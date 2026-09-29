@@ -1,4 +1,3 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 #[derive(Debug, Clone)]
 pub(crate) struct UniversalOutput {
     pub continue_processing: bool,
@@ -63,19 +62,19 @@ pub(crate) struct StopOutput {
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct PreCompactOutput {
-    pub universal: UniversalOutput,
-    pub invalid_reason: Option<String>,
-}
-
-#[derive(Debug, Clone)]
 pub(crate) struct StatelessHookOutput {
     pub universal: UniversalOutput,
     pub invalid_reason: Option<String>,
 }
 
+#[derive(Debug, Clone)]
+pub(crate) struct InterruptOutput {
+    pub system_message: Option<String>,
+}
+
 use crate::schema::BlockDecisionWire;
 use crate::schema::HookUniversalOutputWire;
+use crate::schema::InterruptCommandOutputWire;
 use crate::schema::PermissionRequestBehaviorWire;
 use crate::schema::PermissionRequestCommandOutputWire;
 use crate::schema::PermissionRequestDecisionWire;
@@ -162,11 +161,10 @@ pub(crate) fn parse_pre_tool_use(stdout: &str) -> Option<PreToolUseOutput> {
     };
     let updated_input = if invalid_reason.is_none() {
         hook_specific_output.and_then(|output| {
-            (output.permission_decision.is_none()
-                || matches!(
-                    output.permission_decision,
-                    Some(PreToolUsePermissionDecisionWire::Allow)
-                ))
+            matches!(
+                output.permission_decision,
+                Some(PreToolUsePermissionDecisionWire::Allow)
+            )
             .then(|| output.updated_input.clone())
             .flatten()
         })
@@ -240,10 +238,10 @@ pub(crate) fn parse_post_tool_use(stdout: &str) -> Option<PostToolUseOutput> {
     })
 }
 
-pub(crate) fn parse_pre_compact(stdout: &str) -> Option<PreCompactOutput> {
+pub(crate) fn parse_pre_compact(stdout: &str) -> Option<StatelessHookOutput> {
     let wire: PreCompactCommandOutputWire = parse_json(stdout)?;
     let universal = UniversalOutput::from(wire.universal);
-    Some(PreCompactOutput {
+    Some(StatelessHookOutput {
         universal,
         invalid_reason: None,
     })
@@ -255,6 +253,13 @@ pub(crate) fn parse_post_compact(stdout: &str) -> Option<StatelessHookOutput> {
     Some(StatelessHookOutput {
         universal,
         invalid_reason: None,
+    })
+}
+
+pub(crate) fn parse_interrupt(stdout: &str) -> Option<InterruptOutput> {
+    let wire: InterruptCommandOutputWire = parse_json(stdout)?;
+    Some(InterruptOutput {
+        system_message: wire.system_message,
     })
 }
 
@@ -437,14 +442,12 @@ fn unsupported_pre_tool_use_hook_specific_output(
     output: &crate::schema::PreToolUseHookSpecificOutputWire,
 ) -> Option<String> {
     if output.updated_input.is_some()
-        && matches!(
+        && !matches!(
             output.permission_decision,
-            Some(PreToolUsePermissionDecisionWire::Ask | PreToolUsePermissionDecisionWire::Deny)
+            Some(PreToolUsePermissionDecisionWire::Allow)
         )
     {
-        Some(
-            "PreToolUse hook returned updatedInput with a non-allow permissionDecision".to_string(),
-        )
+        Some("PreToolUse hook returned updatedInput without permissionDecision:allow".to_string())
     } else {
         match output.permission_decision {
             Some(PreToolUsePermissionDecisionWire::Allow) => {
@@ -468,7 +471,7 @@ fn unsupported_pre_tool_use_hook_specific_output(
                 }
             }
             None => {
-                if output.permission_decision_reason.is_some() && output.updated_input.is_none() {
+                if output.permission_decision_reason.is_some() {
                     Some("PreToolUse hook returned permissionDecisionReason without permissionDecision".to_string())
                 } else {
                     None
@@ -523,6 +526,25 @@ mod tests {
     use serde_json::json;
 
     use super::parse_permission_request;
+    use super::parse_user_prompt_submit;
+
+    #[test]
+    fn structured_output_rejects_invalid_shapes_and_types() {
+        for stdout in [
+            "[]",
+            r#"{"systemMessage":123}"#,
+            r#"{"hookSpecificOutput":{"hookEventName":"UserPromptSubmit","additionalContext":123}}"#,
+            r#"{"hookSpecificOutput":{"additionalContext":"missing event name"}}"#,
+            r#"{"hookSpecificOutput":{"hookEventName":"UserPromptSubmit","updatedInput":{}}}"#,
+            r#"{"unexpectedField":true}"#,
+            "{",
+        ] {
+            assert!(
+                parse_user_prompt_submit(stdout).is_none(),
+                "invalid structured output should fail: {stdout}",
+            );
+        }
+    }
 
     #[test]
     fn permission_request_rejects_reserved_updated_input_field() {

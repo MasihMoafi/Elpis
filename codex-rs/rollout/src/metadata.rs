@@ -1,20 +1,21 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use crate::ARCHIVED_SESSIONS_SUBDIR;
+use crate::RolloutItem;
 use crate::SESSIONS_SUBDIR;
 use crate::compression;
-use crate::list::parse_timestamp_uuid_from_filename;
 use crate::recorder::RolloutRecorder;
+use crate::rollout_file_name::RolloutFileName;
 use crate::state_db::normalize_cwd_for_state_db;
 use chrono::DateTime;
 use chrono::NaiveDateTime;
 use chrono::Timelike;
 use chrono::Utc;
-use codex_protocol::ThreadId;
+use codex_protocol::RolloutId;
 use codex_protocol::protocol::AskForApproval;
-use codex_protocol::protocol::RolloutItem;
 use codex_protocol::protocol::SandboxPolicy;
+use codex_protocol::protocol::SessionMeta;
 use codex_protocol::protocol::SessionMetaLine;
 use codex_protocol::protocol::SessionSource;
+use codex_protocol::protocol::ThreadHistoryMode;
 use codex_state::BackfillState;
 use codex_state::BackfillStats;
 use codex_state::BackfillStatus;
@@ -46,7 +47,11 @@ pub(crate) fn builder_from_session_meta(
         created_at,
         session_meta.meta.source.clone(),
     );
+    builder.creator_user_id = session_meta.meta.creator_user_id.clone();
+    builder.creator_account_id = session_meta.meta.creator_account_id.clone();
     builder.history_mode = session_meta.meta.history_mode;
+    builder.originator =
+        (!session_meta.meta.originator.is_empty()).then(|| session_meta.meta.originator.clone());
     builder.model_provider = session_meta.meta.model_provider.clone();
     builder.agent_nickname = session_meta.meta.agent_nickname.clone();
     builder.agent_role = session_meta.meta.agent_role.clone();
@@ -75,6 +80,10 @@ pub fn builder_from_items(
         | RolloutItem::Compacted(_)
         | RolloutItem::TurnContext(_)
         | RolloutItem::WorldState(_)
+        | RolloutItem::RealtimeItem(_)
+        | RolloutItem::TokenUsageRecord(_)
+        | RolloutItem::RetainedContext(_)
+        | RolloutItem::SecurityRiskScore(_)
         | RolloutItem::EventMsg(_) => None,
     }) && let Some(builder) = builder_from_session_meta(session_meta, rollout_path)
     {
@@ -82,17 +91,49 @@ pub fn builder_from_items(
     }
 
     let file_name = rollout_path.file_name()?.to_str()?;
-    let file_name = compression::parse_rollout_file_name(file_name)?;
-    let (created_ts, uuid) = parse_timestamp_uuid_from_filename(file_name)?;
+    let file_name = RolloutFileName::parse(file_name)?;
+    let created_ts = file_name.timestamp();
     let created_at =
         DateTime::<Utc>::from_timestamp(created_ts.unix_timestamp(), 0)?.with_nanosecond(0)?;
-    let id = ThreadId::from_string(&uuid.to_string()).ok()?;
     Some(ThreadMetadataBuilder::new(
-        id,
+        file_name.thread_id(),
         rollout_path.to_path_buf(),
         created_at,
         SessionSource::default(),
     ))
+}
+
+/// Returns the rollout ID encoded in a canonical rollout filename.
+///
+/// Normal rollouts use `rollout-<timestamp>-<thread-id>.jsonl`, where the thread ID and rollout ID
+/// are the same. Threads that have been `reverted` use
+/// `rollout-<timestamp>-<thread-id>_<rollout-id>.jsonl`, where this returns the ID after `_`.
+///
+/// This can differ from [`SessionMeta::id`] when `thread/revert` keeps the thread ID stable while
+/// switching to a new immutable rollout file.
+pub fn rollout_id_from_path(rollout_path: &Path) -> Option<RolloutId> {
+    let file_name = rollout_path.file_name()?.to_str()?;
+    Some(RolloutFileName::parse(file_name)?.rollout_id())
+}
+
+/// Reads the logical fork cutoff without mistaking a revert's history base for its parent.
+///
+/// Older rollouts lack the explicit cutoff. Their history base is safe to use only when it
+/// names the logical parent directly or the current file is the thread's original rollout.
+/// An ambiguous legacy revert omits the cutoff rather than reporting another thread's boundary.
+pub fn forked_from_ordinal_exclusive(
+    meta: &SessionMeta,
+    rollout_path: Option<&Path>,
+) -> Option<u64> {
+    let parent_id = meta.forked_from_id?;
+    meta.forked_from_ordinal_exclusive.or_else(|| {
+        meta.history_base
+            .filter(|base| {
+                base.thread_id == parent_id
+                    || rollout_path.and_then(rollout_id_from_path) == Some(meta.id)
+            })
+            .map(|base| base.end_ordinal_exclusive)
+    })
 }
 
 pub async fn extract_metadata_from_rollout(
@@ -123,6 +164,20 @@ pub async fn extract_metadata_from_rollout(
     }
     Ok(ExtractionOutcome {
         metadata,
+        memory_mode: items.iter().rev().find_map(|item| match item {
+            RolloutItem::SessionMeta(meta_line) => meta_line.meta.memory_mode.clone(),
+            RolloutItem::ResponseItem(_)
+            | RolloutItem::InterAgentCommunication(_)
+            | RolloutItem::InterAgentCommunicationMetadata { .. }
+            | RolloutItem::Compacted(_)
+            | RolloutItem::TurnContext(_)
+            | RolloutItem::WorldState(_)
+            | RolloutItem::RealtimeItem(_)
+            | RolloutItem::TokenUsageRecord(_)
+            | RolloutItem::RetainedContext(_)
+            | RolloutItem::SecurityRiskScore(_)
+            | RolloutItem::EventMsg(_) => None,
+        }),
         parse_errors,
     })
 }
@@ -255,9 +310,15 @@ pub(crate) async fn backfill_sessions_with_lease(
                     }
                     let mut metadata = outcome.metadata;
                     metadata.cwd = normalize_cwd_for_state_db(&metadata.cwd);
-                    if let Ok(Some(existing_metadata)) = runtime.get_thread(metadata.id).await {
-                        metadata.prefer_existing_git_info(&existing_metadata);
-                        metadata.prefer_existing_explicit_title(&existing_metadata);
+                    let memory_mode = outcome.memory_mode.unwrap_or_else(|| "enabled".to_string());
+                    let existing_metadata = runtime.get_thread(metadata.id).await.ok().flatten();
+                    // Paginated metadata updates are SQLite-only. Use the rollout mode to seed a
+                    // missing row, then keep the value from SQLite.
+                    let restore_memory_mode_from_rollout = existing_metadata.is_none()
+                        || matches!(metadata.history_mode, ThreadHistoryMode::Legacy);
+                    if let Some(existing_metadata) = existing_metadata.as_ref() {
+                        metadata.prefer_existing_git_info(existing_metadata);
+                        metadata.prefer_existing_explicit_title(existing_metadata);
                     }
                     if rollout.archived && metadata.archived_at.is_none() {
                         let fallback_archived_at = metadata.updated_at;
@@ -269,6 +330,18 @@ pub(crate) async fn backfill_sessions_with_lease(
                         stats.failed = stats.failed.saturating_add(1);
                         warn!("failed to upsert rollout {}: {err}", rollout.path.display());
                     } else {
+                        if restore_memory_mode_from_rollout
+                            && let Err(err) = runtime
+                                .set_thread_memory_mode(metadata.id, memory_mode.as_str())
+                                .await
+                        {
+                            stats.failed = stats.failed.saturating_add(1);
+                            warn!(
+                                "failed to restore memory mode for {}: {err}",
+                                rollout.path.display()
+                            );
+                            continue;
+                        }
                         stats.upserted = stats.upserted.saturating_add(1);
                     }
                 }

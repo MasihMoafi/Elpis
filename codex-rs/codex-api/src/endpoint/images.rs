@@ -7,14 +7,43 @@ use crate::images::ImageResponse;
 use crate::provider::Provider;
 use codex_client::HttpTransport;
 use codex_client::RequestTelemetry;
+use codex_client::TransportError;
 use http::HeaderMap;
 use http::Method;
 use serde::Serialize;
 use serde_json::to_value;
 use std::sync::Arc;
 
+const X_CODEX_IMAGEGEN_REQUEST_ID_HEADER: &str = "x-codex-imagegen-request-id";
+
 pub struct ImagesClient<T: HttpTransport> {
     session: EndpointSession<T>,
+}
+
+/// Image request failure with the nested ImageGen request ID, when available.
+#[derive(Debug)]
+pub struct ImageRequestError {
+    error: ApiError,
+    imagegen_request_id: Option<String>,
+}
+
+impl ImageRequestError {
+    fn from_api_error(error: ApiError) -> Self {
+        let imagegen_request_id = match &error {
+            ApiError::Transport(TransportError::Http { headers, .. }) => {
+                headers.as_ref().and_then(imagegen_request_id_from_headers)
+            }
+            _ => None,
+        };
+        Self {
+            error,
+            imagegen_request_id,
+        }
+    }
+
+    pub fn into_parts(self) -> (ApiError, Option<String>) {
+        (self.error, self.imagegen_request_id)
+    }
 }
 
 impl<T: HttpTransport> ImagesClient<T> {
@@ -34,7 +63,7 @@ impl<T: HttpTransport> ImagesClient<T> {
         &self,
         request: &ImageGenerationRequest,
         extra_headers: HeaderMap,
-    ) -> Result<ImageResponse, ApiError> {
+    ) -> Result<(ImageResponse, Option<String>), ImageRequestError> {
         self.post_image_request(
             "images/generations",
             request,
@@ -48,7 +77,7 @@ impl<T: HttpTransport> ImagesClient<T> {
         &self,
         request: &ImageEditRequest,
         extra_headers: HeaderMap,
-    ) -> Result<ImageResponse, ApiError> {
+    ) -> Result<(ImageResponse, Option<String>), ImageRequestError> {
         self.post_image_request("images/edits", request, extra_headers, "image edit")
             .await
     }
@@ -59,16 +88,31 @@ impl<T: HttpTransport> ImagesClient<T> {
         request: &R,
         extra_headers: HeaderMap,
         operation: &str,
-    ) -> Result<ImageResponse, ApiError> {
-        let body = to_value(request)
-            .map_err(|e| ApiError::Stream(format!("failed to encode {operation} request: {e}")))?;
+    ) -> Result<(ImageResponse, Option<String>), ImageRequestError> {
+        let body = to_value(request).map_err(|e| ImageRequestError {
+            error: ApiError::Stream(format!("failed to encode {operation} request: {e}")),
+            imagegen_request_id: None,
+        })?;
         let resp = self
             .session
             .execute(Method::POST, path, extra_headers, Some(body))
-            .await?;
-        serde_json::from_slice(&resp.body)
-            .map_err(|e| ApiError::Stream(format!("failed to decode {operation} response: {e}")))
+            .await
+            .map_err(ImageRequestError::from_api_error)?;
+        let imagegen_request_id = imagegen_request_id_from_headers(&resp.headers);
+        let response = serde_json::from_slice(&resp.body).map_err(|e| ImageRequestError {
+            error: ApiError::Stream(format!("failed to decode {operation} response: {e}")),
+            imagegen_request_id: imagegen_request_id.clone(),
+        })?;
+        Ok((response, imagegen_request_id))
     }
+}
+
+fn imagegen_request_id_from_headers(headers: &HeaderMap) -> Option<String> {
+    headers
+        .get(X_CODEX_IMAGEGEN_REQUEST_ID_HEADER)
+        .and_then(|value| value.to_str().ok())
+        .filter(|request_id| !request_id.is_empty())
+        .map(str::to_string)
 }
 
 #[cfg(test)]
@@ -78,13 +122,13 @@ mod tests {
     use crate::images::ImageBackground;
     use crate::images::ImageData;
     use crate::images::ImageQuality;
-    use crate::images::ImageUrl;
     use crate::provider::RetryConfig;
     use codex_client::Request;
     use codex_client::RequestBody;
     use codex_client::Response;
     use codex_client::StreamResponse;
     use codex_client::TransportError;
+    use codex_protocol::models::ImageReference;
     use http::StatusCode;
     use pretty_assertions::assert_eq;
     use serde_json::json;
@@ -102,13 +146,19 @@ mod tests {
     struct CapturingTransport {
         last_request: Arc<Mutex<Option<Request>>>,
         response_body: Arc<Vec<u8>>,
+        response_headers: HeaderMap,
     }
 
     impl CapturingTransport {
         fn new(response_body: Vec<u8>) -> Self {
+            Self::with_response_headers(response_body, HeaderMap::new())
+        }
+
+        fn with_response_headers(response_body: Vec<u8>, response_headers: HeaderMap) -> Self {
             Self {
                 last_request: Arc::new(Mutex::new(None)),
                 response_body: Arc::new(response_body),
+                response_headers,
             }
         }
     }
@@ -118,7 +168,7 @@ mod tests {
             *self.last_request.lock().expect("lock request store") = Some(req);
             Ok(Response {
                 status: StatusCode::OK,
-                headers: HeaderMap::new(),
+                headers: self.response_headers.clone(),
                 body: self.response_body.as_ref().clone().into(),
             })
         }
@@ -176,6 +226,7 @@ mod tests {
             background: Some(ImageBackground::Opaque),
             data: vec![ImageData {
                 b64_json: "REDACT".to_string(),
+                generation_id: None,
             }],
             quality: Some(ImageQuality::Medium),
             size: Some("1024x1536".to_string()),
@@ -193,10 +244,20 @@ mod tests {
 
     #[tokio::test]
     async fn generate_posts_typed_request_and_parses_image_response() {
-        let transport = CapturingTransport::new(response_body());
+        let mut response_headers = HeaderMap::new();
+        response_headers.insert(
+            X_CODEX_IMAGEGEN_REQUEST_ID_HEADER,
+            http::HeaderValue::from_static("req-imagegen-123"),
+        );
+        response_headers.insert(
+            "x-request-id",
+            http::HeaderValue::from_static("req-outer-456"),
+        );
+        let transport =
+            CapturingTransport::with_response_headers(response_body(), response_headers);
         let client = ImagesClient::new(transport.clone(), provider(), Arc::new(DummyAuth));
 
-        let response = client
+        let (response, imagegen_request_id) = client
             .generate(
                 &ImageGenerationRequest {
                     prompt: "a red fox in a field".to_string(),
@@ -212,6 +273,7 @@ mod tests {
             .expect("image generation request should succeed");
 
         assert_eq!(response, expected_response());
+        assert_eq!(imagegen_request_id.as_deref(), Some("req-imagegen-123"));
 
         let request = captured_request(&transport);
         assert_eq!(
@@ -231,16 +293,60 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn preserves_distinct_generation_ids_on_image_data() {
+        let body = serde_json::to_vec(&json!({
+            "created": 1,
+            "data": [
+                {"b64_json": "first", "generation_id": "gen-first"},
+                {"b64_json": "second", "generation_id": "gen-second"},
+                {"b64_json": "legacy"}
+            ]
+        }))
+        .expect("serialize response");
+        let transport = CapturingTransport::new(body);
+        let client = ImagesClient::new(transport, provider(), Arc::new(DummyAuth));
+
+        let (response, _) = client
+            .generate(
+                &ImageGenerationRequest {
+                    prompt: "test".to_string(),
+                    background: None,
+                    model: "gpt-image-2".to_string(),
+                    n: None,
+                    quality: None,
+                    size: None,
+                },
+                HeaderMap::new(),
+            )
+            .await
+            .expect("image response should parse");
+
+        assert_eq!(
+            response
+                .data
+                .iter()
+                .map(|image| image.generation_id.as_deref())
+                .collect::<Vec<_>>(),
+            vec![Some("gen-first"), Some("gen-second"), None]
+        );
+    }
+
+    #[tokio::test]
     async fn edit_posts_typed_request_and_parses_image_response() {
         let transport = CapturingTransport::new(response_body());
         let client = ImagesClient::new(transport.clone(), provider(), Arc::new(DummyAuth));
 
-        let response = client
+        let (response, imagegen_request_id) = client
             .edit(
                 &ImageEditRequest {
-                    images: vec![ImageUrl {
-                        image_url: "data:image/png;base64,Zm9v".to_string(),
-                    }],
+                    images: vec![
+                        ImageReference::Inline {
+                            image_url: "data:image/png;base64,Zm9v".to_string(),
+                        },
+                        ImageReference::File {
+                            file_id: "file-image".to_string(),
+                        },
+                    ],
                     prompt: "add a red hat".to_string(),
                     background: None,
                     model: "gpt-image-1.5".to_string(),
@@ -254,13 +360,17 @@ mod tests {
             .expect("image edit request should succeed");
 
         assert_eq!(response, expected_response());
+        assert_eq!(imagegen_request_id, None);
 
         let request = captured_request(&transport);
         assert_eq!(request.url, "https://example.com/api/codex/images/edits");
         assert_eq!(
             request.body.as_ref().and_then(RequestBody::json),
             Some(&json!({
-                "images": [{"image_url": "data:image/png;base64,Zm9v"}],
+                "images": [
+                    {"image_url": "data:image/png;base64,Zm9v"},
+                    {"file_id": "file-image"},
+                ],
                 "prompt": "add a red hat",
                 "model": "gpt-image-1.5",
             }))
@@ -288,6 +398,7 @@ mod tests {
             )
             .await
             .expect_err("image response without data should fail");
+        let (error, _) = error.into_parts();
 
         let ApiError::Stream(message) = error else {
             panic!("expected image response decode error");

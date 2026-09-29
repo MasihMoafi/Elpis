@@ -6,11 +6,21 @@ use codex_protocol::error::CodexErr;
 use codex_thread_store::ThreadStoreError;
 
 pub(crate) fn map_session_init_error(err: &anyhow::Error, codex_home: &Path) -> CodexErr {
-    if let Some(ThreadStoreError::Unsupported { operation }) = err
+    if let Some(store_error) = err
         .chain()
         .find_map(|cause| cause.downcast_ref::<ThreadStoreError>())
     {
-        return CodexErr::UnsupportedOperation(format!("{operation} is not supported yet"));
+        match store_error {
+            ThreadStoreError::Unsupported { operation } => {
+                return CodexErr::UnsupportedOperation(format!("{operation} is not supported yet"));
+            }
+            ThreadStoreError::Conflict { message } => {
+                return CodexErr::InvalidRequest(message.clone());
+            }
+            ThreadStoreError::ThreadNotFound { .. }
+            | ThreadStoreError::InvalidRequest { .. }
+            | ThreadStoreError::Internal { .. } => {}
+        }
     }
 
     if let Some(mapped) = err
@@ -40,7 +50,7 @@ fn map_rollout_io_error(io_err: &std::io::Error, codex_home: &Path) -> Option<Co
             "Session storage path {} is blocked by an existing file. Remove or rename it so Codex can create sessions.",
             sessions_dir.display()
         ),
-        ErrorKind::InvalidData | ErrorKind::InvalidInput => format!(
+        ErrorKind::InvalidData => format!(
             "Session data under {} looks corrupt or unreadable. Clearing the sessions directory may help (this will remove saved threads).",
             sessions_dir.display()
         ),

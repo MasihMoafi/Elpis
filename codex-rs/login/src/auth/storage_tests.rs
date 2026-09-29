@@ -26,6 +26,7 @@ async fn file_storage_load_returns_auth_dot_json() -> anyhow::Result<()> {
         agent_identity: None,
         personal_access_token: None,
         bedrock_api_key: None,
+        bedrock_access_keys: None,
     };
 
     storage
@@ -49,6 +50,7 @@ async fn file_storage_save_persists_auth_dot_json() -> anyhow::Result<()> {
         agent_identity: None,
         personal_access_token: None,
         bedrock_api_key: None,
+        bedrock_access_keys: None,
     };
 
     let file = get_auth_file(codex_home.path());
@@ -84,6 +86,7 @@ async fn file_storage_round_trips_agent_identity_auth() -> anyhow::Result<()> {
         agent_identity: Some(AgentIdentityStorage::Jwt(agent_identity)),
         personal_access_token: None,
         bedrock_api_key: None,
+        bedrock_access_keys: None,
     };
 
     storage.save(&auth_dot_json)?;
@@ -115,6 +118,7 @@ async fn file_storage_round_trips_registered_agent_identity_auth() -> anyhow::Re
         agent_identity: Some(AgentIdentityStorage::Record(record)),
         personal_access_token: None,
         bedrock_api_key: None,
+        bedrock_access_keys: None,
     };
 
     storage.save(&auth_dot_json)?;
@@ -166,6 +170,7 @@ async fn file_storage_loads_empty_agent_identity_email_as_none() -> anyhow::Resu
             })),
             personal_access_token: None,
             bedrock_api_key: None,
+            bedrock_access_keys: None,
         })
     );
     Ok(())
@@ -192,6 +197,7 @@ async fn file_storage_writes_missing_agent_identity_email_as_empty_string() -> a
         })),
         personal_access_token: None,
         bedrock_api_key: None,
+        bedrock_access_keys: None,
     };
 
     storage.save(&auth_dot_json)?;
@@ -215,6 +221,7 @@ async fn file_storage_round_trips_personal_access_token_auth() -> anyhow::Result
         agent_identity: None,
         personal_access_token: Some("at-example".to_string()),
         bedrock_api_key: None,
+        bedrock_access_keys: None,
     };
 
     storage.save(&auth_dot_json)?;
@@ -266,6 +273,7 @@ fn file_storage_delete_removes_auth_file() -> anyhow::Result<()> {
         agent_identity: None,
         personal_access_token: None,
         bedrock_api_key: None,
+        bedrock_access_keys: None,
     };
     let storage = create_auth_storage(
         dir.path().to_path_buf(),
@@ -297,6 +305,7 @@ fn ephemeral_storage_save_load_delete_is_in_memory_only() -> anyhow::Result<()> 
         agent_identity: None,
         personal_access_token: None,
         bedrock_api_key: None,
+        bedrock_access_keys: None,
     };
 
     storage.save(&auth_dot_json)?;
@@ -372,7 +381,7 @@ fn assert_keyring_saved_auth_and_removed_fallback(
         mock_keyring.saved_value(&old_key).is_none(),
         "legacy keyring auth entry should not be used"
     );
-    let secrets_key = compute_keyring_account(codex_home);
+    let secrets_key = compute_keyring_account(codex_home, LocalSecretsNamespace::CodexAuth);
     assert!(
         mock_keyring.saved_value(&secrets_key).is_some(),
         "secrets backend should persist an encryption passphrase in the keyring"
@@ -430,6 +439,7 @@ fn auth_with_prefix(prefix: &str) -> AuthDotJson {
         agent_identity: None,
         personal_access_token: None,
         bedrock_api_key: None,
+        bedrock_access_keys: None,
     }
 }
 
@@ -457,6 +467,7 @@ fn secrets_keyring_auth_storage_load_returns_deserialized_auth() -> anyhow::Resu
         agent_identity: None,
         personal_access_token: None,
         bedrock_api_key: None,
+        bedrock_access_keys: None,
     };
     seed_secrets_backend_with_auth(&mock_keyring, codex_home.path(), &expected)?;
 
@@ -565,7 +576,10 @@ fn factory_uses_secrets_backend_only_when_requested() -> anyhow::Result<()> {
     secrets_storage.save(&secrets_auth)?;
     assert!(
         secrets_keyring
-            .saved_value(&compute_keyring_account(secrets_home.path()))
+            .saved_value(&compute_keyring_account(
+                secrets_home.path(),
+                LocalSecretsNamespace::CodexAuth,
+            ))
             .is_some()
     );
     assert!(encrypted_auth_file(secrets_home.path()).exists());
@@ -595,6 +609,7 @@ fn secrets_keyring_auth_storage_save_persists_and_removes_fallback_file() -> any
         agent_identity: None,
         personal_access_token: None,
         bedrock_api_key: None,
+        bedrock_access_keys: None,
     };
 
     storage.save(&auth)?;
@@ -712,7 +727,7 @@ fn auto_auth_storage_load_falls_back_when_keyring_errors() -> anyhow::Result<()>
         Arc::new(mock_keyring.clone()),
         AuthKeyringBackendKind::Secrets,
     );
-    let key = compute_keyring_account(codex_home.path());
+    let key = compute_keyring_account(codex_home.path(), LocalSecretsNamespace::CodexAuth);
 
     let encrypted = auth_with_prefix("encrypted");
     seed_secrets_backend_with_auth(&mock_keyring, codex_home.path(), &encrypted)?;
@@ -754,7 +769,7 @@ fn auto_auth_storage_save_falls_back_when_keyring_errors() -> anyhow::Result<()>
         Arc::new(mock_keyring.clone()),
         AuthKeyringBackendKind::Secrets,
     );
-    let key = compute_keyring_account(codex_home.path());
+    let key = compute_keyring_account(codex_home.path(), LocalSecretsNamespace::CodexAuth);
     mock_keyring.set_error(&key, KeyringError::Invalid("error".into(), "save".into()));
 
     let auth = auth_with_prefix("fallback");

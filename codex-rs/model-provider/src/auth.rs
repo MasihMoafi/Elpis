@@ -1,4 +1,3 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering;
@@ -6,6 +5,8 @@ use std::sync::atomic::Ordering;
 use codex_agent_identity::AgentIdentityKey;
 use codex_agent_identity::authorization_header_for_agent_task;
 use codex_api::AgentIdentityTelemetry;
+use codex_api::AuthError;
+use codex_api::AuthHeadersFuture;
 use codex_api::AuthProvider;
 use codex_api::SharedAuthProvider;
 use codex_login::AuthHeaders;
@@ -15,11 +16,9 @@ use codex_login::auth::AgentIdentityAuth;
 use codex_login::auth::AgentIdentityAuthError;
 use codex_login::auth::AgentIdentityAuthPolicy;
 use codex_model_provider_info::ModelProviderInfo;
-use codex_model_provider_info::WireApi;
 use codex_protocol::error::CodexErr;
 use codex_protocol::protocol::SessionSource;
 use http::HeaderMap;
-use http::HeaderName;
 use http::HeaderValue;
 
 use crate::bearer_auth_provider::BearerAuthProvider;
@@ -131,25 +130,41 @@ struct AuthManagerAuthProvider {
     expected_auth: CodexAuth,
 }
 
+impl AuthManagerAuthProvider {
+    fn is_expected_auth(&self, auth: &CodexAuth) -> bool {
+        auth.uses_codex_backend()
+            && auth.get_account_id() == self.expected_auth.get_account_id()
+            && auth.get_chatgpt_user_id() == self.expected_auth.get_chatgpt_user_id()
+            && auth.is_workspace_account() == self.expected_auth.is_workspace_account()
+    }
+
+    fn current_auth(&self) -> Option<CodexAuth> {
+        self.auth_manager
+            .auth_cached()
+            .filter(|auth| self.is_expected_auth(auth))
+    }
+}
+
 impl AuthProvider for AuthManagerAuthProvider {
     fn add_auth_headers(&self, headers: &mut HeaderMap) {
-        let Some(auth) = self
-            .auth_manager
-            .auth_cached()
-            .filter(CodexAuth::uses_codex_backend)
-        else {
+        let Some(auth) = self.current_auth() else {
             return;
         };
-        // The caller's account-scoped state was built for the expected
-        // identity. Follow token refreshes for that identity, but never cross
-        // an account or workspace boundary without rebuilding that state.
-        if auth.get_account_id() != self.expected_auth.get_account_id()
-            || auth.get_chatgpt_user_id() != self.expected_auth.get_chatgpt_user_id()
-            || auth.is_workspace_account() != self.expected_auth.is_workspace_account()
-        {
-            return;
-        }
         auth_provider_from_auth(&auth).add_auth_headers(headers);
+    }
+
+    fn resolve_auth_headers(&self) -> AuthHeadersFuture<'_> {
+        Box::pin(async move {
+            let auth = self
+                .auth_manager
+                .auth()
+                .await
+                .filter(|auth| self.is_expected_auth(auth))
+                .ok_or_else(|| {
+                    AuthError::Transient("managed authentication is unavailable".to_string())
+                })?;
+            Ok(auth_provider_from_auth(&auth).to_auth_headers())
+        })
     }
 }
 
@@ -164,29 +179,6 @@ impl AuthProvider for UnauthenticatedAuthProvider {
 
 pub fn unauthenticated_auth_provider() -> SharedAuthProvider {
     Arc::new(UnauthenticatedAuthProvider)
-}
-
-#[derive(Clone, Debug)]
-struct ApiKeyHeaderAuthProvider {
-    header_name: HeaderName,
-    api_key: String,
-}
-
-impl ApiKeyHeaderAuthProvider {
-    fn new(header_name: HeaderName, api_key: String) -> Self {
-        Self {
-            header_name,
-            api_key,
-        }
-    }
-}
-
-impl AuthProvider for ApiKeyHeaderAuthProvider {
-    fn add_auth_headers(&self, headers: &mut HeaderMap) {
-        if let Ok(value) = HeaderValue::from_str(&self.api_key) {
-            headers.insert(self.header_name.clone(), value);
-        }
-    }
 }
 
 /// Returns the provider-scoped auth manager when this provider uses command-backed auth.
@@ -206,34 +198,21 @@ pub(crate) fn resolve_provider_auth(
     auth: Option<&CodexAuth>,
     provider: &ModelProviderInfo,
 ) -> codex_protocol::error::Result<SharedAuthProvider> {
-    if matches!(auth, Some(CodexAuth::BedrockApiKey(_))) {
-        return Err(CodexErr::UnsupportedOperation(
-            BEDROCK_API_KEY_UNSUPPORTED_MESSAGE.to_string(),
-        ));
-    }
-
-    if let Some(api_key) = provider.api_key()? {
-        return Ok(api_key_auth_provider(provider.wire_api, api_key));
-    }
-
     if let Some(auth) = bearer_auth_for_provider(provider)? {
         return Ok(Arc::new(auth));
     }
 
-    if matches!(provider.wire_api, WireApi::AnthropicMessages)
-        && let Some(env_key) = &provider.env_key
-    {
-        return Err(CodexErr::EnvVar(codex_protocol::error::EnvVarError {
-            var: env_key.clone(),
-            instructions: provider.env_key_instructions.clone(),
-        }));
-    }
-
-    // A provider whose token comes from an auth command still has to send it.
-    // Only a provider with no credential at all goes out unauthenticated.
-    // Restored from upstream Codex, where this second condition never left.
     if !provider.requires_openai_auth && provider.auth.is_none() {
         return Ok(unauthenticated_auth_provider());
+    }
+
+    if matches!(
+        auth,
+        Some(CodexAuth::BedrockApiKey(_) | CodexAuth::BedrockAccessKeys(_))
+    ) {
+        return Err(CodexErr::UnsupportedOperation(
+            BEDROCK_API_KEY_UNSUPPORTED_MESSAGE.to_string(),
+        ));
     }
 
     Ok(match auth {
@@ -310,25 +289,15 @@ fn should_bootstrap_chatgpt_agent_identity(
         && matches!(auth, Some(CodexAuth::Chatgpt(_)))
 }
 
-fn api_key_auth_provider(wire_api: WireApi, api_key: String) -> SharedAuthProvider {
-    match wire_api {
-        WireApi::AnthropicMessages => Arc::new(ApiKeyHeaderAuthProvider::new(
-            HeaderName::from_static("x-api-key"),
-            api_key,
-        )),
-        WireApi::GeminiGenerateContent => Arc::new(ApiKeyHeaderAuthProvider::new(
-            HeaderName::from_static("x-goog-api-key"),
-            api_key,
-        )),
-        WireApi::Responses | WireApi::Chat => Arc::new(BearerAuthProvider::new(api_key)),
-    }
-}
-
 fn bearer_auth_for_provider(
     provider: &ModelProviderInfo,
 ) -> codex_protocol::error::Result<Option<BearerAuthProvider>> {
+    if let Some(api_key) = provider.api_key()? {
+        return Ok(Some(BearerAuthProvider::new(api_key)));
+    }
+
     if let Some(token) = provider.experimental_bearer_token.clone() {
-        return Ok(Some(BearerAuthProvider::new(token)));
+        return Ok(Some(BearerAuthProvider::new(token.into_inner())));
     }
 
     Ok(None)
@@ -341,7 +310,9 @@ pub fn auth_provider_from_auth(auth: &CodexAuth) -> SharedAuthProvider {
             Arc::new(AgentIdentityAuthProvider { auth: auth.clone() })
         }
         CodexAuth::Headers(auth) => Arc::new(HeaderAuthProvider { auth: auth.clone() }),
-        CodexAuth::BedrockApiKey(_) => unreachable!("{BEDROCK_API_KEY_UNSUPPORTED_MESSAGE}"),
+        CodexAuth::BedrockApiKey(_) | CodexAuth::BedrockAccessKeys(_) => {
+            unreachable!("{BEDROCK_API_KEY_UNSUPPORTED_MESSAGE}")
+        }
         CodexAuth::ApiKey(_)
         | CodexAuth::Chatgpt(_)
         | CodexAuth::ChatgptAuthTokens(_)
@@ -379,9 +350,12 @@ mod tests {
     use codex_model_provider_info::WireApi;
     use codex_model_provider_info::create_oss_provider_with_base_url;
     use codex_protocol::account::PlanType;
+    use codex_protocol::config_types::ModelProviderAuthInfo;
+    use codex_protocol::error::CodexErrorDetails;
     use http::header::AUTHORIZATION;
     use pretty_assertions::assert_eq;
     use serde_json::json;
+    use std::num::NonZeroU64;
     use std::path::Path;
     use std::path::PathBuf;
     use std::sync::atomic::AtomicUsize;
@@ -411,7 +385,7 @@ mod tests {
                 task_id: Some("task-run-1".to_string()),
             },
             "https://auth.openai.com/api/accounts",
-            /*auth_route_config*/ None,
+            &codex_login::test_support::transport_default_auth_route_config(),
         )
         .await
         .expect("agent identity auth record should include task id")
@@ -468,7 +442,7 @@ mod tests {
             /*forced_chatgpt_workspace_id*/ None,
             /*chatgpt_base_url*/ None,
             AuthKeyringBackendKind::default(),
-            /*auth_route_config*/ None,
+            codex_login::test_support::transport_default_auth_route_config(),
         )
         .await;
         let auth = auth_manager.auth().await.expect("auth should load");
@@ -496,63 +470,114 @@ mod tests {
 
     #[test]
     fn unauthenticated_auth_provider_adds_no_headers() {
-        let provider = create_oss_provider_with_base_url(
-            codex_model_provider_info::OLLAMA_OSS_PROVIDER_NAME,
-            "http://localhost:11434/v1",
-            WireApi::Responses,
-        );
+        let provider =
+            create_oss_provider_with_base_url("http://localhost:11434/v1", WireApi::Responses);
         let auth = resolve_provider_auth(/*auth*/ None, &provider).expect("auth should resolve");
 
         assert!(auth.to_auth_headers().is_empty());
     }
 
     #[test]
-    fn native_wire_protocols_use_vendor_api_key_headers() {
-        for (wire_api, header_name) in [
-            (WireApi::AnthropicMessages, "x-api-key"),
-            (WireApi::GeminiGenerateContent, "x-goog-api-key"),
-        ] {
-            let headers =
-                api_key_auth_provider(wire_api, "provider-secret".to_string()).to_auth_headers();
-            assert_eq!(
-                headers
-                    .get(header_name)
-                    .and_then(|value| value.to_str().ok()),
-                Some("provider-secret")
-            );
-            assert!(!headers.contains_key(AUTHORIZATION));
-        }
+    fn custom_provider_does_not_inherit_ambient_auth_headers() {
+        let provider =
+            create_oss_provider_with_base_url("http://localhost:11434/v1", WireApi::Responses);
+        let mut ambient_headers = HeaderMap::new();
+        ambient_headers.insert(
+            AUTHORIZATION,
+            HeaderValue::from_static("Bearer ambient-token"),
+        );
+        ambient_headers.insert(
+            "ChatGPT-Account-ID",
+            HeaderValue::from_static("account-123"),
+        );
+        let ambient_auth = CodexAuth::Headers(AuthHeaders::new(ambient_headers));
 
-        let headers = api_key_auth_provider(WireApi::Responses, "openai-secret".to_string())
+        let auth =
+            resolve_provider_auth(Some(&ambient_auth), &provider).expect("auth should resolve");
+
+        assert!(auth.to_auth_headers().is_empty());
+    }
+
+    #[test]
+    fn custom_provider_does_not_inherit_ambient_bedrock_auth() {
+        let provider =
+            create_oss_provider_with_base_url("http://localhost:11434/v1", WireApi::Responses);
+        let ambient_auth = CodexAuth::BedrockApiKey(BedrockApiKeyAuth {
+            api_key: "bedrock-api-key-test".to_string(),
+            region: "us-east-1".to_string(),
+        });
+
+        let auth =
+            resolve_provider_auth(Some(&ambient_auth), &provider).expect("auth should resolve");
+
+        assert!(auth.to_auth_headers().is_empty());
+    }
+
+    #[test]
+    fn custom_provider_uses_explicit_bearer_instead_of_ambient_auth() {
+        let mut provider =
+            create_oss_provider_with_base_url("http://localhost:11434/v1", WireApi::Responses);
+        provider.experimental_bearer_token = Some("provider-token".into());
+        let ambient_auth = CodexAuth::BedrockApiKey(BedrockApiKeyAuth {
+            api_key: "bedrock-api-key-test".to_string(),
+            region: "us-east-1".to_string(),
+        });
+
+        let headers = resolve_provider_auth(Some(&ambient_auth), &provider)
+            .expect("auth should resolve")
             .to_auth_headers();
+
         assert_eq!(
-            headers
-                .get(AUTHORIZATION)
-                .and_then(|value| value.to_str().ok()),
-            Some("Bearer openai-secret")
+            headers.get(AUTHORIZATION),
+            Some(&HeaderValue::from_static("Bearer provider-token"))
+        );
+        assert_eq!(headers.len(), 1);
+    }
+
+    #[test]
+    fn custom_provider_uses_command_resolved_auth() {
+        let mut provider =
+            create_oss_provider_with_base_url("http://localhost:11434/v1", WireApi::Responses);
+        provider.auth = Some(ModelProviderAuthInfo {
+            command: "print-token".to_string(),
+            args: Vec::new(),
+            timeout_ms: NonZeroU64::new(5_000).expect("timeout should be non-zero"),
+            refresh_interval_ms: 300_000,
+            cwd: std::env::current_dir()
+                .expect("current directory should be available")
+                .try_into()
+                .expect("current directory should be absolute"),
+        });
+        let command_auth = CodexAuth::from_api_key("command-token");
+
+        let headers = resolve_provider_auth(Some(&command_auth), &provider)
+            .expect("auth should resolve")
+            .to_auth_headers();
+
+        assert_eq!(
+            headers.get(AUTHORIZATION),
+            Some(&HeaderValue::from_static("Bearer command-token"))
         );
     }
 
     #[test]
-    fn native_provider_without_api_key_returns_a_typed_error() {
-        let provider = ModelProviderInfo {
-            name: "Anthropic test".to_string(),
-            env_key: Some("ELPIS_TEST_MISSING_ANTHROPIC_KEY".to_string()),
-            env_key_instructions: Some("set the test key".to_string()),
-            wire_api: WireApi::AnthropicMessages,
-            ..ModelProviderInfo::default()
-        };
+    fn openai_provider_preserves_ambient_auth_headers() {
+        let provider = ModelProviderInfo::create_openai_provider(/*base_url*/ None);
+        let mut expected = HeaderMap::new();
+        expected.insert(
+            AUTHORIZATION,
+            HeaderValue::from_static("Bearer ambient-token"),
+        );
+        expected.insert(
+            "ChatGPT-Account-ID",
+            HeaderValue::from_static("account-123"),
+        );
+        let ambient_auth = CodexAuth::Headers(AuthHeaders::new(expected.clone()));
 
-        let error = resolve_provider_auth(None, &provider)
-            .err()
-            .expect("missing native provider credentials should fail");
-        match error {
-            codex_protocol::error::CodexErr::EnvVar(error) => {
-                assert_eq!(error.var, "ELPIS_TEST_MISSING_ANTHROPIC_KEY");
-                assert_eq!(error.instructions.as_deref(), Some("set the test key"));
-            }
-            other => panic!("expected missing credential error, got {other}"),
-        }
+        let auth =
+            resolve_provider_auth(Some(&ambient_auth), &provider).expect("auth should resolve");
+
+        assert_eq!(auth.to_auth_headers(), expected);
     }
 
     #[test]
@@ -579,10 +604,12 @@ mod tests {
         });
 
         match resolve_provider_auth(Some(&auth), &provider) {
-            Err(CodexErr::UnsupportedOperation(message)) => {
-                assert_eq!(message, BEDROCK_API_KEY_UNSUPPORTED_MESSAGE);
-            }
-            Err(err) => panic!("unexpected auth error: {err:?}"),
+            Err(err) => match err.details() {
+                CodexErrorDetails::UnsupportedOperation(message) => {
+                    assert_eq!(message, BEDROCK_API_KEY_UNSUPPORTED_MESSAGE);
+                }
+                details => panic!("unexpected auth error: {details:?}"),
+            },
             Ok(_) => panic!("Bedrock API key auth should be rejected"),
         }
     }
@@ -605,7 +632,7 @@ mod tests {
                 /*forced_chatgpt_workspace_id*/ None,
                 /*chatgpt_base_url*/ None,
                 AuthKeyringBackendKind::default(),
-                /*auth_route_config*/ None,
+                codex_login::test_support::transport_default_auth_route_config(),
             )
             .await,
         );
@@ -628,8 +655,12 @@ mod tests {
         .expect("save reloaded auth");
         auth_manager.reload().await;
 
+        let resolved_headers = provider
+            .resolve_auth_headers()
+            .await
+            .expect("managed auth headers should resolve");
         assert_eq!(
-            provider.to_auth_headers().get(AUTHORIZATION),
+            resolved_headers.get(AUTHORIZATION),
             Some(&HeaderValue::from_static("Bearer header.e30.reloaded"))
         );
 

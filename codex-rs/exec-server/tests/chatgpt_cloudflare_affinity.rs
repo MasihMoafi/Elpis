@@ -65,7 +65,7 @@ struct TlsInterceptingProxy {
 }
 
 /// Exercises the same `http/request` route used by remotely executed Streamable HTTP MCP calls.
-/// Each RPC builds a fresh reqwest client. The first response sets `__cflb`, and the second response
+/// Each RPC uses the shared route-aware client. The first response sets `__cflb`, and the second response
 /// replaces it, proving cross-client persistence through the shared cookie store.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn exec_server_replays_only_chatgpt_cloudflare_cookies() -> anyhow::Result<()> {
@@ -87,7 +87,7 @@ async fn exec_server_replays_only_chatgpt_cloudflare_cookies() -> anyhow::Result
         (OsString::from("NO_PROXY"), empty.clone()),
         (OsString::from("no_proxy"), empty),
     ];
-    let mut server = exec_server_with_env(env).await?;
+    let mut server = exec_server_with_env(env, &[]).await?;
     initialize_exec_server(&mut server).await?;
 
     let first_response = execute_http_request(&mut server, CHATGPT_MCP_URL, "first").await?;

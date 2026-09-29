@@ -1,4 +1,3 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use serde::Deserialize;
 use serde::Serialize;
 
@@ -187,10 +186,8 @@ pub struct InferenceCall {
 pub struct TokenUsage {
     pub input_tokens: u64,
     pub cached_input_tokens: u64,
-    /// Prompt-cache writes billed by this call (GPT-5.6 and later). `None` when the
-    /// provider did not report the field, which is not the same as a reported zero.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub cache_write_tokens: Option<u64>,
+    #[serde(default)]
+    pub cache_write_input_tokens: u64,
     pub output_tokens: u64,
     pub reasoning_output_tokens: u64,
 }

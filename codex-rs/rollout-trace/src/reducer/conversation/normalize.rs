@@ -1,4 +1,3 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 //! Normalization from Responses-shaped JSON items into conversation item data.
 
 use anyhow::Context;
@@ -41,7 +40,12 @@ pub(super) fn normalize_model_items(
         if item.get("type").and_then(Value::as_str) == Some("additional_tools") {
             continue;
         }
-        normalized_items.push(normalize_model_item(item, raw_payload)?);
+
+        let mut model_visible_item = item.clone();
+        if let Some(object) = model_visible_item.as_object_mut() {
+            object.remove("internal_chat_message_metadata_passthrough");
+        }
+        normalized_items.push(normalize_model_item(&model_visible_item, raw_payload)?);
     }
     Ok(normalized_items)
 }
@@ -50,10 +54,7 @@ pub(super) fn token_usage_from_value(value: &Value) -> Option<TokenUsage> {
     Some(TokenUsage {
         input_tokens: u64_field(value, "input_tokens")?,
         cached_input_tokens: u64_field(value, "cached_input_tokens")?,
-        // Optional on purpose: absent for every provider that does not report cache
-        // writes, and for every record written before the field existed. Requiring it
-        // here would drop those usage records entirely.
-        cache_write_tokens: u64_field(value, "cache_write_tokens"),
+        cache_write_input_tokens: u64_field(value, "cache_write_input_tokens").unwrap_or(0),
         output_tokens: u64_field(value, "output_tokens")?,
         reasoning_output_tokens: u64_field(value, "reasoning_output_tokens")?,
     })

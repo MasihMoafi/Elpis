@@ -1,4 +1,3 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use std::io;
 use std::os::fd::AsFd;
 use std::os::fd::AsRawFd;
@@ -14,22 +13,11 @@ use crate::unix::escalate_protocol::EscalateRequest;
 use crate::unix::escalate_protocol::EscalateResponse;
 use crate::unix::escalate_protocol::SuperExecMessage;
 use crate::unix::escalate_protocol::SuperExecResult;
-use crate::unix::escalate_protocol::SuperExecSignal;
-use std::sync::atomic::AtomicBool;
-use std::sync::atomic::Ordering;
-
 use crate::unix::socket::AsyncDatagramSocket;
 use crate::unix::socket::AsyncSocket;
 
-static ESCALATE_CLIENT_CALLED: AtomicBool = AtomicBool::new(false);
-
 fn get_escalate_client() -> anyhow::Result<AsyncDatagramSocket> {
-    if ESCALATE_CLIENT_CALLED.swap(true, Ordering::Relaxed) {
-        return Err(anyhow::anyhow!(
-            "get_escalate_client can only be called once"
-        ));
-    }
-
+    // TODO: we should defensively require only calling this once, since AsyncSocket will take ownership of the fd.
     let client_fd = std::env::var(ESCALATE_SOCKET_ENV_VAR)?.parse::<i32>()?;
     if client_fd < 0 {
         return Err(anyhow::anyhow!(
@@ -88,6 +76,8 @@ pub async fn run_shell_escalation_execve_wrapper(
                 duplicate_fd_for_transfer(io::stderr(), "stderr")?,
             ];
 
+            // TODO: also forward signals over the super-exec socket
+
             client
                 .send_with_fds(
                     SuperExecMessage {
@@ -97,35 +87,8 @@ pub async fn run_shell_escalation_execve_wrapper(
                 )
                 .await
                 .context("failed to send SuperExecMessage")?;
-
-            let mut sigint =
-                tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt())?;
-            let mut sigterm =
-                tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
-            let mut sigquit = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::quit())?;
-            let mut sighup =
-                tokio::signal::unix::signal(tokio::signal::unix::SignalKind::hangup())?;
-
-            loop {
-                tokio::select! {
-                    Some(()) = sigint.recv() => {
-                        let _ = client.send(SuperExecSignal { signal: libc::SIGINT }).await;
-                    }
-                    Some(()) = sigterm.recv() => {
-                        let _ = client.send(SuperExecSignal { signal: libc::SIGTERM }).await;
-                    }
-                    Some(()) = sigquit.recv() => {
-                        let _ = client.send(SuperExecSignal { signal: libc::SIGQUIT }).await;
-                    }
-                    Some(()) = sighup.recv() => {
-                        let _ = client.send(SuperExecSignal { signal: libc::SIGHUP }).await;
-                    }
-                    result = client.receive::<SuperExecResult>() => {
-                        let SuperExecResult { exit_code } = result?;
-                        return Ok(exit_code);
-                    }
-                }
-            }
+            let SuperExecResult { exit_code } = client.receive::<SuperExecResult>().await?;
+            Ok(exit_code)
         }
         EscalateAction::Run => {
             // We avoid std::process::Command here because we want to be as transparent as

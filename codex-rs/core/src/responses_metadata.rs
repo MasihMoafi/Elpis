@@ -1,22 +1,25 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use std::collections::BTreeMap;
 use std::collections::HashMap;
+use std::io::ErrorKind;
 
-use crate::compaction_kinds::CompactionImplementation;
-use crate::compaction_kinds::CompactionPhase;
-use crate::compaction_kinds::CompactionReason;
-use crate::compaction_kinds::CompactionStrategy;
-use crate::compaction_kinds::CompactionTrigger;
+use codex_analytics::CompactionImplementation;
+use codex_analytics::CompactionPhase;
+use codex_analytics::CompactionReason;
+use codex_analytics::CompactionStrategy;
+use codex_analytics::CompactionTrigger;
+use codex_git_utils::SanitizedGitUrl;
 use codex_protocol::ThreadId;
-use codex_protocol::protocol::InternalSessionSource;
+use codex_protocol::mcp::McpAttribution;
 use codex_protocol::protocol::SessionSource;
 use codex_protocol::protocol::SubAgentSource;
 use codex_protocol::protocol::ThreadSource;
 use codex_utils_string::to_ascii_json_string;
+use codex_utils_string::to_json_string_bounded;
 use http::HeaderMap as ApiHeaderMap;
 use http::HeaderValue;
 use serde::Serialize;
 use serde_json::Value;
+use uuid::Uuid;
 
 use crate::client::X_CODEX_INSTALLATION_ID_HEADER;
 use crate::client::X_CODEX_PARENT_THREAD_ID_HEADER;
@@ -27,48 +30,94 @@ use crate::client::X_OPENAI_SUBAGENT_HEADER;
 pub(crate) const INSTALLATION_ID_KEY: &str = "installation_id";
 pub(crate) const SESSION_ID_KEY: &str = "session_id";
 pub(crate) const THREAD_ID_KEY: &str = "thread_id";
+pub(crate) const AGENT_NAME_KEY: &str = "agent_name";
 pub(crate) const TURN_ID_KEY: &str = "turn_id";
 pub(crate) const WINDOW_ID_KEY: &str = "window_id";
+pub(crate) const WINDOW_NUMBER_KEY: &str = "window_number";
+pub(crate) const CONTEXT_WINDOW_ID_KEY: &str = "context_window_id";
 pub(crate) const REQUEST_KIND_KEY: &str = "request_kind";
 pub(crate) const COMPACTION_KEY: &str = "compaction";
+// Keep the removed inventory reserved so callers cannot reintroduce oversized metadata.
+pub(crate) const LEGACY_CODE_MODE_TOOL_NAMES_KEY: &str = "code_mode_tool_names";
+pub(crate) const TOOL_NAMESPACES_INFO_KEY: &str = "tool_namespaces_info";
 pub(crate) const TURN_STARTED_AT_UNIX_MS_KEY: &str = "turn_started_at_unix_ms";
+pub(crate) const HISTORY_INGEST_REQUESTED_KEY: &str = "history_ingest_requested";
+pub(crate) const ANALYTICS_ENABLED_KEY: &str = "analytics_enabled";
+pub(crate) const MCP_ATTRIBUTION_CLIENT_METADATA_KEY: &str = "mcp_attribution";
+pub(crate) const MAX_MCP_ATTRIBUTION_BYTES: usize = 16 * 1024;
 
 pub(crate) const FORKED_FROM_THREAD_ID_KEY: &str = "forked_from_thread_id";
+pub(crate) const FORKED_FROM_ORDINAL_EXCLUSIVE_KEY: &str = "forked_from_ordinal_exclusive";
 pub(crate) const PARENT_THREAD_ID_KEY: &str = "parent_thread_id";
+pub(crate) const PARENT_TURN_ID_KEY: &str = "parent_turn_id";
+pub(crate) const ROOT_TURN_ID_KEY: &str = "root_turn_id";
 pub(crate) const SUBAGENT_KIND_KEY: &str = "subagent_kind";
 pub(crate) const THREAD_SOURCE_KEY: &str = "thread_source";
+pub(crate) const TURN_TRIGGER_KEY: &str = "turn_trigger";
 pub(crate) const SANDBOX_KEY: &str = "sandbox";
+pub(crate) const SANDBOX_MODE_KEY: &str = "sandbox_mode";
+pub(crate) const AUTO_REVIEW_ENABLED_KEY: &str = "auto_review_enabled";
+pub(crate) const NODE_REPL_AUTO_REVIEW_REQUIRED_KEY: &str = "node_repl_auto_review_required";
+pub(crate) const NODE_REPL_DISABLED_KEY: &str = "node_repl_disabled";
 pub(crate) const WORKSPACES_KEY: &str = "workspaces";
 
 // App-server clients can specify additional metadata in the `responsesapi_client_metadata` param
 // when submitting a turn, but they must not override fields owned by core.
 const RESERVED_METADATA_KEYS: &[&str] = &[
+    "guardian_credits_requested",
+    MCP_ATTRIBUTION_CLIENT_METADATA_KEY,
     INSTALLATION_ID_KEY,
     X_CODEX_INSTALLATION_ID_HEADER,
     SESSION_ID_KEY,
     THREAD_ID_KEY,
+    AGENT_NAME_KEY,
     TURN_ID_KEY,
     WINDOW_ID_KEY,
+    WINDOW_NUMBER_KEY,
+    CONTEXT_WINDOW_ID_KEY,
     X_CODEX_WINDOW_ID_HEADER,
     X_CODEX_TURN_METADATA_HEADER,
     X_CODEX_PARENT_THREAD_ID_HEADER,
     X_OPENAI_SUBAGENT_HEADER,
     REQUEST_KIND_KEY,
     COMPACTION_KEY,
+    LEGACY_CODE_MODE_TOOL_NAMES_KEY,
+    TOOL_NAMESPACES_INFO_KEY,
     TURN_STARTED_AT_UNIX_MS_KEY,
+    HISTORY_INGEST_REQUESTED_KEY,
+    ANALYTICS_ENABLED_KEY,
     FORKED_FROM_THREAD_ID_KEY,
+    FORKED_FROM_ORDINAL_EXCLUSIVE_KEY,
     PARENT_THREAD_ID_KEY,
+    PARENT_TURN_ID_KEY,
+    ROOT_TURN_ID_KEY,
     SUBAGENT_KIND_KEY,
     THREAD_SOURCE_KEY,
+    TURN_TRIGGER_KEY,
     SANDBOX_KEY,
+    SANDBOX_MODE_KEY,
+    AUTO_REVIEW_ENABLED_KEY,
+    NODE_REPL_AUTO_REVIEW_REQUIRED_KEY,
+    NODE_REPL_DISABLED_KEY,
     WORKSPACES_KEY,
 ];
 
+// These keys were previously valid user configuration. Accept existing configs while filtering
+// their values before constructing Core-owned request metadata.
+const BACKWARD_COMPATIBLE_RESERVED_METADATA_KEYS: &[&str] = &[
+    WINDOW_NUMBER_KEY,
+    FORKED_FROM_ORDINAL_EXCLUSIVE_KEY,
+    ANALYTICS_ENABLED_KEY,
+];
+const MAX_EXTRA_METADATA_ENTRIES: usize = 16;
+const MAX_EXTRA_METADATA_KEY_BYTES: usize = 64;
+pub(crate) const MAX_EXTRA_METADATA_VALUE_BYTES: usize = 128;
+
 /// Metadata attached to model requests whose purpose is conversation compaction.
 ///
-/// This covers both local compaction requests sent through the normal `/responses` path and remote
-/// compaction requests sent through `/responses/compact`. These fields describe the operation at
-/// dispatch time.
+/// This covers both local and remote compaction requests sent through the `/responses` path. These
+/// fields describe the operation at dispatch time. Post-response outcomes such as status, error,
+/// duration, and token deltas remain in compaction analytics events.
 #[derive(Clone, Copy, Debug, Serialize)]
 pub(crate) struct CompactionTurnMetadata {
     trigger: CompactionTrigger,
@@ -105,6 +154,10 @@ impl CompactionTurnMetadata {
     pub(crate) fn implementation(self) -> CompactionImplementation {
         self.implementation
     }
+
+    pub(crate) fn phase(self) -> CompactionPhase {
+        self.phase
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -113,12 +166,6 @@ pub(crate) enum CodexResponsesRequestKind {
     Prewarm,
     Compaction(CompactionTurnMetadata),
     Memory,
-    SessionTitle,
-    /// Layer 2 context-pruning pass (`core/src/session/context_prune.rs`) — a
-    /// background, non-turn call, same shape as `Memory`.
-    ContextPrune,
-    /// Admission-time optimization of fresh tool outputs before the turn sees them.
-    SmartPrune,
 }
 
 impl CodexResponsesRequestKind {
@@ -128,48 +175,50 @@ impl CodexResponsesRequestKind {
             CodexResponsesRequestKind::Prewarm => ("prewarm", None),
             CodexResponsesRequestKind::Compaction(metadata) => ("compaction", Some(metadata)),
             CodexResponsesRequestKind::Memory => ("memory", None),
-            CodexResponsesRequestKind::SessionTitle => ("session_title", None),
-            CodexResponsesRequestKind::ContextPrune => ("context_prune", None),
-            CodexResponsesRequestKind::SmartPrune => ("smart_prune", None),
         }
     }
 
-    fn has_turn_identity(self) -> bool {
-        !matches!(
-            self,
-            CodexResponsesRequestKind::Memory
-                | CodexResponsesRequestKind::SessionTitle
-                | CodexResponsesRequestKind::ContextPrune
-                | CodexResponsesRequestKind::SmartPrune
-        )
-    }
-
-    /// Suffix that separates this kind's `prompt_cache_key` from the turn loop's.
-    ///
-    /// `None` means "share the session key". Only background calls that send a prefix
-    /// unrelated to the conversation get their own namespace; anything on the turn path
-    /// must keep the plain session id so its prefix keeps matching across turns.
-    pub(crate) fn cache_namespace(self) -> Option<&'static str> {
-        match self {
-            CodexResponsesRequestKind::Turn
-            | CodexResponsesRequestKind::Prewarm
-            | CodexResponsesRequestKind::Compaction(_) => None,
-            CodexResponsesRequestKind::Memory => Some("memory"),
-            CodexResponsesRequestKind::SessionTitle => Some("session-title"),
-            CodexResponsesRequestKind::ContextPrune => Some("context-prune"),
-            CodexResponsesRequestKind::SmartPrune => Some("smart-prune"),
-        }
+    fn has_thread_identity(self) -> bool {
+        !matches!(self, CodexResponsesRequestKind::Memory)
     }
 }
 
 #[derive(Clone, Debug, Serialize, Default)]
 pub(crate) struct TurnMetadataWorkspace {
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub(crate) associated_remote_urls: Option<BTreeMap<String, String>>,
+    pub(crate) associated_remote_urls: Option<BTreeMap<String, SanitizedGitUrl>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) latest_git_commit_hash: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) has_changes: Option<bool>,
+}
+
+/// Model-visible namespaces indexed by their effective Responses Lite names.
+pub(crate) type TurnToolNamespacesInfo = BTreeMap<String, TurnToolNamespaceInfo>;
+
+/// The model-visible functions belonging to one effective namespace.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub(crate) struct TurnToolNamespaceInfo {
+    pub(crate) name: String,
+    pub(crate) functions: BTreeMap<String, TurnToolFunctionInfo>,
+}
+
+/// The effective per-turn exposure of one model-visible function.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub(crate) struct TurnToolFunctionInfo {
+    pub(crate) name: String,
+    pub(crate) direct: bool,
+    pub(crate) code_mode_name: Option<String>,
+    pub(crate) deferred: bool,
+    pub(crate) source: TurnToolSource,
+}
+
+/// The owner responsible for dispatching one effective tool function.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub(crate) enum TurnToolSource {
+    Harness,
+    Mcp { server_name: String },
 }
 
 /// Caller-owned snapshot of Codex metadata sent to ResponsesAPI.
@@ -180,20 +229,41 @@ pub(crate) struct TurnMetadataWorkspace {
 /// truth.
 #[derive(Clone, Debug)]
 pub struct CodexResponsesMetadata {
+    /// Guardian parent reference; projected only onto a Guardian request.
+    pub(crate) parent_response_id: Option<String>,
     pub(crate) installation_id: String,
     pub(crate) session_id: String,
     pub(crate) thread_id: String,
+    pub(crate) agent_name: Option<String>,
     pub(crate) turn_id: Option<String>,
+    pub(crate) routing_hint: Option<HeaderValue>,
     pub(crate) window_id: String,
+    pub(crate) window_number: Option<u64>,
+    pub(crate) context_window_id: Option<Uuid>,
     pub(crate) request_kind: Option<CodexResponsesRequestKind>,
     pub(crate) forked_from_thread_id: Option<ThreadId>,
+    pub(crate) forked_from_ordinal_exclusive: Option<u64>,
     pub(crate) parent_thread_id: Option<ThreadId>,
+    pub(crate) parent_turn_id: Option<String>,
+    pub(crate) root_turn_id: Option<String>,
     pub(crate) subagent_header: Option<String>,
     pub(crate) subagent_kind: Option<String>,
     pub(crate) thread_source: Option<ThreadSource>,
+    pub(crate) turn_trigger: Option<String>,
     pub(crate) sandbox: Option<String>,
+    pub(crate) sandbox_mode: Option<String>,
+    pub(crate) auto_review_enabled: Option<bool>,
+    pub(crate) node_repl_auto_review_required: Option<bool>,
+    pub(crate) node_repl_disabled: Option<bool>,
     pub(crate) workspaces: BTreeMap<String, TurnMetadataWorkspace>,
+    pub(crate) tool_namespaces_info: Option<TurnToolNamespacesInfo>,
     pub(crate) turn_started_at_unix_ms: Option<i64>,
+    pub(crate) history_ingest_requested: Option<bool>,
+    /// Selected session analytics client's collection state, independent of event eligibility or delivery.
+    /// Absent when the request has no initialized session analytics context.
+    pub(crate) analytics_enabled: Option<bool>,
+    /// Cumulative MCP attribution for this logical request; body-only and model-invisible.
+    pub(crate) mcp_attribution: Option<McpAttribution>,
     pub(crate) extra: BTreeMap<String, String>,
 }
 
@@ -205,20 +275,37 @@ impl CodexResponsesMetadata {
         window_id: String,
     ) -> Self {
         Self {
+            parent_response_id: None,
             installation_id,
             session_id,
             thread_id,
+            agent_name: None,
             turn_id: None,
+            routing_hint: None,
             window_id,
+            window_number: None,
+            context_window_id: None,
             request_kind: None,
             forked_from_thread_id: None,
+            forked_from_ordinal_exclusive: None,
             parent_thread_id: None,
+            parent_turn_id: None,
+            root_turn_id: None,
             subagent_header: None,
             subagent_kind: None,
             thread_source: None,
+            turn_trigger: None,
             sandbox: None,
+            sandbox_mode: None,
+            auto_review_enabled: None,
+            node_repl_auto_review_required: None,
+            node_repl_disabled: None,
             workspaces: BTreeMap::new(),
+            tool_namespaces_info: None,
             turn_started_at_unix_ms: None,
+            history_ingest_requested: None,
+            analytics_enabled: None,
+            mcp_attribution: None,
             extra: BTreeMap::new(),
         }
     }
@@ -235,7 +322,7 @@ impl CodexResponsesMetadata {
         serde_json::to_value(self.turn_metadata_payload()).ok()
     }
 
-    pub(crate) fn client_metadata(&self) -> HashMap<String, String> {
+    pub(crate) fn client_metadata(&self, include_internal: bool) -> HashMap<String, String> {
         let mut client_metadata = HashMap::from([
             (
                 X_CODEX_INSTALLATION_ID_HEADER.to_string(),
@@ -260,10 +347,29 @@ impl CodexResponsesMetadata {
                 parent_thread_id.to_string(),
             );
         }
+        if let Some(parent_turn_id) = &self.parent_turn_id {
+            client_metadata.insert(PARENT_TURN_ID_KEY.to_string(), parent_turn_id.clone());
+        }
+        if let Some(root_turn_id) = &self.root_turn_id {
+            client_metadata.insert(ROOT_TURN_ID_KEY.to_string(), root_turn_id.clone());
+        }
         if self.has_turn_metadata()
             && let Some(turn_metadata_json) = self.turn_metadata_json()
         {
             client_metadata.insert(X_CODEX_TURN_METADATA_HEADER.to_string(), turn_metadata_json);
+        }
+        if include_internal && let Some(attribution) = &self.mcp_attribution {
+            let serialized = to_json_string_bounded(attribution, MAX_MCP_ATTRIBUTION_BYTES)
+                .unwrap_or_else(|error| {
+                    if error.io_error_kind() == Some(ErrorKind::WriteZero) {
+                        r#"{"status":"attribution_error","error_reason":"payload_too_large"}"#
+                            .to_string()
+                    } else {
+                        r#"{"status":"attribution_error","error_reason":"serialization_failed"}"#
+                            .to_string()
+                    }
+                });
+            client_metadata.insert(MCP_ATTRIBUTION_CLIENT_METADATA_KEY.to_string(), serialized);
         }
         client_metadata
     }
@@ -271,10 +377,13 @@ impl CodexResponsesMetadata {
     pub(crate) fn compatibility_headers(&self) -> ApiHeaderMap {
         let mut headers = ApiHeaderMap::new();
         insert_header(&mut headers, X_CODEX_WINDOW_ID_HEADER, &self.window_id);
-        // Direct x-codex-turn-metadata is compatibility output. New per-request consumers should
-        // prefer client_metadata["x-codex-turn-metadata"], which is rendered from this same object.
+        // Direct x-codex-turn-metadata is compatibility output. Keep the unbounded tool inventory
+        // in client_metadata only so HTTP and WebSocket compatibility headers remain bounded.
         if self.has_turn_metadata()
-            && let Some(turn_metadata_json) = self.turn_metadata_json()
+            && let Ok(turn_metadata_json) = to_ascii_json_string(&CodexTurnMetadataPayload {
+                tool_namespaces_info: None,
+                ..self.turn_metadata_payload()
+            })
         {
             insert_header(
                 &mut headers,
@@ -301,30 +410,46 @@ impl CodexResponsesMetadata {
             let (request_kind, compaction) = request_kind.metadata();
             (Some(request_kind), compaction)
         });
-        let has_turn_identity =
-            request_kind.is_none_or(CodexResponsesRequestKind::has_turn_identity);
+        let has_thread_identity =
+            request_kind.is_none_or(CodexResponsesRequestKind::has_thread_identity);
         let has_request_identity =
-            request_kind.is_some_and(CodexResponsesRequestKind::has_turn_identity);
+            request_kind.is_some_and(CodexResponsesRequestKind::has_thread_identity);
         CodexTurnMetadataPayload {
             installation_id: has_request_identity.then_some(self.installation_id.as_str()),
-            session_id: has_turn_identity.then_some(self.session_id.as_str()),
-            thread_id: has_turn_identity.then_some(self.thread_id.as_str()),
-            turn_id: has_turn_identity
-                .then_some(self.turn_id.as_deref())
+            session_id: has_thread_identity.then_some(self.session_id.as_str()),
+            thread_id: has_thread_identity.then_some(self.thread_id.as_str()),
+            agent_name: has_thread_identity
+                .then_some(self.agent_name.as_deref())
                 .flatten(),
+            turn_id: self.turn_id.as_deref(),
             window_id: has_request_identity.then_some(self.window_id.as_str()),
+            window_number: has_request_identity.then_some(self.window_number).flatten(),
+            context_window_id: has_request_identity
+                .then_some(self.context_window_id)
+                .flatten(),
             request_kind: request_kind_value,
             forked_from_thread_id: self.forked_from_thread_id,
+            forked_from_ordinal_exclusive: self.forked_from_ordinal_exclusive,
             parent_thread_id: self.parent_thread_id,
+            parent_turn_id: self.parent_turn_id.as_deref(),
+            root_turn_id: self.root_turn_id.as_deref(),
             subagent_kind: self.subagent_kind.as_deref(),
             thread_source: self.thread_source.as_ref(),
+            turn_trigger: self.turn_trigger.as_deref(),
             sandbox: self.sandbox.as_deref(),
+            sandbox_mode: self.sandbox_mode.as_deref(),
+            auto_review_enabled: self.auto_review_enabled,
+            node_repl_auto_review_required: self.node_repl_auto_review_required,
+            node_repl_disabled: self.node_repl_disabled,
             workspaces: non_empty_workspaces(&self.workspaces),
+            tool_namespaces_info: self.tool_namespaces_info.as_ref(),
             turn_started_at_unix_ms: self.turn_started_at_unix_ms,
+            history_ingest_requested: self.history_ingest_requested,
+            analytics_enabled: self.analytics_enabled,
             compaction,
-            // responsesapi_client_metadata enriches the Codex turn metadata blob, not literal
-            // top-level Responses client_metadata. Reserved Codex-owned keys are filtered when
-            // these extras enter turn state.
+            // Extra metadata enriches the Codex turn metadata blob, not literal top-level
+            // Responses client_metadata. Product metadata is validated while loading config;
+            // app-server metadata has reserved Codex-owned keys filtered when it enters turn state.
             extra: &self.extra,
         }
     }
@@ -339,9 +464,7 @@ pub(crate) fn subagent_header_value(session_source: &SessionSource) -> Option<St
             SubAgentSource::ThreadSpawn { .. } => Some("collab_spawn".to_string()),
             SubAgentSource::Other(label) => Some(label.clone()),
         },
-        SessionSource::Internal(InternalSessionSource::MemoryConsolidation) => {
-            Some("memory_consolidation".to_string())
-        }
+        SessionSource::Internal(source) => Some(source.to_string()),
         SessionSource::Cli
         | SessionSource::VSCode
         | SessionSource::Exec
@@ -370,11 +493,43 @@ fn insert_header(headers: &mut ApiHeaderMap, name: &'static str, value: &str) {
     }
 }
 
-pub(crate) fn filter_extra_metadata(extra: HashMap<String, String>) -> BTreeMap<String, String> {
+pub(crate) fn validate_extra_metadata<'a>(
+    extra: impl IntoIterator<Item = (&'a String, &'a String)>,
+) -> Result<(), &'static str> {
+    let mut count = 0;
+    for (key, value) in extra {
+        count += 1;
+        if count > MAX_EXTRA_METADATA_ENTRIES {
+            return Err("responses_api_metadata may contain at most 16 entries");
+        }
+        if key.len() > MAX_EXTRA_METADATA_KEY_BYTES || !valid_extra_metadata_key(key) {
+            return Err("responses_api_metadata keys must be short ASCII identifiers");
+        }
+        if RESERVED_METADATA_KEYS.contains(&key.as_str())
+            && !BACKWARD_COMPATIBLE_RESERVED_METADATA_KEYS.contains(&key.as_str())
+        {
+            return Err("responses_api_metadata contains a reserved key");
+        }
+        if value.len() > MAX_EXTRA_METADATA_VALUE_BYTES {
+            return Err("responses_api_metadata values may contain at most 128 bytes");
+        }
+    }
+    Ok(())
+}
+
+pub(crate) fn filter_extra_metadata(
+    extra: impl IntoIterator<Item = (String, String)>,
+) -> BTreeMap<String, String> {
     extra
         .into_iter()
         .filter(|(key, _)| !RESERVED_METADATA_KEYS.contains(&key.as_str()))
         .collect()
+}
+
+fn valid_extra_metadata_key(key: &str) -> bool {
+    let mut bytes = key.bytes();
+    bytes.next().is_some_and(|byte| byte.is_ascii_alphabetic())
+        && bytes.all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'.' | b'-'))
 }
 
 fn non_empty_workspaces(
@@ -392,25 +547,53 @@ struct CodexTurnMetadataPayload<'a> {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     thread_id: Option<&'a str>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    agent_name: Option<&'a str>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     turn_id: Option<&'a str>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     window_id: Option<&'a str>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    window_number: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    context_window_id: Option<Uuid>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     request_kind: Option<&'static str>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     forked_from_thread_id: Option<ThreadId>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    forked_from_ordinal_exclusive: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     parent_thread_id: Option<ThreadId>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    parent_turn_id: Option<&'a str>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    root_turn_id: Option<&'a str>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     subagent_kind: Option<&'a str>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     thread_source: Option<&'a ThreadSource>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    turn_trigger: Option<&'a str>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     sandbox: Option<&'a str>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    sandbox_mode: Option<&'a str>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    auto_review_enabled: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    node_repl_auto_review_required: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    node_repl_disabled: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     workspaces: Option<&'a BTreeMap<String, TurnMetadataWorkspace>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    tool_namespaces_info: Option<&'a TurnToolNamespacesInfo>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     turn_started_at_unix_ms: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    history_ingest_requested: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    analytics_enabled: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     compaction: Option<CompactionTurnMetadata>,
     #[serde(flatten)]

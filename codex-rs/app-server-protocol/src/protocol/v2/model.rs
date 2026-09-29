@@ -1,26 +1,37 @@
 use super::shared::v2_enum_from_core;
+use super::turn::CyberAccessProgram;
+use crate::JsonSchema;
+use crate::TS;
 use codex_protocol::openai_models::InputModality;
+use codex_protocol::openai_models::ModelAccessPrograms as CoreModelAccessPrograms;
 use codex_protocol::openai_models::ModelAvailabilityNux as CoreModelAvailabilityNux;
 use codex_protocol::openai_models::ReasoningEffort;
 use codex_protocol::openai_models::default_input_modalities;
 use codex_protocol::protocol::ModelRerouteReason as CoreModelRerouteReason;
 use codex_protocol::protocol::ModelVerification as CoreModelVerification;
-use schemars::JsonSchema;
+use codex_protocol::protocol::MultiAgentVersion as CoreMultiAgentVersion;
 use serde::Deserialize;
 use serde::Serialize;
 use serde_json::Value as JsonValue;
-use ts_rs::TS;
 
 v2_enum_from_core!(
     pub enum ModelRerouteReason from CoreModelRerouteReason {
-        HighRiskCyberActivity,
-        AutoModelRouting
+        HighRiskCyberActivity
     }
 );
 
 v2_enum_from_core!(
     pub enum ModelVerification from CoreModelVerification {
         TrustedAccessForCyber
+    }
+);
+
+v2_enum_from_core!(
+    /// Multi-agent runtime supported by a model.
+    pub enum MultiAgentVersion from CoreMultiAgentVersion {
+        Disabled,
+        V1,
+        V2
     }
 );
 
@@ -51,9 +62,6 @@ pub struct ModelListParams {
     /// When true, include models that are hidden from the default picker list.
     #[ts(optional = nullable)]
     pub include_hidden: Option<bool>,
-    /// Optional model provider whose catalog should be listed.
-    #[ts(optional = nullable)]
-    pub model_provider: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
@@ -80,6 +88,31 @@ pub struct ModelServiceTier {
     pub description: String,
 }
 
+/// Caller-specific explicit access programs advertised by model discovery.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub struct ModelAccessPrograms {
+    /// Accepted explicit selections.
+    pub cyber: Vec<CyberAccessProgram>,
+}
+
+impl From<CoreModelAccessPrograms> for ModelAccessPrograms {
+    fn from(value: CoreModelAccessPrograms) -> Self {
+        Self {
+            cyber: value.cyber.into_iter().map(Into::into).collect(),
+        }
+    }
+}
+
+impl From<ModelAccessPrograms> for CoreModelAccessPrograms {
+    fn from(value: ModelAccessPrograms) -> Self {
+        Self {
+            cyber: value.cyber.into_iter().map(Into::into).collect(),
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "v2/")]
@@ -91,13 +124,18 @@ pub struct Model {
     pub availability_nux: Option<ModelAvailabilityNux>,
     pub display_name: String,
     pub description: String,
+    #[serde(default)]
+    pub model_specialty: Option<String>,
     pub hidden: bool,
     pub supported_reasoning_efforts: Vec<ReasoningEffortOption>,
     pub default_reasoning_effort: ReasoningEffort,
     #[serde(default = "default_input_modalities")]
     pub input_modalities: Vec<InputModality>,
+    /// @deprecated Always false; models no longer support personality selection.
     #[serde(default)]
     pub supports_personality: bool,
+    /// Multi-agent runtime declared by this model, when available.
+    pub multi_agent_version: Option<MultiAgentVersion>,
     /// Deprecated: use `serviceTiers` instead.
     #[serde(default)]
     pub additional_speed_tiers: Vec<String>,
@@ -106,6 +144,9 @@ pub struct Model {
     /// Catalog default service tier id for this model, when one is configured.
     #[serde(default)]
     pub default_service_tier: Option<String>,
+    /// Null when the catalog does not provide access-program metadata.
+    #[serde(default)]
+    pub available_access_programs: Option<ModelAccessPrograms>,
     // Only one model should be marked as default.
     pub is_default: bool,
 }
@@ -118,6 +159,9 @@ pub struct ModelUpgradeInfo {
     pub upgrade_copy: Option<String>,
     pub model_link: Option<String>,
     pub migration_markdown: Option<String>,
+    /// Informational Unix timestamp for this upgrade's scheduled retirement, if known.
+    #[ts(type = "number | null")]
+    pub retirement_at: Option<i64>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]

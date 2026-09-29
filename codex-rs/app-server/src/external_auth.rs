@@ -17,22 +17,6 @@ use crate::outgoing_message::OutgoingMessageSender;
 
 const EXTERNAL_AUTH_REFRESH_TIMEOUT: Duration = Duration::from_secs(10);
 
-pub(crate) struct ExternalApiKey(pub(crate) String);
-
-impl ExternalAuth for ExternalApiKey {
-    fn resolve(&self) -> ExternalAuthFuture<'_, CodexAuth> {
-        Box::pin(async { Ok(CodexAuth::from_api_key(&self.0)) })
-    }
-
-    fn refresh(&self, _context: ExternalAuthRefreshContext) -> ExternalAuthFuture<'_, CodexAuth> {
-        Box::pin(async {
-            Err(std::io::Error::other(
-                "Update the API key in the client and reconnect.",
-            ))
-        })
-    }
-}
-
 pub(crate) struct ExternalAuthBridge {
     outgoing: Arc<OutgoingMessageSender>,
     auth: RwLock<CodexAuth>,
@@ -65,10 +49,9 @@ impl ExternalAuthBridge {
                     std::io::Error::other(format!("auth refresh request canceled: {err}"))
                 })?;
                 result.map_err(|err| {
-                    std::io::Error::other(format!(
-                        "auth refresh request failed: code={} message={}",
-                        err.code, err.message
-                    ))
+                    // Don't log err.message because it may contain a token.
+                    let code = err.code;
+                    std::io::Error::other(format!("auth refresh request failed: code={code}"))
                 })?
             }
             Err(_) => {
@@ -80,13 +63,17 @@ impl ExternalAuthBridge {
             }
         };
 
-        let response: ChatgptAuthTokensRefreshResponse =
-            serde_json::from_value(result).map_err(std::io::Error::other)?;
+        // Don't propagate parser error messages because they may contain a token.
+        let response: ChatgptAuthTokensRefreshResponse = serde_json::from_value(result)
+            .map_err(|_| std::io::Error::other("invalid auth refresh response"))?;
         let auth = CodexAuth::from_external_chatgpt_tokens(
             response.access_token.as_str(),
             response.chatgpt_account_id.as_str(),
             response.chatgpt_plan_type.as_deref(),
-        )?;
+        )
+        .map_err(|err| {
+            std::io::Error::new(err.kind(), "auth refresh returned invalid credentials")
+        })?;
         *self
             .auth
             .write()

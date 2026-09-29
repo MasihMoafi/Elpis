@@ -1,6 +1,330 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use super::*;
+use crate::test_support::recorded_http_client_urls;
+use crate::test_support::recording_remote_plugin_service_config;
 use pretty_assertions::assert_eq;
+use wiremock::Mock;
+use wiremock::MockServer;
+use wiremock::ResponseTemplate;
+use wiremock::matchers::header_exists;
+use wiremock::matchers::method;
+use wiremock::matchers::path;
+use wiremock::matchers::query_param;
+use wiremock::matchers::query_param_is_missing;
+
+#[tokio::test]
+async fn remote_plugin_list_routes_the_complete_query_url() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/backend-api/ps/plugins/list"))
+        .and(header_exists("user-agent"))
+        .and(header_exists("originator"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "plugins": [],
+            "pagination": {"next_page_token": null},
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let (config, selected_urls) =
+        recording_remote_plugin_service_config(format!("{}/backend-api", server.uri()));
+    let auth = CodexAuth::create_dummy_chatgpt_auth_for_testing();
+
+    get_remote_plugin_list_page(
+        &config,
+        &auth,
+        RemotePluginScope::Global,
+        Some("next page/+"),
+        Some("vertical & special"),
+    )
+    .await
+    .expect("plugin list request should succeed");
+
+    assert_eq!(
+        recorded_http_client_urls(&selected_urls),
+        vec![format!(
+            "{}/backend-api/ps/plugins/list?scope=GLOBAL&limit=200&collection=vertical+%26+special&pageToken=next+page%2F%2B",
+            server.uri()
+        )]
+    );
+}
+
+#[tokio::test]
+async fn recommended_plugins_requests_codex_suggestions_endpoint() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/backend-api/ps/plugins/suggested/codex"))
+        .and(query_param("scope", "GLOBAL"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "enabled": true,
+            "plugins": [],
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let (config, selected_urls) =
+        recording_remote_plugin_service_config(format!("{}/backend-api", server.uri()));
+    let auth = CodexAuth::create_dummy_chatgpt_auth_for_testing();
+
+    let mode = fetch_recommended_plugins(&config, Some(&auth))
+        .await
+        .expect("recommended plugin request should succeed");
+
+    assert_eq!(
+        mode,
+        RecommendedPluginsMode::Endpoint {
+            plugins: Vec::new(),
+        }
+    );
+    assert_eq!(
+        recorded_http_client_urls(&selected_urls),
+        vec![format!(
+            "{}/backend-api/ps/plugins/suggested/codex?scope=GLOBAL",
+            server.uri()
+        )]
+    );
+}
+
+#[tokio::test]
+async fn remote_installed_plugins_paginate_across_all_scopes_without_download_urls() {
+    let server = MockServer::start().await;
+    let installed_plugin = |scope: RemotePluginScope, id: &str, name: &str| {
+        let mut plugin = directory_plugin(id, name);
+        plugin.scope = scope;
+        if scope == RemotePluginScope::Workspace {
+            plugin.discoverability = Some(RemotePluginShareDiscoverability::Listed);
+        }
+        let mut plugin = serde_json::to_value(plugin).expect("serialize installed plugin");
+        plugin["enabled"] = serde_json::json!(true);
+        plugin
+    };
+    let global = installed_plugin(RemotePluginScope::Global, "plugin-global", "global-plugin");
+    let user = installed_plugin(RemotePluginScope::User, "plugin-user", "user-plugin");
+    let workspace = installed_plugin(
+        RemotePluginScope::Workspace,
+        "plugin-workspace",
+        "workspace-plugin",
+    );
+
+    Mock::given(method("GET"))
+        .and(path("/backend-api/ps/plugins/installed"))
+        .and(query_param_is_missing("scope"))
+        .and(query_param("limit", "200"))
+        .and(query_param_is_missing("includeDownloadUrls"))
+        .and(query_param_is_missing("pageToken"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "plugins": [user.clone(), workspace.clone()],
+            "pagination": {"next_page_token": "next page/+"},
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/backend-api/ps/plugins/installed"))
+        .and(query_param_is_missing("scope"))
+        .and(query_param("limit", "200"))
+        .and(query_param_is_missing("includeDownloadUrls"))
+        .and(query_param("pageToken", "next page/+"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "plugins": [global.clone()],
+            "pagination": {"next_page_token": null},
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let (config, selected_urls) =
+        recording_remote_plugin_service_config(format!("{}/backend-api", server.uri()));
+    let auth = CodexAuth::create_dummy_chatgpt_auth_for_testing();
+
+    let installed_plugins = fetch_remote_installed_plugins(&config, Some(&auth))
+        .await
+        .expect("all-scopes installed plugin request should succeed");
+    let expected_plugins = [user, global, workspace]
+        .into_iter()
+        .map(|plugin| {
+            let plugin = serde_json::from_value(plugin).expect("deserialize installed plugin");
+            remote_installed_plugin_to_cache_entry(&plugin).expect("valid installed plugin")
+        })
+        .collect::<Vec<_>>();
+
+    assert_eq!(installed_plugins, expected_plugins);
+    assert_eq!(
+        recorded_http_client_urls(&selected_urls),
+        vec![
+            format!(
+                "{}/backend-api/ps/plugins/installed?limit=200",
+                server.uri()
+            ),
+            format!(
+                "{}/backend-api/ps/plugins/installed?limit=200&pageToken=next+page%2F%2B",
+                server.uri()
+            ),
+        ]
+    );
+}
+
+#[tokio::test]
+async fn remote_catalog_cache_modes_control_refresh_and_persist_fetched_results() {
+    let server = MockServer::start().await;
+    let plugin = directory_plugin("plugin-gmail", "gmail");
+    Mock::given(method("GET"))
+        .and(path("/backend-api/ps/plugins/list"))
+        .and(query_param("scope", "GLOBAL"))
+        .and(query_param_is_missing("collection"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "plugins": [plugin],
+            "pagination": {"next_page_token": null},
+        })))
+        .expect(3)
+        .mount(&server)
+        .await;
+    let codex_home = tempfile::tempdir().expect("create codex home");
+    let (config, selected_urls) =
+        recording_remote_plugin_service_config(format!("{}/backend-api", server.uri()));
+    let auth = CodexAuth::create_dummy_chatgpt_auth_for_testing();
+
+    for (mode, expire_cache, expected_refresh_needed, expected_cache_used) in [
+        (
+            RemotePluginCatalogCacheMode::PreferFreshCache,
+            false,
+            false,
+            false,
+        ),
+        (
+            RemotePluginCatalogCacheMode::PreferFreshCache,
+            false,
+            false,
+            true,
+        ),
+        (RemotePluginCatalogCacheMode::PreferCache, true, true, true),
+        (
+            RemotePluginCatalogCacheMode::PreferFreshCache,
+            false,
+            false,
+            false,
+        ),
+        (
+            RemotePluginCatalogCacheMode::ForceRefetch,
+            false,
+            false,
+            false,
+        ),
+    ] {
+        if expire_cache {
+            let cache_path =
+                std::fs::read_dir(codex_home.path().join("cache/remote_plugin_catalog"))
+                    .expect("read catalog cache directory")
+                    .next()
+                    .expect("catalog cache exists")
+                    .expect("read cache entry")
+                    .path();
+            let mut cached: serde_json::Value =
+                serde_json::from_slice(&std::fs::read(&cache_path).expect("read cache"))
+                    .expect("decode cache");
+            cached["fetched_at"] = serde_json::json!("2000-01-01T00:00:00Z");
+            std::fs::write(
+                cache_path,
+                serde_json::to_vec(&cached).expect("encode cache"),
+            )
+            .expect("expire catalog cache");
+        }
+
+        let outcome = fetch_directory_plugins_for_scope_with_cache(
+            Some(codex_home.path()),
+            &config,
+            &auth,
+            RemotePluginScope::Global,
+            /*collection*/ None,
+            mode,
+        )
+        .await
+        .expect("fetch directory plugins");
+        assert_eq!(
+            (
+                outcome.plugins,
+                outcome.cache_refresh_needed,
+                outcome.catalog_cache_used,
+            ),
+            (
+                vec![plugin.clone()],
+                expected_refresh_needed,
+                expected_cache_used,
+            ),
+        );
+    }
+
+    assert_eq!(
+        recorded_http_client_urls(&selected_urls),
+        vec![
+            format!(
+                "{}/backend-api/ps/plugins/list?scope=GLOBAL&limit=200",
+                server.uri()
+            );
+            3
+        ],
+    );
+    assert!(has_fresh_cached_remote_plugin_catalog(
+        codex_home.path(),
+        &config,
+        Some(&auth),
+        RemotePluginScope::Global,
+    ));
+}
+
+#[test]
+fn catalog_cache_invalidation_clears_global_collections_and_preserves_other_scopes() {
+    let codex_home = tempfile::tempdir().expect("create codex home");
+    let config = RemotePluginServiceConfig::new(
+        "https://chatgpt.com/backend-api".to_string(),
+        crate::test_support::test_http_client_factory(),
+        /*product_sku*/ None,
+    );
+    let auth = CodexAuth::create_dummy_chatgpt_auth_for_testing();
+    for scope in [RemotePluginScope::Global, RemotePluginScope::Workspace] {
+        catalog_cache::write_cached_directory_plugins(
+            codex_home.path(),
+            &config,
+            &auth,
+            scope,
+            /*collection*/ None,
+            &[],
+        );
+    }
+
+    assert_eq!(
+        cached_remote_plugin_catalog_scopes(codex_home.path(), &config, Some(&auth)),
+        BTreeSet::from([RemotePluginScope::Global, RemotePluginScope::Workspace])
+    );
+    catalog_cache::write_cached_directory_plugins(
+        codex_home.path(),
+        &config,
+        &auth,
+        RemotePluginScope::Global,
+        Some(OPENAI_CURATED_REMOTE_COLLECTION_KEY),
+        &[],
+    );
+
+    invalidate_cached_remote_plugin_catalog_scopes(
+        codex_home.path(),
+        &config,
+        Some(&auth),
+        &[RemotePluginScope::Global],
+    );
+
+    assert_eq!(
+        cached_remote_plugin_catalog_scopes(codex_home.path(), &config, Some(&auth)),
+        BTreeSet::from([RemotePluginScope::Workspace]),
+    );
+    assert!(
+        catalog_cache::load_cached_directory_plugins(
+            codex_home.path(),
+            &config,
+            &auth,
+            RemotePluginScope::Global,
+            Some(OPENAI_CURATED_REMOTE_COLLECTION_KEY),
+        )
+        .is_none()
+    );
+}
 
 #[test]
 fn build_remote_marketplace_preserves_directory_order_and_appends_installed_only_plugins() {
@@ -10,6 +334,7 @@ fn build_remote_marketplace_preserves_directory_order_and_appends_installed_only
     ];
     let installed_plugins = vec![RemotePluginInstalledItem {
         plugin: directory_plugin("plugin-a", "alpha"),
+        installed_at: None,
         enabled: true,
         disabled_skill_names: Vec::new(),
     }];
@@ -41,6 +366,7 @@ fn installation_policy_source_is_preserved_across_remote_summary_paths() {
         Some(RemotePluginInstallPolicySource::ImplicitCanonicalApp);
     let installed_plugin = RemotePluginInstalledItem {
         plugin: directory_plugin.clone(),
+        installed_at: None,
         enabled: true,
         disabled_skill_names: Vec::new(),
     };
@@ -83,6 +409,146 @@ fn installation_policy_source_is_preserved_across_remote_summary_paths() {
 }
 
 #[test]
+fn plan_eligibility_is_preserved_across_remote_summary_paths() {
+    let mut directory_plugin = directory_plugin("plugin-gmail", "gmail");
+    directory_plugin.installation_policy = PluginInstallPolicy::NotAvailable;
+    directory_plugin.availability = PluginAvailability::DisabledByAdmin;
+    directory_plugin.disabled_reason = Some(PluginDisabledReason::PlanNotEligible);
+    directory_plugin.eligible_plan_types = Some(vec![
+        "plus".to_string(),
+        "pro".to_string(),
+        "enterprise_cbp_automation".to_string(),
+    ]);
+    let installed_plugin = RemotePluginInstalledItem {
+        plugin: directory_plugin.clone(),
+        installed_at: None,
+        enabled: false,
+        disabled_skill_names: Vec::new(),
+    };
+
+    let marketplace = build_remote_marketplace(
+        REMOTE_GLOBAL_MARKETPLACE_NAME,
+        REMOTE_GLOBAL_MARKETPLACE_DISPLAY_NAME,
+        vec![directory_plugin],
+        Vec::new(),
+        /*include_installed_only*/ false,
+    )
+    .expect("marketplace should be valid")
+    .expect("marketplace should not be empty");
+    let expected = vec![(
+        PluginAvailability::DisabledByAdmin,
+        Some(PluginDisabledReason::PlanNotEligible),
+        Some(vec![
+            "plus".to_string(),
+            "pro".to_string(),
+            "enterprise_cbp_automation".to_string(),
+        ]),
+    )];
+    assert_eq!(
+        marketplace
+            .plugins
+            .into_iter()
+            .map(|plugin| (
+                plugin.availability,
+                plugin.disabled_reason,
+                plugin.eligible_plan_types,
+            ))
+            .collect::<Vec<_>>(),
+        expected
+    );
+
+    let installed_plugin = remote_installed_plugin_to_cache_entry(&installed_plugin)
+        .expect("installed plugin should be valid");
+    let marketplaces = group_remote_installed_plugins_by_marketplaces(
+        &[installed_plugin],
+        &[REMOTE_GLOBAL_MARKETPLACE_NAME],
+    );
+    assert_eq!(
+        marketplaces
+            .into_iter()
+            .flat_map(|marketplace| marketplace.plugins)
+            .map(|plugin| (
+                plugin.availability,
+                plugin.disabled_reason,
+                plugin.eligible_plan_types,
+            ))
+            .collect::<Vec<_>>(),
+        expected
+    );
+}
+
+#[test]
+fn unknown_plugin_disabled_reason_preserves_remote_catalog_compatibility() {
+    let plugin = directory_plugin("plugin-gmail", "gmail");
+    let mut plugin_json = serde_json::to_value(plugin).expect("plugin should serialize");
+    plugin_json["disabled_reason"] = serde_json::json!("future_disabled_reason");
+
+    let plugin: RemotePluginDirectoryItem =
+        serde_json::from_value(plugin_json).expect("unknown reason should deserialize");
+
+    assert_eq!(plugin.disabled_reason, Some(PluginDisabledReason::Unknown));
+}
+
+#[test]
+fn installation_interstitial_requirement_is_preserved_across_remote_summary_paths() {
+    let mut directory_plugin = directory_plugin("plugin-linear", "linear");
+    directory_plugin.must_show_installation_interstitial = Some(true);
+    let marketplace = build_remote_marketplace(
+        REMOTE_GLOBAL_MARKETPLACE_NAME,
+        REMOTE_GLOBAL_MARKETPLACE_DISPLAY_NAME,
+        vec![directory_plugin.clone()],
+        Vec::new(),
+        /*include_installed_only*/ false,
+    )
+    .expect("marketplace should be valid")
+    .expect("marketplace should not be empty");
+    assert_eq!(
+        marketplace
+            .plugins
+            .into_iter()
+            .map(|plugin| plugin.must_show_installation_interstitial)
+            .collect::<Vec<_>>(),
+        vec![Some(true)]
+    );
+
+    directory_plugin.must_show_installation_interstitial = Some(false);
+    let installed_plugin = remote_installed_plugin_to_cache_entry(&RemotePluginInstalledItem {
+        plugin: directory_plugin,
+        installed_at: None,
+        enabled: true,
+        disabled_skill_names: Vec::new(),
+    })
+    .expect("installed plugin should be valid");
+    let marketplaces = group_remote_installed_plugins_by_marketplaces(
+        &[installed_plugin],
+        &[REMOTE_GLOBAL_MARKETPLACE_NAME],
+    );
+    assert_eq!(
+        marketplaces
+            .into_iter()
+            .flat_map(|marketplace| marketplace.plugins)
+            .map(|plugin| plugin.must_show_installation_interstitial)
+            .collect::<Vec<_>>(),
+        vec![Some(false)]
+    );
+}
+
+#[test]
+fn missing_installation_interstitial_requirement_deserializes_to_none() {
+    let plugin = directory_plugin("plugin-linear", "linear");
+    let mut plugin_json = serde_json::to_value(plugin).expect("plugin should serialize");
+    plugin_json
+        .as_object_mut()
+        .expect("plugin should serialize to an object")
+        .remove("must_show_installation_interstitial");
+
+    let plugin: RemotePluginDirectoryItem =
+        serde_json::from_value(plugin_json).expect("missing requirement should deserialize");
+
+    assert_eq!(plugin.must_show_installation_interstitial, None);
+}
+
+#[test]
 fn unknown_installation_policy_source_maps_to_none() {
     let plugin = directory_plugin("plugin-linear", "linear");
     let mut plugin_json = serde_json::to_value(plugin).expect("plugin should serialize");
@@ -115,8 +581,23 @@ fn scheduled_task_metadata_distinguishes_unavailable_from_empty() {
     assert_eq!(with_empty_metadata.scheduled_tasks, Some(Vec::new()));
 }
 
+#[test]
+fn workspace_share_context_preserves_publish_capability() {
+    let mut plugin = directory_plugin("plugin-workspace", "workspace plugin");
+    plugin.scope = RemotePluginScope::Workspace;
+    plugin.discoverability = Some(RemotePluginShareDiscoverability::Private);
+    plugin.can_publish_to_workspace = Some(true);
+
+    let context = remote_plugin_share_context(&plugin)
+        .expect("workspace plugin should be valid")
+        .expect("workspace plugin should have share context");
+
+    assert_eq!(context.can_publish_to_workspace, Some(true));
+}
+
 fn directory_plugin(id: &str, name: &str) -> RemotePluginDirectoryItem {
     RemotePluginDirectoryItem {
+        canonical_app_id: None,
         id: id.to_string(),
         name: name.to_string(),
         scope: RemotePluginScope::Global,
@@ -125,10 +606,14 @@ fn directory_plugin(id: &str, name: &str) -> RemotePluginDirectoryItem {
         creator_name: None,
         share_url: None,
         share_principals: None,
+        can_publish_to_workspace: None,
         installation_policy: PluginInstallPolicy::Available,
         installation_policy_source: None,
+        must_show_installation_interstitial: None,
         authentication_policy: PluginAuthPolicy::OnUse,
         availability: PluginAvailability::Available,
+        disabled_reason: None,
+        eligible_plan_types: None,
         release: RemotePluginReleaseResponse {
             version: None,
             display_name: name.to_string(),
@@ -156,6 +641,7 @@ fn directory_plugin(id: &str, name: &str) -> RemotePluginDirectoryItem {
                 screenshot_urls: Vec::new(),
             },
             skills: Vec::new(),
+            onboarding_skill_name: None,
             mcp_servers: Vec::new(),
             scheduled_tasks: None,
         },
@@ -175,16 +661,11 @@ fn remote_plugin_interface_maps_dark_logo_url() {
         Some("https://example.com/linear/logo-dark.png".to_string())
     );
 }
-fn item(name: &str, display_name: &str) -> RecommendedPluginItem {
+fn item(name: &str) -> RecommendedPluginItem {
     RecommendedPluginItem {
         id: format!("plugin_{name}"),
         name: name.to_string(),
-        status: None,
-        installation_policy: None,
-        release: RecommendedPluginRelease {
-            display_name: display_name.to_string(),
-            app_ids: Vec::new(),
-        },
+        display_name: name.to_string(),
     }
 }
 
@@ -192,25 +673,13 @@ fn item(name: &str, display_name: &str) -> RecommendedPluginItem {
 fn recommended_plugins_enabled_flag_selects_endpoint_or_legacy_mode() {
     let disabled: RecommendedPluginsResponse = serde_json::from_value(serde_json::json!({
         "enabled": false,
-        "plugins": [{"id": "plugin_github", "name": "github", "release": {"display_name": "GitHub"}}]
+        "plugins": [{"id": "plugin_github", "name": "github", "display_name": "GitHub"}]
     }))
     .expect("response should deserialize");
     assert_eq!(
         recommended_plugins_mode(disabled),
         RecommendedPluginsMode::Legacy
     );
-
-    for response in [
-        serde_json::json!({"plugins": []}),
-        serde_json::json!({"enabled": null, "plugins": []}),
-    ] {
-        let response: RecommendedPluginsResponse =
-            serde_json::from_value(response).expect("response should deserialize");
-        assert_eq!(
-            recommended_plugins_mode(response),
-            RecommendedPluginsMode::Legacy
-        );
-    }
 
     let enabled: RecommendedPluginsResponse = serde_json::from_value(serde_json::json!({
         "enabled": true,
@@ -229,10 +698,7 @@ fn recommended_plugins_enabled_flag_selects_endpoint_or_legacy_mode() {
 fn recommended_plugins_require_remote_install_identity() {
     let response = serde_json::from_value::<RecommendedPluginsResponse>(serde_json::json!({
         "enabled": true,
-        "plugins": [{
-            "name": "github",
-            "release": {"display_name": "GitHub"}
-        }]
+        "plugins": [{"name": "github", "display_name": "GitHub"}]
     }));
 
     assert!(response.is_err());
@@ -242,33 +708,13 @@ fn recommended_plugins_require_remote_install_identity() {
 fn recommended_plugins_are_validated_deduplicated_sorted_and_capped() {
     let mut plugins = (0..=52)
         .rev()
-        .map(|index| item(&format!("plugin-{index:02}"), &format!("Plugin {index:02}")))
+        .map(|index| item(&format!("plugin-{index:02}")))
         .collect::<Vec<_>>();
-    plugins.push(item("plugin-00", "Duplicate"));
-    plugins.push(item("not/a/plugin", "Invalid"));
-    plugins.push(RecommendedPluginItem {
-        id: "plugin_disabled".to_string(),
-        name: "disabled".to_string(),
-        status: Some(PluginAvailability::DisabledByAdmin),
-        installation_policy: Some(PluginInstallPolicy::Available),
-        release: RecommendedPluginRelease {
-            display_name: "Disabled".to_string(),
-            app_ids: Vec::new(),
-        },
-    });
-    plugins.push(RecommendedPluginItem {
-        id: "plugin_not_available".to_string(),
-        name: "not-available".to_string(),
-        status: Some(PluginAvailability::Available),
-        installation_policy: Some(PluginInstallPolicy::NotAvailable),
-        release: RecommendedPluginRelease {
-            display_name: "Not Available".to_string(),
-            app_ids: Vec::new(),
-        },
-    });
+    plugins.push(item("plugin-00"));
+    plugins.push(item("not/a/plugin"));
 
     let mode = recommended_plugins_mode(RecommendedPluginsResponse {
-        enabled: Some(true),
+        enabled: true,
         plugins,
     });
     let RecommendedPluginsMode::Endpoint { plugins } = mode else {
@@ -281,8 +727,7 @@ fn recommended_plugins_are_validated_deduplicated_sorted_and_capped() {
         Some(&RecommendedPlugin {
             config_id: "plugin-00@openai-curated-remote".to_string(),
             remote_plugin_id: "plugin_plugin-00".to_string(),
-            display_name: "Plugin 00".to_string(),
-            app_connector_ids: Vec::new(),
+            display_name: "plugin-00".to_string(),
         })
     );
     assert_eq!(
@@ -290,8 +735,7 @@ fn recommended_plugins_are_validated_deduplicated_sorted_and_capped() {
         Some(&RecommendedPlugin {
             config_id: "plugin-49@openai-curated-remote".to_string(),
             remote_plugin_id: "plugin_plugin-49".to_string(),
-            display_name: "Plugin 49".to_string(),
-            app_connector_ids: Vec::new(),
+            display_name: "plugin-49".to_string(),
         })
     );
 }
@@ -301,55 +745,56 @@ fn recommended_plugins_bound_model_visible_fields() {
     let overlong_name = "n".repeat(MAX_RECOMMENDED_PLUGIN_NAME_LEN + 1);
     let overlong_display_name = "D".repeat(MAX_RECOMMENDED_PLUGIN_DISPLAY_NAME_LEN + 1);
     let mode = recommended_plugins_mode(RecommendedPluginsResponse {
-        enabled: Some(true),
+        enabled: true,
         plugins: vec![
-            item(&overlong_name, "Ignored"),
-            item("bounded", &overlong_display_name),
+            item(&overlong_name),
+            RecommendedPluginItem {
+                id: "plugin_bounded".to_string(),
+                name: "bounded".to_string(),
+                display_name: overlong_display_name,
+            },
+            RecommendedPluginItem {
+                id: "plugin_fallback".to_string(),
+                name: "fallback".to_string(),
+                display_name: String::new(),
+            },
         ],
     });
 
     assert_eq!(
         mode,
         RecommendedPluginsMode::Endpoint {
-            plugins: vec![RecommendedPlugin {
-                config_id: "bounded@openai-curated-remote".to_string(),
-                remote_plugin_id: "plugin_bounded".to_string(),
-                display_name: "D".repeat(MAX_RECOMMENDED_PLUGIN_DISPLAY_NAME_LEN),
-                app_connector_ids: Vec::new(),
-            }],
+            plugins: vec![
+                RecommendedPlugin {
+                    config_id: "bounded@openai-curated-remote".to_string(),
+                    remote_plugin_id: "plugin_bounded".to_string(),
+                    display_name: "D".repeat(MAX_RECOMMENDED_PLUGIN_DISPLAY_NAME_LEN),
+                },
+                RecommendedPlugin {
+                    config_id: "fallback@openai-curated-remote".to_string(),
+                    remote_plugin_id: "plugin_fallback".to_string(),
+                    display_name: "fallback".to_string(),
+                },
+            ],
         }
     );
 }
 
 #[test]
-fn recommended_plugins_preserve_install_identity_and_normalize_app_ids() {
-    let mode = recommended_plugins_mode(RecommendedPluginsResponse {
-        enabled: Some(true),
-        plugins: vec![RecommendedPluginItem {
-            id: "plugin_connector_sample".to_string(),
-            name: "sample".to_string(),
-            status: Some(PluginAvailability::Available),
-            installation_policy: Some(PluginInstallPolicy::Available),
-            release: RecommendedPluginRelease {
-                display_name: "Sample".to_string(),
-                app_ids: vec![
-                    "connector_one".to_string(),
-                    String::new(),
-                    "connector_two".to_string(),
-                    "connector_one".to_string(),
-                ],
-            },
-        }],
-    });
+fn recommended_plugins_accept_codex_suggestion_items() {
+    let response: RecommendedPluginsResponse = serde_json::from_value(serde_json::json!({
+        "enabled": true,
+        "plugins": [{"id": "plugin_box", "name": "box", "display_name": "Box"}]
+    }))
+    .expect("compact response should deserialize");
 
     assert_eq!(
-        mode,
+        recommended_plugins_mode(response),
         RecommendedPluginsMode::Endpoint {
             plugins: vec![RecommendedPlugin {
-                config_id: "sample@openai-curated-remote".to_string(),
-                remote_plugin_id: "plugin_connector_sample".to_string(),
-                display_name: "Sample".to_string(),
-                app_connector_ids: vec!["connector_one".to_string(), "connector_two".to_string(),],
+                config_id: "box@openai-curated-remote".to_string(),
+                remote_plugin_id: "plugin_box".to_string(),
+                display_name: "Box".to_string(),
             }],
         }
     );
@@ -358,16 +803,11 @@ fn recommended_plugins_preserve_install_identity_and_normalize_app_ids() {
 #[test]
 fn recommended_plugins_ignore_invalid_remote_plugin_ids() {
     let mode = recommended_plugins_mode(RecommendedPluginsResponse {
-        enabled: Some(true),
+        enabled: true,
         plugins: vec![RecommendedPluginItem {
             id: "not/a/plugin".to_string(),
             name: "sample".to_string(),
-            status: None,
-            installation_policy: None,
-            release: RecommendedPluginRelease {
-                display_name: "Sample".to_string(),
-                app_ids: Vec::new(),
-            },
+            display_name: "Sample".to_string(),
         }],
     });
 

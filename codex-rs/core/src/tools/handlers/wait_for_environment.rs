@@ -1,6 +1,3 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
-use std::collections::BTreeMap;
-
 use codex_tools::JsonSchema;
 use codex_tools::JsonToolOutput;
 use codex_tools::ResponsesApiTool;
@@ -8,7 +5,9 @@ use codex_tools::ToolName;
 use codex_tools::ToolSpec;
 use serde::Deserialize;
 use serde_json::json;
+use std::collections::BTreeMap;
 
+use crate::environment_selection::TurnEnvironmentState;
 use crate::function_tool::FunctionCallError;
 use crate::tools::context::ToolInvocation;
 use crate::tools::context::ToolPayload;
@@ -18,6 +17,24 @@ use crate::tools::registry::CoreToolRuntime;
 use crate::tools::registry::ToolExecutor;
 
 const WAIT_FOR_ENVIRONMENT_TOOL_NAME: &str = "wait_for_environment";
+const DEFAULT_TOOL_DESCRIPTION: &str = "Wait for a selected execution environment marked as `starting` to become available. Use this when the current task needs that environment's files, commands, or installed capabilities. Do not wait if the task can be completed using tools already available, such as connectors. Waiting may take several minutes and blocks other tool calls. If startup fails, continue without that environment.";
+const DEFAULT_ENVIRONMENT_ID_DESCRIPTION: &str =
+    "The exact environment ID marked as `starting` in `<environment_context>`.";
+const MAX_COMBINED_DESCRIPTION_BYTES: usize = 1_024;
+const MAX_SERIALIZED_TOOL_SPEC_BYTES: usize = 1_000;
+
+/// Model-visible descriptions supplied by a host that supports deferred environments.
+///
+/// The two tool-schema descriptions must not exceed 1,024 UTF-8 bytes in total, and Core
+/// also limits the complete serialized tool specification to 1,000 bytes. Oversized
+/// descriptions fall back to Core defaults.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct WaitForEnvironmentToolConfig {
+    /// Explains when and why the model should call `wait_for_environment`.
+    pub tool_description: String,
+    /// Explains how the model should select the `environment_id` argument.
+    pub environment_id_description: String,
+}
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -25,7 +42,44 @@ struct WaitForEnvironmentArgs {
     environment_id: String,
 }
 
-pub(crate) struct WaitForEnvironmentHandler;
+pub(crate) struct WaitForEnvironmentHandler {
+    tool_description: String,
+    environment_id_description: String,
+}
+
+impl WaitForEnvironmentHandler {
+    pub(crate) fn new(config: &WaitForEnvironmentToolConfig) -> Self {
+        let combined_description_bytes = config
+            .tool_description
+            .len()
+            .saturating_add(config.environment_id_description.len());
+        if combined_description_bytes <= MAX_COMBINED_DESCRIPTION_BYTES {
+            let handler = Self {
+                tool_description: config.tool_description.clone(),
+                environment_id_description: config.environment_id_description.clone(),
+            };
+            if serde_json::to_vec(&handler.spec())
+                .is_ok_and(|serialized| serialized.len() <= MAX_SERIALIZED_TOOL_SPEC_BYTES)
+            {
+                return handler;
+            }
+        }
+
+        tracing::warn!(
+            "oversized wait_for_environment tool configuration; falling back to Core defaults"
+        );
+        Self::default()
+    }
+}
+
+impl Default for WaitForEnvironmentHandler {
+    fn default() -> Self {
+        Self {
+            tool_description: DEFAULT_TOOL_DESCRIPTION.to_string(),
+            environment_id_description: DEFAULT_ENVIRONMENT_ID_DESCRIPTION.to_string(),
+        }
+    }
+}
 
 impl ToolExecutor<ToolInvocation> for WaitForEnvironmentHandler {
     fn tool_name(&self) -> ToolName {
@@ -35,16 +89,13 @@ impl ToolExecutor<ToolInvocation> for WaitForEnvironmentHandler {
     fn spec(&self) -> ToolSpec {
         ToolSpec::Function(ResponsesApiTool {
             name: WAIT_FOR_ENVIRONMENT_TOOL_NAME.to_string(),
-            description: "Wait for a starting environment to become available before continuing."
-                .to_string(),
+            description: self.tool_description.clone(),
             strict: false,
             defer_loading: None,
             parameters: JsonSchema::object(
                 BTreeMap::from([(
                     "environment_id".to_string(),
-                    JsonSchema::string(Some(
-                        "The id of an environment currently marked as starting.".to_string(),
-                    )),
+                    JsonSchema::string(Some(self.environment_id_description.clone())),
                 )]),
                 /*required*/ Some(vec!["environment_id".to_string()]),
                 /*additional_properties*/ Some(false.into()),
@@ -53,7 +104,10 @@ impl ToolExecutor<ToolInvocation> for WaitForEnvironmentHandler {
         })
     }
 
-    fn handle(&self, invocation: ToolInvocation) -> codex_tools::ToolExecutorFuture<'_> {
+    fn handle<'a>(&'a self, invocation: ToolInvocation) -> codex_tools::ToolExecutorFuture<'a>
+    where
+        ToolInvocation: 'a,
+    {
         Box::pin(async move {
             let ToolInvocation {
                 payload,
@@ -72,14 +126,28 @@ impl ToolExecutor<ToolInvocation> for WaitForEnvironmentHandler {
             let environment_id = args.environment_id;
             let already_ready = step_context
                 .environments
-                .turn_environments
-                .iter()
-                .any(|environment| environment.environment_id == environment_id);
+                .turn_environments()
+                .any(|environment| environment.selection.environment_id == environment_id);
             if !already_ready {
+                if let Some(error) =
+                    step_context
+                        .environments
+                        .environments
+                        .iter()
+                        .find_map(|state| match state {
+                            TurnEnvironmentState::Failed { selection, error }
+                                if selection.environment_id == environment_id =>
+                            {
+                                Some(error)
+                            }
+                            _ => None,
+                        })
+                {
+                    return Err(environment_failure(&environment_id, error));
+                }
                 let Some(environment) = step_context
                     .environments
-                    .starting
-                    .iter()
+                    .starting()
                     .find(|environment| environment.selection.environment_id == environment_id)
                     .cloned()
                 else {
@@ -88,11 +156,10 @@ impl ToolExecutor<ToolInvocation> for WaitForEnvironmentHandler {
                     )));
                 };
 
-                environment.wait_until_ready().await.map_err(|_| {
-                    FunctionCallError::RespondToModel(format!(
-                        "Environment `{environment_id}` failed to start and is unavailable. Continue without it."
-                    ))
-                })?;
+                environment
+                    .wait_until_ready()
+                    .await
+                    .map_err(|error| environment_failure(&environment_id, &error.to_string()))?;
             }
 
             Ok(boxed_tool_output(JsonToolOutput::new(json!({
@@ -104,3 +171,12 @@ impl ToolExecutor<ToolInvocation> for WaitForEnvironmentHandler {
 }
 
 impl CoreToolRuntime for WaitForEnvironmentHandler {}
+
+// Keep failure output small while preserving a UTF-8 boundary.
+fn environment_failure(environment_id: &str, error: &str) -> FunctionCallError {
+    const MAX_ERROR_BYTES: usize = 256;
+    let reason = &error[..error.floor_char_boundary(MAX_ERROR_BYTES)];
+    FunctionCallError::RespondToModel(format!(
+        "Environment `{environment_id}` failed to start: {reason}"
+    ))
+}

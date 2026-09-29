@@ -1,4 +1,4 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::Mutex as StdMutex;
 use std::time::Duration;
@@ -6,8 +6,8 @@ use std::time::Instant;
 use std::time::SystemTime;
 use std::time::UNIX_EPOCH;
 
+use codex_analytics::TurnProfile;
 use codex_otel::TURN_TTFM_DURATION_METRIC;
-use codex_protocol::TurnProfileSummary;
 use codex_protocol::items::TurnItem;
 use codex_protocol::models::ResponseItem;
 use tokio::sync::Mutex;
@@ -50,20 +50,9 @@ pub(crate) struct TurnTimingState {
 struct TurnTimingStateInner {
     started_at: Option<Instant>,
     started_at_unix_secs: Option<i64>,
+    item_started_at_ms: HashMap<String, i64>,
     first_token_at: Option<Instant>,
     first_message_at: Option<Instant>,
-}
-
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub(crate) struct TurnProfile {
-    pub(crate) before_first_sampling_ms: u64,
-    pub(crate) sampling_ms: u64,
-    pub(crate) compaction_ms: u64,
-    pub(crate) between_sampling_overhead_ms: u64,
-    pub(crate) tool_blocking_ms: u64,
-    pub(crate) after_last_sampling_ms: u64,
-    pub(crate) sampling_request_count: u32,
-    pub(crate) sampling_retry_count: u32,
 }
 
 #[derive(Debug, Default)]
@@ -103,6 +92,7 @@ impl TurnTimingState {
         let mut state = self.state.lock().await;
         state.started_at = Some(started_at);
         state.started_at_unix_secs = Some(started_at_unix_ms / 1000);
+        state.item_started_at_ms.clear();
         state.first_token_at = None;
         state.first_message_at = None;
         self.profile_state().start(started_at);
@@ -113,9 +103,23 @@ impl TurnTimingState {
         self.state.lock().await.started_at_unix_secs
     }
 
+    pub(crate) async fn record_item_started(&self, item_id: String, started_at_ms: i64) -> i64 {
+        *self
+            .state
+            .lock()
+            .await
+            .item_started_at_ms
+            .entry(item_id)
+            .or_insert(started_at_ms)
+    }
+
+    pub(crate) async fn take_item_started(&self, item_id: &str) -> Option<i64> {
+        self.state.lock().await.item_started_at_ms.remove(item_id)
+    }
+
     pub(crate) async fn complete_profile_and_duration_ms(
         &self,
-    ) -> (Option<i64>, Option<i64>, Option<TurnProfile>) {
+    ) -> (Option<i64>, Option<i64>, TurnProfile) {
         let completed_at_instant = Instant::now();
         let state = self.state.lock().await;
         let completed_at = Some(now_unix_timestamp_secs());
@@ -127,9 +131,7 @@ impl TurnTimingState {
             )
             .unwrap_or(i64::MAX)
         });
-        let profile = state
-            .started_at
-            .map(|_| self.profile_state().complete(completed_at_instant));
+        let profile = self.profile_state().complete(completed_at_instant);
         (completed_at, duration_ms, profile)
     }
 
@@ -194,21 +196,6 @@ impl TurnTimingState {
         self.profile
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
-    }
-}
-
-impl From<TurnProfile> for TurnProfileSummary {
-    fn from(profile: TurnProfile) -> Self {
-        Self {
-            before_first_sampling_ms: profile.before_first_sampling_ms,
-            sampling_ms: profile.sampling_ms,
-            compaction_ms: profile.compaction_ms,
-            between_sampling_overhead_ms: profile.between_sampling_overhead_ms,
-            tool_blocking_ms: profile.tool_blocking_ms,
-            after_last_sampling_ms: profile.after_last_sampling_ms,
-            sampling_request_count: u64::from(profile.sampling_request_count),
-            sampling_retry_count: u64::from(profile.sampling_retry_count),
-        }
     }
 }
 
@@ -398,7 +385,7 @@ fn response_event_records_turn_ttft(event: &ResponseEvent) -> bool {
         | ResponseEvent::ReasoningSummaryDelta { .. }
         | ResponseEvent::ReasoningSummaryDone { .. }
         | ResponseEvent::ReasoningContentDelta { .. } => true,
-        ResponseEvent::Created
+        ResponseEvent::Created { .. }
         | ResponseEvent::ServerModel(_)
         | ResponseEvent::ModelVerifications(_)
         | ResponseEvent::TurnModerationMetadata(_)
@@ -442,7 +429,7 @@ fn response_item_records_turn_ttft(item: &ResponseItem) -> bool {
         | ResponseItem::ImageGenerationCall { .. }
         | ResponseItem::Compaction { .. }
         | ResponseItem::ContextCompaction { .. } => true,
-        ResponseItem::CompactionTrigger { .. } => false,
+        ResponseItem::ConfigurationUpdate { .. } | ResponseItem::CompactionTrigger { .. } => false,
         ResponseItem::AdditionalTools { .. }
         | ResponseItem::FunctionCallOutput { .. }
         | ResponseItem::CustomToolCallOutput { .. }

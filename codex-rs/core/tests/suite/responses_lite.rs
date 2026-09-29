@@ -3,23 +3,33 @@ use std::sync::Arc;
 
 use anyhow::Context;
 use anyhow::Result;
+use codex_core::TurnInputRequest;
 use codex_core::config::Config;
 use codex_extension_api::ExtensionRegistry;
 use codex_extension_api::ExtensionRegistryBuilder;
 use codex_features::Feature;
 use codex_image_generation_extension::install as install_image_generation_extension;
 use codex_login::CodexAuth;
+use codex_login::auth::BedrockApiKeyAuth;
+use codex_mcp::CODEX_APPS_MCP_SERVER_NAME;
 use codex_protocol::config_types::WebSearchMode;
 use codex_protocol::models::ImageDetail;
+use codex_protocol::models::ImageReference;
 use codex_protocol::openai_models::InputModality;
+use codex_protocol::openai_models::ToolMode;
 use codex_protocol::protocol::EventMsg;
 use codex_protocol::protocol::Op;
 use codex_protocol::user_input::UserInput;
 use codex_web_search_extension::install as install_web_search_extension;
+use core_test_support::apps_test_server::AppsTestServer;
+use core_test_support::apps_test_server::SEARCH_CALENDAR_CREATE_TOOL;
+use core_test_support::apps_test_server::SEARCH_CALENDAR_NAMESPACE;
+use core_test_support::apps_test_server::apps_enabled_builder;
 use core_test_support::responses;
 use core_test_support::skip_if_no_network;
 use core_test_support::test_codex::test_codex;
 use core_test_support::wait_for_event;
+use core_test_support::wait_for_mcp_server;
 use pretty_assertions::assert_eq;
 use serde_json::Value;
 
@@ -93,14 +103,18 @@ async fn responses_lite_uses_input_items_for_instructions_and_tools() -> Result<
     )
     .await;
 
-    let mut builder = test_codex()
-        .with_model_info_override("gpt-5.4", |model_info| {
-            model_info.use_responses_lite = true;
-        })
-        .with_config(|config| {
-            config.base_instructions = Some("test instructions".to_string());
-        });
-    let test = builder.build(&server).await?;
+    let builder = || {
+        test_codex()
+            .with_model_info_override("gpt-5.4", |model_info| {
+                model_info.use_responses_lite = true;
+                model_info.tool_mode = Some(ToolMode::CodeMode);
+            })
+            .with_config(|config| {
+                config.base_instructions = Some("test instructions".to_string());
+                config.code_mode.disable_in_process_fallback = true;
+            })
+    };
+    let test = builder().build(&server).await?;
 
     test.submit_turn("hello").await?;
 
@@ -113,20 +127,130 @@ async fn responses_lite_uses_input_items_for_instructions_and_tools() -> Result<
         .context("Responses request input should be an array")?;
     assert_eq!(input[0]["type"], "additional_tools");
     assert_eq!(input[0]["role"], "developer");
+    assert!(
+        input[0]["id"]
+            .as_str()
+            .is_some_and(|id| id.starts_with("at_"))
+    );
+    assert!(
+        input[1]["id"]
+            .as_str()
+            .is_some_and(|id| id.starts_with("msg_"))
+    );
     assert_eq!(
         input[1],
         serde_json::json!({
+            "id": input[1]["id"],
             "type": "message",
             "role": "developer",
             "content": [{
                 "type": "input_text",
                 "text": "test instructions",
             }],
+            "internal_chat_message_metadata_passthrough": {
+                "content_item_kinds": ["model.base_instructions"],
+            },
         })
     );
 
     let tools = additional_tools(&body)?;
-    assert!(!tools.is_empty());
+    let functions_namespaces = tools
+        .iter()
+        .filter(|tool| tool["type"] == "namespace" && tool["name"] == "functions")
+        .collect::<Vec<_>>();
+    assert_eq!(functions_namespaces.len(), 1);
+    assert_eq!(functions_namespaces[0]["description"], "");
+    assert!(has_namespaced_tool(tools, "functions", "wait"));
+    assert!(has_namespaced_tool(tools, "functions", "exec"));
+    assert!(
+        tools
+            .iter()
+            .all(|tool| { !matches!(tool["type"].as_str(), Some("function" | "custom")) })
+    );
+    let client_metadata = body["client_metadata"]
+        .as_object()
+        .context("Responses request should include client metadata")?;
+    let turn_metadata: Value = serde_json::from_str(
+        client_metadata["x-codex-turn-metadata"]
+            .as_str()
+            .context("Responses request should include turn metadata")?,
+    )?;
+
+    assert!(turn_metadata.get("tool_namespaces_info").is_none());
+
+    let followup = responses::mount_sse_once(
+        &server,
+        responses::sse(vec![responses::ev_completed("resp-2")]),
+    )
+    .await;
+    let resumed = builder().restart(&server, &test).await?;
+    resumed.submit_turn("continue").await?;
+    assert_eq!(&followup.single_request().input()[..2], &input[..2]);
+
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn responses_lite_includes_tool_namespaces_info_when_enabled() -> Result<()> {
+    skip_if_no_network!(Ok(()));
+
+    let server = responses::start_mock_server().await;
+    let apps_server = AppsTestServer::mount(&server).await?;
+    let response_mock = responses::mount_sse_once(
+        &server,
+        responses::sse(vec![
+            responses::ev_response_created("resp-1"),
+            responses::ev_completed("resp-1"),
+        ]),
+    )
+    .await;
+
+    let mut builder = apps_enabled_builder(apps_server.chatgpt_base_url)
+        .with_model_info_override("gpt-5.4", |model_info| {
+            model_info.use_responses_lite = true;
+            model_info.tool_mode = Some(ToolMode::CodeMode);
+            model_info.supports_search_tool = false;
+        })
+        .with_config(|config| {
+            config.code_mode.disable_in_process_fallback = true;
+            config.tool_registry.turn_metadata_includes_tool_info = true;
+        });
+    let test = builder.build_with_auto_env(&server).await?;
+    wait_for_mcp_server(&test.codex, CODEX_APPS_MCP_SERVER_NAME).await?;
+
+    test.submit_turn("hello").await?;
+
+    let request = response_mock.single_request();
+    let body = request.body_json();
+    let turn_metadata: Value = serde_json::from_str(
+        body["client_metadata"]["x-codex-turn-metadata"]
+            .as_str()
+            .context("Responses request should include turn metadata")?,
+    )?;
+    let calendar = &turn_metadata["tool_namespaces_info"][SEARCH_CALENDAR_NAMESPACE];
+
+    assert_eq!(calendar["name"], SEARCH_CALENDAR_NAMESPACE);
+    assert_eq!(
+        calendar["functions"][SEARCH_CALENDAR_CREATE_TOOL],
+        serde_json::json!({
+            "name": SEARCH_CALENDAR_CREATE_TOOL,
+            "direct": true,
+            "deferred": false,
+            "code_mode_name": "mcp__codex_apps__calendar_create_event",
+            "source": {
+                "kind": "mcp",
+                "server_name": "codex_apps",
+            },
+        })
+    );
+
+    let compatibility_metadata: Value = serde_json::from_str(
+        request
+            .header("x-codex-turn-metadata")
+            .as_deref()
+            .context("Responses request should include compatibility turn metadata")?,
+    )?;
+    assert!(compatibility_metadata.get("tool_namespaces_info").is_none());
 
     Ok(())
 }
@@ -153,22 +277,20 @@ async fn responses_lite_prepares_images() -> Result<()> {
     let test = builder.build(&server).await?;
 
     test.codex
-        .submit(Op::UserInput {
-            items: vec![
-                UserInput::Image {
+        .start_or_steer_turn(TurnInputRequest::user_input(vec![
+            UserInput::Image {
+                image: ImageReference::Inline {
                     image_url: image_url.to_string(),
-                    detail: Some(ImageDetail::Original),
                 },
-                UserInput::Image {
+                detail: Some(ImageDetail::Original),
+            },
+            UserInput::Image {
+                image: ImageReference::Inline {
                     image_url: remote_image_url.to_string(),
-                    detail: Some(ImageDetail::High),
                 },
-            ],
-            final_output_json_schema: None,
-            responsesapi_client_metadata: None,
-            additional_context: Default::default(),
-            thread_settings: Default::default(),
-        })
+                detail: Some(ImageDetail::High),
+            },
+        ]))
         .await?;
     wait_for_event(&test.codex, |event| {
         matches!(event, EventMsg::TurnComplete(_))
@@ -176,6 +298,7 @@ async fn responses_lite_prepares_images() -> Result<()> {
     .await;
 
     let request = response_mock.single_request();
+    assert!(request.has_content_kinds(&["user.image", "images.preparation_error"]));
     let user_content = request
         .input()
         .into_iter()
@@ -275,7 +398,7 @@ async fn responses_lite_exposes_standalone_tools_for_actor_authorized_provider()
             config.model_provider.requires_openai_auth = false;
             config.model_provider.http_headers = Some(HashMap::from([(
                 "x-openai-actor-authorization".to_string(),
-                "test-actor-authorization".to_string(),
+                "test-actor-authorization".into(),
             )]));
         });
     let test = builder.build(&server).await?;
@@ -291,7 +414,39 @@ async fn responses_lite_exposes_standalone_tools_for_actor_authorized_provider()
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn responses_lite_compact_request_uses_lite_transport_contract() -> Result<()> {
+async fn responses_lite_exposes_standalone_web_search_for_opted_in_custom_provider() -> Result<()> {
+    assert_responses_lite_custom_provider_web_search(
+        WebSearchMode::Live,
+        /*supports_standalone_web_search*/ true,
+        /*expect_web_run*/ true,
+    )
+    .await
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn responses_lite_does_not_expose_standalone_web_search_for_custom_provider_by_default()
+-> Result<()> {
+    assert_responses_lite_custom_provider_web_search(
+        WebSearchMode::Live,
+        /*supports_standalone_web_search*/ false,
+        /*expect_web_run*/ false,
+    )
+    .await
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn responses_lite_does_not_expose_disabled_standalone_web_search_for_opted_in_provider()
+-> Result<()> {
+    assert_responses_lite_custom_provider_web_search(
+        WebSearchMode::Disabled,
+        /*supports_standalone_web_search*/ true,
+        /*expect_web_run*/ false,
+    )
+    .await
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn responses_lite_does_not_expose_standalone_web_search_for_bedrock_provider() -> Result<()> {
     skip_if_no_network!(Ok(()));
 
     let server = responses::start_mock_server().await;
@@ -303,30 +458,141 @@ async fn responses_lite_compact_request_uses_lite_transport_contract() -> Result
         ]),
     )
     .await;
-    let compact_mock =
-        responses::mount_compact_json_once(&server, serde_json::json!({ "output": [] })).await;
 
+    let auth = CodexAuth::BedrockApiKey(BedrockApiKeyAuth {
+        api_key: "dummy".to_string(),
+        region: "us-east-1".to_string(),
+    });
+    let extensions = responses_extensions(&auth);
     let mut builder = test_codex()
+        .with_auth(auth)
+        .with_extensions(extensions)
         .with_model_info_override("gpt-5.4", |model_info| {
             model_info.use_responses_lite = true;
-            model_info.supports_parallel_tool_calls = true;
         })
         .with_config(|config| {
-            let _ = config.features.disable(Feature::RemoteCompactionV2);
+            configure_responses_tools(config);
+            config.model_provider.name = "Amazon Bedrock".to_string();
+            config.model_provider.requires_openai_auth = false;
+            config.model_provider.http_headers = None;
+            config.model_provider.supports_standalone_web_search = false;
         });
     let test = builder.build(&server).await?;
 
+    test.submit_turn("Use standalone web search").await?;
+
+    let request = response_mock.single_request();
+    assert_eq!(
+        request.header(RESPONSES_LITE_HEADER).as_deref(),
+        Some("true")
+    );
+    let body = request.body_json();
+    assert!(body.get("tools").is_none());
+    assert!(!request.has_content_kinds(&["model.base_instructions"]));
+    let tools = additional_tools(&body)?;
+    assert!(!has_namespaced_tool(tools, "web", "run"));
+    assert!(!has_hosted_tool(tools, "web_search"));
+
+    Ok(())
+}
+
+async fn assert_responses_lite_custom_provider_web_search(
+    web_search_mode: WebSearchMode,
+    supports_standalone_web_search: bool,
+    expect_web_run: bool,
+) -> Result<()> {
+    skip_if_no_network!(Ok(()));
+
+    let server = responses::start_mock_server().await;
+    let response_mock = responses::mount_sse_once(
+        &server,
+        responses::sse(vec![
+            responses::ev_response_created("resp-1"),
+            responses::ev_completed("resp-1"),
+        ]),
+    )
+    .await;
+
+    let auth = CodexAuth::from_api_key("dummy");
+    let extensions = responses_extensions(&auth);
+    let mut builder = test_codex()
+        .with_auth(auth)
+        .with_extensions(extensions)
+        .with_model_info_override("gpt-5.4", |model_info| {
+            model_info.use_responses_lite = true;
+        })
+        .with_config(move |config| {
+            configure_responses_tools(config);
+            assert!(config.web_search_mode.set(web_search_mode).is_ok());
+            config.model_provider.name = "custom-responses".to_string();
+            config.model_provider.requires_openai_auth = false;
+            config.model_provider.http_headers = None;
+            config.model_provider.supports_standalone_web_search = supports_standalone_web_search;
+        });
+    let test = builder.build(&server).await?;
+
+    test.submit_turn("Use standalone web search").await?;
+
+    let request = response_mock.single_request();
+    assert_eq!(
+        request.header(RESPONSES_LITE_HEADER).as_deref(),
+        Some("true")
+    );
+    let body = request.body_json();
+    assert!(body.get("tools").is_none());
+    let tools = additional_tools(&body)?;
+    assert_eq!(has_namespaced_tool(tools, "web", "run"), expect_web_run);
+    assert!(!has_hosted_tool(tools, "web_search"));
+
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn responses_lite_compact_request_uses_lite_transport_contract() -> Result<()> {
+    skip_if_no_network!(Ok(()));
+
+    let server = responses::start_mock_server().await;
+    let response_mock = responses::mount_sse_sequence(
+        &server,
+        vec![
+            responses::sse(vec![
+                responses::ev_response_created("resp-1"),
+                responses::ev_completed("resp-1"),
+            ]),
+            responses::sse(vec![
+                serde_json::json!({
+                    "type": "response.output_item.done",
+                    "item": {
+                        "type": "compaction",
+                        "encrypted_content": "RESPONSES_LITE_COMPACT_SUMMARY",
+                    }
+                }),
+                responses::ev_completed("resp-compact"),
+            ]),
+        ],
+    )
+    .await;
+
+    let mut builder = test_codex().with_model_info_override("gpt-5.4", |model_info| {
+        model_info.use_responses_lite = true;
+    });
+    let test = builder.build(&server).await?;
+
     test.submit_turn("Compact this conversation").await?;
-    test.codex
-        .submit(Op::Compact { instructions: None })
-        .await?;
+    test.codex.submit(Op::Compact).await?;
     wait_for_event(&test.codex, |event| {
         matches!(event, EventMsg::TurnComplete(_))
     })
     .await;
 
-    response_mock.single_request();
-    let compact_request = compact_mock.single_request();
+    let requests = response_mock.requests();
+    assert_eq!(requests.len(), 2);
+    let compact_request = &requests[1];
+    assert_eq!(compact_request.path(), "/v1/responses");
+    assert_eq!(
+        compact_request.inputs_of_type("compaction_trigger").len(),
+        1
+    );
     assert_eq!(
         compact_request.header(RESPONSES_LITE_HEADER).as_deref(),
         Some("true")

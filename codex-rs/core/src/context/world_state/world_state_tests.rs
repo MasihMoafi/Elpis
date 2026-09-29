@@ -1,5 +1,6 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use super::*;
+use codex_context_fragments::AnnotatedContent;
+use codex_protocol::models::ContentItemKind;
 use pretty_assertions::assert_eq;
 use serde::Deserialize;
 use serde::Serialize;
@@ -37,6 +38,10 @@ impl WorldStateSection for TestSection {
 struct TestFragment(String);
 
 impl ContextualUserFragment for TestFragment {
+    fn content_kind(&self) -> ContentItemKind {
+        ContentItemKind("generic.test".to_string())
+    }
+
     fn role(&self) -> &'static str {
         "user"
     }
@@ -52,6 +57,14 @@ impl ContextualUserFragment for TestFragment {
     fn body(&self) -> String {
         self.0.clone()
     }
+}
+
+#[test]
+fn world_state_hash_normalizes_crlf_line_endings() {
+    assert_eq!(
+        WorldStateHash::from_fragment(&TestFragment("line one\r\nline two".to_string())),
+        WorldStateHash::from_fragment(&TestFragment("line one\nline two".to_string())),
+    );
 }
 
 struct DuplicateTestSection;
@@ -147,6 +160,38 @@ fn extension_owned_section_uses_its_snapshot_and_renderer() {
     assert_eq!(
         rendered[0].render(),
         "<extension_test>after</extension_test>"
+    );
+}
+
+#[test]
+fn extension_owned_section_uses_its_stable_id_as_content_kind_feature() {
+    let mut world_state = WorldState::default();
+    world_state.add_extension_section(WorldStateSectionContribution::new(
+        "extension_test",
+        json!({"value": "after"}),
+        |_| {
+            Some(RenderedWorldStateFragment::new(
+                "developer",
+                ("<extension_test>", "</extension_test>"),
+                "after",
+            ))
+        },
+    ));
+
+    let rendered = world_state.render_diff(&WorldStateSnapshot::default());
+
+    assert_eq!(
+        rendered
+            .into_iter()
+            .map(|fragment| fragment.render_fragment().into_parts())
+            .collect::<Vec<_>>(),
+        vec![(
+            "developer",
+            AnnotatedContent::input_text(
+                "<extension_test>after</extension_test>",
+                ContentItemKind("extension_test.instructions".to_string()),
+            ),
+        )]
     );
 }
 
@@ -251,19 +296,16 @@ fn snapshot_merge_patch_changes_and_removes_nested_values() {
     };
 
     assert_eq!(
-        current.merge_patch_from(&previous),
+        current.merge_patch_from(&previous).map(Value::Object),
         Some(json!({
             "kept": {"changed": "after", "removed": null},
             "removed_section": null,
         }))
     );
-    previous
-        .apply_merge_patch(
-            &current
-                .merge_patch_from(&previous)
-                .expect("changed snapshots should produce a patch"),
-        )
-        .expect("apply world-state merge patch");
+    let patch = current
+        .merge_patch_from(&previous)
+        .expect("changed snapshots should produce a patch");
+    previous.apply_merge_patch(&patch);
     assert_eq!(previous, current);
     assert_eq!(current.merge_patch_from(&current), None);
 }

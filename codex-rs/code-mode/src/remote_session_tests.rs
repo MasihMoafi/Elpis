@@ -3,108 +3,71 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use codex_code_mode_protocol::CodeModeSessionProvider;
-use codex_code_mode_protocol::ExecuteRequest;
-use codex_code_mode_protocol::FunctionCallOutputContentItem;
-use codex_code_mode_protocol::RuntimeResponse;
 use pretty_assertions::assert_eq;
 
 use super::ProcessOwnedCodeModeSession;
 use super::ProcessOwnedCodeModeSessionProvider;
-use super::resolve_host_program;
+use super::connection::ConnectionError;
 use crate::NoopCodeModeSessionDelegate;
 
 #[test]
 fn provider_reuses_its_live_process_host() {
     let provider = ProcessOwnedCodeModeSessionProvider::default();
 
-    let first = provider.process_host().expect("owned process host");
-    let second = provider.process_host().expect("owned process host");
+    let first = provider.process_host();
+    let second = provider.process_host();
 
     assert!(Arc::ptr_eq(&first, &second));
 }
 
 #[test]
-fn host_program_override_takes_precedence() {
+fn missing_host_error_limits_the_displayed_path_to_512_bytes() {
+    let executable = "codex-code-mode-host-does-not-exist";
+    let host_program = format!("{}{executable}", "missing-directory/".repeat(/*n*/ 64));
+    let expected_suffix = &host_program[host_program.len() - (512 - "...".len())..];
+    let error = ConnectionError::Spawn {
+        host_program: PathBuf::from(&host_program),
+        error: io::Error::new(io::ErrorKind::NotFound, "host unavailable"),
+    };
+
     assert_eq!(
-        resolve_host_program(
-            Some("custom-code-mode-host".into()),
-            Ok(PathBuf::from("/opt/codex/bin/codex")),
-        ),
-        PathBuf::from("custom-code-mode-host")
+        error.to_string(),
+        format!("failed to spawn code-mode host ...{expected_suffix}: host unavailable")
     );
 }
 
 #[test]
-fn host_program_is_next_to_the_main_executable_even_when_missing() {
-    let executable_name = if cfg!(windows) {
-        "codex-code-mode-host.exe"
-    } else {
-        "codex-code-mode-host"
-    };
+fn missing_host_error_preserves_utf8_boundaries_when_truncating_the_path() {
+    let executable = "codex-code-mode-host-does-not-exist";
+    let host_program = format!("{}{executable}", "🦀".repeat(/*n*/ 256));
+    let error = ConnectionError::Spawn {
+        host_program: PathBuf::from(host_program),
+        error: io::Error::new(io::ErrorKind::NotFound, "host unavailable"),
+    }
+    .to_string();
+    let displayed_path = error
+        .strip_prefix("failed to spawn code-mode host ")
+        .and_then(|message| message.strip_suffix(": host unavailable"))
+        .expect("missing-host error should contain the displayed host path");
 
-    assert_eq!(
-        resolve_host_program(
-            /*override_path*/ None,
-            Ok(PathBuf::from("/opt/codex/bin/codex")),
-        ),
-        PathBuf::from("/opt/codex/bin").join(executable_name)
-    );
-}
-
-#[test]
-fn host_program_falls_back_to_its_name_when_main_executable_is_unknown() {
-    let executable_name = if cfg!(windows) {
-        "codex-code-mode-host.exe"
-    } else {
-        "codex-code-mode-host"
-    };
-
-    assert_eq!(
-        resolve_host_program(
-            /*override_path*/ None,
-            Err(io::Error::new(
-                io::ErrorKind::NotFound,
-                "missing executable"
-            )),
-        ),
-        PathBuf::from(executable_name)
-    );
+    assert!(displayed_path.starts_with("..."));
+    assert!(displayed_path.ends_with(executable));
+    assert!(displayed_path.len() <= 512);
 }
 
 #[tokio::test]
-async fn provider_falls_back_to_in_process_session_when_host_is_missing() {
+async fn provider_returns_missing_host_error() {
     let provider = ProcessOwnedCodeModeSessionProvider::with_host_program(
         "codex-code-mode-host-does-not-exist".into(),
     );
 
-    let session = provider
-        .create_session(Arc::new(NoopCodeModeSessionDelegate))
+    let error = provider
+        .create_session()
         .await
-        .expect("missing host should fall back to an in-process session");
-    let response = session
-        .execute(ExecuteRequest {
-            tool_call_id: "call-1".to_string(),
-            enabled_tools: Vec::new(),
-            source: "text('fallback')".to_string(),
-            yield_time_ms: None,
-            max_output_tokens: None,
-        })
-        .await
-        .expect("execute fallback session")
-        .initial_response()
-        .await
-        .expect("read fallback response");
+        .err()
+        .expect("missing host should fail");
 
-    assert_eq!(
-        response,
-        RuntimeResponse::Result {
-            cell_id: codex_code_mode_protocol::CellId::new("1".to_string()),
-            content_items: vec![FunctionCallOutputContentItem::InputText {
-                text: "fallback".to_string(),
-            }],
-            error_text: None,
-        }
-    );
+    assert!(error.contains("failed to spawn code-mode host codex-code-mode-host-does-not-exist"));
 }
 
 #[tokio::test]
@@ -113,13 +76,17 @@ async fn shutdown_before_open_does_not_spawn_the_host() {
 
     session.shutdown().await.expect("shutdown session");
     let error = session
-        .execute(codex_code_mode_protocol::ExecuteRequest {
-            tool_call_id: "call-1".to_string(),
-            enabled_tools: Vec::new(),
-            source: "text('unreachable')".to_string(),
-            yield_time_ms: None,
-            max_output_tokens: None,
-        })
+        .execute(
+            codex_code_mode_protocol::ExecuteRequest {
+                tool_call_id: "call-1".to_string(),
+                enabled_tools: Vec::new(),
+                source: "text('unreachable')".to_string(),
+                yield_time_ms: None,
+                max_output_tokens: None,
+            },
+            Arc::new(NoopCodeModeSessionDelegate),
+            /*preempt*/ None,
+        )
         .await
         .err()
         .expect("shutdown session should reject execution");

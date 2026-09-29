@@ -14,7 +14,7 @@ Exported from `codex_config::loader`:
 - `ConfigLayerStack`
   - `effective_config() -> toml::Value`
   - `origins() -> HashMap<String, ConfigLayerMetadata>`
-  - `layers_high_to_low() -> Vec<ConfigLayer>`
+  - `layers_high_to_low() -> impl Iterator<Item = &ConfigLayerEntry>`
   - `with_user_config(user_config) -> ConfigLayerStack`
 - `ConfigLayerEntry` (one layer’s `{name, config, version, disabled_reason}`; `name` carries source metadata)
 - `ConfigLoadOptions` (user-facing load behavior such as strict config validation)
@@ -38,6 +38,12 @@ Precedence is **top overrides bottom**:
 precedence first, highest precedence last, so later layers override earlier
 layers when folded. Thread config entries supplied by `thread_config_loader` are
 inserted according to their translated `ConfigLayerSource` precedence.
+
+Project-root discovery and project trust use the applicable non-project layers,
+including legacy managed-file and MDM config at their normal precedence. The
+managed layers remain above project and session layers in the final stack.
+Executor-local reads use their own system, base-user, and legacy managed sources;
+they do not include cloud config, selected profiles, or session flags.
 
 Layers with a `disabled_reason` are still surfaced for UI, but are ignored when
 computing the effective config and origins metadata. This is what
@@ -68,7 +74,7 @@ let layers = load_config_layers_state(
 
 let effective = layers.effective_config();
 let origins = layers.origins();
-let layers_for_ui = layers.layers_high_to_low();
+let layers_for_ui = layers.layers_high_to_low().collect::<Vec<_>>();
 ```
 
 ## Internal layout
@@ -77,6 +83,7 @@ Implementation is split by concern:
 
 - `state.rs`: public types (`ConfigLayerEntry`, `ConfigLayerStack`) + merge/origins convenience methods.
 - `layer_io.rs`: reading `config.toml`, managed config, and managed preferences inputs.
+- `project_discovery.rs`: shared managed-config composition for project-root and trust discovery.
 - `overrides.rs`: CLI dotted-path overrides → TOML “session flags” layer.
 - `merge.rs`: recursive TOML merge.
 - `fingerprint.rs`: stable per-layer hashing and per-key origins traversal.

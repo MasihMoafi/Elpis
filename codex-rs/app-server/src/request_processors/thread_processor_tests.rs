@@ -1,4 +1,3 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 mod thread_list_cwd_filter_tests {
     use super::super::normalize_thread_list_cwd_filters;
     use codex_app_server_protocol::ThreadListCwdFilter;
@@ -40,7 +39,7 @@ mod thread_list_cwd_filter_tests {
 mod background_terminal_pagination_tests {
     use super::super::paginate_background_terminals;
     use codex_app_server_protocol::ThreadBackgroundTerminal;
-    use codex_utils_absolute_path::AbsolutePathBuf;
+    use codex_utils_path_uri::LegacyAppPathString;
     use pretty_assertions::assert_eq;
 
     fn terminal(process_id: &str) -> ThreadBackgroundTerminal {
@@ -50,7 +49,7 @@ mod background_terminal_pagination_tests {
             item_id: format!("item-{process_id}"),
             process_id: process_id.to_string(),
             command: format!("command-{process_id}"),
-            cwd: AbsolutePathBuf::from_absolute_path(cwd).expect("absolute cwd"),
+            cwd: LegacyAppPathString::from_string(cwd),
             os_pid: None,
             cpu_percent: None,
             rss_kb: None,
@@ -125,15 +124,8 @@ mod thread_processor_behavior_tests {
     use codex_protocol::config_types::CollaborationMode;
     use codex_protocol::config_types::ModeKind;
     use codex_protocol::config_types::Settings;
-    use codex_protocol::models::BUILT_IN_PERMISSION_PROFILE_DANGER_FULL_ACCESS;
-    use codex_protocol::models::BUILT_IN_PERMISSION_PROFILE_READ_ONLY;
-    use codex_protocol::models::BUILT_IN_PERMISSION_PROFILE_WORKSPACE;
     use codex_protocol::models::PermissionProfile;
     use codex_protocol::openai_models::ReasoningEffort;
-    use codex_protocol::permissions::FileSystemAccessMode;
-    use codex_protocol::permissions::FileSystemPath;
-    use codex_protocol::permissions::FileSystemSandboxEntry;
-    use codex_protocol::permissions::NetworkSandboxPolicy;
     use codex_protocol::protocol::AskForApproval;
     use codex_protocol::protocol::SessionSource;
     use codex_protocol::protocol::SubAgentSource;
@@ -467,6 +459,7 @@ mod thread_processor_behavior_tests {
         let thread_id =
             ThreadId::from_string("00000000-0000-0000-0000-000000000123").expect("valid thread");
         let stored_thread = StoredThread {
+            originator: None,
             thread_id,
             extra_config: None,
             rollout_path: Some(PathBuf::from("/tmp/thread.jsonl")),
@@ -481,6 +474,11 @@ mod thread_processor_behavior_tests {
             updated_at: updated_at.with_timezone(&Utc),
             recency_at: updated_at.with_timezone(&Utc),
             archived_at: None,
+            section: None,
+            section_position: None,
+            section_entered_at: None,
+            project_id: None,
+            daybreak_enabled: None,
             cwd: PathBuf::from("/tmp"),
             cli_version: "0.0.0".to_string(),
             source: SessionSource::Cli,
@@ -507,82 +505,6 @@ mod thread_processor_behavior_tests {
             summary.updated_at.as_deref(),
             Some("2025-01-02T03:04:06.789Z")
         );
-    }
-
-    #[test]
-    fn requested_permissions_trust_project_uses_permission_profile_intent() {
-        let cwd = test_path_buf("/tmp/project").abs();
-        let full_access_profile = codex_protocol::models::PermissionProfile::Disabled;
-        let workspace_write_profile = codex_protocol::models::PermissionProfile::workspace_write();
-        let read_only_profile = codex_protocol::models::PermissionProfile::read_only();
-        let split_write_profile =
-            codex_protocol::models::PermissionProfile::from_runtime_permissions(
-                &FileSystemSandboxPolicy::restricted(vec![
-                    FileSystemSandboxEntry {
-                        path: FileSystemPath::Path { path: cwd.clone() },
-                        access: FileSystemAccessMode::Write,
-                    },
-                    FileSystemSandboxEntry {
-                        path: FileSystemPath::GlobPattern {
-                            pattern: "/tmp/project/**/*.env".to_string(),
-                        },
-                        access: FileSystemAccessMode::Deny,
-                    },
-                ]),
-                NetworkSandboxPolicy::Restricted,
-            );
-
-        assert!(requested_permissions_trust_project(
-            &ConfigOverrides {
-                permission_profile: Some(full_access_profile),
-                ..Default::default()
-            },
-            cwd.as_path()
-        ));
-        assert!(requested_permissions_trust_project(
-            &ConfigOverrides {
-                permission_profile: Some(workspace_write_profile),
-                ..Default::default()
-            },
-            cwd.as_path()
-        ));
-        assert!(requested_permissions_trust_project(
-            &ConfigOverrides {
-                permission_profile: Some(split_write_profile),
-                ..Default::default()
-            },
-            cwd.as_path()
-        ));
-        assert!(requested_permissions_trust_project(
-            &ConfigOverrides {
-                default_permissions: Some(BUILT_IN_PERMISSION_PROFILE_WORKSPACE.to_string()),
-                ..Default::default()
-            },
-            cwd.as_path()
-        ));
-        assert!(requested_permissions_trust_project(
-            &ConfigOverrides {
-                default_permissions: Some(
-                    BUILT_IN_PERMISSION_PROFILE_DANGER_FULL_ACCESS.to_string()
-                ),
-                ..Default::default()
-            },
-            cwd.as_path()
-        ));
-        assert!(!requested_permissions_trust_project(
-            &ConfigOverrides {
-                permission_profile: Some(read_only_profile),
-                ..Default::default()
-            },
-            cwd.as_path()
-        ));
-        assert!(!requested_permissions_trust_project(
-            &ConfigOverrides {
-                default_permissions: Some(BUILT_IN_PERMISSION_PROFILE_READ_ONLY.to_string()),
-                ..Default::default()
-            },
-            cwd.as_path()
-        ));
     }
 
     #[test]
@@ -672,10 +594,12 @@ mod thread_processor_behavior_tests {
         let session_provider = ModelProviderInfo {
             name: "session".to_string(),
             base_url: Some("http://127.0.0.1:8061/api/codex".to_string()),
+            model_catalog_url: None,
             env_key: None,
             env_key_instructions: None,
             experimental_bearer_token: None,
             auth: None,
+            gateway_oauth: None,
             aws: None,
             wire_api: WireApi::Responses,
             query_params: None,
@@ -687,6 +611,7 @@ mod thread_processor_behavior_tests {
             websocket_connect_timeout_ms: None,
             requires_openai_auth: false,
             supports_websockets: true,
+            supports_standalone_web_search: false,
         };
         let config_manager = ConfigManager::new(
             temp_dir.path().to_path_buf(),
@@ -735,9 +660,8 @@ mod thread_processor_behavior_tests {
     #[test]
     fn collect_resume_override_mismatches_includes_service_tier() {
         let cwd = test_path_buf("/tmp").abs();
-        let mut request = ThreadResumeParams {
+        let request = ThreadResumeParams {
             thread_id: "thread-1".to_string(),
-            dynamic_tools: None,
             history: None,
             path: None,
             model: None,
@@ -756,14 +680,15 @@ mod thread_processor_behavior_tests {
             exclude_turns: false,
             initial_turns_page: None,
         };
-        let mut config_snapshot = ThreadConfigSnapshot {
-            dynamic_tools: Vec::new(),
+        let config_snapshot = ThreadConfigSnapshot {
+            disabled_plugin_ids: Vec::new(),
             model: "gpt-5".to_string(),
             model_provider_id: "openai".to_string(),
             service_tier: Some("flex".to_string()),
             approval_policy: codex_protocol::protocol::AskForApproval::OnRequest,
             approvals_reviewer: codex_protocol::config_types::ApprovalsReviewer::User,
             permission_profile: codex_protocol::models::PermissionProfile::Disabled,
+            full_access: false,
             active_permission_profile: None,
             environments: TurnEnvironmentSelections::new(cwd, Vec::new()),
             workspace_roots: Vec::new(),
@@ -792,26 +717,6 @@ mod thread_processor_behavior_tests {
             collect_resume_override_mismatches(&request, &config_snapshot),
             vec!["service_tier requested=Some(\"priority\") active=Some(\"flex\")".to_string()]
         );
-
-        request.service_tier = None;
-        let tool: DynamicToolSpec = serde_json::from_value(serde_json::json!({
-            "type": "function",
-            "name": "editor_read",
-            "description": "Read an editor document",
-            "inputSchema": {"type": "object", "properties": {}}
-        }))
-        .unwrap();
-        config_snapshot.dynamic_tools = vec![tool.clone()];
-        assert!(!resume_dynamic_tools_differ(&request, &config_snapshot));
-        request.dynamic_tools = Some(Vec::new());
-        assert!(!resume_dynamic_tools_differ(&request, &config_snapshot));
-        request.dynamic_tools = Some(vec![tool]);
-        assert!(!resume_dynamic_tools_differ(&request, &config_snapshot));
-        config_snapshot.dynamic_tools.clear();
-        assert_eq!(
-            collect_resume_override_mismatches(&request, &config_snapshot),
-            vec!["dynamic tools differ from the loaded session".to_string()]
-        );
     }
 
     fn test_thread_metadata(
@@ -830,145 +735,6 @@ mod thread_processor_behavior_tests {
         metadata.model = model.map(ToString::to_string);
         metadata.reasoning_effort = reasoning_effort;
         Ok(metadata)
-    }
-
-    fn permission_resume_history() -> InitialHistory {
-        let context = serde_json::from_value(serde_json::json!({
-            "cwd": if cfg!(windows) { "C:\\workspace" } else { "/workspace" },
-            "approval_policy": "never",
-            "sandbox_policy": {"type": "danger-full-access"},
-            "model": "test-model",
-            "summary": "auto"
-        }))
-        .unwrap();
-        InitialHistory::Resumed(codex_protocol::protocol::ResumedHistory {
-            conversation_id: ThreadId::new(),
-            history: std::sync::Arc::new(vec![RolloutItem::TurnContext(context)]),
-            rollout_path: None,
-        })
-    }
-
-    #[test]
-    fn resume_permissions_restore_saved_policy_without_state_database() {
-        let mut overrides = ConfigOverrides::default();
-        merge_persisted_permissions(&permission_resume_history(), None, &mut overrides);
-        assert_eq!(
-            overrides.approval_policy,
-            Some(codex_protocol::protocol::AskForApproval::Never)
-        );
-        assert_eq!(
-            overrides.permission_profile,
-            Some(PermissionProfile::Disabled)
-        );
-    }
-
-    #[test]
-    fn resume_permissions_preserve_explicit_restrictions() {
-        let mut overrides = ConfigOverrides {
-            approval_policy: Some(codex_protocol::protocol::AskForApproval::OnRequest),
-            permission_profile: Some(PermissionProfile::read_only()),
-            ..Default::default()
-        };
-        merge_persisted_permissions(&permission_resume_history(), None, &mut overrides);
-        assert_eq!(
-            overrides.approval_policy,
-            Some(codex_protocol::protocol::AskForApproval::OnRequest)
-        );
-        assert_eq!(
-            overrides.permission_profile,
-            Some(PermissionProfile::read_only())
-        );
-
-        let mut overrides = ConfigOverrides::default();
-        let request = HashMap::from([
-            (
-                "approval_policy".to_string(),
-                serde_json::json!("on-request"),
-            ),
-            ("sandbox_mode".to_string(), serde_json::json!("read-only")),
-        ]);
-        merge_persisted_permissions(&permission_resume_history(), Some(&request), &mut overrides);
-        assert!(overrides.approval_policy.is_none());
-        assert!(overrides.permission_profile.is_none());
-    }
-
-    #[test]
-    fn resume_permissions_use_latest_saved_restrictions() {
-        let InitialHistory::Resumed(mut resumed) = permission_resume_history() else {
-            unreachable!()
-        };
-        let RolloutItem::TurnContext(mut context) = resumed.history[0].clone() else {
-            unreachable!()
-        };
-        context.approval_policy = codex_protocol::protocol::AskForApproval::OnRequest;
-        context.permission_profile = Some(PermissionProfile::read_only());
-        std::sync::Arc::make_mut(&mut resumed.history).push(RolloutItem::TurnContext(context));
-        let mut overrides = ConfigOverrides::default();
-        merge_persisted_permissions(&InitialHistory::Resumed(resumed), None, &mut overrides);
-        assert_eq!(
-            overrides.approval_policy,
-            Some(codex_protocol::protocol::AskForApproval::OnRequest)
-        );
-        assert_eq!(
-            overrides.permission_profile,
-            Some(PermissionProfile::read_only())
-        );
-    }
-
-    #[test]
-    fn resume_permissions_preserve_dotted_config_overrides() {
-        for (key, value) in [
-            (
-                "sandbox_workspace_write.network_access",
-                serde_json::json!(false),
-            ),
-            (
-                "permissions.restricted.network.enabled",
-                serde_json::json!(false),
-            ),
-        ] {
-            let mut overrides = ConfigOverrides::default();
-            let request = HashMap::from([(key.to_string(), value)]);
-            merge_persisted_permissions(
-                &permission_resume_history(),
-                Some(&request),
-                &mut overrides,
-            );
-            assert!(
-                overrides.permission_profile.is_none(),
-                "saved profile overrode {key}"
-            );
-        }
-        let mut overrides = ConfigOverrides::default();
-        let unrelated = HashMap::from([(
-            "permissions_unrelated".to_string(),
-            serde_json::json!(false),
-        )]);
-        merge_persisted_permissions(
-            &permission_resume_history(),
-            Some(&unrelated),
-            &mut overrides,
-        );
-        assert_eq!(
-            overrides.permission_profile,
-            Some(PermissionProfile::Disabled)
-        );
-    }
-
-    #[test]
-    fn resume_permissions_do_not_inherit_into_new_or_forked_threads() {
-        let InitialHistory::Resumed(resumed) = permission_resume_history() else {
-            unreachable!()
-        };
-        for history in [
-            InitialHistory::New,
-            InitialHistory::Forked((*resumed.history).clone()),
-        ] {
-            let mut overrides = ConfigOverrides::default();
-            merge_persisted_permissions(&history, None, &mut overrides);
-            assert!(overrides.approval_policy.is_none());
-            assert!(overrides.permission_profile.is_none());
-        }
     }
 
     #[test]
@@ -1155,9 +921,9 @@ mod thread_processor_behavior_tests {
 
     #[tokio::test]
     async fn read_summary_from_rollout_returns_empty_preview_when_no_user_message() -> Result<()> {
-        use codex_protocol::protocol::RolloutItem;
-        use codex_protocol::protocol::RolloutLine;
         use codex_protocol::protocol::SessionMetaLine;
+        use codex_rollout::RolloutItem;
+        use codex_rollout::RolloutLine;
         use std::fs;
         use std::fs::FileTimes;
 
@@ -1213,9 +979,9 @@ mod thread_processor_behavior_tests {
 
     #[tokio::test]
     async fn read_summary_from_rollout_preserves_agent_nickname() -> Result<()> {
-        use codex_protocol::protocol::RolloutItem;
-        use codex_protocol::protocol::RolloutLine;
         use codex_protocol::protocol::SessionMetaLine;
+        use codex_rollout::RolloutItem;
+        use codex_rollout::RolloutLine;
         use std::fs;
 
         let temp_dir = TempDir::new()?;
@@ -1265,9 +1031,9 @@ mod thread_processor_behavior_tests {
 
     #[tokio::test]
     async fn read_summary_from_rollout_preserves_forked_from_id() -> Result<()> {
-        use codex_protocol::protocol::RolloutItem;
-        use codex_protocol::protocol::RolloutLine;
         use codex_protocol::protocol::SessionMetaLine;
+        use codex_rollout::RolloutItem;
+        use codex_rollout::RolloutLine;
         use std::fs;
 
         let temp_dir = TempDir::new()?;
@@ -1309,7 +1075,10 @@ mod thread_processor_behavior_tests {
         let connection_id = ConnectionId(7);
 
         let (outgoing_tx, mut outgoing_rx) = tokio::sync::mpsc::channel(8);
-        let outgoing = Arc::new(OutgoingMessageSender::new(outgoing_tx));
+        let outgoing = Arc::new(OutgoingMessageSender::new(
+            outgoing_tx,
+            codex_analytics::AnalyticsEventsClient::disabled(),
+        ));
         let thread_outgoing = ThreadScopedOutgoingMessageSender::new(
             outgoing.clone(),
             vec![connection_id],
@@ -1323,6 +1092,7 @@ mod thread_processor_behavior_tests {
                     turn_id: "turn-1".to_string(),
                     item_id: "call-1".to_string(),
                     questions: vec![],
+                    is_blocking: true,
                     auto_resolution_ms: None,
                 },
             ))
@@ -1427,6 +1197,7 @@ mod thread_processor_behavior_tests {
                 "turn-1",
                 &EventMsg::TurnStarted(codex_protocol::protocol::TurnStartedEvent {
                     turn_id: "turn-1".to_string(),
+                    root_turn_id: None,
                     trace_id: None,
                     started_at: None,
                     model_context_window: None,
@@ -1538,13 +1309,8 @@ mod thread_processor_behavior_tests {
 
         assert!(
             manager
-                .try_ensure_connection_subscribed(
-                    thread_id,
-                    connection_b,
-                    /*experimental_raw_events*/ false,
-                )
+                .try_add_connection_to_thread(thread_id, connection_b)
                 .await
-                .is_some()
         );
         tokio::time::timeout(Duration::from_secs(1), has_connections.changed())
             .await
@@ -1567,9 +1333,7 @@ mod thread_processor_behavior_tests {
         let attach_connection = async {
             tokio::task::yield_now().await;
             manager
-                .try_ensure_connection_subscribed(
-                    thread_id, connection, /*experimental_raw_events*/ false,
-                )
+                .try_add_connection_to_thread(thread_id, connection)
                 .await
         };
         let ((), attached) = tokio::time::timeout(Duration::from_secs(1), async {
@@ -1577,7 +1341,7 @@ mod thread_processor_behavior_tests {
         })
         .await?;
 
-        assert!(attached.is_some());
+        assert!(attached);
         Ok(())
     }
 
@@ -1602,34 +1366,6 @@ mod thread_processor_behavior_tests {
                 .is_none()
         );
         assert!(!manager.has_subscribers(thread_id).await);
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn ensuring_connection_subscription_reports_new_and_repeat() -> Result<()> {
-        let manager = ThreadStateManager::new();
-        let thread_id = ThreadId::from_string("9ac103e3-4db9-4b0c-bc3d-4cb13570e247")?;
-        let connection = ConnectionId(1);
-
-        manager
-            .connection_initialized(connection, ConnectionCapabilities::default())
-            .await;
-
-        let (_, newly_subscribed) = manager
-            .try_ensure_connection_subscribed(
-                thread_id, connection, /*experimental_raw_events*/ false,
-            )
-            .await
-            .expect("connection should be live");
-        assert!(newly_subscribed);
-
-        let (_, newly_subscribed) = manager
-            .try_ensure_connection_subscribed(
-                thread_id, connection, /*experimental_raw_events*/ false,
-            )
-            .await
-            .expect("connection should remain live");
-        assert!(!newly_subscribed);
         Ok(())
     }
 
@@ -1674,43 +1410,23 @@ mod thread_processor_behavior_tests {
 
         assert!(
             manager
-                .try_ensure_connection_subscribed(
-                    other_thread_id,
-                    unrelated_supported_connection,
-                    /*experimental_raw_events*/ false,
-                )
+                .try_add_connection_to_thread(other_thread_id, unrelated_supported_connection)
                 .await
-                .is_some()
         );
         assert!(
             manager
-                .try_ensure_connection_subscribed(
-                    thread_id,
-                    later_supported_connection,
-                    /*experimental_raw_events*/ false,
-                )
+                .try_add_connection_to_thread(thread_id, later_supported_connection)
                 .await
-                .is_some()
         );
         assert!(
             manager
-                .try_ensure_connection_subscribed(
-                    thread_id,
-                    earlier_supported_connection,
-                    /*experimental_raw_events*/ false,
-                )
+                .try_add_connection_to_thread(thread_id, earlier_supported_connection)
                 .await
-                .is_some()
         );
         assert!(
             manager
-                .try_ensure_connection_subscribed(
-                    thread_id,
-                    unsupported_connection,
-                    /*experimental_raw_events*/ false,
-                )
+                .try_add_connection_to_thread(thread_id, unsupported_connection)
                 .await
-                .is_some()
         );
 
         assert_eq!(

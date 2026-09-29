@@ -1,10 +1,15 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use super::super::protocol::RemoteControlPairingStatusRequest;
 use super::super::protocol::StartRemoteControlPairingRequest;
 use super::*;
+use codex_http_client::HttpClientFactory;
+use codex_http_client::OutboundProxyPolicy;
 use codex_login::AuthKeyringBackendKind;
 use pretty_assertions::assert_eq;
 use std::io;
+
+fn http_client_factory() -> HttpClientFactory {
+    HttpClientFactory::new(OutboundProxyPolicy::ReqwestDefault)
+}
 
 fn remote_control_enrollment(
     remote_control_url: &str,
@@ -50,7 +55,7 @@ async fn auth_manager_with_replacement(
         /*forced_chatgpt_workspace_id*/ None,
         /*chatgpt_base_url*/ None,
         AuthKeyringBackendKind::default(),
-        /*auth_route_config*/ None,
+        codex_login::test_support::transport_default_auth_route_config(),
     )
     .await;
     let mut replacement_auth = remote_control_auth_dot_json(Some(replacement_account_id));
@@ -108,7 +113,10 @@ async fn pairing_error(status: &'static str, body: &'static str) -> (String, Str
     });
 
     let err = remote_control_enrollment(&remote_control_url, "remote-control-token")
-        .start_pairing(StartRemoteControlPairingRequest { manual_code: false })
+        .start_pairing(
+            &http_client_factory(),
+            StartRemoteControlPairingRequest { manual_code: false },
+        )
         .await
         .expect_err("pairing should fail");
     server_task.await.expect("server task should finish");
@@ -126,7 +134,10 @@ async fn pairing_response_error(body: serde_json::Value) -> String {
     });
 
     let err = remote_control_enrollment(&remote_control_url, "remote-control-token")
-        .start_pairing(StartRemoteControlPairingRequest { manual_code: false })
+        .start_pairing(
+            &http_client_factory(),
+            StartRemoteControlPairingRequest { manual_code: false },
+        )
         .await
         .expect_err("pairing should fail");
     server_task.await.expect("server task should finish");
@@ -153,10 +164,13 @@ async fn pairing_status_error(status: &'static str, body: &'static str) -> (io::
     });
 
     let err = remote_control_enrollment(&remote_control_url, "remote-control-token")
-        .pairing_status(RemoteControlPairingStatusRequest {
-            pairing_code: Some("pairing-code".to_string()),
-            manual_pairing_code: None,
-        })
+        .pairing_status(
+            &http_client_factory(),
+            RemoteControlPairingStatusRequest {
+                pairing_code: Some("pairing-code".to_string()),
+                manual_pairing_code: None,
+            },
+        )
         .await
         .expect_err("pairing status should fail");
     server_task.await.expect("server task should finish");
@@ -396,10 +410,13 @@ async fn remote_control_pairing_status_returns_pending() {
     });
 
     let response = remote_control_enrollment(&remote_control_url, "remote-control-token")
-        .pairing_status(RemoteControlPairingStatusRequest {
-            pairing_code: Some("pairing-code".to_string()),
-            manual_pairing_code: None,
-        })
+        .pairing_status(
+            &http_client_factory(),
+            RemoteControlPairingStatusRequest {
+                pairing_code: Some("pairing-code".to_string()),
+                manual_pairing_code: None,
+            },
+        )
         .await
         .expect("pairing status should succeed");
     server_task.await.expect("server task should finish");
@@ -428,10 +445,13 @@ async fn remote_control_pairing_status_accepts_manual_pairing_code() {
     });
 
     let response = remote_control_enrollment(&remote_control_url, "remote-control-token")
-        .pairing_status(RemoteControlPairingStatusRequest {
-            pairing_code: None,
-            manual_pairing_code: Some("ABCD-EFGH".to_string()),
-        })
+        .pairing_status(
+            &http_client_factory(),
+            RemoteControlPairingStatusRequest {
+                pairing_code: None,
+                manual_pairing_code: Some("ABCD-EFGH".to_string()),
+            },
+        )
         .await
         .expect("pairing status should succeed");
     server_task.await.expect("server task should finish");
@@ -455,10 +475,13 @@ async fn remote_control_pairing_status_returns_claimed() {
     });
 
     let response = remote_control_enrollment(&remote_control_url, "remote-control-token")
-        .pairing_status(RemoteControlPairingStatusRequest {
-            pairing_code: Some("pairing-code".to_string()),
-            manual_pairing_code: None,
-        })
+        .pairing_status(
+            &http_client_factory(),
+            RemoteControlPairingStatusRequest {
+                pairing_code: Some("pairing-code".to_string()),
+                manual_pairing_code: None,
+            },
+        )
         .await
         .expect("pairing status should succeed");
     server_task.await.expect("server task should finish");
@@ -771,6 +794,7 @@ async fn pairing_publishes_refresh_deferral_after_auth_recovery() {
             recovered_refresh_request.headers.get("authorization"),
             Some(&"Bearer fresh-token".to_string())
         );
+        let response_started_at = OffsetDateTime::now_utc();
         respond_with_status_and_headers(
             recovered_refresh_request.stream,
             "502 Bad Gateway",
@@ -778,6 +802,7 @@ async fn pairing_publishes_refresh_deferral_after_auth_recovery() {
             "upstream unavailable",
         )
         .await;
+        response_started_at
     });
     let codex_home = TempDir::new().expect("temp dir should create");
     let auth_manager = auth_manager_with_replacement(&codex_home, "account_id").await;
@@ -791,7 +816,6 @@ async fn pairing_publishes_refresh_deferral_after_auth_recovery() {
         .expect("current enrollment should exist")
         .expires_at = Some(OffsetDateTime::now_utc() - time::Duration::seconds(1));
 
-    let refresh_started_at = OffsetDateTime::now_utc();
     let refresh_err = remote_handle
         .start_pairing(
             RemoteControlPairingStartParams::default(),
@@ -807,7 +831,7 @@ async fn pairing_publishes_refresh_deferral_after_auth_recovery() {
         )
         .await
         .expect_err("published deadline should throttle the next pairing refresh");
-    server_task.await.expect("server task should finish");
+    let response_started_at = server_task.await.expect("server task should finish");
 
     assert!(refresh_err.to_string().contains("HTTP 502 Bad Gateway"));
     assert_eq!(deferred_err.kind(), io::ErrorKind::WouldBlock);
@@ -817,8 +841,8 @@ async fn pairing_publishes_refresh_deferral_after_auth_recovery() {
         .and_then(|enrollment| enrollment.next_refresh_at)
         .expect("required refresh failure should publish its retry deadline");
     assert!(
-        (refresh_started_at + time::Duration::seconds(120)
-            ..=refresh_completed_at + time::Duration::seconds(120))
+        (response_started_at + time::Duration::seconds(120)
+            ..=refresh_completed_at + time::Duration::seconds(150))
             .contains(&next_refresh_at)
     );
 }
@@ -1088,7 +1112,7 @@ async fn remote_control_handle_discards_pairing_response_after_auth_change() {
         /*forced_chatgpt_workspace_id*/ None,
         /*chatgpt_base_url*/ None,
         AuthKeyringBackendKind::default(),
-        /*auth_route_config*/ None,
+        codex_login::test_support::transport_default_auth_route_config(),
     )
     .await;
     let remote_handle =

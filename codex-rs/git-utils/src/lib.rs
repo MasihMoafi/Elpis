@@ -1,12 +1,19 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 mod apply;
 mod baseline;
 mod branch;
 mod errors;
 mod fsmonitor;
+mod git_process;
 mod info;
 mod operations;
 mod platform;
+mod status;
+mod trust;
+mod worktree;
+
+/// Git configuration that rejects implicitly discovered bare repositories while
+/// preserving repositories selected explicitly through `GIT_DIR` or `--git-dir`.
+pub const SAFE_BARE_REPOSITORY_CONFIG: &str = "safe.bareRepository=explicit";
 
 pub use apply::ApplyGitRequest;
 pub use apply::ApplyGitResult;
@@ -21,6 +28,7 @@ pub use baseline::diff_since_latest_init;
 pub use baseline::ensure_git_baseline_repository;
 pub use baseline::reset_git_repository;
 pub use branch::merge_base_with_head;
+pub use codex_protocol::SanitizedGitUrl;
 pub use codex_protocol::protocol::GitSha;
 pub use errors::GitToolingError;
 pub use fsmonitor::FsmonitorOverride;
@@ -36,11 +44,15 @@ pub use info::default_branch_name;
 pub use info::get_git_remote_urls;
 pub use info::get_git_remote_urls_assume_git_repo;
 pub use info::get_git_repo_root;
-pub use info::get_git_repo_root_with_fs;
-pub use info::get_has_changes;
 pub use info::get_head_commit_hash;
 pub use info::git_diff_to_remote;
 pub use info::local_git_branches;
 pub use info::recent_commits;
-pub use info::resolve_root_git_project_for_trust;
+pub use operations::git_config_override_env;
 pub use platform::create_symlink;
+pub use status::get_has_changes_in_repo;
+pub use trust::resolve_root_git_project_for_trust;
+pub use trust::resolve_root_git_project_uri_for_trust;
+pub use worktree::RepositoryIdentity;
+pub use worktree::linked_worktree_cwds;
+pub use worktree::repository_identity;

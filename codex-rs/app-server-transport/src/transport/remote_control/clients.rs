@@ -1,7 +1,8 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
+use super::auth::RemoteControlAuth;
 use super::auth::RemoteControlConnectionAuth;
 use super::auth::load_remote_control_auth;
 use super::auth::recover_remote_control_auth;
+use super::auth::request_client;
 use super::enroll::format_headers;
 use super::enroll::preview_remote_control_response_body;
 use super::protocol::normalize_remote_control_base_url;
@@ -12,12 +13,9 @@ use codex_app_server_protocol::RemoteControlClientsListParams;
 use codex_app_server_protocol::RemoteControlClientsListResponse;
 use codex_app_server_protocol::RemoteControlClientsRevokeParams;
 use codex_app_server_protocol::RemoteControlClientsRevokeResponse;
-use codex_login::AuthManager;
-use codex_login::default_client::build_reqwest_client;
 use serde::Deserialize;
 use std::io;
 use std::io::ErrorKind;
-use std::sync::Arc;
 use time::OffsetDateTime;
 use time::format_description::well_known::Rfc3339;
 use url::Url;
@@ -69,7 +67,7 @@ struct ClientManagementResponse {
 
 pub(super) async fn list_remote_control_clients(
     remote_control_url: &str,
-    auth_manager: &Arc<AuthManager>,
+    auth_manager: &RemoteControlAuth,
     params: RemoteControlClientsListParams,
 ) -> io::Result<RemoteControlClientsListResponse> {
     if params.environment_id.is_empty() {
@@ -124,7 +122,7 @@ pub(super) async fn list_remote_control_clients(
 
 pub(super) async fn revoke_remote_control_client(
     remote_control_url: &str,
-    auth_manager: &Arc<AuthManager>,
+    auth_manager: &RemoteControlAuth,
     params: RemoteControlClientsRevokeParams,
 ) -> io::Result<RemoteControlClientsRevokeResponse> {
     if params.environment_id.is_empty() {
@@ -165,7 +163,7 @@ pub(super) async fn revoke_remote_control_client(
 }
 
 async fn send_client_management_request(
-    auth_manager: &Arc<AuthManager>,
+    auth_manager: &RemoteControlAuth,
     request: ClientManagementRequest<'_>,
     action: &str,
 ) -> io::Result<ClientManagementResponse> {
@@ -187,7 +185,12 @@ async fn send_client_management_request_once(
     request: &ClientManagementRequest<'_>,
     action: &str,
 ) -> io::Result<ClientManagementResponse> {
-    let client = build_reqwest_client();
+    let endpoint = match request {
+        ClientManagementRequest::List { url, .. } | ClientManagementRequest::Revoke { url } => {
+            url.as_str()
+        }
+    };
+    let client = request_client(&auth.http_client_factory, endpoint).await?;
     let auth_headers = auth.request_headers()?;
     let request = match request {
         ClientManagementRequest::List { url, params } => {
@@ -208,7 +211,9 @@ async fn send_client_management_request_once(
                     .to_string(),
                 ));
             }
-            client.get((*url).clone()).query(&query)
+            let mut url = (*url).clone();
+            url.query_pairs_mut().extend_pairs(query);
+            client.get(url)
         }
         ClientManagementRequest::Revoke { url } => client.delete((*url).clone()),
     };
@@ -217,13 +222,16 @@ async fn send_client_management_request_once(
         .headers(auth_headers)
         .send()
         .await
-        .map_err(|err| io::Error::other(format!("failed to {action}: {err}")))?;
+        .map_err(|error| match error {
+            codex_http_client::HttpError::Policy(_) => super::auth::request_error(error),
+            error => io::Error::other(format!("failed to {action}: {error}")),
+        })?;
     let headers = response.headers().clone();
     let status = response.status();
     let body = response
         .bytes()
         .await
-        .map_err(|err| io::Error::other(format!("failed to read {action} response: {err}")))?
+        .map_err(super::auth::request_error)?
         .to_vec();
     Ok(ClientManagementResponse {
         status,

@@ -1,5 +1,5 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use anyhow::Result;
+use codex_core::TurnInputRequest;
 use codex_core::config::Config;
 use codex_features::Feature;
 use codex_login::CodexAuth;
@@ -14,7 +14,6 @@ use codex_protocol::openai_models::ModelsResponse;
 use codex_protocol::openai_models::ToolMode;
 use codex_protocol::protocol::EventMsg;
 use codex_protocol::protocol::MultiAgentVersion;
-use codex_protocol::protocol::Op;
 use codex_protocol::protocol::ThreadSettingsOverrides;
 use codex_protocol::user_input::UserInput;
 use core_test_support::responses;
@@ -134,16 +133,10 @@ async fn response_for_remote_model(
     )
     .await?;
     test.codex
-        .submit(Op::UserInput {
-            items: vec![UserInput::Text {
-                text: "list tools".into(),
-                text_elements: Vec::new(),
-            }],
-            final_output_json_schema: None,
-            responsesapi_client_metadata: None,
-            additional_context: Default::default(),
-            thread_settings: Default::default(),
-        })
+        .start_or_steer_turn(TurnInputRequest::user_input(vec![UserInput::Text {
+            text: "list tools".into(),
+            text_elements: Vec::new(),
+        }]))
         .await?;
     let mut warnings = Vec::new();
     loop {
@@ -233,6 +226,48 @@ async fn remote_tool_mode_selector_overrides_feature_flags() -> Result<()> {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn remote_code_mode_only_selector_fails_closed_when_host_is_disabled() -> Result<()> {
+    skip_if_no_network!(Ok(()));
+
+    let mut model = remote_model("test-tool-mode-code-mode-only-host-disabled");
+    model.tool_mode = Some(ToolMode::CodeModeOnly);
+    let response = response_for_remote_model(model, |config| {
+        config
+            .features
+            .disable(Feature::CodeModeHost)
+            .expect("code-mode host should be disabled");
+    })
+    .await?;
+
+    let tools = tool_names(&response.body);
+    assert!(
+        tools
+            .iter()
+            .any(|name| name == codex_code_mode::PUBLIC_TOOL_NAME)
+            && tools
+                .iter()
+                .any(|name| name == codex_code_mode::WAIT_TOOL_NAME),
+        "code-mode-only must retain code-mode tools: {tools:?}"
+    );
+    assert!(
+        tools
+            .iter()
+            .all(|name| { !matches!(name.as_str(), "shell" | "shell_command" | "exec_command") }),
+        "code-mode-only must never expose direct shell tools: {tools:?}"
+    );
+    assert!(
+        response
+            .warnings
+            .iter()
+            .any(|warning| warning.contains("Code mode will fail closed")),
+        "code-mode-only should explain that it fails closed: {:?}",
+        response.warnings
+    );
+
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn unsupported_code_mode_warning_is_emitted_each_turn() -> Result<()> {
     skip_if_no_network!(Ok(()));
 
@@ -288,16 +323,10 @@ async fn unsupported_code_mode_warning_is_emitted_each_turn() -> Result<()> {
     let mut warning_counts = Vec::new();
     for prompt in ["first turn", "second turn"] {
         test.codex
-            .submit(Op::UserInput {
-                items: vec![UserInput::Text {
-                    text: prompt.to_string(),
-                    text_elements: Vec::new(),
-                }],
-                final_output_json_schema: None,
-                responsesapi_client_metadata: None,
-                additional_context: Default::default(),
-                thread_settings: Default::default(),
-            })
+            .start_or_steer_turn(TurnInputRequest::user_input(vec![UserInput::Text {
+                text: prompt.to_string(),
+                text_elements: Vec::new(),
+            }]))
             .await?;
 
         let mut warning_count = 0;
@@ -322,13 +351,13 @@ async fn unsupported_code_mode_warning_is_emitted_each_turn() -> Result<()> {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn remote_multi_agent_selector_overrides_feature_flags() -> Result<()> {
+async fn multi_agent_config_precedence_overrides_remote_model_selector() -> Result<()> {
     skip_if_no_network!(Ok(()));
 
     let mut v2_model = remote_model("test-multi-agent-v2");
     v2_model.multi_agent_version = Some(MultiAgentVersion::V2);
-    let v2_body = response_body_for_remote_model(v2_model, |config| {
-        config.agent_max_threads = Some(3);
+    let disabled_body = response_body_for_remote_model(v2_model, |config| {
+        config.agents_enabled = false;
         config
             .features
             .enable(Feature::Collab)
@@ -339,19 +368,7 @@ async fn remote_multi_agent_selector_overrides_feature_flags() -> Result<()> {
             .expect("test config should allow feature update");
     })
     .await?;
-    assert!(tool_names(&v2_body).contains(&MULTI_AGENT_V2_NAMESPACE.to_string()));
-
-    let mut disabled_model = remote_model("test-multi-agent-disabled");
-    disabled_model.multi_agent_version = Some(MultiAgentVersion::Disabled);
-    let disabled_body = response_body_for_remote_model(disabled_model, |config| {
-        config
-            .features
-            .enable(Feature::MultiAgentV2)
-            .expect("test config should allow feature update");
-    })
-    .await?;
-    let disabled_tools = tool_names(&disabled_body);
-    assert!(disabled_tools.iter().all(|name| !matches!(
+    assert!(tool_names(&disabled_body).iter().all(|name| !matches!(
         name.as_str(),
         "multi_agent_v1"
             | MULTI_AGENT_V2_NAMESPACE
@@ -360,6 +377,33 @@ async fn remote_multi_agent_selector_overrides_feature_flags() -> Result<()> {
             | "wait_agent"
             | "list_agents"
     )));
+
+    let mut v1_model = remote_model("test-multi-agent-v1");
+    v1_model.multi_agent_version = Some(MultiAgentVersion::V1);
+    let v1_body = response_body_for_remote_model(v1_model, |config| {
+        config
+            .features
+            .enable(Feature::Collab)
+            .expect("test config should allow feature update");
+        config
+            .features
+            .disable(Feature::MultiAgentV2)
+            .expect("test config should allow feature update");
+    })
+    .await?;
+    assert!(tool_names(&v1_body).contains(&"multi_agent_v1".to_string()));
+
+    let mut disabled_model = remote_model("test-multi-agent-disabled");
+    disabled_model.multi_agent_version = Some(MultiAgentVersion::Disabled);
+    let v2_body = response_body_for_remote_model(disabled_model, |config| {
+        config.agents_enabled = false;
+        config
+            .features
+            .enable(Feature::MultiAgentV2)
+            .expect("test config should allow feature update");
+    })
+    .await?;
+    assert!(tool_names(&v2_body).contains(&MULTI_AGENT_V2_NAMESPACE.to_string()));
 
     Ok(())
 }
@@ -415,16 +459,10 @@ async fn remote_multi_agent_selector_uses_model_selected_before_first_turn() -> 
     assert_eq!(test.codex.multi_agent_version(), None);
 
     test.codex
-        .submit(Op::UserInput {
-            items: vec![UserInput::Text {
-                text: ROOT_PROMPT.into(),
-                text_elements: Vec::new(),
-            }],
-            final_output_json_schema: None,
-            responsesapi_client_metadata: None,
-            additional_context: Default::default(),
-            thread_settings: Default::default(),
-        })
+        .start_or_steer_turn(TurnInputRequest::user_input(vec![UserInput::Text {
+            text: ROOT_PROMPT.into(),
+            text_elements: Vec::new(),
+        }]))
         .await?;
     wait_for_event(&test.codex, |event| {
         matches!(event, EventMsg::TurnComplete(_))

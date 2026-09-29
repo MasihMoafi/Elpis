@@ -1,4 +1,3 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use super::*;
 
 const REMOTE_CONTROL_APP_SERVER_CLIENT_NAME_NONE: &str = "";
@@ -158,19 +157,20 @@ mod tests {
     use super::StateRuntime;
     use super::test_support::unique_temp_dir;
     use crate::migrations::STATE_MIGRATOR;
-    use crate::state_db_path;
+    use codex_utils_absolute_path::test_support::PathExt;
     use pretty_assertions::assert_eq;
-    use sqlx::SqlitePool;
     use sqlx::migrate::Migrator;
-    use sqlx::sqlite::SqliteConnectOptions;
     use std::borrow::Cow;
 
     #[tokio::test]
     async fn remote_control_enrollment_round_trips_by_target_and_account() {
         let codex_home = unique_temp_dir();
-        let runtime = StateRuntime::init(codex_home.clone(), "test-provider".to_string())
-            .await
-            .expect("initialize runtime");
+        let runtime = StateRuntime::init(
+            crate::SqliteConfig::new_for_testing(codex_home.as_path().abs()),
+            "test-provider".to_string(),
+        )
+        .await
+        .expect("initialize runtime");
 
         runtime
             .upsert_remote_control_enrollment(&RemoteControlEnrollmentRecord {
@@ -248,9 +248,12 @@ mod tests {
     #[tokio::test]
     async fn delete_remote_control_enrollment_removes_only_matching_entry() {
         let codex_home = unique_temp_dir();
-        let runtime = StateRuntime::init(codex_home.clone(), "test-provider".to_string())
-            .await
-            .expect("initialize runtime");
+        let runtime = StateRuntime::init(
+            crate::SqliteConfig::new_for_testing(codex_home.as_path().abs()),
+            "test-provider".to_string(),
+        )
+        .await
+        .expect("initialize runtime");
 
         runtime
             .upsert_remote_control_enrollment(&RemoteControlEnrollmentRecord {
@@ -332,20 +335,25 @@ mod tests {
             .await
             .expect("create codex home");
         let old_state_migrator = Migrator {
-            migrations: Cow::Owned(STATE_MIGRATOR.migrations[..36].to_vec()),
+            migrations: Cow::Owned(
+                STATE_MIGRATOR
+                    .migrations
+                    .iter()
+                    .filter(|migration| migration.version <= 36)
+                    .cloned()
+                    .collect(),
+            ),
             ignore_missing: false,
             locking: true,
             no_tx: false,
             table_name: STATE_MIGRATOR.table_name.clone(),
             create_schemas: STATE_MIGRATOR.create_schemas.clone(),
         };
-        let pool = SqlitePool::connect_with(
-            SqliteConnectOptions::new()
-                .filename(state_db_path(codex_home.as_path()))
-                .create_if_missing(true),
-        )
-        .await
-        .expect("open old state db");
+        let sqlite = crate::SqliteConfig::new_for_testing(codex_home.as_path().abs());
+        let pool = sqlite
+            .open_read_write_pool(&sqlite.state_db_path())
+            .await
+            .expect("open old state db");
         old_state_migrator
             .run(&pool)
             .await
@@ -363,9 +371,12 @@ mod tests {
         .expect("insert legacy enrollment");
         pool.close().await;
 
-        let runtime = StateRuntime::init(codex_home.clone(), "test-provider".to_string())
-            .await
-            .expect("initialize runtime");
+        let runtime = StateRuntime::init(
+            crate::SqliteConfig::new_for_testing(codex_home.as_path().abs()),
+            "test-provider".to_string(),
+        )
+        .await
+        .expect("initialize runtime");
         let actual = runtime
             .get_remote_control_enrollment(
                 "wss://example.com/backend-api/wham/remote/control/server",

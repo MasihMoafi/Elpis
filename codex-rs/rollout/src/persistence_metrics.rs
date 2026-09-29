@@ -7,9 +7,10 @@ use codex_protocol::ThreadId;
 use codex_protocol::items::TurnItem;
 use codex_protocol::models::ResponseItem;
 use codex_protocol::protocol::EventMsg;
-use codex_protocol::protocol::RolloutItem;
 use codex_protocol::protocol::ThreadHistoryMode;
 
+use crate::ResponseItemEnvelope;
+use crate::RolloutItem;
 use crate::policy::is_persisted_rollout_item;
 
 const ITEM_BYTES_METRIC: &str = "codex.rollout.persistence.item_bytes";
@@ -234,7 +235,24 @@ fn rollout_item_type(item: &RolloutItem) -> String {
         }
         RolloutItem::Compacted(_) => "compacted".to_string(),
         RolloutItem::TurnContext(_) => "turn_context".to_string(),
+        RolloutItem::TokenUsageRecord(_) => "token_usage_record".to_string(),
         RolloutItem::WorldState(_) => "world_state".to_string(),
+        RolloutItem::RetainedContext(_) => "retained_context".to_string(),
+        RolloutItem::SecurityRiskScore(_) => "security_risk_score".to_string(),
+        RolloutItem::RealtimeItem(item) => match &item.content {
+            codex_protocol::realtime::RealtimeItemContent::RealtimeSessionStarted => {
+                "realtime.session_started".to_string()
+            }
+            codex_protocol::realtime::RealtimeItemContent::TranscriptSegment { .. } => {
+                "realtime.transcript_segment".to_string()
+            }
+            codex_protocol::realtime::RealtimeItemContent::BemItemPromoted { .. } => {
+                "realtime.bem_item_promoted".to_string()
+            }
+            codex_protocol::realtime::RealtimeItemContent::RealtimeSessionClosed { .. } => {
+                "realtime.session_closed".to_string()
+            }
+        },
         RolloutItem::EventMsg(EventMsg::ItemCompleted(event)) => {
             format!("event.item_completed.{}", turn_item_type(&event.item))
         }
@@ -245,6 +263,7 @@ fn rollout_item_type(item: &RolloutItem) -> String {
 fn turn_item_type(item: &TurnItem) -> &'static str {
     match item {
         TurnItem::UserMessage(_) => "user_message",
+        TurnItem::FunctionCallOutput(_) => "function_call_output",
         TurnItem::HookPrompt(_) => "hook_prompt",
         TurnItem::AgentMessage(_) => "agent_message",
         TurnItem::Plan(_) => "plan",
@@ -265,8 +284,8 @@ fn turn_item_type(item: &TurnItem) -> &'static str {
     }
 }
 
-fn response_item_type(item: &ResponseItem) -> &'static str {
-    match item {
+fn response_item_type(item: &ResponseItemEnvelope) -> &'static str {
+    match &item.item {
         ResponseItem::Message { .. } => "response.message",
         ResponseItem::AdditionalTools { .. } => "response.additional_tools",
         ResponseItem::AgentMessage { .. } => "response.agent_message",
@@ -281,6 +300,7 @@ fn response_item_type(item: &ResponseItem) -> &'static str {
         ResponseItem::WebSearchCall { .. } => "response.web_search_call",
         ResponseItem::ImageGenerationCall { .. } => "response.image_generation_call",
         ResponseItem::Compaction { .. } => "response.compaction",
+        ResponseItem::ConfigurationUpdate { .. } => "response.configuration_update",
         ResponseItem::CompactionTrigger { .. } => "response.compaction_trigger",
         ResponseItem::ContextCompaction { .. } => "response.context_compaction",
         ResponseItem::Other => "response.other",

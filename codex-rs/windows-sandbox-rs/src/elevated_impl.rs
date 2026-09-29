@@ -1,4 +1,3 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use codex_protocol::models::PermissionProfile;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use std::collections::HashMap;
@@ -14,8 +13,8 @@ pub struct ElevatedSandboxProfileCaptureRequest<'a> {
     pub env_map: HashMap<String, String>,
     pub timeout_ms: Option<u64>,
     pub cancellation: Option<crate::WindowsSandboxCancellationToken>,
-    pub use_private_desktop: bool,
     pub proxy_enforced: bool,
+    pub network_proxy_restricting_sid: Option<String>,
     pub read_roots_override: Option<&'a [PathBuf]>,
     pub read_roots_include_platform_defaults: bool,
     pub write_roots_override: Option<&'a [PathBuf]>,
@@ -55,6 +54,7 @@ mod windows_impl {
     use codex_utils_absolute_path::AbsolutePathBuf;
     use std::fs::File;
     use std::path::Path;
+    use std::path::PathBuf;
     use std::sync::Arc;
     use std::sync::atomic::AtomicBool;
     use std::sync::atomic::Ordering;
@@ -109,8 +109,8 @@ mod windows_impl {
             mut env_map,
             timeout_ms,
             cancellation,
-            use_private_desktop,
             proxy_enforced,
+            network_proxy_restricting_sid,
             read_roots_override,
             read_roots_include_platform_defaults,
             write_roots_override,
@@ -182,6 +182,24 @@ mod windows_impl {
         }
 
         (|| -> Result<CaptureResult> {
+            let desktop_policy = crate::desktop::DesktopPolicy::elevated(
+                crate::setup::SandboxSetupRequest {
+                    permissions: &permissions,
+                    command_cwd: cwd,
+                    env_map: &env_map,
+                    codex_home,
+                    proxy_enforced,
+                },
+                crate::setup::SetupRootOverrides {
+                    read_roots: read_roots_override.map(<[PathBuf]>::to_vec),
+                    read_roots_include_platform_defaults,
+                    write_roots: write_roots_override.map(<[PathBuf]>::to_vec),
+                    deny_read_paths: Some(deny_read_paths_override.clone()),
+                    deny_write_paths: Some(deny_write_paths_override.clone()),
+                },
+                &cap_sids,
+                network_proxy_restricting_sid.as_deref(),
+            )?;
             let spawn_request = SpawnRequest {
                 command: command.clone(),
                 cwd: cwd.to_path_buf(),
@@ -191,10 +209,11 @@ mod windows_impl {
                 codex_home: sandbox_base.clone(),
                 real_codex_home: codex_home.to_path_buf(),
                 cap_sids,
+                network_proxy_restricting_sid,
                 timeout_ms,
                 tty: false,
                 stdin_open: false,
-                use_private_desktop,
+                private_desktop_name: None,
             };
             let transport = retry_runner_spawn_once(
                 sandbox_creds,
@@ -206,6 +225,7 @@ mod windows_impl {
                         &sandbox_creds,
                         logs_base_dir,
                         spawn_request.clone(),
+                        Some(&desktop_policy),
                     )
                 },
                 || {
@@ -263,6 +283,7 @@ mod windows_impl {
                 let _ = cancel_handle.join();
             }
             drop(pipe_write);
+            crate::elevated::runner_metrics::record_command(result.as_ref().ok().copied());
             let (exit_code, timed_out) = result?;
 
             if exit_code == 0 {

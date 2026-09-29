@@ -6,6 +6,7 @@ use std::time::Instant;
 use anyhow::Context;
 use anyhow::Result;
 use codex_config::types::AuthKeyringBackendKind;
+use codex_keyring_store::KeyringStore;
 use codex_keyring_store::tests::MockKeyringStore;
 use oauth2::AccessToken;
 use oauth2::RefreshToken;
@@ -26,6 +27,8 @@ use tracing::subscriber::Interest;
 use super::OAuthStore;
 use super::OAuthStoreLock;
 use super::OAuthStoreLockFailure;
+use super::OAuthStoreLockMode;
+use crate::oauth::StoredOAuthCredentialSnapshot;
 use crate::oauth::StoredOAuthTokens;
 use crate::oauth::WrappedOAuthTokenResponse;
 use crate::oauth::fallback_file_path;
@@ -37,6 +40,7 @@ use crate::oauth::save_oauth_tokens_to_file_with_lock_held;
 use crate::oauth::save_oauth_tokens_to_secrets_keyring_with_lock_held;
 use crate::oauth::save_oauth_tokens_with_keyring;
 use crate::oauth::save_oauth_tokens_with_keyring_with_fallback_to_file;
+use crate::oauth::stored_oauth_credential_snapshot;
 use crate::oauth::test_support::TempCodexHome;
 use codex_config::types::OAuthCredentialsStoreMode;
 
@@ -99,10 +103,84 @@ fn sample_tokens() -> StoredOAuthTokens {
     StoredOAuthTokens {
         server_name: "test-server".to_string(),
         url: "https://example.test".to_string(),
+        issuer: Some("https://issuer.example.test".to_string()),
         client_id: "client-id".to_string(),
         token_response: WrappedOAuthTokenResponse(response),
         expires_at,
     }
+}
+
+#[test]
+fn file_credentials_keep_repeated_local_prefixes_isolated() -> Result<()> {
+    let _env = TempCodexHome::new();
+    let config: codex_config::McpServerConfig = serde_json::from_value(serde_json::json!({
+        "url": "https://example.test",
+    }))?;
+    let mut first = sample_tokens();
+    first.server_name = config.oauth_credential_name("local:foo").into_owned();
+    first.expires_at = None;
+    first.token_response.0.set_expires_in(None);
+    save_oauth_tokens_to_file(&first)?;
+
+    let second_name = config.oauth_credential_name("local:local:foo");
+    assert_eq!(load_oauth_tokens_from_file(&second_name, &first.url)?, None);
+
+    let mut second = first.clone();
+    second.server_name = second_name.into_owned();
+    second
+        .token_response
+        .0
+        .set_access_token(AccessToken::new("second-token".to_string()));
+    save_oauth_tokens_to_file(&second)?;
+
+    for expected in [first, second] {
+        assert_eq!(
+            load_oauth_tokens_from_file(&expected.server_name, &expected.url)?,
+            Some(expected)
+        );
+    }
+    Ok(())
+}
+
+#[test]
+fn legacy_rmcp_oauth_keyring_credentials_remain_readable() -> Result<()> {
+    let _env = TempCodexHome::new();
+    let keyring_store = MockKeyringStore::default();
+    let mut expected = sample_tokens();
+    expected.expires_at = None;
+    expected.token_response.0.set_expires_in(None);
+
+    let serialized = serde_json::json!({
+        "server_name": "test-server",
+        "url": "https://example.test",
+        "client_id": "client-id",
+        "token_response": {
+            "access_token": "access-token",
+            "token_type": "Bearer",
+            "refresh_token": "refresh-token",
+            "scope": "scope-a scope-b",
+        },
+    })
+    .to_string();
+    let key = crate::oauth::compute_store_key(&expected.server_name, &expected.url)?;
+    keyring_store.save(crate::oauth::KEYRING_SERVICE, &key, &serialized)?;
+
+    let resolved = resolve_oauth_tokens_from_store_policy(
+        &keyring_store,
+        &expected.server_name,
+        &expected.url,
+        OAuthCredentialsStoreMode::Auto,
+        AuthKeyringBackendKind::Direct,
+    )?
+    .expect("OAuth credentials written before the rmcp upgrade should remain readable");
+
+    assert_eq!(
+        resolved.store,
+        crate::oauth::ResolvedOAuthCredentialStore::Keyring(AuthKeyringBackendKind::Direct)
+    );
+    assert_tokens_match_without_expiry(&resolved.tokens, &expected);
+    assert!(crate::oauth::oauth_tokens_are_usable(&resolved.tokens));
+    Ok(())
 }
 
 const LOCK_HOLDER_CHILD_TEST: &str =
@@ -131,10 +209,11 @@ fn store_lock_is_released_when_holder_process_exits() -> Result<()> {
             std::thread::sleep(Duration::from_millis(/*millis*/ 20));
         }
 
-        let error = match OAuthStoreLock::acquire_in(
+        let error = match OAuthStoreLock::acquire_in_with_mode(
             env.path(),
             OAuthStore::File,
             Duration::from_millis(/*millis*/ 100),
+            OAuthStoreLockMode::Exclusive,
         ) {
             Ok(_) => {
                 anyhow::bail!("live holder process should keep the OAuth store lock unavailable")
@@ -150,10 +229,11 @@ fn store_lock_is_released_when_holder_process_exits() -> Result<()> {
             .wait()
             .context("wait for killed OAuth store lock holder process")?;
         assert!(!status.success());
-        let _lock = OAuthStoreLock::acquire_in(
+        let _lock = OAuthStoreLock::acquire_in_with_mode(
             env.path(),
             OAuthStore::File,
             Duration::from_secs(/*secs*/ 1),
+            OAuthStoreLockMode::Exclusive,
         )?;
         Ok(())
     })();
@@ -173,7 +253,7 @@ fn store_lock_is_released_when_holder_process_exits_child() -> Result<()> {
         Some(path) => std::path::PathBuf::from(path),
         None => return Ok(()),
     };
-    let _lock = OAuthStoreLock::acquire(OAuthStore::File)?;
+    let _lock = OAuthStoreLock::acquire_for_write(OAuthStore::File)?;
     std::fs::write(ready_file, b"ready")?;
     loop {
         std::thread::sleep(Duration::from_secs(/*secs*/ 60));
@@ -234,6 +314,73 @@ fn auto_load_secrets_lock_failure_does_not_fall_back_to_file() -> Result<()> {
     Ok(())
 }
 
+#[test]
+fn oauth_credential_probes_skip_contended_file_and_secrets_stores() -> Result<()> {
+    let _env = TempCodexHome::new();
+    let tokens = sample_tokens();
+    let file = OAuthCredentialsStoreMode::File;
+    let auto = OAuthCredentialsStoreMode::Auto;
+    let direct = AuthKeyringBackendKind::Direct;
+    let secrets = AuthKeyringBackendKind::Secrets;
+    save_oauth_tokens_to_file(&tokens)?;
+    let snapshot =
+        stored_oauth_credential_snapshot(&tokens.server_name, &tokens.url, file, direct)?
+            .expect("fallback credentials should exist before contention");
+    let reload = |store_mode, keyring_backend_kind| {
+        snapshot.reload(
+            &tokens.server_name,
+            &tokens.url,
+            store_mode,
+            keyring_backend_kind,
+        )
+    };
+    let probe = |store_mode, keyring_backend_kind| {
+        StoredOAuthCredentialSnapshot::for_runtime_refresh(
+            /*previous*/ None,
+            &tokens.server_name,
+            &tokens.url,
+            store_mode,
+            keyring_backend_kind,
+        )
+    };
+    let refresh = |url| {
+        StoredOAuthCredentialSnapshot::for_runtime_refresh(
+            Some(&snapshot),
+            &tokens.server_name,
+            url,
+            file,
+            direct,
+        )
+    };
+
+    {
+        let _lock = OAuthStoreLock::acquire_for_write(OAuthStore::File)?;
+        assert_eq!(reload(file, direct)?, None);
+        assert_eq!(reload(auto, secrets)?, None);
+        assert_eq!(probe(file, direct)?, None);
+        let contended = refresh(&tokens.url)?.expect("the previous snapshot should be retained");
+        assert!(contended.store_was_contended());
+        assert_eq!(contended, snapshot);
+        assert_eq!(
+            refresh("https://another.example.test")?,
+            None,
+            "store contention must not replay credentials for another endpoint",
+        );
+    }
+
+    assert_eq!(reload(file, direct)?, Some(snapshot.credentials().clone()));
+    let refreshed = refresh(&tokens.url)?.expect("the unlocked store should still contain tokens");
+    assert!(!refreshed.store_was_contended());
+
+    let _lock = OAuthStoreLock::acquire_for_write(OAuthStore::Secrets)?;
+    assert_eq!(
+        probe(auto, secrets)?,
+        None,
+        "a locked Secrets authority must not fall back to the stale File entry",
+    );
+    Ok(())
+}
+
 struct LockContentionSubscriber {
     contended_tx: mpsc::Sender<()>,
 }
@@ -286,8 +433,12 @@ where
     T: Send + 'static,
 {
     std::thread::scope(|scope| {
-        let held_lock =
-            OAuthStoreLock::acquire_in(codex_home, store, Duration::from_millis(/*millis*/ 100))?;
+        let held_lock = OAuthStoreLock::acquire_in_with_mode(
+            codex_home,
+            store,
+            Duration::from_millis(/*millis*/ 100),
+            OAuthStoreLockMode::Exclusive,
+        )?;
         let (contended_tx, contended_rx) = mpsc::channel();
         let worker = scope.spawn(move || {
             tracing::subscriber::with_default(LockContentionSubscriber { contended_tx }, operation)
@@ -304,6 +455,90 @@ where
             .join()
             .expect("contending OAuth store worker should finish")
     })
+}
+
+#[test]
+fn aggregate_store_readers_share_access_while_writers_remain_exclusive() -> Result<()> {
+    let env = TempCodexHome::new();
+
+    for store in [OAuthStore::File, OAuthStore::Secrets] {
+        let readers = (0..2)
+            .map(|_| {
+                OAuthStoreLock::acquire_in_with_mode(
+                    env.path(),
+                    store,
+                    Duration::from_millis(/*millis*/ 100),
+                    OAuthStoreLockMode::Shared,
+                )
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+
+        let writer_error = match OAuthStoreLock::acquire_in_with_mode(
+            env.path(),
+            store,
+            Duration::from_millis(/*millis*/ 100),
+            OAuthStoreLockMode::Exclusive,
+        ) {
+            Ok(_) => anyhow::bail!("an active OAuth store reader must exclude writers"),
+            Err(error) => error,
+        };
+        assert!(matches!(
+            writer_error,
+            OAuthStoreLockFailure::Timeout { .. }
+        ));
+        drop(readers);
+        let _writer = OAuthStoreLock::acquire_in_with_mode(
+            env.path(),
+            store,
+            Duration::from_millis(/*millis*/ 100),
+            OAuthStoreLockMode::Exclusive,
+        )?;
+    }
+
+    Ok(())
+}
+
+#[test]
+fn aggregate_store_credential_loads_can_share_an_existing_reader() -> Result<()> {
+    let env = TempCodexHome::new();
+    let keyring_store = MockKeyringStore::default();
+    let tokens = sample_tokens();
+    save_oauth_tokens_to_file(&tokens)?;
+    save_oauth_tokens_with_keyring(
+        &keyring_store,
+        AuthKeyringBackendKind::Secrets,
+        &tokens.server_name,
+        &tokens,
+    )?;
+
+    let file_reader = OAuthStoreLock::acquire_in_with_mode(
+        env.path(),
+        OAuthStore::File,
+        Duration::from_millis(/*millis*/ 100),
+        OAuthStoreLockMode::Shared,
+    )?;
+    let file_tokens = load_oauth_tokens_from_file(&tokens.server_name, &tokens.url)?
+        .expect("a File credential read should coexist with another reader");
+    assert_tokens_match_without_expiry(&file_tokens, &tokens);
+    drop(file_reader);
+
+    let secrets_reader = OAuthStoreLock::acquire_in_with_mode(
+        env.path(),
+        OAuthStore::Secrets,
+        Duration::from_millis(/*millis*/ 100),
+        OAuthStoreLockMode::Shared,
+    )?;
+    let secrets_tokens = load_oauth_tokens_from_keyring(
+        &keyring_store,
+        AuthKeyringBackendKind::Secrets,
+        &tokens.server_name,
+        &tokens.url,
+    )?
+    .expect("a Secrets credential read should coexist with another reader");
+    assert_tokens_match_without_expiry(&secrets_tokens, &tokens);
+    drop(secrets_reader);
+
+    Ok(())
 }
 
 #[test]

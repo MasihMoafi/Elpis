@@ -1,4 +1,3 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 //! Shared helpers for filtering and matching built-in and model service-tier slash commands.
 //!
 //! The same sandbox- and feature-gating rules are used by both the composer
@@ -59,31 +58,27 @@ pub(crate) struct BuiltinCommandFlags {
     pub(crate) collaboration_modes_enabled: bool,
     pub(crate) connectors_enabled: bool,
     pub(crate) plugins_command_enabled: bool,
+    pub(crate) token_activity_command_enabled: bool,
     pub(crate) service_tier_commands_enabled: bool,
     pub(crate) goal_command_enabled: bool,
-    pub(crate) personality_command_enabled: bool,
+    pub(crate) voice_command_enabled: bool,
+    pub(crate) worktrees_enabled: bool,
     pub(crate) allow_elevate_sandbox: bool,
     pub(crate) side_conversation_active: bool,
-}
-
-/// Whether a feature gate makes this command genuinely unavailable, as opposed to
-/// the presentation rules — popup visibility and the side-conversation subset — that
-/// only decide what gets *listed*. A gated-off command does not exist for this build;
-/// a merely unlisted one still dispatches when typed.
-fn enabled_by_feature_gates(cmd: SlashCommand, flags: BuiltinCommandFlags) -> bool {
-    (flags.allow_elevate_sandbox || cmd != SlashCommand::ElevateSandbox)
-        && (flags.collaboration_modes_enabled || cmd != SlashCommand::Plan)
-        && (flags.connectors_enabled || cmd != SlashCommand::Apps)
-        && (flags.plugins_command_enabled || cmd != SlashCommand::Plugins)
-        && (flags.goal_command_enabled || cmd != SlashCommand::Goal)
-        && (flags.personality_command_enabled || cmd != SlashCommand::Personality)
 }
 
 /// Return the built-ins that should be visible/usable for the current input.
 pub(crate) fn builtins_for_input(flags: BuiltinCommandFlags) -> Vec<(&'static str, SlashCommand)> {
     built_in_slash_commands()
         .into_iter()
-        .filter(|(_, cmd)| enabled_by_feature_gates(*cmd, flags))
+        .filter(|(_, cmd)| flags.allow_elevate_sandbox || *cmd != SlashCommand::ElevateSandbox)
+        .filter(|(_, cmd)| flags.collaboration_modes_enabled || *cmd != SlashCommand::Plan)
+        .filter(|(_, cmd)| flags.connectors_enabled || *cmd != SlashCommand::Apps)
+        .filter(|(_, cmd)| flags.plugins_command_enabled || *cmd != SlashCommand::Plugins)
+        .filter(|(_, cmd)| flags.token_activity_command_enabled || *cmd != SlashCommand::Usage)
+        .filter(|(_, cmd)| flags.goal_command_enabled || *cmd != SlashCommand::Goal)
+        .filter(|(_, cmd)| flags.worktrees_enabled || *cmd != SlashCommand::Worktree)
+        .filter(|(_, cmd)| flags.voice_command_enabled || *cmd != SlashCommand::Voice)
         .filter(|(_, cmd)| !flags.side_conversation_active || cmd.available_in_side_conversation())
         .collect()
 }
@@ -113,17 +108,23 @@ pub(crate) fn commands_for_input(
 
 /// Find a single built-in command by a recognized name or alias, after applying feature gating.
 ///
-/// Lookup applies feature gates only. Popup visibility and the side-conversation subset are
-/// presentation rules, so a typed command that is merely unlisted still resolves here and lets
-/// dispatch answer with a specific message — routing lookup through the popup's list instead
-/// makes every hidden-but-working command behave as though it does not exist.
+/// Side-conversation and token-activity gating are intentionally enforced by dispatch rather than
+/// command lookup so a typed command can produce a specific unavailable message while the popup
+/// still hides it.
 pub(crate) fn find_builtin_command(name: &str, flags: BuiltinCommandFlags) -> Option<SlashCommand> {
     let cmd = SlashCommand::from_str(name).ok().or_else(|| {
         let repeated_os = name.strip_prefix('g')?.strip_suffix("al")?;
         (!repeated_os.is_empty() && repeated_os.bytes().all(|byte| byte == b'o'))
             .then_some(SlashCommand::Goal)
     })?;
-    enabled_by_feature_gates(cmd, flags).then_some(cmd)
+    builtins_for_input(BuiltinCommandFlags {
+        token_activity_command_enabled: true,
+        side_conversation_active: false,
+        ..flags
+    })
+    .into_iter()
+    .any(|(_, visible_cmd)| visible_cmd == cmd)
+    .then_some(cmd)
 }
 
 pub(crate) fn find_slash_command(
@@ -168,12 +169,26 @@ mod tests {
             collaboration_modes_enabled: true,
             connectors_enabled: true,
             plugins_command_enabled: true,
+            token_activity_command_enabled: true,
             service_tier_commands_enabled: true,
             goal_command_enabled: true,
-            personality_command_enabled: true,
+            voice_command_enabled: true,
+            worktrees_enabled: true,
             allow_elevate_sandbox: true,
             side_conversation_active: false,
         }
+    }
+
+    #[test]
+    fn worktree_command_lookup_requires_feature() {
+        assert_eq!(
+            find_builtin_command("worktree", BuiltinCommandFlags::default()),
+            None
+        );
+        assert_eq!(
+            find_builtin_command("worktree", all_enabled_flags()),
+            Some(SlashCommand::Worktree)
+        );
     }
 
     #[test]
@@ -199,17 +214,19 @@ mod tests {
     }
 
     #[test]
-    fn kill_command_resolves_for_dispatch() {
+    fn stop_command_resolves_for_dispatch() {
         assert_eq!(
-            find_builtin_command("kill", all_enabled_flags()),
+            find_builtin_command("stop", all_enabled_flags()),
             Some(SlashCommand::Stop)
         );
     }
 
     #[test]
-    fn removed_stop_names_do_not_resolve() {
-        assert_eq!(find_builtin_command("stop", all_enabled_flags()), None);
-        assert_eq!(find_builtin_command("clean", all_enabled_flags()), None);
+    fn clean_command_alias_resolves_for_dispatch() {
+        assert_eq!(
+            find_builtin_command("clean", all_enabled_flags()),
+            Some(SlashCommand::Stop)
+        );
     }
 
     #[test]
@@ -265,18 +282,29 @@ mod tests {
         assert_eq!(find_builtin_command("goal", flags), None);
     }
 
-    /// `/usage` reports the session's own context, continuity, and token totals, none of
-    /// which come from an account. It used to be gated on having a Codex backend login,
-    /// which took the command away entirely -- not just its rate-limit section -- from
-    /// anyone running on a local or third-party provider.
     #[test]
-    fn usage_command_is_available_without_an_account() {
-        let flags = BuiltinCommandFlags::default();
-        assert!(
+    fn voice_command_is_hidden_when_disabled() {
+        let mut flags = all_enabled_flags();
+        flags.voice_command_enabled = false;
+        assert_eq!(find_builtin_command("voice", flags), None);
+    }
+
+    #[test]
+    fn usage_command_is_hidden_from_input_when_account_token_activity_is_disabled() {
+        let mut flags = all_enabled_flags();
+        flags.token_activity_command_enabled = false;
+        assert_eq!(
             builtins_for_input(flags)
                 .into_iter()
-                .any(|(_, command)| command == SlashCommand::Usage)
+                .find(|(_, command)| *command == SlashCommand::Usage),
+            None
         );
+    }
+
+    #[test]
+    fn usage_command_exact_lookup_still_resolves_when_account_token_activity_is_disabled() {
+        let mut flags = all_enabled_flags();
+        flags.token_activity_command_enabled = false;
         assert_eq!(
             find_builtin_command("usage", flags),
             Some(SlashCommand::Usage)
@@ -296,11 +324,18 @@ mod tests {
         assert_eq!(
             commands,
             vec![
+                SlashCommand::Ide,
+                SlashCommand::Agents,
                 SlashCommand::Copy,
+                SlashCommand::Export,
+                SlashCommand::Raw,
                 SlashCommand::Diff,
+                SlashCommand::Mention,
+                SlashCommand::Status,
+                SlashCommand::Daemon,
+                SlashCommand::Warnings,
+                SlashCommand::Pwd,
                 SlashCommand::Usage,
-                SlashCommand::Context,
-                SlashCommand::Dashboard,
             ]
         );
     }

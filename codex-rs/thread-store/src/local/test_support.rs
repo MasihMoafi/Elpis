@@ -1,4 +1,3 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use std::fs;
 use std::io::Write;
 use std::path::Path;
@@ -6,6 +5,7 @@ use std::path::PathBuf;
 
 use codex_protocol::protocol::ThreadHistoryMode;
 use codex_rollout::ARCHIVED_SESSIONS_SUBDIR;
+use codex_utils_absolute_path::test_support::PathExt;
 use uuid::Uuid;
 
 use super::LocalThreadStoreConfig;
@@ -13,7 +13,7 @@ use super::LocalThreadStoreConfig;
 pub(super) fn test_config(codex_home: &Path) -> LocalThreadStoreConfig {
     LocalThreadStoreConfig {
         codex_home: codex_home.to_path_buf(),
-        sqlite_home: codex_home.to_path_buf(),
+        sqlite: codex_state::SqliteConfig::new_for_testing(codex_home.abs()),
         default_model_provider_id: "test-provider".to_string(),
     }
 }
@@ -90,7 +90,7 @@ pub(super) fn write_session_file_with_fork(
     fs::create_dir_all(&day_dir)?;
     let path = day_dir.join(format!("rollout-{ts}-{uuid}.jsonl"));
     let mut file = fs::File::create(&path)?;
-    let meta = serde_json::json!({
+    let mut meta = serde_json::json!({
         "timestamp": ts,
         "type": "session_meta",
         "payload": {
@@ -111,6 +111,9 @@ pub(super) fn write_session_file_with_fork(
             }
         },
     });
+    if matches!(history_mode, ThreadHistoryMode::Paginated) {
+        meta["ordinal"] = serde_json::json!(0);
+    }
     writeln!(file, "{meta}")?;
     if matches!(history_mode, ThreadHistoryMode::Legacy) {
         let user_event = serde_json::json!({

@@ -1,4 +1,3 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use super::super::RequirementsLayerEntry;
 use super::super::hooks::HookDirectoryField;
 use super::RequirementsCompositionError;
@@ -15,6 +14,7 @@ use pretty_assertions::assert_eq;
 use std::cell::Cell;
 use std::collections::BTreeMap;
 use tempfile::TempDir;
+use tempfile::tempdir;
 
 fn layer(id: &str, name: &str, contents: &str) -> RequirementsLayerEntry {
     RequirementsLayerEntry::from_toml(
@@ -58,6 +58,40 @@ fn empty_layers_compose_to_none() {
 }
 
 #[test]
+fn cloud_auth_requirements_do_not_override_local_or_discard_other_policy() {
+    let local = RequirementsLayerEntry::from_toml(
+        RequirementSource::Unknown,
+        r#"allowed_login_methods = ["api"]
+cli_auth_credentials_store = "keyring"
+chatgpt_base_url = "https://managed.example/backend-api/""#,
+    );
+    for cloud_auth in [
+        r#"allowed_login_methods = ["api", "chatgpt"]
+allowed_chatgpt_workspaces = ["other"]"#,
+        r#"allowed_login_methods = ["saml"]
+allowed_chatgpt_workspaces = "invalid"
+cli_auth_credentials_store = "invalid"
+chatgpt_base_url = false"#,
+    ] {
+        let cloud = layer(
+            "req_cloud",
+            "Cloud policy",
+            &format!("{cloud_auth}\nallow_login_shell = false"),
+        );
+        assert_eq!(
+            compose(vec![local.clone(), cloud])
+                .expect("cloud auth cannot invalidate enterprise policy"),
+            Some(expected_requirements(
+                r#"allowed_login_methods = ["api"]
+cli_auth_credentials_store = "keyring"
+chatgpt_base_url = "https://managed.example/backend-api/"
+allow_login_shell = false"#
+            ))
+        );
+    }
+}
+
+#[test]
 fn top_level_values_use_toml_priority() {
     let composed = compose(vec![
         layer(
@@ -68,6 +102,7 @@ allowed_approval_policies = ["on-request"]
 allowed_sandbox_modes = ["workspace-write"]
 default_permissions = ":workspace"
 allow_remote_control = true
+additional_developer_instructions = "Lower-priority instructions."
 
 [allowed_permission_profiles]
 ":read-only" = true
@@ -82,6 +117,7 @@ allowed_approval_policies = ["never"]
 allowed_sandbox_modes = ["read-only"]
 default_permissions = ":read-only"
 allow_remote_control = false
+additional_developer_instructions = ""
 
 [allowed_permission_profiles]
 ":danger-full-access" = false
@@ -100,6 +136,7 @@ allowed_approval_policies = ["never"]
 allowed_sandbox_modes = ["read-only"]
 default_permissions = ":read-only"
 allow_remote_control = false
+additional_developer_instructions = ""
 
 [allowed_permission_profiles]
 ":danger-full-access" = false
@@ -148,6 +185,174 @@ service_tier = "fast"
 "#
         )
     );
+}
+
+#[test]
+fn auto_review_required_models_are_unioned_without_overwriting_new_thread_defaults() {
+    let low = layer(
+        "req_low",
+        "Low",
+        r#"[auto_review]
+required_on_models = ["low-model", "shared-model"]
+[models.new_thread]
+model = "low-priority-model"
+model_reasoning_effort = "low""#,
+    );
+    let high = layer(
+        "req_high",
+        "High",
+        r#"[auto_review]
+required_on_models = ["high-model", "shared-model"]
+[models.new_thread]
+model = "high-priority-model""#,
+    );
+    let expected_source = RequirementSource::composite([high.source.clone(), low.source.clone()]);
+    let composed = compose_requirements_for_hostname(
+        vec![
+            low,
+            high,
+            layer(
+                "req_empty",
+                "Empty",
+                "[auto_review]\nrequired_on_models = []",
+            ),
+        ],
+        /*hostname*/ None,
+    )
+    .expect("compose requirements")
+    .expect("requirements present");
+
+    assert_eq!(
+        composed.clone().into_toml(),
+        expected_requirements(
+            r#"[auto_review]
+required_on_models = ["high-model", "shared-model", "low-model"]
+[models.new_thread]
+model = "high-priority-model"
+model_reasoning_effort = "low""#
+        )
+    );
+    assert_eq!(
+        composed.auto_review.map(|auto_review| auto_review.source),
+        Some(expected_source)
+    );
+}
+
+#[test]
+fn relative_paths_resolve_against_their_own_layer_base() {
+    let low_dir = tempdir().expect("low-priority requirements directory");
+    let high_dir = tempdir().expect("high-priority requirements directory");
+    let low_base = AbsolutePathBuf::from_absolute_path(low_dir.path()).expect("absolute low base");
+    let high_base =
+        AbsolutePathBuf::from_absolute_path(high_dir.path()).expect("absolute high base");
+
+    let composed = compose(vec![
+        layer(
+            "req_low",
+            "Low",
+            "sqlite_home = \"state\"\nlog_dir = \"low-logs\"",
+        )
+        .with_base_dir(low_base),
+        layer(
+            "req_high",
+            "High",
+            "log_dir = \"high-logs\"\nmodel_catalog_json = \"models.json\"",
+        )
+        .with_base_dir(high_base),
+    ])
+    .expect("compose requirements")
+    .expect("requirements present");
+
+    assert_eq!(
+        composed.sqlite_home.as_deref(),
+        Some(low_dir.path().join("state").as_path())
+    );
+    assert_eq!(
+        composed.log_dir.as_deref(),
+        Some(high_dir.path().join("high-logs").as_path())
+    );
+    assert_eq!(
+        composed.model_catalog_json.as_deref(),
+        Some(high_dir.path().join("models.json").as_path())
+    );
+}
+
+#[test]
+fn provider_auth_fragments_merge_without_losing_source_paths_or_explicit_values() {
+    let low_dir = tempdir().expect("low-priority requirements directory");
+    let high_dir = tempdir().expect("high-priority requirements directory");
+    let absolute_cwd = toml::Value::String(low_dir.path().display().to_string()).to_string();
+    for (cwd_override, expected_cwd) in [
+        (String::new(), low_dir.path().join("auth")),
+        (
+            "cwd = 'other-auth'".to_string(),
+            high_dir.path().join("other-auth"),
+        ),
+        (
+            format!("cwd = {absolute_cwd}"),
+            low_dir.path().to_path_buf(),
+        ),
+    ] {
+        let composed = compose(vec![
+            layer(
+                "low",
+                "Command",
+                r#"
+[model_providers.gateway]
+name = "Gateway"
+[model_providers.gateway.auth]
+command = "get-token"
+args = ["--token"]
+cwd = "auth"
+timeout_ms = 7000
+refresh_interval_ms = 12345
+"#,
+            )
+            .with_base_dir(AbsolutePathBuf::from_absolute_path(low_dir.path()).unwrap()),
+            layer(
+                "high",
+                "Timeout",
+                &format!("[model_providers.gateway.auth]\ntimeout_ms = 10000\n{cwd_override}"),
+            )
+            .with_base_dir(AbsolutePathBuf::from_absolute_path(high_dir.path()).unwrap()),
+        ])
+        .expect("merge partial auth before parsing")
+        .expect("requirements present");
+        let expected_cwd = toml::Value::String(expected_cwd.display().to_string());
+        assert_eq!(
+            composed,
+            expected_requirements(format!(
+                r#"
+[model_providers.gateway]
+name = "Gateway"
+[model_providers.gateway.auth]
+command = "get-token"
+args = ["--token"]
+cwd = {expected_cwd}
+timeout_ms = 10000
+refresh_interval_ms = 12345
+"#,
+            ))
+        );
+    }
+}
+
+#[test]
+fn provider_auth_missing_command_is_rejected_after_composition() {
+    let err = compose(vec![
+        layer("low", "Name", "[model_providers.gateway]\nname = 'Gateway'"),
+        layer(
+            "high",
+            "Timeout",
+            "[model_providers.gateway.auth]\ntimeout_ms = 10000",
+        ),
+    ])
+    .expect_err("merged auth still needs a command");
+    assert!(matches!(
+        err,
+        RequirementsCompositionError::ComposedParse { message }
+            if message.contains("missing field `command`")
+    ));
 }
 
 #[test]
@@ -349,6 +554,35 @@ approval_mode = "approve"
 }
 
 #[test]
+fn feature_aliases_merge_with_layer_precedence() {
+    for (low_key, high_key) in [
+        ("features", "feature_requirements"),
+        ("feature_requirements", "features"),
+    ] {
+        let composed = compose(vec![
+            layer(
+                "req_low",
+                "Low",
+                &format!("[{low_key}]\nchronicle = true\nshell_snapshot = false"),
+            ),
+            layer(
+                "req_high",
+                "High",
+                &format!("[{high_key}]\nchronicle = false\napps = false"),
+            ),
+        ])
+        .expect("compose mixed feature aliases");
+
+        assert_eq!(
+            composed,
+            Some(expected_requirements(
+                "[features]\nchronicle = false\nshell_snapshot = false\napps = false"
+            ))
+        );
+    }
+}
+
+#[test]
 fn merged_table_source_is_composite_in_priority_order() {
     let high_source = RequirementSource::EnterpriseManaged {
         id: "req_high".to_string(),
@@ -486,6 +720,141 @@ fn network_maps_use_regular_toml_merge() {
 "#
         )
     );
+}
+
+#[test]
+fn browser_and_computer_use_requirements_use_regular_toml_merge() {
+    let composed = compose(vec![
+        layer(
+            "req_low",
+            "Low",
+            r#"
+allow_browser_and_computer_use = true
+
+[browser_use]
+allow_history_access = true
+allow_global_persistent_approval = true
+
+[browser_use.default_origin_policy]
+access = "allow"
+access_approval_lifetime = "thread"
+
+[browser_use.origins."https://example.com"]
+access = "deny"
+downloads = "allow"
+
+[computer_use]
+allow_locked_computer_use = true
+default_app_access = "allow"
+
+[computer_use.macos.bundle_ids]
+"com.apple.Safari" = "deny"
+
+[computer_use.windows.aumids]
+"Microsoft.Paint_8wekyb3d8bbwe!App" = "allow"
+"#,
+        ),
+        layer(
+            "req_high",
+            "High",
+            r#"
+allow_browser_and_computer_use = false
+
+[browser_use]
+allow_history_access = false
+allow_global_persistent_approval = false
+
+[browser_use.default_origin_policy]
+persistent_approval = false
+access_approval_lifetime = "turn"
+
+[browser_use.origins."https://example.com"]
+downloads = "deny"
+uploads = "deny"
+
+[computer_use]
+allow_persistent_approval = false
+
+[computer_use.macos.bundle_ids]
+"com.apple.Safari" = "allow"
+
+[[computer_use.windows.exes]]
+publisher_name = "CN=Google LLC"
+product_name = "Google Chrome"
+binary_name = "chrome.exe"
+access = "deny"
+"#,
+        ),
+    ])
+    .expect("compose requirements")
+    .expect("requirements present");
+
+    assert_eq!(
+        composed,
+        expected_requirements(
+            r#"
+allow_browser_and_computer_use = false
+
+[browser_use]
+allow_history_access = false
+allow_global_persistent_approval = false
+
+[browser_use.default_origin_policy]
+access = "allow"
+persistent_approval = false
+access_approval_lifetime = "turn"
+
+[browser_use.origins."https://example.com"]
+access = "deny"
+downloads = "deny"
+uploads = "deny"
+
+[computer_use]
+allow_locked_computer_use = true
+allow_persistent_approval = false
+default_app_access = "allow"
+
+[computer_use.macos.bundle_ids]
+"com.apple.Safari" = "allow"
+
+[computer_use.windows.aumids]
+"Microsoft.Paint_8wekyb3d8bbwe!App" = "allow"
+
+[[computer_use.windows.exes]]
+publisher_name = "CN=Google LLC"
+product_name = "Google Chrome"
+binary_name = "chrome.exe"
+access = "deny"
+"#
+        )
+    );
+}
+
+#[test]
+fn webmcp_requirements_preserve_managed_layer_precedence() {
+    for (lower, higher, expected) in [
+        ("true", "[browser_use]", true),
+        ("false", "[browser_use]", false),
+        ("true", "[browser_use]\nallow_webmcp = false", false),
+        ("false", "[browser_use]\nallow_webmcp = true", true),
+    ] {
+        let lower = format!("[browser_use]\nallow_webmcp = {lower}");
+        let composed = compose(vec![
+            layer("req_low", "Low", &lower),
+            layer("req_high", "High", higher),
+        ])
+        .expect("compose managed WebMCP policy");
+        assert_eq!(
+            composed,
+            Some(ConfigRequirementsToml {
+                browser_use: Some(crate::BrowserUseRequirementsToml {
+                    allow_webmcp: Some(expected),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            }),
+        );
+    }
 }
 
 #[test]

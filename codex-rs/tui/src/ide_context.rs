@@ -1,4 +1,3 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 //! IDE context data model and public helpers for TUI `/ide` support.
 
 mod ipc;

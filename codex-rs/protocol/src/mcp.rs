@@ -5,8 +5,204 @@
 //! `schemars`) so they can be embedded in Codex's own protocol structures.
 use schemars::JsonSchema;
 use serde::Deserialize;
+use serde::Deserializer;
 use serde::Serialize;
+use std::collections::HashMap;
 use ts_rs::TS;
+
+/// Observed state of an MCP connection in a published thread runtime.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub enum McpServerConnectionStatus {
+    NotStarted,
+    Starting,
+    Connected,
+    AuthenticationRequired,
+    Failed,
+    Cancelled,
+    Disabled,
+}
+
+/// Extension ID for OpenAI elicitation modes.
+pub const OPENAI_ELICITATION_EXTENSION_ID: &str = "openai/elicitation";
+/// Extension ID for legacy OpenAI form elicitation.
+pub const OPENAI_FORM_EXTENSION_ID: &str = "openai/form";
+/// Extension ID for standard MCP form elicitations that require user-entered input.
+pub const OPENAI_STANDARD_FORM_INPUT_EXTENSION_ID: &str = "openai/standard-form-input";
+/// Extension ID for MCP App UI rendering.
+pub const MCP_APP_UI_EXTENSION_ID: &str = "io.modelcontextprotocol/ui";
+/// Host-supplied confirmation-policy documents for Node REPL-backed actor calls.
+pub const CONFIRMATION_POLICIES_META_KEY: &str = "openai/confirmation_policies";
+
+/// Returns whether a raw MCP server name identifies a Node REPL-backed server.
+pub fn is_node_repl_backed_server(server: &str) -> bool {
+    matches!(server, "node_repl" | "cua_repl")
+}
+
+/// Returns whether an MCP server or registered connector is Node REPL-backed.
+/// Callers must supply connector identity from registered tool metadata, never
+/// from tool arguments or provider-supplied elicitation metadata.
+pub fn is_node_repl_backed_connector(server: &str, connector_id: Option<&str>) -> bool {
+    is_node_repl_backed_server(server)
+        || server == "codex_apps" && connector_id == Some("connector_openai_browser")
+}
+
+/// Recognizes Node REPL-backed tools in model-visible MCP namespaces or legacy
+/// flat tool names. An explicit namespace takes precedence over the tool name.
+pub fn is_node_repl_backed_tool(name: &str, namespace: Option<&str>) -> bool {
+    if let Some(namespace) = namespace {
+        let namespace = namespace.strip_prefix("mcp__").unwrap_or(namespace);
+        return is_node_repl_backed_server(namespace.strip_suffix("__").unwrap_or(namespace));
+    }
+
+    let name = name.strip_prefix("mcp__").unwrap_or(name);
+    name.split_once("__")
+        .is_some_and(|(server, _)| is_node_repl_backed_server(server))
+}
+
+/// Producer-reported completeness of the thread's MCP tools/call attribution.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum McpAttributionStatus {
+    #[default]
+    None,
+    Complete,
+    AttributionError,
+}
+
+/// Bounded diagnostics for an attribution error, never a policy decision.
+///
+/// Recorder reasons identify the first observed error and survive checkpoints.
+/// Payload reasons describe a request-serialization fallback and are not checkpointed.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+#[non_exhaustive]
+pub enum McpAttributionErrorReason {
+    HistoryMissingCheckpoint,
+    CheckpointInvalid,
+    CheckpointSourceConflict,
+    SourceInvalid,
+    RecorderPoisoned,
+    /// An earlier error checkpoint did not retain its cause.
+    RestoredErrorUnknown,
+    PayloadTooLarge,
+    SerializationFailed,
+    #[serde(other)]
+    Unknown,
+}
+
+/// One source and the first runtime turn in which Codex recorded it.
+///
+/// Server and tool names are retained when no stable identifier is available;
+/// they are not guaranteed to be globally unique or independently authenticated.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct McpAttributionSource {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub connector_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub plugin_id: Option<String>,
+    pub server_name: String,
+    pub tool_name: String,
+    pub first_turn_id: String,
+}
+
+/// Cumulative, model-invisible attribution reported on Responses API requests.
+/// This is provenance data, not a training-eligibility decision or attestation.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct McpAttribution {
+    pub status: McpAttributionStatus,
+    /// First observed attribution error, absent for non-error states.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_mcp_attribution_error_reason"
+    )]
+    pub error_reason: Option<McpAttributionErrorReason>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sources: Vec<McpAttributionSource>,
+}
+
+fn deserialize_mcp_attribution_error_reason<'de, D>(
+    deserializer: D,
+) -> Result<Option<McpAttributionErrorReason>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let value = serde_json::Value::deserialize(deserializer)?;
+    Ok(serde_json::from_value(value).ok())
+}
+
+/// Bounded app-resource provenance retained across a compaction checkpoint.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct McpResourceOriginCheckpoint {
+    pub origins: Vec<McpResourceOrigin>,
+    pub turns: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub current_turn_id: Option<String>,
+}
+
+/// The original app, account, tool, and URI that authorize one widget read.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct McpResourceOrigin {
+    pub call_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub turn_id: Option<String>,
+    pub tool: String,
+    pub connector_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub link_id: Option<String>,
+    pub uri: String,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub ambiguous_account: bool,
+}
+
+/// Client extensions that must not be advertised to MCP servers.
+const MCP_CLIENT_ONLY_EXTENSION_IDS: [&str; 1] = [OPENAI_STANDARD_FORM_INPUT_EXTENSION_ID];
+
+/// MCP extensions supplied by the client that created a Codex session.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct ClientMcpExtensions {
+    extensions: HashMap<String, serde_json::Value>,
+}
+
+impl ClientMcpExtensions {
+    /// Creates a session extension set from trusted client declarations.
+    pub fn new(extensions: impl IntoIterator<Item = (String, serde_json::Value)>) -> Self {
+        Self {
+            extensions: extensions.into_iter().collect(),
+        }
+    }
+
+    /// Returns whether the client declared the given extension.
+    pub fn contains(&self, extension_id: &str) -> bool {
+        self.extensions.contains_key(extension_id)
+    }
+
+    /// Returns the client's settings for the given extension.
+    pub fn get(&self, extension_id: &str) -> Option<&serde_json::Value> {
+        self.extensions.get(extension_id)
+    }
+
+    /// Returns only client extensions that should be advertised to MCP servers.
+    pub fn for_mcp_servers(&self) -> Self {
+        Self::new(
+            self.extensions
+                .iter()
+                .filter(|(id, _)| !MCP_CLIENT_ONLY_EXTENSION_IDS.contains(&id.as_str()))
+                .map(|(id, settings)| (id.clone(), settings.clone())),
+        )
+    }
+
+    /// Iterates over the extensions and their settings.
+    pub fn iter(&self) -> impl Iterator<Item = (&str, &serde_json::Value)> {
+        self.extensions
+            .iter()
+            .map(|(id, settings)| (id.as_str(), settings))
+    }
+}
 
 /// ID of a request, which can be either a string or an integer.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema, TS)]
@@ -339,6 +535,72 @@ mod tests {
     use pretty_assertions::assert_eq;
 
     use super::*;
+
+    #[test]
+    fn node_repl_backed_tool_recognizes_namespaces_and_legacy_names() {
+        for (name, namespace, expected) in [
+            ("read_file", Some("mcp__node_repl"), true),
+            ("read_file", Some("mcp__node_repl__"), true),
+            ("read_file", Some("node_repl"), true),
+            ("read_file", Some("node_repl__"), true),
+            ("read_file", Some("mcp__cua_repl"), true),
+            ("read_file", Some("mcp__cua_repl__"), true),
+            ("read_file", Some("cua_repl"), true),
+            ("read_file", Some("cua_repl__"), true),
+            ("read_file", Some("node_repl_"), false),
+            ("read_file", Some("cua_repl_"), false),
+            ("read_file", Some("mcp__node_repl____"), false),
+            ("read_file", Some("mcp__cua_repl____"), false),
+            ("mcp__node_repl__js", None, true),
+            ("node_repl__js", None, true),
+            ("mcp__cua_repl__js", None, true),
+            ("cua_repl__js", None, true),
+            ("mcp__node_repl__js", Some("other"), false),
+            ("mcp__cua_repl__js", Some("other"), false),
+            ("mcp__node_repl_other__js", None, false),
+            ("mcp__cua_repl_other__js", None, false),
+        ] {
+            assert_eq!(
+                is_node_repl_backed_tool(name, namespace),
+                expected,
+                "tool {name} in namespace {namespace:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn client_mcp_extensions_for_mcp_servers_excludes_client_only_extensions() {
+        let openai_form_settings = serde_json::json!({ "version": 1 });
+        let app_ui_settings = serde_json::json!({ "mimeTypes": ["text/html"] });
+        let future_server_extension_settings = serde_json::json!({ "version": 2 });
+        let extensions = ClientMcpExtensions::new([
+            (
+                OPENAI_FORM_EXTENSION_ID.to_string(),
+                openai_form_settings.clone(),
+            ),
+            (MCP_APP_UI_EXTENSION_ID.to_string(), app_ui_settings.clone()),
+            (
+                OPENAI_STANDARD_FORM_INPUT_EXTENSION_ID.to_string(),
+                serde_json::json!({}),
+            ),
+            (
+                "example/future-server-extension".to_string(),
+                future_server_extension_settings.clone(),
+            ),
+        ]);
+
+        assert_eq!(
+            extensions.for_mcp_servers(),
+            ClientMcpExtensions::new([
+                (OPENAI_FORM_EXTENSION_ID.to_string(), openai_form_settings),
+                (MCP_APP_UI_EXTENSION_ID.to_string(), app_ui_settings),
+                (
+                    "example/future-server-extension".to_string(),
+                    future_server_extension_settings,
+                ),
+            ])
+        );
+    }
 
     #[test]
     fn resource_size_deserializes_without_narrowing() {

@@ -1,7 +1,7 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 pub(crate) mod command_runner;
 pub(crate) mod discovery;
 pub(crate) mod dispatcher;
+pub(crate) mod mcp_runner;
 pub(crate) mod output_parser;
 pub(crate) mod schema_loader;
 
@@ -9,29 +9,45 @@ use crate::events::compact::PostCompactRequest;
 use crate::events::compact::PreCompactOutcome;
 use crate::events::compact::PreCompactRequest;
 use crate::events::compact::StatelessHookOutcome;
+use crate::events::interrupt::InterruptOutcome;
+use crate::events::interrupt::InterruptRequest;
 use crate::events::permission_request::PermissionRequestOutcome;
 use crate::events::permission_request::PermissionRequestRequest;
 use crate::events::post_tool_use::PostToolUseOutcome;
 use crate::events::post_tool_use::PostToolUseRequest;
 use crate::events::pre_tool_use::PreToolUseOutcome;
 use crate::events::pre_tool_use::PreToolUseRequest;
+use crate::events::session_end::SessionEndOutcome;
+use crate::events::session_end::SessionEndRequest;
 use crate::events::session_start::SessionStartOutcome;
 use crate::events::session_start::SessionStartRequest;
 use crate::events::stop::StopOutcome;
 use crate::events::stop::StopRequest;
 use crate::events::user_prompt_submit::UserPromptSubmitOutcome;
 use crate::events::user_prompt_submit::UserPromptSubmitRequest;
-use crate::output_spill::HookOutputSpiller;
+use crate::mcp::HookMcpExecutor;
+use crate::output_spill::AdditionalContextLimit;
 use codex_config::ConfigLayerStack;
+use codex_config::HookHandlerConfig;
+use codex_plugin::ExecutorPluginHookSource;
 use codex_plugin::PluginHookSource;
-use codex_protocol::ThreadId;
+use codex_plugin::PluginId;
 use codex_protocol::protocol::HookEventName;
+use codex_protocol::protocol::HookExecutionMode;
 use codex_protocol::protocol::HookHandlerType;
 use codex_protocol::protocol::HookRunSummary;
 use codex_protocol::protocol::HookSource;
 use codex_protocol::protocol::HookTrustStatus;
 use codex_utils_absolute_path::AbsolutePathBuf;
+use codex_utils_path_uri::PathUri;
+use serde_json::Map;
+use serde_json::Value;
 use std::collections::HashMap;
+use std::collections::HashSet;
+use std::sync::Arc;
+use std::time::Duration;
+
+use command_runner::CommandHookRuntime;
 
 #[derive(Debug, Clone)]
 pub(crate) struct CommandShell {
@@ -41,24 +57,110 @@ pub(crate) struct CommandShell {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ConfiguredHandler {
+    /// Internally admitted cleanup hook, enabled independently of per-hook state.
+    pub builtin: bool,
     pub event_name: codex_protocol::protocol::HookEventName,
     pub matcher: Option<String>,
-    pub command: String,
     pub timeout_sec: u64,
     pub status_message: Option<String>,
-    pub source_path: AbsolutePathBuf,
+    pub additional_context_limit: AdditionalContextLimit,
+    pub source_path: HandlerSourcePath,
     pub source: HookSource,
     pub display_order: i64,
-    pub env: HashMap<String, String>,
+    pub kind: ConfiguredHandlerKind,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum HandlerSourcePath {
+    Local(AbsolutePathBuf),
+    /// Executor-scoped handlers are currently excluded from user-visible hook reporting
+    /// (events, summary, telemetry). Their handlers are always executed async.
+    ///
+    /// TODO: With CCA, all hooks will be executor-scoped, so user visibility
+    /// (participation in lifecycle events and summaries) and execution behavior
+    /// (non-blocking) will need to be determined independently.
+    ExecutorScoped {
+        plugin_id: PluginId,
+        environment_id: String,
+        mcp_environment_id: Option<String>,
+        mcp_metadata: Option<Box<Map<String, Value>>>,
+        manifest_path: PathUri,
+        source_relative_path: String,
+    },
+}
+
+impl From<AbsolutePathBuf> for HandlerSourcePath {
+    fn from(path: AbsolutePathBuf) -> Self {
+        Self::Local(path)
+    }
+}
+
+impl std::fmt::Display for HandlerSourcePath {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Local(path) => write!(formatter, "{}", path.display()),
+            Self::ExecutorScoped {
+                environment_id,
+                manifest_path,
+                source_relative_path,
+                ..
+            } => write!(
+                formatter,
+                "{environment_id}:{manifest_path}:{source_relative_path}"
+            ),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum ConfiguredHandlerKind {
+    Command {
+        command: String,
+        env: HashMap<String, String>,
+        r#async: bool,
+    },
+    McpTool {
+        server: String,
+        tool: String,
+        input: serde_json::Map<String, serde_json::Value>,
+    },
+}
+
+#[derive(Debug)]
+pub(crate) struct HandlerRunResult {
+    pub started_at: i64,
+    pub completed_at: i64,
+    pub duration_ms: i64,
+    pub exit_code: Option<i32>,
+    pub stdout: String,
+    pub stderr: String,
+    pub error: Option<String>,
 }
 
 impl ConfiguredHandler {
+    pub(crate) fn execution_mode(&self) -> HookExecutionMode {
+        if matches!(self.source_path, HandlerSourcePath::ExecutorScoped { .. }) {
+            return HookExecutionMode::Async;
+        }
+
+        match self.kind {
+            ConfiguredHandlerKind::Command { r#async: true, .. } => HookExecutionMode::Async,
+            ConfiguredHandlerKind::Command { r#async: false, .. }
+            | ConfiguredHandlerKind::McpTool { .. } => HookExecutionMode::Sync,
+        }
+    }
+
+    /// Only synchronous hooks can apply control effects.
+    pub(crate) fn can_apply_control_effects(&self) -> bool {
+        self.execution_mode() == HookExecutionMode::Sync
+    }
+
     pub fn run_id(&self) -> String {
         format!(
             "{}:{}:{}",
             self.event_name_label(),
             self.display_order,
-            self.source_path.display()
+            self.source_path
         )
     }
 
@@ -70,23 +172,40 @@ impl ConfiguredHandler {
             codex_protocol::protocol::HookEventName::PreCompact => "pre-compact",
             codex_protocol::protocol::HookEventName::PostCompact => "post-compact",
             codex_protocol::protocol::HookEventName::SessionStart => "session-start",
+            codex_protocol::protocol::HookEventName::SessionEnd => "session-end",
             codex_protocol::protocol::HookEventName::UserPromptSubmit => "user-prompt-submit",
             codex_protocol::protocol::HookEventName::SubagentStart => "subagent-start",
             codex_protocol::protocol::HookEventName::SubagentStop => "subagent-stop",
             codex_protocol::protocol::HookEventName::Stop => "stop",
+            codex_protocol::protocol::HookEventName::Interrupt => "interrupt",
+        }
+    }
+
+    fn handler_type(&self) -> HookHandlerType {
+        match &self.kind {
+            ConfiguredHandlerKind::Command { .. } => HookHandlerType::Command,
+            ConfiguredHandlerKind::McpTool { .. } => HookHandlerType::McpTool,
         }
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub enum HookListEntryHandler {
+    Command { command: String, r#async: bool },
+    McpTool { server: String, tool: String },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HookListEntry {
+    /// Builtin hooks remain available internally but are omitted from the public hooks list.
+    pub builtin: bool,
     pub key: String,
     pub event_name: HookEventName,
-    pub handler_type: HookHandlerType,
+    pub handler: HookListEntryHandler,
     pub matcher: Option<String>,
-    pub command: Option<String>,
     pub timeout_sec: u64,
     pub status_message: Option<String>,
+    pub additional_context_limit: Option<usize>,
     pub source_path: AbsolutePathBuf,
     pub source: HookSource,
     pub plugin_id: Option<String>,
@@ -99,10 +218,11 @@ pub struct HookListEntry {
 
 #[derive(Clone)]
 pub(crate) struct ClaudeHooksEngine {
-    handlers: Vec<ConfiguredHandler>,
+    pub(crate) handlers: Vec<ConfiguredHandler>,
     warnings: Vec<String>,
-    shell: CommandShell,
-    output_spiller: HookOutputSpiller,
+    required_load_errors: Vec<String>,
+    pub(crate) command_runtime: CommandHookRuntime,
+    pub(crate) mcp_executor: Arc<dyn HookMcpExecutor>,
 }
 
 impl ClaudeHooksEngine {
@@ -112,34 +232,121 @@ impl ClaudeHooksEngine {
         config_layer_stack: Option<&ConfigLayerStack>,
         plugin_hook_sources: Vec<PluginHookSource>,
         plugin_hook_load_warnings: Vec<String>,
-        shell: CommandShell,
+        command_runtime: CommandHookRuntime,
+        mcp_executor: Arc<dyn HookMcpExecutor>,
     ) -> Self {
-        if !enabled {
+        if !enabled && plugin_hook_sources.is_empty() {
             return Self {
                 handlers: Vec::new(),
                 warnings: Vec::new(),
-                shell,
-                output_spiller: HookOutputSpiller::new(),
+                required_load_errors: Vec::new(),
+                command_runtime,
+                mcp_executor,
             };
         }
 
         let _ = schema_loader::generated_hook_schemas();
-        let discovered = discovery::discover_handlers(
+        let mut discovered = discovery::discover_handlers(
             config_layer_stack,
             plugin_hook_sources,
             plugin_hook_load_warnings,
             bypass_hook_trust,
         );
+        if !enabled {
+            discovered.handlers.retain(|handler| handler.builtin);
+            // Disabled ordinary hooks must not emit warnings or reject session startup.
+            discovered.warnings.clear();
+            discovered.required_load_errors.clear();
+        }
         Self {
             handlers: discovered.handlers,
             warnings: discovered.warnings,
-            shell,
-            output_spiller: HookOutputSpiller::new(),
+            required_load_errors: discovered.required_load_errors,
+            command_runtime,
+            mcp_executor,
         }
     }
 
     pub(crate) fn warnings(&self) -> &[String] {
         &self.warnings
+    }
+
+    pub(crate) fn set_executor_hooks(&mut self, executor_hooks: Vec<ExecutorPluginHookSource>) {
+        self.handlers.retain(|handler| {
+            !matches!(
+                handler.source_path,
+                HandlerSourcePath::ExecutorScoped { .. }
+            )
+        });
+
+        let mut display_order = self
+            .handlers
+            .iter()
+            .map(|handler| handler.display_order)
+            .max()
+            .map_or(0, |display_order| display_order.saturating_add(1));
+        let mut seen_targets = HashSet::new();
+        for source in executor_hooks {
+            for (event_name, groups) in source.hooks.into_matcher_groups() {
+                let Some(handler) = groups.into_iter().flat_map(|group| group.hooks).next() else {
+                    continue;
+                };
+                let HookHandlerConfig::McpTool {
+                    server,
+                    tool,
+                    input,
+                    timeout_sec,
+                    status_message,
+                } = handler
+                else {
+                    unreachable!("allowlisted executor handler must be an MCP tool");
+                };
+
+                // Bundled plugins can share a cleanup target; run it once per event
+                // and MCP environment.
+                let target = (
+                    std::mem::discriminant(&event_name),
+                    source
+                        .mcp_environment_id
+                        .as_ref()
+                        .unwrap_or(&source.environment_id)
+                        .clone(),
+                    server.clone(),
+                    tool.clone(),
+                );
+                if !seen_targets.insert(target) {
+                    continue;
+                }
+                self.handlers.push(ConfiguredHandler {
+                    builtin: true,
+                    event_name,
+                    matcher: None,
+                    timeout_sec: timeout_sec.unwrap_or(5).max(1),
+                    status_message,
+                    additional_context_limit: Default::default(),
+                    source_path: HandlerSourcePath::ExecutorScoped {
+                        plugin_id: source.plugin_id.clone(),
+                        environment_id: source.environment_id.clone(),
+                        mcp_environment_id: source.mcp_environment_id.clone(),
+                        mcp_metadata: source.mcp_metadata.clone().map(Box::new),
+                        manifest_path: source.manifest_path.clone(),
+                        source_relative_path: source.source_relative_path.clone(),
+                    },
+                    source: HookSource::Plugin,
+                    display_order,
+                    kind: ConfiguredHandlerKind::McpTool {
+                        server,
+                        tool,
+                        input,
+                    },
+                });
+                display_order = display_order.saturating_add(1);
+            }
+        }
+    }
+
+    pub(crate) fn required_load_errors(&self) -> &[String] {
+        &self.required_load_errors
     }
 
     pub(crate) fn preview_session_start(
@@ -160,6 +367,20 @@ impl ClaudeHooksEngine {
         crate::events::permission_request::preview(&self.handlers, request)
     }
 
+    pub(crate) fn max_permission_request_timeout(&self) -> Duration {
+        Duration::from_secs(
+            self.handlers
+                .iter()
+                .filter(|handler| {
+                    handler.event_name == HookEventName::PermissionRequest
+                        && handler.can_apply_control_effects()
+                })
+                .map(|handler| handler.timeout_sec)
+                .max()
+                .unwrap_or_default(),
+        )
+    }
+
     pub(crate) fn preview_post_tool_use(
         &self,
         request: &PostToolUseRequest,
@@ -172,45 +393,33 @@ impl ClaudeHooksEngine {
         request: SessionStartRequest,
         turn_id: Option<String>,
     ) -> SessionStartOutcome {
-        let session_id = request.session_id;
-        let mut outcome =
-            crate::events::session_start::run(&self.handlers, &self.shell, request, turn_id).await;
-        outcome.additional_contexts = self
-            .maybe_spill_texts(session_id, outcome.additional_contexts)
-            .await;
-        outcome
+        crate::events::session_start::run(self, request, turn_id).await
     }
 
     pub(crate) async fn run_pre_tool_use(&self, request: PreToolUseRequest) -> PreToolUseOutcome {
-        let session_id = request.session_id;
-        let mut outcome =
-            crate::events::pre_tool_use::run(&self.handlers, &self.shell, request).await;
-        outcome.additional_contexts = self
-            .maybe_spill_texts(session_id, outcome.additional_contexts)
-            .await;
-        outcome
+        crate::events::pre_tool_use::run(self, request).await
     }
 
     pub(crate) async fn run_permission_request(
         &self,
         request: PermissionRequestRequest,
     ) -> PermissionRequestOutcome {
-        crate::events::permission_request::run(&self.handlers, &self.shell, request).await
+        crate::events::permission_request::run(self, request).await
     }
 
     pub(crate) async fn run_post_tool_use(
         &self,
         request: PostToolUseRequest,
     ) -> PostToolUseOutcome {
-        let session_id = request.session_id;
-        let mut outcome =
-            crate::events::post_tool_use::run(&self.handlers, &self.shell, request).await;
-        outcome.additional_contexts = self
-            .maybe_spill_texts(session_id, outcome.additional_contexts)
-            .await;
-        outcome.feedback_message = self
-            .maybe_spill_text(session_id, outcome.feedback_message)
-            .await;
+        let mut outcome = crate::events::post_tool_use::run(self, request).await;
+        if let Some(feedback_message) = outcome.feedback_message.take() {
+            outcome.feedback_message = Some(
+                self.command_runtime
+                    .output_spiller()
+                    .maybe_spill_text(feedback_message)
+                    .await,
+            );
+        }
         outcome
     }
 
@@ -219,7 +428,7 @@ impl ClaudeHooksEngine {
     }
 
     pub(crate) async fn run_pre_compact(&self, request: PreCompactRequest) -> PreCompactOutcome {
-        crate::events::compact::run_pre(&self.handlers, &self.shell, request).await
+        crate::events::compact::run_pre(self, request).await
     }
 
     pub(crate) fn preview_post_compact(&self, request: &PostCompactRequest) -> Vec<HookRunSummary> {
@@ -230,7 +439,7 @@ impl ClaudeHooksEngine {
         &self,
         request: PostCompactRequest,
     ) -> StatelessHookOutcome {
-        crate::events::compact::run_post(&self.handlers, &self.shell, request).await
+        crate::events::compact::run_post(self, request).await
     }
 
     pub(crate) fn preview_user_prompt_submit(
@@ -244,49 +453,37 @@ impl ClaudeHooksEngine {
         &self,
         request: UserPromptSubmitRequest,
     ) -> UserPromptSubmitOutcome {
-        let session_id = request.session_id;
-        let mut outcome =
-            crate::events::user_prompt_submit::run(&self.handlers, &self.shell, request).await;
-        outcome.additional_contexts = self
-            .maybe_spill_texts(session_id, outcome.additional_contexts)
-            .await;
-        outcome
+        crate::events::user_prompt_submit::run(self, request).await
     }
 
     pub(crate) fn preview_stop(&self, request: &StopRequest) -> Vec<HookRunSummary> {
         crate::events::stop::preview(&self.handlers, request)
     }
 
+    pub(crate) fn preview_session_end(&self) -> Vec<HookRunSummary> {
+        crate::events::session_end::preview(&self.handlers)
+    }
+
+    pub(crate) async fn run_session_end(&self, request: SessionEndRequest) -> SessionEndOutcome {
+        crate::events::session_end::run(self, request).await
+    }
+
     pub(crate) async fn run_stop(&self, request: StopRequest) -> StopOutcome {
-        let session_id = request.session_id;
-        let mut outcome = crate::events::stop::run(&self.handlers, &self.shell, request).await;
+        let mut outcome = crate::events::stop::run(self, request).await;
         outcome.continuation_fragments = self
-            .maybe_spill_prompt_fragments(session_id, outcome.continuation_fragments)
+            .command_runtime
+            .output_spiller()
+            .maybe_spill_prompt_fragments(outcome.continuation_fragments)
             .await;
         outcome
     }
 
-    async fn maybe_spill_texts(&self, session_id: ThreadId, texts: Vec<String>) -> Vec<String> {
-        self.output_spiller
-            .maybe_spill_texts(session_id, texts)
-            .await
+    pub(crate) fn preview_interrupt(&self) -> Vec<HookRunSummary> {
+        crate::events::interrupt::preview(&self.handlers)
     }
 
-    async fn maybe_spill_text(&self, session_id: ThreadId, text: Option<String>) -> Option<String> {
-        match text {
-            Some(text) => Some(self.output_spiller.maybe_spill_text(session_id, text).await),
-            None => None,
-        }
-    }
-
-    async fn maybe_spill_prompt_fragments(
-        &self,
-        session_id: ThreadId,
-        fragments: Vec<codex_protocol::items::HookPromptFragment>,
-    ) -> Vec<codex_protocol::items::HookPromptFragment> {
-        self.output_spiller
-            .maybe_spill_prompt_fragments(session_id, fragments)
-            .await
+    pub(crate) async fn run_interrupt(&self, request: InterruptRequest) -> InterruptOutcome {
+        crate::events::interrupt::run(self, request).await
     }
 }
 

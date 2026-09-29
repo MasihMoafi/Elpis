@@ -2,12 +2,10 @@
 source: tui/src/chatwidget/tests/exec_flow.rs
 expression: normalize_snapshot_paths(rendered)
 ---
- Elpis · model gpt-5.6-sol · location /tmp/proje
-Waiting for background terminal (0s • esc to in…
+• Waiting for background terminal (0s • esc to …
   └ cargo test -p codex-core -- --exact…
-│
-› Ask Elpis to do anything
-│
-│
-│
-          context unknown · Tab Context Ledger
+
+
+› Ask Codex to do anything
+
+  GPT-5.6-Sol default · /tmp/project

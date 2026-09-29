@@ -1,27 +1,61 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use anyhow::Context;
 use anyhow::Result;
 use codex_config::types::ApprovalsReviewer;
+use codex_core::EnvironmentConfig;
+use codex_core::EnvironmentNetworkPolicy;
+use codex_core::StartThreadOptions;
+use codex_core::TurnInputRequest;
 use codex_core::config::Constrained;
+use codex_core::config::NetworkProxySpec;
+use codex_core::shell::ShellType;
+use codex_core::shell::get_shell;
+use codex_core::windows_sandbox::WindowsSandboxLevelExt;
 use codex_exec_server::CreateDirectoryOptions;
 use codex_exec_server::LOCAL_ENVIRONMENT_ID;
 use codex_exec_server::REMOTE_ENVIRONMENT_ID;
 use codex_exec_server::RemoveOptions;
 use codex_features::Feature;
+use codex_history::RolloutItem;
+use codex_network_proxy::NetworkProxyConfig;
+use codex_network_proxy::PROXY_ACTIVE_ENV_KEY;
+use codex_protocol::approvals::ExecApprovalKind;
+use codex_protocol::approvals::GuardianAssessmentAction;
 use codex_protocol::approvals::NetworkApprovalContext;
 use codex_protocol::approvals::NetworkApprovalProtocol;
 use codex_protocol::approvals::NetworkPolicyAmendment;
 use codex_protocol::approvals::NetworkPolicyRuleAction;
+use codex_protocol::capabilities::CapabilityRootLocation;
+use codex_protocol::capabilities::SelectedCapabilityRoot;
+use codex_protocol::config_types::CollaborationMode;
+use codex_protocol::config_types::ModeKind;
+use codex_protocol::config_types::Settings;
+use codex_protocol::config_types::WindowsSandboxLevel;
+use codex_protocol::models::NetworkPermissions;
 use codex_protocol::models::PermissionProfile;
+use codex_protocol::models::PermissionProfileSnapshot;
+use codex_protocol::openai_models::AutoReviewMessages;
+use codex_protocol::openai_models::ModelVisibility;
+use codex_protocol::openai_models::ModelsResponse;
+use codex_protocol::permissions::FileSystemAccessMode;
+use codex_protocol::permissions::FileSystemPath;
+use codex_protocol::permissions::FileSystemSandboxEntry;
+use codex_protocol::permissions::FileSystemSandboxPolicy;
 use codex_protocol::permissions::NetworkSandboxPolicy;
 use codex_protocol::protocol::AskForApproval;
+use codex_protocol::protocol::EnvironmentConfigState;
 use codex_protocol::protocol::EventMsg;
 use codex_protocol::protocol::ExecApprovalRequestEvent;
+use codex_protocol::protocol::GuardianAssessmentStatus;
 use codex_protocol::protocol::Op;
 use codex_protocol::protocol::ReviewDecision;
+use codex_protocol::protocol::ThreadSettingsOverrides;
 use codex_protocol::protocol::TurnEnvironmentSelection;
 use codex_protocol::protocol::TurnEnvironmentSelections;
+use codex_protocol::request_permissions::PermissionGrantScope;
+use codex_protocol::request_permissions::RequestPermissionProfile;
+use codex_protocol::request_permissions::RequestPermissionsResponse;
 use codex_protocol::user_input::UserInput;
+use codex_thread_store::LoadThreadHistoryParams;
 use codex_utils_path_uri::PathUri;
 use core_test_support::PathBufExt;
 use core_test_support::PathExt;
@@ -44,6 +78,7 @@ use core_test_support::skip_if_no_remote_env;
 use core_test_support::skip_if_sandbox;
 use core_test_support::skip_if_target_windows;
 use core_test_support::test_codex::TestCodex;
+use core_test_support::test_codex::TestCodexBuilder;
 use core_test_support::test_codex::local;
 use core_test_support::test_codex::test_codex;
 use core_test_support::test_codex::turn_permission_fields;
@@ -59,6 +94,7 @@ use std::time::Duration;
 use std::time::SystemTime;
 use std::time::UNIX_EPOCH;
 use tempfile::TempDir;
+use test_case::test_case;
 use tokio::io::AsyncReadExt;
 use tokio::io::AsyncWriteExt;
 
@@ -85,65 +121,102 @@ async fn guardian_network_approval_preserves_action_and_outcome_routing() -> Res
         .context("expected network command")?
         .to_string();
     let second_command = first_command.clone();
+    let expected_command = get_shell(ShellType::Sh)
+        .context("expected local sh")?
+        .derive_exec_args(&first_command, /*use_login_shell*/ false);
     let denial = "The destination is outside the approved test boundary.";
-    let responses = mount_sse_sequence(
-        &server,
-        vec![
+    let mut actions = Vec::new();
+    let mut outputs = Vec::new();
+    for (prompt, call_id, outcome, rationale) in [
+        (
+            "approve the network request",
+            first_call_id,
+            "allow",
+            "The test request is safe.",
+        ),
+        ("deny the network request", second_call_id, "deny", denial),
+    ] {
+        mount_sse_once_match(
+            &server,
+            move |request: &wiremock::Request| {
+                !is_guardian_request(request)
+                    && request_body_contains(request, prompt)
+                    && !request_body_contains(request, call_id)
+            },
             sse(vec![
-                ev_response_created("resp-guardian-network-parent-1"),
                 ev_function_call(
-                    first_call_id,
+                    call_id,
                     "exec_command",
                     &serde_json::to_string(&network_fetch_args(LOCAL_ENVIRONMENT_ID))?,
                 ),
-                ev_completed("resp-guardian-network-parent-1"),
+                ev_completed(&format!("{call_id}-start")),
             ]),
+        )
+        .await;
+        let guardian = mount_sse_once_match(
+            &server,
+            move |request: &wiremock::Request| guardian_request_is_for(request, call_id),
             sse(vec![
-                ev_response_created("resp-guardian-network-allow"),
                 ev_assistant_message(
-                    "msg-guardian-network-allow",
-                    r#"{"risk_level":"low","user_authorization":"high","outcome":"allow","rationale":"The test request is safe."}"#,
-                ),
-                ev_completed("resp-guardian-network-allow"),
-            ]),
-            sse(vec![
-                ev_response_created("resp-guardian-network-parent-2"),
-                ev_assistant_message("msg-guardian-network-parent-2", "approved"),
-                ev_completed("resp-guardian-network-parent-2"),
-            ]),
-            sse(vec![
-                ev_response_created("resp-guardian-network-parent-3"),
-                ev_function_call(
-                    second_call_id,
-                    "exec_command",
-                    &serde_json::to_string(&network_fetch_args(LOCAL_ENVIRONMENT_ID))?,
-                ),
-                ev_completed("resp-guardian-network-parent-3"),
-            ]),
-            sse(vec![
-                ev_response_created("resp-guardian-network-deny"),
-                ev_assistant_message(
-                    "msg-guardian-network-deny",
+                    &format!("{call_id}-decision"),
                     &json!({
-                        "risk_level": "high",
-                        "user_authorization": "low",
-                        "outcome": "deny",
-                        "rationale": denial,
+                        "risk_level": if outcome == "allow" { "low" } else { "high" },
+                        "user_authorization": if outcome == "allow" { "high" } else { "low" },
+                        "outcome": outcome,
+                        "rationale": rationale,
                     })
                     .to_string(),
                 ),
-                ev_completed("resp-guardian-network-deny"),
+                ev_completed(&format!("{call_id}-guardian")),
             ]),
-            sse(vec![
-                ev_response_created("resp-guardian-network-parent-4"),
-                ev_assistant_message("msg-guardian-network-parent-4", "denied"),
-                ev_completed("resp-guardian-network-parent-4"),
-            ]),
-        ],
-    )
-    .await;
+        )
+        .await;
 
-    for prompt in ["approve the network request", "deny the network request"] {
+        // Process startup can outlast exec_command's first yield. Follow the returned
+        // session until its final output instead of consuming Guardian's next response.
+        let (output_tx, output_rx) = std::sync::mpsc::channel();
+        let parent = wiremock::Mock::given(wiremock::matchers::method("POST"))
+            .and(wiremock::matchers::path("/v1/responses"))
+            .and(move |request: &wiremock::Request| {
+                !is_guardian_request(request) && request_body_contains(request, call_id)
+            })
+            .respond_with(move |request: &wiremock::Request| {
+                let body: Value = serde_json::from_slice(
+                    &decoded_request_body(request).expect("decode parent request"),
+                )
+                .expect("parse parent request");
+                let input = body["input"].as_array().expect("parent input");
+                let output = input
+                    .iter()
+                    .rev()
+                    .find(|item| item["type"] == "function_call_output")
+                    .and_then(|item| item["output"].as_str())
+                    .expect("network command or poll output");
+                let response_id = format!("{call_id}-{}", input.len());
+                let event = if let Some(session_id) = output
+                    .lines()
+                    .find_map(|line| line.strip_prefix("Process running with session ID "))
+                {
+                    ev_function_call(
+                        &response_id,
+                        "write_stdin",
+                        &json!({
+                            "session_id": session_id.parse::<i32>().expect("session id"),
+                            "chars": "",
+                            "yield_time_ms": 1_000,
+                        })
+                        .to_string(),
+                    )
+                } else {
+                    output_tx
+                        .send(output.to_string())
+                        .expect("save final output");
+                    ev_assistant_message(&response_id, "done")
+                };
+                sse_response(sse(vec![event, ev_completed(&response_id)]))
+            })
+            .mount_as_scoped(&server)
+            .await;
         submit_managed_network_turn(
             &test,
             prompt,
@@ -153,9 +226,15 @@ async fn guardian_network_approval_preserves_action_and_outcome_routing() -> Res
         )
         .await?;
         wait_for_completion_without_network_prompt(&test).await;
+        outputs.push(
+            output_rx
+                .try_recv()
+                .context("expected final network output")?,
+        );
+        actions.extend(guardian_network_actions(&guardian)?);
+        drop(parent);
     }
 
-    let actions = guardian_network_actions(&responses)?;
     assert_eq!(actions.len(), 2);
     assert_eq!(
         actions[0],
@@ -165,9 +244,10 @@ async fn guardian_network_approval_preserves_action_and_outcome_routing() -> Res
             "protocol": "http",
             "target": NETWORK_TEST_TARGET,
             "tool": "network_access",
+            "environment_id": LOCAL_ENVIRONMENT_ID,
             "trigger": {
                 "callId": first_call_id,
-                "command": ["/bin/sh", "-c", first_command],
+                "command": expected_command,
                 "cwd": test.config.cwd,
                 "sandboxPermissions": "use_default",
                 "toolName": "exec_command",
@@ -188,17 +268,122 @@ async fn guardian_network_approval_preserves_action_and_outcome_routing() -> Res
         Some(second_command.as_str())
     );
 
-    let requests = responses.requests();
-    let approved_output = requests
-        .iter()
-        .find_map(|request| request.function_call_output_text(first_call_id))
-        .context("expected approved network tool output")?;
-    assert!(!approved_output.contains("rejected"));
-    let denied_output = requests
-        .iter()
-        .find_map(|request| request.function_call_output_text(second_call_id))
-        .context("expected denied network tool output")?;
-    assert!(denied_output.contains(denial));
+    assert!(!outputs[0].contains("rejected"));
+    assert!(outputs[1].contains(denial));
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[cfg_attr(
+    not(target_os = "linux"),
+    ignore = "requires the trusted Linux proxy bridge"
+)]
+async fn strict_auto_review_routes_network_approval_to_guardian_when_user_reviewer_is_selected()
+-> Result<()> {
+    skip_if_target_windows!(Ok(()), "uses the POSIX/Python network fixture");
+    skip_if_host_windows!(Ok(()));
+    skip_if_no_network!(Ok(()));
+    skip_if_sandbox!(Ok(()));
+
+    let server = start_mock_server().await;
+    let test = managed_network_unified_exec_test_with_features(
+        &server,
+        &[Feature::RequestPermissionsTool],
+    )
+    .await?;
+    let permission_call_id = "strict-network-permissions";
+    let network_call_id = "strict-network-access";
+    let requested_permissions = RequestPermissionProfile {
+        network: Some(NetworkPermissions {
+            enabled: Some(true),
+        }),
+        ..Default::default()
+    };
+    let responses = mount_sse_sequence(
+        &server,
+        vec![
+            sse(vec![
+                ev_response_created("resp-strict-network-permissions"),
+                ev_function_call(
+                    permission_call_id,
+                    "request_permissions",
+                    &serde_json::to_string(&json!({
+                        "reason": "Require automatic review for the rest of this turn",
+                        "permissions": requested_permissions,
+                    }))?,
+                ),
+                ev_completed("resp-strict-network-permissions"),
+            ]),
+            sse(vec![
+                ev_response_created("resp-strict-network-command"),
+                ev_function_call(
+                    network_call_id,
+                    "exec_command",
+                    &serde_json::to_string(&network_fetch_args(LOCAL_ENVIRONMENT_ID))?,
+                ),
+                ev_completed("resp-strict-network-command"),
+            ]),
+            sse(vec![
+                ev_response_created("resp-strict-command-guardian"),
+                ev_assistant_message(
+                    "msg-strict-command-guardian",
+                    r#"{"risk_level":"low","user_authorization":"high","outcome":"allow","rationale":"The strict-review command is safe."}"#,
+                ),
+                ev_completed("resp-strict-command-guardian"),
+            ]),
+            sse(vec![
+                ev_response_created("resp-strict-network-guardian"),
+                ev_assistant_message(
+                    "msg-strict-network-guardian",
+                    r#"{"risk_level":"low","user_authorization":"high","outcome":"allow","rationale":"The strict-review network request is safe."}"#,
+                ),
+                ev_completed("resp-strict-network-guardian"),
+            ]),
+            sse(vec![
+                ev_response_created("resp-strict-network-complete"),
+                ev_assistant_message("msg-strict-network-complete", "reviewed"),
+                ev_completed("resp-strict-network-complete"),
+            ]),
+        ],
+    )
+    .await;
+
+    submit_managed_network_turn(
+        &test,
+        "grant turn permissions, then automatically review network access",
+        vec![local(test.config.cwd.clone())],
+        ApprovalsReviewer::User,
+        AskForApproval::OnRequest,
+    )
+    .await?;
+    let EventMsg::RequestPermissions(request) = wait_for_event(&test.codex, |event| {
+        matches!(event, EventMsg::RequestPermissions(_))
+    })
+    .await
+    else {
+        unreachable!("matched request permissions event")
+    };
+    assert_eq!(request.call_id, permission_call_id);
+    test.codex
+        .submit(Op::RequestPermissionsResponse {
+            id: permission_call_id.to_string(),
+            response: RequestPermissionsResponse {
+                permissions: request.permissions,
+                scope: PermissionGrantScope::Turn,
+                strict_auto_review: true,
+            },
+        })
+        .await?;
+    wait_for_completion_without_network_prompt(&test).await;
+
+    let actions = guardian_network_actions(&responses)?;
+    assert_eq!(actions.len(), 1);
+    assert_eq!(
+        actions[0]
+            .pointer("/trigger/callId")
+            .and_then(Value::as_str),
+        Some(network_call_id)
+    );
 
     Ok(())
 }
@@ -254,12 +439,22 @@ async fn cancelled_guardian_network_review_fails_closed_without_rewriting_turn_s
         AskForApproval::OnRequest,
     )
     .await?;
-    wait_for_response_request(&pending_guardian).await;
+    wait_for_guardian_request(&pending_guardian).await;
     test.codex.submit(Op::Interrupt).await?;
-    wait_for_event(&test.codex, |event| {
-        matches!(event, EventMsg::TurnAborted(_))
-    })
-    .await;
+    let mut saw_turn_aborted = false;
+    let mut saw_guardian_aborted = false;
+    while !saw_turn_aborted || !saw_guardian_aborted {
+        let event = tokio::time::timeout(Duration::from_secs(5), test.codex.next_event())
+            .await
+            .context("timed out waiting for parent and Guardian cancellation")?
+            .context("event stream ended while waiting for cancellation")?;
+        saw_turn_aborted |= matches!(&event.msg, EventMsg::TurnAborted(_));
+        saw_guardian_aborted |= matches!(
+            &event.msg,
+            EventMsg::GuardianAssessment(assessment)
+                if assessment.status == GuardianAssessmentStatus::Aborted
+        );
+    }
 
     let state_check = mount_sse_once_match(
         &server,
@@ -285,6 +480,122 @@ async fn cancelled_guardian_network_review_fails_closed_without_rewriting_turn_s
     wait_for_turn_complete(&test).await;
     assert!(state_check.single_request().body_contains_text(marker));
 
+    Ok(())
+}
+
+#[test_case("GET", "http://codex-network-test.invalid/"; "plain_http")]
+#[test_case("CONNECT", "codex-network-test.invalid:443"; "connect")]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[cfg_attr(
+    not(target_os = "linux"),
+    ignore = "requires the trusted Linux proxy bridge"
+)]
+async fn disconnected_network_request_explains_failure_to_model(
+    method: &str,
+    target: &str,
+) -> Result<()> {
+    skip_if_target_windows!(Ok(()), "uses the POSIX/Python network fixture");
+    skip_if_host_windows!(Ok(()));
+    skip_if_no_network!(Ok(()));
+    skip_if_sandbox!(Ok(()));
+
+    let server = start_mock_server().await;
+    // This tests the controller-local proxy; remote disconnect forwarding is not supported yet.
+    let test = managed_network_unified_exec_test(&server).await?;
+    let call_id = "network-disconnect";
+    let poll_call_id = "network-disconnect-poll";
+    let command = format!(
+        r#"python3 - <<'PY'
+import os, socket, time, urllib.parse
+proxy = urllib.parse.urlparse(os.environ['HTTP_PROXY'])
+sock = socket.create_connection((proxy.hostname, proxy.port), timeout=10)
+sock.sendall(b'{method} {target} HTTP/1.1\r\nHost: codex-network-test.invalid\r\n\r\n')
+while not os.path.exists('disconnect-now'):
+    time.sleep(0.01)
+sock.close()
+time.sleep(60)
+PY"#
+    );
+    let mut args = network_exec_args(&command);
+    args["environment_id"] = json!(LOCAL_ENVIRONMENT_ID);
+    mount_sse_once_match(
+        &server,
+        |request: &wiremock::Request| {
+            !is_guardian_request(request) && !request_body_contains(request, call_id)
+        },
+        sse(vec![
+            ev_function_call(call_id, "exec_command", &serde_json::to_string(&args)?),
+            ev_completed("parent-start"),
+        ]),
+    )
+    .await;
+    let pending_guardian = mount_response_once_match(
+        &server,
+        is_guardian_request,
+        sse_response(sse(vec![ev_completed("guardian")])).set_delay(Duration::from_secs(60)),
+    )
+    .await;
+    let parent_poll = mount_sse_once_match(
+        &server,
+        |request: &wiremock::Request| {
+            !is_guardian_request(request)
+                && request_body_contains(request, call_id)
+                && !request_body_contains(request, poll_call_id)
+        },
+        sse(vec![
+            ev_function_call(
+                poll_call_id,
+                "write_stdin",
+                &json!({
+                    "session_id": 1000, "chars": "", "yield_time_ms": 10_000,
+                })
+                .to_string(),
+            ),
+            ev_completed("parent-poll"),
+        ]),
+    )
+    .await;
+    let parent_final = mount_sse_once_match(
+        &server,
+        |request: &wiremock::Request| {
+            !is_guardian_request(request) && request_body_contains(request, poll_call_id)
+        },
+        sse(vec![
+            ev_assistant_message("done", "understood"),
+            ev_completed("parent-done"),
+        ]),
+    )
+    .await;
+    submit_managed_network_turn(
+        &test,
+        "explain why the network request fails",
+        vec![local(test.config.cwd.clone())],
+        ApprovalsReviewer::AutoReview,
+        AskForApproval::OnRequest,
+    )
+    .await?;
+    wait_for_guardian_request(&pending_guardian).await;
+    wait_for_response_request(&parent_poll).await;
+    fs::write(test.config.cwd.join("disconnect-now"), "close")?;
+    wait_for_completion_without_network_prompt(&test).await;
+
+    let output = parent_final
+        .single_request()
+        .function_call_output_text(poll_call_id)
+        .context("expected model-visible disconnect output")?;
+    let prefix = "Network request disconnected after ";
+    let suffix = " ms, before approval could complete";
+    let elapsed = output
+        .split_once(prefix)
+        .and_then(|(_, rest)| rest.split_once(suffix))
+        .map(|(elapsed, _)| elapsed)
+        .with_context(|| format!("missing disconnect explanation: {output}"))?;
+    assert!(elapsed.parse::<u128>()? > 0);
+    let message = &output[output.find(prefix).context("missing disconnect prefix")?..];
+    let message = &message[..prefix.len() + elapsed.len() + suffix.len()];
+    insta::assert_snapshot!(message.replacen(elapsed, "<elapsed>", 1), @r"
+    Network request disconnected after <elapsed> ms, before approval could complete
+    ");
     Ok(())
 }
 
@@ -373,7 +684,7 @@ async fn timed_out_guardian_network_review_uses_timeout_outcome_without_user_fal
         AskForApproval::OnRequest,
     )
     .await?;
-    wait_for_response_request(&pending_guardian).await;
+    wait_for_guardian_request(&pending_guardian).await;
     tokio::time::pause();
     tokio::time::advance(Duration::from_secs(91)).await;
     tokio::time::resume();
@@ -393,6 +704,317 @@ async fn timed_out_guardian_network_review_uses_timeout_outcome_without_user_fal
         "unexpected timed-out Guardian tool output: {tool_output}"
     );
     assert!(!tool_output.contains("rejected by user"));
+
+    Ok(())
+}
+
+#[test_case(true; "same_turn")]
+#[test_case(false; "later_turn")]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[cfg_attr(
+    not(target_os = "linux"),
+    ignore = "requires the trusted Linux proxy bridge"
+)]
+async fn background_network_approval_uses_current_review_settings_and_original_execution(
+    same_turn: bool,
+) -> Result<()> {
+    skip_if_target_windows!(Ok(()), "uses the POSIX/Python network fixture");
+    skip_if_host_windows!(Ok(()));
+    skip_if_no_network!(Ok(()));
+    skip_if_sandbox!(Ok(()));
+
+    let server = start_mock_server().await;
+    let test = managed_network_unified_exec_builder(&[
+        Feature::RequestPermissionsTool,
+        Feature::StepModelSwitching,
+    ])?
+    .with_model("guardian-parent-a")
+    .with_config(|config| {
+        config.model_catalog = Some(guardian_parent_catalog());
+    })
+    .build_with_remote_and_local_env(&server)
+    .await?;
+    let start_call_id = "cross-turn-network-start";
+    let permission_call_id = "cross-turn-network-permissions";
+    let stdin_call_id = "cross-turn-network-stdin";
+    let requested_permissions = RequestPermissionProfile {
+        network: Some(NetworkPermissions {
+            enabled: Some(true),
+        }),
+        ..Default::default()
+    };
+    let command = format!(
+        "read _; {}; echo CROSS-TURN-NETWORK-COMPLETE; read _",
+        remote_network_proxy_request_command("NETWORK-RESULT")
+    );
+    let mut start_args = network_exec_args(&command);
+    start_args["environment_id"] = json!(LOCAL_ENVIRONMENT_ID);
+    start_args["tty"] = json!(true);
+    start_args["yield_time_ms"] = json!(250);
+    let mut events = vec![
+        sse(vec![
+            ev_response_created("resp-cross-turn-network-start"),
+            ev_function_call(
+                start_call_id,
+                "exec_command",
+                &serde_json::to_string(&start_args)?,
+            ),
+            ev_completed("resp-cross-turn-network-start"),
+        ]),
+        sse(vec![
+            ev_response_created("resp-cross-turn-network-first-complete"),
+            ev_assistant_message("msg-cross-turn-network-first-complete", "terminal started"),
+            ev_completed("resp-cross-turn-network-first-complete"),
+        ]),
+        sse(vec![
+            ev_response_created("resp-cross-turn-network-permissions"),
+            ev_function_call(
+                permission_call_id,
+                "request_permissions",
+                &serde_json::to_string(&json!({
+                    "reason": "Automatically review the existing terminal's network access",
+                    "permissions": requested_permissions,
+                }))?,
+            ),
+            ev_completed("resp-cross-turn-network-permissions"),
+        ]),
+        sse(vec![
+            ev_response_created("resp-cross-turn-network-stdin"),
+            ev_function_call(
+                stdin_call_id,
+                "write_stdin",
+                &serde_json::to_string(&json!({
+                    "session_id": 1000,
+                    "chars": "continue\n",
+                    "yield_time_ms": 10_000,
+                }))?,
+            ),
+            ev_completed("resp-cross-turn-network-stdin"),
+        ]),
+        // Strict review approves terminal input before the process can request network access.
+        sse(vec![
+            ev_response_created("resp-cross-turn-stdin-guardian"),
+            ev_assistant_message(
+                "msg-cross-turn-stdin-guardian",
+                r#"{"risk_level":"low","user_authorization":"high","outcome":"allow","rationale":"Continue the existing terminal."}"#,
+            ),
+            ev_completed("resp-cross-turn-stdin-guardian"),
+        ]),
+        sse(vec![
+            ev_response_created("resp-network-guardian-environment"),
+            ev_function_call(
+                "guardian-pwd",
+                "exec_command",
+                &network_exec_args("pwd").to_string(),
+            ),
+            ev_completed("resp-network-guardian-environment"),
+        ]),
+        sse(vec![
+            ev_response_created("resp-cross-turn-network-guardian"),
+            ev_assistant_message(
+                "msg-cross-turn-network-guardian",
+                r#"{"risk_level":"low","user_authorization":"high","outcome":"allow","rationale":"The existing terminal's network request is safe."}"#,
+            ),
+            ev_completed("resp-cross-turn-network-guardian"),
+        ]),
+        sse(vec![
+            ev_response_created("resp-cross-turn-network-second-complete"),
+            ev_assistant_message(
+                "msg-cross-turn-network-second-complete",
+                "network request approved",
+            ),
+            ev_completed("resp-cross-turn-network-second-complete"),
+        ]),
+    ];
+    if same_turn {
+        // Omit the first completion so the original turn stays active.
+        events.remove(/*index*/ 1);
+    }
+    let responses = mount_sse_sequence(&server, events).await;
+
+    submit_managed_network_turn(
+        &test,
+        "start a background terminal that waits before requesting network access",
+        vec![local(test.config.cwd.clone())],
+        ApprovalsReviewer::User,
+        AskForApproval::OnRequest,
+    )
+    .await?;
+    let EventMsg::TurnStarted(first_turn) = wait_for_event(&test.codex, |event| {
+        matches!(event, EventMsg::TurnStarted(_))
+    })
+    .await
+    else {
+        unreachable!("matched first turn start")
+    };
+    let current_cwd = test.cwd.path().join("later-turn");
+    fs::create_dir(&current_cwd)?;
+    let active_turn_id = if same_turn {
+        first_turn.turn_id.clone()
+    } else {
+        wait_for_turn_complete(&test).await;
+        assert_eq!(test.codex.list_background_terminals().await.len(), 1);
+        test.codex
+            .start_or_steer_turn(
+                TurnInputRequest::user_input(vec![UserInput::Text {
+                    text: "review the existing terminal under B".to_string(),
+                    text_elements: Vec::new(),
+                }])
+                .with_thread_settings(ThreadSettingsOverrides {
+                    environments: Some(TurnEnvironmentSelections::new(
+                        current_cwd.abs(),
+                        vec![local(current_cwd.abs())],
+                    )),
+                    collaboration_mode: Some(CollaborationMode {
+                        mode: ModeKind::Default,
+                        settings: Settings {
+                            model: "guardian-parent-b".to_string(),
+                            reasoning_effort: Some(
+                                codex_protocol::openai_models::ReasoningEffort::Medium,
+                            ),
+                            developer_instructions: None,
+                        },
+                    }),
+                    ..Default::default()
+                }),
+            )
+            .await?;
+        let EventMsg::TurnStarted(active_turn) = wait_for_event(&test.codex, |event| {
+            matches!(event, EventMsg::TurnStarted(_))
+        })
+        .await
+        else {
+            unreachable!("matched second turn start")
+        };
+        assert_ne!(active_turn.turn_id, first_turn.turn_id);
+        active_turn.turn_id
+    };
+    let EventMsg::RequestPermissions(request) = wait_for_event(&test.codex, |event| {
+        matches!(event, EventMsg::RequestPermissions(_))
+    })
+    .await
+    else {
+        unreachable!("matched request permissions event")
+    };
+    assert_eq!(request.call_id, permission_call_id);
+    if same_turn {
+        let (reply, outcome) = tokio::sync::oneshot::channel();
+        test.codex
+            .submit(Op::TurnSettings {
+                turn_id: active_turn_id.clone(),
+                update: codex_protocol::protocol::TurnSettingsUpdate {
+                    model: Some("guardian-parent-b".to_string()),
+                    effort: Some(Some(codex_protocol::openai_models::ReasoningEffort::Medium)),
+                    ..Default::default()
+                },
+                reply,
+            })
+            .await?;
+        assert_eq!(
+            tokio::time::timeout(Duration::from_secs(10), outcome).await??,
+            codex_protocol::protocol::TurnSettingsUpdateOutcome::Applied,
+        );
+    }
+    test.codex
+        .submit(Op::RequestPermissionsResponse {
+            id: permission_call_id.to_string(),
+            response: RequestPermissionsResponse {
+                permissions: request.permissions,
+                scope: PermissionGrantScope::Turn,
+                strict_auto_review: true,
+            },
+        })
+        .await?;
+    let assessment = wait_for_event(&test.codex, |event| {
+        matches!(
+            event,
+            EventMsg::GuardianAssessment(assessment)
+                if assessment.status == GuardianAssessmentStatus::Approved
+                    && matches!(assessment.action, GuardianAssessmentAction::NetworkAccess { .. })
+        ) || matches!(
+            event,
+            EventMsg::ExecApprovalRequest(_) | EventMsg::TurnComplete(_)
+        )
+    })
+    .await;
+    let EventMsg::GuardianAssessment(assessment) = assessment else {
+        panic!("expected Guardian approval, got {assessment:?}");
+    };
+    assert_eq!(assessment.turn_id, active_turn_id);
+    wait_for_turn_complete(&test).await;
+
+    let actions = guardian_network_actions(&responses)?;
+    assert_eq!(actions.len(), 2);
+    assert_eq!(actions[0], actions[1]);
+    let original_command = get_shell(ShellType::Sh)
+        .context("expected local sh")?
+        .derive_exec_args(&command, /*use_login_shell*/ false);
+    assert_eq!(
+        actions[0]["trigger"],
+        json!({
+            "callId": start_call_id,
+            "toolName": "exec_command",
+            "command": original_command,
+            "cwd": test.config.cwd,
+            "sandboxPermissions": "use_default",
+            "tty": true,
+        })
+    );
+    let requests = responses.requests();
+    let reviews = requests
+        .iter()
+        .filter(|request| request.body_json()["client_metadata"]["x-openai-subagent"] == "guardian")
+        .collect::<Vec<_>>();
+    assert_eq!(reviews.len(), 3);
+    for review in &reviews {
+        assert_eq!(review.body_json()["model"], "guardian-parent-b");
+        assert_eq!(review.body_json()["reasoning"]["effort"], "medium");
+    }
+    let parent_requests = requests
+        .iter()
+        .filter(|request| request.body_json()["client_metadata"]["x-openai-subagent"] != "guardian")
+        .collect::<Vec<_>>();
+    assert_eq!(parent_requests[0].body_json()["model"], "guardian-parent-a");
+    let final_parent = parent_requests
+        .last()
+        .context("parent completion request")?;
+    assert_eq!(final_parent.body_json()["model"], "guardian-parent-b");
+    let metadata: Value = serde_json::from_str(
+        final_parent.body_json()["client_metadata"]["x-codex-turn-metadata"]
+            .as_str()
+            .context("Responses turn metadata")?,
+    )?;
+    // Strict review does not change this field's policy-routing meaning.
+    assert_eq!(metadata["auto_review_enabled"], false);
+    let pwd_output = reviews[2]
+        .function_call_output_text("guardian-pwd")
+        .context("Guardian pwd output")?;
+    let original_cwd = test
+        .config
+        .cwd
+        .as_path()
+        .to_str()
+        .context("UTF-8 original cwd")?;
+    let current_cwd = current_cwd.to_str().context("UTF-8 current cwd")?;
+    assert!(pwd_output.contains(original_cwd));
+    assert!(!pwd_output.contains(current_cwd));
+    let stdin_output = responses
+        .requests()
+        .iter()
+        .find_map(|request| request.function_call_output_text(stdin_call_id))
+        .context("expected background terminal network request output")?;
+    assert!(!stdin_output.contains("blocked by policy"));
+    assert!(
+        stdin_output.contains("NETWORK-RESULT:HTTP/1.1 502")
+            || stdin_output.contains("NETWORK-RESULT:HTTP/1.1 200")
+    );
+    assert!(stdin_output.contains("CROSS-TURN-NETWORK-COMPLETE"));
+    assert_eq!(
+        test.codex.list_background_terminals().await.len(),
+        1,
+        "approved network access must not terminate the background process"
+    );
+    test.codex.submit(Op::CleanBackgroundTerminals).await?;
 
     Ok(())
 }
@@ -428,13 +1050,15 @@ async fn user_network_approval_once_session_and_denial_semantics() -> Result<()>
     )
     .await?;
     let approval = expect_network_approval(&test, LOCAL_ENVIRONMENT_ID).await?;
-    assert_eq!(
-        approval.call_id,
-        "network#local#http#codex-network-test.invalid#80"
+    assert!(
+        approval
+            .call_id
+            .starts_with("network#local#http#codex-network-test.invalid#80#")
     );
-    assert_eq!(approval.approval_id, None);
+    assert_eq!(approval.approval_id.as_deref(), None);
+    let first_approval_call_id = approval.call_id.clone();
     assert!(!approval.turn_id.is_empty());
-    assert_eq!(approval.cwd, test.config.cwd);
+    assert_eq!(approval.cwd, test.config.cwd.clone().into());
     assert_eq!(
         approval.reason.as_deref(),
         Some("codex-network-test.invalid is not in the allowed_domains")
@@ -464,6 +1088,8 @@ async fn user_network_approval_once_session_and_denial_semantics() -> Result<()>
     )
     .await?;
     let approval = expect_network_approval(&test, LOCAL_ENVIRONMENT_ID).await?;
+    assert_eq!(approval.approval_id.as_deref(), None);
+    assert_ne!(approval.call_id, first_approval_call_id);
     test.codex
         .submit(Op::ExecApproval {
             id: approval.effective_approval_id(),
@@ -520,7 +1146,7 @@ async fn user_network_approval_once_session_and_denial_semantics() -> Result<()>
         .submit(Op::ExecApproval {
             id: approval.effective_approval_id(),
             turn_id: Some(approval.turn_id),
-            decision: ReviewDecision::Denied,
+            decision: ReviewDecision::denied("rejected by user"),
         })
         .await?;
     wait_for_turn_complete(&test).await;
@@ -576,6 +1202,214 @@ async fn user_network_approval_once_session_and_denial_semantics() -> Result<()>
     })
     .await;
     abort_response.single_request();
+
+    Ok(())
+}
+
+#[derive(Clone, Copy)]
+enum OtherNetworkReview {
+    Denied,
+    Pending,
+    ApprovedForSession,
+}
+
+#[test_case(OtherNetworkReview::Denied; "latest_rejection")]
+#[test_case(OtherNetworkReview::Pending; "pending_review")]
+#[test_case(OtherNetworkReview::ApprovedForSession; "accepted_review")]
+#[tokio::test(flavor = "current_thread")]
+#[cfg_attr(
+    not(target_os = "linux"),
+    ignore = "requires the trusted Linux proxy bridge"
+)]
+async fn network_rejection_preserves_execution_and_review_outcomes(
+    other_review: OtherNetworkReview,
+) -> Result<()> {
+    skip_if_target_windows!(Ok(()), "uses the POSIX/Python network fixture");
+    skip_if_host_windows!(Ok(()));
+    skip_if_no_network!(Ok(()));
+    skip_if_sandbox!(Ok(()));
+
+    let server = start_mock_server().await;
+    let test = managed_network_unified_exec_test(&server).await?;
+    let local_cwd = test.cwd.path().abs();
+    let call_id = "network-multiple-reviews";
+    let poll_call_id = "network-multiple-reviews-poll";
+    let second_target = format!("http://{NETWORK_TEST_HOST}:81");
+    let command = format!(
+        r#"read _; python3 - <<'PY'
+import fcntl, os, pathlib, socket, threading, urllib.parse
+process_lock = open('network-process-lock', 'w')
+fcntl.flock(process_lock, fcntl.LOCK_EX)
+proxy = urllib.parse.urlparse(os.environ['HTTP_PROXY'])
+def fetch(port):
+    with socket.create_connection((proxy.hostname, proxy.port), timeout=30) as sock:
+        sock.sendall(f'GET http://{NETWORK_TEST_HOST}:{{port}}/ HTTP/1.1\r\nHost: {NETWORK_TEST_HOST}:{{port}}\r\nConnection: close\r\n\r\n'.encode())
+        status = sock.makefile('rb').readline().decode().strip()
+        result = pathlib.Path(f'network-result-{{port}}')
+        result.with_suffix('.tmp').write_text(status)
+        result.with_suffix('.tmp').replace(result)
+threads = [threading.Thread(target=fetch, args=(port,)) for port in (80, 81)]
+for thread in threads:
+    thread.start()
+for thread in threads:
+    thread.join()
+threading.Event().wait()
+PY"#
+    );
+    let mut args = network_exec_args(&command);
+    args["yield_time_ms"] = json!(250);
+    args["tty"] = json!(true);
+    let responses = mount_sse_sequence(
+        &server,
+        vec![
+            sse(vec![
+                ev_function_call(call_id, "exec_command", &args.to_string()),
+                ev_completed("network-start"),
+            ]),
+            sse(vec![
+                ev_function_call(
+                    poll_call_id,
+                    "write_stdin",
+                    &json!({"session_id": 1000, "chars": "start\n", "yield_time_ms": 10_000})
+                        .to_string(),
+                ),
+                ev_completed("network-poll"),
+            ]),
+            sse(vec![
+                ev_assistant_message("network-done", "done"),
+                ev_completed("network-done"),
+            ]),
+        ],
+    )
+    .await;
+
+    submit_managed_network_turn(
+        &test,
+        "review both network requests from one execution",
+        vec![local(local_cwd.clone())],
+        ApprovalsReviewer::User,
+        AskForApproval::OnRequest,
+    )
+    .await?;
+
+    let mut approvals = Vec::new();
+    for _ in 0..2 {
+        let event = wait_for_event_with_timeout(
+            &test.codex,
+            |event| {
+                matches!(
+                    event,
+                    EventMsg::ExecApprovalRequest(_) | EventMsg::TurnComplete(_)
+                )
+            },
+            Duration::from_secs(30),
+        )
+        .await;
+        let EventMsg::ExecApprovalRequest(approval) = event else {
+            anyhow::bail!("execution completed before both network approvals were requested");
+        };
+        approvals.push(approval);
+    }
+    assert_eq!(test.codex.list_background_terminals().await.len(), 1);
+    // The child holds this lock until exit, including across the sandbox's PID namespace.
+    let process_lock = fs::File::open(local_cwd.join("network-process-lock"))?;
+    assert!(matches!(
+        process_lock.try_lock(),
+        Err(fs::TryLockError::WouldBlock)
+    ));
+    assert_eq!(approvals[0].turn_id, approvals[1].turn_id);
+    approvals.sort_by_key(|approval| approval.command[1].clone());
+    let actual_targets = approvals
+        .iter()
+        .map(|approval| approval.command[1].clone())
+        .collect::<Vec<_>>();
+    let mut expected_targets = vec![NETWORK_TEST_TARGET.to_string(), second_target];
+    expected_targets.sort();
+    assert_eq!(actual_targets, expected_targets);
+
+    let first_rejection = "first network approval was rejected";
+    let latest_rejection = "latest network approval was rejected";
+    let first_approval = &approvals[0];
+    let first_decision = match other_review {
+        OtherNetworkReview::Denied => Some(ReviewDecision::denied(first_rejection)),
+        OtherNetworkReview::Pending => None,
+        OtherNetworkReview::ApprovedForSession => Some(ReviewDecision::ApprovedForSession),
+    };
+    if let Some(decision) = first_decision {
+        test.codex
+            .submit(Op::ExecApproval {
+                id: first_approval.effective_approval_id(),
+                turn_id: Some(first_approval.turn_id.clone()),
+                decision,
+            })
+            .await?;
+    }
+    if matches!(other_review, OtherNetworkReview::ApprovedForSession) {
+        // Wait for the process to observe the proxy response before cancelling its execution.
+        let result_path = local_cwd.join("network-result-80");
+        wait_for_paths(&[&result_path]).await?;
+        let result = fs::read_to_string(result_path)?;
+        assert!(result.starts_with("HTTP/1.1 200") || result.starts_with("HTTP/1.1 502"));
+    }
+    let final_approval = &approvals[1];
+    test.codex
+        .submit(Op::ExecApproval {
+            id: final_approval.effective_approval_id(),
+            turn_id: Some(final_approval.turn_id.clone()),
+            decision: ReviewDecision::denied(latest_rejection),
+        })
+        .await?;
+    wait_for_completion_without_network_prompt(&test).await;
+    tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            match process_lock.try_lock() {
+                Ok(()) => return Ok(()),
+                Err(fs::TryLockError::WouldBlock) => {
+                    tokio::time::sleep(Duration::from_millis(10)).await;
+                }
+                Err(fs::TryLockError::Error(error)) => return Err(error),
+            }
+        }
+    })
+    .await
+    .context("background process remained alive after network rejection")??;
+    assert!(test.codex.list_background_terminals().await.is_empty());
+
+    let output = responses
+        .requests()
+        .iter()
+        .find_map(|request| request.function_call_output_text(poll_call_id))
+        .context("expected output from the execution with multiple network reviews")?;
+    assert!(output.contains(latest_rejection), "{output}");
+    assert!(!output.contains(first_rejection), "{output}");
+
+    if matches!(other_review, OtherNetworkReview::ApprovedForSession) {
+        let probe_call_id = "network-session-grant-probe";
+        let probe = mount_exec_network_turn(
+            &server,
+            "network-session-grant-probe",
+            probe_call_id,
+            network_exec_args(&remote_network_proxy_request_command("REUSED-GRANT")),
+        )
+        .await?;
+        submit_managed_network_turn(
+            &test,
+            "reuse the accepted host grant after the original execution was cancelled",
+            vec![local(local_cwd.clone())],
+            ApprovalsReviewer::User,
+            AskForApproval::OnRequest,
+        )
+        .await?;
+        wait_for_completion_without_network_prompt(&test).await;
+        let output = probe
+            .function_call_output_text(probe_call_id)
+            .context("expected network output from the new execution")?;
+        assert!(
+            output.contains("REUSED-GRANT:HTTP/1.1 200")
+                || output.contains("REUSED-GRANT:HTTP/1.1 502"),
+            "{output}",
+        );
+    }
 
     Ok(())
 }
@@ -647,7 +1481,6 @@ async fn allowing_network_policy_amendment_persists_context_and_bypasses_prompt(
             "Allowed network rule saved in execpolicy (allowlist): codex-network-test.invalid",
         )
     }));
-
     mount_exec_network_turn(
         &server,
         "resp-network-amendment-2",
@@ -673,14 +1506,164 @@ async fn allowing_network_policy_amendment_persists_context_and_bypasses_prompt(
     not(target_os = "linux"),
     ignore = "requires the trusted Linux proxy bridge"
 )]
-async fn unattributed_network_request_uses_active_turn_environment_fallback() -> Result<()> {
-    skip_if_target_windows!(Ok(()), "uses a raw TCP proxy fixture");
+async fn denying_network_policy_amendment_persists_and_blocks_request() -> Result<()> {
+    skip_if_target_windows!(Ok(()), "uses the POSIX/Python network fixture");
     skip_if_host_windows!(Ok(()));
     skip_if_no_network!(Ok(()));
     skip_if_sandbox!(Ok(()));
 
     let server = start_mock_server().await;
     let test = managed_network_unified_exec_test(&server).await?;
+    let responses = mount_exec_network_turn(
+        &server,
+        "resp-network-deny-amendment",
+        "network-deny-amendment",
+        network_fetch_args(LOCAL_ENVIRONMENT_ID),
+    )
+    .await?;
+    submit_managed_network_turn(
+        &test,
+        "persist a deny rule for this host",
+        vec![local(test.config.cwd.clone())],
+        ApprovalsReviewer::User,
+        AskForApproval::OnRequest,
+    )
+    .await?;
+    let approval = expect_network_approval(&test, LOCAL_ENVIRONMENT_ID).await?;
+    test.codex
+        .submit(Op::ExecApproval {
+            id: approval.effective_approval_id(),
+            turn_id: Some(approval.turn_id),
+            decision: ReviewDecision::NetworkPolicyAmendment {
+                network_policy_amendment: NetworkPolicyAmendment {
+                    host: NETWORK_TEST_HOST.to_string(),
+                    action: NetworkPolicyRuleAction::Deny,
+                },
+            },
+        })
+        .await?;
+    wait_for_turn_complete(&test).await;
+
+    let policy = fs::read_to_string(test.home.path().join("rules/default.rules"))?;
+    assert!(policy.contains(
+        r#"network_rule(host="codex-network-test.invalid", protocol="http", decision="deny""#
+    ));
+    let output = responses
+        .requests()
+        .iter()
+        .find_map(|request| request.function_call_output_text("network-deny-amendment"))
+        .context("expected denied network tool output")?;
+    assert!(output.contains("rejected by user"));
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[cfg_attr(
+    not(target_os = "linux"),
+    ignore = "requires the trusted Linux proxy bridge"
+)]
+async fn failed_network_policy_amendment_denies_request_and_does_not_approve_host() -> Result<()> {
+    skip_if_target_windows!(Ok(()), "uses the POSIX/Python network fixture");
+    skip_if_host_windows!(Ok(()));
+    skip_if_no_network!(Ok(()));
+    skip_if_sandbox!(Ok(()));
+
+    let server = start_mock_server().await;
+    let test = managed_network_unified_exec_test(&server).await?;
+    let environments = vec![local(test.config.cwd.clone())];
+    let first_responses = mount_exec_network_turn(
+        &server,
+        "resp-network-failed-amendment-1",
+        "network-failed-amendment-1",
+        network_fetch_args(LOCAL_ENVIRONMENT_ID),
+    )
+    .await?;
+    submit_managed_network_turn(
+        &test,
+        "reject an invalid network policy amendment",
+        environments.clone(),
+        ApprovalsReviewer::User,
+        AskForApproval::OnRequest,
+    )
+    .await?;
+    let approval = expect_network_approval(&test, LOCAL_ENVIRONMENT_ID).await?;
+    test.codex
+        .submit(Op::ExecApproval {
+            id: approval.effective_approval_id(),
+            turn_id: Some(approval.turn_id),
+            decision: ReviewDecision::NetworkPolicyAmendment {
+                network_policy_amendment: NetworkPolicyAmendment {
+                    host: "not-the-approved-host.invalid".to_string(),
+                    action: NetworkPolicyRuleAction::Allow,
+                },
+            },
+        })
+        .await?;
+    wait_for_turn_complete(&test).await;
+
+    let denied_output = first_responses
+        .requests()
+        .iter()
+        .find_map(|request| request.function_call_output_text("network-failed-amendment-1"))
+        .context("expected the failed policy amendment to reject the network request")?;
+    assert!(denied_output.contains("blocked by policy"));
+    mount_exec_network_turn(
+        &server,
+        "resp-network-failed-amendment-2",
+        "network-failed-amendment-2",
+        network_fetch_args(LOCAL_ENVIRONMENT_ID),
+    )
+    .await?;
+    submit_managed_network_turn(
+        &test,
+        "a failed policy amendment must not approve the host for the session",
+        environments,
+        ApprovalsReviewer::User,
+        AskForApproval::OnRequest,
+    )
+    .await?;
+    let approval = expect_network_approval(&test, LOCAL_ENVIRONMENT_ID).await?;
+    test.codex
+        .submit(Op::ExecApproval {
+            id: approval.effective_approval_id(),
+            turn_id: Some(approval.turn_id),
+            decision: ReviewDecision::denied("reject the retried network request"),
+        })
+        .await?;
+    wait_for_turn_complete(&test).await;
+
+    Ok(())
+}
+
+#[test_case(ApprovalsReviewer::User; "user_approval")]
+#[test_case(ApprovalsReviewer::AutoReview; "shutdown_during_guardian_retry")]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[cfg_attr(
+    not(target_os = "linux"),
+    ignore = "requires the trusted Linux proxy bridge"
+)]
+async fn unattributed_network_request_uses_active_turn_environment_fallback(
+    approvals_reviewer: ApprovalsReviewer,
+) -> Result<()> {
+    skip_if_target_windows!(Ok(()), "uses a raw TCP proxy fixture");
+    skip_if_host_windows!(Ok(()));
+    skip_if_no_network!(Ok(()));
+    skip_if_sandbox!(Ok(()));
+
+    let server = start_mock_server().await;
+    let features = if approvals_reviewer == ApprovalsReviewer::User {
+        &[Feature::DeferredExecutor][..]
+    } else {
+        &[]
+    };
+    let test = managed_network_unified_exec_test_with_features(&server, features).await?;
+    let mut selection = local(test.config.cwd.clone());
+    if approvals_reviewer == ApprovalsReviewer::User {
+        let cwd = test.config.cwd.join("late-environment");
+        fs::create_dir(&cwd)?;
+        selection = local(cwd);
+        selection.config = EnvironmentConfigState::Pending;
+    }
     let pending_model = mount_response_once_match(
         &server,
         |request: &wiremock::Request| request_body_contains(request, "hold the active turn"),
@@ -695,12 +1678,57 @@ async fn unattributed_network_request_uses_active_turn_environment_fallback() ->
     submit_managed_network_turn(
         &test,
         "hold the active turn",
-        vec![local(test.config.cwd.clone())],
-        ApprovalsReviewer::User,
+        vec![selection.clone()],
+        approvals_reviewer,
         AskForApproval::OnRequest,
     )
     .await?;
     wait_for_response_request(&pending_model).await;
+
+    if approvals_reviewer == ApprovalsReviewer::User {
+        let root = SelectedCapabilityRoot {
+            id: "late-environment".into(),
+            location: CapabilityRootLocation::Environment {
+                environment_id: selection.environment_id.clone(),
+                path: selection.cwd.clone(),
+            },
+        };
+        test.codex
+            .environment_ready(
+                &selection,
+                EnvironmentConfig {
+                    allow_login_shell: test.config.permissions.allow_login_shell,
+                    workspace_roots: selection.workspace_roots.clone(),
+                    permission_profile: PermissionProfileSnapshot::legacy(
+                        test.config.permissions.permission_profile().clone(),
+                    ),
+                    shell_environment_policy: test
+                        .config
+                        .permissions
+                        .shell_environment_policy
+                        .clone(),
+                    windows_sandbox_level: WindowsSandboxLevel::from_config(&test.config),
+                    windows_sandbox_type: test.config.permissions.windows_sandbox_type,
+                    use_legacy_landlock: test.config.features.use_legacy_landlock(),
+                    exec_policy: None,
+                    mcp_policy: None,
+                    network_policy: None,
+                    selected_capability_roots: vec![root.clone()],
+                },
+            )
+            .await?;
+        tokio::time::timeout(Duration::from_secs(/*secs*/ 5), async {
+            while !test
+                .codex
+                .inspect_selected_capability_roots()
+                .ready_roots
+                .contains(&root)
+            {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await?;
+    }
 
     let proxy_addr = test
         .session_configured
@@ -709,10 +1737,68 @@ async fn unattributed_network_request_uses_active_turn_environment_fallback() ->
         .context("expected managed network proxy")?
         .http_addr
         .clone();
+    if approvals_reviewer == ApprovalsReviewer::AutoReview {
+        mount_sse_once_match(
+            &server,
+            is_guardian_request,
+            core_test_support::responses::sse_failed(
+                "guardian-first-failure",
+                "rate_limit_exceeded",
+                "Rate limit exceeded. Please try again in 0s.",
+            ),
+        )
+        .await;
+        let retrying = mount_sse_once_match(
+            &server,
+            is_guardian_request,
+            core_test_support::responses::sse_failed(
+                "guardian-rate-limited",
+                "rate_limit_exceeded",
+                "Rate limit exceeded. Please try again in 60s.",
+            ),
+        )
+        .await;
+        let proxy_request = tokio::spawn(raw_http_proxy_request(proxy_addr, NETWORK_TEST_HOST));
+        wait_for_response_request(&retrying).await;
+        let request = retrying.single_request().body_json();
+        let thread_id = request["client_metadata"]["thread_id"]
+            .as_str()
+            .context("Guardian thread id")?;
+        let thread_id = codex_protocol::ThreadId::from_string(thread_id)?;
+        // Internal reviewers are hidden from get_thread. Their persisted terminal event
+        // confirms the reviewer's own retries finished before testing Guardian's retry wait.
+        tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                test.thread_store.flush_thread(thread_id).await?;
+                let history = test
+                    .thread_store
+                    .load_latest_model_context(LoadThreadHistoryParams {
+                        thread_id,
+                        include_archived: false,
+                    })
+                    .await?;
+                if history.items.iter().any(|item| {
+                    matches!(item, RolloutItem::EventMsg(EventMsg::TurnComplete(event)) if event.error.is_some())
+                }) {
+                    return Ok::<(), anyhow::Error>(());
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .context("Guardian reviewer did not finish its rate-limited turn")??;
+        tokio::time::timeout(Duration::from_secs(5), test.codex.shutdown_and_wait())
+            .await
+            .context("parent shutdown waited for Guardian's 60-second retry")??;
+        let response = tokio::time::timeout(Duration::from_secs(5), proxy_request).await???;
+        assert!(response.starts_with("HTTP/1.1 403"), "{response}");
+        assert_eq!(retrying.requests().len(), 1);
+        return Ok(());
+    }
     let proxy_request = tokio::spawn(raw_http_proxy_request(proxy_addr, NETWORK_TEST_HOST));
     let approval = expect_network_approval(&test, LOCAL_ENVIRONMENT_ID).await?;
     assert_eq!(approval.command, ["network-access", NETWORK_TEST_TARGET]);
-    assert_eq!(approval.cwd, test.config.cwd);
+    assert_eq!(approval.cwd, selection.cwd.into());
     test.codex
         .submit(Op::ExecApproval {
             id: approval.effective_approval_id(),
@@ -832,6 +1918,104 @@ async fn ambiguous_unattributed_network_request_is_not_assigned_to_active_calls(
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn thread_turnover_closes_managed_proxy_tunnels() -> Result<()> {
+    skip_if_host_windows!(Ok(()));
+    skip_if_no_network!(Ok(()));
+    skip_if_sandbox!(Ok(()));
+
+    let server = start_mock_server().await;
+    let test = managed_network_unified_exec_test(&server).await?;
+    let mut config = test.config.clone();
+    let mut network = NetworkProxyConfig {
+        enabled: true,
+        mode: codex_network_proxy::NetworkMode::Full,
+        allow_local_binding: Some(true),
+        allow_upstream_proxy: false,
+        ..NetworkProxyConfig::default()
+    };
+    network.set_allowed_domains(vec!["127.0.0.1".to_string()]);
+    config.permissions.network = Some(NetworkProxySpec::from_config_and_constraints(
+        network,
+        /*requirements*/ None,
+        config.permissions.permission_profile(),
+    )?);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+    let target = listener.local_addr()?;
+
+    for cycle in 0..3 {
+        let started = test
+            .thread_manager
+            .start_thread(StartThreadOptions::new(config.clone()))
+            .await?;
+        let proxy = started
+            .session_configured
+            .network_proxy
+            .as_ref()
+            .context("expected managed network proxy for new thread")?;
+        let (mut client, upstream) = tokio::time::timeout(Duration::from_secs(5), async {
+            let mut client = tokio::net::TcpStream::connect(&proxy.http_addr).await?;
+            client
+                .write_all(
+                    format!("CONNECT {target} HTTP/1.1\r\nHost: {target}\r\n\r\n").as_bytes(),
+                )
+                .await?;
+            let (mut upstream, _) = listener.accept().await?;
+            let mut headers = Vec::new();
+            while !headers.ends_with(b"\r\n\r\n") {
+                headers.push(client.read_u8().await?);
+            }
+            let headers = String::from_utf8(headers)?;
+            assert!(headers.starts_with("HTTP/1.1 200 "), "{headers:?}");
+            client.write_all(b"request").await?;
+            client.shutdown().await?;
+            let mut request = Vec::new();
+            upstream.read_to_end(&mut request).await?;
+            assert_eq!(request, b"request");
+            // Preserve valid half-close behavior while the thread is alive; its
+            // upstream peer deliberately keeps the write half open through unload.
+            upstream.write_all(b"response").await?;
+            let mut response = [0_u8; 8];
+            client.read_exact(&mut response).await?;
+            assert_eq!(&response, b"response");
+            Ok::<_, anyhow::Error>((client, upstream))
+        })
+        .await
+        .with_context(|| {
+            format!("thread cycle {cycle} did not establish a half-closed tunnel")
+        })??;
+
+        tokio::time::timeout(Duration::from_secs(5), started.thread.shutdown_and_wait())
+            .await
+            .with_context(|| format!("thread cycle {cycle} did not shut down"))??;
+        // Unloading releases both the manager's and caller's strong session owners.
+        drop(
+            test.thread_manager
+                .remove_thread(&started.thread_id)
+                .await
+                .context("expected stopped thread in manager")?,
+        );
+        drop(started);
+
+        let result = tokio::time::timeout(Duration::from_secs(2), client.read(&mut [0_u8; 1]))
+            .await
+            .with_context(|| format!("thread cycle {cycle} retained its tunnel after unload"))?;
+        match result {
+            Ok(bytes) => assert_eq!(bytes, 0),
+            Err(error) => assert!(
+                matches!(
+                    error.kind(),
+                    std::io::ErrorKind::ConnectionReset | std::io::ErrorKind::ConnectionAborted
+                ),
+                "unexpected tunnel error after thread unload: {error}"
+            ),
+        }
+        drop(upstream);
+    }
+    test.codex.shutdown_and_wait().await?;
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[cfg_attr(
     not(target_os = "linux"),
     ignore = "requires the trusted Linux proxy bridge"
@@ -856,6 +2040,10 @@ async fn guardian_receives_exact_triggers_for_concurrent_network_requests() -> R
     };
     let first_command = network_command(&first_marker, &second_marker, "1.1.1.1");
     let second_command = network_command(&second_marker, &first_marker, "8.8.8.8");
+    let mut first_args = network_exec_args(&first_command);
+    first_args["yield_time_ms"] = json!(10_000);
+    let mut second_args = network_exec_args(&second_command);
+    second_args["yield_time_ms"] = json!(10_000);
     let first_denial = "first concurrent network request denied";
     let second_denial = "second concurrent network request denied";
     mount_sse_once_match(
@@ -870,12 +2058,12 @@ async fn guardian_receives_exact_triggers_for_concurrent_network_requests() -> R
             ev_function_call(
                 "exec-network-first",
                 "exec_command",
-                &serde_json::to_string(&network_exec_args(&first_command))?,
+                &serde_json::to_string(&first_args)?,
             ),
             ev_function_call(
                 "exec-network-second",
                 "exec_command",
-                &serde_json::to_string(&network_exec_args(&second_command))?,
+                &serde_json::to_string(&second_args)?,
             ),
             ev_completed("resp-network-concurrent"),
         ]),
@@ -995,31 +2183,75 @@ async fn guardian_receives_exact_trigger_for_single_network_request() -> Result<
     let server = start_mock_server().await;
     let test = managed_network_unified_exec_test(&server).await?;
     let command = "python3 -c \"import urllib.request; opener = urllib.request.build_opener(urllib.request.ProxyHandler()); print('OK:' + opener.open('http://1.1.1.1', timeout=10).read().decode(errors='replace'))\"".to_string();
-    let responses = mount_sse_sequence(
+    let call_id = "exec-network-single";
+    mount_sse_once_match(
         &server,
-        vec![
-            sse(vec![
-                ev_response_created("resp-network-single"),
-                ev_function_call(
-                    "exec-network-single",
-                    "exec_command",
-                    &serde_json::to_string(&network_exec_args(&command))?,
-                ),
-                ev_completed("resp-network-single"),
-            ]),
-            sse(vec![
-                ev_response_created("resp-network-guardian"),
-                ev_assistant_message("msg-network-guardian", r#"{"outcome":"deny"}"#),
-                ev_completed("resp-network-guardian"),
-            ]),
-            sse(vec![
-                ev_response_created("resp-network-done"),
-                ev_assistant_message("msg-network-done", "done"),
-                ev_completed("resp-network-done"),
-            ]),
-        ],
+        move |request: &wiremock::Request| {
+            !is_guardian_request(request) && !request_body_contains(request, call_id)
+        },
+        sse(vec![
+            ev_response_created("resp-network-single"),
+            ev_function_call(
+                call_id,
+                "exec_command",
+                &serde_json::to_string(&network_exec_args(&command))?,
+            ),
+            ev_completed("resp-network-single"),
+        ]),
     )
     .await;
+    let guardian = mount_sse_once_match(
+        &server,
+        is_guardian_request,
+        sse(vec![
+            ev_response_created("resp-network-guardian"),
+            ev_assistant_message("msg-network-guardian", r#"{"outcome":"deny"}"#),
+            ev_completed("resp-network-guardian"),
+        ]),
+    )
+    .await;
+
+    // The command can yield before its network request reaches Guardian. Keep the
+    // parent on that process until it exits, without consuming Guardian's reply.
+    let _parent = wiremock::Mock::given(wiremock::matchers::method("POST"))
+        .and(wiremock::matchers::path("/v1/responses"))
+        .and(move |request: &wiremock::Request| {
+            !is_guardian_request(request) && request_body_contains(request, call_id)
+        })
+        .respond_with(move |request: &wiremock::Request| {
+            let body: Value = serde_json::from_slice(
+                &decoded_request_body(request).expect("decode parent request"),
+            )
+            .expect("parse parent request");
+            let input = body["input"].as_array().expect("parent input");
+            let output = input
+                .iter()
+                .rev()
+                .find(|item| item["type"] == "function_call_output")
+                .and_then(|item| item["output"].as_str())
+                .expect("network command or poll output");
+            let response_id = format!("{call_id}-{}", input.len());
+            let event = if let Some(session_id) = output
+                .lines()
+                .find_map(|line| line.strip_prefix("Process running with session ID "))
+            {
+                ev_function_call(
+                    &response_id,
+                    "write_stdin",
+                    &json!({
+                        "session_id": session_id.parse::<i32>().expect("session id"),
+                        "chars": "",
+                        "yield_time_ms": 1_000,
+                    })
+                    .to_string(),
+                )
+            } else {
+                ev_assistant_message(&response_id, "done")
+            };
+            sse_response(sse(vec![event, ev_completed(&response_id)]))
+        })
+        .mount_as_scoped(&server)
+        .await;
 
     submit_managed_network_turn(
         &test,
@@ -1029,13 +2261,701 @@ async fn guardian_receives_exact_trigger_for_single_network_request() -> Result<
         AskForApproval::OnRequest,
     )
     .await?;
-    wait_for_turn_complete(&test).await;
+    tokio::time::timeout(Duration::from_secs(30), wait_for_turn_complete(&test))
+        .await
+        .context("timed out waiting for the network process and Guardian review to finish")?;
 
     assert_eq!(
-        guardian_network_triggers(&[&responses])?,
-        vec![("exec-network-single".to_string(), command)]
+        guardian_network_triggers(&[&guardian])?,
+        vec![(call_id.to_string(), command)]
     );
 
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn remote_guardian_network_decisions_are_scoped_to_each_request_and_environment() -> Result<()>
+{
+    skip_if_target_windows!(Ok(()), "uses the POSIX/Python network fixture");
+    skip_if_host_windows!(Ok(()));
+    skip_if_no_network!(Ok(()));
+    skip_if_sandbox!(Ok(()));
+    skip_if_no_remote_env!(Ok(()));
+
+    let server = start_mock_server().await;
+    let test = managed_network_unified_exec_test(&server).await?;
+    let remote = test.executor_environment().selection().clone();
+    assert_eq!(remote.environment_id, REMOTE_ENVIRONMENT_ID);
+    let session_call_id = "remote-guardian-session-approval";
+    let session_command = remote_network_proxy_request_command("REMOTE_GUARDIAN_SESSION");
+    let session_probe_call_id = "remote-guardian-session-probe";
+    let session_probe_command =
+        remote_network_proxy_request_command("REMOTE_GUARDIAN_SESSION_PROBE");
+
+    let cases = [
+        (
+            "remote-guardian-deny",
+            remote_network_proxy_request_command("REMOTE_GUARDIAN_DENY"),
+            remote.clone(),
+            "The first remote request must be denied.",
+            false,
+        ),
+        (
+            "remote-guardian-allow",
+            remote_network_proxy_request_command("REMOTE_GUARDIAN_ALLOW"),
+            remote.clone(),
+            "This remote request is safe to allow once.",
+            true,
+        ),
+        (
+            "remote-guardian-deny-again",
+            remote_network_proxy_request_command("REMOTE_GUARDIAN_DENY_AGAIN"),
+            remote.clone(),
+            "A previous remote approval must not approve a later request.",
+            false,
+        ),
+        (
+            "local-guardian-deny",
+            remote_network_proxy_request_command("LOCAL_GUARDIAN_DENY"),
+            local(test.cwd.path().abs()),
+            "A remote approval must not approve the local environment.",
+            false,
+        ),
+    ];
+
+    let mut scripted_responses = Vec::with_capacity(cases.len() * 3 + 4);
+    for (call_id, command, _, rationale, approved) in &cases {
+        if *call_id == "local-guardian-deny" {
+            scripted_responses.push(sse(vec![
+                ev_response_created("resp-remote-guardian-session-approval-parent"),
+                ev_function_call(
+                    session_call_id,
+                    "exec_command",
+                    &serde_json::to_string(&network_exec_args(&session_command))?,
+                ),
+                ev_completed("resp-remote-guardian-session-approval-parent"),
+            ]));
+            scripted_responses.push(sse(vec![
+                ev_response_created("resp-remote-guardian-session-approval-done"),
+                ev_assistant_message("msg-remote-guardian-session-approval-done", "done"),
+                ev_completed("resp-remote-guardian-session-approval-done"),
+            ]));
+        }
+        scripted_responses.push(sse(vec![
+            ev_response_created(&format!("resp-{call_id}-parent")),
+            ev_function_call(
+                call_id,
+                "exec_command",
+                &serde_json::to_string(&network_exec_args(command))?,
+            ),
+            ev_completed(&format!("resp-{call_id}-parent")),
+        ]));
+        let assessment = json!({
+            "risk_level": if *approved { "low" } else { "high" },
+            "user_authorization": if *approved { "high" } else { "low" },
+            "outcome": if *approved { "allow" } else { "deny" },
+            "rationale": rationale,
+        });
+        scripted_responses.push(sse(vec![
+            ev_response_created(&format!("resp-{call_id}-guardian")),
+            ev_assistant_message(&format!("msg-{call_id}-guardian"), &assessment.to_string()),
+            ev_completed(&format!("resp-{call_id}-guardian")),
+        ]));
+        scripted_responses.push(sse(vec![
+            ev_response_created(&format!("resp-{call_id}-done")),
+            ev_assistant_message(&format!("msg-{call_id}-done"), "done"),
+            ev_completed(&format!("resp-{call_id}-done")),
+        ]));
+    }
+    scripted_responses.push(sse(vec![
+        ev_response_created("resp-remote-guardian-session-probe-parent"),
+        ev_function_call(
+            session_probe_call_id,
+            "exec_command",
+            &serde_json::to_string(&network_exec_args(&session_probe_command))?,
+        ),
+        ev_completed("resp-remote-guardian-session-probe-parent"),
+    ]));
+    scripted_responses.push(sse(vec![
+        ev_response_created("resp-remote-guardian-session-probe-done"),
+        ev_assistant_message("msg-remote-guardian-session-probe-done", "done"),
+        ev_completed("resp-remote-guardian-session-probe-done"),
+    ]));
+    let responses = mount_sse_sequence(&server, scripted_responses).await;
+
+    for (call_id, _, environment, _, _) in &cases {
+        if *call_id == "local-guardian-deny" {
+            submit_managed_network_turn(
+                &test,
+                "approve the remote destination for this session",
+                vec![remote.clone()],
+                ApprovalsReviewer::User,
+                AskForApproval::OnRequest,
+            )
+            .await?;
+            let approval = expect_network_approval(&test, REMOTE_ENVIRONMENT_ID).await?;
+            test.codex
+                .submit(Op::ExecApproval {
+                    id: approval.effective_approval_id(),
+                    turn_id: Some(approval.turn_id),
+                    decision: ReviewDecision::ApprovedForSession,
+                })
+                .await?;
+            tokio::time::timeout(Duration::from_secs(15), wait_for_turn_complete(&test))
+                .await
+                .context("remote session approval should complete")?;
+        }
+        let prompt = format!("review network request {call_id}");
+        submit_managed_network_turn(
+            &test,
+            &prompt,
+            vec![environment.clone()],
+            ApprovalsReviewer::AutoReview,
+            AskForApproval::OnRequest,
+        )
+        .await?;
+        tokio::time::timeout(
+            Duration::from_secs(15),
+            wait_for_completion_without_network_prompt(&test),
+        )
+        .await
+        .with_context(|| format!("Guardian review for {call_id} should complete"))?;
+    }
+    submit_managed_network_turn(
+        &test,
+        "verify the remote session approval remains active",
+        vec![remote],
+        ApprovalsReviewer::User,
+        AskForApproval::OnRequest,
+    )
+    .await?;
+    tokio::time::timeout(
+        Duration::from_secs(15),
+        wait_for_completion_without_network_prompt(&test),
+    )
+    .await
+    .context("remote session approval should bypass another network prompt")?;
+
+    let local_shell = get_shell(ShellType::Sh).context("expected local sh")?;
+    let mut expected_actions = Vec::with_capacity(cases.len());
+    for (call_id, command, environment, _, _) in &cases {
+        let cwd = environment
+            .cwd
+            .to_abs_path()
+            .with_context(|| format!("resolve the environment cwd for {call_id}"))?;
+        let command = if environment.environment_id == LOCAL_ENVIRONMENT_ID {
+            local_shell.derive_exec_args(command, /*use_login_shell*/ false)
+        } else {
+            vec!["/bin/sh".to_string(), "-c".to_string(), command.clone()]
+        };
+        expected_actions.push(json!({
+            "host": NETWORK_TEST_HOST,
+            "port": 80,
+            "protocol": "http",
+            "target": NETWORK_TEST_TARGET,
+            "tool": "network_access",
+            "environment_id": environment.environment_id,
+            "trigger": {
+                "callId": call_id,
+                "command": command,
+                "cwd": cwd,
+                "sandboxPermissions": "use_default",
+                "toolName": "exec_command",
+                "tty": false,
+            },
+        }));
+    }
+    assert_eq!(guardian_network_actions(&responses)?, expected_actions);
+
+    let requests = responses.requests();
+    for (call_id, marker) in [
+        (session_call_id, "REMOTE_GUARDIAN_SESSION:HTTP/1.1 502"),
+        (
+            session_probe_call_id,
+            "REMOTE_GUARDIAN_SESSION_PROBE:HTTP/1.1 502",
+        ),
+    ] {
+        let output = requests
+            .iter()
+            .find_map(|request| request.function_call_output_text(call_id))
+            .with_context(|| format!("expected remote session network output for {call_id}"))?;
+        assert!(output.contains(marker));
+        assert!(!output.contains("rejected"));
+    }
+    for (call_id, _, _, rationale, approved) in &cases {
+        let output = requests
+            .iter()
+            .find_map(|request| request.function_call_output_text(call_id))
+            .with_context(|| format!("expected network tool output for {call_id}"))?;
+        if *approved {
+            assert!(output.contains("REMOTE_GUARDIAN_ALLOW:HTTP/1.1 502"));
+            assert!(!output.contains("rejected"));
+        } else {
+            assert!(output.contains(rationale));
+            assert!(!output.contains("HTTP/1.1 502"));
+        }
+    }
+
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn owner_network_policy_follows_the_selected_remote_command() -> Result<()> {
+    skip_if_target_windows!(Ok(()), "uses the POSIX/Python network fixture");
+    skip_if_host_windows!(Ok(()));
+    skip_if_no_network!(Ok(()));
+    skip_if_sandbox!(Ok(()));
+    skip_if_no_remote_env!(Ok(()));
+
+    let server = start_mock_server().await;
+    let mut scenarios = vec![(
+        "ROOTED",
+        managed_network_unified_exec_test(&server).await?,
+        Some(true),
+    )];
+    for (scenario, configured_controller, allow_local_binding) in [
+        ("ROOTLESS", false, None),
+        ("USER_ROOTED", true, Some(true)),
+        ("USER_UNSET", true, None),
+        ("USER_DENIED", true, Some(false)),
+    ] {
+        let mut builder = test_codex().with_config(move |config| {
+            for feature in [Feature::UnifiedExec, Feature::ExecPermissionApprovals] {
+                config
+                    .features
+                    .enable(feature)
+                    .expect("test config should allow feature update");
+            }
+            config.permissions.approval_policy = Constrained::allow_any(AskForApproval::OnRequest);
+            config
+                .permissions
+                .set_permission_profile(PermissionProfile::workspace_write_with(
+                    &[],
+                    NetworkSandboxPolicy::Enabled,
+                    /*exclude_tmpdir_env_var*/ false,
+                    /*exclude_slash_tmp*/ false,
+                ))
+                .expect("set permission profile");
+            config.permissions.network = configured_controller.then(|| {
+                NetworkProxySpec::from_config_and_constraints(
+                    NetworkProxyConfig {
+                        enabled: true,
+                        allow_local_binding,
+                        ..NetworkProxyConfig::default()
+                    },
+                    /*requirements*/ None,
+                    config.permissions.permission_profile(),
+                )
+                .expect("build user-configured controller proxy")
+            });
+        });
+        let test = builder.build_with_remote_and_local_env(&server).await?;
+        assert!(!test.config.managed_network_requirements_enabled());
+        assert_eq!(
+            test.session_configured.network_proxy.is_some(),
+            configured_controller
+        );
+        scenarios.push((scenario, test, allow_local_binding));
+    }
+
+    for (scenario, test, controller_local_binding) in scenarios {
+        let mut remote = test.executor_environment().selection().clone();
+        let remote_private_path = remote.cwd.join("secondary-environment-private")?;
+        let permissions = test.config.permissions.permission_profile();
+        let mut filesystem = permissions.file_system_sandbox_policy();
+        filesystem.entries.push(FileSystemSandboxEntry {
+            path: FileSystemPath::Path {
+                path: remote_private_path.clone(),
+            },
+            access: FileSystemAccessMode::Deny,
+            missing_path_behavior: None,
+        });
+        filesystem.entries.push(FileSystemSandboxEntry::new(
+            FileSystemPath::GlobPattern {
+                pattern: "*.guardian-secret".into(),
+            },
+            FileSystemAccessMode::Deny,
+        ));
+        let remote_review_permissions = PermissionProfile::from_runtime_permissions(
+            &filesystem,
+            permissions.network_sandbox_policy(),
+        );
+
+        for (suffix, allowed_domain, expected) in [
+            (
+                "ESCALATION_DENIED",
+                NETWORK_TEST_HOST,
+                "test escalation denied",
+            ),
+            ("ESCALATED", NETWORK_TEST_HOST, "OWNER_ESCALATED:unproxied"),
+            ("ESCALATED_DENY_READ", "owner-only.invalid", "HTTP/1.1 403"),
+            ("ALLOWED", NETWORK_TEST_HOST, "HTTP/1.1 502"),
+            ("DENIED", "owner-only.invalid", "HTTP/1.1 403"),
+            ("REVIEWED", "owner-only.invalid", "HTTP/1.1 502"),
+            ("OFFLINE", "owner-only.invalid", "ROOTLESS_OWNER_OFFLINE"),
+            ("GRANTED_DENIED", "owner-only.invalid", "HTTP/1.1 403"),
+            (
+                "LOCAL_GRANTED",
+                "127.0.0.?",
+                if controller_local_binding == Some(false) {
+                    "HTTP/1.1 403"
+                } else {
+                    "HTTP/1.1 502"
+                },
+            ),
+            ("LOCAL_DENIED", "127.0.0.?", "HTTP/1.1 403"),
+            (
+                "LOCAL_OMITTED",
+                "127.0.0.?",
+                if controller_local_binding == Some(true) {
+                    "HTTP/1.1 502"
+                } else {
+                    "HTTP/1.1 403"
+                },
+            ),
+        ] {
+            let local_binding_probe =
+                matches!(suffix, "LOCAL_GRANTED" | "LOCAL_DENIED" | "LOCAL_OMITTED");
+            if matches!(scenario, "USER_UNSET" | "USER_DENIED") && !local_binding_probe {
+                continue;
+            }
+            let escalated = matches!(
+                suffix,
+                "ESCALATED" | "ESCALATION_DENIED" | "ESCALATED_DENY_READ"
+            );
+            let restricted = matches!(suffix, "OFFLINE" | "GRANTED_DENIED");
+            if scenario != "ROOTLESS" && restricted {
+                continue;
+            }
+            let marker = format!("{scenario}_OWNER_{suffix}");
+            let mut proxy_config = NetworkProxyConfig {
+                allow_local_binding: match suffix {
+                    "LOCAL_DENIED" => Some(false),
+                    "LOCAL_OMITTED" => None,
+                    _ => Some(true),
+                },
+                ..NetworkProxyConfig::default()
+            };
+            proxy_config.set_allowed_domains(vec![allowed_domain.to_string()]);
+            let mut permission_profile = if restricted {
+                PermissionProfile::workspace_write()
+            } else if suffix == "REVIEWED" {
+                remote_review_permissions.clone()
+            } else {
+                test.config.permissions.permission_profile().clone()
+            };
+            const SECRET: &str = "owner-escalation-secret";
+            if suffix == "ESCALATED_DENY_READ" {
+                test.fs()
+                    .write_file(
+                        &remote.cwd.join("secret.env")?,
+                        SECRET.as_bytes().to_vec(),
+                        Default::default(),
+                        /*sandbox*/ None,
+                    )
+                    .await?;
+                let (mut filesystem, network) = permission_profile.to_runtime_permissions();
+                filesystem.entries.push(FileSystemSandboxEntry::new(
+                    FileSystemPath::GlobPattern {
+                        pattern: "**/secret.env".into(),
+                    },
+                    FileSystemAccessMode::Deny,
+                ));
+                permission_profile =
+                    PermissionProfile::from_runtime_permissions(&filesystem, network);
+            }
+            let owner_config = EnvironmentConfig {
+                allow_login_shell: test.config.permissions.allow_login_shell,
+                workspace_roots: remote.workspace_roots.clone(),
+                permission_profile: PermissionProfileSnapshot::legacy(permission_profile),
+                shell_environment_policy: test.config.permissions.shell_environment_policy.clone(),
+                windows_sandbox_level: WindowsSandboxLevel::from_config(&test.config),
+                windows_sandbox_type: test.config.permissions.windows_sandbox_type,
+                use_legacy_landlock: test.config.features.use_legacy_landlock(),
+                exec_policy: None,
+                mcp_policy: None,
+                network_policy: Some(EnvironmentNetworkPolicy::from_config(
+                    &proxy_config,
+                    /*managed_allowed_domains_only*/ suffix != "REVIEWED",
+                )),
+                selected_capability_roots: Vec::new(),
+            };
+            let mut primary = local(test.cwd.path().abs());
+            primary.config = EnvironmentConfigState::Ready(EnvironmentConfig {
+                workspace_roots: primary.workspace_roots.clone(),
+                permission_profile: PermissionProfileSnapshot::legacy(PermissionProfile::Disabled),
+                network_policy: None,
+                ..owner_config.clone()
+            });
+            remote.config = EnvironmentConfigState::Ready(owner_config);
+
+            // Restricted owners run offline until an approved grant enables their filtered proxy.
+            let command = if suffix == "OFFLINE" {
+                format!(
+                    "python3 -c \"import socket; sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM); sock.connect(('198.51.100.1', 9))\" 2>/dev/null || printf {marker}"
+                )
+            } else if suffix == "ESCALATED_DENY_READ" {
+                let read_probe = r#"python3 - <<'PYTHON'
+try:
+    with open('secret.env') as secret:
+        print(secret.read())
+except PermissionError:
+    print('READ_BLOCKED')
+PYTHON"#;
+                format!(
+                    "{read_probe}\n{}",
+                    remote_network_proxy_request_command(&marker)
+                )
+            } else if local_binding_probe {
+                // A wildcard allowlist does not explicitly authorize private destinations.
+                // Port zero has no listener: 502 proves the request passed policy enforcement,
+                // while 403 proves the controller/owner composition denied the loopback target.
+                remote_network_proxy_request_command(&marker)
+                    .replace(NETWORK_TEST_HOST, "127.0.0.1:0")
+            } else if escalated {
+                // Direct sockets and an unproxied environment exercise the actual remote launch.
+                format!(
+                    "python3 -c \"import os,socket; assert '{PROXY_ACTIVE_ENV_KEY}' not in os.environ; sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM); sock.connect(('198.51.100.1', 9)); print('{marker}:unproxied')\""
+                )
+            } else {
+                remote_network_proxy_request_command(&marker)
+            };
+            let mut args = network_exec_args(&command);
+            args["environment_id"] = json!(REMOTE_ENVIRONMENT_ID);
+            if escalated {
+                args["sandbox_permissions"] = json!("require_escalated");
+                args["justification"] = json!("exercise approved full sandbox escalation");
+            } else if suffix == "GRANTED_DENIED" {
+                args["sandbox_permissions"] = json!("with_additional_permissions");
+                args["additional_permissions"] = json!({"network": {"enabled": true}});
+                args["justification"] = json!("exercise attachment-scoped network access");
+            }
+            let guardian = if suffix == "REVIEWED" {
+                Some(
+                    mount_sse_once_match(
+                        &server,
+                        is_guardian_request,
+                        sse(vec![
+                            ev_response_created("resp-owner-network-guardian"),
+                            ev_assistant_message(
+                                "msg-owner-network-guardian",
+                                r#"{"outcome":"allow"}"#,
+                            ),
+                            ev_completed("resp-owner-network-guardian"),
+                        ]),
+                    )
+                    .await,
+                )
+            } else {
+                None
+            };
+            let responses = mount_exec_network_turn(&server, &marker, &marker, args).await?;
+            submit_managed_network_turn(
+                &test,
+                "exercise the selected environment's network policy",
+                vec![primary, remote.clone()],
+                if suffix == "REVIEWED" {
+                    ApprovalsReviewer::AutoReview
+                } else {
+                    ApprovalsReviewer::User
+                },
+                if escalated || matches!(suffix, "REVIEWED" | "GRANTED_DENIED") {
+                    AskForApproval::OnRequest
+                } else {
+                    AskForApproval::Never
+                },
+            )
+            .await?;
+            if escalated || suffix == "GRANTED_DENIED" {
+                let event = wait_for_event(&test.codex, |event| {
+                    matches!(
+                        event,
+                        EventMsg::ExecApprovalRequest(_) | EventMsg::TurnComplete(_)
+                    )
+                })
+                .await;
+                let EventMsg::ExecApprovalRequest(approval) = event else {
+                    anyhow::bail!("expected command approval before completion")
+                };
+                test.codex
+                    .submit(Op::ExecApproval {
+                        id: approval.effective_approval_id(),
+                        turn_id: Some(approval.turn_id),
+                        decision: if suffix == "ESCALATION_DENIED" {
+                            ReviewDecision::denied(expected)
+                        } else {
+                            ReviewDecision::Approved
+                        },
+                    })
+                    .await?;
+            }
+            wait_for_completion_without_network_prompt(&test).await;
+            if let Some(guardian) = guardian {
+                assert_eq!(
+                    guardian_network_triggers(&[&guardian])?,
+                    vec![(marker.clone(), command)]
+                );
+                let prompt = guardian
+                    .single_request()
+                    .message_input_texts("user")
+                    .join("");
+                let permissions = prompt
+                    .split_once("PARENT TURN PERMISSION CONTEXT START")
+                    .and_then(|(_, text)| text.split_once("PARENT TURN PERMISSION CONTEXT END"))
+                    .map(|(permissions, _)| permissions)
+                    .context("network Guardian permissions")?;
+                assert!(permissions.contains(&remote_private_path.inferred_native_path_string()));
+                let remote_glob = remote
+                    .cwd
+                    .join("*.guardian-secret")?
+                    .inferred_native_path_string();
+                assert!(permissions.contains(&format!("glob `{remote_glob}`")));
+            }
+            let output = responses
+                .function_call_output_text(&marker)
+                .context("expected remote network output")?;
+            assert!(
+                output.contains(expected),
+                "unexpected network output for {marker}: {output}"
+            );
+            if suffix == "ESCALATION_DENIED" {
+                assert!(!output.contains(":unproxied"));
+            } else if suffix == "ESCALATED_DENY_READ" {
+                assert!(output.contains("READ_BLOCKED"), "{output}");
+                assert!(!output.contains(SECRET), "{output}");
+            }
+        }
+    }
+
+    Ok(())
+}
+
+#[test_case(FileSystemSandboxPolicy::read_only(); "restricted_filesystem")]
+#[test_case(FileSystemSandboxPolicy::unrestricted(); "unrestricted_filesystem")]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn escalated_owner_network_terminal_requires_stdin_approval(
+    filesystem: FileSystemSandboxPolicy,
+) -> Result<()> {
+    skip_if_target_windows!(Ok(()), "uses the POSIX/Python interactive fixture");
+    skip_if_host_windows!(Ok(()));
+    skip_if_no_network!(Ok(()));
+    skip_if_sandbox!(Ok(()));
+    skip_if_no_remote_env!(Ok(()));
+
+    let server = start_mock_server().await;
+    let profile =
+        PermissionProfile::from_runtime_permissions(&filesystem, NetworkSandboxPolicy::Enabled);
+    let test = test_codex()
+        .with_config(move |config| {
+            for feature in [Feature::UnifiedExec, Feature::WriteStdinApproval] {
+                config
+                    .features
+                    .enable(feature)
+                    .expect("enable test feature");
+            }
+            config.permissions.network = None;
+            config
+                .permissions
+                .set_permission_profile(profile)
+                .expect("set permission profile");
+        })
+        .build_with_auto_env(&server)
+        .await?;
+    assert!(test.session_configured.network_proxy.is_none());
+    let mut remote = test.executor_environment().selection().clone();
+    let mut proxy = NetworkProxyConfig::default();
+    proxy.set_allowed_domains(vec!["owner-only.invalid".to_string()]);
+    remote.config = EnvironmentConfigState::Ready(EnvironmentConfig {
+        allow_login_shell: test.config.permissions.allow_login_shell,
+        workspace_roots: remote.workspace_roots.clone(),
+        permission_profile: PermissionProfileSnapshot::legacy(
+            test.config.permissions.permission_profile().clone(),
+        ),
+        shell_environment_policy: test.config.permissions.shell_environment_policy.clone(),
+        windows_sandbox_level: WindowsSandboxLevel::from_config(&test.config),
+        windows_sandbox_type: test.config.permissions.windows_sandbox_type,
+        use_legacy_landlock: test.config.features.use_legacy_landlock(),
+        exec_policy: None,
+        mcp_policy: None,
+        network_policy: Some(EnvironmentNetworkPolicy::from_config(
+            &proxy, /*managed_allowed_domains_only*/ true,
+        )),
+        selected_capability_roots: Vec::new(),
+    });
+
+    let command = format!(
+        "python3 -c \"import os; assert '{PROXY_ACTIVE_ENV_KEY}' not in os.environ; print('INPUT:' + input())\""
+    );
+    let mut args = network_exec_args(&command);
+    args["environment_id"] = json!(REMOTE_ENVIRONMENT_ID);
+    args["tty"] = json!(true);
+    args["sandbox_permissions"] = json!("require_escalated");
+    args["justification"] = json!("exercise approved interactive escalation");
+    let launch_call = "owner-terminal-launch";
+    let stdin_call = "owner-terminal-stdin";
+    let responses = mount_sse_sequence(
+        &server,
+        vec![
+            sse(vec![
+                ev_function_call(launch_call, "exec_command", &args.to_string()),
+                ev_completed("owner-terminal-started"),
+            ]),
+            sse(vec![
+                ev_function_call(
+                    stdin_call,
+                    "write_stdin",
+                    &json!({"session_id": 1000, "chars": "hello\n", "yield_time_ms": 1_000})
+                        .to_string(),
+                ),
+                ev_completed("owner-terminal-input"),
+            ]),
+            sse(vec![
+                ev_assistant_message("owner-terminal-done", "done"),
+                ev_completed("owner-terminal-done"),
+            ]),
+        ],
+    )
+    .await;
+    submit_managed_network_turn(
+        &test,
+        "launch a terminal and send input",
+        vec![remote],
+        ApprovalsReviewer::User,
+        AskForApproval::UnlessTrusted,
+    )
+    .await?;
+    let mut approvals = Vec::new();
+    loop {
+        match wait_for_event(&test.codex, |_| true).await {
+            EventMsg::ExecApprovalRequest(approval) => {
+                test.codex
+                    .submit(Op::ExecApproval {
+                        id: approval.effective_approval_id(),
+                        turn_id: Some(approval.turn_id),
+                        decision: ReviewDecision::Approved,
+                    })
+                    .await?;
+                approvals.push((approval.kind, approval.call_id, approval.approval_id));
+            }
+            EventMsg::TurnComplete(_) => break,
+            _ => {}
+        }
+    }
+    assert_eq!(
+        approvals,
+        vec![
+            (ExecApprovalKind::Command, launch_call.to_string(), None),
+            (
+                ExecApprovalKind::WriteStdin,
+                launch_call.to_string(),
+                Some(stdin_call.to_string()),
+            ),
+        ]
+    );
+    let output = responses
+        .function_call_output_text(stdin_call)
+        .context("expected terminal input output")?;
+    assert!(output.contains("INPUT:hello"), "{output}");
     Ok(())
 }
 
@@ -1059,7 +2979,10 @@ async fn approved_network_host_for_one_environment_still_prompts_in_another() ->
     test.fs()
         .create_directory(
             &remote_cwd_uri,
-            CreateDirectoryOptions { recursive: true },
+            CreateDirectoryOptions {
+                recursive: true,
+                follow_symlinks: true,
+            },
             /*sandbox*/ None,
         )
         .await?;
@@ -1069,6 +2992,7 @@ async fn approved_network_host_for_one_environment_still_prompts_in_another() ->
             environment_id: REMOTE_ENVIRONMENT_ID.to_string(),
             cwd: PathUri::from_abs_path(&remote_cwd),
             workspace_roots: vec![PathUri::from_abs_path(&remote_cwd)],
+            config: EnvironmentConfigState::FromThread,
         },
     ];
 
@@ -1097,7 +3021,7 @@ async fn approved_network_host_for_one_environment_still_prompts_in_another() ->
         .await?;
     wait_for_turn_complete(&test).await;
 
-    mount_exec_network_turn(
+    let remote_responses = mount_exec_network_turn(
         &server,
         "resp-network-remote",
         "exec-network-remote",
@@ -1113,14 +3037,19 @@ async fn approved_network_host_for_one_environment_still_prompts_in_another() ->
     )
     .await?;
     let approval = expect_network_approval(&test, REMOTE_ENVIRONMENT_ID).await?;
+    let rejection = "approval request failed because the client disconnected";
     test.codex
         .submit(Op::ExecApproval {
             id: approval.effective_approval_id(),
             turn_id: None,
-            decision: ReviewDecision::Denied,
+            decision: ReviewDecision::denied(rejection),
         })
         .await?;
     wait_for_turn_complete(&test).await;
+    assert_eq!(
+        remote_responses.function_call_output_text("exec-network-remote"),
+        Some(rejection.to_string())
+    );
 
     test.fs()
         .remove(
@@ -1128,6 +3057,7 @@ async fn approved_network_host_for_one_environment_still_prompts_in_another() ->
             RemoveOptions {
                 recursive: true,
                 force: true,
+                follow_symlinks: true,
             },
             /*sandbox*/ None,
         )
@@ -1136,7 +3066,62 @@ async fn approved_network_host_for_one_environment_still_prompts_in_another() ->
     Ok(())
 }
 
+pub(super) fn guardian_parent_catalog() -> ModelsResponse {
+    let template = codex_models_manager::bundled_models_response()
+        .expect("bundled model catalog")
+        .models
+        .into_iter()
+        .find(|model| model.slug == "gpt-5.5")
+        .expect("gpt-5.5 in bundled catalog");
+    // Keep safety settings compatible so active publication can switch A to B.
+    ModelsResponse {
+        models: ["guardian-parent-a", "guardian-parent-b"]
+            .into_iter()
+            .map(|slug| {
+                let mut model = template.clone();
+                model.slug = slug.to_string();
+                model.visibility = ModelVisibility::List;
+                model.auto_review_model_override = None;
+                model.supported_reasoning_levels.retain(|level| {
+                    level.effort != codex_protocol::openai_models::ReasoningEffort::Low
+                });
+                model
+                    .model_messages
+                    .as_mut()
+                    .expect("model messages")
+                    .auto_review = Some(AutoReviewMessages {
+                    policy: Some("captured policy".to_string()),
+                    policy_template: Some(
+                        "captured template: {{ tenant_policy_config }}".to_string(),
+                    ),
+                    node_repl_policy: None,
+                    rejection_instructions: None,
+                    timeout_instructions: None,
+                });
+                model
+            })
+            .collect(),
+    }
+}
+
 async fn managed_network_unified_exec_test(server: &wiremock::MockServer) -> Result<TestCodex> {
+    managed_network_unified_exec_test_with_features(server, &[]).await
+}
+
+async fn managed_network_unified_exec_test_with_features(
+    server: &wiremock::MockServer,
+    features: &[Feature],
+) -> Result<TestCodex> {
+    let test = managed_network_unified_exec_builder(features)?
+        .build_with_remote_and_local_env(server)
+        .await?;
+    assert!(test.config.managed_network_requirements_enabled());
+    assert!(test.config.permissions.network.is_some());
+    assert!(test.session_configured.network_proxy.is_some());
+    Ok(test)
+}
+
+fn managed_network_unified_exec_builder(features: &[Feature]) -> Result<TestCodexBuilder> {
     let home = Arc::new(TempDir::new()?);
     fs::write(
         home.path().join("config.toml"),
@@ -1158,37 +3143,24 @@ allow_local_binding = true
         /*exclude_tmpdir_env_var*/ false,
         /*exclude_slash_tmp*/ false,
     );
-    let permission_profile_for_config = permission_profile.clone();
-    let mut builder = test_codex()
+    let permission_profile_for_config = permission_profile;
+    let features = features.to_vec();
+    Ok(test_codex()
         .with_home(home)
         .with_cloud_config_bundle(managed_network_requirements_loader())
         .with_config(move |config| {
-            config.use_experimental_unified_exec_tool = true;
-            config
-                .features
-                .enable(Feature::UnifiedExec)
-                .expect("test config should allow feature update");
+            for feature in &features {
+                config
+                    .features
+                    .enable(*feature)
+                    .expect("test config should allow feature update");
+            }
             config.permissions.approval_policy = Constrained::allow_any(approval_policy);
             config
                 .permissions
                 .set_permission_profile(permission_profile_for_config)
                 .expect("set permission profile");
-        });
-    let test = builder.build_with_remote_and_local_env(server).await?;
-    assert!(
-        test.config.managed_network_requirements_enabled(),
-        "expected managed network requirements to be enabled"
-    );
-    assert!(
-        test.config.permissions.network.is_some(),
-        "expected managed network proxy config to be present"
-    );
-    test.session_configured
-        .network_proxy
-        .as_ref()
-        .expect("expected runtime managed network proxy addresses");
-
-    Ok(test)
+        }))
 }
 
 async fn mount_exec_network_turn(
@@ -1230,6 +3202,13 @@ fn network_exec_args(command: &str) -> Value {
     })
 }
 
+fn remote_network_proxy_request_command(marker: &str) -> String {
+    let host = NETWORK_TEST_HOST;
+    format!(
+        "python3 -c \"import os,socket,urllib.parse; proxy = urllib.parse.urlparse(os.environ['HTTP_PROXY']); sock = socket.create_connection((proxy.hostname, proxy.port), timeout=10); sock.sendall(b'GET http://{host} HTTP/1.1\\r\\nHost: {host}\\r\\nConnection: close\\r\\n\\r\\n'); print('{marker}:' + sock.makefile('rb').readline().decode(errors='replace'))\""
+    )
+}
+
 async fn submit_managed_network_turn(
     test: &TestCodex,
     prompt: &str,
@@ -1249,31 +3228,28 @@ async fn submit_managed_network_turn(
         TurnEnvironmentSelections::new(test.config.cwd.clone(), environments);
 
     test.codex
-        .submit(Op::UserInput {
-            items: vec![UserInput::Text {
+        .start_or_steer_turn(
+            TurnInputRequest::user_input(vec![UserInput::Text {
                 text: prompt.into(),
                 text_elements: Vec::new(),
-            }],
-            final_output_json_schema: None,
-            responsesapi_client_metadata: None,
-            additional_context: Default::default(),
-            thread_settings: codex_protocol::protocol::ThreadSettingsOverrides {
+            }])
+            .with_thread_settings(ThreadSettingsOverrides {
                 environments: Some(turn_environment_selections),
                 approval_policy: Some(approval_policy),
                 approvals_reviewer: Some(approvals_reviewer),
                 sandbox_policy: Some(sandbox_policy),
                 permission_profile,
-                collaboration_mode: Some(codex_protocol::config_types::CollaborationMode {
-                    mode: codex_protocol::config_types::ModeKind::Default,
-                    settings: codex_protocol::config_types::Settings {
+                collaboration_mode: Some(CollaborationMode {
+                    mode: ModeKind::Default,
+                    settings: Settings {
                         model: test.session_configured.model.clone(),
                         reasoning_effort: None,
                         developer_instructions: None,
                     },
                 }),
                 ..Default::default()
-            },
-        })
+            }),
+        )
         .await?;
 
     Ok(())
@@ -1373,6 +3349,10 @@ fn guardian_network_actions(responses: &ResponseMock) -> Result<Vec<Value>> {
         .into_iter()
         .filter(|request| {
             request.body_json()["client_metadata"]["x-openai-subagent"].as_str() == Some("guardian")
+                && request
+                    .message_input_texts("user")
+                    .iter()
+                    .any(|text| text.contains("\"tool\": \"network_access\""))
         })
         .map(|request| {
             let user_texts = request.message_input_texts("user");
@@ -1467,6 +3447,21 @@ async fn wait_for_completion_without_network_prompt(test: &TestCodex) {
         }
         other => panic!("unexpected event: {other:?}"),
     }
+}
+
+async fn wait_for_guardian_request(responses: &ResponseMock) {
+    tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            if responses.requests().iter().any(|request| {
+                request.body_json()["client_metadata"]["x-openai-subagent"] == "guardian"
+            }) {
+                return;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("timed out waiting for Guardian request");
 }
 
 async fn wait_for_response_request(responses: &ResponseMock) {

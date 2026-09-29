@@ -4,11 +4,12 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::time::Duration;
 
+use crate::RemoteEnvironmentOptions;
+use codex_utils_redacted_string::RedactedString;
 use serde::Deserialize;
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 
 use crate::DefaultEnvironmentProvider;
-use crate::Environment;
 use crate::EnvironmentProvider;
 use crate::EnvironmentProviderFuture;
 use crate::ExecServerError;
@@ -38,6 +39,7 @@ struct EnvironmentsToml {
 struct EnvironmentToml {
     id: String,
     url: Option<String>,
+    auth_bearer_token: Option<RedactedString>,
     program: Option<String>,
     args: Option<Vec<String>>,
     env: Option<HashMap<String, String>>,
@@ -94,19 +96,8 @@ impl TomlEnvironmentProvider {
     }
 
     async fn snapshot(&self) -> Result<EnvironmentProviderSnapshot, ExecServerError> {
-        let mut environments = Vec::with_capacity(self.environments.len());
-        for (id, transport_params) in &self.environments {
-            environments.push((
-                id.clone(),
-                Environment::remote_with_transport(
-                    transport_params.clone(),
-                    /*local_runtime_paths*/ None,
-                ),
-            ));
-        }
-
         Ok(EnvironmentProviderSnapshot {
-            environments,
+            environments: self.environments.clone(),
             default: self.default.clone(),
             include_local: self.include_local,
         })
@@ -126,6 +117,7 @@ fn parse_environment_toml(
     let EnvironmentToml {
         id,
         url,
+        auth_bearer_token,
         program,
         args,
         env,
@@ -137,6 +129,11 @@ fn parse_environment_toml(
     if program.is_none() && (args.is_some() || env.is_some() || cwd.is_some()) {
         return Err(ExecServerError::Protocol(format!(
             "environment `{id}` args, env, and cwd require program"
+        )));
+    }
+    if url.is_none() && auth_bearer_token.is_some() {
+        return Err(ExecServerError::Protocol(format!(
+            "environment `{id}` auth_bearer_token requires url"
         )));
     }
     if url.is_none() && connect_timeout_sec.is_some() {
@@ -152,11 +149,28 @@ fn parse_environment_toml(
     let transport_params = match (url, program) {
         (Some(url), None) => {
             let url = validate_websocket_url(url)?;
-            ExecServerTransportParams::WebSocketUrl {
-                websocket_url: url,
-                connect_timeout,
-                initialize_timeout,
+            let options = RemoteEnvironmentOptions {
+                exec_server_url: url,
+                connect_timeout: Some(connect_timeout),
+                http_headers: auth_bearer_token
+                    .into_iter()
+                    .map(|token| {
+                        (
+                            "Authorization".to_string(),
+                            format!("Bearer {}", token.into_inner()),
+                        )
+                    })
+                    .collect(),
+            };
+            let mut transport = options.into_transport_params()?;
+            if let ExecServerTransportParams::WebSocketUrl {
+                initialize_timeout: timeout,
+                ..
+            } = &mut transport
+            {
+                *timeout = initialize_timeout;
             }
+            transport
         }
         (None, Some(program)) => {
             let program = program.trim().to_string();
@@ -209,16 +223,10 @@ pub(crate) fn environment_provider_from_codex_home(
     codex_home: &Path,
 ) -> Result<Box<dyn EnvironmentProvider>, ExecServerError> {
     let path = codex_home.join(ENVIRONMENTS_TOML_FILE);
-    if !path.try_exists().map_err(|err| {
-        ExecServerError::Protocol(format!(
-            "failed to inspect environment config `{}`: {err}",
-            path.display()
-        ))
-    })? {
+    let Some(environments) = load_environments_toml(&path)? else {
         return Ok(Box::new(DefaultEnvironmentProvider::from_env()));
-    }
+    };
 
-    let environments = load_environments_toml(&path)?;
     Ok(Box::new(TomlEnvironmentProvider::new_with_config_dir(
         environments,
         Some(codex_home),
@@ -307,20 +315,28 @@ fn validate_websocket_url(url: String) -> Result<String, ExecServerError> {
     Ok(url.to_string())
 }
 
-fn load_environments_toml(path: &Path) -> Result<EnvironmentsToml, ExecServerError> {
-    let contents = std::fs::read_to_string(path).map_err(|err| {
-        ExecServerError::Protocol(format!(
-            "failed to read environment config `{}`: {err}",
-            path.display()
-        ))
-    })?;
+/// Returns `None` when the config is missing; other I/O and parse failures remain errors.
+fn load_environments_toml(path: &Path) -> Result<Option<EnvironmentsToml>, ExecServerError> {
+    let contents = match std::fs::read_to_string(path) {
+        Ok(contents) => contents,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(err) => {
+            return Err(ExecServerError::Protocol(format!(
+                "failed to read environment config `{}`: {err}",
+                path.display()
+            )));
+        }
+    };
 
-    toml::from_str(&contents).map_err(|err| {
-        ExecServerError::Protocol(format!(
-            "failed to parse environment config `{}`: {err}",
-            path.display()
-        ))
-    })
+    toml::from_str(&contents)
+        .map_err(|mut err| {
+            err.set_input(/*input*/ None);
+            ExecServerError::Protocol(format!(
+                "failed to parse environment config `{}`: {err}",
+                path.display()
+            ))
+        })
+        .map(Some)
 }
 
 mod option_duration_secs {
@@ -345,6 +361,47 @@ mod tests {
     use tempfile::tempdir;
 
     use super::*;
+
+    #[test]
+    fn auth_bearer_token_requires_websocket_and_preserves_timeouts() {
+        let config: EnvironmentsToml = toml::from_str(
+            r#"
+            [[environments]]
+            id = "remote"
+            url = "wss://executor.example"
+            auth_bearer_token = "private-token"
+            initialize_timeout_sec = 17
+        "#,
+        )
+        .unwrap();
+        assert!(!format!("{config:?}").contains("private-token"));
+        let provider = TomlEnvironmentProvider::new(config).unwrap();
+        let ExecServerTransportParams::WebSocketUrl {
+            http_headers,
+            initialize_timeout,
+            ..
+        } = &provider.environments[0].1
+        else {
+            panic!("expected websocket")
+        };
+        assert_eq!(
+            http_headers[http::header::AUTHORIZATION],
+            "Bearer private-token"
+        );
+        assert!(http_headers[http::header::AUTHORIZATION].is_sensitive());
+        assert_eq!(*initialize_timeout, Duration::from_secs(/*secs*/ 17));
+        let error = TomlEnvironmentProvider::new(EnvironmentsToml {
+            environments: vec![EnvironmentToml {
+                id: "stdio".to_string(),
+                program: Some("executor".to_string()),
+                auth_bearer_token: Some("private-token".into()),
+                ..Default::default()
+            }],
+            ..Default::default()
+        })
+        .unwrap_err();
+        assert!(error.to_string().contains("auth_bearer_token requires url"));
+    }
 
     #[tokio::test]
     async fn toml_provider_includes_local_and_adds_configured_environments() {
@@ -389,8 +446,14 @@ mod tests {
 
         assert!(include_local);
         assert!(!environments.contains_key(LOCAL_ENVIRONMENT_ID));
-        assert!(environments["devbox"].is_remote());
-        assert!(environments["ssh-dev"].is_remote());
+        assert!(matches!(
+            &environments["devbox"],
+            ExecServerTransportParams::WebSocketUrl { .. }
+        ));
+        assert!(matches!(
+            &environments["ssh-dev"],
+            ExecServerTransportParams::StdioCommand { .. }
+        ));
         assert_eq!(
             default,
             EnvironmentDefault::EnvironmentId("ssh-dev".to_string())
@@ -625,6 +688,7 @@ mod tests {
             websocket_url,
             connect_timeout,
             initialize_timeout,
+            ..
         } = &provider.environments[0].1
         else {
             panic!("expected websocket transport");
@@ -762,7 +826,9 @@ CODEX_LOG = "debug"
         )
         .expect("write environments.toml");
 
-        let environments = load_environments_toml(&path).expect("environments.toml");
+        let environments = load_environments_toml(&path)
+            .expect("environments.toml")
+            .expect("environments.toml should exist");
 
         assert_eq!(environments.default.as_deref(), Some("ssh-dev"));
         assert_eq!(environments.include_local, Some(false));

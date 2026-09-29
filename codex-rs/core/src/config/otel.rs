@@ -1,4 +1,3 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use std::collections::BTreeMap;
 use std::fmt::Display;
 
@@ -19,7 +18,7 @@ pub(crate) fn resolve_config(
     // OTLP HTTP endpoints are signal-specific in our config, so enabling log
     // export must not implicitly send spans to a /v1/logs endpoint.
     let trace_exporter = config.trace_exporter.unwrap_or(OtelExporterKind::None);
-    let metrics_exporter = config.metrics_exporter.unwrap_or(OtelExporterKind::None);
+    let metrics_exporter = config.metrics_exporter.unwrap_or(OtelExporterKind::Statsig);
     // Provider initialization installs process-global OTEL state. Sanitize
     // user-editable trace metadata here so malformed config is reported as a
     // startup warning instead of making startup fail.
@@ -27,7 +26,10 @@ pub(crate) fn resolve_config(
     let tracestate = resolve_tracestate(config.tracestate, startup_warnings);
 
     OtelConfig {
+        tool_result: config.tool_result,
         log_user_prompt,
+        log_agent_responses: config.log_agent_responses.unwrap_or(false),
+        log_guardian_assessments: config.log_guardian_assessments.unwrap_or(false),
         environment,
         exporter,
         trace_exporter,

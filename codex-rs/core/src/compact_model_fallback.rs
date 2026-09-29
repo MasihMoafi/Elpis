@@ -1,21 +1,17 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
-use crate::compaction_kinds::CompactionImplementation;
-use crate::compaction_kinds::CompactionReason;
+use codex_analytics::CompactionImplementation;
+use codex_analytics::CompactionReason;
 use codex_otel::SessionTelemetry;
 use codex_protocol::error::CodexErr;
+use codex_protocol::error::CodexErrorDetails;
 use tracing::warn;
 
-/// Retries failures that may be model-specific and succeed with a different model.
+/// Returns whether a failed compaction attempt should use the current model.
 pub(crate) fn should_retry_with_current_model(error: &CodexErr) -> bool {
-    matches!(
-        error,
-        CodexErr::InvalidRequest(_)
-            | CodexErr::UnexpectedStatus(_)
-            | CodexErr::ContextWindowExceeded
-            | CodexErr::UsageLimitReached(_)
-            | CodexErr::ServerOverloaded
-            | CodexErr::InternalServerError
-            | CodexErr::RetryLimit(_)
+    !matches!(
+        error.details(),
+        CodexErrorDetails::TurnAborted
+            | CodexErrorDetails::Interrupted
+            | CodexErrorDetails::SessionBudgetExceeded
     )
 }
 
@@ -36,7 +32,6 @@ pub(crate) fn record_model_fallback(
     let implementation_tag = match implementation {
         CompactionImplementation::Responses => "responses",
         CompactionImplementation::ResponsesCompactionV2 => "responses_compaction_v2",
-        CompactionImplementation::ResponsesCompact => "responses_compact",
     };
     let outcome = if fallback_error.is_none() {
         "succeeded"

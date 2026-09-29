@@ -1,6 +1,21 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use ratatui::text::Line;
 use ratatui::text::Span;
+
+/// Create a ratatui `Line` that borrows the contents of another line.
+pub fn line_to_borrowed<'a>(line: &'a Line<'_>) -> Line<'a> {
+    Line {
+        style: line.style,
+        alignment: line.alignment,
+        spans: line
+            .spans
+            .iter()
+            .map(|span| Span {
+                style: span.style,
+                content: std::borrow::Cow::Borrowed(span.content.as_ref()),
+            })
+            .collect(),
+    }
+}
 
 /// Clone a borrowed ratatui `Line` into an owned `'static` line.
 pub fn line_to_static(line: &Line<'_>) -> Line<'static> {

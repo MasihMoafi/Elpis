@@ -1,6 +1,6 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
+use crate::StartThreadOptions;
 use crate::ThreadManager;
-use crate::agent::AgentControl;
+use crate::agent::LocalAgentControl;
 use crate::codex_thread::CodexThread;
 use crate::config::Config;
 use crate::config::test_config;
@@ -8,7 +8,7 @@ use crate::thread_manager::ThreadManagerState;
 use codex_features::Feature;
 use codex_login::CodexAuth;
 use codex_protocol::ThreadId;
-use codex_protocol::error::CodexErr;
+use codex_protocol::error::CodexErrorDetails;
 use codex_protocol::protocol::EventMsg;
 use codex_protocol::protocol::SessionSource;
 use codex_protocol::protocol::SubAgentSource;
@@ -34,11 +34,14 @@ async fn residency_slot_reservation_unloads_oldest_idle_v2_agent() {
         Arc::new(codex_exec_server::EnvironmentManager::default_for_tests()),
     );
     let root = manager
-        .start_thread(config.clone())
+        .start_thread(StartThreadOptions::new(config.clone()))
         .await
         .expect("start root thread");
     let control = manager.agent_control();
-    let state = control.upgrade().expect("thread manager should be live");
+    let state = control
+        .runtime
+        .upgrade()
+        .expect("thread manager should be live");
 
     let first_slot = control
         .reserve_v2_residency_slot(&state, &config, /*protected_thread_id*/ None)
@@ -54,8 +57,10 @@ async fn residency_slot_reservation_unloads_oldest_idle_v2_agent() {
         .await
         .expect("second resident slot should evict the first idle agent");
     match manager.get_thread(first.thread_id).await {
-        Err(CodexErr::ThreadNotFound(thread_id)) => assert_eq!(thread_id, first.thread_id),
-        Err(err) => panic!("expected evicted thread to be missing, got {err:?}"),
+        Err(err) => match err.details() {
+            CodexErrorDetails::ThreadNotFound(thread_id) => assert_eq!(*thread_id, first.thread_id),
+            _ => panic!("expected evicted thread to be missing, got {err:?}"),
+        },
         Ok(_) => panic!("expected evicted thread to be missing"),
     }
     let second = spawn_v2_subagent(&control, &state, config, root.thread_id, "worker-2").await;
@@ -80,11 +85,14 @@ async fn interrupted_v2_agent_is_lost_after_residency_eviction() {
         Arc::new(codex_exec_server::EnvironmentManager::default_for_tests()),
     );
     let root = manager
-        .start_thread(config.clone())
+        .start_thread(StartThreadOptions::new(config.clone()))
         .await
         .expect("start root thread");
     let control = manager.agent_control();
-    let state = control.upgrade().expect("thread manager should be live");
+    let state = control
+        .runtime
+        .upgrade()
+        .expect("thread manager should be live");
 
     let first_slot = control
         .reserve_v2_residency_slot(&state, &config, /*protected_thread_id*/ None)
@@ -100,8 +108,10 @@ async fn interrupted_v2_agent_is_lost_after_residency_eviction() {
         .await
         .expect("second resident slot should evict the first interrupted idle agent");
     match manager.get_thread(first.thread_id).await {
-        Err(CodexErr::ThreadNotFound(thread_id)) => assert_eq!(thread_id, first.thread_id),
-        Err(err) => panic!("expected evicted thread to be missing, got {err:?}"),
+        Err(err) => match err.details() {
+            CodexErrorDetails::ThreadNotFound(thread_id) => assert_eq!(*thread_id, first.thread_id),
+            _ => panic!("expected evicted thread to be missing, got {err:?}"),
+        },
         Ok(_) => panic!("expected evicted thread to be missing"),
     }
     let second =
@@ -110,25 +120,27 @@ async fn interrupted_v2_agent_is_lost_after_residency_eviction() {
     mark_thread_completed(second.thread.as_ref()).await;
 
     let err = control
-        .ensure_v2_agent_loaded(config, first.thread_id)
+        .ensure_v2_agent_loaded(config, first.thread_id, /*parent*/ None)
         .await
         .expect_err("evicted interrupted agent should stay lost");
-    match err {
-        CodexErr::ThreadNotFound(thread_id) => assert_eq!(thread_id, first.thread_id),
-        err => panic!("expected ThreadNotFound, got {err:?}"),
+    match err.details() {
+        CodexErrorDetails::ThreadNotFound(thread_id) => assert_eq!(*thread_id, first.thread_id),
+        _ => panic!("expected ThreadNotFound, got {err:?}"),
     }
 
     assert!(manager.get_thread(root.thread_id).await.is_ok());
     assert!(manager.get_thread(second.thread_id).await.is_ok());
     match manager.get_thread(first.thread_id).await {
-        Err(CodexErr::ThreadNotFound(thread_id)) => assert_eq!(thread_id, first.thread_id),
-        Err(err) => panic!("expected evicted thread to be missing, got {err:?}"),
+        Err(err) => match err.details() {
+            CodexErrorDetails::ThreadNotFound(thread_id) => assert_eq!(*thread_id, first.thread_id),
+            _ => panic!("expected evicted thread to be missing, got {err:?}"),
+        },
         Ok(_) => panic!("expected evicted thread to be missing"),
     }
 }
 
 async fn spawn_v2_subagent(
-    control: &AgentControl,
+    control: &LocalAgentControl,
     state: &Arc<ThreadManagerState>,
     config: Config,
     parent_thread_id: ThreadId,
@@ -139,6 +151,7 @@ async fn spawn_v2_subagent(
             config,
             control.clone(),
             SessionSource::SubAgent(SubAgentSource::Other(label.to_string())),
+            /*history_mode*/ None,
             Some(parent_thread_id),
             /*forked_from_thread_id*/ None,
             Some(ThreadSource::Subagent),

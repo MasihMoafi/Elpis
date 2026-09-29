@@ -1,12 +1,16 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 //! Safety-buffered turn retries that preserve the source thread.
 
 use super::session_lifecycle::ThreadAttachPresentation;
 use super::*;
 use crate::app_server_session::ForkGoalContinuation;
+use crate::app_server_session::HISTORY_ITEM_PAGE_LIMIT;
+use crate::app_server_session::INITIAL_HISTORY_TURN_LIMIT;
+use crate::app_server_session::turn_permissions_overrides;
 use crate::chatwidget::ThreadInputState;
 use crate::chatwidget::ThreadInputStateRestoreMode;
 use crate::chatwidget::UserMessage;
+use codex_app_server_protocol::ThreadHistoryMode;
+use codex_app_server_protocol::TurnItemsView;
 use codex_app_server_protocol::UserInput;
 
 pub(super) struct SafetyBufferedRetry {
@@ -38,18 +42,24 @@ impl App {
             return;
         }
         if !self.chat_widget.can_retry_safety_buffered_turn(&turn_id) {
-            self.app_event_tx.send(AppEvent::UpdateModel(model));
-            self.app_event_tx.send(AppEvent::UpdateReasoningEffort(Some(
-                ReasoningEffortConfig::Low,
-            )));
             return;
         }
 
         let retry_config = self.chat_widget.config_ref().clone();
         let input_state = self.chat_widget.capture_thread_input_state();
+        if self.pending_server_profiles.contains_key(&thread_id) {
+            self.fail_safety_buffered_branch(
+                input_state,
+                prompt,
+                color_eyre::eyre::eyre!("Wait for permissions to update before forking."),
+            );
+            return;
+        }
 
         let AppCommand::UserTurn {
             items,
+            cwd,
+            active_permission_profile,
             model: turn_model,
             effort,
             collaboration_mode,
@@ -61,6 +71,18 @@ impl App {
             );
             return;
         };
+        let permissions_override = Self::turn_permissions_override_from_config(
+            &retry_config,
+            active_permission_profile.as_ref(),
+            self.runtime_permission_profile_override
+                .as_ref()
+                .and_then(RuntimePermissionProfileOverride::turn_permission_profile),
+        );
+        if let Err(err) = turn_permissions_overrides(permissions_override, cwd.as_path()) {
+            self.chat_widget
+                .add_error_message(format!("Failed to retry with a faster model: {err}"));
+            return;
+        }
         *turn_model = model.clone();
         *effort = Some(ReasoningEffortConfig::Low);
         *collaboration_mode = collaboration_mode.as_ref().map(|mode| {
@@ -77,9 +99,53 @@ impl App {
             return;
         }
 
-        let thread = match app_server
-            .thread_read(thread_id, /*include_turns*/ true)
-            .await
+        let thread = match async {
+            let mut thread = app_server
+                .thread_read(thread_id, /*include_turns*/ false)
+                .await?;
+            if thread.history_mode == ThreadHistoryMode::Legacy {
+                app_server
+                    .hydrate_initial_thread_history(
+                        &mut thread,
+                        /*turn_cursor*/ None,
+                        /*item_cursor*/ None,
+                        /*config*/ None,
+                        /*local_settings*/ None,
+                        crate::app_server_session::HistoryHydrationScope::Initial,
+                    )
+                    .await?;
+            } else {
+                let page = app_server
+                    .thread_turns_page(thread_id, /*cursor*/ None, INITIAL_HISTORY_TURN_LIMIT)
+                    .await?;
+                thread.turns = page.data.into_iter().rev().collect();
+                if let Some(turn_index) = thread.turns.iter().position(|turn| turn.id == turn_id) {
+                    let page = app_server
+                        .thread_items_page(
+                            thread_id,
+                            Some(&turn_id),
+                            /*cursor*/ None,
+                            HISTORY_ITEM_PAGE_LIMIT,
+                        )
+                        .await?;
+                    if page.next_cursor.is_some() {
+                        color_eyre::eyre::bail!(
+                            "Cannot safely retry a turn whose input exceeds the bounded history page."
+                        );
+                    }
+                    let turn = &mut thread.turns[turn_index];
+                    turn.items = page
+                        .data
+                        .into_iter()
+                        .rev()
+                        .map(|entry| entry.item)
+                        .collect();
+                    turn.items_view = TurnItemsView::Full;
+                }
+            }
+            Ok::<_, color_eyre::Report>(thread)
+        }
+        .await
         {
             Ok(thread) => thread,
             Err(err) => {
@@ -114,13 +180,16 @@ impl App {
         let retry_display = ChatWidget::user_message_display_from_inputs(items);
 
         self.config = retry_config.clone();
+        let selected_profile = self.confirmed_server_profile(thread_id);
         let started = app_server
             .fork_thread_at(
+                &self.local_settings,
                 retry_config,
                 thread_id,
                 /*last_turn_id*/ None,
                 /*before_turn_id*/ Some(turn_id),
                 ForkGoalContinuation::DeferUntilNextTurn,
+                selected_profile.as_ref(),
             )
             .await;
         let started = match started {
@@ -132,11 +201,11 @@ impl App {
         };
         let retry_thread_id = started.session.thread_id;
 
-        self.shutdown_current_thread(app_server).await;
+        self.detach_current_thread_for_navigation(app_server, Some(retry_thread_id))
+            .await;
         if let Err(err) = self
             .replace_chat_widget_with_app_server_thread(
                 tui,
-                app_server,
                 started,
                 ThreadAttachPresentation::SessionLineage,
                 /*initial_user_message*/ None,

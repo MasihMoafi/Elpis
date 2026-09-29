@@ -1,4 +1,3 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 //! Frame draw scheduling utilities for the TUI.
 //!
 //! This module exposes [`FrameRequester`], a lightweight handle that widgets and
@@ -133,6 +132,19 @@ mod tests {
     use super::*;
     use tokio::time;
     use tokio_util::time::FutureExt;
+
+    impl FrameRequester {
+        /// Create a frame requester and expose its request channel for deterministic tests.
+        pub(crate) fn test_channel() -> (Self, mpsc::UnboundedReceiver<Instant>) {
+            let (tx, rx) = mpsc::unbounded_channel();
+            (
+                FrameRequester {
+                    frame_schedule_tx: tx,
+                },
+                rx,
+            )
+        }
+    }
 
     #[tokio::test(flavor = "current_thread", start_paused = true)]
     async fn test_schedule_frame_immediate_triggers_once() {

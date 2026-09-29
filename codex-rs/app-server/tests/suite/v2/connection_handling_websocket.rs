@@ -20,12 +20,15 @@ use codex_app_server_protocol::ThreadLoadedListResponse;
 use codex_app_server_protocol::ThreadStartParams;
 use codex_app_server_protocol::ThreadStartResponse;
 use codex_core::config::set_project_trust_level;
+use codex_http_client::HttpClient;
+use codex_http_client::HttpClientBuilder;
+use codex_http_client::HttpResponse;
 use codex_protocol::config_types::TrustLevel;
 use futures::SinkExt;
 use futures::StreamExt;
 use hmac::Hmac;
 use hmac::Mac;
-use reqwest::StatusCode;
+use http::StatusCode;
 use serde_json::json;
 use sha2::Sha256;
 use std::net::SocketAddr;
@@ -214,7 +217,7 @@ async fn websocket_transport_serves_health_endpoints_on_same_listener() -> Resul
     create_config_toml(codex_home.path(), &server.uri(), "never")?;
 
     let (mut process, bind_addr) = spawn_websocket_server(codex_home.path()).await?;
-    let client = reqwest::Client::new();
+    let client = HttpClientBuilder::new().build_direct()?;
 
     let readyz = http_get(&client, bind_addr, "/readyz").await?;
     assert_eq!(readyz.status(), StatusCode::OK);
@@ -453,7 +456,12 @@ async fn websocket_disconnect_keeps_last_subscribed_thread_loaded_until_idle_tim
     let codex_home = TempDir::new()?;
     create_config_toml(codex_home.path(), &server.uri(), "never")?;
 
-    let (mut process, bind_addr) = spawn_websocket_server(codex_home.path()).await?;
+    let (mut process, bind_addr) = spawn_websocket_server_with_args(
+        codex_home.path(),
+        "ws://127.0.0.1:0",
+        &["-c".to_string(), "thread_unload_delay_secs=2".to_string()],
+    )
+    .await?;
 
     let mut ws1 = connect_websocket(bind_addr).await?;
     send_initialize_request(&mut ws1, /*id*/ 1, "ws_thread_owner").await?;
@@ -462,14 +470,15 @@ async fn websocket_disconnect_keeps_last_subscribed_thread_loaded_until_idle_tim
     let thread_id = start_thread(&mut ws1, /*id*/ 2).await?;
     assert_loaded_threads(&mut ws1, /*id*/ 3, &[thread_id.as_str()]).await?;
 
-    ws1.close(None).await.context("failed to close websocket")?;
-    drop(ws1);
-
     let mut ws2 = connect_websocket(bind_addr).await?;
     send_initialize_request(&mut ws2, /*id*/ 4, "ws_reconnect_client").await?;
     read_response_for_id(&mut ws2, /*id*/ 4).await?;
 
+    ws1.close(None).await.context("failed to close websocket")?;
+    drop(ws1);
+
     wait_for_loaded_threads(&mut ws2, /*first_id*/ 5, &[thread_id.as_str()]).await?;
+    wait_for_loaded_threads(&mut ws2, /*first_id*/ 100, &[]).await?;
 
     process
         .kill()
@@ -499,6 +508,7 @@ pub(super) async fn spawn_websocket_server_with_args(
         .stderr(Stdio::piped())
         .env("CODEX_HOME", codex_home)
         .env("RUST_LOG", "warn");
+
     let mut process = cmd
         .kill_on_drop(true)
         .spawn()
@@ -641,11 +651,7 @@ async fn run_websocket_server_to_completion_with_args(
         .context("failed to run websocket app-server")
 }
 
-async fn http_get(
-    client: &reqwest::Client,
-    bind_addr: SocketAddr,
-    path: &str,
-) -> Result<reqwest::Response> {
+async fn http_get(client: &HttpClient, bind_addr: SocketAddr, path: &str) -> Result<HttpResponse> {
     let connectable_bind_addr = connectable_bind_addr(bind_addr);
     let deadline = Instant::now() + DEFAULT_READ_TIMEOUT;
     loop {

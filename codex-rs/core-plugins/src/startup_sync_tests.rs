@@ -1,5 +1,10 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use super::*;
+use crate::git_policy::REPOSITORY_LOCAL_GIT_ENVIRONMENT_VARIABLES;
+use crate::test_support::RecordingHttpClientSelector;
+use crate::test_support::recorded_http_client_urls;
+use codex_http_client::DestinationPolicy::Restricted;
+use codex_http_client::NetworkPolicyDenied::Destination;
+use codex_http_client::RouteAwareRequestError::Policy;
 use pretty_assertions::assert_eq;
 use std::ffi::OsStr;
 use std::io::Write;
@@ -11,6 +16,7 @@ use tempfile::tempdir;
 use wiremock::Mock;
 use wiremock::MockServer;
 use wiremock::ResponseTemplate;
+use wiremock::matchers::header_exists;
 use wiremock::matchers::method;
 use wiremock::matchers::path;
 use zip::ZipWriter;
@@ -18,9 +24,197 @@ use zip::write::SimpleFileOptions;
 
 const TEST_CURATED_PLUGIN_SHA: &str = "0123456789abcdef0123456789abcdef01234567";
 
+#[cfg(unix)]
+#[test]
+fn pretrust_startup_sync_uses_installed_git_with_hostile_path() {
+    const CHILD_HOME: &str = "CODEX_TEST_CURATED_SYNC_HOME";
+    if let Some(home) = std::env::var_os(CHILD_HOME) {
+        // Call the public entry point, synchronously. The parent joins this
+        // process before checking the marker, so no detached work can escape it.
+        sync_openai_plugins_repo(
+            Path::new(&home),
+            crate::test_support::test_http_client_factory(),
+        )
+        .expect("Git-only startup sync should succeed");
+        return;
+    }
+    let fixture = tempdir().expect("fixture");
+    let source = fixture.path().join("remote");
+    let home = fixture.path().join("home");
+    let workspace = fixture.path().join("workspace");
+    let bin = workspace.join("node_modules/.bin");
+    let marker = fixture.path().join("helper-ran");
+    std::fs::create_dir_all(&source).unwrap();
+    std::fs::create_dir_all(&bin).unwrap();
+    std::fs::create_dir(&home).unwrap();
+    run_git(&source, &["init", "--quiet"]);
+    for name in ["git", "git-upload-pack", "git-remote-https"] {
+        write_executable_script(
+            &bin.join(name),
+            &format!("#!/bin/sh\nprintf ran > '{}'\nexit 1\n", marker.display()),
+        );
+    }
+    let config = fixture.path().join("gitconfig");
+    std::fs::write(
+        &config,
+        format!(
+            "[url \"file://{}\"]\n insteadOf = {OPENAI_PLUGINS_GIT_URL}\n",
+            source.display()
+        ),
+    )
+    .unwrap();
+
+    for plugins in [vec!["gmail"], vec!["gmail", "linear"]] {
+        write_openai_curated_marketplace(&source, &plugins);
+        run_git(&source, &["add", "."]);
+        run_git(
+            &source,
+            &[
+                "-c",
+                "user.name=Test",
+                "-c",
+                "user.email=test@example.com",
+                "commit",
+                "-qm",
+                "update",
+            ],
+        );
+        let expected_sha = run_git(&source, &["rev-parse", "HEAD"]);
+        let output = Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "startup_sync::tests::pretrust_startup_sync_uses_installed_git_with_hostile_path",
+                "--nocapture",
+            ])
+            .current_dir(&workspace)
+            .env(CHILD_HOME, &home)
+            .env("PATH", &bin)
+            .env("GIT_EXEC_PATH", &bin)
+            .env("GIT_CONFIG_GLOBAL", &config)
+            .env("GIT_CONFIG_SYSTEM", "/dev/null")
+            .env("HTTP_PROXY", "http://127.0.0.1:9")
+            .env("HTTPS_PROXY", "http://127.0.0.1:9")
+            .env("http_proxy", "http://127.0.0.1:9")
+            .env("https_proxy", "http://127.0.0.1:9")
+            .output()
+            .expect("join sync subprocess");
+        assert!(
+            output.status.success(),
+            "{}\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert_eq!(
+            read_curated_plugins_sha(&home),
+            Some(
+                String::from_utf8(expected_sha.stdout)
+                    .unwrap()
+                    .trim()
+                    .to_string()
+            )
+        );
+        assert!(!marker.exists(), "sync executed a workspace helper");
+        for plugin in plugins {
+            assert!(
+                curated_plugins_repo_path(&home)
+                    .join(format!("plugins/{plugin}/.codex-plugin/plugin.json"))
+                    .is_file()
+            );
+        }
+    }
+}
+
+#[tokio::test]
+async fn github_http_routes_repository_ref_and_zipball_urls() {
+    let server = MockServer::start().await;
+    let sha = TEST_CURATED_PLUGIN_SHA;
+    let zipball = b"archive".to_vec();
+    mount_github_repo_and_ref(&server, sha).await;
+    mount_github_zipball(&server, sha, zipball.clone()).await;
+    let api_base_url = server.uri();
+    let repo_url = format!("{api_base_url}/repos/openai/plugins");
+    let ref_url = format!("{repo_url}/git/ref/heads/main");
+    let zipball_url = format!("{repo_url}/zipball/{sha}");
+    let (http_clients, selected_urls) = RecordingHttpClientSelector::new();
+    let http_clients = StartupSyncHttpClient::route_aware(http_clients);
+
+    let remote_sha = fetch_curated_repo_remote_sha(&http_clients, &api_base_url)
+        .await
+        .expect("remote SHA request should succeed");
+    let downloaded_zipball = fetch_curated_repo_zipball(&http_clients, &api_base_url, &remote_sha)
+        .await
+        .expect("zipball request should succeed");
+
+    assert_eq!(remote_sha, sha);
+    assert_eq!(downloaded_zipball, zipball);
+    assert_eq!(
+        recorded_http_client_urls(&selected_urls),
+        vec![repo_url, ref_url, zipball_url]
+    );
+}
+
+#[tokio::test]
+async fn backup_archive_routes_metadata_and_backend_supplied_download_urls() {
+    let metadata_server = MockServer::start().await;
+    let download_server = MockServer::start().await;
+    let download_url = format!(
+        "{}/files/curated-plugins.zip?sig=signed",
+        download_server.uri()
+    );
+    Mock::given(method("GET"))
+        .and(path("/backend-api/plugins/export/curated"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_json(serde_json::json!({"download_url": download_url.clone()})),
+        )
+        .expect(1)
+        .mount(&metadata_server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/files/curated-plugins.zip"))
+        .respond_with(ResponseTemplate::new(200).set_body_bytes(b"archive".to_vec()))
+        .expect(1)
+        .mount(&download_server)
+        .await;
+    let metadata_url = format!(
+        "{}/backend-api/plugins/export/curated",
+        metadata_server.uri()
+    );
+    let (http_clients, selected_urls) = RecordingHttpClientSelector::new();
+    let http_clients = StartupSyncHttpClient::route_aware(http_clients);
+
+    let body = fetch_curated_repo_backup_archive_zip(&http_clients, &metadata_url)
+        .await
+        .expect("backup archive download should succeed");
+
+    assert_eq!(body, b"archive");
+    let controller = codex_http_client::NetworkPolicyController::default();
+    let policy = controller.policy();
+    let allowed_hosts = Default::default();
+    controller.publish(policy.revision(), Restricted { allowed_hosts });
+    let factory = crate::test_support::test_http_client_factory().with_network_policy(policy);
+    let clients = StartupSyncHttpClient::new(&factory);
+    for url in [&metadata_url, &download_url] {
+        let result = clients.request(Method::GET, url).send().await;
+        assert!(matches!(result, Err(Policy(Destination))));
+    }
+    assert_eq!(
+        recorded_http_client_urls(&selected_urls),
+        vec![metadata_url, download_url]
+    );
+}
+
 #[test]
 fn git_command_sanitizes_ambient_repository_environment() {
-    let command = git_command(Path::new("git"));
+    let command = git_command(Path::new("git")).expect("trusted Git command");
+
+    assert_eq!(
+        command.get_args().collect::<Vec<_>>(),
+        [
+            OsStr::new("-c"),
+            OsStr::new(codex_git_utils::SAFE_BARE_REPOSITORY_CONFIG),
+        ]
+    );
 
     for name in REPOSITORY_LOCAL_GIT_ENVIRONMENT_VARIABLES {
         assert_eq!(
@@ -32,6 +226,208 @@ fn git_command_sanitizes_ambient_repository_environment() {
             "{name} should be removed from startup sync Git commands"
         );
     }
+}
+
+#[cfg(unix)]
+#[test]
+fn pretrust_git_sync_ignores_repository_local_transport_config() {
+    let fixture = tempdir().expect("tempdir");
+    let codex_home = fixture.path().join("codex-home");
+    let repository = fixture.path().join("untrusted-project");
+    let marker = fixture.path().join("transport-config-ran");
+    std::fs::create_dir_all(&codex_home).expect("create Codex home");
+    std::fs::create_dir_all(&repository).expect("create repository");
+    run_git(&repository, &["init", "--quiet"]);
+
+    let transport = repository.join("synthetic-transport.sh");
+    write_executable_script(
+        &transport,
+        &format!(
+            "#!/bin/sh\nprintf ran > '{}'\nprintf '{}\\tHEAD\\n'\n",
+            marker.display(),
+            TEST_CURATED_PLUGIN_SHA
+        ),
+    );
+    run_git(
+        &repository,
+        &["config", "--local", "protocol.ext.allow", "always"],
+    );
+    let rewrite_key = format!("url.ext::{} %S .insteadOf", transport.display());
+    run_git(
+        &repository,
+        &["config", "--local", &rewrite_key, OPENAI_PLUGINS_GIT_URL],
+    );
+
+    let global_config = fixture.path().join("global-gitconfig");
+    std::fs::write(
+        &global_config,
+        format!(
+            "[url \"file://{}/\"]\n\tinsteadOf = https://github.com/\n",
+            fixture.path().join("missing-remotes").display()
+        ),
+    )
+    .expect("write global Git config");
+    let git_wrapper = fixture.path().join("git-from-untrusted-repository.sh");
+    write_executable_script(
+        &git_wrapper,
+        &format!(
+            "#!/bin/sh\ncd '{}' || exit 1\nGIT_CONFIG_GLOBAL='{}' GIT_CONFIG_SYSTEM=/dev/null GIT_TERMINAL_PROMPT=0 exec git \"$@\"\n",
+            repository.display(),
+            global_config.display()
+        ),
+    );
+
+    let err = sync_openai_plugins_repo_via_git(&codex_home, &git_wrapper)
+        .expect_err("isolated probe should use the missing global-config remote");
+
+    assert!(err.contains("git ls-remote curated plugins repo"));
+    assert!(
+        !marker.exists(),
+        "pre-trust sync must not execute repository-local transport configuration"
+    );
+}
+
+#[tokio::test]
+async fn ordinary_clone_rejects_tracked_embedded_bare_repository() {
+    let temp_dir = tempdir().expect("create temporary directory");
+    let source = temp_dir.path().join("source");
+    let clone = temp_dir.path().join("clone");
+    let nested_source = source.join("nested");
+    std::fs::create_dir_all(nested_source.join("objects")).expect("create nested object directory");
+    std::fs::create_dir_all(nested_source.join("refs"))
+        .expect("create nested references directory");
+
+    let run_setup_git = |cwd: &Path, args: &[&str]| {
+        let output = Command::new("git")
+            .args(args)
+            .current_dir(cwd)
+            .output()
+            .expect("run repository setup Git command");
+        assert!(
+            output.status.success(),
+            "git {args:?} failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    };
+
+    run_setup_git(&source, &["init", "--quiet"]);
+    std::fs::write(nested_source.join("HEAD"), "ref: refs/heads/main\n")
+        .expect("write tracked nested HEAD");
+    std::fs::write(
+        nested_source.join("config"),
+        "[core]\n\trepositoryformatversion = 0\n\tbare = false\n\tworktree = .\n\tfsmonitor = ./payload.sh\n",
+    )
+    .expect("write tracked nested Git configuration");
+    std::fs::write(nested_source.join("objects/.keep"), "").expect("track nested object directory");
+    std::fs::write(nested_source.join("refs/.keep"), "")
+        .expect("track nested references directory");
+    std::fs::write(
+        nested_source.join("payload.sh"),
+        "#!/bin/sh\nprintf ran > \"$0.ran\"\n",
+    )
+    .expect("write tracked filesystem monitor");
+
+    run_setup_git(&source, &["add", "--all"]);
+    run_setup_git(&source, &["add", "--chmod=+x", "nested/payload.sh"]);
+    run_setup_git(
+        &source,
+        &[
+            "-c",
+            "user.name=Codex Tests",
+            "-c",
+            "user.email=codex-tests@example.com",
+            "commit",
+            "--quiet",
+            "-m",
+            "track embedded Git repository",
+        ],
+    );
+    let clone_output = Command::new("git")
+        .arg("clone")
+        .arg(&source)
+        .arg(&clone)
+        .output()
+        .expect("clone repository normally");
+    assert!(
+        clone_output.status.success(),
+        "ordinary git clone failed: {}",
+        String::from_utf8_lossy(&clone_output.stderr)
+    );
+
+    let nested = clone.join("nested");
+    let marker = nested.join("payload.sh.ran");
+    let vulnerable = Command::new("git")
+        .args(["status", "--short"])
+        .current_dir(&nested)
+        .output()
+        .expect("run unguarded Git against tracked embedded repository");
+    assert!(
+        vulnerable.status.success(),
+        "unguarded Git should discover the tracked embedded repository: {}",
+        String::from_utf8_lossy(&vulnerable.stderr)
+    );
+    assert!(
+        marker.exists(),
+        "unguarded Git should execute the tracked helper"
+    );
+    std::fs::remove_file(&marker).expect("remove unguarded execution marker");
+
+    let guarded = git_command(Path::new("git"))
+        .expect("trusted Git command")
+        .args(["status", "--short"])
+        .current_dir(&nested)
+        .output()
+        .expect("run guarded startup Git against tracked embedded repository");
+    assert!(
+        !guarded.status.success(),
+        "startup Git should reject the repository"
+    );
+    assert!(
+        !marker.exists(),
+        "startup Git must reject the repository before executing its helper"
+    );
+
+    let apply_error = codex_git_utils::apply_git_patch(&codex_git_utils::ApplyGitRequest {
+        cwd: nested.clone(),
+        diff: String::new(),
+        revert: false,
+        preflight: true,
+    })
+    .expect_err("patch root discovery should reject the tracked embedded repository");
+    assert!(apply_error.to_string().contains("not a git repository"));
+    assert!(codex_git_utils::collect_git_info(&nested).await.is_none());
+    assert!(codex_git_utils::git_diff_to_remote(&nested).await.is_none());
+    assert!(
+        !marker.exists(),
+        "Rust-owned Git inspection must not execute the tracked helper"
+    );
+
+    let explicit_git_dir = git_command(Path::new("git"))
+        .expect("trusted Git command")
+        .arg("--git-dir")
+        .arg(&nested)
+        .args(["rev-parse", "--git-dir"])
+        .current_dir(&clone)
+        .output()
+        .expect("run Git with an explicitly selected bare repository");
+    assert!(
+        explicit_git_dir.status.success(),
+        "--git-dir must continue to permit an explicitly selected repository: {}",
+        String::from_utf8_lossy(&explicit_git_dir.stderr)
+    );
+
+    let explicit_environment = Command::new("git")
+        .args(["-c", codex_git_utils::SAFE_BARE_REPOSITORY_CONFIG])
+        .args(["rev-parse", "--git-dir"])
+        .env("GIT_DIR", &nested)
+        .current_dir(&clone)
+        .output()
+        .expect("run Git with explicitly selected GIT_DIR");
+    assert!(
+        explicit_environment.status.success(),
+        "GIT_DIR must continue to permit an explicitly selected repository: {}",
+        String::from_utf8_lossy(&explicit_environment.stderr)
+    );
 }
 
 fn write_file(path: &Path, contents: &str) {
@@ -134,11 +530,15 @@ fn run_git(repo: &Path, args: &[&str]) -> std::process::Output {
 async fn mount_github_repo_and_ref(server: &MockServer, sha: &str) {
     Mock::given(method("GET"))
         .and(path("/repos/openai/plugins"))
+        .and(header_exists("user-agent"))
+        .and(header_exists("originator"))
         .respond_with(ResponseTemplate::new(200).set_body_string(r#"{"default_branch":"main"}"#))
         .mount(server)
         .await;
     Mock::given(method("GET"))
         .and(path("/repos/openai/plugins/git/ref/heads/main"))
+        .and(header_exists("user-agent"))
+        .and(header_exists("originator"))
         .respond_with(
             ResponseTemplate::new(200)
                 .set_body_string(format!(r#"{{"object":{{"sha":"{sha}"}}}}"#)),
@@ -150,6 +550,8 @@ async fn mount_github_repo_and_ref(server: &MockServer, sha: &str) {
 async fn mount_github_zipball(server: &MockServer, sha: &str, bytes: Vec<u8>) {
     Mock::given(method("GET"))
         .and(path(format!("/repos/openai/plugins/zipball/{sha}")))
+        .and(header_exists("user-agent"))
+        .and(header_exists("originator"))
         .respond_with(
             ResponseTemplate::new(200)
                 .insert_header("content-type", "application/zip")
@@ -163,6 +565,8 @@ async fn mount_export_archive(server: &MockServer, bytes: Vec<u8>) -> String {
     let export_api_url = format!("{}/backend-api/plugins/export/curated", server.uri());
     Mock::given(method("GET"))
         .and(path("/backend-api/plugins/export/curated"))
+        .and(header_exists("user-agent"))
+        .and(header_exists("originator"))
         .respond_with(ResponseTemplate::new(200).set_body_string(format!(
             r#"{{"download_url":"{}/files/curated-plugins.zip"}}"#,
             server.uri()
@@ -171,6 +575,8 @@ async fn mount_export_archive(server: &MockServer, bytes: Vec<u8>) -> String {
         .await;
     Mock::given(method("GET"))
         .and(path("/files/curated-plugins.zip"))
+        .and(header_exists("user-agent"))
+        .and(header_exists("originator"))
         .respond_with(
             ResponseTemplate::new(200)
                 .insert_header("content-type", "application/zip")
@@ -197,6 +603,7 @@ async fn run_sync_with_transport_overrides(
             Some(git_binary.as_path()),
             &api_base_url,
             &backup_archive_api_url,
+            &crate::test_support::test_http_client_factory(),
         )
     })
     .await
@@ -216,6 +623,7 @@ async fn run_sync_without_git(
             /*git_binary*/ None,
             &api_base_url,
             &backup_archive_api_url,
+            &crate::test_support::test_http_client_factory(),
         )
     })
     .await
@@ -228,7 +636,11 @@ async fn run_http_sync(
 ) -> Result<String, String> {
     let api_base_url = api_base_url.into();
     tokio::task::spawn_blocking(move || {
-        sync_openai_plugins_repo_via_http(codex_home.as_path(), &api_base_url)
+        sync_openai_plugins_repo_via_http(
+            codex_home.as_path(),
+            &api_base_url,
+            &crate::test_support::test_http_client_factory(),
+        )
     })
     .await
     .expect("sync task should join")
@@ -323,6 +735,7 @@ fn concurrent_syncs_serialize_fetches_without_skipping_remote_checks() {
         &git_path,
         &format!(
             r#"#!/bin/sh
+if [ "$1" = "-c" ] && [ "$2" = "safe.bareRepository=explicit" ]; then shift 2; fi
 printf '%s\n' "$*" >> '{}'
 if [ "$1" = "ls-remote" ]; then
   sleep 1
@@ -367,6 +780,7 @@ exit 1
                 Some(git_path.as_path()),
                 "http://127.0.0.1:9",
                 "http://127.0.0.1:9/backend-api/plugins/export/curated",
+                &crate::test_support::test_http_client_factory(),
             )
         };
         let first = scope.spawn(run_sync);
@@ -563,7 +977,7 @@ fn sync_openai_plugins_repo_via_git_succeeds_with_local_rewritten_remote() {
         .collect::<Vec<_>>();
     let curated_repo_path = curated_plugins_repo_path(tmp.path());
     assert!(incremental_sync_invocations.iter().any(|invocation| {
-        invocation.starts_with(&format!("-C {} fetch ", curated_repo_path.display()))
+        invocation.contains(&format!(" -C {} fetch ", curated_repo_path.display()))
             && invocation.contains(" https://github.com/openai/plugins.git ")
             && invocation.contains(updated_sha.as_str())
             && invocation.ends_with(CURATED_PLUGINS_FETCH_REF)
@@ -586,8 +1000,8 @@ fn sync_openai_plugins_repo_via_git_succeeds_with_local_rewritten_remote() {
             .any(|invocation| invocation.split_whitespace().any(|arg| arg == "clone"))
     );
     assert!(!incremental_sync_invocations.iter().any(|invocation| {
-        invocation.starts_with(&format!("-C {} reset ", curated_repo_path.display()))
-            || invocation.starts_with(&format!("-C {} clean ", curated_repo_path.display()))
+        invocation.contains(&format!(" -C {} reset ", curated_repo_path.display()))
+            || invocation.contains(&format!(" -C {} clean ", curated_repo_path.display()))
     }));
     assert!(!has_plugins_clone_dirs(tmp.path()));
 
@@ -604,7 +1018,7 @@ fn sync_openai_plugins_repo_via_git_succeeds_with_local_rewritten_remote() {
     assert!(
         unchanged_sync_invocations
             .iter()
-            .any(|invocation| invocation.starts_with("ls-remote "))
+            .any(|invocation| invocation.contains(" ls-remote "))
     );
     assert!(
         !unchanged_sync_invocations
@@ -635,31 +1049,6 @@ async fn sync_openai_plugins_repo_falls_back_to_http_when_git_is_unavailable() {
     assert_eq!(synced_sha, sha);
     assert_curated_gmail_repo(&repo_path);
     assert_eq!(read_curated_plugins_sha(tmp.path()).as_deref(), Some(sha));
-}
-
-#[test]
-fn apple_git_without_developer_tools_is_unavailable() {
-    assert_eq!(
-        macos_git_binary_from_path(
-            PathBuf::from("/usr/bin/git"),
-            /*apple_developer_tools_available*/ false,
-        ),
-        None
-    );
-    assert_eq!(
-        macos_git_binary_from_path(
-            PathBuf::from("/usr/bin/git"),
-            /*apple_developer_tools_available*/ true,
-        ),
-        Some(PathBuf::from("/usr/bin/git"))
-    );
-    assert_eq!(
-        macos_git_binary_from_path(
-            PathBuf::from("/opt/homebrew/bin/git"),
-            /*apple_developer_tools_available*/ false,
-        ),
-        Some(PathBuf::from("/opt/homebrew/bin/git"))
-    );
 }
 
 #[tokio::test]
@@ -736,6 +1125,7 @@ fn sync_openai_plugins_repo_via_git_cleans_up_staged_dir_on_fetch_failure() {
         &git_path,
         &format!(
             r#"#!/bin/sh
+if [ "$1" = "-c" ] && [ "$2" = "safe.bareRepository=explicit" ]; then shift 2; fi
 if [ "$1" = "ls-remote" ]; then
   printf '%s\tHEAD\n' "{sha}"
   exit 0
@@ -781,6 +1171,7 @@ fn sync_openai_plugins_repo_via_git_preserves_existing_snapshot_on_validation_fa
         &git_path,
         &format!(
             r#"#!/bin/sh
+if [ "$1" = "-c" ] && [ "$2" = "safe.bareRepository=explicit" ]; then shift 2; fi
 if [ "$1" = "ls-remote" ]; then
   printf '%s\tHEAD\n' "{remote_sha}"
   exit 0

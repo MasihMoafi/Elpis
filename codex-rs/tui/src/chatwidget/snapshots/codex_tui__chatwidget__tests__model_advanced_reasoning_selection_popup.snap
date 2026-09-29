@@ -2,13 +2,12 @@
 source: tui/src/chatwidget/tests/popups_and_settings.rs
 expression: popup
 ---
- Elpis · model gpt-5.4 · location /tmp/project
-┌──────────────────────────────────────────────────────────────────────────────┐
-│ Advanced Reasoning                                                           │
-│ ⚠ Consumes usage limits faster                                               │
-│                                                                              │
-  1. Max              For difficult problems when quality matters more than    │
-                      speed · higher usage                                     │
-› 2. Ultra (current)  For demanding work using multiple agents · highest usage │
-└──────────────────────────────────────────────────────────────────────────────┘
-  Press enter to confirm or esc to go back
+  Advanced Reasoning
+  ⚠ Consumes usage limits faster
+
+
+  1. Max              For difficult problems when quality matters more than
+                      speed · higher usage
+› 2. Ultra (current)  For demanding work using multiple agents · highest usage
+
+  enter apply · s session · esc back

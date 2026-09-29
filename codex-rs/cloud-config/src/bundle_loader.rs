@@ -1,76 +1,113 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use crate::backend::BackendBundleClient;
+use crate::backend::BundleClient;
 use crate::service::CLOUD_CONFIG_BUNDLE_TIMEOUT;
 use crate::service::CloudConfigBundleService;
-use codex_config::CloudConfigBundleLoadError;
-use codex_config::CloudConfigBundleLoadErrorCode;
 use codex_config::CloudConfigBundleLoader;
-use codex_config::types::AuthCredentialsStoreMode;
-use codex_login::AuthKeyringBackendKind;
+use codex_http_client::HttpClientFactory;
+use codex_login::AuthConfig;
 use codex_login::AuthManager;
-use codex_login::AuthRouteConfig;
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::sync::Mutex;
-use std::sync::OnceLock;
+use tokio::task::AbortHandle;
 use tokio::task::JoinHandle;
 
-fn refresher_task_slot() -> &'static Mutex<Option<JoinHandle<()>>> {
-    static REFRESHER_TASK: OnceLock<Mutex<Option<JoinHandle<()>>>> = OnceLock::new();
-    REFRESHER_TASK.get_or_init(|| Mutex::new(None))
+struct CloudConfigBundleLoaderLifetime<C> {
+    service: Arc<CloudConfigBundleService<C>>,
+    refresh_task: JoinHandle<()>,
+}
+
+impl<C> Drop for CloudConfigBundleLoaderLifetime<C> {
+    fn drop(&mut self) {
+        self.refresh_task.abort();
+    }
 }
 
 pub fn cloud_config_bundle_loader(
     auth_manager: Arc<AuthManager>,
     chatgpt_base_url: String,
     codex_home: PathBuf,
+    http_client_factory: HttpClientFactory,
 ) -> CloudConfigBundleLoader {
     let service = CloudConfigBundleService::new(
         auth_manager,
-        Arc::new(BackendBundleClient::new(chatgpt_base_url)),
+        Arc::new(BackendBundleClient::new(
+            chatgpt_base_url,
+            http_client_factory,
+        )),
         codex_home,
         CLOUD_CONFIG_BUNDLE_TIMEOUT,
     );
-    let refresh_service = service.clone();
-    let task = tokio::spawn(async move { service.load_startup_bundle_with_timeout().await });
-    let refresh_task =
-        tokio::spawn(async move { refresh_service.refresh_cache_in_background().await });
-    let mut refresher_guard = refresher_task_slot().lock().unwrap_or_else(|err| {
-        tracing::warn!("cloud config bundle refresher task slot was poisoned");
-        err.into_inner()
+    let (loader, _) = cloud_config_bundle_loader_for_service(service);
+    loader
+}
+
+pub(crate) fn cloud_config_bundle_loader_for_service<C>(
+    service: CloudConfigBundleService<C>,
+) -> (CloudConfigBundleLoader, AbortHandle)
+where
+    C: BundleClient + 'static,
+{
+    let service = Arc::new(service);
+    let background_service = Arc::clone(&service);
+    let refresh_task = tokio::spawn(async move {
+        let _ = background_service.get_latest().await;
+        background_service.refresh_cache_in_background().await;
     });
-    if let Some(existing_task) = refresher_guard.replace(refresh_task) {
-        existing_task.abort();
-    }
-    CloudConfigBundleLoader::new(async move {
-        task.await.map_err(|err| {
-            tracing::error!(error = %err, "Cloud config bundle task failed");
-            CloudConfigBundleLoadError::new(
-                CloudConfigBundleLoadErrorCode::Internal,
-                /*status_code*/ None,
-                format!("cloud config bundle load failed: {err}"),
-            )
-        })?
-    })
+    let abort_handle = refresh_task.abort_handle();
+    let lifetime = Arc::new(CloudConfigBundleLoaderLifetime {
+        service,
+        refresh_task,
+    });
+
+    let loader = CloudConfigBundleLoader::from_getter(move || {
+        let lifetime = Arc::clone(&lifetime);
+        async move { lifetime.service.get_latest().await }
+    });
+    (loader, abort_handle)
 }
 
 pub async fn cloud_config_bundle_loader_for_storage(
-    codex_home: PathBuf,
+    auth_config: AuthConfig,
     enable_codex_api_key_env: bool,
-    credentials_store_mode: AuthCredentialsStoreMode,
-    keyring_backend_kind: AuthKeyringBackendKind,
-    chatgpt_base_url: String,
-    auth_route_config: Option<AuthRouteConfig>,
-) -> CloudConfigBundleLoader {
-    let auth_manager = AuthManager::shared(
-        codex_home.clone(),
-        enable_codex_api_key_env,
-        credentials_store_mode,
-        /*forced_chatgpt_workspace_id*/ None,
-        Some(chatgpt_base_url.clone()),
-        keyring_backend_kind,
-        auth_route_config,
-    )
-    .await;
-    cloud_config_bundle_loader(auth_manager, chatgpt_base_url, codex_home)
+) -> std::io::Result<CloudConfigBundleLoader> {
+    let service =
+        cloud_config_bundle_service_for_storage(auth_config, enable_codex_api_key_env).await?;
+    let (loader, _) = cloud_config_bundle_loader_for_service(service);
+    Ok(loader)
+}
+
+/// Fetches directly from the network on each load, without reading or writing
+/// the disk cache or starting a background refresher.
+pub async fn cloud_config_bundle_loader_for_storage_without_cache(
+    auth_config: AuthConfig,
+    enable_codex_api_key_env: bool,
+) -> std::io::Result<CloudConfigBundleLoader> {
+    let service = Arc::new(
+        cloud_config_bundle_service_for_storage(auth_config, enable_codex_api_key_env)
+            .await?
+            .without_cache(),
+    );
+    Ok(CloudConfigBundleLoader::from_getter(move || {
+        let service = Arc::clone(&service);
+        async move { service.load_startup_bundle_with_timeout().await }
+    }))
+}
+
+async fn cloud_config_bundle_service_for_storage(
+    auth_config: AuthConfig,
+    enable_codex_api_key_env: bool,
+) -> std::io::Result<CloudConfigBundleService<BackendBundleClient>> {
+    let auth_manager =
+        AuthManager::shared_from_auth_config(auth_config.clone(), enable_codex_api_key_env).await?;
+    Ok(CloudConfigBundleService::new(
+        auth_manager,
+        Arc::new(BackendBundleClient::new(
+            auth_config
+                .chatgpt_base_url
+                .unwrap_or_else(|| "https://chatgpt.com/backend-api/".to_string()),
+            auth_config.auth_route_config.http_client_factory().clone(),
+        )),
+        auth_config.codex_home,
+        CLOUD_CONFIG_BUNDLE_TIMEOUT,
+    ))
 }

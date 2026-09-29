@@ -2,7 +2,6 @@ use codex_protocol::config_types::Personality;
 use codex_protocol::config_types::ReasoningSummary;
 use codex_protocol::openai_models::ConfigShellToolType;
 use codex_protocol::openai_models::ModelInfo;
-use codex_protocol::openai_models::ModelInstructionsVariables;
 use codex_protocol::openai_models::ModelMessages;
 use codex_protocol::openai_models::ModelVisibility;
 use codex_protocol::openai_models::TruncationMode;
@@ -15,11 +14,6 @@ use codex_utils_output_truncation::approx_bytes_for_tokens;
 use tracing::warn;
 
 pub const BASE_INSTRUCTIONS: &str = include_str!("../prompt.md");
-const DEFAULT_PERSONALITY_HEADER: &str = "You are Elpis, a coding agent. You and the user share the same workspace and collaborate to achieve the user's goals.";
-const LOCAL_FRIENDLY_TEMPLATE: &str =
-    "You optimize for team morale and being a supportive teammate as much as code quality.";
-const LOCAL_PRAGMATIC_TEMPLATE: &str = "You are a deeply pragmatic, effective software engineer.";
-const PERSONALITY_PLACEHOLDER: &str = "{{ personality }}";
 const PERSONALITY_SECTION_HEADER: &str = "# Personality";
 
 pub fn with_config_overrides(mut model: ModelInfo, config: &ModelsManagerConfig) -> ModelInfo {
@@ -50,23 +44,16 @@ pub fn with_config_overrides(mut model: ModelInfo, config: &ModelsManagerConfig)
     }
 
     if let Some(base_instructions) = &config.base_instructions {
-        model.base_instructions = base_instructions.clone();
-        clear_instruction_messages(&mut model);
-    } else {
-        if config.personality_enabled && config.personality == Some(Personality::None) {
-            model.base_instructions = strip_personality_section(model.base_instructions);
-            if let Some(instructions_template) = model
-                .model_messages
-                .as_mut()
-                .and_then(|messages| messages.instructions_template.as_mut())
-            {
-                *instructions_template =
-                    strip_personality_section(std::mem::take(instructions_template));
-            }
-        }
-        if !config.personality_enabled {
-            clear_instruction_messages(&mut model);
-        }
+        let model_messages = model.model_messages.get_or_insert_default();
+        model_messages.instructions_template = Some(base_instructions.clone());
+        model_messages.instructions_variables = None;
+    } else if config.personality == Some(Personality::None)
+        && let Some(instructions_template) = model
+            .model_messages
+            .as_mut()
+            .and_then(|messages| messages.instructions_template.as_mut())
+    {
+        *instructions_template = strip_personality_section(std::mem::take(instructions_template));
     }
 
     model
@@ -108,19 +95,6 @@ fn is_h1_heading(line: &str) -> bool {
     rest.is_empty() || rest.starts_with(' ') || rest.starts_with('\t')
 }
 
-fn clear_instruction_messages(model: &mut ModelInfo) {
-    if let Some(model_messages) = &mut model.model_messages {
-        model_messages.instructions_template = None;
-        model_messages.instructions_variables = None;
-        if model_messages.approvals.is_none()
-            && model_messages.auto_review.is_none()
-            && model_messages.permissions.is_none()
-        {
-            model.model_messages = None;
-        }
-    }
-}
-
 /// Build a minimal fallback model descriptor for missing/unknown slugs.
 pub fn model_info_from_slug(slug: &str) -> ModelInfo {
     warn!("Unknown model {slug} is used. This will use fallback model metadata.");
@@ -130,18 +104,20 @@ pub fn model_info_from_slug(slug: &str) -> ModelInfo {
         description: None,
         default_reasoning_level: None,
         supported_reasoning_levels: Vec::new(),
-        shell_type: ConfigShellToolType::Default,
+        shell_type: ConfigShellToolType::UnifiedExec,
         visibility: ModelVisibility::None,
         supported_in_api: true,
         priority: 99,
         additional_speed_tiers: Vec::new(),
         service_tiers: Vec::new(),
         default_service_tier: None,
+        available_access_programs: None,
         availability_nux: None,
         upgrade: None,
-        base_instructions: BASE_INSTRUCTIONS.to_string(),
-        model_messages: local_personality_messages_for_slug(slug),
+        model_messages: Some(local_model_messages()),
         include_skills_usage_instructions: false,
+        include_plugin_usage_instructions: false,
+        include_apps_usage_instructions: false,
         supports_reasoning_summary_parameter: true,
         default_reasoning_summary: ReasoningSummary::Auto,
         support_verbosity: false,
@@ -149,7 +125,6 @@ pub fn model_info_from_slug(slug: &str) -> ModelInfo {
         apply_patch_tool_type: None,
         web_search_tool_type: WebSearchToolType::Text,
         truncation_policy: TruncationPolicyConfig::bytes(/*limit*/ 10_000),
-        supports_parallel_tool_calls: false,
         supports_image_detail_original: false,
         context_window: Some(272_000),
         max_context_window: Some(272_000),
@@ -160,29 +135,24 @@ pub fn model_info_from_slug(slug: &str) -> ModelInfo {
         input_modalities: default_input_modalities(),
         used_fallback_model_metadata: true, // this is the fallback model metadata
         supports_search_tool: false,
+        supports_experimental_context: false,
         use_responses_lite: false,
+        supports_reasoning_effort_updates: false,
+        guardian: None,
+        node_repl_auto_review_required: false,
+        node_repl_disabled: false,
         auto_review_model_override: None,
+        model_specialty: None,
         tool_mode: None,
         multi_agent_version: None,
+        multi_agent_reasoning_effort: None,
     }
 }
 
-fn local_personality_messages_for_slug(slug: &str) -> Option<ModelMessages> {
-    match slug {
-        "gpt-5.2-codex" | "exp-codex-personality" => Some(ModelMessages {
-            instructions_template: Some(format!(
-                "{DEFAULT_PERSONALITY_HEADER}\n\n{PERSONALITY_PLACEHOLDER}\n\n{BASE_INSTRUCTIONS}"
-            )),
-            instructions_variables: Some(ModelInstructionsVariables {
-                personality_default: Some(String::new()),
-                personality_friendly: Some(LOCAL_FRIENDLY_TEMPLATE.to_string()),
-                personality_pragmatic: Some(LOCAL_PRAGMATIC_TEMPLATE.to_string()),
-            }),
-            approvals: None,
-            auto_review: None,
-            permissions: None,
-        }),
-        _ => None,
+fn local_model_messages() -> ModelMessages {
+    ModelMessages {
+        instructions_template: Some(BASE_INSTRUCTIONS.to_string()),
+        ..Default::default()
     }
 }
 

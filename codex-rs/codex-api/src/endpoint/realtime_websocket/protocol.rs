@@ -1,7 +1,7 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use crate::endpoint::realtime_websocket::protocol_frameless_bidi::parse_frameless_bidi_event;
 use crate::endpoint::realtime_websocket::protocol_v1::parse_realtime_event_v1;
 use crate::endpoint::realtime_websocket::protocol_v2::parse_realtime_event_v2;
+use codex_protocol::protocol::ConversationTextParams;
 use codex_protocol::protocol::ConversationTextRole;
 pub use codex_protocol::protocol::RealtimeAudioFrame;
 pub use codex_protocol::protocol::RealtimeEvent;
@@ -26,9 +26,19 @@ pub enum RealtimeSessionMode {
     Transcription,
 }
 
+/// Selects the semantic stream used for Frameless Bidi context appends.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RealtimeContextAppendChannel {
+    Speakable,
+    Commentary,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RealtimeSessionConfig {
     pub instructions: String,
+    pub initial_items: Vec<ConversationTextParams>,
+    pub delegation_ack_filler: Option<bool>,
     pub model: Option<String>,
     pub session_id: Option<String>,
     pub event_parser: RealtimeEventParser,
@@ -52,10 +62,14 @@ pub(super) enum RealtimeOutboundMessage {
     #[serde(rename = "delegation.context.append")]
     DelegationContextAppend {
         delegation_item_id: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        channel: Option<RealtimeContextAppendChannel>,
         content: Vec<FramelessInputTextContent>,
     },
     #[serde(rename = "session.context.append")]
     SessionContextAppend {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        channel: Option<RealtimeContextAppendChannel>,
         content: Vec<FramelessInputTextContent>,
     },
     #[serde(rename = "session.close")]

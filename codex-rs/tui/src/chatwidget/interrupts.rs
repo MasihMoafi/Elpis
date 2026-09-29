@@ -1,4 +1,6 @@
-//! Queue prompt overlays and deferred tool activity while another interrupt is visible.
+//! Defer prompt overlays and tool activity until assistant streams finish.
+//!
+//! Turn termination settles background activity without opening queued prompts.
 
 use std::collections::VecDeque;
 
@@ -44,6 +46,20 @@ impl InterruptManager {
         self.queue.is_empty()
     }
 
+    /// Excludes lifecycle events that never claim protected interactive input.
+    pub(crate) fn has_pending_prompt(&self) -> bool {
+        self.queue.iter().any(|interrupt| {
+            matches!(
+                interrupt,
+                QueuedInterrupt::ExecApproval(_)
+                    | QueuedInterrupt::ApplyPatchApproval(_)
+                    | QueuedInterrupt::Elicitation { .. }
+                    | QueuedInterrupt::RequestPermissions(_)
+                    | QueuedInterrupt::RequestUserInput(_)
+            )
+        })
+    }
+
     pub(crate) fn push_exec_approval(&mut self, ev: ExecApprovalRequestEvent) {
         self.queue.push_back(QueuedInterrupt::ExecApproval(ev));
     }
@@ -79,7 +95,25 @@ impl InterruptManager {
         self.queue.push_back(QueuedInterrupt::ItemCompleted(item));
     }
 
+    /// Settle background activity at turn end without opening queued prompts.
+    pub(crate) fn flush_activity(&mut self, chat: &mut ChatWidget) {
+        let mut pending_prompts = VecDeque::new();
+        while let Some(queued) = self.queue.pop_front() {
+            match queued {
+                QueuedInterrupt::ItemStarted(item) => chat.handle_queued_item_started_now(item),
+                QueuedInterrupt::ItemCompleted(item) => {
+                    chat.handle_queued_item_completed_now(item);
+                }
+                prompt => pending_prompts.push_back(prompt),
+            }
+        }
+        self.queue = pending_prompts;
+    }
+
     pub(crate) fn remove_resolved_prompt(&mut self, request: &ResolvedAppServerRequest) -> bool {
+        if !self.has_pending_prompt() {
+            return false;
+        }
         let original_len = self.queue.len();
         self.queue
             .retain(|queued| !queued.matches_resolved_prompt(request));
@@ -109,11 +143,11 @@ impl QueuedInterrupt {
     fn matches_resolved_prompt(&self, request: &ResolvedAppServerRequest) -> bool {
         match self {
             QueuedInterrupt::ExecApproval(ev) => {
-                matches!(request, ResolvedAppServerRequest::ExecApproval { id }
+                matches!(request, ResolvedAppServerRequest::ExecApproval { id, .. }
                     if ev.effective_approval_id() == id.as_str())
             }
             QueuedInterrupt::ApplyPatchApproval(ev) => {
-                matches!(request, ResolvedAppServerRequest::FileChangeApproval { id }
+                matches!(request, ResolvedAppServerRequest::FileChangeApproval { id, .. }
                     if ev.call_id == id.as_str())
             }
             QueuedInterrupt::Elicitation { request_id, params } => {
@@ -123,7 +157,7 @@ impl QueuedInterrupt {
                 } if params.server_name == server_name.as_str() && request_id == resolved_request_id)
             }
             QueuedInterrupt::RequestPermissions(ev) => {
-                matches!(request, ResolvedAppServerRequest::PermissionsApproval { id }
+                matches!(request, ResolvedAppServerRequest::PermissionsApproval { id, .. }
                     if ev.call_id == id.as_str())
             }
             QueuedInterrupt::RequestUserInput(ev) => {
@@ -152,12 +186,14 @@ mod tests {
             item_id: call_id.to_string(),
             turn_id: turn_id.to_string(),
             questions: Vec::new(),
+            is_blocking: true,
             auto_resolution_ms: None,
         }
     }
 
     fn exec_approval(call_id: &str, approval_id: Option<&str>) -> ExecApprovalRequestEvent {
         ExecApprovalRequestEvent {
+            kind: Default::default(),
             call_id: call_id.to_string(),
             approval_id: approval_id.map(str::to_string),
             turn_id: "turn".to_string(),
@@ -175,10 +211,14 @@ mod tests {
 
     fn command_execution(call_id: &str) -> ThreadItem {
         ThreadItem::CommandExecution {
+            model_context: None,
+            sandbox_type: None,
             id: call_id.to_string(),
             command: "true".to_string(),
             cwd: AbsolutePathBuf::current_dir().expect("current dir").into(),
             process_id: None,
+            plugin_id: None,
+            script_path: None,
             source: CommandExecutionSource::Agent,
             status: CommandExecutionStatus::InProgress,
             command_actions: Vec::new(),
@@ -193,6 +233,7 @@ mod tests {
         let mut manager = InterruptManager::new();
         manager.push_user_input(user_input("call-a", "turn"));
         manager.push_user_input(user_input("call-b", "turn"));
+        assert!(manager.has_pending_prompt());
 
         assert!(
             manager.remove_resolved_prompt(&ResolvedAppServerRequest::UserInput {
@@ -201,10 +242,17 @@ mod tests {
         );
 
         assert_eq!(manager.queue.len(), 1);
+        assert!(manager.has_pending_prompt());
         let Some(QueuedInterrupt::RequestUserInput(remaining)) = manager.queue.front() else {
             panic!("expected remaining queued user input");
         };
         assert_eq!(remaining.item_id, "call-a");
+        assert!(
+            manager.remove_resolved_prompt(&ResolvedAppServerRequest::UserInput {
+                call_id: "call-a".to_string(),
+            })
+        );
+        assert!(!manager.has_pending_prompt());
     }
 
     #[test]
@@ -214,6 +262,7 @@ mod tests {
 
         assert!(
             !manager.remove_resolved_prompt(&ResolvedAppServerRequest::ExecApproval {
+                thread_id: "thread-1".to_string(),
                 id: "call".to_string(),
             })
         );
@@ -221,6 +270,7 @@ mod tests {
 
         assert!(
             manager.remove_resolved_prompt(&ResolvedAppServerRequest::ExecApproval {
+                thread_id: "thread-1".to_string(),
                 id: "approval".to_string(),
             })
         );
@@ -231,9 +281,11 @@ mod tests {
     fn remove_resolved_prompt_keeps_lifecycle_events() {
         let mut manager = InterruptManager::new();
         manager.push_item_started(command_execution("call"));
+        assert!(!manager.has_pending_prompt());
 
         assert!(
             !manager.remove_resolved_prompt(&ResolvedAppServerRequest::ExecApproval {
+                thread_id: "thread-1".to_string(),
                 id: "call".to_string(),
             })
         );

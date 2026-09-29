@@ -26,20 +26,21 @@ use std::collections::BTreeMap;
 /// Highest function key supported by portable TUI keymap configuration.
 pub const MAX_FUNCTION_KEY: u8 = 24;
 
-/// Normalized string representation of a single key event (for example `ctrl-a`).
+/// Maximum number of key events in one configurable TUI binding.
+const MAX_KEY_CHORD_STROKES: usize = 2;
+
+/// Normalized representation of one key event or a two-stroke key chord.
 ///
 /// The parser accepts a small alias set (for example `escape` -> `esc`,
-/// `pageup` -> `page-up`) and stores the canonical form.
-///
-/// This deliberately represents one terminal key event, not a sequence of
-/// events. A value like `ctrl-x ctrl-s` is not a chord in this schema; adding
-/// multi-step chords would require a separate runtime state machine.
+/// `pageup` -> `page-up`) and stores each stroke in its canonical form. Chord
+/// strokes are separated by one space, for example `ctrl-x ctrl-s`. Arrays of
+/// bindings remain alternatives; their entries do not form a chord together.
 #[derive(Serialize, Debug, Clone, PartialEq, Eq, JsonSchema)]
 #[serde(transparent)]
 pub struct KeybindingSpec(#[schemars(with = "String")] pub String);
 
 impl KeybindingSpec {
-    /// Returns the canonical key-spec string (for example `ctrl-a`).
+    /// Returns the canonical key-spec string (for example `ctrl-x ctrl-s`).
     pub fn as_str(&self) -> &str {
         self.0.as_str()
     }
@@ -60,8 +61,8 @@ impl<'de> Deserialize<'de> for KeybindingSpec {
 ///
 /// This accepts either:
 ///
-/// 1. A single key spec string (`"ctrl-a"`).
-/// 2. A list of key spec strings (`["ctrl-a", "alt-a"]`).
+/// 1. A single key or chord string (`"ctrl-a"` or `"ctrl-x ctrl-s"`).
+/// 2. A list of alternative bindings (`["ctrl-a", "ctrl-x ctrl-s"]`).
 ///
 /// An empty list explicitly unbinds the action in that scope. Because an
 /// explicit empty list is still a configured value, runtime resolution must not
@@ -91,11 +92,17 @@ impl KeybindingsSpec {
 #[serde(deny_unknown_fields)]
 #[schemars(deny_unknown_fields)]
 pub struct TuiGlobalKeymap {
+    /// Open the shared agent-session overview.
+    pub open_agents: Option<KeybindingsSpec>,
     /// Open the transcript overlay.
     pub open_transcript: Option<KeybindingsSpec>,
+    /// Find text in the full transcript.
+    pub find_transcript: Option<KeybindingsSpec>,
+    /// Focus activity groups in the owned transcript to inspect their details.
+    pub focus_activity: Option<KeybindingsSpec>,
     /// Open the external editor for the current draft.
     pub open_external_editor: Option<KeybindingsSpec>,
-    /// Copy the last prompt and agent response to the clipboard.
+    /// Copy the last agent response to the clipboard.
     pub copy: Option<KeybindingsSpec>,
     /// Clear the terminal UI.
     pub clear_terminal: Option<KeybindingsSpec>,
@@ -111,6 +118,8 @@ pub struct TuiGlobalKeymap {
     pub toggle_fast_mode: Option<KeybindingsSpec>,
     /// Toggle raw scrollback mode for copy-friendly transcript selection.
     pub toggle_raw_output: Option<KeybindingsSpec>,
+    /// Switch between a side conversation and its parent without closing either.
+    pub toggle_side_conversation: Option<KeybindingsSpec>,
 }
 
 /// Chat context keybindings.
@@ -118,14 +127,26 @@ pub struct TuiGlobalKeymap {
 #[serde(deny_unknown_fields)]
 #[schemars(deny_unknown_fields)]
 pub struct TuiChatKeymap {
+    /// Start or stop a voice conversation.
+    pub toggle_voice: Option<KeybindingsSpec>,
+    /// Toggle the microphone in an active voice conversation.
+    pub toggle_voice_mute: Option<KeybindingsSpec>,
     /// Interrupt the active turn.
     pub interrupt_turn: Option<KeybindingsSpec>,
     /// Decrease the active reasoning effort.
     pub decrease_reasoning_effort: Option<KeybindingsSpec>,
     /// Increase the active reasoning effort.
     pub increase_reasoning_effort: Option<KeybindingsSpec>,
-    /// Edit the most recently queued message.
+    /// Switch to the previous available permission mode.
+    pub previous_permission_mode: Option<KeybindingsSpec>,
+    /// Switch to the next available permission mode.
+    pub next_permission_mode: Option<KeybindingsSpec>,
+    /// Move up through pending async questions, then edit the most recently queued message.
     pub edit_queued_message: Option<KeybindingsSpec>,
+    /// Move back through pending async questions toward the composer.
+    pub prompt_stack_back: Option<KeybindingsSpec>,
+    /// Skip the focused question.
+    pub skip_question: Option<KeybindingsSpec>,
 }
 
 /// Composer context keybindings. These override corresponding `global` actions.
@@ -206,6 +227,8 @@ pub struct TuiVimNormalKeymap {
     pub open_line_below: Option<KeybindingsSpec>,
     /// Open a new line above and enter insert mode (`O`).
     pub open_line_above: Option<KeybindingsSpec>,
+    /// Enter replace mode and overwrite characters under the cursor (`R`).
+    pub enter_replace_mode: Option<KeybindingsSpec>,
     /// Move cursor left (`h`).
     pub move_left: Option<KeybindingsSpec>,
     /// Move cursor right (`l`).
@@ -224,8 +247,24 @@ pub struct TuiVimNormalKeymap {
     pub move_line_start: Option<KeybindingsSpec>,
     /// Move cursor to end of line (`$`).
     pub move_line_end: Option<KeybindingsSpec>,
+    /// Find the next character on the current line (`f`).
+    pub find_forward: Option<KeybindingsSpec>,
+    /// Find the previous character on the current line (`F`).
+    pub find_backward: Option<KeybindingsSpec>,
+    /// Stop before the next character on the current line (`t`).
+    pub till_forward: Option<KeybindingsSpec>,
+    /// Stop after the previous character on the current line (`T`).
+    pub till_backward: Option<KeybindingsSpec>,
+    /// Begin a jump to the first buffer line (`gg`).
+    pub jump_top: Option<KeybindingsSpec>,
+    /// Jump to the last buffer line (`G`).
+    pub jump_bottom: Option<KeybindingsSpec>,
     /// Delete character under cursor (`x`).
     pub delete_char: Option<KeybindingsSpec>,
+    /// Replace the character under the cursor (`r`).
+    pub replace_char: Option<KeybindingsSpec>,
+    /// Repeat the last complete edit (`.`).
+    pub repeat_last_change: Option<KeybindingsSpec>,
     /// Delete character under cursor and enter insert mode (`s`).
     pub substitute_char: Option<KeybindingsSpec>,
     /// Delete from cursor to end of line (`D`).
@@ -242,6 +281,10 @@ pub struct TuiVimNormalKeymap {
     pub start_yank_operator: Option<KeybindingsSpec>,
     /// Begin change operator; next keys select a text object.
     pub start_change_operator: Option<KeybindingsSpec>,
+    /// Undo the last complete edit (`u`).
+    pub undo: Option<KeybindingsSpec>,
+    /// Redo the last undone edit (`ctrl-r`).
+    pub redo: Option<KeybindingsSpec>,
     /// Cancel a pending operator and return to normal mode.
     pub cancel_operator: Option<KeybindingsSpec>,
 }
@@ -277,12 +320,39 @@ pub struct TuiVimOperatorKeymap {
     pub motion_line_start: Option<KeybindingsSpec>,
     /// Motion: to end of line (`$`).
     pub motion_line_end: Option<KeybindingsSpec>,
+    /// Motion: find the next character on the current line (`f`).
+    pub motion_find_forward: Option<KeybindingsSpec>,
+    /// Motion: find the previous character on the current line (`F`).
+    pub motion_find_backward: Option<KeybindingsSpec>,
+    /// Motion: stop before the next character on the current line (`t`).
+    pub motion_till_forward: Option<KeybindingsSpec>,
+    /// Motion: stop after the previous character on the current line (`T`).
+    pub motion_till_backward: Option<KeybindingsSpec>,
+    /// Motion: begin a jump to the first buffer line (`gg`).
+    pub motion_jump_top: Option<KeybindingsSpec>,
+    /// Motion: jump to the last buffer line (`G`).
+    pub motion_jump_bottom: Option<KeybindingsSpec>,
     /// Select an inner text object after an operator.
     pub select_inner_text_object: Option<KeybindingsSpec>,
     /// Select an around text object after an operator.
     pub select_around_text_object: Option<KeybindingsSpec>,
     /// Cancel the pending operator and return to normal mode.
     pub cancel: Option<KeybindingsSpec>,
+}
+
+/// Search motions shared by Vim normal and operator-pending input.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default, JsonSchema)]
+#[serde(deny_unknown_fields)]
+#[schemars(deny_unknown_fields)]
+pub struct TuiVimSearchKeymap {
+    /// Search forward in the active buffer (`/`).
+    pub forward: Option<KeybindingsSpec>,
+    /// Search backward in the active buffer (`?`).
+    pub backward: Option<KeybindingsSpec>,
+    /// Repeat the accepted search (`n`).
+    pub next: Option<KeybindingsSpec>,
+    /// Repeat in the opposite direction (`N`).
+    pub previous: Option<KeybindingsSpec>,
 }
 
 /// Vim text-object keybindings for modal editing inside text areas.
@@ -335,6 +405,8 @@ pub struct TuiPagerKeymap {
     pub close: Option<KeybindingsSpec>,
     /// Close the transcript overlay via its dedicated toggle key.
     pub close_transcript: Option<KeybindingsSpec>,
+    /// Find text in a transcript pager.
+    pub find: Option<KeybindingsSpec>,
 }
 
 /// List selection context keybindings for popup-style selectable lists.
@@ -362,6 +434,33 @@ pub struct TuiListKeymap {
     pub accept: Option<KeybindingsSpec>,
     /// Cancel and close selection view.
     pub cancel: Option<KeybindingsSpec>,
+}
+
+/// Shortcuts specific to the shared agents overview.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default, JsonSchema)]
+#[serde(deny_unknown_fields)]
+#[schemars(deny_unknown_fields)]
+pub struct TuiAgentsKeymap {
+    /// Open the session resume picker.
+    pub resume: Option<KeybindingsSpec>,
+    /// Search the available agent tasks.
+    pub search: Option<KeybindingsSpec>,
+    /// Open a new session in the selected checkout.
+    pub new_task: Option<KeybindingsSpec>,
+    /// Open a new session in a worktree from the project default branch.
+    pub new_worktree: Option<KeybindingsSpec>,
+    /// Rename the selected task.
+    pub rename: Option<KeybindingsSpec>,
+    /// Stop the selected running task.
+    pub stop: Option<KeybindingsSpec>,
+    /// Archive the selected task and its child agents after confirmation.
+    pub archive: Option<KeybindingsSpec>,
+    /// Permanently delete the selected task and its child agents after confirmation.
+    pub delete: Option<KeybindingsSpec>,
+    /// Hide the selected task until explicitly resumed or the TUI restarts.
+    pub hide: Option<KeybindingsSpec>,
+    /// Toggle grouping tasks by status or project.
+    pub toggle_grouping: Option<KeybindingsSpec>,
 }
 
 /// Approval overlay keybindings.
@@ -414,11 +513,15 @@ pub struct TuiKeymap {
     #[serde(default)]
     pub vim_operator: TuiVimOperatorKeymap,
     #[serde(default)]
+    pub vim_search: TuiVimSearchKeymap,
+    #[serde(default)]
     pub vim_text_object: TuiVimTextObjectKeymap,
     #[serde(default)]
     pub pager: TuiPagerKeymap,
     #[serde(default)]
     pub list: TuiListKeymap,
+    #[serde(default)]
+    pub agents: TuiAgentsKeymap,
     #[serde(default)]
     pub approval: TuiApprovalKeymap,
 }
@@ -434,6 +537,26 @@ pub struct TuiKeymap {
 /// this function when accepting user-authored key specs, or otherwise equivalent
 /// keys can fail to compare equal in tests, UI hints, and duplicate detection.
 fn normalize_keybinding_spec(raw: &str) -> Result<String, String> {
+    let strokes = raw.split_whitespace().collect::<Vec<_>>();
+    if strokes.is_empty() {
+        return normalize_keybinding_stroke(raw);
+    }
+    if strokes.len() > MAX_KEY_CHORD_STROKES {
+        return Err(format!(
+            "invalid keybinding `{raw}`: key chords may contain at most \
+{MAX_KEY_CHORD_STROKES} strokes (for example `ctrl-x ctrl-s`)."
+        ));
+    }
+
+    strokes
+        .into_iter()
+        .map(normalize_keybinding_stroke)
+        .collect::<Result<Vec<_>, _>>()
+        .map(|normalized| normalized.join(" "))
+}
+
+/// Normalize the key and modifiers for one stroke in a key binding.
+fn normalize_keybinding_stroke(raw: &str) -> Result<String, String> {
     let lower = raw.trim().to_ascii_lowercase();
     if lower.is_empty() {
         return Err(
@@ -653,6 +776,48 @@ mod tests {
     }
 
     #[test]
+    fn transcript_find_accepts_custom_chords_and_can_be_disabled() {
+        for (bindings, expected) in [
+            (
+                "'ctrl-x f'",
+                KeybindingsSpec::One(KeybindingSpec("ctrl-x f".to_owned())),
+            ),
+            ("[]", KeybindingsSpec::Many(Vec::new())),
+        ] {
+            for (context, action) in [("pager", "find"), ("global", "find_transcript")] {
+                let keymap: TuiKeymap =
+                    toml::from_str(&format!("[{context}]\n{action} = {bindings}\n"))
+                        .expect("Find binding");
+                let mut expected_keymap = TuiKeymap::default();
+                if context == "pager" {
+                    expected_keymap.pager.find = Some(expected.clone());
+                } else {
+                    expected_keymap.global.find_transcript = Some(expected.clone());
+                }
+                assert_eq!(keymap, expected_keymap);
+            }
+        }
+    }
+
+    #[test]
+    fn activity_focus_accepts_custom_chords_and_can_be_disabled() {
+        for (bindings, expected) in [
+            (
+                "'ctrl-x t'",
+                KeybindingsSpec::One(KeybindingSpec("ctrl-x t".to_owned())),
+            ),
+            ("[]", KeybindingsSpec::Many(Vec::new())),
+        ] {
+            let keymap: TuiKeymap =
+                toml::from_str(&format!("[global]\nfocus_activity = {bindings}\n"))
+                    .expect("activity focus binding");
+            let mut expected_keymap = TuiKeymap::default();
+            expected_keymap.global.focus_activity = Some(expected);
+            assert_eq!(keymap, expected_keymap);
+        }
+    }
+
+    #[test]
     fn minus_bindings_under_global_context_are_accepted() {
         for (spec, expected) in [
             (
@@ -685,3 +850,7 @@ mod tests {
         assert!(normalize_keybinding_spec("f25").is_err());
     }
 }
+
+#[cfg(test)]
+#[path = "tui_keymap_chord_tests.rs"]
+mod chord_tests;

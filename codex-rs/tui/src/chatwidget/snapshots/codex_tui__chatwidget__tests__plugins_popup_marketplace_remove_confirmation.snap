@@ -2,13 +2,12 @@
 source: tui/src/chatwidget/tests/popups_and_settings.rs
 expression: confirmation
 ---
- Elpis · model gpt-5.6-sol · location /tmp/project
-┌──────────────────────────────────────────────────────────────────────────────────────────────────┐
-│ Plugins                                                                                          │
-│ Remove Repo Marketplace marketplace?                                                             │
-│ This removes the configured marketplace from Elpis.                                              │
-│                                                                                                  │
-› 1. Remove marketplace  Remove this marketplace from the available plugin list.                   │
-  2. Back to plugins     Keep this marketplace installed.                                          │
-└──────────────────────────────────────────────────────────────────────────────────────────────────┘
+  Plugins
+  Remove Repo Marketplace marketplace?
+  This removes the configured marketplace from Codex.
+
+
+› 1. Remove marketplace  Remove this marketplace from the available plugin list
+  2. Back to plugins     Keep this marketplace installed
+
   enter select · esc close

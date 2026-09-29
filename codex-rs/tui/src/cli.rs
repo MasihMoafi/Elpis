@@ -1,22 +1,21 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use clap::Args;
 use clap::FromArgMatches;
 use clap::Parser;
+use codex_utils_absolute_path::AbsolutePathBuf;
 use codex_utils_cli::ApprovalModeCliArg;
 use codex_utils_cli::CliConfigOverrides;
 use codex_utils_cli::SharedCliOptions;
 
 #[derive(Parser, Clone, Debug)]
-#[command(name = "elpis", version)]
+#[command(version)]
 pub struct Cli {
+    /// Internal: launching CLI that handles daemon updates after the TUI exits.
+    #[clap(skip)]
+    pub daemon_cli_executable: Option<AbsolutePathBuf>,
+
     /// Optional user prompt to start the session.
     #[arg(value_name = "PROMPT", value_hint = clap::ValueHint::Other)]
     pub prompt: Option<String>,
-
-    /// Save the Smart Prune model ID without changing the chat model. `provider:id` pins the
-    /// provider too; use "default" to reset.
-    #[arg(long)]
-    pub pruner_model: Option<String>,
 
     /// Error out when config.toml contains fields that are not recognized by this version of Codex.
     #[arg(long = "strict-config", default_value_t = false)]
@@ -42,6 +41,10 @@ pub struct Cli {
     /// Internal: include non-interactive sessions in resume listings.
     #[clap(skip)]
     pub resume_include_non_interactive: bool,
+
+    /// Internal: open the daemon-wide agents overview instead of starting a thread.
+    #[clap(skip)]
+    pub agents_overview: bool,
 
     // Internal controls set by the top-level `codex fork` subcommand.
     // These are not exposed as user flags on the base `codex` command.
@@ -76,6 +79,10 @@ pub struct Cli {
     /// Runs the TUI in inline mode, preserving terminal scrollback history.
     #[arg(long = "no-alt-screen", default_value_t = false)]
     pub no_alt_screen: bool,
+
+    /// Run without the shared background server, even if it is already running.
+    #[arg(long)]
+    pub no_daemon: bool,
 
     #[clap(skip)]
     pub config_overrides: CliConfigOverrides,
@@ -142,4 +149,5 @@ fn mark_tui_args(cmd: clap::Command) -> clap::Command {
     cmd.mut_arg("dangerously_bypass_approvals_and_sandbox", |arg| {
         arg.conflicts_with("approval_policy")
     })
+    .mut_arg("auto_review", |arg| arg.conflicts_with("approval_policy"))
 }

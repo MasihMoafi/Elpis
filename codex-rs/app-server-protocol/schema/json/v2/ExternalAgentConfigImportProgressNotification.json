@@ -66,6 +66,14 @@
             "string",
             "null"
           ]
+        },
+        "title": {
+          "default": null,
+          "description": "Original title for an imported session; null for other item types.",
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
       "required": [
@@ -108,6 +116,7 @@
         "SUBAGENTS",
         "HOOKS",
         "COMMANDS",
+        "MEMORY",
         "SESSIONS"
       ],
       "type": "string"

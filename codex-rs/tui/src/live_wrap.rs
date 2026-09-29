@@ -1,6 +1,5 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
-use unicode_width::UnicodeWidthChar;
-use unicode_width::UnicodeWidthStr;
+use crate::width::display_width;
+use unicode_segmentation::UnicodeSegmentation;
 
 /// A single visual row produced by RowBuilder.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -12,7 +11,7 @@ pub struct Row {
 
 impl Row {
     pub fn width(&self) -> usize {
-        self.text.width()
+        display_width(&self.text)
     }
 }
 
@@ -34,10 +33,6 @@ impl RowBuilder {
             current_line: String::new(),
             rows: Vec::new(),
         }
-    }
-
-    pub fn width(&self) -> usize {
-        self.target_width
     }
 
     pub fn set_width(&mut self, width: usize) {
@@ -75,11 +70,6 @@ impl RowBuilder {
             self.current_line.push_str(&fragment[start..]);
             self.wrap_current_line();
         }
-    }
-
-    /// Mark the end of the current logical line (equivalent to pushing a '\n').
-    pub fn end_line(&mut self) {
-        self.flush_current_line(/*explicit_break*/ true);
     }
 
     /// Return a snapshot of produced rows (non-draining).
@@ -150,9 +140,9 @@ impl RowBuilder {
             let (prefix, suffix, taken) =
                 take_prefix_by_width(&self.current_line, self.target_width);
             if taken == 0 {
-                // Avoid infinite loop on pathological inputs; take one scalar and continue.
-                if let Some((i, ch)) = self.current_line.char_indices().next() {
-                    let len = i + ch.len_utf8();
+                // Avoid an infinite loop on an indivisible grapheme wider than the target.
+                if let Some(grapheme) = self.current_line.graphemes(/*is_extended*/ true).next() {
+                    let len = grapheme.len();
                     let p = self.current_line[..len].to_string();
                     self.rows.push(Row {
                         text: p,
@@ -186,13 +176,13 @@ pub fn take_prefix_by_width(text: &str, max_cols: usize) -> (String, &str, usize
     }
     let mut cols = 0usize;
     let mut end_idx = 0usize;
-    for (i, ch) in text.char_indices() {
-        let ch_width = UnicodeWidthChar::width(ch).unwrap_or(0);
-        if cols.saturating_add(ch_width) > max_cols {
+    for (i, grapheme) in text.grapheme_indices(/*is_extended*/ true) {
+        let grapheme_width = display_width(grapheme);
+        if cols.saturating_add(grapheme_width) > max_cols {
             break;
         }
-        cols += ch_width;
-        end_idx = i + ch.len_utf8();
+        cols += grapheme_width;
+        end_idx = i + grapheme.len();
         if cols == max_cols {
             break;
         }
@@ -243,6 +233,22 @@ mod tests {
                 explicit_break: false
             }]
         );
+    }
+
+    #[test]
+    fn halfwidth_sound_marks_stay_with_their_grapheme_when_wrapping() {
+        assert_eq!(
+            take_prefix_by_width("abｶﾞc", /*max_cols*/ 3),
+            ("ab".to_string(), "ｶﾞc", 2)
+        );
+        assert_eq!(
+            take_prefix_by_width("abｶﾞc", /*max_cols*/ 4),
+            ("abｶﾞ".to_string(), "c", 4)
+        );
+
+        let mut row_builder = RowBuilder::new(/*target_width*/ 1);
+        row_builder.push_fragment("ｶﾞx");
+        assert_eq!(row_builder.rows()[0].text, "ｶﾞ");
     }
 
     #[test]

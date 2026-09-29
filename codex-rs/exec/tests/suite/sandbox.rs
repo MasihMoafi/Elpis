@@ -1,10 +1,10 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 #![cfg(unix)]
 use codex_core::spawn::StdioPolicy;
 use codex_protocol::models::PermissionProfile;
 use codex_protocol::permissions::NetworkSandboxPolicy;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use codex_utils_absolute_path::test_support::PathBufExt;
+use codex_utils_path_uri::PathUri;
 use std::collections::HashMap;
 use std::future::Future;
 use std::io;
@@ -12,8 +12,7 @@ use std::process::ExitStatus;
 use tokio::fs::create_dir_all;
 use tokio::process::Child;
 
-#[cfg(target_os = "macos")]
-async fn spawn_command_under_sandbox(
+pub(super) async fn spawn_command_under_sandbox(
     command: Vec<String>,
     command_cwd: AbsolutePathBuf,
     permission_profile: &PermissionProfile,
@@ -28,6 +27,12 @@ async fn spawn_command_under_sandbox(
     use codex_protocol::config_types::WindowsSandboxLevel;
     use std::process::Stdio;
 
+    #[cfg(target_os = "linux")]
+    let codex_linux_sandbox_exe = Some(
+        core_test_support::find_codex_linux_sandbox_exe()
+            .map_err(|err| io::Error::new(io::ErrorKind::NotFound, err))?,
+    );
+    #[cfg(target_os = "macos")]
     let codex_linux_sandbox_exe = None;
     let exec_request = build_exec_request(
         ExecParams {
@@ -40,14 +45,15 @@ async fn spawn_command_under_sandbox(
             network_environment_id: None,
             sandbox_permissions: SandboxPermissions::UseDefault,
             windows_sandbox_level: WindowsSandboxLevel::Disabled,
-            windows_sandbox_private_desktop: false,
             justification: None,
             arg0: None,
         },
         permission_profile,
         sandbox_cwd,
-        std::slice::from_ref(sandbox_cwd),
+        &[PathUri::from_abs_path(sandbox_cwd)],
         &codex_linux_sandbox_exe,
+        /*codex_self_exe*/ &None,
+        codex_protocol::sandbox::SandboxType::None,
         /*use_legacy_landlock*/ false,
     )
     .map_err(|err| io::Error::other(err.to_string()))?;
@@ -85,33 +91,6 @@ async fn spawn_command_under_sandbox(
     }
 
     child.kill_on_drop(true).spawn()
-}
-
-#[cfg(target_os = "linux")]
-async fn spawn_command_under_sandbox(
-    command: Vec<String>,
-    command_cwd: AbsolutePathBuf,
-    permission_profile: &PermissionProfile,
-    sandbox_cwd: &AbsolutePathBuf,
-    stdio_policy: StdioPolicy,
-    env: HashMap<String, String>,
-) -> std::io::Result<Child> {
-    use codex_core::spawn_command_under_linux_sandbox;
-
-    let codex_linux_sandbox_exe = core_test_support::find_codex_linux_sandbox_exe()
-        .map_err(|err| io::Error::new(io::ErrorKind::NotFound, err))?;
-    spawn_command_under_linux_sandbox(
-        codex_linux_sandbox_exe,
-        command,
-        command_cwd,
-        permission_profile,
-        sandbox_cwd,
-        /*use_legacy_landlock*/ false,
-        stdio_policy,
-        /*network*/ None,
-        env,
-    )
-    .await
 }
 
 #[cfg(target_os = "linux")]

@@ -19,6 +19,8 @@ use codex_exec_server_protocol::JSONRPCRequest;
 use codex_exec_server_protocol::JSONRPCResponse;
 use codex_exec_server_protocol::MAX_HTTP_BODY_DELTA_BYTES;
 use codex_exec_server_protocol::RequestId;
+use codex_http_client::HttpClientFactory;
+use codex_http_client::OutboundProxyPolicy;
 use futures::SinkExt;
 use futures::StreamExt;
 use pretty_assertions::assert_eq;
@@ -44,6 +46,7 @@ const HTTP_REQUEST_BODY_DELTA_METHOD: &str = "http/request/bodyDelta";
 const INITIALIZE_METHOD: &str = "initialize";
 const INITIALIZED_METHOD: &str = "initialized";
 const TEST_TIMEOUT: Duration = Duration::from_secs(5);
+const BYTE_BUDGET_TEST_TIMEOUT: Duration = Duration::from_secs(30);
 const HTTP_BODY_DELTA_CHANNEL_CAPACITY: u64 = 256;
 const HTTP_BODY_DELTA_BYTE_BUDGET: usize = 16 * 1024 * 1024;
 const OVERFLOWING_BODY_DELTA_FRAMES: u64 = 1_024;
@@ -133,6 +136,7 @@ async fn http_response_body_stream_uses_generated_ids_and_receives_ordered_delta
                 headers: vec![HttpHeader {
                     name: "accept".to_string(),
                     value: "text/event-stream".to_string(),
+                    value_env_var: None,
                 }],
                 body: None,
                 timeout_ms: None,
@@ -151,6 +155,7 @@ async fn http_response_body_stream_uses_generated_ids_and_receives_ordered_delta
                 headers: vec![HttpHeader {
                     name: "content-type".to_string(),
                     value: "text/event-stream".to_string(),
+                    value_env_var: None,
                 }],
                 body: Vec::new().into(),
             },
@@ -219,6 +224,7 @@ async fn http_response_body_stream_uses_generated_ids_and_receives_ordered_delta
             headers: vec![HttpHeader {
                 name: "accept".to_string(),
                 value: "text/event-stream".to_string(),
+                value_env_var: None,
             }],
             body: None,
             timeout_ms: None,
@@ -236,6 +242,7 @@ async fn http_response_body_stream_uses_generated_ids_and_receives_ordered_delta
             headers: vec![HttpHeader {
                 name: "content-type".to_string(),
                 value: "text/event-stream".to_string(),
+                value_env_var: None,
             }],
             body: Vec::new().into(),
         }
@@ -846,6 +853,16 @@ async fn http_response_body_stream_enforces_queued_byte_budget() -> Result<()> {
                 stream_response: true,
             }
         );
+        peer.write_response(
+            request_id,
+            HttpRequestResponse {
+                status: 200,
+                headers: Vec::new(),
+                body: Vec::new().into(),
+            },
+        )
+        .await?;
+
         let frame_count = HTTP_BODY_DELTA_BYTE_BUDGET / MAX_HTTP_BODY_DELTA_BYTES + 1;
         for seq in 1..=frame_count as u64 {
             peer.write_body_delta(HttpRequestBodyDeltaNotification {
@@ -857,15 +874,6 @@ async fn http_response_body_stream_enforces_queued_byte_budget() -> Result<()> {
             })
             .await?;
         }
-        peer.write_response(
-            request_id,
-            HttpRequestResponse {
-                status: 200,
-                headers: Vec::new(),
-                body: Vec::new().into(),
-            },
-        )
-        .await?;
 
         let (barrier_request_id, barrier_params) = peer.read_http_request().await?;
         assert_eq!(
@@ -923,7 +931,7 @@ async fn http_response_body_stream_enforces_queued_byte_budget() -> Result<()> {
     // Receiving this terminal notification proves the earlier byte-budget
     // notifications have all passed through the ordered notification handler.
     let (_response, mut barrier_stream) = timeout(
-        TEST_TIMEOUT,
+        BYTE_BUDGET_TEST_TIMEOUT,
         client.http_request_stream(HttpRequestParams {
             method: "GET".to_string(),
             url: "https://example.test/mcp/byte-budget-barrier".to_string(),
@@ -1102,7 +1110,7 @@ async fn http_response_body_streams_share_queued_byte_budget() -> Result<()> {
     // This terminal notification is ordered after both streams contend for the
     // budget, so neither stream is drained before the overflow is observed.
     let (_response, mut barrier_stream) = timeout(
-        TEST_TIMEOUT,
+        BYTE_BUDGET_TEST_TIMEOUT,
         client.http_request_stream(HttpRequestParams {
             method: "GET".to_string(),
             url: "https://example.test/mcp/shared-budget-barrier".to_string(),
@@ -1369,6 +1377,7 @@ impl ScriptedExecServer {
         ExecServerClient::connect_websocket(RemoteExecServerConnectArgs::new(
             self.websocket_url.clone(),
             CLIENT_NAME.to_string(),
+            HttpClientFactory::new(OutboundProxyPolicy::ReqwestDefault),
         ))
         .await
         .context("client should connect to fake exec-server")
@@ -1431,6 +1440,7 @@ impl JsonRpcPeer {
             request.id,
             InitializeResponse {
                 session_id: "session-1".to_string(),
+                environment_info: None,
             },
         )
         .await?;

@@ -1,4 +1,3 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use std::collections::HashMap;
 use std::fmt;
 use std::sync::Arc;
@@ -8,7 +7,6 @@ use codex_protocol::capabilities::SelectedCapabilityRoot;
 
 use crate::Environment;
 use crate::EnvironmentManager;
-use crate::ExecutorFileSystem;
 
 /// A selected capability root paired with its currently ready environment handle.
 ///
@@ -37,10 +35,6 @@ impl ResolvedSelectedCapabilityRoot {
 
     pub fn environment(&self) -> &Arc<Environment> {
         &self.environment
-    }
-
-    pub fn file_system(&self) -> Arc<dyn ExecutorFileSystem> {
-        self.environment.get_filesystem()
     }
 }
 

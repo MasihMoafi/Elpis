@@ -1,4 +1,3 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use super::has_non_contextual_dev_message_content;
 use super::is_contextual_dev_message_content;
 use super::parse_turn_item;
@@ -13,6 +12,7 @@ use codex_protocol::items::WebSearchItem;
 use codex_protocol::items::build_hook_prompt_message;
 use codex_protocol::models::ContentItem;
 use codex_protocol::models::DEFAULT_IMAGE_DETAIL;
+use codex_protocol::models::ImageReference;
 use codex_protocol::models::ReasoningItemContent;
 use codex_protocol::models::ReasoningItemReasoningSummary;
 use codex_protocol::models::ResponseItem;
@@ -50,7 +50,7 @@ fn recognizes_context_window_as_contextual_developer_content() {
     let content = vec![ContentItem::InputText {
         text: format!(
             r#"{CONTEXT_WINDOW_OPEN_TAG}
-Thread id: 00000000-0000-0000-0000-000000000000
+Agent name: /root
 {CONTEXT_WINDOW_CLOSE_TAG}"#
         ),
     }];
@@ -84,11 +84,15 @@ fn parses_user_message_with_text_and_two_images() {
                 text: "Hello world".to_string(),
             },
             ContentItem::InputImage {
-                image_url: img1.clone(),
+                image: ImageReference::Inline {
+                    image_url: img1.clone(),
+                },
                 detail: Some(DEFAULT_IMAGE_DETAIL),
             },
             ContentItem::InputImage {
-                image_url: img2.clone(),
+                image: ImageReference::Inline {
+                    image_url: img2.clone(),
+                },
                 detail: Some(DEFAULT_IMAGE_DETAIL),
             },
         ],
@@ -106,11 +110,11 @@ fn parses_user_message_with_text_and_two_images() {
                     text_elements: Vec::new(),
                 },
                 UserInput::Image {
-                    image_url: img1,
+                    image: ImageReference::Inline { image_url: img1 },
                     detail: Some(DEFAULT_IMAGE_DETAIL),
                 },
                 UserInput::Image {
-                    image_url: img2,
+                    image: ImageReference::Inline { image_url: img2 },
                     detail: Some(DEFAULT_IMAGE_DETAIL),
                 },
             ];
@@ -118,6 +122,49 @@ fn parses_user_message_with_text_and_two_images() {
         }
         other => panic!("expected TurnItem::UserMessage, got {other:?}"),
     }
+}
+
+/// Canonical user-message events must retain opaque file IDs for durable thread history.
+#[test]
+fn parses_user_message_with_file_image() {
+    let item = ResponseItem::Message {
+        id: None,
+        role: "user".to_string(),
+        content: vec![
+            ContentItem::InputImage {
+                image: ImageReference::File {
+                    file_id: "file_123".to_string(),
+                },
+                detail: Some(DEFAULT_IMAGE_DETAIL),
+            },
+            ContentItem::InputText {
+                text: "describe it".to_string(),
+            },
+        ],
+        phase: None,
+        internal_chat_message_metadata_passthrough: None,
+    };
+
+    let turn_item = parse_turn_item(&item).expect("expected user message turn item");
+
+    let TurnItem::UserMessage(user) = turn_item else {
+        panic!("expected TurnItem::UserMessage");
+    };
+    assert_eq!(
+        user.content,
+        vec![
+            UserInput::Image {
+                image: ImageReference::File {
+                    file_id: "file_123".to_string(),
+                },
+                detail: Some(DEFAULT_IMAGE_DETAIL),
+            },
+            UserInput::Text {
+                text: "describe it".to_string(),
+                text_elements: Vec::new(),
+            },
+        ]
+    );
 }
 
 #[test]
@@ -132,7 +179,9 @@ fn skips_local_image_label_text() {
         content: vec![
             ContentItem::InputText { text: label },
             ContentItem::InputImage {
-                image_url: image_url.clone(),
+                image: ImageReference::Inline {
+                    image_url: image_url.clone(),
+                },
                 detail: Some(DEFAULT_IMAGE_DETAIL),
             },
             ContentItem::InputText {
@@ -152,7 +201,7 @@ fn skips_local_image_label_text() {
         TurnItem::UserMessage(user) => {
             let expected_content = vec![
                 UserInput::Image {
-                    image_url,
+                    image: ImageReference::Inline { image_url },
                     detail: Some(DEFAULT_IMAGE_DETAIL),
                 },
                 UserInput::Text {
@@ -161,6 +210,50 @@ fn skips_local_image_label_text() {
                 },
             ];
             assert_eq!(user.content, expected_content);
+        }
+        other => panic!("expected TurnItem::UserMessage, got {other:?}"),
+    }
+}
+
+#[test]
+fn skips_local_audio_label_text() {
+    let audio_url = "data:audio/wav;base64,abc".to_string();
+    let label = r#"<audio name=[Audio #1] path="/tmp/local.wav">"#.to_string();
+    let user_text = "Please transcribe this audio.".to_string();
+
+    let item = ResponseItem::Message {
+        id: None,
+        role: "user".to_string(),
+        content: vec![
+            ContentItem::InputText { text: label },
+            ContentItem::InputAudio {
+                audio_url: audio_url.clone(),
+            },
+            ContentItem::InputText {
+                text: "</audio>".to_string(),
+            },
+            ContentItem::InputText {
+                text: user_text.clone(),
+            },
+        ],
+        phase: None,
+        internal_chat_message_metadata_passthrough: None,
+    };
+
+    let turn_item = parse_turn_item(&item).expect("expected user message turn item");
+
+    match turn_item {
+        TurnItem::UserMessage(user) => {
+            assert_eq!(
+                user.content,
+                vec![
+                    UserInput::Audio { audio_url },
+                    UserInput::Text {
+                        text: user_text,
+                        text_elements: Vec::new(),
+                    },
+                ]
+            );
         }
         other => panic!("expected TurnItem::UserMessage, got {other:?}"),
     }
@@ -215,7 +308,9 @@ fn skips_unnamed_image_label_text() {
         content: vec![
             ContentItem::InputText { text: label },
             ContentItem::InputImage {
-                image_url: image_url.clone(),
+                image: ImageReference::Inline {
+                    image_url: image_url.clone(),
+                },
                 detail: Some(DEFAULT_IMAGE_DETAIL),
             },
             ContentItem::InputText {
@@ -235,7 +330,7 @@ fn skips_unnamed_image_label_text() {
         TurnItem::UserMessage(user) => {
             let expected_content = vec![
                 UserInput::Image {
-                    image_url,
+                    image: ImageReference::Inline { image_url },
                     detail: Some(DEFAULT_IMAGE_DETAIL),
                 },
                 UserInput::Text {

@@ -1,12 +1,13 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use std::fmt;
 
-use reqwest::header::HeaderMap;
+use http::HeaderMap;
 
 /// Request headers returned by an external auth provider.
 ///
 /// The provider owns credential validation, rotation, and persistence. Codex
 /// keeps the resolved headers in memory and attaches them to backend requests.
+/// Identity headers must be derived from and bound to the validated credentials;
+/// Codex may use them to enforce managed authentication policy.
 #[derive(Clone, PartialEq, Eq)]
 pub struct AuthHeaders {
     headers: HeaderMap,

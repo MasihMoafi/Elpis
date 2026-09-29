@@ -1,4 +1,3 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use std::collections::HashMap;
 use std::collections::HashSet;
 
@@ -9,58 +8,42 @@ use crate::bottom_pane::SelectionViewParams;
 use crate::bottom_pane::SkillsToggleItem;
 use crate::bottom_pane::SkillsToggleView;
 use crate::bottom_pane::popup_consts::standard_popup_hint_line;
+use crate::mention_codec::is_common_env_var;
+use crate::mention_codec::is_mention_name_char;
+use crate::mention_codec::parse_linked_tool_mention;
 use crate::skills_helpers::skill_description;
 use crate::skills_helpers::skill_display_name;
-use crate::skills_helpers::skill_scope_label;
-use codex_app_server_protocol::SkillMetadata as ProtocolSkillMetadata;
+use codex_app_server_protocol::SkillMetadata;
 use codex_app_server_protocol::SkillsListEntry;
 use codex_app_server_protocol::SkillsListResponse;
 use codex_connectors::AppInfo;
-use codex_core_skills::model::SkillDependencies;
-use codex_core_skills::model::SkillInterface;
-use codex_core_skills::model::SkillMetadata;
-use codex_core_skills::model::SkillToolDependency;
-use codex_features::Feature;
 use codex_protocol::parse_command::ParsedCommand;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use codex_utils_plugins::mention_syntax::TOOL_MENTION_SIGIL;
 
 impl ChatWidget {
     pub(crate) fn open_skills_list(&mut self) {
-        if self.config.features.enabled(Feature::MentionsV2) {
-            self.insert_str("@");
-        } else {
-            self.insert_str("$");
-        }
+        self.insert_str("$");
     }
 
     pub(crate) fn open_skills_menu(&mut self) {
-        let list_shortcut = if self.config.features.enabled(Feature::MentionsV2) {
-            '@'
-        } else {
-            '$'
-        };
         let items = vec![
             SelectionItem {
                 name: "List skills".to_string(),
-                description: Some(format!(
-                    "Tip: press {list_shortcut} to open this list directly."
-                )),
+                description: Some("Tip: press $ to open this list directly".to_string()),
                 actions: vec![Box::new(|tx| {
                     tx.send(AppEvent::OpenSkillsList);
                 })],
-                // Escape on either page returns to this menu rather than
-                // closing out of the skills screens entirely.
-                dismiss_parent_on_child_accept: true,
+                dismiss_on_select: true,
                 ..Default::default()
             },
             SelectionItem {
                 name: "Enable/Disable Skills".to_string(),
-                description: Some("Enable or disable skills.".to_string()),
+                description: Some("Enable or disable skills".to_string()),
                 actions: vec![Box::new(|tx| {
                     tx.send(AppEvent::OpenManageSkillsPopup);
                 })],
-                dismiss_parent_on_child_accept: true,
+                dismiss_on_select: true,
                 ..Default::default()
             },
         ];
@@ -70,7 +53,7 @@ impl ChatWidget {
             subtitle: Some("Choose an action".to_string()),
             footer_hint: Some(standard_popup_hint_line()),
             items,
-            ..Default::default()
+            ..SelectionViewParams::picker()
         });
     }
 
@@ -86,12 +69,21 @@ impl ChatWidget {
         }
         self.skills_initial_state = Some(initial_state);
 
-        let core_skills: Vec<(bool, SkillMetadata)> = self
+        let items: Vec<SkillsToggleItem> = self
             .skills_all
             .iter()
-            .filter_map(|skill| Some((skill.enabled, protocol_skill_to_core(skill)?)))
+            .map(|skill| {
+                let display_name = skill_display_name(skill);
+                let description = skill_description(skill).to_string();
+                SkillsToggleItem {
+                    name: display_name,
+                    skill_name: skill.name.clone(),
+                    description,
+                    enabled: skill.enabled,
+                    path: skill.path.clone(),
+                }
+            })
             .collect();
-        let items = skills_toggle_items(core_skills);
 
         let view = SkillsToggleView::new(
             items,
@@ -179,10 +171,7 @@ impl ChatWidget {
     }
 }
 
-fn skills_for_cwd(
-    cwd: &AbsolutePathBuf,
-    skills_entries: &[SkillsListEntry],
-) -> Vec<ProtocolSkillMetadata> {
+fn skills_for_cwd(cwd: &AbsolutePathBuf, skills_entries: &[SkillsListEntry]) -> Vec<SkillMetadata> {
     skills_entries
         .iter()
         .find(|entry| entry.cwd.as_path() == cwd.as_path())
@@ -190,86 +179,12 @@ fn skills_for_cwd(
         .unwrap_or_default()
 }
 
-fn skills_toggle_items(mut core_skills: Vec<(bool, SkillMetadata)>) -> Vec<SkillsToggleItem> {
-    let colliding_names =
-        crate::skills_helpers::skill_name_collisions(core_skills.iter().map(|(_, skill)| skill));
-    core_skills
-        .sort_by_key(|(enabled, skill)| (!*enabled, skill_display_name(skill, &colliding_names)));
-
-    core_skills
-        .into_iter()
-        .map(|(enabled, core_skill)| {
-            let display_name = skill_display_name(&core_skill, &colliding_names);
-            let description = skill_description(&core_skill).to_string();
-            let origin = skill_scope_label(core_skill.scope).to_string();
-            let skill_name = core_skill.name;
-            let path = core_skill.path_to_skills_md;
-            SkillsToggleItem {
-                name: display_name,
-                skill_name,
-                description,
-                origin,
-                enabled,
-                path,
-            }
-        })
-        .collect()
-}
-
-fn enabled_skills_for_mentions(skills: &[ProtocolSkillMetadata]) -> Vec<SkillMetadata> {
+fn enabled_skills_for_mentions(skills: &[SkillMetadata]) -> Vec<SkillMetadata> {
     skills
         .iter()
         .filter(|skill| skill.enabled)
-        .filter_map(protocol_skill_to_core)
+        .cloned()
         .collect()
-}
-
-fn protocol_skill_to_core(skill: &ProtocolSkillMetadata) -> Option<SkillMetadata> {
-    let scope = serde_json::to_value(skill.scope)
-        .and_then(serde_json::from_value)
-        .inspect_err(|err| {
-            tracing::warn!(
-                skill_name = %skill.name,
-                %err,
-                "Failed to map app-server skill scope"
-            );
-        })
-        .ok()?;
-
-    Some(SkillMetadata {
-        name: skill.name.clone(),
-        description: skill.description.clone(),
-        short_description: skill.short_description.clone(),
-        interface: skill.interface.clone().map(|interface| SkillInterface {
-            display_name: interface.display_name,
-            short_description: interface.short_description,
-            icon_small: interface.icon_small,
-            icon_large: interface.icon_large,
-            brand_color: interface.brand_color,
-            default_prompt: interface.default_prompt,
-        }),
-        dependencies: skill
-            .dependencies
-            .clone()
-            .map(|dependencies| SkillDependencies {
-                tools: dependencies
-                    .tools
-                    .into_iter()
-                    .map(|tool| SkillToolDependency {
-                        r#type: tool.r#type,
-                        value: tool.value,
-                        description: tool.description,
-                        transport: tool.transport,
-                        command: tool.command,
-                        url: tool.url,
-                    })
-                    .collect(),
-            }),
-        policy: None,
-        path_to_skills_md: skill.path.clone(),
-        scope,
-        plugin_id: None,
-    })
 }
 
 pub(crate) fn collect_tool_mentions(
@@ -301,23 +216,23 @@ pub(crate) fn find_skill_mentions_with_tool_mentions(
     let mut matches: Vec<SkillMetadata> = Vec::new();
 
     for skill in skills {
-        if seen_paths.contains(&skill.path_to_skills_md) {
+        if seen_paths.contains(&skill.path) {
             continue;
         }
-        let path_str = skill.path_to_skills_md.to_string_lossy();
+        let path_str = skill.path.to_string_lossy();
         if mention_skill_paths.contains(path_str.as_ref()) {
-            seen_paths.insert(skill.path_to_skills_md.clone());
+            seen_paths.insert(skill.path.clone());
             seen_names.insert(skill.name.clone());
             matches.push(skill.clone());
         }
     }
 
     for skill in skills {
-        if seen_paths.contains(&skill.path_to_skills_md) {
+        if seen_paths.contains(&skill.path) {
             continue;
         }
         if mentions.names.contains(&skill.name) && seen_names.insert(skill.name.clone()) {
-            seen_paths.insert(skill.path_to_skills_md.clone());
+            seen_paths.insert(skill.path.clone());
             matches.push(skill.clone());
         }
     }
@@ -385,8 +300,7 @@ fn extract_tool_mentions_from_text_with_sigil(text: &str, sigil: char) -> ToolMe
     while index < text_bytes.len() {
         let byte = text_bytes[index];
         if byte == b'['
-            && let Some((name, path, end_index)) =
-                parse_linked_tool_mention(text, text_bytes, index, sigil)
+            && let Some((name, path, end_index)) = parse_linked_tool_mention(text, index, sigil)
         {
             if !is_common_env_var(name) {
                 if is_skill_path(path) {
@@ -435,85 +349,6 @@ fn extract_tool_mentions_from_text_with_sigil(text: &str, sigil: char) -> ToolMe
     }
 }
 
-fn parse_linked_tool_mention<'a>(
-    text: &'a str,
-    text_bytes: &[u8],
-    start: usize,
-    sigil: char,
-) -> Option<(&'a str, &'a str, usize)> {
-    let sigil_index = start + 1;
-    if text_bytes.get(sigil_index) != Some(&(sigil as u8)) {
-        return None;
-    }
-
-    let name_start = sigil_index + 1;
-    let first_name_byte = text_bytes.get(name_start)?;
-    if !is_mention_name_char(*first_name_byte) {
-        return None;
-    }
-
-    let mut name_end = name_start + 1;
-    while let Some(next_byte) = text_bytes.get(name_end)
-        && is_mention_name_char(*next_byte)
-    {
-        name_end += 1;
-    }
-
-    if text_bytes.get(name_end) != Some(&b']') {
-        return None;
-    }
-
-    let mut path_start = name_end + 1;
-    while let Some(next_byte) = text_bytes.get(path_start)
-        && next_byte.is_ascii_whitespace()
-    {
-        path_start += 1;
-    }
-    if text_bytes.get(path_start) != Some(&b'(') {
-        return None;
-    }
-
-    let mut path_end = path_start + 1;
-    while let Some(next_byte) = text_bytes.get(path_end)
-        && *next_byte != b')'
-    {
-        path_end += 1;
-    }
-    if text_bytes.get(path_end) != Some(&b')') {
-        return None;
-    }
-
-    let path = text[path_start + 1..path_end].trim();
-    if path.is_empty() {
-        return None;
-    }
-
-    let name = &text[name_start..name_end];
-    Some((name, path, path_end + 1))
-}
-
-fn is_common_env_var(name: &str) -> bool {
-    let upper = name.to_ascii_uppercase();
-    matches!(
-        upper.as_str(),
-        "PATH"
-            | "HOME"
-            | "USER"
-            | "SHELL"
-            | "PWD"
-            | "TMPDIR"
-            | "TEMP"
-            | "TMP"
-            | "LANG"
-            | "TERM"
-            | "XDG_CONFIG_HOME"
-    )
-}
-
-fn is_mention_name_char(byte: u8) -> bool {
-    matches!(byte, b'a'..=b'z' | b'A'..=b'Z' | b'0'..=b'9' | b'_' | b'-')
-}
-
 fn is_skill_path(path: &str) -> bool {
     !path.starts_with("app://") && !path.starts_with("mcp://") && !path.starts_with("plugin://")
 }
@@ -530,63 +365,7 @@ fn app_id_from_path(path: &str) -> Option<&str> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_support::PathBufExt;
-    use crate::test_support::test_path_buf;
-    use codex_protocol::protocol::SkillScope;
     use pretty_assertions::assert_eq;
-
-    fn core_skill(name: &str, display_name: &str, scope: SkillScope) -> SkillMetadata {
-        SkillMetadata {
-            name: name.to_string(),
-            description: format!("{display_name} description"),
-            short_description: None,
-            interface: Some(SkillInterface {
-                display_name: Some(display_name.to_string()),
-                short_description: None,
-                icon_small: None,
-                icon_large: None,
-                brand_color: None,
-                default_prompt: None,
-            }),
-            dependencies: None,
-            policy: None,
-            path_to_skills_md: test_path_buf(&format!("/tmp/{name}/SKILL.md")).abs(),
-            scope,
-            plugin_id: None,
-        }
-    }
-
-    #[test]
-    fn management_items_sort_enabled_before_available_by_display_name_with_origins() {
-        let items = skills_toggle_items(vec![
-            (
-                false,
-                core_skill("zulu", "Zulu candidate", SkillScope::System),
-            ),
-            (true, core_skill("beta", "Beta enabled", SkillScope::User)),
-            (
-                false,
-                core_skill("alpha", "Alpha candidate", SkillScope::Admin),
-            ),
-            (
-                true,
-                core_skill("alpha-enabled", "Alpha enabled", SkillScope::Repo),
-            ),
-        ]);
-
-        assert_eq!(
-            items
-                .into_iter()
-                .map(|item| (item.name, item.enabled, item.origin))
-                .collect::<Vec<_>>(),
-            vec![
-                ("Alpha enabled".to_string(), true, "repo".to_string()),
-                ("Beta enabled".to_string(), true, "yours".to_string()),
-                ("Alpha candidate".to_string(), false, "admin".to_string()),
-                ("Zulu candidate".to_string(), false, "bundled".to_string()),
-            ]
-        );
-    }
 
     fn app(id: &str, name: &str) -> AppInfo {
         AppInfo {

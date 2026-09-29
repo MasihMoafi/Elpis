@@ -1,11 +1,17 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 mod amazon_bedrock;
 mod auth;
 mod bearer_auth_provider;
-pub mod cache_lifecycle;
+mod combined_auth;
 mod models_endpoint;
-mod native_models_endpoint;
+mod models_identity;
 mod provider;
+mod shared_state;
+pub mod test_support;
+mod workspace_routing;
+pub use workspace_routing::ACCOUNT_ROUTING_HEADER;
+pub use workspace_routing::ResolvedResponsesProvider;
+pub use workspace_routing::ResponsesConnectionKey;
+pub use workspace_routing::WorkspaceRoutingContext;
 
 pub use amazon_bedrock::is_supported_amazon_bedrock_region;
 pub use auth::AgentIdentitySessionFallback;
@@ -16,17 +22,8 @@ pub use auth::auth_provider_from_auth_manager;
 pub use auth::unauthenticated_auth_provider;
 pub use bearer_auth_provider::BearerAuthProvider;
 pub use bearer_auth_provider::BearerAuthProvider as CoreAuthProvider;
-pub use cache_lifecycle::CacheImpactPreview;
-pub use cache_lifecycle::CacheKey;
-pub use cache_lifecycle::CacheMetrics;
-pub use cache_lifecycle::CacheMissReason;
-pub use cache_lifecycle::CacheState;
-pub use cache_lifecycle::ProviderCachePolicy;
-pub use cache_lifecycle::ProviderCacheTracker;
-pub use cache_lifecycle::QueuedTurnPayload;
-pub use cache_lifecycle::QueuedUserInput;
-pub use cache_lifecycle::SafeInputQueue;
 pub use codex_model_provider_info::AMAZON_BEDROCK_PROVIDER_ID;
+pub use codex_model_provider_info::AMAZON_BEDROCK_RUNTIME_PROVIDER_ID;
 pub use codex_model_provider_info::CHATGPT_CODEX_BASE_URL;
 pub use codex_protocol::account::ProviderAccount;
 pub use provider::ModelProvider;
@@ -34,7 +31,13 @@ pub use provider::ModelProviderFuture;
 pub use provider::ProviderAccountError;
 pub use provider::ProviderAccountResult;
 pub use provider::ProviderAccountState;
+pub use provider::ProviderAuthRecoveryMessages;
 pub use provider::ProviderCapabilities;
+pub use provider::ProviderUnauthorizedRecovery;
+pub use provider::RemoteCompactionSupport;
 pub use provider::SharedModelProvider;
 pub use provider::create_model_provider;
-pub use provider::openrouter_free_model_catalog;
+
+#[cfg(test)]
+#[path = "workspace_routing_tests.rs"]
+mod workspace_routing_tests;

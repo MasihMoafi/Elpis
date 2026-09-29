@@ -1,11 +1,12 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use anyhow::Result;
 use codex_protocol::models::PermissionProfile;
 use codex_protocol::permissions::FileSystemPath;
 use codex_protocol::permissions::FileSystemSandboxEntry;
 use codex_protocol::permissions::FileSystemSandboxKind;
 use codex_protocol::permissions::FileSystemSandboxPolicy;
+use codex_protocol::permissions::FileSystemSpecialPath::Root;
 use codex_protocol::permissions::NetworkSandboxPolicy;
+use codex_protocol::permissions::ReadDenyMatcher;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use std::collections::HashMap;
 use std::path::Path;
@@ -99,12 +100,34 @@ impl ResolvedWindowsSandboxPermissions {
         self.network
     }
 
-    pub(crate) fn is_enforceable_by_windows_sandbox(&self) -> bool {
-        matches!(self.file_system.kind, FileSystemSandboxKind::Restricted)
+    /// Rejects filesystem policies that the elevated Windows sandbox cannot
+    /// enforce safely.
+    pub fn validate_elevated_filesystem_policy(&self, cwd: &Path) -> Result<()> {
+        let root = cwd
+            .ancestors()
+            .last()
+            .ok_or_else(|| anyhow::anyhow!("command cwd has no filesystem root"))?;
+        let root_is_denied = ReadDenyMatcher::try_new_for_local_paths(&self.file_system, cwd)
+            .map_err(anyhow::Error::msg)?
+            .is_some_and(|matcher| matcher.is_local_path_read_denied(root));
+        if !self.file_system.can_read_local_path_with_cwd(root, cwd) || root_is_denied {
+            anyhow::bail!("elevated Windows sandbox requires effective `:root` read access");
+        }
+        Ok(())
     }
 
     pub(crate) fn has_full_disk_read_access(&self) -> bool {
         self.file_system.has_full_disk_read_access()
+    }
+
+    pub(crate) fn has_symbolic_root_read_access(&self, cwd: &Path) -> bool {
+        self.file_system.entries.iter().any(|entry| {
+            matches!(&entry.path, FileSystemPath::Special { value: Root })
+                && entry.access.can_read()
+        }) && cwd
+            .ancestors()
+            .last()
+            .is_some_and(|root| self.file_system.can_read_local_path_with_cwd(root, cwd))
     }
 
     pub(crate) fn include_platform_defaults(&self) -> bool {
@@ -174,7 +197,7 @@ impl ResolvedWindowsSandboxPermissions {
         self.file_system
             .entries
             .iter()
-            .any(|FileSystemSandboxEntry { path, access }| {
+            .any(|FileSystemSandboxEntry { path, access, .. }| {
                 matches!(
                     path,
                     FileSystemPath::Special {
@@ -211,6 +234,16 @@ mod tests {
 
     fn workspace_roots_for(root: &Path) -> Vec<AbsolutePathBuf> {
         vec![AbsolutePathBuf::from_absolute_path(root).expect("absolute workspace root")]
+    }
+
+    fn permission_profile_with_entries(entries: Vec<FileSystemSandboxEntry>) -> PermissionProfile {
+        PermissionProfile::Managed {
+            file_system: ManagedFileSystemPermissions::Restricted {
+                entries,
+                glob_scan_max_depth: None,
+            },
+            network: NetworkSandboxPolicy::Restricted,
+        }
     }
 
     #[test]
@@ -259,6 +292,7 @@ mod tests {
                         value: FileSystemSpecialPath::project_roots(/*subpath*/ None),
                     },
                     access: FileSystemAccessMode::Write,
+                    missing_path_behavior: None,
                 }],
                 glob_scan_max_depth: None,
             },
@@ -299,18 +333,21 @@ mod tests {
                             value: FileSystemSpecialPath::project_roots(/*subpath*/ None),
                         },
                         access: FileSystemAccessMode::Write,
+                        missing_path_behavior: None,
                     },
                     FileSystemSandboxEntry {
                         path: FileSystemPath::Special {
                             value: FileSystemSpecialPath::project_roots(Some(".git".into())),
                         },
                         access: FileSystemAccessMode::Deny,
+                        missing_path_behavior: None,
                     },
                     FileSystemSandboxEntry {
                         path: FileSystemPath::GlobPattern {
                             pattern: project_roots_glob_pattern(Path::new("**/*.env")),
                         },
                         access: FileSystemAccessMode::Deny,
+                        missing_path_behavior: None,
                     },
                 ],
                 glob_scan_max_depth: None,
@@ -330,27 +367,31 @@ mod tests {
             FileSystemSandboxPolicy::restricted(vec![
                 FileSystemSandboxEntry {
                     path: FileSystemPath::Path {
-                        path: first.clone(),
+                        path: first.clone().into(),
                     },
                     access: FileSystemAccessMode::Write,
+                    missing_path_behavior: None,
                 },
                 FileSystemSandboxEntry {
                     path: FileSystemPath::Path {
-                        path: second.clone(),
+                        path: second.clone().into(),
                     },
                     access: FileSystemAccessMode::Write,
+                    missing_path_behavior: None,
                 },
                 FileSystemSandboxEntry {
                     path: FileSystemPath::Path {
-                        path: first.join(".git"),
+                        path: first.join(".git").into(),
                     },
                     access: FileSystemAccessMode::Deny,
+                    missing_path_behavior: None,
                 },
                 FileSystemSandboxEntry {
                     path: FileSystemPath::Path {
-                        path: second.join(".git"),
+                        path: second.join(".git").into(),
                     },
                     access: FileSystemAccessMode::Deny,
+                    missing_path_behavior: None,
                 },
                 FileSystemSandboxEntry {
                     path: FileSystemPath::GlobPattern {
@@ -362,6 +403,7 @@ mod tests {
                         .into_owned(),
                     },
                     access: FileSystemAccessMode::Deny,
+                    missing_path_behavior: None,
                 },
                 FileSystemSandboxEntry {
                     path: FileSystemPath::GlobPattern {
@@ -373,6 +415,7 @@ mod tests {
                         .into_owned(),
                     },
                     access: FileSystemAccessMode::Deny,
+                    missing_path_behavior: None,
                 },
             ])
         );
@@ -445,6 +488,96 @@ mod tests {
     }
 
     #[test]
+    fn elevated_filesystem_policy_requires_effective_root_read_access() {
+        let tmp = TempDir::new().expect("tempdir");
+        let cwd = tmp.path().join("workspace");
+        let denied_path = tmp.path().join("private");
+        std::fs::create_dir_all(&cwd).expect("create cwd");
+
+        let default_root_denied = ResolvedWindowsSandboxPermissions::try_from_permission_profile(
+            &permission_profile_with_entries(vec![FileSystemSandboxEntry::new(
+                FileSystemPath::Special {
+                    value: FileSystemSpecialPath::project_roots(/*subpath*/ None),
+                },
+                FileSystemAccessMode::Write,
+            )]),
+        )
+        .expect("managed permission profile");
+        let root_read_with_carveout =
+            ResolvedWindowsSandboxPermissions::try_from_permission_profile(
+                &permission_profile_with_entries(vec![
+                    FileSystemSandboxEntry::new(
+                        FileSystemPath::Special {
+                            value: FileSystemSpecialPath::Root,
+                        },
+                        FileSystemAccessMode::Read,
+                    ),
+                    FileSystemSandboxEntry::new(
+                        FileSystemPath::Path {
+                            path: AbsolutePathBuf::from_absolute_path(&denied_path)
+                                .expect("absolute denied path")
+                                .into(),
+                        },
+                        FileSystemAccessMode::Deny,
+                    ),
+                ]),
+            )
+            .expect("managed permission profile");
+        let root = cwd.ancestors().last().expect("filesystem root");
+        let root_read_with_explicit_path =
+            ResolvedWindowsSandboxPermissions::try_from_permission_profile(
+                &permission_profile_with_entries(vec![FileSystemSandboxEntry::new(
+                    FileSystemPath::Path {
+                        path: AbsolutePathBuf::from_absolute_path(root)
+                            .expect("absolute root")
+                            .into(),
+                    },
+                    FileSystemAccessMode::Read,
+                )]),
+            )
+            .expect("managed permission profile");
+        let root_read_with_root_deny_glob =
+            ResolvedWindowsSandboxPermissions::try_from_permission_profile(
+                &permission_profile_with_entries(vec![
+                    FileSystemSandboxEntry::new(
+                        FileSystemPath::Special {
+                            value: FileSystemSpecialPath::Root,
+                        },
+                        FileSystemAccessMode::Read,
+                    ),
+                    FileSystemSandboxEntry::new(
+                        FileSystemPath::GlobPattern {
+                            pattern: root.join("**").display().to_string(),
+                        },
+                        FileSystemAccessMode::Deny,
+                    ),
+                ]),
+            )
+            .expect("managed permission profile");
+
+        assert!(
+            default_root_denied
+                .validate_elevated_filesystem_policy(&cwd)
+                .is_err()
+        );
+        assert!(
+            root_read_with_carveout
+                .validate_elevated_filesystem_policy(&cwd)
+                .is_ok()
+        );
+        assert!(
+            root_read_with_explicit_path
+                .validate_elevated_filesystem_policy(&cwd)
+                .is_ok()
+        );
+        assert!(
+            root_read_with_root_deny_glob
+                .validate_elevated_filesystem_policy(&cwd)
+                .is_err()
+        );
+    }
+
+    #[test]
     fn token_mode_rejects_full_disk_write_entries() {
         let tmp = TempDir::new().expect("tempdir");
         let cwd = tmp.path().join("workspace");
@@ -456,6 +589,7 @@ mod tests {
                         value: FileSystemSpecialPath::Root,
                     },
                     access: FileSystemAccessMode::Write,
+                    missing_path_behavior: None,
                 }],
                 glob_scan_max_depth: None,
             },

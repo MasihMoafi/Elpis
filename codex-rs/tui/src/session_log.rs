@@ -1,4 +1,3 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use std::fs::File;
 use std::fs::OpenOptions;
 use std::io::Write;
@@ -121,27 +120,45 @@ pub(crate) fn maybe_init(config: &Config) {
 }
 
 pub(crate) fn log_inbound_app_event(event: &AppEvent) {
-    // Log only if enabled
+    log_inbound_app_event_with(&LOGGER, event);
+}
+
+/// Keep the session-log format even though ticks no longer use the app-event queue.
+pub(crate) fn log_commit_tick() {
     if !LOGGER.is_enabled() {
+        return;
+    }
+    let value = json!({
+        "ts": now_ts(),
+        "dir": "to_tui",
+        "kind": "app_event",
+        "variant": "CommitTick",
+    });
+    LOGGER.write_json_line(value);
+}
+
+fn log_inbound_app_event_with(logger: &SessionLogger, event: &AppEvent) {
+    // Log only if enabled
+    if !logger.is_enabled() {
         return;
     }
 
     match event {
-        AppEvent::NewSession => {
+        AppEvent::NewSession { .. } => {
             let value = json!({
                 "ts": now_ts(),
                 "dir": "to_tui",
                 "kind": "new_session",
             });
-            LOGGER.write_json_line(value);
+            logger.write_json_line(value);
         }
-        AppEvent::ClearUi => {
+        AppEvent::ClearUi { .. } => {
             let value = json!({
                 "ts": now_ts(),
                 "dir": "to_tui",
                 "kind": "clear_ui",
             });
-            LOGGER.write_json_line(value);
+            logger.write_json_line(value);
         }
         AppEvent::InsertHistoryCell(cell) => {
             let value = json!({
@@ -150,7 +167,7 @@ pub(crate) fn log_inbound_app_event(event: &AppEvent) {
                 "kind": "insert_history_cell",
                 "lines": cell.transcript_lines(u16::MAX).len(),
             });
-            LOGGER.write_json_line(value);
+            logger.write_json_line(value);
         }
         AppEvent::StartFileSearch(query) => {
             let value = json!({
@@ -159,7 +176,7 @@ pub(crate) fn log_inbound_app_event(event: &AppEvent) {
                 "kind": "file_search_start",
                 "query": query,
             });
-            LOGGER.write_json_line(value);
+            logger.write_json_line(value);
         }
         AppEvent::FileSearchResult { query, matches } => {
             let value = json!({
@@ -169,17 +186,45 @@ pub(crate) fn log_inbound_app_event(event: &AppEvent) {
                 "query": query,
                 "matches": matches.len(),
             });
-            LOGGER.write_json_line(value);
+            logger.write_json_line(value);
         }
-        // Noise or control flow – record variant only
-        other => {
+        AppEvent::PetPreviewLoaded { request_id, result } => {
             let value = json!({
                 "ts": now_ts(),
                 "dir": "to_tui",
                 "kind": "app_event",
-                "variant": format!("{other:?}").split('(').next().unwrap_or("app_event"),
+                "variant": "PetPreviewLoaded",
+                "request_id": request_id,
+                "ok": result.is_ok(),
             });
-            LOGGER.write_json_line(value);
+            logger.write_json_line(value);
+        }
+        AppEvent::PetSelectionLoaded {
+            request_id,
+            pet_id,
+            result,
+        } => {
+            let value = json!({
+                "ts": now_ts(),
+                "dir": "to_tui",
+                "kind": "app_event",
+                "variant": "PetSelectionLoaded",
+                "request_id": request_id,
+                "pet_id": pet_id,
+                "ok": result.is_ok(),
+            });
+            logger.write_json_line(value);
+        }
+        // Noise or control flow – record variant only
+        other => {
+            let variant: &'static str = other.into();
+            let value = json!({
+                "ts": now_ts(),
+                "dir": "to_tui",
+                "kind": "app_event",
+                "variant": variant,
+            });
+            logger.write_json_line(value);
         }
     }
 }
@@ -215,3 +260,7 @@ where
     });
     LOGGER.write_json_line(value);
 }
+
+#[cfg(test)]
+#[path = "session_log_tests.rs"]
+mod tests;

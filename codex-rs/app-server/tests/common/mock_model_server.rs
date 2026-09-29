@@ -22,7 +22,6 @@ pub async fn create_mock_responses_server_sequence(responses: Vec<String>) -> Mo
 
     Mock::given(method("POST"))
         .and(path_regex(".*/responses$"))
-        .and(responses::NotSessionNaming)
         .respond_with(seq_responder)
         .expect(num_calls as u64)
         .mount(&server)
@@ -43,7 +42,6 @@ pub async fn create_mock_responses_server_sequence_unchecked(responses: Vec<Stri
 
     Mock::given(method("POST"))
         .and(path_regex(".*/responses$"))
-        .and(responses::NotSessionNaming)
         .respond_with(seq_responder)
         .mount(&server)
         .await;
@@ -77,7 +75,6 @@ pub async fn create_mock_responses_server_repeating_assistant(message: &str) -> 
     ]);
     Mock::given(method("POST"))
         .and(path_regex(".*/responses$"))
-        .and(responses::NotSessionNaming)
         .respond_with(responses::sse_response(body))
         .mount(&server)
         .await;

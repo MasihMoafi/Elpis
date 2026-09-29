@@ -1,23 +1,22 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 //! Default Codex HTTP client: shared `User-Agent`, `originator`, optional residency header, and
-//! reqwest/`HttpClient` construction.
+//! HTTP client and transport construction.
 //!
 //! Use [`crate::default_client`] or [`codex_login::default_client`] from other crates in this
 //! workspace.
 
-use codex_http_client::BuildCustomCaTransportError;
 use codex_http_client::BuildRouteAwareHttpClientError;
 use codex_http_client::ClientRouteClass;
 use codex_http_client::HttpClient;
+use codex_http_client::HttpClientBuilder;
 use codex_http_client::HttpClientFactory;
 use codex_http_client::OutboundProxyPolicy;
 pub use codex_http_client::RequestBuilder as CodexRequestBuilder;
-use codex_http_client::build_reqwest_client_with_custom_ca;
-use codex_http_client::with_chatgpt_cloudflare_cookie_store;
+use codex_http_client::ReqwestTransport;
+use codex_http_client::RouteAwareClientPool;
 use codex_terminal_detection::user_agent;
-use reqwest::header::HeaderMap;
-use reqwest::header::HeaderValue;
-use reqwest::header::USER_AGENT;
+use http::HeaderMap;
+use http::HeaderValue;
+use http::header::USER_AGENT;
 use std::sync::LazyLock;
 use std::sync::Mutex;
 use std::sync::RwLock;
@@ -42,9 +41,10 @@ use crate::outbound_proxy::AuthRouteConfig;
 pub static USER_AGENT_SUFFIX: LazyLock<Mutex<Option<String>>> = LazyLock::new(|| Mutex::new(None));
 pub const DEFAULT_ORIGINATOR: &str = "codex_cli_rs";
 pub const CODEX_INTERNAL_ORIGINATOR_OVERRIDE_ENV_VAR: &str = "CODEX_INTERNAL_ORIGINATOR_OVERRIDE";
-pub const RESIDENCY_HEADER_NAME: &str = "x-openai-internal-codex-residency";
-
-pub use codex_config::ResidencyRequirement;
+pub use codex_model_provider_info::RESIDENCY_HEADER_NAME;
+pub use codex_model_provider_info::ResidencyRequirement;
+pub use codex_model_provider_info::read_managed_residency_requirement as read_default_client_residency_requirement;
+pub use codex_model_provider_info::set_managed_residency_requirement as set_default_client_residency_requirement;
 
 #[derive(Debug, Clone)]
 pub struct Originator {
@@ -52,8 +52,6 @@ pub struct Originator {
     pub header_value: HeaderValue,
 }
 static ORIGINATOR: LazyLock<RwLock<Option<Originator>>> = LazyLock::new(|| RwLock::new(None));
-static REQUIREMENTS_RESIDENCY: LazyLock<RwLock<Option<ResidencyRequirement>>> =
-    LazyLock::new(|| RwLock::new(None));
 static ROUTE_AWARE_CLIENT_BUILD_PERMIT: tokio::sync::Semaphore =
     tokio::sync::Semaphore::const_new(1);
 
@@ -99,14 +97,6 @@ pub fn set_default_originator(value: String) -> Result<(), SetOriginatorError> {
     Ok(())
 }
 
-pub fn set_default_client_residency_requirement(enforce_residency: Option<ResidencyRequirement>) {
-    let Ok(mut guard) = REQUIREMENTS_RESIDENCY.write() else {
-        tracing::warn!("Failed to acquire requirements residency lock");
-        return;
-    };
-    *guard = enforce_residency;
-}
-
 pub fn originator() -> Originator {
     if let Ok(guard) = ORIGINATOR.read()
         && let Some(originator) = guard.as_ref()
@@ -128,6 +118,26 @@ pub fn originator() -> Originator {
     get_originator_value(/*provided*/ None)
 }
 
+/// Adds a valid, non-default thread originator override to request headers.
+///
+/// The default client already supplies the process originator. Thread-scoped callers should use
+/// this helper to override that value only when the thread originator differs.
+pub fn add_originator_header(headers: &mut HeaderMap, originator_value: &str) {
+    let default_originator = originator();
+    if originator_value == default_originator.value.as_str() {
+        return;
+    }
+
+    match HeaderValue::from_str(originator_value) {
+        Ok(header_value) => {
+            headers.insert("originator", header_value);
+        }
+        Err(err) => {
+            tracing::warn!("ignoring invalid thread originator header value: {err}");
+        }
+    }
+}
+
 pub fn is_first_party_originator(originator_value: &str) -> bool {
     originator_value == DEFAULT_ORIGINATOR
         || originator_value == "codex-tui"
@@ -140,8 +150,11 @@ pub fn is_first_party_chat_originator(originator_value: &str) -> bool {
 }
 
 pub fn get_codex_user_agent() -> String {
+    // OS discovery can spawn subprocesses on Linux. Reuse it across requests,
+    // while continuing to read the mutable originator and suffix below.
+    static OS_INFO: LazyLock<os_info::Info> = LazyLock::new(os_info::get);
     let build_version = env!("CARGO_PKG_VERSION");
-    let os_info = os_info::get();
+    let os_info = &*OS_INFO;
     let originator = originator();
     let prefix = format!(
         "{}/{build_version} ({} {}; {}) {}",
@@ -199,136 +212,244 @@ fn sanitize_user_agent(candidate: String, fallback: &str) -> String {
 
 /// Create an HTTP client with default `originator` and `User-Agent` headers set.
 ///
-/// This supported default path preserves reqwest's existing proxy behavior and does not opt into
+/// This supported default path preserves the transport's existing proxy behavior and does not opt into
 /// Codex's route-aware system/PAC resolution.
 pub fn create_client() -> HttpClient {
-    let inner = build_reqwest_client();
-    HttpClient::new(inner)
+    build_default_client(default_http_client_builder())
 }
 
-/// Builds the default reqwest client used for ordinary Codex HTTP traffic.
-///
-/// This starts from the standard Codex user agent, default headers, and sandbox-specific proxy
-/// policy, then layers in shared custom CA handling from `CODEX_CA_CERTIFICATE` /
-/// `SSL_CERT_FILE`. The function remains infallible for compatibility with existing call sites, so
-/// a custom-CA or builder failure is logged and falls back to `reqwest::Client::new()`.
-///
-/// This supported default path preserves reqwest's existing proxy behavior and does not opt into
-/// Codex's route-aware system/PAC resolution. Auth callers with route settings must use
-/// `build_default_auth_reqwest_client` or `create_default_auth_client`.
-pub fn build_reqwest_client() -> reqwest::Client {
-    try_build_reqwest_client().unwrap_or_else(|error| {
-        tracing::warn!(error = %error, "failed to build default reqwest client");
-        with_chatgpt_cloudflare_cookie_store(reqwest::Client::builder())
-            .build()
-            .unwrap_or_else(|fallback_error| {
-                tracing::warn!(
-                    error = %fallback_error,
-                    "failed to build fallback reqwest client with ChatGPT Cloudflare cookie store"
-                );
-                reqwest::Client::new()
-            })
-    })
+/// Creates an API client retaining managed policy, ChatGPT cookies, and no request diagnostics.
+pub fn create_client_with_chatgpt_cookies(http_client_factory: &HttpClientFactory) -> HttpClient {
+    let builder = default_http_client_builder()
+        .with_chatgpt_cookies(http_client_factory)
+        .without_request_logging();
+    if !http_client_factory.network_policy().is_managed() {
+        return build_default_client(builder);
+    }
+    let mut pool = RouteAwareClientPool::with_builder(
+        http_client_factory.clone(),
+        ClientRouteClass::Api,
+        builder,
+    );
+    if is_sandboxed() {
+        pool = pool.with_legacy_direct_proxy_and_custom_ca_fallback();
+    } else if matches!(
+        http_client_factory.outbound_proxy_policy(),
+        OutboundProxyPolicy::ReqwestDefault
+    ) {
+        pool = pool.with_legacy_custom_ca_fallback();
+    }
+    pool.into_client()
 }
 
-/// Tries to build the default reqwest client used for ordinary Codex HTTP traffic.
+/// Create the default HTTP client without request URL or response-header diagnostics.
 ///
-/// Callers that need a structured CA-loading failure instead of the legacy logged fallback can use
-/// this method directly.
-pub fn try_build_reqwest_client() -> Result<reqwest::Client, BuildCustomCaTransportError> {
-    build_reqwest_client_with_custom_ca(default_reqwest_client_builder())
+/// This preserves the default client's legacy custom-CA fallback and transport proxy behavior while
+/// avoiding diagnostics that could expose credentials embedded in request URLs or headers.
+pub fn create_client_without_request_logging() -> HttpClient {
+    build_default_client(default_http_client_builder().without_request_logging())
 }
 
-/// Builds the default Codex reqwest client for a concrete outbound route.
+/// Builds the default Codex HTTP client for a concrete outbound route.
 ///
 /// When route-aware proxy handling is disabled, or the client is running inside the Codex
 /// sandbox, this preserves the default client's existing proxy behavior. Otherwise it resolves
 /// the destination through the shared system/PAC-aware routing policy.
-pub fn build_default_reqwest_client_for_route(
+pub fn create_client_for_route(
     http_client_factory: &HttpClientFactory,
     request_url: &str,
     route_class: ClientRouteClass,
-) -> Result<reqwest::Client, BuildRouteAwareHttpClientError> {
+    redirect_policy: ClientRedirectPolicy,
+) -> Result<HttpClient, BuildRouteAwareHttpClientError> {
+    let builder = match redirect_policy {
+        ClientRedirectPolicy::Default => default_http_client_builder(),
+        ClientRedirectPolicy::Reject => default_http_client_builder().without_redirects(),
+    };
+    create_client_for_route_with_builder(http_client_factory, request_url, route_class, builder)
+}
+
+fn create_client_for_route_with_builder(
+    http_client_factory: &HttpClientFactory,
+    request_url: &str,
+    route_class: ClientRouteClass,
+    builder: HttpClientBuilder,
+) -> Result<HttpClient, BuildRouteAwareHttpClientError> {
+    if http_client_factory.network_policy().is_managed() {
+        let mut pool = codex_http_client::RouteAwareClientPool::with_builder(
+            http_client_factory.clone(),
+            route_class,
+            builder,
+        );
+        if is_sandboxed() {
+            pool = pool.with_legacy_direct_proxy_and_custom_ca_fallback();
+        } else if matches!(
+            http_client_factory.outbound_proxy_policy(),
+            OutboundProxyPolicy::ReqwestDefault
+        ) {
+            pool = pool.with_legacy_custom_ca_fallback();
+        }
+        return Ok(pool.into_client());
+    }
     if matches!(
         http_client_factory.outbound_proxy_policy(),
         OutboundProxyPolicy::ReqwestDefault
     ) {
-        return Ok(build_reqwest_client());
+        return Ok(build_default_client(builder));
     }
     if is_sandboxed() {
         // Preserve the sandbox's existing no-proxy policy; sandboxed command egress is routed
         // separately through network-proxy.
-        return Ok(build_reqwest_client());
+        return Ok(build_default_client(builder));
     }
 
-    http_client_factory.build_reqwest_client(
-        default_reqwest_client_builder(),
-        request_url,
-        route_class,
-    )
+    builder.build_respecting_outbound_proxy_policy(http_client_factory, request_url, route_class)
 }
 
-/// Builds the default Codex reqwest client for a concrete outbound route without blocking the
+/// Redirect handling for the shared HTTP client builders.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ClientRedirectPolicy {
+    Default,
+    Reject,
+}
+
+/// Builds the default Codex HTTP client for a concrete outbound route without blocking the
 /// async runtime worker that initiated the request.
-pub async fn build_default_reqwest_client_for_route_async(
+pub async fn create_client_for_route_async(
     http_client_factory: HttpClientFactory,
     request_url: String,
     route_class: ClientRouteClass,
-) -> std::io::Result<reqwest::Client> {
+    redirect_policy: ClientRedirectPolicy,
+) -> std::io::Result<HttpClient> {
+    create_client_for_route_async_with_builder(
+        http_client_factory,
+        request_url,
+        route_class,
+        move || match redirect_policy {
+            ClientRedirectPolicy::Default => default_http_client_builder(),
+            ClientRedirectPolicy::Reject => default_http_client_builder().without_redirects(),
+        },
+    )
+    .await
+}
+
+/// Builds a routed default client without request URL or response-header diagnostics.
+pub async fn create_client_for_route_without_request_logging_async(
+    http_client_factory: HttpClientFactory,
+    request_url: String,
+    route_class: ClientRouteClass,
+) -> std::io::Result<HttpClient> {
+    create_client_for_route_async_with_builder(
+        http_client_factory,
+        request_url,
+        route_class,
+        || default_http_client_builder().without_request_logging(),
+    )
+    .await
+}
+
+async fn create_client_for_route_async_with_builder(
+    http_client_factory: HttpClientFactory,
+    request_url: String,
+    route_class: ClientRouteClass,
+    builder: impl FnOnce() -> HttpClientBuilder + Send + 'static,
+) -> std::io::Result<HttpClient> {
     let permit = ROUTE_AWARE_CLIENT_BUILD_PERMIT
         .acquire()
         .await
         .map_err(std::io::Error::other)?;
     tokio::task::spawn_blocking(move || {
         let _permit = permit;
-        build_default_reqwest_client_for_route(&http_client_factory, &request_url, route_class)
-            .map_err(std::io::Error::from)
+        create_client_for_route_with_builder(
+            &http_client_factory,
+            &request_url,
+            route_class,
+            builder(),
+        )
+        .map_err(std::io::Error::from)
     })
     .await
     .map_err(std::io::Error::other)?
 }
 
-fn default_reqwest_client_builder() -> reqwest::ClientBuilder {
-    let mut builder = reqwest::Client::builder().default_headers(default_headers());
+/// Builds the default Codex transport without blocking the async runtime worker.
+///
+/// Route-aware proxy handling resolves each request and redirect destination. When it is disabled,
+/// or the client is running inside the Codex sandbox, this preserves the default client's proxy
+/// behavior while retaining managed application network policy enforcement.
+pub async fn create_transport_for_routes_async(
+    http_client_factory: HttpClientFactory,
+    route_class: ClientRouteClass,
+) -> std::io::Result<ReqwestTransport> {
+    let permit = ROUTE_AWARE_CLIENT_BUILD_PERMIT
+        .acquire()
+        .await
+        .map_err(std::io::Error::other)?;
+    tokio::task::spawn_blocking(move || {
+        let _permit = permit;
+        let sandboxed = is_sandboxed();
+        let transport_default_proxy = matches!(
+            http_client_factory.outbound_proxy_policy(),
+            OutboundProxyPolicy::ReqwestDefault
+        );
+        if !http_client_factory.network_policy().is_managed()
+            && (transport_default_proxy || sandboxed)
+        {
+            return ReqwestTransport::from_http_client(create_client());
+        }
+
+        let mut pool = RouteAwareClientPool::with_builder(
+            http_client_factory,
+            route_class,
+            default_http_client_builder(),
+        );
+        if sandboxed {
+            pool = pool.with_legacy_direct_proxy_and_custom_ca_fallback();
+        } else if transport_default_proxy {
+            pool = pool.with_legacy_custom_ca_fallback();
+        }
+        ReqwestTransport::from_route_aware_client_pool(pool)
+    })
+    .await
+    .map_err(std::io::Error::other)
+}
+
+fn default_http_client_builder() -> HttpClientBuilder {
+    HttpClientBuilder::new()
+        .default_headers(default_headers())
+        .with_chatgpt_cloudflare_cookie_store()
+}
+
+// These legacy constructors intentionally preserve the infallible behavior of `create_client`.
+// New endpoint-aware call sites use `create_client_for_route` and propagate construction errors.
+#[allow(deprecated)]
+fn build_default_client(builder: HttpClientBuilder) -> HttpClient {
     if is_sandboxed() {
-        builder = builder.no_proxy();
+        builder.build_direct_with_custom_ca_fallback()
+    } else {
+        builder.build_with_transport_default_proxy_and_custom_ca_fallback()
     }
-    with_chatgpt_cloudflare_cookie_store(builder)
 }
 
 /// Builds an HTTP client for an auth endpoint without Codex default headers.
 pub(crate) fn create_raw_auth_client(
     endpoint: &str,
-    auth_route_config: Option<&AuthRouteConfig>,
+    auth_route_config: &AuthRouteConfig,
 ) -> Result<HttpClient, BuildRouteAwareHttpClientError> {
-    auth_http_client_factory(auth_route_config)
+    auth_route_config
+        .authentication_factory(endpoint)
         .build_client_without_request_logging(endpoint, ClientRouteClass::Auth)
-}
-
-/// Builds the default Codex reqwest client for an auth endpoint.
-pub(crate) fn build_default_auth_reqwest_client(
-    endpoint: &str,
-    auth_route_config: Option<&AuthRouteConfig>,
-) -> Result<reqwest::Client, BuildRouteAwareHttpClientError> {
-    build_default_reqwest_client_for_route(
-        &auth_http_client_factory(auth_route_config),
-        endpoint,
-        ClientRouteClass::Auth,
-    )
 }
 
 /// Builds the default Codex HTTP client wrapper for an auth endpoint.
 pub(crate) fn create_default_auth_client(
     endpoint: &str,
-    auth_route_config: Option<&AuthRouteConfig>,
+    auth_route_config: &AuthRouteConfig,
 ) -> Result<HttpClient, BuildRouteAwareHttpClientError> {
-    build_default_auth_reqwest_client(endpoint, auth_route_config).map(HttpClient::new)
-}
-
-fn auth_http_client_factory(auth_route_config: Option<&AuthRouteConfig>) -> HttpClientFactory {
-    auth_route_config.map_or_else(
-        || HttpClientFactory::new(OutboundProxyPolicy::ReqwestDefault),
-        |config| config.http_client_factory().clone(),
+    create_client_for_route(
+        &auth_route_config.authentication_factory(endpoint),
+        endpoint,
+        ClientRouteClass::Auth,
+        ClientRedirectPolicy::Default,
     )
 }
 
@@ -338,10 +459,7 @@ pub fn default_headers() -> HeaderMap {
     if let Ok(user_agent) = HeaderValue::from_str(&get_codex_user_agent()) {
         headers.insert(USER_AGENT, user_agent);
     }
-    if let Ok(guard) = REQUIREMENTS_RESIDENCY.read()
-        && let Some(requirement) = guard.as_ref()
-        && !headers.contains_key(RESIDENCY_HEADER_NAME)
-    {
+    if let Some(requirement) = read_default_client_residency_requirement() {
         let value = match requirement {
             ResidencyRequirement::Us => HeaderValue::from_static("us"),
         };

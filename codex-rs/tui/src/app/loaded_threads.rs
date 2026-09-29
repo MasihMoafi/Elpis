@@ -1,4 +1,3 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 //! Discovers subagent threads that belong to a primary thread by walking spawn-tree edges.
 //!
 //! When the TUI resumes or switches to an existing thread, it needs to populate
@@ -15,8 +14,10 @@
 //! `SessionSource::SubAgent(ThreadSpawn { parent_thread_id, .. })` edges until no new children are
 //! found. The primary thread itself is never included in the output.
 
+use crate::app_server_session::thread_blocks_direct_input;
 use codex_app_server_protocol::SessionSource;
 use codex_app_server_protocol::Thread;
+use codex_app_server_protocol::ThreadStatus;
 use codex_protocol::ThreadId;
 use codex_protocol::protocol::SubAgentSource;
 use std::collections::HashMap;
@@ -30,6 +31,9 @@ pub(crate) struct LoadedSubagentThread {
     pub(crate) agent_nickname: Option<String>,
     pub(crate) agent_role: Option<String>,
     pub(crate) agent_path: Option<String>,
+    pub(crate) blocks_direct_input: bool,
+    pub(crate) is_running: bool,
+    pub(crate) is_closed: bool,
 }
 
 /// Walks the spawn tree rooted at `primary_thread_id` and returns every descendant subagent.
@@ -85,6 +89,9 @@ pub(crate) fn find_loaded_subagent_threads_for_primary(
             threads_by_id
                 .remove(&thread_id)
                 .map(|thread| LoadedSubagentThread {
+                    blocks_direct_input: thread_blocks_direct_input(&thread),
+                    is_running: matches!(&thread.status, ThreadStatus::Active { .. }),
+                    is_closed: matches!(&thread.status, ThreadStatus::NotLoaded),
                     thread_id,
                     agent_nickname: thread.agent_nickname,
                     agent_role: thread.agent_role,
@@ -105,33 +112,6 @@ fn thread_spawn_agent_path(source: &SessionSource) -> Option<String> {
     }
 }
 
-/// Whether a newly started thread hangs off a spawn tree this window owns.
-///
-/// The app server announces every thread it starts, including threads started by
-/// another Elpis window talking to the same server. A thread qualifies only when
-/// it was spawned by the primary thread or by an agent this window already
-/// tracks; a plain session, a fork, or another window's work is someone else's
-/// thread and must not appear in this window's agent list.
-pub(super) fn thread_belongs_to_window(
-    thread: &Thread,
-    primary_thread_id: Option<ThreadId>,
-    window_tracks: impl Fn(ThreadId) -> bool,
-) -> bool {
-    // A subagent names its parent twice: in the spawn source it was created
-    // with, and in the thread's own `parent_thread_id`. Either answer will do;
-    // a thread that gives neither is not a child of anything here.
-    let parent_thread_id = thread_spawn_parent_thread_id(&thread.source).or_else(|| {
-        thread
-            .parent_thread_id
-            .as_deref()
-            .and_then(|id| ThreadId::from_string(id).ok())
-    });
-    let Some(parent_thread_id) = parent_thread_id else {
-        return false;
-    };
-    primary_thread_id == Some(parent_thread_id) || window_tracks(parent_thread_id)
-}
-
 fn thread_spawn_parent_thread_id(source: &SessionSource) -> Option<ThreadId> {
     match source {
         SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
@@ -145,7 +125,6 @@ fn thread_spawn_parent_thread_id(source: &SessionSource) -> Option<ThreadId> {
 mod tests {
     use super::LoadedSubagentThread;
     use super::find_loaded_subagent_threads_for_primary;
-    use super::thread_belongs_to_window;
     use codex_app_server_protocol::SessionSource;
     use codex_app_server_protocol::Thread;
     use codex_app_server_protocol::ThreadStatus;
@@ -156,6 +135,8 @@ mod tests {
 
     fn test_thread(thread_id: ThreadId, source: SessionSource) -> Thread {
         Thread {
+            originator: None,
+            environments: None,
             id: thread_id.to_string(),
             extra: None,
             session_id: thread_id.to_string(),
@@ -163,8 +144,14 @@ mod tests {
             parent_thread_id: None,
             preview: String::new(),
             ephemeral: false,
+            section: None,
+            section_entered_at: None,
+            project_id: None,
+            daybreak_enabled: None,
             history_mode: Default::default(),
             model_provider: "openai".to_string(),
+            model: None,
+            reasoning_effort: None,
             created_at: 0,
             updated_at: 0,
             recency_at: Some(0),
@@ -173,6 +160,7 @@ mod tests {
             cwd: test_path_buf("/tmp").abs(),
             cli_version: "0.0.0".to_string(),
             source,
+            can_accept_direct_input: None,
             thread_source: None,
             agent_nickname: None,
             agent_role: None,
@@ -202,62 +190,6 @@ mod tests {
     }
 
     #[test]
-    fn a_thread_started_by_another_window_is_not_adopted_as_a_subagent() {
-        let primary_thread_id =
-            ThreadId::from_string("00000000-0000-0000-0000-000000000001").expect("valid thread");
-        let known_agent_thread_id =
-            ThreadId::from_string("00000000-0000-0000-0000-000000000002").expect("valid thread");
-        let stranger_thread_id =
-            ThreadId::from_string("00000000-0000-0000-0000-000000000003").expect("valid thread");
-        let tracks_known_agent = |thread_id: ThreadId| thread_id == known_agent_thread_id;
-        let spawned_by = |parent: ThreadId| {
-            test_thread(
-                stranger_thread_id,
-                thread_spawn_source(parent, 1, "scout", "explore"),
-            )
-        };
-
-        // Spawned by this window's primary thread, or by an agent it already
-        // tracks: both belong here.
-        assert!(thread_belongs_to_window(
-            &spawned_by(primary_thread_id),
-            Some(primary_thread_id),
-            tracks_known_agent,
-        ));
-        assert!(thread_belongs_to_window(
-            &spawned_by(known_agent_thread_id),
-            Some(primary_thread_id),
-            tracks_known_agent,
-        ));
-
-        // The thread's own `parent_thread_id` answers just as well as the spawn
-        // source it was created with.
-        let mut by_parent_field = test_thread(stranger_thread_id, SessionSource::Unknown);
-        by_parent_field.parent_thread_id = Some(primary_thread_id.to_string());
-        assert!(thread_belongs_to_window(
-            &by_parent_field,
-            Some(primary_thread_id),
-            tracks_known_agent,
-        ));
-
-        // A subagent of a thread this window has never heard of -- another
-        // Elpis window on the same app server -- does not.
-        assert!(!thread_belongs_to_window(
-            &spawned_by(stranger_thread_id),
-            Some(primary_thread_id),
-            tracks_known_agent,
-        ));
-
-        // Neither does a plain session, which is what the other window's own
-        // primary thread looks like.
-        assert!(!thread_belongs_to_window(
-            &test_thread(stranger_thread_id, SessionSource::Cli),
-            Some(primary_thread_id),
-            tracks_known_agent,
-        ));
-    }
-
-    #[test]
     fn finds_loaded_subagent_tree_for_primary_thread() {
         let primary_thread_id =
             ThreadId::from_string("00000000-0000-0000-0000-000000000001").expect("valid thread");
@@ -276,6 +208,10 @@ mod tests {
         );
         child.agent_nickname = Some("Scout".to_string());
         child.agent_role = Some("explorer".to_string());
+        child.can_accept_direct_input = Some(true);
+        child.status = ThreadStatus::Active {
+            active_flags: Vec::new(),
+        };
 
         let mut grandchild = test_thread(
             grandchild_thread_id,
@@ -283,7 +219,8 @@ mod tests {
         );
         grandchild.agent_nickname = Some("Atlas".to_string());
         grandchild.agent_role = Some("worker".to_string());
-
+        grandchild.can_accept_direct_input = Some(false);
+        grandchild.status = ThreadStatus::NotLoaded;
         let unrelated_child = test_thread(
             unrelated_child_id,
             thread_spawn_source(unrelated_parent_id, /*depth*/ 1, "Other", "researcher"),
@@ -303,16 +240,22 @@ mod tests {
             loaded,
             vec![
                 LoadedSubagentThread {
+                    blocks_direct_input: false,
                     thread_id: child_thread_id,
                     agent_nickname: Some("Scout".to_string()),
                     agent_role: Some("explorer".to_string()),
                     agent_path: None,
+                    is_running: true,
+                    is_closed: false,
                 },
                 LoadedSubagentThread {
+                    blocks_direct_input: true,
                     thread_id: grandchild_thread_id,
                     agent_nickname: Some("Atlas".to_string()),
                     agent_role: Some("worker".to_string()),
                     agent_path: None,
+                    is_running: false,
+                    is_closed: true,
                 },
             ]
         );

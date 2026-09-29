@@ -1,11 +1,15 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use crate::policy::is_non_public_ip;
+use crate::runtime::HostBlockDecision;
 use crate::state::NetworkProxyState;
+#[cfg(target_os = "macos")]
+use crate::system_dns::SystemDnsResolver;
 use rama_core::Service;
 use rama_core::error::BoxError;
 use rama_core::error::ErrorExt as _;
 use rama_core::error::OpaqueError;
 use rama_core::extensions::ExtensionsMut;
+use rama_net::address::Host;
+use rama_net::address::HostWithPort;
 use rama_net::address::ProxyAddress;
 use rama_net::client::EstablishedClientConnection;
 use rama_net::transport::TryRefIntoTransportContext;
@@ -18,22 +22,12 @@ use std::sync::Arc;
 
 #[derive(Clone)]
 pub(crate) struct TargetCheckedTcpConnector {
-    policy: TargetPolicy,
+    state: Arc<NetworkProxyState>,
 }
 
 impl TargetCheckedTcpConnector {
     pub(crate) fn new(state: Arc<NetworkProxyState>) -> Self {
-        Self {
-            policy: TargetPolicy::State(state),
-        }
-    }
-
-    pub(crate) fn from_allow_local_binding(allow_local_binding: bool) -> Self {
-        Self {
-            policy: TargetPolicy::Config {
-                allow_local_binding,
-            },
-        }
+        Self { state }
     }
 }
 
@@ -46,13 +40,24 @@ where
     type Error = BoxError;
 
     async fn serve(&self, input: Input) -> Result<Self::Output, Self::Error> {
+        let connector = TcpConnector::new();
+        #[cfg(target_os = "macos")]
+        let connector = connector.with_dns(SystemDnsResolver);
+
         if input.extensions().get::<ProxyAddress>().is_some() {
-            return TcpConnector::new().serve(input).await;
+            return connector.serve(input).await;
         }
 
-        TcpConnector::new()
+        let target = input
+            .try_ref_into_transport_ctx()
+            .map_err(|err| OpaqueError::from_boxed(err.into()).context("read network target"))?
+            .host_with_port()
+            .ok_or_else(|| OpaqueError::from_display("network target is missing a port"))?;
+
+        connector
             .with_connector(TargetCheckedStreamConnector {
-                policy: self.policy.clone(),
+                state: self.state.clone(),
+                target,
             })
             .serve(input)
             .await
@@ -61,14 +66,15 @@ where
 
 #[derive(Clone)]
 struct TargetCheckedStreamConnector {
-    policy: TargetPolicy,
+    state: Arc<NetworkProxyState>,
+    target: HostWithPort,
 }
 
 impl TcpStreamConnector for TargetCheckedStreamConnector {
     type Error = BoxError;
 
     async fn connect(&self, addr: SocketAddr) -> Result<TcpStream, Self::Error> {
-        if !self.policy.allow_local_binding().await? && is_non_public_ip(addr.ip()) {
+        if is_non_public_ip(addr.ip()) && !self.allows_non_public_target(addr).await? {
             return Err(io::Error::new(
                 io::ErrorKind::PermissionDenied,
                 "network target rejected by policy",
@@ -83,24 +89,52 @@ impl TcpStreamConnector for TargetCheckedStreamConnector {
     }
 }
 
-#[derive(Clone)]
-enum TargetPolicy {
-    Config { allow_local_binding: bool },
-    State(Arc<NetworkProxyState>),
-}
+impl TargetCheckedStreamConnector {
+    async fn allows_non_public_target(&self, addr: SocketAddr) -> Result<bool, BoxError> {
+        if self.state.allow_local_binding().await.map_err(|err| {
+            let err: BoxError = err.into();
+            OpaqueError::from_boxed(err)
+                .context("read network proxy config")
+                .into_boxed()
+        })? {
+            return Ok(true);
+        }
 
-impl TargetPolicy {
-    async fn allow_local_binding(&self) -> Result<bool, BoxError> {
-        match self {
-            Self::Config {
-                allow_local_binding,
-            } => Ok(*allow_local_binding),
-            Self::State(state) => state.allow_local_binding().await.map_err(|err| {
+        if !target_matches_non_public_addr(&self.target.host, addr.ip()) {
+            return Ok(false);
+        }
+
+        self.state
+            .host_blocked(&self.target.host.to_string(), self.target.port)
+            .await
+            .map(|decision| decision == HostBlockDecision::Allowed)
+            .map_err(|err| {
                 let err: BoxError = err.into();
                 OpaqueError::from_boxed(err)
-                    .context("read network proxy config")
+                    .context("evaluate network proxy target")
                     .into_boxed()
-            }),
+            })
+    }
+}
+
+pub(crate) fn is_non_public_target(host: &Host) -> bool {
+    match host {
+        Host::Address(ip) => is_non_public_ip(*ip),
+        Host::Name(name) => name
+            .as_str()
+            .trim_end_matches('.')
+            .eq_ignore_ascii_case("localhost"),
+    }
+}
+
+fn target_matches_non_public_addr(host: &Host, addr: std::net::IpAddr) -> bool {
+    match host {
+        Host::Address(ip) => *ip == addr,
+        Host::Name(name) => {
+            name.as_str()
+                .trim_end_matches('.')
+                .eq_ignore_ascii_case("localhost")
+                && addr.is_loopback()
         }
     }
 }
@@ -144,7 +178,7 @@ mod tests {
         let target = listener.local_addr().expect("local addr");
         let connector = TargetCheckedTcpConnector::new(Arc::new(network_proxy_state_for_policy(
             NetworkProxyConfig {
-                allow_local_binding: true,
+                allow_local_binding: Some(true),
                 ..NetworkProxyConfig::default()
             },
         )));
@@ -154,5 +188,57 @@ mod tests {
         let result = Service::serve(&connector, request).await;
 
         assert!(result.is_ok(), "local target should be allowed: {result:?}");
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn direct_connector_allows_explicitly_allowlisted_non_public_target() {
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
+            .await
+            .expect("bind local listener");
+        let target = listener.local_addr().expect("local addr");
+        let mut config = NetworkProxyConfig::default();
+        config.set_allowed_domains(vec![target.ip().to_string()]);
+        let connector =
+            TargetCheckedTcpConnector::new(Arc::new(network_proxy_state_for_policy(config)));
+
+        let request: rama_tcp::client::Request =
+            rama_tcp::client::Request::new(HostWithPort::from(target));
+        let result = Service::serve(&connector, request).await;
+
+        assert!(
+            result.is_ok(),
+            "explicitly allowlisted local target should be allowed: {result:?}"
+        );
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn direct_connector_allows_explicitly_allowlisted_localhost_target() {
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
+            .await
+            .expect("bind local listener");
+        let target = listener.local_addr().expect("local addr");
+        let mut config = NetworkProxyConfig::default();
+        config.set_allowed_domains(vec!["localhost".to_string()]);
+        let connector =
+            TargetCheckedTcpConnector::new(Arc::new(network_proxy_state_for_policy(config)));
+
+        let request: rama_tcp::client::Request =
+            rama_tcp::client::Request::new(HostWithPort::new(Host::LOCALHOST_NAME, target.port()));
+        let result = Service::serve(&connector, request).await;
+
+        assert!(
+            result.is_ok(),
+            "explicitly allowlisted localhost target should be allowed: {result:?}"
+        );
+    }
+
+    #[test]
+    fn resolved_private_address_does_not_match_allowlisted_hostname() {
+        let host = Host::Name("example.com".parse().expect("valid domain"));
+
+        assert!(!target_matches_non_public_addr(
+            &host,
+            Ipv4Addr::LOCALHOST.into()
+        ));
     }
 }

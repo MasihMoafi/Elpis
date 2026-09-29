@@ -10,7 +10,7 @@ Buffer {
         "    a message                           ",
         "    with many                           ",
         "    …                                   ",
-        "    ↑ edit all · enter send             ",
+        "    shift+← edit last queued message    ",
     ],
     styles: [
         x: 0, y: 0, fg: Reset, bg: Reset, underline: Reset, modifier: DIM,
@@ -24,7 +24,8 @@ Buffer {
         x: 13, y: 3, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
         x: 0, y: 4, fg: Reset, bg: Reset, underline: Reset, modifier: DIM | ITALIC,
         x: 5, y: 4, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
-        x: 0, y: 5, fg: Reset, bg: Reset, underline: Reset, modifier: DIM,
-        x: 27, y: 5, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
+        x: 4, y: 5, fg: Reset, bg: Reset, underline: Reset, modifier: BOLD,
+        x: 11, y: 5, fg: Reset, bg: Reset, underline: Reset, modifier: DIM,
+        x: 36, y: 5, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
     ]
 }

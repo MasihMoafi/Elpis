@@ -1,4 +1,3 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use std::ffi::c_void;
 use std::io;
 use windows_sys::Win32::Foundation::GetLastError;
@@ -6,14 +5,20 @@ use windows_sys::Win32::Foundation::HANDLE;
 use windows_sys::Win32::System::Threading::DeleteProcThreadAttributeList;
 use windows_sys::Win32::System::Threading::InitializeProcThreadAttributeList;
 use windows_sys::Win32::System::Threading::LPPROC_THREAD_ATTRIBUTE_LIST;
+use windows_sys::Win32::System::Threading::PROC_THREAD_ATTRIBUTE_DESKTOP_APP_POLICY;
 use windows_sys::Win32::System::Threading::UpdateProcThreadAttribute;
+use windows_sys::Win32::System::WindowsProgramming::PROCESS_CREATION_DESKTOP_APP_BREAKAWAY_DISABLE_PROCESS_TREE;
+use windows_sys::Win32::System::WindowsProgramming::PROCESS_CREATION_DESKTOP_APP_BREAKAWAY_OVERRIDE;
 
 const PROC_THREAD_ATTRIBUTE_HANDLE_LIST: usize = 0x0002_0002;
+const PROC_THREAD_ATTRIBUTE_JOB_LIST: usize = 0x0002_000D;
 const PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE: usize = 0x0002_0016;
 
 pub struct ProcThreadAttributeList {
     buffer: Vec<u8>,
-    handle_list: Option<Vec<HANDLE>>,
+    handle_list: Vec<HANDLE>,
+    job_list: Vec<HANDLE>,
+    desktop_app_policy: Option<Box<u32>>,
 }
 
 impl ProcThreadAttributeList {
@@ -37,7 +42,9 @@ impl ProcThreadAttributeList {
         }
         Ok(Self {
             buffer,
-            handle_list: None,
+            handle_list: Vec::new(),
+            job_list: Vec::new(),
+            desktop_app_policy: None,
         })
     }
 
@@ -46,39 +53,73 @@ impl ProcThreadAttributeList {
     }
 
     pub fn set_pseudoconsole(&mut self, hpc: isize) -> io::Result<()> {
-        let list = self.as_mut_ptr();
-        let ok = unsafe {
-            UpdateProcThreadAttribute(
-                list,
-                0,
+        // SAFETY: `hpc` is the Windows-defined value and size for this attribute.
+        unsafe {
+            self.update(
                 PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE,
                 hpc as *mut c_void,
                 std::mem::size_of::<HANDLE>(),
-                std::ptr::null_mut(),
-                std::ptr::null_mut(),
             )
-        };
-        if ok == 0 {
-            return Err(io::Error::from_raw_os_error(unsafe {
-                GetLastError() as i32
-            }));
         }
-        Ok(())
     }
 
     pub fn set_handle_list(&mut self, handles: Vec<HANDLE>) -> io::Result<()> {
-        self.handle_list = Some(handles);
-        let list = self.as_mut_ptr();
-        let Some(handle_list) = self.handle_list.as_mut() else {
-            return Err(io::Error::other("handle list missing after initialization"));
-        };
+        self.handle_list = handles;
+        let value = self.handle_list.as_mut_ptr().cast();
+        let size = std::mem::size_of_val(self.handle_list.as_slice());
+        // SAFETY: `value` points to `self.handle_list`, which remains alive
+        // while the attribute list can reference it, and `size` covers that slice.
+        unsafe { self.update(PROC_THREAD_ATTRIBUTE_HANDLE_LIST, value, size) }
+    }
+
+    pub fn set_job(&mut self, job: HANDLE) -> io::Result<()> {
+        // Sandboxed processes must enter the job atomically. If Windows cannot
+        // honor the job list (for example, because a parent job forbids
+        // nesting), fail the spawn rather than briefly run an uncontained
+        // sandbox process tree.
+        self.job_list = vec![job];
+        let value = self.job_list.as_mut_ptr().cast();
+        let size = std::mem::size_of_val(self.job_list.as_slice());
+        // SAFETY: `value` points to `self.job_list`, which remains alive while
+        // the attribute list can reference it, and `size` covers that slice.
+        unsafe { self.update(PROC_THREAD_ATTRIBUTE_JOB_LIST, value, size) }
+    }
+
+    pub fn preserve_desktop_app_context(&mut self) -> io::Result<()> {
+        // System shells otherwise leave the package environment and cannot launch
+        // children from its protected directory. Keep the initial child and descendants
+        // inside it, using the caller-provided restricted token and job containment.
+        // Compare compatibility outcomes via codex.windows_sandbox.runner_result.
+        // https://learn.microsoft.com/windows/win32/api/processthreadsapi/nf-processthreadsapi-updateprocthreadattribute
+        let policy = self.desktop_app_policy.insert(Box::new(
+            PROCESS_CREATION_DESKTOP_APP_BREAKAWAY_DISABLE_PROCESS_TREE
+                | PROCESS_CREATION_DESKTOP_APP_BREAKAWAY_OVERRIDE,
+        ));
+        let value = std::ptr::from_mut(policy.as_mut()).cast();
+        // SAFETY: the boxed DWORD remains at a stable address through process creation,
+        // even if the attribute list moves. It is released after DeleteProcThreadAttributeList.
+        unsafe {
+            self.update(
+                PROC_THREAD_ATTRIBUTE_DESKTOP_APP_POLICY as usize,
+                value,
+                std::mem::size_of::<u32>(),
+            )
+        }
+    }
+
+    unsafe fn update(
+        &mut self,
+        attribute: usize,
+        value: *mut c_void,
+        size: usize,
+    ) -> io::Result<()> {
         let ok = unsafe {
             UpdateProcThreadAttribute(
-                list,
+                self.as_mut_ptr(),
                 0,
-                PROC_THREAD_ATTRIBUTE_HANDLE_LIST,
-                handle_list.as_mut_ptr().cast(),
-                std::mem::size_of_val(handle_list.as_slice()),
+                attribute,
+                value,
+                size,
                 std::ptr::null_mut(),
                 std::ptr::null_mut(),
             )

@@ -7,6 +7,7 @@ use crate::exec_output::ExecToolCallOutput;
 use crate::network_policy::NetworkPolicyDecisionPayload;
 use crate::protocol::CodexErrorInfo;
 use crate::protocol::ErrorEvent;
+use crate::protocol::MisalignmentErrorDetails;
 use crate::protocol::RateLimitReachedType;
 use crate::protocol::RateLimitSnapshot;
 use crate::protocol::TruncationPolicy;
@@ -15,12 +16,17 @@ use chrono::Datelike;
 use chrono::Local;
 use chrono::Utc;
 use codex_async_utils::CancelErr;
+use codex_async_utils::backoff;
+use codex_http_client::HttpError;
+use codex_http_client::RetryAfter;
 use codex_utils_string::truncate_middle_chars;
 use codex_utils_string::truncate_middle_with_token_budget;
-use reqwest::StatusCode;
+use http::StatusCode;
 use serde_json;
+use std::fmt;
 use std::io;
 use std::time::Duration;
+use strum_macros::EnumDiscriminants;
 use thiserror::Error;
 use tokio::task::JoinError;
 
@@ -64,8 +70,18 @@ pub enum SandboxErr {
     LandlockRestrict,
 }
 
-#[derive(Error, Debug)]
-pub enum CodexErr {
+pub struct CodexErr {
+    details: CodexErrorDetails,
+    retry_after: Option<RetryAfter>,
+}
+
+/// The semantic category and diagnostic payload for a [`CodexErr`].
+#[derive(Error, Debug, EnumDiscriminants)]
+#[strum_discriminants(name(CodexErrKind))]
+#[strum_discriminants(derive(serde::Serialize))]
+#[strum_discriminants(serde(rename_all = "snake_case"))]
+#[strum_discriminants(doc = "The payload-free semantic category used for analytics.")]
+pub enum CodexErrorDetails {
     #[error("turn aborted. Something went wrong? Hit `/feedback` to report the issue.")]
     TurnAborted,
 
@@ -76,10 +92,12 @@ pub enum CodexErr {
     /// handshake has succeeded but **before** it finished emitting `response.completed`.
     ///
     /// The Session loop treats this as a transient error and will automatically retry the turn.
-    ///
-    /// Optionally includes the requested delay before retrying the turn.
     #[error("stream disconnected before completion: {0}")]
-    Stream(String, Option<Duration>),
+    Stream(String),
+    /// A retryable upstream rate limit received inside the response stream.
+    #[error("rate limit exceeded: {0}")]
+    RateLimitExceeded(String),
+    // The iOS input-limit classifier matches this message's ASCII prefix.
     #[error(
         "Codex ran out of room in the model's context window. Start a new thread or clear earlier history before retrying."
     )]
@@ -109,6 +127,11 @@ pub enum CodexErr {
     /// Invalid request.
     #[error("{0}")]
     InvalidRequest(String),
+    #[error("{message}")]
+    InvalidPrompt { message: String },
+    /// Multiple registered tools share the same effective name.
+    #[error("duplicate tool: {0}")]
+    ToolCollision(String),
     /// Invalid image.
     #[error("Image poisoning")]
     InvalidImageRequest(),
@@ -116,8 +139,17 @@ pub enum CodexErr {
     UsageLimitReached(UsageLimitReachedError),
     #[error("Selected model is at capacity. Please try a different model.")]
     ServerOverloaded,
+    #[error("Flex capacity unavailable.")]
+    FlexUnavailable,
     #[error("{message}")]
     CyberPolicy { message: String },
+    #[error("{message}")]
+    BioPolicy { message: String },
+    #[error("{message}")]
+    MisalignmentPolicyViolation {
+        message: String,
+        misalignment: Option<MisalignmentErrorDetails>,
+    },
     #[error("{0}")]
     ResponseStreamFailed(ResponseStreamFailed),
     #[error("{0}")]
@@ -128,7 +160,7 @@ pub enum CodexErr {
         "To use Codex with your ChatGPT plan, upgrade to Plus: https://chatgpt.com/explore/plus."
     )]
     UsageNotIncluded,
-    #[error("We're currently experiencing high demand, which may cause temporary errors.")]
+    #[error("We’re currently experiencing high demand, which may cause temporary errors.")]
     InternalServerError,
     /// Retry limit exceeded.
     #[error("{0}")]
@@ -166,87 +198,300 @@ pub enum CodexErr {
     EnvVar(EnvVarError),
 }
 
-impl From<CancelErr> for CodexErr {
-    fn from(_: CancelErr) -> Self {
-        CodexErr::TurnAborted
+impl From<&CodexErr> for CodexErrKind {
+    fn from(error: &CodexErr) -> Self {
+        error.details().into()
     }
 }
 
-impl CodexErr {
-    pub fn is_retryable(&self) -> bool {
-        match self {
-            CodexErr::TurnAborted
-            | CodexErr::SessionBudgetExceeded
-            | CodexErr::Interrupted
-            | CodexErr::EnvVar(_)
-            | CodexErr::Fatal(_)
-            | CodexErr::UsageNotIncluded
-            | CodexErr::QuotaExceeded
-            | CodexErr::InvalidImageRequest()
-            | CodexErr::InvalidRequest(_)
-            | CodexErr::RefreshTokenFailed(_)
-            | CodexErr::UnsupportedOperation(_)
-            | CodexErr::Sandbox(_)
-            | CodexErr::LandlockSandboxExecutableNotProvided
-            | CodexErr::RetryLimit(_)
-            | CodexErr::ContextWindowExceeded
-            | CodexErr::ThreadNotFound(_)
-            | CodexErr::AgentLimitReached { .. }
-            | CodexErr::Spawn
-            | CodexErr::SessionConfiguredNotFirstEvent
-            | CodexErr::UsageLimitReached(_)
-            | CodexErr::ServerOverloaded
-            | CodexErr::CyberPolicy { .. } => false,
-            CodexErr::Stream(..)
-            | CodexErr::Timeout
-            | CodexErr::RequestTimeout
-            | CodexErr::UnexpectedStatus(_)
-            | CodexErr::ResponseStreamFailed(_)
-            | CodexErr::ConnectionFailed(_)
-            | CodexErr::InternalServerError
-            | CodexErr::InternalAgentDied
-            | CodexErr::Io(_)
-            | CodexErr::Json(_)
-            | CodexErr::TokioJoin(_) => true,
-            #[cfg(target_os = "linux")]
-            CodexErr::LandlockRuleset(_) | CodexErr::LandlockPathFd(_) => false,
+impl fmt::Debug for CodexErr {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match &self.details {
+            CodexErrorDetails::Stream(message) => formatter
+                .debug_tuple("Stream")
+                .field(message)
+                .field(&self.server_retry_delay())
+                .finish(),
+            details => fmt::Debug::fmt(details, formatter),
         }
+    }
+}
+
+impl fmt::Display for CodexErr {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Display::fmt(&self.details, formatter)
+    }
+}
+
+impl std::error::Error for CodexErr {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        self.details.source()
+    }
+}
+
+impl From<CodexErrorDetails> for CodexErr {
+    fn from(details: CodexErrorDetails) -> Self {
+        Self {
+            details,
+            retry_after: None,
+        }
+    }
+}
+
+impl From<CancelErr> for CodexErr {
+    fn from(error: CancelErr) -> Self {
+        CodexErrorDetails::from(error).into()
+    }
+}
+
+impl From<SandboxErr> for CodexErr {
+    fn from(error: SandboxErr) -> Self {
+        CodexErrorDetails::from(error).into()
+    }
+}
+
+impl From<io::Error> for CodexErr {
+    fn from(error: io::Error) -> Self {
+        CodexErrorDetails::from(error).into()
+    }
+}
+
+impl From<serde_json::Error> for CodexErr {
+    fn from(error: serde_json::Error) -> Self {
+        CodexErrorDetails::from(error).into()
+    }
+}
+
+impl From<JoinError> for CodexErr {
+    fn from(error: JoinError) -> Self {
+        CodexErrorDetails::from(error).into()
+    }
+}
+
+#[cfg(target_os = "linux")]
+impl From<landlock::RulesetError> for CodexErr {
+    fn from(error: landlock::RulesetError) -> Self {
+        CodexErrorDetails::from(error).into()
+    }
+}
+
+#[cfg(target_os = "linux")]
+impl From<landlock::PathFdError> for CodexErr {
+    fn from(error: landlock::PathFdError) -> Self {
+        CodexErrorDetails::from(error).into()
+    }
+}
+
+impl From<CancelErr> for CodexErrorDetails {
+    fn from(_: CancelErr) -> Self {
+        CodexErrorDetails::TurnAborted
+    }
+}
+
+// TODO(anp): Remove this compatibility macro once callers construct
+// `CodexErrorDetails` directly.
+macro_rules! codex_err_unit_constructors {
+    ($($variant:ident),* $(,)?) => {
+        $(
+            #[doc(hidden)]
+            #[allow(non_upper_case_globals)]
+            pub const $variant: Self = Self {
+                details: CodexErrorDetails::$variant,
+                retry_after: None,
+            };
+        )*
+    };
+}
+
+// TODO(anp): Remove this compatibility macro once callers construct
+// `CodexErrorDetails` directly.
+macro_rules! codex_err_tuple_constructors {
+    ($($(#[$attr:meta])* $variant:ident($value:ident: $value_type:ty)),* $(,)?) => {
+        $(
+            $(#[$attr])*
+            #[doc(hidden)]
+            #[allow(non_snake_case)]
+            pub fn $variant($value: $value_type) -> Self {
+                CodexErrorDetails::$variant($value).into()
+            }
+        )*
+    };
+}
+
+impl CodexErr {
+    codex_err_unit_constructors!(
+        TurnAborted,
+        SessionBudgetExceeded,
+        ContextWindowExceeded,
+        SessionConfiguredNotFirstEvent,
+        Timeout,
+        RequestTimeout,
+        Spawn,
+        Interrupted,
+        ServerOverloaded,
+        QuotaExceeded,
+        UsageNotIncluded,
+        InternalServerError,
+        InternalAgentDied,
+        LandlockSandboxExecutableNotProvided,
+    );
+
+    codex_err_tuple_constructors!(
+        Stream(message: String),
+        ThreadNotFound(thread_id: ThreadId),
+        UnexpectedStatus(error: UnexpectedResponseError),
+        InvalidRequest(message: String),
+        UsageLimitReached(error: UsageLimitReachedError),
+        ResponseStreamFailed(error: ResponseStreamFailed),
+        ConnectionFailed(error: ConnectionFailedError),
+        RetryLimit(error: RetryLimitReachedError),
+        Sandbox(error: SandboxErr),
+        UnsupportedOperation(message: String),
+        RefreshTokenFailed(error: RefreshTokenFailedError),
+        Fatal(message: String),
+        Io(error: io::Error),
+        Json(error: serde_json::Error),
+        #[cfg(target_os = "linux")]
+        LandlockRuleset(error: landlock::RulesetError),
+        #[cfg(target_os = "linux")]
+        LandlockPathFd(error: landlock::PathFdError),
+        TokioJoin(error: JoinError),
+        EnvVar(error: EnvVarError),
+    );
+
+    // TODO(anp): Remove this compatibility constructor once callers construct
+    // `CodexErrorDetails` directly.
+    #[doc(hidden)]
+    #[allow(non_snake_case)]
+    pub fn InvalidImageRequest() -> Self {
+        CodexErrorDetails::InvalidImageRequest().into()
+    }
+
+    /// Creates an error with no server-provided retry delay.
+    pub fn new(details: CodexErrorDetails) -> Self {
+        details.into()
+    }
+
+    /// Returns the semantic failure and its diagnostic payload.
+    pub fn details(&self) -> &CodexErrorDetails {
+        &self.details
+    }
+
+    /// Returns the delay before the given retry attempt, or `None` for a terminal error.
+    ///
+    /// The first retry is attempt one. Retryable errors use server advice when available and
+    /// otherwise use exponential backoff with jitter. Callers enforce their own retry budgets.
+    pub fn retry_delay(&self, retry_count: u64) -> Option<Duration> {
+        match self.details() {
+            CodexErrorDetails::TurnAborted
+            | CodexErrorDetails::SessionBudgetExceeded
+            | CodexErrorDetails::Interrupted
+            | CodexErrorDetails::EnvVar(_)
+            | CodexErrorDetails::Fatal(_)
+            | CodexErrorDetails::UsageNotIncluded
+            | CodexErrorDetails::QuotaExceeded
+            | CodexErrorDetails::InvalidImageRequest()
+            | CodexErrorDetails::InvalidRequest(_)
+            | CodexErrorDetails::InvalidPrompt { .. }
+            | CodexErrorDetails::ToolCollision(_)
+            | CodexErrorDetails::RefreshTokenFailed(_)
+            | CodexErrorDetails::UnsupportedOperation(_)
+            | CodexErrorDetails::Sandbox(_)
+            | CodexErrorDetails::LandlockSandboxExecutableNotProvided
+            | CodexErrorDetails::RetryLimit(_)
+            | CodexErrorDetails::ContextWindowExceeded
+            | CodexErrorDetails::ThreadNotFound(_)
+            | CodexErrorDetails::AgentLimitReached { .. }
+            | CodexErrorDetails::Spawn
+            | CodexErrorDetails::SessionConfiguredNotFirstEvent
+            | CodexErrorDetails::UsageLimitReached(_)
+            | CodexErrorDetails::ServerOverloaded
+            | CodexErrorDetails::FlexUnavailable
+            | CodexErrorDetails::CyberPolicy { .. }
+            | CodexErrorDetails::BioPolicy { .. }
+            | CodexErrorDetails::MisalignmentPolicyViolation { .. } => None,
+            CodexErrorDetails::Stream(..)
+            | CodexErrorDetails::RateLimitExceeded(_)
+            | CodexErrorDetails::Timeout
+            | CodexErrorDetails::RequestTimeout
+            | CodexErrorDetails::UnexpectedStatus(_)
+            | CodexErrorDetails::ResponseStreamFailed(_)
+            | CodexErrorDetails::ConnectionFailed(_)
+            | CodexErrorDetails::InternalServerError
+            | CodexErrorDetails::InternalAgentDied
+            | CodexErrorDetails::Io(_)
+            | CodexErrorDetails::Json(_)
+            | CodexErrorDetails::TokioJoin(_) => Some(
+                self.server_retry_delay()
+                    .unwrap_or_else(|| backoff(retry_count)),
+            ),
+            #[cfg(target_os = "linux")]
+            CodexErrorDetails::LandlockRuleset(_) | CodexErrorDetails::LandlockPathFd(_) => None,
+        }
+    }
+
+    /// Returns the original server-advised instant for callers that pass the error on.
+    pub fn retry_after(&self) -> Option<RetryAfter> {
+        self.retry_after
+    }
+
+    /// Returns the remaining server-advised delay without applying local retry policy.
+    /// Expired advice stays present as zero instead of falling back to a local delay.
+    pub fn server_retry_delay(&self) -> Option<Duration> {
+        self.retry_after.map(RetryAfter::remaining_delay)
+    }
+
+    /// Retains an already captured server deadline without restarting it.
+    pub fn with_retry_after(mut self, retry_after: RetryAfter) -> Self {
+        self.retry_after = Some(retry_after);
+        self
     }
 
     /// Minimal shim so that existing `e.downcast_ref::<CodexErr>()` checks continue to compile
     /// after replacing `anyhow::Error` in the return signature. This mirrors the behavior of
-    /// `anyhow::Error::downcast_ref` but works directly on our concrete enum.
+    /// `anyhow::Error::downcast_ref` but works directly on our concrete error type.
     pub fn downcast_ref<T: std::any::Any>(&self) -> Option<&T> {
         (self as &dyn std::any::Any).downcast_ref::<T>()
     }
 
     /// Translate core error to client-facing protocol error.
     pub fn to_codex_protocol_error(&self) -> CodexErrorInfo {
-        match self {
-            CodexErr::ContextWindowExceeded => CodexErrorInfo::ContextWindowExceeded,
-            CodexErr::SessionBudgetExceeded => CodexErrorInfo::SessionBudgetExceeded,
-            CodexErr::UsageLimitReached(_)
-            | CodexErr::QuotaExceeded
-            | CodexErr::UsageNotIncluded => CodexErrorInfo::UsageLimitExceeded,
-            CodexErr::ServerOverloaded => CodexErrorInfo::ServerOverloaded,
-            CodexErr::CyberPolicy { .. } => CodexErrorInfo::CyberPolicy,
-            CodexErr::RetryLimit(_) => CodexErrorInfo::ResponseTooManyFailedAttempts {
+        match &self.details {
+            CodexErrorDetails::ContextWindowExceeded => CodexErrorInfo::ContextWindowExceeded,
+            CodexErrorDetails::SessionBudgetExceeded => CodexErrorInfo::SessionBudgetExceeded,
+            CodexErrorDetails::RateLimitExceeded(_) => CodexErrorInfo::RateLimitExceeded,
+            CodexErrorDetails::UsageLimitReached(_)
+            | CodexErrorDetails::QuotaExceeded
+            | CodexErrorDetails::UsageNotIncluded => CodexErrorInfo::UsageLimitExceeded,
+            CodexErrorDetails::ServerOverloaded => CodexErrorInfo::ServerOverloaded,
+            CodexErrorDetails::FlexUnavailable => CodexErrorInfo::FlexUnavailable,
+            CodexErrorDetails::CyberPolicy { .. } => CodexErrorInfo::CyberPolicy,
+            CodexErrorDetails::BioPolicy { .. } => CodexErrorInfo::BioPolicy,
+            CodexErrorDetails::InvalidPrompt { .. } => CodexErrorInfo::InvalidPrompt,
+            CodexErrorDetails::MisalignmentPolicyViolation { .. } => {
+                CodexErrorInfo::MisalignmentPolicyViolation
+            }
+            CodexErrorDetails::RetryLimit(_) => CodexErrorInfo::ResponseTooManyFailedAttempts {
                 http_status_code: self.http_status_code_value(),
             },
-            CodexErr::ConnectionFailed(_) => CodexErrorInfo::HttpConnectionFailed {
-                http_status_code: self.http_status_code_value(),
-            },
-            CodexErr::ResponseStreamFailed(_) => CodexErrorInfo::ResponseStreamConnectionFailed {
-                http_status_code: self.http_status_code_value(),
-            },
-            CodexErr::RefreshTokenFailed(_) => CodexErrorInfo::Unauthorized,
-            CodexErr::SessionConfiguredNotFirstEvent
-            | CodexErr::InternalServerError
-            | CodexErr::InternalAgentDied => CodexErrorInfo::InternalServerError,
-            CodexErr::UnsupportedOperation(_)
-            | CodexErr::ThreadNotFound(_)
-            | CodexErr::AgentLimitReached { .. } => CodexErrorInfo::BadRequest,
-            CodexErr::Sandbox(_) => CodexErrorInfo::SandboxError,
+            CodexErrorDetails::ConnectionFailed(_) | CodexErrorDetails::UnexpectedStatus(_) => {
+                CodexErrorInfo::HttpConnectionFailed {
+                    http_status_code: self.http_status_code_value(),
+                }
+            }
+            CodexErrorDetails::ResponseStreamFailed(_) => {
+                CodexErrorInfo::ResponseStreamConnectionFailed {
+                    http_status_code: self.http_status_code_value(),
+                }
+            }
+            CodexErrorDetails::RefreshTokenFailed(_) => CodexErrorInfo::Unauthorized,
+            CodexErrorDetails::SessionConfiguredNotFirstEvent
+            | CodexErrorDetails::InternalServerError
+            | CodexErrorDetails::InternalAgentDied => CodexErrorInfo::InternalServerError,
+            CodexErrorDetails::UnsupportedOperation(_)
+            | CodexErrorDetails::ThreadNotFound(_)
+            | CodexErrorDetails::AgentLimitReached { .. } => CodexErrorInfo::BadRequest,
+            CodexErrorDetails::Sandbox(_) => CodexErrorInfo::SandboxError,
             _ => CodexErrorInfo::Other,
         }
     }
@@ -260,15 +505,22 @@ impl CodexErr {
         ErrorEvent {
             message,
             codex_error_info: Some(self.to_codex_protocol_error()),
+            misalignment: match &self.details {
+                CodexErrorDetails::MisalignmentPolicyViolation { misalignment, .. } => {
+                    misalignment.clone()
+                }
+                _ => None,
+            },
         }
     }
 
     pub fn http_status_code_value(&self) -> Option<u16> {
-        let http_status_code = match self {
-            CodexErr::RetryLimit(err) => Some(err.status),
-            CodexErr::UnexpectedStatus(err) => Some(err.status),
-            CodexErr::ConnectionFailed(err) => err.source.status(),
-            CodexErr::ResponseStreamFailed(err) => err.source.status(),
+        let http_status_code = match &self.details {
+            CodexErrorDetails::FlexUnavailable => Some(StatusCode::TOO_MANY_REQUESTS),
+            CodexErrorDetails::RetryLimit(err) => Some(err.status),
+            CodexErrorDetails::UnexpectedStatus(err) => Some(err.status),
+            CodexErrorDetails::ConnectionFailed(err) => err.source.status(),
+            CodexErrorDetails::ResponseStreamFailed(err) => err.source.status(),
             _ => None,
         };
         http_status_code.as_ref().map(StatusCode::as_u16)
@@ -277,7 +529,7 @@ impl CodexErr {
 
 #[derive(Debug)]
 pub struct ConnectionFailedError {
-    pub source: reqwest::Error,
+    pub source: HttpError,
 }
 
 impl std::fmt::Display for ConnectionFailedError {
@@ -288,7 +540,7 @@ impl std::fmt::Display for ConnectionFailedError {
 
 #[derive(Debug)]
 pub struct ResponseStreamFailed {
-    pub source: reqwest::Error,
+    pub source: HttpError,
     pub request_id: Option<String>,
 }
 
@@ -306,7 +558,7 @@ impl std::fmt::Display for ResponseStreamFailed {
     }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct UnexpectedResponseError {
     pub status: StatusCode,
     pub body: String,
@@ -431,6 +683,8 @@ pub struct UsageLimitReachedError {
 
 impl std::fmt::Display for UsageLimitReachedError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // Reserve is a fallback for exhausted ordinary usage, so keep the standard
+        // promo/plan recovery copy below instead of suggesting another model.
         if let Some(limit_name) = self
             .rate_limits
             .as_ref()
@@ -438,10 +692,11 @@ impl std::fmt::Display for UsageLimitReachedError {
             .map(str::trim)
             .filter(|name| !name.is_empty())
             && !limit_name.eq_ignore_ascii_case("codex")
+            && !limit_name.eq_ignore_ascii_case("gpt-reserve")
         {
             return write!(
                 f,
-                "You've hit your usage limit for {limit_name}. Switch to another model now,{}",
+                "You’ve hit your usage limit for {limit_name}. Switch to another model now,{}",
                 retry_suffix_after_or(self.resets_at.as_ref())
             );
         }
@@ -481,44 +736,50 @@ impl std::fmt::Display for UsageLimitReachedError {
         if let Some(promo_message) = &self.promo_message {
             return write!(
                 f,
-                "You've hit your usage limit. {promo_message},{}",
+                "You’ve hit your usage limit. {promo_message},{}",
                 retry_suffix_after_or(self.resets_at.as_ref())
             );
         }
 
         let message = match self.plan_type.as_ref() {
             Some(PlanType::Known(KnownPlan::Plus)) => format!(
-                "You've hit your usage limit. Upgrade to Pro (https://chatgpt.com/explore/pro), visit https://chatgpt.com/codex/settings/usage to purchase more credits{}",
+                "You’ve hit your usage limit. Upgrade to Pro (https://chatgpt.com/explore/pro), visit https://chatgpt.com/codex/settings/usage to purchase more credits{}",
                 retry_suffix_after_or(self.resets_at.as_ref())
             ),
             Some(PlanType::Known(
                 KnownPlan::Team
+                | KnownPlan::SelfServeBusinessProLite
                 | KnownPlan::SelfServeBusinessUsageBased
                 | KnownPlan::Business
+                | KnownPlan::Ent26
+                | KnownPlan::EnterpriseCbpAutomation
                 | KnownPlan::EnterpriseCbpUsageBased,
             )) => {
                 format!(
-                    "You've hit your usage limit. To get more access now, send a request to your admin{}",
+                    "You’ve hit your usage limit. To get more access now, send a request to your admin{}",
                     retry_suffix_after_or(self.resets_at.as_ref())
                 )
             }
             Some(PlanType::Known(KnownPlan::Free)) | Some(PlanType::Known(KnownPlan::Go)) => {
                 format!(
-                    "You've hit your usage limit. Upgrade to Plus to continue using Codex (https://chatgpt.com/explore/plus),{}",
+                    "You’ve hit your usage limit. Upgrade to Plus to continue using Codex (https://chatgpt.com/explore/plus),{}",
                     retry_suffix_after_or(self.resets_at.as_ref())
                 )
             }
-            Some(PlanType::Known(KnownPlan::Pro | KnownPlan::ProLite)) => format!(
-                "You've hit your usage limit. Visit https://chatgpt.com/codex/settings/usage to purchase more credits{}",
-                retry_suffix_after_or(self.resets_at.as_ref())
-            ),
-            Some(PlanType::Known(KnownPlan::Enterprise))
-            | Some(PlanType::Known(KnownPlan::Edu)) => format!(
-                "You've hit your usage limit.{}",
+            Some(PlanType::Known(KnownPlan::Pro | KnownPlan::ProLite | KnownPlan::ProMax)) => {
+                format!(
+                    "You’ve hit your usage limit. Visit https://chatgpt.com/codex/settings/usage to purchase more credits{}",
+                    retry_suffix_after_or(self.resets_at.as_ref())
+                )
+            }
+            Some(PlanType::Known(
+                KnownPlan::Enterprise | KnownPlan::Edu | KnownPlan::EduPlus | KnownPlan::EduPro,
+            )) => format!(
+                "You’ve hit your usage limit.{}",
                 retry_suffix(self.resets_at.as_ref())
             ),
             Some(PlanType::Unknown(_)) | None => format!(
-                "You've hit your usage limit.{}",
+                "You’ve hit your usage limit.{}",
                 retry_suffix(self.resets_at.as_ref())
             ),
         };
@@ -606,8 +867,8 @@ impl std::fmt::Display for EnvVarError {
 }
 
 pub fn get_error_message_ui(e: &CodexErr) -> String {
-    let message = match e {
-        CodexErr::Sandbox(SandboxErr::Denied { output, .. }) => {
+    let message = match e.details() {
+        CodexErrorDetails::Sandbox(SandboxErr::Denied { output, .. }) => {
             let aggregated = output.aggregated_output.text.trim();
             if !aggregated.is_empty() {
                 output.aggregated_output.text.clone()
@@ -626,7 +887,7 @@ pub fn get_error_message_ui(e: &CodexErr) -> String {
             }
         }
         // Timeouts are not sandbox errors from a UX perspective; present them plainly.
-        CodexErr::Sandbox(SandboxErr::Timeout { output }) => {
+        CodexErrorDetails::Sandbox(SandboxErr::Timeout { output }) => {
             format!(
                 "error: command timed out after {} ms",
                 output.duration.as_millis()

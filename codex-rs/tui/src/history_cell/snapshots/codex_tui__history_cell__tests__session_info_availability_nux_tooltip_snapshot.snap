@@ -1,8 +1,12 @@
 ---
-source: tui/src/history_cell/tests.rs
+source: tui/src/history_cell.rs
 expression: rendered
 ---
-◆ Elpis (v0.3.0)
-│ 
-│ model:     gpt-5   /model to change
-│ directory: /tmp/project
+╭─────────────────────────────────────╮
+│ >_ OpenAI Codex (v0.0.0)            │
+│                                     │
+│ model:     gpt-5   /model to change │
+│ directory: /tmp/project             │
+╰─────────────────────────────────────╯
+
+  Tip: Model just became available

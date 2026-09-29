@@ -1,65 +1,29 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use super::*;
 use codex_app_server_protocol::ImageGenerationItem;
 use codex_app_server_protocol::PluginAvailability;
-use pretty_assertions::assert_eq;
+use codex_utils_absolute_path::test_support::PathExt;
 
-/// One directory per test process to hold every widget's home, emptied when the
-/// process first asks for it.
-///
-/// These homes outlive the `TempDir` guard -- the widget keeps a path, not the
-/// handle -- so they were kept deliberately and never removed. At three
-/// thousand tests a run that left tens of thousands of directories loose in the
-/// system temp root. Nesting them under one parent that is purged on entry
-/// bounds the litter to a single run, and to one directory.
-fn test_home_root() -> &'static std::path::Path {
-    static ROOT: std::sync::OnceLock<std::path::PathBuf> = std::sync::OnceLock::new();
-    ROOT.get_or_init(|| {
-        let root = std::env::temp_dir().join(format!("elpis-tui-tests-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&root);
-        std::fs::create_dir_all(&root).expect("test home root");
-        root
-    })
-    .as_path()
-}
-
-pub(super) async fn test_config() -> Config {
+pub(super) async fn test_config() -> (tempfile::TempDir, Config) {
     // Start from the built-in defaults so tests do not inherit host/system config.
     let codex_home = tempfile::Builder::new()
         .prefix("chatwidget-tests-")
-        .tempdir_in(test_home_root())
-        .expect("tempdir")
-        .keep();
-    let mut config =
-        Config::load_default_with_cli_overrides_for_codex_home(codex_home.clone(), Vec::new())
-            .await
-            .expect("config");
-    config.codex_home = codex_home.abs();
-    config.sqlite_home = codex_home.clone();
-    config.log_dir = codex_home.join("log");
+        .tempdir()
+        .expect("tempdir");
+    let mut config = Config::load_default_with_cli_overrides_for_codex_home(
+        codex_home.path().to_path_buf(),
+        Vec::new(),
+    )
+    .await
+    .expect("config");
+    // Keep generic UI snapshots stable when the bundled catalog default changes.
+    config.model = Some("gpt-5.6-sol".to_string());
+    config.codex_home = codex_home.path().abs();
+    config.sqlite = codex_state::SqliteConfig::new_for_testing(codex_home.path().abs());
+    config.log_dir = codex_home.path().join("log");
     config.cwd = PathBuf::from(test_path_display("/tmp/project")).abs();
-    // Model-discovery tests provide their own endpoint instead of querying the workstation.
-    if let Some(provider) = config
-        .model_providers
-        .get_mut(codex_model_provider_info::OLLAMA_OSS_PROVIDER_ID)
-    {
-        provider.base_url = None;
-    }
     config.config_layer_stack = ConfigLayerStack::default();
     config.startup_warnings.clear();
-    config
-}
-
-/// A session catalogue tagged with the provider the widget is on, matching how
-/// the app server answers a provider-scoped `model/list`.
-pub(super) fn catalog_for(
-    chat: &crate::chatwidget::ChatWidget,
-    models: Vec<codex_protocol::openai_models::ModelPreset>,
-) -> std::sync::Arc<crate::model_catalog::ModelCatalog> {
-    std::sync::Arc::new(crate::model_catalog::ModelCatalog::for_provider(
-        models,
-        chat.active_model_provider_id(),
-    ))
+    (codex_home, config)
 }
 
 pub(super) fn test_project_path() -> PathBuf {
@@ -73,7 +37,7 @@ pub(super) fn truncated_path_variants(path: &str) -> Vec<String> {
         .collect()
 }
 
-pub(super) fn normalize_snapshot_paths(text: impl Into<String>) -> String {
+pub(crate) fn normalize_snapshot_paths(text: impl Into<String>) -> String {
     let mut text = text.into();
 
     for unix_path in ["/tmp/project", "/tmp/hooks.json"] {
@@ -82,6 +46,7 @@ pub(super) fn normalize_snapshot_paths(text: impl Into<String>) -> String {
             text = text.replace(&platform_path, unix_path);
         }
     }
+    text = text.replace("/tmp/project\\", "/tmp/project/");
 
     let platform_test_cwd = test_path_display("/tmp/project");
     if platform_test_cwd == "/tmp/project" {
@@ -100,6 +65,44 @@ pub(super) fn normalize_snapshot_paths(text: impl Into<String>) -> String {
 
         text
     }
+}
+
+/// Normalize command-center fixture paths without moving fixed pane separators.
+/// Pad after each complete pane so group counts and destination hints keep their spacing.
+pub(crate) fn normalize_agent_center_snapshot(text: impl AsRef<str>) -> String {
+    text.as_ref()
+        .split('\n')
+        .map(|line| {
+            let quoted = line
+                .strip_prefix('"')
+                .and_then(|line| line.strip_suffix('"'));
+            let content = quoted.unwrap_or(line);
+            let normalized = content
+                .split('│')
+                .map(|pane| {
+                    let mut normalized = pane.to_owned();
+                    for unix_path in ["/tmp/second-project", "/tmp/project", "/project"] {
+                        // test_path_buf uses this drive for all absolute Windows fixtures.
+                        let windows_path = format!("C:{}", unix_path.replace('/', "\\"));
+                        normalized = normalized
+                            .replace(&windows_path, unix_path)
+                            .replace(&windows_path.replace('\\', "/"), unix_path);
+                    }
+                    // Only ASCII path bytes change, so this is also the removed cell width.
+                    let padding = pane.len().saturating_sub(normalized.len());
+                    normalized.push_str(&" ".repeat(padding));
+                    normalized
+                })
+                .collect::<Vec<_>>()
+                .join("│");
+            if quoted.is_some() {
+                format!("\"{normalized}\"")
+            } else {
+                normalized.trim_end().to_owned()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 pub(super) fn normalized_backend_snapshot<T: std::fmt::Display>(value: &T) -> String {
@@ -144,6 +147,7 @@ pub(super) fn snapshot(percent: f64) -> RateLimitSnapshot {
     RateLimitSnapshot {
         limit_id: None,
         limit_name: None,
+        normal_model_slug: None,
         primary: Some(RateLimitWindow {
             used_percent: percent.round() as i32,
             window_duration_mins: Some(60),
@@ -176,21 +180,15 @@ pub(super) fn test_session_telemetry(config: &Config, model: &str) -> SessionTel
 }
 
 pub(super) fn test_model_catalog(_config: &Config) -> Arc<ModelCatalog> {
-    Arc::new(ModelCatalog::for_provider(
-        crate::test_support::TEST_MODEL_PRESETS.clone(),
-        codex_model_provider_info::OPENAI_PROVIDER_ID,
-    ))
+    Arc::new(
+        ModelCatalog::new(crate::test_support::TEST_MODEL_PRESETS.clone())
+            .with_collaboration_modes(
+            codex_models_manager::collaboration_mode_presets::builtin_collaboration_mode_presets(),
+        ),
+    )
 }
 
 // --- Helpers for tests that need direct construction and event draining ---
-impl ChatWidget {
-    // Exercise submission/queue lifecycle independently of the Enter binding.
-    pub(crate) fn submit_composer_for_test(&mut self, queue: bool) {
-        let input = self.bottom_pane.submission_for_test(queue);
-        self.handle_composer_input_result(input, false);
-    }
-}
-
 pub(super) async fn make_chatwidget_manual(
     model_override: Option<&str>,
 ) -> (
@@ -202,6 +200,7 @@ pub(super) async fn make_chatwidget_manual(
         model_override,
         /*has_chatgpt_account*/ false,
         /*has_codex_backend_auth*/ false,
+        FrameRequester::test_dummy(),
     )
     .await
 }
@@ -210,6 +209,7 @@ pub(super) async fn make_chatwidget_manual_with_auth(
     model_override: Option<&str>,
     has_chatgpt_account: bool,
     has_codex_backend_auth: bool,
+    frame_requester: FrameRequester,
 ) -> (
     ChatWidget,
     tokio::sync::mpsc::UnboundedReceiver<AppEvent>,
@@ -218,7 +218,7 @@ pub(super) async fn make_chatwidget_manual_with_auth(
     let (tx_raw, rx) = unbounded_channel::<AppEvent>();
     let app_event_tx = AppEventSender::new(tx_raw);
     let (op_tx, op_rx) = unbounded_channel::<Op>();
-    let mut cfg = test_config().await;
+    let (codex_home, mut cfg) = test_config().await;
     let resolved_model = model_override
         .map(str::to_owned)
         .unwrap_or_else(|| get_model_offline_for_tests(cfg.model.as_deref()));
@@ -228,8 +228,10 @@ pub(super) async fn make_chatwidget_manual_with_auth(
     let session_telemetry = test_session_telemetry(&cfg, resolved_model.as_str());
     let model_catalog = test_model_catalog(&cfg);
     let common = ChatWidgetInit {
+        requires_openai_auth: cfg.model_provider.requires_openai_auth,
+        local_settings: crate::local_settings::LocalSettings::from(&cfg),
         config: cfg,
-        frame_requester: FrameRequester::test_dummy(),
+        frame_requester,
         app_event_tx,
         workspace_command_runner: None,
         initial_user_message: None,
@@ -237,9 +239,9 @@ pub(super) async fn make_chatwidget_manual_with_auth(
         has_chatgpt_account,
         has_codex_backend_auth,
         model_catalog,
+        feedback: codex_feedback::CodexFeedback::new(),
         is_first_run: true,
         status_account_display: None,
-        runtime_model_provider_base_url: None,
         initial_plan_type: None,
         model: Some(resolved_model.clone()),
         startup_tooltip_override: None,
@@ -248,21 +250,18 @@ pub(super) async fn make_chatwidget_manual_with_auth(
         session_telemetry,
     };
     let mut widget = ChatWidget::new_with_op_target(common, super::CodexOpTarget::Direct(op_tx));
+    widget.test_codex_home = Some(codex_home);
+    widget.clock_format = crate::clock_format::ClockFormat::TwentyFourHour;
+    widget.windows_sandbox_host = crate::app::WindowsSandboxHost::Local;
+    widget.windows_sandbox_config.requirements = Some(None);
     widget.transcript.active_cell = None;
     widget.transcript.active_cell_revision = 0;
-    widget.normal_placeholder_text = "Ask Elpis to do anything".to_string();
-    widget.side_placeholder_text =
-        "Check recently modified functions for compatibility".to_string();
-    widget
-        .bottom_pane
-        .set_placeholder_text(widget.normal_placeholder_text.clone());
-    // The synthetic cwd must not inherit a Git marker from the host's /tmp.
-    widget.status_line_project_root_name_cache = Some(CachedProjectRootName {
-        cwd: widget.config.cwd.to_path_buf(),
-        root_name: None,
-    });
     widget.set_model(&resolved_model);
     (widget, rx, op_rx)
+}
+
+pub(crate) fn set_active_cell(chat: &mut ChatWidget, cell: Box<dyn HistoryCell>) {
+    chat.transcript.active_cell = Some(cell);
 }
 
 // ChatWidget may emit other `Op`s (e.g. history/logging updates) on the same channel; this helper
@@ -328,13 +327,11 @@ fn test_model_info(slug: &str, priority: i32, supports_fast_mode: bool) -> Model
         "default_service_tier": null,
         "availability_nux": null,
         "upgrade": null,
-        "base_instructions": "base instructions",
         "default_reasoning_summary": "none",
         "support_verbosity": false,
         "default_verbosity": null,
         "apply_patch_tool_type": null,
         "truncation_policy": {"mode": "bytes", "limit": 10_000},
-        "supports_parallel_tool_calls": false,
         "supports_image_detail_original": false,
         "context_window": 272_000,
         "experimental_supported_tools": [],
@@ -343,13 +340,23 @@ fn test_model_info(slug: &str, priority: i32, supports_fast_mode: bool) -> Model
 }
 
 pub(crate) fn set_fast_mode_test_catalog(chat: &mut ChatWidget) {
+    set_fast_mode_test_catalog_for_models(chat, "gpt-5.4", "gpt-5.2");
+}
+
+pub(crate) fn set_fast_mode_test_catalog_for_models(
+    chat: &mut ChatWidget,
+    fast_model: &str,
+    standard_model: &str,
+) {
     let models: Vec<ModelPreset> = ModelsResponse {
         models: vec![
             test_model_info(
-                "gpt-5.4", /*priority*/ 0, /*supports_fast_mode*/ true,
+                fast_model, /*priority*/ 0, /*supports_fast_mode*/ true,
             ),
             test_model_info(
-                "gpt-5.2", /*priority*/ 1, /*supports_fast_mode*/ false,
+                standard_model,
+                /*priority*/ 1,
+                /*supports_fast_mode*/ false,
             ),
         ],
     }
@@ -358,7 +365,7 @@ pub(crate) fn set_fast_mode_test_catalog(chat: &mut ChatWidget) {
     .map(Into::into)
     .collect();
 
-    chat.model_catalog = catalog_for(chat, models);
+    Arc::make_mut(&mut chat.model_catalog).models = models;
 }
 
 pub(crate) async fn make_chatwidget_manual_with_sender() -> (
@@ -368,28 +375,73 @@ pub(crate) async fn make_chatwidget_manual_with_sender() -> (
     tokio::sync::mpsc::UnboundedReceiver<Op>,
 ) {
     let (widget, rx, op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
-    let app_event_tx = widget.app_event_tx.clone();
+    let app_event_tx = AppEventSender::new(widget.app_event_tx.app_event_tx.clone());
     (widget, app_event_tx, rx, op_rx)
-}
-
-pub(super) fn drain_usage_output(
-    rx: &mut tokio::sync::mpsc::UnboundedReceiver<AppEvent>,
-) -> Vec<Vec<ratatui::text::Line<'static>>> {
-    std::iter::from_fn(|| rx.try_recv().ok())
-        .filter_map(|event| match event {
-            AppEvent::OpenUsage(cell) => Some(cell.display_lines(80)),
-            _ => None,
-        })
-        .collect()
 }
 
 pub(super) fn drain_insert_history(
     rx: &mut tokio::sync::mpsc::UnboundedReceiver<AppEvent>,
 ) -> Vec<Vec<ratatui::text::Line<'static>>> {
+    drain_insert_history_with(rx, |cell| cell.display_lines(/*width*/ 80))
+}
+
+pub(super) fn drain_insert_history_normalized(
+    rx: &mut tokio::sync::mpsc::UnboundedReceiver<AppEvent>,
+) -> Vec<Vec<ratatui::text::Line<'static>>> {
+    drain_insert_history_with(rx, |cell| {
+        cell.display_lines(/*width*/ 80)
+            .into_iter()
+            .map(|mut line| {
+                if cell.as_any().is::<history_cell::FinalMessageSeparator>() {
+                    line.spans = vec![normalize_completion_timestamps(cell, &line).into()];
+                }
+                line
+            })
+            .collect()
+    })
+}
+
+pub(super) fn drain_insert_history_transcript(
+    rx: &mut tokio::sync::mpsc::UnboundedReceiver<AppEvent>,
+) -> Vec<Vec<ratatui::text::Line<'static>>> {
+    drain_insert_history_with(rx, |cell| {
+        cell.transcript_lines(/*width*/ 80)
+            .into_iter()
+            .map(|mut line| {
+                if cell.as_any().is::<history_cell::FinalMessageSeparator>() {
+                    line.spans = vec![normalize_completion_timestamps(cell, &line).into()];
+                }
+                line
+            })
+            .collect()
+    })
+}
+
+// Preserve ordering checks for history cells intentionally hidden from compact chat.
+pub(super) fn drain_insert_history_transcript_normalized(
+    rx: &mut tokio::sync::mpsc::UnboundedReceiver<AppEvent>,
+) -> Vec<Vec<ratatui::text::Line<'static>>> {
+    drain_insert_history_with(rx, |cell| {
+        cell.transcript_lines(/*width*/ 80)
+            .into_iter()
+            .map(|mut line| {
+                if cell.as_any().is::<history_cell::FinalMessageSeparator>() {
+                    line.spans = vec![normalize_completion_timestamps(cell, &line).into()];
+                }
+                line
+            })
+            .collect()
+    })
+}
+
+pub(super) fn drain_insert_history_with(
+    rx: &mut tokio::sync::mpsc::UnboundedReceiver<AppEvent>,
+    render: impl Fn(&dyn HistoryCell) -> Vec<ratatui::text::Line<'static>>,
+) -> Vec<Vec<ratatui::text::Line<'static>>> {
     let mut out = Vec::new();
     while let Ok(ev) = rx.try_recv() {
         if let AppEvent::InsertHistoryCell(cell) = ev {
-            let mut lines = cell.display_lines(/*width*/ 80);
+            let mut lines = render(cell.as_ref());
             if !cell.is_stream_continuation() && !out.is_empty() && !lines.is_empty() {
                 lines.insert(0, "".into());
             }
@@ -412,24 +464,6 @@ pub(super) fn lines_to_single_string(lines: &[ratatui::text::Line<'static>]) -> 
 
 pub(super) fn status_line_text(chat: &ChatWidget) -> Option<String> {
     chat.status_line_text()
-}
-
-/// The configured part of the status line, with the Elpis identity prefix removed.
-///
-/// Every status line now leads with `Elpis · provider … · model … · context …`; the
-/// items chosen through `/statusline` follow it. Tests about item rendering want the
-/// items, not the banner in front of them. Returns `None` when the line carries no
-/// configured items at all, which is what an item that has no value yet produces.
-pub(super) fn status_line_items_text(chat: &ChatWidget) -> Option<String> {
-    let text = chat.status_line_text()?;
-    let (identity, items) = text.split_once(" · context ")?;
-    debug_assert!(
-        identity.starts_with(crate::branding::PRODUCT_NAME),
-        "unexpected status line: {text}"
-    );
-    items
-        .split_once(" · ")
-        .map(|(_context_value, rest)| rest.to_string())
 }
 
 pub(super) fn make_token_info(total_tokens: i64, context_window: i64) -> TokenUsageInfo {
@@ -456,7 +490,7 @@ fn token_usage_breakdown(usage: TokenUsage) -> codex_app_server_protocol::TokenU
         total_tokens: usage.total_tokens,
         input_tokens: usage.input_tokens,
         cached_input_tokens: usage.cached_input_tokens,
-        cache_write_tokens: usage.cache_write_tokens,
+        cache_write_input_tokens: 0,
         output_tokens: usage.output_tokens,
         reasoning_output_tokens: usage.reasoning_output_tokens,
     }
@@ -478,18 +512,13 @@ pub(super) fn handle_token_count(chat: &mut ChatWidget, info: Option<TokenUsageI
                             total: token_usage_breakdown(info.total_token_usage),
                             last: token_usage_breakdown(info.last_token_usage),
                             model_context_window: info.model_context_window,
-                            context_prune_saved_tokens: 0,
-                            smart_prune: Default::default(),
-                            context_attribution: None,
                         },
                     },
                 ),
                 /*replay_kind*/ None,
             );
         }
-        None => {
-            chat.set_token_info(/*info*/ None);
-        }
+        None => chat.set_token_info(/*info*/ None),
     }
 }
 
@@ -501,6 +530,7 @@ pub(super) fn handle_error(
     chat.handle_server_notification(
         ServerNotification::Error(ErrorNotification {
             error: AppServerTurnError {
+                misalignment: None,
                 message: message.into(),
                 codex_error_info,
                 additional_details: None,
@@ -534,6 +564,7 @@ pub(super) fn handle_stream_error_with_replay(
     chat.handle_server_notification(
         ServerNotification::Error(ErrorNotification {
             error: AppServerTurnError {
+                misalignment: None,
                 message: message.into(),
                 codex_error_info: None,
                 additional_details,
@@ -596,7 +627,30 @@ pub(super) fn handle_agent_message_delta(chat: &mut ChatWidget, delta: impl Into
     );
 }
 
+pub(super) fn handle_agent_reasoning_started(chat: &mut ChatWidget, id: impl Into<String>) {
+    chat.handle_server_notification(
+        ServerNotification::ItemStarted(ItemStartedNotification {
+            thread_id: thread_id(chat),
+            turn_id: chat
+                .turn_lifecycle
+                .last_turn_id
+                .clone()
+                .unwrap_or_else(|| "turn-1".to_string()),
+            started_at_ms: 0,
+            item: AppServerThreadItem::Reasoning {
+                id: id.into(),
+                summary: Vec::new(),
+                content: Vec::new(),
+            },
+        }),
+        /*replay_kind*/ None,
+    );
+}
+
 pub(super) fn handle_agent_reasoning_delta(chat: &mut ChatWidget, delta: impl Into<String>) {
+    if chat.status_state.reasoning_item_id.is_none() {
+        handle_agent_reasoning_started(chat, "reasoning-1");
+    }
     chat.handle_server_notification(
         ServerNotification::ReasoningSummaryTextDelta(ReasoningSummaryTextDeltaNotification {
             thread_id: thread_id(chat),
@@ -614,6 +668,9 @@ pub(super) fn handle_agent_reasoning_delta(chat: &mut ChatWidget, delta: impl In
 }
 
 pub(super) fn handle_agent_reasoning_final(chat: &mut ChatWidget) {
+    if chat.status_state.reasoning_item_id.is_none() {
+        handle_agent_reasoning_started(chat, "reasoning-1");
+    }
     chat.handle_server_notification(
         ServerNotification::ItemCompleted(ItemCompletedNotification {
             thread_id: thread_id(chat),
@@ -798,7 +855,11 @@ pub(super) fn handle_image_generation_end(
                 status: status.into(),
                 revised_prompt,
                 result: String::new(),
+                transparent_background: None,
+                failure: None,
                 saved_path,
+                imagegen_request_id: None,
+                generation_id: None,
             }),
         }),
         /*replay_kind*/ None,
@@ -850,6 +911,9 @@ pub(super) fn replay_agent_message(
             id: item_id.to_string(),
             text: text.into(),
             phase: Some(MessagePhase::FinalAnswer),
+            memory_citation: None,
+            delivery: None,
+            questions: None,
         },
         "turn-1".to_string(),
         replay_kind,
@@ -904,10 +968,14 @@ pub(super) fn begin_exec_with_source(
         .map(|parsed| AppServerCommandAction::from_core_with_cwd(parsed, &chat.config.cwd))
         .collect();
     let item = AppServerThreadItem::CommandExecution {
+        model_context: None,
+        sandbox_type: None,
         id: call_id.to_string(),
         command: codex_shell_command::parse_command::shlex_join(&command),
         cwd: chat.config.cwd.clone().into(),
         process_id: None,
+        plugin_id: None,
+        script_path: None,
         source,
         status: AppServerCommandExecutionStatus::InProgress,
         command_actions,
@@ -927,10 +995,14 @@ pub(super) fn begin_unified_exec_startup(
 ) -> AppServerThreadItem {
     let command = vec!["bash".to_string(), "-lc".to_string(), raw_cmd.to_string()];
     let item = AppServerThreadItem::CommandExecution {
+        model_context: None,
+        sandbox_type: None,
         id: call_id.to_string(),
         command: codex_shell_command::parse_command::shlex_join(&command),
         cwd: chat.config.cwd.clone().into(),
         process_id: Some(process_id.to_string()),
+        plugin_id: None,
+        script_path: None,
         source: ExecCommandSource::UnifiedExecStartup,
         status: AppServerCommandExecutionStatus::InProgress,
         command_actions: Vec::new(),
@@ -997,6 +1069,9 @@ pub(super) fn complete_assistant_message(
                 id: item_id.to_string(),
                 text: text.to_string(),
                 phase,
+                memory_citation: None,
+                delivery: None,
+                questions: None,
             },
         }),
         /*replay_kind*/ None,
@@ -1005,8 +1080,10 @@ pub(super) fn complete_assistant_message(
 
 pub(super) fn pending_steer(text: &str) -> PendingSteer {
     PendingSteer {
+        client_id: "test-submission".to_string(),
         user_message: UserMessage::from(text),
         history_record: UserMessageHistoryRecord::UserMessageText,
+        source: UserMessageSource::Prompt,
         compare_key: PendingSteerCompareKey {
             message: text.to_string(),
             image_count: 0,
@@ -1142,6 +1219,8 @@ pub(super) fn end_exec(
         command,
         cwd,
         process_id,
+        plugin_id,
+        script_path,
         source,
         command_actions,
         ..
@@ -1152,10 +1231,14 @@ pub(super) fn end_exec(
     handle_exec_end(
         chat,
         AppServerThreadItem::CommandExecution {
+            model_context: None,
+            sandbox_type: None,
             id,
             command,
             cwd,
             process_id,
+            plugin_id,
+            script_path,
             source,
             status: if exit_code == 0 {
                 AppServerCommandExecutionStatus::Completed
@@ -1196,14 +1279,6 @@ pub(super) fn active_blob(chat: &ChatWidget) -> String {
     lines_to_single_string(&lines)
 }
 
-pub(super) fn active_hook_blob(chat: &ChatWidget) -> String {
-    let Some(cell) = chat.active_hook_cell.as_ref() else {
-        return "<empty>\n".to_string();
-    };
-    let lines = cell.display_lines(/*width*/ 80);
-    lines_to_single_string(&lines)
-}
-
 pub(super) fn expire_quiet_hook_linger(chat: &mut ChatWidget) {
     if let Some(cell) = chat.active_hook_cell.as_mut() {
         cell.expire_quiet_runs_now_for_test();
@@ -1237,41 +1312,11 @@ pub(super) fn get_available_model(chat: &ChatWidget, model: &str) -> ModelPreset
         .unwrap_or_else(|| panic!("{model} preset not found"))
 }
 
-pub(super) async fn assert_custom_queue_edit_binding_for_terminal(terminal_info: TerminalInfo) {
-    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
-    chat.queued_message_edit_hint_binding =
-        Some(queued_message_edit_binding_for_terminal(terminal_info));
-    chat.chat_keymap.edit_queued_message = vec![crate::key_hint::shift(KeyCode::Left)];
-    chat.bottom_pane
-        .set_queued_message_edit_binding(chat.queued_message_edit_hint_binding);
-
-    // Simulate a running task so messages would normally be queued.
-    chat.bottom_pane.set_task_running(/*running*/ true);
-
-    // Seed two queued messages.
-    chat.input_queue
-        .queued_user_messages
-        .push_back(UserMessage::from("first queued".to_string()).into());
-    chat.input_queue
-        .queued_user_messages
-        .push_back(UserMessage::from("second queued".to_string()).into());
-    chat.refresh_pending_input_preview();
-
-    // Explicitly configured alternatives also recall the whole queue.
-    chat.handle_key_event(KeyEvent::new(KeyCode::Left, KeyModifiers::SHIFT));
-
-    assert_eq!(
-        chat.bottom_pane.composer_text(),
-        "first queued\nsecond queued"
-    );
-    assert!(chat.input_queue.queued_user_messages.is_empty());
-}
-
 pub(super) fn render_bottom_first_row(chat: &ChatWidget, width: u16) -> String {
-    let height = chat.bottom_pane.desired_height(width);
+    let height = chat.desired_height(width);
     let area = Rect::new(0, 0, width, height);
     let mut buf = Buffer::empty(area);
-    chat.bottom_pane.render(area, &mut buf);
+    chat.render(area, &mut buf);
     for y in 0..area.height {
         let mut row = String::new();
         for x in 0..area.width {
@@ -1282,7 +1327,7 @@ pub(super) fn render_bottom_first_row(chat: &ChatWidget, width: u16) -> String {
                 row.push_str(s);
             }
         }
-        if row.chars().any(char::is_alphanumeric) {
+        if !row.trim().is_empty() {
             return row;
         }
     }
@@ -1290,18 +1335,10 @@ pub(super) fn render_bottom_first_row(chat: &ChatWidget, width: u16) -> String {
 }
 
 pub(crate) fn render_bottom_popup(chat: &ChatWidget, width: u16) -> String {
-    render_popup(chat, width)
-}
-
-pub(crate) fn render_bottom_popup_content(chat: &ChatWidget, width: u16) -> String {
-    render_popup(&chat.bottom_pane, width)
-}
-
-fn render_popup(widget: &impl Renderable, width: u16) -> String {
-    let height = widget.desired_height(width);
+    let height = chat.desired_height(width);
     let area = Rect::new(0, 0, width, height);
     let mut buf = Buffer::empty(area);
-    widget.render(area, &mut buf);
+    chat.render(area, &mut buf);
 
     let mut lines: Vec<String> = (0..area.height)
         .map(|row| {
@@ -1424,11 +1461,15 @@ pub(super) fn plugins_test_summary(
             path: plugins_test_absolute_path(&format!("plugins/{name}")),
         },
         installed,
+        installed_at: None,
         enabled,
         install_policy,
         install_policy_source: None,
+        must_show_installation_interstitial: None,
         auth_policy: PluginAuthPolicy::OnInstall,
         availability: PluginAvailability::Available,
+        disabled_reason: None,
+        eligible_plan_types: None,
         interface: Some(plugins_test_interface(
             display_name,
             description,
@@ -1454,11 +1495,15 @@ pub(super) fn plugins_test_remote_summary(
         share_context: None,
         source: PluginSource::Remote,
         installed,
+        installed_at: None,
         enabled: true,
         install_policy: PluginInstallPolicy::Available,
         install_policy_source: None,
+        must_show_installation_interstitial: None,
         auth_policy: PluginAuthPolicy::OnInstall,
         availability: PluginAvailability::Available,
+        disabled_reason: None,
+        eligible_plan_types: None,
         interface: Some(plugins_test_interface(
             display_name,
             description,
@@ -1548,6 +1593,7 @@ pub(super) fn plugins_test_detail(
     mcp_servers: &[&str],
 ) -> PluginDetail {
     PluginDetail {
+        onboarding_skill: None,
         marketplace_name: "ChatGPT Marketplace".to_string(),
         marketplace_path: Some(plugins_test_absolute_path("marketplaces/chatgpt")),
         summary,
@@ -1600,6 +1646,7 @@ pub(super) fn plugins_test_remote_detail(
     description: Option<&str>,
 ) -> PluginDetail {
     PluginDetail {
+        onboarding_skill: None,
         marketplace_name: marketplace_name.to_string(),
         marketplace_path: None,
         summary,
@@ -1711,6 +1758,7 @@ pub(super) async fn assert_hook_events_snapshot(
     snapshot_name: &str,
 ) {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    chat.on_task_started();
 
     handle_hook_started(
         &mut chat,
@@ -1727,14 +1775,31 @@ pub(super) async fn assert_hook_events_snapshot(
         "hook start should update the live hook cell instead of writing history"
     );
     reveal_running_hooks(&mut chat);
+    let width = 100;
+    let height = chat.desired_height(width);
+    let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(width, height))
+        .expect("create terminal");
+    terminal
+        .draw(|frame| chat.render(frame.area(), frame.buffer_mut()))
+        .expect("render hook activity status");
+    let running = normalized_backend_snapshot(terminal.backend());
     assert!(
-        active_hook_blob(&chat).contains(&format!(
-            "Running {} hook: {status_message}",
-            hook_event_label(event_name)
-        )),
-        "hook start should render in the live hook cell"
+        running
+            .lines()
+            .any(|line| line.contains("Working") && line.contains(status_message)),
+        "hook start should render its status in the activity row: {running}"
     );
 
+    let mut entries = vec![codex_app_server_protocol::HookOutputEntry {
+        kind: codex_app_server_protocol::HookOutputEntryKind::Warning,
+        text: "Heads up from the hook".to_string(),
+    }];
+    if event_name != codex_app_server_protocol::HookEventName::Interrupt {
+        entries.push(codex_app_server_protocol::HookOutputEntry {
+            kind: codex_app_server_protocol::HookOutputEntryKind::Context,
+            text: "Remember the startup checklist.".to_string(),
+        });
+    }
     handle_hook_completed(
         &mut chat,
         hook_run(
@@ -1742,16 +1807,7 @@ pub(super) async fn assert_hook_events_snapshot(
             event_name,
             codex_app_server_protocol::HookRunStatus::Completed,
             status_message,
-            vec![
-                codex_app_server_protocol::HookOutputEntry {
-                    kind: codex_app_server_protocol::HookOutputEntryKind::Warning,
-                    text: "Heads up from the hook".to_string(),
-                },
-                codex_app_server_protocol::HookOutputEntry {
-                    kind: codex_app_server_protocol::HookOutputEntryKind::Context,
-                    text: "Remember the startup checklist.".to_string(),
-                },
-            ],
+            entries,
         ),
     );
 
@@ -1763,17 +1819,30 @@ pub(super) async fn assert_hook_events_snapshot(
     assert_chatwidget_snapshot!(snapshot_name, combined);
 }
 
-fn hook_event_label(event_name: codex_app_server_protocol::HookEventName) -> &'static str {
-    match event_name {
-        codex_app_server_protocol::HookEventName::PreToolUse => "PreToolUse",
-        codex_app_server_protocol::HookEventName::PermissionRequest => "PermissionRequest",
-        codex_app_server_protocol::HookEventName::PostToolUse => "PostToolUse",
-        codex_app_server_protocol::HookEventName::PreCompact => "PreCompact",
-        codex_app_server_protocol::HookEventName::PostCompact => "PostCompact",
-        codex_app_server_protocol::HookEventName::SessionStart => "SessionStart",
-        codex_app_server_protocol::HookEventName::UserPromptSubmit => "UserPromptSubmit",
-        codex_app_server_protocol::HookEventName::SubagentStart => "SubagentStart",
-        codex_app_server_protocol::HookEventName::SubagentStop => "SubagentStop",
-        codex_app_server_protocol::HookEventName::Stop => "Stop",
+/// Normalize timestamps only in structurally identified completion footer cells.
+pub(crate) fn normalize_completion_timestamps(
+    cell: &dyn HistoryCell,
+    value: impl std::fmt::Display,
+) -> String {
+    if !cell.as_any().is::<history_cell::FinalMessageSeparator>() {
+        return value.to_string();
     }
+    static COMPLETION_FOOTER: std::sync::LazyLock<regex_lite::Regex> = std::sync::LazyLock::new(
+        || {
+            regex_lite::Regex::new(r"(?m)^(?P<indent>[ \t]*)(?P<duration>Worked for (?:[0-9]+h )?(?:[0-9]+m )?[0-9]+s · )?(?:[A-Z][a-z]{2} [0-9]{1,2}(?:, [0-9]{4})? at )?[0-9]{1,2}:[0-9]{2}(?: (?:AM|PM))?(?P<padding>[ \t]*)$")
+                .expect("valid completion footer pattern")
+        },
+    );
+    COMPLETION_FOOTER
+        .replace_all(&value.to_string(), |captures: &regex_lite::Captures<'_>| {
+            let indent = &captures["indent"];
+            let padding = &captures["padding"];
+            let duration = if captures.name("duration").is_some() {
+                "Worked for [duration] · "
+            } else {
+                ""
+            };
+            format!("{indent}{duration}[completion time]{padding}")
+        })
+        .into_owned()
 }

@@ -1,4 +1,4 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
+use crate::ConfigPathContext;
 use crate::ConfigRequirementsToml;
 use crate::ManagedHooksRequirementsToml;
 use crate::RequirementSource;
@@ -9,11 +9,20 @@ use toml::Value as TomlValue;
 
 use super::stack::RequirementsCompositionError;
 
+// Authentication requirements that cloud-managed layers cannot set.
+const LOCAL_ONLY_AUTH_REQUIREMENTS: &[&str] = &[
+    "allowed_login_methods",
+    "allowed_chatgpt_workspaces",
+    "cli_auth_credentials_store",
+    "chatgpt_base_url",
+];
+
 #[derive(Clone, Debug)]
 pub struct RequirementsLayerEntry {
     pub(super) source: RequirementSource,
     toml: RequirementsLayerToml,
     base_dir: Option<AbsolutePathBuf>,
+    path_context: Option<ConfigPathContext>,
 }
 
 impl RequirementsLayerEntry {
@@ -22,6 +31,7 @@ impl RequirementsLayerEntry {
             source,
             toml: RequirementsLayerToml::String(contents.into()),
             base_dir: None,
+            path_context: None,
         }
     }
 
@@ -30,12 +40,34 @@ impl RequirementsLayerEntry {
             source,
             toml: RequirementsLayerToml::Value(value),
             base_dir: None,
+            path_context: None,
         }
     }
 
     pub fn with_base_dir(mut self, base_dir: AbsolutePathBuf) -> Self {
         self.base_dir = Some(base_dir);
         self
+    }
+
+    /// Supplies the owning environment's facts for filesystem denial paths.
+    /// Other path fields keep their existing native deserialization behavior.
+    pub fn with_path_context(mut self, context: ConfigPathContext) -> Self {
+        self.path_context = Some(context);
+        self
+    }
+
+    pub(crate) fn into_raw_parts(
+        self,
+    ) -> Result<(RequirementSource, TomlValue, Option<AbsolutePathBuf>), RequirementsCompositionError>
+    {
+        let Self {
+            source,
+            toml,
+            base_dir,
+            path_context: _,
+        } = self;
+        let toml = parse_layer_toml(&toml, &source)?;
+        Ok((source, toml, base_dir))
     }
 }
 
@@ -61,15 +93,56 @@ impl ComposableRequirementsLayer {
             source,
             toml,
             base_dir,
+            path_context,
         } = layer;
         let (mut regular_toml, mut requirements) = {
             let _guard = base_dir
                 .as_ref()
                 .map(|base_dir| AbsolutePathBufGuard::new(base_dir.as_path()));
-            let regular_toml = parse_layer_toml(&toml, &source)?;
-            let requirements = parse_layer_requirements(&toml, &source)?;
+            let mut regular_toml = parse_layer_toml(&toml, &source)?;
+
+            // These fields can only be set locally; ignore them before validating cloud policy.
+            strip_cloud_auth_requirements(&source, &mut regular_toml);
+
+            // Provider fragments can be incomplete until all requirements layers
+            // are merged. Resolve explicit paths while their source base is still
+            // available, without deserializing complete auth command objects.
+            if let Some(providers) = regular_toml
+                .get_mut("model_providers")
+                .and_then(TomlValue::as_table_mut)
+            {
+                for (id, provider) in providers.iter_mut() {
+                    if let Some(cwd) = provider
+                        .get_mut("auth")
+                        .and_then(|auth| auth.get_mut("cwd"))
+                    {
+                        let resolved: AbsolutePathBuf =
+                            cwd.clone().try_into().map_err(|err: toml::de::Error| {
+                                RequirementsCompositionError::Parse {
+                                    layer_source: source.clone(),
+                                    message: format!("model_providers.{id}.auth.cwd: {err}"),
+                                }
+                            })?;
+                        *cwd = toml_value_from_serializable(resolved)?;
+                    }
+                }
+            }
+            let mut layer_requirements_toml = regular_toml.clone();
+            remove_top_level_field(&mut layer_requirements_toml, "model_providers");
+            let _path_context = path_context.as_ref().map(ConfigPathContext::enter);
+            let requirements = parse_layer_requirements(
+                &RequirementsLayerToml::Value(layer_requirements_toml),
+                &source,
+            )?;
             (regular_toml, requirements)
         };
+
+        // Merge aliases under one key after validating each individual layer.
+        if let Some(table) = regular_toml.as_table_mut()
+            && let Some(features) = table.remove("feature_requirements")
+        {
+            table.insert("features".to_string(), features);
+        }
 
         // Hostname lookup is configuration-driven and may block on DNS, so only
         // resolve it when this layer contains hostname-based sandbox selectors.
@@ -78,6 +151,7 @@ impl ComposableRequirementsLayer {
             .as_ref()
             .and_then(|_| hostname_resolver());
         requirements.apply_remote_sandbox_config(hostname.as_deref());
+        materialize_resolved_path_requirements(&mut regular_toml, &requirements)?;
         materialize_remote_sandbox_config(&mut regular_toml, &requirements)?;
         strip_special_fields(&mut regular_toml);
 
@@ -88,6 +162,7 @@ impl ComposableRequirementsLayer {
                 rules: requirements.rules,
                 hooks: requirements.hooks,
                 permissions: requirements.permissions,
+                auto_review: requirements.auto_review,
             },
         })
     }
@@ -98,6 +173,7 @@ pub(super) struct DomainMergedRequirementsFields {
     pub(super) rules: Option<RequirementsExecPolicyToml>,
     pub(super) hooks: Option<ManagedHooksRequirementsToml>,
     pub(super) permissions: Option<crate::config_requirements::PermissionsRequirementsToml>,
+    pub(super) auto_review: Option<crate::config_requirements::AutoReviewRequirementsToml>,
 }
 
 fn parse_layer_toml(
@@ -141,6 +217,30 @@ fn parse_layer_requirements(
     }
 }
 
+fn materialize_resolved_path_requirements(
+    layer_toml: &mut TomlValue,
+    requirements: &ConfigRequirementsToml,
+) -> Result<(), RequirementsCompositionError> {
+    let Some(table) = layer_toml.as_table_mut() else {
+        return Ok(());
+    };
+
+    for (key, value) in [
+        ("sqlite_home", requirements.sqlite_home.as_ref()),
+        ("log_dir", requirements.log_dir.as_ref()),
+        (
+            "model_catalog_json",
+            requirements.model_catalog_json.as_ref(),
+        ),
+    ] {
+        if let Some(value) = value {
+            table.insert(key.to_string(), toml_value_from_serializable(value)?);
+        }
+    }
+
+    Ok(())
+}
+
 fn materialize_remote_sandbox_config(
     layer_toml: &mut TomlValue,
     requirements: &ConfigRequirementsToml,
@@ -171,6 +271,15 @@ fn strip_special_fields(layer_toml: &mut TomlValue) {
     remove_top_level_field(layer_toml, "rules");
     remove_top_level_field(layer_toml, "hooks");
     remove_nested_field_and_prune_empty(layer_toml, &["permissions", "filesystem", "deny_read"]);
+    remove_nested_field_and_prune_empty(layer_toml, &["auto_review", "required_on_models"]);
+}
+
+pub(crate) fn strip_cloud_auth_requirements(source: &RequirementSource, value: &mut TomlValue) {
+    if matches!(source, RequirementSource::EnterpriseManaged { .. }) {
+        for field in LOCAL_ONLY_AUTH_REQUIREMENTS {
+            remove_top_level_field(value, field);
+        }
+    }
 }
 
 fn remove_top_level_field(value: &mut TomlValue, key: &str) -> Option<TomlValue> {

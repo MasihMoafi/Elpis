@@ -1,19 +1,47 @@
 use chrono::DateTime;
 use chrono::Utc;
 use codex_features::CurrentTimeReminderDeliveryMode;
+use codex_features::Feature;
 use codex_protocol::error::CodexErr;
 use codex_protocol::error::Result as CodexResult;
 use codex_protocol::models::ResponseItem;
 
 use super::session::Session;
 use super::turn_context::TurnContext;
+use crate::config::Config;
+use crate::config::CurrentTimeReminderConfig;
 use crate::context::ContextualUserFragment;
+use crate::context::CurrentTimeUnavailable;
 use crate::context_manager::is_user_turn_boundary;
+
+pub(super) fn apply_persistent_defaults(config: &mut Config) {
+    if config.current_time_reminder.is_some()
+        || config
+            .config_layer_stack
+            .effective_config()
+            .get("features")
+            .and_then(|features| features.get("current_time_reminder"))
+            .is_some()
+    {
+        return;
+    }
+
+    // Apply defaults only to this turn; explicit settings and managed policy win.
+    if config.features.enable(Feature::CurrentTimeReminder).is_ok()
+        && config.features.enabled(Feature::CurrentTimeReminder)
+    {
+        config.current_time_reminder = Some(CurrentTimeReminderConfig {
+            sleep_tool: true,
+            ..CurrentTimeReminderConfig::default()
+        });
+    }
+}
 
 #[derive(Default)]
 pub(crate) struct CurrentTimeReminderState {
     last_delivery_time: Option<DateTime<Utc>>,
     last_window_id: Option<String>,
+    last_clock_failure: Option<(String, uuid::Uuid)>,
     pending_user_or_tool_output_boundary: bool,
 }
 
@@ -68,21 +96,85 @@ impl CurrentTimeReminderState {
     }
 }
 
+impl Session {
+    pub(super) async fn read_clock_for_context(
+        &self,
+        turn_context: &TurnContext,
+        clock_read: &'static str,
+    ) -> CodexResult<Option<DateTime<Utc>>> {
+        let error = match self
+            .services
+            .time_provider
+            .current_time(self.thread_id)
+            .await
+        {
+            Ok(time) => {
+                let mut state = self.state.lock().await;
+                state.current_time_reminder.last_clock_failure = None;
+                return Ok(Some(time));
+            }
+            Err(error) => error,
+        };
+        if !turn_context
+            .config
+            .features
+            .enabled(Feature::NonfatalClockReadErrors)
+        {
+            return Err(CodexErr::Fatal(format!(
+                "failed to read current time: {error:#}"
+            )));
+        }
+        tracing::error!(
+            clock_read,
+            thread_id = %self.thread_id,
+            turn_id = %turn_context.sub_id,
+            "failed to read current time; the clock provider may be stalled"
+        );
+        {
+            let mut state = self.state.lock().await;
+            let failure = (
+                turn_context.sub_id.clone(),
+                state.auto_compact_window_ids().window_id,
+            );
+            // A compacted window may no longer contain the earlier notice.
+            if state.current_time_reminder.last_clock_failure.as_ref() == Some(&failure) {
+                return Ok(None);
+            }
+            state.current_time_reminder.last_clock_failure = Some(failure);
+        }
+        let response_item = ContextualUserFragment::into(CurrentTimeUnavailable);
+        self.record_conversation_items(
+            turn_context,
+            turn_context.model_info(),
+            std::slice::from_ref(&response_item),
+        )
+        .await;
+        Ok(None)
+    }
+}
+
 pub(super) async fn maybe_record_current_time_reminder(
     sess: &Session,
     turn_context: &TurnContext,
     window_id: &str,
 ) -> CodexResult<()> {
+    if !turn_context
+        .config
+        .features
+        .enabled(Feature::CurrentTimeReminder)
+    {
+        return Ok(());
+    }
     let Some(config) = turn_context.config.current_time_reminder else {
         return Ok(());
     };
 
-    let current_time = sess
-        .services
-        .time_provider
-        .current_time(sess.thread_id)
-        .await
-        .map_err(|err| CodexErr::Fatal(format!("failed to read current time: {err:#}")))?;
+    let Some(current_time) = sess
+        .read_clock_for_context(turn_context, "reminder")
+        .await?
+    else {
+        return Ok(());
+    };
 
     let reminder_is_due = {
         let mut state = sess.state.lock().await;
@@ -99,8 +191,12 @@ pub(super) async fn maybe_record_current_time_reminder(
 
     let response_item =
         ContextualUserFragment::into(crate::context::CurrentTimeReminder::new(current_time));
-    sess.record_conversation_items(turn_context, std::slice::from_ref(&response_item))
-        .await;
+    sess.record_conversation_items(
+        turn_context,
+        turn_context.model_info(),
+        std::slice::from_ref(&response_item),
+    )
+    .await;
 
     Ok(())
 }

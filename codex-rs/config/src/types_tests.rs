@@ -1,4 +1,3 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use super::*;
 use pretty_assertions::assert_eq;
 
@@ -41,4 +40,84 @@ fn deserialize_skill_config_with_path_selector() {
             enabled: false,
         }
     );
+}
+
+#[test]
+fn memories_config_clamps_count_limits_to_nonzero_values() {
+    let config = MemoriesConfig::from(MemoriesToml {
+        max_raw_memories_for_consolidation: Some(0),
+        max_rollouts_per_startup: Some(0),
+        ..Default::default()
+    });
+
+    assert_eq!(
+        config,
+        MemoriesConfig {
+            max_raw_memories_for_consolidation: 1,
+            max_rollouts_per_startup: 1,
+            ..MemoriesConfig::default()
+        }
+    );
+}
+
+#[test]
+fn memories_config_clamps_rate_limit_remaining_threshold() {
+    let config = MemoriesConfig::from(MemoriesToml {
+        min_rate_limit_remaining_percent: Some(101),
+        ..Default::default()
+    });
+    assert_eq!(
+        config,
+        MemoriesConfig {
+            min_rate_limit_remaining_percent: 100,
+            ..MemoriesConfig::default()
+        }
+    );
+
+    let config = MemoriesConfig::from(MemoriesToml {
+        min_rate_limit_remaining_percent: Some(-1),
+        ..Default::default()
+    });
+    assert_eq!(
+        config,
+        MemoriesConfig {
+            min_rate_limit_remaining_percent: 0,
+            ..MemoriesConfig::default()
+        }
+    );
+}
+
+#[test]
+fn memories_version_selects_pipeline_without_changing_other_defaults() {
+    for (source, version) in [
+        ("", MemoryVersion::V1),
+        ("version = \"v2\"", MemoryVersion::V2),
+    ] {
+        let parsed: MemoriesToml = toml::from_str(source).expect("parse memories config");
+        assert_eq!(
+            MemoriesConfig::from(parsed),
+            MemoriesConfig {
+                version,
+                ..Default::default()
+            }
+        );
+    }
+    assert!(toml::from_str::<MemoriesToml>("version = \"v3\"").is_err());
+}
+
+#[test]
+fn rendering_preferences_default_individually_and_ignore_animation_switch() {
+    for key in ["mermaid", "math", "tables", "lists"] {
+        let tui: Tui =
+            toml::from_str(&format!("animations = false\n[rendering]\n{key} = false\n")).unwrap();
+        assert_eq!(
+            tui.rendering,
+            TuiRendering {
+                mermaid: key != "mermaid",
+                math: key != "math",
+                tables: key != "tables",
+                lists: key != "lists",
+            }
+        );
+    }
 }

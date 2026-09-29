@@ -1,4 +1,3 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 //! Hook events are append-only across requirements layers. The managed hook
 //! directory is different: only one directory is usable on a given platform, so
 //! conflicting values for the active platform fail closed. The inactive platform
@@ -211,10 +210,12 @@ fn append_hook_events(existing: &mut HookEventsToml, incoming: HookEventsToml) -
         pre_compact,
         post_compact,
         session_start,
+        session_end,
         user_prompt_submit,
         subagent_start,
         subagent_stop,
         stop,
+        interrupt,
     } = incoming;
 
     let mut changed = false;
@@ -224,10 +225,12 @@ fn append_hook_events(existing: &mut HookEventsToml, incoming: HookEventsToml) -
     changed |= append_vec(&mut existing.pre_compact, pre_compact);
     changed |= append_vec(&mut existing.post_compact, post_compact);
     changed |= append_vec(&mut existing.session_start, session_start);
+    changed |= append_vec(&mut existing.session_end, session_end);
     changed |= append_vec(&mut existing.user_prompt_submit, user_prompt_submit);
     changed |= append_vec(&mut existing.subagent_start, subagent_start);
     changed |= append_vec(&mut existing.subagent_stop, subagent_stop);
     changed |= append_vec(&mut existing.stop, stop);
+    changed |= append_vec(&mut existing.interrupt, interrupt);
     changed
 }
 

@@ -1,7 +1,6 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 //! Status output formatting and display adapters for the TUI.
 //!
-//! This module turns protocol-level snapshots into stable display structures used by `/usage`
+//! This module turns protocol-level snapshots into stable display structures used by `/status`
 //! output and footer/status-line helpers, while keeping rendering concerns out of transport-facing
 //! code.
 //!
@@ -13,6 +12,7 @@ mod format;
 mod helpers;
 mod rate_limits;
 pub(crate) mod remote_connection;
+mod thread_usage;
 
 pub(crate) use account::StatusAccountDisplay;
 pub(crate) use card::StatusHistoryHandle;
@@ -21,7 +21,9 @@ pub(crate) use card::new_status_output;
 #[cfg(test)]
 pub(crate) use card::new_status_output_with_rate_limits;
 pub(crate) use card::new_status_output_with_rate_limits_handle;
+pub(crate) use helpers::compose_agents_summary;
 pub(crate) use helpers::format_directory_display;
+pub(crate) use helpers::format_reset_timestamp;
 pub(crate) use helpers::format_tokens_compact;
 pub(crate) use helpers::plan_type_display_name;
 pub(crate) use rate_limits::RateLimitSnapshotDisplay;
@@ -29,6 +31,8 @@ pub(crate) use rate_limits::RateLimitWindowDisplay;
 #[cfg(test)]
 pub(crate) use rate_limits::rate_limit_snapshot_display;
 pub(crate) use rate_limits::rate_limit_snapshot_display_for_limit;
+pub(crate) use thread_usage::format_credit_micros;
+pub(crate) use thread_usage::format_estimated_usd_micros;
 
 #[cfg(test)]
 mod tests;

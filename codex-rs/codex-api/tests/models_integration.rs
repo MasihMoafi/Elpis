@@ -3,6 +3,7 @@ use codex_api::ModelsClient;
 use codex_api::Provider;
 use codex_api::RetryConfig;
 use codex_client::ReqwestTransport;
+use codex_http_client::HttpClientBuilder;
 use codex_protocol::config_types::ReasoningSummary;
 use codex_protocol::openai_models::ConfigShellToolType;
 use codex_protocol::openai_models::ModelInfo;
@@ -14,6 +15,8 @@ use codex_protocol::openai_models::TruncationPolicyConfig;
 use codex_protocol::openai_models::default_input_modalities;
 use http::HeaderMap;
 use http::Method;
+use pretty_assertions::assert_eq;
+use serde_json::json;
 use std::sync::Arc;
 use wiremock::Mock;
 use wiremock::MockServer;
@@ -46,6 +49,59 @@ fn provider(base_url: &str) -> Provider {
 }
 
 #[tokio::test]
+async fn invalid_models_response_reports_bounded_decode_metadata() {
+    let server = MockServer::start().await;
+    for (body, category, column_offset) in [
+        (
+            json!({ "data": [{ "id": "private-model" }] }).to_string(),
+            "Data",
+            0,
+        ),
+        (
+            json!({ "models": "private-value".repeat(4096) }).to_string(),
+            "Data",
+            1,
+        ),
+        (r#"{"models":]}"#.to_string(), "Syntax", 1),
+        (r#"{"models":["#.to_string(), "Eof", 0),
+    ] {
+        let response = Mock::given(method("GET"))
+            .and(path("/models"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(&body))
+            .expect(1)
+            .mount_as_scoped(&server)
+            .await;
+        let transport = ReqwestTransport::from_http_client(
+            HttpClientBuilder::new()
+                .build_direct()
+                .expect("test HTTP client should build"),
+        );
+        let provider = provider(&server.uri());
+        let request_url = ModelsClient::<ReqwestTransport>::request_url(&provider, "0.1.0");
+        let client = ModelsClient::new(transport, provider, Arc::new(DummyAuth));
+
+        let error = client
+            .list_models(
+                request_url,
+                HeaderMap::new(),
+                /*response_body_limit_bytes*/ None,
+            )
+            .await
+            .expect_err("invalid catalog should fail to decode");
+
+        assert_eq!(
+            error.to_string(),
+            format!(
+                "stream error: failed to decode models response: {category} at line 1 column {} (body: {} bytes)",
+                body.len() - column_offset,
+                body.len()
+            )
+        );
+        drop(response);
+    }
+}
+
+#[tokio::test]
 async fn models_client_hits_models_endpoint() {
     let server = MockServer::start().await;
     let base_url = format!("{}/api/codex", server.uri());
@@ -70,17 +126,19 @@ async fn models_client_hits_models_endpoint() {
                     description: ReasoningEffort::High.to_string(),
                 },
             ],
-            shell_type: ConfigShellToolType::ShellCommand,
+            shell_type: ConfigShellToolType::UnifiedExec,
             visibility: ModelVisibility::List,
             supported_in_api: true,
             priority: 1,
             additional_speed_tiers: Vec::new(),
             service_tiers: Vec::new(),
             default_service_tier: None,
+            available_access_programs: None,
             upgrade: None,
-            base_instructions: "base instructions".to_string(),
             model_messages: None,
             include_skills_usage_instructions: false,
+            include_plugin_usage_instructions: false,
+            include_apps_usage_instructions: false,
             supports_reasoning_summary_parameter: true,
             default_reasoning_summary: ReasoningSummary::Auto,
             support_verbosity: false,
@@ -89,7 +147,6 @@ async fn models_client_hits_models_endpoint() {
             apply_patch_tool_type: None,
             web_search_tool_type: Default::default(),
             truncation_policy: TruncationPolicyConfig::bytes(/*limit*/ 10_000),
-            supports_parallel_tool_calls: false,
             supports_image_detail_original: false,
             context_window: Some(272_000),
             max_context_window: None,
@@ -100,10 +157,17 @@ async fn models_client_hits_models_endpoint() {
             input_modalities: default_input_modalities(),
             used_fallback_model_metadata: false,
             supports_search_tool: false,
+            supports_experimental_context: false,
             use_responses_lite: false,
+            supports_reasoning_effort_updates: true,
+            guardian: None,
+            node_repl_auto_review_required: true,
+            node_repl_disabled: true,
             auto_review_model_override: None,
+            model_specialty: None,
             tool_mode: None,
             multi_agent_version: None,
+            multi_agent_reasoning_effort: None,
         }],
     };
 
@@ -117,18 +181,28 @@ async fn models_client_hits_models_endpoint() {
         .mount(&server)
         .await;
 
-    let transport = ReqwestTransport::new(reqwest::Client::new());
+    let transport = ReqwestTransport::from_http_client(
+        HttpClientBuilder::new()
+            .build_direct()
+            .expect("test HTTP client should build"),
+    );
     let provider = provider(&base_url);
     let request_url = ModelsClient::<ReqwestTransport>::request_url(&provider, "0.1.0");
     let client = ModelsClient::new(transport, provider, Arc::new(DummyAuth));
 
     let (models, _) = client
-        .list_models(request_url, HeaderMap::new())
+        .list_models(
+            request_url,
+            HeaderMap::new(),
+            /*response_body_limit_bytes*/ None,
+        )
         .await
         .expect("models request should succeed");
 
     assert_eq!(models.len(), 1);
     assert_eq!(models[0].slug, "gpt-test");
+    assert!(models[0].node_repl_auto_review_required);
+    assert!(models[0].node_repl_disabled);
 
     let received = server
         .received_requests()

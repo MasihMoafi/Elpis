@@ -37,12 +37,9 @@ commands that would enter the bubblewrap path.
 - WSL2 uses the normal Linux bubblewrap path.
 - WSL1 is not supported for bubblewrap sandboxing; Codex rejects sandboxed
   shell commands that would require the bubblewrap path before invoking `bwrap`.
-- Legacy Landlock + mount protections remain available as an explicit legacy
-  fallback path.
-- Set `features.use_legacy_landlock = true` (or CLI `-c use_legacy_landlock=true`)
-  to force the legacy Landlock fallback.
-- The legacy Landlock fallback is used only when the split filesystem policy is
-  sandbox-equivalent to the legacy model after `cwd` resolution.
+- Filesystem-restricted execution requires bubblewrap. The legacy Landlock
+  option is rejected for these policies because it cannot isolate app-server
+  Unix sockets. Disable `features.use_legacy_landlock` when upgrading.
 - Split-only filesystem policies that do not round-trip through the legacy
   `SandboxPolicy` model stay on bubblewrap so nested read-only or denied
   carveouts are preserved.
@@ -82,7 +79,7 @@ commands that would enter the bubblewrap path.
   writable roots are blocked by mounting `/dev/null` on the symlink or first
   missing component.
 - When bubblewrap is active, the helper explicitly isolates the user namespace via
-  `--unshare-user` and the PID namespace via `--unshare-pid`.
+  `--unshare-user`. By default it also creates a PID namespace via `--unshare-pid`.
 - When bubblewrap is active and network is restricted without proxy routing, the helper also
   isolates the network namespace via `--unshare-net`.
 - In managed proxy mode, the helper uses `--unshare-net` plus an internal
@@ -90,8 +87,25 @@ commands that would enter the bubblewrap path.
   endpoints.
 - In managed proxy mode, after the bridge is live, seccomp blocks new
   AF_UNIX/socketpair creation for the user command.
-- When bubblewrap is active, it mounts a fresh `/proc` via `--proc /proc` by default, but
-  you can skip this in restrictive container environments with `--no-proc`.
+- When bubblewrap is active, it mounts a fresh `/proc` via `--proc /proc` by default.
+  If that mount is denied, it retains the inherited `/proc` and still creates a
+  PID namespace, preserving the existing fallback. `--no-proc` also retains the
+  inherited `/proc` without disabling PID isolation. In these cases, process IDs
+  inside the sandbox can differ from those exposed by `/proc`. Default invocations
+  send no new helper flags and remain compatible with older helpers.
+- Trusted provisioning of a dedicated environment can start
+  `codex exec-server --linux-sandbox-pid-namespace=inherit`. This startup-only
+  setting applies to both process and filesystem helpers; repository config and
+  command environment variables cannot enable it. The helper receives the new
+  `--inherit-pid-namespace` option, which requires an updated helper; deploy the
+  helper and startup flag together.
+  Inheritance reuses the caller's PID namespace and `/proc` together, omitting
+  `--unshare-pid` and `--as-pid-1`. This preserves process lookups but allows
+  sandboxed commands to signal other same-UID processes, including the executor.
+  With `:minimal`, the existing `/proc` is bound read-only, preserving its
+  container masks; explicit filesystem denials are applied afterward.
+  Filesystem, user, IPC, network, seccomp, and existing container `/proc` masks
+  remain in force. The default `isolate` mode retains PID isolation.
 
 **Notes**
 - The CLI surface is `codex sandbox`; the host OS selects the sandbox backend.

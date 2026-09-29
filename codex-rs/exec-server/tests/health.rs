@@ -20,8 +20,12 @@ async fn exec_server_serves_readyz_alongside_websocket_endpoint() -> anyhow::Res
         .strip_prefix("ws://")
         .expect("websocket URL should use ws://");
 
-    let response = reqwest::get(format!("http://{http_base_url}/readyz")).await?;
-    assert_eq!(response.status(), reqwest::StatusCode::OK);
+    let client = codex_http_client::HttpClientBuilder::new().build_direct()?;
+    let response = client
+        .get(format!("http://{http_base_url}/readyz"))
+        .send()
+        .await?;
+    assert_eq!(response.status(), http::StatusCode::OK);
 
     server.shutdown().await?;
     Ok(())
@@ -34,7 +38,9 @@ async fn remote_environment_fetches_info_from_exec_server() -> anyhow::Result<()
     assert!(environment.is_remote());
 
     let remote_info = environment.info().await?;
-    let local_info = Environment::default_for_tests().info().await?;
+    let mut local_info = Environment::default_for_tests().info().await?;
+    // Only the remote executor advertises its optional build identity.
+    local_info.provider_id = remote_info.provider_id.clone();
     assert_eq!(remote_info, local_info);
 
     server.shutdown().await?;

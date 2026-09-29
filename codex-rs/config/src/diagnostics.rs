@@ -1,11 +1,9 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 //! Helpers for mapping config parse/validation failures to file locations and
 //! rendering them in a user-friendly way.
 
 use crate::ConfigLayerEntry;
 use crate::ConfigLayerSource;
 use crate::ConfigLayerStack;
-use crate::ConfigLayerStackOrdering;
 use crate::format_config_layer_source;
 use codex_utils_absolute_path::AbsolutePathBufGuard;
 use serde::de::DeserializeOwned;
@@ -176,14 +174,8 @@ pub async fn first_layer_config_error<T: DeserializeOwned>(
     // When the merged config fails schema validation, we surface the first concrete
     // per-file error to point users at a specific file and range rather than an
     // opaque merged-layer failure.
-    first_layer_config_error_for_entries::<T, _>(
-        layers.get_layers(
-            ConfigLayerStackOrdering::LowestPrecedenceFirst,
-            /*include_disabled*/ false,
-        ),
-        config_toml_file,
-    )
-    .await
+    first_layer_config_error_for_entries::<T, _>(layers.layers_low_to_high(), config_toml_file)
+        .await
 }
 
 pub async fn first_layer_config_error_from_entries<T: DeserializeOwned>(
@@ -201,6 +193,9 @@ where
     I: IntoIterator<Item = &'a ConfigLayerEntry>,
 {
     for layer in layers {
+        if layer.is_disabled() {
+            continue;
+        }
         if let Some(contents) = layer.raw_toml() {
             let source_name = format_config_layer_source(&layer.name, config_toml_file);
             let Some(base_dir) = layer.raw_toml_base_dir() else {
@@ -249,6 +244,7 @@ where
 
 fn config_path_for_layer(layer: &ConfigLayerEntry, config_toml_file: &str) -> Option<PathBuf> {
     match &layer.name {
+        ConfigLayerSource::PackagedDefaults { file } => Some(file.to_path_buf()),
         ConfigLayerSource::System { file } => Some(file.to_path_buf()),
         ConfigLayerSource::User { file, .. } => Some(file.to_path_buf()),
         ConfigLayerSource::Project { dot_codex_folder } => {

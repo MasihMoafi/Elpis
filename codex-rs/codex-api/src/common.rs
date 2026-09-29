@@ -1,5 +1,5 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use crate::error::ApiError;
+use codex_protocol::ResponseUsageMetadata;
 use codex_protocol::config_types::ReasoningSummary as ReasoningSummaryConfig;
 use codex_protocol::config_types::Verbosity as VerbosityConfig;
 use codex_protocol::models::ResponseItem;
@@ -9,12 +9,15 @@ use codex_protocol::protocol::RateLimitSnapshot;
 use codex_protocol::protocol::TokenUsage;
 use codex_protocol::protocol::TurnModerationMetadataEvent;
 use codex_protocol::protocol::W3cTraceContext;
+use codex_protocol::turn_input::CyberAccessProgram;
 use futures::Stream;
 use serde::Deserialize;
 use serde::Serialize;
 use serde_json::Value;
+use serde_json::value::RawValue;
 use std::collections::HashMap;
 use std::pin::Pin;
+use std::sync::Arc;
 use std::task::Context;
 use std::task::Poll;
 use tokio::sync::mpsc;
@@ -22,29 +25,63 @@ use tokio::sync::mpsc;
 pub const WS_REQUEST_HEADER_TRACEPARENT_CLIENT_METADATA_KEY: &str = "ws_request_header_traceparent";
 pub const WS_REQUEST_HEADER_TRACESTATE_CLIENT_METADATA_KEY: &str = "ws_request_header_tracestate";
 
-/// Canonical input payload for the compaction endpoint.
+/// Explicit per-request access selection using the Responses API wire values.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+pub struct AccessPrograms {
+    cyber: &'static str,
+}
+
+impl From<CyberAccessProgram> for AccessPrograms {
+    fn from(program: CyberAccessProgram) -> Self {
+        Self {
+            cyber: match program {
+                CyberAccessProgram::Standard => "standard",
+                CyberAccessProgram::DaybreakBlue => "daybreak_blue",
+                CyberAccessProgram::DaybreakRed => "daybreak_red",
+            },
+        }
+    }
+}
+
+/// Canonical input payload for the memory summarize endpoint.
 #[derive(Debug, Clone, Serialize)]
-pub struct CompactionInput<'a> {
-    pub model: &'a str,
-    pub input: &'a [ResponseItem],
-    #[serde(skip_serializing_if = "str::is_empty")]
-    pub instructions: &'a str,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub tools: Option<Vec<Value>>,
-    pub parallel_tool_calls: bool,
+pub struct MemorySummarizeInput {
+    pub model: String,
+    #[serde(rename = "traces")]
+    pub raw_memories: Vec<RawMemory>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reasoning: Option<Reasoning>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub service_tier: Option<&'a str>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub prompt_cache_key: Option<&'a str>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub text: Option<TextControls>,
 }
+
+#[derive(Debug, Clone, Serialize)]
+pub struct RawMemory {
+    pub id: String,
+    pub metadata: RawMemoryMetadata,
+    pub items: Vec<Value>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct RawMemoryMetadata {
+    pub source_path: String,
+}
+
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+pub struct MemorySummarizeOutput {
+    #[serde(rename = "trace_summary", alias = "raw_memory")]
+    pub raw_memory: String,
+    pub memory_summary: String,
+}
+
+/// The latest server response ID received in this turn, shared with tool-review extensions.
+#[derive(Clone, Debug)]
+pub struct ResponseId(pub String);
 
 #[derive(Debug)]
 pub enum ResponseEvent {
-    Created,
+    Created {
+        /// Existing server response ID, when supplied by the stream.
+        response_id: Option<String>,
+    },
     SafetyBuffering(SafetyBuffering),
     OutputItemDone(ResponseItem),
     OutputItemAdded(ResponseItem),
@@ -62,6 +99,7 @@ pub enum ResponseEvent {
     Completed {
         response_id: String,
         token_usage: Option<TokenUsage>,
+        usage_metadata: Option<ResponseUsageMetadata>,
         /// Did the model affirmatively end its turn? Some providers do not set this,
         /// so we rely on fallback logic when this is `None`.
         end_turn: Option<bool>,
@@ -117,12 +155,30 @@ pub enum ReasoningContext {
 
 #[derive(Debug, Serialize, Clone, PartialEq)]
 pub struct Reasoning {
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        serialize_with = "serialize_reasoning_effort"
+    )]
     pub effort: Option<ReasoningEffortConfig>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub summary: Option<ReasoningSummaryConfig>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub context: Option<ReasoningContext>,
+}
+
+fn serialize_reasoning_effort<S>(
+    effort: &Option<ReasoningEffortConfig>,
+    serializer: S,
+) -> Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    if let Some(ReasoningEffortConfig::Custom(value)) = effort
+        && let Ok(value) = value.parse::<u64>()
+    {
+        return serializer.serialize_u64(value);
+    }
+    effort.serialize(serializer)
 }
 
 #[derive(Debug, Serialize, Clone, PartialEq)]
@@ -184,45 +240,38 @@ impl From<VerbosityConfig> for OpenAiVerbosity {
     }
 }
 
-/// Request-wide prompt cache policy (`prompt_cache_options`).
+/// Serialized tool definitions for Responses API requests.
 ///
-/// Accepted by GPT-5.6 and later model families only; older models reject the field, so
-/// it must stay `None` for anything else. `ttl` is deliberately not modelled: its only
-/// supported value is the default `30m`.
-#[derive(Debug, Serialize, Clone, Copy, PartialEq, Eq)]
-pub struct PromptCacheOptions {
-    pub mode: PromptCacheMode,
+/// Keeping the tool list as raw JSON avoids rebuilding a generic JSON value
+/// tree, while the shared allocation keeps request clones cheap.
+#[derive(Debug, Clone)]
+pub struct ResponsesApiTools(Arc<RawValue>);
+
+impl ResponsesApiTools {
+    pub(crate) fn as_raw_value(&self) -> &RawValue {
+        &self.0
+    }
 }
 
-#[derive(Debug, Serialize, Clone, Copy, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub enum PromptCacheMode {
-    /// Server picks one breakpoint near the end of the prompt. This is the API default.
-    Implicit,
-    /// Only the breakpoints in the request are used. A request in this mode with no
-    /// breakpoints does not use prompt caching at all.
-    Explicit,
+impl From<Arc<RawValue>> for ResponsesApiTools {
+    fn from(value: Arc<RawValue>) -> Self {
+        Self(value)
+    }
 }
 
-/// Marks the end of a reusable prefix. Valid on `input_text`, `input_image`, and
-/// `input_file` content blocks; the breakpoint covers that block and everything before it.
-#[derive(Debug, Serialize, Clone, Copy, PartialEq, Eq)]
-pub struct PromptCacheBreakpoint {
-    pub mode: PromptCacheBreakpointMode,
+impl PartialEq for ResponsesApiTools {
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.0, &other.0) || self.0.get() == other.0.get()
+    }
 }
 
-#[derive(Debug, Serialize, Clone, Copy, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub enum PromptCacheBreakpointMode {
-    Explicit,
-}
-
-/// Address of one explicit breakpoint: an index into `input` and an index into that
-/// item's `content` array.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct PromptCacheBreakpointPosition {
-    pub item: usize,
-    pub content: usize,
+impl Serialize for ResponsesApiTools {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        self.0.serialize(serializer)
+    }
 }
 
 #[derive(Debug, Serialize, Clone, PartialEq)]
@@ -232,7 +281,7 @@ pub struct ResponsesApiRequest {
     pub instructions: String,
     pub input: Vec<ResponseItem>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub tools: Option<Vec<serde_json::Value>>,
+    pub tools: Option<ResponsesApiTools>,
     pub tool_choice: String,
     pub parallel_tool_calls: bool,
     pub reasoning: Option<Reasoning>,
@@ -246,130 +295,68 @@ pub struct ResponsesApiRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub prompt_cache_key: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub prompt_cache_options: Option<PromptCacheOptions>,
-    /// Content blocks that carry an explicit `prompt_cache_breakpoint`.
-    ///
-    /// `ResponseItem`/`ContentItem` are persisted history types, so the request-only
-    /// marker is stamped during encoding (see [`encode_responses_request`]) instead of
-    /// being stored on the item and leaking into rollouts.
-    #[serde(skip)]
-    pub prompt_cache_breakpoints: Vec<PromptCacheBreakpointPosition>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub text: Option<TextControls>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub client_metadata: Option<HashMap<String, String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub access_programs: Option<AccessPrograms>,
 }
 
-/// Serializes a Responses request, stamping `prompt_cache_breakpoint` onto the content
-/// blocks named by `prompt_cache_breakpoints`.
-pub fn encode_responses_request(request: &ResponsesApiRequest) -> Result<Value, serde_json::Error> {
-    let mut body = serde_json::to_value(request)?;
-    stamp_prompt_cache_breakpoints(&mut body, &request.prompt_cache_breakpoints);
-    Ok(body)
-}
-
-/// Serializes a websocket `response.create` request the same way.
-///
-/// `ResponsesWsRequest` is internally tagged, so the request fields -- `input` included --
-/// sit at the top level of the encoded object, exactly as in the HTTP body.
-pub fn encode_responses_ws_request(
-    request: &ResponsesWsRequest,
-) -> Result<Value, serde_json::Error> {
-    let ResponsesWsRequest::ResponseCreate(create) = request;
-    let breakpoints = create.prompt_cache_breakpoints.clone();
-    let mut body = serde_json::to_value(request)?;
-    stamp_prompt_cache_breakpoints(&mut body, &breakpoints);
-    Ok(body)
-}
-
-/// Positions that do not resolve to a content-block object are skipped rather than
-/// erroring: a stale index must not fail the request, it must only lose the breakpoint.
-fn stamp_prompt_cache_breakpoints(body: &mut Value, positions: &[PromptCacheBreakpointPosition]) {
-    if positions.is_empty() {
-        return;
-    }
-    let Some(input) = body.get_mut("input").and_then(Value::as_array_mut) else {
-        return;
-    };
-    let Ok(breakpoint) = serde_json::to_value(PromptCacheBreakpoint {
-        mode: PromptCacheBreakpointMode::Explicit,
-    }) else {
-        return;
-    };
-    for position in positions {
-        let Some(block) = input
-            .get_mut(position.item)
-            .and_then(|item| item.get_mut("content"))
-            .and_then(Value::as_array_mut)
-            .and_then(|content| content.get_mut(position.content))
-            .and_then(Value::as_object_mut)
-        else {
-            continue;
-        };
-        block.insert("prompt_cache_breakpoint".to_string(), breakpoint.clone());
-    }
-}
-
-impl From<&ResponsesApiRequest> for ResponseCreateWsRequest {
-    fn from(request: &ResponsesApiRequest) -> Self {
+impl<'a> From<&'a ResponsesApiRequest> for ResponseCreateWsRequest<'a> {
+    fn from(request: &'a ResponsesApiRequest) -> Self {
         Self {
-            model: request.model.clone(),
-            instructions: request.instructions.clone(),
+            model: &request.model,
+            instructions: &request.instructions,
             previous_response_id: None,
-            input: request.input.clone(),
-            tools: request.tools.clone(),
-            tool_choice: request.tool_choice.clone(),
+            input: &request.input,
+            tools: request.tools.as_ref().map(ResponsesApiTools::as_raw_value),
+            tool_choice: &request.tool_choice,
             parallel_tool_calls: request.parallel_tool_calls,
-            reasoning: request.reasoning.clone(),
+            reasoning: request.reasoning.as_ref(),
             store: request.store,
             stream: request.stream,
-            stream_options: request.stream_options.clone(),
-            include: request.include.clone(),
-            service_tier: request.service_tier.clone(),
-            prompt_cache_key: request.prompt_cache_key.clone(),
-            prompt_cache_options: request.prompt_cache_options,
-            prompt_cache_breakpoints: request.prompt_cache_breakpoints.clone(),
-            text: request.text.clone(),
+            stream_options: request.stream_options.as_ref(),
+            include: &request.include,
+            service_tier: request.service_tier.as_deref(),
+            prompt_cache_key: request.prompt_cache_key.as_deref(),
+            text: request.text.as_ref(),
             generate: None,
             client_metadata: request.client_metadata.clone(),
+            access_programs: request.access_programs,
         }
     }
 }
 
 #[derive(Debug, Serialize)]
-pub struct ResponseCreateWsRequest {
-    pub model: String,
-    #[serde(skip_serializing_if = "String::is_empty")]
-    pub instructions: String,
+pub struct ResponseCreateWsRequest<'a> {
+    pub model: &'a str,
+    #[serde(skip_serializing_if = "str::is_empty")]
+    pub instructions: &'a str,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub previous_response_id: Option<String>,
-    pub input: Vec<ResponseItem>,
+    pub input: &'a [ResponseItem],
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub tools: Option<Vec<Value>>,
-    pub tool_choice: String,
+    pub tools: Option<&'a RawValue>,
+    pub tool_choice: &'a str,
     pub parallel_tool_calls: bool,
-    pub reasoning: Option<Reasoning>,
+    pub reasoning: Option<&'a Reasoning>,
     pub store: bool,
     pub stream: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub stream_options: Option<StreamOptions>,
-    pub include: Vec<String>,
+    pub stream_options: Option<&'a StreamOptions>,
+    pub include: &'a [String],
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub service_tier: Option<String>,
+    pub service_tier: Option<&'a str>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub prompt_cache_key: Option<String>,
+    pub prompt_cache_key: Option<&'a str>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub prompt_cache_options: Option<PromptCacheOptions>,
-    /// See [`ResponsesApiRequest::prompt_cache_breakpoints`]; stamped by
-    /// [`encode_responses_ws_request`].
-    #[serde(skip)]
-    pub prompt_cache_breakpoints: Vec<PromptCacheBreakpointPosition>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub text: Option<TextControls>,
+    pub text: Option<&'a TextControls>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub generate: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub client_metadata: Option<HashMap<String, String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub access_programs: Option<AccessPrograms>,
 }
 
 pub fn response_create_client_metadata(
@@ -397,9 +384,9 @@ pub fn response_create_client_metadata(
 #[derive(Debug, Serialize)]
 #[serde(tag = "type")]
 #[allow(clippy::large_enum_variant)]
-pub enum ResponsesWsRequest {
+pub enum ResponsesWsRequest<'a> {
     #[serde(rename = "response.create")]
-    ResponseCreate(ResponseCreateWsRequest),
+    ResponseCreate(ResponseCreateWsRequest<'a>),
 }
 
 pub fn create_text_param_for_request(
@@ -433,196 +420,5 @@ impl Stream for ResponseStream {
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         self.rx_event.poll_recv(cx)
-    }
-}
-
-#[cfg(test)]
-mod prompt_cache_tests {
-    use super::*;
-    use codex_protocol::models::ContentItem;
-    use pretty_assertions::assert_eq;
-
-    fn message(role: &str, blocks: Vec<ContentItem>) -> ResponseItem {
-        ResponseItem::Message {
-            id: None,
-            role: role.to_string(),
-            content: blocks,
-            phase: None,
-            internal_chat_message_metadata_passthrough: None,
-        }
-    }
-
-    fn request(input: Vec<ResponseItem>) -> ResponsesApiRequest {
-        ResponsesApiRequest {
-            model: "gpt-5.6-sol".to_string(),
-            instructions: "Be exact.".to_string(),
-            input,
-            tools: None,
-            tool_choice: "auto".to_string(),
-            parallel_tool_calls: false,
-            reasoning: None,
-            store: false,
-            stream: true,
-            stream_options: None,
-            include: Vec::new(),
-            service_tier: None,
-            prompt_cache_key: Some("session-1".to_string()),
-            prompt_cache_options: None,
-            prompt_cache_breakpoints: Vec::new(),
-            text: None,
-            client_metadata: None,
-        }
-    }
-
-    #[test]
-    fn an_unmarked_request_serializes_exactly_as_before() {
-        let body = encode_responses_request(&request(vec![message(
-            "user",
-            vec![ContentItem::InputText {
-                text: "hi".to_string(),
-            }],
-        )]))
-        .expect("request should encode");
-
-        assert_eq!(body.get("prompt_cache_options"), None);
-        let block = &body["input"][0]["content"][0];
-        assert_eq!(block.get("prompt_cache_breakpoint"), None);
-    }
-
-    #[test]
-    fn explicit_mode_stamps_the_named_content_blocks_only() {
-        let mut request = request(vec![
-            message(
-                "developer",
-                vec![
-                    ContentItem::InputText {
-                        text: "instructions".to_string(),
-                    },
-                    ContentItem::InputText {
-                        text: "agents.md".to_string(),
-                    },
-                ],
-            ),
-            message(
-                "user",
-                vec![ContentItem::InputText {
-                    text: "do the thing".to_string(),
-                }],
-            ),
-        ]);
-        request.prompt_cache_options = Some(PromptCacheOptions {
-            mode: PromptCacheMode::Explicit,
-        });
-        request.prompt_cache_breakpoints = vec![
-            PromptCacheBreakpointPosition {
-                item: 0,
-                content: 1,
-            },
-            PromptCacheBreakpointPosition {
-                item: 1,
-                content: 0,
-            },
-        ];
-
-        let body = encode_responses_request(&request).expect("request should encode");
-
-        assert_eq!(
-            body["prompt_cache_options"],
-            serde_json::json!({"mode": "explicit"})
-        );
-        let content = &body["input"][0]["content"];
-        assert_eq!(content[0].get("prompt_cache_breakpoint"), None);
-        assert_eq!(
-            content[1]["prompt_cache_breakpoint"],
-            serde_json::json!({"mode": "explicit"})
-        );
-        assert_eq!(
-            body["input"][1]["content"][0]["prompt_cache_breakpoint"],
-            serde_json::json!({"mode": "explicit"})
-        );
-        // The marker is request-only: it must not appear on the typed history item.
-        assert_eq!(
-            serde_json::to_value(&request.input[0]).expect("item should serialize")["content"][1]
-                .get("prompt_cache_breakpoint"),
-            None
-        );
-    }
-
-    #[test]
-    fn implicit_mode_still_stamps_the_breakpoints_the_request_carries() {
-        // The default path: no `prompt_cache_options`, so the server keeps its automatic
-        // latest-message breakpoint *and* honours ours. Encoding must not make the
-        // marker conditional on explicit mode.
-        let mut request = request(vec![message(
-            "developer",
-            vec![ContentItem::InputText {
-                text: "instructions".to_string(),
-            }],
-        )]);
-        request.prompt_cache_breakpoints = vec![PromptCacheBreakpointPosition {
-            item: 0,
-            content: 0,
-        }];
-
-        let body = encode_responses_request(&request).expect("request should encode");
-
-        assert_eq!(body.get("prompt_cache_options"), None);
-        assert_eq!(
-            body["input"][0]["content"][0]["prompt_cache_breakpoint"],
-            serde_json::json!({"mode": "explicit"})
-        );
-    }
-
-    #[test]
-    fn a_position_that_no_longer_resolves_is_dropped_rather_than_failing() {
-        let mut request = request(vec![message(
-            "user",
-            vec![ContentItem::InputText {
-                text: "hi".to_string(),
-            }],
-        )]);
-        request.prompt_cache_breakpoints = vec![
-            PromptCacheBreakpointPosition {
-                item: 9,
-                content: 0,
-            },
-            PromptCacheBreakpointPosition {
-                item: 0,
-                content: 7,
-            },
-        ];
-
-        let body = encode_responses_request(&request).expect("request should encode");
-
-        assert_eq!(
-            body["input"][0]["content"][0].get("prompt_cache_breakpoint"),
-            None
-        );
-    }
-
-    #[test]
-    fn the_websocket_body_is_stamped_the_same_way() {
-        let mut create = ResponseCreateWsRequest::from(&request(vec![message(
-            "user",
-            vec![ContentItem::InputText {
-                text: "hi".to_string(),
-            }],
-        )]));
-        create.prompt_cache_options = Some(PromptCacheOptions {
-            mode: PromptCacheMode::Explicit,
-        });
-        create.prompt_cache_breakpoints = vec![PromptCacheBreakpointPosition {
-            item: 0,
-            content: 0,
-        }];
-
-        let body = encode_responses_ws_request(&ResponsesWsRequest::ResponseCreate(create))
-            .expect("request should encode");
-
-        assert_eq!(body["type"], "response.create");
-        assert_eq!(
-            body["input"][0]["content"][0]["prompt_cache_breakpoint"],
-            serde_json::json!({"mode": "explicit"})
-        );
     }
 }

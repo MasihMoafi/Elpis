@@ -1,9 +1,11 @@
+use anyhow::Context;
 use codex_config::types::AppToolApproval;
 use codex_config::types::McpServerAuth;
 use codex_config::types::McpServerConfig;
 use codex_config::types::McpServerEnvVar;
 use codex_config::types::McpServerToolConfig;
 use codex_config::types::McpServerTransportConfig;
+use codex_config::types::McpStartupReadiness;
 use codex_config::types::ToolSuggestDisabledTool;
 use codex_config::types::ToolSuggestDiscoverableType;
 use toml_edit::Array as TomlArray;
@@ -17,13 +19,13 @@ pub(super) fn ensure_table_for_write(item: &mut TomlItem) -> Option<&mut TomlTab
     match item {
         TomlItem::Table(table) => Some(table),
         TomlItem::Value(value) => {
-            // An inline table is the same data in another spelling, so it can be
-            // rewritten in place. Anything else at this key is a value the owner
-            // put there; saying no hands the caller the choice of refusing the
-            // edit, where quietly swapping in an empty table would delete it.
-            let inline = value.as_inline_table()?;
-            *item = TomlItem::Table(table_from_inline(inline));
-            item.as_table_mut()
+            if let Some(inline) = value.as_inline_table() {
+                *item = TomlItem::Table(table_from_inline(inline));
+                item.as_table_mut()
+            } else {
+                *item = TomlItem::Table(new_implicit_table());
+                item.as_table_mut()
+            }
         }
         TomlItem::None => {
             *item = TomlItem::Table(new_implicit_table());
@@ -45,7 +47,7 @@ pub(super) fn ensure_table_for_read(item: &mut TomlItem) -> Option<&mut TomlTabl
     }
 }
 
-fn serialize_mcp_server_table(config: &McpServerConfig) -> TomlTable {
+fn serialize_mcp_server_table(config: &McpServerConfig) -> anyhow::Result<TomlTable> {
     let mut entry = TomlTable::new();
     entry.set_implicit(false);
 
@@ -78,6 +80,7 @@ fn serialize_mcp_server_table(config: &McpServerConfig) -> TomlTable {
             bearer_token_env_var,
             http_headers,
             env_http_headers,
+            http_headers_helper,
         } => {
             entry["url"] = value(url.clone());
             if let Some(env_var) = bearer_token_env_var {
@@ -93,11 +96,16 @@ fn serialize_mcp_server_table(config: &McpServerConfig) -> TomlTable {
             {
                 entry["env_http_headers"] = table_from_pairs(headers.iter());
             }
+            if let Some(command) = http_headers_helper {
+                entry["http_headers_helper"] = value(command.clone());
+            }
         }
     }
 
-    if matches!(&config.auth, McpServerAuth::ChatGpt) {
-        entry["auth"] = value("chatgpt");
+    match config.auth {
+        McpServerAuth::OAuth => {}
+        McpServerAuth::ChatGpt => entry["auth"] = value("chatgpt"),
+        McpServerAuth::EmaAuth => entry["auth"] = value("ema_auth"),
     }
     if !config.enabled {
         entry["enabled"] = value(false);
@@ -108,8 +116,18 @@ fn serialize_mcp_server_table(config: &McpServerConfig) -> TomlTable {
     if config.required {
         entry["required"] = value(true);
     }
+    match config.startup_readiness {
+        McpStartupReadiness::Connection => {}
+        McpStartupReadiness::Catalog => entry["startup_readiness"] = value("catalog"),
+    }
     if config.supports_parallel_tool_calls {
         entry["supports_parallel_tool_calls"] = value(true);
+    }
+    if let Some(budget) = config.tool_input_schema_max_bytes {
+        entry["tool_input_schema_max_bytes"] = value(i64::try_from(budget.get())?);
+    }
+    if let Some(omit_tools_from) = &config.omit_tools_from {
+        entry["omit_tools_from"] = array_from_iter(omit_tools_from.iter().map(ToString::to_string));
     }
     if let Some(timeout) = config.startup_timeout_sec {
         entry["startup_timeout_sec"] = value(timeout.as_secs_f64());
@@ -140,14 +158,29 @@ fn serialize_mcp_server_table(config: &McpServerConfig) -> TomlTable {
     {
         entry["scopes"] = array_from_iter(scopes.iter().cloned());
     }
-    if let Some(oauth) = &config.oauth
-        && let Some(client_id) = &oauth.client_id
-        && !client_id.is_empty()
-    {
+    if let Some(oauth) = &config.oauth {
         let mut oauth_table = TomlTable::new();
         oauth_table.set_implicit(false);
-        oauth_table["client_id"] = value(client_id.clone());
-        entry["oauth"] = TomlItem::Table(oauth_table);
+        if let Some(client_id) = &oauth.client_id
+            && !client_id.is_empty()
+        {
+            oauth_table["client_id"] = value(client_id.clone());
+        }
+        if let Some(client_secret) = &oauth.client_secret {
+            oauth_table["client_secret"] = value(client_secret.as_str());
+        }
+        if let Some(callback_url) = &oauth.callback_url {
+            oauth_table["callback_url"] = value(callback_url.clone());
+        }
+        if let Some(issuer) = &oauth.authorization_server_issuer {
+            oauth_table["authorization_server_issuer"] = value(issuer.clone());
+        }
+        if let Some(callback_port) = oauth.callback_port {
+            oauth_table["callback_port"] = value(i64::from(callback_port));
+        }
+        if !oauth_table.is_empty() {
+            entry["oauth"] = TomlItem::Table(oauth_table);
+        }
     }
     if let Some(resource) = &config.oauth_resource
         && !resource.is_empty()
@@ -159,15 +192,15 @@ fn serialize_mcp_server_table(config: &McpServerConfig) -> TomlTable {
         let mut tool_entries: Vec<_> = config.tools.iter().collect();
         tool_entries.sort_by_key(|(name, _)| *name);
         for (name, tool_config) in tool_entries {
-            tools.insert(name, serialize_mcp_server_tool(tool_config));
+            tools.insert(name, serialize_mcp_server_tool(tool_config)?);
         }
         entry.insert("tools", TomlItem::Table(tools));
     }
 
-    entry
+    Ok(entry)
 }
 
-fn serialize_mcp_server_tool(config: &McpServerToolConfig) -> TomlItem {
+fn serialize_mcp_server_tool(config: &McpServerToolConfig) -> anyhow::Result<TomlItem> {
     let mut entry = TomlTable::new();
     entry.set_implicit(false);
     if let Some(approval_mode) = config.approval_mode {
@@ -178,15 +211,21 @@ fn serialize_mcp_server_tool(config: &McpServerToolConfig) -> TomlItem {
             AppToolApproval::Approve => "approve",
         });
     }
-    TomlItem::Table(entry)
+    if let Some(output_token_limit) = config.output_token_limit {
+        entry["output_token_limit"] = value(
+            i64::try_from(output_token_limit.get())
+                .context("output_token_limit exceeds the TOML integer range")?,
+        );
+    }
+    Ok(TomlItem::Table(entry))
 }
 
-pub(super) fn serialize_mcp_server(config: &McpServerConfig) -> TomlItem {
-    TomlItem::Table(serialize_mcp_server_table(config))
+pub(super) fn serialize_mcp_server(config: &McpServerConfig) -> anyhow::Result<TomlItem> {
+    Ok(TomlItem::Table(serialize_mcp_server_table(config)?))
 }
 
-pub(super) fn serialize_mcp_server_inline(config: &McpServerConfig) -> InlineTable {
-    serialize_mcp_server_table(config).into_inline_table()
+pub(super) fn serialize_mcp_server_inline(config: &McpServerConfig) -> anyhow::Result<InlineTable> {
+    Ok(serialize_mcp_server_table(config)?.into_inline_table())
 }
 
 pub(super) fn merge_inline_table(existing: &mut InlineTable, replacement: InlineTable) {

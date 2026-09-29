@@ -2,9 +2,13 @@
 #![cfg(target_os = "macos")]
 
 use anyhow::Result;
+use codex_core::TurnInputRequest;
 use codex_core::config::Constrained;
 use codex_features::Feature;
 use codex_protocol::config_types::ApprovalsReviewer;
+use codex_protocol::config_types::CollaborationMode;
+use codex_protocol::config_types::ModeKind;
+use codex_protocol::config_types::Settings;
 use codex_protocol::models::FileSystemPermissions;
 use codex_protocol::models::PermissionProfile;
 use codex_protocol::permissions::NetworkSandboxPolicy;
@@ -12,6 +16,7 @@ use codex_protocol::protocol::AskForApproval;
 use codex_protocol::protocol::EventMsg;
 use codex_protocol::protocol::Op;
 use codex_protocol::protocol::ReviewDecision;
+use codex_protocol::protocol::ThreadSettingsOverrides;
 use codex_protocol::request_permissions::PermissionGrantScope;
 use codex_protocol::request_permissions::RequestPermissionProfile;
 use codex_protocol::request_permissions::RequestPermissionsResponse;
@@ -38,6 +43,7 @@ use serde_json::Value;
 use serde_json::json;
 use std::fs;
 use std::path::Path;
+use test_case::test_case;
 
 fn absolute_path(path: &Path) -> AbsolutePathBuf {
     AbsolutePathBuf::try_from(path).expect("absolute path")
@@ -92,16 +98,6 @@ fn requested_directory_write_permissions(path: &Path) -> RequestPermissionProfil
     }
 }
 
-fn normalized_directory_write_permissions(path: &Path) -> Result<RequestPermissionProfile> {
-    Ok(RequestPermissionProfile {
-        file_system: Some(FileSystemPermissions::from_read_write_roots(
-            Some(vec![]),
-            Some(vec![AbsolutePathBuf::try_from(path.canonicalize()?)?]),
-        )),
-        ..RequestPermissionProfile::default()
-    })
-}
-
 fn parse_result(item: &Value) -> (Option<i64>, String) {
     let output_str = item
         .get("output")
@@ -143,31 +139,28 @@ async fn submit_turn(
     let (sandbox_policy, permission_profile) =
         turn_permission_fields(permission_profile, test.config.cwd.as_path());
     test.codex
-        .submit(Op::UserInput {
-            items: vec![UserInput::Text {
+        .start_or_steer_turn(
+            TurnInputRequest::user_input(vec![UserInput::Text {
                 text: prompt.into(),
                 text_elements: Vec::new(),
-            }],
-            final_output_json_schema: None,
-            responsesapi_client_metadata: None,
-            additional_context: Default::default(),
-            thread_settings: codex_protocol::protocol::ThreadSettingsOverrides {
+            }])
+            .with_thread_settings(ThreadSettingsOverrides {
                 environments: Some(local_selections(test.config.cwd.clone())),
                 approval_policy: Some(approval_policy),
                 approvals_reviewer,
                 sandbox_policy: Some(sandbox_policy),
                 permission_profile,
-                collaboration_mode: Some(codex_protocol::config_types::CollaborationMode {
-                    mode: codex_protocol::config_types::ModeKind::Default,
-                    settings: codex_protocol::config_types::Settings {
+                collaboration_mode: Some(CollaborationMode {
+                    mode: ModeKind::Default,
+                    settings: Settings {
                         model: session_model,
                         reasoning_effort: None,
                         developer_instructions: None,
                     },
                 }),
                 ..Default::default()
-            },
-        })
+            }),
+        )
         .await?;
     Ok(())
 }
@@ -238,7 +231,7 @@ async fn approved_folder_write_request_permissions_unblocks_later_exec_without_s
     );
     let requested_permissions = requested_directory_write_permissions(requested_dir.path());
     let normalized_requested_permissions =
-        normalized_directory_write_permissions(requested_dir.path())?;
+        requested_directory_write_permissions(requested_dir.path());
 
     let responses = mount_sse_sequence(
         &server,
@@ -328,16 +321,17 @@ async fn approved_folder_write_request_permissions_unblocks_later_exec_without_s
     Ok(())
 }
 
-#[tokio::test(flavor = "current_thread")]
+#[test_case(false ; "without_strict_auto_review")]
+#[test_case(true ; "with_strict_auto_review")]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[cfg(target_os = "macos")]
-async fn approved_folder_write_request_permissions_unblocks_later_apply_patch() -> Result<()> {
+async fn approved_folder_write_request_permissions_unblocks_later_apply_patch(
+    strict_auto_review: bool,
+) -> Result<()> {
     skip_if_no_network!(Ok(()));
     skip_if_sandbox!(Ok(()));
 
-    apply_patch_after_request_permissions(/*strict_auto_review*/ false).await?;
-    apply_patch_after_request_permissions(/*strict_auto_review*/ true).await?;
-
-    Ok(())
+    apply_patch_after_request_permissions(strict_auto_review).await
 }
 
 async fn apply_patch_after_request_permissions(strict_auto_review: bool) -> Result<()> {
@@ -374,13 +368,10 @@ async fn apply_patch_after_request_permissions(strict_auto_review: bool) -> Resu
     } else {
         "patched-via-request-permissions"
     };
-    let requested_file = requested_dir
-        .path()
-        .canonicalize()?
-        .join(requested_file_name);
+    let requested_file = requested_dir.path().join(requested_file_name);
     let requested_permissions = requested_directory_write_permissions(requested_dir.path());
     let normalized_requested_permissions =
-        normalized_directory_write_permissions(requested_dir.path())?;
+        requested_directory_write_permissions(requested_dir.path());
     let patch = build_add_file_patch(&requested_file, patch_content);
 
     let response_prefix = if strict_auto_review {
@@ -509,6 +500,8 @@ async fn apply_patch_after_request_permissions(strict_auto_review: bool) -> Resu
         fs::read_to_string(&requested_file)?,
         format!("{patch_content}\n")
     );
+
+    test.codex.shutdown_and_wait().await?;
 
     Ok(())
 }

@@ -1,4 +1,3 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 //! Streaming primitives used by the TUI transcript pipeline.
 //!
 //! `StreamState` owns newline-gated markdown collection and a FIFO queue of committed render lines.
@@ -18,9 +17,16 @@ use std::time::Instant;
 use crate::markdown_stream::MarkdownStreamCollector;
 use crate::terminal_hyperlinks::HyperlinkLine;
 pub(crate) mod chunking;
+mod code_fence;
 pub(crate) mod commit_tick;
 pub(crate) mod controller;
+mod prose_preview;
+mod render;
 mod table_holdback;
+
+#[cfg(test)]
+#[path = "mermaid_tests.rs"]
+mod mermaid_tests;
 
 struct QueuedLine {
     line: HyperlinkLine,
@@ -31,7 +37,6 @@ struct QueuedLine {
 pub(crate) struct StreamState {
     pub(crate) collector: MarkdownStreamCollector,
     queued_lines: VecDeque<QueuedLine>,
-    pub(crate) minimum_commit_age: Duration,
     pub(crate) has_seen_delta: bool,
 }
 
@@ -44,7 +49,6 @@ impl StreamState {
         Self {
             collector: MarkdownStreamCollector::new(width, cwd),
             queued_lines: VecDeque::new(),
-            minimum_commit_age: Duration::ZERO,
             has_seen_delta: false,
         }
     }
@@ -56,22 +60,18 @@ impl StreamState {
     }
     /// Drains one queued line from the front of the queue.
     pub(crate) fn step(&mut self) -> Vec<HyperlinkLine> {
-        self.drain_n(1)
+        self.queued_lines
+            .pop_front()
+            .map(|queued| queued.line)
+            .into_iter()
+            .collect()
     }
     /// Drains up to `max_lines` queued lines from the front of the queue.
     ///
     /// Callers that pass very large values still get bounded behavior because this method clamps to
     /// the currently available queue length.
     pub(crate) fn drain_n(&mut self, max_lines: usize) -> Vec<HyperlinkLine> {
-        let now = Instant::now();
-        let end = self
-            .queued_lines
-            .iter()
-            .take(max_lines)
-            .take_while(|queued| {
-                now.saturating_duration_since(queued.enqueued_at) >= self.minimum_commit_age
-            })
-            .count();
+        let end = max_lines.min(self.queued_lines.len());
         self.queued_lines
             .drain(..end)
             .map(|queued| queued.line)
@@ -112,22 +112,6 @@ mod tests {
     use pretty_assertions::assert_eq;
     use ratatui::text::Line;
     use std::path::PathBuf;
-
-    #[test]
-    fn old_batch_does_not_commit_a_younger_line_before_its_reveal() {
-        let mut state = StreamState::new(Some(80), &std::env::temp_dir());
-        state.minimum_commit_age = Duration::from_millis(500);
-        state.enqueue(vec![Line::from("older").into()]);
-        state.queued_lines[0].enqueued_at = Instant::now() - Duration::from_secs(1);
-        state.enqueue(vec![Line::from("younger").into()]);
-        assert_eq!(state.drain_n(usize::MAX).len(), 1);
-        assert_eq!(state.queued_len(), 1);
-        assert!(state.step().is_empty());
-        assert!(!state.is_idle());
-        state.minimum_commit_age = Duration::ZERO;
-        assert_eq!(state.step().len(), 1);
-        assert!(state.is_idle());
-    }
 
     fn test_cwd() -> PathBuf {
         // These tests only need a stable absolute cwd; using temp_dir() avoids baking Unix- or

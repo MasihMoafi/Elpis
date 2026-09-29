@@ -1,12 +1,13 @@
 use codex_core::CodexThread;
 use codex_core::NewThread;
+use codex_core::StartIfIdleSubmission;
 use codex_core::StartThreadOptions;
 use codex_core::ThreadManager;
+use codex_core::TurnInputRequest;
 use codex_core::config::Config;
 use codex_protocol::ThreadId;
 use codex_protocol::error::CodexErr;
 use codex_protocol::error::Result as CodexResult;
-use codex_protocol::protocol::InitialHistory;
 use codex_protocol::protocol::W3cTraceContext;
 use codex_protocol::user_input::UserInput;
 use std::sync::Arc;
@@ -29,7 +30,7 @@ pub struct AgentRun {
     pub thread: Arc<CodexThread>,
 }
 
-/// Runs resolved agents in threads forked by the owning [`ThreadManager`].
+/// Runs resolved agents in legacy threads forked by the owning [`ThreadManager`].
 #[derive(Clone)]
 pub struct AgentRunner {
     thread_manager: Weak<ThreadManager>,
@@ -40,7 +41,9 @@ impl AgentRunner {
         Self { thread_manager }
     }
 
-    /// Starts a resolved agent in a fork of `parent_thread_id`.
+    /// Starts a resolved agent in a fork of a legacy `parent_thread_id`.
+    ///
+    /// Paginated parents are rejected by [`ThreadManager::spawn_legacy_subagent`].
     pub async fn start(
         &self,
         parent_thread_id: ThreadId,
@@ -61,39 +64,34 @@ impl AgentRunner {
             .thread_manager
             .upgrade()
             .ok_or_else(|| CodexErr::UnsupportedOperation("thread manager dropped".to_string()))?;
-        let environments =
-            thread_manager.default_environment_selections(&config.cwd, &config.workspace_roots);
         let NewThread {
             thread_id, thread, ..
         } = thread_manager
-            .spawn_subagent(
+            .spawn_legacy_subagent(
                 parent_thread_id,
                 StartThreadOptions {
-                    config,
-                    allow_provider_model_fallback: false,
-                    initial_history: InitialHistory::New,
-                    history_mode: None,
-                    session_source: None,
-                    thread_source: None,
-                    dynamic_tools: Vec::new(),
-                    metrics_service_name: None,
                     parent_trace: parent_trace.clone(),
-                    environments,
-                    thread_extension_init: Default::default(),
-                    supports_openai_form_elicitation: false,
+                    ..StartThreadOptions::new(config)
                 },
             )
             .await?;
-        let turn_id = thread
-            .submit_with_trace(
-                vec![UserInput::Text {
+        let turn_id = match thread
+            .start_turn_if_idle(
+                TurnInputRequest::user_input(vec![UserInput::Text {
                     text: prompt,
                     text_elements: Vec::new(),
-                }]
-                .into(),
-                parent_trace,
+                }])
+                .with_trace(parent_trace),
             )
-            .await?;
+            .await?
+        {
+            StartIfIdleSubmission::Started { turn_id } => turn_id,
+            StartIfIdleSubmission::NotSubmitted { reason } => {
+                return Err(CodexErr::InvalidRequest(format!(
+                    "agent prompt was not submitted: {reason:?}"
+                )));
+            }
+        };
 
         Ok(AgentRun {
             thread_id,

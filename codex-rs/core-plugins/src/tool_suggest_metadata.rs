@@ -1,9 +1,8 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::RwLock;
 
-use codex_core_skills::config_rules::SkillConfigRules;
+use codex_config::SkillConfigRules;
 use codex_plugin::AppDeclaration;
 use codex_plugin::PluginCapabilitySummary;
 use codex_plugin::PluginId;
@@ -12,6 +11,9 @@ use codex_plugin::app_connector_ids_from_declarations;
 use codex_plugin::prompt_safe_plugin_description;
 use codex_protocol::auth::AuthMode;
 use codex_protocol::protocol::Product;
+use codex_skills::SkillRootLoader;
+use codex_utils_plugins::PluginIdentity;
+use codex_utils_plugins::PluginSkillRoot;
 use tokio::sync::Semaphore;
 
 use crate::app_mcp_routing::apply_app_mcp_routing_policy;
@@ -21,7 +23,8 @@ use crate::loader::load_plugin_mcp_servers;
 use crate::loader::load_plugin_skill_inventory;
 use crate::manager::ConfiguredMarketplacePlugin;
 use crate::manager::remote_plugin_install_required_description;
-use crate::manifest::load_plugin_manifest;
+use crate::manifest::PluginManifestFormat;
+use crate::manifest::load_plugin_manifest_with_format;
 use crate::marketplace::MarketplaceError;
 use crate::marketplace::MarketplacePluginSource;
 
@@ -53,6 +56,7 @@ struct PluginArtifactIdentity {
 pub(crate) struct ToolSuggestMetadataFragment {
     config_name: String,
     display_name: String,
+    plugin_namespace: Option<String>,
     description: Option<String>,
     mcp_server_names: Vec<String>,
     app_declarations: Vec<AppDeclaration>,
@@ -86,6 +90,7 @@ impl ToolSuggestMetadataFragment {
         PluginCapabilitySummary {
             config_name: self.config_name.clone(),
             display_name: self.display_name.clone(),
+            plugin_namespace: self.plugin_namespace.clone(),
             description: self.description.clone(),
             has_skills: self
                 .skill_inventory
@@ -119,6 +124,7 @@ impl ToolSuggestMetadataCache {
         marketplace_name: &str,
         plugin: &ConfiguredMarketplacePlugin,
         restriction_product: Option<Product>,
+        skill_root_loader: &dyn SkillRootLoader<PluginSkillRoot>,
     ) -> Result<Arc<ToolSuggestMetadataFragment>, MarketplaceError> {
         let artifact = PluginArtifactIdentity {
             plugin_id: plugin.id.clone(),
@@ -139,7 +145,13 @@ impl ToolSuggestMetadataCache {
             }
 
             let generation = self.generation();
-            let entry = load_plugin_metadata(marketplace_name, plugin, restriction_product).await;
+            let entry = load_plugin_metadata(
+                marketplace_name,
+                plugin,
+                restriction_product,
+                skill_root_loader,
+            )
+            .await;
             if self.cache_entry_if_current(generation, artifact.clone(), entry.clone()) {
                 return entry.map_err(MarketplaceError::InvalidPlugin);
             }
@@ -187,6 +199,7 @@ async fn load_plugin_metadata(
     marketplace_name: &str,
     plugin: &ConfiguredMarketplacePlugin,
     restriction_product: Option<Product>,
+    skill_root_loader: &dyn SkillRootLoader<PluginSkillRoot>,
 ) -> ToolSuggestMetadataEntry {
     let plugin_id = PluginId::new(plugin.name.clone(), marketplace_name.to_string()).map_err(
         |err| match err {
@@ -198,6 +211,7 @@ async fn load_plugin_metadata(
         return Ok(Arc::new(ToolSuggestMetadataFragment {
             config_name: plugin.id.clone(),
             display_name: plugin.name.clone(),
+            plugin_namespace: Some(plugin.name.clone()),
             description: prompt_safe_plugin_description(Some(
                 &remote_plugin_install_required_description(&plugin.source),
             )),
@@ -209,14 +223,21 @@ async fn load_plugin_metadata(
     if !plugin_root.as_path().is_dir() {
         return Err("path does not exist or is not a directory".to_string());
     }
-    let manifest = load_plugin_manifest(plugin_root.as_path())
+    let loaded_manifest = load_plugin_manifest_with_format(plugin_root.as_path())
         .ok_or_else(|| "missing or invalid plugin.json".to_string())?;
+    let plugin_identity = PluginIdentity {
+        plugin_id: plugin_id.as_key(),
+        remote_plugin_id: None,
+    };
+    let manifest = loaded_manifest.manifest;
     let skill_inventory = load_plugin_skill_inventory(
         plugin_root,
-        &plugin_id,
+        &plugin_identity,
         &manifest,
+        loaded_manifest.format,
         restriction_product,
         /*plugin_skill_snapshots*/ None,
+        skill_root_loader,
     )
     .await;
     let mut mcp_server_names =
@@ -226,11 +247,16 @@ async fn load_plugin_metadata(
             .collect::<Vec<_>>();
     mcp_server_names.sort_unstable();
     mcp_server_names.dedup();
-    let app_declarations = load_plugin_apps(plugin_root.as_path()).await;
+    let app_declarations = if loaded_manifest.format == PluginManifestFormat::AgentPlugin {
+        Vec::new()
+    } else {
+        load_plugin_apps(plugin_root.as_path()).await
+    };
 
     Ok(Arc::new(ToolSuggestMetadataFragment {
         config_name: plugin.id.clone(),
         display_name: plugin.name.clone(),
+        plugin_namespace: Some(manifest.name.clone()),
         description: prompt_safe_plugin_description(manifest.description.as_deref()),
         mcp_server_names,
         app_declarations,

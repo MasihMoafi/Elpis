@@ -1,15 +1,18 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
+use crate::CONFIG_TOML_FILE;
 use crate::config_requirements::ConfigRequirements;
 use crate::config_requirements::ConfigRequirementsToml;
+use crate::format_config_layer_source;
 
 use super::fingerprint::record_origins;
 use super::fingerprint::version_for_toml;
+use super::key_aliases::normalize_key_aliases;
 use super::merge::merge_toml_values;
 use crate::CloudConfigBundleLoader;
 use crate::ConfigLayer;
 use crate::ConfigLayerMetadata;
 use crate::ConfigLayerSource;
 use crate::ProfileV2Name;
+use crate::shell_environment_policy::validate_shell_environment_policy_filter_config;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use serde_json::Value as JsonValue;
 use std::collections::HashMap;
@@ -38,16 +41,19 @@ impl From<LoaderOverrides> for ConfigLoadOptions {
 /// LoaderOverrides overrides managed configuration inputs (primarily for tests).
 #[derive(Debug, Default, Clone)]
 pub struct LoaderOverrides {
+    /// Optional configuration file supplied with the installed Codex package.
+    pub packaged_defaults_path: Option<AbsolutePathBuf>,
     pub user_config_path: Option<AbsolutePathBuf>,
     pub user_config_profile: Option<ProfileV2Name>,
-    /// Name of the repository-local configuration directory. Codex defaults to
-    /// `.codex`; branded clients can select their own namespace.
-    pub project_config_dir_name: Option<String>,
     pub managed_config_path: Option<PathBuf>,
     pub system_config_path: Option<PathBuf>,
     pub system_requirements_path: Option<PathBuf>,
     pub ignore_managed_requirements: bool,
+    /// Remote app servers own their authentication policy independently.
+    pub ignore_login_requirements: bool,
     pub ignore_user_config: bool,
+    /// Skip project-root discovery and all project configuration layers.
+    pub ignore_project_config: bool,
     pub ignore_user_and_project_exec_policy_rules: bool,
     //TODO(gt): Add a macos_ prefix to this field and remove the target_os check.
     #[cfg(target_os = "macos")]
@@ -62,14 +68,16 @@ impl LoaderOverrides {
     pub fn without_managed_config_for_tests() -> Self {
         let base = std::env::temp_dir().join("codex-config-tests");
         Self {
+            packaged_defaults_path: None,
             user_config_path: None,
             user_config_profile: None,
-            project_config_dir_name: None,
             managed_config_path: Some(base.join("managed_config.toml")),
             system_config_path: Some(base.join("config.toml")),
             system_requirements_path: Some(base.join("requirements.toml")),
             ignore_managed_requirements: false,
+            ignore_login_requirements: false,
             ignore_user_config: false,
+            ignore_project_config: false,
             ignore_user_and_project_exec_policy_rules: false,
             #[cfg(target_os = "macos")]
             managed_preferences_base64: Some(String::new()),
@@ -210,6 +218,7 @@ impl ConfigLayerEntry {
     // Get the `.codex/` folder associated with this config layer, if any.
     pub fn config_folder(&self) -> Option<AbsolutePathBuf> {
         match &self.name {
+            ConfigLayerSource::PackagedDefaults { .. } => None,
             ConfigLayerSource::Mdm { .. } => None,
             ConfigLayerSource::System { file } => file.parent(),
             ConfigLayerSource::EnterpriseManaged { .. } => None,
@@ -234,25 +243,15 @@ impl ConfigLayerEntry {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ConfigLayerStackOrdering {
-    LowestPrecedenceFirst,
-    HighestPrecedenceFirst,
-}
-
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct ConfigLayerStack {
+    /// Cached TOML projection derived only from `requirements_toml`.
+    /// Construction validates provider definitions and reports serialization errors,
+    /// so `effective_config()` can replace complete entries without a fallible conversion.
+    model_provider_requirements: Option<TomlValue>,
     /// Layers are listed from lowest precedence (base) to highest (top), so
     /// later entries in the Vec override earlier ones.
     layers: Vec<ConfigLayerEntry>,
-
-    /// Index into [layers] of the active user config layer, if any.
-    ///
-    /// When profile config is active, there can be more than one user layer:
-    /// the base `$CODEX_HOME/config.toml` layer followed by the profile override
-    /// layer. This index points at the highest-precedence user layer because that
-    /// is the writable layer for profile-aware edits.
-    user_layer_index: Option<usize>,
 
     /// Constraints that must be enforced when deriving a [Config] from the
     /// layers.
@@ -271,6 +270,7 @@ pub struct ConfigLayerStack {
     /// `None` means the loader did not check for stack-level warnings, while
     /// `Some(vec![])` means it checked and found nothing to report.
     startup_warnings: Option<Vec<String>>,
+    pub(crate) is_projectless: bool,
 }
 
 impl ConfigLayerStack {
@@ -279,14 +279,19 @@ impl ConfigLayerStack {
         requirements: ConfigRequirements,
         requirements_toml: ConfigRequirementsToml,
     ) -> std::io::Result<Self> {
-        let user_layer_index = verify_layer_ordering(&layers)?;
+        validate_enabled_config_layers(&layers)?;
+        verify_layer_ordering(&layers)?;
+        let model_provider_requirements = Some(crate::model_provider_requirements::to_config(
+            &requirements_toml,
+        )?);
         Ok(Self {
+            model_provider_requirements,
             layers,
-            user_layer_index,
             requirements,
             requirements_toml,
             ignore_user_and_project_exec_policy_rules: false,
             startup_warnings: None,
+            is_projectless: false,
         })
     }
 
@@ -311,6 +316,12 @@ impl ConfigLayerStack {
         self.startup_warnings.as_deref()
     }
 
+    /// Whether discovery found no project markers or project-local configuration.
+    /// Returns false when project discovery was skipped.
+    pub fn is_projectless(&self) -> bool {
+        self.is_projectless
+    }
+
     /// Returns the active raw user config layer, if any.
     ///
     /// This does not merge other config layers or apply any requirements. When
@@ -318,8 +329,10 @@ impl ConfigLayerStack {
     /// the base `$CODEX_HOME/config.toml` layer because the active layer is the
     /// writable target for profile-aware edits.
     pub fn get_active_user_layer(&self) -> Option<&ConfigLayerEntry> {
-        self.user_layer_index
-            .and_then(|index| self.layers.get(index))
+        self.layers
+            .iter()
+            .rev()
+            .find(|layer| matches!(layer.name, ConfigLayerSource::User { .. }))
     }
 
     pub fn get_user_config_file(&self) -> Option<&AbsolutePathBuf> {
@@ -330,34 +343,16 @@ impl ConfigLayerStack {
         Some(file)
     }
 
-    /// Returns all user config layers in the requested precedence order.
-    ///
-    /// With profile-v2 enabled, `LowestPrecedenceFirst` returns the base user
-    /// config before the profile overlay, while `HighestPrecedenceFirst` returns
-    /// the profile overlay before the base user config.
-    pub fn get_user_layers(
-        &self,
-        ordering: ConfigLayerStackOrdering,
-        include_disabled: bool,
-    ) -> Vec<&ConfigLayerEntry> {
-        self.get_layers(ordering, include_disabled)
-            .into_iter()
-            .filter(|layer| matches!(layer.name, ConfigLayerSource::User { .. }))
-            .collect()
-    }
-
     /// Returns the merged config from enabled user layers only.
     ///
     /// When profile config is active, this includes the base user config followed
     /// by the profile override config.
     pub fn effective_user_config(&self) -> Option<TomlValue> {
-        let user_layers = self.get_user_layers(
-            ConfigLayerStackOrdering::LowestPrecedenceFirst,
-            /*include_disabled*/ false,
-        );
-        if user_layers.is_empty() {
-            return None;
-        }
+        let mut user_layers = self
+            .layers_low_to_high()
+            .filter(|layer| matches!(layer.name, ConfigLayerSource::User { .. }))
+            .peekable();
+        user_layers.peek()?;
 
         let mut merged = TomlValue::Table(toml::map::Map::new());
         for layer in user_layers {
@@ -380,7 +375,11 @@ impl ConfigLayerStack {
     /// based on precedence rules. When the stack has both base and profile-v2
     /// user layers, this updates only the layer whose file matches
     /// `config_toml`.
-    pub fn with_user_config(&self, config_toml: &AbsolutePathBuf, user_config: TomlValue) -> Self {
+    pub fn with_user_config(
+        &self,
+        config_toml: &AbsolutePathBuf,
+        user_config: TomlValue,
+    ) -> std::io::Result<Self> {
         let profile = self.layers.iter().find_map(|layer| match &layer.name {
             ConfigLayerSource::User { file, profile } if file == config_toml => profile
                 .as_deref()
@@ -395,7 +394,7 @@ impl ConfigLayerStack {
         config_toml: &AbsolutePathBuf,
         profile: Option<&ProfileV2Name>,
         user_config: TomlValue,
-    ) -> Self {
+    ) -> std::io::Result<Self> {
         let user_layer = ConfigLayerEntry::new(
             ConfigLayerSource::User {
                 file: config_toml.clone(),
@@ -403,6 +402,7 @@ impl ConfigLayerStack {
             },
             user_config,
         );
+        validate_enabled_config_layers(std::slice::from_ref(&user_layer))?;
 
         let mut layers = self.layers.clone();
         if let Some(index) = layers.iter().position(|layer| {
@@ -420,22 +420,16 @@ impl ConfigLayerStack {
             Some(index) => layers.insert(index, user_layer),
             None => layers.push(user_layer),
         }
-        let user_layer_index = layers.iter().enumerate().rev().find_map(|(index, layer)| {
-            if matches!(layer.name, ConfigLayerSource::User { .. }) {
-                Some(index)
-            } else {
-                None
-            }
-        });
-        Self {
+        Ok(Self {
             layers,
-            user_layer_index,
+            model_provider_requirements: self.model_provider_requirements.clone(),
             requirements: self.requirements.clone(),
             requirements_toml: self.requirements_toml.clone(),
             ignore_user_and_project_exec_policy_rules: self
                 .ignore_user_and_project_exec_policy_rules,
             startup_warnings: self.startup_warnings.clone(),
-        }
+            is_projectless: self.is_projectless,
+        })
     }
 
     /// Returns a new stack with the user layer copied from `other`, preserving
@@ -462,89 +456,142 @@ impl ConfigLayerStack {
                 None => layers.push(user_layer),
             }
         }
-        let user_layer_index = layers.iter().enumerate().rev().find_map(|(index, layer)| {
-            if matches!(layer.name, ConfigLayerSource::User { .. }) {
-                Some(index)
-            } else {
-                None
-            }
-        });
         Self {
             layers,
-            user_layer_index,
+            model_provider_requirements: self.model_provider_requirements.clone(),
             requirements: self.requirements.clone(),
             requirements_toml: self.requirements_toml.clone(),
             ignore_user_and_project_exec_policy_rules: self
                 .ignore_user_and_project_exec_policy_rules,
             startup_warnings: self.startup_warnings.clone(),
+            is_projectless: self.is_projectless,
         }
     }
 
     /// Returns the merged config-layer view.
     ///
-    /// This only merges ordinary config layers. Requirements are composed and
-    /// tracked separately.
+    /// Required provider definitions replace local entries before deserialization.
+    /// Selection and other requirements are applied when constructing the final config.
     pub fn effective_config(&self) -> TomlValue {
         let mut merged = TomlValue::Table(toml::map::Map::new());
-        for layer in self.get_layers(
-            ConfigLayerStackOrdering::LowestPrecedenceFirst,
-            /*include_disabled*/ false,
-        ) {
+        for layer in self.layers_low_to_high() {
             merge_toml_values(&mut merged, &layer.config);
         }
+        if let Some(requirements) = &self.model_provider_requirements {
+            crate::model_provider_requirements::apply(&mut merged, requirements);
+        }
         merged
+    }
+
+    /// Required provider selection used when building the effective configuration.
+    pub fn required_model_provider(&self) -> Option<&str> {
+        self.requirements_toml.model_provider.as_deref()
     }
 
     /// Returns field origins for the merged config-layer view.
     ///
     /// Requirement sources are tracked separately and are not included here.
     pub fn origins(&self) -> HashMap<String, ConfigLayerMetadata> {
+        self.origins_with_path_filter(|_| true)
+    }
+
+    /// Filters origins using their original TOML key segments before formatting
+    /// them for the public API, where dots in quoted keys are ambiguous.
+    pub fn origins_with_path_filter(
+        &self,
+        include: impl Fn(&[String]) -> bool,
+    ) -> HashMap<String, ConfigLayerMetadata> {
         let mut origins = HashMap::new();
         let mut path = Vec::new();
+        let mut provider_paths = vec!["features.network_proxy.credentials.".to_string()];
 
-        for layer in self.get_layers(
-            ConfigLayerStackOrdering::LowestPrecedenceFirst,
-            /*include_disabled*/ false,
-        ) {
-            record_origins(&layer.config, &layer.metadata(), &mut path, &mut origins);
+        for layer in self.layers_low_to_high() {
+            let config = normalize_key_aliases(&layer.config);
+            if let Some(profiles) = config.get("profiles").and_then(TomlValue::as_table) {
+                provider_paths.extend(
+                    profiles
+                        .keys()
+                        .map(|name| format!("profiles.{name}.features.network_proxy.credentials.")),
+                );
+            }
+            record_origins(
+                &config,
+                &layer.metadata(),
+                &mut path,
+                &mut origins,
+                &include,
+            );
+        }
+
+        if let Some(layer) = self.layers_low_to_high().next_back() {
+            let effective = self.effective_config();
+            let mut effective_origins = HashMap::new();
+            record_origins(
+                &effective,
+                &layer.metadata(),
+                &mut path,
+                &mut effective_origins,
+                &include,
+            );
+            origins.retain(|path, _| {
+                !provider_paths.iter().any(|prefix| path.starts_with(prefix))
+                    || effective_origins.contains_key(path)
+            });
         }
 
         origins
     }
 
-    /// Returns config layers from highest precedence to lowest precedence.
+    /// Returns enabled config layers from lowest precedence to highest.
     ///
     /// Requirement sources are tracked separately and are not included here.
-    pub fn layers_high_to_low(&self) -> Vec<&ConfigLayerEntry> {
-        self.get_layers(
-            ConfigLayerStackOrdering::HighestPrecedenceFirst,
-            /*include_disabled*/ false,
-        )
+    pub fn layers_low_to_high(&self) -> impl DoubleEndedIterator<Item = &ConfigLayerEntry> {
+        self.all_layers_low_to_high()
+            .filter(|layer| !layer.is_disabled())
     }
 
-    /// Returns config layers in the requested precedence order.
+    /// Returns enabled config layers from highest precedence to lowest.
     ///
     /// Requirement sources are tracked separately and are not included here.
-    pub fn get_layers(
-        &self,
-        ordering: ConfigLayerStackOrdering,
-        include_disabled: bool,
-    ) -> Vec<&ConfigLayerEntry> {
-        let mut layers: Vec<&ConfigLayerEntry> = self
-            .layers
-            .iter()
-            .filter(|layer| include_disabled || !layer.is_disabled())
-            .collect();
-        if ordering == ConfigLayerStackOrdering::HighestPrecedenceFirst {
-            layers.reverse();
-        }
-        layers
+    pub fn layers_high_to_low(&self) -> impl DoubleEndedIterator<Item = &ConfigLayerEntry> {
+        self.layers_low_to_high().rev()
+    }
+
+    /// Returns all config layers, including disabled layers, from lowest
+    /// precedence to highest.
+    ///
+    /// Requirement sources are tracked separately and are not included here.
+    pub fn all_layers_low_to_high(&self) -> impl DoubleEndedIterator<Item = &ConfigLayerEntry> {
+        self.layers.iter()
+    }
+
+    /// Returns all config layers, including disabled layers, from highest
+    /// precedence to lowest.
+    ///
+    /// Requirement sources are tracked separately and are not included here.
+    pub fn all_layers_high_to_low(&self) -> impl DoubleEndedIterator<Item = &ConfigLayerEntry> {
+        self.all_layers_low_to_high().rev()
     }
 }
 
-/// Ensures precedence ordering of config layers is correct. Returns the index
-/// of the active user config layer, if any.
-fn verify_layer_ordering(layers: &[ConfigLayerEntry]) -> std::io::Result<Option<usize>> {
+/// Validates before merging so mixed forms and malformed filter entries cannot be normalized away.
+pub(crate) fn validate_enabled_config_layers(layers: &[ConfigLayerEntry]) -> std::io::Result<()> {
+    for layer in layers.iter().filter(|layer| !layer.is_disabled()) {
+        validate_shell_environment_policy_filter_config(&layer.config).map_err(|error| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!(
+                    "invalid shell environment policy in {}: {error}",
+                    format_config_layer_source(&layer.name, CONFIG_TOML_FILE)
+                ),
+            )
+        })?;
+    }
+    Ok(())
+}
+
+/// Ensures precedence ordering of config layers is correct.
+fn verify_layer_ordering(layers: &[ConfigLayerEntry]) -> std::io::Result<()> {
     if !layers.iter().map(|layer| &layer.name).is_sorted() {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidData,
@@ -556,13 +603,8 @@ fn verify_layer_ordering(layers: &[ConfigLayerEntry]) -> std::io::Result<Option<
     // further verify that project layers are ordered from root to cwd. Multiple
     // user layers are allowed so a profile override can layer on top of the base
     // user config.
-    let mut user_layer_index: Option<usize> = None;
     let mut previous_project_dot_codex_folder: Option<&AbsolutePathBuf> = None;
-    for (index, layer) in layers.iter().enumerate() {
-        if matches!(layer.name, ConfigLayerSource::User { .. }) {
-            user_layer_index = Some(index);
-        }
-
+    for layer in layers {
         if let ConfigLayerSource::Project {
             dot_codex_folder: current_project_dot_codex_folder,
         } = &layer.name
@@ -590,7 +632,7 @@ fn verify_layer_ordering(layers: &[ConfigLayerEntry]) -> std::io::Result<Option<
         }
     }
 
-    Ok(user_layer_index)
+    Ok(())
 }
 
 #[cfg(test)]

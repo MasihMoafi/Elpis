@@ -1,5 +1,7 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
-//! Shortcut picker construction for `/hotkeys`.
+//! Shortcut picker construction for `/keymap`.
+//!
+//! Keep the shared picker panel and reserved result viewport on the production
+//! factory so tabs and search stay anchored in the live picker.
 
 use codex_config::types::TuiKeymap;
 use ratatui::style::Styled;
@@ -10,6 +12,7 @@ use unicode_width::UnicodeWidthStr;
 
 use crate::app_event::AppEvent;
 use crate::bottom_pane::ColumnWidthMode;
+use crate::bottom_pane::PickerSurface;
 use crate::bottom_pane::SelectionItem;
 use crate::bottom_pane::SelectionRowDisplay;
 use crate::bottom_pane::SelectionTab;
@@ -22,8 +25,7 @@ use crate::style::accent_style;
 use super::actions::KEYMAP_ACTIONS;
 use super::actions::KeymapActionFilter;
 use super::actions::action_label;
-use super::actions::bindings_for_action;
-use super::actions::format_binding_summary;
+use super::actions::format_action_binding_summary;
 use super::has_custom_binding;
 
 pub(crate) const KEYMAP_PICKER_VIEW_ID: &str = "keymap-picker";
@@ -106,13 +108,24 @@ const KEYMAP_CONTEXT_TABS: &[KeymapContextTab] = &[
         id: "vim-shortcuts",
         label: "Vim",
         description: "Vim normal-mode and operator shortcuts.",
-        contexts: &["vim_normal", "vim_operator", "vim_text_object"],
+        contexts: &[
+            "vim_normal",
+            "vim_operator",
+            "vim_search",
+            "vim_text_object",
+        ],
     },
     KeymapContextTab {
         id: "navigation-shortcuts",
         label: "Navigation",
         description: "Pager and selection-list navigation shortcuts.",
         contexts: &["pager", "list"],
+    },
+    KeymapContextTab {
+        id: "agents-shortcuts",
+        label: "Agents",
+        description: "Shared agents dashboard shortcuts.",
+        contexts: &["agents"],
     },
     KeymapContextTab {
         id: "approval-shortcuts",
@@ -208,7 +221,7 @@ fn build_keymap_picker_params_for_action(
         items: keymap_selection_items(
             rows.iter(),
             "No shortcuts available",
-            "No configurable shortcuts are available.",
+            "No configurable shortcuts are available",
         ),
     });
 
@@ -224,7 +237,7 @@ fn build_keymap_picker_params_for_action(
         items: keymap_selection_items(
             common_rows,
             "No common shortcuts",
-            "No common shortcut actions are available.",
+            "No common shortcut actions are available",
         ),
     });
 
@@ -242,7 +255,7 @@ fn build_keymap_picker_params_for_action(
         items: keymap_selection_items(
             custom_rows,
             "No customized shortcuts",
-            "No root-level keymap overrides have been configured.",
+            "No root-level keymap overrides have been configured",
         ),
     });
 
@@ -260,7 +273,7 @@ fn build_keymap_picker_params_for_action(
         items: keymap_selection_items(
             unbound_rows,
             "No unbound shortcuts",
-            "Every configurable action currently has a shortcut.",
+            "Every configurable action currently has a shortcut",
         ),
     });
 
@@ -277,7 +290,7 @@ fn build_keymap_picker_params_for_action(
             items: keymap_selection_items(
                 tab_rows,
                 "No shortcuts in this group",
-                "No configurable actions are available in this group.",
+                "No configurable actions are available in this group",
             ),
         });
     }
@@ -285,6 +298,9 @@ fn build_keymap_picker_params_for_action(
 
     SelectionViewParams {
         view_id: Some(KEYMAP_PICKER_VIEW_ID),
+        picker_surface: PickerSurface::Panel,
+        max_visible_rows: 24,
+        reserve_result_rows: true,
         header: Box::new(()),
         footer_hint: Some(keymap_picker_hint_line()),
         tab_footer_hints: vec![(KEYMAP_DEBUG_TAB_ID.to_string(), keymap_debug_hint_line())],
@@ -306,16 +322,16 @@ fn keymap_debug_tab() -> SelectionTab {
         label: "Debug".to_string(),
         header: keymap_header(
             "Inspect keypresses from your terminal.".to_string(),
-            "See the key Elpis detects and any shortcuts assigned to it.".to_string(),
+            "See the key Codex detects and any shortcuts assigned to it.".to_string(),
         ),
         items: vec![SelectionItem {
             name: "Inspect keypresses".to_string(),
             description: Some(
-                "Press Enter to start. Then press any key to inspect it; Ctrl+C exits."
+                "Press Enter, then any key to inspect it (Ctrl+C exits)"
                     .to_string(),
             ),
             selected_description: Some(
-                "Open a live inspector that shows the detected key, config key, and matching actions."
+                "Open a live inspector that shows the detected key, config key, and matching actions"
                     .to_string(),
             ),
             actions: vec![Box::new(|tx| {
@@ -336,24 +352,23 @@ fn build_keymap_rows(
         .iter()
         .copied()
         .filter(|descriptor| descriptor.is_visible(action_filter))
-        .map(|descriptor| {
-            let bindings =
-                bindings_for_action(runtime_keymap, descriptor.context, descriptor.action)
-                    .unwrap_or(&[]);
-            KeymapActionRow {
-                context: descriptor.context,
-                context_label: descriptor.context_label,
-                action: descriptor.action,
-                label: action_label(descriptor.action),
-                description: descriptor.description,
-                binding_summary: format_binding_summary(bindings),
-                custom_binding: has_custom_binding(
-                    keymap_config,
-                    descriptor.context,
-                    descriptor.action,
-                )
-                .unwrap_or(false),
-            }
+        .map(|descriptor| KeymapActionRow {
+            context: descriptor.context,
+            context_label: descriptor.context_label,
+            action: descriptor.action,
+            label: action_label(descriptor.action),
+            description: descriptor.description,
+            binding_summary: format_action_binding_summary(
+                runtime_keymap,
+                descriptor.context,
+                descriptor.action,
+            ),
+            custom_binding: has_custom_binding(
+                keymap_config,
+                descriptor.context,
+                descriptor.action,
+            )
+            .unwrap_or(/*default*/ false),
         })
         .collect()
 }
@@ -440,7 +455,7 @@ fn keymap_row_prefix(row: &KeymapActionRow) -> Vec<Span<'static>> {
 
 fn keymap_header(description: String, summary: String) -> Box<dyn Renderable> {
     let mut header = ColumnRenderable::new();
-    header.push(Line::from("Hotkeys".bold()));
+    header.push(Line::from("Keymap".bold()));
     header.push(Line::from(description.dim()));
     header.push(Line::from(summary.dim()));
     Box::new(header)
@@ -454,27 +469,30 @@ fn action_count_line(count: usize) -> String {
 }
 
 fn keymap_picker_hint_line() -> Line<'static> {
-    let style = accent_style();
-    Line::from(vec![
-        "left/right".set_style(style),
-        " group · ".dim(),
-        "enter".set_style(style),
-        " edit shortcut · ".dim(),
-        "*".set_style(style),
-        " custom · ".dim(),
-        "-".set_style(style),
-        " unbound · ".dim(),
-        "esc".set_style(style),
-        " close".dim(),
-    ])
+    [
+        ("left/right", " group · "),
+        ("enter", " edit shortcut · "),
+        ("*", " custom · "),
+        ("-", " unbound · "),
+        ("esc", " close"),
+    ]
+    .into_iter()
+    .flat_map(|(key, label)| {
+        crate::key_hint::key_label_spans(key)
+            .into_iter()
+            .chain([label.set_style(crate::style::footer_hint_label_style())])
+    })
+    .collect::<Line>()
 }
 
 fn keymap_debug_hint_line() -> Line<'static> {
-    let style = accent_style();
-    Line::from(vec![
-        "enter".set_style(style),
-        " start inspector · ".dim(),
-        "esc".set_style(style),
-        " close".dim(),
-    ])
+    let mut spans = crate::key_hint::key_label_spans("enter");
+    spans.push(" start inspector · ".set_style(crate::style::footer_hint_label_style()));
+    spans.extend(crate::key_hint::key_label_spans("esc"));
+    spans.push(" close".set_style(crate::style::footer_hint_label_style()));
+    spans.into()
 }
+
+#[cfg(test)]
+#[path = "picker_tests.rs"]
+mod tests;

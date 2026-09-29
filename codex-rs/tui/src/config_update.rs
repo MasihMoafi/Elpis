@@ -1,31 +1,56 @@
-//! App-server-backed config update helpers for the TUI.
+//! App-server-backed config read and update helpers for the TUI.
 //!
 //! This module centralizes the small typed update helpers the TUI uses
 //! when a config mutation must be owned by the app server rather than written
 //! to the local `config.toml` directly.
 
 use codex_app_server_client::AppServerRequestHandle;
+use codex_app_server_client::TypedRequestError;
 use codex_app_server_protocol::ClientRequest;
 use codex_app_server_protocol::ConfigBatchWriteParams;
 use codex_app_server_protocol::ConfigEdit;
 use codex_app_server_protocol::ConfigReadParams;
 use codex_app_server_protocol::ConfigReadResponse;
 use codex_app_server_protocol::ConfigWriteResponse;
+use codex_app_server_protocol::EnvironmentInfoParams;
+use codex_app_server_protocol::EnvironmentInfoResponse;
 use codex_app_server_protocol::MergeStrategy;
 use codex_app_server_protocol::RequestId;
 use codex_app_server_protocol::SkillsConfigWriteParams;
 use codex_app_server_protocol::SkillsConfigWriteResponse;
+use codex_config::default_project_root_markers;
+use codex_config::loader::find_project_root;
+use codex_config::loader::normalized_project_trust_keys;
 use codex_config::loader::project_trust_key;
+use codex_exec_server::LOCAL_ENVIRONMENT_ID;
+use codex_exec_server::LOCAL_FS;
 use codex_features::FEATURES;
+use codex_git_utils::resolve_root_git_project_for_trust;
 use codex_protocol::config_types::SERVICE_TIER_DEFAULT_REQUEST_VALUE;
 use codex_protocol::config_types::TrustLevel;
 use codex_utils_absolute_path::AbsolutePathBuf;
+use codex_utils_path_uri::LegacyAppPathString;
+use codex_utils_path_uri::PathConvention;
 use color_eyre::eyre::Result;
 use color_eyre::eyre::WrapErr;
 use serde_json::Value as JsonValue;
 use std::fmt::Display;
 use std::path::Path;
+use std::path::PathBuf;
 use uuid::Uuid;
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ProjectTrustHost {
+    Local,
+    Remote,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct RemoteProjectTrust {
+    pub trust_level: Option<TrustLevel>,
+    pub cwd: PathBuf,
+    pub trust_target: PathBuf,
+}
 
 pub(crate) fn replace_config_value(key_path: impl Into<String>, value: JsonValue) -> ConfigEdit {
     ConfigEdit {
@@ -74,96 +99,6 @@ pub(crate) fn build_model_selection_edits(
     vec![
         replace_config_value("model", serde_json::json!(model)),
         effort_edit,
-        replace_config_value("features.auto_model_routing", serde_json::json!(false)),
-    ]
-}
-
-/// Config edits for pinning a model to a specific provider.
-///
-/// `effort` retains an explicitly selected provider/model reasoning level. Passing `None`
-/// deliberately clears a stale value for providers that do not advertise reasoning metadata.
-///
-/// `context_window` is the window the provider itself reports for this model, when it can be
-/// discovered. Locally served models are absent from the bundled catalog, so without it every
-/// context measurement uses generic fallback metadata and describes the wrong model. Passing
-/// `None` clears any window a previous selection pinned rather than leaving it to apply to a
-/// model it was never measured from.
-pub(crate) fn build_provider_model_selection_edits(
-    model: &str,
-    provider_id: &str,
-    effort: Option<impl ToString>,
-    context_window: Option<i64>,
-) -> Vec<ConfigEdit> {
-    let effort_edit = effort.map_or_else(
-        || clear_config_value("model_reasoning_effort"),
-        |effort| {
-            replace_config_value(
-                "model_reasoning_effort",
-                serde_json::json!(effort.to_string()),
-            )
-        },
-    );
-    vec![
-        replace_config_value("model", serde_json::json!(model)),
-        replace_config_value("model_provider", serde_json::json!(provider_id)),
-        effort_edit,
-        replace_config_value("features.auto_model_routing", serde_json::json!(false)),
-        context_window.map_or_else(
-            || clear_config_value("model_context_window"),
-            |context_window| {
-                replace_config_value("model_context_window", serde_json::json!(context_window))
-            },
-        ),
-    ]
-}
-
-/// Providers the `/model` picker pins on the user's behalf. Selecting a model from a
-/// different group has to release the pin, or the next launch starts on the old
-/// endpoint with a model it does not serve. Providers outside this list were set up
-/// by the user, so they are left alone.
-const PICKER_MANAGED_PROVIDERS: [&str; 3] = [
-    codex_model_provider_info::OLLAMA_OSS_PROVIDER_ID,
-    codex_model_provider_info::LMSTUDIO_OSS_PROVIDER_ID,
-    codex_model_provider_info::OPENROUTER_PROVIDER_ID,
-];
-
-/// Config edit that keeps `model_provider` consistent with a newly selected `model`.
-///
-/// Returns `None` when the selection carries no provider signal and the active provider
-/// is one the user configured themselves.
-pub(crate) fn build_model_provider_edits(model: &str, active_provider_id: &str) -> Vec<ConfigEdit> {
-    if is_openrouter_model_slug(model) {
-        return vec![
-            replace_config_value(
-                "model_provider",
-                serde_json::json!(codex_model_provider_info::OPENROUTER_PROVIDER_ID),
-            ),
-            // A window measured from a local model says nothing about an OpenRouter one.
-            clear_config_value("model_context_window"),
-        ];
-    }
-    if PICKER_MANAGED_PROVIDERS.contains(&active_provider_id) {
-        return vec![
-            clear_config_value("model_provider"),
-            clear_config_value("model_context_window"),
-        ];
-    }
-    Vec::new()
-}
-
-/// Whether a model slug is only reachable through OpenRouter. Mirrors the provider
-/// inference the core applies to a bare model slug.
-pub(crate) fn is_openrouter_model_slug(model: &str) -> bool {
-    model.contains('/')
-        || model.contains(":free")
-        || !codex_model_provider_info::openrouter_free_fallback_candidates(model).is_empty()
-}
-
-pub(crate) fn build_auto_model_routing_edits() -> Vec<ConfigEdit> {
-    vec![
-        replace_config_value("model", serde_json::json!("gpt-5.6-terra")),
-        replace_config_value("model_reasoning_effort", serde_json::json!("medium")),
-        replace_config_value("features.auto_model_routing", serde_json::json!(true)),
     ]
 }
 
@@ -186,24 +121,6 @@ pub(crate) fn build_service_tier_selection_edits(service_tier: Option<&str>) -> 
     vec![service_tier_edit]
 }
 
-#[cfg(target_os = "windows")]
-pub(crate) fn build_windows_sandbox_mode_edits(elevated_enabled: bool) -> Vec<ConfigEdit> {
-    let feature_key_path = |feature: &str| format!("features.{feature}");
-    vec![
-        replace_config_value(
-            "windows.sandbox",
-            serde_json::json!(if elevated_enabled {
-                "elevated"
-            } else {
-                "unelevated"
-            }),
-        ),
-        clear_config_value(feature_key_path("experimental_windows_sandbox")),
-        clear_config_value(feature_key_path("elevated_windows_sandbox")),
-        clear_config_value(feature_key_path("enable_experimental_windows_sandbox")),
-    ]
-}
-
 pub(crate) fn build_feature_enabled_edit(feature_key: &str, enabled: bool) -> ConfigEdit {
     let key_path = format!("features.{feature_key}");
     let is_default_false_feature = FEATURES
@@ -215,6 +132,19 @@ pub(crate) fn build_feature_enabled_edit(feature_key: &str, enabled: bool) -> Co
     } else {
         clear_config_value(key_path)
     }
+}
+
+pub(crate) fn build_memory_settings_edits(
+    use_memories: bool,
+    generate_memories: bool,
+) -> Vec<ConfigEdit> {
+    vec![
+        replace_config_value("memories.use_memories", serde_json::json!(use_memories)),
+        replace_config_value(
+            "memories.generate_memories",
+            serde_json::json!(generate_memories),
+        ),
+    ]
 }
 
 pub(crate) fn build_oss_provider_edit(provider: &str) -> ConfigEdit {
@@ -264,6 +194,193 @@ pub(crate) async fn read_effective_config(
         .wrap_err("config/read failed in TUI")
 }
 
+pub(crate) async fn read_remote_project_trust(
+    request_handle: AppServerRequestHandle,
+    cwd: &Path,
+    host: ProjectTrustHost,
+) -> Result<Option<RemoteProjectTrust>> {
+    let cwd_string = cwd.to_string_lossy().into_owned();
+    let cwd = match LegacyAppPathString::from_string(cwd_string.clone()).to_inferred_path_uri() {
+        Some(cwd) => cwd,
+        None => {
+            let request_id = RequestId::String(format!("tui-environment-info-{}", Uuid::new_v4()));
+            let environment: EnvironmentInfoResponse = request_handle
+                .request_typed(ClientRequest::EnvironmentInfo {
+                    request_id,
+                    params: EnvironmentInfoParams {
+                        environment_id: LOCAL_ENVIRONMENT_ID.to_string(),
+                    },
+                })
+                .await
+                .wrap_err("environment/info failed while resolving remote project trust")?;
+            environment
+                .cwd
+                .ok_or_else(|| color_eyre::eyre::eyre!("remote app server did not provide a cwd"))?
+                .join(&cwd_string)
+                .wrap_err("failed to resolve the remote project directory")?
+        }
+    };
+    let cwd_uri = cwd;
+    let cwd = cwd_uri.inferred_native_path_string();
+    let request_id = RequestId::String(format!("tui-project-trust-read-{}", Uuid::new_v4()));
+    let response: JsonValue = request_handle
+        .request_typed(ClientRequest::ConfigRead {
+            request_id,
+            params: ConfigReadParams {
+                include_layers: true,
+                cwd: Some(cwd.clone()),
+            },
+        })
+        .await
+        .wrap_err("config/read failed while checking remote project trust")?;
+    let project_layers = response
+        .get("layers")
+        .and_then(JsonValue::as_array)
+        .into_iter()
+        .flatten()
+        .filter(|layer| layer["name"]["type"] == "project")
+        .collect::<Vec<_>>();
+    let disabled_project = project_layers.iter().rev().find(|layer| {
+        layer
+            .get("disabledReason")
+            .and_then(JsonValue::as_str)
+            .is_some()
+    });
+    let disabled_reason = disabled_project
+        .and_then(|layer| layer.get("disabledReason"))
+        .and_then(JsonValue::as_str);
+    let projects = response["config"]["projects"].as_object();
+    let windows_path = cwd_uri.infer_path_convention() == Some(PathConvention::Windows);
+    let cwd_key = if windows_path {
+        cwd.to_ascii_lowercase()
+    } else {
+        cwd.clone()
+    };
+    let project_entry = |key: &str| {
+        let projects = projects?;
+        projects
+            .get_key_value(key)
+            .filter(|(_, project)| project["trust_level"].as_str().is_some())
+            .or_else(|| {
+                projects
+                    .iter()
+                    .filter(|(path, project)| {
+                        windows_path
+                            && path.eq_ignore_ascii_case(key)
+                            && project["trust_level"].as_str().is_some()
+                    })
+                    .min_by_key(|(path, _)| *path)
+            })
+    };
+    let local_roots = if host == ProjectTrustHost::Local && project_layers.is_empty() {
+        let cwd = AbsolutePathBuf::from_absolute_path(&cwd)?;
+        let markers = serde_json::from_value::<Option<Vec<String>>>(
+            response["config"]["project_root_markers"].clone(),
+        )?
+        .unwrap_or_else(default_project_root_markers);
+        let project_root = find_project_root(LOCAL_FS.as_ref(), &cwd, &markers).await?;
+        let git_root = resolve_root_git_project_for_trust(LOCAL_FS.as_ref(), &cwd).await;
+        Some((
+            normalized_project_trust_keys(project_root.as_path()),
+            git_root.map(|root| normalized_project_trust_keys(root.as_path())),
+        ))
+    } else {
+        None
+    };
+    let cwd_keys = if host == ProjectTrustHost::Local {
+        normalized_project_trust_keys(Path::new(&cwd))
+    } else {
+        vec![cwd_key]
+    };
+    let saved_trust_target = |keys: &[String]| {
+        keys.iter()
+            .find_map(|key| project_entry(key).map(|(path, _)| path.as_str()))
+    };
+    let cwd_trust_target = saved_trust_target(&cwd_keys);
+    let trust_target = cwd_trust_target
+        .or_else(|| {
+            disabled_reason
+                .and_then(|reason| reason.split_once(", add "))
+                .and_then(|(_, reason)| reason.rsplit_once(" as a trusted project in "))
+                .map(|(trust_target, _)| trust_target)
+                .or_else(|| {
+                    disabled_project
+                        .and_then(|layer| layer["name"]["dotCodexFolder"].as_str())
+                        .and_then(|path| {
+                            path.strip_suffix("/.codex")
+                                .or_else(|| path.strip_suffix("\\.codex"))
+                        })
+                })
+        })
+        .or_else(|| {
+            let (project_root, git_root) = local_roots.as_ref()?;
+            saved_trust_target(project_root)
+                .or_else(|| git_root.as_deref().and_then(saved_trust_target))
+                .or_else(|| {
+                    git_root
+                        .as_ref()
+                        .and_then(|keys| keys.first())
+                        .map(String::as_str)
+                })
+                .or_else(|| project_root.first().map(String::as_str))
+        })
+        .unwrap_or(&cwd);
+    let trust_level = project_entry(trust_target)
+        .map(|(_, project)| project)
+        .and_then(|project| project.get("trust_level"))
+        .and_then(JsonValue::as_str)
+        .and_then(|level| match level {
+            "trusted" => Some(TrustLevel::Trusted),
+            "untrusted" => Some(TrustLevel::Untrusted),
+            _ => None,
+        });
+    let explicitly_untrusted = cwd_trust_target.is_none()
+        && disabled_reason.is_some_and(|reason| {
+            projects.into_iter().flatten().any(|(path, project)| {
+                project.get("trust_level").and_then(JsonValue::as_str) == Some("untrusted")
+                    && reason
+                        .strip_prefix(path)
+                        .is_some_and(|suffix| suffix.starts_with(" is marked as untrusted"))
+            })
+        });
+    if !explicitly_untrusted
+        && (trust_level == Some(TrustLevel::Trusted)
+            || (trust_level.is_none()
+                && disabled_project.is_none()
+                && project_layers
+                    .iter()
+                    .any(|layer| layer.get("disabledReason").is_none())))
+    {
+        return Ok(None);
+    }
+
+    if host == ProjectTrustHost::Remote
+        && trust_level.is_none()
+        && !explicitly_untrusted
+        && project_layers.is_empty()
+        && projects.into_iter().flatten().any(|(path, project)| {
+            project.get("trust_level").and_then(JsonValue::as_str) == Some("untrusted")
+                && LegacyAppPathString::from_string(path.clone())
+                    .to_inferred_path_uri()
+                    .is_some_and(|project_uri| cwd_uri.starts_with(&project_uri))
+        })
+    {
+        return Err(color_eyre::eyre::eyre!(
+            "remote project directory is inside an explicitly untrusted project; pass the repository root explicitly with --cd"
+        ));
+    }
+
+    Ok(Some(RemoteProjectTrust {
+        trust_level: if explicitly_untrusted {
+            Some(TrustLevel::Untrusted)
+        } else {
+            trust_level
+        },
+        cwd: PathBuf::from(&cwd),
+        trust_target: PathBuf::from(trust_target),
+    }))
+}
+
 pub(crate) async fn write_skill_enabled(
     request_handle: AppServerRequestHandle,
     path: AbsolutePathBuf,
@@ -287,3 +404,28 @@ pub(crate) async fn write_skill_enabled(
 #[cfg(test)]
 #[path = "config_update_tests.rs"]
 mod tests;
+
+/// Read effective server settings, retaining compatibility with servers without config/read.
+pub(crate) async fn read_effective_config_if_supported(
+    request_handle: AppServerRequestHandle,
+    cwd: &Path,
+) -> Result<Option<codex_app_server_protocol::Config>> {
+    match read_effective_config(request_handle, cwd.display().to_string()).await {
+        Ok(response) => Ok(Some(response.config)),
+        Err(err)
+            if matches!(
+                err.downcast_ref::<TypedRequestError>(),
+                Some(TypedRequestError::Server { source, .. })
+                    if source.code == -32601
+                        || source.code == -32600
+                            && source.message.contains("config/read")
+                            && (source.message.contains("unknown variant")
+                                || source.message.contains("unknown method"))
+            ) =>
+        {
+            // Callers retain their legacy behavior when the server lacks config/read.
+            Ok(None)
+        }
+        Err(err) => Err(err),
+    }
+}

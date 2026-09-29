@@ -1,10 +1,57 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use super::*;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use codex_utils_absolute_path::AbsolutePathBufGuard;
 use pretty_assertions::assert_eq;
 use std::num::NonZeroU64;
 use tempfile::tempdir;
+
+#[test]
+fn test_api_provider_applies_current_managed_residency() {
+    let info = ModelProviderInfo {
+        http_headers: Some(maplit::hashmap! {
+            "X-OpenAI-Internal-Codex-Residency".to_string() => "eu".into(),
+            "x-provider-header".to_string() => "preserved".into(),
+        }),
+        ..ModelProviderInfo::create_openai_provider(/*base_url*/ None)
+    };
+    let original_info = info.clone();
+    let previous_requirement = read_managed_residency_requirement();
+    set_managed_residency_requirement(Some(ResidencyRequirement::Us));
+    let managed = info.to_api_provider(/*auth_mode*/ None);
+    set_managed_residency_requirement(/*enforce_residency*/ None);
+    let unmanaged = info.to_api_provider(/*auth_mode*/ None);
+    set_managed_residency_requirement(previous_requirement);
+
+    assert_eq!(
+        managed.expect("managed provider should resolve").headers,
+        HeaderMap::from_iter([
+            (
+                HeaderName::from_static(RESIDENCY_HEADER_NAME),
+                HeaderValue::from_static("us")
+            ),
+            (
+                HeaderName::from_static("x-provider-header"),
+                HeaderValue::from_static("preserved")
+            ),
+        ])
+    );
+    assert_eq!(
+        unmanaged
+            .expect("unmanaged provider should resolve")
+            .headers,
+        HeaderMap::from_iter([
+            (
+                HeaderName::from_static(RESIDENCY_HEADER_NAME),
+                HeaderValue::from_static("eu")
+            ),
+            (
+                HeaderName::from_static("x-provider-header"),
+                HeaderValue::from_static("preserved")
+            ),
+        ])
+    );
+    assert_eq!(info, original_info);
+}
 
 #[test]
 fn test_deserialize_ollama_model_provider_toml() {
@@ -15,10 +62,12 @@ base_url = "http://localhost:11434/v1"
     let expected_provider = ModelProviderInfo {
         name: "Ollama".into(),
         base_url: Some("http://localhost:11434/v1".into()),
+        model_catalog_url: None,
         env_key: None,
         env_key_instructions: None,
         experimental_bearer_token: None,
         auth: None,
+        gateway_oauth: None,
         aws: None,
         wire_api: WireApi::Responses,
         query_params: None,
@@ -30,6 +79,7 @@ base_url = "http://localhost:11434/v1"
         websocket_connect_timeout_ms: None,
         requires_openai_auth: false,
         supports_websockets: false,
+        supports_standalone_web_search: false,
     };
 
     let provider: ModelProviderInfo = toml::from_str(azure_provider_toml).unwrap();
@@ -47,14 +97,16 @@ query_params = { api-version = "2025-04-01-preview" }
     let expected_provider = ModelProviderInfo {
         name: "Azure".into(),
         base_url: Some("https://xxxxx.openai.azure.com/openai".into()),
+        model_catalog_url: None,
         env_key: Some("AZURE_OPENAI_API_KEY".into()),
         env_key_instructions: None,
         experimental_bearer_token: None,
         auth: None,
+        gateway_oauth: None,
         aws: None,
         wire_api: WireApi::Responses,
         query_params: Some(maplit::hashmap! {
-            "api-version".to_string() => "2025-04-01-preview".to_string(),
+            "api-version".to_string() => "2025-04-01-preview".into(),
         }),
         http_headers: None,
         env_http_headers: None,
@@ -64,6 +116,7 @@ query_params = { api-version = "2025-04-01-preview" }
         websocket_connect_timeout_ms: None,
         requires_openai_auth: false,
         supports_websockets: false,
+        supports_standalone_web_search: false,
     };
 
     let provider: ModelProviderInfo = toml::from_str(azure_provider_toml).unwrap();
@@ -78,19 +131,22 @@ base_url = "https://example.com"
 env_key = "API_KEY"
 http_headers = { "X-Example-Header" = "example-value" }
 env_http_headers = { "X-Example-Env-Header" = "EXAMPLE_ENV_VAR" }
+supports_standalone_web_search = true
         "#;
     let expected_provider = ModelProviderInfo {
         name: "Example".into(),
         base_url: Some("https://example.com".into()),
+        model_catalog_url: None,
         env_key: Some("API_KEY".into()),
         env_key_instructions: None,
         experimental_bearer_token: None,
         auth: None,
+        gateway_oauth: None,
         aws: None,
         wire_api: WireApi::Responses,
         query_params: None,
         http_headers: Some(maplit::hashmap! {
-            "X-Example-Header".to_string() => "example-value".to_string(),
+            "X-Example-Header".to_string() => "example-value".into(),
         }),
         env_http_headers: Some(maplit::hashmap! {
             "X-Example-Env-Header".to_string() => "EXAMPLE_ENV_VAR".to_string(),
@@ -101,6 +157,7 @@ env_http_headers = { "X-Example-Env-Header" = "EXAMPLE_ENV_VAR" }
         websocket_connect_timeout_ms: None,
         requires_openai_auth: false,
         supports_websockets: false,
+        supports_standalone_web_search: true,
     };
 
     let provider: ModelProviderInfo = toml::from_str(azure_provider_toml).unwrap();
@@ -108,7 +165,7 @@ env_http_headers = { "X-Example-Env-Header" = "EXAMPLE_ENV_VAR" }
 }
 
 #[test]
-fn test_deserialize_chat_wire_api() {
+fn test_deserialize_chat_wire_api_shows_helpful_error() {
     let provider_toml = r#"
 name = "OpenAI using Chat Completions"
 base_url = "https://api.openai.com/v1"
@@ -116,8 +173,8 @@ env_key = "OPENAI_API_KEY"
 wire_api = "chat"
         "#;
 
-    let info: ModelProviderInfo = toml::from_str(provider_toml).unwrap();
-    assert_eq!(info.wire_api, WireApi::Chat);
+    let err = toml::from_str::<ModelProviderInfo>(provider_toml).unwrap_err();
+    assert!(err.to_string().contains(CHAT_WIRE_API_REMOVED_ERROR));
 }
 
 #[test]
@@ -131,13 +188,6 @@ supports_websockets = true
 
     let provider: ModelProviderInfo = toml::from_str(provider_toml).unwrap();
     assert_eq!(provider.websocket_connect_timeout_ms, Some(15_000));
-}
-
-#[test]
-fn test_supports_remote_compaction_for_openai() {
-    let provider = ModelProviderInfo::create_openai_provider(/*base_url*/ None);
-
-    assert!(provider.supports_remote_compaction());
 }
 
 #[test]
@@ -159,60 +209,23 @@ fn test_header_auth_uses_chatgpt_codex_base_url() {
 }
 
 #[test]
-fn test_supports_remote_compaction_for_azure_name() {
-    let provider = ModelProviderInfo {
-        name: "Azure".into(),
-        base_url: Some("https://example.com/openai".into()),
-        env_key: Some("AZURE_OPENAI_API_KEY".into()),
-        env_key_instructions: None,
-        experimental_bearer_token: None,
-        auth: None,
-        aws: None,
-        wire_api: WireApi::Responses,
-        query_params: None,
-        http_headers: None,
-        env_http_headers: None,
-        request_max_retries: None,
-        stream_max_retries: None,
-        stream_idle_timeout_ms: None,
-        websocket_connect_timeout_ms: None,
-        requires_openai_auth: false,
-        supports_websockets: false,
-    };
-
-    assert!(provider.supports_remote_compaction());
-}
-
-#[test]
-fn test_supports_remote_compaction_for_non_openai_non_azure_provider() {
-    let provider = ModelProviderInfo {
-        name: "Example".into(),
-        base_url: Some("https://example.com/v1".into()),
-        env_key: Some("API_KEY".into()),
-        env_key_instructions: None,
-        experimental_bearer_token: None,
-        auth: None,
-        aws: None,
-        wire_api: WireApi::Responses,
-        query_params: None,
-        http_headers: None,
-        env_http_headers: None,
-        request_max_retries: None,
-        stream_max_retries: None,
-        stream_idle_timeout_ms: None,
-        websocket_connect_timeout_ms: None,
-        requires_openai_auth: false,
-        supports_websockets: false,
-    };
-
-    assert!(!provider.supports_remote_compaction());
+fn codex_backend_routes_require_codex_base_url() {
+    for (base_url, expected) in [
+        (None, true),
+        (Some(CHATGPT_CODEX_BASE_URL), true),
+        (Some("https://chatgpt-staging.com/backend-api/codex/"), true),
+        (Some("https://proxy.example.com/v1"), false),
+    ] {
+        let provider = ModelProviderInfo::create_openai_provider(base_url.map(str::to_owned));
+        assert_eq!(provider.supports_codex_backend_routes(), expected);
+    }
 }
 
 #[test]
 fn test_uses_openai_actor_authorization() {
     let mut provider = ModelProviderInfo {
         http_headers: Some(maplit::hashmap! {
-            "X-OpenAI-Actor-Authorization".to_string() => "actor-token".to_string(),
+            "X-OpenAI-Actor-Authorization".to_string() => "actor-token".into(),
         }),
         ..ModelProviderInfo::default()
     };
@@ -222,12 +235,12 @@ fn test_uses_openai_actor_authorization() {
     assert!(!provider.uses_openai_actor_authorization());
 
     provider.http_headers = Some(maplit::hashmap! {
-        OPENAI_ACTOR_AUTHORIZATION_HEADER.to_string() => "  ".to_string(),
+        OPENAI_ACTOR_AUTHORIZATION_HEADER.to_string() => "  ".into(),
     });
     assert!(!provider.uses_openai_actor_authorization());
 
     provider.http_headers = Some(maplit::hashmap! {
-        OPENAI_ACTOR_AUTHORIZATION_HEADER.to_string() => "actor-token".to_string(),
+        OPENAI_ACTOR_AUTHORIZATION_HEADER.to_string() => "actor-token".into(),
     });
     provider.requires_openai_auth = true;
     assert!(!provider.uses_openai_actor_authorization());
@@ -253,7 +266,7 @@ args = ["--format=text"]
         provider.auth,
         Some(ModelProviderAuthInfo {
             command: "./scripts/print-token".to_string(),
-            args: vec!["--format=text".to_string()],
+            args: vec!["--format=text".into()],
             timeout_ms: NonZeroU64::new(5_000).unwrap(),
             refresh_interval_ms: 300_000,
             cwd: AbsolutePathBuf::resolve_path_against_base(".", base_dir.path()),
@@ -268,8 +281,15 @@ name = "Amazon Bedrock"
 base_url = "https://bedrock.example.com/v1"
 
 [aws]
-profile = "codex-bedrock"
 region = "us-west-2"
+
+[aws.credential_export]
+command = "aws-vault"
+args = ["--profile", "codex-bedrock"]
+
+[aws.auth_refresh]
+command = "aws"
+args = ["login", "--profile", "codex-bedrock"]
         "#;
 
     let provider: ModelProviderInfo = toml::from_str(provider_toml).unwrap();
@@ -277,8 +297,18 @@ region = "us-west-2"
     assert_eq!(
         provider.aws,
         Some(ModelProviderAwsAuthInfo {
-            profile: Some("codex-bedrock".to_string()),
+            profile: None,
             region: Some("us-west-2".to_string()),
+            credential_export: Some(AwsCredentialExportConfig {
+                command: "aws-vault".to_string(),
+                args: vec!["--profile".into(), "codex-bedrock".into()],
+                timeout_ms: NonZeroU64::new(30_000).expect("timeout should be non-zero"),
+            }),
+            auth_refresh: Some(AwsAuthRefreshConfig {
+                command: "aws".to_string(),
+                args: vec!["login".into(), "--profile".into(), "codex-bedrock".into()],
+                timeout_ms: NonZeroU64::new(300_000).expect("timeout should be non-zero"),
+            }),
         })
     );
 }
@@ -289,20 +319,24 @@ fn test_create_amazon_bedrock_provider() {
         ModelProviderInfo::create_amazon_bedrock_provider(/*aws*/ None),
         ModelProviderInfo {
             name: "Amazon Bedrock".to_string(),
-            base_url: Some("https://bedrock-mantle.us-east-1.api.aws/openai/v1".to_string()),
+            base_url: None,
+            model_catalog_url: None,
             env_key: None,
             env_key_instructions: None,
             experimental_bearer_token: None,
             auth: None,
+            gateway_oauth: None,
             aws: Some(ModelProviderAwsAuthInfo {
                 profile: None,
                 region: None,
+                credential_export: None,
+                auth_refresh: None,
             }),
             wire_api: WireApi::Responses,
             query_params: None,
             http_headers: Some(maplit::hashmap! {
                 AMAZON_BEDROCK_MANTLE_CLIENT_AGENT_HEADER.to_string() =>
-                    AMAZON_BEDROCK_MANTLE_CLIENT_AGENT_VALUE.to_string(),
+                    AMAZON_BEDROCK_MANTLE_CLIENT_AGENT_VALUE.into(),
             }),
             env_http_headers: None,
             request_max_retries: None,
@@ -311,49 +345,126 @@ fn test_create_amazon_bedrock_provider() {
             websocket_connect_timeout_ms: None,
             requires_openai_auth: false,
             supports_websockets: false,
+            supports_standalone_web_search: false,
         }
     );
 }
 
 #[test]
-fn test_amazon_bedrock_provider_adds_mantle_client_agent_header() {
-    let api_provider = ModelProviderInfo::create_amazon_bedrock_provider(/*aws*/ None)
-        .to_api_provider(/*auth_mode*/ None)
-        .expect("Amazon Bedrock provider should build API provider");
+fn test_create_amazon_bedrock_runtime_provider() {
+    let mut expected = ModelProviderInfo::create_amazon_bedrock_provider(/*aws*/ None);
+    expected.name = "Amazon Bedrock Runtime".to_string();
 
     assert_eq!(
-        api_provider
-            .headers
-            .get(AMAZON_BEDROCK_MANTLE_CLIENT_AGENT_HEADER)
-            .and_then(|value| value.to_str().ok()),
-        Some(AMAZON_BEDROCK_MANTLE_CLIENT_AGENT_VALUE)
+        ModelProviderInfo::create_amazon_bedrock_runtime_provider(/*aws*/ None),
+        expected
     );
 }
 
 #[test]
-fn test_built_in_model_providers_include_amazon_bedrock() {
+fn test_create_amazon_bedrock_runtime_provider_with_aws_configuration() {
+    let provider =
+        ModelProviderInfo::create_amazon_bedrock_runtime_provider(Some(ModelProviderAwsAuthInfo {
+            profile: Some("runtime-profile".to_string()),
+            region: Some("us-west-2".to_string()),
+            credential_export: None,
+            auth_refresh: None,
+        }));
+
+    assert_eq!(
+        (
+            provider.name.as_str(),
+            provider.aws,
+            provider.http_headers,
+            provider.supports_standalone_web_search,
+        ),
+        (
+            "Amazon Bedrock Runtime",
+            Some(ModelProviderAwsAuthInfo {
+                profile: Some("runtime-profile".to_string()),
+                region: Some("us-west-2".to_string()),
+                credential_export: None,
+                auth_refresh: None,
+            }),
+            Some(maplit::hashmap! {
+                AMAZON_BEDROCK_MANTLE_CLIENT_AGENT_HEADER.to_string() =>
+                    AMAZON_BEDROCK_MANTLE_CLIENT_AGENT_VALUE.into(),
+            }),
+            false,
+        )
+    );
+}
+
+fn provider_auth_for_test() -> ModelProviderAuthInfo {
+    ModelProviderAuthInfo {
+        command: "token-fetcher".to_string(),
+        args: vec!["fetch".into()],
+        timeout_ms: NonZeroU64::new(5_000).expect("timeout should be non-zero"),
+        refresh_interval_ms: 300_000,
+        cwd: std::env::current_dir()
+            .expect("current directory should be available")
+            .try_into()
+            .expect("current directory should be absolute"),
+    }
+}
+
+#[test]
+fn test_amazon_bedrock_providers_add_mantle_client_agent_header() {
+    for provider in [
+        ModelProviderInfo::create_amazon_bedrock_provider(/*aws*/ None),
+        ModelProviderInfo::create_amazon_bedrock_runtime_provider(/*aws*/ None),
+    ] {
+        let api_provider = provider
+            .to_api_provider(/*auth_mode*/ None)
+            .expect("Amazon Bedrock provider should build API provider");
+
+        assert_eq!(
+            api_provider
+                .headers
+                .get(AMAZON_BEDROCK_MANTLE_CLIENT_AGENT_HEADER)
+                .and_then(|value| value.to_str().ok()),
+            Some(AMAZON_BEDROCK_MANTLE_CLIENT_AGENT_VALUE),
+            "provider: {}",
+            provider.name
+        );
+    }
+}
+
+#[test]
+fn test_built_in_model_providers_include_amazon_bedrock_endpoints() {
     let providers = built_in_model_providers(/*openai_base_url*/ None);
 
     assert_eq!(
-        providers
+        [
+            AMAZON_BEDROCK_PROVIDER_ID,
+            AMAZON_BEDROCK_RUNTIME_PROVIDER_ID
+        ]
+        .into_iter()
+        .map(|provider_id| {
+            providers
+                .get(provider_id)
+                .map(ModelProviderInfo::is_amazon_bedrock)
+        })
+        .collect::<Vec<_>>(),
+        vec![Some(true), Some(true)]
+    );
+}
+
+#[test]
+fn test_built_in_model_providers_include_amazon_bedrock_runtime() {
+    let providers = built_in_model_providers(/*openai_base_url*/ None);
+    let runtime = providers
+        .get(AMAZON_BEDROCK_RUNTIME_PROVIDER_ID)
+        .expect("Amazon Bedrock Runtime provider should be built in");
+
+    assert!(runtime.is_amazon_bedrock());
+    assert!(runtime.is_amazon_bedrock_runtime());
+    assert!(
+        !providers
             .get(AMAZON_BEDROCK_PROVIDER_ID)
-            .map(ModelProviderInfo::is_amazon_bedrock),
-        Some(true)
+            .expect("Amazon Bedrock provider should be built in")
+            .is_amazon_bedrock_runtime()
     );
-}
-
-#[test]
-fn test_built_in_openrouter_uses_separate_api_key_auth() {
-    let providers = built_in_model_providers(/*openai_base_url*/ None);
-    let provider = providers
-        .get(OPENROUTER_PROVIDER_ID)
-        .expect("OpenRouter provider should be built in");
-
-    assert_eq!(provider.name, "OpenRouter");
-    assert_eq!(provider.base_url.as_deref(), Some(OPENROUTER_BASE_URL));
-    assert_eq!(provider.env_key.as_deref(), Some("OPENROUTER_API_KEY"));
-    assert!(!provider.requires_openai_auth);
-    assert_eq!(provider.wire_api, WireApi::Chat);
 }
 
 #[test]
@@ -379,13 +490,25 @@ fn test_merge_configured_model_providers_adds_custom_provider() {
 }
 
 #[test]
-fn test_merge_configured_model_providers_applies_amazon_bedrock_profile_override() {
+fn test_merge_configured_model_providers_applies_amazon_bedrock_aws_override() {
+    let credential_export = AwsCredentialExportConfig {
+        command: "aws-vault".to_string(),
+        args: vec!["export".into(), "codex-bedrock".into()],
+        timeout_ms: NonZeroU64::new(30_000).expect("timeout should be non-zero"),
+    };
+    let auth_refresh = AwsAuthRefreshConfig {
+        command: "aws".to_string(),
+        args: vec!["login".into(), "--profile".into(), "codex-bedrock".into()],
+        timeout_ms: NonZeroU64::new(10_000).expect("timeout should be non-zero"),
+    };
     let configured_model_providers = std::collections::HashMap::from([(
         AMAZON_BEDROCK_PROVIDER_ID.to_string(),
         ModelProviderInfo {
             aws: Some(ModelProviderAwsAuthInfo {
-                profile: Some("codex-bedrock".to_string()),
+                profile: None,
                 region: Some("us-west-2".to_string()),
+                credential_export: Some(credential_export.clone()),
+                auth_refresh: Some(auth_refresh.clone()),
             }),
             ..ModelProviderInfo::default()
         },
@@ -396,9 +519,90 @@ fn test_merge_configured_model_providers_applies_amazon_bedrock_profile_override
         .get_mut(AMAZON_BEDROCK_PROVIDER_ID)
         .expect("Amazon Bedrock provider should be built in")
         .aws = Some(ModelProviderAwsAuthInfo {
+        profile: None,
+        region: Some("us-west-2".to_string()),
+        credential_export: Some(credential_export),
+        auth_refresh: Some(auth_refresh),
+    });
+
+    assert_eq!(
+        merge_configured_model_providers(
+            built_in_model_providers(/*openai_base_url*/ None),
+            configured_model_providers,
+        ),
+        Ok(expected)
+    );
+}
+
+#[test]
+fn test_merge_configured_model_providers_applies_runtime_overrides_independently() {
+    let runtime_aws = ModelProviderAwsAuthInfo {
+        profile: Some("runtime-profile".to_string()),
+        region: Some("eu-west-1".to_string()),
+        credential_export: None,
+        auth_refresh: None,
+    };
+    let configured_model_providers = std::collections::HashMap::from([(
+        AMAZON_BEDROCK_RUNTIME_PROVIDER_ID.to_string(),
+        ModelProviderInfo {
+            base_url: Some("https://runtime.example.com/openai/v1".to_string()),
+            aws: Some(runtime_aws.clone()),
+            ..ModelProviderInfo::default()
+        },
+    )]);
+    let mut expected = built_in_model_providers(/*openai_base_url*/ None);
+    let expected_runtime = expected
+        .get_mut(AMAZON_BEDROCK_RUNTIME_PROVIDER_ID)
+        .expect("Amazon Bedrock Runtime provider should be built in");
+    expected_runtime.base_url = Some("https://runtime.example.com/openai/v1".to_string());
+    expected_runtime.aws = Some(runtime_aws);
+
+    assert_eq!(
+        merge_configured_model_providers(
+            built_in_model_providers(/*openai_base_url*/ None),
+            configured_model_providers,
+        ),
+        Ok(expected)
+    );
+}
+
+#[test]
+fn test_merge_configured_model_providers_applies_amazon_bedrock_transport_overrides() {
+    let auth = provider_auth_for_test();
+    let configured_model_providers = std::collections::HashMap::from([(
+        AMAZON_BEDROCK_PROVIDER_ID.to_string(),
+        ModelProviderInfo {
+            base_url: Some("https://proxy.example.com/v1".to_string()),
+            auth: Some(auth.clone()),
+            aws: Some(ModelProviderAwsAuthInfo {
+                profile: Some("codex-bedrock".to_string()),
+                region: Some("us-west-2".to_string()),
+                credential_export: None,
+                auth_refresh: None,
+            }),
+            http_headers: Some(maplit::hashmap! {
+                "x-example-header".to_string() => "value".into(),
+            }),
+            ..ModelProviderInfo::default()
+        },
+    )]);
+
+    let mut expected = built_in_model_providers(/*openai_base_url*/ None);
+    let expected_provider = expected
+        .get_mut(AMAZON_BEDROCK_PROVIDER_ID)
+        .expect("Amazon Bedrock provider should be built in");
+    expected_provider.base_url = Some("https://proxy.example.com/v1".to_string());
+    expected_provider.auth = Some(auth);
+    expected_provider.aws = Some(ModelProviderAwsAuthInfo {
         profile: Some("codex-bedrock".to_string()),
         region: Some("us-west-2".to_string()),
+        credential_export: None,
+        auth_refresh: None,
     });
+    expected_provider
+        .http_headers
+        .get_or_insert_default()
+        .insert("x-example-header".to_string(), "value".into());
 
     assert_eq!(
         merge_configured_model_providers(
@@ -418,6 +622,8 @@ fn test_merge_configured_model_providers_rejects_amazon_bedrock_non_default_fiel
             aws: Some(ModelProviderAwsAuthInfo {
                 profile: Some("codex-bedrock".to_string()),
                 region: None,
+                credential_export: None,
+                auth_refresh: None,
             }),
             ..ModelProviderInfo::default()
         },
@@ -429,7 +635,7 @@ fn test_merge_configured_model_providers_rejects_amazon_bedrock_non_default_fiel
             configured_model_providers,
         ),
         Err(
-            "model_providers.amazon-bedrock only supports changing `aws.profile` and `aws.region`; other non-default provider fields are not supported"
+            "model_providers.amazon-bedrock only supports changing `base_url`, `auth`, `http_headers`, `aws.profile`, `aws.region`, `aws.credential_export`, and `aws.auth_refresh`; other non-default provider fields are not supported"
                 .to_string()
         )
     );
@@ -443,6 +649,8 @@ fn test_merge_configured_model_providers_allows_amazon_bedrock_default_fields() 
             aws: Some(ModelProviderAwsAuthInfo {
                 profile: None,
                 region: None,
+                credential_export: None,
+                auth_refresh: None,
             }),
             wire_api: WireApi::Responses,
             ..ModelProviderInfo::default()
@@ -464,6 +672,8 @@ fn test_validate_provider_aws_rejects_conflicting_auth() {
         aws: Some(ModelProviderAwsAuthInfo {
             profile: None,
             region: None,
+            credential_export: None,
+            auth_refresh: None,
         }),
         env_key: Some("AWS_BEARER_TOKEN_BEDROCK".to_string()),
         supports_websockets: false,
@@ -482,6 +692,8 @@ fn test_validate_provider_aws_rejects_websockets() {
         aws: Some(ModelProviderAwsAuthInfo {
             profile: None,
             region: None,
+            credential_export: None,
+            auth_refresh: None,
         }),
         requires_openai_auth: false,
         supports_websockets: true,
@@ -492,6 +704,107 @@ fn test_validate_provider_aws_rejects_websockets() {
         provider.validate(),
         Err("provider aws cannot be combined with supports_websockets".to_string())
     );
+}
+
+#[test]
+fn test_validate_provider_aws_auth_refresh_command() {
+    for (command, expected) in [
+        (
+            "  ",
+            Err("provider aws.auth_refresh.command must not be empty".to_string()),
+        ),
+        (
+            "other-command",
+            Err("provider aws.auth_refresh.command must be `aws`".to_string()),
+        ),
+        ("aws", Ok(())),
+    ] {
+        let provider =
+            ModelProviderInfo::create_amazon_bedrock_provider(Some(ModelProviderAwsAuthInfo {
+                profile: None,
+                region: None,
+                credential_export: None,
+                auth_refresh: Some(AwsAuthRefreshConfig {
+                    command: command.to_string(),
+                    args: Vec::new(),
+                    timeout_ms: NonZeroU64::new(300_000).expect("timeout should be non-zero"),
+                }),
+            }));
+
+        assert_eq!(provider.validate(), expected);
+    }
+}
+
+#[test]
+fn test_validate_provider_aws_credential_export_command() {
+    let absolute_command = std::env::current_exe()
+        .expect("current executable should have a path")
+        .to_string_lossy()
+        .into_owned();
+    for (command, expected) in [
+        (
+            String::new(),
+            Err("provider aws.credential_export.command must not be empty".to_string()),
+        ),
+        (
+            "  ".to_string(),
+            Err("provider aws.credential_export.command must not be empty".to_string()),
+        ),
+        ("aws-vault".to_string(), Ok(())),
+        (absolute_command, Ok(())),
+        (
+            "./scripts/export-credentials".to_string(),
+            Err(
+                "provider aws.credential_export.command must be an absolute path or a bare executable name"
+                    .to_string(),
+            ),
+        ),
+        (
+            "scripts/export-credentials".to_string(),
+            Err(
+                "provider aws.credential_export.command must be an absolute path or a bare executable name"
+                    .to_string(),
+            ),
+        ),
+        (
+            "scripts/.".to_string(),
+            Err(
+                "provider aws.credential_export.command must be an absolute path or a bare executable name"
+                    .to_string(),
+            ),
+        ),
+    ] {
+        let mut provider =
+            ModelProviderInfo::create_amazon_bedrock_provider(Some(ModelProviderAwsAuthInfo {
+                profile: None,
+                region: Some("us-west-2".to_string()),
+                credential_export: Some(AwsCredentialExportConfig {
+                    command,
+                    args: vec!["--secret-argument".into()],
+                    timeout_ms: NonZeroU64::new(30_000).expect("timeout should be non-zero"),
+                }),
+                auth_refresh: Some(AwsAuthRefreshConfig {
+                    command: "aws".to_string(),
+                    args: Vec::new(),
+                    timeout_ms: NonZeroU64::new(300_000).expect("timeout should be non-zero"),
+                }),
+            }));
+
+        assert_eq!(provider.validate(), expected);
+        if expected.is_ok() {
+            provider.aws.as_mut().expect("AWS config").profile = Some("codex-bedrock".to_string());
+            assert_eq!(
+                provider.validate(),
+                Err("provider aws.credential_export cannot be combined with aws.profile".to_string()),
+            );
+        }
+        let export = provider
+            .aws
+            .as_ref()
+            .and_then(|aws| aws.credential_export.as_ref())
+            .expect("credential export should be configured");
+        assert!(!format!("{export:?}").contains("--secret-argument"));
+    }
 }
 
 #[test]
@@ -516,71 +829,32 @@ refresh_interval_ms = 0
 }
 
 #[test]
-fn native_provider_metadata_is_explicit_and_truthful() {
-    let anthropic = provider_metadata(ANTHROPIC_PROVIDER_ID).expect("Anthropic metadata");
-    assert_eq!(anthropic.provider_id, "anthropic");
-    assert_eq!(anthropic.api_base_url, ANTHROPIC_BASE_URL);
-    assert_eq!(anthropic.environment_variable, Some(ANTHROPIC_API_KEY_ENV));
-    assert_eq!(anthropic.wire_protocol, WireApi::AnthropicMessages);
-    assert_eq!(anthropic.default_model, ANTHROPIC_DEFAULT_MODEL);
-
-    let gemini = provider_metadata(GOOGLE_GEMINI_PROVIDER_ID).expect("Gemini metadata");
-    assert_eq!(gemini.provider_id, "google-gemini");
-    assert_eq!(gemini.api_base_url, GOOGLE_GEMINI_BASE_URL);
-    assert_eq!(gemini.environment_variable, Some(GOOGLE_GEMINI_API_KEY_ENV));
-    assert_eq!(gemini.wire_protocol, WireApi::GeminiGenerateContent);
-    assert_eq!(gemini.default_model, GOOGLE_GEMINI_DEFAULT_MODEL);
-
-    let openrouter = provider_metadata(OPENROUTER_PROVIDER_ID).expect("OpenRouter metadata");
-    assert_eq!(openrouter.provider_id, OPENROUTER_PROVIDER_ID);
-    assert_eq!(openrouter.wire_protocol, WireApi::Chat);
-
-    let claude_compat = compatibility_route_metadata(OPENROUTER_CLAUDE_COMPAT_ALIAS)
-        .expect("Claude compatibility route");
-    assert_eq!(claude_compat.provider_id, OPENROUTER_PROVIDER_ID);
-    assert_eq!(claude_compat.model, OPENROUTER_CLAUDE_COMPAT_MODEL);
-    assert!(claude_compat.display_name.contains("compatibility"));
-}
-
-#[test]
-fn native_providers_are_built_in_with_vendor_wire_protocols() {
-    let providers = built_in_model_providers(None);
-    let anthropic = providers
-        .get(ANTHROPIC_PROVIDER_ID)
-        .expect("Anthropic provider");
-    assert_eq!(anthropic.base_url.as_deref(), Some(ANTHROPIC_BASE_URL));
-    assert_eq!(anthropic.env_key.as_deref(), Some(ANTHROPIC_API_KEY_ENV));
-    assert_eq!(anthropic.wire_api, WireApi::AnthropicMessages);
+fn model_catalog_url_deserializes_without_changing_inference_routing() {
+    let provider: ModelProviderInfo = toml::from_str(
+        r#"
+name = "Gateway"
+base_url = "https://gateway.example/v1"
+model_catalog_url = "https://gateway.example/codex/catalog?token=catalog-secret"
+"#,
+    )
+    .unwrap();
+    assert!(!format!("{provider:?}").contains("catalog-secret"));
     assert_eq!(
-        anthropic
-            .http_headers
-            .as_ref()
-            .and_then(|headers| headers.get("anthropic-version"))
-            .map(String::as_str),
-        Some("2023-06-01")
-    );
-
-    let gemini = providers
-        .get(GOOGLE_GEMINI_PROVIDER_ID)
-        .expect("Gemini provider");
-    assert_eq!(gemini.base_url.as_deref(), Some(GOOGLE_GEMINI_BASE_URL));
-    assert_eq!(gemini.env_key.as_deref(), Some(GOOGLE_GEMINI_API_KEY_ENV));
-    assert_eq!(gemini.wire_api, WireApi::GeminiGenerateContent);
-}
-
-#[test]
-fn native_wire_protocols_round_trip_through_toml() {
-    for (wire, serialized) in [
-        (WireApi::AnthropicMessages, "anthropic_messages"),
-        (WireApi::GeminiGenerateContent, "gemini_generate_content"),
-    ] {
-        let provider = ModelProviderInfo {
-            wire_api: wire,
+        provider,
+        ModelProviderInfo {
+            name: "Gateway".to_string(),
+            base_url: Some("https://gateway.example/v1".to_string()),
+            model_catalog_url: Some(
+                "https://gateway.example/codex/catalog?token=catalog-secret".into()
+            ),
             ..ModelProviderInfo::default()
-        };
-        let encoded = toml::to_string(&provider).expect("serialize provider");
-        assert!(encoded.contains(&format!("wire_api = \"{serialized}\"")));
-        let decoded: ModelProviderInfo = toml::from_str(&encoded).expect("deserialize provider");
-        assert_eq!(decoded.wire_api, wire);
-    }
+        }
+    );
+    assert_eq!(
+        provider
+            .to_api_provider(Some(AuthMode::ApiKey))
+            .unwrap()
+            .base_url,
+        "https://gateway.example/v1"
+    );
 }

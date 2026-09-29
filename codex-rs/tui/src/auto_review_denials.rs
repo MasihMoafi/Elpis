@@ -48,9 +48,18 @@ pub(crate) fn action_summary(action: &GuardianAssessmentAction) -> String {
             shlex::try_join(command.iter().map(String::as_str))
                 .unwrap_or_else(|_| command.join(" "))
         }
+        GuardianAssessmentAction::WriteStdin {
+            process_id, stdin, ..
+        } => {
+            let stdin = crate::text_formatting::truncate_text(
+                &format!("{stdin:?}"),
+                /*max_graphemes*/ 80,
+            );
+            format!("send input to terminal {process_id}: {stdin}")
+        }
         GuardianAssessmentAction::ApplyPatch { files, .. } => {
             if files.len() == 1 {
-                format!("apply_patch touching {}", files[0].display())
+                format!("apply_patch touching {}", files[0].render_for_ui())
             } else {
                 format!("apply_patch touching {} files", files.len())
             }
@@ -85,8 +94,12 @@ mod tests {
 
     fn denied_event(id: usize) -> GuardianAssessmentEvent {
         GuardianAssessmentEvent {
+            review_reason: None,
+            model_context: None,
             id: format!("review-{id}"),
             target_item_id: None,
+            plugin_id: None,
+            script_path: None,
             turn_id: "turn-1".to_string(),
             started_at_ms: 0,
             completed_at_ms: Some(1),
@@ -98,7 +111,7 @@ mod tests {
             action: GuardianAssessmentAction::Command {
                 source: GuardianCommandSource::Shell,
                 command: format!("rm -rf /tmp/test-{id}"),
-                cwd: test_path_buf("/tmp").abs(),
+                cwd: test_path_buf("/tmp").abs().into(),
             },
         }
     }

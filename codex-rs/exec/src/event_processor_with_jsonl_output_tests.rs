@@ -17,6 +17,9 @@ fn failed_turn_does_not_overwrite_output_last_message_file() {
                 id: "msg-1".to_string(),
                 text: "partial answer".to_string(),
                 phase: None,
+                memory_citation: None,
+                delivery: None,
+                questions: None,
             },
             thread_id: "thread-1".to_string(),
             turn_id: "turn-1".to_string(),
@@ -36,6 +39,7 @@ fn failed_turn_does_not_overwrite_output_last_message_file() {
                 items: Vec::new(),
                 status: TurnStatus::Failed,
                 error: Some(codex_app_server_protocol::TurnError {
+                    misalignment: None,
                     message: "turn failed".to_string(),
                     additional_details: None,
                     codex_error_info: None,
@@ -99,7 +103,9 @@ fn mcp_tool_call_result_preserves_meta_in_jsonl_event() {
                 arguments: json!({"search_query": [{"q": "OpenAI Codex CLI documentation"}]}),
                 app_context: None,
                 mcp_app_resource_uri: None,
+                mcp_app_ui: None,
                 plugin_id: None,
+                read_only_hint: None,
                 result: Some(Box::new(codex_app_server_protocol::McpToolCallResult {
                     content: vec![json!({"type": "text", "text": "search result"})],
                     structured_content: None,

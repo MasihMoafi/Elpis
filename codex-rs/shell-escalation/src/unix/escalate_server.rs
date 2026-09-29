@@ -1,4 +1,3 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use std::collections::HashMap;
 use std::future::Future;
 use std::os::fd::AsRawFd;
@@ -10,6 +9,7 @@ use std::sync::Mutex;
 use std::time::Duration;
 
 use anyhow::Context as _;
+use codex_protocol::shell_environment::scrub_non_inheritable_env_vars;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use socket2::Socket;
 use tokio::process::Command;
@@ -25,7 +25,6 @@ use crate::unix::escalate_protocol::EscalationDecision;
 use crate::unix::escalate_protocol::EscalationExecution;
 use crate::unix::escalate_protocol::SuperExecMessage;
 use crate::unix::escalate_protocol::SuperExecResult;
-use crate::unix::escalate_protocol::SuperExecSignal;
 use crate::unix::escalation_policy::EscalationPolicy;
 use crate::unix::socket::AsyncDatagramSocket;
 use crate::unix::socket::AsyncSocket;
@@ -337,12 +336,14 @@ async fn handle_escalate_session_with_policy(
             command
                 .args(args)
                 .arg0(arg0.unwrap_or_else(|| program.clone()))
+                .env_clear()
                 .envs(&env)
                 .current_dir(&cwd)
                 .stdin(Stdio::null())
                 .stdout(Stdio::null())
                 .stderr(Stdio::null())
                 .kill_on_drop(true);
+            scrub_non_inheritable_env_vars(command.as_std_mut());
             unsafe {
                 command.pre_exec(move || {
                     for (dst_fd, src_fd) in msg.fds.iter().zip(&fds) {
@@ -352,34 +353,15 @@ async fn handle_escalate_session_with_policy(
                 });
             }
             let mut child = command.spawn()?;
-            let exit_status = loop {
-                tokio::select! {
-                    status = child.wait() => break status?,
-                    _ = parent_cancellation_token.cancelled() => {
-                        let _ = child.start_kill();
-                        break child.wait().await?;
-                    }
-                    _ = session_cancellation_token.cancelled() => {
-                        let _ = child.start_kill();
-                        break child.wait().await?;
-                    }
-                    msg = socket.receive::<SuperExecSignal>() => {
-                        match msg {
-                            Ok(msg) => {
-                                if let Some(pid) = child.id() {
-                                    unsafe {
-                                        libc::kill(pid as libc::pid_t, msg.signal);
-                                    }
-                                }
-                            }
-                            Err(e) => {
-                                tracing::warn!("failed to receive SuperExecSignal: {}", e);
-                                // The client has disconnected. We should break out and kill the child process.
-                                let _ = child.start_kill();
-                                break child.wait().await?;
-                            }
-                        }
-                    }
+            let exit_status = tokio::select! {
+                status = child.wait() => status?,
+                _ = parent_cancellation_token.cancelled() => {
+                    let _ = child.start_kill();
+                    child.wait().await?
+                }
+                _ = session_cancellation_token.cancelled() => {
+                    let _ = child.start_kill();
+                    child.wait().await?
                 }
             };
             socket

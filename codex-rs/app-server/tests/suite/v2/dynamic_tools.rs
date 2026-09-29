@@ -1,10 +1,11 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use anyhow::Context;
 use anyhow::Result;
+use app_test_support::MockResponsesConfig;
 use app_test_support::TestAppServer;
 use app_test_support::create_final_assistant_message_sse_response;
 use app_test_support::create_mock_responses_server_sequence_unchecked;
 use app_test_support::to_response;
+use app_test_support::write_models_cache_with_models;
 use codex_app_server_protocol::DynamicToolCallOutputContentItem;
 use codex_app_server_protocol::DynamicToolCallParams;
 use codex_app_server_protocol::DynamicToolCallResponse;
@@ -29,17 +30,21 @@ use codex_protocol::models::DEFAULT_IMAGE_DETAIL;
 use codex_protocol::models::FunctionCallOutputBody;
 use codex_protocol::models::FunctionCallOutputContentItem;
 use codex_protocol::models::FunctionCallOutputPayload;
+use codex_protocol::models::ImageReference;
+use codex_protocol::openai_models::InputModality;
+use core_test_support::load_default_config_for_test;
 use core_test_support::responses;
 use pretty_assertions::assert_eq;
 use serde_json::Value;
 use serde_json::json;
-use std::path::Path;
 use std::time::Duration;
 use tempfile::TempDir;
 use tokio::time::timeout;
 use wiremock::MockServer;
 
 const TINY_PNG_DATA_URL: &str = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==";
+const INLINE_AUDIO_DATA_URL: &str = "data:audio/wav;base64,YXVkaW8=";
+const INVALID_AUDIO_URL_ERROR: &str = "audio URLs must use an inline data URL";
 const REMOTE_IMAGE_URL_ERROR: &str =
     "remote image URLs are not supported; use an inline data URL instead";
 
@@ -56,7 +61,7 @@ async fn thread_start_normalizes_legacy_dynamic_tools_into_model_request() -> Re
     let server = create_mock_responses_server_sequence_unchecked(responses).await;
 
     let codex_home = TempDir::new()?;
-    create_config_toml(codex_home.path(), &server.uri())?;
+    MockResponsesConfig::new(&server.uri()).write(codex_home.path())?;
 
     let mut mcp = TestAppServer::builder()
         .with_codex_home(codex_home.path())
@@ -174,7 +179,7 @@ async fn thread_start_rejects_hidden_dynamic_tools_without_namespace() -> Result
     let server = MockServer::start().await;
 
     let codex_home = TempDir::new()?;
-    create_config_toml(codex_home.path(), &server.uri())?;
+    MockResponsesConfig::new(&server.uri()).write(codex_home.path())?;
 
     let mut mcp = TestAppServer::builder()
         .with_codex_home(codex_home.path())
@@ -216,7 +221,7 @@ async fn thread_start_rejects_invalid_dynamic_tool_inputs() -> Result<()> {
     let server = MockServer::start().await;
 
     let codex_home = TempDir::new()?;
-    create_config_toml(codex_home.path(), &server.uri())?;
+    MockResponsesConfig::new(&server.uri()).write(codex_home.path())?;
 
     let mut mcp = TestAppServer::builder()
         .with_codex_home(codex_home.path())
@@ -362,7 +367,7 @@ async fn dynamic_tool_call_round_trip_sends_text_content_items_to_model() -> Res
     let server = create_mock_responses_server_sequence_unchecked(responses).await;
 
     let codex_home = TempDir::new()?;
-    create_config_toml(codex_home.path(), &server.uri())?;
+    MockResponsesConfig::new(&server.uri()).write(codex_home.path())?;
 
     let mut mcp = TestAppServer::builder()
         .with_codex_home(codex_home.path())
@@ -592,7 +597,12 @@ async fn start_function_dynamic_tool_call(call_id: &str) -> Result<PendingDynami
     let server = create_mock_responses_server_sequence_unchecked(response_sequence).await;
 
     let codex_home = TempDir::new()?;
-    create_config_toml(codex_home.path(), &server.uri())?;
+    MockResponsesConfig::new(&server.uri()).write(codex_home.path())?;
+    let config = load_default_config_for_test(&codex_home).await;
+    let mut model_info =
+        codex_core::test_support::construct_model_info_offline("mock-model", &config);
+    model_info.input_modalities.push(InputModality::Audio);
+    write_models_cache_with_models(codex_home.path(), vec![model_info]).await?;
 
     let mut mcp = TestAppServer::builder()
         .with_codex_home(codex_home.path())
@@ -681,7 +691,7 @@ async fn start_function_dynamic_tool_call(call_id: &str) -> Result<PendingDynami
 
 /// Ensures dynamic tool call responses can include structured content items.
 #[tokio::test]
-async fn dynamic_tool_call_round_trip_sends_content_items_to_model() -> Result<()> {
+async fn dynamic_tool_call_round_trip_handles_content_items() -> Result<()> {
     let call_id = "dyn-call-items-1";
     let PendingDynamicToolCall {
         mut mcp,
@@ -697,22 +707,24 @@ async fn dynamic_tool_call_round_trip_sends_content_items_to_model() -> Result<(
         DynamicToolCallOutputContentItem::InputImage {
             image_url: TINY_PNG_DATA_URL.to_string(),
         },
+        DynamicToolCallOutputContentItem::InputAudio {
+            audio_url: INLINE_AUDIO_DATA_URL.to_string(),
+        },
     ];
-    let content_items = response_content_items
-        .clone()
-        .into_iter()
-        .map(|item| match item {
-            DynamicToolCallOutputContentItem::InputText { text } => {
-                FunctionCallOutputContentItem::InputText { text }
-            }
-            DynamicToolCallOutputContentItem::InputImage { image_url } => {
-                FunctionCallOutputContentItem::InputImage {
-                    image_url,
-                    detail: Some(DEFAULT_IMAGE_DETAIL),
-                }
-            }
-        })
-        .collect::<Vec<FunctionCallOutputContentItem>>();
+    let model_content_items = vec![
+        FunctionCallOutputContentItem::InputText {
+            text: "dynamic-ok".to_string(),
+        },
+        FunctionCallOutputContentItem::InputImage {
+            image: ImageReference::Inline {
+                image_url: TINY_PNG_DATA_URL.to_string(),
+            },
+            detail: Some(DEFAULT_IMAGE_DETAIL),
+        },
+        FunctionCallOutputContentItem::InputAudio {
+            audio_url: INLINE_AUDIO_DATA_URL.to_string(),
+        },
+    ];
     let response = DynamicToolCallResponse {
         content_items: response_content_items,
         success: true,
@@ -742,6 +754,9 @@ async fn dynamic_tool_call_round_trip_sends_content_items_to_model() -> Result<(
             DynamicToolCallOutputContentItem::InputImage {
                 image_url: TINY_PNG_DATA_URL.to_string(),
             },
+            DynamicToolCallOutputContentItem::InputAudio {
+                audio_url: INLINE_AUDIO_DATA_URL.to_string(),
+            },
         ])
     );
     assert_eq!(success, Some(true));
@@ -768,6 +783,10 @@ async fn dynamic_tool_call_round_trip_sends_content_items_to_model() -> Result<(
                 "type": "input_image",
                 "image_url": TINY_PNG_DATA_URL,
                 "detail": "high"
+            },
+            {
+                "type": "input_audio",
+                "audio_url": INLINE_AUDIO_DATA_URL
             }
         ])
     );
@@ -778,12 +797,12 @@ async fn dynamic_tool_call_round_trip_sends_content_items_to_model() -> Result<(
         .context("expected function_call_output in follow-up request")?;
     assert_eq!(
         payload.body,
-        FunctionCallOutputBody::ContentItems(content_items.clone())
+        FunctionCallOutputBody::ContentItems(model_content_items.clone())
     );
     assert_eq!(payload.success, None);
     assert_eq!(
         serde_json::to_string(&payload)?,
-        serde_json::to_string(&content_items)?
+        serde_json::to_string(&model_content_items)?
     );
 
     Ok(())
@@ -841,6 +860,62 @@ async fn dynamic_tool_remote_image_response_becomes_model_visible_error() -> Res
         .find_map(|body| function_call_output_raw_output(body, call_id))
         .context("expected function_call_output output in follow-up request")?;
     assert_eq!(output, json!(REMOTE_IMAGE_URL_ERROR));
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn dynamic_tool_remote_audio_response_becomes_model_visible_error() -> Result<()> {
+    let call_id = "dyn-call-remote-audio";
+    let PendingDynamicToolCall {
+        mut mcp,
+        server,
+        request_id,
+        params,
+    } = start_function_dynamic_tool_call(call_id).await?;
+
+    let response = DynamicToolCallResponse {
+        content_items: vec![DynamicToolCallOutputContentItem::InputAudio {
+            audio_url: "https://example.com/tool.wav".to_string(),
+        }],
+        success: true,
+    };
+    mcp.send_response(request_id, serde_json::to_value(response)?)
+        .await?;
+
+    let completed = wait_for_dynamic_tool_completed(&mut mcp, call_id).await?;
+    assert_eq!(completed.thread_id, params.thread_id);
+    assert_eq!(completed.turn_id, params.turn_id);
+    let ThreadItem::DynamicToolCall {
+        status,
+        content_items,
+        success,
+        ..
+    } = completed.item
+    else {
+        panic!("expected dynamic tool call item");
+    };
+    assert_eq!(status, DynamicToolCallStatus::Failed);
+    assert_eq!(
+        content_items,
+        Some(vec![DynamicToolCallOutputContentItem::InputText {
+            text: INVALID_AUDIO_URL_ERROR.to_string(),
+        }])
+    );
+    assert_eq!(success, Some(false));
+
+    timeout(
+        DEFAULT_READ_TIMEOUT,
+        mcp.read_stream_until_notification_message("turn/completed"),
+    )
+    .await??;
+
+    let output = responses_bodies(&server)
+        .await?
+        .iter()
+        .find_map(|body| function_call_output_raw_output(body, call_id))
+        .context("expected function_call_output output in follow-up request")?;
+    assert_eq!(output, json!(INVALID_AUDIO_URL_ERROR));
 
     Ok(())
 }
@@ -927,27 +1002,4 @@ async fn wait_for_dynamic_tool_completed(
             return Ok(completed);
         }
     }
-}
-
-fn create_config_toml(codex_home: &Path, server_uri: &str) -> std::io::Result<()> {
-    let config_toml = codex_home.join("config.toml");
-    std::fs::write(
-        config_toml,
-        format!(
-            r#"
-model = "mock-model"
-approval_policy = "never"
-sandbox_mode = "read-only"
-
-model_provider = "mock_provider"
-
-[model_providers.mock_provider]
-name = "Mock provider for test"
-base_url = "{server_uri}/v1"
-wire_api = "responses"
-request_max_retries = 0
-stream_max_retries = 0
-"#
-        ),
-    )
 }

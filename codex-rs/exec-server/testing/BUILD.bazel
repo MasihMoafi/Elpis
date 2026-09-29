@@ -40,6 +40,8 @@ rust_binary(
     visibility = ["//visibility:public"],
     deps = [
         "//codex-rs/exec-server",
+        "//codex-rs/http-client",
+        "//codex-rs/utils/pty",
         "@crates//:tokio",
     ],
 )

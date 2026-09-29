@@ -19,11 +19,19 @@ use tracing_subscriber::Layer;
 use tracing_subscriber::filter::filter_fn;
 use tracing_subscriber::layer::SubscriberExt;
 
+use codex_protocol::AgentPath;
 use codex_protocol::ThreadId;
+use codex_protocol::ToolName;
 use codex_protocol::config_types::ReasoningSummary;
+use codex_protocol::config_types::ToolResultLogConfig;
+use codex_protocol::models::ImageReference;
 use codex_protocol::protocol::AskForApproval;
+use codex_protocol::protocol::GuardianAssessmentEvent;
+use codex_protocol::protocol::GuardianAssessmentOutcome;
+use codex_protocol::protocol::GuardianAssessmentStatus;
 use codex_protocol::protocol::SandboxPolicy;
 use codex_protocol::protocol::SessionSource;
+use codex_protocol::protocol::SubAgentSource;
 use codex_protocol::user_input::UserInput;
 
 fn log_attributes(record: &SdkLogRecord) -> BTreeMap<String, String> {
@@ -93,65 +101,7 @@ fn auth_env_metadata() -> AuthEnvTelemetryMetadata {
 }
 
 #[test]
-fn turn_profile_event_is_structured_and_contains_no_content_fields() {
-    let log_exporter = InMemoryLogExporter::default();
-    let logger_provider = SdkLoggerProvider::builder()
-        .with_simple_exporter(log_exporter.clone())
-        .build();
-    let subscriber = tracing_subscriber::registry().with(
-        opentelemetry_appender_tracing::layer::OpenTelemetryTracingBridge::new(&logger_provider)
-            .with_filter(filter_fn(OtelProvider::log_export_filter)),
-    );
-
-    tracing::subscriber::with_default(subscriber, || {
-        tracing::callsite::rebuild_interest_cache();
-        let manager = SessionTelemetry::new(
-            ThreadId::new(),
-            "gpt-5.6",
-            "gpt-5.6",
-            /*account_id*/ None,
-            /*account_email*/ None,
-            Some(TelemetryAuthMode::Chatgpt),
-            "codex_exec".to_string(),
-            /*log_user_prompts*/ true,
-            "tty".to_string(),
-            SessionSource::Cli,
-        );
-        manager.record_turn_profile("turn-123", 100, 700, 200, 50, 300, 75, 2, 1);
-    });
-
-    logger_provider.force_flush().expect("flush logs");
-    let logs = log_exporter.get_emitted_logs().expect("log export");
-    let profile_log = find_log_by_event_name(&logs, "codex.turn_profile");
-    let attrs = log_attributes(&profile_log.record);
-
-    for (field, expected) in [
-        ("turn.id", "turn-123"),
-        ("before_first_sampling_ms", "100"),
-        ("sampling_ms", "700"),
-        ("compaction_ms", "200"),
-        ("between_sampling_overhead_ms", "50"),
-        ("tool_blocking_ms", "300"),
-        ("after_last_sampling_ms", "75"),
-        ("sampling_request_count", "2"),
-        ("sampling_retry_count", "1"),
-    ] {
-        assert_eq!(attrs.get(field).map(String::as_str), Some(expected));
-    }
-    for forbidden in [
-        "prompt",
-        "response",
-        "output",
-        "arguments",
-        "reasoning",
-        "content",
-    ] {
-        assert!(!attrs.contains_key(forbidden));
-    }
-}
-
-#[test]
-fn otel_export_routing_policy_routes_user_prompt_log_and_trace_events() {
+fn otel_export_routing_policy_routes_prompt_and_guardian_payloads() {
     let log_exporter = InMemoryLogExporter::default();
     let logger_provider = SdkLoggerProvider::builder()
         .with_simple_exporter(log_exporter.clone())
@@ -197,7 +147,9 @@ fn otel_export_routing_policy_routes_user_prompt_log_and_trace_events() {
                 text_elements: Vec::new(),
             },
             UserInput::Image {
-                image_url: "https://example.com/image.png".to_string(),
+                image: ImageReference::Inline {
+                    image_url: "https://example.com/image.png".to_string(),
+                },
                 detail: None,
             },
             UserInput::LocalImage {
@@ -205,6 +157,37 @@ fn otel_export_routing_policy_routes_user_prompt_log_and_trace_events() {
                 detail: None,
             },
         ]);
+        let mut assessment: GuardianAssessmentEvent = serde_json::from_value(serde_json::json!({
+            "id": "review",
+            "turn_id": "turn",
+            "target_item_id": "tool-call",
+            "status": "in_progress",
+            "risk_level": "medium",
+            "user_authorization": "high",
+            "rationale": format!("{}🦀", "x".repeat(/*n*/ 65_535)),
+            "action": {"type": "mcp_tool_call", "server": "private-server", "tool_name": "tool"},
+        }))
+        .expect("assessment");
+        manager.guardian_assessment(&assessment, /*outcome*/ None);
+        for (status, outcome) in [
+            (
+                GuardianAssessmentStatus::Approved,
+                Some(GuardianAssessmentOutcome::Allow),
+            ),
+            (
+                GuardianAssessmentStatus::Denied,
+                Some(GuardianAssessmentOutcome::Deny),
+            ),
+            (GuardianAssessmentStatus::Denied, None),
+            (GuardianAssessmentStatus::TimedOut, None),
+            (GuardianAssessmentStatus::Aborted, None),
+        ] {
+            assessment.status = status;
+            if outcome.is_none() {
+                assessment.rationale = None;
+            }
+            manager.guardian_assessment(&assessment, outcome);
+        }
     });
 
     logger_provider.force_flush().expect("flush logs");
@@ -226,6 +209,46 @@ fn otel_export_routing_policy_routes_user_prompt_log_and_trace_events() {
         prompt_log_attrs.get("user.email").map(String::as_str),
         Some("engineer@example.com")
     );
+
+    let assessments: Vec<_> = logs
+        .iter()
+        .map(|log| log_attributes(&log.record))
+        .filter(|attrs| {
+            attrs.get("event.name").map(String::as_str) == Some("codex.guardian_assessment")
+        })
+        .collect();
+    assert_eq!(
+        assessments
+            .iter()
+            .map(|attrs| (
+                attrs["status"].as_str(),
+                attrs.get("outcome").map(String::as_str),
+                attrs.get("rationale").map(String::len),
+                attrs.get("rationale_length").map(String::as_str),
+                attrs.get("rationale_truncated").map(String::as_str),
+            ))
+            .collect::<Vec<_>>(),
+        vec![
+            (
+                "approved",
+                Some("allow"),
+                Some(65_535),
+                Some("65539"),
+                Some("true")
+            ),
+            (
+                "denied",
+                Some("deny"),
+                Some(65_535),
+                Some("65539"),
+                Some("true")
+            ),
+            ("denied", None, None, None, None),
+            ("timed_out", None, None, None, None),
+            ("aborted", None, None, None, None),
+        ],
+    );
+    assert!(!format!("{assessments:?}").contains("private-server"));
 
     let spans = span_exporter.get_finished_spans().expect("span export");
     assert_eq!(spans.len(), 1);
@@ -263,6 +286,25 @@ fn otel_export_routing_policy_routes_user_prompt_log_and_trace_events() {
 
 #[test]
 fn otel_export_routing_policy_routes_tool_result_log_and_trace_events() {
+    let output = "secret output\nsecond line\n".repeat(100);
+    let root_id = ThreadId::new();
+    let child_id = ThreadId::new();
+    let legacy_id = ThreadId::new();
+    let unnamed_id = ThreadId::new();
+    let make_manager = |thread_id, source| {
+        SessionTelemetry::new(
+            thread_id,
+            "gpt-5.1",
+            "gpt-5.1",
+            Some("account-id".to_string()),
+            Some("engineer@example.com".to_string()),
+            Some(TelemetryAuthMode::ApiKey),
+            "codex_exec".to_string(),
+            /*log_user_prompts*/ true,
+            "tty".to_string(),
+            source,
+        )
+    };
     let log_exporter = InMemoryLogExporter::default();
     let logger_provider = SdkLoggerProvider::builder()
         .with_simple_exporter(log_exporter.clone())
@@ -288,33 +330,73 @@ fn otel_export_routing_policy_routes_tool_result_log_and_trace_events() {
 
     tracing::subscriber::with_default(subscriber, || {
         tracing::callsite::rebuild_interest_cache();
-        let manager = SessionTelemetry::new(
-            ThreadId::new(),
-            "gpt-5.1",
-            "gpt-5.1",
-            Some("account-id".to_string()),
-            Some("engineer@example.com".to_string()),
-            Some(TelemetryAuthMode::ApiKey),
-            "codex_exec".to_string(),
-            /*log_user_prompts*/ true,
-            "tty".to_string(),
-            SessionSource::Cli,
-        );
+        let manager = make_manager(root_id, SessionSource::Cli).with_product_sku(Some("codex"));
         let root_span = tracing::info_span!("root");
         let _root_guard = root_span.enter();
+        let manager = manager.with_tool_result_log_config(ToolResultLogConfig {
+            max_bytes: output.len(),
+        });
         manager.tool_result_with_tags(
-            "shell",
+            &ToolName::namespaced("mcp__example", "shell"),
             "call-1",
             "secret arguments",
             std::time::Duration::from_millis(42),
             /*success*/ true,
-            "secret output\nsecond line",
+            &output,
             &[],
             &[
                 ("mcp_server", "internal-mcp"),
                 ("mcp_server_origin", "stdio"),
             ],
         );
+        let child = make_manager(
+            child_id,
+            SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
+                parent_thread_id: root_id,
+                depth: 1,
+                agent_path: Some(AgentPath::try_from("/root/reviewer").expect("agent path")),
+                agent_nickname: Some("legacy nickname".to_string()),
+                agent_role: None,
+            }),
+        )
+        .with_product_sku(Some("customer-specific-value"));
+        child.tool_result_with_tags(
+            &ToolName::plain("shell"),
+            "call-2",
+            "{}",
+            std::time::Duration::ZERO,
+            /*success*/ true,
+            &output,
+            &[],
+            &[],
+        );
+        let legacy = make_manager(
+            legacy_id,
+            SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
+                parent_thread_id: root_id,
+                depth: 1,
+                agent_path: None,
+                agent_nickname: Some("Mendel".to_string()),
+                agent_role: None,
+            }),
+        );
+        let unnamed = make_manager(unnamed_id, SessionSource::SubAgent(SubAgentSource::Review));
+        for (manager, name, error) in [
+            (&manager, "root_failure", "failure"),
+            (&legacy, "legacy_failure", output.as_str()),
+            (&unnamed, "unnamed_failure", "failure"),
+        ] {
+            manager.tool_result_with_tags(
+                &ToolName::plain(name),
+                name,
+                "{}",
+                std::time::Duration::ZERO,
+                /*success*/ false,
+                error,
+                &[],
+                &[],
+            );
+        }
     });
 
     logger_provider.force_flush().expect("flush logs");
@@ -329,13 +411,77 @@ fn otel_export_routing_policy_routes_tool_result_log_and_trace_events() {
     let tool_log = find_log_by_event_name(&logs, "codex.tool_result");
     let tool_log_attrs = log_attributes(&tool_log.record);
     assert_eq!(
+        tool_log_attrs.get("tool_name").map(String::as_str),
+        Some("shell")
+    );
+    assert_eq!(
+        tool_log_attrs.get("tool_namespace").map(String::as_str),
+        Some("mcp__example")
+    );
+    assert_eq!(
         tool_log_attrs.get("arguments").map(String::as_str),
         Some("secret arguments")
     );
     assert_eq!(
         tool_log_attrs.get("output").map(String::as_str),
-        Some("secret output\nsecond line")
+        Some(output.as_str())
     );
+    let tool_logs: Vec<_> = logs
+        .iter()
+        .map(|log| log_attributes(&log.record))
+        .filter(|attrs| attrs.get("event.name").map(String::as_str) == Some("codex.tool_result"))
+        .collect();
+    assert_eq!(
+        tool_logs
+            .iter()
+            .map(|attrs| attrs.get("product_sku").map(String::as_str))
+            .collect::<Vec<_>>(),
+        vec![Some("codex"), Some("other"), Some("codex"), None, None],
+    );
+    assert_eq!(
+        tool_logs
+            .iter()
+            .map(|attrs| (
+                attrs["conversation.id"].clone(),
+                attrs["agent_name"].clone(),
+                attrs["output_truncated"].clone(),
+            ))
+            .collect::<Vec<_>>(),
+        vec![
+            (
+                root_id.to_string(),
+                "/root".to_string(),
+                "false".to_string()
+            ),
+            (
+                child_id.to_string(),
+                "/root/reviewer".to_string(),
+                "true".to_string()
+            ),
+            (
+                root_id.to_string(),
+                "/root".to_string(),
+                "false".to_string()
+            ),
+            (
+                legacy_id.to_string(),
+                "Mendel".to_string(),
+                "true".to_string()
+            ),
+            (
+                unnamed_id.to_string(),
+                unnamed_id.to_string(),
+                "false".to_string()
+            ),
+        ]
+    );
+    assert!(tool_logs[1]["output"].ends_with("[... telemetry preview truncated ...]"));
+    let sequences: Vec<u64> = tool_logs
+        .iter()
+        .map(|attrs| attrs["tool_result_seq"].parse().expect("numeric sequence"))
+        .collect();
+    assert!(sequences[0] > 0);
+    assert!(sequences.windows(2).all(|pair| pair[0] < pair[1]));
     assert_eq!(
         tool_log_attrs.get("mcp_server").map(String::as_str),
         Some("internal-mcp")
@@ -348,7 +494,16 @@ fn otel_export_routing_policy_routes_tool_result_log_and_trace_events() {
     let spans = span_exporter.get_finished_spans().expect("span export");
     assert_eq!(spans.len(), 1);
     let span_events = &spans[0].events.events;
-    assert_eq!(span_events.len(), 1);
+    assert_eq!(span_events.len(), tool_logs.len());
+    for (event, log) in span_events.iter().zip(&tool_logs) {
+        let attrs = span_event_attributes(event);
+        assert_eq!(attrs.get("tool_name"), log.get("tool_name"));
+        assert_eq!(attrs.get("tool_namespace"), log.get("tool_namespace"));
+        assert_eq!(attrs.get("tool_result_seq"), log.get("tool_result_seq"));
+        assert_eq!(attrs.get("product_sku"), log.get("product_sku"));
+        assert_eq!(attrs.get("output_truncated"), log.get("output_truncated"));
+        assert!(!attrs.contains_key("agent_name"));
+    }
 
     let tool_trace_event = find_span_event_by_name_attr(span_events, "codex.tool_result");
     let tool_trace_attrs = span_event_attributes(tool_trace_event);
@@ -358,13 +513,13 @@ fn otel_export_routing_policy_routes_tool_result_log_and_trace_events() {
     );
     assert_eq!(
         tool_trace_attrs.get("output_length").map(String::as_str),
-        Some("25")
+        Some(output.len().to_string().as_str())
     );
     assert_eq!(
         tool_trace_attrs
             .get("output_line_count")
             .map(String::as_str),
-        Some("2")
+        Some(output.lines().count().to_string().as_str())
     );
     assert!(!tool_trace_attrs.contains_key("arguments"));
     assert!(!tool_trace_attrs.contains_key("output"));

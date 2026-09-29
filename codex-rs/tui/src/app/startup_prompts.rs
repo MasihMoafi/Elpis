@@ -5,6 +5,8 @@
 
 use super::*;
 use codex_config::ConfigLayerSource;
+use codex_model_provider_info::AMAZON_BEDROCK_PROVIDER_ID;
+use codex_model_provider_info::OPENAI_PROVIDER_ID;
 use std::collections::HashSet;
 use std::path::PathBuf;
 
@@ -17,6 +19,8 @@ struct SkillLoadWarningKey {
 #[derive(Debug, Default)]
 pub(super) struct SkillLoadWarningState {
     active: HashSet<SkillLoadWarningKey>,
+    // Both session attachment and the background startup fetch can finish the initial load.
+    pub(super) startup_complete: bool,
 }
 
 impl SkillLoadWarningState {
@@ -45,34 +49,27 @@ impl SkillLoadWarningState {
     }
 }
 
-pub(super) fn emit_skill_load_warnings(app_event_tx: &AppEventSender, errors: &[SkillErrorInfo]) {
+pub(super) fn skill_load_warning_messages(errors: &[SkillErrorInfo]) -> Vec<String> {
     if errors.is_empty() {
-        return;
+        return Vec::new();
     }
 
     let error_count = errors.len();
-    app_event_tx.send(AppEvent::InsertHistoryCell(Box::new(
-        crate::history_cell::new_warning_event(format!(
-            "Skipped loading {error_count} skill(s) due to invalid SKILL.md files."
-        )),
-    )));
-
-    for error in errors {
-        let path = error.path.display();
-        let message = error.message.as_str();
-        app_event_tx.send(AppEvent::InsertHistoryCell(Box::new(
-            crate::history_cell::new_warning_event(format!("{path}: {message}")),
-        )));
-    }
+    let mut messages = vec![format!(
+        "Skipped loading {error_count} skill(s) due to invalid SKILL.md files."
+    )];
+    messages.extend(
+        errors
+            .iter()
+            .map(|error| format!("{}: {}", error.path.display(), error.message)),
+    );
+    messages
 }
 
-pub(super) fn emit_project_config_warnings(app_event_tx: &AppEventSender, config: &Config) {
+pub(super) fn project_config_warning(config: &Config) -> Option<String> {
     let mut disabled_folders = Vec::new();
 
-    for layer in config.config_layer_stack.get_layers(
-        ConfigLayerStackOrdering::LowestPrecedenceFirst,
-        /*include_disabled*/ true,
-    ) {
+    for layer in config.config_layer_stack.all_layers_low_to_high() {
         let ConfigLayerSource::Project { dot_codex_folder } = &layer.name else {
             continue;
         };
@@ -86,7 +83,7 @@ pub(super) fn emit_project_config_warnings(app_event_tx: &AppEventSender, config
     }
 
     if disabled_folders.is_empty() {
-        return;
+        return None;
     }
 
     let mut message = concat!(
@@ -100,9 +97,7 @@ pub(super) fn emit_project_config_warnings(app_event_tx: &AppEventSender, config
         message.push_str(&format!("       {reason}\n"));
     }
 
-    app_event_tx.send(AppEvent::InsertHistoryCell(Box::new(
-        history_cell::new_warning_event(message),
-    )));
+    Some(message)
 }
 
 pub(super) fn emit_system_bwrap_warning(app_event_tx: &AppEventSender, config: &Config) {
@@ -113,11 +108,50 @@ pub(super) fn emit_system_bwrap_warning(app_event_tx: &AppEventSender, config: &
     };
 
     app_event_tx.send(AppEvent::InsertHistoryCell(Box::new(
-        history_cell::new_warning_event(message),
+        history_cell::StartupWarningsCell::new(vec![message]),
     )));
 }
 
+pub(super) fn model_upgrade_for_migration(
+    model_provider_id: &str,
+    model: &str,
+    available_models: &[ModelPreset],
+) -> Option<ModelUpgrade> {
+    if let Some(preset) = available_models.iter().find(|preset| preset.model == model) {
+        return preset.upgrade.clone();
+    }
+
+    // Saved selections can outlive their catalog entries. Scope fallback migration metadata
+    // to the owning provider, since other providers may still support the same model slug.
+    let (target_model, current_name, target_name) = match (model_provider_id, model) {
+        (OPENAI_PROVIDER_ID, "gpt-5.4") => ("gpt-6-sol", "GPT-5.4", "GPT-6 Sol"),
+        (AMAZON_BEDROCK_PROVIDER_ID, "openai.gpt-5.4") => (
+            "openai.gpt-6-sol",
+            "GPT-5.4 on Amazon Bedrock",
+            "GPT-6 Sol on Amazon Bedrock",
+        ),
+        (OPENAI_PROVIDER_ID, "gpt-5.4-mini") => ("gpt-6-luna", "GPT-5.4 Mini", "GPT-6 Luna"),
+        _ => return None,
+    };
+    let availability = if model == "openai.gpt-5.4" {
+        "no longer offered in Codex"
+    } else {
+        "no longer available"
+    };
+    Some(ModelUpgrade {
+        id: target_model.to_string(),
+        migration_config_key: model.to_string(),
+        model_link: None,
+        upgrade_copy: None,
+        migration_markdown: Some(format!(
+            "{current_name} is {availability}\n\nCodex now uses {target_name} in place of {current_name}. Switch to {target_name} to continue.\n"
+        )),
+        retirement_at: None,
+    })
+}
+
 pub(super) fn should_show_model_migration_prompt(
+    model_provider_id: &str,
     current_model: &str,
     target_model: &str,
     seen_migrations: &BTreeMap<String, String>,
@@ -140,9 +174,8 @@ pub(super) fn should_show_model_migration_prompt(
         return false;
     }
 
-    if available_models
-        .iter()
-        .any(|preset| preset.model == current_model && preset.upgrade.is_some())
+    if model_upgrade_for_migration(model_provider_id, current_model, available_models)
+        .is_some_and(|upgrade| upgrade.id == target_model)
     {
         return true;
     }
@@ -157,7 +190,10 @@ pub(super) fn should_show_model_migration_prompt(
     false
 }
 
-pub(super) fn migration_prompt_hidden(config: &Config, migration_config_key: &str) -> bool {
+pub(super) fn migration_prompt_hidden(
+    config: &crate::local_settings::LocalSettings,
+    migration_config_key: &str,
+) -> bool {
     match migration_config_key {
         HIDE_GPT_5_1_CODEX_MAX_MIGRATION_PROMPT_CONFIG => config
             .notices
@@ -231,28 +267,29 @@ pub(super) fn select_model_availability_nux(
 }
 
 pub(super) async fn prepare_startup_tooltip_override(
-    config: &mut Config,
+    config: &mut crate::local_settings::LocalSettings,
     available_models: &[ModelPreset],
     is_first_run: bool,
 ) -> Option<String> {
-    if is_first_run || !config.show_tooltips {
+    if is_first_run || !config.tui.show_tooltips {
         return None;
     }
 
     let tooltip_override =
-        select_model_availability_nux(available_models, &config.model_availability_nux)?;
+        select_model_availability_nux(available_models, &config.tui.model_availability_nux)?;
 
     let shown_count = config
+        .tui
         .model_availability_nux
         .shown_count
         .get(&tooltip_override.model_slug)
         .copied()
         .unwrap_or_default();
     let next_count = shown_count.saturating_add(1);
-    let mut updated_shown_count = config.model_availability_nux.shown_count.clone();
+    let mut updated_shown_count = config.tui.model_availability_nux.shown_count.clone();
     updated_shown_count.insert(tooltip_override.model_slug.clone(), next_count);
 
-    if let Err(err) = ConfigEditsBuilder::for_config(config)
+    if let Err(err) = ConfigEditsBuilder::for_config_path(config.user_config_path.as_path())
         .set_model_availability_nux_count(&updated_shown_count)
         .apply()
         .await
@@ -265,21 +302,19 @@ pub(super) async fn prepare_startup_tooltip_override(
         return Some(tooltip_override.message);
     }
 
-    config.model_availability_nux.shown_count = updated_shown_count;
+    config.tui.model_availability_nux.shown_count = updated_shown_count;
     Some(tooltip_override.message)
 }
 
 pub(super) async fn handle_model_migration_prompt_if_needed(
     tui: &mut tui::Tui,
     config: &mut Config,
+    local_settings: &crate::local_settings::LocalSettings,
     model: &str,
     app_event_tx: &AppEventSender,
     available_models: &[ModelPreset],
-) -> Option<AppExitInfo> {
-    let upgrade = available_models
-        .iter()
-        .find(|preset| preset.model == model)
-        .and_then(|preset| preset.upgrade.as_ref());
+) -> std::io::Result<Option<AppExitInfo>> {
+    let upgrade = model_upgrade_for_migration(&config.model_provider_id, model, available_models);
 
     if let Some(ModelUpgrade {
         id: target_model,
@@ -287,25 +322,28 @@ pub(super) async fn handle_model_migration_prompt_if_needed(
         model_link,
         upgrade_copy,
         migration_markdown,
-    }) = upgrade
+        ..
+    }) = upgrade.as_ref()
     {
-        if migration_prompt_hidden(config, migration_config_key.as_str()) {
-            return None;
+        if migration_prompt_hidden(local_settings, migration_config_key.as_str()) {
+            return Ok(None);
         }
 
         let target_model = target_model.to_string();
         if !should_show_model_migration_prompt(
+            &config.model_provider_id,
             model,
             &target_model,
-            &config.notices.model_migrations,
+            &local_settings.notices.model_migrations,
             available_models,
         ) {
-            return None;
+            return Ok(None);
         }
 
         let current_preset = available_models.iter().find(|preset| preset.model == model);
-        let target_preset = target_preset_for_upgrade(available_models, &target_model);
-        let target_preset = target_preset?;
+        let Some(target_preset) = target_preset_for_upgrade(available_models, &target_model) else {
+            return Ok(None);
+        };
         let target_display_name = target_preset.display_name.clone();
         let heading_label = if target_display_name == model {
             target_model.clone()
@@ -325,7 +363,7 @@ pub(super) async fn handle_model_migration_prompt_if_needed(
             target_description,
             can_opt_out,
         );
-        match run_model_migration_prompt(tui, prompt_copy).await {
+        match run_model_migration_prompt(tui, prompt_copy).await? {
             ModelMigrationOutcome::Accepted => {
                 apply_accepted_model_migration(
                     config,
@@ -342,18 +380,19 @@ pub(super) async fn handle_model_migration_prompt_if_needed(
                 });
             }
             ModelMigrationOutcome::Exit => {
-                return Some(AppExitInfo {
+                return Ok(Some(AppExitInfo {
                     token_usage: TokenUsage::default(),
                     thread_id: None,
                     resume_hint: None,
+                    disconnect_info: None,
                     update_action: None,
                     exit_reason: ExitReason::UserRequested,
-                });
+                }));
             }
         }
     }
 
-    None
+    Ok(None)
 }
 pub(super) fn normalize_harness_overrides_for_cwd(
     mut overrides: ConfigOverrides,
@@ -392,11 +431,17 @@ mod tests {
             additional_writable_roots: vec![PathBuf::from("rel")],
             ..Default::default()
         };
-        let normalized = normalize_harness_overrides_for_cwd(overrides, &base_cwd)?;
+        let mut normalized = normalize_harness_overrides_for_cwd(overrides, &base_cwd)?;
+        let destination = temp_dir.path().join("worktree").abs();
+        normalized.cwd = Some(destination.to_path_buf());
+        let normalized = normalize_harness_overrides_for_cwd(normalized, &destination)?;
 
         assert_eq!(
-            normalized.additional_writable_roots,
-            vec![base_cwd.join("rel").into_path_buf()]
+            (normalized.cwd, normalized.additional_writable_roots),
+            (
+                Some(destination.to_path_buf()),
+                vec![base_cwd.join("rel").into_path_buf()]
+            )
         );
         Ok(())
     }
@@ -419,12 +464,16 @@ mod tests {
         let (tx, mut rx) = unbounded_channel();
         let app_event_tx = AppEventSender::new(tx);
 
-        emit_skill_load_warnings(&app_event_tx, errors);
+        for message in skill_load_warning_messages(errors) {
+            app_event_tx.send(AppEvent::InsertHistoryCell(Box::new(
+                history_cell::new_warning_event(message),
+            )));
+        }
 
         let mut rendered = Vec::new();
         while let Ok(AppEvent::InsertHistoryCell(cell)) = rx.try_recv() {
             rendered.extend(
-                cell.display_lines(/*width*/ 120)
+                cell.transcript_lines(/*width*/ 120)
                     .iter()
                     .map(render_line_text),
             );

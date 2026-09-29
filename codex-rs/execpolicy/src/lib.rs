@@ -1,4 +1,3 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 pub(crate) mod amend;
 pub(crate) mod decision;
 pub(crate) mod error;
@@ -7,6 +6,7 @@ mod executable_name;
 pub(crate) mod parser;
 pub(crate) mod policy;
 pub mod rule;
+mod sandbox_migration;
 
 pub use amend::AmendError;
 pub use amend::blocking_append_allow_prefix_rule;
@@ -22,6 +22,7 @@ pub use parser::PolicyParser;
 pub use policy::Evaluation;
 pub use policy::MatchOptions;
 pub use policy::Policy;
+pub use policy::RequirementsExecPolicy;
 pub use rule::NetworkRuleProtocol;
 pub use rule::PatternToken;
 pub use rule::PrefixPattern;
@@ -29,3 +30,4 @@ pub use rule::PrefixRule;
 pub use rule::Rule;
 pub use rule::RuleMatch;
 pub use rule::RuleRef;
+pub use sandbox_migration::prefix_rule_migration;

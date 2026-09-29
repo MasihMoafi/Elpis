@@ -1,4 +1,3 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 //! Private transport for fetching IDE context for TUI `/ide` support.
 
 use std::path::Path;
@@ -14,19 +13,21 @@ use thiserror::Error;
 
 use super::IdeContext;
 
-// Bound prompt-time IPC work even when the editor is unavailable.
-const IDE_CONTEXT_REQUEST_TIMEOUT: Duration = Duration::from_millis(1500);
+// The desktop IPC client gives requests 5 seconds to complete. Match that prompt-time budget here:
+// fetching IDE context includes router discovery and extension event-loop work, so a shorter TUI
+// deadline can incorrectly skip context even though the IDE answers normally.
+const IDE_CONTEXT_REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
 #[cfg(any(unix, windows))]
-const MAX_IPC_FRAME_BYTES: usize = 1024 * 1024;
+const MAX_IPC_FRAME_BYTES: usize = 256 * 1024 * 1024;
 #[cfg(any(unix, windows))]
-const TUI_SOURCE_CLIENT_ID: &str = "elpis-tui";
+const TUI_SOURCE_CLIENT_ID: &str = "codex-tui";
 #[cfg(any(unix, windows))]
 const OPEN_IDE_HINT: &str =
-    "Open this project in VS Code or Cursor with the Elpis extension active.";
+    "Open this project in VS Code or Cursor with the Codex extension active.";
 #[cfg(any(unix, windows))]
 const IDE_DID_NOT_PROVIDE_CONTEXT_HINT: &str = "The IDE extension did not provide context.";
 #[cfg(any(unix, windows))]
-const KEEP_TRYING_HINT: &str = "Elpis will keep trying on future messages.";
+const KEEP_TRYING_HINT: &str = "Codex will keep trying on future messages.";
 
 #[derive(Debug, Error)]
 pub(crate) enum IdeContextError {
@@ -68,10 +69,10 @@ impl IdeContextError {
                 "The selected IDE context is too large. Clear any large selection in your IDE and try /ide again.".to_string()
             }
             IdeContextError::Send(_) => {
-                "Elpis could not request IDE context. Try /ide again.".to_string()
+                "Codex could not request IDE context. Try /ide again.".to_string()
             }
             IdeContextError::Read(_) | IdeContextError::InvalidResponse(_) => {
-                "Elpis could not read IDE context. Try /ide again.".to_string()
+                "Codex could not read IDE context. Try /ide again.".to_string()
             }
         }
     }
@@ -88,11 +89,11 @@ impl IdeContextError {
                 OPEN_IDE_HINT.to_string()
             }
             IdeContextError::Read(error) if error.kind() == std::io::ErrorKind::TimedOut => {
-                "Elpis timed out waiting for IDE context. It will keep trying on future messages."
+                "Codex timed out waiting for IDE context. It will keep trying on future messages."
                     .to_string()
             }
             IdeContextError::RequestFailed(error) if error == "client-disconnected" => {
-                hint_with_retry("The IDE connection changed while Elpis was requesting context.")
+                hint_with_retry("The IDE connection changed while Codex was requesting context.")
             }
             IdeContextError::RequestFailed(error) if error == "request-timeout" => {
                 hint_with_retry("The IDE extension did not answer in time.")
@@ -105,13 +106,13 @@ impl IdeContextError {
                 "The connected IDE client does not support IDE context requests.".to_string()
             }
             IdeContextError::Send(_) => {
-                hint_with_retry("Elpis lost the IDE connection while requesting context.")
+                hint_with_retry("Codex lost the IDE connection while requesting context.")
             }
             IdeContextError::InvalidResponse(_) => {
-                hint_with_retry("Elpis received an unexpected IDE context response.")
+                hint_with_retry("Codex received an unexpected IDE context response.")
             }
             IdeContextError::RequestFailed(_) => hint_with_retry(IDE_DID_NOT_PROVIDE_CONTEXT_HINT),
-            IdeContextError::Read(_) => hint_with_retry("Elpis could not read IDE context."),
+            IdeContextError::Read(_) => hint_with_retry("Codex could not read IDE context."),
         }
     }
 
@@ -144,9 +145,14 @@ pub(crate) fn fetch_ide_context(
 ) -> Result<IdeContext, IdeContextError> {
     let deadline = Instant::now() + IDE_CONTEXT_REQUEST_TIMEOUT;
     let primary_socket_path = primary_ipc_socket_path(codex_home);
-    let mut stream = UnixDeadlineStream::connect(primary_socket_path, deadline)
-        .map_err(IdeContextError::Connect)?;
-    fetch_ide_context_from_stream(&mut stream, workspace_root, deadline)
+    let uid = unsafe { libc::getuid() };
+    let legacy_socket_paths = legacy_ipc_socket_paths(&std::env::temp_dir(), uid);
+    fetch_ide_context_from_unix_socket_paths(
+        primary_socket_path,
+        legacy_socket_paths,
+        workspace_root,
+        deadline,
+    )
 }
 
 #[cfg(windows)]
@@ -174,9 +180,19 @@ fn primary_ipc_socket_path(codex_home: &Path) -> PathBuf {
     codex_home.join("ipc").join("ipc.sock")
 }
 
+#[cfg(unix)]
+fn legacy_ipc_socket_paths(temp_dir: &Path, uid: libc::uid_t) -> Vec<PathBuf> {
+    let ipc_dir = temp_dir.join("codex-ipc");
+    if uid == 0 {
+        vec![ipc_dir.join("ipc.sock"), ipc_dir.join("ipc-0.sock")]
+    } else {
+        vec![ipc_dir.join(format!("ipc-{uid}.sock"))]
+    }
+}
+
 #[cfg(windows)]
 fn default_ipc_socket_path() -> PathBuf {
-    PathBuf::from(r"\\.\pipe\elpis-ipc")
+    PathBuf::from(r"\\.\pipe\codex-ipc")
 }
 
 #[cfg(not(any(unix, windows)))]
@@ -192,6 +208,40 @@ fn fetch_ide_context_from_socket(
 ) -> Result<IdeContext, IdeContextError> {
     let deadline = Instant::now() + timeout;
     let mut stream = connect_stream(socket_path, deadline)?;
+    fetch_ide_context_from_stream(&mut stream, workspace_root, deadline)
+}
+
+#[cfg(unix)]
+fn fetch_ide_context_from_unix_socket_paths(
+    primary_socket_path: PathBuf,
+    legacy_socket_paths: Vec<PathBuf>,
+    workspace_root: &Path,
+    deadline: Instant,
+) -> Result<IdeContext, IdeContextError> {
+    let mut last_error = std::io::Error::new(
+        std::io::ErrorKind::NotFound,
+        "no IDE IPC socket paths were available",
+    );
+    let mut stream = None;
+    for socket_path in std::iter::once(primary_socket_path).chain(legacy_socket_paths) {
+        match UnixDeadlineStream::connect(socket_path, deadline) {
+            Ok(connected) => {
+                stream = Some(connected);
+                break;
+            }
+            Err(err) if err.kind() == std::io::ErrorKind::TimedOut => {
+                return Err(IdeContextError::Connect(err));
+            }
+            Err(err) if Instant::now() >= deadline => {
+                return Err(IdeContextError::Connect(std::io::Error::new(
+                    std::io::ErrorKind::TimedOut,
+                    format!("IDE IPC connection exhausted the request deadline: {err}"),
+                )));
+            }
+            Err(err) => last_error = err,
+        }
+    }
+    let mut stream = stream.ok_or(IdeContextError::Connect(last_error))?;
     fetch_ide_context_from_stream(&mut stream, workspace_root, deadline)
 }
 
@@ -824,30 +874,10 @@ mod tests {
     use super::*;
     #[cfg(unix)]
     use pretty_assertions::assert_eq;
-    use std::os::unix::fs::PermissionsExt;
 
     #[cfg(unix)]
     fn test_deadline() -> Instant {
         Instant::now() + Duration::from_secs(1)
-    }
-
-    #[test]
-    fn oversized_ide_frame_is_rejected_before_allocating_payload() {
-        let header = ((MAX_IPC_FRAME_BYTES + 1) as u32).to_le_bytes();
-        let mut input = header.as_slice();
-        assert!(matches!(
-            read_frame(&mut input, test_deadline()),
-            Err(IdeContextError::ResponseTooLarge)
-        ));
-    }
-
-    #[test]
-    fn malformed_ide_json_is_rejected() {
-        let mut input = std::io::Cursor::new([1, 0, 0, 0, b'{']);
-        assert!(matches!(
-            read_frame(&mut input, test_deadline()),
-            Err(IdeContextError::InvalidResponse(_))
-        ));
     }
 
     #[cfg(unix)]
@@ -899,9 +929,6 @@ mod tests {
                 Ok(request) => request,
                 Err(err) => panic!("read ide-context failed: {err}"),
             };
-            assert_eq!(request["sourceClientId"], "elpis-tui");
-            assert_eq!(request["method"], "ide-context");
-            assert_eq!(request["params"]["workspaceRoot"], "/repo");
             let Some(request_id) = request.get("requestId").and_then(Value::as_str) else {
                 panic!("ide-context request did not include a request id");
             };
@@ -909,31 +936,195 @@ mod tests {
         })
     }
 
-    #[test]
-    fn fetch_ide_context_reads_fresh_selection_from_elpis_home() {
-        use std::os::unix::net::UnixListener;
-        let home = tempfile::tempdir().expect("home");
-        std::fs::create_dir(home.path().join("ipc")).expect("ipc directory");
-        std::fs::set_permissions(
-            home.path().join("ipc"),
-            std::fs::Permissions::from_mode(0o700),
+    fn fetch_test_ide_context(
+        primary_socket_path: PathBuf,
+        legacy_socket_path: PathBuf,
+    ) -> Result<IdeContext, IdeContextError> {
+        fetch_ide_context_from_unix_socket_paths(
+            primary_socket_path,
+            vec![legacy_socket_path],
+            Path::new("/repo"),
+            test_deadline(),
         )
-        .unwrap();
-        for selection in ["first selection", "updated selection"] {
-            let socket_path = primary_ipc_socket_path(home.path());
-            let listener = UnixListener::bind(&socket_path).expect("bind");
-            let server = spawn_ide_context_server(listener, selection);
-            let context = fetch_ide_context(Path::new("/repo"), home.path()).expect("context");
-            server.join().expect("server joins");
-            assert_eq!(
-                context
-                    .active_file
-                    .expect("active file")
-                    .active_selection_content,
-                selection
-            );
-            std::fs::remove_file(socket_path).expect("remove socket");
+    }
+
+    fn assert_listener_unused(listener: &std::os::unix::net::UnixListener) {
+        if let Err(err) = listener.set_nonblocking(true) {
+            panic!("set listener nonblocking failed: {err}");
         }
+        match listener.accept() {
+            Err(err) => assert_eq!(err.kind(), std::io::ErrorKind::WouldBlock),
+            Ok(_) => panic!("listener should not receive a connection"),
+        }
+    }
+
+    #[test]
+    fn primary_ipc_socket_path_uses_codex_home() {
+        let codex_home = Path::new("/home/test/.codex");
+
+        assert_eq!(
+            primary_ipc_socket_path(codex_home),
+            codex_home.join("ipc").join("ipc.sock")
+        );
+    }
+
+    #[test]
+    fn fetch_ide_context_prefers_primary_socket() {
+        use std::os::unix::net::UnixListener;
+
+        let tempdir = tempfile::tempdir().expect("tempdir");
+        let primary_socket_path = tempdir.path().join("primary.sock");
+        let legacy_socket_path = tempdir.path().join("legacy.sock");
+        let primary_listener = UnixListener::bind(&primary_socket_path).expect("bind primary");
+        let legacy_listener = UnixListener::bind(&legacy_socket_path).expect("bind legacy");
+        let server = spawn_ide_context_server(primary_listener, "primary");
+
+        let context = fetch_test_ide_context(primary_socket_path, legacy_socket_path)
+            .expect("fetch IDE context from primary socket");
+
+        server.join().expect("server joins");
+        assert_eq!(
+            context
+                .active_file
+                .expect("active file")
+                .active_selection_content,
+            "primary"
+        );
+        assert_listener_unused(&legacy_listener);
+    }
+
+    #[test]
+    fn fetch_ide_context_falls_back_to_legacy_socket() {
+        use std::os::unix::net::UnixListener;
+
+        let tempdir = tempfile::tempdir().expect("tempdir");
+        let primary_socket_path = tempdir.path().join("missing-primary.sock");
+        let legacy_socket_path = tempdir.path().join("legacy.sock");
+        let legacy_listener = UnixListener::bind(&legacy_socket_path).expect("bind legacy");
+        let server = spawn_ide_context_server(legacy_listener, "legacy");
+
+        let context = fetch_test_ide_context(primary_socket_path, legacy_socket_path)
+            .expect("fetch IDE context from legacy socket");
+
+        server.join().expect("server joins");
+        assert_eq!(
+            context
+                .active_file
+                .expect("active file")
+                .active_selection_content,
+            "legacy"
+        );
+    }
+
+    #[test]
+    fn fetch_ide_context_falls_back_to_uid_zero_legacy_socket() {
+        use std::os::unix::net::UnixListener;
+
+        let tempdir = tempfile::tempdir().expect("tempdir");
+        let primary_socket_path = tempdir.path().join("missing-primary.sock");
+        let legacy_socket_path = legacy_ipc_socket_paths(tempdir.path(), /*uid*/ 0)
+            .into_iter()
+            .next()
+            .expect("UID-0 legacy socket path");
+        std::fs::create_dir(legacy_socket_path.parent().expect("legacy parent"))
+            .expect("create legacy parent");
+        let legacy_listener = UnixListener::bind(&legacy_socket_path).expect("bind legacy");
+        let server = spawn_ide_context_server(legacy_listener, "legacy-root");
+
+        let context = fetch_test_ide_context(primary_socket_path, legacy_socket_path)
+            .expect("fetch IDE context from UID-0 legacy socket");
+
+        server.join().expect("server joins");
+        assert_eq!(
+            context
+                .active_file
+                .expect("active file")
+                .active_selection_content,
+            "legacy-root"
+        );
+    }
+
+    #[test]
+    fn fetch_ide_context_falls_back_to_pre_migration_uid_zero_legacy_socket() {
+        use std::os::unix::net::UnixListener;
+
+        let tempdir = tempfile::tempdir().expect("tempdir");
+        let primary_socket_path = tempdir.path().join("missing-primary.sock");
+        let legacy_socket_paths = legacy_ipc_socket_paths(tempdir.path(), /*uid*/ 0);
+        let pre_migration_socket_path = legacy_socket_paths
+            .last()
+            .expect("pre-migration UID-0 legacy socket path");
+        std::fs::create_dir(pre_migration_socket_path.parent().expect("legacy parent"))
+            .expect("create legacy parent");
+        let legacy_listener =
+            UnixListener::bind(pre_migration_socket_path).expect("bind pre-migration legacy");
+        let server = spawn_ide_context_server(legacy_listener, "legacy-root-pre-migration");
+
+        let context = fetch_ide_context_from_unix_socket_paths(
+            primary_socket_path,
+            legacy_socket_paths,
+            Path::new("/repo"),
+            test_deadline(),
+        )
+        .expect("fetch IDE context from pre-migration UID-0 legacy socket");
+
+        server.join().expect("server joins");
+        assert_eq!(
+            context
+                .active_file
+                .expect("active file")
+                .active_selection_content,
+            "legacy-root-pre-migration"
+        );
+    }
+
+    #[test]
+    fn fetch_ide_context_does_not_fall_back_after_primary_timeout() {
+        use std::os::unix::net::UnixListener;
+
+        let tempdir = tempfile::tempdir().expect("tempdir");
+        let primary_socket_path = tempdir.path().join("missing-primary.sock");
+        let legacy_socket_path = tempdir.path().join("legacy.sock");
+        let legacy_listener = UnixListener::bind(&legacy_socket_path).expect("bind legacy");
+
+        let err = fetch_ide_context_from_unix_socket_paths(
+            primary_socket_path,
+            vec![legacy_socket_path],
+            Path::new("/repo"),
+            Instant::now(),
+        )
+        .expect_err("expired primary deadline should fail");
+
+        assert!(matches!(
+            err,
+            IdeContextError::Connect(err) if err.kind() == std::io::ErrorKind::TimedOut
+        ));
+        assert_listener_unused(&legacy_listener);
+    }
+
+    #[test]
+    fn fetch_ide_context_does_not_fall_back_after_primary_protocol_error() {
+        use std::os::unix::net::UnixListener;
+        use std::thread;
+
+        let tempdir = tempfile::tempdir().expect("tempdir");
+        let primary_socket_path = tempdir.path().join("primary.sock");
+        let legacy_socket_path = tempdir.path().join("legacy.sock");
+        let primary_listener = UnixListener::bind(&primary_socket_path).expect("bind primary");
+        let legacy_listener = UnixListener::bind(&legacy_socket_path).expect("bind legacy");
+        let server = thread::spawn(move || {
+            let (mut stream, _) = primary_listener.accept().expect("accept primary");
+            read_frame(&mut stream, test_deadline()).expect("read ide-context");
+            write_frame(&mut stream, &json!({ "type": "unexpected" }))
+                .expect("write invalid response");
+        });
+
+        let err = fetch_test_ide_context(primary_socket_path, legacy_socket_path)
+            .expect_err("invalid primary response should fail");
+
+        server.join().expect("server joins");
+        assert!(matches!(err, IdeContextError::InvalidResponse(_)));
+        assert_listener_unused(&legacy_listener);
     }
 
     #[cfg(unix)]
@@ -963,7 +1154,7 @@ mod tests {
         let tempdir = tempfile::tempdir().expect("tempdir");
         std::fs::set_permissions(tempdir.path(), std::fs::Permissions::from_mode(0o777))
             .expect("set unsafe permissions");
-        let socket_path = tempdir.path().join("elpis-ipc.sock");
+        let socket_path = tempdir.path().join("codex-ipc.sock");
         let _listener = UnixListener::bind(&socket_path).expect("bind socket");
 
         let err = validate_unix_socket_path(&socket_path)
@@ -979,8 +1170,7 @@ mod tests {
         use std::thread;
 
         let tempdir = tempfile::tempdir().expect("tempdir");
-        std::fs::set_permissions(tempdir.path(), std::fs::Permissions::from_mode(0o700)).unwrap();
-        let socket_path = tempdir.path().join("elpis-ipc.sock");
+        let socket_path = tempdir.path().join("codex-ipc.sock");
         let listener = UnixListener::bind(&socket_path).expect("bind socket");
 
         let server = thread::spawn(move || {
@@ -1062,17 +1252,16 @@ mod tests {
                 &json!({
                     "type": "broadcast",
                     "method": "thread-stream-state-changed",
-                    "params": "x".repeat(128 * 1024),
+                    "params": "x".repeat(2 * 1024 * 1024),
                 }),
             )
             .expect("write large broadcast");
             write_ide_context_response(&mut stream, ide_context_request_id, "use");
         });
 
-        let deadline = test_deadline();
-        let mut stream = UnixDeadlineStream::connect(socket_path, deadline).expect("connect");
-        let context = fetch_ide_context_from_stream(&mut stream, Path::new("/repo"), deadline)
-            .expect("fetch ide context");
+        let context =
+            fetch_test_ide_context(socket_path, tempdir.path().join("missing-legacy.sock"))
+                .expect("fetch ide context");
 
         server.join().expect("server joins");
         assert_eq!(

@@ -1,4 +1,3 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 #[cfg(test)]
 use chrono::DateTime;
 #[cfg(test)]
@@ -28,7 +27,7 @@ use uuid::Uuid;
 use crate::ThreadMetadata;
 
 #[cfg(test)]
-pub(super) fn unique_temp_dir() -> PathBuf {
+pub(crate) fn unique_temp_dir() -> PathBuf {
     let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_or(0, |duration| duration.as_nanos());
@@ -46,6 +45,9 @@ pub(super) fn test_thread_metadata(
 ) -> ThreadMetadata {
     let now = DateTime::<Utc>::from_timestamp(1_700_000_000, 0).expect("timestamp");
     ThreadMetadata {
+        creator_user_id: None,
+        creator_account_id: None,
+        originator: None,
         id: thread_id,
         rollout_path: codex_home.join(format!("rollout-{thread_id}.jsonl")),
         created_at: now,
@@ -63,12 +65,18 @@ pub(super) fn test_thread_metadata(
         cwd,
         cli_version: "0.0.0".to_string(),
         title: String::new(),
+        name: None,
         preview: Some("hello".to_string()),
         sandbox_policy: crate::extract::enum_to_string(&SandboxPolicy::new_read_only_policy()),
         approval_mode: crate::extract::enum_to_string(&AskForApproval::OnRequest),
         tokens_used: 0,
         first_user_message: Some("hello".to_string()),
         archived_at: None,
+        section: None,
+        section_position: None,
+        section_entered_at: None,
+        project_id: None,
+        daybreak_enabled: None,
         git_sha: None,
         git_branch: None,
         git_origin_url: None,

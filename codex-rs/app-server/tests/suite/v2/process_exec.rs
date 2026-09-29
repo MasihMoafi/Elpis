@@ -42,7 +42,7 @@ async fn process_spawn_returns_before_exit_and_emits_exit_notification() -> Resu
                 "while (!(Test-Path -LiteralPath $env:CODEX_PROCESS_EXEC_RELEASE_FILE)) { ",
                 "Start-Sleep -Milliseconds 20 ",
                 "}; ",
-                "[Console]::Out.Write('process-out'); ",
+                "[Console]::Out.Write(('process-out|{0}|{1}' -f $env:OpenAI_Federation_Rule_Id, $env:OPENAI_IDENTITY_TOKEN_FILE)); ",
                 "[Console]::Error.Write('process-err')",
             )
             .to_string(),
@@ -54,7 +54,7 @@ async fn process_spawn_returns_before_exit_and_emits_exit_notification() -> Resu
             concat!(
                 "printf process > \"$CODEX_PROCESS_EXEC_PROBE_FILE\"; ",
                 "while [ ! -e \"$CODEX_PROCESS_EXEC_RELEASE_FILE\" ]; do sleep 0.05; done; ",
-                "printf process-out; ",
+                "printf 'process-out|%s|%s' \"$OpenAI_Federation_Rule_Id\" \"$OPENAI_IDENTITY_TOKEN_FILE\"; ",
                 "printf process-err >&2",
             )
             .to_string(),
@@ -68,6 +68,14 @@ async fn process_spawn_returns_before_exit_and_emits_exit_notification() -> Resu
         (
             "CODEX_PROCESS_EXEC_RELEASE_FILE".to_string(),
             Some(release_file.display().to_string()),
+        ),
+        (
+            "OpenAI_Federation_Rule_Id".to_string(),
+            Some("rule".to_string()),
+        ),
+        (
+            "OPENAI_IDENTITY_TOKEN_FILE".to_string(),
+            Some("/run/identity-token".to_string()),
         ),
     ]);
     let spawn_request_id = mcp
@@ -94,7 +102,7 @@ async fn process_spawn_returns_before_exit_and_emits_exit_notification() -> Resu
         ProcessExitedNotification {
             process_handle,
             exit_code: 0,
-            stdout: "process-out".to_string(),
+            stdout: "process-out||".to_string(),
             stdout_cap_reached: false,
             stderr: "process-err".to_string(),
             stderr_cap_reached: false,
@@ -177,6 +185,53 @@ async fn process_spawn_reports_buffered_output_cap_reached() -> Result<()> {
         }
     );
 
+    Ok(())
+}
+
+#[cfg(target_os = "linux")]
+#[tokio::test]
+async fn process_spawn_exec_failure_releases_handle_for_retry() -> Result<()> {
+    let codex_home = TempDir::new()?;
+    let (_server, mut mcp) = initialized_mcp(codex_home.path()).await?;
+    let process_handle = "retry-after-exec-error".to_string();
+    let request_id = mcp
+        .send_process_spawn_request(process_spawn_params(
+            process_handle.clone(),
+            codex_home.path(),
+            vec!["/codex-missing-process-spawn-target".to_string()],
+        )?)
+        .await?;
+    let error = mcp
+        .read_stream_until_error_message(RequestId::Integer(request_id))
+        .await?;
+    assert!(error.error.message.starts_with("failed to spawn process:"));
+
+    let request_id = mcp
+        .send_process_spawn_request(process_spawn_params(
+            process_handle.clone(),
+            codex_home.path(),
+            vec![
+                "/bin/sh".to_string(),
+                "-c".to_string(),
+                "printf retried; exit 19".to_string(),
+            ],
+        )?)
+        .await?;
+    let response = mcp
+        .read_stream_until_response_message(RequestId::Integer(request_id))
+        .await?;
+    assert_eq!(response.result, serde_json::json!({}));
+    assert_eq!(
+        read_process_exited(&mut mcp).await?,
+        ProcessExitedNotification {
+            process_handle,
+            exit_code: 19,
+            stdout: "retried".to_string(),
+            stdout_cap_reached: false,
+            stderr: String::new(),
+            stderr_cap_reached: false,
+        }
+    );
     Ok(())
 }
 

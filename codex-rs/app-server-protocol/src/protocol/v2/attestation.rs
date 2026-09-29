@@ -1,7 +1,8 @@
-use schemars::JsonSchema;
+use crate::JsonSchema;
+use crate::TS;
+use codex_utils_redacted_string::RedactedString;
 use serde::Deserialize;
 use serde::Serialize;
-use ts_rs::TS;
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS, Default)]
 #[serde(rename_all = "camelCase")]
@@ -13,5 +14,6 @@ pub struct AttestationGenerateParams {}
 #[ts(export_to = "v2/")]
 pub struct AttestationGenerateResponse {
     /// Opaque client attestation token.
-    pub token: String,
+    #[ts(type = "string")]
+    pub token: RedactedString,
 }

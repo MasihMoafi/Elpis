@@ -1,4 +1,3 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use super::super::REMOTE_WORKSPACE_SHARED_WITH_ME_MARKETPLACE_NAME;
 use super::super::REMOTE_WORKSPACE_SHARED_WITH_ME_PRIVATE_MARKETPLACE_NAME;
 use super::super::REMOTE_WORKSPACE_SHARED_WITH_ME_UNLISTED_MARKETPLACE_NAME;
@@ -94,6 +93,7 @@ pub async fn checkout_remote_plugin_share(
             ))
         })?;
         crate::remote_bundle::download_and_extract_remote_plugin_bundle_to_path(
+            config,
             bundle,
             local_plugin_path.clone(),
         )

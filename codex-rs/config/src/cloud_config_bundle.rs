@@ -14,11 +14,11 @@ use crate::cloud_config_layers_from_fragments;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use futures::future::BoxFuture;
 use futures::future::FutureExt;
-use futures::future::Shared;
 use serde::Deserialize;
 use serde::Serialize;
 use std::fmt;
 use std::future::Future;
+use std::sync::Arc;
 use thiserror::Error;
 
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
@@ -52,6 +52,25 @@ pub struct CloudConfigTomlBundle {
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct CloudRequirementsTomlBundle {
     pub enterprise_managed: Vec<CloudRequirementsFragment>,
+}
+
+impl CloudRequirementsTomlBundle {
+    pub(crate) fn into_layers(self) -> Vec<RequirementsLayerEntry> {
+        // Bundle fragments arrive highest-priority first; requirements merge in reverse order.
+        self.enterprise_managed
+            .into_iter()
+            .rev()
+            .map(|fragment| {
+                RequirementsLayerEntry::from_toml(
+                    RequirementSource::EnterpriseManaged {
+                        id: fragment.id,
+                        name: fragment.name,
+                    },
+                    fragment.contents,
+                )
+            })
+            .collect()
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -100,10 +119,7 @@ impl CloudConfigBundleLayers {
                 CloudConfigTomlBundle {
                     enterprise_managed: config_enterprise_managed,
                 },
-            requirements_toml:
-                CloudRequirementsTomlBundle {
-                    enterprise_managed: requirements_enterprise_managed,
-                },
+            requirements_toml,
         } = bundle;
 
         let enterprise_managed_config = if strict_config {
@@ -112,22 +128,11 @@ impl CloudConfigBundleLayers {
             cloud_config_layers_from_fragments(config_enterprise_managed, base_dir)?
         };
 
-        let mut enterprise_managed_requirements = requirements_enterprise_managed
+        let enterprise_managed_requirements = requirements_toml
+            .into_layers()
             .into_iter()
-            .map(|fragment| {
-                RequirementsLayerEntry::from_toml(
-                    RequirementSource::EnterpriseManaged {
-                        id: fragment.id,
-                        name: fragment.name,
-                    },
-                    fragment.contents,
-                )
-                .with_base_dir(base_dir.clone())
-            })
+            .map(|layer| layer.with_base_dir(base_dir.clone()))
             .collect::<Vec<_>>();
-        // Bundle fragments arrive highest-priority first, while requirements
-        // layers are merged lowest-priority to highest-priority.
-        enterprise_managed_requirements.reverse();
 
         Ok(Self {
             enterprise_managed_config,
@@ -177,7 +182,12 @@ impl CloudConfigBundleLoadError {
 
 #[derive(Clone)]
 pub struct CloudConfigBundleLoader {
-    fut: Shared<BoxFuture<'static, Result<Option<CloudConfigBundle>, CloudConfigBundleLoadError>>>,
+    getter: Arc<
+        dyn Fn()
+                -> BoxFuture<'static, Result<Option<CloudConfigBundle>, CloudConfigBundleLoadError>>
+            + Send
+            + Sync,
+    >,
 }
 
 impl CloudConfigBundleLoader {
@@ -187,13 +197,26 @@ impl CloudConfigBundleLoader {
             + Send
             + 'static,
     {
+        let fut = fut.boxed().shared();
+        Self::from_getter(move || fut.clone())
+    }
+
+    /// Creates a loader that requests the latest bundle on every call.
+    pub fn from_getter<F, Fut>(getter: F) -> Self
+    where
+        F: Fn() -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = Result<Option<CloudConfigBundle>, CloudConfigBundleLoadError>>
+            + Send
+            + 'static,
+    {
         Self {
-            fut: fut.boxed().shared(),
+            getter: Arc::new(move || getter().boxed()),
         }
     }
 
+    /// Returns the current bundle snapshot.
     pub async fn get(&self) -> Result<Option<CloudConfigBundle>, CloudConfigBundleLoadError> {
-        self.fut.clone().await
+        (self.getter)().await
     }
 }
 

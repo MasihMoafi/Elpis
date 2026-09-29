@@ -3,33 +3,15 @@
 //! `send_message` and `followup_task` share the same submission path and differ only in whether the
 //! resulting `InterAgentCommunication` should wake the target immediately.
 
+use super::analytics::ToolCallAnalytics;
 use super::*;
-use crate::agent_communication::AgentCommunicationContext;
-use crate::agent_communication::AgentCommunicationKind;
+use crate::TurnStartOptions;
+use crate::agent::api::AgentInput;
+use crate::agent::api::AgentTarget;
+use crate::agent::api::SendRequest;
+use crate::agent::child_config::build_agent_resume_config;
+use crate::agent::types::MessageDeliveryMode;
 use crate::tools::context::FunctionToolOutput;
-use codex_protocol::protocol::InterAgentCommunication;
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub(crate) enum MessageDeliveryMode {
-    QueueOnly,
-    TriggerTurn,
-}
-
-impl MessageDeliveryMode {
-    /// Returns whether the produced communication should start a turn immediately.
-    fn apply(self, communication: InterAgentCommunication) -> InterAgentCommunication {
-        match self {
-            Self::QueueOnly => InterAgentCommunication {
-                trigger_turn: false,
-                ..communication
-            },
-            Self::TriggerTurn => InterAgentCommunication {
-                trigger_turn: true,
-                ..communication
-            },
-        }
-    }
-}
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -57,63 +39,50 @@ pub(super) fn message_content(message: String) -> Result<String, FunctionCallErr
 }
 
 /// Handles the shared MultiAgentV2 message flow for both `send_message` and `followup_task`.
-pub(crate) async fn handle_message_string_tool(
+pub(super) async fn handle_message_string_tool(
     invocation: ToolInvocation,
     mode: MessageDeliveryMode,
     target: String,
     message: String,
+    analytics: &mut ToolCallAnalytics,
 ) -> Result<FunctionToolOutput, FunctionCallError> {
     let message = message_content(message)?;
     let ToolInvocation {
         session,
         turn,
         call_id,
+        source,
         ..
     } = invocation;
     let receiver_thread_id = resolve_agent_target(&session, &turn, &target).await?;
-    let receiver_agent = session
+    analytics.set_receiver(receiver_thread_id);
+    let resume_config =
+        build_agent_resume_config(&turn).map_err(FunctionCallError::RespondToModel)?;
+    let receipt = session
         .services
         .agent_control
-        .ensure_agent_known(receiver_thread_id)
-        .map_err(|err| collab_agent_error(receiver_thread_id, err))?;
-    if mode == MessageDeliveryMode::TriggerTurn
-        && receiver_agent
-            .agent_path
-            .as_ref()
-            .is_some_and(AgentPath::is_root)
-    {
-        return Err(FunctionCallError::RespondToModel(
-            "Follow-up tasks can't target the root agent".to_string(),
-        ));
-    }
-    let receiver_agent_path = receiver_agent.agent_path.clone().ok_or_else(|| {
+        .send(SendRequest {
+            caller: session.thread_id,
+            target: AgentTarget::Id(receiver_thread_id),
+            resume_config,
+            input: AgentInput::Message {
+                message: agent_message_from_tool(message, &source),
+                mode,
+            },
+            start_options: TurnStartOptions {
+                parent_turn_id: (mode == MessageDeliveryMode::TriggerTurn)
+                    .then(|| turn.sub_id.clone()),
+                root_turn_id: turn.turn_metadata_state.root_turn_id(),
+                turn_trigger: turn.turn_metadata_state.current_turn_trigger(),
+                cyber_access_program: turn.cyber_access_program,
+                ..Default::default()
+            },
+        })
+        .await
+        .map_err(|err| collab_v2_agent_error(receiver_thread_id, err))?;
+    let receiver_agent_path = receipt.metadata.agent_path.ok_or_else(|| {
         FunctionCallError::RespondToModel("target agent is missing an agent_path".to_string())
     })?;
-    let resume_config = build_agent_resume_config(turn.as_ref())?;
-    session
-        .services
-        .agent_control
-        .ensure_v2_agent_loaded(resume_config, receiver_thread_id)
-        .await
-        .map_err(|err| collab_agent_error(receiver_thread_id, err))?;
-    let author = turn
-        .session_source
-        .get_agent_path()
-        .unwrap_or_else(AgentPath::root);
-    let communication =
-        communication_from_tool_message(author, receiver_agent_path.clone(), message);
-    let kind = match mode {
-        MessageDeliveryMode::QueueOnly => AgentCommunicationKind::Message,
-        MessageDeliveryMode::TriggerTurn => AgentCommunicationKind::Followup,
-    };
-    let context = AgentCommunicationContext::new(kind, session.thread_id);
-    let result = session
-        .services
-        .agent_control
-        .send_inter_agent_communication(receiver_thread_id, mode.apply(communication), context)
-        .await
-        .map_err(|err| collab_agent_error(receiver_thread_id, err));
-    result?;
     emit_sub_agent_activity(
         &session,
         &turn,

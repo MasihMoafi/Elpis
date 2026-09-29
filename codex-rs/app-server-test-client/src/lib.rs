@@ -1,4 +1,3 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use std::collections::VecDeque;
 use std::ffi::OsString;
 use std::fs;
@@ -89,7 +88,10 @@ use tungstenite::stream::MaybeTlsStream;
 use url::Url;
 use uuid::Uuid;
 
-mod plugin_remote_uninstall;
+mod loopback_responses_server;
+mod plugin_analytics_capture;
+mod plugin_analytics_mutation_smoke;
+mod plugin_analytics_smoke;
 mod request_user_input;
 
 const NOTIFICATIONS_TO_OPT_OUT: &[&str] = &[
@@ -103,6 +105,7 @@ const NOTIFICATIONS_TO_OPT_OUT: &[&str] = &[
 ];
 const APP_SERVER_GRACEFUL_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(5);
 const APP_SERVER_GRACEFUL_SHUTDOWN_POLL_INTERVAL: Duration = Duration::from_millis(100);
+const DEFAULT_ANALYTICS_ENABLED: bool = true;
 const OTEL_SERVICE_NAME: &str = "codex-app-server-test-client";
 const TRACE_DISABLED_MESSAGE: &str =
     "Not enabled - enable tracing in $CODEX_HOME/config.toml to get a trace URL!";
@@ -286,6 +289,29 @@ enum CliCommand {
         /// Seconds the helper script should sleep while the timeout is paused.
         #[arg(long, default_value_t = 15)]
         hold_seconds: u64,
+    },
+    /// Exercise remote plugin analytics through production app-server RPC paths.
+    #[command(name = "plugin-analytics-smoke")]
+    PluginAnalyticsSmoke {
+        /// Installed local plugin id, such as `linear@openai-curated-remote`.
+        #[arg(long)]
+        plugin_id: String,
+        /// JSONL output path. Defaults to a PID-specific file under the system temp directory.
+        #[arg(long)]
+        capture_file: Option<PathBuf>,
+    },
+    /// Install and uninstall one remote plugin while validating analytics capture.
+    #[command(name = "plugin-analytics-mutation-smoke")]
+    PluginAnalyticsMutationSmoke {
+        /// Backend remote plugin id. The plugin must be initially uninstalled.
+        #[arg(long)]
+        remote_plugin_id: String,
+        /// Acknowledge that this command mutates the active account's plugin state.
+        #[arg(long)]
+        confirm_account_mutation: bool,
+        /// JSONL output path. Defaults to a PID-specific file under the system temp directory.
+        #[arg(long)]
+        capture_file: Option<PathBuf>,
     },
     /// Best-effort recovery command that uninstalls one remote plugin.
     #[command(name = "plugin-remote-uninstall")]
@@ -473,6 +499,40 @@ pub async fn run() -> Result<()> {
                 hold_seconds,
             )
         }
+        CliCommand::PluginAnalyticsSmoke {
+            plugin_id,
+            capture_file,
+        } => {
+            ensure_dynamic_tools_unused(&dynamic_tools, "plugin-analytics-smoke")?;
+            if url.is_some() {
+                bail!("plugin-analytics-smoke requires --codex-bin and does not support --url");
+            }
+            let codex_bin = codex_bin.context("plugin-analytics-smoke requires --codex-bin")?;
+            plugin_analytics_smoke::run(&codex_bin, &config_overrides, &plugin_id, capture_file)
+        }
+        CliCommand::PluginAnalyticsMutationSmoke {
+            remote_plugin_id,
+            confirm_account_mutation,
+            capture_file,
+        } => {
+            ensure_dynamic_tools_unused(&dynamic_tools, "plugin-analytics-mutation-smoke")?;
+            if url.is_some() {
+                bail!(
+                    "plugin-analytics-mutation-smoke requires --codex-bin and does not support --url"
+                );
+            }
+            let codex_bin =
+                codex_bin.context("plugin-analytics-mutation-smoke requires --codex-bin")?;
+            plugin_analytics_mutation_smoke::run(
+                &codex_bin,
+                &config_overrides,
+                &remote_plugin_id,
+                plugin_analytics_mutation_smoke::AccountMutationConfirmation::from_flag(
+                    confirm_account_mutation,
+                ),
+                capture_file,
+            )
+        }
         CliCommand::PluginRemoteUninstall {
             remote_plugin_id,
             confirm_account_mutation,
@@ -482,11 +542,11 @@ pub async fn run() -> Result<()> {
                 bail!("plugin-remote-uninstall requires --codex-bin and does not support --url");
             }
             let codex_bin = codex_bin.context("plugin-remote-uninstall requires --codex-bin")?;
-            plugin_remote_uninstall::run_cleanup(
+            plugin_analytics_mutation_smoke::run_cleanup(
                 &codex_bin,
                 &config_overrides,
                 &remote_plugin_id,
-                plugin_remote_uninstall::AccountMutationConfirmation::from_flag(
+                plugin_analytics_mutation_smoke::AccountMutationConfirmation::from_flag(
                     confirm_account_mutation,
                 ),
             )
@@ -1241,6 +1301,7 @@ async fn thread_list(endpoint: &Endpoint, config_overrides: &[String], limit: u3
         println!("< initialize response: {initialize:?}");
 
         let response = client.thread_list(ThreadListParams {
+            originators: None,
             cursor: None,
             limit: Some(limit),
             sort_key: None,
@@ -1248,6 +1309,8 @@ async fn thread_list(endpoint: &Endpoint, config_overrides: &[String], limit: u3
             model_providers: None,
             source_kinds: None,
             archived: None,
+            section_id: None,
+            project_id: None,
             parent_thread_id: None,
             ancestor_thread_id: None,
             cwd: None,
@@ -1689,6 +1752,7 @@ impl CodexClient {
                     version: env!("CARGO_PKG_VERSION").to_string(),
                 },
                 capabilities: Some(InitializeCapabilities {
+                    explicit_gateway_oauth: false,
                     experimental_api,
                     request_attestation: false,
                     opt_out_notification_methods: Some(
@@ -1698,6 +1762,7 @@ impl CodexClient {
                             .collect(),
                     ),
                     mcp_server_openai_form_elicitation: false,
+                    extensions: None,
                 }),
             },
         };
@@ -2105,6 +2170,7 @@ impl CodexClient {
         params: CommandExecutionRequestApprovalParams,
     ) -> Result<()> {
         let CommandExecutionRequestApprovalParams {
+            kind: _,
             thread_id,
             turn_id,
             item_id,
@@ -2304,6 +2370,7 @@ impl TestClientTracing {
             &config,
             env!("CARGO_PKG_VERSION"),
             Some(OTEL_SERVICE_NAME),
+            DEFAULT_ANALYTICS_ENABLED,
         )
         .map_err(|e| anyhow::anyhow!("error loading otel config: {e}"))?;
         let traces_enabled = otel_provider

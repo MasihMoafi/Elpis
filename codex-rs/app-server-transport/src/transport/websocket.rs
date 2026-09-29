@@ -1,9 +1,6 @@
 use super::CHANNEL_CAPACITY;
 use super::ConnectionOrigin;
 use super::TransportEvent;
-use super::auth::WebsocketAuthPolicy;
-use super::auth::authorize_upgrade;
-use super::auth::is_unauthenticated_non_loopback_listener;
 use super::forward_incoming_message;
 use super::next_connection_id;
 use super::serialize_outgoing_message;
@@ -26,6 +23,9 @@ use axum::response::IntoResponse;
 use axum::response::Response;
 use axum::routing::any;
 use axum::routing::get;
+use codex_websocket_auth::WebsocketAuthPolicy;
+use codex_websocket_auth::authorize_upgrade;
+use codex_websocket_auth::is_unauthenticated_non_loopback_listener;
 use futures::SinkExt;
 use futures::StreamExt;
 use owo_colors::OwoColorize;
@@ -187,6 +187,7 @@ pub(crate) async fn run_websocket_connection<M, SinkError, StreamError>(
         .send(TransportEvent::ConnectionOpened {
             connection_id,
             origin: ConnectionOrigin::WebSocket,
+            auth: None,
             writer: writer_tx,
             disconnect_sender: Some(disconnect_token.clone()),
         })

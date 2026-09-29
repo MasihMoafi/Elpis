@@ -5,6 +5,32 @@ use std::collections::HashMap;
 use std::path::Path;
 
 #[test]
+fn app_tool_approval_restrictions_never_weaken_either_policy() {
+    use AppToolApproval::Approve;
+    use AppToolApproval::Auto;
+    use AppToolApproval::Prompt;
+    use AppToolApproval::Writes;
+
+    let modes = [Approve, Auto, Writes, Prompt];
+    let expected = [
+        [Approve, Auto, Writes, Prompt],
+        [Auto, Auto, Prompt, Prompt],
+        [Writes, Prompt, Writes, Prompt],
+        [Prompt, Prompt, Prompt, Prompt],
+    ];
+
+    for (parent_index, parent) in modes.into_iter().enumerate() {
+        for (requested_index, requested) in modes.into_iter().enumerate() {
+            assert_eq!(
+                parent.restrict_to(requested),
+                expected[parent_index][requested_index],
+                "parent: {parent:?}, requested: {requested:?}",
+            );
+        }
+    }
+}
+
+#[test]
 fn deserialize_stdio_command_server_config() {
     let cfg: McpServerConfig = toml::from_str(
         r#"
@@ -25,6 +51,7 @@ fn deserialize_stdio_command_server_config() {
     );
     assert!(cfg.enabled);
     assert!(!cfg.required);
+    assert_eq!(cfg.omit_tools_from, None);
     assert!(cfg.enabled_tools.is_none());
     assert!(cfg.disabled_tools.is_none());
 }
@@ -246,6 +273,7 @@ fn deserialize_streamable_http_server_config() {
             bearer_token_env_var: None,
             http_headers: None,
             env_http_headers: None,
+            http_headers_helper: None,
         }
     );
     assert!(cfg.enabled);
@@ -268,6 +296,7 @@ fn deserialize_streamable_http_server_config_with_env_var() {
             bearer_token_env_var: Some("GITHUB_TOKEN".to_string()),
             http_headers: None,
             env_http_headers: None,
+            http_headers_helper: None,
         }
     );
     assert!(cfg.enabled);
@@ -280,6 +309,7 @@ fn deserialize_streamable_http_server_config_with_headers() {
             url = "https://example.com/mcp"
             http_headers = { "X-Foo" = "bar" }
             env_http_headers = { "X-Token" = "TOKEN_ENV" }
+            http_headers_helper = "auth-cli headers"
         "#,
     )
     .expect("should deserialize http config with headers");
@@ -294,8 +324,20 @@ fn deserialize_streamable_http_server_config_with_headers() {
                 "X-Token".to_string(),
                 "TOKEN_ENV".to_string()
             )])),
+            http_headers_helper: Some("auth-cli headers".to_string()),
         }
     );
+}
+
+#[test]
+fn rejects_http_headers_helper_outside_local_http_servers() {
+    for contents in [
+        "command = \"server\"\nhttp_headers_helper = \"auth-cli headers\"",
+        "url = \"https://example.com/mcp\"\nhttp_headers_helper = \"  \"",
+        "url = \"https://example.com/mcp\"\nenvironment_id = \"remote\"\nhttp_headers_helper = \"auth-cli headers\"",
+    ] {
+        toml::from_str::<McpServerConfig>(contents).expect_err("invalid helper placement");
+    }
 }
 
 #[test]
@@ -322,6 +364,8 @@ fn deserialize_streamable_http_server_config_with_oauth_client_id() {
 
             [oauth]
             client_id = "eci-prd-pub-codex-123"
+            callback_url = "http://127.0.0.1/callback/registered"
+            callback_port = 9876
         "#,
     )
     .expect("should deserialize http config with oauth client id");
@@ -330,8 +374,117 @@ fn deserialize_streamable_http_server_config_with_oauth_client_id() {
         cfg.oauth,
         Some(McpServerOAuthConfig {
             client_id: Some("eci-prd-pub-codex-123".to_string()),
+            callback_url: Some("http://127.0.0.1/callback/registered".to_string()),
+            callback_port: Some(9876),
+            ..Default::default()
         })
     );
+}
+
+#[test]
+fn oauth_client_secret_round_trips_without_debug_disclosure() {
+    let cfg: McpServerConfig = toml::from_str(
+        r#"
+            url = "https://example.com/mcp"
+
+            [oauth]
+            client_id = "confidential-client"
+            client_secret = "test-client-secret"
+        "#,
+    )
+    .expect("should deserialize an OAuth client secret");
+    assert_eq!(
+        cfg.oauth,
+        Some(McpServerOAuthConfig {
+            client_id: Some("confidential-client".to_string()),
+            client_secret: Some("test-client-secret".into()),
+            ..Default::default()
+        })
+    );
+    assert_eq!(cfg.oauth_client_secret(), Some("test-client-secret"));
+
+    let serialized = serde_json::to_value(&cfg).expect("serialize server as JSON");
+    assert_eq!(
+        serialized["oauth"],
+        serde_json::json!({
+            "client_id": "confidential-client",
+            "client_secret": "test-client-secret"
+        })
+    );
+    assert_eq!(
+        serde_json::from_value::<McpServerConfig>(serialized).expect("deserialize JSON"),
+        cfg
+    );
+    assert_eq!(
+        toml::from_str::<McpServerConfig>(&toml::to_string(&cfg).expect("serialize TOML"))
+            .expect("deserialize TOML"),
+        cfg
+    );
+
+    let debug = format!("{cfg:?}");
+    assert!(!debug.contains("test-client-secret"));
+    assert!(debug.contains("client_secret: Some(<redacted>)"));
+}
+
+#[test]
+fn oauth_client_secret_requires_nonempty_secret_and_client_id() {
+    for (oauth, expected) in [
+        (
+            serde_json::json!({"client_id": "client", "client_secret": ""}),
+            "oauth.client_secret must not be empty",
+        ),
+        (
+            serde_json::json!({"client_id": "client", "client_secret": " \t"}),
+            "oauth.client_secret must not be empty",
+        ),
+        (
+            serde_json::json!({"client_secret": "test-client-secret"}),
+            "oauth.client_secret requires oauth.client_id",
+        ),
+        (
+            serde_json::json!({"client_id": "", "client_secret": "test-client-secret"}),
+            "oauth.client_secret requires oauth.client_id",
+        ),
+        (
+            serde_json::json!({"client_id": " \t", "client_secret": "test-client-secret"}),
+            "oauth.client_secret requires oauth.client_id",
+        ),
+    ] {
+        let err = serde_json::from_value::<McpServerConfig>(serde_json::json!({
+            "url": "https://example.com/mcp",
+            "oauth": oauth
+        }))
+        .expect_err("should reject invalid OAuth client credentials");
+        assert_eq!(err.to_string(), expected);
+    }
+}
+
+#[test]
+fn oauth_callback_port_prefers_server_port_over_global_port() {
+    let cfg: McpServerConfig = toml::from_str(
+        r#"
+            url = "https://example.com/mcp"
+
+            [oauth]
+            callback_port = 9876
+        "#,
+    )
+    .expect("should deserialize http config with oauth callback port");
+
+    assert_eq!(cfg.oauth_callback_port(Some(4321)), Some(9876));
+}
+
+#[test]
+fn oauth_callback_port_falls_back_to_global_port() {
+    let cfg: McpServerConfig = toml::from_str(
+        r#"
+            url = "https://example.com/mcp"
+        "#,
+    )
+    .expect("should deserialize http config without oauth callback port");
+
+    assert_eq!(cfg.oauth_callback_port(Some(4321)), Some(4321));
+    assert_eq!(cfg.oauth_callback_port(/*global_callback_port*/ None), None);
 }
 
 #[test]
@@ -363,6 +516,41 @@ fn deserialize_server_config_with_parallel_tool_calls() {
 }
 
 #[test]
+fn serialize_round_trips_server_config_with_omitted_tool_exposure_surfaces() {
+    for omitted_surfaces in [
+        vec![],
+        vec![ToolExposureSurface::CodeMode],
+        vec![ToolExposureSurface::Deferred],
+        vec![ToolExposureSurface::Direct],
+        vec![ToolExposureSurface::CodeMode, ToolExposureSurface::Deferred],
+        vec![ToolExposureSurface::CodeMode, ToolExposureSurface::Direct],
+        vec![ToolExposureSurface::Deferred, ToolExposureSurface::Direct],
+        vec![
+            ToolExposureSurface::CodeMode,
+            ToolExposureSurface::Deferred,
+            ToolExposureSurface::Direct,
+        ],
+    ] {
+        let serialized_surfaces = omitted_surfaces
+            .iter()
+            .map(|surface| format!("\"{surface}\""))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let config = format!("command = \"echo\"\nomit_tools_from = [{serialized_surfaces}]\n");
+        let cfg: McpServerConfig =
+            toml::from_str(&config).expect("should deserialize omitted MCP exposure surfaces");
+        assert_eq!(cfg.omit_tools_from, Some(omitted_surfaces.clone()));
+
+        let serialized = toml::to_string(&cfg).expect("should serialize MCP config");
+        assert!(serialized.contains(&format!("omit_tools_from = [{serialized_surfaces}]")));
+
+        let round_tripped: McpServerConfig =
+            toml::from_str(&serialized).expect("should deserialize serialized MCP config");
+        assert_eq!(round_tripped, cfg);
+    }
+}
+
+#[test]
 fn deserialize_server_config_with_default_tool_approval_mode() {
     let cfg: McpServerConfig = toml::from_str(
         r#"
@@ -371,6 +559,7 @@ fn deserialize_server_config_with_default_tool_approval_mode() {
 
             [tools.search]
             approval_mode = "prompt"
+            output_token_limit = 30000
         "#,
     )
     .expect("should deserialize default tool approval mode");
@@ -383,15 +572,29 @@ fn deserialize_server_config_with_default_tool_approval_mode() {
         cfg.tools.get("search"),
         Some(&McpServerToolConfig {
             approval_mode: Some(AppToolApproval::Prompt),
+            output_token_limit: std::num::NonZeroUsize::new(30_000),
         })
     );
 
     let serialized = toml::to_string(&cfg).expect("should serialize MCP config");
     assert!(serialized.contains("default_tools_approval_mode = \"approve\""));
+    assert!(serialized.contains("output_token_limit = 30000"));
 
     let round_tripped: McpServerConfig =
         toml::from_str(&serialized).expect("should deserialize serialized MCP config");
     assert_eq!(round_tripped, cfg);
+}
+
+#[test]
+fn deserialize_rejects_nonpositive_mcp_tool_output_limits() {
+    for output_token_limit in [0, -1] {
+        let config = format!(
+            "command = \"echo\"\n[tools.search]\noutput_token_limit = {output_token_limit}\n"
+        );
+        let error = toml::from_str::<McpServerConfig>(&config)
+            .expect_err("MCP tool output limit must be positive");
+        assert!(error.to_string().contains("output_token_limit"));
+    }
 }
 
 #[test]
@@ -437,7 +640,10 @@ fn deserialize_ignores_unknown_server_fields() {
             environment_id: crate::DEFAULT_MCP_SERVER_ENVIRONMENT_ID.to_string(),
             enabled: true,
             required: false,
+            startup_readiness: Default::default(),
             supports_parallel_tool_calls: false,
+            tool_input_schema_max_bytes: None,
+            omit_tools_from: None,
             disabled_reason: None,
             startup_timeout_sec: None,
             tool_timeout_sec: None,

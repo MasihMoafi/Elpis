@@ -1,9 +1,12 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
+use codex_core::TurnInputRequest;
 use codex_core::config::Constrained;
 use codex_features::Feature;
 use codex_otel::SessionTelemetry;
 use codex_otel::TelemetryAuthMode;
 use codex_protocol::ThreadId;
+use codex_protocol::ToolName;
+use codex_protocol::approvals::NetworkPolicyAmendment;
+use codex_protocol::approvals::NetworkPolicyRuleAction;
 use codex_protocol::config_types::ServiceTier;
 use codex_protocol::models::PermissionProfile;
 use codex_protocol::openai_models::ReasoningEffort;
@@ -78,9 +81,9 @@ fn assert_empty_mcp_tool_fields(line: &str) -> Result<(), String> {
     Ok(())
 }
 
-fn shell_command_call(call_id: &str, command: &str) -> serde_json::Value {
-    let args = serde_json::json!({ "command": command }).to_string();
-    ev_function_call(call_id, "shell_command", &args)
+fn exec_command_call(call_id: &str, command: &str) -> serde_json::Value {
+    let args = serde_json::json!({ "cmd": command }).to_string();
+    ev_function_call(call_id, "exec_command", &args)
 }
 
 fn touch_command(path: &str) -> String {
@@ -113,126 +116,13 @@ fn extract_log_field_does_not_confuse_similar_keys() {
 
 #[tokio::test]
 #[traced_test]
-async fn completed_real_turn_emits_sampling_profile_without_content() {
-    let server = start_mock_server().await;
-    mount_sse_once(&server, sse(vec![ev_completed("done")])).await;
-    let TestCodex { codex, .. } = test_codex().build(&server).await.unwrap();
-
-    codex
-        .submit(Op::UserInput {
-            items: vec![UserInput::Text {
-                text: "profile sentinel that must not be logged".into(),
-                text_elements: Vec::new(),
-            }],
-            final_output_json_schema: None,
-            responsesapi_client_metadata: None,
-            additional_context: Default::default(),
-            thread_settings: Default::default(),
-        })
-        .await
-        .unwrap();
-
-    wait_for_event(&codex, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
-
-    logs_assert(|lines: &[&str]| {
-        let line = lines
-            .iter()
-            .find(|line| line.contains("codex.turn_profile"))
-            .ok_or_else(|| "expected codex.turn_profile event".to_string())?;
-        if !line.contains("sampling_request_count=1") {
-            return Err(format!("expected one real sampling request: {line}"));
-        }
-        if line.contains("profile sentinel")
-            || line.contains("prompt=")
-            || line.contains("response=")
-            || line.contains("output=")
-        {
-            return Err(format!("turn profile leaked content: {line}"));
-        }
-        Ok(())
-    });
-}
-
-#[tokio::test]
-#[traced_test]
-async fn interrupted_real_turn_emits_one_sampling_profile_without_content() {
-    let server = start_mock_server().await;
-    let args = serde_json::json!({
-        "command": "sleep 60",
-        "timeout_ms": 60_000,
-    })
-    .to_string();
-    mount_sse_once(
-        &server,
-        sse(vec![
-            ev_function_call("profile-sleep", "shell_command", &args),
-            ev_completed("done"),
-        ]),
-    )
-    .await;
-    let TestCodex { codex, .. } = test_codex()
-        .with_model("gpt-5.4")
-        .with_config(|config| {
-            config.permissions.approval_policy = Constrained::allow_any(AskForApproval::Never);
-        })
-        .build(&server)
-        .await
-        .unwrap();
-
-    codex
-        .submit(Op::UserInput {
-            items: vec![UserInput::Text {
-                text: "interrupted profile sentinel that must not be logged".into(),
-                text_elements: Vec::new(),
-            }],
-            final_output_json_schema: None,
-            responsesapi_client_metadata: None,
-            additional_context: Default::default(),
-            thread_settings: Default::default(),
-        })
-        .await
-        .unwrap();
-    wait_for_event(&codex, |ev| matches!(ev, EventMsg::ExecCommandBegin(_))).await;
-    codex.submit(Op::Interrupt).await.unwrap();
-    wait_for_event(&codex, |ev| matches!(ev, EventMsg::TurnAborted(_))).await;
-
-    logs_assert(|lines: &[&str]| {
-        let profile_logs = lines
-            .iter()
-            .filter(|line| {
-                line.contains("codex_otel.log_only") && line.contains("codex.turn_profile")
-            })
-            .collect::<Vec<_>>();
-        if profile_logs.len() != 1 {
-            return Err(format!(
-                "expected exactly one interrupted turn profile, got {}",
-                profile_logs.len()
-            ));
-        }
-        let line = profile_logs[0];
-        if !line.contains("sampling_request_count=1") {
-            return Err(format!("expected one real sampling request: {line}"));
-        }
-        if line.contains("interrupted profile sentinel")
-            || line.contains("prompt=")
-            || line.contains("response=")
-            || line.contains("output=")
-        {
-            return Err(format!("interrupted turn profile leaked content: {line}"));
-        }
-        Ok(())
-    });
-}
-
-#[tokio::test]
-#[traced_test]
 async fn responses_api_emits_api_request_event() {
     let server = start_mock_server().await;
 
     let response_mock = mount_sse_once(&server, sse(vec![ev_completed("done")])).await;
 
     let TestCodex { codex, .. } = test_codex()
-        .with_model("gpt-5.4")
+        .with_model("gpt-5.5")
         .with_config(|config| {
             config.service_tier = Some(ServiceTier::Fast.request_value().to_string());
             config.model_reasoning_effort = Some(ReasoningEffort::High);
@@ -242,16 +132,10 @@ async fn responses_api_emits_api_request_event() {
         .unwrap();
 
     codex
-        .submit(Op::UserInput {
-            items: vec![UserInput::Text {
-                text: "hello".into(),
-                text_elements: Vec::new(),
-            }],
-            final_output_json_schema: None,
-            responsesapi_client_metadata: None,
-            additional_context: Default::default(),
-            thread_settings: Default::default(),
-        })
+        .start_or_steer_turn(TurnInputRequest::user_input(vec![UserInput::Text {
+            text: "hello".into(),
+            text_elements: Vec::new(),
+        }]))
         .await
         .unwrap();
 
@@ -307,16 +191,10 @@ async fn process_sse_emits_tracing_for_output_item() {
     let TestCodex { codex, .. } = test_codex().build(&server).await.unwrap();
 
     codex
-        .submit(Op::UserInput {
-            items: vec![UserInput::Text {
-                text: "hello".into(),
-                text_elements: Vec::new(),
-            }],
-            final_output_json_schema: None,
-            responsesapi_client_metadata: None,
-            additional_context: Default::default(),
-            thread_settings: Default::default(),
-        })
+        .start_or_steer_turn(TurnInputRequest::user_input(vec![UserInput::Text {
+            text: "hello".into(),
+            text_elements: Vec::new(),
+        }]))
         .await
         .unwrap();
 
@@ -353,16 +231,10 @@ async fn process_sse_emits_failed_event_on_parse_error() {
         .unwrap();
 
     codex
-        .submit(Op::UserInput {
-            items: vec![UserInput::Text {
-                text: "hello".into(),
-                text_elements: Vec::new(),
-            }],
-            final_output_json_schema: None,
-            responsesapi_client_metadata: None,
-            additional_context: Default::default(),
-            thread_settings: Default::default(),
-        })
+        .start_or_steer_turn(TurnInputRequest::user_input(vec![UserInput::Text {
+            text: "hello".into(),
+            text_elements: Vec::new(),
+        }]))
         .await
         .unwrap();
 
@@ -400,16 +272,10 @@ async fn process_sse_records_failed_event_when_stream_closes_without_completed()
         .unwrap();
 
     codex
-        .submit(Op::UserInput {
-            items: vec![UserInput::Text {
-                text: "hello".into(),
-                text_elements: Vec::new(),
-            }],
-            final_output_json_schema: None,
-            responsesapi_client_metadata: None,
-            additional_context: Default::default(),
-            thread_settings: Default::default(),
-        })
+        .start_or_steer_turn(TurnInputRequest::user_input(vec![UserInput::Text {
+            text: "hello".into(),
+            text_elements: Vec::new(),
+        }]))
         .await
         .unwrap();
 
@@ -467,16 +333,10 @@ async fn process_sse_failed_event_records_response_error_message() {
         .unwrap();
 
     codex
-        .submit(Op::UserInput {
-            items: vec![UserInput::Text {
-                text: "hello".into(),
-                text_elements: Vec::new(),
-            }],
-            final_output_json_schema: None,
-            responsesapi_client_metadata: None,
-            additional_context: Default::default(),
-            thread_settings: Default::default(),
-        })
+        .start_or_steer_turn(TurnInputRequest::user_input(vec![UserInput::Text {
+            text: "hello".into(),
+            text_elements: Vec::new(),
+        }]))
         .await
         .unwrap();
 
@@ -532,16 +392,10 @@ async fn process_sse_failed_event_logs_parse_error() {
         .unwrap();
 
     codex
-        .submit(Op::UserInput {
-            items: vec![UserInput::Text {
-                text: "hello".into(),
-                text_elements: Vec::new(),
-            }],
-            final_output_json_schema: None,
-            responsesapi_client_metadata: None,
-            additional_context: Default::default(),
-            thread_settings: Default::default(),
-        })
+        .start_or_steer_turn(TurnInputRequest::user_input(vec![UserInput::Text {
+            text: "hello".into(),
+            text_elements: Vec::new(),
+        }]))
         .await
         .unwrap();
 
@@ -584,16 +438,10 @@ async fn process_sse_failed_event_logs_missing_error() {
         .unwrap();
 
     codex
-        .submit(Op::UserInput {
-            items: vec![UserInput::Text {
-                text: "hello".into(),
-                text_elements: Vec::new(),
-            }],
-            final_output_json_schema: None,
-            responsesapi_client_metadata: None,
-            additional_context: Default::default(),
-            thread_settings: Default::default(),
-        })
+        .start_or_steer_turn(TurnInputRequest::user_input(vec![UserInput::Text {
+            text: "hello".into(),
+            text_elements: Vec::new(),
+        }]))
         .await
         .unwrap();
 
@@ -645,16 +493,10 @@ async fn process_sse_failed_event_logs_response_completed_parse_error() {
         .unwrap();
 
     codex
-        .submit(Op::UserInput {
-            items: vec![UserInput::Text {
-                text: "hello".into(),
-                text_elements: Vec::new(),
-            }],
-            final_output_json_schema: None,
-            responsesapi_client_metadata: None,
-            additional_context: Default::default(),
-            thread_settings: Default::default(),
-        })
+        .start_or_steer_turn(TurnInputRequest::user_input(vec![UserInput::Text {
+            text: "hello".into(),
+            text_elements: Vec::new(),
+        }]))
         .await
         .unwrap();
 
@@ -689,7 +531,10 @@ async fn process_sse_emits_completed_telemetry() {
                     "id": "resp1",
                     "usage": {
                         "input_tokens": 3,
-                        "input_tokens_details": { "cached_tokens": 1 },
+                        "input_tokens_details": {
+                            "cached_tokens": 1,
+                            "cache_write_tokens": 2
+                        },
                         "output_tokens": 5,
                         "output_tokens_details": { "reasoning_tokens": 2 },
                         "total_tokens": 9
@@ -703,16 +548,10 @@ async fn process_sse_emits_completed_telemetry() {
     let TestCodex { codex, .. } = test_codex().build(&server).await.unwrap();
 
     codex
-        .submit(Op::UserInput {
-            items: vec![UserInput::Text {
-                text: "hello".into(),
-                text_elements: Vec::new(),
-            }],
-            final_output_json_schema: None,
-            responsesapi_client_metadata: None,
-            additional_context: Default::default(),
-            thread_settings: Default::default(),
-        })
+        .start_or_steer_turn(TurnInputRequest::user_input(vec![UserInput::Text {
+            text: "hello".into(),
+            text_elements: Vec::new(),
+        }]))
         .await
         .unwrap();
 
@@ -727,6 +566,7 @@ async fn process_sse_emits_completed_telemetry() {
                     && line.contains("input_token_count=3")
                     && line.contains("output_token_count=5")
                     && line.contains("cached_token_count=1")
+                    && line.contains("cache_write_token_count=2")
                     && line.contains("reasoning_token_count=2")
                     && line.contains("tool_token_count=9")
                     && extract_log_field(line, "ttft_ms")
@@ -760,7 +600,10 @@ async fn turn_and_completed_response_spans_record_token_usage() {
                 "id": "resp1",
                 "usage": {
                     "input_tokens": 3,
-                    "input_tokens_details": { "cached_tokens": 1 },
+                    "input_tokens_details": {
+                        "cached_tokens": 1,
+                        "cache_write_tokens": 2
+                    },
                     "output_tokens": 5,
                     "output_tokens_details": { "reasoning_tokens": 2 },
                     "total_tokens": 9
@@ -785,16 +628,10 @@ async fn turn_and_completed_response_spans_record_token_usage() {
     let TestCodex { codex, .. } = test;
 
     codex
-        .submit(Op::UserInput {
-            items: vec![UserInput::Text {
-                text: "hello".into(),
-                text_elements: Vec::new(),
-            }],
-            final_output_json_schema: None,
-            responsesapi_client_metadata: None,
-            additional_context: Default::default(),
-            thread_settings: Default::default(),
-        })
+        .start_or_steer_turn(TurnInputRequest::user_input(vec![UserInput::Text {
+            text: "hello".into(),
+            text_elements: Vec::new(),
+        }]))
         .await
         .unwrap();
 
@@ -809,6 +646,7 @@ async fn turn_and_completed_response_spans_record_token_usage() {
                 && line.contains("codex.request.reasoning_effort=high")
                 && line.contains("gen_ai.usage.input_tokens=3")
                 && line.contains("gen_ai.usage.cache_read.input_tokens=1")
+                && line.contains("gen_ai.usage.cache_write.input_tokens=2")
                 && line.contains("gen_ai.usage.output_tokens=5")
                 && line.contains("codex.usage.reasoning_output_tokens=2")
                 && line.contains("codex.usage.total_tokens=9")
@@ -821,6 +659,7 @@ async fn turn_and_completed_response_spans_record_token_usage() {
                 && line.contains("codex.turn.reasoning_effort=high")
                 && line.contains("codex.turn.token_usage.input_tokens=3")
                 && line.contains("codex.turn.token_usage.cached_input_tokens=1")
+                && line.contains("codex.turn.token_usage.cache_write_input_tokens=2")
                 && line.contains("codex.turn.token_usage.non_cached_input_tokens=2")
                 && line.contains("codex.turn.token_usage.output_tokens=5")
                 && line.contains("codex.turn.token_usage.reasoning_output_tokens=2")
@@ -873,16 +712,10 @@ async fn handle_responses_span_records_response_kind_and_tool_name() {
         .unwrap();
 
     codex
-        .submit(Op::UserInput {
-            items: vec![UserInput::Text {
-                text: "hello".into(),
-                text_elements: Vec::new(),
-            }],
-            final_output_json_schema: None,
-            responsesapi_client_metadata: None,
-            additional_context: Default::default(),
-            thread_settings: Default::default(),
-        })
+        .start_or_steer_turn(TurnInputRequest::user_input(vec![UserInput::Text {
+            text: "hello".into(),
+            text_elements: Vec::new(),
+        }]))
         .await
         .unwrap();
 
@@ -967,16 +800,10 @@ async fn record_responses_sets_span_fields_for_response_events() {
         .unwrap();
 
     codex
-        .submit(Op::UserInput {
-            items: vec![UserInput::Text {
-                text: "hello".into(),
-                text_elements: Vec::new(),
-            }],
-            final_output_json_schema: None,
-            responsesapi_client_metadata: None,
-            additional_context: Default::default(),
-            thread_settings: Default::default(),
-        })
+        .start_or_steer_turn(TurnInputRequest::user_input(vec![UserInput::Text {
+            text: "hello".into(),
+            text_elements: Vec::new(),
+        }]))
         .await
         .unwrap();
 
@@ -1056,16 +883,10 @@ async fn handle_response_item_records_tool_result_for_custom_tool_call() {
         .unwrap();
 
     codex
-        .submit(Op::UserInput {
-            items: vec![UserInput::Text {
-                text: "hello".into(),
-                text_elements: Vec::new(),
-            }],
-            final_output_json_schema: None,
-            responsesapi_client_metadata: None,
-            additional_context: Default::default(),
-            thread_settings: Default::default(),
-        })
+        .start_or_steer_turn(TurnInputRequest::user_input(vec![UserInput::Text {
+            text: "hello".into(),
+            text_elements: Vec::new(),
+        }]))
         .await
         .unwrap();
 
@@ -1132,23 +953,14 @@ async fn handle_response_item_records_tool_result_for_function_call() {
         .unwrap();
 
     codex
-        .submit(Op::UserInput {
-            items: vec![UserInput::Text {
-                text: "hello".into(),
-                text_elements: Vec::new(),
-            }],
-            final_output_json_schema: None,
-            responsesapi_client_metadata: None,
-            additional_context: Default::default(),
-            thread_settings: Default::default(),
-        })
+        .start_or_steer_turn(TurnInputRequest::user_input(vec![UserInput::Text {
+            text: "hello".into(),
+            text_elements: Vec::new(),
+        }]))
         .await
         .unwrap();
 
-    // A `TokenCount` now also lands before the first request is built, so it no longer
-    // marks the point where the tool has run. Wait for the turn itself, as every other
-    // test in this file does.
-    wait_for_event(&codex, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
+    wait_for_event(&codex, |ev| matches!(ev, EventMsg::TokenCount(_))).await;
 
     logs_assert(|lines: &[&str]| {
         let line = lines
@@ -1178,13 +990,13 @@ async fn handle_response_item_records_tool_result_for_function_call() {
 
 #[tokio::test]
 #[traced_test]
-async fn handle_response_item_records_tool_result_for_shell_command_call() {
+async fn handle_response_item_records_tool_result_for_exec_command_call() {
     let server = start_mock_server().await;
 
     mount_sse_once(
         &server,
         sse(vec![
-            shell_command_call("shell-call", "echo shell"),
+            exec_command_call("shell-call", "echo shell"),
             ev_completed("done"),
         ]),
     )
@@ -1212,16 +1024,10 @@ async fn handle_response_item_records_tool_result_for_shell_command_call() {
         .unwrap();
 
     codex
-        .submit(Op::UserInput {
-            items: vec![UserInput::Text {
-                text: "hello".into(),
-                text_elements: Vec::new(),
-            }],
-            final_output_json_schema: None,
-            responsesapi_client_metadata: None,
-            additional_context: Default::default(),
-            thread_settings: Default::default(),
-        })
+        .start_or_steer_turn(TurnInputRequest::user_input(vec![UserInput::Text {
+            text: "hello".into(),
+            text_elements: Vec::new(),
+        }]))
         .await
         .unwrap();
 
@@ -1233,10 +1039,10 @@ async fn handle_response_item_records_tool_result_for_shell_command_call() {
             .find(|line| line.contains("codex.tool_result") && line.contains("call_id=shell-call"))
             .ok_or_else(|| "missing codex.tool_result event".to_string())?;
 
-        if !line.contains("tool_name=shell_command") {
+        if !line.contains("tool_name=exec_command") {
             return Err("missing tool_name field".to_string());
         }
-        if !line.contains("arguments={\"command\":\"echo shell\"}") {
+        if !line.contains("arguments={\"cmd\":\"echo shell\"}") {
             return Err("missing arguments field".to_string());
         }
         let output_idx = line
@@ -1272,8 +1078,11 @@ fn tool_decision_assertion<'a>(
             .ok_or_else(|| format!("missing codex.tool_decision event for {call_id}"))?;
 
         let lower = line.to_lowercase();
-        if !lower.contains("tool_name=shell_command") {
-            return Err("missing tool_name for shell_command".to_string());
+        if !lower.contains("tool_name=exec_command") {
+            return Err("missing tool_name for exec_command".to_string());
+        }
+        if !lower.contains("tool_namespace=functions") {
+            return Err("missing default tool namespace".to_string());
         }
         if !lower.contains(&format!("decision={expected_decision}")) {
             return Err(format!("unexpected decision for {call_id}"));
@@ -1303,8 +1112,8 @@ fn sandbox_outcome_assertion<'a>(
             .ok_or_else(|| format!("missing codex.sandbox_outcome event for {call_id}"))?;
 
         let lower = line.to_lowercase();
-        if !lower.contains("tool_name=shell_command") {
-            return Err("missing tool_name for shell_command".to_string());
+        if !lower.contains("tool_name=exec_command") {
+            return Err("missing tool_name for exec_command".to_string());
         }
         if !lower.contains(&format!("outcome={expected_outcome}")) {
             return Err(format!("unexpected sandbox outcome for {call_id}"));
@@ -1317,6 +1126,76 @@ fn sandbox_outcome_assertion<'a>(
         }
 
         Ok(())
+    }
+}
+
+#[test]
+#[traced_test]
+fn network_policy_decisions_omit_source_and_destination() {
+    let telemetry = SessionTelemetry::new(
+        ThreadId::new(),
+        "gpt-5.5",
+        "gpt-5.5",
+        /*account_id*/ None,
+        /*account_email*/ None,
+        Some(TelemetryAuthMode::ApiKey),
+        "Codex_Desktop".to_string(),
+        /*log_user_prompts*/ false,
+        "tty".to_string(),
+        SessionSource::Cli,
+    );
+
+    for (call_id, action, expected_decision) in [
+        (
+            "network-allow",
+            NetworkPolicyRuleAction::Allow,
+            "approved_with_network_policy_allow",
+        ),
+        (
+            "network-deny",
+            NetworkPolicyRuleAction::Deny,
+            "denied_with_network_policy_deny",
+        ),
+    ] {
+        telemetry.tool_decision(
+            &ToolName::namespaced("mcp__example", "exec_command"),
+            call_id,
+            &ReviewDecision::NetworkPolicyAmendment {
+                network_policy_amendment: NetworkPolicyAmendment {
+                    host: "private.example.com".to_string(),
+                    action,
+                },
+            },
+            /*source*/ None,
+        );
+
+        logs_assert(|lines: &[&str]| {
+            let line = lines
+                .iter()
+                .find(|line| {
+                    line.contains("codex.tool_decision")
+                        && line.contains(&format!("call_id={call_id}"))
+                })
+                .ok_or_else(|| format!("missing network tool decision for {call_id}"))?;
+
+            if !line.contains("tool_name=exec_command") {
+                return Err("missing triggering network tool name".to_string());
+            }
+            if !line.contains("tool_namespace=mcp__example") {
+                return Err("missing triggering network tool namespace".to_string());
+            }
+            if !line.contains(&format!("decision={expected_decision}")) {
+                return Err(format!("unexpected network tool decision for {call_id}"));
+            }
+            if line.contains("source=") {
+                return Err("network tool decision unexpectedly included a source".to_string());
+            }
+            if line.contains("private.example.com") {
+                return Err("network tool decision exposed the destination host".to_string());
+            }
+
+            Ok(())
+        });
     }
 }
 
@@ -1337,7 +1216,7 @@ fn sandbox_outcome_event_records_outcome() {
     );
 
     telemetry.sandbox_outcome(
-        "shell_command",
+        "exec_command",
         "sandbox-outcome-call",
         "escalated",
         Duration::from_millis(/*millis*/ 12),
@@ -1352,12 +1231,12 @@ fn sandbox_outcome_event_records_outcome() {
 
 #[tokio::test]
 #[traced_test]
-async fn handle_shell_command_autoapprove_from_config_records_tool_decision() {
+async fn handle_exec_command_autoapprove_from_config_records_tool_decision() {
     let server = start_mock_server().await;
     mount_sse_once(
         &server,
         sse(vec![
-            shell_command_call("auto_config_call", "echo local shell"),
+            exec_command_call("auto_config_call", "echo local shell"),
             ev_completed("done"),
         ]),
     )
@@ -1385,16 +1264,10 @@ async fn handle_shell_command_autoapprove_from_config_records_tool_decision() {
         .unwrap();
 
     codex
-        .submit(Op::UserInput {
-            items: vec![UserInput::Text {
-                text: "hello".into(),
-                text_elements: Vec::new(),
-            }],
-            final_output_json_schema: None,
-            responsesapi_client_metadata: None,
-            additional_context: Default::default(),
-            thread_settings: Default::default(),
-        })
+        .start_or_steer_turn(TurnInputRequest::user_input(vec![UserInput::Text {
+            text: "hello".into(),
+            text_elements: Vec::new(),
+        }]))
         .await
         .unwrap();
 
@@ -1409,13 +1282,13 @@ async fn handle_shell_command_autoapprove_from_config_records_tool_decision() {
 
 #[tokio::test]
 #[traced_test]
-async fn handle_shell_command_user_approved_records_tool_decision() {
+async fn handle_exec_command_user_approved_records_tool_decision() {
     let server = start_mock_server().await;
     let command = touch_command("codex-otel-approval-test");
     mount_sse_once(
         &server,
         sse(vec![
-            shell_command_call("user_approved_call", &command),
+            exec_command_call("user_approved_call", &command),
             ev_completed("done"),
         ]),
     )
@@ -1440,16 +1313,10 @@ async fn handle_shell_command_user_approved_records_tool_decision() {
         .unwrap();
 
     codex
-        .submit(Op::UserInput {
-            items: vec![UserInput::Text {
-                text: "approved".into(),
-                text_elements: Vec::new(),
-            }],
-            final_output_json_schema: None,
-            responsesapi_client_metadata: None,
-            additional_context: Default::default(),
-            thread_settings: Default::default(),
-        })
+        .start_or_steer_turn(TurnInputRequest::user_input(vec![UserInput::Text {
+            text: "approved".into(),
+            text_elements: Vec::new(),
+        }]))
         .await
         .unwrap();
 
@@ -1479,14 +1346,14 @@ async fn handle_shell_command_user_approved_records_tool_decision() {
 
 #[tokio::test]
 #[traced_test]
-async fn handle_shell_command_user_approved_for_session_records_tool_decision() {
+async fn handle_exec_command_user_approved_for_session_records_tool_decision() {
     let server = start_mock_server().await;
     let command = touch_command("codex-otel-approval-test");
 
     mount_sse_once(
         &server,
         sse(vec![
-            shell_command_call("user_approved_session_call", &command),
+            exec_command_call("user_approved_session_call", &command),
             ev_completed("done"),
         ]),
     )
@@ -1510,16 +1377,10 @@ async fn handle_shell_command_user_approved_for_session_records_tool_decision() 
         .unwrap();
 
     codex
-        .submit(Op::UserInput {
-            items: vec![UserInput::Text {
-                text: "persist".into(),
-                text_elements: Vec::new(),
-            }],
-            final_output_json_schema: None,
-            responsesapi_client_metadata: None,
-            additional_context: Default::default(),
-            thread_settings: Default::default(),
-        })
+        .start_or_steer_turn(TurnInputRequest::user_input(vec![UserInput::Text {
+            text: "persist".into(),
+            text_elements: Vec::new(),
+        }]))
         .await
         .unwrap();
 
@@ -1542,91 +1403,21 @@ async fn handle_shell_command_user_approved_for_session_records_tool_decision() 
 
     logs_assert(tool_decision_assertion(
         "user_approved_session_call",
-        "approvedforsession",
+        "approved_for_session",
         "user",
     ));
 }
 
 #[tokio::test]
 #[traced_test]
-async fn handle_sandbox_error_user_approves_retry_records_tool_decision() {
+async fn handle_exec_command_user_denies_records_tool_decision() {
     let server = start_mock_server().await;
     let command = touch_command("codex-otel-approval-test");
 
     mount_sse_once(
         &server,
         sse(vec![
-            shell_command_call("sandbox_retry_call", &command),
-            ev_completed("done"),
-        ]),
-    )
-    .await;
-    mount_sse_once(
-        &server,
-        sse(vec![
-            ev_assistant_message("msg-1", "shell command done"),
-            ev_completed("done"),
-        ]),
-    )
-    .await;
-
-    let TestCodex { codex, .. } = test_codex()
-        .with_config(|config| {
-            config.permissions.approval_policy =
-                Constrained::allow_any(AskForApproval::UnlessTrusted);
-        })
-        .build(&server)
-        .await
-        .unwrap();
-
-    codex
-        .submit(Op::UserInput {
-            items: vec![UserInput::Text {
-                text: "retry".into(),
-                text_elements: Vec::new(),
-            }],
-            final_output_json_schema: None,
-            responsesapi_client_metadata: None,
-            additional_context: Default::default(),
-            thread_settings: Default::default(),
-        })
-        .await
-        .unwrap();
-
-    let approval_event =
-        wait_for_event(&codex, |ev| matches!(ev, EventMsg::ExecApprovalRequest(_))).await;
-    let EventMsg::ExecApprovalRequest(approval) = approval_event else {
-        panic!("expected ExecApprovalRequest event");
-    };
-
-    codex
-        .submit(Op::ExecApproval {
-            id: approval.effective_approval_id(),
-            turn_id: None,
-            decision: ReviewDecision::Approved,
-        })
-        .await
-        .unwrap();
-
-    wait_for_event(&codex, |ev| matches!(ev, EventMsg::TokenCount(_))).await;
-
-    logs_assert(tool_decision_assertion(
-        "sandbox_retry_call",
-        "approved",
-        "user",
-    ));
-}
-
-#[tokio::test]
-#[traced_test]
-async fn handle_shell_command_user_denies_records_tool_decision() {
-    let server = start_mock_server().await;
-    let command = touch_command("codex-otel-approval-test");
-
-    mount_sse_once(
-        &server,
-        sse(vec![
-            shell_command_call("user_denied_call", &command),
+            exec_command_call("user_denied_call", &command),
             ev_completed("done"),
         ]),
     )
@@ -1650,16 +1441,10 @@ async fn handle_shell_command_user_denies_records_tool_decision() {
         .unwrap();
 
     codex
-        .submit(Op::UserInput {
-            items: vec![UserInput::Text {
-                text: "deny".into(),
-                text_elements: Vec::new(),
-            }],
-            final_output_json_schema: None,
-            responsesapi_client_metadata: None,
-            additional_context: Default::default(),
-            thread_settings: Default::default(),
-        })
+        .start_or_steer_turn(TurnInputRequest::user_input(vec![UserInput::Text {
+            text: "deny".into(),
+            text_elements: Vec::new(),
+        }]))
         .await
         .unwrap();
 
@@ -1673,7 +1458,7 @@ async fn handle_shell_command_user_denies_records_tool_decision() {
         .submit(Op::ExecApproval {
             id: approval.effective_approval_id(),
             turn_id: None,
-            decision: ReviewDecision::Denied,
+            decision: ReviewDecision::denied("rejected by user"),
         })
         .await
         .unwrap();
@@ -1682,147 +1467,6 @@ async fn handle_shell_command_user_denies_records_tool_decision() {
 
     logs_assert(tool_decision_assertion(
         "user_denied_call",
-        "denied",
-        "user",
-    ));
-}
-
-#[tokio::test]
-#[traced_test]
-async fn handle_sandbox_error_user_approves_for_session_records_tool_decision() {
-    let server = start_mock_server().await;
-    let command = touch_command("codex-otel-approval-test");
-
-    mount_sse_once(
-        &server,
-        sse(vec![
-            shell_command_call("sandbox_session_call", &command),
-            ev_completed("done"),
-        ]),
-    )
-    .await;
-    mount_sse_once(
-        &server,
-        sse(vec![
-            ev_assistant_message("msg-1", "shell command done"),
-            ev_completed("done"),
-        ]),
-    )
-    .await;
-
-    let TestCodex { codex, .. } = test_codex()
-        .with_config(|config| {
-            config.permissions.approval_policy =
-                Constrained::allow_any(AskForApproval::UnlessTrusted);
-        })
-        .build(&server)
-        .await
-        .unwrap();
-
-    codex
-        .submit(Op::UserInput {
-            items: vec![UserInput::Text {
-                text: "persist".into(),
-                text_elements: Vec::new(),
-            }],
-            final_output_json_schema: None,
-            responsesapi_client_metadata: None,
-            additional_context: Default::default(),
-            thread_settings: Default::default(),
-        })
-        .await
-        .unwrap();
-
-    let approval_event =
-        wait_for_event(&codex, |ev| matches!(ev, EventMsg::ExecApprovalRequest(_))).await;
-    let EventMsg::ExecApprovalRequest(approval) = approval_event else {
-        panic!("expected ExecApprovalRequest event");
-    };
-
-    codex
-        .submit(Op::ExecApproval {
-            id: approval.effective_approval_id(),
-            turn_id: None,
-            decision: ReviewDecision::ApprovedForSession,
-        })
-        .await
-        .unwrap();
-
-    wait_for_event(&codex, |ev| matches!(ev, EventMsg::TokenCount(_))).await;
-
-    logs_assert(tool_decision_assertion(
-        "sandbox_session_call",
-        "approvedforsession",
-        "user",
-    ));
-}
-
-#[tokio::test]
-#[traced_test]
-async fn handle_sandbox_error_user_denies_records_tool_decision() {
-    let server = start_mock_server().await;
-    let command = touch_command("codex-otel-approval-test");
-
-    mount_sse_once(
-        &server,
-        sse(vec![
-            shell_command_call("sandbox_deny_call", &command),
-            ev_completed("done"),
-        ]),
-    )
-    .await;
-
-    mount_sse_once(
-        &server,
-        sse(vec![
-            ev_assistant_message("msg-1", "shell command done"),
-            ev_completed("done"),
-        ]),
-    )
-    .await;
-
-    let TestCodex { codex, .. } = test_codex()
-        .with_config(|config| {
-            config.permissions.approval_policy =
-                Constrained::allow_any(AskForApproval::UnlessTrusted);
-        })
-        .build(&server)
-        .await
-        .unwrap();
-
-    codex
-        .submit(Op::UserInput {
-            items: vec![UserInput::Text {
-                text: "deny".into(),
-                text_elements: Vec::new(),
-            }],
-            final_output_json_schema: None,
-            responsesapi_client_metadata: None,
-            additional_context: Default::default(),
-            thread_settings: Default::default(),
-        })
-        .await
-        .unwrap();
-
-    let approval_event =
-        wait_for_event(&codex, |ev| matches!(ev, EventMsg::ExecApprovalRequest(_))).await;
-    let EventMsg::ExecApprovalRequest(approval) = approval_event else {
-        panic!("expected ExecApprovalRequest event");
-    };
-
-    codex
-        .submit(Op::ExecApproval {
-            id: approval.effective_approval_id(),
-            turn_id: None,
-            decision: ReviewDecision::Denied,
-        })
-        .await
-        .unwrap();
-
-    wait_for_event(&codex, |ev| matches!(ev, EventMsg::TokenCount(_))).await;
-
-    logs_assert(tool_decision_assertion(
-        "sandbox_deny_call",
         "denied",
         "user",
     ));

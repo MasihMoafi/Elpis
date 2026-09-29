@@ -1,8 +1,8 @@
+use crate::JsonSchema;
+use crate::TS;
 use codex_utils_absolute_path::AbsolutePathBuf;
-use schemars::JsonSchema;
 use serde::Deserialize;
 use serde::Serialize;
-use ts_rs::TS;
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]
@@ -19,6 +19,15 @@ pub struct WindowsWorldWritableWarningNotification {
 pub enum WindowsSandboxSetupMode {
     Elevated,
     Unelevated,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase", export_to = "v2/")]
+pub enum WindowsSandboxImplementation {
+    Elevated,
+    Unelevated,
+    Mxc,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, JsonSchema, TS)]

@@ -1,6 +1,4 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use codex_http_client::HttpClientFactory;
-use codex_http_client::OutboundProxyPolicy;
 
 /// Auth-layer adapter around client-owned proxy policy.
 ///
@@ -9,16 +7,40 @@ use codex_http_client::OutboundProxyPolicy;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AuthRouteConfig {
     http_client_factory: HttpClientFactory,
+    local_bootstrap_factory: Option<HttpClientFactory>,
 }
 
 impl AuthRouteConfig {
-    pub fn respect_system_proxy() -> Self {
+    /// Adapts an application-resolved HTTP client factory for auth requests.
+    pub fn from_http_client_factory(http_client_factory: HttpClientFactory) -> Self {
         Self {
-            http_client_factory: HttpClientFactory::new(OutboundProxyPolicy::RespectSystemProxy),
+            http_client_factory,
+            local_bootstrap_factory: None,
         }
     }
 
-    pub(crate) fn http_client_factory(&self) -> &HttpClientFactory {
+    /// Installs the configuration owner's local-only policy for auth discovery.
+    /// Only auth-owned endpoint constructors can access this factory.
+    pub fn with_local_bootstrap_factory(mut self, factory: HttpClientFactory) -> Self {
+        self.local_bootstrap_factory = Some(factory);
+        self
+    }
+
+    pub(crate) fn authentication_factory(&self, endpoint: &str) -> HttpClientFactory {
+        let Some(factory) = &self.local_bootstrap_factory else {
+            return self.http_client_factory.clone();
+        };
+        let endpoints = endpoint.parse().into_iter().collect();
+        factory.clone().with_network_policy(
+            factory
+                .network_policy()
+                .clone()
+                .restrict_to_endpoints(endpoints),
+        )
+    }
+
+    /// Returns the HTTP client factory represented by this routing configuration.
+    pub fn http_client_factory(&self) -> &HttpClientFactory {
         &self.http_client_factory
     }
 }

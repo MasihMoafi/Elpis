@@ -1,4 +1,4 @@
-//! Fetch provider-scoped picker models without blocking the TUI event loop.
+//! Fetch picker models without blocking the event loop and keep new-thread defaults in sync.
 
 use super::AppServerSession;
 use super::model_preset_from_api_model;
@@ -23,12 +23,7 @@ impl AppServerSession {
         self.available_models = models;
     }
 
-    pub(crate) fn fetch_models(
-        &self,
-        request_id: Uuid,
-        provider_id: Option<String>,
-        app_event_tx: AppEventSender,
-    ) {
+    pub(crate) fn fetch_models(&self, request_id: Uuid, app_event_tx: AppEventSender) {
         let request_handle = self.request_handle();
         tokio::spawn(async move {
             let result = request_handle
@@ -38,7 +33,6 @@ impl AppServerSession {
                         cursor: None,
                         limit: None,
                         include_hidden: Some(true),
-                        model_provider: provider_id.clone(),
                     },
                 })
                 .await
@@ -50,11 +44,7 @@ impl AppServerSession {
                         .collect()
                 })
                 .map_err(|err| err.to_string());
-            app_event_tx.send(AppEvent::ModelsLoaded {
-                request_id,
-                provider_id,
-                result,
-            });
+            app_event_tx.send(AppEvent::ModelsLoaded { request_id, result });
         });
     }
 }

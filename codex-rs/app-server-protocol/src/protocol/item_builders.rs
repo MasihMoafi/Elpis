@@ -1,4 +1,3 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 //! Shared builders for app-server [`ThreadItem`] values derived from compatibility events.
 //!
 //! Most live tool items now come from first-class core `ItemStarted` / `ItemCompleted` events.
@@ -26,7 +25,6 @@ use crate::protocol::v2::ThreadItem;
 use codex_protocol::ThreadId;
 use codex_protocol::parse_command::ParsedCommand;
 use codex_protocol::protocol::ApplyPatchApprovalRequestEvent;
-use codex_protocol::protocol::ExecApprovalRequestEvent;
 use codex_protocol::protocol::ExecCommandBeginEvent;
 use codex_protocol::protocol::ExecCommandEndEvent;
 use codex_protocol::protocol::FileChange;
@@ -37,13 +35,31 @@ use codex_protocol::protocol::PatchApplyEndEvent;
 use codex_protocol::protocol::ReviewOutputEvent;
 use codex_protocol::review_format::REVIEW_FALLBACK_MESSAGE;
 use codex_protocol::review_format::render_review_output_text;
+use codex_secrets::redact_secrets;
 use codex_shell_command::parse_command::parse_command;
 use codex_shell_command::parse_command::shlex_join;
-use codex_utils_path_uri::PathConvention;
 use codex_utils_path_uri::PathUri;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use tracing::warn;
+
+/// Client-facing command and parsed actions projected from a raw command.
+pub struct CommandExecutionPresentation {
+    /// Shell-formatted command with recognizable secrets redacted.
+    pub command: String,
+    /// Parsed command actions with recognizable secrets redacted.
+    pub command_actions: Vec<CommandAction>,
+}
+
+impl CommandExecutionPresentation {
+    /// Projects a raw command into its client-facing representation.
+    pub fn from_raw(command: &[String], parsed_cmd: &[ParsedCommand], cwd: &PathUri) -> Self {
+        Self {
+            command: redact_secrets(shlex_join(command)),
+            command_actions: command_actions_for_path_uri(parsed_cmd, cwd),
+        }
+    }
+}
 
 pub(crate) fn review_output_text(output: Option<&ReviewOutputEvent>) -> String {
     output
@@ -77,38 +93,21 @@ pub fn build_file_change_end_item(payload: &PatchApplyEndEvent) -> ThreadItem {
     }
 }
 
-pub fn build_command_execution_approval_request_item(
-    payload: &ExecApprovalRequestEvent,
-) -> ThreadItem {
-    ThreadItem::CommandExecution {
-        id: payload.call_id.clone(),
-        command: shlex_join(&payload.command),
-        cwd: payload.cwd.clone().into(),
-        process_id: None,
-        source: CommandExecutionSource::Agent,
-        status: CommandExecutionStatus::InProgress,
-        command_actions: payload
-            .parsed_cmd
-            .iter()
-            .cloned()
-            .map(|parsed| CommandAction::from_core_with_cwd(parsed, &payload.cwd))
-            .collect(),
-        aggregated_output: None,
-        exit_code: None,
-        duration_ms: None,
-    }
-}
-
 pub fn build_command_execution_begin_item(payload: &ExecCommandBeginEvent) -> ThreadItem {
-    let command_actions = command_actions_for_path_uri(&payload.parsed_cmd, &payload.cwd);
+    let presentation =
+        CommandExecutionPresentation::from_raw(&payload.command, &payload.parsed_cmd, &payload.cwd);
     ThreadItem::CommandExecution {
+        model_context: None,
+        sandbox_type: None,
         id: payload.call_id.clone(),
-        command: shlex_join(&payload.command),
+        plugin_id: payload.plugin_id.clone(),
+        script_path: payload.script_path.clone(),
+        command: presentation.command,
         cwd: payload.cwd.clone().into(),
         process_id: payload.process_id.clone(),
         source: payload.source.into(),
         status: CommandExecutionStatus::InProgress,
-        command_actions,
+        command_actions: presentation.command_actions,
         aggregated_output: None,
         exit_code: None,
         duration_ms: None,
@@ -122,62 +121,66 @@ pub fn build_command_execution_end_item(payload: &ExecCommandEndEvent) -> Thread
         Some(payload.aggregated_output.clone())
     };
     let duration_ms = i64::try_from(payload.duration.as_millis()).unwrap_or(i64::MAX);
-    let command_actions = command_actions_for_path_uri(&payload.parsed_cmd, &payload.cwd);
+    let presentation =
+        CommandExecutionPresentation::from_raw(&payload.command, &payload.parsed_cmd, &payload.cwd);
 
     ThreadItem::CommandExecution {
+        model_context: None,
+        sandbox_type: None,
         id: payload.call_id.clone(),
-        command: shlex_join(&payload.command),
+        plugin_id: payload.plugin_id.clone(),
+        script_path: payload.script_path.clone(),
+        command: presentation.command,
         cwd: payload.cwd.clone().into(),
         process_id: payload.process_id.clone(),
         source: payload.source.into(),
         status: (&payload.status).into(),
-        command_actions,
+        command_actions: presentation.command_actions,
         aggregated_output,
         exit_code: Some(payload.exit_code),
         duration_ms: Some(duration_ms),
     }
 }
 
-pub(crate) fn command_actions_for_path_uri(
-    parsed_cmd: &[ParsedCommand],
-    cwd: &PathUri,
-) -> Vec<CommandAction> {
-    // TODO(anp): Carry PathUri into CommandAction so foreign Read actions retain resolved paths.
-    // Until then, omit those actions rather than project a foreign cwd onto the host.
-    let native_cwd = if cwd.infer_path_convention() == Some(PathConvention::native()) {
-        cwd.to_abs_path().ok()
-    } else {
-        None
-    };
-
+fn command_actions_for_path_uri(parsed_cmd: &[ParsedCommand], cwd: &PathUri) -> Vec<CommandAction> {
     parsed_cmd
         .iter()
         .cloned()
         .filter_map(|parsed| match parsed {
-            ParsedCommand::Read { cmd, name, path } => match native_cwd.as_ref() {
-                Some(native_cwd) => Some(CommandAction::Read {
-                    command: cmd,
-                    name,
-                    path: native_cwd.join(path),
-                }),
-                None => {
-                    warn!(
-                        command = cmd,
-                        %cwd,
-                        "omitting read command action whose path cannot be resolved against a foreign cwd"
-                    );
-                    None
+            ParsedCommand::Read { cmd, name, path } => {
+                // Resolve against the executor's URI, not the app-server's filesystem. POSIX
+                // non-UTF-8 paths are percent-encoded, not opaque. Expanding `~` or resolving a
+                // genuinely opaque cwd would require executor-native state unavailable here.
+                match cwd.join(path.to_string_lossy().as_ref()) {
+                    Ok(path) => Some(CommandAction::Read {
+                        command: redact_secrets(cmd),
+                        name,
+                        path: path.into(),
+                    }),
+                    Err(error) => {
+                        warn!(
+                            command = cmd,
+                            %cwd,
+                            file_path = %path.display(),
+                            %error,
+                            "omitting read action: invalid file path or cwd"
+                        );
+                        None
+                    }
                 }
-            },
-            ParsedCommand::ListFiles { cmd, path } => {
-                Some(CommandAction::ListFiles { command: cmd, path })
             }
-            ParsedCommand::Search { cmd, query, path } => Some(CommandAction::Search {
-                command: cmd,
-                query,
+            ParsedCommand::ListFiles { cmd, path } => Some(CommandAction::ListFiles {
+                command: redact_secrets(cmd),
                 path,
             }),
-            ParsedCommand::Unknown { cmd } => Some(CommandAction::Unknown { command: cmd }),
+            ParsedCommand::Search { cmd, query, path } => Some(CommandAction::Search {
+                command: redact_secrets(cmd),
+                query: query.map(redact_secrets),
+                path,
+            }),
+            ParsedCommand::Unknown { cmd } => Some(CommandAction::Unknown {
+                command: redact_secrets(cmd),
+            }),
         })
         .collect()
 }
@@ -186,6 +189,7 @@ pub(crate) fn command_actions_for_path_uri(
 ///
 /// Currently this only synthesizes [`ThreadItem::CommandExecution`] for
 /// [`GuardianAssessmentAction::Command`] and [`GuardianAssessmentAction::Execve`].
+/// Stdin reviews are child approvals and must not change the parent item lifecycle.
 pub fn build_item_from_guardian_event(
     assessment: &GuardianAssessmentEvent,
     status: CommandExecutionStatus,
@@ -199,8 +203,12 @@ pub fn build_item_from_guardian_event(
             }];
             Some(ThreadItem::CommandExecution {
                 id: id.clone(),
+                model_context: assessment.model_context.clone(),
+                sandbox_type: None,
+                plugin_id: assessment.plugin_id.clone(),
+                script_path: assessment.script_path.clone(),
                 command,
-                cwd: cwd.clone().into(),
+                cwd: cwd.clone(),
                 process_id: None,
                 source: CommandExecutionSource::Agent,
                 status,
@@ -235,6 +243,10 @@ pub fn build_item_from_guardian_event(
             };
             Some(ThreadItem::CommandExecution {
                 id: id.clone(),
+                model_context: assessment.model_context.clone(),
+                sandbox_type: None,
+                plugin_id: assessment.plugin_id.clone(),
+                script_path: assessment.script_path.clone(),
                 command,
                 cwd: cwd.clone().into(),
                 process_id: None,
@@ -246,7 +258,8 @@ pub fn build_item_from_guardian_event(
                 duration_ms: None,
             })
         }
-        GuardianAssessmentAction::ApplyPatch { .. }
+        GuardianAssessmentAction::WriteStdin { .. }
+        | GuardianAssessmentAction::ApplyPatch { .. }
         | GuardianAssessmentAction::NetworkAccess { .. }
         | GuardianAssessmentAction::McpToolCall { .. }
         | GuardianAssessmentAction::RequestPermissions { .. } => None,

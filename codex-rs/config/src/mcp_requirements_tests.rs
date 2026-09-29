@@ -1,4 +1,5 @@
 use super::*;
+use crate::McpServerCommandMatcher;
 use crate::mcp_types::McpServerConfig;
 use pretty_assertions::assert_eq;
 use std::collections::HashMap;
@@ -16,7 +17,10 @@ fn stdio_server(command: &str, args: &[&str]) -> McpServerConfig {
         environment_id: crate::DEFAULT_MCP_SERVER_ENVIRONMENT_ID.to_string(),
         enabled: true,
         required: false,
+        startup_readiness: Default::default(),
         supports_parallel_tool_calls: false,
+        tool_input_schema_max_bytes: None,
+        omit_tools_from: None,
         disabled_reason: None,
         startup_timeout_sec: None,
         tool_timeout_sec: None,
@@ -44,22 +48,28 @@ fn command_matcher_matches_exact_positional_arguments() {
         ],
     });
 
-    assert!(requirement.matches(&stdio_server(
-        "company-cli",
-        &["mcp", "https://pricing.example.com"]
-    )));
-    assert!(!requirement.matches(&stdio_server(
-        "company-cli",
-        &["https://pricing.example.com", "mcp"]
-    )));
-    assert!(!requirement.matches(&stdio_server(
-        "company-cli",
-        &["mcp", "https://pricing.example.com", "--verbose"]
-    )));
-    assert!(!requirement.matches(&stdio_server(
-        "/usr/local/bin/company-cli",
-        &["mcp", "https://pricing.example.com"]
-    )));
+    assert!(
+        stdio_server("company-cli", &["mcp", "https://pricing.example.com"])
+            .matches_requirement(&requirement)
+    );
+    assert!(
+        !stdio_server("company-cli", &["https://pricing.example.com", "mcp"])
+            .matches_requirement(&requirement)
+    );
+    assert!(
+        !stdio_server(
+            "company-cli",
+            &["mcp", "https://pricing.example.com", "--verbose"]
+        )
+        .matches_requirement(&requirement)
+    );
+    assert!(
+        !stdio_server(
+            "/usr/local/bin/company-cli",
+            &["mcp", "https://pricing.example.com"]
+        )
+        .matches_requirement(&requirement)
+    );
 }
 
 #[test]
@@ -68,9 +78,9 @@ fn regex_matcher_requires_a_full_value_match() {
         expression: "mcp".to_string(),
     };
 
-    assert!(matcher.matches("mcp"));
-    assert!(!matcher.matches("mcp-proxy"));
-    assert!(!matcher.matches("prefix-mcp"));
+    assert!(matches_value(&matcher, "mcp"));
+    assert!(!matches_value(&matcher, "mcp-proxy"));
+    assert!(!matches_value(&matcher, "prefix-mcp"));
 }
 
 #[test]
@@ -79,7 +89,7 @@ fn regex_matcher_allows_a_later_alternative_to_match_the_full_value() {
         expression: r"https://api\.example\.com|https://api\.example\.com/mcp".to_string(),
     };
 
-    assert!(matcher.matches("https://api.example.com/mcp"));
+    assert!(matches_value(&matcher, "https://api.example.com/mcp"));
 }
 
 #[test]
@@ -88,8 +98,7 @@ fn regex_matcher_validation_rejects_expression_that_cannot_be_wrapped() {
         expression: "(?x)mcp # trailing comment".to_string(),
     };
 
-    let err = matcher
-        .validate()
+    let err = validate_value_matcher(&matcher)
         .expect_err("expression should not be valid for full-value matching");
     assert!(
         err.contains("cannot be used for full-value matching"),
@@ -107,11 +116,11 @@ command = "company-cli"
     )
     .expect("legacy command identity");
 
-    assert!(requirement.matches(&stdio_server(
-        "company-cli",
-        &["any", "arguments", "remain", "allowed"]
-    )));
-    assert!(!requirement.matches(&stdio_server("different-cli", &[])));
+    assert!(
+        stdio_server("company-cli", &["any", "arguments", "remain", "allowed"])
+            .matches_requirement(&requirement)
+    );
+    assert!(!stdio_server("different-cli", &[]).matches_requirement(&requirement));
 }
 
 #[test]

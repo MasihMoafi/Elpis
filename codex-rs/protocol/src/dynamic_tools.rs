@@ -1,4 +1,3 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde::Deserializer;
@@ -71,6 +70,8 @@ pub enum DynamicToolCallOutputContentItem {
     InputText { text: String },
     #[serde(rename_all = "camelCase")]
     InputImage { image_url: String },
+    #[serde(rename_all = "camelCase")]
+    InputAudio { audio_url: String },
 }
 
 /// Former flat `SessionMeta` shape, including the old `exposeToContext` flag.

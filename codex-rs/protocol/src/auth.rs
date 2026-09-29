@@ -31,6 +31,10 @@ pub enum AuthMode {
     #[serde(rename = "bedrockApiKey")]
     #[strum(serialize = "bedrockApiKey")]
     BedrockApiKey,
+    /// Amazon Bedrock AWS access keys managed by Codex.
+    #[serde(rename = "bedrockAccessKeys")]
+    #[strum(serialize = "bedrockAccessKeys")]
+    BedrockAccessKeys,
 }
 
 impl AuthMode {
@@ -38,7 +42,11 @@ impl AuthMode {
     pub fn has_chatgpt_account(self) -> bool {
         match self {
             Self::Chatgpt | Self::ChatgptAuthTokens | Self::PersonalAccessToken => true,
-            Self::ApiKey | Self::Headers | Self::AgentIdentity | Self::BedrockApiKey => false,
+            Self::ApiKey
+            | Self::Headers
+            | Self::AgentIdentity
+            | Self::BedrockApiKey
+            | Self::BedrockAccessKeys => false,
         }
     }
 
@@ -50,7 +58,7 @@ impl AuthMode {
             | Self::Headers
             | Self::AgentIdentity
             | Self::PersonalAccessToken => true,
-            Self::ApiKey | Self::BedrockApiKey => false,
+            Self::ApiKey | Self::BedrockApiKey | Self::BedrockAccessKeys => false,
         }
     }
 }
@@ -70,14 +78,20 @@ impl PlanType {
             "plus" => Self::Known(KnownPlan::Plus),
             "pro" => Self::Known(KnownPlan::Pro),
             "prolite" => Self::Known(KnownPlan::ProLite),
+            "promax" => Self::Known(KnownPlan::ProMax),
             "team" => Self::Known(KnownPlan::Team),
+            "self_serve_business_prolite" => Self::Known(KnownPlan::SelfServeBusinessProLite),
             "self_serve_business_usage_based" => {
                 Self::Known(KnownPlan::SelfServeBusinessUsageBased)
             }
             "business" => Self::Known(KnownPlan::Business),
+            "ent26" => Self::Known(KnownPlan::Ent26),
+            "enterprise_cbp_automation" => Self::Known(KnownPlan::EnterpriseCbpAutomation),
             "enterprise_cbp_usage_based" => Self::Known(KnownPlan::EnterpriseCbpUsageBased),
             "enterprise" | "hc" => Self::Known(KnownPlan::Enterprise),
             "education" | "edu" => Self::Known(KnownPlan::Edu),
+            "edu_plus" => Self::Known(KnownPlan::EduPlus),
+            "edu_pro" => Self::Known(KnownPlan::EduPro),
             _ => Self::Unknown(raw.to_string()),
         }
     }
@@ -91,16 +105,26 @@ pub enum KnownPlan {
     Plus,
     Pro,
     ProLite,
+    ProMax,
     Team,
+    #[serde(rename = "self_serve_business_prolite")]
+    SelfServeBusinessProLite,
     #[serde(rename = "self_serve_business_usage_based")]
     SelfServeBusinessUsageBased,
     Business,
+    Ent26,
+    #[serde(rename = "enterprise_cbp_automation")]
+    EnterpriseCbpAutomation,
     #[serde(rename = "enterprise_cbp_usage_based")]
     EnterpriseCbpUsageBased,
     #[serde(alias = "hc")]
     Enterprise,
     #[serde(alias = "education")]
     Edu,
+    #[serde(rename = "edu_plus")]
+    EduPlus,
+    #[serde(rename = "edu_pro")]
+    EduPro,
 }
 
 impl KnownPlan {
@@ -109,14 +133,20 @@ impl KnownPlan {
             Self::Free => "Free",
             Self::Go => "Go",
             Self::Plus => "Plus",
-            Self::Pro => "Pro",
-            Self::ProLite => "Pro Lite",
+            Self::Pro => "Pro (More)",
+            Self::ProLite => "Pro",
+            Self::ProMax => "Pro (Max)",
             Self::Team => "Team",
+            Self::SelfServeBusinessProLite => "Self Serve Business ProLite",
             Self::SelfServeBusinessUsageBased => "Self Serve Business Usage Based",
             Self::Business => "Business",
+            Self::Ent26 => "Enterprise",
+            Self::EnterpriseCbpAutomation => "Enterprise (Automation)",
             Self::EnterpriseCbpUsageBased => "Enterprise CBP Usage Based",
             Self::Enterprise => "Enterprise",
             Self::Edu => "Edu",
+            Self::EduPlus => "Edu Plus",
+            Self::EduPro => "Edu Pro",
         }
     }
 
@@ -127,12 +157,18 @@ impl KnownPlan {
             Self::Plus => "plus",
             Self::Pro => "pro",
             Self::ProLite => "prolite",
+            Self::ProMax => "promax",
             Self::Team => "team",
+            Self::SelfServeBusinessProLite => "self_serve_business_prolite",
             Self::SelfServeBusinessUsageBased => "self_serve_business_usage_based",
             Self::Business => "business",
+            Self::Ent26 => "ent26",
+            Self::EnterpriseCbpAutomation => "enterprise_cbp_automation",
             Self::EnterpriseCbpUsageBased => "enterprise_cbp_usage_based",
             Self::Enterprise => "enterprise",
             Self::Edu => "edu",
+            Self::EduPlus => "edu_plus",
+            Self::EduPro => "edu_pro",
         }
     }
 
@@ -140,11 +176,16 @@ impl KnownPlan {
         matches!(
             self,
             Self::Team
+                | Self::SelfServeBusinessProLite
                 | Self::SelfServeBusinessUsageBased
                 | Self::Business
+                | Self::Ent26
+                | Self::EnterpriseCbpAutomation
                 | Self::EnterpriseCbpUsageBased
                 | Self::Enterprise
                 | Self::Edu
+                | Self::EduPlus
+                | Self::EduPro
         )
     }
 }
@@ -190,5 +231,24 @@ mod tests {
                 .expect("education should deserialize"),
             PlanType::Known(KnownPlan::Edu)
         );
+        assert_eq!(
+            serde_json::from_str::<PlanType>("\"enterprise_cbp_automation\"")
+                .expect("enterprise cbp automation should deserialize"),
+            PlanType::Known(KnownPlan::EnterpriseCbpAutomation)
+        );
+        for (raw, known) in [
+            ("promax", KnownPlan::ProMax),
+            ("edu_plus", KnownPlan::EduPlus),
+            ("edu_pro", KnownPlan::EduPro),
+        ] {
+            let expected = PlanType::Known(known);
+            assert_eq!(PlanType::from_raw_value(raw), expected);
+            assert_eq!(
+                serde_json::from_value::<PlanType>(serde_json::json!(raw))
+                    .expect("plan should deserialize"),
+                expected
+            );
+            assert_eq!(known.raw_value(), raw);
+        }
     }
 }

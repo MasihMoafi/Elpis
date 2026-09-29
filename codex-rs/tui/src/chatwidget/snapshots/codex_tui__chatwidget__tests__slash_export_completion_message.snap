@@ -1,0 +1,9 @@
+---
+source: tui/src/chatwidget/tests/slash_commands.rs
+expression: "normalize_completion_timestamps(&\n(cells.iter().map(|cell|\nlines_to_single_string(cell).trim().to_string()).collect::<Vec<_>>().join(\"\\n\")))"
+---
+[completion time]
+• Saved conversation to conversation.md
+• Copied conversation to clipboard
+■ Copy failed: clipboard unavailable
+■ Export failed: missing parent

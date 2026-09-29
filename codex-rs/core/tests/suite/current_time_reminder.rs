@@ -1,4 +1,7 @@
+use std::collections::BTreeMap;
+use std::collections::VecDeque;
 use std::sync::Arc;
+use std::sync::Mutex;
 use std::sync::atomic::AtomicI64;
 use std::sync::atomic::AtomicU64;
 use std::sync::atomic::Ordering;
@@ -7,10 +10,13 @@ use std::time::Duration;
 use anyhow::Result;
 use anyhow::anyhow;
 use chrono::DateTime;
+use chrono::Local;
 use chrono::Utc;
+use codex_config::test_support::CloudConfigBundleFixture;
 use codex_core::SleepFuture;
 use codex_core::TimeFuture;
 use codex_core::TimeProvider;
+use codex_core::TurnInputRequest;
 use codex_core::config::CurrentTimeReminderConfig;
 use codex_features::CurrentTimeReminderDeliveryMode;
 use codex_features::CurrentTimeSource;
@@ -18,6 +24,7 @@ use codex_features::Feature;
 use codex_model_provider_info::built_in_model_providers;
 use codex_protocol::ThreadId;
 use codex_protocol::models::PermissionProfile;
+use codex_protocol::openai_models::ReasoningEffort;
 use codex_protocol::protocol::CodexErrorInfo;
 use codex_protocol::protocol::EventMsg;
 use codex_protocol::protocol::Op;
@@ -26,6 +33,7 @@ use core_test_support::assert_regex_match;
 use core_test_support::responses::ResponsesRequest;
 use core_test_support::responses::ev_assistant_message;
 use core_test_support::responses::ev_completed;
+use core_test_support::responses::ev_completed_with_tokens;
 use core_test_support::responses::ev_function_call;
 use core_test_support::responses::ev_function_call_with_namespace;
 use core_test_support::responses::ev_response_created;
@@ -38,16 +46,34 @@ use core_test_support::test_codex::test_codex;
 use core_test_support::wait_for_event;
 use pretty_assertions::assert_eq;
 use serde_json::json;
+use test_case::test_case;
 
-const FIRST_REMINDER: &str = "It is 2026-06-17 17:34:15 UTC.";
-const EARLIER_REMINDER: &str = "It is 2026-06-17 17:33:15 UTC.";
-const SECOND_REMINDER: &str = "It is 2026-06-17 17:35:15 UTC.";
-const THIRD_REMINDER: &str = "It is 2026-06-17 17:36:15 UTC.";
+const FIRST_REMINDER: &str =
+    "<current_time_reminder>It is 2026-06-17 17:34:15 UTC.</current_time_reminder>";
+const EARLIER_REMINDER: &str =
+    "<current_time_reminder>It is 2026-06-17 17:33:15 UTC.</current_time_reminder>";
+const SECOND_REMINDER: &str =
+    "<current_time_reminder>It is 2026-06-17 17:35:15 UTC.</current_time_reminder>";
+const THIRD_REMINDER: &str =
+    "<current_time_reminder>It is 2026-06-17 17:36:15 UTC.</current_time_reminder>";
+const CLOCK_UNAVAILABLE: &str =
+    "<current_time_unavailable>failed to read current time</current_time_unavailable>";
 const FIRST_TIME_UNIX_SECONDS: i64 = 1_781_717_655;
+
+#[derive(Clone, Copy)]
+enum ClockSetup {
+    Configured,
+    Persistent,
+    OrdinaryEffort,
+    ModelTools,
+    ExplicitlyDisabled,
+    RequiredOff,
+}
 
 struct TestTimeProvider {
     current_time: AtomicI64,
     sleep_seconds: AtomicU64,
+    scripted_current_time: Option<Mutex<VecDeque<Result<i64, &'static str>>>>,
 }
 
 impl Default for TestTimeProvider {
@@ -55,14 +81,24 @@ impl Default for TestTimeProvider {
         Self {
             current_time: AtomicI64::new(FIRST_TIME_UNIX_SECONDS),
             sleep_seconds: AtomicU64::new(0),
+            scripted_current_time: None,
         }
     }
 }
 
 impl TimeProvider for TestTimeProvider {
     fn current_time(&self, _thread_id: ThreadId) -> TimeFuture<'_> {
-        let timestamp = self.current_time.fetch_add(60, Ordering::Relaxed);
+        let timestamp = if let Some(script) = &self.scripted_current_time {
+            script
+                .lock()
+                .expect("test clock script should not be poisoned")
+                .pop_front()
+                .expect("unexpected test clock read")
+        } else {
+            Ok(self.current_time.fetch_add(60, Ordering::Relaxed))
+        };
         Box::pin(async move {
+            let timestamp = timestamp.map_err(anyhow::Error::msg)?;
             Ok(DateTime::<Utc>::from_timestamp(timestamp, 0)
                 .expect("test timestamp should be valid"))
         })
@@ -91,7 +127,7 @@ fn current_time_reminders(request: &ResponsesRequest) -> Vec<String> {
     request
         .message_input_texts("developer")
         .into_iter()
-        .filter(|text| text.starts_with("It is "))
+        .filter(|text| text.starts_with("<current_time_reminder>"))
         .collect()
 }
 
@@ -100,6 +136,7 @@ fn enable_current_time_reminder(
     interval: u64,
     clock_source: CurrentTimeSource,
 ) {
+    config.include_environment_context = false;
     config
         .features
         .enable(Feature::CurrentTimeReminder)
@@ -112,13 +149,64 @@ fn enable_current_time_reminder(
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn environment_context_uses_external_current_time_on_each_turn() -> Result<()> {
+    skip_if_no_network!(Ok(()));
+
+    let server = start_mock_server().await;
+    let responses = mount_sse_sequence(
+        &server,
+        vec![
+            sse(vec![ev_response_created("resp-1"), ev_completed("resp-1")]),
+            sse(vec![ev_response_created("resp-2"), ev_completed("resp-2")]),
+        ],
+    )
+    .await;
+    let time_provider = Arc::new(TestTimeProvider::default());
+    let test = test_codex()
+        .with_config(|config| {
+            enable_current_time_reminder(config, /*interval*/ 0, CurrentTimeSource::External);
+            config.include_environment_context = true;
+        })
+        .with_external_time_provider(time_provider.clone())
+        .build_with_auto_env(&server)
+        .await?;
+
+    test.submit_turn("first simulated day").await?;
+    time_provider
+        .current_time
+        .store(FIRST_TIME_UNIX_SECONDS + 86_400, Ordering::Relaxed);
+    test.submit_turn("second simulated day").await?;
+
+    let requests = responses.requests();
+    assert_eq!(requests.len(), 2);
+    for (request, timestamp) in requests
+        .iter()
+        .zip([FIRST_TIME_UNIX_SECONDS, FIRST_TIME_UNIX_SECONDS + 86_400])
+    {
+        assert!(request.has_content_kinds(&["environments.environment_context"]));
+        let current_date = DateTime::<Utc>::from_timestamp(timestamp, 0)
+            .expect("test timestamp should be valid")
+            .with_timezone(&Local)
+            .format("%Y-%m-%d")
+            .to_string();
+        assert!(request.message_input_texts("user").iter().any(|text| {
+            text.contains("<environment_context>")
+                && text.contains(&format!("<current_date>{current_date}</current_date>"))
+        }));
+    }
+    assert_eq!(current_time_reminders(&requests[0]), vec![SECOND_REMINDER]);
+
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn current_time_reminders_follow_time_interval_and_persist_in_history() -> Result<()> {
     skip_if_no_network!(Ok(()));
 
     let server = start_mock_server().await;
     let tool_args = json!({
-        "command": "echo current time",
-        "timeout_ms": 1_000,
+        "cmd": "echo current time",
+        "yield_time_ms": 1_000,
     });
     let responses = mount_sse_sequence(
         &server,
@@ -127,7 +215,7 @@ async fn current_time_reminders_follow_time_interval_and_persist_in_history() ->
                 ev_response_created("resp-1"),
                 ev_function_call(
                     "current-time-tool-call",
-                    "shell_command",
+                    "exec_command",
                     &serde_json::to_string(&tool_args)?,
                 ),
                 ev_completed("resp-1"),
@@ -208,8 +296,8 @@ async fn current_time_reminders_can_follow_only_user_or_tool_outputs() -> Result
 
     let server = start_mock_server().await;
     let tool_args = json!({
-        "command": "echo current time",
-        "timeout_ms": 1_000,
+        "cmd": "echo current time",
+        "yield_time_ms": 1_000,
     });
     let mut continue_response = ev_completed("resp-2");
     // Ask for another inference without recording a new user message or tool output.
@@ -221,7 +309,7 @@ async fn current_time_reminders_can_follow_only_user_or_tool_outputs() -> Result
                 ev_response_created("resp-1"),
                 ev_function_call(
                     "current-time-tool-call",
-                    "shell_command",
+                    "exec_command",
                     &serde_json::to_string(&tool_args)?,
                 ),
                 ev_completed("resp-1"),
@@ -265,8 +353,14 @@ async fn current_time_reminders_can_follow_only_user_or_tool_outputs() -> Result
     Ok(())
 }
 
+#[test_case(ClockSetup::Configured; "configured")]
+#[test_case(ClockSetup::Persistent; "persistent")]
+#[test_case(ClockSetup::OrdinaryEffort; "ordinary_effort")]
+#[test_case(ClockSetup::ModelTools; "model_tools_without_reminders")]
+#[test_case(ClockSetup::ExplicitlyDisabled; "explicitly_disabled")]
+#[test_case(ClockSetup::RequiredOff; "required_off")]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn system_time_source_adds_current_time_reminder() -> Result<()> {
+async fn system_time_source_adds_current_time_reminder(clock_setup: ClockSetup) -> Result<()> {
     skip_if_no_network!(Ok(()));
 
     let server = start_mock_server().await;
@@ -275,22 +369,190 @@ async fn system_time_source_adds_current_time_reminder() -> Result<()> {
         sse(vec![ev_response_created("resp-1"), ev_completed("resp-1")]),
     )
     .await;
-    let test = test_codex()
-        .with_config(|config| {
-            enable_current_time_reminder(config, /*interval*/ 1, CurrentTimeSource::System)
+    let mut builder = test_codex()
+        .with_model_info_override("gpt-5.5", move |model_info| {
+            if matches!(clock_setup, ClockSetup::Configured | ClockSetup::ModelTools) {
+                model_info
+                    .experimental_supported_tools
+                    .push("clock".to_string());
+            }
         })
-        .build(&server)
-        .await?;
+        .with_pre_build_hook(move |home| {
+            let config = match clock_setup {
+                ClockSetup::Configured => Some("[features]\ncurrent_time_reminder = true\n"),
+                ClockSetup::ModelTools | ClockSetup::ExplicitlyDisabled => {
+                    Some("[features]\ncurrent_time_reminder = false\n")
+                }
+                ClockSetup::Persistent | ClockSetup::OrdinaryEffort | ClockSetup::RequiredOff => {
+                    None
+                }
+            };
+            if let Some(config) = config {
+                std::fs::write(home.join("config.toml"), config)
+                    .expect("clock configuration should be written");
+            }
+        })
+        .with_config(move |config| {
+            config.include_environment_context = false;
+            config.model_reasoning_effort = Some(match clock_setup {
+                ClockSetup::OrdinaryEffort | ClockSetup::ModelTools => ReasoningEffort::High,
+                ClockSetup::Configured
+                | ClockSetup::Persistent
+                | ClockSetup::ExplicitlyDisabled
+                | ClockSetup::RequiredOff => ReasoningEffort::Persistent,
+            });
+        });
+    if matches!(clock_setup, ClockSetup::RequiredOff) {
+        builder = builder.with_cloud_config_bundle(
+            CloudConfigBundleFixture::loader_with_enterprise_requirement(
+                "[features]\ncurrent_time_reminder = false\n",
+            ),
+        );
+    }
+    let test = builder.build_with_auto_env(&server).await?;
 
-    test.submit_turn("what time is it?").await?;
+    test.submit_text_turn("what time is it?").await?;
 
-    let reminders = current_time_reminders(&responses.single_request());
+    let request = responses.single_request();
+    assert_eq!(
+        ["curr_time", "sleep"].map(|name| request.tool_by_name("clock", name).is_some()),
+        match clock_setup {
+            ClockSetup::Configured => [true, false],
+            ClockSetup::Persistent | ClockSetup::ModelTools => [true, true],
+            ClockSetup::OrdinaryEffort
+            | ClockSetup::ExplicitlyDisabled
+            | ClockSetup::RequiredOff => [false, false],
+        }
+    );
+    if matches!(
+        clock_setup,
+        ClockSetup::OrdinaryEffort
+            | ClockSetup::ModelTools
+            | ClockSetup::ExplicitlyDisabled
+            | ClockSetup::RequiredOff
+    ) {
+        assert!(current_time_reminders(&request).is_empty());
+        return Ok(());
+    }
+    assert!(request.has_content_kinds(&["current_time.reminder"]));
+    let reminders = current_time_reminders(&request);
     assert_eq!(reminders.len(), 1);
     assert_regex_match(
-        r"^It is \d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} UTC\.$",
+        r"^<current_time_reminder>It is \d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} UTC\.</current_time_reminder>$",
         &reminders[0],
     );
 
+    Ok(())
+}
+
+#[test_case(ReasoningEffort::High, true; "model_enabled")]
+#[test_case(ReasoningEffort::High, false; "model_disabled")]
+#[test_case(ReasoningEffort::Persistent, true; "persistent_enabled")]
+#[test_case(ReasoningEffort::Persistent, false; "persistent_disabled")]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn client_feature_map_can_disable_sleep_tool(
+    reasoning_effort: ReasoningEffort,
+    sleep_tool_enabled: bool,
+) -> Result<()> {
+    skip_if_no_network!(Ok(()));
+    let reminders_enabled = reasoning_effort == ReasoningEffort::Persistent;
+
+    let server = start_mock_server().await;
+    let responses = mount_sse_once(
+        &server,
+        sse(vec![ev_response_created("resp-1"), ev_completed("resp-1")]),
+    )
+    .await;
+    let test = test_codex()
+        .with_model_info_override("gpt-5.5", |model_info| {
+            model_info
+                .experimental_supported_tools
+                .push("clock".to_string());
+        })
+        .with_config(move |config| {
+            config.model_reasoning_effort = Some(reasoning_effort);
+            let mut features = config.features.get().clone();
+            features.apply_map(&BTreeMap::from([(
+                "sleep_tool".to_string(),
+                sleep_tool_enabled,
+            )]));
+            config
+                .features
+                .set(features)
+                .expect("test features should be allowed");
+        })
+        .build_with_auto_env(&server)
+        .await?;
+
+    test.submit_text_turn("what time is it?").await?;
+
+    let request = responses.single_request();
+    assert_eq!(
+        ["curr_time", "sleep"].map(|name| request.tool_by_name("clock", name).is_some()),
+        [true, sleep_tool_enabled]
+    );
+    assert_eq!(
+        current_time_reminders(&request).is_empty(),
+        !reminders_enabled
+    );
+    Ok(())
+}
+
+#[test_case("[features]\nsleep_tool = true", Some(true), [true, true]; "boolean_enabled")]
+#[test_case("[features]\nsleep_tool = false", Some(true), [true, false]; "boolean_disabled")]
+#[test_case("[features.sleep_tool]\nmode = 'always_on'", None, [false, true]; "always_on_without_model_clock")]
+#[test_case("[features.sleep_tool]\nenabled = false\nmode = 'always_on'", Some(true), [true, false]; "disabled_overrides_always_on")]
+#[test_case("[features.sleep_tool]\nmode = 'model_driven'", None, [false, false]; "model_driven_without_model_clock")]
+#[test_case("[features.sleep_tool]\nmode = 'model_driven'", Some(false), [true, false]; "model_driven_preserves_legacy_disable")]
+#[test_case("[features.sleep_tool]\nmode = 'always_on'", Some(false), [true, true]; "always_on_overrides_legacy_disable")]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn sleep_tool_configuration_controls_registration(
+    sleep_config: &str,
+    legacy_sleep_tool: Option<bool>,
+    expected_tools: [bool; 2],
+) -> Result<()> {
+    skip_if_no_network!(Ok(()));
+
+    let server = start_mock_server().await;
+    let responses = mount_sse_once(
+        &server,
+        sse(vec![ev_response_created("resp-1"), ev_completed("resp-1")]),
+    )
+    .await;
+    let mut config_toml = sleep_config.to_string();
+    if let Some(sleep_tool) = legacy_sleep_tool {
+        config_toml.push_str(&format!(
+            "\n[features.current_time_reminder]\nenabled = true\nsleep_tool = {sleep_tool}\n"
+        ));
+    }
+    let test = test_codex()
+        .with_model_info_override("gpt-5.5", |model_info| {
+            model_info
+                .experimental_supported_tools
+                .retain(|tool| tool != "clock");
+        })
+        .with_pre_build_hook(move |home| {
+            std::fs::write(home.join("config.toml"), config_toml)
+                .expect("sleep tool configuration should be written");
+        })
+        .with_config(|config| {
+            config.model_reasoning_effort = Some(ReasoningEffort::High);
+        })
+        .build_with_auto_env(&server)
+        .await?;
+
+    test.submit_text_turn("check the available clock tools")
+        .await?;
+
+    let request = responses.single_request();
+    assert_eq!(
+        ["curr_time", "sleep"].map(|name| request.tool_by_name("clock", name).is_some()),
+        expected_tools
+    );
+    assert_eq!(
+        current_time_reminders(&request).is_empty(),
+        legacy_sleep_tool.is_none()
+    );
     Ok(())
 }
 
@@ -335,9 +597,7 @@ async fn current_time_reminder_is_refreshed_after_compaction() -> Result<()> {
         .await?;
 
     test.submit_turn("before compact").await?;
-    test.codex
-        .submit(Op::Compact { instructions: None })
-        .await?;
+    test.codex.submit(Op::Compact).await?;
     wait_for_event(&test.codex, |event| {
         matches!(event, EventMsg::TurnComplete(_))
     })
@@ -370,23 +630,18 @@ async fn time_provider_failure_stops_before_inference() -> Result<()> {
     .await;
     let test = test_codex()
         .with_config(|config| {
-            enable_current_time_reminder(config, /*interval*/ 1, CurrentTimeSource::External)
+            enable_current_time_reminder(config, /*interval*/ 1, CurrentTimeSource::External);
+            config.include_environment_context = true;
         })
         .with_external_time_provider(Arc::new(FailingTimeProvider))
-        .build(&server)
+        .build_with_auto_env(&server)
         .await?;
 
     test.codex
-        .submit(Op::UserInput {
-            items: vec![UserInput::Text {
-                text: "fail before inference".into(),
-                text_elements: Vec::new(),
-            }],
-            final_output_json_schema: None,
-            responsesapi_client_metadata: None,
-            additional_context: Default::default(),
-            thread_settings: Default::default(),
-        })
+        .start_or_steer_turn(TurnInputRequest::user_input(vec![UserInput::Text {
+            text: "fail before inference".into(),
+            text_elements: Vec::new(),
+        }]))
         .await?;
 
     let EventMsg::Error(error) =
@@ -406,6 +661,160 @@ async fn time_provider_failure_stops_before_inference() -> Result<()> {
     .await;
     assert!(responses.requests().is_empty());
 
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn opted_in_clock_failures_reach_the_model_without_aborting() -> Result<()> {
+    skip_if_no_network!(Ok(()));
+
+    const CALL_ID: &str = "failed-current-time";
+    let server = start_mock_server().await;
+    let responses = mount_sse_sequence(
+        &server,
+        vec![
+            sse(vec![
+                ev_response_created("resp-1"),
+                ev_function_call_with_namespace(CALL_ID, "clock", "curr_time", "{}"),
+                ev_completed_with_tokens("resp-1", /*total_tokens*/ 80),
+            ]),
+            sse(vec![
+                ev_response_created("resp-2"),
+                ev_function_call_with_namespace("clock-before-compact", "clock", "curr_time", "{}"),
+                ev_completed_with_tokens("resp-2", /*total_tokens*/ 500),
+            ]),
+            sse(vec![
+                ev_response_created("resp-compact"),
+                ev_assistant_message("msg-compact", "compact summary"),
+                ev_completed("resp-compact"),
+            ]),
+            sse(vec![
+                ev_response_created("resp-3"),
+                ev_completed_with_tokens("resp-3", /*total_tokens*/ 80),
+            ]),
+        ],
+    )
+    .await;
+    let mut model_provider = built_in_model_providers(/*openai_base_url*/ None)["openai"].clone();
+    model_provider.name = "OpenAI-compatible test provider".to_string();
+    model_provider.base_url = Some(format!("{}/v1", server.uri()));
+    model_provider.supports_websockets = false;
+    let test = test_codex()
+        .with_config(move |config| {
+            config.model_provider = model_provider;
+            config.model_auto_compact_token_limit = Some(200);
+            enable_current_time_reminder(config, /*interval*/ 0, CurrentTimeSource::External);
+            config.include_environment_context = true;
+            config
+                .features
+                .enable(Feature::NonfatalClockReadErrors)
+                .unwrap();
+        })
+        .with_external_time_provider(Arc::new(FailingTimeProvider))
+        .build_with_auto_env(&server)
+        .await?;
+
+    test.submit_turn("continue in a new context window").await?;
+
+    let requests = responses.requests();
+    assert_eq!(requests.len(), 4);
+    assert_eq!(
+        requests[1].function_call_output_text(CALL_ID),
+        Some("failed to read current time".to_string()),
+    );
+    for index in [0, 1, 3] {
+        let request = &requests[index];
+        let developer_messages = request.message_input_texts("developer");
+        assert_eq!(
+            developer_messages
+                .iter()
+                .map(|text| text.matches(CLOCK_UNAVAILABLE).count())
+                .sum::<usize>(),
+            1,
+            "request {index} developer messages: {developer_messages:?}",
+        );
+        assert!(current_time_reminders(request).is_empty());
+        assert!(
+            !request
+                .message_input_texts("user")
+                .iter()
+                .any(|text| text.contains("<current_date>"))
+        );
+    }
+    Ok(())
+}
+
+/// Consecutive failures share one notice, but a new outage after recovery is reported in the same turn.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn opted_in_clock_failures_are_reported_again_after_recovery() -> Result<()> {
+    skip_if_no_network!(Ok(()));
+
+    let server = start_mock_server().await;
+    let mut model_responses = Vec::new();
+    for (response_id, message_id) in [
+        ("resp-1", "msg-1"),
+        ("resp-2", "msg-2"),
+        ("resp-3", "msg-3"),
+    ] {
+        let mut completion = ev_completed(response_id);
+        completion["response"]["end_turn"] = json!(false);
+        model_responses.push(sse(vec![
+            ev_response_created(response_id),
+            ev_assistant_message(message_id, "continue"),
+            completion,
+        ]));
+    }
+    model_responses.push(sse(vec![
+        ev_response_created("resp-4"),
+        ev_completed("resp-4"),
+    ]));
+    let responses = mount_sse_sequence(&server, model_responses).await;
+    let clock = TestTimeProvider {
+        scripted_current_time: Some(Mutex::new(VecDeque::from([
+            Err("test clock unavailable"),
+            Err("test clock unavailable"),
+            Ok(FIRST_TIME_UNIX_SECONDS),
+            Err("test clock unavailable"),
+        ]))),
+        ..TestTimeProvider::default()
+    };
+    let test = test_codex()
+        .with_config(|config| {
+            enable_current_time_reminder(config, /*interval*/ 0, CurrentTimeSource::External);
+            config
+                .features
+                .enable(Feature::NonfatalClockReadErrors)
+                .unwrap();
+        })
+        .with_external_time_provider(Arc::new(clock))
+        .build_with_auto_env(&server)
+        .await?;
+
+    test.submit_turn("keep going while the clock changes")
+        .await?;
+
+    let clock_messages = responses
+        .requests()
+        .iter()
+        .map(|request| {
+            request
+                .message_input_texts("developer")
+                .into_iter()
+                .filter(|text| {
+                    text == CLOCK_UNAVAILABLE || text.starts_with("<current_time_reminder>")
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        clock_messages,
+        vec![
+            vec![CLOCK_UNAVAILABLE],
+            vec![CLOCK_UNAVAILABLE],
+            vec![CLOCK_UNAVAILABLE, FIRST_REMINDER],
+            vec![CLOCK_UNAVAILABLE, FIRST_REMINDER, CLOCK_UNAVAILABLE],
+        ]
+    );
     Ok(())
 }
 
@@ -449,7 +858,7 @@ async fn current_time_tool_returns_the_latest_time() -> Result<()> {
     );
     assert_eq!(
         requests[1].function_call_output_text(CALL_ID),
-        Some(SECOND_REMINDER.to_string())
+        Some("It is 2026-06-17 17:35:15 UTC.".to_string())
     );
 
     Ok(())

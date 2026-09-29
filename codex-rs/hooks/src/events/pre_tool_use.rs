@@ -1,4 +1,3 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use std::path::PathBuf;
 
 use codex_protocol::ThreadId;
@@ -12,11 +11,12 @@ use codex_utils_absolute_path::AbsolutePathBuf;
 use serde_json::Value;
 
 use super::common;
-use crate::engine::CommandShell;
+use crate::engine::ClaudeHooksEngine;
 use crate::engine::ConfiguredHandler;
-use crate::engine::command_runner::CommandRunResult;
+use crate::engine::HandlerRunResult;
 use crate::engine::dispatcher;
 use crate::engine::output_parser;
+use crate::output_spill::AdditionalContext;
 use crate::schema::PreToolUseCommandInput;
 use crate::schema::SubagentCommandInputFields;
 
@@ -48,7 +48,7 @@ pub struct PreToolUseOutcome {
 struct PreToolUseHandlerData {
     should_block: bool,
     block_reason: Option<String>,
-    additional_contexts_for_model: Vec<String>,
+    additional_contexts_for_model: Vec<AdditionalContext>,
     updated_input: Option<Value>,
 }
 
@@ -70,13 +70,12 @@ pub(crate) fn preview(
 }
 
 pub(crate) async fn run(
-    handlers: &[ConfiguredHandler],
-    shell: &CommandShell,
+    engine: &ClaudeHooksEngine,
     request: PreToolUseRequest,
 ) -> PreToolUseOutcome {
     let matcher_inputs = common::matcher_inputs(&request.tool_name, &request.matcher_aliases);
     let matched = dispatcher::select_handlers_for_matcher_inputs(
-        handlers,
+        &engine.handlers,
         HookEventName::PreToolUse,
         &matcher_inputs,
     );
@@ -104,7 +103,7 @@ pub(crate) async fn run(
     };
 
     let results = dispatcher::execute_handlers(
-        shell,
+        engine,
         matched,
         input_json,
         request.cwd.as_path(),
@@ -122,6 +121,11 @@ pub(crate) async fn run(
             .iter()
             .map(|result| result.data.additional_contexts_for_model.as_slice()),
     );
+    let additional_contexts = engine
+        .command_runtime
+        .output_spiller()
+        .maybe_spill_additional_contexts(additional_contexts)
+        .await;
     let updated_input = if should_block {
         None
     } else {
@@ -188,7 +192,7 @@ fn command_input_json(request: &PreToolUseRequest) -> Result<String, serde_json:
 
 fn parse_completed(
     handler: &ConfiguredHandler,
-    run_result: CommandRunResult,
+    run_result: HandlerRunResult,
     turn_id: Option<String>,
 ) -> dispatcher::ParsedHandler<PreToolUseHandlerData> {
     let mut entries = Vec::new();
@@ -217,21 +221,24 @@ fn parse_completed(
                             text: system_message,
                         });
                     }
-                    if let Some(invalid_reason) = parsed.invalid_reason {
-                        status = HookRunStatus::Failed;
-                        entries.push(HookOutputEntry {
-                            kind: HookOutputEntryKind::Error,
-                            text: invalid_reason,
-                        });
-                    } else {
-                        if let Some(additional_context) = parsed.additional_context {
-                            common::append_additional_context(
-                                &mut entries,
-                                &mut additional_contexts_for_model,
-                                additional_context,
-                            );
-                        }
-                        if let Some(reason) = parsed.block_reason {
+                    if (!handler.can_apply_control_effects() || parsed.invalid_reason.is_none())
+                        && let Some(additional_context) = parsed.additional_context
+                    {
+                        common::append_additional_context(
+                            &mut entries,
+                            &mut additional_contexts_for_model,
+                            handler,
+                            additional_context,
+                        );
+                    }
+                    if handler.can_apply_control_effects() {
+                        if let Some(invalid_reason) = parsed.invalid_reason {
+                            status = HookRunStatus::Failed;
+                            entries.push(HookOutputEntry {
+                                kind: HookOutputEntryKind::Error,
+                                text: invalid_reason,
+                            });
+                        } else if let Some(reason) = parsed.block_reason {
                             status = HookRunStatus::Blocked;
                             should_block = true;
                             block_reason = Some(reason.clone());
@@ -239,8 +246,7 @@ fn parse_completed(
                                 kind: HookOutputEntryKind::Feedback,
                                 text: reason,
                             });
-                        }
-                        if !should_block {
+                        } else {
                             updated_input = parsed.updated_input;
                         }
                     }
@@ -252,7 +258,7 @@ fn parse_completed(
                     });
                 }
             }
-            Some(2) => {
+            Some(2) if handler.can_apply_control_effects() => {
                 if let Some(reason) = common::trimmed_non_empty(&run_result.stderr) {
                     status = HookRunStatus::Blocked;
                     should_block = true;
@@ -330,8 +336,10 @@ mod tests {
     use super::parse_completed;
     use super::preview;
     use crate::engine::ConfiguredHandler;
-    use crate::engine::command_runner::CommandRunResult;
+    use crate::engine::HandlerRunResult;
     use crate::events::common;
+    use crate::output_spill::AdditionalContext;
+    use crate::output_spill::AdditionalContextLimit;
 
     #[test]
     fn command_input_uses_request_tool_name() {
@@ -402,31 +410,6 @@ mod tests {
     }
 
     #[test]
-    fn updated_input_without_permission_decision_can_update_input() {
-        let parsed = parse_completed(
-            &handler(),
-            run_result(
-                Some(0),
-                r#"{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecisionReason":"RTK auto-rewrite","updatedInput":{"command":"rtk git status"}}}"#,
-                "",
-            ),
-            Some("turn-1".to_string()),
-        );
-
-        assert_eq!(
-            parsed.data,
-            PreToolUseHandlerData {
-                should_block: false,
-                block_reason: None,
-                additional_contexts_for_model: Vec::new(),
-                updated_input: Some(serde_json::json!({ "command": "rtk git status" })),
-            }
-        );
-        assert_eq!(parsed.completed.run.status, HookRunStatus::Completed);
-        assert_eq!(parsed.completed.run.entries, vec![]);
-    }
-
-    #[test]
     fn last_completed_updated_input_wins() {
         let mut later_configured = parse_completed(
             &handler(),
@@ -457,13 +440,10 @@ mod tests {
 
     #[test]
     fn permission_decision_allow_without_updated_input_fails_open() {
+        let stdout = r#"{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"allow","additionalContext":"preserved"}}"#;
         let parsed = parse_completed(
             &handler(),
-            run_result(
-                Some(0),
-                r#"{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"allow"}}"#,
-                "",
-            ),
+            run_result(Some(0), stdout, ""),
             Some("turn-1".to_string()),
         );
 
@@ -483,6 +463,21 @@ mod tests {
                 kind: HookOutputEntryKind::Error,
                 text: "PreToolUse hook returned unsupported permissionDecision:allow".to_string(),
             }]
+        );
+
+        let async_handler = handler_with_async(/*async*/ true);
+        let parsed = parse_completed(
+            &async_handler,
+            run_result(Some(0), stdout, ""),
+            Some("turn-1".to_string()),
+        );
+        assert_eq!(parsed.completed.run.status, HookRunStatus::Completed);
+        assert_eq!(
+            parsed.completed.run.entries,
+            vec![HookOutputEntry {
+                kind: HookOutputEntryKind::Context,
+                text: "preserved".to_string(),
+            }],
         );
     }
 
@@ -534,7 +529,10 @@ mod tests {
             PreToolUseHandlerData {
                 should_block: true,
                 block_reason: Some("do not run that".to_string()),
-                additional_contexts_for_model: vec!["remember this".to_string()],
+                additional_contexts_for_model: vec![AdditionalContext {
+                    text: "remember this".to_string(),
+                    limit: Default::default(),
+                }],
                 updated_input: None,
             }
         );
@@ -614,8 +612,10 @@ mod tests {
 
     #[test]
     fn additional_context_is_recorded() {
+        let mut handler = handler();
+        handler.additional_context_limit = AdditionalContextLimit::from_config(Some(13));
         let parsed = parse_completed(
-            &handler(),
+            &handler,
             run_result(
                 Some(0),
                 r#"{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"do not run that","additionalContext":"nope"}}"#,
@@ -629,7 +629,10 @@ mod tests {
             PreToolUseHandlerData {
                 should_block: true,
                 block_reason: Some("do not run that".to_string()),
-                additional_contexts_for_model: vec!["nope".to_string()],
+                additional_contexts_for_model: vec![AdditionalContext {
+                    text: "nope".to_string(),
+                    limit: AdditionalContextLimit::from_config(Some(13)),
+                }],
                 updated_input: None,
             }
         );
@@ -765,21 +768,30 @@ mod tests {
     }
 
     fn handler() -> ConfiguredHandler {
+        handler_with_async(/*async*/ false)
+    }
+
+    fn handler_with_async(r#async: bool) -> ConfiguredHandler {
         ConfiguredHandler {
+            builtin: false,
             event_name: HookEventName::PreToolUse,
             matcher: Some("^Bash$".to_string()),
-            command: "echo hook".to_string(),
             timeout_sec: 5,
             status_message: None,
-            source_path: test_path_buf("/tmp/hooks.json").abs(),
+            additional_context_limit: Default::default(),
+            source_path: test_path_buf("/tmp/hooks.json").abs().into(),
             source: codex_protocol::protocol::HookSource::User,
             display_order: 0,
-            env: std::collections::HashMap::new(),
+            kind: crate::engine::ConfiguredHandlerKind::Command {
+                command: "echo hook".to_string(),
+                r#async,
+                env: std::collections::HashMap::new(),
+            },
         }
     }
 
-    fn run_result(exit_code: Option<i32>, stdout: &str, stderr: &str) -> CommandRunResult {
-        CommandRunResult {
+    fn run_result(exit_code: Option<i32>, stdout: &str, stderr: &str) -> HandlerRunResult {
+        HandlerRunResult {
             started_at: 1,
             completed_at: 2,
             duration_ms: 1,

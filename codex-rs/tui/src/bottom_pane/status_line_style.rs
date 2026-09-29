@@ -1,14 +1,17 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 //! Theme-derived styling for the configurable footer statusline.
 
-use ratatui::prelude::Stylize;
 use ratatui::style::Color;
 use ratatui::style::Style;
+use ratatui::style::Styled;
 use ratatui::text::Line;
 use ratatui::text::Span;
 
 use super::status_line_setup::StatusLineItem;
 use crate::render::highlight::foreground_style_for_scopes;
+use crate::style::readable_color_on;
+use crate::style::secondary_text_style;
+use crate::thread_color::thread_color;
+use codex_protocol::ThreadId;
 
 const STATUS_LINE_SEPARATOR: &str = " · ";
 const STATUS_LINE_COLOR_SATURATION_PERCENT: u16 = 85;
@@ -44,13 +47,19 @@ impl StatusLineAccent {
             | StatusLineItem::ContextWindowSize
             | StatusLineItem::UsedTokens
             | StatusLineItem::TotalInputTokens
-            | StatusLineItem::TotalOutputTokens => Self::Usage,
+            | StatusLineItem::TotalOutputTokens
+            | StatusLineItem::ThreadCredits
+            | StatusLineItem::EstimatedThreadCost => Self::Usage,
             StatusLineItem::FiveHourLimit | StatusLineItem::WeeklyLimit => Self::Limit,
-            StatusLineItem::CodexVersion | StatusLineItem::SessionId => Self::Metadata,
+            StatusLineItem::CodexVersion | StatusLineItem::Hostname | StatusLineItem::SessionId => {
+                Self::Metadata
+            }
             StatusLineItem::FastMode | StatusLineItem::RawOutput => Self::Mode,
             StatusLineItem::Permissions => Self::Mode,
             StatusLineItem::ApprovalMode => Self::Mode,
-            StatusLineItem::ThreadTitle | StatusLineItem::WorkspaceHeadline => Self::Thread,
+            StatusLineItem::ThreadName
+            | StatusLineItem::ThreadTitle
+            | StatusLineItem::WorkspaceHeadline => Self::Thread,
             StatusLineItem::TaskProgress => Self::Progress,
         }
     }
@@ -71,55 +80,23 @@ impl StatusLineAccent {
     }
 
     fn fallback_style(self) -> Style {
-        let _ = self;
-        Style::default().cyan()
+        match self {
+            Self::Model | Self::State | Self::Metadata | Self::Mode => Style::default().cyan(),
+            Self::Path | Self::Usage | Self::Progress => Style::default().green(),
+            Self::Branch | Self::Limit | Self::Thread => Style::default().magenta(),
+        }
     }
 }
 
 pub(crate) fn status_line_from_segments<I>(
     segments: I,
     use_theme_colors: bool,
+    thread_id: Option<ThreadId>,
 ) -> Option<Line<'static>>
 where
     I: IntoIterator<Item = (StatusLineItem, String)>,
 {
-    let segments = segments.into_iter().collect::<Vec<_>>();
-    let model_hint = segments.iter().find_map(|(item, value)| {
-        matches!(
-            item,
-            StatusLineItem::ModelName | StatusLineItem::ModelWithReasoning
-        )
-        .then(|| value.clone())
-    });
-    let tail = status_line_preview_from_segments(
-        segments.into_iter().filter(|(item, _)| {
-            !matches!(
-                item,
-                StatusLineItem::ModelName
-                    | StatusLineItem::ModelWithReasoning
-                    | StatusLineItem::ContextRemaining
-                    | StatusLineItem::ContextUsed
-                    | StatusLineItem::ContextWindowSize
-                    | StatusLineItem::UsedTokens
-            )
-        }),
-        use_theme_colors,
-    );
-
-    Some(crate::branding::decorate_status_line(
-        tail,
-        model_hint.as_deref(),
-    ))
-}
-
-pub(crate) fn status_line_preview_from_segments<I>(
-    segments: I,
-    use_theme_colors: bool,
-) -> Option<Line<'static>>
-where
-    I: IntoIterator<Item = (StatusLineItem, String)>,
-{
-    status_line_from_segments_with_resolver(segments, use_theme_colors, |accent| {
+    status_line_from_segments_with_resolver(segments, use_theme_colors, thread_id, |accent| {
         foreground_style_for_scopes(accent.scopes())
     })
 }
@@ -127,6 +104,7 @@ where
 fn status_line_from_segments_with_resolver<I, F>(
     segments: I,
     use_theme_colors: bool,
+    thread_id: Option<ThreadId>,
     theme_style_for_accent: F,
 ) -> Option<Line<'static>>
 where
@@ -136,15 +114,31 @@ where
     let mut spans = Vec::new();
     for (item, text) in segments {
         if !spans.is_empty() {
-            spans.push(STATUS_LINE_SEPARATOR.dim());
+            spans.push(STATUS_LINE_SEPARATOR.set_style(secondary_text_style()));
         }
-        let style = if use_theme_colors {
+        let style = if use_theme_colors
+            && matches!(
+                item,
+                StatusLineItem::ThreadName | StatusLineItem::ThreadTitle
+            )
+            && let Some(thread_id) = thread_id
+        {
+            Style::default().fg(thread_color(thread_id))
+        } else if use_theme_colors {
             let accent = StatusLineAccent::for_item(item);
             soften_status_line_style(
                 theme_style_for_accent(accent).unwrap_or_else(|| accent.fallback_style()),
             )
         } else {
-            Style::default().dim()
+            secondary_text_style()
+        };
+        let style = if use_theme_colors {
+            style.fg(readable_color_on(
+                style.fg.unwrap_or(Color::Reset),
+                /*background*/ None,
+            ))
+        } else {
+            style
         };
         let style = if item == StatusLineItem::PullRequestNumber {
             style.underlined()
@@ -177,7 +171,7 @@ fn soften_status_line_color(color: Color) -> Color {
         }
         Color::LightRed => Color::Red,
         Color::LightGreen => Color::Green,
-        Color::LightYellow | Color::Yellow => Color::Cyan,
+        Color::LightYellow => Color::Yellow,
         Color::LightBlue => Color::Blue,
         Color::LightMagenta => Color::Magenta,
         Color::LightCyan => Color::Cyan,
@@ -186,6 +180,7 @@ fn soften_status_line_color(color: Color) -> Color {
         | Color::Black
         | Color::Red
         | Color::Green
+        | Color::Yellow
         | Color::Blue
         | Color::Magenta
         | Color::Cyan
@@ -231,6 +226,7 @@ mod tests {
                 (StatusLineItem::GitBranch, "main".to_string()),
             ],
             /*use_theme_colors*/ true,
+            /*thread_id*/ None,
             |_| None,
         )
         .expect("status line");
@@ -238,20 +234,21 @@ mod tests {
         assert_eq!(line_text(&line), "gpt-5 · /repo · main");
         assert_eq!(line.spans[0].style.fg, Some(Color::Cyan));
         assert!(!line.spans[0].style.add_modifier.contains(Modifier::DIM));
-        assert_eq!(line.spans[2].style.fg, Some(Color::Cyan));
+        assert_eq!(line.spans[2].style.fg, Some(Color::Green));
         assert!(!line.spans[2].style.add_modifier.contains(Modifier::DIM));
-        assert_eq!(line.spans[4].style.fg, Some(Color::Cyan));
+        assert_eq!(line.spans[4].style.fg, Some(Color::Magenta));
         assert!(!line.spans[4].style.add_modifier.contains(Modifier::DIM));
     }
 
     #[test]
-    fn status_line_segments_dim_separators_and_use_theme_styles_first() {
+    fn status_line_segments_use_secondary_separators_and_theme_styles_first() {
         let line = status_line_from_segments_with_resolver(
             [
                 (StatusLineItem::ModelName, "gpt-5".to_string()),
                 (StatusLineItem::ContextUsed, "Context 12% used".to_string()),
             ],
             /*use_theme_colors*/ true,
+            /*thread_id*/ None,
             |accent| match accent {
                 StatusLineAccent::Model => Some(Style::default().red()),
                 _ => None,
@@ -261,9 +258,27 @@ mod tests {
 
         assert_eq!(line.spans[0].style.fg, Some(Color::Red));
         assert!(!line.spans[0].style.add_modifier.contains(Modifier::DIM));
-        assert!(line.spans[1].style.add_modifier.contains(Modifier::DIM));
-        assert_eq!(line.spans[2].style.fg, Some(Color::Cyan));
+        assert_eq!(line.spans[1].style, secondary_text_style());
+        assert_eq!(line.spans[2].style.fg, Some(Color::Green));
         assert!(!line.spans[2].style.add_modifier.contains(Modifier::DIM));
+    }
+
+    #[test]
+    fn thread_usage_items_share_an_accent_and_secondary_separator() {
+        let line = status_line_from_segments_with_resolver(
+            [
+                (StatusLineItem::ThreadCredits, "5.2 credits".to_string()),
+                (StatusLineItem::EstimatedThreadCost, "~$0.21".to_string()),
+            ],
+            /*use_theme_colors*/ true,
+            /*thread_id*/ None,
+            |_| None,
+        )
+        .expect("thread usage status line");
+
+        assert_eq!(line_text(&line), "5.2 credits · ~$0.21");
+        assert_eq!(line.spans[0].style, line.spans[2].style);
+        assert_eq!(line.spans[1].style, secondary_text_style());
     }
 
     #[test]
@@ -272,11 +287,18 @@ mod tests {
         let line = status_line_from_segments_with_resolver(
             [(StatusLineItem::ModelName, "gpt-5".to_string())],
             /*use_theme_colors*/ true,
+            /*thread_id*/ None,
             |_| Some(Style::default().fg(Color::Rgb(255, 0, 0))),
         )
         .expect("status line");
 
-        assert_eq!(line.spans[0].style.fg, Some(Color::Rgb(228, 11, 11)));
+        assert_eq!(
+            line.spans[0].style.fg,
+            Some(readable_color_on(
+                Color::Rgb(228, 11, 11),
+                /*background*/ None
+            ))
+        );
         assert!(!line.spans[0].style.add_modifier.contains(Modifier::DIM));
     }
 
@@ -288,16 +310,15 @@ mod tests {
                 (StatusLineItem::ContextUsed, "Context 12% used".to_string()),
             ],
             /*use_theme_colors*/ false,
+            /*thread_id*/ None,
             |_| Some(Style::default().red()),
         )
         .expect("status line");
 
         assert_eq!(line_text(&line), "gpt-5 · Context 12% used");
-        assert_eq!(line.spans[0].style.fg, None);
-        assert!(line.spans[0].style.add_modifier.contains(Modifier::DIM));
-        assert!(line.spans[1].style.add_modifier.contains(Modifier::DIM));
-        assert_eq!(line.spans[2].style.fg, None);
-        assert!(line.spans[2].style.add_modifier.contains(Modifier::DIM));
+        assert_eq!(line.spans[0].style, secondary_text_style());
+        assert_eq!(line.spans[1].style, secondary_text_style());
+        assert_eq!(line.spans[2].style, secondary_text_style());
     }
 
     #[test]
@@ -305,18 +326,12 @@ mod tests {
         let line = status_line_from_segments_with_resolver(
             [(StatusLineItem::PullRequestNumber, "PR #20252".to_string())],
             /*use_theme_colors*/ false,
+            /*thread_id*/ None,
             |_| None,
         )
         .expect("status line");
 
-        assert_eq!(line.spans[0].style.fg, None);
-        assert!(line.spans[0].style.add_modifier.contains(Modifier::DIM));
-        assert!(
-            line.spans[0]
-                .style
-                .add_modifier
-                .contains(Modifier::UNDERLINED)
-        );
+        assert_eq!(line.spans[0].style, secondary_text_style().underlined());
     }
 
     #[test]
@@ -325,9 +340,51 @@ mod tests {
             status_line_from_segments_with_resolver(
                 Vec::<(StatusLineItem, String)>::new(),
                 /*use_theme_colors*/ true,
+                /*thread_id*/ None,
                 |_| None,
             ),
             None
         );
+    }
+
+    #[test]
+    fn light_status_line_corrects_pale_custom_theme_colors() {
+        use ratatui::buffer::Buffer;
+        use ratatui::layout::Rect;
+        use ratatui::widgets::Widget;
+
+        let colors = crate::terminal_probe::DefaultColors {
+            fg: (30, 30, 30),
+            bg: (255, 255, 255),
+        };
+        crate::terminal_palette::with_test_default_colors(colors, || {
+            let line = status_line_from_segments_with_resolver(
+                [
+                    (StatusLineItem::ModelName, "gpt-5".to_string()),
+                    (StatusLineItem::CurrentDir, "~/code".to_string()),
+                    (
+                        StatusLineItem::Permissions,
+                        "Custom permissions".to_string(),
+                    ),
+                ],
+                /*use_theme_colors*/ true,
+                /*thread_id*/ None,
+                |accent| {
+                    let rgb = match accent {
+                        StatusLineAccent::Model => (240, 210, 160),
+                        StatusLineAccent::Path => (190, 230, 180),
+                        _ => (215, 180, 240),
+                    };
+                    Some(Style::default().fg(crate::terminal_palette::rgb_color(rgb)))
+                },
+            )
+            .expect("status line");
+            let area = Rect::new(
+                /*x*/ 0, /*y*/ 0, /*width*/ 42, /*height*/ 1,
+            );
+            let mut buffer = Buffer::empty(area);
+            line.render(area, &mut buffer);
+            insta::assert_snapshot!(format!("{buffer:?}"));
+        });
     }
 }

@@ -1,4 +1,3 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use std::collections::BTreeMap;
 use std::collections::HashMap;
 
@@ -54,6 +53,7 @@ fn evaluator_reuses_one_snapshot_across_tools() {
                         "events/create".to_string(),
                         AppToolRequirementToml {
                             approval_mode: Some(AppToolApproval::Approve),
+                            ..Default::default()
                         },
                     )]),
                 }),
@@ -189,6 +189,61 @@ fn app_enablement_uses_defaults_and_per_app_overrides() {
             app_is_enabled(&apps_config, /*connector_id*/ None),
         ],
         [true, false, false]
+    );
+
+    let evaluator = AppToolPolicyEvaluator::from_parts(
+        Some(apps_config),
+        /*requirements_apps_config*/ None,
+    );
+    assert_eq!(
+        evaluator.apply_app_enabled_state(vec![
+            app("calendar", /*enabled*/ false),
+            app("drive", /*enabled*/ true),
+        ]),
+        vec![
+            app("calendar", /*enabled*/ true),
+            app("drive", /*enabled*/ false),
+        ]
+    );
+}
+
+#[test]
+fn app_enablement_preserves_source_state_and_honors_local_and_managed_overrides() {
+    let apps_config = AppsConfigToml {
+        default: None,
+        apps: HashMap::from([
+            (
+                "calendar".to_string(),
+                AppConfig {
+                    enabled: true,
+                    ..Default::default()
+                },
+            ),
+            (
+                "drive".to_string(),
+                AppConfig {
+                    enabled: true,
+                    ..Default::default()
+                },
+            ),
+        ]),
+    };
+    let requirements = app_enabled_requirement("drive", /*enabled*/ false);
+    let evaluator = AppToolPolicyEvaluator::from_parts(Some(apps_config), Some(&requirements));
+
+    assert_eq!(
+        evaluator.apply_app_enabled_state(vec![
+            app("calendar", /*enabled*/ false),
+            app("drive", /*enabled*/ true),
+            app("slack", /*enabled*/ false),
+            app("gmail", /*enabled*/ true),
+        ]),
+        vec![
+            app("calendar", /*enabled*/ true),
+            app("drive", /*enabled*/ false),
+            app("slack", /*enabled*/ false),
+            app("gmail", /*enabled*/ true),
+        ]
     );
 }
 
@@ -435,6 +490,112 @@ fn managed_approval_overrides_user_tool_approval() {
 }
 
 #[test]
+fn link_privacy_mode_overrides_app_default_and_preserves_tool_settings() {
+    let apps_config = serde_json::from_value(serde_json::json!({
+        "calendar": {
+            "default_tools_approval_mode": "auto",
+            "tools": { "events/create": { "approval_mode": "writes" } },
+            "links": {
+                "link_calendar": { "default_tools_approval_mode": "approve" },
+                "link_other": { "default_tools_approval_mode": "prompt" },
+                "link_without_privacy": {},
+            },
+        },
+        "drive": {
+            "links": { "link_drive": { "default_tools_approval_mode": "prompt" } },
+        },
+        "without_links": {
+            "default_tools_approval_mode": "writes",
+        },
+        "empty_links": {
+            "default_tools_approval_mode": "prompt",
+            "links": {},
+        },
+    }))
+    .expect("apps config");
+    let evaluator = AppToolPolicyEvaluator::from_parts(
+        Some(apps_config),
+        /*requirements_apps_config*/ None,
+    );
+
+    for (link_id, approval) in [
+        (Some("link_calendar"), AppToolApproval::Approve),
+        (Some("link_other"), AppToolApproval::Prompt),
+        (Some("link_without_privacy"), AppToolApproval::Auto),
+        (Some("link_drive"), AppToolApproval::Auto),
+        (None, AppToolApproval::Auto),
+    ] {
+        assert_eq!(
+            evaluator.policy(AppToolPolicyInput {
+                link_id,
+                ..input("events/list", /*tool_title*/ None)
+            }),
+            AppToolPolicy {
+                enabled: true,
+                approval,
+            }
+        );
+    }
+
+    assert_eq!(
+        evaluator.policy(AppToolPolicyInput {
+            link_id: Some("link_calendar"),
+            ..input("events/create", /*tool_title*/ None)
+        }),
+        AppToolPolicy {
+            enabled: true,
+            approval: AppToolApproval::Writes,
+        }
+    );
+
+    for (connector_id, approval) in [
+        ("without_links", AppToolApproval::Writes),
+        ("empty_links", AppToolApproval::Prompt),
+    ] {
+        assert_eq!(
+            evaluator.policy(AppToolPolicyInput {
+                connector_id: Some(connector_id),
+                link_id: Some("link_calendar"),
+                ..input("events/list", /*tool_title*/ None)
+            }),
+            AppToolPolicy {
+                enabled: true,
+                approval,
+            }
+        );
+    }
+}
+
+#[test]
+fn link_privacy_mode_preserves_managed_connector_requirements() {
+    let apps_config = serde_json::from_value(serde_json::json!({
+        "calendar": {
+            "links": { "link_calendar": { "default_tools_approval_mode": "approve" } },
+        },
+    }))
+    .expect("apps config");
+    let mut requirements =
+        app_tool_requirements("calendar", "events/create", AppToolApproval::Prompt);
+    requirements
+        .apps
+        .get_mut("calendar")
+        .expect("calendar requirement")
+        .enabled = Some(false);
+    let evaluator = AppToolPolicyEvaluator::from_parts(Some(apps_config), Some(&requirements));
+
+    assert_eq!(
+        evaluator.policy(AppToolPolicyInput {
+            link_id: Some("link_calendar"),
+            ..input("events/create", /*tool_title*/ None)
+        }),
+        AppToolPolicy {
+            enabled: false,
+            approval: AppToolApproval::Prompt,
+        }
+    );
+}
+
+#[test]
 fn per_tool_enable_overrides_app_level_hints() {
     let apps_config = AppsConfigToml {
         default: None,
@@ -651,10 +812,31 @@ fn evaluator_matches_tool_title_for_user_config() {
 fn input<'a>(tool_name: &'a str, tool_title: Option<&'a str>) -> AppToolPolicyInput<'a> {
     AppToolPolicyInput {
         connector_id: Some("calendar"),
+        link_id: None,
         tool_name,
         tool_title,
         destructive_hint: Some(true),
         open_world_hint: Some(true),
+    }
+}
+
+fn app(id: &str, enabled: bool) -> AppInfo {
+    AppInfo {
+        id: id.to_string(),
+        name: id.to_string(),
+        description: None,
+        logo_url: None,
+        logo_url_dark: None,
+        icon_assets: None,
+        icon_dark_assets: None,
+        distribution_channel: None,
+        branding: None,
+        app_metadata: None,
+        labels: None,
+        install_url: None,
+        is_accessible: true,
+        is_enabled: enabled,
+        plugin_display_names: Vec::new(),
     }
 }
 
@@ -713,12 +895,15 @@ fn policy_from_config_parts(
         let config_toml_path =
             AbsolutePathBuf::try_from(std::env::temp_dir().join(CONFIG_TOML_FILE))
                 .expect("absolute config path");
-        config_layer_stack.with_user_config(&config_toml_path, user_config)
+        config_layer_stack
+            .with_user_config(&config_toml_path, user_config)
+            .expect("apps user config should be valid")
     } else {
         config_layer_stack
     };
     AppToolPolicyEvaluator::new(&config_layer_stack).policy(AppToolPolicyInput {
         connector_id,
+        link_id: None,
         tool_name,
         tool_title,
         destructive_hint,
@@ -753,6 +938,7 @@ fn app_tool_requirements(
                         tool_name.to_string(),
                         AppToolRequirementToml {
                             approval_mode: Some(approval_mode),
+                            ..Default::default()
                         },
                     )]),
                 }),

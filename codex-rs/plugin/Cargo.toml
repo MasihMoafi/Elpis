@@ -14,10 +14,12 @@ workspace = true
 
 [dependencies]
 codex-config = { workspace = true }
+codex-core-plugin-common = { workspace = true }
 codex-protocol = { workspace = true }
 codex-utils-absolute-path = { workspace = true }
 codex-utils-path-uri = { workspace = true }
 codex-utils-plugins = { workspace = true }
+serde_json = { workspace = true }
 thiserror = { workspace = true }
 
 [dev-dependencies]

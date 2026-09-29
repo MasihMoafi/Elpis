@@ -1,9 +1,8 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use anyhow::Result;
+use app_test_support::MockResponsesConfig;
 use app_test_support::TestAppServer;
 use app_test_support::create_fake_rollout;
 use app_test_support::rollout_path;
-use app_test_support::to_response;
 use codex_app_server::in_process;
 use codex_app_server::in_process::InProcessStartArgs;
 use codex_app_server_protocol::ClientInfo;
@@ -13,16 +12,17 @@ use codex_app_server_protocol::GetConversationSummaryParams;
 use codex_app_server_protocol::GetConversationSummaryResponse;
 use codex_app_server_protocol::InitializeCapabilities;
 use codex_app_server_protocol::InitializeParams;
-use codex_app_server_protocol::JSONRPCResponse;
 use codex_app_server_protocol::RequestId;
 use codex_arg0::Arg0DispatchPaths;
 use codex_config::CloudConfigBundleLoader;
 use codex_config::LoaderOverrides;
 use codex_core::config::ConfigBuilder;
 use codex_exec_server::EnvironmentManager;
+use codex_feedback::CodexFeedback;
 use codex_protocol::ThreadId;
 use codex_protocol::models::BaseInstructions;
 use codex_protocol::protocol::SessionSource;
+use codex_protocol::protocol::ThreadMemoryMode;
 use codex_thread_store::CreateThreadParams;
 use codex_thread_store::InMemoryThreadStore;
 use codex_thread_store::ThreadPersistenceMetadata;
@@ -34,10 +34,8 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tempfile::TempDir;
-use tokio::time::timeout;
 use uuid::Uuid;
 
-const DEFAULT_READ_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
 const FILENAME_TS: &str = "2025-01-02T12-00-00";
 const META_RFC3339: &str = "2025-01-02T12:00:00Z";
 const CREATED_AT_RFC3339: &str = "2025-01-02T12:00:00.000Z";
@@ -68,6 +66,9 @@ fn normalized_summary_path(mut summary: ConversationSummary) -> Result<Conversat
     if !summary.path.as_os_str().is_empty() {
         summary.path = normalized_canonical_path(summary.path)?;
     }
+    if !summary.cwd.as_os_str().is_empty() {
+        summary.cwd = AbsolutePathBuf::from_absolute_path(summary.cwd)?.into_path_buf();
+    }
     Ok(summary)
 }
 
@@ -95,21 +96,17 @@ async fn get_conversation_summary_by_thread_id_reads_rollout() -> Result<()> {
     let mut mcp = TestAppServer::builder()
         .with_codex_home(codex_home.path())
         .without_auto_env()
-        .build()
+        .build_initialized()
         .await?;
-    timeout(DEFAULT_READ_TIMEOUT, mcp.initialize()).await??;
 
-    let request_id = mcp
-        .send_get_conversation_summary_request(GetConversationSummaryParams::ThreadId {
-            conversation_id: thread_id,
+    let received: GetConversationSummaryResponse = mcp
+        .request(|request_id| ClientRequest::GetConversationSummary {
+            request_id,
+            params: GetConversationSummaryParams::ThreadId {
+                conversation_id: thread_id,
+            },
         })
         .await?;
-    let response: JSONRPCResponse = timeout(
-        DEFAULT_READ_TIMEOUT,
-        mcp.read_stream_until_response_message(RequestId::Integer(request_id)),
-    )
-    .await??;
-    let received: GetConversationSummaryResponse = to_response(response)?;
 
     assert_eq!(normalized_summary_path(received.summary)?, expected);
     Ok(())
@@ -125,6 +122,8 @@ async fn get_conversation_summary_by_thread_id_reads_pathless_store_thread() -> 
     let thread_id = ThreadId::from_string("00000000-0000-4000-8000-000000000125")?;
     store
         .create_thread(CreateThreadParams {
+            creator_user_id: None,
+            creator_account_id: None,
             session_id: thread_id.into(),
             thread_id,
             extra_config: None,
@@ -138,10 +137,14 @@ async fn get_conversation_summary_by_thread_id_reads_pathless_store_thread() -> 
             selected_capability_roots: Vec::new(),
             multi_agent_version: None,
             history_mode: Default::default(),
+            history_base: None,
+            subagent_history_start_ordinal: None,
             initial_window_id: Uuid::now_v7().to_string(),
+            runtime_workspace_roots: None,
             metadata: ThreadPersistenceMetadata {
                 cwd: None,
                 model_provider: "test-provider".to_string(),
+                memory_mode: ThreadMemoryMode::Disabled,
             },
         })
         .await?;
@@ -160,7 +163,9 @@ async fn get_conversation_summary_by_thread_id_reads_pathless_store_thread() -> 
         loader_overrides,
         strict_config: false,
         cloud_config_bundle: CloudConfigBundleLoader::default(),
+        embedded_network_policy: Default::default(),
         thread_config_loader: Arc::new(codex_config::NoopThreadConfigLoader),
+        feedback: CodexFeedback::new(),
         log_db: None,
         state_db: None,
         environment_manager: Arc::new(EnvironmentManager::default_for_tests()),
@@ -222,21 +227,17 @@ async fn get_conversation_summary_by_relative_rollout_path_resolves_from_codex_h
     let mut mcp = TestAppServer::builder()
         .with_codex_home(codex_home.path())
         .without_auto_env()
-        .build()
+        .build_initialized()
         .await?;
-    timeout(DEFAULT_READ_TIMEOUT, mcp.initialize()).await??;
 
-    let request_id = mcp
-        .send_get_conversation_summary_request(GetConversationSummaryParams::RolloutPath {
-            rollout_path: relative_path,
+    let received: GetConversationSummaryResponse = mcp
+        .request(|request_id| ClientRequest::GetConversationSummary {
+            request_id,
+            params: GetConversationSummaryParams::RolloutPath {
+                rollout_path: relative_path,
+            },
         })
         .await?;
-    let response: JSONRPCResponse = timeout(
-        DEFAULT_READ_TIMEOUT,
-        mcp.read_stream_until_response_message(RequestId::Integer(request_id)),
-    )
-    .await??;
-    let received: GetConversationSummaryResponse = to_response(response)?;
 
     assert_eq!(normalized_summary_path(received.summary)?, expected);
     Ok(())
@@ -256,24 +257,9 @@ fn create_config_toml_with_in_memory_thread_store(
     codex_home: &Path,
     store_id: &str,
 ) -> std::io::Result<()> {
-    std::fs::write(
-        codex_home.join("config.toml"),
-        format!(
-            r#"
-model = "mock-model"
-approval_policy = "never"
-sandbox_mode = "read-only"
-experimental_thread_store = {{ type = "in_memory", id = "{store_id}" }}
-
-model_provider = "mock_provider"
-
-[model_providers.mock_provider]
-name = "Mock provider for test"
-base_url = "http://127.0.0.1:1/v1"
-wire_api = "responses"
-request_max_retries = 0
-stream_max_retries = 0
-"#
-        ),
-    )
+    MockResponsesConfig::new("http://127.0.0.1:1")
+        .with_root_config(&format!(
+            "experimental_thread_store = {{ type = \"in_memory\", id = \"{store_id}\" }}"
+        ))
+        .write(codex_home)
 }

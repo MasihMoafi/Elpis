@@ -1,10 +1,10 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use std::process::Command;
 use std::sync::Arc;
 
 use codex_core::ModelClient;
 use codex_core::Prompt;
 use codex_core::ResponseEvent;
+use codex_features::Feature;
 use codex_login::CodexAuth;
 use codex_login::auth::AgentIdentityAuthPolicy;
 use codex_model_provider_info::ModelProviderInfo;
@@ -74,10 +74,12 @@ async fn responses_stream_includes_subagent_header_on_review() {
     let provider = ModelProviderInfo {
         name: "mock".into(),
         base_url: Some(format!("{}/v1", server.uri())),
+        model_catalog_url: None,
         env_key: None,
         env_key_instructions: None,
         experimental_bearer_token: None,
         auth: None,
+        gateway_oauth: None,
         aws: None,
         wire_api: WireApi::Responses,
         query_params: None,
@@ -89,6 +91,7 @@ async fn responses_stream_includes_subagent_header_on_review() {
         websocket_connect_timeout_ms: None,
         requires_openai_auth: false,
         supports_websockets: false,
+        supports_standalone_web_search: false,
     };
 
     let codex_home = TempDir::new().expect("failed to create TempDir");
@@ -128,13 +131,16 @@ async fn responses_stream_includes_subagent_header_on_review() {
         session_source.clone(),
         "test_originator".to_string(),
         config.model_verbosity,
+        config.features.enabled(Feature::ContentItemKinds),
+        config.features.enabled(Feature::ReasoningEffortOverride),
         /*enable_request_compression*/ false,
         /*include_timing_metrics*/ false,
         /*beta_features_header*/ None,
-        /*item_ids_enabled*/ false,
         /*concurrent_reasoning_summaries_enabled*/ false,
         /*attestation_provider*/ None,
         config.http_client_factory(),
+        config.workspace_routing_context(),
+        Vec::new(),
     );
     let responses_metadata = test_turn_responses_metadata(&client, thread_id, &session_source);
     let mut client_session = client.new_session();
@@ -210,10 +216,12 @@ async fn responses_stream_includes_subagent_header_on_other() {
     let provider = ModelProviderInfo {
         name: "mock".into(),
         base_url: Some(format!("{}/v1", server.uri())),
+        model_catalog_url: None,
         env_key: None,
         env_key_instructions: None,
         experimental_bearer_token: None,
         auth: None,
+        gateway_oauth: None,
         aws: None,
         wire_api: WireApi::Responses,
         query_params: None,
@@ -225,6 +233,7 @@ async fn responses_stream_includes_subagent_header_on_other() {
         websocket_connect_timeout_ms: None,
         requires_openai_auth: false,
         supports_websockets: false,
+        supports_standalone_web_search: false,
     };
 
     let codex_home = TempDir::new().expect("failed to create TempDir");
@@ -264,13 +273,16 @@ async fn responses_stream_includes_subagent_header_on_other() {
         session_source.clone(),
         "test_originator".to_string(),
         config.model_verbosity,
+        config.features.enabled(Feature::ContentItemKinds),
+        config.features.enabled(Feature::ReasoningEffortOverride),
         /*enable_request_compression*/ false,
         /*include_timing_metrics*/ false,
         /*beta_features_header*/ None,
-        /*item_ids_enabled*/ false,
         /*concurrent_reasoning_summaries_enabled*/ false,
         /*attestation_provider*/ None,
         config.http_client_factory(),
+        config.workspace_routing_context(),
+        Vec::new(),
     );
     let responses_metadata = test_turn_responses_metadata(&client, thread_id, &session_source);
     let mut client_session = client.new_session();
@@ -327,10 +339,12 @@ async fn responses_respects_model_info_overrides_from_config() {
     let provider = ModelProviderInfo {
         name: "mock".into(),
         base_url: Some(format!("{}/v1", server.uri())),
+        model_catalog_url: None,
         env_key: None,
         env_key_instructions: None,
         experimental_bearer_token: None,
         auth: None,
+        gateway_oauth: None,
         aws: None,
         wire_api: WireApi::Responses,
         query_params: None,
@@ -342,6 +356,7 @@ async fn responses_respects_model_info_overrides_from_config() {
         websocket_connect_timeout_ms: None,
         requires_openai_auth: false,
         supports_websockets: false,
+        supports_standalone_web_search: false,
     };
 
     let codex_home = TempDir::new().expect("failed to create TempDir");
@@ -385,13 +400,16 @@ async fn responses_respects_model_info_overrides_from_config() {
         session_source.clone(),
         "test_originator".to_string(),
         config.model_verbosity,
+        config.features.enabled(Feature::ContentItemKinds),
+        config.features.enabled(Feature::ReasoningEffortOverride),
         /*enable_request_compression*/ false,
         /*include_timing_metrics*/ false,
         /*beta_features_header*/ None,
-        /*item_ids_enabled*/ false,
         /*concurrent_reasoning_summaries_enabled*/ false,
         /*attestation_provider*/ None,
         config.http_client_factory(),
+        config.workspace_routing_context(),
+        Vec::new(),
     );
     let responses_metadata = test_turn_responses_metadata(&client, thread_id, &session_source);
     let mut client_session = client.new_session();
@@ -457,15 +475,19 @@ async fn responses_stream_includes_turn_metadata_header_for_git_workspace_e2e() 
         responses::ev_completed("resp-1"),
     ]);
 
-    let test = test_codex().build(&server).await.expect("build test codex");
+    let test = test_codex()
+        .with_config(|config| config.analytics_enabled = Some(true))
+        .build(&server)
+        .await
+        .expect("build test codex");
     let cwd = test.cwd_path();
 
     let first_request = responses::mount_sse_once(&server, response_body.clone()).await;
     test.submit_turn("hello")
         .await
         .expect("submit first turn prompt");
-    let initial_header = first_request
-        .single_request()
+    let initial_request = first_request.single_request();
+    let initial_header = initial_request
         .header("x-codex-turn-metadata")
         .expect("x-codex-turn-metadata header should be present");
     let initial_parsed: serde_json::Value =
@@ -492,6 +514,31 @@ async fn responses_stream_includes_turn_metadata_header_for_git_workspace_e2e() 
             .get("sandbox")
             .and_then(serde_json::Value::as_str),
         Some("none")
+    );
+    assert_eq!(
+        initial_parsed
+            .get("sandbox_mode")
+            .and_then(serde_json::Value::as_str),
+        Some("danger-full-access")
+    );
+    let body_metadata: serde_json::Value = serde_json::from_str(
+        initial_request.body_json()["client_metadata"]["x-codex-turn-metadata"]
+            .as_str()
+            .expect("request body should include x-codex-turn-metadata"),
+    )
+    .expect("body x-codex-turn-metadata should be valid JSON");
+    assert_eq!(
+        (
+            initial_parsed["analytics_enabled"].as_bool(),
+            body_metadata["analytics_enabled"].as_bool(),
+        ),
+        (Some(true), Some(true)),
+    );
+    assert_eq!(
+        body_metadata
+            .get("sandbox_mode")
+            .and_then(serde_json::Value::as_str),
+        Some("danger-full-access")
     );
     assert_eq!(
         initial_parsed
@@ -545,7 +592,7 @@ async fn responses_stream_includes_turn_metadata_header_for_git_workspace_e2e() 
     let first_response = responses::sse(vec![
         responses::ev_response_created("resp-2"),
         responses::ev_reasoning_item("rsn-1", &["thinking"], &[]),
-        responses::ev_shell_command_call("call-1", "echo turn-metadata"),
+        responses::ev_exec_command_call("call-1", "echo turn-metadata"),
         responses::ev_completed("resp-2"),
     ]);
     let follow_up_response = responses::sse(vec![
@@ -664,4 +711,97 @@ async fn responses_stream_includes_turn_metadata_header_for_git_workspace_e2e() 
             .and_then(serde_json::Value::as_bool),
         Some(false)
     );
+}
+
+/// Credential-bearing Git remotes must be redacted from both metadata transports.
+#[tokio::test]
+async fn responses_stream_redacts_git_remote_credentials_from_turn_metadata() {
+    core_test_support::skip_if_no_network!();
+
+    let server = responses::start_mock_server().await;
+    let test = test_codex()
+        .with_model("test-gpt-5.1-codex")
+        .build(&server)
+        .await
+        .expect("build test codex");
+    let cwd = test.cwd_path();
+    let remote_token = "test-git-secret-token";
+    let credential_bearing_origin =
+        "https://alice:test-git-secret-token@example.invalid/openai/codex.git";
+
+    for args in [
+        ["init"].as_slice(),
+        ["remote", "add", "origin", credential_bearing_origin].as_slice(),
+    ] {
+        let output = Command::new("git")
+            .args(args)
+            .current_dir(cwd)
+            .output()
+            .expect("git command should run");
+        assert!(
+            output.status.success(),
+            "git {args:?} failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    let first_response = responses::sse(vec![
+        responses::ev_response_created("resp-1"),
+        responses::ev_function_call(
+            "wait-for-git",
+            "test_sync_tool",
+            r#"{"wait_for_git_enrichment":true}"#,
+        ),
+        responses::ev_completed("resp-1"),
+    ]);
+    let follow_up_response = responses::sse(vec![
+        responses::ev_response_created("resp-2"),
+        responses::ev_assistant_message("msg-1", "done"),
+        responses::ev_completed("resp-2"),
+    ]);
+    let request_log = responses::mount_response_sequence(
+        &server,
+        vec![
+            responses::sse_response(first_response),
+            responses::sse_response(follow_up_response),
+        ],
+    )
+    .await;
+
+    test.submit_turn("inspect the workspace")
+        .await
+        .expect("submit turn prompt");
+
+    let requests = request_log.requests();
+    assert_eq!(requests.len(), 2, "expected a follow-up model request");
+    let header_metadata = requests[1]
+        .header("x-codex-turn-metadata")
+        .expect("request header should include turn metadata");
+    let request_body = requests[1].body_json();
+    let body_metadata = request_body["client_metadata"]["x-codex-turn-metadata"]
+        .as_str()
+        .expect("request body should include turn metadata");
+
+    for (location, metadata) in [
+        ("request header", header_metadata.as_str()),
+        ("request body", body_metadata),
+    ] {
+        assert!(
+            !metadata.contains(remote_token),
+            "{location} should not expose git remote credentials"
+        );
+        let metadata: serde_json::Value =
+            serde_json::from_str(metadata).expect("turn metadata should be valid JSON");
+        let remotes = metadata
+            .get("workspaces")
+            .and_then(serde_json::Value::as_object)
+            .and_then(|workspaces| workspaces.values().next())
+            .and_then(|workspace| workspace.get("associated_remote_urls"))
+            .expect("turn metadata should include git remote URLs");
+        assert_eq!(
+            remotes,
+            &serde_json::json!({ "origin": "https://example.invalid/openai/codex.git" }),
+            "{location} should contain the sanitized remote"
+        );
+    }
 }

@@ -51,11 +51,27 @@ fn sub_agent_activity_is_a_terminal_tool_runtime_event() -> anyhow::Result<()> {
 }
 
 #[test]
+fn completed_sub_agent_activity_is_not_a_tool_runtime_event() -> anyhow::Result<()> {
+    let event = EventMsg::SubAgentActivity(SubAgentActivityEvent {
+        event_id: "child-turn-completed".to_string(),
+        occurred_at_ms: 1234,
+        agent_thread_id: ThreadId::new(),
+        agent_path: AgentPath::try_from("/root/reviewer").map_err(anyhow::Error::msg)?,
+        kind: SubAgentActivityKind::Completed,
+    });
+
+    assert!(tool_runtime_trace_event(&event).is_none());
+    Ok(())
+}
+
+#[test]
 fn exec_command_trace_payloads_use_inferred_native_cwd() -> anyhow::Result<()> {
     // Convention inference depends on the URI spelling, not the test host, so exercise both
     // Windows and POSIX paths on every platform.
     let begin = EventMsg::ExecCommandBegin(ExecCommandBeginEvent {
         call_id: "call-begin".to_string(),
+        plugin_id: Some("sample@openai-curated".to_string()),
+        script_path: Some("scripts/run.py".to_string()),
         process_id: Some("process-1".to_string()),
         turn_id: "turn-1".to_string(),
         started_at_ms: 1234,
@@ -67,6 +83,8 @@ fn exec_command_trace_payloads_use_inferred_native_cwd() -> anyhow::Result<()> {
     });
     let end = EventMsg::ExecCommandEnd(ExecCommandEndEvent {
         call_id: "call-end".to_string(),
+        plugin_id: Some("sample@openai-curated".to_string()),
+        script_path: Some("scripts/run.py".to_string()),
         process_id: None,
         turn_id: "turn-1".to_string(),
         completed_at_ms: 2345,
@@ -92,6 +110,8 @@ fn exec_command_trace_payloads_use_inferred_native_cwd() -> anyhow::Result<()> {
         serde_json::to_value(payload)?,
         json!({
             "call_id": "call-begin",
+            "plugin_id": "sample@openai-curated",
+            "script_path": "scripts/run.py",
             "process_id": "process-1",
             "turn_id": "turn-1",
             "started_at_ms": 1234,
@@ -109,6 +129,8 @@ fn exec_command_trace_payloads_use_inferred_native_cwd() -> anyhow::Result<()> {
         serde_json::to_value(payload)?,
         json!({
             "call_id": "call-end",
+            "plugin_id": "sample@openai-curated",
+            "script_path": "scripts/run.py",
             "turn_id": "turn-1",
             "completed_at_ms": 2345,
             "command": ["pwd"],

@@ -1,9 +1,12 @@
+use crate::agent::types::AgentMetadata;
 use codex_protocol::AgentPath;
 use codex_protocol::ThreadId;
 use codex_protocol::error::CodexErr;
+use codex_protocol::error::CodexErrorDetails;
 use codex_protocol::error::Result;
 use codex_protocol::protocol::SessionSource;
 use codex_protocol::protocol::SubAgentSource;
+use codex_protocol::protocol::TurnEnvironmentSelection;
 use rand::prelude::IndexedRandom;
 use std::collections::HashMap;
 use std::collections::HashSet;
@@ -17,7 +20,7 @@ use std::sync::atomic::Ordering;
 /// the current implementation, it limits:
 /// * Total number of sub-agents (i.e. threads) per user session
 ///
-/// This structure is shared by all agents in the same user session (because the `AgentControl`
+/// This structure is shared by all agents in the same user session (because the `LocalAgentControl`
 /// is).
 #[derive(Default)]
 pub(crate) struct AgentRegistry {
@@ -28,16 +31,23 @@ pub(crate) struct AgentRegistry {
 #[derive(Default)]
 struct ActiveAgents {
     agent_tree: HashMap<String, AgentMetadata>,
+    thread_paths: HashMap<ThreadId, RegisteredAgent>,
     used_agent_nicknames: HashSet<String>,
     nickname_reset_count: usize,
 }
 
-#[derive(Clone, Debug, Default)]
-pub(crate) struct AgentMetadata {
-    pub(crate) agent_id: Option<ThreadId>,
-    pub(crate) agent_path: Option<AgentPath>,
-    pub(crate) agent_nickname: Option<String>,
-    pub(crate) agent_role: Option<String>,
+struct RegisteredAgent {
+    path: String,
+    evicted_environments: Option<Vec<TurnEnvironmentSelection>>,
+}
+
+impl RegisteredAgent {
+    fn new(path: String) -> Self {
+        Self {
+            path,
+            evicted_environments: None,
+        }
+    }
 }
 
 fn format_agent_nickname(name: &str, nickname_reset_count: usize) -> String {
@@ -82,7 +92,9 @@ impl AgentRegistry {
     ) -> Result<SpawnReservation> {
         if let Some(max_threads) = max_threads {
             if !self.try_increment_spawned(max_threads) {
-                return Err(CodexErr::AgentLimitReached { max_threads });
+                return Err(CodexErr::new(CodexErrorDetails::AgentLimitReached {
+                    max_threads,
+                }));
             }
         } else {
             self.total_count.fetch_add(1, Ordering::AcqRel);
@@ -101,13 +113,10 @@ impl AgentRegistry {
                 .active_agents
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
-            let removed_key = active_agents
-                .agent_tree
-                .iter()
-                .find_map(|(key, metadata)| (metadata.agent_id == Some(thread_id)).then_some(key))
-                .cloned();
-            removed_key
-                .and_then(|key| active_agents.agent_tree.remove(key.as_str()))
+            active_agents
+                .thread_paths
+                .remove(&thread_id)
+                .and_then(|agent| active_agents.agent_tree.remove(agent.path.as_str()))
                 .is_some_and(|metadata| {
                     !metadata.agent_path.as_ref().is_some_and(AgentPath::is_root)
                 })
@@ -122,14 +131,21 @@ impl AgentRegistry {
             .active_agents
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        active_agents
+        let root_path = AgentPath::ROOT.to_string();
+        let root_thread_id = active_agents
             .agent_tree
-            .entry(AgentPath::ROOT.to_string())
+            .entry(root_path.clone())
             .or_insert_with(|| AgentMetadata {
                 agent_id: Some(thread_id),
                 agent_path: Some(AgentPath::root()),
                 ..Default::default()
-            });
+            })
+            .agent_id;
+        if let Some(root_thread_id) = root_thread_id {
+            active_agents
+                .thread_paths
+                .insert(root_thread_id, RegisteredAgent::new(root_path));
+        }
     }
 
     pub(crate) fn agent_id_for_path(&self, agent_path: &AgentPath) -> Option<ThreadId> {
@@ -142,13 +158,53 @@ impl AgentRegistry {
     }
 
     pub(crate) fn agent_metadata_for_thread(&self, thread_id: ThreadId) -> Option<AgentMetadata> {
-        self.active_agents
+        let active_agents = self
+            .active_agents
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .agent_tree
-            .values()
-            .find(|metadata| metadata.agent_id == Some(thread_id))
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        active_agents
+            .thread_paths
+            .get(&thread_id)
+            .and_then(|agent| active_agents.agent_tree.get(&agent.path))
             .cloned()
+    }
+
+    pub(crate) fn save_evicted_environments(
+        &self,
+        thread_id: ThreadId,
+        environments: Vec<TurnEnvironmentSelection>,
+    ) {
+        let mut active_agents = self
+            .active_agents
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if let Some(agent) = active_agents.thread_paths.get_mut(&thread_id) {
+            agent.evicted_environments = Some(environments);
+        }
+    }
+
+    pub(crate) fn evicted_environments(
+        &self,
+        thread_id: ThreadId,
+    ) -> Option<Vec<TurnEnvironmentSelection>> {
+        let active_agents = self
+            .active_agents
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        active_agents
+            .thread_paths
+            .get(&thread_id)
+            .and_then(|agent| agent.evicted_environments.clone())
+    }
+
+    pub(crate) fn clear_evicted_environments(&self, thread_id: ThreadId) {
+        let mut active_agents = self
+            .active_agents
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if let Some(agent) = active_agents.thread_paths.get_mut(&thread_id) {
+            agent.evicted_environments = None;
+        }
     }
 
     pub(crate) fn live_agents(&self) -> Vec<AgentMetadata> {
@@ -181,7 +237,21 @@ impl AgentRegistry {
         if let Some(agent_nickname) = agent_metadata.agent_nickname.clone() {
             active_agents.used_agent_nicknames.insert(agent_nickname);
         }
-        active_agents.agent_tree.insert(key, agent_metadata);
+        if let Some(previous_agent) = active_agents
+            .thread_paths
+            .insert(thread_id, RegisteredAgent::new(key.clone()))
+            && previous_agent.path != key
+        {
+            active_agents
+                .agent_tree
+                .remove(previous_agent.path.as_str());
+        }
+        if let Some(previous_metadata) = active_agents.agent_tree.insert(key, agent_metadata)
+            && let Some(previous_thread_id) = previous_metadata.agent_id
+            && previous_thread_id != thread_id
+        {
+            active_agents.thread_paths.remove(&previous_thread_id);
+        }
     }
 
     fn reserve_agent_nickname(&self, names: &[&str], preferred: Option<&str>) -> Option<String> {

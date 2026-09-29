@@ -1,4 +1,4 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
+mod artifact;
 mod backend;
 mod extension;
 mod tool;

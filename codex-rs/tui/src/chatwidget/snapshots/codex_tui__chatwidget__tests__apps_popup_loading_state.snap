@@ -2,11 +2,10 @@
 source: tui/src/chatwidget/tests/popups_and_settings.rs
 expression: before
 ---
- Elpis · model gpt-5.6-sol · location /tmp/project
-┌──────────────────────────────────────────────────────────────────────────────┐
-│ Apps                                                                         │
-│ Loading installed and available apps...                                      │
-│                                                                              │
-›    Loading apps...  This updates when the full list is ready.                │
-└──────────────────────────────────────────────────────────────────────────────┘
-  Press enter to confirm or esc to go back
+  Apps
+  Loading installed and available apps...
+
+
+›    Loading apps...  This updates when the full list is ready
+
+  enter select · esc back

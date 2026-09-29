@@ -1,15 +1,15 @@
 #![cfg(unix)]
 
 use anyhow::Result;
+use app_test_support::MockResponsesConfig;
 use app_test_support::TestAppServer;
+use app_test_support::create_command_execution_sse_response;
 use app_test_support::create_final_assistant_message_sse_response;
 use app_test_support::create_mock_responses_server_sequence;
 use app_test_support::create_mock_responses_server_sequence_unchecked;
-use app_test_support::create_shell_command_sse_response;
-use app_test_support::to_response;
+use codex_app_server_protocol::ClientRequest;
 use codex_app_server_protocol::JSONRPCError;
-use codex_app_server_protocol::JSONRPCNotification;
-use codex_app_server_protocol::JSONRPCResponse;
+use codex_app_server_protocol::JSONRPCErrorError;
 use codex_app_server_protocol::RequestId;
 use codex_app_server_protocol::ServerRequest;
 use codex_app_server_protocol::ServerRequestResolvedNotification;
@@ -20,9 +20,11 @@ use codex_app_server_protocol::TurnInterruptParams;
 use codex_app_server_protocol::TurnInterruptResponse;
 use codex_app_server_protocol::TurnStartParams;
 use codex_app_server_protocol::TurnStartResponse;
+use codex_app_server_protocol::TurnStartedNotification;
 use codex_app_server_protocol::TurnStatus;
 use codex_app_server_protocol::UserInput as V2UserInput;
 use core_test_support::skip_if_remote;
+use pretty_assertions::assert_eq;
 use tempfile::TempDir;
 use tokio::time::timeout;
 
@@ -54,85 +56,93 @@ async fn turn_interrupt_aborts_running_turn() -> Result<()> {
     std::fs::create_dir(&working_directory)?;
 
     // Mock server: long-running shell command then (after abort) nothing else needed.
-    let server =
-        create_mock_responses_server_sequence_unchecked(vec![create_shell_command_sse_response(
+    let server = create_mock_responses_server_sequence_unchecked(vec![
+        create_command_execution_sse_response(
             shell_command.clone(),
             Some(&working_directory),
             Some(10_000),
             "call_sleep",
-        )?])
-        .await;
-    create_config_toml(&codex_home, &server.uri(), "never", "workspace-write")?;
+        )?,
+    ])
+    .await;
+    MockResponsesConfig::new(&server.uri())
+        .with_sandbox_mode("workspace-write")
+        .with_root_config(r#"approvals_reviewer = "user""#)
+        .write(&codex_home)?;
 
     let mut mcp = TestAppServer::builder()
         .with_codex_home(&codex_home)
-        .build()
+        .build_initialized()
         .await?;
-    timeout(DEFAULT_READ_TIMEOUT, mcp.initialize()).await??;
 
     // Start a v2 thread and capture its id.
-    let thread_req = mcp
-        .send_thread_start_request_with_auto_env(ThreadStartParams {
+    let ThreadStartResponse { thread, .. } = mcp
+        .start_thread(ThreadStartParams {
             model: Some("mock-model".to_string()),
             ..Default::default()
         })
         .await?;
-    let thread_resp: JSONRPCResponse = timeout(
-        DEFAULT_READ_TIMEOUT,
-        mcp.read_stream_until_response_message(RequestId::Integer(thread_req)),
-    )
-    .await??;
-    let ThreadStartResponse { thread, .. } = to_response::<ThreadStartResponse>(thread_resp)?;
 
     // Start a turn that triggers a long-running command.
-    let turn_req = mcp
-        .send_turn_start_request(TurnStartParams {
-            thread_id: thread.id.clone(),
-            client_user_message_id: None,
-            input: vec![V2UserInput::Text {
-                text: "run sleep".to_string(),
-                text_elements: Vec::new(),
-            }],
-            cwd: Some(working_directory.clone()),
-            ..Default::default()
+    let TurnStartResponse { turn } = mcp
+        .request(|request_id| ClientRequest::TurnStart {
+            request_id,
+            params: TurnStartParams {
+                thread_id: thread.id.clone(),
+                client_user_message_id: None,
+                input: vec![V2UserInput::Text {
+                    text: "run sleep".to_string(),
+                    text_elements: Vec::new(),
+                }],
+                cwd: Some(working_directory.clone()),
+                ..Default::default()
+            },
         })
         .await?;
-    let turn_resp: JSONRPCResponse = timeout(
-        DEFAULT_READ_TIMEOUT,
-        mcp.read_stream_until_response_message(RequestId::Integer(turn_req)),
-    )
-    .await??;
-    let TurnStartResponse { turn } = to_response::<TurnStartResponse>(turn_resp)?;
     let turn_id = turn.id.clone();
 
-    // Give the command a brief moment to start.
-    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+    let started: TurnStartedNotification =
+        timeout(DEFAULT_READ_TIMEOUT, mcp.read_notification("turn/started")).await??;
+    assert_eq!(started.thread_id, thread.id);
+    assert_eq!(started.turn.id, turn_id);
 
     let thread_id = thread.id.clone();
-    // Interrupt the in-progress turn by id (v2 API).
     let interrupt_id = mcp
         .send_turn_interrupt_request(TurnInterruptParams {
             thread_id: thread_id.clone(),
-            turn_id: turn_id.clone(),
+            turn_id: "wrong-turn".to_string(),
         })
         .await?;
-    let interrupt_resp: JSONRPCResponse = timeout(
+    let interrupt_err = timeout(
         DEFAULT_READ_TIMEOUT,
-        mcp.read_stream_until_response_message(RequestId::Integer(interrupt_id)),
+        mcp.read_stream_until_error_message(RequestId::Integer(interrupt_id)),
     )
     .await??;
-    let _resp: TurnInterruptResponse = to_response::<TurnInterruptResponse>(interrupt_resp)?;
+    assert_eq!(
+        interrupt_err.error,
+        JSONRPCErrorError {
+            code: INVALID_REQUEST_ERROR_CODE,
+            message: format!("expected active turn id wrong-turn but found {turn_id}"),
+            data: None,
+        }
+    );
 
-    let completed_notif: JSONRPCNotification = timeout(
+    // Interrupt the in-progress turn by id (v2 API).
+    let _: TurnInterruptResponse = mcp
+        .request(|request_id| ClientRequest::TurnInterrupt {
+            request_id,
+            params: TurnInterruptParams {
+                thread_id: thread_id.clone(),
+                turn_id: turn_id.clone(),
+            },
+        })
+        .await?;
+
+    let completed: TurnCompletedNotification = timeout(
         DEFAULT_READ_TIMEOUT,
-        mcp.read_stream_until_notification_message("turn/completed"),
+        mcp.read_notification("turn/completed"),
     )
     .await??;
-    let completed: TurnCompletedNotification = serde_json::from_value(
-        completed_notif
-            .params
-            .expect("turn/completed params must be present"),
-    )?;
     assert_eq!(completed.thread_id, thread_id);
     assert_eq!(completed.turn.status, TurnStatus::Interrupted);
 
@@ -149,55 +159,43 @@ async fn turn_interrupt_rejects_completed_turn() -> Result<()> {
         create_final_assistant_message_sse_response("done")?,
     ])
     .await;
-    create_config_toml(&codex_home, &server.uri(), "never", "workspace-write")?;
+    MockResponsesConfig::new(&server.uri())
+        .with_sandbox_mode("workspace-write")
+        .with_root_config(r#"approvals_reviewer = "user""#)
+        .write(&codex_home)?;
 
     let mut mcp = TestAppServer::builder()
         .with_codex_home(&codex_home)
-        .build()
+        .build_initialized()
         .await?;
-    timeout(DEFAULT_READ_TIMEOUT, mcp.initialize()).await??;
 
-    let thread_req = mcp
-        .send_thread_start_request_with_auto_env(ThreadStartParams {
+    let ThreadStartResponse { thread, .. } = mcp
+        .start_thread(ThreadStartParams {
             model: Some("mock-model".to_string()),
             ..Default::default()
         })
         .await?;
-    let thread_resp: JSONRPCResponse = timeout(
-        DEFAULT_READ_TIMEOUT,
-        mcp.read_stream_until_response_message(RequestId::Integer(thread_req)),
-    )
-    .await??;
-    let ThreadStartResponse { thread, .. } = to_response::<ThreadStartResponse>(thread_resp)?;
 
-    let turn_req = mcp
-        .send_turn_start_request(TurnStartParams {
-            thread_id: thread.id.clone(),
-            client_user_message_id: None,
-            input: vec![V2UserInput::Text {
-                text: "say done".to_string(),
-                text_elements: Vec::new(),
-            }],
-            ..Default::default()
+    let TurnStartResponse { turn } = mcp
+        .request(|request_id| ClientRequest::TurnStart {
+            request_id,
+            params: TurnStartParams {
+                thread_id: thread.id.clone(),
+                client_user_message_id: None,
+                input: vec![V2UserInput::Text {
+                    text: "say done".to_string(),
+                    text_elements: Vec::new(),
+                }],
+                ..Default::default()
+            },
         })
         .await?;
-    let turn_resp: JSONRPCResponse = timeout(
-        DEFAULT_READ_TIMEOUT,
-        mcp.read_stream_until_response_message(RequestId::Integer(turn_req)),
-    )
-    .await??;
-    let TurnStartResponse { turn } = to_response::<TurnStartResponse>(turn_resp)?;
 
-    let completed_notif: JSONRPCNotification = timeout(
+    let completed: TurnCompletedNotification = timeout(
         DEFAULT_READ_TIMEOUT,
-        mcp.read_stream_until_notification_message("turn/completed"),
+        mcp.read_notification("turn/completed"),
     )
     .await??;
-    let completed: TurnCompletedNotification = serde_json::from_value(
-        completed_notif
-            .params
-            .expect("turn/completed params must be present"),
-    )?;
     assert_eq!(completed.thread_id, thread.id);
     assert_eq!(completed.turn.id, turn.id);
     assert_eq!(completed.turn.status, TurnStatus::Completed);
@@ -246,53 +244,47 @@ async fn turn_interrupt_resolves_pending_command_approval_request() -> Result<()
     let working_directory = tmp.path().join("workdir");
     std::fs::create_dir(&working_directory)?;
 
-    let server = create_mock_responses_server_sequence(vec![create_shell_command_sse_response(
-        shell_command.clone(),
-        Some(&working_directory),
-        Some(10_000),
-        "call_sleep_approval",
-    )?])
-    .await;
-    create_config_toml(&codex_home, &server.uri(), "untrusted", "read-only")?;
+    let server =
+        create_mock_responses_server_sequence(vec![create_command_execution_sse_response(
+            shell_command.clone(),
+            Some(&working_directory),
+            Some(10_000),
+            "call_sleep_approval",
+        )?])
+        .await;
+    MockResponsesConfig::new(&server.uri())
+        .with_approval_policy("on-request")
+        .with_root_config(r#"approvals_reviewer = "user""#)
+        .write(&codex_home)?;
 
     let mut mcp = TestAppServer::builder()
         .with_codex_home(&codex_home)
-        .build()
+        .build_initialized()
         .await?;
-    timeout(DEFAULT_READ_TIMEOUT, mcp.initialize()).await??;
 
-    let thread_req = mcp
-        .send_thread_start_request_with_auto_env(ThreadStartParams {
+    let ThreadStartResponse { thread, .. } = mcp
+        .start_thread(ThreadStartParams {
             model: Some("mock-model".to_string()),
             ..Default::default()
         })
         .await?;
-    let thread_resp: JSONRPCResponse = timeout(
-        DEFAULT_READ_TIMEOUT,
-        mcp.read_stream_until_response_message(RequestId::Integer(thread_req)),
-    )
-    .await??;
-    let ThreadStartResponse { thread, .. } = to_response::<ThreadStartResponse>(thread_resp)?;
 
-    let turn_req = mcp
-        .send_turn_start_request(TurnStartParams {
-            thread_id: thread.id.clone(),
-            client_user_message_id: None,
-            input: vec![V2UserInput::Text {
-                text: "run python".to_string(),
-                text_elements: Vec::new(),
-            }],
-            cwd: Some(working_directory),
-            approval_policy: Some(codex_app_server_protocol::AskForApproval::UnlessTrusted),
-            ..Default::default()
+    let TurnStartResponse { turn } = mcp
+        .request(|request_id| ClientRequest::TurnStart {
+            request_id,
+            params: TurnStartParams {
+                thread_id: thread.id.clone(),
+                client_user_message_id: None,
+                input: vec![V2UserInput::Text {
+                    text: "run python".to_string(),
+                    text_elements: Vec::new(),
+                }],
+                cwd: Some(working_directory),
+                approval_policy: Some(codex_app_server_protocol::AskForApproval::UnlessTrusted),
+                ..Default::default()
+            },
         })
         .await?;
-    let turn_resp: JSONRPCResponse = timeout(
-        DEFAULT_READ_TIMEOUT,
-        mcp.read_stream_until_response_message(RequestId::Integer(turn_req)),
-    )
-    .await??;
-    let TurnStartResponse { turn } = to_response::<TurnStartResponse>(turn_resp)?;
 
     let request = timeout(
         DEFAULT_READ_TIMEOUT,
@@ -306,75 +298,31 @@ async fn turn_interrupt_resolves_pending_command_approval_request() -> Result<()
     assert_eq!(params.thread_id, thread.id);
     assert_eq!(params.turn_id, turn.id);
 
-    let interrupt_id = mcp
-        .send_turn_interrupt_request(TurnInterruptParams {
-            thread_id: thread.id.clone(),
-            turn_id: turn.id.clone(),
+    let _: TurnInterruptResponse = mcp
+        .request(|request_id| ClientRequest::TurnInterrupt {
+            request_id,
+            params: TurnInterruptParams {
+                thread_id: thread.id.clone(),
+                turn_id: turn.id.clone(),
+            },
         })
         .await?;
-    let interrupt_resp: JSONRPCResponse = timeout(
-        DEFAULT_READ_TIMEOUT,
-        mcp.read_stream_until_response_message(RequestId::Integer(interrupt_id)),
-    )
-    .await??;
-    let _resp: TurnInterruptResponse = to_response::<TurnInterruptResponse>(interrupt_resp)?;
 
-    let resolved_notification = timeout(
+    let resolved: ServerRequestResolvedNotification = timeout(
         DEFAULT_READ_TIMEOUT,
-        mcp.read_stream_until_notification_message("serverRequest/resolved"),
+        mcp.read_notification("serverRequest/resolved"),
     )
     .await??;
-    let resolved: ServerRequestResolvedNotification = serde_json::from_value(
-        resolved_notification
-            .params
-            .clone()
-            .expect("serverRequest/resolved params must be present"),
-    )?;
     assert_eq!(resolved.thread_id, thread.id);
     assert_eq!(resolved.request_id, request_id);
 
-    let completed_notif: JSONRPCNotification = timeout(
+    let completed: TurnCompletedNotification = timeout(
         DEFAULT_READ_TIMEOUT,
-        mcp.read_stream_until_notification_message("turn/completed"),
+        mcp.read_notification("turn/completed"),
     )
     .await??;
-    let completed: TurnCompletedNotification = serde_json::from_value(
-        completed_notif
-            .params
-            .expect("turn/completed params must be present"),
-    )?;
     assert_eq!(completed.thread_id, thread.id);
     assert_eq!(completed.turn.status, TurnStatus::Interrupted);
 
     Ok(())
-}
-
-// Helper to create a config.toml pointing at the mock model server.
-fn create_config_toml(
-    codex_home: &std::path::Path,
-    server_uri: &str,
-    approval_policy: &str,
-    sandbox_mode: &str,
-) -> std::io::Result<()> {
-    let config_toml = codex_home.join("config.toml");
-    std::fs::write(
-        config_toml,
-        format!(
-            r#"
-model = "mock-model"
-approval_policy = "{approval_policy}"
-approvals_reviewer = "user"
-sandbox_mode = "{sandbox_mode}"
-
-model_provider = "mock_provider"
-
-[model_providers.mock_provider]
-name = "Mock provider for test"
-base_url = "{server_uri}/v1"
-wire_api = "responses"
-request_max_retries = 0
-stream_max_retries = 0
-"#
-        ),
-    )
 }

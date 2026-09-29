@@ -12,6 +12,7 @@ use futures::SinkExt;
 use futures::Stream;
 use futures::StreamExt;
 use tokio::sync::mpsc;
+use tokio::sync::oneshot;
 use tokio::sync::watch;
 use tokio_tungstenite::tungstenite::Message;
 use tracing::Instrument;
@@ -31,6 +32,7 @@ use crate::noise_channel::NoiseChannelIdentity;
 use crate::noise_channel::NoiseChannelPublicKey;
 use crate::noise_channel::NoiseTransport;
 use crate::noise_channel::noise_channel_prologue;
+use crate::noise_relay::message_framing::ClientJsonRpcMessageDecoder;
 use crate::noise_relay::message_framing::JsonRpcMessageDecoder;
 use crate::noise_relay::message_framing::NOISE_RECORD_PLAINTEXT_LEN;
 use crate::noise_relay::message_framing::frame_jsonrpc_message;
@@ -59,6 +61,13 @@ pub(crate) struct NoiseHarnessConnectionArgs {
     pub(crate) harness_key_authorization: String,
 }
 
+/// One Noise-backed JSON-RPC connection plus a signal that its authenticated
+/// transport is ready for application messages.
+pub(crate) struct NoiseHarnessConnection {
+    pub(crate) connection: JsonRpcConnection,
+    pub(crate) handshake_ready: oneshot::Receiver<()>,
+}
+
 // Reset frames are cleartext relay control and are not authenticated by Noise.
 // Preserve the availability signal while replacing attacker-controlled reason
 // text before it reaches disconnect diagnostics.
@@ -66,17 +75,15 @@ const NOISE_RELAY_RESET_DISCONNECT_REASON: &str = "Noise relay stream reset";
 // Give a Pong already queued behind data a bounded chance to reach the reader.
 const MAX_FRAMES_DRAINED_AFTER_PONG_DEADLINE: usize = 32;
 
-/// Adapt one harness rendezvous websocket into an authenticated JSON-RPC connection.
+/// Adapt one harness rendezvous websocket and expose when hybrid IK completes.
 ///
-/// The returned connection is not usable until the background task completes
-/// hybrid IK against the registry-pinned exec-server key. Rendezvous can see
-/// stream metadata and ciphertext, but never JSON-RPC plaintext or either
-/// endpoint's private key. Failures close the connection rather than falling
-/// back to plaintext.
-pub(crate) fn noise_harness_connection_from_websocket<T, E>(
+/// Callers that send application messages immediately after opening the
+/// websocket must await handshake_ready first. Dropping that receiver keeps
+/// the legacy fire-and-forget behavior for existing connection owners.
+pub(crate) fn noise_harness_connection_from_websocket_with_readiness<T, E>(
     stream: T,
     args: NoiseHarnessConnectionArgs,
-) -> JsonRpcConnection
+) -> NoiseHarnessConnection
 where
     T: Sink<Message, Error = E> + Stream<Item = Result<Message, E>> + Unpin + Send + 'static,
     E: std::fmt::Display + Send + 'static,
@@ -93,6 +100,7 @@ where
     let (outgoing_tx, mut outgoing_rx) = mpsc::channel(CHANNEL_CAPACITY);
     let (incoming_tx, incoming_rx) = mpsc::channel(CHANNEL_CAPACITY);
     let (disconnected_tx, disconnected_rx) = watch::channel(false);
+    let (handshake_ready_tx, handshake_ready_rx) = oneshot::channel();
     let stream_span = tracing::debug_span!("noise_relay.stream", noise_side = "harness",);
     debug!(
         environment_id,
@@ -100,6 +108,7 @@ where
     );
 
     let websocket_task = tokio::spawn(async move {
+        let mut handshake_ready_tx = Some(handshake_ready_tx);
         let mut websocket = stream;
 
         // Bind the Noise transcript to the exact environment registration and
@@ -221,6 +230,9 @@ where
                                 noise_outcome = "ok",
                                 "Noise harness handshake completed"
                             );
+                            if let Some(handshake_ready_tx) = handshake_ready_tx.take() {
+                                let _ = handshake_ready_tx.send(());
+                            }
                             break transport;
                         }
                         Err(error) => {
@@ -263,7 +275,7 @@ where
         let mut websocket = websocket.peekable();
         let mut next_outbound_seq = 0u32;
         let mut inbound_ciphertexts = OrderedCiphertextFrames::default();
-        let mut inbound_decoder = JsonRpcMessageDecoder::default();
+        let mut inbound_decoder = JsonRpcMessageDecoder::client();
         let mut keepalive = tokio::time::interval_at(
             tokio::time::Instant::now() + WEBSOCKET_KEEPALIVE_INTERVAL,
             WEBSOCKET_KEEPALIVE_INTERVAL,
@@ -275,7 +287,7 @@ where
         // Keep one framed message as a cursor. Sending one Noise record per loop
         // creates a scheduling point for keepalive and inbound control frames
         // without splitting the WebSocket reader and writer.
-        let mut pending_outbound: Option<(Vec<u8>, usize)> = None;
+        let mut pending_outbound = None;
         let mut force_incoming = false;
         let mut frames_drained_after_pong_deadline = 0usize;
         'relay: loop {
@@ -344,13 +356,20 @@ where
                     let Some(message) = maybe_message else {
                         break;
                     };
-                    pending_outbound = Some(match frame_jsonrpc_message(&message) {
-                        Ok(framed) => (framed, 0),
+                    let framed = match frame_jsonrpc_message(&message) {
+                        Ok(framed) => framed,
                         Err(error) => {
                             warn!("failed to frame JSON-RPC payload for Noise relay: {error}");
                             break;
                         }
-                    });
+                    };
+                    let request_trace = match message {
+                        codex_exec_server_protocol::JSONRPCMessage::Request(request) => request.trace,
+                        codex_exec_server_protocol::JSONRPCMessage::Notification(_)
+                        | codex_exec_server_protocol::JSONRPCMessage::Response(_)
+                        | codex_exec_server_protocol::JSONRPCMessage::Error(_) => None,
+                    };
+                    pending_outbound = Some((framed, 0, request_trace));
                 }
                 _ = std::future::ready(()), if pending_outbound.is_some() && !force_incoming && !pong_deadline_expired => {
                     let seq = match take_next_sequence(&mut next_outbound_seq) {
@@ -360,8 +379,8 @@ where
                             break 'relay;
                         }
                     };
-                    let (ciphertext, next_offset, message_complete) = {
-                        let Some((framed, offset)) = pending_outbound.as_ref() else {
+                    let (ciphertext, next_offset, message_complete, request_trace) = {
+                        let Some((framed, offset, request_trace)) = pending_outbound.as_mut() else {
                             continue;
                         };
                         let next_offset = (*offset + NOISE_RECORD_PLAINTEXT_LEN).min(framed.len());
@@ -372,9 +391,15 @@ where
                                 break 'relay;
                             }
                         };
-                        (ciphertext, next_offset, next_offset == framed.len())
+                        (
+                            ciphertext,
+                            next_offset,
+                            next_offset == framed.len(),
+                            request_trace.take(),
+                        )
                     };
-                    let frame = RelayMessageFrame::data(stream_id.clone(), seq, ciphertext);
+                    let frame =
+                        RelayMessageFrame::data(stream_id.clone(), seq, ciphertext, request_trace);
                     // A Pong can arrive after the readiness check while this write owns the
                     // combined sink and stream. A single bounded record can therefore hit the
                     // deadline and disconnect with that Pong queued. Treat that as write
@@ -391,7 +416,7 @@ where
                     }
                     if message_complete {
                         pending_outbound = None;
-                    } else if let Some((_framed, offset)) = pending_outbound.as_mut() {
+                    } else if let Some((_framed, offset, _request_trace)) = pending_outbound.as_mut() {
                         *offset = next_offset;
                     }
                 }
@@ -512,12 +537,15 @@ where
     }
     .instrument(stream_span));
 
-    JsonRpcConnection {
-        outgoing_tx,
-        incoming_rx,
-        disconnected_rx,
-        task_handles: vec![websocket_task],
-        transport: JsonRpcTransport::Plain,
+    NoiseHarnessConnection {
+        connection: JsonRpcConnection {
+            outgoing_tx,
+            incoming_rx,
+            disconnected_rx,
+            task_handles: vec![websocket_task],
+            transport: JsonRpcTransport::Plain,
+        },
+        handshake_ready: handshake_ready_rx,
     }
 }
 
@@ -567,7 +595,7 @@ where
 async fn receive_data(
     inbound_ciphertexts: &mut OrderedCiphertextFrames,
     transport: &mut NoiseTransport,
-    decoder: &mut JsonRpcMessageDecoder,
+    decoder: &mut ClientJsonRpcMessageDecoder,
     data: RelayData,
     delivery_deadline: tokio::time::Instant,
     incoming_tx: &mpsc::Sender<JsonRpcConnectionEvent>,
@@ -585,7 +613,7 @@ async fn receive_data(
         for message in decoder.push(&plaintext)? {
             send_incoming_event(
                 incoming_tx,
-                JsonRpcConnectionEvent::Message(message),
+                JsonRpcConnectionEvent::message(message),
                 delivery_deadline,
             )
             .await?;

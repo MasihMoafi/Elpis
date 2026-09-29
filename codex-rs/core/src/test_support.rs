@@ -1,16 +1,14 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 //! Test-only helpers exposed for cross-crate integration tests.
 //!
 //! Production code should not depend on this module.
 //! We prefer this to using a crate feature to avoid building multiple
 //! permutations of the crate.
 
-use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::Arc;
 
 use codex_exec_server::EnvironmentManager;
-use codex_extension_api::LoadUserInstructionsFuture;
+use codex_extension_api::LoadInstructionsFuture;
 use codex_extension_api::LoadedUserInstructions;
 use codex_extension_api::UserInstructionsProvider;
 use codex_http_client::HttpClientFactory;
@@ -26,14 +24,13 @@ use codex_models_manager::test_support::construct_model_info_offline_for_tests;
 use codex_models_manager::test_support::get_model_offline_for_tests;
 use codex_protocol::ThreadId;
 use codex_protocol::config_types::CollaborationModeMask;
-use codex_protocol::models::ResponseItem;
+use codex_protocol::mcp::ClientMcpExtensions;
+use codex_protocol::mcp::OPENAI_FORM_EXTENSION_ID;
 use codex_protocol::openai_models::ModelInfo;
 use codex_protocol::openai_models::ModelPreset;
-use codex_protocol::protocol::Op;
 use codex_protocol::protocol::SessionSource;
 use once_cell::sync::Lazy;
 
-use crate::CodexThread;
 use crate::ThreadManager;
 use crate::config::Config;
 use crate::responses_metadata::CodexResponsesMetadata;
@@ -52,100 +49,51 @@ static TEST_MODEL_PRESETS: Lazy<Vec<ModelPreset>> = Lazy::new(|| {
     presets
 });
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct ContextPruneStateSnapshot {
-    pub raw_history: Vec<ResponseItem>,
-    pub covered_call_ids: HashSet<String>,
-    pub saved_tokens: u64,
-}
-
-pub async fn context_prune_state_snapshot(thread: &CodexThread) -> ContextPruneStateSnapshot {
-    let (raw_history, covered_call_ids, saved_tokens) =
-        crate::session::context_prune::state_snapshot_for_test(&thread.session).await;
-    ContextPruneStateSnapshot {
-        raw_history,
-        covered_call_ids,
-        saved_tokens,
-    }
-}
-
-async fn active_prune_boundary(thread: &CodexThread) -> crate::tasks::TaskCancellationBoundary {
-    let active_turn = thread.session.active_turn.lock().await;
-    active_turn
-        .as_ref()
-        .and_then(|turn| turn.task.as_ref())
-        .and_then(|task| task.task.cancellation_boundary())
-        .expect("an active prune task must expose a cancellation boundary")
-}
-
-pub async fn interrupt_active_prune_and_wait_for_cancellation(
-    thread: &CodexThread,
-) -> codex_protocol::error::Result<String> {
-    let boundary = active_prune_boundary(thread).await;
-    let submission_id = thread.submit(Op::Interrupt).await?;
-    boundary.wait_for_cancellation_delivery().await;
-    let decision = boundary.wait_for_decision().await;
-    assert_eq!(
-        decision,
-        crate::tasks::TaskCancellationDecision::Cancelled,
-        "interrupt arrived after the prune task committed"
-    );
-    Ok(submission_id)
-}
-
-pub async fn wait_for_active_prune_commit(thread: &CodexThread) {
-    let decision = active_prune_boundary(thread)
+/// Inspect the same resolved environment configurations used to construct sampling steps.
+pub async fn environment_windows_sandbox_types(
+    thread: &crate::CodexThread,
+) -> Vec<(String, codex_sandboxing::SandboxType)> {
+    thread
+        .session
+        .services
+        .turn_environments
+        .snapshot()
         .await
-        .wait_for_decision()
-        .await;
-    assert_eq!(
-        decision,
-        crate::tasks::TaskCancellationDecision::Committed,
-        "the prune task was cancelled before committing"
-    );
+        .turn_environments()
+        .map(|environment| {
+            (
+                environment.selection.environment_id.clone(),
+                environment.config().windows_sandbox_type,
+            )
+        })
+        .collect()
 }
 
-pub async fn interrupt_active_prune_and_wait_for_commit_protection(
-    thread: &CodexThread,
-) -> codex_protocol::error::Result<String> {
-    let boundary = active_prune_boundary(thread).await;
-    let submission_id = thread.submit(Op::Interrupt).await?;
-    boundary.wait_for_cancel_request().await;
-    assert_eq!(
-        boundary.wait_for_decision().await,
-        crate::tasks::TaskCancellationDecision::Committed,
-        "interrupt displaced an already committed prune task"
-    );
-    Ok(submission_id)
+/// Reattaches request-only observations to a completed turn's history for capture assertions.
+/// Tests inspect this separately from the destination-filtered HTTP/WS request.
+pub async fn history_with_tool_call_metadata(
+    thread: &crate::CodexThread,
+) -> Vec<codex_protocol::models::ResponseItem> {
+    let history = thread.conversation_history_snapshot().await;
+    let mut items = history.items().cloned().collect::<Vec<_>>();
+    thread
+        .session
+        .services
+        .executed_tool_calls
+        .attach_to_prompt(&mut items, &mut Default::default());
+    items
 }
 
-pub struct ContextPruneCommitGate {
-    boundary: crate::tasks::TaskCancellationBoundary,
-    released: bool,
-}
-
-impl ContextPruneCommitGate {
-    pub fn release(mut self) {
-        self.boundary.release_commit_for_test();
-        self.released = true;
-    }
-}
-
-impl Drop for ContextPruneCommitGate {
-    fn drop(&mut self) {
-        if !self.released {
-            self.boundary.release_commit_for_test();
-        }
-    }
-}
-
-pub async fn pause_active_prune_commit(thread: &CodexThread) -> ContextPruneCommitGate {
-    let boundary = active_prune_boundary(thread).await;
-    boundary.pause_commit_for_test();
-    ContextPruneCommitGate {
-        boundary,
-        released: false,
-    }
+/// Returns the recorder state used by the next session metadata snapshot.
+/// This does not change destination filtering or issue a request.
+pub fn mcp_attribution_snapshot(
+    thread: &crate::CodexThread,
+) -> codex_protocol::mcp::McpAttribution {
+    thread
+        .session
+        .services
+        .executed_tool_calls
+        .mcp_attribution_snapshot()
 }
 
 /// Test-only provider that supplies no user instructions.
@@ -153,7 +101,7 @@ pub async fn pause_active_prune_commit(thread: &CodexThread) -> ContextPruneComm
 pub struct EmptyUserInstructionsProvider;
 
 impl UserInstructionsProvider for EmptyUserInstructionsProvider {
-    fn load_user_instructions(&self) -> LoadUserInstructionsFuture<'_> {
+    fn load_user_instructions(&self) -> LoadInstructionsFuture<'_> {
         Box::pin(async { LoadedUserInstructions::default() })
     }
 }
@@ -177,8 +125,9 @@ pub fn auth_manager_from_auth_with_home(auth: CodexAuth, codex_home: PathBuf) ->
 pub fn with_code_mode_host_program(
     thread_manager: ThreadManager,
     host_program: PathBuf,
+    config: &crate::config::Config,
 ) -> ThreadManager {
-    thread_manager.with_code_mode_host_program_for_tests(host_program)
+    thread_manager.with_code_mode_host_program_for_tests(host_program, config)
 }
 
 pub fn thread_manager_with_models_provider(
@@ -202,22 +151,6 @@ pub fn thread_manager_with_models_provider_and_home(
     )
 }
 
-pub fn thread_manager_with_models_provider_home_and_state(
-    auth: CodexAuth,
-    provider: ModelProviderInfo,
-    codex_home: PathBuf,
-    environment_manager: Arc<EnvironmentManager>,
-    state_db: Option<crate::StateDbHandle>,
-) -> ThreadManager {
-    ThreadManager::with_models_provider_home_and_state_for_tests(
-        auth,
-        provider,
-        codex_home,
-        environment_manager,
-        state_db,
-    )
-}
-
 pub async fn start_thread_with_user_shell_override(
     thread_manager: &ThreadManager,
     config: Config,
@@ -228,12 +161,15 @@ pub async fn start_thread_with_user_shell_override(
         .start_thread_with_user_shell_override_for_tests(
             config,
             user_shell_override,
-            supports_openai_form_elicitation,
+            ClientMcpExtensions::new(
+                supports_openai_form_elicitation
+                    .then(|| (OPENAI_FORM_EXTENSION_ID.to_string(), serde_json::json!({}))),
+            ),
         )
         .await
 }
 
-pub async fn resume_thread_from_rollout_with_user_shell_override(
+pub async fn resume_legacy_thread_from_rollout_with_user_shell_override(
     thread_manager: &ThreadManager,
     config: Config,
     rollout_path: PathBuf,
@@ -242,12 +178,15 @@ pub async fn resume_thread_from_rollout_with_user_shell_override(
     supports_openai_form_elicitation: bool,
 ) -> codex_protocol::error::Result<crate::NewThread> {
     thread_manager
-        .resume_thread_from_rollout_with_user_shell_override_for_tests(
+        .resume_legacy_thread_from_rollout_with_user_shell_override_for_tests(
             config,
             rollout_path,
             auth_manager,
             user_shell_override,
-            supports_openai_form_elicitation,
+            ClientMcpExtensions::new(
+                supports_openai_form_elicitation
+                    .then(|| (OPENAI_FORM_EXTENSION_ID.to_string(), serde_json::json!({}))),
+            ),
         )
         .await
 }
@@ -309,6 +248,11 @@ pub fn responses_metadata(
             window_id,
         )
     }
+}
+
+pub fn with_parent_turn(mut metadata: CodexResponsesMetadata, id: &str) -> CodexResponsesMetadata {
+    metadata.parent_turn_id = Some(id.to_string());
+    metadata
 }
 
 pub fn all_model_presets() -> &'static Vec<ModelPreset> {

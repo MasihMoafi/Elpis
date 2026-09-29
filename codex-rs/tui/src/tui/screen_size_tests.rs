@@ -8,10 +8,10 @@ use crate::tui::TuiEvent;
 #[tokio::test]
 async fn draw_size_policy_refreshes_only_after_resume() {
     let mut tui = crate::tui::test_support::make_test_tui().expect("test tui");
-    let cached = Size::new(120, 40);
+    let cached = Size::new(/*width*/ 120, /*height*/ 40);
     let resumed = tui.terminal.size().expect("backend size");
     tui.terminal.last_known_screen_size = cached;
-    let resized = Size::new(100, 30);
+    let resized = Size::new(/*width*/ 100, /*height*/ 30);
     for (event, expected) in [
         (TuiEvent::Draw, cached),
         (TuiEvent::Resume, resumed),
@@ -32,7 +32,7 @@ async fn draw_size_policy_refreshes_only_after_resume() {
 #[tokio::test]
 async fn standalone_resize_draw_rechecks_settled_screen_size_once() {
     let mut tui = crate::tui::test_support::make_test_tui().expect("test tui");
-    let resize_size = Size::new(120, 40);
+    let resize_size = Size::new(/*width*/ 120, /*height*/ 40);
 
     tui.screen_size_for_event(&TuiEvent::Resize(resize_size))
         .expect("resolve resize");
@@ -56,7 +56,7 @@ async fn standalone_resize_draw_rechecks_settled_screen_size_once() {
 async fn entering_alternate_screen_updates_cached_screen_size() {
     let mut tui = crate::tui::test_support::make_test_tui().expect("test tui");
     let screen_size = tui.terminal.size().expect("terminal size");
-    tui.terminal.last_known_screen_size = Size::new(120, 40);
+    tui.terminal.last_known_screen_size = Size::new(/*width*/ 120, /*height*/ 40);
 
     tui.enter_alt_screen().expect("enter alternate screen");
 

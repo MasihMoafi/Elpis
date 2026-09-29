@@ -1,14 +1,10 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 //! Read-only state database queries for diagnostics.
 
 use anyhow::Result;
-use log::LevelFilter;
-use sqlx::ConnectOptions;
 use sqlx::Row;
-use sqlx::sqlite::SqliteConnectOptions;
-use sqlx::sqlite::SqlitePoolOptions;
-use std::path::Path;
 use std::path::PathBuf;
+
+use crate::SqliteConfig;
 
 /// Minimal thread metadata used by read-only state database audits.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -21,15 +17,11 @@ pub struct ThreadStateAuditRow {
 }
 
 /// Read persisted thread rows from a state DB without creating, migrating, or repairing it.
-pub async fn read_thread_state_audit_rows(path: &Path) -> Result<Vec<ThreadStateAuditRow>> {
-    let options = SqliteConnectOptions::new()
-        .filename(path)
-        .create_if_missing(false)
-        .read_only(true)
-        .log_statements(LevelFilter::Off);
-    let pool = SqlitePoolOptions::new()
-        .max_connections(1)
-        .connect_with(options)
+pub async fn read_thread_state_audit_rows(
+    sqlite: &SqliteConfig,
+) -> Result<Vec<ThreadStateAuditRow>> {
+    let pool = sqlite
+        .open_read_only_pool(&sqlite.state_db_path(), /*busy_timeout*/ None)
         .await?;
     let rows = sqlx::query(
         r#"

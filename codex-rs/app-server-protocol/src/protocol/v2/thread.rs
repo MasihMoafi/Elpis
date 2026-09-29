@@ -1,4 +1,3 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use super::ActivePermissionProfile;
 use super::ApprovalsReviewer;
 use super::AskForApproval;
@@ -7,11 +6,19 @@ use super::SandboxPolicy;
 use super::Thread;
 use super::ThreadHistoryMode;
 use super::ThreadItem;
+use super::ThreadRealtimeItem;
+use super::ThreadSection;
+use super::ThreadSectionAppearance;
 use super::ThreadSource;
 use super::Turn;
 use super::TurnEnvironmentParams;
+use super::TurnError;
 use super::TurnItemsView;
+use super::TurnStatus;
+use super::UserInput;
 use super::shared::v2_enum_from_core;
+use crate::JsonSchema;
+use crate::TS;
 use codex_experimental_api_macros::ExperimentalApi;
 pub use codex_protocol::capabilities::CapabilityRootLocation;
 pub use codex_protocol::capabilities::SelectedCapabilityRoot;
@@ -25,23 +32,17 @@ pub use codex_protocol::dynamic_tools::DynamicToolNamespaceTool;
 pub use codex_protocol::dynamic_tools::DynamicToolSpec;
 use codex_protocol::models::ResponseItem;
 use codex_protocol::openai_models::ReasoningEffort;
-use codex_protocol::protocol::ContextAttributionSnapshot as CoreContextAttributionSnapshot;
-use codex_protocol::protocol::SmartPruneAdmissionSnapshot as CoreSmartPruneAdmissionSnapshot;
-use codex_protocol::protocol::SmartPruneAttemptSnapshot as CoreSmartPruneAttemptSnapshot;
-use codex_protocol::protocol::SmartPruneSnapshot as CoreSmartPruneSnapshot;
 use codex_protocol::protocol::ThreadGoalStatus as CoreThreadGoalStatus;
 use codex_protocol::protocol::TokenUsage as CoreTokenUsage;
 use codex_protocol::protocol::TokenUsageInfo as CoreTokenUsageInfo;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use codex_utils_path_uri::LegacyAppPathString;
 use codex_utils_path_uri::PathUri;
-use schemars::JsonSchema;
 use serde::Deserialize;
 use serde::Serialize;
 use serde_json::Value as JsonValue;
 use std::collections::HashMap;
 use std::path::PathBuf;
-use ts_rs::TS;
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]
@@ -103,6 +104,7 @@ pub struct ThreadStartParams {
     pub base_instructions: Option<String>,
     #[ts(optional = nullable)]
     pub developer_instructions: Option<String>,
+    /// @deprecated `friendly` and `pragmatic` no longer select a style.
     #[ts(optional = nullable)]
     pub personality: Option<Personality>,
     /// @deprecated Ignored. Use Ultra reasoning effort for proactive multi-agent behavior.
@@ -120,6 +122,17 @@ pub struct ThreadStartParams {
     /// Optional client-supplied analytics source classification for this thread.
     #[ts(optional = nullable)]
     pub thread_source: Option<ThreadSource>,
+    /// Optional project identity for this new thread. Durable threads persist
+    /// the assignment; ephemeral threads expose it only in live responses.
+    #[experimental("thread/start.projectId")]
+    #[ts(optional = nullable)]
+    pub project_id: Option<String>,
+    /// Initial Daybreak choice for this persistent thread. Omitted or null
+    /// leaves it unset. This does not select a turn's `cyberAccessProgram`
+    /// or grant access. Not supported for ephemeral threads.
+    #[experimental("thread/start.daybreakEnabled")]
+    #[ts(optional = nullable)]
+    pub daybreak_enabled: Option<bool>,
     /// Optional sticky environments for this thread.
     ///
     /// Omitted selects the default environment when environment access is
@@ -177,6 +190,9 @@ pub struct ThreadStartResponse {
     pub model: String,
     pub model_provider: String,
     pub service_tier: Option<String>,
+    /// Saved list of disabled plugin IDs. Does not yet filter plugin capabilities.
+    #[serde(default)]
+    pub disabled_plugin_ids: Vec<String>,
     pub cwd: AbsolutePathBuf,
     /// Thread-scoped runtime workspace roots used to materialize
     /// `:workspace_roots`.
@@ -219,6 +235,10 @@ impl ThreadStartResponse {
 #[ts(export_to = "v2/")]
 pub struct ThreadSettingsUpdateParams {
     pub thread_id: String,
+    /// Replace this thread's disabled plugin IDs.
+    /// Omitted/null preserves the list; [] clears it.
+    #[ts(optional = nullable)]
+    pub disabled_plugin_ids: Option<Vec<String>>,
     /// Override the working directory for subsequent turns.
     #[ts(optional = nullable)]
     pub cwd: Option<PathBuf>,
@@ -240,12 +260,6 @@ pub struct ThreadSettingsUpdateParams {
     /// Override the model for subsequent turns.
     #[ts(optional = nullable)]
     pub model: Option<String>,
-    /// Whether Elpis should choose the concrete model automatically.
-    #[ts(optional = nullable)]
-    pub automatic_model_routing: Option<bool>,
-    /// Override the model provider for subsequent turns.
-    #[ts(optional = nullable)]
-    pub model_provider: Option<String>,
     /// Override the service tier for subsequent turns. `null` clears the
     /// current service tier; omission leaves it unchanged.
     #[serde(
@@ -273,7 +287,8 @@ pub struct ThreadSettingsUpdateParams {
     #[experimental("thread/settings/update.multiAgentMode")]
     #[ts(optional = nullable)]
     pub multi_agent_mode: Option<MultiAgentMode>,
-    /// Override the personality for subsequent turns.
+    /// @deprecated `friendly` and `pragmatic` no longer select a style.
+    /// Changing this does not rewrite the thread's existing instructions.
     #[ts(optional = nullable)]
     pub personality: Option<Personality>,
 }
@@ -287,6 +302,9 @@ pub struct ThreadSettingsUpdateResponse {}
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "v2/")]
 pub struct ThreadSettings {
+    /// Saved list of disabled plugin IDs. Does not yet filter plugin capabilities.
+    #[serde(default)]
+    pub disabled_plugin_ids: Vec<String>,
     pub cwd: AbsolutePathBuf,
     pub approval_policy: AskForApproval,
     pub approvals_reviewer: ApprovalsReviewer,
@@ -302,6 +320,7 @@ pub struct ThreadSettings {
     #[experimental("thread/settings.multiAgentMode")]
     #[serde(default)]
     pub multi_agent_mode: MultiAgentMode,
+    /// @deprecated Reports the saved setting; `friendly` and `pragmatic` no longer select a style.
     pub personality: Option<Personality>,
 }
 
@@ -334,16 +353,6 @@ pub struct ThreadSettingsUpdatedNotification {
 /// Prefer using thread_id whenever possible.
 pub struct ThreadResumeParams {
     pub thread_id: String,
-
-    /// Supply tools for this resumed session. Omitted or empty lists retain saved tools.
-    /// A loaded thread may only change tools after its clients detach and it becomes idle.
-    #[experimental("thread/resume.dynamicTools")]
-    #[serde(
-        default,
-        deserialize_with = "codex_protocol::dynamic_tools::deserialize_dynamic_tool_specs"
-    )]
-    #[ts(optional = nullable)]
-    pub dynamic_tools: Option<Vec<DynamicToolSpec>>,
 
     /// [UNSTABLE] FOR CODEX CLOUD - DO NOT USE.
     /// If specified, the thread will be resumed with the provided history
@@ -403,12 +412,15 @@ pub struct ThreadResumeParams {
     pub base_instructions: Option<String>,
     #[ts(optional = nullable)]
     pub developer_instructions: Option<String>,
+    /// @deprecated `friendly` and `pragmatic` no longer select a style.
+    /// Changing this does not rewrite the thread's existing instructions.
     #[ts(optional = nullable)]
     pub personality: Option<Personality>,
     /// When true, return only thread metadata and live-resume state without
     /// populating `thread.turns`. This is useful when the client plans to call
-    /// `thread/turns/list` immediately after resuming.
-    #[experimental("thread/resume.excludeTurns")]
+    /// `thread/turns/list` immediately after resuming. Full-history hydration
+    /// is deprecated for paginated threads; use this with `thread/turns/list`
+    /// and `thread/items/list` instead.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub exclude_turns: bool,
     /// When present, include a `thread/turns/list` page in the resume response
@@ -426,6 +438,9 @@ pub struct ThreadResumeResponse {
     pub model: String,
     pub model_provider: String,
     pub service_tier: Option<String>,
+    /// Saved list of disabled plugin IDs. Does not yet filter plugin capabilities.
+    #[serde(default)]
+    pub disabled_plugin_ids: Vec<String>,
     pub cwd: AbsolutePathBuf,
     /// Thread-scoped runtime workspace roots used to materialize
     /// `:workspace_roots`.
@@ -448,6 +463,8 @@ pub struct ThreadResumeResponse {
     #[serde(default)]
     pub active_permission_profile: Option<ActivePermissionProfile>,
     pub reasoning_effort: Option<ReasoningEffort>,
+    /// Effective collaboration mode. Absent when resuming from an older server.
+    pub collaboration_mode: Option<CollaborationMode>,
     /// @deprecated Always `explicitRequestOnly`. Use `reasoningEffort` for Ultra behavior.
     #[experimental("thread/resume.multiAgentMode")]
     #[serde(default)]
@@ -456,6 +473,18 @@ pub struct ThreadResumeResponse {
     #[experimental("thread/resume.initialTurnsPage")]
     #[serde(default)]
     pub initial_turns_page: Option<TurnsPage>,
+    /// Opaque cursor for hydrating paginated turns backwards.
+    ///
+    /// Pass this as `cursor` to `thread/turns/list` with
+    /// `sortDirection: "desc"`. The first page includes the turn identified by the cursor.
+    #[serde(default)]
+    pub turns_backwards_cursor: Option<String>,
+    /// Opaque cursor for hydrating paginated items backwards.
+    ///
+    /// Pass this as `cursor` to `thread/items/list` with
+    /// `sortDirection: "desc"`. The first page includes the item identified by the cursor.
+    #[serde(default)]
+    pub items_backwards_cursor: Option<String>,
 }
 
 impl ThreadResumeResponse {
@@ -584,8 +613,9 @@ pub struct ThreadForkParams {
     pub thread_source: Option<ThreadSource>,
     /// When true, return only thread metadata and live fork state without
     /// populating `thread.turns`. This is useful when the client plans to call
-    /// `thread/turns/list` immediately after forking.
-    #[experimental("thread/fork.excludeTurns")]
+    /// `thread/turns/list` immediately after forking. Full-history hydration
+    /// is deprecated for paginated threads; use this with `thread/turns/list`
+    /// and `thread/items/list` instead.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub exclude_turns: bool,
     /// When true, carry the source thread's current goal into the fork without
@@ -604,6 +634,9 @@ pub struct ThreadForkResponse {
     pub model: String,
     pub model_provider: String,
     pub service_tier: Option<String>,
+    /// Saved list of disabled plugin IDs. Does not yet filter plugin capabilities.
+    #[serde(default)]
+    pub disabled_plugin_ids: Vec<String>,
     pub cwd: AbsolutePathBuf,
     /// Thread-scoped runtime workspace roots used to materialize
     /// `:workspace_roots`.
@@ -862,16 +895,134 @@ pub struct ThreadGoalClearResponse {
     pub cleared: bool,
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS, ExperimentalApi)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub struct QueuedSubmission {
+    pub id: String,
+    pub input: Vec<UserInput>,
+    pub client_user_message_id: String,
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub struct ThreadQueueAddParams {
+    pub thread_id: String,
+    pub input: Vec<UserInput>,
+    pub client_user_message_id: String,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub struct ThreadQueueAddResponse {
+    pub queued_submission: QueuedSubmission,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub struct ThreadQueueListParams {
+    pub thread_id: String,
+    /// Opaque pagination cursor returned by a previous call.
+    #[ts(optional = nullable)]
+    pub cursor: Option<String>,
+    /// Optional page size; defaults to the standard thread-list page size.
+    #[ts(optional = nullable)]
+    pub limit: Option<u32>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub struct ThreadQueueListResponse {
+    pub data: Vec<QueuedSubmission>,
+    /// Opaque cursor for the next page, or `null` when no submissions remain.
+    pub next_cursor: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub struct ThreadQueueUpdateParams {
+    pub thread_id: String,
+    pub queued_submission_id: String,
+    pub input: Vec<UserInput>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub struct ThreadQueueUpdateResponse {
+    pub queued_submission: QueuedSubmission,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub struct ThreadQueueDeleteParams {
+    pub thread_id: String,
+    pub queued_submission_id: String,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub struct ThreadQueueDeleteResponse {
+    pub deleted: bool,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub struct ThreadQueueReorderParams {
+    pub thread_id: String,
+    pub queued_submission_ids: Vec<String>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub struct ThreadQueueReorderResponse {}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub struct ThreadQueueStartParams {
+    pub thread_id: String,
+    #[ts(optional = nullable)]
+    pub queued_submission_id: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub struct ThreadQueueStartResponse {
+    pub turn: Turn,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS, ExperimentalApi)]
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "v2/")]
 pub struct ThreadMetadataUpdateParams {
     pub thread_id: String,
+    /// Omit to leave the project unchanged, use an empty string to clear it,
+    /// or provide an existing project ID to assign it.
+    #[experimental("thread/metadata/update.projectId")]
+    #[ts(optional = nullable)]
+    pub project_id: Option<String>,
     /// Patch the stored Git metadata for this thread.
     /// Omit a field to leave it unchanged, set it to `null` to clear it, or
     /// provide a string to replace the stored value.
     #[ts(optional = nullable)]
     pub git_info: Option<ThreadMetadataGitInfoUpdateParams>,
+    /// Save the client's Daybreak choice for this persistent thread.
+    /// Omitted or null leaves it unchanged. This does not select a turn's
+    /// `cyberAccessProgram` or grant access.
+    #[experimental("thread/metadata/update.daybreakEnabled")]
+    #[ts(optional = nullable)]
+    pub daybreak_enabled: Option<bool>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
@@ -917,6 +1068,73 @@ pub struct ThreadMetadataUpdateResponse {
     pub thread: Thread,
 }
 
+/// Parameters for moving a thread within a server-owned section ordering.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub struct ThreadSectionMoveParams {
+    /// Thread to move into, within, or out of a section.
+    pub thread_id: String,
+    /// Destination section, or `null` to remove the thread from its section.
+    #[serde(deserialize_with = "Option::deserialize")]
+    #[schemars(
+        required,
+        schema_with = "crate::protocol::serde_helpers::nullable_string_schema"
+    )]
+    #[ts(type = "string | null")]
+    pub section_id: Option<String>,
+    /// Existing thread to insert before; omission or null appends to the section.
+    #[ts(optional = nullable)]
+    pub before_thread_id: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub struct ThreadSectionMoveResponse {}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, JsonSchema, TS)]
+#[serde(rename_all = "lowercase")]
+#[ts(rename_all = "lowercase")]
+pub enum ThreadMemoryMode {
+    Enabled,
+    Disabled,
+}
+
+impl ThreadMemoryMode {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Enabled => "enabled",
+            Self::Disabled => "disabled",
+        }
+    }
+
+    pub fn to_core(self) -> codex_protocol::protocol::ThreadMemoryMode {
+        match self {
+            Self::Enabled => codex_protocol::protocol::ThreadMemoryMode::Enabled,
+            Self::Disabled => codex_protocol::protocol::ThreadMemoryMode::Disabled,
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub struct ThreadMemoryModeSetParams {
+    pub thread_id: String,
+    pub mode: ThreadMemoryMode,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub struct ThreadMemoryModeSetResponse {}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub struct MemoryResetResponse {}
+
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "v2/")]
@@ -929,29 +1147,12 @@ pub struct ThreadUnarchiveResponse {
 #[ts(export_to = "v2/")]
 pub struct ThreadCompactStartParams {
     pub thread_id: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
-    pub instructions: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "v2/")]
 pub struct ThreadCompactStartResponse {}
-
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
-#[serde(rename_all = "camelCase")]
-#[ts(export_to = "v2/")]
-pub struct ThreadPruneStartParams {
-    pub thread_id: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub target_pct: Option<i64>,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
-#[serde(rename_all = "camelCase")]
-#[ts(export_to = "v2/")]
-pub struct ThreadPruneStartResponse {}
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]
@@ -963,6 +1164,12 @@ pub struct ThreadShellCommandParams {
     /// such as pipes, redirects, and quoting. This runs unsandboxed with full
     /// access rather than inheriting the thread sandbox policy.
     pub command: String,
+    /// Maximum execution time in milliseconds. Defaults to one hour when omitted
+    /// or null. Must be non-negative; zero requests an immediate timeout, not
+    /// unlimited execution. Does not affect the immediate RPC acknowledgement.
+    #[ts(type = "number | null")]
+    #[ts(optional = nullable)]
+    pub timeout_ms: Option<i64>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
@@ -1016,7 +1223,7 @@ pub struct ThreadBackgroundTerminal {
     pub item_id: String,
     pub process_id: String,
     pub command: String,
-    pub cwd: AbsolutePathBuf,
+    pub cwd: LegacyAppPathString,
     pub os_pid: Option<u32>,
     pub cpu_percent: Option<f64>,
     pub rss_kb: Option<u64>,
@@ -1047,30 +1254,123 @@ pub struct ThreadBackgroundTerminalsTerminateResponse {
     pub terminated: bool,
 }
 
+/// Replace a paginated thread's durable history with the prefix before one turn.
+///
+/// This only changes persisted conversation history. It does not revert local file changes.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "v2/")]
-/// DEPRECATED: `thread/rollback` will be removed soon.
-pub struct ThreadRollbackParams {
+pub struct ThreadRevertParams {
     pub thread_id: String,
-    /// The number of turns to drop from the end of the thread. Must be >= 1.
-    ///
-    /// This only modifies the thread's history and does not revert local file changes
-    /// that have been made by the agent. Clients are responsible for reverting these changes.
-    pub num_turns: u32,
+    /// Turn excluded from the replacement history, together with every later turn.
+    pub before_turn_id: String,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "v2/")]
-pub struct ThreadRollbackResponse {
-    /// The updated thread after applying the rollback, with `turns` populated.
-    ///
-    /// The ThreadItems stored in each Turn are lossy since we explicitly do not
-    /// persist all agent interactions, such as command executions. This is the same
-    /// behavior as `thread/resume`.
+pub struct ThreadRevertResponse {
+    /// Updated loaded thread metadata. `turns` is always empty; hydrate retained history through
+    /// `thread/turns/list`.
     pub thread: Thread,
+    /// Opaque cursor for hydrating paginated turns backwards.
+    ///
+    /// Pass this as `cursor` to `thread/turns/list` with
+    /// `sortDirection: "desc"`. The first page includes the turn identified by the cursor.
+    pub turns_backwards_cursor: Option<String>,
+    /// Opaque cursor for hydrating paginated items backwards.
+    ///
+    /// Pass this as `cursor` to `thread/items/list` with
+    /// `sortDirection: "desc"`. The first page includes the item identified by the cursor.
+    pub items_backwards_cursor: Option<String>,
 }
+
+/// Parameters for listing independently persisted thread sections.
+#[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq, Eq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub struct ThreadSectionListParams {
+    /// Opaque pagination cursor returned by a previous call.
+    #[ts(optional = nullable)]
+    pub cursor: Option<String>,
+    /// Maximum number of sections to return.
+    #[ts(optional = nullable)]
+    pub limit: Option<u32>,
+}
+
+/// One page of independently persisted thread sections.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub struct ThreadSectionListResponse {
+    pub data: Vec<ThreadSection>,
+    /// Opaque cursor for the next page, or `null` when no sections remain.
+    pub next_cursor: Option<String>,
+}
+
+/// Parameters for creating an independently persisted thread section.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub struct ThreadSectionCreateParams {
+    /// The user-visible name of the section.
+    pub name: String,
+    #[serde(default)]
+    #[ts(optional = nullable)]
+    pub appearance: Option<ThreadSectionAppearance>,
+}
+
+/// The independently persisted section created by the server.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub struct ThreadSectionCreateResponse {
+    pub section: ThreadSection,
+}
+
+/// Parameters for updating an independently persisted thread section.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub struct ThreadSectionUpdateParams {
+    /// The stable, server-generated identity of the section to update.
+    pub section_id: String,
+    /// The updated user-visible name of the section.
+    pub name: String,
+    /// Omit to preserve appearance, use `null` to clear it, or provide a replacement.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        serialize_with = "crate::protocol::serde_helpers::serialize_double_option",
+        deserialize_with = "crate::protocol::serde_helpers::deserialize_double_option"
+    )]
+    #[schemars(with = "Option<ThreadSectionAppearance>")]
+    #[ts(optional = nullable, as = "Option<ThreadSectionAppearance>")]
+    pub appearance: Option<Option<ThreadSectionAppearance>>,
+}
+
+/// The independently persisted section after its name is updated.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub struct ThreadSectionUpdateResponse {
+    pub section: ThreadSection,
+}
+
+/// Parameters for deleting an independently persisted thread section.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub struct ThreadSectionDeleteParams {
+    /// The stable, server-generated identity of the section to delete.
+    pub section_id: String,
+}
+
+/// Successful deletion does not return additional section data.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub struct ThreadSectionDeleteResponse {}
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS, ExperimentalApi)]
 #[serde(rename_all = "camelCase")]
@@ -1096,10 +1396,36 @@ pub struct ThreadListParams {
     /// are returned. When omitted or empty, defaults to interactive sources.
     #[ts(optional = nullable)]
     pub source_kinds: Option<Vec<ThreadSourceKind>>,
+    /// Optional originator allowlist, matching any supplied value exactly.
+    /// Supported by hosted backends only; the local app-server rejects a nonempty list.
+    /// Omitted or empty lists leave originators unrestricted.
+    #[ts(optional = nullable)]
+    pub originators: Option<Vec<String>>,
     /// Optional archived filter; when set to true, only archived threads are returned.
     /// If false or null, only non-archived threads are returned.
     #[ts(optional = nullable)]
     pub archived: Option<bool>,
+    /// Omit to include every section, set to `null` for unsectioned threads,
+    /// or provide a section ID to return only threads in that section.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        serialize_with = "crate::protocol::serde_helpers::serialize_double_option",
+        deserialize_with = "crate::protocol::serde_helpers::deserialize_double_option"
+    )]
+    #[ts(optional = nullable, type = "string | null")]
+    pub section_id: Option<Option<String>>,
+    /// Omit to include every project, set to null for unassigned threads,
+    /// or provide a project ID to return only threads in that project.
+    #[experimental("thread/list.projectId")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        serialize_with = "crate::protocol::serde_helpers::serialize_double_option",
+        deserialize_with = "crate::protocol::serde_helpers::deserialize_double_option"
+    )]
+    #[ts(optional = nullable, type = "string | null")]
+    pub project_id: Option<Option<String>>,
     /// Optional cwd filter or filters; when set, only threads whose session cwd
     /// exactly matches one of these paths are returned.
     #[ts(optional = nullable, type = "string | Array<string> | null")]
@@ -1135,7 +1461,7 @@ pub struct ThreadSearchParams {
     pub limit: Option<u32>,
     /// Optional sort key; defaults to created_at.
     #[ts(optional = nullable)]
-    pub sort_key: Option<ThreadSortKey>,
+    pub sort_key: Option<ThreadSearchSortKey>,
     /// Optional sort direction; defaults to descending (newest first).
     #[ts(optional = nullable)]
     pub sort_direction: Option<SortDirection>,
@@ -1183,9 +1509,19 @@ pub enum ThreadSortKey {
     CreatedAt,
     UpdatedAt,
     RecencyAt,
+    SectionPosition,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, JsonSchema, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export_to = "v2/")]
+pub enum ThreadSearchSortKey {
+    CreatedAt,
+    UpdatedAt,
+    RecencyAt,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, JsonSchema, TS)]
 #[serde(rename_all = "snake_case")]
 #[ts(export_to = "v2/")]
 pub enum SortDirection {
@@ -1229,6 +1565,58 @@ pub struct ThreadSearchResponse {
     /// Use it with the opposite `sortDirection`; for timestamp sorts it anchors
     /// at the start of the page timestamp so same-second updates are not skipped.
     pub backwards_cursor: Option<String>,
+}
+
+/// Parameters for searching visible message occurrences within one paginated thread.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub struct ThreadSearchOccurrencesParams {
+    pub thread_id: String,
+    /// Case-insensitive literal substring to find in visible user messages and final assistant
+    /// messages.
+    pub search_term: String,
+    /// Opaque cursor returned by a previous call for the same thread and search term.
+    #[ts(optional = nullable)]
+    pub cursor: Option<String>,
+    /// Optional occurrence page size.
+    #[ts(optional = nullable)]
+    pub limit: Option<u32>,
+}
+
+/// UTF-16 code-unit range within `snippet`.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub struct ThreadSearchTextRange {
+    /// Inclusive UTF-16 code-unit offset.
+    pub start: u32,
+    /// Exclusive UTF-16 code-unit offset.
+    pub end: u32,
+}
+
+/// One visible message occurrence returned by [`ThreadSearchOccurrencesResponse`].
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub struct ThreadSearchOccurrence {
+    pub turn_id: String,
+    pub item_id: String,
+    pub snippet: String,
+    /// Match range within `snippet`, in UTF-16 code units.
+    pub snippet_match_range: ThreadSearchTextRange,
+    /// Opaque inclusive cursor accepted by `thread/turns/list` for this turn.
+    pub turn_cursor: String,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub struct ThreadSearchOccurrencesResponse {
+    /// Occurrences in chronological message order.
+    pub data: Vec<ThreadSearchOccurrence>,
+    /// Opaque cursor to continue after the last returned occurrence.
+    pub next_cursor: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default, JsonSchema, TS)]
@@ -1283,6 +1671,9 @@ pub enum ThreadActiveFlag {
 pub struct ThreadReadParams {
     pub thread_id: String,
     /// When true, include turns and their items from rollout history.
+    /// Full-history hydration is deprecated for paginated threads; prefer a
+    /// metadata-only read and page with `thread/turns/list` and
+    /// `thread/items/list`.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub include_turns: bool,
 }
@@ -1368,6 +1759,12 @@ pub struct ThreadItemEntry {
     /// Turn containing this item.
     pub turn_id: String,
     pub item: ThreadItem,
+    /// Unix timestamp (milliseconds) when the item started, if recorded by the producer.
+    #[ts(type = "number | null")]
+    pub started_at_ms: Option<i64>,
+    /// Unix timestamp (milliseconds) when the item completed, if recorded by the producer.
+    #[ts(type = "number | null")]
+    pub completed_at_ms: Option<i64>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
@@ -1383,6 +1780,75 @@ pub struct ThreadItemsListResponse {
     pub backwards_cursor: Option<String>,
 }
 
+/// EXPERIMENTAL - list ordinary and realtime thread history in rollout order.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub struct ThreadTimelineListParams {
+    pub thread_id: String,
+    #[ts(optional = nullable)]
+    pub cursor: Option<String>,
+    #[ts(optional = nullable)]
+    pub limit: Option<u32>,
+}
+
+/// EXPERIMENTAL - one item or turn boundary in canonical rollout order.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[serde(
+    tag = "type",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
+#[ts(tag = "type", rename_all = "camelCase", export_to = "v2/")]
+pub enum ThreadTimelineEntry {
+    Item {
+        #[ts(type = "number")]
+        position: u64,
+        #[schemars(rename = "turnId")]
+        #[serde(rename = "turnId")]
+        #[ts(rename = "turnId")]
+        turn_id: String,
+        item: Box<ThreadItem>,
+    },
+    Realtime {
+        #[ts(type = "number")]
+        position: u64,
+        item: ThreadRealtimeItem,
+    },
+    TurnStarted {
+        #[ts(type = "number")]
+        position: u64,
+        #[ts(rename = "turnId")]
+        turn_id: String,
+        #[ts(rename = "startedAt", type = "number | null")]
+        started_at: Option<i64>,
+    },
+    TurnCompleted {
+        #[ts(type = "number")]
+        position: u64,
+        #[ts(rename = "turnId")]
+        turn_id: String,
+        status: TurnStatus,
+        error: Option<TurnError>,
+        #[ts(rename = "startedAt", type = "number | null")]
+        started_at: Option<i64>,
+        #[ts(rename = "completedAt", type = "number | null")]
+        completed_at: Option<i64>,
+        #[ts(rename = "durationMs", type = "number | null")]
+        duration_ms: Option<i64>,
+    },
+}
+
+/// EXPERIMENTAL - a bounded timeline page with its resolved opening voice state.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub struct ThreadTimelineListResponse {
+    pub data: Vec<ThreadTimelineEntry>,
+    pub next_cursor: Option<String>,
+    pub active_realtime_session_at_page_start: Option<String>,
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "v2/")]
@@ -1390,18 +1856,6 @@ pub struct ThreadTokenUsageUpdatedNotification {
     pub thread_id: String,
     pub turn_id: String,
     pub token_usage: ThreadTokenUsage,
-}
-
-/// Thread-scoped Smart Prune state emitted after config refresh or listener attachment.
-///
-/// This is intentionally separate from token usage because a config change can
-/// happen without an active turn or a provider usage sample.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
-#[serde(rename_all = "camelCase")]
-#[ts(export_to = "v2/")]
-pub struct ThreadSmartPruneUpdatedNotification {
-    pub thread_id: String,
-    pub smart_prune: ThreadSmartPruneSnapshot,
 }
 
 /// Internal-only notification containing the exact usage from one upstream
@@ -1414,6 +1868,25 @@ pub struct RawResponseCompletedNotification {
     pub turn_id: String,
     pub response_id: String,
     pub usage: Option<TokenUsageBreakdown>,
+    pub usage_metadata: Option<ResponseUsageMetadata>,
+}
+
+/// Usage metadata reported for one upstream response.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub struct ResponseUsageMetadata {
+    pub amount: Option<String>,
+    pub metadata: Option<JsonValue>,
+}
+
+impl From<codex_protocol::ResponseUsageMetadata> for ResponseUsageMetadata {
+    fn from(value: codex_protocol::ResponseUsageMetadata) -> Self {
+        Self {
+            amount: value.amount,
+            metadata: value.metadata,
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
@@ -1425,14 +1898,6 @@ pub struct ThreadTokenUsage {
     // TODO(aibrahim): make this not optional
     #[ts(type = "number | null")]
     pub model_context_window: Option<i64>,
-    #[serde(default)]
-    #[ts(type = "number")]
-    pub context_prune_saved_tokens: u64,
-    #[serde(default)]
-    pub smart_prune: ThreadSmartPruneSnapshot,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
-    pub context_attribution: Option<ThreadContextAttribution>,
 }
 
 impl From<CoreTokenUsageInfo> for ThreadTokenUsage {
@@ -1441,217 +1906,11 @@ impl From<CoreTokenUsageInfo> for ThreadTokenUsage {
             total: value.total_token_usage.into(),
             last: value.last_token_usage.into(),
             model_context_window: value.model_context_window,
-            context_prune_saved_tokens: 0,
-            smart_prune: ThreadSmartPruneSnapshot::default(),
-            context_attribution: None,
         }
     }
-}
-
-/// Estimated composition of the exact request built for the latest provider attempt.
-/// Values are never padded to reconcile with provider token accounting.
-#[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq, Eq, JsonSchema, TS)]
-#[serde(rename_all = "camelCase")]
-#[ts(export_to = "v2/")]
-pub struct ThreadContextAttribution {
-    #[ts(type = "number")]
-    pub system_instructions: u64,
-    #[ts(type = "number")]
-    pub developer_messages: u64,
-    #[ts(type = "number")]
-    pub user_messages: u64,
-    #[ts(type = "number")]
-    pub agent_messages: u64,
-    #[ts(type = "number")]
-    pub reasoning: u64,
-    #[ts(type = "number")]
-    pub tool_calls: u64,
-    #[ts(type = "number")]
-    pub tool_results: u64,
-    #[ts(type = "number")]
-    pub tool_definitions: u64,
-    #[ts(type = "number")]
-    pub output_schema: u64,
-    #[ts(type = "number")]
-    pub unrecognized_items: u64,
-    #[ts(type = "number")]
-    pub estimated_total: u64,
-}
-
-impl From<CoreContextAttributionSnapshot> for ThreadContextAttribution {
-    fn from(value: CoreContextAttributionSnapshot) -> Self {
-        Self {
-            system_instructions: value.system_instructions,
-            developer_messages: value.developer_messages,
-            user_messages: value.user_messages,
-            agent_messages: value.agent_messages,
-            reasoning: value.reasoning,
-            tool_calls: value.tool_calls,
-            tool_results: value.tool_results,
-            tool_definitions: value.tool_definitions,
-            output_schema: value.output_schema,
-            unrecognized_items: value.unrecognized_items,
-            estimated_total: value.estimated_total,
-        }
-    }
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq, JsonSchema, TS)]
-#[serde(rename_all = "camelCase")]
-#[ts(export_to = "v2/")]
-pub struct ThreadSmartPruneSnapshot {
-    pub enabled: bool,
-    #[ts(type = "number")]
-    pub examined_outputs: u64,
-    #[ts(type = "number")]
-    pub admitted_outputs: u64,
-    #[ts(type = "number")]
-    pub unchanged_outputs: u64,
-    #[ts(type = "number")]
-    pub failed_batches: u64,
-    #[ts(type = "number")]
-    pub approx_source_tokens: u64,
-    #[ts(type = "number")]
-    pub approx_admitted_tokens: u64,
-    #[ts(type = "number")]
-    pub approx_saved_tokens: u64,
-    #[serde(default)]
-    #[ts(type = "number")]
-    pub optimizer_requests: u64,
-    #[serde(default)]
-    #[ts(type = "number")]
-    pub optimizer_usage_reports: u64,
-    #[serde(default)]
-    pub optimizer_usage: TokenUsageBreakdown,
-    #[serde(default)]
-    #[ts(type = "number")]
-    pub optimizer_latency_ms: u64,
-    #[ts(type = "number")]
-    pub main_request_sequence: u64,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
-    pub latest: Option<ThreadSmartPruneAdmissionSnapshot>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
-    pub latest_attempt: Option<ThreadSmartPruneAttemptSnapshot>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
-#[serde(rename_all = "camelCase")]
-#[ts(export_to = "v2/")]
-pub struct ThreadSmartPruneAttemptSnapshot {
-    pub attempt_id: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
-    pub audit_path: Option<String>,
-    pub status: String,
-    pub model_slug: String,
-    pub reasoning_effort: String,
-    #[ts(type = "number")]
-    pub candidate_outputs: u64,
-    #[ts(type = "number")]
-    pub admitted_outputs: u64,
-    #[ts(type = "number")]
-    pub approx_saved_tokens: u64,
-    #[ts(type = "number")]
-    pub latency_ms: u64,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
-    pub usage: Option<TokenUsageBreakdown>,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
-#[serde(rename_all = "camelCase")]
-#[ts(export_to = "v2/")]
-pub struct ThreadSmartPruneAdmissionSnapshot {
-    pub admission_id: String,
-    pub audit_path: String,
-    #[ts(type = "number")]
-    pub examined_outputs: u64,
-    #[ts(type = "number")]
-    pub admitted_outputs: u64,
-    #[ts(type = "number")]
-    pub approx_source_tokens: u64,
-    #[ts(type = "number")]
-    pub approx_admitted_tokens: u64,
-    #[ts(type = "number")]
-    pub approx_saved_tokens: u64,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(type = "number", optional)]
-    pub request_sequence: Option<u64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
-    pub request_input_sha256: Option<String>,
-    pub request_linkage_verified: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
-    pub response_id: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
-    pub response_usage: Option<TokenUsageBreakdown>,
-    pub response_linkage_verified: bool,
-}
-
-impl From<CoreSmartPruneSnapshot> for ThreadSmartPruneSnapshot {
-    fn from(value: CoreSmartPruneSnapshot) -> Self {
-        Self {
-            enabled: value.enabled,
-            examined_outputs: value.examined_outputs,
-            admitted_outputs: value.admitted_outputs,
-            unchanged_outputs: value.unchanged_outputs,
-            failed_batches: value.failed_batches,
-            approx_source_tokens: value.approx_source_tokens,
-            approx_admitted_tokens: value.approx_admitted_tokens,
-            approx_saved_tokens: value.approx_saved_tokens,
-            optimizer_requests: value.optimizer_requests,
-            optimizer_usage_reports: value.optimizer_usage_reports,
-            optimizer_usage: value.optimizer_usage.into(),
-            optimizer_latency_ms: value.optimizer_latency_ms,
-            main_request_sequence: value.main_request_sequence,
-            latest: value.latest.map(Into::into),
-            latest_attempt: value.latest_attempt.map(Into::into),
-        }
-    }
-}
-
-impl From<CoreSmartPruneAttemptSnapshot> for ThreadSmartPruneAttemptSnapshot {
-    fn from(value: CoreSmartPruneAttemptSnapshot) -> Self {
-        Self {
-            attempt_id: value.attempt_id,
-            audit_path: value.audit_path,
-            status: value.status,
-            model_slug: value.model_slug,
-            reasoning_effort: value.reasoning_effort,
-            candidate_outputs: value.candidate_outputs,
-            admitted_outputs: value.admitted_outputs,
-            approx_saved_tokens: value.approx_saved_tokens,
-            latency_ms: value.latency_ms,
-            usage: value.usage.map(Into::into),
-        }
-    }
-}
-
-impl From<CoreSmartPruneAdmissionSnapshot> for ThreadSmartPruneAdmissionSnapshot {
-    fn from(value: CoreSmartPruneAdmissionSnapshot) -> Self {
-        Self {
-            admission_id: value.admission_id,
-            audit_path: value.audit_path,
-            examined_outputs: value.examined_outputs,
-            admitted_outputs: value.admitted_outputs,
-            approx_source_tokens: value.approx_source_tokens,
-            approx_admitted_tokens: value.approx_admitted_tokens,
-            approx_saved_tokens: value.approx_saved_tokens,
-            request_sequence: value.request_sequence,
-            request_input_sha256: value.request_input_sha256,
-            request_linkage_verified: value.request_linkage_verified,
-            response_id: value.response_id,
-            response_usage: value.response_usage.map(Into::into),
-            response_linkage_verified: value.response_linkage_verified,
-        }
-    }
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq, JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "v2/")]
 pub struct TokenUsageBreakdown {
@@ -1661,13 +1920,9 @@ pub struct TokenUsageBreakdown {
     pub input_tokens: i64,
     #[ts(type = "number")]
     pub cached_input_tokens: i64,
-    /// Input tokens written to the prompt cache by this request.
-    ///
-    /// `None` means the provider did not report the field, which is not the same as a reported
-    /// zero.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(type = "number", optional)]
-    pub cache_write_tokens: Option<i64>,
+    #[serde(default)]
+    #[ts(type = "number")]
+    pub cache_write_input_tokens: i64,
     #[ts(type = "number")]
     pub output_tokens: i64,
     #[ts(type = "number")]
@@ -1680,7 +1935,7 @@ impl From<CoreTokenUsage> for TokenUsageBreakdown {
             total_tokens: value.total_tokens,
             input_tokens: value.input_tokens,
             cached_input_tokens: value.cached_input_tokens,
-            cache_write_tokens: value.cache_write_tokens,
+            cache_write_input_tokens: value.cache_write_input_tokens,
             output_tokens: value.output_tokens,
             reasoning_output_tokens: value.reasoning_output_tokens,
         }
@@ -1730,6 +1985,13 @@ pub struct ThreadUnarchivedNotification {
 pub struct ThreadClosedNotification {
     pub thread_id: String,
 }
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub struct ThreadRevertedNotification {
+    pub thread_id: String,
+}
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "v2/")]
@@ -1756,6 +2018,13 @@ pub struct ThreadGoalClearedNotification {
     pub thread_id: String,
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub struct ThreadQueueChangedNotification {
+    pub thread_id: String,
+}
+
 /// Deprecated: Use `ContextCompaction` item type instead.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]
@@ -1763,36 +2032,4 @@ pub struct ThreadGoalClearedNotification {
 pub struct ContextCompactedNotification {
     pub thread_id: String,
     pub turn_id: String,
-}
-
-#[cfg(test)]
-mod tests {
-    use super::ThreadCompactStartParams;
-    use pretty_assertions::assert_eq;
-    use serde_json::json;
-
-    #[test]
-    fn thread_compact_start_params_preserve_legacy_wire_shape() {
-        let params: ThreadCompactStartParams =
-            serde_json::from_value(json!({ "threadId": "thread-1" })).unwrap();
-        assert_eq!(params.instructions, None);
-        assert_eq!(
-            serde_json::to_value(params).unwrap(),
-            json!({ "threadId": "thread-1" })
-        );
-    }
-
-    #[test]
-    fn thread_compact_start_params_round_trip_instructions() {
-        let value = json!({
-            "threadId": "thread-1",
-            "instructions": "preserve exact evidence"
-        });
-        let params: ThreadCompactStartParams = serde_json::from_value(value.clone()).unwrap();
-        assert_eq!(
-            params.instructions.as_deref(),
-            Some("preserve exact evidence")
-        );
-        assert_eq!(serde_json::to_value(params).unwrap(), value);
-    }
 }

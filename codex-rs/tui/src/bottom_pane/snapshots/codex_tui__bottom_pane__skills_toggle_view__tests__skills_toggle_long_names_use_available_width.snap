@@ -4,11 +4,13 @@ expression: "render_lines(&view, 96)"
 ---
                                                                                                 
   Enable/Disable Skills                                                                         
-  Only enabled skills are shown to the model. Available skills stay off until you select them.  
+  Turn skills on or off. Your changes are saved automatically.                                  
                                                                                                 
   Type to search skills                                                                         
-  >                                                                                             
-› [x] superpowers-systematic-debugging (polish)            Find root causes before fixing bug…  
-  [ ] superpowers-verification-before-completion (polish)  Verify completion before claiming …  
                                                                                                 
-  Press space or enter to toggle; esc to close
+› [x] superpowers-systematic-debugging (polish)            Find root causes before fixing bugs  
+  [ ] superpowers-verification-before-completion (polish)  Verify completion before claiming su…
+                                                                                                
+                                                                                                
+                                                                                                
+  space/enter toggle · esc close

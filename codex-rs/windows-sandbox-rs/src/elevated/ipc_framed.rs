@@ -1,4 +1,3 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 //! Framed IPC protocol used between the parent (CLI) and the elevated command runner.
 //!
 //! This module defines the JSON message schema (spawn request/ready, output, stdin,
@@ -20,14 +19,8 @@ use std::io::Read;
 use std::io::Write;
 use std::path::PathBuf;
 
-/// Safety cap for a single framed message payload.
-///
-/// This is not a protocol requirement; it simply bounds memory use and rejects
-/// obviously invalid frames.
-const MAX_FRAME_LEN: usize = 8 * 1024 * 1024;
-
 /// Protocol version shared by the parent process and elevated command runner.
-pub const IPC_PROTOCOL_VERSION: u8 = 4;
+pub const IPC_PROTOCOL_VERSION: u8 = 6;
 
 /// Length-prefixed, JSON-encoded frame.
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -66,12 +59,15 @@ pub struct SpawnRequest {
     pub codex_home: PathBuf,
     pub real_codex_home: PathBuf,
     pub cap_sids: Vec<String>,
+    /// Optional managed-network identity added only to the child's restricting SID set.
+    #[serde(default)]
+    pub network_proxy_restricting_sid: Option<String>,
     pub timeout_ms: Option<u64>,
     pub tty: bool,
     #[serde(default)]
     pub stdin_open: bool,
-    #[serde(default)]
-    pub use_private_desktop: bool,
+    /// Private desktop kept alive by the parent across command runners.
+    pub private_desktop_name: Option<String>,
 }
 
 /// Ack from runner after it spawns the child process.
@@ -147,34 +143,13 @@ pub fn decode_bytes(data: &str) -> Result<Vec<u8>> {
 }
 
 /// Write a length-prefixed JSON frame.
-pub fn write_frame<W: Write>(mut writer: W, msg: &FramedMessage) -> Result<()> {
-    let payload = serde_json::to_vec(msg)?;
-    if payload.len() > MAX_FRAME_LEN {
-        anyhow::bail!("frame too large: {}", payload.len());
-    }
-    let len = payload.len() as u32;
-    writer.write_all(&len.to_le_bytes())?;
-    writer.write_all(&payload)?;
-    writer.flush()?;
-    Ok(())
+pub fn write_frame<W: Write>(writer: W, msg: &FramedMessage) -> Result<()> {
+    crate::framed_io::write_frame(writer, msg)
 }
 
 /// Read a length-prefixed JSON frame; returns `Ok(None)` on EOF.
-pub fn read_frame<R: Read>(mut reader: R) -> Result<Option<FramedMessage>> {
-    let mut len_buf = [0u8; 4];
-    match reader.read_exact(&mut len_buf) {
-        Ok(()) => {}
-        Err(err) if err.kind() == std::io::ErrorKind::UnexpectedEof => return Ok(None),
-        Err(err) => return Err(err.into()),
-    }
-    let len = u32::from_le_bytes(len_buf) as usize;
-    if len > MAX_FRAME_LEN {
-        anyhow::bail!("frame too large: {len}");
-    }
-    let mut payload = vec![0u8; len];
-    reader.read_exact(&mut payload)?;
-    let msg: FramedMessage = serde_json::from_slice(&payload)?;
-    Ok(Some(msg))
+pub fn read_frame<R: Read>(reader: R) -> Result<Option<FramedMessage>> {
+    crate::framed_io::read_frame(reader)
 }
 
 #[cfg(test)]
@@ -225,10 +200,11 @@ mod tests {
                     codex_home: PathBuf::from(r"C:\codex"),
                     real_codex_home: PathBuf::from(r"C:\Users\codex"),
                     cap_sids: vec!["S-1-15-3-1024-1".to_string()],
+                    network_proxy_restricting_sid: Some("S-1-5-21-100-200-300-400".to_string()),
                     timeout_ms: Some(1000),
                     tty: false,
                     stdin_open: false,
-                    use_private_desktop: false,
+                    private_desktop_name: Some("CodexSandboxDesktop-1234".to_string()),
                 }),
             },
         };
@@ -246,6 +222,14 @@ mod tests {
         };
         assert_eq!(PermissionProfile::read_only(), payload.permission_profile);
         assert_eq!(workspace_roots, payload.workspace_roots);
+        assert_eq!(
+            Some("CodexSandboxDesktop-1234"),
+            payload.private_desktop_name.as_deref()
+        );
+        assert_eq!(
+            Some("S-1-5-21-100-200-300-400"),
+            payload.network_proxy_restricting_sid.as_deref()
+        );
     }
 
     #[test]

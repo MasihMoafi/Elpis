@@ -111,7 +111,7 @@ fn effort_transition_never_replaces_a_footer_flash() {
     composer.set_status_line(Some(Line::from("gpt-5.4 ultra · main")));
     composer
         .footer
-        .show_flash(Line::from("saved"), Duration::from_secs(/*secs*/ 1), None);
+        .show_flash(Line::from("saved"), Duration::from_secs(/*secs*/ 1));
 
     let area = Rect::new(
         /*x*/ 0, /*y*/ 0, /*width*/ 60, /*height*/ 6,

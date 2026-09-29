@@ -1,4 +1,3 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use std::collections::VecDeque;
 use std::sync::Arc;
 use std::time::SystemTime;
@@ -36,23 +35,12 @@ impl StreamingSseServer {
         self.requests.lock().await.clone()
     }
 
-    /// Waits until `count` requests have arrived. Bounded so a runtime regression fails the
-    /// test instead of hanging it until the CI job timeout.
     pub async fn wait_for_request_count(&self, count: usize) {
-        let wait = async {
-            loop {
-                if self.requests.lock().await.len() >= count {
-                    return;
-                }
-                self.request_notify.notified().await;
+        loop {
+            if self.requests.lock().await.len() >= count {
+                return;
             }
-        };
-        if tokio::time::timeout(std::time::Duration::from_secs(30), wait)
-            .await
-            .is_err()
-        {
-            let seen = self.requests.lock().await.len();
-            panic!("expected {count} model requests within 30s, saw {seen}");
+            self.request_notify.notified().await;
         }
     }
 
@@ -64,7 +52,8 @@ impl StreamingSseServer {
 
 /// Starts a lightweight HTTP server that supports:
 /// - GET /v1/models -> empty models response
-/// - POST /v1/responses -> SSE stream gated per-chunk, served in order
+/// - GET responses routes -> 426 to select the HTTP fallback
+/// - POST responses and Guardian routes -> SSE stream gated per-chunk, served in order
 ///
 /// Returns the server handle and a list of receivers that fire when each
 /// response stream finishes sending its final chunk.
@@ -128,7 +117,13 @@ pub async fn start_streaming_sse_server(
                             return;
                         }
 
-                        if method == "POST" && path == "/v1/responses" {
+                        let responses_route = matches!(path, "/v1/responses" | "/backend-api/codex/responses");
+                        if method == "GET" && responses_route {
+                            let _ = write_http_response(&mut stream, /*status*/ 426, "websockets unsupported", "text/plain").await;
+                            return;
+                        }
+
+                        if method == "POST" && (responses_route || path == "/backend-api/codex/guardian") {
                             let body = match read_request_body(&mut stream, &request, body_prefix)
                                 .await
                             {
@@ -138,16 +133,6 @@ pub async fn start_streaming_sse_server(
                                     return;
                                 }
                             };
-                            // Elpis names a session from its first user message on
-                            // the same background model these fixtures use for
-                            // pruning, fired with `tokio::spawn` while the turn is
-                            // still running. Letting it land here shifts every index
-                            // a test asserts on and eats a queued response. 404 is
-                            // what naming already treats as "skipped".
-                            if is_session_naming_request(&request) {
-                                let _ = write_http_response(&mut stream, /*status*/ 404, "not found", "text/plain").await;
-                                return;
-                            }
                             requests.lock().await.push(body);
                             request_notify.notify_one();
                             let Some((chunks, completion)) = take_next_stream(&state).await else {
@@ -192,22 +177,6 @@ pub async fn start_streaming_sse_server(
         },
         completion_receivers,
     )
-}
-
-/// True when the raw request headers carry Elpis's session-naming request kind.
-fn is_session_naming_request(request: &str) -> bool {
-    request
-        .lines()
-        .filter_map(|line| line.split_once(':'))
-        .find(|(name, _)| name.trim().eq_ignore_ascii_case("x-codex-turn-metadata"))
-        .and_then(|(_, value)| serde_json::from_str::<serde_json::Value>(value.trim()).ok())
-        .and_then(|metadata| {
-            metadata
-                .get("request_kind")
-                .and_then(serde_json::Value::as_str)
-                .map(|kind| kind == "session_title")
-        })
-        .unwrap_or(false)
 }
 
 struct StreamingSseState {
@@ -322,8 +291,10 @@ fn unix_ms_now() -> i64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use codex_http_client::ClientRouteClass;
+    use codex_http_client::HttpClientFactory;
+    use codex_http_client::OutboundProxyPolicy;
     use pretty_assertions::assert_eq;
-    use reqwest::StatusCode;
     use tokio::net::TcpStream;
     use tokio::time::Duration;
     use tokio::time::timeout;
@@ -645,13 +616,16 @@ data: {"type":"response.completed","response":{"id":"resp-1"}}
             "stream": true
         });
 
-        let resp = reqwest::Client::new()
+        let client = HttpClientFactory::new(OutboundProxyPolicy::ReqwestDefault)
+            .build_client(&url, ClientRouteClass::Other)
+            .expect("build HTTP client");
+        let resp = client
             .post(url)
             .json(&payload)
             .send()
             .await
             .expect("send request");
-        assert_eq!(resp.status(), StatusCode::OK);
+        assert_eq!(resp.status().as_u16(), 200);
 
         let bytes = resp.bytes().await.expect("read response body");
         assert_eq!(bytes, response_body.as_bytes());

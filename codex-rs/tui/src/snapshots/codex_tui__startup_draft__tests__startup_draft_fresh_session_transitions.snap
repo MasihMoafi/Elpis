@@ -1,0 +1,82 @@
+---
+source: tui/src/startup_draft_tests.rs
+assertion_line: 285
+expression: "snapshots.join(\"\\n---\\n\")"
+---
+resume lookup fallback:
+before:
+
+  >_ OpenAI Codex (v<VERSION>)
+     loading
+
+  Pull up a prompt.
+  Resuming session…
+
+› draft while loading
+
+
+after:
+
+  >_ OpenAI Codex (v<VERSION>)
+     loading
+
+  Pull up a prompt.
+
+
+› draft while loading
+
+
+---
+fork lookup fallback:
+before:
+
+  >_ OpenAI Codex (v<VERSION>)
+     loading
+
+  Pull up a prompt.
+  Forking session…
+
+› draft while loading
+
+
+after:
+
+  >_ OpenAI Codex (v<VERSION>)
+     loading
+
+  Pull up a prompt.
+
+
+› draft while loading
+
+
+---
+resume picker cancellation:
+before:
+hidden while picker owns input
+after:
+
+  >_ OpenAI Codex (v<VERSION>)
+     loading
+
+  Pull up a prompt.
+
+
+› Ask Codex to do anything
+
+  ? for shortcuts
+---
+fork picker cancellation:
+before:
+hidden while picker owns input
+after:
+
+  >_ OpenAI Codex (v<VERSION>)
+     loading
+
+  Pull up a prompt.
+
+
+› Ask Codex to do anything
+
+  ? for shortcuts

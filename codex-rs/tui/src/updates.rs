@@ -1,7 +1,8 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 #![cfg(not(debug_assertions))]
 
 use crate::legacy_core::config::Config;
+use crate::npm_registry;
+use crate::npm_registry::NpmPackageInfo;
 use crate::update_action;
 use crate::update_action::UpdateAction;
 use crate::update_versions::extract_version_from_latest_tag;
@@ -12,7 +13,10 @@ use crate::updates_cache::read_version_info;
 use crate::updates_cache::version_filepath;
 use chrono::Duration;
 use chrono::Utc;
-use codex_login::default_client::create_client;
+use codex_http_client::ClientRouteClass;
+use codex_http_client::HttpClientFactory;
+use codex_http_client::RouteAwareClientPool;
+use codex_login::default_client::default_headers;
 use serde::Deserialize;
 use std::path::Path;
 
@@ -33,11 +37,12 @@ pub fn get_upgrade_version(config: &Config) -> Option<String> {
         None => true,
         Some(info) => info.last_checked_at < Utc::now() - Duration::hours(20),
     } {
+        let http_client_factory = config.http_client_factory();
         // Refresh the cached latest version in the background so TUI startup
         // isn’t blocked by a network call. The UI reads the previously cached
         // value (if any) for this run; the next run shows the banner if needed.
         tokio::spawn(async move {
-            check_for_update(&version_file, action)
+            check_for_update(&version_file, action, http_client_factory)
                 .await
                 .inspect_err(|e| tracing::error!("Failed to update version: {e}"))
         });
@@ -52,22 +57,63 @@ pub fn get_upgrade_version(config: &Config) -> Option<String> {
     })
 }
 
-const LATEST_RELEASE_URL: &str = "https://api.github.com/repos/MasihMoafi/Elpis/releases/latest";
+// We use the latest version from the cask if installation is via homebrew - homebrew does not immediately pick up the latest release and can lag behind.
+const HOMEBREW_CASK_API_URL: &str = "https://formulae.brew.sh/api/cask/codex.json";
+const LATEST_RELEASE_URL: &str = "https://api.github.com/repos/openai/codex/releases/latest";
 
 #[derive(Deserialize, Debug, Clone)]
 struct ReleaseInfo {
     tag_name: String,
 }
 
+#[derive(Deserialize, Debug, Clone)]
+struct HomebrewCaskInfo {
+    version: String,
+}
+
 async fn check_for_update(
     version_file: &Path,
-    _action: Option<UpdateAction>,
+    action: Option<UpdateAction>,
+    http_client_factory: HttpClientFactory,
 ) -> anyhow::Result<()> {
-    let latest_version = fetch_latest_github_release_version().await?;
-
-    if !is_newer(&latest_version, CODEX_CLI_VERSION).unwrap_or(false) {
-        return Ok(());
-    }
+    let client_pool = RouteAwareClientPool::with_chatgpt_cloudflare_cookies(
+        http_client_factory,
+        ClientRouteClass::Other,
+    )
+    .with_legacy_custom_ca_fallback();
+    let latest_version = match action {
+        Some(UpdateAction::Daemon(_)) => return Ok(()),
+        Some(UpdateAction::BrewUpgrade) => {
+            let HomebrewCaskInfo { version } = client_pool
+                .get(HOMEBREW_CASK_API_URL)
+                .headers(default_headers())
+                .send()
+                .await?
+                .error_for_status()?
+                .json::<HomebrewCaskInfo>()
+                .await?;
+            version
+        }
+        Some(UpdateAction::NpmGlobalLatest)
+        | Some(UpdateAction::BunGlobalLatest)
+        | Some(UpdateAction::VitePlusGlobalLatest)
+        | Some(UpdateAction::PnpmGlobalLatest) => {
+            let latest_version = fetch_latest_github_release_version(&client_pool).await?;
+            let package_info = client_pool
+                .get(npm_registry::PACKAGE_URL)
+                .headers(default_headers())
+                .send()
+                .await?
+                .error_for_status()?
+                .json::<NpmPackageInfo>()
+                .await?;
+            npm_registry::ensure_version_ready(&package_info, &latest_version)?;
+            latest_version
+        }
+        Some(UpdateAction::StandaloneUnix) | Some(UpdateAction::StandaloneWindows) | None => {
+            fetch_latest_github_release_version(&client_pool).await?
+        }
+    };
 
     // Preserve any previously dismissed version if present.
     let prev_info = read_version_info(version_file).ok();
@@ -85,11 +131,14 @@ async fn check_for_update(
     Ok(())
 }
 
-async fn fetch_latest_github_release_version() -> anyhow::Result<String> {
+async fn fetch_latest_github_release_version(
+    client_pool: &RouteAwareClientPool,
+) -> anyhow::Result<String> {
     let ReleaseInfo {
         tag_name: latest_tag_name,
-    } = create_client()
+    } = client_pool
         .get(LATEST_RELEASE_URL)
+        .headers(default_headers())
         .send()
         .await?
         .error_for_status()?

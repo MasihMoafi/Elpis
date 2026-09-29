@@ -1,6 +1,47 @@
 use super::*;
+use crate::key_hint;
+use crate::keymap::KeymapContext;
+use crate::keymap::RuntimeKeymap;
 use pretty_assertions::assert_eq;
 use std::sync::mpsc::Receiver;
+
+#[test]
+fn picker_prompt_keeps_multiline_cursor_and_escape_hint_visible_after_resize() {
+    let (mut view, submitted_rx) = custom_prompt_view();
+    view.enable_vim_in_insert_mode();
+    view.handle_paste("Check the parser and preserve 日本語.\n".repeat(/*n*/ 12));
+    for (width, height) in [(80, 16), (40, 8), (80, 16), (12, 3)] {
+        let area = Rect::new(/*x*/ 0, /*y*/ 0, width, height);
+        let mut buf = Buffer::empty(area);
+        view.render(area, &mut buf);
+        let (x, y) = view.cursor_pos(area).expect("editable row remains visible");
+        assert!(
+            x >= 2 && x < width - 2 && y < height - 1,
+            "cursor {x},{y} in {area:?}"
+        );
+        if width >= 40 {
+            let rows = (0..height)
+                .map(|y| {
+                    (0..width)
+                        .map(|x| buf[(x, y)].symbol())
+                        .collect::<String>()
+                        .trim_end()
+                        .to_owned()
+                })
+                .collect::<Vec<_>>();
+            assert!(rows.last().unwrap().contains("esc normal mode"));
+            insta::assert_snapshot!(
+                format!("picker_prompt_multiline_{width}x{height}"),
+                rows.join("\n")
+            );
+        }
+    }
+    view.handle_key_event(KeyEvent::from(KeyCode::Esc));
+    assert!(!view.is_complete(), "first Escape enters Vim normal mode");
+    view.handle_key_event(KeyEvent::from(KeyCode::Esc));
+    assert_eq!(view.completion(), Some(ViewCompletion::Cancelled));
+    assert!(submitted_rx.try_recv().is_err());
+}
 
 #[test]
 fn paste_burst_newline_does_not_submit_short_first_line() {
@@ -72,6 +113,246 @@ fn delayed_enter_after_typing_submits() {
 
     assert_eq!(submitted_rx.try_recv(), Ok("foo".to_string()));
     assert!(view.is_complete());
+}
+
+#[test]
+fn vim_insert_escape_clears_paste_burst_before_enter() {
+    let (mut view, submitted_rx) = custom_prompt_view();
+    let now = Instant::now();
+    view.enable_vim_in_insert_mode();
+
+    for (idx, ch) in "abc".chars().enumerate() {
+        view.handle_key_event_at(KeyEvent::from(KeyCode::Char(ch)), now + elapsed(idx));
+    }
+    view.handle_key_event_at(KeyEvent::from(KeyCode::Esc), now + elapsed(/*ms*/ 3));
+    view.handle_key_event_at(KeyEvent::from(KeyCode::Enter), now + elapsed(/*ms*/ 4));
+
+    assert_eq!(submitted_rx.try_recv(), Ok("abc".to_string()));
+    assert_eq!(view.completion(), Some(ViewCompletion::Accepted));
+}
+
+#[test]
+fn vim_prompt_hint_tracks_escape_behavior() {
+    let (mut view, _submitted_rx) = custom_prompt_view();
+    let rendered_hint = |view: &CustomPromptView, width: u16| {
+        let area = Rect::new(/*x*/ 0, /*y*/ 0, width, /*height*/ 5);
+        let mut buf = Buffer::empty(area);
+        view.render(area, &mut buf);
+        (0..area.width)
+            .map(|x| buf[(x, area.height - 1)].symbol())
+            .collect::<String>()
+            .trim_end()
+            .to_string()
+    };
+    let vim_color = |view: &CustomPromptView| {
+        let area = Rect::new(
+            /*x*/ 0, /*y*/ 0, /*width*/ 80, /*height*/ 5,
+        );
+        let mut buf = Buffer::empty(area);
+        view.render(area, &mut buf);
+        buf[(67, 4)].style().fg
+    };
+
+    let mut hints = vec![rendered_hint(&view, /*width*/ 80)];
+    view.enable_vim_in_insert_mode();
+    hints.extend([80, 60, 14].map(|width| rendered_hint(&view, width)));
+    assert_eq!(vim_color(&view), Some(ratatui::style::Color::Green));
+
+    view.handle_key_event(KeyEvent::from(KeyCode::Esc));
+    hints.push(rendered_hint(&view, /*width*/ 80));
+    assert_eq!(vim_color(&view), Some(ratatui::style::Color::Magenta));
+    view.handle_key_event(KeyEvent::from(KeyCode::Char('R')));
+    hints.push(rendered_hint(&view, /*width*/ 80));
+    insta::assert_snapshot!(hints.join("\n"));
+}
+
+#[test]
+fn vim_insert_cursor_tracks_mode_and_normal_mode_commands() {
+    let (mut view, _submitted_rx) = custom_prompt_view();
+    let area = Rect::new(0, 0, 80, 10);
+    view.textarea.set_text_clearing_elements("rename");
+    view.textarea.set_cursor("rename".len());
+    let mut config = codex_config::types::TuiKeymap::default();
+    config.editor.move_left = Some(codex_config::types::KeybindingsSpec::One(
+        codex_config::types::KeybindingSpec("f2".to_string()),
+    ));
+    let mut keymap = RuntimeKeymap::from_config(&config).expect("valid editor remap");
+    keymap.vim_normal.delete_char = vec![key_hint::plain(KeyCode::F(3))];
+    view.set_keymap_bindings(&keymap);
+    view.handle_key_event(KeyEvent::from(KeyCode::F(2)));
+    assert_eq!(view.textarea.cursor(), "rename".len() - 1);
+    view.textarea.set_cursor("rename".len());
+
+    assert!(matches!(
+        view.cursor_style(area),
+        crossterm::cursor::SetCursorStyle::DefaultUserShape
+    ));
+
+    view.enable_vim_in_insert_mode();
+    assert!(view.prefer_esc_to_handle_key_event());
+    assert!(view.keymap_contexts().contains(KeymapContext::Editor));
+    assert!(matches!(
+        view.cursor_style(area),
+        crossterm::cursor::SetCursorStyle::SteadyBar
+    ));
+
+    view.handle_key_event(KeyEvent::from(KeyCode::Esc));
+    assert!(!view.is_complete());
+    assert!(!view.prefer_esc_to_handle_key_event());
+    assert!(view.keymap_contexts().contains(KeymapContext::VimNormal));
+    assert!(matches!(
+        view.cursor_style(area),
+        crossterm::cursor::SetCursorStyle::DefaultUserShape
+    ));
+
+    for key_code in [KeyCode::Enter, KeyCode::Esc] {
+        view.handle_key_event(KeyEvent::from(KeyCode::Char('d')));
+        assert!(view.prefer_esc_to_handle_key_event());
+        assert!(view.keymap_contexts().contains(KeymapContext::VimOperator));
+        view.handle_key_event(KeyEvent::from(key_code));
+        assert!(!view.is_complete());
+        assert!(!view.prefer_esc_to_handle_key_event());
+        assert_eq!(view.textarea.text(), "rename");
+    }
+
+    view.handle_key_event(KeyEvent::from(KeyCode::Char('d')));
+    view.handle_key_event(KeyEvent::from(KeyCode::Char('i')));
+    assert!(
+        view.keymap_contexts()
+            .contains(KeymapContext::VimTextObject)
+    );
+    view.handle_key_event(KeyEvent::from(KeyCode::Esc));
+
+    view.handle_key_event(KeyEvent::from(KeyCode::Char('h')));
+    view.handle_key_event(KeyEvent::from(KeyCode::F(3)));
+    assert_eq!(view.textarea.text(), "renae");
+
+    view.handle_key_event(KeyEvent::from(KeyCode::Char('i')));
+    assert!(matches!(
+        view.cursor_style(area),
+        crossterm::cursor::SetCursorStyle::SteadyBar
+    ));
+    view.handle_key_event(KeyEvent::from(KeyCode::Char('m')));
+    assert_eq!(view.textarea.text(), "rename");
+
+    view.handle_key_event(KeyEvent::from(KeyCode::Esc));
+    view.handle_key_event(KeyEvent::from(KeyCode::Char('R')));
+    assert!(view.prefer_esc_to_handle_key_event());
+    view.handle_key_event(KeyEvent::from(KeyCode::Char('x')));
+    assert_eq!(view.textarea.text(), "renaxe");
+    view.handle_key_event(KeyEvent::from(KeyCode::Esc));
+    assert!(!view.is_complete());
+    assert!(!view.prefer_esc_to_handle_key_event());
+    assert_eq!(view.textarea.text(), "renaxe");
+    view.handle_key_event(KeyEvent::from(KeyCode::Esc));
+    assert!(view.is_complete());
+    assert_eq!(view.completion(), Some(ViewCompletion::Cancelled));
+}
+
+#[test]
+fn escape_without_vim_cancels_prompt() {
+    let (mut view, _submitted_rx) = custom_prompt_view();
+
+    view.handle_key_event(KeyEvent::from(KeyCode::Esc));
+
+    assert!(view.is_complete());
+    assert_eq!(view.completion(), Some(ViewCompletion::Cancelled));
+}
+
+#[test]
+fn background_prefill_requires_a_matching_unedited_prompt() {
+    let request_id = Uuid::new_v4();
+    let (view, submitted_rx) = custom_prompt_view();
+    let mut view = view.with_text_suggestion(request_id, "Loading".into(), "Ready".into());
+
+    assert!(!view.apply_text_suggestion(Uuid::new_v4(), Some("Stale")));
+    assert!(view.apply_text_suggestion(request_id, Some("Suggested text")));
+    assert_eq!(view.context_label.as_deref(), Some("Ready"));
+
+    view.handle_key_event_at(KeyEvent::from(KeyCode::Enter), Instant::now());
+
+    assert_eq!(submitted_rx.try_recv(), Ok("Suggested text".to_string()));
+    assert!(!view.apply_text_suggestion(request_id, Some("Late")));
+}
+
+#[test]
+fn background_prefill_failure_clears_loading_without_changing_text() {
+    let request_id = Uuid::new_v4();
+    let (view, _submitted_rx) = custom_prompt_view();
+    let mut view = view.with_text_suggestion(request_id, "Loading".into(), "Ready".into());
+    view.textarea.set_text_clearing_elements("Existing title");
+
+    assert!(view.apply_text_suggestion(request_id, /*suggestion*/ None));
+    assert_eq!(
+        (view.textarea.text(), view.context_label.as_deref()),
+        ("Existing title", None)
+    );
+}
+
+#[test]
+fn background_prefill_preserves_typing_even_after_the_text_is_deleted() {
+    let request_id = Uuid::new_v4();
+    let (view, _submitted_rx) = custom_prompt_view();
+    let mut view = view.with_text_suggestion(request_id, "Loading".into(), "Ready".into());
+
+    view.handle_key_event_at(KeyEvent::from(KeyCode::Char('x')), Instant::now());
+    view.handle_key_event_at(KeyEvent::from(KeyCode::Backspace), Instant::now());
+
+    assert!(view.apply_text_suggestion(request_id, Some("Generated")));
+    assert_eq!(
+        (view.textarea.text(), view.context_label.as_deref()),
+        ("", None)
+    );
+}
+
+#[test]
+fn background_prefill_preserves_pasted_text() {
+    let request_id = Uuid::new_v4();
+    let (view, _submitted_rx) = custom_prompt_view();
+    let mut view = view.with_text_suggestion(request_id, "Loading".into(), "Ready".into());
+
+    assert!(view.handle_paste("Manual title".to_string()));
+    assert!(view.apply_text_suggestion(request_id, Some("Generated")));
+    assert_eq!(
+        (view.textarea.text(), view.context_label.as_deref()),
+        ("Manual title", None)
+    );
+}
+
+#[test]
+fn background_prefill_survives_cursor_movement() {
+    let request_id = Uuid::new_v4();
+    let (view, _submitted_rx) = custom_prompt_view();
+    let mut view = view.with_text_suggestion(request_id, "Loading".into(), "Ready".into());
+    view.textarea.set_text_clearing_elements("Existing");
+    view.textarea.set_cursor("Existing".len());
+
+    view.handle_key_event_at(KeyEvent::from(KeyCode::Left), Instant::now());
+
+    assert!(view.apply_text_suggestion(request_id, Some("Generated")));
+    assert_eq!(
+        (view.textarea.text(), view.context_label.as_deref()),
+        ("Generated", Some("Ready"))
+    );
+}
+
+#[test]
+fn background_prefill_preserves_replace_backspace_recovery() {
+    let request_id = Uuid::new_v4();
+    let (view, _submitted_rx) = custom_prompt_view();
+    let mut view = view.with_text_suggestion(request_id, "Loading".into(), "Ready".into());
+    view.enable_vim_in_insert_mode();
+    for code in [KeyCode::Esc, KeyCode::Char('R')] {
+        view.handle_key_event(KeyEvent::from(code));
+    }
+    assert!(view.apply_text_suggestion(request_id, Some("abc")));
+    for code in [KeyCode::Left, KeyCode::Char('X'), KeyCode::Backspace] {
+        view.handle_key_event(KeyEvent::from(code));
+    }
+    assert_eq!(
+        (view.textarea.text(), view.textarea.vim_mode_label()),
+        ("abc", Some("Replace"))
+    );
 }
 
 fn custom_prompt_view() -> (CustomPromptView, Receiver<String>) {

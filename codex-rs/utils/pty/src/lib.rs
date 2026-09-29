@@ -1,10 +1,22 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
+mod child;
+pub use child::Child;
+mod child_command;
+pub use child_command::ChildStdin;
+pub use child_command::Command;
+pub use child_command::DescriptorPolicy;
+pub use child_command::ProcessMode;
+pub use child_command::SpawnFallback;
+#[cfg(target_os = "linux")]
+mod linux_fds;
 pub mod pipe;
 mod process;
 pub mod process_group;
 pub mod pty;
+pub use pty::ChildFds;
 #[cfg(test)]
 mod tests;
+#[cfg(unix)]
+mod unix_io;
 #[cfg(windows)]
 mod win;
 #[cfg(windows)]
@@ -39,8 +51,20 @@ pub use pty::conpty_supported;
 /// Spawn a process attached to a PTY for interactive use.
 pub use pty::spawn_process as spawn_pty_process;
 #[cfg(windows)]
+pub use win::JobObject;
+#[cfg(windows)]
 pub use win::PsuedoCon;
 #[cfg(windows)]
 pub use win::conpty::RawConPty;
 #[cfg(windows)]
 pub use windows_input::WindowsTtyInputNormalizer;
+
+#[cfg(target_os = "linux")]
+mod spawn_helper;
+#[cfg(target_os = "linux")]
+mod spawn_helper_main;
+#[cfg(target_os = "linux")]
+pub use spawn_helper::init_spawn_helper;
+#[cfg(all(test, target_os = "linux"))]
+#[path = "spawn_helper_tests.rs"]
+mod spawn_helper_tests;

@@ -1,6 +1,5 @@
 use super::*;
 use crate::tools::handlers::multi_agents_spec::create_close_agent_tool_v1;
-use codex_protocol::error::CodexErr;
 use codex_tools::ToolSpec;
 
 pub(crate) struct Handler;
@@ -21,7 +20,10 @@ impl ToolExecutor<ToolInvocation> for Handler {
         )
     }
 
-    fn handle(&self, invocation: ToolInvocation) -> codex_tools::ToolExecutorFuture<'_> {
+    fn handle<'a>(&'a self, invocation: ToolInvocation) -> codex_tools::ToolExecutorFuture<'a>
+    where
+        ToolInvocation: 'a,
+    {
         Box::pin(async move { handle_close_agent(invocation).await.map(boxed_tool_output) })
     }
 }
@@ -39,8 +41,11 @@ async fn handle_close_agent(
     let arguments = function_arguments(payload)?;
     let args: CloseAgentArgs = parse_arguments(&arguments)?;
     let agent_id = parse_agent_id_target(&args.target)?;
-    let receiver_agent = session.services.agent_control.get_agent_metadata(agent_id);
-    let known_agent = receiver_agent.is_some();
+    let local_agent_control = session
+        .services
+        .local_agent_runtime
+        .control(session.session_id());
+    let receiver_agent = local_agent_control.get_agent_metadata(agent_id);
     let receiver_agent = receiver_agent.unwrap_or_default();
     session
         .emit_turn_item_started(
@@ -59,57 +64,23 @@ async fn handle_close_agent(
             }),
         )
         .await;
-    let status = match session
-        .services
-        .agent_control
-        .subscribe_status(agent_id)
-        .await
-    {
-        Ok(mut status_rx) => status_rx.borrow_and_update().clone(),
-        Err(CodexErr::ThreadNotFound(_)) if known_agent => {
-            session.services.agent_control.get_status(agent_id).await
-        }
-        Err(err) => {
-            let status = session.services.agent_control.get_status(agent_id).await;
-            session
-                .emit_turn_item_completed(
-                    &turn,
-                    TurnItem::CollabAgentToolCall(CollabAgentToolCallItem {
-                        id: call_id.clone(),
-                        tool: CollabAgentTool::CloseAgent,
-                        status: collab_tool_call_status(&status, Some(agent_id)),
-                        sender_thread_id: session.thread_id(),
-                        receiver_thread_ids: vec![agent_id],
-                        receiver_agents: vec![CollabAgentRef {
-                            thread_id: agent_id,
-                            agent_nickname: receiver_agent.agent_nickname.clone(),
-                            agent_role: receiver_agent.agent_role.clone(),
-                        }],
-                        prompt: None,
-                        model: None,
-                        reasoning_effort: None,
-                        agents_states: [(agent_id, status)].into_iter().collect(),
-                    }),
-                )
-                .await;
-            return Err(collab_agent_error(agent_id, err));
-        }
+    // Shutdown may remove the target before a descendant fails to close.
+    let previous_status = local_agent_control.get_status(agent_id).await;
+    let result = local_agent_control.close_agent(agent_id).await;
+    let (status, receiver_agent) = match &result {
+        Ok(snapshot) => (
+            snapshot.status().cloned().unwrap_or(AgentStatus::NotFound),
+            snapshot.metadata().clone(),
+        ),
+        Err(_) => (previous_status, receiver_agent),
     };
-    let result = Box::pin(session.services.agent_control.close_agent(agent_id))
-        .await
-        .map_err(|err| collab_agent_error(agent_id, err))
-        .map(|_| ());
     session
         .emit_turn_item_completed(
             &turn,
             TurnItem::CollabAgentToolCall(CollabAgentToolCallItem {
                 id: call_id,
                 tool: CollabAgentTool::CloseAgent,
-                status: if result.is_err() {
-                    CollabAgentToolCallStatus::Failed
-                } else {
-                    collab_tool_call_status(&status, Some(agent_id))
-                },
+                status: collab_tool_call_status(&status, Some(agent_id)),
                 sender_thread_id: session.thread_id,
                 receiver_thread_ids: vec![agent_id],
                 receiver_agents: vec![CollabAgentRef {
@@ -124,7 +95,7 @@ async fn handle_close_agent(
             }),
         )
         .await;
-    result?;
+    result.map_err(|err| collab_agent_error(agent_id, err))?;
 
     Ok(CloseAgentResult {
         previous_status: status,
@@ -143,7 +114,7 @@ pub(crate) struct CloseAgentResult {
 }
 
 impl ToolOutput for CloseAgentResult {
-    fn log_preview(&self) -> String {
+    fn log_output(&self) -> String {
         tool_output_json_text(self, "close_agent")
     }
 

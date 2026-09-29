@@ -52,6 +52,15 @@ impl RequestTracker {
         })
     }
 
+    pub(super) fn has_pending_execute_for_session(&self, session_id: &SessionId) -> bool {
+        self.pending.values().any(|request| {
+            matches!(
+                request,
+                PendingRequest::Execute { session, .. } if session.id == *session_id
+            )
+        })
+    }
+
     pub(super) fn allocate_id(&mut self) -> Result<RequestId, String> {
         let id = self.next_request_id;
         self.next_request_id = self
@@ -64,9 +73,12 @@ impl RequestTracker {
     pub(super) fn insert_pending(
         &mut self,
         id: RequestId,
-        pending: PendingRequest,
+        mut pending: PendingRequest,
         event_tx: &mpsc::Sender<DriverEvent>,
     ) {
+        if let Some(observation) = pending.yield_observation() {
+            observation.spawn_watcher(id, event_tx.clone());
+        }
         self.pending.insert(id, pending);
         if let Some(cancellation) = self
             .pending

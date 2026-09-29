@@ -1,13 +1,14 @@
 ---
 source: tui/src/bottom_pane/chat_composer.rs
+assertion_line: 5609
 expression: terminal.backend()
 ---
-"│                                                                                                   "
-"› Ask Elpis to do anything                                                                          "
-"│                                                                                                   "
-"│                                                                                                   "
-"│                                                                                                   "
-"│                                                                                                   "
-"│                                                                                                   "
-"│                                                                                                   "
-"  esc esc to edit previous message                                                                  "
+"                                                                                                    "
+"› Ask Codex to do anything                                                                          "
+"                                                                                                    "
+"                                                                                                    "
+"                                                                                                    "
+"                                                                                                    "
+"                                                                                                    "
+"                                                                                                    "
+"  ? for shortcuts                                                                100% context left  "

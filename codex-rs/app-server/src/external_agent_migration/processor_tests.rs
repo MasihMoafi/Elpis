@@ -1,4 +1,3 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use super::*;
 
 fn migration_item(
@@ -31,6 +30,9 @@ fn migration_items_that_update_runtime_sources_trigger_refresh() {
     )]));
     assert!(migration_items_need_runtime_refresh(&[migration_item(
         ExternalAgentConfigMigrationItemType::Plugins,
+    )]));
+    assert!(!migration_items_need_runtime_refresh(&[migration_item(
+        ExternalAgentConfigMigrationItemType::Memory,
     )]));
     assert!(!migration_items_need_runtime_refresh(&[migration_item(
         ExternalAgentConfigMigrationItemType::Sessions,

@@ -1,3 +1,4 @@
+use std::collections::VecDeque;
 use std::panic::AssertUnwindSafe;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
@@ -6,6 +7,7 @@ use std::sync::atomic::Ordering;
 use codex_code_mode_protocol::CellId;
 use codex_code_mode_protocol::CodeModeSessionDelegate;
 use codex_code_mode_protocol::host::EncodedFrame;
+use codex_code_mode_protocol::host::HostToClient;
 use codex_code_mode_protocol::host::RequestId;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
@@ -40,6 +42,7 @@ pub(super) struct ConnectionDriver {
     execute_claim_rx: mpsc::UnboundedReceiver<RequestId>,
     outgoing_tx: mpsc::Sender<EncodedFrame>,
     requests: RequestTracker,
+    deferred_host_messages: VecDeque<HostToClient>,
     sessions: SessionRegistry,
     delegates: DelegateRuntime,
     alive: Arc<AtomicBool>,
@@ -65,6 +68,7 @@ impl ConnectionDriver {
                 execute_claim_rx,
                 outgoing_tx,
                 requests: RequestTracker::new(),
+                deferred_host_messages: VecDeque::new(),
                 sessions: SessionRegistry::new(),
                 delegates: DelegateRuntime::new(event_tx),
                 alive: lifecycle.alive,
@@ -118,6 +122,7 @@ impl ConnectionDriver {
             DriverEvent::HostMessage(message) => self.handle_host_message(message),
             DriverEvent::DelegateCompleted { id, result } => self.complete_delegate(id, result),
             DriverEvent::RequestCancelled(id) => self.cancel_request(id),
+            DriverEvent::YieldRequest(id) => self.yield_request(id),
             DriverEvent::Failed(reason) => {
                 self.fail(reason);
                 false

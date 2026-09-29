@@ -1,4 +1,3 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 //! Chat-widget wiring for the `/ide` command and IDE context prompt injection.
 
 use codex_app_server_protocol::UserInput;
@@ -35,6 +34,7 @@ impl ChatWidget {
     pub(super) fn handle_ide_command(&mut self) {
         if self.ide_context.is_enabled() {
             self.ide_context.disable();
+            self.sync_ide_context_status_indicator();
             self.add_info_message("IDE context is off.".to_string(), /*hint*/ None);
         } else {
             self.ide_context.enable();
@@ -43,7 +43,7 @@ impl ChatWidget {
     }
 
     pub(super) fn handle_ide_command_args(&mut self, args: &str) {
-        match args.trim().to_ascii_lowercase().as_str() {
+        match args.to_ascii_lowercase().as_str() {
             "" => self.handle_ide_command(),
             "on" => {
                 self.ide_context.enable();
@@ -51,6 +51,7 @@ impl ChatWidget {
             }
             "off" => {
                 self.ide_context.disable();
+                self.sync_ide_context_status_indicator();
                 self.add_info_message("IDE context is off.".to_string(), /*hint*/ None);
             }
             "status" => {
@@ -71,9 +72,11 @@ impl ChatWidget {
         match crate::ide_context::fetch_ide_context(&self.config.cwd, &self.config.codex_home) {
             Ok(context) => {
                 self.ide_context.mark_available();
+                self.sync_ide_context_status_indicator();
                 crate::ide_context::apply_ide_context_to_user_input(&context, items);
             }
             Err(err) => {
+                self.sync_ide_context_status_indicator();
                 if !self.ide_context.prompt_fetch_warned {
                     self.ide_context.prompt_fetch_warned = true;
                     self.add_info_message(
@@ -87,6 +90,7 @@ impl ChatWidget {
 
     fn add_ide_context_status_message(&mut self) {
         if !self.ide_context.is_enabled() {
+            self.sync_ide_context_status_indicator();
             self.add_info_message("IDE context is off.".to_string(), /*hint*/ None);
             return;
         }
@@ -94,6 +98,7 @@ impl ChatWidget {
         match crate::ide_context::fetch_ide_context(&self.config.cwd, &self.config.codex_home) {
             Ok(context) => {
                 self.ide_context.mark_available();
+                self.sync_ide_context_status_indicator();
                 if crate::ide_context::has_prompt_context(&context) {
                     self.add_info_message(
                         "IDE context is on.".to_string(),
@@ -111,11 +116,17 @@ impl ChatWidget {
             }
             Err(err) => {
                 self.ide_context.disable();
+                self.sync_ide_context_status_indicator();
                 self.add_info_message(
                     "IDE context could not be enabled.".to_string(),
                     Some(err.user_facing_hint()),
                 );
             }
         }
+    }
+
+    pub(super) fn sync_ide_context_status_indicator(&mut self) {
+        self.bottom_pane
+            .set_ide_context_active(self.ide_context.is_enabled());
     }
 }

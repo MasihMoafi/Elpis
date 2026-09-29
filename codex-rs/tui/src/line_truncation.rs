@@ -1,11 +1,12 @@
 use ratatui::text::Line;
 use ratatui::text::Span;
 use unicode_segmentation::UnicodeSegmentation;
-use unicode_width::UnicodeWidthStr;
+
+use crate::width::display_width;
 
 pub(crate) fn line_width(line: &Line<'_>) -> usize {
     line.iter()
-        .map(|span| UnicodeWidthStr::width(span.content.as_ref()))
+        .map(|span| display_width(span.content.as_ref()))
         .sum()
 }
 
@@ -23,7 +24,7 @@ pub(crate) fn truncate_line_to_width(line: Line<'static>, max_width: usize) -> L
     let mut spans_out: Vec<Span<'static>> = Vec::with_capacity(spans.len());
 
     for span in spans {
-        let span_width = UnicodeWidthStr::width(span.content.as_ref());
+        let span_width = display_width(span.content.as_ref());
 
         if span_width == 0 {
             spans_out.push(span);
@@ -43,13 +44,13 @@ pub(crate) fn truncate_line_to_width(line: Line<'static>, max_width: usize) -> L
         let style = span.style;
         let text = span.content.as_ref();
         let mut end_idx = 0usize;
-        for (idx, grapheme) in text.grapheme_indices(true) {
-            let ch_width = UnicodeWidthStr::width(grapheme);
-            if used + ch_width > max_width {
+        for (idx, grapheme) in text.grapheme_indices(/*is_extended*/ true) {
+            let grapheme_width = display_width(grapheme);
+            if used + grapheme_width > max_width {
                 break;
             }
             end_idx = idx + grapheme.len();
-            used += ch_width;
+            used += grapheme_width;
         }
 
         if end_idx > 0 {
@@ -63,21 +64,6 @@ pub(crate) fn truncate_line_to_width(line: Line<'static>, max_width: usize) -> L
         style,
         alignment,
         spans: spans_out,
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn truncation_preserves_whole_emoji_and_combining_sequences() {
-        for text in ["👩‍💻", "🇮🇷", "e\u{301}"] {
-            let width = UnicodeWidthStr::width(text);
-            let truncated = truncate_line_to_width(Line::from(format!("{text}tail")), width);
-            assert_eq!(truncated.to_string(), text);
-            assert_eq!(truncated.width(), width);
-        }
     }
 }
 
@@ -113,3 +99,7 @@ pub(crate) fn truncate_line_with_ellipsis_if_overflow(
         spans,
     }
 }
+
+#[cfg(test)]
+#[path = "line_truncation_tests.rs"]
+mod tests;

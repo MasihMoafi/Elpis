@@ -228,7 +228,7 @@ async fn preserves_large_image_in_original_mode() {
     assert_eq!(processed.bytes.as_ref(), original_bytes);
 }
 
-#[tokio::test(flavor = "multi_thread")]
+#[tokio::test(flavor = "current_thread")]
 async fn data_url_processing_preserves_supported_source_bytes() {
     let image = ImageBuffer::from_pixel(64, 32, Rgba([10u8, 20, 30, 255]));
     let original_bytes = image_bytes(&image, ImageFormat::Png);
@@ -236,7 +236,7 @@ async fn data_url_processing_preserves_supported_source_bytes() {
         .replacen("data:", "DATA:", 1)
         .replacen(";base64,", ";BASE64,", 1);
 
-    let processed = load_data_url_for_prompt(&image_url, PromptImageMode::ResizeToFit)
+    let processed = load_data_url_for_prompt_uncached(&image_url, PromptImageMode::ResizeToFit)
         .expect("process data URL image");
 
     assert_eq!(processed.width, 64);
@@ -276,23 +276,37 @@ fn data_url_processing_rejects_malformed_input() {
     }
 }
 
+/// The shared detail modes apply the policies used by external byte-oriented callers.
 #[tokio::test(flavor = "multi_thread")]
-async fn resize_with_limits_respects_dimension_and_patch_budgets() {
-    let image = ImageBuffer::from_pixel(2048, 2048, Rgba([200u8, 10, 10, 255]));
-    let original_bytes = image_bytes(&image, ImageFormat::Png);
-    let limits = PromptImageResizeLimits {
-        max_dimension: 2048,
-        max_patches: 2_500,
-    };
+async fn detail_modes_apply_expected_budgets() {
+    for (mode, input_dimensions, expected_dimensions) in [
+        (PromptImageMode::HIGH_DETAIL, (2048, 2048), (1600, 1600)),
+        (PromptImageMode::ORIGINAL_DETAIL, (6401, 100), (6000, 94)),
+    ] {
+        let image = ImageBuffer::from_pixel(
+            input_dimensions.0,
+            input_dimensions.1,
+            Rgba([200u8, 10, 10, 255]),
+        );
+        let original_bytes = image_bytes(&image, ImageFormat::Png);
+        let processed = load_for_prompt_bytes(Path::new("in-memory-image"), original_bytes, mode)
+            .expect("process image with detail mode");
 
-    let processed = load_for_prompt_bytes(
-        Path::new("in-memory-image"),
-        original_bytes,
-        PromptImageMode::ResizeWithLimits(limits),
-    )
-    .expect("process image with explicit limits");
-
-    assert_eq!((processed.width, processed.height), (1600, 1600));
+        assert_eq!(
+            (
+                processed.source_width,
+                processed.source_height,
+                processed.width,
+                processed.height,
+            ),
+            (
+                input_dimensions.0,
+                input_dimensions.1,
+                expected_dimensions.0,
+                expected_dimensions.1,
+            )
+        );
+    }
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -350,6 +364,8 @@ async fn bounds_cache_by_encoded_byte_size() {
     let image = |size| EncodedImage {
         bytes: vec![0; size].into(),
         mime: "image/png".to_string(),
+        source_width: 1,
+        source_height: 1,
         width: 1,
         height: 1,
     };

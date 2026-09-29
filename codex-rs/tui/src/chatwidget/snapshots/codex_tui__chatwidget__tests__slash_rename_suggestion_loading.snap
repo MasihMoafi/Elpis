@@ -1,0 +1,10 @@
+---
+source: tui/src/chatwidget/tests/slash_commands.rs
+expression: popup
+---
+  Rename thread
+  Generating a title suggestion…
+
+› Current project title
+
+  enter submit · esc back

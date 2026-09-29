@@ -1,4 +1,3 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 //! Construction and initial wiring for `ChatWidget`.
 
 use super::*;
@@ -14,17 +13,19 @@ impl ChatWidget {
     ) -> Self {
         let ChatWidgetInit {
             config,
+            local_settings,
             frame_requester,
             app_event_tx,
             workspace_command_runner,
             initial_user_message,
             enhanced_keys_supported,
             has_chatgpt_account,
+            requires_openai_auth,
             has_codex_backend_auth,
             model_catalog,
+            feedback,
             is_first_run,
             status_account_display,
-            runtime_model_provider_base_url,
             initial_plan_type,
             model,
             startup_tooltip_override,
@@ -32,14 +33,14 @@ impl ChatWidget {
             terminal_title_invalid_items_warned,
             session_telemetry,
         } = common;
+        // Keep asynchronous widget callbacks scoped separately from the app and other widgets.
+        let app_event_tx = AppEventSender::new(app_event_tx.app_event_tx);
         let model = model.filter(|m| !m.trim().is_empty());
         let mut config = config;
         config.model = model.clone();
         let prevent_idle_sleep = config.features.enabled(Feature::PreventIdleSleep);
-        let mut rng = rand::rng();
-        let placeholder = PLACEHOLDERS[rng.random_range(0..PLACEHOLDERS.len())].to_string();
-        let side_placeholder =
-            SIDE_PLACEHOLDERS[rng.random_range(0..SIDE_PLACEHOLDERS.len())].to_string();
+        let placeholder = PLACEHOLDER.to_string();
+        let side_placeholder = SIDE_PLACEHOLDER.to_string();
 
         let model_override = model.as_deref();
         let model_for_header = model
@@ -62,16 +63,19 @@ impl ChatWidget {
             settings: fallback_default,
         };
 
-        let active_cell = Some(Self::placeholder_session_header_cell(&config));
+        let empty_state_animation = crate::empty_state_animation::EmptyStateAnimation::default();
+        let mut header = Self::placeholder_session_header_cell(&config);
+        history_cell::set_session_greeting(header.as_mut(), &empty_state_animation.greeting);
+        let active_cell = Some(header);
 
         let current_cwd = Some(config.cwd.to_path_buf());
         let effective_service_tier = crate::service_tier_resolution::effective_service_tier(
             &config,
+            &local_settings.notices,
             &header_model,
             &model_catalog.try_list_models().unwrap_or_default(),
         );
-        let current_terminal_info = terminal_info();
-        let runtime_keymap = RuntimeKeymap::from_config(&config.tui_keymap).ok();
+        let runtime_keymap = RuntimeKeymap::from_config(&local_settings.tui.keymap).ok();
         let default_keymap = RuntimeKeymap::defaults();
         let copy_last_response_binding = runtime_keymap
             .as_ref()
@@ -81,11 +85,20 @@ impl ChatWidget {
             .as_ref()
             .map(|keymap| keymap.chat.clone())
             .unwrap_or_else(|| default_keymap.chat.clone());
-        let queued_message_edit_hint_binding = queued_message_edit_hint_binding(
-            &chat_keymap.edit_queued_message,
-            current_terminal_info,
+        let pet_http_client = codex_http_client::RouteAwareClientPool::new(
+            config.http_client_factory(),
+            codex_http_client::ClientRouteClass::Other,
+        );
+        pets::start_configured_pet_load_if_needed(
+            &local_settings,
+            /*ambient_pet_missing*/ true,
+            frame_requester.clone(),
+            app_event_tx.clone(),
+            pet_http_client.clone(),
         );
         let mut widget = Self {
+            empty_state_animation: std::cell::RefCell::new(empty_state_animation),
+            cyber_policy_notice: Default::default(),
             app_event_tx: app_event_tx.clone(),
             frame_requester: frame_requester.clone(),
             codex_op_target,
@@ -95,54 +108,65 @@ impl ChatWidget {
                 has_input_focus: true,
                 enhanced_keys_supported,
                 placeholder_text: placeholder.clone(),
-                disable_paste_burst: config.disable_paste_burst,
-                animations_enabled: config.animations,
+                disable_paste_burst: local_settings.tui.disable_paste_burst.unwrap_or(false),
+                animations_enabled: local_settings.tui.animations,
+                effects: local_settings.tui.effects,
                 skills: None,
             }),
-            context_ledger: ContextLedgerState::default(),
-            agent_ledger: Vec::new(),
-            manual_memory_cache: ManualMemoryCache::default(),
             transcript: TranscriptState::new(active_cell),
-            raw_output_mode: config.tui_raw_output_mode,
+            raw_output_mode: local_settings.tui.raw_output_mode,
             config,
+            local_settings,
             effective_service_tier,
             skills_all: Vec::new(),
             skills_initial_state: None,
             current_collaboration_mode,
             active_collaboration_mask,
             has_chatgpt_account,
+            requires_openai_auth,
             has_codex_backend_auth,
             model_catalog,
-            model_popup_request_ids: HashMap::new(),
+            model_popup_request_id: None,
+            permission_popup_request_id: None,
+            worktree_popup_request_id: None,
+            permission_profiles_menu_opened: false,
             model_popup_model_ids: Vec::new(),
-            ollama_local_models: Vec::new(),
-            openrouter_models: Vec::new(),
-            browsing_provider: None,
             session_telemetry,
             session_header: SessionHeader::new(header_model),
             initial_user_message,
             status_account_display,
-            runtime_model_provider_base_url,
             remote_connection: None,
+            snapshot_local_images: false,
+            pending_image_submission: None,
+            local_worktree_operations: true,
+            windows_sandbox_local_server: false,
+            windows_sandbox_config: Default::default(),
+            windows_sandbox_host: crate::app::WindowsSandboxHost::Unknown,
+            #[cfg(any(target_os = "windows", test))]
+            windows_sandbox_elevated_setup_complete: false,
             token_info: None,
-            context_attribution: None,
-            context_usage_transcript_totals:
-                crate::app_backtrack::ContextUsageTranscriptTotals::default(),
-            smart_prune: ThreadSmartPruneSnapshot::default(),
-            smart_prune_synced: false,
-            context_prune_report_pending: false,
-            last_prune_saved_tokens: None,
-            last_smart_prune_saved_tokens: None,
+            token_usage_pending: false,
             rate_limit_snapshots_by_limit_id: BTreeMap::new(),
             refreshing_status_outputs: Vec::new(),
             next_status_refresh_request_id: 0,
-            refreshing_token_activity_output: None,
-            completed_token_activity_output: None,
-            next_token_activity_request_id: 0,
+            pending_rate_limit_reset_request_id: None,
+            pending_rate_limit_reset_idempotency_key: None,
+            rate_limit_reset_picker_request_id: None,
+            pending_rate_limit_reset_hint_request_id: None,
+            pending_usage_menu_rate_limit_request_id: None,
+            pending_rate_limit_reset_hint: None,
+            available_rate_limit_reset_credits: None,
+            next_rate_limit_reset_request_id: 0,
             plan_type: initial_plan_type,
             codex_rate_limit_reached_type: None,
             codex_spend_control_reached: None,
             rate_limit_warnings: RateLimitWarningState::default(),
+            clock_format: crate::clock_format::ClockFormat::system(),
+            usage_notice_state: usage_notice::UsageNoticeState::default(),
+            backend_banner_state: backend_banners::BackendBannerState::default(),
+            automatic_model_switch_state: backend_banners::AutomaticModelSwitchState::default(),
+            backend_banner_notice_model: None,
+            luna_reserve_notice_account_id: None,
             warning_display_state: WarningDisplayState::default(),
             rate_limit_switch_prompt: RateLimitSwitchPromptState::default(),
             add_credits_nudge_email_in_flight: None,
@@ -150,7 +174,7 @@ impl ChatWidget {
             stream_controller: None,
             plan_stream_controller: None,
             pending_stream_consolidations: 0,
-            clipboard_lease: None,
+            pending_clipboard: None,
             copy_last_response_binding,
             running_commands: HashMap::new(),
             collab_agent_metadata: HashMap::new(),
@@ -159,7 +183,8 @@ impl ChatWidget {
             last_unified_wait: None,
             unified_exec_wait_streak: None,
             turn_lifecycle: TurnLifecycleState::new(prevent_idle_sleep),
-            activity_state: ActivityState::default(),
+            realtime_conversation: RealtimeConversationUiState::default(),
+            realtime_conversation_available_for_thread: false,
             safety_buffering: SafetyBufferingState::default(),
             task_complete_pending: false,
             unified_exec_processes: Vec::new(),
@@ -170,6 +195,7 @@ impl ChatWidget {
             mcp_startup_pending_next_round: HashMap::new(),
             mcp_startup_pending_next_round_saw_starting: false,
             connectors: ConnectorsState::default(),
+            ide_context: IdeContextState::default(),
             plugins_cache: PluginsCacheState::default(),
             plugins_fetch_state: PluginListFetchState::default(),
             plugin_remote_sections_loading: false,
@@ -181,23 +207,37 @@ impl ChatWidget {
             newly_installed_marketplace_tab_id: None,
             interrupts: InterruptManager::new(),
             reasoning_buffer: String::new(),
+            reasoning_header: None,
             reasoning_summary_parts: Vec::new(),
             status_state: StatusState::default(),
-            ide_context: IdeContextState::default(),
             review: ReviewState::default(),
             active_hook_cell: None,
+            pet_http_client,
+            ambient_pet: None,
+            pet_picker_preview_state: crate::pets::PetPickerPreviewState::default(),
+            pet_picker_preview_pet: None,
+            pet_picker_preview_request_id: 0,
+            pet_picker_preview_image_visible: std::cell::Cell::new(/*value*/ false),
+            pet_selection_load_request_id: 0,
+            #[cfg(test)]
+            pet_image_support_override: None,
             thread_id: None,
             thread_name: None,
             thread_rename_block_message: None,
             active_side_conversation: false,
+            blocks_direct_input: false,
+            external_writer_view: false,
+            fork_in_progress: false,
+            misalignment_policy_violation: None,
             normal_placeholder_text: placeholder,
             side_placeholder_text: side_placeholder,
             forked_from: None,
             interrupted_turn_notice_mode: InterruptedTurnNoticeMode::Default,
             input_queue: InputQueueState::default(),
             safety_buffering_prompt: None,
+            safety_buffering_source: UserMessageSource::Prompt,
             chat_keymap,
-            queued_message_edit_hint_binding,
+            permission_shortcut_pending: false,
             show_welcome_banner: is_first_run,
             startup_tooltip_override,
             suppress_session_configured_redraw: false,
@@ -207,9 +247,7 @@ impl ChatWidget {
             quit_shortcut_key: None,
             turn_runtime_metrics: RuntimeMetricsSummary::default(),
             last_rendered_width: std::cell::Cell::new(None),
-            stream_motion: Default::default(),
-            displayed_live_cells: Default::default(),
-            ledger_motion: Default::default(),
+            feedback,
             current_rollout_path: None,
             current_cwd,
             workspace_command_runner,
@@ -221,6 +259,7 @@ impl ChatWidget {
             last_terminal_title_requires_action: false,
             terminal_title_setup_original_items: None,
             terminal_title_animation_origin: Instant::now(),
+            terminal_title_next_refresh: None,
             status_line_project_root_name_cache: None,
             status_line_branch: None,
             status_line_branch_cwd: None,
@@ -235,47 +274,49 @@ impl ChatWidget {
             next_status_line_workspace_headline_request_id: 0,
             status_line_workspace_headline_last_requested_at: None,
             status_line_workspace_messages_disabled: false,
+            thread_usage: thread_usage::ThreadUsageState::default(),
             current_goal_status_indicator: None,
             current_goal_status: None,
             external_editor_state: ExternalEditorState::Closed,
             last_rendered_user_message_display: None,
+            last_rendered_user_message_client_id: None,
             last_non_retry_error: None,
+            #[cfg(test)]
+            test_codex_home: None,
         };
 
         widget.prefetch_rate_limits();
-        widget.refresh_ollama_models();
         if let Some(keymap) = runtime_keymap {
             widget.bottom_pane.set_keymap_bindings(&keymap);
         }
+        if widget.local_settings.tui.vim_mode_default {
+            widget.bottom_pane.enable_vim_in_insert_mode();
+        } else {
+            widget.bottom_pane.set_vim_enabled(/*enabled*/ false);
+        }
         widget
             .bottom_pane
-            .set_vim_enabled(widget.config.tui_vim_mode_default);
-        widget.bottom_pane.set_status_line_enabled(false);
+            .set_status_line_enabled(!widget.configured_status_line_items().is_empty());
         widget
             .bottom_pane
             .set_collaboration_modes_enabled(/*enabled*/ true);
         widget.sync_service_tier_commands();
-        widget.sync_personality_command_enabled();
+        widget.sync_worktrees_enabled();
         widget.sync_plugins_command_enabled();
         widget.sync_goal_command_enabled();
+        widget
+            .bottom_pane
+            .set_voice_command_enabled(/*enabled*/ false);
         widget.sync_mentions_v2_enabled();
-        widget
-            .bottom_pane
-            .set_queued_message_edit_binding(widget.queued_message_edit_hint_binding);
-        #[cfg(target_os = "windows")]
-        widget
-            .bottom_pane
-            .set_windows_degraded_sandbox_active(matches!(
-                crate::windows_sandbox::level_from_config(&widget.config),
-                WindowsSandboxLevel::RestrictedToken
-            ));
         widget.update_collaboration_mode_indicator();
 
         widget
             .bottom_pane
             .set_connectors_enabled(widget.connectors_enabled());
+        widget
+            .bottom_pane
+            .set_token_activity_command_enabled(widget.has_codex_backend_auth);
         widget.refresh_status_surfaces();
-        widget.refresh_context_window_display();
 
         widget
     }

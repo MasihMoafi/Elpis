@@ -1,10 +1,10 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde::Serialize;
 use ts_rs::TS;
 
 use crate::models::ImageDetail;
+use crate::models::ImageReference;
 
 /// Conservative cap so one user message cannot monopolize a large context window.
 pub const MAX_USER_INPUT_TEXT_CHARS: usize = 1 << 20;
@@ -23,14 +23,14 @@ pub enum UserInput {
         #[serde(default)]
         text_elements: Vec<TextElement>,
     },
-    /// Pre‑encoded data: URI image.
+    /// Image reference forwarded to the Responses API.
     Image {
-        image_url: String,
+        #[serde(flatten)]
+        image: ImageReference,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         #[ts(optional)]
         detail: Option<ImageDetail>,
     },
-
     /// Local image path provided by the user.  This will be converted to an
     /// `Image` variant (base64 data URL) during request serialization.
     LocalImage {
@@ -39,6 +39,10 @@ pub enum UserInput {
         #[ts(optional)]
         detail: Option<ImageDetail>,
     },
+    /// Pre-encoded audio data URI forwarded to the Responses API.
+    Audio { audio_url: String },
+    /// Local audio path converted to an `Audio` data URI during request serialization.
+    LocalAudio { path: std::path::PathBuf },
 
     /// Skill selected by the user (name + path to SKILL.md).
     Skill {

@@ -1,4 +1,3 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use std::env;
 use std::io::Write;
 use std::path::Path;
@@ -7,8 +6,13 @@ use std::process::Command;
 use std::process::Stdio;
 use std::time::Duration;
 
+use codex_exec_server::CODEX_ARG0_EXEC_HELPER_ARG1;
 use codex_exec_server::CODEX_FS_HELPER_ARG1;
 use codex_exec_server::ExecServerRuntimePaths;
+use codex_exec_server::ExecServerTelemetry;
+use codex_exec_server::RequestDispatchMode;
+use codex_http_client::HttpClientFactory;
+use codex_http_client::OutboundProxyPolicy;
 use codex_sandboxing::landlock::CODEX_LINUX_SANDBOX_ARG0;
 use codex_test_binary_support::TestBinaryDispatchGuard;
 use codex_test_binary_support::TestBinaryDispatchMode;
@@ -17,19 +21,40 @@ use ctor::ctor;
 
 pub(crate) mod exec_server;
 
+pub(crate) const TEST_BUILD_COMMIT: &str = "0123456789abcdef0123456789abcdef01234567";
+
 pub(crate) const DELAYED_OUTPUT_AFTER_EXIT_PARENT_ARG: &str =
     "--codex-test-delayed-output-after-exit-parent";
+pub(crate) const SYSTEM_PROXY_REQUEST_URL_ENV: &str =
+    "CODEX_EXEC_SERVER_TEST_SYSTEM_PROXY_REQUEST_URL";
+pub(crate) const SYSTEM_PROXY_URL_ENV: &str = "CODEX_EXEC_SERVER_TEST_SYSTEM_PROXY_URL";
 
 const CODEX_WINDOWS_SANDBOX_ARG1: &str = "--run-as-windows-sandbox";
 const DELAYED_OUTPUT_AFTER_EXIT_CHILD_ARG: &str = "--codex-test-delayed-output-after-exit-child";
 
+#[macro_export]
+macro_rules! skip_if_mxc_unavailable {
+    ($return_value:expr $(,)?) => {{
+        if !codex_sandboxing::windows_mxc_available() {
+            eprintln!("skipping test: native MXC is unavailable on this host");
+            return $return_value;
+        }
+    }};
+}
+
 #[ctor]
 pub static TEST_BINARY_DISPATCH_GUARD: Option<TestBinaryDispatchGuard> = {
     let guard = configure_test_binary_dispatch("codex-exec-server-tests", |exe_name, argv1| {
+        if argv1 == Some(CODEX_ARG0_EXEC_HELPER_ARG1) {
+            return TestBinaryDispatchMode::DispatchArg0Only;
+        }
         if argv1 == Some(CODEX_FS_HELPER_ARG1) {
             return TestBinaryDispatchMode::DispatchArg0Only;
         }
         if argv1 == Some(CODEX_WINDOWS_SANDBOX_ARG1) {
+            return TestBinaryDispatchMode::DispatchArg0Only;
+        }
+        if argv1 == Some(codex_sandboxing::CODEX_WINDOWS_MXC_ARG1) {
             return TestBinaryDispatchMode::DispatchArg0Only;
         }
         if exe_name == CODEX_LINUX_SANDBOX_ARG0 {
@@ -140,6 +165,19 @@ fn maybe_run_exec_server_from_test_binary(guard: Option<&TestBinaryDispatchGuard
     if command != "exec-server" {
         return;
     }
+    // Enable requested child diagnostics so integration tests can observe background failures.
+    if env::var_os("RUST_LOG").is_some()
+        && let Err(error) = tracing_subscriber::fmt()
+            .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
+            .with_writer(std::io::stderr)
+            .with_ansi(false)
+            .try_init()
+    {
+        eprintln!("failed to initialize executor test logging: {error}");
+        std::process::exit(1);
+    }
+    // Initialize in the executor child, just as the real CLI does at startup.
+    codex_build_info::BuildInfo::initialize(TEST_BUILD_COMMIT);
 
     let Some(flag) = args.next() else {
         eprintln!("expected --listen");
@@ -153,10 +191,21 @@ fn maybe_run_exec_server_from_test_binary(guard: Option<&TestBinaryDispatchGuard
         eprintln!("expected listen URL");
         std::process::exit(1);
     };
-    if args.next().is_some() {
-        eprintln!("unexpected extra arguments");
-        std::process::exit(1);
-    }
+    let remaining_args = args.collect::<Vec<_>>();
+    let request_dispatch_mode = match remaining_args.as_slice() {
+        [] => RequestDispatchMode::Inline,
+        [flag, value] if flag == "--concurrent-requests" => match value.parse() {
+            Ok(mode) => mode,
+            Err(error) => {
+                eprintln!("invalid concurrent request count: {error}");
+                std::process::exit(1);
+            }
+        },
+        args => {
+            eprintln!("unexpected exec-server arguments: {args:?}");
+            std::process::exit(1);
+        }
+    };
 
     let current_exe = match env::current_exe() {
         Ok(current_exe) => current_exe,
@@ -185,8 +234,49 @@ fn maybe_run_exec_server_from_test_binary(guard: Option<&TestBinaryDispatchGuard
             std::process::exit(1);
         }
     };
-    let exit_code = match runtime.block_on(codex_exec_server::run_main(&listen_url, runtime_paths))
-    {
+    let http_client_factory = match (
+        env::var(SYSTEM_PROXY_REQUEST_URL_ENV),
+        env::var(SYSTEM_PROXY_URL_ENV),
+    ) {
+        (Ok(request_url), Ok(proxy_url)) => {
+            codex_http_client::cache_system_proxy_route_for_test(&request_url, proxy_url);
+            HttpClientFactory::new(OutboundProxyPolicy::RespectSystemProxy)
+        }
+        (Err(env::VarError::NotPresent), Err(env::VarError::NotPresent)) => {
+            HttpClientFactory::new(OutboundProxyPolicy::ReqwestDefault)
+        }
+        _ => {
+            eprintln!("system proxy test configuration requires both request and proxy URLs");
+            std::process::exit(1);
+        }
+    };
+    let exit_code = match runtime.block_on(async {
+        #[cfg(target_os = "macos")]
+        let runtime_paths = {
+            let home = codex_utils_home_dir::find_codex_home()?;
+            let config = codex_config::loader::load_config_layers_state(
+                &codex_exec_server::LocalFileSystem::unsandboxed(),
+                home.as_path(),
+                /*cwd*/ None,
+                &[],
+                codex_config::LoaderOverrides::default(),
+                &codex_config::NoopThreadConfigLoader,
+            )
+            .await?;
+            runtime_paths.with_allowed_symlinked_codex_home(
+                codex_config::allowed_symlinked_codex_home(&config, &home),
+            )
+        };
+        codex_exec_server::run_main_with_telemetry(
+            &listen_url,
+            runtime_paths,
+            ExecServerTelemetry::default(),
+            http_client_factory,
+            request_dispatch_mode,
+            codex_websocket_auth::WebsocketAuthSettings::default(),
+        )
+        .await
+    }) {
         Ok(()) => 0,
         Err(error) => {
             eprintln!("exec-server failed: {error}");

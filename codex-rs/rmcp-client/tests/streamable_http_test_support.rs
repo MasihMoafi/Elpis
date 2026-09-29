@@ -3,13 +3,15 @@
 //! This support module starts the test HTTP server, launches a real
 //! `exec-server` when remote coverage is needed, and provides small helpers for
 //! creating RMCP clients and asserting round-trip behavior.
+//! HTTP server startup uses the address published by the child that owns the listener.
 
 // This support module is included by multiple integration-test crates. Each
 // crate uses a different subset of the helpers, so dead-code warnings would
 // otherwise depend on which test file compiled the module.
 #![allow(dead_code)]
 
-use std::net::TcpListener;
+use std::net::SocketAddr;
+use std::path::Path;
 use std::path::PathBuf;
 use std::process::Stdio;
 use std::sync::Arc;
@@ -23,6 +25,8 @@ use codex_exec_server::Environment;
 use codex_exec_server::ExecServerClient;
 use codex_exec_server::HttpClient;
 use codex_exec_server::RemoteExecServerConnectArgs;
+use codex_http_client::HttpClientFactory;
+use codex_http_client::OutboundProxyPolicy;
 use codex_rmcp_client::ElicitationAction;
 use codex_rmcp_client::ElicitationResponse;
 use codex_rmcp_client::RmcpClient;
@@ -40,7 +44,6 @@ use serde_json::json;
 use tempfile::TempDir;
 use tokio::io::AsyncBufReadExt;
 use tokio::io::BufReader;
-use tokio::net::TcpStream;
 use tokio::process::Child;
 use tokio::process::Command;
 use tokio::time::sleep;
@@ -56,12 +59,8 @@ fn streamable_http_server_bin() -> Result<PathBuf, CargoBinError> {
 
 fn init_params() -> InitializeRequestParams {
     let mut capabilities = ClientCapabilities::default();
-    capabilities.elicitation = Some(ElicitationCapability {
-        form: Some(FormElicitationCapability {
-            schema_validation: None,
-        }),
-        url: None,
-    });
+    capabilities.elicitation =
+        Some(ElicitationCapability::new().with_form(FormElicitationCapability::new()));
     InitializeRequestParams::new(
         capabilities,
         Implementation::new("codex-test", "0.0.0-test").with_title("Codex rmcp recovery test"),
@@ -71,6 +70,7 @@ fn init_params() -> InitializeRequestParams {
 
 pub(crate) fn expected_echo_result(message: &str) -> CallToolResult {
     let mut result = CallToolResult::success(Vec::new());
+    result.result_type = None;
     result.structured_content = Some(json!({
         "echo": format!("ECHOING: {message}"),
         "env": null,
@@ -106,10 +106,17 @@ pub(crate) async fn create_client_with_http_client(
 }
 
 pub(crate) async fn initialize_client(client: &RmcpClient) -> anyhow::Result<()> {
+    initialize_client_with_timeout(client, Duration::from_secs(/*secs*/ 5)).await
+}
+
+pub(crate) async fn initialize_client_with_timeout(
+    client: &RmcpClient,
+    timeout: Duration,
+) -> anyhow::Result<()> {
     client
         .initialize(
             init_params(),
-            Some(Duration::from_secs(5)),
+            Some(timeout),
             Box::new(|_, _| {
                 async {
                     Ok(ElicitationResponse {
@@ -178,13 +185,17 @@ pub(crate) async fn call_echo_tool(
         .await
 }
 
+fn control_client() -> anyhow::Result<codex_http_client::HttpClient> {
+    Ok(codex_http_client::HttpClientBuilder::new().build_direct()?)
+}
+
 pub(crate) async fn arm_session_post_failure(
     base_url: &str,
     status: u16,
     remaining: usize,
     www_authenticate_headers: &[&str],
 ) -> anyhow::Result<()> {
-    let response = reqwest::Client::new()
+    let response = control_client()?
         .post(format!("{base_url}{SESSION_POST_FAILURE_CONTROL_PATH}"))
         .json(&json!({
             "status": status,
@@ -194,7 +205,7 @@ pub(crate) async fn arm_session_post_failure(
         .send()
         .await?;
 
-    assert_eq!(response.status(), reqwest::StatusCode::NO_CONTENT);
+    assert_eq!(response.status(), http::StatusCode::NO_CONTENT);
     Ok(())
 }
 
@@ -203,7 +214,7 @@ pub(crate) async fn arm_session_post_json_rpc_failure(
     status: u16,
     remaining: usize,
 ) -> anyhow::Result<()> {
-    let response = reqwest::Client::new()
+    let response = control_client()?
         .post(format!("{base_url}{SESSION_POST_FAILURE_CONTROL_PATH}"))
         .json(&json!({
             "status": status,
@@ -221,7 +232,7 @@ pub(crate) async fn arm_session_post_json_rpc_failure(
         .send()
         .await?;
 
-    assert_eq!(response.status(), reqwest::StatusCode::NO_CONTENT);
+    assert_eq!(response.status(), http::StatusCode::NO_CONTENT);
     Ok(())
 }
 
@@ -230,7 +241,7 @@ pub(crate) async fn arm_initialized_notification_post_json_rpc_failure(
     status: u16,
     remaining: usize,
 ) -> anyhow::Result<()> {
-    let response = reqwest::Client::new()
+    let response = control_client()?
         .post(format!(
             "{base_url}{INITIALIZED_NOTIFICATION_POST_FAILURE_CONTROL_PATH}"
         ))
@@ -250,7 +261,7 @@ pub(crate) async fn arm_initialized_notification_post_json_rpc_failure(
         .send()
         .await?;
 
-    assert_eq!(response.status(), reqwest::StatusCode::NO_CONTENT);
+    assert_eq!(response.status(), http::StatusCode::NO_CONTENT);
     Ok(())
 }
 
@@ -259,7 +270,7 @@ pub(crate) async fn arm_initialize_post_failure(
     status: u16,
     remaining: usize,
 ) -> anyhow::Result<()> {
-    let response = reqwest::Client::new()
+    let response = control_client()?
         .post(format!("{base_url}{INITIALIZE_POST_FAILURE_CONTROL_PATH}"))
         .json(&json!({
             "status": status,
@@ -268,7 +279,7 @@ pub(crate) async fn arm_initialize_post_failure(
         .send()
         .await?;
 
-    assert_eq!(response.status(), reqwest::StatusCode::NO_CONTENT);
+    assert_eq!(response.status(), http::StatusCode::NO_CONTENT);
     Ok(())
 }
 
@@ -277,7 +288,7 @@ pub(crate) async fn arm_initialize_post_json_rpc_failure(
     status: u16,
     remaining: usize,
 ) -> anyhow::Result<()> {
-    let response = reqwest::Client::new()
+    let response = control_client()?
         .post(format!("{base_url}{INITIALIZE_POST_FAILURE_CONTROL_PATH}"))
         .json(&json!({
             "status": status,
@@ -295,24 +306,28 @@ pub(crate) async fn arm_initialize_post_json_rpc_failure(
         .send()
         .await?;
 
-    assert_eq!(response.status(), reqwest::StatusCode::NO_CONTENT);
+    assert_eq!(response.status(), http::StatusCode::NO_CONTENT);
     Ok(())
 }
 
 pub(crate) async fn spawn_streamable_http_server() -> anyhow::Result<(Child, String)> {
-    let listener = TcpListener::bind("127.0.0.1:0")?;
-    let port = listener.local_addr()?.port();
-    drop(listener);
-
-    let bind_addr = format!("127.0.0.1:{port}");
-    let base_url = format!("http://{bind_addr}");
+    let startup_dir = tempfile::tempdir()?;
+    let bound_addr_path = startup_dir.path().join("bound_addr");
+    // Let the child reserve its own port; releasing a parent-owned port before
+    // spawning can let another test claim it and satisfy the readiness probe.
     let mut child = Command::new(streamable_http_server_bin()?)
         .kill_on_drop(true)
-        .env("MCP_STREAMABLE_HTTP_BIND_ADDR", &bind_addr)
+        .env("MCP_STREAMABLE_HTTP_BIND_ADDR", "127.0.0.1:0")
+        .env("MCP_STREAMABLE_HTTP_BOUND_ADDR_FILE", &bound_addr_path)
         .spawn()?;
 
-    wait_for_streamable_http_server(&mut child, &bind_addr, Duration::from_secs(5)).await?;
-    Ok((child, base_url))
+    let address = wait_for_streamable_http_server(
+        &mut child,
+        &bound_addr_path,
+        Duration::from_secs(/*secs*/ 5),
+    )
+    .await?;
+    Ok((child, format!("http://{address}")))
 }
 
 /// Owns the exec-server process used by the remote-client integration test.
@@ -345,6 +360,7 @@ pub(crate) async fn spawn_exec_server() -> anyhow::Result<ExecServerProcess> {
     let client = ExecServerClient::connect_websocket(RemoteExecServerConnectArgs::new(
         websocket_url,
         "rmcp-client-remote-http-test".to_string(),
+        HttpClientFactory::new(OutboundProxyPolicy::ReqwestDefault),
     ))
     .await?;
 
@@ -383,9 +399,9 @@ async fn read_exec_server_listen_url(child: &mut Child) -> anyhow::Result<String
 
 async fn wait_for_streamable_http_server(
     server_child: &mut Child,
-    address: &str,
+    bound_addr_path: &Path,
     timeout: Duration,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<SocketAddr> {
     let deadline = Instant::now() + timeout;
 
     loop {
@@ -395,26 +411,22 @@ async fn wait_for_streamable_http_server(
             ));
         }
 
-        let remaining = deadline.saturating_duration_since(Instant::now());
-        if remaining.is_zero() {
+        if Instant::now() >= deadline {
             return Err(anyhow::anyhow!(
-                "timed out waiting for streamable HTTP server at {address}: deadline reached"
+                "timed out waiting for streamable HTTP server to publish its bound address"
             ));
         }
 
-        match tokio::time::timeout(remaining, TcpStream::connect(address)).await {
-            Ok(Ok(_)) => return Ok(()),
-            Ok(Err(error)) => {
-                if Instant::now() >= deadline {
-                    return Err(anyhow::anyhow!(
-                        "timed out waiting for streamable HTTP server at {address}: {error}"
-                    ));
+        match std::fs::read_to_string(bound_addr_path) {
+            Ok(contents) => {
+                // The child creates the file before writing the address into it.
+                if let Ok(address) = contents.parse() {
+                    return Ok(address);
                 }
             }
-            Err(_) => {
-                return Err(anyhow::anyhow!(
-                    "timed out waiting for streamable HTTP server at {address}: connect call timed out"
-                ));
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => {
+                return Err(error).context("failed to read streamable HTTP server bound address");
             }
         }
 

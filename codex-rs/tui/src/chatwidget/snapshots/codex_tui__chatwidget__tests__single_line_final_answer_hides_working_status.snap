@@ -3,12 +3,12 @@ source: tui/src/chatwidget/tests/status_and_layout.rs
 expression: normalize_snapshot_paths(terminal.backend().vt100().screen().contents())
 ---
 
+› count to 1
+
+
 • 1
 
- Elpis · model gpt-5 · location /tmp/pro
-│
-› Ask Elpis to do anything
-│
-│
-│
-  context unknown · Tab Context Ledger
+
+› Ask Codex to do anything
+
+  gpt-5 default · /tmp/project

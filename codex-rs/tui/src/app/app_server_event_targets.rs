@@ -51,6 +51,7 @@ pub(super) fn server_notification_thread_target(
         ServerNotification::ThreadStatusChanged(notification) => {
             Some(notification.thread_id.as_str())
         }
+        ServerNotification::ThreadReverted(notification) => Some(notification.thread_id.as_str()),
         ServerNotification::ThreadArchived(notification) => Some(notification.thread_id.as_str()),
         ServerNotification::ThreadDeleted(notification) => Some(notification.thread_id.as_str()),
         ServerNotification::ThreadUnarchived(notification) => Some(notification.thread_id.as_str()),
@@ -58,10 +59,13 @@ pub(super) fn server_notification_thread_target(
         ServerNotification::ThreadNameUpdated(notification) => {
             Some(notification.thread_id.as_str())
         }
-        ServerNotification::ThreadTokenUsageUpdated(notification) => {
+        ServerNotification::ThreadAttachmentUpdated(notification) => {
             Some(notification.thread_id.as_str())
         }
-        ServerNotification::ThreadSmartPruneUpdated(notification) => {
+        ServerNotification::ThreadProjectUpdated(notification) => {
+            Some(notification.thread_id.as_str())
+        }
+        ServerNotification::ThreadTokenUsageUpdated(notification) => {
             Some(notification.thread_id.as_str())
         }
         ServerNotification::ThreadGoalUpdated(notification) => {
@@ -70,14 +74,13 @@ pub(super) fn server_notification_thread_target(
         ServerNotification::ThreadGoalCleared(notification) => {
             Some(notification.thread_id.as_str())
         }
+        ServerNotification::ThreadQueueChanged(notification) => {
+            Some(notification.thread_id.as_str())
+        }
         ServerNotification::ThreadSettingsUpdated(notification) => {
             Some(notification.thread_id.as_str())
         }
         ServerNotification::TurnStarted(notification) => Some(notification.thread_id.as_str()),
-        ServerNotification::TurnActivityUpdated(notification) => {
-            Some(notification.thread_id.as_str())
-        }
-        ServerNotification::TurnCostUpdated(notification) => Some(notification.thread_id.as_str()),
         ServerNotification::HookStarted(notification) => Some(notification.thread_id.as_str()),
         ServerNotification::TurnCompleted(notification) => Some(notification.thread_id.as_str()),
         ServerNotification::HookCompleted(notification) => Some(notification.thread_id.as_str()),
@@ -88,6 +91,9 @@ pub(super) fn server_notification_thread_target(
             Some(notification.thread_id.as_str())
         }
         ServerNotification::ItemGuardianApprovalReviewCompleted(notification) => {
+            Some(notification.thread_id.as_str())
+        }
+        ServerNotification::StrictReviewRequired(notification) => {
             Some(notification.thread_id.as_str())
         }
         ServerNotification::ItemCompleted(notification) => Some(notification.thread_id.as_str()),
@@ -145,6 +151,15 @@ pub(super) fn server_notification_thread_target(
         ServerNotification::ThreadRealtimeItemAdded(notification) => {
             Some(notification.thread_id.as_str())
         }
+        ServerNotification::ThreadRealtimeItemStarted(notification) => {
+            Some(notification.thread_id.as_str())
+        }
+        ServerNotification::ThreadRealtimeItemTranscriptDelta(notification) => {
+            Some(notification.thread_id.as_str())
+        }
+        ServerNotification::ThreadRealtimeItemCompleted(notification) => {
+            Some(notification.thread_id.as_str())
+        }
         ServerNotification::ThreadRealtimeTranscriptDelta(notification) => {
             Some(notification.thread_id.as_str())
         }
@@ -163,6 +178,10 @@ pub(super) fn server_notification_thread_target(
         ServerNotification::ThreadRealtimeClosed(notification) => {
             Some(notification.thread_id.as_str())
         }
+        ServerNotification::AuthRecoveryStarted(notification)
+        | ServerNotification::AuthRecoveryCompleted(notification) => {
+            Some(notification.thread_id.as_str())
+        }
         ServerNotification::Warning(notification) => notification.thread_id.as_deref(),
         ServerNotification::GuardianWarning(notification) => Some(notification.thread_id.as_str()),
         ServerNotification::McpServerStatusUpdated(notification) => {
@@ -171,9 +190,11 @@ pub(super) fn server_notification_thread_target(
                 None => return ServerNotificationThreadTarget::AppScoped,
             }
         }
-        ServerNotification::SkillsChanged(_)
+        ServerNotification::ProjectChanged(_)
+        | ServerNotification::SkillsChanged(_)
         | ServerNotification::McpServerOauthLoginCompleted(_)
         | ServerNotification::AccountUpdated(_)
+        | ServerNotification::GatewayOAuthChanged(_)
         | ServerNotification::AccountRateLimitsUpdated(_)
         | ServerNotification::AppListUpdated(_)
         | ServerNotification::EnvironmentConnected(_)
@@ -188,6 +209,7 @@ pub(super) fn server_notification_thread_target(
         | ServerNotification::CommandExecOutputDelta(_)
         | ServerNotification::ProcessOutputDelta(_)
         | ServerNotification::ProcessExited(_)
+        | ServerNotification::McpServerEventStream(_)
         | ServerNotification::FsChanged(_)
         | ServerNotification::WindowsWorldWritableWarning(_)
         | ServerNotification::WindowsSandboxSetupCompleted(_)
@@ -213,15 +235,10 @@ mod tests {
     use codex_app_server_protocol::McpServerStartupState;
     use codex_app_server_protocol::McpServerStatusUpdatedNotification;
     use codex_app_server_protocol::ServerNotification;
+    use codex_app_server_protocol::ThreadAttachmentOperation;
+    use codex_app_server_protocol::ThreadAttachmentUpdatedNotification;
     use codex_app_server_protocol::ThreadSettings;
     use codex_app_server_protocol::ThreadSettingsUpdatedNotification;
-    use codex_app_server_protocol::ThreadSmartPruneSnapshot;
-    use codex_app_server_protocol::ThreadSmartPruneUpdatedNotification;
-    use codex_app_server_protocol::TurnActivityStatus;
-    use codex_app_server_protocol::TurnActivityUpdatedNotification;
-    use codex_app_server_protocol::TurnCostAvailability;
-    use codex_app_server_protocol::TurnCostState;
-    use codex_app_server_protocol::TurnCostUpdatedNotification;
     use codex_app_server_protocol::WarningNotification;
     use codex_protocol::ThreadId;
     use codex_protocol::config_types::CollaborationMode;
@@ -232,6 +249,7 @@ mod tests {
 
     fn test_thread_settings() -> ThreadSettings {
         ThreadSettings {
+            disabled_plugin_ids: Vec::new(),
             cwd: test_path_buf("/tmp/thread-settings").abs(),
             approval_policy: codex_app_server_protocol::AskForApproval::Never,
             approvals_reviewer: codex_app_server_protocol::ApprovalsReviewer::User,
@@ -343,46 +361,19 @@ mod tests {
     }
 
     #[test]
-    fn smart_prune_updated_notifications_route_to_threads() {
+    fn thread_attachment_updated_notifications_route_to_threads() {
         let thread_id = ThreadId::new();
         let notification =
-            ServerNotification::ThreadSmartPruneUpdated(ThreadSmartPruneUpdatedNotification {
+            ServerNotification::ThreadAttachmentUpdated(ThreadAttachmentUpdatedNotification {
                 thread_id: thread_id.to_string(),
-                smart_prune: ThreadSmartPruneSnapshot::default(),
+                attachment_type: "pull_request".to_string(),
+                identity_key: r#"["github.com","openai","codex",123]"#.to_string(),
+                attachment_id: "attachment-1".to_string(),
+                operation: ThreadAttachmentOperation::Deleted,
             });
 
         let target = server_notification_thread_target(&notification);
 
         assert_eq!(target, ServerNotificationThreadTarget::Thread(thread_id));
-    }
-
-    #[test]
-    fn activity_and_cost_notifications_route_only_to_their_explicit_thread() {
-        let thread_id = ThreadId::new();
-        let notifications = [
-            ServerNotification::TurnActivityUpdated(TurnActivityUpdatedNotification {
-                thread_id: thread_id.to_string(),
-                turn_id: "turn-1".to_string(),
-                status: TurnActivityStatus::Completed,
-                started_at: None,
-                duration_ms: None,
-                time_to_first_token_ms: None,
-                profile: None,
-            }),
-            ServerNotification::TurnCostUpdated(TurnCostUpdatedNotification {
-                thread_id: thread_id.to_string(),
-                turn_id: "turn-1".to_string(),
-                cost: TurnCostState::Unavailable {
-                    reason: TurnCostAvailability::BackendUnavailable,
-                },
-            }),
-        ];
-
-        for notification in notifications {
-            assert_eq!(
-                server_notification_thread_target(&notification),
-                ServerNotificationThreadTarget::Thread(thread_id)
-            );
-        }
     }
 }

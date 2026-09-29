@@ -1,15 +1,12 @@
-use chrono::DateTime;
-use chrono::Utc;
 use codex_core::test_support::all_model_presets;
-use codex_models_manager::client_version_to_whole;
 use codex_protocol::config_types::ReasoningSummary;
 use codex_protocol::openai_models::ConfigShellToolType;
 use codex_protocol::openai_models::ModelInfo;
+use codex_protocol::openai_models::ModelMessages;
 use codex_protocol::openai_models::ModelPreset;
 use codex_protocol::openai_models::ModelVisibility;
 use codex_protocol::openai_models::TruncationPolicyConfig;
 use codex_protocol::openai_models::default_input_modalities;
-use serde_json::json;
 use std::path::Path;
 
 /// Convert a ModelPreset to ModelInfo for cache storage.
@@ -20,7 +17,7 @@ fn preset_to_info(preset: &ModelPreset, priority: i32) -> ModelInfo {
         description: Some(preset.description.clone()),
         default_reasoning_level: Some(preset.default_reasoning_effort.clone()),
         supported_reasoning_levels: preset.supported_reasoning_efforts.clone(),
-        shell_type: ConfigShellToolType::ShellCommand,
+        shell_type: ConfigShellToolType::UnifiedExec,
         visibility: if preset.show_in_picker {
             ModelVisibility::List
         } else {
@@ -31,10 +28,25 @@ fn preset_to_info(preset: &ModelPreset, priority: i32) -> ModelInfo {
         additional_speed_tiers: preset.additional_speed_tiers.clone(),
         service_tiers: preset.service_tiers.clone(),
         default_service_tier: preset.default_service_tier.clone(),
+        available_access_programs: preset.available_access_programs.clone(),
         upgrade: preset.upgrade.as_ref().map(Into::into),
-        base_instructions: "base instructions".to_string(),
-        model_messages: None,
+        model_messages: Some(ModelMessages {
+            persistent_instructions: None,
+            tools: None,
+            instructions_template: Some("base instructions".to_string()),
+            instructions_variables: None,
+            approvals: None,
+            collaboration_modes: None,
+            auto_review: None,
+            permissions: None,
+            multi_agent: None,
+            token_budget: None,
+            confirmation_policies: None,
+            guardian_v2: None,
+        }),
         include_skills_usage_instructions: false,
+        include_plugin_usage_instructions: false,
+        include_apps_usage_instructions: false,
         supports_reasoning_summary_parameter: true,
         default_reasoning_summary: ReasoningSummary::Auto,
         support_verbosity: false,
@@ -43,7 +55,6 @@ fn preset_to_info(preset: &ModelPreset, priority: i32) -> ModelInfo {
         apply_patch_tool_type: None,
         web_search_tool_type: Default::default(),
         truncation_policy: TruncationPolicyConfig::bytes(/*limit*/ 10_000),
-        supports_parallel_tool_calls: false,
         supports_image_detail_original: false,
         context_window: Some(272_000),
         max_context_window: None,
@@ -54,27 +65,25 @@ fn preset_to_info(preset: &ModelPreset, priority: i32) -> ModelInfo {
         input_modalities: default_input_modalities(),
         used_fallback_model_metadata: false,
         supports_search_tool: false,
+        supports_experimental_context: false,
         use_responses_lite: false,
+        supports_reasoning_effort_updates: false,
+        guardian: None,
+        node_repl_auto_review_required: false,
+        node_repl_disabled: false,
         auto_review_model_override: None,
+        model_specialty: None,
         tool_mode: None,
-        multi_agent_version: None,
+        multi_agent_version: preset.multi_agent_version,
+        multi_agent_reasoning_effort: None,
     }
 }
 
-/// Write the models cache for the default OpenAI provider into a codex home.
+/// Write a models_cache.json file to the codex home directory.
 /// This prevents ModelsManager from making network requests to refresh models.
 /// The cache will be treated as fresh (within TTL) and used instead of fetching from the network.
 /// Uses bundled-catalog-derived presets, converted to ModelInfo format.
-pub fn write_models_cache(codex_home: &Path) -> std::io::Result<()> {
-    write_default_models_cache_for_base_url(codex_home, "https://api.openai.com/v1")
-}
-
-/// [`write_models_cache`] filed under a specific provider endpoint, for tests that
-/// run on the mock provider rather than OpenAI's.
-pub fn write_default_models_cache_for_base_url(
-    codex_home: &Path,
-    base_url: &str,
-) -> std::io::Result<()> {
+pub async fn write_models_cache(codex_home: &Path) -> std::io::Result<()> {
     // Get a stable bundled-catalog-derived preset list and filter for picker-visible entries.
     let presets: Vec<&ModelPreset> = all_model_presets()
         .iter()
@@ -92,40 +101,33 @@ pub fn write_default_models_cache_for_base_url(
         })
         .collect();
 
-    write_models_cache_for_base_url(codex_home, base_url, models)
+    write_models_cache_with_models(codex_home, models).await
 }
 
-/// Write the models cache with specific models.
+/// Write a models_cache.json file with specific models.
 /// Useful when tests need specific models to be available.
-pub fn write_models_cache_with_models(
+pub async fn write_models_cache_with_models(
     codex_home: &Path,
     models: Vec<ModelInfo>,
 ) -> std::io::Result<()> {
-    // The cache is per provider endpoint; these fixtures stand in for the
-    // default OpenAI provider the app server starts on.
-    write_models_cache_for_base_url(codex_home, "https://api.openai.com/v1", models)
-}
-
-/// Write the cache under a specific provider endpoint. A test that reads the
-/// fixture back needs the path its own provider will consult, which for the
-/// mock server is `{uri}/v1` rather than OpenAI's.
-pub fn write_models_cache_for_base_url(
-    codex_home: &Path,
-    base_url: &str,
-    models: Vec<ModelInfo>,
-) -> std::io::Result<()> {
-    let cache_path = codex_models_manager::manager::models_cache_path(codex_home, base_url);
-    if let Some(parent) = cache_path.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
-    // DateTime<Utc> serializes to RFC3339 format by default with serde
-    let fetched_at: DateTime<Utc> = Utc::now();
-    let client_version = client_version_to_whole();
-    let cache = json!({
-        "fetched_at": fetched_at,
-        "etag": null,
-        "client_version": client_version,
-        "models": models
-    });
+    let config = codex_core::config::ConfigBuilder::default()
+        .loader_overrides(codex_config::LoaderOverrides::without_managed_config_for_tests())
+        .codex_home(codex_home.to_path_buf())
+        .build()
+        .await?;
+    let auth = codex_login::CodexAuth::from_auth_storage(
+        codex_home,
+        config.cli_auth_credentials_store_mode,
+        Some(&config.chatgpt_base_url),
+        config.auth_keyring_backend_kind(),
+        &codex_login::test_support::transport_default_auth_route_config(),
+    )
+    .await?;
+    let cache = codex_model_provider::test_support::models_cache_entry(
+        &config.model_provider,
+        auth.as_ref(),
+        models,
+    );
+    let cache_path = codex_home.join("models_cache.json");
     std::fs::write(cache_path, serde_json::to_string_pretty(&cache)?)
 }

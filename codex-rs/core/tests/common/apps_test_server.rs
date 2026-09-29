@@ -1,4 +1,3 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use crate::test_codex::TestCodexBuilder;
 use crate::test_codex::test_codex;
 use anyhow::Result;
@@ -9,8 +8,11 @@ use codex_models_manager::bundled_models_response;
 use serde_json::Value;
 use serde_json::json;
 use std::sync::Arc;
+use std::sync::Mutex;
+use std::sync::atomic::AtomicBool;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
+use std::sync::mpsc;
 use wiremock::Mock;
 use wiremock::MockServer;
 use wiremock::Request;
@@ -27,7 +29,7 @@ const DISCOVERABLE_CALENDAR_ID: &str = "connector_2128aebfecb84f64a069897515042a
 const DISCOVERABLE_GMAIL_ID: &str = "connector_68df038e0ba48191908c8434991bbac2";
 const CONNECTOR_DESCRIPTION: &str = "Plan events and manage your calendar.";
 const CODEX_APPS_META_KEY: &str = "_codex_apps";
-const CODEX_APPS_MCP_PATH_REGEX: &str = "^/api/codex/apps/?$";
+const CODEX_APPS_MCP_PATH_REGEX: &str = "^/api/codex/ps/mcp/?$";
 const HOSTED_PLUGIN_RUNTIME_MCP_PATH_REGEX: &str = "^/api/codex/ps/mcp/?$";
 const PROTOCOL_VERSION: &str = "2025-11-25";
 const SERVER_NAME: &str = "codex-apps-test";
@@ -54,6 +56,8 @@ const CALENDAR_LIST_EVENTS_RESOURCE_URI: &str = "connector://calendar/tools/cale
 pub const DOCUMENT_EXTRACT_TEXT_RESOURCE_URI: &str =
     "connector://calendar/tools/calendar_extract_text";
 
+type AppsStartupInitializeGate = Arc<Mutex<Option<mpsc::Receiver<()>>>>;
+
 #[derive(Clone)]
 pub struct AppsTestServer {
     pub chatgpt_base_url: String,
@@ -63,6 +67,7 @@ pub struct AppsTestServer {
 pub struct AppsTestServerStartupControl {
     initialize_attempts: Arc<AtomicUsize>,
     remaining_initialize_failures: Arc<AtomicUsize>,
+    successful_initialize_gate: AppsStartupInitializeGate,
 }
 
 impl AppsTestServerStartupControl {
@@ -74,6 +79,16 @@ impl AppsTestServerStartupControl {
     pub fn initialize_attempts(&self) -> usize {
         self.initialize_attempts.load(Ordering::SeqCst)
     }
+
+    /// Holds one successful startup without turning recovery into a fresh runtime refresh.
+    pub fn hold_next_successful_initialize(&self) -> mpsc::Sender<()> {
+        let (release, gate) = mpsc::channel();
+        *self
+            .successful_initialize_gate
+            .lock()
+            .expect("Apps initialization gate lock should not be poisoned") = Some(gate);
+        release
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -82,11 +97,12 @@ pub enum AppsTestToolLoading {
     Searchable,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 enum AppsTestToolsListBehavior {
     AlwaysAvailable,
-    AvailableAfterInitialList,
+    AvailableWhen(Arc<AtomicBool>),
     AlwaysUnavailable,
+    Custom(Arc<Mutex<Vec<Value>>>),
 }
 
 impl AppsTestServer {
@@ -177,6 +193,7 @@ impl AppsTestServer {
         let control = AppsTestServerStartupControl {
             initialize_attempts: Arc::new(AtomicUsize::new(0)),
             remaining_initialize_failures: Arc::new(AtomicUsize::new(0)),
+            successful_initialize_gate: Arc::new(Mutex::new(None)),
         };
         mount_streamable_http_json_rpc_with_startup_control(
             server,
@@ -188,6 +205,7 @@ impl AppsTestServer {
             AppsTestToolsListBehavior::AlwaysAvailable,
             Some(Arc::clone(&control.initialize_attempts)),
             Some(Arc::clone(&control.remaining_initialize_failures)),
+            Some(Arc::clone(&control.successful_initialize_gate)),
         )
         .await;
         Ok((
@@ -198,14 +216,22 @@ impl AppsTestServer {
         ))
     }
 
-    pub async fn mount_with_tools_available_after_initial_list(
+    pub async fn mount_with_tools_available_when(
         server: &MockServer,
+        tools_available: Arc<AtomicBool>,
     ) -> Result<Self> {
         Self::mount_with_tools_list_behavior(
             server,
-            AppsTestToolsListBehavior::AvailableAfterInitialList,
+            AppsTestToolsListBehavior::AvailableWhen(tools_available),
         )
         .await
+    }
+
+    pub async fn mount_with_tools(
+        server: &MockServer,
+        tools: Arc<Mutex<Vec<Value>>>,
+    ) -> Result<Self> {
+        Self::mount_with_tools_list_behavior(server, AppsTestToolsListBehavior::Custom(tools)).await
     }
 
     pub async fn mount_without_tools(server: &MockServer) -> Result<Self> {
@@ -239,9 +265,9 @@ pub fn configure_search_capable_model(config: &mut Config) {
     let model = model_catalog
         .models
         .iter_mut()
-        .find(|model| model.slug == "gpt-5.4")
-        .expect("gpt-5.4 exists in bundled models.json");
-    config.model = Some("gpt-5.4".to_string());
+        .find(|model| model.slug == "gpt-5.5")
+        .expect("gpt-5.5 exists in bundled models.json");
+    config.model = Some("gpt-5.5".to_string());
     model.supports_search_tool = true;
     config.model_catalog = Some(model_catalog);
 }
@@ -289,7 +315,7 @@ pub async fn recorded_apps_tool_calls(server: &MockServer) -> Vec<Value> {
         .into_iter()
         .filter_map(|request| {
             let body: Value = serde_json::from_slice(&request.body).ok()?;
-            (request.url.path() == "/api/codex/apps"
+            (request.url.path() == "/api/codex/ps/mcp"
                 && body.get("method").and_then(Value::as_str) == Some("tools/call"))
             .then_some(body)
         })
@@ -412,6 +438,7 @@ async fn mount_streamable_http_json_rpc_at_path(
         tools_list_behavior,
         /*initialize_attempts*/ None,
         /*remaining_initialize_failures*/ None,
+        /*successful_initialize_gate*/ None,
     )
     .await;
 }
@@ -427,6 +454,7 @@ async fn mount_streamable_http_json_rpc_with_startup_control(
     tools_list_behavior: AppsTestToolsListBehavior,
     initialize_attempts: Option<Arc<AtomicUsize>>,
     remaining_initialize_failures: Option<Arc<AtomicUsize>>,
+    successful_initialize_gate: Option<AppsStartupInitializeGate>,
 ) {
     Mock::given(method("POST"))
         .and(path_regex(mcp_path_regex))
@@ -436,9 +464,9 @@ async fn mount_streamable_http_json_rpc_with_startup_control(
             searchable,
             include_app_only_tool,
             tools_list_behavior,
-            tools_list_calls: AtomicUsize::new(0),
             initialize_attempts,
             remaining_initialize_failures,
+            successful_initialize_gate,
         })
         .mount(server)
         .await;
@@ -450,9 +478,9 @@ struct CodexAppsJsonRpcResponder {
     searchable: bool,
     include_app_only_tool: bool,
     tools_list_behavior: AppsTestToolsListBehavior,
-    tools_list_calls: AtomicUsize,
     initialize_attempts: Option<Arc<AtomicUsize>>,
     remaining_initialize_failures: Option<Arc<AtomicUsize>>,
+    successful_initialize_gate: Option<AppsStartupInitializeGate>,
 }
 
 impl Respond for CodexAppsJsonRpcResponder {
@@ -492,6 +520,20 @@ impl Respond for CodexAppsJsonRpcResponder {
                         "error": "simulated non-retryable Apps MCP startup failure",
                     }));
                 }
+                let gate = self.successful_initialize_gate.as_ref().and_then(|gate| {
+                    gate.lock()
+                        .expect("Apps initialization gate lock should not be poisoned")
+                        .take()
+                });
+                // This responder's dedicated mock server stays paused while the test controls
+                // when this existing client's background retry may finish.
+                if let Some(gate) = gate
+                    && gate.recv().is_err()
+                {
+                    return ResponseTemplate::new(500).set_body_json(json!({
+                        "error": "Apps initialization gate was dropped before release",
+                    }));
+                }
                 let id = body.get("id").cloned().unwrap_or(Value::Null);
                 let protocol_version = body
                     .pointer("/params/protocolVersion")
@@ -516,10 +558,12 @@ impl Respond for CodexAppsJsonRpcResponder {
             }
             "notifications/initialized" => ResponseTemplate::new(202),
             "tools/list" => {
-                let list_index = self.tools_list_calls.fetch_add(1, Ordering::SeqCst);
-                let tools_available = match self.tools_list_behavior {
-                    AppsTestToolsListBehavior::AlwaysAvailable => true,
-                    AppsTestToolsListBehavior::AvailableAfterInitialList => list_index > 0,
+                let tools_available = match &self.tools_list_behavior {
+                    AppsTestToolsListBehavior::AlwaysAvailable
+                    | AppsTestToolsListBehavior::Custom(_) => true,
+                    AppsTestToolsListBehavior::AvailableWhen(tools_available) => {
+                        tools_available.load(Ordering::SeqCst)
+                    }
                     AppsTestToolsListBehavior::AlwaysUnavailable => false,
                 };
                 let id = body.get("id").cloned().unwrap_or(Value::Null);
@@ -625,6 +669,14 @@ impl Respond for CodexAppsJsonRpcResponder {
                         "nextCursor": null
                     }
                 });
+                if let AppsTestToolsListBehavior::Custom(tools) = &self.tools_list_behavior {
+                    response["result"]["tools"] = json!(
+                        tools
+                            .lock()
+                            .expect("Apps test tools lock should not be poisoned")
+                            .clone()
+                    );
+                }
                 if !tools_available
                     && let Some(tools) = response
                         .pointer_mut("/result/tools")

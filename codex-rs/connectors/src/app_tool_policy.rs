@@ -1,9 +1,10 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use codex_config::AppsRequirementsToml;
 use codex_config::ConfigLayerStack;
 use codex_config::types::AppToolApproval;
 use codex_config::types::AppsConfigToml;
 use serde::Deserialize;
+
+use crate::AppInfo;
 
 /// The effective enablement and approval policy for one app tool.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -21,10 +22,11 @@ impl Default for AppToolPolicy {
     }
 }
 
-/// Connector-owned metadata used to evaluate one app tool.
+/// App and account metadata used to evaluate one tool.
 #[derive(Debug, Clone, Copy)]
 pub struct AppToolPolicyInput<'a> {
     pub connector_id: Option<&'a str>,
+    pub link_id: Option<&'a str>,
     pub tool_name: &'a str,
     pub tool_title: Option<&'a str>,
     pub destructive_hint: Option<bool>,
@@ -54,6 +56,29 @@ impl<'a> AppToolPolicyEvaluator<'a> {
             input.tool_name,
         );
         app_tool_policy_from_apps_config(self.apps_config.as_ref(), input, managed_approval)
+    }
+
+    /// Returns the effective local and managed enablement for one connector.
+    pub fn app_enabled(&self, connector_id: &str) -> bool {
+        self.apps_config
+            .as_ref()
+            .map(|apps_config| app_is_enabled(apps_config, Some(connector_id)))
+            .unwrap_or(true)
+    }
+
+    /// Applies app policy without overriding source state for unconfigured apps.
+    pub fn apply_app_enabled_state(&self, mut apps: Vec<AppInfo>) -> Vec<AppInfo> {
+        let Some(apps_config) = self.apps_config.as_ref() else {
+            return apps;
+        };
+
+        for app in &mut apps {
+            if apps_config.default.is_some() || apps_config.apps.contains_key(app.id.as_str()) {
+                app.is_enabled = self.app_enabled(app.id.as_str());
+            }
+        }
+
+        apps
     }
 
     fn from_parts(
@@ -162,6 +187,12 @@ fn app_tool_policy_from_apps_config(
     });
     let approval = managed_approval
         .or_else(|| tool_config.and_then(|tool| tool.approval_mode))
+        .or_else(|| {
+            input
+                .link_id
+                .and_then(|link_id| app?.links.as_ref()?.links.get(link_id))
+                .and_then(|link| link.default_tools_approval_mode)
+        })
         .or_else(|| app.and_then(|app| app.default_tools_approval_mode))
         .or_else(|| {
             input

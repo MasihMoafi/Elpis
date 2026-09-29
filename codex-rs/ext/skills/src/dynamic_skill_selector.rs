@@ -1,5 +1,24 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
+mod character_ngram;
+mod character_routing_card;
+mod fielded_bm25;
+mod lru;
+mod lru_plus_character_routing;
+mod lru_plus_lexical;
+mod multi_query_lexical;
+mod routing_card_lexical;
+mod rrf_lexical_char;
 mod weighted_lexical;
+pub(crate) use character_ngram::CharacterNgramSkillSelector;
+pub(crate) use character_routing_card::CharacterRoutingCardSkillSelector;
+use codex_skills::SkillDependencies;
+pub(crate) use fielded_bm25::FieldedBm25SkillSelector;
+pub(crate) use lru::LruSkillSelector;
+pub(crate) use lru_plus_character_routing::LruPlusCharacterRoutingSkillSelector;
+pub(crate) use lru_plus_character_routing::LruPlusLexicalCharacterRoutingSkillSelector;
+pub(crate) use lru_plus_lexical::LruPlusLexicalSkillSelector;
+pub(crate) use multi_query_lexical::MultiQueryLexicalSkillSelector;
+pub(crate) use routing_card_lexical::RoutingCardLexicalSkillSelector;
+pub(crate) use rrf_lexical_char::RrfLexicalCharSkillSelector;
 pub(crate) use weighted_lexical::WeightedLexicalSkillSelector;
 
 /// Metadata searched by a cheap skill selector.
@@ -10,6 +29,7 @@ pub(crate) struct SkillSelectionDocument<'a> {
     pub name: &'a str,
     pub short_description: Option<&'a str>,
     pub description: &'a str,
+    pub dependencies: Option<&'a SkillDependencies>,
 }
 
 /// Bounded output from one cheap skill-selection method.

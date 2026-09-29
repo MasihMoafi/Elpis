@@ -1,36 +1,54 @@
-use codex_protocol::models::ContentItem;
-use codex_protocol::models::ResponseInputItem;
+use crate::AnnotatedContent;
+use codex_protocol::models::ContentItemKind;
+use codex_protocol::models::InternalChatMessageMetadataPassthrough;
 use codex_protocol::models::ResponseItem;
 
-/// Type-erased registration for a contextual user fragment.
-///
-/// Implementations are used by context filtering code to recognize injected
-/// fragments without constructing the concrete context payload.
-pub trait FragmentRegistration: Sync {
-    fn matches_text(&self, text: &str) -> bool;
+/// A rendered contextual fragment and the role that owns its annotated content.
+#[derive(Clone, Debug, PartialEq)]
+pub struct RenderedFragment {
+    role: &'static str,
+    content: AnnotatedContent,
 }
 
-pub struct FragmentRegistrationProxy<T> {
-    _marker: std::marker::PhantomData<fn() -> T>,
+impl RenderedFragment {
+    /// Creates a rendered fragment without separating its role and annotated content.
+    pub fn new(role: &'static str, content: AnnotatedContent) -> Self {
+        Self { role, content }
+    }
+
+    /// Returns the response role associated with this fragment.
+    pub fn role(&self) -> &'static str {
+        self.role
+    }
+
+    /// Returns this fragment's model-visible content and classification.
+    pub fn annotated_content(&self) -> &AnnotatedContent {
+        &self.content
+    }
+
+    /// Separates the role and annotated content at an API boundary.
+    pub fn into_parts(self) -> (&'static str, AnnotatedContent) {
+        (self.role, self.content)
+    }
 }
 
-impl<T> FragmentRegistrationProxy<T> {
-    pub const fn new() -> Self {
-        Self {
-            _marker: std::marker::PhantomData,
+impl From<RenderedFragment> for ResponseItem {
+    fn from(fragment: RenderedFragment) -> Self {
+        let (role, annotated_content) = fragment.into_parts();
+        let (content, content_kind) = annotated_content.into_parts();
+
+        Self::Message {
+            id: None,
+            role: role.to_string(),
+            content: vec![content],
+            phase: None,
+            internal_chat_message_metadata_passthrough: Some(
+                InternalChatMessageMetadataPassthrough {
+                    content_item_kinds: Some(vec![content_kind]),
+                    ..Default::default()
+                },
+            ),
         }
-    }
-}
-
-impl<T> Default for FragmentRegistrationProxy<T> {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl<T: ContextualUserFragment> FragmentRegistration for FragmentRegistrationProxy<T> {
-    fn matches_text(&self, text: &str) -> bool {
-        T::matches_text(text)
     }
 }
 
@@ -45,6 +63,14 @@ impl<T: ContextualUserFragment> FragmentRegistration for FragmentRegistrationPro
 /// arbitrary text.
 pub trait ContextualUserFragment {
     fn role(&self) -> &'static str;
+
+    /// Returns a stable `<feature>.<name>` classification, using `generic` for shared fragments.
+    fn content_kind(&self) -> ContentItemKind;
+
+    /// Whether this fragment must be recorded as its own response item.
+    fn requires_separate_message(&self) -> bool {
+        false
+    }
 
     fn markers(&self) -> (&'static str, &'static str);
 
@@ -72,44 +98,23 @@ pub trait ContextualUserFragment {
         format!("{start_marker}{body}{end_marker}")
     }
 
+    /// Renders the role, model-visible content, and classification together.
+    fn render_fragment(&self) -> RenderedFragment {
+        RenderedFragment::new(
+            self.role(),
+            AnnotatedContent::input_text(self.render(), self.content_kind()),
+        )
+    }
+
     fn into(self) -> ResponseItem
     where
         Self: Sized,
     {
-        ResponseItem::Message {
-            id: None,
-            role: self.role().to_string(),
-            content: vec![ContentItem::InputText {
-                text: self.render(),
-            }],
-            phase: None,
-            internal_chat_message_metadata_passthrough: None,
-        }
+        ResponseItem::from(self.render_fragment())
     }
 
     fn into_boxed_response_item(self: Box<Self>) -> ResponseItem {
-        ResponseItem::Message {
-            id: None,
-            role: self.role().to_string(),
-            content: vec![ContentItem::InputText {
-                text: self.render(),
-            }],
-            phase: None,
-            internal_chat_message_metadata_passthrough: None,
-        }
-    }
-
-    fn into_response_input_item(self) -> ResponseInputItem
-    where
-        Self: Sized,
-    {
-        ResponseInputItem::Message {
-            role: self.role().to_string(),
-            content: vec![ContentItem::InputText {
-                text: self.render(),
-            }],
-            phase: None,
-        }
+        ResponseItem::from(self.render_fragment())
     }
 }
 

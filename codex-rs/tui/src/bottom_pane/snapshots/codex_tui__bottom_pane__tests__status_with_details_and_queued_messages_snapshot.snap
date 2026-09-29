@@ -2,16 +2,14 @@
 source: tui/src/bottom_pane/mod.rs
 expression: "render_snapshot(&pane, area)"
 ---
-Elpising… (0s • esc to interrupt)               
+• Working (0s • esc to interrupt)               
   └ First detail line                           
     Second detail line                          
                                                 
 • Queued follow-up inputs                       
   ↳ Queued follow-up question                   
-    ↑ edit all · enter send                     
-│                                               
-› Ask Elpis to do anything                      
-│                                               
-│                                               
-│                                               
-          context unknown · Tab Context Ledger
+    shift+← edit last queued message            
+                                                
+› Ask Codex to do anything                      
+                                                
+  ? for shortcuts            100% context left

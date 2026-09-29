@@ -1,4 +1,3 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use crate::protocol::common::ServerNotification;
 use crate::protocol::item_builders::build_command_execution_begin_item;
 use crate::protocol::item_builders::build_command_execution_end_item;
@@ -59,6 +58,9 @@ pub fn item_event_to_server_notification(
                             }
                             CoreDynamicToolCallOutputContentItem::InputImage { image_url } => {
                                 DynamicToolCallOutputContentItem::InputImage { image_url }
+                            }
+                            CoreDynamicToolCallOutputContentItem::InputAudio { audio_url } => {
+                                DynamicToolCallOutputContentItem::InputAudio { audio_url }
                             }
                         })
                         .collect(),

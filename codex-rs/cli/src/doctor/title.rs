@@ -3,7 +3,6 @@ use std::path::Path;
 use std::path::PathBuf;
 
 use codex_config::ConfigLayerSource;
-use codex_config::ConfigLayerStackOrdering;
 use codex_core::config::Config;
 use codex_git_utils::get_git_repo_root;
 use unicode_segmentation::UnicodeSegmentation;
@@ -135,6 +134,8 @@ fn terminal_title_item_id(item: &str) -> Option<&'static str> {
         "context-used" | "context-usage" => Some("context-used"),
         "five-hour-limit" => Some("five-hour-limit"),
         "weekly-limit" => Some("weekly-limit"),
+        "thread-credits" => Some("thread-credits"),
+        "estimated-thread-cost" => Some("estimated-thread-cost"),
         "codex-version" => Some("codex-version"),
         "used-tokens" => Some("used-tokens"),
         "total-input-tokens" => Some("total-input-tokens"),
@@ -171,11 +172,7 @@ fn terminal_title_project_root(config: &Config, cwd: &Path) -> Option<ProjectTit
 
     config
         .config_layer_stack
-        .get_layers(
-            ConfigLayerStackOrdering::LowestPrecedenceFirst,
-            /*include_disabled*/ true,
-        )
-        .iter()
+        .all_layers_low_to_high()
         .find_map(|layer| match &layer.name {
             ConfigLayerSource::Project { dot_codex_folder } => dot_codex_folder
                 .as_path()
@@ -309,6 +306,27 @@ mod tests {
                 .details
                 .contains(&"terminal title project value: project".to_string())
         );
+    }
+
+    #[test]
+    fn terminal_title_accepts_thread_usage_items() {
+        let check = terminal_title_check_from_inputs(TerminalTitleInputs {
+            configured_items: Some(vec![
+                "thread-credits".to_string(),
+                "estimated-thread-cost".to_string(),
+            ]),
+            cwd: PathBuf::from("/workspace/project"),
+            project_root: None,
+        });
+
+        assert_eq!(check.status, CheckStatus::Ok);
+        assert_eq!(check.summary, "terminal title configured");
+        assert!(
+            check.details.contains(
+                &"terminal title items: thread-credits, estimated-thread-cost".to_string()
+            )
+        );
+        assert!(check.issues.is_empty());
     }
 
     #[test]

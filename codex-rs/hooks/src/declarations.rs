@@ -1,4 +1,3 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use codex_plugin::PluginHookSource;
 use codex_protocol::protocol::HookEventName;
 
@@ -70,6 +69,7 @@ mod tests {
                             timeout_sec: None,
                             r#async: false,
                             status_message: None,
+                            additional_context_limit: None,
                         },
                     ],
                 }],

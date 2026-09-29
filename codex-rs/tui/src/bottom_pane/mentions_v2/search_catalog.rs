@@ -1,9 +1,12 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
-use codex_core_skills::model::SkillMetadata;
+use std::collections::HashSet;
+
+use codex_app_server_protocol::SkillMetadata;
 use codex_plugin::PluginCapabilitySummary;
 
 use crate::skills_helpers::skill_description;
 use crate::skills_helpers::skill_display_name;
+use crate::task_mentions::MAX_TASK_TITLE_CHARS;
+use crate::task_mentions::TaskMention;
 
 use super::candidate::Candidate;
 use super::candidate::MentionType;
@@ -12,14 +15,26 @@ use super::candidate::Selection;
 pub(crate) fn build_search_catalog(
     skills: Option<&[SkillMetadata]>,
     plugins: Option<&[PluginCapabilitySummary]>,
+    tasks: &[TaskMention],
 ) -> Vec<Candidate> {
+    let plugin_ids: HashSet<_> = plugins
+        .into_iter()
+        .flatten()
+        .map(|plugin| plugin.config_name.as_str())
+        .collect();
     let mut candidates = Vec::new();
     if let Some(skills) = skills {
-        let colliding_names = crate::skills_helpers::skill_name_collisions(skills);
+        // Keep skills visible when older servers omit plugin ownership.
         candidates.extend(
             skills
                 .iter()
-                .map(|skill| skill_candidate(skill, &colliding_names)),
+                .filter(|skill| {
+                    !skill
+                        .plugin_id
+                        .as_deref()
+                        .is_some_and(|plugin_id| plugin_ids.contains(plugin_id))
+                })
+                .map(skill_candidate),
         );
     }
 
@@ -27,14 +42,30 @@ pub(crate) fn build_search_catalog(
         candidates.extend(plugins.iter().map(plugin_candidate));
     }
 
+    candidates.extend(tasks.iter().map(|task| {
+        let title = task.title.split_whitespace().collect::<Vec<_>>().join(" ");
+        let title: String = title.chars().take(MAX_TASK_TITLE_CHARS).collect();
+        Candidate {
+            display_name: title.clone(),
+            description: (!task.cwd.is_empty()).then(|| task.cwd.clone()),
+            search_terms: vec![
+                title.clone(),
+                task.cwd.chars().take(MAX_TASK_TITLE_CHARS).collect(),
+                task.snippet.chars().take(MAX_TASK_TITLE_CHARS).collect(),
+            ],
+            mention_type: MentionType::Task,
+            selection: Selection::Tool {
+                insert_text: format!("@{title}"),
+                path: Some(format!("thread://{}", task.thread_id)),
+            },
+        }
+    }));
+
     candidates
 }
 
-fn skill_candidate(
-    skill: &SkillMetadata,
-    colliding_names: &std::collections::HashSet<String>,
-) -> Candidate {
-    let display_name = skill_display_name(skill, colliding_names);
+fn skill_candidate(skill: &SkillMetadata) -> Candidate {
+    let display_name = skill_display_name(skill);
     let description = optional_skill_description(skill);
     let skill_name = skill.name.clone();
     let search_terms = if display_name == skill.name {
@@ -49,7 +80,7 @@ fn skill_candidate(
         mention_type: MentionType::Skill,
         selection: Selection::Tool {
             insert_text: format!("${skill_name}"),
-            path: Some(skill.path_to_skills_md.to_string_lossy().into_owned()),
+            path: Some(skill.path.to_string_lossy().into_owned()),
         },
     }
 }

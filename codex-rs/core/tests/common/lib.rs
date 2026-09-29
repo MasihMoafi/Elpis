@@ -1,4 +1,3 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 #![allow(clippy::expect_used)]
 
 use anyhow::Context as _;
@@ -30,6 +29,7 @@ pub mod context_snapshot;
 pub mod hooks;
 pub mod process;
 pub mod responses;
+pub mod startup;
 pub mod streaming_sse;
 pub mod test_codex;
 pub mod test_codex_exec;
@@ -224,9 +224,6 @@ pub fn managed_network_requirements_loader() -> CloudConfigBundleLoader {
 [experimental_network]
 enabled = true
 allow_local_binding = true
-
-[windows]
-allowed_sandbox_implementations = ["elevated"]
 "#,
     )
 }
@@ -316,7 +313,12 @@ pub async fn submit_thread_settings(
     use tokio::time::Duration;
     use tokio::time::timeout;
 
-    let submission_id = codex.submit(Op::ThreadSettings { thread_settings }).await?;
+    let submission_id = codex
+        .submit(Op::ThreadSettings {
+            thread_settings,
+            reply: None,
+        })
+        .await?;
     loop {
         let ev = timeout(Duration::from_secs(10), codex.next_event())
             .await
@@ -329,6 +331,40 @@ pub async fn submit_thread_settings(
                 other => panic!("unexpected thread settings update event: {other:?}"),
             }
         }
+    }
+}
+
+/// For sequential tests, register this contributor and wait once after every completed turn.
+/// Notifications are thread-scoped so a child or sibling cannot satisfy the wait.
+pub struct ThreadIdle;
+
+#[derive(Default)]
+struct ThreadIdleNotification(tokio::sync::Notify);
+
+impl codex_extension_api::ThreadLifecycleContributor<Config> for ThreadIdle {
+    fn on_thread_idle<'a>(
+        &'a self,
+        input: codex_extension_api::ThreadIdleInput<'a>,
+    ) -> codex_extension_api::ExtensionFuture<'a, ()> {
+        Box::pin(async move {
+            input
+                .thread_store
+                .get_or_init(ThreadIdleNotification::default)
+                .0
+                .notify_one();
+        })
+    }
+}
+
+impl ThreadIdle {
+    pub async fn wait(thread: &CodexThread) {
+        // TurnComplete is sent before active-turn cleanup. Rollback requires the later idle signal.
+        let idle = thread
+            .thread_extension_data()
+            .get_or_init(ThreadIdleNotification::default);
+        tokio::time::timeout(std::time::Duration::from_secs(10), idle.0.notified())
+            .await
+            .expect("thread should become idle after turn completion");
     }
 }
 

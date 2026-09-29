@@ -1,61 +1,289 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
+use std::sync::Arc;
+
 use super::session::Session;
 use super::step_context::StepContext;
 use crate::connectors;
+use crate::context::TokenBudgetContext;
 use crate::context::world_state::AgentsMdState;
 use crate::context::world_state::AppsInstructionsState;
+use crate::context::world_state::CollaborationModeState;
+use crate::context::world_state::CompactPermissionsState;
+use crate::context::world_state::ContextWindowGuidanceState;
+use crate::context::world_state::EnvironmentsInstructionsState;
 use crate::context::world_state::EnvironmentsState;
+use crate::context::world_state::ManagedDeveloperInstructionsState;
+use crate::context::world_state::ModelInstructionsState;
+use crate::context::world_state::MultiAgentModeState;
+use crate::context::world_state::MultiAgentUsageHintState;
+use crate::context::world_state::PermissionsState;
+use crate::context::world_state::PersistentModeState;
 use crate::context::world_state::PluginsInstructionsState;
+use crate::context::world_state::RealtimeState;
+use crate::context::world_state::ToolsState;
 use crate::context::world_state::WorldState;
+use codex_connectors::AppToolPolicyEvaluator;
 use codex_extension_api::WorldStateContributionInput;
+use codex_features::Feature;
+use codex_file_system::FileSystemSandboxContext;
+use codex_prompts::ApprovalPromptContext;
+use codex_prompts::ResolvedModelMessages;
+use codex_prompts::render_model_instructions;
+use codex_protocol::error::Result as CodexResult;
+use codex_protocol::models::BaseInstructionsProvenance;
+use codex_protocol::protocol::MultiAgentVersion;
+
+const MAX_ENVIRONMENT_SUBAGENTS: usize = 8;
+const MAX_ENVIRONMENT_SUBAGENT_BYTES: usize = 1_024;
 
 impl Session {
     #[tracing::instrument(name = "world_state.build", level = "info", skip_all)]
     pub(crate) async fn build_world_state_for_step(
         &self,
         step_context: &StepContext,
-    ) -> WorldState {
+    ) -> CodexResult<WorldState> {
         let turn_context = step_context.turn.as_ref();
+        let settings = &step_context.settings;
+        let model_info = settings.model_info.as_ref();
+        let model_messages = ResolvedModelMessages::from_model(model_info);
         tracing::trace!(
             selected_capability_root_count = step_context.selected_capability_roots.len(),
             "building step world state"
         );
+        let model_instructions = render_model_instructions(model_info);
+        let model_instructions = if !turn_context.config.update_plan_enabled
+            && turn_context.config.model_catalog.is_none()
+            && (turn_context.config.base_instructions.is_none()
+                || matches!(
+                    turn_context.config.base_instructions_provenance,
+                    Some(BaseInstructionsProvenance::Model { .. })
+                )) {
+            codex_prompts::without_update_plan_instructions(&model_instructions)
+        } else {
+            model_instructions
+        };
+        let base_instructions = self.get_prompt_base_instructions().await.text;
+        let previous_model = {
+            let state = self.state.lock().await;
+            state
+                .previous_turn_settings()
+                .map(|previous| previous.model)
+                .or_else(|| {
+                    state
+                        .base_instructions_provenance
+                        .as_ref()
+                        .and_then(|provenance| match provenance {
+                            BaseInstructionsProvenance::Model { model } => Some(model),
+                            BaseInstructionsProvenance::Custom => None,
+                        })
+                        .filter(|_| base_instructions != model_instructions)
+                        .cloned()
+                })
+        };
         let environment_subagents = if turn_context.config.include_environment_context {
-            self.services
-                .agent_control
-                .format_environment_context_subagents(self.thread_id)
-                .await
+            match turn_context.multi_agent_version {
+                MultiAgentVersion::V2 => {
+                    let agent_paths = self
+                        .services
+                        .agent_control
+                        .child_agent_paths(self.thread_id)
+                        .await;
+                    let mut lines =
+                        Vec::with_capacity(agent_paths.len().min(MAX_ENVIRONMENT_SUBAGENTS));
+                    let mut rendered_bytes = "  <subagents>\n  </subagents>\n".len();
+                    for agent_path in agent_paths {
+                        if lines.len() == MAX_ENVIRONMENT_SUBAGENTS {
+                            break;
+                        }
+                        let line = format!(r#"<agent name="{agent_path}" />"#);
+                        let line_bytes = "    \n".len() + line.len();
+                        if rendered_bytes + line_bytes <= MAX_ENVIRONMENT_SUBAGENT_BYTES {
+                            rendered_bytes += line_bytes;
+                            lines.push(line);
+                        }
+                    }
+                    lines.join("\n")
+                }
+                MultiAgentVersion::Disabled | MultiAgentVersion::V1 => {
+                    self.services
+                        .local_agent_runtime
+                        .format_legacy_environment_context_subagents(self.thread_id)
+                        .await
+                }
+            }
         } else {
             String::new()
         };
-
         let mut world_state = WorldState::default();
+        world_state.add_section(ModelInstructionsState::new(
+            &model_info.slug,
+            previous_model.as_deref(),
+            model_instructions,
+        ));
+        let token_budget_enabled = turn_context.config.features.enabled(Feature::TokenBudget)
+            && step_context
+                .settings
+                .model_info
+                .resolved_context_window()
+                .is_some();
+        if token_budget_enabled {
+            let window_ids = self.state.lock().await.auto_compact_window_ids();
+            world_state.add_section(TokenBudgetContext::new(
+                turn_context
+                    .session_source
+                    .get_agent_path()
+                    .unwrap_or_else(codex_protocol::AgentPath::root),
+                window_ids.first_window_id,
+                window_ids.previous_window_id,
+                window_ids.window_id,
+                /*thread_hint*/ None,
+            ));
+        }
+        let guidance = step_context
+            .token_budget
+            .as_ref()
+            .and_then(|config| config.guidance_message.as_deref())
+            .filter(|_| token_budget_enabled);
+        world_state.add_section(ContextWindowGuidanceState::new(guidance));
+        let realtime = &step_context.realtime;
+        world_state.add_section(RealtimeState::new(
+            realtime.active,
+            realtime
+                .mode_instructions
+                .as_ref()
+                .and_then(|instructions| instructions.start.as_deref())
+                .or(turn_context
+                    .config
+                    .experimental_realtime_start_instructions
+                    .as_deref()),
+            realtime
+                .mode_instructions
+                .as_ref()
+                .and_then(|instructions| instructions.end.as_deref()),
+        ));
         world_state.add_section(AgentsMdState::new(step_context.loaded_agents_md.as_deref()));
+        let exec_policy = self
+            .services
+            .exec_policy
+            .current_for_prefix_rules(turn_context.allow_prefix_rules());
+        if turn_context.config.include_permissions_instructions {
+            let environment = step_context.environments.primary();
+            let sandbox = environment
+                .filter(|environment| environment.environment.is_remote())
+                .map(|environment| {
+                    environment.sandbox_context(/*additional_permissions*/ None)
+                });
+            let paths = sandbox
+                .as_ref()
+                .map(FileSystemSandboxContext::policy_context);
+            let permission_profile =
+                turn_context.permission_profile_for_environments(&step_context.environments);
+            #[allow(deprecated)]
+            let cwd = environment
+                .and_then(|environment| environment.cwd().to_abs_path().ok())
+                .unwrap_or_else(|| turn_context.cwd.clone());
+            world_state.add_section(PermissionsState::new(
+                &permission_profile,
+                settings.approval_policy(),
+                ApprovalPromptContext::new(settings.approvals_reviewer(), model_messages),
+                exec_policy.as_ref(),
+                &cwd,
+                paths.as_ref(),
+                turn_context
+                    .config
+                    .features
+                    .enabled(Feature::ExecPermissionApprovals),
+                turn_context
+                    .config
+                    .features
+                    .enabled(Feature::RequestPermissionsTool),
+            ));
+        } else {
+            world_state.add_section(CompactPermissionsState::new(exec_policy.as_ref()));
+        }
+        if turn_context.config.include_collaboration_mode_instructions {
+            world_state.add_section(CollaborationModeState::from_collaboration_mode(
+                &settings.effective_collaboration_mode(),
+                model_messages.collaboration_modes(),
+                turn_context.config.update_plan_enabled,
+                turn_context.config.model_catalog.is_some(),
+            ));
+        }
+        if !crate::guardian::is_basic_session_source(&turn_context.session_source) {
+            let send_user_message_async_available =
+                !turn_context.session_source.is_non_root_agent()
+                    && step_context
+                        .settings
+                        .model_info
+                        .experimental_supported_tools
+                        .iter()
+                        .any(|tool| tool == "send_user_message_async");
+            world_state.add_section(PersistentModeState::new(
+                step_context.settings.effective_reasoning_effort().as_ref(),
+                model_messages.persistent_instructions(),
+                send_user_message_async_available,
+            ));
+        }
         if turn_context.config.include_environment_context {
+            let current_date = self
+                .read_clock_for_context(turn_context, "environment_date")
+                .await?
+                .map(|current_time| {
+                    current_time
+                        .with_timezone(&chrono::Local)
+                        .format("%Y-%m-%d")
+                        .to_string()
+                });
             world_state.add_section(
                 EnvironmentsState::from_turn_context_with_environments(
                     turn_context,
                     &step_context.environments,
+                    current_date,
                 )
+                .await
                 .with_subagents(environment_subagents),
             );
         }
+        world_state.add_section(EnvironmentsInstructionsState::new(
+            turn_context.config.include_environment_context
+                && turn_context
+                    .config
+                    .features
+                    .enabled(Feature::DeferredExecutor),
+        ));
         let apps_available =
             if turn_context.config.include_apps_instructions && turn_context.apps_enabled() {
-                let tools = step_context.mcp_tools().await;
-                connectors::with_app_enabled_state(
-                    connectors::accessible_connectors_from_mcp_tools(tools),
-                    &turn_context.config,
-                )
-                .into_iter()
-                .any(|connector| connector.is_accessible && connector.is_enabled)
+                AppToolPolicyEvaluator::new(&turn_context.config.config_layer_stack)
+                    .apply_app_enabled_state(connectors::accessible_connectors_from_mcp_tools(
+                        step_context.mcp.tools(),
+                    ))
+                    .into_iter()
+                    .any(|connector| connector.is_accessible && connector.is_enabled)
             } else {
                 false
             };
-        world_state.add_section(AppsInstructionsState::new(apps_available));
-        world_state.add_section(PluginsInstructionsState::new(
-            step_context.mcp.plugins_available(),
+        let apps_usage_instructions_available =
+            apps_available && model_info.include_apps_usage_instructions;
+        world_state.add_section(AppsInstructionsState::new(
+            apps_usage_instructions_available,
         ));
+        let plugins_usage_instructions_available =
+            step_context.mcp.plugins_available() && model_info.include_plugin_usage_instructions;
+        world_state.add_section(PluginsInstructionsState::new(
+            plugins_usage_instructions_available,
+        ));
+        let extension_metrics = super::extension_metrics::from_session_telemetry(
+            step_context.session_telemetry.clone(),
+        );
+        if turn_context
+            .config
+            .features
+            .enabled(Feature::DeferredToolWorldState)
+        {
+            world_state.add_section(ToolsState::new(
+                step_context.tool_router.deferred_tool_namespaces(),
+                Arc::clone(&extension_metrics),
+            ));
+        }
         let environments = step_context.environments.to_selections();
         let ready_selected_capability_roots = step_context
             .selected_capability_roots
@@ -67,8 +295,13 @@ impl Session {
                 .contribute_world_state(WorldStateContributionInput {
                     thread_id: self.thread_id(),
                     turn_id: turn_context.sub_id.as_str(),
+                    model_info: &step_context.settings.model_info,
                     environments: &environments,
                     ready_selected_capability_roots: &ready_selected_capability_roots,
+                    executor_capability_discovery: step_context
+                        .executor_capability_discovery
+                        .as_deref(),
+                    extension_metrics: Some(Arc::clone(&extension_metrics)),
                     session_store: &self.services.session_extension_data,
                     thread_store: &self.services.thread_extension_data,
                     turn_store: turn_context.extension_data.as_ref(),
@@ -78,6 +311,25 @@ impl Session {
                 world_state.add_extension_section(section);
             }
         }
-        world_state
+        let mut multi_agent_mode = MultiAgentModeState::new(
+            super::multi_agents::effective_multi_agent_mode(step_context),
+        );
+        if let Some(usage_hint_text) = super::multi_agents::usage_hint_text(step_context) {
+            let usage_hint = MultiAgentUsageHintState::new(usage_hint_text);
+            multi_agent_mode = multi_agent_mode.with_usage_hint(&usage_hint);
+            world_state.add_section(usage_hint);
+        }
+        world_state.add_section(multi_agent_mode);
+        if !crate::guardian::is_basic_session_source(&turn_context.session_source) {
+            world_state.add_section(ManagedDeveloperInstructionsState::new(
+                turn_context
+                    .config
+                    .config_layer_stack
+                    .requirements()
+                    .additional_developer_instructions
+                    .as_ref(),
+            ));
+        }
+        Ok(world_state)
     }
 }

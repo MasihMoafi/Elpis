@@ -1,4 +1,3 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use std::path::PathBuf;
 
 use codex_protocol::ThreadId;
@@ -11,11 +10,12 @@ use codex_protocol::protocol::HookRunSummary;
 use codex_utils_absolute_path::AbsolutePathBuf;
 
 use super::common;
-use crate::engine::CommandShell;
+use crate::engine::ClaudeHooksEngine;
 use crate::engine::ConfiguredHandler;
-use crate::engine::command_runner::CommandRunResult;
+use crate::engine::HandlerRunResult;
 use crate::engine::dispatcher;
 use crate::engine::output_parser;
+use crate::output_spill::AdditionalContext;
 use crate::schema::NullableString;
 use crate::schema::SessionStartCommandInput;
 use crate::schema::SubagentStartCommandInput;
@@ -26,6 +26,7 @@ pub enum SessionStartSource {
     Resume,
     Clear,
     Compact,
+    Fork,
 }
 
 impl SessionStartSource {
@@ -35,6 +36,7 @@ impl SessionStartSource {
             Self::Resume => "resume",
             Self::Clear => "clear",
             Self::Compact => "compact",
+            Self::Fork => "fork",
         }
     }
 }
@@ -89,7 +91,7 @@ pub struct SessionStartOutcome {
 struct SessionStartHandlerData {
     should_stop: bool,
     stop_reason: Option<String>,
-    additional_contexts_for_model: Vec<String>,
+    additional_contexts_for_model: Vec<AdditionalContext>,
 }
 
 pub(crate) fn preview(
@@ -107,13 +109,12 @@ pub(crate) fn preview(
 }
 
 pub(crate) async fn run(
-    handlers: &[ConfiguredHandler],
-    shell: &CommandShell,
+    engine: &ClaudeHooksEngine,
     request: SessionStartRequest,
     turn_id: Option<String>,
 ) -> SessionStartOutcome {
     let matched = dispatcher::select_handlers(
-        handlers,
+        &engine.handlers,
         request.target.event_name(),
         Some(request.target.matcher_input()),
     );
@@ -182,7 +183,7 @@ pub(crate) async fn run(
     };
 
     let results = dispatcher::execute_handlers(
-        shell,
+        engine,
         matched,
         input_json,
         request.cwd.as_path(),
@@ -200,6 +201,11 @@ pub(crate) async fn run(
             .iter()
             .map(|result| result.data.additional_contexts_for_model.as_slice()),
     );
+    let additional_contexts = engine
+        .command_runtime
+        .output_spiller()
+        .maybe_spill_additional_contexts(additional_contexts)
+        .await;
 
     SessionStartOutcome {
         hook_events: results.into_iter().map(|result| result.completed).collect(),
@@ -217,7 +223,7 @@ pub(crate) async fn run(
 /// `continue:false`; `SubagentStart` stays context-injection-only.
 fn parse_completed(
     handler: &ConfiguredHandler,
-    run_result: CommandRunResult,
+    run_result: HandlerRunResult,
     turn_id: Option<String>,
 ) -> dispatcher::ParsedHandler<SessionStartHandlerData> {
     let mut entries = Vec::new();
@@ -259,11 +265,13 @@ fn parse_completed(
                         common::append_additional_context(
                             &mut entries,
                             &mut additional_contexts_for_model,
+                            handler,
                             additional_context,
                         );
                     }
                     let _ = parsed.universal.suppress_output;
-                    if handler.event_name == HookEventName::SessionStart
+                    if handler.can_apply_control_effects()
+                        && handler.event_name == HookEventName::SessionStart
                         && !parsed.universal.continue_processing
                     {
                         status = HookRunStatus::Stopped;
@@ -298,6 +306,7 @@ fn parse_completed(
                     common::append_additional_context(
                         &mut entries,
                         &mut additional_contexts_for_model,
+                        handler,
                         additional_context,
                     );
                 }
@@ -357,12 +366,16 @@ mod tests {
     use super::SessionStartHandlerData;
     use super::parse_completed;
     use crate::engine::ConfiguredHandler;
-    use crate::engine::command_runner::CommandRunResult;
+    use crate::engine::HandlerRunResult;
+    use crate::output_spill::AdditionalContext;
+    use crate::output_spill::AdditionalContextLimit;
 
     #[test]
     fn plain_stdout_becomes_model_context() {
+        let mut handler = handler();
+        handler.additional_context_limit = AdditionalContextLimit::from_config(Some(7));
         let parsed = parse_completed(
-            &handler(),
+            &handler,
             run_result(Some(0), "hello from hook\n", ""),
             /*turn_id*/ None,
         );
@@ -372,7 +385,10 @@ mod tests {
             SessionStartHandlerData {
                 should_stop: false,
                 stop_reason: None,
-                additional_contexts_for_model: vec!["hello from hook".to_string()],
+                additional_contexts_for_model: vec![AdditionalContext {
+                    text: "hello from hook".to_string(),
+                    limit: AdditionalContextLimit::from_config(Some(7)),
+                }],
             }
         );
         assert_eq!(parsed.completed.run.status, HookRunStatus::Completed);
@@ -402,7 +418,10 @@ mod tests {
             SessionStartHandlerData {
                 should_stop: true,
                 stop_reason: Some("pause".to_string()),
-                additional_contexts_for_model: vec!["do not inject".to_string()],
+                additional_contexts_for_model: vec![AdditionalContext {
+                    text: "do not inject".to_string(),
+                    limit: Default::default(),
+                }],
             }
         );
         assert_eq!(parsed.completed.run.status, HookRunStatus::Stopped);
@@ -453,8 +472,10 @@ mod tests {
 
     #[test]
     fn subagent_start_plain_stdout_becomes_model_context() {
+        let mut handler = handler_for(HookEventName::SubagentStart);
+        handler.additional_context_limit = AdditionalContextLimit::from_config(Some(4_096));
         let parsed = parse_completed(
-            &handler_for(HookEventName::SubagentStart),
+            &handler,
             run_result(Some(0), "hello from subagent hook\n", ""),
             /*turn_id*/ Some("turn-1".to_string()),
         );
@@ -464,7 +485,10 @@ mod tests {
             SessionStartHandlerData {
                 should_stop: false,
                 stop_reason: None,
-                additional_contexts_for_model: vec!["hello from subagent hook".to_string()],
+                additional_contexts_for_model: vec![AdditionalContext {
+                    text: "hello from subagent hook".to_string(),
+                    limit: AdditionalContextLimit::from_config(Some(4_096)),
+                }],
             }
         );
         assert_eq!(parsed.completed.turn_id.as_deref(), Some("turn-1"));
@@ -495,7 +519,10 @@ mod tests {
             SessionStartHandlerData {
                 should_stop: false,
                 stop_reason: None,
-                additional_contexts_for_model: vec!["child context".to_string()],
+                additional_contexts_for_model: vec![AdditionalContext {
+                    text: "child context".to_string(),
+                    limit: Default::default(),
+                }],
             }
         );
         assert_eq!(parsed.completed.turn_id.as_deref(), Some("turn-1"));
@@ -515,20 +542,25 @@ mod tests {
 
     fn handler_for(event_name: HookEventName) -> ConfiguredHandler {
         ConfiguredHandler {
+            builtin: false,
             event_name,
             matcher: None,
-            command: "echo hook".to_string(),
             timeout_sec: 600,
             status_message: None,
-            source_path: test_path_buf("/tmp/hooks.json").abs(),
+            additional_context_limit: Default::default(),
+            source_path: test_path_buf("/tmp/hooks.json").abs().into(),
             source: codex_protocol::protocol::HookSource::User,
             display_order: 0,
-            env: std::collections::HashMap::new(),
+            kind: crate::engine::ConfiguredHandlerKind::Command {
+                command: "echo hook".to_string(),
+                r#async: false,
+                env: std::collections::HashMap::new(),
+            },
         }
     }
 
-    fn run_result(exit_code: Option<i32>, stdout: &str, stderr: &str) -> CommandRunResult {
-        CommandRunResult {
+    fn run_result(exit_code: Option<i32>, stdout: &str, stderr: &str) -> HandlerRunResult {
+        HandlerRunResult {
             started_at: 1,
             completed_at: 2,
             duration_ms: 1,

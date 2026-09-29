@@ -1,5 +1,6 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use super::shared::v2_enum_from_core;
+use crate::JsonSchema;
+use crate::TS;
 use codex_protocol::approvals::ExecPolicyAmendment as CoreExecPolicyAmendment;
 use codex_protocol::approvals::NetworkApprovalContext as CoreNetworkApprovalContext;
 use codex_protocol::approvals::NetworkApprovalProtocol as CoreNetworkApprovalProtocol;
@@ -19,14 +20,12 @@ use codex_protocol::request_permissions::PermissionGrantScope as CorePermissionG
 use codex_protocol::request_permissions::RequestPermissionProfile as CoreRequestPermissionProfile;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use codex_utils_path_uri::LegacyAppPathString;
-use codex_utils_path_uri::PathConvention;
-use schemars::JsonSchema;
+use codex_utils_path_uri::PathUri;
 use serde::Deserialize;
 use serde::Serialize;
 use std::io;
 use std::num::NonZeroUsize;
 use std::path::Path;
-use ts_rs::TS;
 
 v2_enum_from_core! {
     pub enum NetworkApprovalProtocol from CoreNetworkApprovalProtocol {
@@ -70,6 +69,13 @@ pub struct AdditionalFileSystemPermissions {
     pub entries: Option<Vec<FileSystemSandboxEntry>>,
 }
 
+fn permission_path_uri(path: LegacyAppPathString) -> io::Result<PathUri> {
+    if let Ok(path) = AbsolutePathBuf::try_from(path.clone()) {
+        return Ok(path.into());
+    }
+    PathUri::try_from(path).map_err(|err| io::Error::new(io::ErrorKind::InvalidInput, err))
+}
+
 // TODO(anp): Remove this conversion once core permission paths use PathUri.
 impl From<CoreFileSystemPermissions> for AdditionalFileSystemPermissions {
     fn from(value: CoreFileSystemPermissions) -> Self {
@@ -110,9 +116,27 @@ impl From<CoreFileSystemPermissions> for AdditionalFileSystemPermissions {
                 entries: Some(entries),
             }
         } else {
+            let mut read = Vec::new();
+            let mut write = Vec::new();
+            let legacy_compatible = value.glob_scan_max_depth.is_none()
+                && value.entries.iter().all(|entry| {
+                    let CoreFileSystemPath::Path { path } = &entry.path else {
+                        return false;
+                    };
+                    let legacy_path = LegacyAppPathString::from(path.clone());
+                    if legacy_path.to_inferred_path_uri().as_ref() != Some(path) {
+                        return false;
+                    }
+                    match entry.access {
+                        CoreFileSystemAccessMode::Read => read.push(legacy_path),
+                        CoreFileSystemAccessMode::Write => write.push(legacy_path),
+                        CoreFileSystemAccessMode::Deny => return false,
+                    }
+                    true
+                });
             Self {
-                read: None,
-                write: None,
+                read: (legacy_compatible && !read.is_empty()).then_some(read),
+                write: (legacy_compatible && !write.is_empty()).then_some(write),
                 glob_scan_max_depth: value.glob_scan_max_depth,
                 entries: Some(
                     value
@@ -145,11 +169,7 @@ impl TryFrom<AdditionalFileSystemPermissions> for CoreFileSystemPermissions {
                 .map(|paths| {
                     paths
                         .into_iter()
-                        .map(|path| {
-                            path.to_path_uri(PathConvention::native())
-                                .map_err(|err| io::Error::new(io::ErrorKind::InvalidInput, err))?
-                                .to_abs_path()
-                        })
+                        .map(permission_path_uri)
                         .collect::<io::Result<Vec<_>>>()
                 })
                 .transpose()?;
@@ -158,15 +178,11 @@ impl TryFrom<AdditionalFileSystemPermissions> for CoreFileSystemPermissions {
                 .map(|paths| {
                     paths
                         .into_iter()
-                        .map(|path| {
-                            path.to_path_uri(PathConvention::native())
-                                .map_err(|err| io::Error::new(io::ErrorKind::InvalidInput, err))?
-                                .to_abs_path()
-                        })
+                        .map(permission_path_uri)
                         .collect::<io::Result<Vec<_>>>()
                 })
                 .transpose()?;
-            CoreFileSystemPermissions::from_read_write_roots(read, write)
+            CoreFileSystemPermissions::from_read_write_path_uris(read, write)
         };
         permissions.glob_scan_max_depth = value.glob_scan_max_depth;
         Ok(permissions)
@@ -313,9 +329,7 @@ pub enum FileSystemPath {
 impl From<CoreFileSystemPath> for FileSystemPath {
     fn from(value: CoreFileSystemPath) -> Self {
         match value {
-            CoreFileSystemPath::Path { path } => Self::Path {
-                path: LegacyAppPathString::from_abs_path(&path),
-            },
+            CoreFileSystemPath::Path { path } => Self::Path { path: path.into() },
             CoreFileSystemPath::GlobPattern { pattern } => Self::GlobPattern { pattern },
             CoreFileSystemPath::Special { value } => Self::Special {
                 value: value.into(),
@@ -331,10 +345,7 @@ impl TryFrom<FileSystemPath> for CoreFileSystemPath {
     fn try_from(value: FileSystemPath) -> Result<Self, Self::Error> {
         Ok(match value {
             FileSystemPath::Path { path } => Self::Path {
-                path: path
-                    .to_path_uri(PathConvention::native())
-                    .map_err(|err| io::Error::new(io::ErrorKind::InvalidInput, err))?
-                    .to_abs_path()?,
+                path: permission_path_uri(path)?,
             },
             FileSystemPath::GlobPattern { pattern } => Self::GlobPattern { pattern },
             FileSystemPath::Special { value } => Self::Special {
@@ -369,6 +380,7 @@ impl TryFrom<FileSystemSandboxEntry> for CoreFileSystemSandboxEntry {
         Ok(Self {
             path: value.path.try_into()?,
             access: value.access.to_core(),
+            missing_path_behavior: None,
         })
     }
 }
@@ -767,7 +779,7 @@ pub struct PermissionsRequestApprovalParams {
     /// Unix timestamp (in milliseconds) when this approval request started.
     #[ts(type = "number")]
     pub started_at_ms: i64,
-    pub cwd: AbsolutePathBuf,
+    pub cwd: LegacyAppPathString,
     pub reason: Option<String>,
     pub permissions: RequestPermissionProfile,
 }

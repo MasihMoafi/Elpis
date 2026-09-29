@@ -7,8 +7,7 @@ use ratatui::widgets::Paragraph;
 use ratatui::widgets::Widget;
 use std::borrow::Cow;
 use std::time::Instant;
-use unicode_width::UnicodeWidthChar;
-use unicode_width::UnicodeWidthStr;
+use unicode_segmentation::UnicodeSegmentation;
 
 use crate::bottom_pane::popup_consts::standard_popup_hint_line;
 use crate::bottom_pane::scroll_state::ScrollState;
@@ -18,7 +17,9 @@ use crate::bottom_pane::selection_popup_common::menu_surface_padding_height;
 use crate::bottom_pane::selection_popup_common::render_menu_surface;
 use crate::bottom_pane::selection_popup_common::render_rows;
 use crate::bottom_pane::selection_popup_common::wrap_styled_line;
+use crate::line_truncation::line_width;
 use crate::render::renderable::Renderable;
+use crate::width::display_width;
 
 use super::DESIRED_SPACERS_BETWEEN_SECTIONS;
 use super::RequestUserInputOverlay;
@@ -287,7 +288,7 @@ impl RequestUserInputOverlay {
             let question_line = if answered {
                 Line::from(line.clone())
             } else {
-                Line::from(line.clone()).cyan()
+                Line::from(line.clone()).fg(crate::style::accent_color())
             };
             Paragraph::new(question_line).render(
                 Rect {
@@ -346,7 +347,7 @@ impl RequestUserInputOverlay {
         let option_tip = if options_hidden {
             let selected = self.selected_option_index().unwrap_or(0).saturating_add(1);
             let total = self.options_len();
-            Some(super::FooterTip::new(format!("option {selected}/{total}")))
+            Some(Line::from(format!("option {selected}/{total}").dim()))
         } else {
             None
         };
@@ -361,11 +362,7 @@ impl RequestUserInputOverlay {
                 if tip_idx > 0 {
                     spans.push(TIP_SEPARATOR.into());
                 }
-                if tip.highlight {
-                    spans.push(tip.text.cyan().bold().not_dim());
-                } else {
-                    spans.push(tip.text.into());
-                }
+                spans.extend(tip.spans);
             }
             let line = Line::from(spans).dim();
             let line = truncate_line_word_boundary_with_ellipsis(line, footer_area.width as usize);
@@ -421,18 +418,12 @@ impl RequestUserInputOverlay {
     }
 }
 
-fn line_width(line: &Line<'_>) -> usize {
-    line.iter()
-        .map(|span| UnicodeWidthStr::width(span.content.as_ref()))
-        .sum()
-}
-
 /// Render rows into `area`, bottom-aligning the visible rows when fewer than
 /// `area.height` lines are produced.
 ///
 /// This keeps footer spacing stable by anchoring the options block to the
 /// bottom of its allocated region.
-fn render_rows_bottom_aligned(
+pub(in crate::bottom_pane) fn render_rows_bottom_aligned(
     area: Rect,
     buf: &mut Buffer,
     rows: &[crate::bottom_pane::selection_popup_common::GenericDisplayRow],
@@ -476,7 +467,7 @@ fn render_rows_bottom_aligned(
 /// overflows, it truncates at the last word boundary when possible (falling back to the last
 /// fitting character), trims trailing whitespace, then appends an ellipsis styled to match the
 /// last visible span (or the line style if nothing was kept).
-fn truncate_line_word_boundary_with_ellipsis(
+pub(in crate::bottom_pane) fn truncate_line_word_boundary_with_ellipsis(
     line: Line<'static>,
     max_width: usize,
 ) -> Line<'static> {
@@ -489,7 +480,7 @@ fn truncate_line_word_boundary_with_ellipsis(
     }
 
     let ellipsis = "…";
-    let ellipsis_width = UnicodeWidthStr::width(ellipsis);
+    let ellipsis_width = display_width(ellipsis);
     if ellipsis_width >= max_width {
         return Line::from(ellipsis);
     }
@@ -509,19 +500,19 @@ fn truncate_line_word_boundary_with_ellipsis(
 
     'outer: for (span_idx, span) in line.spans.iter().enumerate() {
         let text = span.content.as_ref();
-        for (byte_idx, ch) in text.char_indices() {
-            let ch_width = UnicodeWidthChar::width(ch).unwrap_or(0);
-            if used.saturating_add(ch_width) > limit {
+        for (byte_idx, grapheme) in text.grapheme_indices(/*is_extended*/ true) {
+            let grapheme_width = display_width(grapheme);
+            if used.saturating_add(grapheme_width) > limit {
                 overflowed = true;
                 break 'outer;
             }
-            used = used.saturating_add(ch_width);
+            used = used.saturating_add(grapheme_width);
             let bp = BreakPoint {
                 span_idx,
-                byte_end: byte_idx + ch.len_utf8(),
+                byte_end: byte_idx + grapheme.len(),
             };
             last_fit = Some(bp);
-            if ch.is_whitespace() {
+            if grapheme.chars().all(char::is_whitespace) {
                 last_word_break = Some(bp);
             }
         }
@@ -576,3 +567,7 @@ fn truncate_line_word_boundary_with_ellipsis(
 
     Line::from(spans_out).style(line_style)
 }
+
+#[cfg(test)]
+#[path = "render_tests.rs"]
+mod tests;

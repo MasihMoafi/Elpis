@@ -1,5 +1,9 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
+use crate::ApplicationRequirementsToml;
+use codex_features::FeatureToml;
+use codex_model_provider_info::ModelProviderInfo;
+pub use codex_model_provider_info::ResidencyRequirement;
 use codex_protocol::config_types::ApprovalsReviewer;
+use codex_protocol::config_types::ForcedLoginMethod;
 use codex_protocol::config_types::SandboxMode;
 use codex_protocol::config_types::WebSearchMode;
 use codex_protocol::models::PermissionProfile;
@@ -9,21 +13,32 @@ use codex_utils_absolute_path::AbsolutePathBuf;
 use serde::Deserialize;
 use serde::Serialize;
 use serde::de::Error as _;
-use serde::de::value::Error as ValueDeserializerError;
-use serde::de::value::StrDeserializer;
 use std::collections::BTreeMap;
+use std::collections::BTreeSet;
+use std::collections::HashMap;
+use std::convert::Infallible;
 use std::fmt;
 use std::path::PathBuf;
+use std::str::FromStr;
 use wildmatch::WildMatchPattern;
 
-use super::requirements_exec_policy::RequirementsExecPolicy;
 use super::requirements_exec_policy::RequirementsExecPolicyToml;
 use crate::Constrained;
 use crate::ConstraintError;
+use crate::InAppBrowserRequirementsToml;
+use crate::ManagedAuthPolicy;
 use crate::ManagedHooksRequirementsToml;
-use crate::mcp_requirements::McpServerRequirement;
+use crate::McpServerRequirement;
+use crate::PluginRequirementsToml;
+use crate::RequirementsExecPolicy;
+use crate::browser_computer_use_requirements::BrowserUseRequirementsToml;
+use crate::browser_computer_use_requirements::ComputerUseRequirementsToml;
+use crate::config_toml::ConfigToml;
+use crate::mcp_requirements::validate_mcp_server_requirement;
 use crate::mcp_types::AppToolApproval;
 use crate::permissions_toml::PermissionProfileToml;
+use crate::types::AuthCredentialsStoreMode;
+use crate::types::FeedbackConfigToml;
 use crate::types::WindowsSandboxModeToml;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -146,8 +161,21 @@ impl<T> std::ops::DerefMut for ConstrainedWithSource<T> {
 /// normalization.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ConfigRequirements {
+    pub allowed_login_methods: Option<Sourced<Vec<ForcedLoginMethod>>>,
+    pub allowed_chatgpt_workspaces: Option<Sourced<Vec<String>>>,
+    pub cli_auth_credentials_store: Option<Sourced<AuthCredentialsStoreMode>>,
+    pub chatgpt_base_url: Option<Sourced<String>>,
+    pub sqlite_home: Option<Sourced<AbsolutePathBuf>>,
+    pub log_dir: Option<Sourced<AbsolutePathBuf>>,
+    pub model_catalog_json: Option<Sourced<AbsolutePathBuf>>,
+    pub model_provider: Option<Sourced<String>>,
+    pub model_providers: Option<Sourced<HashMap<String, ModelProviderInfo>>>,
+    pub check_for_update_on_startup: Option<Sourced<bool>>,
+    pub allow_login_shell: Option<Sourced<bool>>,
+    pub feedback: Option<Sourced<FeedbackConfigToml>>,
     pub approval_policy: ConstrainedWithSource<AskForApproval>,
     pub approvals_reviewer: ConstrainedWithSource<ApprovalsReviewer>,
+    pub auto_review_required_models: Option<Sourced<BTreeSet<String>>>,
     pub permission_profile: ConstrainedWithSource<PermissionProfile>,
     pub windows_sandbox_mode: ConstrainedWithSource<Option<WindowsSandboxModeToml>>,
     pub web_search_mode: ConstrainedWithSource<WebSearchMode>,
@@ -164,15 +192,32 @@ pub struct ConfigRequirements {
     pub enforce_residency: ConstrainedWithSource<Option<ResidencyRequirement>>,
     /// Managed network constraints derived from requirements.
     pub network: Option<Sourced<NetworkConstraints>>,
+    pub application: Option<Sourced<ApplicationRequirementsToml>>,
     /// Managed filesystem constraints derived from requirements.
     pub filesystem: Option<Sourced<FilesystemConstraints>>,
+    /// Managed instructions included independently of ordinary developer instructions.
+    pub additional_developer_instructions: Option<Sourced<String>>,
     /// Source for the managed guardian policy config, when one is configured.
     pub guardian_policy_config_source: Option<RequirementSource>,
+    /// Source for the managed extra guardian policy, when one is configured.
+    pub guardian_extra_policy_source: Option<RequirementSource>,
 }
 
 impl Default for ConfigRequirements {
     fn default() -> Self {
         Self {
+            allowed_login_methods: None,
+            allowed_chatgpt_workspaces: None,
+            cli_auth_credentials_store: None,
+            chatgpt_base_url: None,
+            sqlite_home: None,
+            log_dir: None,
+            model_catalog_json: None,
+            model_provider: None,
+            model_providers: None,
+            check_for_update_on_startup: None,
+            allow_login_shell: None,
+            feedback: None,
             approval_policy: ConstrainedWithSource::new(
                 Constrained::allow_any_from_default(),
                 /*source*/ None,
@@ -181,6 +226,7 @@ impl Default for ConfigRequirements {
                 Constrained::allow_any_from_default(),
                 /*source*/ None,
             ),
+            auto_review_required_models: None,
             permission_profile: ConstrainedWithSource::new(
                 Constrained::allow_any(PermissionProfile::read_only()),
                 /*source*/ None,
@@ -208,21 +254,60 @@ impl Default for ConfigRequirements {
                 /*source*/ None,
             ),
             network: None,
+            application: None,
             filesystem: None,
+            additional_developer_instructions: None,
             guardian_policy_config_source: None,
+            guardian_extra_policy_source: None,
         }
     }
 }
 
 impl ConfigRequirements {
+    /// Returns whether a model slug or its supported provider alias requires auto-review.
+    pub fn auto_review_required_for_model(&self, model: &str) -> bool {
+        let Some(protected_models) = self.auto_review_required_models.as_ref() else {
+            return false;
+        };
+
+        let model = match model.split_once('/') {
+            Some((namespace, suffix))
+                if !namespace.is_empty()
+                    && !suffix.contains('/')
+                    && namespace.chars().all(|character| {
+                        character.is_ascii_alphanumeric() || character == '_' || character == '-'
+                    }) =>
+            {
+                suffix
+            }
+            Some(_) => return false,
+            None => model,
+        };
+
+        protected_models.value.contains(model)
+    }
+
+    pub fn managed_auth_policy(&self) -> ManagedAuthPolicy {
+        ManagedAuthPolicy {
+            allowed_login_methods: self
+                .allowed_login_methods
+                .as_ref()
+                .map(|allowed| allowed.value.clone()),
+            allowed_chatgpt_workspaces: self.allowed_chatgpt_workspaces.as_ref().map(|allowed| {
+                allowed
+                    .value
+                    .iter()
+                    .map(|workspace| workspace.trim())
+                    .filter(|workspace| !workspace.is_empty())
+                    .map(str::to_string)
+                    .collect()
+            }),
+        }
+    }
+
     pub fn exec_policy_source(&self) -> Option<&RequirementSource> {
         self.exec_policy.as_ref().map(|policy| &policy.source)
     }
-}
-
-#[derive(Deserialize, Debug, Clone, Default, PartialEq, Eq)]
-pub struct PluginRequirementsToml {
-    pub mcp_servers: Option<BTreeMap<String, McpServerRequirement>>,
 }
 
 #[derive(Deserialize, Debug, Clone, Default, PartialEq, Eq)]
@@ -260,12 +345,6 @@ pub enum MarketplaceAllowedSourceKind {
     Local,
 }
 
-impl PluginRequirementsToml {
-    pub fn is_empty(&self) -> bool {
-        self.mcp_servers.as_ref().is_none_or(BTreeMap::is_empty)
-    }
-}
-
 #[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq, Eq)]
 pub struct NetworkDomainPermissionsToml {
     #[serde(flatten)]
@@ -273,10 +352,6 @@ pub struct NetworkDomainPermissionsToml {
 }
 
 impl NetworkDomainPermissionsToml {
-    pub fn is_empty(&self) -> bool {
-        self.entries.is_empty()
-    }
-
     pub fn allowed_domains(&self) -> Option<Vec<String>> {
         let allowed_domains: Vec<String> = self
             .entries
@@ -322,10 +397,6 @@ pub struct NetworkUnixSocketPermissionsToml {
 }
 
 impl NetworkUnixSocketPermissionsToml {
-    pub fn is_empty(&self) -> bool {
-        self.entries.is_empty()
-    }
-
     pub fn allow_unix_sockets(&self) -> Vec<String> {
         self.entries
             .iter()
@@ -365,7 +436,30 @@ pub struct NetworkRequirementsToml {
     /// network enforcement is active. User allowlist entries are ignored.
     pub managed_allowed_domains_only: Option<bool>,
     pub unix_sockets: Option<NetworkUnixSocketPermissionsToml>,
+    /// MXC requires true when managed networking is enabled; an explicit false is rejected.
     pub allow_local_binding: Option<bool>,
+    /// Requirements-only header injections. These annotate matching requests
+    /// without changing whether non-matching requests are allowed.
+    pub header_injections: Option<Vec<NetworkHeaderInjectionToml>>,
+}
+
+#[derive(Serialize, Deserialize, Clone, PartialEq, Eq)]
+pub struct NetworkHeaderInjectionToml {
+    pub host: String,
+    pub methods: Vec<String>,
+    pub path_prefixes: Vec<String>,
+    pub headers: BTreeMap<String, String>,
+}
+
+impl std::fmt::Debug for NetworkHeaderInjectionToml {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("NetworkHeaderInjectionToml")
+            .field("host", &self.host)
+            .field("methods", &self.methods)
+            .field("path_prefixes", &self.path_prefixes)
+            .field("header_names", &self.headers.keys().collect::<Vec<_>>())
+            .finish()
+    }
 }
 
 #[derive(Deserialize)]
@@ -388,6 +482,7 @@ struct RawNetworkRequirementsToml {
     #[serde(default)]
     allow_unix_sockets: Option<Vec<String>>,
     allow_local_binding: Option<bool>,
+    header_injections: Option<Vec<NetworkHeaderInjectionToml>>,
 }
 
 impl<'de> Deserialize<'de> for NetworkRequirementsToml {
@@ -410,6 +505,7 @@ impl<'de> Deserialize<'de> for NetworkRequirementsToml {
             unix_sockets,
             allow_unix_sockets,
             allow_local_binding,
+            header_injections,
         } = raw;
 
         if domains.is_some() && (allowed_domains.is_some() || denied_domains.is_some()) {
@@ -437,6 +533,7 @@ impl<'de> Deserialize<'de> for NetworkRequirementsToml {
             unix_sockets: unix_sockets
                 .or_else(|| legacy_unix_socket_permissions_from_list(allow_unix_sockets)),
             allow_local_binding,
+            header_injections,
         })
     }
 }
@@ -488,6 +585,7 @@ pub struct NetworkConstraints {
     pub managed_allowed_domains_only: Option<bool>,
     pub unix_sockets: Option<NetworkUnixSocketPermissionsToml>,
     pub allow_local_binding: Option<bool>,
+    pub header_injections: Option<Vec<NetworkHeaderInjectionToml>>,
 }
 
 impl<'de> Deserialize<'de> for NetworkConstraints {
@@ -513,6 +611,7 @@ impl From<NetworkRequirementsToml> for NetworkConstraints {
             managed_allowed_domains_only,
             unix_sockets,
             allow_local_binding,
+            header_injections,
         } = value;
         Self {
             enabled,
@@ -525,6 +624,7 @@ impl From<NetworkRequirementsToml> for NetworkConstraints {
             managed_allowed_domains_only,
             unix_sockets,
             allow_local_binding,
+            header_injections,
         }
     }
 }
@@ -612,25 +712,49 @@ impl FilesystemDenyReadPattern {
     }
 
     pub fn from_input(input: &str) -> Result<Self, String> {
+        codex_utils_path_uri::PathUri::validate_config_path_text(
+            input,
+            crate::path_context::convention(),
+        )
+        .map_err(|error| error.to_string())?;
         if !input.chars().any(is_glob_metacharacter) {
             let path = deserialize_absolute_path(input)?;
-            return Ok(Self(path.to_string_lossy().into_owned()));
+            validate_literal_denial_path(&path)?;
+            return Ok(Self(path));
         }
 
         let (directory_prefix, suffix) = split_glob_pattern(input);
+        if crate::path_context::convention() == codex_utils_path_uri::PathConvention::Windows
+            && matches!(input.as_bytes(), [b'/' | b'\\', b'/' | b'\\', ..])
+            && !matches!(
+                directory_prefix.as_bytes(),
+                [b'/' | b'\\', b'/' | b'\\', ..]
+            )
+        {
+            return Err(
+                "filesystem denial glob requires a literal UNC server and share".to_string(),
+            );
+        }
         let normalized_prefix = if directory_prefix.is_empty() {
             deserialize_absolute_path(".")?
         } else {
             deserialize_absolute_path(directory_prefix)?
         };
-        let normalized_prefix = normalized_prefix.to_string_lossy();
+        // The prefix is literal even when supplied home/base facts contain
+        // glob syntax. Reject it before appending the user's pattern suffix.
+        validate_literal_denial_path(&normalized_prefix)?;
         let normalized = if suffix.is_empty() {
-            normalized_prefix.into_owned()
+            normalized_prefix
         } else if normalized_prefix == "/" {
             format!("/{suffix}")
         } else {
             format!("{normalized_prefix}/{suffix}")
         };
+        codex_utils_path_uri::PathUri::validate_config_path_text(
+            &normalized,
+            crate::path_context::convention(),
+        )
+        .map_err(|error| error.to_string())?;
         Ok(Self(normalized))
     }
 }
@@ -651,9 +775,16 @@ impl<'de> Deserialize<'de> for FilesystemDenyReadPattern {
     }
 }
 
-fn deserialize_absolute_path(input: &str) -> Result<AbsolutePathBuf, String> {
-    AbsolutePathBuf::deserialize(StrDeserializer::<ValueDeserializerError>::new(input))
-        .map_err(|err| err.to_string())
+fn validate_literal_denial_path(path: &str) -> Result<(), String> {
+    let convention = crate::path_context::convention();
+    codex_utils_path_uri::LegacyAppPathString::from_string(path)
+        .to_path_uri(convention)
+        .and_then(|path| path.validate_glob_directory(convention))
+        .map_err(|error| error.to_string())
+}
+
+fn deserialize_absolute_path(input: &str) -> Result<String, String> {
+    crate::path_context::resolve(input)
 }
 
 fn split_glob_pattern(input: &str) -> (&str, &str) {
@@ -669,7 +800,8 @@ fn split_glob_pattern(input: &str) -> (&str, &str) {
     match separator_index {
         Some(0) => ("/", &input[1..]),
         Some(index)
-            if cfg!(windows)
+            if crate::path_context::convention()
+                == codex_utils_path_uri::PathConvention::Windows
                 && index == 2
                 && input.as_bytes().get(1) == Some(&b':')
                 && input.as_bytes().get(2).is_some() =>
@@ -682,7 +814,7 @@ fn split_glob_pattern(input: &str) -> (&str, &str) {
 }
 
 fn is_path_separator(ch: char) -> bool {
-    if cfg!(windows) {
+    if crate::path_context::convention() == codex_utils_path_uri::PathConvention::Windows {
         ch == '/' || ch == '\\'
     } else {
         ch == '/'
@@ -736,34 +868,20 @@ impl fmt::Display for WebSearchModeRequirement {
 }
 
 #[derive(Deserialize, Debug, Clone, Default, PartialEq, Eq)]
-pub struct ComputerUseRequirementsToml {
-    pub allow_locked_computer_use: Option<bool>,
-}
-
-impl ComputerUseRequirementsToml {
-    pub fn is_empty(&self) -> bool {
-        self.allow_locked_computer_use.is_none()
-    }
-}
-
-#[derive(Deserialize, Debug, Clone, Default, PartialEq, Eq)]
 pub struct WindowsRequirementsToml {
-    pub allowed_sandbox_implementations: Option<Vec<WindowsSandboxModeToml>>,
+    pub allowed_sandbox_implementations: Option<Vec<WindowsSandboxImplementationToml>>,
+}
+
+#[derive(Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum WindowsSandboxImplementationToml {
+    Elevated,
+    Unelevated,
 }
 
 impl WindowsRequirementsToml {
     pub fn is_empty(&self) -> bool {
         self.allowed_sandbox_implementations.is_none()
-    }
-
-    pub fn allows_only_elevated_sandbox(&self) -> bool {
-        let Some(modes) = self.allowed_sandbox_implementations.as_deref() else {
-            return false;
-        };
-        !modes.is_empty()
-            && modes
-                .iter()
-                .all(|&mode| mode == WindowsSandboxModeToml::Elevated)
     }
 }
 
@@ -782,11 +900,53 @@ impl FeatureRequirementsToml {
 #[derive(Deserialize, Debug, Clone, Default, PartialEq, Eq)]
 pub struct AppToolRequirementToml {
     pub approval_mode: Option<AppToolApproval>,
+    /// Opt-in analytics extraction for this exact tool, not a tool argument.
+    /// The highest-priority rule wins as a whole, including unsupported formats.
+    pub analytics_result_source: Option<AppToolResultSourceRequirementToml>,
+}
+
+#[derive(Deserialize, Debug, Clone, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct AppToolResultSourceRequirementToml {
+    /// Result format to parse; currently only `detailed_message_search_v1` is supported.
+    pub format: AppToolResultSourceFormat,
+    /// Source kind emitted alongside each extracted ID.
+    #[serde(rename = "type")]
+    pub source_type: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AppToolResultSourceFormat {
+    DetailedMessageSearchV1,
+    /// Keep unknown formats so higher-priority rules still override lower ones.
+    Unknown(String),
+}
+
+impl FromStr for AppToolResultSourceFormat {
+    type Err = Infallible;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        Ok(match value {
+            "detailed_message_search_v1" => Self::DetailedMessageSearchV1,
+            _ => Self::Unknown(value.to_string()),
+        })
+    }
+}
+
+impl<'de> Deserialize<'de> for AppToolResultSourceFormat {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        String::deserialize(deserializer)?
+            .parse()
+            .map_err(D::Error::custom)
+    }
 }
 
 impl AppToolRequirementToml {
     pub fn is_empty(&self) -> bool {
-        self.approval_mode.is_none()
+        self.approval_mode.is_none() && self.analytics_result_source.is_none()
     }
 }
 
@@ -857,6 +1017,9 @@ pub(crate) fn merge_app_requirements_descending(
             if base_tool.approval_mode.is_none() {
                 base_tool.approval_mode = incoming_tool.approval_mode;
             }
+            if base_tool.analytics_result_source.is_none() {
+                base_tool.analytics_result_source = incoming_tool.analytics_result_source;
+            }
         }
     }
 }
@@ -864,6 +1027,20 @@ pub(crate) fn merge_app_requirements_descending(
 /// Base config deserialized from system `requirements.toml` or MDM.
 #[derive(Deserialize, Debug, Clone, Default, PartialEq)]
 pub struct ConfigRequirementsToml {
+    pub allowed_login_methods: Option<Vec<ForcedLoginMethod>>,
+    pub allowed_chatgpt_workspaces: Option<Vec<String>>,
+    pub cli_auth_credentials_store: Option<AuthCredentialsStoreMode>,
+    pub chatgpt_base_url: Option<String>,
+    pub sqlite_home: Option<AbsolutePathBuf>,
+    pub log_dir: Option<AbsolutePathBuf>,
+    pub model_catalog_json: Option<AbsolutePathBuf>,
+    /// Exact provider selection, overriding local and session configuration.
+    pub model_provider: Option<String>,
+    /// Complete provider definitions; each entry replaces the configured provider.
+    pub model_providers: Option<HashMap<String, ModelProviderInfo>>,
+    pub check_for_update_on_startup: Option<bool>,
+    pub allow_login_shell: Option<bool>,
+    pub feedback: Option<FeedbackConfigToml>,
     pub allowed_approval_policies: Option<Vec<AskForApproval>>,
     pub allowed_approvals_reviewers: Option<Vec<ApprovalsReviewer>>,
     pub allowed_sandbox_modes: Option<Vec<SandboxModeRequirement>>,
@@ -872,9 +1049,12 @@ pub struct ConfigRequirementsToml {
     pub remote_sandbox_config: Option<Vec<RemoteSandboxConfigToml>>,
     pub allowed_web_search_modes: Option<Vec<WebSearchModeRequirement>>,
     pub allow_managed_hooks_only: Option<bool>,
+    pub allow_browser_and_computer_use: Option<bool>,
     pub allow_appshots: Option<bool>,
     pub allow_remote_control: Option<bool>,
     pub computer_use: Option<ComputerUseRequirementsToml>,
+    pub browser_use: Option<BrowserUseRequirementsToml>,
+    pub in_app_browser: Option<InAppBrowserRequirementsToml>,
     pub windows: Option<WindowsRequirementsToml>,
     #[serde(rename = "features", alias = "feature_requirements")]
     pub feature_requirements: Option<FeatureRequirementsToml>,
@@ -887,17 +1067,19 @@ pub struct ConfigRequirementsToml {
     pub enforce_residency: Option<ResidencyRequirement>,
     #[serde(rename = "experimental_network")]
     pub network: Option<NetworkRequirementsToml>,
+    pub application: Option<ApplicationRequirementsToml>,
     pub permissions: Option<PermissionsRequirementsToml>,
+    pub auto_review: Option<AutoReviewRequirementsToml>,
     pub models: Option<ModelsRequirementsToml>,
+    pub additional_developer_instructions: Option<String>,
     pub guardian_policy_config: Option<String>,
+    pub guardian_extra_policy: Option<String>,
 }
 
-impl ConfigRequirementsToml {
-    pub fn allows_only_elevated_windows_sandbox(&self) -> bool {
-        self.windows
-            .as_ref()
-            .is_some_and(WindowsRequirementsToml::allows_only_elevated_sandbox)
-    }
+#[derive(Deserialize, Debug, Clone, Default, PartialEq, Eq)]
+pub struct AutoReviewRequirementsToml {
+    pub required_on_models: Option<Vec<String>>,
+    pub ignore_rules: Option<Vec<String>>,
 }
 
 #[derive(Deserialize, Debug, Clone, Default, PartialEq, Eq)]
@@ -956,6 +1138,18 @@ impl<T> std::ops::Deref for Sourced<T> {
 
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct ConfigRequirementsWithSources {
+    pub allowed_login_methods: Option<Sourced<Vec<ForcedLoginMethod>>>,
+    pub allowed_chatgpt_workspaces: Option<Sourced<Vec<String>>>,
+    pub cli_auth_credentials_store: Option<Sourced<AuthCredentialsStoreMode>>,
+    pub chatgpt_base_url: Option<Sourced<String>>,
+    pub sqlite_home: Option<Sourced<AbsolutePathBuf>>,
+    pub log_dir: Option<Sourced<AbsolutePathBuf>>,
+    pub model_catalog_json: Option<Sourced<AbsolutePathBuf>>,
+    pub model_provider: Option<Sourced<String>>,
+    pub model_providers: Option<Sourced<HashMap<String, ModelProviderInfo>>>,
+    pub check_for_update_on_startup: Option<Sourced<bool>>,
+    pub allow_login_shell: Option<Sourced<bool>>,
+    pub feedback: Option<Sourced<FeedbackConfigToml>>,
     pub allowed_approval_policies: Option<Sourced<Vec<AskForApproval>>>,
     pub allowed_approvals_reviewers: Option<Sourced<Vec<ApprovalsReviewer>>>,
     pub allowed_sandbox_modes: Option<Sourced<Vec<SandboxModeRequirement>>>,
@@ -963,9 +1157,12 @@ pub struct ConfigRequirementsWithSources {
     pub default_permissions: Option<Sourced<String>>,
     pub allowed_web_search_modes: Option<Sourced<Vec<WebSearchModeRequirement>>>,
     pub allow_managed_hooks_only: Option<Sourced<bool>>,
+    pub allow_browser_and_computer_use: Option<Sourced<bool>>,
     pub allow_appshots: Option<Sourced<bool>>,
     pub allow_remote_control: Option<Sourced<bool>>,
     pub computer_use: Option<Sourced<ComputerUseRequirementsToml>>,
+    pub browser_use: Option<Sourced<BrowserUseRequirementsToml>>,
+    pub in_app_browser: Option<Sourced<InAppBrowserRequirementsToml>>,
     pub windows: Option<Sourced<WindowsRequirementsToml>>,
     pub feature_requirements: Option<Sourced<FeatureRequirementsToml>>,
     pub hooks: Option<Sourced<ManagedHooksRequirementsToml>>,
@@ -976,9 +1173,13 @@ pub struct ConfigRequirementsWithSources {
     pub rules: Option<Sourced<RequirementsExecPolicyToml>>,
     pub enforce_residency: Option<Sourced<ResidencyRequirement>>,
     pub network: Option<Sourced<NetworkRequirementsToml>>,
+    pub application: Option<Sourced<ApplicationRequirementsToml>>,
     pub permissions: Option<Sourced<PermissionsRequirementsToml>>,
+    pub auto_review: Option<Sourced<AutoReviewRequirementsToml>>,
     pub models: Option<Sourced<ModelsRequirementsToml>>,
+    pub additional_developer_instructions: Option<Sourced<String>>,
     pub guardian_policy_config: Option<Sourced<String>>,
+    pub guardian_extra_policy: Option<Sourced<String>>,
 }
 
 impl ConfigRequirementsWithSources {
@@ -1000,6 +1201,18 @@ impl ConfigRequirementsWithSources {
         // Destructure without `..` so adding fields to `ConfigRequirementsToml`
         // forces this merge logic to be updated.
         let ConfigRequirementsToml {
+            allowed_login_methods: _,
+            allowed_chatgpt_workspaces: _,
+            cli_auth_credentials_store: _,
+            chatgpt_base_url: _,
+            sqlite_home: _,
+            log_dir: _,
+            model_catalog_json: _,
+            model_provider: _,
+            model_providers: _,
+            check_for_update_on_startup: _,
+            allow_login_shell: _,
+            feedback: _,
             allowed_approval_policies: _,
             allowed_approvals_reviewers: _,
             allowed_sandbox_modes: _,
@@ -1008,9 +1221,12 @@ impl ConfigRequirementsWithSources {
             remote_sandbox_config: _,
             allowed_web_search_modes: _,
             allow_managed_hooks_only: _,
+            allow_browser_and_computer_use: _,
             allow_appshots: _,
             allow_remote_control: _,
             computer_use: _,
+            browser_use: _,
+            in_app_browser: _,
             windows: _,
             feature_requirements: _,
             hooks: _,
@@ -1021,9 +1237,13 @@ impl ConfigRequirementsWithSources {
             rules: _,
             enforce_residency: _,
             network: _,
+            application: _,
             permissions: _,
+            auto_review: _,
             models: _,
+            additional_developer_instructions: _,
             guardian_policy_config: _,
+            guardian_extra_policy: _,
         } = &other;
 
         let mut other = other;
@@ -1034,11 +1254,30 @@ impl ConfigRequirementsWithSources {
         {
             other.guardian_policy_config = None;
         }
+        if other
+            .guardian_extra_policy
+            .as_deref()
+            .is_some_and(|value| value.trim().is_empty())
+        {
+            other.guardian_extra_policy = None;
+        }
         fill_missing_take!(
             self,
             other,
             source,
             {
+                allowed_login_methods,
+                allowed_chatgpt_workspaces,
+                cli_auth_credentials_store,
+                chatgpt_base_url,
+                sqlite_home,
+                log_dir,
+                model_catalog_json,
+                model_provider,
+                model_providers,
+                check_for_update_on_startup,
+                allow_login_shell,
+                feedback,
                 allowed_approval_policies,
                 allowed_approvals_reviewers,
                 allowed_sandbox_modes,
@@ -1046,9 +1285,12 @@ impl ConfigRequirementsWithSources {
                 default_permissions,
                 allowed_web_search_modes,
                 allow_managed_hooks_only,
+                allow_browser_and_computer_use,
                 allow_appshots,
                 allow_remote_control,
                 computer_use,
+                browser_use,
+                in_app_browser,
                 windows,
                 feature_requirements,
                 hooks,
@@ -1058,11 +1300,46 @@ impl ConfigRequirementsWithSources {
                 rules,
                 enforce_residency,
                 network,
+                application,
                 permissions,
                 models,
+                additional_developer_instructions,
                 guardian_policy_config,
+                guardian_extra_policy,
             }
         );
+
+        if let Some(incoming_auto_review) = other.auto_review.take() {
+            if let Some(existing_auto_review) = self.auto_review.as_mut() {
+                let mut source_contributed = false;
+                if let Some(incoming_slugs) = incoming_auto_review.required_on_models {
+                    let protected_slugs = existing_auto_review
+                        .value
+                        .required_on_models
+                        .get_or_insert_default();
+                    for slug in incoming_slugs {
+                        if !protected_slugs.contains(&slug) {
+                            protected_slugs.push(slug);
+                            source_contributed = true;
+                        }
+                    }
+                }
+                if existing_auto_review.value.ignore_rules.is_none()
+                    && let Some(ignore_rules) = incoming_auto_review.ignore_rules
+                {
+                    existing_auto_review.value.ignore_rules = Some(ignore_rules);
+                    source_contributed = true;
+                }
+                if source_contributed && existing_auto_review.source != source {
+                    existing_auto_review.source = RequirementSource::composite([
+                        existing_auto_review.source.clone(),
+                        source.clone(),
+                    ]);
+                }
+            } else {
+                self.auto_review = Some(Sourced::new(incoming_auto_review, source.clone()));
+            }
+        }
 
         if let Some(incoming_apps) = other.apps.take() {
             if let Some(existing_apps) = self.apps.as_mut() {
@@ -1075,6 +1352,18 @@ impl ConfigRequirementsWithSources {
 
     pub fn into_toml(self) -> ConfigRequirementsToml {
         let ConfigRequirementsWithSources {
+            allowed_login_methods,
+            allowed_chatgpt_workspaces,
+            cli_auth_credentials_store,
+            chatgpt_base_url,
+            sqlite_home,
+            log_dir,
+            model_catalog_json,
+            model_provider,
+            model_providers,
+            check_for_update_on_startup,
+            allow_login_shell,
+            feedback,
             allowed_approval_policies,
             allowed_approvals_reviewers,
             allowed_sandbox_modes,
@@ -1082,9 +1371,12 @@ impl ConfigRequirementsWithSources {
             default_permissions,
             allowed_web_search_modes,
             allow_managed_hooks_only,
+            allow_browser_and_computer_use,
             allow_appshots,
             allow_remote_control,
             computer_use,
+            browser_use,
+            in_app_browser,
             windows,
             feature_requirements,
             hooks,
@@ -1095,11 +1387,27 @@ impl ConfigRequirementsWithSources {
             rules,
             enforce_residency,
             network,
+            application,
             permissions,
+            auto_review,
             models,
+            additional_developer_instructions,
             guardian_policy_config,
+            guardian_extra_policy,
         } = self;
         ConfigRequirementsToml {
+            allowed_login_methods: allowed_login_methods.map(|sourced| sourced.value),
+            allowed_chatgpt_workspaces: allowed_chatgpt_workspaces.map(|sourced| sourced.value),
+            cli_auth_credentials_store: cli_auth_credentials_store.map(|sourced| sourced.value),
+            chatgpt_base_url: chatgpt_base_url.map(|sourced| sourced.value),
+            sqlite_home: sqlite_home.map(|sourced| sourced.value),
+            log_dir: log_dir.map(|sourced| sourced.value),
+            model_catalog_json: model_catalog_json.map(|sourced| sourced.value),
+            model_provider: model_provider.map(|sourced| sourced.value),
+            model_providers: model_providers.map(|sourced| sourced.value),
+            check_for_update_on_startup: check_for_update_on_startup.map(|sourced| sourced.value),
+            allow_login_shell: allow_login_shell.map(|sourced| sourced.value),
+            feedback: feedback.map(|sourced| sourced.value),
             allowed_approval_policies: allowed_approval_policies.map(|sourced| sourced.value),
             allowed_approvals_reviewers: allowed_approvals_reviewers.map(|sourced| sourced.value),
             allowed_sandbox_modes: allowed_sandbox_modes.map(|sourced| sourced.value),
@@ -1108,9 +1416,13 @@ impl ConfigRequirementsWithSources {
             remote_sandbox_config: None,
             allowed_web_search_modes: allowed_web_search_modes.map(|sourced| sourced.value),
             allow_managed_hooks_only: allow_managed_hooks_only.map(|sourced| sourced.value),
+            allow_browser_and_computer_use: allow_browser_and_computer_use
+                .map(|sourced| sourced.value),
             allow_appshots: allow_appshots.map(|sourced| sourced.value),
             allow_remote_control: allow_remote_control.map(|sourced| sourced.value),
             computer_use: computer_use.map(|sourced| sourced.value),
+            browser_use: browser_use.map(|sourced| sourced.value),
+            in_app_browser: in_app_browser.map(|sourced| sourced.value),
             windows: windows.map(|sourced| sourced.value),
             feature_requirements: feature_requirements.map(|sourced| sourced.value),
             hooks: hooks.map(|sourced| sourced.value),
@@ -1121,9 +1433,14 @@ impl ConfigRequirementsWithSources {
             rules: rules.map(|sourced| sourced.value),
             enforce_residency: enforce_residency.map(|sourced| sourced.value),
             network: network.map(|sourced| sourced.value),
+            application: application.map(|sourced| sourced.value),
             permissions: permissions.map(|sourced| sourced.value),
+            auto_review: auto_review.map(|sourced| sourced.value),
             models: models.map(|sourced| sourced.value),
+            additional_developer_instructions: additional_developer_instructions
+                .map(|sourced| sourced.value),
             guardian_policy_config: guardian_policy_config.map(|sourced| sourced.value),
+            guardian_extra_policy: guardian_extra_policy.map(|sourced| sourced.value),
         }
     }
 }
@@ -1168,12 +1485,6 @@ impl From<SandboxMode> for SandboxModeRequirement {
     }
 }
 
-#[derive(Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
-#[serde(rename_all = "lowercase")]
-pub enum ResidencyRequirement {
-    Us,
-}
-
 impl ConfigRequirementsToml {
     pub fn apply_remote_sandbox_config(&mut self, hostname: Option<&str>) {
         let Some(remote_sandbox_config) = self.remote_sandbox_config.as_ref() else {
@@ -1192,7 +1503,22 @@ impl ConfigRequirementsToml {
     }
 
     pub fn is_empty(&self) -> bool {
-        self.allowed_approval_policies.is_none()
+        self.allowed_login_methods.is_none()
+            && self.allowed_chatgpt_workspaces.is_none()
+            && self.cli_auth_credentials_store.is_none()
+            && self.chatgpt_base_url.is_none()
+            && self.sqlite_home.is_none()
+            && self.log_dir.is_none()
+            && self.model_catalog_json.is_none()
+            && self.model_provider.is_none()
+            && self.model_providers.as_ref().is_none_or(HashMap::is_empty)
+            && self.check_for_update_on_startup.is_none()
+            && self.allow_login_shell.is_none()
+            && self
+                .feedback
+                .as_ref()
+                .is_none_or(|feedback| feedback == &FeedbackConfigToml::default())
+            && self.allowed_approval_policies.is_none()
             && self.allowed_approvals_reviewers.is_none()
             && self.allowed_sandbox_modes.is_none()
             && self.allowed_permission_profiles.is_none()
@@ -1200,12 +1526,21 @@ impl ConfigRequirementsToml {
             && self.remote_sandbox_config.is_none()
             && self.allowed_web_search_modes.is_none()
             && self.allow_managed_hooks_only.is_none()
+            && self.allow_browser_and_computer_use.is_none()
             && self.allow_appshots.is_none()
             && self.allow_remote_control.is_none()
             && self
                 .computer_use
                 .as_ref()
                 .is_none_or(ComputerUseRequirementsToml::is_empty)
+            && self
+                .browser_use
+                .as_ref()
+                .is_none_or(BrowserUseRequirementsToml::is_empty)
+            && self
+                .in_app_browser
+                .as_ref()
+                .is_none_or(|requirements| requirements == &InAppBrowserRequirementsToml::default())
             && self
                 .windows
                 .as_ref()
@@ -1234,16 +1569,135 @@ impl ConfigRequirementsToml {
             && self.rules.is_none()
             && self.enforce_residency.is_none()
             && self.network.is_none()
+            && self
+                .application
+                .as_ref()
+                .is_none_or(|application| application.network.is_none())
             && self.permissions.is_none()
+            && self.auto_review.as_ref().is_none_or(|auto_review| {
+                auto_review.ignore_rules.as_ref().is_none_or(Vec::is_empty)
+                    && auto_review
+                        .required_on_models
+                        .as_ref()
+                        .is_none_or(Vec::is_empty)
+            })
             && self
                 .models
                 .as_ref()
                 .is_none_or(ModelsRequirementsToml::is_empty)
+            && self.additional_developer_instructions.is_none()
             && self
                 .guardian_policy_config
                 .as_deref()
                 .is_none_or(|value| value.trim().is_empty())
+            && self
+                .guardian_extra_policy
+                .as_deref()
+                .is_none_or(|value| value.trim().is_empty())
     }
+
+    /// Applies the requirements whose values replace config values.
+    ///
+    /// This projection keeps config/read aligned with the final runtime config.
+    pub fn apply_exact_to_config(&self, config: &mut ConfigToml) {
+        macro_rules! apply_exact {
+            ($field:ident) => {
+                if let Some(value) = self.$field.as_ref() {
+                    config.$field = Some(value.clone());
+                }
+            };
+        }
+
+        apply_exact!(cli_auth_credentials_store);
+        apply_exact!(chatgpt_base_url);
+        apply_exact!(sqlite_home);
+        apply_exact!(log_dir);
+        apply_exact!(model_catalog_json);
+        apply_exact!(model_provider);
+        if let Some(providers) = &self.model_providers {
+            config.model_providers.extend(providers.clone());
+        }
+        apply_exact!(check_for_update_on_startup);
+        apply_exact!(allow_login_shell);
+
+        if self
+            .allowed_approvals_reviewers
+            .as_ref()
+            .is_some_and(|reviewers| !reviewers.contains(&ApprovalsReviewer::User))
+        {
+            config.features.get_or_insert_default().guardianv2 = Some(FeatureToml::Enabled(false));
+        }
+
+        if let Some(enabled) = self.feedback.as_ref().and_then(|feedback| feedback.enabled) {
+            config.feedback.get_or_insert_default().enabled = Some(enabled);
+        }
+    }
+
+    /// Returns the exact managed field affected by editing `segments`.
+    pub fn exact_requirement_for_config_path(&self, segments: &[String]) -> Option<&'static str> {
+        if self.model_providers.as_ref().is_some_and(|providers| {
+            providers
+                .keys()
+                .any(|id| config_paths_overlap(segments, &["model_providers", id]))
+        }) {
+            return Some("model_providers");
+        }
+        let managed_fields: [(bool, &[&str], &'static str); 9] = [
+            (
+                self.model_provider.is_some(),
+                &["model_provider"],
+                "model_provider",
+            ),
+            (self.sqlite_home.is_some(), &["sqlite_home"], "sqlite_home"),
+            (self.log_dir.is_some(), &["log_dir"], "log_dir"),
+            (
+                self.model_catalog_json.is_some(),
+                &["model_catalog_json"],
+                "model_catalog_json",
+            ),
+            (
+                self.check_for_update_on_startup.is_some(),
+                &["check_for_update_on_startup"],
+                "check_for_update_on_startup",
+            ),
+            (
+                self.allow_login_shell.is_some(),
+                &["allow_login_shell"],
+                "allow_login_shell",
+            ),
+            (
+                self.feedback
+                    .as_ref()
+                    .and_then(|feedback| feedback.enabled)
+                    .is_some(),
+                &["feedback", "enabled"],
+                "feedback.enabled",
+            ),
+            (
+                self.cli_auth_credentials_store.is_some(),
+                &["cli_auth_credentials_store"],
+                "cli_auth_credentials_store",
+            ),
+            (
+                self.chatgpt_base_url.is_some(),
+                &["chatgpt_base_url"],
+                "chatgpt_base_url",
+            ),
+        ];
+
+        managed_fields
+            .into_iter()
+            .find_map(|(is_managed, managed_path, field)| {
+                (is_managed && config_paths_overlap(segments, managed_path)).then_some(field)
+            })
+    }
+}
+
+fn config_paths_overlap(segments: &[String], managed_path: &[&str]) -> bool {
+    segments
+        .iter()
+        .zip(managed_path)
+        .all(|(segment, managed_segment)| segment == managed_segment)
 }
 
 fn validate_mcp_server_requirements(
@@ -1252,15 +1706,15 @@ fn validate_mcp_server_requirements(
     plugin_name: Option<&str>,
 ) -> Result<(), ConstraintError> {
     for (server_name, requirement) in requirements {
-        requirement
-            .validate()
-            .map_err(|reason| ConstraintError::McpServerRequirementParse {
+        validate_mcp_server_requirement(requirement).map_err(|reason| {
+            ConstraintError::McpServerRequirementParse {
                 server_name: plugin_name
                     .map(|plugin_name| format!("{plugin_name}/{server_name}"))
                     .unwrap_or_else(|| server_name.clone()),
                 requirement_source: source.clone(),
                 reason,
-            })?;
+            }
+        })?;
     }
     Ok(())
 }
@@ -1271,9 +1725,21 @@ impl TryFrom<ConfigRequirementsWithSources> for ConfigRequirements {
     fn try_from(toml: ConfigRequirementsWithSources) -> Result<Self, Self::Error> {
         // Profile catalog selection remains on ConfigRequirementsToml for
         // config loading and requirements API projection. Managed new-thread
-        // defaults also remain there because they are initialization values,
-        // not runtime constraints.
+        // defaults also remain there because they are initialization values;
+        // model-specific auto-review requirements are runtime constraints.
         let ConfigRequirementsWithSources {
+            allowed_login_methods,
+            allowed_chatgpt_workspaces,
+            cli_auth_credentials_store,
+            chatgpt_base_url,
+            sqlite_home,
+            log_dir,
+            model_catalog_json,
+            model_provider,
+            model_providers,
+            check_for_update_on_startup,
+            allow_login_shell,
+            feedback,
             allowed_approval_policies,
             allowed_approvals_reviewers,
             allowed_sandbox_modes,
@@ -1281,9 +1747,12 @@ impl TryFrom<ConfigRequirementsWithSources> for ConfigRequirements {
             default_permissions: _,
             allowed_web_search_modes,
             allow_managed_hooks_only,
+            allow_browser_and_computer_use: _,
             allow_appshots,
             allow_remote_control,
             computer_use,
+            browser_use: _,
+            in_app_browser: _,
             windows,
             feature_requirements,
             hooks,
@@ -1294,10 +1763,41 @@ impl TryFrom<ConfigRequirementsWithSources> for ConfigRequirements {
             rules,
             enforce_residency,
             network,
+            application,
             permissions,
+            auto_review,
             models: _,
+            additional_developer_instructions,
             guardian_policy_config,
+            guardian_extra_policy,
         } = toml;
+
+        let auto_review_required_models = auto_review
+            .and_then(|auto_review| {
+                auto_review
+                    .value
+                    .required_on_models
+                    .map(|slugs| Sourced::new(slugs, auto_review.source))
+            })
+            .filter(|models| !models.value.is_empty())
+            .map(|models| {
+                let Sourced { value, source } = models;
+                let mut protected_models = BTreeSet::new();
+                for slug in value {
+                    if slug.trim().is_empty() || slug.trim() != slug || slug.contains('/') {
+                        return Err(ConstraintError::InvalidValue {
+                            field_name: "auto_review.required_on_models",
+                            candidate: format!("{slug:?}"),
+                            allowed: "non-empty model slugs without surrounding whitespace or provider namespaces"
+                                .to_string(),
+                            requirement_source: source,
+                        });
+                    }
+                    protected_models.insert(slug);
+                }
+                Ok(Sourced::new(protected_models, source))
+            })
+            .transpose()?;
 
         if let Some(requirements) = &mcp_servers {
             validate_mcp_server_requirements(
@@ -1429,16 +1929,29 @@ impl TryFrom<ConfigRequirementsWithSources> for ConfigRequirements {
                     ));
                 }
                 // Prefer elevated when both Windows sandbox implementations are allowed.
-                let initial_value = if implementations.contains(&WindowsSandboxModeToml::Elevated) {
-                    WindowsSandboxModeToml::Elevated
-                } else {
-                    WindowsSandboxModeToml::Unelevated
-                };
+                let initial_value =
+                    if implementations.contains(&WindowsSandboxImplementationToml::Elevated) {
+                        WindowsSandboxModeToml::Elevated
+                    } else {
+                        WindowsSandboxModeToml::Unelevated
+                    };
 
                 let requirement_source_for_error = requirement_source.clone();
                 let constrained =
                     Constrained::new(Some(initial_value), move |candidate| match candidate {
-                        Some(candidate) if implementations.contains(candidate) => Ok(()),
+                        Some(WindowsSandboxModeToml::Mxc) => Ok(()),
+                        Some(WindowsSandboxModeToml::Elevated)
+                            if implementations
+                                .contains(&WindowsSandboxImplementationToml::Elevated) =>
+                        {
+                            Ok(())
+                        }
+                        Some(WindowsSandboxModeToml::Unelevated)
+                            if implementations
+                                .contains(&WindowsSandboxImplementationToml::Unelevated) =>
+                        {
+                            Ok(())
+                        }
                         _ => Err(ConstraintError::InvalidValue {
                             field_name: "windows.sandbox",
                             candidate: format!("{candidate:?}"),
@@ -1448,7 +1961,14 @@ impl TryFrom<ConfigRequirementsWithSources> for ConfigRequirements {
                     })?;
                 ConstrainedWithSource::new(constrained, Some(requirement_source))
             }
-            Some(_) | None => ConstrainedWithSource::new(
+            Some(Sourced {
+                value:
+                    WindowsRequirementsToml {
+                        allowed_sandbox_implementations: None,
+                    },
+                ..
+            })
+            | None => ConstrainedWithSource::new(
                 Constrained::allow_any(/*initial_value*/ None),
                 /*source*/ None,
             ),
@@ -1576,9 +2096,23 @@ impl TryFrom<ConfigRequirementsWithSources> for ConfigRequirements {
             Sourced::new(FilesystemConstraints::from(value), source)
         });
         let guardian_policy_config_source = guardian_policy_config.map(|sourced| sourced.source);
+        let guardian_extra_policy_source = guardian_extra_policy.map(|sourced| sourced.source);
         Ok(ConfigRequirements {
+            allowed_login_methods,
+            allowed_chatgpt_workspaces,
+            cli_auth_credentials_store,
+            chatgpt_base_url,
+            sqlite_home,
+            log_dir,
+            model_catalog_json,
+            model_provider,
+            model_providers,
+            check_for_update_on_startup,
+            allow_login_shell,
+            feedback,
             approval_policy,
             approvals_reviewer,
+            auto_review_required_models,
             permission_profile,
             windows_sandbox_mode,
             web_search_mode,
@@ -1594,8 +2128,11 @@ impl TryFrom<ConfigRequirementsWithSources> for ConfigRequirements {
             exec_policy,
             enforce_residency,
             network,
+            application,
             filesystem,
+            additional_developer_instructions,
             guardian_policy_config_source,
+            guardian_extra_policy_source,
         })
     }
 }
@@ -1626,6 +2163,12 @@ pub fn sandbox_mode_requirement_for_permission_profile(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::AllowDenyRequirementToml;
+    use crate::BrowserUseAccessApprovalLifetimeToml;
+    use crate::BrowserUseOriginPolicyToml;
+    use crate::ComputerUseMacosRequirementsToml;
+    use crate::ComputerUseWindowsExeRequirementToml;
+    use crate::ComputerUseWindowsRequirementsToml;
     use crate::HookEventsToml;
     use crate::McpServerCommandMatcher;
     use crate::McpServerIdentity;
@@ -1651,6 +2194,54 @@ mod tests {
     }
 
     #[test]
+    fn exact_requirement_for_config_path_matches_overlapping_paths() {
+        let managed_path = AbsolutePathBuf::try_from(std::env::temp_dir().join("managed"))
+            .expect("managed path should be absolute");
+        let requirements = ConfigRequirementsToml {
+            cli_auth_credentials_store: Some(AuthCredentialsStoreMode::Ephemeral),
+            chatgpt_base_url: Some("https://managed.example/backend-api/".to_string()),
+            sqlite_home: Some(managed_path.clone()),
+            log_dir: Some(managed_path.clone()),
+            model_catalog_json: Some(managed_path),
+            check_for_update_on_startup: Some(false),
+            allow_login_shell: Some(false),
+            feedback: Some(FeedbackConfigToml {
+                enabled: Some(false),
+            }),
+            ..Default::default()
+        };
+        let cases: &[(&[&str], Option<&str>)] = &[
+            (
+                &["cli_auth_credentials_store"],
+                Some("cli_auth_credentials_store"),
+            ),
+            (&["chatgpt_base_url"], Some("chatgpt_base_url")),
+            (&["sqlite_home"], Some("sqlite_home")),
+            (&["log_dir"], Some("log_dir")),
+            (&["model_catalog_json"], Some("model_catalog_json")),
+            (
+                &["check_for_update_on_startup"],
+                Some("check_for_update_on_startup"),
+            ),
+            (&["allow_login_shell"], Some("allow_login_shell")),
+            (&["feedback", "enabled"], Some("feedback.enabled")),
+            (&[], Some("sqlite_home")),
+            (&["feedback"], Some("feedback.enabled")),
+            (&["feedback", "other"], None),
+            (&["windows", "sandbox"], None),
+        ];
+
+        for (segments, expected) in cases {
+            let segments = segments.iter().map(ToString::to_string).collect::<Vec<_>>();
+            assert_eq!(
+                requirements.exact_requirement_for_config_path(&segments),
+                *expected,
+                "segments: {segments:?}"
+            );
+        }
+    }
+
+    #[test]
     fn composite_requirement_source_flattens_and_deduplicates_sources() {
         let mdm_source = RequirementSource::MdmManagedPreferences {
             domain: "com.openai.codex".to_string(),
@@ -1671,6 +2262,18 @@ mod tests {
 
     fn with_unknown_source(toml: ConfigRequirementsToml) -> ConfigRequirementsWithSources {
         let ConfigRequirementsToml {
+            allowed_login_methods,
+            allowed_chatgpt_workspaces,
+            cli_auth_credentials_store,
+            chatgpt_base_url,
+            sqlite_home,
+            log_dir,
+            model_catalog_json,
+            model_provider,
+            model_providers,
+            check_for_update_on_startup,
+            allow_login_shell,
+            feedback,
             allowed_approval_policies,
             allowed_approvals_reviewers,
             allowed_sandbox_modes,
@@ -1679,9 +2282,12 @@ mod tests {
             remote_sandbox_config: _,
             allowed_web_search_modes,
             allow_managed_hooks_only,
+            allow_browser_and_computer_use,
             allow_appshots,
             allow_remote_control,
             computer_use,
+            browser_use,
+            in_app_browser,
             windows,
             feature_requirements,
             hooks,
@@ -1692,11 +2298,36 @@ mod tests {
             rules,
             enforce_residency,
             network,
+            application,
             permissions,
+            auto_review,
             models,
+            additional_developer_instructions,
             guardian_policy_config,
+            guardian_extra_policy,
         } = toml;
         ConfigRequirementsWithSources {
+            allowed_login_methods: allowed_login_methods
+                .map(|value| Sourced::new(value, RequirementSource::Unknown)),
+            allowed_chatgpt_workspaces: allowed_chatgpt_workspaces
+                .map(|value| Sourced::new(value, RequirementSource::Unknown)),
+            cli_auth_credentials_store: cli_auth_credentials_store
+                .map(|value| Sourced::new(value, RequirementSource::Unknown)),
+            chatgpt_base_url: chatgpt_base_url
+                .map(|value| Sourced::new(value, RequirementSource::Unknown)),
+            sqlite_home: sqlite_home.map(|value| Sourced::new(value, RequirementSource::Unknown)),
+            log_dir: log_dir.map(|value| Sourced::new(value, RequirementSource::Unknown)),
+            model_catalog_json: model_catalog_json
+                .map(|value| Sourced::new(value, RequirementSource::Unknown)),
+            model_provider: model_provider
+                .map(|value| Sourced::new(value, RequirementSource::Unknown)),
+            model_providers: model_providers
+                .map(|value| Sourced::new(value, RequirementSource::Unknown)),
+            check_for_update_on_startup: check_for_update_on_startup
+                .map(|value| Sourced::new(value, RequirementSource::Unknown)),
+            allow_login_shell: allow_login_shell
+                .map(|value| Sourced::new(value, RequirementSource::Unknown)),
+            feedback: feedback.map(|value| Sourced::new(value, RequirementSource::Unknown)),
             allowed_approval_policies: allowed_approval_policies
                 .map(|value| Sourced::new(value, RequirementSource::Unknown)),
             allowed_approvals_reviewers: allowed_approvals_reviewers
@@ -1711,11 +2342,16 @@ mod tests {
                 .map(|value| Sourced::new(value, RequirementSource::Unknown)),
             allow_managed_hooks_only: allow_managed_hooks_only
                 .map(|value| Sourced::new(value, RequirementSource::Unknown)),
+            allow_browser_and_computer_use: allow_browser_and_computer_use
+                .map(|value| Sourced::new(value, RequirementSource::Unknown)),
             allow_appshots: allow_appshots
                 .map(|value| Sourced::new(value, RequirementSource::Unknown)),
             allow_remote_control: allow_remote_control
                 .map(|value| Sourced::new(value, RequirementSource::Unknown)),
             computer_use: computer_use.map(|value| Sourced::new(value, RequirementSource::Unknown)),
+            browser_use: browser_use.map(|value| Sourced::new(value, RequirementSource::Unknown)),
+            in_app_browser: in_app_browser
+                .map(|value| Sourced::new(value, RequirementSource::Unknown)),
             windows: windows.map(|value| Sourced::new(value, RequirementSource::Unknown)),
             feature_requirements: feature_requirements
                 .map(|value| Sourced::new(value, RequirementSource::Unknown)),
@@ -1728,9 +2364,15 @@ mod tests {
             enforce_residency: enforce_residency
                 .map(|value| Sourced::new(value, RequirementSource::Unknown)),
             network: network.map(|value| Sourced::new(value, RequirementSource::Unknown)),
+            application: application.map(|value| Sourced::new(value, RequirementSource::Unknown)),
             permissions: permissions.map(|value| Sourced::new(value, RequirementSource::Unknown)),
+            auto_review: auto_review.map(|value| Sourced::new(value, RequirementSource::Unknown)),
             models: models.map(|value| Sourced::new(value, RequirementSource::Unknown)),
+            additional_developer_instructions: additional_developer_instructions
+                .map(|value| Sourced::new(value, RequirementSource::Unknown)),
             guardian_policy_config: guardian_policy_config
+                .map(|value| Sourced::new(value, RequirementSource::Unknown)),
+            guardian_extra_policy: guardian_extra_policy
                 .map(|value| Sourced::new(value, RequirementSource::Unknown)),
         }
     }
@@ -1864,21 +2506,214 @@ mod tests {
     }
 
     #[test]
-    fn deserialize_computer_use_requirements() -> Result<()> {
+    fn deserialize_browser_and_computer_use_requirements() -> Result<()> {
         let requirements: ConfigRequirementsToml = from_str(
             r#"
+                allow_browser_and_computer_use = false
+
+                [browser_use]
+                allow_history_access = false
+                disable_auto_review = true
+                allow_global_persistent_approval = false
+
+                [browser_use.default_origin_policy]
+                access = "deny"
+                downloads = "allow"
+                uploads = "deny"
+                full_cdp_access = "allow"
+                auto_review = "deny"
+                persistent_approval = false
+                access_approval_lifetime = "turn"
+
+                [browser_use.origins."https://example.com"]
+                access = "allow"
+                downloads = "deny"
+                uploads = "allow"
+                full_cdp_access = "deny"
+                auto_review = "deny"
+                persistent_approval = true
+                access_approval_lifetime = "thread"
+
                 [computer_use]
                 allow_locked_computer_use = false
+                allow_persistent_approval = false
+                default_app_access = "deny"
+
+                [computer_use.macos.bundle_ids]
+                "com.apple.Safari" = "allow"
+
+                [computer_use.windows.aumids]
+                "Microsoft.Paint_8wekyb3d8bbwe!App" = "allow"
+
+                [[computer_use.windows.exes]]
+                publisher_name = "CN=Google LLC, O=Google LLC, L=Mountain View, S=California, C=US"
+                product_name = "Google Chrome"
+                binary_name = "chrome.exe"
+                access = "deny"
             "#,
         )?;
 
+        assert_eq!(requirements.allow_browser_and_computer_use, Some(false));
+        assert_eq!(
+            requirements.browser_use,
+            Some(BrowserUseRequirementsToml {
+                allow_webmcp: None,
+                allow_history_access: Some(false),
+                disable_auto_review: Some(true),
+                allow_global_persistent_approval: Some(false),
+                default_origin_policy: Some(BrowserUseOriginPolicyToml {
+                    access: Some(AllowDenyRequirementToml::Deny),
+                    downloads: Some(AllowDenyRequirementToml::Allow),
+                    uploads: Some(AllowDenyRequirementToml::Deny),
+                    full_cdp_access: Some(AllowDenyRequirementToml::Allow),
+                    auto_review: Some(AllowDenyRequirementToml::Deny),
+                    persistent_approval: Some(false),
+                    access_approval_lifetime: Some(BrowserUseAccessApprovalLifetimeToml::Turn),
+                }),
+                origins: Some(BTreeMap::from([(
+                    "https://example.com".to_string(),
+                    BrowserUseOriginPolicyToml {
+                        access: Some(AllowDenyRequirementToml::Allow),
+                        downloads: Some(AllowDenyRequirementToml::Deny),
+                        uploads: Some(AllowDenyRequirementToml::Allow),
+                        full_cdp_access: Some(AllowDenyRequirementToml::Deny),
+                        auto_review: Some(AllowDenyRequirementToml::Deny),
+                        persistent_approval: Some(true),
+                        access_approval_lifetime: Some(
+                            BrowserUseAccessApprovalLifetimeToml::Thread,
+                        ),
+                    },
+                )])),
+            })
+        );
         assert_eq!(
             requirements.computer_use,
             Some(ComputerUseRequirementsToml {
                 allow_locked_computer_use: Some(false),
+                allow_persistent_approval: Some(false),
+                default_app_access: Some(AllowDenyRequirementToml::Deny),
+                macos: Some(ComputerUseMacosRequirementsToml {
+                    bundle_ids: Some(BTreeMap::from([(
+                        "com.apple.Safari".to_string(),
+                        AllowDenyRequirementToml::Allow,
+                    )])),
+                }),
+                windows: Some(ComputerUseWindowsRequirementsToml {
+                    aumids: Some(BTreeMap::from([(
+                        "Microsoft.Paint_8wekyb3d8bbwe!App".to_string(),
+                        AllowDenyRequirementToml::Allow,
+                    )])),
+                    exes: Some(vec![ComputerUseWindowsExeRequirementToml {
+                        publisher_name:
+                            "CN=Google LLC, O=Google LLC, L=Mountain View, S=California, C=US"
+                                .to_string(),
+                        product_name: "Google Chrome".to_string(),
+                        binary_name: Some("chrome.exe".to_string()),
+                        access: AllowDenyRequirementToml::Deny,
+                    }]),
+                }),
             })
         );
         assert!(!requirements.is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn browser_and_computer_use_leaf_requirements_are_not_empty() -> Result<()> {
+        for (name, requirements_toml) in [
+            (
+                "browser history",
+                "[browser_use]\nallow_history_access = false",
+            ),
+            (
+                "browser auto-review",
+                "[browser_use]\ndisable_auto_review = true",
+            ),
+            (
+                "global persistent approval",
+                "[browser_use]\nallow_global_persistent_approval = false",
+            ),
+            (
+                "default origin access",
+                "[browser_use.default_origin_policy]\naccess = \"deny\"",
+            ),
+            (
+                "default origin downloads",
+                "[browser_use.default_origin_policy]\ndownloads = \"deny\"",
+            ),
+            (
+                "default origin uploads",
+                "[browser_use.default_origin_policy]\nuploads = \"deny\"",
+            ),
+            (
+                "default origin full CDP access",
+                "[browser_use.default_origin_policy]\nfull_cdp_access = \"deny\"",
+            ),
+            (
+                "default origin auto-review",
+                "[browser_use.default_origin_policy]\nauto_review = \"deny\"",
+            ),
+            (
+                "default origin persistent approval",
+                "[browser_use.default_origin_policy]\npersistent_approval = false",
+            ),
+            (
+                "default origin access approval lifetime",
+                "[browser_use.default_origin_policy]\naccess_approval_lifetime = \"turn\"",
+            ),
+            (
+                "origin access",
+                "[browser_use.origins.\"https://example.com\"]\naccess = \"deny\"",
+            ),
+            (
+                "origin downloads",
+                "[browser_use.origins.\"https://example.com\"]\ndownloads = \"deny\"",
+            ),
+            (
+                "origin uploads",
+                "[browser_use.origins.\"https://example.com\"]\nuploads = \"deny\"",
+            ),
+            (
+                "origin full CDP access",
+                "[browser_use.origins.\"https://example.com\"]\nfull_cdp_access = \"deny\"",
+            ),
+            (
+                "origin auto-review",
+                "[browser_use.origins.\"https://example.com\"]\nauto_review = \"deny\"",
+            ),
+            (
+                "origin persistent approval",
+                "[browser_use.origins.\"https://example.com\"]\npersistent_approval = false",
+            ),
+            (
+                "origin access approval lifetime",
+                "[browser_use.origins.\"https://example.com\"]\naccess_approval_lifetime = \"turn\"",
+            ),
+            (
+                "computer persistent approval",
+                "[computer_use]\nallow_persistent_approval = false",
+            ),
+            (
+                "default app access",
+                "[computer_use]\ndefault_app_access = \"deny\"",
+            ),
+            (
+                "macOS bundle identifier",
+                "[computer_use.macos.bundle_ids]\n\"com.example.App\" = \"deny\"",
+            ),
+            (
+                "Windows AUMID",
+                "[computer_use.windows.aumids]\n\"Example.App_123!Main\" = \"deny\"",
+            ),
+            (
+                "Windows executable",
+                "[[computer_use.windows.exes]]\npublisher_name = \"CN=Example Corp\"\nproduct_name = \"Example App\"\naccess = \"deny\"",
+            ),
+        ] {
+            let requirements: ConfigRequirementsToml = from_str(requirements_toml)?;
+            assert!(!requirements.is_empty(), "{name} requirement was dropped");
+        }
+
         Ok(())
     }
 
@@ -1908,6 +2743,34 @@ mod tests {
     }
 
     #[test]
+    fn auto_review_required_for_model_matches_exact_provider_aliases() {
+        let requirements = ConfigRequirements {
+            auto_review_required_models: Some(Sourced::new(
+                BTreeSet::from(["protected-model".to_string()]),
+                RequirementSource::Unknown,
+            )),
+            ..Default::default()
+        };
+
+        for (model, protected) in [
+            ("protected-model", true),
+            ("protected-model-preview", false),
+            ("openai-codex/protected-model-preview", false),
+            ("provider_1/protected-model", true),
+            ("protected-modelish", false),
+            ("/protected-model", false),
+            ("bad.provider/protected-model", false),
+            ("provider/nested/protected-model", false),
+        ] {
+            assert_eq!(
+                requirements.auto_review_required_for_model(model),
+                protected,
+                "{model}"
+            );
+        }
+    }
+
+    #[test]
     fn merge_unset_fields_copies_every_field_and_sets_sources() {
         let mut target = ConfigRequirementsWithSources::default();
         let source = RequirementSource::LegacyManagedConfigTomlFromMdm;
@@ -1926,8 +2789,24 @@ mod tests {
         let feature_requirements = FeatureRequirementsToml {
             entries: BTreeMap::from([("personality".to_string(), true)]),
         };
+        let browser_use = BrowserUseRequirementsToml {
+            allow_webmcp: None,
+            allow_history_access: Some(false),
+            disable_auto_review: Some(true),
+            allow_global_persistent_approval: None,
+            default_origin_policy: None,
+            origins: None,
+        };
         let computer_use = ComputerUseRequirementsToml {
             allow_locked_computer_use: Some(false),
+            allow_persistent_approval: Some(false),
+            default_app_access: None,
+            macos: None,
+            windows: None,
+        };
+        let auto_review = AutoReviewRequirementsToml {
+            required_on_models: Some(vec!["managed-model".to_string()]),
+            ignore_rules: None,
         };
         let models = ModelsRequirementsToml {
             new_thread: Some(NewThreadModelDefaultsToml {
@@ -1936,13 +2815,40 @@ mod tests {
                 service_tier: Some("fast".to_string()),
             }),
         };
+        let sqlite_home = AbsolutePathBuf::try_from(std::env::temp_dir().join("managed-state"))
+            .expect("managed sqlite home should be absolute");
+        let log_dir = AbsolutePathBuf::try_from(std::env::temp_dir().join("managed-logs"))
+            .expect("managed log dir should be absolute");
+        let model_catalog_json =
+            AbsolutePathBuf::try_from(std::env::temp_dir().join("managed-models.json"))
+                .expect("managed model catalog path should be absolute");
+        let feedback = FeedbackConfigToml {
+            enabled: Some(false),
+        };
+        let windows = WindowsRequirementsToml {
+            allowed_sandbox_implementations: Some(vec![WindowsSandboxImplementationToml::Elevated]),
+        };
         let enforce_residency = ResidencyRequirement::Us;
         let enforce_source = source.clone();
+        let additional_developer_instructions = "Follow the company policy.".to_string();
         let guardian_policy_config = "Use the company-managed guardian policy.".to_string();
+        let guardian_extra_policy = "Use the company-managed extra policy.".to_string();
 
         // Intentionally constructed without `..Default::default()` so adding a new field to
         // `ConfigRequirementsToml` forces this test to be updated.
         let other = ConfigRequirementsToml {
+            allowed_login_methods: Some(vec![ForcedLoginMethod::Chatgpt]),
+            allowed_chatgpt_workspaces: Some(vec!["managed-workspace".to_string()]),
+            cli_auth_credentials_store: Some(AuthCredentialsStoreMode::Keyring),
+            chatgpt_base_url: Some("https://managed.example/backend-api/".to_string()),
+            sqlite_home: Some(sqlite_home.clone()),
+            log_dir: Some(log_dir.clone()),
+            model_catalog_json: Some(model_catalog_json.clone()),
+            model_provider: Some("gateway".to_string()),
+            model_providers: Some(HashMap::new()),
+            check_for_update_on_startup: Some(false),
+            allow_login_shell: Some(false),
+            feedback: Some(feedback.clone()),
             allowed_approval_policies: Some(allowed_approval_policies.clone()),
             allowed_approvals_reviewers: Some(allowed_approvals_reviewers.clone()),
             allowed_sandbox_modes: Some(allowed_sandbox_modes.clone()),
@@ -1951,10 +2857,13 @@ mod tests {
             remote_sandbox_config: None,
             allowed_web_search_modes: Some(allowed_web_search_modes.clone()),
             allow_managed_hooks_only: Some(true),
+            allow_browser_and_computer_use: Some(false),
             allow_appshots: Some(false),
             allow_remote_control: Some(false),
             computer_use: Some(computer_use.clone()),
-            windows: None,
+            browser_use: Some(browser_use.clone()),
+            in_app_browser: None,
+            windows: Some(windows.clone()),
             feature_requirements: Some(feature_requirements.clone()),
             hooks: None,
             mcp_servers: None,
@@ -1964,9 +2873,13 @@ mod tests {
             rules: None,
             enforce_residency: Some(enforce_residency),
             network: None,
+            application: None,
             permissions: None,
+            auto_review: Some(auto_review.clone()),
             models: Some(models.clone()),
+            additional_developer_instructions: Some(additional_developer_instructions.clone()),
             guardian_policy_config: Some(guardian_policy_config.clone()),
+            guardian_extra_policy: Some(guardian_extra_policy.clone()),
         };
 
         target.merge_unset_fields(source.clone(), other);
@@ -1974,6 +2887,33 @@ mod tests {
         assert_eq!(
             target,
             ConfigRequirementsWithSources {
+                allowed_login_methods: Some(Sourced::new(
+                    vec![ForcedLoginMethod::Chatgpt],
+                    source.clone(),
+                )),
+                allowed_chatgpt_workspaces: Some(Sourced::new(
+                    vec!["managed-workspace".to_string()],
+                    source.clone(),
+                )),
+                cli_auth_credentials_store: Some(Sourced::new(
+                    AuthCredentialsStoreMode::Keyring,
+                    source.clone(),
+                )),
+                chatgpt_base_url: Some(Sourced::new(
+                    "https://managed.example/backend-api/".to_string(),
+                    source.clone(),
+                )),
+                sqlite_home: Some(Sourced::new(sqlite_home, source.clone())),
+                log_dir: Some(Sourced::new(log_dir, source.clone())),
+                model_catalog_json: Some(Sourced::new(model_catalog_json, source.clone())),
+                model_provider: Some(Sourced::new("gateway".to_string(), source.clone())),
+                model_providers: Some(Sourced::new(HashMap::new(), source.clone())),
+                check_for_update_on_startup: Some(Sourced::new(
+                    /*value*/ false,
+                    source.clone(),
+                )),
+                allow_login_shell: Some(Sourced::new(/*value*/ false, source.clone())),
+                feedback: Some(Sourced::new(feedback, source.clone())),
                 allowed_approval_policies: Some(Sourced::new(
                     allowed_approval_policies,
                     source.clone()
@@ -1996,13 +2936,19 @@ mod tests {
                     /*value*/ true,
                     enforce_source.clone(),
                 )),
+                allow_browser_and_computer_use: Some(Sourced::new(
+                    /*value*/ false,
+                    enforce_source.clone(),
+                )),
                 allow_appshots: Some(Sourced::new(/*value*/ false, enforce_source.clone(),)),
                 allow_remote_control: Some(Sourced::new(
                     /*value*/ false,
                     enforce_source.clone(),
                 )),
                 computer_use: Some(Sourced::new(computer_use, enforce_source.clone())),
-                windows: None,
+                browser_use: Some(Sourced::new(browser_use, enforce_source.clone())),
+                in_app_browser: None,
+                windows: Some(Sourced::new(windows, enforce_source.clone())),
                 feature_requirements: Some(Sourced::new(
                     feature_requirements,
                     enforce_source.clone(),
@@ -2015,9 +2961,16 @@ mod tests {
                 rules: None,
                 enforce_residency: Some(Sourced::new(enforce_residency, enforce_source)),
                 network: None,
+                application: None,
                 permissions: None,
+                auto_review: Some(Sourced::new(auto_review, source.clone())),
                 models: Some(Sourced::new(models, source.clone())),
-                guardian_policy_config: Some(Sourced::new(guardian_policy_config, source)),
+                additional_developer_instructions: Some(Sourced::new(
+                    additional_developer_instructions,
+                    source.clone(),
+                )),
+                guardian_policy_config: Some(Sourced::new(guardian_policy_config, source.clone())),
+                guardian_extra_policy: Some(Sourced::new(guardian_extra_policy, source)),
             }
         );
     }
@@ -2053,6 +3006,8 @@ mod tests {
                 allow_appshots: None,
                 allow_remote_control: None,
                 computer_use: None,
+                browser_use: None,
+                in_app_browser: None,
                 windows: None,
                 feature_requirements: None,
                 hooks: None,
@@ -2063,9 +3018,11 @@ mod tests {
                 rules: None,
                 enforce_residency: None,
                 network: None,
+                application: None,
                 permissions: None,
                 models: None,
                 guardian_policy_config: None,
+                ..Default::default()
             }
         );
         Ok(())
@@ -2078,6 +3035,7 @@ mod tests {
         let populated_requirements: ConfigRequirementsToml = from_str(
             r#"
                 allowed_approval_policies = ["never"]
+                guardian_extra_policy = "Use the managed extra policy."
             "#,
         )?;
         populated_target.merge_unset_fields(existing_source.clone(), populated_requirements);
@@ -2085,6 +3043,7 @@ mod tests {
         let source: ConfigRequirementsToml = from_str(
             r#"
                 allowed_approval_policies = ["on-request"]
+                guardian_extra_policy = "Use the lower-priority extra policy."
             "#,
         )?;
         let source_location = RequirementSource::MdmManagedPreferences {
@@ -2098,7 +3057,7 @@ mod tests {
             ConfigRequirementsWithSources {
                 allowed_approval_policies: Some(Sourced::new(
                     vec![AskForApproval::Never],
-                    existing_source,
+                    existing_source.clone(),
                 )),
                 allowed_approvals_reviewers: None,
                 allowed_sandbox_modes: None,
@@ -2109,6 +3068,8 @@ mod tests {
                 allow_appshots: None,
                 allow_remote_control: None,
                 computer_use: None,
+                browser_use: None,
+                in_app_browser: None,
                 windows: None,
                 feature_requirements: None,
                 hooks: None,
@@ -2119,9 +3080,15 @@ mod tests {
                 rules: None,
                 enforce_residency: None,
                 network: None,
+                application: None,
                 permissions: None,
                 models: None,
                 guardian_policy_config: None,
+                guardian_extra_policy: Some(Sourced::new(
+                    "Use the managed extra policy.".to_string(),
+                    existing_source,
+                )),
+                ..Default::default()
             }
         );
         Ok(())
@@ -2134,29 +3101,35 @@ mod tests {
             RequirementSource::LegacyManagedConfigTomlFromMdm,
             ConfigRequirementsToml {
                 guardian_policy_config: Some("   \n\t".to_string()),
+                guardian_extra_policy: Some("   \n\t".to_string()),
                 ..Default::default()
             },
         );
+        let source = RequirementSource::SystemRequirementsToml {
+            file: system_requirements_toml_file_for_test().expect("system requirements.toml path"),
+        };
         target.merge_unset_fields(
-            RequirementSource::SystemRequirementsToml {
-                file: system_requirements_toml_file_for_test()
-                    .expect("system requirements.toml path"),
-            },
+            source.clone(),
             ConfigRequirementsToml {
                 guardian_policy_config: Some("Use the system guardian policy.".to_string()),
+                guardian_extra_policy: Some("Use the system extra policy.".to_string()),
                 ..Default::default()
             },
         );
 
         assert_eq!(
-            target.guardian_policy_config,
-            Some(Sourced::new(
-                "Use the system guardian policy.".to_string(),
-                RequirementSource::SystemRequirementsToml {
-                    file: system_requirements_toml_file_for_test()
-                        .expect("system requirements.toml path"),
-                },
-            )),
+            target,
+            ConfigRequirementsWithSources {
+                guardian_policy_config: Some(Sourced::new(
+                    "Use the system guardian policy.".to_string(),
+                    source.clone(),
+                )),
+                guardian_extra_policy: Some(Sourced::new(
+                    "Use the system extra policy.".to_string(),
+                    source,
+                )),
+                ..Default::default()
+            },
         );
     }
 
@@ -2167,27 +3140,36 @@ mod tests {
 guardian_policy_config = """
 Use the cloud-managed guardian policy.
 """
+guardian_extra_policy = """
+Use the cloud-managed extra policy.
+"""
 "#,
         )?;
 
         assert_eq!(
-            requirements.guardian_policy_config.as_deref(),
-            Some("Use the cloud-managed guardian policy.\n")
+            requirements,
+            ConfigRequirementsToml {
+                guardian_policy_config: Some(
+                    "Use the cloud-managed guardian policy.\n".to_string()
+                ),
+                guardian_extra_policy: Some("Use the cloud-managed extra policy.\n".to_string()),
+                ..Default::default()
+            }
         );
         Ok(())
     }
 
     #[test]
     fn blank_guardian_policy_config_is_empty() -> Result<()> {
-        let requirements: ConfigRequirementsToml = from_str(
-            r#"
-guardian_policy_config = """
+        for key in ["guardian_policy_config", "guardian_extra_policy"] {
+            let requirements: ConfigRequirementsToml =
+                from_str(&format!("{key} = \"\"\"\n\n\"\"\"\n"))?;
+            assert!(requirements.is_empty(), "{key}");
 
-"""
-"#,
-        )?;
-
-        assert!(requirements.is_empty());
+            let requirements: ConfigRequirementsToml =
+                from_str(&format!("{key} = \"Use the managed policy.\"\n"))?;
+            assert!(!requirements.is_empty(), "{key}");
+        }
         Ok(())
     }
 
@@ -2311,6 +3293,7 @@ allowed_approvals_reviewers = ["user"]
                                 "calendar/list_events".to_string(),
                                 AppToolRequirementToml {
                                     approval_mode: Some(AppToolApproval::Approve),
+                                    analytics_result_source: None,
                                 },
                             )]),
                         }),
@@ -2318,6 +3301,56 @@ allowed_approvals_reviewers = ["user"]
                 )]),
             })
         );
+        Ok(())
+    }
+
+    #[test]
+    fn app_tool_result_source_requirements_parse_and_merge() -> Result<()> {
+        let rule = r#"
+            [apps.connector_123123.tools."messages/search"]
+            analytics_result_source = { format = "detailed_message_search_v1", type = "message_room" }
+            "#;
+        let requirements: ConfigRequirementsToml = from_str(rule)?;
+        assert!(!requirements.is_empty());
+        let source = requirements.apps.expect("apps should be present");
+
+        for higher_rule in [
+            None,
+            Some(("unsupported", "other_resource")),
+            Some(("detailed_message_search_v1", "other_resource")),
+        ] {
+            let mut merged = source.clone();
+            merged
+                .apps
+                .get_mut("connector_123123")
+                .expect("app should be present")
+                .tools
+                .as_mut()
+                .expect("tools should be present")
+                .tools
+                .get_mut("messages/search")
+                .expect("tool should be present")
+                .analytics_result_source = higher_rule.map(|(format, source_type)| {
+                from_str(&format!("format = {format:?}\ntype = {source_type:?}"))
+                    .expect("complete source rule should parse, including unknown formats")
+            });
+            let expected = if higher_rule.is_none() {
+                source.clone()
+            } else {
+                merged.clone()
+            };
+
+            merge_app_requirements_descending(&mut merged, source.clone());
+
+            assert_eq!(merged, expected);
+        }
+
+        for incomplete_rule in [
+            r#"format = "detailed_message_search_v1""#,
+            r#"type = "message_room""#,
+        ] {
+            assert!(from_str::<AppToolResultSourceRequirementToml>(incomplete_rule).is_err());
+        }
         Ok(())
     }
 
@@ -2353,6 +3386,7 @@ allowed_approvals_reviewers = ["user"]
                             tool_name.to_string(),
                             AppToolRequirementToml {
                                 approval_mode: Some(approval_mode),
+                                analytics_result_source: None,
                             },
                         )]),
                     }),
@@ -2679,21 +3713,15 @@ allowed_approvals_reviewers = ["user"]
     #[test]
     fn deserialize_allowed_approval_policies() -> Result<()> {
         let toml_str = r#"
-            allowed_approval_policies = ["untrusted", "on-request"]
+            allowed_approval_policies = ["on-request", "never"]
         "#;
         let config: ConfigRequirementsToml = from_str(toml_str)?;
         let requirements: ConfigRequirements = with_unknown_source(config).try_into()?;
 
         assert_eq!(
             requirements.approval_policy.value(),
-            AskForApproval::UnlessTrusted,
+            AskForApproval::OnRequest,
             "currently, there is no way to specify the default value for approval policy in the toml, so it picks the first allowed value"
-        );
-        assert!(
-            requirements
-                .approval_policy
-                .can_set(&AskForApproval::UnlessTrusted)
-                .is_ok()
         );
         assert!(
             requirements
@@ -2702,11 +3730,13 @@ allowed_approvals_reviewers = ["user"]
                 .is_ok()
         );
         assert_eq!(
-            requirements.approval_policy.can_set(&AskForApproval::Never),
+            requirements
+                .approval_policy
+                .can_set(&AskForApproval::UnlessTrusted),
             Err(ConstraintError::InvalidValue {
                 field_name: "approval_policy",
-                candidate: "Never".into(),
-                allowed: "[UnlessTrusted, OnRequest]".into(),
+                candidate: "UnlessTrusted".into(),
+                allowed: "[OnRequest, Never]".into(),
                 requirement_source: RequirementSource::Unknown,
             })
         );
@@ -2773,6 +3803,12 @@ allowed_approvals_reviewers = ["user"]
                 .windows_sandbox_mode
                 .can_set(&Some(WindowsSandboxModeToml::Unelevated))
                 .is_err()
+        );
+        assert!(
+            requirements
+                .windows_sandbox_mode
+                .can_set(&Some(WindowsSandboxModeToml::Mxc))
+                .is_ok()
         );
         assert!(requirements.windows_sandbox_mode.can_set(&None).is_err());
 
@@ -3354,6 +4390,14 @@ command = "python3 /enterprise/hooks/pre.py"
             [experimental_network.unix_sockets]
             "/tmp/example.sock" = "allow"
             "/tmp/blocked.sock" = "deny"
+
+            [[experimental_network.header_injections]]
+            host = "api.example.com"
+            methods = ["POST"]
+            path_prefixes = ["/console/v1"]
+
+            [experimental_network.header_injections.headers]
+            "x-statsig-change-source" = "codex"
         "#;
 
         let source = RequirementSource::LegacyManagedConfigTomlFromMdm;
@@ -3411,6 +4455,21 @@ command = "python3 /enterprise/hooks/pre.py"
             })
         );
         assert_eq!(sourced_network.value.allow_local_binding, Some(false));
+        assert_eq!(
+            sourced_network.value.header_injections,
+            Some(vec![NetworkHeaderInjectionToml {
+                host: "api.example.com".to_string(),
+                methods: vec!["POST".to_string()],
+                path_prefixes: vec!["/console/v1".to_string()],
+                headers: BTreeMap::from([(
+                    "x-statsig-change-source".to_string(),
+                    "codex".to_string(),
+                )]),
+            }])
+        );
+        let debug = format!("{:?}", sourced_network.value.header_injections);
+        assert!(debug.contains("x-statsig-change-source"));
+        assert!(!debug.contains("codex"));
 
         Ok(())
     }

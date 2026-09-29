@@ -1,8 +1,7 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use std::collections::HashSet;
 
-use codex_core_skills::injection::extract_tool_mentions;
 use codex_protocol::user_input::UserInput;
+use codex_skills::extract_tool_mentions;
 
 use crate::catalog::SkillAuthority;
 use crate::catalog::SkillCatalog;
@@ -37,7 +36,11 @@ pub(crate) fn collect_explicit_skill_mentions(
                 blocked_plain_names.insert(name.clone());
                 select_by_path(catalog, path, &mut seen, &mut selected);
             }
-            UserInput::Text { .. } | UserInput::Image { .. } | UserInput::LocalImage { .. } => {}
+            UserInput::Text { .. }
+            | UserInput::Image { .. }
+            | UserInput::LocalImage { .. }
+            | UserInput::Audio { .. }
+            | UserInput::LocalAudio { .. } => {}
             UserInput::Mention { .. } => {}
             _ => {}
         }

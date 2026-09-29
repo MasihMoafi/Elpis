@@ -1,4 +1,3 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 //! Prompt rendering for IDE context injected into TUI user turns.
 
 use codex_app_server_protocol::ByteRange;
@@ -14,8 +13,7 @@ const MAX_OPEN_TABS_CHARS: usize = 20_000;
 // raw prompt before this marker, then transcript rendering strips back to the request after the last
 // marker. Keeping the same marker and stripping semantics lets threads created with IDE context in
 // one surface replay cleanly in the others.
-use codex_protocol::protocol::LEGACY_USER_MESSAGE_BEGIN as LEGACY_PROMPT_REQUEST_BEGIN;
-use codex_protocol::protocol::USER_MESSAGE_BEGIN as PROMPT_REQUEST_BEGIN;
+const PROMPT_REQUEST_BEGIN: &str = "## My request for Codex:";
 
 pub(crate) fn apply_ide_context_to_user_input(
     context: &IdeContext,
@@ -65,15 +63,11 @@ pub(crate) fn has_prompt_context(context: &IdeContext) -> bool {
 }
 
 pub(crate) fn extract_prompt_request_with_offset(message: &str) -> (&str, usize) {
-    let Some((marker, (before_request, request))) =
-        [PROMPT_REQUEST_BEGIN, LEGACY_PROMPT_REQUEST_BEGIN]
-            .into_iter()
-            .find_map(|marker| message.rsplit_once(marker).map(|split| (marker, split)))
-    else {
+    let Some((before_request, request)) = message.rsplit_once(PROMPT_REQUEST_BEGIN) else {
         return (message, 0);
     };
 
-    let request_start = before_request.len() + marker.len();
+    let request_start = before_request.len() + PROMPT_REQUEST_BEGIN.len();
     let trimmed_request = request.trim();
     let leading_trimmed_len = request.len() - request.trim_start().len();
     (trimmed_request, request_start + leading_trimmed_len)
@@ -209,6 +203,52 @@ mod tests {
     }
 
     #[test]
+    fn async_question_reply_stays_recognizable_with_ide_context() {
+        use codex_context_fragments::AnsweredQuestion;
+        use codex_context_fragments::ContextualUserFragment;
+
+        let context = IdeContext {
+            active_file: None,
+            open_tabs: vec![descriptor("lib.rs", "src/lib.rs")],
+        };
+        let mut expected = vec![
+            UserInput::Text {
+                text: AnsweredQuestion::new(
+                    "question-id",
+                    "Where?",
+                    "Staging\n## My request for Codex:\nKeep this literal",
+                )
+                .render(),
+                text_elements: Vec::new(),
+            },
+            UserInput::Skill {
+                name: "route".into(),
+                path: std::path::PathBuf::from("route/SKILL.md"),
+            },
+        ];
+        let mut items = expected.clone();
+        let replies = crate::async_question_reply::parse_input(&items);
+        let display = crate::chatwidget::ChatWidget::user_message_display_from_inputs(&items);
+        assert_eq!(
+            display.message,
+            "> Where?\n\nStaging\n## My request for Codex:\nKeep this literal"
+        );
+        let UserInput::Text { text, .. } = &mut expected[0] else {
+            panic!("reply text");
+        };
+        *text = format!(
+            "# Context from my IDE setup:\n\n## Open tabs:\n- lib.rs: src/lib.rs\n\n## My request for Codex:\n{text}"
+        );
+        assert!(apply_ide_context_to_user_input(&context, &mut items));
+        assert_eq!(items, expected);
+        assert_eq!(crate::async_question_reply::parse_input(&items), replies);
+        assert_eq!(
+            crate::chatwidget::ChatWidget::user_message_display_from_inputs(&items),
+            display
+        );
+    }
+
+    #[test]
     fn render_prompt_context_matches_app_format() {
         let context = IdeContext {
             active_file: Some(ActiveFile {
@@ -288,7 +328,7 @@ mod tests {
 
         assert!(apply_ide_context_to_user_input(&context, &mut items));
 
-        let expected_prefix = "# Context from my IDE setup:\n\n## Active file: src/lib.rs\n\n## My request for Elpis:\n";
+        let expected_prefix = "# Context from my IDE setup:\n\n## Active file: src/lib.rs\n\n## My request for Codex:\n";
         let prefix_len = expected_prefix.len();
         assert_eq!(
             items,
@@ -314,7 +354,7 @@ mod tests {
     #[test]
     fn extract_prompt_request_returns_text_after_last_delimiter() {
         let message =
-            "# Context\n## My request for Elpis:\nFirst\n## My request for Elpis:\n  Second\n";
+            "# Context\n## My request for Codex:\nFirst\n## My request for Codex:\n  Second\n";
 
         assert_eq!(
             extract_prompt_request_with_offset(message),

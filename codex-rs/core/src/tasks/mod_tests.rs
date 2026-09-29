@@ -1,24 +1,26 @@
+use super::SessionTask;
+use super::SessionTaskResult;
 use super::TASK_COMPACT_METRIC;
-use super::TaskAbortRequest;
-use super::TaskCancellationBoundary;
-use super::TaskCompletion;
-use super::TaskCompletionOutcome;
 use super::emit_compact_metric;
+use super::emit_turn_memory_metric;
 use super::emit_turn_network_proxy_metric;
+use crate::session::TurnInput;
+use crate::session::session::Session;
+use crate::session::tests::make_session_and_context_with_rx;
+use crate::session::turn_context::TurnContext;
+use crate::state::TaskKind;
 use codex_otel::MetricsClient;
 use codex_otel::MetricsConfig;
 use codex_otel::SessionTelemetry;
+use codex_otel::TURN_MEMORY_METRIC;
 use codex_otel::TURN_NETWORK_PROXY_METRIC;
+use codex_otel::TURN_TOKEN_USAGE_METRIC;
+use codex_otel::TURN_TOOL_CALL_METRIC;
+use codex_otel::TURN_UNIFIED_EXEC_RUNNING_PROCESSES_METRIC;
 use codex_protocol::ThreadId;
-use codex_protocol::TurnProfileSummary;
-use codex_protocol::protocol::ErrorEvent;
-use codex_protocol::protocol::Event;
-use codex_protocol::protocol::EventMsg;
+use codex_protocol::error::CodexErr;
 use codex_protocol::protocol::SessionSource;
-use codex_protocol::protocol::TurnAbortedEvent;
-use codex_protocol::protocol::TurnCompleteEvent;
-use codex_protocol::protocol::TurnProfileEvent;
-use codex_protocol::protocol::TurnProfileOutcome;
+use codex_protocol::protocol::TokenUsage;
 use opentelemetry::KeyValue;
 use opentelemetry_sdk::metrics::InMemoryMetricExporter;
 use opentelemetry_sdk::metrics::data::AggregatedMetrics;
@@ -28,224 +30,28 @@ use opentelemetry_sdk::metrics::data::ResourceMetrics;
 use pretty_assertions::assert_eq;
 use std::collections::BTreeMap;
 use std::sync::Arc;
+use tokio_util::sync::CancellationToken;
 
-use crate::turn_timing::TurnProfile;
+struct PendingTask;
 
-fn deterministic_profile() -> TurnProfile {
-    TurnProfile {
-        before_first_sampling_ms: 11,
-        sampling_ms: 22,
-        compaction_ms: 33,
-        between_sampling_overhead_ms: 44,
-        tool_blocking_ms: 55,
-        after_last_sampling_ms: 66,
-        sampling_request_count: 7,
-        sampling_retry_count: 8,
+impl SessionTask for PendingTask {
+    fn kind(&self) -> TaskKind {
+        TaskKind::Regular
     }
-}
 
-fn assert_exact_profile(profile: &TurnProfileSummary) {
-    assert_eq!(profile.before_first_sampling_ms, 11);
-    assert_eq!(profile.sampling_ms, 22);
-    assert_eq!(profile.compaction_ms, 33);
-    assert_eq!(profile.between_sampling_overhead_ms, 44);
-    assert_eq!(profile.tool_blocking_ms, 55);
-    assert_eq!(profile.after_last_sampling_ms, 66);
-    assert_eq!(profile.sampling_request_count, 7);
-    assert_eq!(profile.sampling_retry_count, 8);
-}
+    fn span_name(&self) -> &'static str {
+        "session_task.pending"
+    }
 
-async fn delivered_terminal_events(
-    terminal_event: impl FnOnce(&str) -> EventMsg,
-    profile: Option<TurnProfile>,
-) -> [Event; 2] {
-    let (session, turn_context, rx) =
-        crate::session::tests::make_session_and_context_with_rx().await;
-    let terminal_event = terminal_event(&turn_context.sub_id);
-    let profile_event =
-        super::build_turn_profile_event(turn_context.sub_id.clone(), &terminal_event, profile);
-
-    super::emit_terminal_event_sequence(
-        session.as_ref(),
-        turn_context.as_ref(),
-        profile_event,
-        terminal_event,
-    )
-    .await;
-
-    let first = rx.recv().await.expect("transient profile event");
-    let second = rx.recv().await.expect("durable terminal event");
-    assert!(rx.try_recv().is_err(), "expected exactly two events");
-    [first, second]
-}
-
-#[tokio::test]
-async fn normal_completion_is_delivered_after_transient_profile() {
-    let [profile_event, terminal_event] = delivered_terminal_events(
-        |turn_id| {
-            EventMsg::TurnComplete(TurnCompleteEvent {
-                turn_id: turn_id.to_string(),
-                last_agent_message: Some("unchanged".to_string()),
-                error: None,
-                started_at: Some(100),
-                completed_at: Some(200),
-                duration_ms: Some(231),
-                time_to_first_token_ms: Some(12),
-            })
-        },
-        Some(deterministic_profile()),
-    )
-    .await;
-
-    let profile_event_id = profile_event.id.clone();
-    let terminal_event_id = terminal_event.id.clone();
-    assert_eq!(profile_event_id, terminal_event_id);
-    let EventMsg::TurnProfile(TurnProfileEvent {
-        turn_id,
-        outcome,
-        started_at,
-        duration_ms,
-        time_to_first_token_ms,
-        profile,
-    }) = profile_event.msg
-    else {
-        panic!("profile event should precede terminal event");
-    };
-    assert_eq!(turn_id, profile_event_id);
-    assert_eq!(outcome, TurnProfileOutcome::Completed);
-    assert_eq!(started_at, Some(100));
-    assert_eq!(duration_ms, Some(231));
-    assert_eq!(time_to_first_token_ms, Some(12));
-    assert_exact_profile(profile.as_ref().expect("completed profile"));
-    assert!(matches!(
-        terminal_event.msg,
-        EventMsg::TurnComplete(TurnCompleteEvent {
-            turn_id,
-            last_agent_message: Some(message),
-            error: None,
-            started_at: Some(100),
-            completed_at: Some(200),
-            duration_ms: Some(231),
-            time_to_first_token_ms: Some(12),
-        }) if turn_id == terminal_event_id && message == "unchanged"
-    ));
-}
-
-#[tokio::test]
-async fn failed_completion_derives_activity_outcome_from_terminal_error() {
-    let [profile_event, terminal_event] = delivered_terminal_events(
-        |turn_id| {
-            EventMsg::TurnComplete(TurnCompleteEvent {
-                turn_id: turn_id.to_string(),
-                last_agent_message: None,
-                error: Some(ErrorEvent {
-                    message: "terminal failure".to_string(),
-                    codex_error_info: None,
-                }),
-                started_at: Some(210),
-                completed_at: Some(420),
-                duration_ms: Some(210),
-                time_to_first_token_ms: Some(21),
-            })
-        },
-        Some(deterministic_profile()),
-    )
-    .await;
-
-    assert!(matches!(
-        profile_event.msg,
-        EventMsg::TurnProfile(TurnProfileEvent {
-            outcome: TurnProfileOutcome::Failed,
-            started_at: Some(210),
-            duration_ms: Some(210),
-            time_to_first_token_ms: Some(21),
-            ..
-        })
-    ));
-    assert!(matches!(
-        terminal_event.msg,
-        EventMsg::TurnComplete(TurnCompleteEvent {
-            error: Some(ErrorEvent { message, .. }),
-            started_at: Some(210),
-            completed_at: Some(420),
-            duration_ms: Some(210),
-            time_to_first_token_ms: Some(21),
-            ..
-        }) if message == "terminal failure"
-    ));
-}
-
-#[tokio::test]
-async fn abort_is_delivered_after_transient_profile_without_ttft() {
-    let [profile_event, terminal_event] = delivered_terminal_events(
-        |turn_id| {
-            EventMsg::TurnAborted(TurnAbortedEvent {
-                turn_id: Some(turn_id.to_string()),
-                reason: codex_protocol::protocol::TurnAbortReason::Interrupted,
-                started_at: Some(300),
-                completed_at: Some(400),
-                duration_ms: Some(231),
-            })
-        },
-        Some(deterministic_profile()),
-    )
-    .await;
-
-    let profile_event_id = profile_event.id.clone();
-    let terminal_event_id = terminal_event.id.clone();
-    assert_eq!(profile_event_id, terminal_event_id);
-    let EventMsg::TurnProfile(TurnProfileEvent {
-        outcome,
-        time_to_first_token_ms,
-        profile,
-        ..
-    }) = profile_event.msg
-    else {
-        panic!("profile event should precede terminal event");
-    };
-    assert_eq!(outcome, TurnProfileOutcome::Interrupted);
-    assert_eq!(time_to_first_token_ms, None);
-    assert_exact_profile(profile.as_ref().expect("completed profile"));
-    assert!(matches!(
-        terminal_event.msg,
-        EventMsg::TurnAborted(TurnAbortedEvent {
-            turn_id: Some(turn_id),
-            reason: codex_protocol::protocol::TurnAbortReason::Interrupted,
-            started_at: Some(300),
-            completed_at: Some(400),
-            duration_ms: Some(231),
-        }) if turn_id == terminal_event_id
-    ));
-}
-
-#[tokio::test]
-async fn activity_is_delivered_when_profile_is_unavailable() {
-    let [profile_event, terminal_event] = delivered_terminal_events(
-        |turn_id| {
-            EventMsg::TurnAborted(TurnAbortedEvent {
-                turn_id: Some(turn_id.to_string()),
-                reason: codex_protocol::protocol::TurnAbortReason::Interrupted,
-                started_at: None,
-                completed_at: Some(400),
-                duration_ms: None,
-            })
-        },
-        None,
-    )
-    .await;
-
-    assert!(matches!(
-        profile_event.msg,
-        EventMsg::TurnProfile(TurnProfileEvent {
-            outcome: TurnProfileOutcome::Interrupted,
-            started_at: None,
-            duration_ms: None,
-            time_to_first_token_ms: None,
-            profile: None,
-            ..
-        })
-    ));
-    assert!(matches!(terminal_event.msg, EventMsg::TurnAborted(_)));
+    async fn run(
+        self: Arc<Self>,
+        _session: Arc<Session>,
+        _turn_context: Arc<TurnContext>,
+        _input: Vec<TurnInput>,
+        _cancellation_token: CancellationToken,
+    ) -> SessionTaskResult {
+        std::future::pending().await
+    }
 }
 
 fn test_session_telemetry() -> SessionTelemetry {
@@ -305,11 +111,236 @@ fn metric_point(resource_metrics: &ResourceMetrics, name: &str) -> (BTreeMap<Str
     }
 }
 
+#[derive(Clone, Copy)]
+enum UsageScenario {
+    ResponseOnly,
+    ResponseAfterStepSwitch,
+    CompactThenResponse,
+    CompactThenStop,
+    NoResponse,
+}
+
+#[test_case::test_case(UsageScenario::ResponseOnly; "response_only")]
+#[test_case::test_case(UsageScenario::ResponseAfterStepSwitch; "response_after_step_switch")]
+#[test_case::test_case(UsageScenario::CompactThenResponse; "compact_then_response")]
+#[test_case::test_case(UsageScenario::CompactThenStop; "compact_then_stop")]
+#[test_case::test_case(UsageScenario::NoResponse; "no_response")]
+#[tokio::test]
+async fn turn_completion_metrics_follow_model_switch(scenario: UsageScenario) {
+    let metrics = MetricsClient::new(
+        MetricsConfig::in_memory(
+            "test",
+            "codex-core",
+            env!("CARGO_PKG_VERSION"),
+            InMemoryMetricExporter::default(),
+        )
+        .with_runtime_reader(),
+    )
+    .expect("in-memory metrics client");
+    let (mut session, mut turn_context, _receiver) = make_session_and_context_with_rx().await;
+    let session_telemetry = session
+        .services
+        .session_telemetry
+        .clone()
+        .with_metrics(metrics.clone());
+    Arc::get_mut(&mut session)
+        .expect("session should be uniquely owned")
+        .services
+        .session_telemetry = session_telemetry.clone();
+    Arc::get_mut(&mut turn_context)
+        .expect("turn context should be uniquely owned")
+        .session_telemetry = session_telemetry;
+
+    let next_model = if turn_context.model_info().slug == "gpt-5.4" {
+        "gpt-5.2"
+    } else {
+        "gpt-5.4"
+    };
+    let previous_context = turn_context;
+    let turn_context = Arc::new(
+        previous_context
+            .with_model(next_model.to_string(), &session.services.models_manager)
+            .await,
+    );
+    // Earlier session usage must not leak into this turn's per-model samples.
+    session
+        .update_token_usage_info(
+            &previous_context,
+            Some(&TokenUsage {
+                input_tokens: 1_000,
+                total_tokens: 1_000,
+                ..TokenUsage::default()
+            }),
+        )
+        .await
+        .expect("earlier session usage should be recorded");
+    session
+        .spawn_task(Arc::clone(&turn_context), Vec::new(), PendingTask)
+        .await;
+    let mut expected_usage = Vec::new();
+    if matches!(
+        scenario,
+        UsageScenario::CompactThenResponse | UsageScenario::CompactThenStop
+    ) {
+        let compaction_usage = TokenUsage {
+            input_tokens: 100,
+            cached_input_tokens: 30,
+            cache_write_input_tokens: 20,
+            output_tokens: 70,
+            reasoning_output_tokens: 40,
+            total_tokens: 170,
+            codex_rollout_budget_units: None,
+        };
+        // Local pre-turn compaction records usage with the previous model's context.
+        session
+            .update_token_usage_info(&previous_context, Some(&compaction_usage))
+            .await
+            .expect("compaction usage should be recorded");
+        expected_usage.push((previous_context.model_info().slug.clone(), compaction_usage));
+    }
+    if matches!(
+        scenario,
+        UsageScenario::ResponseOnly
+            | UsageScenario::ResponseAfterStepSwitch
+            | UsageScenario::CompactThenResponse
+    ) {
+        let response_context = if matches!(scenario, UsageScenario::ResponseAfterStepSwitch) {
+            &previous_context
+        } else {
+            &turn_context
+        };
+        let response_usage = TokenUsage {
+            input_tokens: 10,
+            cached_input_tokens: 3,
+            cache_write_input_tokens: 2,
+            output_tokens: 7,
+            reasoning_output_tokens: 4,
+            total_tokens: 17,
+            codex_rollout_budget_units: None,
+        };
+        // Multiple requests for one model must still produce one turn histogram sample.
+        for _ in 0..2 {
+            session
+                .record_token_usage_info(
+                    &turn_context,
+                    &response_context.initial_settings,
+                    Some(&response_usage),
+                )
+                .await
+                .expect("response usage should be recorded");
+        }
+        let mut total_usage = response_usage.clone();
+        total_usage.add_assign(&response_usage);
+        expected_usage.push((response_context.model_info().slug.clone(), total_usage));
+    }
+    if matches!(scenario, UsageScenario::NoResponse) {
+        expected_usage.push((next_model.to_string(), TokenUsage::default()));
+    }
+
+    let task_result = if matches!(scenario, UsageScenario::CompactThenStop) {
+        // A PostCompact hook can stop the turn before the new model samples.
+        Err(CodexErr::TurnAborted)
+    } else {
+        Ok(None)
+    };
+    session.on_task_finished(turn_context, task_result).await;
+
+    let snapshot = metrics.snapshot().expect("runtime metrics snapshot");
+    let token_usage_metric = find_metric(&snapshot, TURN_TOKEN_USAGE_METRIC);
+    let AggregatedMetrics::F64(MetricData::Histogram(histogram)) = token_usage_metric.data() else {
+        panic!("expected token usage histogram");
+    };
+    let mut token_usage_points = histogram
+        .data_points()
+        .map(|point| {
+            let mut attributes = attributes_to_map(point.attributes());
+            (
+                (
+                    attributes
+                        .remove("token_type")
+                        .expect("token usage metric should include a token type"),
+                    attributes
+                        .remove("model")
+                        .expect("token usage metric should include a model"),
+                ),
+                point.count(),
+                point.sum(),
+            )
+        })
+        .collect::<Vec<_>>();
+    let mut expected_points = expected_usage
+        .into_iter()
+        .flat_map(|(model, usage)| {
+            [
+                ("cache_write_input", usage.cache_write_input_tokens),
+                ("cached_input", usage.cached_input()),
+                ("input", usage.input_tokens),
+                ("output", usage.output_tokens),
+                ("reasoning_output", usage.reasoning_output_tokens),
+                ("total", usage.total_tokens),
+            ]
+            .map(|(token_type, value)| ((token_type.to_string(), model.clone()), 1, value as f64))
+        })
+        .collect::<Vec<_>>();
+    token_usage_points.sort_by(|left, right| left.0.cmp(&right.0));
+    expected_points.sort_by(|left, right| left.0.cmp(&right.0));
+    assert_eq!(token_usage_points, expected_points);
+
+    let tool_call_metric = find_metric(&snapshot, TURN_TOOL_CALL_METRIC);
+    let AggregatedMetrics::F64(MetricData::Histogram(histogram)) = tool_call_metric.data() else {
+        panic!("expected tool call histogram");
+    };
+    let tool_call_models = histogram
+        .data_points()
+        .map(|point| {
+            attributes_to_map(point.attributes())
+                .remove("model")
+                .expect("tool call metric should include a model")
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(tool_call_models, vec![next_model.to_string()]);
+
+    let counter_models = [
+        TURN_MEMORY_METRIC,
+        TURN_NETWORK_PROXY_METRIC,
+        TURN_UNIFIED_EXEC_RUNNING_PROCESSES_METRIC,
+    ]
+    .into_iter()
+    .map(|name| {
+        let (mut attributes, _value) = metric_point(&snapshot, name);
+        (
+            name.to_string(),
+            attributes
+                .remove("model")
+                .expect("turn counter should include a model"),
+        )
+    })
+    .collect::<BTreeMap<_, _>>();
+    assert_eq!(
+        counter_models,
+        BTreeMap::from([
+            (TURN_MEMORY_METRIC.to_string(), next_model.to_string()),
+            (
+                TURN_NETWORK_PROXY_METRIC.to_string(),
+                next_model.to_string(),
+            ),
+            (
+                TURN_UNIFIED_EXEC_RUNNING_PROCESSES_METRIC.to_string(),
+                next_model.to_string(),
+            ),
+        ])
+    );
+}
+
 #[test]
 fn emit_turn_network_proxy_metric_records_active_turn() {
     let session_telemetry = test_session_telemetry();
 
-    emit_turn_network_proxy_metric(&session_telemetry, /*network_proxy_active*/ true);
+    emit_turn_network_proxy_metric(
+        &session_telemetry,
+        /*network_proxy_active*/ true,
+        ("tmp_mem_enabled", "true"),
+    );
 
     let snapshot = session_telemetry
         .snapshot_metrics()
@@ -319,7 +350,10 @@ fn emit_turn_network_proxy_metric_records_active_turn() {
     assert_eq!(value, 1);
     assert_eq!(
         attrs,
-        BTreeMap::from([("active".to_string(), "true".to_string()),])
+        BTreeMap::from([
+            ("active".to_string(), "true".to_string()),
+            ("tmp_mem_enabled".to_string(), "true".to_string()),
+        ])
     );
 }
 
@@ -327,7 +361,11 @@ fn emit_turn_network_proxy_metric_records_active_turn() {
 fn emit_turn_network_proxy_metric_records_inactive_turn() {
     let session_telemetry = test_session_telemetry();
 
-    emit_turn_network_proxy_metric(&session_telemetry, /*network_proxy_active*/ false);
+    emit_turn_network_proxy_metric(
+        &session_telemetry,
+        /*network_proxy_active*/ false,
+        ("tmp_mem_enabled", "false"),
+    );
 
     let snapshot = session_telemetry
         .snapshot_metrics()
@@ -337,7 +375,66 @@ fn emit_turn_network_proxy_metric_records_inactive_turn() {
     assert_eq!(value, 1);
     assert_eq!(
         attrs,
-        BTreeMap::from([("active".to_string(), "false".to_string()),])
+        BTreeMap::from([
+            ("active".to_string(), "false".to_string()),
+            ("tmp_mem_enabled".to_string(), "false".to_string()),
+        ])
+    );
+}
+
+#[test]
+fn emit_turn_memory_metric_records_read_allowed_with_citations() {
+    let session_telemetry = test_session_telemetry();
+
+    emit_turn_memory_metric(
+        &session_telemetry,
+        /*feature_enabled*/ true,
+        /*config_enabled*/ true,
+        /*has_citations*/ true,
+    );
+
+    let snapshot = session_telemetry
+        .snapshot_metrics()
+        .expect("runtime metrics snapshot");
+    let (attrs, value) = metric_point(&snapshot, TURN_MEMORY_METRIC);
+
+    assert_eq!(value, 1);
+    assert_eq!(
+        attrs,
+        BTreeMap::from([
+            ("config_use_memories".to_string(), "true".to_string()),
+            ("feature_enabled".to_string(), "true".to_string()),
+            ("has_citations".to_string(), "true".to_string()),
+            ("read_allowed".to_string(), "true".to_string()),
+        ])
+    );
+}
+
+#[test]
+fn emit_turn_memory_metric_records_config_disabled_without_citations() {
+    let session_telemetry = test_session_telemetry();
+
+    emit_turn_memory_metric(
+        &session_telemetry,
+        /*feature_enabled*/ true,
+        /*config_enabled*/ false,
+        /*has_citations*/ false,
+    );
+
+    let snapshot = session_telemetry
+        .snapshot_metrics()
+        .expect("runtime metrics snapshot");
+    let (attrs, value) = metric_point(&snapshot, TURN_MEMORY_METRIC);
+
+    assert_eq!(value, 1);
+    assert_eq!(
+        attrs,
+        BTreeMap::from([
+            ("config_use_memories".to_string(), "false".to_string()),
+            ("feature_enabled".to_string(), "true".to_string()),
+            ("has_citations".to_string(), "false".to_string()),
+            ("read_allowed".to_string(), "false".to_string()),
+        ])
     );
 }
 
@@ -380,73 +477,5 @@ fn emit_compact_metric_records_auto_local() {
             ("manual".to_string(), "false".to_string()),
             ("type".to_string(), "local".to_string()),
         ])
-    );
-}
-
-#[test]
-fn prune_commit_rearms_cancellation_for_the_next_pass() {
-    let boundary = TaskCancellationBoundary::default();
-
-    assert!(boundary.try_commit());
-    assert!(boundary.finish_commit());
-    assert!(boundary.try_cancel());
-}
-
-#[test]
-fn interrupt_during_prune_commit_stops_after_that_commit() {
-    let boundary = TaskCancellationBoundary::default();
-
-    assert!(boundary.try_commit());
-    assert!(!boundary.try_cancel());
-    assert!(!boundary.finish_commit());
-}
-
-#[tokio::test]
-async fn abnormal_task_completion_is_latched_for_late_waiters() {
-    let completion = Arc::new(TaskCompletion::default());
-    let guard = completion.guard();
-
-    drop(guard);
-
-    assert_eq!(completion.request_abort(), TaskAbortRequest::Abnormal);
-    assert_eq!(completion.wait().await, TaskCompletionOutcome::Abnormal);
-}
-
-#[tokio::test]
-async fn requested_task_abort_is_not_misclassified_as_abnormal() {
-    let completion = Arc::new(TaskCompletion::default());
-    let guard = completion.guard();
-
-    assert_eq!(completion.request_abort(), TaskAbortRequest::Requested);
-    drop(guard);
-
-    assert_eq!(
-        completion.wait().await,
-        TaskCompletionOutcome::IntentionalAbort
-    );
-}
-
-#[tokio::test]
-async fn clean_task_completion_wins_a_late_abort_request() {
-    let completion = Arc::new(TaskCompletion::default());
-    let guard = completion.guard();
-
-    guard.finish();
-
-    assert_eq!(completion.request_abort(), TaskAbortRequest::Finished);
-    assert_eq!(completion.wait().await, TaskCompletionOutcome::Normal);
-}
-
-#[tokio::test]
-async fn clean_exit_after_an_abort_request_is_intentional_abort() {
-    let completion = Arc::new(TaskCompletion::default());
-    let guard = completion.guard();
-
-    assert_eq!(completion.request_abort(), TaskAbortRequest::Requested);
-    guard.finish();
-
-    assert_eq!(
-        completion.wait().await,
-        TaskCompletionOutcome::IntentionalAbort
     );
 }

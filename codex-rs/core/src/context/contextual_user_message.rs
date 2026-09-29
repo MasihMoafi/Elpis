@@ -1,70 +1,90 @@
 use codex_protocol::items::HookPromptItem;
 use codex_protocol::items::parse_hook_prompt_fragment;
 use codex_protocol::models::ContentItem;
+use codex_protocol::models::ResponseItem;
 
 use super::AdditionalContextUserFragment;
-use super::FragmentRegistration;
-use super::FragmentRegistrationProxy;
+use super::AgentMessageBoardNotification;
+use super::ContextualUserFragment;
+use super::GuardianRetainedInstructions;
 use super::InternalModelContextFragment;
 use super::LegacyApplyPatchExecCommandWarning;
 use super::LegacyModelMismatchWarning;
 use super::LegacyUnifiedExecProcessLimitWarning;
 use super::RecommendedPluginsInstructions;
-use super::SkillInstructions;
 use super::SubagentNotification;
 use super::TurnAborted;
+use super::UserGoalUpdate;
 use super::UserInstructions;
 use super::UserShellCommand;
 use super::world_state::EnvironmentsState;
 
-static USER_INSTRUCTIONS_REGISTRATION: FragmentRegistrationProxy<UserInstructions> =
-    FragmentRegistrationProxy::new();
-static ENVIRONMENT_CONTEXT_REGISTRATION: FragmentRegistrationProxy<EnvironmentsState> =
-    FragmentRegistrationProxy::new();
-static ADDITIONAL_CONTEXT_REGISTRATION: FragmentRegistrationProxy<AdditionalContextUserFragment> =
-    FragmentRegistrationProxy::new();
-static SKILL_INSTRUCTIONS_REGISTRATION: FragmentRegistrationProxy<SkillInstructions> =
-    FragmentRegistrationProxy::new();
-static USER_SHELL_COMMAND_REGISTRATION: FragmentRegistrationProxy<UserShellCommand> =
-    FragmentRegistrationProxy::new();
-static TURN_ABORTED_REGISTRATION: FragmentRegistrationProxy<TurnAborted> =
-    FragmentRegistrationProxy::new();
-static SUBAGENT_NOTIFICATION_REGISTRATION: FragmentRegistrationProxy<SubagentNotification> =
-    FragmentRegistrationProxy::new();
-static INTERNAL_MODEL_CONTEXT_REGISTRATION: FragmentRegistrationProxy<
-    InternalModelContextFragment,
-> = FragmentRegistrationProxy::new();
-static RECOMMENDED_PLUGINS_REGISTRATION: FragmentRegistrationProxy<RecommendedPluginsInstructions> =
-    FragmentRegistrationProxy::new();
-static LEGACY_UNIFIED_EXEC_PROCESS_LIMIT_WARNING_REGISTRATION: FragmentRegistrationProxy<
-    LegacyUnifiedExecProcessLimitWarning,
-> = FragmentRegistrationProxy::new();
-static LEGACY_APPLY_PATCH_EXEC_COMMAND_WARNING_REGISTRATION: FragmentRegistrationProxy<
-    LegacyApplyPatchExecCommandWarning,
-> = FragmentRegistrationProxy::new();
-static LEGACY_MODEL_MISMATCH_WARNING_REGISTRATION: FragmentRegistrationProxy<
-    LegacyModelMismatchWarning,
-> = FragmentRegistrationProxy::new();
-
-static CONTEXTUAL_USER_FRAGMENTS: &[&dyn FragmentRegistration] = &[
-    &USER_INSTRUCTIONS_REGISTRATION,
-    &ENVIRONMENT_CONTEXT_REGISTRATION,
-    &ADDITIONAL_CONTEXT_REGISTRATION,
-    &SKILL_INSTRUCTIONS_REGISTRATION,
-    &USER_SHELL_COMMAND_REGISTRATION,
-    &TURN_ABORTED_REGISTRATION,
-    &SUBAGENT_NOTIFICATION_REGISTRATION,
-    &INTERNAL_MODEL_CONTEXT_REGISTRATION,
-    &RECOMMENDED_PLUGINS_REGISTRATION,
-    &LEGACY_UNIFIED_EXEC_PROCESS_LIMIT_WARNING_REGISTRATION,
-    &LEGACY_APPLY_PATCH_EXEC_COMMAND_WARNING_REGISTRATION,
-    &LEGACY_MODEL_MISMATCH_WARNING_REGISTRATION,
+const CONTEXTUAL_USER_FRAGMENT_MATCHERS: &[fn(&str) -> bool] = &[
+    UserInstructions::matches_text,
+    EnvironmentsState::matches_text,
+    AdditionalContextUserFragment::matches_text,
+    AgentMessageBoardNotification::matches_text,
+    codex_skills_extension::is_skill_prompt_fragment,
+    UserShellCommand::matches_text,
+    TurnAborted::matches_text,
+    SubagentNotification::matches_text,
+    InternalModelContextFragment::matches_text,
+    // compatibility for user-role recommendation messages in existing rollouts
+    RecommendedPluginsInstructions::matches_text,
+    LegacyUnifiedExecProcessLimitWarning::matches_text,
+    LegacyApplyPatchExecCommandWarning::matches_text,
+    LegacyModelMismatchWarning::matches_text,
 ];
 
+/// Hidden runtime context is not user authorization. Explicit user goal edits are.
+pub(crate) fn is_guardian_context_message(item: &ResponseItem) -> bool {
+    matches!(item, ResponseItem::Message { role, content, internal_chat_message_metadata_passthrough, .. }
+        if role == "user"
+            && (content.iter().any(is_contextual_user_fragment)
+                || internal_chat_message_metadata_passthrough.as_ref()
+                    .and_then(|metadata| metadata.content_item_kinds.as_ref())
+                    .is_some_and(|kinds| !kinds.is_empty() && kinds.len() == content.len()
+                        && kinds.iter().all(|kind| kind.0 == GuardianRetainedInstructions::KIND)))
+            && UserGoalUpdate::message_text(item).is_none())
+}
+
+/// Uses host annotations rather than text markers to identify user authorization changes.
+pub(crate) fn is_user_authorization_message(item: &ResponseItem) -> bool {
+    let ResponseItem::Message {
+        role,
+        content,
+        internal_chat_message_metadata_passthrough,
+        ..
+    } = item
+    else {
+        return false;
+    };
+    role == "user"
+        && internal_chat_message_metadata_passthrough
+            .as_ref()
+            .and_then(|metadata| metadata.content_item_kinds.as_ref())
+            .is_none_or(|kinds| {
+                // Unknown, incomplete, and legacy messages remain conservative.
+                kinds.is_empty()
+                    || kinds.len() != content.len()
+                    || kinds.iter().any(|kind| {
+                        kind.0.starts_with("user.")
+                            || matches!(
+                                kind.0.as_str(),
+                                "" | "unknown"
+                                    // Media preparation can replace real user input.
+                                    | "images.preparation_error"
+                                    | "images.unsupported"
+                                    | "audio.unsupported"
+                            )
+                    })
+            })
+}
+
 fn is_standard_contextual_user_text(text: &str) -> bool {
-    CONTEXTUAL_USER_FRAGMENTS
+    CONTEXTUAL_USER_FRAGMENT_MATCHERS
         .iter()
-        .any(|fragment| fragment.matches_text(text))
+        .any(|matches_text| matches_text(text))
 }
 
 pub(crate) fn is_contextual_user_fragment(content_item: &ContentItem) -> bool {

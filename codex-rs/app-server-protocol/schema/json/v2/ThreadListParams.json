@@ -25,7 +25,8 @@
       "enum": [
         "created_at",
         "updated_at",
-        "recency_at"
+        "recency_at",
+        "section_position"
       ],
       "type": "string"
     },
@@ -90,8 +91,25 @@
         "null"
       ]
     },
+    "originators": {
+      "description": "Optional originator allowlist, matching any supplied value exactly. Supported by hosted backends only; the local app-server rejects a nonempty list. Omitted or empty lists leave originators unrestricted.",
+      "items": {
+        "type": "string"
+      },
+      "type": [
+        "array",
+        "null"
+      ]
+    },
     "searchTerm": {
       "description": "Optional substring filter for the extracted thread title.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "sectionId": {
+      "description": "Omit to include every section, set to `null` for unsectioned threads, or provide a section ID to return only threads in that section.",
       "type": [
         "string",
         "null"

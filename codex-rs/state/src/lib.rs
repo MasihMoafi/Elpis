@@ -1,4 +1,3 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 //! SQLite-backed state for rollout metadata.
 //!
 //! This crate is intentionally small and focused: it extracts rollout metadata
@@ -17,52 +16,62 @@ mod migrations;
 mod model;
 mod paths;
 mod runtime;
+mod sqlite;
 mod telemetry;
 
+pub use log_db::LogWriteFailureReporter;
+pub use model::CreatedProject;
 pub use model::LogEntry;
 pub use model::LogQuery;
 pub use model::LogRow;
+pub use model::Phase2JobClaimOutcome;
+pub use model::Project;
+pub use model::ProjectRoot;
+pub use model::ProjectSortKey;
+pub use model::ProjectsPage;
+pub use model::QueuedUserSubmissionRecord;
+pub use model::RolloutMigrationCursor;
+pub use model::RolloutMigrationSkippedRollout;
+pub use model::RolloutMigrationState;
 /// Preferred entrypoint: owns configuration and metrics.
 pub use runtime::StateRuntime;
+pub use sqlite::SqliteConfig;
 
 pub use audit::ThreadStateAuditRow;
 pub use audit::read_thread_state_audit_rows;
+pub use extract::GUARDIAN_THREAD_PREVIEW;
+pub use extract::GUARDIAN_THREAD_TITLE;
 /// Low-level storage engine: useful for focused tests.
 ///
 /// Most consumers should prefer [`StateRuntime`].
 pub use extract::apply_rollout_item;
+pub use extract::is_guardian_review_source;
 pub use extract::rollout_item_affects_thread_metadata;
-pub use model::AgentJob;
-pub use model::AgentJobCreateParams;
-pub use model::AgentJobItem;
-pub use model::AgentJobItemCreateParams;
-pub use model::AgentJobItemStatus;
-pub use model::AgentJobProgress;
-pub use model::AgentJobStatus;
+pub use model::AddThreadAttachmentOutcome;
 pub use model::Anchor;
 pub use model::BackfillState;
 pub use model::BackfillStats;
 pub use model::BackfillStatus;
 pub use model::DirectionalThreadSpawnEdgeStatus;
 pub use model::ExtractionOutcome;
+pub use model::RemoveThreadAttachmentOutcome;
 pub use model::SortDirection;
 pub use model::SortKey;
+pub use model::Stage1JobClaim;
+pub use model::Stage1JobClaimOutcome;
+pub use model::Stage1Output;
+pub use model::Stage1StartupClaimParams;
+pub use model::ThreadAttachment;
+pub use model::ThreadAttachmentPage;
 pub use model::ThreadGoal;
 pub use model::ThreadGoalStatus;
 pub use model::ThreadMetadata;
 pub use model::ThreadMetadataBuilder;
 pub use model::ThreadRelationFilter;
+pub use model::ThreadSection;
+pub use model::ThreadSectionAppearance;
+pub use model::ThreadSectionsPage;
 pub use model::ThreadsPage;
-pub use model::WorkGraph;
-pub use model::WorkGraphCreateParams;
-pub use model::WorkGraphEvent;
-pub use model::WorkGraphStatus;
-pub use model::WorkGraphTask;
-pub use model::WorkGraphTaskCreateParams;
-pub use model::WorkGraphTaskKind;
-pub use model::WorkGraphTaskReport;
-pub use model::WorkGraphTaskStatus;
-pub use model::validate_work_graph_tasks;
 pub use runtime::ExternalAgentConfigImportDetailsRecord;
 pub use runtime::ExternalAgentConfigImportFailureRecord;
 pub use runtime::ExternalAgentConfigImportHistoryRecord;
@@ -71,39 +80,52 @@ pub use runtime::GoalAccountingMode;
 pub use runtime::GoalAccountingOutcome;
 pub use runtime::GoalStore;
 pub use runtime::GoalUpdate;
+pub use runtime::MemoryStore;
 pub use runtime::RemoteControlEnrollmentRecord;
 pub use runtime::RuntimeDbBackup;
-pub use runtime::RuntimeDbPath;
+pub use runtime::SqliteIntegrityCheck;
+pub use runtime::SqliteQueueStore;
 pub use runtime::ThreadFilterOptions;
 pub use runtime::backup_runtime_db_for_fresh_start;
-pub use runtime::goals_db_filename;
-pub use runtime::goals_db_path;
 pub use runtime::is_sqlite_corruption_error;
-pub use runtime::logs_db_filename;
-pub use runtime::logs_db_path;
 pub use runtime::open_thread_history_db;
 pub use runtime::runtime_db_path_for_corruption_error;
-pub use runtime::runtime_db_paths;
 pub use runtime::sqlite_error_detail_is_corruption;
 pub use runtime::sqlite_error_detail_is_lock;
 pub use runtime::sqlite_integrity_check;
-pub use runtime::state_db_filename;
-pub use runtime::state_db_path;
-pub use runtime::thread_history_db_filename;
-pub use runtime::thread_history_db_path;
+pub use sqlite::RuntimeDbPath;
 pub use telemetry::DbTelemetry;
 pub use telemetry::DbTelemetryHandle;
 pub use telemetry::install_process_db_telemetry;
 pub use telemetry::record_backfill_gate;
 pub use telemetry::record_fallback;
 
+/// Maximum number of pending user submissions permitted for one thread.
+pub const MAX_QUEUE_ITEMS: usize = 100;
+
+/// Maximum serialized size of one persisted thread-attachment payload.
+pub const MAX_THREAD_ATTACHMENT_PAYLOAD_BYTES: usize = 64 * 1024;
+
+/// Maximum byte length of a persisted attachment type.
+pub const MAX_THREAD_ATTACHMENT_TYPE_BYTES: usize = 256;
+
+/// Maximum byte length of a persisted stable attachment identity key.
+pub const MAX_THREAD_ATTACHMENT_IDENTITY_KEY_BYTES: usize = 256;
+
+/// Maximum number of attachments returned in one page.
+pub const MAX_THREAD_ATTACHMENT_LIST_PAGE_SIZE: usize = 100;
+
+/// Maximum number of active attachments retained for one thread.
+pub const MAX_THREAD_ATTACHMENTS_PER_THREAD: usize = 100;
+
+/// Stable UUIDv7 identifying the built-in pinned thread section.
+pub const PINNED_THREAD_SECTION_ID: &str = "01984de2-8f74-7c91-a3b2-5c5e937cf318";
+
+/// User-facing name of the built-in pinned thread section.
+pub const PINNED_THREAD_SECTION_NAME: &str = "Pinned";
+
 /// Environment variable for overriding the SQLite state database home directory.
 pub const SQLITE_HOME_ENV: &str = "CODEX_SQLITE_HOME";
-
-pub const LOGS_DB_FILENAME: &str = "logs_2.sqlite";
-pub const GOALS_DB_FILENAME: &str = "goals_1.sqlite";
-pub const STATE_DB_FILENAME: &str = "state_5.sqlite";
-pub const THREAD_HISTORY_DB_FILENAME: &str = "thread_history_1.sqlite";
 
 /// Errors encountered during DB operations. Tags: [stage]
 pub const DB_ERROR_METRIC: &str = "codex.db.error";
@@ -117,3 +139,15 @@ pub const DB_INIT_METRIC: &str = "codex.sqlite.init.count";
 pub const DB_INIT_DURATION_METRIC: &str = "codex.sqlite.init.duration_ms";
 /// Rollout fallback attempts. Tags: [caller, reason]
 pub const DB_FALLBACK_METRIC: &str = "codex.sqlite.fallback.count";
+/// SQLite log batch write attempts. Tags: [status, error]
+pub const LOG_WRITE_METRIC: &str = "codex.sqlite.logs.write.count";
+/// SQLite log batch write latency. Tags: [status, error]
+pub const LOG_WRITE_DURATION_METRIC: &str = "codex.sqlite.logs.write.duration_ms";
+/// Estimated bytes in each SQLite log batch. Tags: [status, error]
+pub const LOG_WRITE_BYTES_METRIC: &str = "codex.sqlite.logs.write.bytes";
+/// Number of entries in each SQLite log batch. Tags: [status, error]
+pub const LOG_WRITE_ENTRIES_METRIC: &str = "codex.sqlite.logs.write.entries";
+/// Largest estimated entry size in each SQLite log batch. Tags: [status, error]
+pub const LOG_WRITE_MAX_ENTRY_BYTES_METRIC: &str = "codex.sqlite.logs.write.max_entry_bytes";
+/// SQLite log entries discarded before they can be queued. Tags: [reason]
+pub const LOG_QUEUE_DROPPED_METRIC: &str = "codex.sqlite.logs.queue.dropped";

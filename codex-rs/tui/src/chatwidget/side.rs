@@ -1,4 +1,3 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 //! Chat widget hooks for side-conversation mode.
 //!
 //! App-level side-thread lifecycle lives in `app::side`; this module owns the
@@ -24,6 +23,9 @@ impl ChatWidget {
         };
         self.bottom_pane.set_placeholder_text(placeholder);
         self.bottom_pane.set_side_conversation_active(active);
+        if self.blocks_direct_input && !active {
+            self.bottom_pane.set_parent_owned_thread();
+        }
     }
 
     pub(crate) fn side_conversation_active(&self) -> bool {

@@ -16,6 +16,7 @@ use super::WireCellId;
 use super::WireExecuteRequest;
 use super::WireNestedToolCall;
 use super::WireRuntimeResponse;
+use super::WireSessionCellExecutionLimits;
 use super::WireWaitOutcome;
 use super::WireWaitRequest;
 
@@ -134,6 +135,9 @@ pub enum ClientToHost {
     Request { id: RequestId, request: HostRequest },
     #[serde(rename = "operation/cancel")]
     CancelRequest { id: RequestId },
+    /// Yield the active observation without cancelling its cell.
+    #[serde(rename = "operation/yield")]
+    YieldRequest { id: RequestId },
     #[serde(rename = "delegate/response")]
     DelegateResponse {
         id: DelegateRequestId,
@@ -178,7 +182,11 @@ pub enum HostToClient {
 #[serde(deny_unknown_fields, tag = "method", rename_all_fields = "camelCase")]
 pub enum HostRequest {
     #[serde(rename = "session/open")]
-    OpenSession { session_id: SessionId },
+    OpenSession {
+        session_id: SessionId,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        cell_execution_limits: Option<WireSessionCellExecutionLimits>,
+    },
     #[serde(rename = "session/execute")]
     Execute {
         session_id: SessionId,

@@ -2,12 +2,12 @@
 source: tui/src/bottom_pane/chat_composer.rs
 expression: terminal.backend()
 ---
-"│                                                                                                   "
+"                                                                                                    "
 "› @sample @other                                                                                    "
-"│                                                                                                   "
-"│                                                                                                   "
-"│                                                                                                   "
-"│                                                                                                   "
-"│                                                                                                   "
-"│                                                                                                   "
-"                                                              context unknown · Tab Context Ledger  "
+"                                                                                                    "
+"                                                                                                    "
+"                                                                                                    "
+"                                                                                                    "
+"                                                                                                    "
+"                                                                                                    "
+"                                                                                 100% context left  "

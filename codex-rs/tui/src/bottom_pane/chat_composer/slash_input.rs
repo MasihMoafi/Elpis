@@ -1,4 +1,3 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 //! Slash-command input parsing, cursor detection, and completion helpers.
 
 use std::ops::Range;
@@ -16,7 +15,6 @@ use crate::bottom_pane::slash_commands::ServiceTierCommand;
 use crate::bottom_pane::slash_commands::SlashCommandItem;
 use crate::bottom_pane::slash_commands::find_slash_command;
 use crate::bottom_pane::slash_commands::has_slash_command_prefix;
-use crate::key_hint::KeyBindingListExt;
 use crate::slash_command::SlashCommand;
 use codex_protocol::user_input::ByteRange;
 use codex_protocol::user_input::TextElement;
@@ -26,6 +24,7 @@ use super::ActivePopup;
 use super::ChatComposer;
 use super::InputResult;
 use super::QueuedInputAction;
+use super::parent_owned_command_is_allowed;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum SlashValidation {
@@ -175,9 +174,11 @@ impl<'a> SlashInput<'a> {
                 collaboration_modes_enabled: self.command_flags.collaboration_modes_enabled,
                 connectors_enabled: self.command_flags.connectors_enabled,
                 plugins_command_enabled: self.command_flags.plugins_command_enabled,
+                token_activity_command_enabled: self.command_flags.token_activity_command_enabled,
                 service_tier_commands_enabled: self.command_flags.service_tier_commands_enabled,
                 goal_command_enabled: self.command_flags.goal_command_enabled,
-                personality_command_enabled: self.command_flags.personality_command_enabled,
+                voice_command_enabled: self.command_flags.voice_command_enabled,
+                worktrees_enabled: self.command_flags.worktrees_enabled,
                 windows_degraded_sandbox_active: self.command_flags.allow_elevate_sandbox,
                 side_conversation_active: self.command_flags.side_conversation_active,
             },
@@ -187,7 +188,7 @@ impl<'a> SlashInput<'a> {
         command_popup
     }
 
-    fn command(&self, name: &str) -> Option<SlashCommandItem> {
+    pub(super) fn command(&self, name: &str) -> Option<SlashCommandItem> {
         find_slash_command(name, self.command_flags, self.service_tier_commands)
     }
 }
@@ -206,15 +207,31 @@ pub(super) fn queued_input_action(
 }
 
 impl ChatComposer {
+    pub(super) fn builtin_command_flags(&self) -> BuiltinCommandFlags {
+        BuiltinCommandFlags {
+            collaboration_modes_enabled: self.collaboration_modes_enabled,
+            connectors_enabled: self.connectors_enabled,
+            plugins_command_enabled: self.plugins_command_enabled,
+            token_activity_command_enabled: self.token_activity_command_enabled,
+            service_tier_commands_enabled: self.service_tier_commands_enabled,
+            goal_command_enabled: self.goal_command_enabled,
+            voice_command_enabled: self.voice_command_enabled,
+            worktrees_enabled: self.worktrees_enabled,
+            allow_elevate_sandbox: self.windows_degraded_sandbox_active,
+            side_conversation_active: self.side_conversation_active,
+        }
+    }
+
+    pub fn set_worktrees_enabled(&mut self, enabled: bool) {
+        self.worktrees_enabled = enabled;
+    }
+
     /// Handle key event when the slash-command popup is visible.
     pub(super) fn handle_key_event_with_slash_popup(
         &mut self,
         key_event: KeyEvent,
     ) -> (InputResult, bool) {
-        if self.queue_keys.is_pressed(key_event) && self.should_queue_input() {
-            return self.handle_submission(true);
-        }
-        if self.handle_shortcut_overlay_key(&key_event) {
+        if self.handle_empty_prompt_shortcut(&key_event) {
             return (InputResult::None, true);
         }
         if key_event.code == KeyCode::Esc {
@@ -346,6 +363,19 @@ impl ChatComposer {
                 ..
             } => {
                 if let Some(sel) = popup.selected_item() {
+                    if self.blocks_direct_input {
+                        let command_is_allowed = match &sel {
+                            CommandItem::Builtin(cmd) => {
+                                parse_slash_name(self.draft.textarea.text()).is_some_and(
+                                    |(_, args, _)| parent_owned_command_is_allowed(*cmd, args),
+                                )
+                            }
+                            CommandItem::ServiceTier(_) => false,
+                        };
+                        if !command_is_allowed {
+                            return (InputResult::ParentOwnedInputBlocked, true);
+                        }
+                    }
                     if self
                         .complete_selected_slash_command_preserving_existing_draft_tail_as_inline_args(
                             &sel,
@@ -356,8 +386,11 @@ impl ChatComposer {
                     }
 
                     self.stage_selected_slash_command_history(&sel);
-                    self.draft.textarea.set_text_clearing_elements("");
-                    self.draft.is_bash_mode = false;
+                    if !matches!(sel, CommandItem::Builtin(cmd) if cmd.requires_dispatch_validation())
+                    {
+                        self.draft.textarea.set_text_clearing_elements("");
+                        self.draft.is_bash_mode = false;
+                    }
                     return (
                         match sel {
                             CommandItem::Builtin(cmd) => InputResult::Command(cmd),
@@ -577,7 +610,7 @@ mod tests {
             /*has_input_focus*/ true,
             AppEventSender::new(tx),
             /*enhanced_keys_supported*/ false,
-            "Ask Elpis to do anything".to_string(),
+            "Ask Codex to do anything".to_string(),
             /*disable_paste_burst*/ false,
         )
     }
@@ -602,31 +635,29 @@ mod tests {
 
     #[test]
     fn esc_dismisses_slash_popup_while_idle() {
-        // Any command Elpis actually lists will do -- Esc is what is under test. `/rev` was
-        // used here upstream, where `/review` is on the menu.
-        let mut composer = composer_with_text_at_cursor("/mod", "/mod".len());
+        let mut composer = composer_with_text_at_cursor("/rev", "/rev".len());
         assert!(composer.popup_active());
 
         assert_eq!(press(&mut composer, KeyCode::Esc), InputResult::None);
 
         assert!(!composer.popup_active());
-        assert_eq!(composer.draft.textarea.text(), "/mod");
+        assert_eq!(composer.draft.textarea.text(), "/rev");
     }
 
     #[test]
     fn slash_completion_preserves_existing_draft_tail_for_inline_arg_commands() {
-        let draft = "name the release";
-        let expected_text = "/rename name the release";
+        let draft = "view the diff";
+        let expected_text = "/review view the diff";
 
-        let mut composer = composer_with_draft_tail("/ren", draft);
+        let mut composer = composer_with_draft_tail("/re", draft);
         assert_eq!(press(&mut composer, KeyCode::Tab), InputResult::None);
         assert_eq!(composer.draft.textarea.text(), expected_text);
         assert_eq!(composer.draft.textarea.cursor(), expected_text.len());
 
-        let mut composer = composer_with_draft_tail("/ren", draft);
+        let mut composer = composer_with_draft_tail("/re", draft);
         assert_eq!(
             press(&mut composer, KeyCode::Enter),
-            InputResult::CommandWithArgs(SlashCommand::Rename, draft.to_string(), Vec::new())
+            InputResult::CommandWithArgs(SlashCommand::Review, draft.to_string(), Vec::new())
         );
         assert_eq!(composer.draft.textarea.text(), expected_text);
     }
@@ -645,15 +676,15 @@ mod tests {
 
     #[test]
     fn slash_completion_does_not_turn_command_suffix_into_args() {
-        let mut composer = composer_with_text_at_cursor("/rename", "/ren".len());
+        let mut composer = composer_with_text_at_cursor("/review", "/re".len());
         assert_eq!(press(&mut composer, KeyCode::Tab), InputResult::None);
-        assert_eq!(composer.draft.textarea.text(), "/rename ");
+        assert_eq!(composer.draft.textarea.text(), "/review ");
 
-        let mut composer = composer_with_text_at_cursor("/rename", "/ren".len());
+        let mut composer = composer_with_text_at_cursor("/review", "/re".len());
         assert_eq!(
             press(&mut composer, KeyCode::Enter),
-            InputResult::Command(SlashCommand::Rename)
+            InputResult::Command(SlashCommand::Review)
         );
-        assert!(composer.draft.textarea.is_empty());
+        assert_eq!(composer.draft.textarea.text(), "/review ");
     }
 }

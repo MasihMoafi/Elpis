@@ -1,4 +1,3 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use codex_protocol::models::WebSearchAction;
 use serde::Deserialize;
 use serde::Serialize;
@@ -64,6 +63,9 @@ pub struct Usage {
     pub input_tokens: i64,
     /// The number of cached input tokens used during the turn.
     pub cached_input_tokens: i64,
+    /// The number of input tokens written to the prompt cache during the turn.
+    #[serde(default)]
+    pub cache_write_input_tokens: i64,
     /// The number of output tokens used during the turn.
     pub output_tokens: i64,
     /// The number of reasoning output tokens used during the turn.
@@ -297,6 +299,10 @@ pub struct WebSearchItem {
     pub id: String,
     pub query: String,
     pub action: WebSearchAction,
+    /// Structured results returned by web search, when available.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub results: Option<Vec<JsonValue>>,
 }
 
 /// An error notification.

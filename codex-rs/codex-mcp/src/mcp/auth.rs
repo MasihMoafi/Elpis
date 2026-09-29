@@ -10,17 +10,21 @@ use codex_config::types::OAuthCredentialsStoreMode;
 use codex_exec_server::HttpClient;
 use codex_login::CodexAuth;
 use codex_rmcp_client::McpAuthState;
+use codex_rmcp_client::McpOAuthCallbackMode;
+use codex_rmcp_client::OAuthDiscoveryTimeout;
 use codex_rmcp_client::OAuthProviderError;
+use codex_rmcp_client::StreamableHttpRedirectMode;
 use codex_rmcp_client::determine_streamable_http_auth_status;
-use codex_rmcp_client::determine_streamable_http_auth_status_with_http_client;
+use codex_rmcp_client::determine_streamable_http_auth_status_from_credentials;
 use codex_rmcp_client::discover_streamable_http_oauth;
-use codex_rmcp_client::discover_streamable_http_oauth_with_http_client;
+use codex_rmcp_client::resolve_mcp_oauth_callback_url;
 use futures::FutureExt;
 use futures::future::join_all;
 use tracing::warn;
 
 use crate::runtime::McpRuntimeContext;
 use crate::server::EffectiveMcpServer;
+use crate::server::has_explicit_http_authorization;
 
 #[derive(Debug, Clone)]
 pub struct McpOAuthLoginConfig {
@@ -28,6 +32,7 @@ pub struct McpOAuthLoginConfig {
     pub http_headers: Option<HashMap<String, String>>,
     pub env_http_headers: Option<HashMap<String, String>>,
     pub discovered_scopes: Option<Vec<String>>,
+    pub callback_mode: McpOAuthCallbackMode,
 }
 
 #[derive(Debug)]
@@ -51,13 +56,47 @@ pub struct ResolvedMcpOAuthScopes {
     pub source: McpOAuthScopesSource,
 }
 
+/// Keeps registered callbacks tied to their client while preserving legacy redirects.
+pub fn resolve_oauth_callback(
+    server: &McpServerConfig,
+    server_url: &str,
+    global_callback_url: Option<&str>,
+) -> Result<Option<String>> {
+    if let Some(callback_url) = server
+        .oauth
+        .as_ref()
+        .and_then(|oauth| oauth.callback_url.as_deref())
+    {
+        return Ok(Some(callback_url.to_string()));
+    }
+
+    if server
+        .oauth_client_id()
+        .is_none_or(|client_id| client_id.trim().is_empty())
+    {
+        return Ok(global_callback_url.map(ToOwned::to_owned));
+    }
+
+    resolve_mcp_oauth_callback_url(
+        server_url,
+        global_callback_url,
+        McpOAuthCallbackMode::CallbackSpecific,
+    )
+    .map(Some)
+}
+
 #[derive(Debug, Clone)]
 pub struct McpAuthStatusEntry {
     pub config: Option<McpServerConfig>,
     pub auth_state: McpAuthState,
 }
 
-pub async fn oauth_login_support(transport: &McpServerTransportConfig) -> McpOAuthLoginSupport {
+pub async fn oauth_login_support(
+    transport: &McpServerTransportConfig,
+    http_client: Arc<dyn HttpClient>,
+    discovery_timeout: OAuthDiscoveryTimeout,
+    redirect_mode: StreamableHttpRedirectMode,
+) -> McpOAuthLoginSupport {
     let Some(mut config) = oauth_login_candidate(transport) else {
         return McpOAuthLoginSupport::Unsupported;
     };
@@ -65,35 +104,15 @@ pub async fn oauth_login_support(transport: &McpServerTransportConfig) -> McpOAu
         &config.url,
         config.http_headers.clone(),
         config.env_http_headers.clone(),
-    )
-    .await
-    {
-        Ok(Some(discovery)) => {
-            config.discovered_scopes = discovery.scopes_supported;
-            McpOAuthLoginSupport::Supported(config)
-        }
-        Ok(None) => McpOAuthLoginSupport::Unsupported,
-        Err(err) => McpOAuthLoginSupport::Unknown(err),
-    }
-}
-
-pub async fn oauth_login_support_with_http_client(
-    transport: &McpServerTransportConfig,
-    http_client: Arc<dyn HttpClient>,
-) -> McpOAuthLoginSupport {
-    let Some(mut config) = oauth_login_candidate(transport) else {
-        return McpOAuthLoginSupport::Unsupported;
-    };
-    match discover_streamable_http_oauth_with_http_client(
-        &config.url,
-        config.http_headers.clone(),
-        config.env_http_headers.clone(),
         http_client,
+        discovery_timeout,
+        redirect_mode,
     )
     .await
     {
         Ok(Some(discovery)) => {
             config.discovered_scopes = discovery.scopes_supported;
+            config.callback_mode = discovery.callback_mode;
             McpOAuthLoginSupport::Supported(config)
         }
         Ok(None) => McpOAuthLoginSupport::Unsupported,
@@ -107,6 +126,7 @@ fn oauth_login_candidate(transport: &McpServerTransportConfig) -> Option<McpOAut
         bearer_token_env_var,
         http_headers,
         env_http_headers,
+        ..
     } = transport
     else {
         return None;
@@ -119,23 +139,17 @@ fn oauth_login_candidate(transport: &McpServerTransportConfig) -> Option<McpOAut
         http_headers: http_headers.clone(),
         env_http_headers: env_http_headers.clone(),
         discovered_scopes: None,
+        callback_mode: McpOAuthCallbackMode::CallbackSpecific,
     })
 }
 
 pub async fn discover_supported_scopes(
     transport: &McpServerTransportConfig,
-) -> Option<Vec<String>> {
-    match oauth_login_support(transport).await {
-        McpOAuthLoginSupport::Supported(config) => config.discovered_scopes,
-        McpOAuthLoginSupport::Unsupported | McpOAuthLoginSupport::Unknown(_) => None,
-    }
-}
-
-pub async fn discover_supported_scopes_with_http_client(
-    transport: &McpServerTransportConfig,
     http_client: Arc<dyn HttpClient>,
+    discovery_timeout: OAuthDiscoveryTimeout,
+    redirect_mode: StreamableHttpRedirectMode,
 ) -> Option<Vec<String>> {
-    match oauth_login_support_with_http_client(transport, http_client).await {
+    match oauth_login_support(transport, http_client, discovery_timeout, redirect_mode).await {
         McpOAuthLoginSupport::Supported(config) => config.discovered_scopes,
         McpOAuthLoginSupport::Unsupported | McpOAuthLoginSupport::Unknown(_) => None,
     }
@@ -192,46 +206,35 @@ where
 {
     let futures = servers.into_iter().map(|(name, server)| {
         let name = name.clone();
-        let config = server.configured_config().cloned();
+        let redirect_mode = if server.is_agent_plugin() {
+            StreamableHttpRedirectMode::AgentPluginV1
+        } else {
+            StreamableHttpRedirectMode::Legacy
+        };
+        let config = server.config().clone();
         let runtime_context = runtime_context.clone();
-        let has_runtime_auth = config
-            .as_ref()
-            .is_some_and(|config| matches!(&config.auth, McpServerAuth::ChatGpt))
-            && auth.is_some_and(CodexAuth::uses_codex_backend)
-            && config.as_ref().is_some_and(|config| {
-                matches!(
-                    &config.transport,
-                    McpServerTransportConfig::StreamableHttp {
-                        bearer_token_env_var: None,
-                        ..
-                    }
-                )
-            });
         async move {
-            let auth_state = match config.as_ref() {
-                Some(config) => {
-                    match compute_auth_status(
-                        &name,
-                        config,
-                        store_mode,
-                        keyring_backend_kind,
-                        has_runtime_auth,
-                        &runtime_context,
-                    )
-                    .await
-                    {
-                        Ok(status) => status,
-                        Err(error) => {
-                            warn!(
-                                "failed to determine auth status for MCP server `{name}`: {error:?}"
-                            );
-                            McpAuthState::Unsupported
-                        }
-                    }
+            let auth_state = match compute_auth_status(
+                &name,
+                &config,
+                store_mode,
+                keyring_backend_kind,
+                auth,
+                &runtime_context,
+                redirect_mode,
+            )
+            .await
+            {
+                Ok(status) => status,
+                Err(error) => {
+                    warn!("failed to determine auth status for MCP server `{name}`: {error:?}");
+                    McpAuthState::Unknown
                 }
-                None => McpAuthState::Unsupported,
             };
-            let entry = McpAuthStatusEntry { config, auth_state };
+            let entry = McpAuthStatusEntry {
+                config: Some(config),
+                auth_state,
+            };
             (name, entry)
         }
     });
@@ -244,11 +247,33 @@ async fn compute_auth_status(
     config: &McpServerConfig,
     store_mode: OAuthCredentialsStoreMode,
     keyring_backend_kind: AuthKeyringBackendKind,
-    has_runtime_auth: bool,
+    auth: Option<&CodexAuth>,
     runtime_context: &McpRuntimeContext,
+    redirect_mode: StreamableHttpRedirectMode,
 ) -> Result<McpAuthState> {
     if !config.enabled {
         return Ok(McpAuthState::Unsupported);
+    }
+    if matches!(config.auth, McpServerAuth::EmaAuth) {
+        // EMA connections are not enabled until the runtime stage of the stack.
+        return Ok(McpAuthState::Unsupported);
+    }
+    let has_runtime_auth = matches!(config.auth, McpServerAuth::ChatGpt)
+        && auth.is_some_and(CodexAuth::uses_codex_backend)
+        && matches!(
+            &config.transport,
+            McpServerTransportConfig::StreamableHttp {
+                bearer_token_env_var: None,
+                ..
+            }
+        );
+
+    if matches!(config.auth, McpServerAuth::ChatGpt) && !config.is_local_environment() {
+        return Ok(if has_explicit_http_authorization(config) {
+            McpAuthState::BearerToken
+        } else {
+            McpAuthState::Unsupported
+        });
     }
 
     if has_runtime_auth {
@@ -262,36 +287,45 @@ async fn compute_auth_status(
             bearer_token_env_var,
             http_headers,
             env_http_headers,
+            http_headers_helper,
         } => {
-            if config.is_local_environment() {
-                determine_streamable_http_auth_status(
-                    server_name,
+            if http_headers_helper.is_some() {
+                // Status inspection must not execute an arbitrary local helper. Existing
+                // credentials remain reportable; otherwise discovery waits for startup/login.
+                return Ok(determine_streamable_http_auth_status_from_credentials(
+                    config.oauth_credential_name(server_name).as_ref(),
                     url,
                     bearer_token_env_var.as_deref(),
                     http_headers.clone(),
                     env_http_headers.clone(),
                     store_mode,
                     keyring_backend_kind,
-                )
-                .boxed()
-                .await
-            } else {
-                let http_client = runtime_context
-                    .resolve_http_client(server_name, config)
-                    .map_err(anyhow::Error::msg)?;
-                determine_streamable_http_auth_status_with_http_client(
-                    server_name,
-                    url,
-                    bearer_token_env_var.as_deref(),
-                    http_headers.clone(),
-                    env_http_headers.clone(),
-                    store_mode,
-                    keyring_backend_kind,
-                    http_client,
-                )
-                .boxed()
-                .await
+                )?
+                .unwrap_or(McpAuthState::Unknown));
             }
+            let http_client = runtime_context
+                .resolve_http_client(server_name, config)
+                .map_err(anyhow::Error::msg)?;
+            let discovery_timeout = if config.is_local_environment() {
+                OAuthDiscoveryTimeout::LOCAL
+            } else {
+                OAuthDiscoveryTimeout::Requested
+            };
+            let oauth_credential_name = config.oauth_credential_name(server_name);
+            determine_streamable_http_auth_status(
+                oauth_credential_name.as_ref(),
+                url,
+                bearer_token_env_var.as_deref(),
+                http_headers.clone(),
+                env_http_headers.clone(),
+                store_mode,
+                keyring_backend_kind,
+                http_client,
+                discovery_timeout,
+                redirect_mode,
+            )
+            .boxed()
+            .await
         }
     }
 }
@@ -304,8 +338,54 @@ mod tests {
     use super::McpOAuthScopesSource;
     use super::OAuthProviderError;
     use super::ResolvedMcpOAuthScopes;
+    use super::resolve_oauth_callback;
     use super::resolve_oauth_scopes;
     use super::should_retry_without_scopes;
+
+    #[test]
+    fn callback_resolution_preserves_registered_and_legacy_clients() -> anyhow::Result<()> {
+        for (client_id, saved_callback, global_callback, expected_callback) in [
+            (
+                Some("registered-client"),
+                Some("http://127.0.0.1/callback"),
+                Some("https://override.example/callback"),
+                Some("http://127.0.0.1/callback"),
+            ),
+            (
+                Some("legacy-client"),
+                None,
+                None,
+                Some("http://127.0.0.1/callback/epMNJ6P1xGQ9"),
+            ),
+            (
+                None,
+                Some("https://plugin.example/callback"),
+                Some("https://override.example/callback"),
+                Some("https://plugin.example/callback"),
+            ),
+            (
+                None,
+                None,
+                Some("https://override.example/callback"),
+                Some("https://override.example/callback"),
+            ),
+        ] {
+            let server = serde_json::from_value(serde_json::json!({
+                "url": "https://mcp.example.com/mcp",
+                "oauth": {
+                    "client_id": client_id,
+                    "callback_url": saved_callback,
+                },
+            }))?;
+            assert_eq!(
+                resolve_oauth_callback(&server, "https://mcp.example.com/mcp", global_callback)?
+                    .as_deref(),
+                expected_callback
+            );
+        }
+
+        Ok(())
+    }
 
     #[test]
     fn resolve_oauth_scopes_prefers_explicit() {

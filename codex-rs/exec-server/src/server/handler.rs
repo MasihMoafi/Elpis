@@ -1,4 +1,3 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use std::sync::Arc;
 use std::sync::Mutex as StdMutex;
 use std::sync::atomic::AtomicBool;
@@ -6,6 +5,8 @@ use std::sync::atomic::Ordering;
 
 use codex_exec_server_protocol::JSONRPCErrorError;
 use codex_exec_server_protocol::RequestId;
+use codex_http_client::HttpClientFactory;
+use opentelemetry::trace::SpanContext;
 use serde_json::to_value;
 use std::collections::HashSet;
 use tokio::sync::Mutex;
@@ -13,8 +14,15 @@ use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
 
 use crate::ExecServerRuntimePaths;
-use crate::client::http_client::PendingReqwestHttpBodyStream;
-use crate::client::http_client::ReqwestHttpRequestRunner;
+use crate::client::http_client::PendingRouteAwareHttpBodyStream;
+use crate::client::http_client::RouteAwareHttpClient;
+use crate::client::http_client::RouteAwareHttpRequestRunner;
+use crate::environment_config::ReadEnvironmentConfigError;
+use crate::environment_config::read_environment_config;
+use crate::protocol::CapabilityRootsDiscoverParams;
+use crate::protocol::CapabilityRootsDiscoverResponse;
+use crate::protocol::EnvironmentConfigReadParams;
+use crate::protocol::EnvironmentConfigReadResponse;
 use crate::protocol::EnvironmentInfo;
 use crate::protocol::EnvironmentStatus;
 use crate::protocol::EnvironmentStatusKind;
@@ -44,6 +52,7 @@ use crate::protocol::FsWalkParams;
 use crate::protocol::FsWalkResponse;
 use crate::protocol::FsWriteFileParams;
 use crate::protocol::FsWriteFileResponse;
+use crate::protocol::HTTP_REQUEST_METHOD;
 use crate::protocol::HttpRequestParams;
 use crate::protocol::InitializeParams;
 use crate::protocol::InitializeResponse;
@@ -59,11 +68,14 @@ use crate::rpc::RpcNotificationSender;
 use crate::rpc::internal_error;
 use crate::rpc::invalid_params;
 use crate::rpc::invalid_request;
+use crate::server::build_identity::local_environment_info;
 use crate::server::file_system_handler::FileSystemHandler;
 use crate::server::session_registry::SessionHandle;
 use crate::server::session_registry::SessionRegistry;
+use crate::telemetry::ExecutorRegistration;
 
 pub(crate) struct ExecServerHandler {
+    pub(super) executor_registration: Option<Arc<ExecutorRegistration>>,
     session_registry: Arc<SessionRegistry>,
     notifications: RpcNotificationSender,
     session: StdMutex<Option<SessionHandle>>,
@@ -72,6 +84,7 @@ pub(crate) struct ExecServerHandler {
     background_tasks: TaskTracker,
     file_system: FileSystemHandler,
     runtime_paths: ExecServerRuntimePaths,
+    http_client: RouteAwareHttpClient,
     initialize_requested: AtomicBool,
     initialized: AtomicBool,
 }
@@ -81,8 +94,10 @@ impl ExecServerHandler {
         session_registry: Arc<SessionRegistry>,
         notifications: RpcNotificationSender,
         runtime_paths: ExecServerRuntimePaths,
+        http_client_factory: HttpClientFactory,
     ) -> Self {
         Self {
+            executor_registration: None,
             session_registry,
             notifications,
             session: StdMutex::new(None),
@@ -91,6 +106,7 @@ impl ExecServerHandler {
             background_tasks: TaskTracker::new(),
             file_system: FileSystemHandler::new(runtime_paths.clone()),
             runtime_paths,
+            http_client: RouteAwareHttpClient::new(http_client_factory),
             initialize_requested: AtomicBool::new(false),
             initialized: AtomicBool::new(false),
         }
@@ -146,7 +162,10 @@ impl ExecServerHandler {
             .session
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(session);
-        Ok(InitializeResponse { session_id })
+        Ok(InitializeResponse {
+            session_id,
+            environment_info: Some(local_environment_info()),
+        })
     }
 
     pub(crate) fn initialized(&self) -> Result<(), String> {
@@ -159,14 +178,41 @@ impl ExecServerHandler {
         Ok(())
     }
 
-    pub(crate) async fn exec(&self, params: ExecParams) -> Result<ExecResponse, JSONRPCErrorError> {
+    pub(crate) async fn exec(
+        &self,
+        params: ExecParams,
+        launch_context: Option<SpanContext>,
+    ) -> Result<ExecResponse, JSONRPCErrorError> {
         let session = self.require_initialized_for("exec")?;
-        session.process().exec(params).await
+        session
+            .process()
+            .exec(
+                params,
+                crate::process_telemetry::ProcessTelemetry {
+                    launch_context,
+                    executor_registration: self.executor_registration.clone(),
+                    ..Default::default()
+                },
+            )
+            .await
     }
 
     pub(crate) fn environment_info(&self) -> Result<EnvironmentInfo, JSONRPCErrorError> {
         self.require_initialized_for("environment info")?;
-        Ok(EnvironmentInfo::local())
+        Ok(local_environment_info())
+    }
+
+    pub(crate) async fn environment_config_read(
+        &self,
+        params: EnvironmentConfigReadParams,
+    ) -> Result<EnvironmentConfigReadResponse, JSONRPCErrorError> {
+        self.require_initialized_for("environment config")?;
+        read_environment_config(crate::LOCAL_FS.as_ref(), params)
+            .await
+            .map_err(|error| match error {
+                ReadEnvironmentConfigError::InvalidParams(message) => invalid_params(message),
+                ReadEnvironmentConfigError::Internal(message) => internal_error(message),
+            })
     }
 
     pub(crate) fn environment_status(&self) -> Result<EnvironmentStatus, JSONRPCErrorError> {
@@ -221,7 +267,9 @@ impl ExecServerHandler {
         if stream_response {
             self.reserve_http_body_stream(&http_request_id).await?;
         }
-        let response = ReqwestHttpRequestRunner::new(params.timeout_ms, params.redirect_policy)?
+        let response = self
+            .http_client
+            .runner(params.redirect_policy)
             .run(params)
             .await;
         if response.is_err() && stream_response {
@@ -245,6 +293,15 @@ impl ExecServerHandler {
             }
             return Err(error);
         }
+        // This response bypasses the dispatcher; record it before body-stream setup.
+        tracing::event!(
+            name: "codex.exec_server.response_enqueued",
+            target: "codex_otel.trace_safe",
+            tracing::Level::INFO,
+            event.name = "codex.exec_server.response_enqueued",
+            rpc.method = HTTP_REQUEST_METHOD,
+            outcome = "success",
+        );
         if let Some(pending_stream) = pending_stream {
             self.start_http_body_stream(pending_stream).await;
         }
@@ -257,6 +314,14 @@ impl ExecServerHandler {
     ) -> Result<FsReadFileResponse, JSONRPCErrorError> {
         self.require_initialized_for("filesystem")?;
         self.file_system.read_file(params).await
+    }
+
+    pub(crate) async fn discover_capability_roots(
+        &self,
+        params: CapabilityRootsDiscoverParams,
+    ) -> Result<CapabilityRootsDiscoverResponse, JSONRPCErrorError> {
+        self.require_initialized_for("capability discovery")?;
+        self.file_system.discover_capability_roots(params).await
     }
 
     pub(crate) async fn fs_open(
@@ -389,7 +454,7 @@ impl ExecServerHandler {
 
     async fn start_http_body_stream(
         self: &Arc<Self>,
-        pending_stream: PendingReqwestHttpBodyStream,
+        pending_stream: PendingRouteAwareHttpBodyStream,
     ) {
         let request_id = pending_stream.request_id.clone();
         if self.background_task_shutdown.is_cancelled() {
@@ -403,7 +468,7 @@ impl ExecServerHandler {
         self.background_tasks.spawn(async move {
             tokio::select! {
                 _ = shutdown.cancelled() => {}
-                _ = ReqwestHttpRequestRunner::stream_body(pending_stream, notifications) => {}
+                _ = RouteAwareHttpRequestRunner::stream_body(pending_stream, notifications) => {}
             }
             handler.release_http_body_stream(&finished_request_id).await;
         });

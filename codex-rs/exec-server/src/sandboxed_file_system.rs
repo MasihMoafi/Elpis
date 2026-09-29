@@ -3,20 +3,29 @@ use base64::engine::general_purpose::STANDARD;
 use codex_exec_server_protocol::JSONRPCErrorError;
 use codex_utils_path_uri::PathUri;
 use tokio::io;
+use tokio_util::io::ReaderStream;
 
+use crate::CapabilityRootsDiscoverParams;
+use crate::CapabilityRootsDiscoverResponse;
 use crate::CopyOptions;
 use crate::CreateDirectoryOptions;
+use crate::DiscoverV2CapabilitiesResponse;
 use crate::ExecServerRuntimePaths;
 use crate::ExecutorFileSystem;
 use crate::ExecutorFileSystemFuture;
+use crate::FILE_READ_CHUNK_SIZE;
 use crate::FileMetadata;
 use crate::FileSystemReadStream;
 use crate::FileSystemResult;
 use crate::FileSystemSandboxContext;
+use crate::GetMetadataOptions;
 use crate::ReadDirectoryEntry;
+use crate::ReadFileOptions;
 use crate::RemoveOptions;
 use crate::WalkOptions;
 use crate::WalkOutcome;
+use crate::WriteFileOptions;
+use crate::discover_v2::capability_locations::CapabilityLocation;
 use crate::fs_helper::FsHelperPayload;
 use crate::fs_helper::FsHelperRequest;
 use crate::fs_sandbox::FileSystemSandboxRunner;
@@ -36,6 +45,57 @@ pub struct SandboxedFileSystem {
 }
 
 impl SandboxedFileSystem {
+    pub(crate) async fn load_sandboxed_capability_discoveries(
+        &self,
+        locations: Vec<CapabilityLocation>,
+        warnings: Vec<String>,
+        sandbox: &FileSystemSandboxContext,
+    ) -> FileSystemResult<DiscoverV2CapabilitiesResponse> {
+        require_platform_sandbox(Some(sandbox))?;
+        self.run_sandboxed(
+            sandbox,
+            FsHelperRequest::LoadCapabilityDiscoveries {
+                locations,
+                warnings,
+            },
+        )
+        .await?
+        .expect_capability_discoveries()
+        .map_err(map_sandbox_error)
+    }
+
+    #[tracing::instrument(
+        name = "capability_roots.discover_v1",
+        skip_all,
+        fields(root_count = params.roots.len())
+    )]
+    pub(crate) async fn discover_capability_roots(
+        &self,
+        params: CapabilityRootsDiscoverParams,
+        sandbox: &FileSystemSandboxContext,
+    ) -> FileSystemResult<CapabilityRootsDiscoverResponse> {
+        self.run_sandboxed(sandbox, FsHelperRequest::DiscoverCapabilityRoots(params))
+            .await?
+            .expect_capability_roots_discover()
+            .map_err(map_sandbox_error)
+    }
+
+    pub(crate) async fn open_file_for_read(
+        &self,
+        path: &PathUri,
+        sandbox: Option<&FileSystemSandboxContext>,
+    ) -> FileSystemResult<tokio::fs::File> {
+        let sandbox = require_platform_sandbox(sandbox)?;
+        validate_native_path(path)?;
+        let command = self
+            .sandbox_runner
+            .sandbox_command(sandbox)
+            .map_err(map_sandbox_error)?;
+        crate::sandboxed_file_open::open(command, path.clone())
+            .await
+            .map_err(map_sandbox_error)
+    }
+
     pub fn new(runtime_paths: ExecServerRuntimePaths) -> Self {
         Self {
             sandbox_runner: FileSystemSandboxRunner::new(runtime_paths),
@@ -79,6 +139,7 @@ impl SandboxedFileSystem {
     async fn read_file(
         &self,
         path: &PathUri,
+        options: ReadFileOptions,
         sandbox: Option<&FileSystemSandboxContext>,
     ) -> FileSystemResult<Vec<u8>> {
         let sandbox = require_platform_sandbox(sandbox)?;
@@ -88,6 +149,7 @@ impl SandboxedFileSystem {
                 sandbox,
                 FsHelperRequest::ReadFile(FsReadFileParams {
                     path: path.clone(),
+                    follow_symlinks: (!options.follow_symlinks).then_some(false),
                     sandbox: None,
                 }),
             )
@@ -106,6 +168,7 @@ impl SandboxedFileSystem {
         &self,
         path: &PathUri,
         contents: Vec<u8>,
+        options: WriteFileOptions,
         sandbox: Option<&FileSystemSandboxContext>,
     ) -> FileSystemResult<()> {
         let sandbox = require_platform_sandbox(sandbox)?;
@@ -115,6 +178,7 @@ impl SandboxedFileSystem {
             FsHelperRequest::WriteFile(FsWriteFileParams {
                 path: path.clone(),
                 data_base64: STANDARD.encode(contents),
+                follow_symlinks: (!options.follow_symlinks).then_some(false),
                 sandbox: None,
             }),
         )
@@ -137,6 +201,7 @@ impl SandboxedFileSystem {
             FsHelperRequest::CreateDirectory(FsCreateDirectoryParams {
                 path: path.clone(),
                 recursive: Some(options.recursive),
+                follow_symlinks: (!options.follow_symlinks).then_some(false),
                 sandbox: None,
             }),
         )
@@ -149,6 +214,7 @@ impl SandboxedFileSystem {
     async fn get_metadata(
         &self,
         path: &PathUri,
+        options: GetMetadataOptions,
         sandbox: Option<&FileSystemSandboxContext>,
     ) -> FileSystemResult<FileMetadata> {
         let sandbox = require_platform_sandbox(sandbox)?;
@@ -158,6 +224,7 @@ impl SandboxedFileSystem {
                 sandbox,
                 FsHelperRequest::GetMetadata(FsGetMetadataParams {
                     path: path.clone(),
+                    follow_symlinks: (!options.follow_symlinks).then_some(false),
                     sandbox: None,
                 }),
             )
@@ -240,6 +307,7 @@ impl SandboxedFileSystem {
                 path: path.clone(),
                 recursive: Some(remove_options.recursive),
                 force: Some(remove_options.force),
+                follow_symlinks: (!remove_options.follow_symlinks).then_some(false),
                 sandbox: None,
             }),
         )
@@ -287,21 +355,23 @@ impl ExecutorFileSystem for SandboxedFileSystem {
     fn read_file<'a>(
         &'a self,
         path: &'a PathUri,
+        options: ReadFileOptions,
         sandbox: Option<&'a FileSystemSandboxContext>,
     ) -> ExecutorFileSystemFuture<'a, Vec<u8>> {
-        Box::pin(SandboxedFileSystem::read_file(self, path, sandbox))
+        Box::pin(SandboxedFileSystem::read_file(self, path, options, sandbox))
     }
 
     fn read_file_stream<'a>(
         &'a self,
-        _path: &'a PathUri,
-        _sandbox: Option<&'a FileSystemSandboxContext>,
+        path: &'a PathUri,
+        sandbox: Option<&'a FileSystemSandboxContext>,
     ) -> ExecutorFileSystemFuture<'a, FileSystemReadStream> {
-        Box::pin(async {
-            Err(io::Error::new(
-                io::ErrorKind::Unsupported,
-                "streaming file reads do not support platform sandboxing",
-            ))
+        Box::pin(async move {
+            let file = self.open_file_for_read(path, sandbox).await?;
+            Ok(FileSystemReadStream::new(ReaderStream::with_capacity(
+                file,
+                FILE_READ_CHUNK_SIZE,
+            )))
         })
     }
 
@@ -309,10 +379,11 @@ impl ExecutorFileSystem for SandboxedFileSystem {
         &'a self,
         path: &'a PathUri,
         contents: Vec<u8>,
+        options: WriteFileOptions,
         sandbox: Option<&'a FileSystemSandboxContext>,
     ) -> ExecutorFileSystemFuture<'a, ()> {
         Box::pin(SandboxedFileSystem::write_file(
-            self, path, contents, sandbox,
+            self, path, contents, options, sandbox,
         ))
     }
 
@@ -330,9 +401,12 @@ impl ExecutorFileSystem for SandboxedFileSystem {
     fn get_metadata<'a>(
         &'a self,
         path: &'a PathUri,
+        options: GetMetadataOptions,
         sandbox: Option<&'a FileSystemSandboxContext>,
     ) -> ExecutorFileSystemFuture<'a, FileMetadata> {
-        Box::pin(SandboxedFileSystem::get_metadata(self, path, sandbox))
+        Box::pin(SandboxedFileSystem::get_metadata(
+            self, path, options, sandbox,
+        ))
     }
 
     fn read_directory<'a>(
@@ -391,7 +465,7 @@ fn require_platform_sandbox(
     sandbox: Option<&FileSystemSandboxContext>,
 ) -> FileSystemResult<&FileSystemSandboxContext> {
     sandbox
-        .filter(|sandbox| sandbox.should_run_in_sandbox())
+        .filter(|sandbox| sandbox.should_read_from_sandbox() || sandbox.should_write_into_sandbox())
         .ok_or_else(|| {
             io::Error::new(
                 io::ErrorKind::InvalidInput,

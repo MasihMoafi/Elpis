@@ -1,11 +1,16 @@
 use anyhow::Result;
 use codex_config::types::McpServerConfig;
 use codex_config::types::McpServerTransportConfig;
+use codex_core::TurnInputRequest;
+use codex_core::config::Config;
 use codex_core::config::TokenBudgetConfig;
+use codex_extension_api::ExtensionRegistryBuilder;
 use codex_features::Feature;
+use codex_login::CodexAuth;
 use codex_model_provider_info::built_in_model_providers;
 use codex_protocol::config_types::AutoCompactTokenLimitScope;
 use codex_protocol::items::TurnItem;
+use codex_protocol::openai_models::ModelTokenBudgetConfig;
 use codex_protocol::protocol::CONTEXT_WINDOW_CLOSE_TAG;
 use codex_protocol::protocol::CONTEXT_WINDOW_GUIDANCE_CLOSE_TAG;
 use codex_protocol::protocol::CONTEXT_WINDOW_GUIDANCE_OPEN_TAG;
@@ -16,6 +21,10 @@ use codex_protocol::protocol::HookRunStatus;
 use codex_protocol::protocol::ItemCompletedEvent;
 use codex_protocol::protocol::ItemStartedEvent;
 use codex_protocol::protocol::Op;
+use codex_protocol::protocol::ThreadSettingsOverrides;
+use codex_protocol::user_input::UserInput;
+use codex_skills_extension::SkillsExtensionConfig;
+use codex_skills_extension::install;
 use core_test_support::PathBufExt;
 use core_test_support::assert_regex_match;
 use core_test_support::context_snapshot;
@@ -25,12 +34,13 @@ use core_test_support::responses::ResponsesRequest;
 use core_test_support::responses::ev_assistant_message;
 use core_test_support::responses::ev_completed;
 use core_test_support::responses::ev_completed_with_tokens;
+use core_test_support::responses::ev_exec_command_call;
 use core_test_support::responses::ev_function_call;
 use core_test_support::responses::ev_response_created;
-use core_test_support::responses::ev_shell_command_call;
-use core_test_support::responses::mount_compact_json_once;
+use core_test_support::responses::mount_sse_once;
 use core_test_support::responses::mount_sse_sequence;
 use core_test_support::responses::sse;
+use core_test_support::responses::sse_completed;
 use core_test_support::responses::start_mock_server;
 use core_test_support::skip_if_no_network;
 use core_test_support::stdio_server_bin;
@@ -44,13 +54,27 @@ use serde_json::Value;
 use serde_json::json;
 use std::collections::HashMap;
 use std::path::Path;
+use std::sync::Arc;
 use std::time::Duration;
+use test_case::test_case;
 
 const CONFIGURED_CONTEXT_WINDOW: i64 = 128_000;
 const AUTO_COMPACT_FALLBACK_PROMPT: &str = "Save the important state before rollover.";
 
+fn model_token_budget_config() -> ModelTokenBudgetConfig {
+    ModelTokenBudgetConfig {
+        enabled: false,
+        use_history_notes_extension: false,
+        reminder_threshold_tokens: 6_144,
+        reminder_message_template: "Model reminder: {n_remaining} tokens remain.".to_string(),
+        guidance_message: "Use the model-owned context-window guidance.".to_string(),
+        auto_compact_fallback_prompt: AUTO_COMPACT_FALLBACK_PROMPT.to_string(),
+        auto_compact_fallback_buffer_tokens: 16_384,
+    }
+}
+
 fn token_budget_contexts(request: &ResponsesRequest) -> Vec<String> {
-    let context_window_prefix = format!("{CONTEXT_WINDOW_OPEN_TAG}\nThread id: ");
+    let context_window_prefix = format!("{CONTEXT_WINDOW_OPEN_TAG}\n");
     request
         .message_input_texts("developer")
         .into_iter()
@@ -58,13 +82,10 @@ fn token_budget_contexts(request: &ResponsesRequest) -> Vec<String> {
         .collect()
 }
 
-fn token_budget_window_ids(
-    text: &str,
-    thread_id: codex_protocol::ThreadId,
-) -> (String, Option<String>, String) {
+fn token_budget_window_ids(text: &str, agent_name: &str) -> (String, Option<String>, String) {
     let captures = assert_regex_match(
         &format!(
-            r"^{CONTEXT_WINDOW_OPEN_TAG}\nThread id: {thread_id}\nFirst context window id: ([0-9a-f-]{{36}})\nCurrent context window id: ([0-9a-f-]{{36}})(?:\nPrevious context window id: ([0-9a-f-]{{36}}))?\n{CONTEXT_WINDOW_CLOSE_TAG}$"
+            r"^{CONTEXT_WINDOW_OPEN_TAG}\nAgent name: {agent_name}\nFirst context window id: ([0-9a-f-]{{36}})\nCurrent context window id: ([0-9a-f-]{{36}})(?:\nPrevious context window id: ([0-9a-f-]{{36}}))?\n{CONTEXT_WINDOW_CLOSE_TAG}$"
         ),
         text,
     );
@@ -199,11 +220,10 @@ async fn token_budget_context_is_only_emitted_with_full_context() -> Result<()> 
     let requests = responses.requests();
     assert_eq!(requests.len(), 2);
 
-    let thread_id = test.session_configured.thread_id;
     let initial_token_budget = token_budget_contexts(&requests[0]);
     assert_eq!(initial_token_budget.len(), 1);
     let (first_window_id, previous_window_id, window_id) =
-        token_budget_window_ids(&initial_token_budget[0], thread_id);
+        token_budget_window_ids(&initial_token_budget[0], "/root");
     assert_eq!(previous_window_id, None);
     assert_eq!(first_window_id, window_id);
     assert_eq!(
@@ -215,8 +235,12 @@ async fn token_budget_context_is_only_emitted_with_full_context() -> Result<()> 
     Ok(())
 }
 
+#[test_case("features.token_budget.enabled = true"; "token_budget")]
+#[test_case("features.context_management.experimental_mode = true"; "experimental_mode")]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn token_budget_guidance_follows_context_window() -> Result<()> {
+async fn token_budget_guidance_precedes_standalone_context_window(
+    activation: &'static str,
+) -> Result<()> {
     skip_if_no_network!(Ok(()));
 
     let server = start_mock_server().await;
@@ -229,33 +253,492 @@ async fn token_budget_guidance_follows_context_window() -> Result<()> {
     )
     .await;
     let guidance_message = "Preserve important state before compaction.";
+    let backend_url = format!("{}/backend-api/codex", server.uri());
     let test = test_codex()
+        .with_model_info_override("gpt-5.2", |model| {
+            model.supports_experimental_context = true;
+        })
+        .with_auth(CodexAuth::from_external_chatgpt_tokens(
+            "header.e30.signature",
+            "account-123",
+            Some("plus"),
+        )?)
+        .with_pre_build_hook(move |home| {
+            std::fs::write(
+                home.join("config.toml"),
+                format!(
+                    "{activation}\nfeatures.token_budget.guidance_message = {guidance_message:?}\n"
+                ),
+            )
+            .expect("write token-budget guidance configuration");
+        })
         .with_config(move |config| {
+            config.model_provider.base_url = Some(backend_url);
+            config.update_plan_enabled = true;
             config.model_context_window = Some(CONFIGURED_CONTEXT_WINDOW);
-            config.token_budget = Some(TokenBudgetConfig {
-                guidance_message: Some(guidance_message.to_string()),
-                ..TokenBudgetConfig::default()
-            });
-            config
-                .features
-                .enable(Feature::TokenBudget)
-                .expect("test config should allow token budget");
         })
         .build_with_auto_env(&server)
         .await?;
 
     test.submit_turn("inspect context guidance").await?;
 
-    let developer_texts = response.single_request().message_input_texts("developer");
+    let request = response.single_request();
+    assert!(request.has_content_kinds(&[
+        "token_budget.context_window_guidance",
+        "permissions.instructions",
+    ]));
+    assert!(request.has_content_kinds(&["token_budget.context_window"]));
+    let developer_texts = request.message_input_texts("developer");
     let context_window_index = developer_texts
         .iter()
         .position(|text| text.starts_with(CONTEXT_WINDOW_OPEN_TAG))
         .expect("context-window metadata should be present");
+    let guidance_index = developer_texts
+        .iter()
+        .position(|text| {
+            text == &format!(
+                "{CONTEXT_WINDOW_GUIDANCE_OPEN_TAG}\n{guidance_message}\n{CONTEXT_WINDOW_GUIDANCE_CLOSE_TAG}"
+            )
+        })
+        .expect("context-window guidance should be present");
+    assert!(guidance_index < context_window_index);
+
+    Ok(())
+}
+
+#[test_case("OpenAI", "/backend-api/codex", None, true, true; "codex_backend")]
+#[test_case("OpenAI", "/backend-api/codex", None, false, false; "unsupported_model")]
+#[test_case("Custom", "/backend-api/codex", None, true, false; "custom_provider")]
+#[test_case("OpenAI", "/v1", None, true, false; "non_codex_endpoint")]
+#[test_case("OpenAI", "/backend-api/codex", Some("test-provider-token"), true, false; "provider_credentials")]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn experimental_context_requires_capable_model_and_codex_backend(
+    provider_name: &'static str,
+    base_path: &'static str,
+    bearer_token: Option<&'static str>,
+    supports_context: bool,
+    expected_enabled: bool,
+) -> Result<()> {
+    skip_if_no_network!(Ok(()));
+
+    let server = start_mock_server().await;
+    let response = mount_sse_once(&server, sse_completed("resp-1")).await;
+    let base_url = format!("{}{base_path}", server.uri());
+    let test = test_codex()
+        .with_model_info_override("gpt-5.2", move |model| {
+            model.supports_experimental_context = supports_context;
+        })
+        .with_auth(CodexAuth::from_external_chatgpt_tokens(
+            "header.e30.signature",
+            "account-123",
+            Some("plus"),
+        )?)
+        .with_config(move |config| {
+            config.model_provider.name = provider_name.to_string();
+            config.model_provider.base_url = Some(base_url);
+            config.model_provider.experimental_bearer_token = bearer_token.map(Into::into);
+            config.model_context_window = Some(CONFIGURED_CONTEXT_WINDOW);
+            config
+                .features
+                .enable(Feature::ContextManagement)
+                .expect("test config should allow experimental context");
+        })
+        .build_with_auto_env(&server)
+        .await?;
+
+    test.submit_turn("inspect experimental context activation")
+        .await?;
+
+    let request = response.single_request();
     assert_eq!(
-        developer_texts.get(context_window_index + 1),
-        Some(&format!(
-            "{CONTEXT_WINDOW_GUIDANCE_OPEN_TAG}\n{guidance_message}\n{CONTEXT_WINDOW_GUIDANCE_CLOSE_TAG}"
-        ))
+        tool_names(&request)
+            .iter()
+            .any(|name| name == "new_context"),
+        expected_enabled
+    );
+    assert_eq!(
+        !token_budget_contexts(&request).is_empty(),
+        expected_enabled
+    );
+
+    Ok(())
+}
+
+#[test_case(false, true, false; "explicit_history_notes_without_experimental_capability")]
+#[test_case(false, true, true; "explicit_history_notes_with_experimental_capability")]
+#[test_case(false, false, false; "explicit_standalone_token_budget")]
+#[test_case(true, true, false; "model_default_history_notes_without_experimental_capability")]
+#[test_case(true, true, true; "model_default_history_notes_with_experimental_capability")]
+#[test_case(true, false, false; "model_default_standalone_token_budget")]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn token_budget_history_notes_can_be_enabled_without_experimental_context(
+    use_model_defaults: bool,
+    use_history_notes: bool,
+    supports_context: bool,
+) -> Result<()> {
+    skip_if_no_network!(Ok(()));
+
+    let server = start_mock_server().await;
+    let backend_url = format!("{}/backend-api/codex", server.uri());
+    let mut builder = test_codex()
+        .with_auth(CodexAuth::from_external_chatgpt_tokens(
+            "header.e30.signature",
+            "account-123",
+            Some("plus"),
+        )?)
+        .with_pre_build_hook(move |home| {
+            let config = if use_model_defaults {
+                "[features.context_management]\nexperimental_mode = false\n".to_string()
+            } else {
+                format!(
+                    "[features.context_management]\nexperimental_mode = false\n[features.token_budget]\nenabled = true\nuse_history_notes_extension = {use_history_notes}\n"
+                )
+            };
+            std::fs::write(home.join("config.toml"), config)
+                .expect("write token-budget configuration");
+        })
+        .with_model_info_override("gpt-5.2", move |model_info| {
+            model_info.supports_experimental_context = supports_context;
+            let mut defaults = model_token_budget_config();
+            defaults.enabled = use_model_defaults;
+            defaults.use_history_notes_extension = use_history_notes;
+            model_info
+                .model_messages
+                .as_mut()
+                .expect("bundled model should have model messages")
+                .token_budget = Some(defaults);
+        })
+        .with_config(move |config| {
+            config.model_provider.base_url = Some(backend_url);
+            config.model_context_window = Some(CONFIGURED_CONTEXT_WINDOW);
+        });
+    let test = builder.build_with_auto_env(&server).await?;
+
+    let response = mount_sse_sequence(
+        &server,
+        vec![sse_completed("resp-1"), sse_completed("resp-2")],
+    )
+    .await;
+    test.submit_turn("inspect token-budget activation").await?;
+    // Builder overrides are consumed by the initial build. Reapply the model and
+    // provider settings so the cold resume exercises the same activation defaults.
+    let initial_config = test.config.clone();
+    let resumed = builder
+        .with_config(move |config| {
+            config.model = initial_config.model;
+            config.model_catalog = initial_config.model_catalog;
+            config.model_provider = initial_config.model_provider;
+            config.model_context_window = initial_config.model_context_window;
+        })
+        .restart(&server, &test)
+        .await?;
+    resumed
+        .submit_turn("inspect token-budget activation after restart")
+        .await?;
+
+    let requests = response.requests();
+    assert_eq!(requests.len(), 2);
+    for request in requests {
+        assert!(
+            tool_names(&request)
+                .iter()
+                .any(|name| name == "new_context")
+        );
+        assert_eq!(token_budget_contexts(&request).len(), 1);
+        let turn_metadata: Value = serde_json::from_str(
+            &request
+                .header("x-codex-turn-metadata")
+                .expect("request should include turn metadata"),
+        )?;
+        assert_eq!(
+            turn_metadata["history_ingest_requested"].as_bool(),
+            use_history_notes.then_some(true)
+        );
+    }
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn token_budget_uses_model_message_defaults() -> Result<()> {
+    skip_if_no_network!(Ok(()));
+
+    let server = start_mock_server().await;
+    let response = mount_sse_once(&server, sse_completed("resp-1")).await;
+    let mut model_defaults = model_token_budget_config();
+    model_defaults.enabled = true;
+    model_defaults.use_history_notes_extension = true;
+    let expected_guidance = model_defaults.guidance_message.clone();
+    let test = test_codex()
+        .with_model_info_override("gpt-5.2", move |model_info| {
+            model_info.supports_experimental_context = true;
+            model_info
+                .model_messages
+                .as_mut()
+                .expect("bundled model should have model messages")
+                .token_budget = Some(model_defaults);
+        })
+        .with_config(|config| {
+            config.model_context_window = Some(CONFIGURED_CONTEXT_WINDOW);
+        })
+        .build_with_auto_env(&server)
+        .await?;
+
+    test.submit_turn("inspect model-owned context guidance")
+        .await?;
+
+    let request = response.single_request();
+    let token_budget_context = token_budget_contexts(&request);
+    assert_eq!(token_budget_context.len(), 1);
+    assert!(
+        token_budget_context[0]
+            .starts_with(&format!("{CONTEXT_WINDOW_OPEN_TAG}\nAgent name: /root\n"))
+    );
+    let developer_texts = request.message_input_texts("developer");
+    assert!(developer_texts.iter().any(|text| {
+        text == &format!(
+            "{CONTEXT_WINDOW_GUIDANCE_OPEN_TAG}\n{expected_guidance}\n{CONTEXT_WINDOW_GUIDANCE_CLOSE_TAG}"
+        )
+    }));
+
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn token_budget_explicit_default_template_overrides_model_defaults() -> Result<()> {
+    skip_if_no_network!(Ok(()));
+
+    let server = start_mock_server().await;
+    let response = mount_sse_once(&server, sse_completed("resp-1")).await;
+    let test = test_codex()
+        .with_pre_build_hook(|home| {
+            let default_template = TokenBudgetConfig::default().reminder_message_template;
+            std::fs::write(
+                home.join("config.toml"),
+                format!(
+                    "[features.token_budget]\nenabled = true\nreminder_message_template = {default_template:?}\n"
+                ),
+            )
+            .expect("write explicit default token-budget configuration");
+        })
+        .with_model_info_override("gpt-5.2", |model_info| {
+            model_info
+                .model_messages
+                .as_mut()
+                .expect("bundled model should have model messages")
+                .token_budget = Some(model_token_budget_config());
+        })
+        .with_config(|config| {
+            config.model_context_window = Some(CONFIGURED_CONTEXT_WINDOW);
+        })
+        .build_with_auto_env(&server)
+        .await?;
+
+    test.submit_turn("inspect explicitly configured default template")
+        .await?;
+
+    assert!(
+        !response
+            .single_request()
+            .message_input_texts("developer")
+            .iter()
+            .any(|text| text.contains("Use the model-owned context-window guidance.")),
+        "an explicitly configured default template must not inherit model-owned settings"
+    );
+
+    Ok(())
+}
+
+#[test_case(Feature::TokenBudget; "explicit_activation")]
+#[test_case(Feature::ContextManagement; "experimental_activation")]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn token_budget_defaults_follow_the_active_model(activation: Feature) -> Result<()> {
+    skip_if_no_network!(Ok(()));
+
+    let server = start_mock_server().await;
+    let responses = mount_sse_sequence(
+        &server,
+        vec![sse_completed("resp-1"), sse_completed("resp-2")],
+    )
+    .await;
+    let backend_url = format!("{}/backend-api/codex", server.uri());
+    let test = test_codex()
+        .with_auth(CodexAuth::from_external_chatgpt_tokens(
+            "header.e30.signature",
+            "account-123",
+            Some("plus"),
+        )?)
+        .with_model_info_override("gpt-5.2", |model_info| {
+            model_info.supports_experimental_context = true;
+            let mut defaults = model_token_budget_config();
+            defaults.guidance_message = "Use first-model context-window guidance.".to_string();
+            model_info
+                .model_messages
+                .as_mut()
+                .expect("bundled model should have model messages")
+                .token_budget = Some(defaults);
+        })
+        .with_model_info_override("gpt-5.4", |model_info| {
+            let mut defaults = model_token_budget_config();
+            defaults.guidance_message = "Use second-model context-window guidance.".to_string();
+            model_info
+                .model_messages
+                .as_mut()
+                .expect("bundled model should have model messages")
+                .token_budget = Some(defaults);
+        })
+        .with_model("gpt-5.2")
+        .with_config(move |config| {
+            config.model_provider.base_url = Some(backend_url);
+            config.model_context_window = Some(CONFIGURED_CONTEXT_WINDOW);
+            config
+                .features
+                .enable(activation)
+                .expect("test config should allow token budget");
+        })
+        .build_with_auto_env(&server)
+        .await?;
+
+    test.submit_turn("inspect first-model guidance").await?;
+    core_test_support::submit_thread_settings(
+        &test.codex,
+        ThreadSettingsOverrides {
+            model: Some("gpt-5.4".to_string()),
+            ..Default::default()
+        },
+    )
+    .await?;
+    test.codex
+        .start_or_steer_turn(TurnInputRequest::user_input(vec![UserInput::Text {
+            text: "inspect second-model guidance".to_string(),
+            text_elements: Vec::new(),
+        }]))
+        .await?;
+    wait_for_event(&test.codex, |event| {
+        matches!(event, EventMsg::TurnComplete(_))
+    })
+    .await;
+
+    let requests = responses.requests();
+    assert_eq!(requests.len(), 2);
+    assert_eq!(requests[1].body_json()["model"], "gpt-5.4");
+    assert!(requests[0].body_contains_text("Use first-model context-window guidance."));
+    assert!(
+        requests[1].body_contains_text("Use first-model context-window guidance."),
+        "switching models must preserve the existing conversation history"
+    );
+    let developer_texts = requests[1].message_input_texts("developer");
+    assert!(
+        developer_texts
+            .iter()
+            .any(|text| text.contains("<model_switch>")),
+        "switching models should preserve the existing model-switch message"
+    );
+    let expected_guidance = format!(
+        "{CONTEXT_WINDOW_GUIDANCE_OPEN_TAG}\nThis context-window guidance replaces all previously provided context-window guidance.\n\nUse second-model context-window guidance.\n{CONTEXT_WINDOW_GUIDANCE_CLOSE_TAG}"
+    );
+    assert_eq!(
+        developer_texts
+            .iter()
+            .filter(|text| **text == expected_guidance)
+            .count(),
+        1,
+        "the active model's guidance should be emitted once by world state"
+    );
+
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn token_budget_ignores_invalid_model_message_defaults() -> Result<()> {
+    skip_if_no_network!(Ok(()));
+
+    let mut zero_reminder_threshold = model_token_budget_config();
+    zero_reminder_threshold.reminder_threshold_tokens = 0;
+    let mut negative_fallback_buffer = model_token_budget_config();
+    negative_fallback_buffer.auto_compact_fallback_buffer_tokens = -1;
+    let mut oversized_reminder = model_token_budget_config();
+    oversized_reminder.reminder_message_template = "x".repeat(2_001);
+    let mut oversized_guidance = model_token_budget_config();
+    oversized_guidance.guidance_message = "x".repeat(2_001);
+    let mut oversized_fallback = model_token_budget_config();
+    oversized_fallback.auto_compact_fallback_prompt = "x".repeat(2_001);
+
+    for model_defaults in [
+        zero_reminder_threshold,
+        negative_fallback_buffer,
+        oversized_reminder,
+        oversized_guidance,
+        oversized_fallback,
+    ] {
+        let server = start_mock_server().await;
+        let response = mount_sse_once(&server, sse_completed("resp-1")).await;
+        let test = test_codex()
+            .with_model_info_override("gpt-5.2", move |model_info| {
+                model_info
+                    .model_messages
+                    .as_mut()
+                    .expect("bundled model should have model messages")
+                    .token_budget = Some(model_defaults);
+            })
+            .with_config(|config| {
+                config.model_context_window = Some(CONFIGURED_CONTEXT_WINDOW);
+                config
+                    .features
+                    .enable(Feature::TokenBudget)
+                    .expect("test config should allow token budget");
+            })
+            .build_with_auto_env(&server)
+            .await?;
+
+        test.submit_turn("inspect invalid model-owned context guidance")
+            .await?;
+
+        assert!(
+            !response
+                .single_request()
+                .message_input_texts("developer")
+                .iter()
+                .any(|text| text.starts_with(CONTEXT_WINDOW_GUIDANCE_OPEN_TAG)),
+            "invalid model-owned token-budget settings must not enter the model context"
+        );
+    }
+
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn model_token_budget_defaults_do_not_enable_disabled_feature() -> Result<()> {
+    skip_if_no_network!(Ok(()));
+
+    let server = start_mock_server().await;
+    let response = mount_sse_once(&server, sse_completed("resp-1")).await;
+    let test = test_codex()
+        .with_model_info_override("gpt-5.2", |model_info| {
+            model_info
+                .model_messages
+                .as_mut()
+                .expect("bundled model should have model messages")
+                .token_budget = Some(model_token_budget_config());
+        })
+        .with_config(|config| {
+            config
+                .features
+                .disable(Feature::TokenBudget)
+                .expect("test config should allow token budget to be disabled");
+        })
+        .build_with_auto_env(&server)
+        .await?;
+
+    test.submit_turn("inspect disabled context guidance")
+        .await?;
+
+    let request = response.single_request();
+    assert!(token_budget_contexts(&request).is_empty());
+    assert!(
+        !request
+            .message_input_texts("developer")
+            .iter()
+            .any(|text| text.contains("Use the model-owned context-window guidance."))
     );
 
     Ok(())
@@ -289,7 +772,10 @@ async fn token_budget_context_injects_plain_thread_hint_text() -> Result<()> {
                     environment_id: "local".to_string(),
                     enabled: true,
                     required: false,
+                    startup_readiness: Default::default(),
                     supports_parallel_tool_calls: false,
+                    tool_input_schema_max_bytes: None,
+                    omit_tools_from: None,
                     disabled_reason: None,
                     startup_timeout_sec: Some(Duration::from_secs(10)),
                     tool_timeout_sec: None,
@@ -327,7 +813,7 @@ async fn token_budget_context_injects_plain_thread_hint_text() -> Result<()> {
     assert_eq!(token_budgets.len(), 1);
     let captures = assert_regex_match(
         &format!(
-            r"^{CONTEXT_WINDOW_OPEN_TAG}\nThread id: {thread_id}\nFirst context window id: ([0-9a-f-]{{36}})\nCurrent context window id: ([0-9a-f-]{{36}})\nmanual history hint for thread {thread_id}\nunstructured notes/thread_hint fixture result\n{CONTEXT_WINDOW_CLOSE_TAG}$"
+            r"^{CONTEXT_WINDOW_OPEN_TAG}\nAgent name: /root\nFirst context window id: ([0-9a-f-]{{36}})\nCurrent context window id: ([0-9a-f-]{{36}})\nmanual history hint for thread {thread_id}\nunstructured notes/thread_hint fixture result\n{CONTEXT_WINDOW_CLOSE_TAG}$"
         ),
         &token_budgets[0],
     );
@@ -511,11 +997,10 @@ async fn get_context_remaining_returns_token_budget_remaining_fragment() -> Resu
         "get_context_remaining should be exposed when token budget is enabled"
     );
 
-    let thread_id = test.session_configured.thread_id;
     let remaining_context = "You have 6500 tokens left in this context window.".to_string();
     let token_budgets = token_budget_contexts(&requests[1]);
     assert_eq!(token_budgets.len(), 1);
-    token_budget_window_ids(&token_budgets[0], thread_id);
+    token_budget_window_ids(&token_budgets[0], "/root");
     assert_eq!(
         requests[2].function_call_output_content_and_success(call_id),
         Some((Some(remaining_context), None))
@@ -648,8 +1133,12 @@ async fn get_context_remaining_returns_unknown_when_threshold_is_unbounded() -> 
     Ok(())
 }
 
+#[test_case(false; "token_budget_only")]
+#[test_case(true; "with_client_developer_retention")]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn token_budget_context_uses_new_window_after_compaction() -> Result<()> {
+async fn token_budget_context_uses_new_window_after_compaction(
+    retain_client_developer_messages: bool,
+) -> Result<()> {
     skip_if_no_network!(Ok(()));
 
     let server = start_mock_server().await;
@@ -665,8 +1154,6 @@ async fn token_budget_context_uses_new_window_after_compaction() -> Result<()> {
         ],
     )
     .await;
-    let compact = mount_compact_json_once(&server, json!({ "output": [] })).await;
-
     let mut model_provider = built_in_model_providers(/*openai_base_url*/ None)["openai"].clone();
     model_provider.base_url = Some(format!("{}/v1", server.uri()));
     model_provider.supports_websockets = false;
@@ -679,36 +1166,62 @@ async fn token_budget_context_uses_new_window_after_compaction() -> Result<()> {
                 .features
                 .enable(Feature::TokenBudget)
                 .expect("test config should allow token budget");
+            if retain_client_developer_messages {
+                config
+                    .features
+                    .enable(Feature::RetainClientDeveloperMessages)
+                    .expect("test config should allow client developer retention");
+            }
         })
         .build(&server)
         .await?;
 
+    if retain_client_developer_messages {
+        test.codex
+            .inject_response_items(vec![serde_json::from_value(json!({
+                "type": "message",
+                "role": "developer",
+                "content": [{"type": "input_text", "text": "CLIENT_DEVELOPER_INSTRUCTIONS"}]
+            }))?])
+            .await?;
+    }
     test.submit_turn("before compact").await?;
-    test.codex
-        .submit(Op::Compact { instructions: None })
-        .await?;
+    test.codex.submit(Op::Compact).await?;
     assert_context_compaction_item_lifecycle(&test.codex).await;
     test.submit_turn("after compact").await?;
 
     let requests = responses.requests();
     assert_eq!(requests.len(), 2);
-    assert!(
-        compact.requests().is_empty(),
-        "token budget compaction should not call server-side compaction"
-    );
 
-    let thread_id = test.session_configured.thread_id;
     let initial_token_budget = token_budget_contexts(&requests[0]);
     assert_eq!(initial_token_budget.len(), 1);
     let (initial_first_window_id, initial_previous_window_id, initial_window_id) =
-        token_budget_window_ids(&initial_token_budget[0], thread_id);
+        token_budget_window_ids(&initial_token_budget[0], "/root");
+    let initial_turn_metadata: Value = serde_json::from_str(
+        &requests[0]
+            .header("x-codex-turn-metadata")
+            .expect("initial context window metadata"),
+    )?;
+    assert_eq!(
+        initial_turn_metadata["context_window_id"].as_str(),
+        Some(initial_window_id.as_str())
+    );
     let post_compaction_token_budget = token_budget_contexts(&requests[1]);
     assert_eq!(post_compaction_token_budget.len(), 1);
     let (
         post_compaction_first_window_id,
         post_compaction_previous_window_id,
         post_compaction_window_id,
-    ) = token_budget_window_ids(&post_compaction_token_budget[0], thread_id);
+    ) = token_budget_window_ids(&post_compaction_token_budget[0], "/root");
+    let post_compaction_turn_metadata: Value = serde_json::from_str(
+        &requests[1]
+            .header("x-codex-turn-metadata")
+            .expect("post-compaction context window metadata"),
+    )?;
+    assert_eq!(
+        post_compaction_turn_metadata["context_window_id"].as_str(),
+        Some(post_compaction_window_id.as_str())
+    );
     assert_eq!(initial_previous_window_id, None);
     assert_eq!(initial_first_window_id, initial_window_id);
     assert_eq!(post_compaction_first_window_id, initial_first_window_id);
@@ -724,6 +1237,11 @@ async fn token_budget_context_uses_new_window_after_compaction() -> Result<()> {
     assert!(
         !requests[1].body_contains_text("assistant before compact"),
         "token budget compaction should drop prior assistant messages"
+    );
+    assert_eq!(
+        requests[1].body_contains_text("CLIENT_DEVELOPER_INSTRUCTIONS"),
+        retain_client_developer_messages,
+        "token budget compaction should retain client-authored developer messages when enabled"
     );
     assert!(
         requests[1].body_contains_text("after compact"),
@@ -751,9 +1269,7 @@ async fn token_budget_compaction_runs_compact_hooks() -> Result<()> {
         .build(&server)
         .await?;
 
-    test.codex
-        .submit(Op::Compact { instructions: None })
-        .await?;
+    test.codex.submit(Op::Compact).await?;
 
     let pre_compact = wait_for_event_match(&test.codex, |event| match event {
         EventMsg::HookCompleted(completed)
@@ -784,8 +1300,12 @@ async fn token_budget_compaction_runs_compact_hooks() -> Result<()> {
     Ok(())
 }
 
+#[test_case(false; "token_budget_only")]
+#[test_case(true; "with_client_developer_retention")]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn token_budget_mid_turn_auto_compaction_resets_before_active_follow_up() -> Result<()> {
+async fn token_budget_mid_turn_auto_compaction_resets_before_active_follow_up(
+    retain_client_developer_messages: bool,
+) -> Result<()> {
     skip_if_no_network!(Ok(()));
 
     let server = start_mock_server().await;
@@ -811,17 +1331,45 @@ async fn token_budget_mid_turn_auto_compaction_resets_before_active_follow_up() 
     model_provider.base_url = Some(format!("{}/v1", server.uri()));
     model_provider.supports_websockets = false;
     let test = test_codex()
+        .with_model_info_override("gpt-5.2", |model_info| {
+            model_info
+                .model_messages
+                .as_mut()
+                .expect("bundled model should have model messages")
+                .token_budget = Some(model_token_budget_config());
+        })
         .with_config(move |config| {
             config.model_provider = model_provider;
             config.model_context_window = Some(10_000);
+            config.token_budget = Some(TokenBudgetConfig {
+                reminder_threshold_tokens: Some(16_384),
+                reminder_message_template: "Bridge reminder: {n_remaining} tokens remain."
+                    .to_string(),
+                ..TokenBudgetConfig::default()
+            });
             config
                 .features
                 .enable(Feature::TokenBudget)
                 .expect("test config should allow token budget");
+            if retain_client_developer_messages {
+                config
+                    .features
+                    .enable(Feature::RetainClientDeveloperMessages)
+                    .expect("test config should allow client developer retention");
+            }
         })
         .build(&server)
         .await?;
 
+    if retain_client_developer_messages {
+        test.codex
+            .inject_response_items(vec![serde_json::from_value(json!({
+                "type": "message",
+                "role": "developer",
+                "content": [{"type": "input_text", "text": "MID_TURN_CLIENT_INSTRUCTIONS"}]
+            }))?])
+            .await?;
+    }
     test.submit_turn("trigger mid-turn auto compaction").await?;
 
     let requests = responses.requests();
@@ -831,6 +1379,19 @@ async fn token_budget_mid_turn_auto_compaction_resets_before_active_follow_up() 
         "token-budget auto-compaction should reset locally before the continuation"
     );
     assert!(
+        !requests
+            .iter()
+            .any(|request| request
+                .body_contains_text("Use the model-owned context-window guidance.")),
+        "an explicit token-budget config must not inherit model-owned guidance"
+    );
+    assert!(
+        !requests
+            .iter()
+            .any(|request| request.body_contains_text(AUTO_COMPACT_FALLBACK_PROMPT)),
+        "an explicit token-budget config must not enable model-owned fallback"
+    );
+    assert!(
         !requests[1].input().iter().any(|item| {
             item.get("type").and_then(Value::as_str) == Some("function_call_output")
                 && item.get("call_id").and_then(Value::as_str) == Some(call_id)
@@ -838,15 +1399,14 @@ async fn token_budget_mid_turn_auto_compaction_resets_before_active_follow_up() 
         "fresh token-budget windows should drop active tool output with the prior history"
     );
 
-    let thread_id = test.session_configured.thread_id;
     let initial_token_budget = token_budget_contexts(&requests[0]);
     assert_eq!(initial_token_budget.len(), 1);
     let (initial_first_window_id, _, initial_window_id) =
-        token_budget_window_ids(&initial_token_budget[0], thread_id);
+        token_budget_window_ids(&initial_token_budget[0], "/root");
     let follow_up_token_budget = token_budget_contexts(&requests[1]);
     assert_eq!(follow_up_token_budget.len(), 1);
     let (follow_up_first_window_id, follow_up_previous_window_id, follow_up_window_id) =
-        token_budget_window_ids(&follow_up_token_budget[0], thread_id);
+        token_budget_window_ids(&follow_up_token_budget[0], "/root");
     assert_eq!(follow_up_first_window_id, initial_first_window_id);
     assert_eq!(
         follow_up_previous_window_id.as_deref(),
@@ -855,6 +1415,11 @@ async fn token_budget_mid_turn_auto_compaction_resets_before_active_follow_up() 
     assert!(
         !requests[1].body_contains_text("trigger mid-turn auto compaction"),
         "fresh token-budget windows should drop prior user messages"
+    );
+    assert_eq!(
+        requests[1].body_contains_text("MID_TURN_CLIENT_INSTRUCTIONS"),
+        retain_client_developer_messages,
+        "mid-turn token-budget compaction should retain client-authored developer messages when enabled"
     );
     assert_ne!(
         follow_up_window_id, initial_window_id,
@@ -882,7 +1447,7 @@ async fn token_budget_auto_compact_fallback_uses_buffer_until_new_context() -> R
             ]),
             sse(vec![
                 ev_response_created("fallback-tool-resp"),
-                ev_shell_command_call(fallback_call_id, "echo fallback-note > fallback-note.txt"),
+                ev_exec_command_call(fallback_call_id, "echo fallback-note > fallback-note.txt"),
                 ev_completed_with_tokens("fallback-tool-resp", /*total_tokens*/ 10_000),
             ]),
             sse(vec![
@@ -938,16 +1503,15 @@ async fn token_budget_auto_compact_fallback_uses_buffer_until_new_context() -> R
         fallback_request.function_call_output_text(trigger_call_id),
         Some("You have 0 tokens left in this context window.".to_string())
     );
-    let thread_id = test.session_configured.thread_id;
     let initial_context = token_budget_contexts(&requests[0]);
     assert_eq!(token_budget_contexts(fallback_request), initial_context);
     assert_eq!(token_budget_contexts(&requests[2]), initial_context);
     assert!(requests[2].body_contains_text(AUTO_COMPACT_FALLBACK_PROMPT));
     assert!(requests[2].body_contains_text(fallback_call_id));
-    let (_, _, initial_window_id) = token_budget_window_ids(&initial_context[0], thread_id);
+    let (_, _, initial_window_id) = token_budget_window_ids(&initial_context[0], "/root");
     let follow_up_context = token_budget_contexts(&requests[3]);
     let (_, previous_window_id, follow_up_window_id) =
-        token_budget_window_ids(&follow_up_context[0], thread_id);
+        token_budget_window_ids(&follow_up_context[0], "/root");
     assert_eq!(
         previous_window_id.as_deref(),
         Some(initial_window_id.as_str())
@@ -1062,8 +1626,18 @@ async fn new_context_tool_skips_auto_compact_fallback() -> Result<()> {
         ],
     )
     .await;
+    let mut extensions = ExtensionRegistryBuilder::<Config>::new();
+    install(&mut extensions, |config: &Config| SkillsExtensionConfig {
+        include_instructions: config.include_skill_instructions,
+        max_context_tokens: config.skill_max_context_tokens,
+        bundled_skills_enabled: config.bundled_skills_enabled(),
+        cloud_skill_enabled: config.cloud_skill_enabled,
+        shadow_selection_enabled: config.features.enabled(Feature::SkillSearch),
+    });
     let test = test_codex()
+        .with_extensions(Arc::new(extensions.build()))
         .with_config(|config| {
+            config.update_plan_enabled = true;
             config.model_context_window = Some(10_000);
             config.token_budget = Some(TokenBudgetConfig {
                 auto_compact_fallback_prompt: Some(AUTO_COMPACT_FALLBACK_PROMPT.to_string()),
@@ -1089,15 +1663,14 @@ async fn new_context_tool_skips_auto_compact_fallback() -> Result<()> {
             .any(|name| name == "new_context"),
         "new_context should be exposed when token budget is enabled"
     );
-    let thread_id = test.session_configured.thread_id;
     let initial_token_budget = token_budget_contexts(&requests[0]);
     assert_eq!(initial_token_budget.len(), 1);
     let (initial_first_window_id, _, initial_window_id) =
-        token_budget_window_ids(&initial_token_budget[0], thread_id);
+        token_budget_window_ids(&initial_token_budget[0], "/root");
     let new_window_token_budget = token_budget_contexts(&requests[2]);
     assert_eq!(new_window_token_budget.len(), 1);
     let (new_first_window_id, new_previous_window_id, new_window_id) =
-        token_budget_window_ids(&new_window_token_budget[0], thread_id);
+        token_budget_window_ids(&new_window_token_budget[0], "/root");
     assert_eq!(new_first_window_id, initial_first_window_id);
     assert_eq!(
         new_previous_window_id.as_deref(),
@@ -1115,12 +1688,8 @@ async fn new_context_tool_skips_auto_compact_fallback() -> Result<()> {
     let snapshot = context_snapshot::format_labeled_requests_snapshot(
         "New context window tool installs fresh full context before the next follow-up request.",
         &[("Final Follow-Up Request", &requests[2])],
-        &ContextSnapshotOptions::default(),
+        &ContextSnapshotOptions::default().rewrite_known_segments(),
     );
-    let snapshot = snapshot
-        .replace(&thread_id.to_string(), "<THREAD_ID>")
-        .replace(&new_first_window_id, "<FIRST_WINDOW_ID>")
-        .replace(&new_window_id, "<WINDOW_ID>");
     insta::assert_snapshot!(
         "token_budget_new_context_window_tool_full_context",
         snapshot

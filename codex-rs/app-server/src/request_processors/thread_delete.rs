@@ -1,4 +1,3 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 //! `thread/delete` request handling.
 
 use super::thread_processor::unsupported_thread_store_operation;
@@ -42,42 +41,18 @@ impl ThreadRequestProcessor {
         self.validate_root_thread_delete(thread_id, thread_ids.len() > 1)
             .await?;
         for thread_id_to_delete in thread_ids.iter().copied() {
-            self.prepare_thread_for_delete(thread_id_to_delete).await;
+            self.prepare_thread_for_delete(thread_id_to_delete).await?;
         }
 
         let mut delete_order: Vec<_> = thread_ids.iter().skip(1).rev().copied().collect();
         delete_order.push(thread_id);
 
-        for thread_id_to_delete in delete_order.iter().copied() {
-            match self
-                .thread_store
-                .delete_thread(StoreDeleteThreadParams {
-                    thread_id: thread_id_to_delete,
-                })
-                .await
-            {
-                Ok(()) => {}
-                Err(ThreadStoreError::ThreadNotFound { .. }) => {
-                    warn!(
-                        "thread {thread_id_to_delete} was already missing while deleting {thread_id}"
-                    );
-                }
-                Err(err) => {
-                    return Err(thread_store_delete_error(err));
-                }
-            }
-        }
-
-        if let Some(state_db) = self.state_db.as_ref() {
-            state_db
-                .delete_threads_strict(thread_ids.as_slice())
-                .await
-                .map_err(|err| {
-                    internal_error(format!(
-                        "failed to delete app-server state for {thread_id}: {err}"
-                    ))
-                })?;
-        }
+        self.thread_store
+            .delete_threads(StoreDeleteThreadsParams {
+                thread_ids: delete_order.clone(),
+            })
+            .await
+            .map_err(thread_store_delete_error)?;
 
         deleted_thread_ids.extend(
             delete_order
@@ -150,11 +125,15 @@ impl ThreadRequestProcessor {
         }
     }
 
-    async fn prepare_thread_for_delete(&self, thread_id: ThreadId) {
-        self.prepare_thread_for_removal(thread_id, "delete").await;
+    async fn prepare_thread_for_delete(
+        &self,
+        thread_id: ThreadId,
+    ) -> Result<(), JSONRPCErrorError> {
+        self.prepare_thread_for_removal(thread_id, "delete").await?;
         if let Some(log_db) = self.log_db.as_ref() {
             log_db.flush().await;
         }
+        Ok(())
     }
 }
 
@@ -163,7 +142,9 @@ fn thread_store_delete_error(err: ThreadStoreError) -> JSONRPCErrorError {
         ThreadStoreError::ThreadNotFound { thread_id } => {
             invalid_request(format!("thread not found: {thread_id}"))
         }
-        ThreadStoreError::InvalidRequest { message } => invalid_request(message),
+        ThreadStoreError::InvalidRequest { message } | ThreadStoreError::Conflict { message } => {
+            invalid_request(message)
+        }
         ThreadStoreError::Unsupported { operation } => {
             unsupported_thread_store_operation(operation)
         }

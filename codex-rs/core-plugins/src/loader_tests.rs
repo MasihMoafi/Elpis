@@ -1,12 +1,14 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use super::*;
 use crate::manifest::load_plugin_manifest;
+use crate::manifest::load_plugin_manifest_with_format;
+use crate::test_support::test_skill_root_loader;
 use crate::test_support::write_file;
 use codex_config::ConfigLayerEntry;
 use codex_config::ConfigLayerSource;
 use codex_config::ConfigRequirements;
 use codex_config::ConfigRequirementsToml;
 use codex_plugin::PluginId;
+use codex_utils_plugins::AGENT_PLUGIN_SCHEMA_URI;
 use pretty_assertions::assert_eq;
 use tempfile::TempDir;
 
@@ -25,11 +27,399 @@ fn user_layer(path: AbsolutePathBuf, config: &str) -> ConfigLayerEntry {
     )
 }
 
+#[tokio::test]
+async fn ema_policy_overlays_native_and_agent_plugins_without_changing_endpoints() {
+    let temp_dir = TempDir::new().expect("tempdir");
+    let policy_config = r#"
+        [plugins."sample@test".mcp_servers.example]
+        enabled = true
+        [plugins."sample@test".mcp_servers.example.ema_auth]
+        url = "https://resource.example/mcp"
+        client_id = "resource-client"
+        authorization_server_issuer = "https://as.example"
+        resource = "https://resource.example"
+        scopes = ["tools"]
+    "#;
+    let stack = ConfigLayerStack::new(
+        vec![ConfigLayerEntry::new(
+            ConfigLayerSource::EnterpriseManaged {
+                id: "ema-policy".to_string(),
+                name: "EMA policy".to_string(),
+            },
+            toml::from_str(policy_config).expect("managed policy toml"),
+        )],
+        ConfigRequirements::default(),
+        ConfigRequirementsToml::default(),
+    )
+    .expect("valid trusted policy stack");
+    let policies = configured_plugins_from_stack(&stack, temp_dir.path())
+        .remove("sample@test")
+        .expect("configured plugin")
+        .mcp_servers;
+
+    for (name, manifest_path, manifest, mcp_path, mcp) in [
+        (
+            "native",
+            ".codex-plugin/plugin.json",
+            r#"{"name":"native"}"#,
+            ".mcp.json",
+            r#"{"mcpServers":{"example":{"url":"https://resource.example/mcp"}}}"#,
+        ),
+        (
+            "agent",
+            "plugin.json",
+            r#"{"$schema":"https://agent-plugins.org/schemas/1.0.0/plugin.schema.json","name":"agent"}"#,
+            "mcp.json",
+            r#"{"$schema":"https://agent-plugins.org/schemas/1.0.0/mcp.schema.json","mcpServers":{"example":{"type":"streamable-http","url":"https://resource.example/mcp"}}}"#,
+        ),
+    ] {
+        for endpoint in [
+            "https://resource.example/mcp",
+            "https://resource.example/mcp/other",
+            "https://resource.example/mcp?tenant=other",
+            "https://other.example/mcp",
+        ] {
+            let root = temp_dir.path().join(name);
+            write_file(&root.join(manifest_path), manifest);
+            write_file(
+                &root.join(mcp_path),
+                &mcp.replace("https://resource.example/mcp", endpoint),
+            );
+            let declared = load_plugin_mcp_servers(&root, /*auth_mode*/ None).await;
+            let transport = declared["example"].transport.clone();
+            let installed = load_plugin_mcp_servers_with_policy(
+                &root,
+                /*auth_mode*/ None,
+                Some(&policies),
+            )
+            .await;
+            let mut selected = declared;
+            apply_configured_plugin_mcp_server_policies(&policies, &mut selected);
+            assert_eq!(installed, selected);
+            let server = &selected["example"];
+            assert_eq!(server.transport, transport);
+            assert_eq!(server.enabled, endpoint == "https://resource.example/mcp");
+            assert_eq!(server.auth, codex_config::McpServerAuth::EmaAuth);
+            assert_eq!(
+                server.oauth,
+                Some(codex_config::McpServerOAuthConfig {
+                    client_id: Some("resource-client".into()),
+                    authorization_server_issuer: Some("https://as.example".into()),
+                    ema_registration_error: (endpoint != "https://resource.example/mcp")
+                        .then_some("plugin endpoint does not match its EMA registration"),
+                    ..Default::default()
+                })
+            );
+            assert_eq!(
+                server.oauth_resource.as_deref(),
+                Some("https://resource.example")
+            );
+            assert_eq!(
+                server.scopes.as_deref(),
+                Some(["tools".to_string()].as_slice())
+            );
+            assert_eq!(server.oauth_idp(), None);
+        }
+    }
+}
+
+#[tokio::test]
+async fn agent_plugin_overlay_apps_are_not_runtime_active() {
+    let temp_dir = TempDir::new().expect("tempdir");
+    let plugin_root = temp_dir.path().join("plugin");
+    write_file(
+        &plugin_root.join("plugin.json"),
+        &format!(r#"{{"$schema":"{AGENT_PLUGIN_SCHEMA_URI}","name":"plugin"}}"#),
+    );
+    write_file(
+        &plugin_root.join(".codex-plugin/plugin.json"),
+        r#"{"name":"plugin","apps":"./.app.json"}"#,
+    );
+    write_file(
+        &plugin_root.join(".app.json"),
+        r#"{"apps":{"example":{"id":"connector_example"}}}"#,
+    );
+
+    assert!(load_plugin_apps(&plugin_root).await.is_empty());
+}
+
+#[tokio::test]
+async fn agent_plugin_codex_mcp_overlay_only_forwards_matching_stdio_server_env_vars() {
+    let temp_dir = TempDir::new().expect("tempdir");
+    let plugin_root = temp_dir.path().join("plugin");
+    write_file(
+        &plugin_root.join("plugin.json"),
+        &format!(
+            r#"{{"$schema":"{AGENT_PLUGIN_SCHEMA_URI}","name":"plugin","extensions":{{"com.openai":{{"interface":{{"displayName":"Portable"}}}}}}}}"#
+        ),
+    );
+    write_file(
+        &plugin_root.join("mcp.json"),
+        r#"{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+  "mcpServers": {
+    "shared": {
+      "type": "stdio",
+      "command": "portable-server",
+      "args": ["portable"],
+      "env": {
+        "DB_PASSWORD": "${DB_PASSWORD}",
+        "API_TOKEN": "portable-token",
+        "REMOTE_ONLY": "${REMOTE_ONLY}",
+        "UNLISTED": "${UNLISTED}"
+      }
+    },
+    "portable-only": {"type": "stdio", "command": "portable-only"}
+  }
+}"#,
+    );
+
+    let mut expected = load_plugin_mcp_servers(&plugin_root, /*auth_mode*/ None).await;
+    let Some(McpServerConfig {
+        transport: McpServerTransportConfig::Stdio { env, env_vars, .. },
+        ..
+    }) = expected.get_mut("shared")
+    else {
+        panic!("expected portable stdio server");
+    };
+    env.as_mut()
+        .expect("portable environment")
+        .remove("DB_PASSWORD");
+    env_vars.extend(["DB_PASSWORD".into(), "API_TOKEN".into()]);
+
+    write_file(
+        &plugin_root.join(".codex-plugin/plugin.json"),
+        r#"{"name":"legacy-plugin"}"#,
+    );
+    write_file(
+        &plugin_root.join(".mcp.json"),
+        r#"{
+  "mcpServers": {
+    "shared": {
+      "command": "legacy-server",
+      "args": ["legacy"],
+      "env_vars": ["DB_PASSWORD", "API_TOKEN", {"name": "REMOTE_ONLY", "source": "remote"}]
+    },
+    "legacy-only": {"command": "legacy-only", "env_vars": ["UNLISTED"]}
+  }
+}"#,
+    );
+
+    assert_eq!(
+        load_plugin_mcp_servers(&plugin_root, /*auth_mode*/ None).await,
+        expected
+    );
+}
+
+#[tokio::test]
+async fn agent_plugin_codex_mcp_overlay_supports_inline_legacy_servers_without_portable_env() {
+    let temp_dir = TempDir::new().expect("tempdir");
+    let plugin_root = temp_dir.path().join("plugin");
+    write_file(
+        &plugin_root.join("plugin.json"),
+        &format!(r#"{{"$schema":"{AGENT_PLUGIN_SCHEMA_URI}","name":"plugin"}}"#),
+    );
+    write_file(
+        &plugin_root.join("mcp.json"),
+        r#"{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+  "mcpServers": {
+    "shared": {
+      "type": "stdio",
+      "command": "portable-server"
+    }
+  }
+}"#,
+    );
+
+    let mut expected = load_plugin_mcp_servers(&plugin_root, /*auth_mode*/ None).await;
+    let Some(McpServerConfig {
+        transport: McpServerTransportConfig::Stdio { env_vars, .. },
+        ..
+    }) = expected.get_mut("shared")
+    else {
+        panic!("expected portable stdio server");
+    };
+    env_vars.push("TOKEN".into());
+
+    write_file(
+        &plugin_root.join(".codex-plugin/plugin.json"),
+        r#"{
+  "name": "legacy-plugin",
+  "mcpServers": {
+    "shared": {"command": "legacy-server", "env_vars": ["TOKEN"]}
+  }
+}"#,
+    );
+
+    assert_eq!(
+        load_plugin_mcp_servers(&plugin_root, /*auth_mode*/ None).await,
+        expected
+    );
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn agent_plugin_mcp_rejects_config_symlink_outside_plugin_root() {
+    let temp_dir = TempDir::new().expect("tempdir");
+    let plugin_root = temp_dir.path().join("plugin");
+    let outside_config = temp_dir.path().join("outside-mcp.json");
+    fs::create_dir_all(&plugin_root).expect("create plugin root");
+    fs::write(
+        plugin_root.join("plugin.json"),
+        format!(r#"{{"$schema":"{AGENT_PLUGIN_SCHEMA_URI}","name":"plugin"}}"#),
+    )
+    .expect("write Agent Plugins manifest");
+    fs::write(
+        &outside_config,
+        r#"{"$schema":"https://agent-plugins.org/schemas/1.0.0/mcp.schema.json","mcpServers":{"outside":{"type":"stdio","command":"echo"}}}"#,
+    )
+    .expect("write outside MCP config");
+    std::os::unix::fs::symlink(&outside_config, plugin_root.join("mcp.json"))
+        .expect("create MCP symlink");
+    let config_path = AbsolutePathBuf::from_absolute_path(plugin_root.join("mcp.json"))
+        .expect("absolute MCP path");
+
+    let discovered = load_mcp_servers_from_file(
+        &plugin_root,
+        /*plugin_data_root*/ None,
+        PluginManifestFormat::AgentPlugin,
+        &config_path,
+    )
+    .await;
+
+    assert!(discovered.mcp_servers.is_empty());
+}
+
+#[tokio::test]
+async fn agent_plugin_mcp_rejects_present_nonregular_config() {
+    let temp_dir = TempDir::new().expect("tempdir");
+    let plugin_root = temp_dir.path().join("plugin");
+    let config_path = plugin_root.join("mcp.json");
+    fs::create_dir_all(&config_path).expect("create nonregular MCP config");
+
+    let discovered = load_mcp_servers_from_file(
+        &plugin_root,
+        /*plugin_data_root*/ None,
+        PluginManifestFormat::AgentPlugin,
+        &AbsolutePathBuf::from_absolute_path(config_path).expect("absolute MCP path"),
+    )
+    .await;
+
+    assert!(discovered.mcp_servers.is_empty());
+}
+
+#[tokio::test]
+async fn legacy_manifest_can_point_at_root_mcp_json() {
+    let temp_dir = TempDir::new().expect("tempdir");
+    let plugin_root = temp_dir.path().join("plugin");
+    fs::create_dir_all(plugin_root.join(".codex-plugin")).expect("create manifest directory");
+    fs::write(
+        plugin_root.join(".codex-plugin/plugin.json"),
+        r#"{"name":"plugin","mcpServers":"./mcp.json"}"#,
+    )
+    .expect("write legacy manifest");
+    fs::write(
+        plugin_root.join("mcp.json"),
+        r#"{"mcpServers":{"legacy":{"command":"echo"}}}"#,
+    )
+    .expect("write legacy MCP config");
+    let manifest = load_plugin_manifest(&plugin_root).expect("load legacy manifest");
+
+    let discovered = load_plugin_mcp_servers_from_manifest_with_format(
+        &plugin_root,
+        &manifest.paths,
+        /*plugin_policy*/ None,
+        /*plugin_data_root*/ None,
+        PluginManifestFormat::Legacy,
+    )
+    .await;
+
+    assert_eq!(
+        discovered.keys().collect::<Vec<_>>(),
+        vec![&"legacy".to_string()]
+    );
+}
+
+#[tokio::test]
+async fn installed_agent_plugin_uses_isolated_data_root_for_stdio_mcp() {
+    let temp_dir = TempDir::new().expect("tempdir");
+    let plugin_root = temp_dir.path().join("plugins/cache/c/a-b/local");
+    write_file(
+        &plugin_root.join("plugin.json"),
+        &format!(r#"{{"$schema":"{AGENT_PLUGIN_SCHEMA_URI}","name":"a-b"}}"#),
+    );
+    write_file(
+        &plugin_root.join("mcp.json"),
+        r#"{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+  "mcpServers": {
+    "example": {
+      "type": "stdio",
+      "command": "echo"
+    }
+  }
+}"#,
+    );
+    let stack = ConfigLayerStack::new(
+        vec![user_layer(
+            user_config_path(&temp_dir, "config.toml"),
+            "[plugins.\"a-b@c\"]\nenabled = true\n",
+        )],
+        ConfigRequirements::default(),
+        ConfigRequirementsToml::default(),
+    )
+    .expect("valid config layer stack");
+    let store = PluginStore::new(temp_dir.path().to_path_buf());
+
+    let plugins = load_plugins_from_layer_stack(
+        &stack,
+        RemoteInstalledPluginsSnapshot::default(),
+        &store,
+        /*plugin_skill_snapshots*/ None,
+        Some(Product::Codex),
+        /*remote_global_catalog_active*/ false,
+        test_skill_root_loader().as_ref(),
+    )
+    .await;
+
+    let expected_data_root = temp_dir
+        .path()
+        .join("plugins")
+        .join("data")
+        .join("agent-plugins")
+        .join("6920dd17774030852d11d1b94758fcaae4f894c7b2f36301ed174bc3b33e0743");
+    let expected_data_root = AbsolutePathBuf::from_absolute_path(expected_data_root)
+        .expect("absolute Agent Plugin data root")
+        .canonicalize()
+        .expect("canonical Agent Plugin data root");
+    let server = plugins
+        .first()
+        .and_then(|plugin| plugin.mcp_servers.get("example"))
+        .expect("Agent plugin stdio MCP server");
+    let McpServerTransportConfig::Stdio { env, .. } = &server.transport else {
+        panic!("expected stdio MCP server");
+    };
+    assert_eq!(
+        env.as_ref()
+            .and_then(|env| env.get("PLUGIN_DATA"))
+            .map(String::as_str),
+        expected_data_root.as_path().to_str()
+    );
+    assert!(expected_data_root.as_path().is_dir());
+}
+
 #[test]
-fn configured_plugins_from_stack_merges_user_layers() {
+fn configured_plugins_from_stack_merges_enabled_effective_layers() {
     let temp_dir = TempDir::new().expect("tempdir");
     let stack = ConfigLayerStack::new(
         vec![
+            ConfigLayerEntry::new(
+                ConfigLayerSource::System {
+                    file: user_config_path(&temp_dir, "system.toml"),
+                },
+                toml::from_str("[plugins.system]\nenabled = true\n").expect("system config toml"),
+            ),
             user_layer(
                 user_config_path(&temp_dir, "config.toml"),
                 "[plugins.base]\nenabled = true\n",
@@ -38,12 +428,36 @@ fn configured_plugins_from_stack_merges_user_layers() {
                 user_config_path(&temp_dir, "work.config.toml"),
                 "[plugins.profile]\nenabled = false\n",
             ),
+            ConfigLayerEntry::new(
+                ConfigLayerSource::Project {
+                    dot_codex_folder: user_config_path(&temp_dir, "project/.codex"),
+                },
+                toml::from_str(
+                    "[plugins.profile]\nenabled = true\n[plugins.profile.mcp_servers.example]\nenabled = false\n",
+                )
+                .expect("project config toml"),
+            ),
+            ConfigLayerEntry::new_disabled(
+                ConfigLayerSource::Project {
+                    dot_codex_folder: user_config_path(&temp_dir, "project/untrusted/.codex"),
+                },
+                toml::from_str("[plugins.untrusted]\nenabled = true\n")
+                    .expect("untrusted project config toml"),
+                "project is untrusted",
+            ),
         ],
         ConfigRequirements::default(),
         ConfigRequirementsToml::default(),
     )
     .expect("valid config layer stack");
 
+    let project_mcp_servers = HashMap::from([(
+        "example".to_string(),
+        PluginMcpServerConfig {
+            enabled: false,
+            ..PluginMcpServerConfig::default()
+        },
+    )]);
     let plugins = configured_plugins_from_stack(&stack, temp_dir.path());
 
     assert_eq!(
@@ -59,11 +473,22 @@ fn configured_plugins_from_stack_merges_user_layers() {
             (
                 "profile".to_string(),
                 PluginConfig {
-                    enabled: false,
+                    enabled: true,
+                    mcp_servers: project_mcp_servers.clone(),
+                },
+            ),
+            (
+                "system".to_string(),
+                PluginConfig {
+                    enabled: true,
                     mcp_servers: HashMap::new(),
                 },
             ),
         ])
+    );
+    assert_eq!(
+        configured_plugin_mcp_server_policies(&stack).get("profile"),
+        Some(&project_mcp_servers)
     );
 }
 
@@ -159,11 +584,12 @@ enabled = true
 
     let full = load_plugins_from_layer_stack(
         &stack,
-        HashMap::new(),
+        RemoteInstalledPluginsSnapshot::default(),
         &store,
         /*plugin_skill_snapshots*/ None,
         Some(Product::Codex),
         /*remote_global_catalog_active*/ false,
+        test_skill_root_loader().as_ref(),
     )
     .await;
     let hooks_only = load_plugins_from_layer_stack_with_scope(
@@ -264,7 +690,8 @@ fn write_hook_file(plugin_root: &AbsolutePathBuf, relative_path: &str, event: &s
 }
 
 fn load_sources(plugin_root: &AbsolutePathBuf) -> (Vec<PluginHookSource>, Vec<String>) {
-    let manifest = load_plugin_manifest(plugin_root.as_path()).expect("manifest");
+    let loaded_manifest =
+        load_plugin_manifest_with_format(plugin_root.as_path()).expect("manifest");
     let plugin_data_root = AbsolutePathBuf::try_from(
         plugin_root
             .as_path()
@@ -277,7 +704,7 @@ fn load_sources(plugin_root: &AbsolutePathBuf) -> (Vec<PluginHookSource>, Vec<St
         plugin_root,
         &plugin_id(),
         &plugin_data_root,
-        &manifest.paths,
+        &loaded_manifest.manifest.paths,
     )
 }
 
@@ -455,6 +882,9 @@ fn load_plugin_hooks_supports_inline_manifest_hook_list() {
 
 #[test]
 fn materialize_git_subdir_uses_sparse_checkout() {
+    let run_git = |args: &[&str], cwd| super::run_git(args, cwd, PluginGitMode::Manual);
+    let run_git_output =
+        |args: &[&str], cwd| super::run_git_output(args, cwd, PluginGitMode::Manual);
     let codex_home = tempfile::tempdir().expect("create codex home");
     let repo = tempfile::tempdir().expect("create git repo");
     let plugin_dir = repo.path().join("plugins/toolkit");
@@ -473,6 +903,7 @@ fn materialize_git_subdir_uses_sparse_checkout() {
     run_git(&["config", "user.name", "Test User"], Some(repo.path())).expect("configure git name");
     run_git(&["add", "."], Some(repo.path())).expect("stage git repo");
     run_git(&["commit", "-m", "init"], Some(repo.path())).expect("commit git repo");
+    let sha = run_git_output(&["rev-parse", "HEAD"], Some(repo.path())).expect("resolve commit");
 
     let materialized = materialize_marketplace_plugin_source(
         codex_home.path(),
@@ -480,7 +911,7 @@ fn materialize_git_subdir_uses_sparse_checkout() {
             url: repo.path().display().to_string(),
             path: Some("plugins/toolkit".to_string()),
             ref_name: None,
-            sha: None,
+            sha: Some(sha),
         },
     )
     .expect("materialize git source");
@@ -498,4 +929,50 @@ fn materialize_git_subdir_uses_sparse_checkout() {
         .expect("materialized path should be nested under checkout root");
     assert!(!checkout_root.join("root.txt").exists());
     assert!(!checkout_root.join("plugins/other/marker.txt").exists());
+}
+
+#[test]
+fn materialize_git_source_rejects_sha_that_resolves_to_hostile_default_branch() {
+    let run_git = |args: &[&str], cwd| super::run_git(args, cwd, PluginGitMode::Manual);
+    let run_git_output =
+        |args: &[&str], cwd| super::run_git_output(args, cwd, PluginGitMode::Manual);
+    let codex_home = tempfile::tempdir().expect("create codex home");
+    let repo = tempfile::tempdir().expect("create git repo");
+    run_git(&["init"], Some(repo.path())).expect("init git repo");
+    run_git(
+        &["config", "user.email", "test@example.com"],
+        Some(repo.path()),
+    )
+    .expect("configure git email");
+    run_git(&["config", "user.name", "Test User"], Some(repo.path())).expect("configure git name");
+
+    fs::write(repo.path().join("marker.txt"), "benign").expect("write benign marker");
+    run_git(&["add", "."], Some(repo.path())).expect("stage git repo");
+    run_git(&["commit", "-m", "benign"], Some(repo.path())).expect("commit benign revision");
+    let benign_sha =
+        run_git_output(&["rev-parse", "HEAD"], Some(repo.path())).expect("resolve commit A");
+
+    fs::write(repo.path().join("marker.txt"), "malicious").expect("write malicious marker");
+    run_git(&["add", "."], Some(repo.path())).expect("stage malicious revision");
+    run_git(&["commit", "-m", "malicious"], Some(repo.path())).expect("commit malicious revision");
+    let malicious_sha =
+        run_git_output(&["rev-parse", "HEAD"], Some(repo.path())).expect("resolve commit B");
+    run_git(&["branch", "-m", &benign_sha], Some(repo.path()))
+        .expect("name default branch after commit A");
+
+    let err = materialize_marketplace_plugin_source(
+        codex_home.path(),
+        &MarketplacePluginSource::Git {
+            url: repo.path().display().to_string(),
+            path: None,
+            ref_name: None,
+            sha: Some(benign_sha.clone()),
+        },
+    )
+    .expect_err("hostile default branch must not satisfy SHA pinning");
+
+    assert_eq!(
+        err,
+        format!("checked out Git SHA {malicious_sha} does not match requested SHA {benign_sha}")
+    );
 }

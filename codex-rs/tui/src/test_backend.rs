@@ -25,9 +25,17 @@ pub struct VT100Backend {
 impl VT100Backend {
     /// Creates a new `TestBackend` with the specified width and height.
     pub fn new(width: u16, height: u16) -> Self {
+        Self::with_scrollback(width, height, /*scrollback_len*/ 0)
+    }
+
+    pub fn with_scrollback(width: u16, height: u16, scrollback_len: usize) -> Self {
         crossterm::style::force_color_output(true);
         Self {
-            crossterm_backend: CrosstermBackend::new(vt100::Parser::new(height, width, 0)),
+            crossterm_backend: CrosstermBackend::new(vt100::Parser::new(
+                height,
+                width,
+                scrollback_len,
+            )),
         }
     }
 
@@ -53,6 +61,8 @@ impl fmt::Display for VT100Backend {
 }
 
 impl Backend for VT100Backend {
+    type Error = io::Error;
+
     fn draw<'a, I>(&mut self, content: I) -> io::Result<()>
     where
         I: Iterator<Item = (u16, u16, &'a Cell)>,

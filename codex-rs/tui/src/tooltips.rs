@@ -1,0 +1,774 @@
+use crate::keymap::RuntimeKeymap;
+use crate::keymap::keymap_action_id;
+use crate::terminal_hyperlinks::HyperlinkLine;
+use codex_config::types::TuiKeymap;
+use codex_features::FEATURES;
+use codex_features::Feature;
+use codex_features::FeatureSpec;
+use codex_protocol::account::PlanType;
+use lazy_static::lazy_static;
+use rand::Rng;
+use rand::seq::IteratorRandom;
+use std::path::Path;
+
+#[cfg(test)]
+#[path = "tooltips/keybinding_tests.rs"]
+mod keybinding_tests;
+
+const ANNOUNCEMENT_TIP_URL: &str =
+    "https://raw.githubusercontent.com/openai/codex/main/announcement_tip.toml";
+
+const IS_MACOS: bool = cfg!(target_os = "macos");
+const IS_WINDOWS: bool = cfg!(target_os = "windows");
+
+const APP_TOOLTIP: &str = "Try the **Desktop app**. Run 'codex app' or visit https://chatgpt.com/codex?app-landing-page=true";
+const MACOS_APP_TOOLTIP: &str =
+    "Run `codex app` to open the Desktop app (it installs on macOS if needed).";
+const LINUX_APP_TOOLTIP: &str = "Try the **Desktop app** on Linux: install it from https://learn.chatgpt.com/docs/linux/linux-app and run 'chatgpt'.";
+const FAST_TOOLTIP: &str =
+    "*New* Use **/fast** to enable our fastest inference with increased plan usage.";
+const OTHER_TOOLTIP: &str = "*New* Build faster with the **Desktop app**. Run 'codex app' or visit https://chatgpt.com/codex?app-landing-page=true";
+const OTHER_TOOLTIP_NON_MAC: &str = "*New* Build faster with Codex.";
+const FREE_GO_TOOLTIP: &str =
+    "*New* For a limited time, Codex is included in your plan for free – let’s build together.";
+
+const RAW_TOOLTIPS: &str = include_str!("../assets/tooltips.txt");
+
+lazy_static! {
+    static ref TOOLTIPS: Vec<&'static str> = RAW_TOOLTIPS
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty() && !line.starts_with('#'))
+        .chain(if IS_MACOS {
+            Some(MACOS_APP_TOOLTIP)
+        } else {
+            linux_app_tooltip(LinuxDesktopSession::current())
+        })
+        .collect();
+    static ref ALL_TOOLTIPS: Vec<&'static str> = {
+        let mut tips = Vec::new();
+        tips.extend(TOOLTIPS.iter().copied());
+        tips.extend(experimental_tooltips(
+            FEATURES,
+            codex_realtime_webrtc::RealtimeWebrtcSession::is_supported,
+        ));
+        tips
+    };
+}
+
+fn experimental_tooltips(
+    features: &[FeatureSpec],
+    voice_supported: impl Fn() -> bool,
+) -> Vec<&'static str> {
+    features
+        .iter()
+        .filter(|spec| spec.id != Feature::RealtimeConversation || voice_supported())
+        .filter_map(|spec| spec.stage.experimental_announcement())
+        .collect()
+}
+
+/// Pick a random tooltip to show to the user when starting Codex.
+pub(crate) fn get_tooltip(
+    plan: Option<PlanType>,
+    fast_mode_enabled: bool,
+    keymap: &TuiKeymap,
+) -> Option<String> {
+    let mut rng = rand::rng();
+    preferred_tooltip(&mut rng, plan, fast_mode_enabled).or_else(|| pick_tooltip(&mut rng, keymap))
+}
+
+/// Apply the shared announcement and promotion policy before falling back to local tips.
+/// The announcement lookup only reads the prewarmed cache.
+pub(crate) fn preferred_tooltip<R: Rng + ?Sized>(
+    rng: &mut R,
+    plan: Option<PlanType>,
+    fast_mode_enabled: bool,
+) -> Option<String> {
+    if let Some(announcement) = announcement::fetch_announcement_tip(plan) {
+        return Some(announcement);
+    }
+
+    // Leave small chance for a random tooltip to be shown.
+    if rng.random_ratio(/*numerator*/ 8, /*denominator*/ 10) {
+        match plan {
+            Some(plan_type)
+                if matches!(
+                    plan_type,
+                    PlanType::Plus
+                        | PlanType::Enterprise
+                        | PlanType::Pro
+                        | PlanType::ProLite
+                        | PlanType::ProMax
+                ) || plan_type.is_team_like()
+                    || plan_type.is_business_like() =>
+            {
+                if let Some(tooltip) = pick_paid_tooltip(rng, fast_mode_enabled) {
+                    return Some(tooltip.to_string());
+                }
+            }
+            Some(PlanType::Go) | Some(PlanType::Free) => {
+                return Some(FREE_GO_TOOLTIP.to_string());
+            }
+            _ => {
+                let tooltip = if IS_MACOS {
+                    OTHER_TOOLTIP
+                } else {
+                    OTHER_TOOLTIP_NON_MAC
+                };
+                return Some(tooltip.to_string());
+            }
+        }
+    }
+
+    None
+}
+
+struct LinuxDesktopSession {
+    has_display: bool,
+    is_wsl: bool,
+}
+
+impl LinuxDesktopSession {
+    fn current() -> Self {
+        #[cfg(target_os = "linux")]
+        {
+            Self {
+                has_display: std::env::var_os("DISPLAY").is_some_and(|value| !value.is_empty())
+                    || std::env::var_os("WAYLAND_DISPLAY").is_some_and(|value| !value.is_empty()),
+                is_wsl: crate::clipboard_paste::is_probably_wsl(),
+            }
+        }
+
+        #[cfg(not(target_os = "linux"))]
+        {
+            Self {
+                has_display: false,
+                is_wsl: false,
+            }
+        }
+    }
+}
+
+fn linux_app_tooltip(session: LinuxDesktopSession) -> Option<&'static str> {
+    (session.has_display && !session.is_wsl).then_some(LINUX_APP_TOOLTIP)
+}
+
+fn paid_app_tooltip() -> Option<&'static str> {
+    if IS_MACOS || IS_WINDOWS {
+        Some(APP_TOOLTIP)
+    } else {
+        linux_app_tooltip(LinuxDesktopSession::current())
+    }
+}
+
+/// Paid users spend most startup sessions in a dedicated promo slot rather than the
+/// generic random tip pool. Keep this business logic explicit: we currently split
+/// that slot between the app promo and Fast mode, but suppress the Fast promo once
+/// the user already has Fast mode enabled.
+fn pick_paid_tooltip<R: Rng + ?Sized>(
+    rng: &mut R,
+    fast_mode_enabled: bool,
+) -> Option<&'static str> {
+    if fast_mode_enabled || rng.random_bool(0.5) {
+        paid_app_tooltip()
+    } else {
+        Some(FAST_TOOLTIP)
+    }
+}
+
+fn pick_tooltip<R: Rng + ?Sized>(rng: &mut R, keymap: &TuiKeymap) -> Option<String> {
+    // Resolve current settings for each new tip; never replace an invalid or unbound keymap
+    // with defaults, or cache shortcut text across /keymap edits.
+    let keymap = RuntimeKeymap::from_config(keymap).ok();
+    resolved_tooltips(keymap.as_ref()).choose(rng)
+}
+
+/// Render shared tip styling and links, retaining visible URLs when the terminal needs them.
+pub(crate) fn render_tooltip_lines(tip: &str, width: usize, cwd: &Path) -> Vec<HyperlinkLine> {
+    crate::markdown_render::render_streaming_markdown_lines_with_width_and_cwd(
+        &format!("**Tip:** {tip}"),
+        Some(width),
+        Some(cwd),
+        &crate::markdown_render::hide_web_link_destination,
+        crate::markdown_render::ListSpacing::AfterMultiline,
+    )
+    .lines
+}
+
+/// Resolve the local tip pool in catalog order using the supplied runtime keymap.
+/// Tips with invalid or unbound shortcuts are omitted; without a keymap, only key-free tips remain.
+pub(crate) fn resolved_tooltips(
+    keymap: Option<&RuntimeKeymap>,
+) -> impl Iterator<Item = String> + '_ {
+    ALL_TOOLTIPS
+        .iter()
+        .filter_map(move |tip| render_tooltip(tip, keymap))
+}
+
+pub(crate) fn tooltip_templates() -> impl Iterator<Item = &'static str> {
+    ALL_TOOLTIPS.iter().copied()
+}
+
+/// Substitute `{key:context.action}` with the current primary shortcut in a Markdown code span.
+/// Skip the tip if a placeholder is invalid or its action has no binding.
+pub(crate) fn render_tooltip(mut template: &str, keymap: Option<&RuntimeKeymap>) -> Option<String> {
+    let mut rendered = String::new();
+    while let Some((prefix, rest)) = template.split_once("{key:") {
+        let (action, suffix) = rest.split_once('}')?;
+        let (context, action) = action.split_once('.')?;
+        let action = keymap_action_id(context, action)?;
+        let hint = keymap?.primary_hint(action.context, action.action)?;
+        rendered.push_str(prefix);
+        // A key or two-key chord can contain literal backticks; use a padded code span.
+        rendered.push_str(&format!("`` {} ``", hint.display_label()));
+        template = suffix;
+    }
+    rendered.push_str(template);
+    Some(rendered)
+}
+
+pub(crate) mod announcement {
+    use crate::tooltips::ANNOUNCEMENT_TIP_URL;
+    use crate::version::CODEX_CLI_VERSION;
+    use chrono::NaiveDate;
+    use chrono::Utc;
+    use codex_http_client::ClientRouteClass;
+    use codex_http_client::HttpClientFactory;
+    use codex_http_client::RouteAwareClientPool;
+    use codex_protocol::account::PlanType;
+    use regex_lite::Regex;
+    use serde::Deserialize;
+    use std::sync::OnceLock;
+    use std::time::Duration;
+
+    static ANNOUNCEMENT_TIP: OnceLock<Option<AnnouncementTips>> = OnceLock::new();
+    const CURRENT_OS: TargetOs = TargetOs::current();
+
+    /// Prewarm the cache of the announcement tip.
+    pub(crate) fn prewarm(http_client_factory: HttpClientFactory) {
+        if ANNOUNCEMENT_TIP.get().is_some() {
+            return;
+        }
+        tokio::spawn(async move {
+            let announcement_tip = fetch_announcement_tip_text(http_client_factory)
+                .await
+                .and_then(|raw| AnnouncementTips::parse(&raw));
+            let _ = ANNOUNCEMENT_TIP.set(announcement_tip);
+        });
+    }
+
+    /// Fetch the announcement tip, return None if the prewarm is not done yet.
+    pub(crate) fn fetch_announcement_tip(plan: Option<PlanType>) -> Option<String> {
+        ANNOUNCEMENT_TIP
+            .get()
+            .and_then(Option::as_ref)
+            .and_then(|tips| tips.select(plan))
+    }
+
+    #[derive(Debug, Deserialize)]
+    struct AnnouncementTipRaw {
+        content: String,
+        from_date: Option<String>,
+        to_date: Option<String>,
+        version_regex: Option<String>,
+        target_app: Option<String>,
+        target_plan_types: Option<Vec<PlanType>>,
+        target_oses: Option<Vec<TargetOs>>,
+    }
+
+    #[derive(Debug, Deserialize)]
+    struct AnnouncementTipDocument {
+        announcements: Vec<AnnouncementTipRaw>,
+    }
+
+    #[derive(Debug)]
+    struct AnnouncementTip {
+        content: String,
+        from_date: Option<NaiveDate>,
+        to_date: Option<NaiveDate>,
+        version_regex: Option<Regex>,
+        target_app: String,
+        target_plan_types: Option<Vec<PlanType>>,
+        target_oses: Option<Vec<TargetOs>>,
+    }
+
+    #[derive(Debug, Deserialize, Copy, Clone, PartialEq, Eq)]
+    #[serde(rename_all = "lowercase")]
+    enum TargetOs {
+        Linux,
+        Macos,
+        Windows,
+        #[serde(other)]
+        Unknown,
+    }
+
+    impl TargetOs {
+        const fn current() -> Self {
+            if cfg!(target_os = "macos") {
+                Self::Macos
+            } else if cfg!(target_os = "windows") {
+                Self::Windows
+            } else {
+                // Codex currently publishes CLI builds for macOS, Windows, and Linux.
+                Self::Linux
+            }
+        }
+    }
+
+    async fn fetch_announcement_tip_text(http_client_factory: HttpClientFactory) -> Option<String> {
+        let client = RouteAwareClientPool::new(http_client_factory, ClientRouteClass::Other);
+        let response = client
+            .get(ANNOUNCEMENT_TIP_URL)
+            .timeout(Duration::from_millis(2000))
+            .send()
+            .await
+            .ok()?;
+        response.error_for_status().ok()?.text().await.ok()
+    }
+
+    /// Parsed once during prewarming; eligibility stays current across redraws and account changes.
+    pub(super) struct AnnouncementTips(Vec<AnnouncementTip>);
+
+    impl AnnouncementTips {
+        pub(super) fn parse(text: &str) -> Option<Self> {
+            let announcements = toml::from_str::<AnnouncementTipDocument>(text)
+                .map(|doc| doc.announcements)
+                .or_else(|_| toml::from_str::<Vec<AnnouncementTipRaw>>(text))
+                .ok()?;
+            Some(Self(
+                announcements
+                    .into_iter()
+                    .filter_map(AnnouncementTip::from_raw)
+                    .collect(),
+            ))
+        }
+
+        pub(super) fn select(&self, plan: Option<PlanType>) -> Option<String> {
+            let today = Utc::now().date_naive();
+            self.0
+                .iter()
+                .rev()
+                .find(|tip| {
+                    let plan_matches = tip.target_plan_types.as_ref().is_none_or(|target_plans| {
+                        plan.is_some_and(|plan| target_plans.contains(&plan))
+                    });
+                    let os_matches = tip
+                        .target_oses
+                        .as_ref()
+                        .is_none_or(|target_oses| target_oses.contains(&CURRENT_OS));
+                    tip.version_matches(CODEX_CLI_VERSION)
+                        && tip.date_matches(today)
+                        && tip.target_app == "cli"
+                        && plan_matches
+                        && os_matches
+                })
+                .map(|tip| tip.content.clone())
+        }
+    }
+
+    impl AnnouncementTip {
+        fn from_raw(raw: AnnouncementTipRaw) -> Option<Self> {
+            let content = raw.content.trim();
+            if content.is_empty() {
+                return None;
+            }
+
+            let from_date = match raw.from_date {
+                Some(date) => Some(NaiveDate::parse_from_str(&date, "%Y-%m-%d").ok()?),
+                None => None,
+            };
+            let to_date = match raw.to_date {
+                Some(date) => Some(NaiveDate::parse_from_str(&date, "%Y-%m-%d").ok()?),
+                None => None,
+            };
+            let version_regex = match raw.version_regex {
+                Some(pattern) => Some(Regex::new(&pattern).ok()?),
+                None => None,
+            };
+            let target_plan_types = raw.target_plan_types;
+            if target_plan_types
+                .as_ref()
+                .is_some_and(|plans| plans.contains(&PlanType::Unknown))
+            {
+                return None;
+            }
+            let target_oses = raw.target_oses;
+            if target_oses
+                .as_ref()
+                .is_some_and(|oses| oses.contains(&TargetOs::Unknown))
+            {
+                return None;
+            }
+
+            Some(Self {
+                content: content.to_string(),
+                from_date,
+                to_date,
+                version_regex,
+                target_app: raw.target_app.unwrap_or("cli".to_string()).to_lowercase(),
+                target_plan_types,
+                target_oses,
+            })
+        }
+
+        fn version_matches(&self, version: &str) -> bool {
+            self.version_regex
+                .as_ref()
+                .is_none_or(|regex| regex.is_match(version))
+        }
+
+        fn date_matches(&self, today: NaiveDate) -> bool {
+            if let Some(from) = self.from_date
+                && today < from
+            {
+                return false;
+            }
+            if let Some(to) = self.to_date
+                && today >= to
+            {
+                return false;
+            }
+            true
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::tooltips::announcement::AnnouncementTips;
+    use pretty_assertions::assert_eq;
+    use rand::SeedableRng;
+    use rand::rngs::StdRng;
+
+    #[test]
+    fn experimental_voice_tooltip_requires_runtime_support() {
+        let mut features = FEATURES.to_vec();
+        features
+            .iter_mut()
+            .find(|spec| spec.id == Feature::RealtimeConversation)
+            .unwrap()
+            .stage = codex_features::Stage::Experimental {
+            name: "Voice conversations",
+            menu_description: "Talk with Codex using /voice.",
+            announcement: "NEW: Voice conversations can now be enabled from /experimental. Restart Codex after enabling, then use /voice.",
+        };
+        let unavailable = experimental_tooltips(&features, || false);
+        let available = experimental_tooltips(&features, || true);
+        let voice_tip = features
+            .iter()
+            .find(|spec| spec.id == Feature::RealtimeConversation)
+            .and_then(|spec| spec.stage.experimental_announcement())
+            .expect("voice has an experimental announcement");
+        assert_eq!(
+            unavailable,
+            available
+                .iter()
+                .copied()
+                .filter(|tip| *tip != voice_tip)
+                .collect::<Vec<_>>()
+        );
+        insta::assert_snapshot!(
+            "experimental_voice_tooltip",
+            available
+                .into_iter()
+                .filter(|tip| *tip == voice_tip)
+                .collect::<Vec<_>>()
+                .join("\n")
+        );
+    }
+
+    #[test]
+    fn random_tooltip_returns_some_tip_when_available() {
+        let mut rng = StdRng::seed_from_u64(42);
+        assert!(pick_tooltip(&mut rng, &TuiKeymap::default()).is_some());
+    }
+
+    #[test]
+    fn random_tooltip_is_reproducible_with_seed() {
+        let expected = {
+            let mut rng = StdRng::seed_from_u64(7);
+            pick_tooltip(&mut rng, &TuiKeymap::default())
+        };
+
+        let mut rng = StdRng::seed_from_u64(7);
+        assert_eq!(expected, pick_tooltip(&mut rng, &TuiKeymap::default()));
+    }
+
+    #[test]
+    fn desktop_app_tooltip_uses_supported_platform_launcher() {
+        let tooltip = TOOLTIPS
+            .iter()
+            .copied()
+            .find(|tip| tip.contains("Desktop app"));
+
+        if linux_app_tooltip(LinuxDesktopSession::current()).is_some() {
+            let tooltip = tooltip.expect("Linux should advertise the desktop app");
+            assert_eq!(paid_app_tooltip(), Some(tooltip));
+        } else if IS_MACOS {
+            let tooltip = tooltip.expect("macOS should advertise the desktop app");
+            insta::assert_snapshot!(tooltip, @"Run `codex app` to open the Desktop app (it installs on macOS if needed).");
+            assert_eq!(paid_app_tooltip(), Some(APP_TOOLTIP));
+        } else if IS_WINDOWS {
+            assert_eq!(tooltip, None);
+            assert_eq!(paid_app_tooltip(), Some(APP_TOOLTIP));
+        } else {
+            assert_eq!(tooltip, None);
+            assert_eq!(paid_app_tooltip(), None);
+        }
+    }
+
+    #[test]
+    fn linux_desktop_app_tooltip_requires_graphical_native_session() {
+        let tooltip = linux_app_tooltip(LinuxDesktopSession {
+            has_display: true,
+            is_wsl: false,
+        })
+        .expect("graphical native Linux should advertise the desktop app");
+        insta::assert_snapshot!(tooltip, @"Try the **Desktop app** on Linux: install it from https://learn.chatgpt.com/docs/linux/linux-app and run 'chatgpt'.");
+
+        assert_eq!(
+            linux_app_tooltip(LinuxDesktopSession {
+                has_display: false,
+                is_wsl: false,
+            }),
+            None
+        );
+        assert_eq!(
+            linux_app_tooltip(LinuxDesktopSession {
+                has_display: true,
+                is_wsl: true,
+            }),
+            None
+        );
+    }
+
+    #[test]
+    fn paid_tooltip_pool_rotates_between_promos() {
+        let mut seen = std::collections::BTreeSet::new();
+        for seed in 0..32 {
+            let mut rng = StdRng::seed_from_u64(seed);
+            seen.insert(pick_paid_tooltip(
+                &mut rng, /*fast_mode_enabled*/ false,
+            ));
+        }
+
+        let expected = std::collections::BTreeSet::from([paid_app_tooltip(), Some(FAST_TOOLTIP)]);
+        assert_eq!(seen, expected);
+    }
+
+    #[test]
+    fn paid_tooltip_pool_skips_fast_when_fast_mode_is_enabled() {
+        let mut seen = std::collections::BTreeSet::new();
+        for seed in 0..8 {
+            let mut rng = StdRng::seed_from_u64(seed);
+            seen.insert(pick_paid_tooltip(&mut rng, /*fast_mode_enabled*/ true));
+        }
+
+        let expected = std::collections::BTreeSet::from([paid_app_tooltip()]);
+        assert_eq!(seen, expected);
+        assert!(!seen.contains(&Some(FAST_TOOLTIP)));
+    }
+
+    #[test]
+    fn announcement_tip_toml_picks_last_matching() {
+        let toml = r#"
+[[announcements]]
+content = "first"
+from_date = "2000-01-01"
+
+[[announcements]]
+content = "latest match"
+version_regex = ".*"
+target_app = "cli"
+
+[[announcements]]
+content = "should not match"
+to_date = "2000-01-01"
+        "#;
+
+        assert_eq!(
+            Some("latest match".to_string()),
+            AnnouncementTips::parse(toml).and_then(|tips| tips.select(/*plan*/ None))
+        );
+
+        let toml = r#"
+[[announcements]]
+content = "first"
+from_date = "2000-01-01"
+target_app = "cli"
+
+[[announcements]]
+content = "latest match"
+version_regex = ".*"
+
+[[announcements]]
+content = "should not match"
+to_date = "2000-01-01"
+        "#;
+
+        assert_eq!(
+            Some("latest match".to_string()),
+            AnnouncementTips::parse(toml).and_then(|tips| tips.select(/*plan*/ None))
+        );
+    }
+
+    #[test]
+    fn announcement_tip_toml_picks_no_match() {
+        let toml = r#"
+[[announcements]]
+content = "first"
+from_date = "2000-01-01"
+to_date = "2000-01-05"
+
+[[announcements]]
+content = "latest match"
+version_regex = "invalid_version_name"
+
+[[announcements]]
+content = "should not match either "
+target_app = "vsce"
+        "#;
+
+        assert_eq!(
+            None,
+            AnnouncementTips::parse(toml).and_then(|tips| tips.select(/*plan*/ None))
+        );
+    }
+
+    #[test]
+    fn announcement_tip_toml_bad_deserialization() {
+        let toml = r#"
+[[announcements]]
+content = 123
+from_date = "2000-01-01"
+        "#;
+
+        assert_eq!(
+            None,
+            AnnouncementTips::parse(toml).and_then(|tips| tips.select(/*plan*/ None))
+        );
+    }
+
+    #[test]
+    fn announcement_tip_toml_parse_comments() {
+        let toml = r#"
+# Example announcement tips for Codex TUI.
+# Each [[announcements]] entry is evaluated in order; the last matching one is shown.
+# Dates are UTC, formatted as YYYY-MM-DD. The from_date is inclusive and the to_date is exclusive.
+# version_regex matches against the CLI version (env!("CARGO_PKG_VERSION")); omit to apply to all versions.
+# target_app specify which app should display the announcement (cli, vsce, ...).
+# target_plan_types optionally restricts the announcement to plan types like ["plus", "pro"].
+# target_oses optionally restricts the announcement to operating systems like ["macos", "windows"].
+
+[[announcements]]
+content = "Welcome to Codex! Check out the new onboarding flow."
+from_date = "2024-10-01"
+to_date = "2024-10-15"
+target_app = "cli"
+version_regex = "^0\\.0\\.0$"
+
+[[announcements]]
+content = "This is a test announcement"
+        "#;
+
+        assert_eq!(
+            Some("This is a test announcement".to_string()),
+            AnnouncementTips::parse(toml).and_then(|tips| tips.select(/*plan*/ None))
+        );
+    }
+
+    #[test]
+    fn announcement_tip_toml_matches_target_plan_type() {
+        let toml = r#"
+[[announcements]]
+content = "all plans"
+
+[[announcements]]
+content = "pro announcement"
+target_plan_types = ["pro", "enterprise"]
+
+[[announcements]]
+content = "free announcement"
+target_plan_types = ["free"]
+        "#;
+
+        let tips = AnnouncementTips::parse(toml).unwrap();
+        assert_eq!(
+            Some("pro announcement".to_string()),
+            tips.select(Some(PlanType::Pro))
+        );
+        assert_eq!(
+            Some("free announcement".to_string()),
+            tips.select(Some(PlanType::Free))
+        );
+        assert_eq!(
+            Some("all plans".to_string()),
+            tips.select(Some(PlanType::Plus))
+        );
+        assert_eq!(Some("all plans".to_string()), tips.select(/*plan*/ None));
+    }
+
+    #[test]
+    fn announcement_tip_toml_rejects_unknown_target_plan_type() {
+        let toml = r#"
+[[announcements]]
+content = "all plans"
+
+[[announcements]]
+content = "typo announcement"
+target_plan_types = ["prp"]
+        "#;
+
+        assert_eq!(
+            Some("all plans".to_string()),
+            AnnouncementTips::parse(toml).and_then(|tips| tips.select(Some(PlanType::Unknown)))
+        );
+    }
+
+    #[test]
+    fn announcement_tip_toml_matches_target_os() {
+        let toml = r#"
+[[announcements]]
+content = "linux announcement"
+target_oses = ["linux"]
+
+[[announcements]]
+content = "macos announcement"
+target_oses = ["macos"]
+
+[[announcements]]
+content = "windows announcement"
+target_oses = ["windows"]
+        "#;
+
+        let expected = if cfg!(target_os = "macos") {
+            "macos announcement"
+        } else if cfg!(target_os = "windows") {
+            "windows announcement"
+        } else {
+            "linux announcement"
+        };
+        assert_eq!(
+            Some(expected.to_string()),
+            AnnouncementTips::parse(toml).and_then(|tips| tips.select(/*plan*/ None))
+        );
+    }
+
+    #[test]
+    fn announcement_tip_toml_rejects_unknown_target_os() {
+        let toml = r#"
+[[announcements]]
+content = "all operating systems"
+
+[[announcements]]
+content = "typo announcement"
+target_oses = ["amiga"]
+        "#;
+
+        assert_eq!(
+            Some("all operating systems".to_string()),
+            AnnouncementTips::parse(toml).and_then(|tips| tips.select(/*plan*/ None))
+        );
+    }
+}

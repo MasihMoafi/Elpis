@@ -1,5 +1,21 @@
-use reqwest::header::HeaderMap;
-use reqwest::header::HeaderValue;
+use http::HeaderMap;
+use http::HeaderValue;
+
+pub(crate) fn current_rendezvous_headers() -> HeaderMap {
+    let mut headers = current_trace_context_headers();
+    for (header, variable) in [
+        ("x-cluster-name", "OPENAI_CLUSTER"),
+        ("x-openai-internal-caller", "DD_SERVICE"),
+    ] {
+        if let Ok(value) = std::env::var(variable)
+            && !value.is_empty()
+            && let Ok(value) = HeaderValue::try_from(value)
+        {
+            headers.insert(header, value);
+        }
+    }
+    headers
+}
 
 pub(crate) fn current_trace_context_headers() -> HeaderMap {
     let mut headers = HeaderMap::new();

@@ -1,14 +1,16 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use super::ConnectionSessionState;
 use super::MessageProcessor;
 use super::MessageProcessorArgs;
+use crate::analytics_utils::analytics_events_client_from_config;
 use crate::config_manager::ConfigManager;
 use crate::outgoing_message::ConnectionId;
 use crate::outgoing_message::OutgoingMessageSender;
+use crate::plugin_config_reload::PluginStartupConfig;
 use crate::transport::AppServerTransport;
 use anyhow::Result;
 use app_test_support::create_mock_responses_server_repeating_assistant;
 use app_test_support::write_mock_responses_config_toml;
+use codex_analytics::AppServerRpcTransport;
 use codex_app_server_protocol::ClientInfo;
 use codex_app_server_protocol::ClientRequest;
 use codex_app_server_protocol::InitializeCapabilities;
@@ -27,6 +29,7 @@ use codex_config::LoaderOverrides;
 use codex_core::config::Config;
 use codex_core::config::ConfigBuilder;
 use codex_exec_server::EnvironmentManager;
+use codex_feedback::CodexFeedback;
 use codex_login::AuthManager;
 use codex_protocol::protocol::SessionSource;
 use codex_protocol::protocol::W3cTraceContext;
@@ -46,12 +49,13 @@ use std::future::Future;
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::OnceLock;
+use std::time::Duration;
 use tempfile::TempDir;
 use tokio::sync::mpsc;
 use tracing_subscriber::layer::SubscriberExt;
 use wiremock::MockServer;
 
-const TEST_CONNECTION_ID: ConnectionId = ConnectionId(7);
+pub(super) const TEST_CONNECTION_ID: ConnectionId = ConnectionId(7);
 
 struct TestTracing {
     exporter: InMemorySpanExporter,
@@ -117,7 +121,12 @@ impl TracingHarness {
         let server = create_mock_responses_server_repeating_assistant("Done").await;
         let codex_home = TempDir::new()?;
         let config = Arc::new(build_test_config(codex_home.path(), &server.uri()).await?);
-        let (processor, outgoing_rx) = build_test_processor(config).await;
+        let auth_manager = AuthManager::shared_from_config(
+            config.as_ref(),
+            /*enable_codex_api_key_env*/ false,
+        )
+        .await?;
+        let (processor, outgoing_rx) = build_test_processor(config, auth_manager).await;
         let tracing = init_test_tracing();
         tracing.exporter.reset();
         tracing::callsite::rebuild_interest_cache();
@@ -126,7 +135,9 @@ impl TracingHarness {
             _codex_home: codex_home,
             processor,
             outgoing_rx,
-            session: Arc::new(ConnectionSessionState::new()),
+            session: Arc::new(ConnectionSessionState::new(
+                crate::transport::ConnectionOrigin::Stdio,
+            )),
             tracing,
         };
 
@@ -224,39 +235,52 @@ async fn build_test_config(codex_home: &Path, server_uri: &str) -> Result<Config
         .await?)
 }
 
-async fn build_test_processor(
+pub(super) async fn build_test_processor(
     config: Arc<Config>,
+    auth_manager: Arc<AuthManager>,
 ) -> (
     Arc<MessageProcessor>,
     mpsc::Receiver<crate::outgoing_message::OutgoingEnvelope>,
 ) {
     let (outgoing_tx, outgoing_rx) = mpsc::channel(16);
-    let auth_manager =
-        AuthManager::shared_from_config(config.as_ref(), /*enable_codex_api_key_env*/ false).await;
     let config_manager = ConfigManager::new(
         config.codex_home.to_path_buf(),
         Vec::new(),
-        LoaderOverrides::default(),
+        LoaderOverrides::with_managed_config_path_for_tests(
+            config.codex_home.join("managed_config.toml").to_path_buf(),
+        ),
         /*strict_config*/ false,
         CloudConfigBundleLoader::default(),
         Arg0DispatchPaths::default(),
         Arc::new(codex_config::NoopThreadConfigLoader),
     );
-    let outgoing = Arc::new(OutgoingMessageSender::new(outgoing_tx));
+    let analytics_events_client =
+        analytics_events_client_from_config(Arc::clone(&auth_manager), config.as_ref());
+    let outgoing = Arc::new(OutgoingMessageSender::new(
+        outgoing_tx,
+        analytics_events_client.clone(),
+    ));
     let processor = Arc::new(MessageProcessor::new(MessageProcessorArgs {
         outgoing,
+        analytics_events_client,
         arg0_paths: Arg0DispatchPaths::default(),
         config,
         config_manager,
         environment_manager: Arc::new(EnvironmentManager::default_for_tests()),
+        feedback: CodexFeedback::new(),
         log_db: None,
         state_db: None,
         config_warnings: Vec::new(),
         session_source: SessionSource::VSCode,
+        user_verification: Arc::new(crate::user_verification::Service::new(Arc::clone(
+            &auth_manager,
+        ))),
         auth_manager,
         installation_id: "11111111-1111-4111-8111-111111111111".to_string(),
+        code_mode_session_provider: None,
+        rpc_transport: AppServerRpcTransport::Stdio,
         remote_control_handle: None,
-        plugin_startup_tasks: crate::PluginStartupTasks::Start,
+        plugin_startup_tasks: Some(PluginStartupConfig::Current),
     }));
     (processor, outgoing_rx)
 }
@@ -265,7 +289,7 @@ fn run_current_thread_test_with_stack<F>(name: &str, future: F) -> Result<()>
 where
     F: Future<Output = Result<()>> + Send + 'static,
 {
-    const TEST_STACK_SIZE_BYTES: usize = 4 * 1024 * 1024;
+    const TEST_STACK_SIZE_BYTES: usize = 8 * 1024 * 1024;
 
     let handle = std::thread::Builder::new()
         .name(name.to_string())
@@ -413,12 +437,20 @@ fn assert_has_internal_descendant_at_min_depth(
     );
 }
 
-async fn read_response<T: serde::de::DeserializeOwned>(
+pub(super) async fn read_response<T: serde::de::DeserializeOwned>(
     outgoing_rx: &mut mpsc::Receiver<crate::outgoing_message::OutgoingEnvelope>,
     request_id: i64,
 ) -> T {
+    read_response_from(outgoing_rx, TEST_CONNECTION_ID, request_id).await
+}
+
+pub(super) async fn read_response_from<T: serde::de::DeserializeOwned>(
+    outgoing_rx: &mut mpsc::Receiver<crate::outgoing_message::OutgoingEnvelope>,
+    expected_connection_id: ConnectionId,
+    request_id: i64,
+) -> T {
     loop {
-        let envelope = tokio::time::timeout(std::time::Duration::from_secs(5), outgoing_rx.recv())
+        let envelope = tokio::time::timeout(Duration::from_secs(/*secs*/ 30), outgoing_rx.recv())
             .await
             .expect("timed out waiting for response")
             .expect("outgoing channel closed");
@@ -430,7 +462,7 @@ async fn read_response<T: serde::de::DeserializeOwned>(
         else {
             continue;
         };
-        if connection_id != TEST_CONNECTION_ID {
+        if connection_id != expected_connection_id {
             continue;
         }
         let crate::outgoing_message::OutgoingMessage::Response(response) = message else {
@@ -439,8 +471,10 @@ async fn read_response<T: serde::de::DeserializeOwned>(
         if response.id != RequestId::Integer(request_id) {
             continue;
         }
-        return serde_json::from_value(response.result)
-            .expect("response payload should deserialize");
+        return serde_json::from_value(
+            serde_json::to_value(response.result).expect("response payload should serialize"),
+        )
+        .expect("response payload should deserialize");
     }
 }
 
@@ -641,6 +675,7 @@ async fn turn_start_jsonrpc_span_parents_core_turn_spans() -> Result<()> {
             ClientRequest::TurnStart {
                 request_id: RequestId::Integer(3),
                 params: TurnStartParams {
+                    disabled_plugin_ids: None,
                     environments: None,
                     thread_id,
                     client_user_message_id: None,
@@ -648,6 +683,8 @@ async fn turn_start_jsonrpc_span_parents_core_turn_spans() -> Result<()> {
                         text: "hello".to_string(),
                         text_elements: Vec::new(),
                     }],
+                    turn_trigger: None,
+                    tool_output: None,
                     responsesapi_client_metadata: None,
                     additional_context: None,
                     cwd: None,
@@ -658,12 +695,14 @@ async fn turn_start_jsonrpc_span_parents_core_turn_spans() -> Result<()> {
                     approvals_reviewer: None,
                     model: None,
                     service_tier: None,
+                    service_tier_for_turn: None,
                     effort: None,
                     summary: None,
                     personality: None,
                     output_schema: None,
                     collaboration_mode: None,
                     multi_agent_mode: None,
+                    cyber_access_program: None,
                 },
             },
             Some(remote_trace),
@@ -675,7 +714,7 @@ async fn turn_start_jsonrpc_span_parents_core_turn_spans() -> Result<()> {
                 && span_attr(span, "rpc.method") == Some("turn/start")
                 && span.span_context.trace_id() == remote_trace_id
         }) && spans.iter().any(|span| {
-            span_attr(span, "codex.op") == Some("user_input")
+            span_attr(span, "codex.op") == Some("turn_input")
                 && span.span_context.trace_id() == remote_trace_id
         })
     })
@@ -684,8 +723,8 @@ async fn turn_start_jsonrpc_span_parents_core_turn_spans() -> Result<()> {
     let server_request_span =
         find_rpc_span_with_trace(&spans, SpanKind::Server, "turn/start", remote_trace_id);
     let core_turn_span =
-        find_span_with_trace(&spans, remote_trace_id, "codex.op=user_input", |span| {
-            span_attr(span, "codex.op") == Some("user_input")
+        find_span_with_trace(&spans, remote_trace_id, "codex.op=turn_input", |span| {
+            span_attr(span, "codex.op") == Some("turn_input")
         });
 
     assert_eq!(server_request_span.parent_span_id, remote_parent_span_id);

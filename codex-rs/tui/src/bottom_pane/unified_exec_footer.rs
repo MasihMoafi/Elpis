@@ -1,4 +1,3 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 //! Renders and formats unified-exec background session summary text.
 //!
 //! This module provides one canonical summary string so the bottom pane can
@@ -51,7 +50,7 @@ impl UnifiedExecFooter {
         let count = self.processes.len();
         let plural = if count == 1 { "" } else { "s" };
         Some(format!(
-            "{count} background terminal{plural} running · /ps to view · /kill to close"
+            "{count} background terminal{plural} running · /ps to view · /stop to close"
         ))
     }
 

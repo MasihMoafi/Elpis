@@ -1,4 +1,3 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 #[path = "enabled_extensions/shared_state_extension.rs"]
 mod shared_state_extension;
 

@@ -22,6 +22,7 @@ use crate::protocol::INITIALIZE_METHOD;
 use crate::protocol::INITIALIZED_METHOD;
 use crate::protocol::InitializeParams;
 use crate::protocol::InitializeResponse;
+use crate::server::RequestDispatchMode;
 
 #[test]
 fn parse_listen_url_accepts_default_websocket_url() {
@@ -62,6 +63,10 @@ async fn stdio_listen_transport_serves_initialize() {
         server_writer,
         test_runtime_paths(),
         crate::ExecServerTelemetry::default(),
+        codex_http_client::HttpClientFactory::new(
+            codex_http_client::OutboundProxyPolicy::ReqwestDefault,
+        ),
+        RequestDispatchMode::Inline,
     ));
     let mut client_lines = BufReader::new(client_reader).lines();
 

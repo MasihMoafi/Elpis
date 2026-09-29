@@ -2,19 +2,9 @@
 source: tui/src/chatwidget/tests/popups_and_settings.rs
 expression: popup
 ---
- Elpis · model test-visible-model · location /tmp/project
-┌──────────────────────────────────────────────────────────────────────────────┐
-│ Choose a mind                                                                │
-│ Provider: OpenAI                                                             │
-│ Route: direct provider connection                                            │
-│ Protocol: responses                                                          │
-│ Credential: OpenAI/ChatGPT credential store                                  │
-│ Model: test-visible-model                                                    │
-│ Provider, protocol, route, and credential source remain visible while choosi │
-│                                                                              │
-     OPENAI                                                                    │
-  1. Change provider…              Currently OpenAI                            │
-› 2. test-visible-model (current)  direct provider connection · test-visible-  │
-                                   model description                           │
-└──────────────────────────────────────────────────────────────────────────────┘
-  Press enter to confirm or esc to go back
+  Select Model and Effort
+
+
+› 1. test-visible-model (current)  test-visible-model description
+
+  enter default · s session · esc back

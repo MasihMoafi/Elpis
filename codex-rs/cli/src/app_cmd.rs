@@ -1,10 +1,9 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use clap::Parser;
 use std::path::PathBuf;
 
 #[derive(Debug, Parser)]
 pub struct AppCommand {
-    /// Workspace path to open in Codex Desktop.
+    /// Workspace path to open in the Desktop app.
     #[arg(value_name = "PATH", default_value = ".")]
     pub path: PathBuf,
 

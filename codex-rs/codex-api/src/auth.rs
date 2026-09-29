@@ -1,4 +1,3 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use codex_client::Request;
 use codex_client::TransportError;
 use http::HeaderMap;
@@ -42,6 +41,15 @@ pub trait AuthProvider: Send + Sync {
         headers
     }
 
+    /// Resolves auth headers for an outbound request.
+    ///
+    /// Unlike [`Self::to_auth_headers`], implementations may perform asynchronous work to refresh
+    /// credentials before returning. Header-only providers with static credentials can rely on the
+    /// default implementation.
+    fn resolve_auth_headers(&self) -> AuthHeadersFuture<'_> {
+        Box::pin(async { Ok(self.to_auth_headers()) })
+    }
+
     /// Applies auth to a complete outbound request and returns the request to send.
     ///
     /// The input `request` is moved into this method. Implementations may mutate
@@ -56,7 +64,7 @@ pub trait AuthProvider: Send + Sync {
     fn apply_auth(&self, request: Request) -> AuthProviderFuture<'_> {
         Box::pin(async move {
             let mut request = request;
-            self.add_auth_headers(&mut request.headers);
+            request.headers.extend(self.resolve_auth_headers().await?);
             Ok(request)
         })
     }
@@ -64,6 +72,9 @@ pub trait AuthProvider: Send + Sync {
 
 pub type AuthProviderFuture<'a> =
     Pin<Box<dyn Future<Output = Result<Request, AuthError>> + Send + 'a>>;
+
+pub type AuthHeadersFuture<'a> =
+    Pin<Box<dyn Future<Output = Result<HeaderMap, AuthError>> + Send + 'a>>;
 
 /// Shared auth handle passed through API clients.
 pub type SharedAuthProvider = Arc<dyn AuthProvider>;
@@ -83,15 +94,9 @@ pub struct AuthHeaderTelemetry {
 pub fn auth_header_telemetry(auth: &dyn AuthProvider) -> AuthHeaderTelemetry {
     let mut headers = HeaderMap::new();
     auth.add_auth_headers(&mut headers);
-    let name = if headers.contains_key(http::header::AUTHORIZATION) {
-        Some("authorization")
-    } else if headers.contains_key("x-api-key") {
-        Some("x-api-key")
-    } else if headers.contains_key("x-goog-api-key") {
-        Some("x-goog-api-key")
-    } else {
-        None
-    };
+    let name = headers
+        .contains_key(http::header::AUTHORIZATION)
+        .then_some("authorization");
     AuthHeaderTelemetry {
         attached: name.is_some(),
         name,

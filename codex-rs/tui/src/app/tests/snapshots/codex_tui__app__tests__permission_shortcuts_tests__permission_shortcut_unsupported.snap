@@ -1,0 +1,6 @@
+---
+source: tui/src/app/tests/permission_shortcuts_tests.rs
+assertion_line: 66
+expression: "next_history_message(&mut\nevents).replace(&thread_id.to_string(), \"<THREAD_ID>\")"
+---
+■ Permission selection requires a newer app server.

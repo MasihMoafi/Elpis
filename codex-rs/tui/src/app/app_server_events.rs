@@ -1,56 +1,54 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 //! App-server event stream handling for the TUI app.
 
 use super::App;
+use super::ThreadBufferedEvent;
 use super::app_server_event_targets::ServerNotificationThreadTarget;
 use super::app_server_event_targets::server_notification_thread_target;
 use super::app_server_event_targets::server_request_thread_id;
 use crate::app_command::AppCommand;
 use crate::app_event::AppEvent;
-use crate::app_event::ConnectorsSnapshot;
+use crate::app_event::RateLimitRefreshOrigin;
+#[cfg(any(target_os = "windows", test))]
+use crate::app_event::WindowsSandboxEnableMode;
 use crate::app_info::app_info_from_api;
 use crate::app_server_session::AppServerSession;
 use crate::app_server_session::status_account_display_from_auth_mode;
 use codex_app_server_client::AppServerEvent;
-use codex_app_server_protocol::AskForApproval;
+use codex_app_server_client::TypedRequestError;
 use codex_app_server_protocol::AuthMode;
+use codex_app_server_protocol::ClientRequest;
 use codex_app_server_protocol::RateLimitReachedType;
+use codex_app_server_protocol::RequestId;
 use codex_app_server_protocol::ServerNotification;
 use codex_app_server_protocol::ServerRequest;
+use codex_app_server_protocol::SessionSource;
+use codex_app_server_protocol::ThreadItem;
+use codex_app_server_protocol::ThreadReadParams;
+use codex_app_server_protocol::ThreadReadResponse;
+use codex_app_server_protocol::ThreadSource;
+use codex_app_server_protocol::ThreadStatus;
 use codex_protocol::ThreadId;
+use codex_protocol::protocol::SubAgentSource;
+use std::time::Duration;
 
 impl App {
-    pub(super) async fn resolve_full_access_approvals(
-        &mut self,
-        app_server_client: &AppServerSession,
-    ) {
-        for approval in self.pending_app_server_requests.full_access_approval_ops() {
-            let thread_id = match ThreadId::from_string(&approval.thread_id) {
-                Ok(thread_id) => thread_id,
-                Err(err) => {
-                    self.chat_widget.add_error_message(format!(
-                        "Failed to resolve Full Access approval for thread {}: {err}",
-                        approval.thread_id
-                    ));
-                    continue;
-                }
-            };
-            match self
-                .try_resolve_app_server_request(app_server_client, thread_id, &approval.op)
-                .await
-            {
-                Ok(true) => self
-                    .chat_widget
-                    .dismiss_app_server_request(&approval.resolved),
-                Ok(false) => {}
-                Err(err) => self.chat_widget.add_error_message(format!(
-                    "Failed to resolve Full Access approval for thread {thread_id}: {err}"
-                )),
-            }
-        }
-    }
-
     pub(super) fn refresh_mcp_startup_expected_servers_from_config(&mut self) {
+        if self
+            .current_displayed_thread_id()
+            .zip(self.primary_thread_id)
+            .is_some_and(|(thread_id, primary_thread_id)| {
+                self.agent_navigation.is_parent_owned(thread_id)
+                    || (thread_id != primary_thread_id
+                        && !self.side_threads.contains_key(&thread_id))
+            })
+        {
+            // Subagents can defer cached servers indefinitely, so only servers
+            // that actually report startup should keep their status running.
+            self.chat_widget
+                .set_mcp_startup_expected_servers(std::iter::empty());
+            return;
+        }
+
         let enabled_config_mcp_servers: Vec<String> = self
             .config
             .mcp_servers
@@ -75,18 +73,41 @@ impl App {
                 );
                 self.refresh_mcp_startup_expected_servers_from_config();
                 self.chat_widget.finish_mcp_startup_after_lag();
+                if let Some(task) = self.agents_overview.refresh_task.take() {
+                    task.abort();
+                }
+                self.agents_overview.request_id = None;
+                self.agents_overview.refresh_pending = false;
+                self.agents_overview.refresh_notifications.clear();
+                self.agents_overview.activity.clear();
+                self.agents_overview.last_messages.clear();
+                self.agents_overview.usage.clear();
+                self.agents_overview.pending_usage = None;
+                self.agents_overview.usage_disabled = false;
+                self.repaint_agents_overview();
+                self.refresh_agents_overview_threads(app_server_client);
             }
             AppServerEvent::ServerNotification(notification) => {
-                self.handle_server_notification_event(app_server_client, notification)
+                let request_resolved = matches!(
+                    notification.as_ref(),
+                    ServerNotification::ServerRequestResolved(_)
+                );
+                self.handle_server_notification_event(app_server_client, *notification)
                     .await;
+                if request_resolved {
+                    self.repaint_agents_overview();
+                }
             }
             AppServerEvent::ServerRequest(request) => {
-                self.handle_server_request_event(app_server_client, request)
+                self.handle_server_request_event(app_server_client, *request)
                     .await;
+                self.repaint_agents_overview();
             }
             AppServerEvent::Disconnected { message } => {
+                if self.begin_reconnect() {
+                    return;
+                }
                 tracing::warn!("app-server event stream disconnected: {message}");
-                let message = disconnect_message(&message, self.active_thread_id);
                 self.chat_widget.add_error_message(message.clone());
                 self.app_event_tx.send(AppEvent::FatalExitRequest(message));
             }
@@ -98,21 +119,154 @@ impl App {
         app_server_client: &AppServerSession,
         notification: ServerNotification,
     ) {
-        self.mirror_elpis_context_notification(&notification).await;
+        // A picker can leave an old runtime's close notification queued while the same thread
+        // is resumed. Thread IDs survive reloads, so confirm that the displayed thread is still
+        // unloaded before routing a close that would exit the TUI or switch away from it.
+        if let ServerNotification::ThreadClosed(closed) = &notification
+            && let Ok(thread_id) = ThreadId::from_string(&closed.thread_id)
+            && self.current_displayed_thread_id() == Some(thread_id)
+        {
+            let deadline = tokio::time::Instant::now() + Duration::from_secs(/*secs*/ 5);
+            for attempt in 0..2 {
+                let result = tokio::time::timeout_at(
+                    deadline,
+                    app_server_client
+                        .request_handle()
+                        .request_typed::<ThreadReadResponse>(ClientRequest::ThreadRead {
+                            request_id: RequestId::String(format!(
+                                "thread-closed-{thread_id}-{attempt}"
+                            )),
+                            params: ThreadReadParams {
+                                thread_id: closed.thread_id.clone(),
+                                include_turns: false,
+                            },
+                        }),
+                )
+                .await;
+                match result {
+                    Ok(Ok(response))
+                        if !matches!(response.thread.status, ThreadStatus::NotLoaded) =>
+                    {
+                        return;
+                    }
+                    Ok(Ok(_)) => break,
+                    // Unpersisted closed threads can no longer be read. Preserve that close
+                    // and compatibility with servers that do not support this request.
+                    Ok(Err(TypedRequestError::Server { source, .. }))
+                        if matches!(source.code, -32602..=-32600) =>
+                    {
+                        break;
+                    }
+                    Ok(Err(TypedRequestError::Server { source, .. }))
+                        if source.code == -32603 && attempt == 0 =>
+                    {
+                        continue;
+                    }
+                    Ok(Err(_)) | Err(_) => {
+                        // A failed read does not confirm closure. Remote connections recover
+                        // through the normal reconnect path, rather than exiting the TUI.
+                        tracing::warn!("could not confirm displayed thread closure");
+                        if self.begin_reconnect() {
+                            return;
+                        }
+                        break;
+                    }
+                }
+            }
+        }
+
+        if let ServerNotification::ThreadStatusChanged(status) = &notification {
+            let _ = self.dynamic_tool_status_updates.send(status.clone());
+        }
+
+        if let ServerNotification::ThreadStarted(started) = &notification
+            && started.thread.ephemeral
+            && matches!(
+                started.thread.thread_source.as_ref(),
+                Some(ThreadSource::Feature(feature)) if matches!(feature.as_str(), "system" | "thread_title")
+            )
+        {
+            return;
+        }
+        // Hidden helper threads must not enter visible thread routing or overview refreshes.
+        if let ServerNotificationThreadTarget::Thread(thread_id) =
+            server_notification_thread_target(&notification)
+            && let Some(sender) = self.temporary_structured_requests.get(&thread_id)
+        {
+            if matches!(
+                &notification,
+                ServerNotification::ItemCompleted(_) | ServerNotification::TurnCompleted(_)
+            ) && sender.send(notification).is_err()
+            {
+                self.temporary_structured_requests.remove(&thread_id);
+            }
+
+            return;
+        }
+
+        if let ServerNotification::ThreadStarted(started) = &notification
+            && let SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
+                parent_thread_id, ..
+            }) = &started.thread.source
+            && self
+                .agents_overview
+                .dispatched_requests
+                .contains_key(parent_thread_id)
+            && let Ok(thread_id) = codex_protocol::ThreadId::from_string(&started.thread.id)
+        {
+            self.agents_overview
+                .dispatched_requests
+                .entry(thread_id)
+                .or_default();
+        }
+        self.track_agents_overview_notification(&notification);
+        if matches!(
+            &notification,
+            ServerNotification::ThreadStarted(_)
+                | ServerNotification::ThreadStatusChanged(_)
+                | ServerNotification::ThreadSettingsUpdated(_)
+                | ServerNotification::ThreadNameUpdated(_)
+                | ServerNotification::ThreadArchived(_)
+                | ServerNotification::ThreadDeleted(_)
+                | ServerNotification::ThreadClosed(_)
+        ) {
+            self.repaint_agents_overview();
+            self.refresh_changed_agents_overview_threads(app_server_client);
+        }
         match &notification {
             ServerNotification::ServerRequestResolved(notification) => {
+                if let Some((_, task)) = self.dynamic_tool_tasks.remove(&notification.request_id) {
+                    task.abort();
+                }
+                let notification_thread_id =
+                    codex_protocol::ThreadId::from_string(&notification.thread_id).ok();
+                self.pending_primary_events.retain(|event| {
+                    !matches!(event, ThreadBufferedEvent::Request(request)
+                        if request.id() == &notification.request_id
+                            && server_request_thread_id(request) == notification_thread_id)
+                });
+                if let Some(thread_id) = notification_thread_id
+                    && let Some(requests) =
+                        self.agents_overview.dispatched_requests.get_mut(&thread_id)
+                {
+                    requests.retain(|request| request.id() != &notification.request_id);
+                }
                 if let Some(request) = self
                     .pending_app_server_requests
-                    .resolve_notification(&notification.request_id)
+                    .resolve_notification(&notification.thread_id, &notification.request_id)
                 {
                     self.chat_widget.dismiss_app_server_request(&request);
+                    if self.startup_pending_protected_request {
+                        self.startup_pending_protected_request =
+                            self.chat_widget.has_pending_protected_request();
+                    }
                 }
             }
             ServerNotification::McpServerStatusUpdated(_) => {
                 self.refresh_mcp_startup_expected_servers_from_config();
             }
             ServerNotification::AccountRateLimitsUpdated(notification) => {
-                if matches!(
+                let workspace_hard_stop = matches!(
                     notification.rate_limits.rate_limit_reached_type,
                     Some(
                         RateLimitReachedType::WorkspaceOwnerCreditsDepleted
@@ -120,16 +274,39 @@ impl App {
                             | RateLimitReachedType::WorkspaceOwnerUsageLimitReached
                             | RateLimitReachedType::WorkspaceMemberUsageLimitReached
                     )
-                ) || notification.rate_limits.spend_control_reached == Some(true)
-                {
+                ) || notification.rate_limits.spend_control_reached
+                    == Some(true);
+                if workspace_hard_stop {
                     self.rate_limit_hard_stop_generation =
                         self.rate_limit_hard_stop_generation.wrapping_add(1);
                 }
                 self.chat_widget
                     .on_rolling_rate_limit_snapshot(notification.rate_limits.clone());
+                if workspace_hard_stop && self.chat_widget.has_chatgpt_account() {
+                    // Background inference may publish a hard stop without a foreground Error.
+                    self.refresh_rate_limits(app_server_client, RateLimitRefreshOrigin::Recovery);
+                }
                 return;
             }
             ServerNotification::AccountUpdated(notification) => {
+                self.agents_overview.usage.clear();
+                self.agents_overview.pending_usage = None;
+                self.agents_overview.usage_disabled = false;
+                self.repaint_agents_overview();
+                self.chat_widget.cyber_policy_notice = Default::default();
+                if let Some(crate::pager_overlay::Overlay::Analytics(view)) = &mut self.overlay {
+                    view.refresh();
+                }
+                if let Some(view) = &mut self.retained_analytics {
+                    view.cancel_loads();
+                }
+                self.rate_limit_hard_stop_generation =
+                    self.rate_limit_hard_stop_generation.wrapping_add(1);
+                self.rate_limit_refresh_state.invalidate_recovery();
+                // Deferred terminal writes must never carry the previous account's billing into
+                // the newly authenticated identity, even when both accounts share one thread.
+                self.last_thread_usage_status_cell = None;
+                self.pending_thread_usage_history_refresh = false;
                 let has_codex_backend_auth = matches!(
                     notification.auth_mode,
                     Some(
@@ -150,12 +327,21 @@ impl App {
                         .is_some_and(AuthMode::has_chatgpt_account),
                     has_codex_backend_auth,
                 );
+                if self.chat_widget.has_chatgpt_account() {
+                    crate::daybreak::prefetch_notice(
+                        &self.config,
+                        app_server_client,
+                        self.chat_widget.cyber_policy_notice.clone(),
+                    );
+                }
                 return;
             }
             ServerNotification::ExternalAgentConfigImportCompleted(notification) => {
-                let should_report_completion =
-                    app_server_client.consume_external_agent_config_import_completion();
-                if let Err(err) = self.refresh_in_memory_config_from_disk().await {
+                let should_report_completion = app_server_client
+                    .consume_external_agent_config_import_completion(&notification.import_id);
+                if !app_server_client.uses_remote_workspace()
+                    && let Err(err) = self.refresh_in_memory_config_from_disk().await
+                {
                     tracing::warn!(
                         error = %err,
                         "failed to refresh config after external agent config import"
@@ -167,23 +353,23 @@ impl App {
                 self.fetch_plugins_list(app_server_client, cwd);
                 if should_report_completion {
                     self.chat_widget.add_plain_history_lines(
-                        crate::external_agent_config_migration_flow::external_agent_config_migration_finished_lines(notification),
+                        crate::external_agent_config_migration::flow::external_agent_config_migration_finished_lines(notification),
                     );
                 }
                 return;
             }
             ServerNotification::AppListUpdated(notification) => {
-                self.chat_widget.on_connectors_loaded(
-                    Ok(ConnectorsSnapshot {
-                        connectors: notification
-                            .data
-                            .iter()
-                            .cloned()
-                            .map(app_info_from_api)
-                            .collect(),
-                    }),
-                    /*is_final*/ false,
-                );
+                if self.current_displayed_thread_id().is_some() {
+                    self.chat_widget
+                        .refresh_connector_directory_after_notification(
+                            notification
+                                .data
+                                .iter()
+                                .cloned()
+                                .map(app_info_from_api)
+                                .collect(),
+                        );
+                }
                 return;
             }
             _ => {}
@@ -191,9 +377,66 @@ impl App {
 
         match server_notification_thread_target(&notification) {
             ServerNotificationThreadTarget::Thread(thread_id) => {
-                let result = if self.primary_thread_id == Some(thread_id)
-                    || self.primary_thread_id.is_none()
+                if self.current_displayed_thread_id() != Some(thread_id)
+                    && let ServerNotification::ItemCompleted(item) = &notification
+                    && let ThreadItem::UserMessage {
+                        client_id: Some(client_id),
+                        ..
+                    } = &item.item
                 {
+                    // Acknowledge by ID before routing can discard the receipt. ID-less receipts
+                    // cannot safely distinguish identical pending submissions.
+                    let mut store = match self.thread_event_channels.get(&thread_id) {
+                        Some(channel) => Some(channel.store.lock().await),
+                        None => None,
+                    };
+                    for input in store
+                        .as_mut()
+                        .and_then(|store| store.input_state.as_mut())
+                        .into_iter()
+                        .chain(self.agents_overview.input_states.get_mut(&thread_id))
+                    {
+                        if input
+                            .pending_steers
+                            .front()
+                            .is_some_and(|pending| pending.client_id == *client_id)
+                        {
+                            input.pending_steers.pop_front();
+                        }
+                    }
+                }
+                let background_voice = self.background_voice.as_ref().is_some_and(|owner| {
+                    owner.thread_id() == Some(thread_id) && owner.realtime_conversation_is_running()
+                });
+                if self.primary_thread_id.is_none()
+                    && !self.pending_startup_thread_start
+                    && !background_voice
+                {
+                    return;
+                }
+                if self.primary_thread_id.is_some()
+                    && self.primary_thread_id != Some(thread_id)
+                    && !self.thread_event_channels.contains_key(&thread_id)
+                    && self.agent_navigation.get(&thread_id).is_none()
+                    && !self.side_threads.contains_key(&thread_id)
+                    && !matches!(&notification, ServerNotification::McpServerStatusUpdated(_))
+                    && !matches!(
+                        &notification,
+                        ServerNotification::ThreadStarted(started)
+                            if matches!(
+                                &started.thread.source,
+                                SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
+                                    parent_thread_id,
+                                    ..
+                                }) if self.primary_thread_id == Some(*parent_thread_id)
+                                    || self.thread_event_channels.contains_key(parent_thread_id)
+                                    || self.agent_navigation.get(parent_thread_id).is_some()
+                            )
+                    )
+                {
+                    return;
+                }
+                let result = if self.primary_thread_id.is_none() && !background_voice {
                     self.enqueue_primary_thread_notification(notification).await
                 } else {
                     self.enqueue_thread_notification(thread_id, notification)
@@ -221,111 +464,52 @@ impl App {
             ServerNotificationThreadTarget::Global => {}
         }
 
-        self.chat_widget
-            .handle_server_notification(notification, /*replay_kind*/ None);
-    }
-
-    pub(super) async fn mirror_elpis_context_notification(
-        &mut self,
-        notification: &ServerNotification,
-    ) {
-        if let Some(primary_thread_id) = self.primary_thread_id
-            && let ServerNotificationThreadTarget::Thread(thread_id) =
-                server_notification_thread_target(notification)
-            && thread_id != primary_thread_id
-        {
-            return;
-        }
-        if let ServerNotification::ItemCompleted(notification) = notification {
-            self.elpis_turn_items
-                .entry(notification.thread_id.clone())
-                .or_default()
-                .push((notification.turn_id.clone(), notification.item.clone()));
-            return;
-        }
-        if let ServerNotification::TurnCompleted(notification) = notification {
-            let cwd = match ThreadId::from_string(&notification.thread_id) {
-                Ok(thread_id) => self
-                    .thread_cwd(thread_id)
-                    .await
-                    .unwrap_or_else(|| self.config.cwd.clone()),
-                Err(_) => self.config.cwd.clone(),
+        #[cfg(any(target_os = "windows", test))]
+        if let ServerNotification::WindowsSandboxSetupCompleted(result) = notification {
+            let Some((mode, preset, profile_selection)) = self.windows_sandbox.pending_setup.take()
+            else {
+                return;
             };
-            let buffered = self
-                .elpis_turn_items
-                .remove(&notification.thread_id)
-                .unwrap_or_default();
-            let turn = crate::elpis_context::turn_with_buffered_items(&notification.turn, buffered);
-            let result = crate::elpis_context::write_session_checkpoint(
-                Some(self.config.memory_dir.as_path()),
-                cwd.as_path(),
-                &notification.thread_id,
-                &turn,
-            )
-            .await;
-            match result {
-                Ok(_) => {
-                    let memories_root = self.config.memory_dir.clone();
-                    self.request_manual_memory_refresh_for_paths(
-                        memories_root.as_path(),
-                        cwd.as_path(),
-                    );
+            let expected_mode = match mode {
+                WindowsSandboxEnableMode::Elevated => {
+                    codex_app_server_protocol::WindowsSandboxSetupMode::Elevated
                 }
-                Err(err) => {
-                    tracing::warn!(error = %err, "failed to save Elpis session checkpoint");
-                    self.chat_widget.add_error_message(format!(
-                        "Turn completed, but Elpis could not save ES.md: {err}"
-                    ));
+                WindowsSandboxEnableMode::Legacy => {
+                    codex_app_server_protocol::WindowsSandboxSetupMode::Unelevated
                 }
+            };
+            if result.mode != expected_mode {
+                self.windows_sandbox.pending_setup = Some((mode, preset, profile_selection));
+                return;
             }
-            return;
-        }
-
-        let (thread_id, goal) = match notification {
-            ServerNotification::ThreadGoalUpdated(notification) => {
-                (&notification.thread_id, Some(&notification.goal))
-            }
-            ServerNotification::ThreadGoalCleared(notification) => (&notification.thread_id, None),
-            _ => return,
-        };
-        let cwd = match ThreadId::from_string(thread_id) {
-            Ok(thread_id) => self
-                .thread_cwd(thread_id)
-                .await
-                .unwrap_or_else(|| self.config.cwd.clone()),
-            Err(_) => self.config.cwd.clone(),
-        };
-        let memories_root = Some(self.config.memory_dir.as_path());
-        let result = match goal {
-            Some(goal) => crate::elpis_context::write_goal(
-                memories_root,
-                cwd.as_path(),
-                thread_id,
-                &goal.objective,
-                goal_status_label(&goal.status),
-                goal.updated_at,
-            )
-            .await
-            .map(|_| ()),
-            None => crate::elpis_context::clear_goal(memories_root, cwd.as_path(), thread_id)
-                .await
-                .map(|_| ()),
-        };
-        match result {
-            Ok(()) => {
-                let memories_root = self.config.memory_dir.clone();
-                self.request_manual_memory_refresh_for_paths(
-                    memories_root.as_path(),
-                    cwd.as_path(),
-                );
-            }
-            Err(err) => {
-                tracing::warn!(error = %err, "failed to mirror Elpis goal");
+            if result.success {
+                self.app_event_tx
+                    .send(AppEvent::EnableWindowsSandboxForAgentMode {
+                        preset,
+                        mode,
+                        profile_selection,
+                    });
+            } else if mode == WindowsSandboxEnableMode::Elevated {
+                self.app_event_tx
+                    .send(AppEvent::OpenWindowsSandboxFallbackPrompt {
+                        preset,
+                        profile_selection,
+                    });
+            } else {
+                self.chat_widget.clear_windows_sandbox_setup_status();
+                self.windows_sandbox.setup_started_at = None;
+                self.chat_widget
+                    .retain_input_after_failed_permission_selection();
                 self.chat_widget.add_error_message(format!(
-                    "Goal changed, but Elpis could not save its portable GOAL.md: {err}"
+                    "Windows sandbox setup failed: {}",
+                    result.error.unwrap_or_else(|| "unknown error".to_string())
                 ));
             }
+            return;
         }
+
+        self.chat_widget
+            .handle_server_notification(notification, /*replay_kind*/ None);
     }
 
     async fn handle_server_request_event(
@@ -333,6 +517,199 @@ impl App {
         app_server_client: &AppServerSession,
         request: ServerRequest,
     ) {
+        if let ServerRequest::DynamicToolCall { request_id, params } = &request {
+            if self.dynamic_tool_tasks.contains_key(request_id)
+                || (params.namespace.as_deref() != Some(crate::dynamic_tools::NAMESPACE)
+                    && !app_server_client.uses_embedded_app_server())
+            {
+                return;
+            }
+
+            let requires_mcp = crate::dynamic_tools::DELEGATION_TOOLS
+                .contains(&params.tool.as_str())
+                || matches!(
+                    app_server_client.thread_tool_transport(),
+                    crate::dynamic_tools_mcp::ThreadToolTransport::Mcp(_)
+                );
+            if app_server_client.uses_embedded_app_server()
+                || requires_mcp
+                || codex_protocol::ThreadId::from_string(&params.thread_id)
+                    .is_ok_and(|thread_id| self.abandoned_side_threads.contains(&thread_id))
+            {
+                let response = crate::dynamic_tools::failure_response(if requires_mcp {
+                    "TUI task tools require the approval-gated MCP server"
+                } else {
+                    "TUI dynamic tools require an active external task"
+                });
+                self.app_event_tx.send(AppEvent::DynamicToolCallCompleted {
+                    request_id: request_id.clone(),
+                    response,
+                });
+                return;
+            }
+
+            let request_handle = app_server_client.request_handle();
+            let app_event_tx = self.app_event_tx.clone();
+            let status_updates = self.dynamic_tool_status_updates.subscribe();
+            let request_id = request_id.clone();
+            let task_request_id = request_id.clone();
+            let source_thread_id = params.thread_id.clone();
+            let inherits_task_tools = params.tool == "fork_thread"
+                && params
+                    .arguments
+                    .get("threadId")
+                    .and_then(serde_json::Value::as_str)
+                    .and_then(|thread_id| ThreadId::from_string(thread_id).ok())
+                    .is_none_or(|thread_id| app_server_client.task_tools_available(thread_id));
+            let params = params.clone();
+            let mut thread_start_params =
+                crate::app_server_session::thread_start_params_from_config(
+                    &self.config,
+                    app_server_client.thread_params_mode(),
+                    app_server_client.remote_cwd_override(),
+                    /*session_start_source*/ None,
+                );
+            app_server_client
+                .thread_tool_transport()
+                .configure(&mut thread_start_params);
+            let task = tokio::spawn(async move {
+                let response = crate::dynamic_tools::execute(
+                    request_handle,
+                    params,
+                    thread_start_params,
+                    status_updates,
+                    Some(&app_event_tx),
+                )
+                .await;
+                if inherits_task_tools
+                    && response.success
+                    && let [
+                        codex_app_server_protocol::DynamicToolCallOutputContentItem::InputText {
+                            text,
+                        },
+                    ] = response.content_items.as_slice()
+                    && let Ok(result) = serde_json::from_str::<serde_json::Value>(text)
+                    && let Some(thread_id) =
+                        result.get("threadId").and_then(serde_json::Value::as_str)
+                    && let Ok(thread_id) = ThreadId::from_string(thread_id)
+                {
+                    app_event_tx.send(AppEvent::TaskToolsAvailable { thread_id });
+                }
+                app_event_tx.send(AppEvent::DynamicToolCallCompleted {
+                    request_id,
+                    response,
+                });
+            });
+            self.dynamic_tool_tasks
+                .insert(task_request_id, (source_thread_id, task));
+            return;
+        }
+
+        let thread_id = server_request_thread_id(&request);
+        let background_voice = self.background_voice.as_ref().is_some_and(|owner| {
+            owner.realtime_conversation_is_running()
+                && owner.thread_id().is_some()
+                && owner.thread_id() == thread_id
+        });
+        if thread_id.is_some_and(|thread_id| self.abandoned_side_threads.contains(&thread_id)) {
+            if let Err(err) = self
+                .reject_app_server_request(
+                    app_server_client,
+                    request.id().clone(),
+                    "side conversation was closed".to_string(),
+                )
+                .await
+            {
+                tracing::warn!("{err}");
+            }
+            return;
+        }
+        if thread_id.is_some()
+            && self.primary_thread_id.is_none()
+            && !background_voice
+            && self.pending_startup_thread_start
+        {
+            self.pending_primary_events
+                .push_back(ThreadBufferedEvent::Request(Box::new(request)));
+            return;
+        }
+        let unsupported_request = matches!(
+            &request,
+            ServerRequest::DynamicToolCall { .. }
+                | ServerRequest::AttestationGenerate { .. }
+                | ServerRequest::CurrentTimeRead { .. }
+                | ServerRequest::ApplyPatchApproval { .. }
+                | ServerRequest::ExecCommandApproval { .. }
+        );
+        if self
+            .pending_app_server_requests
+            .contains_server_request(&request)
+        {
+            return;
+        }
+        if let Some(thread_id) = thread_id
+            && self.primary_thread_id != Some(thread_id)
+            && !unsupported_request
+            && !background_voice
+            && let Some(requests) = self.agents_overview.dispatched_requests.get_mut(&thread_id)
+        {
+            requests.push(request);
+            return;
+        }
+        if thread_id.is_some()
+            && self.primary_thread_id.is_none()
+            && !background_voice
+            && !self.pending_startup_thread_start
+            && !unsupported_request
+        {
+            return;
+        }
+        if let Some(thread_id) = thread_id
+            && self.primary_thread_id.is_some()
+            && self.primary_thread_id != Some(thread_id)
+            && !self.thread_event_channels.contains_key(&thread_id)
+            && self.agent_navigation.get(&thread_id).is_none()
+            && !self.side_threads.contains_key(&thread_id)
+            && !unsupported_request
+        {
+            let thread = app_server_client
+                .request_handle()
+                .request_typed::<ThreadReadResponse>(ClientRequest::ThreadRead {
+                    request_id: RequestId::String(format!("subagent-approval-{thread_id}")),
+                    params: ThreadReadParams {
+                        thread_id: thread_id.to_string(),
+                        include_turns: false,
+                    },
+                })
+                .await;
+            let Ok(ThreadReadResponse { thread, .. }) = thread else {
+                return;
+            };
+            let SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
+                parent_thread_id, ..
+            }) = thread.source
+            else {
+                return;
+            };
+            if self.primary_thread_id != Some(parent_thread_id)
+                && !self.thread_event_channels.contains_key(&parent_thread_id)
+                && self.agent_navigation.get(&parent_thread_id).is_none()
+            {
+                if self
+                    .agents_overview
+                    .dispatched_requests
+                    .contains_key(&parent_thread_id)
+                {
+                    self.agents_overview
+                        .dispatched_requests
+                        .entry(thread_id)
+                        .or_default()
+                        .push(request);
+                }
+                return;
+            }
+        }
+
         if let Some(unsupported) = self
             .pending_app_server_requests
             .note_server_request(&request)
@@ -357,81 +734,18 @@ impl App {
             return;
         }
 
-        if self.runtime_approval_policy_override == Some(AskForApproval::Never)
-            && matches!(
-                &request,
-                ServerRequest::CommandExecutionRequestApproval { .. }
-                    | ServerRequest::FileChangeRequestApproval { .. }
-                    | ServerRequest::PermissionsRequestApproval { .. }
-            )
-        {
-            self.resolve_full_access_approvals(app_server_client).await;
-            return;
-        }
-
-        let Some(thread_id) = server_request_thread_id(&request) else {
+        let Some(thread_id) = thread_id else {
             tracing::warn!("ignoring threadless app-server request");
             return;
         };
 
-        let result =
-            if self.primary_thread_id == Some(thread_id) || self.primary_thread_id.is_none() {
-                self.enqueue_primary_thread_request(request).await
-            } else {
-                self.enqueue_thread_request(thread_id, request).await
-            };
+        let result = if self.primary_thread_id.is_none() && !background_voice {
+            self.enqueue_primary_thread_request(request).await
+        } else {
+            self.enqueue_thread_request(thread_id, request).await
+        };
         if let Err(err) = result {
             tracing::warn!("failed to enqueue app-server request: {err}");
         }
-    }
-}
-
-fn goal_status_label(status: &codex_app_server_protocol::ThreadGoalStatus) -> &'static str {
-    use codex_app_server_protocol::ThreadGoalStatus;
-    match status {
-        ThreadGoalStatus::Active => "active",
-        ThreadGoalStatus::Paused => "paused",
-        ThreadGoalStatus::Blocked => "blocked",
-        ThreadGoalStatus::UsageLimited => "usage-limited",
-        ThreadGoalStatus::BudgetLimited => "budget-limited",
-        ThreadGoalStatus::Complete => "complete",
-    }
-}
-
-/// What the owner is told when the connection to the app server goes away.
-///
-/// The thread itself survives on disk, so name the one command that opens it
-/// again rather than leaving a transport error to read as lost work.
-fn disconnect_message(transport_error: &str, active_thread: Option<ThreadId>) -> String {
-    match active_thread {
-        Some(thread_id) => format!(
-            "{transport_error}\n\nThis session is saved. Reopen it with `elpis resume {thread_id}`."
-        ),
-        None => transport_error.to_string(),
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn a_dropped_connection_names_the_command_that_brings_the_session_back() {
-        let thread_id = ThreadId::new();
-        let message = disconnect_message(
-            "remote app server at `unix:///tmp/x.sock` transport failed",
-            Some(thread_id),
-        );
-        assert!(
-            message.contains(&format!("elpis resume {thread_id}")),
-            "a drop must not read as lost work: {message}"
-        );
-    }
-
-    #[test]
-    fn a_drop_before_any_thread_exists_says_only_what_happened() {
-        let message = disconnect_message("transport failed", None);
-        assert!(!message.contains("elpis resume"), "{message}");
-        assert!(message.contains("transport failed"), "{message}");
     }
 }

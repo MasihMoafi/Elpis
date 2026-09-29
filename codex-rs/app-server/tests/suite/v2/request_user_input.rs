@@ -1,11 +1,10 @@
 use anyhow::Result;
+use app_test_support::MockResponsesConfig;
 use app_test_support::TestAppServer;
 use app_test_support::create_final_assistant_message_sse_response;
 use app_test_support::create_mock_responses_server_sequence;
-use app_test_support::to_response;
+use codex_app_server_protocol::ClientRequest;
 use codex_app_server_protocol::JSONRPCMessage;
-use codex_app_server_protocol::JSONRPCResponse;
-use codex_app_server_protocol::RequestId;
 use codex_app_server_protocol::ServerRequest;
 use codex_app_server_protocol::ServerRequestResolvedNotification;
 use codex_app_server_protocol::ThreadStartParams;
@@ -23,10 +22,7 @@ use tokio::time::timeout;
 
 const DEFAULT_READ_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
 
-fn create_request_user_input_sse_response_with_auto_resolution(
-    call_id: &str,
-    auto_resolution_ms: u64,
-) -> anyhow::Result<String> {
+fn create_request_user_input_sse_response(call_id: &str) -> anyhow::Result<String> {
     let tool_call_arguments = serde_json::to_string(&json!({
         "questions": [{
             "id": "confirm_path",
@@ -39,8 +35,7 @@ fn create_request_user_input_sse_response_with_auto_resolution(
                 "label": "No",
                 "description": "Stop and revisit the approach."
             }]
-        }],
-        "autoResolutionMs": auto_resolution_ms
+        }]
     }))?;
 
     Ok(responses::sse(vec![
@@ -52,62 +47,81 @@ fn create_request_user_input_sse_response_with_auto_resolution(
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn request_user_input_round_trip() -> Result<()> {
+    request_user_input_round_trip_for_mode(
+        ModeKind::Plan,
+        /*enable_default_mode_feature*/ false,
+        /*expected_is_blocking*/ true,
+    )
+    .await
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn request_user_input_default_mode_forwards_non_blocking() -> Result<()> {
+    request_user_input_round_trip_for_mode(
+        ModeKind::Default,
+        /*enable_default_mode_feature*/ true,
+        /*expected_is_blocking*/ false,
+    )
+    .await
+}
+
+async fn request_user_input_round_trip_for_mode(
+    mode: ModeKind,
+    enable_default_mode_feature: bool,
+    expected_is_blocking: bool,
+) -> Result<()> {
     let codex_home = tempfile::TempDir::new()?;
     let responses = vec![
-        create_request_user_input_sse_response_with_auto_resolution(
-            "call1", /*auto_resolution_ms*/ 60_000,
-        )?,
+        create_request_user_input_sse_response("call1")?,
         create_final_assistant_message_sse_response("done")?,
     ];
     let server = create_mock_responses_server_sequence(responses).await;
-    create_config_toml(codex_home.path(), &server.uri())?;
+    MockResponsesConfig::new(&server.uri())
+        .with_approval_policy("on-request")
+        .write(codex_home.path())?;
 
     let mut mcp = TestAppServer::builder()
         .with_codex_home(codex_home.path())
-        .build()
+        .build_initialized()
         .await?;
-    timeout(DEFAULT_READ_TIMEOUT, mcp.initialize()).await??;
 
-    let thread_start_id = mcp
-        .send_thread_start_request_with_auto_env(ThreadStartParams {
+    let ThreadStartResponse { thread, .. } = mcp
+        .start_thread(ThreadStartParams {
             model: Some("mock-model".to_string()),
-            ..Default::default()
-        })
-        .await?;
-    let thread_start_resp: JSONRPCResponse = timeout(
-        DEFAULT_READ_TIMEOUT,
-        mcp.read_stream_until_response_message(RequestId::Integer(thread_start_id)),
-    )
-    .await??;
-    let ThreadStartResponse { thread, .. } = to_response(thread_start_resp)?;
-
-    let turn_start_id = mcp
-        .send_turn_start_request(TurnStartParams {
-            thread_id: thread.id.clone(),
-            client_user_message_id: None,
-            input: vec![V2UserInput::Text {
-                text: "ask something".to_string(),
-                text_elements: Vec::new(),
-            }],
-            model: Some("mock-model".to_string()),
-            effort: Some(ReasoningEffort::Medium),
-            collaboration_mode: Some(CollaborationMode {
-                mode: ModeKind::Plan,
-                settings: Settings {
-                    model: "mock-model".to_string(),
-                    reasoning_effort: Some(ReasoningEffort::Medium),
-                    developer_instructions: None,
-                },
+            config: enable_default_mode_feature.then(|| {
+                std::collections::HashMap::from([(
+                    "features.default_mode_request_user_input".to_string(),
+                    json!(true),
+                )])
             }),
             ..Default::default()
         })
         .await?;
-    let turn_start_resp: JSONRPCResponse = timeout(
-        DEFAULT_READ_TIMEOUT,
-        mcp.read_stream_until_response_message(RequestId::Integer(turn_start_id)),
-    )
-    .await??;
-    let TurnStartResponse { turn, .. } = to_response(turn_start_resp)?;
+
+    let TurnStartResponse { turn, .. } = mcp
+        .request(|request_id| ClientRequest::TurnStart {
+            request_id,
+            params: TurnStartParams {
+                thread_id: thread.id.clone(),
+                client_user_message_id: None,
+                input: vec![V2UserInput::Text {
+                    text: "ask something".to_string(),
+                    text_elements: Vec::new(),
+                }],
+                model: Some("mock-model".to_string()),
+                effort: Some(ReasoningEffort::Medium),
+                collaboration_mode: Some(CollaborationMode {
+                    mode,
+                    settings: Settings {
+                        model: "mock-model".to_string(),
+                        reasoning_effort: Some(ReasoningEffort::Medium),
+                        developer_instructions: None,
+                    },
+                }),
+                ..Default::default()
+            },
+        })
+        .await?;
 
     let server_req = timeout(
         DEFAULT_READ_TIMEOUT,
@@ -122,7 +136,8 @@ async fn request_user_input_round_trip() -> Result<()> {
     assert_eq!(params.turn_id, turn.id);
     assert_eq!(params.item_id, "call1");
     assert_eq!(params.questions.len(), 1);
-    assert_eq!(params.auto_resolution_ms, Some(60_000));
+    assert_eq!(params.is_blocking, expected_is_blocking);
+    assert_eq!(params.auto_resolution_ms, None);
     let resolved_request_id = request_id.clone();
 
     mcp.send_response(
@@ -161,26 +176,4 @@ async fn request_user_input_round_trip() -> Result<()> {
     }
 
     Ok(())
-}
-fn create_config_toml(codex_home: &std::path::Path, server_uri: &str) -> std::io::Result<()> {
-    let config_toml = codex_home.join("config.toml");
-    std::fs::write(
-        config_toml,
-        format!(
-            r#"
-model = "mock-model"
-approval_policy = "untrusted"
-sandbox_mode = "read-only"
-
-model_provider = "mock_provider"
-
-[model_providers.mock_provider]
-name = "Mock provider for test"
-base_url = "{server_uri}/v1"
-wire_api = "responses"
-request_max_retries = 0
-stream_max_retries = 0
-"#
-        ),
-    )
 }

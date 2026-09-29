@@ -1,8 +1,8 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::widgets::WidgetRef;
 
+use super::picker_style::selection_style;
 use super::popup_consts::MAX_POPUP_ROWS;
 use super::scroll_state::ScrollState;
 use super::selection_popup_common::ColumnWidthConfig;
@@ -14,8 +14,6 @@ use super::slash_commands::BuiltinCommandFlags;
 use super::slash_commands::ServiceTierCommand;
 use super::slash_commands::SlashCommandItem;
 use super::slash_commands::commands_for_input;
-use crate::render::Insets;
-use crate::render::RectExt;
 use crate::slash_command::SlashCommand;
 
 // Hide alias commands in the default popup list so each unique action appears once.
@@ -45,9 +43,11 @@ pub(crate) struct CommandPopupFlags {
     pub(crate) collaboration_modes_enabled: bool,
     pub(crate) connectors_enabled: bool,
     pub(crate) plugins_command_enabled: bool,
+    pub(crate) token_activity_command_enabled: bool,
     pub(crate) service_tier_commands_enabled: bool,
     pub(crate) goal_command_enabled: bool,
-    pub(crate) personality_command_enabled: bool,
+    pub(crate) voice_command_enabled: bool,
+    pub(crate) worktrees_enabled: bool,
     pub(crate) windows_degraded_sandbox_active: bool,
     pub(crate) side_conversation_active: bool,
 }
@@ -58,9 +58,11 @@ impl From<CommandPopupFlags> for BuiltinCommandFlags {
             collaboration_modes_enabled: value.collaboration_modes_enabled,
             connectors_enabled: value.connectors_enabled,
             plugins_command_enabled: value.plugins_command_enabled,
+            token_activity_command_enabled: value.token_activity_command_enabled,
             service_tier_commands_enabled: value.service_tier_commands_enabled,
             goal_command_enabled: value.goal_command_enabled,
-            personality_command_enabled: value.personality_command_enabled,
+            voice_command_enabled: value.voice_command_enabled,
+            worktrees_enabled: value.worktrees_enabled,
             allow_elevate_sandbox: value.windows_degraded_sandbox_active,
             side_conversation_active: value.side_conversation_active,
         }
@@ -202,16 +204,22 @@ impl CommandPopup {
     ) -> Vec<GenericDisplayRow> {
         matches
             .into_iter()
-            .map(|(item, indices)| {
+            .enumerate()
+            .map(|(index, (item, indices))| {
                 let name = format!("/{}", item.command());
                 let description = item.description().to_string();
                 GenericDisplayRow {
+                    category_tag: None,
                     name,
-                    name_prefix_spans: Vec::new(),
+                    name_prefix_spans: vec![if self.state.selected_idx == Some(index) {
+                        "› ".into()
+                    } else {
+                        "  ".into()
+                    }],
+                    selection_style: Some(selection_style()),
                     match_indices: indices.map(|v| v.into_iter().map(|i| i + 1).collect()),
                     display_shortcut: None,
                     description: Some(description),
-                    category_tag: None,
                     wrap_indent: None,
                     is_disabled: false,
                     disabled_reason: None,
@@ -264,9 +272,7 @@ impl WidgetRef for CommandPopup {
     fn render_ref(&self, area: Rect, buf: &mut Buffer) {
         let rows = self.rows_from_matches(self.filtered());
         render_rows_with_col_width_mode(
-            area.inset(Insets::tlbr(
-                /*top*/ 0, /*left*/ 2, /*bottom*/ 0, /*right*/ 0,
-            )),
+            area,
             buf,
             &rows,
             &self.state,
@@ -367,6 +373,51 @@ mod tests {
     }
 
     #[test]
+    fn command_popup_wrap_boundary_preserves_following_choice() {
+        let mut popup = CommandPopup::new(
+            CommandPopupFlags {
+                service_tier_commands_enabled: true,
+                ..CommandPopupFlags::default()
+            },
+            vec![
+                ServiceTierCommand {
+                    id: "priority".to_string(),
+                    name: "tier-one".to_string(),
+                    description: "Use faster inference".to_string(),
+                },
+                ServiceTierCommand {
+                    id: "default".to_string(),
+                    name: "tier-two".to_string(),
+                    description: "Keep default speed".to_string(),
+                },
+            ],
+        );
+        popup.on_composer_text_change("/tier".to_string());
+
+        // The first description exactly fits at width 33, including the left inset.
+        // Rendering at the requested height must also retain the second choice
+        // when the first description wraps one column below that boundary.
+        let mut snapshots = Vec::new();
+        for width in [32, 33, 34] {
+            let area = Rect::new(
+                /*x*/ 0,
+                /*y*/ 0,
+                width,
+                popup.calculate_required_height(width),
+            );
+            let mut buf = Buffer::empty(area);
+            popup.render_ref(area, &mut buf);
+
+            let snapshot = format!("{buf:?}");
+            assert!(snapshot.contains("/tier-two"));
+            assert!(snapshot.contains("Keep default speed"));
+            snapshots.push(format!("width {width}\n{snapshot}"));
+        }
+
+        insta::assert_snapshot!("command_popup_wrap_boundary", snapshots.join("\n\n"));
+    }
+
+    #[test]
     fn filtered_commands_keep_presentation_order_for_prefix() {
         let mut popup = CommandPopup::new(CommandPopupFlags::default(), Vec::new());
         popup.on_composer_text_change("/m".to_string());
@@ -379,14 +430,12 @@ mod tests {
                 CommandItem::ServiceTier(command) => command.name,
             })
             .collect();
-        // `/mention` also matches this prefix upstream, but it is not part of Elpis's command
-        // menu, so the run of matches is shorter here. What this covers is the order the
-        // matches keep, not how many there are.
         assert_eq!(
             cmds,
             vec![
                 "model".to_string(),
-                "memory-model".to_string(),
+                "memories".to_string(),
+                "mention".to_string(),
                 "mcp".to_string()
             ]
         );
@@ -409,6 +458,31 @@ mod tests {
         popup.render_ref(area, &mut buf);
 
         insta::assert_snapshot!("command_popup_app", format!("{buf:?}"));
+    }
+
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
+    #[test]
+    fn voice_command_popup_snapshot() {
+        let mut popup = CommandPopup::new(
+            CommandPopupFlags {
+                voice_command_enabled: true,
+                ..CommandPopupFlags::default()
+            },
+            Vec::new(),
+        );
+        popup.on_composer_text_change("/voice".to_string());
+
+        let width = 72;
+        let area = Rect::new(
+            /*x*/ 0,
+            /*y*/ 0,
+            width,
+            popup.calculate_required_height(width),
+        );
+        let mut buf = Buffer::empty(area);
+        popup.render_ref(area, &mut buf);
+
+        insta::assert_snapshot!("command_popup_voice", format!("{buf:?}"));
     }
 
     #[cfg(target_os = "macos")]
@@ -460,11 +534,11 @@ mod tests {
         }
         assert!(popup.state.scroll_top > 0);
 
-        popup.on_composer_text_change("/us".to_string());
+        popup.on_composer_text_change("/st".to_string());
 
         assert_eq!(
             popup.selected_item(),
-            Some(CommandItem::Builtin(SlashCommand::Usage))
+            Some(CommandItem::Builtin(SlashCommand::Status))
         );
         assert_eq!(popup.state.scroll_top, 0);
         let width = 72;
@@ -495,6 +569,18 @@ mod tests {
     }
 
     #[test]
+    fn btw_hidden_in_empty_filter_but_shown_for_prefix() {
+        let mut popup = CommandPopup::new(CommandPopupFlags::default(), Vec::new());
+        popup.on_composer_text_change("/".to_string());
+        let items = popup.filtered_items();
+        assert!(!items.contains(&CommandItem::Builtin(SlashCommand::Btw)));
+
+        popup.on_composer_text_change("/bt".to_string());
+        let items = popup.filtered_items();
+        assert!(items.contains(&CommandItem::Builtin(SlashCommand::Btw)));
+    }
+
+    #[test]
     fn plan_command_hidden_when_collaboration_modes_disabled() {
         let mut popup = CommandPopup::new(CommandPopupFlags::default(), Vec::new());
         popup.on_composer_text_change("/".to_string());
@@ -514,15 +600,17 @@ mod tests {
     }
 
     #[test]
-    fn plan_command_shown_when_collaboration_modes_enabled() {
+    fn plan_command_visible_when_collaboration_modes_enabled() {
         let mut popup = CommandPopup::new(
             CommandPopupFlags {
                 collaboration_modes_enabled: true,
                 connectors_enabled: false,
                 plugins_command_enabled: false,
+                token_activity_command_enabled: false,
                 service_tier_commands_enabled: false,
                 goal_command_enabled: false,
-                personality_command_enabled: true,
+                voice_command_enabled: false,
+                worktrees_enabled: true,
                 windows_degraded_sandbox_active: false,
                 side_conversation_active: false,
             },
@@ -530,63 +618,13 @@ mod tests {
         );
         popup.on_composer_text_change("/plan".to_string());
 
-        assert!(
-            popup
-                .filtered_items()
-                .contains(&CommandItem::Builtin(SlashCommand::Plan)),
-            "expected '/plan' to be offered when collaboration modes are enabled"
-        );
-    }
-
-    #[test]
-    fn personality_command_hidden_when_disabled() {
-        let mut popup = CommandPopup::new(
-            CommandPopupFlags {
-                collaboration_modes_enabled: true,
-                connectors_enabled: false,
-                plugins_command_enabled: false,
-                service_tier_commands_enabled: false,
-                goal_command_enabled: false,
-                personality_command_enabled: false,
-                windows_degraded_sandbox_active: false,
-                side_conversation_active: false,
-            },
-            Vec::new(),
-        );
-        popup.on_composer_text_change("/pers".to_string());
-
-        let cmds: Vec<String> = popup
-            .filtered_items()
-            .into_iter()
-            .map(|item| match item {
-                CommandItem::Builtin(cmd) => cmd.command().to_string(),
-                CommandItem::ServiceTier(command) => command.name,
-            })
-            .collect();
-        assert!(
-            !cmds.iter().any(|cmd| cmd == "personality"),
-            "expected '/personality' to be hidden when disabled, got {cmds:?}"
-        );
-    }
-
-    #[test]
-    fn personality_command_stays_removed_when_enabled() {
-        let mut popup = CommandPopup::new(
-            CommandPopupFlags {
-                collaboration_modes_enabled: true,
-                connectors_enabled: false,
-                plugins_command_enabled: false,
-                service_tier_commands_enabled: false,
-                goal_command_enabled: false,
-                personality_command_enabled: true,
-                windows_degraded_sandbox_active: false,
-                side_conversation_active: false,
-            },
-            Vec::new(),
-        );
-        popup.on_composer_text_change("/personality".to_string());
-
-        assert!(popup.filtered_items().is_empty());
+        match popup.selected_item() {
+            Some(CommandItem::Builtin(cmd)) => assert_eq!(cmd.command(), "plan"),
+            Some(CommandItem::ServiceTier(command)) => {
+                panic!("expected plan command, got service tier {command:?}")
+            }
+            other => panic!("expected plan to be selected for exact match, got {other:?}"),
+        }
     }
 
     #[test]

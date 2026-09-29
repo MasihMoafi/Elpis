@@ -1,4 +1,3 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use crate::config::NetworkDomainPermissions;
 use crate::config::NetworkMode;
 use crate::config::NetworkProxyConfig;
@@ -58,14 +57,34 @@ pub struct PartialNetworkProxyConfig {
     pub mitm_hooks: Option<Vec<MitmHookConfig>>,
 }
 
+/// Compiles policy using the supplied executor OS, which may differ from this host.
+/// Socket paths are validated without native normalization or filesystem access.
 pub fn build_config_state(
-    config: NetworkProxyConfig,
+    mut config: NetworkProxyConfig,
     constraints: NetworkProxyConstraints,
+    executor_os: crate::Platform,
 ) -> anyhow::Result<ConfigState> {
-    crate::config::validate_unix_socket_allowlist_paths(&config)?;
+    if constraints.enabled == Some(false) {
+        config.credential_broker = false;
+    }
+    let brokerage_created_proxy = config.credential_broker && !config.enabled;
+    let brokerage_created_default_allowlist = brokerage_created_proxy
+        && config.allowed_domains().is_none()
+        && constraints.allowed_domains.is_none();
+    if brokerage_created_proxy {
+        config.enabled = true;
+    }
+    if brokerage_created_default_allowlist {
+        config.set_allowed_domains(vec!["*".to_string()]);
+    }
+    crate::config::validate_unix_socket_allowlist_paths(&config, executor_os)?;
     anyhow::ensure!(
         !config.credential_broker || config.mitm,
         "network.credential_broker requires network.mitm = true"
+    );
+    anyhow::ensure!(
+        config.mitm_ca.is_none() || config.mitm,
+        "network.mitm_ca requires network.mitm = true"
     );
     let allowed_domains = config.allowed_domains().unwrap_or_default();
     let denied_domains = config.denied_domains().unwrap_or_default();
@@ -77,13 +96,15 @@ pub fn build_config_state(
     let mitm = if config.mitm {
         Some(Arc::new(MitmState::new(MitmUpstreamConfig {
             allow_upstream_proxy: config.allow_upstream_proxy,
-            allow_local_binding: config.allow_local_binding,
+            external_ca: config.mitm_ca.clone(),
         })?))
     } else {
         None
     };
     Ok(ConfigState {
+        executor_os,
         config,
+        brokerage_created_default_allowlist,
         allow_set,
         deny_set,
         mitm,
@@ -197,7 +218,7 @@ pub fn validate_policy_against_constraints(
         .dangerously_allow_all_unix_sockets
         .unwrap_or(constraints.allow_unix_sockets.is_none());
     validate(
-        config.dangerously_allow_all_unix_sockets,
+        config.dangerously_allow_all_unix_sockets.unwrap_or(false),
         move |candidate| {
             if *candidate && !allow_all_unix_sockets {
                 Err(invalid_value(
@@ -212,7 +233,7 @@ pub fn validate_policy_against_constraints(
     )?;
 
     if let Some(allow_local_binding) = constraints.allow_local_binding {
-        validate(config.allow_local_binding, move |candidate| {
+        validate(config.allow_local_binding(), move |candidate| {
             if *candidate && !allow_local_binding {
                 Err(invalid_value(
                     "network.allow_local_binding",

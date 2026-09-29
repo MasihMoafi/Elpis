@@ -1,5 +1,5 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use codex_utils_absolute_path::AbsolutePathBuf;
+use codex_utils_redacted_string::RedactedString;
 use schemars::JsonSchema;
 use schemars::r#gen::SchemaGenerator;
 use schemars::schema::InstanceType;
@@ -21,6 +21,23 @@ use ts_rs::TS;
 use wildmatch::WildMatchPattern;
 
 use crate::openai_models::ReasoningEffort;
+
+/// Limit for the text included in `codex.tool_result` log records.
+/// This does not affect model-visible output. Raising it can expose more tool data to logs.
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq, JsonSchema)]
+#[serde(default)]
+pub struct ToolResultLogConfig {
+    /// Maximum UTF-8 bytes before the truncation notice. Defaults to 2048.
+    pub max_bytes: usize,
+}
+
+impl Default for ToolResultLogConfig {
+    fn default() -> Self {
+        Self {
+            max_bytes: 2 * 1024,
+        }
+    }
+}
 
 /// Selects which part of the active context is charged against
 /// `model_auto_compact_token_limit`.
@@ -200,6 +217,16 @@ pub enum ShellEnvironmentPolicyInherit {
     None,
 }
 
+/// Assigns a shell environment variable pattern to the include-only or exclude
+/// set. Includes do not re-add variables removed by another exclude pattern.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, JsonSchema, TS)]
+#[serde(rename_all = "lowercase")]
+#[ts(export_to = "v2/")]
+pub enum ShellEnvironmentPolicyFilter {
+    Include,
+    Exclude,
+}
+
 pub type EnvironmentVariablePattern = WildMatchPattern<'*', '?'>;
 
 /// Deriving the `env` based on this policy works as follows:
@@ -274,6 +301,17 @@ pub enum WindowsSandboxLevel {
     Elevated,
 }
 
+/// Controls whether a Windows sandbox launch reconciles persistent proxy settings or preserves
+/// the settings established by another launch.
+#[derive(Deserialize, Debug, Clone, Copy, PartialEq, Eq, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum WindowsSandboxProxySettingsMode {
+    #[default]
+    Reconcile,
+    Preserve,
+}
+
+/// Deprecated: `friendly` and `pragmatic` no longer select a style.
 #[derive(
     Debug,
     Serialize,
@@ -341,6 +379,31 @@ pub enum WebSearchMode {
     Cached,
     Indexed,
     Live,
+}
+
+impl WebSearchMode {
+    /// Restricts search to the access permitted by both modes.
+    pub fn restrict_to(self, requested: Self) -> Self {
+        match (self, requested) {
+            (Self::Disabled, _) | (_, Self::Disabled) => Self::Disabled,
+            (Self::Cached, _) | (_, Self::Cached) => Self::Cached,
+            (Self::Indexed, _) | (_, Self::Indexed) => Self::Indexed,
+            (Self::Live, Self::Live) => Self::Live,
+        }
+    }
+}
+
+/// A model-facing surface on which a tool can be exposed.
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Display, JsonSchema, TS)]
+#[serde(rename_all = "snake_case")]
+#[strum(serialize_all = "snake_case")]
+pub enum ToolExposureSurface {
+    /// Nested tools available to Code Mode scripts.
+    CodeMode,
+    /// Tools discovered later through tool search.
+    Deferred,
+    /// Tools present in the model's initial tool list.
+    Direct,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Display, JsonSchema, TS)]
@@ -510,7 +573,7 @@ pub struct ModelProviderAuthInfo {
 
     /// Command arguments.
     #[serde(default)]
-    pub args: Vec<String>,
+    pub args: Vec<RedactedString>,
 
     /// Maximum time to wait for the token command to exit successfully.
     #[serde(default = "default_provider_auth_timeout_ms")]
@@ -618,16 +681,6 @@ pub enum ModeKind {
         alias = "custom"
     )]
     Default,
-    #[doc(hidden)]
-    #[serde(skip_serializing, skip_deserializing)]
-    #[schemars(skip)]
-    #[ts(skip)]
-    PairProgramming,
-    #[doc(hidden)]
-    #[serde(skip_serializing, skip_deserializing)]
-    #[schemars(skip)]
-    #[ts(skip)]
-    Execute,
 }
 
 pub const TUI_VISIBLE_COLLABORATION_MODES: [ModeKind; 2] = [ModeKind::Default, ModeKind::Plan];
@@ -637,8 +690,6 @@ impl ModeKind {
         match self {
             Self::Plan => "Plan",
             Self::Default => "Default",
-            Self::PairProgramming => "Pair Programming",
-            Self::Execute => "Execute",
         }
     }
 
@@ -749,6 +800,32 @@ mod tests {
     use pretty_assertions::assert_eq;
 
     #[test]
+    fn web_search_mode_restrictions_never_expand_either_mode() {
+        use WebSearchMode::Cached;
+        use WebSearchMode::Disabled;
+        use WebSearchMode::Indexed;
+        use WebSearchMode::Live;
+
+        let modes = [Disabled, Cached, Indexed, Live];
+        let expected = [
+            [Disabled, Disabled, Disabled, Disabled],
+            [Disabled, Cached, Cached, Cached],
+            [Disabled, Cached, Indexed, Indexed],
+            [Disabled, Cached, Indexed, Live],
+        ];
+
+        for (parent_index, parent) in modes.into_iter().enumerate() {
+            for (requested_index, requested) in modes.into_iter().enumerate() {
+                assert_eq!(
+                    parent.restrict_to(requested),
+                    expected[parent_index][requested_index],
+                    "parent: {parent:?}, requested: {requested:?}",
+                );
+            }
+        }
+    }
+
+    #[test]
     fn apply_mask_can_clear_optional_fields() {
         let mode = CollaborationMode {
             mode: ModeKind::Default,
@@ -837,9 +914,6 @@ mod tests {
         for mode in TUI_VISIBLE_COLLABORATION_MODES {
             assert!(mode.is_tui_visible());
         }
-
-        assert!(!ModeKind::PairProgramming.is_tui_visible());
-        assert!(!ModeKind::Execute.is_tui_visible());
     }
 
     #[test]

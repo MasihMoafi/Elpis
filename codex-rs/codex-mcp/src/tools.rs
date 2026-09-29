@@ -21,7 +21,7 @@ use crate::mcp::sanitize_responses_api_tool_name;
 
 const LEGACY_MCP_TOOL_NAME_PREFIX: &str = "mcp__";
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ToolInfo {
     /// Raw MCP server name used for routing the tool call.
     pub server_name: String,
@@ -106,13 +106,14 @@ pub(crate) fn filter_tools(tools: Vec<ToolInfo>, filter: &ToolFilter) -> Vec<Too
 ///
 /// Raw MCP server/tool names are kept on each [`ToolInfo`] for protocol calls, while
 /// `callable_namespace` / `callable_name` are sanitized and, when necessary, hashed so
-/// every model-visible name is unique and <= 64 bytes.
+/// every model-visible name is unique and <= 128 bytes.
 ///
 /// When `prefix_mcp_tool_names` is true, the historical `mcp__` namespace
-/// prefix is added without restoring the old trailing `__` namespace suffix.
+/// prefix is added except for tools from `non_prefixed_mcp_tool_servers`.
 pub(crate) fn normalize_tools_for_model_with_prefix<I>(
     tools: I,
     prefix_mcp_tool_names: bool,
+    non_prefixed_mcp_tool_servers: &[String],
 ) -> Vec<ToolInfo>
 where
     I: IntoIterator<Item = ToolInfo>,
@@ -137,7 +138,7 @@ where
 
         let callable_namespace = callable_namespace_with_prefix(
             &sanitize_responses_api_tool_name(&tool.callable_namespace),
-            prefix_mcp_tool_names,
+            prefix_mcp_tool_names && !non_prefixed_mcp_tool_servers.contains(&tool.server_name),
         );
 
         candidates.push(CallableToolCandidate {
@@ -222,7 +223,7 @@ struct CallableToolCandidate {
 }
 
 const MCP_TOOL_NAME_DELIMITER: &str = "__";
-const MAX_TOOL_NAME_LENGTH: usize = 64;
+const MAX_TOOL_NAME_LENGTH: usize = 128;
 const CALLABLE_NAME_HASH_LEN: usize = 12;
 fn callable_namespace_with_prefix(namespace: &str, prefix_mcp_tool_names: bool) -> String {
     if !prefix_mcp_tool_names || namespace.starts_with(LEGACY_MCP_TOOL_NAME_PREFIX) {

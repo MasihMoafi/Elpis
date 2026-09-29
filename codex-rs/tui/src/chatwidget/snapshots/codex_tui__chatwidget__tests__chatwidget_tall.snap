@@ -3,26 +3,26 @@ source: tui/src/chatwidget/tests/status_and_layout.rs
 expression: normalize_snapshot_paths(term.backend().vt100().screen().contents())
 ---
 
- Elpis · model gpt-5.6-sol · location /tmp/proje
-Elpising… (0s • esc to interrupt)               │CONTEXT LEDGER  context not
-                                                │measured · ≈0 source estimates
-• Queued follow-up inputs                       │Tab controls · Alt+C hide ·
-  ↳ Hello, world! 0                             │Ctrl+click open file
-  ↳ Hello, world! 1                             │
-  ↳ Hello, world! 2                             │SMART PRUNE          [···] SYNC
-  ↳ Hello, world! 3                             │Reading current thread state
-  ↳ Hello, world! 4                             │Syncing… · /smart-prune on|off
-  ↳ Hello, world! 5                             │sets an explicit state
-  ↳ Hello, world! 6                             │
-  ↳ Hello, world! 7                             │SUBAGENTS             [━━━●] ON
-  ↳ Hello, world! 8                             │May delegate to other agents
-  ↳ Hello, world! 9                             │
-  ↳ Hello, world! 10                            │CONTEXT WINDOW  usage
-  ↳ Hello, world! 11                            │unavailable
-  ↳ Hello, world! 12                            │Context measurement unavailable
-│                                               │until the first request
-› Ask Elpis to do anything                      │snapshot
-│                                               │
-│                                               │No portable context is
-│                                               │available.
-          context unknown · Tab Context Ledger
+• Working (0s • esc to interrupt)
+
+• Queued follow-up inputs
+  ↳ Hello, world! 0
+  ↳ Hello, world! 1
+  ↳ Hello, world! 2
+  ↳ Hello, world! 3
+  ↳ Hello, world! 4
+  ↳ Hello, world! 5
+  ↳ Hello, world! 6
+  ↳ Hello, world! 7
+  ↳ Hello, world! 8
+  ↳ Hello, world! 9
+  ↳ Hello, world! 10
+  ↳ Hello, world! 11
+  ↳ Hello, world! 12
+  ↳ Hello, world! 13
+  ↳ Hello, world! 14
+  ↳ Hello, world! 15
+
+› Ask Codex to do anything
+
+  GPT-5.6-Sol default · /tmp/project

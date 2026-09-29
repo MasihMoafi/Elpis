@@ -1,16 +1,18 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use super::windows_common::finish_driver_spawn;
 use crate::conpty::ConptyInstance;
 use crate::conpty::spawn_conpty_process_as_user;
 use crate::desktop::LaunchDesktop;
 use crate::logging::log_failure;
+use crate::logging::log_note;
 use crate::logging::log_success;
 use crate::process::ConsoleMode;
 use crate::process::StderrMode;
 use crate::process::StdinMode;
 use crate::process::read_handle_loop;
 use crate::process::spawn_process_with_pipes;
+use crate::resolved_permissions::ResolvedWindowsSandboxPermissions;
 use crate::spawn_prep::LegacyAclSids;
+use crate::spawn_prep::LegacySessionSecurity;
 use crate::spawn_prep::SpawnPrepOptions;
 use crate::spawn_prep::allow_null_device_for_workspace_write;
 use crate::spawn_prep::apply_legacy_session_acl_rules;
@@ -20,6 +22,7 @@ use crate::spawn_prep::prepare_legacy_spawn_context;
 use anyhow::Result;
 use codex_protocol::models::PermissionProfile;
 use codex_utils_absolute_path::AbsolutePathBuf;
+use codex_utils_pty::JobObject;
 use codex_utils_pty::ProcessDriver;
 use codex_utils_pty::SpawnedProcess;
 use codex_utils_pty::TerminalSize;
@@ -49,6 +52,7 @@ const WAIT_TIMEOUT: u32 = 0x0000_0102;
 
 struct LegacyProcessHandles {
     process: PROCESS_INFORMATION,
+    job: Arc<JobObject>,
     output_join: std::thread::JoinHandle<()>,
     writer_handle: tokio::task::JoinHandle<()>,
     hpc: Option<HANDLE>,
@@ -59,11 +63,13 @@ struct LegacyProcessHandles {
 
 #[allow(clippy::too_many_arguments)]
 fn spawn_legacy_process(
-    h_token: HANDLE,
+    security: &LegacySessionSecurity,
+    permissions: &ResolvedWindowsSandboxPermissions,
+    additional_deny_write_paths: &[std::path::PathBuf],
     command: &[String],
     cwd: &Path,
     env_map: &HashMap<String, String>,
-    use_private_desktop: bool,
+    private_desktop_name: Option<&str>,
     tty: bool,
     stdin_open: bool,
     stdout_tx: broadcast::Sender<Vec<u8>>,
@@ -71,15 +77,24 @@ fn spawn_legacy_process(
     writer_rx: mpsc::Receiver<Vec<u8>>,
     logs_base_dir: Option<&Path>,
 ) -> Result<LegacyProcessHandles> {
-    let (pi, output_join, writer_handle, hpc, conpty_owner, desktop) = if tty {
-        let (pi, mut conpty) = spawn_conpty_process_as_user(
-            h_token,
-            command,
+    let h_token = security.h_token;
+    let launch_desktop = match private_desktop_name {
+        Some(name) => LaunchDesktop::open_private(name)?,
+        None => LaunchDesktop::prepare_legacy(
+            permissions,
             cwd,
             env_map,
-            use_private_desktop,
+            security,
+            additional_deny_write_paths,
             logs_base_dir,
-        )?;
+        )?,
+    };
+    let (pi, job, output_join, writer_handle, hpc, conpty_owner, desktop) = if tty {
+        let (pi, mut conpty) =
+            spawn_conpty_process_as_user(h_token, command, cwd, env_map, launch_desktop)?;
+        let job = conpty
+            .job()
+            .ok_or_else(|| anyhow::anyhow!("spawned ConPTY is missing its process job"))?;
         let hpc = conpty.raw_handle();
         let output_join = spawn_output_reader(conpty.take_output_read(), stdout_tx);
         let writer_handle = spawn_input_writer(
@@ -87,7 +102,7 @@ fn spawn_legacy_process(
             writer_rx,
             /*normalize_newlines*/ true,
         );
-        (pi, output_join, writer_handle, hpc, Some(conpty), None)
+        (pi, job, output_join, writer_handle, hpc, Some(conpty), None)
     } else {
         let pipe_handles = spawn_process_with_pipes(
             h_token,
@@ -101,7 +116,7 @@ fn spawn_legacy_process(
             },
             StderrMode::Separate,
             ConsoleMode::Inherit,
-            use_private_desktop,
+            launch_desktop,
             logs_base_dir,
         )?;
         let stdout_join = spawn_output_reader(pipe_handles.stdout_read, stdout_tx);
@@ -123,6 +138,7 @@ fn spawn_legacy_process(
         );
         (
             pipe_handles.process,
+            pipe_handles.job(),
             output_join,
             writer_handle,
             None,
@@ -132,6 +148,7 @@ fn spawn_legacy_process(
     };
     Ok(LegacyProcessHandles {
         process: pi,
+        job,
         output_join,
         writer_handle,
         hpc,
@@ -176,6 +193,31 @@ fn spawn_input_writer(
             }
         }
     })
+}
+
+fn terminate_job_or_process(
+    job: &JobObject,
+    process_handle: &Arc<StdMutex<Option<HANDLE>>>,
+    logs_base_dir: Option<&Path>,
+) {
+    if let Err(job_err) = job.terminate() {
+        log_note(
+            &format!("legacy spawn failed to terminate process tree: {job_err}"),
+            logs_base_dir,
+        );
+        if let Ok(guard) = process_handle.lock()
+            && let Some(handle) = guard.as_ref()
+            && unsafe { TerminateProcess(*handle, 1) } == 0
+        {
+            log_note(
+                &format!(
+                    "legacy spawn failed to terminate root process: {}",
+                    unsafe { GetLastError() }
+                ),
+                logs_base_dir,
+            );
+        }
+    }
 }
 
 fn write_all_handle(handle: HANDLE, mut bytes: &[u8]) -> Result<()> {
@@ -284,7 +326,7 @@ pub(crate) async fn spawn_windows_sandbox_session_legacy(
     additional_deny_write_paths: &[AbsolutePathBuf],
     tty: bool,
     stdin_open: bool,
-    use_private_desktop: bool,
+    private_desktop_name: Option<String>,
 ) -> Result<SpawnedProcess> {
     let common = prepare_legacy_spawn_context(
         permission_profile,
@@ -349,6 +391,7 @@ pub(crate) async fn spawn_windows_sandbox_session_legacy(
 
     let LegacyProcessHandles {
         process: pi,
+        job,
         output_join,
         writer_handle,
         hpc,
@@ -356,11 +399,13 @@ pub(crate) async fn spawn_windows_sandbox_session_legacy(
         token_handle,
         desktop,
     } = match spawn_legacy_process(
-        security.h_token,
+        &security,
+        &common.permissions,
+        &additional_deny_write_paths,
         &command,
         cwd,
         &env_map,
-        use_private_desktop,
+        private_desktop_name.as_deref(),
         tty,
         stdin_open,
         stdout_tx,
@@ -380,20 +425,21 @@ pub(crate) async fn spawn_windows_sandbox_session_legacy(
 
     let process_handle = Arc::new(StdMutex::new(Some(pi.hProcess)));
     let wait_handle = Arc::clone(&process_handle);
+    let job_for_wait = Arc::clone(&job);
     let command_for_wait = command.clone();
     let hpc_for_wait = hpc_handle.clone();
+    let wait_logs_base_dir = common.logs_base_dir.clone();
     std::thread::spawn(move || {
         let _desktop = desktop;
         let timeout = timeout_ms.map(|ms| ms as u32).unwrap_or(INFINITE);
         let wait_res = unsafe { WaitForSingleObject(pi.hProcess, timeout) };
         if wait_res == WAIT_TIMEOUT {
-            unsafe {
-                if let Ok(guard) = wait_handle.lock()
-                    && let Some(handle) = guard.as_ref()
-                {
-                    let _ = TerminateProcess(*handle, 1);
-                }
-            }
+            terminate_job_or_process(&job_for_wait, &wait_handle, wait_logs_base_dir.as_deref());
+        } else if let Err(err) = job_for_wait.preserve_descendants() {
+            log_note(
+                &format!("legacy spawn failed to preserve descendants after root exit: {err}"),
+                wait_logs_base_dir.as_deref(),
+            );
         }
         if let Some(hpc) = hpc_for_wait
             && let Ok(mut guard) = hpc.lock()
@@ -411,21 +457,17 @@ pub(crate) async fn spawn_windows_sandbox_session_legacy(
             wait_handle,
             pi.hThread,
             output_join,
-            common.logs_base_dir.as_deref(),
+            wait_logs_base_dir.as_deref(),
             command_for_wait,
         );
     });
 
     let terminator = {
+        let job = Arc::clone(&job);
         let process_handle = Arc::clone(&process_handle);
+        let logs_base_dir = common.logs_base_dir;
         Some(Box::new(move || {
-            if let Ok(guard) = process_handle.lock()
-                && let Some(handle) = guard.as_ref()
-            {
-                unsafe {
-                    let _ = TerminateProcess(*handle, 1);
-                }
-            }
+            terminate_job_or_process(&job, &process_handle, logs_base_dir.as_deref());
         }) as Box<dyn FnMut() + Send + Sync>)
     };
 
@@ -440,6 +482,7 @@ pub(crate) async fn spawn_windows_sandbox_session_legacy(
             Box::new(move |size| resize_conpty_handle(&hpc, size))
                 as Box<dyn FnMut(TerminalSize) -> Result<()> + Send>
         }),
+        tty,
     };
 
     Ok(finish_driver_spawn(driver, stdin_open))

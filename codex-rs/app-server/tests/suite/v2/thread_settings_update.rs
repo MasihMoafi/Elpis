@@ -1,37 +1,230 @@
 use anyhow::Context;
 use anyhow::Result;
+use app_test_support::MockResponsesConfig;
 use app_test_support::TestAppServer;
 use app_test_support::create_final_assistant_message_sse_response;
 use app_test_support::create_mock_responses_server_sequence_unchecked;
-use app_test_support::to_response;
-use app_test_support::write_mock_responses_config_toml;
 use app_test_support::write_models_cache;
+use codex_app_server_protocol::ApprovalsReviewer;
+use codex_app_server_protocol::AskForApproval;
+use codex_app_server_protocol::ClientRequest;
 use codex_app_server_protocol::JSONRPCError;
-use codex_app_server_protocol::JSONRPCNotification;
-use codex_app_server_protocol::JSONRPCResponse;
 use codex_app_server_protocol::RequestId;
+use codex_app_server_protocol::SandboxMode;
 use codex_app_server_protocol::SandboxPolicy;
+use codex_app_server_protocol::ThreadForkParams;
+use codex_app_server_protocol::ThreadForkResponse;
+use codex_app_server_protocol::ThreadHistoryMode;
+use codex_app_server_protocol::ThreadListResponse;
 use codex_app_server_protocol::ThreadReadParams;
 use codex_app_server_protocol::ThreadReadResponse;
+use codex_app_server_protocol::ThreadResumeParams;
+use codex_app_server_protocol::ThreadResumeResponse;
 use codex_app_server_protocol::ThreadSettingsUpdateParams;
 use codex_app_server_protocol::ThreadSettingsUpdateResponse;
 use codex_app_server_protocol::ThreadSettingsUpdatedNotification;
 use codex_app_server_protocol::ThreadStartParams;
 use codex_app_server_protocol::ThreadStartResponse;
+use codex_app_server_protocol::ThreadUnsubscribeParams;
+use codex_app_server_protocol::ThreadUnsubscribeResponse;
+use codex_app_server_protocol::ThreadUnsubscribeStatus;
 use codex_app_server_protocol::TurnStartParams;
 use codex_app_server_protocol::TurnStartResponse;
 use codex_app_server_protocol::UserInput as V2UserInput;
 use codex_core::test_support::all_model_presets;
+use codex_protocol::config_types::CollaborationMode;
+use codex_protocol::config_types::ModeKind;
 use codex_protocol::config_types::SERVICE_TIER_DEFAULT_REQUEST_VALUE;
+use codex_protocol::config_types::Settings;
+use codex_protocol::openai_models::ReasoningEffort;
+use codex_utils_absolute_path::test_support::PathExt;
 use core_test_support::responses;
 use pretty_assertions::assert_eq;
 use serde_json::Value;
-use std::collections::BTreeMap;
+use serde_json::json;
 use std::time::Duration;
 use tempfile::TempDir;
+use test_case::test_case;
 use tokio::time::timeout;
 
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(10);
+
+#[tokio::test]
+async fn disabled_plugin_ids_replace_preserve_and_clear_without_inference() -> Result<()> {
+    let server = responses::start_mock_server().await;
+    let codex_home = TempDir::new()?;
+    create_config_toml(codex_home.path(), &server.uri())?;
+    let mut mcp = TestAppServer::builder()
+        .with_codex_home(codex_home.path())
+        .build_initialized()
+        .await?;
+    let started = start_thread(&mut mcp).await?;
+    assert_eq!(started.disabled_plugin_ids, Vec::<String>::new());
+
+    for (mut params, expected) in [
+        (
+            json!({"disabledPluginIds": ["slack@openai", "notion@openai"]}),
+            vec!["slack@openai", "notion@openai"],
+        ),
+        (
+            json!({"disabledPluginIds": ["slack@openai"]}),
+            vec!["slack@openai"],
+        ),
+        (json!({"model": "mock-model-2"}), vec!["slack@openai"]),
+        (
+            json!({"disabledPluginIds": null, "model": "mock-model-3"}),
+            vec!["slack@openai"],
+        ),
+        (json!({"disabledPluginIds": []}), vec![]),
+    ] {
+        params["threadId"] = json!(started.thread.id);
+        let request_id = mcp
+            .send_raw_request("thread/settings/update", Some(params))
+            .await?;
+        let _: ThreadSettingsUpdateResponse =
+            timeout(DEFAULT_TIMEOUT, mcp.read_response(request_id)).await??;
+        let updated = read_thread_settings_updated(&mut mcp).await?;
+        assert_eq!(updated.thread_settings.disabled_plugin_ids, expected);
+    }
+    assert!(received_response_bodies(&server).await?.is_empty());
+    Ok(())
+}
+
+#[test_case(ThreadHistoryMode::Legacy, true; "cold legacy parent")]
+#[test_case(ThreadHistoryMode::Legacy, false; "loaded legacy parent")]
+#[test_case(ThreadHistoryMode::Paginated, true; "cold paginated parent")]
+#[test_case(ThreadHistoryMode::Paginated, false; "loaded paginated parent")]
+#[tokio::test]
+async fn disabled_plugin_ids_restore_from_fork_boundary(
+    history_mode: ThreadHistoryMode,
+    restart_before_fork: bool,
+) -> Result<()> {
+    let server = create_mock_responses_server_sequence_unchecked(vec![
+        create_final_assistant_message_sse_response("done")?,
+        create_final_assistant_message_sse_response("done again")?,
+    ])
+    .await;
+    let codex_home = TempDir::new()?;
+    create_config_toml(codex_home.path(), &server.uri())?;
+    let mut mcp = TestAppServer::builder()
+        .with_codex_home(codex_home.path())
+        .build_initialized()
+        .await?;
+    let started = mcp
+        .start_thread(ThreadStartParams {
+            history_mode: Some(history_mode),
+            ..Default::default()
+        })
+        .await?;
+    let thread_id = started.thread.id;
+    let initial_selection = vec!["slack@openai".to_string()];
+    let first_turn = mcp
+        .start_turn_and_wait_for_completion(TurnStartParams {
+            thread_id: thread_id.clone(),
+            disabled_plugin_ids: Some(initial_selection.clone()),
+            input: vec![V2UserInput::Text {
+                text: "materialize the thread".to_string(),
+                text_elements: Vec::new(),
+            }],
+            ..Default::default()
+        })
+        .await?;
+    assert_eq!(
+        read_thread_settings_updated(&mut mcp)
+            .await?
+            .thread_settings
+            .disabled_plugin_ids,
+        initial_selection
+    );
+    let second_turn = mcp
+        .start_turn_and_wait_for_completion(TurnStartParams {
+            thread_id: thread_id.clone(),
+            input: vec![V2UserInput::Text {
+                text: "continue beyond the fork cutoff".to_string(),
+                text_elements: Vec::new(),
+            }],
+            ..Default::default()
+        })
+        .await?;
+    // Clearing after the second turn must not affect forks at an earlier boundary.
+    let current_selection = Vec::<String>::new();
+    send_thread_settings_update(
+        &mut mcp,
+        ThreadSettingsUpdateParams {
+            thread_id: thread_id.clone(),
+            disabled_plugin_ids: Some(current_selection.clone()),
+            ..Default::default()
+        },
+    )
+    .await?;
+    assert_eq!(
+        read_thread_settings_updated(&mut mcp)
+            .await?
+            .thread_settings
+            .disabled_plugin_ids,
+        current_selection
+    );
+    if restart_before_fork {
+        mcp.shutdown_gracefully().await?;
+        mcp = TestAppServer::builder()
+            .with_codex_home(codex_home.path())
+            .build_initialized()
+            .await?;
+    }
+    for (params, expected_selection) in [
+        (
+            ThreadForkParams {
+                thread_id: thread_id.clone(),
+                ..Default::default()
+            },
+            &current_selection,
+        ),
+        (
+            ThreadForkParams {
+                thread_id: thread_id.clone(),
+                last_turn_id: Some(first_turn.turn.id.clone()),
+                ..Default::default()
+            },
+            &initial_selection,
+        ),
+        (
+            ThreadForkParams {
+                thread_id: thread_id.clone(),
+                before_turn_id: Some(second_turn.turn.id),
+                ..Default::default()
+            },
+            &initial_selection,
+        ),
+        (
+            ThreadForkParams {
+                thread_id: thread_id.clone(),
+                last_turn_id: Some(first_turn.turn.id),
+                // Selection restoration must not depend on restoring permissions.
+                approval_policy: Some(AskForApproval::Never),
+                approvals_reviewer: Some(ApprovalsReviewer::User),
+                sandbox: Some(SandboxMode::DangerFullAccess),
+                ..Default::default()
+            },
+            &initial_selection,
+        ),
+    ] {
+        let forked: ThreadForkResponse = mcp
+            .request(|request_id| ClientRequest::ThreadFork { request_id, params })
+            .await?;
+        assert_eq!(&forked.disabled_plugin_ids, expected_selection);
+    }
+    let resumed: ThreadResumeResponse = mcp
+        .request(|request_id| ClientRequest::ThreadResume {
+            request_id,
+            params: ThreadResumeParams {
+                thread_id,
+                ..Default::default()
+            },
+        })
+        .await?;
+    assert_eq!(resumed.disabled_plugin_ids, current_selection);
+    Ok(())
+}
 
 #[tokio::test]
 async fn thread_settings_update_emits_notification_and_updates_future_turns() -> Result<()> {
@@ -41,21 +234,27 @@ async fn thread_settings_update_emits_notification_and_updates_future_turns() ->
     .await;
     let codex_home = TempDir::new()?;
     create_config_toml(codex_home.path(), &server.uri())?;
-    write_models_cache(codex_home.path())?;
+    write_models_cache(codex_home.path()).await?;
     let (model_id, service_tier_id) = service_tier_model_and_tier_id()?;
 
     let mut mcp = TestAppServer::builder()
         .with_codex_home(codex_home.path())
-        .build()
+        .build_initialized_with_timeout(DEFAULT_TIMEOUT)
         .await?;
-    timeout(DEFAULT_TIMEOUT, mcp.initialize()).await??;
     let thread = start_thread(&mut mcp).await?.thread;
 
     send_thread_settings_update(
         &mut mcp,
         ThreadSettingsUpdateParams {
             thread_id: thread.id.clone(),
-            model: Some(model_id.clone()),
+            collaboration_mode: Some(CollaborationMode {
+                mode: ModeKind::Default,
+                settings: Settings {
+                    model: model_id.clone(),
+                    reasoning_effort: None,
+                    developer_instructions: None,
+                },
+            }),
             service_tier: Some(Some(service_tier_id.clone())),
             ..Default::default()
         },
@@ -82,8 +281,65 @@ async fn thread_settings_update_emits_notification_and_updates_future_turns() ->
     )
     .await??;
 
-    let read = read_thread_with_turns(&mut mcp, &thread.id).await?;
-    assert_eq!(read.thread.turns.len(), 1);
+    // Loaded metadata must come from live settings, even if stored metadata is stale.
+    let state_db = codex_state::StateRuntime::init(
+        codex_state::SqliteConfig::new_for_testing(codex_home.path().abs()),
+        "mock_provider".to_string(),
+    )
+    .await?;
+    let mut stored = state_db
+        .get_thread(codex_protocol::ThreadId::from_string(&thread.id)?)
+        .await?
+        .expect("completed thread should be persisted");
+    stored.model = Some("stored-model".to_string());
+    stored.reasoning_effort = Some(ReasoningEffort::Low);
+    state_db.upsert_thread(&stored).await?;
+
+    let unsubscribe_id = mcp
+        .send_thread_unsubscribe_request(ThreadUnsubscribeParams {
+            thread_id: thread.id.clone(),
+        })
+        .await?;
+    let unsubscribed: ThreadUnsubscribeResponse =
+        timeout(DEFAULT_TIMEOUT, mcp.read_response(unsubscribe_id)).await??;
+    assert_eq!(unsubscribed.status, ThreadUnsubscribeStatus::Unsubscribed);
+
+    for include_turns in [false, true] {
+        let read_id = mcp
+            .send_thread_read_request(ThreadReadParams {
+                thread_id: thread.id.clone(),
+                include_turns,
+            })
+            .await?;
+        let read: ThreadReadResponse =
+            timeout(DEFAULT_TIMEOUT, mcp.read_response(read_id)).await??;
+        assert_eq!(read.thread.turns.len(), usize::from(include_turns));
+        assert_eq!(
+            (read.thread.model.as_deref(), read.thread.reasoning_effort),
+            (Some(model_id.as_str()), None)
+        );
+    }
+    let list_id = mcp
+        .send_raw_request("thread/list", Some(json!({ "useStateDbOnly": true })))
+        .await?;
+    let listed: ThreadListResponse = timeout(DEFAULT_TIMEOUT, mcp.read_response(list_id)).await??;
+    let listed = listed
+        .data
+        .iter()
+        .find(|listed| listed.id == thread.id)
+        .expect("loaded thread should be listed");
+    assert_eq!(
+        (listed.model.as_deref(), listed.reasoning_effort.clone()),
+        (Some(model_id.as_str()), None)
+    );
+    let unsubscribe_id = mcp
+        .send_thread_unsubscribe_request(ThreadUnsubscribeParams {
+            thread_id: thread.id.clone(),
+        })
+        .await?;
+    let unsubscribed: ThreadUnsubscribeResponse =
+        timeout(DEFAULT_TIMEOUT, mcp.read_response(unsubscribe_id)).await??;
+    assert_eq!(unsubscribed.status, ThreadUnsubscribeStatus::NotSubscribed);
 
     let request_bodies = received_response_bodies(&server).await?;
     assert!(
@@ -113,9 +369,8 @@ async fn thread_settings_update_cwd_retargets_default_environment() -> Result<()
 
     let mut mcp = TestAppServer::builder()
         .with_codex_home(codex_home.path())
-        .build()
+        .build_initialized_with_timeout(DEFAULT_TIMEOUT)
         .await?;
-    timeout(DEFAULT_TIMEOUT, mcp.initialize()).await??;
     let request_id = mcp
         .send_thread_start_request(ThreadStartParams {
             cwd: Some(initial_workspace.path().to_string_lossy().into_owned()),
@@ -123,12 +378,8 @@ async fn thread_settings_update_cwd_retargets_default_environment() -> Result<()
             ..Default::default()
         })
         .await?;
-    let response: JSONRPCResponse = timeout(
-        DEFAULT_TIMEOUT,
-        mcp.read_stream_until_response_message(RequestId::Integer(request_id)),
-    )
-    .await??;
-    let thread = to_response::<ThreadStartResponse>(response)?.thread;
+    let ThreadStartResponse { thread, .. } =
+        timeout(DEFAULT_TIMEOUT, mcp.read_response(request_id)).await??;
 
     send_thread_settings_update(
         &mut mcp,
@@ -185,9 +436,8 @@ async fn thread_settings_update_while_turn_is_active_emits_notification() -> Res
 
     let mut mcp = TestAppServer::builder()
         .with_codex_home(codex_home.path())
-        .build()
+        .build_initialized_with_timeout(DEFAULT_TIMEOUT)
         .await?;
-    timeout(DEFAULT_TIMEOUT, mcp.initialize()).await??;
     let thread = start_thread(&mut mcp).await?.thread;
     start_text_turn(&mut mcp, thread.id.clone()).await?;
     timeout(
@@ -226,14 +476,13 @@ async fn thread_settings_update_null_service_tier_uses_default() -> Result<()> {
     .await;
     let codex_home = TempDir::new()?;
     create_config_toml(codex_home.path(), &server.uri())?;
-    write_models_cache(codex_home.path())?;
+    write_models_cache(codex_home.path()).await?;
     let (model_id, service_tier_id) = service_tier_model_and_tier_id()?;
 
     let mut mcp = TestAppServer::builder()
         .with_codex_home(codex_home.path())
-        .build()
+        .build_initialized_with_timeout(DEFAULT_TIMEOUT)
         .await?;
-    timeout(DEFAULT_TIMEOUT, mcp.initialize()).await??;
     let thread = start_thread(&mut mcp).await?.thread;
 
     send_thread_settings_update(
@@ -300,9 +549,8 @@ async fn thread_settings_update_rejects_sandbox_policy_with_permissions() -> Res
 
     let mut mcp = TestAppServer::builder()
         .with_codex_home(codex_home.path())
-        .build()
+        .build_initialized_with_timeout(DEFAULT_TIMEOUT)
         .await?;
-    timeout(DEFAULT_TIMEOUT, mcp.initialize()).await??;
     let thread = start_thread(&mut mcp).await?.thread;
 
     let request_id = mcp
@@ -337,9 +585,8 @@ async fn turn_start_settings_override_emits_thread_settings_updated() -> Result<
 
     let mut mcp = TestAppServer::builder()
         .with_codex_home(codex_home.path())
-        .build()
+        .build_initialized_with_timeout(DEFAULT_TIMEOUT)
         .await?;
-    timeout(DEFAULT_TIMEOUT, mcp.initialize()).await??;
     let thread = start_thread(&mut mcp).await?.thread;
     timeout(
         DEFAULT_TIMEOUT,
@@ -356,20 +603,21 @@ async fn turn_start_settings_override_emits_thread_settings_updated() -> Result<
                 text_elements: Vec::new(),
             }],
             model: Some("mock-model-3".to_string()),
+            disabled_plugin_ids: Some(vec!["slack@openai".to_string()]),
             ..Default::default()
         })
         .await?;
-    let turn_response: JSONRPCResponse = timeout(
-        DEFAULT_TIMEOUT,
-        mcp.read_stream_until_response_message(RequestId::Integer(turn_request_id)),
-    )
-    .await??;
-    let TurnStartResponse { turn } = to_response(turn_response)?;
+    let TurnStartResponse { turn } =
+        timeout(DEFAULT_TIMEOUT, mcp.read_response(turn_request_id)).await??;
     assert!(!turn.id.is_empty());
 
     let updated = read_thread_settings_updated(&mut mcp).await?;
     assert_eq!(updated.thread_id, thread.id);
     assert_eq!(updated.thread_settings.model, "mock-model-3");
+    assert_eq!(
+        updated.thread_settings.disabled_plugin_ids,
+        vec!["slack@openai"]
+    );
 
     timeout(
         DEFAULT_TIMEOUT,
@@ -384,12 +632,8 @@ async fn send_thread_settings_update(
     params: ThreadSettingsUpdateParams,
 ) -> Result<()> {
     let request_id = mcp.send_thread_settings_update_request(params).await?;
-    let response: JSONRPCResponse = timeout(
-        DEFAULT_TIMEOUT,
-        mcp.read_stream_until_response_message(RequestId::Integer(request_id)),
-    )
-    .await??;
-    let _: ThreadSettingsUpdateResponse = to_response(response)?;
+    let _: ThreadSettingsUpdateResponse =
+        timeout(DEFAULT_TIMEOUT, mcp.read_response(request_id)).await??;
     Ok(())
 }
 
@@ -404,12 +648,8 @@ async fn start_text_turn(mcp: &mut TestAppServer, thread_id: String) -> Result<(
             ..Default::default()
         })
         .await?;
-    let turn_response: JSONRPCResponse = timeout(
-        DEFAULT_TIMEOUT,
-        mcp.read_stream_until_response_message(RequestId::Integer(turn_request_id)),
-    )
-    .await??;
-    let TurnStartResponse { turn } = to_response(turn_response)?;
+    let TurnStartResponse { turn } =
+        timeout(DEFAULT_TIMEOUT, mcp.read_response(turn_request_id)).await??;
     assert!(!turn.id.is_empty());
     Ok(())
 }
@@ -421,44 +661,17 @@ async fn start_thread(mcp: &mut TestAppServer) -> Result<ThreadStartResponse> {
             ..Default::default()
         })
         .await?;
-    let response: JSONRPCResponse = timeout(
-        DEFAULT_TIMEOUT,
-        mcp.read_stream_until_response_message(RequestId::Integer(request_id)),
-    )
-    .await??;
-    to_response(response)
-}
-
-async fn read_thread_with_turns(
-    mcp: &mut TestAppServer,
-    thread_id: &str,
-) -> Result<ThreadReadResponse> {
-    let request_id = mcp
-        .send_thread_read_request(ThreadReadParams {
-            thread_id: thread_id.to_string(),
-            include_turns: true,
-        })
-        .await?;
-    let response: JSONRPCResponse = timeout(
-        DEFAULT_TIMEOUT,
-        mcp.read_stream_until_response_message(RequestId::Integer(request_id)),
-    )
-    .await??;
-    to_response(response)
+    timeout(DEFAULT_TIMEOUT, mcp.read_response(request_id)).await?
 }
 
 async fn read_thread_settings_updated(
     mcp: &mut TestAppServer,
 ) -> Result<ThreadSettingsUpdatedNotification> {
-    let notification: JSONRPCNotification = timeout(
+    timeout(
         DEFAULT_TIMEOUT,
-        mcp.read_stream_until_notification_message("thread/settings/updated"),
+        mcp.read_notification("thread/settings/updated"),
     )
-    .await??;
-    let params = notification
-        .params
-        .context("thread/settings/updated should include params")?;
-    Ok(serde_json::from_value(params)?)
+    .await?
 }
 
 async fn received_response_bodies(server: &wiremock::MockServer) -> Result<Vec<Value>> {
@@ -484,13 +697,75 @@ fn service_tier_model_and_tier_id() -> Result<(String, String)> {
 }
 
 fn create_config_toml(codex_home: &std::path::Path, server_uri: &str) -> std::io::Result<()> {
-    write_mock_responses_config_toml(
-        codex_home,
-        server_uri,
-        &BTreeMap::default(),
-        /*auto_compact_limit*/ 200_000,
-        /*requires_openai_auth*/ None,
-        "mock_provider",
-        "compact",
-    )
+    MockResponsesConfig::new(server_uri)
+        .with_root_config("compact_prompt = \"compact\"\nmodel_auto_compact_token_limit = 200000")
+        .with_provider_config("supports_websockets = false")
+        .write(codex_home)
+}
+
+#[tokio::test]
+async fn thread_settings_update_preserves_session_profiles() -> Result<()> {
+    for (profile_on_disk, top_level_selection) in [(false, false), (true, false), (true, true)] {
+        let home = TempDir::new()?;
+        let profile = json!({"extends": ":read-only"});
+        std::fs::write(
+            home.path().join("config.toml"),
+            if profile_on_disk {
+                "default_permissions = ':read-only'\n[permissions.audit]\nextends = ':read-only'\n"
+            } else {
+                ""
+            },
+        )?;
+        write_models_cache(home.path()).await?;
+        let mut server = TestAppServer::builder()
+            .with_codex_home(home.path())
+            .build_initialized_with_timeout(DEFAULT_TIMEOUT)
+            .await?;
+        let mut config = std::collections::HashMap::from([
+            ("default_permissions".to_string(), json!("audit")),
+            ("features.guardian_approval".to_string(), json!(true)),
+        ]);
+        if !profile_on_disk {
+            config.insert("permissions.audit".to_string(), profile);
+        }
+        if top_level_selection {
+            config.remove("default_permissions");
+        }
+        let id = server
+            .send_thread_start_request_with_auto_env(ThreadStartParams {
+                model: Some("mock-model".to_string()),
+                config: Some(config),
+                permissions: top_level_selection.then(|| "audit".to_string()),
+                ..Default::default()
+            })
+            .await?;
+        let started: ThreadStartResponse =
+            timeout(DEFAULT_TIMEOUT, server.read_response(id)).await??;
+        let thread_id = started.thread.id;
+        for profile_id in [":workspace", "audit"] {
+            let id = server
+                .send_thread_settings_update_request(ThreadSettingsUpdateParams {
+                    thread_id: thread_id.clone(),
+                    permissions: Some(profile_id.to_string()),
+                    ..Default::default()
+                })
+                .await?;
+            let _: ThreadSettingsUpdateResponse =
+                timeout(DEFAULT_TIMEOUT, server.read_response(id)).await??;
+            let applied: ThreadSettingsUpdatedNotification = timeout(
+                DEFAULT_TIMEOUT,
+                server.read_notification("thread/settings/updated"),
+            )
+            .await??;
+            assert_eq!(
+                applied
+                    .thread_settings
+                    .active_permission_profile
+                    .unwrap()
+                    .id,
+                profile_id
+            );
+        }
+    }
+    Ok(())
 }

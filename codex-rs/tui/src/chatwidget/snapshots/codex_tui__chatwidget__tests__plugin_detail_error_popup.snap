@@ -2,12 +2,11 @@
 source: tui/src/chatwidget/tests/popups_and_settings.rs
 expression: popup
 ---
- Elpis · model gpt-5.6-sol · location /tmp/project
-┌──────────────────────────────────────────────────────────────────────────────────────────────────┐
-│ Plugins                                                                                          │
-│ Failed to load plugin details.                                                                   │
-│                                                                                                  │
-     Plugin detail unavailable  Failed to load plugin details.                                     │
-› 1. Back to plugins            Return to the plugin list.                                         │
-└──────────────────────────────────────────────────────────────────────────────────────────────────┘
-  Press esc to close.
+  Plugins
+  Failed to load plugin details.
+
+
+     Plugin detail unavailable  Failed to load plugin details.
+› 1. Back to plugins            Return to the plugin list
+
+  esc close

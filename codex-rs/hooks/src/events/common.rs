@@ -1,4 +1,3 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use codex_protocol::protocol::HookCompletedEvent;
 use codex_protocol::protocol::HookEventName;
 use codex_protocol::protocol::HookOutputEntry;
@@ -7,7 +6,9 @@ use codex_protocol::protocol::HookRunStatus;
 use codex_protocol::protocol::HookRunSummary;
 
 use crate::engine::ConfiguredHandler;
+use crate::engine::HandlerSourcePath;
 use crate::engine::dispatcher;
+use crate::output_spill::AdditionalContext;
 
 /// Identifies a thread-spawned subagent when a normal hook runs inside it.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -35,19 +36,23 @@ pub(crate) fn trimmed_non_empty(text: &str) -> Option<String> {
 
 pub(crate) fn append_additional_context(
     entries: &mut Vec<HookOutputEntry>,
-    additional_contexts_for_model: &mut Vec<String>,
+    additional_contexts_for_model: &mut Vec<AdditionalContext>,
+    handler: &ConfiguredHandler,
     additional_context: String,
 ) {
     entries.push(HookOutputEntry {
         kind: HookOutputEntryKind::Context,
         text: additional_context.clone(),
     });
-    additional_contexts_for_model.push(additional_context);
+    additional_contexts_for_model.push(AdditionalContext {
+        text: additional_context,
+        limit: handler.additional_context_limit,
+    });
 }
 
 pub(crate) fn flatten_additional_contexts<'a>(
-    additional_contexts: impl IntoIterator<Item = &'a [String]>,
-) -> Vec<String> {
+    additional_contexts: impl IntoIterator<Item = &'a [AdditionalContext]>,
+) -> Vec<AdditionalContext> {
     additional_contexts
         .into_iter()
         .flat_map(|chunk| chunk.iter().cloned())
@@ -61,6 +66,7 @@ pub(crate) fn serialization_failure_hook_events(
 ) -> Vec<HookCompletedEvent> {
     handlers
         .into_iter()
+        .filter(|handler| matches!(handler.source_path, HandlerSourcePath::Local(_)))
         .map(|handler| {
             let mut run = dispatcher::running_summary(&handler);
             run.status = HookRunStatus::Failed;
@@ -112,11 +118,12 @@ pub(crate) fn matcher_pattern_for_event(
         | HookEventName::PermissionRequest
         | HookEventName::PostToolUse
         | HookEventName::SessionStart
+        | HookEventName::SessionEnd
         | HookEventName::SubagentStart
         | HookEventName::SubagentStop
         | HookEventName::PreCompact
         | HookEventName::PostCompact => matcher,
-        HookEventName::UserPromptSubmit | HookEventName::Stop => None,
+        HookEventName::UserPromptSubmit | HookEventName::Stop | HookEventName::Interrupt => None,
     }
 }
 
@@ -263,6 +270,10 @@ mod tests {
             matcher_pattern_for_event(HookEventName::Stop, Some("^done$")),
             None
         );
+        assert_eq!(
+            matcher_pattern_for_event(HookEventName::Interrupt, Some("^interrupted$")),
+            None
+        );
     }
 
     #[test]
@@ -278,6 +289,10 @@ mod tests {
         assert_eq!(
             matcher_pattern_for_event(HookEventName::SessionStart, Some("startup|resume")),
             Some("startup|resume")
+        );
+        assert_eq!(
+            matcher_pattern_for_event(HookEventName::SessionEnd, Some("clear|other")),
+            Some("clear|other")
         );
         assert_eq!(
             matcher_pattern_for_event(HookEventName::PreCompact, Some("^auto$")),

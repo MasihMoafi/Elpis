@@ -1,4 +1,4 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
+use std::env;
 use std::future::Future;
 use std::sync::Arc;
 
@@ -15,26 +15,57 @@ use codex_agent_identity::is_retryable_registration_error;
 use codex_agent_identity::public_key_ssh_from_private_key_pkcs8_base64;
 use codex_agent_identity::register_agent_identity;
 use codex_agent_identity::register_agent_task;
+use codex_http_client::HttpClient;
 use codex_protocol::account::PlanType as AccountPlanType;
 use codex_protocol::protocol::SessionSource;
 use thiserror::Error;
 
-use crate::default_client::build_default_auth_reqwest_client;
+use crate::default_client::create_default_auth_client;
 use crate::outbound_proxy::AuthRouteConfig;
 
 use super::storage::AgentIdentityAuthRecord;
 
 pub(super) const MAX_AGENT_IDENTITY_BOOTSTRAP_ATTEMPTS: usize = 3;
+const CODEX_AGENT_IDENTITY_AUTHAPI_BASE_URL_ENV_VAR: &str = "CODEX_AGENT_IDENTITY_AUTHAPI_BASE_URL";
+const CODEX_AGENT_IDENTITY_JWKS_BASE_URL_ENV_VAR: &str = "CODEX_AGENT_IDENTITY_JWKS_BASE_URL";
+
+fn agent_identity_endpoint_override(environment_variable: &str) -> Option<String> {
+    env::var(environment_variable)
+        .ok()
+        .map(|base_url| base_url.trim().trim_end_matches('/').to_string())
+        .filter(|base_url| !base_url.is_empty())
+}
+
+fn agent_identity_jwks_base_url_matches(chatgpt_base_url: &str, jwks_base_url: &str) -> bool {
+    chatgpt_base_url.trim().trim_end_matches('/') == jwks_base_url
+}
 
 pub(super) fn agent_identity_authapi_base_url(
     chatgpt_base_url: Option<&str>,
 ) -> std::io::Result<String> {
     let environment = match chatgpt_base_url {
-        Some(chatgpt_base_url) => ChatGptEnvironment::from_chatgpt_base_url(chatgpt_base_url)
-            .map_err(std::io::Error::other)?,
-        None => ChatGptEnvironment::default(),
+        Some(chatgpt_base_url) => ChatGptEnvironment::from_chatgpt_base_url(chatgpt_base_url),
+        None => Ok(ChatGptEnvironment::default()),
     };
-    Ok(environment.agent_identity_authapi_base_url().to_string())
+    let authapi_base_url =
+        agent_identity_endpoint_override(CODEX_AGENT_IDENTITY_AUTHAPI_BASE_URL_ENV_VAR);
+    let jwks_base_url =
+        agent_identity_endpoint_override(CODEX_AGENT_IDENTITY_JWKS_BASE_URL_ENV_VAR);
+
+    match (environment, authapi_base_url) {
+        (Ok(_), Some(base_url)) => Ok(base_url),
+        (Ok(environment), None) => Ok(environment.agent_identity_authapi_base_url().to_string()),
+        (Err(_), Some(base_url))
+            if chatgpt_base_url.is_some_and(|chatgpt_base_url| {
+                jwks_base_url.as_deref().is_some_and(|jwks_base_url| {
+                    agent_identity_jwks_base_url_matches(chatgpt_base_url, jwks_base_url)
+                })
+            }) =>
+        {
+            Ok(base_url)
+        }
+        (Err(error), _) => Err(std::io::Error::other(error)),
+    }
 }
 
 pub(super) fn require_agent_identity_authapi_base_url(
@@ -102,7 +133,7 @@ impl AgentIdentityAuth {
     pub async fn from_record(
         mut record: AgentIdentityAuthRecord,
         agent_identity_authapi_base_url: &str,
-        auth_route_config: Option<&AuthRouteConfig>,
+        auth_route_config: &AuthRouteConfig,
     ) -> std::io::Result<Self> {
         public_key_ssh_from_private_key_pkcs8_base64(&record.agent_private_key)
             .map_err(std::io::Error::other)?;
@@ -125,7 +156,7 @@ impl AgentIdentityAuth {
         jwt: &str,
         chatgpt_base_url: &str,
         agent_identity_authapi_base_url: &str,
-        auth_route_config: Option<&AuthRouteConfig>,
+        auth_route_config: &AuthRouteConfig,
     ) -> std::io::Result<Self> {
         let record = verified_record_from_jwt(jwt, chatgpt_base_url, auth_route_config).await?;
         Self::from_record(record, agent_identity_authapi_base_url, auth_route_config).await
@@ -175,11 +206,11 @@ pub(super) async fn register_managed_chatgpt_agent_identity(
     binding: ManagedChatGptAgentIdentityBinding,
     agent_identity_authapi_base_url: &str,
     session_source: SessionSource,
-    auth_route_config: Option<&AuthRouteConfig>,
+    auth_route_config: &AuthRouteConfig,
 ) -> std::io::Result<AgentIdentityAuth> {
     let key_material = generate_agent_key_material().map_err(std::io::Error::other)?;
     let registration_url = agent_registration_url(agent_identity_authapi_base_url);
-    let client = build_default_auth_reqwest_client(&registration_url, auth_route_config)?;
+    let client = create_default_auth_client(&registration_url, auth_route_config)?;
     let runtime_id = retry_registration(|| async {
         register_agent_identity(
             &client,
@@ -222,12 +253,23 @@ pub(super) async fn register_managed_chatgpt_agent_identity(
 pub(super) async fn verified_record_from_jwt(
     jwt: &str,
     chatgpt_base_url: &str,
-    auth_route_config: Option<&AuthRouteConfig>,
+    auth_route_config: &AuthRouteConfig,
 ) -> std::io::Result<AgentIdentityAuthRecord> {
     AgentIdentityAuthRecord::from_agent_identity_jwt(jwt)?;
-    let jwks_url = agent_identity_jwks_url(chatgpt_base_url);
-    let client = build_default_auth_reqwest_client(&jwks_url, auth_route_config)?;
-    let jwks = fetch_agent_identity_jwks(&client, chatgpt_base_url)
+    let jwks_base_url =
+        match agent_identity_endpoint_override(CODEX_AGENT_IDENTITY_JWKS_BASE_URL_ENV_VAR) {
+            Some(base_url) => {
+                if !agent_identity_jwks_base_url_matches(chatgpt_base_url, &base_url) {
+                    ChatGptEnvironment::from_chatgpt_base_url(chatgpt_base_url)
+                        .map_err(std::io::Error::other)?;
+                }
+                base_url
+            }
+            None => chatgpt_base_url.to_string(),
+        };
+    let jwks_url = agent_identity_jwks_url(&jwks_base_url);
+    let client = create_default_auth_client(&jwks_url, auth_route_config)?;
+    let jwks = fetch_agent_identity_jwks(&client, &jwks_base_url)
         .await
         .map_err(std::io::Error::other)?;
     let claims = decode_agent_identity_jwt(jwt, Some(&jwks)).map_err(std::io::Error::other)?;
@@ -302,11 +344,11 @@ where
 async fn register_task_for_record_with_retries(
     record: &AgentIdentityAuthRecord,
     agent_identity_authapi_base_url: &str,
-    auth_route_config: Option<&AuthRouteConfig>,
+    auth_route_config: &AuthRouteConfig,
 ) -> std::io::Result<String> {
     let task_registration_url =
         agent_task_registration_url(agent_identity_authapi_base_url, &record.agent_runtime_id);
-    let client = build_default_auth_reqwest_client(&task_registration_url, auth_route_config)?;
+    let client = create_default_auth_client(&task_registration_url, auth_route_config)?;
     retry_registration(|| async {
         register_task_for_record(&client, record, agent_identity_authapi_base_url).await
     })
@@ -314,7 +356,7 @@ async fn register_task_for_record_with_retries(
 }
 
 async fn register_task_for_record(
-    client: &reqwest::Client,
+    client: &HttpClient,
     record: &AgentIdentityAuthRecord,
     agent_identity_authapi_base_url: &str,
 ) -> std::io::Result<String> {
@@ -351,6 +393,7 @@ mod tests {
     use codex_agent_identity::generate_agent_key_material;
     use pretty_assertions::assert_eq;
     use serde_json::json;
+    use serial_test::serial;
     use wiremock::Mock;
     use wiremock::MockServer;
     use wiremock::ResponseTemplate;
@@ -392,7 +435,7 @@ mod tests {
         let auth = AgentIdentityAuth::from_record(
             agent_identity_record_with_generated_key(),
             &server.uri(),
-            /*auth_route_config*/ None,
+            &crate::test_support::transport_default_auth_route_config(),
         )
         .await?;
 
@@ -414,6 +457,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial(codex_auth_env)]
     async fn from_jwt_registers_task() -> anyhow::Result<()> {
         let server = MockServer::start().await;
         Mock::given(method("GET"))
@@ -437,7 +481,7 @@ mod tests {
             &jwt,
             &format!("{}/backend-api", server.uri()),
             &server.uri(),
-            /*auth_route_config*/ None,
+            &crate::test_support::transport_default_auth_route_config(),
         )
         .await?;
 
@@ -480,7 +524,7 @@ mod tests {
         let auth = AgentIdentityAuth::from_record(
             agent_identity_record_with_generated_key(),
             &server.uri(),
-            /*auth_route_config*/ None,
+            &crate::test_support::transport_default_auth_route_config(),
         )
         .await?;
 

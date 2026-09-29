@@ -1,7 +1,5 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::sync::Arc;
-use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
 
@@ -10,33 +8,41 @@ use crate::hook_runtime::PreToolUseHookResult;
 use crate::hook_runtime::record_additional_contexts;
 use crate::hook_runtime::run_post_tool_use_hooks;
 use crate::hook_runtime::run_pre_tool_use_hooks;
-use crate::sandbox_tags::permission_profile_policy_tag;
-use crate::sandbox_tags::permission_profile_sandbox_tag;
+use crate::memory_usage::emit_metric_for_tool_read;
+use crate::memory_usage::shell_script_for_invocation;
+use crate::session::session::Session;
 use crate::session::turn_context::TurnContext;
 use crate::tools::context::FunctionToolOutput;
+use crate::tools::context::ToolCallState;
 use crate::tools::context::ToolInvocation;
 use crate::tools::context::ToolOutput;
 use crate::tools::context::ToolPayload;
+use crate::tools::control_tool_analytics::ControlToolCallGuard;
 use crate::tools::flat_tool_name;
 use crate::tools::handlers::multi_agents_spec::MULTI_AGENT_V1_NAMESPACE;
-use crate::tools::handlers::unified_exec::ExecCommandArgs;
 use crate::tools::hook_names::HookToolName;
 use crate::tools::lifecycle::notify_tool_finish;
 use crate::tools::lifecycle::notify_tool_start;
+use crate::tools::router::tool_log_payload;
 use crate::tools::tool_dispatch_trace::ToolDispatchTrace;
 use crate::util::error_or_panic;
+use codex_analytics::ControlToolCallStatus;
 use codex_extension_api::ToolCallOutcome;
+use codex_extension_api::ToolPolicy;
+use codex_history::CodexHarnessMetadata;
+use codex_history::ResponseItemEnvelope;
 use codex_protocol::models::FunctionCallOutputPayload;
 use codex_protocol::models::ResponseInputItem;
 use codex_protocol::parse_command::ParsedCommand;
 use codex_protocol::protocol::EventMsg;
+use codex_rollout::state_db;
 use codex_shell_command::parse_command::parse_shell_script;
 use codex_tools::ToolName;
-use codex_tools::ToolSearchInfo;
 use codex_tools::ToolSpec;
 use futures::future::BoxFuture;
+use indexmap::IndexMap;
+use indexmap::map::Entry;
 use serde_json::Value;
-use tracing::instrument;
 
 pub(crate) type ToolTelemetryTags = Vec<(&'static str, String)>;
 
@@ -48,6 +54,34 @@ pub use codex_tools::ToolExposure;
 /// Implementers provide the shared `ToolExecutor` behavior plus optional
 /// core-owned metadata for hooks, telemetry, tool search, and argument diffs.
 pub(crate) trait CoreToolRuntime: ToolExecutor<ToolInvocation> {
+    /// Whether this built-in control tool needs a structured tool-call event.
+    fn is_builtin_control_tool(&self) -> bool {
+        false
+    }
+
+    /// Returns a shared spec when both the spec and search metadata are immutable.
+    fn immutable_spec(&self) -> Option<&Arc<ToolSpec>> {
+        None
+    }
+
+    /// Returns lazily cached Code Mode definitions owned by this runtime.
+    fn cached_code_mode_definitions(
+        &self,
+        _code_mode_input_schema_max_bytes: Option<usize>,
+    ) -> Option<&[codex_code_mode::ToolDefinition]> {
+        None
+    }
+
+    /// Returns a readiness wait for this exact tool before taking the execution gate.
+    fn wait_until_ready<'a>(&'a self, _session: &'a Arc<Session>) -> Option<BoxFuture<'a, ()>> {
+        None
+    }
+
+    /// Returns the owning server only for MCP-backed tool runtimes.
+    fn mcp_server_name(&self) -> Option<&str> {
+        None
+    }
+
     fn matches_kind(&self, payload: &ToolPayload) -> bool {
         matches!(
             payload,
@@ -55,18 +89,12 @@ pub(crate) trait CoreToolRuntime: ToolExecutor<ToolInvocation> {
         )
     }
 
-    /// Whether cancellation should let the handler finish teardown before the
-    /// host returns an aborted tool response.
-    fn waits_for_runtime_cancellation(&self) -> bool {
-        false
+    fn telemetry_tags(&self, _invocation: &ToolInvocation) -> ToolTelemetryTags {
+        Vec::new()
     }
 
-    fn telemetry_tags<'a>(
-        &'a self,
-        _invocation: &'a ToolInvocation,
-    ) -> BoxFuture<'a, ToolTelemetryTags> {
-        Box::pin(async { Vec::new() })
-    }
+    /// Observes a tool result only after all PostToolUse hooks accept it.
+    fn on_tool_result_accepted(&self, _invocation: &ToolInvocation, _result: &dyn ToolOutput) {}
 
     fn post_tool_use_payload(
         &self,
@@ -167,14 +195,21 @@ pub(crate) struct AnyToolResult {
 }
 
 impl AnyToolResult {
-    pub(crate) fn into_response(self) -> ResponseInputItem {
+    pub(crate) fn into_response(self) -> ResponseItemEnvelope {
         let Self {
             call_id,
             payload,
             result,
             ..
         } = self;
-        result.to_response_item(&call_id, &payload)
+        let history_truncation_token_limit = result.fallback_token_limit_override();
+        ResponseItemEnvelope {
+            item: result.to_response_item(&call_id, &payload).into(),
+            metadata: history_truncation_token_limit.map(|limit| CodexHarnessMetadata {
+                history_truncation_token_limit: Some(limit),
+                ..Default::default()
+            }),
+        }
     }
 
     pub(crate) fn code_mode_result(self) -> serde_json::Value {
@@ -191,16 +226,20 @@ struct PostToolUseFeedbackOutput {
 }
 
 impl ToolOutput for PostToolUseFeedbackOutput {
-    fn log_preview(&self) -> String {
-        self.original.log_preview()
+    fn log_output(&self) -> String {
+        self.original.log_output()
     }
 
     fn success_for_logging(&self) -> bool {
         self.original.success_for_logging()
     }
 
-    fn smart_prune_eligible(&self) -> bool {
-        false
+    fn set_handler_duration_ms(&mut self, handler_duration_ms: u64) {
+        self.original.set_handler_duration_ms(handler_duration_ms);
+    }
+
+    fn fallback_token_limit_override(&self) -> Option<usize> {
+        self.original.fallback_token_limit_override()
     }
 
     fn to_response_item(&self, call_id: &str, payload: &ToolPayload) -> ResponseInputItem {
@@ -209,6 +248,10 @@ impl ToolOutput for PostToolUseFeedbackOutput {
 
     fn code_mode_result(&self, payload: &ToolPayload) -> Value {
         self.original.code_mode_result(payload)
+    }
+
+    fn tool_result_metadata(&self) -> Option<&Value> {
+        self.original.tool_result_metadata()
     }
 }
 
@@ -241,116 +284,199 @@ pub(crate) struct PostToolUsePayload {
     pub(crate) tool_response: Value,
 }
 
-pub(crate) fn override_tool_exposure(
-    handler: Arc<dyn CoreToolRuntime>,
-    exposure: ToolExposure,
-) -> Arc<dyn CoreToolRuntime> {
-    if handler.exposure() == exposure {
-        return handler;
-    }
-
-    Arc::new(ExposureOverride { handler, exposure })
+/// A tool runtime together with its effective exposure for the current step.
+pub(crate) struct RegisteredTool {
+    pub(crate) runtime: Arc<dyn CoreToolRuntime>,
+    pub(crate) exposure: ToolExposure,
 }
 
-struct ExposureOverride {
-    handler: Arc<dyn CoreToolRuntime>,
-    exposure: ToolExposure,
-}
-
-impl ToolExecutor<ToolInvocation> for ExposureOverride {
-    fn tool_name(&self) -> ToolName {
-        self.handler.tool_name()
-    }
-
-    fn spec(&self) -> ToolSpec {
-        self.handler.spec()
-    }
-
-    fn exposure(&self) -> ToolExposure {
-        self.exposure
-    }
-
-    fn supports_parallel_tool_calls(&self) -> bool {
-        self.exposure != ToolExposure::Hidden && self.handler.supports_parallel_tool_calls()
-    }
-
-    fn search_info(&self) -> Option<ToolSearchInfo> {
-        self.handler.search_info()
-    }
-
-    fn handle(&self, invocation: ToolInvocation) -> codex_tools::ToolExecutorFuture<'_> {
-        self.handler.handle(invocation)
-    }
-}
-
-impl CoreToolRuntime for ExposureOverride {
-    fn matches_kind(&self, payload: &ToolPayload) -> bool {
-        self.handler.matches_kind(payload)
-    }
-
-    fn waits_for_runtime_cancellation(&self) -> bool {
-        self.handler.waits_for_runtime_cancellation()
-    }
-
-    fn pre_tool_use_payload(&self, invocation: &ToolInvocation) -> Option<PreToolUsePayload> {
-        self.handler.pre_tool_use_payload(invocation)
-    }
-
-    fn post_tool_use_payload(
-        &self,
-        invocation: &ToolInvocation,
-        result: &dyn ToolOutput,
-    ) -> Option<PostToolUsePayload> {
-        self.handler.post_tool_use_payload(invocation, result)
-    }
-
-    fn with_updated_hook_input(
-        &self,
-        invocation: ToolInvocation,
-        updated_input: Value,
-    ) -> Result<ToolInvocation, FunctionCallError> {
-        self.handler
-            .with_updated_hook_input(invocation, updated_input)
-    }
-
-    fn telemetry_tags<'a>(
-        &'a self,
-        invocation: &'a ToolInvocation,
-    ) -> BoxFuture<'a, ToolTelemetryTags> {
-        self.handler.telemetry_tags(invocation)
-    }
-
-    fn create_diff_consumer(&self) -> Option<Box<dyn ToolArgumentDiffConsumer>> {
-        self.handler.create_diff_consumer()
-    }
-}
-
+#[derive(Default)]
 pub struct ToolRegistry {
-    tools: HashMap<ToolName, Arc<dyn CoreToolRuntime>>,
+    tools: IndexMap<ToolName, RegisteredTool>,
+    first_collision: Option<ToolName>,
+    pub(crate) tool_policy: Arc<ToolPolicy>,
 }
 
 impl ToolRegistry {
-    fn new(tools: HashMap<ToolName, Arc<dyn CoreToolRuntime>>) -> Self {
-        Self { tools }
+    pub(crate) fn with_tool_policy(tool_policy: Arc<ToolPolicy>) -> Self {
+        Self {
+            tool_policy,
+            ..Self::default()
+        }
     }
 
-    #[instrument(level = "trace", skip_all)]
+    #[cfg(test)]
     pub(crate) fn from_tools(tools: impl IntoIterator<Item = Arc<dyn CoreToolRuntime>>) -> Self {
-        let mut tools_by_name = HashMap::new();
-        for tool in tools {
-            let name = tool.tool_name();
-            if tools_by_name.contains_key(&name) {
-                error_or_panic(format!("tool {name} already registered"));
+        let mut registry = Self::default();
+
+        for runtime in tools {
+            registry.register_trusted(runtime);
+        }
+
+        registry
+    }
+
+    pub(crate) fn add<T>(&mut self, handler: T)
+    where
+        T: CoreToolRuntime + 'static,
+    {
+        self.register_trusted(Arc::new(handler));
+    }
+
+    pub(crate) fn add_with_exposure<T>(&mut self, handler: T, exposure: ToolExposure)
+    where
+        T: CoreToolRuntime + 'static,
+    {
+        self.register_trusted_with_exposure(Arc::new(handler), exposure);
+    }
+
+    pub(crate) fn register_trusted(&mut self, runtime: Arc<dyn CoreToolRuntime>) {
+        let exposure = runtime.exposure();
+        self.register_trusted_with_exposure(runtime, exposure);
+    }
+
+    pub(crate) fn register_trusted_with_exposure(
+        &mut self,
+        runtime: Arc<dyn CoreToolRuntime>,
+        exposure: ToolExposure,
+    ) {
+        let tool_name = runtime.tool_name().with_default_namespace();
+        if !self.tool_policy.allows(&tool_name) {
+            return;
+        }
+        match self.tools.entry(tool_name) {
+            Entry::Vacant(entry) => {
+                entry.insert(RegisteredTool { runtime, exposure });
+            }
+            Entry::Occupied(entry) => {
+                let tool_name = entry.key();
+                error_or_panic(format!("tool {tool_name} already registered"));
+            }
+        }
+    }
+
+    pub(crate) fn prepend_trusted(&mut self, runtime: Arc<dyn CoreToolRuntime>) {
+        let tool_name = runtime.tool_name().with_default_namespace();
+        if !self.tool_policy.allows(&tool_name) {
+            return;
+        }
+        if self.tools.contains_key(&tool_name) {
+            error_or_panic(format!("tool {tool_name} already registered"));
+            return;
+        }
+
+        let exposure = runtime.exposure();
+        self.tools
+            .shift_insert(0, tool_name, RegisteredTool { runtime, exposure });
+    }
+
+    pub(crate) fn register_external(&mut self, runtime: Arc<dyn CoreToolRuntime>) -> bool {
+        let exposure = runtime.exposure();
+        self.register_external_with_exposure(runtime, exposure)
+    }
+
+    pub(crate) fn register_external_with_exposure(
+        &mut self,
+        runtime: Arc<dyn CoreToolRuntime>,
+        exposure: ToolExposure,
+    ) -> bool {
+        let tool_name = runtime.tool_name().with_default_namespace();
+        if !self.tool_policy.allows(&tool_name) {
+            return false;
+        }
+        if tool_name.is_default_namespace()
+            && matches!(tool_name.name.as_str(), "exec_command" | "shell_command")
+        {
+            tracing::warn!(tool_name = %tool_name, "skipping external tool with reserved name");
+            if self.tools.contains_key(&tool_name) {
+                self.record_collision(tool_name);
+            }
+            return false;
+        }
+
+        match self.tools.entry(tool_name) {
+            Entry::Vacant(entry) => {
+                entry.insert(RegisteredTool { runtime, exposure });
+                true
+            }
+            Entry::Occupied(entry) => {
+                tracing::warn!(
+                    tool_name = %entry.key(),
+                    "skipping duplicate external tool that is already registered"
+                );
+                self.first_collision
+                    .get_or_insert_with(|| entry.key().clone());
+                false
+            }
+        }
+    }
+
+    pub(crate) fn record_collision(&mut self, tool_name: ToolName) {
+        self.first_collision.get_or_insert(tool_name);
+    }
+
+    pub(crate) fn first_collision(&self) -> Option<&ToolName> {
+        self.first_collision.as_ref()
+    }
+
+    pub(crate) fn remove(&mut self, tool_name: &ToolName) -> Option<Arc<dyn CoreToolRuntime>> {
+        self.tools
+            .shift_remove(&tool_name.clone().with_default_namespace())
+            .map(|tool| tool.runtime)
+    }
+
+    pub(crate) fn entries(&self) -> impl Iterator<Item = &RegisteredTool> {
+        self.tools.values()
+    }
+
+    pub(crate) fn entries_mut(&mut self) -> impl Iterator<Item = &mut RegisteredTool> {
+        self.tools.values_mut()
+    }
+
+    /// Returns configured MCP server names and their registered callable namespaces.
+    pub(crate) fn mcp_namespaces(&self) -> impl Iterator<Item = (&str, &str)> {
+        self.tools.iter().filter_map(|(name, tool)| {
+            Some((tool.runtime.mcp_server_name()?, name.namespace.as_deref()?))
+        })
+    }
+
+    pub(crate) fn deferred_tool_namespaces(&self) -> BTreeMap<String, String> {
+        let mut namespaces = BTreeMap::<String, String>::new();
+        for (name, tool) in &self.tools {
+            if !tool.exposure.is_deferred() || name.is_default_namespace() {
                 continue;
             }
-            tools_by_name.insert(name, tool);
+            let Some(namespace) = &name.namespace else {
+                continue;
+            };
+            let existing_description = namespaces.entry(namespace.clone()).or_default();
+            if !existing_description.trim().is_empty() {
+                continue;
+            }
+            let owned_spec;
+            let spec = if let Some(spec) = tool.runtime.immutable_spec() {
+                spec.as_ref()
+            } else {
+                owned_spec = tool.runtime.spec();
+                &owned_spec
+            };
+            let description = match spec {
+                ToolSpec::Namespace(namespace) => namespace.description.as_str(),
+                ToolSpec::Function(_)
+                | ToolSpec::Freeform(_)
+                | ToolSpec::ToolSearch { .. }
+                | ToolSpec::WebSearch { .. } => "",
+            };
+            if !description.trim().is_empty() {
+                *existing_description = description.to_string();
+            }
         }
-        Self::new(tools_by_name)
+        namespaces
     }
 
     #[cfg(test)]
     pub(crate) fn empty_for_test() -> Self {
-        Self::new(HashMap::new())
+        Self::from_tools(std::iter::empty())
     }
 
     #[cfg(test)]
@@ -358,12 +484,13 @@ impl ToolRegistry {
     where
         T: CoreToolRuntime + 'static,
     {
-        let name = handler.tool_name();
-        Self::new(HashMap::from([(name, handler as Arc<dyn CoreToolRuntime>)]))
+        Self::from_tools([handler as Arc<dyn CoreToolRuntime>])
     }
 
-    fn tool(&self, name: &ToolName) -> Option<Arc<dyn CoreToolRuntime>> {
-        self.tools.get(name).map(Arc::clone)
+    pub(crate) fn tool(&self, name: &ToolName) -> Option<Arc<dyn CoreToolRuntime>> {
+        self.tools
+            .get(&name.clone().with_default_namespace())
+            .map(|tool| Arc::clone(&tool.runtime))
     }
 
     #[cfg(test)]
@@ -375,7 +502,9 @@ impl ToolRegistry {
 
     #[cfg(test)]
     pub(crate) fn tool_exposure(&self, name: &ToolName) -> Option<ToolExposure> {
-        self.tools.get(name).map(|tool| tool.exposure())
+        self.tools
+            .get(&name.clone().with_default_namespace())
+            .map(|tool| tool.exposure)
     }
 
     pub(crate) fn create_diff_consumer(
@@ -386,55 +515,29 @@ impl ToolRegistry {
     }
 
     pub(crate) fn supports_parallel_tool_calls(&self, name: &ToolName) -> Option<bool> {
-        let tool = self.tool(name)?;
-        Some(tool.supports_parallel_tool_calls())
-    }
-
-    pub(crate) fn waits_for_runtime_cancellation(&self, name: &ToolName) -> Option<bool> {
-        let tool = self.tool(name)?;
-        Some(tool.waits_for_runtime_cancellation())
-    }
-
-    #[allow(dead_code)]
-    pub(crate) async fn dispatch_any(
-        &self,
-        invocation: ToolInvocation,
-    ) -> Result<AnyToolResult, FunctionCallError> {
-        self.dispatch_any_with_terminal_outcome(invocation, /*terminal_outcome_reached*/ None)
-            .await
+        let tool = self.tools.get(&name.clone().with_default_namespace())?;
+        Some(tool.exposure != ToolExposure::Hidden && tool.runtime.supports_parallel_tool_calls())
     }
 
     #[expect(
         clippy::await_holding_invalid_type,
         reason = "tool dispatch must keep active-turn accounting atomic"
     )]
-    pub(crate) async fn dispatch_any_with_terminal_outcome(
+    pub(crate) async fn dispatch_any_with_state(
         &self,
         mut invocation: ToolInvocation,
-        terminal_outcome_reached: Option<Arc<AtomicBool>>,
+        call_state: Option<Arc<ToolCallState>>,
     ) -> Result<AnyToolResult, FunctionCallError> {
         let tool_name = invocation.tool_name.clone();
-        let tool_name_flat = flat_tool_name(&tool_name);
         let call_id_owned = invocation.call_id.clone();
-        let otel = invocation.turn.session_telemetry.clone();
-        let base_tool_result_tags = [
-            (
-                "sandbox",
-                permission_profile_sandbox_tag(
-                    &invocation.turn.permission_profile,
-                    invocation.turn.windows_sandbox_level,
-                    invocation.turn.network.is_some(),
-                ),
-            ),
-            (
-                "sandbox_policy",
-                permission_profile_policy_tag(
-                    &invocation.turn.permission_profile,
-                    #[allow(deprecated)]
-                    invocation.turn.cwd.as_path(),
-                ),
-            ),
-        ];
+        let otel = invocation
+            .step_context
+            .session_telemetry
+            .clone()
+            .with_product_sku(invocation.turn.config.apps_mcp_product_sku.as_deref());
+        // TODO(anp): Reconcile these tags with TurnEnvironment::sandbox_context
+        // instead of reporting the thread-wide backend for environment-scoped tools.
+        let sandbox_tags = invocation.turn.turn_metadata_state.sandbox_tags;
 
         {
             let mut active = invocation.session.active_turn.lock().await;
@@ -449,15 +552,17 @@ impl ToolRegistry {
             Some(tool) => tool,
             None => {
                 let message = unsupported_tool_call_message(&invocation.payload, &tool_name);
-                let log_payload = invocation.payload.log_payload();
+                let log_payload = tool_log_payload(&invocation.payload, &invocation.source);
+                let mut tool_result_tags = Vec::with_capacity(2);
+                sandbox_tags.append_metric_tags(&mut tool_result_tags);
                 otel.tool_result_with_tags(
-                    tool_name_flat.as_ref(),
+                    &tool_name,
                     &call_id_owned,
                     log_payload.as_ref(),
                     Duration::ZERO,
                     /*success*/ false,
                     &message,
-                    &base_tool_result_tags,
+                    &tool_result_tags,
                     /*extra_trace_fields*/ &[],
                 );
                 let err = FunctionCallError::RespondToModel(message);
@@ -465,12 +570,10 @@ impl ToolRegistry {
                 return Err(err);
             }
         };
-
-        let telemetry_tags = tool.telemetry_tags(&invocation).await;
-        let mut tool_result_tags =
-            Vec::with_capacity(base_tool_result_tags.len() + telemetry_tags.len() + 1);
+        let telemetry_tags = tool.telemetry_tags(&invocation);
+        let mut tool_result_tags = Vec::with_capacity(2 + telemetry_tags.len() + 1);
         let mut extra_trace_fields = Vec::new();
-        tool_result_tags.extend_from_slice(&base_tool_result_tags);
+        sandbox_tags.append_metric_tags(&mut tool_result_tags);
         for (key, value) in &telemetry_tags {
             if matches!(*key, "mcp_server" | "mcp_server_origin") {
                 extra_trace_fields.push((*key, value.as_str()));
@@ -480,9 +583,9 @@ impl ToolRegistry {
         }
         if !tool.matches_kind(&invocation.payload) {
             let message = format!("tool {tool_name} invoked with incompatible payload");
-            let log_payload = invocation.payload.log_payload();
+            let log_payload = tool_log_payload(&invocation.payload, &invocation.source);
             otel.tool_result_with_tags(
-                tool_name_flat.as_ref(),
+                &tool_name,
                 &call_id_owned,
                 log_payload.as_ref(),
                 Duration::ZERO,
@@ -496,12 +599,10 @@ impl ToolRegistry {
             return Err(err);
         }
 
-        notify_tool_start(&invocation).await;
-
         if let Some(pre_tool_use_payload) = tool.pre_tool_use_payload(&invocation) {
             match run_pre_tool_use_hooks(
                 &invocation.session,
-                &invocation.turn,
+                invocation.step_context.as_ref(),
                 invocation.call_id.clone(),
                 &pre_tool_use_payload.tool_name,
                 &pre_tool_use_payload.tool_input,
@@ -509,11 +610,15 @@ impl ToolRegistry {
             .await
             {
                 PreToolUseHookResult::Blocked(message) => {
+                    if tool.is_builtin_control_tool() {
+                        let mut analytics = ControlToolCallGuard::new(&invocation);
+                        analytics.finish(ControlToolCallStatus::Rejected);
+                    }
                     let err = FunctionCallError::RespondToModel(message);
                     dispatch_trace.record_failed(&err);
                     notify_tool_finish_if_unclaimed(
                         &invocation,
-                        terminal_outcome_reached.as_deref(),
+                        call_state.as_deref(),
                         ToolCallOutcome::Blocked,
                     )
                     .await;
@@ -526,10 +631,14 @@ impl ToolRegistry {
                         invocation = updated_invocation;
                     }
                     Err(err) => {
+                        if tool.is_builtin_control_tool() {
+                            let mut analytics = ControlToolCallGuard::new(&invocation);
+                            analytics.finish(ControlToolCallStatus::Failed);
+                        }
                         dispatch_trace.record_failed(&err);
                         notify_tool_finish_if_unclaimed(
                             &invocation,
-                            terminal_outcome_reached.as_deref(),
+                            call_state.as_deref(),
                             ToolCallOutcome::Failed {
                                 handler_executed: false,
                             },
@@ -543,6 +652,13 @@ impl ToolRegistry {
                 } => {}
             }
         }
+
+        if tool.mcp_server_name().is_none() {
+            notify_tool_start(&invocation, /*mcp_tool*/ None).await;
+        }
+        let mut control_tool_analytics = tool
+            .is_builtin_control_tool()
+            .then(|| ControlToolCallGuard::new(&invocation));
 
         if let Some(command) = shell_script_for_invocation(&invocation) {
             let parsed = parse_shell_script(&command);
@@ -560,43 +676,40 @@ impl ToolRegistry {
             tool_result_tags.push(("command_category", category));
         }
 
-        let response_cell = tokio::sync::Mutex::new(None);
-        let invocation_for_tool = invocation.clone();
-        let log_payload = invocation.payload.log_payload();
+        let log_payload = tool_log_payload(&invocation.payload, &invocation.source);
 
         let result = otel
             .log_tool_result_with_tags(
-                tool_name_flat.as_ref(),
+                &tool_name,
                 &call_id_owned,
                 log_payload.as_ref(),
                 &tool_result_tags,
                 &extra_trace_fields,
-                || {
-                    let tool = tool.clone();
-                    let response_cell = &response_cell;
-                    async move {
-                        match handle_any_tool(tool.as_ref(), invocation_for_tool).await {
-                            Ok(result) => {
-                                let preview = result.result.log_preview();
-                                let success = result.result.success_for_logging();
-                                let mut guard = response_cell.lock().await;
-                                *guard = Some(result);
-                                Ok((preview, success))
-                            }
-                            Err(err) => Err(err),
-                        }
-                    }
+                || handle_any_tool(tool.as_ref(), invocation.clone(), call_state.as_deref()),
+                |result| {
+                    (
+                        result.result.log_output(),
+                        result.result.success_for_logging(),
+                    )
                 },
             )
             .await;
         let success = match &result {
-            Ok((_, success)) => *success,
+            Ok(result) => result.result.success_for_logging(),
             Err(_) => false,
         };
+        if let Some(analytics) = control_tool_analytics.as_mut() {
+            analytics.finish(if success {
+                ControlToolCallStatus::Completed
+            } else {
+                ControlToolCallStatus::Failed
+            });
+        }
+        emit_metric_for_tool_read(&invocation, success);
         let post_tool_use_payload = if success {
-            let guard = response_cell.lock().await;
-            guard
+            result
                 .as_ref()
+                .ok()
                 .and_then(|result| result.post_tool_use_payload.clone())
         } else {
             None
@@ -605,7 +718,7 @@ impl ToolRegistry {
             Some(
                 run_post_tool_use_hooks(
                     &invocation.session,
-                    &invocation.turn,
+                    invocation.step_context.as_ref(),
                     post_tool_use_payload.tool_use_id,
                     post_tool_use_payload.tool_name.name().to_string(),
                     post_tool_use_payload.tool_name.matcher_aliases().to_vec(),
@@ -628,34 +741,16 @@ impl ToolRegistry {
 
         // A PostToolUse block rejects the result, not the already-completed tool execution.
         let lifecycle_outcome = match &result {
-            Ok(_) => {
-                let guard = response_cell.lock().await;
-                match guard.as_ref() {
-                    Some(result) => ToolCallOutcome::Completed {
-                        success: result.result.success_for_logging(),
-                    },
-                    None => ToolCallOutcome::Failed {
-                        handler_executed: true,
-                    },
-                }
-            }
+            Ok(_) => ToolCallOutcome::Completed { success },
             Err(_) => ToolCallOutcome::Failed {
                 handler_executed: true,
             },
         };
-        notify_tool_finish_if_unclaimed(
-            &invocation,
-            terminal_outcome_reached.as_deref(),
-            lifecycle_outcome,
-        )
-        .await;
+        notify_tool_finish_if_unclaimed(&invocation, call_state.as_deref(), lifecycle_outcome)
+            .await;
 
         match result {
-            Ok(_) => {
-                let mut guard = response_cell.lock().await;
-                let mut result = guard.take().ok_or_else(|| {
-                    FunctionCallError::Fatal("tool produced no output".to_string())
-                })?;
+            Ok(mut result) => {
                 if let Some(outcome) = post_tool_use_outcome {
                     if outcome.should_block {
                         let message = outcome.feedback_message.unwrap_or_else(|| {
@@ -675,6 +770,7 @@ impl ToolRegistry {
                         });
                     }
                 }
+                tool.on_tool_result_accepted(&invocation, result.result.as_ref());
                 dispatch_trace.record_completed(
                     &invocation,
                     &result.call_id,
@@ -693,10 +789,10 @@ impl ToolRegistry {
 
 async fn notify_tool_finish_if_unclaimed(
     invocation: &ToolInvocation,
-    terminal_outcome_reached: Option<&AtomicBool>,
+    call_state: Option<&ToolCallState>,
     outcome: ToolCallOutcome,
 ) -> bool {
-    if terminal_outcome_reached.is_some_and(|reached| reached.swap(true, Ordering::AcqRel)) {
+    if call_state.is_some_and(|state| state.terminal_outcome_reached.swap(true, Ordering::AcqRel)) {
         return false;
     }
 
@@ -704,50 +800,45 @@ async fn notify_tool_finish_if_unclaimed(
     true
 }
 
-fn shell_script_for_invocation(invocation: &ToolInvocation) -> Option<String> {
-    let ToolPayload::Function { arguments } = &invocation.payload else {
-        return None;
-    };
-
-    match (
-        invocation.tool_name.namespace.as_deref(),
-        invocation.tool_name.name.as_str(),
-    ) {
-        (None, "shell_command") => {
-            serde_json::from_str::<codex_protocol::models::ShellCommandToolCallParams>(arguments)
-                .ok()
-                .map(|params| params.command)
-        }
-        (None, "exec_command") => serde_json::from_str::<ExecCommandArgs>(arguments)
-            .ok()
-            .map(|params| params.cmd),
-        (Some(_), _) | (None, _) => None,
-    }
-}
-
 async fn handle_any_tool(
     tool: &dyn CoreToolRuntime,
     invocation: ToolInvocation,
+    call_state: Option<&ToolCallState>,
 ) -> Result<AnyToolResult, FunctionCallError> {
     let call_id = invocation.call_id.clone();
     let payload = invocation.payload.clone();
     let output = tool.handle(invocation.clone()).await?;
     let post_tool_use_payload =
         CoreToolRuntime::post_tool_use_payload(tool, &invocation, output.as_ref());
-    Ok(AnyToolResult {
+    let result = AnyToolResult {
         call_id,
         payload,
         result: output,
         post_tool_use_payload,
-    })
+    };
+    // Capture confirmed delivery before any further await, including post-tool hooks.
+    if let Some(call_state) = call_state
+        && let Some(text) = result.delivered_assistant_message()
+    {
+        let _ = call_state.delivered_assistant_message.set(text);
+    }
+    if result.result.contains_external_context()
+        && invocation.turn.config.memories.disable_on_external_context
+    {
+        state_db::mark_thread_memory_mode_polluted(
+            invocation.session.services.state_db.as_deref(),
+            invocation.session.thread_id,
+            "tool_output",
+        )
+        .await;
+    }
+    Ok(result)
 }
 
 fn function_hook_tool_name(invocation: &ToolInvocation) -> HookToolName {
     if invocation.tool_name.name == "spawn_agent"
-        && matches!(
-            invocation.tool_name.namespace.as_deref(),
-            None | Some(MULTI_AGENT_V1_NAMESPACE)
-        )
+        && (invocation.tool_name.is_default_namespace()
+            || invocation.tool_name.namespace.as_deref() == Some(MULTI_AGENT_V1_NAMESPACE))
     {
         return HookToolName::spawn_agent();
     }

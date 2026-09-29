@@ -1,4 +1,3 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use crate::auth::SharedAuthProvider;
 use crate::common::ResponseEvent;
 use crate::common::ResponseStream;
@@ -126,17 +125,22 @@ impl WsStream {
     }
 
     async fn request(
-        &self,
+        &mut self,
         make_command: impl FnOnce(oneshot::Sender<Result<(), WsError>>) -> WsCommand,
     ) -> Result<(), WsError> {
         let (tx_result, rx_result) = oneshot::channel();
-        if self.tx_command.send(make_command(tx_result)).await.is_err() {
-            return Err(WsError::ConnectionClosed);
+        if self.tx_command.send(make_command(tx_result)).await.is_ok()
+            && let Ok(result) = rx_result.await
+        {
+            return result;
         }
-        rx_result.await.unwrap_or(Err(WsError::ConnectionClosed))
+        while let Some(message) = self.rx_message.recv().await {
+            message?;
+        }
+        Err(WsError::ConnectionClosed)
     }
 
-    async fn send(&self, message: Message) -> Result<(), WsError> {
+    async fn send(&mut self, message: Message) -> Result<(), WsError> {
         self.request(|tx_result| WsCommand::Send { message, tx_result })
             .await
     }
@@ -158,6 +162,9 @@ const X_REASONING_INCLUDED_HEADER: &str = "x-reasoning-included";
 const OPENAI_MODEL_HEADER: &str = "openai-model";
 const WEBSOCKET_CONNECTION_LIMIT_REACHED_CODE: &str = "websocket_connection_limit_reached";
 const WEBSOCKET_CONNECTION_LIMIT_REACHED_MESSAGE: &str = "Responses websocket connection limit reached (60 minutes). Create a new websocket connection to continue.";
+const PREVIOUS_RESPONSE_NOT_FOUND_CODE: &str = "previous_response_not_found";
+const PREVIOUS_RESPONSE_NOT_FOUND_MESSAGE: &str =
+    "Previous response was not found. Retrying the full request.";
 const RESPONSES_WEBSOCKET_TIMING_KIND: &str = "responsesapi.websocket_timing";
 const RESPONSES_WEBSOCKET_TIMING_EVENT_TARGET: &str = "codex_api::responses_websocket_timing";
 const SESSION_ID_CLIENT_METADATA_KEY: &str = "session_id";
@@ -182,7 +189,6 @@ pub struct ResponsesWebsocketConnection {
     // TODO (pakrym): is this the right place for timeout?
     idle_timeout: Duration,
     server_reasoning_included: bool,
-    models_etag: Option<String>,
     server_model: Option<String>,
     telemetry: Option<Arc<dyn WebsocketTelemetry>>,
 }
@@ -193,7 +199,6 @@ impl std::fmt::Debug for ResponsesWebsocketConnection {
             .field("stream", &"<ws-stream>")
             .field("idle_timeout", &self.idle_timeout)
             .field("server_reasoning_included", &self.server_reasoning_included)
-            .field("models_etag", &self.models_etag)
             .field("server_model", &self.server_model)
             .field("telemetry", &self.telemetry.as_ref().map(|_| "<telemetry>"))
             .finish()
@@ -205,7 +210,6 @@ impl ResponsesWebsocketConnection {
         stream: WsStream,
         idle_timeout: Duration,
         server_reasoning_included: bool,
-        models_etag: Option<String>,
         server_model: Option<String>,
         telemetry: Option<Arc<dyn WebsocketTelemetry>>,
     ) -> Self {
@@ -213,25 +217,28 @@ impl ResponsesWebsocketConnection {
             stream: Arc::new(Mutex::new(Some(stream))),
             idle_timeout,
             server_reasoning_included,
-            models_etag,
             server_model,
             telemetry,
         }
     }
 
     pub async fn is_closed(&self) -> bool {
-        self.stream.lock().await.is_none()
+        self.stream
+            .lock()
+            .await
+            .as_ref()
+            .is_none_or(|stream| stream.pump_task.is_finished())
     }
 
     #[instrument(
         name = "responses_websocket.stream_request",
         level = "info",
         skip_all,
-        fields(transport = "responses_websocket", api.path = "responses")
+        fields(transport = "responses_websocket", api.path = "/responses")
     )]
     pub async fn stream_request(
         &self,
-        request: ResponsesWsRequest,
+        request: ResponsesWsRequest<'_>,
         connection_reused: bool,
         turn_state: Option<Arc<OnceLock<String>>>,
     ) -> Result<ResponseStream, ApiError> {
@@ -240,13 +247,12 @@ impl ResponsesWebsocketConnection {
         let stream = Arc::clone(&self.stream);
         let idle_timeout = self.idle_timeout;
         let server_reasoning_included = self.server_reasoning_included;
-        let models_etag = self.models_etag.clone();
         let server_model = self.server_model.clone();
         let telemetry = self.telemetry.clone();
         let ResponsesWsRequest::ResponseCreate(ws_request) = &request;
         let client_metadata = ws_request.client_metadata.as_ref();
         let timing_log_context = ResponsesWebsocketTimingLogContext {
-            model: ws_request.model.clone(),
+            model: ws_request.model.to_string(),
             session_id: client_metadata
                 .and_then(|metadata| metadata.get(SESSION_ID_CLIENT_METADATA_KEY))
                 .cloned(),
@@ -280,15 +286,19 @@ impl ResponsesWebsocketConnection {
                 if let Some(model) = server_model {
                     let _ = tx_event.send(Ok(ResponseEvent::ServerModel(model))).await;
                 }
-                if let Some(etag) = models_etag {
-                    let _ = tx_event.send(Ok(ResponseEvent::ModelsEtag(etag))).await;
-                }
                 if server_reasoning_included {
                     let _ = tx_event
                         .send(Ok(ResponseEvent::ServerReasoningIncluded(true)))
                         .await;
                 }
-                let mut guard = stream.lock().await;
+                let mut guard = tokio::select! {
+                    biased;
+                    _ = tx_event.closed() => return,
+                    guard = stream.lock() => guard,
+                };
+                if tx_event.is_closed() {
+                    return;
+                }
                 let result = {
                     let Some(ws_stream) = guard.as_mut() else {
                         let _ = tx_event
@@ -299,16 +309,21 @@ impl ResponsesWebsocketConnection {
                         return;
                     };
 
-                    run_websocket_response_stream(
-                        ws_stream,
-                        tx_event.clone(),
-                        request_text,
-                        idle_timeout,
-                        telemetry,
-                        turn_state.as_deref(),
-                        &timing_log_context,
-                    )
-                    .await
+                    tokio::select! {
+                        biased;
+                        result = run_websocket_response_stream(
+                            ws_stream,
+                            tx_event.clone(),
+                            request_text,
+                            idle_timeout,
+                            telemetry,
+                            turn_state.as_deref(),
+                            &timing_log_context,
+                        ) => result,
+                        _ = tx_event.closed() => Err(ApiError::Stream(
+                            "response event consumer dropped".to_string(),
+                        )),
+                    }
                 };
 
                 if let Err(err) = result {
@@ -354,8 +369,6 @@ pub struct ResponsesWebsocketProbe {
     pub status: StatusCode,
     /// Whether the server reported reasoning support in the upgrade response.
     pub reasoning_included: bool,
-    /// Whether the server returned a model catalog ETag in the upgrade response.
-    pub models_etag_present: bool,
     /// Whether the server returned a server-selected model in the upgrade response.
     pub server_model_present: bool,
     /// Close frame received immediately after upgrade, when one arrives quickly.
@@ -372,7 +385,7 @@ impl ResponsesWebsocketClient {
         name = "responses_websocket.connect",
         level = "info",
         skip_all,
-        fields(transport = "responses_websocket", api.path = "responses")
+        fields(transport = "responses_websocket", api.path = "/responses")
     )]
     pub async fn connect(
         &self,
@@ -384,20 +397,19 @@ impl ResponsesWebsocketClient {
     ) -> Result<ResponsesWebsocketConnection, ApiError> {
         let ws_url = self
             .provider
-            .websocket_url_for_path("responses")
+            .websocket_url_for_path("/responses")
             .map_err(|err| ApiError::Stream(format!("failed to build websocket URL: {err}")))?;
 
         let mut headers =
             merge_request_headers(&self.provider.headers, extra_headers, default_headers);
         self.auth.add_auth_headers(&mut headers);
 
-        let (stream, _status, server_reasoning_included, models_etag, server_model) =
+        let (stream, _status, server_reasoning_included, server_model) =
             connect_websocket(ws_url, headers, http_client_factory, turn_state.clone()).await?;
         Ok(ResponsesWebsocketConnection::new(
             stream,
             self.provider.stream_idle_timeout,
             server_reasoning_included,
-            models_etag,
             server_model,
             telemetry,
         ))
@@ -419,36 +431,32 @@ impl ResponsesWebsocketClient {
     ) -> Result<ResponsesWebsocketProbe, ApiError> {
         let ws_url = self
             .provider
-            .websocket_url_for_path("responses")
+            .websocket_url_for_path("/responses")
             .map_err(|err| ApiError::Stream(format!("failed to build websocket URL: {err}")))?;
 
         let mut headers =
             merge_request_headers(&self.provider.headers, extra_headers, default_headers);
         self.auth.add_auth_headers(&mut headers);
 
-        let (mut stream, status, reasoning_included, models_etag, server_model) =
-            connect_websocket(
-                ws_url.clone(),
-                headers,
-                http_client_factory,
-                /*turn_state*/ None,
-            )
-            .await?;
+        let (mut stream, status, reasoning_included, server_model) = connect_websocket(
+            ws_url.clone(),
+            headers,
+            http_client_factory,
+            /*turn_state*/ None,
+        )
+        .await?;
         let immediate_close = tokio::time::timeout(immediate_close_timeout, stream.next())
             .await
             .ok()
             .flatten()
             .transpose()
-            .map_err(|err| {
-                ApiError::Stream(format!("failed to read websocket probe event: {err}"))
-            })?
+            .map_err(map_ws_stream_error)?
             .and_then(immediate_close_from_message);
 
         Ok(ResponsesWebsocketProbe {
             url: ws_url.to_string(),
             status,
             reasoning_included,
-            models_etag_present: models_etag.is_some(),
             server_model_present: server_model.is_some(),
             immediate_close,
         })
@@ -489,7 +497,7 @@ async fn connect_websocket(
     headers: HeaderMap,
     http_client_factory: &HttpClientFactory,
     turn_state: Option<Arc<OnceLock<String>>>,
-) -> Result<(WsStream, StatusCode, bool, Option<String>, Option<String>), ApiError> {
+) -> Result<(WsStream, StatusCode, bool, Option<String>), ApiError> {
     info!("connecting to websocket: {url}");
 
     let mut request = url
@@ -504,10 +512,7 @@ async fn connect_websocket(
 
     let (stream, response) = match response {
         Ok((stream, response)) => {
-            info!(
-                "successfully connected to websocket: {url}, headers: {:?}",
-                response.headers()
-            );
+            info!("successfully connected to websocket: {url}");
             (stream, response)
         }
         Err(err) => {
@@ -517,11 +522,6 @@ async fn connect_websocket(
     };
 
     let reasoning_included = response.headers().contains_key(X_REASONING_INCLUDED_HEADER);
-    let models_etag = response
-        .headers()
-        .get(X_MODELS_ETAG_HEADER)
-        .and_then(|value| value.to_str().ok())
-        .map(ToString::to_string);
     let server_model = response
         .headers()
         .get(OPENAI_MODEL_HEADER)
@@ -539,7 +539,6 @@ async fn connect_websocket(
         WsStream::new(stream),
         response.status(),
         reasoning_included,
-        models_etag,
         server_model,
     ))
 }
@@ -553,7 +552,17 @@ fn websocket_config() -> WebSocketConfig {
     config
 }
 
+fn map_ws_stream_error(error: WsError) -> ApiError {
+    match codex_websocket_client::network_policy_denial(&error) {
+        Some(denied) => ApiError::Transport(TransportError::Policy(denied)),
+        None => ApiError::Stream(error.to_string()),
+    }
+}
+
 fn map_ws_error(err: WsError, url: &Url) -> ApiError {
+    if let Some(denied) = codex_websocket_client::network_policy_denial(&err) {
+        return ApiError::Transport(TransportError::Policy(denied));
+    }
     match err {
         WsError::Http(response) => {
             let status = response.status();
@@ -567,6 +576,7 @@ fn map_ws_error(err: WsError, url: &Url) -> ApiError {
                 url: Some(url.to_string()),
                 headers: Some(headers),
                 body,
+                retry_after: None,
             })
         }
         WsError::ConnectionClosed | WsError::AlreadyClosed => {
@@ -616,14 +626,20 @@ fn map_wrapped_websocket_error_event(
 
     if let Some(error) = error.as_ref()
         && let Some(code) = error.code.as_deref()
-        && code == WEBSOCKET_CONNECTION_LIMIT_REACHED_CODE
+        && let Some(fallback_message) = match code {
+            WEBSOCKET_CONNECTION_LIMIT_REACHED_CODE => {
+                Some(WEBSOCKET_CONNECTION_LIMIT_REACHED_MESSAGE)
+            }
+            PREVIOUS_RESPONSE_NOT_FOUND_CODE => Some(PREVIOUS_RESPONSE_NOT_FOUND_MESSAGE),
+            _ => None,
+        }
     {
         return Some(ApiError::Retryable {
             message: error
                 .message
                 .clone()
-                .unwrap_or_else(|| WEBSOCKET_CONNECTION_LIMIT_REACHED_MESSAGE.to_string()),
-            delay: None,
+                .unwrap_or_else(|| fallback_message.to_string()),
+            retry_after: None,
         });
     }
 
@@ -637,6 +653,7 @@ fn map_wrapped_websocket_error_event(
         url: None,
         headers: headers.as_ref().map(json_headers_to_http_headers),
         body: Some(original_payload),
+        retry_after: None,
     }))
 }
 
@@ -695,7 +712,7 @@ async fn run_websocket_response_stream(
         let message = match response {
             Ok(Some(Ok(msg))) => msg,
             Ok(Some(Err(err))) => {
-                return Err(ApiError::Stream(err.to_string()));
+                return Err(map_ws_stream_error(err));
             }
             Ok(None) => {
                 return Err(ApiError::Stream(
@@ -728,6 +745,21 @@ async fn run_websocket_response_stream(
                     text.as_str(),
                     timing_log_context,
                 );
+                if event.kind() == "codex.response.metadata"
+                    && let Some(etag) =
+                        event
+                            .headers
+                            .as_ref()
+                            .and_then(Value::as_object)
+                            .and_then(|headers| {
+                                json_headers_to_http_headers(headers)
+                                    .get(X_MODELS_ETAG_HEADER)
+                                    .and_then(|value| value.to_str().ok())
+                                    .map(str::to_string)
+                            })
+                {
+                    let _ = tx_event.send(Ok(ResponseEvent::ModelsEtag(etag))).await;
+                }
                 if let Some(response_turn_state) = event.turn_state()
                     && let Some(turn_state) = turn_state
                 {
@@ -854,7 +886,7 @@ fn safety_buffering_for_event(
 }
 
 async fn send_websocket_request(
-    ws_stream: &WsStream,
+    ws_stream: &mut WsStream,
     request_text: String,
     idle_timeout: Duration,
     telemetry: Option<&Arc<dyn WebsocketTelemetry>>,
@@ -867,9 +899,7 @@ async fn send_websocket_request(
     )
     .await
     .map_err(|_| ApiError::Stream("idle timeout sending websocket request".into()))
-    .and_then(|result| {
-        result.map_err(|err| ApiError::Stream(format!("failed to send websocket request: {err}")))
-    });
+    .and_then(|result| result.map_err(map_ws_stream_error));
 
     if let Some(t) = telemetry.as_ref() {
         t.on_ws_request(
@@ -884,9 +914,8 @@ async fn send_websocket_request(
     Ok(())
 }
 
-fn serialize_websocket_request(request: &ResponsesWsRequest) -> Result<String, ApiError> {
-    crate::common::encode_responses_ws_request(request)
-        .and_then(|value| serde_json::to_string(&value))
+fn serialize_websocket_request(request: &ResponsesWsRequest<'_>) -> Result<String, ApiError> {
+    serde_json::to_string(request)
         .map_err(|err| ApiError::Stream(format!("failed to encode websocket request: {err}")))
 }
 
@@ -894,21 +923,22 @@ fn serialize_websocket_request(request: &ResponsesWsRequest) -> Result<String, A
 mod tests {
     use super::*;
     use crate::common::ResponseCreateWsRequest;
+    use crate::common::ResponsesApiRequest;
     use codex_protocol::ResponseItemId;
     use codex_protocol::models::ContentItem;
     use codex_protocol::models::ResponseItem;
     use pretty_assertions::assert_eq;
     use serde_json::json;
+    use serde_json::value::RawValue;
+    use serde_json::value::to_raw_value;
     use std::collections::HashMap;
+    use std::sync::Arc;
 
     #[test]
     fn direct_serialization_preserves_websocket_request_payload() {
-        let request = ResponsesWsRequest::ResponseCreate(ResponseCreateWsRequest {
-            prompt_cache_options: None,
-            prompt_cache_breakpoints: Vec::new(),
+        let api_request = ResponsesApiRequest {
             model: "gpt-test".to_string(),
             instructions: "Use the available tools.".to_string(),
-            previous_response_id: Some("resp-1".to_string()),
             input: vec![ResponseItem::Message {
                 id: Some(ResponseItemId::with_suffix("msg", "1")),
                 role: "user".to_string(),
@@ -918,11 +948,17 @@ mod tests {
                 phase: None,
                 internal_chat_message_metadata_passthrough: None,
             }],
-            tools: Some(vec![json!({
-                "type": "function",
-                "name": "lookup",
-                "parameters": {"type": "object"}
-            })]),
+            tools: Some(
+                Arc::<RawValue>::from(
+                    to_raw_value(&vec![json!({
+                        "type": "function",
+                        "name": "lookup",
+                        "parameters": {"type": "object"}
+                    })])
+                    .expect("serialize tools"),
+                )
+                .into(),
+            ),
             tool_choice: "auto".to_string(),
             parallel_tool_calls: true,
             reasoning: None,
@@ -933,20 +969,31 @@ mod tests {
             service_tier: Some("priority".to_string()),
             prompt_cache_key: Some("cache-key".to_string()),
             text: None,
-            generate: Some(false),
+            access_programs: Some(
+                codex_protocol::turn_input::CyberAccessProgram::DaybreakBlue.into(),
+            ),
             client_metadata: Some(HashMap::from([(
                 "traceparent".to_string(),
                 "00-0123456789abcdef0123456789abcdef-0123456789abcdef-01".to_string(),
             )])),
+        };
+        let request = ResponsesWsRequest::ResponseCreate(ResponseCreateWsRequest {
+            previous_response_id: Some("resp-1".to_string()),
+            generate: Some(false),
+            ..ResponseCreateWsRequest::from(&api_request)
         });
 
-        let previous_payload = serde_json::to_value(&request).expect("serialize previous payload");
+        let mut expected_payload =
+            serde_json::to_value(&api_request).expect("serialize responses API request");
+        expected_payload["type"] = json!("response.create");
+        expected_payload["previous_response_id"] = json!("resp-1");
+        expected_payload["generate"] = json!(false);
         let request_text =
             serialize_websocket_request(&request).expect("serialize websocket request");
         let wire_payload =
             serde_json::from_str::<Value>(&request_text).expect("parse websocket request");
 
-        assert_eq!(wire_payload, previous_payload);
+        assert_eq!(wire_payload, expected_payload);
     }
 
     #[test]
@@ -1063,11 +1110,15 @@ mod tests {
             .expect("expected websocket error payload to be parsed");
         let api_error = map_wrapped_websocket_error_event(wrapped_error, payload)
             .expect("expected websocket error payload to map to ApiError");
-        let ApiError::Retryable { message, delay } = api_error else {
+        let ApiError::Retryable {
+            message,
+            retry_after,
+        } = api_error
+        else {
             panic!("expected ApiError::Retryable");
         };
         assert_eq!(message, WEBSOCKET_CONNECTION_LIMIT_REACHED_MESSAGE);
-        assert_eq!(delay, None);
+        assert_eq!(retry_after, None);
     }
 
     #[test]

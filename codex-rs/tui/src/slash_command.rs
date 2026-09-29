@@ -1,4 +1,3 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use strum::IntoEnumIterator;
 use strum_macros::AsRefStr;
 use strum_macros::EnumIter;
@@ -14,22 +13,16 @@ pub enum SlashCommand {
     // DO NOT ALPHA-SORT! Enum order is presentation order in the popup, so
     // more frequently used commands should be listed first.
     Model,
-    PrunerModel,
-    MemoryModel,
+    Ide,
     Permissions,
-    Yolo,
-    #[strum(serialize = "hotkeys", serialize = "keymap")]
     Keymap,
     Vim,
     #[strum(serialize = "setup-default-sandbox")]
     ElevateSandbox,
-    #[strum(serialize = "sandbox-add-read-dir")]
-    SandboxReadRoot,
-    #[strum(to_string = "settings")]
     Experimental,
     #[strum(to_string = "approve")]
     AutoReview,
-    Add,
+    Memories,
     Skills,
     Import,
     Hooks,
@@ -37,125 +30,129 @@ pub enum SlashCommand {
     Rename,
     New,
     Archive,
-    #[strum(to_string = "del")]
     Delete,
     Resume,
     Fork,
+    Worktree,
     App,
     Init,
     Compact,
-    Prune,
-    SmartPrune,
-    #[strum(to_string = "force-prune")]
-    ForcePrune,
+    Recap,
     Plan,
+    Voice,
     Goal,
-    Agent,
+    Agents,
     Side,
     Btw,
     Copy,
+    Export,
     Raw,
+    Tui,
     Diff,
     Mention,
+    Status,
+    Daemon,
+    Warnings,
+    Cd,
+    #[strum(to_string = "pwd", serialize = "cwd")]
+    Pwd,
     Usage,
-    Context,
-    Dashboard,
     DebugConfig,
     Title,
     Statusline,
     Theme,
+    #[strum(to_string = "pets", serialize = "pet")]
+    Pets,
     Mcp,
-    Ide,
     Apps,
     Plugins,
     Logout,
     Quit,
+    Exit,
+    Feedback,
+    Rollout,
     Ps,
-    #[strum(to_string = "kill")]
+    #[strum(to_string = "stop", serialize = "clean")]
     Stop,
     Clear,
-    Personality,
+    TestApproval,
     #[strum(serialize = "subagents")]
     MultiAgents,
+    // Debugging commands.
+    #[strum(serialize = "debug-m-drop")]
+    MemoryDrop,
+    #[strum(serialize = "debug-m-update")]
+    MemoryUpdate,
 }
 
 impl SlashCommand {
     /// User-visible description shown in the popup.
     pub fn description(self) -> &'static str {
         match self {
+            SlashCommand::Feedback => "send logs to maintainers",
             SlashCommand::New => "start a new chat during a conversation",
-            SlashCommand::Init => "create an AGENTS.md file with instructions for Elpis",
-            SlashCommand::Compact => {
-                "compact now, or /compact N to set remaining-context pressure (0 < N < 70)"
-            }
-            SlashCommand::Prune => "turn Smart Prune on for subsequent turns",
+            SlashCommand::Init => "create an AGENTS.md file with instructions for Codex",
+            SlashCommand::Compact => "summarize conversation to prevent hitting the context limit",
+            SlashCommand::Recap => "summarize the current conversation now",
             SlashCommand::Review => "review my current changes and find issues",
             SlashCommand::Rename => "rename the current thread",
             SlashCommand::Resume => "resume a saved chat",
-            SlashCommand::Archive => "archive this session and exit",
-            SlashCommand::Delete => "permanently delete this session and quit",
+            SlashCommand::Archive => "archive this session",
+            SlashCommand::Delete => "permanently delete this session",
             SlashCommand::Clear => "clear the terminal and start a new chat",
             SlashCommand::Fork => "fork the current chat",
-            SlashCommand::App => "continue this session in Elpis Desktop",
-            SlashCommand::Quit => "quit Elpis",
-            SlashCommand::Copy => "copy last prompt and response as markdown",
+            SlashCommand::Worktree => "start or continue a conversation in a new worktree",
+            SlashCommand::App => "continue this session in the Desktop app",
+            SlashCommand::Quit | SlashCommand::Exit => "exit Codex",
+            SlashCommand::Copy => "copy the last response or part of it",
+            SlashCommand::Export => "export the conversation as markdown",
             SlashCommand::Raw => "toggle raw scrollback mode for copy-friendly terminal selection",
+            SlashCommand::Tui => "choose the TUI mode for the next launch",
             SlashCommand::Diff => "show git diff (including untracked files)",
             SlashCommand::Mention => "mention a file",
-            SlashCommand::Skills => "use skills to improve how Elpis performs specific tasks",
+            SlashCommand::Skills => "use skills to improve how Codex performs specific tasks",
             SlashCommand::Import => "import setup, this project, and recent chats from Claude Code",
             SlashCommand::Hooks => "view and manage lifecycle hooks",
-            SlashCommand::Usage => {
-                "inspect this session, or add daily/weekly/cumulative for account activity"
-            }
-            SlashCommand::SmartPrune => {
-                "optimize fresh tool results before their first model request"
-            }
-            SlashCommand::ForcePrune => {
-                "force a prune down to a target of remaining context: /force-prune <1-100>"
-            }
-            SlashCommand::Context => {
-                "show context usage as a grid, by category, with checkpoints and system files"
-            }
-            SlashCommand::Dashboard => {
-                "show the current context window, admitted sources, and pruning evidence"
-            }
+            SlashCommand::Daemon => "Manage the local background server",
+            SlashCommand::Warnings => "view retained warnings and diagnostic details",
+            SlashCommand::Status => "show current session configuration and token usage",
+            SlashCommand::Cd => "change the current working directory",
+            SlashCommand::Pwd => "show the current working directory",
+            SlashCommand::Usage => "view account usage or use a usage limit reset",
             SlashCommand::DebugConfig => "show config layers and requirement sources for debugging",
             SlashCommand::Title => "configure which items appear in the terminal title",
             SlashCommand::Statusline => "configure which items appear in the status line",
             SlashCommand::Theme => "choose a syntax highlighting theme",
+            SlashCommand::Pets => "choose or hide the terminal pet",
             SlashCommand::Ps => "list background terminals",
-            SlashCommand::Stop => "kill all background terminals",
-            SlashCommand::Model => "choose a provider-aware model and reasoning effort",
-            SlashCommand::PrunerModel => {
-                "view or set the model that prunes context; follows /memory-model when unset: /pruner-model <id|default>"
+            SlashCommand::Stop => "stop all background terminals",
+            SlashCommand::MemoryDrop => "DO NOT USE",
+            SlashCommand::MemoryUpdate => "DO NOT USE",
+            SlashCommand::Model => "choose what model and reasoning effort to use",
+            SlashCommand::Ide => {
+                "include current selection, open files, and other context from your IDE"
             }
-            SlashCommand::MemoryModel => {
-                "set background tasks (pruning and session naming); memory uses the responding agent: /memory-model <id|provider:id|default>"
-            }
-            SlashCommand::Personality => "choose a communication style for Elpis",
             SlashCommand::Plan => "switch to Plan mode",
+            SlashCommand::Voice => "start or stop voice; use /voice settings to choose a voice",
             SlashCommand::Goal => "set or view the goal for a long-running task",
-            SlashCommand::Agent | SlashCommand::MultiAgents => "switch the active agent thread",
+            SlashCommand::Agents => "open the agent command center",
+            SlashCommand::MultiAgents => "switch between this session's subagents",
             SlashCommand::Side | SlashCommand::Btw => {
                 "start a side conversation in an ephemeral fork"
             }
-            SlashCommand::Permissions => "choose what Elpis is allowed to do",
-            SlashCommand::Yolo => "save Full Access as the default for future chats",
-            SlashCommand::Keymap => "view or change TUI hotkeys",
+            SlashCommand::Permissions => "choose what Codex is allowed to do",
+            SlashCommand::Keymap => "remap TUI shortcuts",
             SlashCommand::Vim => "toggle Vim mode for the composer",
             SlashCommand::ElevateSandbox => "set up elevated agent sandbox",
-            SlashCommand::SandboxReadRoot => {
-                "let sandbox read a directory: /sandbox-add-read-dir <absolute_path>"
-            }
-            SlashCommand::Experimental => "configure Elpis settings",
+            SlashCommand::Experimental => "toggle experimental features",
             SlashCommand::AutoReview => "approve one retry of a recent auto-review denial",
-            SlashCommand::Add => "add a file to the Context Ledger: /add <path>",
-            SlashCommand::Mcp => "list MCP tools; verbose for details, reset to reload connections",
-            SlashCommand::Ide => "include IDE selection and open tabs: /ide [on|off|status]",
+            SlashCommand::Memories => "configure memory use and generation",
+            SlashCommand::Mcp => "list configured MCP tools; use /mcp verbose for details",
             SlashCommand::Apps => "manage apps",
             SlashCommand::Plugins => "browse plugins",
-            SlashCommand::Logout => "log out",
+            SlashCommand::Logout => "log out of Codex",
+            SlashCommand::Rollout => "print the rollout file path",
+            SlashCommand::TestApproval => "test approval request",
         }
     }
 
@@ -169,25 +166,26 @@ impl SlashCommand {
     pub fn supports_inline_args(self) -> bool {
         matches!(
             self,
-            SlashCommand::SmartPrune
-                | SlashCommand::Compact
-                | SlashCommand::PrunerModel
-                | SlashCommand::MemoryModel
-                | SlashCommand::ForcePrune
-                | SlashCommand::Review
-                | SlashCommand::Add
+            SlashCommand::Review
                 | SlashCommand::Rename
+                | SlashCommand::New
+                | SlashCommand::Clear
+                | SlashCommand::Fork
                 | SlashCommand::Plan
                 | SlashCommand::Goal
+                | SlashCommand::Voice
+                | SlashCommand::Ide
                 | SlashCommand::Keymap
                 | SlashCommand::Mcp
-                | SlashCommand::Ide
+                | SlashCommand::Export
                 | SlashCommand::Raw
+                | SlashCommand::Cd
+                | SlashCommand::Pwd
+                | SlashCommand::Usage
+                | SlashCommand::Pets
                 | SlashCommand::Side
                 | SlashCommand::Btw
                 | SlashCommand::Resume
-                | SlashCommand::SandboxReadRoot
-                | SlashCommand::Usage
         )
     }
 
@@ -196,12 +194,44 @@ impl SlashCommand {
         matches!(
             self,
             SlashCommand::Copy
+                | SlashCommand::Agents
+                | SlashCommand::Export
                 | SlashCommand::Raw
                 | SlashCommand::Diff
                 | SlashCommand::Mention
+                | SlashCommand::Status
+                | SlashCommand::Daemon
+                | SlashCommand::Warnings
+                | SlashCommand::Pwd
                 | SlashCommand::Usage
-                | SlashCommand::Context
-                | SlashCommand::Dashboard
+                | SlashCommand::Ide
+        )
+    }
+
+    /// Whether dispatch needs thread state to validate this command before consuming its draft.
+    /// The composer must defer busy-state rejection and draft clearing for these commands.
+    pub(crate) fn requires_dispatch_validation(self) -> bool {
+        matches!(self, SlashCommand::Review)
+    }
+
+    /// Commands that do not require a writable current thread. The server must still be connected.
+    pub(crate) fn available_when_thread_unavailable(self) -> bool {
+        matches!(
+            self,
+            SlashCommand::New
+                | SlashCommand::Clear
+                | SlashCommand::Resume
+                | SlashCommand::Agents
+                | SlashCommand::MultiAgents
+                | SlashCommand::Quit
+                | SlashCommand::Exit
+                | SlashCommand::Status
+                | SlashCommand::Warnings
+                | SlashCommand::DebugConfig
+                | SlashCommand::Pwd
+                | SlashCommand::Rollout
+                | SlashCommand::Copy
+                | SlashCommand::Raw
         )
     }
 
@@ -212,122 +242,72 @@ impl SlashCommand {
             | SlashCommand::Archive
             | SlashCommand::Delete
             | SlashCommand::Fork
+            | SlashCommand::Worktree
             | SlashCommand::Init
             | SlashCommand::Compact
-            | SlashCommand::Prune
-            | SlashCommand::SmartPrune
-            | SlashCommand::ForcePrune
+            | SlashCommand::Recap
+            | SlashCommand::Export
             | SlashCommand::Keymap
+            | SlashCommand::Tui
             | SlashCommand::Vim
             | SlashCommand::ElevateSandbox
-            | SlashCommand::SandboxReadRoot
             | SlashCommand::Experimental
-            | SlashCommand::Add
+            | SlashCommand::Memories
             | SlashCommand::Import
             | SlashCommand::Review
             | SlashCommand::Plan
+            | SlashCommand::Cd
             | SlashCommand::Clear
-            | SlashCommand::Logout => false,
+            | SlashCommand::Logout
+            | SlashCommand::MemoryDrop
+            | SlashCommand::MemoryUpdate => false,
             SlashCommand::Diff
             | SlashCommand::Resume
             | SlashCommand::Model
-            | SlashCommand::PrunerModel
-            | SlashCommand::MemoryModel
-            | SlashCommand::Personality
             | SlashCommand::Permissions
-            | SlashCommand::Yolo
             | SlashCommand::Copy
             | SlashCommand::Raw
             | SlashCommand::Rename
             | SlashCommand::Mention
             | SlashCommand::Skills
             | SlashCommand::Hooks
+            | SlashCommand::Status
+            | SlashCommand::Daemon
+            | SlashCommand::Warnings
+            | SlashCommand::Pwd
             | SlashCommand::Usage
-            | SlashCommand::Context
-            | SlashCommand::Dashboard
             | SlashCommand::DebugConfig
             | SlashCommand::Ps
             | SlashCommand::Stop
             | SlashCommand::App
             | SlashCommand::Goal
+            | SlashCommand::Voice
             | SlashCommand::Mcp
-            | SlashCommand::Ide
             | SlashCommand::Apps
             | SlashCommand::Plugins
             | SlashCommand::Title
             | SlashCommand::Statusline
             | SlashCommand::AutoReview
+            | SlashCommand::Feedback
+            | SlashCommand::Ide
             | SlashCommand::Quit
+            | SlashCommand::Exit
             | SlashCommand::Side
             | SlashCommand::Btw => true,
-            SlashCommand::Agent | SlashCommand::MultiAgents => true,
-            SlashCommand::Theme => false,
+            SlashCommand::Rollout => true,
+            SlashCommand::TestApproval => true,
+            SlashCommand::Agents | SlashCommand::MultiAgents => true,
+            SlashCommand::Theme | SlashCommand::Pets => false,
         }
     }
 
     fn is_visible(self) -> bool {
         match self {
-            // Elpis owns the continuity, context, memory, permissions, and runtime
-            // surfaces below. The remaining inherited commands are intentionally not
-            // part of the public Elpis command contract.
-            SlashCommand::Model
-            | SlashCommand::PrunerModel
-            | SlashCommand::MemoryModel
-            | SlashCommand::Permissions
-            | SlashCommand::Yolo
-            | SlashCommand::Add
-            | SlashCommand::Skills
-            | SlashCommand::Hooks
-            | SlashCommand::New
-            | SlashCommand::Resume
-            | SlashCommand::Init
-            | SlashCommand::Compact
-            | SlashCommand::Prune
-            | SlashCommand::SmartPrune
-            | SlashCommand::ForcePrune
-            | SlashCommand::Diff
-            | SlashCommand::Usage
-            | SlashCommand::Context
-            | SlashCommand::Dashboard
-            | SlashCommand::Mcp
-            | SlashCommand::Ide
-            | SlashCommand::Quit
-            | SlashCommand::Keymap
-            | SlashCommand::Theme
-            | SlashCommand::Fork
-            | SlashCommand::Goal
-            | SlashCommand::Rename
-            | SlashCommand::Copy
-            | SlashCommand::Experimental
-            // Inherited Codex features being re-evaluated for the Elpis contract:
-            // multi-agent threads (I6 /multi-task) and Plan mode (evaluated
-            // against I5 structured interactive clarification).
-            | SlashCommand::Agent
-            | SlashCommand::MultiAgents
-            | SlashCommand::Plan
-            | SlashCommand::Clear => true,
-            SlashCommand::Review
-            | SlashCommand::Delete
-            | SlashCommand::Side
-            | SlashCommand::Btw
-            | SlashCommand::Logout
-            | SlashCommand::ElevateSandbox
-            | SlashCommand::SandboxReadRoot
-            | SlashCommand::AutoReview
-            | SlashCommand::Import
-            | SlashCommand::Archive
-            | SlashCommand::App
-            | SlashCommand::Mention
-            | SlashCommand::Raw
-            | SlashCommand::DebugConfig
-            | SlashCommand::Title
-            | SlashCommand::Statusline
-            | SlashCommand::Apps
-            | SlashCommand::Plugins
-            | SlashCommand::Ps
-            | SlashCommand::Stop
-            | SlashCommand::Personality
-            | SlashCommand::Vim => false,
+            SlashCommand::Copy => !cfg!(target_os = "android"),
+            SlashCommand::App => cfg!(any(target_os = "macos", target_os = "windows")),
+            SlashCommand::Voice => true,
+            SlashCommand::Rollout | SlashCommand::TestApproval => cfg!(debug_assertions),
+            _ => true,
         }
     }
 }
@@ -348,147 +328,31 @@ mod tests {
     use super::SlashCommand;
 
     #[test]
-    fn kill_command_is_canonical_name() {
-        assert_eq!(SlashCommand::Stop.command(), "kill");
+    fn stop_command_is_canonical_name() {
+        assert_eq!(SlashCommand::Stop.command(), "stop");
     }
 
     #[test]
-    fn removed_stop_names_do_not_parse() {
-        assert!(SlashCommand::from_str("stop").is_err());
-        assert!(SlashCommand::from_str("clean").is_err());
+    fn clean_alias_parses_to_stop_command() {
+        assert_eq!(SlashCommand::from_str("clean"), Ok(SlashCommand::Stop));
     }
 
     #[test]
-    fn ide_command_is_visible_argument_aware_and_available_during_tasks() {
-        assert_eq!(SlashCommand::from_str("ide"), Ok(SlashCommand::Ide));
-        assert!(SlashCommand::Ide.supports_inline_args());
-        assert!(SlashCommand::Ide.available_during_task());
-        assert!(
-            super::built_in_slash_commands()
-                .into_iter()
-                .any(|(name, _)| name == "ide")
-        );
-    }
-
-    #[test]
-    fn prune_enables_smart_prune_without_replacing_explicit_recovery() {
-        assert_eq!(SlashCommand::from_str("prune"), Ok(SlashCommand::Prune));
-        assert_eq!(SlashCommand::from_str("compact"), Ok(SlashCommand::Compact));
-        assert_eq!(
-            SlashCommand::from_str("smart-prune"),
-            Ok(SlashCommand::SmartPrune)
-        );
-        assert_eq!(
-            SlashCommand::from_str("force-prune"),
-            Ok(SlashCommand::ForcePrune)
-        );
-        assert!(
-            super::built_in_slash_commands()
-                .into_iter()
-                .any(|(name, command)| name == "prune" && command == SlashCommand::Prune)
-        );
-    }
-
-    #[test]
-    fn renamed_commands_use_elpis_names() {
-        assert_eq!(SlashCommand::Keymap.command(), "hotkeys");
-        assert_eq!(SlashCommand::Delete.command(), "del");
-        assert_eq!(SlashCommand::Experimental.command(), "settings");
-        assert_eq!(SlashCommand::from_str("keymap"), Ok(SlashCommand::Keymap));
-        assert_eq!(SlashCommand::from_str("hotkeys"), Ok(SlashCommand::Keymap));
-        assert!(SlashCommand::from_str("delete").is_err());
-        assert!(SlashCommand::from_str("experimental").is_err());
-    }
-
-    #[test]
-    fn removed_commands_are_not_visible_or_parseable() {
-        let visible = super::built_in_slash_commands()
-            .into_iter()
-            .map(|(name, _)| name)
-            .collect::<Vec<_>>();
-        for removed in [
-            "archive",
-            "btw",
-            "del",
-            "debug-m-drop",
-            "debug-m-update",
-            "exit",
-            "feedback",
-            "apps",
-            "app",
-            "debug-config",
-            "experimental",
-            "import",
-            "mention",
-            "personality",
-            "plugins",
-            "raw",
-            "review",
-            "status",
-            "statusline",
-            "title",
-            "vim",
-        ] {
-            assert!(!visible.contains(&removed), "{removed} should be removed");
-        }
-        assert!(visible.contains(&"add"));
-        assert!(visible.contains(&"usage"));
-        assert!(visible.contains(&"settings"));
-        assert!(visible.contains(&"fork"));
-        assert!(visible.contains(&"goal"));
-        assert!(visible.contains(&"hooks"));
-        assert!(visible.contains(&"copy"));
-        // Unhidden 2026-07-25 for evaluation against the multi-agent backlog (I6).
-        assert!(visible.contains(&"agent"));
-        assert!(visible.contains(&"subagents"));
-        // Unhidden 2026-07-26 so Masih can evaluate inherited Plan mode before any I5
-        // structured-clarification work starts. Re-hide here if I5 supersedes it.
-        assert!(visible.contains(&"plan"));
-        // The terminal pets feature was deleted outright, not hidden.
-        assert!(SlashCommand::from_str("pets").is_err());
-        assert!(SlashCommand::from_str("debug-m-drop").is_err());
-        assert!(SlashCommand::from_str("debug-m-update").is_err());
+    fn pet_alias_parses_to_pets_command() {
+        assert_eq!(SlashCommand::Pets.command(), "pets");
+        assert_eq!(SlashCommand::from_str("pet"), Ok(SlashCommand::Pets));
     }
 
     #[test]
     fn certain_commands_are_available_during_task() {
         assert!(SlashCommand::Goal.available_during_task());
+        assert!(SlashCommand::Ide.available_during_task());
         assert!(SlashCommand::Title.available_during_task());
         assert!(SlashCommand::Statusline.available_during_task());
+        assert!(SlashCommand::Raw.available_during_task());
+        assert!(SlashCommand::Raw.available_in_side_conversation());
+        assert!(SlashCommand::Raw.supports_inline_args());
         assert!(SlashCommand::App.available_during_task());
-    }
-
-    #[test]
-    fn dashboard_is_a_visible_read_only_context_command() {
-        assert_eq!(
-            SlashCommand::from_str("dashboard"),
-            Ok(SlashCommand::Dashboard)
-        );
-        assert_eq!(SlashCommand::Dashboard.command(), "dashboard");
-        assert!(SlashCommand::Dashboard.available_in_side_conversation());
-        assert!(SlashCommand::Dashboard.available_during_task());
-        assert!(
-            super::built_in_slash_commands()
-                .into_iter()
-                .any(|(name, command)| name == "dashboard" && command == SlashCommand::Dashboard)
-        );
-        assert!(SlashCommand::Dashboard.description().contains("context"));
-    }
-
-    #[test]
-    fn smart_prune_is_visible_argument_aware_and_idle_only() {
-        assert_eq!(
-            SlashCommand::from_str("smart-prune"),
-            Ok(SlashCommand::SmartPrune)
-        );
-        assert!(SlashCommand::SmartPrune.supports_inline_args());
-        assert!(!SlashCommand::SmartPrune.available_during_task());
-        assert!(
-            super::built_in_slash_commands()
-                .into_iter()
-                .any(|(name, command)| name == "smart-prune"
-                    && command == SlashCommand::SmartPrune)
-        );
     }
 
     #[test]

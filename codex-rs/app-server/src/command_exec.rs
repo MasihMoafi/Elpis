@@ -1,4 +1,3 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::AtomicI64;
@@ -276,13 +275,22 @@ impl CommandExecManager {
                 &env,
                 &arg0,
                 size.unwrap_or_default(),
+                codex_utils_pty::ChildFds::Inherited(&[]),
             )
             .await
         } else if stream_stdin {
-            codex_utils_pty::spawn_pipe_process(program, args, cwd.as_path(), &env, &arg0).await
-        } else {
-            codex_utils_pty::spawn_pipe_process_no_stdin(program, args, cwd.as_path(), &env, &arg0)
+            codex_utils_pty::spawn_pipe_process(program, args, cwd.as_path(), &env, &arg0, &[])
                 .await
+        } else {
+            codex_utils_pty::spawn_pipe_process_no_stdin(
+                program,
+                args,
+                cwd.as_path(),
+                &env,
+                &arg0,
+                &[],
+            )
+            .await
         };
         let spawned = match spawned {
             Ok(spawned) => spawned,
@@ -711,7 +719,6 @@ mod tests {
             SandboxType::WindowsRestrictedToken,
             vec![cwd],
             WindowsSandboxLevel::Disabled,
-            /*windows_sandbox_private_desktop*/ false,
             PermissionProfile::read_only(),
             /*arg0*/ None,
         )
@@ -723,7 +730,10 @@ mod tests {
         let manager = CommandExecManager::default();
         let err = manager
             .start(StartCommandExecParams {
-                outgoing: Arc::new(OutgoingMessageSender::new(tx)),
+                outgoing: Arc::new(OutgoingMessageSender::new(
+                    tx,
+                    codex_analytics::AnalyticsEventsClient::disabled(),
+                )),
                 request_id: ConnectionRequestId {
                     connection_id: ConnectionId(1),
                     request_id: codex_app_server_protocol::RequestId::Integer(42),
@@ -759,7 +769,10 @@ mod tests {
 
         manager
             .start(StartCommandExecParams {
-                outgoing: Arc::new(OutgoingMessageSender::new(tx)),
+                outgoing: Arc::new(OutgoingMessageSender::new(
+                    tx,
+                    codex_analytics::AnalyticsEventsClient::disabled(),
+                )),
                 request_id: request_id.clone(),
                 process_id: Some("proc-99".to_string()),
                 exec_request: windows_sandbox_exec_request(),
@@ -806,7 +819,10 @@ mod tests {
 
         manager
             .start(StartCommandExecParams {
-                outgoing: Arc::new(OutgoingMessageSender::new(tx)),
+                outgoing: Arc::new(OutgoingMessageSender::new(
+                    tx,
+                    codex_analytics::AnalyticsEventsClient::disabled(),
+                )),
                 request_id: request_id.clone(),
                 process_id: Some("proc-100".to_string()),
                 exec_request: ExecRequest::new(
@@ -820,7 +836,6 @@ mod tests {
                     SandboxType::None,
                     vec![cwd.clone()],
                     WindowsSandboxLevel::Disabled,
-                    /*windows_sandbox_private_desktop*/ false,
                     PermissionProfile::read_only(),
                     /*arg0*/ None,
                 ),
@@ -868,8 +883,11 @@ mod tests {
             panic!("expected execution response after termination");
         };
         assert_eq!(response.id, request_id.request_id);
-        let response: CommandExecResponse =
-            serde_json::from_value(response.result).expect("deserialize command/exec response");
+        let codex_app_server_protocol::ClientResponsePayload::OneOffCommandExec(response) =
+            *response.result
+        else {
+            panic!("expected command/exec response");
+        };
         assert_ne!(response.exit_code, 0);
         assert_eq!(response.stdout, "");
         // The deferred response now drains any already-emitted stderr before
@@ -891,7 +909,10 @@ mod tests {
 
         manager
             .start(StartCommandExecParams {
-                outgoing: Arc::new(OutgoingMessageSender::new(tx)),
+                outgoing: Arc::new(OutgoingMessageSender::new(
+                    tx,
+                    codex_analytics::AnalyticsEventsClient::disabled(),
+                )),
                 request_id: request_id.clone(),
                 process_id: Some("proc-101".to_string()),
                 exec_request: ExecRequest::new(
@@ -908,7 +929,6 @@ mod tests {
                     SandboxType::None,
                     vec![cwd],
                     WindowsSandboxLevel::Disabled,
-                    /*windows_sandbox_private_desktop*/ false,
                     PermissionProfile::read_only(),
                     /*arg0*/ None,
                 ),
@@ -941,8 +961,11 @@ mod tests {
             panic!("expected execution response after cancellation");
         };
         assert_eq!(response.id, request_id.request_id);
-        let response: CommandExecResponse =
-            serde_json::from_value(response.result).expect("deserialize command/exec response");
+        let codex_app_server_protocol::ClientResponsePayload::OneOffCommandExec(response) =
+            *response.result
+        else {
+            panic!("expected command/exec response");
+        };
         assert_ne!(response.exit_code, EXEC_TIMEOUT_EXIT_CODE);
     }
 

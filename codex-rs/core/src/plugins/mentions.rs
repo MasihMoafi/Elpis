@@ -1,29 +1,62 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use std::collections::HashMap;
 use std::collections::HashSet;
 
 use codex_connectors::metadata::connector_mention_slug;
 use codex_protocol::user_input::UserInput;
+use codex_skills::ToolMentionKind;
+use codex_skills::app_id_from_path;
+use codex_skills::extract_tool_mentions_with_sigil;
+use codex_skills::plugin_config_name_from_path;
+use codex_skills::tool_kind_for_path;
 
 use crate::connectors;
-use crate::injection::ToolMentionKind;
-use crate::injection::extract_tool_mentions_with_sigil;
-use crate::injection::plugin_config_name_from_path;
-use crate::injection::tool_kind_for_path;
 use crate::mention_syntax::PLUGIN_TEXT_MENTION_SIGIL;
+use crate::mention_syntax::TOOL_MENTION_SIGIL;
 
 use super::PluginCapabilitySummary;
 
-fn tool_mention_paths_with_sigil(messages: &[String], sigil: char) -> HashSet<String> {
+pub(crate) struct CollectedToolMentions {
+    pub(crate) plain_names: HashSet<String>,
+    pub(crate) paths: HashSet<String>,
+}
+
+pub(crate) fn collect_tool_mentions_from_messages(messages: &[String]) -> CollectedToolMentions {
+    collect_tool_mentions_from_messages_with_sigil(messages, TOOL_MENTION_SIGIL)
+}
+
+fn collect_tool_mentions_from_messages_with_sigil(
+    messages: &[String],
+    sigil: char,
+) -> CollectedToolMentions {
+    let mut plain_names = HashSet::new();
     let mut paths = HashSet::new();
     for message in messages {
-        paths.extend(
-            extract_tool_mentions_with_sigil(message, sigil)
-                .paths()
-                .map(str::to_string),
-        );
+        let mentions = extract_tool_mentions_with_sigil(message, sigil);
+        plain_names.extend(mentions.plain_names().map(str::to_string));
+        paths.extend(mentions.paths().map(str::to_string));
     }
-    paths
+    CollectedToolMentions { plain_names, paths }
+}
+
+pub(crate) fn collect_explicit_app_ids(input: &[UserInput]) -> HashSet<String> {
+    let messages = input
+        .iter()
+        .filter_map(|item| match item {
+            UserInput::Text { text, .. } => Some(text.clone()),
+            _ => None,
+        })
+        .collect::<Vec<String>>();
+
+    input
+        .iter()
+        .filter_map(|item| match item {
+            UserInput::Mention { path, .. } => Some(path.clone()),
+            _ => None,
+        })
+        .chain(collect_tool_mentions_from_messages(&messages).paths)
+        .filter(|path| tool_kind_for_path(path.as_str()) == ToolMentionKind::App)
+        .filter_map(|path| app_id_from_path(path.as_str()).map(str::to_string))
+        .collect()
 }
 
 /// Collect explicit structured or linked `plugin://...` mentions.
@@ -35,6 +68,19 @@ pub(crate) fn collect_explicit_plugin_mentions(
         return Vec::new();
     }
 
+    // `config_name` stores the full plugin ID, not its display or mention name.
+    let mentioned_plugin_ids = collect_explicit_plugin_ids(input);
+    plugins
+        .iter()
+        .filter(|plugin| mentioned_plugin_ids.contains(plugin.config_name.as_str()))
+        .cloned()
+        .collect()
+}
+
+/// Collect exact IDs from explicit `plugin://` references, independently of display names.
+///
+/// Host plugins use `<plugin>@<marketplace>` IDs; selected roots may supply opaque IDs.
+pub(crate) fn collect_explicit_plugin_ids(input: &[UserInput]) -> HashSet<String> {
     let messages = input
         .iter()
         .filter_map(|item| match item {
@@ -43,7 +89,7 @@ pub(crate) fn collect_explicit_plugin_mentions(
         })
         .collect::<Vec<String>>();
 
-    let mentioned_config_names: HashSet<String> = input
+    input
         .iter()
         .filter_map(|item| match item {
             UserInput::Mention { path, .. } => Some(path.clone()),
@@ -51,20 +97,11 @@ pub(crate) fn collect_explicit_plugin_mentions(
         })
         .chain(
             // Plugin plaintext links use `@`, not the default `$` tool sigil.
-            tool_mention_paths_with_sigil(&messages, PLUGIN_TEXT_MENTION_SIGIL),
+            collect_tool_mentions_from_messages_with_sigil(&messages, PLUGIN_TEXT_MENTION_SIGIL)
+                .paths,
         )
         .filter(|path| tool_kind_for_path(path.as_str()) == ToolMentionKind::Plugin)
         .filter_map(|path| plugin_config_name_from_path(path.as_str()).map(str::to_string))
-        .collect();
-
-    if mentioned_config_names.is_empty() {
-        return Vec::new();
-    }
-
-    plugins
-        .iter()
-        .filter(|plugin| mentioned_config_names.contains(plugin.config_name.as_str()))
-        .cloned()
         .collect()
 }
 

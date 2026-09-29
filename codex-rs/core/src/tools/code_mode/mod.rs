@@ -1,8 +1,9 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 mod delegate;
 mod execute_handler;
 pub(crate) mod execute_spec;
+mod output;
 mod response_adapter;
+mod telemetry;
 mod wait_handler;
 pub(crate) mod wait_spec;
 
@@ -17,35 +18,41 @@ use codex_code_mode::CodeModeSession;
 use codex_code_mode::CodeModeSessionProvider;
 use codex_code_mode::CodeModeToolKind;
 use codex_code_mode::RuntimeResponse;
+use codex_protocol::ThreadId;
 use codex_protocol::models::FunctionCallOutputContentItem;
+use futures::future::join_all;
 use serde_json::Value as JsonValue;
 use tokio::sync::OnceCell;
 use tokio_util::sync::CancellationToken;
 
+use crate::config::CodeModeConfig;
 use crate::function_tool::FunctionCallError;
 use crate::original_image_detail::can_request_original_image_detail;
 use crate::original_image_detail::sanitize_original_image_detail as sanitize_image_detail_items;
 use crate::session::session::Session;
 use crate::session::step_context::StepContext;
 use crate::session::turn_context::TurnContext;
-use crate::tools::ToolRouter;
+use crate::tools::ExecutedToolCalls;
+use crate::tools::call_trace;
 use crate::tools::context::FunctionToolOutput;
 use crate::tools::context::SharedTurnDiffTracker;
 use crate::tools::context::ToolPayload;
-use crate::tools::effective_tool_mode;
 use crate::tools::parallel::ToolCallRuntime;
 use crate::tools::router::ToolCall;
 use crate::tools::router::ToolCallSource;
 use crate::unified_exec::resolve_max_tokens;
 use codex_protocol::openai_models::ToolMode;
 use codex_tools::ToolName;
+use codex_utils_audio::estimate_audio_token_count;
 use codex_utils_output_truncation::TruncationPolicy;
 use codex_utils_output_truncation::formatted_truncate_text_content_items_with_policy;
 use codex_utils_output_truncation::truncate_function_output_items_with_policy;
 
+use delegate::CodeModeCellDelegate;
 use delegate::CodeModeDispatchBroker;
 use delegate::CodeModeDispatchWorker;
 pub(crate) use execute_handler::CodeModeExecuteHandler;
+use output::CodeModeToolOutput;
 use response_adapter::into_function_call_output_content_items;
 pub(crate) use wait_handler::CodeModeWaitHandler;
 
@@ -53,9 +60,9 @@ pub(crate) const PUBLIC_TOOL_NAME: &str = codex_code_mode::PUBLIC_TOOL_NAME;
 pub(crate) const WAIT_TOOL_NAME: &str = codex_code_mode::WAIT_TOOL_NAME;
 pub(crate) const DEFAULT_WAIT_YIELD_TIME_MS: u64 = codex_code_mode::DEFAULT_WAIT_YIELD_TIME_MS;
 
-/// Returns true for the un-namespaced code-mode `exec` tool.
+/// Returns true for the code-mode `exec` tool in the default namespace.
 pub(crate) fn is_exec_tool_name(tool_name: &ToolName) -> bool {
-    tool_name.namespace.is_none() && tool_name.name == PUBLIC_TOOL_NAME
+    tool_name.is_default_namespace() && tool_name.name == PUBLIC_TOOL_NAME
 }
 
 #[derive(Clone)]
@@ -67,19 +74,51 @@ pub(crate) struct ExecContext {
 pub(crate) struct CodeModeService {
     session: OnceCell<Arc<dyn CodeModeSession>>,
     session_provider: Arc<dyn CodeModeSessionProvider>,
+    availability: Result<(), String>,
     dispatch_broker: Arc<CodeModeDispatchBroker>,
-    shutting_down: AtomicBool,
+    default_exec_yield_time_ms: u64,
+    shutdown_token: CancellationToken,
+    unavailable_warning_emitted: AtomicBool,
 }
 
 impl CodeModeService {
-    pub(crate) fn new(session_provider: Arc<dyn CodeModeSessionProvider>) -> Self {
-        let dispatch_broker = Arc::new(CodeModeDispatchBroker::new());
+    pub(crate) fn new(
+        thread_id: ThreadId,
+        session_provider: Arc<dyn CodeModeSessionProvider>,
+        config: &CodeModeConfig,
+        executed_tool_calls: ExecutedToolCalls,
+    ) -> Self {
+        let dispatch_broker = Arc::new(CodeModeDispatchBroker::new(thread_id, executed_tool_calls));
+        let availability = session_provider.availability();
         Self {
             session: OnceCell::new(),
             session_provider,
+            availability,
             dispatch_broker,
-            shutting_down: AtomicBool::new(false),
+            default_exec_yield_time_ms: config.default_exec_yield_time_ms,
+            shutdown_token: CancellationToken::new(),
+            unavailable_warning_emitted: AtomicBool::new(false),
         }
+    }
+
+    pub(crate) fn is_available(&self) -> bool {
+        self.availability.is_ok()
+    }
+
+    pub(crate) fn take_unavailable_warning(&self, tool_mode: ToolMode) -> Option<String> {
+        let error = self.availability.as_ref().err()?;
+        let behavior = match tool_mode {
+            ToolMode::Direct => "Falling back to direct tools",
+            ToolMode::CodeMode | ToolMode::CodeModeOnly => "Code mode will fail closed",
+        };
+        (!self
+            .unavailable_warning_emitted
+            .swap(true, Ordering::Relaxed))
+        .then(|| {
+            format!(
+                "Code Mode is unavailable because {error}. {behavior}; enable `features.code_mode_host` and install `codex-code-mode-host`."
+            )
+        })
     }
 
     pub(crate) fn session_provider(&self) -> Arc<dyn CodeModeSessionProvider> {
@@ -88,16 +127,27 @@ impl CodeModeService {
 
     pub(crate) async fn execute(
         &self,
-        request: codex_code_mode::ExecuteRequest,
+        mut request: codex_code_mode::ExecuteRequest,
+        step_context: Arc<StepContext>,
     ) -> Result<codex_code_mode::StartedCell, String> {
-        self.session().await?.execute(request).await
+        request
+            .yield_time_ms
+            .get_or_insert(self.default_exec_yield_time_ms);
+        let delegate = Arc::new(CodeModeCellDelegate {
+            broker: Arc::clone(&self.dispatch_broker),
+            step_context,
+        });
+        self.session()
+            .await?
+            .execute(request, delegate, /*preempt*/ None)
+            .await
     }
 
     pub(crate) async fn wait(
         &self,
         request: codex_code_mode::WaitRequest,
     ) -> Result<codex_code_mode::WaitOutcome, String> {
-        self.session().await?.wait(request).await
+        self.session().await?.wait(request, /*preempt*/ None).await
     }
 
     pub(crate) async fn terminate(
@@ -107,8 +157,25 @@ impl CodeModeService {
         self.session().await?.terminate(cell_id).await
     }
 
+    pub(crate) async fn interrupt_active_cells(&self) {
+        let Some(session) = self.session.get() else {
+            return;
+        };
+        join_all(
+            self.dispatch_broker
+                .active_cell_ids()
+                .into_iter()
+                .map(|cell_id| async move {
+                    if let Err(error) = session.terminate(cell_id.clone()).await {
+                        tracing::warn!(%cell_id, %error, "failed to terminate interrupted code-mode cell");
+                    }
+                }),
+        )
+        .await;
+    }
+
     pub(crate) async fn shutdown(&self) -> Result<(), String> {
-        self.shutting_down.store(true, Ordering::Release);
+        self.shutdown_token.cancel();
         // Join any initialization already in progress without initializing an unused service.
         match self
             .session
@@ -124,8 +191,20 @@ impl CodeModeService {
         }
     }
 
-    pub(crate) fn mark_cell_ready_for_dispatch(&self, cell_id: &codex_code_mode::CellId) {
-        self.dispatch_broker.mark_cell_ready_for_dispatch(cell_id);
+    pub(crate) fn mark_cell_ready_for_dispatch(
+        &self,
+        cell_id: &codex_code_mode::CellId,
+        originating_call: Option<crate::tools::context::ToolCallOrigin>,
+    ) {
+        self.dispatch_broker
+            .mark_cell_ready_for_dispatch(cell_id, originating_call);
+    }
+
+    pub(crate) fn cell_originating_call(
+        &self,
+        cell_id: &codex_code_mode::CellId,
+    ) -> Option<crate::tools::context::ToolCallOrigin> {
+        self.dispatch_broker.cell_originating_call(cell_id)
     }
 
     pub(crate) fn finish_cell_dispatch(&self, cell_id: &CellId) {
@@ -136,39 +215,37 @@ impl CodeModeService {
         &self,
         session: &Arc<Session>,
         step_context: Arc<StepContext>,
-        router: Arc<ToolRouter>,
         tracker: SharedTurnDiffTracker,
     ) -> Option<CodeModeDispatchWorker> {
-        let turn = &step_context.turn;
-        let tool_mode = effective_tool_mode(turn);
-        if !matches!(tool_mode, ToolMode::CodeMode | ToolMode::CodeModeOnly) {
+        if !step_context.tool_router.requires_code_mode_worker() {
             return None;
         }
 
-        let exec = ExecContext {
-            session: Arc::clone(session),
-            turn: Arc::clone(turn),
-        };
         Some(
             self.dispatch_broker
-                .start_turn_worker(exec, router, step_context, tracker),
+                .start_turn_worker(Arc::clone(session), step_context, tracker),
         )
     }
 
-    async fn session(&self) -> Result<Arc<dyn CodeModeSession>, String> {
-        if self.shutting_down.load(Ordering::Acquire) {
+    pub(crate) async fn session(&self) -> Result<Arc<dyn CodeModeSession>, String> {
+        if self.shutdown_token.is_cancelled() {
             return Err("code mode session is shutting down".to_string());
         }
         self.session
             .get_or_try_init(|| async {
-                if self.shutting_down.load(Ordering::Acquire) {
+                if self.shutdown_token.is_cancelled() {
                     return Err("code mode session is shutting down".to_string());
                 }
-                let session = self
-                    .session_provider
-                    .create_session(self.dispatch_broker.clone())
-                    .await?;
-                if self.shutting_down.load(Ordering::Acquire) {
+                let session = tokio::select! {
+                    biased;
+                    _ = self.shutdown_token.cancelled() => {
+                        return Err("code mode session is shutting down".to_string());
+                    }
+                    session = self
+                        .session_provider
+                        .create_session() => session?,
+                };
+                if self.shutdown_token.is_cancelled() {
                     let _ = session.shutdown().await;
                     return Err("code mode session is shutting down".to_string());
                 }
@@ -179,54 +256,43 @@ impl CodeModeService {
     }
 }
 
-pub(super) async fn handle_runtime_response(
-    exec: &ExecContext,
+fn handle_runtime_response(
+    model_info: &codex_protocol::openai_models::ModelInfo,
     response: RuntimeResponse,
     max_output_tokens: Option<usize>,
-    started_at: std::time::Instant,
-) -> Result<FunctionToolOutput, String> {
+    wall_time: Duration,
+    experimental_show_cell_overhead: bool,
+) -> CodeModeToolOutput {
     let script_status = format_script_status(&response);
+    let supports_original = can_request_original_image_detail(model_info);
+    let host_duration = response
+        .code_mode_host_duration()
+        .filter(|_| experimental_show_cell_overhead);
 
-    match response {
-        RuntimeResponse::Yielded { content_items, .. } => {
-            let mut content_items = into_function_call_output_content_items(content_items);
-            sanitize_runtime_image_detail(exec.turn.as_ref(), &mut content_items);
-            content_items = truncate_code_mode_result(content_items, max_output_tokens);
-            prepend_script_status(&mut content_items, &script_status, started_at.elapsed());
-            Ok(FunctionToolOutput::from_content(content_items, Some(true)))
-        }
-        RuntimeResponse::Terminated { content_items, .. } => {
-            let mut content_items = into_function_call_output_content_items(content_items);
-            sanitize_runtime_image_detail(exec.turn.as_ref(), &mut content_items);
-            content_items = truncate_code_mode_result(content_items, max_output_tokens);
-            prepend_script_status(&mut content_items, &script_status, started_at.elapsed());
-            Ok(FunctionToolOutput::from_content(content_items, Some(true)))
-        }
+    let (content_items, error_text) = match response {
+        RuntimeResponse::Yielded { content_items, .. }
+        | RuntimeResponse::Terminated { content_items, .. } => (content_items, None),
         RuntimeResponse::Result {
             content_items,
             error_text,
             ..
-        } => {
-            let mut content_items = into_function_call_output_content_items(content_items);
-            sanitize_runtime_image_detail(exec.turn.as_ref(), &mut content_items);
-            let success = error_text.is_none();
-            if let Some(error_text) = error_text {
-                content_items.push(FunctionCallOutputContentItem::InputText {
-                    text: format!("Script error:\n{error_text}"),
-                });
-            }
-            content_items = truncate_code_mode_result(content_items, max_output_tokens);
-            prepend_script_status(&mut content_items, &script_status, started_at.elapsed());
-            Ok(FunctionToolOutput::from_content(
-                content_items,
-                Some(success),
-            ))
-        }
+        } => (content_items, error_text),
+    };
+    let mut content_items = into_function_call_output_content_items(content_items);
+    sanitize_image_detail_items(supports_original, &mut content_items);
+    let success = error_text.is_none();
+    if let Some(error_text) = error_text {
+        content_items.push(FunctionCallOutputContentItem::InputText {
+            text: format!("Script error:\n{error_text}"),
+        });
     }
-}
-
-fn sanitize_runtime_image_detail(turn: &TurnContext, items: &mut [FunctionCallOutputContentItem]) {
-    sanitize_image_detail_items(can_request_original_image_detail(&turn.model_info), items);
+    content_items = truncate_code_mode_result(content_items, max_output_tokens);
+    CodeModeToolOutput::new(
+        FunctionToolOutput::from_content(content_items, Some(success)),
+        script_status,
+        wall_time,
+        host_duration,
+    )
 }
 
 fn format_script_status(response: &RuntimeResponse) -> String {
@@ -245,16 +311,6 @@ fn format_script_status(response: &RuntimeResponse) -> String {
     }
 }
 
-fn prepend_script_status(
-    content_items: &mut Vec<FunctionCallOutputContentItem>,
-    status: &str,
-    wall_time: Duration,
-) {
-    let wall_time_seconds = ((wall_time.as_secs_f32()) * 10.0).round() / 10.0;
-    let header = format!("{status}\nWall time {wall_time_seconds:.1} seconds\nOutput:\n");
-    content_items.insert(0, FunctionCallOutputContentItem::InputText { text: header });
-}
-
 fn truncate_code_mode_result(
     items: Vec<FunctionCallOutputContentItem>,
     max_output_tokens: Option<usize>,
@@ -270,15 +326,21 @@ fn truncate_code_mode_result(
         return truncated_items;
     }
 
-    truncate_function_output_items_with_policy(&items, policy)
+    truncate_function_output_items_with_policy(&items, policy, estimate_audio_token_count)
 }
 
-async fn call_nested_tool(
-    _exec: ExecContext,
+// Submit synchronously so the recorder sees the call before the cell's dispatch gate closes.
+fn submit_nested_tool(
+    session: Arc<Session>,
+    step_context: Arc<StepContext>,
     tool_runtime: ToolCallRuntime,
     invocation: CodeModeNestedToolCall,
+    call_id: String,
     cancellation_token: CancellationToken,
-) -> Result<JsonValue, FunctionCallError> {
+) -> Result<
+    impl std::future::Future<Output = Result<JsonValue, FunctionCallError>> + Send + 'static,
+    FunctionCallError,
+> {
     let CodeModeNestedToolCall {
         cell_id,
         runtime_tool_call_id,
@@ -286,33 +348,66 @@ async fn call_nested_tool(
         tool_kind,
         input,
     } = invocation;
-    if is_exec_tool_name(&tool_name) {
-        return Err(FunctionCallError::RespondToModel(format!(
-            "{PUBLIC_TOOL_NAME} cannot invoke itself"
-        )));
-    }
-
-    let payload = match build_nested_tool_payload(tool_kind, &tool_name, input) {
+    let thread_id = session.thread_id;
+    let turn_id = step_context.turn.sub_id.clone();
+    let tool_name = tool_name.with_default_namespace();
+    // A cell can outlive a turn; the broker records arrival before a dispatching turn is known.
+    tracing::event!(
+        name: "codex.code_mode.nested_tool_dispatched",
+        target: "codex_otel.trace_safe",
+        tracing::Level::INFO,
+        event.name = "codex.code_mode.nested_tool_dispatched",
+        conversation.id = %thread_id,
+        turn_id = turn_id.as_str(),
+        cell.id = telemetry::trace_id(cell_id.as_str()),
+        runtime_tool_call_id = telemetry::trace_id(&runtime_tool_call_id),
+        call_id = call_id.as_str(),
+    );
+    let payload = if is_exec_tool_name(&tool_name) {
+        Err(format!("{PUBLIC_TOOL_NAME} cannot invoke itself"))
+    } else {
+        build_nested_tool_payload(tool_kind, &tool_name, input)
+    };
+    let payload = match payload {
         Ok(payload) => payload,
-        Err(error) => return Err(FunctionCallError::RespondToModel(error)),
+        Err(error) => {
+            call_trace::result_ready(
+                thread_id,
+                &turn_id,
+                &tool_name,
+                &call_id,
+                call_trace::Source::CodeMode,
+            );
+            return Err(FunctionCallError::RespondToModel(error));
+        }
     };
 
     let call = ToolCall {
         tool_name,
-        call_id: format!("{PUBLIC_TOOL_NAME}-{}", uuid::Uuid::new_v4()),
+        call_id,
         payload,
+        encrypted_function_args: None,
     };
-    let result = tool_runtime
-        .handle_tool_call_with_source(
-            call,
-            ToolCallSource::CodeMode {
-                cell_id: cell_id.to_string(),
-                runtime_tool_call_id,
-            },
-            cancellation_token,
-        )
-        .await?;
-    Ok(result.code_mode_result())
+    session
+        .services
+        .analytics_events_client
+        .track_code_mode_tool_call(codex_analytics::CodeModeToolCallFact::ChildStarted {
+            thread_id: session.thread_id.to_string(),
+            turn_id: step_context.turn.sub_id.clone(),
+            call_id: call.call_id.clone(),
+            cell_id: cell_id.to_string(),
+        });
+    let result = tool_runtime.handle_tool_call_with_source(
+        step_context,
+        call,
+        ToolCallSource::CodeMode {
+            cell_id: cell_id.to_string(),
+            runtime_tool_call_id,
+        },
+        cancellation_token,
+        Arc::default(),
+    );
+    Ok(async move { Ok(result.await?.code_mode_result()) })
 }
 
 fn build_nested_tool_payload(
@@ -360,20 +455,51 @@ fn build_freeform_tool_payload(
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
     use std::sync::Arc;
 
-    use super::CodeModeService;
     use super::build_nested_tool_payload;
     use super::truncate_code_mode_result;
+    use crate::session::step_context::StepContext;
+    use crate::session::tests::make_session_and_context;
     use crate::tools::context::ToolPayload;
+    use crate::tools::registry::ToolRegistry;
+    use crate::tools::router::ToolRouter;
+    use crate::turn_diff_tracker::TurnDiffTracker;
     use codex_code_mode::CodeModeToolKind;
-    use codex_code_mode::ExecuteRequest;
-    use codex_code_mode::FunctionCallOutputContentItem as CodeModeOutputContentItem;
-    use codex_code_mode::ProcessOwnedCodeModeSessionProvider;
-    use codex_code_mode::RuntimeResponse;
     use codex_protocol::models::FunctionCallOutputContentItem;
+    use codex_protocol::openai_models::ToolMode;
     use codex_tools::ToolName;
     use serde_json::json;
+
+    #[tokio::test]
+    async fn turn_worker_uses_step_router_mode_instead_of_admitted_turn() {
+        let (session, turn) = make_session_and_context().await;
+        assert_eq!(
+            crate::tools::effective_tool_mode(&turn, turn.model_info()),
+            ToolMode::Direct
+        );
+        let session = Arc::new(session);
+        let step_context = StepContext::for_test(Arc::new(turn));
+        let router = Arc::new(ToolRouter::from_parts(
+            ToolRegistry::empty_for_test(),
+            Vec::new(),
+            ToolMode::CodeModeOnly,
+            BTreeMap::new(),
+            /*tool_namespaces_info*/ None,
+            &[],
+        ));
+        let step_context = step_context.with_tool_router_for_test(router);
+        let tracker = Arc::new(tokio::sync::Mutex::new(TurnDiffTracker::new()));
+
+        let worker =
+            session
+                .services
+                .code_mode_service
+                .start_turn_worker(&session, step_context, tracker);
+
+        assert!(worker.is_some());
+    }
 
     #[test]
     fn build_nested_tool_payload_uses_function_kind() {
@@ -428,38 +554,17 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn missing_process_host_falls_back_to_in_process_session() {
-        let service = CodeModeService::new(Arc::new(
-            ProcessOwnedCodeModeSessionProvider::with_host_program(
-                "codex-code-mode-host-does-not-exist".into(),
-            ),
-        ));
-
-        let response = service
-            .execute(ExecuteRequest {
-                tool_call_id: "call-1".to_string(),
-                enabled_tools: Vec::new(),
-                source: "text('fallback')".to_string(),
-                yield_time_ms: None,
-                max_output_tokens: None,
-            })
-            .await
-            .expect("missing host should fall back to an in-process session")
-            .initial_response()
-            .await
-            .expect("read fallback response");
+    #[test]
+    fn over_budget_audio_output_is_omitted() {
+        let items = vec![FunctionCallOutputContentItem::InputAudio {
+            audio_url: format!("data:audio/wav;base64,{}", "A".repeat(100)),
+        }];
 
         assert_eq!(
-            response,
-            RuntimeResponse::Result {
-                cell_id: codex_code_mode::CellId::new("1".to_string()),
-                content_items: vec![CodeModeOutputContentItem::InputText {
-                    text: "fallback".to_string(),
-                }],
-                error_text: None,
-            }
+            truncate_code_mode_result(items, Some(5)),
+            vec![FunctionCallOutputContentItem::InputText {
+                text: "[omitted 1 audio items ...]".to_string(),
+            }]
         );
-        service.shutdown().await.expect("shutdown service");
     }
 }

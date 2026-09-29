@@ -33,7 +33,7 @@ impl ChatWidget {
                 });
             }),
         );
-        self.bottom_pane.show_view(Box::new(view));
+        self.bottom_pane.show_text_prompt(view);
     }
 
     pub(crate) fn show_resume_paused_goal_prompt(
@@ -67,7 +67,7 @@ impl ChatWidget {
                     ..Default::default()
                 },
             ],
-            ..Default::default()
+            ..SelectionViewParams::picker()
         });
     }
 
@@ -123,7 +123,7 @@ fn goal_status_label(status: AppThreadGoalStatus) -> &'static str {
     match status {
         AppThreadGoalStatus::Active => "active",
         AppThreadGoalStatus::Paused => "paused",
-        AppThreadGoalStatus::Blocked => "blocked",
+        AppThreadGoalStatus::Blocked => "stalled",
         AppThreadGoalStatus::UsageLimited => "usage limited",
         AppThreadGoalStatus::BudgetLimited => "limited by budget",
         AppThreadGoalStatus::Complete => "complete",

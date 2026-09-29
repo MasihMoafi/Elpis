@@ -2,20 +2,11 @@ use codex_app_server_protocol::Model;
 use codex_app_server_protocol::ModelServiceTier;
 use codex_app_server_protocol::ModelUpgradeInfo;
 use codex_app_server_protocol::ReasoningEffortOption;
-use codex_http_client::HttpClientFactory;
-use codex_models_manager::manager::RefreshStrategy;
-use codex_models_manager::manager::SharedModelsManager;
 use codex_protocol::openai_models::ModelPreset;
 use codex_protocol::openai_models::ReasoningEffortPreset;
 
-pub async fn supported_models(
-    models_manager: SharedModelsManager,
-    include_hidden: bool,
-    http_client_factory: HttpClientFactory,
-) -> Vec<Model> {
-    models_manager
-        .list_models(RefreshStrategy::OnlineIfUncached, http_client_factory)
-        .await
+pub fn supported_models(models: Vec<ModelPreset>, include_hidden: bool) -> Vec<Model> {
+    models
         .into_iter()
         .filter(|preset| include_hidden || preset.show_in_picker)
         .map(model_from_preset)
@@ -32,10 +23,15 @@ fn model_from_preset(preset: ModelPreset) -> Model {
             upgrade_copy: upgrade.upgrade_copy.clone(),
             model_link: upgrade.model_link.clone(),
             migration_markdown: upgrade.migration_markdown.clone(),
+            retirement_at: upgrade
+                .retirement_at
+                .as_ref()
+                .map(chrono::DateTime::timestamp),
         }),
         availability_nux: preset.availability_nux.map(Into::into),
         display_name: preset.display_name.to_string(),
         description: preset.description.to_string(),
+        model_specialty: preset.model_specialty,
         hidden: !preset.show_in_picker,
         supported_reasoning_efforts: reasoning_efforts_from_preset(
             preset.supported_reasoning_efforts,
@@ -43,6 +39,7 @@ fn model_from_preset(preset: ModelPreset) -> Model {
         default_reasoning_effort: preset.default_reasoning_effort,
         input_modalities: preset.input_modalities,
         supports_personality: preset.supports_personality,
+        multi_agent_version: preset.multi_agent_version.map(Into::into),
         additional_speed_tiers: preset.additional_speed_tiers,
         service_tiers: preset
             .service_tiers
@@ -54,6 +51,7 @@ fn model_from_preset(preset: ModelPreset) -> Model {
             })
             .collect(),
         default_service_tier: preset.default_service_tier,
+        available_access_programs: preset.available_access_programs.map(Into::into),
         is_default: preset.is_default,
     }
 }

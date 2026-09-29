@@ -1,24 +1,30 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use std::pin::Pin;
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 
 use tokio::sync::Mutex;
 use tokio::time::Duration;
 use tokio::time::Instant;
 use tokio::time::Sleep;
 
+use super::SharedPluginMetricsSidecar;
 use super::UnifiedExecContext;
+use super::process::OutputBuffers;
+use super::process::OutputHandles;
 use super::process::UnifiedExecProcess;
+use super::take_plugin_metrics_sidecar;
 use crate::exec::MAX_EXEC_OUTPUT_DELTAS_PER_CALL;
+use crate::plugins::metrics::finish_and_track_measurements;
 use crate::session::session::Session;
 use crate::session::turn_context::TurnContext;
 use crate::tools::events::ToolEmitter;
 use crate::tools::events::ToolEventCtx;
 use crate::tools::events::ToolEventFailure;
 use crate::tools::events::ToolEventStage;
-use crate::unified_exec::head_tail_buffer::HeadTailBuffer;
+use codex_core_plugins::PluginCommandAttribution;
 use codex_protocol::exec_output::ExecToolCallOutput;
 use codex_protocol::exec_output::StreamOutput;
+use codex_protocol::openai_models::ModelInfo;
 use codex_protocol::protocol::EventMsg;
 use codex_protocol::protocol::ExecCommandOutputDeltaEvent;
 use codex_protocol::protocol::ExecCommandSource;
@@ -35,31 +41,58 @@ pub(crate) const TRAILING_OUTPUT_GRACE: Duration = Duration::from_millis(100);
 /// process arbitrarily large delta payloads.
 const UNIFIED_EXEC_OUTPUT_DELTA_MAX_BYTES: usize = 8192;
 
-/// Spawn a background task that continuously reads from the PTY, appends to the
-/// shared transcript, and emits ExecCommandOutputDelta events on UTF‑8
-/// boundaries.
-pub(crate) fn start_streaming_output(
-    process: &UnifiedExecProcess,
-    context: &UnifiedExecContext,
-    transcript: Arc<Mutex<HeadTailBuffer>>,
-) {
+struct Emitter {
+    remaining_deltas: usize,
+    session: Arc<Session>,
+    turn: Arc<TurnContext>,
+    call_id: String,
+}
+
+struct Buffer<const MAX_BYTES: usize = UNIFIED_EXEC_OUTPUT_DELTA_MAX_BYTES> {
+    pending: Vec<u8>,
+    emitter: Emitter,
+}
+
+/// Spawn a background task that emits ExecCommandOutputDelta events on UTF‑8 boundaries.
+pub(crate) fn start_streaming_output(process: &UnifiedExecProcess, context: &UnifiedExecContext) {
     let mut receiver = process.output_receiver();
     let output_drained = process.output_drained_notify();
     let exit_token = process.cancellation_token();
+    let OutputHandles {
+        output_closed,
+        output_closed_notify,
+        ..
+    } = process.output_handles().clone();
 
-    let session_ref = Arc::clone(&context.session);
-    let turn_ref = Arc::clone(&context.turn);
-    let call_id = context.call_id.clone();
+    let emitter = Emitter {
+        remaining_deltas: MAX_EXEC_OUTPUT_DELTAS_PER_CALL,
+        session: Arc::clone(&context.session),
+        turn: Arc::clone(&context.step_context.turn),
+        call_id: context.call_id.clone(),
+    };
 
     tokio::spawn(async move {
         use tokio::sync::broadcast::error::RecvError;
 
-        let mut pending = Vec::<u8>::new();
-        let mut emitted_deltas: usize = 0;
+        let mut output: Buffer = Buffer {
+            pending: Vec::new(),
+            emitter,
+        };
 
         let mut grace_sleep: Option<Pin<Box<Sleep>>> = None;
+        let output_closed_notified = output_closed_notify.notified();
+        tokio::pin!(output_closed_notified);
+        let mut output_complete = false;
 
         loop {
+            // Register before checking the atomic so a close between the check
+            // and the select cannot miss the notification.
+            output_closed_notified.as_mut().enable();
+            if grace_sleep.is_some() && output_closed.load(Ordering::Acquire) {
+                output_complete = true;
+                break;
+            }
+
             tokio::select! {
                 _ = exit_token.cancelled(), if grace_sleep.is_none() => {
                     let deadline = Instant::now() + TRAILING_OUTPUT_GRACE;
@@ -71,8 +104,11 @@ pub(crate) fn start_streaming_output(
                         sleep.as_mut().await;
                     }
                 }, if grace_sleep.is_some() => {
-                    output_drained.notify_one();
                     break;
+                }
+
+                _ = &mut output_closed_notified, if grace_sleep.is_some() => {
+                    output_closed_notified.set(output_closed_notify.notified());
                 }
 
                 received = receiver.recv() => {
@@ -82,23 +118,37 @@ pub(crate) fn start_streaming_output(
                             continue;
                         },
                         Err(RecvError::Closed) => {
-                            output_drained.notify_one();
+                            output_complete = true;
                             break;
                         }
                     };
 
-                    process_chunk(
-                        &mut pending,
-                        &transcript,
-                        &call_id,
-                        &session_ref,
-                        &turn_ref,
-                        &mut emitted_deltas,
-                        chunk,
-                    ).await;
+                    output.push(chunk).await;
                 }
             }
         }
+
+        output_complete |= output_closed.load(Ordering::Acquire);
+        if output_complete {
+            // Output producers publish all chunks before setting output_closed
+            // with Release ordering, so the Acquire above makes this a final
+            // safe drain.
+            loop {
+                let chunk = match receiver.try_recv() {
+                    Ok(chunk) => chunk,
+                    Err(tokio::sync::broadcast::error::TryRecvError::Lagged(_)) => continue,
+                    Err(
+                        tokio::sync::broadcast::error::TryRecvError::Empty
+                        | tokio::sync::broadcast::error::TryRecvError::Closed,
+                    ) => break,
+                };
+
+                output.push(chunk).await;
+            }
+        }
+
+        output.finish().await;
+        output_drained.notify_one();
     });
 }
 
@@ -107,32 +157,53 @@ pub(crate) fn start_streaming_output(
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn spawn_exit_watcher(
     process: Arc<UnifiedExecProcess>,
-    session_ref: Arc<Session>,
-    turn_ref: Arc<TurnContext>,
-    call_id: String,
+    context: &UnifiedExecContext,
     command: Vec<String>,
     cwd: PathUri,
     process_id: i32,
-    transcript: Arc<Mutex<HeadTailBuffer>>,
+    plugin_attribution: Option<PluginCommandAttribution>,
+    output_buffer: Arc<Mutex<OutputBuffers>>,
     started_at: Instant,
+    network_denial_monitor: Option<tokio::task::JoinHandle<()>>,
+    plugin_metrics_sidecar: Option<SharedPluginMetricsSidecar>,
 ) {
+    let session_ref = Arc::clone(&context.session);
+    let turn_ref = Arc::clone(&context.step_context.turn);
+    let model_info = Arc::clone(&context.step_context.settings.model_info);
+    let model_context = context.step_context.model_context();
+    let call_id = context.call_id.clone();
     let exit_token = process.cancellation_token();
     let output_drained = process.output_drained_notify();
+    let interaction_lock = process.interaction_lock();
 
     tokio::spawn(async move {
         exit_token.cancelled().await;
         output_drained.notified().await;
+        // Deferred network denial deliberately remains observable for a short
+        // window after process exit. Do not classify the terminal event until
+        // that monitor has settled, even when output closes immediately.
+        if let Some(network_denial_monitor) = network_denial_monitor {
+            let _ = network_denial_monitor.await;
+        }
+        let _interaction_guard = interaction_lock.lock_owned().await;
 
         let duration = Instant::now().saturating_duration_since(started_at);
+        let plugin_metrics_sidecar = plugin_metrics_sidecar
+            .as_ref()
+            .and_then(take_plugin_metrics_sidecar);
         if let Some(message) = process.failure_message() {
+            drop(plugin_metrics_sidecar);
             emit_failed_exec_end_for_unified_exec(
+                process.sandbox_type(),
                 session_ref,
                 turn_ref,
+                model_info,
                 call_id,
                 command,
                 cwd,
                 Some(process_id.to_string()),
-                transcript,
+                plugin_attribution,
+                output_buffer,
                 String::new(),
                 message,
                 duration,
@@ -140,52 +211,116 @@ pub(crate) fn spawn_exit_watcher(
             .await;
         } else {
             let exit_code = process.exit_code().unwrap_or(-1);
+            let timed_out = process.timed_out();
+            finish_and_track_measurements(
+                plugin_metrics_sidecar,
+                exit_code,
+                &session_ref,
+                &turn_ref,
+                &model_context,
+                &call_id,
+            )
+            .await;
             emit_exec_end_for_unified_exec(
+                process.sandbox_type(),
                 session_ref,
                 turn_ref,
+                model_info,
                 call_id,
                 command,
                 cwd,
                 Some(process_id.to_string()),
-                transcript,
+                plugin_attribution,
+                output_buffer,
                 String::new(),
                 exit_code,
                 duration,
+                timed_out,
             )
             .await;
         }
     });
 }
 
-async fn process_chunk(
-    pending: &mut Vec<u8>,
-    transcript: &Arc<Mutex<HeadTailBuffer>>,
-    call_id: &str,
-    session_ref: &Arc<Session>,
-    turn_ref: &Arc<TurnContext>,
-    emitted_deltas: &mut usize,
-    chunk: Vec<u8>,
-) {
-    pending.extend_from_slice(&chunk);
-    while let Some(prefix) = split_valid_utf8_prefix(pending) {
-        {
-            let mut guard = transcript.lock().await;
-            guard.push_chunk(prefix.to_vec());
-        }
-
-        if *emitted_deltas >= MAX_EXEC_OUTPUT_DELTAS_PER_CALL {
-            continue;
-        }
-
-        let event = ExecCommandOutputDeltaEvent {
-            call_id: call_id.to_string(),
-            stream: ExecOutputStream::Stdout,
-            chunk: prefix,
+impl<const MAX_BYTES: usize> Buffer<MAX_BYTES> {
+    async fn push(&mut self, mut bytes: Vec<u8>) {
+        const {
+            assert!(
+                MAX_BYTES >= char::MAX.len_utf8(),
+                "a frame must fit one UTF-8 scalar"
+            )
         };
-        session_ref
-            .send_event(turn_ref.as_ref(), EventMsg::ExecCommandOutputDelta(event))
-            .await;
-        *emitted_deltas += 1;
+        let Self { pending, emitter } = self;
+
+        // Reuse a producer chunk when it fits, retaining only an incomplete
+        // UTF-8 suffix for the next push.
+        if pending.is_empty() && bytes.len() <= MAX_BYTES {
+            emitter
+                .emit(|| {
+                    let complete = utf8_boundary(&bytes);
+                    pending.extend(bytes.drain(complete..));
+                    bytes
+                })
+                .await;
+            return;
+        }
+
+        let mut bytes = bytes.as_slice();
+        let mut next_chunk = || {
+            let space = MAX_BYTES.saturating_sub(pending.len());
+            let (prefix, rest) = bytes.split_at_checked(space).unwrap_or((bytes, &[]));
+            let mut chunk = Vec::with_capacity(pending.len().saturating_add(prefix.len()));
+            chunk.append(pending); // Empties pending.
+            chunk.extend_from_slice(prefix);
+            bytes = rest;
+
+            let complete = utf8_boundary(&chunk);
+            // Only the incomplete suffix passes through pending.
+            pending.extend(chunk.drain(complete..));
+            chunk
+        };
+        while emitter.emit(&mut next_chunk).await {}
+    }
+
+    async fn finish(self) {
+        let Self {
+            pending,
+            mut emitter,
+        } = self;
+        debug_assert!(
+            pending.len() < char::MAX.len_utf8(),
+            "only an incomplete UTF-8 scalar can remain"
+        );
+        emitter.emit(|| pending).await;
+    }
+}
+
+impl Emitter {
+    /// Build a frame only while quota remains. Returns whether a nonempty frame was sent.
+    async fn emit(&mut self, make_chunk: impl FnOnce() -> Vec<u8>) -> bool {
+        let Self {
+            remaining_deltas,
+            session,
+            turn,
+            call_id,
+        } = self;
+        let Some(remaining) = remaining_deltas.checked_sub(1) else {
+            return false;
+        };
+        let chunk = make_chunk();
+        let emit = !chunk.is_empty();
+        if emit {
+            let event = ExecCommandOutputDeltaEvent {
+                call_id: call_id.clone(),
+                stream: ExecOutputStream::Stdout,
+                chunk,
+            };
+            session
+                .send_event(turn.as_ref(), EventMsg::ExecCommandOutputDelta(event))
+                .await;
+            *remaining_deltas = remaining;
+        }
+        emit
     }
 }
 
@@ -194,37 +329,44 @@ async fn process_chunk(
 /// text when the transcript is empty.
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn emit_exec_end_for_unified_exec(
+    sandbox_type: Option<codex_protocol::sandbox::SandboxType>,
     session_ref: Arc<Session>,
     turn_ref: Arc<TurnContext>,
+    model_info: Arc<ModelInfo>,
     call_id: String,
     command: Vec<String>,
     cwd: PathUri,
     process_id: Option<String>,
-    transcript: Arc<Mutex<HeadTailBuffer>>,
+    plugin_attribution: Option<PluginCommandAttribution>,
+    output_buffer: Arc<Mutex<OutputBuffers>>,
     fallback_output: String,
     exit_code: i32,
     duration: Duration,
+    timed_out: bool,
 ) {
-    let aggregated_output = resolve_aggregated_output(&transcript, fallback_output).await;
+    let aggregated_output = resolve_aggregated_output(&output_buffer, fallback_output).await;
     let output = ExecToolCallOutput {
         exit_code,
         stdout: StreamOutput::new(aggregated_output.clone()),
         stderr: StreamOutput::new(String::new()),
         aggregated_output: StreamOutput::new(aggregated_output),
         duration,
-        timed_out: false,
+        timed_out,
     };
-    let event_ctx = ToolEventCtx::new(
+    let mut event_ctx = ToolEventCtx::new(
         session_ref.as_ref(),
         turn_ref.as_ref(),
+        &model_info,
         &call_id,
         /*turn_diff_tracker*/ None,
     );
+    event_ctx.sandbox_type = sandbox_type;
     let emitter = ToolEmitter::unified_exec(
         &command,
         cwd,
         ExecCommandSource::UnifiedExecStartup,
         process_id,
+        plugin_attribution,
     );
     emitter
         .emit(
@@ -239,19 +381,22 @@ pub(crate) async fn emit_exec_end_for_unified_exec(
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn emit_failed_exec_end_for_unified_exec(
+    sandbox_type: Option<codex_protocol::sandbox::SandboxType>,
     session_ref: Arc<Session>,
     turn_ref: Arc<TurnContext>,
+    model_info: Arc<ModelInfo>,
     call_id: String,
     command: Vec<String>,
     cwd: PathUri,
     process_id: Option<String>,
-    transcript: Arc<Mutex<HeadTailBuffer>>,
+    plugin_attribution: Option<PluginCommandAttribution>,
+    output_buffer: Arc<Mutex<OutputBuffers>>,
     fallback_output: String,
     message: String,
     duration: Duration,
 ) {
     let stdout = if fallback_output.is_empty() {
-        resolve_aggregated_output(&transcript, fallback_output).await
+        resolve_aggregated_output(&output_buffer, fallback_output).await
     } else {
         fallback_output
     };
@@ -268,17 +413,20 @@ pub(crate) async fn emit_failed_exec_end_for_unified_exec(
         duration,
         timed_out: false,
     };
-    let event_ctx = ToolEventCtx::new(
+    let mut event_ctx = ToolEventCtx::new(
         session_ref.as_ref(),
         turn_ref.as_ref(),
+        &model_info,
         &call_id,
         /*turn_diff_tracker*/ None,
     );
+    event_ctx.sandbox_type = sandbox_type;
     let emitter = ToolEmitter::unified_exec(
         &command,
         cwd,
         ExecCommandSource::UnifiedExecStartup,
         process_id,
+        plugin_attribution,
     );
     emitter
         .emit(
@@ -288,46 +436,36 @@ pub(crate) async fn emit_failed_exec_end_for_unified_exec(
         .await;
 }
 
-fn split_valid_utf8_prefix(buffer: &mut Vec<u8>) -> Option<Vec<u8>> {
-    split_valid_utf8_prefix_with_max(buffer, UNIFIED_EXEC_OUTPUT_DELTA_MAX_BYTES)
-}
-
-fn split_valid_utf8_prefix_with_max(buffer: &mut Vec<u8>, max_bytes: usize) -> Option<Vec<u8>> {
-    if buffer.is_empty() {
-        return None;
-    }
-
-    let max_len = buffer.len().min(max_bytes);
-    let mut split = max_len;
-    while split > 0 {
-        if std::str::from_utf8(&buffer[..split]).is_ok() {
-            let prefix = buffer[..split].to_vec();
-            buffer.drain(..split);
-            return Some(prefix);
+/// Keep only a potentially incomplete UTF-8 suffix; malformed bytes remain raw.
+/// A UTF-8 scalar spans at most four bytes, so its incomplete tail fits in three.
+fn utf8_boundary(bytes: &[u8]) -> usize {
+    let mut boundary = bytes.len().saturating_sub(char::MAX.len_utf8() - 1);
+    while boundary < bytes.len() {
+        match std::str::from_utf8(&bytes[boundary..]) {
+            Ok(s) => return boundary + s.len(),
+            Err(error) => {
+                boundary += error.valid_up_to();
+                if let Some(invalid_len) = error.error_len() {
+                    boundary += invalid_len;
+                } else {
+                    return boundary;
+                }
+            }
         }
-
-        if max_len - split > 4 {
-            break;
-        }
-        split -= 1;
     }
-
-    // If no valid UTF-8 prefix was found, emit the first byte so the stream
-    // keeps making progress and the transcript reflects all bytes.
-    let byte = buffer.drain(..1).collect();
-    Some(byte)
+    bytes.len()
 }
 
 async fn resolve_aggregated_output(
-    transcript: &Arc<Mutex<HeadTailBuffer>>,
+    output_buffer: &Arc<Mutex<OutputBuffers>>,
     fallback: String,
 ) -> String {
-    let guard = transcript.lock().await;
-    if guard.retained_bytes() == 0 {
+    let guard = output_buffer.lock().await;
+    if guard.transcript.retained_bytes() == 0 {
         return fallback;
     }
 
-    String::from_utf8_lossy(&guard.to_bytes_with_omission_marker()).to_string()
+    String::from_utf8_lossy(&guard.transcript.to_bytes_with_omission_marker()).to_string()
 }
 
 #[cfg(test)]

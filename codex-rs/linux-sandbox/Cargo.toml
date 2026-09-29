@@ -23,10 +23,12 @@ codex-network-proxy = { workspace = true }
 codex-process-hardening = { workspace = true }
 codex-protocol = { workspace = true }
 codex-sandboxing = { workspace = true }
+codex-uds = { workspace = true }
 codex-utils-absolute-path = { workspace = true }
 globset = { workspace = true }
 landlock = { workspace = true }
 libc = { workspace = true }
+rustix = { workspace = true }
 seccompiler = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
@@ -37,6 +39,7 @@ url = { workspace = true }
 codex-core = { workspace = true }
 pretty_assertions = { workspace = true }
 tempfile = { workspace = true }
+test-case = "3.3.1"
 tokio = { workspace = true, features = [
     "io-std",
     "macros",

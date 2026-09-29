@@ -1,4 +1,3 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use pretty_assertions::assert_eq;
 
 use std::collections::BTreeMap;
@@ -24,7 +23,8 @@ fn hooks_file_deserializes_existing_json_shape() {
             "type": "command",
             "command": "python3 /tmp/pre.py",
             "timeout": 10,
-            "statusMessage": "checking"
+            "statusMessage": "checking",
+            "additionalContextLimit": 4096
           }
         ]
       }
@@ -47,12 +47,86 @@ fn hooks_file_deserializes_existing_json_shape() {
                         timeout_sec: Some(10),
                         r#async: false,
                         status_message: Some("checking".to_string()),
+                        additional_context_limit: Some(4096),
                     }],
                 }],
                 ..Default::default()
             },
         }
     );
+}
+
+#[test]
+fn hooks_file_deserializes_mcp_tool_handler_with_json_inputs() {
+    let parsed: HooksFile = serde_json::from_value(serde_json::json!({
+        "hooks": {
+            "PostToolUse": [{
+                "matcher": "Write|Edit",
+                "hooks": [{
+                    "type": "mcp_tool",
+                    "server": "security",
+                    "tool": "scan",
+                    "input": {
+                        "file_path": "${tool_input.file_path}",
+                        "include_ignored": false,
+                    },
+                    "timeout": 30,
+                    "statusMessage": "Scanning file",
+                }],
+            }],
+        },
+    }))
+    .expect("MCP tool hooks should deserialize");
+
+    assert_eq!(
+        parsed.hooks.post_tool_use[0].hooks,
+        vec![HookHandlerConfig::McpTool {
+            server: "security".to_string(),
+            tool: "scan".to_string(),
+            input: serde_json::Map::from_iter([
+                (
+                    "file_path".to_string(),
+                    serde_json::Value::String("${tool_input.file_path}".to_string()),
+                ),
+                (
+                    "include_ignored".to_string(),
+                    serde_json::Value::Bool(false)
+                ),
+            ]),
+            timeout_sec: Some(30),
+            status_message: Some("Scanning file".to_string()),
+        }]
+    );
+}
+
+#[test]
+fn hooks_file_rejects_mcp_tool_handler_with_null_input() {
+    for input in [
+        serde_json::json!({ "optional": null }),
+        serde_json::json!({ "metadata": { "optional": null } }),
+        serde_json::json!({ "values": [null] }),
+    ] {
+        let error = serde_json::from_value::<HooksFile>(serde_json::json!({
+            "hooks": {
+                "PostToolUse": [{
+                    "hooks": [{
+                        "type": "mcp_tool",
+                        "server": "security",
+                        "tool": "scan",
+                        "input": input,
+                    }],
+                }],
+            },
+        }))
+        .expect_err("literal null MCP hook arguments should be rejected");
+
+        assert!(
+            error
+                .to_string()
+                .contains("MCP hook input must be representable as TOML"),
+            "unexpected parse error: {error}"
+        );
+    }
 }
 
 #[test]
@@ -91,6 +165,7 @@ type = "command"
 command = "python3 /tmp/pre.py"
 timeout = 10
 statusMessage = "checking"
+additionalContextLimit = 4096
 "#,
     )
     .expect("hook events TOML should deserialize");
@@ -106,6 +181,7 @@ statusMessage = "checking"
                     timeout_sec: Some(10),
                     r#async: false,
                     status_message: Some("checking".to_string()),
+                    additional_context_limit: Some(4096),
                 }],
             }],
             ..Default::default()
@@ -143,6 +219,7 @@ command = "python3 /tmp/pre.py"
                         timeout_sec: None,
                         r#async: false,
                         status_message: None,
+                        additional_context_limit: None,
                     }],
                 }],
                 ..Default::default()
@@ -188,6 +265,7 @@ command = "python3 /enterprise/place/pre.py"
                         timeout_sec: None,
                         r#async: false,
                         status_message: None,
+                        additional_context_limit: None,
                     }],
                 }],
                 ..Default::default()
@@ -224,6 +302,7 @@ command_windows = "powershell -File C:\\enterprise\\hooks\\pre.ps1"
                     timeout_sec: None,
                     r#async: false,
                     status_message: None,
+                    additional_context_limit: None,
                 }],
             }],
             ..Default::default()
@@ -259,9 +338,26 @@ commandWindows = "powershell -File C:\\enterprise\\hooks\\pre.ps1"
                     timeout_sec: None,
                     r#async: false,
                     status_message: None,
+                    additional_context_limit: None,
                 }],
             }],
             ..Default::default()
         }
     );
+}
+
+#[test]
+fn hook_handler_omits_unset_additional_context_limit() {
+    let handler = HookHandlerConfig::Command {
+        command: "python3 /tmp/pre.py".to_string(),
+        command_windows: None,
+        timeout_sec: None,
+        r#async: false,
+        status_message: None,
+        additional_context_limit: None,
+    };
+
+    let serialized = serde_json::to_value(handler).expect("hook handler should serialize");
+
+    assert_eq!(serialized.get("additionalContextLimit"), None);
 }

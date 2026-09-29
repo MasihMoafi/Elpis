@@ -1,4 +1,3 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 //! Exercises `ChatWidget` event handling and rendering invariants.
 //!
 //! These tests cover both app-server-native inputs and focused widget helpers. Many assertions are
@@ -9,11 +8,6 @@ pub(super) use super::*;
 pub(super) use crate::app_command::AppCommand as Op;
 pub(super) use crate::app_event::AppEvent;
 pub(super) use crate::app_event::ExitMode;
-pub(super) use crate::app_event::ManualMemoryMutation;
-pub(super) use crate::app_event::ManualMemoryRequestTarget;
-pub(super) use crate::app_event::ManualMemoryStatusCompletion;
-pub(super) use crate::app_event::ManualMemoryStorageTarget;
-pub(super) use crate::app_event::ManualMemoryViewKey;
 pub(super) use crate::app_event_sender::AppEventSender;
 pub(super) use crate::approval_events::ApplyPatchApprovalRequestEvent;
 pub(super) use crate::approval_events::ExecApprovalRequestEvent;
@@ -105,6 +99,7 @@ pub(super) use codex_app_server_protocol::RateLimitWindow;
 pub(super) use codex_app_server_protocol::ReasoningSummaryTextDeltaNotification;
 pub(super) use codex_app_server_protocol::ReviewTarget;
 pub(super) use codex_app_server_protocol::ServerNotification;
+pub(super) use codex_app_server_protocol::SkillMetadata;
 pub(super) use codex_app_server_protocol::SkillSummary;
 pub(super) use codex_app_server_protocol::ThreadClosedNotification;
 pub(super) use codex_app_server_protocol::ThreadItem as AppServerThreadItem;
@@ -112,28 +107,21 @@ pub(super) use codex_app_server_protocol::ToolRequestUserInputOption;
 pub(super) use codex_app_server_protocol::ToolRequestUserInputParams;
 pub(super) use codex_app_server_protocol::ToolRequestUserInputQuestion;
 pub(super) use codex_app_server_protocol::Turn as AppServerTurn;
-pub(super) use codex_app_server_protocol::TurnActivityStatus;
-pub(super) use codex_app_server_protocol::TurnActivityUpdatedNotification;
 pub(super) use codex_app_server_protocol::TurnCompletedNotification;
-pub(super) use codex_app_server_protocol::TurnCostAvailability;
-pub(super) use codex_app_server_protocol::TurnCostState;
-pub(super) use codex_app_server_protocol::TurnCostUpdatedNotification;
 pub(super) use codex_app_server_protocol::TurnError as AppServerTurnError;
 pub(super) use codex_app_server_protocol::TurnStartedNotification;
 pub(super) use codex_app_server_protocol::TurnStatus as AppServerTurnStatus;
 pub(super) use codex_app_server_protocol::UserInput;
 pub(super) use codex_app_server_protocol::UserInput as AppServerUserInput;
 pub(super) use codex_app_server_protocol::WarningNotification;
+pub(super) use codex_app_server_protocol::WindowsSandboxSetupMode;
 pub(super) use codex_config::ConfigLayerStack;
 pub(super) use codex_config::Constrained;
 pub(super) use codex_config::ConstraintError;
 pub(super) use codex_config::RequirementSource;
 pub(super) use codex_config::types::ApprovalsReviewer;
 pub(super) use codex_config::types::Notifications;
-pub(super) use codex_config::types::WindowsSandboxModeToml;
 pub(super) use codex_core_plugins::OPENAI_CURATED_MARKETPLACE_NAME;
-pub(super) use codex_core_skills::model::SkillMetadata;
-pub(super) use codex_features::FEATURES;
 pub(super) use codex_features::Feature;
 pub(super) use codex_git_utils::CommitLogEntry;
 pub(super) use codex_models_manager::test_support::construct_model_info_offline_for_tests;
@@ -171,9 +159,6 @@ pub(super) use codex_protocol::plan_tool::StepStatus;
 pub(super) use codex_protocol::plan_tool::UpdatePlanArgs;
 pub(super) use codex_protocol::request_permissions::RequestPermissionProfile;
 pub(super) use codex_protocol::user_input::TextElement;
-pub(super) use codex_terminal_detection::Multiplexer;
-pub(super) use codex_terminal_detection::TerminalInfo;
-pub(super) use codex_terminal_detection::TerminalName;
 pub(super) use codex_utils_absolute_path::AbsolutePathBuf;
 pub(super) use codex_utils_approval_presets::builtin_approval_presets;
 pub(super) use codex_utils_path_uri::LegacyAppPathString;
@@ -191,62 +176,6 @@ pub(super) use tempfile::tempdir;
 pub(super) use tokio::sync::mpsc::error::TryRecvError;
 pub(super) use tokio::sync::mpsc::unbounded_channel;
 pub(super) use toml::Value as TomlValue;
-
-pub(super) fn seed_manual_memory_cache_from_disk(
-    chat: &mut ChatWidget,
-) -> anyhow::Result<ManualMemoryRequestTarget> {
-    let memories_root = chat.config_ref().memory_dir.clone();
-    let cwd = chat.config_ref().cwd.clone();
-    let dev_rule_roots = chat.config_ref().dev_rule_roots();
-    let (admission_path, memory_path) =
-        crate::legacy_core::elpis_context::manual_memory_storage_paths(
-            Some(memories_root.as_path()),
-            cwd.as_path(),
-        )
-        .ok_or_else(|| anyhow::anyhow!("manual-memory test storage is unavailable"))?;
-    let thread_id = chat.thread_id().unwrap_or_else(ThreadId::new);
-    let target = ManualMemoryRequestTarget {
-        view: ManualMemoryViewKey {
-            epoch: chat
-                .manual_memory_bound_target()
-                .map_or(1, |target| target.view.epoch.saturating_add(1)),
-            primary_root_thread_id: thread_id,
-            displayed_thread_id: thread_id,
-            cwd: cwd.to_path_buf(),
-            memory_path: memory_path.clone(),
-        },
-        storage: ManualMemoryStorageTarget {
-            admission_path,
-            memory_path,
-        },
-    };
-    let status = crate::legacy_core::elpis_context::manual_memory_status(
-        Some(memories_root.as_path()),
-        cwd.as_path(),
-    )?
-    .ok_or_else(|| anyhow::anyhow!("manual-memory test status is unavailable"))?;
-    let sources = crate::legacy_core::elpis_context::continuity_sources_from_manual_memory_status(
-        Some(memories_root.as_path()),
-        cwd.as_path(),
-        &chat.instruction_source_paths_as_path_bufs(),
-        &dev_rule_roots,
-        Some(&status),
-    )?;
-    chat.bind_manual_memory_loading(
-        target.clone(),
-        /*pending_context_report*/ false,
-        /*pending_mutation*/ None,
-    );
-    if !chat.apply_manual_memory_status_completion(
-        &target,
-        ManualMemoryStatusCompletion::Ready { status, sources },
-    ) {
-        return Err(anyhow::anyhow!(
-            "manual-memory test cache rejected its target"
-        ));
-    }
-    Ok(target)
-}
 
 pub(super) fn chatwidget_snapshot_dir() -> PathBuf {
     let snapshot_file = codex_utils_cargo_bin::find_resource!(
@@ -275,7 +204,7 @@ macro_rules! assert_chatwidget_snapshot {
         settings.bind(|| {
             insta::assert_snapshot!(
                 format!("codex_tui__chatwidget__tests__{}", $name),
-                &($value),
+                $value,
                 @$snapshot
             );
         });
@@ -298,38 +227,97 @@ fn next_goal_draft(
     }
 }
 
-mod active_cell_layout_cache;
-mod agent_ledger;
 mod app_server;
 mod approval_requests;
+#[path = "tests/backend_banners_tests.rs"]
+mod backend_banners_tests;
+#[path = "tests/bedrock_catalog_tests.rs"]
+mod bedrock_catalog_tests;
+#[path = "tests/collaboration_catalog_tests.rs"]
+mod collaboration_catalog_tests;
+#[path = "tests/compaction_tests.rs"]
+mod compaction_tests;
+#[path = "tests/completion_styling_tests.rs"]
+mod completion_styling;
 mod composer_submission;
+#[path = "tests/computer_activity_tests.rs"]
+mod computer_activity_tests;
 #[path = "tests/config_errors_tests.rs"]
 mod config_errors;
-mod context_ledger;
+#[path = "tests/copy_export_picker_tests.rs"]
+mod copy_export_picker_tests;
+#[path = "tests/dynamic_activity_tests.rs"]
+mod dynamic_activity_tests;
 mod exec_flow;
 mod goal_menu;
 mod goal_validation;
 mod guardian;
 pub(crate) mod helpers;
+#[path = "tests/history_projection.rs"]
+mod history_projection;
 mod history_replay;
-#[cfg(unix)]
-mod ide_context;
+#[path = "tests/home_cleanup_tests.rs"]
+mod home_cleanup_tests;
+#[path = "tests/luna_reserve_usage_tests.rs"]
+mod luna_reserve_usage_tests;
 mod mcp_startup;
+#[path = "tests/misalignment_policy_tests.rs"]
+mod misalignment_policy;
+#[path = "tests/model_display_name_tests.rs"]
+mod model_display_name_tests;
+#[path = "tests/model_picker_tests.rs"]
+mod model_picker_tests;
+#[path = "tests/permission_picker_tests.rs"]
+mod permission_picker_tests;
+#[path = "tests/permission_shortcuts_tests.rs"]
+mod permission_shortcuts_tests;
 mod permissions;
 mod plan_mode;
 #[path = "tests/plugin_catalog_tests.rs"]
 mod plugin_catalog;
 mod popups_and_settings;
-mod render_path_latency;
+#[path = "tests/rate_limit_recovery_tests.rs"]
+mod rate_limit_recovery_tests;
+#[path = "tests/reasoning_status_tests.rs"]
+mod reasoning_status_tests;
+#[path = "tests/replay_render_tests.rs"]
+mod replay_render_tests;
 mod review_mode;
+#[path = "tests/review_picker_tests.rs"]
+mod review_picker_tests;
+#[path = "tests/session_model_selection_tests.rs"]
+mod session_model_selection_tests;
 mod side;
 mod slash_commands;
+#[path = "tests/sparkle_submission_tests.rs"]
+mod sparkle_submission_tests;
+#[path = "tests/startup_submission_tests.rs"]
+mod startup_submission_tests;
 mod status_and_layout;
 mod status_command_tests;
 mod status_surface_previews;
+#[path = "tests/subagent_activity_tests.rs"]
+mod subagent_activity;
 mod terminal_title;
+#[path = "tests/tool_activity_tests.rs"]
+mod tool_activity_tests;
+mod usage;
+#[path = "tests/worktree_picker_tests.rs"]
+mod worktree_picker;
 
 pub(crate) use helpers::make_chatwidget_manual_with_sender;
 pub(crate) use helpers::set_chatgpt_auth;
 pub(crate) use helpers::set_fast_mode_test_catalog;
 pub(super) use helpers::*;
+
+#[path = "tests/questions_tests.rs"]
+mod questions_tests;
+
+#[path = "tests/question_turn_end_tests.rs"]
+mod question_turn_end_tests;
+
+#[path = "tests/list_spacing_tests.rs"]
+mod list_spacing_tests;
+
+#[path = "tests/question_notifications_tests.rs"]
+mod question_notifications_tests;

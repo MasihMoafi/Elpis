@@ -1,8 +1,9 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use crate::config_toml::ConfigToml;
 use crate::types::RawMcpServerConfig;
 use codex_features::FEATURES;
 use codex_features::legacy_feature_keys;
+use codex_protocol::protocol::GranularApprovalConfig;
+use schemars::JsonSchema;
 use schemars::r#gen::SchemaGenerator;
 use schemars::r#gen::SchemaSettings;
 use schemars::schema::InstanceType;
@@ -14,6 +15,28 @@ use schemars::schema::SubschemaValidation;
 use serde_json::Map;
 use serde_json::Value;
 use std::path::Path;
+
+/// Determines the conditions under which the user is consulted to approve
+/// running the command proposed by Codex.
+#[allow(dead_code)]
+#[derive(JsonSchema)]
+#[schemars(rename = "AskForApproval")]
+#[serde(rename_all = "kebab-case")]
+pub(crate) enum ConfigAskForApproval {
+    /// The model decides when to ask the user for approval.
+    OnRequest,
+
+    /// Fine-grained controls for individual approval flows.
+    ///
+    /// When a field is `true`, commands in that category are allowed. When it
+    /// is `false`, those requests are automatically rejected instead of shown
+    /// to the user.
+    Granular(GranularApprovalConfig),
+
+    /// Never ask the user to approve commands. Failures are immediately returned
+    /// to the model, and never escalated to the user for approval.
+    Never,
+}
 
 /// Schema for the `[features]` map with known + legacy keys only.
 pub fn features_schema(schema_gen: &mut SchemaGenerator) -> Schema {
@@ -36,6 +59,37 @@ pub fn features_schema(schema_gen: &mut SchemaGenerator) -> Schema {
             );
             continue;
         }
+        if feature.id == codex_features::Feature::CodeModeHost {
+            validation.properties.insert(
+                feature.key.to_string(),
+                schema_gen.subschema_for::<codex_features::FeatureToml<
+                    codex_features::CodeModeHostConfigToml,
+                >>(),
+            );
+            continue;
+        }
+        if feature.id == codex_features::Feature::NonPrefixedMcpToolNames {
+            validation.properties.insert(
+                feature.key.to_string(),
+                schema_gen.subschema_for::<codex_features::FeatureToml<
+                    codex_features::NonPrefixedMcpToolNamesConfigToml,
+                >>(),
+            );
+            continue;
+        }
+        if feature.id == codex_features::Feature::GuardianThreadContext {
+            // This setting is already part of the guardianv2 feature table.
+            continue;
+        }
+        if feature.id == codex_features::Feature::GuardianV2 {
+            validation.properties.insert(
+                feature.key.to_string(),
+                schema_gen.subschema_for::<codex_features::FeatureToml<
+                    codex_features::GuardianV2ConfigToml,
+                >>(),
+            );
+            continue;
+        }
         if feature.id == codex_features::Feature::MultiAgentV2 {
             validation.properties.insert(
                 feature.key.to_string(),
@@ -54,6 +108,15 @@ pub fn features_schema(schema_gen: &mut SchemaGenerator) -> Schema {
             );
             continue;
         }
+        if feature.id == codex_features::Feature::ContextManagement {
+            validation.properties.insert(
+                feature.key.to_string(),
+                schema_gen.subschema_for::<codex_features::FeatureToml<
+                    codex_features::ContextManagementConfigToml,
+                >>(),
+            );
+            continue;
+        }
         if feature.id == codex_features::Feature::RolloutBudget {
             validation.properties.insert(
                 feature.key.to_string(),
@@ -68,6 +131,15 @@ pub fn features_schema(schema_gen: &mut SchemaGenerator) -> Schema {
                 feature.key.to_string(),
                 schema_gen.subschema_for::<codex_features::FeatureToml<
                     codex_features::CurrentTimeReminderConfigToml,
+                >>(),
+            );
+            continue;
+        }
+        if feature.id == codex_features::Feature::SleepTool {
+            validation.properties.insert(
+                feature.key.to_string(),
+                schema_gen.subschema_for::<codex_features::FeatureToml<
+                    codex_features::SleepToolConfigToml,
                 >>(),
             );
             continue;
@@ -97,6 +169,10 @@ pub fn features_schema(schema_gen: &mut SchemaGenerator) -> Schema {
             .properties
             .insert(legacy_key.to_string(), schema_gen.subschema_for::<bool>());
     }
+    validation.properties.insert(
+        "tool_registry".to_string(),
+        schema_gen.subschema_for::<codex_features::ToolRegistryConfigToml>(),
+    );
     validation.additional_properties = Some(Box::new(Schema::Bool(false)));
     object.object = Some(Box::new(validation));
 
@@ -145,12 +221,41 @@ pub fn mcp_servers_schema(schema_gen: &mut SchemaGenerator) -> Schema {
 
 /// Build the config schema for `config.toml`.
 pub fn config_schema() -> RootSchema {
-    SchemaSettings::draft07()
+    let mut schema = SchemaSettings::draft07()
         .with(|settings| {
             settings.option_add_null_type = false;
         })
         .into_generator()
-        .into_root_schema_for::<ConfigToml>()
+        .into_root_schema_for::<ConfigToml>();
+    add_shell_environment_policy_constraints(&mut schema);
+    schema
+}
+
+fn add_shell_environment_policy_constraints(schema: &mut RootSchema) {
+    let Some(Schema::Object(policy)) = schema.definitions.get_mut("ShellEnvironmentPolicyToml")
+    else {
+        return;
+    };
+    let all_of = policy
+        .subschemas
+        .get_or_insert_default()
+        .all_of
+        .get_or_insert_default();
+    for fields in [["exclude", "filters"], ["filters", "include_only"]] {
+        all_of.push(Schema::Object(SchemaObject {
+            subschemas: Some(Box::new(SubschemaValidation {
+                not: Some(Box::new(Schema::Object(SchemaObject {
+                    object: Some(Box::new(ObjectValidation {
+                        required: fields.into_iter().map(str::to_string).collect(),
+                        ..Default::default()
+                    })),
+                    ..Default::default()
+                }))),
+                ..Default::default()
+            })),
+            ..Default::default()
+        }));
+    }
 }
 
 /// Canonicalize a JSON value by sorting its keys.

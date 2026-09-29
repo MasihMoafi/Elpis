@@ -1,15 +1,25 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "definitions": {
-    "TokenUsageBreakdown": {
+    "ResponseUsageMetadata": {
+      "description": "Usage metadata reported for one upstream response.",
       "properties": {
-        "cacheWriteTokens": {
-          "description": "Input tokens written to the prompt cache by this request.\n\n`None` means the provider did not report the field, which is not the same as a reported zero.",
-          "format": "int64",
+        "amount": {
           "type": [
-            "integer",
+            "string",
             "null"
           ]
+        },
+        "metadata": true
+      },
+      "type": "object"
+    },
+    "TokenUsageBreakdown": {
+      "properties": {
+        "cacheWriteInputTokens": {
+          "default": 0,
+          "format": "int64",
+          "type": "integer"
         },
         "cachedInputTokens": {
           "format": "int64",
@@ -57,6 +67,16 @@
       "anyOf": [
         {
           "$ref": "#/definitions/TokenUsageBreakdown"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "usageMetadata": {
+      "anyOf": [
+        {
+          "$ref": "#/definitions/ResponseUsageMetadata"
         },
         {
           "type": "null"

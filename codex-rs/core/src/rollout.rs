@@ -1,4 +1,3 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use crate::config::Config;
 pub use codex_rollout::ARCHIVED_SESSIONS_SUBDIR;
 pub use codex_rollout::Cursor;
@@ -29,8 +28,8 @@ impl codex_rollout::RolloutConfigView for Config {
         self.codex_home.as_path()
     }
 
-    fn sqlite_home(&self) -> &std::path::Path {
-        self.sqlite_home.as_path()
+    fn sqlite_config(&self) -> &codex_state::SqliteConfig {
+        self.sqlite_config()
     }
 
     fn cwd(&self) -> &std::path::Path {
@@ -39,6 +38,10 @@ impl codex_rollout::RolloutConfigView for Config {
 
     fn model_provider_id(&self) -> &str {
         self.model_provider_id.as_str()
+    }
+
+    fn generate_memories(&self) -> bool {
+        self.memories.generate_memories
     }
 }
 

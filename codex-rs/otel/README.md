@@ -43,7 +43,7 @@ let settings = OtelSettings {
     tracestate: std::collections::BTreeMap::new(),
 };
 
-if let Some(provider) = OtelProvider::from(&settings)? {
+if let Some(provider) = OtelProvider::try_new(&settings)? {
     let registry = tracing_subscriber::registry()
         .with(provider.logger_layer())
         .with(provider.tracing_layer());
@@ -96,6 +96,57 @@ let manager = SessionTelemetry::new(
 manager.user_prompt(&prompt_items);
 ```
 
+### Agent response logs
+
+Set `otel.log_agent_responses = true` with an OTLP HTTP or gRPC log exporter to
+emit `codex.agent_response` for completed assistant messages explicitly marked
+`final_answer`. The default is false, independent of `otel.log_user_prompt`;
+disabled response logging emits no event. Main agents and spawned task agents
+are included. Internal/review/compaction/memory agents, commentary, untagged
+messages, streaming deltas, tool-generated async messages, and history replay
+are excluded. Plans are preserved and memory-citation markup is removed from
+the exported copy without changing the stored answer.
+
+Opting in exports potentially sensitive response text, including subagent work
+absent from the main answer, to your log destination. Text is sent only to logs,
+capped at 65,536 UTF-8 bytes at a character boundary, without a truncation notice.
+`response_length` is the original byte count after citation removal, and
+`response_truncated` indicates whether the cap removed text.
+The log-only target is excluded from trace export, local state logs, and the
+feedback log buffer.
+
+Events include standard session attributes, `agent.type` (`main` or `subagent`),
+`turn.id`, and `item.id`. `conversation.id` identifies the emitting thread.
+Available lineage includes `parent.conversation.id`, `parent.turn.id`,
+`root.turn.id`, and `initiating.agent.path`. The parent conversation is the
+structural owner; the parent turn is the trigger and may belong to another
+agent. They are not a guaranteed matching pair or a supported Compliance API join.
+Completion is logged even if the turn later fails. Duplicate item completions
+are suppressed within a turn; delivery retains the existing best-effort exporter
+behavior, without an exactly-once guarantee.
+
+`AgentResponseLogger` owns filtering, text preparation, and per-turn deduplication.
+Core supplies completed raw items and step attribution, retaining the logger in
+the existing turn extension data; it does not own response-logging policy.
+
+### Guardian assessment logs
+
+Set `otel.log_guardian_assessments = true` with an OTLP HTTP or gRPC log exporter
+to emit `codex.guardian_assessment` once a synchronous Guardian review finishes.
+The default is false. Events include the reviewed conversation, turn, review and
+target item IDs, status, risk level, user authorization and rationale. `outcome`
+is `allow` or `deny` for a completed model assessment and absent for review errors,
+timeouts and cancellations, including fail-closed denials. Low-risk approvals
+may contain the reviewer's generic fallback explanation.
+
+Rationales can contain sensitive content. The exported copy is capped at 65,536
+UTF-8 bytes at a character boundary; `rationale_length` records the original byte
+count and `rationale_truncated` indicates truncation. The log-only target is
+excluded from trace export, local state logs and the feedback log buffer. This
+does not add content to the main model's conversation or grant it log read access.
+Cached V2 approvals do not create a synchronous assessment and are not included.
+Delivery uses the existing best-effort OTLP exporter.
+
 ## Metrics (OTLP or in-memory)
 
 Modes:
@@ -143,6 +194,26 @@ let metrics = MetricsClient::new(MetricsConfig::in_memory(
 metrics.counter("codex.turns", 1, &[("model", "gpt-5.1")])?;
 metrics.shutdown()?; // flushes in-memory exporter
 ```
+
+## WebSocket continuation
+
+`codex.websocket.continuation` counts `response.create` send attempts, including
+failed sends. It carries existing session tags plus `mode` (`incremental`/`full`),
+`phase` (`warmup`/`generation`), and `reason`:
+
+| Reason | Meaning |
+| --- | --- |
+| `incremental` | Send the previous response ID and new input. |
+| `no_previous_request` | First request from a fresh client. |
+| `restored_history` | First request after loading resumed or forked history. |
+| `connection_closed` | Full input after observing the previous socket closed. |
+| `other` | Full input for another reason, such as changed input/settings or unavailable response state. |
+
+Per-socket backend metrics label a resend after reconnect as `initial`; this client
+metric retains the first reset reason through reconnect failures and turn boundaries.
+Include warmups (`generate=false`), which can send full input before an incremental
+generation. Closes may be intentional; restored history includes manual resumes/forks.
+This measures client send attempts, not disconnect rates or engine cache reuse.
 
 ## Trace context
 

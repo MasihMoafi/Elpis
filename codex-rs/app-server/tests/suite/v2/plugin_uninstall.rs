@@ -1,18 +1,18 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use std::time::Duration;
 
 use anyhow::Result;
 use anyhow::bail;
 use app_test_support::ChatGptAuthFixture;
+use app_test_support::DEFAULT_CLIENT_NAME;
 use app_test_support::TestAppServer;
-use app_test_support::to_response;
+use app_test_support::start_analytics_events_server;
 use app_test_support::write_chatgpt_auth;
-use codex_app_server_protocol::JSONRPCResponse;
 use codex_app_server_protocol::PluginUninstallParams;
 use codex_app_server_protocol::PluginUninstallResponse;
 use codex_app_server_protocol::RequestId;
 use codex_config::types::AuthCredentialsStoreMode;
 use pretty_assertions::assert_eq;
+use serde_json::json;
 use tempfile::TempDir;
 use tokio::time::timeout;
 use wiremock::Mock;
@@ -42,22 +42,10 @@ enabled = true
 
     let mut mcp = TestAppServer::builder()
         .with_codex_home(codex_home.path())
-        .without_auto_env()
-        .build()
+        .build_initialized_with_timeout(DEFAULT_TIMEOUT)
         .await?;
-    timeout(DEFAULT_TIMEOUT, mcp.initialize()).await??;
 
-    let params = PluginUninstallParams {
-        plugin_id: "sample-plugin@debug".to_string(),
-    };
-
-    let request_id = mcp.send_plugin_uninstall_request(params.clone()).await?;
-    let response: JSONRPCResponse = timeout(
-        DEFAULT_TIMEOUT,
-        mcp.read_stream_until_response_message(RequestId::Integer(request_id)),
-    )
-    .await??;
-    let response: PluginUninstallResponse = to_response(response)?;
+    let response = uninstall_plugin(&mut mcp, "sample-plugin@debug").await?;
     assert_eq!(response, PluginUninstallResponse {});
 
     assert!(
@@ -69,15 +57,75 @@ enabled = true
     let config = std::fs::read_to_string(codex_home.path().join("config.toml"))?;
     assert!(!config.contains(r#"[plugins."sample-plugin@debug"]"#));
 
-    let request_id = mcp.send_plugin_uninstall_request(params).await?;
-    let response: JSONRPCResponse = timeout(
-        DEFAULT_TIMEOUT,
-        mcp.read_stream_until_response_message(RequestId::Integer(request_id)),
-    )
-    .await??;
-    let response: PluginUninstallResponse = to_response(response)?;
+    let response = uninstall_plugin(&mut mcp, "sample-plugin@debug").await?;
     assert_eq!(response, PluginUninstallResponse {});
 
+    Ok(())
+}
+
+#[tokio::test]
+async fn plugin_uninstall_tracks_analytics_event() -> Result<()> {
+    let analytics_server = start_analytics_events_server().await?;
+    let codex_home = TempDir::new()?;
+    write_installed_plugin(&codex_home, "debug", "sample-plugin")?;
+    std::fs::write(
+        codex_home.path().join("config.toml"),
+        format!(
+            "chatgpt_base_url = \"{}\"\n\n[features]\nplugins = true\n\n[plugins.\"sample-plugin@debug\"]\nenabled = true\n",
+            analytics_server.uri()
+        ),
+    )?;
+    write_chatgpt_auth(
+        codex_home.path(),
+        ChatGptAuthFixture::new("chatgpt-token")
+            .account_id("account-123")
+            .chatgpt_user_id("user-123")
+            .chatgpt_account_id("account-123"),
+        AuthCredentialsStoreMode::File,
+    )?;
+
+    let mut mcp = TestAppServer::builder()
+        .with_codex_home(codex_home.path())
+        .build_initialized_with_timeout(DEFAULT_TIMEOUT)
+        .await?;
+
+    let response = uninstall_plugin(&mut mcp, "sample-plugin@debug").await?;
+    assert_eq!(response, PluginUninstallResponse {});
+
+    let payload = timeout(DEFAULT_TIMEOUT, async {
+        loop {
+            let Some(requests) = analytics_server.received_requests().await else {
+                tokio::time::sleep(Duration::from_millis(25)).await;
+                continue;
+            };
+            if let Some(request) = requests.iter().find(|request| {
+                request.method == "POST" && request.url.path() == "/codex/analytics-events/events"
+            }) {
+                break request.body.clone();
+            }
+            tokio::time::sleep(Duration::from_millis(25)).await;
+        }
+    })
+    .await?;
+    let payload: serde_json::Value = serde_json::from_slice(&payload).expect("analytics payload");
+    assert_eq!(
+        payload,
+        json!({
+            "events": [{
+                "event_type": "codex_plugin_uninstalled",
+                "event_params": {
+                    "plugin_id": "sample-plugin@debug",
+                    "remote_plugin_id": null,
+                    "plugin_name": "sample-plugin",
+                    "marketplace_name": "debug",
+                    "has_skills": false,
+                    "mcp_server_count": 0,
+                    "connector_ids": [],
+                    "product_client_id": DEFAULT_CLIENT_NAME,
+                }
+            }]
+        })
+    );
     Ok(())
 }
 
@@ -92,10 +140,8 @@ plugins = false
     )?;
     let mut mcp = TestAppServer::builder()
         .with_codex_home(codex_home.path())
-        .without_auto_env()
-        .build()
+        .build_initialized_with_timeout(DEFAULT_TIMEOUT)
         .await?;
-    timeout(DEFAULT_TIMEOUT, mcp.initialize()).await??;
 
     let request_id = mcp
         .send_plugin_uninstall_request(PluginUninstallParams {
@@ -149,6 +195,11 @@ async fn plugin_uninstall_writes_remote_plugin_to_cloud_when_remote_plugin_enabl
         )
         .mount(&server)
         .await;
+    Mock::given(method("POST"))
+        .and(path("/backend-api/codex/analytics-events/events"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(r#"{"status":"ok"}"#))
+        .mount(&server)
+        .await;
 
     let remote_plugin_cache_root = codex_home
         .path()
@@ -170,26 +221,14 @@ async fn plugin_uninstall_writes_remote_plugin_to_cloud_when_remote_plugin_enabl
 
     let mut mcp = TestAppServer::builder()
         .with_codex_home(codex_home.path())
-        .without_auto_env()
-        .build()
+        .build_initialized_with_timeout(DEFAULT_TIMEOUT)
         .await?;
-    timeout(DEFAULT_TIMEOUT, mcp.initialize()).await??;
 
     // Simulate a background remote-cache refresh removing the local bundle
     // before the uninstall request captures its telemetry metadata.
     std::fs::remove_dir_all(remote_plugin_cache_root.join("1.0.0"))?;
 
-    let request_id = mcp
-        .send_plugin_uninstall_request(PluginUninstallParams {
-            plugin_id: REMOTE_PLUGIN_ID.to_string(),
-        })
-        .await?;
-    let response: JSONRPCResponse = timeout(
-        DEFAULT_TIMEOUT,
-        mcp.read_stream_until_response_message(RequestId::Integer(request_id)),
-    )
-    .await??;
-    let response: PluginUninstallResponse = to_response(response)?;
+    let response = uninstall_plugin(&mut mcp, REMOTE_PLUGIN_ID).await?;
 
     assert_eq!(response, PluginUninstallResponse {});
     wait_for_remote_plugin_request_count(
@@ -201,6 +240,25 @@ async fn plugin_uninstall_writes_remote_plugin_to_cloud_when_remote_plugin_enabl
     .await?;
     assert!(!remote_plugin_cache_root.exists());
     assert!(!legacy_remote_plugin_cache_root.exists());
+    let payload = wait_for_plugin_analytics_payload(&server).await?;
+    assert_eq!(
+        payload,
+        json!({
+            "events": [{
+                "event_type": "codex_plugin_uninstalled",
+                "event_params": {
+                    "plugin_id": "linear@openai-curated-remote",
+                    "remote_plugin_id": REMOTE_PLUGIN_ID,
+                    "plugin_name": "linear",
+                    "marketplace_name": "openai-curated-remote",
+                    "has_skills": true,
+                    "mcp_server_count": 0,
+                    "connector_ids": [],
+                    "product_client_id": DEFAULT_CLIENT_NAME,
+                }
+            }]
+        })
+    );
     Ok(())
 }
 
@@ -250,22 +308,10 @@ async fn plugin_uninstall_uses_detail_scope_for_cache_namespace() -> Result<()> 
 
     let mut mcp = TestAppServer::builder()
         .with_codex_home(codex_home.path())
-        .without_auto_env()
-        .build()
+        .build_initialized_with_timeout(DEFAULT_TIMEOUT)
         .await?;
-    timeout(DEFAULT_TIMEOUT, mcp.initialize()).await??;
 
-    let request_id = mcp
-        .send_plugin_uninstall_request(PluginUninstallParams {
-            plugin_id: REMOTE_PLUGIN_ID.to_string(),
-        })
-        .await?;
-    let response: JSONRPCResponse = timeout(
-        DEFAULT_TIMEOUT,
-        mcp.read_stream_until_response_message(RequestId::Integer(request_id)),
-    )
-    .await??;
-    let response: PluginUninstallResponse = to_response(response)?;
+    let response = uninstall_plugin(&mut mcp, REMOTE_PLUGIN_ID).await?;
 
     assert_eq!(response, PluginUninstallResponse {});
     wait_for_remote_plugin_request_count(
@@ -328,22 +374,10 @@ async fn plugin_uninstall_accepts_workspace_remote_plugin_id_shape() -> Result<(
 
     let mut mcp = TestAppServer::builder()
         .with_codex_home(codex_home.path())
-        .without_auto_env()
-        .build()
+        .build_initialized_with_timeout(DEFAULT_TIMEOUT)
         .await?;
-    timeout(DEFAULT_TIMEOUT, mcp.initialize()).await??;
 
-    let request_id = mcp
-        .send_plugin_uninstall_request(PluginUninstallParams {
-            plugin_id: WORKSPACE_REMOTE_PLUGIN_ID.to_string(),
-        })
-        .await?;
-    let response: JSONRPCResponse = timeout(
-        DEFAULT_TIMEOUT,
-        mcp.read_stream_until_response_message(RequestId::Integer(request_id)),
-    )
-    .await??;
-    let response: PluginUninstallResponse = to_response(response)?;
+    let response = uninstall_plugin(&mut mcp, WORKSPACE_REMOTE_PLUGIN_ID).await?;
 
     assert_eq!(response, PluginUninstallResponse {});
     wait_for_remote_plugin_request_count(
@@ -381,10 +415,8 @@ async fn plugin_uninstall_rejects_before_post_when_remote_detail_fetch_fails() -
 
     let mut mcp = TestAppServer::builder()
         .with_codex_home(codex_home.path())
-        .without_auto_env()
-        .build()
+        .build_initialized_with_timeout(DEFAULT_TIMEOUT)
         .await?;
-    timeout(DEFAULT_TIMEOUT, mcp.initialize()).await??;
 
     let request_id = mcp
         .send_plugin_uninstall_request(PluginUninstallParams {
@@ -427,10 +459,8 @@ async fn plugin_uninstall_rejects_remote_plugin_id_with_spaces_before_network_ca
     )?;
     let mut mcp = TestAppServer::builder()
         .with_codex_home(codex_home.path())
-        .without_auto_env()
-        .build()
+        .build_initialized_with_timeout(DEFAULT_TIMEOUT)
         .await?;
-    timeout(DEFAULT_TIMEOUT, mcp.initialize()).await??;
 
     let request_id = mcp
         .send_plugin_uninstall_request(PluginUninstallParams {
@@ -466,10 +496,8 @@ async fn plugin_uninstall_rejects_invalid_remote_plugin_id_before_network_call()
     )?;
     let mut mcp = TestAppServer::builder()
         .with_codex_home(codex_home.path())
-        .without_auto_env()
-        .build()
+        .build_initialized_with_timeout(DEFAULT_TIMEOUT)
         .await?;
-    timeout(DEFAULT_TIMEOUT, mcp.initialize()).await??;
 
     let request_id = mcp
         .send_plugin_uninstall_request(PluginUninstallParams {
@@ -505,10 +533,8 @@ async fn plugin_uninstall_rejects_empty_remote_plugin_id() -> Result<()> {
     )?;
     let mut mcp = TestAppServer::builder()
         .with_codex_home(codex_home.path())
-        .without_auto_env()
-        .build()
+        .build_initialized_with_timeout(DEFAULT_TIMEOUT)
         .await?;
-    timeout(DEFAULT_TIMEOUT, mcp.initialize()).await??;
 
     let request_id = mcp
         .send_plugin_uninstall_request(PluginUninstallParams {
@@ -525,6 +551,18 @@ async fn plugin_uninstall_rejects_empty_remote_plugin_id() -> Result<()> {
     assert!(err.error.message.contains("invalid remote plugin id"));
 
     Ok(())
+}
+
+async fn uninstall_plugin(
+    mcp: &mut TestAppServer,
+    plugin_id: &str,
+) -> Result<PluginUninstallResponse> {
+    let request_id = mcp
+        .send_plugin_uninstall_request(PluginUninstallParams {
+            plugin_id: plugin_id.to_string(),
+        })
+        .await?;
+    timeout(DEFAULT_TIMEOUT, mcp.read_response(request_id)).await?
 }
 
 fn write_installed_plugin(
@@ -623,6 +661,29 @@ async fn mount_remote_plugin_detail_with_name(
         .respond_with(ResponseTemplate::new(200).set_body_string(detail_body))
         .mount(server)
         .await;
+}
+
+async fn wait_for_plugin_analytics_payload(server: &MockServer) -> Result<serde_json::Value> {
+    timeout(DEFAULT_TIMEOUT, async {
+        loop {
+            let Some(requests) = server.received_requests().await else {
+                tokio::time::sleep(Duration::from_millis(25)).await;
+                continue;
+            };
+            if let Some(request) = requests.iter().find(|request| {
+                request.method == "POST"
+                    && request
+                        .url
+                        .path()
+                        .ends_with("/codex/analytics-events/events")
+            }) {
+                return serde_json::from_slice(&request.body)
+                    .map_err(|err| anyhow::anyhow!("invalid analytics payload: {err}"));
+            }
+            tokio::time::sleep(Duration::from_millis(25)).await;
+        }
+    })
+    .await?
 }
 
 async fn wait_for_remote_plugin_request_count(

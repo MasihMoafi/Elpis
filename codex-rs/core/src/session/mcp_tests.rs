@@ -1,18 +1,17 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use super::*;
 use rmcp::model::BooleanSchema;
 use rmcp::model::ElicitationSchema;
-use rmcp::model::PrimitiveSchema;
+use rmcp::model::PrimitiveSchemaDefinition;
 use serde_json::json;
 
-fn meta(value: Value) -> Option<Meta> {
+fn meta(value: Value) -> Option<RequestMetaObject> {
     let Value::Object(map) = value else {
         panic!("metadata must be an object");
     };
-    Some(Meta(map))
+    Some(RequestMetaObject::from(map))
 }
 
-fn guardian_meta(tool_params: Option<Value>) -> Option<Meta> {
+fn guardian_meta(tool_params: Option<Value>) -> Option<RequestMetaObject> {
     let mut value = json!({
         "codex_approval_kind": "mcp_tool_call",
         "codex_request_type": "approval_request",
@@ -27,19 +26,17 @@ fn guardian_meta(tool_params: Option<Value>) -> Option<Meta> {
     meta(value)
 }
 
-fn form_request(meta: Option<Meta>) -> ElicitationReviewRequest {
+fn form_request(meta: Option<RequestMetaObject>) -> ElicitationReviewRequest {
     ElicitationReviewRequest {
         server_name: "browser-use".to_string(),
         request_id: rmcp::model::NumberOrString::Number(7),
-        elicitation: Elicitation::Mcp(
-            rmcp::model::CreateElicitationRequestParams::FormElicitationParams {
-                meta,
-                message: "Allow origin?".to_string(),
-                requested_schema: ElicitationSchema::builder()
-                    .build()
-                    .expect("schema should build"),
-            },
-        ),
+        elicitation: Elicitation::Mcp(rmcp::model::ElicitRequestParams::FormElicitationParams {
+            meta,
+            message: "Allow origin?".to_string(),
+            requested_schema: ElicitationSchema::builder()
+                .build()
+                .expect("schema should build"),
+        }),
     }
 }
 
@@ -50,7 +47,7 @@ fn guardian_elicitation_review_request_builds_mcp_tool_call() {
     }))));
 
     let GuardianElicitationReview::ApprovalRequest(guardian_request) =
-        guardian_elicitation_review_request(&request)
+        guardian_elicitation_review_request(&request, /*originating_call_id*/ None)
     else {
         panic!("expected Guardian MCP tool call request");
     };
@@ -89,7 +86,7 @@ fn guardian_elicitation_review_request_defaults_missing_tool_params() {
     let request = form_request(guardian_meta(/*tool_params*/ None));
 
     let GuardianElicitationReview::ApprovalRequest(guardian_request) =
-        guardian_elicitation_review_request(&request)
+        guardian_elicitation_review_request(&request, /*originating_call_id*/ None)
     else {
         panic!("expected Guardian MCP tool call request");
     };
@@ -166,7 +163,7 @@ fn guardian_elicitation_review_request_requires_opt_in() {
     })));
 
     assert_eq!(
-        guardian_elicitation_review_request(&request),
+        guardian_elicitation_review_request(&request, /*originating_call_id*/ None),
         GuardianElicitationReview::NotRequested
     );
 }
@@ -176,36 +173,38 @@ fn guardian_elicitation_review_request_declines_unsupported_opt_in_shapes() {
     let url_request = ElicitationReviewRequest {
         server_name: "browser-use".to_string(),
         request_id: rmcp::model::NumberOrString::Number(8),
-        elicitation: Elicitation::Mcp(
-            rmcp::model::CreateElicitationRequestParams::UrlElicitationParams {
-                meta: guardian_meta(Some(json!({}))),
-                message: "Open URL".to_string(),
-                url: "https://example.com".to_string(),
-                elicitation_id: "elicit-1".to_string(),
-            },
-        ),
+        elicitation: Elicitation::Mcp(rmcp::model::ElicitRequestParams::UrlElicitationParams {
+            meta: guardian_meta(Some(json!({}))),
+            message: "Open URL".to_string(),
+            url: "https://example.com".to_string(),
+            elicitation_id: "elicit-1".to_string(),
+        }),
     };
     assert!(matches!(
-        guardian_elicitation_review_request(&url_request),
+        guardian_elicitation_review_request(&url_request, /*originating_call_id*/ None),
         GuardianElicitationReview::Decline(_)
     ));
 
     let non_empty_schema_request = ElicitationReviewRequest {
         server_name: "browser-use".to_string(),
         request_id: rmcp::model::NumberOrString::Number(9),
-        elicitation: Elicitation::Mcp(
-            rmcp::model::CreateElicitationRequestParams::FormElicitationParams {
-                meta: guardian_meta(Some(json!({}))),
-                message: "Allow origin?".to_string(),
-                requested_schema: ElicitationSchema::builder()
-                    .required_property("confirmed", PrimitiveSchema::Boolean(BooleanSchema::new()))
-                    .build()
-                    .expect("schema should build"),
-            },
-        ),
+        elicitation: Elicitation::Mcp(rmcp::model::ElicitRequestParams::FormElicitationParams {
+            meta: guardian_meta(Some(json!({}))),
+            message: "Allow origin?".to_string(),
+            requested_schema: ElicitationSchema::builder()
+                .required_property(
+                    "confirmed",
+                    PrimitiveSchemaDefinition::Boolean(BooleanSchema::new()),
+                )
+                .build()
+                .expect("schema should build"),
+        }),
     };
     assert!(matches!(
-        guardian_elicitation_review_request(&non_empty_schema_request),
+        guardian_elicitation_review_request(
+            &non_empty_schema_request,
+            /*originating_call_id*/ None
+        ),
         GuardianElicitationReview::Decline(_)
     ));
 
@@ -214,18 +213,19 @@ fn guardian_elicitation_review_request_declines_unsupported_opt_in_shapes() {
         "codex_request_type": "approval_request",
     })));
     assert!(matches!(
-        guardian_elicitation_review_request(&missing_tool_name_request),
+        guardian_elicitation_review_request(
+            &missing_tool_name_request,
+            /*originating_call_id*/ None
+        ),
         GuardianElicitationReview::Decline(_)
     ));
 }
 
 #[test]
 fn guardian_decisions_map_to_elicitation_responses_without_session_state() {
+    let model = codex_models_manager::model_info::model_info_from_slug("acting-model");
     assert_eq!(
-        mcp_elicitation_response_from_guardian_decision_parts(
-            ReviewDecision::Approved,
-            /*denial_message*/ None,
-        ),
+        mcp_elicitation_response_from_guardian_decision(ReviewDecision::Approved, &model),
         ElicitationResponse {
             action: ElicitationAction::Accept,
             content: Some(json!({})),
@@ -235,9 +235,9 @@ fn guardian_decisions_map_to_elicitation_responses_without_session_state() {
         }
     );
     assert_eq!(
-        mcp_elicitation_response_from_guardian_decision_parts(
-            ReviewDecision::Denied,
-            Some("Denied by Guardian".to_string()),
+        mcp_elicitation_response_from_guardian_decision(
+            ReviewDecision::denied("Denied by Guardian"),
+            &model,
         ),
         ElicitationResponse {
             action: ElicitationAction::Decline,
@@ -249,24 +249,18 @@ fn guardian_decisions_map_to_elicitation_responses_without_session_state() {
         }
     );
     assert_eq!(
-        mcp_elicitation_response_from_guardian_decision_parts(
-            ReviewDecision::TimedOut,
-            /*denial_message*/ None,
-        ),
+        mcp_elicitation_response_from_guardian_decision(ReviewDecision::TimedOut, &model),
         ElicitationResponse {
             action: ElicitationAction::Decline,
             content: None,
             meta: Some(json!({
                 "approvals_reviewer": ApprovalsReviewer::AutoReview,
-                "message": crate::guardian::guardian_timeout_message(),
+                "message": codex_prompts::ResolvedModelMessages::from_model(&model).auto_review().timeout_instructions,
             })),
         }
     );
     assert_eq!(
-        mcp_elicitation_response_from_guardian_decision_parts(
-            ReviewDecision::Abort,
-            /*denial_message*/ None,
-        ),
+        mcp_elicitation_response_from_guardian_decision(ReviewDecision::Abort, &model),
         ElicitationResponse {
             action: ElicitationAction::Cancel,
             content: None,
@@ -275,4 +269,30 @@ fn guardian_decisions_map_to_elicitation_responses_without_session_state() {
             })),
         }
     );
+}
+
+#[test]
+fn guardian_elicitation_timeout_uses_acting_model_instructions() {
+    let mut model = codex_models_manager::model_info::model_info_from_slug("acting-model");
+    for timeout_instructions in ["Catalog timeout instructions.", ""] {
+        model.model_messages = Some(
+            serde_json::from_value(json!({
+                "auto_review": {
+                    "timeout_instructions": timeout_instructions,
+                },
+            }))
+            .expect("model messages should deserialize"),
+        );
+        assert_eq!(
+            mcp_elicitation_response_from_guardian_decision(ReviewDecision::TimedOut, &model),
+            ElicitationResponse {
+                action: ElicitationAction::Decline,
+                content: None,
+                meta: Some(json!({
+                    "approvals_reviewer": ApprovalsReviewer::AutoReview,
+                    "message": timeout_instructions,
+                })),
+            }
+        );
+    }
 }

@@ -16,10 +16,9 @@ codex-utils-rustls-provider = { workspace = true }
 codex-websocket-client = { workspace = true }
 futures = { workspace = true }
 http = { workspace = true }
-reqwest = { workspace = true, features = ["json", "stream"] }
 schemars = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
-serde_json = { workspace = true }
+serde_json = { workspace = true, features = ["raw_value"] }
 thiserror = { workspace = true }
 tokio = { workspace = true, features = ["fs", "macros", "net", "rt", "sync", "time"] }
 tokio-tungstenite = { workspace = true }
@@ -35,9 +34,12 @@ uuid = { workspace = true }
 anyhow = { workspace = true }
 assert_matches = { workspace = true }
 pretty_assertions = { workspace = true }
+rcgen = { workspace = true }
+rustls = { workspace = true }
+tempfile = { workspace = true }
+tokio = { workspace = true, features = ["test-util"] }
 tokio-test = { workspace = true }
 wiremock = { workspace = true }
-reqwest = { workspace = true }
 
 [lints]
 workspace = true

@@ -16,6 +16,7 @@ pub(crate) struct ContextWindowTokenStatus {
     pub(crate) auto_compact_window_prefill_tokens: Option<i64>,
     pub(crate) full_context_window_limit_reached: bool,
     pub(crate) token_limit_reached: bool,
+    pub(crate) turn_end_compaction_threshold_reached: bool,
 }
 
 fn tokens_remaining(limit: Option<i64>, used: i64) -> Option<i64> {
@@ -29,9 +30,24 @@ pub(crate) async fn context_window_token_status(
     context_window_token_status_with_config(
         sess,
         turn_context.config.as_ref(),
-        &turn_context.model_info,
+        turn_context.model_info().as_ref(),
     )
     .await
+}
+
+pub(crate) async fn context_window_token_status_for_model(
+    sess: &Session,
+    config: &Config,
+    turn_context: &TurnContext,
+    model_info: &ModelInfo,
+) -> ContextWindowTokenStatus {
+    let mut config = config.clone();
+    config.token_budget = super::token_budget::resolve_token_budget(
+        turn_context.configured_token_budget.as_ref(),
+        turn_context.use_model_token_budget_defaults,
+        model_info,
+    );
+    context_window_token_status_with_config(sess, &config, model_info).await
 }
 
 async fn context_window_token_status_with_config(
@@ -65,7 +81,9 @@ async fn context_window_token_status_with_config(
         };
 
     // The model's full context window is a hard cap, independent of the auto-compaction scope.
-    let full_context_window_limit = model_info.usable_context_window();
+    let full_context_window_limit = model_info.resolved_context_window().map(|context_window| {
+        context_window.saturating_mul(model_info.effective_context_window_percent) / 100
+    });
 
     // Report remaining tokens against the base (unbuffered) window, capped by the full context.
     let base_window_tokens_remaining = [
@@ -90,6 +108,13 @@ async fn context_window_token_status_with_config(
     let token_limit_reached = buffered_auto_compact_limit
         .is_some_and(|limit| auto_compact_scope_tokens >= limit)
         || full_context_window_limit_reached;
+    let post_turn_percent = config.model_post_turn_compact_threshold_percent;
+    let turn_end_compaction_threshold_reached = post_turn_percent > 0
+        && (token_limit_reached
+            || full_context_window_limit.is_some_and(|limit| {
+                i128::from(active_context_tokens) * 100
+                    >= i128::from(limit) * i128::from(post_turn_percent)
+            }));
 
     ContextWindowTokenStatus {
         active_context_tokens,
@@ -100,138 +125,6 @@ async fn context_window_token_status_with_config(
         auto_compact_window_prefill_tokens,
         full_context_window_limit_reached,
         token_limit_reached,
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use codex_protocol::protocol::TokenUsage;
-    use codex_protocol::protocol::TokenUsageInfo;
-    use pretty_assertions::assert_eq;
-
-    async fn set_active_context_tokens(sess: &Session, tokens: i64) {
-        let usage = TokenUsage {
-            input_tokens: tokens,
-            total_tokens: tokens,
-            ..TokenUsage::default()
-        };
-        let mut state = sess.state.lock().await;
-        state.set_token_info(Some(TokenUsageInfo {
-            total_token_usage: usage.clone(),
-            last_token_usage: usage,
-            model_context_window: None,
-        }));
-    }
-
-    fn model_with_context_limits(model_info: &ModelInfo) -> ModelInfo {
-        ModelInfo {
-            context_window: Some(272_000),
-            max_context_window: Some(400_000),
-            auto_compact_token_limit: Some(250_000),
-            effective_context_window_percent: 95,
-            ..model_info.clone()
-        }
-    }
-
-    #[tokio::test]
-    async fn total_scope_uses_model_limit_and_usable_context_window() {
-        let (sess, turn_context) = crate::session::tests::make_session_and_context().await;
-        set_active_context_tokens(&sess, 100_000).await;
-        let mut config = turn_context.config.as_ref().clone();
-        config.model_auto_compact_token_limit = None;
-        config.model_auto_compact_token_limit_scope = AutoCompactTokenLimitScope::Total;
-        let model_info = model_with_context_limits(&turn_context.model_info);
-
-        let status = context_window_token_status_with_config(&sess, &config, &model_info).await;
-
-        assert_eq!(status.active_context_tokens, 100_000);
-        assert_eq!(status.auto_compact_scope_tokens, 100_000);
-        assert_eq!(status.auto_compact_scope_limit, Some(244_800));
-        assert_eq!(status.full_context_window_limit, Some(258_400));
-        assert_eq!(status.base_window_tokens_remaining, Some(144_800));
-        assert_eq!(status.auto_compact_window_prefill_tokens, None);
-    }
-
-    #[tokio::test]
-    async fn total_scope_ignores_explicit_config_limit() {
-        let (sess, turn_context) = crate::session::tests::make_session_and_context().await;
-        set_active_context_tokens(&sess, 100_000).await;
-        let mut config = turn_context.config.as_ref().clone();
-        config.model_auto_compact_token_limit = Some(120_000);
-        config.model_auto_compact_token_limit_scope = AutoCompactTokenLimitScope::Total;
-        let model_info = model_with_context_limits(&turn_context.model_info);
-
-        let status = context_window_token_status_with_config(&sess, &config, &model_info).await;
-
-        assert_eq!(status.auto_compact_scope_limit, Some(244_800));
-        assert_eq!(status.full_context_window_limit, Some(258_400));
-    }
-
-    #[tokio::test]
-    async fn body_after_prefix_uses_configured_limit_and_prefill_accounting() {
-        let (sess, turn_context) = crate::session::tests::make_session_and_context().await;
-        set_active_context_tokens(&sess, 100_000).await;
-        {
-            let mut state = sess.state.lock().await;
-            state.set_auto_compact_window_estimated_prefill(70_000);
-        }
-        let mut config = turn_context.config.as_ref().clone();
-        config.model_auto_compact_token_limit = Some(40_000);
-        config.model_auto_compact_token_limit_scope = AutoCompactTokenLimitScope::BodyAfterPrefix;
-        let model_info = model_with_context_limits(&turn_context.model_info);
-
-        let status = context_window_token_status_with_config(&sess, &config, &model_info).await;
-
-        assert_eq!(status.active_context_tokens, 100_000);
-        assert_eq!(status.auto_compact_scope_tokens, 30_000);
-        assert_eq!(status.auto_compact_scope_limit, Some(40_000));
-        assert_eq!(status.full_context_window_limit, Some(258_400));
-        assert_eq!(status.base_window_tokens_remaining, Some(10_000));
-        assert_eq!(status.auto_compact_window_prefill_tokens, Some(70_000));
-    }
-
-    #[tokio::test]
-    async fn max_context_window_is_used_when_context_window_is_missing() {
-        let (sess, turn_context) = crate::session::tests::make_session_and_context().await;
-        set_active_context_tokens(&sess, 100_000).await;
-        let mut config = turn_context.config.as_ref().clone();
-        config.model_auto_compact_token_limit = None;
-        config.model_auto_compact_token_limit_scope = AutoCompactTokenLimitScope::Total;
-        let model_info = ModelInfo {
-            context_window: None,
-            max_context_window: Some(400_000),
-            auto_compact_token_limit: None,
-            effective_context_window_percent: 95,
-            ..turn_context.model_info.clone()
-        };
-
-        let status = context_window_token_status_with_config(&sess, &config, &model_info).await;
-
-        assert_eq!(status.auto_compact_scope_limit, Some(360_000));
-        assert_eq!(status.full_context_window_limit, Some(380_000));
-    }
-
-    #[tokio::test]
-    async fn unknown_context_window_has_no_synthetic_limit() {
-        let (sess, turn_context) = crate::session::tests::make_session_and_context().await;
-        set_active_context_tokens(&sess, 100_000).await;
-        let mut config = turn_context.config.as_ref().clone();
-        config.model_auto_compact_token_limit = Some(120_000);
-        config.model_auto_compact_token_limit_scope = AutoCompactTokenLimitScope::Total;
-        let model_info = ModelInfo {
-            context_window: None,
-            max_context_window: None,
-            auto_compact_token_limit: None,
-            ..turn_context.model_info.clone()
-        };
-
-        let status = context_window_token_status_with_config(&sess, &config, &model_info).await;
-
-        assert_eq!(status.auto_compact_scope_limit, None);
-        assert_eq!(status.full_context_window_limit, None);
-        assert_eq!(status.base_window_tokens_remaining, None);
-        assert!(!status.full_context_window_limit_reached);
-        assert!(!status.token_limit_reached);
+        turn_end_compaction_threshold_reached,
     }
 }

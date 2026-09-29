@@ -5,10 +5,21 @@ use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
 
+use codex_network_proxy::NetworkDecision;
+use codex_network_proxy::NetworkPolicyDecision;
+use codex_network_proxy::NetworkPolicyRequest;
+use codex_network_proxy::NetworkProtocol;
+use codex_network_proxy::NetworkRequestCancellation;
+use codex_network_proxy::NetworkRequestCancellationReason;
+use serde_json::Value;
 use tokio::sync::mpsc;
 use tokio::time::Instant;
 use tokio::time::sleep;
+use tokio::time::timeout;
 use tokio::time::timeout_at;
+use tokio_util::sync::CancellationToken;
+use tracing::Instrument;
+use tracing::debug;
 
 use super::ConnectionStatus;
 use super::ExecServerClient;
@@ -25,13 +36,24 @@ use crate::client_transport::ExecServerReconnectStrategy;
 use crate::process::ExecProcessEvent;
 use crate::protocol::EXEC_READ_METHOD;
 use crate::protocol::EXEC_TERMINATE_METHOD;
+use crate::protocol::ExecServerNetworkPolicyDecision;
+use crate::protocol::ExecServerNetworkProtocol;
+use crate::protocol::MAX_NETWORK_POLICY_HOST_BYTES;
+use crate::protocol::MAX_NETWORK_POLICY_PROCESS_ID_BYTES;
+use crate::protocol::MAX_NETWORK_POLICY_REASON_BYTES;
+use crate::protocol::NETWORK_POLICY_REQUEST_METHOD;
+use crate::protocol::NetworkPolicyRequestParams;
+use crate::protocol::NetworkPolicyRequestResponse;
 use crate::protocol::ReadParams;
 use crate::protocol::ReadResponse;
 use crate::protocol::TerminateParams;
 use crate::protocol::TerminateResponse;
 use crate::rpc::RpcClient;
 use crate::rpc::RpcClientEvent;
+use crate::rpc::RpcInboundRequestAdmissionError;
 use crate::rpc::SESSION_ALREADY_ATTACHED_ERROR_CODE;
+use crate::rpc::invalid_params;
+use crate::rpc::method_not_found;
 
 #[cfg(test)]
 const SESSION_RECOVERY_TIMEOUT: Duration = Duration::from_millis(500);
@@ -42,6 +64,24 @@ const SESSION_RECOVERY_TIMEOUT: Duration = Duration::from_secs(25);
 const SESSION_RECOVERY_RETRY_INTERVAL: Duration = Duration::from_millis(100);
 const REGISTRY_RECOVERY_INITIAL_RETRY_INTERVAL: Duration = Duration::from_millis(500);
 const REGISTRY_RECOVERY_MAX_RETRY_INTERVAL: Duration = Duration::from_secs(5);
+const NETWORK_POLICY_DENIAL_REASON: &str = "not_allowed";
+
+struct ClientRequestOutcome {
+    span: tracing::Span,
+    result: &'static str,
+}
+
+impl ClientRequestOutcome {
+    fn complete(&mut self, result: &'static str) {
+        self.result = result;
+    }
+}
+
+impl Drop for ClientRequestOutcome {
+    fn drop(&mut self) {
+        self.span.record("result", self.result);
+    }
+}
 
 impl SessionState {
     fn last_published_seq(&self) -> u64 {
@@ -213,8 +253,8 @@ impl Inner {
     pub(super) async fn rpc_client(self: &Arc<Self>) -> Result<Arc<RpcClient>, ExecServerError> {
         let mut connection_changed = self.connection_changed.subscribe();
         loop {
-            if let Some(message) = self.failure_message() {
-                return Err(ExecServerError::Disconnected(message));
+            if let Some(message) = self.connection_failure() {
+                return Err(message.into());
             }
 
             let rpc_client = {
@@ -270,10 +310,10 @@ impl Inner {
     }
 
     pub(super) fn is_failed(&self) -> bool {
-        self.failure_message().is_some()
+        self.connection_failure().is_some()
     }
 
-    pub(super) fn failure_message(&self) -> Option<String> {
+    pub(super) fn connection_failure(&self) -> Option<super::ConnectionFailure> {
         let connection = self
             .connection
             .lock()
@@ -284,7 +324,7 @@ impl Inner {
         }
     }
 
-    fn request_recovery(
+    pub(super) fn request_recovery(
         self: &Arc<Self>,
         failed_rpc_client: Arc<RpcClient>,
         disconnect_message: String,
@@ -313,7 +353,11 @@ impl Inner {
         self.notify_connection_changed();
         let inner = Arc::clone(self);
         tokio::spawn(async move {
-            inner.recover(disconnect_message).await;
+            tokio::select! {
+                biased;
+                _ = inner.retired.cancelled() => {},
+                _ = inner.recover(disconnect_message) => {},
+            }
         });
     }
 
@@ -328,11 +372,13 @@ impl Inner {
             let message = format!(
                 "{disconnect_message}; failed to resume exec-server session: recovery timed out after {SESSION_RECOVERY_TIMEOUT:?}"
             );
-            self.fail(message).await;
+            self.fail(super::ConnectionFailure::Disconnected(message))
+                .await;
             return;
         }
         if self.reconnect_strategy.is_none() {
-            self.fail(disconnect_message).await;
+            self.fail(super::ConnectionFailure::Disconnected(disconnect_message))
+                .await;
             return;
         }
 
@@ -340,7 +386,8 @@ impl Inner {
             let message = format!(
                 "{disconnect_message}; failed to resume exec-server session: missing session id"
             );
-            self.fail(message).await;
+            self.fail(super::ConnectionFailure::Disconnected(message))
+                .await;
             return;
         };
         let uses_registry_backoff = matches!(
@@ -350,15 +397,20 @@ impl Inner {
         let mut registry_retry_attempt = 0;
         let last_error = loop {
             match timeout_at(deadline, self.resume_once(&session_id)).await {
-                Ok(Ok(candidate)) => {
-                    if !candidate.is_disconnected() && self.install_recovered_client(candidate) {
+                Ok(Ok((rpc_client, _attempt, executor_registration_id))) => {
+                    if self.install_recovered_client(rpc_client, executor_registration_id) {
                         return;
                     }
                 }
-                Ok(Err(error)) if !is_retryable_recovery_error(&error) => {
-                    break error.to_string();
+                Ok(Err(error)) => {
+                    if let Some(denial) = error.application_network_policy_denial() {
+                        self.fail(super::ConnectionFailure::Policy(denial)).await;
+                        return;
+                    }
+                    if !is_retryable_recovery_error(&error) {
+                        break error.to_string();
+                    }
                 }
-                Ok(Err(_)) => {}
                 Err(_) => {
                     break format!("recovery timed out after {SESSION_RECOVERY_TIMEOUT:?}");
                 }
@@ -381,7 +433,8 @@ impl Inner {
 
         let message =
             format!("{disconnect_message}; failed to resume exec-server session: {last_error}");
-        self.fail(message).await;
+        self.fail(super::ConnectionFailure::Disconnected(message))
+            .await;
     }
 
     async fn wait_for_process_starts(&self) {
@@ -400,17 +453,23 @@ impl Inner {
         }
     }
 
-    fn install_recovered_client(&self, rpc_client: Arc<RpcClient>) -> bool {
+    fn install_recovered_client(
+        &self,
+        rpc_client: Arc<RpcClient>,
+        executor_registration_id: Option<String>,
+    ) -> bool {
         let installed = {
             let mut connection = self
                 .connection
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
-            if !matches!(connection.status, ConnectionStatus::Recovering)
+            if self.retired.is_cancelled()
+                || !matches!(connection.status, ConnectionStatus::Recovering)
                 || rpc_client.is_disconnected()
             {
                 false
             } else {
+                connection.executor_registration_id = executor_registration_id;
                 connection.set_status(ConnectionStatus::Connected(rpc_client));
                 true
             }
@@ -428,12 +487,23 @@ impl Inner {
     async fn resume_once(
         self: &Arc<Self>,
         session_id: &str,
-    ) -> Result<Arc<RpcClient>, ExecServerError> {
+    ) -> Result<
+        (
+            Arc<RpcClient>,
+            Option<tokio::sync::OwnedSemaphorePermit>,
+            Option<String>,
+        ),
+        ExecServerError,
+    > {
         let reconnect_strategy = self
             .reconnect_strategy
             .as_ref()
             .ok_or_else(|| ExecServerError::Protocol("missing reconnect strategy".to_string()))?;
-        let (connection, options) = reconnect_strategy.resume(session_id).await?;
+        let attempt = reconnect_strategy.resume(session_id).await?;
+        let (connection, options, attempt_permit, noise_context) = attempt.into_parts();
+        let executor_registration_id = noise_context
+            .as_ref()
+            .map(|context| context.executor_registration_id.clone());
         let (rpc_client, events_rx) = RpcClient::new(connection);
         let rpc_client = Arc::new(rpc_client);
         let client = ExecServerClient {
@@ -445,10 +515,12 @@ impl Inner {
         // burst cannot fill the bounded event channel and block the initialize
         // response behind it.
         client.spawn_rpc_reader(&rpc_client, events_rx);
-        client.initialize_rpc(&rpc_client, options).await?;
+        client
+            .initialize_rpc(&rpc_client, options, noise_context)
+            .await?;
 
         self.recover_processes(&rpc_client).await?;
-        Ok(rpc_client)
+        Ok((rpc_client, attempt_permit, executor_registration_id))
     }
 
     async fn recover_processes(
@@ -481,6 +553,10 @@ impl Inner {
                 Ok(true) => self.remove_session_if(process_id, session),
                 Ok(false) => {}
                 Err(error) => {
+                    session
+                        .network_policy
+                        .cancellation
+                        .record(NetworkRequestCancellationReason::ProcessCancelled);
                     let terminated: Result<TerminateResponse, ExecServerError> = rpc_client
                         .call_for_cleanup(
                             EXEC_TERMINATE_METHOD,
@@ -503,7 +579,7 @@ impl Inner {
         Ok(())
     }
 
-    async fn fail(self: &Arc<Self>, message: String) {
+    async fn fail(self: &Arc<Self>, message: super::ConnectionFailure) {
         let (message, newly_failed) = {
             let mut connection = self
                 .connection
@@ -519,7 +595,7 @@ impl Inner {
         };
         if newly_failed {
             self.notify_connection_changed();
-            fail_all_in_flight_work(self, message.clone()).await;
+            fail_all_in_flight_work(self, message.to_string()).await;
         }
     }
 }
@@ -531,14 +607,236 @@ impl ExecServerClient {
         mut events_rx: mpsc::Receiver<RpcClientEvent>,
     ) {
         let inner = Arc::downgrade(&self.inner);
+        let rpc_inbound_request_slots = Arc::clone(&self.inner.rpc_inbound_request_slots);
         let rpc_client = Arc::downgrade(rpc_client);
+        let connection_cancelled = CancellationToken::new();
+        let connection_cancel_guard = connection_cancelled.clone().drop_guard();
         tokio::spawn(async move {
+            let _connection_cancel_guard = connection_cancel_guard;
             while let Some(event) = events_rx.recv().await {
                 let (Some(inner), Some(rpc_client)) = (inner.upgrade(), rpc_client.upgrade())
                 else {
                     return;
                 };
                 match event {
+                    RpcClientEvent::Request {
+                        request,
+                        request_span,
+                    } => {
+                        let mut request_outcome = ClientRequestOutcome {
+                            span: request_span,
+                            result: "disconnected",
+                        };
+                        if request.method != NETWORK_POLICY_REQUEST_METHOD {
+                            let error = method_not_found(format!(
+                                "exec-server client does not implement `{}` yet",
+                                request.method
+                            ));
+                            if rpc_client.respond_error(request.id, error).await.is_err() {
+                                inner.request_recovery(
+                                    rpc_client,
+                                    disconnected_message(/*reason*/ None),
+                                );
+                                return;
+                            }
+                            request_outcome.complete("error");
+                            continue;
+                        }
+                        request_outcome
+                            .span
+                            .record("otel.name", NETWORK_POLICY_REQUEST_METHOD);
+
+                        let request_guard = match rpc_client
+                            .admit_inbound_request(&request.id, &rpc_inbound_request_slots)
+                        {
+                            Ok(request_guard) => request_guard,
+                            Err(RpcInboundRequestAdmissionError::InvalidRequestId) => {
+                                rpc_client.close_transport().await;
+                                inner.request_recovery(
+                                    rpc_client,
+                                    "exec-server sent an invalid request ID".to_string(),
+                                );
+                                return;
+                            }
+                            Err(RpcInboundRequestAdmissionError::DuplicateRequestId) => {
+                                rpc_client.close_transport().await;
+                                inner.request_recovery(
+                                    rpc_client,
+                                    "exec-server reused an in-flight request ID".to_string(),
+                                );
+                                return;
+                            }
+                            Err(RpcInboundRequestAdmissionError::AtCapacity) => {
+                                let response = NetworkPolicyRequestResponse {
+                                    decision: ExecServerNetworkPolicyDecision::Deny {
+                                        reason: NETWORK_POLICY_DENIAL_REASON.to_string(),
+                                    },
+                                };
+                                if rpc_client.respond(request.id, &response).await.is_err() {
+                                    inner.request_recovery(
+                                        rpc_client,
+                                        disconnected_message(/*reason*/ None),
+                                    );
+                                    return;
+                                }
+                                request_outcome.complete("success");
+                                continue;
+                            }
+                        };
+                        let request_id = request.id;
+                        let params: NetworkPolicyRequestParams =
+                            match serde_json::from_value(request.params.unwrap_or(Value::Null)) {
+                                Ok(params) => params,
+                                Err(_) => {
+                                    let error = invalid_params(
+                                        "invalid network policy request params".to_string(),
+                                    );
+                                    if rpc_client.respond_error(request_id, error).await.is_err() {
+                                        inner.request_recovery(
+                                            rpc_client,
+                                            disconnected_message(/*reason*/ None),
+                                        );
+                                        return;
+                                    }
+                                    request_outcome.complete("error");
+                                    continue;
+                                }
+                            };
+                        let process_id = params.process_id;
+                        let request = params.request;
+                        let process_id_valid = !process_id.is_empty()
+                            && process_id.len() <= MAX_NETWORK_POLICY_PROCESS_ID_BYTES;
+                        let host_valid = !request.host.is_empty()
+                            && request.host.len() <= MAX_NETWORK_POLICY_HOST_BYTES
+                            && !request.host.chars().any(char::is_control)
+                            && !request.host.chars().any(char::is_whitespace);
+                        let session = (process_id_valid && host_valid)
+                            .then(|| inner.get_session(&process_id))
+                            .flatten();
+                        let controller = session
+                            .as_ref()
+                            .and_then(|session| session.network_policy.controller.load_full());
+                        let process_cancelled = session
+                            .as_ref()
+                            .map(|session| session.network_policy.cancelled.clone());
+                        let process_cancellation = session
+                            .as_ref()
+                            .map(|session| session.network_policy.cancellation.clone());
+                        let cancellation = NetworkRequestCancellation::default();
+                        let expected_session = session.as_ref().map(Arc::downgrade);
+                        let policy_request =
+                            (process_id_valid && host_valid).then_some(NetworkPolicyRequest {
+                                protocol: match request.protocol {
+                                    ExecServerNetworkProtocol::Http => NetworkProtocol::Http,
+                                    ExecServerNetworkProtocol::HttpsConnect => {
+                                        NetworkProtocol::HttpsConnect
+                                    }
+                                    ExecServerNetworkProtocol::Socks5Tcp => {
+                                        NetworkProtocol::Socks5Tcp
+                                    }
+                                    ExecServerNetworkProtocol::Socks5Udp => {
+                                        NetworkProtocol::Socks5Udp
+                                    }
+                                },
+                                host: request.host,
+                                port: request.port,
+                                environment_id: None,
+                                client_addr: None,
+                                method: None,
+                                command: None,
+                                exec_policy_hint: None,
+                                execution_id: None,
+                                disconnect: None,
+                                cancellation: Some(cancellation.clone()),
+                            });
+                        let inner = Arc::downgrade(&inner);
+                        let rpc_client = Arc::downgrade(&rpc_client);
+                        let connection_cancelled = connection_cancelled.clone();
+                        let task_span = request_outcome.span.clone();
+                        let task = async move {
+                            let _request_guard = request_guard;
+                            let decision = match (controller, policy_request, process_cancelled) {
+                                (Some(controller), Some(request), Some(process_cancelled)) => {
+                                    // Keep the decision future outside select/timeout so its
+                                    // guard sees the cancellation cause before it is dropped.
+                                    let mut decision = controller.decider.decide(request);
+                                    tokio::select! {
+                                        biased;
+                                        _ = connection_cancelled.cancelled() => {
+                                            cancellation.record(NetworkRequestCancellationReason::ConnectionClosed);
+                                            return;
+                                        },
+                                        _ = process_cancelled.cancelled() => {
+                                            cancellation.record(process_cancellation.as_ref()
+                                                .and_then(NetworkRequestCancellation::reason)
+                                                .unwrap_or(NetworkRequestCancellationReason::ProcessCancelled));
+                                            NetworkDecision::deny(NETWORK_POLICY_DENIAL_REASON)
+                                        }
+                                        result = timeout(
+                                            controller.timeout,
+                                            &mut decision,
+                                        ) => result.unwrap_or_else(|_| {
+                                            cancellation.record(NetworkRequestCancellationReason::TimedOut);
+                                            NetworkDecision::deny(NETWORK_POLICY_DENIAL_REASON)
+                                        }),
+                                    }
+                                }
+                                (None, _, _) | (_, None, _) | (_, _, None) => {
+                                    NetworkDecision::deny(NETWORK_POLICY_DENIAL_REASON)
+                                }
+                            };
+                            if let Some(expected_session) = expected_session {
+                                let (Some(inner), Some(expected_session)) =
+                                    (inner.upgrade(), expected_session.upgrade())
+                                else {
+                                    return;
+                                };
+                                if !inner
+                                    .get_session(&process_id)
+                                    .is_some_and(|session| Arc::ptr_eq(&session, &expected_session))
+                                {
+                                    return;
+                                }
+                            }
+                            let Some(rpc_client) = rpc_client.upgrade() else {
+                                return;
+                            };
+                            let decision = match decision {
+                                NetworkDecision::Allow => ExecServerNetworkPolicyDecision::Allow,
+                                NetworkDecision::Deny {
+                                    reason, decision, ..
+                                } if reason.len() <= MAX_NETWORK_POLICY_REASON_BYTES
+                                    && !reason.chars().any(char::is_control) =>
+                                {
+                                    match decision {
+                                        NetworkPolicyDecision::Deny => {
+                                            ExecServerNetworkPolicyDecision::Deny { reason }
+                                        }
+                                        NetworkPolicyDecision::Ask => {
+                                            ExecServerNetworkPolicyDecision::Ask { reason }
+                                        }
+                                    }
+                                }
+                                NetworkDecision::Deny { .. } => {
+                                    ExecServerNetworkPolicyDecision::Deny {
+                                        reason: NETWORK_POLICY_DENIAL_REASON.to_string(),
+                                    }
+                                }
+                            };
+                            if let Err(error) = rpc_client
+                                .respond(request_id, &NetworkPolicyRequestResponse { decision })
+                                .await
+                            {
+                                debug!(
+                                    ?error,
+                                    "failed to send network policy decision to exec-server"
+                                );
+                            } else {
+                                request_outcome.complete("success");
+                            }
+                        };
+                        tokio::spawn(task.instrument(task_span));
+                    }
                     RpcClientEvent::Notification(notification) => {
                         if let Err(error) = handle_server_notification(&inner, notification).await {
                             rpc_client.close_transport().await;
@@ -559,11 +857,18 @@ impl ExecServerClient {
     }
 }
 
-fn is_retryable_recovery_error(error: &ExecServerError) -> bool {
+pub(crate) fn is_retryable_recovery_error(error: &ExecServerError) -> bool {
+    if error.application_network_policy_denial().is_some() {
+        return false;
+    }
+    if let ExecServerError::ConnectionAttempt(error) = error {
+        return is_retryable_recovery_error(error.as_ref());
+    }
     is_transport_closed_error(error)
         || matches!(
             error,
-            ExecServerError::WebSocketConnectTimeout { .. }
+            ExecServerError::ProvisioningFailed(_)
+                | ExecServerError::WebSocketConnectTimeout { .. }
                 | ExecServerError::WebSocketConnect { .. }
                 | ExecServerError::InitializeTimedOut { .. }
         )
@@ -575,33 +880,44 @@ fn is_retryable_recovery_error(error: &ExecServerError) -> bool {
         )
 }
 
-fn is_retryable_registry_error(error: &ExecServerError) -> bool {
+pub(crate) fn is_retryable_registry_error(error: &ExecServerError) -> bool {
     matches!(
         error,
         ExecServerError::EnvironmentRegistryRequest(error)
-            if error.is_connect() || error.is_timeout()
+            if error.is_connect()
+                || error.is_timeout()
+                || error.is_body()
+                || matches!(
+                    error,
+                    codex_http_client::RouteAwareRequestError::Request(error)
+                        if error.is_decode()
+                )
     ) || matches!(
         error,
-        ExecServerError::EnvironmentRegistryHttp { status, code, .. }
+        ExecServerError::EnvironmentRegistryHttp { status, .. }
             if status.is_server_error()
-                || *status == reqwest::StatusCode::REQUEST_TIMEOUT
-                || *status == reqwest::StatusCode::TOO_MANY_REQUESTS
-                // TODO: Replace this coarse retry with an explicit registry/presence
-                // recovery FSM so `environment_offline` is retried only while the
-                // executor is expected to reconnect.
-                || (*status == reqwest::StatusCode::CONFLICT
-                    && code.as_deref() == Some("environment_offline"))
+                || *status == http::StatusCode::REQUEST_TIMEOUT
+                || *status == http::StatusCode::TOO_MANY_REQUESTS
+    ) || is_environment_offline_error(error)
+}
+
+pub(crate) fn is_environment_offline_error(error: &ExecServerError) -> bool {
+    matches!(
+        error,
+        ExecServerError::EnvironmentRegistryHttp { status, code, .. }
+            if *status == http::StatusCode::CONFLICT
+                && code.as_deref() == Some("environment_offline")
     )
 }
 
-fn registry_recovery_retry_delay(session_id: &str, attempt: u32) -> Duration {
+pub(crate) fn registry_recovery_retry_delay(retry_key: &str, attempt: u32) -> Duration {
     let multiplier = 1_u32.checked_shl(attempt.min(4)).unwrap_or(u32::MAX);
     let base_delay = REGISTRY_RECOVERY_INITIAL_RETRY_INTERVAL
         .saturating_mul(multiplier)
         .min(REGISTRY_RECOVERY_MAX_RETRY_INTERVAL);
     let base_millis = base_delay.as_millis() as u64;
     let mut hasher = DefaultHasher::new();
-    session_id.hash(&mut hasher);
+    retry_key.hash(&mut hasher);
     attempt.hash(&mut hasher);
 
     Duration::from_millis(base_millis + hasher.finish() % (base_millis / 2 + 1))

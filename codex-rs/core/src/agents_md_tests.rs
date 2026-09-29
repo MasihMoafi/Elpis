@@ -1,8 +1,10 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use super::*;
 use crate::config::ConfigBuilder;
+use crate::config::PermissionProfileSnapshot;
 use crate::context::ContextualUserFragment;
+use crate::environment_selection::EnvironmentConfigOrigin;
 use crate::environment_selection::TurnEnvironmentSnapshot;
+use crate::environment_selection::TurnEnvironmentState;
 use crate::session::turn_context::TurnEnvironment;
 use codex_config::ConfigLayerEntry;
 use codex_config::ConfigLayerStack;
@@ -15,11 +17,21 @@ use codex_exec_server::ExecutorFileSystemFuture;
 use codex_exec_server::FileMetadata;
 use codex_exec_server::FileSystemReadStream;
 use codex_exec_server::FileSystemSandboxContext;
+use codex_exec_server::GetMetadataOptions;
 use codex_exec_server::LOCAL_FS;
 use codex_exec_server::ReadDirectoryEntry;
+use codex_exec_server::ReadFileOptions;
 use codex_exec_server::RemoveOptions;
-use codex_extension_api::UserInstructions;
+use codex_exec_server::WalkOptions;
+use codex_exec_server::WalkOutcome;
+use codex_exec_server::WriteFileOptions;
+use codex_extension_api::Instructions;
 use codex_features::Feature;
+use codex_protocol::config_types::WindowsSandboxLevel;
+use codex_protocol::models::PermissionProfile;
+use codex_protocol::protocol::EnvironmentConfig;
+use codex_protocol::protocol::EnvironmentConfigState;
+use codex_protocol::protocol::TurnEnvironmentSelection;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use codex_utils_path_uri::PathUri;
 use core_test_support::PathBufExt;
@@ -39,6 +51,7 @@ use tokio::sync::Semaphore;
 
 #[derive(Clone, Copy)]
 enum InjectedFailure {
+    MetadataNotFound,
     Metadata(io::ErrorKind),
     MetadataBlocked,
     MetadataBlockedByFilenamePrefix(&'static str),
@@ -80,6 +93,7 @@ impl FailingFileSystem {
     async fn read_file(
         &self,
         path: &PathUri,
+        options: ReadFileOptions,
         sandbox: Option<&FileSystemSandboxContext>,
     ) -> io::Result<Vec<u8>> {
         if path.to_abs_path()? == self.path
@@ -87,13 +101,14 @@ impl FailingFileSystem {
         {
             return Err(io::Error::new(kind, "injected read failure"));
         }
-        LOCAL_FS.read_file(path, sandbox).await
+        LOCAL_FS.read_file(path, options, sandbox).await
     }
 
     async fn write_file(
         &self,
         _path: &PathUri,
         _contents: Vec<u8>,
+        _options: WriteFileOptions,
         _sandbox: Option<&FileSystemSandboxContext>,
     ) -> io::Result<()> {
         unreachable!("write_file should not be called")
@@ -111,15 +126,19 @@ impl FailingFileSystem {
     async fn get_metadata(
         &self,
         path: &PathUri,
+        options: GetMetadataOptions,
         sandbox: Option<&FileSystemSandboxContext>,
     ) -> io::Result<FileMetadata> {
-        let path_abs = path.to_abs_path()?;
         self.metadata_calls
             .paths
             .lock()
             .expect("metadata paths lock")
             .push(path.clone());
         self.metadata_calls.started.notify_one();
+        if matches!(self.failure, InjectedFailure::MetadataNotFound) {
+            return Err(io::Error::from(io::ErrorKind::NotFound));
+        }
+        let path_abs = path.to_abs_path()?;
         match self.failure {
             InjectedFailure::Metadata(kind) if path_abs == self.path => {
                 Err(io::Error::new(kind, "injected metadata failure"))
@@ -131,7 +150,7 @@ impl FailingFileSystem {
                     .await
                     .expect("metadata release semaphore")
                     .forget();
-                LOCAL_FS.get_metadata(path, sandbox).await
+                LOCAL_FS.get_metadata(path, options, sandbox).await
             }
             InjectedFailure::MetadataBlockedByFilenamePrefix(prefix)
                 if path_abs
@@ -145,16 +164,17 @@ impl FailingFileSystem {
                     .await
                     .expect("metadata release semaphore")
                     .forget();
-                LOCAL_FS.get_metadata(path, sandbox).await
+                LOCAL_FS.get_metadata(path, options, sandbox).await
             }
             InjectedFailure::MetadataPending if path_abs == self.path => {
                 std::future::pending().await
             }
-            InjectedFailure::Metadata(_)
+            InjectedFailure::MetadataNotFound
+            | InjectedFailure::Metadata(_)
             | InjectedFailure::MetadataBlocked
             | InjectedFailure::MetadataBlockedByFilenamePrefix(_)
             | InjectedFailure::MetadataPending
-            | InjectedFailure::Read(_) => LOCAL_FS.get_metadata(path, sandbox).await,
+            | InjectedFailure::Read(_) => LOCAL_FS.get_metadata(path, options, sandbox).await,
         }
     }
 
@@ -198,9 +218,10 @@ impl ExecutorFileSystem for FailingFileSystem {
     fn read_file<'a>(
         &'a self,
         path: &'a PathUri,
+        options: ReadFileOptions,
         sandbox: Option<&'a FileSystemSandboxContext>,
     ) -> ExecutorFileSystemFuture<'a, Vec<u8>> {
-        Box::pin(FailingFileSystem::read_file(self, path, sandbox))
+        Box::pin(FailingFileSystem::read_file(self, path, options, sandbox))
     }
 
     fn read_file_stream<'a>(
@@ -220,9 +241,12 @@ impl ExecutorFileSystem for FailingFileSystem {
         &'a self,
         path: &'a PathUri,
         contents: Vec<u8>,
+        options: WriteFileOptions,
         sandbox: Option<&'a FileSystemSandboxContext>,
     ) -> ExecutorFileSystemFuture<'a, ()> {
-        Box::pin(FailingFileSystem::write_file(self, path, contents, sandbox))
+        Box::pin(FailingFileSystem::write_file(
+            self, path, contents, options, sandbox,
+        ))
     }
 
     fn create_directory<'a>(
@@ -239,9 +263,12 @@ impl ExecutorFileSystem for FailingFileSystem {
     fn get_metadata<'a>(
         &'a self,
         path: &'a PathUri,
+        options: GetMetadataOptions,
         sandbox: Option<&'a FileSystemSandboxContext>,
     ) -> ExecutorFileSystemFuture<'a, FileMetadata> {
-        Box::pin(FailingFileSystem::get_metadata(self, path, sandbox))
+        Box::pin(FailingFileSystem::get_metadata(
+            self, path, options, sandbox,
+        ))
     }
 
     fn read_directory<'a>(
@@ -250,6 +277,15 @@ impl ExecutorFileSystem for FailingFileSystem {
         sandbox: Option<&'a FileSystemSandboxContext>,
     ) -> ExecutorFileSystemFuture<'a, Vec<ReadDirectoryEntry>> {
         Box::pin(FailingFileSystem::read_directory(self, path, sandbox))
+    }
+
+    fn walk<'a>(
+        &'a self,
+        _path: &'a PathUri,
+        _options: WalkOptions,
+        _sandbox: Option<&'a FileSystemSandboxContext>,
+    ) -> ExecutorFileSystemFuture<'a, WalkOutcome> {
+        Box::pin(async { unreachable!("walk should not be called") })
     }
 
     fn remove<'a>(
@@ -280,7 +316,7 @@ impl ExecutorFileSystem for FailingFileSystem {
 
 struct TestConfig {
     config: Config,
-    user_instructions: Option<UserInstructions>,
+    user_instructions: Option<Instructions>,
 }
 
 impl Deref for TestConfig {
@@ -310,6 +346,7 @@ async fn load_agents_md(config: &TestConfig) -> Option<LoadedAgentsMd> {
         &environments,
     )
     .await
+    .expect("project instructions should load")
 }
 
 async fn agents_md_paths(config: &TestConfig) -> std::io::Result<Vec<PathUri>> {
@@ -317,6 +354,7 @@ async fn agents_md_paths(config: &TestConfig) -> std::io::Result<Vec<PathUri>> {
         &config.config,
         &PathUri::from_abs_path(&config.cwd),
         LOCAL_FS.as_ref(),
+        /*sandbox*/ None,
     )
     .await
 }
@@ -325,22 +363,39 @@ fn resolved_local_environments<const N: usize>(
     environments: [(&str, AbsolutePathBuf); N],
 ) -> TurnEnvironmentSnapshot {
     TurnEnvironmentSnapshot {
-        turn_environments: environments
+        environments: environments
             .into_iter()
             .map(|(environment_id, cwd)| {
-                TurnEnvironment::new(
-                    environment_id.to_string(),
+                TurnEnvironmentState::Ready(TurnEnvironment::new(
+                    TurnEnvironmentSelection {
+                        environment_id: environment_id.to_string(),
+                        cwd: PathUri::from_abs_path(&cwd),
+                        workspace_roots: Vec::new(),
+                        config: EnvironmentConfigState::Ready(EnvironmentConfig {
+                            allow_login_shell: true,
+                            workspace_roots: Vec::new(),
+                            windows_sandbox_level: WindowsSandboxLevel::Disabled,
+                            windows_sandbox_type: codex_protocol::sandbox::SandboxType::None,
+                            use_legacy_landlock: false,
+                            permission_profile: PermissionProfileSnapshot::legacy(
+                                PermissionProfile::read_only(),
+                            ),
+                            shell_environment_policy: Default::default(),
+                            exec_policy: None,
+                            mcp_policy: None,
+                            network_policy: None,
+                            selected_capability_roots: Vec::new(),
+                        }),
+                    },
+                    EnvironmentConfigOrigin::Thread,
                     Arc::new(
                         Environment::create_for_tests(/*exec_server_url*/ None)
                             .expect("local environment"),
                     ),
-                    PathUri::from_abs_path(&cwd),
-                    Vec::new(),
                     /*shell*/ None,
-                )
+                ))
             })
             .collect(),
-        starting: Vec::new(),
     }
 }
 
@@ -368,6 +423,7 @@ fn foreign_agents_md_uses_environment_native_paths() {
     let source_path = cwd.join("AGENTS.md").expect("AGENTS.md URI");
     let loaded = LoadedAgentsMd {
         user_instructions: None,
+        thread_instructions: None,
         entries: vec![InstructionEntry {
             contents: "remote instructions".to_string(),
             provenance: InstructionProvenance::Project {
@@ -401,6 +457,7 @@ fn multi_environment_agents_md_renders_mixed_path_conventions() {
         .expect("Windows AGENTS.md URI");
     let loaded = LoadedAgentsMd {
         user_instructions: None,
+        thread_instructions: None,
         entries: vec![
             InstructionEntry {
                 contents: "POSIX instructions".to_string(),
@@ -457,9 +514,9 @@ async fn make_config(root: &TempDir, limit: usize, instructions: Option<&str>) -
     config.cwd = root.abs();
     config.project_doc_max_bytes = limit;
 
-    let user_instructions = instructions.map(|text| UserInstructions {
+    let user_instructions = instructions.map(|text| Instructions {
         text: text.to_owned(),
-        source: config.codex_home.join(DEFAULT_AGENTS_MD_FILENAME),
+        source: Some(config.codex_home.join(DEFAULT_AGENTS_MD_FILENAME)),
     });
     TestConfig {
         config,
@@ -506,9 +563,9 @@ async fn make_config_with_project_root_markers(
 
     config.cwd = root.abs();
     config.project_doc_max_bytes = limit;
-    let user_instructions = instructions.map(|text| UserInstructions {
+    let user_instructions = instructions.map(|text| Instructions {
         text: text.to_owned(),
-        source: config.codex_home.join(DEFAULT_AGENTS_MD_FILENAME),
+        source: Some(config.codex_home.join(DEFAULT_AGENTS_MD_FILENAME)),
     });
     TestConfig {
         config,
@@ -558,6 +615,7 @@ fn empty_loaded_instructions_are_empty() {
 fn loaded_instructions_with_only_empty_or_whitespace_entries_are_empty() {
     let empty = LoadedAgentsMd {
         user_instructions: None,
+        thread_instructions: None,
         entries: vec![InstructionEntry {
             contents: String::new(),
             provenance: InstructionProvenance::Internal,
@@ -565,6 +623,7 @@ fn loaded_instructions_with_only_empty_or_whitespace_entries_are_empty() {
     };
     let whitespace = LoadedAgentsMd {
         user_instructions: None,
+        thread_instructions: None,
         entries: vec![InstructionEntry {
             contents: " \n\t".to_string(),
             provenance: InstructionProvenance::Internal,
@@ -636,6 +695,7 @@ async fn total_byte_limit_truncates_later_project_docs() {
     let loaded = load_agents_md(&config).await.expect("project instructions");
     let expected = LoadedAgentsMd {
         user_instructions: None,
+        thread_instructions: None,
         entries: vec![
             InstructionEntry {
                 contents: "root".to_string(),
@@ -655,11 +715,16 @@ async fn total_byte_limit_truncates_later_project_docs() {
     assert_eq!(loaded.text(), "root\n\nabc");
 }
 
+/// Unreadable ancestor markers must not hide readable instructions in the selected cwd.
 #[tokio::test]
-async fn read_agents_md_propagates_metadata_errors() {
+async fn read_agents_md_loads_cwd_instructions_when_parent_markers_are_unreadable() {
     let tmp = tempfile::tempdir().expect("tempdir");
-    let config = make_config(&tmp, /*limit*/ 4096, /*instructions*/ None).await;
-    let marker_path = config.cwd.join(".git");
+    let nested = tmp.path().join("nested");
+    fs::create_dir(&nested).unwrap();
+    fs::write(nested.join("AGENTS.md"), "project doc").unwrap();
+    let mut config = make_config(&tmp, /*limit*/ 4096, /*instructions*/ None).await;
+    config.cwd = nested.abs();
+    let marker_path = tmp.path().join(".git").abs();
     let fs = FailingFileSystem {
         path: marker_path,
         failure: InjectedFailure::Metadata(io::ErrorKind::PermissionDenied),
@@ -667,11 +732,19 @@ async fn read_agents_md_propagates_metadata_errors() {
     };
 
     let cwd = config.cwd.clone();
-    let err = read_agents_md(&config.config, &fs, "local", &PathUri::from_abs_path(&cwd))
-        .await
-        .expect_err("metadata error");
+    let loaded = read_agents_md(
+        &config.config,
+        &fs,
+        "local",
+        &PathUri::from_abs_path(&cwd),
+        config.project_doc_max_bytes,
+        /*sandbox*/ None,
+    )
+    .await
+    .expect("unreadable parent markers should not hide cwd instructions")
+    .expect("cwd instructions");
 
-    assert_eq!(err.kind(), io::ErrorKind::PermissionDenied);
+    assert_eq!(loaded.text(), "project doc");
 }
 
 #[tokio::test]
@@ -686,9 +759,16 @@ async fn read_agents_md_propagates_read_errors() {
     };
 
     let cwd = config.cwd.clone();
-    let err = read_agents_md(&config.config, &fs, "local", &PathUri::from_abs_path(&cwd))
-        .await
-        .expect_err("read error");
+    let err = read_agents_md(
+        &config.config,
+        &fs,
+        "local",
+        &PathUri::from_abs_path(&cwd),
+        config.project_doc_max_bytes,
+        /*sandbox*/ None,
+    )
+    .await
+    .expect_err("read error");
 
     assert_eq!(err.kind(), io::ErrorKind::PermissionDenied);
 }
@@ -705,9 +785,16 @@ async fn read_agents_md_ignores_files_removed_after_discovery() {
     };
 
     let cwd = config.cwd.clone();
-    let loaded = read_agents_md(&config.config, &fs, "local", &PathUri::from_abs_path(&cwd))
-        .await
-        .expect("removed file is recoverable");
+    let loaded = read_agents_md(
+        &config.config,
+        &fs,
+        "local",
+        &PathUri::from_abs_path(&cwd),
+        config.project_doc_max_bytes,
+        /*sandbox*/ None,
+    )
+    .await
+    .expect("removed file is recoverable");
 
     assert_eq!(loaded, None);
 }
@@ -737,7 +824,7 @@ async fn marker_search_does_not_wait_for_a_higher_ancestor() {
 
     let paths = tokio::time::timeout(
         std::time::Duration::from_secs(1),
-        super::agents_md_paths(&config.config, &cwd, &fs),
+        super::agents_md_paths(&config.config, &cwd, &fs, /*sandbox*/ None),
     )
     .await
     .expect("nearest marker should complete")
@@ -842,7 +929,7 @@ async fn project_root_marker_search_limits_concurrent_probes_and_preserves_order
         metadata_calls.release.add_permits(max_probe_count);
     };
     let (paths, ()) = tokio::join!(
-        super::agents_md_paths(&config.config, &cwd, &fs),
+        super::agents_md_paths(&config.config, &cwd, &fs, /*sandbox*/ None),
         assertions
     );
     let paths = paths.expect("AGENTS.md discovery");
@@ -888,9 +975,9 @@ async fn agents_md_search_starts_all_directory_probes() {
         failure: InjectedFailure::MetadataBlocked,
         metadata_calls: Arc::clone(&metadata_calls),
     };
-
-    let search =
-        tokio::spawn(async move { super::agents_md_paths(&config.config, &cwd, &fs).await });
+    let search = tokio::spawn(async move {
+        super::agents_md_paths(&config.config, &cwd, &fs, /*sandbox*/ None).await
+    });
     tokio::time::timeout(std::time::Duration::from_secs(5), async {
         loop {
             let started = metadata_calls.started.notified();
@@ -964,7 +1051,7 @@ async fn empty_project_root_markers_only_probe_cwd_candidates() {
     };
     let cwd = PathUri::from_abs_path(&config.cwd);
 
-    let paths = super::agents_md_paths(&config.config, &cwd, &fs)
+    let paths = super::agents_md_paths(&config.config, &cwd, &fs, /*sandbox*/ None)
         .await
         .expect("AGENTS.md discovery");
 
@@ -1023,16 +1110,16 @@ async fn zero_byte_limit_disables_docs() {
     );
 }
 
-/// When both system instructions and AGENTS.md docs are present the two
-/// should be concatenated with the separator.
+/// User instructions precede project docs without consuming their byte budget.
 #[tokio::test]
 async fn merges_existing_instructions_with_agents_md() {
     let tmp = tempfile::tempdir().expect("tempdir");
-    fs::write(tmp.path().join("AGENTS.md"), "proj doc").unwrap();
+    fs::write(tmp.path().join("AGENTS.md"), "proj document").unwrap();
 
     const INSTRUCTIONS: &str = "base instructions";
+    let limit = "proj doc".len();
 
-    let res = get_user_instructions(&make_config(&tmp, /*limit*/ 4096, Some(INSTRUCTIONS)).await)
+    let res = get_user_instructions(&make_config(&tmp, limit, Some(INSTRUCTIONS)).await)
         .await
         .expect("should produce a combined instruction string");
 
@@ -1061,6 +1148,7 @@ async fn multiple_environment_docs_use_labeled_layout_and_preserve_source_order(
 
     let loaded = load_project_instructions(&config.config, user_instructions, &environments)
         .await
+        .expect("project instructions should load")
         .expect("instructions expected");
     let inner = format!(
         r#"global instructions
@@ -1095,11 +1183,13 @@ secondary doc"#,
         loaded.sources().collect::<Vec<_>>(),
         vec![
             PathUri::from_abs_path(
-                &config
+                config
                     .user_instructions
                     .as_ref()
                     .expect("global instructions")
-                    .source,
+                    .source
+                    .as_ref()
+                    .expect("global instruction source"),
             ),
             PathUri::from_abs_path(&primary.path().join("AGENTS.md").abs()),
             PathUri::from_abs_path(&primary_nested.join("AGENTS.md").abs()),
@@ -1122,6 +1212,7 @@ async fn secondary_only_project_doc_uses_single_contributor_layout() {
 
     let loaded = load_project_instructions(&config.config, user_instructions, &environments)
         .await
+        .expect("project instructions should load")
         .expect("instructions expected");
     let inner = format!("global instructions{AGENTS_MD_SEPARATOR}secondary doc");
 
@@ -1151,6 +1242,7 @@ async fn primary_only_project_doc_preserves_legacy_layout_with_multiple_bound_en
 
     let loaded = load_project_instructions(&config.config, user_instructions, &environments)
         .await
+        .expect("project instructions should load")
         .expect("instructions expected");
     let inner = format!("global instructions{AGENTS_MD_SEPARATOR}primary doc");
 
@@ -1167,12 +1259,12 @@ async fn primary_only_project_doc_preserves_legacy_layout_with_multiple_bound_en
 }
 
 #[tokio::test]
-async fn project_doc_byte_limit_is_applied_independently_per_environment() {
+async fn project_doc_byte_limit_is_shared_across_environments() {
     let primary = tempfile::tempdir().expect("primary tempdir");
     let secondary = tempfile::tempdir().expect("secondary tempdir");
     fs::write(primary.path().join("AGENTS.md"), "ABCDE").unwrap();
     fs::write(secondary.path().join("AGENTS.md"), "VWXYZ").unwrap();
-    let config = make_config(&primary, /*limit*/ 3, /*instructions*/ None).await;
+    let config = make_config(&primary, /*limit*/ 7, /*instructions*/ None).await;
     let environments = resolved_local_environments([
         ("primary", config.cwd.clone()),
         ("secondary", secondary.abs()),
@@ -1181,12 +1273,13 @@ async fn project_doc_byte_limit_is_applied_independently_per_environment() {
 
     let loaded = load_project_instructions(&config.config, user_instructions, &environments)
         .await
+        .expect("project instructions should load")
         .expect("instructions expected");
 
     assert_eq!(
         loaded.text(),
         format!(
-            "for `primary` with root {}\n\nABC\n\nfor `secondary` with root {}\n\nVWX",
+            "for `primary` with root {}\n\nABCDE\n\nfor `secondary` with root {}\n\nVW",
             primary.path().display(),
             secondary.path().display()
         )
@@ -1194,9 +1287,7 @@ async fn project_doc_byte_limit_is_applied_independently_per_environment() {
 }
 
 #[tokio::test]
-async fn multiple_environments_can_exceed_single_environment_project_doc_limit() {
-    // TODO(anp): Add an aggregate cap across environments instead of allowing the combined
-    // project instructions to grow by one full per-environment budget for every binding.
+async fn full_primary_environment_budget_excludes_later_environment_docs() {
     const LIMIT: usize = 8;
     let primary = tempfile::tempdir().expect("primary tempdir");
     let secondary = tempfile::tempdir().expect("secondary tempdir");
@@ -1216,6 +1307,7 @@ async fn multiple_environments_can_exceed_single_environment_project_doc_limit()
         &environments,
     )
     .await
+    .expect("project instructions should load")
     .expect("instructions expected");
     let project_bytes = loaded
         .entries
@@ -1224,10 +1316,9 @@ async fn multiple_environments_can_exceed_single_environment_project_doc_limit()
         .map(|entry| entry.contents.len())
         .sum::<usize>();
 
-    assert_eq!(project_bytes, LIMIT * 2);
-    assert!(project_bytes > config.project_doc_max_bytes);
+    assert_eq!(project_bytes, LIMIT);
     assert!(loaded.text().contains(&primary_doc));
-    assert!(loaded.text().contains(&secondary_doc));
+    assert!(!loaded.text().contains(&secondary_doc));
 }
 
 #[tokio::test]
@@ -1248,6 +1339,7 @@ async fn secondary_environment_invalid_utf8_does_not_suppress_other_docs() {
         &environments,
     )
     .await
+    .expect("project instructions should load")
     .expect("instructions expected");
 
     assert!(loaded.text().contains("primary doc"));
@@ -1296,6 +1388,7 @@ async fn concatenates_root_and_cwd_docs() {
     let crate_agents = cfg.cwd.join("AGENTS.md");
     let expected = LoadedAgentsMd {
         user_instructions: None,
+        thread_instructions: None,
         entries: vec![
             InstructionEntry {
                 contents: "root doc".to_string(),
@@ -1431,10 +1524,11 @@ async fn instruction_sources_include_global_before_agents_md_docs() {
     let project_agents = cfg.cwd.join("AGENTS.md");
 
     let expected = LoadedAgentsMd {
-        user_instructions: Some(UserInstructions {
+        user_instructions: Some(Instructions {
             text: "global doc".to_string(),
-            source: global_agents.clone(),
+            source: Some(global_agents.clone()),
         }),
+        thread_instructions: None,
         entries: vec![InstructionEntry {
             contents: "project doc".to_string(),
             provenance: project_provenance(project_agents.clone(), cfg.cwd.clone()),
@@ -1475,6 +1569,72 @@ async fn agents_local_md_preferred() {
         discovery[0].basename().as_deref(),
         Some(LOCAL_AGENTS_MD_FILENAME)
     );
+}
+
+#[tokio::test]
+async fn fallback_paths_are_rejected_before_filesystem_probes() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let mut cfg = make_config_with_project_root_markers(
+        &tmp,
+        /*limit*/ 4096,
+        /*instructions*/ None,
+        &[],
+    )
+    .await;
+    let windows_paths = [
+        r"..\AGENTS.md",
+        r"nested\AGENTS.md",
+        r"\AGENTS.md",
+        r"C:\AGENTS.md",
+        "C:AGENTS.md",
+        r"\\server\share\AGENTS.md",
+        r"\\?\UNC\server\share\AGENTS.md",
+        r"\\.\pipe\instructions",
+        "AGENTS.md:stream",
+    ];
+    cfg.project_doc_fallback_filenames = [
+        "",
+        ".",
+        "..",
+        "/AGENTS.md",
+        "../AGENTS.md",
+        "nested/AGENTS.md",
+        "//server/share/AGENTS.md",
+        "AGENTS\0.md",
+    ]
+    .into_iter()
+    .chain(windows_paths)
+    .chain(["WORKFLOW.md", "WORKFLOW.md", ".instructions.md"])
+    .map(str::to_owned)
+    .collect();
+
+    // Backslashes and colons are ordinary filename characters on POSIX executors.
+    for (cwd, extra_filenames) in [
+        ("file:///repo", windows_paths.as_slice()),
+        ("file:///C:/repo", &[][..]),
+    ] {
+        let cwd: PathUri = cwd.parse().expect("cwd URI");
+        let metadata_calls = Arc::new(MetadataCallCounts::default());
+        let filesystem = FailingFileSystem {
+            path: tmp.abs(),
+            failure: InjectedFailure::MetadataNotFound,
+            metadata_calls: Arc::clone(&metadata_calls),
+        };
+        let paths = super::agents_md_paths(&cfg, &cwd, &filesystem, /*sandbox*/ None)
+            .await
+            .expect("discover paths");
+
+        assert_eq!(paths, Vec::<PathUri>::new());
+        assert_eq!(
+            *metadata_calls.paths.lock().expect("metadata paths lock"),
+            ["AGENTS.override.md", "AGENTS.md"]
+                .into_iter()
+                .chain(extra_filenames.iter().copied())
+                .chain(["WORKFLOW.md", ".instructions.md"])
+                .map(|name| cwd.join(name).expect("filename"))
+                .collect::<Vec<_>>()
+        );
+    }
 }
 
 /// When AGENTS.md is absent but a configured fallback exists, the fallback is used.

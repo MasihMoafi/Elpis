@@ -1,16 +1,14 @@
-use std::path::Component;
-use std::path::Path;
-use std::path::PathBuf;
-
 use codex_apply_patch::ApplyPatchAction;
 use codex_apply_patch::ApplyPatchFileChange;
 use codex_protocol::config_types::WindowsSandboxLevel;
 use codex_protocol::models::PermissionProfile;
 use codex_protocol::permissions::FileSystemSandboxPolicy;
+use codex_protocol::permissions::FileSystemSandboxPolicyContext;
+use codex_protocol::permissions::LocalFileSystemPolicyMatcher;
 use codex_protocol::protocol::AskForApproval;
-use codex_sandboxing::SandboxType;
 use codex_sandboxing::get_platform_sandbox;
 use codex_utils_path_uri::PathUri;
+use std::io;
 
 const PATCH_REJECTED_OUTSIDE_PROJECT_REASON: &str =
     "writing outside of the project; rejected by user approval settings";
@@ -19,28 +17,63 @@ const PATCH_REJECTED_READ_ONLY_REASON: &str =
 
 #[derive(Debug, PartialEq)]
 pub enum SafetyCheck {
-    AutoApprove {
-        sandbox_type: SandboxType,
-        user_explicitly_approved: bool,
-    },
+    AutoApprove,
     AskUser,
-    Reject {
-        reason: String,
-    },
+    Reject { reason: String },
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum PatchSandboxRoute {
+    ExecutorManaged,
+    Platform(WindowsSandboxLevel),
+}
+
+/// Keeps configured permissions and prepared local matching separate for one patch.
+pub(crate) struct PatchPolicyMatcher<'a> {
+    configured_policy: &'a FileSystemSandboxPolicy,
+    pub(crate) context: FileSystemSandboxPolicyContext<'a>,
+    pub(crate) sandbox_route: PatchSandboxRoute,
+    local_matching: Option<LocalFileSystemPolicyMatcher<'a>>,
+}
+
+impl PatchSandboxRoute {
+    pub(crate) fn prepare_matching<'a>(
+        self,
+        configured_policy: &'a FileSystemSandboxPolicy,
+        context: &FileSystemSandboxPolicyContext<'a>,
+    ) -> io::Result<PatchPolicyMatcher<'a>> {
+        let local_matching = match self {
+            Self::Platform(_) => Some(configured_policy.prepare_local_matching(context)?),
+            Self::ExecutorManaged => None,
+        };
+        Ok(PatchPolicyMatcher {
+            configured_policy,
+            context: *context,
+            sandbox_route: self,
+            local_matching,
+        })
+    }
+}
+
+impl PatchPolicyMatcher<'_> {
+    pub(crate) fn can_write_path(&self, path: &PathUri) -> io::Result<bool> {
+        match &self.local_matching {
+            Some(matching) => matching.can_write_path(path),
+            None => Ok(self.configured_policy.can_write_path(path, &self.context)),
+        }
+    }
 }
 
 pub fn assess_patch_safety(
     action: &ApplyPatchAction,
     policy: AskForApproval,
     permission_profile: &PermissionProfile,
-    file_system_sandbox_policy: &FileSystemSandboxPolicy,
-    cwd: &PathUri,
-    windows_sandbox_level: WindowsSandboxLevel,
-) -> SafetyCheck {
+    matching: &PatchPolicyMatcher<'_>,
+) -> io::Result<SafetyCheck> {
     if action.is_empty() {
-        return SafetyCheck::Reject {
+        return Ok(SafetyCheck::Reject {
             reason: "empty patch".to_string(),
-        };
+        });
     }
 
     match policy {
@@ -50,7 +83,7 @@ pub fn assess_patch_safety(
         // TODO(ragona): I'm not sure this is actually correct? I believe in this case
         // we want to continue to the writable paths check before asking the user.
         AskForApproval::UnlessTrusted => {
-            return SafetyCheck::AskUser;
+            return Ok(SafetyCheck::AskUser);
         }
     }
 
@@ -59,69 +92,47 @@ pub fn assess_patch_safety(
             policy,
             AskForApproval::Granular(granular_config) if !granular_config.sandbox_approval
         );
+    let sandbox_available = match matching.sandbox_route {
+        PatchSandboxRoute::ExecutorManaged => true,
+        PatchSandboxRoute::Platform(windows_sandbox_level) => {
+            get_platform_sandbox(windows_sandbox_level != WindowsSandboxLevel::Disabled).is_some()
+        }
+    };
 
     // Even though the patch appears to be constrained to writable paths, it is
     // possible that paths in the patch are hard links to files outside the
     // writable roots, so we should still run `apply_patch` in a sandbox in that case.
-    if is_write_patch_constrained_to_writable_paths(action, file_system_sandbox_policy, cwd) {
-        if matches!(
+    // Disabled and External profiles intentionally do not apply an outer sandbox.
+    if is_write_patch_constrained_to_writable_paths(action, matching)?
+        && (matches!(
             permission_profile,
             PermissionProfile::Disabled | PermissionProfile::External { .. }
-        ) {
-            // Disabled and External profiles intentionally do not apply an
-            // outer Codex filesystem sandbox.
-            SafetyCheck::AutoApprove {
-                sandbox_type: SandboxType::None,
-                user_explicitly_approved: false,
-            }
-        } else {
-            // Only auto‑approve when we can actually enforce a sandbox. Otherwise
-            // fall back to asking the user because the patch may touch arbitrary
-            // paths outside the project.
-            match get_platform_sandbox(windows_sandbox_level != WindowsSandboxLevel::Disabled) {
-                Some(sandbox_type) => SafetyCheck::AutoApprove {
-                    sandbox_type,
-                    user_explicitly_approved: false,
-                },
-                None => {
-                    if rejects_sandbox_approval {
-                        SafetyCheck::Reject {
-                            reason: patch_rejection_reason(
-                                permission_profile,
-                                file_system_sandbox_policy,
-                                cwd,
-                            )
-                            .to_string(),
-                        }
-                    } else {
-                        SafetyCheck::AskUser
-                    }
-                }
-            }
-        }
+        ) || sandbox_available)
+    {
+        Ok(SafetyCheck::AutoApprove)
     } else if rejects_sandbox_approval {
-        SafetyCheck::Reject {
-            reason: patch_rejection_reason(permission_profile, file_system_sandbox_policy, cwd)
-                .to_string(),
-        }
+        Ok(SafetyCheck::Reject {
+            reason: patch_rejection_reason(
+                permission_profile,
+                matching.configured_policy,
+                &matching.context,
+            )
+            .to_string(),
+        })
     } else {
-        SafetyCheck::AskUser
+        Ok(SafetyCheck::AskUser)
     }
 }
 
 fn patch_rejection_reason(
     permission_profile: &PermissionProfile,
     file_system_sandbox_policy: &FileSystemSandboxPolicy,
-    cwd: &PathUri,
+    context: &FileSystemSandboxPolicyContext<'_>,
 ) -> &'static str {
-    let has_no_writable_roots = cwd.to_abs_path().is_ok_and(|cwd| {
-        file_system_sandbox_policy
-            .get_writable_roots_with_cwd(cwd.as_path())
-            .is_empty()
-    });
+    let has_no_writable_roots = !file_system_sandbox_policy.has_configured_writable_roots(context);
     match permission_profile {
         PermissionProfile::Managed { .. }
-            if !file_system_sandbox_policy.has_full_disk_write_access()
+            if !file_system_sandbox_policy.has_full_disk_write_access_with_context(context)
                 && has_no_writable_roots =>
         {
             PATCH_REJECTED_READ_ONLY_REASON
@@ -134,72 +145,38 @@ fn patch_rejection_reason(
 
 fn is_write_patch_constrained_to_writable_paths(
     action: &ApplyPatchAction,
-    file_system_sandbox_policy: &FileSystemSandboxPolicy,
-    cwd: &PathUri,
-) -> bool {
+    matching: &PatchPolicyMatcher<'_>,
+) -> io::Result<bool> {
     // A full-disk policy permits every patch target, so no per-path writable-root check can
     // further constrain the result.
-    if file_system_sandbox_policy.has_full_disk_write_access() {
-        return true;
+    if matching
+        .configured_policy
+        .has_full_disk_write_access_with_context(&matching.context)
+    {
+        return Ok(true);
     }
-    // TODO(anp): Make filesystem sandbox policies operate on PathUri.
-    let Ok(native_cwd) = cwd.to_abs_path() else {
-        return false;
-    };
-    // Normalize a path by removing `.` and resolving `..` without touching the
-    // filesystem (works even if the file does not exist).
-    fn normalize(path: &Path) -> Option<PathBuf> {
-        let mut out = PathBuf::new();
-        for comp in path.components() {
-            match comp {
-                Component::ParentDir => {
-                    out.pop();
-                }
-                Component::CurDir => { /* skip */ }
-                other => out.push(other.as_os_str()),
-            }
-        }
-        Some(out)
-    }
-
-    // Determine whether `path` is inside **any** writable root. Both `path`
-    // and roots are converted to absolute, normalized forms before the
-    // prefix check.
-    let is_path_writable = |path: &PathUri| {
-        // TODO(anp): Make sandbox policy path checks accept PathUri without host projection.
-        let Ok(path) = path.to_abs_path() else {
-            return false;
-        };
-        let abs = path.into_path_buf();
-        let abs = match normalize(&abs) {
-            Some(v) => v,
-            None => return false,
-        };
-
-        file_system_sandbox_policy.can_write_path_with_cwd(&abs, &native_cwd)
-    };
 
     for (path, change) in action.changes() {
         match change {
             ApplyPatchFileChange::Add { .. } | ApplyPatchFileChange::Delete { .. } => {
-                if !is_path_writable(path) {
-                    return false;
+                if !matching.can_write_path(path)? {
+                    return Ok(false);
                 }
             }
             ApplyPatchFileChange::Update { move_path, .. } => {
-                if !is_path_writable(path) {
-                    return false;
+                if !matching.can_write_path(path)? {
+                    return Ok(false);
                 }
                 if let Some(dest) = move_path
-                    && !is_path_writable(dest)
+                    && !matching.can_write_path(dest)?
                 {
-                    return false;
+                    return Ok(false);
                 }
             }
         }
     }
 
-    true
+    Ok(true)
 }
 
 #[cfg(test)]

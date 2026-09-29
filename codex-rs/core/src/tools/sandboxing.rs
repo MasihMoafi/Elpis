@@ -1,21 +1,22 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 //! Shared approvals and sandboxing traits used by tool runtimes.
 //!
 //! Consolidates the approval flow primitives (`ApprovalDecision`, `ApprovalStore`,
-//! `ApprovalCtx`, `Approvable`) together with the sandbox orchestration traits
+//! `Approvable`) together with the sandbox orchestration traits
 //! and helpers (`Sandboxable`, `ToolRuntime`, `SandboxAttempt`, etc.).
 
 use crate::sandboxing::ExecOptions;
 use crate::sandboxing::SandboxPermissions;
 use crate::session::session::Session;
-use crate::session::turn_context::TurnContext;
+use crate::session::step_context::StepContext;
+use crate::session::turn_context::TurnEnvironment;
 use crate::state::SessionServices;
 use crate::tools::hook_names::HookToolName;
 use crate::tools::network_approval::NetworkApprovalSpec;
 use codex_file_system::FileSystemSandboxContext;
+use codex_file_system::WindowsSandboxSelection;
 use codex_network_proxy::NetworkProxy;
 use codex_protocol::approvals::ExecPolicyAmendment;
-use codex_protocol::approvals::NetworkApprovalContext;
+use codex_protocol::config_types::WindowsSandboxLevel;
 use codex_protocol::error::CodexErr;
 use codex_protocol::permissions::FileSystemSandboxKind;
 use codex_protocol::permissions::FileSystemSandboxPolicy;
@@ -28,13 +29,11 @@ use codex_sandboxing::SandboxType;
 use codex_sandboxing::SandboxablePreference;
 use codex_sandboxing::policy_transforms::effective_permission_profile;
 use codex_tools::ToolName;
+use codex_utils_path_uri::PathConvention;
 use codex_utils_path_uri::PathUri;
 use futures::Future;
-use futures::future::BoxFuture;
 use serde::Serialize;
 use std::collections::HashMap;
-use std::fmt::Debug;
-use std::hash::Hash;
 use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
 
@@ -117,13 +116,10 @@ where
     decision
 }
 
-#[derive(Clone)]
-pub(crate) struct ApprovalCtx<'a> {
-    pub session: &'a Arc<Session>,
-    pub turn: &'a Arc<TurnContext>,
-    pub call_id: &'a str,
-    pub retry_reason: Option<String>,
-    pub network_approval_context: Option<NetworkApprovalContext>,
+#[derive(Clone, Debug, Default)]
+pub(crate) struct ApprovalRequestReasons {
+    pub(crate) approval: Option<String>,
+    pub(crate) retry: Option<String>,
 }
 
 pub(crate) use super::approvals::ApprovalAction;
@@ -311,17 +307,6 @@ pub(crate) fn managed_network_for_sandbox_permissions(
 }
 
 pub(crate) trait Approvable<Req> {
-    type ApprovalKey: Hash + Eq + Clone + Debug + Serialize;
-
-    // In most cases (shell, unified_exec), a request will have a single approval key.
-    //
-    // However, apply_patch needs session "Allow, don't ask again" semantics that
-    // apply to multiple atomic targets (e.g., apply_patch approves per file path). Returning
-    // a list of keys lets the runtime treat the request as approved-for-session only if
-    // *all* keys are already approved, while still caching approvals per-key so future
-    // requests touching a subset can be auto-approved.
-    fn approval_keys(&self, req: &Req) -> Vec<Self::ApprovalKey>;
-
     /// Return per-request sandbox permissions for first-attempt sandbox
     /// selection. Most tools use the ambient sandbox policy unchanged.
     fn sandbox_permissions(&self, _req: &Req) -> SandboxPermissions {
@@ -342,12 +327,6 @@ pub(crate) trait Approvable<Req> {
         None
     }
 
-    /// Return hook input for approval-time policy hooks when this runtime wants
-    /// hook evaluation to run before guardian or user approval.
-    fn permission_request_payload(&self, _req: &Req) -> Option<PermissionRequestPayload> {
-        None
-    }
-
     /// Decide we can request an approval for no-sandbox execution.
     fn wants_no_sandbox_approval(&self, policy: AskForApproval) -> bool {
         match policy {
@@ -358,13 +337,7 @@ pub(crate) trait Approvable<Req> {
         }
     }
 
-    fn start_approval_async<'a>(
-        &'a mut self,
-        req: &'a Req,
-        ctx: ApprovalCtx<'a>,
-    ) -> BoxFuture<'a, ReviewDecision>;
-
-    fn approval_action(&self, req: &Req, ctx: &ApprovalCtx<'_>) -> std::io::Result<ApprovalAction>;
+    fn approval_action(&self, req: &Req, call_id: &str) -> std::io::Result<ApprovalAction>;
 }
 
 pub(crate) trait Sandboxable {
@@ -376,7 +349,8 @@ pub(crate) trait Sandboxable {
 
 pub(crate) struct ToolCtx {
     pub session: Arc<Session>,
-    pub turn: Arc<TurnContext>,
+    pub step_context: Arc<StepContext>,
+    pub cancellation_token: CancellationToken,
     pub call_id: String,
     pub tool_name: ToolName,
 }
@@ -384,12 +358,15 @@ pub(crate) struct ToolCtx {
 #[derive(Debug)]
 pub(crate) enum ToolError {
     Rejected(String),
-    UserDeclined(String),
     Codex(CodexErr),
 }
 
 pub(crate) trait ToolRuntime<Req, Out>: Approvable<Req> + Sandboxable {
-    fn workspace_roots<'a>(&self, req: &'a Req) -> &'a [PathUri];
+    fn turn_environment<'a>(&self, req: &'a Req) -> &'a TurnEnvironment;
+
+    fn uses_executor_managed_process_sandbox(&self, _req: &Req) -> bool {
+        false
+    }
 
     fn network_approval_spec(&self, _req: &Req, _ctx: &ToolCtx) -> Option<NetworkApprovalSpec> {
         None
@@ -418,20 +395,81 @@ pub(crate) struct SandboxAttempt<'a> {
     pub(crate) manager: &'a SandboxManager,
     pub(crate) sandbox_cwd: &'a PathUri,
     pub(crate) workspace_roots: &'a [PathUri],
-    pub codex_linux_sandbox_exe: Option<&'a std::path::PathBuf>,
+    pub sandbox_exe: Option<&'a std::path::PathBuf>,
+    // TODO(anp): Reconcile these attempt settings with TurnEnvironment::sandbox_context
+    // so process execution and patch writes honor the selected environment's backend.
     pub use_legacy_landlock: bool,
+    pub windows_sandbox_type: SandboxType,
     pub windows_sandbox_level: codex_protocol::config_types::WindowsSandboxLevel,
-    pub windows_sandbox_private_desktop: bool,
     pub network_denial_cancellation_token: Option<CancellationToken>,
     pub(crate) network_proxy: Option<&'a NetworkProxy>,
 }
 
+pub(crate) fn executor_windows_sandbox_level(
+    windows_sandbox_type: SandboxType,
+    windows_sandbox_level: WindowsSandboxLevel,
+    cwd: &PathUri,
+) -> WindowsSandboxLevel {
+    if windows_sandbox_type != SandboxType::WindowsMxc
+        && windows_sandbox_level == WindowsSandboxLevel::Disabled
+        && cwd.infer_path_convention() == Some(PathConvention::Windows)
+    {
+        WindowsSandboxLevel::RestrictedToken
+    } else {
+        windows_sandbox_level
+    }
+}
+
+pub(crate) fn executor_windows_sandbox_selection(
+    windows_sandbox_type: SandboxType,
+    windows_sandbox_level: WindowsSandboxLevel,
+    cwd: &PathUri,
+) -> WindowsSandboxSelection {
+    configured_windows_sandbox_selection(
+        windows_sandbox_type,
+        executor_windows_sandbox_level(windows_sandbox_type, windows_sandbox_level, cwd),
+        cwd,
+    )
+}
+
+pub(crate) fn configured_windows_sandbox_selection(
+    windows_sandbox_type: SandboxType,
+    windows_sandbox_level: WindowsSandboxLevel,
+    cwd: &PathUri,
+) -> WindowsSandboxSelection {
+    if cwd.infer_path_convention() != Some(PathConvention::Windows) {
+        return WindowsSandboxSelection::Disabled;
+    }
+
+    if windows_sandbox_type == SandboxType::WindowsMxc {
+        WindowsSandboxSelection::Mxc
+    } else {
+        windows_sandbox_level.into()
+    }
+}
+
 impl<'a> SandboxAttempt<'a> {
+    /// Whether this attempt bypasses sandboxing required by its ambient policy.
+    /// Use the requested policy, not the controller's wrapper, for remote executors.
+    pub(crate) fn is_escalated(&self) -> bool {
+        !self.sandbox_requested
+            && self.manager.should_sandbox(
+                self.permissions,
+                SandboxablePreference::Auto,
+                self.enforce_managed_network,
+            )
+    }
+
     pub(crate) fn network_proxy<'b>(
         &'b self,
         fallback: Option<&'b NetworkProxy>,
     ) -> Option<&'b NetworkProxy> {
-        fallback.map(|fallback| self.network_proxy.unwrap_or(fallback))
+        // Execution-only proxies need no fallback; offline attempts must not revive one.
+        if self.enforce_managed_network {
+            self.network_proxy.or(fallback)
+        } else {
+            None
+        }
     }
 
     pub fn env_for(
@@ -452,13 +490,9 @@ impl<'a> SandboxAttempt<'a> {
                 environment_id,
                 network,
                 sandbox_policy_cwd: self.sandbox_cwd,
-                codex_linux_sandbox_exe: self
-                    .codex_linux_sandbox_exe
-                    .map(std::path::PathBuf::as_path),
+                sandbox_exe: self.sandbox_exe.map(std::path::PathBuf::as_path),
                 use_legacy_landlock: self.use_legacy_landlock,
                 windows_sandbox_level: self.windows_sandbox_level,
-                windows_sandbox_private_desktop: self.windows_sandbox_private_desktop,
-                arg0: None,
             })
             .map_err(CodexErr::from)?;
         let workspace_roots = self
@@ -466,21 +500,14 @@ impl<'a> SandboxAttempt<'a> {
             .iter()
             .map(PathUri::to_abs_path)
             .collect::<std::io::Result<Vec<_>>>()?;
-        Ok(crate::sandboxing::ExecRequest::from_sandbox_exec_request(
-            request,
-            options,
-            workspace_roots,
-        ))
+        crate::sandboxing::ExecRequest::from_sandbox_exec_request(request, options, workspace_roots)
     }
 
     pub fn env_for_exec_server(
         &self,
         command: SandboxCommand,
         options: ExecOptions,
-        network: Option<&NetworkProxy>,
-        environment_id: Option<&str>,
     ) -> Result<crate::sandboxing::ExecRequest, CodexErr> {
-        let network = self.network_proxy(network);
         let managed_network = command.managed_network.clone();
         let exec_server_permissions = effective_permission_profile(
             self.exec_server_permissions,
@@ -494,26 +521,33 @@ impl<'a> SandboxAttempt<'a> {
                 // The exec-server must receive the native command, not this host's wrapper.
                 sandbox: SandboxType::None,
                 enforce_managed_network: self.enforce_managed_network,
-                environment_id,
-                network,
+                environment_id: None,
+                network: None,
                 sandbox_policy_cwd: self.sandbox_cwd,
-                codex_linux_sandbox_exe: None,
+                sandbox_exe: None,
                 use_legacy_landlock: self.use_legacy_landlock,
                 windows_sandbox_level: self.windows_sandbox_level,
-                windows_sandbox_private_desktop: self.windows_sandbox_private_desktop,
-                arg0: None,
             })
             .map_err(CodexErr::from)?;
-        let mut exec_request =
-            crate::sandboxing::ExecRequest::from_sandbox_exec_request(request, options, Vec::new());
+        let mut exec_request = crate::sandboxing::ExecRequest::from_sandbox_exec_request(
+            request,
+            options,
+            Vec::new(),
+        )?;
         exec_request.exec_server_managed_network = managed_network;
         if self.sandbox_requested {
             exec_request.exec_server_sandbox = Some(FileSystemSandboxContext {
-                permissions: exec_server_permissions.into(),
-                cwd: Some(exec_request.windows_sandbox_policy_cwd.clone()),
+                permissions: exec_server_permissions,
+                cwd: exec_request.windows_sandbox_policy_cwd.clone(),
                 workspace_roots: self.workspace_roots.to_vec(),
-                windows_sandbox_level: self.windows_sandbox_level,
-                windows_sandbox_private_desktop: self.windows_sandbox_private_desktop,
+                user_home_dir: None,
+                temporary_directories: None,
+                windows_sandbox_selection: executor_windows_sandbox_selection(
+                    self.windows_sandbox_type,
+                    self.windows_sandbox_level,
+                    self.sandbox_cwd,
+                ),
+                windows_sandbox_proxy_settings_mode: None,
                 use_legacy_landlock: self.use_legacy_landlock,
             });
             exec_request.exec_server_enforce_managed_network = self.enforce_managed_network;

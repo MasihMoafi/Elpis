@@ -1,12 +1,14 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
+use std::marker::PhantomData;
 use std::sync::Arc;
 use std::sync::Weak;
 
+use codex_history::ResponseItemEnvelope;
 use codex_protocol::items::TurnItem;
 use codex_protocol::protocol::Event;
 use codex_protocol::protocol::EventMsg;
 use codex_tools::ConversationHistory;
 use codex_tools::ExtensionTurnItem;
+use codex_tools::ResponsesApiNamespaceTool;
 use codex_tools::ToolCall as ExtensionToolCall;
 use codex_tools::ToolEnvironment;
 use codex_tools::ToolName;
@@ -22,14 +24,19 @@ use crate::session::turn_context::TurnContext;
 use crate::tools::context::ToolInvocation;
 use crate::tools::context::ToolPayload;
 use crate::tools::handlers::apply_granted_turn_permissions;
+use crate::tools::lifecycle::extension_tool_call_source;
 use crate::tools::registry::CoreToolRuntime;
 use crate::tools::registry::ToolExecutor;
-use crate::turn_metadata::McpTurnMetadataContext;
+use crate::turn_metadata::ExecutionMetadata;
 
-pub(crate) struct ExtensionToolAdapter(Arc<dyn codex_tools::ToolExecutor<ExtensionToolCall>>);
+pub(crate) struct ExtensionToolAdapter(
+    Arc<dyn for<'call> codex_tools::ToolExecutor<ExtensionToolCall<'call>>>,
+);
 
 impl ExtensionToolAdapter {
-    pub(crate) fn new(executor: Arc<dyn codex_tools::ToolExecutor<ExtensionToolCall>>) -> Self {
+    pub(crate) fn new(
+        executor: Arc<dyn for<'call> codex_tools::ToolExecutor<ExtensionToolCall<'call>>>,
+    ) -> Self {
         Self(executor)
     }
 }
@@ -55,14 +62,57 @@ impl ToolExecutor<ToolInvocation> for ExtensionToolAdapter {
         self.0.search_info()
     }
 
-    fn handle(&self, invocation: ToolInvocation) -> codex_tools::ToolExecutorFuture<'_> {
+    fn handle<'a>(&'a self, invocation: ToolInvocation) -> codex_tools::ToolExecutorFuture<'a>
+    where
+        ToolInvocation: 'a,
+    {
         Box::pin(async move { self.0.handle(to_extension_call(&invocation).await).await })
     }
 }
 
 impl CoreToolRuntime for ExtensionToolAdapter {
+    fn is_builtin_control_tool(&self) -> bool {
+        let tool_name = self.0.tool_name();
+        if tool_name.is_default_namespace() {
+            return matches!(
+                tool_name.name.as_str(),
+                "get_goal" | "create_goal" | "update_goal"
+            );
+        }
+        matches!(
+            (tool_name.namespace.as_deref(), tool_name.name.as_str()),
+            (
+                Some("notes"),
+                "list_files_by_prefix"
+                    | "read_file"
+                    | "search_contents"
+                    | "append_to_file"
+                    | "write_file"
+            ) | (
+                Some("history"),
+                "list_windows" | "list_items" | "read_item" | "search_contents"
+            )
+        )
+    }
+
     fn matches_kind(&self, payload: &ToolPayload) -> bool {
-        matches!(payload, ToolPayload::Function { .. })
+        match payload {
+            ToolPayload::Function { .. } => true,
+            ToolPayload::Custom { .. } => match self.0.spec() {
+                ToolSpec::Freeform(_) => true,
+                ToolSpec::Namespace(namespace) => namespace.tools.iter().any(|tool| {
+                    matches!(
+                        tool,
+                        ResponsesApiNamespaceTool::Custom(tool)
+                            if tool.name == self.0.tool_name().name
+                    )
+                }),
+                ToolSpec::Function(_)
+                | ToolSpec::ToolSearch { .. }
+                | ToolSpec::WebSearch { .. } => false,
+            },
+            ToolPayload::ToolSearch { .. } => false,
+        }
     }
 }
 
@@ -114,40 +164,42 @@ impl TurnItemEmitter for CoreTurnItemEmitter {
     }
 }
 
-async fn to_extension_call(invocation: &ToolInvocation) -> ExtensionToolCall {
-    let conversation_history =
-        ConversationHistory::new(invocation.session.clone_history().await.into_raw_items());
+async fn to_extension_call(invocation: &ToolInvocation) -> ExtensionToolCall<'_> {
+    let history = invocation
+        .session
+        .clone_history()
+        .await
+        .into_shared_annotated_items();
+    let conversation_history = ConversationHistory::new_deferred(move || {
+        Arc::unwrap_or_clone(history)
+            .into_iter()
+            .map(ResponseItemEnvelope::into_item)
+            .collect()
+    });
+    let settings = &invocation.step_context.settings;
     let codex_turn_metadata = invocation
         .turn
         .turn_metadata_state
-        .current_meta_value_for_mcp_request(McpTurnMetadataContext {
-            model: invocation.turn.model_info.slug.as_str(),
-            reasoning_effort: invocation.turn.effective_reasoning_effort(),
-        })
+        .current_meta_value_for_mcp_request(ExecutionMetadata::from_settings(
+            &invocation.step_context.settings,
+        ))
         .and_then(|metadata| to_ascii_json_string(&metadata).ok());
-    let mut environments =
-        Vec::with_capacity(invocation.step_context.environments.turn_environments.len());
-    for environment in &invocation.step_context.environments.turn_environments {
-        // TODO(anp): Migrate extension ToolEnvironment and granted-permission lookup to PathUri
-        // so extensions can receive foreign environment cwd values.
-        let Ok(native_cwd) = environment.cwd().to_abs_path() else {
-            continue;
-        };
+    let mut environments = Vec::new();
+    for environment in invocation.step_context.environments.turn_environments() {
         let additional_permissions = apply_granted_turn_permissions(
             invocation.session.as_ref(),
-            &environment.environment_id,
-            native_cwd.as_path(),
+            environment,
+            environment.cwd(),
             SandboxPermissions::UseDefault,
             /*additional_permissions*/ None,
         )
         .await
         .additional_permissions;
-        let file_system_sandbox_context = invocation
-            .turn
-            .file_system_sandbox_context(additional_permissions, environment);
+        let file_system_sandbox_context = environment.sandbox_context(additional_permissions);
         environments.push(ToolEnvironment {
-            environment_id: environment.environment_id.clone(),
-            cwd: native_cwd,
+            _lifetime: PhantomData,
+            environment_id: environment.selection.environment_id.clone(),
+            cwd: environment.cwd().clone(),
             file_system: environment.environment.get_filesystem(),
             file_system_sandbox_context,
         });
@@ -156,9 +208,10 @@ async fn to_extension_call(invocation: &ToolInvocation) -> ExtensionToolCall {
         turn_id: invocation.turn.sub_id.clone(),
         call_id: invocation.call_id.clone(),
         tool_name: invocation.tool_name.clone(),
-        model: invocation.turn.model_info.slug.clone(),
+        model: settings.model_info.slug.clone(),
         codex_turn_metadata,
-        truncation_policy: invocation.turn.model_info.truncation_policy.into(),
+        truncation_policy: settings.model_info.truncation_policy.into(),
+        source: extension_tool_call_source(invocation.source.clone()),
         conversation_history,
         turn_item_emitter: Arc::new(CoreTurnItemEmitter {
             session: Arc::downgrade(&invocation.session),
@@ -183,8 +236,12 @@ mod tests {
     use codex_protocol::protocol::ImageGenerationBeginEvent;
     use codex_protocol::protocol::ImageGenerationEndEvent;
     use codex_tools::ExtensionTurnItem;
+    use codex_tools::ToolCallSource as ExtensionToolCallSource;
     use codex_utils_absolute_path::test_support::PathExt;
     use codex_utils_absolute_path::test_support::test_path_buf;
+    use codex_utils_path_uri::PathUri;
+    use core_test_support::responses::strip_response_item_id;
+    use core_test_support::responses::strip_response_item_ids;
     use pretty_assertions::assert_eq;
     use serde_json::json;
     use tokio::sync::Mutex;
@@ -203,7 +260,9 @@ mod tests {
 
     struct StubExtensionExecutor;
 
-    impl codex_extension_api::ToolExecutor<codex_tools::ToolCall> for StubExtensionExecutor {
+    impl<'call> codex_extension_api::ToolExecutor<codex_tools::ToolCall<'call>>
+        for StubExtensionExecutor
+    {
         fn tool_name(&self) -> codex_tools::ToolName {
             codex_tools::ToolName::plain("extension_echo")
         }
@@ -227,7 +286,13 @@ mod tests {
             })
         }
 
-        fn handle(&self, _call: codex_tools::ToolCall) -> codex_tools::ToolExecutorFuture<'_> {
+        fn handle<'a>(
+            &'a self,
+            _call: codex_tools::ToolCall<'call>,
+        ) -> codex_tools::ToolExecutorFuture<'a>
+        where
+            'call: 'a,
+        {
             Box::pin(async {
                 Ok(
                     Box::new(codex_tools::JsonToolOutput::new(json!({ "ok": true })))
@@ -238,10 +303,13 @@ mod tests {
     }
 
     struct CapturingExtensionExecutor {
-        captured_call: Arc<Mutex<Option<codex_tools::ToolCall>>>,
+        captured_call: Arc<Mutex<Option<codex_tools::ToolCall<'static>>>>,
+        captured_sandbox_cwds: Arc<Mutex<Vec<PathUri>>>,
     }
 
-    impl codex_extension_api::ToolExecutor<codex_tools::ToolCall> for CapturingExtensionExecutor {
+    impl<'call> codex_extension_api::ToolExecutor<codex_tools::ToolCall<'call>>
+        for CapturingExtensionExecutor
+    {
         fn tool_name(&self) -> codex_tools::ToolName {
             codex_tools::ToolName::plain("extension_echo")
         }
@@ -257,7 +325,13 @@ mod tests {
             })
         }
 
-        fn handle(&self, call: codex_tools::ToolCall) -> codex_tools::ToolExecutorFuture<'_> {
+        fn handle<'a>(
+            &'a self,
+            call: codex_tools::ToolCall<'call>,
+        ) -> codex_tools::ToolExecutorFuture<'a>
+        where
+            'call: 'a,
+        {
             Box::pin(self.handle_call(call))
         }
     }
@@ -265,7 +339,7 @@ mod tests {
     impl CapturingExtensionExecutor {
         async fn handle_call(
             &self,
-            call: codex_tools::ToolCall,
+            call: codex_tools::ToolCall<'_>,
         ) -> Result<Box<dyn codex_tools::ToolOutput>, codex_tools::FunctionCallError> {
             call.turn_item_emitter
                 .emit_started(ExtensionTurnItem {
@@ -278,12 +352,34 @@ mod tests {
                     legacy_events: Vec::new(),
                 })
                 .await;
+            // Record owned metadata only; the invocation lifetime belongs to this callback.
+            *self.captured_sandbox_cwds.lock().await = call
+                .environments
+                .iter()
+                .map(|environment| environment.file_system_sandbox_context.cwd.clone())
+                .collect();
+            let call = codex_tools::ToolCall {
+                environments: Vec::new(),
+                ..call
+            };
             *self.captured_call.lock().await = Some(call);
             Ok(
                 Box::new(codex_tools::JsonToolOutput::new(json!({ "ok": true })))
                     as Box<dyn codex_tools::ToolOutput>,
             )
         }
+    }
+
+    #[test]
+    fn function_extensions_reject_custom_payloads() {
+        let handler = ExtensionToolAdapter::new(Arc::new(StubExtensionExecutor));
+
+        assert!(handler.matches_kind(&ToolPayload::Function {
+            arguments: "{}".to_string(),
+        }));
+        assert!(!handler.matches_kind(&ToolPayload::Custom {
+            input: "raw input".to_string(),
+        }));
     }
 
     #[tokio::test]
@@ -325,22 +421,23 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn passes_turn_fields_and_scoped_turn_item_emitter_to_extension_call() {
+    async fn passes_step_node_repl_flag_and_scoped_turn_item_emitter_to_extension_call() {
         let captured_call = Arc::new(Mutex::new(None));
+        let captured_sandbox_cwds = Arc::new(Mutex::new(Vec::new()));
         let handler = ExtensionToolAdapter::new(Arc::new(CapturingExtensionExecutor {
             captured_call: Arc::clone(&captured_call),
+            captured_sandbox_cwds: Arc::clone(&captured_sandbox_cwds),
         }));
         let (session, turn, rx) = crate::session::tests::make_session_and_context_with_rx().await;
         let weak_session = Arc::downgrade(&session);
         let weak_turn = Arc::downgrade(&turn);
         let turn_id = turn.sub_id.clone();
-        let model = turn.model_info.slug.clone();
-        let truncation_policy = turn.model_info.truncation_policy.into();
+        let model = turn.model_info().slug.clone();
+        let truncation_policy = turn.model_info().truncation_policy.into();
         let expected_sandbox_cwds = turn
-            .environments
-            .turn_environments
-            .iter()
-            .map(|environment| Some(environment.cwd().clone()))
+            .initial_environments
+            .turn_environments()
+            .map(|environment| environment.cwd().clone())
             .collect::<Vec<_>>();
         let history_item = ResponseItem::Message {
             id: None,
@@ -352,16 +449,38 @@ mod tests {
             internal_chat_message_metadata_passthrough: None,
         };
         session
-            .record_conversation_items(&turn, std::slice::from_ref(&history_item))
+            .record_conversation_items(
+                &turn,
+                turn.model_info(),
+                std::slice::from_ref(&history_item),
+            )
             .await;
-        let mut expected_history_item = history_item.clone();
-        expected_history_item.set_turn_id_if_missing(&turn_id);
+        let expected_history_item = strip_response_item_id(
+            session
+                .clone_history()
+                .await
+                .raw_items()
+                .next()
+                .expect("history item")
+                .clone(),
+        );
         let raw_history_event = rx.recv().await.expect("history raw response item event");
         let EventMsg::RawResponseItem(raw_history_item) = raw_history_event.msg else {
             panic!("expected raw response item event");
         };
-        assert_eq!(raw_history_item.item, expected_history_item);
-        let step_context = StepContext::for_test(Arc::clone(&turn));
+        assert_eq!(
+            strip_response_item_id(raw_history_item.item),
+            expected_history_item
+        );
+        let mut step_context = StepContext::for_test(Arc::clone(&turn));
+        let settings = Arc::make_mut(
+            &mut Arc::get_mut(&mut step_context)
+                .expect("unshared step")
+                .settings,
+        );
+        let model_info = Arc::make_mut(&mut settings.model_info);
+        model_info.node_repl_disabled = !turn.model_info().node_repl_disabled;
+        let node_repl_disabled = model_info.node_repl_disabled;
         let invocation = ToolInvocation {
             session,
             step_context,
@@ -370,7 +489,10 @@ mod tests {
             tracker: Arc::new(tokio::sync::Mutex::new(TurnDiffTracker::new())),
             call_id: "call-extension".to_string(),
             tool_name: codex_tools::ToolName::plain("extension_echo"),
-            source: ToolCallSource::Direct,
+            source: ToolCallSource::CodeMode {
+                cell_id: "cell-1".to_string(),
+                runtime_tool_call_id: "nested-call-1".to_string(),
+            },
             payload: ToolPayload::Function {
                 arguments: json!({ "message": "hello" }).to_string(),
             },
@@ -391,17 +513,25 @@ mod tests {
         );
         assert_eq!(captured_call.model, model);
         assert_eq!(captured_call.truncation_policy, truncation_policy);
-        assert_eq!(
+        let metadata: serde_json::Value = serde_json::from_str(
             captured_call
-                .environments
-                .iter()
-                .map(|environment| environment.file_system_sandbox_context.cwd.clone())
-                .collect::<Vec<_>>(),
-            expected_sandbox_cwds
-        );
+                .codex_turn_metadata
+                .as_deref()
+                .expect("turn metadata"),
+        )
+        .expect("metadata JSON");
+        assert_eq!(metadata["node_repl_disabled"], json!(node_repl_disabled));
         assert_eq!(
-            captured_call.conversation_history.items(),
-            std::slice::from_ref(&expected_history_item)
+            captured_call.source,
+            ExtensionToolCallSource::CodeMode {
+                cell_id: "cell-1".to_string(),
+                runtime_tool_call_id: "nested-call-1".to_string(),
+            }
+        );
+        assert_eq!(*captured_sandbox_cwds.lock().await, expected_sandbox_cwds);
+        assert_eq!(
+            strip_response_item_ids(captured_call.conversation_history.items()),
+            vec![expected_history_item]
         );
         match captured_call.payload {
             ToolPayload::Function { arguments } => {
@@ -432,11 +562,6 @@ mod tests {
     async fn image_generation_publication_preserves_extension_saved_path() {
         let (session, turn, rx) = crate::session::tests::make_session_and_context_with_rx().await;
         let expected_path = test_path_buf("/tmp/extension-claimed.png").abs();
-        let default_path = crate::stream_events_utils::image_generation_artifact_path(
-            &turn.config.codex_home,
-            &session.thread_id.to_string(),
-            "call-image",
-        );
         let emitter = CoreTurnItemEmitter {
             session: Arc::downgrade(&session),
             turn: Arc::downgrade(&turn),
@@ -446,14 +571,22 @@ mod tests {
             status: "in_progress".to_string(),
             revised_prompt: None,
             result: String::new(),
+            transparent_background: None,
+            failure: None,
             saved_path: None,
+            imagegen_request_id: None,
+            generation_id: None,
         });
         let expected_completed_item = ExtensionItem::ImageGeneration(ImageGenerationItem {
             id: "call-image".to_string(),
             status: "completed".to_string(),
             revised_prompt: Some("A tiny blue square".to_string()),
             result: "cG5n".to_string(),
+            transparent_background: Some(true),
+            failure: None,
             saved_path: Some(expected_path.clone()),
+            imagegen_request_id: None,
+            generation_id: None,
         });
         codex_tools::TurnItemEmitter::emit_started(
             &emitter,
@@ -474,6 +607,8 @@ mod tests {
                     status: "completed".to_string(),
                     revised_prompt: Some("A tiny blue square".to_string()),
                     result: "cG5n".to_string(),
+                    transparent_background: Some(true),
+                    failure: None,
                     saved_path: Some(expected_path.clone()),
                 })],
             },
@@ -501,6 +636,5 @@ mod tests {
 
         assert_eq!(started_item, expected_started_item);
         assert_eq!(completed_item, expected_completed_item);
-        assert!(!default_path.exists());
     }
 }

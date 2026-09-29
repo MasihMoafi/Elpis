@@ -1,7 +1,7 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use crate::winutil::to_wide;
 use anyhow::Result;
 use anyhow::anyhow;
+use anyhow::ensure;
 use std::ffi::c_void;
 use windows_sys::Win32::Foundation::CloseHandle;
 use windows_sys::Win32::Foundation::ERROR_SUCCESS;
@@ -20,8 +20,8 @@ use windows_sys::Win32::Security::Authorization::TRUSTEE_W;
 use windows_sys::Win32::Security::CopySid;
 use windows_sys::Win32::Security::CreateRestrictedToken;
 use windows_sys::Win32::Security::CreateWellKnownSid;
-use windows_sys::Win32::Security::GetLengthSid;
 use windows_sys::Win32::Security::GetTokenInformation;
+use windows_sys::Win32::Security::IsValidSid;
 use windows_sys::Win32::Security::LookupPrivilegeValueW;
 use windows_sys::Win32::Security::SetTokenInformation;
 
@@ -32,12 +32,11 @@ use windows_sys::Win32::Security::TOKEN_ADJUST_PRIVILEGES;
 use windows_sys::Win32::Security::TOKEN_ADJUST_SESSIONID;
 use windows_sys::Win32::Security::TOKEN_ASSIGN_PRIMARY;
 use windows_sys::Win32::Security::TOKEN_DUPLICATE;
+use windows_sys::Win32::Security::TOKEN_GROUPS;
 use windows_sys::Win32::Security::TOKEN_PRIVILEGES;
 use windows_sys::Win32::Security::TOKEN_QUERY;
-use windows_sys::Win32::Security::TOKEN_USER;
 use windows_sys::Win32::Security::TokenDefaultDacl;
 use windows_sys::Win32::Security::TokenGroups;
-use windows_sys::Win32::Security::TokenUser;
 use windows_sys::Win32::System::Threading::GetCurrentProcess;
 
 const DISABLE_MAX_PRIVILEGE: u32 = 0x01;
@@ -52,27 +51,32 @@ struct TokenDefaultDaclInfo {
     default_dacl: *mut ACL,
 }
 
-/// Sets a permissive default DACL so sandboxed processes can create pipes/IPC objects
-/// without hitting ACCESS_DENIED when PowerShell builds pipelines.
-unsafe fn set_default_dacl(h_token: HANDLE, sids: &[*mut c_void]) -> Result<()> {
-    if sids.is_empty() {
-        return Ok(());
-    }
-    let entries: Vec<EXPLICIT_ACCESS_W> = sids
-        .iter()
-        .map(|sid| EXPLICIT_ACCESS_W {
-            grfAccessPermissions: GENERIC_ALL,
-            grfAccessMode: GRANT_ACCESS,
-            grfInheritance: 0,
-            Trustee: TRUSTEE_W {
-                pMultipleTrustee: std::ptr::null_mut(),
-                MultipleTrusteeOperation: 0,
-                TrusteeForm: TRUSTEE_IS_SID,
-                TrusteeType: TRUSTEE_IS_UNKNOWN,
-                ptstrName: *sid as *mut u16,
-            },
-        })
-        .collect();
+/// Keep child-process and IPC access within the runner's logon session.
+/// Elevated runners have distinct logon SIDs even when they use the same account.
+unsafe fn set_default_dacl(h_token: HANDLE, logon_sid: *mut c_void) -> Result<()> {
+    let owner_rights = LocalSid::from_string("S-1-3-4")?;
+    // The shared account also owns these objects. An OWNER RIGHTS ACE suppresses
+    // its implicit WRITE_DAC grant, which would otherwise let a different logon
+    // rewrite this DACL. The creating logon retains full access explicitly.
+    let entries = [
+        (logon_sid, GENERIC_ALL),
+        (
+            owner_rights.as_ptr(),
+            windows_sys::Win32::Storage::FileSystem::READ_CONTROL,
+        ),
+    ]
+    .map(|(sid, access)| EXPLICIT_ACCESS_W {
+        grfAccessPermissions: access,
+        grfAccessMode: GRANT_ACCESS,
+        grfInheritance: 0,
+        Trustee: TRUSTEE_W {
+            pMultipleTrustee: std::ptr::null_mut(),
+            MultipleTrusteeOperation: 0,
+            TrusteeForm: TRUSTEE_IS_SID,
+            TrusteeType: TRUSTEE_IS_UNKNOWN,
+            ptstrName: sid as *mut u16,
+        },
+    });
     let mut p_new_dacl: *mut ACL = std::ptr::null_mut();
     let res = SetEntriesInAclW(
         entries.len() as u32,
@@ -192,47 +196,100 @@ pub unsafe fn get_current_token_for_restriction() -> Result<HANDLE> {
     Ok(h)
 }
 
+/// An owned token group, including attributes such as enabled and deny-only.
+#[derive(Debug, PartialEq, Eq)]
+pub struct TokenGroup {
+    pub sid: Vec<u8>,
+    pub attributes: u32,
+}
+
+/// Queries groups without filtering membership or retaining pointers into Windows' buffer.
+///
+/// # Safety
+/// `token` must remain a valid token handle with `TOKEN_QUERY` access during this call.
+pub unsafe fn token_groups(token: HANDLE, max_bytes: u32) -> Result<Vec<TokenGroup>> {
+    let mut needed = 0;
+    GetTokenInformation(token, TokenGroups, std::ptr::null_mut(), 0, &mut needed);
+    ensure!(
+        needed > 0 && needed <= max_bytes,
+        "invalid token group size"
+    );
+    let mut buffer = vec![0u8; needed as usize];
+    if GetTokenInformation(
+        token,
+        TokenGroups,
+        buffer.as_mut_ptr().cast(),
+        needed,
+        &mut needed,
+    ) == 0
+    {
+        return Err(anyhow!(
+            "GetTokenInformation(TokenGroups) failed: {}",
+            GetLastError()
+        ));
+    }
+    ensure!(
+        needed as usize <= buffer.len(),
+        "invalid token group result size"
+    );
+    decode_token_groups(&buffer[..needed as usize])
+}
+
+fn decode_token_groups(buffer: &[u8]) -> Result<Vec<TokenGroup>> {
+    let offset = std::mem::offset_of!(TOKEN_GROUPS, Groups);
+    let stride = std::mem::size_of::<SID_AND_ATTRIBUTES>();
+    ensure!(buffer.len() >= offset, "truncated token group header");
+    let count = unsafe { std::ptr::read_unaligned(buffer.as_ptr().cast::<u32>()) } as usize;
+    ensure!(
+        count <= (buffer.len() - offset) / stride,
+        "truncated token groups"
+    );
+    let mut groups = Vec::with_capacity(count);
+    for index in 0..count {
+        let entry = unsafe {
+            std::ptr::read_unaligned(
+                buffer
+                    .as_ptr()
+                    .add(offset + index * stride)
+                    .cast::<SID_AND_ATTRIBUTES>(),
+            )
+        };
+        // Bound the header and every subauthority before calling a SID API.
+        let sid_offset = (entry.Sid as usize).wrapping_sub(buffer.as_ptr() as usize);
+        ensure!(
+            sid_offset <= buffer.len().saturating_sub(8),
+            "invalid token group SID pointer"
+        );
+        ensure!(buffer[sid_offset] == 1, "invalid token group SID revision");
+        let sid_len = 8 + usize::from(buffer[sid_offset + 1]) * 4;
+        ensure!(
+            sid_len <= 68 && sid_len <= buffer.len() - sid_offset,
+            "invalid token group SID size"
+        );
+        ensure!(
+            unsafe { IsValidSid(entry.Sid) } != 0,
+            "invalid token group SID"
+        );
+        let mut sid = vec![0u8; sid_len];
+        ensure!(
+            unsafe { CopySid(sid_len as u32, sid.as_mut_ptr().cast(), entry.Sid) } != 0,
+            "invalid token group SID"
+        );
+        groups.push(TokenGroup {
+            sid,
+            attributes: entry.Attributes,
+        });
+    }
+    Ok(groups)
+}
+
 pub unsafe fn get_logon_sid_bytes(h_token: HANDLE) -> Result<Vec<u8>> {
     unsafe fn scan_token_groups_for_logon(h: HANDLE) -> Option<Vec<u8>> {
-        let mut needed: u32 = 0;
-        GetTokenInformation(h, TokenGroups, std::ptr::null_mut(), 0, &mut needed);
-        if needed == 0 {
-            return None;
-        }
-        let mut buf: Vec<u8> = vec![0u8; needed as usize];
-        let ok = GetTokenInformation(
-            h,
-            TokenGroups,
-            buf.as_mut_ptr() as *mut c_void,
-            needed,
-            &mut needed,
-        );
-        if ok == 0 || (needed as usize) < std::mem::size_of::<u32>() {
-            return None;
-        }
-        let group_count = std::ptr::read_unaligned(buf.as_ptr() as *const u32) as usize;
-        // TOKEN_GROUPS layout is: DWORD GroupCount; SID_AND_ATTRIBUTES Groups[];
-        // On 64-bit, Groups is aligned to pointer alignment after 4-byte GroupCount.
-        let after_count = unsafe { buf.as_ptr().add(std::mem::size_of::<u32>()) } as usize;
-        let align = std::mem::align_of::<SID_AND_ATTRIBUTES>();
-        let aligned = (after_count + (align - 1)) & !(align - 1);
-        let groups_ptr = aligned as *const SID_AND_ATTRIBUTES;
-        for i in 0..group_count {
-            let entry: SID_AND_ATTRIBUTES = std::ptr::read_unaligned(groups_ptr.add(i));
-            if (entry.Attributes & SE_GROUP_LOGON_ID) == SE_GROUP_LOGON_ID {
-                let sid = entry.Sid;
-                let sid_len = GetLengthSid(sid);
-                if sid_len == 0 {
-                    return None;
-                }
-                let mut out = vec![0u8; sid_len as usize];
-                if CopySid(sid_len, out.as_mut_ptr() as *mut c_void, sid) == 0 {
-                    return None;
-                }
-                return Some(out);
-            }
-        }
-        None
+        token_groups(h, u32::MAX)
+            .ok()?
+            .into_iter()
+            .find(|group| group.attributes & SE_GROUP_LOGON_ID == SE_GROUP_LOGON_ID)
+            .map(|group| group.sid)
     }
 
     if let Some(v) = scan_token_groups_for_logon(h_token) {
@@ -277,45 +334,7 @@ pub unsafe fn get_logon_sid_bytes(h_token: HANDLE) -> Result<Vec<u8>> {
     Err(anyhow!("Logon SID not present on token"))
 }
 
-unsafe fn get_user_sid_bytes(h_token: HANDLE) -> Result<Vec<u8>> {
-    let mut needed: u32 = 0;
-    GetTokenInformation(h_token, TokenUser, std::ptr::null_mut(), 0, &mut needed);
-    if needed == 0 {
-        return Err(anyhow!("TokenUser size query returned 0"));
-    }
-    let mut user_buf: Vec<u8> = vec![0u8; needed as usize];
-    let ok = GetTokenInformation(
-        h_token,
-        TokenUser,
-        user_buf.as_mut_ptr() as *mut c_void,
-        needed,
-        &mut needed,
-    );
-    if ok == 0 || (needed as usize) < std::mem::size_of::<TOKEN_USER>() {
-        return Err(anyhow!(
-            "GetTokenInformation(TokenUser) failed: {}",
-            GetLastError()
-        ));
-    }
-    let token_user: TOKEN_USER = std::ptr::read_unaligned(user_buf.as_ptr() as *const TOKEN_USER);
-    let sid_len = GetLengthSid(token_user.User.Sid);
-    if sid_len == 0 {
-        return Err(anyhow!(
-            "GetLengthSid(TokenUser) failed: {}",
-            GetLastError()
-        ));
-    }
-    let mut user_sid_bytes = vec![0u8; sid_len as usize];
-    if CopySid(
-        sid_len,
-        user_sid_bytes.as_mut_ptr() as *mut c_void,
-        token_user.User.Sid,
-    ) == 0
-    {
-        return Err(anyhow!("CopySid(TokenUser) failed: {}", GetLastError()));
-    }
-    Ok(user_sid_bytes)
-}
+pub(crate) use crate::token_user::get_user_sid_bytes;
 
 unsafe fn enable_single_privilege(h_token: HANDLE, name: &str) -> Result<()> {
     let mut luid = LUID {
@@ -382,7 +401,8 @@ pub unsafe fn create_workspace_write_token_with_caps_from(
     create_token_with_caps_from(base_token, psid_capabilities, &[])
 }
 
-/// Create a restricted token that includes all provided capability SIDs plus the token user SID.
+/// Create a restricted token that includes all provided capability SIDs, the token user SID, and
+/// any additional restricting SIDs.
 ///
 /// This is intended for the elevated sandbox backend, where the token user is the dedicated
 /// sandbox account rather than the real signed-in user.
@@ -392,10 +412,13 @@ pub unsafe fn create_workspace_write_token_with_caps_from(
 pub unsafe fn create_workspace_write_token_with_caps_and_user_from(
     base_token: HANDLE,
     psid_capabilities: &[*mut c_void],
+    additional_restricting_sids: &[*mut c_void],
 ) -> Result<HANDLE> {
-    let mut user_sid_bytes = get_user_sid_bytes(base_token)?;
-    let psid_user = user_sid_bytes.as_mut_ptr() as *mut c_void;
-    create_token_with_caps_from(base_token, psid_capabilities, &[psid_user])
+    create_token_with_caps_user_and_additional_restrictions_from(
+        base_token,
+        psid_capabilities,
+        additional_restricting_sids,
+    )
 }
 
 /// Create a restricted token that includes all provided capability SIDs.
@@ -409,7 +432,8 @@ pub unsafe fn create_readonly_token_with_caps_from(
     create_token_with_caps_from(base_token, psid_capabilities, &[])
 }
 
-/// Create a restricted token that includes all provided capability SIDs plus the token user SID.
+/// Create a restricted token that includes all provided capability SIDs, the token user SID, and
+/// any additional restricting SIDs.
 ///
 /// This is intended for the elevated sandbox backend, where the token user is the dedicated
 /// sandbox account rather than the real signed-in user.
@@ -419,10 +443,26 @@ pub unsafe fn create_readonly_token_with_caps_from(
 pub unsafe fn create_readonly_token_with_caps_and_user_from(
     base_token: HANDLE,
     psid_capabilities: &[*mut c_void],
+    additional_restricting_sids: &[*mut c_void],
+) -> Result<HANDLE> {
+    create_token_with_caps_user_and_additional_restrictions_from(
+        base_token,
+        psid_capabilities,
+        additional_restricting_sids,
+    )
+}
+
+unsafe fn create_token_with_caps_user_and_additional_restrictions_from(
+    base_token: HANDLE,
+    psid_capabilities: &[*mut c_void],
+    additional_restricting_sids: &[*mut c_void],
 ) -> Result<HANDLE> {
     let mut user_sid_bytes = get_user_sid_bytes(base_token)?;
     let psid_user = user_sid_bytes.as_mut_ptr() as *mut c_void;
-    create_token_with_caps_from(base_token, psid_capabilities, &[psid_user])
+    let mut extra_restricting_sids = Vec::with_capacity(additional_restricting_sids.len() + 1);
+    extra_restricting_sids.push(psid_user);
+    extra_restricting_sids.extend_from_slice(additional_restricting_sids);
+    create_token_with_caps_from(base_token, psid_capabilities, &extra_restricting_sids)
 }
 
 unsafe fn create_token_with_caps_from(
@@ -473,12 +513,21 @@ unsafe fn create_token_with_caps_from(
         return Err(anyhow!("CreateRestrictedToken failed: {}", GetLastError()));
     }
 
-    let mut dacl_sids: Vec<*mut c_void> = Vec::with_capacity(psid_capabilities.len() + 2);
-    dacl_sids.push(psid_logon);
-    dacl_sids.push(psid_everyone);
-    dacl_sids.extend_from_slice(psid_capabilities);
-    set_default_dacl(new_token, &dacl_sids)?;
-
-    enable_single_privilege(new_token, "SeChangeNotifyPrivilege")?;
+    // Filesystem and route capabilities may be shared between launches. They
+    // must not grant access to another launch's processes, threads, or IPC.
+    if let Err(error) = set_default_dacl(new_token, psid_logon)
+        .and_then(|()| enable_single_privilege(new_token, "SeChangeNotifyPrivilege"))
+    {
+        CloseHandle(new_token);
+        return Err(error);
+    }
     Ok(new_token)
 }
+
+#[cfg(test)]
+#[path = "token_tests.rs"]
+mod tests;
+
+#[cfg(test)]
+#[path = "token_groups_tests.rs"]
+mod token_groups_tests;

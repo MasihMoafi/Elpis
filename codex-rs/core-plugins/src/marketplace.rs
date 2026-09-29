@@ -1,4 +1,3 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use crate::manifest::PluginManifestInterface;
 use crate::manifest::load_plugin_manifest;
 use codex_app_server_protocol::PluginAuthPolicy;
@@ -22,6 +21,7 @@ const MARKETPLACE_MANIFEST_RELATIVE_PATHS: &[&str] = &[
     ".agents/plugins/marketplace.json",
     ".agents/plugins/api_marketplace.json",
     ".claude-plugin/marketplace.json",
+    ".cursor-plugin/marketplace.json",
 ];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -97,6 +97,7 @@ impl MarketplacePluginManifestFallback {
         )
         .ok()?;
         manifest.paths = crate::manifest::PluginManifestPaths {
+            onboarding_skill: None,
             skills: Vec::new(),
             mcp_servers: None,
             apps: None,
@@ -663,7 +664,13 @@ fn resolve_local_plugin_source_path(
     }
 
     // Non-root local sources must keep the explicit `./` prefix and remain normalized.
-    let Some(relative_path) = path.strip_prefix("./") else {
+    let relative_path = path.strip_prefix("./").or_else(|| {
+        marketplace_path
+            .as_path()
+            .ends_with(".cursor-plugin/marketplace.json")
+            .then_some(path)
+    });
+    let Some(relative_path) = relative_path else {
         return Err(MarketplaceError::InvalidMarketplaceFile {
             path: marketplace_path.to_path_buf(),
             message: "local plugin source path must start with `./`".to_string(),

@@ -1,10 +1,12 @@
 use anyhow::Result;
+use app_test_support::MockResponsesConfig;
 use app_test_support::TestAppServer;
+use app_test_support::create_escalated_command_execution_sse_response;
 use app_test_support::create_final_assistant_message_sse_response;
 use app_test_support::create_mock_responses_server_sequence;
-use app_test_support::create_shell_command_sse_response;
 use app_test_support::format_with_current_shell_display;
-use app_test_support::to_response;
+use codex_app_server::INVALID_PARAMS_ERROR_CODE;
+use codex_app_server_protocol::ClientRequest;
 use codex_app_server_protocol::CommandExecutionApprovalDecision;
 use codex_app_server_protocol::CommandExecutionOutputDeltaNotification;
 use codex_app_server_protocol::CommandExecutionRequestApprovalResponse;
@@ -12,12 +14,12 @@ use codex_app_server_protocol::CommandExecutionSource;
 use codex_app_server_protocol::CommandExecutionStatus;
 use codex_app_server_protocol::ItemCompletedNotification;
 use codex_app_server_protocol::ItemStartedNotification;
-use codex_app_server_protocol::JSONRPCResponse;
 use codex_app_server_protocol::RequestId;
 use codex_app_server_protocol::ServerRequest;
 use codex_app_server_protocol::SortDirection;
 use codex_app_server_protocol::ThreadForkParams;
 use codex_app_server_protocol::ThreadForkResponse;
+use codex_app_server_protocol::ThreadHistoryMode;
 use codex_app_server_protocol::ThreadItem;
 use codex_app_server_protocol::ThreadReadParams;
 use codex_app_server_protocol::ThreadReadResponse;
@@ -25,19 +27,19 @@ use codex_app_server_protocol::ThreadShellCommandParams;
 use codex_app_server_protocol::ThreadShellCommandResponse;
 use codex_app_server_protocol::ThreadStartParams;
 use codex_app_server_protocol::ThreadStartResponse;
+use codex_app_server_protocol::ThreadStatus;
 use codex_app_server_protocol::ThreadTurnsListParams;
 use codex_app_server_protocol::ThreadTurnsListResponse;
 use codex_app_server_protocol::TurnCompletedNotification;
 use codex_app_server_protocol::TurnStartParams;
 use codex_app_server_protocol::TurnStartResponse;
+use codex_app_server_protocol::TurnStartedNotification;
+use codex_app_server_protocol::TurnStatus;
 use codex_app_server_protocol::UserInput as V2UserInput;
 use codex_core::shell::default_user_shell;
 use codex_exec_server::CODEX_EXEC_SERVER_URL_ENV_VAR;
-use codex_features::FEATURES;
-use codex_features::Feature;
 use pretty_assertions::assert_eq;
-use std::collections::BTreeMap;
-use std::path::Path;
+use serde_json::json;
 use tempfile::TempDir;
 use tokio::time::timeout;
 
@@ -53,44 +55,35 @@ async fn thread_shell_command_history_responses_exclude_persisted_command_execut
     std::fs::create_dir(&workspace)?;
 
     let server = create_mock_responses_server_sequence(vec![]).await;
-    create_config_toml(
-        codex_home.as_path(),
-        &server.uri(),
-        "never",
-        &BTreeMap::default(),
-    )?;
+    MockResponsesConfig::new(&server.uri()).write(&codex_home)?;
 
     let mut mcp = TestAppServer::builder()
         .with_codex_home(codex_home.as_path())
         // thread/shellCommand intentionally executes on the app-server host.
         .without_auto_env()
-        .build()
+        .build_initialized()
         .await?;
-    timeout(DEFAULT_READ_TIMEOUT, mcp.initialize()).await??;
-
-    let start_id = mcp
-        .send_thread_start_request(ThreadStartParams::default())
-        .await?;
-    let start_resp: JSONRPCResponse = timeout(
-        DEFAULT_READ_TIMEOUT,
-        mcp.read_stream_until_response_message(RequestId::Integer(start_id)),
-    )
-    .await??;
-    let ThreadStartResponse { thread, .. } = to_response::<ThreadStartResponse>(start_resp)?;
-    let (shell_command, expected_output) = current_shell_output_command("hello from bang")?;
-
-    let shell_id = mcp
-        .send_thread_shell_command_request(ThreadShellCommandParams {
-            thread_id: thread.id.clone(),
-            command: shell_command,
+    let ThreadStartResponse { thread, .. } = mcp
+        .request(|request_id| ClientRequest::ThreadStart {
+            request_id,
+            params: ThreadStartParams {
+                history_mode: Some(ThreadHistoryMode::Legacy),
+                ..Default::default()
+            },
         })
         .await?;
-    let shell_resp: JSONRPCResponse = timeout(
-        DEFAULT_READ_TIMEOUT,
-        mcp.read_stream_until_response_message(RequestId::Integer(shell_id)),
-    )
-    .await??;
-    let _: ThreadShellCommandResponse = to_response::<ThreadShellCommandResponse>(shell_resp)?;
+    let (shell_command, expected_output) = current_shell_output_command("hello from bang")?;
+
+    let _: ThreadShellCommandResponse = mcp
+        .request(|request_id| ClientRequest::ThreadShellCommand {
+            request_id,
+            params: ThreadShellCommandParams {
+                thread_id: thread.id.clone(),
+                command: shell_command,
+                timeout_ms: None,
+            },
+        })
+        .await?;
 
     let started = wait_for_command_execution_started(&mut mcp, /*expected_id*/ None).await?;
     let ThreadItem::CommandExecution {
@@ -133,52 +126,42 @@ async fn thread_shell_command_history_responses_exclude_persisted_command_execut
     )
     .await??;
 
-    let read_id = mcp
-        .send_thread_read_request(ThreadReadParams {
-            thread_id: thread.id.clone(),
-            include_turns: true,
+    let ThreadReadResponse { thread, .. } = mcp
+        .request(|request_id| ClientRequest::ThreadRead {
+            request_id,
+            params: ThreadReadParams {
+                thread_id: thread.id.clone(),
+                include_turns: true,
+            },
         })
         .await?;
-    let read_resp: JSONRPCResponse = timeout(
-        DEFAULT_READ_TIMEOUT,
-        mcp.read_stream_until_response_message(RequestId::Integer(read_id)),
-    )
-    .await??;
-    let ThreadReadResponse { thread, .. } = to_response::<ThreadReadResponse>(read_resp)?;
     assert_eq!(thread.turns.len(), 1);
     assert_no_command_executions(&thread.turns[0].items, "thread/read");
 
-    let turns_list_id = mcp
-        .send_thread_turns_list_request(ThreadTurnsListParams {
-            thread_id: thread.id.clone(),
-            cursor: None,
-            limit: None,
-            sort_direction: Some(SortDirection::Asc),
-            items_view: None,
+    let ThreadTurnsListResponse { data, .. } = mcp
+        .request(|request_id| ClientRequest::ThreadTurnsList {
+            request_id,
+            params: ThreadTurnsListParams {
+                thread_id: thread.id.clone(),
+                cursor: None,
+                limit: None,
+                sort_direction: Some(SortDirection::Asc),
+                items_view: None,
+            },
         })
         .await?;
-    let turns_list_resp: JSONRPCResponse = timeout(
-        DEFAULT_READ_TIMEOUT,
-        mcp.read_stream_until_response_message(RequestId::Integer(turns_list_id)),
-    )
-    .await??;
-    let ThreadTurnsListResponse { data, .. } =
-        to_response::<ThreadTurnsListResponse>(turns_list_resp)?;
     assert_eq!(data.len(), 1);
     assert_no_command_executions(&data[0].items, "thread/turns/list");
 
-    let fork_id = mcp
-        .send_thread_fork_request(ThreadForkParams {
-            thread_id: thread.id,
-            ..Default::default()
+    let ThreadForkResponse { thread, .. } = mcp
+        .request(|request_id| ClientRequest::ThreadFork {
+            request_id,
+            params: ThreadForkParams {
+                thread_id: thread.id,
+                ..Default::default()
+            },
         })
         .await?;
-    let fork_resp: JSONRPCResponse = timeout(
-        DEFAULT_READ_TIMEOUT,
-        mcp.read_stream_until_response_message(RequestId::Integer(fork_id)),
-    )
-    .await??;
-    let ThreadForkResponse { thread, .. } = to_response::<ThreadForkResponse>(fork_resp)?;
     assert_eq!(thread.turns.len(), 1);
     assert_no_command_executions(&thread.turns[0].items, "thread/fork");
 
@@ -191,35 +174,26 @@ async fn thread_shell_command_returns_error_when_local_environment_is_disabled()
     let codex_home = tmp.path().join("codex_home");
     std::fs::create_dir(&codex_home)?;
     let server = create_mock_responses_server_sequence(vec![]).await;
-    create_config_toml(
-        codex_home.as_path(),
-        &server.uri(),
-        "never",
-        &BTreeMap::default(),
-    )?;
+    MockResponsesConfig::new(&server.uri()).write(&codex_home)?;
 
     let mut mcp = TestAppServer::builder()
         .with_codex_home(codex_home.as_path())
         // This test intentionally exercises thread/shellCommand without a local host environment.
         .without_auto_env()
         .with_env_overrides(&[(CODEX_EXEC_SERVER_URL_ENV_VAR, Some("none"))])
-        .build()
+        .build_initialized()
         .await?;
-    timeout(DEFAULT_READ_TIMEOUT, mcp.initialize()).await??;
-
-    let start_id = mcp
-        .send_thread_start_request(ThreadStartParams::default())
+    let ThreadStartResponse { thread, .. } = mcp
+        .request(|request_id| ClientRequest::ThreadStart {
+            request_id,
+            params: ThreadStartParams::default(),
+        })
         .await?;
-    let start_resp: JSONRPCResponse = timeout(
-        DEFAULT_READ_TIMEOUT,
-        mcp.read_stream_until_response_message(RequestId::Integer(start_id)),
-    )
-    .await??;
-    let ThreadStartResponse { thread, .. } = to_response::<ThreadStartResponse>(start_resp)?;
     let shell_id = mcp
         .send_thread_shell_command_request(ThreadShellCommandParams {
             thread_id: thread.id,
             command: "pwd".to_string(),
+            timeout_ms: None,
         })
         .await?;
     let error = mcp
@@ -232,6 +206,15 @@ async fn thread_shell_command_returns_error_when_local_environment_is_disabled()
 
 #[tokio::test]
 async fn thread_shell_command_uses_existing_active_turn() -> Result<()> {
+    check_thread_shell_command_in_active_turn(/*timeout_ms*/ None).await
+}
+
+#[tokio::test]
+async fn thread_shell_command_timeout_preserves_active_turn() -> Result<()> {
+    check_thread_shell_command_in_active_turn(Some(3_000)).await
+}
+
+async fn check_thread_shell_command_in_active_turn(timeout_ms: Option<i64>) -> Result<()> {
     let tmp = TempDir::new()?;
     let codex_home = tmp.path().join("codex_home");
     std::fs::create_dir(&codex_home)?;
@@ -239,7 +222,7 @@ async fn thread_shell_command_uses_existing_active_turn() -> Result<()> {
     std::fs::create_dir(&workspace)?;
 
     let responses = vec![
-        create_shell_command_sse_response(
+        create_escalated_command_execution_sse_response(
             vec![
                 "python3".to_string(),
                 "-c".to_string(),
@@ -252,51 +235,49 @@ async fn thread_shell_command_uses_existing_active_turn() -> Result<()> {
         create_final_assistant_message_sse_response("done")?,
     ];
     let server = create_mock_responses_server_sequence(responses).await;
-    create_config_toml(
-        codex_home.as_path(),
-        &server.uri(),
-        "untrusted",
-        &BTreeMap::default(),
-    )?;
+    MockResponsesConfig::new(&server.uri())
+        .with_approval_policy("on-request")
+        .write(&codex_home)?;
 
     let mut mcp = TestAppServer::builder()
         .with_codex_home(codex_home.as_path())
         // thread/shellCommand intentionally joins the app-server's host-local active turn.
         .without_auto_env()
-        .build()
+        .build_initialized()
         .await?;
-    timeout(DEFAULT_READ_TIMEOUT, mcp.initialize()).await??;
-
-    let start_id = mcp
-        .send_thread_start_request(ThreadStartParams::default())
-        .await?;
-    let start_resp: JSONRPCResponse = timeout(
-        DEFAULT_READ_TIMEOUT,
-        mcp.read_stream_until_response_message(RequestId::Integer(start_id)),
-    )
-    .await??;
-    let ThreadStartResponse { thread, .. } = to_response::<ThreadStartResponse>(start_resp)?;
-    let (shell_command, expected_output) = current_shell_output_command("active turn bang")?;
-
-    let turn_id = mcp
-        .send_turn_start_request(TurnStartParams {
-            thread_id: thread.id.clone(),
-            client_user_message_id: None,
-            input: vec![V2UserInput::Text {
-                text: "run python".to_string(),
-                text_elements: Vec::new(),
-            }],
-            cwd: Some(workspace.clone()),
-            ..Default::default()
+    let ThreadStartResponse { thread, .. } = mcp
+        .request(|request_id| ClientRequest::ThreadStart {
+            request_id,
+            params: ThreadStartParams {
+                history_mode: Some(ThreadHistoryMode::Legacy),
+                ..Default::default()
+            },
         })
         .await?;
-    let turn_resp: JSONRPCResponse = timeout(
-        DEFAULT_READ_TIMEOUT,
-        mcp.read_stream_until_response_message(RequestId::Integer(turn_id)),
-    )
-    .await??;
-    let TurnStartResponse { turn } = to_response::<TurnStartResponse>(turn_resp)?;
+    let (shell_command, expected_output) = if timeout_ms.is_some() {
+        current_shell_slow_command()?
+    } else {
+        current_shell_output_command("active turn bang")?
+    };
 
+    let TurnStartResponse { turn } = mcp
+        .request(|request_id| ClientRequest::TurnStart {
+            request_id,
+            params: TurnStartParams {
+                thread_id: thread.id.clone(),
+                client_user_message_id: None,
+                input: vec![V2UserInput::Text {
+                    text: "run python".to_string(),
+                    text_elements: Vec::new(),
+                }],
+                cwd: Some(workspace.clone()),
+                ..Default::default()
+            },
+        })
+        .await?;
+
+    let started: TurnStartedNotification = mcp.read_notification("turn/started").await?;
+    assert_eq!(started.turn.id, turn.id);
     let agent_started = wait_for_command_execution_started(&mut mcp, Some("call-approve")).await?;
     let ThreadItem::CommandExecution {
         command, source, ..
@@ -319,18 +300,16 @@ async fn thread_shell_command_uses_existing_active_turn() -> Result<()> {
         panic!("expected approval request");
     };
 
-    let shell_id = mcp
-        .send_thread_shell_command_request(ThreadShellCommandParams {
-            thread_id: thread.id.clone(),
-            command: shell_command,
+    let _: ThreadShellCommandResponse = mcp
+        .request(|request_id| ClientRequest::ThreadShellCommand {
+            request_id,
+            params: ThreadShellCommandParams {
+                thread_id: thread.id.clone(),
+                command: shell_command,
+                timeout_ms,
+            },
         })
         .await?;
-    let shell_resp: JSONRPCResponse = timeout(
-        DEFAULT_READ_TIMEOUT,
-        mcp.read_stream_until_response_message(RequestId::Integer(shell_id)),
-    )
-    .await??;
-    let _: ThreadShellCommandResponse = to_response::<ThreadShellCommandResponse>(shell_resp)?;
 
     let started =
         wait_for_command_execution_started_by_source(&mut mcp, CommandExecutionSource::UserShell)
@@ -345,13 +324,46 @@ async fn thread_shell_command_uses_existing_active_turn() -> Result<()> {
     let ThreadItem::CommandExecution {
         source,
         aggregated_output,
+        status,
+        exit_code,
         ..
     } = &completed.item
     else {
         unreachable!("helper returns command execution item");
     };
     assert_eq!(source, &CommandExecutionSource::UserShell);
-    assert_eq!(aggregated_output.as_deref(), Some(expected_output.as_str()));
+    if timeout_ms.is_some() {
+        assert_eq!(status, &CommandExecutionStatus::Failed);
+        assert_eq!(*exit_code, Some(-1));
+        let output = aggregated_output.as_deref().expect("timeout output");
+        assert!(output.contains("Timeout"));
+        assert!(output.contains(expected_output.trim()));
+    } else {
+        assert_eq!(status, &CommandExecutionStatus::Completed);
+        assert_eq!(*exit_code, Some(0));
+        assert_eq!(aggregated_output.as_deref(), Some(expected_output.as_str()));
+    }
+
+    let ThreadReadResponse {
+        thread: active_thread,
+        ..
+    } = mcp
+        .request(|request_id| ClientRequest::ThreadRead {
+            request_id,
+            params: ThreadReadParams {
+                thread_id: thread.id.clone(),
+                include_turns: true,
+            },
+        })
+        .await?;
+    assert_eq!(active_thread.turns.len(), 1);
+    assert_eq!(active_thread.turns[0].id, turn.id);
+    assert_eq!(active_thread.turns[0].status, TurnStatus::InProgress);
+    assert!(
+        mcp.pending_notification_methods()
+            .iter()
+            .all(|method| { method != "turn/started" && method != "turn/completed" })
+    );
 
     mcp.send_response(
         request_id,
@@ -360,32 +372,176 @@ async fn thread_shell_command_uses_existing_active_turn() -> Result<()> {
         })?,
     )
     .await?;
-    let _: TurnCompletedNotification = serde_json::from_value(
-        timeout(
-            DEFAULT_READ_TIMEOUT,
-            mcp.read_stream_until_notification_message("turn/completed"),
-        )
-        .await??
-        .params
-        .expect("turn/completed params"),
-    )?;
-
-    let read_id = mcp
-        .send_thread_read_request(ThreadReadParams {
-            thread_id: thread.id,
-            include_turns: true,
-        })
-        .await?;
-    let read_resp: JSONRPCResponse = timeout(
+    let completed: TurnCompletedNotification = timeout(
         DEFAULT_READ_TIMEOUT,
-        mcp.read_stream_until_response_message(RequestId::Integer(read_id)),
+        mcp.read_notification("turn/completed"),
     )
     .await??;
-    let ThreadReadResponse { thread, .. } = to_response::<ThreadReadResponse>(read_resp)?;
+    assert_eq!(completed.turn.id, turn.id);
+    assert_eq!(completed.turn.status, TurnStatus::Completed);
+    let ThreadReadResponse { thread, .. } = mcp
+        .request(|request_id| ClientRequest::ThreadRead {
+            request_id,
+            params: ThreadReadParams {
+                thread_id: thread.id,
+                include_turns: true,
+            },
+        })
+        .await?;
     assert_eq!(thread.turns.len(), 1);
     assert_no_command_executions(&thread.turns[0].items, "thread/read");
+    assert!(
+        mcp.pending_notification_methods()
+            .iter()
+            .all(|method| { method != "turn/started" && method != "turn/completed" })
+    );
 
     Ok(())
+}
+
+#[tokio::test]
+async fn thread_shell_command_honors_optional_timeout() -> Result<()> {
+    let codex_home = TempDir::new()?;
+    let server = create_mock_responses_server_sequence(vec![]).await;
+    MockResponsesConfig::new(&server.uri()).write(codex_home.path())?;
+    let mut mcp = TestAppServer::builder()
+        .with_codex_home(codex_home.path())
+        // thread/shellCommand always executes on the app-server host.
+        .without_auto_env()
+        .build_initialized()
+        .await?;
+    let ThreadStartResponse { thread, .. } = mcp
+        .request(|request_id| ClientRequest::ThreadStart {
+            request_id,
+            params: ThreadStartParams::default(),
+        })
+        .await?;
+
+    for (timeout_ms, expires) in [
+        (None, false),
+        (Some(json!(null)), false),
+        (Some(json!(28_800_000)), false),
+        (Some(json!(3_000)), true),
+        (Some(json!(0)), true),
+    ] {
+        let expect_output = timeout_ms != Some(json!(0));
+        let (command, expected_output) = if expires {
+            current_shell_slow_command()?
+        } else {
+            current_shell_output_command("shell-timeout-ready")?
+        };
+        let mut params = json!({ "threadId": thread.id, "command": command });
+        if let Some(timeout_ms) = timeout_ms {
+            params["timeoutMs"] = timeout_ms;
+        }
+        let request_id = mcp
+            .send_request("thread/shellCommand", Some(params))
+            .await?;
+        let _: ThreadShellCommandResponse =
+            timeout(DEFAULT_READ_TIMEOUT, mcp.read_response(request_id)).await??;
+        let started: TurnStartedNotification = mcp.read_notification("turn/started").await?;
+        let completed =
+            wait_for_command_execution_completed(&mut mcp, /*expected_id*/ None).await?;
+        assert_eq!(completed.turn_id, started.turn.id);
+        let ThreadItem::CommandExecution {
+            status,
+            exit_code,
+            aggregated_output,
+            ..
+        } = completed.item
+        else {
+            unreachable!("helper returns command execution item");
+        };
+        let output = aggregated_output.expect("shell output");
+        if expires {
+            assert_eq!(status, CommandExecutionStatus::Failed);
+            assert_eq!(exit_code, Some(-1));
+            assert!(output.contains("Timeout"));
+            if expect_output {
+                assert!(output.contains(expected_output.trim()));
+            }
+        } else {
+            assert_eq!(status, CommandExecutionStatus::Completed);
+            assert_eq!(exit_code, Some(0));
+            assert_eq!(output, expected_output);
+        }
+        let completed: TurnCompletedNotification = timeout(
+            DEFAULT_READ_TIMEOUT,
+            mcp.read_notification("turn/completed"),
+        )
+        .await??;
+        assert_eq!(completed.turn.id, started.turn.id);
+        assert_eq!(completed.turn.status, TurnStatus::Completed);
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn thread_shell_command_rejects_invalid_timeouts_before_execution() -> Result<()> {
+    let codex_home = TempDir::new()?;
+    let server = create_mock_responses_server_sequence(vec![]).await;
+    MockResponsesConfig::new(&server.uri()).write(codex_home.path())?;
+    let mut mcp = TestAppServer::builder()
+        .with_codex_home(codex_home.path())
+        .without_auto_env()
+        .build_initialized()
+        .await?;
+    let ThreadStartResponse { thread, .. } = mcp
+        .request(|request_id| ClientRequest::ThreadStart {
+            request_id,
+            params: ThreadStartParams::default(),
+        })
+        .await?;
+    for timeout_ms in [json!(-1), json!(1.5), json!("1000"), json!(u64::MAX)] {
+        let request_id = mcp
+            .send_request(
+                "thread/shellCommand",
+                Some(json!({
+                    "threadId": thread.id,
+                    "command": "echo unexpected",
+                    "timeoutMs": timeout_ms,
+                })),
+            )
+            .await?;
+        let error = timeout(
+            DEFAULT_READ_TIMEOUT,
+            mcp.read_stream_until_error_message(RequestId::Integer(request_id)),
+        )
+        .await??;
+        if timeout_ms == json!(-1) {
+            assert_eq!(error.error.code, INVALID_PARAMS_ERROR_CODE);
+            assert_eq!(
+                error.error.message,
+                "thread/shellCommand timeoutMs must be non-negative, got -1"
+            );
+        }
+    }
+    let ThreadReadResponse { thread, .. } = mcp
+        .request(|request_id| ClientRequest::ThreadRead {
+            request_id,
+            params: ThreadReadParams {
+                thread_id: thread.id,
+                include_turns: false,
+            },
+        })
+        .await?;
+    assert_eq!(thread.status, ThreadStatus::Idle);
+    assert!(
+        mcp.pending_notification_methods()
+            .iter()
+            .all(|method| { method != "turn/started" && method != "item/started" })
+    );
+    Ok(())
+}
+
+fn current_shell_slow_command() -> Result<(String, String)> {
+    let (command, expected_output) = current_shell_output_command("shell-timeout-ready")?;
+    let suffix = match default_user_shell().name() {
+        "powershell" => "; Start-Sleep -Seconds 60",
+        "cmd" => " & ping -n 61 127.0.0.1 > nul",
+        _ => "; exec sleep 60",
+    };
+    Ok((format!("{command}{suffix}"), expected_output))
 }
 
 fn assert_no_command_executions(items: &[ThreadItem], context: &str) {
@@ -420,14 +576,7 @@ async fn wait_for_command_execution_started(
     expected_id: Option<&str>,
 ) -> Result<ItemStartedNotification> {
     loop {
-        let notif = mcp
-            .read_stream_until_notification_message("item/started")
-            .await?;
-        let started: ItemStartedNotification = serde_json::from_value(
-            notif
-                .params
-                .ok_or_else(|| anyhow::anyhow!("missing item/started params"))?,
-        )?;
+        let started: ItemStartedNotification = mcp.read_notification("item/started").await?;
         let ThreadItem::CommandExecution { id, .. } = &started.item else {
             continue;
         };
@@ -457,14 +606,7 @@ async fn wait_for_command_execution_completed(
     expected_id: Option<&str>,
 ) -> Result<ItemCompletedNotification> {
     loop {
-        let notif = mcp
-            .read_stream_until_notification_message("item/completed")
-            .await?;
-        let completed: ItemCompletedNotification = serde_json::from_value(
-            notif
-                .params
-                .ok_or_else(|| anyhow::anyhow!("missing item/completed params"))?,
-        )?;
+        let completed: ItemCompletedNotification = mcp.read_notification("item/completed").await?;
         let ThreadItem::CommandExecution { id, .. } = &completed.item else {
             continue;
         };
@@ -479,58 +621,11 @@ async fn wait_for_command_execution_output_delta(
     item_id: &str,
 ) -> Result<CommandExecutionOutputDeltaNotification> {
     loop {
-        let notif = mcp
-            .read_stream_until_notification_message("item/commandExecution/outputDelta")
+        let delta: CommandExecutionOutputDeltaNotification = mcp
+            .read_notification("item/commandExecution/outputDelta")
             .await?;
-        let delta: CommandExecutionOutputDeltaNotification = serde_json::from_value(
-            notif
-                .params
-                .ok_or_else(|| anyhow::anyhow!("missing output delta params"))?,
-        )?;
         if delta.item_id == item_id {
             return Ok(delta);
         }
     }
-}
-
-fn create_config_toml(
-    codex_home: &Path,
-    server_uri: &str,
-    approval_policy: &str,
-    feature_flags: &BTreeMap<Feature, bool>,
-) -> std::io::Result<()> {
-    let feature_entries = feature_flags
-        .iter()
-        .map(|(feature, enabled)| {
-            let key = FEATURES
-                .iter()
-                .find(|spec| spec.id == *feature)
-                .map(|spec| spec.key)
-                .expect("feature should have a config key");
-            format!("{key} = {enabled}")
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
-    std::fs::write(
-        codex_home.join("config.toml"),
-        format!(
-            r#"
-model = "mock-model"
-approval_policy = "{approval_policy}"
-sandbox_mode = "read-only"
-
-model_provider = "mock_provider"
-
-[features]
-{feature_entries}
-
-[model_providers.mock_provider]
-name = "Mock provider for test"
-base_url = "{server_uri}/v1"
-wire_api = "responses"
-request_max_retries = 0
-stream_max_retries = 0
-"#
-        ),
-    )
 }

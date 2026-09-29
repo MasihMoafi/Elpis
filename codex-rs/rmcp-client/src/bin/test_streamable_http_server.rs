@@ -34,8 +34,6 @@ use rmcp::model::ListResourceTemplatesResult;
 use rmcp::model::ListResourcesResult;
 use rmcp::model::ListToolsResult;
 use rmcp::model::PaginatedRequestParams;
-use rmcp::model::RawResource;
-use rmcp::model::RawResourceTemplate;
 use rmcp::model::ReadResourceRequestParams;
 use rmcp::model::ReadResourceResult;
 use rmcp::model::Resource;
@@ -114,6 +112,31 @@ struct EchoArgs {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let mut args = std::env::args_os().skip(1);
+    match args.next().as_deref() {
+        Some(value) if value == std::ffi::OsStr::new("--http-headers-helper") => {
+            if std::env::var_os("MCP_TEST_AMBIENT_SECRET").is_some() {
+                return Err("helper inherited ambient secret".into());
+            }
+            if let Some(invocations) = args.next() {
+                let count = fs::read_to_string(&invocations).unwrap_or_default().len() + 1;
+                fs::write(invocations, "x".repeat(count))?;
+                let header =
+                    if args.next().as_deref() == Some(std::ffi::OsStr::new("--authorization")) {
+                        "Authorization"
+                    } else {
+                        "Proxy-Authorization"
+                    };
+                println!(
+                    r#"{{"{header}":"Bearer gateway-token","X-Helper-Generation":"{count}"}}"#
+                );
+            } else {
+                println!(r#"{{"Proxy-Authorization":"Bearer gateway-token"}}"#);
+            }
+            return Ok(());
+        }
+        _ => {}
+    }
     let bind_addr = parse_bind_addr()?;
     let post_failure_state = PostFailureState::default();
     const MAX_BIND_RETRIES: u32 = 20;
@@ -170,6 +193,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         .header(CONTENT_TYPE, "application/json")
                         .body(Body::from(
                             serde_json::to_vec(&json!({
+                                "issuer": format!("{metadata_base}/mcp"),
                                 "authorization_endpoint": format!("{metadata_base}/oauth/authorize"),
                                 "token_endpoint": format!("{metadata_base}/oauth/token"),
                                 "scopes_supported": [""],
@@ -177,6 +201,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         ))
                         .expect("valid metadata response")
                 }
+            }),
+        )
+        .route(
+            "/oauth/token",
+            post(|| async {
+                (
+                    StatusCode::BAD_REQUEST,
+                    Json(json!({
+                        "error": "invalid_grant",
+                        "error_description": "refresh token expired or revoked",
+                    })),
+                )
             }),
         )
         .nest_service(
@@ -196,6 +232,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let router = if let Ok(token) = std::env::var("MCP_EXPECT_BEARER") {
         let expected = Arc::new(format!("Bearer {token}"));
         router.layer(middleware::from_fn_with_state(expected, require_bearer))
+    } else {
+        router
+    };
+    let router = if let Ok(token) = std::env::var("MCP_EXPECT_GATEWAY_BEARER") {
+        let expected = Arc::new(format!("Bearer {token}"));
+        router.layer(middleware::from_fn_with_state(
+            expected,
+            require_gateway_bearer,
+        ))
     } else {
         router
     };
@@ -222,13 +267,7 @@ impl ServerHandler for TestToolServer {
         _context: rmcp::service::RequestContext<rmcp::service::RoleServer>,
     ) -> impl std::future::Future<Output = Result<ListToolsResult, McpError>> + Send + '_ {
         let tools = self.tools.clone();
-        async move {
-            Ok(ListToolsResult {
-                tools: (*tools).clone(),
-                next_cursor: None,
-                meta: None,
-            })
-        }
+        async move { Ok(ListToolsResult::with_all_items((*tools).clone())) }
     }
 
     fn list_resources(
@@ -237,13 +276,7 @@ impl ServerHandler for TestToolServer {
         _context: rmcp::service::RequestContext<rmcp::service::RoleServer>,
     ) -> impl std::future::Future<Output = Result<ListResourcesResult, McpError>> + Send + '_ {
         let resources = self.resources.clone();
-        async move {
-            Ok(ListResourcesResult {
-                resources: (*resources).clone(),
-                next_cursor: None,
-                meta: None,
-            })
-        }
+        async move { Ok(ListResourcesResult::with_all_items((*resources).clone())) }
     }
 
     async fn list_resource_templates(
@@ -251,27 +284,26 @@ impl ServerHandler for TestToolServer {
         _request: Option<PaginatedRequestParams>,
         _context: rmcp::service::RequestContext<rmcp::service::RoleServer>,
     ) -> Result<ListResourceTemplatesResult, McpError> {
-        Ok(ListResourceTemplatesResult {
-            resource_templates: (*self.resource_templates).clone(),
-            next_cursor: None,
-            meta: None,
-        })
+        Ok(ListResourceTemplatesResult::with_all_items(
+            (*self.resource_templates).clone(),
+        ))
     }
 
     async fn read_resource(
         &self,
         ReadResourceRequestParams { uri, .. }: ReadResourceRequestParams,
         _context: rmcp::service::RequestContext<rmcp::service::RoleServer>,
-    ) -> Result<ReadResourceResult, McpError> {
+    ) -> Result<rmcp::model::ReadResourceResponse, McpError> {
         if uri == MEMO_URI {
-            Ok(ReadResourceResult::new(vec![
-                ResourceContents::TextResourceContents {
+            Ok(
+                ReadResourceResult::new(vec![ResourceContents::TextResourceContents {
                     uri,
                     mime_type: Some("text/plain".to_string()),
                     text: Self::memo_text().to_string(),
                     meta: None,
-                },
-            ]))
+                }])
+                .into(),
+            )
         } else {
             Err(McpError::resource_not_found(
                 "resource_not_found",
@@ -284,7 +316,7 @@ impl ServerHandler for TestToolServer {
         &self,
         request: CallToolRequestParams,
         _context: rmcp::service::RequestContext<rmcp::service::RoleServer>,
-    ) -> Result<CallToolResult, McpError> {
+    ) -> Result<rmcp::model::CallToolResponse, McpError> {
         match request.name.as_ref() {
             "echo" => {
                 let args: EchoArgs = match request.arguments {
@@ -308,7 +340,7 @@ impl ServerHandler for TestToolServer {
 
                 let mut result = CallToolResult::success(Vec::new());
                 result.structured_content = Some(structured_content);
-                Ok(result)
+                Ok(result.into())
             }
             other => Err(McpError::invalid_params(
                 format!("unknown tool: {other}"),
@@ -370,31 +402,17 @@ impl TestToolServer {
     }
 
     fn memo_resource() -> Resource {
-        let raw = RawResource {
-            uri: MEMO_URI.to_string(),
-            name: "example-note".to_string(),
-            title: Some("Example Note".to_string()),
-            description: Some("A sample MCP resource exposed for integration tests.".to_string()),
-            mime_type: Some("text/plain".to_string()),
-            size: None,
-            icons: None,
-            meta: None,
-        };
-        Resource::new(raw, None)
+        Resource::new(MEMO_URI, "example-note")
+            .with_title("Example Note")
+            .with_description("A sample MCP resource exposed for integration tests.")
+            .with_mime_type("text/plain")
     }
 
     fn memo_template() -> ResourceTemplate {
-        let raw = RawResourceTemplate {
-            uri_template: "memo://codex/{slug}".to_string(),
-            name: "codex-memo".to_string(),
-            title: Some("Codex Memo".to_string()),
-            description: Some(
-                "Template for memo://codex/{slug} resources used in tests.".to_string(),
-            ),
-            mime_type: Some("text/plain".to_string()),
-            icons: None,
-        };
-        ResourceTemplate::new(raw, None)
+        ResourceTemplate::new("memo://codex/{slug}", "codex-memo")
+            .with_title("Codex Memo")
+            .with_description("Template for memo://codex/{slug} resources used in tests.")
+            .with_mime_type("text/plain")
     }
 
     fn memo_text() -> &'static str {
@@ -415,12 +433,31 @@ async fn require_bearer(
     request: Request<Body>,
     next: Next,
 ) -> Result<Response, StatusCode> {
-    if request.uri().path().contains("/.well-known/") {
+    if request.uri().path().contains("/.well-known/") || request.uri().path() == "/oauth/token" {
         return Ok(next.run(request).await);
     }
     if request
         .headers()
         .get(AUTHORIZATION)
+        .is_some_and(|value| value.as_bytes() == expected.as_bytes())
+    {
+        Ok(next.run(request).await)
+    } else {
+        Err(StatusCode::UNAUTHORIZED)
+    }
+}
+
+async fn require_gateway_bearer(
+    State(expected): State<Arc<String>>,
+    request: Request<Body>,
+    next: Next,
+) -> Result<Response, StatusCode> {
+    if !request.uri().path().starts_with("/mcp") {
+        return Ok(next.run(request).await);
+    }
+    if request
+        .headers()
+        .get("proxy-authorization")
         .is_some_and(|value| value.as_bytes() == expected.as_bytes())
     {
         Ok(next.run(request).await)

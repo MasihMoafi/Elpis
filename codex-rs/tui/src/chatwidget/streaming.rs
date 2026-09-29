@@ -1,32 +1,106 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 //! Streaming transcript updates for `ChatWidget`.
 //!
 //! This module owns assistant, plan, and reasoning deltas, including stream-tail
 //! cells, commit ticks, and interrupt deferral.
 
 use super::*;
+use crate::markdown_render::ListSpacing;
+
+fn latest_summary_line(text: &str) -> Option<String> {
+    text.lines().rev().find_map(|line| {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with("<!--") {
+            return None;
+        }
+        let line = line.trim_start_matches('#').trim();
+        let line = if let Some(stripped) = line.strip_prefix("**") {
+            let (bold, trailing) = stripped.split_once("**")?;
+            format!("{bold}{trailing}")
+        } else {
+            line.to_string()
+        };
+        (!line.is_empty()).then_some(line)
+    })
+}
 
 impl ChatWidget {
+    pub(super) fn on_reasoning_item_started(&mut self, id: String) {
+        if self.status_state.reasoning_resume_turn_id.take().is_some()
+            && self.status_state.reasoning_item_id.as_ref() != Some(&id)
+        {
+            self.on_agent_reasoning_final();
+        }
+        if self.status_state.reasoning_item_id.as_ref() == Some(&id) {
+            return;
+        }
+        self.status_state.reasoning_item_id = Some(id);
+        self.status_state.reasoning_recovered_after_refresh = false;
+        self.reasoning_buffer.clear();
+        self.reasoning_summary_parts.clear();
+        self.restore_reasoning_status_header();
+    }
+
     pub(super) fn restore_reasoning_status_header(&mut self) {
-        if let Some(header) = extract_first_bold(&self.reasoning_buffer) {
+        if self.safety_buffering_is_waiting()
+            || self.unified_exec_wait_streak.is_some()
+            || self.status_state.compaction.is_some()
+            || !self.status_state.pending_guardian_review_status.is_empty()
+        {
+            return;
+        }
+        self.reasoning_header =
+            latest_summary_line(&self.reasoning_buffer).or(self.reasoning_header.take());
+        if let Some(header) = self.reasoning_header.clone() {
             self.status_state.terminal_title_status_kind = TerminalTitleStatusKind::Thinking;
             self.set_status_header(header);
-        } else if self.bottom_pane.is_task_running() {
+        } else if self.bottom_pane.is_task_running()
+            || self.status_state.current_status.is_guardian_review()
+        {
             self.status_state.terminal_title_status_kind = TerminalTitleStatusKind::Working;
-            self.set_status_header(String::from("Elpising…"));
+            self.set_status_header(String::from("Working"));
+        }
+    }
+
+    /// Preserve received answer and plan source before ordinary turn termination.
+    pub(super) fn flush_answer_and_plan_streams(&mut self) {
+        self.flush_answer_stream_with_separator();
+        if let Some(mut controller) = self.plan_stream_controller.take() {
+            self.clear_active_stream_tail();
+            let (cell, source) = controller.finalize();
+            if let Some(cell) = cell {
+                self.add_boxed_history(cell);
+            }
+            if let Some(source) = source {
+                self.note_stream_consolidation_queued();
+                self.app_event_tx
+                    .send(AppEvent::ConsolidateProposedPlan(source));
+            }
+            self.request_pending_usage_output_insertion_after_stream_shutdown();
         }
     }
 
     pub(super) fn flush_answer_stream_with_separator(&mut self) {
+        self.flush_answer_stream(/*completed_message*/ None);
+    }
+
+    fn flush_answer_stream(&mut self, completed_message: Option<&str>) {
         let had_stream_controller = self.stream_controller.is_some();
         if let Some(mut controller) = self.stream_controller.take() {
-            let scrollback_reflow = if controller.has_live_tail() {
+            let had_live_tail = controller.has_live_tail();
+            self.clear_active_stream_tail();
+            let (cell, streamed_source) = controller.finalize();
+            let completed_message_differs = completed_message.is_some_and(|completed| {
+                let Some(streamed) = streamed_source.as_deref() else {
+                    return true;
+                };
+                // Stream finalization supplies one trailing newline when the last delta omitted it.
+                streamed != completed && streamed.strip_suffix('\n') != Some(completed)
+            });
+            let scrollback_reflow = if had_live_tail || completed_message_differs {
                 crate::app_event::ConsolidationScrollbackReflow::Required
             } else {
                 crate::app_event::ConsolidationScrollbackReflow::IfResizeReflowRan
             };
-            self.clear_active_stream_tail();
-            let (cell, source) = controller.finalize();
             // Match newline-committed streaming behavior: once assistant output is ready to be
             // committed into history, hide the inline status row so transcript content replaces it.
             if cell.is_some() {
@@ -43,13 +117,23 @@ impl ChatWidget {
                 };
             // Consolidate the run of streaming AgentMessageCells into a single AgentMarkdownCell
             // that can re-render from source on resize.
+            let source = completed_message.map(str::to_owned).or_else(|| {
+                streamed_source.map(|source| {
+                    parse_assistant_markdown(&source, self.config.cwd.as_path()).visible_markdown
+                })
+            });
             if let Some(source) = source {
-                let source =
-                    parse_assistant_markdown(&source, self.config.cwd.as_path()).visible_markdown;
+                let inline_visualization_context = self.thread_id.and_then(|thread_id| {
+                    crate::inline_visualization::InlineVisualizationContext::from_config(
+                        &self.config,
+                        thread_id,
+                    )
+                });
                 self.note_stream_consolidation_queued();
                 self.app_event_tx.send(AppEvent::ConsolidateAgentMessage {
                     source,
                     cwd: self.config.cwd.to_path_buf(),
+                    inline_visualization_context,
                     scrollback_reflow,
                     deferred_history_cell,
                 });
@@ -101,15 +185,15 @@ impl ChatWidget {
     }
 
     pub(super) fn finalize_completed_assistant_message(&mut self, message: Option<&str>) {
-        // If we have a stream_controller, the finalized message payload is redundant because the
-        // visible content has already been accumulated through deltas.
         if self.stream_controller.is_none()
             && let Some(message) = message
             && !message.is_empty()
         {
             self.handle_streaming_delta(message.to_string());
         }
-        self.flush_answer_stream_with_separator();
+        // Item completion is authoritative. Use it for consolidation so any
+        // deltas dropped by a saturated transport cannot truncate the transcript.
+        self.flush_answer_stream(message);
         self.handle_stream_finished();
         self.request_redraw();
     }
@@ -131,31 +215,46 @@ impl ChatWidget {
             // Before starting a plan stream, flush any active exec cell group.
             self.flush_unified_exec_wait_streak();
             self.flush_active_cell();
-            self.plan_stream_controller = Some(PlanStreamController::new(
-                self.current_stream_width(/*reserved_cols*/ 4),
-                &self.config.cwd,
-                self.history_render_mode(),
-            ));
+            self.plan_stream_controller = Some(
+                PlanStreamController::new(
+                    self.current_stream_width(/*reserved_cols*/ 4),
+                    &self.config.cwd,
+                    self.history_render_mode(),
+                )
+                .with_list_spacing(
+                    if self.local_settings.transcript_mode.is_owned() {
+                        ListSpacing::Compact
+                    } else {
+                        ListSpacing::AfterMultiline
+                    },
+                ),
+            );
         }
-        if let Some(controller) = self.plan_stream_controller.as_mut()
-            && controller.push(&delta)
-        {
+        let changed = self
+            .plan_stream_controller
+            .as_mut()
+            .is_some_and(|controller| controller.push(&delta));
+        if (changed || delta.contains('\n')) && self.sync_active_stream_tail() {
+            self.request_redraw();
+        }
+        if changed {
             self.app_event_tx.send(AppEvent::StartCommitAnimation);
             self.run_catch_up_commit_tick();
         }
-        self.sync_active_stream_tail();
-        self.request_redraw();
     }
 
     pub(super) fn on_plan_item_completed(&mut self, text: String) {
-        let streamed_plan = self.transcript.plan_delta_buffer.trim().to_string();
-        let plan_text = if text.trim().is_empty() {
-            streamed_plan
+        let (plan_text, source) = if text.trim().is_empty() {
+            (
+                self.transcript.plan_delta_buffer.trim().to_string(),
+                self.transcript.plan_delta_buffer.clone(),
+            )
         } else {
-            text
+            (text.clone(), text)
         };
         if !plan_text.trim().is_empty() {
-            self.record_agent_markdown(&plan_text);
+            self.transcript
+                .record_agent_markdown(plan_text.clone(), source);
             self.transcript.latest_proposed_plan_markdown = Some(plan_text.clone());
         }
         // Plan commit ticks can hide the status row; remember whether we streamed plan output so
@@ -166,10 +265,10 @@ impl ChatWidget {
         self.transcript.saw_plan_item_this_turn = true;
         let (finalized_streamed_cell, consolidated_plan_source) =
             if let Some(mut controller) = self.plan_stream_controller.take() {
-                let had_live_tail = controller.has_live_tail();
+                let source_only = controller.has_live_tail() && controller.tail_starts_stream();
                 self.clear_active_stream_tail();
                 let (cell, source) = controller.finalize();
-                if had_live_tail {
+                if source_only {
                     (None, source)
                 } else {
                     (cell, source)
@@ -201,30 +300,48 @@ impl ChatWidget {
     }
 
     pub(super) fn on_agent_reasoning_delta(&mut self, delta: String) {
-        // For reasoning deltas, do not stream to history. Accumulate the
-        // current reasoning block and extract the first bold element
-        // (between **/**) as the chunk header. Show this header as status.
+        // Accumulate the current reasoning block for history and activity text.
         self.reasoning_buffer.push_str(&delta);
 
         if self.safety_buffering_is_waiting() {
-            self.request_redraw();
             return;
         }
 
         if self.unified_exec_wait_streak.is_some() {
             // Unified exec waiting should take precedence over reasoning-derived status headers.
-            self.request_redraw();
             return;
         }
 
-        if let Some(header) = extract_first_bold(&self.reasoning_buffer) {
-            // Update the shimmer header to the extracted reasoning chunk header.
-            self.status_state.terminal_title_status_kind = TerminalTitleStatusKind::Thinking;
-            self.set_status_header(header);
-        } else {
-            // Fallback while we don't yet have a bold header: leave existing header as-is.
+        if !self.status_state.pending_guardian_review_status.is_empty() {
+            return;
         }
-        self.request_redraw();
+
+        self.reasoning_header =
+            latest_summary_line(&self.reasoning_buffer).or(self.reasoning_header.take());
+        let Some(header) = self.reasoning_header.as_deref() else {
+            // No usable summary has arrived yet.
+            return;
+        };
+
+        let status = &self.status_state.current_status;
+        if self.status_state.terminal_title_status_kind == TerminalTitleStatusKind::Thinking
+            && status.header == header
+            && status.details.is_none()
+            && status.details_max_lines == STATUS_DETAILS_DEFAULT_MAX_LINES
+            && self
+                .bottom_pane
+                .status_widget()
+                .is_none_or(|status| status.header() == header)
+        {
+            return;
+        }
+
+        // Update the shimmer header to the extracted reasoning chunk header.
+        let header = header.to_string();
+        self.status_state.terminal_title_status_kind = TerminalTitleStatusKind::Thinking;
+        if !self.set_status_header(header) {
+            self.request_redraw();
+        }
     }
 
     pub(super) fn on_agent_reasoning_final(&mut self) {
@@ -233,12 +350,34 @@ impl ChatWidget {
             self.reasoning_summary_parts
                 .push(std::mem::take(&mut self.reasoning_buffer));
         }
+        self.reasoning_header = self
+            .reasoning_summary_parts
+            .iter()
+            .rev()
+            .find_map(|part| latest_summary_line(part))
+            .or(self.reasoning_header.take());
         if !self.reasoning_summary_parts.is_empty() {
             let reasoning_parts = std::mem::take(&mut self.reasoning_summary_parts);
-            let cell = history_cell::new_reasoning_summary_block(reasoning_parts, &self.config.cwd);
-            self.add_boxed_history(cell);
+            let mut cell =
+                history_cell::new_reasoning_summary_block(reasoning_parts, &self.config.cwd);
+            if let Some(id) = &self.status_state.reasoning_item_id {
+                cell.set_source_item_id(id.clone());
+            }
+            let cell: Box<dyn HistoryCell> = cell;
+            let result = match self.transcript.active_cell.as_mut() {
+                Some(active) => active.append_reasoning(cell),
+                None => Err(cell),
+            };
+            match result {
+                Ok(()) => self.bump_active_cell_revision(),
+                Err(cell) => self.add_boxed_history(cell),
+            }
         }
         self.reasoning_buffer.clear();
+        // Keep the last useful summary through tools and later empty items.
+        self.status_state.reasoning_item_id = None;
+        self.status_state.reasoning_resume_turn_id = None;
+        self.status_state.reasoning_recovered_after_refresh = false;
         self.reasoning_summary_parts.clear();
         self.request_redraw();
     }
@@ -271,8 +410,13 @@ impl ChatWidget {
     pub(super) fn on_agent_message_item_completed(
         &mut self,
         item: AgentMessageItem,
+        turn_id: &str,
         from_replay: bool,
     ) {
+        if !from_replay && let Some(questions) = &item.questions {
+            self.add_async_questions(&item.id, questions);
+        }
+        self.transcript.last_completed_agent_message = Some((turn_id.to_string(), item.id.clone()));
         let mut message = String::new();
         for content in &item.content {
             match content {
@@ -280,34 +424,60 @@ impl ChatWidget {
             }
         }
         let parsed = parse_assistant_markdown(&message, self.config.cwd.as_path());
-        self.finalize_completed_assistant_message(
-            (!parsed.visible_markdown.is_empty()).then_some(parsed.visible_markdown.as_str()),
-        );
-        if matches!(item.phase, Some(MessagePhase::FinalAnswer) | None)
-            && !parsed.visible_markdown.is_empty()
-        {
-            self.record_agent_markdown(&parsed.visible_markdown);
+        if from_replay && self.stream_controller.is_none() && !parsed.visible_markdown.is_empty() {
+            self.prepare_assistant_message();
+            self.mark_safety_buffering_agent_message_started();
+            self.bottom_pane.hide_status_indicator();
+            let context = self.thread_id.and_then(|thread_id| {
+                crate::inline_visualization::InlineVisualizationContext::from_config(
+                    &self.config,
+                    thread_id,
+                )
+            });
+            self.add_to_history(
+                history_cell::AgentMarkdownCell::new_with_inline_visualizations(
+                    parsed.visible_markdown.clone(),
+                    self.config.cwd.as_path(),
+                    context,
+                ),
+            );
+            self.handle_stream_finished();
+            self.request_redraw();
+        } else {
+            self.finalize_completed_assistant_message(Some(parsed.visible_markdown.as_str()));
+        }
+        if !parsed.visible_markdown.is_empty() {
+            self.transcript
+                .record_agent_markdown(parsed.visible_markdown.clone(), message);
         }
         if !from_replay
             && let Some(cwd) = parsed.last_created_branch_cwd()
             && let Some(thread_id) = self.thread_id
             && let Some(runner) = self.workspace_command_runner.clone()
         {
-            let cwd = PathBuf::from(cwd);
+            let branch_cwd = PathBuf::from(cwd);
+            let cwd = self.config.cwd.to_path_buf();
             let tx = self.app_event_tx.clone();
             tokio::spawn(async move {
                 if let Some(branch) =
-                    crate::branch_summary::current_branch_name(runner.as_ref(), &cwd).await
+                    crate::branch_summary::current_branch_name(runner.as_ref(), &branch_cwd).await
                 {
-                    tx.send(AppEvent::SyncThreadGitBranch { thread_id, branch });
+                    tx.send(AppEvent::SyncThreadGitBranch {
+                        thread_id,
+                        branch,
+                        cwd,
+                    });
                 }
             });
         }
-        self.status_state.pending_status_indicator_restore = match item.phase {
-            // Models that don't support preambles only output AgentMessageItems on turn completion.
-            Some(MessagePhase::FinalAnswer) | None => !self.input_queue.pending_steers.is_empty(),
-            Some(MessagePhase::Commentary) => true,
-        };
+        self.status_state.pending_status_indicator_restore = item.questions.is_some()
+            || match item.phase {
+                // Models that don't support preambles only output AgentMessageItems on turn completion.
+                Some(MessagePhase::FinalAnswer) | None => {
+                    !self.input_queue.pending_steers.is_empty()
+                }
+                Some(MessagePhase::Commentary) => true,
+            };
         self.maybe_restore_status_indicator_after_stream_idle();
     }
 
@@ -334,19 +504,6 @@ impl ChatWidget {
     /// duplicate "in progress" affordances. Restoration is gated separately so we only re-show
     /// the row after commentary completion once stream queues are idle.
     pub(super) fn run_commit_tick_with_scope(&mut self, scope: CommitTickScope) {
-        // Every queued line gets its own reveal interval, including young lines
-        // behind an older batch. An oldest-line gate can release them too early.
-        let minimum_age = if self.config.animations {
-            crate::elpis_motion::REVEAL_COMMIT_AGE
-        } else {
-            std::time::Duration::ZERO
-        };
-        if let Some(controller) = self.stream_controller.as_mut() {
-            controller.set_minimum_commit_age(minimum_age);
-        }
-        if let Some(controller) = self.plan_stream_controller.as_mut() {
-            controller.set_minimum_commit_age(minimum_age);
-        }
         let now = Instant::now();
         let outcome = run_commit_tick(
             &mut self.adaptive_chunking,
@@ -359,7 +516,9 @@ impl ChatWidget {
             self.bottom_pane.hide_status_indicator();
             self.add_boxed_history(cell);
         }
-        self.sync_active_stream_tail();
+        if scope == CommitTickScope::AnyMode || outcome.has_controller {
+            self.sync_active_stream_tail();
+        }
 
         if outcome.has_controller && outcome.all_idle {
             self.maybe_restore_status_indicator_after_stream_idle();
@@ -377,19 +536,27 @@ impl ChatWidget {
         self.interrupts = mgr;
     }
 
+    pub(super) fn flush_interrupt_activity(&mut self) {
+        let mut mgr = std::mem::take(&mut self.interrupts);
+        mgr.flush_activity(self);
+        self.interrupts = mgr;
+    }
+
+    /// Move a lifecycle payload into the interrupt queue or its immediate handler.
     #[inline]
-    pub(super) fn defer_or_handle(
+    pub(super) fn defer_or_handle<T>(
         &mut self,
-        push: impl FnOnce(&mut InterruptManager),
-        handle: impl FnOnce(&mut Self),
+        payload: T,
+        push: impl FnOnce(&mut InterruptManager, T),
+        handle: impl FnOnce(&mut Self, T),
     ) {
         // Preserve deterministic FIFO across queued interrupts: once anything
         // is queued due to an active write cycle, continue queueing until the
         // queue is flushed to avoid reordering (e.g., ExecEnd before ExecBegin).
         if self.stream_controller.is_some() || !self.interrupts.is_empty() {
-            push(&mut self.interrupts);
+            push(&mut self.interrupts, payload);
         } else {
-            handle(self);
+            handle(self, payload);
         }
     }
 
@@ -408,34 +575,40 @@ impl ChatWidget {
             self.mark_safety_buffering_agent_message_started();
         }
         if self.stream_controller.is_none() {
-            // Before starting an agent stream, flush any active exec cell group.
-            self.flush_unified_exec_wait_streak();
-            self.flush_active_cell();
-            // If the previous turn inserted non-stream history (exec output, patch status, MCP
-            // calls), render a separator before starting the next streamed assistant message.
-            if self.transcript.needs_final_message_separator && self.transcript.had_work_activity {
-                self.add_to_history(history_cell::FinalMessageSeparator::new(
-                    /*elapsed_seconds*/ None, /*runtime_metrics*/ None,
-                ));
-                self.transcript.needs_final_message_separator = false;
-            } else if self.transcript.needs_final_message_separator {
-                // Reset the flag even if we don't show separator (no work was done)
-                self.transcript.needs_final_message_separator = false;
-            }
-            self.stream_controller = Some(StreamController::new(
-                self.current_stream_width(/*reserved_cols*/ 2),
-                &self.config.cwd,
-                self.history_render_mode(),
-            ));
+            self.prepare_assistant_message();
+            let inline_visualization_context = self.thread_id.and_then(|thread_id| {
+                crate::inline_visualization::InlineVisualizationContext::from_config(
+                    &self.config,
+                    thread_id,
+                )
+            });
+            self.stream_controller = Some(
+                StreamController::new_with_inline_visualizations(
+                    self.current_stream_width(/*reserved_cols*/ 2),
+                    &self.config.cwd,
+                    self.history_render_mode(),
+                    inline_visualization_context,
+                )
+                .with_list_spacing(
+                    if self.local_settings.transcript_mode.is_owned() {
+                        ListSpacing::Compact
+                    } else {
+                        ListSpacing::AfterMultiline
+                    },
+                ),
+            );
         }
-        if let Some(controller) = self.stream_controller.as_mut()
-            && controller.push(&delta)
-        {
+        let changed = self
+            .stream_controller
+            .as_mut()
+            .is_some_and(|controller| controller.push(&delta));
+        if (changed || delta.contains('\n')) && self.sync_active_stream_tail() {
+            self.request_redraw();
+        }
+        if changed {
             self.app_event_tx.send(AppEvent::StartCommitAnimation);
             self.run_catch_up_commit_tick();
         }
-        self.sync_active_stream_tail();
-        self.request_redraw();
     }
 
     pub(super) fn active_cell_is_stream_tail(&self) -> bool {
@@ -450,63 +623,74 @@ impl ChatWidget {
             && self.active_cell_is_stream_tail()
     }
 
-    pub(super) fn sync_active_stream_tail(&mut self) {
+    pub(super) fn sync_active_stream_tail(&mut self) -> bool {
         if let Some(controller) = self.stream_controller.as_ref() {
-            let tail_lines = if self.config.animations {
-                controller.current_reveal_lines()
-            } else {
-                controller.current_tail_lines()
-            };
+            let tail_lines = controller.current_tail_lines();
             if tail_lines.is_empty() {
-                self.clear_active_stream_tail();
-                return;
+                return self.clear_active_stream_tail();
             }
 
             self.bottom_pane.hide_status_indicator();
-            self.transcript.active_cell =
-                Some(Box::new(history_cell::StreamingAgentTailCell::new(
-                    tail_lines,
-                    if self.config.animations {
-                        controller.reveal_starts_stream()
-                    } else {
-                        controller.tail_starts_stream()
-                    },
-                )));
+            let cell = history_cell::StreamingAgentTailCell::new(
+                tail_lines,
+                controller.tail_starts_stream(),
+            );
+            if self
+                .transcript
+                .active_cell
+                .as_ref()
+                .and_then(|active| {
+                    active
+                        .as_any()
+                        .downcast_ref::<history_cell::StreamingAgentTailCell>()
+                })
+                .is_some_and(|active| active == &cell)
+            {
+                return false;
+            }
+            self.transcript.active_cell = Some(Box::new(cell));
             self.bump_active_cell_revision();
-            return;
+            return true;
         }
 
         if let Some(controller) = self.plan_stream_controller.as_ref() {
-            let tail_lines = if self.config.animations {
-                controller.current_reveal_display_lines()
-            } else {
-                controller.current_tail_display_lines()
-            };
+            let tail_lines = controller.current_tail_display_lines();
             if tail_lines.is_empty() {
-                self.clear_active_stream_tail();
-                return;
+                return self.clear_active_stream_tail();
             }
 
             self.bottom_pane.hide_status_indicator();
-            self.transcript.active_cell = Some(Box::new(history_cell::StreamingPlanTailCell::new(
+            let cell = history_cell::StreamingPlanTailCell::new(
                 tail_lines,
-                !(if self.config.animations {
-                    controller.reveal_starts_stream()
-                } else {
-                    controller.tail_starts_stream()
-                }),
-            )));
+                !controller.tail_starts_stream(),
+            );
+            if self
+                .transcript
+                .active_cell
+                .as_ref()
+                .and_then(|active| {
+                    active
+                        .as_any()
+                        .downcast_ref::<history_cell::StreamingPlanTailCell>()
+                })
+                .is_some_and(|active| active == &cell)
+            {
+                return false;
+            }
+            self.transcript.active_cell = Some(Box::new(cell));
             self.bump_active_cell_revision();
-            return;
+            return true;
         }
 
-        self.clear_active_stream_tail();
+        self.clear_active_stream_tail()
     }
 
-    pub(super) fn clear_active_stream_tail(&mut self) {
+    pub(super) fn clear_active_stream_tail(&mut self) -> bool {
         if self.active_cell_is_stream_tail() {
             self.transcript.active_cell = None;
             self.bump_active_cell_revision();
+            return true;
         }
+        false
     }
 }

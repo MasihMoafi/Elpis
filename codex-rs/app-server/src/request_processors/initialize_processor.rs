@@ -1,37 +1,55 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering;
 
 use axum::http::HeaderValue;
+use codex_analytics::AppServerRpcTransport;
 use codex_login::default_client::SetOriginatorError;
 use codex_login::default_client::USER_AGENT_SUFFIX;
 use codex_login::default_client::get_codex_user_agent;
 use codex_login::default_client::set_default_client_residency_requirement;
 use codex_login::default_client::set_default_originator;
+use codex_protocol::mcp::ClientMcpExtensions;
+use codex_protocol::mcp::OPENAI_ELICITATION_EXTENSION_ID;
 
 use super::*;
 use crate::message_processor::ConnectionSessionState;
 use crate::message_processor::InitializedConnectionSessionState;
+use crate::transport::ConnectionOrigin;
 
 const NON_ORIGINATING_CLIENT_NAMES: &[&str] = &["codex_app_server_daemon", "codex-backend"];
 
 #[derive(Clone)]
 pub(crate) struct InitializeRequestProcessor {
+    gateway_login_control: Arc<codex_login::GatewayLoginControl>,
+    gateway_login_initialized: Arc<std::sync::OnceLock<()>>,
     outgoing: Arc<OutgoingMessageSender>,
+    analytics_events_client: AnalyticsEventsClient,
     config: Arc<Config>,
     config_warnings: Arc<Vec<ConfigWarningNotification>>,
+    rpc_transport: AppServerRpcTransport,
+    user_verification: Arc<crate::user_verification::Service>,
 }
 
 impl InitializeRequestProcessor {
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
+        gateway_login_control: Arc<codex_login::GatewayLoginControl>,
         outgoing: Arc<OutgoingMessageSender>,
+        analytics_events_client: AnalyticsEventsClient,
         config: Arc<Config>,
         config_warnings: Vec<ConfigWarningNotification>,
+        rpc_transport: AppServerRpcTransport,
+        user_verification: Arc<crate::user_verification::Service>,
     ) -> Self {
         Self {
+            gateway_login_control,
+            gateway_login_initialized: Arc::new(std::sync::OnceLock::new()),
             outgoing,
+            analytics_events_client,
             config,
             config_warnings: Arc::new(config_warnings),
+            rpc_transport,
+            user_verification,
         }
     }
 
@@ -60,10 +78,15 @@ impl InitializeRequestProcessor {
         // shared thread when another connected client did not opt into
         // experimental API). Proposed direction is instance-global first-write-wins
         // with initialize-time mismatch rejection.
+        let analytics_initialize_params = params.clone();
         let capabilities = params.capabilities.unwrap_or_default();
         let experimental_api_enabled = capabilities.experimental_api;
         let request_attestation = capabilities.request_attestation;
-        let supports_openai_form_elicitation = capabilities.mcp_server_openai_form_elicitation;
+        let extensions = capabilities.extensions.as_ref();
+        let mut client_mcp_extensions = codex_mcp::client_mcp_extensions(
+            extensions,
+            capabilities.mcp_server_openai_form_elicitation,
+        );
         let opt_out_notification_methods = capabilities
             .opt_out_notification_methods
             .unwrap_or_default();
@@ -79,6 +102,31 @@ impl InitializeRequestProcessor {
                 "Invalid clientInfo.name: '{name}'. Must be a valid HTTP header value."
             )));
         }
+        // Activate only the embedded TUI and local desktop host. Client-supplied
+        // extensions cannot opt other hosts into verification.
+        let user_verification_enabled = experimental_api_enabled
+            && matches!(
+                (session.origin, name.as_str()),
+                (ConnectionOrigin::InProcess, "codex-tui")
+                    | (ConnectionOrigin::Stdio, "Codex Desktop")
+            )
+            && tokio::task::spawn_blocking(self.user_verification.device_supported)
+                .await
+                .unwrap_or(false);
+        if user_verification_enabled {
+            let mut extensions = client_mcp_extensions
+                .iter()
+                .map(|(id, value)| (id.to_string(), value.clone()))
+                .collect::<std::collections::HashMap<_, _>>();
+            let settings = extensions
+                .entry(OPENAI_ELICITATION_EXTENSION_ID.to_string())
+                .or_insert_with(|| serde_json::json!({}));
+            if !settings.is_object() {
+                *settings = serde_json::json!({});
+            }
+            settings["userVerification"] = serde_json::json!({});
+            client_mcp_extensions = ClientMcpExtensions::new(extensions);
+        }
         let originator = name.clone();
         let user_agent_suffix = format!("{name}; {version}");
         let mutates_global_identity = !NON_ORIGINATING_CLIENT_NAMES.contains(&name.as_str());
@@ -90,11 +138,29 @@ impl InitializeRequestProcessor {
                 app_server_client_name: name.clone(),
                 client_version: version,
                 request_attestation,
-                supports_openai_form_elicitation,
+                client_mcp_extensions,
             })
             .is_err()
         {
             return Err(invalid_request("Already initialized"));
+        }
+        if user_verification_enabled {
+            self.outgoing
+                .enable_user_verification_connection(connection_id)
+                .await;
+        }
+
+        if capabilities.explicit_gateway_oauth || mutates_global_identity {
+            // Only the first originating client may restore legacy automatic login.
+            // Any explicit opt-in is sticky across subsequent connections.
+            self.gateway_login_initialized.get_or_init(|| {
+                if !capabilities.explicit_gateway_oauth {
+                    self.gateway_login_control.allow_automatic_login();
+                }
+            });
+            if capabilities.explicit_gateway_oauth {
+                self.gateway_login_control.require_explicit_login();
+            }
         }
 
         if mutates_global_identity {
@@ -116,9 +182,31 @@ impl InitializeRequestProcessor {
                 }
             }
         }
+        self.analytics_events_client.track_initialize(
+            connection_id.0,
+            analytics_initialize_params,
+            originator,
+            self.rpc_transport,
+        );
         set_default_client_residency_requirement(self.config.enforce_residency.value());
         if mutates_global_identity && let Ok(mut suffix) = USER_AGENT_SUFFIX.lock() {
             *suffix = Some(user_agent_suffix);
+        }
+
+        #[cfg(windows)]
+        if matches!(session.origin, ConnectionOrigin::Stdio) && name == "Codex Desktop" {
+            // Uninstall ownership must not depend on account sign-in or sandbox setup.
+            // Keep this bounded attempt ahead of the response; background registration can race uninstall.
+            let home = codex_home.clone();
+            if !matches!(
+                tokio::task::spawn_blocking(move || {
+                    codex_windows_sandbox::register_desktop_installation(&home)
+                })
+                .await,
+                Ok(Ok(()))
+            ) {
+                tracing::warn!("could not register desktop uninstall ownership");
+            }
         }
 
         let user_agent = get_codex_user_agent();
@@ -161,5 +249,15 @@ impl InitializeRequestProcessor {
                 .send_server_notification(ServerNotification::ConfigWarning(notification))
                 .await;
         }
+    }
+
+    pub(crate) fn track_initialized_request(
+        &self,
+        connection_id: ConnectionId,
+        request_id: RequestId,
+        request: &ClientRequest,
+    ) {
+        self.analytics_events_client
+            .track_request(connection_id.0, request_id, request);
     }
 }

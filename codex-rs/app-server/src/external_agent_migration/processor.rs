@@ -1,17 +1,21 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use std::sync::Arc;
+use std::time::Duration;
 
 use crate::config_manager::ConfigManager;
 use crate::error_code::internal_error;
+use crate::error_code::invalid_request;
 use crate::outgoing_message::ConnectionRequestId;
 use crate::outgoing_message::OutgoingMessageSender;
 use crate::request_processors::ConfigRequestProcessor;
-use codex_app_server_protocol::CommandMigration;
+use codex_analytics::AnalyticsEventsClient;
+use codex_analytics::ExternalAgentConfigImportCompletedInput;
+use codex_analytics::ExternalAgentConfigImportFailureInput;
 use codex_app_server_protocol::ExternalAgentConfigDetectParams;
 use codex_app_server_protocol::ExternalAgentConfigDetectResponse;
 use codex_app_server_protocol::ExternalAgentConfigImportCompletedNotification;
 use codex_app_server_protocol::ExternalAgentConfigImportHistoriesReadResponse;
-use codex_app_server_protocol::ExternalAgentConfigImportHistory;
+use codex_app_server_protocol::ExternalAgentConfigImportHistoryRecordParams;
+use codex_app_server_protocol::ExternalAgentConfigImportHistoryRecordResponse;
 use codex_app_server_protocol::ExternalAgentConfigImportItemTypeFailure as ProtocolImportFailure;
 use codex_app_server_protocol::ExternalAgentConfigImportItemTypeSuccess as ProtocolImportSuccess;
 use codex_app_server_protocol::ExternalAgentConfigImportParams;
@@ -20,34 +24,38 @@ use codex_app_server_protocol::ExternalAgentConfigImportResponse;
 use codex_app_server_protocol::ExternalAgentConfigImportTypeResult as ProtocolImportTypeResult;
 use codex_app_server_protocol::ExternalAgentConfigMigrationItem;
 use codex_app_server_protocol::ExternalAgentConfigMigrationItemType;
-use codex_app_server_protocol::HookMigration;
+use codex_app_server_protocol::ExternalAgentImportedConnectorCandidate;
+use codex_app_server_protocol::ExternalAgentImportedConnectorSource;
 use codex_app_server_protocol::JSONRPCErrorError;
-use codex_app_server_protocol::McpServerMigration;
-use codex_app_server_protocol::MigrationDetails;
-use codex_app_server_protocol::PluginsMigration;
 use codex_app_server_protocol::ServerNotification;
-use codex_app_server_protocol::SkillMigration;
 use codex_arg0::Arg0DispatchPaths;
 use codex_core::ThreadManager;
+use codex_external_agent_migration::DetectedConnectorCandidate;
+use codex_external_agent_migration::ExternalAgentConfigDetectOptions;
+use codex_external_agent_migration::ExternalAgentConfigImportItemResult as CoreImportItemResult;
+use codex_external_agent_migration::ExternalAgentConfigImportOutcome as CoreImportOutcome;
+use codex_external_agent_migration::ExternalAgentConfigMigrationItemType as CoreMigrationItemType;
+use codex_external_agent_migration::ExternalAgentConfigService;
+use codex_external_agent_migration::ExternalAgentSessionImportLimits;
+use codex_external_agent_migration::PluginImportOutcome;
+use codex_external_agent_migration::record_import_error;
 use codex_external_agent_migration::sessions::ExternalAgentSessionMigration as CoreSessionMigration;
+use codex_external_agent_migration::sessions::read_imported_connector_candidates;
+use codex_external_agent_migration::sessions::record_detected_session_connectors;
+use codex_features::Feature;
 use codex_rollout::StateDbHandle;
 use codex_state::ExternalAgentConfigImportFailureRecord;
 use codex_state::ExternalAgentConfigImportSuccessRecord;
 use codex_thread_store::ThreadStore;
+use std::collections::BTreeMap;
 use std::collections::HashSet;
 use std::path::PathBuf;
 
-use super::service::ExternalAgentConfigDetectOptions;
-use super::service::ExternalAgentConfigImportItemResult as CoreImportItemResult;
-use super::service::ExternalAgentConfigImportOutcome as CoreImportOutcome;
-use super::service::ExternalAgentConfigImportRawError as CoreImportRawError;
-use super::service::ExternalAgentConfigMigrationItem as CoreMigrationItem;
-use super::service::ExternalAgentConfigMigrationItemType as CoreMigrationItemType;
-use super::service::ExternalAgentConfigService;
-use super::service::NamedMigration as CoreNamedMigration;
-use super::service::PendingPluginImport;
-use super::service::PluginImportOutcome;
-use super::service::record_import_error;
+use super::protocol::completed_notification;
+use super::protocol::core_migration_items;
+use super::protocol::detect_response;
+use super::protocol::protocol_import_history;
+use super::protocol::protocol_import_type_result;
 use super::session_importer::ExternalAgentSessionImporter;
 use uuid::Uuid;
 
@@ -57,8 +65,10 @@ pub(crate) struct ExternalAgentConfigRequestProcessor {
     migration_service: ExternalAgentConfigService,
     session_importer: ExternalAgentSessionImporter,
     thread_manager: Arc<ThreadManager>,
+    config_manager: ConfigManager,
     config_processor: ConfigRequestProcessor,
     state_db: Option<StateDbHandle>,
+    analytics_events_client: AnalyticsEventsClient,
 }
 
 pub(crate) struct ExternalAgentConfigRequestProcessorArgs {
@@ -68,6 +78,7 @@ pub(crate) struct ExternalAgentConfigRequestProcessorArgs {
     pub(crate) config_manager: ConfigManager,
     pub(crate) config_processor: ConfigRequestProcessor,
     pub(crate) state_db: Option<StateDbHandle>,
+    pub(crate) analytics_events_client: AnalyticsEventsClient,
     pub(crate) arg0_paths: Arg0DispatchPaths,
     pub(crate) codex_home: PathBuf,
 }
@@ -81,24 +92,33 @@ impl ExternalAgentConfigRequestProcessor {
             config_manager,
             config_processor,
             state_db,
+            analytics_events_client,
             arg0_paths,
             codex_home,
         } = args;
-        let session_importer = ExternalAgentSessionImporter::new(
+        let migration_service = ExternalAgentConfigService::new(
             codex_home.clone(),
+            thread_manager.auth_manager(),
+            analytics_events_client.clone(),
+            state_db.clone(),
+        );
+        let session_importer = ExternalAgentSessionImporter::new(
+            codex_home,
+            migration_service.connector_metadata_roots().to_vec(),
             Arc::clone(&thread_manager),
             thread_store,
-            config_manager,
+            config_manager.clone(),
             arg0_paths,
         );
-        let migration_service = ExternalAgentConfigService::new(codex_home);
         Self {
             outgoing,
             migration_service,
             session_importer,
             thread_manager,
+            config_manager,
             config_processor,
             state_db,
+            analytics_events_client,
         }
     }
 
@@ -106,99 +126,48 @@ impl ExternalAgentConfigRequestProcessor {
         &self,
         params: ExternalAgentConfigDetectParams,
     ) -> Result<ExternalAgentConfigDetectResponse, JSONRPCErrorError> {
-        let items = self
+        let migration_service = self
             .migration_service
-            .detect(ExternalAgentConfigDetectOptions {
-                include_home: params.include_home,
-                cwds: params.cwds,
-            })
+            .with_migration_source(params.migration_source.as_deref());
+        let default_session_import_limits = ExternalAgentSessionImportLimits::default();
+        let migration_service =
+            migration_service.with_session_import_limits(ExternalAgentSessionImportLimits {
+                max_age: params
+                    .max_session_age_days
+                    .map(|days| Duration::from_secs(u64::from(days) * 24 * 60 * 60))
+                    .unwrap_or(default_session_import_limits.max_age),
+                max_sessions: params
+                    .max_sessions
+                    .map(|max_sessions| max_sessions as usize)
+                    .unwrap_or(default_session_import_limits.max_sessions),
+            });
+        let options = ExternalAgentConfigDetectOptions {
+            include_home: params.include_home,
+            include_memory: self.external_agent_memory_import_enabled().await,
+            cwds: params.cwds,
+        };
+        let items = migration_service
+            .detect(options)
             .await
             .map_err(|err| internal_error(err.to_string()))?;
+        let sessions = items
+            .iter()
+            .filter_map(|item| item.details.as_ref())
+            .flat_map(|details| details.sessions.iter().cloned())
+            .collect::<Vec<_>>();
+        let (connector_names_by_source_path, connectors) =
+            detected_session_connectors(&migration_service, &sessions);
+        record_detected_session_connectors(
+            self.migration_service.codex_home(),
+            connector_names_by_source_path,
+        )
+        .map_err(|err| {
+            internal_error(format!(
+                "failed to record detected connector candidates: {err}"
+            ))
+        })?;
 
-        Ok(ExternalAgentConfigDetectResponse {
-            items: items
-                .into_iter()
-                .map(|migration_item| ExternalAgentConfigMigrationItem {
-                    item_type: match migration_item.item_type {
-                        CoreMigrationItemType::Config => {
-                            ExternalAgentConfigMigrationItemType::Config
-                        }
-                        CoreMigrationItemType::Skills => {
-                            ExternalAgentConfigMigrationItemType::Skills
-                        }
-                        CoreMigrationItemType::AgentsMd => {
-                            ExternalAgentConfigMigrationItemType::AgentsMd
-                        }
-                        CoreMigrationItemType::Plugins => {
-                            ExternalAgentConfigMigrationItemType::Plugins
-                        }
-                        CoreMigrationItemType::McpServerConfig => {
-                            ExternalAgentConfigMigrationItemType::McpServerConfig
-                        }
-                        CoreMigrationItemType::Subagents => {
-                            ExternalAgentConfigMigrationItemType::Subagents
-                        }
-                        CoreMigrationItemType::Hooks => ExternalAgentConfigMigrationItemType::Hooks,
-                        CoreMigrationItemType::Commands => {
-                            ExternalAgentConfigMigrationItemType::Commands
-                        }
-                        CoreMigrationItemType::Sessions => {
-                            ExternalAgentConfigMigrationItemType::Sessions
-                        }
-                    },
-                    description: migration_item.description,
-                    cwd: migration_item.cwd,
-                    details: migration_item.details.map(|details| MigrationDetails {
-                        plugins: details
-                            .plugins
-                            .into_iter()
-                            .map(|plugin| PluginsMigration {
-                                marketplace_name: plugin.marketplace_name,
-                                plugin_names: plugin.plugin_names,
-                            })
-                            .collect(),
-                        skills: details
-                            .skills
-                            .into_iter()
-                            .map(|skill| SkillMigration { name: skill.name })
-                            .collect(),
-                        sessions: details
-                            .sessions
-                            .into_iter()
-                            .map(|session| codex_app_server_protocol::SessionMigration {
-                                path: session.path,
-                                cwd: session.cwd,
-                                title: session.title,
-                            })
-                            .collect(),
-                        mcp_servers: details
-                            .mcp_servers
-                            .into_iter()
-                            .map(|mcp_server| McpServerMigration {
-                                name: mcp_server.name,
-                            })
-                            .collect(),
-                        hooks: details
-                            .hooks
-                            .into_iter()
-                            .map(|hook| HookMigration { name: hook.name })
-                            .collect(),
-                        subagents: details
-                            .subagents
-                            .into_iter()
-                            .map(|subagent| codex_app_server_protocol::SubagentMigration {
-                                name: subagent.name,
-                            })
-                            .collect(),
-                        commands: details
-                            .commands
-                            .into_iter()
-                            .map(|command| CommandMigration { name: command.name })
-                            .collect(),
-                    }),
-                })
-                .collect(),
-        })
+        Ok(detect_response(items, connectors))
     }
 
     pub(crate) async fn import(
@@ -206,7 +175,31 @@ impl ExternalAgentConfigRequestProcessor {
         request_id: ConnectionRequestId,
         params: ExternalAgentConfigImportParams,
     ) -> Result<(), JSONRPCErrorError> {
+        if params
+            .migration_items
+            .iter()
+            .any(|item| item.item_type == ExternalAgentConfigMigrationItemType::Memory)
+            && !self.external_agent_memory_import_enabled().await
+        {
+            return Err(invalid_request("external agent memory import is disabled"));
+        }
+        if params.migration_items.iter().any(|item| {
+            item.item_type == ExternalAgentConfigMigrationItemType::Memory
+                && item
+                    .details
+                    .as_ref()
+                    .is_none_or(|details| details.memory.is_empty())
+        }) {
+            return Err(invalid_request(
+                "memory import requires at least one selected memory",
+            ));
+        }
         let import_id = Uuid::new_v4().to_string();
+        let analytics_source = params.source.clone().unwrap_or_default();
+        let provider_id = params.provider_id.clone();
+        let migration_service = self
+            .migration_service
+            .with_migration_source(params.migration_source.as_deref());
         let needs_runtime_refresh = migration_items_need_runtime_refresh(&params.migration_items);
         let has_migration_items = !params.migration_items.is_empty();
         let has_plugin_imports = params.migration_items.iter().any(|item| {
@@ -216,8 +209,10 @@ impl ExternalAgentConfigRequestProcessor {
             )
         });
         let (pending_session_imports, session_validation_result) =
-            self.validate_pending_session_imports(&params);
-        let import_outcome = self.import_external_agent_config(params).await;
+            self.validate_pending_session_imports(&params, &migration_service);
+        let import_outcome = self
+            .import_external_agent_config(params, &migration_service)
+            .await;
         if needs_runtime_refresh {
             self.config_processor.handle_config_mutation().await;
         }
@@ -250,7 +245,10 @@ impl ExternalAgentConfigRequestProcessor {
             send_completed_import_notification(
                 &self.outgoing,
                 self.state_db.as_ref(),
+                &self.analytics_events_client,
                 import_id,
+                analytics_source,
+                provider_id,
                 &completed_item_results,
             )
             .await;
@@ -258,10 +256,12 @@ impl ExternalAgentConfigRequestProcessor {
         }
 
         let session_importer = self.session_importer.clone();
-        let plugin_processor = self.clone();
         let outgoing = Arc::clone(&self.outgoing);
         let state_db = self.state_db.clone();
+        let analytics_events_client = self.analytics_events_client.clone();
         let thread_manager = Arc::clone(&self.thread_manager);
+        let session_metadata_mode = migration_service.session_metadata_mode();
+        let plugin_migration_service = migration_service;
         let session_import_result = (!pending_session_imports.is_empty()).then(|| {
             CoreImportItemResult::new(
                 CoreMigrationItemType::Sessions,
@@ -271,12 +271,19 @@ impl ExternalAgentConfigRequestProcessor {
         });
         let pending_plugin_imports = import_outcome.pending_plugin_imports;
         tokio::spawn(async move {
+            let connector_names_by_source_path =
+                detected_session_connectors(&plugin_migration_service, &pending_session_imports).0;
             let session_progress_outgoing = Arc::clone(&outgoing);
             let session_import_id = import_id.clone();
             let session_imports = async move {
                 let session_import_result = session_import_result?;
                 let item_result = session_importer
-                    .import_sessions(pending_session_imports, session_import_result)
+                    .import_sessions(
+                        pending_session_imports,
+                        session_import_result,
+                        session_metadata_mode,
+                        connector_names_by_source_path,
+                    )
                     .await;
                 send_import_progress(&session_progress_outgoing, &session_import_id, &item_result)
                     .await;
@@ -292,8 +299,11 @@ impl ExternalAgentConfigRequestProcessor {
                         pending_plugin_import.description.clone(),
                         pending_plugin_import.cwd.clone(),
                     );
-                    match plugin_processor
-                        .complete_pending_plugin_import(pending_plugin_import)
+                    match plugin_migration_service
+                        .import_plugins(
+                            pending_plugin_import.cwd.as_deref(),
+                            Some(pending_plugin_import.details),
+                        )
                         .await
                     {
                         Ok(plugin_outcome) => {
@@ -303,7 +313,8 @@ impl ExternalAgentConfigRequestProcessor {
                             record_import_error(
                                 &mut item_result,
                                 "plugin_import",
-                                error.message.clone(),
+                                /*sub_error_type*/ None,
+                                error.to_string(),
                                 /*source*/ None,
                             );
                         }
@@ -332,13 +343,34 @@ impl ExternalAgentConfigRequestProcessor {
             send_completed_import_notification(
                 &outgoing,
                 state_db.as_ref(),
+                &analytics_events_client,
                 import_id,
+                analytics_source,
+                provider_id,
                 &completed_item_results,
             )
             .await;
         });
 
         Ok(())
+    }
+
+    async fn external_agent_memory_import_enabled(&self) -> bool {
+        let config = match self
+            .config_manager
+            .load_latest_config(/*fallback_cwd*/ None)
+            .await
+        {
+            Ok(config) => config,
+            Err(err) => {
+                tracing::warn!(
+                    error = %err,
+                    "failed to reload config for external agent memory import detection"
+                );
+                return false;
+            }
+        };
+        config.features.enabled(Feature::ExternalAgentMemoryImport)
     }
 
     pub(crate) async fn read_import_histories(
@@ -356,13 +388,67 @@ impl ExternalAgentConfigRequestProcessor {
             .into_iter()
             .map(protocol_import_history)
             .collect::<Result<Vec<_>, _>>()?;
+        let connectors = read_imported_connector_candidates(self.migration_service.codex_home())
+            .map_err(|err| {
+                internal_error(format!(
+                    "failed to read imported connector candidates: {err}"
+                ))
+            })?
+            .into_iter()
+            .map(|candidate| ExternalAgentImportedConnectorCandidate {
+                name: candidate.name,
+                session_count: candidate.session_count,
+                source: ExternalAgentImportedConnectorSource::RemoteMcpServersConfig,
+            })
+            .collect();
 
-        Ok(ExternalAgentConfigImportHistoriesReadResponse { data })
+        Ok(ExternalAgentConfigImportHistoriesReadResponse { data, connectors })
+    }
+
+    pub(crate) async fn record_import_history(
+        &self,
+        params: ExternalAgentConfigImportHistoryRecordParams,
+    ) -> Result<ExternalAgentConfigImportHistoryRecordResponse, JSONRPCErrorError> {
+        let state_db = self
+            .state_db
+            .as_ref()
+            .ok_or_else(|| internal_error("state database is unavailable"))?;
+        let import_id = Uuid::new_v4().to_string();
+        let item_type_results = params
+            .item_type_results
+            .into_iter()
+            .map(|type_result| ProtocolImportTypeResult {
+                item_type: type_result.item_type,
+                successes: type_result
+                    .successes
+                    .into_iter()
+                    .map(|success| ProtocolImportSuccess {
+                        item_type: success.item_type,
+                        cwd: success.cwd,
+                        source: success.source,
+                        target: success.target,
+                        title: success.title,
+                    })
+                    .collect(),
+                failures: type_result.failures,
+            })
+            .collect::<Vec<_>>();
+        record_import_history(
+            state_db,
+            import_id.as_str(),
+            Some(params.provider_id.as_str()),
+            &item_type_results,
+        )
+        .await
+        .map_err(|err| internal_error(format!("failed to record import history: {err}")))?;
+
+        Ok(ExternalAgentConfigImportHistoryRecordResponse { import_id })
     }
 
     fn validate_pending_session_imports(
         &self,
         params: &ExternalAgentConfigImportParams,
+        migration_service: &ExternalAgentConfigService,
     ) -> (Vec<CoreSessionMigration>, Option<CoreImportItemResult>) {
         let sessions = params
             .migration_items
@@ -392,33 +478,33 @@ impl ExternalAgentConfigRequestProcessor {
         let mut selected_session_paths = HashSet::new();
         let mut selected_sessions = Vec::new();
         for session in sessions {
-            let canonical_path = match self
-                .migration_service
-                .external_agent_session_source_path(&session.path)
-            {
-                Ok(Some(canonical_path)) => canonical_path,
-                Ok(None) => {
-                    record_import_error(
-                        &mut item_result,
-                        "session_missing",
-                        format!(
-                            "external agent session was not detected for import: {}",
-                            session.path.display()
-                        ),
-                        Some(session.path.display().to_string()),
-                    );
-                    continue;
-                }
-                Err(err) => {
-                    record_import_error(
-                        &mut item_result,
-                        "session_source_path",
-                        err.to_string(),
-                        Some(session.path.display().to_string()),
-                    );
-                    continue;
-                }
-            };
+            let canonical_path =
+                match migration_service.external_agent_session_source_path(&session.path) {
+                    Ok(Some(canonical_path)) => canonical_path,
+                    Ok(None) => {
+                        record_import_error(
+                            &mut item_result,
+                            "session_missing",
+                            Some("session_not_detected"),
+                            format!(
+                                "external agent session was not detected for import: {}",
+                                session.path.display()
+                            ),
+                            Some(session.path.display().to_string()),
+                        );
+                        continue;
+                    }
+                    Err(err) => {
+                        record_import_error(
+                            &mut item_result,
+                            "session_source_path",
+                            Some("failed_to_resolve_session_source_path"),
+                            err.to_string(),
+                            Some(session.path.display().to_string()),
+                        );
+                        continue;
+                    }
+                };
             if selected_session_paths.insert(canonical_path) {
                 selected_sessions.push(session);
             }
@@ -429,117 +515,17 @@ impl ExternalAgentConfigRequestProcessor {
     async fn import_external_agent_config(
         &self,
         params: ExternalAgentConfigImportParams,
+        migration_service: &ExternalAgentConfigService,
     ) -> CoreImportOutcome {
-        self.migration_service
-            .import(
+        migration_service
+            .import(core_migration_items(
                 params
                     .migration_items
                     .into_iter()
-                    .filter(|migration_item| {
-                        !matches!(
-                            migration_item.item_type,
-                            ExternalAgentConfigMigrationItemType::Sessions
-                        )
-                    })
-                    .map(|migration_item| CoreMigrationItem {
-                        item_type: match migration_item.item_type {
-                            ExternalAgentConfigMigrationItemType::Config => {
-                                CoreMigrationItemType::Config
-                            }
-                            ExternalAgentConfigMigrationItemType::Skills => {
-                                CoreMigrationItemType::Skills
-                            }
-                            ExternalAgentConfigMigrationItemType::AgentsMd => {
-                                CoreMigrationItemType::AgentsMd
-                            }
-                            ExternalAgentConfigMigrationItemType::Plugins => {
-                                CoreMigrationItemType::Plugins
-                            }
-                            ExternalAgentConfigMigrationItemType::McpServerConfig => {
-                                CoreMigrationItemType::McpServerConfig
-                            }
-                            ExternalAgentConfigMigrationItemType::Subagents => {
-                                CoreMigrationItemType::Subagents
-                            }
-                            ExternalAgentConfigMigrationItemType::Hooks => {
-                                CoreMigrationItemType::Hooks
-                            }
-                            ExternalAgentConfigMigrationItemType::Commands => {
-                                CoreMigrationItemType::Commands
-                            }
-                            ExternalAgentConfigMigrationItemType::Sessions => {
-                                CoreMigrationItemType::Sessions
-                            }
-                        },
-                        description: migration_item.description,
-                        cwd: migration_item.cwd,
-                        details: migration_item.details.map(|details| {
-                            super::service::MigrationDetails {
-                                plugins: details
-                                    .plugins
-                                    .into_iter()
-                                    .map(|plugin| super::service::PluginsMigration {
-                                        marketplace_name: plugin.marketplace_name,
-                                        plugin_names: plugin.plugin_names,
-                                    })
-                                    .collect(),
-                                skills: details
-                                    .skills
-                                    .into_iter()
-                                    .map(|skill| CoreNamedMigration { name: skill.name })
-                                    .collect(),
-                                sessions: details
-                                    .sessions
-                                    .into_iter()
-                                    .map(|session| CoreSessionMigration {
-                                        path: session.path,
-                                        cwd: session.cwd,
-                                        title: session.title,
-                                    })
-                                    .collect(),
-                                mcp_servers: details
-                                    .mcp_servers
-                                    .into_iter()
-                                    .map(|mcp_server| CoreNamedMigration {
-                                        name: mcp_server.name,
-                                    })
-                                    .collect(),
-                                hooks: details
-                                    .hooks
-                                    .into_iter()
-                                    .map(|hook| CoreNamedMigration { name: hook.name })
-                                    .collect(),
-                                subagents: details
-                                    .subagents
-                                    .into_iter()
-                                    .map(|subagent| CoreNamedMigration {
-                                        name: subagent.name,
-                                    })
-                                    .collect(),
-                                commands: details
-                                    .commands
-                                    .into_iter()
-                                    .map(|command| CoreNamedMigration { name: command.name })
-                                    .collect(),
-                            }
-                        }),
-                    })
+                    .filter(|item| item.item_type != ExternalAgentConfigMigrationItemType::Sessions)
                     .collect(),
-            )
+            ))
             .await
-    }
-
-    async fn complete_pending_plugin_import(
-        &self,
-        pending_plugin_import: PendingPluginImport,
-    ) -> Result<PluginImportOutcome, JSONRPCErrorError> {
-        self.migration_service
-            .import_plugins(
-                pending_plugin_import.cwd.as_deref(),
-                Some(pending_plugin_import.details),
-            )
-            .await
-            .map_err(|err| internal_error(err.to_string()))
     }
 }
 
@@ -561,13 +547,24 @@ async fn send_import_progress(
 async fn send_completed_import_notification(
     outgoing: &OutgoingMessageSender,
     state_db: Option<&StateDbHandle>,
+    analytics_events_client: &AnalyticsEventsClient,
     import_id: String,
+    analytics_source: String,
+    provider_id: Option<String>,
     item_results: &[CoreImportItemResult],
 ) {
     let notification = completed_notification(import_id, item_results);
     log_completed_import_failures(&notification);
+    track_completed_import_notification(
+        analytics_events_client,
+        &analytics_source,
+        provider_id.as_deref().unwrap_or_default(),
+        &notification,
+    );
     if let Some(state_db) = state_db
-        && let Err(err) = record_completed_import_notification(state_db, &notification).await
+        && let Err(err) =
+            record_completed_import_notification(state_db, provider_id.as_deref(), &notification)
+                .await
     {
         tracing::warn!(
             import_id = %notification.import_id,
@@ -600,6 +597,40 @@ fn log_completed_import_failures(notification: &ExternalAgentConfigImportComplet
     }
 }
 
+fn track_completed_import_notification(
+    analytics_events_client: &AnalyticsEventsClient,
+    analytics_source: &str,
+    provider_id: &str,
+    notification: &ExternalAgentConfigImportCompletedNotification,
+) {
+    for type_result in &notification.item_type_results {
+        let item_type = analytics_migration_item_type(type_result.item_type).to_string();
+        analytics_events_client.track_external_agent_config_import_completed(
+            ExternalAgentConfigImportCompletedInput {
+                import_id: notification.import_id.clone(),
+                source: analytics_source.to_string(),
+                provider_id: provider_id.to_string(),
+                item_type: item_type.clone(),
+                success_count: type_result.successes.len(),
+                failed_count: type_result.failures.len(),
+            },
+        );
+        for failure in &type_result.failures {
+            analytics_events_client.track_external_agent_config_import_failure(
+                ExternalAgentConfigImportFailureInput {
+                    import_id: notification.import_id.clone(),
+                    source: analytics_source.to_string(),
+                    provider_id: provider_id.to_string(),
+                    item_type: item_type.clone(),
+                    failure_stage: failure.failure_stage.clone(),
+                    error_type: import_failure_error_type(failure),
+                    sub_error_type: failure.sub_error_type.clone(),
+                },
+            );
+        }
+    }
+}
+
 fn import_failure_error_type(failure: &ProtocolImportFailure) -> String {
     failure
         .error_type
@@ -607,12 +638,42 @@ fn import_failure_error_type(failure: &ProtocolImportFailure) -> String {
         .unwrap_or_else(|| failure.failure_stage.clone())
 }
 
+fn analytics_migration_item_type(item_type: ExternalAgentConfigMigrationItemType) -> &'static str {
+    match item_type {
+        ExternalAgentConfigMigrationItemType::AgentsMd => "AGENTS_MD",
+        ExternalAgentConfigMigrationItemType::Config => "CONFIG",
+        ExternalAgentConfigMigrationItemType::Skills => "SKILLS",
+        ExternalAgentConfigMigrationItemType::Plugins => "PLUGINS",
+        ExternalAgentConfigMigrationItemType::McpServerConfig => "MCP_SERVER_CONFIG",
+        ExternalAgentConfigMigrationItemType::Subagents => "SUBAGENTS",
+        ExternalAgentConfigMigrationItemType::Hooks => "HOOKS",
+        ExternalAgentConfigMigrationItemType::Commands => "COMMANDS",
+        ExternalAgentConfigMigrationItemType::Memory => "MEMORY",
+        ExternalAgentConfigMigrationItemType::Sessions => "SESSIONS",
+    }
+}
+
 async fn record_completed_import_notification(
     state_db: &StateDbHandle,
+    provider_id: Option<&str>,
     notification: &ExternalAgentConfigImportCompletedNotification,
 ) -> anyhow::Result<()> {
-    let successes = notification
-        .item_type_results
+    record_import_history(
+        state_db,
+        notification.import_id.as_str(),
+        provider_id,
+        &notification.item_type_results,
+    )
+    .await
+}
+
+async fn record_import_history(
+    state_db: &StateDbHandle,
+    import_id: &str,
+    provider_id: Option<&str>,
+    item_type_results: &[ProtocolImportTypeResult],
+) -> anyhow::Result<()> {
+    let successes = item_type_results
         .iter()
         .flat_map(|type_result| type_result.successes.iter())
         .map(|success| {
@@ -621,11 +682,11 @@ async fn record_completed_import_notification(
                 cwd: success.cwd.clone(),
                 source: success.source.clone(),
                 target: success.target.clone(),
+                title: success.title.clone(),
             })
         })
         .collect::<anyhow::Result<Vec<_>>>()?;
-    let failures = notification
-        .item_type_results
+    let failures = item_type_results
         .iter()
         .flat_map(|type_result| type_result.failures.iter())
         .map(|failure| {
@@ -642,174 +703,53 @@ async fn record_completed_import_notification(
         .collect::<anyhow::Result<Vec<_>>>()?;
     state_db
         .record_external_agent_config_import_completed(
-            notification.import_id.as_str(),
+            import_id,
+            provider_id,
             &successes,
             &failures,
         )
         .await
 }
 
-fn protocol_import_history(
-    record: codex_state::ExternalAgentConfigImportHistoryRecord,
-) -> Result<ExternalAgentConfigImportHistory, JSONRPCErrorError> {
-    let successes = record
-        .successes
-        .into_iter()
-        .map(protocol_import_success_record)
-        .collect::<Result<Vec<_>, _>>()?;
-    let failures = record
-        .failures
-        .into_iter()
-        .map(protocol_import_failure_record)
-        .collect::<Result<Vec<_>, _>>()?;
-
-    Ok(ExternalAgentConfigImportHistory {
-        import_id: record.import_id,
-        completed_at_ms: record.completed_at_ms,
-        successes,
-        failures,
-    })
-}
-
-fn protocol_import_success_record(
-    record: ExternalAgentConfigImportSuccessRecord,
-) -> Result<ProtocolImportSuccess, JSONRPCErrorError> {
-    Ok(ProtocolImportSuccess {
-        item_type: protocol_import_record_item_type(record.item_type)?,
-        cwd: record.cwd,
-        source: record.source,
-        target: record.target,
-    })
-}
-
-fn protocol_import_failure_record(
-    record: ExternalAgentConfigImportFailureRecord,
-) -> Result<ProtocolImportFailure, JSONRPCErrorError> {
-    Ok(ProtocolImportFailure {
-        item_type: protocol_import_record_item_type(record.item_type)?,
-        error_type: record.error_type,
-        sub_error_type: record.sub_error_type,
-        failure_stage: record.failure_stage,
-        message: record.message,
-        cwd: record.cwd,
-        source: record.source,
-    })
-}
-
-fn protocol_import_record_item_type(
-    item_type: String,
-) -> Result<ExternalAgentConfigMigrationItemType, JSONRPCErrorError> {
-    serde_json::from_value(serde_json::Value::String(item_type.clone())).map_err(|err| {
-        internal_error(format!(
-            "failed to decode import item type {item_type}: {err}"
-        ))
-    })
-}
-
-fn completed_notification(
-    import_id: String,
-    item_results: &[CoreImportItemResult],
-) -> ExternalAgentConfigImportCompletedNotification {
-    let mut protocol_type_results: Vec<ProtocolImportTypeResult> = Vec::new();
-    for item_result in item_results {
-        let item_raw_errors = item_result
-            .raw_errors
-            .iter()
-            .map(protocol_import_raw_error)
-            .collect::<Vec<_>>();
-        let item_successes = item_result
-            .successes
-            .iter()
-            .map(protocol_import_success)
-            .collect::<Vec<_>>();
-        let item_type = protocol_migration_item_type(item_result.item_type);
-        if let Some(type_result) = protocol_type_results
-            .iter_mut()
-            .find(|type_result| type_result.item_type == item_type)
-        {
-            type_result.successes.extend(item_successes);
-            type_result.failures.extend(item_raw_errors);
-        } else {
-            protocol_type_results.push(ProtocolImportTypeResult {
-                item_type,
-                successes: item_successes,
-                failures: item_raw_errors,
+fn detected_session_connectors(
+    migration_service: &ExternalAgentConfigService,
+    sessions: &[CoreSessionMigration],
+) -> (
+    BTreeMap<PathBuf, Vec<String>>,
+    Vec<DetectedConnectorCandidate>,
+) {
+    let mut connector_names_by_source_path = BTreeMap::new();
+    let mut connectors_by_name = BTreeMap::<String, DetectedConnectorCandidate>::new();
+    let sessions = sessions
+        .iter()
+        .filter(|session| session.path.is_file())
+        .cloned()
+        .collect::<Vec<_>>();
+    for (source_path, session_connectors) in
+        migration_service.detect_session_connectors_by_source_path(&sessions)
+    {
+        connector_names_by_source_path.insert(
+            source_path,
+            session_connectors
+                .iter()
+                .map(|candidate| candidate.name.clone())
+                .collect(),
+        );
+        for candidate in session_connectors {
+            let key = candidate.name.to_lowercase();
+            let session_count = candidate.session_count;
+            let connector = connectors_by_name.entry(key).or_insert_with(|| {
+                let mut connector = candidate;
+                connector.session_count = 0;
+                connector
             });
+            connector.session_count = connector.session_count.saturating_add(session_count);
         }
     }
-    protocol_type_results.sort_by_key(|type_result| match type_result.item_type {
-        ExternalAgentConfigMigrationItemType::Config => 0,
-        ExternalAgentConfigMigrationItemType::Skills => 1,
-        ExternalAgentConfigMigrationItemType::AgentsMd => 2,
-        ExternalAgentConfigMigrationItemType::Plugins => 3,
-        ExternalAgentConfigMigrationItemType::McpServerConfig => 4,
-        ExternalAgentConfigMigrationItemType::Subagents => 5,
-        ExternalAgentConfigMigrationItemType::Hooks => 6,
-        ExternalAgentConfigMigrationItemType::Commands => 7,
-        ExternalAgentConfigMigrationItemType::Sessions => 8,
-    });
-
-    ExternalAgentConfigImportCompletedNotification {
-        import_id,
-        item_type_results: protocol_type_results,
-    }
-}
-
-fn protocol_import_type_result(item_result: &CoreImportItemResult) -> ProtocolImportTypeResult {
-    ProtocolImportTypeResult {
-        item_type: protocol_migration_item_type(item_result.item_type),
-        successes: item_result
-            .successes
-            .iter()
-            .map(protocol_import_success)
-            .collect(),
-        failures: item_result
-            .raw_errors
-            .iter()
-            .map(protocol_import_raw_error)
-            .collect(),
-    }
-}
-
-fn protocol_import_success(
-    success: &super::service::ExternalAgentConfigImportSuccess,
-) -> ProtocolImportSuccess {
-    ProtocolImportSuccess {
-        item_type: protocol_migration_item_type(success.item_type),
-        cwd: success.cwd.clone(),
-        source: success.source.clone(),
-        target: success.target.clone(),
-    }
-}
-
-fn protocol_import_raw_error(raw_error: &CoreImportRawError) -> ProtocolImportFailure {
-    ProtocolImportFailure {
-        item_type: protocol_migration_item_type(raw_error.item_type),
-        error_type: raw_error.error_type.clone(),
-        sub_error_type: raw_error.sub_error_type.clone(),
-        failure_stage: raw_error.failure_stage.clone(),
-        message: raw_error.message.clone(),
-        cwd: raw_error.cwd.clone(),
-        source: raw_error.source.clone(),
-    }
-}
-
-fn protocol_migration_item_type(
-    item_type: CoreMigrationItemType,
-) -> ExternalAgentConfigMigrationItemType {
-    match item_type {
-        CoreMigrationItemType::Config => ExternalAgentConfigMigrationItemType::Config,
-        CoreMigrationItemType::Skills => ExternalAgentConfigMigrationItemType::Skills,
-        CoreMigrationItemType::AgentsMd => ExternalAgentConfigMigrationItemType::AgentsMd,
-        CoreMigrationItemType::Plugins => ExternalAgentConfigMigrationItemType::Plugins,
-        CoreMigrationItemType::McpServerConfig => {
-            ExternalAgentConfigMigrationItemType::McpServerConfig
-        }
-        CoreMigrationItemType::Subagents => ExternalAgentConfigMigrationItemType::Subagents,
-        CoreMigrationItemType::Hooks => ExternalAgentConfigMigrationItemType::Hooks,
-        CoreMigrationItemType::Commands => ExternalAgentConfigMigrationItemType::Commands,
-        CoreMigrationItemType::Sessions => ExternalAgentConfigMigrationItemType::Sessions,
-    }
+    (
+        connector_names_by_source_path,
+        connectors_by_name.into_values().collect(),
+    )
 }
 
 fn apply_plugin_outcome_to_item_result(
@@ -817,7 +757,11 @@ fn apply_plugin_outcome_to_item_result(
     plugin_outcome: PluginImportOutcome,
 ) {
     for plugin_id in plugin_outcome.succeeded_plugin_ids {
-        item_result.record_success(Some(plugin_id.clone()), Some(plugin_id));
+        item_result.record_success(
+            Some(plugin_id.clone()),
+            Some(plugin_id),
+            /*title*/ None,
+        );
     }
     for raw_error in plugin_outcome.raw_errors {
         item_result.record_error(raw_error);

@@ -1,7 +1,8 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use std::collections::HashMap;
+use std::future::Future;
 use std::sync::Arc;
 use std::time::Duration;
+use std::time::Instant;
 
 use codex_mcp::CODEX_APPS_MCP_SERVER_NAME;
 use codex_protocol::items::McpToolCallError;
@@ -9,10 +10,13 @@ use codex_protocol::items::McpToolCallItem;
 use codex_protocol::items::McpToolCallStatus;
 use codex_protocol::items::TurnItem;
 use codex_protocol::mcp::CallToolResult;
+use codex_protocol::models::function_call_output_content_items_to_text;
 use codex_protocol::protocol::TruncationPolicy;
 use codex_utils_output_truncation::truncate_text;
+use codex_utils_output_truncation::with_serialization_allowance;
 use rmcp::model::ListResourceTemplatesResult;
 use rmcp::model::ListResourcesResult;
+use rmcp::model::PaginatedRequestParams;
 use rmcp::model::ReadResourceResult;
 use rmcp::model::Resource;
 use rmcp::model::ResourceTemplate;
@@ -23,8 +27,11 @@ use serde_json::Value;
 
 use crate::function_tool::FunctionCallError;
 use crate::session::session::Session;
+use crate::session::step_context::StepContext;
 use crate::session::turn_context::TurnContext;
 use crate::tools::context::FunctionToolOutput;
+use crate::tools::context::ToolOutput;
+use crate::tools::context::boxed_tool_output;
 use codex_protocol::protocol::McpInvocation;
 
 mod list_mcp_resource_templates;
@@ -52,22 +59,41 @@ fn ensure_model_can_access_mcp_server(
     }
 }
 
-#[derive(Debug, Deserialize, Default)]
-struct ListResourcesArgs {
-    /// Lists all resources from all servers if not specified.
+#[derive(Debug, Deserialize, Default, PartialEq, Eq)]
+struct ListResourceArgs {
     #[serde(default)]
     server: Option<String>,
     #[serde(default)]
     cursor: Option<String>,
 }
 
-#[derive(Debug, Deserialize, Default)]
-struct ListResourceTemplatesArgs {
-    /// Lists all resource templates from all servers if not specified.
-    #[serde(default)]
-    server: Option<String>,
-    #[serde(default)]
-    cursor: Option<String>,
+impl ListResourceArgs {
+    fn normalized(self) -> Self {
+        Self {
+            server: normalize_optional_string(self.server),
+            cursor: normalize_optional_string(self.cursor),
+        }
+    }
+
+    fn target(
+        &self,
+        turn: &TurnContext,
+    ) -> Result<Option<(String, Option<PaginatedRequestParams>)>, FunctionCallError> {
+        match &self.server {
+            Some(server) => {
+                ensure_model_can_access_mcp_server(turn, server)?;
+                let params = self
+                    .cursor
+                    .clone()
+                    .map(|cursor| PaginatedRequestParams::default().with_cursor(Some(cursor)));
+                Ok(Some((server.clone(), params)))
+            }
+            None if self.cursor.is_some() => Err(FunctionCallError::RespondToModel(
+                "cursor can only be used when a server is specified".to_string(),
+            )),
+            None => Ok(None),
+        }
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -77,28 +103,31 @@ struct ReadResourceArgs {
 }
 
 #[derive(Debug, Serialize)]
-struct ResourceWithServer {
+struct ResourceWithServer<T> {
     server: String,
     #[serde(flatten)]
-    resource: Resource,
+    resource: T,
 }
 
-impl ResourceWithServer {
-    fn new(server: String, resource: Resource) -> Self {
+impl<T> ResourceWithServer<T> {
+    fn new(server: String, resource: T) -> Self {
         Self { server, resource }
     }
-}
 
-#[derive(Debug, Serialize)]
-struct ResourceTemplateWithServer {
-    server: String,
-    #[serde(flatten)]
-    template: ResourceTemplate,
-}
+    fn from_server(server: &str, resources: Vec<T>) -> Vec<Self> {
+        resources
+            .into_iter()
+            .map(|resource| Self::new(server.to_string(), resource))
+            .collect()
+    }
 
-impl ResourceTemplateWithServer {
-    fn new(server: String, template: ResourceTemplate) -> Self {
-        Self { server, template }
+    fn from_all_servers(resources_by_server: HashMap<String, Vec<T>>) -> Vec<Self> {
+        let mut entries: Vec<_> = resources_by_server.into_iter().collect();
+        entries.sort_by(|(left, _), (right, _)| left.cmp(right));
+        entries
+            .into_iter()
+            .flat_map(|(server, resources)| Self::from_server(&server, resources))
+            .collect()
     }
 }
 
@@ -107,39 +136,24 @@ impl ResourceTemplateWithServer {
 struct ListResourcesPayload {
     #[serde(skip_serializing_if = "Option::is_none")]
     server: Option<String>,
-    resources: Vec<ResourceWithServer>,
+    resources: Vec<ResourceWithServer<Resource>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     next_cursor: Option<String>,
 }
 
 impl ListResourcesPayload {
     fn from_single_server(server: String, result: ListResourcesResult) -> Self {
-        let resources = result
-            .resources
-            .into_iter()
-            .map(|resource| ResourceWithServer::new(server.clone(), resource))
-            .collect();
         Self {
+            resources: ResourceWithServer::from_server(&server, result.resources),
             server: Some(server),
-            resources,
             next_cursor: result.next_cursor,
         }
     }
 
     fn from_all_servers(resources_by_server: HashMap<String, Vec<Resource>>) -> Self {
-        let mut entries: Vec<(String, Vec<Resource>)> = resources_by_server.into_iter().collect();
-        entries.sort_by(|a, b| a.0.cmp(&b.0));
-
-        let mut resources = Vec::new();
-        for (server, server_resources) in entries {
-            for resource in server_resources {
-                resources.push(ResourceWithServer::new(server.clone(), resource));
-            }
-        }
-
         Self {
             server: None,
-            resources,
+            resources: ResourceWithServer::from_all_servers(resources_by_server),
             next_cursor: None,
         }
     }
@@ -150,40 +164,24 @@ impl ListResourcesPayload {
 struct ListResourceTemplatesPayload {
     #[serde(skip_serializing_if = "Option::is_none")]
     server: Option<String>,
-    resource_templates: Vec<ResourceTemplateWithServer>,
+    resource_templates: Vec<ResourceWithServer<ResourceTemplate>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     next_cursor: Option<String>,
 }
 
 impl ListResourceTemplatesPayload {
     fn from_single_server(server: String, result: ListResourceTemplatesResult) -> Self {
-        let resource_templates = result
-            .resource_templates
-            .into_iter()
-            .map(|template| ResourceTemplateWithServer::new(server.clone(), template))
-            .collect();
         Self {
+            resource_templates: ResourceWithServer::from_server(&server, result.resource_templates),
             server: Some(server),
-            resource_templates,
             next_cursor: result.next_cursor,
         }
     }
 
     fn from_all_servers(templates_by_server: HashMap<String, Vec<ResourceTemplate>>) -> Self {
-        let mut entries: Vec<(String, Vec<ResourceTemplate>)> =
-            templates_by_server.into_iter().collect();
-        entries.sort_by(|a, b| a.0.cmp(&b.0));
-
-        let mut resource_templates = Vec::new();
-        for (server, server_templates) in entries {
-            for template in server_templates {
-                resource_templates.push(ResourceTemplateWithServer::new(server.clone(), template));
-            }
-        }
-
         Self {
             server: None,
-            resource_templates,
+            resource_templates: ResourceWithServer::from_all_servers(templates_by_server),
             next_cursor: None,
         }
     }
@@ -224,11 +222,12 @@ async fn emit_tool_call_begin(
         arguments: arguments.unwrap_or(Value::Null),
         connector_id: None,
         mcp_app_resource_uri: None,
+        mcp_app_ui: None,
         link_id: None,
         app_name: None,
-        template_id: None,
         action_name: None,
         plugin_id: None,
+        read_only_hint: None,
         status: McpToolCallStatus::InProgress,
         result: None,
         error: None,
@@ -268,17 +267,68 @@ async fn emit_tool_call_end(
         arguments: arguments.unwrap_or(Value::Null),
         connector_id: None,
         mcp_app_resource_uri: None,
+        mcp_app_ui: None,
         link_id: None,
         app_name: None,
-        template_id: None,
         action_name: None,
         plugin_id: None,
+        read_only_hint: None,
         status,
         result,
         error,
         duration: Some(duration),
     });
     session.emit_turn_item_completed(turn, item).await;
+}
+
+async fn run_resource_operation<T>(
+    session: &Arc<Session>,
+    step_context: &StepContext,
+    call_id: &str,
+    invocation: McpInvocation,
+    operation: impl Future<Output = Result<T, FunctionCallError>>,
+) -> Result<Box<dyn ToolOutput>, FunctionCallError>
+where
+    T: Serialize,
+{
+    let turn = &step_context.turn;
+    emit_tool_call_begin(session, turn, call_id, invocation.clone()).await;
+    let start = Instant::now();
+    let result = operation.await.and_then(|payload| {
+        serialize_function_output(
+            payload,
+            step_context.settings.model_info.truncation_policy.into(),
+        )
+    });
+
+    match result {
+        Ok(output) => {
+            let content =
+                function_call_output_content_items_to_text(&output.body).unwrap_or_default();
+            emit_tool_call_end(
+                session,
+                turn,
+                call_id,
+                invocation,
+                start.elapsed(),
+                Ok(call_tool_result_from_content(&content, output.success)),
+            )
+            .await;
+            Ok(boxed_tool_output(output))
+        }
+        Err(error) => {
+            emit_tool_call_end(
+                session,
+                turn,
+                call_id,
+                invocation,
+                start.elapsed(),
+                Err(error.to_string()),
+            )
+            .await;
+            Err(error)
+        }
+    }
 }
 
 fn normalize_optional_string(input: Option<String>) -> Option<String> {
@@ -315,7 +365,7 @@ where
     })?;
     // Match regular MCP tool outputs by bounding the copy persisted to the
     // rollout and injected into model context.
-    let content = truncate_text(&content, truncation_policy * 1.2);
+    let content = truncate_text(&content, with_serialization_allowance(truncation_policy));
 
     Ok(FunctionToolOutput::from_text(content, Some(true)))
 }

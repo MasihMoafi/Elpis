@@ -1,4 +1,3 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use codex_config::CONFIG_TOML_FILE;
 use codex_config::ConfigLayerStack;
 use codex_config::TomlValue;
@@ -64,5 +63,7 @@ pub fn trusted_config_layer_stack(
         state_table.insert(hook.key, hook_state);
     }
 
-    config_layer_stack.with_user_config(&codex_home.join(CONFIG_TOML_FILE), user_config)
+    config_layer_stack
+        .with_user_config(&codex_home.join(CONFIG_TOML_FILE), user_config)
+        .expect("hook user config should be valid")
 }

@@ -1,4 +1,3 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use anyhow::Context as _;
 use std::ffi::CString;
 use std::path::Path;
@@ -6,6 +5,8 @@ use std::path::PathBuf;
 use tempfile::Builder;
 use tokio::process::Command;
 
+const CODEX_BUNDLE_IDENTIFIER: &str = "com.openai.codex";
+const OPENAI_APPLE_TEAM_IDENTIFIER: &str = "2DC432GLL2";
 const CODEX_DMG_URL_ARM64: &str = "https://persistent.oaistatic.com/codex-app-prod/Codex.dmg";
 const CODEX_DMG_URL_X64: &str =
     "https://persistent.oaistatic.com/codex-app-prod/Codex-latest-x64.dmg";
@@ -14,15 +15,15 @@ pub async fn run_mac_app_open_or_install(
     workspace: PathBuf,
     download_url_override: Option<String>,
 ) -> anyhow::Result<()> {
-    if let Some(app_path) = find_existing_codex_app_path() {
+    if let Some(app_path) = find_existing_codex_app_path(&codex_app_search_dirs()) {
         eprintln!(
-            "Opening Codex Desktop at {app_path}...",
+            "Opening Desktop app at {app_path}...",
             app_path = app_path.display()
         );
         open_codex_app(&app_path, &workspace).await?;
         return Ok(());
     }
-    eprintln!("Codex Desktop not found; downloading installer...");
+    eprintln!("Desktop app not found; downloading installer...");
     let download_url = download_url_override.unwrap_or_else(|| {
         let default_url = if is_apple_silicon_mac() {
             CODEX_DMG_URL_ARM64
@@ -33,9 +34,9 @@ pub async fn run_mac_app_open_or_install(
     });
     let installed_app = download_and_install_codex_to_user_applications(&download_url)
         .await
-        .context("failed to download/install Codex Desktop")?;
+        .context("failed to download/install Desktop app")?;
     eprintln!(
-        "Launching Codex Desktop from {installed_app}...",
+        "Launching Desktop app from {installed_app}...",
         installed_app = installed_app.display()
     );
     open_codex_app(&installed_app, &workspace).await?;
@@ -64,21 +65,42 @@ fn is_apple_silicon_mac() -> bool {
         || macos_sysctl_flag("hw.optional.arm64").unwrap_or(false)
 }
 
-fn find_existing_codex_app_path() -> Option<PathBuf> {
-    candidate_codex_app_paths()
-        .into_iter()
-        .find(|candidate| candidate.is_dir())
+fn find_existing_codex_app_path(applications_dirs: &[PathBuf]) -> Option<PathBuf> {
+    applications_dirs
+        .iter()
+        .flat_map(|dir| ["ChatGPT.app", "Codex.app"].map(|app_name| dir.join(app_name)))
+        .find(|candidate| is_codex_app_bundle(candidate))
 }
 
-fn candidate_codex_app_paths() -> Vec<PathBuf> {
-    let mut paths = vec![PathBuf::from("/Applications/Codex.app")];
+fn codex_app_search_dirs() -> Vec<PathBuf> {
+    let mut paths = vec![PathBuf::from("/Applications")];
     if let Some(home) = std::env::var_os("HOME") {
-        paths.push(PathBuf::from(home).join("Applications").join("Codex.app"));
+        paths.push(PathBuf::from(home).join("Applications"));
     }
     paths
 }
 
+fn is_codex_app_bundle(app_path: &Path) -> bool {
+    if !app_path.is_dir() {
+        return false;
+    }
+
+    std::process::Command::new("/usr/bin/plutil")
+        .arg("-extract")
+        .arg("CFBundleIdentifier")
+        .arg("raw")
+        .arg("-o")
+        .arg("-")
+        .arg(app_path.join("Contents/Info.plist"))
+        .output()
+        .is_ok_and(|output| {
+            output.status.success()
+                && String::from_utf8_lossy(&output.stdout).trim() == CODEX_BUNDLE_IDENTIFIER
+        })
+}
+
 async fn open_codex_app(app_path: &Path, workspace: &Path) -> anyhow::Result<()> {
+    verify_codex_app_bundle(app_path).await?;
     eprintln!(
         "Opening workspace {workspace}...",
         workspace = workspace.display()
@@ -103,6 +125,29 @@ async fn open_codex_app(app_path: &Path, workspace: &Path) -> anyhow::Result<()>
     );
 }
 
+async fn verify_codex_app_bundle(app_path: &Path) -> anyhow::Result<()> {
+    let requirement = format!(
+        "identifier \"{CODEX_BUNDLE_IDENTIFIER}\" and anchor apple generic and certificate leaf[subject.OU] = \"{OPENAI_APPLE_TEAM_IDENTIFIER}\""
+    );
+    let output = Command::new("/usr/bin/codesign")
+        .args(["--verify", "--deep", "--strict"])
+        .arg(format!("-R={requirement}"))
+        .arg(app_path)
+        .output()
+        .await
+        .context("failed to verify Desktop app signature")?;
+
+    if output.status.success() {
+        return Ok(());
+    }
+
+    anyhow::bail!(
+        "Desktop app at {} failed OpenAI signature verification (team {OPENAI_APPLE_TEAM_IDENTIFIER}, bundle {CODEX_BUNDLE_IDENTIFIER}): {}",
+        app_path.display(),
+        String::from_utf8_lossy(&output.stderr).trim()
+    );
+}
+
 fn codex_new_thread_url(workspace: &Path) -> String {
     let workspace = workspace.as_os_str().to_string_lossy();
     let mut serializer = url::form_urlencoded::Serializer::new(String::new());
@@ -122,7 +167,7 @@ async fn download_and_install_codex_to_user_applications(dmg_url: &str) -> anyho
     let dmg_path = tmp_root.join("Codex.dmg");
     download_dmg(dmg_url, &dmg_path).await?;
 
-    eprintln!("Mounting Codex Desktop installer...");
+    eprintln!("Mounting Desktop app installer...");
     let mount_point = mount_dmg(&dmg_path).await?;
     eprintln!(
         "Installer mounted at {mount_point}.",
@@ -131,6 +176,9 @@ async fn download_and_install_codex_to_user_applications(dmg_url: &str) -> anyho
     let result = async {
         let app_in_volume = find_codex_app_in_mount(&mount_point)
             .context("failed to locate Codex.app in mounted dmg")?;
+        verify_codex_app_bundle(&app_in_volume)
+            .await
+            .context("refusing to install an unverified Desktop app")?;
         install_codex_app_bundle(&app_in_volume).await
     }
     .await;
@@ -149,7 +197,7 @@ async fn download_and_install_codex_to_user_applications(dmg_url: &str) -> anyho
 async fn install_codex_app_bundle(app_in_volume: &Path) -> anyhow::Result<PathBuf> {
     for applications_dir in candidate_applications_dirs()? {
         eprintln!(
-            "Installing Codex Desktop into {applications_dir}...",
+            "Installing Desktop app into {applications_dir}...",
             applications_dir = applications_dir.display()
         );
         std::fs::create_dir_all(&applications_dir).with_context(|| {
@@ -304,9 +352,124 @@ fn parse_hdiutil_attach_mount_point(output: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::codex_new_thread_url;
+    use super::find_existing_codex_app_path;
+    use super::open_codex_app;
     use super::parse_hdiutil_attach_mount_point;
+    use super::verify_codex_app_bundle;
     use pretty_assertions::assert_eq;
+    use std::fs;
     use std::path::Path;
+
+    fn write_app_bundle(app_path: &Path, bundle_identifier: &str) {
+        let contents_path = app_path.join("Contents");
+        fs::create_dir_all(&contents_path).expect("create app bundle");
+        fs::write(
+            contents_path.join("Info.plist"),
+            format!(
+                r#"<?xml version="1.0"?><plist version="1.0"><dict><key>CFBundleIdentifier</key><string>{bundle_identifier}</string></dict></plist>"#
+            ),
+        )
+        .expect("write Info.plist");
+    }
+
+    #[test]
+    fn finds_chatgpt_app_with_codex_bundle_identifier() {
+        let temp_dir = tempfile::tempdir().expect("create temp dir");
+        let app_path = temp_dir.path().join("ChatGPT.app");
+        write_app_bundle(&app_path, "com.openai.codex");
+
+        assert_eq!(
+            find_existing_codex_app_path(&[temp_dir.path().to_path_buf()]),
+            Some(app_path)
+        );
+    }
+
+    #[test]
+    fn ignores_classic_chatgpt_app() {
+        let temp_dir = tempfile::tempdir().expect("create temp dir");
+        write_app_bundle(&temp_dir.path().join("ChatGPT.app"), "com.openai.chat");
+        let codex_app_path = temp_dir.path().join("Codex.app");
+        write_app_bundle(&codex_app_path, "com.openai.codex");
+
+        assert_eq!(
+            find_existing_codex_app_path(&[temp_dir.path().to_path_buf()]),
+            Some(codex_app_path)
+        );
+    }
+
+    #[tokio::test]
+    async fn rejects_unsigned_app_with_codex_bundle_identifier() {
+        let temp_dir = tempfile::tempdir().expect("create temp dir");
+        let app_path = temp_dir.path().join("Codex.app");
+        write_app_bundle(&app_path, "com.openai.codex");
+
+        let err = verify_codex_app_bundle(&app_path)
+            .await
+            .expect_err("unsigned app should not satisfy the OpenAI signing requirement");
+
+        assert!(
+            err.to_string()
+                .contains("failed OpenAI signature verification"),
+            "unexpected verification error: {err}"
+        );
+    }
+
+    #[tokio::test]
+    async fn rejects_valid_signature_without_openai_signing_identity() {
+        let temp_dir = tempfile::tempdir().expect("create temp dir");
+        let app_path = temp_dir.path().join("Codex.app");
+        let contents_path = app_path.join("Contents");
+        let executable_path = contents_path.join("MacOS/Codex");
+        fs::create_dir_all(executable_path.parent().expect("executable parent"))
+            .expect("create executable directory");
+        fs::copy("/usr/bin/true", &executable_path).expect("copy executable into app bundle");
+        fs::write(
+            contents_path.join("Info.plist"),
+            r#"<?xml version="1.0"?><plist version="1.0"><dict><key>CFBundleIdentifier</key><string>com.openai.codex</string><key>CFBundleExecutable</key><string>Codex</string></dict></plist>"#,
+        )
+        .expect("write Info.plist");
+
+        let sign_status = std::process::Command::new("/usr/bin/codesign")
+            .args(["--force", "--sign", "-"])
+            .arg(&app_path)
+            .status()
+            .expect("sign app bundle");
+        assert!(sign_status.success(), "failed to ad-hoc sign app bundle");
+
+        let verify_status = std::process::Command::new("/usr/bin/codesign")
+            .args(["--verify", "--deep", "--strict"])
+            .arg(&app_path)
+            .status()
+            .expect("verify app bundle signature");
+        assert!(verify_status.success(), "ad-hoc signature should be valid");
+
+        let err = verify_codex_app_bundle(&app_path)
+            .await
+            .expect_err("valid signature without the OpenAI team should not be trusted");
+
+        assert!(
+            err.to_string()
+                .contains("failed OpenAI signature verification"),
+            "unexpected verification error: {err}"
+        );
+    }
+
+    #[tokio::test]
+    async fn refuses_to_launch_unsigned_existing_codex_app() {
+        let temp_dir = tempfile::tempdir().expect("create temp dir");
+        let app_path = temp_dir.path().join("Codex.app");
+        write_app_bundle(&app_path, "com.openai.codex");
+
+        let err = open_codex_app(&app_path, temp_dir.path())
+            .await
+            .expect_err("unsigned existing app should not be launched");
+
+        assert!(
+            err.to_string()
+                .contains("failed OpenAI signature verification"),
+            "unexpected launch error: {err}"
+        );
+    }
 
     #[test]
     fn parses_mount_point_from_tab_separated_hdiutil_output() {

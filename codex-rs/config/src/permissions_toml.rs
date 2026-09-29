@@ -1,4 +1,3 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use std::collections::BTreeMap;
 
 use crate::merge::merge_toml_values;
@@ -251,10 +250,6 @@ pub struct NetworkDomainPermissionsToml {
 }
 
 impl NetworkDomainPermissionsToml {
-    pub fn is_empty(&self) -> bool {
-        self.entries.is_empty()
-    }
-
     pub fn allowed_domains(&self) -> Option<Vec<String>> {
         let allowed_domains: Vec<String> = self
             .entries
@@ -302,10 +297,6 @@ pub struct NetworkUnixSocketPermissionsToml {
 }
 
 impl NetworkUnixSocketPermissionsToml {
-    pub fn is_empty(&self) -> bool {
-        self.entries.is_empty()
-    }
-
     pub fn allow_unix_sockets(&self) -> Vec<String> {
         self.entries
             .iter()
@@ -349,6 +340,9 @@ pub struct NetworkToml {
     pub mode: Option<NetworkMode>,
     pub domains: Option<NetworkDomainPermissionsToml>,
     pub unix_sockets: Option<NetworkUnixSocketPermissionsToml>,
+    /// Permits local servers and direct host-loopback connections and skips the proxy's
+    /// additional private-network destination checks. Proxy domain rules still apply.
+    /// Defaults to true for MXC, which cannot enforce false; otherwise defaults to false.
     pub allow_local_binding: Option<bool>,
     pub mitm: Option<NetworkMitmToml>,
 }
@@ -454,29 +448,6 @@ impl NetworkMitmToml {
         Ok(())
     }
 
-    pub fn validate_action_references(
-        &self,
-        actions_by_name: &IndexMap<String, NetworkMitmActionToml>,
-    ) -> Result<(), String> {
-        self.validate_action_definitions()?;
-
-        let Some(hooks) = self.hooks.as_ref() else {
-            return Ok(());
-        };
-
-        for (hook_name, hook) in hooks {
-            for action_name in &hook.action {
-                if !actions_by_name.contains_key(action_name) {
-                    return Err(format!(
-                        "network.mitm.hooks.{hook_name}.action references undefined action `{action_name}`"
-                    ));
-                }
-            }
-        }
-
-        Ok(())
-    }
-
     pub fn to_runtime_hooks(
         &self,
         actions_by_name: Option<&IndexMap<String, NetworkMitmActionToml>>,
@@ -525,7 +496,7 @@ impl NetworkToml {
             config.dangerously_allow_non_loopback_proxy = dangerously_allow_non_loopback_proxy;
         }
         if let Some(dangerously_allow_all_unix_sockets) = self.dangerously_allow_all_unix_sockets {
-            config.dangerously_allow_all_unix_sockets = dangerously_allow_all_unix_sockets;
+            config.dangerously_allow_all_unix_sockets = Some(dangerously_allow_all_unix_sockets);
         }
         if let Some(mode) = self.mode {
             config.mode = mode;
@@ -544,11 +515,10 @@ impl NetworkToml {
                 };
                 proxy_unix_sockets.entries.insert(path.clone(), permission);
             }
-            config.unix_sockets =
-                (!proxy_unix_sockets.entries.is_empty()).then_some(proxy_unix_sockets);
+            config.unix_sockets = Some(proxy_unix_sockets);
         }
         if let Some(allow_local_binding) = self.allow_local_binding {
-            config.allow_local_binding = allow_local_binding;
+            config.allow_local_binding = Some(allow_local_binding);
         }
         if let Some(mitm) = self.mitm.as_ref() {
             config.mitm_hooks = mitm.to_runtime_hooks(mitm.actions.as_ref());

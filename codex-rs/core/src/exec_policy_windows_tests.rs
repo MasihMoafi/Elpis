@@ -1,4 +1,3 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use super::*;
 use pretty_assertions::assert_eq;
 
@@ -62,18 +61,17 @@ fn commands_for_exec_policy_parses_powershell_shell_wrapper() {
         commands_for_exec_policy(&command),
         ExecPolicyCommands {
             commands: vec![vec!["echo".to_string(), "blocked".to_string()]],
-            used_complex_parsing: false,
             command_origin: ExecPolicyCommandOrigin::PowerShell,
         }
     );
 }
 
 #[test]
-fn unmatched_safe_powershell_words_are_allowed() {
+fn unmatched_powershell_read_requires_approval_without_sandbox() {
     let command = vec!["Get-Content".to_string(), "Cargo.toml".to_string()];
 
     assert_eq!(
-        Decision::Allow,
+        Decision::Prompt,
         render_decision_for_unmatched_command(
             &command,
             UnmatchedCommandContext {
@@ -81,7 +79,6 @@ fn unmatched_safe_powershell_words_are_allowed() {
                 permission_profile: &PermissionProfile::read_only(),
                 windows_sandbox_level: WindowsSandboxLevel::Disabled,
                 sandbox_permissions: SandboxPermissions::UseDefault,
-                used_complex_parsing: false,
                 command_origin: ExecPolicyCommandOrigin::PowerShell,
             },
         )
@@ -105,7 +102,6 @@ fn read_only_windows_sandbox_runs_unmatched_commands_under_sandbox() {
                     permission_profile: &PermissionProfile::read_only(),
                     windows_sandbox_level,
                     sandbox_permissions: SandboxPermissions::UseDefault,
-                    used_complex_parsing: false,
                     command_origin: ExecPolicyCommandOrigin::Generic,
                 },
             )
@@ -126,7 +122,6 @@ fn read_only_windows_policy_without_sandbox_backend_still_requires_approval() {
                 permission_profile: &PermissionProfile::read_only(),
                 windows_sandbox_level: WindowsSandboxLevel::Disabled,
                 sandbox_permissions: SandboxPermissions::UseDefault,
-                used_complex_parsing: false,
                 command_origin: ExecPolicyCommandOrigin::Generic,
             },
         ),
@@ -143,12 +138,14 @@ fn writable_windows_policy_without_sandbox_backend_still_requires_approval() {
                 value: FileSystemSpecialPath::Root,
             },
             access: FileSystemAccessMode::Read,
+            missing_path_behavior: None,
         },
         FileSystemSandboxEntry {
             path: FileSystemPath::Special {
                 value: FileSystemSpecialPath::project_roots(/*subpath*/ None),
             },
             access: FileSystemAccessMode::Write,
+            missing_path_behavior: None,
         },
     ]);
     let permission_profile = PermissionProfile::from_runtime_permissions(
@@ -165,7 +162,6 @@ fn writable_windows_policy_without_sandbox_backend_still_requires_approval() {
                 permission_profile: &permission_profile,
                 windows_sandbox_level: WindowsSandboxLevel::Disabled,
                 sandbox_permissions: SandboxPermissions::UseDefault,
-                used_complex_parsing: false,
                 command_origin: ExecPolicyCommandOrigin::Generic,
             },
         )

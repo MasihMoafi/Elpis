@@ -1,4 +1,3 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use serde::Deserialize;
 use serde::Serialize;
 
@@ -23,5 +22,8 @@ pub enum FunctionCallOutputContentItem {
         image_url: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         detail: Option<ImageDetail>,
+    },
+    InputAudio {
+        audio_url: String,
     },
 }

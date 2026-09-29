@@ -1,4 +1,3 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 //! Keyboard shortcuts for stepping the active model's reasoning effort.
 //!
 //! The main chat surface treats `Alt+,` and `Alt+.` as small adjustments to the
@@ -11,8 +10,8 @@
 //! current model preset's default, and it walks only efforts advertised by the
 //! active model. Unsupported efforts anchor to the model default, or the first
 //! advertised effort when the default is absent, before stepping through the
-//! advertised order. Raising never silently crosses into Max or Ultra; those
-//! efforts require the explicit advanced-reasoning picker.
+//! advertised order. Raising into Ultra requires the explicit
+//! advanced-reasoning picker.
 
 use codex_protocol::config_types::ModeKind;
 use codex_protocol::openai_models::ModelPreset;
@@ -20,6 +19,7 @@ use codex_protocol::openai_models::ReasoningEffort as ReasoningEffortConfig;
 use crossterm::event::KeyEvent;
 
 use super::ChatWidget;
+use super::PARENT_OWNED_INPUT_MESSAGE;
 use crate::app_event::AppEvent;
 use crate::key_hint::KeyBindingListExt;
 
@@ -73,6 +73,11 @@ impl ChatWidget {
             return false;
         }
 
+        if self.blocks_direct_input {
+            self.add_error_message(PARENT_OWNED_INPUT_MESSAGE.to_string());
+            return true;
+        }
+
         if !self.is_session_configured() {
             self.add_info_message(
                 "Reasoning shortcuts are disabled until startup completes.".to_string(),
@@ -112,28 +117,15 @@ impl ChatWidget {
         };
 
         if direction == ReasoningShortcutDirection::Raise
-            && Self::is_advanced_reasoning_effort(&next_effort)
+            && next_effort == ReasoningEffortConfig::Ultra
         {
-            let advanced_label = choices
-                .iter()
-                .filter(|effort| Self::is_advanced_reasoning_effort(effort))
-                .map(Self::reasoning_effort_label)
-                .collect::<Vec<_>>()
-                .join(" and ");
-            let verb = if advanced_label.contains(" and ") {
-                "are"
-            } else {
-                "is"
-            };
             let model_path = if current_model.starts_with("codex-auto-") {
                 current_model
             } else {
                 format!("All models → {current_model}")
             };
             self.add_info_message(
-                format!(
-                    "{advanced_label} {verb} available under /model → {model_path} → More reasoning…"
-                ),
+                format!("Ultra is available under /model → {model_path} → More reasoning…"),
                 /*hint*/ None,
             );
             return true;
@@ -149,7 +141,8 @@ impl ChatWidget {
                 )));
             }
         } else {
-            self.apply_model_and_effort_without_persist(current_model, Some(next_effort));
+            self.app_event_tx
+                .send(AppEvent::UpdateReasoningEffort(Some(next_effort)));
         }
 
         true

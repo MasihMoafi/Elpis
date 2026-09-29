@@ -2,14 +2,16 @@
 source: tui/src/chatwidget/tests/popups_and_settings.rs
 expression: popup
 ---
- Elpis · model gpt-5.6-sol · location /tmp/project
+  Experimental features
+  Checked features are configured on. Some experimental features take effect
+  only in new tasks or after restarting the Codex server.
 
-  Settings
-  Changes are saved to config.toml.
 
-› [ ] JavaScript REPL  Enable a persistent Node-backed JavaScript REPL for
-                       interactive website debugging and other inline
-                       JavaScript execution capabilities.
-  [x] Shell tool       Allow the model to run shell commands.
+› [ ] JavaScript REPL      Enable a persistent Node-backed JavaScript REPL for
+                           interactive website debugging and other inline
+                           JavaScript execution capabilities.
+  [x] Shell tool           Allow the model to run shell commands.
+  [ ] Voice conversations  Talk with Codex using /voice.
 
-  Press space to select or enter to save for next conversation
+
+  space toggle · enter save · esc save/close

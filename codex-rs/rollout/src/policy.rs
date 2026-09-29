@@ -1,21 +1,26 @@
+use crate::RolloutItem;
 use crate::protocol::EventMsg;
-use crate::protocol::RolloutItem;
 use codex_extension_items::ExtensionItem;
 use codex_protocol::items::TurnItem;
 use codex_protocol::models::ResponseItem;
+use codex_protocol::protocol::SubAgentActivityKind;
 use codex_protocol::protocol::ThreadHistoryMode;
 
 /// Whether a rollout `item` should be persisted in rollout files.
 pub fn is_persisted_rollout_item(item: &RolloutItem, history_mode: ThreadHistoryMode) -> bool {
     match item {
-        RolloutItem::ResponseItem(item) => should_persist_response_item(item),
+        RolloutItem::ResponseItem(item) => should_persist_response_item(&item.item),
         RolloutItem::InterAgentCommunication(_)
         | RolloutItem::InterAgentCommunicationMetadata { .. } => true,
         RolloutItem::EventMsg(ev) => should_persist_event_msg(ev, history_mode),
+        RolloutItem::RealtimeItem(_) => matches!(history_mode, ThreadHistoryMode::Paginated),
         // Persist Codex executive markers so we can analyze flows (e.g., compaction, API turns).
         RolloutItem::Compacted(_)
         | RolloutItem::TurnContext(_)
+        | RolloutItem::TokenUsageRecord(_)
         | RolloutItem::WorldState(_)
+        | RolloutItem::RetainedContext(_)
+        | RolloutItem::SecurityRiskScore(_)
         | RolloutItem::SessionMeta(_) => true,
     }
 }
@@ -50,6 +55,7 @@ pub fn should_persist_response_item(item: &ResponseItem) -> bool {
         | ResponseItem::CustomToolCallOutput { .. }
         | ResponseItem::WebSearchCall { .. }
         | ResponseItem::ImageGenerationCall { .. }
+        | ResponseItem::ConfigurationUpdate { .. }
         | ResponseItem::Compaction { .. }
         | ResponseItem::ContextCompaction { .. } => true,
         ResponseItem::AdditionalTools { .. }
@@ -74,6 +80,7 @@ pub fn should_persist_response_item_for_memories(item: &ResponseItem) -> bool {
         | ResponseItem::WebSearchCall { .. } => true,
         ResponseItem::AdditionalTools { .. }
         | ResponseItem::Reasoning { .. }
+        | ResponseItem::ConfigurationUpdate { .. }
         | ResponseItem::ImageGenerationCall { .. }
         | ResponseItem::Compaction { .. }
         | ResponseItem::CompactionTrigger { .. }
@@ -88,11 +95,19 @@ pub fn should_persist_event_msg(ev: &EventMsg, history_mode: ThreadHistoryMode) 
     match ev {
         EventMsg::ItemCompleted(event) => {
             // Paginated rollouts store TurnItems.
-            // Legacy rollouts keep only items with no raw ResponseItem or legacy equivalent.
+            // Legacy rollouts keep only items with no lossless raw ResponseItem or legacy
+            // equivalent.
             matches!(history_mode, ThreadHistoryMode::Paginated)
                 || matches!(
                     event.item,
-                    TurnItem::Plan(_) | TurnItem::Extension(ExtensionItem::Sleep(_))
+                    TurnItem::FunctionCallOutput(_)
+                        | TurnItem::Plan(_)
+                        | TurnItem::Extension(ExtensionItem::Sleep(_))
+                )
+                || matches!(
+                    &event.item,
+                    TurnItem::SubAgentActivity(item)
+                        if item.kind == SubAgentActivityKind::Completed
                 )
         }
         EventMsg::TokenCount(_)
@@ -115,12 +130,17 @@ pub fn should_persist_event_msg(ev: &EventMsg, history_mode: ThreadHistoryMode) 
         | EventMsg::ContextCompacted(_)
         | EventMsg::McpToolCallEnd(_)
         | EventMsg::WebSearchEnd(_)
-        | EventMsg::ImageGenerationEnd(_)
-        | EventMsg::SubAgentActivity(_) => matches!(history_mode, ThreadHistoryMode::Legacy),
+        | EventMsg::ImageGenerationEnd(_) => {
+            matches!(history_mode, ThreadHistoryMode::Legacy)
+        }
+        EventMsg::SubAgentActivity(event) => {
+            matches!(history_mode, ThreadHistoryMode::Legacy)
+                && event.kind != SubAgentActivityKind::Completed
+        }
 
         // Transient, non-durable events.
         EventMsg::Error(_)
-        | EventMsg::TurnProfile(_)
+        | EventMsg::ThreadQueueChanged(_)
         | EventMsg::GuardianAssessment(_)
         | EventMsg::ExecCommandEnd(_)
         | EventMsg::ViewImageToolCall(_)
@@ -132,6 +152,8 @@ pub fn should_persist_event_msg(ev: &EventMsg, history_mode: ThreadHistoryMode) 
         | EventMsg::DynamicToolCallRequest(_)
         | EventMsg::DynamicToolCallResponse(_)
         | EventMsg::Warning(_)
+        | EventMsg::AuthRecoveryStarted(_)
+        | EventMsg::AuthRecoveryCompleted(_)
         | EventMsg::GuardianWarning(_)
         | EventMsg::RealtimeConversationStarted(_)
         | EventMsg::RealtimeConversationSdp(_)
@@ -180,40 +202,5 @@ pub fn should_persist_event_msg(ev: &EventMsg, history_mode: ThreadHistoryMode) 
         | EventMsg::CollabWaitingBegin(_)
         | EventMsg::CollabCloseBegin(_)
         | EventMsg::CollabResumeBegin(_) => false,
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use codex_protocol::TurnProfileSummary;
-    use codex_protocol::protocol::TurnProfileEvent;
-    use codex_protocol::protocol::TurnProfileOutcome;
-
-    #[test]
-    fn turn_profile_events_are_never_persisted() {
-        let event = EventMsg::TurnProfile(TurnProfileEvent {
-            turn_id: "turn-1".to_string(),
-            outcome: TurnProfileOutcome::Completed,
-            started_at: Some(10),
-            duration_ms: Some(20),
-            time_to_first_token_ms: Some(3),
-            profile: Some(TurnProfileSummary {
-                before_first_sampling_ms: 1,
-                sampling_ms: 2,
-                compaction_ms: 3,
-                between_sampling_overhead_ms: 4,
-                tool_blocking_ms: 5,
-                after_last_sampling_ms: 6,
-                sampling_request_count: 7,
-                sampling_retry_count: 8,
-            }),
-        });
-
-        assert!(!should_persist_event_msg(&event, ThreadHistoryMode::Legacy));
-        assert!(!should_persist_event_msg(
-            &event,
-            ThreadHistoryMode::Paginated
-        ));
     }
 }

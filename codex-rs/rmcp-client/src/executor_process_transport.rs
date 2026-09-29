@@ -37,7 +37,6 @@ use rmcp::service::RoleClient;
 use rmcp::service::RxJsonRpcMessage;
 use rmcp::service::TxJsonRpcMessage;
 use rmcp::transport::Transport;
-use serde_json::from_slice;
 use serde_json::to_vec;
 use tokio::runtime::Handle;
 use tokio::sync::Semaphore;
@@ -355,10 +354,23 @@ impl ExecutorProcessTransport {
             .await
             .map_err(io::Error::other)?;
         for chunk in response.chunks {
+            let expected_seq = self.last_seq.saturating_add(1);
+            if chunk.seq > expected_seq {
+                return Err(self.close_for_lost_output(expected_seq, chunk.seq));
+            }
             self.push_process_output_if_new(chunk);
             if self.closed {
                 return Ok(());
             }
+        }
+        // Process reads include output chunks but not the sequenced `Exited`
+        // and `Closed` events. Account for those terminal events without
+        // allowing an evicted output chunk to be silently spliced into MCP.
+        let terminal_event_count = u64::from(response.exited) + u64::from(response.closed);
+        let next_output_seq = response.next_seq.saturating_sub(terminal_event_count);
+        let expected_seq = self.last_seq.saturating_add(1);
+        if next_output_seq > expected_seq {
+            return Err(self.close_for_lost_output(expected_seq, next_output_seq));
         }
         self.last_seq = self.last_seq.max(response.next_seq.saturating_sub(1));
         if let Some(message) = response.failure {
@@ -371,6 +383,18 @@ impl ExecutorProcessTransport {
             self.closed = true;
         }
         Ok(())
+    }
+
+    fn close_for_lost_output(&mut self, expected_seq: u64, received_seq: u64) -> io::Error {
+        self.stdout.clear();
+        self.stderr.clear();
+        self.closed = true;
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!(
+                "remote MCP server output stream lost process events: expected sequence {expected_seq}, received {received_seq}"
+            ),
+        )
     }
 
     fn push_process_output_if_new(&mut self, chunk: ProcessOutputChunk) {
@@ -426,7 +450,7 @@ impl ExecutorProcessTransport {
                 None => return None,
             };
             let line = Self::trim_trailing_carriage_return(line);
-            match from_slice::<RxJsonRpcMessage<RoleClient>>(&line) {
+            match serde_json::from_slice(&line) {
                 Ok(message) => return Some(message),
                 Err(error) => {
                     debug!(

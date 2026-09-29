@@ -1,6 +1,7 @@
 //! Approval, denial, and review-status transcript cells.
 
 use super::*;
+use crate::style::accent_color;
 
 fn truncate_exec_snippet(full_cmd: &str) -> String {
     let mut snippet = match full_cmd.split_once('\n') {
@@ -57,7 +58,7 @@ pub fn new_approval_decision_cell(
                     vec![
                         actor.subject().into(),
                         "approved".bold(),
-                        " Elpis to run ".into(),
+                        " codex to run ".into(),
                         Span::from(snippet).dim(),
                         " this time".bold(),
                     ]
@@ -76,7 +77,7 @@ pub fn new_approval_decision_cell(
                 vec![
                     actor.subject().into(),
                     "approved".bold(),
-                    " Elpis network access to ".into(),
+                    " codex network access to ".into(),
                     Span::from(target).dim(),
                     " this time".bold(),
                 ],
@@ -91,7 +92,7 @@ pub fn new_approval_decision_cell(
                 vec![
                     actor.subject().into(),
                     "approved".bold(),
-                    " Elpis to always run commands that start with ".into(),
+                    " codex to always run commands that start with ".into(),
                     snippet,
                 ],
             )
@@ -102,7 +103,7 @@ pub fn new_approval_decision_cell(
                     vec![
                         actor.subject().into(),
                         "approved".bold(),
-                        " Elpis to run ".into(),
+                        " codex to run ".into(),
                         Span::from(snippet).dim(),
                         " every time this session".bold(),
                     ]
@@ -121,7 +122,7 @@ pub fn new_approval_decision_cell(
                 vec![
                     actor.subject().into(),
                     "approved".bold(),
-                    " Elpis network access to ".into(),
+                    " codex network access to ".into(),
                     Span::from(target).dim(),
                     " every time this session".bold(),
                 ],
@@ -140,7 +141,7 @@ pub fn new_approval_decision_cell(
                     vec![
                         actor.subject().into(),
                         "persisted".bold(),
-                        " Elpis network access to ".into(),
+                        " Codex network access to ".into(),
                         Span::from(target).dim(),
                     ],
                 ),
@@ -149,7 +150,7 @@ pub fn new_approval_decision_cell(
                     vec![
                         actor.subject().into(),
                         "denied".bold(),
-                        " Elpis network access to ".into(),
+                        " codex network access to ".into(),
                         Span::from(target).dim(),
                         " and saved that rule".into(),
                     ],
@@ -164,13 +165,13 @@ pub fn new_approval_decision_cell(
                         ApprovalDecisionActor::User => vec![
                             actor.subject().into(),
                             "did not approve".bold(),
-                            " Elpis to run ".into(),
+                            " codex to run ".into(),
                             snippet,
                         ],
                         ApprovalDecisionActor::Guardian => vec![
                             "Request ".into(),
                             "denied".bold(),
-                            " for Elpis to run ".into(),
+                            " for codex to run ".into(),
                             snippet,
                         ],
                     }
@@ -193,7 +194,7 @@ pub fn new_approval_decision_cell(
                 vec![
                     actor.subject().into(),
                     "did not approve".bold(),
-                    " Elpis network access to ".into(),
+                    " codex network access to ".into(),
                     Span::from(target).dim(),
                 ],
             ),
@@ -204,7 +205,7 @@ pub fn new_approval_decision_cell(
                     vec![
                         "Review ".into(),
                         "timed out".bold(),
-                        " before Elpis could run ".into(),
+                        " before codex could run ".into(),
                         Span::from(snippet).dim(),
                     ]
                 } else {
@@ -221,7 +222,7 @@ pub fn new_approval_decision_cell(
                 vec![
                     "Review ".into(),
                     "timed out".bold(),
-                    " before Elpis could access ".into(),
+                    " before codex could access ".into(),
                     Span::from(target).dim(),
                 ],
             ),
@@ -249,7 +250,7 @@ pub fn new_approval_decision_cell(
                 vec![
                     actor.subject().into(),
                     "canceled".bold(),
-                    " the request for Elpis network access to ".into(),
+                    " the request for codex network access to ".into(),
                     Span::from(target).dim(),
                 ],
             ),
@@ -282,7 +283,7 @@ pub fn new_guardian_denied_patch_request(files: Vec<String>) -> Box<dyn HistoryC
     let mut summary = vec![
         "Request ".into(),
         "denied".bold(),
-        " for Elpis to apply ".into(),
+        " for codex to apply ".into(),
     ];
     if files.len() == 1 {
         summary.push("a patch touching ".into());
@@ -310,21 +311,11 @@ pub fn new_guardian_denied_action_request(summary: String) -> Box<dyn HistoryCel
     Box::new(PrefixedWrappedHistoryCell::new(line, "✗ ".red(), "  "))
 }
 
-pub fn new_guardian_approved_action_request(summary: String) -> Box<dyn HistoryCell> {
-    let line = Line::from(vec![
-        "Request ".into(),
-        "approved".bold(),
-        " for ".into(),
-        Span::from(summary).dim(),
-    ]);
-    Box::new(PrefixedWrappedHistoryCell::new(line, "✔ ".green(), "  "))
-}
-
 pub fn new_guardian_timed_out_patch_request(files: Vec<String>) -> Box<dyn HistoryCell> {
     let mut summary = vec![
         "Review ".into(),
         "timed out".bold(),
-        " before Elpis could apply ".into(),
+        " before codex could apply ".into(),
     ];
     if files.len() == 1 {
         summary.push("a patch touching ".into());
@@ -352,9 +343,9 @@ pub fn new_guardian_timed_out_action_request(summary: String) -> Box<dyn History
     Box::new(PrefixedWrappedHistoryCell::new(line, "✗ ".red(), "  "))
 }
 
-/// Cyan history cell line showing the current review status.
+/// Accented history cell line showing the current review status.
 pub(crate) fn new_review_status_line(message: String) -> PlainHistoryCell {
     PlainHistoryCell {
-        lines: vec![Line::from(message.cyan())],
+        lines: vec![Line::from(message.fg(accent_color()))],
     }
 }

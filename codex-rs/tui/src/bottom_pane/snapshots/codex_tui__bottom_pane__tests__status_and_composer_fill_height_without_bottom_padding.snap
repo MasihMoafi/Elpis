@@ -2,10 +2,9 @@
 source: tui/src/bottom_pane/mod.rs
 expression: "render_snapshot(&pane, area)"
 ---
-Elpising… (0s • esc to interr…
-│                             
-› Ask Elpis to do anything    
-│                             
-│                             
-│                             
-  context unknown · Tab Contex
+• Working (0s • esc to interr…
+                              
+                              
+› Ask Codex to do anything    
+                              
+           100% context left

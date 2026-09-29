@@ -1,4 +1,3 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use std::fmt;
 use std::sync::Arc;
 
@@ -41,15 +40,15 @@ impl SkillProviderSource {
         Self::new(SkillSourceKind::Executor, label, provider)
     }
 
-    pub fn orchestrator(label: impl Into<String>, provider: Arc<dyn SkillProvider>) -> Self {
-        Self::new(SkillSourceKind::Orchestrator, label, provider)
+    pub fn cloud(label: impl Into<String>, provider: Arc<dyn SkillProvider>) -> Self {
+        Self::new(SkillSourceKind::Cloud, label, provider)
     }
 
     fn should_list(&self, query: &SkillListQuery) -> bool {
         match &self.kind {
             SkillSourceKind::Host => query.include_host_skills,
             SkillSourceKind::Executor => !query.executor_roots.is_empty(),
-            SkillSourceKind::Orchestrator => query.include_orchestrator_skills,
+            SkillSourceKind::Cloud => query.include_cloud_skills,
             SkillSourceKind::Custom(_) => true,
         }
     }
@@ -96,16 +95,22 @@ impl SkillProviders {
         self
     }
 
-    pub fn with_orchestrator_provider(mut self, provider: Arc<dyn SkillProvider>) -> Self {
+    pub fn with_cloud_provider(mut self, provider: Arc<dyn SkillProvider>) -> Self {
         self.sources
-            .push(SkillProviderSource::orchestrator("orchestrator", provider));
+            .push(SkillProviderSource::cloud("cloud", provider));
         self
     }
 
-    pub(crate) fn has_orchestrator_provider(&self) -> bool {
+    pub(crate) fn has_cloud_provider(&self) -> bool {
         self.sources
             .iter()
-            .any(|source| source.kind == SkillSourceKind::Orchestrator)
+            .any(|source| source.kind == SkillSourceKind::Cloud)
+    }
+
+    pub(crate) fn has_host_provider(&self) -> bool {
+        self.sources
+            .iter()
+            .any(|source| source.kind == SkillSourceKind::Host)
     }
 
     pub(crate) async fn list_for_turn(&self, query: SkillListQuery) -> SkillCatalog {
@@ -113,7 +118,7 @@ impl SkillProviders {
             .await
     }
 
-    pub(crate) async fn list_orchestrator_for_turn(
+    pub(crate) async fn list_cloud_for_turn(
         &self,
         query: SkillListQuery,
     ) -> SkillProviderResult<SkillCatalog> {
@@ -122,7 +127,7 @@ impl SkillProviders {
         for source in self
             .sources
             .iter()
-            .filter(|source| source.kind == SkillSourceKind::Orchestrator)
+            .filter(|source| source.kind == SkillSourceKind::Cloud)
         {
             let source_catalog = source.provider.list(query.clone()).await.map_err(|err| {
                 SkillProviderError::new(format!(
@@ -138,6 +143,11 @@ impl SkillProviders {
 
     pub(crate) async fn list_executor_for_turn(&self, query: SkillListQuery) -> SkillCatalog {
         self.list_matching(&query, |source| source.kind == SkillSourceKind::Executor)
+            .await
+    }
+
+    pub(crate) async fn list_host_for_turn(&self, query: SkillListQuery) -> SkillCatalog {
+        self.list_matching(&query, |source| source.kind == SkillSourceKind::Host)
             .await
     }
 
@@ -161,7 +171,7 @@ impl SkillProviders {
 
     pub(crate) async fn read(
         &self,
-        request: SkillReadRequest,
+        request: SkillReadRequest<'_>,
     ) -> Result<SkillReadResult, SkillProviderError> {
         let mut last_error = None;
         for source in self

@@ -1,4 +1,3 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use codex_protocol::models::ManagedFileSystemPermissions;
 use codex_protocol::models::PermissionProfile;
 use codex_protocol::permissions::FileSystemAccessMode;
@@ -35,13 +34,9 @@ impl FileSystemContext {
         permission_profile: &PermissionProfile,
         workspace_roots: &[PathUri],
     ) -> Self {
-        let materialized_workspace_roots = workspace_roots
-            .iter()
-            .filter_map(|workspace_root| workspace_root.to_abs_path().ok())
-            .collect::<Vec<_>>();
         let permission_profile = permission_profile
             .clone()
-            .materialize_project_roots_with_workspace_roots(&materialized_workspace_roots);
+            .materialize_project_roots_with_path_uris(workspace_roots);
         let workspace_roots = workspace_roots
             .iter()
             .map(PathUri::inferred_native_path_string)
@@ -155,7 +150,7 @@ fn render_file_system_entry(rendered: &mut String, entry: &FileSystemSandboxEntr
     rendered.push_str("\">");
     match &entry.path {
         FileSystemPath::Path { path } => {
-            push_text_element(rendered, "path", path.to_string_lossy().as_ref());
+            push_text_element(rendered, "path", &path.inferred_native_path_string());
         }
         FileSystemPath::GlobPattern { pattern } => {
             push_text_element(rendered, "glob", pattern);
@@ -216,26 +211,22 @@ pub(crate) fn push_xml_escaped_text(rendered: &mut String, value: &str) {
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub(crate) struct NetworkContext {
-    enabled: bool,
     allowed_domains: Vec<String>,
     denied_domains: Vec<String>,
 }
 
 impl NetworkContext {
-    pub(crate) fn new(enabled: bool, allowed: Vec<String>, denied: Vec<String>) -> Self {
+    pub(crate) fn new(allowed_domains: Vec<String>, denied_domains: Vec<String>) -> Self {
         Self {
-            enabled,
-            allowed_domains: allowed,
-            denied_domains: denied,
+            allowed_domains,
+            denied_domains,
         }
     }
 
     pub(super) fn render(&self) -> String {
-        let mut rendered = format!("<network enabled=\"{}\">", self.enabled);
-        if self.enabled {
-            Self::push_rendered_domain_element(&mut rendered, "allowed", &self.allowed_domains);
-            Self::push_rendered_domain_element(&mut rendered, "denied", &self.denied_domains);
-        }
+        let mut rendered = "<network enabled=\"true\">".to_string();
+        Self::push_rendered_domain_element(&mut rendered, "allowed", &self.allowed_domains);
+        Self::push_rendered_domain_element(&mut rendered, "denied", &self.denied_domains);
         rendered.push_str("</network>");
         rendered
     }

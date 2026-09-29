@@ -1,0 +1,84 @@
+---
+source: tui/src/streaming/mermaid_tests.rs
+expression: "stages.join(\"\\n\\n---\\n\\n\")"
+---
+Before.
+
+
+---
+
+Before.
+
+flowchart LR
+A[Request] --> B[Reply]
+
+---
+
+Before.
+
+┌─────────┐  ┌───────┐
+│ Request │  │ Reply │
+└┬────────┘  └┬──────┘
+ │            ▲
+ │            │
+ │            │
+ │            │
+ └────────────┘
+
+---
+
+Before.
+
+┌─────────┐  ┌───────┐
+│ Request │  │ Reply │
+└┬────────┘  └┬──────┘
+ │            ▲
+ │            │
+ │            │
+ │            │
+ └────────────┘
+
+After.
+
+---
+
+Before.
+
+This
+Mermaid
+diagram
+doesn't
+fit the
+current
+terminal
+width.
+flowchart LR
+A[Request] --> B[Reply]
+
+After.
+
+---
+
+Before.
+
+```mermaid
+flowchart LR
+A[Request] --> B[Reply]
+```
+
+After.
+
+---
+
+Before.
+
+┌─────────┐  ┌───────┐
+│ Request │  │ Reply │
+└┬────────┘  └┬──────┘
+ │            ▲
+ │            │
+ │            │
+ │            │
+ └────────────┘
+
+After.

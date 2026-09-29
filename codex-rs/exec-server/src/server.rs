@@ -1,24 +1,44 @@
+mod build_identity;
 mod file_system_handler;
 mod handler;
 mod process_handler;
 mod processor;
 mod registry;
+mod release_version;
+mod request_dispatcher;
 mod session_registry;
 mod transport;
 
+#[cfg(all(test, unix))]
+#[path = "server/process_otel_tests.rs"]
+mod process_otel_tests;
+
 pub(crate) use handler::ExecServerHandler;
 pub(crate) use processor::ConnectionProcessor;
+pub use request_dispatcher::ConcurrentRequestLimit;
+pub use request_dispatcher::RequestDispatchMode;
 pub use transport::DEFAULT_LISTEN_URL;
 pub use transport::ExecServerListenUrlParseError;
 
 use crate::ExecServerRuntimePaths;
 use crate::ExecServerTelemetry;
+use codex_http_client::HttpClientFactory;
+use codex_websocket_auth::WebsocketAuthSettings;
 
 pub async fn run_main(
     listen_url: &str,
     runtime_paths: ExecServerRuntimePaths,
+    http_client_factory: HttpClientFactory,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    run_main_with_telemetry(listen_url, runtime_paths, ExecServerTelemetry::default()).await
+    run_main_with_telemetry(
+        listen_url,
+        runtime_paths,
+        ExecServerTelemetry::default(),
+        http_client_factory,
+        RequestDispatchMode::Inline,
+        WebsocketAuthSettings::default(),
+    )
+    .await
 }
 
 #[tracing::instrument(
@@ -30,12 +50,26 @@ pub async fn run_main_with_telemetry(
     listen_url: &str,
     runtime_paths: ExecServerRuntimePaths,
     telemetry: ExecServerTelemetry,
+    http_client_factory: HttpClientFactory,
+    request_dispatch_mode: RequestDispatchMode,
+    websocket_auth: WebsocketAuthSettings,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    transport::run_transport(listen_url, runtime_paths, telemetry).await
+    std::sync::LazyLock::force(&build_identity::PROVIDER_ID);
+    transport::run_transport(
+        listen_url,
+        runtime_paths,
+        telemetry,
+        http_client_factory,
+        request_dispatch_mode,
+        websocket_auth,
+    )
+    .await
 }
 
 #[cfg(test)]
 mod tests {
+    use codex_http_client::HttpClientFactory;
+    use codex_http_client::OutboundProxyPolicy;
     use opentelemetry::trace::TracerProvider as _;
     use opentelemetry_sdk::trace::InMemorySpanExporter;
     use opentelemetry_sdk::trace::SdkTracerProvider;
@@ -65,6 +99,9 @@ mod tests {
                 )
                 .expect("runtime paths"),
                 ExecServerTelemetry::default(),
+                HttpClientFactory::new(OutboundProxyPolicy::ReqwestDefault),
+                super::RequestDispatchMode::Inline,
+                codex_websocket_auth::WebsocketAuthSettings::default(),
             )
             .await
             .expect_err("invalid listen URL should fail");

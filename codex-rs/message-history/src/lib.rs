@@ -1,4 +1,3 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 //! Persistence layer for the global, append-only *message history* file.
 //!
 //! The history is stored at `~/.codex/history.jsonl` with **one JSON object per
@@ -37,6 +36,12 @@ use tokio::io::AsyncReadExt;
 
 use codex_config::types::History;
 use codex_config::types::HistoryPersistence;
+
+mod batch;
+pub use batch::HistoryBatch;
+pub use batch::HistoryBatchCursor;
+pub use batch::HistoryBatchEntry;
+pub use batch::lookup_batch;
 
 #[cfg(unix)]
 use std::os::unix::fs::OpenOptionsExt;
@@ -434,5 +439,8 @@ fn log_identity(_metadata: &std::fs::Metadata) -> Option<u64> {
     None
 }
 
+#[cfg(test)]
+#[path = "batch_tests.rs"]
+mod batch_tests;
 #[cfg(test)]
 mod tests;

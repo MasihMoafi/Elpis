@@ -12,7 +12,19 @@ includeHome?: boolean,
  */
 cwds?: Array<string> | null,
 /**
- * Optional import-source selector. Missing or unrecognized values use the default source for
- * backwards compatibility.
+ * Maximum age in days for detected sessions. Missing values use the default limit.
  */
-source?: string | null, };
+maxSessionAgeDays?: number | null,
+/**
+ * Maximum number of sessions to detect. Missing values use the default limit.
+ */
+maxSessions?: number | null,
+/**
+ * Deprecated field retained for compatibility. This field is ignored; use `migrationSource`
+ * to select the migration source.
+ */
+source?: string | null,
+/**
+ * Optional migration-source selector. Missing or unrecognized values use the default source.
+ */
+migrationSource?: string | null, };

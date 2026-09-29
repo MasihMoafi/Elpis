@@ -1,4 +1,3 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 //! Windows named-pipe transport for the IDE context IPC client.
 
 use std::io;

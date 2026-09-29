@@ -1,4 +1,3 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use std::collections::HashMap;
 use std::os::fd::RawFd;
 use std::path::PathBuf;
@@ -80,12 +79,6 @@ pub enum EscalateAction {
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct SuperExecMessage {
     pub fds: Vec<RawFd>,
-}
-
-/// The client sends this to the server to forward a signal.
-#[derive(Clone, Serialize, Deserialize, Debug)]
-pub struct SuperExecSignal {
-    pub signal: i32,
 }
 
 /// The server responds when the exec()'d command has exited.

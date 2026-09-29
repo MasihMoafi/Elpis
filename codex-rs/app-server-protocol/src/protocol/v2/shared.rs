@@ -1,3 +1,5 @@
+use crate::JsonSchema;
+use crate::TS;
 use codex_experimental_api_macros::ExperimentalApi;
 use codex_protocol::config_types::ApprovalsReviewer as CoreApprovalsReviewer;
 use codex_protocol::config_types::SandboxMode as CoreSandboxMode;
@@ -5,16 +7,20 @@ use codex_protocol::protocol::AskForApproval as CoreAskForApproval;
 use codex_protocol::protocol::CodexErrorInfo as CoreCodexErrorInfo;
 use codex_protocol::protocol::GranularApprovalConfig as CoreGranularApprovalConfig;
 use codex_protocol::protocol::NonSteerableTurnKind as CoreNonSteerableTurnKind;
-use schemars::JsonSchema;
+#[cfg(test)]
 use schemars::r#gen::SchemaGenerator;
+#[cfg(test)]
 use schemars::schema::InstanceType;
+#[cfg(test)]
 use schemars::schema::Metadata;
+#[cfg(test)]
 use schemars::schema::Schema;
+#[cfg(test)]
 use schemars::schema::SchemaObject;
 use serde::Deserialize;
 use serde::Serialize;
+#[cfg(test)]
 use serde_json::Value as JsonValue;
-use ts_rs::TS;
 
 // Macro to declare a camelCased API v2 enum mirroring a core enum which
 // tends to use either snake_case or kebab-case.
@@ -59,7 +65,6 @@ pub(super) const fn default_enabled() -> bool {
 pub enum NonSteerableTurnKind {
     Review,
     Compact,
-    Prune,
 }
 
 /// This translation layer make sure that we expose codex error code in camel case.
@@ -73,8 +78,11 @@ pub enum CodexErrorInfo {
     ContextWindowExceeded,
     SessionBudgetExceeded,
     UsageLimitExceeded,
+    RateLimitExceeded,
+    FlexUnavailable,
     ServerOverloaded,
     CyberPolicy,
+    MisalignmentPolicyViolation,
     HttpConnectionFailed {
         #[serde(rename = "httpStatusCode")]
         #[ts(rename = "httpStatusCode")]
@@ -119,8 +127,14 @@ impl From<CoreCodexErrorInfo> for CodexErrorInfo {
             CoreCodexErrorInfo::ContextWindowExceeded => CodexErrorInfo::ContextWindowExceeded,
             CoreCodexErrorInfo::SessionBudgetExceeded => CodexErrorInfo::SessionBudgetExceeded,
             CoreCodexErrorInfo::UsageLimitExceeded => CodexErrorInfo::UsageLimitExceeded,
+            CoreCodexErrorInfo::RateLimitExceeded => CodexErrorInfo::RateLimitExceeded,
+            CoreCodexErrorInfo::FlexUnavailable => CodexErrorInfo::FlexUnavailable,
             CoreCodexErrorInfo::ServerOverloaded => CodexErrorInfo::ServerOverloaded,
             CoreCodexErrorInfo::CyberPolicy => CodexErrorInfo::CyberPolicy,
+            CoreCodexErrorInfo::BioPolicy => CodexErrorInfo::Other,
+            CoreCodexErrorInfo::MisalignmentPolicyViolation => {
+                CodexErrorInfo::MisalignmentPolicyViolation
+            }
             CoreCodexErrorInfo::HttpConnectionFailed { http_status_code } => {
                 CodexErrorInfo::HttpConnectionFailed { http_status_code }
             }
@@ -130,6 +144,7 @@ impl From<CoreCodexErrorInfo> for CodexErrorInfo {
             CoreCodexErrorInfo::InternalServerError => CodexErrorInfo::InternalServerError,
             CoreCodexErrorInfo::Unauthorized => CodexErrorInfo::Unauthorized,
             CoreCodexErrorInfo::BadRequest => CodexErrorInfo::BadRequest,
+            CoreCodexErrorInfo::InvalidPrompt => CodexErrorInfo::Other,
             CoreCodexErrorInfo::ThreadRollbackFailed => CodexErrorInfo::ThreadRollbackFailed,
             CoreCodexErrorInfo::SandboxError => CodexErrorInfo::SandboxError,
             CoreCodexErrorInfo::ResponseStreamDisconnected { http_status_code } => {
@@ -153,7 +168,6 @@ impl From<CoreNonSteerableTurnKind> for NonSteerableTurnKind {
         match value {
             CoreNonSteerableTurnKind::Review => Self::Review,
             CoreNonSteerableTurnKind::Compact => Self::Compact,
-            CoreNonSteerableTurnKind::Prune => Self::Prune,
         }
     }
 }
@@ -238,6 +252,7 @@ pub enum ApprovalsReviewer {
     AutoReview,
 }
 
+#[cfg(test)]
 impl JsonSchema for ApprovalsReviewer {
     fn schema_name() -> String {
         "ApprovalsReviewer".to_string()
@@ -251,6 +266,7 @@ impl JsonSchema for ApprovalsReviewer {
     }
 }
 
+#[cfg(test)]
 fn string_enum_schema_with_description(values: &[&str], description: &str) -> Schema {
     let mut schema = SchemaObject {
         instance_type: Some(InstanceType::String.into()),

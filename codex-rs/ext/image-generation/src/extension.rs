@@ -1,4 +1,3 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use std::sync::Arc;
 
 use codex_core::config::Config;
@@ -7,10 +6,12 @@ use codex_extension_api::ExtensionData;
 use codex_extension_api::ExtensionFuture;
 use codex_extension_api::ExtensionRegistryBuilder;
 use codex_extension_api::ThreadLifecycleContributor;
+use codex_extension_api::ThreadOriginator;
 use codex_extension_api::ThreadStartInput;
 use codex_extension_api::ToolCall;
 use codex_extension_api::ToolContributor;
 use codex_extension_api::ToolExecutor;
+use codex_http_client::HttpClientFactory;
 use codex_login::AuthManager;
 use codex_model_provider::create_model_provider;
 use codex_model_provider_info::ModelProviderInfo;
@@ -30,6 +31,7 @@ type SaveRootResolver = dyn Fn(&Config) -> Option<AbsolutePathBuf> + Send + Sync
 #[derive(Clone)]
 struct ImageGenerationExtensionConfig {
     available: bool,
+    http_client_factory: HttpClientFactory,
     provider: ModelProviderInfo,
     save_root: Option<AbsolutePathBuf>,
 }
@@ -41,6 +43,7 @@ impl ImageGenerationExtensionConfig {
             available: config.model_provider.is_openai()
                 || config.model_provider.requires_openai_auth
                 || config.model_provider.uses_openai_actor_authorization(),
+            http_client_factory: config.http_client_factory(),
             provider: config.model_provider.clone(),
             save_root: resolve_save_root(config),
         }
@@ -86,7 +89,7 @@ impl ToolContributor for ImageGenerationExtension {
         &self,
         _session_store: &ExtensionData,
         thread_store: &ExtensionData,
-    ) -> Vec<Arc<dyn ToolExecutor<ToolCall>>> {
+    ) -> Vec<Arc<dyn for<'call> ToolExecutor<ToolCall<'call>>>> {
         let Some(config) = thread_store.get::<ImageGenerationExtensionConfig>() else {
             return Vec::new();
         };
@@ -95,10 +98,13 @@ impl ToolContributor for ImageGenerationExtension {
         }
 
         vec![Arc::new(ImageGenerationTool::new(
-            CodexImagesBackend::new(create_model_provider(
-                config.provider.clone(),
-                Some(self.auth_manager.clone()),
-            )),
+            CodexImagesBackend::new(
+                create_model_provider(config.provider.clone(), Some(self.auth_manager.clone())),
+                config.http_client_factory.clone(),
+                thread_store
+                    .get::<ThreadOriginator>()
+                    .map(|originator| originator.0.clone()),
+            ),
             config.save_root.clone(),
             thread_store.level_id().to_string(),
         ))]

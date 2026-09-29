@@ -1,4 +1,3 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 //! Hot-path helpers for recording upstream remote compaction attempts.
 //!
 //! Remote compaction is a model-facing request with a different semantic role
@@ -114,6 +113,11 @@ impl CompactionTraceContext {
                 provider_name,
             }),
         }
+    }
+
+    /// Returns whether this context records compaction traces.
+    pub fn is_enabled(&self) -> bool {
+        matches!(self.state, CompactionTraceContextState::Enabled(_))
     }
 
     /// Starts a new upstream attempt and records the exact compact endpoint request.

@@ -1,29 +1,31 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use super::ApprovalsReviewer;
 use super::AskForApproval;
 use super::SandboxPolicy;
 use super::Turn;
+use crate::JsonSchema;
+use crate::TS;
 use codex_experimental_api_macros::ExperimentalApi;
 use codex_protocol::config_types::CollaborationMode;
 use codex_protocol::config_types::MultiAgentMode;
 use codex_protocol::config_types::Personality;
 use codex_protocol::config_types::ReasoningSummary;
+use codex_protocol::models::FunctionCallOutputBody;
 use codex_protocol::models::ImageDetail;
+use codex_protocol::models::ImageReference as CoreImageReference;
 use codex_protocol::openai_models::ReasoningEffort;
 use codex_protocol::plan_tool::PlanItemArg as CorePlanItemArg;
 use codex_protocol::plan_tool::StepStatus as CorePlanStepStatus;
+use codex_protocol::turn_input::CyberAccessProgram as CoreCyberAccessProgram;
 use codex_protocol::user_input::ByteRange as CoreByteRange;
 use codex_protocol::user_input::TextElement as CoreTextElement;
 use codex_protocol::user_input::UserInput as CoreUserInput;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use codex_utils_path_uri::LegacyAppPathString;
-use schemars::JsonSchema;
 use serde::Deserialize;
 use serde::Serialize;
 use serde_json::Value as JsonValue;
 use std::collections::HashMap;
 use std::path::PathBuf;
-use ts_rs::TS;
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]
@@ -36,6 +38,58 @@ pub enum TurnStatus {
 }
 
 // Turn APIs
+/// Experimental settings changes for one running turn, not future turns.
+/// Unsupported fields are rejected rather than silently ignored.
+/// Any live task kind may accept publication. Child sessions and consumers of
+/// frozen initial settings are unchanged.
+#[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[ts(export_to = "v2/")]
+pub struct TurnSettingsUpdateParams {
+    pub thread_id: String,
+    pub turn_id: String,
+    /// Changes the active turn's reviewer without changing future thread settings.
+    /// Already captured steps and pending approvals retain their original reviewer.
+    #[ts(optional = nullable)]
+    pub approvals_reviewer: Option<ApprovalsReviewer>,
+    /// Omission or `null` leaves the model unchanged.
+    #[ts(optional = nullable)]
+    pub model: Option<String>,
+    /// Omission or `null` leaves the effort unchanged.
+    #[ts(optional = nullable)]
+    pub effort: Option<ReasoningEffort>,
+    /// Omission or `null` leaves the summary preference unchanged.
+    #[ts(optional = nullable)]
+    pub summary: Option<ReasoningSummary>,
+    /// `null` clears the requested tier; omission leaves it unchanged.
+    #[serde(
+        default,
+        deserialize_with = "crate::protocol::serde_helpers::deserialize_double_option",
+        serialize_with = "crate::protocol::serde_helpers::serialize_double_option",
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[ts(optional = nullable)]
+    pub service_tier: Option<Option<String>>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub struct TurnSettingsUpdateResponse {
+    pub status: TurnSettingsUpdateStatus,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase", export_to = "v2/")]
+pub enum TurnSettingsUpdateStatus {
+    /// Published for subsequent captures, even if the values were unchanged.
+    /// Already captured steps are unchanged; a later inference is not guaranteed.
+    Applied,
+    /// No matching live task remained available for publication.
+    TargetUnavailable,
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS, ExperimentalApi)]
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "v2/")]
@@ -64,6 +118,47 @@ pub struct AdditionalContextEntry {
     pub kind: AdditionalContextKind,
 }
 
+/// Requested cyber treatment for a ChatGPT-authenticated Codex turn.
+/// Authorization and model-tier restrictions remain server-owned.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub enum CyberAccessProgram {
+    Standard,
+    DaybreakBlue,
+    DaybreakRed,
+}
+
+impl From<CyberAccessProgram> for CoreCyberAccessProgram {
+    fn from(value: CyberAccessProgram) -> Self {
+        match value {
+            CyberAccessProgram::Standard => Self::Standard,
+            CyberAccessProgram::DaybreakBlue => Self::DaybreakBlue,
+            CyberAccessProgram::DaybreakRed => Self::DaybreakRed,
+        }
+    }
+}
+
+impl From<CoreCyberAccessProgram> for CyberAccessProgram {
+    fn from(value: CoreCyberAccessProgram) -> Self {
+        match value {
+            CoreCyberAccessProgram::Standard => Self::Standard,
+            CoreCyberAccessProgram::DaybreakBlue => Self::DaybreakBlue,
+            CoreCyberAccessProgram::DaybreakRed => Self::DaybreakRed,
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub struct TurnToolOutput {
+    pub name: String,
+    pub namespace: Option<String>,
+    pub output: FunctionCallOutputBody,
+}
+
 #[derive(
     Serialize, Deserialize, Debug, Default, Clone, PartialEq, JsonSchema, TS, ExperimentalApi,
 )]
@@ -71,9 +166,19 @@ pub struct AdditionalContextEntry {
 #[ts(export_to = "v2/")]
 pub struct TurnStartParams {
     pub thread_id: String,
+    /// Replace this thread's disabled plugin IDs.
+    /// Omitted/null preserves the list; [] clears it.
+    #[ts(optional = nullable)]
+    pub disabled_plugin_ids: Option<Vec<String>>,
     #[ts(optional = nullable)]
     pub client_user_message_id: Option<String>,
     pub input: Vec<UserInput>,
+    /// Optional source classification for the caller that starts this turn.
+    /// Ignored when this request steers an already-active turn.
+    #[ts(optional = nullable)]
+    pub turn_trigger: Option<String>,
+    #[ts(optional = nullable)]
+    pub tool_output: Option<Box<TurnToolOutput>>,
     /// Optional metadata to enrich Codex's ResponsesAPI turn metadata.
     ///
     /// Entries are flattened into the JSON string sent as
@@ -132,13 +237,19 @@ pub struct TurnStartParams {
     )]
     #[ts(optional = nullable)]
     pub service_tier: Option<Option<String>>,
+    /// Override the service tier only when this request starts a new turn.
+    /// Use "default" for standard speed. Omitted or null inherits the thread's tier.
+    /// Does not change the thread's tier or a turn being steered.
+    #[ts(optional = nullable)]
+    pub service_tier_for_turn: Option<String>,
     /// Override the reasoning effort for this turn and subsequent turns.
     #[ts(optional = nullable)]
     pub effort: Option<ReasoningEffort>,
     /// Override the reasoning summary for this turn and subsequent turns.
     #[ts(optional = nullable)]
     pub summary: Option<ReasoningSummary>,
-    /// Override the personality for this turn and subsequent turns.
+    /// @deprecated `friendly` and `pragmatic` no longer select a style.
+    /// Changing this does not rewrite the thread's existing instructions.
     #[ts(optional = nullable)]
     pub personality: Option<Personality>,
     /// Optional JSON Schema used to constrain the final assistant message for
@@ -159,6 +270,12 @@ pub struct TurnStartParams {
     #[experimental("turn/start.multiAgentMode")]
     #[ts(optional = nullable)]
     pub multi_agent_mode: Option<MultiAgentMode>,
+
+    /// EXPERIMENTAL - Request a workspace-authorized cyber program for this
+    /// turn. Omission preserves automatic behavior. This does not grant access.
+    #[experimental("turn/start.cyberAccessProgram")]
+    #[ts(optional = nullable)]
+    pub cyber_access_program: Option<CyberAccessProgram>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
@@ -287,6 +404,21 @@ impl From<TextElement> for CoreTextElement {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[serde(untagged)]
+#[ts(untagged)]
+#[ts(export_to = "v2/")]
+pub enum ImageReference {
+    Inline {
+        url: String,
+    },
+    File {
+        #[serde(rename = "fileId")]
+        #[ts(rename = "fileId")]
+        file_id: String,
+    },
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
 #[serde(tag = "type", rename_all = "camelCase")]
 #[ts(tag = "type")]
 #[ts(export_to = "v2/")]
@@ -298,15 +430,22 @@ pub enum UserInput {
         text_elements: Vec<TextElement>,
     },
     Image {
+        #[serde(flatten)]
+        image: ImageReference,
         #[serde(default)]
         #[ts(optional)]
         detail: Option<ImageDetail>,
-        url: String,
     },
     LocalImage {
         #[serde(default)]
         #[ts(optional)]
         detail: Option<ImageDetail>,
+        path: PathBuf,
+    },
+    Audio {
+        url: String,
+    },
+    LocalAudio {
         path: PathBuf,
     },
     Skill {
@@ -329,11 +468,16 @@ impl UserInput {
                 text,
                 text_elements: text_elements.into_iter().map(Into::into).collect(),
             },
-            UserInput::Image { url, detail } => CoreUserInput::Image {
-                image_url: url,
+            UserInput::Image { image, detail } => CoreUserInput::Image {
+                image: match image {
+                    ImageReference::Inline { url } => CoreImageReference::Inline { image_url: url },
+                    ImageReference::File { file_id } => CoreImageReference::File { file_id },
+                },
                 detail,
             },
             UserInput::LocalImage { path, detail } => CoreUserInput::LocalImage { path, detail },
+            UserInput::Audio { url } => CoreUserInput::Audio { audio_url: url },
+            UserInput::LocalAudio { path } => CoreUserInput::LocalAudio { path },
             UserInput::Skill { name, path } => CoreUserInput::Skill { name, path },
             UserInput::Mention { name, path } => CoreUserInput::Mention { name, path },
         }
@@ -350,11 +494,18 @@ impl From<CoreUserInput> for UserInput {
                 text,
                 text_elements: text_elements.into_iter().map(Into::into).collect(),
             },
-            CoreUserInput::Image { image_url, detail } => UserInput::Image {
-                url: image_url,
+            CoreUserInput::Image { image, detail } => UserInput::Image {
+                image: match image {
+                    CoreImageReference::Inline { image_url } => {
+                        ImageReference::Inline { url: image_url }
+                    }
+                    CoreImageReference::File { file_id } => ImageReference::File { file_id },
+                },
                 detail,
             },
             CoreUserInput::LocalImage { path, detail } => UserInput::LocalImage { path, detail },
+            CoreUserInput::Audio { audio_url } => UserInput::Audio { url: audio_url },
+            CoreUserInput::LocalAudio { path } => UserInput::LocalAudio { path },
             CoreUserInput::Skill { name, path } => UserInput::Skill { name, path },
             CoreUserInput::Mention { name, path } => UserInput::Mention { name, path },
             _ => unreachable!("unsupported user input variant"),
@@ -368,6 +519,8 @@ impl UserInput {
             UserInput::Text { text, .. } => text.chars().count(),
             UserInput::Image { .. }
             | UserInput::LocalImage { .. }
+            | UserInput::Audio { .. }
+            | UserInput::LocalAudio { .. }
             | UserInput::Skill { .. }
             | UserInput::Mention { .. } => 0,
         }

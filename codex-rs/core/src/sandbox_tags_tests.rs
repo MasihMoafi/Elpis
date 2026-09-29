@@ -1,4 +1,3 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use super::permission_profile_policy_tag;
 use super::permission_profile_sandbox_tag;
 use codex_protocol::config_types::WindowsSandboxLevel;
@@ -9,6 +8,7 @@ use codex_protocol::permissions::FileSystemPath;
 use codex_protocol::permissions::FileSystemSandboxEntry;
 use codex_protocol::permissions::FileSystemSandboxKind;
 use codex_protocol::permissions::FileSystemSandboxPolicy;
+use codex_protocol::permissions::FileSystemSpecialPath;
 use codex_protocol::permissions::NetworkSandboxPolicy;
 use codex_sandboxing::SandboxType;
 use codex_sandboxing::get_platform_sandbox;
@@ -99,6 +99,7 @@ fn root_write_managed_profile_with_enabled_network_is_untagged() {
                     value: codex_protocol::permissions::FileSystemSpecialPath::Root,
                 },
                 access: FileSystemAccessMode::Write,
+                missing_path_behavior: None,
             }],
             glob_scan_max_depth: None,
         },
@@ -146,9 +147,10 @@ fn profile_policy_tag_reports_closest_legacy_mode() {
             glob_scan_max_depth: None,
             entries: vec![FileSystemSandboxEntry {
                 path: FileSystemPath::Path {
-                    path: writable_root,
+                    path: writable_root.into(),
                 },
                 access: FileSystemAccessMode::Write,
+                missing_path_behavior: None,
             }],
         },
         NetworkSandboxPolicy::Restricted,
@@ -158,4 +160,49 @@ fn profile_policy_tag_reports_closest_legacy_mode() {
         permission_profile_policy_tag(&profile, cwd.as_path()),
         "workspace-write"
     );
+}
+
+#[test]
+fn policy_labels_follow_configured_roots_and_deny_rules() {
+    let workspace = tempfile::tempdir().expect("workspace");
+    let cwd = workspace.path().join("not-created");
+    let denied_root = AbsolutePathBuf::from_absolute_path(&cwd).expect("absolute root");
+    let project_root = FileSystemSandboxEntry::new(
+        FileSystemPath::Special {
+            value: FileSystemSpecialPath::ProjectRoots { subpath: None },
+        },
+        FileSystemAccessMode::Write,
+    );
+    let cases = [
+        (vec![project_root.clone()], "workspace-write"),
+        (
+            vec![
+                project_root.clone(),
+                FileSystemSandboxEntry::new(denied_root.into(), FileSystemAccessMode::Deny),
+            ],
+            "read-only",
+        ),
+        (
+            vec![
+                project_root,
+                FileSystemSandboxEntry::new(
+                    FileSystemPath::Special {
+                        value: FileSystemSpecialPath::ProjectRoots {
+                            subpath: Some("private".to_string()),
+                        },
+                    },
+                    FileSystemAccessMode::Deny,
+                ),
+            ],
+            "workspace-write",
+        ),
+    ];
+
+    for (entries, expected) in cases {
+        let profile = PermissionProfile::from_runtime_permissions(
+            &FileSystemSandboxPolicy::restricted(entries),
+            NetworkSandboxPolicy::Restricted,
+        );
+        assert_eq!(permission_profile_policy_tag(&profile, &cwd), expected);
+    }
 }

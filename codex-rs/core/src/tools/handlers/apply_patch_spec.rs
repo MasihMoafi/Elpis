@@ -1,9 +1,8 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use codex_tools::FreeformTool;
 use codex_tools::FreeformToolFormat;
 use codex_tools::ToolSpec;
 
-const APPLY_PATCH_LARK_GRAMMAR: &str = include_str!("apply_patch.lark");
+const APPLY_PATCH_LARK_GRAMMAR: &str = include_str!("../../../assets/tools/apply_patch.lark");
 
 /// Returns a custom tool that can be used to edit files. Well-suited for GPT-5 models
 /// https://platform.openai.com/docs/guides/function-calling#custom-tools
@@ -18,7 +17,8 @@ pub fn create_apply_patch_freeform_tool(include_environment_id: bool) -> ToolSpe
     };
     ToolSpec::Freeform(FreeformTool {
         name: "apply_patch".to_string(),
-        description: "Use the `apply_patch` tool to edit files. This is a FREEFORM tool, so do not wrap the patch in JSON.".to_string(),
+        description: "The `apply_patch` tool can be used to edit files. This is a FREEFORM tool, so do not wrap the patch in JSON.".to_string(),
+        defer_loading: None,
         format: FreeformToolFormat {
             r#type: "grammar".to_string(),
             syntax: "lark".to_string(),

@@ -3,8 +3,9 @@
 use super::HistoryCell;
 use super::HistoryRenderMode;
 use std::cell::Cell;
+use std::sync::Arc;
 
-/// Identifies every input that can change an active cell's viewport height.
+/// Identifies the render state that determines an active cell's viewport height.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) struct ActiveCellLayoutCacheKey {
     pub(super) cell_identity: usize,
@@ -14,7 +15,10 @@ pub(super) struct ActiveCellLayoutCacheKey {
     pub(super) syntax_theme_revision: u64,
 }
 
-/// Retains semantic and wrapped heights independently for one active cell.
+/// Retains the active cell's semantic and actual wrapped heights independently.
+///
+/// History cells may override their desired height, so it cannot be substituted for the rendered
+/// row count used to keep overflowing content anchored to the bottom of the viewport.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) struct ActiveCellLayoutCache {
     pub(super) key: ActiveCellLayoutCacheKey,
@@ -22,25 +26,32 @@ pub(super) struct ActiveCellLayoutCache {
     pub(super) rendered_height: Option<usize>,
 }
 
+pub(super) struct StatusCopySource {
+    pub(super) handle: crate::status::StatusHistoryHandle,
+    pub(super) fields: Vec<(String, Arc<str>)>,
+}
+
 #[derive(Default)]
 pub(super) struct TranscriptState {
     pub(super) active_cell: Option<Box<dyn HistoryCell>>,
+    /// Shared retained rows for concurrently running dynamic tools, removed on completion.
+    pub(super) dynamic_calls:
+        std::collections::HashMap<String, crate::history_cell::DynamicToolCallCell>,
     /// Monotonic-ish counter used to invalidate transcript overlay caching.
     pub(super) active_cell_revision: u64,
-    /// One bounded entry shared by layout and paint across unchanged frames.
+    /// One bounded entry shared by layout and paint across unchanged active-cell frames.
     pub(super) active_cell_layout: Cell<Option<ActiveCellLayoutCache>>,
-    /// Raw markdown of the most recently completed agent response.
+    /// Markdown of the most recently completed agent message for whole-response copying.
     pub(super) last_agent_markdown: Option<String>,
-    /// Raw markdown of the prompt and response from the most recently completed exchange.
-    pub(super) last_exchange_markdown: Option<String>,
+    /// Original source of that response, before display sanitization, for exact block copying.
+    pub(super) last_agent_source: Option<String>,
+    /// Latest `/status` card and fields, retained across copying until a later turn or command.
+    pub(super) last_status_copy_targets: Option<StatusCopySource>,
+    pub(super) last_completed_agent_message: Option<(String, String)>,
     /// Raw markdown of the most recently completed proposed plan.
     pub(super) latest_proposed_plan_markdown: Option<String>,
     /// Whether this turn already produced a copyable response.
     pub(super) saw_copy_source_this_turn: bool,
-    /// Whether the next streamed assistant content should be preceded by a final message separator.
-    pub(super) needs_final_message_separator: bool,
-    /// Whether the current turn performed "work" (exec commands, MCP tool calls, patch applications).
-    pub(super) had_work_activity: bool,
     /// Whether the current turn emitted a plan update.
     pub(super) saw_plan_update_this_turn: bool,
     /// Whether the current turn emitted a proposed plan item that has not been superseded by a
@@ -78,22 +89,25 @@ impl TranscriptState {
         active_cell
     }
 
-    pub(super) fn record_agent_markdown(&mut self, markdown: String) {
+    pub(super) fn record_agent_markdown(&mut self, markdown: String, source: String) {
+        self.last_status_copy_targets = None;
         self.last_agent_markdown = Some(markdown);
+        self.last_agent_source = Some(source);
         self.saw_copy_source_this_turn = true;
     }
 
     pub(super) fn reset_copy_history(&mut self) {
+        self.last_status_copy_targets = None;
         self.last_agent_markdown = None;
-        self.last_exchange_markdown = None;
+        self.last_agent_source = None;
         self.saw_copy_source_this_turn = false;
     }
 
     pub(super) fn reset_turn_flags(&mut self) {
         self.saw_copy_source_this_turn = false;
+        self.last_completed_agent_message = None;
         self.saw_plan_update_this_turn = false;
         self.saw_plan_item_this_turn = false;
-        self.had_work_activity = false;
         self.latest_proposed_plan_markdown = None;
         self.plan_delta_buffer.clear();
         self.plan_item_active = false;

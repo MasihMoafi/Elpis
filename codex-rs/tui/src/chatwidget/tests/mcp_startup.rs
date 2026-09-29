@@ -1,4 +1,4 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
+use super::helpers::drain_insert_history_transcript as drain_insert_history;
 use super::*;
 use pretty_assertions::assert_eq;
 
@@ -71,6 +71,28 @@ async fn mcp_startup_ignores_status_for_other_thread() {
 }
 
 #[tokio::test]
+async fn mcp_apps_readiness_retries_an_in_flight_installed_mention_lookup() {
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    chat.thread_id = Some(ThreadId::new());
+    set_chatgpt_auth(&mut chat);
+    chat.set_feature_enabled(Feature::Apps, /*enabled*/ true);
+
+    chat.refresh_connector_mentions(/*force_refresh*/ false);
+    chat.on_mcp_server_status_updated(McpServerStatusUpdatedNotification {
+        thread_id: None,
+        name: "codex_apps".to_string(),
+        status: McpServerStartupState::Ready,
+        error: None,
+        failure_reason: None,
+    });
+
+    assert_eq!(chat.connectors.mention_refresh_pending, Some(false));
+    let snapshot = crate::app_event::ConnectorsSnapshot { connectors: vec![] };
+    chat.on_connector_mentions_loaded(chat.connector_scope_generation(), Ok(snapshot));
+    assert!(chat.connectors.mention_refresh_in_flight);
+}
+
+#[tokio::test]
 async fn mcp_startup_dedupes_same_round_duplicate_failure_warning() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
     chat.show_welcome_banner = false;
@@ -113,6 +135,8 @@ async fn mcp_startup_header_booting_snapshot() {
 
     notify_mcp_status(&mut chat, "alpha", McpServerStartupState::Starting);
 
+    assert!(chat.bottom_pane.is_task_running());
+    assert!(!chat.bottom_pane.status_indicator_visible());
     let height = chat.desired_height(/*width*/ 80);
     let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(80, height))
         .expect("create terminal");
@@ -123,6 +147,55 @@ async fn mcp_startup_header_booting_snapshot() {
         "mcp_startup_header_booting",
         normalized_backend_snapshot(terminal.backend())
     );
+}
+
+#[tokio::test]
+async fn mcp_startup_updates_preserve_streaming_status_suppression() {
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    chat.set_mcp_startup_expected_servers(["alpha".into(), "beta".into()]);
+    handle_turn_started(&mut chat, "turn-1");
+    chat.on_agent_message_delta("Partial response\n".into());
+    chat.on_commit_tick();
+    assert!(!chat.bottom_pane.status_indicator_visible());
+
+    notify_mcp_status(&mut chat, "alpha", McpServerStartupState::Ready);
+    assert!(chat.bottom_pane.is_task_running());
+    assert!(!chat.bottom_pane.status_indicator_visible());
+}
+
+#[tokio::test]
+async fn mcp_startup_warning_identity_survives_resume_and_task_switch() {
+    use AppServerTurnStatus::Completed;
+    use AppServerTurnStatus::InProgress;
+    use ReplayKind::ResumeInitialMessages;
+    use ReplayKind::ThreadSnapshot;
+
+    for (replay_kind, status) in [
+        (ResumeInitialMessages, Completed),
+        (ResumeInitialMessages, InProgress),
+        (ThreadSnapshot, Completed),
+    ] {
+        let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+        chat.replay_thread_turns(
+            vec![app_server_turn(
+                "previous-turn",
+                status,
+                /*duration_ms*/ None,
+                /*error*/ None,
+            )],
+            replay_kind,
+        );
+        while rx.try_recv().is_ok() {}
+        chat.set_mcp_startup_expected_servers(["alpha".into()]);
+        notify_mcp_status_error(&mut chat, "alpha", "connection failed");
+        let mut compact_cells = Vec::new();
+        while let Ok(event) = rx.try_recv() {
+            if let AppEvent::InsertHistoryCell(cell) = event {
+                compact_cells.push(cell.as_any().is::<history_cell::StartupWarningsCell>());
+            }
+        }
+        assert_eq!(compact_cells, vec![true; 2]);
+    }
 }
 
 #[tokio::test]
@@ -140,7 +213,284 @@ async fn mcp_startup_complete_does_not_clear_running_task() {
 
     assert!(chat.bottom_pane.is_task_running());
     assert!(chat.bottom_pane.status_indicator_visible());
-    assert_eq!(chat.status_state.current_status.header, "Elpising…");
+    assert_eq!(chat.status_state.current_status.header, "Working");
+}
+
+#[tokio::test]
+async fn review_opens_during_mcp_startup() {
+    for dismiss_completion in [false, true] {
+        let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+        chat.show_welcome_banner = false;
+        chat.set_mcp_startup_expected_servers(["slow".to_string()]);
+        notify_mcp_status(&mut chat, "slow", McpServerStartupState::Starting);
+        chat.bottom_pane
+            .set_composer_text("/review".to_string(), Vec::new(), Vec::new());
+        chat.bottom_pane
+            .set_remote_image_urls(vec!["https://example.com/image.png".to_string()]);
+        if dismiss_completion {
+            chat.handle_key_event(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+        }
+
+        chat.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+
+        assert!(drain_insert_history(&mut rx).is_empty());
+        assert_eq!(chat.bottom_pane.composer_text(), "");
+        assert!(chat.bottom_pane.remote_image_urls().is_empty());
+        assert_chatwidget_snapshot!(
+            "review_during_mcp_startup",
+            render_bottom_popup(&chat, /*width*/ 80)
+        );
+    }
+}
+
+#[tokio::test]
+async fn inline_review_submits_during_mcp_startup() {
+    let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    chat.set_mcp_startup_expected_servers(["slow".to_string()]);
+    notify_mcp_status(&mut chat, "slow", McpServerStartupState::Starting);
+    chat.bottom_pane.set_composer_text(
+        "/review check regressions".to_string(),
+        Vec::new(),
+        Vec::new(),
+    );
+
+    chat.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+
+    assert_eq!(
+        op_rx.try_recv().expect("review command"),
+        Op::Review {
+            target: ReviewTarget::Custom {
+                instructions: "check regressions".to_string(),
+            }
+        }
+    );
+    assert!(drain_insert_history(&mut rx).is_empty());
+    assert_eq!(chat.bottom_pane.composer_text(), "");
+}
+
+#[tokio::test]
+async fn review_during_mcp_startup_preserves_draft_when_foreground_work_is_pending() {
+    for activity in ["turn", "review", "pending", "queued", "images"] {
+        for draft in ["/review", "/review check regressions"] {
+            let (mut chat, mut rx, mut op_rx) =
+                make_chatwidget_manual(/*model_override*/ None).await;
+            chat.set_mcp_startup_expected_servers(["slow".to_string()]);
+            notify_mcp_status(&mut chat, "slow", McpServerStartupState::Starting);
+            match activity {
+                "turn" => handle_turn_started(&mut chat, "turn-1"),
+                "review" => chat.review.is_review_mode = true,
+                "pending" => chat.input_queue.user_turn_pending_start = true,
+                "images" => chat.prepare_image_submission(
+                    "image prompt".into(),
+                    UserMessageHistoryRecord::UserMessageText,
+                    UserMessageSource::Prompt,
+                ),
+                "queued" => chat
+                    .input_queue
+                    .queued_user_messages
+                    .push_back(UserMessage::from("queued prompt".to_string()).into()),
+                _ => unreachable!(),
+            }
+            chat.bottom_pane
+                .set_composer_text(draft.to_string(), Vec::new(), Vec::new());
+            chat.bottom_pane
+                .set_remote_image_urls(vec!["https://example.com/image.png".to_string()]);
+
+            chat.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+
+            assert_eq!(chat.bottom_pane.composer_text(), draft);
+            assert_eq!(
+                chat.bottom_pane.remote_image_urls(),
+                vec!["https://example.com/image.png".to_string()]
+            );
+            let errors = drain_insert_history(&mut rx)
+                .iter()
+                .map(|cell| lines_to_single_string(cell))
+                .collect::<Vec<_>>();
+            assert_eq!(
+                errors,
+                vec!["■ '/review' is disabled while a task is in progress.\n".to_string()]
+            );
+            assert!(
+                !std::iter::from_fn(|| op_rx.try_recv().ok())
+                    .any(|op| matches!(op, Op::Review { .. } | Op::UserTurn { .. }))
+            );
+        }
+    }
+}
+
+#[tokio::test]
+async fn pending_mcp_startup_does_not_block_queued_follow_up() {
+    let (mut chat, _rx, mut op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    chat.set_mcp_startup_expected_servers(["slow".to_string()]);
+    notify_mcp_status(&mut chat, "slow", McpServerStartupState::Starting);
+    chat.thread_id = Some(ThreadId::new());
+    handle_turn_started(&mut chat, "turn-1");
+    chat.queue_user_message("queued follow-up".into());
+
+    handle_turn_completed(&mut chat, "turn-1", /*duration_ms*/ None);
+
+    assert!(chat.mcp_startup_status.is_some());
+    assert!(chat.bottom_pane.is_task_running());
+    assert!(chat.input_queue.queued_user_messages.is_empty());
+    assert_matches!(next_submit_op(&mut op_rx), Op::UserTurn { items, .. } if items == vec![
+        UserInput::Text {
+            text: "queued follow-up".to_string(),
+            text_elements: Vec::new(),
+        }
+    ]);
+
+    chat.finish_mcp_startup(Vec::new(), Vec::new());
+
+    assert!(chat.input_queue.user_turn_pending_start);
+}
+
+#[tokio::test]
+async fn pending_mcp_startup_dispatches_queued_slash_commands() {
+    let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    chat.empty_state_animation.borrow_mut().start_fresh();
+    chat.set_mcp_startup_expected_servers(["slow".to_string()]);
+    notify_mcp_status(&mut chat, "slow", McpServerStartupState::Starting);
+    chat.thread_id = Some(ThreadId::new());
+    chat.bottom_pane
+        .set_composer_text("/resume".to_string(), Vec::new(), Vec::new());
+
+    chat.handle_key_event(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
+
+    assert_matches!(rx.try_recv(), Ok(AppEvent::OpenResumePicker));
+    assert_no_submit_op(&mut op_rx);
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 48, /*height*/ 17,
+    );
+    let mut buffer = ratatui::buffer::Buffer::empty(area);
+    assert!(
+        chat.empty_state_animation
+            .borrow_mut()
+            .render_in(
+                area,
+                &mut buffer,
+                crate::empty_state_animation::Presentation::Animated,
+            )
+            .is_some()
+    );
+}
+
+#[tokio::test]
+async fn pending_mcp_startup_does_not_reject_queued_compaction() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    chat.set_mcp_startup_expected_servers(["slow".to_string()]);
+    notify_mcp_status(&mut chat, "slow", McpServerStartupState::Starting);
+    chat.thread_id = Some(ThreadId::new());
+    handle_turn_started(&mut chat, "turn-1");
+    chat.bottom_pane
+        .set_composer_text("/compact".to_string(), Vec::new(), Vec::new());
+    chat.handle_key_event(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
+
+    handle_turn_completed(&mut chat, "turn-1", /*duration_ms*/ None);
+
+    assert!(
+        std::iter::from_fn(|| rx.try_recv().ok())
+            .any(|event| matches!(event, AppEvent::CodexOp(Op::Compact)))
+    );
+}
+
+#[tokio::test]
+async fn pending_mcp_startup_does_not_drain_follow_up_before_review_starts() {
+    let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    chat.set_mcp_startup_expected_servers(["slow".to_string()]);
+    notify_mcp_status(&mut chat, "slow", McpServerStartupState::Starting);
+    chat.thread_id = Some(ThreadId::new());
+    handle_turn_started(&mut chat, "turn-1");
+    for message in ["/review", "queued follow-up"] {
+        chat.bottom_pane
+            .set_composer_text(message.to_string(), Vec::new(), Vec::new());
+        chat.handle_key_event(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
+    }
+    chat.bottom_pane
+        .set_composer_text("new draft".to_string(), Vec::new(), Vec::new());
+    handle_turn_completed(&mut chat, "turn-1", /*duration_ms*/ None);
+    assert_eq!(chat.bottom_pane.composer_text(), "new draft");
+
+    chat.handle_key_event(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
+    chat.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+
+    assert_eq!(chat.input_queue.queued_user_messages.len(), 1);
+    assert!(
+        std::iter::from_fn(|| rx.try_recv().ok())
+            .any(|event| { matches!(event, AppEvent::CodexOp(Op::Review { .. })) })
+    );
+    assert_no_submit_op(&mut op_rx);
+}
+
+#[tokio::test]
+async fn pending_mcp_startup_does_not_unblock_external_review() {
+    let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    chat.set_mcp_startup_expected_servers(["slow".to_string()]);
+    notify_mcp_status(&mut chat, "slow", McpServerStartupState::Starting);
+    chat.thread_id = Some(ThreadId::new());
+
+    handle_entered_review_mode(&mut chat, "current changes");
+    assert!(chat.bottom_pane.status_indicator_visible());
+    chat.queue_user_message("queued follow-up".into());
+
+    assert!(chat.review.is_review_mode);
+    assert!(!chat.turn_lifecycle.agent_turn_running);
+    assert_eq!(chat.input_queue.queued_user_messages.len(), 1);
+    assert_no_submit_op(&mut op_rx);
+
+    while rx.try_recv().is_ok() {}
+    chat.dispatch_command(crate::slash_command::SlashCommand::Fork);
+    assert_matches!(rx.try_recv(), Ok(AppEvent::InsertHistoryCell(_)));
+
+    chat.finish_mcp_startup(Vec::new(), Vec::new());
+    assert!(chat.bottom_pane.is_task_running());
+    assert!(chat.bottom_pane.status_indicator_visible());
+    assert_eq!(chat.input_queue.queued_user_messages.len(), 1);
+    assert_no_submit_op(&mut op_rx);
+}
+
+#[tokio::test]
+async fn pending_mcp_startup_does_not_unblock_foreground_shell() {
+    let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    chat.set_mcp_startup_expected_servers(["slow".to_string()]);
+    notify_mcp_status(&mut chat, "slow", McpServerStartupState::Starting);
+    chat.thread_id = Some(ThreadId::new());
+
+    chat.queue_user_message_with_options(
+        "!echo hi".into(),
+        QueuedInputAction::RunShell,
+        Vec::new(),
+    );
+
+    assert_matches!(op_rx.try_recv(), Ok(Op::RunUserShellCommand { command }) if command == "echo hi");
+    chat.bottom_pane
+        .set_composer_text("queued follow-up".to_string(), Vec::new(), Vec::new());
+    chat.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+    assert_eq!(chat.input_queue.queued_user_messages.len(), 1);
+    assert_no_submit_op(&mut op_rx);
+
+    chat.finish_mcp_startup(Vec::new(), Vec::new());
+    assert!(chat.bottom_pane.is_task_running());
+    assert_eq!(chat.input_queue.queued_user_messages.len(), 1);
+    assert_no_submit_op(&mut op_rx);
+
+    while rx.try_recv().is_ok() {}
+    chat.dispatch_command(crate::slash_command::SlashCommand::Fork);
+    assert_matches!(rx.try_recv(), Ok(AppEvent::InsertHistoryCell(_)));
+}
+
+#[tokio::test]
+async fn pending_mcp_startup_does_not_unblock_foreground_compaction() {
+    let (mut chat, _rx, mut op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    chat.dispatch_command(crate::slash_command::SlashCommand::Compact);
+    chat.set_mcp_startup_expected_servers(["slow".to_string()]);
+    notify_mcp_status(&mut chat, "slow", McpServerStartupState::Starting);
+    chat.thread_id = Some(ThreadId::new());
+
+    chat.queue_user_message("queued follow-up".into());
+
+    assert_eq!(chat.input_queue.queued_user_messages.len(), 1);
+    assert_no_submit_op(&mut op_rx);
 }
 
 #[tokio::test]
@@ -159,7 +509,7 @@ async fn turn_start_preserves_active_mcp_startup_header() {
 
     notify_mcp_status(&mut chat, "schaltwerk", McpServerStartupState::Ready);
 
-    assert_eq!(chat.status_state.current_status.header, "Elpising…");
+    assert_eq!(chat.status_state.current_status.header, "Working");
 }
 
 #[tokio::test]
@@ -179,7 +529,7 @@ async fn turn_start_replaces_idle_completed_mcp_startup_header() {
     handle_turn_started(&mut chat, "turn-1");
 
     assert!(chat.bottom_pane.is_task_running());
-    assert_eq!(chat.status_state.current_status.header, "Elpising…");
+    assert_eq!(chat.status_state.current_status.header, "Working");
 }
 
 #[tokio::test]
@@ -275,11 +625,18 @@ async fn mcp_startup_failure_restores_running_status_header() {
         "MCP client for `alpha` failed to start: handshake failed",
     );
     notify_mcp_status(&mut chat, "beta", McpServerStartupState::Ready);
-    let _ = drain_insert_history(&mut rx);
+    let warnings = drain_insert_history(&mut rx);
+    insta::assert_snapshot!(
+        "runtime_mcp_warning",
+        warnings
+            .iter()
+            .map(|lines| lines_to_single_string(lines))
+            .collect::<String>()
+    );
 
     assert!(chat.bottom_pane.is_task_running());
     assert!(chat.bottom_pane.status_indicator_visible());
-    assert_eq!(chat.status_state.current_status.header, "Elpising…");
+    assert_eq!(chat.status_state.current_status.header, "Working");
 }
 
 #[tokio::test]
@@ -298,8 +655,12 @@ async fn mcp_startup_complete_preserves_review_status() {
     );
 
     chat.on_guardian_assessment(GuardianAssessmentEvent {
+        review_reason: None,
+        model_context: None,
         id: "guardian-1".to_string(),
         target_item_id: Some("guardian-target-1".to_string()),
+        plugin_id: None,
+        script_path: None,
         turn_id: "turn-1".to_string(),
         started_at_ms: 0,
         completed_at_ms: None,
@@ -311,7 +672,7 @@ async fn mcp_startup_complete_preserves_review_status() {
         action: GuardianAssessmentAction::Command {
             source: GuardianCommandSource::Shell,
             command: "rm -rf '/tmp/guardian target'".to_string(),
-            cwd: test_path_buf("/tmp").abs(),
+            cwd: test_path_buf("/tmp").abs().into(),
         },
     });
 
@@ -333,7 +694,11 @@ async fn mcp_startup_complete_preserves_review_status() {
 async fn app_server_mcp_startup_lag_settles_startup_and_ignores_late_updates() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
     chat.show_welcome_banner = false;
-    chat.set_mcp_startup_expected_servers(["alpha".to_string(), "beta".to_string()]);
+    chat.set_mcp_startup_expected_servers([
+        "alpha".to_string(),
+        "beta".to_string(),
+        "gamma".to_string(),
+    ]);
 
     notify_mcp_status(&mut chat, "alpha", McpServerStartupState::Starting);
     notify_mcp_status_error(
@@ -352,9 +717,9 @@ async fn app_server_mcp_startup_lag_settles_startup_and_ignores_late_updates() {
         .iter()
         .map(|lines| lines_to_single_string(lines))
         .collect::<String>();
-    assert!(summary_text.contains("MCP startup interrupted"));
-    assert!(summary_text.contains("beta"));
-    assert!(summary_text.contains("MCP startup incomplete (failed: alpha)"));
+    insta::assert_snapshot!(summary_text, @r"
+⚠ MCP startup incomplete (failed: alpha)
+");
     assert!(!chat.bottom_pane.is_task_running());
 
     notify_mcp_status(&mut chat, "beta", McpServerStartupState::Starting);
@@ -366,6 +731,83 @@ async fn app_server_mcp_startup_lag_settles_startup_and_ignores_late_updates() {
 
     assert!(drain_insert_history(&mut rx).is_empty());
     assert!(!chat.bottom_pane.is_task_running());
+}
+
+#[tokio::test]
+async fn app_server_mcp_startup_lag_reports_only_explicit_cancellations() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    chat.show_welcome_banner = false;
+    chat.set_mcp_startup_expected_servers([
+        "alpha".to_string(),
+        "beta".to_string(),
+        "gamma".to_string(),
+    ]);
+
+    notify_mcp_status(&mut chat, "alpha", McpServerStartupState::Starting);
+    notify_mcp_status(&mut chat, "alpha", McpServerStartupState::Cancelled);
+    notify_mcp_status(&mut chat, "beta", McpServerStartupState::Starting);
+
+    let _ = drain_insert_history(&mut rx);
+    assert!(chat.bottom_pane.is_task_running());
+
+    chat.finish_mcp_startup_after_lag();
+
+    let summary_text = drain_insert_history(&mut rx)
+        .iter()
+        .map(|lines| lines_to_single_string(lines))
+        .collect::<String>();
+    assert_eq!(
+        summary_text,
+        "⚠ MCP startup interrupted. The following servers were not initialized: alpha\n"
+    );
+    assert!(!chat.bottom_pane.is_task_running());
+}
+
+#[tokio::test]
+async fn app_server_mcp_startup_reports_failure_after_lag() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    chat.show_welcome_banner = false;
+    chat.set_mcp_startup_expected_servers(["alpha".to_string()]);
+    notify_mcp_status(&mut chat, "alpha", McpServerStartupState::Starting);
+
+    chat.finish_mcp_startup_after_lag();
+    assert!(drain_insert_history(&mut rx).is_empty());
+
+    notify_mcp_status_error(
+        &mut chat,
+        "alpha",
+        "MCP client for `alpha` failed to start: handshake failed",
+    );
+
+    let warning_text = drain_insert_history(&mut rx)
+        .iter()
+        .map(|lines| lines_to_single_string(lines))
+        .collect::<String>();
+    assert!(warning_text.contains("MCP client for `alpha` failed to start: handshake failed"));
+    assert!(warning_text.contains("MCP startup incomplete (failed: alpha)"));
+    assert!(!warning_text.contains("MCP startup interrupted"));
+}
+
+#[tokio::test]
+async fn app_server_mcp_startup_reports_cancellation_after_lag() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    chat.show_welcome_banner = false;
+    chat.set_mcp_startup_expected_servers(["alpha".to_string()]);
+    notify_mcp_status(&mut chat, "alpha", McpServerStartupState::Starting);
+
+    chat.finish_mcp_startup_after_lag();
+    assert!(drain_insert_history(&mut rx).is_empty());
+
+    notify_mcp_status(&mut chat, "alpha", McpServerStartupState::Cancelled);
+
+    let warning_text = drain_insert_history(&mut rx)
+        .iter()
+        .map(|lines| lines_to_single_string(lines))
+        .collect::<String>();
+    assert_eq!(
+        warning_text,
+        "⚠ MCP startup interrupted. The following servers were not initialized: alpha\n"
+    );
 }
 
 #[tokio::test]

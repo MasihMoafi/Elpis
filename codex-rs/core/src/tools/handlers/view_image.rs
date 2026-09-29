@@ -1,4 +1,5 @@
-// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
+use codex_exec_server::GetMetadataOptions;
+use codex_exec_server::ReadFileOptions;
 use codex_protocol::items::ImageViewItem;
 use codex_protocol::items::TurnItem;
 use codex_protocol::models::DEFAULT_IMAGE_DETAIL;
@@ -6,6 +7,7 @@ use codex_protocol::models::FunctionCallOutputBody;
 use codex_protocol::models::FunctionCallOutputContentItem;
 use codex_protocol::models::FunctionCallOutputPayload;
 use codex_protocol::models::ImageDetail;
+use codex_protocol::models::ImageReference;
 use codex_protocol::models::ResponseInputItem;
 use codex_protocol::openai_models::InputModality;
 use codex_utils_image::data_url_from_bytes;
@@ -35,6 +37,7 @@ impl Default for ViewImageHandler {
         Self {
             options: ViewImageToolOptions {
                 can_request_original_image_detail: false,
+                unified_image_budget: false,
                 include_environment_id: false,
             },
         }
@@ -49,6 +52,8 @@ impl ViewImageHandler {
 
 const VIEW_IMAGE_UNSUPPORTED_MESSAGE: &str =
     "view_image is not allowed because you do not support image inputs";
+const VIEW_IMAGE_INVALID_MESSAGE: &str =
+    "unable to process image: invalid or unsupported image data";
 
 #[derive(Deserialize)]
 struct ViewImageArgs {
@@ -77,7 +82,10 @@ impl ToolExecutor<ToolInvocation> for ViewImageHandler {
         true
     }
 
-    fn handle(&self, invocation: ToolInvocation) -> codex_tools::ToolExecutorFuture<'_> {
+    fn handle<'a>(&'a self, invocation: ToolInvocation) -> codex_tools::ToolExecutorFuture<'a>
+    where
+        ToolInvocation: 'a,
+    {
         Box::pin(self.handle_call(invocation))
     }
 }
@@ -88,7 +96,8 @@ impl ViewImageHandler {
         invocation: ToolInvocation,
     ) -> Result<Box<dyn crate::tools::context::ToolOutput>, FunctionCallError> {
         if !invocation
-            .turn
+            .step_context
+            .settings
             .model_info
             .input_modalities
             .contains(&InputModality::Image)
@@ -121,8 +130,7 @@ impl ViewImageHandler {
             environment_id,
             detail,
         } = parse_arguments(&arguments)?;
-        // `high` is the explicit spelling of the default resized path.
-        // Other string values remain invalid rather than being silently reinterpreted.
+        // Keep accepting previously supported detail hints after they disappear from the schema.
         let detail = match detail.as_deref() {
             None => None,
             Some("high") => Some(ViewImageDetail::High),
@@ -148,12 +156,11 @@ impl ViewImageHandler {
             ))
         })?;
         let model_visible_path = path_uri.inferred_native_path_string();
-        let sandbox = turn
-            .file_system_sandbox_context(/*additional_permissions*/ None, turn_environment);
+        let sandbox = turn_environment.sandbox_context(/*additional_permissions*/ None);
         let fs = turn_environment.environment.get_filesystem();
 
         let metadata = fs
-            .get_metadata(&path_uri, Some(&sandbox))
+            .get_metadata(&path_uri, GetMetadataOptions::default(), Some(&sandbox))
             .await
             .map_err(|error| {
                 FunctionCallError::RespondToModel(format!(
@@ -167,24 +174,30 @@ impl ViewImageHandler {
             )));
         }
         let file_bytes = fs
-            .read_file(&path_uri, Some(&sandbox))
+            .read_file(&path_uri, ReadFileOptions::default(), Some(&sandbox))
             .await
             .map_err(|error| {
                 FunctionCallError::RespondToModel(format!(
                     "unable to read image at `{model_visible_path}`: {error}"
                 ))
             })?;
+        // Reject non-images before their bytes can reach code mode without changing
+        // valid image bytes, metadata, or centralized image preparation.
+        image::load_from_memory(&file_bytes).map_err(|_| {
+            FunctionCallError::RespondToModel(VIEW_IMAGE_INVALID_MESSAGE.to_string())
+        })?;
 
-        let can_request_original_detail = can_request_original_image_detail(&turn.model_info);
-        let use_original_detail =
-            can_request_original_detail && matches!(detail, Some(ViewImageDetail::Original));
+        let can_request_original_detail =
+            can_request_original_image_detail(&step_context.settings.model_info);
+        let use_original_detail = self.options.unified_image_budget
+            || can_request_original_detail && matches!(detail, Some(ViewImageDetail::Original));
         let image_detail = if use_original_detail {
             ImageDetail::Original
         } else {
             DEFAULT_IMAGE_DETAIL
         };
 
-        // The history insertion path owns image decoding and resizing.
+        // The history insertion path owns image preparation and resizing.
         let image_url = data_url_from_bytes("application/octet-stream", &file_bytes);
 
         let item = TurnItem::ImageView(ImageViewItem {
@@ -197,19 +210,25 @@ impl ViewImageHandler {
         Ok(boxed_tool_output(ViewImageOutput {
             image_url,
             image_detail,
+            unified_image_budget: self.options.unified_image_budget,
         }))
     }
 }
 
-impl CoreToolRuntime for ViewImageHandler {}
+impl CoreToolRuntime for ViewImageHandler {
+    fn is_builtin_control_tool(&self) -> bool {
+        true
+    }
+}
 
 pub struct ViewImageOutput {
     image_url: String,
     image_detail: ImageDetail,
+    unified_image_budget: bool,
 }
 
 impl ToolOutput for ViewImageOutput {
-    fn log_preview(&self) -> String {
+    fn log_output(&self) -> String {
         format!("<image data URL omitted: {} bytes>", self.image_url.len())
     }
 
@@ -220,7 +239,9 @@ impl ToolOutput for ViewImageOutput {
     fn to_response_item(&self, call_id: &str, _payload: &ToolPayload) -> ResponseInputItem {
         let body =
             FunctionCallOutputBody::ContentItems(vec![FunctionCallOutputContentItem::InputImage {
-                image_url: self.image_url.clone(),
+                image: ImageReference::Inline {
+                    image_url: self.image_url.clone(),
+                },
                 detail: Some(self.image_detail),
             }]);
         let output = FunctionCallOutputPayload {
@@ -235,16 +256,22 @@ impl ToolOutput for ViewImageOutput {
     }
 
     fn code_mode_result(&self, _payload: &ToolPayload) -> serde_json::Value {
-        serde_json::json!({
-            "image_url": self.image_url,
-            "detail": self.image_detail
-        })
+        if self.unified_image_budget {
+            serde_json::json!({ "image_url": self.image_url })
+        } else {
+            serde_json::json!({
+                "image_url": self.image_url,
+                "detail": self.image_detail
+            })
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::PermissionProfileSnapshot;
+    use crate::environment_selection::TurnEnvironmentState;
     use crate::session::step_context::StepContext;
     use crate::session::tests::make_session_and_context;
     use crate::session::turn_context::TurnEnvironment;
@@ -252,28 +279,53 @@ mod tests {
     use crate::tools::context::ToolInvocation;
     use crate::turn_diff_tracker::TurnDiffTracker;
     use codex_protocol::models::PermissionProfile;
+    use codex_protocol::permissions::FileSystemAccessMode;
+    use codex_protocol::permissions::FileSystemSandboxEntry;
+    use codex_protocol::permissions::FileSystemSandboxPolicy;
+    use codex_protocol::permissions::NetworkSandboxPolicy;
     use codex_utils_absolute_path::AbsolutePathBuf;
     use codex_utils_path_uri::PathUri;
     use core_test_support::TempDirExt;
+    use image::ImageBuffer;
+    use image::ImageFormat;
+    use image::Rgba;
     use pretty_assertions::assert_eq;
     use serde_json::json;
+    use std::io::Cursor;
     use std::sync::Arc;
     use tokio::sync::Mutex;
 
     fn replace_primary_environment_cwd(turn: &mut crate::TurnContext, cwd: AbsolutePathBuf) {
-        let current = turn
-            .environments
-            .turn_environments
-            .first()
+        let mut current = turn
+            .initial_environments
+            .turn_environments()
+            .next()
             .cloned()
             .expect("default local turn environment");
-        turn.environments.turn_environments[0] = TurnEnvironment::new(
-            current.environment_id,
-            current.environment,
-            PathUri::from_abs_path(&cwd),
-            Vec::new(),
-            current.shell,
+        current.config_mut().workspace_roots.clear();
+        let mut selection = current.selection;
+        selection.cwd = PathUri::from_abs_path(&cwd);
+        selection.workspace_roots.clear();
+        turn.initial_environments.environments[0] =
+            TurnEnvironmentState::Ready(TurnEnvironment::new(
+                selection,
+                current.config_origin,
+                current.environment,
+                current.shell,
+            ));
+    }
+
+    fn tiny_png() -> Vec<u8> {
+        let image = ImageBuffer::from_pixel(
+            /*width*/ 1,
+            /*height*/ 1,
+            Rgba([255u8, 0, 0, 255]),
         );
+        let mut bytes = Vec::new();
+        image
+            .write_to(&mut Cursor::new(&mut bytes), ImageFormat::Png)
+            .expect("encode test image");
+        bytes
     }
 
     #[test]
@@ -281,9 +333,10 @@ mod tests {
         let output = ViewImageOutput {
             image_url: "data:image/png;base64,AAA".to_string(),
             image_detail: DEFAULT_IMAGE_DETAIL,
+            unified_image_budget: false,
         };
 
-        assert_eq!(output.log_preview(), "<image data URL omitted: 25 bytes>");
+        assert_eq!(output.log_output(), "<image data URL omitted: 25 bytes>");
     }
 
     #[test]
@@ -291,6 +344,7 @@ mod tests {
         let output = ViewImageOutput {
             image_url: "data:image/png;base64,AAA".to_string(),
             image_detail: DEFAULT_IMAGE_DETAIL,
+            unified_image_budget: false,
         };
 
         let result = output.code_mode_result(&ToolPayload::Function {
@@ -314,8 +368,24 @@ mod tests {
 
         replace_primary_environment_cwd(&mut turn, image_cwd.clone());
         let image_path = image_cwd.join("image.png");
-        std::fs::write(image_path.as_path(), b"not a real image").expect("write test image");
-        turn.permission_profile = PermissionProfile::read_only();
+        std::fs::write(image_path.as_path(), tiny_png()).expect("write test image");
+        Arc::make_mut(&mut turn.config)
+            .permissions
+            .set_permission_profile(PermissionProfile::Disabled)
+            .expect("set thread permission profile");
+        let TurnEnvironmentState::Ready(environment) =
+            &mut turn.initial_environments.environments[0]
+        else {
+            panic!("primary environment should be ready");
+        };
+        environment.config_mut().permission_profile =
+            PermissionProfileSnapshot::legacy(PermissionProfile::from_runtime_permissions(
+                &FileSystemSandboxPolicy::restricted(vec![FileSystemSandboxEntry::new(
+                    image_cwd.into(),
+                    FileSystemAccessMode::Read,
+                )]),
+                NetworkSandboxPolicy::Restricted,
+            ));
         let turn = Arc::new(turn);
 
         let result = ViewImageHandler::default()
@@ -381,11 +451,14 @@ mod tests {
 
         replace_primary_environment_cwd(&mut turn, image_cwd.clone());
         let image_path = image_cwd.join("image.png");
-        std::fs::write(image_path.as_path(), b"not a real image").expect("write test image");
-        Arc::make_mut(&mut turn.config)
-            .permissions
-            .set_permission_profile(PermissionProfile::Disabled)
-            .expect("set permission profile");
+        std::fs::write(image_path.as_path(), tiny_png()).expect("write test image");
+        let TurnEnvironmentState::Ready(environment) =
+            &mut turn.initial_environments.environments[0]
+        else {
+            panic!("primary environment should be ready");
+        };
+        environment.config_mut().permission_profile =
+            PermissionProfileSnapshot::legacy(PermissionProfile::Disabled);
         let turn = Arc::new(turn);
 
         let result = ViewImageHandler::default()
@@ -405,5 +478,49 @@ mod tests {
             .await;
 
         result.expect("explicit high detail should be accepted");
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn handle_rejects_invalid_image_before_returning_output_to_code_mode() {
+        let (session, mut turn) = make_session_and_context().await;
+        let image_dir = tempfile::tempdir().expect("create image temp dir");
+        let image_cwd = image_dir.abs();
+
+        replace_primary_environment_cwd(&mut turn, image_cwd.clone());
+        let image_path = image_cwd.join("not-an-image.txt");
+        std::fs::write(image_path.as_path(), b"arbitrary file contents")
+            .expect("write invalid image");
+        let TurnEnvironmentState::Ready(environment) =
+            &mut turn.initial_environments.environments[0]
+        else {
+            panic!("primary environment should be ready");
+        };
+        environment.config_mut().permission_profile =
+            PermissionProfileSnapshot::legacy(PermissionProfile::Disabled);
+        let turn = Arc::new(turn);
+
+        let result = ViewImageHandler::default()
+            .handle(ToolInvocation {
+                session: Arc::new(session),
+                step_context: StepContext::for_test(Arc::clone(&turn)),
+                turn,
+                cancellation_token: tokio_util::sync::CancellationToken::new(),
+                tracker: Arc::new(Mutex::new(TurnDiffTracker::new())),
+                call_id: "call-view-image".to_string(),
+                tool_name: codex_tools::ToolName::plain("view_image"),
+                source: ToolCallSource::CodeMode {
+                    cell_id: "cell-1".to_string(),
+                    runtime_tool_call_id: "tool-1".to_string(),
+                },
+                payload: ToolPayload::Function {
+                    arguments: json!({ "path": "not-an-image.txt" }).to_string(),
+                },
+            })
+            .await;
+
+        let Err(FunctionCallError::RespondToModel(message)) = result else {
+            panic!("expected invalid image error");
+        };
+        assert_eq!(message, VIEW_IMAGE_INVALID_MESSAGE);
     }
 }
