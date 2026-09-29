@@ -620,8 +620,7 @@ assert_argv_occurrences 1 fmt --all --check
 assert_safe_cargo_log
 
 python3 - \
-    "$SOURCE_ROOT/.github/workflows/embedded-elpis-linux.yml" \
-    "$SOURCE_ROOT/.github/workflows/launcher-diagnostics.yml" <<'PY'
+    "$SOURCE_ROOT/.github/workflows/embedded-elpis-linux.yml" <<'PY'
 from pathlib import Path
 import sys
 
@@ -632,13 +631,24 @@ def require(condition: bool, message: str) -> None:
 
 
 main = Path(sys.argv[1]).read_text()
-launcher = Path(sys.argv[2]).read_text()
 # Elpis publishes a Linux binary only, so the whole workflow is the Linux job.
 linux = main
 require("\n  build-macos:" not in main, "main workflow must not regrow a macOS job")
+# CI verifies; it never edits source, commits, or pushes (GUIDE R9).
+require("git push" not in main, "CI must not push")
+require("git commit" not in main, "CI must not commit")
+require("agent/product-integration" not in main, "the retired integration branch must not return")
+require(
+    main.startswith("name: Elpis Linux verification\n")
+    and "\npermissions:\n  contents: read\n" in main,
+    "the workflow default token must be read-only; only the release job writes",
+)
+require(
+    not Path(sys.argv[1]).with_name("launcher-diagnostics.yml").exists(),
+    "the retired launcher diagnostics workflow must stay deleted",
+)
 
 for trigger_path in (
-    ".github/workflows/launcher-diagnostics.yml",
     "scripts/verify-elpis",
     "tools/verify-elpis/surfaces.toml",
     "tests/verify-elpis/test_verify_elpis.sh",
@@ -646,7 +656,7 @@ for trigger_path in (
 ):
     require(main.count(f"      - {trigger_path}\n") == 2, f"missing PR/push path {trigger_path}")
 
-require(linux.count("fetch-depth: 0") >= 2, "both Linux checkouts must fetch exact diff endpoints")
+require(linux.count("fetch-depth: 0") >= 1, "the Linux checkout must fetch exact diff endpoints")
 require("bash tests/verify-elpis/test_verify_elpis.sh" in linux, "Linux must run the fake-Cargo harness")
 require(
     'git diff --name-only -z "$base" "$head" > "$RUNNER_TEMP/elpis-changed-paths"' in linux,
@@ -737,24 +747,6 @@ require(
     "      - name: Package .deb\n        if: startsWith(github.ref, 'refs/tags/v')\n        working-directory: codex-rs\n" in linux,
     "package step must retain codex-rs working directory",
 )
-require("scripts/verify-elpis --surface tui" in launcher, "launcher must reuse the TUI surface")
-require("cargo test -p codex-tui --bin elpis" not in launcher, "launcher must not retain a Cargo list")
-require("run_filter()" not in launcher, "launcher must not add a second test helper")
-require(
-    not any(line.strip() == "cargo fmt --all" for line in launcher.splitlines()),
-    "launcher must not run write-mode formatting",
-)
-require(
-    launcher.index("Materialize reviewed integration source") < launcher.index("scripts/verify-elpis --surface tui"),
-    "launcher selector must run after materialization",
-)
-for retained in (
-    "continue-on-error: true",
-    "path: /tmp/elpis-launcher.log",
-    "name: elpis-launcher-diagnostics",
-    "if: steps.launcher.outcome == 'failure'",
-):
-    require(retained in launcher, f"launcher diagnostic behavior disappeared: {retained}")
 PY
 
 python3 - \
