@@ -380,6 +380,8 @@ mod attachment_state;
 mod completion_target;
 mod composer_layout;
 mod draft_state;
+// Elpis: composer behaviour kept from v0.3.0.
+mod elpis_composer;
 mod footer_state;
 mod history_search;
 mod inline_input;
@@ -3525,6 +3527,10 @@ impl ChatComposer {
             }
         } else {
             self.footer.mode = reset_mode_after_activity(self.footer.mode);
+        }
+        // Elpis: U20, backslash then Enter continues the line.
+        if self.try_insert_backslash_newline(key_event) {
+            return (InputResult::None, true);
         }
         if self.queue_keys.is_pressed(key_event)
             && (self.is_task_running || self.queue_submissions || !self.is_bang_shell_command())
