@@ -5063,6 +5063,46 @@
           "properties": {
             "method": {
               "enum": [
+                "turn/activityUpdated"
+              ],
+              "title": "Turn/activityUpdatedNotificationMethod",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/definitions/v2/TurnActivityUpdatedNotification"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "title": "Turn/activityUpdatedNotification",
+          "type": "object"
+        },
+        {
+          "properties": {
+            "method": {
+              "enum": [
+                "turn/costUpdated"
+              ],
+              "title": "Turn/costUpdatedNotificationMethod",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/definitions/v2/TurnCostUpdatedNotification"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "title": "Turn/costUpdatedNotification",
+          "type": "object"
+        },
+        {
+          "properties": {
+            "method": {
+              "enum": [
                 "hook/completed"
               ],
               "title": "Hook/completedNotificationMethod",
@@ -25373,6 +25413,47 @@
         ],
         "type": "object"
       },
+      "TurnActivityStatus": {
+        "enum": [
+          "completed",
+          "failed",
+          "interrupted"
+        ],
+        "type": "string"
+      },
+      "TurnActivityUpdatedNotification": {
+        "properties": {
+          "durationMs": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "status": {
+            "$ref": "#/definitions/v2/TurnActivityStatus"
+          },
+          "threadId": {
+            "type": "string"
+          },
+          "timeToFirstTokenMs": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "turnId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "threadId",
+          "turnId"
+        ],
+        "type": "object"
+      },
       "TurnCompletedNotification": {
         "$schema": "http://json-schema.org/draft-07/schema#",
         "properties": {
@@ -25388,6 +25469,56 @@
           "turn"
         ],
         "title": "TurnCompletedNotification",
+        "type": "object"
+      },
+      "TurnCostAvailability": {
+        "enum": [
+          "subscriptionAuthentication",
+          "costObservationDisabled"
+        ],
+        "type": "string"
+      },
+      "TurnCostState": {
+        "oneOf": [
+          {
+            "properties": {
+              "reason": {
+                "$ref": "#/definitions/v2/TurnCostAvailability"
+              },
+              "type": {
+                "enum": [
+                  "unavailable"
+                ],
+                "title": "UnavailableTurnCostStateType",
+                "type": "string"
+              }
+            },
+            "required": [
+              "reason",
+              "type"
+            ],
+            "title": "UnavailableTurnCostState",
+            "type": "object"
+          }
+        ]
+      },
+      "TurnCostUpdatedNotification": {
+        "properties": {
+          "cost": {
+            "$ref": "#/definitions/v2/TurnCostState"
+          },
+          "threadId": {
+            "type": "string"
+          },
+          "turnId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "cost",
+          "threadId",
+          "turnId"
+        ],
         "type": "object"
       },
       "TurnDiffUpdatedNotification": {

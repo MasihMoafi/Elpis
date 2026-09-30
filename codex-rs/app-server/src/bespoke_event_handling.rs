@@ -74,6 +74,7 @@ use codex_app_server_protocol::ToolRequestUserInputParams;
 use codex_app_server_protocol::ToolRequestUserInputQuestion;
 use codex_app_server_protocol::ToolRequestUserInputResponse;
 use codex_app_server_protocol::Turn;
+use codex_app_server_protocol::TurnActivityStatus;
 use codex_app_server_protocol::TurnCompletedNotification;
 use codex_app_server_protocol::TurnDiffUpdatedNotification;
 use codex_app_server_protocol::TurnError;
@@ -182,6 +183,14 @@ pub(crate) async fn apply_bespoke_event_handling(
             outgoing
                 .send_server_notification(ServerNotification::TurnStarted(notification))
                 .await;
+            // Elpis: the dashboard shows each turn's cost state.
+            crate::elpis_turn_activity::send_turn_cost(
+                &outgoing,
+                conversation_id,
+                &payload.turn_id,
+                thread_manager.auth_manager().get_api_auth_mode(),
+            )
+            .await;
         }
         EventMsg::TurnComplete(turn_complete_event) => {
             // All per-thread requests are bound to a turn, so abort them.
@@ -191,6 +200,18 @@ pub(crate) async fn apply_bespoke_event_handling(
             thread_watch_manager
                 .note_turn_completed(&conversation_id.to_string(), turn_failed)
                 .await;
+            // Elpis: the dashboard's per-turn timing.
+            let activity = crate::elpis_turn_activity::turn_activity(
+                conversation_id,
+                &event_turn_id,
+                if turn_failed {
+                    TurnActivityStatus::Failed
+                } else {
+                    TurnActivityStatus::Completed
+                },
+                turn_complete_event.duration_ms,
+                turn_complete_event.time_to_first_token_ms,
+            );
             handle_turn_complete(
                 conversation_id,
                 event_turn_id,
@@ -199,6 +220,7 @@ pub(crate) async fn apply_bespoke_event_handling(
                 &thread_state,
             )
             .await;
+            outgoing.send_server_notification(activity).await;
         }
         EventMsg::McpStartupUpdate(update) => {
             let (status, error, failure_reason) = match update.status {
@@ -1227,6 +1249,14 @@ pub(crate) async fn apply_bespoke_event_handling(
             thread_watch_manager
                 .note_turn_interrupted(&conversation_id.to_string())
                 .await;
+            // Elpis: the dashboard's per-turn timing.
+            let activity = crate::elpis_turn_activity::turn_activity(
+                conversation_id,
+                &event_turn_id,
+                TurnActivityStatus::Interrupted,
+                turn_aborted_event.duration_ms,
+                /*time_to_first_token_ms*/ None,
+            );
             handle_turn_interrupted(
                 conversation_id,
                 event_turn_id,
@@ -1235,6 +1265,7 @@ pub(crate) async fn apply_bespoke_event_handling(
                 &thread_state,
             )
             .await;
+            outgoing.send_server_notification(activity).await;
         }
         EventMsg::ThreadGoalUpdated(thread_goal_event) => {
             let notification = ThreadGoalUpdatedNotification {

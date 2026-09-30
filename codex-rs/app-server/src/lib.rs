@@ -114,6 +114,8 @@ mod effective_plugin_change;
 mod elpis_smart_prune;
 // Elpis: the Context Ledger's category shares on token usage.
 mod elpis_context_attribution;
+// Elpis: per-turn timing and cost state for the dashboard.
+mod elpis_turn_activity;
 mod error_code;
 mod extensions;
 mod external_agent_migration;
