@@ -1,4 +1,9 @@
 // Real app-server compaction with a loopback-only fake provider. No credentials.
+// usage: node scripts/compact-instructions-runtime.test.cjs /absolute/path/to/binary
+//          [local|token-budget|remote-v2] [--drop-instructions]
+// The binary is the elpis multitool (run as `<binary> app-server`) or a codex-app-server build.
+// Run it without network access, e.g. `unshare -rn sh -c 'ip link set lo up && node ...'`.
+// --drop-instructions is the negative control: the guidance is not sent, so 'custom' must fail.
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const http = require("node:http");
@@ -13,8 +18,8 @@ for (const directory of [home, cwd]) fs.mkdirSync(directory);
 const instructions = "Preserve unresolved Cedar blockers and exact evidence — ۳ نکته.";
 const summaryPrompt = "Summarize the conversation for continuation; preserve unresolved work.";
 const tokenBudget = process.argv[3] === "token-budget";
-const remote = process.argv[3] === "remote" || process.argv[3] === "remote-v2";
-const remoteV2 = process.argv[3] === "remote-v2";
+// Codex 0.159 has only remote compaction v2; v0.3.0's "remote" (v1, /responses/compact) is gone.
+const remote = process.argv[3] === "remote-v2";
 // Negative control simulates the reported bug: drop the suffix before dispatch.
 const dropInstructions = process.argv.includes("--drop-instructions");
 const requests = [];
@@ -23,7 +28,7 @@ let rpc;
 
 const server = http.createServer(async (request, response) => {
   try {
-    if (!request.url.endsWith("/responses") && !request.url.endsWith("/responses/compact")) {
+    if (!request.url.endsWith("/responses")) {
       response.writeHead(404);
       response.end();
       return;
@@ -32,14 +37,9 @@ const server = http.createServer(async (request, response) => {
     for await (const chunk of request) chunks.push(chunk);
     const body = JSON.parse(Buffer.concat(chunks).toString());
     requests.push({ phase, path: request.url, body });
-    if (request.url.endsWith("/responses/compact")) {
-      response.writeHead(200, { "content-type": "application/json" });
-      response.end(JSON.stringify({ output: [{ type: "compaction", encrypted_content: "fixture-summary" }] }));
-      return;
-    }
     const id = `response-${requests.length}`;
     // Never echo the instructions into history: later checks detect actual leakage.
-    const item = remoteV2 && body.input?.some(item => item.type === "compaction_trigger") ? {
+    const item = remote && body.input?.some(item => item.type === "compaction_trigger") ? {
       type: "compaction", encrypted_content: "fixture-summary",
     } : {
       type: "message", id: `message-${id}`, role: "assistant", status: "completed",
@@ -104,8 +104,7 @@ function baseGuidance(body) {
 
 function compactionRequest(name) {
   const matches = requests.filter(request => request.phase === name && (remote
-    ? (remoteV2 ? request.body.input?.some(item => item.type === "compaction_trigger")
-      : request.path.endsWith("/responses/compact"))
+    ? request.body.input?.some(item => item.type === "compaction_trigger")
     : request.body.input?.some(item => item.role === "user" && messageText(item) === summaryPrompt)));
   assert.equal(matches.length, 1, `${name} must contain exactly one compaction request`);
   return matches[0].body;
@@ -116,15 +115,18 @@ async function run() {
   fs.writeFileSync(path.join(home, "config.toml"), [
     'model = "gpt-5.6-terra"', 'model_provider = "fixture"',
     `compact_prompt = ${JSON.stringify(summaryPrompt)}`,
-    "[features]", `token_budget = ${tokenBudget}`, `remote_compaction_v2 = ${remoteV2}`,
+    "[features]", `token_budget = ${tokenBudget}`,
     "[model_providers.fixture]", `name = "${remote ? "OpenAI" : "Fixture"}"`,
     `base_url = "http://127.0.0.1:${server.address().port}/v1"`,
     'wire_api = "responses"', "requires_openai_auth = false", "",
   ].join("\n"));
   fs.writeFileSync(path.join(home, "hooks.json"), "{}");
-  const binary = path.resolve(process.argv[2] || "codex-rs/target/local-release/codex-app-server");
+  const binary = process.argv[2];
+  assert(binary && path.isAbsolute(binary), "usage: compact-instructions-runtime.test.cjs /absolute/path/to/binary");
   rpc = new AppServer(binary, cwd, {
-    env: { ...process.env, CODEX_HOME: home, CODEX_AUTH_HOME: home, ELPIS_HOME: home },
+    args: path.basename(binary) === "codex-app-server" ? [] : ["app-server"],
+    // Only PATH is inherited, so neither the real home nor a proxy reaches the runtime.
+    env: { PATH: process.env.PATH, HOME: home, CODEX_HOME: home, CODEX_AUTH_HOME: home, ELPIS_HOME: home },
   });
   rpc.on("request", message => rpc.respond(message.id, { decision: "decline" }));
   await rpc.request("initialize", {
@@ -159,11 +161,6 @@ async function run() {
   assert(baseGuidance(custom).includes(instructions), "custom compaction instructions never reached the provider");
   assert(baseGuidance(custom).startsWith(normalGuidance), "custom instructions replaced normal base guidance");
   if (!remote) assert(JSON.stringify(custom.input).includes(summaryPrompt), "custom compaction replaced the normal summary prompt");
-  if (remote) {
-    assert(requests.some(request => request.phase === phase && (remoteV2
-      ? request.body.input?.some(item => item.type === "compaction_trigger")
-      : request.path.endsWith("/responses/compact"))), "remote compaction path was not exercised");
-  }
 
   phase = "bare-after";
   await complete("thread/compact/start", { threadId: thread.id });
@@ -182,7 +179,7 @@ async function run() {
   for (const body of phaseRequests(phase)) {
     assert(!JSON.stringify(body).includes(instructions), "custom instructions leaked into a normal turn");
   }
-  console.log(JSON.stringify({ passed: true, tokenBudget, remote, remoteV2, checks: [
+  console.log(JSON.stringify({ passed: true, tokenBudget, remote, checks: [
     "bare compaction retains its normal prompt",
     "exact Unicode instructions reach the selected compaction request",
     "custom instructions supplement rather than replace summary guidance",

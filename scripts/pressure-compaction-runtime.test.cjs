@@ -1,3 +1,9 @@
+// Pressure compaction (`/compact N`) against a real app-server and a loopback-only fake
+// provider, in a temporary Elpis home. No credentials.
+// usage: node scripts/pressure-compaction-runtime.test.cjs /absolute/path/to/binary [--drop-pressure]
+// The binary is the elpis multitool (run as `<binary> app-server`) or a codex-app-server build.
+// Run it without network access, e.g. `unshare -rn sh -c 'ip link set lo up && node ...'`.
+// --drop-pressure is the negative control: the saved threshold is empty, so 'pressure' must fail.
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const http = require('node:http');
@@ -18,7 +24,8 @@ const server = http.createServer(async (req, res) => {
   if (!req.url.includes('/responses')) {res.writeHead(404); res.end(); return;}
   const body = JSON.parse(raw);
   requests.push(body);
-  const optimizer = req.url.endsWith('/compact') || body.input?.some(item=>item.type==='compaction_trigger');
+  // Codex 0.159 compacts remotely only through v2, a /responses request with a compaction_trigger.
+  const optimizer = body.input?.some(item=>item.type==='compaction_trigger');
   body.fixture_is_compact = optimizer;
   let item;
   if (optimizer) {
@@ -52,9 +59,8 @@ async function runCase(nextMode) {
   }
   else fs.writeFileSync(settings,JSON.stringify({remaining_percent:mode==='off'?null:30}));
   const start = requests.length;
-  const config = mode === 'auto-disabled' ? {model_auto_compact_enabled:false} : undefined;
   const {thread} = await rpc.request('thread/start', {model:'gpt-5.6-terra',cwd,
-    approvalPolicy:'never',sandbox:'danger-full-access',config});
+    approvalPolicy:'never',sandbox:'danger-full-access'});
   await rpc.request('thread/name/set',{threadId:thread.id,name:'Pressure compaction fixture'});
   let timer, listener;
   const done = new Promise((resolve,reject) => {
@@ -91,7 +97,8 @@ async function runCase(nextMode) {
   ].join('\n'));
   fs.writeFileSync(path.join(home,'hooks.json'),'{}');
   const binary = process.argv[2];
-  rpc = new AppServer(binary,cwd,{args:path.basename(binary)==='elpis'?['app-server']:[],
+  assert(binary && path.isAbsolute(binary), 'usage: pressure-compaction-runtime.test.cjs /absolute/path/to/binary');
+  rpc = new AppServer(binary,cwd,{args:path.basename(binary)==='codex-app-server'?[]:['app-server'],
     env:{PATH:process.env.PATH,HOME:home,CODEX_HOME:home,ELPIS_HOME:home}});
   rpc.child.stderr.on('data', data=>fs.appendFileSync(path.join(root,'stderr.log'),data));
   rpc.on('disconnect',()=>{});
@@ -99,7 +106,9 @@ async function runCase(nextMode) {
   await rpc.request('initialize',{clientInfo:{name:'prune_fixture',version:'1'},capabilities:{experimentalApi:true}});
   rpc.send({method:'initialized'});
   const results = [];
-  for(const selected of ['unset','off','malformed','pressure','ineffective','auto-disabled']) {
+  // v0.3.0 also had 'auto-disabled' (model_auto_compact_enabled=false). Codex 0.159 has no
+  // switch that disables automatic compaction, so that case has nothing to test here.
+  for(const selected of ['unset','off','malformed','pressure','ineffective']) {
     const result = await runCase(selected);
     results.push(result);
     console.log(JSON.stringify(result));
