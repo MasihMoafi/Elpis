@@ -186,6 +186,7 @@ async fn widget_reads_survive_history_modes_compaction_restarts_and_app_only_vis
                 let compact_id = app_server
                     .send_thread_compact_start_request(ThreadCompactStartParams {
                         thread_id: thread.id.clone(),
+                        instructions: None, // Elpis
                     })
                     .await?;
                 let _: ThreadCompactStartResponse =

@@ -100,6 +100,7 @@ pub(crate) async fn run_inline_remote_auto_compact_task(
         Some(client_session),
         initial_context_injection,
         compaction_metadata,
+        /*additional_instructions*/ None, // Elpis
     )
     .await
 }
@@ -107,6 +108,7 @@ pub(crate) async fn run_inline_remote_auto_compact_task(
 pub(crate) async fn run_remote_compact_task(
     sess: Arc<Session>,
     turn_context: Arc<TurnContext>,
+    additional_instructions: Option<&str>, // Elpis: `/compact <text>`
 ) -> CodexResult<()> {
     // Standalone compaction is its own request boundary, so it captures a fresh step.
     let step_context = sess
@@ -127,6 +129,7 @@ pub(crate) async fn run_remote_compact_task(
         /*client_session*/ None,
         InitialContextInjection::DoNotInject,
         compaction_metadata,
+        additional_instructions,
     )
     .await
 }
@@ -138,6 +141,7 @@ async fn run_remote_compact_task_inner(
     client_session: Option<&mut ModelClientSession>,
     initial_context_injection: InitialContextInjection,
     compaction_metadata: CompactionTurnMetadata,
+    additional_instructions: Option<&str>, // Elpis: `/compact <text>`
 ) -> CodexResult<()> {
     let turn_context = &step_context.turn;
     let trigger = compaction_metadata.trigger();
@@ -181,6 +185,7 @@ async fn run_remote_compact_task_inner(
         initial_context_injection,
         compaction_metadata,
         &mut analytics_details,
+        additional_instructions,
     )
     .await;
     let status = compaction_status_from_result(&result);
@@ -219,6 +224,7 @@ async fn run_remote_compact_task_inner(
     }
 }
 
+#[allow(clippy::too_many_arguments)] // Elpis: `/compact <text>` added one
 async fn run_remote_compact_task_inner_impl(
     sess: &Arc<Session>,
     step_context: &Arc<StepContext>,
@@ -227,6 +233,7 @@ async fn run_remote_compact_task_inner_impl(
     initial_context_injection: InitialContextInjection,
     compaction_metadata: CompactionTurnMetadata,
     analytics_details: &mut CompactionAnalyticsDetails,
+    additional_instructions: Option<&str>, // Elpis: `/compact <text>`
 ) -> CodexResult<()> {
     let turn_context = &step_context.turn;
     let context_compaction_item = ContextCompactionItem::new();
@@ -248,6 +255,7 @@ async fn run_remote_compact_task_inner_impl(
         &compaction_trace,
         compaction_metadata,
         analytics_details,
+        additional_instructions,
     )
     .await;
     let (attempt, compaction_turn_context) = match attempt {
@@ -276,6 +284,7 @@ async fn run_remote_compact_task_inner_impl(
                 &fallback_compaction_trace,
                 compaction_metadata,
                 analytics_details,
+                additional_instructions,
             )
             .await;
             record_model_fallback(
