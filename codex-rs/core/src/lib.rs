@@ -87,6 +87,8 @@ pub mod context;
 pub mod elpis_context;
 // Elpis: `/compact N` pressure compaction; the TUI saves it through app-server-client.
 pub mod pressure_compaction;
+// Elpis: the model's request follows the Context Ledger.
+pub mod elpis_admission;
 mod context_manager;
 mod current_time;
 mod cyber_access_program;
