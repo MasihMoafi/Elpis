@@ -1,4 +1,4 @@
-//! The Elpis identity line (" Elpis · model X · location Y") above the composer, and the
+//! The Elpis identity line (" Elpis · model X · location Y · title") above the composer, and the
 //! turn clock the paced Elpis motion samples.
 //!
 //! Copied from Elpis v0.3.0 `chatwidget/rendering.rs` (`IdentityLineRenderable`,
@@ -63,6 +63,10 @@ impl ChatWidget {
             " · location ".dim(),
             location.dim(),
         ]);
+        // The generated conversation title, which upstream shows in its footer status line.
+        if let Some(title) = self.thread_name.as_deref().and_then(super::normalize_thread_name) {
+            spans.extend([" · ".dim(), Span::raw(title)]);
+        }
         Line::from(spans).render(area, buf);
     }
 
