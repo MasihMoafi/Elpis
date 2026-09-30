@@ -203,11 +203,6 @@ fn inject_persistence_failure(
     InjectedPersistenceFailureGuard(previous)
 }
 
-#[cfg(test)]
-pub(crate) fn inject_admission_read_failure() -> InjectedPersistenceFailureGuard {
-    inject_persistence_failure(InjectedPersistenceFailure::AdmissionRead)
-}
-
 fn fail_if_injected(stage: InjectedPersistenceFailure) -> std::io::Result<()> {
     #[cfg(test)]
     if INJECTED_PERSISTENCE_FAILURE.with(|failure| {
