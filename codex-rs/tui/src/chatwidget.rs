@@ -1183,6 +1183,8 @@ impl ChatWidget {
         self.update_due_hook_visibility();
         self.schedule_hook_timer_if_needed();
         self.bottom_pane.pre_draw_tick();
+        // Elpis: the idle footer tip follows the composer state (v0.3.0).
+        self.refresh_elpis_tip();
         self.flush_realtime_transcript_history();
         self.refresh_realtime_microphone_level();
         if let Some(pet) = self.ambient_pet.as_ref() {

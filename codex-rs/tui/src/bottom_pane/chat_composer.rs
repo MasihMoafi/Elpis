@@ -622,6 +622,8 @@ pub(crate) struct ChatComposer {
     effort_status_line_transition: Option<EffortStatusLineTransition>,
     effort_observed: bool,
     luna_reserve_active: bool,
+    // Elpis: the idle footer tip (v0.3.0).
+    elpis_tip: elpis_composer::ElpisFooterTip,
     attachments: AttachmentState,
     placeholder_text: String,
     blocks_direct_input: bool,
@@ -777,7 +779,9 @@ impl ChatComposer {
                     use_shift_enter_hint,
                 )
                 .map(ShortcutHint::from),
-                queue_key: default_keymap.primary_hint(KeymapContext::Composer, "queue"),
+                // Elpis: Enter queues during a turn, so the queue hint names it.
+                queue_key: default_keymap
+                    .primary_hint(KeymapContext::Composer, elpis_composer::QUEUE_HINT_ACTION),
                 toggle_shortcuts_key: default_keymap
                     .primary_hint(KeymapContext::Composer, "toggle_shortcuts"),
                 history_search_key: default_keymap
@@ -798,6 +802,7 @@ impl ChatComposer {
             effort_status_line_transition: None,
             effort_observed: false,
             luna_reserve_active: false,
+            elpis_tip: elpis_composer::ElpisFooterTip::new(),
             attachments: AttachmentState::default(),
             placeholder_text,
             blocks_direct_input: false,
@@ -1067,7 +1072,9 @@ impl ChatComposer {
                 )
                 .map(ShortcutHint::from),
             };
-        self.footer.queue_key = keymap.primary_hint(KeymapContext::Composer, "queue");
+        // Elpis: Enter queues during a turn, so the queue hint names it.
+        self.footer.queue_key =
+            keymap.primary_hint(KeymapContext::Composer, elpis_composer::QUEUE_HINT_ACTION);
         self.footer.toggle_shortcuts_key =
             keymap.primary_hint(KeymapContext::Composer, "toggle_shortcuts");
         self.footer.history_search_key =
@@ -1447,6 +1454,8 @@ impl ChatComposer {
             line.spans.push(" | ".dim());
             line.spans.push(vim_mode);
         }
+        // Elpis: "Tab Context Ledger" beside the context indicator (v0.3.0).
+        elpis_composer::push_context_ledger_hint(&mut line);
         line
     }
 
@@ -4727,6 +4736,9 @@ impl ChatComposer {
                 if let Some(input) = self.draft.textarea.vim_query() {
                     input.render(inset_footer_hint_area(hint_rect), buf);
                 } else if let Some(line) = self.history_search_footer_line() {
+                    render_footer_line(hint_rect, buf, line);
+                } else if let Some(line) = self.elpis_tip_footer_line(hint_rect) {
+                    // Elpis: the idle Elpis tip replaces the ambient footer (v0.3.0).
                     render_footer_line(hint_rect, buf, line);
                 } else {
                     let available_width =
