@@ -166,6 +166,8 @@ pub(crate) enum CodexResponsesRequestKind {
     Prewarm,
     Compaction(CompactionTurnMetadata),
     Memory,
+    /// Elpis: admission-time optimization of fresh tool outputs (session/smart_prune.rs).
+    SmartPrune,
 }
 
 impl CodexResponsesRequestKind {
@@ -175,6 +177,7 @@ impl CodexResponsesRequestKind {
             CodexResponsesRequestKind::Prewarm => ("prewarm", None),
             CodexResponsesRequestKind::Compaction(metadata) => ("compaction", Some(metadata)),
             CodexResponsesRequestKind::Memory => ("memory", None),
+            CodexResponsesRequestKind::SmartPrune => ("smart_prune", None), // Elpis
         }
     }
 

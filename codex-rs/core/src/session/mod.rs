@@ -256,6 +256,9 @@ mod rollout_budget;
 mod rollout_reconstruction;
 #[allow(clippy::module_inception)]
 pub(crate) mod session;
+// Elpis: Smart Prune optimizes fresh tool output before its first model request.
+pub(crate) mod smart_prune;
+mod smart_prune_audit;
 pub(crate) mod startup_prewarm;
 mod step_activation;
 pub(crate) mod step_context;
@@ -1189,6 +1192,8 @@ impl Session {
                 .filter(|spec| {
                     spec.id == Feature::RemoteCompactionV2
                         || (spec.stage.experimental_menu_description().is_some()
+                            // Elpis: Smart Prune is Elpis's own; the provider is not told.
+                            && spec.id != Feature::AutomaticContextPruning
                             && config.features.enabled(spec.id))
                 })
                 .map(|spec| spec.key)
@@ -2099,6 +2104,15 @@ impl Session {
                     .enabled(Feature::McpOAuthRefreshCoordination),
             ) {
                 warn!("failed to refresh MCP OAuth coordination config: {err}");
+            }
+            // Elpis: Smart Prune is switched during a session; later turns follow the switch.
+            if let Err(err) = config.features.set_enabled(
+                Feature::AutomaticContextPruning,
+                next_config
+                    .features
+                    .enabled(Feature::AutomaticContextPruning),
+            ) {
+                warn!("failed to refresh Smart Prune config: {err}");
             }
             let config = Arc::new(config);
             state.session_configuration.original_config_do_not_use = Arc::clone(&config);

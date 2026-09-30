@@ -990,6 +990,13 @@ impl CodexThread {
         self.session.refresh_runtime_config(next_config).await;
     }
 
+    /// Elpis: this thread's Smart Prune switch, counters and latest evidence.
+    pub async fn smart_prune_snapshot(
+        &self,
+    ) -> codex_protocol::elpis_smart_prune::SmartPruneSnapshot {
+        self.session.smart_prune_snapshot().await
+    }
+
     /// Refresh MCP configuration and managed requirements without reloading unrelated settings.
     pub async fn refresh_mcp_config(&self, next_config: crate::config::Config) {
         self.session.refresh_mcp_config(next_config).await;

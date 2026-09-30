@@ -1688,6 +1688,10 @@ async fn run_sampling_request(
             )
             .await?;
         }
+        // Elpis: record each real attempt after its prompt is fixed. A failed stream may
+        // execute and admit a tool result before the retry, so recording only outside this
+        // loop misses the retry that first exposes that admission (smart_prune.rs).
+        let smart_prune_request_link = sess.record_smart_prune_request(&prompt.input).await;
         let err = match try_run_sampling_request(
             tool_runtime.clone(),
             Arc::clone(&sess),
@@ -1697,6 +1701,7 @@ async fn run_sampling_request(
             &responses_metadata,
             Arc::clone(&turn_diff_tracker),
             &prompt,
+            smart_prune_request_link, // Elpis
             cancellation_token.child_token(),
         )
         .await
@@ -2480,8 +2485,13 @@ async fn drain_in_flight(
     in_flight: &mut FuturesOrdered<InFlightFuture<'static>>,
     sess: Arc<Session>,
     step_context: &StepContext,
+    cancellation_token: &CancellationToken, // Elpis
 ) -> CodexResult<()> {
     let turn_context = &step_context.turn;
+    // Elpis: with Smart Prune on, the sibling outputs are optimized together before any of
+    // them is recorded, so the model first sees them already admitted (smart_prune.rs).
+    let smart_prune = super::smart_prune::enabled_for_turn(turn_context);
+    let mut pending_outputs = Vec::new();
     while let Some(res) = in_flight.next().await {
         match res {
             Ok(envelope) => {
@@ -2491,6 +2501,10 @@ async fn drain_in_flight(
                     &envelope.item,
                 )
                 .await;
+                if smart_prune {
+                    pending_outputs.push(envelope);
+                    continue;
+                }
                 sess.record_annotated_conversation_items(
                     turn_context,
                     &step_context.settings.model_info,
@@ -2501,6 +2515,23 @@ async fn drain_in_flight(
             Err(err) => {
                 error_or_panic(format!("in-flight tool future failed during drain: {err}"));
             }
+        }
+    }
+    if smart_prune && !pending_outputs.is_empty() {
+        let pending_outputs = super::smart_prune::optimize_pending_outputs(
+            &sess,
+            step_context,
+            pending_outputs,
+            cancellation_token,
+        )
+        .await;
+        for envelope in pending_outputs {
+            sess.record_annotated_conversation_items(
+                turn_context,
+                &step_context.settings.model_info,
+                vec![envelope],
+            )
+            .await;
         }
     }
     Ok(())
@@ -2538,6 +2569,7 @@ async fn try_run_sampling_request(
     responses_metadata: &CodexResponsesMetadata,
     turn_diff_tracker: SharedTurnDiffTracker,
     prompt: &Prompt,
+    smart_prune_request_link: Option<super::smart_prune::SmartPruneRequestLink>, // Elpis
     cancellation_token: CancellationToken,
 ) -> CodexResult<SamplingRequestResult> {
     let turn_context = Arc::clone(&step_context.turn);
@@ -2971,6 +3003,15 @@ async fn try_run_sampling_request(
                     usage_metadata.as_ref(),
                 )
                 .await;
+                // Elpis: link the response that first saw a Smart Prune admission.
+                if let Some(request_link) = smart_prune_request_link.as_ref() {
+                    sess.record_smart_prune_response(
+                        request_link,
+                        &response_id,
+                        token_usage.as_ref(),
+                    )
+                    .await;
+                }
                 let budget_result = sess
                     .record_token_usage_info(
                         &turn_context,
@@ -3155,7 +3196,13 @@ async fn try_run_sampling_request(
     } else {
         Some(turn_context.turn_timing_state.begin_tool_blocking())
     };
-    drain_in_flight(&mut in_flight, sess.clone(), &step_context).await?;
+    drain_in_flight(
+        &mut in_flight,
+        sess.clone(),
+        &step_context,
+        &cancellation_token, // Elpis
+    )
+    .await?;
     drop(tool_blocking_timing_guard);
 
     if should_emit_token_count {

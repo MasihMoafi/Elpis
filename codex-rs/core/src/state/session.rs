@@ -102,6 +102,8 @@ pub(crate) struct SessionState {
     pub(crate) pending_session_start_sources: VecDeque<codex_hooks::SessionStartSource>,
     granted_permissions_by_environment_id: HashMap<String, AdditionalPermissionProfile>,
     next_turn_is_first: bool,
+    /// Elpis: Smart Prune counters and evidence (core/src/session/smart_prune.rs).
+    pub(crate) smart_prune: crate::smart_prune::SmartPruneState,
 }
 
 impl SessionState {
@@ -143,6 +145,7 @@ impl SessionState {
             pending_session_start_sources: VecDeque::new(),
             granted_permissions_by_environment_id: HashMap::new(),
             next_turn_is_first: true,
+            smart_prune: crate::smart_prune::SmartPruneState::default(), // Elpis
         }
     }
 
