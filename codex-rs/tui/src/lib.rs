@@ -2044,6 +2044,8 @@ async fn run_ratatui_app(
         Ok(StartupHooksReviewOutcome::OpenHooksBrowser(data)) => Some(data),
     };
 
+    // Elpis: the app server lists models for the provider it started with.
+    crate::chatwidget::set_elpis_catalog_provider(&config.model_provider_id);
     // Keep the large event-loop future out of the enclosing startup futures so session
     // transitions have enough stack headroom to rebuild configuration and the chat widget.
     let app_result = Box::pin(App::run(

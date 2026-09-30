@@ -701,7 +701,7 @@ impl App {
                 }
                 tui.frame_requester().schedule_frame();
             }
-            ElpisAppEvent::EnableYolo => {
+            ElpisAppEvent::EnableYolo | ElpisAppEvent::Provider(_) => {
                 unreachable!("handled in app/elpis_events.rs")
             }
         }

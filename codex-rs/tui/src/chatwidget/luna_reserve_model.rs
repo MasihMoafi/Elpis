@@ -41,7 +41,7 @@ impl ChatWidget {
             });
         })];
         let header = self.model_menu_header(
-            "Select Model",
+            "Choose a mind",
             "Other models return when ordinary usage is available again.",
         );
         self.show_model_selection_view(

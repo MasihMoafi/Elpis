@@ -21,6 +21,10 @@ impl ChatWidget {
             );
             return;
         }
+        // Elpis: a thread on a provider the app server does not list gets that provider's list.
+        if self.elpis_open_model_popup_for_other_provider() {
+            return;
+        }
 
         let presets: Vec<ModelPreset> = match self.model_catalog.try_list_models() {
             Ok(models) => models,
@@ -46,6 +50,8 @@ impl ChatWidget {
         if !subtitle.is_empty() {
             header.push(Line::from(subtitle.dim()));
         }
+        // Elpis: name the provider, its route, protocol and credential.
+        header.extend(self.elpis_provider_header_lines(&self.config.model_provider_id));
         if let Some(warning) = self.model_menu_warning_line() {
             header.push(warning);
         }
@@ -183,8 +189,13 @@ impl ChatWidget {
             });
         }
 
+        // Elpis: "Change provider…" and, without a key, "Add API key…" end the list.
+        for (id, item) in self.elpis_picker_rows(&self.config.model_provider_id) {
+            model_ids.push(id);
+            items.push(item);
+        }
         let header = self.model_menu_header(
-            "Select Model",
+            "Choose a mind",
             "Pick a quick auto mode or browse all models.",
         );
         self.show_model_selection_view(
@@ -234,7 +245,10 @@ impl ChatWidget {
         presets: Vec<ModelPreset>,
         view_id: &'static str,
     ) {
-        if presets.is_empty() {
+        // Elpis: "Change provider…" and, without a key, "Add API key…" end the list; a provider
+        // that lists nothing for want of a key still offers a way on.
+        let elpis_rows = self.elpis_picker_rows(&self.config.model_provider_id);
+        if presets.is_empty() && !self.elpis_needs_key(&self.config.model_provider_id) {
             self.bottom_pane.dismiss_view_by_id(view_id);
             self.add_info_message(
                 "No additional models are available right now.".to_string(),
@@ -244,7 +258,8 @@ impl ChatWidget {
         }
 
         let mut items: Vec<SelectionItem> = Vec::new();
-        let model_ids = presets.iter().map(|preset| preset.model.clone()).collect();
+        let mut model_ids: Vec<String> =
+            presets.iter().map(|preset| preset.model.clone()).collect();
         for preset in presets.into_iter() {
             let description =
                 (!preset.description.is_empty()).then_some(preset.description.to_string());
@@ -278,7 +293,11 @@ impl ChatWidget {
             });
         }
 
-        let header = self.model_menu_header("Select Model and Effort", "");
+        for (id, item) in elpis_rows {
+            model_ids.push(id);
+            items.push(item);
+        }
+        let header = self.model_menu_header("Choose a mind and effort", "");
         self.show_model_selection_view(
             model_ids,
             SelectionViewParams {
