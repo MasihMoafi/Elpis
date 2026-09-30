@@ -44,7 +44,7 @@ async fn server_with_one_answer() -> wiremock::MockServer {
 /// Starts a thread and one turn; returns the turn id once the turn has started.
 async fn start_one_turn(mcp: &mut TestAppServer) -> Result<(String, String)> {
     let request = mcp
-        .send_thread_start_request(ThreadStartParams {
+        .send_thread_start_request_with_auto_env(ThreadStartParams {
             model: Some("mock-model".to_string()),
             ..Default::default()
         })
@@ -164,5 +164,11 @@ async fn a_subscription_login_reports_cost_as_unavailable_for_subscription() -> 
             reason: TurnCostAvailability::SubscriptionAuthentication,
         }
     );
+    // Let the turn reach the mock provider before the server checks its one expected request.
+    let _: TurnActivityUpdatedNotification = timeout(
+        DEFAULT_READ_TIMEOUT,
+        mcp.read_notification("turn/activityUpdated"),
+    )
+    .await??;
     Ok(())
 }
