@@ -719,6 +719,23 @@ impl ChatWidget {
                 ),
                 muted,
             )));
+            // Elpis: the attempt's audit record opens as a readable report.
+            if let Some(path) = attempt.audit_path.as_deref().and_then(|path| {
+                super::elpis_dashboard::smart_prune_attempt_evidence_path(
+                    self.config.codex_home.as_path(),
+                    path,
+                )
+            }) && let Some(destination) = crate::dashboard_server::evidence_url(
+                self.config.codex_home.as_path(),
+                "Smart Prune attempt",
+                &path,
+            ) {
+                source_links.push((lines.len(), destination));
+                lines.push(Line::from(Span::styled(
+                    "Read attempt evidence",
+                    crate::elpis_motion::accent_style().underlined(),
+                )));
+            }
         }
         if self.smart_prune_synced
             && let Some(latest) = self.smart_prune.latest.as_ref()

@@ -485,6 +485,12 @@ impl ChatWidget {
                 .into(),
             );
         }
+        // Elpis: local evidence the dashboard server opens as readable reports.
+        let evidence_lines = self.local_evidence_lines();
+        if !evidence_lines.is_empty() {
+            after_chart.push(Line::default());
+            after_chart.extend(evidence_lines);
+        }
         ContextUsageHistoryCell {
             before_chart,
             has_request_snapshot: snapshot.has_request_snapshot,

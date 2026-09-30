@@ -26,6 +26,9 @@ use crate::activity_state::DashboardActivityStatus as ProjectedActivityStatus;
 #[path = "dashboard_evidence.rs"]
 mod evidence;
 
+pub(crate) use evidence::publish as publish_evidence;
+pub(crate) use evidence::register as evidence_url;
+
 const INDEX_HTML: &str = include_str!("dashboard_assets/index.html");
 const DASHBOARD_CSS: &str = include_str!("dashboard_assets/dashboard.css");
 const DASHBOARD_JS: &str = include_str!("dashboard_assets/dashboard.js");
