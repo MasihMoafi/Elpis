@@ -92,6 +92,7 @@ async fn selected_usage_is_cached_and_account_changes_discard_old_results() -> R
                 total: tokens.clone(),
                 last: tokens.clone(),
                 model_context_window: None,
+                context_attribution: None,
             },
         },
     ));

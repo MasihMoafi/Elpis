@@ -380,3 +380,88 @@ async fn smart_prune_row_syncs_then_shows_the_thread_state_as_in_v030() {
     assert!(ledger.contains("[━━━●] ON"), "{ledger}");
     assert!(!ledger.contains("SYNC"), "{ledger}");
 }
+
+/// One `thread/tokenUsage/updated`, as the app server sends it after a sampled response.
+fn token_usage_update(
+    chat: &mut ChatWidget,
+    context_attribution: Option<codex_app_server_protocol::ThreadContextAttribution>,
+) {
+    let breakdown = codex_app_server_protocol::TokenUsageBreakdown {
+        total_tokens: 1_000,
+        input_tokens: 900,
+        cached_input_tokens: 0,
+        cache_write_input_tokens: 0,
+        output_tokens: 100,
+        reasoning_output_tokens: 0,
+    };
+    chat.handle_server_notification(
+        ServerNotification::ThreadTokenUsageUpdated(
+            codex_app_server_protocol::ThreadTokenUsageUpdatedNotification {
+                thread_id: "thread-1".to_string(),
+                turn_id: "turn-1".to_string(),
+                token_usage: codex_app_server_protocol::ThreadTokenUsage {
+                    total: breakdown.clone(),
+                    last: breakdown,
+                    model_context_window: Some(258_400),
+                    context_attribution,
+                },
+            },
+        ),
+        /*replay_kind*/ None,
+    );
+}
+
+/// The ledger's words in reading order, without its left border or line wrapping.
+fn ledger_words(chat: &ChatWidget) -> String {
+    ledger_alone(chat)
+        .iter()
+        .map(|row| row.chars().skip(1).collect::<String>())
+        .collect::<Vec<_>>()
+        .join(" ")
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn planted_attribution() -> codex_app_server_protocol::ThreadContextAttribution {
+    codex_app_server_protocol::ThreadContextAttribution {
+        system_instructions: 560,
+        developer_messages: 141,
+        user_messages: 41,
+        agent_messages: 6,
+        tool_definitions: 252,
+        estimated_total: 1_000,
+        ..Default::default()
+    }
+}
+
+#[tokio::test]
+async fn context_window_shows_category_shares_once_the_server_sends_them() {
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
+    chat.last_rendered_width.set(Some(WIDTH));
+
+    token_usage_update(&mut chat, Some(planted_attribution()));
+
+    let ledger = ledger_words(&chat);
+    for category in ["User messages", "Agent messages", "System instructions"] {
+        assert!(ledger.contains(category), "missing {category}:\n{ledger}");
+    }
+    assert!(!ledger.contains("category attribution unavailable"), "{ledger}");
+
+    // A later update without shares (a replay) keeps the last known ones.
+    token_usage_update(&mut chat, /*context_attribution*/ None);
+    let ledger = ledger_words(&chat);
+    assert!(ledger.contains("User messages"), "{ledger}");
+}
+
+#[tokio::test]
+async fn context_window_says_attribution_is_unavailable_until_shares_arrive() {
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
+    chat.last_rendered_width.set(Some(WIDTH));
+
+    token_usage_update(&mut chat, /*context_attribution*/ None);
+
+    let ledger = ledger_words(&chat);
+    assert!(ledger.contains("category attribution unavailable"), "{ledger}");
+    assert!(!ledger.contains("User messages"), "{ledger}");
+}

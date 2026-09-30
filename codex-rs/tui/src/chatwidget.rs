@@ -388,6 +388,8 @@ mod rendering;
 mod elpis_identity;
 // Elpis: the ChatWidget half of the v0.3.0 composer behaviour.
 mod elpis_composer;
+// Elpis: the Context Ledger's category shares, the dashboard and the `/usage` card.
+mod elpis_dashboard;
 mod replay;
 mod review;
 mod review_popups;

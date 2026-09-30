@@ -99,6 +99,8 @@ pub mod elpis_admission;
 // Elpis: the responding agent saves MEMORY.md / ES.md through the guarded `save_memory` tool.
 pub mod elpis_memory;
 pub mod memory_save;
+// Elpis: the Context Ledger's per-category shares of each built request.
+pub mod elpis_context_attribution;
 mod context_manager;
 mod current_time;
 mod cyber_access_program;

@@ -47,6 +47,10 @@ impl ChatWidget {
             ServerNotification::ThreadTokenUsageUpdated(notification) => {
                 // Elpis: a measured turn replaces the ledger's projected admission delta.
                 self.reconcile_context_projection_for_turn(&notification.turn_id);
+                // Elpis: the latest request's category shares, when the server sent them.
+                self.apply_context_attribution(
+                    notification.token_usage.context_attribution.clone(),
+                );
                 self.set_token_info(Some(token_usage_info_from_app_server(
                     notification.token_usage,
                 )));

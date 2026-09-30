@@ -52,6 +52,7 @@ use codex_app_server_protocol::RequestId;
 use codex_app_server_protocol::ServerNotification;
 use codex_app_server_protocol::ServerRequestPayload;
 use codex_app_server_protocol::StrictReviewRequiredNotification;
+use codex_app_server_protocol::ThreadContextAttribution;
 use codex_app_server_protocol::ThreadGoalUpdatedNotification;
 use codex_app_server_protocol::ThreadItem;
 use codex_app_server_protocol::ThreadRealtimeClosedNotification;
@@ -1024,8 +1025,15 @@ pub(crate) async fn apply_bespoke_event_handling(
                 .await;
         }
         EventMsg::TokenCount(token_count_event) => {
-            handle_token_count_event(conversation_id, event_turn_id, token_count_event, &outgoing)
-                .await;
+            handle_token_count_event(
+                conversation_id,
+                event_turn_id,
+                token_count_event,
+                // Elpis: the Context Ledger's category shares for the latest request.
+                crate::elpis_context_attribution::latest(&conversation),
+                &outgoing,
+            )
+            .await;
             // Elpis: Smart Prune counters move with token usage (elpis_smart_prune.rs).
             outgoing
                 .send_server_notification(
@@ -1590,10 +1598,12 @@ async fn handle_token_count_event(
     conversation_id: ThreadId,
     turn_id: String,
     token_count_event: TokenCountEvent,
+    context_attribution: Option<ThreadContextAttribution>,
     outgoing: &ThreadScopedOutgoingMessageSender,
 ) {
     let TokenCountEvent { info, rate_limits } = token_count_event;
-    if let Some(token_usage) = info.map(ThreadTokenUsage::from) {
+    if let Some(mut token_usage) = info.map(ThreadTokenUsage::from) {
+        token_usage.context_attribution = context_attribution; // Elpis
         let notification = ThreadTokenUsageUpdatedNotification {
             thread_id: conversation_id.to_string(),
             turn_id,
@@ -3712,6 +3722,7 @@ mod tests {
                 info: Some(info),
                 rate_limits: Some(rate_limits),
             },
+            /*context_attribution*/ None,
             &outgoing,
         )
         .await;
@@ -3765,6 +3776,7 @@ mod tests {
                 info: None,
                 rate_limits: None,
             },
+            /*context_attribution*/ None,
             &outgoing,
         )
         .await;

@@ -1712,6 +1712,12 @@ async fn run_sampling_request(
         // execute and admit a tool result before the retry, so recording only outside this
         // loop misses the retry that first exposes that admission (smart_prune.rs).
         let smart_prune_request_link = sess.record_smart_prune_request(&prompt.input).await;
+        // Elpis: the Context Ledger's category shares for this exact request.
+        crate::elpis_context_attribution::record(
+            &sess.services.thread_extension_data,
+            &prompt,
+            &prompt.input,
+        );
         let err = match try_run_sampling_request(
             tool_runtime.clone(),
             Arc::clone(&sess),
@@ -3230,6 +3236,16 @@ async fn try_run_sampling_request(
         // counts only after pending tools resolve so clients do not see progress events while the
         // turn is waiting on the user. This also needs to happen before returning cancellation so
         // token usage already recorded from the completed response is still persisted.
+        // Elpis: the shares follow the retained history once the response and its tools land.
+        let retained_input = sess
+            .clone_history()
+            .await
+            .for_prompt(&step_context.settings.model_info.input_modalities);
+        crate::elpis_context_attribution::record(
+            &sess.services.thread_extension_data,
+            prompt,
+            &retained_input,
+        );
         sess.send_token_count_event(&turn_context).await;
     }
 

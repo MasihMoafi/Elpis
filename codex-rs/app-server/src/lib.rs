@@ -113,6 +113,8 @@ mod dynamic_tools;
 mod effective_plugin_change;
 // Elpis: `thread/smartPrune/updated`.
 mod elpis_smart_prune;
+// Elpis: the Context Ledger's category shares on token usage.
+mod elpis_context_attribution;
 mod error_code;
 mod extensions;
 mod external_agent_migration;
