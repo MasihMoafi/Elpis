@@ -260,6 +260,8 @@ mod elpis_look;
 mod elpis_provider_picker;
 // Elpis: evals for the Elpis slash commands.
 mod elpis_slash_commands;
+// Elpis: evals for Smart Prune's commands, switch and saved-tokens line.
+mod elpis_smart_prune;
 mod exec_flow;
 mod goal_menu;
 mod goal_validation;

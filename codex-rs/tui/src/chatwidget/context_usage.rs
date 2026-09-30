@@ -696,6 +696,26 @@ pub(super) fn weighted_cell_counts(weights: &[u64], used_cells: usize) -> Vec<us
     counts
 }
 
+/// How long a "Saved N tokens" line stays above the composer, as in v0.3.0.
+pub(super) const SAVED_CONTEXT_FLASH_DURATION: std::time::Duration =
+    std::time::Duration::from_secs(4);
+
+/// The line shown when Smart Prune admits compact output; `None` when nothing was saved.
+pub(super) fn smart_prune_saved_context_flash_line(saved_tokens: u64) -> Option<Line<'static>> {
+    (saved_tokens > 0).then(|| {
+        Line::from(vec![
+            Span::styled("✂ ", Style::default().fg(Color::LightGreen)),
+            Span::styled(
+                format!(
+                    "Smart Prune saved ~{} tokens · snip!",
+                    fmt_tokens(saved_tokens)
+                ),
+                Style::default().fg(Color::LightGreen).bold(),
+            ),
+        ])
+    })
+}
+
 /// Exercised by tests only; no production path reaches it today.
 #[cfg(test)]
 fn no_prune_totals_line() -> Line<'static> {
@@ -744,6 +764,16 @@ mod tests {
             })
             .collect::<Vec<_>>()
             .join("\n")
+    }
+
+    #[test]
+    fn smart_prune_flash_is_plain_and_specific() {
+        let line = smart_prune_saved_context_flash_line(3_300).expect("Smart Prune flash");
+        assert_eq!(
+            plain_text(vec![line]),
+            "✂ Smart Prune saved ~3.3k tokens · snip!"
+        );
+        assert!(smart_prune_saved_context_flash_line(0).is_none());
     }
 
     #[test]

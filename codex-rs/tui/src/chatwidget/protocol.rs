@@ -51,6 +51,10 @@ impl ChatWidget {
                     notification.token_usage,
                 )));
             }
+            // Elpis: Smart Prune state for the Context Ledger (elpis_ledger_glue.rs).
+            ServerNotification::ThreadSmartPruneUpdated(notification) => {
+                self.on_thread_smart_prune_updated(notification, from_replay);
+            }
             ServerNotification::ThreadNameUpdated(notification) => {
                 match ThreadId::from_string(&notification.thread_id) {
                     Ok(thread_id) => {

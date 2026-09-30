@@ -364,18 +364,19 @@ async fn context_before_the_ledger_loads_says_so_and_asks_for_nothing() {
 }
 
 #[tokio::test]
-async fn smart_prune_row_says_it_is_not_in_this_build_instead_of_syncing_forever() {
+async fn smart_prune_row_syncs_then_shows_the_thread_state_as_in_v030() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
     chat.last_rendered_width.set(Some(WIDTH));
 
     let ledger = ledger_alone(&chat).join("\n");
-    assert!(ledger.contains("Not in this Elpis build yet"), "{ledger}");
-    assert!(!ledger.contains("SYNC"), "{ledger}");
+    assert!(ledger.contains("[···] SYNC"), "{ledger}");
+    assert!(ledger.contains("Reading current thread state"), "{ledger}");
+    assert!(!ledger.contains("Not in this Elpis build yet"), "{ledger}");
 
     // Negative: once a thread reports Smart Prune state, the row shows it.
     chat.smart_prune_synced = true;
     chat.smart_prune.enabled = true;
     let ledger = ledger_alone(&chat).join("\n");
     assert!(ledger.contains("[━━━●] ON"), "{ledger}");
-    assert!(!ledger.contains("Not in this Elpis build yet"), "{ledger}");
+    assert!(!ledger.contains("SYNC"), "{ledger}");
 }
