@@ -19,7 +19,7 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-24.04
-    timeout-minutes: 120
+    timeout-minutes: 180
     env:
       CODEX_SKIP_BWRAP_BUILD: '1'
       CARGO_BUILD_JOBS: '2'
@@ -55,7 +55,8 @@ jobs:
           (cd "$directory" && sha256sum -c SHA256SUMS)
           echo "RUSTY_V8_ARCHIVE=$directory/$archive" >> "$GITHUB_ENV"
           echo "RUSTY_V8_SRC_BINDING_PATH=$directory/$binding" >> "$GITHUB_ENV"
-      - uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7
+      - uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7
+        id: cargo_cache
         with:
           path: |
             ~/.cargo/registry
@@ -118,6 +119,15 @@ jobs:
           path: dist/*
           if-no-files-found: error
           retention-days: 7
+      - name: Retain compiled outputs after checks
+        if: always() && steps.cargo_cache.outputs.cache-hit != 'true' && steps.cargo_cache.outputs.cache-primary-key != ''
+        uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            codex-rs/target
+          key: ${{ steps.cargo_cache.outputs.cache-primary-key }}
 
   release:
     if: startsWith(github.ref, 'refs/tags/v')
