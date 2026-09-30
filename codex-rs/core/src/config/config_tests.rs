@@ -13467,3 +13467,39 @@ fn sqlite_home_env_conflict_reports_an_override() -> std::io::Result<()> {
 
     Ok(())
 }
+
+// Elpis: a provider named with a gateway protocol reaches core routed through the gateway.
+#[tokio::test]
+async fn elpis_gateway_provider_from_config_file_keeps_its_route() -> std::io::Result<()> {
+    let codex_home = TempDir::new()?;
+    std::fs::write(
+        codex_home.path().join(CONFIG_TOML_FILE),
+        r#"
+model_provider = "fixture-anthropic"
+
+[model_providers.fixture-anthropic]
+name = "Fixture anthropic"
+base_url = "http://127.0.0.1:9/anthropic/v1"
+env_key = "FIXTURE_ANTHROPIC_API_KEY"
+wire_api = "anthropic_messages"
+"#,
+    )?;
+    let parsed: ConfigToml = toml::from_str(&std::fs::read_to_string(
+        codex_home.path().join(CONFIG_TOML_FILE),
+    )?)
+    .expect("parse");
+    let direct = &parsed.model_providers["fixture-anthropic"];
+    assert_eq!(direct.env_key, None, "direct parse: {direct:?}");
+    let config = ConfigBuilder::without_managed_config_for_tests()
+        .codex_home(codex_home.path().to_path_buf())
+        .build()
+        .await?;
+    let provider = &config.model_provider;
+    assert_eq!(provider.env_key, None, "{provider:?}");
+    let headers = provider.http_headers.as_ref().expect("gateway headers");
+    assert!(
+        headers.contains_key(codex_model_provider_info::GATEWAY_TOKEN_HEADER),
+        "{provider:?}"
+    );
+    Ok(())
+}
