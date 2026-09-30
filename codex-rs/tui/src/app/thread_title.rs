@@ -108,7 +108,7 @@ impl App {
         let options = TemporaryStructuredThreadOptions {
             thread_source: ThreadSource::Feature("thread_title".to_string()),
             model,
-            model_provider,
+            model_provider, // Elpis: from session_naming_model
             cwd: config.cwd.display().to_string(),
             active_permission_profile: config
                 .permissions
