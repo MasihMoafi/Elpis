@@ -2531,6 +2531,7 @@ dependencies = [
  "codex-mcp",
  "codex-memories-write",
  "codex-model-provider",
+ "codex-model-provider-info",
  "codex-models-manager",
  "codex-plugin",
  "codex-protocol",

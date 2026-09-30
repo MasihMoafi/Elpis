@@ -60,6 +60,8 @@ mod desktop_app;
 mod doctor;
 // Elpis: the Elpis home.
 mod elpis_home;
+// Elpis: v0.3.0's --provider flag.
+mod elpis_provider;
 #[cfg(test)]
 #[path = "exec_server_args_tests.rs"]
 mod exec_server_args_tests;
@@ -132,6 +134,10 @@ struct MultitoolCli {
 
     #[clap(flatten)]
     pub feature_toggles: FeatureToggles,
+
+    // Elpis: --provider.
+    #[clap(flatten)]
+    elpis_provider: elpis_provider::ProviderSelection,
 
     #[clap(flatten)]
     remote: InteractiveRemoteOptions,
@@ -1085,6 +1091,7 @@ async fn cli_main(
     let MultitoolCli {
         config_overrides: mut root_config_overrides,
         feature_toggles,
+        elpis_provider,
         remote,
         mut interactive,
         subcommand,
@@ -1101,6 +1108,10 @@ async fn cli_main(
     // Fold --enable/--disable into config overrides so they flow to all subcommands.
     let toggle_overrides = feature_toggles.to_overrides()?;
     root_config_overrides.raw_overrides.extend(toggle_overrides);
+    // Elpis: --provider is -c model_provider (and a model, for the OpenRouter routes).
+    root_config_overrides
+        .raw_overrides
+        .extend(elpis_provider.to_overrides());
     let agents_options = match &subcommand {
         Some(Subcommand::Agents(options)) => Some(options),
         _ => None,
@@ -2921,6 +2932,7 @@ mod tests {
             config_overrides: mut root_overrides,
             subcommand,
             feature_toggles: _,
+            elpis_provider: _,
             remote: _,
         } = cli;
         interactive
@@ -2958,6 +2970,7 @@ mod tests {
             config_overrides: mut root_overrides,
             subcommand,
             feature_toggles: _,
+            elpis_provider: _,
             remote: _,
         } = cli;
         interactive
@@ -3002,6 +3015,7 @@ mod tests {
             config_overrides: root_overrides,
             subcommand,
             feature_toggles: _,
+            elpis_provider: _,
             remote: _,
         } = cli;
 
