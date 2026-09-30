@@ -140,14 +140,11 @@ impl ChatComposer {
     /// Enter queues the draft as a follow-up while a turn runs, as v0.3.0 did, instead of
     /// steering the running turn.
     ///
-    /// A slash command still runs now, and Enter inside a paste burst stays a newline exactly as
-    /// it does on the ordinary send path. Returns `None` when Enter should take that path.
+    /// Slash-led drafts queue too and are validated when they run, as in v0.3.0; Enter inside a
+    /// paste burst stays a newline exactly as it does on the ordinary send path. Returns `None`
+    /// when Enter should take that path.
     pub(super) fn queue_submission_during_turn(&mut self) -> Option<(InputResult, bool)> {
-        if !self.is_task_running
-            || self
-                .slash_input()
-                .should_parse_on_dequeue(self.draft.textarea.text())
-        {
+        if !self.is_task_running {
             return None;
         }
         if self.handle_paste_enter(tokio::time::Instant::now().into_std()) {
