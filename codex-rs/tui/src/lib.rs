@@ -1978,6 +1978,14 @@ async fn run_ratatui_app(
     #[cfg(not(target_os = "windows"))]
     let should_prompt_windows_sandbox_nux_at_startup = false;
 
+    // Elpis: `--pruner-model` saves the Smart Prune model before the session starts.
+    if let Some(model) = &cli.pruner_model
+        && let Err(err) =
+            crate::chatwidget::elpis_prune_commands::apply_pruner_model_flag(&config, model)
+    {
+        shutdown_startup_session(Some(app_server), &mut terminal_restore_guard).await;
+        return Err(err.into());
+    }
     let Cli {
         prompt,
         shared,
