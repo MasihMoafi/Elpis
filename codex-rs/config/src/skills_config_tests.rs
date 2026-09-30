@@ -12,6 +12,7 @@ use super::SkillConfigRule;
 use super::SkillConfigRuleSelector;
 use super::SkillConfigRules;
 use super::bundled_skills_enabled_from_stack;
+use super::dev_rule_roots_from_stack;
 use super::skill_config_rules_from_stack;
 
 fn user_layer(codex_home: &TempDir, config: &str) -> ConfigLayerEntry {
@@ -263,5 +264,28 @@ fn default_off_disables_every_skill_until_one_is_turned_on() {
     assert_eq!(
         elpis.resolve_disabled_paths(skills),
         [other.clone()].into_iter().collect()
+    );
+}
+
+#[test]
+fn dev_rule_roots_follow_effective_configuration() {
+    let codex_home = TempDir::new().expect("temp dir");
+    let first = codex_home.path().join("first-rules");
+    let second = codex_home.path().join("second-rules");
+
+    assert_eq!(
+        dev_rule_roots_from_stack(&stack(&codex_home, "", "")),
+        Vec::<AbsolutePathBuf>::new(),
+        "no configured roots selects the managed fallback"
+    );
+    let user = format!(
+        "[skills]\ndev_rule_roots = [{}, {}]\n",
+        toml::Value::String(first.display().to_string()),
+        toml::Value::String(second.display().to_string()),
+    );
+    assert_eq!(
+        dev_rule_roots_from_stack(&stack(&codex_home, &user, "")),
+        vec![first.abs(), second.abs()],
+        "configured roots keep their order"
     );
 }

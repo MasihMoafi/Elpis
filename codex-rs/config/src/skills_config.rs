@@ -42,6 +42,10 @@ pub struct SkillsConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub default_enabled: Option<bool>,
 
+    /// Elpis: ordered roots of the development-rule Markdown files listed in the Context Ledger.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub dev_rule_roots: Vec<AbsolutePathBuf>,
+
     /// Maximum tokens used by the available-skills catalog. Defaults to 2% of
     /// the model context window and is capped at 10,000 tokens when set.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -173,6 +177,25 @@ fn skills_default_enabled_from_stack(config_layer_stack: &ConfigLayerStack) -> O
         Err(err) => {
             warn!("invalid skills config: {err}");
             None
+        }
+    }
+}
+
+/// Elpis: `[skills] dev_rule_roots` from the effective configuration. Empty means the
+/// managed fallback: `<home>/skills/dev` plus `ELPIS_DEV_SKILLS_DIRS`.
+pub fn dev_rule_roots_from_stack(config_layer_stack: &ConfigLayerStack) -> Vec<AbsolutePathBuf> {
+    let effective_config = config_layer_stack.effective_config();
+    let Some(skills_value) = effective_config
+        .as_table()
+        .and_then(|table| table.get("skills"))
+    else {
+        return Vec::new();
+    };
+    match SkillsConfig::try_from(skills_value.clone()) {
+        Ok(skills) => skills.dev_rule_roots,
+        Err(err) => {
+            warn!("invalid skills config: {err}");
+            Vec::new()
         }
     }
 }
