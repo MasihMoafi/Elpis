@@ -262,3 +262,30 @@ async fn identity_line_sits_directly_above_the_composer() {
         "{rows:#?}"
     );
 }
+
+#[tokio::test]
+async fn identity_line_names_the_conversation_once_it_has_a_title() {
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    let thread_id = ThreadId::new();
+    chat.thread_id = Some(thread_id);
+    chat.refresh_status_surfaces();
+    let identity_row = |chat: &ChatWidget| {
+        let buffer = with_test_default_colors(DARK, || render_widget(chat, /*width*/ 120));
+        rows(&buffer)
+            .into_iter()
+            .find(|row| row.starts_with(" Elpis · model "))
+            .expect("identity line")
+    };
+
+    let untitled = identity_row(&chat);
+    assert!(!untitled.contains("Fix login refresh bug"), "{untitled}");
+
+    chat.on_thread_name_updated(thread_id, Some("  Fix login refresh bug ".to_string()));
+    assert!(
+        identity_row(&chat)
+            .trim_end()
+            .ends_with("· Fix login refresh bug"),
+        "{}",
+        identity_row(&chat)
+    );
+}
