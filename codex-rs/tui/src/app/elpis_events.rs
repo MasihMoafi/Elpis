@@ -18,6 +18,7 @@ impl App {
                 self.handle_elpis_provider_event(tui, app_server, event)
                     .await;
             }
+            ElpisAppEvent::SaveBackgroundModel(choice) => self.save_background_model(choice).await,
             ledger_event => self.handle_elpis_ledger_event(tui, ledger_event)?,
         }
         Ok(())
@@ -50,6 +51,34 @@ impl App {
             Err(err) => self
                 .chat_widget
                 .add_error_message(format!("Full Access default could not be saved: {err}")),
+        }
+    }
+
+    /// `/memory-model`: save the background model in config.toml, then use it in this
+    /// session (the chat's config and the one new chats start from).
+    async fn save_background_model(
+        &mut self,
+        choice: crate::elpis_background_model::BackgroundModelChoice,
+    ) {
+        let saved = ConfigEditsBuilder::for_config(&self.config)
+            .with_edits(choice.edits())
+            .apply()
+            .await;
+        match saved {
+            Ok(()) => {
+                choice.apply_to(&mut self.config);
+                self.chat_widget.apply_background_model(&choice);
+                self.chat_widget.add_info_message(
+                    format!(
+                        "Background model saved: {}. Session naming uses it; memory uses the responding agent; the chat model is unchanged.",
+                        crate::elpis_background_model::describe(self.chat_widget.config_ref())
+                    ),
+                    /*hint*/ None,
+                );
+            }
+            Err(err) => self
+                .chat_widget
+                .add_error_message(format!("Background model was not changed: {err}")),
         }
     }
 

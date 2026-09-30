@@ -4,10 +4,14 @@
 //! decides about them lives here: the descriptions, the dispatch flags and the dispatch itself.
 //! Upstream files reach this module through one-line seams marked `Elpis:`.
 //!
-//! `/yolo`, `/agent`, `/add` and `/context` work in this build. The commands that need the Elpis
-//! context engine (`/pruner-model`, `/memory-model`, `/prune`, `/smart-prune`, `/force-prune`,
-//! `/dashboard`) are listed with their v0.3.0 descriptions and, when run, say plainly that they
-//! arrive in a later Elpis build. They send nothing to the model or the app server.
+//! `/yolo`, `/agent`, `/add`, `/context` and `/memory-model` work in this build. The commands
+//! that need the Elpis context engine (`/pruner-model`, `/prune`, `/smart-prune`,
+//! `/force-prune`, `/dashboard`) are listed with their v0.3.0 descriptions and, when run, say
+//! plainly that they arrive in a later Elpis build. They send nothing to the model or the app
+//! server.
+//!
+//! `/memory-model` saves `background_model` / `background_provider`
+//! (`crate::elpis_background_model`), which choose the model that names sessions.
 //!
 //! `/compact` stays upstream's command; Elpis adds its v0.3.0 arguments here. `/compact N` saves
 //! the pressure-compaction threshold (core/src/pressure_compaction.rs) and `/compact <text>`
@@ -16,9 +20,17 @@
 use super::ChatWidget;
 use super::user_messages::QueueDrain;
 use crate::app_event::AppEvent;
+use crate::bottom_pane::SelectionItem;
+use crate::bottom_pane::SelectionViewParams;
+use crate::bottom_pane::popup_consts::picker_hint_line_for_keymap;
 use crate::elpis_app_event::ElpisAppEvent;
+use crate::elpis_background_model::BackgroundModelChoice;
 use crate::legacy_core::pressure_compaction::PressureCompaction;
 use crate::slash_command::SlashCommand;
+use ratatui::style::Stylize;
+use ratatui::text::Line;
+use ratatui::widgets::Paragraph;
+use ratatui::widgets::Wrap;
 
 /// Or-pattern of every Elpis-owned `SlashCommand` variant, for the exhaustive upstream matches.
 macro_rules! elpis_slash_commands {
@@ -201,6 +213,7 @@ impl ChatWidget {
                 self.add_error_message(super::elpis_ledger_glue::ADD_CONTEXT_USAGE.to_string());
             }
             SlashCommand::Context => self.request_fresh_context_usage_report(),
+            SlashCommand::MemoryModel => self.open_background_model_popup(),
             _ => {
                 self.add_info_message(
                     format!(
@@ -211,5 +224,85 @@ impl ChatWidget {
                 );
             }
         }
+    }
+
+    /// `/memory-model <id|provider:id|default>`, as in v0.3.0.
+    pub(super) fn dispatch_memory_model_with_args(&mut self, args: &str) {
+        match BackgroundModelChoice::parse(args, &self.config) {
+            Ok(choice) => self.save_background_model(choice),
+            Err(error) => {
+                self.add_error_message(format!("Background model was not changed: {error}"))
+            }
+        }
+    }
+
+    /// Bare `/memory-model`: the built-in default and this provider's models, as in v0.3.0.
+    fn open_background_model_popup(&mut self) {
+        let current = self.config.background_model.clone();
+        // The catalog is the session provider's, so a listed model clears
+        // `background_provider` and follows the session's provider.
+        let mut choices = vec![(
+            None,
+            "Built-in default".to_string(),
+            "Name sessions with the default model on the session's provider".to_string(),
+        )];
+        choices.extend(
+            self.model_catalog()
+                .try_list_models()
+                .unwrap_or_default()
+                .into_iter()
+                .filter(|preset| preset.show_in_picker)
+                .map(|preset| (Some(preset.model.clone()), preset.model, preset.description)),
+        );
+        let items = choices
+            .into_iter()
+            .map(|(model, name, description)| {
+                let choice = BackgroundModelChoice {
+                    model,
+                    provider: Some(None),
+                };
+                SelectionItem {
+                    name,
+                    description: Some(description),
+                    is_current: current == choice.model,
+                    actions: vec![Box::new(move |tx| {
+                        tx.send(AppEvent::Elpis(ElpisAppEvent::SaveBackgroundModel(
+                            choice.clone(),
+                        )));
+                    })],
+                    dismiss_on_select: true,
+                    ..Default::default()
+                }
+            })
+            .collect();
+        self.show_selection_view(SelectionViewParams {
+            header: Box::new(
+                Paragraph::new(vec![
+                    Line::from("Background model".bold()),
+                    Line::from(
+                        format!(
+                            "Names sessions; memory uses the responding agent. Now: {}. Any other model: /memory-model <id|provider:id|default>",
+                            crate::elpis_background_model::describe(&self.config)
+                        )
+                        .dim(),
+                    ),
+                ])
+                .wrap(Wrap { trim: false }),
+            ),
+            footer_hint: Some(picker_hint_line_for_keymap(&self.bottom_pane.list_keymap())),
+            items,
+            ..SelectionViewParams::picker()
+        });
+        self.request_redraw();
+    }
+
+    fn save_background_model(&mut self, choice: BackgroundModelChoice) {
+        self.app_event_tx
+            .send(AppEvent::Elpis(ElpisAppEvent::SaveBackgroundModel(choice)));
+    }
+
+    /// Uses a saved `/memory-model` choice in this chat.
+    pub(crate) fn apply_background_model(&mut self, choice: &BackgroundModelChoice) {
+        choice.apply_to(&mut self.config);
     }
 }

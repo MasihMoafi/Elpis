@@ -16,6 +16,8 @@ pub(crate) enum ElpisAppEvent {
     /// The provider-aware `/model` picker (chatwidget/elpis_providers.rs,
     /// app/elpis_providers.rs).
     Provider(crate::chatwidget::ElpisProviderEvent),
+    /// `/memory-model`: save the background model and use it from now on.
+    SaveBackgroundModel(crate::elpis_background_model::BackgroundModelChoice),
 
     // The Context Ledger (app/elpis_ledger.rs).
     /// Render the `/context` usage report. Requires the App-owned transcript cell list

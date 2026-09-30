@@ -98,12 +98,17 @@ impl App {
         } else {
             self.chat_widget.current_model().to_string()
         };
+        // Elpis: `/memory-model` (background_model / background_provider) names sessions.
+        let (model, model_provider) = crate::elpis_background_model::session_naming_model(
+            self.chat_widget.config_ref(),
+            model,
+        );
         let effort = (model == THREAD_TITLE_MODEL).then_some(ReasoningEffort::Low);
         let config = self.chat_widget.config_ref();
         let options = TemporaryStructuredThreadOptions {
             thread_source: ThreadSource::Feature("thread_title".to_string()),
             model,
-            model_provider: config.model_provider_id.clone(),
+            model_provider,
             cwd: config.cwd.display().to_string(),
             active_permission_profile: config
                 .permissions
