@@ -77,6 +77,8 @@ pub(crate) fn mark_underlined_hyperlink(buf: &mut Buffer, area: Rect, url: &str)
 
 use super::onboarding_screen::StepState;
 
+// Elpis: the API-key field is masked as it is typed (v0.3.0).
+mod elpis_api_key;
 mod headless_chatgpt_login;
 
 #[derive(Clone)]
@@ -723,7 +725,8 @@ impl AuthModeWidget {
         let content_line: Line = if state.value.is_empty() {
             vec!["Paste or type your API key".dim()].into()
         } else {
-            Line::from(state.value.clone())
+            // Elpis: dots, not the key (v0.3.0).
+            Line::from(elpis_api_key::mask_api_key(&state.value))
         };
         Paragraph::new(content_line)
             .wrap(Wrap { trim: false })
@@ -1276,6 +1279,40 @@ mod tests {
             animations_suppressed: std::cell::Cell::new(false),
         };
         (widget, codex_home)
+    }
+
+    // Elpis: the API-key field never shows the typed key.
+    #[test]
+    fn api_key_entry_masks_the_typed_key() {
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let (widget, _tmp) = runtime.block_on(widget_forced_chatgpt());
+        let area = Rect::new(0, 0, 80, 12);
+        let render = |value: &str| {
+            let mut buf = Buffer::empty(area);
+            let state = ApiKeyInputState {
+                value: value.to_string(),
+                prepopulated_from_env: false,
+            };
+            widget.render_api_key_entry(area, &mut buf, &state);
+            (area.top()..area.bottom())
+                .map(|row| {
+                    (area.left()..area.right())
+                        .map(|column| buf[(column, row)].symbol())
+                        .collect::<String>()
+                })
+                .collect::<Vec<_>>()
+                .join("\n")
+        };
+
+        let typed = render("sk-test-ABCDEFGHIJKLMNOP1234");
+        assert!(!typed.contains("sk-test"), "the key is readable:\n{typed}");
+        assert!(typed.contains("••••1234"), "the tail is missing:\n{typed}");
+
+        let empty = render("");
+        assert!(
+            empty.contains("Paste or type your API key"),
+            "an empty field lost its prompt:\n{empty}"
+        );
     }
 
     #[tokio::test]
