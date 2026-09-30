@@ -143,9 +143,13 @@ struct MultitoolCli {
     subcommand: Option<Subcommand>,
 }
 
+// Elpis: `elpis --help` lists what v0.3.0 listed (resume, archive, delete, unarchive). The
+// other subcommands stay callable; exec and app-server are used internally.
 #[derive(Debug, clap::Subcommand)]
 enum Subcommand {
     /// Browse all agent sessions on the shared local app-server daemon.
+    // Elpis: hidden from help; still callable.
+    #[clap(hide = true)]
     Agents(AgentsCommand),
 
     /// Internal: forward a local TCP socket through an HTTP/3 CONNECT proxy.
@@ -153,46 +157,74 @@ enum Subcommand {
     TcpTunnel(codex_tcp_tunnel::Args),
     /// Run Codex non-interactively.
     #[clap(visible_alias = "e")]
+    // Elpis: hidden from help; still callable.
+    #[clap(hide = true)]
     Exec(ExecCli),
 
     /// Run a code review non-interactively.
+    // Elpis: hidden from help; still callable.
+    #[clap(hide = true)]
     Review(ReviewCommand),
 
     /// Manage login.
+    // Elpis: hidden from help; still callable.
+    #[clap(hide = true)]
     Login(LoginCommand),
 
     /// Remove stored authentication credentials.
+    // Elpis: hidden from help; still callable.
+    #[clap(hide = true)]
     Logout(LogoutCommand),
 
-    /// Manage external MCP servers for Codex.
+    /// Manage external MCP servers for Elpis.
+    // Elpis: hidden from help; still callable.
+    #[clap(hide = true)]
     Mcp(McpCli),
 
-    /// Manage Codex plugins.
+    /// Manage Elpis plugins.
+    // Elpis: hidden from help; still callable.
+    #[clap(hide = true)]
     Plugin(PluginCli),
 
     /// [experimental] Run the app server or related tooling.
+    // Elpis: hidden from help; still callable.
+    #[clap(hide = true)]
     AppServer(AppServerCommand),
 
     /// [experimental] Manage the app-server daemon with remote control enabled.
+    // Elpis: hidden from help; still callable.
+    #[clap(hide = true)]
     RemoteControl(RemoteControlCommand),
 
     /// Launch the Desktop app (opens the app installer if missing).
     #[cfg(any(target_os = "macos", target_os = "windows"))]
+    // Elpis: hidden from help; still callable.
+    #[clap(hide = true)]
     App(app_cmd::AppCommand),
 
     /// Generate shell completion scripts.
+    // Elpis: hidden from help; still callable.
+    #[clap(hide = true)]
     Completion(CompletionCommand),
 
     /// Update Codex to the latest version.
+    // Elpis: hidden from help; still callable.
+    #[clap(hide = true)]
     Update,
 
-    /// Diagnose local Codex installation, config, auth, and runtime health.
+    /// Diagnose local Elpis installation, config, auth, and runtime health.
+    // Elpis: hidden from help; still callable.
+    #[clap(hide = true)]
     Doctor(DoctorCommand),
 
-    /// Run commands within a Codex-provided sandbox.
+    /// Run commands within an Elpis-provided sandbox.
+    // Elpis: hidden from help; still callable.
+    #[clap(hide = true)]
     Sandbox(HostSandboxArgs),
 
     /// Debugging tools.
+    // Elpis: hidden from help; still callable.
+    #[clap(hide = true)]
     Debug(DebugCommand),
 
     /// Execpolicy tooling.
@@ -201,12 +233,16 @@ enum Subcommand {
 
     /// Apply the latest diff produced by Codex agent as a `git apply` to your local working tree.
     #[clap(visible_alias = "a")]
+    // Elpis: hidden from help; still callable.
+    #[clap(hide = true)]
     Apply(ApplyCommand),
 
     /// Resume a previous interactive session (picker by default; use --last to continue the most recent).
     Resume(ResumeCommand),
 
     /// Queue a message for an existing session.
+    // Elpis: hidden from help; still callable.
+    #[clap(hide = true)]
     Queue(QueueCommand),
 
     /// Archive a saved session by id or session name.
@@ -216,16 +252,22 @@ enum Subcommand {
     Delete(DeleteCommand),
 
     /// Inspect or migrate legacy local sessions to paginated thread history.
+    // Elpis: hidden from help; still callable.
+    #[clap(hide = true)]
     MigrateRollouts(migrate_rollouts::MigrateRolloutsCommand),
 
     /// Unarchive a saved session by id or session name.
     Unarchive(SessionArchiveCommand),
 
     /// Fork a previous interactive session (picker by default; use --last to fork the most recent).
+    // Elpis: hidden from help; still callable.
+    #[clap(hide = true)]
     Fork(ForkCommand),
 
     /// [EXPERIMENTAL] Browse tasks from Codex Cloud and apply changes locally.
     #[clap(name = "cloud", alias = "cloud-tasks")]
+    // Elpis: hidden from help; still callable.
+    #[clap(hide = true)]
     Cloud(CloudTasksCli),
 
     /// Internal: run the responses API proxy.
@@ -237,9 +279,13 @@ enum Subcommand {
     StdioToUds(StdioToUdsCommand),
 
     /// [EXPERIMENTAL] Run the standalone exec-server service.
+    // Elpis: hidden from help; still callable.
+    #[clap(hide = true)]
     ExecServer(ExecServerCommand),
 
     /// Inspect feature flags.
+    // Elpis: hidden from help; still callable.
+    #[clap(hide = true)]
     Features(FeaturesCli),
 }
 
@@ -3401,6 +3447,29 @@ mod tests {
         let err = MultitoolCli::try_parse_from(args).expect_err("help should short-circuit");
         assert_eq!(err.kind(), clap::error::ErrorKind::DisplayHelp);
         err.to_string()
+    }
+
+    #[test]
+    fn help_lists_only_the_v030_commands_and_hidden_ones_still_parse() {
+        let help = help_from_args(&["elpis", "--help"]);
+        let listed = help
+            .lines()
+            .skip_while(|line| line.trim_end() != "Commands:")
+            .skip(1)
+            .take_while(|line| line.starts_with("  "))
+            .filter(|line| !line.starts_with("   "))
+            .filter_map(|line| line.split_whitespace().next())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            listed,
+            ["resume", "archive", "delete", "unarchive", "help"],
+            "{help}"
+        );
+        // Hidden, not removed: Elpis runs exec and app-server internally.
+        let cli = MultitoolCli::try_parse_from(["elpis", "exec", "hi"]).expect("exec parses");
+        assert!(matches!(cli.subcommand, Some(Subcommand::Exec(_))));
+        let cli = MultitoolCli::try_parse_from(["elpis", "app-server"]).expect("app-server parses");
+        assert!(matches!(cli.subcommand, Some(Subcommand::AppServer(_))));
     }
 
     #[test]
