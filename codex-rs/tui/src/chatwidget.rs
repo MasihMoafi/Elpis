@@ -333,7 +333,6 @@ mod model_popups;
 // Elpis: the provider-aware /model picker.
 mod elpis_providers;
 pub(crate) use self::elpis_providers::ElpisProviderEvent;
-pub(crate) use self::elpis_providers::ElpisSecret;
 pub(crate) use self::elpis_providers::elpis_catalog_provider;
 pub(crate) use self::elpis_providers::load_elpis_provider_models;
 pub(crate) use self::elpis_providers::set_elpis_catalog_provider;

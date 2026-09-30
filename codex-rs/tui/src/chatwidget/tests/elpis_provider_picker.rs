@@ -5,7 +5,7 @@
 
 use super::*;
 use crate::chatwidget::ElpisProviderEvent;
-use crate::chatwidget::ElpisSecret;
+use crate::chatwidget::elpis_providers::ElpisSecret;
 use crate::elpis_app_event::ElpisAppEvent;
 use codex_model_provider_info::GatewayWire;
 use codex_model_provider_info::ModelProviderInfo;
