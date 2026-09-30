@@ -111,6 +111,20 @@ fn roots_from_layer_stack(
                     system_cache_root_dir(&config_folder),
                     SkillScope::System,
                 ));
+
+                // Elpis: `[skills] extra_roots` adds directories of chosen skills (v0.3.0).
+                if let Some(skills) = layer
+                    .config
+                    .get("skills")
+                    .and_then(|skills| codex_config::SkillsConfig::try_from(skills.clone()).ok())
+                {
+                    roots.extend(
+                        skills
+                            .extra_roots
+                            .into_iter()
+                            .map(|path| local_root(path, SkillScope::User)),
+                    );
+                }
             }
             ConfigLayerSource::System { .. } => {
                 roots.push(local_root(

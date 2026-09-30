@@ -4145,6 +4145,13 @@
           },
           "type": "array"
         },
+        "extra_roots": {
+          "description": "Elpis: more directories whose immediate children hold `SKILL.md` files (v0.3.0), such as the skills a user chose outside `~/.agents/skills`.",
+          "items": {
+            "$ref": "#/definitions/AbsolutePathBuf"
+          },
+          "type": "array"
+        },
         "include_instructions": {
           "description": "Whether turns receive the automatic skills instructions block.",
           "type": "boolean"
