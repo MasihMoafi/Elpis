@@ -7,8 +7,9 @@
 //!   with a newline before submission or queuing is considered. The replacement uses the same
 //!   [`TextArea`] edit primitive as the editor newline path. Active paste bursts keep
 //!   backslashes literal.
-//! - The queued-messages preview says Up pulls them all back. The ChatWidget half (the Up
-//!   recall itself) lives in `chatwidget/elpis_composer.rs`.
+//! - Enter queues a follow-up while a turn runs instead of steering the running turn, and the
+//!   queued-messages preview says Up pulls them all back. The ChatWidget half (Up recall) lives
+//!   in `chatwidget/elpis_composer.rs`.
 
 use super::*;
 
@@ -62,6 +63,25 @@ impl ChatComposer {
             .textarea
             .replace_range(cursor - '\\'.len_utf8()..cursor, "\n");
         true
+    }
+
+    /// Enter queues the draft as a follow-up while a turn runs, as v0.3.0 did, instead of
+    /// steering the running turn.
+    ///
+    /// A slash command still runs now, and Enter inside a paste burst stays a newline exactly as
+    /// it does on the ordinary send path. Returns `None` when Enter should take that path.
+    pub(super) fn queue_submission_during_turn(&mut self) -> Option<(InputResult, bool)> {
+        if !self.is_task_running
+            || self
+                .slash_input()
+                .should_parse_on_dequeue(self.draft.textarea.text())
+        {
+            return None;
+        }
+        if self.handle_paste_enter(tokio::time::Instant::now().into_std()) {
+            return Some((InputResult::None, true));
+        }
+        Some(self.handle_submission(/*should_queue*/ true))
     }
 }
 
