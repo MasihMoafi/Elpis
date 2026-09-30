@@ -33,9 +33,9 @@ async fn log_write_warning_is_broadcast_once() -> anyhow::Result<()> {
             panic!("expected a broadcast notification");
         };
         let expected = if feedback_enabled {
-            "Codex couldn't save diagnostic logs to its local database. Use /feedback with logs included before closing Codex, or run `codex doctor` for diagnostics."
+            "Elpis couldn't save diagnostic logs to its local database. Use /feedback with logs included before closing Elpis, or run `elpis doctor` for diagnostics."
         } else {
-            "Codex couldn't save diagnostic logs to its local database. Run `codex doctor` for diagnostics."
+            "Elpis couldn't save diagnostic logs to its local database. Run `elpis doctor` for diagnostics."
         };
         let ServerNotification::Warning(notification) = envelope.notification else {
             panic!("expected a warning");

@@ -145,7 +145,7 @@ requires_openai_auth = true
         .await?;
     assert_eq!(error.error, codex_app_server_protocol::JSONRPCErrorError {
         code: -32600,
-        message: "failed to load configuration: Your organization's required model provider settings changed. Restart Codex to apply them; this request was not sent".to_string(),
+        message: "failed to load configuration: Your organization's required model provider settings changed. Restart Elpis to apply them; this request was not sent".to_string(),
         data: None,
     });
     assert_eq!(

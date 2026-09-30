@@ -256,7 +256,7 @@ async fn setup_bedrock_profile_and_environment() -> Result<()> {
     .await??;
     assert_eq!(
         error.error.message,
-        "Codex-managed Bedrock credentials are already configured and take priority over AWS environment credentials. Run `codex logout` and try again."
+        "Elpis-managed Bedrock credentials are already configured and take priority over AWS environment credentials. Run `elpis logout` and try again."
     );
     assert_eq!(std::fs::read_to_string(&auth_path)?, expected_auth);
     assert_eq!(

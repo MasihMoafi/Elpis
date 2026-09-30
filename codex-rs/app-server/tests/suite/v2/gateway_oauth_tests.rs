@@ -129,7 +129,7 @@ async fn model_list_requests_restart_after_gateway_provider_changes() -> Result<
         .await??;
         assert_eq!(error.error, JSONRPCErrorError {
             code: -32600,
-            message: "Model provider settings changed. Restart Codex to apply them, then retry fetching the model list".to_string(),
+            message: "Model provider settings changed. Restart Elpis to apply them, then retry fetching the model list".to_string(),
             data: None,
         });
     }
