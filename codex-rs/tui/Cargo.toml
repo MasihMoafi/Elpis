@@ -22,6 +22,8 @@ doctest = false
 workspace = true
 
 [dependencies]
+# Elpis: rtk_hook.rs finds `rtk` on PATH (upstream needs it only on Windows).
+which = { workspace = true }
 codex-build-info = { workspace = true }
 anyhow = { workspace = true }
 axum = { workspace = true, default-features = false, features = ["http1", "tokio"] }
@@ -153,7 +155,6 @@ objc2-foundation = { version = "0.3.2", default-features = false, features = ["s
 zbus = "4.4.0"
 
 [target.'cfg(windows)'.dependencies]
-which = { workspace = true }
 windows-sys = { version = "0.52", features = [
     "Win32_Foundation",
     "Win32_Globalization",
