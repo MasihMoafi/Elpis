@@ -628,6 +628,15 @@ pub struct Config {
     /// Model used specifically for review sessions.
     pub review_model: Option<String>,
 
+    // Elpis: background work (session naming, pruning) chooses its own model (v0.3.0).
+    /// Model used for background work such as naming sessions. `None` keeps the built-in
+    /// default.
+    pub background_model: Option<String>,
+
+    /// Provider id used for background work, when it differs from the provider answering
+    /// the user.
+    pub background_provider: Option<String>,
+
     /// Size of the context window for the model, in tokens.
     pub model_context_window: Option<i64>,
 
@@ -4052,6 +4061,19 @@ impl Config {
             .map(AbsolutePathBuf::into_path_buf);
 
         let review_model = override_review_model.or(cfg.review_model);
+        // Elpis: a blank background setting means the built-in default (v0.3.0).
+        let background_model = cfg
+            .background_model
+            .as_deref()
+            .map(str::trim)
+            .filter(|slug| !slug.is_empty())
+            .map(str::to_string);
+        let background_provider = cfg
+            .background_provider
+            .as_deref()
+            .map(str::trim)
+            .filter(|id| !id.is_empty())
+            .map(str::to_string);
 
         let check_for_update_on_startup = cfg.check_for_update_on_startup.unwrap_or(true);
         let model_catalog = load_model_catalog(cfg.model_catalog_json.clone())?;
@@ -4260,6 +4282,8 @@ impl Config {
             model,
             service_tier,
             review_model,
+            background_model, // Elpis
+            background_provider, // Elpis
             model_context_window: cfg.model_context_window,
             model_auto_compact_token_limit: cfg.model_auto_compact_token_limit,
             model_auto_compact_token_limit_scope: cfg

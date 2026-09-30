@@ -167,6 +167,16 @@ pub struct ConfigToml {
     pub model: Option<String>,
     /// Review model override used by the `/review` feature.
     pub review_model: Option<String>,
+    // Elpis: `/memory-model` saves these two (v0.3.0).
+    /// Model used for background work such as naming sessions and pruning context, instead
+    /// of the built-in default. Saving memory uses the responding agent. Set this to move
+    /// that work onto a cheaper or non-OpenAI provider without affecting the model that
+    /// answers the user.
+    pub background_model: Option<String>,
+    /// Provider id from `model_providers` that background work should talk to, when it
+    /// differs from the provider answering the user. Requires `background_model` to name a
+    /// model that provider serves.
+    pub background_provider: Option<String>,
 
     /// Provider to use from the model_providers map.
     pub model_provider: Option<String>,
