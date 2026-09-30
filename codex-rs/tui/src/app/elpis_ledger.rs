@@ -166,6 +166,10 @@ impl App {
         self.manual_memory_status.in_flight = Some(target.clone());
 
         let instruction_source_paths = self.chat_widget.instruction_source_paths_as_path_bufs();
+        // Elpis: list the development-rule roots the model's request reads.
+        let dev_rule_roots = codex_config::dev_rule_roots_from_stack(
+            &self.chat_widget.config_ref().config_layer_stack,
+        );
         let app_event_tx = self.app_event_tx.clone();
         tokio::spawn(async move {
             let worker_target = target.clone();
@@ -173,7 +177,7 @@ impl App {
                 Self::load_manual_memory_status(
                     &worker_target,
                     &instruction_source_paths,
-                    /*dev_rule_roots*/ &[],
+                    &dev_rule_roots,
                 )
             })
             .await
