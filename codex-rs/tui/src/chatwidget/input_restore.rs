@@ -327,9 +327,10 @@ impl ChatWidget {
                     TurnAbortReason::BudgetLimited => history_cell::new_error_event(
                         "Goal budget reached - the turn was stopped.".to_string(),
                     ),
+                    // Elpis: no /feedback command; say what to do instead.
                     TurnAbortReason::Interrupted => PlainHistoryCell::new(vec![
                         Line::from(
-                            "■ Conversation interrupted - use /feedback if something went wrong",
+                            "■ Conversation interrupted - tell the model what to do differently",
                         )
                         .style(crate::style::secondary_text_style()),
                     ]),
