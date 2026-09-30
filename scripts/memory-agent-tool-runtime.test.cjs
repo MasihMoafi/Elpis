@@ -1,3 +1,9 @@
+// Agent-owned memory eval: the responding agent saves MEMORY.md / ES.md through the guarded
+// `save_memory` tool, in its own tool loop, with no auxiliary memory request.
+// usage: node scripts/memory-agent-tool-runtime.test.cjs /absolute/path/to/binary
+// The binary is the elpis multitool (run as `<binary> app-server`) or a codex-app-server build.
+// Loopback fake provider and a fresh temporary home only; run it without network access, e.g.
+// `unshare -rn sh -c 'ip link set lo up && node scripts/memory-agent-tool-runtime.test.cjs <bin>'`.
 const assert = require("node:assert/strict");
 const crypto = require("node:crypto");
 const fs = require("node:fs");
@@ -38,6 +44,20 @@ let disabledHidTool = false;
 const failedToolOutputs = new Map();
 let staleExpected;
 const requests = [];
+
+// Code mode's `exec` tool lists every nested tool as "### `name`". 0.159 sends it inside the
+// `additional_tools` input item, under the `functions` namespace.
+function codeModeExec(body) {
+  const pending = (body.input || [])
+    .filter(item => item.type === "additional_tools")
+    .flatMap(item => item.tools || []);
+  while (pending.length) {
+    const tool = pending.pop();
+    if (tool.name === "exec") return tool;
+    pending.push(...(tool.tools || []));
+  }
+  return undefined;
+}
 
 function send(response, events) {
   response.writeHead(200, { "content-type": "text/event-stream" });
@@ -89,10 +109,7 @@ const server = http.createServer(async (request, response) => {
     response.end(JSON.stringify({ error: "auxiliary memory requests are forbidden" }));
     return;
   }
-  const execTool = body.input
-    ?.find(item => item.type === "additional_tools")
-    ?.tools?.find(candidate => candidate.name === "exec");
-  const hasMemoryTool = execTool?.description?.includes("### `save_memory`") === true;
+  const hasMemoryTool = codeModeExec(body)?.description?.includes("### `save_memory`") === true;
   sawMemoryTool ||= hasMemoryTool;
   const serialized = JSON.stringify(body);
   if (mode === "save") {
@@ -246,11 +263,12 @@ async function run() {
     "",
   ].join("\n"));
   fs.writeFileSync(path.join(home, "hooks.json"), "{}");
-  const binary = process.argv[2]
-    ? path.resolve(process.argv[2])
-    : path.resolve(__dirname, "../codex-rs/target/local-release/codex-app-server");
+  const binary = process.argv[2];
+  assert(binary && path.isAbsolute(binary), "usage: memory-agent-tool-runtime.test.cjs /absolute/path/to/binary");
   rpc = new AppServer(binary, cwd, {
-    env: { ...process.env, CODEX_HOME: home, CODEX_AUTH_HOME: home, ELPIS_HOME: home },
+    args: path.basename(binary) === "codex-app-server" ? [] : ["app-server"],
+    // Only PATH is inherited, so neither the real home nor a proxy reaches the runtime.
+    env: { PATH: process.env.PATH, HOME: home, CODEX_HOME: home, CODEX_AUTH_HOME: home, ELPIS_HOME: home },
   });
   rpc.on("request", message => rpc.respond(message.id, { decision: "decline" }));
   await rpc.request("initialize", {
