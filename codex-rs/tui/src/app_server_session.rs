@@ -1514,7 +1514,12 @@ impl AppServerSession {
         Ok(())
     }
 
-    pub(crate) async fn thread_compact_start(&mut self, thread_id: ThreadId) -> Result<()> {
+    // Elpis: `instructions` is `/compact <text>` guidance for this compaction.
+    pub(crate) async fn thread_compact_start(
+        &mut self,
+        thread_id: ThreadId,
+        instructions: Option<String>,
+    ) -> Result<()> {
         let request_id = self.next_request_id();
         let _: ThreadCompactStartResponse = self
             .client
@@ -1522,6 +1527,7 @@ impl AppServerSession {
                 request_id,
                 params: ThreadCompactStartParams {
                     thread_id: thread_id.to_string(),
+                    instructions,
                 },
             })
             .await

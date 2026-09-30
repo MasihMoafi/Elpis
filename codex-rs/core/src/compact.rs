@@ -133,6 +133,7 @@ pub(crate) async fn run_inline_auto_compact_task(
         CompactionTrigger::Auto,
         reason,
         phase,
+        /*additional_instructions*/ None, // Elpis
     )
     .await?;
     Ok(())
@@ -142,6 +143,7 @@ pub(crate) async fn run_compact_task(
     sess: Arc<Session>,
     turn_context: Arc<TurnContext>,
     input: Vec<UserInput>,
+    additional_instructions: Option<&str>, // Elpis: `/compact <text>`
 ) -> CodexResult<()> {
     sess.emit_turn_started(&turn_context).await;
     run_compact_task_inner(
@@ -152,11 +154,13 @@ pub(crate) async fn run_compact_task(
         CompactionTrigger::Manual,
         CompactionReason::UserRequested,
         CompactionPhase::StandaloneTurn,
+        additional_instructions,
     )
     .await?;
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)] // Elpis: `/compact <text>` added one
 async fn run_compact_task_inner(
     sess: Arc<Session>,
     turn_context: Arc<TurnContext>,
@@ -165,6 +169,7 @@ async fn run_compact_task_inner(
     trigger: CompactionTrigger,
     reason: CompactionReason,
     phase: CompactionPhase,
+    additional_instructions: Option<&str>, // Elpis: `/compact <text>`
 ) -> CodexResult<()> {
     let compaction_metadata =
         CompactionTurnMetadata::new(trigger, reason, CompactionImplementation::Responses, phase);
@@ -199,6 +204,7 @@ async fn run_compact_task_inner(
         input,
         initial_context_injection,
         compaction_metadata,
+        additional_instructions,
     )
     .await;
     let status = compaction_status_from_result(&result);
@@ -248,6 +254,7 @@ async fn run_compact_task_inner_impl(
     input: Vec<UserInput>,
     initial_context_injection: InitialContextInjection,
     compaction_metadata: CompactionTurnMetadata,
+    additional_instructions: Option<&str>, // Elpis: `/compact <text>`
 ) -> CodexResult<String> {
     let compaction_item = TurnItem::ContextCompaction(ContextCompactionItem::new());
     sess.emit_turn_item_started(&turn_context, &compaction_item)
@@ -276,7 +283,11 @@ async fn run_compact_task_inner_impl(
         let turn_input_len = turn_input.len();
         let prompt = Prompt {
             input: turn_input,
-            base_instructions: sess.get_prompt_base_instructions().await,
+            // Elpis: `/compact <text>` guidance extends this request's base instructions.
+            base_instructions: crate::compact_instructions::with_additional_compaction_instructions(
+                sess.get_prompt_base_instructions().await,
+                additional_instructions,
+            ),
             cyber_access_program: turn_context.cyber_access_program,
             ..Default::default()
         };

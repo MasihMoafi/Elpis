@@ -34,10 +34,15 @@ pub(super) async fn run_remote_compact_v2_attempt(
     compaction_trace: &CompactionTraceContext,
     compaction_metadata: CompactionTurnMetadata,
     analytics_details: &mut CompactionAnalyticsDetails,
+    additional_instructions: Option<&str>, // Elpis: `/compact <text>`
 ) -> CodexResult<RemoteCompactV2Attempt> {
     let turn_context = &step_context.turn;
     let mut history = sess.clone_history().await;
-    let base_instructions = sess.get_prompt_base_instructions().await;
+    // Elpis: `/compact <text>` guidance extends this request's base instructions.
+    let base_instructions = crate::compact_instructions::with_additional_compaction_instructions(
+        sess.get_prompt_base_instructions().await,
+        additional_instructions,
+    );
     let (rewritten_outputs, estimated_deleted_tokens) =
         trim_function_call_history_to_fit_context_window(
             &mut history,

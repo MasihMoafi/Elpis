@@ -164,6 +164,7 @@ async fn local_compaction_respects_tool_metadata_state(
             text: "Summarize the conversation.".to_string(),
             text_elements: Vec::new(),
         }],
+        /*additional_instructions*/ None, // Elpis
     )
     .await?;
 

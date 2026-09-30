@@ -910,7 +910,16 @@ impl App {
                 Ok(true)
             }
             AppCommand::Compact => {
-                app_server.thread_compact_start(thread_id).await?;
+                app_server
+                    .thread_compact_start(thread_id, /*instructions*/ None)
+                    .await?;
+                Ok(true)
+            }
+            // Elpis: `/compact <text>`.
+            AppCommand::CompactWithInstructions { instructions } => {
+                app_server
+                    .thread_compact_start(thread_id, Some(instructions.clone()))
+                    .await?;
                 Ok(true)
             }
             AppCommand::SetThreadName { name } => {

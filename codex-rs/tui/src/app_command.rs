@@ -179,6 +179,10 @@ pub(crate) enum AppCommand {
         force_reload: bool,
     },
     Compact,
+    // Elpis: `/compact <text>`, a compaction with guidance for its summary.
+    CompactWithInstructions {
+        instructions: String,
+    },
     SetThreadName {
         name: String,
     },
