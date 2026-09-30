@@ -117,6 +117,10 @@ pub(crate) fn find_builtin_command(name: &str, flags: BuiltinCommandFlags) -> Op
         (!repeated_os.is_empty() && repeated_os.bytes().all(|byte| byte == b'o'))
             .then_some(SlashCommand::Goal)
     })?;
+    // Elpis: commands kept out of the popup stay typeable, as in v0.3.0.
+    if crate::chatwidget::elpis_commands::unlisted(cmd) {
+        return Some(cmd);
+    }
     builtins_for_input(BuiltinCommandFlags {
         token_activity_command_enabled: true,
         side_conversation_active: false,
