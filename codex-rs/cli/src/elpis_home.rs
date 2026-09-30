@@ -31,6 +31,7 @@ fn resolve_elpis_home() -> anyhow::Result<PathBuf> {
 /// Points every Codex home lookup at the Elpis home. Must run first in `main`.
 pub(crate) fn prepare_elpis_environment() -> anyhow::Result<PathBuf> {
     let elpis_home = resolve_elpis_home()?;
+    let no_proxy = codex_elpis_gateway::no_proxy_with_loopback(|name| std::env::var(name).ok());
     // This runs before arg0 dispatch creates a Tokio runtime or any threads.
     unsafe {
         // Exported so arg0 helper re-execs and nested elpis resolve the same home.
@@ -38,6 +39,11 @@ pub(crate) fn prepare_elpis_environment() -> anyhow::Result<PathBuf> {
         std::env::set_var("CODEX_HOME", &elpis_home);
         std::env::remove_var("CODEX_SQLITE_HOME");
         std::env::remove_var("CODEX_TUI_SESSION_LOG_PATH");
+        // Requests to the provider gateway on 127.0.0.1 must not go to an HTTP proxy.
+        if let Some(no_proxy) = &no_proxy {
+            std::env::set_var("NO_PROXY", no_proxy);
+            std::env::set_var("no_proxy", no_proxy);
+        }
     }
     Ok(elpis_home)
 }

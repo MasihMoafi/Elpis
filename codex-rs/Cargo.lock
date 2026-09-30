@@ -2515,6 +2515,7 @@ dependencies = [
  "codex-config",
  "codex-core",
  "codex-core-plugins",
+ "codex-elpis-gateway",
  "codex-exec",
  "codex-exec-server",
  "codex-execpolicy",

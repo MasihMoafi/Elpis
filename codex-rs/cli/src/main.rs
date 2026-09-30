@@ -1068,6 +1068,10 @@ fn main() -> anyhow::Result<()> {
     arg0_dispatch_or_else(move |arg0_paths: Arg0DispatchPaths| async move {
         // Elpis: refuse a v0.3.0 home before anything opens its state DB.
         elpis_home::refuse_v030_state_db(&elpis_home).await?;
+        // Elpis: serve Anthropic, Gemini and Chat providers before any config names them.
+        if let Err(error) = codex_elpis_gateway::start_for_process(&elpis_home).await {
+            tracing::warn!("the Elpis provider gateway did not start: {error}");
+        }
         // Keep the CLI dispatcher off the runtime's stack while the TUI rebuilds a thread.
         Box::pin(cli_main(arg0_paths, remote_control_disabled)).await?;
         Ok(())

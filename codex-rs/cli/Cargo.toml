@@ -44,6 +44,8 @@ codex-utils-cli = { workspace = true }
 codex-config = { workspace = true }
 codex-core = { workspace = true }
 codex-core-plugins = { workspace = true }
+# Elpis: the in-process provider gateway.
+codex-elpis-gateway = { workspace = true }
 codex-history = { workspace = true }
 codex-home = { workspace = true }
 codex-http-client = { workspace = true }
