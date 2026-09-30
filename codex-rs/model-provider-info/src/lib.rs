@@ -35,6 +35,10 @@ mod gateway_oauth;
 pub use gateway_oauth::GatewayOAuthConfig;
 pub use gateway_oauth::GatewayOAuthDelivery;
 
+// Elpis: Anthropic, Gemini and Chat providers are served through the Elpis gateway.
+mod elpis_gateway;
+pub use elpis_gateway::*;
+
 pub const RESIDENCY_HEADER_NAME: &str = "x-openai-internal-codex-residency";
 
 #[derive(Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
@@ -680,6 +684,8 @@ pub fn built_in_model_providers(
     ]
     .into_iter()
     .map(|(k, v)| (k.to_string(), v))
+    // Elpis: Anthropic, Gemini and OpenRouter are built in, served through the Elpis gateway.
+    .chain(elpis_gateway::built_in_gateway_providers())
     .collect()
 }
 

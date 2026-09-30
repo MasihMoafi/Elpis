@@ -19,6 +19,8 @@ codex-utils-redacted-string = { workspace = true }
 http = { workspace = true }
 schemars = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
+# Elpis: configured gateway providers are rewritten as JSON before they are read.
+serde_json = { workspace = true }
 url = { workspace = true }
 
 [dev-dependencies]

@@ -961,7 +961,9 @@ fn deserialize_model_providers<'de, D>(
 where
     D: serde::Deserializer<'de>,
 {
-    let model_providers = HashMap::<String, ModelProviderInfo>::deserialize(deserializer)?;
+    // Elpis: a provider speaking Chat, Anthropic Messages or Gemini routes through the gateway.
+    let model_providers =
+        codex_model_provider_info::deserialize_configured_model_providers(deserializer)?;
     validate_model_providers(&model_providers).map_err(serde::de::Error::custom)?;
     Ok(model_providers)
 }
