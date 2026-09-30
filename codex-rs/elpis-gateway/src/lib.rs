@@ -35,6 +35,8 @@ use axum::response::Response;
 use axum::routing::get;
 use axum::routing::post;
 use codex_model_provider_info::GatewayWire;
+use codex_model_provider_info::ModelProviderInfo;
+use codex_protocol::openai_models::ModelsResponse;
 use eventsource_stream::Eventsource;
 use futures::StreamExt;
 use http::HeaderMap;
@@ -52,6 +54,7 @@ use tokio_stream::wrappers::ReceiverStream;
 
 pub use keys::KeySource;
 pub use keys::key_source;
+pub use keys::provider_key_source;
 pub use keys::provider_keys_path;
 pub use keys::remove_provider_key;
 pub use keys::save_provider_key;
@@ -99,13 +102,7 @@ struct GatewayState {
 
 impl GatewayState {
     fn client_for(&self, url: &str) -> &reqwest::Client {
-        let loopback = reqwest::Url::parse(url).ok().is_some_and(|url| {
-            matches!(
-                url.host_str(),
-                Some("127.0.0.1" | "localhost" | "[::1]" | "::1")
-            )
-        });
-        if loopback {
+        if is_loopback(url) {
             &self.direct
         } else {
             &self.client
@@ -113,12 +110,17 @@ impl GatewayState {
     }
 }
 
-/// Starts a gateway on an ephemeral loopback port. It serves until the runtime shuts down.
-/// `home` is the Elpis home that holds saved provider keys.
-pub async fn start(home: PathBuf) -> std::io::Result<GatewayHandle> {
-    let listener = TcpListener::bind(SocketAddr::from(([127, 0, 0, 1], 0))).await?;
-    let origin = format!("http://{}", listener.local_addr()?);
-    let token = uuid::Uuid::new_v4().simple().to_string();
+fn is_loopback(url: &str) -> bool {
+    reqwest::Url::parse(url).ok().is_some_and(|url| {
+        matches!(
+            url.host_str(),
+            Some("127.0.0.1" | "localhost" | "[::1]" | "::1")
+        )
+    })
+}
+
+/// A client that honors proxy variables, and one that never proxies (for this machine).
+fn http_clients() -> std::io::Result<(reqwest::Client, reqwest::Client)> {
     let client = reqwest::Client::builder()
         .connect_timeout(CONNECT_TIMEOUT)
         .build()
@@ -128,6 +130,16 @@ pub async fn start(home: PathBuf) -> std::io::Result<GatewayHandle> {
         .no_proxy()
         .build()
         .map_err(std::io::Error::other)?;
+    Ok((client, direct))
+}
+
+/// Starts a gateway on an ephemeral loopback port. It serves until the runtime shuts down.
+/// `home` is the Elpis home that holds saved provider keys.
+pub async fn start(home: PathBuf) -> std::io::Result<GatewayHandle> {
+    let listener = TcpListener::bind(SocketAddr::from(([127, 0, 0, 1], 0))).await?;
+    let origin = format!("http://{}", listener.local_addr()?);
+    let token = uuid::Uuid::new_v4().simple().to_string();
+    let (client, direct) = http_clients()?;
     let state = GatewayState {
         token: Arc::from(token.as_str()),
         home: Arc::new(home),
@@ -403,11 +415,20 @@ async fn models(State(state): State<GatewayState>, headers: HeaderMap) -> Respon
 async fn serve_models(state: &GatewayState, headers: &HeaderMap) -> Result<Value, GatewayError> {
     let route = Route::from_headers(headers, &state.token)?;
     let key = keys::resolve(&state.home, &route, |name| std::env::var(name).ok());
-    let url = route.models_url();
-    let response = state
-        .client_for(&url)
-        .get(&url)
-        .headers(route.vendor_headers(key.as_deref())?)
+    let client = state.client_for(&route.models_url());
+    let listing = fetch_listing(client, &route, key.as_deref()).await?;
+    catalog::catalog_response(catalog::models_from_listing(route.wire, &listing))
+        .map_err(|message| GatewayError::new(StatusCode::INTERNAL_SERVER_ERROR, message))
+}
+
+async fn fetch_listing(
+    client: &reqwest::Client,
+    route: &Route,
+    key: Option<&str>,
+) -> Result<Value, GatewayError> {
+    let response = client
+        .get(route.models_url())
+        .headers(route.vendor_headers(key)?)
         .timeout(CATALOG_TIMEOUT)
         .send()
         .await
@@ -422,14 +443,38 @@ async fn serve_models(state: &GatewayState, headers: &HeaderMap) -> Result<Value
     if !status.is_success() {
         return Err(GatewayError::from_vendor(status, &text, &route.provider_id));
     }
-    let listing: Value = serde_json::from_str(&text).map_err(|error| {
+    serde_json::from_str(&text).map_err(|error| {
         GatewayError::bad_gateway(format!(
             "provider `{}` listed its models in a form Elpis cannot read: {error}",
             route.provider_id
         ))
-    })?;
-    catalog::catalog_response(catalog::models_from_listing(route.wire, &listing))
-        .map_err(|message| GatewayError::new(StatusCode::INTERNAL_SERVER_ERROR, message))
+    })
+}
+
+/// Lists a gateway provider's models as core would receive them, straight from the vendor.
+/// The `/model` picker uses it to browse a provider no thread runs on yet. Returns `None` for
+/// a provider the gateway does not serve.
+pub async fn provider_models(
+    home: &Path,
+    provider: &ModelProviderInfo,
+) -> Option<Result<ModelsResponse, String>> {
+    let route = Route::from_provider(provider)?;
+    let result = async {
+        let (client, direct) = http_clients().map_err(|error| error.to_string())?;
+        let key = keys::resolve(home, &route, |name| std::env::var(name).ok());
+        let client = if is_loopback(&route.models_url()) {
+            &direct
+        } else {
+            &client
+        };
+        let listing = fetch_listing(client, &route, key.as_deref())
+            .await
+            .map_err(|error| error.message)?;
+        let catalog = catalog::catalog_response(catalog::models_from_listing(route.wire, &listing))?;
+        serde_json::from_value::<ModelsResponse>(catalog).map_err(|error| error.to_string())
+    }
+    .await;
+    Some(result)
 }
 
 #[cfg(test)]

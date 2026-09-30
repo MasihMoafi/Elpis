@@ -1,5 +1,6 @@
 use super::*;
 use codex_model_provider_info::GatewayWire;
+use codex_model_provider_info::ModelProviderInfo;
 use http::HeaderMap;
 use pretty_assertions::assert_eq;
 
@@ -94,4 +95,37 @@ fn key_source_names_where_a_key_would_come_from() {
     assert_eq!(key_source(home.path(), "fixture", Some(unset)), KeySource::Missing);
     save_provider_key(home.path(), "fixture", "saved-key").expect("save");
     assert_eq!(key_source(home.path(), "fixture", Some(unset)), KeySource::Saved);
+}
+
+fn routed(provider_id: &str, wire: GatewayWire, env_key: Option<&str>) -> ModelProviderInfo {
+    let mut provider = ModelProviderInfo {
+        name: provider_id.to_string(),
+        base_url: Some("https://vendor.example/v1".to_string()),
+        env_key: env_key.map(str::to_string),
+        ..ModelProviderInfo::default()
+    };
+    codex_model_provider_info::route_through_gateway(provider_id, wire, &mut provider)
+        .expect("routed");
+    provider
+}
+
+#[test]
+fn provider_key_source_covers_every_way_a_gateway_provider_gets_a_key() {
+    let home = tempfile::tempdir().expect("tempdir");
+    let unset = "ELPIS_GATEWAY_TEST_VARIABLE_THAT_IS_NEVER_SET";
+    let anthropic = routed("fixture", GatewayWire::AnthropicMessages, Some(unset));
+
+    assert_eq!(provider_key_source(home.path(), &anthropic), Some(KeySource::Missing));
+    save_provider_key(home.path(), "fixture", "saved-key").expect("save");
+    assert_eq!(provider_key_source(home.path(), &anthropic), Some(KeySource::Saved));
+
+    let local_chat = routed("local", GatewayWire::Chat, /*env_key*/ None);
+    assert_eq!(provider_key_source(home.path(), &local_chat), Some(KeySource::NotRequired));
+
+    let mut configured = routed("configured", GatewayWire::Chat, Some(unset));
+    configured.experimental_bearer_token = Some("token".into());
+    assert_eq!(provider_key_source(home.path(), &configured), Some(KeySource::Configured));
+
+    let openai = ModelProviderInfo::create_openai_provider(/*base_url*/ None);
+    assert_eq!(provider_key_source(home.path(), &openai), None);
 }
