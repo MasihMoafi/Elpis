@@ -1,5 +1,5 @@
 // Ledger admission eval: the provider request carries exactly the sources the Context
-// Ledger admits (MEMORY, global and project AGENTS.md, dev rules, /add files).
+// Ledger admits (MEMORY, GOAL, ES, global and project AGENTS.md, dev rules, /add files).
 // usage: ELPIS_BIN=/abs/elpis-next node scripts/continuity-admission-runtime.test.cjs
 //    or: ELPIS_APP_SERVER_BIN=/abs/codex-app-server node scripts/continuity-admission-runtime.test.cjs
 // Runs only against a loopback fake provider with a fresh temporary home; wrap it in
@@ -19,6 +19,8 @@ const GLOBAL_AGENTS_SENTINEL = "ELPIS_GLOBAL_AGENTS_SENTINEL_934fc08c8a";
 const PROJECT_AGENTS_SENTINEL = "ELPIS_PROJECT_AGENTS_SENTINEL_13a0a94236";
 const DEV_RULE_SENTINEL = "ELPIS_DEV_RULE_SENTINEL_841c87ce04";
 const ADDED_FILE_SENTINEL = "ELPIS_ADDED_FILE_SENTINEL_5f0d2c71e3";
+const GOAL_SENTINEL = "ELPIS_GOAL_SENTINEL_c61e0b7a24";
+const CHECKPOINT_SENTINEL = "ELPIS_CHECKPOINT_SENTINEL_2d9f4a13b8";
 const USER_SENTINEL = "ELPIS_NEIGHBOR_USER_SENTINEL_a329510b8e";
 const DEVELOPER_SENTINEL = "ELPIS_NEIGHBOR_DEVELOPER_SENTINEL_786ed03a7f";
 const NEGATIVE_CONTROLS = new Set([
@@ -26,6 +28,7 @@ const NEGATIVE_CONTROLS = new Set([
   "disable-agents-on-admission",
   "disable-dev-on-admission",
   "disable-added-on-admission",
+  "disable-continuity-on-admission",
 ]);
 const REQUEST_TIMEOUT_MS = 30_000;
 const STAGES = ["default", "off", "on", "withdrawn", "malformed"];
@@ -71,6 +74,9 @@ fs.writeFileSync(path.join(home, "AGENTS.md"), `${GLOBAL_AGENTS_SENTINEL}\n`);
 fs.writeFileSync(path.join(cwd, "AGENTS.md"), `${PROJECT_AGENTS_SENTINEL}\n`);
 fs.writeFileSync(path.join(devRules, devRuleName), `${DEV_RULE_SENTINEL}\n`);
 fs.writeFileSync(addedFile, `${ADDED_FILE_SENTINEL}\n`);
+// GOAL.md and ES.md are the workspace's continuity files (/goal mirror and turn checkpoint).
+fs.writeFileSync(path.join(workspace, "GOAL.md"), `# Elpis Goal\n\n## Objective\n\n${GOAL_SENTINEL}\n`);
+fs.writeFileSync(path.join(workspace, "ES.md"), `# Elpis Session Checkpoint\n\n## Latest Result\n\n${CHECKPOINT_SENTINEL}\n`);
 // `/add` stores the canonical path as a custom source key.
 const addedSourceKey = JSON.stringify(fs.realpathSync(addedFile));
 fs.writeFileSync(path.join(home, "hooks.json"), "{}");
@@ -292,6 +298,9 @@ async function runStage(threadId, stage, admission, text) {
   if (negativeControl === "disable-added-on-admission" && stage === "on") {
     admission = admission.replace(`${addedSourceKey} = true`, `${addedSourceKey} = false`);
   }
+  if (negativeControl === "disable-continuity-on-admission" && stage === "on") {
+    admission = admission.replace("goal = true", "goal = false").replace("checkpoint = true", "checkpoint = false");
+  }
   if (admission === null) fs.rmSync(admissionFile, { force: true });
   else fs.writeFileSync(admissionFile, admission);
   activeStage = stage;
@@ -314,6 +323,8 @@ function observe() {
     projectAgentsSentinelCount: occurrenceCount(body, PROJECT_AGENTS_SENTINEL),
     devRuleSentinelCount: occurrenceCount(body, DEV_RULE_SENTINEL),
     addedFileSentinelCount: occurrenceCount(body, ADDED_FILE_SENTINEL),
+    goalSentinelCount: occurrenceCount(body, GOAL_SENTINEL),
+    checkpointSentinelCount: occurrenceCount(body, CHECKPOINT_SENTINEL),
     userSentinelCount: occurrenceCount(body, USER_SENTINEL),
     developerSentinelCount: occurrenceCount(body, DEVELOPER_SENTINEL),
   }));
@@ -362,6 +373,8 @@ async function run() {
   await runStage(thread, "off", "memory = false\n", "Admission is explicitly off.");
   await runStage(thread, "on", [
     "memory = true",
+    "goal = true",
+    "checkpoint = true",
     "global_rules = true",
     "project_rules = true",
     "[dev_sources]",
@@ -372,6 +385,8 @@ async function run() {
   ].join("\n"), "Memory, AGENTS and the added file are on while the dev rule is off.");
   await runStage(thread, "withdrawn", [
     "memory = false",
+    "goal = false",
+    "checkpoint = false",
     "global_rules = false",
     "project_rules = false",
     "[dev_sources]",
@@ -414,6 +429,14 @@ async function run() {
       expectedAddedFileCount,
       `${stage} request had the wrong added-file sentinel count`,
     );
+    // Admitted GOAL and ES reach the request once, like MEMORY; excluded, they are absent.
+    for (const [name, sentinel] of [["GOAL", GOAL_SENTINEL], ["ES", CHECKPOINT_SENTINEL]]) {
+      assert.equal(
+        occurrenceCount(body, sentinel),
+        expectedMemoryCount,
+        `${stage} request had the wrong ${name} sentinel count`,
+      );
+    }
     assert.match(JSON.stringify(body), new RegExp(DEVELOPER_SENTINEL), `${stage} lost developer context`);
   }
   for (const stage of ["off", "on", "withdrawn", "malformed"]) {
@@ -430,6 +453,7 @@ async function run() {
     observations,
     checks: [
       "MEMORY is absent by default and while explicitly disabled",
+      "GOAL and ES are absent by default, admitted once when enabled, then withdrawn",
       "MEMORY is admitted exactly once when enabled",
       "disabling admission removes MEMORY on the next turn in the same thread",
       "malformed admission fails closed",
