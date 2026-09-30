@@ -438,6 +438,7 @@ enabled = false
             bundled: Some(BundledSkillsConfig { enabled: false }),
             include_instructions: Some(false),
             default_enabled: None,
+            extra_roots: Vec::new(),
             dev_rule_roots: Vec::new(),
             max_context_tokens: std::num::NonZeroUsize::new(1_200),
             config: Vec::new(),
