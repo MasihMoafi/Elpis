@@ -25,6 +25,9 @@ pub(crate) enum ElpisAppEvent {
     /// Republish the dashboard's state. The checkpoint count needs the App-owned transcript.
     RefreshDashboard,
 
+    /// Bare `/usage`: show the session card as an overlay Escape closes.
+    OpenUsage(Box<dyn crate::history_cell::HistoryCell>),
+
     // The Context Ledger (app/elpis_ledger.rs).
     /// Render the `/context` usage report. Requires the App-owned transcript cell list
     /// (checkpoint count, per-category totals), so it cannot be built inside `ChatWidget`.

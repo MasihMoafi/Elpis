@@ -21,6 +21,7 @@ impl App {
             ElpisAppEvent::SaveBackgroundModel(choice) => self.save_background_model(choice).await,
             ElpisAppEvent::OpenDashboard => self.open_dashboard(tui),
             ElpisAppEvent::RefreshDashboard => self.publish_dashboard_snapshot(),
+            ElpisAppEvent::OpenUsage(card) => self.open_escape_closable_pager(tui, card, "Usage")?,
             ledger_event => self.handle_elpis_ledger_event(tui, ledger_event)?,
         }
         Ok(())

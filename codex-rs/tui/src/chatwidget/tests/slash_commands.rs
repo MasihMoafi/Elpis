@@ -1357,21 +1357,29 @@ async fn usage_error_slash_command_is_available_from_local_recall() {
     assert_eq!(recall_latest_after_clearing(&mut chat), "/raw maybe");
 }
 
+// Elpis: bare `/usage` is v0.3.0's session card for every login, not a sign-in error.
 #[tokio::test]
-async fn signed_out_usage_command_reports_chatgpt_login_requirement() {
+async fn signed_out_usage_command_opens_the_session_card() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
 
     submit_composer_text(&mut chat, "/usage");
 
-    let cells = drain_insert_history(&mut rx);
-    let rendered = cells
-        .iter()
-        .map(|cell| lines_to_single_string(cell))
-        .collect::<Vec<_>>()
-        .join("\n");
-    assert_chatwidget_snapshot!(
-        "signed_out_usage_command_reports_chatgpt_login_requirement",
-        rendered
+    let events = std::iter::from_fn(|| rx.try_recv().ok()).collect::<Vec<_>>();
+    assert!(
+        events.iter().any(|event| matches!(
+            event,
+            AppEvent::Elpis(crate::elpis_app_event::ElpisAppEvent::OpenUsage(_))
+        )),
+        "{events:?}"
+    );
+    assert!(
+        !events.iter().any(|event| matches!(
+            event,
+            AppEvent::InsertHistoryCell(cell)
+                if lines_to_single_string(&cell.display_lines(/*width*/ 80))
+                    .contains("Sign in with ChatGPT")
+        )),
+        "{events:?}"
     );
     assert_eq!(recall_latest_after_clearing(&mut chat), "/usage");
 }

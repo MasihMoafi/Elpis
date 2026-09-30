@@ -69,7 +69,12 @@ fn elpis_commands_are_listed_in_their_v030_order_with_v030_descriptions() {
         ),
         ("agent", Some("switch the active agent thread")),
         ("agents", None),
-        ("usage", None),
+        (
+            "usage",
+            Some(
+                "inspect this session, or add account/daily/weekly/cumulative for account activity",
+            ),
+        ),
         (
             "context",
             Some("show context usage as a grid, by category, with checkpoints and system files"),
@@ -380,4 +385,60 @@ fn commands_v030_kept_out_of_the_popup_still_work_under_their_v030_names() {
     }
     assert_eq!(find_builtin_command("stop", flags), Some(SlashCommand::Stop));
     assert_eq!(find_builtin_command("delete", flags), Some(SlashCommand::Delete));
+}
+
+fn usage_card(rx: &mut tokio::sync::mpsc::UnboundedReceiver<AppEvent>) -> Option<String> {
+    std::iter::from_fn(|| rx.try_recv().ok()).find_map(|event| match event {
+        AppEvent::Elpis(ElpisAppEvent::OpenUsage(card)) => {
+            Some(lines_to_single_string(&card.display_lines(/*width*/ 120)))
+        }
+        _ => None,
+    })
+}
+
+#[tokio::test]
+async fn usage_opens_the_session_card_for_any_login() {
+    for chatgpt in [false, true] {
+        let (mut chat, mut rx, mut ops) = make_chatwidget_manual(/*model_override*/ None).await;
+        chat.thread_id = Some(ThreadId::new());
+        if chatgpt {
+            set_chatgpt_auth(&mut chat);
+        }
+
+        chat.dispatch_command(SlashCommand::Usage);
+
+        let card = usage_card(&mut rx)
+            .unwrap_or_else(|| panic!("/usage opened no card (ChatGPT login: {chatgpt})"));
+        for row in [
+            "/usage",
+            "Model:",
+            "Model provider:",
+            "Directory:",
+            "Permissions:",
+            "Session:",
+            "Token usage:",
+        ] {
+            assert!(
+                card.contains(row),
+                "missing {row} (ChatGPT login: {chatgpt}):\n{card}"
+            );
+        }
+        assert!(!card.contains("/status"), "{card}");
+        assert_matches!(ops.try_recv(), Err(TryRecvError::Empty));
+    }
+}
+
+#[tokio::test]
+async fn usage_account_is_upstreams_menu_and_bare_usage_is_not() {
+    let (mut chat, mut rx, _ops) = make_chatwidget_manual(/*model_override*/ None).await;
+    set_chatgpt_auth(&mut chat);
+
+    // Negative: bare `/usage` opens the card, not the account menu.
+    chat.dispatch_command(SlashCommand::Usage);
+    assert!(usage_card(&mut rx).is_some());
+    assert!(chat.bottom_pane.no_modal_or_popup_active());
+
+    chat.dispatch_command_with_args(SlashCommand::Usage, "account".to_string(), Vec::new());
+    assert!(!chat.bottom_pane.no_modal_or_popup_active());
+    assert!(usage_card(&mut rx).is_none());
 }
