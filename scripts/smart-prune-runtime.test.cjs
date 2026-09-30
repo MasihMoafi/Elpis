@@ -1,3 +1,11 @@
+// Smart Prune against a real app-server and a loopback-only fake provider, in a temporary
+// Elpis home. No credentials.
+// usage: node scripts/smart-prune-runtime.test.cjs /absolute/path/to/binary [--drop-prune]
+// The binary is the elpis multitool (run as `<binary> app-server`) or a codex-app-server build.
+// Run it without network access, e.g. `unshare -rn sh -c 'ip link set lo up && node ...'`.
+// Cases: compact (the admitted output is the compact form, audited), unchanged and malformed
+// (the original output is admitted byte-for-byte), disabled (no optimizer request at all).
+// --drop-prune is the negative control: Smart Prune is off in 'compact', so 'compact' must fail.
 const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
 const fs = require('node:fs');
@@ -89,7 +97,7 @@ async function runCase(nextMode) {
   };
   const disabled = mode === 'disabled' || (negativeControl === '--drop-prune' && mode === 'compact');
   const config = disabled ? {'features.automatic_context_pruning':false} : undefined;
-  const {thread} = await rpc.request('thread/start', {model:'gpt-5.4',cwd,
+  const {thread} = await rpc.request('thread/start', {model:'gpt-5.5',cwd,
     approvalPolicy:'never',sandbox:'danger-full-access',config});
   await rpc.request('thread/name/set',{threadId:thread.id,name:'Smart Prune fixture '+mode});
   let timer, listener;
@@ -199,15 +207,19 @@ async function runCase(nextMode) {
 (async()=>{
   await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
   fs.writeFileSync(path.join(home,'config.toml'),[
-    'model="gpt-5.4"','model_provider="fixture"','model_context_window=100000',
+    'model="gpt-5.5"','model_provider="fixture"','model_context_window=100000',
     '[features]','automatic_context_pruning=true',
     '[model_providers.fixture]','name="Fixture"',
     `base_url="http://127.0.0.1:${server.address().port}/v1"`,'wire_api="responses"','requires_openai_auth=false',
   ].join('\n'));
   fs.writeFileSync(path.join(home,'hooks.json'),'{}');
   const binary = process.argv[2];
-  rpc = new AppServer(binary,cwd,{args:path.basename(binary)==='elpis'?['app-server']:[],
-    env:{PATH:process.env.PATH,HOME:home,CODEX_HOME:home,ELPIS_HOME:home}});
+  assert(binary && path.isAbsolute(binary),
+    'usage: smart-prune-runtime.test.cjs /absolute/path/to/binary [--drop-prune]');
+  rpc = new AppServer(binary,cwd,{
+    args:path.basename(binary)==='codex-app-server'?[]:['app-server'],
+    // Only PATH is inherited, so neither the real home nor a proxy reaches the runtime.
+    env:{PATH:process.env.PATH,HOME:home,CODEX_HOME:home,CODEX_AUTH_HOME:home,ELPIS_HOME:home}});
   rpc.child.stderr.on('data', data=>fs.appendFileSync(path.join(root,'stderr.log'),data));
   rpc.on('disconnect',()=>{});
   rpc.on('request',event=>rpc.respond(event.id,{decision:'decline'}));
