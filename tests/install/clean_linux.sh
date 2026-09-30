@@ -6,6 +6,7 @@ installer=$(realpath scripts/install-elpis-binary.sh)
 if [[ -d $artifacts ]]; then
     test -x "$artifacts/elpis"
     test -x "$artifacts/bwrap"
+    test -x "$artifacts/codex-code-mode-host"
 else
     test -f "$artifacts"
     dpkg-deb --info "$artifacts" >/dev/null
@@ -25,6 +26,9 @@ else
     dpkg -i /artifacts
 fi
 elpis --version
+command -v codex-code-mode-host
+codex-code-mode-host --help >/dev/null
+test ! -e /root/.codex
 binary=$(command -v elpis)
 test -x "$(dirname "$binary")/codex-resources/bwrap"
 mkdir -p /tmp/project

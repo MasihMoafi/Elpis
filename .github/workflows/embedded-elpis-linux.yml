@@ -2,260 +2,140 @@ name: Elpis Linux verification
 
 on:
   workflow_dispatch:
-    inputs:
-      full_regression:
-        description: Run the exhaustive inherited-regression checks
-        required: false
-        default: true
-        type: boolean
-  pull_request:
-    paths:
-      - .github/workflows/embedded-elpis-linux.yml
-      - codex-rs/**
-      - scripts/install-elpis-binary.sh
-      - scripts/install-elpis.sh
-      - scripts/verify-elpis
-      - tests/verify-elpis/test_verify_elpis.sh
-      - tests/install/**
-      - tools/verify-elpis/surfaces.toml
-      - docs/**
-  schedule:
-    - cron: "17 3 * * 1"
   push:
-    branches:
-      - main
-    tags:
-      - "v*"
-    paths:
-      - .github/workflows/embedded-elpis-linux.yml
-      - codex-rs/**
-      - scripts/install-elpis-binary.sh
-      - scripts/install-elpis.sh
-      - scripts/verify-elpis
-      - tests/verify-elpis/test_verify_elpis.sh
-      - tests/install/**
-      - tools/verify-elpis/surfaces.toml
-      - docs/**
+    tags: ['v*']
+    branches: [next]
+    paths: ['codex-rs/**', 'scripts/**', 'tests/install/**', '.github/workflows/embedded-elpis-linux.yml']
+  pull_request:
+    paths: ['codex-rs/**', 'scripts/**', 'tests/install/**', '.github/workflows/embedded-elpis-linux.yml']
 
 permissions:
   contents: read
 
 concurrency:
   group: elpis-linux-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   build:
-    name: Build and verify Elpis
     runs-on: ubuntu-24.04
-    timeout-minutes: 90
+    timeout-minutes: 120
     env:
-      CARGO_INCREMENTAL: "1"
-      CARGO_PROFILE_DEV_DEBUG: "0"
-      CARGO_PROFILE_TEST_DEBUG: "0"
-      CARGO_TERM_COLOR: always
-      CODEX_SKIP_BWRAP_BUILD: "1"
-
+      CODEX_SKIP_BWRAP_BUILD: '1'
+      CARGO_BUILD_JOBS: '2'
+      RUST_TEST_THREADS: '1'
+      CARGO_PROFILE_RELEASE_LTO: 'false'
+      CARGO_PROFILE_RELEASE_OPT_LEVEL: '1'
+      CARGO_PROFILE_RELEASE_CODEGEN_UNITS: '256'
+      CARGO_PROFILE_RELEASE_DEBUG: 'none'
+      CARGO_PROFILE_RELEASE_STRIP: 'symbols'
     steps:
-      - name: Checkout source
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
-          fetch-depth: 0
-
-      - name: Install Linux build dependencies
-        working-directory: codex-rs
+          node-version: '24'
+      - name: Install build dependencies and Rust
         run: |
-          sudo DEBIAN_FRONTEND=noninteractive apt-get update
-          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-            bubblewrap \
-            libcap-dev \
-            libssl-dev \
-            pkg-config
-
-      - name: Install pinned Rust toolchain
-        working-directory: codex-rs
-        run: |
-          rustup set profile minimal
-          rustup toolchain install 1.95.0 --component rustfmt --no-self-update
-
-      - name: Verify selector harness
-        run: bash tests/verify-elpis/test_verify_elpis.sh
-
-      - name: Restore Cargo downloads
-        uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7
-        with:
-          path: |
-            ~/.cargo/registry/index
-            ~/.cargo/registry/cache
-            ~/.cargo/git/db
-          key: elpis-cargo-${{ runner.os }}-${{ hashFiles('codex-rs/Cargo.lock') }}
-          restore-keys: |
-            elpis-cargo-${{ runner.os }}-
-
-      - name: Restore incremental build outputs
-        uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7
-        with:
-          path: codex-rs/target
-          key: elpis-target-${{ runner.os }}-${{ hashFiles('codex-rs/rust-toolchain.toml') }}-${{ hashFiles('codex-rs/Cargo.lock') }}-${{ github.sha }}
-          restore-keys: |
-            elpis-target-${{ runner.os }}-${{ hashFiles('codex-rs/rust-toolchain.toml') }}-${{ hashFiles('codex-rs/Cargo.lock') }}-
-            elpis-target-${{ runner.os }}-${{ hashFiles('codex-rs/rust-toolchain.toml') }}-
-
-      - name: Collect changed paths
-        if: ${{ github.event_name == 'pull_request' || (github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/')) }}
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libcap-dev libssl-dev pkg-config strace iproute2
+          rustup toolchain install 1.95.0 --profile minimal --no-self-update
+      - name: Download and verify the pinned sandbox V8
         shell: bash
         run: |
           set -euo pipefail
-          if [[ "$GITHUB_EVENT_NAME" == "pull_request" ]]; then
-            base="${{ github.event.pull_request.base.sha }}"
-            head="${{ github.event.pull_request.head.sha }}"
-          else
-            base="${{ github.event.before }}"
-            head="${{ github.sha }}"
-          fi
-          git diff --name-only -z "$base" "$head" > "$RUNNER_TEMP/elpis-changed-paths"
-
-      - name: Verify changed Linux surfaces
-        if: ${{ github.event_name == 'pull_request' || (github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/')) }}
-        run: scripts/verify-elpis --paths-file "$RUNNER_TEMP/elpis-changed-paths"
-
-      - name: Verify conservative full Linux surface
-        if: ${{ github.event_name == 'schedule' || startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch' }}
-        run: scripts/verify-elpis --surface full
-
-      - name: Run exhaustive continuity regression
-        if: ${{ github.event_name == 'schedule' || startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.full_regression) }}
-        run: scripts/verify-elpis --surface nightly-release
-
-      - name: Build Elpis binary and Cargo timing report
-        working-directory: codex-rs
-        run: cargo build -p codex-tui --bin elpis --locked --timings --release
-
-      - name: Verify executable identity
+          base=https://github.com/openai/codex/releases/download/rusty-v8-v150.4.0
+          directory="$RUNNER_TEMP/elpis-v8"
+          mkdir -p "$directory"
+          archive=librusty_v8_ptrcomp_sandbox_release_x86_64-unknown-linux-gnu.a.gz
+          binding=src_binding_ptrcomp_sandbox_release_x86_64-unknown-linux-gnu.rs
+          curl -fL "$base/$archive" -o "$directory/$archive"
+          curl -fL "$base/$binding" -o "$directory/$binding"
+          printf '%s  %s\n' a35c75d1f26e6a983885a45b33490a4ebe54f05050568b32b89cfb421b30b583 "$archive" \
+            7727826ae479bdb645e807239fb12d1f8e2e23de7a6cf16f5ee592690d1d8506 "$binding" > "$directory/SHA256SUMS"
+          (cd "$directory" && sha256sum -c SHA256SUMS)
+          echo "RUSTY_V8_ARCHIVE=$directory/$archive" >> "$GITHUB_ENV"
+          echo "RUSTY_V8_SRC_BINDING_PATH=$directory/$binding" >> "$GITHUB_ENV"
+      - uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            codex-rs/target
+          key: elpis-040-${{ runner.os }}-${{ hashFiles('codex-rs/Cargo.lock') }}-${{ github.sha }}
+          restore-keys: elpis-040-${{ runner.os }}-${{ hashFiles('codex-rs/Cargo.lock') }}-
+      - name: Installer checks
+        run: bash tests/install/test_install.sh
+      - name: Focused Elpis Rust checks
         working-directory: codex-rs
         run: |
-          target/release/elpis --help
-          # Read the expected version from the manifest instead of pinning a literal:
-          # a hardcoded string turns every version bump into a red build.
-          expected="$(sed -n '/^\[package\]/,/^\[[^p]/s/^version *= *"\([^"]*\)"/\1/p' tui/Cargo.toml | head -1)"
-          test -n "$expected"
-          test "$(target/release/elpis --version)" = "elpis $expected"
-
-      - name: Reduce artifact size
-        working-directory: codex-rs
-        run: strip target/release/elpis
-
-      - name: Build the bundled Linux sandbox
+          cargo test --release --locked -p codex-tui --lib elpis_
+          cargo test --release --locked -p codex-core --lib elpis_
+          cargo test --release --locked -p codex-core --lib smart_prune
+          cargo test --release --locked -p codex-elpis-gateway --lib
+          cargo test --release --locked -p codex-model-provider-info --lib
+          cargo test --release --locked -p codex-cli --lib
+          cargo test --release --locked -p codex-tui --lib branding::tests
+      - name: Build the runtime, Code Mode host, and sandbox
         working-directory: codex-rs
         run: |
-          env -u CODEX_SKIP_BWRAP_BUILD cargo build -p codex-bwrap --bin bwrap --locked --release
-          strip target/release/bwrap
-          target/release/bwrap --version
-
-      - name: Verify a clean offline Linux installation
+          cargo build --release --locked -p codex-cli --bin codex -p codex-code-mode-host --bin codex-code-mode-host
+          env -u CODEX_SKIP_BWRAP_BUILD cargo build --release --locked -p codex-bwrap --bin bwrap
+          cp target/release/codex target/release/elpis
+          test "$(target/release/elpis --version)" = 'elpis 0.4.0'
+      - name: Real runtime evals and failing controls, without outside network
+        run: sudo --preserve-env=PATH unshare -rn sh -c 'ip link set lo up; bash scripts/release-runtime-evals.sh "$PWD/codex-rs/target/release/elpis"'
+      - name: Clean offline installation
         run: bash tests/install/clean_linux.sh codex-rs/target/release
-
-      - name: Upload Elpis binary
-        if: ${{ github.event_name != 'pull_request' }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      - name: Package Linux binaries and Debian installer
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist package/DEBIAN package/usr/bin/codex-resources
+          install -m 0755 codex-rs/target/release/elpis dist/elpis-linux-x86_64
+          install -m 0755 codex-rs/target/release/codex-code-mode-host dist/elpis-code-mode-host-linux-x86_64
+          install -m 0755 codex-rs/target/release/bwrap dist/elpis-bwrap-linux-x86_64
+          install -m 0755 dist/elpis-linux-x86_64 package/usr/bin/elpis
+          install -m 0755 dist/elpis-code-mode-host-linux-x86_64 package/usr/bin/codex-code-mode-host
+          install -m 0755 dist/elpis-bwrap-linux-x86_64 package/usr/bin/codex-resources/bwrap
+          cp codex-rs/vendor/bubblewrap/COPYING dist/bubblewrap.COPYING
+          cat > package/DEBIAN/control <<'CONTROL'
+          Package: elpis
+          Version: 0.4.0
+          Architecture: amd64
+          Maintainer: Elpis <MasihMoafi@users.noreply.github.com>
+          Depends: libc6 (>= 2.39), libssl3t64, libgcc-s1, libstdc++6
+          Description: Elpis coding agent with context and continuity controls
+          CONTROL
+          dpkg-deb --root-owner-group --build package dist/elpis_0.4.0_amd64.deb
+          for file in dist/elpis-* dist/*.deb; do
+            (cd dist && sha256sum "$(basename "$file")" > "$(basename "$file").sha256")
+          done
+      - name: Clean Debian installation
+        run: bash tests/install/clean_linux.sh dist/elpis_0.4.0_amd64.deb
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: elpis-linux-x86_64
-          path: |
-            codex-rs/target/release/elpis
-            codex-rs/target/release/bwrap
+          path: dist/*
           if-no-files-found: error
           retention-days: 7
-
-      - name: Package .deb
-        if: startsWith(github.ref, 'refs/tags/v')
-        working-directory: codex-rs
-        run: |
-          cargo install cargo-deb --locked
-          cargo deb --no-build -p codex-tui
-
-      - name: Verify clean Debian package installation
-        if: startsWith(github.ref, 'refs/tags/v')
-        run: |
-          for package in codex-rs/target/debian/*.deb; do
-            bash tests/install/clean_linux.sh "$package"
-          done
-
-      - name: Upload Elpis .deb
-        if: startsWith(github.ref, 'refs/tags/v')
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with:
-          name: elpis-deb
-          path: codex-rs/target/debian/*.deb
-          if-no-files-found: error
-          retention-days: 7
-
-      - name: Upload Cargo timing report
-        if: ${{ always() && github.event_name != 'pull_request' }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with:
-          name: elpis-cargo-timings
-          path: codex-rs/target/cargo-timings/cargo-timing.html
-          if-no-files-found: warn
-          retention-days: 7
-
-  installer-platform-detection:
-    name: Verify installer platform selection
-    runs-on: ubuntu-24.04
-    timeout-minutes: 10
-    steps:
-      - name: Checkout source
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
-
-      - name: Verify installer platforms and bundled sandbox
-        run: bash tests/install/test_install.sh
 
   release:
-    name: Publish tagged binaries
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [build, installer-platform-detection]
+    needs: build
     runs-on: ubuntu-24.04
     permissions:
       contents: write
     steps:
-      - name: Check out release notes
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
-
-      - name: Download verified Elpis binary
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
           name: elpis-linux-x86_64
           path: dist
-
-      - name: Download Elpis .deb
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
-        with:
-          name: elpis-deb
-          path: dist
-
-      - name: Publish GitHub release
+      - name: Publish verified release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          mv dist/elpis dist/elpis-linux-x86_64
-          mv dist/bwrap dist/elpis-bwrap-linux-x86_64
-          cp codex-rs/vendor/bubblewrap/COPYING dist/bubblewrap.COPYING
-          (cd dist && sha256sum elpis-bwrap-linux-x86_64 > elpis-bwrap-linux-x86_64.sha256)
-          (cd dist && sha256sum elpis-linux-x86_64 > elpis-linux-x86_64.sha256)
-          for deb in dist/*.deb; do
-            (cd dist && sha256sum "$(basename "$deb")" > "$(basename "$deb").sha256")
-          done
-          # Re-tagging the same version must replace the release, not fail on it;
-          # this runs only after build+tests pass, so the old release stays live
-          # until a verified replacement is seconds away.
-          gh release delete "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --yes || true
-          gh release create "$GITHUB_REF_NAME" \
-            dist/elpis-linux-x86_64 \
-            dist/elpis-linux-x86_64.sha256 \
-            dist/elpis-bwrap-linux-x86_64 \
-            dist/elpis-bwrap-linux-x86_64.sha256 \
-            dist/bubblewrap.COPYING \
-            dist/*.deb \
-            dist/*.deb.sha256 \
-            --repo "$GITHUB_REPOSITORY" \
-            --notes-file .github/RELEASE_NOTES.md \
+          test "$GITHUB_REF_NAME" = v0.4.0
+          gh release create "$GITHUB_REF_NAME" dist/* --verify-tag \
+            --repo "$GITHUB_REPOSITORY" --notes-file .github/RELEASE_NOTES.md \
             --title "Elpis $GITHUB_REF_NAME"

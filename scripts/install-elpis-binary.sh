@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-source_binary=${1:?"usage: scripts/install-elpis-binary.sh PATH_TO_ELPIS_BINARY [PATH_TO_BWRAP]"}
+source_binary=${1:?"usage: scripts/install-elpis-binary.sh PATH_TO_ELPIS_BINARY [PATH_TO_BWRAP] [PATH_TO_CODE_MODE_HOST]"}
 install_dir=${ELPIS_INSTALL_DIR:-"$HOME/.local/bin"}
 destination="$install_dir/elpis"
 temporary="$install_dir/.elpis.installing"
@@ -14,12 +14,19 @@ if [ "$(uname -s)" = Linux ]; then
         exit 1
     }
 fi
+host=${3:-"$(dirname "$source_binary")/codex-code-mode-host"}
+test -x "$host" || {
+    printf 'Missing Code Mode host: pass its path as the third argument.\n' >&2
+    exit 1
+}
 mkdir -p "$install_dir"
 if [ "$(uname -s)" = Linux ]; then
     mkdir -p "$install_dir/codex-resources"
     install -m 0755 "$sandbox" "$install_dir/codex-resources/.bwrap.installing"
     mv -f "$install_dir/codex-resources/.bwrap.installing" "$install_dir/codex-resources/bwrap"
 fi
+install -m 0755 "$host" "$install_dir/.codex-code-mode-host.installing"
+mv -f "$install_dir/.codex-code-mode-host.installing" "$install_dir/codex-code-mode-host"
 install -m 0755 "$source_binary" "$temporary"
 mv -f "$temporary" "$destination"
 

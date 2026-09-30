@@ -7,7 +7,7 @@ failures=0
 
 release="$work/release"
 mkdir -p "$release"
-for asset in elpis-linux-x86_64 elpis-bwrap-linux-x86_64; do
+for asset in elpis-linux-x86_64 elpis-bwrap-linux-x86_64 elpis-code-mode-host-linux-x86_64; do
   printf 'payload-for-%s\n' "$asset" > "$release/$asset"
   (cd "$release" && sha256sum "$asset" > "$asset.sha256")
 done
@@ -73,6 +73,9 @@ check() {
     elif [ "$sysname" = Linux ] && { [ ! -x "$dir/install/codex-resources/bwrap" ] || [ "$(cat "$dir/install/codex-resources/bwrap")" != "payload-for-elpis-bwrap-linux-x86_64" ]; }; then
       printf 'FAIL %-14s missing or incorrect sandbox\n' "$label"
       failures=$((failures + 1))
+    elif [ ! -x "$dir/install/codex-code-mode-host" ] || [ "$(cat "$dir/install/codex-code-mode-host")" != "payload-for-elpis-code-mode-host-linux-x86_64" ]; then
+      printf 'FAIL %-14s missing or incorrect Code Mode host\n' "$label"
+      failures=$((failures + 1))
     else
       printf 'PASS %-14s %s-%s -> %s\n' "$label" "$sysname" "$machine" "$expected"
     fi
@@ -125,3 +128,18 @@ fi
 test "$(cat "$dir/install/elpis")" = 'old elpis'
 test "$(cat "$dir/install/codex-resources/bwrap")" = 'old sandbox'
 printf 'PASS corrupt sandbox preserves the installed files\n'
+
+# A corrupt Code Mode host must preserve every installed component.
+(cd "$release" && sha256sum elpis-bwrap-linux-x86_64 > elpis-bwrap-linux-x86_64.sha256)
+printf 'old host\n' > "$dir/install/codex-code-mode-host"
+printf 'corrupt host\n' > "$release/elpis-code-mode-host-linux-x86_64"
+if env -i HOME="$dir" PATH="$dir/bin" TMPDIR="$dir" \
+    ELPIS_SKIP_RTK=1 ELPIS_INSTALL_DIR="$dir/install" \
+    bash "$script" > "$dir/out" 2> "$dir/err"; then
+  printf 'FAIL corrupt Code Mode host was accepted\n' >&2
+  exit 1
+fi
+test "$(cat "$dir/install/elpis")" = 'old elpis'
+test "$(cat "$dir/install/codex-resources/bwrap")" = 'old sandbox'
+test "$(cat "$dir/install/codex-code-mode-host")" = 'old host'
+printf 'PASS corrupt Code Mode host preserves the installed files\n'
