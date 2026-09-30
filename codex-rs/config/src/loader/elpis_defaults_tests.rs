@@ -61,6 +61,10 @@ async fn elpis_defaults_turn_off_outbound_services_and_keep_the_inline_screen() 
         Some(OtelExporterKind::None)
     );
     assert_eq!(
+        typed.skills.as_ref().and_then(|s| s.default_enabled),
+        Some(false)
+    );
+    assert_eq!(
         typed.skills.and_then(|s| s.bundled).map(|b| b.enabled),
         Some(false)
     );

@@ -4115,6 +4115,10 @@
           },
           "type": "array"
         },
+        "default_enabled": {
+          "description": "Elpis: whether discovered skills are enabled before any `[[skills.config]]` rule. Elpis sets `false` so only skills the user turns on reach the model.",
+          "type": "boolean"
+        },
         "include_instructions": {
           "description": "Whether turns receive the automatic skills instructions block.",
           "type": "boolean"

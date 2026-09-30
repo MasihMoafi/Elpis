@@ -240,3 +240,28 @@ fn later_path_rule_reenables_one_skill_disabled_by_name() {
         [second_path].into_iter().collect()
     );
 }
+
+#[test]
+fn default_off_disables_every_skill_until_one_is_turned_on() {
+    let codex_home = TempDir::new().expect("temp dir");
+    let chosen = codex_home.path().join("chosen/SKILL.md").abs();
+    let other = codex_home.path().join("other/SKILL.md").abs();
+    let skills = [("chosen", &chosen), ("other", &other)];
+
+    let upstream = skill_config_rules_from_stack(&stack(&codex_home, "", ""));
+    assert_eq!(
+        upstream.resolve_disabled_paths(skills),
+        Default::default(),
+        "without default_enabled every skill stays on"
+    );
+
+    let user = format!(
+        "[skills]\ndefault_enabled = false\n{}",
+        path_toggle_config(chosen.as_path(), /*enabled*/ true)
+    );
+    let elpis = skill_config_rules_from_stack(&stack(&codex_home, &user, ""));
+    assert_eq!(
+        elpis.resolve_disabled_paths(skills),
+        [other.clone()].into_iter().collect()
+    );
+}
