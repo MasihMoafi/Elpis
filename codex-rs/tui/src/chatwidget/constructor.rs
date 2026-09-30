@@ -327,9 +327,6 @@ impl ChatWidget {
         widget
             .bottom_pane
             .set_connectors_enabled(widget.connectors_enabled());
-        widget
-            .bottom_pane
-            .set_token_activity_command_enabled(widget.has_codex_backend_auth);
         widget.refresh_status_surfaces();
 
         widget
