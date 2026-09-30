@@ -112,6 +112,8 @@ mod app_server_approval_conversions;
 mod app_server_connection;
 mod app_server_session;
 mod approval_events;
+// Elpis: the welcome-screen ASCII animation v0.3.0 drew.
+mod ascii_animation;
 mod async_question_reply;
 mod backend_banners;
 mod bottom_pane;
@@ -156,6 +158,7 @@ mod exec_command;
 mod external_agent_config_migration;
 mod external_editor;
 mod file_search;
+mod frames;
 mod get_git_diff;
 mod git_action_directives;
 mod goal_display;
