@@ -84,7 +84,7 @@ jobs:
           cp target/release/codex target/release/elpis
           test "$(target/release/elpis --version)" = 'elpis 0.4.0'
       - name: Real runtime evals and failing controls, without outside network
-        run: sudo --preserve-env=PATH unshare -rn sh -c 'ip link set lo up; bash scripts/release-runtime-evals.sh "$PWD/codex-rs/target/release/elpis"'
+        run: sudo --preserve-env=PATH unshare -n sh -c 'ip link set lo up; bash scripts/release-runtime-evals.sh "$PWD/codex-rs/target/release/elpis"'
       - name: Clean offline installation
         run: bash tests/install/clean_linux.sh codex-rs/target/release
       - name: Package Linux binaries and Debian installer
