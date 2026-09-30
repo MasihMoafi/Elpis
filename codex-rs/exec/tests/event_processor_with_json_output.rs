@@ -1327,6 +1327,7 @@ fn token_usage_update_is_emitted_on_turn_completion() {
                         reasoning_output_tokens: 7,
                     },
                     model_context_window: Some(128_000),
+                    context_attribution: None,
                 },
             },
         ));

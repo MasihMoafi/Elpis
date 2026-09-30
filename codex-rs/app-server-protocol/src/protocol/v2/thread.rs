@@ -1925,6 +1925,10 @@ pub struct ThreadTokenUsage {
     // TODO(aibrahim): make this not optional
     #[ts(type = "number | null")]
     pub model_context_window: Option<i64>,
+    // Elpis: estimated composition of the latest built request, for the Context Ledger.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub context_attribution: Option<super::ThreadContextAttribution>,
 }
 
 impl From<CoreTokenUsageInfo> for ThreadTokenUsage {
@@ -1933,6 +1937,7 @@ impl From<CoreTokenUsageInfo> for ThreadTokenUsage {
             total: value.total_token_usage.into(),
             last: value.last_token_usage.into(),
             model_context_window: value.model_context_window,
+            context_attribution: None, // Elpis
         }
     }
 }

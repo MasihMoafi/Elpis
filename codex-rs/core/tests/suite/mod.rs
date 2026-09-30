@@ -72,6 +72,8 @@ mod cyber_exec_policy;
 mod daybreak_access;
 mod deprecation_notice;
 mod direct_tool_metadata;
+// Elpis: a sampled turn records the Context Ledger's category shares.
+mod elpis_context_attribution;
 // Elpis: the request follows the Context Ledger.
 mod elpis_ledger_admission;
 mod exec;

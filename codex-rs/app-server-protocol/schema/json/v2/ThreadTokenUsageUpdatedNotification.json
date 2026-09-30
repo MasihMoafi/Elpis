@@ -1,8 +1,92 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "definitions": {
+    "ThreadContextAttribution": {
+      "description": "Estimated composition of the exact request built for the latest provider attempt. Values are never padded to reconcile with provider token accounting.",
+      "properties": {
+        "agentMessages": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "developerMessages": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "estimatedTotal": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "outputSchema": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "reasoning": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "systemInstructions": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "toolCalls": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "toolDefinitions": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "toolResults": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "unrecognizedItems": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "userMessages": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "agentMessages",
+        "developerMessages",
+        "estimatedTotal",
+        "outputSchema",
+        "reasoning",
+        "systemInstructions",
+        "toolCalls",
+        "toolDefinitions",
+        "toolResults",
+        "unrecognizedItems",
+        "userMessages"
+      ],
+      "type": "object"
+    },
     "ThreadTokenUsage": {
       "properties": {
+        "contextAttribution": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ThreadContextAttribution"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "last": {
           "$ref": "#/definitions/TokenUsageBreakdown"
         },
