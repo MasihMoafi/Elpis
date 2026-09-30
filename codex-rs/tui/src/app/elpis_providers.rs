@@ -45,20 +45,23 @@ impl App {
         tui.frame_requester().schedule_frame();
     }
 
-    /// Lists a provider's models: the app server's list when it serves that provider,
-    /// otherwise the provider's own list, fetched off the event loop.
+    /// Lists a provider's models, off the event loop. A gateway provider is always asked
+    /// directly, so a key saved a moment ago counts; another provider the app server started
+    /// with uses the app server's list.
     fn elpis_browse_provider(&mut self, provider_id: String) {
-        if crate::chatwidget::elpis_catalog_provider().as_deref() == Some(provider_id.as_str()) {
-            let presets = self.model_catalog.try_list_models().unwrap_or_default();
-            self.chat_widget
-                .open_elpis_provider_models(provider_id, Ok(presets));
-            return;
-        }
         let Some(provider) = self.config.model_providers.get(&provider_id).cloned() else {
             self.chat_widget
                 .add_error_message(format!("Model provider `{provider_id}` not found"));
             return;
         };
+        if codex_model_provider_info::gateway_route(&provider).is_none()
+            && crate::chatwidget::elpis_catalog_provider().as_deref() == Some(provider_id.as_str())
+        {
+            let presets = self.model_catalog.try_list_models().unwrap_or_default();
+            self.chat_widget
+                .open_elpis_provider_models(provider_id, Ok(presets));
+            return;
+        }
         let home = self.config.codex_home.to_path_buf();
         let tx = self.app_event_tx.clone();
         tokio::spawn(async move {
