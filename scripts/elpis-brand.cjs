@@ -168,7 +168,9 @@ const RULES = [
   {
     name: "command",
     re: new RegExp(
-      `${NOT_AFTER}codex(?= (?:${SUBCOMMANDS.join("|")})(?![\\w-])| --?[a-z])|(?<=\`)codex(?=[\` ])`,
+      `${NOT_AFTER}codex(?= (?:${SUBCOMMANDS.join("|")})(?![\\w-])| --?[a-z])|(?<=\`)codex(?=[\` ])` +
+        // The same command right after a color escape in a Rust literal: "\u{1b}[36mcodex resume".
+        `|(?<=\\u\\{1b\\}\\[[0-9;]*m)codex(?= (?:${SUBCOMMANDS.join("|")})(?![\\w-]))`,
       "g",
     ),
     to: "elpis",
