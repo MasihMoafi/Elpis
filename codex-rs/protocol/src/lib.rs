@@ -23,6 +23,8 @@ pub mod capabilities;
 mod codex_error_info;
 pub mod config_types;
 pub mod dynamic_tools;
+// Elpis: Smart Prune state reported per thread.
+pub mod elpis_smart_prune;
 mod environment;
 pub mod error;
 pub mod exec_output;

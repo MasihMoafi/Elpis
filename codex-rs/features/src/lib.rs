@@ -346,6 +346,8 @@ pub enum Feature {
     Goals,
     /// Add current context-window metadata to model-visible context.
     TokenBudget,
+    /// Elpis: optimize large fresh tool outputs before their first main-model exposure.
+    AutomaticContextPruning,
     /// Enables experimental context management.
     ContextManagement,
     /// Track and report a shared token budget across a session's agent threads.
@@ -1709,6 +1711,17 @@ pub const FEATURES: &[FeatureSpec] = &[
         id: Feature::TokenBudget,
         key: "token_budget",
         stage: Stage::UnderDevelopment,
+        default_enabled: false,
+    },
+    // Elpis: Smart Prune (core/src/session/smart_prune.rs), off by default.
+    FeatureSpec {
+        id: Feature::AutomaticContextPruning,
+        key: "automatic_context_pruning",
+        stage: Stage::Experimental {
+            name: "Smart Prune — Experimental",
+            menu_description: "Optimizes eligible fresh tool results before their first main-model request. Uses an extra AI call and may slow a turn or remove useful detail; failures keep the original.",
+            announcement: "",
+        },
         default_enabled: false,
     },
     FeatureSpec {

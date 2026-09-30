@@ -1,13 +1,29 @@
 //! Elpis: Context Ledger and Smart Prune state carried beside a thread's token usage.
 //!
-//! Copied from v0.3.0 `v2/thread.rs`. The conversions from core snapshots, and the
-//! notifications that carry these types, arrive with the engine in Stage 2.
+//! Copied from v0.3.0 `v2/thread.rs`, with the conversions from the core's Smart Prune
+//! snapshots and the `thread/smartPrune/updated` notification that carries them.
 
 use super::TokenUsageBreakdown;
 use crate::JsonSchema;
 use crate::TS;
+use codex_protocol::elpis_smart_prune::SmartPruneAdmissionSnapshot as CoreSmartPruneAdmissionSnapshot;
+use codex_protocol::elpis_smart_prune::SmartPruneAttemptSnapshot as CoreSmartPruneAttemptSnapshot;
+use codex_protocol::elpis_smart_prune::SmartPruneSnapshot as CoreSmartPruneSnapshot;
 use serde::Deserialize;
 use serde::Serialize;
+
+/// Thread-scoped Smart Prune state, sent after each token-usage update, after a config
+/// refresh changes the switch, and when a client attaches to a thread.
+///
+/// This is intentionally separate from token usage because a config change can
+/// happen without an active turn or a provider usage sample.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub struct ThreadSmartPruneUpdatedNotification {
+    pub thread_id: String,
+    pub smart_prune: ThreadSmartPruneSnapshot,
+}
 
 /// Estimated composition of the exact request built for the latest provider attempt.
 /// Values are never padded to reconcile with provider token accounting.
@@ -164,6 +180,65 @@ impl Default for ThreadSmartPruneSnapshot {
             main_request_sequence: 0,
             latest: None,
             latest_attempt: None,
+        }
+    }
+}
+
+impl From<CoreSmartPruneSnapshot> for ThreadSmartPruneSnapshot {
+    fn from(value: CoreSmartPruneSnapshot) -> Self {
+        Self {
+            enabled: value.enabled,
+            examined_outputs: value.examined_outputs,
+            admitted_outputs: value.admitted_outputs,
+            unchanged_outputs: value.unchanged_outputs,
+            failed_batches: value.failed_batches,
+            approx_source_tokens: value.approx_source_tokens,
+            approx_admitted_tokens: value.approx_admitted_tokens,
+            approx_saved_tokens: value.approx_saved_tokens,
+            optimizer_requests: value.optimizer_requests,
+            optimizer_usage_reports: value.optimizer_usage_reports,
+            optimizer_usage: value.optimizer_usage.into(),
+            optimizer_latency_ms: value.optimizer_latency_ms,
+            main_request_sequence: value.main_request_sequence,
+            latest: value.latest.map(Into::into),
+            latest_attempt: value.latest_attempt.map(Into::into),
+        }
+    }
+}
+
+impl From<CoreSmartPruneAttemptSnapshot> for ThreadSmartPruneAttemptSnapshot {
+    fn from(value: CoreSmartPruneAttemptSnapshot) -> Self {
+        Self {
+            attempt_id: value.attempt_id,
+            audit_path: value.audit_path,
+            status: value.status,
+            model_slug: value.model_slug,
+            reasoning_effort: value.reasoning_effort,
+            candidate_outputs: value.candidate_outputs,
+            admitted_outputs: value.admitted_outputs,
+            approx_saved_tokens: value.approx_saved_tokens,
+            latency_ms: value.latency_ms,
+            usage: value.usage.map(Into::into),
+        }
+    }
+}
+
+impl From<CoreSmartPruneAdmissionSnapshot> for ThreadSmartPruneAdmissionSnapshot {
+    fn from(value: CoreSmartPruneAdmissionSnapshot) -> Self {
+        Self {
+            admission_id: value.admission_id,
+            audit_path: value.audit_path,
+            examined_outputs: value.examined_outputs,
+            admitted_outputs: value.admitted_outputs,
+            approx_source_tokens: value.approx_source_tokens,
+            approx_admitted_tokens: value.approx_admitted_tokens,
+            approx_saved_tokens: value.approx_saved_tokens,
+            request_sequence: value.request_sequence,
+            request_input_sha256: value.request_input_sha256,
+            request_linkage_verified: value.request_linkage_verified,
+            response_id: value.response_id,
+            response_usage: value.response_usage.map(Into::into),
+            response_linkage_verified: value.response_linkage_verified,
         }
     }
 }
