@@ -350,13 +350,19 @@ impl OpenAiModelsManager {
         endpoint_client: Arc<dyn ModelsEndpointClient>,
         auth_manager: Option<Arc<AuthManager>>,
     ) -> Self {
+        // Elpis: a provider's own catalog starts empty; until it is listed nothing is offered.
+        let remote_models = if endpoint_client.serves_own_catalog() {
+            Vec::new()
+        } else {
+            load_remote_models_from_file().unwrap_or_default()
+        };
         Self {
             remote_models: RwLock::new(ModelsCacheEntry {
                 fetched_at: Utc::now(),
                 etag: None,
                 client_version: Some(crate::client_version_to_whole()),
                 identity: endpoint_client.identity(),
-                models: load_remote_models_from_file().unwrap_or_default(),
+                models: remote_models,
             }),
             cache,
             api_key_model_discovery_enabled: AtomicBool::new(false),

@@ -11,6 +11,7 @@ const FACTORY: HttpClientFactory = HttpClientFactory::new(OutboundProxyPolicy::R
 #[derive(Debug)]
 struct VendorEndpoint {
     serves_own_catalog: bool,
+    reachable: bool,
     models: Vec<ModelInfo>,
     fetch_count: AtomicUsize,
 }
@@ -39,6 +40,7 @@ impl VendorEndpoint {
         .expect("valid model");
         Arc::new(Self {
             serves_own_catalog,
+            reachable: true,
             models: vec![model],
             fetch_count: AtomicUsize::new(0),
         })
@@ -69,6 +71,9 @@ impl ModelsEndpointClient for VendorEndpoint {
     ) -> ModelsEndpointFuture<'a, CoreResult<ModelsEndpointResponse>> {
         Box::pin(async move {
             self.fetch_count.fetch_add(1, Ordering::SeqCst);
+            if !self.reachable {
+                return Err(codex_protocol::error::CodexErr::RequestTimeout);
+            }
             Ok(ModelsEndpointResponse {
                 models: self.models.clone(),
                 etag: None,
@@ -109,4 +114,20 @@ async fn without_an_own_catalog_nothing_is_fetched_and_the_bundled_list_stays() 
 
     assert_eq!(catalog.models, load_remote_models_from_file().expect("bundled"));
     assert_eq!(endpoint.fetch_count.load(Ordering::SeqCst), 0);
+}
+
+#[tokio::test]
+async fn an_unreachable_own_catalog_lists_nothing_rather_than_openai_models() {
+    let endpoint = Arc::new(VendorEndpoint {
+        reachable: false,
+        ..Arc::into_inner(VendorEndpoint::new(/*serves_own_catalog*/ true)).expect("sole owner")
+    });
+    let manager = OpenAiModelsManager::new_without_cache(endpoint.clone(), /*auth_manager*/ None);
+
+    let catalog = manager
+        .raw_model_catalog(RefreshStrategy::OnlineIfUncached, FACTORY)
+        .await;
+
+    assert_eq!(catalog.models, Vec::new());
+    assert_eq!(endpoint.fetch_count.load(Ordering::SeqCst), 1);
 }
