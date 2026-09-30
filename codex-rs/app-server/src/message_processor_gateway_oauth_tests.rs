@@ -268,7 +268,7 @@ delivery = {{ kind = "header", name = "X-Gateway-Authorization" }}
     .await?;
     assert_eq!(error, JSONRPCErrorError {
         code: -32600,
-        message: "failed to load configuration: Your organization's required model provider settings changed. Restart Codex to apply them; this request was not sent".to_string(),
+        message: "failed to load configuration: Your organization's required model provider settings changed. Restart Elpis to apply them; this request was not sent".to_string(),
         data: None,
     });
     assert!(server.received_requests().await.unwrap().is_empty());

@@ -37,7 +37,7 @@ async fn worker_starts_with_otlp_metrics_exporter_without_log_exporter() {
         .expect(1)
         .mount(&server)
         .await;
-    let codex_home = TempDir::new().expect("temporary Codex home");
+    let codex_home = TempDir::new().expect("temporary Elpis home");
     let mut config = ConfigBuilder::default()
         .codex_home(codex_home.path().to_path_buf())
         .build()
@@ -61,7 +61,7 @@ async fn worker_starts_with_otlp_metrics_exporter_without_log_exporter() {
 
 #[tokio::test]
 async fn handle_observes_only_matching_model_provider() {
-    let codex_home = TempDir::new().expect("temporary Codex home");
+    let codex_home = TempDir::new().expect("temporary Elpis home");
     let mut config = ConfigBuilder::default()
         .codex_home(codex_home.path().to_path_buf())
         .build()
@@ -186,7 +186,7 @@ async fn custom_provider_auth_failure_retries_without_auth_changes() {
     )
     .expect("write initial provider auth");
     let provider_auth_manager = auth_manager_at(provider_auth_home.path()).await;
-    let codex_home = TempDir::new().expect("temporary Codex home");
+    let codex_home = TempDir::new().expect("temporary Elpis home");
     let mut config = ConfigBuilder::default()
         .codex_home(codex_home.path().to_path_buf())
         .build()
@@ -234,7 +234,7 @@ async fn custom_provider_does_not_send_chatgpt_auth_for_turn_costs() {
         .await;
     let auth_manager =
         AuthManager::from_auth_for_testing(CodexAuth::create_dummy_chatgpt_auth_for_testing());
-    let codex_home = TempDir::new().expect("temporary Codex home");
+    let codex_home = TempDir::new().expect("temporary Elpis home");
     let mut config = ConfigBuilder::default()
         .codex_home(codex_home.path().to_path_buf())
         .build()
@@ -393,7 +393,7 @@ async fn priced_cost_waits_for_every_response_when_response_costs_are_available(
 }
 
 async fn test_runtime(server: &MockServer, auth_manager: Arc<AuthManager>) -> WorkerRuntime {
-    let codex_home = TempDir::new().expect("temporary Codex home");
+    let codex_home = TempDir::new().expect("temporary Elpis home");
     let mut config = ConfigBuilder::default()
         .codex_home(codex_home.path().to_path_buf())
         .build()

@@ -83,7 +83,7 @@ use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::registry::Registry;
 use tracing_subscriber::util::SubscriberInitExt;
 
-const SQLITE_RECOVERY_CONFIG_WARNING_SUMMARY: &str = "Codex rebuilt its local database.";
+const SQLITE_RECOVERY_CONFIG_WARNING_SUMMARY: &str = "Elpis rebuilt its local database.";
 
 fn is_unsupported_untrusted_approval_policy_error(err: &std::io::Error) -> bool {
     err.get_ref().is_some_and(
@@ -1427,7 +1427,7 @@ async fn init_sqlite_state_db_with_fresh_start_on_corruption(
 
         let original_error = err.to_string();
         emit_state_db_backup_warning(&format!(
-            "Codex local database at {} appears damaged. Moving it into a backup folder so the app server can rebuild it from saved data.",
+            "Elpis local database at {} appears damaged. Moving it into a backup folder so the app server can rebuild it from saved data.",
             database_path.display()
         ));
         let backups = codex_state::backup_runtime_db_for_fresh_start(database_path.as_path())
@@ -1439,7 +1439,7 @@ async fn init_sqlite_state_db_with_fresh_start_on_corruption(
             })?;
         for backup in &backups {
             emit_state_db_backup_warning(&format!(
-                "Moved damaged Codex local database file {} to {}",
+                "Moved damaged Elpis local database file {} to {}",
                 backup.original_path.display(),
                 backup.backup_path.display()
             ));

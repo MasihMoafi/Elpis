@@ -35,7 +35,7 @@ pub(crate) mod application_network;
 
 #[derive(Debug, thiserror::Error)]
 #[error(
-    "Your organization's required model provider settings changed. Restart Codex to apply them; this request was not sent"
+    "Your organization's required model provider settings changed. Restart Elpis to apply them; this request was not sent"
 )]
 pub(crate) struct ModelProviderRequirementsChanged;
 

@@ -149,11 +149,11 @@ async fn poll_for_token(
 fn device_code_prompt(verification_url: &str, code: &str) -> String {
     let version = env!("CARGO_PKG_VERSION");
     format!(
-        "\nWelcome to Codex [v{ANSI_GRAY}{version}{ANSI_RESET}]\n{ANSI_GRAY}OpenAI's command-line coding agent{ANSI_RESET}\n\
+        "\nWelcome to Elpis [v{ANSI_GRAY}{version}{ANSI_RESET}]\n{ANSI_GRAY}OpenAI's command-line coding agent{ANSI_RESET}\n\
 \nFollow these steps to sign in with ChatGPT using device code authorization:\n\
 \n1. Open this link in your browser and sign in to your account\n   {ANSI_BLUE}{verification_url}{ANSI_RESET}\n\
 \n2. Enter this one-time code {ANSI_GRAY}(expires in 15 minutes){ANSI_RESET}\n   {ANSI_BLUE}{code}{ANSI_RESET}\n\
-\n{ANSI_GRAY}Continue only if you started this login in Codex. If a website or another person gave you this code, cancel.{ANSI_RESET}\n",
+\n{ANSI_GRAY}Continue only if you started this login in Elpis. If a website or another person gave you this code, cancel.{ANSI_RESET}\n",
     )
 }
 

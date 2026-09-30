@@ -229,7 +229,7 @@ async fn feedback_upload_includes_sqlite_flush_and_query_failures() -> Result<()
                 serde_json::from_value(notification.params.unwrap())?;
             assert_eq!(warning, codex_app_server_protocol::WarningNotification {
                 thread_id: None,
-                message: "Codex couldn't save diagnostic logs to its local database. Use /feedback with logs included before closing Codex, or run `codex doctor` for diagnostics.".to_string(),
+                message: "Elpis couldn't save diagnostic logs to its local database. Use /feedback with logs included before closing Elpis, or run `elpis doctor` for diagnostics.".to_string(),
             });
         }
         let request = app_server

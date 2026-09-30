@@ -127,7 +127,7 @@ pub(super) async fn resolve_auth_method(
         BedrockAuthSource::ManagedBearerToken => {
             let Some(CodexAuth::BedrockApiKey(auth)) = managed_auth else {
                 return Err(CodexErr::Fatal(
-                    "selected Codex-managed Amazon Bedrock API key is no longer available"
+                    "selected Elpis-managed Amazon Bedrock API key is no longer available"
                         .to_string(),
                 ));
             };
@@ -160,7 +160,7 @@ pub(super) async fn resolve_auth_method(
         BedrockAuthSource::ManagedAccessKeys => {
             let Some(CodexAuth::BedrockAccessKeys(auth)) = managed_auth else {
                 return Err(CodexErr::Fatal(
-                    "selected Codex-managed Amazon Bedrock access keys are no longer available"
+                    "selected Elpis-managed Amazon Bedrock access keys are no longer available"
                         .to_string(),
                 ));
             };
