@@ -24,6 +24,8 @@ pub(crate) mod request_plugin_install_spec;
 mod request_user_input;
 mod request_user_input_async;
 pub(crate) mod request_user_input_spec;
+// Elpis: the guarded `save_memory` tool, offered by `crate::elpis_memory`.
+mod save_memory;
 mod send_message_to_user_async;
 pub(crate) mod shell_spec;
 mod sleep;
@@ -72,6 +74,8 @@ pub use request_permissions::RequestPermissionsHandler;
 pub use request_plugin_install::RequestPluginInstallHandler;
 pub use request_user_input::RequestUserInputHandler;
 pub use request_user_input_async::RequestUserInputAsyncHandler;
+// Elpis: the guarded `save_memory` tool.
+pub use save_memory::SaveMemoryHandler;
 pub use send_message_to_user_async::SendMessageToUserAsyncHandler;
 pub use sleep::SleepHandler;
 pub use test_sync::TestSyncHandler;
