@@ -51,6 +51,8 @@ codex-login = { workspace = true }
 codex-mermaid = { workspace = true }
 codex-message-history = { workspace = true }
 codex-model-provider = { workspace = true }
+# Elpis: provider keys and vendor model lists for the /model picker.
+codex-elpis-gateway = { workspace = true }
 codex-model-provider-info = { workspace = true }
 codex-models-manager = { workspace = true }
 codex-otel = { workspace = true }

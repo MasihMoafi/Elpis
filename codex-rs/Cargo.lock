@@ -4777,6 +4777,7 @@ dependencies = [
  "codex-connectors",
  "codex-context-fragments",
  "codex-core-plugins",
+ "codex-elpis-gateway",
  "codex-exec-server",
  "codex-features",
  "codex-feedback",

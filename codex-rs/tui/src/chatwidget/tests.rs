@@ -256,6 +256,8 @@ mod elpis_composer;
 mod elpis_context_ledger;
 // Elpis: evals for the Elpis look.
 mod elpis_look;
+// Elpis: evals for the provider-aware /model picker.
+mod elpis_provider_picker;
 // Elpis: evals for the Elpis slash commands.
 mod elpis_slash_commands;
 mod exec_flow;

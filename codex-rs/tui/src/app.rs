@@ -218,6 +218,7 @@ mod connector_mentions;
 mod daemon_menu;
 // Elpis: Elpis-owned event handling.
 mod elpis_events;
+mod elpis_providers;
 // Elpis: the App side of the Context Ledger.
 mod elpis_ledger;
 mod empty_state_policy;

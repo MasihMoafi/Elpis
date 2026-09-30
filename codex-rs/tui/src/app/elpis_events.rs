@@ -14,6 +14,10 @@ impl App {
     ) -> Result<()> {
         match event {
             ElpisAppEvent::EnableYolo => self.enable_yolo(app_server).await,
+            ElpisAppEvent::Provider(event) => {
+                self.handle_elpis_provider_event(tui, app_server, event)
+                    .await;
+            }
             ledger_event => self.handle_elpis_ledger_event(tui, ledger_event)?,
         }
         Ok(())

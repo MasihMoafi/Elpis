@@ -13,6 +13,10 @@ pub(crate) enum ElpisAppEvent {
     /// `/yolo`: switch this chat to Full Access and save it as the default for future chats.
     EnableYolo,
 
+    /// The provider-aware `/model` picker (chatwidget/elpis_providers.rs,
+    /// app/elpis_providers.rs).
+    Provider(crate::chatwidget::ElpisProviderEvent),
+
     // The Context Ledger (app/elpis_ledger.rs).
     /// Render the `/context` usage report. Requires the App-owned transcript cell list
     /// (checkpoint count, per-category totals), so it cannot be built inside `ChatWidget`.
