@@ -180,6 +180,11 @@ impl ChatWidget {
             _ => {}
         }
 
+        // Elpis: Up pulls every queued follow-up back into the composer (v0.3.0).
+        if self.recall_queued_follow_ups_on_up(key_event) {
+            return KeyEventAction::None;
+        }
+
         if key_event.kind == KeyEventKind::Press
             && self.chat_keymap.edit_queued_message.is_pressed(key_event)
             && (self.has_queued_follow_up_messages() || self.pending_image_submission.is_some())
