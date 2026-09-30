@@ -458,7 +458,8 @@ impl StatusHistoryCell {
                 lines.push(formatter.line(
                     "Warning",
                     vec![Span::from(if state.refreshing_rate_limits {
-                        "limits may be stale - run /status again shortly."
+                        // Elpis: /usage opens this card; /status is hidden.
+                        "limits may be stale - run /usage again shortly."
                     } else {
                         "limits may be stale - start new turn to refresh."
                     })
@@ -476,7 +477,8 @@ impl StatusHistoryCell {
                 vec![formatter.line(
                     "Limits",
                     vec![Span::from(if state.refreshing_rate_limits {
-                        "refresh requested; run /status again shortly."
+                        // Elpis: /usage opens this card; /status is hidden.
+                        "refresh requested; run /usage again shortly."
                     } else {
                         "data not available yet"
                     })
