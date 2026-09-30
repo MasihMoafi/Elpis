@@ -17,6 +17,8 @@ pub const BASE_INSTRUCTIONS: &str = include_str!("../prompt.md");
 const PERSONALITY_SECTION_HEADER: &str = "# Personality";
 
 pub fn with_config_overrides(mut model: ModelInfo, config: &ModelsManagerConfig) -> ModelInfo {
+    // Elpis: catalog and bundled instructions name Elpis; user overrides below stay verbatim.
+    model = crate::elpis_identity::name_elpis(model);
     if let Some(context_window) = config.model_context_window {
         model.context_window = Some(
             model
