@@ -5,12 +5,16 @@
 //! CLI". Every catalog model passes through `with_config_overrides`, which calls
 //! [`name_elpis`] before applying user overrides, so a user's own `base_instructions` stay
 //! verbatim. Only the capitalized word "Codex" is renamed: paths (`~/.codex`), commands
-//! (`codex exec`) and longer words are left alone.
+//! (`codex exec`) and longer words are left alone. The fallback prompt's "led by OpenAI"
+//! is dropped, since Elpis is not.
 
 use codex_protocol::openai_models::ModelInfo;
 
 const UPSTREAM_NAME: &str = "Codex";
 const PRODUCT_NAME: &str = "Elpis";
+/// The bundled fallback prompt credits the CLI to OpenAI; said of Elpis that is false.
+const UPSTREAM_OWNERSHIP: &str = "Codex CLI is an open source project led by OpenAI.";
+const ELPIS_OWNERSHIP: &str = "Codex CLI is an open source project.";
 
 pub(crate) fn name_elpis(mut model: ModelInfo) -> ModelInfo {
     if let Some(messages) = model.model_messages.as_mut() {
@@ -28,9 +32,10 @@ pub(crate) fn name_elpis(mut model: ModelInfo) -> ModelInfo {
 }
 
 fn rename(text: &str) -> String {
+    let text = text.replace(UPSTREAM_OWNERSHIP, ELPIS_OWNERSHIP);
     let is_word = |c: char| c.is_alphanumeric() || c == '_';
     let mut out = String::with_capacity(text.len());
-    let mut rest = text;
+    let mut rest = text.as_str();
     while let Some(index) = rest.find(UPSTREAM_NAME) {
         let (before, after) = rest.split_at(index);
         let after = &after[UPSTREAM_NAME.len()..];
@@ -73,6 +78,21 @@ mod tests {
             rename("running in the Codex CLI"),
             "running in the Elpis CLI"
         );
+    }
+
+    #[test]
+    fn the_fallback_prompt_does_not_credit_elpis_to_openai() {
+        // Negative control: upstream's fallback prompt does say it.
+        assert!(crate::model_info::BASE_INSTRUCTIONS.contains(UPSTREAM_OWNERSHIP));
+        let renamed = rename(crate::model_info::BASE_INSTRUCTIONS);
+        assert!(
+            renamed.starts_with(
+                "You are a coding agent running in the Elpis CLI, a terminal-based coding \
+                 assistant. Elpis CLI is an open source project. You are expected"
+            ),
+            "{renamed}"
+        );
+        assert!(!renamed.contains("led by OpenAI"), "{renamed}");
     }
 
     #[test]
