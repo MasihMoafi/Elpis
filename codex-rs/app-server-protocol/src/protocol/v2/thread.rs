@@ -1149,7 +1149,7 @@ pub struct ThreadCompactStartParams {
     pub thread_id: String,
     // Elpis: guidance for this compaction's summary (`/compact <text>`); blank means none.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[ts(optional = nullable)]
     pub instructions: Option<String>,
 }
 
