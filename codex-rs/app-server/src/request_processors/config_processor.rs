@@ -175,6 +175,12 @@ impl ConfigRequestProcessor {
             self.handle_config_mutation().await;
             if should_reload {
                 reload_user_config(&self.config_manager, &self.thread_manager).await;
+                // Elpis: a reload can switch Smart Prune for loaded threads.
+                crate::elpis_smart_prune::broadcast_for_loaded_threads(
+                    &self.outgoing,
+                    &self.thread_manager,
+                )
+                .await;
             }
         }
         Ok(ClientResponsePayload::ConfigBatchWrite(response))
@@ -190,6 +196,12 @@ impl ConfigRequestProcessor {
             .await?;
         if !response.enablement.is_empty() {
             reload_user_config(&self.config_manager, &self.thread_manager).await;
+            // Elpis: Smart Prune is an experimental feature; its switch may have moved.
+            crate::elpis_smart_prune::broadcast_for_loaded_threads(
+                &self.outgoing,
+                &self.thread_manager,
+            )
+            .await;
         }
         self.outgoing
             .send_response_as(

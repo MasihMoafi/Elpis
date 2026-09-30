@@ -111,6 +111,8 @@ mod current_time;
 mod daemon_thread_recovery;
 mod dynamic_tools;
 mod effective_plugin_change;
+// Elpis: `thread/smartPrune/updated`.
+mod elpis_smart_prune;
 mod error_code;
 mod extensions;
 mod external_agent_migration;

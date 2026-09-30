@@ -1026,6 +1026,16 @@ pub(crate) async fn apply_bespoke_event_handling(
         EventMsg::TokenCount(token_count_event) => {
             handle_token_count_event(conversation_id, event_turn_id, token_count_event, &outgoing)
                 .await;
+            // Elpis: Smart Prune counters move with token usage (elpis_smart_prune.rs).
+            outgoing
+                .send_server_notification(
+                    crate::elpis_smart_prune::thread_smart_prune_updated(
+                        conversation_id,
+                        &conversation,
+                    )
+                    .await,
+                )
+                .await;
         }
         EventMsg::Error(ev) => {
             thread_watch_manager
