@@ -32,11 +32,11 @@ use crate::bottom_pane::SelectionViewParams;
 use crate::bottom_pane::popup_consts::picker_hint_line_for_keymap;
 use crate::elpis_app_event::ElpisAppEvent;
 use crate::elpis_background_model::BackgroundModelChoice;
+use crate::history_cell::HistoryCell;
 use crate::history_cell::PlainHistoryCell;
 use crate::history_cell::WebHyperlinkHistoryCell;
 use crate::legacy_core::pressure_compaction::PressureCompaction;
 use crate::slash_command::SlashCommand;
-use ratatui::style::Stylize;
 use ratatui::text::Line;
 use ratatui::widgets::Paragraph;
 use ratatui::widgets::Wrap;
@@ -231,7 +231,9 @@ impl ChatWidget {
         let mut card = self.status_output_cell(request_id.is_some(), request_id);
         // v0.3.0 headed the card with the command that opened it.
         if let Some(header) = card.parts.first_mut() {
-            *header = Box::new(PlainHistoryCell::new(vec!["/usage".magenta().into()]));
+            let usage: Box<dyn HistoryCell> =
+                Box::new(PlainHistoryCell::new(vec!["/usage".magenta().into()]));
+            *header = usage;
         }
         let evidence = self.local_evidence_lines();
         if !evidence.is_empty() {
