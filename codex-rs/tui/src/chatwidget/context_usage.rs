@@ -116,16 +116,17 @@ impl CategoryUsage {
     }
 }
 
+// Elpis: shared with the dashboard (elpis_dashboard.rs).
 #[derive(Clone, Debug)]
-struct ContextUsageSnapshot {
-    model: String,
-    used_tokens: Option<u64>,
-    window_tokens: Option<u64>,
-    has_request_snapshot: bool,
-    attributed_tokens: Option<u64>,
-    categories: Vec<CategoryUsage>,
-    saved_tokens: u64,
-    backtrack_points: usize,
+pub(super) struct ContextUsageSnapshot {
+    pub(super) model: String,
+    pub(super) used_tokens: Option<u64>,
+    pub(super) window_tokens: Option<u64>,
+    pub(super) has_request_snapshot: bool,
+    pub(super) attributed_tokens: Option<u64>,
+    pub(super) categories: Vec<CategoryUsage>,
+    pub(super) saved_tokens: u64,
+    pub(super) backtrack_points: usize,
 }
 
 #[derive(Debug)]
@@ -305,7 +306,7 @@ impl HistoryCell for ContextUsageHistoryCell {
 }
 
 impl ChatWidget {
-    fn context_usage_snapshot(
+    pub(super) fn context_usage_snapshot(
         &self,
         totals: &ContextUsageTranscriptTotals,
     ) -> ContextUsageSnapshot {

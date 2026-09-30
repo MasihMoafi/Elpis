@@ -2,7 +2,7 @@
 //!
 //! Upstream `AppEvent` carries every Elpis event in one variant, `AppEvent::Elpis`, so each new
 //! Elpis event costs no upstream edit. `App::handle_elpis_event` (app/elpis_events.rs) handles
-//! them. Later Elpis slices (the dashboard) add their variants here.
+//! them.
 
 use crate::elpis_ledger_events::ManualMemoryMutationCompletion;
 use crate::elpis_ledger_events::ManualMemoryRequestTarget;
@@ -18,6 +18,12 @@ pub(crate) enum ElpisAppEvent {
     Provider(crate::chatwidget::ElpisProviderEvent),
     /// `/memory-model`: save the background model and use it from now on.
     SaveBackgroundModel(crate::elpis_background_model::BackgroundModelChoice),
+    // The dashboard (app/elpis_events.rs).
+    /// `/dashboard`: publish the current state, start the loopback server and open the page.
+    OpenDashboard,
+
+    /// Republish the dashboard's state. The checkpoint count needs the App-owned transcript.
+    RefreshDashboard,
 
     // The Context Ledger (app/elpis_ledger.rs).
     /// Render the `/context` usage report. Requires the App-owned transcript cell list

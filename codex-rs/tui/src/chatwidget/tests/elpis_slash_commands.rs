@@ -16,10 +16,9 @@ const NOT_IN_THIS_BUILD: &str =
 
 /// The commands that wait for the rest of the Elpis context engine. `/prune`, `/smart-prune`
 /// and `/pruner-model` work (tests/elpis_smart_prune.rs); `/memory-model` saves the
-/// background model.
-const LATER_BUILD: [SlashCommand; 2] = [
+/// background model; `/dashboard` works (elpis_dashboard.rs).
+const LATER_BUILD: [SlashCommand; 1] = [
     SlashCommand::ForcePrune,
-    SlashCommand::Dashboard,
 ];
 
 fn history_text(rx: &mut tokio::sync::mpsc::UnboundedReceiver<AppEvent>) -> Vec<String> {

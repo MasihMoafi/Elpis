@@ -703,7 +703,9 @@ impl App {
             }
             ElpisAppEvent::EnableYolo
             | ElpisAppEvent::Provider(_)
-            | ElpisAppEvent::SaveBackgroundModel(_) => {
+            | ElpisAppEvent::SaveBackgroundModel(_)
+            | ElpisAppEvent::OpenDashboard
+            | ElpisAppEvent::RefreshDashboard => {
                 unreachable!("handled in app/elpis_events.rs")
             }
         }

@@ -1,9 +1,11 @@
-//! Evals for what the dashboard reads from the ChatWidget: each turn's timing and cost state.
+//! Evals for `/dashboard` and what the page reads from the ChatWidget: each turn's timing and
+//! cost state.
 //!
 //! Each behaviour has a positive case and a negative case.
 
 use super::*;
 use crate::activity_state::DashboardActivityStatus;
+use crate::elpis_app_event::ElpisAppEvent;
 use codex_app_server_protocol::TurnActivityStatus;
 use codex_app_server_protocol::TurnActivityUpdatedNotification;
 use codex_app_server_protocol::TurnCostAvailability;
@@ -84,4 +86,48 @@ async fn replayed_or_foreign_updates_record_nothing() {
         /*replay_kind*/ None,
     );
     assert_eq!(chat.dashboard_activity_state(), Default::default());
+}
+
+fn dashboard_events(rx: &mut tokio::sync::mpsc::UnboundedReceiver<AppEvent>) -> Vec<String> {
+    std::iter::from_fn(|| rx.try_recv().ok())
+        .filter_map(|event| match event {
+            AppEvent::Elpis(ElpisAppEvent::OpenDashboard) => Some("open".to_string()),
+            AppEvent::Elpis(ElpisAppEvent::RefreshDashboard) => Some("refresh".to_string()),
+            AppEvent::InsertHistoryCell(cell) => {
+                Some(lines_to_single_string(&cell.display_lines(/*width*/ 200)))
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+#[tokio::test]
+async fn dashboard_asks_the_app_to_open_the_page_and_is_no_longer_a_stub() {
+    let (mut chat, mut rx, mut ops) = make_chatwidget_manual(None).await;
+    chat.thread_id = Some(ThreadId::new());
+
+    chat.dispatch_command(SlashCommand::Dashboard);
+
+    assert_eq!(dashboard_events(&mut rx), vec!["open".to_string()]);
+    assert_matches!(ops.try_recv(), Err(TryRecvError::Empty));
+}
+
+#[tokio::test]
+async fn the_page_is_refreshed_only_after_dashboard_was_opened() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
+    chat.thread_id = Some(ThreadId::new());
+
+    // Negative: a chat that never opened the dashboard does no dashboard work.
+    handle_turn_started(&mut chat, "turn-1");
+    handle_token_count(&mut chat, Some(make_token_info(1_000, 258_400)));
+    assert!(!dashboard_events(&mut rx).contains(&"refresh".to_string()));
+
+    chat.dispatch_command(SlashCommand::Dashboard);
+    assert_eq!(dashboard_events(&mut rx), vec!["open".to_string()]);
+
+    // Positive: once open, measured usage and each turn's timing republish the page.
+    handle_token_count(&mut chat, Some(make_token_info(2_000, 258_400)));
+    assert_eq!(dashboard_events(&mut rx), vec!["refresh".to_string()]);
+    chat.handle_server_notification(activity_update("turn-1", 900, 40), /*replay_kind*/ None);
+    assert_eq!(dashboard_events(&mut rx), vec!["refresh".to_string()]);
 }

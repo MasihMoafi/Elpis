@@ -4,11 +4,11 @@
 //! decides about them lives here: the descriptions, the dispatch flags and the dispatch itself.
 //! Upstream files reach this module through one-line seams marked `Elpis:`.
 //!
-//! `/yolo`, `/agent`, `/add`, `/context`, `/memory-model`, `/prune`, `/smart-prune` and
-//! `/pruner-model` work in this build (the pruning commands live in `elpis_prune_commands.rs`).
-//! The commands that need the rest of the Elpis context engine (`/force-prune`, `/dashboard`)
-//! are listed with their v0.3.0 descriptions and, when run, say plainly that they arrive in a
-//! later Elpis build. They send nothing to the model or the app server.
+//! `/yolo`, `/agent`, `/add`, `/context`, `/memory-model`, `/prune`, `/smart-prune`,
+//! `/pruner-model` and `/dashboard` work in this build (the pruning commands live in
+//! `elpis_prune_commands.rs`). `/force-prune` needs the rest of the Elpis context engine: it is
+//! listed with its v0.3.0 description and, when run, says plainly that it arrives in a later
+//! Elpis build. It sends nothing to the model or the app server.
 //!
 //! `/memory-model` saves `background_model` / `background_provider`
 //! (`crate::elpis_background_model`), which choose the model that names sessions.
@@ -222,6 +222,7 @@ impl ChatWidget {
             }
             SlashCommand::Context => self.request_fresh_context_usage_report(),
             SlashCommand::MemoryModel => self.open_background_model_popup(),
+            SlashCommand::Dashboard => self.open_dashboard(),
             _ => {
                 self.add_info_message(
                     format!(
