@@ -111,7 +111,17 @@ pub(super) fn is_pressure_compaction_arg(value: &str) -> bool {
 pub(crate) fn unlisted(cmd: SlashCommand) -> bool {
     matches!(
         cmd,
-        SlashCommand::Archive
+        // Commands Codex added after v0.3.0, kept typeable (Masih asked for v0.3.0's list).
+        SlashCommand::Agents
+            | SlashCommand::Cd
+            | SlashCommand::Daemon
+            | SlashCommand::Export
+            | SlashCommand::Pwd
+            | SlashCommand::Recap
+            | SlashCommand::Tui
+            | SlashCommand::Warnings
+            // Commands v0.3.0 kept out of the popup.
+            | SlashCommand::Archive
             | SlashCommand::AutoReview
             | SlashCommand::Btw
             | SlashCommand::DebugConfig
@@ -147,6 +157,8 @@ pub(crate) fn hidden(cmd: SlashCommand) -> bool {
             | SlashCommand::Rollout
             | SlashCommand::Status
             | SlashCommand::TestApproval
+            // Codex's worktree chooser, added after v0.3.0 and feature-gated upstream.
+            | SlashCommand::Worktree
     )
 }
 
