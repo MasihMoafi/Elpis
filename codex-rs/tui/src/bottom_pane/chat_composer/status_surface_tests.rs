@@ -10,7 +10,7 @@ fn composer() -> ChatComposer {
         /*has_input_focus*/ true,
         AppEventSender::new(tx),
         /*enhanced_keys_supported*/ false,
-        "Ask Codex".to_string(),
+        "Ask Elpis".to_string(),
         /*disable_paste_burst*/ true,
     );
     composer.set_status_line_enabled(/*enabled*/ true);
@@ -166,7 +166,7 @@ fn shortcut_help_stays_above_the_prompt_and_bottom_status() {
             .unwrap();
         let prompt_row = rows
             .iter()
-            .position(|line| line.contains("Ask Codex"))
+            .position(|line| line.contains("Ask Elpis"))
             .unwrap();
         assert!(help_row < prompt_row);
         assert!(
@@ -361,7 +361,7 @@ fn slash_popup_preserves_footer_and_selection_style() {
         /*has_input_focus*/ true,
         AppEventSender::new(tx),
         /*enhanced_keys_supported*/ false,
-        "Ask Codex to do anything".to_string(),
+        "Ask Elpis to do anything".to_string(),
         /*disable_paste_burst*/ true,
     );
     composer.set_status_line_enabled(/*enabled*/ true);

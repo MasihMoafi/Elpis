@@ -8,7 +8,7 @@ expression: "terminal.backend().to_string().replace('\\\\', \"/\")"
   Git project. Trusting will apply to 
   the repository root:                
   workspace/…/repository              
-  Trust this folder? Codex can read,
+  Trust this folder? Elpis can read,
   edit, and run files here, subject to
   your permission settings. Folder
   settings can run code automatically,

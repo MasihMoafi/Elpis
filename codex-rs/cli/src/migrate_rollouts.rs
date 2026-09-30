@@ -335,7 +335,7 @@ fn print_human_report(
         );
     }
     if mode == RolloutMigrationMode::DryRun && counts.eligible > 0 {
-        println!("Run `codex migrate-rollouts --apply` to migrate eligible sessions.");
+        println!("Run `elpis migrate-rollouts --apply` to migrate eligible sessions.");
     }
 
     if verbose {

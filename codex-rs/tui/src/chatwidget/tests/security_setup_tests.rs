@@ -127,7 +127,7 @@ async fn security_setup_after_cutoff_wraps_in_narrow_terminal() {
     let (mut chat, _events, _ops) = make_chatwidget_manual(Some("test-model-a")).await;
     let mut notice = setup_notice();
     notice.title = "Set up security for Daybreak mode".into();
-    notice.description = "Set up Advanced Account Security with a hardware security key. Already Persona-verified? Add your key before October 15 to skip re-verification. You can keep using Codex while you finish setup.".into();
+    notice.description = "Set up Advanced Account Security with a hardware security key. Already Persona-verified? Add your key before October 15 to skip re-verification. You can keep using Elpis while you finish setup.".into();
     chat.show_security_setup(setup_identity(), notice);
     insta::assert_snapshot!(
         "security_setup_after_cutoff",
@@ -140,7 +140,7 @@ async fn security_setup_after_persona_grace_wraps_in_narrow_terminal() {
     let (mut chat, _events, _ops) = make_chatwidget_manual(Some("test-model-a")).await;
     let mut notice = setup_notice();
     notice.title = "Set up security for Daybreak mode".into();
-    notice.description = "Set up Advanced Account Security with a hardware security key. Verify each new hardware security key with Persona. You can keep using Codex while you finish setup.".into();
+    notice.description = "Set up Advanced Account Security with a hardware security key. Verify each new hardware security key with Persona. You can keep using Elpis while you finish setup.".into();
     chat.show_security_setup(setup_identity(), notice);
     insta::assert_snapshot!(
         "security_setup_after_persona_grace",

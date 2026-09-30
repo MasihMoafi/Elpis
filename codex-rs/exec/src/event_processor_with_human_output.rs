@@ -100,7 +100,7 @@ impl EventProcessorWithHumanOutput {
             ThreadItem::AgentMessage { text, .. } => {
                 eprintln!(
                     "{}\n{}",
-                    "codex".style(self.italic).style(self.magenta),
+                    "elpis".style(self.italic).style(self.magenta),
                     text
                 );
                 self.final_message = Some(text);
@@ -418,7 +418,7 @@ impl EventProcessor for EventProcessorWithHumanOutput {
         {
             eprintln!(
                 "{}\n{}",
-                "codex".style(self.italic).style(self.magenta),
+                "elpis".style(self.italic).style(self.magenta),
                 message
             );
         }

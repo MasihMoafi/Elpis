@@ -387,7 +387,7 @@ impl ChatWidget {
         let header = Paragraph::new(vec![
             Line::from("Plugins".bold()),
             Line::from(format!("Remove {marketplace_display_name} marketplace?").dim()),
-            Line::from("This removes the configured marketplace from Codex.".dim()),
+            Line::from("This removes the configured marketplace from Elpis.".dim()),
         ])
         .wrap(Wrap { trim: false });
 

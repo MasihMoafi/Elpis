@@ -4,14 +4,14 @@ expression: rendered
 ---
   Do you want to upload logs before reporting issue?
 
-  Logs may include the full conversation history of this Codex process
+  Logs may include the full conversation history of this Elpis process
   These logs are retained for 90 days and are used solely for troubles
 
   You can review the exact content of the logs before they’re uploaded
   <LOG_PATH>
 
 
-› 1. Yes     Share the current Codex session logs and diagnostics with the team
+› 1. Yes     Share the current Elpis session logs and diagnostics with the team
              for troubleshooting.
   2. No
   3. Cancel

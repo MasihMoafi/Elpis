@@ -15,7 +15,7 @@ fn entries() -> Vec<WarningEntry> {
         WarningEntry {
             id: WarningId::McpServer("example".into()),
             source: "MCP · example".into(),
-            details: "MCP example could not connect\nSign in again using codex mcp login example"
+            details: "MCP example could not connect\nSign in again using elpis mcp login example"
                 .into(),
         },
         WarningEntry {

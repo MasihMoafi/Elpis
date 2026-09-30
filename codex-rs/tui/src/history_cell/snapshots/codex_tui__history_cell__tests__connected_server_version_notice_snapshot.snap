@@ -2,4 +2,4 @@
 source: tui/src/history_cell/tests.rs
 expression: "render_lines(&cell.display_lines(100)).join(\"\\n\")"
 ---
-⚠ A background Codex service is running v0.152.1, older than your Codex CLI v0.153.0.
+⚠ A background Elpis service is running v0.152.1, older than your Elpis CLI v0.153.0.

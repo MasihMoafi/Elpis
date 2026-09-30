@@ -2,6 +2,6 @@
 source: tui/src/chatwidget/tests/slash_commands.rs
 expression: "render_bottom_popup(&chat, 80)"
 ---
-› Ask Codex to do anything
+› Ask Elpis to do anything
 
   Copied selection to clipboard

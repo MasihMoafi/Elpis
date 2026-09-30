@@ -5,13 +5,13 @@ expression: rendered
 
   > Import setup
   Bring over supported setup from another coding agent.
-  Codex may add files to your current project folder.
+  Elpis may add files to your current project folder.
   Your existing setup will not be changed.
     [x] Tools & setup
         Settings, instructions, integrations, agents, commands, and skills
         Importing: Settings 1, Memory 1
     [x] Current project
-        Add Codex files alongside your existing project files
+        Add Elpis files alongside your existing project files
         Importing: Plugins 6, Instructions 1
     [x] Chat sessions (1)
         Last 30 days of chats

@@ -4,4 +4,4 @@ expression: output
 ---
 Disconnected from this task. The current turn was stopped.
 To reconnect, run:
-  codex resume THREAD_ID
+  elpis resume THREAD_ID

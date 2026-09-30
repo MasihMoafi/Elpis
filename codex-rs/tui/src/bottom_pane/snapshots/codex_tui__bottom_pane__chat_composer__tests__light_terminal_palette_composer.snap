@@ -6,7 +6,7 @@ Buffer {
     area: Rect { x: 0, y: 0, width: 48, height: 6 },
     content: [
         "                                                ",
-        "› Ask Codex to do anything                      ",
+        "› Ask Elpis to do anything                      ",
         "                                                ",
         "                                                ",
         "                                                ",

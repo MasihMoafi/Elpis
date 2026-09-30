@@ -3,4 +3,4 @@ source: tui/src/app/user_verification_tests.rs
 assertion_line: 275
 expression: rendered
 ---
-⚠ The local Codex binary could not complete user verification.
+⚠ The local Elpis binary could not complete user verification.

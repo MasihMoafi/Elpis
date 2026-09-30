@@ -7,7 +7,7 @@ fullscreen=false, width=80
 
 
 › 1. Scrollback (current)  Native terminal copy, paste and scrollback
-  2. Fullscreen            Scroll within Codex's fullscreen view
+  2. Fullscreen            Scroll within Elpis's fullscreen view
 
   Restart to apply. Launch overrides still apply.
   enter select · esc back
@@ -22,7 +22,7 @@ fullscreen=false, width=40
                            and
                            scrollback
   2. Fullscreen            Scroll within
-                           Codex's
+                           Elpis's
                            fullscreen
                            view
 
@@ -35,7 +35,7 @@ fullscreen=true, width=80
 
 
   1. Scrollback            Native terminal copy, paste and scrollback
-› 2. Fullscreen (current)  Scroll within Codex's fullscreen view
+› 2. Fullscreen (current)  Scroll within Elpis's fullscreen view
 
   Restart to apply. Launch overrides still apply.
   enter select · esc back
@@ -50,7 +50,7 @@ fullscreen=true, width=40
                            and
                            scrollback
 › 2. Fullscreen (current)  Scroll within
-                           Codex's
+                           Elpis's
                            fullscreen
                            view
 

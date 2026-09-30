@@ -36,7 +36,7 @@ async fn worktree_creation_event_requires_feature() -> Result<()> {
             _ => None,
         })
         .expect("disabled feature message");
-    insta::assert_snapshot!(message, @"■ Enable worktrees in your Codex configuration to create a worktree.");
+    insta::assert_snapshot!(message, @"■ Enable worktrees in your Elpis configuration to create a worktree.");
     assert!(!app.config.codex_home.join("worktrees").exists());
     app_server.shutdown().await?;
     Ok(())

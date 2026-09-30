@@ -110,7 +110,7 @@ fn render_inline(width: u16) -> String {
     terminal
         .draw(|frame| {
             frame.render_widget(
-                Paragraph::new("$ codex fork saved-session"),
+                Paragraph::new("$ elpis fork saved-session"),
                 Rect::new(/*x*/ 0, /*y*/ 0, width, /*height*/ 1),
             );
             frame.render_widget_ref(&screen, Rect::new(/*x*/ 0, /*y*/ 2, width, height));

@@ -5,7 +5,7 @@ expression: "snapshots.join(\"\\n\\n\")"
 specialty=None 40x10
 
   Enable full access?
-  When Codex runs with full access, it
+  When Elpis runs with full access, it
   can edit any file on your computer
   and run commands with network,
   without your approval. Exercise
@@ -18,7 +18,7 @@ specialty=Some("cyber") 40x16
 
   Enable full access?
 
-  When Codex runs with full access, it
+  When Elpis runs with full access, it
   can edit any file on your computer
   and run commands with network,
   without your approval.

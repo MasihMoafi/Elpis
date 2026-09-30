@@ -264,7 +264,7 @@ async fn run_verification_rpc_scenario(scenario: RpcScenario) -> color_eyre::Res
         let message = if scenario == RpcScenario::RemoteWorkspace {
             "User verification is unavailable for remote workspaces."
         } else {
-            "The local Codex binary could not complete user verification."
+            "The local Elpis binary could not complete user verification."
         };
         let ServerNotification::Warning(warning) = notification.as_ref() else {
             panic!("expected warning notification");

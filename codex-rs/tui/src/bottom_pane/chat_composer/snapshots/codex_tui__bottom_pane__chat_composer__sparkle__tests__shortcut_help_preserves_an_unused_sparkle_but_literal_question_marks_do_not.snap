@@ -22,13 +22,13 @@ shortcut help:
 
   /keymap customize
 
-› Ask Codex to do anything
+› Ask Elpis to do anything
 
   ? / esc close
 
 after /model selects Astra:
                             ⠈     ⢀     ⠁                 ⠂
-›⠁Ask Codex to do anything         ⠈      ⠁
+›⠁Ask Elpis to do anything         ⠈      ⠁
        ⢀            ⠠     ⠄         ⠠          ⢀    ⠠     ⡀
   ? for shortcuts                                            100% context left
 
@@ -40,6 +40,6 @@ literal pasted question mark:
 
 after clearing and selecting Astra:
 
-› Ask Codex to do anything
+› Ask Elpis to do anything
 
   ? for shortcuts                                            100% context left

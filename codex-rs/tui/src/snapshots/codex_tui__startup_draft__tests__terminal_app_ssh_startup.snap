@@ -17,7 +17,7 @@ terminal_app_over_ssh=false, owned=true
 
 
 
-› Ask Codex to do anything
+› Ask Elpis to do anything
 
   ? for shortcuts
 ---
@@ -29,6 +29,6 @@ terminal_app_over_ssh=true, owned=false
   Pull up a prompt.
 
 
-› Ask Codex to do anything
+› Ask Elpis to do anything
 
   ? for shortcuts

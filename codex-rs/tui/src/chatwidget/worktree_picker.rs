@@ -84,7 +84,7 @@ impl ChatWidget {
     pub(super) fn show_managed_worktree_picker(&mut self) {
         if !self.config.features.enabled(Feature::Worktrees) {
             self.add_error_message(
-                "Enable worktrees in your Codex configuration to create a worktree.".to_string(),
+                "Enable worktrees in your Elpis configuration to create a worktree.".to_string(),
             );
             return;
         }

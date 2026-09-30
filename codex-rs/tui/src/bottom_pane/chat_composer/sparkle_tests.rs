@@ -24,7 +24,7 @@ fn pane() -> BottomPane {
         frame_requester: FrameRequester::test_dummy(),
         has_input_focus: true,
         enhanced_keys_supported: false,
-        placeholder_text: "Ask Codex to do anything".into(),
+        placeholder_text: "Ask Elpis to do anything".into(),
         disable_paste_burst: true,
         animations_enabled: true,
         effects: Default::default(),

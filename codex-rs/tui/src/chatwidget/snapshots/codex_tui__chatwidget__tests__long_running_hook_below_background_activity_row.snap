@@ -8,7 +8,7 @@ expression: "format!(\"80 columns:\\n{}\\n120 columns:\\n{}\", hook_status_frame
 "  └ checking command policy for deployment commands, production credentials, an…"
 "                                                                                "
 "                                                                                "
-"› Ask Codex to do anything                                                      "
+"› Ask Elpis to do anything                                                      "
 "                                                                                "
 "  GPT-5.6-Sol default · /tmp/project                                            "
 120 columns:
@@ -17,6 +17,6 @@ expression: "format!(\"80 columns:\\n{}\\n120 columns:\\n{}\", hook_status_frame
 "  └ checking command policy for deployment commands, production credentials, and paths containing 日本語 before continu…" Hidden by multi-width symbols: [(99, " "), (101, " "), (103, " ")]
 "                                                                                                                        "
 "                                                                                                                        "
-"› Ask Codex to do anything                                                                                              "
+"› Ask Elpis to do anything                                                                                              "
 "                                                                                                                        "
 "  GPT-5.6-Sol default · /tmp/project                                                                                    "

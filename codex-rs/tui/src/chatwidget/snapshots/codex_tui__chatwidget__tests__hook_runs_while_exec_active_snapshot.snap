@@ -12,7 +12,7 @@ exec and hook running:
 "• Working (0s • esc to interrupt) · checking output policy                      "
 "                                                                                "
 "                                                                                "
-"› Ask Codex to do anything                                                      "
+"› Ask Elpis to do anything                                                      "
 "                                                                                "
 "  GPT-5.6-Sol default · /tmp/project                                            "
 history after exec:
@@ -24,7 +24,7 @@ hook running after exec:
 "• Working (0s • esc to interrupt) · checking output policy                      "
 "                                                                                "
 "                                                                                "
-"› Ask Codex to do anything                                                      "
+"› Ask Elpis to do anything                                                      "
 "                                                                                "
 "  GPT-5.6-Sol default · /tmp/project                                            "
 quiet hook completed:
@@ -32,6 +32,6 @@ quiet hook completed:
 "• Working (0s • esc to interrupt)                                               "
 "                                                                                "
 "                                                                                "
-"› Ask Codex to do anything                                                      "
+"› Ask Elpis to do anything                                                      "
 "                                                                                "
 "  GPT-5.6-Sol default · /tmp/project                                            "

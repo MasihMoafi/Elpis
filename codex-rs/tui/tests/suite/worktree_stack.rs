@@ -47,7 +47,7 @@ async fn picker_side_worktree_fork_and_cd_run_on_the_production_stack() -> Resul
             .arg(&root)
             .args([
                 "-c",
-                "user.name=Codex Test",
+                "user.name=Elpis Test",
                 "-c",
                 "user.email=test@example.invalid"
             ])
@@ -109,7 +109,7 @@ async fn picker_side_worktree_fork_and_cd_run_on_the_production_stack() -> Resul
     )?;
     terminal.wait_for_startup()?;
     terminal.wait_for_screen("STACK_SAVED_HISTORY")?;
-    terminal.wait_for_screen("Ask Codex to do anything")?;
+    terminal.wait_for_screen("Ask Elpis to do anything")?;
 
     // Starting and closing a side conversation both rebuild the displayed chat widget.
     // Repeat through the real event loop, whose dev-build frames share the production stack.
@@ -119,21 +119,21 @@ async fn picker_side_worktree_fork_and_cd_run_on_the_production_stack() -> Resul
         terminal.ensure_running()?;
         terminal.write_input(b"\x03")?;
         terminal.wait_for_screen("STACK_SAVED_HISTORY")?;
-        terminal.wait_for_screen("Ask Codex to do anything")?;
+        terminal.wait_for_screen("Ask Elpis to do anything")?;
         terminal.ensure_running()?;
 
         let draft = format!("SIDE_STACK_DRAFT_{attempt}");
         terminal.write_input(draft.as_bytes())?;
         terminal.wait_for_screen(&draft)?;
         terminal.write_input(b"\x15")?;
-        terminal.wait_for_screen("Ask Codex to do anything")?;
+        terminal.wait_for_screen("Ask Elpis to do anything")?;
     }
 
     submit(&mut terminal, "/resume")?;
     terminal.wait_for_screen("Resume a previous session")?;
     terminal.ensure_running()?;
     terminal.write_input(b"\x1b")?;
-    terminal.wait_for_screen("Ask Codex to do anything")?;
+    terminal.wait_for_screen("Ask Elpis to do anything")?;
 
     submit(&mut terminal, "/worktree")?;
     terminal.wait_for_screen("Continue current conversation")?;

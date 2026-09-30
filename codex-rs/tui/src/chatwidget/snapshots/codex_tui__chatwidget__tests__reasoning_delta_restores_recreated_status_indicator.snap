@@ -7,6 +7,6 @@ expression: normalized_backend_snapshot(terminal.backend())
 "• Checking files and preparing a response (0s • esc to interrupt) · 1 backgroun…"
 "                                                                                "
 "                                                                                "
-"› Ask Codex to do anything                                                      "
+"› Ask Elpis to do anything                                                      "
 "                                                                                "
 "  GPT-5.6-Sol default · /tmp/project                                            "

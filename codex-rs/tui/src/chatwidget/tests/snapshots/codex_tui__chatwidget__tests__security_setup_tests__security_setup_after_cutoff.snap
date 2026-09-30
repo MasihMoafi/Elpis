@@ -8,13 +8,13 @@ expression: "normalize_snapshot_paths(render_bottom_popup(&chat, 48))"
   hardware security key. Already Persona-
   verified? Add your key before October 15 to
   skip re-verification. You can keep using
-  Codex while you finish setup.
+  Elpis while you finish setup.
 
 › 1. Set up security
 
   Press a number to choose · esc to dismiss ·
   type to continue
 
-› Ask Codex to do anything
+› Ask Elpis to do anything
 
   test-model-a default · /tmp/project

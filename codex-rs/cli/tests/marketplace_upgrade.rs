@@ -41,7 +41,7 @@ async fn marketplace_upgrade_json_prints_upgrade_outcome() -> Result<()> {
         vec!["add", "."],
         vec![
             "-c",
-            "user.name=Codex Tests",
+            "user.name=Elpis Tests",
             "-c",
             "user.email=codex@example.com",
             "commit",

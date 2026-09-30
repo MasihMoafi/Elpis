@@ -225,7 +225,7 @@ fn visible_export_items(turns: Vec<Turn>) -> Vec<ThreadItem> {
 }
 
 fn render_markdown_transcript(cells: &[Arc<dyn HistoryCell>]) -> Result<String, String> {
-    let mut markdown = String::from("# Codex conversation\n");
+    let mut markdown = String::from("# Elpis conversation\n");
     for cell in cells {
         let lines = if let Some(user) = cell.as_any().downcast_ref::<UserHistoryCell>() {
             let (message, _) =
@@ -287,7 +287,7 @@ fn render_markdown_transcript(cells: &[Arc<dyn HistoryCell>]) -> Result<String, 
             markdown.push('\n');
         }
     }
-    if markdown != "# Codex conversation\n" {
+    if markdown != "# Elpis conversation\n" {
         Ok(markdown)
     } else {
         Err("No conversation content to export.".to_string())

@@ -5,12 +5,12 @@ expression: popup
 ---
   Experimental features
   Checked features are configured on. Some experimental features take effect
-  only in new tasks or after restarting the Codex server.
+  only in new tasks or after restarting the Elpis server.
 
 
 › [ ] Network proxy                Apply network proxy restrictions to sandboxed
                                    sessions that already have network access.
-  [ ] Prevent sleep while running  Keep your computer awake while Codex is
+  [ ] Prevent sleep while running  Keep your computer awake while Elpis is
                                    running a thread.
 
 

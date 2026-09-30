@@ -5,7 +5,7 @@ expression: "snapshots.join(\"\\n\\n\")"
 expires during help: false
 initial:
                             ⠈     ⢀     ⠁                 ⠂
-›⠁Ask Codex to do anything         ⠈      ⠁
+›⠁Ask Elpis to do anything         ⠈      ⠁
        ⢀            ⠠     ⠄         ⠠          ⢀    ⠠     ⡀
   ? for shortcuts                                            100% context left
 shortcut help:
@@ -28,19 +28,19 @@ shortcut help:
 
   /keymap customize
 
-› Ask Codex to do anything
+› Ask Elpis to do anything
 
   ? / esc close
 after closing:
                                         ⠁               ⡀   ⠄           ⠄   ⠄
-› Ask Codex to do anything                                   ⠈
+› Ask Elpis to do anything                                   ⠈
       ⠠                             ⠠        ⢀ ⢀     ⡀                         ⠄
   ? for shortcuts                                            100% context left
 
 expires during help: true
 initial:
                             ⠈     ⢀     ⠁                 ⠂
-›⠁Ask Codex to do anything         ⠈      ⠁
+›⠁Ask Elpis to do anything         ⠈      ⠁
        ⢀            ⠠     ⠄         ⠠          ⢀    ⠠     ⡀
   ? for shortcuts                                            100% context left
 shortcut help:
@@ -63,11 +63,11 @@ shortcut help:
 
   /keymap customize
 
-› Ask Codex to do anything
+› Ask Elpis to do anything
 
   ? / esc close
 after closing:
 
-› Ask Codex to do anything
+› Ask Elpis to do anything
 
   ? for shortcuts                                            100% context left

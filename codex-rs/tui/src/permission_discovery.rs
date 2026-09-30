@@ -203,7 +203,7 @@ fn discovery_error(error: TypedRequestError) -> String {
                     || source.message.contains("configRequirements/read")
                     || source.message.contains("config/read"))))
     {
-        return "This server does not support permission discovery. Upgrade the Codex server to use this menu.".to_string();
+        return "This server does not support permission discovery. Upgrade the Elpis server to use this menu.".to_string();
     }
     format!("Failed to load permissions: {error}")
 }

@@ -15,7 +15,7 @@ impl ChatWidget {
                 "Scrollback",
                 "Native terminal copy, paste and scrollback",
             ),
-            (true, "Fullscreen", "Scroll within Codex's fullscreen view"),
+            (true, "Fullscreen", "Scroll within Elpis's fullscreen view"),
         ]
         .into_iter()
         .map(|(enabled, name, description)| SelectionItem {
