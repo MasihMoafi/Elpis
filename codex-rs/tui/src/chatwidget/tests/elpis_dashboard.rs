@@ -131,3 +131,29 @@ async fn the_page_is_refreshed_only_after_dashboard_was_opened() {
     chat.handle_server_notification(activity_update("turn-1", 900, 40), /*replay_kind*/ None);
     assert_eq!(dashboard_events(&mut rx), vec!["refresh".to_string()]);
 }
+
+fn context_report(chat: &mut ChatWidget) -> String {
+    let cell = chat.context_usage_cell(Default::default());
+    lines_to_single_string(&cell.display_lines(/*width*/ 200))
+}
+
+#[tokio::test]
+async fn context_links_the_rollout_as_a_readable_local_report() -> anyhow::Result<()> {
+    let home = tempfile::tempdir()?;
+    let rollout = home.path().join("sessions/rollout-test.jsonl");
+    std::fs::create_dir_all(rollout.parent().expect("rollout dir"))?;
+    std::fs::write(&rollout, "{\"type\":\"session_meta\"}\n")?;
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
+    chat.config.codex_home = AbsolutePathBuf::from_absolute_path(home.path())?;
+
+    // Negative: no rollout on disk, no evidence block.
+    let report = context_report(&mut chat);
+    assert!(!report.contains("Local evidence"), "{report}");
+
+    chat.current_rollout_path = Some(rollout);
+    let report = context_report(&mut chat);
+    assert!(report.contains("Local evidence · Ctrl+click to open"), "{report}");
+    assert!(report.contains("Rollout · http://127.0.0.1:"), "{report}");
+    assert!(!report.contains("file://"), "{report}");
+    Ok(())
+}

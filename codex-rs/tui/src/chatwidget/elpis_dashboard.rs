@@ -1,5 +1,6 @@
 //! Elpis: the ChatWidget side of `/dashboard` — the Context Ledger's CONTEXT WINDOW shares,
-//! the Activity tab and the state the local page reads.
+//! the Activity tab, the state the local page reads, and the local evidence links that
+//! `/context`, `/usage` and the Ledger show.
 //!
 //! Copied from v0.3.0 `chatwidget.rs`, `chatwidget/protocol.rs` and `chatwidget/context_usage.rs`.
 //! Upstream files reach this module through one-line seams marked `Elpis:`.
@@ -11,6 +12,12 @@ use codex_app_server_protocol::ThreadContextAttribution;
 use codex_app_server_protocol::TurnActivityUpdatedNotification;
 use codex_app_server_protocol::TurnCostUpdatedNotification;
 use ratatui::style::Color;
+use ratatui::style::Style;
+use ratatui::style::Stylize;
+use ratatui::text::Line;
+use ratatui::text::Span;
+use std::path::Path;
+use std::path::PathBuf;
 
 use super::ChatWidget;
 use super::context_ledger::LedgerSourceGroup;
@@ -150,6 +157,10 @@ impl ChatWidget {
                 .as_ref()
                 .map(|info| to_totals(&info.last_token_usage)),
         };
+        crate::dashboard_server::publish_evidence(
+            self.config.codex_home.as_path(),
+            self.local_evidence_paths(),
+        );
         crate::dashboard_server::publish_state(
             DashboardContext {
                 model: snapshot.model,
@@ -166,6 +177,58 @@ impl ChatWidget {
             self.dashboard_activity_state(),
             self.dashboard_smart_prune(),
         );
+    }
+
+    /// Local files the dashboard server opens as readable reports: the thread's rollout and,
+    /// once Smart Prune reports them, its latest attempt, admission and optimizer conversation.
+    fn local_evidence_paths(&self) -> Vec<(&'static str, PathBuf)> {
+        let codex_home = self.config.codex_home.as_path();
+        let mut paths = Vec::new();
+        if let Some(path) = self.rollout_path().filter(|path| path.is_file()) {
+            paths.push(("Rollout", path));
+        }
+        if let Some(path) = self
+            .smart_prune
+            .latest_attempt
+            .as_ref()
+            .and_then(|attempt| attempt.audit_path.as_deref())
+            .and_then(|path| smart_prune_attempt_evidence_path(codex_home, path))
+        {
+            paths.push(("Smart Prune attempt", path));
+        }
+        if let Some(path) = self.smart_prune.latest.as_ref().and_then(|admission| {
+            smart_prune_admission_manifest_path(codex_home, admission.audit_path.as_str())
+        }) {
+            let ace = path.with_file_name("ace.json");
+            paths.push(("Smart Prune admission", path));
+            if ace.is_file() {
+                paths.push(("Optimizer conversation", ace));
+            }
+        }
+        paths
+    }
+
+    /// The "Local evidence" block `/context` and `/usage` end with. Each link opens a readable
+    /// report served on the loopback address; empty when there is nothing to read.
+    pub(super) fn local_evidence_lines(&self) -> Vec<Line<'static>> {
+        let codex_home = self.config.codex_home.as_path();
+        let evidence: Vec<_> = self
+            .local_evidence_paths()
+            .iter()
+            .filter_map(|(label, path)| evidence_url_line(label, codex_home, path))
+            .collect();
+        if evidence.is_empty() {
+            return Vec::new();
+        }
+        let mut lines = vec![
+            Span::styled(
+                " Local evidence · Ctrl+click to open",
+                crate::style::brand_style(),
+            )
+            .into(),
+        ];
+        lines.extend(evidence);
+        lines
     }
 
     /// The Smart Prune tab's facts. Nothing reports Smart Prune state in this build, so the tab
@@ -224,6 +287,56 @@ impl ChatWidget {
                 }),
         }
     }
+}
+
+/// One evidence link: the label, then the report's loopback address.
+fn evidence_url_line(label: &'static str, root: &Path, path: &Path) -> Option<Line<'static>> {
+    let destination = crate::dashboard_server::evidence_url(root, label, path)?;
+    Some(Line::from(vec![
+        Span::styled(format!("   {label} · "), Style::default().fg(Color::Reset)),
+        Span::styled(
+            destination,
+            crate::style::brand_style().not_bold().underlined(),
+        ),
+    ]))
+}
+
+/// A Smart Prune audit record under `<home>/logs/smart-prune/<kind>/<leaf>`, and nothing else.
+fn strict_smart_prune_path(
+    codex_home: &Path,
+    audit_path: &str,
+    leaf_kind: &str,
+    append_manifest: bool,
+) -> Option<PathBuf> {
+    use std::path::Component;
+
+    let relative = Path::new(audit_path);
+    let mut components = relative.components();
+    let valid = matches!(components.next(), Some(Component::Normal(part)) if part == "smart-prune")
+        && matches!(components.next(), Some(Component::Normal(part)) if part == leaf_kind)
+        && matches!(components.next(), Some(Component::Normal(leaf)) if !leaf.is_empty())
+        && components.next().is_none();
+    if !valid {
+        return None;
+    }
+    let mut path = codex_home.join("logs").join(relative);
+    if append_manifest {
+        path.push("manifest.json");
+    } else if path.extension().is_none_or(|extension| extension != "json") {
+        return None;
+    }
+    path.is_file().then_some(path)
+}
+
+pub(super) fn smart_prune_attempt_evidence_path(
+    codex_home: &Path,
+    audit_path: &str,
+) -> Option<PathBuf> {
+    strict_smart_prune_path(codex_home, audit_path, "attempts", /*append_manifest*/ false)
+}
+
+fn smart_prune_admission_manifest_path(codex_home: &Path, audit_path: &str) -> Option<PathBuf> {
+    strict_smart_prune_path(codex_home, audit_path, "admissions", /*append_manifest*/ true)
 }
 
 /// A Ledger source as the page shows it: a file name, never the absolute path it was added with.
@@ -305,6 +418,57 @@ mod tests {
         ));
         assert_eq!(projected.name, "GOAL.md");
         assert_eq!(projected.category, "session continuity");
+    }
+
+    #[test]
+    fn evidence_links_open_readable_http_reports() {
+        let dir = tempfile::tempdir().expect("temp home");
+        let path = dir.path().join("attempt.json");
+        std::fs::write(&path, r#"{"status":"admitted","input":"EVIDENCE_ACCESS_MARKER"}"#)
+            .expect("write evidence");
+
+        let line = evidence_url_line("Smart Prune attempt", dir.path(), &path)
+            .expect("a file under the home gets a link");
+        assert_eq!(line.spans[0].style.fg, Some(Color::Reset));
+        let text = line
+            .spans
+            .iter()
+            .map(|span| span.content.as_ref())
+            .collect::<String>();
+        assert!(text.contains("http://127.0.0.1:"), "{text}");
+        assert!(!text.contains("file://"), "{text}");
+
+        // A file outside the home is never served.
+        let elsewhere = tempfile::tempdir().expect("second temp dir");
+        let foreign = elsewhere.path().join("secret.json");
+        std::fs::write(&foreign, "{}").expect("write foreign file");
+        assert!(evidence_url_line("Foreign", dir.path(), &foreign).is_none());
+    }
+
+    #[test]
+    fn only_smart_prune_audit_records_become_evidence() {
+        let home = tempfile::tempdir().expect("temp home");
+        let attempts = home.path().join("logs/smart-prune/attempts");
+        std::fs::create_dir_all(&attempts).expect("attempts dir");
+        std::fs::write(attempts.join("a1.json"), "{}").expect("attempt record");
+        std::fs::write(home.path().join("config.toml"), "").expect("config");
+
+        assert_eq!(
+            smart_prune_attempt_evidence_path(home.path(), "smart-prune/attempts/a1.json"),
+            Some(attempts.join("a1.json"))
+        );
+        for escaping in [
+            "../config.toml",
+            "smart-prune/attempts/../../../config.toml",
+            "smart-prune/admissions/a1.json",
+            "/etc/passwd",
+        ] {
+            assert_eq!(
+                smart_prune_attempt_evidence_path(home.path(), escaping),
+                None,
+                "{escaping}"
+            );
+        }
     }
 
     #[test]
