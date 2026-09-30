@@ -11,7 +11,7 @@ if [ -n "${ELPIS_BUILD_REPO_ROOT:-}" ]; then
 fi
 mode=${1:-}
 if [ "$#" -ne 1 ]; then
-    printf 'usage: %s {check|core-check|dev|optimized|schema-build|schema-write|schema-tests|config-schema-write|app-server-build|test-build|tui-tests|core-test-build|core-tests|app-server-test-build|app-server-tests|core-suite-build|core-suite-tests|workspace-check|models-test-build|config-test-build|next-dev|next-cargo|shipping}\n' "$0" >&2
+    printf 'usage: %s {check|core-check|dev|optimized|schema-build|schema-write|schema-tests|config-schema-write|app-server-build|test-build|tui-tests|core-test-build|core-tests|app-server-test-build|app-server-tests|core-suite-build|core-suite-tests|workspace-check|models-test-build|config-test-build|next-dev|next-release|next-host|next-cargo|shipping}\n' "$0" >&2
     exit 2
 fi
 
@@ -151,6 +151,27 @@ case "$mode" in
         cargo_args=(build --profile dev-small --locked --offline -p codex-cli --bin codex)
         artifact="$repo_root/codex-rs/target/dev-small/codex"
         ;;
+    next-release|next-host)
+        # The installed build. Upstream's release profile uses thin LTO; these
+        # overrides match v0.3.0's local-release (opt 1, no LTO, incremental)
+        # to keep the edit/build/install loop short.
+        profile=release
+        export CARGO_PROFILE_RELEASE_LTO=false CARGO_PROFILE_RELEASE_OPT_LEVEL=1 \
+            CARGO_PROFILE_RELEASE_CODEGEN_UNITS=256 CARGO_PROFILE_RELEASE_INCREMENTAL=true \
+            CARGO_PROFILE_RELEASE_DEBUG=none CARGO_PROFILE_RELEASE_STRIP=symbols
+        if [ "$mode" = next-release ]; then
+            cargo_args=(build --release --locked --offline -p codex-cli --bin codex)
+            artifact="$repo_root/codex-rs/target/release/codex"
+        else
+            # gpt-6/5.6 are code-mode-only; their helper links OpenAI's sandbox
+            # V8, checksum-verified into this directory (see TASKS.md).
+            v8_dir="$HOME/.cargo/.rusty_v8/codex-sandbox-150.4.0"
+            export RUSTY_V8_ARCHIVE="$v8_dir/librusty_v8_ptrcomp_sandbox_release_x86_64-unknown-linux-gnu.a.gz"
+            export RUSTY_V8_SRC_BINDING_PATH="$v8_dir/src_binding_ptrcomp_sandbox_release_x86_64-unknown-linux-gnu.rs"
+            cargo_args=(build --release --locked --offline -p codex-code-mode-host --bin codex-code-mode-host)
+            artifact="$repo_root/codex-rs/target/release/codex-code-mode-host"
+        fi
+        ;;
     next-cargo)
         # Any cargo command on the vendored base, under the same thermal guard.
         # Example: ELPIS_NEXT_CARGO_ARGS="test --profile dev-small --locked --offline -p codex-tui --lib elpis_"
@@ -164,7 +185,7 @@ case "$mode" in
         artifact="$repo_root/codex-rs/target/release/elpis"
         ;;
     *)
-        printf 'unknown build mode %q; expected check, core-check, dev, optimized, schema-build, schema-write, schema-tests, config-schema-write, app-server-build, test-build, tui-tests, core-test-build, core-tests, app-server-test-build, app-server-tests, core-suite-build, core-suite-tests, workspace-check, models-test-build, config-test-build, next-dev, next-cargo, or shipping\n' "$mode" >&2
+        printf 'unknown build mode %q; expected check, core-check, dev, optimized, schema-build, schema-write, schema-tests, config-schema-write, app-server-build, test-build, tui-tests, core-test-build, core-tests, app-server-test-build, app-server-tests, core-suite-build, core-suite-tests, workspace-check, models-test-build, config-test-build, next-dev, next-release, next-host, next-cargo, or shipping\n' "$mode" >&2
         exit 2
         ;;
 esac
