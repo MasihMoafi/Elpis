@@ -22,11 +22,24 @@ use pretty_assertions::assert_eq;
 
 use super::EventProcessorWithHumanOutput;
 use super::config_summary_entries;
+use super::elpis_header;
 use super::final_message_from_turn_items;
 use super::reasoning_text;
 use super::should_print_final_message_to_stdout;
 use super::should_print_final_message_to_tty;
 use crate::event_processor::EventProcessor;
+
+#[test]
+fn header_names_elpis_with_the_release_elpis_version_prints() {
+    let header = elpis_header();
+    let version = header.strip_prefix("Elpis v").expect("header names Elpis");
+    assert!(
+        include_str!("../../cli/Cargo.toml").contains(&format!("\nversion = \"{version}\"\n")),
+        "{header} is not the CLI release"
+    );
+    // Negative: not the vendored Codex version this crate is built with.
+    assert_ne!(version, env!("CARGO_PKG_VERSION"));
+}
 
 #[test]
 fn suppresses_final_stdout_message_when_both_streams_are_terminals() {
