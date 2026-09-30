@@ -374,6 +374,37 @@ impl LoadedAgentsMd {
                 .all(|entry| entry.contents.trim().is_empty())
     }
 
+    /// Elpis: the subset the Context Ledger admits into model context. Discovery keeps every
+    /// file, so the Ledger can still list a withdrawn one. Instructions without a file behind
+    /// them are not Ledger rows and stay. `None` when nothing is left.
+    pub(crate) fn admitted_by(&self, admits: &dyn Fn(&std::path::Path) -> bool) -> Option<Self> {
+        let admits_source = |source: &Option<AbsolutePathBuf>| {
+            source
+                .as_ref()
+                .is_none_or(|source| admits(source.as_path()))
+        };
+        let admitted = Self {
+            user_instructions: self
+                .user_instructions
+                .clone()
+                .filter(|instructions| admits_source(&instructions.source)),
+            thread_instructions: self
+                .thread_instructions
+                .clone()
+                .filter(|instructions| admits_source(&instructions.source)),
+            entries: self
+                .entries
+                .iter()
+                .filter(|entry| match entry.provenance.path() {
+                    Some(path) => path.to_abs_path().is_ok_and(|path| admits(path.as_path())),
+                    None => true,
+                })
+                .cloned()
+                .collect(),
+        };
+        (!admitted.is_empty()).then_some(admitted)
+    }
+
     /// Returns the concatenated model-visible instruction text.
     pub fn text(&self) -> String {
         if self.has_multiple_project_environments() {

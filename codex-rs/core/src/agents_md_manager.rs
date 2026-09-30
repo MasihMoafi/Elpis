@@ -140,6 +140,10 @@ impl AgentsMdManager {
             Ok(loaded)
         }
         .await;
+        // Elpis: only what the Context Ledger admits reaches the model. `get_loaded` keeps
+        // every discovered file, so the Ledger can still list and re-admit a withdrawn one.
+        let result =
+            result.map(|loaded| crate::elpis_admission::admitted_agents_md(config, loaded));
         (result, warnings)
     }
 
