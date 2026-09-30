@@ -296,14 +296,17 @@ async function runCase(vendor, port) {
 
 // A config naming a built-in gateway provider loads, and with no key the gateway refuses before
 // any request leaves. A dead proxy catches any outbound attempt, so no real vendor is reached.
-async function builtInCase(providerId, model, envKey) {
+// With `viaFlag`, the provider comes from `--provider` instead of config.toml.
+async function builtInCase(providerId, model, envKey, viaFlag = false) {
   const caseRoot = path.join(root, providerId);
   const home = path.join(caseRoot, "elpis-home");
   const cwd = path.join(caseRoot, "project");
   fs.mkdirSync(home, { recursive: true });
   fs.mkdirSync(cwd, { recursive: true });
-  fs.writeFileSync(path.join(home, "config.toml"), `model = "${model}"\nmodel_provider = "${providerId}"\n`);
+  fs.writeFileSync(path.join(home, "config.toml"),
+    `model = "${model}"\n${viaFlag ? "" : `model_provider = "${providerId}"\n`}`);
   const result = await run([
+    ...(viaFlag ? ["--provider", providerId] : []),
     "exec", "--skip-git-repo-check", "--dangerously-bypass-approvals-and-sandbox", "Say hi.",
   ], {
     cwd,
@@ -322,6 +325,7 @@ async function builtInCase(providerId, model, envKey) {
   fs.writeFileSync(path.join(caseRoot, "output.log"), output);
   const summary = {
     provider: providerId,
+    viaFlag,
     status: result.status,
     notFound: output.includes(`Model provider \`${providerId}\` not found`),
     refusedForKey: output.includes(`no API key for provider \`${providerId}\``),
@@ -341,7 +345,7 @@ async function builtInCase(providerId, model, envKey) {
   const results = [];
   for (const vendor of ["anthropic", "chat"]) results.push(await runCase(vendor, port));
   results.push(await builtInCase("anthropic", "claude-sonnet-4-6", "ANTHROPIC_API_KEY"));
-  results.push(await builtInCase("google-gemini", "gemini-3.5-flash", "GEMINI_API_KEY"));
+  results.push(await builtInCase("google-gemini", "gemini-3.5-flash", "GEMINI_API_KEY", true));
   console.log(JSON.stringify({ passed: true, mode: dropCompletion ? "drop-completion" : "positive", results }));
 })().catch(error => {
   console.error(error.stack || error);
