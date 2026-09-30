@@ -3,6 +3,8 @@ mod apps_instructions;
 mod collaboration_mode;
 mod compact_permissions;
 mod context_window_guidance;
+// Elpis: single-slot sections, which keep the request in step with the Context Ledger.
+mod elpis_single_slot;
 mod environment;
 mod environments_instructions;
 mod managed_developer_instructions;
@@ -63,6 +65,11 @@ trait ErasedWorldStateSection: Send + Sync {
 
     fn matches_retained_fragment(&self, role: &str, text: &str) -> bool;
 
+    // Elpis: see `WorldStateSection::owns_single_history_slot`.
+    fn owns_single_history_slot(&self) -> bool;
+
+    fn has_model_visible_content(&self) -> bool;
+
     fn render_diff(
         &self,
         previous: PreviousSectionState<'_, Value>,
@@ -106,6 +113,14 @@ impl<S: WorldStateSection> ErasedWorldStateSection for S {
 
     fn matches_retained_fragment(&self, role: &str, text: &str) -> bool {
         S::matches_retained_fragment(role, text)
+    }
+
+    fn owns_single_history_slot(&self) -> bool {
+        S::owns_single_history_slot()
+    }
+
+    fn has_model_visible_content(&self) -> bool {
+        WorldStateSection::has_model_visible_content(self)
     }
 
     fn render_diff(
@@ -157,6 +172,14 @@ impl ErasedWorldStateSection for ExtensionWorldStateSection {
 
     fn matches_retained_fragment(&self, role: &str, text: &str) -> bool {
         self.0.matches_retained_fragment(role, text)
+    }
+
+    fn owns_single_history_slot(&self) -> bool {
+        self.0.owns_single_history_slot()
+    }
+
+    fn has_model_visible_content(&self) -> bool {
+        self.0.has_model_visible_content()
     }
 
     fn render_diff(
@@ -251,6 +274,20 @@ pub(crate) trait WorldStateSection: Send + Sync + 'static {
     /// Recognizes this section's rendered fragment in retained model history.
     fn matches_retained_fragment(_role: &str, _text: &str) -> bool {
         false
+    }
+
+    /// Elpis: whether this section owns exactly one slot in model-visible history. A
+    /// single-slot section never accumulates: any earlier copy is removed before a new one
+    /// is appended, and the slot is emptied once the section has no content. Requires a
+    /// retained-fragment matcher, which identifies the slot's copies.
+    fn owns_single_history_slot() -> bool {
+        false
+    }
+
+    /// Elpis: whether this section currently has anything the model should see. A
+    /// single-slot section answering `false` has its retained copies removed.
+    fn has_model_visible_content(&self) -> bool {
+        true
     }
 
     fn render_diff(
@@ -396,7 +433,7 @@ impl WorldState {
 
     /// Renders every section as new, without any known previous state.
     pub(crate) fn render_full(&self) -> Vec<Box<dyn ContextualUserFragment>> {
-        self.render_with(|_, _| PreviousSectionState::Absent)
+        drop_section_ids(self.render_with(|_, _| PreviousSectionState::Absent))
     }
 
     /// Renders each section against the exact persisted snapshot when available.
@@ -405,18 +442,30 @@ impl WorldState {
         &self,
         previous: &WorldStateSnapshot,
     ) -> Vec<Box<dyn ContextualUserFragment>> {
-        self.render_with(|id, _| match previous.sections.get(id) {
+        drop_section_ids(self.render_with(|id, _| match previous.sections.get(id) {
             Some(previous) => PreviousSectionState::Known(previous),
             None => PreviousSectionState::Absent,
-        })
+        }))
     }
 
     /// Falls back to retained model history when no exact persisted snapshot is available.
+    // Elpis: production renders through `render_history_diff_with_ids`.
+    #[cfg(test)]
     pub(crate) fn render_history_diff<'a>(
         &self,
         previous: Option<&WorldStateSnapshot>,
         items: impl IntoIterator<Item = &'a ResponseItem> + Clone,
     ) -> Vec<Box<dyn ContextualUserFragment>> {
+        drop_section_ids(self.render_history_diff_with_ids(previous, items))
+    }
+
+    /// Elpis: `render_history_diff`, keeping each fragment's section ID so single-slot
+    /// sections know whether they were refilled.
+    pub(crate) fn render_history_diff_with_ids<'a>(
+        &self,
+        previous: Option<&WorldStateSnapshot>,
+        items: impl IntoIterator<Item = &'a ResponseItem> + Clone,
+    ) -> Vec<(&'static str, Box<dyn ContextualUserFragment>)> {
         self.render_with(|id, section| {
             if let Some(previous) = previous.and_then(|previous| previous.sections.get(id)) {
                 if section.has_retained_fragment_matcher()
@@ -437,12 +486,22 @@ impl WorldState {
     fn render_with<'a>(
         &self,
         mut previous: impl FnMut(&str, &dyn ErasedWorldStateSection) -> PreviousSectionState<'a, Value>,
-    ) -> Vec<Box<dyn ContextualUserFragment>> {
+    ) -> Vec<(&'static str, Box<dyn ContextualUserFragment>)> {
         self.sections
             .iter()
-            .filter_map(|(id, section)| section.render_diff(previous(id, section.as_ref())))
+            .filter_map(|(id, section)| {
+                section
+                    .render_diff(previous(id, section.as_ref()))
+                    .map(|fragment| (*id, fragment))
+            })
             .collect()
     }
+}
+
+fn drop_section_ids(
+    rendered: Vec<(&'static str, Box<dyn ContextualUserFragment>)>,
+) -> Vec<Box<dyn ContextualUserFragment>> {
+    rendered.into_iter().map(|(_, fragment)| fragment).collect()
 }
 
 fn has_retained_fragment<'a>(

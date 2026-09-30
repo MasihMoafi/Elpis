@@ -448,8 +448,13 @@ impl ContextManager {
         world_state: &WorldState,
     ) -> (Vec<Box<dyn ContextualUserFragment>>, Option<WorldStateItem>) {
         let snapshot = world_state.snapshot();
-        let fragments =
-            world_state.render_history_diff(self.world_state_baseline.as_ref(), self.raw_items());
+        // Elpis: renders through the single-slot reconciliation.
+        let fragments = Self::render_world_state_reconciling(
+            &mut self.items,
+            &mut self.history_version,
+            world_state,
+            self.world_state_baseline.as_ref(),
+        );
         let rollout_item = self.world_state_baseline.as_ref().map_or_else(
             || Some(WorldStateItem::full(snapshot.clone().into_object())),
             |previous| {
@@ -460,6 +465,41 @@ impl ContextManager {
         );
         self.world_state_baseline = Some(snapshot);
         (fragments, rollout_item)
+    }
+
+    /// Elpis: renders one step's World State against the previous step's snapshot, with the
+    /// same single-slot reconciliation as `update_world_state`.
+    pub(crate) fn render_world_state_step(
+        &mut self,
+        world_state: &WorldState,
+        previous: &WorldStateSnapshot,
+    ) -> Vec<Box<dyn ContextualUserFragment>> {
+        Self::render_world_state_reconciling(
+            &mut self.items,
+            &mut self.history_version,
+            world_state,
+            Some(previous),
+        )
+    }
+
+    /// Elpis: renders `world_state` against `previous`, then reconciles single-slot sections
+    /// with history. A refill or an empty slot removes every earlier copy; an unchanged slot
+    /// keeps only its newest copy. Any removal is a history rewrite.
+    fn render_world_state_reconciling(
+        items: &mut Arc<Vec<ResponseItemEnvelope>>,
+        history_version: &mut u64,
+        world_state: &WorldState,
+        previous: Option<&WorldStateSnapshot>,
+    ) -> Vec<Box<dyn ContextualUserFragment>> {
+        let rendered = world_state.render_history_diff_with_ids(
+            previous,
+            items.iter().map(|envelope| &envelope.item),
+        );
+        let refilled = rendered.iter().map(|(id, _)| *id).collect();
+        if world_state.vacate_single_slot_fragments(items, &refilled) {
+            *history_version = history_version.saturating_add(1);
+        }
+        rendered.into_iter().map(|(_, fragment)| fragment).collect()
     }
 
     pub(crate) fn set_world_state_baseline(&mut self, snapshot: WorldStateSnapshot) {
@@ -1365,3 +1405,8 @@ fn user_message_positions(items: &[ResponseItemEnvelope]) -> Vec<usize> {
 #[cfg(test)]
 #[path = "history_tests.rs"]
 mod tests;
+
+// Elpis: single-slot history reconciliation.
+#[cfg(test)]
+#[path = "history_elpis_tests.rs"]
+mod elpis_tests;

@@ -3691,11 +3691,13 @@ impl Session {
             .merge_patch_from(&previous_snapshot)
             .map(WorldStateItem::patch);
         // A catalog may have left history during compaction even when its snapshot survives.
+        // Elpis: rendering also reconciles single-slot sections with history.
         let items = crate::context_manager::updates::merge_contextual_fragments(
-            world_state.render_history_diff(
-                Some(&previous_snapshot),
-                self.state.lock().await.history.raw_items(),
-            ),
+            self.state
+                .lock()
+                .await
+                .history
+                .render_world_state_step(world_state.as_ref(), &previous_snapshot),
         );
         if !items.is_empty() {
             self.record_conversation_items(turn_context, &step_context.settings.model_info, &items)
