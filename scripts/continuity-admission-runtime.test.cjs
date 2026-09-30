@@ -1,3 +1,9 @@
+// Ledger admission eval: the provider request carries exactly the sources the Context
+// Ledger admits (MEMORY, global and project AGENTS.md, dev rules, /add files).
+// usage: ELPIS_BIN=/abs/elpis-next node scripts/continuity-admission-runtime.test.cjs
+//    or: ELPIS_APP_SERVER_BIN=/abs/codex-app-server node scripts/continuity-admission-runtime.test.cjs
+// Runs only against a loopback fake provider with a fresh temporary home; wrap it in
+// `unshare -rn sh -c "ip link set lo up; ..."` to rule out any other network access.
 const assert = require("node:assert/strict");
 const crypto = require("node:crypto");
 const { EventEmitter } = require("node:events");
@@ -12,21 +18,31 @@ const MEMORY_SENTINEL = "ELPIS_MEMORY_SENTINEL_9bf259b96d";
 const GLOBAL_AGENTS_SENTINEL = "ELPIS_GLOBAL_AGENTS_SENTINEL_934fc08c8a";
 const PROJECT_AGENTS_SENTINEL = "ELPIS_PROJECT_AGENTS_SENTINEL_13a0a94236";
 const DEV_RULE_SENTINEL = "ELPIS_DEV_RULE_SENTINEL_841c87ce04";
+const ADDED_FILE_SENTINEL = "ELPIS_ADDED_FILE_SENTINEL_5f0d2c71e3";
 const USER_SENTINEL = "ELPIS_NEIGHBOR_USER_SENTINEL_a329510b8e";
 const DEVELOPER_SENTINEL = "ELPIS_NEIGHBOR_DEVELOPER_SENTINEL_786ed03a7f";
 const NEGATIVE_CONTROLS = new Set([
   "disable-memory-on-admission",
   "disable-agents-on-admission",
   "disable-dev-on-admission",
+  "disable-added-on-admission",
 ]);
 const REQUEST_TIMEOUT_MS = 30_000;
 const STAGES = ["default", "off", "on", "withdrawn", "malformed"];
 
-const binaryInput = process.env.ELPIS_APP_SERVER_BIN;
-assert(binaryInput, "ELPIS_APP_SERVER_BIN must name the app-server binary under test");
-assert(path.isAbsolute(binaryInput), "ELPIS_APP_SERVER_BIN must be an absolute path");
+// ELPIS_BIN is the elpis multitool, run as `<bin> app-server`; ELPIS_APP_SERVER_BIN is a
+// standalone app-server binary such as v0.3.0's codex-app-server.
+const multitoolInput = process.env.ELPIS_BIN;
+const appServerInput = process.env.ELPIS_APP_SERVER_BIN;
+assert(
+  Boolean(multitoolInput) !== Boolean(appServerInput),
+  "set exactly one of ELPIS_BIN (multitool) or ELPIS_APP_SERVER_BIN (standalone app-server)",
+);
+const binaryInput = multitoolInput || appServerInput;
+const binaryArgs = multitoolInput ? ["app-server"] : [];
+assert(path.isAbsolute(binaryInput), "the binary under test must be an absolute path");
 const binary = path.resolve(binaryInput);
-assert(fs.statSync(binary).isFile(), `ELPIS_APP_SERVER_BIN is not a file: ${binary}`);
+assert(fs.statSync(binary).isFile(), `the binary under test is not a file: ${binary}`);
 
 const negativeControl = process.env.ELPIS_CONTINUITY_NEGATIVE_CONTROL;
 assert(
@@ -46,6 +62,7 @@ const memoryFile = path.join(home, "memories/MEMORY.md");
 const admissionFile = path.join(workspace, "admission.toml");
 const devRules = path.join(root, "dev-rules");
 const devRuleName = "RUNTIME.md";
+const addedFile = path.join(cwd, "NOTES.md");
 for (const directory of [cwd, workspace, path.dirname(memoryFile), devRules]) {
   fs.mkdirSync(directory, { recursive: true });
 }
@@ -53,15 +70,18 @@ fs.writeFileSync(memoryFile, `# Elpis Memory\n\n- ${MEMORY_SENTINEL}\n`);
 fs.writeFileSync(path.join(home, "AGENTS.md"), `${GLOBAL_AGENTS_SENTINEL}\n`);
 fs.writeFileSync(path.join(cwd, "AGENTS.md"), `${PROJECT_AGENTS_SENTINEL}\n`);
 fs.writeFileSync(path.join(devRules, devRuleName), `${DEV_RULE_SENTINEL}\n`);
+fs.writeFileSync(addedFile, `${ADDED_FILE_SENTINEL}\n`);
+// `/add` stores the canonical path as a custom source key.
+const addedSourceKey = JSON.stringify(fs.realpathSync(addedFile));
 fs.writeFileSync(path.join(home, "hooks.json"), "{}");
 
 class AppServer extends EventEmitter {
-  constructor(executable, workingDirectory, env) {
+  constructor(executable, args, workingDirectory, env) {
     super();
     this.closed = false;
     this.nextId = 1;
     this.pending = new Map();
-    this.child = spawn(executable, [], {
+    this.child = spawn(executable, args, {
       cwd: workingDirectory,
       env,
       stdio: ["pipe", "pipe", "pipe"],
@@ -269,6 +289,9 @@ async function runStage(threadId, stage, admission, text) {
   if (negativeControl === "disable-dev-on-admission" && stage === "withdrawn") {
     admission = admission.replace(`"${devRuleName}" = true`, `"${devRuleName}" = false`);
   }
+  if (negativeControl === "disable-added-on-admission" && stage === "on") {
+    admission = admission.replace(`${addedSourceKey} = true`, `${addedSourceKey} = false`);
+  }
   if (admission === null) fs.rmSync(admissionFile, { force: true });
   else fs.writeFileSync(admissionFile, admission);
   activeStage = stage;
@@ -281,6 +304,19 @@ async function runStage(threadId, stage, admission, text) {
   if (providerFailure) throw providerFailure;
   assert.equal(requests.length, before + 1, `${stage} turn made an auxiliary or missing provider request`);
   assert.equal(requests.at(-1).stage, stage, `${stage} provider request was misattributed`);
+}
+
+function observe() {
+  return requests.map(({ stage, body }) => ({
+    stage,
+    memorySentinelCount: occurrenceCount(body, MEMORY_SENTINEL),
+    globalAgentsSentinelCount: occurrenceCount(body, GLOBAL_AGENTS_SENTINEL),
+    projectAgentsSentinelCount: occurrenceCount(body, PROJECT_AGENTS_SENTINEL),
+    devRuleSentinelCount: occurrenceCount(body, DEV_RULE_SENTINEL),
+    addedFileSentinelCount: occurrenceCount(body, ADDED_FILE_SENTINEL),
+    userSentinelCount: occurrenceCount(body, USER_SENTINEL),
+    developerSentinelCount: occurrenceCount(body, DEVELOPER_SENTINEL),
+  }));
 }
 
 async function run() {
@@ -301,7 +337,7 @@ async function run() {
     "",
   ].join("\n"));
 
-  rpc = new AppServer(binary, cwd, childEnvironment());
+  rpc = new AppServer(binary, binaryArgs, cwd, childEnvironment());
   rpc.on("request", message => rpc.respond(message.id, { decision: "decline" }));
   await rpc.request("initialize", {
     clientInfo: { name: "elpis_continuity_admission_runtime_test", version: "1" },
@@ -330,16 +366,20 @@ async function run() {
     "project_rules = true",
     "[dev_sources]",
     `"${devRuleName}" = false`,
+    "[custom_sources]",
+    `${addedSourceKey} = true`,
     "",
-  ].join("\n"), "Memory and AGENTS are on while the dev rule is off.");
+  ].join("\n"), "Memory, AGENTS and the added file are on while the dev rule is off.");
   await runStage(thread, "withdrawn", [
     "memory = false",
     "global_rules = false",
     "project_rules = false",
     "[dev_sources]",
     `"${devRuleName}" = true`,
+    "[custom_sources]",
+    `${addedSourceKey} = false`,
     "",
-  ].join("\n"), "AGENTS were withdrawn and the dev rule was restored.");
+  ].join("\n"), "AGENTS and the added file were withdrawn and the dev rule was restored.");
   await runStage(thread, "malformed", "memory = [\n", "Malformed admission must fail closed.");
 
   assert.equal(requests.length, STAGES.length, "unexpected auxiliary provider request count");
@@ -348,6 +388,7 @@ async function run() {
     const expectedMemoryCount = stage === "on" ? 1 : 0;
     const expectedAgentsCount = stage === "on" ? 1 : 0;
     const expectedDevRuleCount = stage === "default" || stage === "off" || stage === "withdrawn" ? 1 : 0;
+    const expectedAddedFileCount = stage === "on" ? 1 : 0;
     assert.equal(
       occurrenceCount(body, MEMORY_SENTINEL),
       expectedMemoryCount,
@@ -368,6 +409,11 @@ async function run() {
       expectedDevRuleCount,
       `${stage} request had the wrong dev-rule sentinel count`,
     );
+    assert.equal(
+      occurrenceCount(body, ADDED_FILE_SENTINEL),
+      expectedAddedFileCount,
+      `${stage} request had the wrong added-file sentinel count`,
+    );
     assert.match(JSON.stringify(body), new RegExp(DEVELOPER_SENTINEL), `${stage} lost developer context`);
   }
   for (const stage of ["off", "on", "withdrawn", "malformed"]) {
@@ -375,15 +421,7 @@ async function run() {
     assert.match(JSON.stringify(body), new RegExp(USER_SENTINEL), `${stage} lost neighboring user history`);
   }
 
-  const observations = requests.map(({ stage, body }) => ({
-    stage,
-    memorySentinelCount: occurrenceCount(body, MEMORY_SENTINEL),
-    globalAgentsSentinelCount: occurrenceCount(body, GLOBAL_AGENTS_SENTINEL),
-    projectAgentsSentinelCount: occurrenceCount(body, PROJECT_AGENTS_SENTINEL),
-    devRuleSentinelCount: occurrenceCount(body, DEV_RULE_SENTINEL),
-    userSentinelCount: occurrenceCount(body, USER_SENTINEL),
-    developerSentinelCount: occurrenceCount(body, DEVELOPER_SENTINEL),
-  }));
+  const observations = observe();
   fs.writeFileSync(path.join(root, "observations.json"), JSON.stringify(observations, null, 2));
   console.log(JSON.stringify({
     passed: true,
@@ -397,6 +435,7 @@ async function run() {
       "malformed admission fails closed",
       "global and project AGENTS are absent by default, admitted once when enabled, then withdrawn",
       "the configured dev rule is admitted by default, excluded explicitly, then restored",
+      "a file added with /add is sent only while it is included",
       "neighboring user and developer context survives slot replacement",
       "one provider request occurs per turn with no auxiliary request",
     ],
@@ -412,6 +451,7 @@ run().catch(error => {
   fs.writeFileSync(path.join(root, "failure.txt"), error.stack || String(error));
   fs.writeFileSync(path.join(root, "requests.json"), JSON.stringify(requests, null, 2));
   console.error(error.stack || error);
+  console.error(JSON.stringify({ passed: false, observations: observe() }, null, 2));
   process.exitCode = 1;
 }).finally(async () => {
   try {
