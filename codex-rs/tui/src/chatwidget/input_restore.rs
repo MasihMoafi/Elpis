@@ -402,7 +402,8 @@ impl ChatWidget {
     /// placeholders in a stable order and rebase text element byte ranges so the restored composer
     /// state stays aligned with the merged attachment list. Returns `None` when there is nothing to
     /// restore.
-    fn drain_pending_messages_for_restore(&mut self) -> Option<ThreadComposerState> {
+    // Elpis: visible to the Up recall in elpis_composer.rs.
+    pub(super) fn drain_pending_messages_for_restore(&mut self) -> Option<ThreadComposerState> {
         if self.input_queue.pending_steers.is_empty() && !self.has_queued_follow_up_messages() {
             return None;
         }

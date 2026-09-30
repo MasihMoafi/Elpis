@@ -7,8 +7,20 @@
 //!   with a newline before submission or queuing is considered. The replacement uses the same
 //!   [`TextArea`] edit primitive as the editor newline path. Active paste bursts keep
 //!   backslashes literal.
+//! - The queued-messages preview says Up pulls them all back. The ChatWidget half (the Up
+//!   recall itself) lives in `chatwidget/elpis_composer.rs`.
 
 use super::*;
+
+/// The hint under queued follow-ups: Up pulls every one of them back, Enter sends.
+pub(in crate::bottom_pane) fn queued_follow_ups_hint_line() -> Line<'static> {
+    Line::from(vec![
+        "    ".into(),
+        key_hint::plain(KeyCode::Up).into(),
+        " edit all · enter send".into(),
+    ])
+    .dim()
+}
 
 impl ChatComposer {
     /// Turns a trailing backslash followed by plain Enter into a newline without submitting.

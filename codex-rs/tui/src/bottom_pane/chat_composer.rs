@@ -381,7 +381,7 @@ mod completion_target;
 mod composer_layout;
 mod draft_state;
 // Elpis: composer behaviour kept from v0.3.0.
-mod elpis_composer;
+pub(super) mod elpis_composer;
 mod footer_state;
 mod history_search;
 mod inline_input;

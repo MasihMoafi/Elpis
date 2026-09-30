@@ -163,14 +163,9 @@ impl PendingInputPreview {
             }
         }
 
-        if !self.queued_messages.is_empty()
-            && !has_questions
-            && let Some(edit_binding) = self.edit_binding
-        {
-            let mut hint = Line::from("    ");
-            hint.spans.extend(edit_binding.spans());
-            hint.spans.push(" edit last queued message".dim());
-            lines.push(hint);
+        // Elpis: Up pulls every queued follow-up back together, and the hint says so (v0.3.0).
+        if !self.queued_messages.is_empty() && !has_questions {
+            lines.push(super::chat_composer::elpis_composer::queued_follow_ups_hint_line());
         }
 
         Paragraph::new(lines).into()

@@ -250,6 +250,8 @@ mod copy_export_picker_tests;
 mod dynamic_activity_tests;
 // Elpis: evals for `/compact N` and `/compact <text>`.
 mod elpis_compact;
+// Elpis: evals for the v0.3.0 composer behaviour.
+mod elpis_composer;
 // Elpis: Context Ledger evals.
 mod elpis_context_ledger;
 // Elpis: evals for the Elpis look.

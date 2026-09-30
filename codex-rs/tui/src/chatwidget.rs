@@ -377,6 +377,8 @@ use self::realtime::RealtimeConversationUiState;
 mod rendering;
 // Elpis: the identity line above the composer.
 mod elpis_identity;
+// Elpis: the ChatWidget half of the v0.3.0 composer behaviour.
+mod elpis_composer;
 mod replay;
 mod review;
 mod review_popups;
