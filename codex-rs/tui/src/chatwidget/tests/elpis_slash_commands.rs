@@ -14,11 +14,10 @@ use std::str::FromStr;
 const NOT_IN_THIS_BUILD: &str =
     "is not in this Elpis build yet. It arrives in a later Elpis build.";
 
-/// The commands that wait for the Elpis context engine.
-const LATER_BUILD: [SlashCommand; 5] = [
-    SlashCommand::PrunerModel,
-    SlashCommand::Prune,
-    SlashCommand::SmartPrune,
+/// The commands that wait for the rest of the Elpis context engine. `/prune`, `/smart-prune`
+/// and `/pruner-model` work (tests/elpis_smart_prune.rs); `/memory-model` saves the
+/// background model.
+const LATER_BUILD: [SlashCommand; 2] = [
     SlashCommand::ForcePrune,
     SlashCommand::Dashboard,
 ];

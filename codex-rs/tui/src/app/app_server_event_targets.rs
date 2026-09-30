@@ -68,6 +68,10 @@ pub(super) fn server_notification_thread_target(
         ServerNotification::ThreadTokenUsageUpdated(notification) => {
             Some(notification.thread_id.as_str())
         }
+        // Elpis: Smart Prune state belongs to its thread.
+        ServerNotification::ThreadSmartPruneUpdated(notification) => {
+            Some(notification.thread_id.as_str())
+        }
         ServerNotification::ThreadGoalUpdated(notification) => {
             Some(notification.thread_id.as_str())
         }

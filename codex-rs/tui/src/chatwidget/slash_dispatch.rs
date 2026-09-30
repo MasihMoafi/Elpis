@@ -1063,6 +1063,10 @@ impl ChatWidget {
             SlashCommand::Pets if !trimmed.is_empty() => {
                 self.select_pet_by_id(args);
             }
+            // Elpis: `/smart-prune on|off` and `/pruner-model <id|provider:id|default>`.
+            SlashCommand::SmartPrune | SlashCommand::PrunerModel if !trimmed.is_empty() => {
+                self.dispatch_prune_command_with_args(cmd, trimmed)
+            }
             // Elpis: `/compact N` sets pressure compaction; `/compact <text>` guides a compaction.
             SlashCommand::Compact if !trimmed.is_empty() => {
                 self.dispatch_compact_with_args(trimmed)

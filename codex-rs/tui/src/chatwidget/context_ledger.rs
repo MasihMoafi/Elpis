@@ -549,10 +549,8 @@ impl ChatWidget {
         let pending_smart_prune_enabled = self.context_ledger.pending_smart_prune_enabled;
         let smart_prune_enabled = pending_smart_prune_enabled.unwrap_or(self.smart_prune.enabled);
         let smart_prune_button =
-            // Stage 1: nothing syncs Smart Prune until the Elpis context engine arrives, so an
-            // unsynced switch reads OFF, not SYNC. v0.3.0 showed "[···] SYNC" here.
             if !self.smart_prune_synced && pending_smart_prune_enabled.is_none() {
-                "[●━━━] OFF"
+                "[···] SYNC"
             } else if smart_prune_enabled {
                 "[━━━●] ON"
             } else {
@@ -626,8 +624,7 @@ impl ChatWidget {
         let smart_prune_detail = if pending_smart_prune_enabled.is_some() {
             "Saving setting · the active turn keeps its current policy".to_string()
         } else if !self.smart_prune_synced {
-            // Stage 1; v0.3.0: "Reading current thread state".
-            "Not in this Elpis build yet".to_string()
+            "Reading current thread state".to_string()
         } else if self.smart_prune.examined_outputs > 0 {
             format!(
                 "{} of {} eligible outputs shortened · ≈{} tokens saved",
@@ -744,8 +741,7 @@ impl ChatWidget {
         let smart_prune_hint = if pending_smart_prune_enabled.is_some() {
             "Saving… · applies next turn; active turn unchanged"
         } else if !self.smart_prune_synced {
-            // Stage 1; v0.3.0: "Syncing… · /smart-prune on|off sets an explicit state".
-            "Arrives in a later Elpis build"
+            "Syncing… · /smart-prune on|off sets an explicit state"
         } else if self.is_user_turn_pending_or_running() {
             "p toggle · applies next turn; active turn unchanged"
         } else {

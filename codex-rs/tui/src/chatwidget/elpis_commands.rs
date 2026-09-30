@@ -4,11 +4,11 @@
 //! decides about them lives here: the descriptions, the dispatch flags and the dispatch itself.
 //! Upstream files reach this module through one-line seams marked `Elpis:`.
 //!
-//! `/yolo`, `/agent`, `/add`, `/context` and `/memory-model` work in this build. The commands
-//! that need the Elpis context engine (`/pruner-model`, `/prune`, `/smart-prune`,
-//! `/force-prune`, `/dashboard`) are listed with their v0.3.0 descriptions and, when run, say
-//! plainly that they arrive in a later Elpis build. They send nothing to the model or the app
-//! server.
+//! `/yolo`, `/agent`, `/add`, `/context`, `/memory-model`, `/prune`, `/smart-prune` and
+//! `/pruner-model` work in this build (the pruning commands live in `elpis_prune_commands.rs`).
+//! The commands that need the rest of the Elpis context engine (`/force-prune`, `/dashboard`)
+//! are listed with their v0.3.0 descriptions and, when run, say plainly that they arrive in a
+//! later Elpis build. They send nothing to the model or the app server.
 //!
 //! `/memory-model` saves `background_model` / `background_provider`
 //! (`crate::elpis_background_model`), which choose the model that names sessions.
@@ -164,11 +164,16 @@ pub(crate) fn available_during_task(cmd: SlashCommand) -> bool {
 
 /// Whether a command queued behind a turn lets the next queued input run after it.
 ///
-/// `/yolo` waits for the permission change and `/agent` opens a picker, as in v0.3.0. The
-/// commands that only print "not in this build yet" let the queue continue.
+/// `/yolo` waits for the permission change, `/prune` and `/smart-prune` for the Smart Prune
+/// switch, and `/agent` opens a picker, as in v0.3.0. The commands that only print "not in
+/// this build yet" let the queue continue.
 pub(super) fn queued_drain(cmd: SlashCommand) -> QueueDrain {
     match cmd {
-        SlashCommand::Yolo | SlashCommand::Agent | SlashCommand::Add => QueueDrain::Stop,
+        SlashCommand::Yolo
+        | SlashCommand::Agent
+        | SlashCommand::Add
+        | SlashCommand::Prune
+        | SlashCommand::SmartPrune => QueueDrain::Stop,
         _ => QueueDrain::Continue,
     }
 }
@@ -211,6 +216,9 @@ impl ChatWidget {
             }
             SlashCommand::Add => {
                 self.add_error_message(super::elpis_ledger_glue::ADD_CONTEXT_USAGE.to_string());
+            }
+            SlashCommand::Prune | SlashCommand::SmartPrune | SlashCommand::PrunerModel => {
+                self.dispatch_prune_command(cmd)
             }
             SlashCommand::Context => self.request_fresh_context_usage_report(),
             SlashCommand::MemoryModel => self.open_background_model_popup(),

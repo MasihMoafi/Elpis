@@ -12,6 +12,8 @@ use crossterm::event::KeyCode;
 use crossterm::event::KeyEvent;
 
 use super::ChatWidget;
+use super::context_usage::SAVED_CONTEXT_FLASH_DURATION;
+use super::context_usage::smart_prune_saved_context_flash_line;
 use crate::app_event::AppEvent;
 use crate::elpis_ledger_events::ManualMemoryMutation;
 use crate::elpis_ledger_events::ManualMemoryRequestTarget;
@@ -82,19 +84,69 @@ impl ChatWidget {
         ledger_toggle && self.handle_context_ledger_key_event(key_event)
     }
 
-    /// Smart Prune needs the Elpis context engine, which arrives in a later Elpis build.
-    pub(super) fn request_smart_prune_enabled(&mut self, _enabled: bool) -> bool {
-        self.add_info_message(
-            "Smart Prune is not in this Elpis build yet. It arrives in a later Elpis build."
-                .to_string(),
-            /*hint*/ None,
-        );
+    /// Asks to switch Smart Prune on or off for subsequent turns. The switch shows the
+    /// requested state until the config write settles it (`cancel_pending_smart_prune_update`).
+    pub(super) fn request_smart_prune_enabled(&mut self, enabled: bool) -> bool {
+        if self.context_ledger.pending_smart_prune_enabled.is_some() {
+            return false;
+        }
+        self.context_ledger.pending_smart_prune_enabled = Some(enabled);
+        self.app_event_tx.send(AppEvent::UpdateFeatureFlags {
+            updates: vec![(Feature::AutomaticContextPruning, enabled)],
+        });
         self.request_redraw();
-        false
+        true
     }
 
     pub(super) fn toggle_smart_prune(&mut self) -> bool {
-        self.request_smart_prune_enabled(/*enabled*/ true)
+        if !self.smart_prune_synced && self.context_ledger.pending_smart_prune_enabled.is_none() {
+            self.add_info_message(
+                "Smart Prune state is still syncing.".to_string(),
+                Some("Use /smart-prune on|off to set an explicit state now.".to_string()),
+            );
+            self.request_redraw();
+            return false;
+        }
+        let enabled = !self
+            .context_ledger
+            .pending_smart_prune_enabled
+            .unwrap_or(self.smart_prune.enabled);
+        self.request_smart_prune_enabled(enabled)
+    }
+
+    /// The config write that `request_smart_prune_enabled` started has settled.
+    pub(crate) fn cancel_pending_smart_prune_update(&mut self) {
+        self.context_ledger.pending_smart_prune_enabled = None;
+        self.request_redraw();
+    }
+
+    /// `thread/smartPrune/updated`: the thread's switch, counters and latest evidence.
+    /// A snapshot that saved more than the last one flashes the saving above the composer.
+    pub(super) fn on_thread_smart_prune_updated(
+        &mut self,
+        notification: codex_app_server_protocol::ThreadSmartPruneUpdatedNotification,
+        from_replay: bool,
+    ) {
+        let is_current_thread = self
+            .thread_id()
+            .is_some_and(|thread_id| thread_id.to_string() == notification.thread_id);
+        if !is_current_thread {
+            return;
+        }
+        let newly_saved = if self.smart_prune_synced {
+            notification
+                .smart_prune
+                .approx_saved_tokens
+                .saturating_sub(self.smart_prune.approx_saved_tokens)
+        } else {
+            0
+        };
+        if !from_replay && let Some(line) = smart_prune_saved_context_flash_line(newly_saved) {
+            self.bottom_pane.show_footer_flash(line, SAVED_CONTEXT_FLASH_DURATION);
+        }
+        self.smart_prune = notification.smart_prune;
+        self.smart_prune_synced = true;
+        self.request_redraw();
     }
 
     /// Flips whether the model may hand work to other agent threads.
