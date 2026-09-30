@@ -3202,6 +3202,9 @@ mod tests {
             }
             other => bail!("unexpected message: {other:?}"),
         }
+        // Elpis: turn/costUpdated follows turn/started (elpis_turn_activity.rs).
+        let cost = serde_json::to_value(recv_broadcast_notification(&mut rx).await?)?;
+        assert_eq!(cost["method"], "turn/costUpdated", "{cost}");
 
         for (phase, method, event) in [
             (
