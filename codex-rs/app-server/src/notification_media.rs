@@ -78,6 +78,9 @@ pub(crate) fn without_notification_media(notification: ServerNotification) -> Se
         | ServerNotification::TurnStarted(_)
         | ServerNotification::HookStarted(_)
         | ServerNotification::TurnCompleted(_)
+        // Elpis: the dashboard's per-turn timing and cost carry scalars only.
+        | ServerNotification::TurnActivityUpdated(_)
+        | ServerNotification::TurnCostUpdated(_)
         | ServerNotification::HookCompleted(_)
         | ServerNotification::TurnDiffUpdated(_)
         | ServerNotification::TurnPlanUpdated(_)

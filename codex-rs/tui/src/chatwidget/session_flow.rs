@@ -95,6 +95,7 @@ impl ChatWidget {
             self.review.recent_auto_review_denials = RecentAutoReviewDenials::default();
             self.clear_thread_usage_state();
             self.reset_context_ledger_for_thread_change(); // Elpis
+            self.reset_dashboard_for_thread_change(); // Elpis
         }
         self.turn_lifecycle.reset_thread();
         self.clear_safety_buffering();

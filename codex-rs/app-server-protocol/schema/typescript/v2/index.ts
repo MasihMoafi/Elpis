@@ -605,7 +605,12 @@ export type { ToolRequestUserInputQuestion } from "./ToolRequestUserInputQuestio
 export type { ToolRequestUserInputResponse } from "./ToolRequestUserInputResponse";
 export type { ToolsV2 } from "./ToolsV2";
 export type { Turn } from "./Turn";
+export type { TurnActivityStatus } from "./TurnActivityStatus";
+export type { TurnActivityUpdatedNotification } from "./TurnActivityUpdatedNotification";
 export type { TurnCompletedNotification } from "./TurnCompletedNotification";
+export type { TurnCostAvailability } from "./TurnCostAvailability";
+export type { TurnCostState } from "./TurnCostState";
+export type { TurnCostUpdatedNotification } from "./TurnCostUpdatedNotification";
 export type { TurnDiffUpdatedNotification } from "./TurnDiffUpdatedNotification";
 export type { TurnEnvironmentParams } from "./TurnEnvironmentParams";
 export type { TurnError } from "./TurnError";
