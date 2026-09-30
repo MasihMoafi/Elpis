@@ -59,6 +59,22 @@ pub(crate) fn description(cmd: SlashCommand) -> &'static str {
     }
 }
 
+/// Upstream commands v0.3.0 had removed. They are neither listed nor typed.
+pub(crate) fn hidden(cmd: SlashCommand) -> bool {
+    matches!(
+        cmd,
+        SlashCommand::Exit
+            | SlashCommand::Feedback
+            | SlashCommand::Memories
+            | SlashCommand::MemoryDrop
+            | SlashCommand::MemoryUpdate
+            | SlashCommand::Pets
+            | SlashCommand::Rollout
+            | SlashCommand::Status
+            | SlashCommand::TestApproval
+    )
+}
+
 pub(crate) fn supports_inline_args(cmd: SlashCommand) -> bool {
     matches!(
         cmd,

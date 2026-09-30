@@ -257,3 +257,35 @@ async fn during_a_turn_yolo_runs_and_pruning_waits() {
         vec!["■ '/prune' is disabled while a task is in progress.\n".to_string()]
     );
 }
+
+#[test]
+fn commands_v030_removed_stay_hidden_and_new_upstream_commands_stay() {
+    let flags = BuiltinCommandFlags::default();
+    let listed = built_in_slash_commands()
+        .into_iter()
+        .map(|(name, _)| name)
+        .collect::<Vec<_>>();
+    for name in [
+        "exit",
+        "feedback",
+        "memories",
+        "memory-drop",
+        "memory-update",
+        "pets",
+        "rollout",
+        "status",
+        "test-approval",
+    ] {
+        assert!(!listed.contains(&name), "/{name} is listed");
+        assert_eq!(find_builtin_command(name, flags), None, "/{name} resolves");
+    }
+    // Negative: commands Codex added since July are kept.
+    for (name, cmd) in [
+        ("agents", SlashCommand::Agents),
+        ("export", SlashCommand::Export),
+        ("recap", SlashCommand::Recap),
+    ] {
+        assert!(listed.contains(&name), "/{name} is missing");
+        assert_eq!(find_builtin_command(name, flags), Some(cmd), "/{name}");
+    }
+}
