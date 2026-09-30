@@ -68,7 +68,6 @@ fn elpis_commands_are_listed_in_their_v030_order_with_v030_descriptions() {
             Some("force a prune down to a target of remaining context: /force-prune <1-100>"),
         ),
         ("agent", Some("switch the active agent thread")),
-        ("agents", None),
         (
             "usage",
             Some(
@@ -311,7 +310,7 @@ async fn during_a_turn_yolo_runs_and_pruning_waits() {
 }
 
 #[test]
-fn commands_v030_removed_stay_hidden_and_new_upstream_commands_stay() {
+fn commands_v030_removed_stay_hidden_and_new_upstream_commands_leave_the_popup() {
     let flags = BuiltinCommandFlags::default();
     let listed = built_in_slash_commands()
         .into_iter()
@@ -335,14 +334,19 @@ fn commands_v030_removed_stay_hidden_and_new_upstream_commands_stay() {
         assert!(!listed.contains(&name), "/{name} is listed");
         assert_eq!(find_builtin_command(name, flags), None, "/{name} resolves");
     }
-    // Negative: commands Codex added since July are kept.
+    // Commands Codex added since July are out of the popup but still typeable.
     for (name, cmd) in [
         ("agents", SlashCommand::Agents),
         ("export", SlashCommand::Export),
         ("recap", SlashCommand::Recap),
+        ("pwd", SlashCommand::Pwd),
     ] {
-        assert!(listed.contains(&name), "/{name} is missing");
+        assert!(!listed.contains(&name), "/{name} is listed");
         assert_eq!(find_builtin_command(name, flags), Some(cmd), "/{name}");
+    }
+    // Negative: v0.3.0's own commands are listed.
+    for name in ["model", "compact", "context", "dashboard"] {
+        assert!(listed.contains(&name), "/{name} is missing");
     }
 }
 
