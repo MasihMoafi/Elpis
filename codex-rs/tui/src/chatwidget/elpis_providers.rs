@@ -321,6 +321,8 @@ impl ChatWidget {
             items.push(SelectionItem {
                 name: preset.display_name.clone(),
                 description: (!preset.description.is_empty()).then_some(preset.description.clone()),
+                // Searchable rows need a search value, or a search hides them.
+                search_value: Some(format!("{} {model}", preset.display_name)),
                 is_current: is_active && model == current_model,
                 is_default: preset.is_default,
                 actions: vec![Box::new(move |tx| {
