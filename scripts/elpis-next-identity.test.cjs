@@ -9,7 +9,7 @@ const path = require("node:path");
 const { spawnSync } = require("node:child_process");
 const { DatabaseSync } = require("node:sqlite");
 
-const EXPECTED_VERSION = process.env.ELPIS_EXPECTED_VERSION || "0.4.0-dev";
+const EXPECTED_VERSION = process.env.ELPIS_EXPECTED_VERSION || "0.4.0";
 const HOME_DIR = process.env.ELPIS_EXPECTED_HOME_DIR || ".elpis-next";
 
 const binary = process.argv[2];

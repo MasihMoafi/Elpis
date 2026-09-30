@@ -11,7 +11,7 @@ case "$platform" in
     # Releases stopped carrying a macOS binary when that build left CI. Saying
     # so beats sending curl after an asset that will 404.
     printf 'Elpis does not publish a macOS binary yet; releases carry Linux x86_64 only.\n' >&2
-    printf 'Build from source with `cargo build --release -p codex-tui --bin elpis`.\n' >&2
+    printf 'Build from source with `cargo build --release -p codex-cli --bin codex`.\n' >&2
     exit 1
     ;;
   *)
@@ -23,7 +23,8 @@ esac
 
 repository=${ELPIS_GITHUB_REPOSITORY:-MasihMoafi/Elpis}
 install_dir=${ELPIS_INSTALL_DIR:-"$HOME/.local/bin"}
-release_url="https://github.com/$repository/releases/latest/download"
+release_version=${ELPIS_RELEASE_VERSION:-v0.4.0}
+release_url="https://github.com/$repository/releases/download/$release_version"
 # macOS `mktemp` requires an explicit template, so do not shorten this to `mktemp -d`.
 temporary_dir=$(mktemp -d "${TMPDIR:-/tmp}/elpis-install.XXXXXX")
 trap 'rm -rf "$temporary_dir"' EXIT
@@ -32,6 +33,12 @@ curl --fail --location --progress-bar \
   "$release_url/$asset" --output "$temporary_dir/$asset"
 curl --fail --location --progress-bar \
   "$release_url/$asset.sha256" --output "$temporary_dir/$asset.sha256"
+
+host=elpis-code-mode-host-linux-x86_64
+curl --fail --location --progress-bar \
+  "$release_url/$host" --output "$temporary_dir/$host"
+curl --fail --location --progress-bar \
+  "$release_url/$host.sha256" --output "$temporary_dir/$host.sha256"
 
 if [ "$platform" = Linux-x86_64 ]; then
   resource=elpis-bwrap-linux-x86_64
@@ -46,6 +53,7 @@ fi
   # macOS ships `shasum`, not GNU `sha256sum`; both read the same checksum format.
   if command -v sha256sum >/dev/null 2>&1; then
     sha256sum --check "$asset.sha256"
+    sha256sum --check "$host.sha256"
   else
     shasum -a 256 --check "$asset.sha256"
   fi
@@ -60,22 +68,14 @@ if [ "$platform" = Linux-x86_64 ]; then
   install -m 0755 "$temporary_dir/$resource" "$install_dir/codex-resources/.bwrap.installing"
   mv -f "$install_dir/codex-resources/.bwrap.installing" "$install_dir/codex-resources/bwrap"
 fi
+install -m 0755 "$temporary_dir/$host" "$install_dir/.codex-code-mode-host.installing"
+mv -f "$install_dir/.codex-code-mode-host.installing" "$install_dir/codex-code-mode-host"
 install -m 0755 "$temporary_dir/$asset" "$install_dir/.elpis.installing"
 mv -f "$install_dir/.elpis.installing" "$install_dir/elpis"
 printf 'Installed Elpis at %s\n' "$install_dir/elpis"
 
-# Layer 1 of Elpis's context pruning rewrites shell commands through RTK, so RTK is part
-# of a complete install. Elpis registers its hook on first launch once RTK is on PATH.
-# Set ELPIS_SKIP_RTK=1 to install Elpis alone.
-if [ "${ELPIS_SKIP_RTK:-0}" = "1" ]; then
-  printf 'Skipped RTK; shell-output filtering stays off.\n'
-elif command -v rtk >/dev/null 2>&1; then
+if command -v rtk >/dev/null 2>&1; then
   printf 'RTK already installed at %s\n' "$(command -v rtk)"
 else
-  printf 'Installing RTK for shell-output filtering...\n'
-  if curl -fsSL https://raw.githubusercontent.com/rtk-ai/rtk/refs/heads/master/install.sh | sh; then
-    printf 'Installed RTK.\n'
-  else
-    printf 'RTK install failed; Elpis works without it, with shell-output filtering off.\n' >&2
-  fi
+  printf 'RTK is optional; shell-output filtering stays off until it is installed.\n'
 fi

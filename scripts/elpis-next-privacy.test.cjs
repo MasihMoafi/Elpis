@@ -186,10 +186,17 @@ function driveTui(binary, out, env) {
   const transcript = fs.createWriteStream(`${out}/typescript.txt`);
   let pending = "";
   let lastOutput = Date.now();
+  let skippedHookReview = false;
   child.stdout.on("data", (data) => {
     transcript.write(data);
     lastOutput = Date.now();
     pending = (pending + data.toString("latin1")).slice(-4096);
+    // RTK on PATH can add an untrusted first-run hook. Dismiss its review
+    // before exercising the ordinary composer exit path.
+    if (!skippedHookReview && pending.includes("Hooks need review")) {
+      skippedHookReview = true;
+      setTimeout(() => child.stdin.write("\x1b"), 100);
+    }
     for (const [pattern, answer] of answers) {
       const matches = pending.match(pattern);
       if (matches) {

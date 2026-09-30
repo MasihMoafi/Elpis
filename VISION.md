@@ -31,15 +31,16 @@ The public website may borrow RAG Studio's standard of polish, but not its compo
 
 ## Near-term outcome
 
-September 29, 2026: move Elpis onto the latest Codex by copying, not rebuilding.
+September 30, 2026: release the accepted v0.4.0 candidate on Codex rust-v0.159.0.
+Masih lifted the previous port restriction on September 29 and selected a vendor-first
+method: keep the upstream release, copy Elpis files, and adapt call sites. On September
+30 he tested the installed candidate, accepted the observed experience and authorized
+release. Focused evidence and clean-install checks gate publication; the full inherited
+suite and all historical outcome cases are not claimed accepted.
 
-The September 23 port reproduced Codex's engine without Elpis's identity and was
-rolled back. On September 29 Masih lifted "do not restart that port" for a
-different method: vendor the latest Codex release unmodified and carry Elpis as
-copied files plus small marked seams (`docs/GUIDE.md`, Source Map). The look comes
-first: the first week ends when Masih recognizes `elpis-next` as Elpis on sight, or
-the move stops. The installed `elpis` v0.3.0 stays the daily build until he accepts
-the new one. Anthropic, Gemini and OpenRouter through their APIs are required.
-The live website has a known source/deployment mismatch: do not overwrite it from
-this checkout. Current execution and acceptance gates live in `TASKS.md`; requested
-outcomes in `docs/USER_REQUESTS.md`.
+State stays in ~/.elpis-next because v0.3.0's database is incompatible. The release
+includes the runtime, Code Mode host and sandbox. /force-prune, Auto routing and
+appearance settings remain unported. Memory benefit beyond the observed save/recall
+checks remains unproven. The live website retains its deployment boundary and is not
+part of this release. TASKS.md records local execution and acceptance; release notes
+record the public limits.
