@@ -37,6 +37,10 @@ image_generation = false
 daemon_auto_start = false
 memories = false
 
+[skills]
+# Only skills the user turns on in [[skills.config]] reach the model.
+default_enabled = false
+
 [skills.bundled]
 enabled = false
 

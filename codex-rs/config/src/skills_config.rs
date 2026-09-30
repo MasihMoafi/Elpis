@@ -37,6 +37,11 @@ pub struct SkillsConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub include_instructions: Option<bool>,
 
+    /// Elpis: whether discovered skills are enabled before any `[[skills.config]]` rule.
+    /// Elpis sets `false` so only skills the user turns on reach the model.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_enabled: Option<bool>,
+
     /// Maximum tokens used by the available-skills catalog. Defaults to 2% of
     /// the model context window and is capped at 10,000 tokens when set.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -72,6 +77,8 @@ impl TryFrom<toml::Value> for SkillsConfig {
 pub enum SkillConfigRuleSelector {
     Name(String),
     Path(AbsolutePathBuf),
+    /// Elpis: every discovered skill (`[skills] default_enabled`).
+    All,
 }
 
 /// Enables or disables every skill matched by its selector.
@@ -104,6 +111,15 @@ impl SkillConfigRules {
                         disabled_paths.remove(path);
                     } else {
                         disabled_paths.insert(path.clone());
+                    }
+                }
+                SkillConfigRuleSelector::All => {
+                    for (_, path) in skills.clone() {
+                        if entry.enabled {
+                            disabled_paths.remove(path);
+                        } else {
+                            disabled_paths.insert(path.clone());
+                        }
                     }
                 }
                 SkillConfigRuleSelector::Name(name) => {
@@ -146,9 +162,31 @@ pub fn bundled_skills_enabled_from_stack(config_layer_stack: &ConfigLayerStack) 
     skills.bundled.unwrap_or_default().enabled
 }
 
+fn skills_default_enabled_from_stack(config_layer_stack: &ConfigLayerStack) -> Option<bool> {
+    let skills = config_layer_stack
+        .effective_config()
+        .as_table()?
+        .get("skills")?
+        .clone();
+    match SkillsConfig::try_from(skills) {
+        Ok(skills) => skills.default_enabled,
+        Err(err) => {
+            warn!("invalid skills config: {err}");
+            None
+        }
+    }
+}
+
 /// Resolves skill enablement rules from user and session configuration layers.
 pub fn skill_config_rules_from_stack(config_layer_stack: &ConfigLayerStack) -> SkillConfigRules {
     let mut entries = Vec::new();
+    // Elpis: a default off rule comes first, so every per-skill rule overrides it.
+    if skills_default_enabled_from_stack(config_layer_stack) == Some(false) {
+        entries.push(SkillConfigRule {
+            selector: SkillConfigRuleSelector::All,
+            enabled: false,
+        });
+    }
     for layer in config_layer_stack.all_layers_low_to_high() {
         if !matches!(
             layer.name,
