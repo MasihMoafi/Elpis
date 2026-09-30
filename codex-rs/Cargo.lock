@@ -4857,6 +4857,7 @@ dependencies = [
  "tempfile",
  "textwrap 0.16.2",
  "thiserror 2.0.18",
+ "tiny_http",
  "tokio",
  "tokio-stream",
  "tokio-tungstenite",

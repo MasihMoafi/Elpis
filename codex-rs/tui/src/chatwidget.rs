@@ -584,8 +584,8 @@ pub(crate) struct ChatWidget {
     smart_prune: codex_app_server_protocol::ThreadSmartPruneSnapshot,
     smart_prune_synced: bool,
     last_prune_saved_tokens: Option<u64>,
-    // Elpis: the dashboard's Activity tab.
-    activity_state: crate::activity_state::ActivityState,
+    // Elpis: the dashboard's Activity tab and whether `/dashboard` has been opened.
+    dashboard: elpis_dashboard::DashboardWidgetState,
     token_usage_pending: bool,
     // Status and polling use account usage reads; response streams may identify meters differently.
     rate_limit_snapshots_by_limit_id: BTreeMap<String, RateLimitSnapshotDisplay>,

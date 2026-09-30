@@ -19,9 +19,37 @@ impl App {
                     .await;
             }
             ElpisAppEvent::SaveBackgroundModel(choice) => self.save_background_model(choice).await,
+            ElpisAppEvent::OpenDashboard => self.open_dashboard(tui),
+            ElpisAppEvent::RefreshDashboard => self.publish_dashboard_snapshot(),
             ledger_event => self.handle_elpis_ledger_event(tui, ledger_event)?,
         }
         Ok(())
+    }
+
+    /// `/dashboard`: publish the current state, start the loopback server once and open the
+    /// page in a browser, as v0.3.0 did.
+    fn open_dashboard(&mut self, tui: &mut tui::Tui) {
+        self.publish_dashboard_snapshot();
+        match crate::dashboard_server::ensure_running() {
+            Some(url) => match webbrowser::open(&url) {
+                Ok(()) => self
+                    .chat_widget
+                    .add_info_message(format!("Opened the context dashboard at {url}"), None),
+                Err(_) => self.chat_widget.add_info_message(
+                    format!("The context dashboard is at {url}"),
+                    Some("No browser could be opened; open the address yourself.".to_string()),
+                ),
+            },
+            None => self
+                .chat_widget
+                .add_error_message("Could not start the local dashboard server".to_string()),
+        }
+        tui.frame_requester().schedule_frame();
+    }
+
+    fn publish_dashboard_snapshot(&self) {
+        let totals = crate::elpis_ledger_events::context_usage_totals(&self.transcript_cells);
+        self.chat_widget.publish_dashboard_snapshot(&totals);
     }
 
     /// `/yolo`: Full Access (no sandbox, never ask) for this chat, saved as the default for
