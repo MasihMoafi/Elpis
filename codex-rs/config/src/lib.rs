@@ -208,6 +208,7 @@ pub use skills_config::SkillConfigRuleSelector;
 pub use skills_config::SkillConfigRules;
 pub use skills_config::SkillsConfig;
 pub use skills_config::bundled_skills_enabled_from_stack;
+pub use skills_config::dev_rule_roots_from_stack;
 pub use skills_config::skill_config_rules_from_stack;
 pub use state::ConfigLayerEntry;
 pub use state::ConfigLayerStack;
