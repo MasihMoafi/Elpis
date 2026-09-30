@@ -59,16 +59,44 @@ pub(crate) fn description(cmd: SlashCommand) -> &'static str {
     }
 }
 
-/// Upstream commands v0.3.0 had removed. They are neither listed nor typed.
+/// Upstream commands v0.3.0 kept out of the `/` popup. Typing them still works, so none
+/// of them may be feature-gated upstream (gated ones go in [`hidden`]).
+pub(crate) fn unlisted(cmd: SlashCommand) -> bool {
+    matches!(
+        cmd,
+        SlashCommand::Archive
+            | SlashCommand::AutoReview
+            | SlashCommand::Btw
+            | SlashCommand::DebugConfig
+            | SlashCommand::Delete
+            | SlashCommand::Import
+            | SlashCommand::Logout
+            | SlashCommand::Mention
+            | SlashCommand::Ps
+            | SlashCommand::Raw
+            | SlashCommand::Review
+            | SlashCommand::Side
+            | SlashCommand::Statusline
+            | SlashCommand::Stop
+            | SlashCommand::Title
+            | SlashCommand::Vim
+    )
+}
+
+/// Upstream commands v0.3.0 had removed or never offered. They are neither listed nor typed.
 pub(crate) fn hidden(cmd: SlashCommand) -> bool {
     matches!(
         cmd,
-        SlashCommand::Exit
+        SlashCommand::App
+            | SlashCommand::Apps
+            | SlashCommand::ElevateSandbox
+            | SlashCommand::Exit
             | SlashCommand::Feedback
             | SlashCommand::Memories
             | SlashCommand::MemoryDrop
             | SlashCommand::MemoryUpdate
             | SlashCommand::Pets
+            | SlashCommand::Plugins
             | SlashCommand::Rollout
             | SlashCommand::Status
             | SlashCommand::TestApproval

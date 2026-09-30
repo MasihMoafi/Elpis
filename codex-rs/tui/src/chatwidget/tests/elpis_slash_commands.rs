@@ -266,6 +266,10 @@ fn commands_v030_removed_stay_hidden_and_new_upstream_commands_stay() {
         .map(|(name, _)| name)
         .collect::<Vec<_>>();
     for name in [
+        "app",
+        "apps",
+        "plugins",
+        "setup-default-sandbox",
         "exit",
         "feedback",
         "memories",
@@ -288,4 +292,45 @@ fn commands_v030_removed_stay_hidden_and_new_upstream_commands_stay() {
         assert!(listed.contains(&name), "/{name} is missing");
         assert_eq!(find_builtin_command(name, flags), Some(cmd), "/{name}");
     }
+}
+
+#[test]
+fn commands_v030_kept_out_of_the_popup_still_work_under_their_v030_names() {
+    let flags = BuiltinCommandFlags::default();
+    let listed = built_in_slash_commands()
+        .into_iter()
+        .map(|(name, _)| name)
+        .collect::<Vec<_>>();
+    for (name, cmd) in [
+        ("approve", SlashCommand::AutoReview),
+        ("archive", SlashCommand::Archive),
+        ("btw", SlashCommand::Btw),
+        ("debug-config", SlashCommand::DebugConfig),
+        ("del", SlashCommand::Delete),
+        ("import", SlashCommand::Import),
+        ("kill", SlashCommand::Stop),
+        ("logout", SlashCommand::Logout),
+        ("mention", SlashCommand::Mention),
+        ("ps", SlashCommand::Ps),
+        ("raw", SlashCommand::Raw),
+        ("review", SlashCommand::Review),
+        ("side", SlashCommand::Side),
+        ("statusline", SlashCommand::Statusline),
+        ("title", SlashCommand::Title),
+        ("vim", SlashCommand::Vim),
+    ] {
+        assert!(!listed.contains(&name), "/{name} is listed");
+        assert_eq!(find_builtin_command(name, flags), Some(cmd), "/{name}");
+    }
+    // v0.3.0's names are listed; upstream's old names still resolve.
+    for (name, alias, cmd) in [
+        ("hotkeys", "keymap", SlashCommand::Keymap),
+        ("settings", "experimental", SlashCommand::Experimental),
+    ] {
+        assert!(listed.contains(&name), "/{name} is missing");
+        assert!(!listed.contains(&alias), "/{alias} is listed");
+        assert_eq!(find_builtin_command(alias, flags), Some(cmd), "/{alias}");
+    }
+    assert_eq!(find_builtin_command("stop", flags), Some(SlashCommand::Stop));
+    assert_eq!(find_builtin_command("delete", flags), Some(SlashCommand::Delete));
 }

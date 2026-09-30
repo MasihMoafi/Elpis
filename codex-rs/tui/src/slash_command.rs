@@ -22,10 +22,12 @@ pub enum SlashCommand {
     Ide,
     Permissions,
     Yolo, // Elpis
+    #[strum(to_string = "hotkeys", serialize = "keymap")] // Elpis: v0.3.0 name
     Keymap,
     Vim,
     #[strum(serialize = "setup-default-sandbox")]
     ElevateSandbox,
+    #[strum(to_string = "settings", serialize = "experimental")] // Elpis: v0.3.0 name
     Experimental,
     #[strum(to_string = "approve")]
     AutoReview,
@@ -38,6 +40,7 @@ pub enum SlashCommand {
     Rename,
     New,
     Archive,
+    #[strum(to_string = "del", serialize = "delete")] // Elpis: v0.3.0 name
     Delete,
     Resume,
     Fork,
@@ -87,7 +90,7 @@ pub enum SlashCommand {
     Feedback,
     Rollout,
     Ps,
-    #[strum(to_string = "stop", serialize = "clean")]
+    #[strum(to_string = "kill", serialize = "stop", serialize = "clean")] // Elpis: v0.3.0 name
     Stop,
     Clear,
     TestApproval,
@@ -330,7 +333,7 @@ impl SlashCommand {
 
     fn is_visible(self) -> bool {
         // Elpis: upstream commands Elpis removed stay hidden.
-        if elpis::hidden(self) {
+        if elpis::hidden(self) || elpis::unlisted(self) {
             return false;
         }
         match self {
