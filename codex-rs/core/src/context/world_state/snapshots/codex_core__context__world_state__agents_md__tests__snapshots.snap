@@ -22,30 +22,18 @@ None
 # AGENTS.md instructions
 
 <INSTRUCTIONS>
-These AGENTS.md instructions replace all previously provided AGENTS.md instructions.
-
 new instructions
 </INSTRUCTIONS>
 
-{"text":"new instructions"} -> {} (role - user)
-# AGENTS.md instructions
-
-<INSTRUCTIONS>
-The previously provided AGENTS.md instructions no longer apply.
-</INSTRUCTIONS>
+{"text":"new instructions"} -> {}
+None
 
 Unknown -> {"text":"new instructions"} (role - user)
 # AGENTS.md instructions
 
 <INSTRUCTIONS>
-These AGENTS.md instructions replace all previously provided AGENTS.md instructions.
-
 new instructions
 </INSTRUCTIONS>
 
-Unknown -> {} (role - user)
-# AGENTS.md instructions
-
-<INSTRUCTIONS>
-The previously provided AGENTS.md instructions no longer apply.
-</INSTRUCTIONS>
+Unknown -> {}
+None
