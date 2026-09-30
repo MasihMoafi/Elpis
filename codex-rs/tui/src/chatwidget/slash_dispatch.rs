@@ -291,25 +291,8 @@ impl ChatWidget {
                 const INIT_PROMPT: &str = include_str!("../../assets/prompt_for_init_command.md");
                 self.submit_user_message(INIT_PROMPT.to_string().into());
             }
-            SlashCommand::Compact => {
-                if self.blocks_direct_input {
-                    self.add_error_message(PARENT_OWNED_INPUT_MESSAGE.to_string());
-                    return;
-                }
-                self.clear_token_usage();
-                if !self.bottom_pane.is_task_running() {
-                    self.bottom_pane.set_task_running(/*running*/ true);
-                }
-                self.bottom_pane.ensure_status_indicator();
-                self.set_status(
-                    compaction::COMPACTION_HEADER.to_string(),
-                    Some(compaction::COMPACTION_DETAILS.to_string()),
-                    StatusDetailsCapitalization::Preserve,
-                    STATUS_DETAILS_DEFAULT_MAX_LINES,
-                );
-                self.input_queue.user_turn_pending_start = true;
-                self.app_event_tx.compact();
-            }
+            // Elpis: the body moved to `start_compaction`, which `/compact <text>` shares.
+            SlashCommand::Compact => self.start_compaction(/*instructions*/ None),
             SlashCommand::Recap => {
                 let Some(thread_id) = self.thread_id else {
                     self.add_error_message(
@@ -620,6 +603,33 @@ impl ChatWidget {
             }
             // Elpis: Elpis commands, bare or with inline args (chatwidget/elpis_commands.rs).
             elpis_commands::elpis_slash_commands!() => self.dispatch_elpis_command(cmd),
+        }
+    }
+
+    // Elpis: upstream's `/compact` arm, moved out of `dispatch_command_from_source` so that
+    // `/compact <text>` (chatwidget/elpis_commands.rs) shares it. Only the final op differs.
+    pub(super) fn start_compaction(&mut self, instructions: Option<String>) {
+        if self.blocks_direct_input {
+            self.add_error_message(PARENT_OWNED_INPUT_MESSAGE.to_string());
+            return;
+        }
+        self.clear_token_usage();
+        if !self.bottom_pane.is_task_running() {
+            self.bottom_pane.set_task_running(/*running*/ true);
+        }
+        self.bottom_pane.ensure_status_indicator();
+        self.set_status(
+            compaction::COMPACTION_HEADER.to_string(),
+            Some(compaction::COMPACTION_DETAILS.to_string()),
+            StatusDetailsCapitalization::Preserve,
+            STATUS_DETAILS_DEFAULT_MAX_LINES,
+        );
+        self.input_queue.user_turn_pending_start = true;
+        match instructions {
+            Some(instructions) => self.app_event_tx.send(AppEvent::CodexOp(
+                AppCommand::compact_with_instructions(instructions),
+            )),
+            None => self.app_event_tx.compact(),
         }
     }
 
@@ -1053,6 +1063,10 @@ impl ChatWidget {
             SlashCommand::Pets if !trimmed.is_empty() => {
                 self.select_pet_by_id(args);
             }
+            // Elpis: `/compact N` sets pressure compaction; `/compact <text>` guides a compaction.
+            SlashCommand::Compact if !trimmed.is_empty() => {
+                self.dispatch_compact_with_args(trimmed)
+            }
             // Elpis: `/add <path>` adds a source to the Context Ledger.
             SlashCommand::Add if !trimmed.is_empty() => self.add_context_source_command(trimmed),
             _ => self.dispatch_command_from_source(cmd, source),
@@ -1155,6 +1169,9 @@ impl ChatWidget {
             rest_offset + leading_trimmed,
             &text_elements,
         );
+        // Elpis: a queued `/compact N` only saves a setting, so the queue continues.
+        let changes_pressure = cmd == SlashCommand::Compact
+            && elpis_commands::is_pressure_compaction_arg(trimmed_rest);
         self.dispatch_prepared_command_with_args(
             cmd,
             PreparedSlashCommandArgs {
@@ -1167,7 +1184,11 @@ impl ChatWidget {
                 source: SlashCommandDispatchSource::Queued,
             },
         );
-        self.queued_command_drain_result(cmd)
+        if changes_pressure {
+            QueueDrain::Continue
+        } else {
+            self.queued_command_drain_result(cmd)
+        }
     }
 
     pub(super) fn builtin_command_flags(&self) -> BuiltinCommandFlags {

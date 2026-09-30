@@ -57,7 +57,10 @@ fn elpis_commands_are_listed_in_their_v030_order_with_v030_descriptions() {
             Some("save Full Access as the default for future chats"),
         ),
         ("add", Some("add a file to the Context Ledger: /add <path>")),
-        ("compact", None),
+        (
+            "compact",
+            Some("compact now, or /compact N to set remaining-context pressure (0 < N < 70)"),
+        ),
         ("prune", Some("turn Smart Prune on for subsequent turns")),
         (
             "smart-prune",
