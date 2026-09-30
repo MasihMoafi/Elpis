@@ -84,3 +84,86 @@ fn backslash_enter_keeps_backslash_literal_in_active_paste_burst() {
     assert!(composer.flush_paste_burst_if_due());
     assert_eq!("a\\\n", composer.draft.textarea.text());
 }
+
+#[test]
+fn backslash_away_from_cursor_still_queues_during_a_turn() {
+    let mut composer = composer_with_text("keep \\ literal", /*running*/ true);
+
+    let (result, _) = press(&mut composer, KeyCode::Enter);
+
+    assert_eq!(
+        InputResult::Queued {
+            text: "keep \\ literal".to_string(),
+            text_elements: Vec::new(),
+            action: QueuedInputAction::Plain,
+            pending_pastes: Vec::new(),
+        },
+        result
+    );
+}
+
+// Enter queues a follow-up during a turn instead of steering it.
+
+#[test]
+fn enter_queues_the_draft_during_a_turn() {
+    let mut composer = composer_with_text("queued follow-up", /*running*/ true);
+
+    let (result, _) = press(&mut composer, KeyCode::Enter);
+
+    assert_eq!(
+        InputResult::Queued {
+            text: "queued follow-up".to_string(),
+            text_elements: Vec::new(),
+            action: QueuedInputAction::Plain,
+            pending_pastes: Vec::new(),
+        },
+        result
+    );
+    assert!(composer.draft.textarea.is_empty());
+}
+
+#[test]
+fn enter_sends_the_draft_while_idle() {
+    let mut composer = composer_with_text("send now", /*running*/ false);
+
+    let (result, _) = press(&mut composer, KeyCode::Enter);
+
+    assert!(
+        matches!(&result, InputResult::Submitted { text, .. } if text == "send now"),
+        "an idle Enter must send, not queue, got {result:?}"
+    );
+}
+
+#[test]
+fn enter_inside_a_paste_burst_during_a_turn_stays_a_newline() {
+    let (mut composer, _rx) = new_test_composer();
+    composer.set_task_running(/*running*/ true);
+    composer
+        .draft
+        .paste_burst
+        .begin_with_retro_grabbed(String::new(), Instant::now());
+
+    for ch in ['a', 'b'] {
+        let (result, _) = press(&mut composer, KeyCode::Char(ch));
+        assert_eq!(InputResult::None, result);
+    }
+
+    let (enter_result, _) = press(&mut composer, KeyCode::Enter);
+    assert_eq!(InputResult::None, enter_result);
+
+    std::thread::sleep(PasteBurst::recommended_active_flush_delay());
+    assert!(composer.flush_paste_burst_if_due());
+    assert_eq!("ab\n", composer.draft.textarea.text());
+}
+
+#[test]
+fn slash_command_during_a_turn_is_not_queued() {
+    let mut composer = composer_with_text("/diff", /*running*/ true);
+
+    let (result, _) = press(&mut composer, KeyCode::Enter);
+
+    assert!(
+        !matches!(result, InputResult::Queued { .. }),
+        "a slash command runs now rather than waiting behind the turn, got {result:?}"
+    );
+}

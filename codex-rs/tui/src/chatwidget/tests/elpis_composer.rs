@@ -64,3 +64,34 @@ async fn up_leaves_steers_already_sent_to_the_turn_alone() {
     assert_eq!(chat.bottom_pane.composer_text(), "queued one");
     assert_eq!(chat.input_queue.pending_steers.len(), 1);
 }
+
+// Enter queues a follow-up during a turn instead of steering it.
+
+#[tokio::test]
+async fn enter_during_a_turn_queues_instead_of_steering() {
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    chat.thread_id = Some(ThreadId::new());
+    handle_turn_started(&mut chat, "turn-1");
+    chat.bottom_pane
+        .set_composer_text("queued one".to_string(), Vec::new(), Vec::new());
+
+    chat.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+
+    assert_eq!(chat.queued_user_message_texts(), vec!["queued one"]);
+    assert!(chat.input_queue.pending_steers.is_empty());
+    assert!(chat.bottom_pane.composer_text().is_empty());
+}
+
+#[tokio::test]
+async fn enter_while_idle_sends_and_queues_nothing() {
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    chat.thread_id = Some(ThreadId::new());
+    chat.bottom_pane
+        .set_composer_text("send now".to_string(), Vec::new(), Vec::new());
+
+    chat.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+
+    assert!(chat.queued_user_message_texts().is_empty());
+    assert!(chat.input_queue.pending_steers.is_empty());
+    assert!(chat.bottom_pane.composer_text().is_empty());
+}

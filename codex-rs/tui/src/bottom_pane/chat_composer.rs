@@ -3539,6 +3539,10 @@ impl ChatComposer {
         }
 
         if self.submit_keys.is_pressed(key_event) {
+            // Elpis: Enter queues a follow-up during a turn (v0.3.0).
+            if let Some(result) = self.queue_submission_during_turn() {
+                return result;
+            }
             return self.handle_submission(self.queue_submissions);
         }
 
