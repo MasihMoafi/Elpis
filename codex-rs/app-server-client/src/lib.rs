@@ -96,6 +96,11 @@ pub mod legacy_core {
     pub mod memory_save {
         pub use codex_core::memory_save::*;
     }
+
+    // Elpis: `/pruner-model` saves the Smart Prune optimizer settings that core reads.
+    pub mod pruner_settings {
+        pub use codex_core::pruner_settings::*;
+    }
 }
 
 const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(5);

@@ -544,6 +544,58 @@ impl ModelClient {
         }
     }
 
+    /// Elpis: the provider this client talks to (core/src/session/smart_prune.rs).
+    pub(crate) fn provider_info(&self) -> ModelProviderInfo {
+        self.state.provider.info().clone()
+    }
+
+    /// Elpis: a client for `provider_info` that shares this session's auth, routing and
+    /// request settings but keeps its own websocket cache and sends no session events.
+    /// Smart Prune's optimizer uses it, as in v0.3.0 (core/src/session/smart_prune.rs).
+    pub(crate) fn with_provider(&self, provider_info: ModelProviderInfo) -> Self {
+        let model_provider =
+            create_model_provider(provider_info, self.state.provider.auth_manager());
+        let codex_api_key_env_enabled = model_provider
+            .auth_manager()
+            .as_ref()
+            .is_some_and(|manager| manager.codex_api_key_env_enabled());
+        let auth_env_telemetry =
+            collect_auth_env_telemetry(model_provider.info(), codex_api_key_env_enabled);
+        let include_attestation = model_provider.supports_attestation();
+        Self {
+            state: Arc::new(ModelClientState {
+                thread_id: self.state.thread_id,
+                provider: model_provider,
+                workspace_routing: self.state.workspace_routing.clone(),
+                auth_env_telemetry,
+                session_source: self.state.session_source.clone(),
+                originator: self.state.originator.clone(),
+                model_verbosity: self.state.model_verbosity,
+                content_item_kinds_enabled: self.state.content_item_kinds_enabled,
+                reasoning_effort_override_enabled: self.state.reasoning_effort_override_enabled,
+                enable_request_compression: self.state.enable_request_compression,
+                include_timing_metrics: self.state.include_timing_metrics,
+                beta_features_header: self.state.beta_features_header.clone(),
+                concurrent_reasoning_summaries_enabled: self
+                    .state
+                    .concurrent_reasoning_summaries_enabled,
+                include_attestation,
+                attestation_provider: self.state.attestation_provider.clone(),
+                disable_websockets: AtomicBool::new(false),
+                agent_identity_session_fallback: AgentIdentitySessionFallback::default(),
+                cached_websocket_session: StdMutex::new(WebsocketSession::default()),
+            }),
+            agent_identity_policy: self.agent_identity_policy,
+            prompt_cache_key_override: self.prompt_cache_key_override.clone(),
+            codex_responses_headers: self.codex_responses_headers.clone(),
+            event_sender: None,
+            http_client_factory: self.http_client_factory.clone(),
+            restored_history: false,
+            request_contributors: self.request_contributors.clone(),
+            executed_tool_calls: None,
+        }
+    }
+
     pub(crate) fn with_executed_tool_calls(mut self, recorder: ExecutedToolCalls) -> Self {
         self.executed_tool_calls = Some(recorder);
         self

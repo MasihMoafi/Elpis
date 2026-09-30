@@ -22,6 +22,12 @@ pub trait ToolOutput: Send {
     /// Called before recording model-visible history; implementations must not measure time here.
     fn set_handler_duration_ms(&mut self, _handler_duration_ms: u64) {}
 
+    /// Elpis: whether admission-time semantic optimization (Smart Prune) may rewrite this
+    /// model-visible output. Policy wrappers such as explicit post-tool hook feedback opt out.
+    fn smart_prune_eligible(&self) -> bool {
+        true
+    }
+
     /// Whether this output contains external context that should disable memory generation when
     /// `memories.disable_on_external_context` is enabled.
     fn contains_external_context(&self) -> bool {
@@ -81,6 +87,10 @@ where
 
     fn set_handler_duration_ms(&mut self, handler_duration_ms: u64) {
         (**self).set_handler_duration_ms(handler_duration_ms);
+    }
+
+    fn smart_prune_eligible(&self) -> bool {
+        (**self).smart_prune_eligible() // Elpis
     }
 
     fn contains_external_context(&self) -> bool {

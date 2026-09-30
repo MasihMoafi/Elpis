@@ -87,6 +87,13 @@ pub mod context;
 pub mod elpis_context;
 // Elpis: `/compact N` pressure compaction; the TUI saves it through app-server-client.
 pub mod pressure_compaction;
+// Elpis: Smart Prune. The pure admission logic, the pruner model and provider, and the
+// `/pruner-model` settings the TUI saves through app-server-client.
+pub(crate) mod smart_prune;
+#[cfg(test)]
+mod smart_prune_tests;
+pub(crate) mod context_pruner;
+pub mod pruner_settings;
 // Elpis: the model's request follows the Context Ledger.
 pub mod elpis_admission;
 // Elpis: the responding agent saves MEMORY.md / ES.md through the guarded `save_memory` tool.

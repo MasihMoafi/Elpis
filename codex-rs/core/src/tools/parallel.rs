@@ -84,6 +84,9 @@ impl ToolCallRuntime {
         let recorder = self.session.services.executed_tool_calls.clone();
         let recorded_call = recorder.prepare_direct_call(&call, &source, &self.step_context);
         let step_context = Arc::clone(&self.step_context);
+        // Elpis: outputs Smart Prune must admit exactly (core/src/session/smart_prune.rs).
+        let smart_prune = crate::session::smart_prune::enabled_for_turn(&self.step_context.turn)
+            .then(|| Arc::clone(&self.session));
         let call_state = Arc::new(ToolCallState::default());
         let future = self.handle_tool_call_with_source(
             step_context,
@@ -98,6 +101,12 @@ impl ToolCallRuntime {
                 recorded_call.filter(|(_, recording)| recording.strong_count() > 0);
             let mut response = match result {
                 Ok(result) => {
+                    // Elpis: explicit post-tool hook feedback stays exact.
+                    if let Some(session) = &smart_prune
+                        && !result.result.smart_prune_eligible()
+                    {
+                        session.mark_smart_prune_ineligible(&result.call_id).await;
+                    }
                     if let Some((call, _)) = recorded_call.as_mut()
                         && let Some(metadata) = result.result.tool_result_metadata()
                     {
@@ -107,6 +116,11 @@ impl ToolCallRuntime {
                 }
                 Err(FunctionCallError::Fatal(message)) => return Err(CodexErr::Fatal(message)),
                 Err(other) => {
+                    // Elpis: runtime-generated failures carry hook and policy feedback; keep
+                    // that model-visible control text exact instead of treating it as tool data.
+                    if let Some(session) = &smart_prune {
+                        session.mark_smart_prune_ineligible(&error_call.call_id).await;
+                    }
                     ResponseItemEnvelope::new(Self::failure_response(error_call, other).into())
                 }
             };
