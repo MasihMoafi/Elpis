@@ -215,8 +215,8 @@ impl EventProcessor for EventProcessorWithHumanOutput {
         prompt: &str,
         session_configured_event: &SessionConfiguredEvent,
     ) {
-        const VERSION: &str = env!("CARGO_PKG_VERSION");
-        eprintln!("OpenAI Codex v{VERSION}\n--------");
+        // Elpis: the product name and the release `elpis --version` prints.
+        eprintln!("{}\n--------", elpis_header());
         for (key, value) in config_summary_entries(config, session_configured_event) {
             eprintln!("{} {}", format!("{key}:").style(self.bold), value);
         }
@@ -423,6 +423,17 @@ impl EventProcessor for EventProcessorWithHumanOutput {
             );
         }
     }
+}
+
+/// Elpis: "Elpis v<release>". This crate carries the vendored Codex version, so the release
+/// is read from the CLI manifest, which owns the number `elpis --version` prints.
+fn elpis_header() -> String {
+    const CLI_MANIFEST: &str = include_str!("../../cli/Cargo.toml");
+    let version = CLI_MANIFEST
+        .lines()
+        .find_map(|line| line.strip_prefix("version = \"")?.strip_suffix('"'))
+        .unwrap_or(env!("CARGO_PKG_VERSION"));
+    format!("Elpis v{version}")
 }
 
 fn config_summary_entries(
