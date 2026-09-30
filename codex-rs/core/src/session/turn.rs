@@ -180,11 +180,14 @@ pub(crate) async fn run_turn(
     // new user message are recorded. Estimate pending incoming items (context
     // diffs/full reinjection + user input) and trigger compaction preemptively
     // when they would push the thread over the compaction threshold.
+    // Elpis: set while compaction cannot get below the `/compact N` pressure threshold.
+    let mut pressure_compaction_suppressed = false;
     if let Err(err) = run_pre_sampling_compact(
         &sess,
         &turn_context,
         &mut client_session,
         &cancellation_token,
+        &mut pressure_compaction_suppressed, // Elpis
     )
     .await
     {
@@ -565,6 +568,12 @@ pub(crate) async fn run_turn(
                 .await;
                 let needs_follow_up = model_needs_follow_up || has_pending_input;
                 let token_limit_reached = token_status.token_limit_reached;
+                // Elpis: `/compact N` pressure compaction (core/src/pressure_compaction.rs).
+                let pressure_reached =
+                    crate::pressure_compaction::reached(&turn_context, &token_status);
+                if !pressure_reached {
+                    pressure_compaction_suppressed = false;
+                }
 
                 trace!(
                     turn_id = %turn_context.sub_id,
@@ -598,8 +607,11 @@ pub(crate) async fn run_turn(
                     );
                 }
 
+                // Elpis: pressure also rolls over, unless compaction already failed to relieve it.
                 let should_roll_over = needs_follow_up
-                    && (sess.take_new_context_window_request().await || token_limit_reached);
+                    && (sess.take_new_context_window_request().await
+                        || token_limit_reached
+                        || (pressure_reached && !pressure_compaction_suppressed));
                 let allow_auto_compact_fallback = !should_roll_over && !token_limit_reached;
                 super::token_budget::maybe_record(
                     sess.as_ref(),
@@ -637,6 +649,15 @@ pub(crate) async fn run_turn(
                         .await;
                         return Ok(None);
                     }
+                    // Elpis: if compaction cannot reach the pressure target, don't repeat it
+                    // after every tool result. Native context-limit handling remains active.
+                    let compacted_status = super::context_window::context_window_token_status(
+                        sess.as_ref(),
+                        turn_context.as_ref(),
+                    )
+                    .await;
+                    pressure_compaction_suppressed =
+                        crate::pressure_compaction::reached(&turn_context, &compacted_status);
                     if run_pending_session_start_hooks(&sess, &turn_context).await {
                         return Ok(None);
                     }
@@ -1300,6 +1321,7 @@ async fn run_pre_sampling_compact(
     turn_context: &Arc<TurnContext>,
     client_session: &mut ModelClientSession,
     cancellation_token: &CancellationToken,
+    pressure_compaction_suppressed: &mut bool, // Elpis
 ) -> CodexResult<()> {
     maybe_run_previous_model_inline_compact(sess, turn_context, client_session, cancellation_token)
         .await?;
@@ -1307,7 +1329,10 @@ async fn run_pre_sampling_compact(
         super::context_window::context_window_token_status(sess.as_ref(), turn_context.as_ref())
             .await;
     // Compact if the configured auto-compaction budget or usable context window is exhausted.
-    if token_status.token_limit_reached {
+    // Elpis: or if remaining context is at or below the `/compact N` pressure threshold.
+    if token_status.token_limit_reached
+        || crate::pressure_compaction::reached(turn_context, &token_status)
+    {
         // Pre-turn compaction runs before run_turn creates the normal sampling step.
         let step_context = sess
             .capture_step_context(Arc::clone(turn_context), cancellation_token)
@@ -1322,6 +1347,14 @@ async fn run_pre_sampling_compact(
             CompactionPhase::PreTurn,
         )
         .await?;
+        // Elpis: remember when compaction could not get below the pressure threshold.
+        let compacted_status = super::context_window::context_window_token_status(
+            sess.as_ref(),
+            turn_context.as_ref(),
+        )
+        .await;
+        *pressure_compaction_suppressed =
+            crate::pressure_compaction::reached(turn_context, &compacted_status);
     }
     Ok(())
 }
