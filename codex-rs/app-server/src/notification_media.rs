@@ -74,6 +74,7 @@ pub(crate) fn without_notification_media(notification: ServerNotification) -> Se
         | ServerNotification::EnvironmentDisconnected(_)
         | ServerNotification::ThreadSettingsUpdated(_)
         | ServerNotification::ThreadTokenUsageUpdated(_)
+        | ServerNotification::ThreadSmartPruneUpdated(_) // Elpis
         | ServerNotification::TurnStarted(_)
         | ServerNotification::HookStarted(_)
         | ServerNotification::TurnCompleted(_)
