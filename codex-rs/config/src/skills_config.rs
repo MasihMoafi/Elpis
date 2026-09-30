@@ -42,6 +42,11 @@ pub struct SkillsConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub default_enabled: Option<bool>,
 
+    /// Elpis: more directories whose immediate children hold `SKILL.md` files (v0.3.0), such as
+    /// the skills a user chose outside `~/.agents/skills`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub extra_roots: Vec<AbsolutePathBuf>,
+
     /// Elpis: ordered roots of the development-rule Markdown files listed in the Context Ledger.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub dev_rule_roots: Vec<AbsolutePathBuf>,

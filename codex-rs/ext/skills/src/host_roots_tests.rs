@@ -676,3 +676,34 @@ async fn resolved_config_and_repo_roots_preserve_order_and_dedupe_paths_not_name
         ]
     );
 }
+
+// Elpis: `[skills] extra_roots` in the user config adds skill directories (v0.3.0).
+#[test]
+fn user_extra_roots_add_skill_directories() {
+    let temp_dir = TempDir::new().expect("temp dir");
+    let home_folder = absolute(temp_dir.path().join("home"));
+    let user_folder = home_folder.join("codex");
+    let chosen = absolute(temp_dir.path().join("chosen-skills"));
+    let roots_for = |config: toml::Value| {
+        let config_stack = stack(vec![ConfigLayerEntry::new(
+            ConfigLayerSource::User {
+                file: user_folder.join("config.toml"),
+                profile: None,
+            },
+            config,
+        )]);
+        roots_from_layer_stack(&config_stack, Some(&home_folder), None)
+            .into_iter()
+            .map(|root| (root.scope, root.path))
+            .collect::<Vec<_>>()
+    };
+
+    let with_extra: toml::Value = toml::from_str(&format!(
+        "[skills]\nextra_roots = [{:?}]\n",
+        chosen.as_path().display().to_string()
+    ))
+    .expect("config");
+    assert!(roots_for(with_extra).contains(&(SkillScope::User, chosen.clone())));
+    // Negative: without the setting the directory is not a root.
+    assert!(!roots_for(empty_config()).contains(&(SkillScope::User, chosen)));
+}
