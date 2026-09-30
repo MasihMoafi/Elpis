@@ -161,10 +161,12 @@ pub(crate) fn parse_pre_tool_use(stdout: &str) -> Option<PreToolUseOutput> {
     };
     let updated_input = if invalid_reason.is_none() {
         hook_specific_output.and_then(|output| {
-            matches!(
-                output.permission_decision,
-                Some(PreToolUsePermissionDecisionWire::Allow)
-            )
+            // Elpis: RTK's `rtk hook claude` rewrites with updatedInput and no permissionDecision.
+            (output.permission_decision.is_none()
+                || matches!(
+                    output.permission_decision,
+                    Some(PreToolUsePermissionDecisionWire::Allow)
+                ))
             .then(|| output.updated_input.clone())
             .flatten()
         })
@@ -441,13 +443,17 @@ fn unsupported_post_tool_use_hook_specific_output(
 fn unsupported_pre_tool_use_hook_specific_output(
     output: &crate::schema::PreToolUseHookSpecificOutputWire,
 ) -> Option<String> {
+    // Elpis: updatedInput without a permissionDecision is a plain rewrite (RTK); only a
+    // non-allow decision makes it unsupported.
     if output.updated_input.is_some()
-        && !matches!(
+        && matches!(
             output.permission_decision,
-            Some(PreToolUsePermissionDecisionWire::Allow)
+            Some(PreToolUsePermissionDecisionWire::Ask | PreToolUsePermissionDecisionWire::Deny)
         )
     {
-        Some("PreToolUse hook returned updatedInput without permissionDecision:allow".to_string())
+        Some(
+            "PreToolUse hook returned updatedInput with a non-allow permissionDecision".to_string(),
+        )
     } else {
         match output.permission_decision {
             Some(PreToolUsePermissionDecisionWire::Allow) => {
@@ -471,7 +477,8 @@ fn unsupported_pre_tool_use_hook_specific_output(
                 }
             }
             None => {
-                if output.permission_decision_reason.is_some() {
+                // Elpis: RTK sends a reason with its updatedInput rewrite.
+                if output.permission_decision_reason.is_some() && output.updated_input.is_none() {
                     Some("PreToolUse hook returned permissionDecisionReason without permissionDecision".to_string())
                 } else {
                     None

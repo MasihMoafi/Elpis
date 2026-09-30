@@ -409,6 +409,50 @@ mod tests {
         assert_eq!(parsed.completed.run.entries, vec![]);
     }
 
+    // Elpis: RTK 0.43's `rtk hook claude` output, verbatim. Without the parser change the
+    // hook fails with "updatedInput without permissionDecision:allow" and nothing is rewritten.
+    #[test]
+    fn updated_input_without_permission_decision_can_update_input() {
+        let parsed = parse_completed(
+            &handler(),
+            run_result(
+                Some(0),
+                r#"{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecisionReason":"RTK auto-rewrite","updatedInput":{"command":"rtk git status"}}}"#,
+                "",
+            ),
+            Some("turn-1".to_string()),
+        );
+
+        assert_eq!(
+            parsed.data,
+            PreToolUseHandlerData {
+                should_block: false,
+                block_reason: None,
+                additional_contexts_for_model: Vec::new(),
+                updated_input: Some(serde_json::json!({ "command": "rtk git status" })),
+            }
+        );
+        assert_eq!(parsed.completed.run.status, HookRunStatus::Completed);
+        assert_eq!(parsed.completed.run.entries, vec![]);
+    }
+
+    // Elpis: the negative case. A rewrite paired with a non-allow decision stays unsupported.
+    #[test]
+    fn updated_input_with_ask_decision_is_not_applied() {
+        let parsed = parse_completed(
+            &handler(),
+            run_result(
+                Some(0),
+                r#"{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"ask","updatedInput":{"command":"rtk git status"}}}"#,
+                "",
+            ),
+            Some("turn-1".to_string()),
+        );
+
+        assert_eq!(parsed.data.updated_input, None);
+        assert_eq!(parsed.completed.run.status, HookRunStatus::Failed);
+    }
+
     #[test]
     fn last_completed_updated_input_wins() {
         let mut later_configured = parse_completed(
