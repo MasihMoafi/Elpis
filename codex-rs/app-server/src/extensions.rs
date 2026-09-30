@@ -98,6 +98,8 @@ pub(crate) fn thread_extensions(
         );
     }
     codex_guardian_v2::install(&mut builder, auth_manager.clone(), thread_manager);
+    // Elpis: the Context Ledger's admitted sources reach the model.
+    codex_core::elpis_admission::install_elpis_continuity(&mut builder);
     codex_memories_extension::install(&mut builder, codex_otel::global());
     codex_mcp_extension::install(&mut builder);
     codex_mcp_extension::install_plugins(&mut builder, environment_manager);
