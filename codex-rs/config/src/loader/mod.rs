@@ -1444,10 +1444,38 @@ pub fn resolve_relative_paths_in_config_toml(
         )
     })?;
 
-    Ok(copy_shape_from_original(
-        &value_from_config_toml,
-        &resolved_value,
-    ))
+    let mut resolved = copy_shape_from_original(&value_from_config_toml, &resolved_value);
+    // Elpis: route gateway providers once, when the merged config is read.
+    keep_gateway_provider_tables(&value_from_config_toml, &mut resolved);
+    Ok(resolved)
+}
+
+/// Elpis: a provider whose `wire_api` names a gateway protocol (Anthropic, Gemini, Chat) is
+/// routed through the Elpis gateway when a `ConfigToml` is read. The round trip above reads one
+/// early, and `copy_shape_from_original` then keeps only the original keys: the gateway URL and
+/// `wire_api = "responses"` survive, the gateway headers do not, and `env_key` comes back. Keep
+/// such providers' original tables so the merged config routes them whole.
+fn keep_gateway_provider_tables(original: &TomlValue, resolved: &mut TomlValue) {
+    let Some(original_providers) = original.get("model_providers").and_then(TomlValue::as_table)
+    else {
+        return;
+    };
+    let Some(resolved_providers) = resolved
+        .get_mut("model_providers")
+        .and_then(TomlValue::as_table_mut)
+    else {
+        return;
+    };
+    for (id, provider) in original_providers {
+        let routed_by_gateway = provider
+            .get("wire_api")
+            .and_then(TomlValue::as_str)
+            .and_then(codex_model_provider_info::GatewayWire::parse)
+            .is_some();
+        if routed_by_gateway {
+            resolved_providers.insert(id.clone(), provider.clone());
+        }
+    }
 }
 
 /// Ensure that every field in `original` is present in the returned
