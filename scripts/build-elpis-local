@@ -350,10 +350,27 @@ terminate_build() {
 }
 trap 'terminate_build; exit 130' INT TERM
 
+# Disk guard: target/ once filled the disk (2026-09-30, 143 GB of dev-small incremental
+# cache). Refuse to start, and stop a running build, below these free-space floors.
+start_floor_gb=${ELPIS_BUILD_MIN_FREE_GB:-40}
+abort_floor_gb=${ELPIS_BUILD_ABORT_FREE_GB:-15}
+free_gb() { df -P -BG "$repo_root/codex-rs" | awk 'NR == 2 { sub("G", "", $4); print $4 }'; }
+if [ "$(free_gb)" -lt "$start_floor_gb" ]; then
+    printf 'only %s GB free (< %s GB); free space first, e.g. cargo clean --profile dev-small -p <crate>\n' \
+        "$(free_gb)" "$start_floor_gb" >&2
+    exit 3
+fi
+
 cd "$repo_root/codex-rs"
 setsid nice -n 5 cargo "${cargo_args[@]}" &
 build_pid=$!
 while kill -0 "$build_pid" 2>/dev/null || kill -0 -- "-$build_pid" 2>/dev/null; do
+    if [ "$(free_gb)" -lt "$abort_floor_gb" ]; then
+        thermal_failure=disk_full
+        printf 'only %s GB free (< %s GB); stopping build\n' "$(free_gb)" "$abort_floor_gb" >&2
+        terminate_build
+        break
+    fi
     if ! kill -0 "$build_pid" 2>/dev/null; then
         thermal_failure=leader_exit
         printf 'build leader exited while process group remained; terminating owned group\n' >&2
