@@ -202,6 +202,8 @@ pub(crate) mod public_widgets;
 mod render;
 mod resize_reflow_cap;
 mod resume_picker;
+// Elpis: writes the RTK shell-output hook on a first run that finds `rtk`.
+mod rtk_hook;
 mod screen_reader;
 mod service_tier_resolution;
 mod session_archive_commands;
@@ -1994,6 +1996,9 @@ async fn run_ratatui_app(
     let bypass_hook_trust_for_startup_review = config.bypass_hook_trust && !is_persistent_resume;
     let hooks_request_handle = app_server.request_handle();
     let hooks_cwd = config.cwd.to_path_buf();
+    // Elpis: layer 1 of the pruning pipeline is a hook, not built-in behavior. Register it just
+    // before hooks are listed, so a first launch that finds RTK reviews it right away.
+    crate::rtk_hook::ensure_rtk_hook(config.codex_home.as_path());
     let startup_prefetch_started_at = Instant::now();
     let startup_prefetch = startup_draft
         .run_until(&mut tui, async {
