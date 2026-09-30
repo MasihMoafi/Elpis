@@ -1,5 +1,5 @@
-//! Evals for the Elpis slash commands: `/yolo` and `/agent` work, and the commands that need
-//! the Elpis context engine say plainly that they arrive in a later build.
+//! Evals for the Elpis slash commands: `/yolo`, `/agent` and `/memory-model` work, and the
+//! commands that need the Elpis context engine say plainly that they arrive in a later build.
 //!
 //! Each behaviour has a positive case and a negative case.
 
@@ -15,9 +15,8 @@ const NOT_IN_THIS_BUILD: &str =
     "is not in this Elpis build yet. It arrives in a later Elpis build.";
 
 /// The commands that wait for the Elpis context engine.
-const LATER_BUILD: [SlashCommand; 6] = [
+const LATER_BUILD: [SlashCommand; 5] = [
     SlashCommand::PrunerModel,
-    SlashCommand::MemoryModel,
     SlashCommand::Prune,
     SlashCommand::SmartPrune,
     SlashCommand::ForcePrune,
@@ -216,17 +215,64 @@ async fn queued_elpis_command_with_args_is_not_sent_to_the_model() {
     let drain = chat.submit_queued_slash_prompt(UserMessage::from("/memory-model gpt-x").into());
 
     assert_matches!(drain, QueueDrain::Continue);
-    let history = history_text(&mut rx);
+    let events = std::iter::from_fn(|| rx.try_recv().ok()).collect::<Vec<_>>();
     assert!(
-        history
-            .iter()
-            .any(|cell| cell.contains(&format!("/memory-model {NOT_IN_THIS_BUILD}"))),
-        "{history:?}"
+        events.iter().any(|event| matches!(
+            event,
+            AppEvent::Elpis(ElpisAppEvent::SaveBackgroundModel(choice))
+                if choice.model.as_deref() == Some("gpt-x") && choice.provider.is_none()
+        )),
+        "{events:?}"
     );
     assert!(
         std::iter::from_fn(|| ops.try_recv().ok()).all(|op| !matches!(op, Op::UserTurn { .. })),
         "a queued /memory-model must not reach the model"
     );
+}
+
+/// Positive: `/memory-model default` asks the App to clear the model and its provider.
+/// Negative: an empty choice never reaches the App.
+#[tokio::test]
+async fn memory_model_saves_the_typed_choice() {
+    let (mut chat, mut rx, mut ops) = make_chatwidget_manual(/*model_override*/ None).await;
+
+    chat.dispatch_command_with_args(SlashCommand::MemoryModel, "default".to_string(), Vec::new());
+
+    let events = std::iter::from_fn(|| rx.try_recv().ok()).collect::<Vec<_>>();
+    assert!(
+        events.iter().any(|event| matches!(
+            event,
+            AppEvent::Elpis(ElpisAppEvent::SaveBackgroundModel(choice))
+                if choice.model.is_none() && choice.provider == Some(None)
+        )),
+        "{events:?}"
+    );
+    assert_matches!(ops.try_recv(), Err(TryRecvError::Empty));
+
+    chat.dispatch_memory_model_with_args("   ");
+    let events = std::iter::from_fn(|| rx.try_recv().ok()).collect::<Vec<_>>();
+    assert!(
+        events
+            .iter()
+            .all(|event| !matches!(event, AppEvent::Elpis(ElpisAppEvent::SaveBackgroundModel(_)))),
+        "{events:?}"
+    );
+}
+
+/// Bare `/memory-model` opens the picker instead of the later-build notice.
+#[tokio::test]
+async fn bare_memory_model_opens_the_background_model_picker() {
+    let (mut chat, mut rx, mut ops) = make_chatwidget_manual(/*model_override*/ None).await;
+
+    chat.dispatch_command(SlashCommand::MemoryModel);
+
+    let history = history_text(&mut rx);
+    assert!(
+        history.iter().all(|cell| !cell.contains(NOT_IN_THIS_BUILD)),
+        "{history:?}"
+    );
+    assert!(chat.has_active_modal(), "no picker opened");
+    assert_matches!(ops.try_recv(), Err(TryRecvError::Empty));
 }
 
 #[tokio::test]

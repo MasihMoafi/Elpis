@@ -133,6 +133,8 @@ pub(crate) mod custom_terminal;
 mod daybreak;
 // Elpis: Elpis-owned app events.
 mod elpis_app_event;
+// Elpis: `/memory-model` chooses the model for background work such as session naming.
+mod elpis_background_model;
 // Elpis: GOAL.md and the ES.md turn checkpoint.
 mod elpis_context;
 // Elpis: Context Ledger event value types.

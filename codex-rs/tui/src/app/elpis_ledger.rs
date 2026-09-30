@@ -701,7 +701,9 @@ impl App {
                 }
                 tui.frame_requester().schedule_frame();
             }
-            ElpisAppEvent::EnableYolo | ElpisAppEvent::Provider(_) => {
+            ElpisAppEvent::EnableYolo
+            | ElpisAppEvent::Provider(_)
+            | ElpisAppEvent::SaveBackgroundModel(_) => {
                 unreachable!("handled in app/elpis_events.rs")
             }
         }
