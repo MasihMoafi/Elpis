@@ -17,6 +17,12 @@ pub struct Cli {
     #[arg(value_name = "PROMPT", value_hint = clap::ValueHint::Other)]
     pub prompt: Option<String>,
 
+    // Elpis: v0.3.0's `--pruner-model` (chatwidget/elpis_prune_commands.rs).
+    /// Save the Smart Prune model ID without changing the chat model. `provider:id` pins the
+    /// provider too; use "default" to reset.
+    #[arg(long)]
+    pub pruner_model: Option<String>,
+
     /// Error out when config.toml contains fields that are not recognized by this version of Elpis.
     #[arg(long = "strict-config", default_value_t = false)]
     pub strict_config: bool,

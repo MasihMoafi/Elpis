@@ -45,6 +45,25 @@ fn save_pruner_choice(
     })
 }
 
+/// `--pruner-model <id|provider:id|default>`, copied from v0.3.0 `tui/src/lib.rs`. Unlike the
+/// slash command, a bare id clears the pinned provider, so the pruner follows background
+/// maintenance again rather than keeping a provider chosen for some earlier model.
+pub(crate) fn apply_pruner_model_flag(
+    config: &crate::legacy_core::config::Config,
+    model: &str,
+) -> std::io::Result<()> {
+    let mut settings = PrunerSettings::load(config.codex_home.as_path())?;
+    let (provider, model) = match model.split_once(':') {
+        Some((provider, id)) if !id.is_empty() && config.model_providers.contains_key(provider) => {
+            (Some(provider.to_string()), id)
+        }
+        _ => (None, model),
+    };
+    settings.model = (model != "default").then(|| model.to_string());
+    settings.provider = settings.model.as_ref().and(provider);
+    settings.save(config.codex_home.as_path())
+}
+
 impl ChatWidget {
     /// Bare `/prune`, `/smart-prune` and `/pruner-model`.
     pub(super) fn dispatch_prune_command(&mut self, cmd: SlashCommand) {
@@ -223,6 +242,36 @@ mod tests {
             model: model.map(str::to_string),
             provider: provider.map(|provider| provider.map(str::to_string)),
         }
+    }
+
+    /// Positive: `--pruner-model openai:<id>` pins the provider; a bare id clears it.
+    /// Negative: an unknown prefix is part of the id, and `default` clears both.
+    #[tokio::test]
+    async fn pruner_model_flag_follows_v030() -> anyhow::Result<()> {
+        let home = tempfile::tempdir()?;
+        let config =
+            crate::legacy_core::config::Config::load_default_with_cli_overrides_for_codex_home(
+                home.path().to_path_buf(),
+                Vec::new(),
+            )
+            .await?;
+        let load = || PrunerSettings::load(home.path());
+
+        apply_pruner_model_flag(&config, "openai:gpt-5.6-luna")?;
+        assert_eq!(load()?.model.as_deref(), Some("gpt-5.6-luna"));
+        assert_eq!(load()?.provider.as_deref(), Some("openai"));
+
+        apply_pruner_model_flag(&config, "gpt-5.6-terra")?;
+        assert_eq!(load()?.model.as_deref(), Some("gpt-5.6-terra"));
+        assert_eq!(load()?.provider, None);
+
+        apply_pruner_model_flag(&config, "vendor:model")?;
+        assert_eq!(load()?.model.as_deref(), Some("vendor:model"));
+        assert_eq!(load()?.provider, None);
+
+        apply_pruner_model_flag(&config, "default")?;
+        assert_eq!(load()?, PrunerSettings::default());
+        Ok(())
     }
 
     /// Positive: a choice lands in pruner.json and reads back with its provider.

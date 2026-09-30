@@ -315,8 +315,8 @@ pub(crate) mod agent_ledger;
 mod context_ledger;
 mod context_usage;
 mod elpis_ledger_glue;
-// Elpis: /prune, /smart-prune and /pruner-model.
-mod elpis_prune_commands;
+// Elpis: /prune, /smart-prune, /pruner-model and `--pruner-model`.
+pub(crate) mod elpis_prune_commands;
 pub(crate) use elpis_ledger_glue::elpis_memory_dir;
 mod worktree_picker;
 use self::skills::collect_tool_mentions;

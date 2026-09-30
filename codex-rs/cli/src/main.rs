@@ -2722,6 +2722,7 @@ fn finalize_session_archive_interactive(
 fn merge_interactive_cli_flags(interactive: &mut TuiCli, subcommand_cli: TuiCli) {
     let TuiCli {
         shared,
+        pruner_model,
         strict_config,
         approval_policy,
         web_search,
@@ -2731,6 +2732,10 @@ fn merge_interactive_cli_flags(interactive: &mut TuiCli, subcommand_cli: TuiCli)
         mut config_overrides,
         ..
     } = subcommand_cli;
+    // Elpis: a subcommand's `--pruner-model` wins, as in v0.3.0.
+    if pruner_model.is_some() {
+        interactive.pruner_model = pruner_model;
+    }
     let subcommand_auto_review = shared.auto_review;
     interactive
         .shared
