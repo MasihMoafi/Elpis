@@ -86,6 +86,11 @@ pub mod legacy_core {
     pub mod elpis_context {
         pub use codex_core::elpis_context::*;
     }
+
+    // Elpis: `/compact N` saves the pressure-compaction threshold that core reads.
+    pub mod pressure_compaction {
+        pub use codex_core::pressure_compaction::*;
+    }
 }
 
 const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(5);

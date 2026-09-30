@@ -85,6 +85,8 @@ pub mod connectors;
 pub mod context;
 // Elpis: the Context Ledger's admission and continuity sources.
 pub mod elpis_context;
+// Elpis: `/compact N` pressure compaction; the TUI saves it through app-server-client.
+pub mod pressure_compaction;
 mod context_manager;
 mod current_time;
 mod cyber_access_program;
