@@ -8,11 +8,16 @@
 //! context engine (`/pruner-model`, `/memory-model`, `/prune`, `/smart-prune`, `/force-prune`,
 //! `/dashboard`) are listed with their v0.3.0 descriptions and, when run, say plainly that they
 //! arrive in a later Elpis build. They send nothing to the model or the app server.
+//!
+//! `/compact` stays upstream's command; Elpis adds its v0.3.0 arguments here. `/compact N` saves
+//! the pressure-compaction threshold (core/src/pressure_compaction.rs) and `/compact <text>`
+//! compacts now with the text as guidance for the summary. Bare `/compact` is unchanged.
 
 use super::ChatWidget;
 use super::user_messages::QueueDrain;
 use crate::app_event::AppEvent;
 use crate::elpis_app_event::ElpisAppEvent;
+use crate::legacy_core::pressure_compaction::PressureCompaction;
 use crate::slash_command::SlashCommand;
 
 /// Or-pattern of every Elpis-owned `SlashCommand` variant, for the exhaustive upstream matches.
@@ -57,6 +62,20 @@ pub(crate) fn description(cmd: SlashCommand) -> &'static str {
         }
         _ => unreachable!("not an Elpis slash command: /{}", cmd.command()),
     }
+}
+
+/// v0.3.0's `/compact` description.
+pub(crate) const COMPACT_DESCRIPTION: &str =
+    "compact now, or /compact N to set remaining-context pressure (0 < N < 70)";
+
+/// Whether `/compact` arguments are a pressure setting (one number, `%` allowed) rather than
+/// guidance for a compaction. Copied from v0.3.0 `slash_dispatch.rs`.
+pub(super) fn is_pressure_compaction_arg(value: &str) -> bool {
+    let mut parts = value.split_whitespace();
+    let Some(token) = parts.next() else {
+        return false;
+    };
+    parts.next().is_none() && token.trim_end_matches('%').parse::<f64>().is_ok()
 }
 
 /// Upstream commands v0.3.0 kept out of the `/` popup. Typing them still works, so none
@@ -111,6 +130,7 @@ pub(crate) fn supports_inline_args(cmd: SlashCommand) -> bool {
             | SlashCommand::SmartPrune
             | SlashCommand::ForcePrune
             | SlashCommand::Add
+            | SlashCommand::Compact
     )
 }
 
@@ -142,6 +162,30 @@ pub(super) fn queued_drain(cmd: SlashCommand) -> QueueDrain {
 }
 
 impl ChatWidget {
+    /// `/compact <args>`, as in v0.3.0. One number saves the pressure-compaction threshold and
+    /// compacts nothing now; any other text compacts now with the text as summary guidance.
+    pub(super) fn dispatch_compact_with_args(&mut self, args: &str) {
+        if !is_pressure_compaction_arg(args) {
+            self.start_compaction(Some(args.to_string()));
+            return;
+        }
+        let result = PressureCompaction::parse(args).and_then(|settings| {
+            settings.save(self.config.codex_home.as_path())?;
+            Ok(settings.remaining_percent.unwrap_or_default())
+        });
+        match result {
+            Ok(percent) => self.add_info_message(
+                format!(
+                    "Pressure compaction saved: {percent}% remaining. Checked before each turn. /compact alone compacts now."
+                ),
+                /*hint*/ None,
+            ),
+            Err(error) => {
+                self.add_error_message(format!("Compaction setting was not changed: {error}"))
+            }
+        }
+    }
+
     /// Run an Elpis slash command, bare or with inline arguments.
     pub(super) fn dispatch_elpis_command(&mut self, cmd: SlashCommand) {
         match cmd {

@@ -346,6 +346,11 @@ impl AppCommand {
         Self::Compact
     }
 
+    // Elpis: `/compact <text>`.
+    pub(crate) fn compact_with_instructions(instructions: String) -> Self {
+        Self::CompactWithInstructions { instructions }
+    }
+
     pub(crate) fn set_thread_name(name: String) -> Self {
         Self::SetThreadName { name }
     }
