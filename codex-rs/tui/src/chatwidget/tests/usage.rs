@@ -13,11 +13,16 @@ use uuid::Uuid;
 
 const TEST_OVERLAY_VIEW_ID: &str = "usage-test-overlay";
 
+/// Elpis: bare `/usage` is the session card, so upstream's account menu is `/usage account`.
+fn open_account_usage_menu(chat: &mut ChatWidget) {
+    chat.dispatch_command_with_args(SlashCommand::Usage, "account".to_string(), Vec::new());
+}
+
 #[tokio::test]
 async fn usage_menu_opens_analytics() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
     set_chatgpt_auth(&mut chat);
-    chat.dispatch_command(SlashCommand::Usage);
+    open_account_usage_menu(&mut chat);
     chat.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
     assert_matches!(rx.try_recv(), Ok(AppEvent::OpenAnalytics { view: None }));
 }
@@ -122,7 +127,7 @@ async fn usage_command_opens_menu_when_reset_is_available_snapshot() {
         Ok(reset_credits(/*available_count*/ 2)),
     ));
 
-    chat.dispatch_command(SlashCommand::Usage);
+    open_account_usage_menu(&mut chat);
 
     assert_chatwidget_snapshot!(
         "usage_command_menu",
@@ -147,7 +152,7 @@ async fn usage_command_disables_reset_after_cached_zero_snapshot() {
         Ok(reset_credits(/*available_count*/ 0)),
     ));
 
-    chat.dispatch_command(SlashCommand::Usage);
+    open_account_usage_menu(&mut chat);
 
     assert_chatwidget_snapshot!(
         "usage_command_menu_without_resets",
@@ -174,7 +179,7 @@ async fn usage_menu_refresh_enables_newly_available_reset() {
         Ok(reset_credits(/*available_count*/ 0)),
     ));
 
-    chat.dispatch_command(SlashCommand::Usage);
+    open_account_usage_menu(&mut chat);
     assert_matches!(
         rx.try_recv(),
         Ok(AppEvent::RefreshRateLimits {
@@ -203,7 +208,7 @@ async fn usage_menu_refresh_failure_preserves_disabled_known_zero() {
         Ok(reset_credits(/*available_count*/ 0)),
     ));
 
-    chat.dispatch_command(SlashCommand::Usage);
+    open_account_usage_menu(&mut chat);
     assert_matches!(
         rx.try_recv(),
         Ok(AppEvent::RefreshRateLimits {
@@ -231,7 +236,7 @@ async fn account_update_invalidates_usage_menu_refresh_when_visible_state_is_unc
         Vec::new(),
         Ok(reset_credits(/*available_count*/ 0)),
     ));
-    chat.dispatch_command(SlashCommand::Usage);
+    open_account_usage_menu(&mut chat);
     assert_matches!(
         rx.try_recv(),
         Ok(AppEvent::RefreshRateLimits {
@@ -260,7 +265,7 @@ async fn usage_command_can_check_reset_availability_before_startup_refresh_finis
     set_chatgpt_auth(&mut chat);
     chat.start_rate_limit_reset_startup_check();
 
-    chat.dispatch_command(SlashCommand::Usage);
+    open_account_usage_menu(&mut chat);
 
     assert_chatwidget_snapshot!(
         "usage_command_menu_before_reset_refresh",
@@ -277,7 +282,7 @@ async fn usage_command_can_check_reset_availability_for_workspace_accounts() {
     set_chatgpt_auth(&mut chat);
     chat.plan_type = Some(PlanType::Business);
 
-    chat.dispatch_command(SlashCommand::Usage);
+    open_account_usage_menu(&mut chat);
 
     chat.handle_key_event(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
     chat.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
@@ -294,7 +299,7 @@ async fn usage_menu_rate_limit_reset_entry_opens_reset_flow() {
         Vec::new(),
         Ok(reset_credits(/*available_count*/ 2)),
     ));
-    chat.dispatch_command(SlashCommand::Usage);
+    open_account_usage_menu(&mut chat);
 
     chat.handle_key_event(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
     chat.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
@@ -705,7 +710,7 @@ async fn no_credit_outcome_disables_reset_entry_in_usage_menu() {
     ));
     dismiss_popup(&mut chat);
 
-    chat.dispatch_command(SlashCommand::Usage);
+    open_account_usage_menu(&mut chat);
     assert_matches!(
         rx.try_recv(),
         Ok(AppEvent::RefreshRateLimits {
@@ -818,7 +823,7 @@ async fn failed_post_consume_refresh_does_not_keep_stale_reset_count() {
         Err("backend unavailable".to_string()),
     ));
     dismiss_popup(&mut chat);
-    chat.dispatch_command(SlashCommand::Usage);
+    open_account_usage_menu(&mut chat);
 
     let rendered = render_bottom_popup(&chat, /*width*/ 80);
     assert!(rendered.contains("Check availability"));

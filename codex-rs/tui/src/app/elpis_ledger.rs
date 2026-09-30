@@ -543,7 +543,7 @@ impl App {
     /// The pager's default close keys are `q`/`Ctrl+C`, so Escape is prepended;
     /// without an overlay to consume it, Escape would instead prime backtrack
     /// when idle or interrupt the turn mid-stream.
-    fn open_escape_closable_pager(
+    pub(super) fn open_escape_closable_pager(
         &mut self,
         tui: &mut tui::Tui,
         cell: Box<dyn HistoryCell>,
@@ -705,7 +705,8 @@ impl App {
             | ElpisAppEvent::Provider(_)
             | ElpisAppEvent::SaveBackgroundModel(_)
             | ElpisAppEvent::OpenDashboard
-            | ElpisAppEvent::RefreshDashboard => {
+            | ElpisAppEvent::RefreshDashboard
+            | ElpisAppEvent::OpenUsage(_) => {
                 unreachable!("handled in app/elpis_events.rs")
             }
         }

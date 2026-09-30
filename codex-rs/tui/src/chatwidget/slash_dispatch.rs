@@ -513,11 +513,8 @@ impl ChatWidget {
                     /*hint*/ None,
                 );
             }
-            SlashCommand::Usage => {
-                if self.ensure_usage_command_available() {
-                    self.open_usage_menu();
-                }
-            }
+            // Elpis: bare `/usage` is v0.3.0's session card for every login.
+            SlashCommand::Usage => self.open_usage_card(),
             SlashCommand::Ide => {
                 self.handle_ide_command();
             }
@@ -790,13 +787,18 @@ impl ChatWidget {
             }
             SlashCommand::Usage => {
                 if self.ensure_usage_command_available() {
-                    match crate::analytics::TokenActivityView::parse(trimmed) {
-                        Some(view) => self
-                            .app_event_tx
-                            .send(AppEvent::OpenAnalytics { view: Some(view) }),
-                        None => self.add_error_message(
-                            "Usage: /usage [daily|weekly|cumulative]".to_string(),
-                        ),
+                    // Elpis: upstream's account menu, which bare `/usage` no longer opens.
+                    if trimmed == elpis_commands::USAGE_ACCOUNT_ARG {
+                        self.open_usage_menu();
+                    } else {
+                        match crate::analytics::TokenActivityView::parse(trimmed) {
+                            Some(view) => self
+                                .app_event_tx
+                                .send(AppEvent::OpenAnalytics { view: Some(view) }),
+                            None => self.add_error_message(
+                                "Usage: /usage [daily|weekly|cumulative]".to_string(),
+                            ),
+                        }
                     }
                 }
             }

@@ -16,15 +16,24 @@
 //! `/compact` stays upstream's command; Elpis adds its v0.3.0 arguments here. `/compact N` saves
 //! the pressure-compaction threshold (core/src/pressure_compaction.rs) and `/compact <text>`
 //! compacts now with the text as guidance for the summary. Bare `/compact` is unchanged.
+//!
+//! Bare `/usage` is v0.3.0's session card for every login, opened as an overlay Escape closes.
+//! Upstream's account menu (analytics and usage-limit resets) moves to `/usage account`; the
+//! `daily`, `weekly` and `cumulative` views are unchanged.
+
+use ratatui::style::Stylize;
 
 use super::ChatWidget;
 use super::user_messages::QueueDrain;
 use crate::app_event::AppEvent;
+use crate::app_event::RateLimitRefreshOrigin;
 use crate::bottom_pane::SelectionItem;
 use crate::bottom_pane::SelectionViewParams;
 use crate::bottom_pane::popup_consts::picker_hint_line_for_keymap;
 use crate::elpis_app_event::ElpisAppEvent;
 use crate::elpis_background_model::BackgroundModelChoice;
+use crate::history_cell::PlainHistoryCell;
+use crate::history_cell::WebHyperlinkHistoryCell;
 use crate::legacy_core::pressure_compaction::PressureCompaction;
 use crate::slash_command::SlashCommand;
 use ratatui::style::Stylize;
@@ -79,6 +88,13 @@ pub(crate) fn description(cmd: SlashCommand) -> &'static str {
 /// v0.3.0's `/compact` description.
 pub(crate) const COMPACT_DESCRIPTION: &str =
     "compact now, or /compact N to set remaining-context pressure (0 < N < 70)";
+
+/// v0.3.0's `/usage` description, plus the `account` view that keeps upstream's menu.
+pub(crate) const USAGE_DESCRIPTION: &str =
+    "inspect this session, or add account/daily/weekly/cumulative for account activity";
+
+/// `/usage account`: upstream's account menu, which bare `/usage` no longer opens.
+pub(super) const USAGE_ACCOUNT_ARG: &str = "account";
 
 /// Whether `/compact` arguments are a pressure setting (one number, `%` allowed) rather than
 /// guidance for a compaction. Copied from v0.3.0 `slash_dispatch.rs`.
@@ -200,6 +216,34 @@ impl ChatWidget {
             Err(error) => {
                 self.add_error_message(format!("Compaction setting was not changed: {error}"))
             }
+        }
+    }
+
+    /// Bare `/usage`: v0.3.0's session card — model, provider, directory, permissions, session
+    /// id and token usage — for every login, as an overlay Escape closes. A ChatGPT login also
+    /// refreshes its limits into the card, as `/status` does.
+    pub(super) fn open_usage_card(&mut self) {
+        let request_id = self.should_prefetch_rate_limits().then(|| {
+            let request_id = self.next_status_refresh_request_id;
+            self.next_status_refresh_request_id = request_id.wrapping_add(1);
+            request_id
+        });
+        let mut card = self.status_output_cell(request_id.is_some(), request_id);
+        // v0.3.0 headed the card with the command that opened it.
+        if let Some(header) = card.parts.first_mut() {
+            *header = Box::new(PlainHistoryCell::new(vec!["/usage".magenta().into()]));
+        }
+        let evidence = self.local_evidence_lines();
+        if !evidence.is_empty() {
+            card.parts
+                .push(Box::new(WebHyperlinkHistoryCell::new(evidence)));
+        }
+        self.app_event_tx
+            .send(AppEvent::Elpis(ElpisAppEvent::OpenUsage(Box::new(card))));
+        if let Some(request_id) = request_id {
+            self.app_event_tx.send(AppEvent::RefreshRateLimits {
+                origin: RateLimitRefreshOrigin::StatusCommand { request_id },
+            });
         }
     }
 

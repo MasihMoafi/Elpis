@@ -211,6 +211,16 @@ impl ChatWidget {
         refreshing_rate_limits: bool,
         request_id: Option<u64>,
     ) {
+        // Elpis: the card is built apart so `/usage` can open it as an overlay.
+        let cell = self.status_output_cell(refreshing_rate_limits, request_id);
+        self.add_to_history(cell);
+    }
+
+    pub(crate) fn status_output_cell(
+        &mut self,
+        refreshing_rate_limits: bool,
+        request_id: Option<u64>,
+    ) -> crate::history_cell::CompositeHistoryCell {
         let default_usage = TokenUsage::default();
         let token_info = self.token_info.as_ref();
         let total_usage = token_info
@@ -268,10 +278,7 @@ impl ChatWidget {
         if self.thread_usage_is_available() {
             handle.reserve_thread_usage_label_width();
             handle.set_thread_usage(self.estimated_thread_usage().cloned());
-            self.add_to_history(cell);
             self.request_thread_usage_for_status(handle.clone());
-        } else {
-            self.add_to_history(cell);
         }
         // Capture the displayed status inputs before later configuration or thread changes.
         let mut copy_targets = vec![
@@ -291,6 +298,7 @@ impl ChatWidget {
             handle,
             fields: copy_targets,
         });
+        cell
     }
 
     pub(crate) fn finish_status_rate_limit_refresh(
