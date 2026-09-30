@@ -9,7 +9,7 @@ expression: terminal_title_popup_snapshot(&mut chat)
 
 › [x] thread-credits         Estimated current-thread credits (Enterprise workspaces only; omitted …
   [x] estimated-thread-cost  Estimated current-thread cost (Enterprise workspaces only; omitted whe…
-  [ ] app-name               Codex app name
+  [ ] app-name               Elpis app name
   [ ] project-name           Project name (falls back to current directory name)
   [ ] current-dir            Current working directory
   [ ] activity               Spinner while working, action-required message while blocked

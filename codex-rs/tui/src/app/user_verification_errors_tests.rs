@@ -14,7 +14,7 @@ fn user_verification_errors_use_typed_reasons_without_raw_provider_diagnostics()
     };
     assert_eq!(
         verification_error_message(&error),
-        "No user-verification credential is available in the local Codex binary."
+        "No user-verification credential is available in the local Elpis binary."
     );
     let malformed = TypedRequestError::Server {
         method: "userVerification/verify".to_string(),
@@ -28,7 +28,7 @@ fn user_verification_errors_use_typed_reasons_without_raw_provider_diagnostics()
     };
     assert_eq!(
         verification_error_message(&malformed),
-        "The local Codex binary could not complete user verification."
+        "The local Elpis binary could not complete user verification."
     );
 }
 

@@ -165,7 +165,7 @@ impl App {
         if self.windows_sandbox.pending_setup.is_some() {
             if self.windows_sandbox.setup_started_at.is_none() {
                 self.chat_widget.add_info_message(
-                    "Windows sandbox setup is still running. Restart Codex to retry.".to_string(),
+                    "Windows sandbox setup is still running. Restart Elpis to retry.".to_string(),
                     /*hint*/ None,
                 );
             }
@@ -221,7 +221,7 @@ impl App {
             })) => {}
             Err(_) => {
                 self.chat_widget.add_error_message(
-                    "Windows sandbox setup request timed out. Waiting for completion; restart Codex if it does not finish."
+                    "Windows sandbox setup request timed out. Waiting for completion; restart Elpis if it does not finish."
                         .to_string(),
                 );
             }

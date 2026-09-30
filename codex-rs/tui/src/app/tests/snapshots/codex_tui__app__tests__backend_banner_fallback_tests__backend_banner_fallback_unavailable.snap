@@ -2,6 +2,6 @@
 source: tui/src/app/tests/backend_banner_fallback_tests.rs
 expression: normalize_snapshot_paths(rendered)
 ---
-› Ask Codex to do anything
+› Ask Elpis to do anything
 
   gpt-5.5 default · /tmp/project

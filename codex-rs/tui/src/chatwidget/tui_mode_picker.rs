@@ -11,7 +11,7 @@ impl ChatWidget {
     pub(crate) fn show_tui_mode_picker(&mut self) {
         let items = [
             (false, "Scrollback", "Use your terminal's scrollback"),
-            (true, "Fullscreen", "Scroll within Codex's fullscreen view"),
+            (true, "Fullscreen", "Scroll within Elpis's fullscreen view"),
         ]
         .into_iter()
         .map(|(enabled, name, description)| SelectionItem {

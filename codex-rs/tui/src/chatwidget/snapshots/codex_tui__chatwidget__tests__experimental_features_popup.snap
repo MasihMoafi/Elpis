@@ -4,14 +4,14 @@ expression: popup
 ---
   Experimental features
   Checked features are configured on. Some experimental features take effect
-  only in new tasks or after restarting the Codex server.
+  only in new tasks or after restarting the Elpis server.
 
 
 › [ ] JavaScript REPL      Enable a persistent Node-backed JavaScript REPL for
                            interactive website debugging and other inline
                            JavaScript execution capabilities.
   [x] Shell tool           Allow the model to run shell commands.
-  [ ] Voice conversations  Talk with Codex using /voice.
+  [ ] Voice conversations  Talk with Elpis using /voice.
 
 
   space toggle · enter save · esc save/close

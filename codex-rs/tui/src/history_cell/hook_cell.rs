@@ -560,7 +560,7 @@ mod tests {
             HookRunStatus::Completed,
             vec![HookOutputEntry {
                 kind: HookOutputEntryKind::Context,
-                text: "## Working Memory Recall\n\nSource: Codex compaction".to_string(),
+                text: "## Working Memory Recall\n\nSource: Elpis compaction".to_string(),
             }],
         );
 

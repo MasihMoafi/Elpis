@@ -379,14 +379,14 @@ async fn reconnect_restores_history_permissions_and_keeps_old_input_paused() -> 
         let notices = history
             .lines()
             .filter(|line| {
-                line.contains("Reconnected.") || line.contains("background Codex service")
+                line.contains("Reconnected.") || line.contains("background Elpis service")
             })
             .collect::<Vec<_>>()
             .join("\n");
         if deferred_notice {
             assert_snapshot!(notices, @r###"
 • Reconnected. No input was resent. Review uncertain submissions before retrying; recovered queues remain paused.
-⚠ A background Codex service is running v2.0.0, older than your Codex CLI
+⚠ A background Elpis service is running v2.0.0, older than your Elpis CLI
 "###);
         } else {
             insta::allow_duplicates! {

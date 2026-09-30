@@ -5,7 +5,7 @@ expression: buffer_text(&buffer)
 
   Experimental features
   Checked features are configured on. Some experimental features take effect only in new tasks or
-  after restarting the Codex server.
+  after restarting the Elpis server.
 
 
 › [x] Server network_proxy       Description supplied by the server.

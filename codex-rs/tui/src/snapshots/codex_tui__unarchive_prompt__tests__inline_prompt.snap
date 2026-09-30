@@ -2,7 +2,7 @@
 source: tui/src/unarchive_prompt_tests.rs
 expression: render_inline(80)
 ---
-$ codex fork saved-session
+$ elpis fork saved-session
 
 
   This conversation is archived

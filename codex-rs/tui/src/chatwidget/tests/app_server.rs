@@ -1121,7 +1121,7 @@ async fn config_warning_during_turn_retains_transcript_details() {
 #[tokio::test]
 async fn startup_config_warning_is_not_repeated_by_thread() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
-    let message = "Codex is ignoring 1 unrecognized configuration setting. Check for typos or deprecated settings.";
+    let message = "Elpis is ignoring 1 unrecognized configuration setting. Check for typos or deprecated settings.";
 
     for notification in [
         ServerNotification::ConfigWarning(ConfigWarningNotification {
@@ -1141,7 +1141,7 @@ async fn startup_config_warning_is_not_repeated_by_thread() {
     let cells = drain_insert_history_transcript(&mut rx);
     assert_eq!(cells.len(), 1);
     insta::assert_snapshot!(lines_to_single_string(&cells[0]), @"
-    ⚠ Codex is ignoring 1 unrecognized configuration setting. Check for typos or
+    ⚠ Elpis is ignoring 1 unrecognized configuration setting. Check for typos or
       deprecated settings.
     ");
 }
@@ -2096,7 +2096,7 @@ async fn sqlite_log_write_warning_is_visible_in_warnings() {
     chat.handle_server_notification(
         ServerNotification::Warning(WarningNotification {
             thread_id: None,
-            message: "Codex couldn't save diagnostic logs to its local database. Use /feedback with logs included before closing Codex, or run `codex doctor` for diagnostics.".to_string(),
+            message: "Elpis couldn't save diagnostic logs to its local database. Use /feedback with logs included before closing Elpis, or run `elpis doctor` for diagnostics.".to_string(),
         }),
         /*replay_kind*/ None,
     );

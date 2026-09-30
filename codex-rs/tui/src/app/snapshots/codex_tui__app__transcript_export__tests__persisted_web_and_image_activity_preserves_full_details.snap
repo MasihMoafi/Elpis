@@ -3,7 +3,7 @@ source: tui/src/app/transcript_export_tests.rs
 assertion_line: 227
 expression: "render_markdown_transcript(&cells).expect(\"exported transcript\")"
 ---
-# Codex conversation
+# Elpis conversation
 
 ## Reasoning
 

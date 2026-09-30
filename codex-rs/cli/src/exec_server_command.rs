@@ -34,7 +34,7 @@ pub(super) struct ExecServerCommand {
     #[command(subcommand)]
     pub(super) command: Option<ExecServerSubcommand>,
 
-    /// Error out when config.toml contains fields that are not recognized by this version of Codex.
+    /// Error out when config.toml contains fields that are not recognized by this version of Elpis.
     #[arg(
         id = "exec_server_strict_config",
         long = "strict-config",
@@ -173,7 +173,7 @@ impl ExecServerCommand {
         let codex_self_exe = arg0_paths
             .codex_self_exe
             .clone()
-            .ok_or_else(|| anyhow::anyhow!("Codex executable path is not configured"))?;
+            .ok_or_else(|| anyhow::anyhow!("Elpis executable path is not configured"))?;
         let runtime_paths = ExecServerRuntimeOptions::new(
             codex_self_exe,
             arg0_paths.codex_linux_sandbox_exe.clone(),
@@ -377,7 +377,7 @@ async fn load_exec_server_remote_auth_provider(
 
     let (auth_manager, auth) = load_exec_server_remote_auth(
         config,
-        "remote exec-server registration requires ChatGPT authentication or API key authentication; run `codex login` or set CODEX_API_KEY",
+        "remote exec-server registration requires ChatGPT authentication or API key authentication; run `elpis login` or set CODEX_API_KEY",
     )
     .await?;
 

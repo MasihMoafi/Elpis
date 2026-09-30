@@ -5,14 +5,14 @@ expression: popup
 ---
   Update Model Permissions
 
-› 1. Read Only (current)                   Codex can read files in the current
+› 1. Read Only (current)                   Elpis can read files in the current
                                            workspace. Approval is required to
                                            edit files or access the internet.
-  2. Ask for approval (non-admin sandbox)  Codex can read and edit files in the
+  2. Ask for approval (non-admin sandbox)  Elpis can read and edit files in the
                                            current workspace, and run commands.
                                            Approval is required to access the
                                            internet or edit other files.
-  3. Full Access                           Codex can edit files outside this
+  3. Full Access                           Elpis can edit files outside this
                                            workspace and access the internet
                                            without asking for approval. Exercise
                                            caution when using.

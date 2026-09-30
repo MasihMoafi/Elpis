@@ -4,7 +4,7 @@ expression: "format!(\"created from the dashboard:\\n{}\\nreturned to the existi
 ---
 created from the dashboard:
                             ⠈     ⢀     ⠁                 ⠂
-›⠁Ask Codex to do anything         ⠈      ⠁
+›⠁Ask Elpis to do anything         ⠈      ⠁
        ⢀            ⠠     ⠄         ⠠          ⢀    ⠠     ⡀
 returned to the existing task:
-› Ask Codex to do anything
+› Ask Elpis to do anything

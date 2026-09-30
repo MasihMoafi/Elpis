@@ -6,6 +6,6 @@ expression: normalize_snapshot_paths(rendered)
   └ rm -rf '/tmp/current-review'
 
 
-› Ask Codex to do anything
+› Ask Elpis to do anything
 
   GPT-5.6-Sol default · /tmp/project

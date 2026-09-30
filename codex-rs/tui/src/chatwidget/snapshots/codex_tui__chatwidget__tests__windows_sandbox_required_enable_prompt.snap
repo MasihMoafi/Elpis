@@ -2,7 +2,7 @@
 source: tui/src/chatwidget/tests/permissions.rs
 expression: "render_bottom_popup(&chat, 120)"
 ---
-  Your organization requires the default Codex agent sandbox to continue. Set it up to protect your files and control
+  Your organization requires the default Elpis agent sandbox to continue. Set it up to protect your files and control
   network access.
   Learn more <https://developers.openai.com/codex/windows>
 

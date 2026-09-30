@@ -290,7 +290,7 @@ fn item_to_cells(
                 )
             {
                 cells.push(Arc::new(PrefixedWrappedHistoryCell::new(
-                    format!("Sent by Codex from task {source_thread_id}\n{prompt}"),
+                    format!("Sent by Elpis from task {source_thread_id}\n{prompt}"),
                     "• ".dim(),
                     "  ",
                 )));

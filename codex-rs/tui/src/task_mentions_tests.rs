@@ -175,6 +175,6 @@ fn task_reference_heading_inside_selected_title_is_not_a_context_boundary() {
     let [UserInput::Text { text, .. }] = items.as_slice() else {
         panic!("expected text with a task reference");
     };
-    assert!(text.starts_with("## Referenced chats with Codex:"));
+    assert!(text.starts_with("## Referenced chats with Elpis:"));
     assert!(text.ends_with(&format!("[@{title}](thread://task-123)")));
 }

@@ -3058,7 +3058,7 @@ async fn experimental_features_popup_snapshot() {
             key: Feature::RealtimeConversation.key().to_string(),
             writable: true,
             name: "Voice conversations".to_string(),
-            description: "Talk with Codex using /voice.".to_string(),
+            description: "Talk with Elpis using /voice.".to_string(),
             enabled: false,
         },
     ];
@@ -3185,7 +3185,7 @@ async fn experimental_popup_available_snapshot() {
     };
     let features = [
         ("network_proxy", "Network proxy", "Apply network proxy restrictions to sandboxed sessions that already have network access."),
-        ("prevent_idle_sleep", "Prevent sleep while running", "Keep your computer awake while Codex is running a thread."),
+        ("prevent_idle_sleep", "Prevent sleep while running", "Keep your computer awake while Elpis is running a thread."),
     ]
     .into_iter()
     .map(|(name, display_name, description)| codex_app_server_protocol::ExperimentalFeature {

@@ -331,7 +331,7 @@ async fn reconnect_daemon_command_center_after_socket_replacement_without_a_conv
                 if let AppEvent::InsertHistoryCell(cell) = &event {
                     let rendered = lines_to_single_string(&cell.display_lines(/*width*/ 100));
                     if rendered.contains("Windows sandbox setup was interrupted") {
-                        insta::assert_snapshot!(rendered, @"■ Windows sandbox setup was interrupted. Restart Codex before using Agent mode.");
+                        insta::assert_snapshot!(rendered, @"■ Windows sandbox setup was interrupted. Restart Elpis before using Agent mode.");
                         saw_warning = true;
                         continue;
                     }

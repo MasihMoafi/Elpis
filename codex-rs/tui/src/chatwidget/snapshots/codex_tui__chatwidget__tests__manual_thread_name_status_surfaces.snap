@@ -5,7 +5,7 @@ expression: "format!(\"transcript:\\n{transcript}\\nfooter:\\n{footer}\\ntitle: 
 transcript:
 
 footer:
-› Ask Codex to do anything
+› Ask Elpis to do anything
 
   GPT-5.6-Sol default · /tmp/project · review-fix
 title: review-fix | project

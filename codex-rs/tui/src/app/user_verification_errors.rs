@@ -9,7 +9,7 @@ use codex_app_server_protocol::UserVerificationUnavailableReason;
 
 pub(super) fn verification_error_message(error: &TypedRequestError) -> &'static str {
     let TypedRequestError::Server { source, .. } = error else {
-        return "Could not complete user verification with the local Codex binary.";
+        return "Could not complete user verification with the local Elpis binary.";
     };
     let details = source
         .data
@@ -18,10 +18,10 @@ pub(super) fn verification_error_message(error: &TypedRequestError) -> &'static 
     match details {
         Some(UserVerificationErrorDetails::InvalidRequest {
             reason: UserVerificationInvalidRequestReason::InvalidParams,
-        }) => "The local Codex binary could not verify this request.",
+        }) => "The local Elpis binary could not verify this request.",
         Some(UserVerificationErrorDetails::Unavailable {
             reason: UserVerificationUnavailableReason::CredentialMissing,
-        }) => "No user-verification credential is available in the local Codex binary.",
+        }) => "No user-verification credential is available in the local Elpis binary.",
         Some(UserVerificationErrorDetails::Unavailable {
             reason: UserVerificationUnavailableReason::BiometricsUnavailable,
         }) => "Biometric verification is currently unavailable on this device.",
@@ -46,7 +46,7 @@ pub(super) fn verification_error_message(error: &TypedRequestError) -> &'static 
         | Some(UserVerificationErrorDetails::Failed {
             reason: UserVerificationFailureReason::ServiceError,
         })
-        | None => "The local Codex binary could not complete user verification.",
+        | None => "The local Elpis binary could not complete user verification.",
     }
 }
 

@@ -462,7 +462,7 @@ impl App {
         #[cfg(any(target_os = "windows", test))]
         if interrupted_windows_setup {
             self.chat_widget.add_error_message(
-                "Windows sandbox setup was interrupted. Restart Codex before using Agent mode."
+                "Windows sandbox setup was interrupted. Restart Elpis before using Agent mode."
                     .to_string(),
             );
         }
