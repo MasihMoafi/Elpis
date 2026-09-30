@@ -77,10 +77,11 @@ fn complete_turn(chat: &mut ChatWidget, turn_id: &str) {
     handle_turn_completed(chat, turn_id, /*duration_ms*/ None);
 }
 
-fn queue_with_tab(chat: &mut ChatWidget, text: &str) {
+// Elpis queues with Enter during a turn; Tab opens the Context Ledger.
+fn queue_with_enter(chat: &mut ChatWidget, text: &str) {
     chat.bottom_pane
         .set_composer_text(text.to_string(), Vec::new(), Vec::new());
-    chat.handle_key_event(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
+    chat.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
 }
 
 #[tokio::test]
@@ -218,8 +219,8 @@ async fn queued_compact_number_lets_the_next_message_run() {
     let (mut chat, mut rx, mut ops, home) = chat_with_home().await;
     handle_turn_started(&mut chat, "turn-1");
 
-    queue_with_tab(&mut chat, "/compact 25");
-    queue_with_tab(&mut chat, "continue after the setting");
+    queue_with_enter(&mut chat, "/compact 25");
+    queue_with_enter(&mut chat, "continue after the setting");
     complete_turn(&mut chat, "turn-1");
 
     assert_eq!(saved_percent(&home), Some(25.0));
@@ -242,8 +243,8 @@ async fn queued_compact_text_compacts_and_holds_the_next_message() {
     let (mut chat, mut rx, mut ops, home) = chat_with_home().await;
     handle_turn_started(&mut chat, "turn-1");
 
-    queue_with_tab(&mut chat, &format!("/compact {GUIDANCE}"));
-    queue_with_tab(&mut chat, "continue after the compaction");
+    queue_with_enter(&mut chat, &format!("/compact {GUIDANCE}"));
+    queue_with_enter(&mut chat, "continue after the compaction");
     complete_turn(&mut chat, "turn-1");
 
     assert!(

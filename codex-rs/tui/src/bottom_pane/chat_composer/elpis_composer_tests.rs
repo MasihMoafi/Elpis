@@ -157,15 +157,20 @@ fn enter_inside_a_paste_burst_during_a_turn_stays_a_newline() {
 }
 
 #[test]
-fn slash_command_during_a_turn_is_not_queued() {
-    let mut composer = composer_with_text("/diff", /*running*/ true);
-
+fn slash_led_drafts_queue_during_a_turn_without_validation() {
+    // v0.3.0: remapped_queue_handles_slash_led_prompts_while_task_running_without_validation.
+    for text in ["/compact", "/review check regressions", "/does-not-exist"] {
+        let mut composer = composer_with_text(text, /*running*/ true);
+        let (result, _) = press(&mut composer, KeyCode::Enter);
+        match result {
+            InputResult::Queued { text: queued, .. } => assert_eq!(queued, text),
+            other => panic!("expected {text} to queue, got {other:?}"),
+        }
+    }
+    // Negative: idle, a slash command is not queued.
+    let mut composer = composer_with_text("/compact", /*running*/ false);
     let (result, _) = press(&mut composer, KeyCode::Enter);
-
-    assert!(
-        !matches!(result, InputResult::Queued { .. }),
-        "a slash command runs now rather than waiting behind the turn, got {result:?}"
-    );
+    assert!(!matches!(result, InputResult::Queued { .. }), "{result:?}");
 }
 
 // Footer hints: the idle Elpis tip.
