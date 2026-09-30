@@ -220,6 +220,11 @@ impl ModelsEndpointClient for OpenAiModelsEndpoint {
             || self.provider_info.experimental_bearer_token.is_some()
     }
 
+    // Elpis: the Elpis gateway lists the vendor's models itself.
+    fn serves_own_catalog(&self) -> bool {
+        codex_model_provider_info::gateway_route(&self.provider_info).is_some()
+    }
+
     fn identity(&self) -> Option<String> {
         let auth = self
             .auth_manager

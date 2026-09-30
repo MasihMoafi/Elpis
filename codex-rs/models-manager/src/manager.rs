@@ -63,6 +63,13 @@ pub trait ModelsEndpointClient: fmt::Debug + Send + Sync {
         false
     }
 
+    /// Elpis: returns whether the provider lists its own models, whatever the OpenAI login.
+    /// Such a catalog is fetched without a login and is the whole list, never merged with
+    /// the bundled OpenAI models.
+    fn serves_own_catalog(&self) -> bool {
+        false
+    }
+
     /// Fetches the latest remote model catalog and optional ETag.
     fn list_models<'a>(
         &'a self,
@@ -547,6 +554,8 @@ impl OpenAiModelsManager {
         // Command-auth providers retain their existing discovery behavior.
         if self.uses_api_key_auth()
             && !self.endpoint_client.has_command_auth()
+            // Elpis: a provider serving its own catalog needs no API-key discovery flag.
+            && !self.endpoint_client.serves_own_catalog()
             && (!self.endpoint_client.supports_api_key_models()
                 || !self.api_key_model_discovery_enabled.load(Ordering::SeqCst))
         {
@@ -663,7 +672,9 @@ impl OpenAiModelsManager {
     }
 
     async fn should_refresh_models(&self) -> bool {
-        self.endpoint_client.uses_codex_backend().await
+        // Elpis: a provider serving its own catalog refreshes without an OpenAI login.
+        self.endpoint_client.serves_own_catalog()
+            || self.endpoint_client.uses_codex_backend().await
             || self.endpoint_client.has_command_auth()
             || self.supports_api_key_discovery()
     }
@@ -678,7 +689,9 @@ impl OpenAiModelsManager {
             .models
             .iter()
             .any(|model| model.visibility == ModelVisibility::List)
-            && (self.supports_api_key_discovery()
+            // Elpis: a provider's own catalog is its whole list.
+            && (self.endpoint_client.serves_own_catalog()
+                || self.supports_api_key_discovery()
                 || self.auth_manager.as_ref().is_some_and(|auth_manager| {
                     auth_manager
                         .auth_mode()
@@ -921,3 +934,7 @@ fn construct_model_info(
 #[cfg(test)]
 #[path = "manager_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "elpis_own_catalog_tests.rs"]
+mod elpis_own_catalog_tests;
