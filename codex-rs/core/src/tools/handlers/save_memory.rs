@@ -32,7 +32,7 @@ use crate::tools::context::ToolPayload;
 use crate::tools::context::boxed_tool_output;
 use crate::tools::handlers::parse_arguments;
 
-pub(crate) const TOOL_NAME: &str = "save_memory";
+const TOOL_NAME: &str = "save_memory";
 const MAX_EVIDENCE_CHARS: usize = 64_000;
 
 #[derive(Debug, Deserialize)]
@@ -205,7 +205,10 @@ impl SaveMemoryHandler {
         .map_err(|error| FunctionCallError::Fatal(error.to_string()))
     }
 
-    async fn save(&self, invocation: ToolCall<'_>) -> Result<Box<dyn ToolOutput>, FunctionCallError> {
+    async fn save(
+        &self,
+        invocation: ToolCall<'_>,
+    ) -> Result<Box<dyn ToolOutput>, FunctionCallError> {
         // The baseline was captured when this turn started; a call from any other turn
         // would compare the files against the wrong snapshot.
         if invocation.turn_id != self.turn_id {
