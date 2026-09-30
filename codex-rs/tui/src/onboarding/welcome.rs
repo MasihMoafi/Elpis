@@ -115,7 +115,6 @@ impl WidgetRef for &WelcomeWidget {
                 crate::branding::PRODUCT_NAME,
                 crate::style::brand_style(),
             ),
-            ", with Elpis as the active runtime".into(),
         ]));
 
         Paragraph::new(lines)
