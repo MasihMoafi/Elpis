@@ -220,6 +220,8 @@ mod daemon_menu;
 // Elpis: Elpis-owned event handling.
 mod elpis_events;
 mod elpis_providers;
+// Elpis: GOAL.md and the ES.md turn checkpoint follow the app-server notifications.
+mod elpis_continuity;
 // Elpis: the App side of the Context Ledger.
 mod elpis_ledger;
 mod empty_state_policy;
@@ -628,6 +630,8 @@ pub(crate) struct App {
     agents_overview: agents_overview::AgentsOverviewState,
     // Elpis: the Context Ledger's Manual Memory loader and writers.
     manual_memory_status: elpis_ledger::ManualMemoryStatusCoordinator,
+    // Elpis: each thread's completed items, buffered until its turn completes and ES.md is written.
+    elpis_turn_items: HashMap<String, Vec<(String, codex_app_server_protocol::ThreadItem)>>,
     side_threads: HashMap<ThreadId, SideThreadState>,
     abandoned_side_threads: HashSet<ThreadId>,
     active_thread_id: Option<ThreadId>,

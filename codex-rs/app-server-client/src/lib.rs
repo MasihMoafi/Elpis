@@ -91,6 +91,11 @@ pub mod legacy_core {
     pub mod pressure_compaction {
         pub use codex_core::pressure_compaction::*;
     }
+
+    // Elpis: the ES.md checkpoint writer shares the agent saver's workspace lock.
+    pub mod memory_save {
+        pub use codex_core::memory_save::*;
+    }
 }
 
 const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(5);

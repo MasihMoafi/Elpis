@@ -204,6 +204,8 @@ impl App {
 
             return;
         }
+        // Elpis: mirror /goal into GOAL.md and checkpoint each finished turn into ES.md.
+        self.mirror_elpis_context_notification(&notification).await;
 
         if let ServerNotification::ThreadStarted(started) = &notification
             && let SessionSource::SubAgent(SubAgentSource::ThreadSpawn {

@@ -91,6 +91,7 @@ pub(crate) async fn make_test_app() -> App {
         agent_navigation: AgentNavigationState::default(),
         agents_overview: Default::default(),
         manual_memory_status: Default::default(), // Elpis
+        elpis_turn_items: Default::default(), // Elpis
         side_threads: HashMap::new(),
         abandoned_side_threads: HashSet::new(),
         active_thread_id: None,

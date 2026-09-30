@@ -6069,6 +6069,7 @@ async fn make_test_app() -> Box<App> {
         pending_server_profiles: HashMap::new(),
         agents_overview: Default::default(),
         manual_memory_status: Default::default(), // Elpis
+        elpis_turn_items: Default::default(), // Elpis
         side_threads: HashMap::new(),
         abandoned_side_threads: HashSet::new(),
         active_thread_id: None,
@@ -6187,6 +6188,7 @@ pub(super) async fn make_test_app_with_channels() -> (
             pending_server_profiles: HashMap::new(),
             agents_overview: Default::default(),
             manual_memory_status: Default::default(), // Elpis
+            elpis_turn_items: Default::default(), // Elpis
             side_threads: HashMap::new(),
             abandoned_side_threads: HashSet::new(),
             active_thread_id: None,
