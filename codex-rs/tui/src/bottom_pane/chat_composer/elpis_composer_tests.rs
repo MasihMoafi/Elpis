@@ -167,3 +167,47 @@ fn slash_command_during_a_turn_is_not_queued() {
         "a slash command runs now rather than waiting behind the turn, got {result:?}"
     );
 }
+
+// Footer hints: the idle Elpis tip.
+
+fn rendered(composer: &ChatComposer) -> String {
+    let area = Rect::new(0, 0, 80, 6);
+    let mut buf = Buffer::empty(area);
+    composer.render(area, &mut buf);
+    (area.top()..area.bottom())
+        .map(|row| {
+            (area.left()..area.right())
+                .map(|column| buf[(column, row)].symbol())
+                .collect::<String>()
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+#[test]
+fn elpis_tip_replaces_the_idle_footer_only_when_visible() {
+    let (mut composer, _rx) = new_test_composer();
+    let hidden = rendered(&composer);
+    assert!(!hidden.contains("open the Context Ledger"), "{hidden}");
+
+    composer.set_elpis_tip_visible(/*visible*/ true);
+    let shown = rendered(&composer);
+
+    assert!(
+        shown.contains("tab  open the Context Ledger and choose what stays in context"),
+        "{shown}"
+    );
+    assert!(!shown.contains("? for shortcuts"), "{shown}");
+}
+
+#[test]
+fn quit_reminder_outranks_the_elpis_tip() {
+    let (mut composer, _rx) = new_test_composer();
+    composer.set_elpis_tip_visible(/*visible*/ true);
+
+    composer.show_quit_shortcut_hint(key_hint::ctrl(KeyCode::Char('c')), /*has_focus*/ true);
+    let screen = rendered(&composer);
+
+    assert!(screen.contains("again to quit"), "{screen}");
+    assert!(!screen.contains("open the Context Ledger"), "{screen}");
+}

@@ -95,3 +95,74 @@ async fn enter_while_idle_sends_and_queues_nothing() {
     assert!(chat.input_queue.pending_steers.is_empty());
     assert!(chat.bottom_pane.composer_text().is_empty());
 }
+
+// Footer hints: the idle Elpis tip, the Ledger hint, and Enter to queue while busy.
+
+/// Renders below the Context Ledger's width threshold so the footer keeps the full row.
+fn footer_after_tick(chat: &mut ChatWidget) -> String {
+    chat.pre_draw_tick();
+    render_bottom_popup(chat, /*width*/ 79)
+}
+
+#[tokio::test]
+async fn idle_empty_composer_shows_the_ledger_tip_instead_of_shortcuts() {
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+
+    let footer = footer_after_tick(&mut chat);
+
+    assert!(chat.bottom_pane.elpis_tip_visible());
+    assert!(
+        footer.contains("tab  open the Context Ledger and choose what stays in context"),
+        "{footer}"
+    );
+    assert!(!footer.contains("? for shortcuts"), "{footer}");
+}
+
+#[tokio::test]
+async fn a_draft_a_turn_or_a_picker_hides_the_tip() {
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    chat.bottom_pane
+        .set_composer_text("make a plan".to_string(), Vec::new(), Vec::new());
+    chat.pre_draw_tick();
+    assert!(
+        !chat.bottom_pane.elpis_tip_visible(),
+        "a draft in progress outranks a tip"
+    );
+
+    chat.bottom_pane
+        .set_composer_text(String::new(), Vec::new(), Vec::new());
+    chat.bottom_pane.set_task_running(/*running*/ true);
+    chat.pre_draw_tick();
+    assert!(
+        !chat.bottom_pane.elpis_tip_visible(),
+        "a running turn outranks a tip"
+    );
+
+    chat.bottom_pane.set_task_running(/*running*/ false);
+    chat.show_selection_view(SelectionViewParams {
+        items: vec![SelectionItem {
+            name: "Keep planning".to_string(),
+            ..Default::default()
+        }],
+        ..Default::default()
+    });
+    chat.pre_draw_tick();
+    assert!(
+        !chat.bottom_pane.elpis_tip_visible(),
+        "an open picker outranks a tip"
+    );
+}
+
+#[tokio::test]
+async fn busy_draft_footer_offers_enter_to_queue_and_the_ledger() {
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    chat.bottom_pane.set_task_running(/*running*/ true);
+    chat.bottom_pane
+        .set_composer_text("follow-up".to_string(), Vec::new(), Vec::new());
+
+    let footer = footer_after_tick(&mut chat);
+
+    assert!(footer.contains("enter to queue message"), "{footer}");
+    assert!(footer.contains("Tab Context Ledger"), "{footer}");
+    assert!(!footer.contains("open the Context Ledger"), "{footer}");
+}
