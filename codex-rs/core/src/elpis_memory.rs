@@ -88,9 +88,7 @@ impl ThreadLifecycleContributor<Config> for SaveMemoryExtension {
     ) -> ExtensionFuture<'a, ()> {
         Box::pin(async move {
             if saves_for(input.session_source) {
-                input
-                    .thread_store
-                    .insert(SavePaths::from_config(input.config));
+                input.thread_store.insert(SavePaths::from_config(input.config));
             }
         })
     }
