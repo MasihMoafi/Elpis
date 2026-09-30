@@ -701,6 +701,22 @@ impl ContextManager {
         }
     }
 
+    /// Elpis: removes the items `remove` selects and returns how many went. Used to expire a
+    /// finished turn's hidden reasoning (session/context_cleaner.rs). A removal is a history
+    /// rewrite, not a reset, so only `history_version` moves.
+    pub(crate) fn remove_items_where(
+        &mut self,
+        mut remove: impl FnMut(&ResponseItem) -> bool,
+    ) -> usize {
+        let before = self.items.len();
+        if !self.items.iter().any(|envelope| remove(&envelope.item)) {
+            return 0;
+        }
+        Arc::make_mut(&mut self.items).retain(|envelope| !remove(&envelope.item));
+        self.history_version = self.history_version.saturating_add(1);
+        before - self.items.len()
+    }
+
     #[cfg(test)]
     pub(crate) fn replace(&mut self, items: Vec<ResponseItem>) {
         self.replace_annotated(items.into_iter().map(ResponseItemEnvelope::new).collect());

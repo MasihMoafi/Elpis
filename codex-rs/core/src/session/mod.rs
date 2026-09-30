@@ -228,6 +228,8 @@ use codex_protocol::error::Result as CodexResult;
 use codex_protocol::exec_output::StreamOutput;
 
 mod code_mode_warning;
+// Elpis: a finished turn's hidden reasoning leaves working history.
+mod context_cleaner;
 pub(crate) mod context_window;
 mod daemon_recovery;
 mod environment;

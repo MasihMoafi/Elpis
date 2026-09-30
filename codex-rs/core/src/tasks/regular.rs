@@ -118,6 +118,13 @@ impl SessionTask for RegularTask {
                 return Ok(last_agent_message);
             }
             if !sess.input_queue.has_pending_input(&sess.active_turn).await {
+                // Elpis: the answered turn's hidden reasoning leaves working history; the
+                // rollout keeps it (session/context_cleaner.rs).
+                if last_agent_message.is_some()
+                    && !ctx.capture_current_model_info().use_responses_lite
+                {
+                    sess.expire_reasoning_items_for_turn(&ctx.sub_id).await;
+                }
                 return Ok(last_agent_message);
             }
             next_input = Vec::new();
