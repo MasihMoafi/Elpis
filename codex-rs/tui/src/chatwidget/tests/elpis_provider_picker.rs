@@ -153,9 +153,15 @@ async fn the_provider_list_names_every_configured_provider() {
     chat.open_elpis_provider_popup();
     let popup = render_bottom_popup(&chat, /*width*/ 120);
 
-    for name in ["Choose a provider", "Anthropic Claude", "Google Gemini", "OpenRouter", "Fixture Vendor"] {
+    for name in ["Choose a provider", "Anthropic Claude", "Google Gemini", "Fixture Vendor"] {
         assert!(popup.contains(name), "{name} missing:\n{popup}");
     }
+    // OpenRouter sorts below the visible rows; the search finds it.
+    for ch in "openrouter".chars() {
+        chat.handle_key_event(KeyEvent::from(KeyCode::Char(ch)));
+    }
+    let popup = render_bottom_popup(&chat, /*width*/ 120);
+    assert!(popup.contains("OpenRouter"), "OpenRouter missing:\n{popup}");
 }
 
 #[tokio::test]
