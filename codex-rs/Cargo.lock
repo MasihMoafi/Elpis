@@ -3126,6 +3126,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "codex-elpis-gateway"
+version = "0.159.0"
+dependencies = [
+ "axum",
+ "codex-model-provider-info",
+ "codex-models-manager",
+ "codex-protocol",
+ "eventsource-stream",
+ "futures",
+ "http 1.4.0",
+ "pretty_assertions",
+ "reqwest 0.12.28",
+ "serde_json",
+ "sha2 0.10.9",
+ "tempfile",
+ "tokio",
+ "tokio-stream",
+ "tracing",
+ "uuid",
+ "wiremock",
+]
+
+[[package]]
 name = "codex-exec"
 version = "0.159.0"
 dependencies = [
@@ -4043,6 +4066,7 @@ dependencies = [
  "pretty_assertions",
  "schemars 0.8.22",
  "serde",
+ "serde_json",
  "tempfile",
  "toml 0.9.11+spec-1.1.0",
  "url",
