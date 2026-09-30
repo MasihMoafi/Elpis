@@ -7,6 +7,7 @@ use codex_model_provider_info::GATEWAY_TOKEN_HEADER;
 use codex_model_provider_info::GATEWAY_UPSTREAM_HEADER;
 use codex_model_provider_info::GATEWAY_WIRE_HEADER;
 use codex_model_provider_info::GatewayWire;
+use codex_model_provider_info::ModelProviderInfo;
 use http::HeaderMap;
 use http::HeaderName;
 use http::HeaderValue;
@@ -80,6 +81,32 @@ impl Route {
             upstream,
             env_key: text(GATEWAY_ENV_KEY_HEADER),
             bearer,
+            forwarded,
+        })
+    }
+
+    /// The route of a configured gateway provider, read from its provider entry rather than
+    /// from a request: the picker lists a provider's models before any thread uses it.
+    pub(crate) fn from_provider(provider: &ModelProviderInfo) -> Option<Self> {
+        let route = codex_model_provider_info::gateway_route(provider)?;
+        let mut forwarded = HeaderMap::new();
+        for (name, value) in provider.http_headers.iter().flatten() {
+            if let Some(original) = name.strip_prefix(GATEWAY_FORWARD_HEADER_PREFIX)
+                && let Ok(original) = HeaderName::from_bytes(original.as_bytes())
+                && let Ok(value) = HeaderValue::from_str(value.as_str())
+            {
+                forwarded.insert(original, value);
+            }
+        }
+        Some(Self {
+            provider_id: route.provider_id,
+            wire: route.wire,
+            upstream: route.upstream_base_url,
+            env_key: route.env_key,
+            bearer: provider
+                .experimental_bearer_token
+                .as_ref()
+                .map(|token| token.as_str().to_string()),
             forwarded,
         })
     }

@@ -332,3 +332,42 @@ async fn a_provider_routed_by_model_provider_info_reaches_its_vendor() {
     let response = completed(&events).expect("completed");
     assert_eq!(response["usage"]["total_tokens"], 11);
 }
+
+#[tokio::test]
+async fn a_provider_is_browsed_straight_from_its_vendor() {
+    let vendor = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v1/models"))
+        .and(header("authorization", "Bearer browse-key"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"data": [
+            {"id": "deepseek-chat", "supported_parameters": ["tools"]},
+        ]})))
+        .expect(1)
+        .mount(&vendor)
+        .await;
+    let home = tempfile::tempdir().expect("tempdir");
+    save_provider_key(home.path(), "browse-chat", "browse-key").expect("save");
+    let mut provider = ModelProviderInfo {
+        name: "Browse Chat".to_string(),
+        base_url: Some(format!("{}/v1", vendor.uri())),
+        ..ModelProviderInfo::default()
+    };
+    codex_model_provider_info::route_through_gateway("browse-chat", GatewayWire::Chat, &mut provider)
+        .expect("routed");
+
+    let catalog = provider_models(home.path(), &provider)
+        .await
+        .expect("a gateway provider")
+        .expect("the vendor lists its models");
+
+    assert_eq!(
+        catalog
+            .models
+            .iter()
+            .map(|model| model.slug.as_str())
+            .collect::<Vec<_>>(),
+        vec!["deepseek-chat"]
+    );
+    let openai = ModelProviderInfo::create_openai_provider(/*base_url*/ None);
+    assert!(provider_models(home.path(), &openai).await.is_none());
+}

@@ -13,6 +13,9 @@ use std::io::Write;
 use std::path::Path;
 use std::path::PathBuf;
 
+use codex_model_provider_info::GatewayWire;
+use codex_model_provider_info::ModelProviderInfo;
+
 use crate::route::Route;
 
 const FILE_NAME: &str = "provider-keys.json";
@@ -22,10 +25,14 @@ const MAX_KEY_BYTES: usize = 8_192;
 /// Where a provider's key comes from, for display.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum KeySource {
+    /// Written in the provider's configuration (`experimental_bearer_token`).
+    Configured,
     /// Saved from the terminal into the Elpis home.
     Saved,
     /// Read from the provider's environment variable.
     Environment,
+    /// A Chat provider that names no key variable, such as a local server.
+    NotRequired,
     /// No key is available.
     Missing,
 }
@@ -69,6 +76,26 @@ pub fn key_source(home: &Path, provider_id: &str, env_key: Option<&str>) -> KeyS
     } else {
         KeySource::Missing
     }
+}
+
+/// Where a gateway provider's key would come from, or `None` for a provider core reaches
+/// directly (OpenAI sign-in, Bedrock, local Responses servers).
+pub fn provider_key_source(home: &Path, provider: &ModelProviderInfo) -> Option<KeySource> {
+    let route = Route::from_provider(provider)?;
+    if route.bearer.is_some() {
+        return Some(KeySource::Configured);
+    }
+    let source = key_source(home, &route.provider_id, route.env_key.as_deref());
+    Some(
+        if source == KeySource::Missing
+            && route.env_key.is_none()
+            && route.wire == GatewayWire::Chat
+        {
+            KeySource::NotRequired
+        } else {
+            source
+        },
+    )
 }
 
 /// Saves a key the owner pasted into the terminal. It is live for the next request in every
