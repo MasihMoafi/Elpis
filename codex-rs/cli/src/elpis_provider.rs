@@ -46,7 +46,6 @@ fn toml_string(value: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use clap::Parser;
     use pretty_assertions::assert_eq;
 
