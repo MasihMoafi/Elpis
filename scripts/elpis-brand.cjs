@@ -12,7 +12,8 @@
 // Every replacement is five characters for five, so wrapped snapshots keep their layout;
 // the one exception is the article, "a Codex" -> "an Elpis".
 // Text where "Codex" truly means OpenAI's product, or that another crate parses, is kept
-// and listed in EXCEPTIONS with the reason.
+// and listed in EXCEPTIONS with the reason. A string that is only ever an identifier by
+// where it sits (a path component, an originator prefix) is kept by LITERAL_EXCEPTIONS.
 //
 //   node scripts/elpis-brand.cjs            apply the rename
 //   node scripts/elpis-brand.cjs --dry-run  list file:line old -> new, write nothing
@@ -26,7 +27,8 @@
 const fs = require("node:fs");
 const path = require("node:path");
 
-// Directories rewritten, relative to codex-rs/.
+// Directories rewritten, relative to codex-rs/. `files`, when present, narrows a directory
+// to the paths that match it.
 const SCOPE = [
   { dir: "tui/src", why: "the TUI" },
   { dir: "cli/src", why: "CLI help and messages" },
@@ -35,6 +37,16 @@ const SCOPE = [
   { dir: "cli/tests", why: "integration tests that assert the CLI wording" },
   { dir: "exec/tests", why: "integration tests that assert the exec wording" },
   { dir: "features/src", why: "descriptions the /experimental menu shows" },
+  { dir: "config/src", why: "config warnings and errors the user reads" },
+  { dir: "app-server/src", why: "messages the app server sends its clients; the TUI shows them" },
+  { dir: "login/src", why: "the device-code banner, sign-in errors and the browser callback messages" },
+  { dir: "model-provider/src", why: "provider and credential errors the user reads" },
+  { dir: "login/tests", why: "integration tests that assert the login wording" },
+  {
+    dir: "app-server/tests",
+    files: /^app-server\/tests\/suite\/v2\/(?:bedrock_setup|feedback|gateway_oauth_tests|model_list_requirements_tests|model_provider_enforcement_tests)\.rs$/,
+    why: "only the tests that assert app-server wording; the rest assert core's prompts and other crates' output, which stay Codex",
+  },
 ];
 
 // Files left alone entirely. Paths are relative to codex-rs/.
@@ -121,7 +133,7 @@ const EXCEPTIONS = [
   },
   {
     re: /is archived\. Run `codex unarchive/g,
-    why: "the error codex-rs/app-server returns; session_start.rs recognises it by this text",
+    why: "the error codex-rs/app-server returns (two sites); session_start.rs in the TUI recognises it by this text",
     sample: " is archived. Run `codex unarchive ",
   },
   {
@@ -143,6 +155,70 @@ const EXCEPTIONS = [
     re: /Please run 'codex login'/g,
     why: "text codex-rs/cloud-tasks prints; the CLI test asserts it",
     sample: "Not signed in. Please run 'codex login'",
+  },
+  {
+    re: /Codex Desktop/g,
+    why: "client name the app server, core and otel match on (`name == \"Codex Desktop\"`, originator mapping); the desktop app is OpenAI's",
+    sample: "(ConnectionOrigin::Stdio, \"Codex Desktop\", true, true, true)",
+  },
+  {
+    re: /Codex-App_2/g,
+    why: "a tool-namespace identifier fixture for validate_dynamic_tools, not prose",
+    sample: "Some(\"Codex-App_2\")",
+  },
+  {
+    re: /Codex Auth/g,
+    why: "the OS keyring service name; renaming it orphans every saved login",
+    sample: "const KEYRING_SERVICE: &str = \"Codex Auth\";",
+  },
+  {
+    re: /Codex Companion/g,
+    why: "the name of a third-party plugin in a hooks fixture, not this program",
+    sample: "Optional stop-time review gate for Codex Companion.",
+  },
+  {
+    re: /You do not have access to Codex|Codex is not enabled for your workspace|(?:request|get) access to Codex|authorized to use Codex|Codex access denial/g,
+    why: "says the ChatGPT account lacks OpenAI's Codex entitlement (missing_codex_entitlement); it is not about this program",
+    sample: "Codex is not enabled for your workspace. Contact your workspace administrator to request access to Codex.",
+  },
+  {
+    re: /this Codex server/g,
+    why: "the OpenAI auth server the login talks to; Elpis has no server of its own",
+    sample: "device code login is not enabled for this Codex server. Use the browser login.",
+  },
+  {
+    re: /invalid Codex open app URL/g,
+    why: "names CODEX_OPEN_APP_URL, the link that opens OpenAI's Codex desktop app",
+    sample: "invalid Codex open app URL: relative URL without a base",
+  },
+  {
+    re: /Sanitized Codex user agent|base Codex user agent|default Codex originator/g,
+    why: "logs about the user-agent and originator header values, which stay Codex-prefixed for OpenAI's backend",
+    sample: "Falling back to default Codex originator because base user agent string is invalid",
+  },
+  {
+    re: /update or unset it, then restart Codex/g,
+    why: "core/src/client_tests.rs asserts this Bedrock message verbatim and core is out of scope; rename both together",
+    sample: "update or unset it, then restart Codex",
+  },
+];
+
+// A string literal kept as "Codex" because of the code around it, not its wording. `before`
+// is tested against the source just ahead of the literal, `body` against its contents.
+// `sample` is Rust source the entry protects; the eval checks it survives and would be
+// renamed without the entry.
+const LITERAL_EXCEPTIONS = [
+  {
+    before: /(?:\.join|Path::new)\("OpenAI"\)\s*\.join\(\s*$/,
+    body: /^Codex$/,
+    why: "the Windows ProgramData directory OpenAI\\Codex where managed config and requirements are read",
+    sample: 'program_data.join("OpenAI").join("Codex")',
+  },
+  {
+    before: /(?:\.starts_with|is_first_party_originator)\(\s*$/,
+    body: /^Codex /,
+    why: "the first-party originator prefix (`Codex Desktop`, ...) that login matches and OpenAI's backend sees",
+    sample: 'originator_value.starts_with("Codex ")',
   },
 ];
 
@@ -295,6 +371,7 @@ function scanText(text) {
 function editsFor(relPath, src) {
   const edits = [];
   const excepted = new Set();
+  const literalExcepted = new Set();
   const collect = (text, offset) => {
     const result = scanText(text);
     for (const r of result.renames) edits.push({ start: offset + r.start, end: offset + r.end, to: r.to });
@@ -309,6 +386,12 @@ function editsFor(relPath, src) {
     for (const token of lexRust(src)) {
       if (token.kind === "str") {
         const body = src.slice(token.bodyStart, token.bodyEnd);
+        const before = src.slice(Math.max(0, token.start - 96), token.start);
+        const literalIndex = LITERAL_EXCEPTIONS.findIndex((e) => e.body.test(body) && e.before.test(before));
+        if (literalIndex >= 0) {
+          if (scanText(body).renames.length) literalExcepted.add(literalIndex);
+          continue;
+        }
         const replyLabel = relPath.startsWith("exec/src/") && src.startsWith(".style(", token.end);
         const commandHead = COMMAND_HEAD.test(src.slice(Math.max(0, token.start - 64), token.start)) &&
           src.startsWith(".to_string()", token.end);
@@ -324,7 +407,7 @@ function editsFor(relPath, src) {
     }
   }
   edits.sort((a, b) => a.start - b.start);
-  return { edits, excepted };
+  return { edits, excepted, literalExcepted };
 }
 
 function applyEdits(src, edits) {
@@ -350,20 +433,23 @@ function walk(dir, out) {
 
 function run({ root, mode, log = console.log }) {
   const usedExceptions = new Set();
+  const usedLiteralExceptions = new Set();
   const usedExclusions = new Set();
   const changes = [];
   let occurrences = 0;
   for (const scope of SCOPE) {
     for (const file of walk(path.join(root, scope.dir), []).sort()) {
       const relPath = path.relative(root, file).split(path.sep).join("/");
+      if (scope.files && !scope.files.test(relPath)) continue;
       const src = fs.readFileSync(file, "utf8");
       const exclusion = EXCLUDED_PATHS.findIndex((entry) => entry.re.test(relPath));
       if (exclusion >= 0) {
         if (editsFor(relPath, src).edits.length) usedExclusions.add(exclusion);
         continue;
       }
-      const { edits, excepted } = editsFor(relPath, src);
+      const { edits, excepted, literalExcepted } = editsFor(relPath, src);
       for (const index of excepted) usedExceptions.add(index);
+      for (const index of literalExcepted) usedLiteralExceptions.add(index);
       if (!edits.length) continue;
       const next = applyEdits(src, edits);
       occurrences += edits.length;
@@ -373,6 +459,7 @@ function run({ root, mode, log = console.log }) {
   }
   const unused = [
     ...EXCEPTIONS.filter((_, index) => !usedExceptions.has(index)).map((e) => `exception ${e.re}`),
+    ...LITERAL_EXCEPTIONS.filter((_, index) => !usedLiteralExceptions.has(index)).map((e) => `literal exception ${e.before} ${e.body}`),
     ...EXCLUDED_PATHS.filter((_, index) => !usedExclusions.has(index)).map((e) => `exclusion ${e.re}`),
   ];
   if (mode !== "apply") {
@@ -402,6 +489,6 @@ function main(argv) {
   if (mode === "check" && (result.occurrences > 0 || result.unused.length > 0)) process.exitCode = 1;
 }
 
-module.exports = { EXCEPTIONS, EXCLUDED_PATHS, RULES, SCOPE, editsFor, lexRust, run, scanText };
+module.exports = { EXCEPTIONS, EXCLUDED_PATHS, LITERAL_EXCEPTIONS, RULES, SCOPE, editsFor, lexRust, run, scanText };
 
 if (require.main === module) main(process.argv.slice(2));

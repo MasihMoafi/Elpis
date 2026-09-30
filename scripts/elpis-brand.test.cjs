@@ -33,6 +33,12 @@ fn f(codex_home: &Path) {
     let e = "Run ` + "`codex {action}`" + String.raw` without an ID";
     let f = "Usage: codex exec [OPTIONS]";
     let i = "Fork a Codex task. A Codex home. data Codex";
+    let j = "get access to Codex, then return to Codex and try again";
+    let path = program_data.join("OpenAI").join("Codex");
+    let same = Path::new("OpenAI")
+        .join("Codex");
+    let first_party = originator.starts_with("Codex ") || is_first_party_originator("Codex Other");
+    let named = ["Codex Desktop", "Codex Auth", "Codex Hub"];
     let g = vec!["codex".to_string(), "--remote".to_string()];
     let h = "codex".style(x);
     let keep = ["~/.codex/config.toml", "https://chatgpt.com/codex?x=1", "codex", "codex-tui",
@@ -51,6 +57,12 @@ fn f(codex_home: &Path) {
     let e = "Run ` + "`elpis {action}`" + String.raw` without an ID";
     let f = "Usage: elpis exec [OPTIONS]";
     let i = "Fork an Elpis task. An Elpis home. data Elpis";
+    let j = "get access to Codex, then return to Elpis and try again";
+    let path = program_data.join("OpenAI").join("Codex");
+    let same = Path::new("OpenAI")
+        .join("Codex");
+    let first_party = originator.starts_with("Codex ") || is_first_party_originator("Codex Other");
+    let named = ["Codex Desktop", "Codex Auth", "Elpis Hub"];
     let g = vec!["elpis".to_string(), "--remote".to_string()];
     let h = "codex".style(x);
     let keep = ["~/.codex/config.toml", "https://chatgpt.com/codex?x=1", "codex", "codex-tui",
@@ -106,6 +118,37 @@ check("every exception protects its sample, and the sample would be renamed with
   });
 });
 
+check("a bare Codex literal is renamed unless the code around it makes it a path or an originator", () => {
+  assert.equal(transform("tui/src/x.rs", 'let a = other.join("Codex");\nlet b = name.contains("Codex ");\n'),
+    'let a = other.join("Elpis");\nlet b = name.contains("Elpis ");\n');
+  assert.equal(transform("tui/src/x.rs", 'let a = x.join("Other").join("Codex");\n'),
+    'let a = x.join("Other").join("Elpis");\n');
+});
+
+check("every literal exception protects its sample, and the sample would be renamed without it", () => {
+  brand.LITERAL_EXCEPTIONS.forEach((exception, index) => {
+    const src = `fn f() {\n    ${exception.sample};\n}\n`;
+    const kept = brand.editsFor("tui/src/literal.rs", src);
+    assert(kept.literalExcepted.has(index), `${exception.before} does not match its sample`);
+    assert.equal(kept.edits.length, 0, `${exception.before} sample is renamed anyway`);
+    brand.LITERAL_EXCEPTIONS.splice(index, 1);
+    try {
+      assert(brand.editsFor("tui/src/literal.rs", src).edits.length > 0, `${exception.before} is not needed`);
+    } finally {
+      brand.LITERAL_EXCEPTIONS.splice(index, 0, exception);
+    }
+  });
+});
+
+check("every scope directory is walked, and a `files` filter keeps the rest of its directory untouched", () => {
+  const listed = brand.SCOPE.filter((entry) => entry.files);
+  assert(listed.length > 0, "no scope entry narrows by files");
+  for (const entry of listed) {
+    assert(entry.files.test(`${entry.dir}/suite/v2/bedrock_setup.rs`), `${entry.dir} filter misses its own test`);
+    assert(!entry.files.test(`${entry.dir}/suite/v2/git_attribution.rs`), `${entry.dir} filter admits a core-output test`);
+  }
+});
+
 check("the script is idempotent on the fixture", () => {
   assert.equal(transform("tui/src/fixture.rs", RUST_AFTER), RUST_AFTER);
 });
@@ -118,6 +161,11 @@ check("--check fails before applying, apply is a no-op the second time, --check 
     fs.writeFileSync(path.join(root, rel), text);
   };
   write("tui/src/pending.rs", 'const A: &str = "Ask Codex to do anything";\n');
+  write("login/src/pending.rs", 'const A: &str = "Return to Codex to retry";\n');
+  write("app-server/tests/suite/v2/feedback.rs", 'const A: &str = "Restart Codex to apply them";\n');
+  write("app-server/tests/suite/v2/git_attribution.rs", 'const A: &str = "Generated with Codex.";\n');
+  write("tui/src/literals.rs",
+    `fn f() {\n${brand.LITERAL_EXCEPTIONS.map((e) => `    ${e.sample};\n`).join("")}}\n`);
   write("tui/src/samples.rs",
     `const S: &[&str] = &[\n${brand.EXCEPTIONS.map((e) => `    ${rustLiteral(e.sample)},\n`).join("")}];\n`);
   for (const rel of ["tui/src/elpis_owned.rs", "cli/src/doctor.rs", "cli/src/desktop_app/mac.rs",
@@ -131,14 +179,21 @@ check("--check fails before applying, apply is a no-op the second time, --check 
   const dry = cli("--dry-run");
   assert.equal(dry.status, 0, dry.stdout);
   assert.match(fs.readFileSync(path.join(root, "tui/src/pending.rs"), "utf8"), /Ask Codex/, "dry-run wrote");
-  assert.match(cli().stdout, /apply: 1 occurrence\(s\) in 1 file\(s\)/);
+  assert.match(cli().stdout, /apply: 3 occurrence\(s\) in 3 file\(s\)/);
   assert.match(cli().stdout, /apply: 0 occurrence\(s\) in 0 file\(s\)/);
   const after = cli("--check");
   assert.equal(after.status, 0, after.stdout);
   assert.match(fs.readFileSync(path.join(root, "tui/src/elpis_owned.rs"), "utf8"), /Ask Codex/);
+  assert.match(fs.readFileSync(path.join(root, "login/src/pending.rs"), "utf8"), /Return to Elpis/);
+  assert.match(fs.readFileSync(path.join(root, "app-server/tests/suite/v2/feedback.rs"), "utf8"), /Restart Elpis/);
+  assert.match(fs.readFileSync(path.join(root, "app-server/tests/suite/v2/git_attribution.rs"), "utf8"), /with Codex/,
+    "a test outside the files filter was rewritten");
   // Negative: an exception that no longer matches anything fails --check.
   fs.rmSync(path.join(root, "tui/src/samples.rs"));
   assert.equal(cli("--check").status, 1);
+  write("tui/src/samples.rs", "");
+  fs.rmSync(path.join(root, "tui/src/literals.rs"));
+  assert.match(cli("--check").stdout, /unused literal exception/);
   fs.rmSync(root, { recursive: true, force: true });
 });
 
