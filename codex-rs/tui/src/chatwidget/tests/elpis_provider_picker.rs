@@ -29,34 +29,39 @@ fn add_keyless_vendor(chat: &mut ChatWidget, home: &Path) {
         &mut provider,
     )
     .expect("routed");
-    chat.config.model_providers.insert(VENDOR.to_string(), provider);
+    chat.config
+        .model_providers
+        .insert(VENDOR.to_string(), provider);
     chat.config.codex_home = home.to_path_buf().abs();
 }
 
 fn fixture_preset() -> ModelPreset {
-    let model: codex_protocol::openai_models::ModelInfo = serde_json::from_value(serde_json::json!({
-        "slug": "fixture-model",
-        "display_name": "Fixture Model",
-        "description": "≈200k context",
-        "supported_reasoning_levels": [],
-        "shell_type": "shell_command",
-        "visibility": "list",
-        "supported_in_api": true,
-        "priority": 0,
-        "availability_nux": null,
-        "upgrade": null,
-        "model_messages": {"instructions_template": "base instructions"},
-        "support_verbosity": false,
-        "default_verbosity": null,
-        "apply_patch_tool_type": "freeform",
-        "truncation_policy": {"mode": "bytes", "limit": 10_000},
-        "experimental_supported_tools": [],
-    }))
-    .expect("valid model");
+    let model: codex_protocol::openai_models::ModelInfo =
+        serde_json::from_value(serde_json::json!({
+            "slug": "fixture-model",
+            "display_name": "Fixture Model",
+            "description": "≈200k context",
+            "supported_reasoning_levels": [],
+            "shell_type": "shell_command",
+            "visibility": "list",
+            "supported_in_api": true,
+            "priority": 0,
+            "availability_nux": null,
+            "upgrade": null,
+            "model_messages": {"instructions_template": "base instructions"},
+            "support_verbosity": false,
+            "default_verbosity": null,
+            "apply_patch_tool_type": "freeform",
+            "truncation_policy": {"mode": "bytes", "limit": 10_000},
+            "experimental_supported_tools": [],
+        }))
+        .expect("valid model");
     model.into()
 }
 
-fn provider_events(rx: &mut tokio::sync::mpsc::UnboundedReceiver<AppEvent>) -> Vec<ElpisProviderEvent> {
+fn provider_events(
+    rx: &mut tokio::sync::mpsc::UnboundedReceiver<AppEvent>,
+) -> Vec<ElpisProviderEvent> {
     std::iter::from_fn(|| rx.try_recv().ok())
         .filter_map(|event| match event {
             AppEvent::Elpis(ElpisAppEvent::Provider(event)) => Some(event),
@@ -76,6 +81,15 @@ async fn the_model_picker_names_its_provider_and_offers_a_change_of_provider() {
     assert!(popup.contains("Provider: OpenAI (openai)"), "{popup}");
     assert!(popup.contains("Protocol: OpenAI Responses"), "{popup}");
     assert!(popup.contains("Credential: your OpenAI sign-in"), "{popup}");
+    // The provider rows end the list; a long model list scrolls them into view.
+    let mut popup = popup;
+    for _ in 0..12 {
+        if popup.contains("Change provider…") {
+            break;
+        }
+        chat.handle_key_event(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
+        popup = render_bottom_popup(&chat, /*width*/ 120);
+    }
     assert!(popup.contains("Change provider…"), "{popup}");
     // The OpenAI sign-in is not an API key typed here.
     assert!(!popup.contains("Add API key…"), "{popup}");
@@ -91,11 +105,19 @@ async fn a_gateway_provider_without_a_key_says_so_and_offers_to_add_one() {
     chat.open_elpis_provider_models(VENDOR.to_string(), Ok(vec![fixture_preset()]));
     let popup = render_bottom_popup(&chat, /*width*/ 120);
 
-    assert!(popup.contains("Provider: Fixture Vendor (fixture-vendor)"), "{popup}");
-    assert!(popup.contains("Route: Elpis gateway → https://vendor.example/v1"), "{popup}");
+    assert!(
+        popup.contains("Provider: Fixture Vendor (fixture-vendor)"),
+        "{popup}"
+    );
+    assert!(
+        popup.contains("Route: Elpis gateway → https://vendor.example/v1"),
+        "{popup}"
+    );
     assert!(popup.contains("Protocol: Anthropic Messages"), "{popup}");
     assert!(
-        popup.contains(&format!("Credential: missing · set {UNSET_KEY} or add a key")),
+        popup.contains(&format!(
+            "Credential: missing · set {UNSET_KEY} or add a key"
+        )),
         "{popup}"
     );
     assert!(popup.contains("Add API key…"), "{popup}");
@@ -139,7 +161,10 @@ async fn a_listing_error_is_shown_instead_of_models() {
     chat.open_elpis_provider_models(VENDOR.to_string(), Err("vendor unreachable".to_string()));
     let popup = render_bottom_popup(&chat, /*width*/ 120);
 
-    assert!(popup.contains("Could not list its models: vendor unreachable"), "{popup}");
+    assert!(
+        popup.contains("Could not list its models: vendor unreachable"),
+        "{popup}"
+    );
     assert!(!popup.contains("Fixture Model"), "{popup}");
     assert!(popup.contains("Change provider…"), "{popup}");
 }
@@ -153,7 +178,12 @@ async fn the_provider_list_names_every_configured_provider() {
     chat.open_elpis_provider_popup();
     let popup = render_bottom_popup(&chat, /*width*/ 120);
 
-    for name in ["Choose a provider", "Anthropic Claude", "Google Gemini", "Fixture Vendor"] {
+    for name in [
+        "Choose a provider",
+        "Anthropic Claude",
+        "Google Gemini",
+        "Fixture Vendor",
+    ] {
         assert!(popup.contains(name), "{name} missing:\n{popup}");
     }
     // OpenRouter sorts below the visible rows; the search finds it.
@@ -174,18 +204,22 @@ async fn a_saved_key_lands_in_the_home_and_the_provider_is_listed_again() {
 
     let stored = std::fs::read_to_string(codex_elpis_gateway::provider_keys_path(home.path()))
         .expect("key file");
-    assert!(stored.contains("\"fixture-vendor\": \"sk-fixture\""), "{stored}");
     assert!(
-        matches!(
-            provider_events(&mut rx).as_slice(),
-            [ElpisProviderEvent::Browse { provider_id }] if provider_id == VENDOR
-        )
+        stored.contains("\"fixture-vendor\": \"sk-fixture\""),
+        "{stored}"
     );
+    assert!(matches!(
+        provider_events(&mut rx).as_slice(),
+        [ElpisProviderEvent::Browse { provider_id }] if provider_id == VENDOR
+    ));
     // With a key saved, the picker no longer asks for one.
     chat.open_elpis_provider_models(VENDOR.to_string(), Ok(vec![fixture_preset()]));
     let popup = render_bottom_popup(&chat, /*width*/ 120);
     assert!(!popup.contains("Add API key…"), "{popup}");
-    assert!(popup.contains("Credential: key saved in this Elpis home"), "{popup}");
+    assert!(
+        popup.contains("Credential: key saved in this Elpis home"),
+        "{popup}"
+    );
 }
 
 #[tokio::test]
