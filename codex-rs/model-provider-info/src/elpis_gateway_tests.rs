@@ -50,9 +50,17 @@ fn built_in_anthropic_is_a_responses_provider_pointing_at_the_gateway() {
 #[test]
 fn built_in_catalog_names_the_gateway_providers_and_leaves_openai_direct() {
     let providers = crate::built_in_model_providers(/*openai_base_url*/ None);
-    let routed = |id: &str| providers.get(id).and_then(gateway_route).map(|route| route.wire);
+    let routed = |id: &str| {
+        providers
+            .get(id)
+            .and_then(gateway_route)
+            .map(|route| route.wire)
+    };
 
-    assert_eq!(routed(ANTHROPIC_PROVIDER_ID), Some(GatewayWire::AnthropicMessages));
+    assert_eq!(
+        routed(ANTHROPIC_PROVIDER_ID),
+        Some(GatewayWire::AnthropicMessages)
+    );
     assert_eq!(
         routed(GOOGLE_GEMINI_PROVIDER_ID),
         Some(GatewayWire::GeminiGenerateContent)
@@ -156,8 +164,8 @@ base_url = "http://localhost:8080/v1"
 env_key = "LOCAL_KEY"
 wire_api = "responses"
 "#;
-    let providers =
-        configured(&format!("[model_providers.local]\n{text}")).expect("a responses provider loads");
+    let providers = configured(&format!("[model_providers.local]\n{text}"))
+        .expect("a responses provider loads");
     let upstream: ModelProviderInfo = toml::from_str(text).expect("upstream parse");
 
     assert_eq!(providers["local"], upstream);
