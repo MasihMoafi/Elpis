@@ -1,5 +1,6 @@
 use super::*;
 use pretty_assertions::assert_eq;
+use serde::Deserialize;
 
 // These tests never call `set_elpis_gateway_address`: the address is process-wide, and other
 // tests in this crate compare two `built_in_model_providers()` results that must agree.

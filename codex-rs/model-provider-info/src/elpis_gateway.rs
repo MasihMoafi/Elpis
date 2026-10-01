@@ -25,7 +25,6 @@ use std::sync::PoisonError;
 use std::sync::RwLock;
 
 use codex_utils_redacted_string::RedactedString;
-use serde::Deserialize;
 
 use crate::ModelProviderInfo;
 use crate::WireApi;
