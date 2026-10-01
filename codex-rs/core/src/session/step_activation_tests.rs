@@ -215,6 +215,14 @@ async fn thread_instruction_refresh_serializes_reads_and_releases_on_cancellatio
         text: text.to_string(),
         source: Some(turn.config.codex_home.join("AGENTS.md")),
     });
+    // Elpis: a global AGENTS.md reaches the model once the Context Ledger admits it.
+    crate::elpis_context::set_continuity_source_admitted(
+        Some(crate::elpis_admission::memory_dir(&turn.config).as_path()),
+        turn.config.cwd.as_path(),
+        "Global AGENTS.md",
+        /*admitted*/ true,
+    )
+    .expect("admit the global AGENTS.md row");
     let instructions = |text: &str| {
         Some(Instructions {
             text: text.to_string(),
