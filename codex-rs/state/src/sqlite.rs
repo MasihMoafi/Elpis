@@ -31,6 +31,7 @@ const MEMORIES_DB_FILENAME: &str = "memories_1.sqlite";
 const QUEUE_DB_FILENAME: &str = "queue_1.sqlite";
 const STATE_DB_FILENAME: &str = "state_5.sqlite";
 const THREAD_HISTORY_DB_FILENAME: &str = "thread_history_1.sqlite";
+const WORK_GRAPHS_DB_FILENAME: &str = "work_graphs_1.sqlite";
 
 #[derive(Clone, Copy)]
 struct RuntimeDbSpec {
@@ -112,7 +113,16 @@ const THREAD_HISTORY_DB: RuntimeDbSpec = RuntimeDbSpec {
     background_reclamation: false,
 };
 
-const RUNTIME_DBS: [RuntimeDbSpec; 7] = [
+// Elpis: work graphs, opened on first use.
+const WORK_GRAPHS_DB: RuntimeDbSpec = RuntimeDbSpec {
+    label: "work graphs DB",
+    filename: WORK_GRAPHS_DB_FILENAME,
+    kind: DbKind::WorkGraphs,
+    open_phase: "open_work_graphs",
+    migrate_phase: "migrate_work_graphs",
+};
+
+const RUNTIME_DBS: [RuntimeDbSpec; 8] = [
     STATE_DB,
     LOGS_DB,
     GOALS_DB,
@@ -120,6 +130,7 @@ const RUNTIME_DBS: [RuntimeDbSpec; 7] = [
     MEMORIES_V2_DB,
     QUEUE_DB,
     THREAD_HISTORY_DB,
+    WORK_GRAPHS_DB,
 ];
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -176,6 +187,15 @@ impl SqliteConfig {
         self.open_runtime_db(
             MEMORIES_V2_DB,
             &crate::migrations::runtime_memories_migrator(),
+            /*telemetry_override*/ None,
+        )
+        .await
+    }
+
+    pub(crate) async fn open_work_graphs_db(&self) -> anyhow::Result<SqlitePool> {
+        self.open_runtime_db(
+            WORK_GRAPHS_DB,
+            &crate::migrations::runtime_work_graph_migrator(),
             /*telemetry_override*/ None,
         )
         .await

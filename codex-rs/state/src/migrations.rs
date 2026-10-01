@@ -8,6 +8,8 @@ pub(crate) static LOGS_MIGRATOR: Migrator = sqlx_macros::migrate!("./logs_migrat
 pub(crate) static GOALS_MIGRATOR: Migrator = sqlx_macros::migrate!("./goals_migrations");
 pub(crate) static MEMORIES_MIGRATOR: Migrator = sqlx_macros::migrate!("./memory_migrations");
 pub(crate) static QUEUE_MIGRATOR: Migrator = sqlx_macros::migrate!("./queue_migrations");
+// Elpis: work graphs live in their own file (v0.3.0 migrations 0041/0042).
+pub(crate) static WORK_GRAPH_MIGRATOR: Migrator = sqlx_macros::migrate!("./work_graph_migrations");
 pub(crate) static THREAD_HISTORY_MIGRATOR: Migrator =
     sqlx_macros::migrate!("./thread_history_migrations");
 
@@ -38,6 +40,10 @@ pub(crate) fn runtime_logs_migrator() -> Migrator {
 
 pub(crate) fn runtime_goals_migrator() -> Migrator {
     runtime_migrator(&GOALS_MIGRATOR)
+}
+
+pub(crate) fn runtime_work_graph_migrator() -> Migrator {
+    runtime_migrator(&WORK_GRAPH_MIGRATOR)
 }
 
 pub(crate) fn runtime_memories_migrator() -> Migrator {

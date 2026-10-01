@@ -57,6 +57,7 @@ mod thread_attachments;
 mod thread_section_order;
 mod thread_sections;
 mod threads;
+mod work_graphs;
 
 pub use external_agent_config_imports::ExternalAgentConfigImportDetailsRecord;
 pub use external_agent_config_imports::ExternalAgentConfigImportFailureRecord;
@@ -94,6 +95,7 @@ pub struct StateRuntime {
     thread_goals: GoalStore,
     memories: MemoryStore,
     memories_v2: Arc<tokio::sync::OnceCell<MemoryStore>>,
+    work_graphs: Arc<tokio::sync::OnceCell<sqlx::SqlitePool>>,
     thread_queue: SqliteQueueStore,
     thread_updated_at_millis: Arc<AtomicI64>,
     thread_recency_at_millis: Arc<AtomicI64>,
@@ -257,6 +259,7 @@ impl StateRuntime {
             thread_goals: GoalStore::new(Arc::clone(&goals_pool)),
             memories: MemoryStore::new(Arc::clone(&memories_pool), Arc::clone(&pool)),
             memories_v2: Arc::new(tokio::sync::OnceCell::new()),
+            work_graphs: Arc::new(tokio::sync::OnceCell::new()),
             thread_queue: SqliteQueueStore::new(queue_pool),
             pool,
             logs_pool,
@@ -309,6 +312,9 @@ impl StateRuntime {
         self.memories.close().await;
         if let Some(memories) = self.memories_v2.get() {
             memories.close().await;
+        }
+        if let Some(work_graphs) = self.work_graphs.get() {
+            work_graphs.close().await;
         }
         self.thread_goals.close().await;
         self.logs_pool.close().await;

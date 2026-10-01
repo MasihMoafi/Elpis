@@ -9,6 +9,7 @@ codex_rust_crate(
         "migrations/**",
         "queue_migrations/**",
         "thread_history_migrations/**",
+        "work_graph_migrations/**",
     ]),
     crate_name = "codex_state",
     test_shard_counts = {

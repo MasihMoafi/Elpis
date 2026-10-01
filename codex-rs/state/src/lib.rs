@@ -33,6 +33,16 @@ pub use model::QueuedUserSubmissionRecord;
 pub use model::RolloutMigrationCursor;
 pub use model::RolloutMigrationSkippedRollout;
 pub use model::RolloutMigrationState;
+pub use model::WorkGraph;
+pub use model::WorkGraphCreateParams;
+pub use model::WorkGraphEvent;
+pub use model::WorkGraphStatus;
+pub use model::WorkGraphTask;
+pub use model::WorkGraphTaskCreateParams;
+pub use model::WorkGraphTaskKind;
+pub use model::WorkGraphTaskReport;
+pub use model::WorkGraphTaskStatus;
+pub use model::validate_work_graph_tasks;
 /// Preferred entrypoint: owns configuration and metrics.
 pub use runtime::StateRuntime;
 pub use sqlite::SqliteConfig;
