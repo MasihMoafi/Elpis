@@ -3216,6 +3216,8 @@ async fn hosted_web_search_and_standalone_image_generation_follow_runtime_gates(
     let image_generation = probe_with(
         |turn| {
             use_chatgpt_auth(turn);
+            // Elpis turns image generation off by default; these cases test its other gates.
+            set_feature(turn, Feature::ImageGeneration, /*enabled*/ true);
             update_turn_settings_for_test(turn, |settings| {
                 Arc::make_mut(&mut settings.model_info).input_modalities =
                     vec![InputModality::Image];
@@ -3249,6 +3251,8 @@ async fn hosted_web_search_and_standalone_image_generation_follow_runtime_gates(
     let text_only_model = probe_with(
         |turn| {
             use_chatgpt_auth(turn);
+            // Elpis turns image generation off by default; these cases test its other gates.
+            set_feature(turn, Feature::ImageGeneration, /*enabled*/ true);
             update_turn_settings_for_test(turn, |settings| {
                 Arc::make_mut(&mut settings.model_info).input_modalities = vec![];
             });
@@ -3264,6 +3268,7 @@ async fn hosted_web_search_and_standalone_image_generation_follow_runtime_gates(
     let unsupported_provider = probe_with(
         |turn| {
             use_bedrock_provider(turn);
+            set_feature(turn, Feature::ImageGeneration, /*enabled*/ true);
             update_turn_settings_for_test(turn, |settings| {
                 Arc::make_mut(&mut settings.model_info).input_modalities =
                     vec![InputModality::Image];
@@ -3299,6 +3304,8 @@ async fn hosted_web_search_and_standalone_image_generation_follow_runtime_gates(
 
     let code_mode_only = probe(|turn| {
         use_chatgpt_auth(turn);
+        // Elpis turns image generation off by default; these cases test its other gates.
+        set_feature(turn, Feature::ImageGeneration, /*enabled*/ true);
         set_features(turn, &[Feature::CodeModeOnly, Feature::MultiAgentV2]);
         set_web_search_mode(turn, WebSearchMode::Live);
         update_turn_settings_for_test(turn, |settings| {
