@@ -36,30 +36,30 @@ Status: **works**, **partial**, **stub** (says "not in this build yet"), **missi
 
 ## B. Context Ledger & admission
 
-| # | Feature | How to check (in elpis-next) | elpis-next status |
-| - | ------- | ---------------------------- | ----------------- |
-| B1 | Ledger beside the composer, shown by default, top-aligned, never trimmed | Start it and look right of the composer | works (fullscreen mode starts it one row high) |
-| B2 | Tab opens, focuses and closes it (an open popup gets Tab first); Alt+C toggles; Esc closes | Tab, Tab, Alt+C, Esc | works |
-| B3 | Ledger keys: ↑↓/jk, Space/Enter toggle, i all, g e none, w why, Backspace removes an added row | Tab, then each key | works (on screen only; see B5) |
-| B4 | Mouse click toggles a row | none | removed-on-purpose: Masih, 2026-09-17, "no mouse"; the audit flagged it anyway |
-| B5 | The switches decide what the next request carries (`admission.toml`) | Plant a word in an admitted file, then include/exclude it and ask for the word | missing: switches are saved but the model never follows them |
-| B6 | Global and project AGENTS.md rows can be excluded | Exclude AGENTS.md, then ask about its contents | missing: always sent |
-| B7 | Development-rule rows (skills/dev/*.md) are included by default | Put a marker in `~/.elpis-next/skills/dev/AGENTS.md` and ask for it | missing: the row shows INCLUDED but is never sent |
-| B8 | Bundled dev rules (AGENTS.md, CODING_GUIDELINES.md) installed into the home | `ls ~/.elpis-next/skills/dev` | missing |
-| B9 | `skills.dev_rule_roots` (and `ELPIS_DEV_SKILLS_DIRS`) choose the rule folders | Set dev_rule_roots and open the Ledger | missing: key not in config |
-| B10 | `/add <file or dir>` (drag-and-drop paths too) adds an admitted row | `/add NOTES.md`, then ask for its contents | missing: the row shows INCL, the file never reaches the model |
-| B11 | GOAL.md row | `/goal …`, then Tab | missing |
-| B12 | SESSION CONTINUITY section with the ES.md row | Finish a turn, then Tab | missing |
-| B13 | MEMORY.md row: `c` creates it (not admitted), Space admits it | Tab → MEMORY.md → c, Space, then ask | partial: create and toggle work on screen; the contents are never sent (C1) |
-| B14 | CONTEXT WINDOW: measured total against the full window | Send a message and read CONTEXT WINDOW | works |
-| B15 | Category shares (user, agent, reasoning, tools, instructions, developer, tool definitions) | Send two messages; read CONTEXT WINDOW or `/context` | missing: "category attribution unavailable" never changes |
-| B16 | Per-source bytes and token estimates, with a "why" line | Tab, w | works (on screen) |
-| B17 | Ctrl+click a row opens the file (OSC 8 link) | Ctrl+click the MEMORY.md row | unknown: code only |
-| B18 | SMART PRUNE switch (`p`) | Tab, p | stub |
-| B19 | SUBAGENTS switch (`s`) stops the model delegating | Tab, s, then ask it to spawn an agent | unknown: code only (it flips `multi_agent`) |
-| B20 | Subagents listed in the Ledger with live status | Delegate a task and watch the Ledger | unknown: code only |
-| B21 | The count holds the last provider figure when Enter sends (U22) | Note the count, press Enter | unknown |
-| B22 | Only skills you turn on reach the model; bundled skills off (U3) | Put a skill in ~/.agents/skills and ask what skills it has | unknown: fixed in code by 094332d3 after the audit found every skill sent; the installed binary predates the fix |
+| #   | Feature                                                                                        | How to check (in elpis-next)                                                   | elpis-next status                                                                                                |
+| --- | ---------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------- |
+| B1  | Ledger beside the composer, shown by default, top-aligned, never trimmed                       | Start it and look right of the composer                                        | works (fullscreen mode starts it one row high)                                                                   |
+| B2  | Tab opens, focuses and closes it (an open popup gets Tab first); Alt+C toggles; Esc closes     | Tab, Tab, Alt+C, Esc                                                           | works                                                                                                            |
+| B3  | Ledger keys: ↑↓/jk, Space/Enter toggle, i all, g e none, w why, Backspace removes an added row | Tab, then each key                                                             | works (on screen only; see B5)                                                                                   |
+| B4  | Mouse click toggles a row                                                                      | none                                                                           | removed-on-purpose: Masih, 2026-09-17, "no mouse"; the audit flagged it anyway                                   |
+| B5  | The switches decide what the next request carries (`admission.toml`)                           | Plant a word in an admitted file, then include/exclude it and ask for the word | missing: switches are saved but the model never follows them                                                     |
+| B6  | Global and project AGENTS.md rows can be excluded                                              | Exclude AGENTS.md, then ask about its contents                                 | missing: always sent                                                                                             |
+| B7  | Development-rule rows (skills/dev/*.md) are included by default                                | Put a marker in `~/.elpis-next/skills/dev/AGENTS.md` and ask for it            | missing: the row shows INCLUDED but is never sent                                                                |
+| B8  | Bundled dev rules (AGENTS.md, CODING_GUIDELINES.md) installed into the home                    | `ls ~/.elpis-next/skills/dev`                                                  | missing                                                                                                          |
+| B9  | `skills.dev_rule_roots` (and `ELPIS_DEV_SKILLS_DIRS`) choose the rule folders                  | Set dev_rule_roots and open the Ledger                                         | missing: key not in config                                                                                       |
+| B10 | `/add <file or dir>` (drag-and-drop paths too) adds an admitted row                            | `/add NOTES.md`, then ask for its contents                                     | missing: the row shows INCL, the file never reaches the model                                                    |
+| B11 | GOAL.md row                                                                                    | `/goal …`, then Tab                                                            | missing                                                                                                          |
+| B12 | SESSION CONTINUITY section with the ES.md row                                                  | Finish a turn, then Tab                                                        | missing                                                                                                          |
+| B13 | MEMORY.md row: `c` creates it (not admitted), Space admits it                                  | Tab → MEMORY.md → c, Space, then ask                                           | partial: create and toggle work on screen; the contents are never sent (C1)                                      |
+| B14 | CONTEXT WINDOW: measured total against the full window                                         | Send a message and read CONTEXT WINDOW                                         | works                                                                                                            |
+| B15 | Category shares (user, agent, reasoning, tools, instructions, developer, tool definitions)     | Send two messages; read CONTEXT WINDOW or `/context`                           | missing: "category attribution unavailable" never changes                                                        |
+| B16 | Per-source bytes and token estimates, with a "why" line                                        | Tab, w                                                                         | works (on screen)                                                                                                |
+| B17 | Ctrl+click a row opens the file (OSC 8 link)                                                   | Ctrl+click the MEMORY.md row                                                   | unknown: code only                                                                                               |
+| B18 | SMART PRUNE switch (`p`)                                                                       | Tab, p                                                                         | stub                                                                                                             |
+| B19 | SUBAGENTS switch (`s`) stops the model delegating                                              | Tab, s, then ask it to spawn an agent                                          | works for every model since 2026-10-01 (it flips `multi_agent`; GPT-6 models used to ignore it); runtime-checked by config, the `s` key itself not run |
+| B20 | Subagents listed in the Ledger with live status                                                | Delegate a task and watch the Ledger                                           | works: running subagents listed with their latest activity, refreshed as they work (unit-tested; not yet watched live) |
+| B21 | The count holds the last provider figure when Enter sends (U22)                                | Note the count, press Enter                                                    | unknown                                                                                                          |
+| B22 | Only skills you turn on reach the model; bundled skills off (U3)                               | Put a skill in ~/.agents/skills and ask what skills it has                     | unknown: fixed in code by 094332d3 after the audit found every skill sent; the installed binary predates the fix |
 
 ## C. Memory & continuity
 
@@ -132,12 +132,12 @@ Status: **works**, **partial**, **stub** (says "not in this build yet"), **missi
 | F12 | `elpis resume`, `delete`, `archive` and `unarchive` with an id | `elpis-next resume <id>` | kept from Codex (the auditor checked resume) |
 | F13 | `--resume <id>` flag (U14 compatibility) | `elpis-next --resume <id>` | missing: "unexpected argument" |
 | F14 | `\` then Enter inserts a newline (U20) | Type `a\` and press Enter | missing: sends the draft |
-| F15 | Up during a turn brings every queued message plus the draft back into the composer | Queue two, then press Up | missing: only the last, or prompt history |
-| F16 | Enter during a reply queues the message | Type during a reply, press Enter | kept from Codex (steers at the next tool call) |
-| F17 | Empty Enter during a reply interrupts and sends the queue once | Queue one, then Enter on an empty box | unknown |
+| F15 | Up during a turn brings every queued message plus the draft back into the composer | Queue two, then press Up | works (tested: Up pulls every queued message plus the draft) |
+| F16 | Enter during a reply queues the message | Type during a reply, press Enter | works (tested) |
+| F17 | Empty Enter during a reply interrupts and sends the queue once | Queue one, then Enter on an empty box | works (tested, with a no-queue negative); fixed 2026-10-01 |
 | F18 | Tab never queues; Tab belongs to the Ledger | Type during a reply, press Tab | works |
 | F19 | Shift+Tab cycles permissions (Read Only / Default / Full Access), with a lasting footer label | Shift+Tab | missing: cycles Plan (collaboration) mode |
-| F20 | Esc with queued messages sends them (U18; not in v0.3.0) | Queue one mid-reply, press Esc | kept from Codex: interrupts, then sends the queue (U18 asked not to interrupt) |
+| F20 | Esc with queued messages sends them (U18; not in v0.3.0) | Queue one mid-reply, press Esc | works as v0.3.0: Esc hands the queued message to the running turn without stopping it (tested) |
 | F21 | Esc Esc steps back through earlier messages | Esc Esc | kept from Codex (inline pager, because Elpis turns the full-screen transcript off; R19) |
 | F22 | Exit is immediate (U17; not in v0.3.0) | Quit during and after a turn | unknown: idle `/quit` takes about 75 ms in all three builds; mid-turn not measured |
 | F23 | Middle-click pastes the primary selection; mouse copy in the composer | Middle-click in the composer | missing |
@@ -171,8 +171,8 @@ Status: **works**, **partial**, **stub** (says "not in this build yet"), **missi
 
 | # | Feature | How to check (in elpis-next) | elpis-next status |
 | - | ------- | ---------------------------- | ----------------- |
-| I1 | Work-graph engine: acyclic plan check, write-scope conflicts, mandatory verifier, evidence gates (`features.enable_fanout`, off) | `-c features.enable_fanout=true`, then ask for a fan-out | missing |
-| I2 | `workGraph/list` and the work-graph cell under `/agent` | `/agent` | missing |
+| I1 | Work-graph engine: acyclic plan check, write-scope conflicts, mandatory verifier, evidence gates (`features.enable_fanout`, off) | `-c features.enable_fanout=true`, then ask for a fan-out | works, on by default (follows SUBAGENTS); 17 unit + 5 end-to-end tests, runtime-checked on a fake model; not yet run on a real model |
+| I2 | `workGraph/list` and the work-graph cell under `/agent` | `/agent` | works (tested; runtime-checked: `/agent` shows the graph) |
 | I3 | Subagent repairs: another window's threads are not counted, the footer names the current agent, spawn rolls back on failure | Delegate in two windows | unknown |
 
 The subagent switch and the subagent list are B19 and B20.
