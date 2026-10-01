@@ -26,7 +26,6 @@ use std::sync::RwLock;
 
 use codex_utils_redacted_string::RedactedString;
 use serde::Deserialize;
-use serde_json::Value;
 
 use crate::ModelProviderInfo;
 use crate::WireApi;
@@ -274,41 +273,74 @@ pub fn built_in_gateway_providers() -> Vec<(String, ModelProviderInfo)> {
 
 /// Deserializes the `model_providers` table, routing each provider whose
 /// `wire_api` names a gateway protocol through the gateway.
+///
+/// Each provider is read through the caller's deserializer, so a wrapping
+/// deserializer (the strict-config check) still sees keys Codex would ignore.
+/// `WireApi` accepts a gateway protocol name only while this runs, and records it.
 pub fn deserialize_configured_model_providers<'de, D>(
     deserializer: D,
 ) -> Result<HashMap<String, ModelProviderInfo>, D::Error>
 where
     D: serde::Deserializer<'de>,
 {
-    HashMap::<String, Value>::deserialize(deserializer)?
-        .into_iter()
-        .map(|(provider_id, value)| {
-            configured_provider(&provider_id, value)
-                .map(|provider| (provider_id, provider))
-                .map_err(serde::de::Error::custom)
-        })
-        .collect()
+    struct Providers;
+
+    impl<'de> serde::de::Visitor<'de> for Providers {
+        type Value = HashMap<String, ModelProviderInfo>;
+
+        fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            formatter.write_str("a table of model providers")
+        }
+
+        fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
+        where
+            A: serde::de::MapAccess<'de>,
+        {
+            let mut providers = HashMap::new();
+            while let Some(provider_id) = map.next_key::<String>()? {
+                let (provider, wire) =
+                    capture_gateway_wire(|| map.next_value::<ModelProviderInfo>());
+                let mut provider = provider?;
+                if let Some(wire) = wire {
+                    route_through_gateway(&provider_id, wire, &mut provider).map_err(|error| {
+                        serde::de::Error::custom(format!("model_providers.{provider_id}: {error}"))
+                    })?;
+                }
+                providers.insert(provider_id, provider);
+            }
+            Ok(providers)
+        }
+    }
+
+    deserializer.deserialize_map(Providers)
 }
 
-fn configured_provider(provider_id: &str, mut value: Value) -> Result<ModelProviderInfo, String> {
-    let wire = value
-        .get("wire_api")
-        .and_then(Value::as_str)
-        .and_then(GatewayWire::parse);
-    if wire.is_some()
-        && let Some(object) = value.as_object_mut()
-    {
-        object.insert(
-            "wire_api".to_string(),
-            Value::String(WireApi::Responses.to_string()),
-        );
-    }
-    let mut provider: ModelProviderInfo = serde_json::from_value(value)
-        .map_err(|error| format!("model_providers.{provider_id}: {error}"))?;
-    if let Some(wire) = wire {
-        route_through_gateway(provider_id, wire, &mut provider)?;
-    }
-    Ok(provider)
+thread_local! {
+    /// `Some` while a provider is being read: the gateway protocol its `wire_api` named, if any.
+    static CAPTURED_GATEWAY_WIRE: std::cell::Cell<Option<Option<GatewayWire>>> =
+        const { std::cell::Cell::new(None) };
+}
+
+fn capture_gateway_wire<T>(read: impl FnOnce() -> T) -> (T, Option<GatewayWire>) {
+    let outer = CAPTURED_GATEWAY_WIRE.replace(Some(None));
+    let value = read();
+    let wire = CAPTURED_GATEWAY_WIRE.replace(outer).flatten();
+    (value, wire)
+}
+
+/// Elpis seam for `WireApi`'s deserializer: while a configured provider is being read, a
+/// gateway protocol name is recorded and read as `responses`. Anywhere else it stays an error.
+pub(crate) fn accept_gateway_wire_name(value: &str) -> bool {
+    let Some(wire) = GatewayWire::parse(value) else {
+        return false;
+    };
+    CAPTURED_GATEWAY_WIRE.with(|captured| match captured.get() {
+        Some(_) => {
+            captured.set(Some(Some(wire)));
+            true
+        }
+        None => false,
+    })
 }
 
 #[cfg(test)]

@@ -126,6 +126,10 @@ impl<'de> Deserialize<'de> for WireApi {
         D: serde::Deserializer<'de>,
     {
         let value = String::deserialize(deserializer)?;
+        // Elpis: a configured provider may name a gateway protocol (elpis_gateway.rs).
+        if elpis_gateway::accept_gateway_wire_name(&value) {
+            return Ok(Self::Responses);
+        }
         match value.as_str() {
             "responses" => Ok(Self::Responses),
             "chat" => Err(serde::de::Error::custom(CHAT_WIRE_API_REMOVED_ERROR)),
