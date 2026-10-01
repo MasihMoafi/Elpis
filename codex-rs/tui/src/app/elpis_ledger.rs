@@ -601,9 +601,7 @@ impl App {
         }
     }
 
-    /// Mirrors the agent threads into the ledger's SUBAGENTS list.
-    ///
-    /// v0.3.0 also showed each agent's latest activity; that preview is not in this build.
+    /// Mirrors the agent threads into the ledger's SUBAGENTS list, each with its latest activity.
     pub(super) fn sync_agent_ledger(&mut self) {
         let entries = self
             .agent_navigation
@@ -612,6 +610,7 @@ impl App {
             .filter(|(id, _)| Some(*id) != self.primary_thread_id)
             .map(
                 |(id, entry)| crate::chatwidget::agent_ledger::AgentLedgerEntry {
+                    activity: self.agent_latest_activity(id),
                     task: entry
                         .agent_path
                         .clone()
@@ -626,11 +625,19 @@ impl App {
                     } else {
                         "Idle"
                     },
-                    activity: None,
                 },
             )
             .collect();
         self.chat_widget.set_agent_ledger(entries);
+    }
+
+    /// The agent's newest buffered activity (command, message, tool call), if its event store is
+    /// free right now; a busy store is skipped and the next sync fills it in.
+    fn agent_latest_activity(&self, thread_id: ThreadId) -> Option<String> {
+        let channel = self.thread_event_channels.get(&thread_id)?;
+        let store = channel.store.try_lock().ok()?;
+        super::agent_status_feed::AgentStatusThreadPreview::from_store(String::new(), &store)
+            .latest_activity()
     }
 
     /// Handles the Context Ledger's `ElpisAppEvent`s.

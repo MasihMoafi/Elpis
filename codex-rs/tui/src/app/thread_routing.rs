@@ -1199,6 +1199,12 @@ impl App {
         {
             return Ok(());
         }
+        // Elpis: a subagent's step refreshes its activity line in the Ledger.
+        let refreshes_agent_activity = self.primary_thread_id != Some(thread_id)
+            && matches!(
+                &notification,
+                ServerNotification::ItemStarted(_) | ServerNotification::ItemCompleted(_)
+            );
         let mut confirmed_profile = None;
         if let ServerNotification::ThreadSettingsUpdated(notification) = &notification {
             self.apply_thread_settings_to_cached_session(thread_id, &notification.thread_settings)
@@ -1297,6 +1303,9 @@ impl App {
             self.mark_agent_picker_thread_closed(thread_id);
         } else if turn_stopped {
             self.agent_navigation.mark_stopped(thread_id);
+        }
+        if refreshes_agent_activity {
+            self.sync_agent_ledger();
         }
 
         // Settings snapshots do not belong in the transcript queue: apply them in receive order.

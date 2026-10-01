@@ -112,6 +112,11 @@ impl AgentStatusThreadPreview {
         }
     }
 
+    /// Elpis: the newest activity line, shown under the agent in the Ledger's subagent list.
+    pub(super) fn latest_activity(&self) -> Option<String> {
+        self.activity.last().cloned()
+    }
+
     fn title_line(&self) -> Line<'static> {
         vec![
             "  • ".dim(),

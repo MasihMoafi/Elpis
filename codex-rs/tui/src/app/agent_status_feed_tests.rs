@@ -115,3 +115,34 @@ fn agent_status_uses_reasoning_summaries_only() {
     assert!(!rendered.contains("hidden raw reasoning"));
     assert!(!rendered.contains("raw-only reasoning"));
 }
+
+// Elpis: the Ledger's subagent list shows the newest activity, and nothing for a quiet agent.
+#[test]
+fn latest_activity_is_the_newest_summary_and_none_when_quiet() {
+    let mut store = ThreadEventStore::new(/*capacity*/ 8);
+    assert_eq!(
+        AgentStatusThreadPreview::from_store(String::new(), &store).latest_activity(),
+        None
+    );
+    for (id, text) in [("message-1", "first finding"), ("message-2", "second finding")] {
+        store.push_notification(ServerNotification::ItemCompleted(
+            ItemCompletedNotification {
+                item: ThreadItem::AgentMessage {
+                    id: id.to_string(),
+                    text: text.to_string(),
+                    phase: None,
+                    memory_citation: None,
+                    delivery: None,
+                    questions: None,
+                },
+                thread_id: "thread-child".to_string(),
+                turn_id: "turn-1".to_string(),
+                completed_at_ms: 1,
+            },
+        ));
+    }
+    let latest = AgentStatusThreadPreview::from_store(String::new(), &store)
+        .latest_activity()
+        .expect("activity");
+    assert!(latest.contains("second finding"), "{latest}");
+}
