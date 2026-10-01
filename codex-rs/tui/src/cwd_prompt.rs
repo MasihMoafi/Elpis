@@ -3,14 +3,12 @@
 use std::path::Path;
 
 use crate::bottom_pane::picker_option_list;
-use crate::bottom_pane::render_menu_surface;
 use crate::key_hint;
 use crate::legacy_core::config::Config;
 use crate::legacy_core::config::edit::ConfigEditsBuilder;
 use crate::local_settings::LocalSettings;
 use crate::render::Insets;
 use crate::render::renderable::FlexRenderable;
-use crate::render::renderable::Renderable;
 use crate::render::renderable::RenderableExt as _;
 use crate::render::renderable::RenderableItem;
 use crate::tui::FrameRequester;
@@ -342,12 +340,8 @@ impl WidgetRef for &CwdPromptScreen {
             .inset(Insets::vh(/*v*/ 0, /*h*/ 2)),
         );
         column.push(/*flex*/ 1, RenderableItem::Borrowed(&""));
-        let panel = Rect {
-            height: column.desired_height(area.width).min(area.height),
-            ..area
-        };
-        render_menu_surface(panel, buf);
-        column.render(panel, buf);
+        // Elpis: content stays inside the popup border.
+        crate::bottom_pane::render_bordered_panel(area, buf, &column);
     }
 }
 

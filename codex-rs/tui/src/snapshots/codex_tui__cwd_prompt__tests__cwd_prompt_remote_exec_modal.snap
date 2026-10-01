@@ -1,14 +1,18 @@
 ---
 source: tui/src/cwd_prompt.rs
+assertion_line: 422
 expression: rendered
 ---
-
-  Working directory · resume
-  Session = latest cwd recorded in the resumed session
-  Current = your current working directory
-
-› 1. Use session directory (/Users/example/session)
-  2. Use current directory (/Users/example/current)
-  3. Always use session directory
-
-  enter continue · esc use session · ctrl+c quit
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                                                                              │
+│  Working directory · resume                                                  │
+│  Session = latest cwd recorded in the resumed session                        │
+│  Current = your current working directory                                    │
+│                                                                              │
+│› 1. Use session directory (/Users/example/session)                           │
+│  2. Use current directory (/Users/example/current)                           │
+│  3. Always use session directory                                             │
+│                                                                              │
+│  enter continue · esc use session · ctrl+c quit                              │
+│                                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘

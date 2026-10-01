@@ -1,15 +1,19 @@
 ---
 source: tui/src/cwd_prompt.rs
+assertion_line: 398
 expression: terminal.backend()
 ---
-
-  Working directory · fork
-  Session = latest cwd recorded in the forked session                         
-  Current = your current working directory                                    
-
-› 1. Use session directory (/Users/example/session)                             
-  2. Use current directory (/Users/example/current)
-  3. Always use session directory
-  4. Always use current directory
-
-  enter continue · esc use session · ctrl+c quit
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                                                                              │
+│  Working directory · fork                                                    │
+│  Session = latest cwd recorded in the forked session                         │
+│  Current = your current working directory                                    │
+│                                                                              │
+│› 1. Use session directory (/Users/example/session)                           │
+│  2. Use current directory (/Users/example/current)                           │
+│  3. Always use session directory                                             │
+│  4. Always use current directory                                             │
+│                                                                              │
+│  enter continue · esc use session · ctrl+c quit                              │
+│                                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘

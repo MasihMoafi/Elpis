@@ -120,6 +120,25 @@ pub(crate) fn render_menu_surface(area: Rect, buf: &mut Buffer) -> Rect {
     menu_surface_inset(area)
 }
 
+/// Elpis: sizes a bordered panel for `content`, draws the border, and renders the content inside
+/// it, so content never paints over the border.
+pub(crate) fn render_bordered_panel(
+    area: Rect,
+    buf: &mut Buffer,
+    content: &dyn crate::render::renderable::Renderable,
+) {
+    let inner_width = area.width.saturating_sub(2);
+    let panel = Rect {
+        height: content
+            .desired_height(inner_width)
+            .saturating_add(2)
+            .min(area.height),
+        ..area
+    };
+    render_menu_surface(panel, buf);
+    content.render(panel.inset(Insets::vh(/*v*/ 1, /*h*/ 1)), buf);
+}
+
 /// Wrap a styled line while preserving span styles.
 ///
 /// The function clamps `width` to at least one terminal cell so callers can use

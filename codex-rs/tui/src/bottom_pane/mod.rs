@@ -201,6 +201,7 @@ pub(crate) mod popup_consts;
 mod scroll_state;
 mod selection_popup_common;
 pub(crate) use selection_popup_common::menu_surface_padding_height;
+pub(crate) use selection_popup_common::render_bordered_panel;
 pub(crate) use selection_popup_common::render_menu_surface;
 mod selection_row_layout;
 mod selection_tabs;

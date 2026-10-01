@@ -1,20 +1,21 @@
 ---
 source: tui/src/bottom_pane/hooks_browser_view.rs
+assertion_line: 989
 expression: text
 ---
-
-  Hooks
-  Lifecycle hooks from config and
-  enabled plugins.
-
-  Event               Active/Installed
-↑
-  SessionEnd          0/0
-  UserPromptSubmit    0/0
-  SubagentStart       0/0
-  SubagentStop        0/0
-  Stop                0/0
-› Interrupt           0/0
-
-
+┌──────────────────────────────────────┐
+│ Hooks                                │
+│ Lifecycle hooks from config and      │
+│ enabled plugins.                     │
+│                                      │
+│ Event               Active/Installed │
+│↑                                     │
+│  SessionEnd          0/0             │
+│  UserPromptSubmit    0/0             │
+│  SubagentStart       0/0             │
+│  SubagentStop        0/0             │
+│  Stop                0/0             │
+│› Interrupt           0/0             │
+│                                      │
+└──────────────────────────────────────┘
   enter details · esc close

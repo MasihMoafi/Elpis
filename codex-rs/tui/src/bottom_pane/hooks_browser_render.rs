@@ -135,7 +135,13 @@ impl Renderable for HooksBrowserView {
             Layout::vertical([Constraint::Length(header_height), Constraint::Fill(1)])
                 .areas(content);
         header.render(header_area, buf);
-        let body = Rect::new(area.x, body.y, area.width, body.height);
+        // Elpis: rows span the popup but stay inside its border.
+        let body = Rect::new(
+            panel.x.saturating_add(1),
+            body.y,
+            panel.width.saturating_sub(2),
+            body.height,
+        );
         match self.page {
             HooksBrowserPage::Events => render_line_rows(body, buf, rows, self.state),
             HooksBrowserPage::Handlers(event) => {

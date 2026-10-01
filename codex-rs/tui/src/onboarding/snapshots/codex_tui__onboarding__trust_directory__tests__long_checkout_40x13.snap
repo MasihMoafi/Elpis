@@ -1,17 +1,18 @@
 ---
 source: tui/src/onboarding/trust_directory.rs
+assertion_line: 457
 expression: "terminal.backend().to_string().replace('\\\\', \"/\")"
 ---
-  Folder access
-  workspace/…/repository              
-  Trust this folder? Elpis can read,
-  edit, and run files here, subject to
-  your permission settings. Folder
-  settings can run code automatically,
-  even without a model request.
-  Continue only if you trust these
-  files. Your trust decision will be
-  saved.
-› 1. Trust and continue                 
-  2. Quit
-  enter continue · esc quit
+┌──────────────────────────────────────┐
+│  Folder access                       │
+│  workspace/…/repository              │
+│  Trust this folder? Elpis can read,  │
+│  edit, and run files here, subject   │
+│  to your permission settings.        │
+│  Folder settings can run code        │
+│  automatically, even without a       │
+│  model request. Continue only if     │
+│  you trust these files. Your trust   │
+│  decision will be saved.             │
+│› 1. Trust and continue               │
+└──────────────────────────────────────┘

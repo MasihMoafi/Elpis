@@ -989,10 +989,11 @@ mod tests {
         insta::assert_snapshot!(text);
         let selected_y = text
             .lines()
-            .position(|line| line.starts_with("› "))
+            .position(|line| line.starts_with("│› "))
             .unwrap() as u16;
-        assert_eq!(buf[(0, selected_y)].bg, selection_style().bg.unwrap());
-        assert_eq!(buf[(39, selected_y)].bg, selection_style().bg.unwrap());
+        // Elpis: the selection spans the popup inside its border.
+        assert_eq!(buf[(1, selected_y)].bg, selection_style().bg.unwrap());
+        assert_eq!(buf[(38, selected_y)].bg, selection_style().bg.unwrap());
         assert!(text.contains("Interrupt"));
         assert!(text.contains("Active/Installed"));
     }
