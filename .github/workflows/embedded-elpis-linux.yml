@@ -69,7 +69,12 @@ jobs:
       - name: Reuse only unchanged cached Rust sources
         env:
           CACHE_KEY: ${{ steps.cargo_cache.outputs.cache-matched-key }}
-        run: bash scripts/restore-cargo-cache-source-times.sh "$CACHE_KEY"
+        run: |
+          cached_sha=${CACHE_KEY##*-}
+          if [[ $cached_sha =~ ^[0-9a-f]{40}$ ]] && ! git cat-file -e "$cached_sha^{commit}" 2>/dev/null; then
+            git fetch --no-tags --depth=1 origin "$cached_sha"
+          fi
+          bash scripts/restore-cargo-cache-source-times.sh "$CACHE_KEY"
       - name: Installer checks
         run: |
           bash tests/install/test_install.sh
