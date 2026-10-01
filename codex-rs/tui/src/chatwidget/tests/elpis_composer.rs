@@ -96,6 +96,99 @@ async fn enter_while_idle_sends_and_queues_nothing() {
     assert!(chat.bottom_pane.composer_text().is_empty());
 }
 
+// Empty Enter and Esc deliver queued follow-ups during a turn.
+
+fn drain_interrupts(op_rx: &mut tokio::sync::mpsc::UnboundedReceiver<Op>) -> usize {
+    std::iter::from_fn(|| op_rx.try_recv().ok())
+        .filter(|op| matches!(op, Op::Interrupt))
+        .count()
+}
+
+#[tokio::test]
+async fn empty_enter_interrupts_and_sends_the_queued_follow_up() {
+    let (mut chat, _rx, mut op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    chat.thread_id = Some(ThreadId::new());
+    handle_turn_started(&mut chat, "turn-1");
+    queue_follow_ups(&mut chat, &["queued instruction"]);
+
+    chat.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+    chat.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+    assert_eq!(
+        drain_interrupts(&mut op_rx),
+        1,
+        "a second Enter must not interrupt twice"
+    );
+    assert_eq!(chat.queued_user_message_texts(), vec!["queued instruction"]);
+
+    chat.on_interrupted_turn(TurnAbortReason::Interrupted);
+
+    match next_submit_op(&mut op_rx) {
+        Op::UserTurn { items, .. } => assert_eq!(
+            items,
+            vec![UserInput::Text {
+                text: "queued instruction".to_string(),
+                text_elements: Vec::new(),
+            }]
+        ),
+        other => panic!("expected the queued follow-up, got {other:?}"),
+    }
+    assert!(chat.queued_user_message_texts().is_empty());
+}
+
+#[tokio::test]
+async fn empty_enter_with_nothing_queued_does_not_interrupt() {
+    let (mut chat, _rx, mut op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    chat.thread_id = Some(ThreadId::new());
+    handle_turn_started(&mut chat, "turn-1");
+
+    chat.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+
+    assert_eq!(drain_interrupts(&mut op_rx), 0);
+    assert!(chat.queued_user_message_texts().is_empty());
+}
+
+#[tokio::test]
+async fn esc_hands_a_queued_message_to_the_running_turn() {
+    let (mut chat, _rx, mut op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    chat.thread_id = Some(ThreadId::new());
+    handle_turn_started(&mut chat, "turn-1");
+    queue_follow_ups(&mut chat, &["also check downward scrolling"]);
+
+    chat.handle_key_event(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+
+    assert!(chat.queued_user_message_texts().is_empty());
+    assert_eq!(chat.input_queue.pending_steers.len(), 1);
+    assert!(chat.turn_lifecycle.agent_turn_running);
+    assert_eq!(
+        drain_interrupts(&mut op_rx),
+        0,
+        "Esc must not stop the turn"
+    );
+}
+
+#[tokio::test]
+async fn esc_with_a_queued_slash_command_still_interrupts() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    chat.thread_id = Some(ThreadId::new());
+    handle_turn_started(&mut chat, "turn-1");
+    chat.queue_user_message_with_options(
+        UserMessage::from("/compact"),
+        QueuedInputAction::ParseSlash,
+        Vec::new(),
+    );
+
+    chat.handle_key_event(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+
+    assert_eq!(chat.queued_user_message_texts(), vec!["/compact"]);
+    // The bottom pane asks for this interrupt through the app-event channel.
+    let interrupted = std::iter::from_fn(|| rx.try_recv().ok())
+        .any(|event| format!("{event:?}").contains("Interrupt"));
+    assert!(
+        interrupted,
+        "a queued slash command leaves Esc's interrupt alone"
+    );
+}
+
 // Footer hints: the idle Elpis tip, the Ledger hint, and Enter to queue while busy.
 
 /// Renders below the Context Ledger's width threshold so the footer keeps the full row.

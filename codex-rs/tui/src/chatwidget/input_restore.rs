@@ -385,8 +385,9 @@ impl ChatWidget {
                     ShellEscapePolicy::Allow,
                     UserMessageSource::Prompt,
                 );
-            } else if let Some(combined) = self.drain_pending_messages_for_restore() {
-                self.restore_composer_state(combined);
+            } else {
+                // Elpis: an interrupt asked for by empty Enter sends the queue (v0.3.0).
+                self.maybe_send_next_queued_input();
             }
         } else if let Some(combined) = self.drain_pending_messages_for_restore() {
             self.restore_composer_state(combined);

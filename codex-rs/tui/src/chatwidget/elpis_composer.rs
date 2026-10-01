@@ -10,7 +10,11 @@ use crossterm::event::KeyEvent;
 use crossterm::event::KeyEventKind;
 
 use super::ChatWidget;
+use super::user_messages::ShellEscapePolicy;
+use crate::app_command::AppCommand;
+use crate::bottom_pane::QueuedInputAction;
 use crate::key_hint;
+use crate::key_hint::KeyBindingListExt;
 
 impl ChatWidget {
     /// Up pulls every queued follow-up, plus the current draft, back into the composer together,
@@ -37,6 +41,71 @@ impl ChatWidget {
             self.request_redraw();
         }
         true
+    }
+
+    /// Delivers queued follow-ups during a running turn, so a turn that never ends cannot hold
+    /// them back (v0.3.0 `interaction.rs`):
+    ///
+    /// - Enter on an empty composer interrupts the turn; the interrupt then sends the queue.
+    /// - Esc hands the next plain queued message to the running turn as a steer, without
+    ///   cancelling it. A queued slash or shell command, a review turn or a shell-only turn falls
+    ///   through to the ordinary interrupt.
+    pub(super) fn send_queued_follow_ups_on_key(&mut self, key_event: KeyEvent) -> bool {
+        if !self.has_queued_follow_up_messages()
+            || !self.bottom_pane.is_task_running()
+            || !self.bottom_pane.no_modal_or_popup_active()
+            || self.input_queue.suppress_queue_autosend
+        {
+            return false;
+        }
+        if key_hint::plain(KeyCode::Enter).is_press(key_event)
+            && self.bottom_pane.composer_is_empty()
+        {
+            if !self.input_queue.submit_pending_steers_after_interrupt {
+                self.input_queue.submit_pending_steers_after_interrupt = true;
+                if self.submit_op(AppCommand::interrupt()) {
+                    self.pause_active_goal_for_interrupt();
+                } else {
+                    self.input_queue.submit_pending_steers_after_interrupt = false;
+                }
+            }
+            return true;
+        }
+        if self.chat_keymap.interrupt_turn.is_pressed(key_event)
+            && self.input_queue.pending_steers.is_empty()
+            && self.input_queue.rejected_steers_queue.is_empty()
+            && self.next_queued_input_is_plain()
+            && self.turn_lifecycle.agent_turn_running
+            && !self.review.is_review_mode
+            && !self.only_user_shell_commands_running()
+            && !self.should_handle_vim_insert_escape(key_event)
+        {
+            self.steer_next_queued_input();
+            return true;
+        }
+        false
+    }
+
+    fn next_queued_input_is_plain(&self) -> bool {
+        self.input_queue
+            .queued_user_messages
+            .front()
+            .is_some_and(|queued| queued.action == QueuedInputAction::Plain)
+    }
+
+    /// Hands exactly one queued message to the running turn, which receives it at the next
+    /// tool/result boundary.
+    fn steer_next_queued_input(&mut self) {
+        if let Some((queued_message, history_record)) = self.pop_next_queued_user_message() {
+            let source = queued_message.source;
+            self.submit_user_message_with_history_and_shell_escape_policy(
+                queued_message.into_user_message(),
+                history_record,
+                ShellEscapePolicy::Allow,
+                source,
+            );
+        }
+        self.refresh_pending_input_preview();
     }
 
     /// Returns whether the footer should show an Elpis tip instead of ambient status.

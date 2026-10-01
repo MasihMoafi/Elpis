@@ -184,6 +184,10 @@ impl ChatWidget {
         if self.recall_queued_follow_ups_on_up(key_event) {
             return KeyEventAction::None;
         }
+        // Elpis: empty Enter and Esc deliver queued follow-ups during a turn (v0.3.0).
+        if self.send_queued_follow_ups_on_key(key_event) {
+            return KeyEventAction::None;
+        }
 
         if key_event.kind == KeyEventKind::Press
             && self.chat_keymap.edit_queued_message.is_pressed(key_event)
