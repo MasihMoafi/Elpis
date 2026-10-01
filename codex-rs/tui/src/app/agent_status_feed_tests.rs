@@ -124,7 +124,10 @@ fn latest_activity_is_the_newest_summary_and_none_when_quiet() {
         AgentStatusThreadPreview::from_store(String::new(), &store).latest_activity(),
         None
     );
-    for (id, text) in [("message-1", "first finding"), ("message-2", "second finding")] {
+    for (id, text) in [
+        ("message-1", "first finding"),
+        ("message-2", "second finding"),
+    ] {
         store.push_notification(ServerNotification::ItemCompleted(
             ItemCompletedNotification {
                 item: ThreadItem::AgentMessage {
