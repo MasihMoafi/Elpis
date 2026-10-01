@@ -13514,3 +13514,26 @@ wire_api = "anthropic_messages"
     );
     Ok(())
 }
+
+// Elpis: the multi_agent switch (the Ledger's SUBAGENTS) also holds for models that declare V2.
+#[tokio::test]
+async fn multi_agent_off_disables_subagents_even_for_v2_models() -> std::io::Result<()> {
+    let codex_home = TempDir::new()?;
+    let mut config = ConfigBuilder::default()
+        .codex_home(codex_home.path().to_path_buf())
+        .build()
+        .await?;
+    assert_eq!(
+        config.multi_agent_version_for_model(Some(MultiAgentVersion::V2)),
+        MultiAgentVersion::V2
+    );
+    config
+        .features
+        .disable(Feature::Collab)
+        .expect("multi_agent should be disableable");
+    assert_eq!(
+        config.multi_agent_version_for_model(Some(MultiAgentVersion::V2)),
+        MultiAgentVersion::Disabled
+    );
+    Ok(())
+}

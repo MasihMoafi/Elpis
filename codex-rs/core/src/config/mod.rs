@@ -1595,7 +1595,8 @@ impl Config {
     pub(crate) fn multi_agent_version_override(&self) -> Option<MultiAgentVersion> {
         if self.features.enabled(Feature::MultiAgentV2) {
             Some(MultiAgentVersion::V2)
-        } else if !self.agents_enabled {
+        } else if !self.agents_enabled || !self.features.enabled(Feature::Collab) {
+            // Elpis: `multi_agent = false` (the Ledger's SUBAGENTS switch) wins over a model's V2.
             Some(MultiAgentVersion::Disabled)
         } else {
             None
