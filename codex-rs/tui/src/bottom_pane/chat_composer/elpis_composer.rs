@@ -140,18 +140,28 @@ impl ChatComposer {
     /// Enter queues the draft as a follow-up while a turn runs, as v0.3.0 did, instead of
     /// steering the running turn.
     ///
-    /// Slash-led drafts queue too and are validated when they run, as in v0.3.0; Enter inside a
-    /// paste burst stays a newline exactly as it does on the ordinary send path. Returns `None`
-    /// when Enter should take that path.
+    /// A slash command that can run during a turn (`/side`, `/btw`, `/goal`) takes the ordinary
+    /// path and acts at once, as in v0.3.0; one that cannot (`/compact`, `/review`) queues and runs
+    /// after the turn instead of being rejected. Enter inside a paste burst stays a newline exactly
+    /// as it does on the ordinary send path. Returns `None` when Enter should take that path.
     pub(super) fn queue_submission_during_turn(&mut self) -> Option<(InputResult, bool)> {
         // MCP startup also marks the composer busy; only an agent turn queues.
-        if !self.is_task_running || !self.elpis_turn_running {
+        if !self.is_task_running || !self.elpis_turn_running || self.slash_runs_during_turn() {
             return None;
         }
         if self.handle_paste_enter(tokio::time::Instant::now().into_std()) {
             return Some((InputResult::None, true));
         }
         Some(self.handle_submission(/*should_queue*/ true))
+    }
+
+    fn slash_runs_during_turn(&self) -> bool {
+        let slash = self.slash_input();
+        let text = self.draft.textarea.text();
+        slash
+            .bare_command(text)
+            .or_else(|| slash.inline_command(text).map(|inline| inline.command))
+            .is_some_and(|command| command.available_during_task())
     }
 
     /// Updates whether the idle Elpis tip replaces the ambient footer row.

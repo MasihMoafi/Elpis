@@ -301,12 +301,10 @@ async fn during_a_turn_yolo_runs_and_pruning_waits() {
         Ok(AppEvent::Elpis(ElpisAppEvent::EnableYolo))
     );
 
+    // Pruning waits: it queues for after the turn instead of being rejected.
     chat.dispatch_command(SlashCommand::Prune);
-    let history = history_text(&mut rx);
-    assert_eq!(
-        history,
-        vec!["■ '/prune' is disabled while a task is in progress.\n".to_string()]
-    );
+    assert!(history_text(&mut rx).is_empty());
+    assert_eq!(chat.queued_user_message_texts(), vec!["/prune"]);
 }
 
 #[test]

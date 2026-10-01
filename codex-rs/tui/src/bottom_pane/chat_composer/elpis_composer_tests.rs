@@ -159,9 +159,13 @@ fn enter_inside_a_paste_burst_during_a_turn_stays_a_newline() {
 }
 
 #[test]
-fn slash_led_drafts_queue_during_a_turn_without_validation() {
-    // v0.3.0: remapped_queue_handles_slash_led_prompts_while_task_running_without_validation.
-    for text in ["/compact", "/review check regressions", "/does-not-exist"] {
+fn during_a_turn_slash_commands_that_can_run_act_and_the_rest_queue() {
+    // `/side` runs during a turn (v0.3.0: it takes the ordinary path).
+    let mut composer = composer_with_text("/side", /*running*/ true);
+    let (result, _) = press(&mut composer, KeyCode::Enter);
+    assert!(!matches!(result, InputResult::Queued { .. }), "{result:?}");
+    // `/compact` cannot run during a turn, so it queues rather than being rejected.
+    for text in ["/compact", "/review check regressions", "plain follow-up"] {
         let mut composer = composer_with_text(text, /*running*/ true);
         let (result, _) = press(&mut composer, KeyCode::Enter);
         match result {

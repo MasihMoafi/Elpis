@@ -108,6 +108,31 @@ impl ChatWidget {
         self.refresh_pending_input_preview();
     }
 
+    /// During an agent turn, a typed command that must wait (`/compact`, `/review`) is queued to run
+    /// after the turn instead of being rejected, matching how Enter queues plain follow-ups.
+    /// Returns `true` when the command was queued.
+    pub(super) fn queue_command_blocked_by_turn(
+        &mut self,
+        cmd: crate::slash_command::SlashCommand,
+        args: Option<&str>,
+        typed_live: bool,
+    ) -> bool {
+        if !typed_live || !self.turn_lifecycle.agent_turn_running || cmd.available_during_task() {
+            return false;
+        }
+        let text = match args.map(str::trim).filter(|args| !args.is_empty()) {
+            Some(args) => format!("/{} {args}", cmd.command()),
+            None => format!("/{}", cmd.command()),
+        };
+        self.queue_user_message_with_options(
+            super::user_messages::UserMessage::from(text),
+            QueuedInputAction::ParseSlash,
+            Vec::new(),
+        );
+        self.request_redraw();
+        true
+    }
+
     /// Returns whether the footer should show an Elpis tip instead of ambient status.
     ///
     /// Only an empty, idle composer qualifies: once the reader is typing, or a turn is running,

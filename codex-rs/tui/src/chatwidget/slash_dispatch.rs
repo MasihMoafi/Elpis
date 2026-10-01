@@ -174,6 +174,14 @@ impl ChatWidget {
             return;
         }
         if self.slash_command_blocked_by_active_task(cmd, source) {
+            // Elpis: a command that must wait is queued for after the turn.
+            if self.queue_command_blocked_by_turn(
+                cmd,
+                /*args*/ None,
+                source == SlashCommandDispatchSource::Live,
+            ) {
+                return;
+            }
             let message = format!(
                 "'/{}' is disabled while a task is in progress.",
                 cmd.command()
@@ -655,6 +663,10 @@ impl ChatWidget {
             return;
         }
         if self.slash_command_blocked_by_active_task(cmd, SlashCommandDispatchSource::Live) {
+            // Elpis: a command that must wait is queued, with its arguments, for after the turn.
+            if self.queue_command_blocked_by_turn(cmd, Some(&args), /*typed_live*/ true) {
+                return;
+            }
             let message = format!(
                 "'/{}' is disabled while a task is in progress.",
                 cmd.command()
