@@ -362,5 +362,6 @@ run().catch(error => {
   rpc?.dispose();
   server.close();
   if (process.exitCode) console.error("Failure evidence: " + root);
-  else fs.rmSync(root, { recursive: true, force: true });
+  // The app-server may still be flushing its home while it exits.
+  else fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
 });
