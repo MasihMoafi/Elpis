@@ -1,7 +1,10 @@
 ---
 source: tui/src/app/agents_overview_actions_tests.rs
+assertion_line: 29
 expression: "render_bottom_popup(&app.chat_widget, 72)"
 ---
+ Elpis · model gpt-5.6-sol · location /tmp/project
+
   Archive “Current task”?
   This stops any running work in this task and its child agents, then
   archives them. Their history can be restored from the resume picker.

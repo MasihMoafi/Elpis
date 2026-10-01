@@ -1,12 +1,20 @@
 ---
 source: tui/src/chatwidget/tests/popups_and_settings.rs
+assertion_line: 3466
 expression: "render_bottom_popup(&chat, 80)"
 ---
-  Select Model and Effort
+ Elpis · model gpt-5.5 · location /tmp/project
+
+  Choose a mind and effort
+  Provider: OpenAI (openai)
+  Route: the provider's default endpoint
+  Protocol: OpenAI Responses
+  Credential: your OpenAI sign-in
 
 
 › 1. Renamed model                  Older balanced model for straightforward
                                     work.
   2. Shared display name (current)  Legacy coding model.
+  3. Change provider…               Currently OpenAI
 
   enter select · esc back

@@ -1,7 +1,10 @@
 ---
 source: tui/src/chatwidget/tests/popups_and_settings.rs
+assertion_line: 760
 expression: strip_osc8_for_snapshot(&popup)
 ---
+ Elpis · model gpt-5.6-sol · location /tmp/project
+
   Plugins
   Figma · Installed by admin · ChatGPT Marketplace
   Turn Figma files into implementation context.

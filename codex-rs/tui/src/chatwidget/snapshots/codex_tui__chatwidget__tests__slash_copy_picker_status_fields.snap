@@ -1,11 +1,14 @@
 ---
 source: tui/src/chatwidget/tests/slash_commands.rs
+assertion_line: 1813
 expression: "render_bottom_popup(&chat,\n100).replace(&directory,\n\"[[workspace]]\").replace(crate::version::CODEX_CLI_VERSION, \"VERSION\")"
 ---
+ Elpis · model gpt-5.5 · location /tmp/project · New name
+
   Copy to clipboard
 
 
-› 1. Whole status  >_ OpenAI Codex (vVERSION)
+› 1. Whole status  ◆ Elpis (v0.4.0-dev)
   2. Model         gpt-5.5
   3. Directory     [[workspace]]
   4. Thread name   Clipboard example

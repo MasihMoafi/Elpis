@@ -1,7 +1,10 @@
 ---
 source: tui/src/chatwidget/tests/popups_and_settings.rs
+assertion_line: 3213
 expression: "render_bottom_popup(&chat, 80)"
 ---
+ Elpis · model gpt-5.6-sol · location /tmp/project
+
   Enable subagents?
   Subagents are disabled in this TUI session.
 

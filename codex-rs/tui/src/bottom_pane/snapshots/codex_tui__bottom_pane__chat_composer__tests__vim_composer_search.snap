@@ -1,13 +1,14 @@
 ---
 source: tui/src/bottom_pane/chat_composer.rs
+assertion_line: 5346
 expression: terminal.backend()
 ---
-"                                        "
+"│                                       "
 "› a ǵg b हि gg                          " Hidden by multi-width symbols: [(10, " ")]
-"                                        "
-"                                        "
-"                                        "
-"                                        "
-"                                        "
-"                                        "
+"│                                       "
+"│                                       "
+"│                                       "
+"│                                       "
+"│                                       "
+"│                                       "
 "  ?ह                                    "

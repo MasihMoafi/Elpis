@@ -1,7 +1,10 @@
 ---
 source: tui/src/chatwidget/tests/slash_commands.rs
+assertion_line: 1598
 expression: "render_bottom_popup(&chat, 80)"
 ---
+ Elpis · model gpt-5.6-sol · location /tmp/project
+
   Copy to clipboard
 
 

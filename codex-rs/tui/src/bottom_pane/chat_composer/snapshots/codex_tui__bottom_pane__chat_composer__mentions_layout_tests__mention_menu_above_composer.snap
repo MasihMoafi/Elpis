@@ -1,5 +1,6 @@
 ---
 source: tui/src/bottom_pane/chat_composer/mentions_layout_tests.rs
+assertion_line: 187
 expression: buffer_text(&buffer)
 ---
   Mentions
@@ -19,7 +20,7 @@ expression: buffer_text(&buffer)
   Plugin07  Plugin description 07                                         Plugin
 ↓
   enter/tab insert · esc close · ↑/↓ select · ←/→ filter
-
+│
 › @
-
+│
   MODEL STATUS

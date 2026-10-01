@@ -1,11 +1,19 @@
 ---
 source: tui/src/chatwidget/tests/bedrock_catalog_tests.rs
+assertion_line: 83
 expression: "render_bottom_popup(&chat, 100)"
 ---
-  Select Model and Effort
+ Elpis · model openai.gpt-5.6-terra · location /tmp/project
+
+  Choose a mind and effort
+  Provider: OpenAI (openai)
+  Route: the provider's default endpoint
+  Protocol: OpenAI Responses
+  Credential: your OpenAI sign-in
 
 
 › 1. GPT-5.6 Terra (current)  Older balanced model for straightforward work.
   2. GPT-5.6 Luna             Older fast and efficient model.
+  3. Change provider…         Currently OpenAI
 
   enter select · esc back

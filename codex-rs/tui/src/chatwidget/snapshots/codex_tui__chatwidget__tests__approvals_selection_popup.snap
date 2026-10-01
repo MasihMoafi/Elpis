@@ -1,7 +1,10 @@
 ---
 source: tui/src/chatwidget/tests/permissions.rs
+assertion_line: 233
 expression: popup
 ---
+ Elpis · model gpt-5.6-sol · location /tmp/project
+
   Update Model Permissions
 
 

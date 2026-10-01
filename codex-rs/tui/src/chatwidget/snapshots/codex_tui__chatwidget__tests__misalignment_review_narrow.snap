@@ -1,7 +1,10 @@
 ---
 source: tui/src/chatwidget/tests/misalignment_policy_tests.rs
+assertion_line: 270
 expression: "render_bottom_popup(&chat, 38)"
 ---
+ Elpis · model gpt-5.6-sol · location
+
   Chat paused as a precaution
 
 

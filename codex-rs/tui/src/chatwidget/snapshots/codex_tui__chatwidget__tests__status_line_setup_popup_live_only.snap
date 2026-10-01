@@ -1,7 +1,10 @@
 ---
 source: tui/src/chatwidget/tests/status_surface_previews.rs
+assertion_line: 174
 expression: status_line_popup_snapshot(&mut chat)
 ---
+ Elpis · model gpt-5.6-sol · location /tmp/project · Live preview thread
+
   Configure Status Line
   Select which items to display in the status line.
 

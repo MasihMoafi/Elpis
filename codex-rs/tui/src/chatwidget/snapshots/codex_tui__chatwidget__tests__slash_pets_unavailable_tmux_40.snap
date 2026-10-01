@@ -1,7 +1,10 @@
 ---
 source: tui/src/chatwidget/tests/slash_commands.rs
-expression: "render_bottom_popup(&chat, width)"
+assertion_line: 2962
+expression: "render_bottom_popup(&chat, 40)"
 ---
+ Elpis · model gpt-5.6-sol · location /t
+
   Pets unavailable
   Pets are disabled in tmux. Terminal
   images don’t stay pane-local in tmux

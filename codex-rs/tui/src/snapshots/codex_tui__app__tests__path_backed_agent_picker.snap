@@ -1,7 +1,10 @@
 ---
 source: tui/src/app/tests.rs
+assertion_line: 2318
 expression: "render_bottom_popup(&app.chat_widget, 80)"
 ---
+ Elpis · model gpt-5.6-sol · location /tmp/project
+
   Subagents
   Select an agent to watch. ⌥← previous, ⌥→ next.
 

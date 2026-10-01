@@ -1,7 +1,10 @@
 ---
 source: tui/src/chatwidget/realtime_settings_tests.rs
+assertion_line: 25
 expression: "render_bottom_popup(&chat, 80)"
 ---
+ Elpis · model gpt-5.6-sol · location /tmp/project
+
   Select voice
   Applies to your next voice conversation.
 

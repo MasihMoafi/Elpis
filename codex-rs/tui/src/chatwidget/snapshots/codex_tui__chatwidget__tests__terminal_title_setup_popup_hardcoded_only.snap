@@ -1,7 +1,10 @@
 ---
 source: tui/src/chatwidget/tests/status_surface_previews.rs
+assertion_line: 492
 expression: terminal_title_popup_snapshot(&mut chat)
 ---
+ Elpis · model gpt-5.6-sol · location /tmp/project
+
   Configure Terminal Title
   Select which items to display in the terminal title.
 

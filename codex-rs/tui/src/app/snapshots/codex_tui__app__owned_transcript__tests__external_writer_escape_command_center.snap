@@ -1,7 +1,9 @@
 ---
 source: tui/src/app/owned_transcript_tests.rs
+assertion_line: 136
 expression: "crate::chatwidget::tests::helpers::normalize_agent_center_snapshot(crate::chatwidget::tests::helpers::render_bottom_popup(&app.chat_widget,\n96,))"
 ---
+ Elpis · model gpt-test · location /tmp/project
   Agent command center  Group: Project  g
    All 0   Needs you 0   Working 0   Ready 0   Inactive 0                 tab/shift+tab filter
   ────────────────────────────────────────────────────────────────────────────────────────────

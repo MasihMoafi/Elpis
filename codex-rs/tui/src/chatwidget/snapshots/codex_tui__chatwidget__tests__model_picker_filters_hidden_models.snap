@@ -1,10 +1,18 @@
 ---
 source: tui/src/chatwidget/tests/popups_and_settings.rs
+assertion_line: 3640
 expression: popup
 ---
-  Select Model and Effort
+ Elpis · model test-visible-model · location /tmp/project
+
+  Choose a mind and effort
+  Provider: OpenAI (openai)
+  Route: the provider's default endpoint
+  Protocol: OpenAI Responses
+  Credential: your OpenAI sign-in
 
 
 › 1. test-visible-model (current)  test-visible-model description
+  2. Change provider…              Currently OpenAI
 
   enter default · s session · esc back

@@ -1,7 +1,10 @@
 ---
 source: tui/src/chatwidget/tests/popups_and_settings.rs
+assertion_line: 3735
 expression: popup
 ---
+ Elpis · model gpt-5.5 · location /tmp/project
+
   Advanced Reasoning
   ⚠ Consumes usage limits faster
 

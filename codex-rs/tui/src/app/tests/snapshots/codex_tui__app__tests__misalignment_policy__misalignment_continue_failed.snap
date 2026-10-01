@@ -1,8 +1,11 @@
 ---
 source: tui/src/app/tests/misalignment_policy_tests.rs
+assertion_line: 142
 expression: "format!(\"{errors}\\n{}\", render_bottom_popup(&app.chat_widget, 80))"
 ---
 ■ Couldn’t continue this chat. Review its latest status before trying again.
+ Elpis · model gpt-test · location /tmp/project
+
   Chat paused as a precaution
   We couldn’t confirm the agent was interpreting your instructions correctly.
   Review what we detected before deciding to continue.

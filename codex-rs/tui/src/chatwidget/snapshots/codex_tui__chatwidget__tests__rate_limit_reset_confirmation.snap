@@ -1,7 +1,10 @@
 ---
 source: tui/src/chatwidget/tests/usage.rs
+assertion_line: 499
 expression: "render_bottom_popup(&chat, 80)"
 ---
+ Elpis · model gpt-5.6-sol · location /tmp/project
+
   Use this reset?
   Full reset (Weekly + 5 hr) · Expires 09:39 on 18 Jun 2026
 

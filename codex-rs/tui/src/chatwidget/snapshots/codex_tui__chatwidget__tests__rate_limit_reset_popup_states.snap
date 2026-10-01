@@ -1,7 +1,10 @@
 ---
 source: tui/src/chatwidget/tests/usage.rs
+assertion_line: 418
 expression: "states.join(\"\\n---\\n\")"
 ---
+ Elpis · model gpt-5.6-sol · location /tmp/project
+
   Usage limit resets
   Checking your available resets...
 
@@ -10,6 +13,8 @@ expression: "states.join(\"\\n---\\n\")"
 
   enter select · esc back
 ---
+ Elpis · model gpt-5.6-sol · location /tmp/project
+
   Usage limit resets
   2 usage limit resets available.
 
@@ -20,6 +25,8 @@ expression: "states.join(\"\\n---\\n\")"
 
   enter choose · esc back
 ---
+ Elpis · model gpt-5.6-sol · location /tmp/project
+
   Usage limit resets
   You don't have any usage limit resets available.
 
@@ -28,6 +35,8 @@ expression: "states.join(\"\\n---\\n\")"
 
   enter select · esc back
 ---
+ Elpis · model gpt-5.6-sol · location /tmp/project
+
   Usage limit resets
   Couldn't load usage limit resets. Please try again.
 
@@ -37,12 +46,16 @@ expression: "states.join(\"\\n---\\n\")"
 
   enter select · esc back
 ---
+ Elpis · model gpt-5.6-sol · location /tmp/project
+
   Usage limit resets
   Resetting your usage...
 
 
 ›    Using a reset...
 ---
+ Elpis · model gpt-5.6-sol · location /tmp/project
+
   Usage limit resets
   Couldn't reset usage. Please try again.
 
@@ -52,6 +65,8 @@ expression: "states.join(\"\\n---\\n\")"
 
   enter select · esc back
 ---
+ Elpis · model gpt-5.6-sol · location /tmp/project
+
   Usage limit resets
   Your usage does not need a reset right now.
 
@@ -60,6 +75,8 @@ expression: "states.join(\"\\n---\\n\")"
 
   enter select · esc back
 ---
+ Elpis · model gpt-5.6-sol · location /tmp/project
+
   Usage limit resets
   No usage limit resets are available.
 
@@ -68,12 +85,16 @@ expression: "states.join(\"\\n---\\n\")"
 
   enter select · esc back
 ---
+ Elpis · model gpt-5.6-sol · location /tmp/project
+
   Usage limit resets
   Usage reset. Checking your remaining resets...
 
 
 ›    Refreshing...
 ---
+ Elpis · model gpt-5.6-sol · location /tmp/project
+
   Usage limit resets
   Usage reset. You have 1 usage limit reset left.
 
