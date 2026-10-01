@@ -259,7 +259,8 @@ fn model_context_window_override_clamps_to_max_context_window() {
     };
 
     let updated = with_config_overrides(model.clone(), &config);
-    let mut expected = model;
+    // Elpis: the overrides also name Elpis in the bundled instructions.
+    let mut expected = crate::elpis_identity::name_elpis(model);
     expected.context_window = Some(400_000);
 
     assert_eq!(updated, expected);
@@ -274,5 +275,6 @@ fn model_context_window_uses_model_value_without_override() {
 
     let updated = with_config_overrides(model.clone(), &config);
 
-    assert_eq!(updated, model);
+    // Elpis: the overrides also name Elpis in the bundled instructions.
+    assert_eq!(updated, crate::elpis_identity::name_elpis(model));
 }
