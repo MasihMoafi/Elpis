@@ -1298,6 +1298,14 @@ fn add_core_utility_tools(context: &CoreToolPlanContext<'_>, registry: &mut Tool
 #[instrument(level = "trace", skip_all)]
 fn add_collaboration_tools(context: &CoreToolPlanContext<'_>, registry: &mut ToolRegistry) {
     let turn_context = context.turn_context;
+    // Elpis: work graphs follow the subagent switch; a work-graph worker only reports its task.
+    if crate::tools::handlers::work_graphs::register_tools(
+        turn_context,
+        collab_tools_enabled(turn_context, context.model_info),
+        registry,
+    ) {
+        return;
+    }
     if collab_tools_enabled(turn_context, context.model_info) {
         if multi_agent_v2_enabled(turn_context) {
             let model_messages = ResolvedModelMessages::from_model(context.model_info);

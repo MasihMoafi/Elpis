@@ -1361,9 +1361,10 @@ pub const FEATURES: &[FeatureSpec] = &[
     },
     FeatureSpec {
         id: Feature::SpawnCsv,
+        // Elpis: `enable_fanout` gates work graphs, on by default.
         key: "enable_fanout",
-        stage: Stage::Removed,
-        default_enabled: false,
+        stage: Stage::Stable,
+        default_enabled: true,
     },
     FeatureSpec {
         id: Feature::Apps,

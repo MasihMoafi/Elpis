@@ -37,6 +37,9 @@ pub(crate) mod unified_exec;
 mod view_image;
 pub(crate) mod view_image_spec;
 mod wait_for_environment;
+// Elpis: deterministic work graphs (v0.3.0).
+pub(crate) mod work_graphs;
+pub(crate) mod work_graphs_spec;
 
 use codex_file_system::FileSystemSandboxContext;
 use codex_sandboxing::policy_transforms::materialize_additional_permissions_with_context;

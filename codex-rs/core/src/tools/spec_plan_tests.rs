@@ -3409,3 +3409,38 @@ async fn hosted_web_search_and_standalone_image_generation_follow_runtime_gates(
     bedrock_with_standalone_web_search.assert_visible_contains(&["web_search"]);
     bedrock_with_standalone_web_search.assert_visible_lacks(&["web"]);
 }
+
+// Elpis: work graphs are offered by default, follow the subagent switch, and a work-graph
+// worker only reports its task.
+#[tokio::test]
+async fn work_graph_tools_follow_enable_fanout_and_the_subagent_switch() {
+    let coordinator = probe(|turn| {
+        set_feature(turn, Feature::Collab, /*enabled*/ true);
+    })
+    .await;
+    coordinator.assert_visible_contains(&["run_agent_work_graph"]);
+    coordinator.assert_visible_lacks(&["report_agent_work_task"]);
+
+    let subagents_off = probe(|turn| {
+        set_feature(turn, Feature::Collab, /*enabled*/ false);
+    })
+    .await;
+    subagents_off.assert_visible_lacks(&["run_agent_work_graph", "report_agent_work_task"]);
+
+    let fanout_off = probe(|turn| {
+        set_feature(turn, Feature::Collab, /*enabled*/ true);
+        set_feature(turn, Feature::SpawnCsv, /*enabled*/ false);
+    })
+    .await;
+    fanout_off.assert_visible_lacks(&["run_agent_work_graph"]);
+
+    let worker = probe(|turn| {
+        set_feature(turn, Feature::Collab, /*enabled*/ true);
+        turn.session_source = codex_protocol::protocol::SessionSource::SubAgent(
+            codex_protocol::protocol::SubAgentSource::Other("work_graph:42:task".to_string()),
+        );
+    })
+    .await;
+    worker.assert_visible_contains(&["report_agent_work_task"]);
+    worker.assert_visible_lacks(&["run_agent_work_graph", "spawn_agent"]);
+}

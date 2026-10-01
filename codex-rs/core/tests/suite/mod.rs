@@ -246,6 +246,8 @@ mod websocket_fallback;
 mod window_headers;
 #[cfg(target_os = "windows")]
 mod windows_sandbox;
+// Elpis: deterministic work graphs (v0.3.0).
+mod work_graphs;
 mod workspace_roots;
 mod worktree_trust;
 
