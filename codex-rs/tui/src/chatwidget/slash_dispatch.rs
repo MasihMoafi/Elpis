@@ -631,9 +631,12 @@ impl ChatWidget {
         );
         self.input_queue.user_turn_pending_start = true;
         match instructions {
-            Some(instructions) => self.app_event_tx.send(AppEvent::CodexOp(
-                AppCommand::compact_with_instructions(instructions),
-            )),
+            Some(instructions) => {
+                self.app_event_tx
+                    .send(AppEvent::CodexOp(AppCommand::compact_with_instructions(
+                        instructions,
+                    )))
+            }
             None => self.app_event_tx.compact(),
         }
     }
