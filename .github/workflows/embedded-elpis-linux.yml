@@ -31,6 +31,8 @@ jobs:
       CARGO_PROFILE_RELEASE_STRIP: 'symbols'
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          fetch-depth: 2
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: '24'
@@ -64,8 +66,14 @@ jobs:
             codex-rs/target
           key: elpis-040-${{ runner.os }}-${{ hashFiles('codex-rs/Cargo.lock') }}-${{ github.sha }}
           restore-keys: elpis-040-${{ runner.os }}-${{ hashFiles('codex-rs/Cargo.lock') }}-
+      - name: Reuse only unchanged cached Rust sources
+        env:
+          CACHE_KEY: ${{ steps.cargo_cache.outputs.cache-matched-key }}
+        run: bash scripts/restore-cargo-cache-source-times.sh "$CACHE_KEY"
       - name: Installer checks
-        run: bash tests/install/test_install.sh
+        run: |
+          bash tests/install/test_install.sh
+          bash tests/install/test_cache_source_times.sh
       - name: Focused Elpis Rust checks
         working-directory: codex-rs
         run: |
