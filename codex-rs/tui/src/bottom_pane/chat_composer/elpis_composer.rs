@@ -144,7 +144,8 @@ impl ChatComposer {
     /// paste burst stays a newline exactly as it does on the ordinary send path. Returns `None`
     /// when Enter should take that path.
     pub(super) fn queue_submission_during_turn(&mut self) -> Option<(InputResult, bool)> {
-        if !self.is_task_running {
+        // MCP startup also marks the composer busy; only an agent turn queues.
+        if !self.is_task_running || !self.elpis_turn_running {
             return None;
         }
         if self.handle_paste_enter(tokio::time::Instant::now().into_std()) {
@@ -188,6 +189,11 @@ impl ChatComposer {
 }
 
 impl BottomPane {
+    /// Tells the composer whether an agent turn is running, so Enter queues only then.
+    pub(crate) fn set_elpis_turn_running(&mut self, running: bool) {
+        self.composer.elpis_turn_running = running;
+    }
+
     /// Applies the ChatWidget's decision on whether the idle Elpis tip is showing.
     pub(crate) fn set_elpis_tip_visible(&mut self, visible: bool) {
         if self.composer.set_elpis_tip_visible(visible) {

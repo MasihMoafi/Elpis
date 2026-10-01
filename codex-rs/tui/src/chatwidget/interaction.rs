@@ -58,6 +58,9 @@ impl ChatWidget {
     }
 
     pub(crate) fn handle_key_event(&mut self, key_event: KeyEvent) -> KeyEventAction {
+        // Elpis: Enter queues during an agent turn, not while MCP servers start.
+        self.bottom_pane
+            .set_elpis_turn_running(self.turn_lifecycle.agent_turn_running);
         if self.handle_startup_submission_key(key_event) {
             return KeyEventAction::None;
         }

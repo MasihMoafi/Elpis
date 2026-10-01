@@ -624,6 +624,8 @@ pub(crate) struct ChatComposer {
     luna_reserve_active: bool,
     // Elpis: the idle footer tip (v0.3.0).
     elpis_tip: elpis_composer::ElpisFooterTip,
+    /// Elpis: an agent turn (not MCP startup) is running, so Enter queues.
+    elpis_turn_running: bool,
     attachments: AttachmentState,
     placeholder_text: String,
     blocks_direct_input: bool,
@@ -802,6 +804,7 @@ impl ChatComposer {
             effort_observed: false,
             luna_reserve_active: false,
             elpis_tip: elpis_composer::ElpisFooterTip::new(),
+            elpis_turn_running: false,
             attachments: AttachmentState::default(),
             placeholder_text,
             blocks_direct_input: false,

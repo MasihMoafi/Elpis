@@ -14,6 +14,7 @@ fn press(composer: &mut ChatComposer, code: KeyCode) -> (InputResult, bool) {
 fn composer_with_text(text: &str, running: bool) -> ChatComposer {
     let (mut composer, _rx) = new_test_composer();
     composer.set_task_running(running);
+    composer.elpis_turn_running = running;
     composer.draft.textarea.set_text_clearing_elements(text);
     composer
         .draft
@@ -138,6 +139,7 @@ fn enter_sends_the_draft_while_idle() {
 fn enter_inside_a_paste_burst_during_a_turn_stays_a_newline() {
     let (mut composer, _rx) = new_test_composer();
     composer.set_task_running(/*running*/ true);
+    composer.elpis_turn_running = true;
     composer
         .draft
         .paste_burst
