@@ -548,3 +548,134 @@ async fn work_graph_worker_cannot_write_outside_declared_scope() -> Result<()> {
     assert_eq!(tasks[0].status, codex_state::WorkGraphTaskStatus::Failed);
     Ok(())
 }
+
+/// Answers the coordinator with a one-task graph and never answers its worker, so the graph is
+/// still running when the coordinator's turn is interrupted.
+struct HangingWorkerResponder {
+    graph_args_json: String,
+    seen_main: AtomicBool,
+    assignment: Arc<Mutex<Option<(String, String)>>>,
+}
+
+impl Respond for HangingWorkerResponder {
+    fn respond(&self, request: &wiremock::Request) -> ResponseTemplate {
+        let body: Value =
+            serde_json::from_slice(&decode_body_bytes(request)).unwrap_or(Value::Null);
+        if let Some(assignment) = extract_assignment(&body) {
+            *self.assignment.lock().expect("assignment mutex") = Some(assignment);
+            return completed_response("resp-worker-hangs")
+                .set_delay(std::time::Duration::from_secs(600));
+        }
+        if !self.seen_main.swap(true, Ordering::SeqCst) {
+            return sse_response(sse(vec![
+                ev_response_created("resp-main-hang"),
+                ev_function_call(
+                    "call-work-graph-hang",
+                    "run_agent_work_graph",
+                    self.graph_args_json.as_str(),
+                ),
+                ev_completed("resp-main-hang"),
+            ]));
+        }
+        completed_response("resp-default-hang")
+    }
+}
+
+// Elpis: Codex aborts a running tool on Esc; the graph must not leave its workers running.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn interrupting_the_coordinator_cancels_the_graph_and_stops_its_workers() -> Result<()> {
+    let mut args = graph_args();
+    args["tasks"] = json!([args["tasks"][0].clone()]);
+    let assignment = Arc::new(Mutex::new(None));
+    let server = start_mock_server().await;
+    let test = test_codex()
+        .with_config(|config| {
+            for feature in [Feature::SpawnCsv, Feature::Collab] {
+                config
+                    .features
+                    .enable(feature)
+                    .expect("feature should enable");
+            }
+        })
+        .build(&server)
+        .await?;
+    Mock::given(method("POST"))
+        .and(path_regex(".*/responses$"))
+        .respond_with(HangingWorkerResponder {
+            graph_args_json: serde_json::to_string(&args)?,
+            seen_main: AtomicBool::new(false),
+            assignment: Arc::clone(&assignment),
+        })
+        .mount(&server)
+        .await;
+
+    test.codex
+        .start_or_steer_turn(codex_protocol::turn_input::TurnInputRequest::user_input(
+            vec![codex_protocol::user_input::UserInput::Text {
+                text: "run the work graph".into(),
+                text_elements: vec![],
+            }],
+        ))
+        .await?;
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(20);
+    let (graph_id, task_id) = loop {
+        if let Some(assignment) = assignment.lock().expect("assignment mutex").clone() {
+            break assignment;
+        }
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "worker never started"
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    };
+    let db = test.codex.state_db().expect("state db");
+    let worker = loop {
+        let task = db
+            .list_work_graph_tasks(graph_id.as_str())
+            .await?
+            .into_iter()
+            .find(|task| task.task_id == task_id)
+            .expect("task");
+        if let Some(thread_id) = task.assigned_thread_id {
+            break codex_protocol::ThreadId::from_string(&thread_id)?;
+        }
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "worker never assigned"
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    };
+    assert!(
+        test.thread_manager
+            .list_thread_ids()
+            .await
+            .contains(&worker)
+    );
+
+    test.codex
+        .submit(codex_protocol::protocol::Op::Interrupt)
+        .await?;
+
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(20);
+    loop {
+        let graph = db.get_work_graph(graph_id.as_str()).await?.expect("graph");
+        let worker_gone = !test
+            .thread_manager
+            .list_thread_ids()
+            .await
+            .contains(&worker);
+        if graph.status == codex_state::WorkGraphStatus::Cancelled && worker_gone {
+            break;
+        }
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "graph status {:?}, worker still loaded: {}",
+            graph.status,
+            !worker_gone
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
+    let tasks = db.list_work_graph_tasks(graph_id.as_str()).await?;
+    assert_eq!(tasks[0].status, codex_state::WorkGraphTaskStatus::Cancelled);
+    Ok(())
+}
