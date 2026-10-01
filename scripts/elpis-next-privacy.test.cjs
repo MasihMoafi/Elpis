@@ -288,7 +288,10 @@ function outer(binary) {
   for (const caseName of only) {
     const out = path.join(root, caseName);
     fs.mkdirSync(out, { recursive: true });
-    const r = spawnSync("unshare", ["-rn", process.execPath, __filename, "--inner", caseName, binary, out], { encoding: "utf8", timeout: 180_000 });
+    // Root already has namespace privileges; mapping it into a user namespace
+    // removes its access to a private checkout owned by the CI runner.
+    const namespaceFlags = process.getuid() === 0 ? "-n" : "-rn";
+    const r = spawnSync("unshare", [namespaceFlags, process.execPath, __filename, "--inner", caseName, binary, out], { encoding: "utf8", timeout: 180_000 });
     if (r.status !== 0) {
       results.push(`FAIL ${caseName}: harness exited ${r.status}: ${r.stderr}`);
       continue;
