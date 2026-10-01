@@ -67,7 +67,11 @@ impl ChatWidget {
             location.dim(),
         ]);
         // The generated conversation title, which upstream shows in its footer status line.
-        if let Some(title) = self.thread_name.as_deref().and_then(super::normalize_thread_name) {
+        if let Some(title) = self
+            .thread_name
+            .as_deref()
+            .and_then(super::normalize_thread_name)
+        {
             spans.extend([" · ".dim(), Span::raw(title)]);
         }
         Line::from(spans).render(area, buf);
