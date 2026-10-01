@@ -244,7 +244,9 @@ async fn identity_line_sits_directly_above_the_composer() {
     let model = chat.current_model().to_string();
     let identity = rows
         .iter()
-        .position(|row| row.starts_with(&format!(" Elpis · model {model} · location ")))
+        .position(|row| {
+            row.starts_with(&format!(" Elpis · model {model} ")) && row.contains(" · location ")
+        })
         .unwrap_or_else(|| panic!("no identity line in {rows:#?}"));
     let composer_top = rows
         .iter()
@@ -288,4 +290,77 @@ async fn identity_line_names_the_conversation_once_it_has_a_title() {
         "{}",
         identity_row(&chat)
     );
+}
+
+#[tokio::test]
+async fn identity_line_shows_the_reasoning_effort_as_it_changes() {
+    // Alt+, and Alt+. change the effort; the identity line is where that shows (Elpis turns the
+    // upstream status line off).
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.5")).await;
+    let identity_row = |chat: &ChatWidget| {
+        let buffer = with_test_default_colors(DARK, || render_widget(chat, /*width*/ 120));
+        rows(&buffer)
+            .into_iter()
+            .find(|row| row.starts_with(" Elpis · model "))
+            .expect("identity line")
+    };
+    chat.set_reasoning_effort(Some(ReasoningEffortConfig::Low));
+    let low = identity_row(&chat);
+    assert!(
+        low.contains(&format!(
+            "gpt-5.5 {} · location",
+            chat.reasoning_display_name()
+        )),
+        "{low}"
+    );
+
+    chat.set_reasoning_effort(Some(ReasoningEffortConfig::High));
+    let high = identity_row(&chat);
+    assert_ne!(
+        low, high,
+        "the effort change left the identity line unchanged"
+    );
+    assert!(
+        high.contains(&format!(
+            "gpt-5.5 {} · location",
+            chat.reasoning_display_name()
+        )),
+        "{high}"
+    );
+}
+
+#[tokio::test]
+async fn footer_shows_the_goal_state_beside_the_context_indicator() {
+    // Upstream draws the goal state only in its status line, which Elpis turns off.
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.5")).await;
+    chat.set_feature_enabled(Feature::Goals, /*enabled*/ true);
+    chat.show_welcome_banner = false;
+    let screen = |chat: &ChatWidget| {
+        let buffer = with_test_default_colors(DARK, || render_widget(chat, /*width*/ 140));
+        rows(&buffer).join("\n")
+    };
+    assert!(!screen(&chat).contains("Pursuing goal"));
+
+    chat.handle_server_notification(
+        ServerNotification::ThreadGoalUpdated(
+            codex_app_server_protocol::ThreadGoalUpdatedNotification {
+                thread_id: "thread-1".to_string(),
+                turn_id: None,
+                goal: codex_app_server_protocol::ThreadGoal {
+                    thread_id: "thread-1".to_string(),
+                    objective: "Keep improving the benchmark".to_string(),
+                    status: codex_app_server_protocol::ThreadGoalStatus::Active,
+                    token_budget: Some(50_000),
+                    tokens_used: 40_000,
+                    time_used_seconds: 30 * 60,
+                    created_at: 0,
+                    updated_at: 0,
+                },
+            },
+        ),
+        /*replay_kind*/ None,
+    );
+
+    let shown = screen(&chat);
+    assert!(shown.contains("Pursuing goal (40K / 50K)"), "{shown}");
 }

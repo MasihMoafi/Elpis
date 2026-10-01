@@ -73,6 +73,20 @@ impl ElpisFooterTip {
     }
 }
 
+/// Follows the context indicator with the goal state ("Pursuing goal (40K / 50K)", "Goal paused
+/// (/goal resume)", "Goal achieved"), which upstream draws only in its status line.
+pub(super) fn push_goal_status(
+    line: &mut Line<'static>,
+    indicator: Option<&crate::bottom_pane::footer::GoalStatusIndicator>,
+) {
+    if let Some(goal) = crate::bottom_pane::footer::goal_status_indicator_line(indicator) {
+        if !line.spans.is_empty() {
+            line.spans.push(" | ".dim());
+        }
+        line.spans.extend(goal.spans);
+    }
+}
+
 /// Follows the context indicator with v0.3.0's reminder that Tab opens the Context Ledger,
 /// styled like the indicator it follows.
 pub(super) fn push_context_ledger_hint(line: &mut Line<'static>) {

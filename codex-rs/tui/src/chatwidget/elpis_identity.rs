@@ -57,9 +57,12 @@ impl ChatWidget {
         for span in &mut spans {
             span.style = span.style.add_modifier(ratatui::style::Modifier::BOLD);
         }
+        // The reasoning effort follows the model, so Alt+, and Alt+. are visible as they act.
         spans.extend([
             "· model ".dim(),
             Span::raw(model),
+            Span::raw(" "),
+            self.reasoning_display_name().dim(),
             " · location ".dim(),
             location.dim(),
         ]);

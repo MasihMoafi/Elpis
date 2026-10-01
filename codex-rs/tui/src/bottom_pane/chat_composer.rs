@@ -1451,7 +1451,9 @@ impl ChatComposer {
             line.spans.push(" | ".dim());
             line.spans.push(vim_mode);
         }
-        // Elpis: "Tab Context Ledger" beside the context indicator (v0.3.0).
+        // Elpis: the goal state (upstream shows it only in its status line, which Elpis turns
+        // off) and "Tab Context Ledger" beside the context indicator (v0.3.0).
+        elpis_composer::push_goal_status(&mut line, self.footer.goal_status_indicator.as_ref());
         elpis_composer::push_context_ledger_hint(&mut line);
         line
     }
