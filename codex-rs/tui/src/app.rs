@@ -224,6 +224,8 @@ mod elpis_providers;
 mod elpis_continuity;
 // Elpis: the App side of the Context Ledger.
 mod elpis_ledger;
+// Elpis: the work graph under /agent.
+mod elpis_work_graph;
 mod empty_state_policy;
 mod event_dispatch;
 mod exit_summary;

@@ -16,6 +16,7 @@ mod diagnostics;
 mod elpis_activity;
 // Elpis: Context Ledger state types.
 mod elpis_context;
+mod elpis_work_graph;
 mod environment;
 mod experimental_feature;
 mod feedback;
@@ -57,6 +58,7 @@ pub use current_time::*;
 pub use diagnostics::*;
 pub use elpis_activity::*;
 pub use elpis_context::*;
+pub use elpis_work_graph::*;
 pub use environment::*;
 pub use experimental_feature::*;
 pub use feedback::*;

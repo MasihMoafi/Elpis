@@ -1110,6 +1110,23 @@ impl AppServerSession {
             .wrap_err("failed to list loaded threads from app server")
     }
 
+    /// Elpis: the work graphs a root thread ran, newest first.
+    pub(crate) async fn work_graph_list(
+        &mut self,
+        root_thread_id: ThreadId,
+    ) -> Result<codex_app_server_protocol::WorkGraphListResponse> {
+        let request_id = self.next_request_id();
+        self.client
+            .request_typed(ClientRequest::WorkGraphList {
+                request_id,
+                params: codex_app_server_protocol::WorkGraphListParams {
+                    root_thread_id: root_thread_id.to_string(),
+                },
+            })
+            .await
+            .wrap_err("workGraph/list failed during agent graph lookup")
+    }
+
     pub(crate) async fn thread_read(
         &mut self,
         thread_id: ThreadId,

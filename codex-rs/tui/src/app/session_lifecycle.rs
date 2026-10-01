@@ -38,6 +38,8 @@ impl App {
         } else {
             LoadedSubagentBackfill::default()
         };
+        // Elpis: the latest work graph, above the picker (v0.3.0).
+        self.show_latest_work_graph(app_server).await;
         // V2 subagents are identified by canonical paths observed from activity events or loaded
         // thread metadata. A buffered active turn is positive liveness evidence; a completed
         // snapshot is terminal evidence. An empty store does not clear a successful spawn hint.

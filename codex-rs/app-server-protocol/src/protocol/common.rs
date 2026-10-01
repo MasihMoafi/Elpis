@@ -848,6 +848,12 @@ client_request_definitions! {
         serialization: thread_id(params.thread_id),
         response: v2::ThreadReadResponse,
     },
+    // Elpis: the work graphs a root thread ran, for the /agent panel.
+    WorkGraphList => "workGraph/list" {
+        params: v2::WorkGraphListParams,
+        serialization: thread_id(params.root_thread_id),
+        response: v2::WorkGraphListResponse,
+    },
     ThreadTurnsList => "thread/turns/list" {
         params: v2::ThreadTurnsListParams,
         // Explicitly concurrent: this primarily reads append-only rollout storage.
