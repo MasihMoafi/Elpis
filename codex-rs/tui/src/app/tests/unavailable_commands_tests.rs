@@ -21,7 +21,7 @@ async fn unavailable_thread_routes_local_and_recovery_commands() -> Result<()> {
     app.chat_widget.handle_key_event(KeyCode::Enter.into());
     app.chat_widget
         .restore_user_message_to_composer("keep queued input".into());
-    app.chat_widget.handle_key_event(KeyCode::Tab.into());
+    app.chat_widget.handle_key_event(KeyCode::Enter.into());
     assert_eq!(
         app.chat_widget.queued_user_message_texts(),
         vec!["keep queued input"]
@@ -46,8 +46,8 @@ async fn unavailable_thread_routes_local_and_recovery_commands() -> Result<()> {
         "/subagents",
         "/raw on",
         "/warnings",
+        // Elpis: /exit is hidden (R8); /quit still exits.
         "/quit",
-        "/exit",
     ] {
         app.chat_widget
             .restore_user_message_to_composer(command.into());
@@ -66,7 +66,7 @@ async fn unavailable_thread_routes_local_and_recovery_commands() -> Result<()> {
                     | ("/subagents", AppEvent::OpenAgentPicker)
                     | ("/raw on", AppEvent::RawOutputModeChanged { enabled: true })
                     | ("/warnings", AppEvent::OpenWarnings)
-                    | ("/quit" | "/exit", AppEvent::Exit(_))
+                    | ("/quit", AppEvent::Exit(_))
             );
         }
         assert!(dispatched, "{command}");
@@ -84,12 +84,19 @@ async fn unavailable_thread_routes_local_and_recovery_commands() -> Result<()> {
         history.replace(&app.config.cwd.display().to_string(), "/project")
     );
 
+    // Elpis: /status is folded into /usage (R8), which opens the same card as an overlay.
     app.chat_widget
-        .restore_user_message_to_composer("/status".into());
+        .restore_user_message_to_composer("/usage".into());
     app.handle_tui_event(&mut tui, &mut session, TuiEvent::Key(KeyCode::Enter.into()))
         .await?;
-    let history = drain_history(&mut app, &mut tui, &mut session, &mut events).await?;
-    assert!(history.contains("Model:"), "{history}");
+    let mut card = None;
+    while let Ok(event) = events.try_recv() {
+        if let AppEvent::Elpis(crate::elpis_app_event::ElpisAppEvent::OpenUsage(cell)) = &event {
+            card = Some(lines_to_single_string(&cell.display_lines(/*width*/ 80)));
+        }
+    }
+    let card = card.expect("usage card");
+    assert!(card.contains("Model:"), "{card}");
     assert!(app.chat_widget.composer_is_empty());
     assert!(ops.try_recv().is_err());
 

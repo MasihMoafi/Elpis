@@ -256,6 +256,8 @@ impl SlashCommand {
                 | SlashCommand::Quit
                 | SlashCommand::Exit
                 | SlashCommand::Status
+                // Elpis: /status is folded into /usage (R8), so /usage works here too.
+                | SlashCommand::Usage
                 | SlashCommand::Warnings
                 | SlashCommand::DebugConfig
                 | SlashCommand::Pwd
