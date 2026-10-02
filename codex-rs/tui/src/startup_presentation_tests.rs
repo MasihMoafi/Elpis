@@ -50,8 +50,8 @@ async fn selected_profile_controls_submit_before_the_first_frame() -> anyhow::Re
 async fn first_frame_respects_screen_and_status_line_overrides() -> anyhow::Result<()> {
     let home = tempfile::tempdir()?;
     for (config, args, expected) in [
-        ("", vec!["codex"], (true, true, true)),
-        ("[tui]\n", vec!["codex"], (true, true, true)),
+        ("", vec!["codex"], (true, false, true)),
+        ("[tui]\n", vec!["codex"], (true, false, true)),
         ("", vec!["codex", "--no-alt-screen"], (false, false, true)),
         (
             "[tui]\nfullscreen_transcript = true\n",

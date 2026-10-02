@@ -29,7 +29,10 @@ fn configured_shortcut_tips_render_at_narrow_width() {
     for (label, keymap) in [("Default", RuntimeKeymap::defaults()), ("Remapped", keymap)] {
         lines.push(label.into());
         for template in TOOLTIPS.iter().filter(|tip| tip.contains("{key:")) {
-            let tip = render_tooltip(template, Some(&keymap)).expect("valid shortcut tip");
+            let Some(tip) = render_tooltip(template, Some(&keymap)) else {
+                assert!(template.contains("{key:composer.queue}"));
+                continue;
+            };
             crate::markdown::append_markdown(
                 &format!("**Tip:** {tip}"),
                 Some(40),

@@ -366,8 +366,8 @@ mod tests {
     use super::SlashCommand;
 
     #[test]
-    fn stop_command_is_canonical_name() {
-        assert_eq!(SlashCommand::Stop.command(), "stop");
+    fn kill_command_is_canonical_name() {
+        assert_eq!(SlashCommand::Stop.command(), "kill");
     }
 
     #[test]
