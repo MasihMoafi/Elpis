@@ -4771,6 +4771,8 @@ async fn command_center_read_only_open_requests_and_failure_preservation() -> Re
             let error = render_bottom_popup(&app.chat_widget, /*width*/ 96);
             insta::allow_duplicates! {
                 insta::assert_snapshot!(error, @"
+                 Elpis · model gpt-5.6-sol default · location /tmp/project
+
                   Unable to complete action
                   Couldn't load this conversation. Please try again.
 

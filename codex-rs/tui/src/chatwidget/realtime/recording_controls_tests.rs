@@ -71,10 +71,10 @@ async fn voice_composer_preserves_normal_colors_across_microphone_states() {
                 .collect::<Vec<_>>()
                 .join("\n");
             insta::assert_snapshot!(rows, @r"
-            0:
-            1:  voice ● listening ctrl+x mute     /voice stop
-            2:    mic ▁▁▁▁▁▁  codex ▁▁▁▁▁▁
-            3:
+            0: │
+            1: │voice ● listening ctrl+x mute     /voice stop
+            2: │  mic ▁▁▁▁▁▁  codex ▁▁▁▁▁▁
+            3: │
             4: › typed
             ");
         }
@@ -134,10 +134,15 @@ async fn voice_preserves_the_normal_composer_prompt() {
         .handle_key_event(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
     assert_eq!(prompt(&mut chat), Some('›'));
     chat.reset_realtime_conversation();
-    assert_eq!(
-        render_bottom_popup(&chat, /*width*/ 80).chars().next(),
-        Some('›')
+    // Elpis: the identity line and a rail row sit above the prompt; no voice row is left.
+    let rendered = render_bottom_popup(&chat, /*width*/ 80);
+    let mut rows = rendered.lines();
+    assert!(
+        rows.next()
+            .is_some_and(|row| row.starts_with(" Elpis · model"))
     );
+    assert!(rows.next().is_some_and(|row| row.starts_with('│')));
+    assert_eq!(rows.next().and_then(|row| row.chars().next()), Some('›'));
 }
 
 #[tokio::test]
@@ -251,7 +256,10 @@ async fn voice_meters_preserve_silence_and_restart_sampling_after_reset() {
 async fn voice_footer_renders_the_main_conversation_states() {
     let (mut chat, _sender, _events, _ops) = make_chatwidget_manual_with_sender().await;
     activate_voice(&mut chat);
-    chat.thread_name = Some("status line stays visible".to_string());
+    // Elpis: the footer status line is off (R17); the title stays visible on the identity line.
+    // The Context Ledger is hidden so the snapshot shows the voice rows alone.
+    chat.thread_name = Some("title stays".to_string());
+    chat.handle_key_event(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::ALT));
     chat.local_settings.tui.status_line = Some(vec!["thread-title".to_string()]);
     chat.refresh_status_surfaces();
     let mut states = Vec::new();
@@ -328,7 +336,7 @@ async fn voice_footer_renders_the_main_conversation_states() {
         chat.realtime_conversation.transcript = transcript.to_string();
         chat.update_realtime_footer();
         let rendered = render_bottom_popup(&chat, /*width*/ 80);
-        assert!(rendered.contains("status line stays visible"));
+        assert!(rendered.contains("· title stays"));
         states.push(format!("{label}:\n{rendered}"));
     }
 
@@ -605,15 +613,15 @@ async fn clipped_voice_composer_keeps_the_draft_and_cursor_visible() {
 
     insta::assert_snapshot!(layouts.join("\n\n"), @r"
     5 rows:
-    voice ● listening ctrl+x mute     /voice stop
+    │voice ● listening ctrl+x mute     /voice stop
     › typed
 
     6 rows:
-    voice ● listening ctrl+x mute     /voice stop
+    │voice ● listening ctrl+x mute     /voice stop
     › typed
 
     8 rows:
-    voice ● listening ctrl+x mute     /voice stop
+    │voice ● listening ctrl+x mute     /voice stop
     › typed
     ");
 }

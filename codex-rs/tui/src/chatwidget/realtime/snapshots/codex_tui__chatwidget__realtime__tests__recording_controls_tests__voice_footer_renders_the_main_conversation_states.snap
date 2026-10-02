@@ -3,48 +3,60 @@ source: tui/src/chatwidget/realtime/recording_controls_tests.rs
 expression: "states.join(\"\\n\\n\")"
 ---
 connecting:
- voice ◌ connecting                                                 /voice stop
-
+ Elpis · model gpt-5.6-sol default · location /tmp/project · title stays
+│
+│voice ◌ connecting                                                 /voice stop
+│
 › Ask Elpis to do anything
-
-  status line stays visible
+│
+  ? for shortcuts                       100% context left · Tab Context Ledger
 
 listening:
- voice ● listening                                  ctrl+x mute     /voice stop
-   mic ▁▁▁▁▁▁  codex ▁▁▁▁▁▁
-
+ Elpis · model gpt-5.6-sol default · location /tmp/project · title stays
+│
+│voice ● listening                                  ctrl+x mute     /voice stop
+│  mic ▁▁▁▁▁▁  codex ▁▁▁▁▁▁
+│
 › Ask Elpis to do anything
-
-  status line stays visible
+│
+  ? for shortcuts                       100% context left · Tab Context Ledger
 
 speaking:
- voice ● speaking                                   ctrl+x mute     /voice stop
-   mic ▁▁▇▇▇▇  codex ▁▁████
-
+ Elpis · model gpt-5.6-sol default · location /tmp/project · title stays
+│
+│voice ● speaking                                   ctrl+x mute     /voice stop
+│  mic ▁▁▇▇▇▇  codex ▁▁████
+│
 › Ask Elpis to do anything
-
-  status line stays visible
+│
+  ? for shortcuts                       100% context left · Tab Context Ledger
 
 muted:
- voice ◌ muted                                      ctrl+x unmute   /voice stop
-   mic ▁▁▁▁▁▁  codex ▁▁▇▇▇▇
-
+ Elpis · model gpt-5.6-sol default · location /tmp/project · title stays
+│
+│voice ◌ muted                                      ctrl+x unmute   /voice stop
+│  mic ▁▁▁▁▁▁  codex ▁▁▇▇▇▇
+│
 › Ask Elpis to do anything
-
-  status line stays visible
+│
+  ? for shortcuts                       100% context left · Tab Context Ledger
 
 transcript:
- voice ● speaking                                   ctrl+x mute     /voice stop
-   mic ▁▁▄▄▄▄  codex ▁▁▄▄▄▄
-
+ Elpis · model gpt-5.6-sol default · location /tmp/project · title stays
+│
+│voice ● speaking                                   ctrl+x mute     /voice stop
+│  mic ▁▁▄▄▄▄  codex ▁▁▄▄▄▄
+│
 › Ask Elpis to do anything
-
-  status line stays visible
+│
+  ? for shortcuts                       100% context left · Tab Context Ledger
 
 interrupted:
- voice ● heard                                      ctrl+x mute     /voice stop
-   mic ▁▁▄▄▄▄  codex ▁▁▄▄▄▄
-
+ Elpis · model gpt-5.6-sol default · location /tmp/project · title stays
+│
+│voice ● heard                                      ctrl+x mute     /voice stop
+│  mic ▁▁▄▄▄▄  codex ▁▁▄▄▄▄
+│
 › Ask Elpis to do anything
-
-  status line stays visible
+│
+  ? for shortcuts                       100% context left · Tab Context Ledger

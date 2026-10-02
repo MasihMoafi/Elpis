@@ -1990,26 +1990,6 @@ async fn replayed_interrupted_turn_restores_queued_input_to_composer() {
 }
 
 #[tokio::test]
-async fn token_usage_update_refreshes_status_line_with_runtime_context_window() {
-    let mut app = make_test_app().await;
-    app.chat_widget.setup_status_line(
-        vec![crate::bottom_pane::StatusLineItem::ContextWindowSize],
-        /*use_theme_colors*/ true,
-    );
-
-    assert_eq!(app.chat_widget.status_line_text(), None);
-
-    app.handle_thread_event_now(ThreadBufferedEvent::Notification(Box::new(
-        token_usage_notification(ThreadId::new(), "turn-1", Some(950_000)),
-    )));
-
-    assert_eq!(
-        app.chat_widget.status_line_text(),
-        Some("950K window".into())
-    );
-}
-
-#[tokio::test]
 async fn collab_receiver_notification_caches_thread_without_app_server_read() {
     let mut app = make_test_app().await;
     let receiver_thread_id =
@@ -5102,6 +5082,8 @@ async fn side_parent_status_prioritizes_input_over_approval() -> Result<()> {
     )
     .await?;
 
+    // Elpis: the footer is read without the Context Ledger, which narrows it.
+    crate::app::test_support::hide_context_ledger(&mut app);
     let side_footer = |app: &App| {
         render_bottom_popup(&app.chat_widget, /*width*/ 120)
             .lines()

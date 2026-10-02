@@ -396,12 +396,14 @@ async fn initial_session_header_starts_at_the_top_of_the_viewport() {
         })
         .collect::<Vec<_>>()
         .join("\n")
-        .replace(crate::version::CODEX_CLI_VERSION, "<VERSION>");
+        .replace(crate::version::CODEX_CLI_VERSION, "<VERSION>")
+        // Elpis: the header shows the Elpis release.
+        .replace(crate::branding::ELPIS_VERSION, "<VERSION>");
 
     let cwd = widget.config.cwd.as_path().display().to_string();
 
     insta::assert_snapshot!(header.replace(&cwd, "/tmp/project"), @r"
-      >_ OpenAI Codex (v<VERSION>)
+      ◆ Elpis (v<VERSION>)
          /tmp/project
     ");
 }
