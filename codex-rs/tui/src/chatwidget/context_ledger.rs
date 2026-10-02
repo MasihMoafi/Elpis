@@ -265,9 +265,11 @@ impl ChatWidget {
         // with something in it; when it would otherwise do nothing, it closes
         // the panel that claims it.
         if !self.context_ledger.focused {
+            // A dismissible banner ("esc to dismiss") takes Esc before the panel does.
             let esc_is_idle = matches!(key_event.code, KeyCode::Esc)
                 && !self.bottom_pane.has_active_view()
                 && !self.bottom_pane.is_task_running()
+                && !self.bottom_pane.inline_banner_accepts_dismissal()
                 && self.composer_is_empty();
             if esc_is_idle {
                 self.close_context_ledger();

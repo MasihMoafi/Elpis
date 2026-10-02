@@ -226,7 +226,7 @@ impl BottomPane {
             })
     }
 
-    pub(super) fn inline_banner_accepts_dismissal(&self) -> bool {
+    pub(crate) fn inline_banner_accepts_dismissal(&self) -> bool {
         self.inline_banner.as_ref().is_some_and(|banner| {
             banner.visible.get()
                 && !banner.dismissed

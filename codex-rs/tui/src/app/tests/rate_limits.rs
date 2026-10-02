@@ -126,7 +126,11 @@ async fn backend_banner_state_survives_widget_replacement() -> Result<()> {
             app.chat_widget
                 .handle_key_event(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
         }
+        // Elpis: the idle footer tip appears on the next tick, so both sides are drawn after one.
+        app.chat_widget.pre_draw_tick();
         let before = render_bottom_popup(&app.chat_widget, /*width*/ 90);
+        // Elpis: Esc dismisses the banner even while the Context Ledger is open beside it.
+        assert_eq!(before.contains("View usage"), !dismiss, "{before}");
         let mut tui = crate::tui::test_support::make_test_tui()?;
         let init = app.chatwidget_init_for_forked_or_resumed_thread(
             &mut tui,
@@ -251,7 +255,7 @@ async fn stale_rate_limit_reads_preserve_newer_workspace_hard_stop_for_every_ori
                         credits: None,
                     }),
                 );
-                app.chat_widget.insert_str("/usage");
+                app.chat_widget.insert_str("/usage account");
                 app.chat_widget
                     .handle_key_event(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
                 app.chat_widget
