@@ -1,19 +1,20 @@
 ---
 source: tui/src/status_indicator_widget/effects_tests.rs
+assertion_line: 54
 expression: "snapshots.join(\"\\n\\n\")"
 ---
 animations=true, shimmer=false, progress=false
-Working (0s • esc to interrupt)
-[Span::from("Working"), Span::from(" "), Span::from("(0s • ").dim(), Span::from("esc").fg(Color::Rgb(240, 240, 240)).bold().not_dim(), Span::from(" to interrupt)").dim()]
+Elpising… (0s • esc to interrupt)
+[Span::from("E").fg(Color::Rgb(220, 140, 32)), Span::from("l").fg(Color::Rgb(223, 151, 38)), Span::from("p").fg(Color::Rgb(226, 166, 45)), Span::from("i").fg(Color::Rgb(229, 177, 51)), Span::from("s").fg(Color::Rgb(229, 178, 51)), Span::from("i").fg(Color::Rgb(223, 177, 51)), Span::from("n").fg(Color::Rgb(214, 175, 49)), Span::from("g").fg(Color::Rgb(208, 174, 49)), Span::from("…").fg(Color::Rgb(208, 172, 48)), Span::from(" "), Span::from("(0s • ").dim(), Span::from("esc").fg(Color::Rgb(240, 240, 240)).bold().not_dim(), Span::from(" to interrupt)").dim()]
 
 animations=true, shimmer=false, progress=true
-• Working (0s • esc to interrupt)
-[Span::from("Working"), Span::from(" "), Span::from("(0s • ").dim(), Span::from("esc").fg(Color::Rgb(240, 240, 240)).bold().not_dim(), Span::from(" to interrupt)").dim()]
+Elpising… (0s • esc to interrupt)
+[Span::from("p").fg(Color::Rgb(226, 166, 45)), Span::from("i").fg(Color::Rgb(229, 177, 51)), Span::from("s").fg(Color::Rgb(229, 178, 51)), Span::from("i").fg(Color::Rgb(223, 177, 51)), Span::from("n").fg(Color::Rgb(214, 175, 49)), Span::from("g").fg(Color::Rgb(208, 174, 49)), Span::from("…").fg(Color::Rgb(208, 172, 48)), Span::from(" "), Span::from("(0s • ").dim(), Span::from("esc").fg(Color::Rgb(240, 240, 240)).bold().not_dim(), Span::from(" to interrupt)").dim()]
 
 animations=true, shimmer=true, progress=false
-Working (0s • esc to interrupt)
-[Span::from("W").fg(Color::Rgb(128, 128, 128)), Span::from("o").fg(Color::Rgb(128, 128, 128)), Span::from("r").fg(Color::Rgb(128, 128, 128)), Span::from("k").fg(Color::Rgb(128, 128, 128)), Span::from("i").fg(Color::Rgb(128, 128, 128)), Span::from("n").fg(Color::Rgb(128, 128, 128)), Span::from("g").fg(Color::Rgb(128, 128, 128)), Span::from(" "), Span::from("(0s • ").dim(), Span::from("esc").fg(Color::Rgb(240, 240, 240)).bold().not_dim(), Span::from(" to interrupt)").dim()]
+Elpising… (0s • esc to interrupt)
+[Span::from("E").fg(Color::Rgb(220, 140, 32)), Span::from("l").fg(Color::Rgb(223, 151, 38)), Span::from("p").fg(Color::Rgb(226, 166, 45)), Span::from("i").fg(Color::Rgb(229, 177, 51)), Span::from("s").fg(Color::Rgb(229, 178, 51)), Span::from("i").fg(Color::Rgb(223, 177, 51)), Span::from("n").fg(Color::Rgb(214, 175, 49)), Span::from("g").fg(Color::Rgb(208, 174, 49)), Span::from("…").fg(Color::Rgb(208, 172, 48)), Span::from(" "), Span::from("(0s • ").dim(), Span::from("esc").fg(Color::Rgb(240, 240, 240)).bold().not_dim(), Span::from(" to interrupt)").dim()]
 
 animations=false, shimmer=true, progress=true
-Working (0s • esc to interrupt)
-[Span::from("Working"), Span::from(" "), Span::from("(0s • ").dim(), Span::from("esc").fg(Color::Rgb(240, 240, 240)).bold().not_dim(), Span::from(" to interrupt)").dim()]
+Elpising… (0s • esc to interrupt)
+[Span::from("E").fg(Color::Rgb(220, 140, 32)), Span::from("l").fg(Color::Rgb(223, 151, 38)), Span::from("p").fg(Color::Rgb(226, 166, 45)), Span::from("i").fg(Color::Rgb(229, 177, 51)), Span::from("s").fg(Color::Rgb(229, 178, 51)), Span::from("i").fg(Color::Rgb(223, 177, 51)), Span::from("n").fg(Color::Rgb(214, 175, 49)), Span::from("g").fg(Color::Rgb(208, 174, 49)), Span::from("…").fg(Color::Rgb(208, 172, 48)), Span::from(" "), Span::from("(0s • ").dim(), Span::from("esc").fg(Color::Rgb(240, 240, 240)).bold().not_dim(), Span::from(" to interrupt)").dim()]

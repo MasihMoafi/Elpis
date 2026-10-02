@@ -1,9 +1,9 @@
 ---
 source: tui/src/chatwidget/tests/slash_commands.rs
-assertion_line: 1813
+assertion_line: 1714
 expression: "render_bottom_popup(&chat,\n100).replace(&directory,\n\"[[workspace]]\").replace(crate::version::CODEX_CLI_VERSION, \"VERSION\")"
 ---
- Elpis · model gpt-5.5 · location /tmp/project · New name
+ Elpis · model gpt-5.5 default · location /tmp/project · New name
 
   Copy to clipboard
 

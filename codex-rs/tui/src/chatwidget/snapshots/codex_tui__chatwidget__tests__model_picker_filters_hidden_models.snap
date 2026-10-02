@@ -3,7 +3,7 @@ source: tui/src/chatwidget/tests/popups_and_settings.rs
 assertion_line: 3640
 expression: popup
 ---
- Elpis · model test-visible-model · location /tmp/project
+ Elpis · model test-visible-model default · location /tmp/project
 
   Choose a mind and effort
   Provider: OpenAI (openai)

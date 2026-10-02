@@ -1,26 +1,61 @@
 ---
 source: tui/src/chatwidget/tests/status_and_layout.rs
+assertion_line: 5127
 expression: "format!(\"{running_snapshot}\\n\\n{completed_snapshot}\")"
 ---
 running
 activity:
 "                                                                                "
-"• Checking command                                                              "
-"                                                                                "
-"                                                                                "
-"› Ask Elpis to do anything                                                      "
-"                                                                                "
-"  GPT-5.6-Sol default · /tmp/project                                            "
+" Elpis · model gpt-5.6-sol default · location /tmp/project                      "
+"• Checking command                              │CONTEXT LEDGER  context not    "
+"                                                │measured · ≈0 source estimates "
+"│                                               │Tab controls · Alt+C hide ·    "
+"› Ask Elpis to do anything                      │Ctrl+click open file           "
+"│                                               │                               "
+"  tab  open the Context Ledger and choose what …│SMART PRUNE          [···] SYNC"
+"                                                │Reading current thread state   "
+"                                                │Syncing… · /smart-prune on|off "
+"                                                │sets an explicit state         "
+"                                                │                               "
+"                                                │SUBAGENTS             [━━━●] ON"
+"                                                │May delegate to other agents   "
+"                                                │                               "
+"                                                │CONTEXT WINDOW  usage          "
+"                                                │unavailable                    "
+"                                                │Context measurement unavailable"
+"                                                │until the first request        "
+"                                                │snapshot                       "
+"                                                │                               "
+"                                                │No portable context is         "
+"                                                │available.                     "
 history:
 <empty>
 
 completed
 activity:
 "                                                                                "
-"                                                                                "
-"› Ask Elpis to do anything                                                      "
-"                                                                                "
-"  GPT-5.6-Sol default · /tmp/project                                            "
+" Elpis · model gpt-5.6-sol default · location /tmp/project                      "
+"│                                               │CONTEXT LEDGER  context not    "
+"› Ask Elpis to do anything                      │measured · ≈0 source estimates "
+"│                                               │Tab controls · Alt+C hide ·    "
+"  tab  open the Context Ledger and choose what …│Ctrl+click open file           "
+"                                                │                               "
+"                                                │SMART PRUNE          [···] SYNC"
+"                                                │Reading current thread state   "
+"                                                │Syncing… · /smart-prune on|off "
+"                                                │sets an explicit state         "
+"                                                │                               "
+"                                                │SUBAGENTS             [━━━●] ON"
+"                                                │May delegate to other agents   "
+"                                                │                               "
+"                                                │CONTEXT WINDOW  usage          "
+"                                                │unavailable                    "
+"                                                │Context measurement unavailable"
+"                                                │until the first request        "
+"                                                │snapshot                       "
+"                                                │                               "
+"                                                │No portable context is         "
+"                                                │available.                     "
 history:
 • Blocked by hook
   └ command blocked by policy

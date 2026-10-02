@@ -3,7 +3,7 @@ source: tui/src/chatwidget/tests/usage.rs
 assertion_line: 439
 expression: "render_bottom_popup(&chat, 44)"
 ---
- Elpis · model gpt-5.6-sol · location /tmp/p
+ Elpis · model gpt-5.6-sol default · locatio
 
   Usage limit resets
   2 usage limit resets available.

@@ -5,58 +5,60 @@ expression: "snapshots.join(\"\\n---\\n\")"
 ---
 empty (48 columns):
 
-  >_ OpenAI Codex (v<VERSION>)
+  ◆ Elpis (v0.4.0-dev)
      loading
 
   Pull up a prompt.
 
-
+│
 › Ask Elpis to do anything
-
-  ? for shortcuts
+│
+  ? for shortcuts           Tab Context Ledger
 ---
 resuming (48 columns):
 
-  >_ OpenAI Codex (v<VERSION>)
+  ◆ Elpis (v0.4.0-dev)
      loading
   Resuming session…
-
+│
 › Ask Elpis to do anything
-
-  ? for shortcuts
+│
+  ? for shortcuts           Tab Context Ledger
 ---
 forking (48 columns):
 
-  >_ OpenAI Codex (v<VERSION>)
+  ◆ Elpis (v0.4.0-dev)
      loading
   Forking session…
-
+│
 › draft while loading
-
-
+│
+                            Tab Context Ledger
 ---
 multiline (48 columns):
 
-  >_ OpenAI Codex (v<VERSION>)
+  ◆ Elpis (v0.4.0-dev)
      loading
 
   Pull up a prompt.
 
-
+│
 › first startup line
-  second startup line
-
-
+│ second startup line
+│
+                            Tab Context Ledger
 ---
 narrow (18 columns):
 
-  >_ OpenAI Codex…
+  ◆ Elpis (v0.4.0…
      loading
 
   Pull up a promp…
 
-
+│
 › first startup
-  line
-  second startup
-  line
+│ line
+│ second startup
+│ line
+│
+  Tab Context Ledg

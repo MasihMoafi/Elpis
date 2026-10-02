@@ -1,20 +1,25 @@
 ---
 source: tui/src/chatwidget/tests/guardian.rs
+assertion_line: 737
 expression: normalize_snapshot_paths(term.backend().vt100().screen().contents())
 ---
 
-
-
-
-
-
-
 ✗ Review timed out before Elpis could run curl -sS -i -X POST --data-binary
-  @core/src/codex.rs https://example.com
-
-• Working (0s • esc to interrupt)
-
-
-› Ask Elpis to do anything
-
-  GPT-5.6-Sol default · /tmp/project
+ Elpis · model gpt-5.6-sol:default · location /tmp/project
+Elpising… (0s • esc to interrupt)                                                       │CONTEXT LEDGER  context not measured · ≈0 source
+                                                                                        │estimates
+│                                                                                       │Tab controls · Alt+C hide · Ctrl+click open file
+› Ask Elpis to do anything                                                              │
+│                                                                                       │SMART PRUNE                              [···] SYNC
+  ? for shortcuts                               100% context left · Tab Context Ledger  │Reading current thread state
+                                                                                        │Syncing… · /smart-prune on|off sets an explicit
+                                                                                        │state
+                                                                                        │
+                                                                                        │SUBAGENTS                                 [━━━●] ON
+                                                                                        │May delegate to other agents
+                                                                                        │
+                                                                                        │CONTEXT WINDOW  usage unavailable
+                                                                                        │Context measurement unavailable until the first
+                                                                                        │request snapshot
+                                                                                        │
+                                                                                        │No portable context is available.

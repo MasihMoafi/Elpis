@@ -1,13 +1,17 @@
 ---
 source: tui/src/bottom_pane/async_questions/state_tests.rs
+assertion_line: 252
 expression: buffer_text(&buffer)
 ---
-
-  2 of 2
-  Second
-
-  › 1. Other
-    2. Other (write an answer)
-
-  enter submit   ctrl+] skip
-  shift+→ prev question
+┌────────────────────────────────────────────────┐
+│ 2 of 2                                         │
+│ Second                                         │
+│                                                │
+│ › 1. Other                                     │
+│   2. Other (write an answer)                   │
+│                                                │
+│ enter submit   ctrl+] skip                     │
+│ shift+→ prev question                          │
+│                                                │
+│                                                │
+└────────────────────────────────────────────────┘

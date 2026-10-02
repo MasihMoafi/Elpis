@@ -3,7 +3,7 @@ source: tui/src/app/agents_overview_actions_tests.rs
 assertion_line: 642
 expression: "render_bottom_popup(&app.chat_widget, 80)"
 ---
- Elpis · model gpt-5.2 · location /
+ Elpis · model gpt-5.2 default · location /
 
   Could not archive task
   failed to archive session: thread/archive failed: no rollout found for

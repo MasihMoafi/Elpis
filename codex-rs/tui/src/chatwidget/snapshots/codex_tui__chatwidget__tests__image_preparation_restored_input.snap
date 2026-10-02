@@ -1,9 +1,27 @@
 ---
 source: tui/src/chatwidget/tests/composer_submission.rs
-expression: "render_bottom_popup(&chat, 80)"
+assertion_line: 2594
+expression: "normalize_snapshot_paths(render_bottom_popup(&chat, 80))"
 ---
-  [Image #1]
-
-› [Image #2] describe $file
-
-  GPT-5.6-Sol default · /tmp/project
+ Elpis · model gpt-5.6-sol default · location /tmp/project
+│                                               │CONTEXT LEDGER  context not
+│ [Image #1]                                    │measured · ≈0 source estimates
+│                                               │Tab controls · Alt+C hide ·
+› [Image #2] describe $file                     │Ctrl+click open file
+│                                               │
+        100% context left · Tab Context Ledger  │SMART PRUNE          [···] SYNC
+                                                │Reading current thread state
+                                                │Syncing… · /smart-prune on|off
+                                                │sets an explicit state
+                                                │
+                                                │SUBAGENTS             [━━━●] ON
+                                                │May delegate to other agents
+                                                │
+                                                │CONTEXT WINDOW  usage
+                                                │unavailable
+                                                │Context measurement unavailable
+                                                │until the first request
+                                                │snapshot
+                                                │
+                                                │No portable context is
+                                                │available.

@@ -1,13 +1,15 @@
 ---
 source: tui/src/bottom_pane/mcp_server_elicitation.rs
+assertion_line: 2290
 expression: snapshot
 ---
-
-  Field 1/1 (1 required unanswered)
-  Enter a name
-
-  Name
-
-  › Type your answer
-
-  ctrl+x enter to submit | esc to cancel
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ Field 1/1 (1 required unanswered)                                            │
+│ Enter a name                                                                 │
+│                                                                              │
+│ Name                                                                         │
+│ │                                                                            │
+│ › Type your answer                                                           │
+│ │                                                                            │
+│ ctrl+x enter to submit | esc to cancel                                       │
+└──────────────────────────────────────────────────────────────────────────────┘

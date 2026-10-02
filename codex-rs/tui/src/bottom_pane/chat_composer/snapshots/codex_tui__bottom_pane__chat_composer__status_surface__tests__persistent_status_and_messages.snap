@@ -1,5 +1,6 @@
 ---
 source: tui/src/bottom_pane/chat_composer/status_surface_tests.rs
+assertion_line: 267
 expression: "states.join(\"\\n---\\n\")"
 ---
 
@@ -10,9 +11,9 @@ expression: "states.join(\"\\n---\\n\")"
 
 
 
-
+│
 › Ask Elpis
-
+│
   MODEL · ~/project · Context 20% used               Plan mode
   ? for shortcuts
 ---
@@ -24,9 +25,9 @@ expression: "states.join(\"\\n---\\n\")"
 
 
 
-
+│
 › Ask Elpis
-
+│
   MODEL · ~/project · Context 20% used               Plan mode
   Copied selection
 ---
@@ -38,9 +39,9 @@ expression: "states.join(\"\\n---\\n\")"
 
 
 
-
+│
 › Ask Elpis
-
+│
   MODEL · ~/project · Context 20% used               Plan mode
   Ctrl+X waiting for chord
 ---
@@ -52,8 +53,8 @@ expression: "states.join(\"\\n---\\n\")"
 
 
 
-
+│
 › Continue the task
-
+│
   MODEL · ~/project · Context 20% used               Plan mode
-  tab to queue message
+  enter to queue message

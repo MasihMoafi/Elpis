@@ -1,6 +1,6 @@
 ---
 source: tui/src/transcript_view/text_tests.rs
-assertion_line: 245
+assertion_line: 357
 expression: "format!(\"{buffer:?}\")"
 ---
 Buffer {
@@ -16,7 +16,7 @@ Buffer {
         "                        ",
     ],
     styles: [
-        x: 0, y: 0, fg: Magenta, bg: Reset, underline: Reset, modifier: NONE,
+        x: 0, y: 0, fg: Rgb(229, 178, 51), bg: Reset, underline: Reset, modifier: NONE,
         x: 2, y: 0, fg: Rgb(137, 180, 250), bg: Reset, underline: Reset, modifier: NONE,
         x: 8, y: 0, fg: Rgb(205, 214, 244), bg: Reset, underline: Reset, modifier: NONE,
         x: 9, y: 0, fg: Rgb(166, 227, 161), bg: Reset, underline: Reset, modifier: NONE,

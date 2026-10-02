@@ -4,7 +4,7 @@ assertion_line: 48
 expression: "screens.join(\"\\n\\n\")"
 ---
 fullscreen=false, width=80
- Elpis · model gpt-5.6-sol · location /tmp/project
+ Elpis · model gpt-5.6-sol default · location /tmp/project
 
   TUI mode for next launch
 
@@ -16,7 +16,7 @@ fullscreen=false, width=80
   enter select · esc back
 
 fullscreen=false, width=40
- Elpis · model gpt-5.6-sol · location /t
+ Elpis · model gpt-5.6-sol default · loc
 
   TUI mode for next launch
 
@@ -36,7 +36,7 @@ fullscreen=false, width=40
   enter select · esc back
 
 fullscreen=true, width=80
- Elpis · model gpt-5.6-sol · location /tmp/project
+ Elpis · model gpt-5.6-sol default · location /tmp/project
 
   TUI mode for next launch
 
@@ -48,7 +48,7 @@ fullscreen=true, width=80
   enter select · esc back
 
 fullscreen=true, width=40
- Elpis · model gpt-5.6-sol · location /t
+ Elpis · model gpt-5.6-sol default · loc
 
   TUI mode for next launch
 

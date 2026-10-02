@@ -3,7 +3,7 @@ source: tui/src/app/tests.rs
 assertion_line: 2095
 expression: "render_bottom_popup(&app.chat_widget, 80)"
 ---
- Elpis · model gpt-test · location /tmp/project
+ Elpis · model gpt-test default · location /tmp/project
 
   Subagents
   Select an agent to watch. ⌥← previous, ⌥→ next.

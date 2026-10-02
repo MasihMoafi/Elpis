@@ -1,8 +1,15 @@
 ---
 source: tui/src/chatwidget/tests/popups_and_settings.rs
+assertion_line: 3310
 expression: popup
 ---
-  Select Model and Effort
+ Elpis · model gpt-5.5 default · location /tmp/project
+
+  Choose a mind and effort
+  Provider: OpenAI (openai)
+  Route: the provider's default endpoint
+  Protocol: OpenAI Responses
+  Credential: your OpenAI sign-in
 
 
   1. GPT-6.1-Sol (default)  Latest workhorse model for coding and everyday work.
@@ -13,5 +20,5 @@ expression: popup
   6. GPT-5.6-Terra          Older balanced model for straightforward work.
   7. GPT-5.6-Luna           Older fast and efficient model.
 › 8. GPT-5.5 (current)      Legacy coding model.
-
+↓
   enter select · esc back

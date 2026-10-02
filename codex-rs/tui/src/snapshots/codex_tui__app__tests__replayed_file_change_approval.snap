@@ -3,7 +3,7 @@ source: tui/src/app/tests.rs
 assertion_line: 4264
 expression: rendered
 ---
- Elpis · model gpt-test · location /tmp/project
+ Elpis · model gpt-test default · location /tmp/project
 
   Would you like to make the following edits?
 

@@ -1,15 +1,17 @@
 ---
 source: tui/src/bottom_pane/async_questions/state_tests.rs
+assertion_line: 213
 expression: buffer_text(&buffer)
 ---
-
-  2 of 2
-  Second
-
-  › 1. Option 1 is long enough to wrap across
-       rows
-    2. Option 2 is long enough to wrap across
-       rows
-
-  f9 submit   ctrl+] skip   option 1/13
-  shift+→ prev question
+┌────────────────────────────────────────────────┐
+│ 2 of 2                                         │
+│ Second                                         │
+│                                                │
+│ › 1. Option 1 is long enough to wrap across    │
+│      rows                                      │
+│   2. Option 2 is long enough to wrap across    │
+│      rows                                      │
+│                                                │
+│ f9 submit   ctrl+] skip   option 1/13          │
+│ shift+→ prev question                          │
+└────────────────────────────────────────────────┘

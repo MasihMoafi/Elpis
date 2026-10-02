@@ -3,7 +3,7 @@ source: tui/src/chatwidget/tests/popups_and_settings.rs
 assertion_line: 1073
 expression: strip_osc8_for_snapshot(&popup)
 ---
- Elpis · model gpt-5.6-sol · location /tmp/project
+ Elpis · model gpt-5.6-sol default · location /tmp/project
 
   Plugins
   Docs · Can be installed · Local

@@ -4,7 +4,7 @@ assertion_line: 1644
 expression: terminal.backend().vt100().screen().contents()
 ---
 
- Elpis · model gpt-5.6-sol · location /tmp/project
+ Elpis · model gpt-5.6-sol default · location /tmp/project
 
   Would you like to run the following command?
 

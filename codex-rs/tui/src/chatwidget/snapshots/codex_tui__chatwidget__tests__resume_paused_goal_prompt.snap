@@ -3,7 +3,7 @@ source: tui/src/chatwidget/tests/goal_menu.rs
 assertion_line: 83
 expression: "render_bottom_popup(&chat, 100)"
 ---
- Elpis · model gpt-5.6-sol · location /tmp/project
+ Elpis · model gpt-5.6-sol default · location /tmp/project
 
   Resume paused goal?
   Goal: Keep improving the bare goal command until it feels calm and useful.

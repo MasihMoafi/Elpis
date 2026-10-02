@@ -3,7 +3,7 @@ source: tui/src/chatwidget/tests/plan_mode.rs
 assertion_line: 115
 expression: popup
 ---
- Elpis · model gpt-5 · location /tmp/project
+ Elpis · model gpt-5 default · location /tmp/project
 
   Implement this plan?
 

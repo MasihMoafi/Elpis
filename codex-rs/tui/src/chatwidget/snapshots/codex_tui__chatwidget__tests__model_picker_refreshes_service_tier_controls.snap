@@ -1,7 +1,27 @@
 ---
 source: tui/src/chatwidget/tests/popups_and_settings.rs
-expression: "render_bottom_popup(&chat, 80)"
+assertion_line: 3498
+expression: "normalize_snapshot_paths(render_bottom_popup(&chat, 80))"
 ---
-› /fast
-
-  gpt-5.4 default · /tmp/project
+ Elpis · model gpt-5.4 default · location /tmp/project
+│                                               │CONTEXT LEDGER  context not
+› /fast                                         │measured · ≈0 source estimates
+│                                               │Tab controls · Alt+C hide ·
+        100% context left · Tab Context Ledger  │Ctrl+click open file
+                                                │
+                                                │SMART PRUNE          [···] SYNC
+                                                │Reading current thread state
+                                                │Syncing… · /smart-prune on|off
+                                                │sets an explicit state
+                                                │
+                                                │SUBAGENTS             [━━━●] ON
+                                                │May delegate to other agents
+                                                │
+                                                │CONTEXT WINDOW  usage
+                                                │unavailable
+                                                │Context measurement unavailable
+                                                │until the first request
+                                                │snapshot
+                                                │
+                                                │No portable context is
+                                                │available.

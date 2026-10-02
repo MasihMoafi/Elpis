@@ -1,25 +1,26 @@
 ---
 source: tui/src/bottom_pane/chat_composer/sparkle_tests.rs
+assertion_line: 171
 expression: "snapshots.join(\"\\n\\n\")"
 ---
 40 columns, cursor Some((2, 1))
-                            ⠈     ⢀
+│                           ⠈     ⢀
 ›⠁Ask Elpis to do anything         ⠈
-       ⢀            ⠠     ⠄         ⠠
-  ? for shortcuts    100% context left
+│      ⢀            ⠠     ⠄         ⠠
+  100% context left · Tab Context Ledger
 first input:
-
+│
 › x
-
-                     100% context left
+│
+  100% context left · Tab Context Ledger
 
 80 columns, cursor Some((2, 1))
-                            ⠈     ⢀     ⠁                 ⠂
+│                           ⠈     ⢀     ⠁                 ⠂
 ›⠁Ask Elpis to do anything         ⠈      ⠁
-       ⢀            ⠠     ⠄         ⠠          ⢀    ⠠     ⡀
-  ? for shortcuts                                            100% context left
+│      ⢀            ⠠     ⠄         ⠠          ⢀    ⠠     ⡀
+  ? for shortcuts                       100% context left · Tab Context Ledger
 first input:
-
+│
 › x
-
-                                                             100% context left
+│
+                                        100% context left · Tab Context Ledger

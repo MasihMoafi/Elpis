@@ -1,5 +1,6 @@
 ---
 source: tui/src/bottom_pane/pending_input_preview.rs
+assertion_line: 284
 expression: "format!(\"{buf:?}\")"
 ---
 Buffer {
@@ -10,7 +11,7 @@ Buffer {
         "  ↳ This is another message             ",
         "  ↳ This is a third message             ",
         "  ↳ This is a fourth message            ",
-        "    shift+← edit last queued message    ",
+        "    ↑ edit all · enter send             ",
     ],
     styles: [
         x: 0, y: 0, fg: Reset, bg: Reset, underline: Reset, modifier: DIM,
@@ -27,8 +28,9 @@ Buffer {
         x: 0, y: 4, fg: Reset, bg: Reset, underline: Reset, modifier: DIM,
         x: 4, y: 4, fg: Reset, bg: Reset, underline: Reset, modifier: DIM | ITALIC,
         x: 28, y: 4, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
+        x: 0, y: 5, fg: Reset, bg: Reset, underline: Reset, modifier: DIM,
         x: 4, y: 5, fg: Reset, bg: Reset, underline: Reset, modifier: BOLD,
-        x: 11, y: 5, fg: Reset, bg: Reset, underline: Reset, modifier: DIM,
-        x: 36, y: 5, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
+        x: 5, y: 5, fg: Reset, bg: Reset, underline: Reset, modifier: DIM,
+        x: 27, y: 5, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
     ]
 }

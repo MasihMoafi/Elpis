@@ -3,7 +3,7 @@ source: tui/src/chatwidget/tests/luna_reserve_usage_tests.rs
 assertion_line: 199
 expression: "normalize_snapshot_paths(render_bottom_popup(&chat, 80))"
 ---
- Elpis · model gpt-reserve · location /tmp/project
+ Elpis · model gpt-reserve default · location /tmp/project
 
   You’re now using Luna, a faster model for simpler tasks.
   Add credits or upgrade to continue using the most advanced models.

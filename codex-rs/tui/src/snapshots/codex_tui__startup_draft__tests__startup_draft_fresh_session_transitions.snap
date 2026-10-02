@@ -1,82 +1,82 @@
 ---
 source: tui/src/startup_draft_tests.rs
-assertion_line: 285
+assertion_line: 297
 expression: "snapshots.join(\"\\n---\\n\")"
 ---
 resume lookup fallback:
 before:
 
-  >_ OpenAI Codex (v<VERSION>)
+  ◆ Elpis (v0.4.0-dev)
      loading
 
   Pull up a prompt.
   Resuming session…
-
+│
 › draft while loading
-
-
+│
+                            Tab Context Ledger
 after:
 
-  >_ OpenAI Codex (v<VERSION>)
+  ◆ Elpis (v0.4.0-dev)
      loading
 
   Pull up a prompt.
 
-
+│
 › draft while loading
-
-
+│
+                            Tab Context Ledger
 ---
 fork lookup fallback:
 before:
 
-  >_ OpenAI Codex (v<VERSION>)
+  ◆ Elpis (v0.4.0-dev)
      loading
 
   Pull up a prompt.
   Forking session…
-
+│
 › draft while loading
-
-
+│
+                            Tab Context Ledger
 after:
 
-  >_ OpenAI Codex (v<VERSION>)
+  ◆ Elpis (v0.4.0-dev)
      loading
 
   Pull up a prompt.
 
-
+│
 › draft while loading
-
-
+│
+                            Tab Context Ledger
 ---
 resume picker cancellation:
 before:
 hidden while picker owns input
 after:
 
-  >_ OpenAI Codex (v<VERSION>)
+  ◆ Elpis (v0.4.0-dev)
      loading
 
   Pull up a prompt.
 
-
+│
 › Ask Elpis to do anything
-
-  ? for shortcuts
+│
+  ? for shortcuts           Tab Context Ledger
 ---
 fork picker cancellation:
 before:
 hidden while picker owns input
 after:
 
-  >_ OpenAI Codex (v<VERSION>)
+  ◆ Elpis (v0.4.0-dev)
      loading
 
   Pull up a prompt.
 
-
+│
 › Ask Elpis to do anything
-
-  ? for shortcuts
+│
+  ? for shortcuts           Tab Context Ledger

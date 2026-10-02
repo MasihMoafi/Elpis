@@ -3,7 +3,7 @@ source: tui/src/app/tests/user_verification_routes_tests.rs
 assertion_line: 140
 expression: "render_bottom_popup(&app.chat_widget, 80)"
 ---
- Elpis · model gpt-5.6-sol · location /tmp/project
+ Elpis · model gpt-5.6-sol default · location /tmp/project
 
   Approve deployment?
 

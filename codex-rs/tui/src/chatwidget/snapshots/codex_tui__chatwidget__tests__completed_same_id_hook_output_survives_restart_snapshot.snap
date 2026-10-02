@@ -1,16 +1,33 @@
 ---
 source: tui/src/chatwidget/tests/status_and_layout.rs
+assertion_line: 5227
 expression: "hook_status_and_history_snapshot(&chat, \"restarted\", &history)"
 ---
 restarted
 activity:
 "                                                                                "
-"• Checking stop condition                                                       "
-"                                                                                "
-"                                                                                "
-"› Ask Elpis to do anything                                                      "
-"                                                                                "
-"  GPT-5.6-Sol default · /tmp/project                                            "
+" Elpis · model gpt-5.6-sol default · location /tmp/project                      "
+"• Checking stop condition                       │CONTEXT LEDGER  context not    "
+"                                                │measured · ≈0 source estimates "
+"│                                               │Tab controls · Alt+C hide ·    "
+"› Ask Elpis to do anything                      │Ctrl+click open file           "
+"│                                               │                               "
+"  tab  open the Context Ledger and choose what …│SMART PRUNE          [···] SYNC"
+"                                                │Reading current thread state   "
+"                                                │Syncing… · /smart-prune on|off "
+"                                                │sets an explicit state         "
+"                                                │                               "
+"                                                │SUBAGENTS             [━━━●] ON"
+"                                                │May delegate to other agents   "
+"                                                │                               "
+"                                                │CONTEXT WINDOW  usage          "
+"                                                │unavailable                    "
+"                                                │Context measurement unavailable"
+"                                                │until the first request        "
+"                                                │snapshot                       "
+"                                                │                               "
+"                                                │No portable context is         "
+"                                                │available.                     "
 history:
 • Hook stopped
   └ continue with more context

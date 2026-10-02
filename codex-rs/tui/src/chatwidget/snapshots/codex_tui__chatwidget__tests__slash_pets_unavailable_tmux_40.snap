@@ -1,9 +1,9 @@
 ---
 source: tui/src/chatwidget/tests/slash_commands.rs
-assertion_line: 2962
+assertion_line: 2863
 expression: "render_bottom_popup(&chat, 40)"
 ---
- Elpis · model gpt-5.6-sol · location /t
+ Elpis · model gpt-5.6-sol default · loc
 
   Pets unavailable
   Pets are disabled in tmux. Terminal

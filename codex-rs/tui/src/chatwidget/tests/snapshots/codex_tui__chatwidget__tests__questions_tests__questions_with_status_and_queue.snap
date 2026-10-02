@@ -1,14 +1,52 @@
 ---
 source: tui/src/chatwidget/tests/questions_tests.rs
+assertion_line: 614
 expression: "format!(\"OPEN\\n{open}\\n\\nONLY QUESTIONS\\n{completed}\")"
 ---
 OPEN
-• Working (0s • esc to interrupt)
-
-• Queued follow-up inputs
-  ↳ queued follow-up
+ Elpis · model gpt-5.6-sol default · location /tmp/project
+Elpising… (0s • esc to interrupt)               │CONTEXT LEDGER  context not
+                                                │measured · ≈0 source estimates
+• Queued follow-up inputs                       │Tab controls · Alt+C hide ·
+  ↳ queued follow-up                            │Ctrl+click open file
+┌──────────────────────────────────────────────┐│
+│ 1 of 2                                       ││SMART PRUNE          [···] SYNC
+│                                              ││Reading current thread state
+│ Which way?                                   ││Syncing… · /smart-prune on|off
+│                                              ││sets an explicit state
+│ Type your answer                             ││
+│                                              ││SUBAGENTS             [━━━●] ON
+│ enter submit   ctrl+] skip                   ││May delegate to other agents
+│ shift+→ main prompt   shift+← next question  ││
+└──────────────────────────────────────────────┘│CONTEXT WINDOW  usage
+                                                │unavailable
+                                                │Context measurement unavailable
+                                                │until the first request
+                                                │snapshot
+                                                │
+                                                │No portable context is
+                                                │available.
 
 ONLY QUESTIONS
-• Queued follow-up inputs
-  ? 2 questions
-    shift+← to answer
+ Elpis · model gpt-5.6-sol default · location /tmp/project
+• Queued follow-up inputs                       │CONTEXT LEDGER  context not
+  ? 2 questions                                 │measured · ≈0 source estimates
+    shift+← to answer                           │Tab controls · Alt+C hide ·
+│                                               │Ctrl+click open file
+› main draft                                    │
+│                                               │SMART PRUNE          [···] SYNC
+        100% context left · Tab Context Ledger  │Reading current thread state
+                                                │Syncing… · /smart-prune on|off
+                                                │sets an explicit state
+                                                │
+                                                │SUBAGENTS             [━━━●] ON
+                                                │May delegate to other agents
+                                                │
+                                                │CONTEXT WINDOW  usage
+                                                │unavailable
+                                                │Context measurement unavailable
+                                                │until the first request
+                                                │snapshot
+                                                │
+                                                │No portable context is
+                                                │available.

@@ -1,11 +1,27 @@
 ---
 source: tui/src/chatwidget/tests/questions_tests.rs
+assertion_line: 1009
 expression: "render_bottom_popup(&chat, 80)"
 ---
-• Queued follow-up inputs
-
-  Same title?
-
-  My draft for the second question
-
-  enter submit   ctrl+] skip   shift+→ main prompt
+ Elpis · model gpt-5.6-sol default · location /tmp/project
+• Queued follow-up inputs                       │CONTEXT LEDGER  context not
+┌──────────────────────────────────────────────┐│measured · ≈0 source estimates
+│ Same title?                                  ││Tab controls · Alt+C hide ·
+│                                              ││Ctrl+click open file
+│ My draft for the second question             ││
+│                                              ││SMART PRUNE          [···] SYNC
+│ enter submit   ctrl+] skip                   ││Reading current thread state
+│ shift+→ main prompt                          ││Syncing… · /smart-prune on|off
+└──────────────────────────────────────────────┘│sets an explicit state
+                                                │
+                                                │SUBAGENTS             [━━━●] ON
+                                                │May delegate to other agents
+                                                │
+                                                │CONTEXT WINDOW  usage
+                                                │unavailable
+                                                │Context measurement unavailable
+                                                │until the first request
+                                                │snapshot
+                                                │
+                                                │No portable context is
+                                                │available.

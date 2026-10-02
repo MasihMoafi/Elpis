@@ -3,7 +3,7 @@ source: tui/src/chatwidget/tests/permissions.rs
 assertion_line: 635
 expression: "render_bottom_popup(&chat, 120)"
 ---
- Elpis · model gpt-5.6-sol · location /tmp/project
+ Elpis · model gpt-5.6-sol default · location /tmp/project
 
   Your organization requires the default Elpis agent sandbox to continue. Set it up to protect your files and control
   network access.

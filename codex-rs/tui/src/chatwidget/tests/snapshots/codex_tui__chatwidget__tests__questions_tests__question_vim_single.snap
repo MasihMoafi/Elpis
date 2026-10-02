@@ -1,24 +1,52 @@
 ---
 source: tui/src/chatwidget/tests/questions_tests.rs
+assertion_line: 518
 expression: "format!(\"NORMAL\\n{normal}\\n\\nSEARCH\\n{search}\")"
 ---
 NORMAL
-• Queued follow-up inputs
-
-  Which way?
-
-  alpha beta
-  alpha gamma
-                                                                   Vim: Normal
-  enter submit   ctrl+] skip   shift+→ main prompt
+ Elpis · model gpt-5.6-sol default · location /tmp/project
+• Queued follow-up inputs                       │CONTEXT LEDGER  context not
+┌──────────────────────────────────────────────┐│measured · ≈0 source estimates
+│ Which way?                                   ││Tab controls · Alt+C hide ·
+│                                              ││Ctrl+click open file
+│ alpha beta                                   ││
+│ alpha gamma                                  ││SMART PRUNE          [···] SYNC
+│                                  Vim: Normal ││Reading current thread state
+│ enter submit   ctrl+] skip                   ││Syncing… · /smart-prune on|off
+│ shift+→ main prompt                          ││sets an explicit state
+└──────────────────────────────────────────────┘│
+                                                │SUBAGENTS             [━━━●] ON
+                                                │May delegate to other agents
+                                                │
+                                                │CONTEXT WINDOW  usage
+                                                │unavailable
+                                                │Context measurement unavailable
+                                                │until the first request
+                                                │snapshot
+                                                │
+                                                │No portable context is
+                                                │available.
 
 SEARCH
-• Queued follow-up inputs
-
-  Which way?
-
-  alpha beta
-  alpha gamma
-  /gamma
-                                                                   Vim: Normal
-  enter submit   ctrl+] skip   shift+→ main prompt
+ Elpis · model gpt-5.6-sol default · location /tmp/project
+• Queued follow-up inputs                       │CONTEXT LEDGER  context not
+┌──────────────────────────────────────────────┐│measured · ≈0 source estimates
+│ Which way?                                   ││Tab controls · Alt+C hide ·
+│                                              ││Ctrl+click open file
+│ alpha beta                                   ││
+│ alpha gamma                                  ││SMART PRUNE          [···] SYNC
+│ /gamma                                       ││Reading current thread state
+│                                  Vim: Normal ││Syncing… · /smart-prune on|off
+│ enter submit   ctrl+] skip                   ││sets an explicit state
+│ shift+→ main prompt                          ││
+└──────────────────────────────────────────────┘│SUBAGENTS             [━━━●] ON
+                                                │May delegate to other agents
+                                                │
+                                                │CONTEXT WINDOW  usage
+                                                │unavailable
+                                                │Context measurement unavailable
+                                                │until the first request
+                                                │snapshot
+                                                │
+                                                │No portable context is
+                                                │available.

@@ -4,7 +4,7 @@ assertion_line: 2772
 expression: normalized_backend_snapshot(terminal.backend())
 ---
 "                                                                                                    "
-" Elpis · model gpt-5.6-sol · location /tmp/project                                                  "
+" Elpis · model gpt-5.6-sol default · location /tmp/project                                          "
 "                                                                                                    "
 "  Would you like to run the following command?                                                      "
 "                                                                                                    "

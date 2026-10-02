@@ -1,13 +1,14 @@
 ---
 source: tui/src/keymap_setup.rs
+assertion_line: 1245
 expression: "render_picker(params, 120)"
 ---
 
   Keymap
   All configurable shortcuts.
-  150 actions, 0 customized, 5 unbound.
+  150 actions, 0 customized, 6 unbound.
 
-   All   Common   Customized (0)   Unbound (5)   App   Composer   Editor   Vim   Navigation   Agents   Approval      ›
+   All   Common   Customized (0)   Unbound (6)   App   Composer   Editor   Vim   Navigation   Agents   Approval      ›
 
   Type to search shortcuts
 
@@ -32,7 +33,7 @@ expression: "render_picker(params, 120)"
   Chat           Toggle Voice               f8
   Chat           Toggle Voice Mute          ctrl-x
   Composer       Submit                     enter
-  Composer       Queue                      tab
+  Composer     - Queue                      unbound
   Composer       Toggle Shortcuts           ?, shift-?
   Composer       History Search Previous    ctrl-r
 ↓

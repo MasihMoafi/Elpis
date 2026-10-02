@@ -1,11 +1,12 @@
 ---
 source: tui/src/bottom_pane/mod.rs
+assertion_line: 3400
 expression: "render_snapshot(&pane, area)"
 ---
 • Queued follow-up inputs                       
   ↳ Queued follow-up question                   
-    shift+← edit last queued message            
-                                                
+    ↑ edit all · enter send                     
+│                                               
 › Ask Elpis to do anything                      
-                                                
-  ? for shortcuts            100% context left
+│                                               
+        100% context left · Tab Context Ledger

@@ -1,45 +1,46 @@
 ---
 source: tui/src/bottom_pane/chat_composer/sparkle_tests.rs
+assertion_line: 367
 expression: "snapshots.join(\"\\n\\n\")"
 ---
 shortcut help:
   Keyboard shortcuts
 
   Compose                       Session
-  /        Commands             tab     Send message
-  @        Mention files        ⌥,      Less reasoning
-  !        Shell command        ⌥.      More reasoning
+  /        Commands             enter   Send message
+  @        Mention files        ⌥+,     Less reasoning
+  !        Shell command        ⌥+.     More reasoning
   ctrl+j   New line             f4      Inspect activity
   ctrl+v   Paste image          ctrl+c  Quit
   ctrl+g   External editor
   ctrl+r   Search history       Transcript (open first)
-  esc esc  Edit last message    ctrl+t                Open transcript
-                                f3                    Find text
-                                pgup / pgdn           Scroll
-                                ctrl+space            Start selection
-                                ctrl+home / ctrl+end  Top / latest
-                                shift+⌥, / shift+⌥.   Top / latest
+  esc esc  Edit last message    ctrl+t                 Open transcript
+                                f3                     Find text
+                                pgup / pgdn            Scroll
+                                ctrl+space             Start selection
+                                ctrl+home / ctrl+end   Top / latest
+                                shift+⌥+, / shift+⌥+.  Top / latest
 
   /keymap customize
-
+│
 › Ask Elpis to do anything
-
+│
   ? / esc close
 
 after /model selects Astra:
-                            ⠈     ⢀     ⠁                 ⠂
+│                           ⠈     ⢀     ⠁                 ⠂
 ›⠁Ask Elpis to do anything         ⠈      ⠁
-       ⢀            ⠠     ⠄         ⠠          ⢀    ⠠     ⡀
-  ? for shortcuts                                            100% context left
+│      ⢀            ⠠     ⠄         ⠠          ⢀    ⠠     ⡀
+  ? for shortcuts                       100% context left · Tab Context Ledger
 
 literal pasted question mark:
-
+│
 › ?
-
-                                                             100% context left
+│
+                                        100% context left · Tab Context Ledger
 
 after clearing and selecting Astra:
-
+│
 › Ask Elpis to do anything
-
-  ? for shortcuts                                            100% context left
+│
+  ? for shortcuts                       100% context left · Tab Context Ledger

@@ -3,7 +3,7 @@ source: tui/src/chatwidget/tests/popups_and_settings.rs
 assertion_line: 3466
 expression: "render_bottom_popup(&chat, 80)"
 ---
- Elpis · model gpt-5.5 · location /tmp/project
+ Elpis · model gpt-5.5 default · location /tmp/project
 
   Choose a mind and effort
   Provider: OpenAI (openai)

@@ -3,7 +3,7 @@ source: tui/src/chatwidget/tests/bedrock_catalog_tests.rs
 assertion_line: 83
 expression: "render_bottom_popup(&chat, 100)"
 ---
- Elpis · model openai.gpt-5.6-terra · location /tmp/project
+ Elpis · model openai.gpt-5.6-terra default · location /tmp/project
 
   Choose a mind and effort
   Provider: OpenAI (openai)

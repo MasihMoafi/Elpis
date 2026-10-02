@@ -1,11 +1,28 @@
 ---
 source: tui/src/app/tests/buffered_replay.rs
+assertion_line: 684
 expression: "normalize_snapshot_paths(render_bottom_popup(&app.chat_widget, 80))"
 ---
-• Queued follow-up inputs
-  ↳ keep queued
-    shift+← edit last queued message
-
-› keep draft
-
-  GPT-5.6-Sol default · /tmp/project
+ Elpis · model gpt-5.6-sol default · location /tmp/project
+│                                               │CONTEXT LEDGER  context not
+› keep draft                                    │measured · ≈0 source estimates
+│ keep queued                                   │Up/Down move · Space/Enter
+│                                               │toggle · p prune · s subagents
+        100% context left · Tab Context Ledger  │· i all · w why · Tab/Esc close
+                                                │
+                                                │SMART PRUNE          [···] SYNC
+                                                │Reading current thread state
+                                                │Syncing… · /smart-prune on|off
+                                                │sets an explicit state
+                                                │
+                                                │SUBAGENTS             [━━━●] ON
+                                                │May delegate to other agents
+                                                │
+                                                │CONTEXT WINDOW  usage
+                                                │unavailable
+                                                │Context measurement unavailable
+                                                │until the first request
+                                                │snapshot
+                                                │
+                                                │No portable context is
+                                                │available.

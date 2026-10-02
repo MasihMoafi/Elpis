@@ -1,11 +1,27 @@
 ---
 source: tui/src/chatwidget/tests/composer_submission.rs
+assertion_line: 2660
 expression: "normalize_snapshot_paths(render_bottom_popup(&chat, 80))"
 ---
-• Queued follow-up inputs
-  ↳ Preparing images: describe
-    shift+← edit last queued message
-
-› x
-
-  GPT-5.6-Sol default · /tmp/project
+ Elpis · model gpt-5.6-sol default · location /tmp/project
+• Queued follow-up inputs                       │CONTEXT LEDGER  context not
+  ↳ Preparing images: describe                  │measured · ≈0 source estimates
+    ↑ edit all · enter send                     │Tab controls · Alt+C hide ·
+│                                               │Ctrl+click open file
+› x                                             │
+│                                               │SMART PRUNE          [···] SYNC
+        100% context left · Tab Context Ledger  │Reading current thread state
+                                                │Syncing… · /smart-prune on|off
+                                                │sets an explicit state
+                                                │
+                                                │SUBAGENTS             [━━━●] ON
+                                                │May delegate to other agents
+                                                │
+                                                │CONTEXT WINDOW  usage
+                                                │unavailable
+                                                │Context measurement unavailable
+                                                │until the first request
+                                                │snapshot
+                                                │
+                                                │No portable context is
+                                                │available.

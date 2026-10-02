@@ -1,17 +1,27 @@
 ---
 source: tui/src/chatwidget/tests/questions_tests.rs
+assertion_line: 445
 expression: "render_bottom_popup(&chat, 80)"
 ---
-• Queued follow-up inputs
-
-  What next?
-
-  › 1.
-       xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-       xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-       xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-       xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-       xxxxxxxxxxxxxxxx but do not deploy
-    2. Other
-
-  enter submit   ctrl+] skip   shift+→ main prompt
+ Elpis · model gpt-5.6-sol default · location /tmp/project
+• Queued follow-up inputs                       │CONTEXT LEDGER  context not
+┌──────────────────────────────────────────────┐│measured · ≈0 source estimates
+│ What next?                                   ││Tab controls · Alt+C hide ·
+│                                              ││Ctrl+click open file
+│ › 1.                                         ││
+│      xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx ││SMART PRUNE          [···] SYNC
+│      xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx ││Reading current thread state
+│      xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx ││Syncing… · /smart-prune on|off
+│      xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx ││sets an explicit state
+│      xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx ││
+│      xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx ││SUBAGENTS             [━━━●] ON
+│      xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx ││May delegate to other agents
+│      xxxxxxxxxxxxxxxxxxxxxxxxxxx but do not  ││
+│      deploy                                  ││CONTEXT WINDOW  usage
+│   2. Other                                   ││unavailable
+│                                              ││Context measurement unavailable
+│ enter submit   ctrl+] skip                   ││until the first request
+│ shift+→ main prompt                          ││snapshot
+└──────────────────────────────────────────────┘│
+                                                │No portable context is
+                                                │available.

@@ -3,7 +3,7 @@ source: tui/src/chatwidget/tests/misalignment_policy_tests.rs
 assertion_line: 98
 expression: popup
 ---
- Elpis · model gpt-5.6-sol · location /tmp/project
+ Elpis · model gpt-5.6-sol default · location /tmp/project
 
   Chat stopped as a precaution
   We couldn’t confirm the agent was acting safely and following your

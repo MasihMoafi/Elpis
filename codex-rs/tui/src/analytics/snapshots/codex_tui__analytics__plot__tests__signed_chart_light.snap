@@ -1,5 +1,6 @@
 ---
 source: tui/src/analytics/plot_tests.rs
+assertion_line: 173
 expression: display(&rendered)
 ---
 
@@ -24,8 +25,8 @@ Palette:
 4: Style::new().magenta().bg(Color::Reset).underline_color(Color::Reset).reversed()
 5: Style::new().magenta().bg(Color::Reset).underline_color(Color::Reset)
 6: Style::new().fg(Color::Reset).bg(Color::Reset).underline_color(Color::Reset).bold()
-7: Style::new().fg(Color::Rgb(28, 100, 200)).bg(Color::Reset).underline_color(Color::Reset).bold()
-8: Style::new().fg(Color::Rgb(28, 100, 200)).bg(Color::Reset).underline_color(Color::Reset).bold().underlined()
+7: Style::new().fg(Color::Rgb(150, 100, 0)).bg(Color::Reset).underline_color(Color::Reset).bold()
+8: Style::new().fg(Color::Rgb(150, 100, 0)).bg(Color::Reset).underline_color(Color::Reset).bold().underlined()
 Rows (column:palette):
 0: 0:0
 1: 0:0 3:1 5:0 9:2 13:0
