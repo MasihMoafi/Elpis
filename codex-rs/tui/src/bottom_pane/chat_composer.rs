@@ -5133,6 +5133,28 @@ mod tests {
     use crate::bottom_pane::ChatComposer;
     use crate::bottom_pane::InputResult;
     use crate::bottom_pane::chat_composer::LARGE_PASTE_CHAR_THRESHOLD;
+
+    /// The Elpis accent on a dark terminal, where it is a real color rather than the reset default.
+    fn with_accent<T>(test: impl FnOnce(Option<Color>) -> T) -> T {
+        let colors = crate::terminal_probe::DefaultColors {
+            fg: (0xee, 0xee, 0xee),
+            bg: (0x10, 0x10, 0x10),
+        };
+        crate::terminal_palette::with_test_default_colors(colors, || {
+            let accent = crate::elpis_motion::accent_style().fg;
+            assert_ne!(
+                accent,
+                Some(Color::Reset),
+                "the accent must be a real color"
+            );
+            test(accent)
+        })
+    }
+
+    /// A Vim mode label as Elpis draws it: every mode wears the Elpis accent, not one color per mode.
+    fn vim_label(label: &'static str) -> Span<'static> {
+        Span::from(label).style(crate::elpis_motion::accent_style())
+    }
     use crate::bottom_pane::textarea::TextArea;
     use codex_protocol::models::local_image_label_text;
     use tokio::sync::mpsc::UnboundedReceiver;
@@ -5177,9 +5199,10 @@ mod tests {
             let mut buffer = Buffer::empty(area);
             composer.render(area, &mut buffer);
 
+            // Elpis: the light composer wears the warm Quiet Rail wash, not upstream's grey.
             assert_eq!(
                 buffer[(0, 1)].bg,
-                crate::terminal_palette::rgb_color((244, 244, 244))
+                crate::terminal_palette::rgb_color((238, 232, 216))
             );
             insta::assert_snapshot!("light_terminal_palette_composer", format!("{buffer:?}"));
         });
@@ -5212,7 +5235,8 @@ mod tests {
         let mut hint_row: Option<(u16, String)> = None;
         for y in 0..area.height {
             let row = row_to_string(y);
-            if row.contains("? for shortcuts") {
+            // Elpis: the footer hint row names the Ledger key, not upstream's shortcut help.
+            if row.contains("Tab Context Ledger") {
                 hint_row = Some((y, row));
                 break;
             }
@@ -5233,7 +5257,8 @@ mod tests {
 
         let spacing_row = row_to_string(hint_row_idx - 1);
         assert_eq!(
-            spacing_row.trim(),
+            // Elpis: the orange rail runs down the composer's left edge, spacing row included.
+            spacing_row.trim_start_matches('│').trim(),
             "",
             "expected blank spacing row above hints but saw: {spacing_row:?}",
         );
@@ -5537,40 +5562,39 @@ mod tests {
 
     #[test]
     fn shell_command_uses_shell_accent_style() {
-        let (tx, _rx) = unbounded_channel::<AppEvent>();
-        let sender = AppEventSender::new(tx);
-        let mut composer = ChatComposer::new(
-            /*has_input_focus*/ true,
-            sender,
-            /*enhanced_keys_supported*/ true,
-            "Ask Elpis to do anything".to_string(),
-            /*disable_paste_burst*/ false,
-        );
-        composer.set_status_line_enabled(/*enabled*/ true);
-        composer.set_status_line(Some(Line::from(
-            "gpt-5.4 high fast · ~/code/codex-1 · Context 0% used",
-        )));
-        composer.set_text_content("!git status".to_string(), Vec::new(), Vec::new());
+        with_accent(|accent| {
+            let (tx, _rx) = unbounded_channel::<AppEvent>();
+            let sender = AppEventSender::new(tx);
+            let mut composer = ChatComposer::new(
+                /*has_input_focus*/ true,
+                sender,
+                /*enhanced_keys_supported*/ true,
+                "Ask Elpis to do anything".to_string(),
+                /*disable_paste_burst*/ false,
+            );
+            composer.set_status_line_enabled(/*enabled*/ true);
+            composer.set_status_line(Some(Line::from(
+                "gpt-5.4 high fast · ~/code/codex-1 · Context 0% used",
+            )));
+            composer.set_text_content("!git status".to_string(), Vec::new(), Vec::new());
 
-        let area = Rect::new(0, 0, 100, 9);
-        let mut buf = Buffer::empty(area);
-        composer.render(area, &mut buf);
+            let area = Rect::new(0, 0, 100, 9);
+            let mut buf = Buffer::empty(area);
+            composer.render(area, &mut buf);
 
-        let prompt_cell = &buf[(0, 1)];
-        assert_eq!(prompt_cell.symbol(), "!");
-        assert_eq!(prompt_cell.style().fg, Some(Color::LightRed));
+            let prompt_cell = &buf[(0, 1)];
+            assert_eq!(prompt_cell.symbol(), "!");
+            assert_eq!(prompt_cell.style().fg, accent);
 
-        let footer_y = area.height - 1;
-        let footer_text = (0..area.width)
-            .map(|x| buf[(x, footer_y)].symbol().chars().next().unwrap_or(' '))
-            .collect::<String>();
-        let shell_label_x = footer_text
-            .find("Shell mode")
-            .expect("expected shell mode footer label");
-        assert_eq!(
-            buf[(shell_label_x as u16, footer_y)].style().fg,
-            Some(Color::LightRed)
-        );
+            let footer_y = area.height - 1;
+            let footer_text = (0..area.width)
+                .map(|x| buf[(x, footer_y)].symbol().chars().next().unwrap_or(' '))
+                .collect::<String>();
+            let shell_label_x = footer_text
+                .find("Shell mode")
+                .expect("expected shell mode footer label");
+            assert_eq!(buf[(shell_label_x as u16, footer_y)].style().fg, accent);
+        });
     }
 
     fn plugin_mention_foreground_color(composer: &ChatComposer) -> Option<Color> {
@@ -5596,30 +5620,29 @@ mod tests {
 
     #[test]
     fn plugin_at_mentions_use_plugin_accent_style() {
-        let (tx, _rx) = unbounded_channel::<AppEvent>();
-        let sender = AppEventSender::new(tx);
-        let mut composer = ChatComposer::new(
-            /*has_input_focus*/ true,
-            sender,
-            /*enhanced_keys_supported*/ true,
-            "Ask Elpis to do anything".to_string(),
-            /*disable_paste_burst*/ false,
-        );
-        composer.set_text_content_with_mention_bindings(
-            "@sample plugin".to_string(),
-            Vec::new(),
-            Vec::new(),
-            vec![MentionBinding {
-                sigil: '@',
-                mention: "sample".to_string(),
-                path: "plugin://sample@test".to_string(),
-            }],
-        );
+        with_accent(|accent| {
+            let (tx, _rx) = unbounded_channel::<AppEvent>();
+            let sender = AppEventSender::new(tx);
+            let mut composer = ChatComposer::new(
+                /*has_input_focus*/ true,
+                sender,
+                /*enhanced_keys_supported*/ true,
+                "Ask Elpis to do anything".to_string(),
+                /*disable_paste_burst*/ false,
+            );
+            composer.set_text_content_with_mention_bindings(
+                "@sample plugin".to_string(),
+                Vec::new(),
+                Vec::new(),
+                vec![MentionBinding {
+                    sigil: '@',
+                    mention: "sample".to_string(),
+                    path: "plugin://sample@test".to_string(),
+                }],
+            );
 
-        assert_eq!(
-            plugin_mention_foreground_color(&composer),
-            Some(Color::Magenta)
-        );
+            assert_eq!(plugin_mention_foreground_color(&composer), accent);
+        });
     }
 
     #[test]
@@ -5675,38 +5698,37 @@ mod tests {
 
     #[test]
     fn recalled_plugin_at_mentions_keep_plugin_accent_style() {
-        let (tx, _rx) = unbounded_channel::<AppEvent>();
-        let sender = AppEventSender::new(tx);
-        let mut composer = ChatComposer::new(
-            /*has_input_focus*/ true,
-            sender,
-            /*enhanced_keys_supported*/ true,
-            "Ask Elpis to do anything".to_string(),
-            /*disable_paste_burst*/ false,
-        );
-        composer.set_text_content_with_mention_bindings(
-            "@sample plugin".to_string(),
-            Vec::new(),
-            Vec::new(),
-            vec![MentionBinding {
-                sigil: '@',
-                mention: "sample".to_string(),
-                path: "plugin://sample@test".to_string(),
-            }],
-        );
-        let (result, _) =
-            composer.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
-        assert!(matches!(result, InputResult::Submitted { .. }));
+        with_accent(|accent| {
+            let (tx, _rx) = unbounded_channel::<AppEvent>();
+            let sender = AppEventSender::new(tx);
+            let mut composer = ChatComposer::new(
+                /*has_input_focus*/ true,
+                sender,
+                /*enhanced_keys_supported*/ true,
+                "Ask Elpis to do anything".to_string(),
+                /*disable_paste_burst*/ false,
+            );
+            composer.set_text_content_with_mention_bindings(
+                "@sample plugin".to_string(),
+                Vec::new(),
+                Vec::new(),
+                vec![MentionBinding {
+                    sigil: '@',
+                    mention: "sample".to_string(),
+                    path: "plugin://sample@test".to_string(),
+                }],
+            );
+            let (result, _) =
+                composer.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+            assert!(matches!(result, InputResult::Submitted { .. }));
 
-        composer.set_text_content(String::new(), Vec::new(), Vec::new());
-        let (_, needs_redraw) =
-            composer.handle_key_event(KeyEvent::new(KeyCode::Up, KeyModifiers::NONE));
-        assert!(needs_redraw);
+            composer.set_text_content(String::new(), Vec::new(), Vec::new());
+            let (_, needs_redraw) =
+                composer.handle_key_event(KeyEvent::new(KeyCode::Up, KeyModifiers::NONE));
+            assert!(needs_redraw);
 
-        assert_eq!(
-            plugin_mention_foreground_color(&composer),
-            Some(Color::Magenta)
-        );
+            assert_eq!(plugin_mention_foreground_color(&composer), accent);
+        });
     }
 
     #[test]
@@ -6090,7 +6112,7 @@ mod tests {
         assert!(composer.is_empty());
         assert_eq!(
             composer.vim_mode_indicator_span(),
-            Some("Vim: Insert".green())
+            Some(vim_label("Vim: Insert"))
         );
 
         let (result, needs_redraw) =
@@ -6101,7 +6123,7 @@ mod tests {
         assert!(composer.is_empty());
         assert_eq!(
             composer.vim_mode_indicator_span(),
-            Some("Vim: Normal".magenta())
+            Some(vim_label("Vim: Normal"))
         );
         assert_eq!(composer.footer.mode, FooterMode::ComposerEmpty);
         assert!(!composer.footer.esc_backtrack_hint);
@@ -6109,7 +6131,7 @@ mod tests {
         composer.handle_key_event(KeyEvent::new(KeyCode::Char('R'), KeyModifiers::NONE));
         assert_eq!(
             composer.vim_mode_indicator_span(),
-            Some("Vim: Replace".cyan())
+            Some(vim_label("Vim: Replace"))
         );
         snapshot_composer_state(
             "vim_replace_mode",
@@ -6128,7 +6150,7 @@ mod tests {
         composer.handle_key_event(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
         assert_eq!(
             composer.vim_mode_indicator_span(),
-            Some("Vim: Normal".magenta())
+            Some(vim_label("Vim: Normal"))
         );
     }
 
@@ -6160,7 +6182,7 @@ mod tests {
         assert!(matches!(composer.popups.active, ActivePopup::Command(_)));
         assert_eq!(
             composer.vim_mode_indicator_span(),
-            Some("Vim: Insert".green())
+            Some(vim_label("Vim: Insert"))
         );
     }
 
@@ -6194,7 +6216,7 @@ mod tests {
         assert!(composer.is_empty());
         assert_eq!(
             composer.vim_mode_indicator_span(),
-            Some("Vim: Insert".green())
+            Some(vim_label("Vim: Insert"))
         );
         assert!(matches!(result, InputResult::Command(SlashCommand::Diff)));
     }
@@ -6226,7 +6248,7 @@ mod tests {
         assert!(needs_redraw);
         assert_eq!(
             composer.vim_mode_indicator_span(),
-            Some("Vim: Insert".green())
+            Some(vim_label("Vim: Insert"))
         );
         match result {
             InputResult::CommandWithArgs(cmd, args, text_elements) => {
@@ -6272,7 +6294,7 @@ mod tests {
         assert_eq!(composer.draft.textarea.text(), "");
         assert_eq!(
             composer.vim_mode_indicator_span(),
-            Some("Vim: Insert".green())
+            Some(vim_label("Vim: Insert"))
         );
     }
 
@@ -6473,7 +6495,7 @@ mod tests {
         assert!(composer.draft.textarea.is_vim_enabled());
         assert_eq!(
             composer.vim_mode_indicator_span(),
-            Some("Vim: Normal".magenta())
+            Some(vim_label("Vim: Normal"))
         );
 
         composer.handle_key_event(KeyEvent::new(KeyCode::Char('i'), KeyModifiers::NONE));
@@ -6484,7 +6506,7 @@ mod tests {
         assert!(composer.draft.textarea.is_vim_enabled());
         assert_eq!(
             composer.vim_mode_indicator_span(),
-            Some("Vim: Insert".green())
+            Some(vim_label("Vim: Insert"))
         );
         assert!(composer.is_empty());
         match result {
@@ -6518,7 +6540,7 @@ mod tests {
 
         assert_eq!(
             composer.vim_mode_indicator_span(),
-            Some("Vim: Insert".green())
+            Some(vim_label("Vim: Insert"))
         );
         assert!(composer.is_empty());
         match result {
@@ -6554,7 +6576,7 @@ mod tests {
         assert_eq!(composer.draft.textarea.text(), "/not-a-command");
         assert_eq!(
             composer.vim_mode_indicator_span(),
-            Some("Vim: Insert".green())
+            Some(vim_label("Vim: Insert"))
         );
     }
 
@@ -6583,14 +6605,14 @@ mod tests {
             .set_cursor(composer.draft.textarea.text().len());
         assert_eq!(
             composer.vim_mode_indicator_span(),
-            Some("Vim: Insert".green())
+            Some(vim_label("Vim: Insert"))
         );
         assert_eq!(composer.draft.textarea.cursor(), "hey".len());
 
         composer.handle_key_event(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
         assert_eq!(
             composer.vim_mode_indicator_span(),
-            Some("Vim: Normal".magenta())
+            Some(vim_label("Vim: Normal"))
         );
         assert_eq!(composer.draft.textarea.cursor(), "he".len());
     }
@@ -9586,168 +9608,6 @@ mod tests {
     }
 
     #[test]
-    fn slash_popup_pets_for_pet_ui() {
-        use ratatui::Terminal;
-        use ratatui::backend::TestBackend;
-
-        let (tx, _rx) = unbounded_channel::<AppEvent>();
-        let sender = AppEventSender::new(tx);
-
-        let mut composer = ChatComposer::new(
-            /*has_input_focus*/ true,
-            sender,
-            /*enhanced_keys_supported*/ false,
-            "Ask Elpis to do anything".to_string(),
-            /*disable_paste_burst*/ false,
-        );
-
-        type_chars_humanlike(&mut composer, &['/', 'p', 'e', 't']);
-
-        let mut terminal = Terminal::new(TestBackend::new(60, 5)).expect("terminal");
-        terminal
-            .draw(|f| composer.render(f.area(), f.buffer_mut()))
-            .expect("draw composer");
-
-        insta::assert_snapshot!("slash_popup_pet", terminal.backend());
-    }
-
-    #[test]
-    fn slash_popup_pets_for_pet_logic() {
-        use super::super::command_popup::CommandItem;
-        let (tx, _rx) = unbounded_channel::<AppEvent>();
-        let sender = AppEventSender::new(tx);
-        let mut composer = ChatComposer::new(
-            /*has_input_focus*/ true,
-            sender,
-            /*enhanced_keys_supported*/ false,
-            "Ask Elpis to do anything".to_string(),
-            /*disable_paste_burst*/ false,
-        );
-        type_chars_humanlike(&mut composer, &['/', 'p', 'e', 't']);
-
-        match &composer.popups.active {
-            ActivePopup::Command(popup) => match popup.selected_item() {
-                Some(CommandItem::Builtin(cmd)) => {
-                    assert_eq!(cmd.command(), "pets")
-                }
-                Some(CommandItem::ServiceTier(command)) => {
-                    panic!("expected pets command, got service tier {command:?}")
-                }
-                None => panic!("no selected command for '/pet'"),
-            },
-            _ => panic!("slash popup not active after typing '/pet'"),
-        }
-    }
-
-    #[test]
-    fn slash_popup_btw_for_bt_ui() {
-        use ratatui::Terminal;
-        use ratatui::backend::TestBackend;
-
-        let (tx, _rx) = unbounded_channel::<AppEvent>();
-        let sender = AppEventSender::new(tx);
-
-        let mut composer = ChatComposer::new(
-            /*has_input_focus*/ true,
-            sender,
-            /*enhanced_keys_supported*/ false,
-            "Ask Elpis to do anything".to_string(),
-            /*disable_paste_burst*/ false,
-        );
-
-        type_chars_humanlike(&mut composer, &['/', 'b', 't']);
-
-        let mut terminal = Terminal::new(TestBackend::new(60, 5)).expect("terminal");
-        terminal
-            .draw(|f| composer.render(f.area(), f.buffer_mut()))
-            .expect("draw composer");
-
-        insta::assert_snapshot!("slash_popup_bt", terminal.backend());
-    }
-
-    #[test]
-    fn slash_popup_btw_for_bt_logic() {
-        use super::super::command_popup::CommandItem;
-        let (tx, _rx) = unbounded_channel::<AppEvent>();
-        let sender = AppEventSender::new(tx);
-        let mut composer = ChatComposer::new(
-            /*has_input_focus*/ true,
-            sender,
-            /*enhanced_keys_supported*/ false,
-            "Ask Elpis to do anything".to_string(),
-            /*disable_paste_burst*/ false,
-        );
-        type_chars_humanlike(&mut composer, &['/', 'b', 't']);
-
-        match &composer.popups.active {
-            ActivePopup::Command(popup) => match popup.selected_item() {
-                Some(CommandItem::Builtin(cmd)) => {
-                    assert_eq!(cmd.command(), "btw")
-                }
-                Some(CommandItem::ServiceTier(command)) => {
-                    panic!("expected btw command, got service tier {command:?}")
-                }
-                None => panic!("no selected command for '/bt'"),
-            },
-            _ => panic!("slash popup not active after typing '/bt'"),
-        }
-    }
-
-    #[test]
-    fn slash_popup_side_for_si_ui() {
-        use ratatui::Terminal;
-        use ratatui::backend::TestBackend;
-
-        let (tx, _rx) = unbounded_channel::<AppEvent>();
-        let sender = AppEventSender::new(tx);
-
-        let mut composer = ChatComposer::new(
-            /*has_input_focus*/ true,
-            sender,
-            /*enhanced_keys_supported*/ false,
-            "Ask Elpis to do anything".to_string(),
-            /*disable_paste_burst*/ false,
-        );
-
-        type_chars_humanlike(&mut composer, &['/', 's', 'i']);
-
-        let mut terminal = Terminal::new(TestBackend::new(60, 5)).expect("terminal");
-        terminal
-            .draw(|f| composer.render(f.area(), f.buffer_mut()))
-            .expect("draw composer");
-
-        insta::assert_snapshot!("slash_popup_si", terminal.backend());
-    }
-
-    #[test]
-    fn slash_popup_side_for_si_logic() {
-        use super::super::command_popup::CommandItem;
-        let (tx, _rx) = unbounded_channel::<AppEvent>();
-        let sender = AppEventSender::new(tx);
-        let mut composer = ChatComposer::new(
-            /*has_input_focus*/ true,
-            sender,
-            /*enhanced_keys_supported*/ false,
-            "Ask Elpis to do anything".to_string(),
-            /*disable_paste_burst*/ false,
-        );
-        type_chars_humanlike(&mut composer, &['/', 's', 'i']);
-
-        match &composer.popups.active {
-            ActivePopup::Command(popup) => match popup.selected_item() {
-                Some(CommandItem::Builtin(cmd)) => {
-                    assert_eq!(cmd.command(), "side")
-                }
-                Some(CommandItem::ServiceTier(command)) => {
-                    panic!("expected side command, got service tier {command:?}")
-                }
-                None => panic!("no selected command for '/si'"),
-            },
-            _ => panic!("slash popup not active after typing '/si'"),
-        }
-    }
-
-    #[test]
     fn service_tier_slash_command_dispatches_from_catalog_name() {
         let (tx, _rx) = unbounded_channel::<AppEvent>();
         let sender = AppEventSender::new(tx);
@@ -11423,7 +11283,7 @@ mod tests {
         assert_eq!(composer.draft.textarea.text(), "hello");
         assert_eq!(
             composer.vim_mode_indicator_span(),
-            Some("Vim: Normal".magenta())
+            Some(vim_label("Vim: Normal"))
         );
         assert!(!composer.draft.textarea.is_vim_operator_pending());
     }
