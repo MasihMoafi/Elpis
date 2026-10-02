@@ -179,15 +179,13 @@ mod tests {
     }
 
     #[test]
-    fn worktree_command_lookup_requires_feature() {
+    fn worktree_command_lookup_is_hidden_even_with_the_feature() {
+        // Elpis: /worktree is on the hidden list, so no feature flag brings it back.
         assert_eq!(
             find_builtin_command("worktree", BuiltinCommandFlags::default()),
             None
         );
-        assert_eq!(
-            find_builtin_command("worktree", all_enabled_flags()),
-            Some(SlashCommand::Worktree)
-        );
+        assert_eq!(find_builtin_command("worktree", all_enabled_flags()), None);
     }
 
     #[test]
@@ -317,19 +315,15 @@ mod tests {
 
         assert_eq!(
             commands,
+            // Elpis: the commands Elpis hides or leaves unlisted never reach a side conversation's
+            // popup, and /context and /dashboard are the two Elpis commands that work there.
             vec![
                 SlashCommand::Ide,
-                SlashCommand::Agents,
                 SlashCommand::Copy,
-                SlashCommand::Export,
-                SlashCommand::Raw,
                 SlashCommand::Diff,
-                SlashCommand::Mention,
-                SlashCommand::Status,
-                SlashCommand::Daemon,
-                SlashCommand::Warnings,
-                SlashCommand::Pwd,
                 SlashCommand::Usage,
+                SlashCommand::Context,
+                SlashCommand::Dashboard,
             ]
         );
     }

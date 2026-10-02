@@ -230,7 +230,8 @@ async fn commands_can_precede_the_sparkle_but_inserted_or_typed_drafts_cannot() 
                 );
             }
             "commands" => {
-                for command in ["/status", "/pwd"] {
+                // Elpis: /pwd is unlisted, so typing it leaves the command popup and ends the sparkle.
+                for command in ["/context", "/copy"] {
                     type_into(&mut app.chat_widget, command);
                     app.chat_widget
                         .handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
@@ -343,7 +344,7 @@ async fn overlays_shortcuts_and_key_chords_leave_the_main_sparkle_untouched() ->
 
 #[tokio::test]
 async fn a_command_pending_on_fresh_astra_start_can_finish_before_the_sparkle() -> Result<()> {
-    for (command, visible_after) in [("/status", true), ("/mention", false)] {
+    for (command, visible_after) in [("/usage", true), ("/mention", false)] {
         let (mut app, _events, _ops) = make_test_app_with_channels().await;
         app.chat_widget.local_settings.tui.animations = true;
         app.chat_widget.local_settings.tui.effects.starfield = true;
@@ -748,7 +749,7 @@ async fn a_read_only_command_can_return_to_active_stars_but_mention_ends_them() 
     )
     .await?;
     assert!(visible(&app.chat_widget));
-    type_into(&mut app.chat_widget, "/status");
+    type_into(&mut app.chat_widget, "/usage");
     assert!(!visible(&app.chat_widget));
     app.chat_widget
         .handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));

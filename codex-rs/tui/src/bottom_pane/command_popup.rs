@@ -430,10 +430,10 @@ mod tests {
             .collect();
         assert_eq!(
             cmds,
+            // Elpis: /memories and /mention are hidden, and /memory-model is Elpis's.
             vec![
                 "model".to_string(),
-                "memories".to_string(),
-                "mention".to_string(),
+                "memory-model".to_string(),
                 "mcp".to_string()
             ]
         );
@@ -532,11 +532,12 @@ mod tests {
         }
         assert!(popup.state.scroll_top > 0);
 
-        popup.on_composer_text_change("/st".to_string());
+        // Elpis: /status is hidden, so the filter that resets the selection is /mo.
+        popup.on_composer_text_change("/mo".to_string());
 
         assert_eq!(
             popup.selected_item(),
-            Some(CommandItem::Builtin(SlashCommand::Status))
+            Some(CommandItem::Builtin(SlashCommand::Model))
         );
         assert_eq!(popup.state.scroll_top, 0);
         let width = 72;
@@ -564,18 +565,6 @@ mod tests {
         popup.on_composer_text_change("/qu".to_string());
         let items = popup.filtered_items();
         assert!(items.contains(&CommandItem::Builtin(SlashCommand::Quit)));
-    }
-
-    #[test]
-    fn btw_hidden_in_empty_filter_but_shown_for_prefix() {
-        let mut popup = CommandPopup::new(CommandPopupFlags::default(), Vec::new());
-        popup.on_composer_text_change("/".to_string());
-        let items = popup.filtered_items();
-        assert!(!items.contains(&CommandItem::Builtin(SlashCommand::Btw)));
-
-        popup.on_composer_text_change("/bt".to_string());
-        let items = popup.filtered_items();
-        assert!(items.contains(&CommandItem::Builtin(SlashCommand::Btw)));
     }
 
     #[test]

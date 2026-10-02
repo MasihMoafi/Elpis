@@ -77,11 +77,9 @@ fn unavailable_thread_dispatches_recovery_and_local_commands() {
         SlashCommand::Agents,
         SlashCommand::MultiAgents,
         SlashCommand::Quit,
-        SlashCommand::Exit,
-        SlashCommand::Status,
+        // Elpis: /exit, /status and /rollout are on the hidden list (R8), so they cannot be typed.
         SlashCommand::DebugConfig,
         SlashCommand::Pwd,
-        SlashCommand::Rollout,
         SlashCommand::Copy,
         SlashCommand::Raw,
     ] {

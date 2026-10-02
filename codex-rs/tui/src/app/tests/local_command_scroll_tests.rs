@@ -65,7 +65,7 @@ async fn settings_pickers_preserve_the_reading_anchor_through_open_and_close() -
         ("/model", KeyCode::Esc),
         ("/theme", KeyCode::Enter),
         ("/keymap", KeyCode::Esc),
-        ("/memories", KeyCode::Esc),
+        // Elpis: /memories is hidden (R3), so it cannot be typed.
         ("/title", KeyCode::Esc),
         ("/statusline", KeyCode::Esc),
     ] {
@@ -446,7 +446,8 @@ async fn usage_picker_opens_analytics_without_moving_the_background_transcript()
     hold_older_history(&mut app, &mut tui);
     while events.try_recv().is_ok() {}
 
-    submit_local_command(&mut app, "/usage");
+    // Elpis: bare `/usage` is the session card; upstream's account menu is `/usage account`.
+    submit_local_command(&mut app, "/usage account");
     let follow = events.try_recv().expect("usage command follow event");
     assert_matches!(&follow, AppEvent::FollowTranscript);
     app.handle_event(&mut tui, &mut server, follow).await?;

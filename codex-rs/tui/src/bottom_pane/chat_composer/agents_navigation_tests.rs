@@ -37,7 +37,8 @@ fn parent_owned_thread_allows_safe_command_selected_from_prefix() {
         .handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE))
         .0;
 
-    assert_eq!(result, InputResult::Command(SlashCommand::Agents));
+    // Elpis: /agents is unlisted; "/ag" selects Elpis's /agent, the subagent picker.
+    assert_eq!(result, InputResult::Command(SlashCommand::Agent));
 }
 
 #[test]
