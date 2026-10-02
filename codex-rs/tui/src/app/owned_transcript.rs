@@ -81,7 +81,9 @@ impl App {
         };
         self.sync_owned_transcript(screen_size.width);
         let transcript_width = self.chat_widget.history_wrap_width(screen_size.width);
-        let composer_hint = self.composer_hint(transcript_width);
+        // Elpis: the hint row shares the composer's column, left of the Context Ledger.
+        let composer_hint =
+            self.composer_hint(self.chat_widget.width_beside_context_ledger(transcript_width));
         let now = Instant::now();
         let turn_tip = self.turn_tip(transcript_width, now, &tui.frame_requester());
         let working_tip = turn_tip
@@ -235,9 +237,11 @@ impl App {
             if let (Some(tip), Some(area)) = (completion_tip, completion_tip_area) {
                 tip.render(area, frame.buffer);
             }
+            // Elpis: the row above the composer stops at the Context Ledger, which starts there.
+            let gap_width = chat_widget.width_beside_context_ledger(transcript_width);
             let follow_area = if let Some(gap) = composer_gap.as_ref() {
                 Some(Rect {
-                    width: transcript_width,
+                    width: gap_width,
                     ..gap.area.get()
                 })
             } else {
@@ -245,7 +249,7 @@ impl App {
                     Rect::new(
                         /*x*/ 0,
                         available - 1,
-                        transcript_width,
+                        gap_width,
                         /*height*/ 1,
                     )
                 })

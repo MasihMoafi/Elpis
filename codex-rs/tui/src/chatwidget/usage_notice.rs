@@ -74,8 +74,9 @@ impl UsageNoticeState {
             .min(usize::from(width)) as u16;
         let line = first_fitting_line(
             [
-                Line::from(format!("{summary}{reset} · /status")),
-                Line::from(format!("{summary} · /status")),
+                // Elpis: /usage replaces the hidden /status.
+                Line::from(format!("{summary}{reset} · /usage")),
+                Line::from(format!("{summary} · /usage")),
                 Line::from(summary),
                 compact,
             ],

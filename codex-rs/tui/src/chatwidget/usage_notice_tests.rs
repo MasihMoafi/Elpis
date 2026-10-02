@@ -91,7 +91,7 @@ fn notice_shows_only_valid_future_reset_times() {
         assert_eq!(
             state.line(/*width*/ 160, now, ClockFormat::TwentyFourHour),
             Some(
-                Line::from(format!("⚠ 5h limit: 8% left{expected} · /status"))
+                Line::from(format!("⚠ 5h limit: 8% left{expected} · /usage"))
                     .style(crate::style::warning_notice_style().bold())
             ),
         );
@@ -120,7 +120,7 @@ fn notice_emphasis_tracks_utilization_without_claiming_a_hard_stop() {
                 ClockFormat::TwentyFourHour
             ),
             Some(
-                Line::from(format!("⚠ 5h limit: {remaining} left · /status")).style(if bold {
+                Line::from(format!("⚠ 5h limit: {remaining} left · /usage")).style(if bold {
                     style.bold()
                 } else {
                     style

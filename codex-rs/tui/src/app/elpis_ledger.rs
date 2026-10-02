@@ -712,6 +712,7 @@ impl App {
             | ElpisAppEvent::Provider(_)
             | ElpisAppEvent::SaveBackgroundModel(_)
             | ElpisAppEvent::OpenDashboard
+            | ElpisAppEvent::WorkGraphLoaded(_)
             | ElpisAppEvent::RefreshDashboard
             | ElpisAppEvent::OpenUsage(_) => {
                 unreachable!("handled in app/elpis_events.rs")

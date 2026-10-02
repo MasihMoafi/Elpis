@@ -4,6 +4,7 @@
 //! status, summary, changed files, checks, evidence, unchecked work and failure.
 
 use super::*;
+use crate::elpis_app_event::ElpisAppEvent;
 use crate::history_cell::PlainHistoryCell;
 use codex_app_server_protocol::WorkGraphSummary;
 use ratatui::style::Stylize;
@@ -11,24 +12,44 @@ use ratatui::text::Line;
 use ratatui::text::Span;
 
 impl App {
-    /// Adds the root thread's latest work graph to the transcript, if it ran one.
-    pub(super) async fn show_latest_work_graph(&mut self, app_server: &mut AppServerSession) {
+    /// Asks for the root thread's latest work graph in the background, so `/agent` opens at once
+    /// even when the app server is slow; the graph joins the transcript when it arrives.
+    pub(super) fn show_latest_work_graph(&mut self, app_server: &AppServerSession) {
         let Some(root_thread_id) = self.primary_thread_id else {
             return;
         };
-        match app_server.work_graph_list(root_thread_id).await {
-            Ok(response) => {
-                if let Some(graph) = response.data.first() {
-                    self.chat_widget
-                        .add_to_history(work_graph_history_cell(graph));
-                }
-            }
-            Err(err) => {
-                self.chat_widget.add_info_message(
-                    format!("Unable to load the work graph: {err}"),
-                    /*hint*/ None,
-                );
-            }
+        let request_handle = app_server.request_handle();
+        let app_event_tx = self.app_event_tx.clone();
+        tokio::spawn(async move {
+            let result = request_handle
+                .request_typed::<codex_app_server_protocol::WorkGraphListResponse>(
+                    codex_app_server_protocol::ClientRequest::WorkGraphList {
+                        request_id: codex_app_server_protocol::RequestId::String(
+                            uuid::Uuid::new_v4().to_string(),
+                        ),
+                        params: codex_app_server_protocol::WorkGraphListParams {
+                            root_thread_id: root_thread_id.to_string(),
+                        },
+                    },
+                )
+                .await
+                .map(|response| response.data.into_iter().next())
+                .map_err(|err| err.to_string());
+            app_event_tx.send(AppEvent::Elpis(ElpisAppEvent::WorkGraphLoaded(result)));
+        });
+    }
+
+    /// Adds a work graph that arrived after `/agent` opened.
+    pub(super) fn add_loaded_work_graph(&mut self, result: Result<Option<WorkGraphSummary>, String>) {
+        match result {
+            Ok(Some(graph)) => self
+                .chat_widget
+                .add_to_history(work_graph_history_cell(&graph)),
+            Ok(None) => {}
+            Err(err) => self.chat_widget.add_info_message(
+                format!("Unable to load the work graph: {err}"),
+                /*hint*/ None,
+            ),
         }
     }
 }

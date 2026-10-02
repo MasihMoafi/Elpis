@@ -19,6 +19,7 @@ impl App {
                     .await;
             }
             ElpisAppEvent::SaveBackgroundModel(choice) => self.save_background_model(choice).await,
+            ElpisAppEvent::WorkGraphLoaded(result) => self.add_loaded_work_graph(result),
             ElpisAppEvent::OpenDashboard => self.open_dashboard(tui),
             ElpisAppEvent::RefreshDashboard => self.publish_dashboard_snapshot(),
             ElpisAppEvent::OpenUsage(card) => self.open_escape_closable_pager(tui, card, "Usage")?,

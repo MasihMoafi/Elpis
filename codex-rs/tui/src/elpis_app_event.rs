@@ -19,6 +19,9 @@ pub(crate) enum ElpisAppEvent {
     /// `/memory-model`: save the background model and use it from now on.
     SaveBackgroundModel(crate::elpis_background_model::BackgroundModelChoice),
     // The dashboard (app/elpis_events.rs).
+    /// The root thread's latest work graph, fetched in the background when `/agent` opened.
+    WorkGraphLoaded(Result<Option<codex_app_server_protocol::WorkGraphSummary>, String>),
+
     /// `/dashboard`: publish the current state, start the loopback server and open the page.
     OpenDashboard,
 

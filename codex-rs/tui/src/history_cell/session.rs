@@ -229,8 +229,9 @@ pub(crate) fn new_session_info(
             ]),
             Line::from(vec![
                 "  ".into(),
-                "/status".into(),
-                " - show current session configuration".dim(),
+                // Elpis: /usage replaces the hidden /status.
+                "/usage".into(),
+                " - show this session's usage and limits".dim(),
             ]),
             Line::from(vec![
                 "  ".into(),

@@ -227,6 +227,13 @@ impl ChatWidget {
     }
 }
 
+impl ChatWidget {
+    /// The width left of the Context Ledger, where rows beside the composer must fit.
+    pub(crate) fn width_beside_context_ledger(&self, width: u16) -> u16 {
+        width.saturating_sub(self.context_ledger_width(width))
+    }
+}
+
 /// The bottom pane with the Context Ledger to its right.
 ///
 /// The ledger's top row is the composer box's top row and it runs downward. It is never
