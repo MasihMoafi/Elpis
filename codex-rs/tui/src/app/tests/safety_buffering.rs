@@ -93,6 +93,11 @@ fn submit_prompt(app: &mut App, prompt: &str) {
     app.chat_widget.apply_external_edit(prompt.to_string());
     app.chat_widget
         .handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+    // Elpis: during a turn Enter queues the prompt; Esc hands it to the running turn as a steer.
+    if !app.chat_widget.queued_user_message_texts().is_empty() {
+        app.chat_widget
+            .handle_key_event(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+    }
 }
 
 fn drain_active_thread_events(app: &mut App) {
@@ -397,7 +402,9 @@ stream_max_retries = 0
         None
     );
 
-    insta::assert_snapshot!(app.chat_widget.composer_text_with_pending(), @"");
+    // Two tests share this helper, and insta rejects a second inline assertion from one
+    // function in one `cargo test` process, so this compares the text directly.
+    assert_eq!(app.chat_widget.composer_text_with_pending(), "");
     assert!(
         std::iter::from_fn(|| app_event_rx.try_recv().ok())
             .all(|event| !matches!(event, AppEvent::CodexOp(AppCommand::UserTurn { .. })))

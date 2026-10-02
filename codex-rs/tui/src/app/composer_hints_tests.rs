@@ -66,7 +66,7 @@ async fn usage_notice_preserves_composer_geometry_on_recovery() -> Result<()> {
                 app.chat_widget
                     .apply_external_edit("queued follow-up".into());
                 app.chat_widget
-                    .handle_key_event(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
+                    .handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
                 assert_eq!(
                     app.chat_widget.queued_user_message_texts(),
                     vec!["queued follow-up"],

@@ -1,17 +1,15 @@
 ---
 source: tui/src/app/tests/buffered_replay.rs
-assertion_line: 684
 expression: "normalize_snapshot_paths(render_bottom_popup(&app.chat_widget, 80))"
 ---
  Elpis · model gpt-5.6-sol default · location /tmp/project
-│                                               │CONTEXT LEDGER  context not
-› keep draft                                    │measured · ≈0 source estimates
-│ keep queued                                   │Up/Down move · Space/Enter
-│                                               │toggle · p prune · s subagents
-        100% context left · Tab Context Ledger  │· i all · w why · Tab/Esc close
-                                                │
-                                                │SMART PRUNE          [···] SYNC
-                                                │Reading current thread state
+• Queued follow-up inputs                       │CONTEXT LEDGER  context not
+  ↳ keep queued                                 │measured · ≈0 source estimates
+    ↑ edit all · enter send                     │Tab controls · Alt+C hide ·
+│                                               │Ctrl+click open file
+› keep draft                                    │
+│                                               │SMART PRUNE          [···] SYNC
+        100% context left · Tab Context Ledger  │Reading current thread state
                                                 │Syncing… · /smart-prune on|off
                                                 │sets an explicit state
                                                 │

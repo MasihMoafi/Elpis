@@ -2021,10 +2021,12 @@ async fn enqueueing_history_prompt_multiple_times_is_stable() {
         assert_eq!(chat.bottom_pane.composer_text(), "repeat me");
 
         // Queue the prompt while the task is running.
-        chat.handle_key_event(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
+        chat.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
     }
 
-    assert_eq!(chat.input_queue.queued_user_messages.len(), 3);
+    // Elpis: Up pulls the queued messages back before it reaches history (R16), so each round
+    // recalls the one queued prompt and queues it again.
+    assert_eq!(chat.input_queue.queued_user_messages.len(), 1);
     for message in chat.input_queue.queued_user_messages.iter() {
         assert_eq!(message.text, "repeat me");
     }
@@ -2620,6 +2622,12 @@ async fn image_preparation_failure_restores_full_input_without_submitting() {
             std::fs::remove_file(&path).unwrap();
         }
         chat.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+        if running {
+            // Elpis: Enter queues the message during a turn and prepares nothing; Esc hands the
+            // queued message to the running turn, which prepares its images.
+            assert_eq!(chat.input_queue.queued_user_messages.len(), 1);
+            chat.handle_key_event(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+        }
         while let Some(event) = rx.recv().await {
             if let AppEvent::ImagesPrepared(id) = event {
                 chat.on_images_prepared(id);
@@ -2685,6 +2693,10 @@ async fn image_preparation_failure_restores_full_input_without_submitting() {
         }
         pixels.save(&path).unwrap();
         chat.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+        if running {
+            // Elpis: the retry is queued too, and Esc hands it to the running turn.
+            chat.handle_key_event(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+        }
         while let Some(event) = rx.recv().await {
             if let AppEvent::ImagesPrepared(id) = event {
                 chat.on_images_prepared(id);

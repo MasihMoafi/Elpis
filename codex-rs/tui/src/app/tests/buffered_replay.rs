@@ -634,7 +634,7 @@ async fn misalignment_buffered_replay_preserves_input_after_continuation() {
         .set_queue_autosend_suppressed(/*suppressed*/ true);
     app.chat_widget.insert_str("keep queued");
     app.chat_widget
-        .handle_key_event(KeyEvent::from(KeyCode::Tab));
+        .handle_key_event(KeyEvent::from(KeyCode::Enter));
     app.chat_widget
         .restore_user_message_to_composer("keep draft".into());
     let saved_input = app.chat_widget.capture_thread_input_state();
