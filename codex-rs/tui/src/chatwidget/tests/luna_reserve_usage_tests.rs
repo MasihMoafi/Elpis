@@ -101,7 +101,7 @@ async fn luna_reserve_selector_supports_arrows_enter_shortcuts_and_escape_withou
         let rendered = normalize_snapshot_paths(render_bottom_popup(&chat, /*width*/ 90));
         assert!(!rendered.contains("You’re now using Luna"));
         assert!(rendered.contains("saved draft"));
-        assert!(rendered.contains("Luna Reserve"));
+        assert!(rendered.contains("model gpt-reserve"));
     }
 }
 
@@ -114,26 +114,31 @@ async fn luna_reserve_status_tracks_the_active_model() {
     )));
     assert!(
         !normalize_snapshot_paths(render_bottom_popup(&chat, /*width*/ 80))
-            .contains("Luna Reserve")
+            .contains("model gpt-reserve")
     );
 
     chat.set_model("gpt-reserve");
     let rendered = normalize_snapshot_paths(render_bottom_popup(&chat, /*width*/ 80));
-    assert!(rendered.contains("Luna Reserve default"));
+    assert!(rendered.contains("model gpt-reserve default"));
+    assert!(rendered.contains("Tab Context Ledger"));
     insta::assert_snapshot!("luna_reserve_usage_wide", rendered);
-    insta::assert_snapshot!(
-        "luna_reserve_usage_narrow",
-        normalize_snapshot_paths(render_bottom_popup(&chat, /*width*/ 34))
+    let narrow = normalize_snapshot_paths(render_bottom_popup(&chat, /*width*/ 34));
+    assert!(narrow.contains("100% context left"));
+    assert!(
+        !narrow.contains("Tab Context"),
+        "Ledger hint must fit completely: {narrow}"
     );
+    insta::assert_snapshot!("luna_reserve_usage_narrow", narrow);
 
     chat.set_model("gpt-5.6-sol");
     assert!(
         !normalize_snapshot_paths(render_bottom_popup(&chat, /*width*/ 80))
-            .contains("Luna Reserve")
+            .contains("model gpt-reserve")
     );
     chat.set_model("gpt-reserve");
     assert!(
-        normalize_snapshot_paths(render_bottom_popup(&chat, /*width*/ 80)).contains("Luna Reserve")
+        normalize_snapshot_paths(render_bottom_popup(&chat, /*width*/ 80))
+            .contains("model gpt-reserve")
     );
 }
 
@@ -236,19 +241,17 @@ async fn luna_reserve_prompt_preserves_the_composer_palette_on_exit() {
             let mut active = Buffer::empty(area);
             chat.bottom_pane.render(area, &mut active);
             let cursor = chat.bottom_pane.cursor_pos(area).expect("composer cursor");
-            let ordinary_style = crate::style::user_message_style();
-            assert_eq!(active[(0, cursor.1)].bg, ordinary_style.bg.unwrap());
-            assert_eq!(active[(0, cursor.1)].bg, active[(0, cursor.1 - 1)].bg);
+
             chat.set_model("gpt-5.6-sol");
             let area = Rect::new(0, 0, 80, chat.bottom_pane.desired_height(/*width*/ 80));
             let mut inactive = Buffer::empty(area);
             chat.bottom_pane.render(area, &mut inactive);
             let restored_cursor = chat.bottom_pane.cursor_pos(area).expect("composer cursor");
-            assert_eq!(
-                inactive[(0, restored_cursor.1)].bg,
-                ordinary_style.bg.unwrap()
-            );
-            assert_eq!(restored_cursor.1, cursor.1);
+            assert_eq!(inactive.area, active.area);
+            assert_eq!(restored_cursor, cursor);
+            for (before, after) in active.content.iter().zip(&inactive.content) {
+                assert_eq!(before.bg, after.bg);
+            }
         });
     }
 }

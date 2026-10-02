@@ -1438,7 +1438,7 @@ impl ChatComposer {
         }
     }
 
-    fn right_footer_line_with_context(&self) -> Line<'static> {
+    fn right_footer_line_with_context(&self, available_width: usize) -> Line<'static> {
         let mut line = if self.footer.context_window_pending {
             Line::default()
         } else {
@@ -1454,7 +1454,7 @@ impl ChatComposer {
         // Elpis: the goal state (upstream shows it only in its status line, which Elpis turns
         // off) and "Tab Context Ledger" beside the context indicator (v0.3.0).
         elpis_composer::push_goal_status(&mut line, self.footer.goal_status_indicator.as_ref());
-        elpis_composer::push_context_ledger_hint(&mut line);
+        elpis_composer::push_context_ledger_hint(&mut line, available_width);
         line
     }
 
@@ -4820,7 +4820,7 @@ impl ChatComposer {
                                 compact
                             }
                         } else {
-                            Some(self.right_footer_line_with_context())
+                            Some(self.right_footer_line_with_context(available_width))
                         };
                     let right_width = right_line.as_ref().map(|l| l.width() as u16).unwrap_or(0);
                     if status_line_active

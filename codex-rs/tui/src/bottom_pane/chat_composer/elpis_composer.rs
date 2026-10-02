@@ -88,15 +88,17 @@ pub(super) fn push_goal_status(
 }
 
 /// Follows the context indicator with v0.3.0's reminder that Tab opens the Context Ledger,
-/// styled like the indicator it follows.
-pub(super) fn push_context_ledger_hint(line: &mut Line<'static>) {
+/// styled like the indicator it follows. Omit the hint if it cannot fit in full.
+pub(super) fn push_context_ledger_hint(line: &mut Line<'static>, available_width: usize) {
     let hint = if line.spans.is_empty() {
         "Tab Context Ledger"
     } else {
         " · Tab Context Ledger"
     };
-    line.spans
-        .push(Span::styled(hint, crate::style::secondary_text_style()));
+    let hint = Span::styled(hint, crate::style::secondary_text_style());
+    if line.width().saturating_add(hint.width()) <= available_width {
+        line.spans.push(hint);
+    }
 }
 
 /// The hint under queued follow-ups: Up pulls every one of them back, Enter sends.
