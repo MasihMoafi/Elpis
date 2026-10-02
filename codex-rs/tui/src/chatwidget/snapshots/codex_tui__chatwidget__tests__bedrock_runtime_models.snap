@@ -1,8 +1,15 @@
 ---
 source: tui/src/chatwidget/tests/bedrock_catalog_tests.rs
+assertion_line: 49
 expression: "render_bottom_popup(&chat, 100)"
 ---
-  Select Model and Effort
+ Elpis · model global.openai.gpt-6.1-sol default · location /tmp/project
+
+  Choose a mind and effort
+  Provider: OpenAI (openai)
+  Route: the provider's default endpoint
+  Protocol: OpenAI Responses
+  Credential: your OpenAI sign-in
 
 
 › 1. GPT-6.1 Sol (Global) (current)    Latest workhorse model for coding and everyday work.

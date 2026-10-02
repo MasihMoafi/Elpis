@@ -1,7 +1,10 @@
 ---
 source: tui/src/chatwidget/tests/permissions.rs
+assertion_line: 155
 expression: "render_bottom_popup(&chat, 100)"
 ---
+ Elpis · model gpt-5.6-sol default · location /tmp/project
+
   Update Model Permissions
   No permission profiles returned by the server.
 

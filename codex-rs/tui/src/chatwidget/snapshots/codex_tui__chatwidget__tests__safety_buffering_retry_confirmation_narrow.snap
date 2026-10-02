@@ -1,7 +1,10 @@
 ---
 source: tui/src/chatwidget/tests/app_server.rs
+assertion_line: 265
 expression: "render_bottom_popup(&chat, 40)"
 ---
+ Elpis · model gpt-5.6-sol default · loc
+
   Stop this attempt and retry?
 
   This will stop the current attempt
