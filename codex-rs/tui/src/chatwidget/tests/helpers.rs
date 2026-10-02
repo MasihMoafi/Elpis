@@ -1328,7 +1328,10 @@ pub(super) fn render_bottom_first_row(chat: &ChatWidget, width: u16) -> String {
                 row.push_str(s);
             }
         }
-        if !row.trim().is_empty() {
+        if !row.trim().is_empty()
+            && !row.trim_start().starts_with("Elpis ·")
+            && !row.trim_start().starts_with('┌')
+        {
             return row;
         }
     }
@@ -1787,7 +1790,9 @@ pub(super) async fn assert_hook_events_snapshot(
     assert!(
         running
             .lines()
-            .any(|line| line.contains("Working") && line.contains(status_message)),
+            .skip_while(|line| !line.contains("Elpising…"))
+            .take(2)
+            .any(|line| line.contains(status_message)),
         "hook start should render its status in the activity row: {running}"
     );
 

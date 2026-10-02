@@ -1,5 +1,6 @@
 ---
 source: tui/src/markdown_render_tests.rs
+assertion_line: 958
 expression: rendered
 ---
-Your codex launcher automatically adds those overrides (project/dotslash-gen/bin/codex:1105), even though you did not specify any.
+Your elpis launcher automatically adds those overrides (project/dotslash-gen/bin/codex:1105), even though you did not specify any.

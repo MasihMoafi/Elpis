@@ -1,11 +1,11 @@
 ---
 source: tui/src/startup_draft_tests.rs
-assertion_line: 194
+assertion_line: 203
 expression: "frames.join(\"\\n---\\n\").replace(crate::version::CODEX_CLI_VERSION, \"<VERSION>\")"
 ---
 terminal_app_over_ssh=false, owned=true
 
-  >_ OpenAI Codex (v<VERSION>)
+  ◆ Elpis (v0.4.0-dev)
      loading
 
   Pull up a prompt.
@@ -16,19 +16,19 @@ terminal_app_over_ssh=false, owned=true
 
 
 
-
+│
 › Ask Elpis to do anything
-
-  ? for shortcuts
+│
+  ? for shortcuts           Tab Context Ledger
 ---
 terminal_app_over_ssh=true, owned=false
 
-  >_ OpenAI Codex (v<VERSION>)
+  ◆ Elpis (v0.4.0-dev)
      loading
 
   Pull up a prompt.
 
-
+│
 › Ask Elpis to do anything
-
-  ? for shortcuts
+│
+  ? for shortcuts           Tab Context Ledger

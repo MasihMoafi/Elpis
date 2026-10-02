@@ -748,7 +748,7 @@ async fn windows_sandbox_setup_starts_a_fresh_status_clock() {
     chat.clear_windows_sandbox_setup_status();
     chat.bottom_pane.set_task_running(/*running*/ true);
     let working = render_bottom_popup(&chat, /*width*/ 80);
-    assert!(working.contains("Working"));
+    assert!(working.contains("Elpising…"));
     assert!(!working.contains("Setting up sandbox"));
 }
 

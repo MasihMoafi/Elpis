@@ -931,7 +931,7 @@ fn file_link_keeps_descriptive_label_and_target() {
     );
     let expected = Text::from(Line::from_iter([
         "Your ".into(),
-        Span::styled("codex", MarkdownStyles::default().code),
+        Span::styled("elpis", MarkdownStyles::default().code),
         " launcher ".into(),
         "automatically adds those overrides".into(),
         " (".into(),
