@@ -114,10 +114,14 @@ async fn resumed_session_hides_unknown_token_usage_until_an_update_arrives() {
         )),
     );
     chat.refresh_status_line();
-    assert_eq!(
-        status_line_text(&chat),
-        Some("Context 30% left · Context 70% used · 0 in · 0 out".to_string())
-    );
+    assert_eq!(status_line_text(&chat), None);
+    assert_eq!(chat.bottom_pane.context_window_percent(), Some(30));
+    let height = chat.desired_height(width);
+    let mut terminal = ratatui::Terminal::new(TestBackend::new(width, height)).unwrap();
+    terminal
+        .draw(|frame| chat.render(frame.area(), frame.buffer_mut()))
+        .unwrap();
+    assert!(normalized_backend_snapshot(terminal.backend()).contains("30% context left"));
 }
 
 #[tokio::test]
@@ -2820,10 +2824,10 @@ async fn status_line_estimated_thread_cost_fetches_and_renders_backend_estimate(
     chat.thread_id = Some(thread_id);
     chat.has_codex_backend_auth = true;
     chat.plan_type = Some(PlanType::Business);
-    chat.local_settings.tui.status_line = Some(vec!["estimated-thread-cost".to_string()]);
+    chat.local_settings.tui.terminal_title = Some(vec!["estimated-thread-cost".to_string()]);
 
-    chat.refresh_status_line();
-    assert_eq!(status_line_text(&chat), None);
+    chat.refresh_terminal_title();
+    assert_eq!(chat.last_terminal_title.clone(), None);
     let request_id = match rx.try_recv() {
         Ok(AppEvent::RefreshThreadUsage {
             thread_id: requested_thread_id,
@@ -2845,7 +2849,7 @@ async fn status_line_estimated_thread_cost_fetches_and_renders_backend_estimate(
             groups: Vec::new(),
         })),
     ));
-    assert_eq!(status_line_text(&chat), Some("~$1.82".to_string()));
+    assert_eq!(chat.last_terminal_title.clone(), Some("~$1.82".to_string()));
     assert!(rx.try_recv().is_err(), "idle refresh must not poll");
 }
 
@@ -2856,10 +2860,10 @@ async fn status_line_thread_credits_fetches_and_renders_fractional_credits() {
     chat.thread_id = Some(thread_id);
     chat.has_codex_backend_auth = true;
     chat.plan_type = Some(PlanType::Business);
-    chat.local_settings.tui.status_line = Some(vec!["thread-credits".to_string()]);
+    chat.local_settings.tui.terminal_title = Some(vec!["thread-credits".to_string()]);
 
-    chat.refresh_status_line();
-    assert_eq!(status_line_text(&chat), None);
+    chat.refresh_terminal_title();
+    assert_eq!(chat.last_terminal_title.clone(), None);
     let request_id = match rx.try_recv() {
         Ok(AppEvent::RefreshThreadUsage {
             thread_id: requested_thread_id,
@@ -2881,7 +2885,10 @@ async fn status_line_thread_credits_fetches_and_renders_fractional_credits() {
             groups: Vec::new(),
         })),
     ));
-    assert_eq!(status_line_text(&chat), Some("5.2 credits".to_string()));
+    assert_eq!(
+        chat.last_terminal_title.clone(),
+        Some("5.2 credits".to_string())
+    );
     assert!(rx.try_recv().is_err(), "idle refresh must not poll");
 }
 
@@ -2892,12 +2899,12 @@ async fn status_line_thread_credits_and_cost_share_one_backend_request() {
     chat.thread_id = Some(thread_id);
     chat.has_codex_backend_auth = true;
     chat.plan_type = Some(PlanType::Business);
-    chat.local_settings.tui.status_line = Some(vec![
+    chat.local_settings.tui.terminal_title = Some(vec![
         "thread-credits".to_string(),
         "estimated-thread-cost".to_string(),
     ]);
 
-    chat.refresh_status_line();
+    chat.refresh_terminal_title();
     let request_id = match rx.try_recv() {
         Ok(AppEvent::RefreshThreadUsage { request_id, .. }) => request_id,
         event => panic!("expected a shared thread usage refresh, got {event:?}"),
@@ -2915,8 +2922,8 @@ async fn status_line_thread_credits_and_cost_share_one_backend_request() {
         })),
     ));
     assert_eq!(
-        status_line_text(&chat),
-        Some("5.2 credits · ~$0.21".to_string())
+        chat.last_terminal_title.clone(),
+        Some("5.2 credits | ~$0.21".to_string())
     );
     assert!(rx.try_recv().is_err(), "idle refresh must not poll");
 }
@@ -2928,12 +2935,12 @@ async fn status_line_thread_credits_remain_visible_when_usd_is_unavailable() {
     chat.thread_id = Some(thread_id);
     chat.has_codex_backend_auth = true;
     chat.plan_type = Some(PlanType::Business);
-    chat.local_settings.tui.status_line = Some(vec![
+    chat.local_settings.tui.terminal_title = Some(vec![
         "thread-credits".to_string(),
         "estimated-thread-cost".to_string(),
     ]);
 
-    chat.refresh_status_line();
+    chat.refresh_terminal_title();
     let request_id = match rx.try_recv() {
         Ok(AppEvent::RefreshThreadUsage { request_id, .. }) => request_id,
         event => panic!("expected a shared thread usage refresh, got {event:?}"),
@@ -2949,7 +2956,10 @@ async fn status_line_thread_credits_remain_visible_when_usd_is_unavailable() {
         })),
     ));
 
-    assert_eq!(status_line_text(&chat), Some("5.2 credits".to_string()));
+    assert_eq!(
+        chat.last_terminal_title.clone(),
+        Some("5.2 credits".to_string())
+    );
     assert!(
         rx.try_recv().is_err(),
         "credits-only estimates must not trigger retries"
@@ -3066,7 +3076,13 @@ async fn terminal_title_and_status_line_share_one_thread_usage_request() {
     ));
 
     assert_eq!(chat.last_terminal_title, Some("5.2 credits".to_string()));
-    assert_eq!(status_line_text(&chat), Some("~$0.21".to_string()));
+    assert_eq!(status_line_text(&chat), None);
+    assert_eq!(
+        chat.estimated_thread_usage()
+            .unwrap()
+            .estimated_usage_usd_micros,
+        Some(210_000)
+    );
 }
 
 #[tokio::test]
@@ -3082,7 +3098,7 @@ async fn status_line_estimated_thread_cost_avoids_unsupported_plan_requests() {
 
     chat.refresh_status_line();
 
-    assert_eq!(status_line_text(&chat), Some("Ready".to_string()));
+    assert_eq!(status_line_text(&chat), None);
     assert!(
         rx.try_recv().is_err(),
         "unsupported plans must not query usage"
@@ -3121,8 +3137,8 @@ async fn status_line_estimated_thread_cost_preserves_cached_amount_during_settle
     chat.thread_id = Some(thread_id);
     chat.has_codex_backend_auth = true;
     chat.plan_type = Some(PlanType::Business);
-    chat.local_settings.tui.status_line = Some(vec!["estimated-thread-cost".to_string()]);
-    chat.refresh_status_line();
+    chat.local_settings.tui.terminal_title = Some(vec!["estimated-thread-cost".to_string()]);
+    chat.refresh_terminal_title();
     let initial_request_id = match rx.try_recv() {
         Ok(AppEvent::RefreshThreadUsage { request_id, .. }) => request_id,
         event => panic!("expected initial thread usage refresh, got {event:?}"),
@@ -3154,7 +3170,7 @@ async fn status_line_estimated_thread_cost_preserves_cached_amount_during_settle
         })),
     ));
 
-    assert_eq!(status_line_text(&chat), Some("~$1.82".to_string()));
+    assert_eq!(chat.last_terminal_title.clone(), Some("~$1.82".to_string()));
     assert!(
         rx.try_recv().is_err(),
         "settlement must not poll continuously"
@@ -3168,8 +3184,8 @@ async fn completed_turn_refreshes_estimated_thread_cost() {
     chat.thread_id = Some(thread_id);
     chat.has_codex_backend_auth = true;
     chat.plan_type = Some(PlanType::Business);
-    chat.local_settings.tui.status_line = Some(vec!["estimated-thread-cost".to_string()]);
-    chat.refresh_status_line();
+    chat.local_settings.tui.terminal_title = Some(vec!["estimated-thread-cost".to_string()]);
+    chat.refresh_terminal_title();
 
     let initial_request_id = match rx.try_recv() {
         Ok(AppEvent::RefreshThreadUsage { request_id, .. }) => request_id,
@@ -3209,7 +3225,7 @@ async fn completed_turn_refreshes_estimated_thread_cost() {
             groups: Vec::new(),
         })),
     ));
-    assert_eq!(status_line_text(&chat), Some("~$2.10".to_string()));
+    assert_eq!(chat.last_terminal_title.clone(), Some("~$2.10".to_string()));
 }
 
 #[tokio::test]
@@ -3357,15 +3373,15 @@ async fn status_line_estimated_thread_cost_rejects_stale_thread_completions() {
     chat.thread_id = Some(previous_thread_id);
     chat.has_codex_backend_auth = true;
     chat.plan_type = Some(PlanType::Business);
-    chat.local_settings.tui.status_line = Some(vec!["estimated-thread-cost".to_string()]);
-    chat.refresh_status_line();
+    chat.local_settings.tui.terminal_title = Some(vec!["estimated-thread-cost".to_string()]);
+    chat.refresh_terminal_title();
     let previous_request_id = match rx.try_recv() {
         Ok(AppEvent::RefreshThreadUsage { request_id, .. }) => request_id,
         event => panic!("expected previous-thread usage refresh, got {event:?}"),
     };
 
     chat.thread_id = Some(active_thread_id);
-    chat.refresh_status_line();
+    chat.refresh_terminal_title();
     let active_request_id = match rx.try_recv() {
         Ok(AppEvent::RefreshThreadUsage { request_id, .. }) => request_id,
         event => panic!("expected active-thread usage refresh, got {event:?}"),
@@ -3380,7 +3396,7 @@ async fn status_line_estimated_thread_cost_rejects_stale_thread_completions() {
             groups: Vec::new(),
         })),
     ));
-    assert_eq!(status_line_text(&chat), None);
+    assert_eq!(chat.last_terminal_title.clone(), None);
 
     assert!(chat.finish_thread_usage_refresh(
         active_thread_id,
@@ -3392,7 +3408,10 @@ async fn status_line_estimated_thread_cost_rejects_stale_thread_completions() {
             groups: Vec::new(),
         })),
     ));
-    assert_eq!(status_line_text(&chat), Some("~$0.0004".to_string()));
+    assert_eq!(
+        chat.last_terminal_title.clone(),
+        Some("~$0.0004".to_string())
+    );
 }
 
 #[tokio::test]
@@ -3473,7 +3492,7 @@ async fn workspace_headline_update_applies_available_headline() {
     ));
 
     assert_eq!(
-        status_line_text(&chat),
+        chat.status_line_workspace_headline.clone(),
         Some("Fresh workspace headline".to_string())
     );
     assert!(!chat.status_line_workspace_messages_disabled);
@@ -3580,7 +3599,7 @@ async fn account_update_discards_stale_workspace_headline_results() {
     ));
     assert_eq!(
         (
-            status_line_text(&chat),
+            chat.status_line_workspace_headline.clone(),
             chat.status_line_workspace_headline_pending_request_id,
             chat.status_line_workspace_messages_disabled,
         ),
@@ -3768,7 +3787,7 @@ async fn status_line_and_terminal_title_reasoning_render_only_effort() {
     chat.refresh_status_line();
     chat.refresh_terminal_title();
 
-    assert_eq!(status_line_text(&chat), Some("xhigh".to_string()));
+    assert_eq!(status_line_text(&chat), None);
     assert_eq!(chat.last_terminal_title, Some("xhigh".to_string()));
 }
 

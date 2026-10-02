@@ -219,14 +219,7 @@ async fn status_command_renders_immediately_and_updates_first_card_without_statu
     chat.thread_id = Some(thread_id);
     chat.plan_type = Some(PlanType::Business);
 
-    chat.dispatch_command(SlashCommand::Status);
-
-    let first_cell = match rx.try_recv() {
-        Ok(AppEvent::InsertHistoryCell(cell)) => cell,
-        event => panic!("expected immediate /status output, got {event:?}"),
-    };
-    let initial = lines_to_single_string(&first_cell.display_lines(/*width*/ 90));
-    assert!(!initial.contains("Thread usage"));
+    chat.dispatch_command(SlashCommand::Usage);
 
     let request_id = match rx.try_recv() {
         Ok(AppEvent::RefreshThreadUsage {
@@ -238,6 +231,13 @@ async fn status_command_renders_immediately_and_updates_first_card_without_statu
         }
         event => panic!("expected /status to request thread usage, got {event:?}"),
     };
+    let first_cell = match rx.try_recv() {
+        Ok(AppEvent::Elpis(crate::elpis_app_event::ElpisAppEvent::OpenUsage(cell))) => cell,
+        event => panic!("expected immediate /status output, got {event:?}"),
+    };
+    let initial = lines_to_single_string(&first_cell.display_lines(/*width*/ 90));
+    assert!(!initial.contains("Thread usage"));
+
     drain_insert_history(&mut rx);
     assert!(chat.finish_thread_usage_refresh(
         thread_id,
@@ -277,9 +277,10 @@ async fn status_command_renders_immediately_and_updates_first_card_without_statu
     assert!(settled.contains("50 credits · ~$1.82"));
     assert!(settled.contains("GPT-5.4 80%, GPT-5 Mini 20%"));
     assert!(drain_insert_history(&mut rx).is_empty());
-    chat.dispatch_command(SlashCommand::Status);
+    chat.dispatch_command(SlashCommand::Usage);
+    assert_matches!(rx.try_recv(), Ok(AppEvent::RefreshThreadUsage { .. }));
     let cell = match rx.try_recv() {
-        Ok(AppEvent::InsertHistoryCell(cell)) => cell,
+        Ok(AppEvent::Elpis(crate::elpis_app_event::ElpisAppEvent::OpenUsage(cell))) => cell,
         event => panic!("expected /status output with cached thread usage, got {event:?}"),
     };
     let rendered =
@@ -342,16 +343,16 @@ async fn status_command_stays_visible_and_updates_after_thread_usage_retry() {
     chat.thread_id = Some(thread_id);
     chat.plan_type = Some(PlanType::Business);
 
-    chat.dispatch_command(SlashCommand::Status);
-    let cell = match rx.try_recv() {
-        Ok(AppEvent::InsertHistoryCell(cell)) => cell,
-        event => panic!("expected immediate /status output, got {event:?}"),
-    };
-    assert!(!lines_to_single_string(&cell.display_lines(/*width*/ 90)).contains("Thread usage"));
+    chat.dispatch_command(SlashCommand::Usage);
     let request_id = match rx.try_recv() {
         Ok(AppEvent::RefreshThreadUsage { request_id, .. }) => request_id,
         event => panic!("expected thread usage request, got {event:?}"),
     };
+    let cell = match rx.try_recv() {
+        Ok(AppEvent::Elpis(crate::elpis_app_event::ElpisAppEvent::OpenUsage(cell))) => cell,
+        event => panic!("expected immediate /status output, got {event:?}"),
+    };
+    assert!(!lines_to_single_string(&cell.display_lines(/*width*/ 90)).contains("Thread usage"));
     while rx.try_recv().is_ok() {}
     assert!(chat.finish_thread_usage_refresh(
         thread_id,
@@ -360,14 +361,14 @@ async fn status_command_stays_visible_and_updates_after_thread_usage_retry() {
     ));
     assert!(drain_insert_history(&mut rx).is_empty());
 
-    chat.dispatch_command(SlashCommand::Status);
-    let retry_cell = match rx.try_recv() {
-        Ok(AppEvent::InsertHistoryCell(cell)) => cell,
-        event => panic!("expected another immediate /status output, got {event:?}"),
-    };
+    chat.dispatch_command(SlashCommand::Usage);
     let retry_request_id = match rx.try_recv() {
         Ok(AppEvent::RefreshThreadUsage { request_id, .. }) => request_id,
         event => panic!("expected thread usage retry, got {event:?}"),
+    };
+    let retry_cell = match rx.try_recv() {
+        Ok(AppEvent::Elpis(crate::elpis_app_event::ElpisAppEvent::OpenUsage(cell))) => cell,
+        event => panic!("expected another immediate /status output, got {event:?}"),
     };
     assert!(chat.finish_thread_usage_refresh(
         thread_id,
@@ -396,14 +397,14 @@ async fn status_command_renders_credits_and_breakdowns_without_usd_estimate() {
     chat.thread_id = Some(thread_id);
     chat.plan_type = Some(PlanType::Business);
 
-    chat.dispatch_command(SlashCommand::Status);
-    let first_cell = match rx.try_recv() {
-        Ok(AppEvent::InsertHistoryCell(cell)) => cell,
-        event => panic!("expected immediate /status output, got {event:?}"),
-    };
+    chat.dispatch_command(SlashCommand::Usage);
     let request_id = match rx.try_recv() {
         Ok(AppEvent::RefreshThreadUsage { request_id, .. }) => request_id,
         event => panic!("expected thread usage request, got {event:?}"),
+    };
+    let first_cell = match rx.try_recv() {
+        Ok(AppEvent::Elpis(crate::elpis_app_event::ElpisAppEvent::OpenUsage(cell))) => cell,
+        event => panic!("expected immediate /status output, got {event:?}"),
     };
     drain_insert_history(&mut rx);
     assert!(chat.finish_thread_usage_refresh(
@@ -432,9 +433,10 @@ async fn status_command_renders_credits_and_breakdowns_without_usd_estimate() {
     assert!(first_rendered.contains("GPT-5.4 100%"));
     assert!(!first_rendered.contains("~$"));
     drain_insert_history(&mut rx);
-    chat.dispatch_command(SlashCommand::Status);
+    chat.dispatch_command(SlashCommand::Usage);
+    assert_matches!(rx.try_recv(), Ok(AppEvent::RefreshThreadUsage { .. }));
     let rendered = match rx.try_recv() {
-        Ok(AppEvent::InsertHistoryCell(cell)) => {
+        Ok(AppEvent::Elpis(crate::elpis_app_event::ElpisAppEvent::OpenUsage(cell))) => {
             lines_to_single_string(&cell.display_lines(/*width*/ 90))
         }
         event => panic!("expected cached credits-only /status output, got {event:?}"),
@@ -464,12 +466,17 @@ async fn status_command_drops_stale_usd_when_updated_usage_has_only_credits() {
     chat.thread_id = Some(thread_id);
     chat.plan_type = Some(PlanType::Business);
 
-    chat.dispatch_command(SlashCommand::Status);
-    assert_matches!(rx.try_recv(), Ok(AppEvent::InsertHistoryCell(_)));
+    chat.dispatch_command(SlashCommand::Usage);
     let request_id = match rx.try_recv() {
         Ok(AppEvent::RefreshThreadUsage { request_id, .. }) => request_id,
         event => panic!("expected initial thread usage request, got {event:?}"),
     };
+    assert_matches!(
+        rx.try_recv(),
+        Ok(AppEvent::Elpis(
+            crate::elpis_app_event::ElpisAppEvent::OpenUsage(_)
+        ))
+    );
     drain_insert_history(&mut rx);
     assert!(chat.finish_thread_usage_refresh(
         thread_id,
@@ -483,18 +490,18 @@ async fn status_command_drops_stale_usd_when_updated_usage_has_only_credits() {
     ));
 
     drain_insert_history(&mut rx);
-    chat.dispatch_command(SlashCommand::Status);
+    chat.dispatch_command(SlashCommand::Usage);
+    let request_id = match rx.try_recv() {
+        Ok(AppEvent::RefreshThreadUsage { request_id, .. }) => request_id,
+        event => panic!("expected refreshed thread usage request, got {event:?}"),
+    };
     let cached = match rx.try_recv() {
-        Ok(AppEvent::InsertHistoryCell(cell)) => {
+        Ok(AppEvent::Elpis(crate::elpis_app_event::ElpisAppEvent::OpenUsage(cell))) => {
             lines_to_single_string(&cell.display_lines(/*width*/ 90))
         }
         event => panic!("expected cached /status output, got {event:?}"),
     };
     assert!(cached.contains("40 credits · ~$1.82"));
-    let request_id = match rx.try_recv() {
-        Ok(AppEvent::RefreshThreadUsage { request_id, .. }) => request_id,
-        event => panic!("expected refreshed thread usage request, got {event:?}"),
-    };
     drain_insert_history(&mut rx);
     assert!(chat.finish_thread_usage_refresh(
         thread_id,
@@ -508,9 +515,10 @@ async fn status_command_drops_stale_usd_when_updated_usage_has_only_credits() {
     ));
 
     drain_insert_history(&mut rx);
-    chat.dispatch_command(SlashCommand::Status);
+    chat.dispatch_command(SlashCommand::Usage);
+    assert_matches!(rx.try_recv(), Ok(AppEvent::RefreshThreadUsage { .. }));
     let refreshed = match rx.try_recv() {
-        Ok(AppEvent::InsertHistoryCell(cell)) => {
+        Ok(AppEvent::Elpis(crate::elpis_app_event::ElpisAppEvent::OpenUsage(cell))) => {
             lines_to_single_string(&cell.display_lines(/*width*/ 90))
         }
         event => panic!("expected credits-only /status output, got {event:?}"),
@@ -535,10 +543,15 @@ async fn status_command_requests_thread_usage_for_remote_connection_metadata() {
         is_local_daemon: false,
     });
 
-    chat.dispatch_command(SlashCommand::Status);
+    chat.dispatch_command(SlashCommand::Usage);
 
-    assert_matches!(rx.try_recv(), Ok(AppEvent::InsertHistoryCell(_)));
     assert_matches!(rx.try_recv(), Ok(AppEvent::RefreshThreadUsage { .. }));
+    assert_matches!(
+        rx.try_recv(),
+        Ok(AppEvent::Elpis(
+            crate::elpis_app_event::ElpisAppEvent::OpenUsage(_)
+        ))
+    );
 }
 
 #[tokio::test]
@@ -553,10 +566,15 @@ async fn status_command_requests_thread_usage_with_backend_only_authentication()
     );
     assert!(!chat.has_chatgpt_account());
     assert!(chat.has_codex_backend_auth());
-    chat.dispatch_command(SlashCommand::Status);
+    chat.dispatch_command(SlashCommand::Usage);
 
-    assert_matches!(rx.try_recv(), Ok(AppEvent::InsertHistoryCell(_)));
     assert_matches!(rx.try_recv(), Ok(AppEvent::RefreshThreadUsage { .. }));
+    assert_matches!(
+        rx.try_recv(),
+        Ok(AppEvent::Elpis(
+            crate::elpis_app_event::ElpisAppEvent::OpenUsage(_)
+        ))
+    );
 }
 
 #[tokio::test]
@@ -567,12 +585,17 @@ async fn status_command_remains_visible_when_account_changes_during_usage_refres
     chat.thread_id = Some(thread_id);
     chat.plan_type = Some(PlanType::Business);
 
-    chat.dispatch_command(SlashCommand::Status);
-    assert_matches!(rx.try_recv(), Ok(AppEvent::InsertHistoryCell(_)));
+    chat.dispatch_command(SlashCommand::Usage);
     let request_id = match rx.try_recv() {
         Ok(AppEvent::RefreshThreadUsage { request_id, .. }) => request_id,
         event => panic!("expected thread usage request, got {event:?}"),
     };
+    assert_matches!(
+        rx.try_recv(),
+        Ok(AppEvent::Elpis(
+            crate::elpis_app_event::ElpisAppEvent::OpenUsage(_)
+        ))
+    );
     drain_insert_history(&mut rx);
 
     chat.update_account_state(
@@ -601,12 +624,17 @@ async fn status_command_remains_visible_when_thread_changes_during_usage_refresh
     chat.thread_id = Some(thread_id);
     chat.plan_type = Some(PlanType::Business);
 
-    chat.dispatch_command(SlashCommand::Status);
-    assert_matches!(rx.try_recv(), Ok(AppEvent::InsertHistoryCell(_)));
+    chat.dispatch_command(SlashCommand::Usage);
     let request_id = match rx.try_recv() {
         Ok(AppEvent::RefreshThreadUsage { request_id, .. }) => request_id,
         event => panic!("expected thread usage request, got {event:?}"),
     };
+    assert_matches!(
+        rx.try_recv(),
+        Ok(AppEvent::Elpis(
+            crate::elpis_app_event::ElpisAppEvent::OpenUsage(_)
+        ))
+    );
     drain_insert_history(&mut rx);
 
     chat.thread_id = Some(ThreadId::new());
