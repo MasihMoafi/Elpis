@@ -3,7 +3,7 @@ source: tui/src/app/tests/background_task_defaults_tests.rs
 assertion_line: 1220
 expression: "rendered.replace(&unused.root.display().to_string(), \"<worktree>\")"
 ---
- Elpis · model gpt-6.1-sol default · location /tmp/.tmpO6qaVM/home/worktrees/8e8e/project/subdir
+ Elpis · model gpt-6.1-sol default · location /tmp/.tmpr1hhQG/home/worktrees/b3af/project/subdir
 
   Unable to complete action
   Failed to start session: thread/start failed during TUI bootstrap: thread/start failed: replacement unavailable (code -32603) A checkout was retained at <worktree>; remove it with `git worktree remove <checkout-path>` from the source repository if it is no longer needed.

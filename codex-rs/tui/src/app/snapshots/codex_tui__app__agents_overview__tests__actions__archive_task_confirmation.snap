@@ -1,9 +1,9 @@
 ---
 source: tui/src/app/agents_overview_actions_tests.rs
-assertion_line: 29
+assertion_line: 678
 expression: "render_bottom_popup(&app.chat_widget, 72)"
 ---
- Elpis · model gpt-5.6-sol default · location /tmp/project
+ Elpis · model gpt-5.2 default · location /
 
   Archive “Current task”?
   This stops any running work in this task and its child agents, then

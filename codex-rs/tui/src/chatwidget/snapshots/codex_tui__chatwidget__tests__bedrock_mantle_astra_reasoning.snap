@@ -1,7 +1,10 @@
 ---
 source: tui/src/chatwidget/tests/bedrock_catalog_tests.rs
+assertion_line: 55
 expression: "render_bottom_popup(&chat, 100)"
 ---
+ Elpis · model openai.gpt-6.1-sol default · location /tmp/project
+
   Select Reasoning Level for GPT-6-Astra
 
 
