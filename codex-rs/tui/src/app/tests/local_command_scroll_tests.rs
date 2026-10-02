@@ -297,7 +297,8 @@ async fn local_command_and_inline_error_reveal_their_history_output() -> Result<
             "/model",
             "Model selection is disabled until startup completes.",
         ),
-        ("/status", "/status"),
+        // Elpis: /status is hidden (R8); /pwd is a local command that still prints history.
+        ("/pwd", "Current working directory:"),
         ("/keymap invalid", "Usage: /keymap [debug]"),
     ] {
         hold_older_history(&mut app, &mut tui);

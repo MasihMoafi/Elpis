@@ -464,7 +464,7 @@ fn disconnected_sparkle_edits_are_tracked_between_renders() {
             for (scenario, input, draft) in [
                 ("ordinary", "x", SparkleDraft::Dismissed),
                 ("offline question mark", "?", SparkleDraft::Dismissed),
-                ("recognized command", "/status", SparkleDraft::Command),
+                ("recognized command", "/context", SparkleDraft::Command),
                 ("unknown command", "/xyz", SparkleDraft::Dismissed),
             ] {
                 let mut pane = pane();
@@ -526,12 +526,13 @@ fn disconnected_sparkle_edits_are_tracked_between_renders() {
 }
 
 #[test]
+// Elpis: /status is hidden (R8), so these tests type /context, a bare read-only command.
 fn a_fresh_astra_response_waits_for_the_pending_command_to_leave() {
     palette(|| {
         let now = Instant::now();
         for completion in ["submit", "erase", "draft"] {
             let mut pane = pane();
-            type_text(&mut pane, "/status");
+            type_text(&mut pane, "/context");
             pane.mark_fresh_task_for_sparkle("astra", &enabled());
             let pending = draw(&pane.composer, /*width*/ 80, now).0;
             assert!(dots(&pending).is_empty());
@@ -539,10 +540,10 @@ fn a_fresh_astra_response_waits_for_the_pending_command_to_leave() {
             match completion {
                 "submit" => assert!(matches!(
                     key(&mut pane, KeyCode::Enter),
-                    InputResult::Command(SlashCommand::Status)
+                    InputResult::Command(SlashCommand::Context)
                 )),
                 "erase" => {
-                    for _ in "/status".chars() {
+                    for _ in "/context".chars() {
                         key(&mut pane, KeyCode::Backspace);
                     }
                 }
@@ -764,7 +765,7 @@ fn cancelling_history_search_preserves_a_typed_command_despite_attachment_previe
         let now = Instant::now();
         let mut pane = pane();
         pane.mark_fresh_task_for_sparkle("gpt-5.5", &enabled());
-        type_text(&mut pane, "/status");
+        type_text(&mut pane, "/context");
         let mut entry = HistoryEntry::new("history attachment".into());
         entry.local_image_paths = vec![crate::test_support::test_path_buf("/tmp/image.png")];
         entry.remote_image_urls = vec!["https://example.com/image.png".into()];
@@ -775,12 +776,12 @@ fn cancelling_history_search_preserves_a_typed_command_despite_attachment_previe
         assert!(!pane.composer.remote_image_urls().is_empty());
         assert_eq!(pane.composer.sparkle.draft.get(), SparkleDraft::Command);
         key(&mut pane, KeyCode::Esc);
-        assert_eq!(pane.composer.current_text(), "/status");
+        assert_eq!(pane.composer.current_text(), "/context");
         assert!(pane.composer.local_image_paths().is_empty());
         assert!(pane.composer.remote_image_urls().is_empty());
         assert!(matches!(
             key(&mut pane, KeyCode::Enter),
-            InputResult::Command(SlashCommand::Status)
+            InputResult::Command(SlashCommand::Context)
         ));
         pane.select_sparkle_model("astra", &enabled());
         assert!(!dots(&draw(&pane.composer, /*width*/ 80, now).0).is_empty());
@@ -810,7 +811,8 @@ fn arbitrary_commands_preserve_a_never_used_fresh_opportunity() {
             let mut pane = pane();
             pane.mark_fresh_task_for_sparkle("gpt-5.5", &enabled());
             assert!(dots(&draw(&pane.composer, /*width*/ 80, now).0).is_empty());
-            for command in ["/status", "/diff", "/pwd"] {
+            // Elpis: /pwd is unlisted, so typing it leaves the command popup and ends the sparkle; /copy stays listed.
+            for command in ["/context", "/diff", "/copy"] {
                 type_text(&mut pane, command);
                 assert!(matches!(
                     key(&mut pane, KeyCode::Enter),
@@ -866,7 +868,7 @@ fn canceled_commands_remain_eligible_but_inserted_content_and_ordinary_paste_do_
 
         let mut canceled = pane();
         canceled.mark_fresh_task_for_sparkle("gpt-5.5", &enabled());
-        type_text(&mut canceled, "/sta");
+        type_text(&mut canceled, "/con");
         for _ in 0..4 {
             key(&mut canceled, KeyCode::Backspace);
         }
@@ -958,13 +960,13 @@ fn buffered_commands_and_read_only_inline_arguments_preserve_eligibility() {
             .composer
             .set_disable_paste_burst(/*disabled*/ false);
         buffered.mark_fresh_task_for_sparkle("gpt-5.5", &enabled());
-        type_text(&mut buffered, "/status");
+        type_text(&mut buffered, "/context");
         buffered
             .composer
             .handle_paste_burst_flush(now + Duration::from_secs(/*secs*/ 1));
         assert!(matches!(
             key(&mut buffered, KeyCode::Enter),
-            InputResult::Command(SlashCommand::Status)
+            InputResult::Command(SlashCommand::Context)
         ));
         assert_eq!(
             buffered.composer.sparkle.draft.get(),
@@ -994,7 +996,7 @@ fn commands_hide_a_started_sparkle_without_restarting_its_deadline() {
         let mut pane = pane();
         pane.mark_fresh_task_for_sparkle("astra", &enabled());
         assert!(!dots(&draw(&pane.composer, /*width*/ 80, now).0).is_empty());
-        type_text(&mut pane, "/status");
+        type_text(&mut pane, "/context");
         assert!(
             dots(
                 &draw(
@@ -1008,7 +1010,7 @@ fn commands_hide_a_started_sparkle_without_restarting_its_deadline() {
         );
         assert!(matches!(
             key(&mut pane, KeyCode::Enter),
-            InputResult::Command(SlashCommand::Status)
+            InputResult::Command(SlashCommand::Context)
         ));
         assert!(
             !dots(

@@ -1605,7 +1605,10 @@ async fn root_switch_loads_local_preferences_from_disk() -> Result<()> {
         "[tui]\ntheme = \"dracula\"\nresume_cwd = \"session\"\n[history]\npersistence = \"none\"\n",
     )?;
     let config = Box::pin(app.rebuild_config_for_cwd(app.config.cwd.to_path_buf())).await?;
-    let expected = crate::local_settings::LocalSettings::from(&config);
+    let mut expected = crate::local_settings::LocalSettings::from(&config);
+    // Elpis: the packaged defaults turn the full-screen transcript off (R18), but the test app
+    // starts without them. A root switch keeps this launch's screen, so expect the launch mode.
+    expected.transcript_mode = app.local_settings.transcript_mode;
     let mut tui = crate::tui::test_support::make_test_tui()?;
 
     Box::pin(app.select_agents_overview_thread(&mut tui, &mut app_server, target_thread_id))
