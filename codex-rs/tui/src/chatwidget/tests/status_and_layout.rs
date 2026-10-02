@@ -2116,7 +2116,7 @@ async fn streaming_final_answer_keeps_task_running_state() {
 
     chat.bottom_pane
         .set_composer_text("queued submission".to_string(), Vec::new(), Vec::new());
-    chat.handle_key_event(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
+    chat.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
 
     assert_eq!(chat.input_queue.queued_user_messages.len(), 1);
     assert_eq!(
@@ -2319,6 +2319,7 @@ async fn final_answer_completion_restores_status_indicator_for_pending_steer() {
         Vec::new(),
     );
     chat.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+    chat.handle_key_event(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
 
     assert_eq!(chat.input_queue.pending_steers.len(), 1);
     let items = match next_submit_op(&mut op_rx) {

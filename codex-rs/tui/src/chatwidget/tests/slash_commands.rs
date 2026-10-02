@@ -365,7 +365,11 @@ async fn queued_settings_selection_applies_before_next_input() {
     chat.model_catalog = std::sync::Arc::new(ModelCatalog::new(vec![preset]));
     handle_turn_started(&mut chat, "turn-1");
 
-    queue_composer_text_with_tab(&mut chat, "/model");
+    chat.queue_user_message_with_options(
+        UserMessage::from("/model".to_string()),
+        QueuedInputAction::ParseSlash,
+        Vec::new(),
+    );
     queue_composer_text_with_tab(&mut chat, "hello after selection");
 
     complete_turn_with_message(&mut chat, "turn-1", Some("done"));
@@ -411,7 +415,11 @@ async fn queued_bare_rename_drains_next_input_after_name_update() {
     chat.thread_id = Some(thread_id);
     handle_turn_started(&mut chat, "turn-1");
 
-    queue_composer_text_with_tab(&mut chat, "/rename");
+    chat.queue_user_message_with_options(
+        UserMessage::from("/rename".to_string()),
+        QueuedInputAction::ParseSlash,
+        Vec::new(),
+    );
     queue_composer_text_with_tab(&mut chat, "hello after rename");
 
     complete_turn_with_message(&mut chat, "turn-1", Some("done"));
@@ -587,7 +595,7 @@ async fn queued_unknown_slash_reports_error_when_dequeued() {
     let drain = chat.submit_queued_slash_prompt(UserMessage::from("/worktree").into());
     assert_matches!(drain, QueueDrain::Continue);
     assert!(drain_insert_history(&mut rx).iter().any(|lines| {
-        lines_to_single_string(lines).contains("Managed worktrees require a local Git repository.")
+        lines_to_single_string(lines).contains("Unrecognized command '/worktree'")
     }));
 }
 
@@ -620,7 +628,12 @@ async fn slash_init_does_not_depend_on_loaded_instruction_sources() {
 
     assert_eq!(chat.input_queue.queued_user_messages.len(), 1);
     assert!(drain_insert_history(&mut rx).is_empty());
-    assert_eq!(recall_latest_after_clearing(&mut chat), "/init");
+    let prompt = include_str!("../../../assets/prompt_for_init_command.md");
+    assert_eq!(
+        chat.input_queue.queued_user_messages.front().unwrap().text,
+        prompt
+    );
+    assert_eq!(recall_latest_after_clearing(&mut chat), prompt);
 }
 
 #[tokio::test]
@@ -1091,6 +1104,7 @@ async fn interrupted_merged_message_history_encodes_mentions_once() {
     );
 
     chat.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+    chat.handle_key_event(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
 
     match next_submit_op(&mut op_rx) {
         Op::UserTurn { items, .. } => {

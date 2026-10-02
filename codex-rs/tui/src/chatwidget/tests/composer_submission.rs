@@ -206,7 +206,7 @@ async fn rejected_hidden_shell_paste_preserves_colliding_draft_paste() {
     let model = chat.current_model().to_string();
     handle_turn_started(&mut chat, "turn-1");
     let payload = paste_hidden_shell_payload(&mut chat);
-    chat.handle_key_event(KeyEvent::from(KeyCode::Tab));
+    chat.handle_key_event(KeyEvent::from(KeyCode::Enter));
     let draft_payload = format!("draft {}", "y".repeat(1000));
     chat.handle_paste(draft_payload.clone());
     chat.set_model("");
@@ -1972,7 +1972,7 @@ async fn unbound_queued_message_edit_does_not_fall_back_to_alt_up() {
 }
 
 #[tokio::test]
-async fn queued_message_edit_hint_displays_configured_chords() {
+async fn queued_message_edit_hint_uses_up_with_configured_chord() {
     use codex_config::types::KeybindingSpec;
     use codex_config::types::KeybindingsSpec;
     use codex_config::types::TuiKeymap;
@@ -1989,14 +1989,12 @@ async fn queued_message_edit_hint_displays_configured_chords() {
         .push_back(UserMessage::from("queued".to_string()).into());
     chat.refresh_pending_input_preview();
 
-    let hint = crate::key_hint::ShortcutHint::Chord {
-        prefix: crate::key_hint::ctrl(KeyCode::Char('x')),
-        completion: crate::key_hint::plain(KeyCode::Up),
-    };
-    assert!(render_bottom_popup(&chat, /*width*/ 100).contains(&format!(
-        "{} edit last queued message",
-        hint.display_label()
-    )));
+    let rendered = render_bottom_popup(&chat, /*width*/ 100);
+    assert!(rendered.contains("↑ edit all · enter send"));
+    assert!(!rendered.contains("edit last queued message"));
+    chat.handle_key_event(KeyEvent::new(KeyCode::Up, KeyModifiers::NONE));
+    assert_eq!(chat.bottom_pane.composer_text(), "queued");
+    assert!(chat.input_queue.queued_user_messages.is_empty());
 }
 
 /// Pressing Up to recall the most recent history entry and immediately queuing

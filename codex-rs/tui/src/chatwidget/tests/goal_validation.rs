@@ -145,7 +145,11 @@ async fn queued_goal_slash_command_emits_oversized_objective_and_stops_queue() {
     handle_turn_started(&mut chat, "turn-1");
     let objective = "x".repeat(MAX_THREAD_GOAL_OBJECTIVE_CHARS + 1);
 
-    queue_composer_text_with_tab(&mut chat, &format!("/goal {objective}"));
+    chat.queue_user_message_with_options(
+        UserMessage::from(format!("/goal {objective}")),
+        QueuedInputAction::ParseSlash,
+        Vec::new(),
+    );
     queue_composer_text_with_tab(&mut chat, "continue");
     assert_eq!(chat.input_queue.queued_user_messages.len(), 2);
 

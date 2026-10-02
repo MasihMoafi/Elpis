@@ -1026,6 +1026,7 @@ async fn plan_implementation_popup_skips_when_steer_follows_proposed_plan() {
     chat.bottom_pane
         .set_composer_text("Please continue.".to_string(), Vec::new(), Vec::new());
     chat.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+    chat.handle_key_event(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
 
     match next_submit_op(&mut op_rx) {
         Op::UserTurn { items, .. } => assert_eq!(
@@ -1068,6 +1069,7 @@ async fn plan_implementation_popup_shows_after_new_plan_follows_steer() {
     chat.bottom_pane
         .set_composer_text("Please revise.".to_string(), Vec::new(), Vec::new());
     chat.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+    chat.handle_key_event(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
 
     match next_submit_op(&mut op_rx) {
         Op::UserTurn { items, .. } => assert_eq!(
@@ -1327,7 +1329,7 @@ async fn submit_user_message_emits_structured_plugin_mentions_from_bindings() {
 }
 
 #[tokio::test]
-async fn enter_submits_when_plan_stream_is_not_active() {
+async fn enter_queues_when_plan_turn_is_active_without_plan_stream() {
     let (mut chat, _rx, mut op_rx) = make_chatwidget_manual(Some("gpt-5.5")).await;
     chat.thread_id = Some(ThreadId::new());
     chat.set_feature_enabled(Feature::CollaborationModes, /*enabled*/ true);
@@ -1340,11 +1342,13 @@ async fn enter_submits_when_plan_stream_is_not_active() {
         .set_composer_text("submitted immediately".to_string(), Vec::new(), Vec::new());
     chat.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
 
-    assert!(chat.input_queue.queued_user_messages.is_empty());
-    match next_submit_op(&mut op_rx) {
-        Op::UserTurn { .. } => {}
-        other => panic!("expected Op::UserTurn, got {other:?}"),
-    }
+    assert_eq!(chat.input_queue.queued_user_messages.len(), 1);
+    assert_eq!(
+        chat.input_queue.queued_user_messages.front().unwrap().text,
+        "submitted immediately"
+    );
+    assert!(chat.input_queue.pending_steers.is_empty());
+    assert_no_submit_op(&mut op_rx);
 }
 
 #[tokio::test]
@@ -1526,7 +1530,7 @@ async fn plan_slash_command_with_hidden_shell_paste_queued_during_turn_submits_l
     handle_turn_started(&mut chat, "turn-1");
     let payload = paste_hidden_plan_shell_payload(&mut chat);
 
-    chat.handle_key_event(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
+    chat.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
     assert_eq!(
         chat.input_queue
             .queued_user_messages
