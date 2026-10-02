@@ -5134,23 +5134,6 @@ mod tests {
     use crate::bottom_pane::InputResult;
     use crate::bottom_pane::chat_composer::LARGE_PASTE_CHAR_THRESHOLD;
 
-    /// The Elpis accent on a dark terminal, where it is a real color rather than the reset default.
-    fn with_accent<T>(test: impl FnOnce(Option<Color>) -> T) -> T {
-        let colors = crate::terminal_probe::DefaultColors {
-            fg: (0xee, 0xee, 0xee),
-            bg: (0x10, 0x10, 0x10),
-        };
-        crate::terminal_palette::with_test_default_colors(colors, || {
-            let accent = crate::elpis_motion::accent_style().fg;
-            assert_ne!(
-                accent,
-                Some(Color::Reset),
-                "the accent must be a real color"
-            );
-            test(accent)
-        })
-    }
-
     /// A Vim mode label as Elpis draws it: every mode wears the Elpis accent, not one color per mode.
     fn vim_label(label: &'static str) -> Span<'static> {
         Span::from(label).style(crate::elpis_motion::accent_style())
@@ -5562,7 +5545,7 @@ mod tests {
 
     #[test]
     fn shell_command_uses_shell_accent_style() {
-        with_accent(|accent| {
+        crate::test_support::with_elpis_accent(|accent| {
             let (tx, _rx) = unbounded_channel::<AppEvent>();
             let sender = AppEventSender::new(tx);
             let mut composer = ChatComposer::new(
@@ -5620,7 +5603,7 @@ mod tests {
 
     #[test]
     fn plugin_at_mentions_use_plugin_accent_style() {
-        with_accent(|accent| {
+        crate::test_support::with_elpis_accent(|accent| {
             let (tx, _rx) = unbounded_channel::<AppEvent>();
             let sender = AppEventSender::new(tx);
             let mut composer = ChatComposer::new(
@@ -5698,7 +5681,7 @@ mod tests {
 
     #[test]
     fn recalled_plugin_at_mentions_keep_plugin_accent_style() {
-        with_accent(|accent| {
+        crate::test_support::with_elpis_accent(|accent| {
             let (tx, _rx) = unbounded_channel::<AppEvent>();
             let sender = AppEventSender::new(tx);
             let mut composer = ChatComposer::new(
