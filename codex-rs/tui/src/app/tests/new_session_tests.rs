@@ -175,12 +175,16 @@ async fn replacement_uses_server_defaults_and_preserves_explicit_launch_settings
             ],
         );
         if explicit == "saved" {
+            // Elpis: the identity line carries the model; the Ledger beside it is hidden.
+            crate::app::test_support::hide_context_ledger(&mut app);
             let rendered = render_bottom_popup(&app.chat_widget, /*width*/ 80)
                 .replace(&server_config.cwd.display().to_string(), "<PROJECT>");
             insta::assert_snapshot!(rendered, @r"
+             Elpis · model server-model high · location <PROJECT>
+            │
             › Ask Elpis to do anything
-
-              server-model high · <PROJECT>
+            │
+              ? for shortcuts                       100% context left · Tab Context Ledger
             ");
         }
         server.shutdown().await?;

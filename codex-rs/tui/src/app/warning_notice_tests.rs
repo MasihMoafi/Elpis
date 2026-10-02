@@ -22,6 +22,8 @@ fn screen(tui: &tui::Tui) -> String {
 #[tokio::test]
 async fn warning_notice_keeps_details_in_transcript_and_preserves_draft() -> Result<()> {
     let mut app = crate::app::test_support::make_test_app().await;
+    // Elpis: the Context Ledger takes the bottom rows, so the owned screen is tested without it.
+    crate::app::test_support::hide_context_ledger(&mut app);
     let mut tui = crate::tui::test_support::make_test_tui()?;
     tui.set_owned_screen(/*owned*/ true)?;
     let size = Size::new(/*width*/ 80, /*height*/ 24);

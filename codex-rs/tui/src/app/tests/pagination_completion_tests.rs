@@ -221,6 +221,8 @@ async fn beginning_navigation_holds_the_view_until_the_last_page_arrives() -> Re
         app.transcript_view.history = TranscriptHistoryState::Partial;
         let mut tui = crate::tui::test_support::make_test_tui()?;
         tui.set_owned_screen(/*owned*/ true)?;
+        // Elpis: the Context Ledger takes the bottom rows, so the owned screen is tested without it.
+        crate::app::test_support::hide_context_ledger(&mut app);
         let size = ratatui::layout::Size::new(/*width*/ 80, /*height*/ 12);
         let render = |app: &mut App, tui: &mut tui::Tui| -> Result<Buffer> {
             tui.screen_size_for_event(&TuiEvent::Resize(size))?;

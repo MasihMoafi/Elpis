@@ -4,7 +4,7 @@ expression: "format!(\"enabled:\\n{}\\n---\\ndisabled:\\n{}\", text(after), text
 ---
 enabled:
 
-  >_ OpenAI Codex (v0.0.0)
+  ◆ Elpis (v0.4.0-dev)
      /tmp/project
 
   Pull up a prompt.
@@ -41,16 +41,16 @@ enabled:
 
 
 
+ Elpis · model gpt-5.6-sol default · location /tmp/project
 
-
+│
 › Ask Elpis to do anything
-
-  GPT-5.6-Sol default · /tmp/project
-  ? for shortcuts                                                                              ⚠ 1 warning · f2 to view
+│
+  ? for shortcuts                                    100% context left · Tab Context Ledger    ⚠ 1 warning · f2 to view
 ---
 disabled:
 
-  >_ OpenAI Codex (v0.0.0)
+  ◆ Elpis (v0.4.0-dev)
      /tmp/project
 
   Pull up a prompt.
@@ -87,9 +87,9 @@ disabled:
 
 
 
+ Elpis · model gpt-5.6-sol default · location /tmp/project
 
-
+│
 › Ask Elpis to do anything
-
-  GPT-5.6-Sol default · /tmp/project
-  ? for shortcuts                                                                              ⚠ 1 warning · f2 to view
+│
+  ? for shortcuts                                    100% context left · Tab Context Ledger    ⚠ 1 warning · f2 to view

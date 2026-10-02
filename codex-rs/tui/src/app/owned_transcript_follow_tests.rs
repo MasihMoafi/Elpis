@@ -10,6 +10,8 @@ use pretty_assertions::assert_eq;
 #[tokio::test]
 async fn follow_control_click_preserves_draft_caret_and_composer_geometry() -> Result<()> {
     let mut app = crate::app::test_support::make_test_app().await;
+    // Elpis: the Context Ledger takes the bottom rows, so the owned screen is tested without it.
+    crate::app::test_support::hide_context_ledger(&mut app);
     app.local_settings.tui.animations = false;
     let mut server = Box::pin(crate::start_embedded_app_server_for_picker(&app.config)).await?;
     let mut tui = crate::tui::test_support::make_test_tui()?;

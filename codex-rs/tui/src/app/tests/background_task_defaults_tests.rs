@@ -875,7 +875,9 @@ async fn command_center_new_restores_blank_drafts_and_builtin_permissions() -> R
     );
     insta::assert_snapshot!(
         crate::chatwidget::tests::helpers::render_bottom_popup(&app.chat_widget, /*width*/ 80)
-            .lines().next().unwrap(), @"› Keep this unsent draft");
+            // Elpis: the identity line sits above the prompt, and the Ledger is beside it.
+            .lines().find(|line| line.starts_with('›')).unwrap().split('│').next().unwrap().trim_end(),
+            @"› Keep this unsent draft");
     // Seed persisted history without sending the user's draft. Subsequent navigation
     // must exercise thread/resume, including its restoration of permission settings.
     for id in [first, other] {

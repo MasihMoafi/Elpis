@@ -141,9 +141,15 @@ stream_max_retries = 0
         AppEvent::CheckRecap { thread_id },
     )
     .await?;
-    let started_event = tokio::time::timeout(Duration::from_secs(/*secs*/ 5), app_event_rx.recv())
-        .await?
-        .expect("recap start event");
+    // Elpis: the Context Ledger's memory status can arrive before the recap starts.
+    let started_event = loop {
+        let event = tokio::time::timeout(Duration::from_secs(/*secs*/ 5), app_event_rx.recv())
+            .await?
+            .expect("recap start event");
+        if !matches!(event, AppEvent::Elpis(_)) {
+            break event;
+        }
+    };
     assert!(matches!(started_event, AppEvent::RecapStarted { .. }));
     app.handle_event(&mut tui, &mut app_server, started_event)
         .await?;
@@ -229,6 +235,8 @@ stream_max_retries = 0
 #[tokio::test]
 async fn manual_recap_works_when_auto_recap_disabled() -> Result<()> {
     let (mut app, mut app_event_rx, _op_rx) = make_test_app_with_channels().await;
+    // Elpis: the Context Ledger takes the bottom rows, so the progress row is read without it.
+    crate::app::test_support::hide_context_ledger(&mut app);
     app.local_settings.tui.auto_recap = false;
     let thread_id = ThreadId::new();
     app.active_thread_id = Some(thread_id);

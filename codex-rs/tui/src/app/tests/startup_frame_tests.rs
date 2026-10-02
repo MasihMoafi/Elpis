@@ -154,6 +154,9 @@ async fn owned_startup_preserves_loading_until_resume_replay_is_applied() -> Res
             let control = Box::pin(app.handle_event(&mut tui, &mut app_server, event)).await?;
             assert!(matches!(control, AppRunControl::Continue));
         }
+        // Elpis: the Context Ledger takes the bottom rows, so the resumed screen is read without
+        // it.
+        crate::app::test_support::hide_context_ledger(&mut app);
         app.chat_widget.restore_startup_draft_when_ready(&mut draft);
         app.render_startup_frame(&mut tui, &events)?;
         assert!(draft.is_none());
@@ -162,7 +165,7 @@ async fn owned_startup_preserves_loading_until_resume_replay_is_applied() -> Res
         if has_answer {
             assert!(rendered.contains("Retained answer after resume."));
         } else {
-            assert!(rendered.contains("OpenAI Codex"));
+            assert!(rendered.contains("Elpis (v"));
         }
         tui.set_owned_screen(/*owned*/ false)?;
         app_server.shutdown().await?;

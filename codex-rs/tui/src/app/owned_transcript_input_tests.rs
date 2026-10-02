@@ -288,6 +288,8 @@ async fn plan_menu_wheel_scrolling_respects_modal_and_completion_popup_bounds() 
 #[tokio::test]
 async fn empty_enter_returns_to_latest_with_contextual_hints() -> Result<()> {
     let (mut app, mut events, mut operations) = make_test_app_with_channels().await;
+    // Elpis: the Context Ledger takes the bottom rows, so the owned screen is tested without it.
+    crate::app::test_support::hide_context_ledger(&mut app);
     let mut server = Box::pin(crate::start_embedded_app_server_for_picker(&app.config)).await?;
     let mut tui = crate::tui::test_support::make_test_tui()?;
     tui.set_owned_screen(/*owned*/ true)?;
@@ -401,6 +403,8 @@ async fn submitting_a_draft_from_history_queues_once_and_follows_immediately() -
 #[tokio::test]
 async fn enter_preserves_search_backtrack_and_modal_ownership_while_scrolled() -> Result<()> {
     let mut app = crate::app::test_support::make_test_app().await;
+    // Elpis: the Context Ledger takes the bottom rows, so the owned screen is tested without it.
+    crate::app::test_support::hide_context_ledger(&mut app);
     let mut server = Box::pin(crate::start_embedded_app_server_for_picker(&app.config)).await?;
     let mut tui = crate::tui::test_support::make_test_tui()?;
     tui.set_owned_screen(/*owned*/ true)?;
@@ -460,6 +464,8 @@ async fn enter_preserves_search_backtrack_and_modal_ownership_while_scrolled() -
 #[tokio::test]
 async fn escape_returns_to_latest_without_changing_the_composer_draft() -> Result<()> {
     let mut app = crate::app::test_support::make_test_app().await;
+    // Elpis: the Context Ledger takes the bottom rows, so the owned screen is tested without it.
+    crate::app::test_support::hide_context_ledger(&mut app);
     let mut app_server = Box::pin(crate::start_embedded_app_server_for_picker(&app.config)).await?;
     let mut tui = crate::tui::test_support::make_test_tui()?;
     tui.set_owned_screen(/*owned*/ true)?;

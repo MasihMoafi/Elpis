@@ -6,31 +6,31 @@ expression: "crate::chatwidget::tests::helpers::normalize_snapshot_paths(snapsho
 transcript row 37
 transcript row 38
 transcript row 39
+ Elpis · model gpt-5.6-sol default · location /tmp/project
 
-• Working (0s • esc to interrupt)
+Elpising… (0s • esc to interrupt)
 
                                               Copied 24 chars to host clipboard
-
+│
 › draft stays here
-
-  GPT-5.6-Sol default · /tmp/project
-  tab to queue message
+│
+  enter to queue message                100% context left · Tab Context Ledger
 
 18 columns, 14 rows
 transcript row 36
 transcript row 37
 transcript row 38
 transcript row 39
+ Elpis · model gpt
 
-• Working (0s • e…
+Elpising… (0s • e…
 
   Copied 24 chars
-
+│
 › draft stays
-  here
-
-  GPT-5.6-Sol def…
-  tab to queue mes
+│ here
+│
+  enter to queue
 
 6 columns, 18 rows
 ript
@@ -38,24 +38,24 @@ row 38
 transc
 ript
 row 39
+ Elpis
 
-• Wor…
+Elpis…
 
-
+│
 › dra
-  ft
-  sta
-  ys
-  her
-  e
-
-  GPT…
-  tab
+│ ft
+│ sta
+│ ys
+│ her
+│ e
+│
+  100%
 
 80 columns, 6 rows
-• Working (0s • esc to interrupt)
-
+ Elpis · model gpt-5.6-sol default · location /tmp/project
+Elpising… (0s • esc to interrupt)
+│
 › draft stays here
-
-  GPT-5.6-Sol default · /tmp/project
-  tab to queue message
+│
+  enter to queue message                100% context left · Tab Context Ledger

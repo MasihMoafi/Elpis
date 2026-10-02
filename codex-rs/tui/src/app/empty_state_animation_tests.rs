@@ -39,6 +39,8 @@ fn draw(app: &mut App, tui: &mut tui::Tui, size: Size) -> Result<Rect> {
 #[tokio::test]
 async fn fresh_logo_returns_only_to_the_ordinary_composer() -> Result<()> {
     let mut app = crate::app::test_support::make_test_app().await;
+    // Elpis: the Context Ledger takes the bottom rows, so the owned screen is tested without it.
+    crate::app::test_support::hide_context_ledger(&mut app);
     app.local_settings.tui.animations = true;
     let size = Size::new(/*width*/ 120, /*height*/ 44);
     let mut tui = crate::tui::test_support::make_test_tui()?;
@@ -177,6 +179,8 @@ async fn non_startup_history_dismisses_logo_until_a_new_thread() -> Result<()> {
 #[tokio::test]
 async fn empty_state_animation_preserves_header_cursor_and_footer() -> Result<()> {
     let mut app = crate::app::test_support::make_test_app().await;
+    // Elpis: the Context Ledger takes the bottom rows, so the owned screen is tested without it.
+    crate::app::test_support::hide_context_ledger(&mut app);
     app.local_settings.tui.animations = true;
     let size = Size::new(/*width*/ 120, /*height*/ 44);
     let mut tui = crate::tui::test_support::make_test_tui()?;
@@ -271,6 +275,8 @@ async fn empty_state_animation_preserves_header_cursor_and_footer() -> Result<()
 #[tokio::test]
 async fn submitting_a_draft_keeps_greeting_and_dismisses_logo_even_after_clear() -> Result<()> {
     let (mut app, _events, _ops) = crate::app::tests::make_test_app_with_channels().await;
+    // Elpis: the Context Ledger takes the bottom rows, so the owned screen is tested without it.
+    crate::app::test_support::hide_context_ledger(&mut app);
     app.local_settings.tui.animations = true;
     let size = Size::new(/*width*/ 120, /*height*/ 44);
     let mut tui = crate::tui::test_support::make_test_tui()?;
@@ -328,6 +334,8 @@ async fn empty_state_animation_survives_plain_transcript_clicks() -> Result<()> 
     use crossterm::event::MouseEventKind;
 
     let mut app = crate::app::test_support::make_test_app().await;
+    // Elpis: the Context Ledger takes the bottom rows, so the owned screen is tested without it.
+    crate::app::test_support::hide_context_ledger(&mut app);
     app.local_settings.tui.animations = true;
     let size = Size::new(/*width*/ 120, /*height*/ 44);
     let mut tui = crate::tui::test_support::make_test_tui()?;

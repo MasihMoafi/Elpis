@@ -198,6 +198,8 @@ async fn list_spacing_completion_preserves_the_scrolled_reader() -> Result<()> {
 #[tokio::test]
 async fn older_page_loading_uses_the_status_row_without_moving_content_or_cursor() -> Result<()> {
     let mut app = crate::app::test_support::make_test_app().await;
+    // Elpis: the Context Ledger takes the bottom rows, so the owned screen is tested without it.
+    crate::app::test_support::hide_context_ledger(&mut app);
     attach_thread(&mut app, ThreadId::new());
     app.local_settings.tui.animations = false;
     app.chat_widget.apply_external_edit("draft".to_string());
@@ -326,6 +328,8 @@ async fn recap_spacing_belongs_to_the_transcript_tail() -> Result<()> {
 #[tokio::test]
 async fn owned_transcript_reserves_a_row_above_the_composer() -> Result<()> {
     let mut app = crate::app::test_support::make_test_app().await;
+    // Elpis: the Context Ledger takes the bottom rows, so the owned screen is tested without it.
+    crate::app::test_support::hide_context_ledger(&mut app);
     attach_thread(&mut app, ThreadId::new());
     app.transcript_cells = vec![Arc::new(crate::history_cell::PlainHistoryCell::new(
         (1..=40)
@@ -374,8 +378,19 @@ async fn owned_transcript_reserves_a_row_above_the_composer() -> Result<()> {
             ));
             continue;
         }
-        let gap = Rect::new(/*x*/ 0, bottom.y, width, /*height*/ 1);
+        // Elpis: the reserved row carries the identity line, so the empty row (or the "Back to
+        // bottom" control) is the one below it.
+        let identity = Rect::new(/*x*/ 0, bottom.y, width, /*height*/ 1);
+        let gap = Rect::new(/*x*/ 0, bottom.y + 1, width, /*height*/ 1);
         let buffer = crate::custom_terminal::test_support::last_rendered_buffer(&tui.terminal);
+        assert!(
+            buffer_text(buffer)
+                .lines()
+                .nth(usize::from(identity.y))
+                .unwrap()
+                .starts_with(" Elpis · model"),
+            "{label}",
+        );
         let start = buffer.index_of(gap.x, gap.y);
         // Both scenarios show the current tail, including the paused detailed view.
         if matches!(label, "Latest" | "Detailed") {
@@ -402,8 +417,8 @@ async fn owned_transcript_reserves_a_row_above_the_composer() -> Result<()> {
                         kind: crossterm::event::MouseEventKind::Down(
                             crossterm::event::MouseButton::Left
                         ),
-                        column: gap.x,
-                        row: gap.y,
+                        column: identity.x,
+                        row: identity.y,
                         modifiers: KeyModifiers::NONE,
                     },
                     &app.transcript_cells,
@@ -423,6 +438,8 @@ async fn owned_drag_stops_when_focus_or_input_ownership_is_lost() -> Result<()> 
     use crossterm::event::MouseEventKind;
 
     let mut app = crate::app::test_support::make_test_app().await;
+    // Elpis: the Context Ledger takes the bottom rows, so the owned screen is tested without it.
+    crate::app::test_support::hide_context_ledger(&mut app);
     attach_thread(&mut app, ThreadId::new());
     app.transcript_cells = vec![Arc::new(crate::history_cell::PlainHistoryCell::new(
         (0..40).map(|row| format!("row {row:02}").into()).collect(),
@@ -500,6 +517,8 @@ async fn owned_drag_stops_when_focus_or_input_ownership_is_lost() -> Result<()> 
 #[tokio::test]
 async fn owned_details_keep_the_composer_cursor_and_screen() -> Result<()> {
     let mut app = crate::app::test_support::make_test_app().await;
+    // Elpis: the Context Ledger takes the bottom rows, so the owned screen is tested without it.
+    crate::app::test_support::hide_context_ledger(&mut app);
     attach_thread(&mut app, ThreadId::new());
     app.transcript_cells = vec![user_cell("First prompt"), user_cell("Second prompt")];
     app.chat_widget
@@ -871,6 +890,8 @@ async fn inline_transcript_search_draws_and_escape_precedes_backtrack() -> Resul
 #[tokio::test]
 async fn find_owns_editor_chords_without_changing_the_composer_draft() -> Result<()> {
     let mut app = crate::app::test_support::make_test_app().await;
+    // Elpis: the Context Ledger takes the bottom rows, so the owned screen is tested without it.
+    crate::app::test_support::hide_context_ledger(&mut app);
     app.transcript_cells = vec![user_cell("alpha beta")];
     app.chat_widget
         .apply_external_edit("draft remains intact".to_string());
@@ -979,6 +1000,8 @@ async fn find_owns_editor_chords_without_changing_the_composer_draft() -> Result
 #[tokio::test]
 async fn offline_find_closes_before_the_next_ctrl_c_quits() -> Result<()> {
     let mut app = crate::app::test_support::make_test_app().await;
+    // Elpis: the Context Ledger takes the bottom rows, so the owned screen is tested without it.
+    crate::app::test_support::hide_context_ledger(&mut app);
     app.chat_widget
         .apply_external_edit("offline draft".to_string());
     let mut app_server = Box::pin(crate::start_embedded_app_server_for_picker(&app.config)).await?;

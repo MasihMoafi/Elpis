@@ -153,3 +153,13 @@ pub(super) fn app_enabled_in_effective_config(config: &Config, app_id: &str) -> 
         .and_then(|app| app.get("enabled"))
         .and_then(TomlValue::as_bool)
 }
+
+/// Hides the Context Ledger the way Alt+C does. The Ledger is as tall as the composer and its own
+/// panels, so a test of the rest of the screen keeps the rows it would take.
+pub(crate) fn hide_context_ledger(app: &mut App) {
+    app.chat_widget
+        .handle_key_event(crossterm::event::KeyEvent::new(
+            crossterm::event::KeyCode::Char('c'),
+            crossterm::event::KeyModifiers::ALT,
+        ));
+}
