@@ -1,13 +1,27 @@
 ---
 source: tui/src/chatwidget/tests/questions_tests.rs
+assertion_line: 847
 expression: rendered
 ---
-• Working (0s • esc to interrupt)
-
-• Queued follow-up inputs
-
-  Only question?
-
-  A typed answer
-
-  enter submit   ctrl+] skip   shift+→ main prompt
+ Elpis · model gpt-5.6-sol default · location /tmp/project
+Elpising… (0s • esc to interrupt)               │CONTEXT LEDGER  context not
+                                                │measured · ≈0 source estimates
+• Queued follow-up inputs                       │Tab controls · Alt+C hide ·
+┌──────────────────────────────────────────────┐│Ctrl+click open file
+│ Only question?                               ││
+│                                              ││SMART PRUNE          [···] SYNC
+│ A typed answer                               ││Reading current thread state
+│                                              ││Syncing… · /smart-prune on|off
+│ enter submit   ctrl+] skip                   ││sets an explicit state
+│ shift+→ main prompt                          ││
+└──────────────────────────────────────────────┘│SUBAGENTS             [━━━●] ON
+                                                │May delegate to other agents
+                                                │
+                                                │CONTEXT WINDOW  usage
+                                                │unavailable
+                                                │Context measurement unavailable
+                                                │until the first request
+                                                │snapshot
+                                                │
+                                                │No portable context is
+                                                │available.
