@@ -624,7 +624,7 @@ async fn daemon_ctrl_c_hides_background_exit_with_queued_follow_up() -> Result<(
     app.chat_widget
         .apply_external_edit("queued follow-up".to_string());
     app.chat_widget
-        .handle_key_event(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
+        .handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
     assert_eq!(
         app.chat_widget.queued_user_message_texts(),
         vec!["queued follow-up".to_string()]

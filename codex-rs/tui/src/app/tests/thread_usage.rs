@@ -34,16 +34,18 @@ async fn app_with_pending_thread_usage()
     app.chat_widget.add_status_output(
         /*refreshing_rate_limits*/ false, /*request_id*/ None,
     );
-    let initial_status = match app_event_rx.try_recv() {
-        Ok(event @ AppEvent::InsertHistoryCell(_)) => event,
-        other => panic!("expected immediate status card, got {other:?}"),
-    };
+    // Elpis: the card is built before it is inserted (`/usage` opens it as an overlay), so the
+    // thread usage request is queued ahead of the history cell.
     let request_id = match app_event_rx.try_recv() {
         Ok(AppEvent::RefreshThreadUsage {
             thread_id: requested_thread_id,
             request_id,
         }) if requested_thread_id == thread_id => request_id,
         other => panic!("expected asynchronous thread usage request, got {other:?}"),
+    };
+    let initial_status = match app_event_rx.try_recv() {
+        Ok(event @ AppEvent::InsertHistoryCell(_)) => event,
+        other => panic!("expected immediate status card, got {other:?}"),
     };
     app.handle_event(&mut tui, &mut app_server, initial_status)
         .await?;
@@ -106,7 +108,7 @@ async fn account_updated_with_backend_only_auth_enables_thread_usage() -> Result
     app.chat_widget.add_status_output(
         /*refreshing_rate_limits*/ false, /*request_id*/ None,
     );
-    assert_matches!(app_event_rx.try_recv(), Ok(AppEvent::InsertHistoryCell(_)));
+    // Elpis: the thread usage request is queued ahead of the history cell.
     assert_matches!(
         app_event_rx.try_recv(),
         Ok(AppEvent::RefreshThreadUsage {
@@ -114,6 +116,7 @@ async fn account_updated_with_backend_only_auth_enables_thread_usage() -> Result
             ..
         }) if requested_thread_id == thread_id
     );
+    assert_matches!(app_event_rx.try_recv(), Ok(AppEvent::InsertHistoryCell(_)));
     app_server.shutdown().await?;
     Ok(())
 }

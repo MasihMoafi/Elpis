@@ -1280,7 +1280,7 @@ async fn replay_thread_snapshot_restores_draft_and_queued_input() {
     app.chat_widget
         .apply_external_edit("outgoing queued input".to_string());
     app.chat_widget
-        .handle_key_event(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
+        .handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
     app.chat_widget
         .set_queue_autosend_suppressed(/*suppressed*/ true);
     app.chat_widget.handle_server_notification(
@@ -1394,7 +1394,7 @@ async fn replayed_turn_complete_submits_restored_queued_follow_up() {
     app.chat_widget
         .apply_external_edit("queued follow-up".to_string());
     app.chat_widget
-        .handle_key_event(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
+        .handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
     let input_state = app
         .chat_widget
         .capture_thread_input_state()
@@ -1457,7 +1457,7 @@ async fn replay_only_thread_keeps_restored_queue_visible() {
     app.chat_widget
         .apply_external_edit("queued follow-up".to_string());
     app.chat_widget
-        .handle_key_event(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
+        .handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
     let mut input_state = app
         .chat_widget
         .capture_thread_input_state()
@@ -1511,7 +1511,7 @@ async fn replay_thread_snapshot_keeps_queue_when_running_state_only_comes_from_s
     app.chat_widget
         .apply_external_edit("queued follow-up".to_string());
     app.chat_widget
-        .handle_key_event(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
+        .handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
     let input_state = app
         .chat_widget
         .capture_thread_input_state()
@@ -1562,7 +1562,7 @@ async fn replay_thread_snapshot_in_progress_turn_restores_running_queue_state() 
     app.chat_widget
         .apply_external_edit("queued follow-up".to_string());
     app.chat_widget
-        .handle_key_event(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
+        .handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
     let input_state = app
         .chat_widget
         .capture_thread_input_state()
@@ -1641,7 +1641,7 @@ async fn replay_thread_snapshot_does_not_submit_queue_before_replay_catches_up()
     app.chat_widget
         .apply_external_edit("queued follow-up".to_string());
     app.chat_widget
-        .handle_key_event(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
+        .handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
     let mut input_state = app
         .chat_widget
         .capture_thread_input_state()
@@ -5973,7 +5973,7 @@ async fn ctrl_l_clears_owned_history_and_preserves_the_draft() -> Result<()> {
             .is::<history_cell::SessionHeaderHistoryCell>()
     );
     let header = lines_to_single_string(&app.transcript_cells[0].display_lines(/*width*/ 80));
-    assert!(header.contains("OpenAI Codex"));
+    assert!(header.contains("Elpis (v"));
     let raw_header = lines_to_single_string(&app.transcript_cells[0].raw_lines());
     assert!(raw_header.contains("gpt-test"));
     assert!(!header.contains("old transcript row"));

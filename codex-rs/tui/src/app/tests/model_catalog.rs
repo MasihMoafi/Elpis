@@ -355,6 +355,8 @@ async fn prepare_startup_tooltip_override_persists_model_availability_nux_count(
     });
 
     let mut local_settings = crate::local_settings::LocalSettings::from(&config);
+    // Elpis: startup tips are off by default (R7), so this test turns them on.
+    local_settings.tui.show_tooltips = true;
     let tooltip = prepare_startup_tooltip_override(
         &mut local_settings,
         &presets,

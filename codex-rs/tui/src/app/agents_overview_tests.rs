@@ -2311,7 +2311,7 @@ async fn resume_picker_round_trip_preserves_each_threads_input() -> Result<()> {
             let follow_up = format!("Follow-up for {}", target.thread_id);
             app.chat_widget.apply_external_edit(follow_up.clone());
             app.chat_widget
-                .handle_key_event(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
+                .handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
             assert_eq!(app.chat_widget.queued_user_message_texts(), vec![follow_up]);
             app.chat_widget
                 .apply_external_edit(format!("Draft for {}", target.thread_id));
