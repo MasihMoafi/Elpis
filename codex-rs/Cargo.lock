@@ -2516,6 +2516,7 @@ dependencies = [
  "codex-config",
  "codex-core",
  "codex-core-plugins",
+ "codex-elpis-claude-proxy",
  "codex-elpis-gateway",
  "codex-exec",
  "codex-exec-server",
@@ -3125,6 +3126,26 @@ version = "0.159.3"
 dependencies = [
  "libc",
  "pretty_assertions",
+]
+
+[[package]]
+name = "codex-elpis-claude-proxy"
+version = "0.159.3"
+dependencies = [
+ "anyhow",
+ "axum",
+ "codex-core",
+ "codex-utils-string",
+ "futures",
+ "pretty_assertions",
+ "reqwest 0.12.28",
+ "serde_json",
+ "sha2 0.10.9",
+ "tempfile",
+ "tokio",
+ "tracing",
+ "uuid",
+ "wiremock",
 ]
 
 [[package]]

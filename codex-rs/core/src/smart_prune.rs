@@ -29,7 +29,7 @@ pub(crate) struct SmartPruneState {
     pub(crate) ineligible_call_ids: HashSet<String>,
 }
 
-pub(crate) const MIN_SOURCE_TOKENS: usize = 1_024;
+pub const MIN_SOURCE_TOKENS: usize = 1_024;
 pub(crate) const MIN_SAVED_TOKENS: usize = 256;
 pub(crate) const MIN_SAVINGS_PERCENT: usize = 20;
 
@@ -48,13 +48,13 @@ pub(crate) struct TransformedToolOutput {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum AdmissionDecision {
+pub enum AdmissionDecision {
     Compact { call_id: String, content: String },
     Unchanged { call_id: String },
 }
 
 impl AdmissionDecision {
-    pub(crate) fn call_id(&self) -> &str {
+    pub fn call_id(&self) -> &str {
         match self {
             Self::Compact { call_id, .. } | Self::Unchanged { call_id } => call_id,
         }
@@ -155,7 +155,7 @@ enum RawDecisionKind {
 
 /// Parses an all-or-nothing manifest. Every expected id must appear exactly once and
 /// the returned decisions follow caller order, regardless of model output order.
-pub(crate) fn parse_decision_manifest(
+pub fn parse_decision_manifest(
     raw: &str,
     expected_call_ids: &[&str],
 ) -> Option<Vec<AdmissionDecision>> {
@@ -198,6 +198,53 @@ pub(crate) fn parse_decision_manifest(
         .collect()
 }
 
+/// The admitted text for one tool output and its token accounting.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AdmittedText {
+    pub text: String,
+    pub source_tokens: usize,
+    pub admitted_tokens: usize,
+    pub saved_tokens: usize,
+}
+
+/// Formats the admitted form of `source_text` and applies the conservative profitability
+/// floor. `None` means the caller must admit the source byte-for-byte. Elpis's session and
+/// the `elpis claude` proxy both use this, so the two paths admit the same text.
+pub fn admit_compact_text(
+    source_text: &str,
+    compact_text: &str,
+    call_id: &str,
+    admission_id: &str,
+    source_sha256: &str,
+) -> Option<AdmittedText> {
+    let compact_text = compact_text.trim();
+    if compact_text.is_empty() {
+        return None;
+    }
+    let source_tokens = approx_token_count(source_text);
+    if source_tokens < MIN_SOURCE_TOKENS {
+        return None;
+    }
+    let text = format!(
+        "{compact_text}\n[ELPIS SMART PRUNE]\n\
+         exact_source=smart-prune://{admission_id}/{call_id}\n\
+         source_sha256={source_sha256}"
+    );
+    let admitted_tokens = approx_token_count(&text);
+    let saved_tokens = source_tokens.saturating_sub(admitted_tokens);
+    if saved_tokens < MIN_SAVED_TOKENS
+        || saved_tokens.saturating_mul(100) < source_tokens.saturating_mul(MIN_SAVINGS_PERCENT)
+    {
+        return None;
+    }
+    Some(AdmittedText {
+        text,
+        source_tokens,
+        admitted_tokens,
+        saved_tokens,
+    })
+}
+
 /// Returns a body-only compact clone when the source is supported and the proposed
 /// admission clears the conservative profitability floor. Returning `None` means the
 /// caller must admit the source item byte-for-byte.
@@ -206,31 +253,19 @@ pub(crate) fn transform_tool_output(
     compact_text: &str,
     evidence: AdmissionEvidence<'_>,
 ) -> Option<TransformedToolOutput> {
-    let compact_text = compact_text.trim();
-    if compact_text.is_empty() {
-        return None;
-    }
-
     let (call_id, source_text) = textual_tool_output(source)?;
-
-    let source_tokens = approx_token_count(source_text.as_ref());
-    if source_tokens < MIN_SOURCE_TOKENS {
-        return None;
-    }
-
-    let admitted_text = format!(
-        "{compact_text}\n[ELPIS SMART PRUNE]\n\
-         exact_source=smart-prune://{}/{call_id}\n\
-         source_sha256={}",
-        evidence.admission_id, evidence.source_sha256
-    );
-    let admitted_tokens = approx_token_count(&admitted_text);
-    let saved_tokens = source_tokens.saturating_sub(admitted_tokens);
-    if saved_tokens < MIN_SAVED_TOKENS
-        || saved_tokens.saturating_mul(100) < source_tokens.saturating_mul(MIN_SAVINGS_PERCENT)
-    {
-        return None;
-    }
+    let AdmittedText {
+        text: admitted_text,
+        source_tokens,
+        admitted_tokens,
+        saved_tokens,
+    } = admit_compact_text(
+        source_text.as_ref(),
+        compact_text,
+        call_id,
+        evidence.admission_id,
+        evidence.source_sha256,
+    )?;
 
     let mut admitted = source.clone();
     match &mut admitted {

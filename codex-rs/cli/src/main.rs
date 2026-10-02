@@ -52,6 +52,7 @@ static ALLOCATOR: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 
 #[cfg(any(target_os = "macos", target_os = "windows"))]
 mod app_cmd;
+mod claude_cmd;
 mod cloud_config;
 mod daemon_install;
 mod daemon_telemetry;
@@ -293,6 +294,9 @@ enum Subcommand {
     // Elpis: hidden from help; still callable.
     #[clap(hide = true)]
     Features(FeaturesCli),
+
+    /// Start Claude Code with Smart Prune on its requests.
+    Claude(claude_cmd::ClaudeCommand),
 }
 
 #[derive(Debug, Parser)]
@@ -1844,6 +1848,19 @@ async fn cli_main(
             );
             run_apply_command(apply_cli, /*cwd*/ None).await?;
         }
+        Some(Subcommand::Claude(cmd)) => {
+            reject_remote_mode_for_subcommand(
+                root_remote.as_deref(),
+                root_remote_auth_token_env.as_deref(),
+                "claude",
+            )?;
+            cmd.run(
+                root_config_overrides
+                    .parse_overrides()
+                    .map_err(anyhow::Error::msg)?,
+            )
+            .await?;
+        }
         Some(Subcommand::ResponsesApiProxy(args)) => {
             reject_remote_mode_for_subcommand(
                 root_remote.as_deref(),
@@ -2337,6 +2354,7 @@ fn unsupported_subcommand_name_for_strict_config(
         Some(Subcommand::StdioToUds(_)) => Some("stdio-to-uds"),
         Some(Subcommand::Features(_)) => Some("features"),
         Some(Subcommand::TcpTunnel(_)) => Some("tcp-tunnel"),
+        Some(Subcommand::Claude(_)) => Some("claude"),
     }
 }
 

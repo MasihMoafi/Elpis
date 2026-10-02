@@ -18,7 +18,7 @@ pub(crate) const PRUNE_MODEL_SLUG: &str = "gpt-5.6-luna";
 /// stops being a bounded maintenance call: latency grows, and a reply covering
 /// hundreds of ids is far likelier to come back truncated or unparseable — which
 /// reclaims nothing at all. Whatever is left over is simply the next pass's batch.
-pub(crate) const MAX_PRUNE_BATCH_TOKENS: usize = 24_000;
+pub const MAX_PRUNE_BATCH_TOKENS: usize = 24_000;
 
 /// The model background maintenance should use: the configured
 /// `background_model` when set, otherwise the caller's built-in default.

@@ -978,24 +978,7 @@ async fn run_model_admission(
         .get_model_info(primary_model, &turn_context.config.to_models_manager_config())
         .await;
     let model_slug = model_info.slug.clone();
-    let prompt = Prompt {
-        input: vec![ResponseItem::Message {
-            id: None,
-            role: "user".to_string(),
-            content: vec![ContentItem::InputText {
-                text: input.clone(),
-            }],
-            phase: None,
-            internal_chat_message_metadata_passthrough: None,
-        }],
-        base_instructions: BaseInstructions {
-            text: instructions.to_string(),
-            ..Default::default()
-        },
-        output_schema: Some(crate::smart_prune::decision_manifest_schema()),
-        output_schema_strict: true,
-        ..Default::default()
-    };
+    let prompt = optimizer_prompt(input.clone(), instructions);
     let metadata = turn_context.turn_metadata_state.to_responses_metadata(
         sess.installation_id.clone(),
         "smart-prune".to_string(),
@@ -1041,6 +1024,156 @@ async fn run_model_admission(
         input,
         latency: Duration::ZERO,
     })
+}
+
+/// The optimizer request: one user message and the strict decision-manifest schema.
+fn optimizer_prompt(input: String, instructions: &str) -> Prompt {
+    Prompt {
+        input: vec![ResponseItem::Message {
+            id: None,
+            role: "user".to_string(),
+            content: vec![ContentItem::InputText { text: input }],
+            phase: None,
+            internal_chat_message_metadata_passthrough: None,
+        }],
+        base_instructions: BaseInstructions {
+            text: instructions.to_string(),
+            ..Default::default()
+        },
+        output_schema: Some(crate::smart_prune::decision_manifest_schema()),
+        output_schema_strict: true,
+        ..Default::default()
+    }
+}
+
+/// The optimizer's raw decision manifest and the model that wrote it.
+pub struct OptimizerReply {
+    pub raw_response: String,
+    pub model_slug: String,
+}
+
+/// Smart Prune decisions outside a session. The `elpis claude` proxy asks the same
+/// optimizer, with the same `pruner.json` settings and prompt, that a session asks.
+pub struct StandaloneOptimizer {
+    config: Arc<crate::config::Config>,
+    auth_manager: Arc<codex_login::AuthManager>,
+    models_manager: codex_models_manager::manager::SharedModelsManager,
+    thread_id: codex_protocol::ThreadId,
+}
+
+impl StandaloneOptimizer {
+    pub fn new(
+        config: Arc<crate::config::Config>,
+        auth_manager: Arc<codex_login::AuthManager>,
+    ) -> Self {
+        let models_manager = crate::build_models_manager(&config, Arc::clone(&auth_manager));
+        Self {
+            config,
+            auth_manager,
+            models_manager,
+            thread_id: codex_protocol::ThreadId::new(),
+        }
+    }
+
+    /// Sends one admission input and returns the raw manifest. The caller parses it
+    /// with `parse_decision_manifest` and keeps the source on any error.
+    pub async fn decide(&self, input: String) -> anyhow::Result<OptimizerReply> {
+        let config = self.config.as_ref();
+        let settings = crate::pruner_settings::PrunerSettings::load(&config.codex_home)?;
+        let instructions = settings
+            .system_prompt
+            .as_deref()
+            .unwrap_or(SMART_PRUNE_INSTRUCTIONS);
+        let default_slug =
+            if config.model_provider_id == codex_model_provider_info::OPENAI_PROVIDER_ID {
+                PRUNE_MODEL_SLUG
+            } else {
+                config.model.as_deref().unwrap_or(PRUNE_MODEL_SLUG)
+            };
+        let model_slug = settings.model.clone().unwrap_or_else(|| {
+            crate::context_pruner::background_model_slug(
+                config.background_model.as_deref(),
+                default_slug,
+            )
+            .to_string()
+        });
+        let provider =
+            crate::context_pruner::pruner_provider_info(settings.provider.as_deref(), config)?
+                .unwrap_or_else(|| config.model_provider.clone());
+        let model_info = self
+            .models_manager
+            .get_model_info(&model_slug, &config.to_models_manager_config())
+            .await;
+        let session_source = codex_protocol::protocol::SessionSource::Exec;
+        let originator = codex_login::default_client::originator().value;
+        let model_client = crate::ModelClient::new(
+            Some(Arc::clone(&self.auth_manager)),
+            codex_login::AgentIdentityAuthPolicy::JwtOnly,
+            self.thread_id,
+            optimizer_provider_with_timeouts(provider, ADMISSION_TIMEOUT),
+            session_source.clone(),
+            originator.clone(),
+            config.model_verbosity,
+            config.features.enabled(Feature::ContentItemKinds),
+            config.features.enabled(Feature::ReasoningEffortOverride),
+            config.features.enabled(Feature::EnableRequestCompression),
+            config.features.enabled(Feature::RuntimeMetrics),
+            /*beta_features_header*/ None,
+            /*concurrent_reasoning_summaries_enabled*/ false,
+            /*attestation_provider*/ None,
+            config.http_client_factory(),
+            config.workspace_routing_context(),
+            Vec::new(),
+        );
+        let telemetry = codex_otel::SessionTelemetry::new(
+            self.thread_id,
+            &model_slug,
+            &model_slug,
+            /*account_id*/ None,
+            /*account_email*/ None,
+            /*auth_mode*/ None,
+            originator,
+            /*log_user_prompts*/ false,
+            codex_terminal_detection::user_agent(),
+            session_source,
+        );
+        let thread_id = self.thread_id.to_string();
+        let metadata = crate::responses_metadata::CodexResponsesMetadata {
+            request_kind: Some(CodexResponsesRequestKind::SmartPrune),
+            ..crate::responses_metadata::CodexResponsesMetadata::new(
+                crate::resolve_installation_id(&config.codex_home).await?,
+                thread_id.clone(),
+                thread_id.clone(),
+                format!("{thread_id}:0"),
+            )
+        };
+        let prompt = optimizer_prompt(input, instructions);
+        let mut client_session = model_client.new_session();
+        let mut stream = tokio::time::timeout(
+            ADMISSION_TIMEOUT,
+            client_session.stream(
+                &prompt,
+                &model_info,
+                &telemetry,
+                Some(SMART_PRUNE_REASONING_EFFORT),
+                config
+                    .model_reasoning_summary
+                    .unwrap_or(model_info.default_reasoning_summary),
+                /*service_tier*/ None,
+                &metadata,
+                &InferenceTraceContext::disabled(),
+            ),
+        )
+        .await
+        .map_err(|_| OptimizerInactivityTimeout(ADMISSION_TIMEOUT))??;
+        let mut progress = OptimizerProgress::default();
+        let raw_response =
+            collect_optimizer_response(&mut stream, ADMISSION_TIMEOUT, &mut progress).await?;
+        Ok(OptimizerReply {
+            raw_response,
+            model_slug,
+        })
+    }
 }
 
 /// The pruner's model when `/pruner-model` sets none: the background model, else Luna on

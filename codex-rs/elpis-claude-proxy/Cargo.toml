@@ -1,0 +1,36 @@
+# Elpis: Smart Prune on Claude Code's requests (`elpis claude`).
+[package]
+edition.workspace = true
+license.workspace = true
+name = "codex-elpis-claude-proxy"
+version.workspace = true
+
+[lib]
+doctest = false
+name = "codex_elpis_claude_proxy"
+path = "src/lib.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+anyhow = { workspace = true }
+axum = { workspace = true, default-features = false, features = [
+    "http1",
+    "tokio",
+] }
+codex-core = { workspace = true }
+codex-utils-string = { workspace = true }
+futures = { workspace = true, features = ["std"] }
+reqwest = { workspace = true, features = ["stream"] }
+serde_json = { workspace = true, features = ["preserve_order"] }
+sha2 = { workspace = true }
+tokio = { workspace = true, features = ["macros", "net", "rt", "sync"] }
+tracing = { workspace = true }
+uuid = { workspace = true, features = ["v7"] }
+
+[dev-dependencies]
+pretty_assertions = { workspace = true }
+tempfile = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+wiremock = { workspace = true }
