@@ -411,10 +411,16 @@ impl ChatWidget {
     }
 
     pub(super) fn status_line_context_window_size(&self) -> Option<i64> {
+        // Elpis: a reported or configured window of zero or less is no window (as in v0.3.0), so
+        // `/context` and the Ledger say "capacity unknown" instead of dividing by it.
         self.token_info
             .as_ref()
             .and_then(|info| info.model_context_window)
-            .or(self.config.model_context_window)
+            .filter(|window| *window > 0)
+            .or(self
+                .config
+                .model_context_window
+                .filter(|window| *window > 0))
     }
 
     pub(super) fn status_line_context_remaining_percent(&self) -> Option<i64> {
