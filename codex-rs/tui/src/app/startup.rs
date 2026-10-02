@@ -327,7 +327,9 @@ impl App {
                     &local_settings,
                     model.as_str(),
                     &app_event_tx,
-                    &available_models,
+                    // Elpis: no model-upgrade prompt ("Meet GPT-6 Sol"); the model you chose
+                    // stays, and Esc can no longer switch it (A19).
+                    &[],
                 )
                 .await?
             };

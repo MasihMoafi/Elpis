@@ -4,7 +4,6 @@
 #![cfg(any(not(debug_assertions), test))]
 
 use crate::bottom_pane::picker_option_list;
-use crate::bottom_pane::render_menu_surface;
 use crate::key_hint;
 #[cfg(not(debug_assertions))]
 use crate::legacy_core::config::Config;
@@ -260,12 +259,8 @@ impl WidgetRef for &UpdatePromptScreen {
             .inset(Insets::vh(/*v*/ 0, /*h*/ 2)),
         );
         column.push(/*flex*/ 1, RenderableItem::Borrowed(&""));
-        let panel = Rect {
-            height: column.desired_height(area.width).min(area.height),
-            ..area
-        };
-        render_menu_surface(panel, buf);
-        column.render(panel, buf);
+        // Elpis: content stays inside the popup border.
+        crate::bottom_pane::render_bordered_panel(area, buf, &column);
         crate::terminal_hyperlinks::mark_underlined_hyperlink(buf, area, RELEASE_NOTES_URL);
     }
 }
@@ -350,14 +345,19 @@ mod tests {
         let mut screen = new_prompt();
         screen.update_action = UpdateAction::StandaloneWindows;
         screen.handle_key(KeyEvent::new(KeyCode::Up, KeyModifiers::NONE));
-        let (width, height) = (28, 12);
+        // Elpis: two columns wider and two rows taller for the popup border.
+        let (width, height) = (30, 14);
         let mut terminal = Terminal::new(VT100Backend::new(width, height)).expect("terminal");
         terminal
             .draw(|frame| frame.render_widget_ref(&screen, frame.area()))
             .expect("render resized update picker");
         let rendered = terminal.backend().to_string();
         assert!(rendered.contains("› 3. Skip until next version"));
-        let words = rendered.split_whitespace().collect::<Vec<_>>().join(" ");
+        let words = rendered
+            .replace('│', " ")
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ");
         assert!(words.contains("enter continue · esc skip"));
         assert_eq!(screen.selection(), None);
         insta::assert_snapshot!(format!("update_picker_selected_{width}x{height}"), rendered);

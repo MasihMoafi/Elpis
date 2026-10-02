@@ -2,7 +2,6 @@
 //! Mandatory and optional migration outcomes retain their existing keyboard policy.
 
 use crate::bottom_pane::picker_option_list;
-use crate::bottom_pane::render_menu_surface;
 use crate::key_hint;
 use crate::markdown_render::render_markdown_text_with_width;
 use crate::render::Insets;
@@ -310,12 +309,8 @@ impl WidgetRef for &ModelMigrationScreen {
                 .inset(Insets::vh(/*v*/ 0, /*h*/ 2)),
         );
         column.push(/*flex*/ 1, RenderableItem::Borrowed(&""));
-        let panel = Rect {
-            height: column.desired_height(area.width).min(area.height),
-            ..area
-        };
-        render_menu_surface(panel, buf);
-        column.render(panel, buf);
+        // Elpis: content stays inside the popup border.
+        crate::bottom_pane::render_bordered_panel(area, buf, &column);
     }
 }
 
