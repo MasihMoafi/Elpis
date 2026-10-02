@@ -4444,6 +4444,8 @@ fn session_lifecycle_avoids_redundant_subagent_metadata_reads() -> Result<()> {
                         .replace(&root_thread_id.to_string(), "[root]")
                         .replace(&child_thread_id.to_string(), "[child]"),
                     @r###"
+                     Elpis · model gpt-6.1-sol default · location /tmp/project
+
                       Subagents
                       Select an agent to watch. ⌥← previous, ⌥→ next.
 

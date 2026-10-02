@@ -735,12 +735,19 @@ fn ps_output_empty_snapshot() {
     insta::assert_snapshot!(rendered);
 }
 
+fn tips_on(config: &Config) -> crate::local_settings::LocalSettings {
+    let mut settings = crate::local_settings::LocalSettings::from(config);
+    settings.tui.show_tooltips = true;
+    settings
+}
+
 #[tokio::test]
 async fn session_info_uses_availability_nux_tooltip_override() {
     let config = test_config().await;
     let cell = new_session_info(
         &config,
-        &crate::local_settings::LocalSettings::from(&config),
+        // Elpis turns startup tips off (defaults.toml); these tests render a tip.
+        &tips_on(&config),
         "gpt-5",
         "gpt-5",
         &session_configured_event("gpt-5"),
@@ -763,7 +770,8 @@ async fn session_info_availability_nux_tooltip_snapshot() {
     config.cwd = test_path_buf("/tmp/project").abs();
     let cell = new_session_info(
         &config,
-        &crate::local_settings::LocalSettings::from(&config),
+        // Elpis turns startup tips off (defaults.toml); these tests render a tip.
+        &tips_on(&config),
         "gpt-5",
         "gpt-5",
         &session_configured_event("gpt-5"),
@@ -781,7 +789,8 @@ async fn session_info_preserves_styled_tooltip_links() {
     let config = test_config().await;
     let cell = new_session_info(
         &config,
-        &crate::local_settings::LocalSettings::from(&config),
+        // Elpis turns startup tips off (defaults.toml); these tests render a tip.
+        &tips_on(&config),
         "gpt-5",
         "gpt-5",
         &session_configured_event("gpt-5"),

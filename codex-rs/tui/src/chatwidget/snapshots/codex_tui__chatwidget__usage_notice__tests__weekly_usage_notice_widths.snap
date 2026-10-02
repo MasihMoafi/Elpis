@@ -1,11 +1,12 @@
 ---
 source: tui/src/chatwidget/usage_notice_tests.rs
+assertion_line: 69
 expression: "lines.join(\"\\n\")"
 ---
-138 columns: ⚠ weekly limit: only 2% left · resets at 12:00 PM on 21 Sep · /status
-137 columns: ⚠ weekly limit: only 2% left · /status
-76 columns: ⚠ weekly limit: only 2% left · /status
-75 columns: ⚠ weekly limit: only 2% left
+138 columns: ⚠ weekly limit: only 2% left · resets at 12:00 PM on 21 Sep · /usage
+137 columns: ⚠ weekly limit: only 2% left · resets at 12:00 PM on 21 Sep · /usage
+76 columns: ⚠ weekly limit: only 2% left · /usage
+75 columns: ⚠ weekly limit: only 2% left · /usage
 56 columns: ⚠ weekly limit: only 2% left
 55 columns: ⚠ weekly 2% left
 16 columns: ⚠ weekly 2% left
