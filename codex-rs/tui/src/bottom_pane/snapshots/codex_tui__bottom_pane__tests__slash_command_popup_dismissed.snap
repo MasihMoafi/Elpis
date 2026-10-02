@@ -2,9 +2,9 @@
 source: tui/src/bottom_pane/mod.rs
 expression: "render_snapshot(&pane, area)"
 ---
-• Working (0s • esc to interrupt)                           
+Elpising… (0s • esc to interrupt)                           
                                                             
-                                                            
-› /rev                                                      
-                                                            
-  tab to queue message                   100% context left
+│                                                           
+› /ren                                                      
+│                                                           
+  enter to queue    100% context left · Tab Context Ledger

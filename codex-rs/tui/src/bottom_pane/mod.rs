@@ -3148,9 +3148,10 @@ mod tests {
         for x in 0..area.width {
             row0.push(buf[(x, 0)].symbol().chars().next().unwrap_or(' '));
         }
+        // Elpis: the status header reads "Elpising…", not "Working".
         assert!(
-            row0.contains("Working"),
-            "expected Working header after denial on row 0: {row0:?}"
+            row0.contains("Elpising"),
+            "expected Elpising header after denial on row 0: {row0:?}"
         );
 
         // Composer placeholder should be visible somewhere below.
@@ -3196,7 +3197,8 @@ mod tests {
         pane.render(area, &mut buf);
 
         let bufs = snapshot_buffer(&buf);
-        assert!(bufs.contains("• Working"), "expected Working header");
+        // Elpis: the status header reads "Elpising…", not "• Working".
+        assert!(bufs.contains("Elpising…"), "expected Elpising header");
 
         pane.reset_status_timer(Duration::from_secs(/*secs*/ 42));
         pane.hide_status_indicator();
@@ -3558,10 +3560,10 @@ mod tests {
 
         // Repro: a running task + slash-command popup + Esc should dismiss the popup without
         // interrupting the task.
-        pane.insert_str("/rev");
+        pane.insert_str("/ren");
         assert!(
             pane.composer.popup_active(),
-            "expected command popup after typing `/rev`"
+            "expected command popup after typing `/ren`"
         );
 
         // Owned transcript mode must reserve the popup's rows while task status is visible.
@@ -3594,7 +3596,7 @@ mod tests {
             );
         }
         assert!(!pane.composer.popup_active());
-        assert_eq!(pane.composer_text(), "/rev");
+        assert_eq!(pane.composer_text(), "/ren");
 
         let width = 60;
         let area = Rect::new(0, 0, width, pane.desired_height(width));
@@ -3603,7 +3605,7 @@ mod tests {
             render_snapshot(&pane, area)
         );
 
-        pane.insert_str("i");
+        pane.insert_str("a");
         assert!(pane.composer.popup_active());
     }
 
