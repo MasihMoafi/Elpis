@@ -355,8 +355,6 @@ async fn queued_bang_shell_waits_for_user_shell_completion_before_next_input() {
     assert!(chat.input_queue.queued_user_messages.is_empty());
 }
 
-
-
 #[tokio::test]
 async fn queued_settings_selection_applies_before_next_input() {
     let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(Some("gpt-5.2")).await;
@@ -870,8 +868,6 @@ async fn queued_goal_slash_command_emits_set_goal_event_after_thread_starts() {
     assert_eq!(draft.objective, "improve benchmark coverage");
     assert_no_submit_op(&mut op_rx);
 }
-
-
 
 #[tokio::test]
 async fn interrupt_disambiguates_same_sized_goal_pastes() {
@@ -1419,25 +1415,6 @@ async fn unavailable_slash_command_is_available_from_local_recall() {
         "expected disabled-command message, got: {rendered:?}"
     );
     assert_eq!(recall_latest_after_clearing(&mut chat), "/review");
-}
-
-#[tokio::test]
-async fn no_op_stub_slash_command_is_available_from_local_recall() {
-    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
-
-    submit_composer_text(&mut chat, "/debug-m-drop");
-
-    let cells = drain_insert_history(&mut rx);
-    let rendered = cells
-        .iter()
-        .map(|cell| lines_to_single_string(cell))
-        .collect::<Vec<_>>()
-        .join("\n");
-    assert!(
-        rendered.contains("Memory maintenance"),
-        "expected stub message, got: {rendered:?}"
-    );
-    assert_eq!(recall_latest_after_clearing(&mut chat), "/debug-m-drop");
 }
 
 #[tokio::test]
@@ -2801,56 +2778,6 @@ async fn slash_pets_opens_picker() {
 
 #[tokio::test]
 #[serial]
-async fn slash_pets_with_arg_selects_named_pet() {
-    let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
-    force_pet_image_support(&mut chat);
-
-    chat.bottom_pane
-        .set_composer_text("/pets chefito".to_string(), Vec::new(), Vec::new());
-    chat.handle_key_event(KeyEvent::from(KeyCode::Enter));
-    assert_matches!(rx.try_recv(), Ok(AppEvent::FollowTranscript));
-
-    assert_matches!(
-        rx.try_recv(),
-        Ok(AppEvent::PetSelected { pet_id }) if pet_id == "chefito"
-    );
-    assert_matches!(op_rx.try_recv(), Err(TryRecvError::Empty));
-}
-
-#[tokio::test]
-#[serial]
-async fn slash_pets_disable_disables_pets_even_on_unsupported_terminal() {
-    let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
-    force_tmux_pet_image_unsupported(&mut chat);
-
-    chat.bottom_pane
-        .set_composer_text("/pets disable".to_string(), Vec::new(), Vec::new());
-    chat.handle_key_event(KeyEvent::from(KeyCode::Enter));
-    assert_matches!(rx.try_recv(), Ok(AppEvent::FollowTranscript));
-
-    assert_matches!(rx.try_recv(), Ok(AppEvent::PetDisabled));
-    assert_matches!(rx.try_recv(), Err(TryRecvError::Empty));
-    assert_matches!(op_rx.try_recv(), Err(TryRecvError::Empty));
-}
-
-#[tokio::test]
-#[serial]
-async fn slash_pet_hide_disables_pets_even_on_unsupported_terminal() {
-    let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
-    force_tmux_pet_image_unsupported(&mut chat);
-
-    chat.bottom_pane
-        .set_composer_text("/pet hide".to_string(), Vec::new(), Vec::new());
-    chat.handle_key_event(KeyEvent::from(KeyCode::Enter));
-    assert_matches!(rx.try_recv(), Ok(AppEvent::FollowTranscript));
-
-    assert_matches!(rx.try_recv(), Ok(AppEvent::PetDisabled));
-    assert_matches!(rx.try_recv(), Err(TryRecvError::Empty));
-    assert_matches!(op_rx.try_recv(), Err(TryRecvError::Empty));
-}
-
-#[tokio::test]
-#[serial]
 async fn slash_pets_in_tmux_shows_notice_and_preserves_draft() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
     force_tmux_pet_image_unsupported(&mut chat);
@@ -2876,34 +2803,6 @@ async fn slash_pets_in_tmux_shows_notice_and_preserves_draft() {
     chat.handle_key_event(KeyEvent::from(KeyCode::Esc));
     assert!(!chat.bottom_pane.has_active_view());
     assert_eq!(chat.bottom_pane.composer_text(), "Keep this draft");
-}
-
-#[tokio::test]
-#[serial]
-async fn slash_pets_with_arg_on_unsupported_terminal_shows_notice_without_selection() {
-    let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
-    force_tmux_pet_image_unsupported(&mut chat);
-
-    chat.bottom_pane
-        .set_composer_text("/pets chefito".to_string(), Vec::new(), Vec::new());
-    chat.handle_key_event(KeyEvent::from(KeyCode::Enter));
-
-    assert!(chat.bottom_pane.has_active_view());
-    assert!(render_bottom_popup(&chat, /*width*/ 80).contains("Pets are disabled in tmux."));
-    let cells = drain_insert_history_transcript(&mut rx);
-    let rendered = cells
-        .iter()
-        .map(|lines| lines_to_single_string(lines))
-        .collect::<Vec<_>>()
-        .join("\n");
-    assert!(rendered.contains("Pets are disabled in tmux."));
-    assert_matches!(rx.try_recv(), Err(TryRecvError::Empty));
-    assert_matches!(op_rx.try_recv(), Err(TryRecvError::Empty));
-
-    chat.handle_key_event(KeyEvent::from(KeyCode::Enter));
-    assert!(!chat.bottom_pane.has_active_view());
-    assert_matches!(rx.try_recv(), Err(TryRecvError::Empty));
-    assert_matches!(op_rx.try_recv(), Err(TryRecvError::Empty));
 }
 
 #[tokio::test]

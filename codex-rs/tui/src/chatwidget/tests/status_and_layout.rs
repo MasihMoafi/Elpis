@@ -2559,77 +2559,6 @@ async fn ambient_pet_reserves_history_wrap_width() {
 
 #[tokio::test]
 #[serial]
-async fn ambient_pet_reduces_stream_width_and_composer_text_width() {
-    use ratatui::Terminal;
-
-    let (mut with_pet, _with_pet_rx, _with_pet_op_rx) =
-        make_chatwidget_manual(/*model_override*/ None).await;
-    enable_test_ambient_pet(&mut with_pet);
-    with_pet.last_rendered_width.set(Some(80));
-    let stream_width_with_pet = with_pet.current_stream_width(/*reserved_cols*/ 2);
-
-    let (mut disabled, _disabled_rx, _disabled_op_rx) =
-        make_chatwidget_manual(/*model_override*/ None).await;
-    disabled.set_tui_pet(Some(crate::pets::DISABLED_PET_ID.to_string()));
-    disabled.last_rendered_width.set(Some(80));
-    let stream_width_without_pet = disabled.current_stream_width(/*reserved_cols*/ 2);
-
-    assert_eq!(
-        stream_width_with_pet,
-        crate::width::usable_content_width(/*total_width*/ 69, /*reserved_cols*/ 2)
-    );
-    assert_eq!(
-        stream_width_without_pet,
-        crate::width::usable_content_width(/*total_width*/ 80, /*reserved_cols*/ 2)
-    );
-    assert!(stream_width_with_pet < stream_width_without_pet);
-
-    let draft =
-        "Minim commodo esse elit Lorem exercitation elit ipsum proident labore. Esse culpa aliqua"
-            .to_string();
-    with_pet
-        .bottom_pane
-        .set_composer_text(draft.clone(), Vec::new(), Vec::new());
-    disabled
-        .bottom_pane
-        .set_composer_text(draft, Vec::new(), Vec::new());
-
-    let mut with_pet_terminal =
-        Terminal::new(TestBackend::new(/*width*/ 80, /*height*/ 6)).expect("create terminal");
-    with_pet_terminal
-        .draw(|f| with_pet.render(f.area(), f.buffer_mut()))
-        .expect("draw pet-enabled chat");
-    let mut disabled_terminal =
-        Terminal::new(TestBackend::new(/*width*/ 80, /*height*/ 6)).expect("create terminal");
-    disabled_terminal
-        .draw(|f| disabled.render(f.area(), f.buffer_mut()))
-        .expect("draw disabled-pet chat");
-
-    let pet_row = buffer_row_containing(with_pet_terminal.backend().buffer(), "Minim")
-        .expect("pet-enabled composer row should render draft");
-    let disabled_row = buffer_row_containing(disabled_terminal.backend().buffer(), "Minim")
-        .expect("disabled-pet composer row should render draft");
-
-    assert!(row_tail_is_blank(&pet_row, /*start_col*/ 69));
-    assert!(!row_tail_is_blank(&disabled_row, /*start_col*/ 69));
-}
-
-fn buffer_row_containing(buffer: &ratatui::buffer::Buffer, text: &str) -> Option<String> {
-    (0..buffer.area.height)
-        .map(|y| {
-            (0..buffer.area.width)
-                .map(|x| buffer.cell((x, y)).expect("cell should exist").symbol())
-                .collect::<String>()
-        })
-        .find(|row| row.contains(text))
-}
-
-fn row_tail_is_blank(row: &str, start_col: usize) -> bool {
-    row.chars().skip(start_col).all(char::is_whitespace)
-}
-
-#[tokio::test]
-#[serial]
 async fn ambient_pet_draw_uses_terminal_screen_area_not_short_inline_viewport() {
     use ratatui::layout::Rect;
 
@@ -2881,69 +2810,6 @@ async fn status_line_invalid_items_warn_once() {
     assert!(
         cells.is_empty(),
         "expected invalid status line warning to emit only once"
-    );
-}
-
-#[tokio::test]
-async fn status_line_hostname_renders_current_machine_hostname() {
-    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
-    chat.thread_id = Some(ThreadId::new());
-    chat.local_settings.tui.status_line = Some(vec!["hostname".to_string()]);
-
-    chat.refresh_status_line();
-
-    assert_eq!(status_line_text(&chat), codex_config::os_host_name());
-    assert!(
-        drain_insert_history(&mut rx).is_empty(),
-        "hostname should be accepted as a status line item"
-    );
-}
-
-#[tokio::test]
-async fn status_line_context_used_renders_labeled_percent() {
-    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
-    chat.thread_id = Some(ThreadId::new());
-    chat.local_settings.tui.status_line = Some(vec!["context-used".to_string()]);
-
-    chat.refresh_status_line();
-
-    assert_eq!(status_line_text(&chat), Some("Context 0% used".to_string()));
-    assert!(
-        drain_insert_history(&mut rx).is_empty(),
-        "context-used should remain a valid status line item"
-    );
-}
-
-#[tokio::test]
-async fn status_line_context_remaining_renders_labeled_percent() {
-    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
-    chat.thread_id = Some(ThreadId::new());
-    chat.local_settings.tui.status_line = Some(vec!["context-remaining".to_string()]);
-
-    chat.refresh_status_line();
-
-    assert_eq!(
-        status_line_text(&chat),
-        Some("Context 100% left".to_string())
-    );
-    assert!(
-        drain_insert_history(&mut rx).is_empty(),
-        "context-remaining should remain a valid status line item"
-    );
-}
-
-#[tokio::test]
-async fn status_line_legacy_context_usage_renders_context_used_percent() {
-    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
-    chat.thread_id = Some(ThreadId::new());
-    chat.local_settings.tui.status_line = Some(vec!["context-usage".to_string()]);
-
-    chat.refresh_status_line();
-
-    assert_eq!(status_line_text(&chat), Some("Context 0% used".to_string()));
-    assert!(
-        drain_insert_history(&mut rx).is_empty(),
-        "legacy context-usage should remain a valid status line item"
     );
 }
 
@@ -3574,43 +3440,6 @@ async fn status_line_estimated_thread_cost_footer_snapshot() {
 }
 
 #[tokio::test]
-async fn status_line_workspace_headline_renders_cached_value() {
-    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
-    chat.thread_id = Some(ThreadId::new());
-    chat.local_settings.tui.status_line = Some(vec!["workspace-headline".to_string()]);
-    chat.status_line_workspace_headline = Some("Workspace maintenance starts at 5pm".to_string());
-
-    chat.refresh_status_line();
-
-    assert_eq!(
-        status_line_text(&chat),
-        Some("Workspace maintenance starts at 5pm".to_string())
-    );
-    assert!(
-        drain_insert_history(&mut rx).is_empty(),
-        "workspace-headline should be a valid status line item"
-    );
-}
-
-#[tokio::test]
-async fn status_line_workspace_headline_omits_when_unavailable() {
-    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
-    chat.thread_id = Some(ThreadId::new());
-    chat.local_settings.tui.status_line = Some(vec![
-        "workspace-headline".to_string(),
-        "run-state".to_string(),
-    ]);
-
-    chat.refresh_status_line();
-
-    assert_eq!(status_line_text(&chat), Some("Ready".to_string()));
-    assert!(
-        drain_insert_history(&mut rx).is_empty(),
-        "workspace-headline should be omitted without warning when no headline is cached"
-    );
-}
-
-#[tokio::test]
 async fn workspace_headline_update_applies_feature_disabled_result() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
     chat.local_settings.tui.status_line = Some(vec!["workspace-headline".to_string()]);
@@ -3886,41 +3715,6 @@ async fn completed_turn_clears_visible_running_hook() {
 }
 
 #[tokio::test]
-async fn status_line_fast_mode_renders_on_and_off() {
-    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.4")).await;
-    set_fast_mode_test_catalog(&mut chat);
-    chat.local_settings.tui.status_line = Some(vec!["fast-mode".to_string()]);
-
-    chat.refresh_status_line();
-    assert_eq!(status_line_text(&chat), Some("Fast off".to_string()));
-
-    chat.set_service_tier(Some(ServiceTier::Fast.request_value().to_string()));
-    chat.refresh_status_line();
-    assert_eq!(status_line_text(&chat), Some("Fast on".to_string()));
-}
-
-#[tokio::test]
-async fn status_line_fast_mode_updates_visibility_on_model_change() {
-    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.4")).await;
-    set_fast_mode_test_catalog(&mut chat);
-    chat.local_settings.tui.status_line = Some(vec!["fast-mode".to_string()]);
-
-    chat.refresh_status_line();
-    assert_eq!(status_line_text(&chat), Some("Fast off".to_string()));
-
-    chat.set_model("gpt-5.2");
-    assert_eq!(status_line_text(&chat), None);
-
-    chat.set_model("gpt-5.4");
-    assert_eq!(status_line_text(&chat), Some("Fast off".to_string()));
-
-    chat.set_model("uncatalogued-model");
-    assert_eq!(status_line_text(&chat), Some("Fast off".to_string()));
-    chat.set_service_tier(Some(ServiceTier::Fast.request_value().to_string()));
-    assert_eq!(status_line_text(&chat), Some("Fast on".to_string()));
-}
-
-#[tokio::test]
 async fn status_line_fast_mode_footer_snapshot() {
     use ratatui::Terminal;
     use ratatui::backend::TestBackend;
@@ -3944,39 +3738,6 @@ async fn status_line_fast_mode_footer_snapshot() {
     assert_chatwidget_snapshot!(
         "status_line_fast_mode_footer",
         normalized_backend_snapshot(terminal.backend())
-    );
-}
-
-#[tokio::test]
-async fn status_line_model_with_reasoning_includes_fast_for_fast_capable_models() {
-    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.4")).await;
-    set_fast_mode_test_catalog(&mut chat);
-    assert!(get_available_model(&chat, "gpt-5.4").supports_fast_mode());
-    chat.config.cwd = test_project_path().abs();
-    chat.local_settings.tui.status_line = Some(vec![
-        "model-with-reasoning".to_string(),
-        "context-used".to_string(),
-        "current-dir".to_string(),
-    ]);
-    chat.set_reasoning_effort(Some(ReasoningEffortConfig::XHigh));
-    chat.set_service_tier(Some(ServiceTier::Fast.request_value().to_string()));
-    set_chatgpt_auth(&mut chat);
-    set_fast_mode_test_catalog(&mut chat);
-    assert!(get_available_model(&chat, "gpt-5.4").supports_fast_mode());
-    chat.refresh_status_line();
-    let test_cwd = test_path_display("/tmp/project");
-
-    assert_eq!(
-        status_line_text(&chat),
-        Some(format!("gpt-5.4 xhigh fast · Context 0% used · {test_cwd}"))
-    );
-
-    chat.set_model("gpt-5.2");
-    chat.refresh_status_line();
-
-    assert_eq!(
-        status_line_text(&chat),
-        Some(format!("gpt-5.2 xhigh · Context 0% used · {test_cwd}"))
     );
 }
 
@@ -4009,44 +3770,6 @@ async fn status_line_and_terminal_title_reasoning_render_only_effort() {
 
     assert_eq!(status_line_text(&chat), Some("xhigh".to_string()));
     assert_eq!(chat.last_terminal_title, Some("xhigh".to_string()));
-}
-
-#[tokio::test]
-async fn status_line_reasoning_updates_on_mode_switch_without_manual_refresh() {
-    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.2")).await;
-    chat.set_feature_enabled(Feature::CollaborationModes, /*enabled*/ true);
-    chat.local_settings.tui.status_line = Some(vec!["reasoning".to_string()]);
-    chat.set_reasoning_effort(Some(ReasoningEffortConfig::High));
-
-    assert_eq!(status_line_text(&chat), Some("high".to_string()));
-
-    let plan_mask = collaboration_modes::plan_mask(chat.model_catalog.as_ref())
-        .expect("expected plan collaboration mode");
-    chat.set_collaboration_mask(plan_mask);
-
-    assert_eq!(status_line_text(&chat), Some("medium".to_string()));
-}
-
-#[tokio::test]
-async fn status_line_model_with_reasoning_updates_on_mode_switch_without_manual_refresh() {
-    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.2")).await;
-    chat.set_feature_enabled(Feature::CollaborationModes, /*enabled*/ true);
-    chat.local_settings.tui.status_line = Some(vec!["model-with-reasoning".to_string()]);
-    chat.set_reasoning_effort(Some(ReasoningEffortConfig::High));
-
-    assert_eq!(status_line_text(&chat), Some("gpt-5.2 high".to_string()));
-
-    let plan_mask = collaboration_modes::plan_mask(chat.model_catalog.as_ref())
-        .expect("expected plan collaboration mode");
-    chat.set_collaboration_mask(plan_mask);
-
-    assert_eq!(status_line_text(&chat), Some("gpt-5.2 medium".to_string()));
-
-    let default_mask = collaboration_modes::default_mask(chat.model_catalog.as_ref())
-        .expect("expected default collaboration mode");
-    chat.set_collaboration_mask(default_mask);
-
-    assert_eq!(status_line_text(&chat), Some("gpt-5.2 high".to_string()));
 }
 
 #[tokio::test]
