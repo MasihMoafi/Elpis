@@ -31,7 +31,7 @@ Status: **works**, **partial**, **stub** (says "not in this build yet"), **missi
 | A16 | Readable in a light terminal (follows terminal colours) | Switch the terminal to light; read the footer and Ledger | works (auditor contrast ≥3.5:1, approximate; Masih has not checked) |
 | A17 | `tui.appearance = "system"`/dark/light override | Set it in config.toml | missing: no such key |
 | A18 | No upstream startup tips or announcement | Start it and look for "Tip: … Codex" | works |
-| A19 | No OpenAI upgrade upsell; Esc never changes your model | Start with `model="gpt-5.5"` and press Esc on the first box | missing: "Meet GPT-6 Sol" appears, and Esc saves gpt-6-sol to config.toml |
+| A19 | No OpenAI upgrade upsell; Esc never changes your model | Start with `model="gpt-5.5"` and press Esc on the first box | works since 2026-10-02: no upgrade prompt; checked on the real binary with gpt-5.5 (the 2026-09-30 build still shows "Meet GPT-6 Sol") |
 | A20 | API key masked while typed (last 4 visible) | Empty home → "Provide your own API key" → type a key | missing: shown in clear |
 
 ## B. Context Ledger & admission
@@ -131,7 +131,7 @@ Status: **works**, **partial**, **stub** (says "not in this build yet"), **missi
 | F11 | Upstream commands v0.3.0 kept: /model /permissions /skills /hooks /resume /init /diff /mcp /theme /fork /goal /rename /copy /plan /clear /quit /subagents | Spot-check a few | kept from Codex |
 | F12 | `elpis resume`, `delete`, `archive` and `unarchive` with an id | `elpis-next resume <id>` | kept from Codex (the auditor checked resume) |
 | F13 | `--resume <id>` flag (U14 compatibility) | `elpis-next --resume <id>` | missing: "unexpected argument" |
-| F14 | `\` then Enter inserts a newline (U20) | Type `a\` and press Enter | missing: sends the draft |
+| F14 | `\` then Enter inserts a newline (U20) | Type `a\` and press Enter | works (tested: backslash_enter_* composer tests) |
 | F15 | Up during a turn brings every queued message plus the draft back into the composer | Queue two, then press Up | works (tested: Up pulls every queued message plus the draft) |
 | F16 | Enter during a reply queues the message | Type during a reply, press Enter | works (tested) |
 | F17 | Empty Enter during a reply interrupts and sends the queue once | Queue one, then Enter on an empty box | works (tested, with a no-queue negative); fixed 2026-10-01 |
