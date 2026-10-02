@@ -98,6 +98,8 @@ async fn vim_buffer_jumps_route_default_chords_in_normal_and_operator_contexts()
 #[tokio::test]
 async fn global_chord_keeps_hints_and_completes_before_deadline() -> Result<()> {
     let (mut app, mut tui, mut app_server) = chord_app().await?;
+    // Elpis: the hint row is tested without the Context Ledger, which narrows it.
+    crate::app::test_support::hide_context_ledger(&mut app);
 
     press(&mut app, &mut tui, &mut app_server, ctrl('x')).await?;
     assert!(app.key_chord_matcher.is_pending());
@@ -111,8 +113,10 @@ async fn global_chord_keeps_hints_and_completes_before_deadline() -> Result<()> 
         render_bottom_popup(&app.chat_widget, /*width*/ 80)
             .replace(&test_path_display("/tmp/project"), "/tmp/project"),
         @r"
+         Elpis · model gpt-5.6-sol default · location /tmp/project
+        │
         › Ask Elpis to do anything
-
+        │
           ctrl+x then · ctrl+t open transcript · ctrl+u interrupt turn · esc cancel
         "
     );
@@ -735,6 +739,8 @@ async fn command_center_chords_do_not_capture_search_text() -> Result<()> {
 #[tokio::test]
 async fn transcript_fixed_keys_take_precedence_over_pager_chord_prefixes() -> Result<()> {
     let (mut app, mut tui, mut app_server) = chord_app().await?;
+    // Elpis: the Context Ledger takes the bottom rows, so the owned screen is tested without it.
+    crate::app::test_support::hide_context_ledger(&mut app);
     app.keymap = RuntimeKeymap::from_config(&serde_json::from_value(serde_json::json!({
         "global": {"copy": ["ctrl-x ctrl-u"]},
         "pager": {
