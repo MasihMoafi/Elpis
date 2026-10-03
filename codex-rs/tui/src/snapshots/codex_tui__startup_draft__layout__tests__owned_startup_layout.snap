@@ -4,7 +4,7 @@ expression: "format!(\"cursor={:?}\\n{frame}\",\nlayout.cursor_pos(area)).replac
 ---
 cursor=Some((13, 12))
                                                 
-  ◆ Elpis (v0.4.0-dev)                          
+  ◆ Elpis (v0.5.0-dev)                          
      loading                                    
                                                 
   Pull up a prompt.                             

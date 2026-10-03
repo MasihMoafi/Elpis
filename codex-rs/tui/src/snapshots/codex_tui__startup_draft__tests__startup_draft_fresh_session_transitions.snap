@@ -5,7 +5,7 @@ expression: "snapshots.join(\"\\n---\\n\")"
 resume lookup fallback:
 before:
 
-  ◆ Elpis (v0.4.0-dev)
+  ◆ Elpis (v0.5.0-dev)
      loading
 
   Pull up a prompt.
@@ -16,7 +16,7 @@ before:
                             Tab Context Ledger
 after:
 
-  ◆ Elpis (v0.4.0-dev)
+  ◆ Elpis (v0.5.0-dev)
      loading
 
   Pull up a prompt.
@@ -29,7 +29,7 @@ after:
 fork lookup fallback:
 before:
 
-  ◆ Elpis (v0.4.0-dev)
+  ◆ Elpis (v0.5.0-dev)
      loading
 
   Pull up a prompt.
@@ -40,7 +40,7 @@ before:
                             Tab Context Ledger
 after:
 
-  ◆ Elpis (v0.4.0-dev)
+  ◆ Elpis (v0.5.0-dev)
      loading
 
   Pull up a prompt.
@@ -55,7 +55,7 @@ before:
 hidden while picker owns input
 after:
 
-  ◆ Elpis (v0.4.0-dev)
+  ◆ Elpis (v0.5.0-dev)
      loading
 
   Pull up a prompt.
@@ -70,7 +70,7 @@ before:
 hidden while picker owns input
 after:
 
-  ◆ Elpis (v0.4.0-dev)
+  ◆ Elpis (v0.5.0-dev)
      loading
 
   Pull up a prompt.

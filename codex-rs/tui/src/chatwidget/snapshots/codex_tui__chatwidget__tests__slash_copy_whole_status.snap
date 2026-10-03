@@ -3,7 +3,7 @@ source: tui/src/chatwidget/tests/slash_commands.rs
 assertion_line: 1723
 expression: "whole_status.replace(&directory,\n\"[[workspace]]\").replace(crate::version::CODEX_CLI_VERSION, \"VERSION\")"
 ---
-◆ Elpis (v0.4.0-dev)
+◆ Elpis (v0.5.0-dev)
 
   Visit https://chatgpt.com/codex/settings/usage for up-to-date
   information on rate limits and credits
