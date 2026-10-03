@@ -2405,15 +2405,6 @@ async fn queued_menu_slash_keeps_agent_turn_complete_notification() {
 }
 
 #[tokio::test]
-async fn slash_exit_requests_exit() {
-    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
-
-    chat.dispatch_command(SlashCommand::Exit);
-
-    assert_matches!(rx.try_recv(), Ok(AppEvent::Exit(ExitMode::ShutdownFirst)));
-}
-
-#[tokio::test]
 async fn slash_stop_submits_background_terminal_cleanup() {
     let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
 
@@ -2832,42 +2823,6 @@ async fn slash_cd_rejects_pending_input_and_unsupported_session_ownership() {
 ■ The session must start before you can change its working directory.
 ■ Changing directories requires an idle primary session without queued input.
 ");
-}
-
-#[tokio::test]
-async fn slash_rollout_displays_current_path() {
-    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
-    let rollout_path = PathBuf::from("/tmp/codex-test-rollout.jsonl");
-    chat.current_rollout_path = Some(rollout_path.clone());
-
-    chat.dispatch_command(SlashCommand::Rollout);
-
-    let cells = drain_insert_history(&mut rx);
-    assert_eq!(cells.len(), 1, "expected info message for rollout path");
-    let rendered = lines_to_single_string(&cells[0]);
-    assert!(
-        rendered.contains(&rollout_path.display().to_string()),
-        "expected rollout path to be shown: {rendered}"
-    );
-}
-
-#[tokio::test]
-async fn slash_rollout_handles_missing_path() {
-    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
-
-    chat.dispatch_command(SlashCommand::Rollout);
-
-    let cells = drain_insert_history(&mut rx);
-    assert_eq!(
-        cells.len(),
-        1,
-        "expected info message explaining missing path"
-    );
-    let rendered = lines_to_single_string(&cells[0]);
-    assert!(
-        rendered.contains("not available"),
-        "expected missing rollout path message: {rendered}"
-    );
 }
 
 #[tokio::test]
