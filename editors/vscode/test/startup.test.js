@@ -166,8 +166,14 @@ test('a runtime version that differs from the checked build shows one warning', 
     await other.commands['elpis.open']();await other.commands['elpis.open']();
     await new Promise(resolve => setImmediate(resolve));
     assert.equal(other.warnings.length, 1);
-    assert.match(other.warnings[0], /version 0\.3\.0, but this extension was checked with 0\.4\.0-dev/);
+    const expected = require('../package.json').elpisRuntime;
+    assert.ok(other.warnings[0].includes(`version 0.3.0, but this extension was checked with ${expected}`), other.warnings[0]);
   } finally { other.cleanup(); }
   const same = await open({ folder: true });
   try { assert.deepEqual(same.warnings, []); } finally { same.cleanup(); }
+});
+
+test('the checked runtime version is the version of the Elpis CLI in this repository', () => {
+  const manifest = fs.readFileSync(path.join(__dirname, '../../../codex-rs/cli/Cargo.toml'), 'utf8');
+  assert.equal(require('../package.json').elpisRuntime, manifest.match(/^version = "([^"]+)"/m)[1]);
 });
