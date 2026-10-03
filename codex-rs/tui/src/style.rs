@@ -10,6 +10,7 @@ pub(crate) use elpis::composer_bg_rgb;
 pub(crate) use elpis::composer_border_style;
 pub(crate) use elpis::composer_style;
 pub(crate) use elpis::popup_border_style;
+pub(crate) use elpis::rule_style;
 
 use crate::color::blend;
 use crate::color::is_light;

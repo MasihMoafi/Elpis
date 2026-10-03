@@ -72,7 +72,7 @@ impl LedgerSourceGroup {
             Self::DurableMemory => 2,
             Self::Instructions => 3,
         };
-        smart_prune_on_colors(default_bg(), stdout_color_level())[index]
+        source_group_colors(default_bg(), stdout_color_level())[index]
     }
 
     fn marker(self) -> &'static str {
@@ -1110,7 +1110,6 @@ impl ChatWidget {
             subagents_line,
             subagents_columns,
         } = ledger_lines;
-        let brand = crate::style::brand_style().not_bold();
 
         let scroll_lines = self
             .context_ledger
@@ -1185,7 +1184,11 @@ impl ChatWidget {
         *self.context_ledger.last_source_ranges.borrow_mut() = tracked_ranges;
 
         Paragraph::new(lines.clone())
-            .block(Block::default().borders(Borders::LEFT).border_style(brand))
+            .block(
+                Block::default()
+                    .borders(Borders::LEFT)
+                    .border_style(crate::style::rule_style()),
+            )
             .wrap(Wrap { trim: true })
             .scroll((scroll_lines, 0))
             .render(area, buf);
@@ -1948,9 +1951,50 @@ fn format_source_count(value: u64) -> String {
     grouped
 }
 
+/// The switched-on state: teal, dim to bright.
 fn smart_prune_on_colors(
     terminal_bg: Option<(u8, u8, u8)>,
     color_level: StdoutColorLevel,
+) -> [Color; 4] {
+    ledger_palette(
+        terminal_bg,
+        color_level,
+        Color::Cyan,
+        [(34, 122, 106), (26, 110, 96), (20, 94, 82), (16, 84, 72)],
+        [
+            (96, 162, 150),
+            (130, 196, 182),
+            (160, 216, 203),
+            (200, 240, 230),
+        ],
+    )
+}
+
+/// Source group headings: the Deus Ex gold family (style/elpis.rs primary color).
+fn source_group_colors(
+    terminal_bg: Option<(u8, u8, u8)>,
+    color_level: StdoutColorLevel,
+) -> [Color; 4] {
+    ledger_palette(
+        terminal_bg,
+        color_level,
+        Color::Yellow,
+        [(128, 88, 10), (110, 76, 6), (140, 96, 12), (96, 70, 20)],
+        [
+            (229, 187, 104),
+            (245, 205, 128),
+            (214, 170, 90),
+            (196, 160, 96),
+        ],
+    )
+}
+
+fn ledger_palette(
+    terminal_bg: Option<(u8, u8, u8)>,
+    color_level: StdoutColorLevel,
+    ansi16_on_dark: Color,
+    light: [(u8, u8, u8); 4],
+    dark: [(u8, u8, u8); 4],
 ) -> [Color; 4] {
     if terminal_bg.is_none() {
         return [Color::Reset; 4];
@@ -1962,19 +2006,13 @@ fn smart_prune_on_colors(
         return [if terminal_bg.is_some_and(is_light) {
             Color::Black
         } else {
-            Color::Yellow
+            ansi16_on_dark
         }; 4];
     }
-
     let palette = if terminal_bg.is_some_and(is_light) {
-        [(145, 76, 0), (122, 95, 0), (96, 72, 24), (166, 99, 0)]
+        light
     } else {
-        [
-            (211, 126, 22),
-            (248, 185, 52),
-            (241, 219, 110),
-            (184, 156, 89),
-        ]
+        dark
     };
     palette.map(|color| best_color_for_level(color, color_level))
 }
@@ -2081,7 +2119,7 @@ mod tests {
                 Some((0, 0, 0)),
                 crate::terminal_palette::StdoutColorLevel::Ansi16,
             ),
-            [Color::Yellow; 4]
+            [Color::Cyan; 4]
         );
         assert_eq!(
             smart_prune_on_colors(Some((255, 255, 255)), StdoutColorLevel::Ansi16),
@@ -2097,10 +2135,10 @@ mod tests {
                 crate::terminal_palette::StdoutColorLevel::TrueColor,
             ),
             [
-                Color::Rgb(145, 76, 0),
-                Color::Rgb(122, 95, 0),
-                Color::Rgb(96, 72, 24),
-                Color::Rgb(166, 99, 0),
+                Color::Rgb(34, 122, 106),
+                Color::Rgb(26, 110, 96),
+                Color::Rgb(20, 94, 82),
+                Color::Rgb(16, 84, 72),
             ]
         );
     }
