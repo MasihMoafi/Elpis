@@ -656,6 +656,43 @@ async function submitProviderKey(apiKey) {
   }
 }
 
+let lastClaudeFetch = 0;
+
+async function refreshClaude() {
+  const now = Date.now();
+  if (now - lastClaudeFetch < 10_000) return;
+  lastClaudeFetch = now;
+  try {
+    const response = await fetch('/claude.json', { cache: 'no-store' });
+    if (response.ok) renderClaude(await response.json());
+  } catch (_error) {
+    // The Claude Code section keeps its last values.
+  }
+}
+
+function renderClaude(summary) {
+  if (!isObject(summary) || !isFiniteNumber(summary.results)) return;
+  setText('claude-state-pill', summary.results > 0 ? 'Recorded' : 'No records');
+  setText('claude-results', formatNumber(summary.results));
+  setText('claude-source', compactNumber(summary.source_tokens));
+  setText('claude-sent', compactNumber(summary.sent_tokens));
+  setText('claude-saved', compactNumber(summary.saved_tokens));
+  setText('claude-saved-share', (formatPercent(summary.saved_tokens, summary.source_tokens) || '0%') + ' of source');
+  const recent = Array.isArray(summary.recent) ? summary.recent.filter(isObject) : [];
+  const list = byId('claude-recent');
+  list.replaceChildren(...recent.map(row => {
+    const line = makeNode('div');
+    const at = isFiniteNumber(row.at) ? new Date(row.at * 1000).toLocaleString() : 'Time unavailable';
+    line.append(
+      makeNode('span', null, at + ' · ' + (typeof row.model === 'string' ? row.model : 'Model unavailable')),
+      makeNode('strong', null, compactNumber(row.source_tokens) + ' → ' + compactNumber(row.sent_tokens)),
+    );
+    return line;
+  }));
+  list.hidden = recent.length === 0;
+  byId('claude-empty').hidden = recent.length > 0;
+}
+
 async function poll(force = false) {
   if (inFlight || (paused && !force)) return;
   inFlight = true;
@@ -678,6 +715,7 @@ async function poll(force = false) {
     }
     lastValidHeartbeat = nextHeartbeat;
     await refreshEvidence();
+    await refreshClaude();
     if (lastValidState === null || nextState.revision !== lastValidState.revision) renderState(nextState);
     updateFreshness();
     setTransport(paused ? 'Paused · refreshed' : 'Live', paused ? 'paused' : 'available');

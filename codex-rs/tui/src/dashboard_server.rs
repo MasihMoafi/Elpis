@@ -23,6 +23,8 @@ use serde::Serialize;
 use crate::activity_state::DashboardActivityState;
 use crate::activity_state::DashboardActivityStatus as ProjectedActivityStatus;
 
+#[path = "dashboard_claude.rs"]
+mod claude;
 #[path = "dashboard_evidence.rs"]
 mod evidence;
 
@@ -381,6 +383,11 @@ fn response_for_at(
             200,
             "text/javascript; charset=utf-8",
             DASHBOARD_JS.as_bytes().to_vec(),
+        ),
+        "/claude.json" => response(
+            200,
+            "application/json; charset=utf-8",
+            claude::summary_json(),
         ),
         "/data.json" => match state {
             Some(state) => data_response_with(state, heartbeat_at, serde_json::to_vec),
