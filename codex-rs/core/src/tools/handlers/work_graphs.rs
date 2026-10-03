@@ -5,6 +5,7 @@ use crate::agent::control::LocalAgentControl;
 use crate::agent::status::is_final;
 use crate::agent::types::SpawnAgentOptions;
 use crate::config::Config;
+use crate::environment_selection::TurnEnvironmentSnapshot;
 use crate::function_tool::FunctionCallError;
 use crate::session::session::Session;
 use crate::session::step_context::StepContext;
@@ -138,6 +139,7 @@ struct RunnerOptions {
     max_runtime: Duration,
     spawn_config: Config,
     environments: Vec<TurnEnvironmentSelection>,
+    environment_snapshot: TurnEnvironmentSnapshot,
 }
 
 #[derive(Debug, Clone)]
@@ -605,6 +607,7 @@ async fn build_runner_options(
             .unwrap_or(DEFAULT_TASK_RUNTIME),
         spawn_config,
         environments: step_context.environments.to_selections(),
+        environment_snapshot: step_context.environments.clone(),
     })
 }
 
@@ -708,7 +711,11 @@ async fn run_scheduler(
                     options: SpawnAgentOptions {
                         parent_thread_id: Some(session.thread_id),
                         parent_turn_id: Some(turn.sub_id.clone()),
-                        environments: Some(environments),
+                        environments: Some(
+                            options
+                                .environment_snapshot
+                                .narrowed_to(&environments[0].environment_id),
+                        ),
                         ..Default::default()
                     },
                 })

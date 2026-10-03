@@ -1227,6 +1227,30 @@ impl TurnEnvironmentSnapshot {
             .collect()
     }
 
+    /// Elpis: the snapshot narrowed to one environment, for one work-graph task.
+    pub(crate) fn narrowed_to(&self, environment_id: &str) -> Self {
+        let environments = self
+            .environments
+            .iter()
+            .filter(|environment| {
+                let id = match environment {
+                    TurnEnvironmentState::Ready(environment) => {
+                        environment.selection().environment_id
+                    }
+                    TurnEnvironmentState::Starting(environment) => {
+                        environment.selection.environment_id.clone()
+                    }
+                    TurnEnvironmentState::Failed { selection, .. } => {
+                        selection.environment_id.clone()
+                    }
+                };
+                id == environment_id
+            })
+            .cloned()
+            .collect();
+        Self { environments }
+    }
+
     /// Returns every captured selection, including those still starting or unable to connect.
     pub(crate) fn all_selections(&self) -> Vec<TurnEnvironmentSelection> {
         self.environments
