@@ -126,32 +126,6 @@ fn gradient_text_at(text: &str, time: Duration) -> Vec<Span<'static>> {
         .collect()
 }
 
-pub(crate) fn paint_frame(area: Rect, buf: &mut Buffer, time: Duration, animated: bool) {
-    let area = area.intersection(buf.area);
-    if area.width < 3 || area.height < 3 {
-        return;
-    }
-    let seconds = if animated { time.as_secs_f64() } else { 0.0 };
-    let light = default_bg().is_some_and(is_light);
-    let width = area.width - 1;
-    let height = area.height - 1;
-    for y in 0..=height {
-        for x in 0..=width {
-            if x != 0 && x != width && y != 0 && y != height {
-                continue;
-            }
-            buf[(area.x + x, area.y + y)]
-                .set_symbol(if x == 0 { "│" } else { " " })
-                .set_style(Style::default().remove_modifier(ratatui::style::Modifier::BOLD))
-                .set_fg(best_color(pigment(
-                    f64::from(y) / f64::from(height),
-                    seconds * (24.0 / 5.6),
-                    light,
-                )));
-        }
-    }
-}
-
 /// The selected Quiet Rail wash fades into the terminal background without
 /// changing draft text, selection colors, or activity effects.
 pub(crate) fn paint_surface(area: Rect, buf: &mut Buffer) {
@@ -387,23 +361,13 @@ mod tests {
     }
 
     #[test]
-    fn gradient_moves_gently_and_reduced_motion_is_static() {
-        let area = Rect::new(0, 0, 30, 5);
-        let mut original = Buffer::empty(area);
-        original[(8, 2)].set_symbol("文");
-        let mut first = original.clone();
-        let mut later = original.clone();
+    fn gradient_moves_gently() {
         // Part-way through the cycle, for the same reason as above.
         let sample = Duration::from_millis(2_500);
-        paint_frame(area, &mut first, Duration::ZERO, true);
-        paint_frame(area, &mut later, sample, true);
         assert_ne!(
             pigment(0.2, 0.0, false),
             pigment(0.2, sample.as_secs_f64(), false)
         );
-        assert_eq!(first[(8, 2)], original[(8, 2)]);
-        paint_frame(area, &mut later, sample, false);
-        assert_eq!(first, later);
         for light in [false, true] {
             let a = pigment(0.2, 0.0, light);
             let b = pigment(0.2, FRAME_TICK.as_secs_f64(), light);
