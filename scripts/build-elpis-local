@@ -351,6 +351,19 @@ if [ -n "$artifact" ] && [ -f "$artifact" ]; then
     artifact_bytes=$(stat -c %s "$artifact")
 fi
 
+# With INSTA_FORCE_PASS=1, each snapshot test runs to its end, so one run
+# writes every changed snapshot as a .snap.new file. Cargo then reports a pass
+# for a changed snapshot. Thus the script lists the snapshot files that the run
+# wrote and gives a failure if there are any.
+snapshots_pending=0
+if [ "${INSTA_FORCE_PASS:-}" = 1 ]; then
+    while IFS= read -r pending_file; do
+        printf 'snapshot_pending %s\n' "${pending_file#"$repo_root"/}"
+        snapshots_pending=$((snapshots_pending + 1))
+    done < <(find "$repo_root/codex-rs" -path "$repo_root/codex-rs/target" -prune -o -type f \
+        \( -name '*.snap.new' -o -name '*.pending-snap' \) -newermt "@$((started_ns / 1000000000))" -print)
+fi
+
 if [ -n "$thermal_failure" ]; then
     printf 'build_result status=%s mode=%s profile=%s jobs=%s elapsed_ms=%s peak_c=%s artifact_bytes=%s pause_count=%s cooling_ms=%s limit_hold_count=%s\n' \
         "$thermal_failure" "$mode" "$profile" "$jobs" "$elapsed_ms" "$(format_temperature "$peak_milli")" "$artifact_bytes" "$pause_count" "$cooling_ms" "$limit_hold_count"
@@ -360,6 +373,12 @@ if [ "$build_status" -ne 0 ]; then
     printf 'build_result status=failed mode=%s profile=%s jobs=%s elapsed_ms=%s peak_c=%s artifact_bytes=%s pause_count=%s cooling_ms=%s limit_hold_count=%s\n' \
         "$mode" "$profile" "$jobs" "$elapsed_ms" "$(format_temperature "$peak_milli")" "$artifact_bytes" "$pause_count" "$cooling_ms" "$limit_hold_count"
     exit "$build_status"
+fi
+
+if [ "$snapshots_pending" -gt 0 ]; then
+    printf 'build_result status=snapshots_pending mode=%s profile=%s jobs=%s elapsed_ms=%s peak_c=%s artifact_bytes=%s pause_count=%s cooling_ms=%s limit_hold_count=%s snapshots_pending=%s\n' \
+        "$mode" "$profile" "$jobs" "$elapsed_ms" "$(format_temperature "$peak_milli")" "$artifact_bytes" "$pause_count" "$cooling_ms" "$limit_hold_count" "$snapshots_pending"
+    exit 1
 fi
 
 printf 'build_result status=ok mode=%s profile=%s jobs=%s elapsed_ms=%s peak_c=%s artifact_bytes=%s pause_count=%s cooling_ms=%s limit_hold_count=%s\n' \

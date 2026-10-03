@@ -5,7 +5,7 @@ const os = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
 
-function runGuard(temperature, mode = 'core-check', selectedRepo, extraEnv = {}) {
+function runGuard(temperature, mode = 'core-check', selectedRepo, extraEnv = {}, prepare = () => {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'elpis-build-guard-test-'));
   try {
     for (const directory of ['scripts', 'codex-rs', 'bin', 'thermal/hwmon/hwmon0']) {
@@ -17,9 +17,10 @@ function runGuard(temperature, mode = 'core-check', selectedRepo, extraEnv = {})
     fs.writeFileSync(path.join(root, 'candidate/codex-rs/Cargo.toml'), '[workspace]\n');
     fs.writeFileSync(path.join(root, 'bin/rustc'), '#!/bin/sh\nexit 1\n', { mode: 0o755 });
     fs.writeFileSync(path.join(root, 'bin/cargo'),
-      '#!/bin/sh\nprintf "%s\\n" "$@" > "$ELPIS_GUARD_TEST_MARKER"\npwd > "$ELPIS_GUARD_TEST_MARKER.cwd"\nprintf "%s" "$INSTA_WORKSPACE_ROOT" > "$ELPIS_GUARD_TEST_MARKER.insta"\nprintf "%s" "$RUST_TEST_THREADS" > "$ELPIS_GUARD_TEST_MARKER.threads"\nsleep 1\n', { mode: 0o755 });
+      '#!/bin/sh\nprintf "%s\\n" "$@" > "$ELPIS_GUARD_TEST_MARKER"\npwd > "$ELPIS_GUARD_TEST_MARKER.cwd"\nprintf "%s" "$INSTA_WORKSPACE_ROOT" > "$ELPIS_GUARD_TEST_MARKER.insta"\nprintf "%s" "$RUST_TEST_THREADS" > "$ELPIS_GUARD_TEST_MARKER.threads"\nif [ -n "$FAKE_PENDING_SNAPSHOT" ]; then mkdir -p tui/src/snapshots; : > tui/src/snapshots/new.snap.new; fi\nsleep 1\n', { mode: 0o755 });
     fs.writeFileSync(path.join(root, 'thermal/hwmon/hwmon0/temp1_input'), `${temperature}\n`);
     const marker = path.join(root, 'compiler-started');
+    prepare(root);
     const result = spawnSync('timeout', ['4s', 'bash', script, mode], {
       encoding: 'utf8', timeout: 7000,
       env: { ...process.env, PATH: `${root}/bin:${process.env.PATH}`,
@@ -103,4 +104,24 @@ test('tests run on two threads unless one is requested', () => {
   const many = runGuard(50000, 'core-check', undefined, { ELPIS_TEST_THREADS: '4' });
   assert.equal(many.status, 2, many.stdout + many.stderr);
   assert.equal(many.compilerStarted, false);
+});
+
+test('a force-pass run fails when it writes snapshot files', () => {
+  const oldSnapshot = (root) => {
+    const file = path.join(root, 'codex-rs/tui/src/snapshots/old.snap.new');
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, '');
+    fs.utimesSync(file, new Date('2000-01-01'), new Date('2000-01-01'));
+  };
+  const pending = runGuard(50000, 'core-check', undefined,
+    { INSTA_FORCE_PASS: '1', FAKE_PENDING_SNAPSHOT: '1' }, oldSnapshot);
+  assert.equal(pending.status, 1, pending.stdout + pending.stderr);
+  assert.match(pending.stdout, /^snapshot_pending codex-rs\/tui\/src\/snapshots\/new\.snap\.new$/m);
+  assert.doesNotMatch(pending.stdout, /old\.snap\.new/);
+  assert.match(pending.stdout, /status=snapshots_pending .* snapshots_pending=1$/m);
+  const onlyOld = runGuard(50000, 'core-check', undefined, { INSTA_FORCE_PASS: '1' }, oldSnapshot);
+  assert.equal(onlyOld.status, 0, onlyOld.stdout + onlyOld.stderr);
+  const notRequested = runGuard(50000, 'core-check', undefined, { FAKE_PENDING_SNAPSHOT: '1' });
+  assert.equal(notRequested.status, 0, notRequested.stdout + notRequested.stderr);
+  assert.doesNotMatch(notRequested.stdout, /snapshot_pending/);
 });
