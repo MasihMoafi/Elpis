@@ -139,6 +139,7 @@ Do not test the TUI and config crates in one command. That enables config's test
 networking features throughout the TUI dependency graph and causes a large recompilation.
 The script sets `INSTA_WORKSPACE_ROOT` to the selected worktree's `codex-rs`, so snapshot
 files stay in that worktree.
+It runs tests on two threads; set `ELPIS_TEST_THREADS=1` to run them one at a time.
 The workspace also enables `similar/inline`, matching the snapshot-test dependency
 features so switching between TUI tests and the installable build reuses core.
 

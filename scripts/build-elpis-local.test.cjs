@@ -17,7 +17,7 @@ function runGuard(temperature, mode = 'core-check', selectedRepo, extraEnv = {})
     fs.writeFileSync(path.join(root, 'candidate/codex-rs/Cargo.toml'), '[workspace]\n');
     fs.writeFileSync(path.join(root, 'bin/rustc'), '#!/bin/sh\nexit 1\n', { mode: 0o755 });
     fs.writeFileSync(path.join(root, 'bin/cargo'),
-      '#!/bin/sh\nprintf "%s\\n" "$@" > "$ELPIS_GUARD_TEST_MARKER"\npwd > "$ELPIS_GUARD_TEST_MARKER.cwd"\nprintf "%s" "$INSTA_WORKSPACE_ROOT" > "$ELPIS_GUARD_TEST_MARKER.insta"\nsleep 1\n', { mode: 0o755 });
+      '#!/bin/sh\nprintf "%s\\n" "$@" > "$ELPIS_GUARD_TEST_MARKER"\npwd > "$ELPIS_GUARD_TEST_MARKER.cwd"\nprintf "%s" "$INSTA_WORKSPACE_ROOT" > "$ELPIS_GUARD_TEST_MARKER.insta"\nprintf "%s" "$RUST_TEST_THREADS" > "$ELPIS_GUARD_TEST_MARKER.threads"\nsleep 1\n', { mode: 0o755 });
     fs.writeFileSync(path.join(root, 'thermal/hwmon/hwmon0/temp1_input'), `${temperature}\n`);
     const marker = path.join(root, 'compiler-started');
     const result = spawnSync('timeout', ['4s', 'bash', script, mode], {
@@ -29,7 +29,7 @@ function runGuard(temperature, mode = 'core-check', selectedRepo, extraEnv = {})
         ELPIS_BUILD_REPO_ROOT: selectedRepo === undefined ? '' : path.join(root, selectedRepo),
         ...extraEnv },
     });
-    return { ...result, compilerStarted: fs.existsSync(marker), args: fs.existsSync(marker) ? fs.readFileSync(marker, 'utf8').trim().split('\n').map((arg) => arg.replaceAll(root, 'FIXTURE')) : [], cwd:fs.existsSync(`${marker}.cwd`)?fs.readFileSync(`${marker}.cwd`,'utf8').trim().replaceAll(root,'FIXTURE'):'', insta:fs.existsSync(`${marker}.insta`)?fs.readFileSync(`${marker}.insta`,'utf8').replaceAll(root,'FIXTURE'):'' };
+    return { ...result, compilerStarted: fs.existsSync(marker), args: fs.existsSync(marker) ? fs.readFileSync(marker, 'utf8').trim().split('\n').map((arg) => arg.replaceAll(root, 'FIXTURE')) : [], cwd:fs.existsSync(`${marker}.cwd`)?fs.readFileSync(`${marker}.cwd`,'utf8').trim().replaceAll(root,'FIXTURE'):'', insta:fs.existsSync(`${marker}.insta`)?fs.readFileSync(`${marker}.insta`,'utf8').replaceAll(root,'FIXTURE'):'', threads:fs.existsSync(`${marker}.threads`)?fs.readFileSync(`${marker}.threads`,'utf8'):'' };
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
@@ -91,4 +91,16 @@ test('snapshots stay in the selected worktree', () => {
   const selected = runGuard(50000, 'core-check', 'candidate');
   assert.equal(selected.status, 0, selected.stdout + selected.stderr);
   assert.equal(selected.insta, 'FIXTURE/candidate/codex-rs');
+});
+
+test('tests run on two threads unless one is requested', () => {
+  const two = runGuard(50000, 'core-check', undefined, { RUST_TEST_THREADS: '8' });
+  assert.equal(two.status, 0, two.stdout + two.stderr);
+  assert.equal(two.threads, '2');
+  const one = runGuard(50000, 'core-check', undefined, { ELPIS_TEST_THREADS: '1' });
+  assert.equal(one.status, 0, one.stdout + one.stderr);
+  assert.equal(one.threads, '1');
+  const many = runGuard(50000, 'core-check', undefined, { ELPIS_TEST_THREADS: '4' });
+  assert.equal(many.status, 2, many.stdout + many.stderr);
+  assert.equal(many.compilerStarted, false);
 });

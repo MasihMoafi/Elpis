@@ -108,6 +108,15 @@ if ! [[ "$jobs" =~ ^[12]$ ]]; then
     exit 2
 fi
 
+# Two test threads make a test binary run faster and stay inside the documented
+# limit (RUST_TEST_THREADS=2). In codex-tui, the tests that change environment
+# variables use #[serial]. Set ELPIS_TEST_THREADS=1 to run tests one at a time.
+test_threads=${ELPIS_TEST_THREADS:-2}
+if ! [[ "$test_threads" =~ ^[12]$ ]]; then
+    printf 'ELPIS_TEST_THREADS must be 1 or 2 on this workstation\n' >&2
+    exit 2
+fi
+
 rustc_threads=${ELPIS_RUSTC_THREADS:-$default_rustc_threads}
 if ! [[ "$rustc_threads" =~ ^[1-9][0-9]*$ ]]; then
     printf 'ELPIS_RUSTC_THREADS must be a positive integer\n' >&2
@@ -184,7 +193,7 @@ if [ "$current_milli" -ge "$max_temp_milli" ]; then
 fi
 
 export CARGO_BUILD_JOBS=$jobs
-export RUST_TEST_THREADS=1
+export RUST_TEST_THREADS=$test_threads
 export CODEX_SKIP_BWRAP_BUILD=1
 # insta reads and writes snapshot files in this folder. All worktrees use the
 # same target folder. Without this setting, a test binary from a different
