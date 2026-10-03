@@ -1,6 +1,5 @@
 ---
 source: tui/src/chatwidget/tests/backend_banners_tests.rs
-assertion_line: 68
 expression: "normalize_snapshot_paths(render_bottom_popup(&chat, 70))"
 ---
  Elpis · model test-model-a default · location /tmp/project
@@ -11,7 +10,7 @@ expression: "normalize_snapshot_paths(render_bottom_popup(&chat, 70))"
 › 1. Notify owner
 
   Press a number to choose
-│
-› Ask Elpis to do anything
-│
+┌────────────────────────────────────────────────────────────────────┐
+› Ask Elpis to do anything                                           │
+└────────────────────────────────────────────────────────────────────┘
   ? for shortcuts             100% context left · Tab Context Ledger

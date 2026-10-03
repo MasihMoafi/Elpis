@@ -1,6 +1,5 @@
 ---
 source: tui/src/chatwidget/tests/questions_tests.rs
-assertion_line: 614
 expression: "format!(\"OPEN\\n{open}\\n\\nONLY QUESTIONS\\n{completed}\")"
 ---
 OPEN
@@ -32,9 +31,9 @@ ONLY QUESTIONS
 • Queued follow-up inputs                       │CONTEXT LEDGER  context not
   ? 2 questions                                 │measured · ≈0 source estimates
     shift+← to answer                           │Tab controls · Alt+C hide ·
-│                                               │Ctrl+click open file
-› main draft                                    │
-│                                               │SMART PRUNE          [···] SYNC
+┌──────────────────────────────────────────────┐│Ctrl+click open file
+› main draft                                   ││
+└──────────────────────────────────────────────┘│SMART PRUNE          [···] SYNC
         100% context left · Tab Context Ledger  │Reading current thread state
                                                 │Syncing… · /smart-prune on|off
                                                 │sets an explicit state

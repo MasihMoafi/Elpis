@@ -1,6 +1,5 @@
 ---
 source: tui/src/startup_draft_tests.rs
-assertion_line: 297
 expression: "snapshots.join(\"\\n---\\n\")"
 ---
 resume lookup fallback:
@@ -11,9 +10,9 @@ before:
 
   Pull up a prompt.
   Resuming session…
-│
-› draft while loading
-│
+┌──────────────────────────────────────────────┐
+› draft while loading                          │
+└──────────────────────────────────────────────┘
                             Tab Context Ledger
 after:
 
@@ -22,9 +21,9 @@ after:
 
   Pull up a prompt.
 
-│
-› draft while loading
-│
+┌──────────────────────────────────────────────┐
+› draft while loading                          │
+└──────────────────────────────────────────────┘
                             Tab Context Ledger
 ---
 fork lookup fallback:
@@ -35,9 +34,9 @@ before:
 
   Pull up a prompt.
   Forking session…
-│
-› draft while loading
-│
+┌──────────────────────────────────────────────┐
+› draft while loading                          │
+└──────────────────────────────────────────────┘
                             Tab Context Ledger
 after:
 
@@ -46,9 +45,9 @@ after:
 
   Pull up a prompt.
 
-│
-› draft while loading
-│
+┌──────────────────────────────────────────────┐
+› draft while loading                          │
+└──────────────────────────────────────────────┘
                             Tab Context Ledger
 ---
 resume picker cancellation:
@@ -61,9 +60,9 @@ after:
 
   Pull up a prompt.
 
-│
-› Ask Elpis to do anything
-│
+┌──────────────────────────────────────────────┐
+› Ask Elpis to do anything                     │
+└──────────────────────────────────────────────┘
   ? for shortcuts           Tab Context Ledger
 ---
 fork picker cancellation:
@@ -76,7 +75,7 @@ after:
 
   Pull up a prompt.
 
-│
-› Ask Elpis to do anything
-│
+┌──────────────────────────────────────────────┐
+› Ask Elpis to do anything                     │
+└──────────────────────────────────────────────┘
   ? for shortcuts           Tab Context Ledger

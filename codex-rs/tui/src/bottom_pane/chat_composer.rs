@@ -300,7 +300,7 @@ use ratatui::style::Stylize;
 use ratatui::text::Line;
 use ratatui::text::Span;
 use ratatui::widgets::Block;
-// Elpis: the composer rail border.
+// Elpis: the composer box border.
 use ratatui::widgets::Borders;
 use ratatui::widgets::Paragraph;
 use ratatui::widgets::StatefulWidgetRef;
@@ -4954,18 +4954,12 @@ impl ChatComposer {
         if let Some((warning_area, line)) = warning_notice {
             line.render(warning_area, buf);
         }
-        // Elpis: the Quiet Rail composer: an orange left rail over a fading wash.
+        // Elpis: the Deus Ex composer: a thin teal rule box over a fading wash.
         let style = crate::style::composer_style();
         Block::default()
             .borders(Borders::ALL)
             .border_style(crate::style::composer_border_style())
             .render(composer_rect, buf);
-        crate::elpis_motion::paint_frame(
-            composer_rect,
-            buf,
-            Duration::ZERO,
-            /*animated*/ false,
-        );
         if !remote_images_rect.is_empty() {
             Paragraph::new(self.attachments.remote_image_lines())
                 .style(style)
@@ -5240,8 +5234,8 @@ mod tests {
 
         let spacing_row = row_to_string(hint_row_idx - 1);
         assert_eq!(
-            // Elpis: the orange rail runs down the composer's left edge, spacing row included.
-            spacing_row.trim_start_matches('│').trim(),
+            // Elpis: the composer box's bottom rule is the separator above the hints.
+            spacing_row.trim().trim_matches(['└', '─', '┘']),
             "",
             "expected blank spacing row above hints but saw: {spacing_row:?}",
         );

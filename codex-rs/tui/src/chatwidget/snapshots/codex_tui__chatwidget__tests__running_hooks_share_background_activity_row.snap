@@ -1,6 +1,5 @@
 ---
 source: tui/src/chatwidget/tests/status_and_layout.rs
-assertion_line: 5275
 expression: "format!(\"80 columns:\\n{}\\n120 columns:\\n{}\", hook_status_frame(&chat, 80),\nhook_status_frame(&chat, 120),)"
 ---
 80 columns:
@@ -9,9 +8,9 @@ expression: "format!(\"80 columns:\\n{}\\n120 columns:\\n{}\", hook_status_frame
 "Elpising… (0s • esc to interrupt) · 1 backgroun…│CONTEXT LEDGER  context not    "
 "  └ checking command policy                     │measured · ≈0 source estimates "
 "                                                │Tab controls · Alt+C hide ·    "
-"│                                               │Ctrl+click open file           "
-"› Ask Elpis to do anything                      │                               "
-"│                                               │SMART PRUNE          [···] SYNC"
+"┌──────────────────────────────────────────────┐│Ctrl+click open file           "
+"› Ask Elpis to do anything                     ││                               "
+"└──────────────────────────────────────────────┘│SMART PRUNE          [···] SYNC"
 "        100% context left · Tab Context Ledger  │Reading current thread state   "
 "                                                │Syncing… · /smart-prune on|off "
 "                                                │sets an explicit state         "
@@ -33,9 +32,9 @@ expression: "format!(\"80 columns:\\n{}\\n120 columns:\\n{}\", hook_status_frame
 "Elpising… (0s • esc to interrupt) · 1 background terminal running · /ps…│CONTEXT LEDGER  context not measured · ≈0      "
 "  └ checking command policy                                             │source estimates                               "
 "                                                                        │Tab controls · Alt+C hide · Ctrl+click open    "
-"│                                                                       │file                                           "
-"› Ask Elpis to do anything                                              │                                               "
-"│                                                                       │SMART PRUNE                          [···] SYNC"
+"┌──────────────────────────────────────────────────────────────────────┐│file                                           "
+"› Ask Elpis to do anything                                             ││                                               "
+"└──────────────────────────────────────────────────────────────────────┘│SMART PRUNE                          [···] SYNC"
 "  ? for shortcuts               100% context left · Tab Context Ledger  │Reading current thread state                   "
 "                                                                        │Syncing… · /smart-prune on|off sets an explicit"
 "                                                                        │state                                          "

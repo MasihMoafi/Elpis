@@ -1,6 +1,5 @@
 ---
 source: tui/src/chatwidget/tests/status_and_layout.rs
-assertion_line: 5742
 expression: normalize_snapshot_paths(term.backend().vt100().screen().contents())
 ---
 
@@ -24,9 +23,9 @@ expression: normalize_snapshot_paths(term.backend().vt100().screen().contents())
  Elpis · model gpt-5.6-sol default · location /tmp/project
 Investigating rendering code (0s • esc to inter…│CONTEXT LEDGER  context not
                                                 │measured · ≈0 source estimates
-│                                               │Tab controls · Alt+C hide ·
-› Summarize recent commits                      │Ctrl+click open file
-│                                               │
+┌──────────────────────────────────────────────┐│Tab controls · Alt+C hide ·
+› Summarize recent commits                     ││Ctrl+click open file
+└──────────────────────────────────────────────┘│
   enter to queue message                        │SMART PRUNE          [···] SYNC
                                                 │Reading current thread state
                                                 │Syncing… · /smart-prune on|off

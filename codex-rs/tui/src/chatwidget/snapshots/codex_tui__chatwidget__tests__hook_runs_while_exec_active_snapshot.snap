@@ -1,6 +1,5 @@
 ---
 source: tui/src/chatwidget/tests/status_and_layout.rs
-assertion_line: 5455
 expression: "format!(\"exec running:\\n{exec_running}\\nexec and hook running:\\n{exec_and_hook_running}\\nhistory after exec:\\n{history_after_exec}\\nhook running after exec:\\n{hook_running_after_exec}\\nquiet hook completed:\\n{quiet_hook_completed}\")"
 ---
 exec running:
@@ -14,9 +13,9 @@ exec and hook running:
 "Elpising… (0s • esc to interrupt)               │CONTEXT LEDGER  context not    "
 "  └ checking output policy                      │measured · ≈0 source estimates "
 "                                                │Tab controls · Alt+C hide ·    "
-"│                                               │Ctrl+click open file           "
-"› Ask Elpis to do anything                      │                               "
-"│                                               │SMART PRUNE          [···] SYNC"
+"┌──────────────────────────────────────────────┐│Ctrl+click open file           "
+"› Ask Elpis to do anything                     ││                               "
+"└──────────────────────────────────────────────┘│SMART PRUNE          [···] SYNC"
 "  tab  open the Context Ledger and choose what …│Reading current thread state   "
 "                                                │Syncing… · /smart-prune on|off "
 "                                                │sets an explicit state         "
@@ -42,9 +41,9 @@ hook running after exec:
 "Elpising… (0s • esc to interrupt)               │CONTEXT LEDGER  context not    "
 "  └ checking output policy                      │measured · ≈0 source estimates "
 "                                                │Tab controls · Alt+C hide ·    "
-"│                                               │Ctrl+click open file           "
-"› Ask Elpis to do anything                      │                               "
-"│                                               │SMART PRUNE          [···] SYNC"
+"┌──────────────────────────────────────────────┐│Ctrl+click open file           "
+"› Ask Elpis to do anything                     ││                               "
+"└──────────────────────────────────────────────┘│SMART PRUNE          [···] SYNC"
 "  tab  open the Context Ledger and choose what …│Reading current thread state   "
 "                                                │Syncing… · /smart-prune on|off "
 "                                                │sets an explicit state         "
@@ -65,9 +64,9 @@ quiet hook completed:
 " Elpis · model gpt-5.6-sol default · location /tmp/project                      "
 "Elpising… (0s • esc to interrupt)               │CONTEXT LEDGER  context not    "
 "                                                │measured · ≈0 source estimates "
-"│                                               │Tab controls · Alt+C hide ·    "
-"› Ask Elpis to do anything                      │Ctrl+click open file           "
-"│                                               │                               "
+"┌──────────────────────────────────────────────┐│Tab controls · Alt+C hide ·    "
+"› Ask Elpis to do anything                     ││Ctrl+click open file           "
+"└──────────────────────────────────────────────┘│                               "
 "  tab  open the Context Ledger and choose what …│SMART PRUNE          [···] SYNC"
 "                                                │Reading current thread state   "
 "                                                │Syncing… · /smart-prune on|off "

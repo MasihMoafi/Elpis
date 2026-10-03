@@ -11,9 +11,9 @@ transcript row 39
 Elpising… (0s • esc to interrupt)
 
                                               Copied 24 chars to host clipboard
-│
-› draft stays here
-│
+┌──────────────────────────────────────────────────────────────────────────────┐
+› draft stays here                                                             │
+└──────────────────────────────────────────────────────────────────────────────┘
   enter to queue message                100% context left · Tab Context Ledger
 
 18 columns, 14 rows
@@ -26,10 +26,10 @@ transcript row 39
 Elpising… (0s • e…
 
   Copied 24 chars
-│
-› draft stays
-│ here
-│
+┌────────────────┐
+› draft stays    │
+│ here           │
+└────────────────┘
   enter to queue
 
 6 columns, 18 rows
@@ -42,20 +42,20 @@ row 39
 
 Elpis…
 
-│
-› dra
-│ ft
-│ sta
-│ ys
-│ her
-│ e
-│
+┌────┐
+› dra│
+│ ft │
+│ sta│
+│ ys │
+│ her│
+│ e  │
+└────┘
   100%
 
 80 columns, 6 rows
  Elpis · model gpt-5.6-sol default · location /tmp/project
 Elpising… (0s • esc to interrupt)
-│
-› draft stays here
-│
+┌──────────────────────────────────────────────────────────────────────────────┐
+› draft stays here                                                             │
+└──────────────────────────────────────────────────────────────────────────────┘
   enter to queue message                100% context left · Tab Context Ledger

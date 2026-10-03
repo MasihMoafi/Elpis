@@ -1,28 +1,27 @@
 ---
 source: tui/src/bottom_pane/chat_composer/sparkle_tests.rs
-assertion_line: 948
 expression: "snapshots.join(\"\\n\\n\")"
 ---
 gpt-6-astra
 after immediately canceling the held slash:
-│                           ⠈     ⢀     ⠁                 ⠂
-›⠁Ask Elpis to do anything         ⠈      ⠁
-│      ⢀            ⠠     ⠄         ⠠          ⢀    ⠠     ⡀
+┌──────────────────────────────────────────────────────────────────────────────┐
+›⠁Ask Elpis to do anything         ⠈      ⠁                                    │
+└──────────────────────────────────────────────────────────────────────────────┘
   ? for shortcuts                       100% context left · Tab Context Ledger
 after /model:
-│                           ⠈     ⢀     ⠁                 ⠂
-›⠁Ask Elpis to do anything         ⠈      ⠁
-│      ⢀            ⠠     ⠄         ⠠          ⢀    ⠠     ⡀
+┌──────────────────────────────────────────────────────────────────────────────┐
+›⠁Ask Elpis to do anything         ⠈      ⠁                                    │
+└──────────────────────────────────────────────────────────────────────────────┘
   ? for shortcuts                       100% context left · Tab Context Ledger
 
 gpt-5.5
 after immediately canceling the held slash:
-│
-› Ask Elpis to do anything
-│
+┌──────────────────────────────────────────────────────────────────────────────┐
+› Ask Elpis to do anything                                                     │
+└──────────────────────────────────────────────────────────────────────────────┘
   ? for shortcuts                       100% context left · Tab Context Ledger
 after /model:
-│                           ⠈     ⢀     ⠁                 ⠂
-›⠁Ask Elpis to do anything         ⠈      ⠁
-│      ⢀            ⠠     ⠄         ⠠          ⢀    ⠠     ⡀
+┌──────────────────────────────────────────────────────────────────────────────┐
+›⠁Ask Elpis to do anything         ⠈      ⠁                                    │
+└──────────────────────────────────────────────────────────────────────────────┘
   ? for shortcuts                       100% context left · Tab Context Ledger

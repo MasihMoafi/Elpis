@@ -1,11 +1,10 @@
 ---
 source: tui/src/chatwidget/realtime/recording_controls_tests.rs
-assertion_line: 224
 expression: "meters.join(\"\\n\")"
 ---
-│  mic ██████  codex ▅▅▅▅▅▅                     │Tab controls · Alt+C hide ·
-│  mic ██████  codex ▅▅▅▅▅▅
-│  mic ████▅▁  codex ▅▅▅▅██                     │Tab controls · Alt+C hide ·
-│  mic ███▅▁█  codex ▅▅▅██▁                     │Tab controls · Alt+C hide ·
-│  mic ██▅▁█▁  codex ▅▅██▁▁                     │Tab controls · Alt+C hide ·
-│  mic ▁▁▁▁▁▁  codex ▁▁▁▁▁▁                     │Tab controls · Alt+C hide ·
+│  mic ██████  codex ▅▅▅▅▅▅                    ││Tab controls · Alt+C hide ·
+│  mic ██████  codex ▅▅▅▅▅▅  │
+│  mic ████▅▁  codex ▅▅▅▅██                    ││Tab controls · Alt+C hide ·
+│  mic ███▅▁█  codex ▅▅▅██▁                    ││Tab controls · Alt+C hide ·
+│  mic ██▅▁█▁  codex ▅▅██▁▁                    ││Tab controls · Alt+C hide ·
+│  mic ▁▁▁▁▁▁  codex ▁▁▁▁▁▁                    ││Tab controls · Alt+C hide ·

@@ -1,6 +1,5 @@
 ---
 source: tui/src/chatwidget/tests/slash_commands.rs
-assertion_line: 3502
 expression: normalize_snapshot_paths(term.backend().vt100().screen().contents())
 ---
 
@@ -9,9 +8,9 @@ Elpising… (0s • esc to interrupt)               │CONTEXT LEDGER  context n
                                                 │measured · ≈0 source estimates
 • Messages to be submitted at end of turn       │Tab controls · Alt+C hide ·
   ↳ Steer submitted while /compact was running. │Ctrl+click open file
-│                                               │
-› Ask Elpis to do anything                      │SMART PRUNE          [···] SYNC
-│                                               │Reading current thread state
+┌──────────────────────────────────────────────┐│
+› Ask Elpis to do anything                     ││SMART PRUNE          [···] SYNC
+└──────────────────────────────────────────────┘│Reading current thread state
         100% context left · Tab Context Ledger  │Syncing… · /smart-prune on|off
                                                 │sets an explicit state
                                                 │

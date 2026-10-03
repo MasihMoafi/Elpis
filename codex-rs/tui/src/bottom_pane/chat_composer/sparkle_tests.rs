@@ -144,7 +144,14 @@ fn sparkle_matches_the_original_starfield_and_protects_the_placeholder_and_curso
                         && cursor != Some((*x, *y)))
             );
             if width == 80 {
-                assert!(dots(&active).len() > 6);
+                // Elpis: the composer box keeps its rules; stars fill only its inside.
+                let inside = |(x, y, _): &(u16, u16, String)| {
+                    *x > active.area.x
+                        && *x + 1 < active.area.right()
+                        && *y > active.area.y
+                        && *y + 1 < active.area.bottom()
+                };
+                assert!(dots(&active).iter().chain(dots(&later).iter()).all(inside));
                 assert!(
                     dots(&active)
                         .iter()

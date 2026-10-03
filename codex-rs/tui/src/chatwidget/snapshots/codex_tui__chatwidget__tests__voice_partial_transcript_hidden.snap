@@ -1,15 +1,14 @@
 ---
 source: tui/src/chatwidget/tests/status_and_layout.rs
-assertion_line: 39
 expression: normalized_backend_snapshot(terminal.backend())
 ---
 "                                                            "
 "• Agent answer arriving                                     "
 "                                                            "
 " Elpis · model gpt-5.6-sol default · location /tmp/project  "
-"│                                                           "
-"│voice ● listening              ctrl+x mute     /voice stop "
-"│                                                           "
-"› Ask Elpis to do anything                                  "
-"│                                                           "
+"┌──────────────────────────────────────────────────────────┐"
+"│voice ● listening              ctrl+x mute     /voice stop│"
+"│                                                          │"
+"› Ask Elpis to do anything                                 │"
+"└──────────────────────────────────────────────────────────┘"
 "  ? for shortcuts   100% context left · Tab Context Ledger  "

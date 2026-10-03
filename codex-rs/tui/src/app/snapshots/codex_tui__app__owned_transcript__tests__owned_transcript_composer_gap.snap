@@ -11,9 +11,9 @@ Transcript row 39
 Transcript row 40
  Elpis · model gpt-test default · location /tmp/project
 
-│
-› draft
-│
+┌──────────────────────────────────────────────────────────────────────────────┐
+› draft                                                                        │
+└──────────────────────────────────────────────────────────────────────────────┘
                                         100% context left · Tab Context Ledger
 
 Reading
@@ -25,9 +25,9 @@ Transcript row 34
 Transcript row 35
  Elpis · model gpt-test default · location /tmp/project
                              ↓ Back to bottom · esc
-│
-› draft
-│
+┌──────────────────────────────────────────────────────────────────────────────┐
+› draft                                                                        │
+└──────────────────────────────────────────────────────────────────────────────┘
   esc latest
 
 Resized multiline composer
@@ -37,18 +37,18 @@ Transcript row 32
 Transcript row 33
  Elpis · model gpt-test default · locati
          ↓ Back to bottom · esc
-│
-› draft
-│ second line
-│ third line
-│
+┌──────────────────────────────────────┐
+› draft                                │
+│ second line                          │
+│ third line                           │
+└──────────────────────────────────────┘
   esc latest
 
 Tiny terminal
  Elpis · model gpt-test default · locati
-│
-› draft
-│
+┌──────────────────────────────────────┐
+› draft                                │
+└──────────────────────────────────────┘
   esc latest
 
 Detailed
@@ -60,7 +60,7 @@ Detailed
 
  Elpis · model gpt-test default · location /tmp/project
 
-│
-› preserved draft
-│
+┌──────────────────────────────────────────────────────────────────────────────┐
+› preserved draft                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
                                         100% context left · Tab Context Ledger

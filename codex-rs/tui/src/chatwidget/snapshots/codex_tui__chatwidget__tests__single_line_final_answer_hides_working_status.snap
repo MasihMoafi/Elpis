@@ -1,6 +1,5 @@
 ---
 source: tui/src/chatwidget/tests/status_and_layout.rs
-assertion_line: 2165
 expression: normalize_snapshot_paths(terminal.backend().vt100().screen().contents())
 ---
 › count to 1
@@ -9,7 +8,7 @@ expression: normalize_snapshot_paths(terminal.backend().vt100().screen().content
 • 1
 
  Elpis · model gpt-5 default · location 
-│
-› Ask Elpis to do anything
-│
+┌──────────────────────────────────────┐
+› Ask Elpis to do anything             │
+└──────────────────────────────────────┘
   100% context left · Tab Context Ledger

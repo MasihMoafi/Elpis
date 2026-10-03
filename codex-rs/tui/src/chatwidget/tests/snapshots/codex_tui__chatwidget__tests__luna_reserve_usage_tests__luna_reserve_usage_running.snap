@@ -1,14 +1,13 @@
 ---
 source: tui/src/chatwidget/tests/luna_reserve_usage_tests.rs
-assertion_line: 214
 expression: rendered
 ---
  Elpis · model gpt-reserve default · location /tmp/project
 Elpising… (0s • esc to interrupt)               │CONTEXT LEDGER  context not
                                                 │measured · ≈0 source estimates
-│                                               │Tab controls · Alt+C hide ·
-› x                                             │Ctrl+click open file
-│                                               │
+┌──────────────────────────────────────────────┐│Tab controls · Alt+C hide ·
+› x                                            ││Ctrl+click open file
+└──────────────────────────────────────────────┘│
   enter to queue message                        │SMART PRUNE          [···] SYNC
                                                 │Reading current thread state
                                                 │Syncing… · /smart-prune on|off

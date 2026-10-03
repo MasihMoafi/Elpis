@@ -1,20 +1,19 @@
 ---
 source: tui/src/bottom_pane/chat_composer/sparkle_tests.rs
-assertion_line: 217
 expression: "format!(\"before fade:\\n{}\\nfading:\\n{}\\nfinished:\\n{}\", text(&last),\ntext(&fading), text(&finished))"
 ---
 before fade:
-│             ⠄          ⢀  ⠈           ⠁               ⡀ ⠂ ⠄
-› Ask Elpis to do anything   ⠈     ⠈ ⠂    ⠁                                ⠂
-│      ⢀⠐        ⠄        ⠄                    ⢀    ⠠ ⠄
+┌──────────────────────────────────────────────────────────────────────────────┐
+› Ask Elpis to do anything   ⠈     ⠈ ⠂    ⠁                                ⠂   │
+└──────────────────────────────────────────────────────────────────────────────┘
   ? for shortcuts                       100% context left · Tab Context Ledger
 fading:
-│             ⠄          ⢀  ⠈           ⠁               ⡀ ⠂ ⠄
-› Ask Elpis to do anything   ⠈     ⠈ ⠂    ⠁
-│       ⠐        ⠄        ⠄                    ⢀    ⠠ ⠄
+┌──────────────────────────────────────────────────────────────────────────────┐
+› Ask Elpis to do anything   ⠈     ⠈ ⠂    ⠁                                    │
+└──────────────────────────────────────────────────────────────────────────────┘
   ? for shortcuts                       100% context left · Tab Context Ledger
 finished:
-│
-› Ask Elpis to do anything
-│
+┌──────────────────────────────────────────────────────────────────────────────┐
+› Ask Elpis to do anything                                                     │
+└──────────────────────────────────────────────────────────────────────────────┘
   ? for shortcuts                       100% context left · Tab Context Ledger

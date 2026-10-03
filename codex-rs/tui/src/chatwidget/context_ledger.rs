@@ -595,7 +595,7 @@ impl ChatWidget {
                 }
                 spans
             } else {
-                vec![Span::styled(label, Style::default().fg(teal).bold())]
+                vec![Span::styled(label, brand.bold())]
             }
         };
         let switch_spans = if !self.smart_prune_synced && pending_smart_prune_enabled.is_none() {

@@ -1,6 +1,5 @@
 ---
 source: tui/src/chatwidget/tests/popups_and_settings.rs
-assertion_line: 2317
 expression: snapshot
 ---
  Elpis · model gpt-5.6-sol default · location /tmp/project
@@ -8,9 +7,9 @@ expression: snapshot
 › Google Drive  [App] Connected files           │measured · ≈0 source estimates
                                                 │Tab controls · Alt+C hide ·
   enter insert · esc close                      │Ctrl+click open file
-│                                               │
-› $                                             │SMART PRUNE          [···] SYNC
-│                                               │Reading current thread state
+┌──────────────────────────────────────────────┐│
+› $                                            ││SMART PRUNE          [···] SYNC
+└──────────────────────────────────────────────┘│Reading current thread state
         100% context left · Tab Context Ledger  │Syncing… · /smart-prune on|off
                                                 │sets an explicit state
                                                 │

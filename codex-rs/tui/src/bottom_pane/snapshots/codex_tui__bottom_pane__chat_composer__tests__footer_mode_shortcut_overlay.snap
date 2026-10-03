@@ -1,6 +1,5 @@
 ---
 source: tui/src/bottom_pane/chat_composer.rs
-assertion_line: 5348
 expression: terminal.backend()
 ---
 "  Keyboard shortcuts                                                                                "
@@ -21,11 +20,11 @@ expression: terminal.backend()
 "                                    shift+⌥+, / shift+⌥+.  Top / latest                             "
 "                                                                                                    "
 "  /keymap customize                                                                                 "
-"│                                                                                                   "
-"› Ask Elpis to do anything                                                                          "
-"│                                                                                                   "
-"│                                                                                                   "
-"│                                                                                                   "
-"│                                                                                                   "
-"│                                                                                                   "
+"┌──────────────────────────────────────────────────────────────────────────────────────────────────┐"
+"› Ask Elpis to do anything                                                                         │"
+"│                                                                                                  │"
+"│                                                                                                  │"
+"│                                                                                                  │"
+"│                                                                                                  │"
+"└──────────────────────────────────────────────────────────────────────────────────────────────────┘"
 "  ? / esc close                                                                                     "

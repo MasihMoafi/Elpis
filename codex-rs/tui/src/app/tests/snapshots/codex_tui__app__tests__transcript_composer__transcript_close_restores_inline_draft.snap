@@ -1,13 +1,12 @@
 ---
 source: tui/src/app/tests/transcript_composer.rs
-assertion_line: 349
 expression: "buffer_text(crate::custom_terminal::test_support::last_rendered_buffer(&tui.terminal)).replace(&test_path_display(\"/tmp/project\"),\n\"/tmp/project\")"
 ---
 
  Elpis · model gpt-5.6-sol default · location /tmp/project
-│                                               │CONTEXT LEDGER  context not
-› EDGE-DRAFT-MUST-SURVIVE                       │measured · ≈0 source estimates
-│                                               │Tab controls · Alt+C hide ·
+┌──────────────────────────────────────────────┐│CONTEXT LEDGER  context not
+› EDGE-DRAFT-MUST-SURVIVE                      ││measured · ≈0 source estimates
+└──────────────────────────────────────────────┘│Tab controls · Alt+C hide ·
         100% context left · Tab Context Ledger  │Ctrl+click open file
                                                 │
                                                 │SMART PRUNE          [···] SYNC

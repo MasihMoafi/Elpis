@@ -1,6 +1,5 @@
 ---
 source: tui/src/chatwidget/tests/security_setup_tests.rs
-assertion_line: 132
 expression: "normalize_snapshot_paths(render_bottom_popup(&chat, 48))"
 ---
  Elpis · model test-model-a default · location /
@@ -16,7 +15,7 @@ expression: "normalize_snapshot_paths(render_bottom_popup(&chat, 48))"
 
   Press a number to choose · esc to dismiss ·
   type to continue
-│
-› Ask Elpis to do anything
-│
+┌──────────────────────────────────────────────┐
+› Ask Elpis to do anything                     │
+└──────────────────────────────────────────────┘
         100% context left · Tab Context Ledger

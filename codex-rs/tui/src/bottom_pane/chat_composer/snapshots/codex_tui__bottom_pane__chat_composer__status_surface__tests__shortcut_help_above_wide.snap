@@ -1,6 +1,5 @@
 ---
 source: tui/src/bottom_pane/chat_composer/status_surface_tests.rs
-assertion_line: 133
 expression: text
 ---
 
@@ -24,8 +23,8 @@ expression: text
   esc esc  Edit last message
 
   /keymap customize
-│
-› Ask Elpis
-│
+┌────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+› Ask Elpis                                                                                                                      │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
   MODEL · ~/project · Context 20% used
   ? / esc close

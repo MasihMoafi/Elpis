@@ -1,14 +1,13 @@
 ---
 source: tui/src/chatwidget/tests/mcp_startup.rs
-assertion_line: 612
 expression: normalize_snapshot_paths(term.backend().vt100().screen().contents())
 ---
 
 ⚠ MCP startup incomplete (failed: alpha)
  Elpis · model gpt-5.6-sol default · location /tmp/project
-│                                                                       │CONTEXT LEDGER  context not measured · ≈0
-› Ask Elpis to do anything                                              │source estimates
-│                                                                       │Tab controls · Alt+C hide · Ctrl+click open
+┌──────────────────────────────────────────────────────────────────────┐│CONTEXT LEDGER  context not measured · ≈0
+› Ask Elpis to do anything                                             ││source estimates
+└──────────────────────────────────────────────────────────────────────┘│Tab controls · Alt+C hide · Ctrl+click open
   ? for shortcuts               100% context left · Tab Context Ledger  │file
                                                                         │
                                                                         │SMART PRUNE                          [···] SYNC

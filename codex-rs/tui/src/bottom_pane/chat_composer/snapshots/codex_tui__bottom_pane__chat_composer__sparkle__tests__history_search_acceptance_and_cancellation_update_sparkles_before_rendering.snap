@@ -1,16 +1,15 @@
 ---
 source: tui/src/bottom_pane/chat_composer/sparkle_tests.rs
-assertion_line: 632
 expression: "snapshots.join(\"\\n\\n\")"
 ---
 accept:
-│
-› Ask Elpis to do anything
-│
+┌──────────────────────────────────────────────────────────────────────────────┐
+› Ask Elpis to do anything                                                     │
+└──────────────────────────────────────────────────────────────────────────────┘
   ? for shortcuts                       100% context left · Tab Context Ledger
 
 escape:
-│                           ⠈     ⢀     ⠁                 ⠂
-›⠁Ask Elpis to do anything         ⠈      ⠁
-│      ⢀            ⠠     ⠄         ⠠          ⢀    ⠠     ⡀
+┌──────────────────────────────────────────────────────────────────────────────┐
+›⠁Ask Elpis to do anything         ⠈      ⠁                                    │
+└──────────────────────────────────────────────────────────────────────────────┘
   ? for shortcuts                       100% context left · Tab Context Ledger

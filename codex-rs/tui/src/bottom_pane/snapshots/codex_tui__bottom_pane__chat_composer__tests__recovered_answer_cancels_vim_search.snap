@@ -2,12 +2,12 @@
 source: tui/src/bottom_pane/chat_composer.rs
 expression: terminal.backend()
 ---
-"                                        "
-"› existing draft                        "
-"  answer                                "
-"                                        "
-"                                        "
-"                                        "
-"                                        "
-"                                        "
+"┌──────────────────────────────────────┐"
+"› existing draft                       │"
+"│ answer                               │"
+"│                                      │"
+"│                                      │"
+"│                                      │"
+"│                                      │"
+"└──────────────────────────────────────┘"
 "       100% context left | Vim: Normal  "

@@ -1,6 +1,5 @@
 ---
 source: tui/src/chatwidget/tests/guardian.rs
-assertion_line: 321
 expression: normalize_snapshot_paths(term.backend().vt100().screen().contents())
 ---
 
@@ -8,9 +7,9 @@ expression: normalize_snapshot_paths(term.backend().vt100().screen().contents())
  Elpis · model gpt-5.6-sol default · location /tmp/projectta-binary
 Elpising…r(0s • esc to interrupt)ple.com                                                │CONTEXT LEDGER  context not measured · ≈0 source
                                                                                         │estimates
-│                                                                                       │Tab controls · Alt+C hide · Ctrl+click open file
-› Ask Elpis to do anything                                                              │
-│                                                                                       │SMART PRUNE                              [···] SYNC
+┌──────────────────────────────────────────────────────────────────────────────────────┐│Tab controls · Alt+C hide · Ctrl+click open file
+› Ask Elpis to do anything                                                             ││
+└──────────────────────────────────────────────────────────────────────────────────────┘│SMART PRUNE                              [···] SYNC
   ? for shortcuts                               100% context left · Tab Context Ledger  │Reading current thread state
                                                                                         │Syncing… · /smart-prune on|off sets an explicit
                                                                                         │state

@@ -50,6 +50,10 @@ fn is_orange(color: ratatui::style::Color) -> bool {
     matches!(color, ratatui::style::Color::Rgb(r, g, b) if r >= g && g > b && r > 150)
 }
 
+fn is_teal(color: ratatui::style::Color) -> bool {
+    matches!(color, ratatui::style::Color::Rgb(r, g, b) if g > r && b > r)
+}
+
 #[test]
 fn session_header_names_elpis_and_never_openai_codex() {
     let header = SessionHeaderHistoryCell::new(
@@ -202,7 +206,7 @@ async fn run_state_reads_elpising_while_working_and_ready_when_idle() {
 }
 
 #[tokio::test]
-async fn composer_wears_the_orange_rail_and_keeps_the_draft_intact() {
+async fn composer_wears_the_teal_box_and_keeps_the_draft_intact() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
     chat.bottom_pane.insert_str("keep my draft");
     let buffer = with_test_default_colors(DARK, || render_widget(&chat, /*width*/ 80));
@@ -211,12 +215,12 @@ async fn composer_wears_the_orange_rail_and_keeps_the_draft_intact() {
         .iter()
         .position(|row| row.contains("keep my draft"))
         .expect("draft row");
-    // The rail runs down the composer's left edge; the prompt glyph takes the draft row,
-    // as in v0.3.0.
-    let rail_row = draft_row as u16 - 1;
-    assert_eq!(buffer[(0, rail_row)].symbol(), "│");
-    assert!(is_orange(buffer[(0, rail_row)].fg));
-    // The rail is drawn around the text, never over it.
+    // A thin teal rule box frames the composer; the prompt glyph takes the draft row.
+    let top_row = draft_row as u16 - 1;
+    assert_eq!(buffer[(0, top_row)].symbol(), "┌");
+    assert_eq!(buffer[(0, draft_row as u16)].symbol(), "›");
+    assert!(is_teal(buffer[(0, top_row)].fg));
+    // The box is drawn around the text, never over it.
     assert!(
         rows[draft_row].contains("› keep my draft"),
         "{}",
@@ -250,8 +254,8 @@ async fn identity_line_sits_directly_above_the_composer() {
         .unwrap_or_else(|| panic!("no identity line in {rows:#?}"));
     let composer_top = rows
         .iter()
-        .position(|row| row.starts_with('│'))
-        .expect("composer rail");
+        .position(|row| row.starts_with('┌'))
+        .expect("composer box");
     assert_eq!(identity + 1, composer_top, "{rows:#?}");
     assert!(is_orange(buffer[(1, identity as u16)].fg));
     // The upstream footer status line stays off: the identity line replaces it, so the
@@ -363,4 +367,29 @@ async fn footer_shows_the_goal_state_beside_the_context_indicator() {
 
     let shown = screen(&chat);
     assert!(shown.contains("Pursuing goal (40K / 50K)"), "{shown}");
+}
+
+#[tokio::test]
+async fn composer_box_shares_the_ledger_rule_and_closes_itself_without_the_ledger() {
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    let rows_now = |chat: &ChatWidget| {
+        rows(&with_test_default_colors(DARK, || {
+            render_widget(chat, /*width*/ 120)
+        }))
+    };
+    let beside = rows_now(&chat);
+    let top = beside
+        .iter()
+        .find(|row| row.starts_with('┌'))
+        .expect("composer box");
+    assert!(top.contains("─┐CONTEXT LEDGER"), "{beside:#?}");
+    assert!(beside.iter().all(|row| !row.contains("││")), "{beside:#?}");
+
+    chat.close_context_ledger();
+    let alone = rows_now(&chat);
+    let top = alone
+        .iter()
+        .find(|row| row.starts_with('┌'))
+        .expect("composer box");
+    assert!(top.trim_end().ends_with('┐'), "{alone:#?}");
 }

@@ -1,6 +1,5 @@
 ---
 source: tui/src/bottom_pane/chat_composer/sparkle_tests.rs
-assertion_line: 367
 expression: "snapshots.join(\"\\n\\n\")"
 ---
 shortcut help:
@@ -22,25 +21,25 @@ shortcut help:
                                 shift+⌥+, / shift+⌥+.  Top / latest
 
   /keymap customize
-│
-› Ask Elpis to do anything
-│
+┌──────────────────────────────────────────────────────────────────────────────┐
+› Ask Elpis to do anything                                                     │
+└──────────────────────────────────────────────────────────────────────────────┘
   ? / esc close
 
 after /model selects Astra:
-│                           ⠈     ⢀     ⠁                 ⠂
-›⠁Ask Elpis to do anything         ⠈      ⠁
-│      ⢀            ⠠     ⠄         ⠠          ⢀    ⠠     ⡀
+┌──────────────────────────────────────────────────────────────────────────────┐
+›⠁Ask Elpis to do anything         ⠈      ⠁                                    │
+└──────────────────────────────────────────────────────────────────────────────┘
   ? for shortcuts                       100% context left · Tab Context Ledger
 
 literal pasted question mark:
-│
-› ?
-│
+┌──────────────────────────────────────────────────────────────────────────────┐
+› ?                                                                            │
+└──────────────────────────────────────────────────────────────────────────────┘
                                         100% context left · Tab Context Ledger
 
 after clearing and selecting Astra:
-│
-› Ask Elpis to do anything
-│
+┌──────────────────────────────────────────────────────────────────────────────┐
+› Ask Elpis to do anything                                                     │
+└──────────────────────────────────────────────────────────────────────────────┘
   ? for shortcuts                       100% context left · Tab Context Ledger

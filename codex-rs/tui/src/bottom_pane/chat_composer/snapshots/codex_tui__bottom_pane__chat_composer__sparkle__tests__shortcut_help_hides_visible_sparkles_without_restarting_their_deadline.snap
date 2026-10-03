@@ -1,13 +1,12 @@
 ---
 source: tui/src/bottom_pane/chat_composer/sparkle_tests.rs
-assertion_line: 454
 expression: "snapshots.join(\"\\n\\n\")"
 ---
 expires during help: false
 initial:
-│                           ⠈     ⢀     ⠁                 ⠂
-›⠁Ask Elpis to do anything         ⠈      ⠁
-│      ⢀            ⠠     ⠄         ⠠          ⢀    ⠠     ⡀
+┌──────────────────────────────────────────────────────────────────────────────┐
+›⠁Ask Elpis to do anything         ⠈      ⠁                                    │
+└──────────────────────────────────────────────────────────────────────────────┘
   ? for shortcuts                       100% context left · Tab Context Ledger
 shortcut help:
   Keyboard shortcuts
@@ -28,21 +27,21 @@ shortcut help:
                                 shift+⌥+, / shift+⌥+.  Top / latest
 
   /keymap customize
-│
-› Ask Elpis to do anything
-│
+┌──────────────────────────────────────────────────────────────────────────────┐
+› Ask Elpis to do anything                                                     │
+└──────────────────────────────────────────────────────────────────────────────┘
   ? / esc close
 after closing:
-│                                       ⠁               ⡀   ⠄           ⠄   ⠄
-› Ask Elpis to do anything                                   ⠈
-│     ⠠                             ⠠        ⢀ ⢀     ⡀                         ⠄
+┌──────────────────────────────────────────────────────────────────────────────┐
+› Ask Elpis to do anything                                   ⠈                 │
+└──────────────────────────────────────────────────────────────────────────────┘
   ? for shortcuts                       100% context left · Tab Context Ledger
 
 expires during help: true
 initial:
-│                           ⠈     ⢀     ⠁                 ⠂
-›⠁Ask Elpis to do anything         ⠈      ⠁
-│      ⢀            ⠠     ⠄         ⠠          ⢀    ⠠     ⡀
+┌──────────────────────────────────────────────────────────────────────────────┐
+›⠁Ask Elpis to do anything         ⠈      ⠁                                    │
+└──────────────────────────────────────────────────────────────────────────────┘
   ? for shortcuts                       100% context left · Tab Context Ledger
 shortcut help:
   Keyboard shortcuts
@@ -63,12 +62,12 @@ shortcut help:
                                 shift+⌥+, / shift+⌥+.  Top / latest
 
   /keymap customize
-│
-› Ask Elpis to do anything
-│
+┌──────────────────────────────────────────────────────────────────────────────┐
+› Ask Elpis to do anything                                                     │
+└──────────────────────────────────────────────────────────────────────────────┘
   ? / esc close
 after closing:
-│
-› Ask Elpis to do anything
-│
+┌──────────────────────────────────────────────────────────────────────────────┐
+› Ask Elpis to do anything                                                     │
+└──────────────────────────────────────────────────────────────────────────────┘
   ? for shortcuts                       100% context left · Tab Context Ledger

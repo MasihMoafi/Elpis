@@ -11,9 +11,9 @@ row 18
 row 19
  Elpis · model gpt-5.6-sol default · location /tmp/project
                      New activity · ↓ Back to bottom · esc
-│
-› draft preserved
-│
+┌──────────────────────────────────────────────────────────────────────────────┐
+› draft preserved                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
   New activity · esc latest
 
 after
@@ -25,7 +25,7 @@ row 29
 new output
  Elpis · model gpt-5.6-sol default · location /tmp/project
 
-│
-› draft preserved
-│
+┌──────────────────────────────────────────────────────────────────────────────┐
+› draft preserved                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
                                         100% context left · Tab Context Ledger

@@ -3,7 +3,7 @@ source: tui/src/app/thread_title_tests.rs
 expression: normalize_snapshot_paths(popup)
 ---
  Elpis · model gpt-5.2 default · location /tmp/project · Keep this title
-│
-› Ask Elpis to do anything
-│
+┌──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+› Ask Elpis to do anything                                                                                             │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
   ? for shortcuts                                                               100% context left · Tab Context Ledger

@@ -1,6 +1,5 @@
 ---
 source: tui/src/chatwidget/tests/status_and_layout.rs
-assertion_line: 5848
 expression: normalize_snapshot_paths(term.backend().vt100().screen().contents())
 ---
 
@@ -23,7 +22,7 @@ Elpising… (0s • esc to interrupt)               │CONTEXT LEDGER  context n
   ↳ Hello, world! 12                            │Context measurement unavailable
   ↳ Hello, world! 13                            │until the first request
   ↳ Hello, world! 14                            │snapshot
-│                                               │
-› Ask Elpis to do anything                      │No portable context is
-│                                               │available.
+┌──────────────────────────────────────────────┐│
+› Ask Elpis to do anything                     ││No portable context is
+└──────────────────────────────────────────────┘│available.
         100% context left · Tab Context Ledger

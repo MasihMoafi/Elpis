@@ -113,11 +113,11 @@ async fn global_chord_keeps_hints_and_completes_before_deadline() -> Result<()> 
         render_bottom_popup(&app.chat_widget, /*width*/ 80)
             .replace(&test_path_display("/tmp/project"), "/tmp/project"),
         @r"
-         Elpis · model gpt-5.6-sol default · location /tmp/project
-        │
-        › Ask Elpis to do anything
-        │
-          ctrl+x then · ctrl+t open transcript · ctrl+u interrupt turn · esc cancel
+          Elpis · model gpt-5.6-sol default · location /tmp/project
+         ┌──────────────────────────────────────────────────────────────────────────────┐
+         › Ask Elpis to do anything                                                     │
+         └──────────────────────────────────────────────────────────────────────────────┘
+           ctrl+x then · ctrl+t open transcript · ctrl+u interrupt turn · esc cancel
         "
     );
 

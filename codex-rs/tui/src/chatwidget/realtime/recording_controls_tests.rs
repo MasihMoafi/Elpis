@@ -71,11 +71,11 @@ async fn voice_composer_preserves_normal_colors_across_microphone_states() {
                 .collect::<Vec<_>>()
                 .join("\n");
             insta::assert_snapshot!(rows, @r"
-            0: │
-            1: │voice ● listening ctrl+x mute     /voice stop
-            2: │  mic ▁▁▁▁▁▁  codex ▁▁▁▁▁▁
-            3: │
-            4: › typed
+            0: ┌─────────────────────────────────────────────┐
+            1: │voice ● listening ctrl+x mute     /voice stop│
+            2: │  mic ▁▁▁▁▁▁  codex ▁▁▁▁▁▁                   │
+            3: │                                             │
+            4: › typed                                       │
             ");
         }
         buffer
@@ -134,14 +134,15 @@ async fn voice_preserves_the_normal_composer_prompt() {
         .handle_key_event(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
     assert_eq!(prompt(&mut chat), Some('›'));
     chat.reset_realtime_conversation();
-    // Elpis: the identity line and a rail row sit above the prompt; no voice row is left.
+    // Elpis: the identity line and the composer box's top rule sit above the prompt;
+    // no voice row is left.
     let rendered = render_bottom_popup(&chat, /*width*/ 80);
     let mut rows = rendered.lines();
     assert!(
         rows.next()
             .is_some_and(|row| row.starts_with(" Elpis · model"))
     );
-    assert!(rows.next().is_some_and(|row| row.starts_with('│')));
+    assert!(rows.next().is_some_and(|row| row.starts_with('┌')));
     assert_eq!(rows.next().and_then(|row| row.chars().next()), Some('›'));
 }
 
@@ -613,16 +614,16 @@ async fn clipped_voice_composer_keeps_the_draft_and_cursor_visible() {
 
     insta::assert_snapshot!(layouts.join("\n\n"), @r"
     5 rows:
-    │voice ● listening ctrl+x mute     /voice stop
-    › typed
+    │voice ● listening ctrl+x mute     /voice stop│
+    › typed                                       │
 
     6 rows:
-    │voice ● listening ctrl+x mute     /voice stop
-    › typed
+    │voice ● listening ctrl+x mute     /voice stop│
+    › typed                                       │
 
     8 rows:
-    │voice ● listening ctrl+x mute     /voice stop
-    › typed
+    │voice ● listening ctrl+x mute     /voice stop│
+    › typed                                       │
     ");
 }
 
