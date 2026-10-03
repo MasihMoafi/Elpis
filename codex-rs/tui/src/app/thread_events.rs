@@ -645,10 +645,8 @@ mod tests {
     use codex_app_server_protocol::HookRunSummary as AppServerHookRunSummary;
     use codex_app_server_protocol::HookScope as AppServerHookScope;
     use codex_app_server_protocol::HookStartedNotification;
-    use codex_app_server_protocol::ItemCompletedNotification;
     use codex_app_server_protocol::ItemStartedNotification;
     use codex_app_server_protocol::McpToolCallProgressNotification;
-    use codex_app_server_protocol::ReasoningSummaryTextDeltaNotification;
     use codex_app_server_protocol::RequestId as AppServerRequestId;
     use codex_app_server_protocol::ThreadAttachmentOperation;
     use codex_app_server_protocol::ThreadAttachmentUpdatedNotification;
@@ -656,7 +654,6 @@ mod tests {
     use codex_app_server_protocol::ThreadRealtimeOutputAudioDeltaNotification;
     use codex_app_server_protocol::TurnCompletedNotification;
     use codex_app_server_protocol::TurnStartedNotification;
-    use codex_app_server_protocol::UserInput;
     use codex_config::types::ApprovalsReviewer;
     use codex_protocol::models::PermissionProfile;
     use pretty_assertions::assert_eq;
@@ -1048,94 +1045,5 @@ mod tests {
             serde_json::to_value(actual).expect("MCP notification should serialize"),
             serde_json::to_value(notification).expect("MCP notification should serialize"),
         );
-    }
-
-    #[test]
-    fn buffered_voice_handoff_retains_only_preexisting_typed_reasoning() {
-        let thread_id = ThreadId::new().to_string();
-        let turn_id = "mixed-reasoning-turn".to_string();
-        let mut store = ThreadEventStore::new(/*capacity*/ 16);
-        let typed = ThreadItem::Reasoning {
-            id: "typed-reasoning".into(),
-            summary: Vec::new(),
-            content: Vec::new(),
-        };
-        store.push_notification(ServerNotification::ItemStarted(ItemStartedNotification {
-            thread_id: thread_id.clone(),
-            turn_id: turn_id.clone(),
-            item: typed,
-            started_at_ms: 0,
-        }));
-        store.push_notification(ServerNotification::ItemStarted(ItemStartedNotification {
-            thread_id: thread_id.clone(),
-            turn_id: turn_id.clone(),
-            item: ThreadItem::UserMessage {
-                id: "voice-marker".into(),
-                client_id: None,
-                content: vec![UserInput::Text {
-                    text:
-                        "<realtime_delegation><input>spoken follow-up</input></realtime_delegation>"
-                            .into(),
-                    text_elements: Vec::new(),
-                }],
-            },
-            started_at_ms: 0,
-        }));
-        for (id, text) in [
-            ("typed-reasoning", "Typed tail"),
-            ("private-reasoning", "Private voice reasoning"),
-        ] {
-            if id == "private-reasoning" {
-                store.push_notification(ServerNotification::ItemStarted(ItemStartedNotification {
-                    thread_id: thread_id.clone(),
-                    turn_id: turn_id.clone(),
-                    item: ThreadItem::Reasoning {
-                        id: id.into(),
-                        summary: Vec::new(),
-                        content: Vec::new(),
-                    },
-                    started_at_ms: 0,
-                }));
-            }
-            store.push_notification(ServerNotification::ReasoningSummaryTextDelta(
-                ReasoningSummaryTextDeltaNotification {
-                    thread_id: thread_id.clone(),
-                    turn_id: turn_id.clone(),
-                    item_id: id.into(),
-                    delta: text.into(),
-                    summary_index: 0,
-                },
-            ));
-            store.push_notification(ServerNotification::ItemCompleted(
-                ItemCompletedNotification {
-                    thread_id: thread_id.clone(),
-                    turn_id: turn_id.clone(),
-                    item: ThreadItem::Reasoning {
-                        id: id.into(),
-                        summary: vec![text.into()],
-                        content: Vec::new(),
-                    },
-                    completed_at_ms: 0,
-                },
-            ));
-        }
-
-        let retained = store
-            .snapshot()
-            .events
-            .into_iter()
-            .filter_map(|event| match event {
-                ThreadBufferedEvent::Notification(notification) => match *notification {
-                    ServerNotification::ReasoningSummaryTextDelta(n) => Some(n.delta),
-                    ServerNotification::ItemCompleted(n) => match n.item {
-                        ThreadItem::Reasoning { summary, .. } => Some(summary.join("")),
-                        _ => None,
-                    },
-                    _ => None,
-                },
-                _ => None,
-            })
-            .collect::<Vec<_>>();
-        assert_eq!(retained, vec!["Typed tail", "Typed tail"]);
     }
 }

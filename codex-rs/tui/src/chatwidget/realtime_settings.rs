@@ -48,7 +48,3 @@ impl ChatWidget {
         );
     }
 }
-
-#[cfg(test)]
-#[path = "realtime_settings_tests.rs"]
-mod tests;

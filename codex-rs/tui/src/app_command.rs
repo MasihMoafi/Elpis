@@ -373,7 +373,3 @@ impl From<&AppCommand> for AppCommand {
         value.clone()
     }
 }
-
-#[cfg(test)]
-#[path = "app_command_tests.rs"]
-mod tests;

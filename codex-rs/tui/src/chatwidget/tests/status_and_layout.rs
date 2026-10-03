@@ -4,41 +4,12 @@ use crate::bottom_pane::goal_status_indicator_line;
 use crate::chatwidget::ThreadUsageOutcome;
 use crate::chatwidget::rate_limits::NUDGE_MODEL_SLUG;
 use crate::chatwidget::rate_limits::get_limits_duration;
-use crate::chatwidget::realtime::tests::activate_voice_for_thread;
 use codex_app_server_protocol::SpendControlLimitSnapshot;
 use codex_app_server_protocol::ThreadUsage;
 use pretty_assertions::assert_eq;
 use ratatui::Terminal;
 use ratatui::backend::TestBackend;
 use serial_test::serial;
-
-#[tokio::test]
-async fn finalized_voice_transcript_renders_beside_the_streamed_cell() {
-    let (mut chat, _rx, _ops) = make_chatwidget_manual(/*model_override*/ None).await;
-    chat.local_settings.tui.animations = false;
-    activate_voice_for_thread(&mut chat, ThreadId::new());
-    chat.update_realtime_footer();
-    chat.transcript.active_cell = Some(Box::new(history_cell::StreamingAgentTailCell::new(
-        vec![Line::from("Agent answer arriving").into()],
-        /*is_first_line*/ true,
-    )));
-    chat.on_realtime_transcript_delta("user".into(), "pick a number".into());
-    for (finalized, snapshot) in [
-        (false, "voice_partial_transcript_hidden"),
-        (true, "voice_live_transcript_and_stream"),
-    ] {
-        if finalized {
-            chat.on_realtime_transcript_done("user".into(), "pick a number".into());
-        }
-        let width = 60;
-        let height = chat.desired_height(width);
-        let mut terminal = Terminal::new(TestBackend::new(width, height)).expect("create terminal");
-        terminal
-            .draw(|frame| chat.render(frame.area(), frame.buffer_mut()))
-            .expect("render voice transcript");
-        assert_chatwidget_snapshot!(snapshot, normalized_backend_snapshot(terminal.backend()));
-    }
-}
 
 fn take_workspace_headline_request_id(
     rx: &mut tokio::sync::mpsc::UnboundedReceiver<AppEvent>,

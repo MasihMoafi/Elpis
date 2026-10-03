@@ -238,22 +238,6 @@ pub(super) enum RealtimeRequestBehavior {
     AcceptSpeechAndStallStop,
 }
 
-pub(super) async fn start_recording_realtime_speech_app_server(
-    config: &Config,
-    realtime_behavior: RealtimeRequestBehavior,
-) -> Result<RecordingAppServer> {
-    start_recording_app_server_with_realtime_speech(
-        config,
-        HistoryCapabilities::Current,
-        /*blocked_thread_list*/ None,
-        /*failed_thread_name*/ None,
-        crate::app_server_session::ThreadParamsMode::Embedded,
-        realtime_behavior,
-        LoaderOverrides::default(),
-    )
-    .await
-}
-
 pub(super) async fn start_recording_app_server_with_realtime_speech(
     config: &Config,
     history_capabilities: HistoryCapabilities,
