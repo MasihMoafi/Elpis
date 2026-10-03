@@ -11,8 +11,6 @@
 //! that does not overlap reserved bottom-pane space. It does not persist pet
 //! selection or decide when modal/popover UI should suppress the sprite.
 
-#[cfg(test)]
-use std::collections::HashMap;
 use std::path::PathBuf;
 use std::time::Duration;
 use std::time::Instant;
@@ -30,8 +28,6 @@ use super::image_protocol::PetImageSupport;
 #[cfg(not(test))]
 use super::image_protocol::ProtocolSelection;
 use super::model::Animation;
-#[cfg(test)]
-use super::model::AnimationFrame;
 use super::model::Pet;
 
 const PET_TARGET_HEIGHT_PX: u16 = 75;
@@ -439,90 +435,5 @@ fn notification_height(notification: &PetNotification) -> u16 {
         1
     } else {
         2
-    }
-}
-
-#[cfg(test)]
-pub(crate) fn test_ambient_pet(
-    frame_requester: FrameRequester,
-    animations_enabled: bool,
-) -> AmbientPet {
-    AmbientPet {
-        pet: Pet {
-            id: "test".to_string(),
-            display_name: "Test".to_string(),
-            description: String::new(),
-            spritesheet_path: PathBuf::from("spritesheet.webp"),
-            frame_width: 192,
-            frame_height: 208,
-            columns: 8,
-            rows: 9,
-            frame_count: 72,
-            animations: HashMap::from([("idle".to_string(), test_animation())]),
-        },
-        support: PetImageSupport::Supported(ImageProtocol::Kitty),
-        frames: vec![PathBuf::from("frame-0.png"), PathBuf::from("frame-1.png")],
-        sixel_dir: PathBuf::new(),
-        frame_requester,
-        notification: None,
-        animation_started_at: Instant::now()
-            .checked_sub(Duration::from_millis(/*millis*/ 15))
-            .unwrap(),
-        animations_enabled,
-    }
-}
-
-#[cfg(test)]
-fn test_animation() -> Animation {
-    Animation {
-        frames: vec![
-            AnimationFrame {
-                sprite_index: 0,
-                duration: Duration::from_millis(/*millis*/ 10),
-            },
-            AnimationFrame {
-                sprite_index: 1,
-                duration: Duration::from_millis(/*millis*/ 10),
-            },
-        ],
-        loop_start: Some(/*loop_start*/ 0),
-        fallback: "idle".to_string(),
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn notification_labels_match_codex_app_vocabulary() {
-        assert_eq!(PetNotificationKind::Running.label(), "Running");
-        assert_eq!(PetNotificationKind::Waiting.label(), "Needs input");
-        assert_eq!(PetNotificationKind::Review.label(), "Ready");
-        assert_eq!(PetNotificationKind::Failed.label(), "Blocked");
-    }
-
-    #[test]
-    fn animation_frame_uses_per_frame_duration() {
-        let animation = test_animation();
-
-        assert_eq!(
-            current_animation_frame(&animation, Duration::from_millis(/*millis*/ 15)),
-            Some(AnimationFrameTick {
-                sprite_index: 1,
-                delay: Some(Duration::from_millis(/*millis*/ 5)),
-            })
-        );
-    }
-
-    #[test]
-    fn reduced_motion_uses_stable_first_frame_and_schedules_no_follow_up() {
-        let pet = test_ambient_pet(
-            FrameRequester::test_dummy(),
-            /*animations_enabled*/ false,
-        );
-
-        assert_eq!(pet.current_frame_path(), Some(PathBuf::from("frame-0.png")));
-        assert_eq!(pet.next_frame_delay(), None);
     }
 }

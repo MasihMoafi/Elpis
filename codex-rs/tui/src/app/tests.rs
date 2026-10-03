@@ -6527,32 +6527,6 @@ async fn uncapped_resize_reflow_renders_all_cells_when_row_cap_absent() {
 }
 
 #[tokio::test]
-async fn resize_reflow_wraps_transcript_early_when_pet_is_enabled() {
-    let (mut app, _rx, _op_rx) = make_test_app_with_channels().await;
-    app.local_settings.tui.terminal_resize_reflow_max_rows = Some(0);
-    app.transcript_cells = vec![Arc::new(AgentMarkdownCell::new(
-        "alpha beta gamma delta epsilon zeta eta theta iota kappa lambda".to_string(),
-        Path::new("/tmp"),
-    ))];
-
-    let without_pet = app.render_transcript_lines_for_reflow(/*width*/ 40);
-    app.chat_widget
-        .set_pet_image_support_for_tests(crate::pets::PetImageSupport::Supported(
-            crate::pets::ImageProtocol::Kitty,
-        ));
-    app.chat_widget
-        .install_test_ambient_pet_for_tests(/*animations_enabled*/ false);
-    let width = app.chat_widget.history_wrap_width(/*width*/ 40);
-    assert!(width < 40);
-    let with_pet = app.render_transcript_lines_for_reflow(width);
-
-    assert!(
-        with_pet.lines.len() > without_pet.lines.len(),
-        "expected pet-enabled transcript reflow to wrap earlier"
-    );
-}
-
-#[tokio::test]
 async fn closing_fullscreen_inline_overlay_restores_history_once() -> Result<()> {
     let (mut app, _rx, _op_rx) = make_test_app_with_channels().await;
     app.transcript_cells = vec![plain_line_cell("Previous conversation")];

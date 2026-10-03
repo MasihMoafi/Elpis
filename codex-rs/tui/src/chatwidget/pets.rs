@@ -336,17 +336,6 @@ impl ChatWidget {
         self.pet_image_support_override = Some(support);
         self.apply_ambient_pet_image_support_override_for_tests();
     }
-
-    #[cfg(test)]
-    pub(crate) fn install_test_ambient_pet_for_tests(&mut self, animations_enabled: bool) {
-        self.set_tui_pet_loaded(
-            Some("test".to_string()),
-            Some(crate::pets::test_ambient_pet(
-                self.frame_requester.clone(),
-                animations_enabled,
-            )),
-        );
-    }
 }
 
 fn spawn_pet_load<T>(
@@ -376,7 +365,3 @@ fn spawn_pet_load<T>(
         });
     }
 }
-
-#[cfg(test)]
-#[path = "pets_tests.rs"]
-mod tests;

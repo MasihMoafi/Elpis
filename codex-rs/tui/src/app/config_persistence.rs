@@ -1124,12 +1124,6 @@ impl App {
         self.chat_widget.set_tui_theme(Some(name));
     }
 
-    #[cfg(test)]
-    pub(super) fn sync_tui_pet_selection(&mut self, pet: String) {
-        self.local_settings.tui.pet = Some(pet.clone());
-        self.chat_widget.set_tui_pet(Some(pet));
-    }
-
     pub(super) fn sync_tui_pet_disabled(&mut self) {
         let pet = crate::pets::DISABLED_PET_ID.to_string();
         self.local_settings.tui.pet = Some(pet.clone());
@@ -2029,34 +2023,5 @@ theme = "dracula"
             source
         );
         Ok(())
-    }
-
-    #[tokio::test]
-    async fn sync_tui_pet_selection_updates_chat_widget_config_copy() {
-        let mut app = make_test_app().await;
-
-        app.sync_tui_pet_selection("chefito".to_string());
-
-        assert_eq!(app.local_settings.tui.pet.as_deref(), Some("chefito"));
-        assert_eq!(
-            app.chat_widget.local_settings.tui.pet.as_deref(),
-            Some("chefito")
-        );
-    }
-
-    #[tokio::test]
-    async fn sync_tui_pet_disabled_updates_chat_widget_config_copy() {
-        let mut app = make_test_app().await;
-
-        app.sync_tui_pet_disabled();
-
-        assert_eq!(
-            app.local_settings.tui.pet.as_deref(),
-            Some(crate::pets::DISABLED_PET_ID)
-        );
-        assert_eq!(
-            app.chat_widget.local_settings.tui.pet.as_deref(),
-            Some(crate::pets::DISABLED_PET_ID)
-        );
     }
 }

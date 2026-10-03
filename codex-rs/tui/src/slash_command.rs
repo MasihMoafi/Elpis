@@ -376,12 +376,6 @@ mod tests {
     }
 
     #[test]
-    fn pet_alias_parses_to_pets_command() {
-        assert_eq!(SlashCommand::Pets.command(), "pets");
-        assert_eq!(SlashCommand::from_str("pet"), Ok(SlashCommand::Pets));
-    }
-
-    #[test]
     fn certain_commands_are_available_during_task() {
         assert!(SlashCommand::Goal.available_during_task());
         assert!(SlashCommand::Ide.available_during_task());

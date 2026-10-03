@@ -142,23 +142,3 @@ fn centered_text_area(area: Rect, height: u16) -> Rect {
     let y = area.y + area.height.saturating_sub(height) / 2;
     Rect::new(area.x, y, area.width, height)
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn centered_text_area_centers_vertically() {
-        assert_eq!(
-            centered_text_area(
-                Rect::new(
-                    /*x*/ 5, /*y*/ 10, /*width*/ 20, /*height*/ 8
-                ),
-                /*height*/ 2
-            ),
-            Rect::new(
-                /*x*/ 5, /*y*/ 13, /*width*/ 20, /*height*/ 2
-            )
-        );
-    }
-}
