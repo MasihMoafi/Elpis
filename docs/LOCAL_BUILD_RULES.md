@@ -133,13 +133,10 @@ temperature ceiling.
 Source-only and fake-Cargo checks do not need this wrapper because they
 do not compile or execute Rust.
 
-For the locally optimized workflow, `scripts/build-elpis-local test-build` builds
-TUI tests. Use `scripts/build-elpis-local config-test-build` separately when config
-tests are required. Combining those packages enables config's test-only networking
-features throughout the TUI dependency graph and forces expensive recompilation
-before `optimized`; keep their test invocations separate.
-Use `scripts/build-elpis-local core-test-build` for core unit-test executables;
-it applies the same thermal guard and compiler settings without adding TUI tests.
+For focused tests, use the `next-cargo` mode with one crate per command, for example
+`ELPIS_NEXT_CARGO_ARGS="test --profile dev-small --locked --offline -p codex-tui --lib <filter>" scripts/build-elpis-local next-cargo`.
+Do not test the TUI and config crates in one command. That enables config's test-only
+networking features throughout the TUI dependency graph and causes a large recompilation.
 The workspace also enables `similar/inline`, matching the snapshot-test dependency
 features so switching between TUI tests and the installable build reuses core.
 

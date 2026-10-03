@@ -11,7 +11,7 @@ if [ -n "${ELPIS_BUILD_REPO_ROOT:-}" ]; then
 fi
 mode=${1:-}
 if [ "$#" -ne 1 ]; then
-    printf 'usage: %s {check|core-check|dev|optimized|schema-build|schema-write|schema-tests|config-schema-write|app-server-build|test-build|tui-tests|core-test-build|core-tests|app-server-test-build|app-server-tests|core-suite-build|core-suite-tests|workspace-check|models-test-build|config-test-build|next-dev|next-release|next-host|next-cargo|shipping}\n' "$0" >&2
+    printf 'usage: %s {check|core-check|dev|core-suite-build|core-suite-tests|workspace-check|models-test-build|next-dev|next-release|next-host|next-cargo|shipping}\n' "$0" >&2
     exit 2
 fi
 
@@ -30,83 +30,6 @@ case "$mode" in
         profile=dev-small
         cargo_args=(build --profile dev-small --locked --offline -p codex-tui --bin elpis)
         artifact="$repo_root/codex-rs/target/dev-small/elpis"
-        ;;
-    optimized)
-        profile=local-release
-        cargo_args=(build --profile local-release --locked --offline -p codex-tui --bin elpis -p codex-app-server --bin codex-app-server)
-        artifact="$repo_root/codex-rs/target/local-release/elpis"
-        ;;
-    schema-build)
-        profile=local-release
-        cargo_args=(test --profile local-release --locked --offline -p codex-app-server-protocol --lib --no-run)
-        artifact=
-        ;;
-    schema-write)
-        if [ -z "${CODEX_APP_SERVER_SCHEMA_ROOT:-}" ]; then
-            printf 'CODEX_APP_SERVER_SCHEMA_ROOT must be set explicitly for schema-write\n' >&2
-            exit 2
-        fi
-        if [[ "${CODEX_APP_SERVER_SCHEMA_EXPERIMENTAL:-}" != 0 && "${CODEX_APP_SERVER_SCHEMA_EXPERIMENTAL:-}" != 1 ]]; then
-            printf 'CODEX_APP_SERVER_SCHEMA_EXPERIMENTAL must be set explicitly to 0 or 1 for schema-write\n' >&2
-            exit 2
-        fi
-        profile=local-release
-        cargo_args=(test --profile local-release --locked --offline -p codex-app-server-protocol --lib)
-        cargo_args+=(schema_fixtures_tests::write_schema_fixtures_from_env -- --exact --ignored --test-threads=1)
-        artifact=
-        ;;
-    schema-tests)
-        profile=local-release
-        cargo_args=(test --profile local-release --locked --offline -p codex-app-server-protocol --lib)
-        cargo_args+=('schema_fixtures_tests::' -- --test-threads=1)
-        artifact=
-        ;;
-    config-schema-write)
-        if [[ "${ELPIS_CONFIG_SCHEMA_OUT:-}" != /* ]]; then
-            printf 'ELPIS_CONFIG_SCHEMA_OUT must be set to an absolute path for config-schema-write\n' >&2
-            exit 2
-        fi
-        profile=local-release
-        cargo_args=(run --profile local-release --locked --offline -p codex-config-schema)
-        cargo_args+=(--bin codex-write-config-schema -- --out "$ELPIS_CONFIG_SCHEMA_OUT")
-        artifact=
-        ;;
-    app-server-build)
-        profile=local-release
-        cargo_args=(build --profile local-release --locked --offline -p codex-app-server --bin codex-app-server)
-        artifact="${CARGO_TARGET_DIR:-$repo_root/codex-rs/target}/local-release/codex-app-server"
-        ;;
-    test-build)
-        profile=local-release
-        cargo_args=(test --profile local-release --locked --offline -p codex-tui --lib --bins --no-run)
-        artifact=
-        ;;
-    tui-tests)
-        profile=local-release
-        test_filter=${ELPIS_TEST_FILTER:-empty_enter}
-        cargo_args=(test --profile local-release --locked --offline -p codex-tui --lib "$test_filter" -- --test-threads=1)
-        artifact=
-        ;;
-    core-test-build)
-        profile=local-release
-        cargo_args=(test --profile local-release --locked --offline -p codex-core --lib --no-run)
-        artifact=
-        ;;
-    core-tests)
-        profile=local-release
-        test_filter=${ELPIS_TEST_FILTER:-smart_prune}
-        cargo_args=(test --profile local-release --locked --offline -p codex-core --lib "$test_filter" -- --test-threads=1)
-        artifact=
-        ;;
-    app-server-test-build)
-        profile=local-release
-        cargo_args=(test --profile local-release --locked --offline -p codex-app-server --lib --no-run)
-        artifact=
-        ;;
-    app-server-tests)
-        profile=local-release
-        cargo_args=(test --profile local-release --locked --offline -p codex-app-server --lib elpis_ -- --test-threads=1)
-        artifact=
         ;;
     core-suite-build)
         profile=dev-small
@@ -137,11 +60,6 @@ case "$mode" in
         # answer is read.
         cargo_args=(test --profile dev-small --locked --offline --lib --no-run)
         cargo_args+=(-p codex-protocol -p codex-models-manager -p codex-model-provider -p codex-model-provider-info)
-        artifact=
-        ;;
-    config-test-build)
-        profile=local-release
-        cargo_args=(test --profile local-release --locked --offline -p codex-config --lib --no-run)
         artifact=
         ;;
     next-dev)
@@ -185,7 +103,7 @@ case "$mode" in
         artifact="$repo_root/codex-rs/target/release/elpis"
         ;;
     *)
-        printf 'unknown build mode %q; expected check, core-check, dev, optimized, schema-build, schema-write, schema-tests, config-schema-write, app-server-build, test-build, tui-tests, core-test-build, core-tests, app-server-test-build, app-server-tests, core-suite-build, core-suite-tests, workspace-check, models-test-build, config-test-build, next-dev, next-release, next-host, next-cargo, or shipping\n' "$mode" >&2
+        printf 'unknown build mode %q; expected check, core-check, dev, core-suite-build, core-suite-tests, workspace-check, models-test-build, next-dev, next-release, next-host, next-cargo, or shipping\n' "$mode" >&2
         exit 2
         ;;
 esac
@@ -309,10 +227,10 @@ else
     local_acceleration=unavailable
 fi
 
-# Freeze path-remapping flags for both locally optimized profiles so repeats
-# reuse the same Cargo fingerprint and installed artifacts do not expose the
-# workstation path. Dev/check retain the caller's normal fingerprint.
-if [ "$mode" = optimized ] || [ "$mode" = schema-build ] || [ "$mode" = schema-write ] || [ "$mode" = schema-tests ] || [ "$mode" = config-schema-write ] || [ "$mode" = app-server-build ] || [ "$mode" = test-build ] || [ "$mode" = tui-tests ] || [ "$mode" = core-test-build ] || [ "$mode" = core-tests ] || [ "$mode" = app-server-test-build ] || [ "$mode" = app-server-tests ] || [ "$mode" = config-test-build ] || [ "$mode" = shipping ]; then
+# Freeze path-remapping flags for the shipping build so repeats reuse the same
+# Cargo fingerprint and installed artifacts do not expose the workstation path.
+# Other modes retain the caller's normal fingerprint.
+if [ "$mode" = shipping ]; then
     remap_from=${ELPIS_REMAP_PATH_FROM:-/home/masih}
     append_rustflag "--remap-path-prefix=$remap_from=/build"
     export CFLAGS="-ffile-prefix-map=$remap_from=/build -fdebug-prefix-map=$remap_from=/build"
@@ -453,7 +371,7 @@ if [ "$build_status" -ne 0 ]; then
     exit "$build_status"
 fi
 
-if [ -n "$artifact" ] && [ -f "$artifact" ] && { [ "$mode" = optimized ] || [ "$mode" = shipping ]; }; then
+if [ -n "$artifact" ] && [ -f "$artifact" ] && [ "$mode" = shipping ]; then
     # Consume the full stream: grep -q can SIGPIPE strings and hide a match under pipefail.
     if strings "$artifact" | grep -E '/home/masih|Desktop/p/' >/dev/null; then
         printf 'build_result status=path_leak mode=%s profile=%s jobs=%s elapsed_ms=%s peak_c=%s artifact_bytes=%s pause_count=%s cooling_ms=%s limit_hold_count=%s\n' \
