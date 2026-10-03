@@ -112,11 +112,6 @@ const EXCEPTIONS = [
     sample: "Ask a workspace admin to enable Codex plugins or plugin sharing",
   },
   {
-    re: /Codex is included in your plan/g,
-    why: "OpenAI plan promotion; false if said of Elpis",
-    sample: "*New* For a limited time, Codex is included in your plan for free",
-  },
-  {
     re: /Update Codex to the latest version|Updating Codex via|Update ran successfully! Please restart Codex|`codex update` is not available|release build of Codex|detect the Codex installation method/g,
     why: "`update` runs OpenAI's Codex installer (npm @openai/codex, brew codex, chatgpt.com/codex/install.sh); it does not update Elpis",
     sample: "`codex update` is not available in debug builds. Install a release build of Codex to use this command.",
