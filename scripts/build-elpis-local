@@ -281,7 +281,8 @@ while kill -0 "$build_pid" 2>/dev/null || kill -0 -- "-$build_pid" 2>/dev/null; 
         break
     fi
     if ! kill -0 "$build_pid" 2>/dev/null; then
-        thermal_failure=leader_exit
+        # Cargo is done, and its exit status gives the result. Stop the processes that its
+        # tests left behind.
         printf 'build leader exited while process group remained; terminating owned group\n' >&2
         terminate_build
         break
