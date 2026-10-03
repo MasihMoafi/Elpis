@@ -7,7 +7,6 @@ use crate::chatwidget::rate_limits::get_limits_duration;
 use codex_app_server_protocol::SpendControlLimitSnapshot;
 use codex_app_server_protocol::ThreadUsage;
 use pretty_assertions::assert_eq;
-use ratatui::Terminal;
 use ratatui::backend::TestBackend;
 use serial_test::serial;
 

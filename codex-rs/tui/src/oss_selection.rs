@@ -10,7 +10,6 @@ use crate::key_hint::KeyBinding;
 use crate::key_hint::KeyBindingListExt;
 use crate::render::Insets;
 use crate::render::renderable::FlexRenderable;
-use crate::render::renderable::Renderable;
 use crate::render::renderable::RenderableExt as _;
 use crate::render::renderable::RenderableItem;
 use codex_http_client::HttpClient;

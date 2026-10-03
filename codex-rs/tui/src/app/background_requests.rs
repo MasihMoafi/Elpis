@@ -1329,11 +1329,9 @@ mod tests {
     use crate::app::test_support::make_test_app;
     use app_test_support::ChatGptAuthFixture;
     use app_test_support::write_chatgpt_auth;
-    use codex_app_server_protocol::PluginMarketplaceEntry;
     use codex_app_server_protocol::ThreadUsage;
     use codex_config::types::AuthCredentialsStoreMode;
     use codex_protocol::mcp::Tool;
-    use codex_utils_absolute_path::AbsolutePathBuf;
     use pretty_assertions::assert_eq;
 
     #[tokio::test]
@@ -1414,10 +1412,6 @@ mod tests {
                 groups: Vec::new(),
             })
         );
-    }
-
-    fn test_absolute_path(path: &str) -> AbsolutePathBuf {
-        AbsolutePathBuf::try_from(PathBuf::from(path)).expect("absolute test path")
     }
 
     #[test]

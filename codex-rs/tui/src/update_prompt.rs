@@ -9,7 +9,6 @@ use crate::key_hint;
 use crate::legacy_core::config::Config;
 use crate::render::Insets;
 use crate::render::renderable::FlexRenderable;
-use crate::render::renderable::Renderable;
 use crate::render::renderable::RenderableExt as _;
 use crate::render::renderable::RenderableItem;
 use crate::tui::FrameRequester;

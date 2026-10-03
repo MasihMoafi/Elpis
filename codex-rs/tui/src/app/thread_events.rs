@@ -645,7 +645,6 @@ mod tests {
     use codex_app_server_protocol::HookRunSummary as AppServerHookRunSummary;
     use codex_app_server_protocol::HookScope as AppServerHookScope;
     use codex_app_server_protocol::HookStartedNotification;
-    use codex_app_server_protocol::ItemStartedNotification;
     use codex_app_server_protocol::McpToolCallProgressNotification;
     use codex_app_server_protocol::RequestId as AppServerRequestId;
     use codex_app_server_protocol::ThreadAttachmentOperation;

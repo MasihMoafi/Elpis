@@ -4,10 +4,6 @@ use super::*;
 use crate::app::owned_transcript::tests::attach_thread;
 use crate::app::owned_transcript::tests::buffer_text;
 use crate::app::owned_transcript::tests::user_cell;
-use crossterm::event::MouseButton::Left;
-use crossterm::event::MouseEvent;
-use crossterm::event::MouseEventKind::Down;
-use crossterm::event::MouseEventKind::Drag;
 use pretty_assertions::assert_eq;
 
 fn notification(method: &str, thread: ThreadId, turn: usize, status: &str) -> ServerNotification {
