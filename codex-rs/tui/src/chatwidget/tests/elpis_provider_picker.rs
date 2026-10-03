@@ -81,16 +81,22 @@ async fn the_model_picker_names_its_provider_and_offers_a_change_of_provider() {
     assert!(popup.contains("Provider: OpenAI (openai)"), "{popup}");
     assert!(popup.contains("Protocol: OpenAI Responses"), "{popup}");
     assert!(popup.contains("Credential: your OpenAI sign-in"), "{popup}");
-    // The provider rows end the list; a long model list scrolls them into view.
+    // The provider rows open the list, as in v0.3.0. The list keeps the current model in
+    // view, so from an old model near the end, Up reaches them.
     let mut popup = popup;
     for _ in 0..12 {
         if popup.contains("Change provider…") {
             break;
         }
-        chat.handle_key_event(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
+        chat.handle_key_event(KeyEvent::new(KeyCode::Up, KeyModifiers::NONE));
         popup = render_bottom_popup(&chat, /*width*/ 120);
     }
     assert!(popup.contains("Change provider…"), "{popup}");
+    // On the default model the row shows at once, without scrolling.
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    chat.open_all_models_popup();
+    let first = render_bottom_popup(&chat, /*width*/ 120);
+    assert!(first.contains("Change provider…"), "{first}");
     // The OpenAI sign-in is not an API key typed here.
     assert!(!popup.contains("Add API key…"), "{popup}");
     assert!(!popup.contains("Select Model"), "{popup}");

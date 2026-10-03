@@ -1,6 +1,5 @@
 ---
 source: tui/src/chatwidget/tests/popups_and_settings.rs
-assertion_line: 3394
 expression: "render_bottom_popup(&chat, 80)"
 ---
  Elpis · model gpt-5.5 default · location /tmp/project
@@ -13,9 +12,9 @@ expression: "render_bottom_popup(&chat, 80)"
   Credential: your OpenAI sign-in
 
 
-  1. GPT-5.5               Auto model
-› 2. All models (current)  Choose a specific model and reasoning level (current:
+  1. Change provider…      Currently OpenAI
+  2. GPT-5.5               Auto model
+› 3. All models (current)  Choose a specific model and reasoning level (current:
                            GPT-5.5)
-  3. Change provider…      Currently OpenAI
 
   enter select · esc back

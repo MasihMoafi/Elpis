@@ -189,11 +189,14 @@ impl ChatWidget {
             });
         }
 
-        // Elpis: "Change provider…" and, without a key, "Add API key…" end the list.
-        for (id, item) in self.elpis_picker_rows(&self.config.model_provider_id) {
-            model_ids.push(id);
-            items.push(item);
-        }
+        // Elpis: "Change provider…" and, without a key, "Add API key…" open the list, as in
+        // v0.3.0, so they are visible without scrolling.
+        let (ids, rows): (Vec<_>, Vec<_>) = self
+            .elpis_picker_rows(&self.config.model_provider_id)
+            .into_iter()
+            .unzip();
+        model_ids.splice(0..0, ids);
+        items.splice(0..0, rows);
         let header = self.model_menu_header(
             "Choose a mind",
             "Pick a quick auto mode or browse all models.",
@@ -245,7 +248,7 @@ impl ChatWidget {
         presets: Vec<ModelPreset>,
         view_id: &'static str,
     ) {
-        // Elpis: "Change provider…" and, without a key, "Add API key…" end the list; a provider
+        // Elpis: "Change provider…" and, without a key, "Add API key…" open the list; a provider
         // that lists nothing for want of a key still offers a way on.
         let elpis_rows = self.elpis_picker_rows(&self.config.model_provider_id);
         if presets.is_empty() && !self.elpis_needs_key(&self.config.model_provider_id) {
@@ -293,10 +296,9 @@ impl ChatWidget {
             });
         }
 
-        for (id, item) in elpis_rows {
-            model_ids.push(id);
-            items.push(item);
-        }
+        let (ids, rows): (Vec<_>, Vec<_>) = elpis_rows.into_iter().unzip();
+        model_ids.splice(0..0, ids);
+        items.splice(0..0, rows);
         let header = self.model_menu_header("Choose a mind and effort", "");
         self.show_model_selection_view(
             model_ids,

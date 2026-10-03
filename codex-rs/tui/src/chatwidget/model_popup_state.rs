@@ -67,6 +67,11 @@ impl ChatWidget {
         params.initial_selected_idx = model_ids
             .iter()
             .position(|model| Some(model) == selected_model);
+        // Elpis: the provider rows open the list; without a current model, start on a model.
+        if params.initial_selected_idx.is_none() && !params.items.iter().any(|item| item.is_current)
+        {
+            params.initial_selected_idx = model_ids.iter().position(|id| !id.starts_with("elpis:"));
+        }
         self.model_popup_model_ids = model_ids;
         if let Some(view_id) = params.view_id.filter(|_| selected_index.is_some()) {
             self.bottom_pane

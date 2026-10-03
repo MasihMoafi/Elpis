@@ -186,8 +186,7 @@ impl ChatWidget {
     }
 
     /// "Change provider…" and, while `provider_id` has no key, "Add API key…", each with the id
-    /// the picker uses to keep its highlight. They end each list, so the numbers of the models
-    /// are the same as without them.
+    /// the picker uses to keep its highlight. They open each list, as in v0.3.0.
     pub(super) fn elpis_picker_rows(&self, provider_id: &str) -> Vec<(String, SelectionItem)> {
         let mut rows = vec![(
             "elpis:change-provider".to_string(),
@@ -236,7 +235,10 @@ impl ChatWidget {
         if elpis_catalog_provider().is_none_or(|catalog| catalog == provider_id) {
             return false;
         }
-        send(&self.app_event_tx, ElpisProviderEvent::Browse { provider_id });
+        send(
+            &self.app_event_tx,
+            ElpisProviderEvent::Browse { provider_id },
+        );
         true
     }
 
@@ -338,16 +340,20 @@ impl ChatWidget {
                 ..Default::default()
             });
         }
-        items.extend(
-            self.elpis_picker_rows(&provider_id)
-                .into_iter()
-                .map(|(_, item)| item),
-        );
-        let mut header = vec![Line::from("Choose a mind".bold()), Line::from(subtitle.dim())];
+        let elpis_rows = self.elpis_picker_rows(&provider_id);
+        let first_model = elpis_rows.len();
+        items.splice(0..0, elpis_rows.into_iter().map(|(_, item)| item));
+        let mut header = vec![
+            Line::from("Choose a mind".bold()),
+            Line::from(subtitle.dim()),
+        ];
         header.extend(self.elpis_provider_header_lines(&provider_id));
         // Searchable, since a provider such as OpenRouter lists hundreds of models; the current
         // model starts highlighted.
-        let initial_selected_idx = items.iter().position(|item| item.is_current);
+        let initial_selected_idx = items
+            .iter()
+            .position(|item| item.is_current)
+            .or((items.len() > first_model).then_some(first_model));
         self.bottom_pane.show_selection_view(SelectionViewParams {
             view_id: Some(ELPIS_PROVIDER_MODELS_VIEW_ID),
             items,
@@ -410,7 +416,10 @@ impl ChatWidget {
                             .to_string(),
                     ),
                 );
-                send(&self.app_event_tx, ElpisProviderEvent::Browse { provider_id });
+                send(
+                    &self.app_event_tx,
+                    ElpisProviderEvent::Browse { provider_id },
+                );
             }
             Err(error) => {
                 self.add_error_message(format!("Could not save the {name} key: {error}"));

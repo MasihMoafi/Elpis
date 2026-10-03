@@ -1,6 +1,5 @@
 ---
 source: tui/src/chatwidget/tests/popups_and_settings.rs
-assertion_line: 3640
 expression: popup
 ---
  Elpis · model test-visible-model default · location /tmp/project
@@ -12,7 +11,7 @@ expression: popup
   Credential: your OpenAI sign-in
 
 
-› 1. test-visible-model (current)  test-visible-model description
-  2. Change provider…              Currently OpenAI
+  1. Change provider…              Currently OpenAI
+› 2. test-visible-model (current)  test-visible-model description
 
   enter default · s session · esc back
