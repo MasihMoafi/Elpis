@@ -822,19 +822,21 @@ impl LocalAgentControl {
                     child_thread_id,
                     source.as_ref(),
                 )
-                .await;
+                .await
         }));
         let durability_wait_started_at = Instant::now();
+        // Elpis: an edge write error returns here, and the armed guard removes the child.
         if options.fork_mode.is_some() {
-            tokio::join!(
+            let (_, edge_write) = tokio::join!(
                 new_thread
                     .thread
                     .session
                     .ensure_rollout_materialized(PersistContext::Standard),
                 pending_spawn.wait_for_edge(),
             );
+            edge_write?;
         } else {
-            pending_spawn.wait_for_edge().await;
+            pending_spawn.wait_for_edge().await?;
         }
         let durability_wait = durability_wait_started_at.elapsed();
 
@@ -1410,6 +1412,28 @@ impl LocalAgentControl {
                 client_mcp_extensions: None,
             })
             .await?;
+        // Elpis: save the edge before the agent counts as resumed. On failure, unload the
+        // agent again, as in v0.3.0.
+        if let Err(error) = self
+            .persist_thread_spawn_edge_for_source(
+                resumed_thread.thread.as_ref(),
+                resumed_thread.thread_id,
+                Some(&notification_source),
+            )
+            .await
+        {
+            resumed_thread
+                .thread
+                .shutdown_and_wait()
+                .await
+                .map_err(|rollback| {
+                    CodexErr::Fatal(format!(
+                        "{error}; failed to unload resumed agent: {rollback}"
+                    ))
+                })?;
+            state.remove_thread(&resumed_thread.thread_id).await;
+            return Err(error);
+        }
         let mut agent_metadata = agent_metadata;
         agent_metadata.agent_id = Some(resumed_thread.thread_id);
         reservation.commit(agent_metadata.clone());
@@ -1429,13 +1453,6 @@ impl LocalAgentControl {
                 agent_metadata.agent_path.clone(),
             );
         }
-        self.persist_thread_spawn_edge_for_source(
-            resumed_thread.thread.as_ref(),
-            resumed_thread.thread_id,
-            Some(&notification_source),
-        )
-        .await;
-
         Ok((resumed_thread.thread_id, multi_agent_version))
     }
 }

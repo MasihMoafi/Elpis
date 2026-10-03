@@ -3,6 +3,7 @@
 use crate::thread_manager::ThreadManagerState;
 use codex_agent_graph_store::ThreadSpawnEdgeStatus;
 use codex_protocol::ThreadId;
+use codex_protocol::error::Result as CodexResult;
 use std::sync::Arc;
 use tokio::task::JoinHandle;
 use tracing::warn;
@@ -10,7 +11,7 @@ use tracing::warn;
 pub(super) struct PendingSpawn {
     state: Arc<ThreadManagerState>,
     child: Option<ThreadId>,
-    edge_write: Option<JoinHandle<()>>,
+    edge_write: Option<JoinHandle<CodexResult<()>>>,
 }
 
 impl PendingSpawn {
@@ -22,18 +23,21 @@ impl PendingSpawn {
         }
     }
 
-    pub(super) fn set_edge_write(&mut self, edge_write: JoinHandle<()>) {
+    pub(super) fn set_edge_write(&mut self, edge_write: JoinHandle<CodexResult<()>>) {
         self.edge_write = Some(edge_write);
     }
 
-    pub(super) async fn wait_for_edge(&mut self) {
+    pub(super) async fn wait_for_edge(&mut self) -> CodexResult<()> {
+        let mut result = Ok(());
         if let Some(edge_write) = self.edge_write.as_mut() {
-            assert!(
-                edge_write.await.is_ok(),
-                "spawn edge write task should complete"
-            );
+            let joined = edge_write.await;
+            assert!(joined.is_ok(), "spawn edge write task should complete");
+            if let Ok(write) = joined {
+                result = write;
+            }
         }
         self.edge_write = None;
+        result
     }
 
     pub(super) fn disarm(mut self) {

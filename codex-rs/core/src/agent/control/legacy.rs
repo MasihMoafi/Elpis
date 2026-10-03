@@ -67,7 +67,11 @@ impl LocalAgentControl {
                         )
                         .await
                 {
-                    warn!("failed to persist thread-spawn edge status for {agent_id}: {err}");
+                    // Elpis: fail before shutdown, as the unloaded case below does, so the agent
+                    // stays open and a retry can close it.
+                    return Err(CodexErr::Fatal(format!(
+                        "failed to persist thread-spawn edge status for {agent_id}: {err}"
+                    )));
                 }
                 AgentInfo::Loaded { agent, config }
             }
