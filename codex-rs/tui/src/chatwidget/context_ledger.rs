@@ -116,6 +116,9 @@ pub(super) struct ContextLedgerState {
     subagents_selected: bool,
     pending_g: bool,
     why_visible: bool,
+    /// Full screen only: the Ledger would leave the transcript too few rows, so it hides
+    /// until Tab or Alt+C focuses it.
+    crowded: std::cell::Cell<bool>,
     last_area: std::cell::Cell<Option<Rect>>,
     last_scroll: std::cell::Cell<u16>,
     last_source_ranges: std::cell::RefCell<Vec<(usize, std::ops::Range<usize>)>>,
@@ -142,6 +145,7 @@ impl Default for ContextLedgerState {
             subagents_selected: false,
             pending_g: false,
             why_visible: false,
+            crowded: std::cell::Cell::new(false),
             last_area: std::cell::Cell::new(None),
             last_scroll: std::cell::Cell::new(0),
             last_source_ranges: std::cell::RefCell::new(Vec::new()),
@@ -183,10 +187,32 @@ impl ChatWidget {
         if !self.context_ledger.visible
             || self.bottom_pane.has_active_view()
             || terminal_width < LEDGER_MIN_TERMINAL_WIDTH
+            || false
         {
             return 0;
         }
         LEDGER_WIDTH.min(terminal_width * 2 / 5)
+    }
+
+    /// Full screen keeps at least this many transcript rows above the Ledger.
+    const FULL_SCREEN_MIN_TRANSCRIPT_ROWS: u16 = 8;
+
+    /// Full screen only: an unfocused Ledger that would leave the transcript fewer than
+    /// `FULL_SCREEN_MIN_TRANSCRIPT_ROWS` rows hides; Tab or Alt+C still opens it whole.
+    /// Inline mode passes `None`, which always shows the Ledger.
+    pub(crate) fn fit_context_ledger_to_screen(&self, screen: Option<ratatui::layout::Size>) {
+        self.context_ledger.crowded.set(false);
+        let Some(screen) = screen else {
+            return;
+        };
+        let width = self.context_ledger_width(screen.width);
+        if width == 0 || self.context_ledger.focused {
+            return;
+        }
+        let height = self.context_ledger_desired_height(width);
+        self.context_ledger
+            .crowded
+            .set(height + Self::FULL_SCREEN_MIN_TRANSCRIPT_ROWS > screen.height);
     }
 
     pub(super) fn context_ledger_desired_height(&self, ledger_width: u16) -> u16 {
@@ -229,7 +255,9 @@ impl ChatWidget {
         let is_tab = matches!(key_event.code, KeyCode::Tab) && key_event.modifiers.is_empty();
         let is_toggle_key = is_tab || key_hint::alt(KeyCode::Char('c')).is_press(key_event);
         if is_toggle_key {
+            let crowded_out = self.context_ledger.crowded.get() && !self.context_ledger.focused;
             if !self.context_ledger.visible
+                || crowded_out
                 || (is_tab && !self.context_ledger.focused && !self.bottom_pane.has_active_view())
             {
                 self.context_ledger.visible = true;

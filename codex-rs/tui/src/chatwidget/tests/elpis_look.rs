@@ -393,3 +393,32 @@ async fn composer_box_shares_the_ledger_rule_and_closes_itself_without_the_ledge
         .expect("composer box");
     assert!(top.trim_end().ends_with('┐'), "{alone:#?}");
 }
+
+#[tokio::test]
+async fn full_screen_hides_a_crowded_ledger_until_it_is_opened() {
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    let short = ratatui::layout::Size::new(/*width*/ 120, /*height*/ 20);
+    let tall = ratatui::layout::Size::new(/*width*/ 120, /*height*/ 80);
+
+    chat.fit_context_ledger_to_screen(Some(tall));
+    assert!(chat.context_ledger_width(120) > 0, "room: the Ledger shows");
+    chat.fit_context_ledger_to_screen(Some(short));
+    assert_eq!(
+        chat.context_ledger_width(120),
+        0,
+        "crowded: the Ledger hides"
+    );
+    chat.fit_context_ledger_to_screen(/*screen*/ None);
+    assert!(
+        chat.context_ledger_width(120) > 0,
+        "inline mode always shows it"
+    );
+
+    chat.fit_context_ledger_to_screen(Some(short));
+    chat.handle_key_event(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::ALT));
+    chat.fit_context_ledger_to_screen(Some(short));
+    assert!(
+        chat.context_ledger_width(120) > 0,
+        "Alt+C opens a crowded Ledger"
+    );
+}
