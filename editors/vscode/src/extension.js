@@ -2,7 +2,8 @@
 const vscode = require('vscode');
 const fs = require('node:fs');
 const path = require('node:path');
-const { resolveHome, configuredRuntime } = require('./runtime-query');
+const os = require('node:os');
+const { resolveHome, configuredRuntime, runtimeEnv, runtimeVersion } = require('./runtime-query');
 const { EditorBridge } = require('./editor');
 const { Session } = require('./session');
 const { panelHtml } = require('./panel');
@@ -30,8 +31,8 @@ function activate(context) {
   }
   context.subscriptions.push({dispose(){contextDisposed=true;for(const promise of contextServices.values())void promise.then(service=>service?.dispose());}},vscode.workspace.onDidChangeWorkspaceFolders(()=>void refreshContextServices()),vscode.workspace.onDidChangeConfiguration(event=>{if(event.affectsConfiguration('elpis.home')||event.affectsConfiguration('elpis.executable'))void refreshContextServices();}));
   void refreshContextServices();
-  const panels = new Map();
-  async function openChat(panel) {
+  // The folder for a new Elpis session: the workspace folder, else the active file's folder, else `fallback`.
+  async function pickRoot(fallback) {
     if (!vscode.workspace.isTrusted) { vscode.window.showWarningMessage('Trust the workspace before starting Elpis.'); return; }
     const roots = vscode.workspace.workspaceFolders || [];
     let root;
@@ -42,21 +43,47 @@ function activate(context) {
       if (document?.scheme === 'file') {
         const directory = path.dirname(document.fsPath);
         root = { name: path.basename(directory), uri: vscode.Uri.file(directory) };
-      } else {
-        const uri = vscode.Uri.joinPath(context.globalStorageUri, 'chat-workspace');
-        await vscode.workspace.fs.createDirectory(uri);
-        root = { name: 'New chat', uri: vscode.Uri.file(uri.fsPath) };
-      }
+      } else root = await fallback();
     }
+    if (root && root.uri.scheme !== 'file') { vscode.window.showWarningMessage('Elpis currently supports local file workspaces.'); return; }
+    return root;
+  }
+  // Warns once per binary and version when the runtime is not the build this extension was checked with.
+  const checkedRuntimes = new Set();
+  async function checkRuntime(executable) {
+    const expected = require('../package.json').elpisRuntime;
+    try {
+      const version = await runtimeVersion(executable);
+      if (version === expected || checkedRuntimes.has(`${executable}\n${version}`)) return;
+      checkedRuntimes.add(`${executable}\n${version}`);
+      vscode.window.showWarningMessage(`Elpis: ${executable} is version ${version}, but this extension was checked with ${expected}. Some features can fail. Install the matching extension or Elpis build.`);
+    } catch (error) { vscode.window.showWarningMessage(`Elpis: cannot run ${executable}. Install Elpis, or set Elpis: Executable to the elpis binary. ${error.message}`); }
+  }
+  async function openTerminal() {
+    const root = await pickRoot(async () => ({ name: 'Home', uri: vscode.Uri.file(os.homedir()) }));
     if (!root) return;
-    if (root.uri.scheme !== 'file') { vscode.window.showWarningMessage('Elpis currently supports local file workspaces.'); return; }
+    const runtime = configuredRuntime(vscode.workspace.getConfiguration('elpis', root.uri));
+    void checkRuntime(runtime.executable);
+    const env = runtimeEnv({ home: runtime.home });
+    const terminal = vscode.window.createTerminal({ name: 'Elpis', shellPath: runtime.executable, cwd: root.uri.fsPath,
+      env: env.ELPIS_HOME ? { ELPIS_HOME: env.ELPIS_HOME } : {}, location: vscode.TerminalLocation.Editor });
+    terminal.show();
+  }
+  const panels = new Map();
+  async function openChat(panel) {
+    const root = await pickRoot(async () => {
+      const uri = vscode.Uri.joinPath(context.globalStorageUri, 'chat-workspace');
+      await vscode.workspace.fs.createDirectory(uri);
+      return { name: 'New chat', uri: vscode.Uri.file(uri.fsPath) };
+    });
+    if (!root) return;
     const key = root.uri.toString();
     if (panels.has(key)) { panels.get(key).show(true); return; }
     panel.title = `Elpis · ${root.name}`;
     panel.webview.options = { enableScripts: true, localResourceRoots: [vscode.Uri.joinPath(context.extensionUri, 'assets')] };
     panels.set(key, panel);
     const config = () => vscode.workspace.getConfiguration('elpis', root.uri);
-    const configTarget = roots.length ? vscode.ConfigurationTarget.WorkspaceFolder : vscode.ConfigurationTarget.Global;
+    const configTarget = vscode.workspace.workspaceFolders?.length ? vscode.ConfigurationTarget.WorkspaceFolder : vscode.ConfigurationTarget.Global;
     const modeKey=`elpis.approvalMode.${key}`;
     const currentMode=()=>approvalMode(context.workspaceState.get(modeKey,'ask'));
     const bridge = new EditorBridge(vscode, root.uri, {approvalMode:()=>session?.options.approvalMode || currentMode().id});
@@ -94,6 +121,7 @@ function activate(context) {
       return s;
     }
     session = await createSession();
+    void checkRuntime(session.options.executable);
     let menuModels = [];
     let catalogRequest = 0;
     let resuming = false;
@@ -315,10 +343,17 @@ function activate(context) {
   context.subscriptions.push(vscode.window.registerWebviewViewProvider('elpis.chatView', {
     resolveWebviewView(view) { opening = openChat(view); return opening; },
   }, {webviewOptions:{retainContextWhenHidden:true}}));
-  context.subscriptions.push(vscode.commands.registerCommand('elpis.chat', async () => {
+  async function focusChat() {
+    if (!vscode.workspace.getConfiguration('elpis').get('useChatView', false)) {
+      vscode.window.showInformationMessage('The Elpis chat view is off. Set Elpis: Use Chat View to use it, or run Elpis: Open for the Elpis terminal.');
+      return;
+    }
     await vscode.commands.executeCommand('elpis.chatView.focus');
     await opening;
-  }));
+  }
+  context.subscriptions.push(vscode.commands.registerCommand('elpis.chat', focusChat));
+  context.subscriptions.push(vscode.commands.registerCommand('elpis.open', () =>
+    vscode.workspace.getConfiguration('elpis').get('useChatView', false) ? focusChat() : openTerminal()));
   return { EditorBridge, Session };
 }
 module.exports = { activate };

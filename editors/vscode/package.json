@@ -1,8 +1,9 @@
 {
   "name": "elpis-editor",
   "displayName": "Elpis",
-  "description": "Chat with your Elpis runtime using live VS Code documents and language intelligence.",
-  "version": "0.1.30",
+  "description": "Run the installed Elpis in a VS Code editor tab, with live editor context for /ide.",
+  "version": "0.2.0",
+  "elpisRuntime": "0.4.0-dev",
   "publisher": "elpis-local",
   "license": "Apache-2.0",
   "engines": {
@@ -22,6 +23,7 @@
     "virtualWorkspaces": false
   },
   "activationEvents": [
+    "onCommand:elpis.open",
     "onCommand:elpis.chat",
     "onStartupFinished"
   ],
@@ -40,19 +42,37 @@
         {
           "type": "webview",
           "id": "elpis.chatView",
-          "name": "Elpis"
+          "name": "Elpis",
+          "when": "config.elpis.useChatView"
         }
       ]
     },
     "commands": [
       {
+        "command": "elpis.open",
+        "title": "Elpis: Open"
+      },
+      {
         "command": "elpis.chat",
         "title": "Elpis: Open Chat"
       }
     ],
+    "menus": {
+      "commandPalette": [
+        {
+          "command": "elpis.chat",
+          "when": "config.elpis.useChatView"
+        }
+      ]
+    },
     "configuration": {
       "title": "Elpis",
       "properties": {
+        "elpis.useChatView": {
+          "type": "boolean",
+          "default": false,
+          "description": "Use the frozen chat view instead of the Elpis terminal. When it is on, Elpis: Open opens the chat view."
+        },
         "elpis.followupBehavior": {
           "type": "string",
           "enum": [
@@ -61,13 +81,13 @@
           ],
           "default": "queue",
           "scope": "resource",
-          "description": "Queue follow-ups until the current turn completes or steer its active turn. Ctrl+Enter chooses the opposite behavior when Enter is the send shortcut."
+          "description": "Chat view only. Queue follow-ups until the current turn completes or steer its active turn. Ctrl+Enter chooses the opposite behavior when Enter is the send shortcut."
         },
         "elpis.showContextUsage": {
           "type": "boolean",
           "default": false,
           "scope": "resource",
-          "description": "Show the runtime's last reported context-window usage in the composer."
+          "description": "Chat view only. Show the runtime's last reported context-window usage in the composer."
         },
         "elpis.accountSource": {
           "type": "string",
@@ -77,7 +97,7 @@
           ],
           "default": "elpis",
           "scope": "machine",
-          "description": "Use the Elpis login or the ChatGPT login saved by Codex. Elpis configuration and history stay in Elpis home. Reconnect after changing this setting."
+          "description": "Chat view only. Use the Elpis login or the ChatGPT login saved by Codex. Elpis configuration and history stay in Elpis home. Reconnect after changing this setting."
         },
         "elpis.executable": {
           "type": "string",
@@ -102,19 +122,19 @@
             "google-gemini"
           ],
           "default": "",
-          "description": "Inference provider. Empty uses existing Elpis configuration."
+          "description": "Chat view only. Inference provider. Empty uses existing Elpis configuration."
         },
         "elpis.model": {
           "scope": "resource",
           "type": "string",
           "default": "",
-          "description": "Optional model override; empty retains the Elpis configured model."
+          "description": "Chat view only. Optional model override; empty retains the Elpis configured model."
         },
         "elpis.reasoningEffort": {
           "scope": "resource",
           "type": "string",
           "default": "",
-          "description": "Reasoning effort selected from the current model's runtime capabilities; empty uses the configured default."
+          "description": "Chat view only. Reasoning effort selected from the current model's runtime capabilities; empty uses the configured default."
         },
         "elpis.sendShortcut": {
           "scope": "resource",
@@ -124,13 +144,13 @@
             "Ctrl+Enter"
           ],
           "default": "Enter",
-          "description": "Keyboard shortcut for sending a chat message. Shift+Enter always inserts a new line."
+          "description": "Chat view only. Keyboard shortcut for sending a chat message. Shift+Enter always inserts a new line."
         },
         "elpis.editorAccess": {
           "scope": "resource",
           "type": "boolean",
           "default": true,
-          "description": "Permit this window's Elpis bridge to read live editor buffers and use language providers. Disabling immediately blocks editor tools; start a new conversation to remove previously seen facts."
+          "description": "Permit this window to give live editor buffers, selections and language providers to Elpis (the chat view tools and the terminal /ide context). Disabling immediately blocks editor tools; start a new conversation to remove previously seen facts."
         }
       }
     }

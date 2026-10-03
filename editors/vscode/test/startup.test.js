@@ -7,11 +7,11 @@ const path = require('node:path');
 const { EventEmitter } = require('node:events');
 const { createRequire } = require('node:module');
 
-async function open({ folder = false, file = false, trusted = true, resumeFailure = false } = {}) {
+async function open({ folder = false, file = false, trusted = true, resumeFailure = false, chat = true, settings = {}, runtimeVersion } = {}) {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'elpis-startup-'));
   const uri = value => ({ scheme: 'file', fsPath: value, toString: () => 'file://' + value });
   const root = uri(directory);
-  const sessions = [], updates = [], warnings = [], subscriptions = [], messages=[];
+  const sessions = [], updates = [], warnings = [], subscriptions = [], messages=[], terminals = [], infos = [], executed = [], commands = {};
   let provider, handler;
   class Session extends EventEmitter {
     constructor(cwd, bridge, options) { super(); this.cwd = cwd; this.options = options; this.queued = []; sessions.push(this); }
@@ -25,10 +25,10 @@ async function open({ folder = false, file = false, trusted = true, resumeFailur
     emitQueue() {}
     dispose() {this.disposed=true;}
   }
-  const configuration = { get: (key, fallback) => fallback, update: async (...args) => updates.push(args) };
+  const configuration = { get: (key, fallback) => settings[key] ?? fallback, update: async (...args) => updates.push(args) };
   const vscode = {
     Uri: { file: uri, joinPath: (base, ...parts) => ({ ...uri(path.join(base.fsPath, ...parts)), scheme: base.scheme }) },
-    ConfigurationTarget: { Global: 1, WorkspaceFolder: 3 },
+    ConfigurationTarget: { Global: 1, WorkspaceFolder: 3 }, TerminalLocation: { Panel: 1, Editor: 2 },
     workspace: {
       isTrusted: trusted, workspaceFolders: folder ? [{ name: 'project', uri: root }] : [],
       getConfiguration: () => configuration,
@@ -38,10 +38,11 @@ async function open({ folder = false, file = false, trusted = true, resumeFailur
     },
     window: {
       activeTextEditor: file ? { document: { uri: uri(path.join(directory, 'example.js')) } } : undefined,
-      showWarningMessage: text => warnings.push(text),
+      showWarningMessage: text => warnings.push(text), showInformationMessage: text => infos.push(text),
+      createTerminal: options => { terminals.push(options); return { show() { options.shown = true; } }; },
       registerWebviewViewProvider: (id, value) => { provider = value; return {}; },
     },
-    commands: { registerCommand: () => ({}) },
+    commands: { registerCommand: (id, run) => { commands[id] = run; return {}; }, executeCommand: async id => executed.push(id) },
   };
   const context = { subscriptions, extensionUri: uri(path.resolve(__dirname, '..')),
     globalStorageUri: { ...uri(path.join(directory, 'storage')), scheme: 'vscode-userdata' },
@@ -53,8 +54,9 @@ async function open({ folder = false, file = false, trusted = true, resumeFailur
     if (name === './session') return { Session };
     if (name === './history') return {...localRequire(name),readHistory:async()=>({id:'resumed'})};
     if (name === './ide-context') return { startContextService: async () => ({ dispose() {} }) };
-    // The real elpis binary never runs here: the home comes from the fixture.
-    if (name === './runtime-query') return { ...localRequire(name), resolveHome: async () => directory };
+    // The real elpis binary never runs here: the home and version come from the fixture.
+    if (name === './runtime-query') return { ...localRequire(name), resolveHome: async () => directory,
+      runtimeVersion: async () => runtimeVersion ?? require('../package.json').elpisRuntime };
     return localRequire(name);
   }, module, module.exports);
   module.exports.activate(context);
@@ -63,8 +65,9 @@ async function open({ folder = false, file = false, trusted = true, resumeFailur
     onDidReceiveMessage: value => { handler = value; return {}; }, html: '',
   } };
   try {
-    await provider.resolveWebviewView(panel);
-    return { directory, sessions, updates, warnings, panel, handler, messages,
+    if (chat) await provider.resolveWebviewView(panel);
+    await new Promise(resolve => setImmediate(resolve));
+    return { directory, sessions, updates, warnings, panel, handler, messages, terminals, infos, executed, commands,
       cleanup: () => { subscriptions.forEach(value => value.dispose?.()); fs.rmSync(directory, { recursive: true, force: true }); } };
   } catch (error) { fs.rmSync(directory, { recursive: true, force: true }); throw error; }
 }
@@ -114,4 +117,57 @@ test('failed history handoff keeps the old session and discards staged text',asy
     assert.equal(result.sessions[1].disposed,true);
     assert(!result.messages.some(message=>['delta','transcript','reset'].includes(message.type)));
   }finally{result.cleanup();}
+});
+
+test('Elpis: Open starts the elpis terminal in an editor tab and no chat runtime', async () => {
+  const result = await open({ folder: true, chat: false, settings: { executable: '/opt/elpis-fixture/elpis' } });
+  try {
+    await result.commands['elpis.open']();
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(result.terminals.length, 1);
+    const [terminal] = result.terminals;
+    assert.equal(terminal.shellPath, '/opt/elpis-fixture/elpis');
+    assert.equal(terminal.location, 2);
+    assert.equal(terminal.cwd, result.directory);
+    assert.deepEqual(terminal.env, process.env.ELPIS_HOME ? { ELPIS_HOME: process.env.ELPIS_HOME } : {});
+    assert.equal(terminal.shown, true);
+    assert.equal(result.sessions.length, 0, 'the terminal entry must not start a chat runtime');
+    assert.deepEqual(result.executed, []);
+    assert.deepEqual(result.warnings, []);
+  } finally { result.cleanup(); }
+});
+
+test('the configured home reaches the terminal as ELPIS_HOME', async () => {
+  const result = await open({ folder: true, chat: false, settings: { executable: '/opt/elpis-fixture/elpis', home: '/tmp/elpis-home-fixture' } });
+  try {
+    await result.commands['elpis.open']();
+    assert.deepEqual(result.terminals[0].env, { ELPIS_HOME: '/tmp/elpis-home-fixture' });
+  } finally { result.cleanup(); }
+});
+
+test('the chat view stays off until its setting selects it', async () => {
+  const off = await open({ folder: true, chat: false });
+  try {
+    await off.commands['elpis.chat']();
+    assert.deepEqual(off.executed, []);
+    assert.match(off.infos[0], /chat view is off/);
+  } finally { off.cleanup(); }
+  const on = await open({ folder: true, chat: false, settings: { useChatView: true } });
+  try {
+    await on.commands['elpis.open']();
+    assert.deepEqual(on.executed, ['elpis.chatView.focus']);
+    assert.equal(on.terminals.length, 0);
+  } finally { on.cleanup(); }
+});
+
+test('a runtime version that differs from the checked build shows one warning', async () => {
+  const other = await open({ folder: true, chat: false, runtimeVersion: '0.3.0', settings: { executable: '/opt/elpis-fixture/elpis' } });
+  try {
+    await other.commands['elpis.open']();await other.commands['elpis.open']();
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(other.warnings.length, 1);
+    assert.match(other.warnings[0], /version 0\.3\.0, but this extension was checked with 0\.4\.0-dev/);
+  } finally { other.cleanup(); }
+  const same = await open({ folder: true });
+  try { assert.deepEqual(same.warnings, []); } finally { same.cleanup(); }
 });

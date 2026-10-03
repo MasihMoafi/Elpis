@@ -2,6 +2,7 @@
 const os = require('node:os');
 const path = require('node:path');
 const fs = require('node:fs');
+const { execFile } = require('node:child_process');
 const { AppServer } = require('./rpc');
 const { connectAccount, refreshAccount } = require('./account-source');
 const expandHome = value => value === '~' || value.startsWith('~/') ? path.join(os.homedir(), value.slice(1)) : value;
@@ -51,4 +52,11 @@ function resolveHome(options = {}) {
   }
   return homes.get(options.executable);
 }
-module.exports = { withRuntime, resolveHome, resolveExecutable, configuredRuntime, runtimeEnv, runtimeTransport };
+// Resolves to the version that `elpis --version` prints, for example `0.4.0-dev`.
+function runtimeVersion(executable) {
+  return new Promise((resolve, reject) => execFile(executable, ['--version'], {timeout:15000}, (error, stdout) => {
+    if (error) return reject(new Error(`${executable} --version failed: ${error.message}`));
+    resolve(stdout.trim().replace(/^elpis\s+/, ''));
+  }));
+}
+module.exports = { withRuntime, resolveHome, resolveExecutable, configuredRuntime, runtimeEnv, runtimeTransport, runtimeVersion };
