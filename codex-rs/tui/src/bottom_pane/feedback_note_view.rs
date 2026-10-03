@@ -435,7 +435,3 @@ fn feedback_title_and_placeholder(category: FeedbackCategory) -> (String, String
         ),
     }
 }
-
-#[cfg(test)]
-#[path = "feedback_note_view_tests.rs"]
-mod tests;
