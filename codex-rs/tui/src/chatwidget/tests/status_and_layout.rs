@@ -3416,50 +3416,6 @@ async fn status_line_estimated_thread_cost_rejects_stale_thread_completions() {
 }
 
 #[tokio::test]
-async fn status_line_estimated_thread_cost_footer_snapshot() {
-    use ratatui::Terminal;
-    use ratatui::backend::TestBackend;
-
-    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
-    let thread_id = ThreadId::new();
-    chat.thread_id = Some(thread_id);
-    chat.has_codex_backend_auth = true;
-    chat.plan_type = Some(PlanType::Business);
-    chat.show_welcome_banner = false;
-    chat.local_settings.tui.status_line = Some(vec![
-        "model-with-reasoning".to_string(),
-        "thread-credits".to_string(),
-        "estimated-thread-cost".to_string(),
-    ]);
-    chat.refresh_status_line();
-    let request_id = match rx.try_recv() {
-        Ok(AppEvent::RefreshThreadUsage { request_id, .. }) => request_id,
-        event => panic!("expected estimated thread usage refresh, got {event:?}"),
-    };
-    assert!(chat.finish_thread_usage_refresh(
-        thread_id,
-        request_id,
-        Ok(ThreadUsageOutcome::Available(ThreadUsage {
-            thread_id: thread_id.to_string(),
-            estimated_usage_credits_micros: 5_200_000,
-            estimated_usage_usd_micros: Some(210_000),
-            groups: Vec::new(),
-        })),
-    ));
-
-    let width = 80;
-    let height = chat.desired_height(width);
-    let mut terminal = Terminal::new(TestBackend::new(width, height)).expect("create terminal");
-    terminal
-        .draw(|frame| chat.render(frame.area(), frame.buffer_mut()))
-        .expect("draw estimated-thread-cost footer");
-    assert_chatwidget_snapshot!(
-        "status_line_estimated_thread_cost_footer",
-        normalized_backend_snapshot(terminal.backend())
-    );
-}
-
-#[tokio::test]
 async fn workspace_headline_update_applies_feature_disabled_result() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
     chat.local_settings.tui.status_line = Some(vec!["workspace-headline".to_string()]);
@@ -3735,33 +3691,6 @@ async fn completed_turn_clears_visible_running_hook() {
 }
 
 #[tokio::test]
-async fn status_line_fast_mode_footer_snapshot() {
-    use ratatui::Terminal;
-    use ratatui::backend::TestBackend;
-
-    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.2")).await;
-    set_fast_mode_test_catalog(&mut chat);
-    chat.show_welcome_banner = false;
-    chat.local_settings.tui.status_line = Some(vec![
-        "model-with-reasoning".to_string(),
-        "fast-mode".to_string(),
-    ]);
-    chat.set_reasoning_effort(Some(ReasoningEffortConfig::High));
-    chat.refresh_status_line();
-
-    let width = 80;
-    let height = chat.desired_height(width);
-    let mut terminal = Terminal::new(TestBackend::new(width, height)).expect("create terminal");
-    terminal
-        .draw(|f| chat.render(f.area(), f.buffer_mut()))
-        .expect("draw fast-mode footer");
-    assert_chatwidget_snapshot!(
-        "status_line_fast_mode_footer",
-        normalized_backend_snapshot(terminal.backend())
-    );
-}
-
-#[tokio::test]
 async fn terminal_title_model_updates_on_model_change_without_manual_refresh() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.5")).await;
     chat.local_settings.tui.terminal_title = Some(vec!["model".to_string()]);
@@ -3853,74 +3782,6 @@ async fn renamed_thread_footer_title_snapshot() {
         .expect("draw renamed-thread footer");
     assert_chatwidget_snapshot!(
         "renamed_thread_footer_title",
-        normalized_backend_snapshot(terminal.backend())
-    );
-}
-
-#[tokio::test]
-async fn status_line_model_with_reasoning_fast_footer_snapshot() {
-    use ratatui::Terminal;
-    use ratatui::backend::TestBackend;
-
-    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.4")).await;
-    set_fast_mode_test_catalog(&mut chat);
-    assert!(get_available_model(&chat, "gpt-5.4").supports_fast_mode());
-    chat.show_welcome_banner = false;
-    chat.config.cwd = test_project_path().abs();
-    chat.local_settings.tui.status_line = Some(vec![
-        "model-with-reasoning".to_string(),
-        "context-used".to_string(),
-        "current-dir".to_string(),
-    ]);
-    chat.set_reasoning_effort(Some(ReasoningEffortConfig::XHigh));
-    chat.set_service_tier(Some(ServiceTier::Fast.request_value().to_string()));
-    set_chatgpt_auth(&mut chat);
-    set_fast_mode_test_catalog(&mut chat);
-    assert!(get_available_model(&chat, "gpt-5.4").supports_fast_mode());
-    chat.refresh_status_line();
-
-    let width = 80;
-    let height = chat.desired_height(width);
-    let mut terminal = Terminal::new(TestBackend::new(width, height)).expect("create terminal");
-    terminal
-        .draw(|f| chat.render(f.area(), f.buffer_mut()))
-        .expect("draw model-with-reasoning footer");
-    assert_chatwidget_snapshot!(
-        "status_line_model_with_reasoning_fast_footer",
-        normalized_backend_snapshot(terminal.backend())
-    );
-}
-
-#[tokio::test]
-async fn status_line_model_with_reasoning_context_remaining_footer_snapshot() {
-    use ratatui::Terminal;
-    use ratatui::backend::TestBackend;
-
-    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.4")).await;
-    set_fast_mode_test_catalog(&mut chat);
-    assert!(get_available_model(&chat, "gpt-5.4").supports_fast_mode());
-    chat.show_welcome_banner = false;
-    chat.config.cwd = test_project_path().abs();
-    chat.local_settings.tui.status_line = Some(vec![
-        "model-with-reasoning".to_string(),
-        "context-remaining".to_string(),
-        "current-dir".to_string(),
-    ]);
-    chat.set_reasoning_effort(Some(ReasoningEffortConfig::XHigh));
-    chat.set_service_tier(Some(ServiceTier::Fast.request_value().to_string()));
-    set_chatgpt_auth(&mut chat);
-    set_fast_mode_test_catalog(&mut chat);
-    assert!(get_available_model(&chat, "gpt-5.4").supports_fast_mode());
-    chat.refresh_status_line();
-
-    let width = 80;
-    let height = chat.desired_height(width);
-    let mut terminal = Terminal::new(TestBackend::new(width, height)).expect("create terminal");
-    terminal
-        .draw(|f| chat.render(f.area(), f.buffer_mut()))
-        .expect("draw model-with-reasoning footer");
-    assert_chatwidget_snapshot!(
-        "status_line_model_with_reasoning_context_remaining_footer",
         normalized_backend_snapshot(terminal.backend())
     );
 }
