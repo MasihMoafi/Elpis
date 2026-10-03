@@ -187,7 +187,7 @@ impl ChatWidget {
         if !self.context_ledger.visible
             || self.bottom_pane.has_active_view()
             || terminal_width < LEDGER_MIN_TERMINAL_WIDTH
-            || false
+            || (self.context_ledger.crowded.get() && !self.context_ledger.focused)
         {
             return 0;
         }

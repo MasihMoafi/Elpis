@@ -70,6 +70,9 @@ impl App {
         screen_size: Size,
     ) -> Result<Rect> {
         self.chat_widget.sync_warnings(&self.transcript_cells);
+        // Elpis: full screen hides a Ledger that leaves the transcript too few rows.
+        self.chat_widget
+            .fit_context_ledger_to_screen(Some(screen_size));
         let motion = MotionMode::from_animations_enabled(
             self.local_settings.tui.animations && self.local_settings.tui.effects.shimmer,
         );

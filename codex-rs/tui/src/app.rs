@@ -1170,12 +1170,12 @@ impl App {
         self.sync_thread_title_progress();
         self.chat_widget
             .set_sparkle_terminal_focus(tui.is_terminal_focused());
-        // Elpis: full screen hides a Ledger that leaves the transcript too few rows.
-        self.chat_widget
-            .fit_context_ledger_to_screen(tui.is_owned_screen().then_some(screen_size));
         if tui.is_owned_screen() {
             return self.render_owned_transcript(tui, screen_size);
         }
+        // Elpis: inline mode always shows the Ledger.
+        self.chat_widget
+            .fit_context_ledger_to_screen(/*screen*/ None);
         self.chat_widget
             .empty_state_animation
             .borrow_mut()
