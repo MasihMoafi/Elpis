@@ -2,10 +2,11 @@
 source: tui/src/chatwidget/tests/compaction_tests.rs
 expression: "normalize_compaction_snapshot(render_bottom_popup(&chat, 40))"
 ---
-• Compacting context (<elapsed> • esc to i…
+ Elpis · model gpt-5.6-sol default · loc
+Compacting context (<elapsed> • esc to int…
   └ Making room to continue.
 
-
-› Ask Elpis to do anything
-
-  GPT-5.6-Sol default · /tmp/project
+┌──────────────────────────────────────┐
+› Ask Elpis to do anything             │
+└──────────────────────────────────────┘
+  100% context left · Tab Context Ledger

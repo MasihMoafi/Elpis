@@ -1,9 +1,11 @@
 ---
 source: tui/src/app/daemon_menu_tests.rs
-expression: "render_bottom_popup(&app.chat_widget,\nwidth).replace(r\"C:\\cli-build\\bin\\codex\", \"/x/cli-build/bin/codex\")"
+expression: "render_bottom_popup(&app.chat_widget,\nwidth).replace(r\"C:\\cli-build\\bin\\codex\", \"/x/cli-build/bin/codex\").replace(crate::version::CODEX_CLI_VERSION,\n\"<cli-version>\")"
 ---
+ Elpis · model gpt-5.6-sol default · location /tmp/project
+
   Update daemon and exit Elpis?
-  Use this CLI package v0.0.0 from /x/cli-build/bin/codex. Copy the complete package and pin it
+  Use this CLI package v<cli-version> from /x/cli-build/bin/codex. Copy the complete package and pin it
   against automatic updates.
   This may restart the daemon and interrupt active or queued work.
   Elpis exits to update in this terminal. Relaunch it afterward.

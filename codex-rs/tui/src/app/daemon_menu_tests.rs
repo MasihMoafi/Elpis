@@ -122,10 +122,12 @@ async fn daemon_menu_is_read_only_and_confirmation_can_cancel_or_handoff() {
             .unwrap(),
         );
         app.confirm_daemon_update(source);
+        // The crate version changes with each upstream bump; the snapshot keeps the wording.
         insta::assert_snapshot!(
             snapshot,
             render_bottom_popup(&app.chat_widget, width)
                 .replace(r"C:\cli-build\bin\codex", "/x/cli-build/bin/codex")
+                .replace(crate::version::CODEX_CLI_VERSION, "<cli-version>")
         );
         // The default choice cancels without emitting an update or exiting.
         app.chat_widget.handle_key_event(KeyCode::Enter.into());

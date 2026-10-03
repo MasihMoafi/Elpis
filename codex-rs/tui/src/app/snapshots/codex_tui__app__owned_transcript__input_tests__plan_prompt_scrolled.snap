@@ -2,7 +2,6 @@
 source: tui/src/app/owned_transcript_input_tests.rs
 expression: scrolled
 ---
-  • Plan step 27
   • Plan step 28
   • Plan step 29
   • Plan step 30
@@ -17,6 +16,7 @@ expression: scrolled
   • Plan step 39
   • Plan step 40
 
+ Elpis · model gpt-5.6-sol medium · location /tmp/project
 
   Implement this plan?
 

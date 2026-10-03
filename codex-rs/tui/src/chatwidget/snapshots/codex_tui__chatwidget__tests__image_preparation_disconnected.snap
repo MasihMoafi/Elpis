@@ -2,12 +2,25 @@
 source: tui/src/chatwidget/tests/composer_submission.rs
 expression: "normalize_snapshot_paths(render_bottom_popup(&chat, 80)).replace('◦', \"•\")"
 ---
-• Reconnect failed — check the endpoint, then relaunch (0s)
-
-• Queued follow-up inputs
-  ↳ x
-    shift+← edit last queued message
-
-› describe
-
-  ctrl+c quit
+ Elpis · model gpt-5.6-sol default · location /tmp/project
+Reconnect failed — check the endpoint, then rel…│CONTEXT LEDGER  context not
+                                                │measured · ≈0 source estimates
+• Queued follow-up inputs                       │Tab controls · Alt+C hide ·
+  ↳ x                                           │Ctrl+click open file
+    ↑ edit all · enter send                     │
+┌──────────────────────────────────────────────┐│SMART PRUNE          [···] SYNC
+› describe                                     ││Reading current thread state
+└──────────────────────────────────────────────┘│Syncing… · /smart-prune on|off
+  ctrl+c quit                                   │sets an explicit state
+                                                │
+                                                │SUBAGENTS             [━━━●] ON
+                                                │May delegate to other agents
+                                                │
+                                                │CONTEXT WINDOW  usage
+                                                │unavailable
+                                                │Context measurement unavailable
+                                                │until the first request
+                                                │snapshot
+                                                │
+                                                │No portable context is
+                                                │available.

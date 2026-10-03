@@ -1,32 +1,19 @@
 ---
 source: tui/src/app/tests/background_task_defaults_tests.rs
-assertion_line: 124
 expression: "crate::chatwidget::tests::helpers::normalize_snapshot_paths(snapshots.join(\"\\n\\n\"))"
 ---
 owned=false
 startup:
 
-│
-› draft during startup
-│
+┌──────────────────────────────────────────────────────────────────────────────┐
+› draft during startup                                                         │
+└──────────────────────────────────────────────────────────────────────────────┘
 
-attached:
-                                                │snapshot
-                                                │
-                                                │◆ DURABLE MEMORY  ≈0 tokens
-                                                │admitted
-                                                │]8;;file:///tmp/chatwidget-tests-YcbNOR/memories/MEMORY.md[]8;;]8;;file:///tmp/chatwidget-tests-YcbNOR/memories/MEMORY.md ]8;;]8;;file:///tmp/chatwidget-tests-YcbNOR/memories/MEMORY.md]]8;;]8;;file:///tmp/chatwidget-tests-YcbNOR/memories/MEMORY.md ]8;;]8;;file:///tmp/chatwidget-tests-YcbNOR/memories/MEMORY.md…]8;;]8;;file:///tmp/chatwidget-tests-YcbNOR/memories/MEMORY.md ]8;;]8;;file:///tmp/chatwidget-tests-YcbNOR/memories/MEMORY.md≈]8;;]8;;file:///tmp/chatwidget-tests-YcbNOR/memories/MEMORY.md0]8;;]8;;file:///tmp/chatwidget-tests-YcbNOR/memories/MEMORY.md ]8;;]8;;file:///tmp/chatwidget-tests-YcbNOR/memories/MEMORY.mde]8;;]8;;file:///tmp/chatwidget-tests-YcbNOR/memories/MEMORY.mds]8;;]8;;file:///tmp/chatwidget-tests-YcbNOR/memories/MEMORY.mdt]8;;]8;;file:///tmp/chatwidget-tests-YcbNOR/memories/MEMORY.md.]8;;]8;;file:///tmp/chatwidget-tests-YcbNOR/memories/MEMORY.md ]8;;]8;;file:///tmp/chatwidget-tests-YcbNOR/memories/MEMORY.mdt]8;;]8;;file:///tmp/chatwidget-tests-YcbNOR/memories/MEMORY.mdo]8;;]8;;file:///tmp/chatwidget-tests-YcbNOR/memories/MEMORY.mdk]8;;]8;;file:///tmp/chatwidget-tests-YcbNOR/memories/MEMORY.mde]8;;]8;;file:///tmp/chatwidget-tests-YcbNOR/memories/MEMORY.mdn]8;;]8;;file:///tmp/chatwidget-tests-YcbNOR/memories/MEMORY.mds]8;;]8;;file:///tmp/chatwidget-tests-YcbNOR/memories/MEMORY.md ]8;;]8;;file:///tmp/chatwidget-tests-YcbNOR/memories/MEMORY.mdE]8;;]8;;file:///tmp/chatwidget-tests-YcbNOR/memories/MEMORY.mdX]8;;]8;;file:///tmp/chatwidget-tests-YcbNOR/memories/MEMORY.mdC]8;;]8;;file:///tmp/chatwidget-tests-YcbNOR/memories/MEMORY.mdL]8;;]8;;file:///tmp/chatwidget-tests-YcbNOR/memories/MEMORY.mdU]8;;]8;;file:///tmp/chatwidget-tests-YcbNOR/memories/MEMORY.mdD]8;;]8;;file:///tmp/chatwidget-tests-YcbNOR/memories/MEMORY.mdE]8;;]8;;file:///tmp/chatwidget-tests-YcbNOR/memories/MEMORY.mdD]8;;]8;;file:///tmp/chatwidget-tests-YcbNOR/memories/MEMORY.md ]8;;]8;;file:///tmp/chatwidget-tests-YcbNOR/memories/MEMORY.md ]8;;
 
 owned=true
 startup:
-│
-› draft during startup
-│
+┌──────────────────────────────────────────────────────────────────────────────┐
+› draft during startup                                                         │
+└──────────────────────────────────────────────────────────────────────────────┘
 
 
-attached:
-                                                │snapshot
-                                                │
-                                                │◆ DURABLE MEMORY  ≈0 tokens
-                                                │admitted
-                                                │]8;;file:///tmp/chatwidget-tests-EtIiNh/memories/MEMORY.md[]8;;]8;;file:///tmp/chatwidget-tests-EtIiNh/memories/MEMORY.md ]8;;]8;;file:///tmp/chatwidget-tests-EtIiNh/memories/MEMORY.md]]8;;]8;;file:///tmp/chatwidget-tests-EtIiNh/memories/MEMORY.md ]8;;]8;;file:///tmp/chatwidget-tests-EtIiNh/memories/MEMORY.md…]8;;]8;;file:///tmp/chatwidget-tests-EtIiNh/memories/MEMORY.md ]8;;]8;;file:///tmp/chatwidget-tests-EtIiNh/memories/MEMORY.md≈]8;;]8;;file:///tmp/chatwidget-tests-EtIiNh/memories/MEMORY.md0]8;;]8;;file:///tmp/chatwidget-tests-EtIiNh/memories/MEMORY.md ]8;;]8;;file:///tmp/chatwidget-tests-EtIiNh/memories/MEMORY.mde]8;;]8;;file:///tmp/chatwidget-tests-EtIiNh/memories/MEMORY.mds]8;;]8;;file:///tmp/chatwidget-tests-EtIiNh/memories/MEMORY.mdt]8;;]8;;file:///tmp/chatwidget-tests-EtIiNh/memories/MEMORY.md.]8;;]8;;file:///tmp/chatwidget-tests-EtIiNh/memories/MEMORY.md ]8;;]8;;file:///tmp/chatwidget-tests-EtIiNh/memories/MEMORY.mdt]8;;]8;;file:///tmp/chatwidget-tests-EtIiNh/memories/MEMORY.mdo]8;;]8;;file:///tmp/chatwidget-tests-EtIiNh/memories/MEMORY.mdk]8;;]8;;file:///tmp/chatwidget-tests-EtIiNh/memories/MEMORY.mde]8;;]8;;file:///tmp/chatwidget-tests-EtIiNh/memories/MEMORY.mdn]8;;]8;;file:///tmp/chatwidget-tests-EtIiNh/memories/MEMORY.mds]8;;]8;;file:///tmp/chatwidget-tests-EtIiNh/memories/MEMORY.md ]8;;]8;;file:///tmp/chatwidget-tests-EtIiNh/memories/MEMORY.mdE]8;;]8;;file:///tmp/chatwidget-tests-EtIiNh/memories/MEMORY.mdX]8;;]8;;file:///tmp/chatwidget-tests-EtIiNh/memories/MEMORY.mdC]8;;]8;;file:///tmp/chatwidget-tests-EtIiNh/memories/MEMORY.mdL]8;;]8;;file:///tmp/chatwidget-tests-EtIiNh/memories/MEMORY.mdU]8;;]8;;file:///tmp/chatwidget-tests-EtIiNh/memories/MEMORY.mdD]8;;]8;;file:///tmp/chatwidget-tests-EtIiNh/memories/MEMORY.mdE]8;;]8;;file:///tmp/chatwidget-tests-EtIiNh/memories/MEMORY.mdD]8;;]8;;file:///tmp/chatwidget-tests-EtIiNh/memories/MEMORY.md ]8;;]8;;file:///tmp/chatwidget-tests-EtIiNh/memories/MEMORY.md ]8;;

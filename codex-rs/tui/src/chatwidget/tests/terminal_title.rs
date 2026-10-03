@@ -356,15 +356,11 @@ async fn thread_title_progress_animates_when_main_turn_is_idle() {
 }
 
 #[tokio::test]
-async fn thread_title_progress_preserves_suffix_after_truncation_and_in_default_footer() {
+async fn thread_title_progress_preserves_suffix_after_truncation() {
+    // Elpis never shows the footer status line (R17), so the progress shows in the title only.
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
     chat.local_settings.tui.animations = false;
     chat.set_thread_title_generation_pending(/*pending*/ true);
-    chat.show_welcome_banner = false;
-    assert_chatwidget_snapshot!(
-        "default_footer_generating_thread_title",
-        normalize_snapshot_paths(render_bottom_popup(&chat, /*width*/ 100))
-    );
     chat.thread_name = Some("Long title ".repeat(/*n*/ 12));
     for item in [TerminalTitleItem::ThreadName, TerminalTitleItem::Thread] {
         let title = chat

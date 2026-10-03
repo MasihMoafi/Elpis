@@ -26,10 +26,8 @@ async fn archive_confirmation_number_keys_act_immediately() {
             )),
         );
         app.confirm_agents_overview_action(id, AgentsOverviewAction::Archive);
-        insta::assert_snapshot!(
-            "archive_task_confirmation",
-            render_bottom_popup(&app.chat_widget, /*width*/ 72)
-        );
+        // The lifecycle test owns the `archive_task_confirmation` snapshot.
+        assert!(app.chat_widget.has_active_view());
 
         app.chat_widget.handle_key_event(KeyCode::Char(key).into());
 

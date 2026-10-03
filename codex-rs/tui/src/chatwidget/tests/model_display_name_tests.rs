@@ -66,10 +66,8 @@ async fn custom_model_display_name_in_pickers_preserves_selection_slug() {
 }
 
 #[tokio::test]
-async fn custom_model_display_name_in_status_line_and_fallback() {
-    use ratatui::Terminal;
-    use ratatui::backend::TestBackend;
-
+async fn custom_model_display_name_falls_back_to_the_slug() {
+    // Elpis never shows the footer status line (R17), so only the name fallback is checked.
     let slug = "us.openai.gpt-5.6-luna";
     let (mut chat, _events, _ops) = make_chatwidget_manual(Some(slug)).await;
     let mut preset = get_available_model(&chat, "gpt-5.5");
@@ -77,23 +75,7 @@ async fn custom_model_display_name_in_status_line_and_fallback() {
     preset.display_name = "GPT-5.6 Luna".to_string();
     preset.show_in_picker = false;
     chat.model_catalog = Arc::new(ModelCatalog::new(vec![preset]));
-    chat.show_welcome_banner = false;
-    chat.local_settings.tui.status_line = Some(vec![
-        "model-name".to_string(),
-        "model-with-reasoning".to_string(),
-    ]);
-    chat.set_reasoning_effort(Some(ReasoningEffortConfig::High));
-    chat.refresh_status_line();
-    let width = 80;
-    let mut terminal = Terminal::new(TestBackend::new(width, chat.desired_height(width)))
-        .expect("create terminal");
-    terminal
-        .draw(|frame| chat.render(frame.area(), frame.buffer_mut()))
-        .expect("draw model status line");
-    assert_chatwidget_snapshot!(
-        "custom_model_display_name_status_line",
-        normalized_backend_snapshot(terminal.backend())
-    );
+    assert_eq!(chat.model_display_name(), "GPT-5.6 Luna");
 
     Arc::make_mut(&mut chat.model_catalog).models.clear();
     assert_eq!(chat.model_display_name(), slug);

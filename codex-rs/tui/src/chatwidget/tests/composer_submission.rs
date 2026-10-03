@@ -112,23 +112,16 @@ async fn hidden_shell_paste_recalled_from_history_submits_literal_prompt() {
 
 #[tokio::test]
 async fn hidden_shell_paste_queued_during_turn_submits_literal_prompt() {
-    for key in [KeyCode::Tab, KeyCode::Enter] {
-        let (mut chat, _rx, mut op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
-        chat.thread_id = Some(ThreadId::new());
-        handle_turn_started(&mut chat, "turn-1");
-        let payload = paste_hidden_shell_payload(&mut chat);
+    // Elpis: Enter queues during a turn; Tab opens the Context Ledger and never queues (R15).
+    let (mut chat, _rx, mut op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    chat.thread_id = Some(ThreadId::new());
+    handle_turn_started(&mut chat, "turn-1");
+    let payload = paste_hidden_shell_payload(&mut chat);
 
-        chat.handle_key_event(KeyEvent::new(key, KeyModifiers::NONE));
-        if key == KeyCode::Tab {
-            assert_chatwidget_snapshot!(
-                "hidden_shell_paste_queued_preview",
-                normalize_snapshot_paths(render_bottom_popup(&chat, /*width*/ 80))
-            );
-        }
-        handle_turn_completed(&mut chat, "turn-1", /*duration_ms*/ None);
+    chat.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+    handle_turn_completed(&mut chat, "turn-1", /*duration_ms*/ None);
 
-        assert_hidden_shell_payload_is_literal(op_rx.try_recv(), payload);
-    }
+    assert_hidden_shell_payload_is_literal(op_rx.try_recv(), payload);
 }
 
 #[tokio::test]

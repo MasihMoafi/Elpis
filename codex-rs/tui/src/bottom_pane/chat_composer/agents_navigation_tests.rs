@@ -90,26 +90,16 @@ fn left_respects_attachments_pastes_and_other_input_surfaces() {
 
 #[test]
 fn agents_navigation_hint_snapshots() {
-    for name in [
-        "agents_navigation_enabled",
-        "agents_navigation_help",
-        "agents_navigation_status",
-    ] {
+    // Elpis never enables the footer status line (R17), so no case renders one.
+    for name in ["agents_navigation_enabled", "agents_navigation_help"] {
         snapshot_composer_state_with_width(
             name,
             /*width*/ 80,
             /*enhanced_keys_supported*/ false,
             |composer| {
                 composer.set_agents_navigation_enabled(/*enabled*/ true);
-                match name {
-                    "agents_navigation_help" => {
-                        composer.handle_key_event(KeyCode::Char('?').into());
-                    }
-                    "agents_navigation_status" => {
-                        composer.set_status_line_enabled(/*enabled*/ true);
-                        composer.set_status_line(Some(Line::from("model · project")));
-                    }
-                    _ => {}
+                if name == "agents_navigation_help" {
+                    composer.handle_key_event(KeyCode::Char('?').into());
                 }
             },
         );

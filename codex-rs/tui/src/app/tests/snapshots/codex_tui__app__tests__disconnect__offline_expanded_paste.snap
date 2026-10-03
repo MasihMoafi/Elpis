@@ -2,19 +2,32 @@
 source: tui/src/app/tests/disconnect_tests.rs
 expression: draft
 ---
-queued before disconnectcopied text copied text copied text copied text
-  copied text copied text copied text copied text copied text copied text
-  copied text copied text copied text copied text copied text copied text
-  copied text copied text copied text copied text copied text copied text
-  copied text copied text copied text copied text copied text copied text
-  copied text copied text copied text copied text copied text copied text
-  copied text copied text copied text copied text copied text copied text
-  copied text copied text copied text copied text copied text copied text
-  copied text copied text copied text copied text copied text copied text
-  copied text copied text copied text copied text copied text copied text
-  copied text copied text copied text copied text copied text copied text
-  copied text copied text copied text copied text copied text copied text
-  copied text copied text copied text copied text copied text copied text
-  copied text copied text copied text copied text copied text copied text
-  copied text copied text copied text copied text copied text copied text
-  copied text copied text copied text copied text
+queued before disconnectcopied text copied   ││Ctrl+click open file
+│ text copied text copied text copied text     ││
+│ copied text copied text copied text copied   ││SMART PRUNE          [···] SYNC
+│ text copied text copied text copied text     ││Reading current thread state
+│ copied text copied text copied text copied   ││Syncing… · /smart-prune on|off
+│ text copied text copied text copied text     ││sets an explicit state
+│ copied text copied text copied text copied   ││
+│ text copied text copied text copied text     ││SUBAGENTS             [━━━●] ON
+│ copied text copied text copied text copied   ││May delegate to other agents
+│ text copied text copied text copied text     ││
+│ copied text copied text copied text copied   ││CONTEXT WINDOW  usage
+│ text copied text copied text copied text     ││unavailable
+│ copied text copied text copied text copied   ││Context measurement unavailable
+│ text copied text copied text copied text     ││until the first request
+│ copied text copied text copied text copied   ││snapshot
+│ text copied text copied text copied text     ││
+│ copied text copied text copied text copied   ││No portable context is
+│ text copied text copied text copied text     ││available.
+│ copied text copied text copied text copied   │
+│ text copied text copied text copied text     │
+│ copied text copied text copied text copied   │
+│ text copied text copied text copied text     │
+│ copied text copied text copied text copied   │
+│ text copied text copied text copied text     │
+│ copied text copied text copied text copied   │
+│ text copied text copied text copied text     │
+│ copied text copied text copied text          │
+└──────────────────────────────────────────────┘
+        100% context left · Tab Context Ledger
