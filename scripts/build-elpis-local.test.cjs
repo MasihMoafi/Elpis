@@ -5,7 +5,7 @@ const os = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
 
-function runGuard(temperature, mode = 'check', selectedRepo, extraEnv = {}) {
+function runGuard(temperature, mode = 'core-check', selectedRepo, extraEnv = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'elpis-build-guard-test-'));
   try {
     for (const directory of ['scripts', 'codex-rs', 'bin', 'thermal/hwmon/hwmon0']) {
@@ -50,7 +50,7 @@ test('core check uses the selected worktree and includes tests without building 
 });
 
 test('invalid worktree selection refuses compiler startup', () => {
-  const result = runGuard(50000, 'check', 'missing');
+  const result = runGuard(50000, 'core-check', 'missing');
   assert.equal(result.status, 2, result.stdout + result.stderr);
   assert.equal(result.compilerStarted, false);
 });

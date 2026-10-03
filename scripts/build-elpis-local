@@ -11,25 +11,15 @@ if [ -n "${ELPIS_BUILD_REPO_ROOT:-}" ]; then
 fi
 mode=${1:-}
 if [ "$#" -ne 1 ]; then
-    printf 'usage: %s {check|core-check|dev|core-suite-build|core-suite-tests|workspace-check|models-test-build|next-dev|next-release|next-host|next-cargo|shipping}\n' "$0" >&2
+    printf 'usage: %s {core-check|core-suite-build|core-suite-tests|workspace-check|models-test-build|next-dev|next-release|next-host|next-cargo}\n' "$0" >&2
     exit 2
 fi
 
 case "$mode" in
-    check)
-        profile=check
-        cargo_args=(check --locked --offline -p codex-tui --bin elpis)
-        artifact=
-        ;;
     core-check)
         profile=check
         cargo_args=(check --locked --offline -p codex-core --all-targets)
         artifact=
-        ;;
-    dev)
-        profile=dev-small
-        cargo_args=(build --profile dev-small --locked --offline -p codex-tui --bin elpis)
-        artifact="$repo_root/codex-rs/target/dev-small/elpis"
         ;;
     core-suite-build)
         profile=dev-small
@@ -97,13 +87,8 @@ case "$mode" in
         read -r -a cargo_args <<< "${ELPIS_NEXT_CARGO_ARGS:?set ELPIS_NEXT_CARGO_ARGS to the cargo arguments}"
         artifact=
         ;;
-    shipping)
-        profile=release
-        cargo_args=(build --release --locked --offline -p codex-tui --bin elpis)
-        artifact="$repo_root/codex-rs/target/release/elpis"
-        ;;
     *)
-        printf 'unknown build mode %q; expected check, core-check, dev, core-suite-build, core-suite-tests, workspace-check, models-test-build, next-dev, next-release, next-host, next-cargo, or shipping\n' "$mode" >&2
+        printf 'unknown build mode %q; expected core-check, core-suite-build, core-suite-tests, workspace-check, models-test-build, next-dev, next-release, next-host, or next-cargo\n' "$mode" >&2
         exit 2
         ;;
 esac
@@ -227,15 +212,6 @@ else
     local_acceleration=unavailable
 fi
 
-# Freeze path-remapping flags for the shipping build so repeats reuse the same
-# Cargo fingerprint and installed artifacts do not expose the workstation path.
-# Other modes retain the caller's normal fingerprint.
-if [ "$mode" = shipping ]; then
-    remap_from=${ELPIS_REMAP_PATH_FROM:-/home/masih}
-    append_rustflag "--remap-path-prefix=$remap_from=/build"
-    export CFLAGS="-ffile-prefix-map=$remap_from=/build -fdebug-prefix-map=$remap_from=/build"
-    export CXXFLAGS="$CFLAGS"
-fi
 export RUSTFLAGS
 
 started_ns=$(date +%s%N)
@@ -369,15 +345,6 @@ if [ "$build_status" -ne 0 ]; then
     printf 'build_result status=failed mode=%s profile=%s jobs=%s elapsed_ms=%s peak_c=%s artifact_bytes=%s pause_count=%s cooling_ms=%s limit_hold_count=%s\n' \
         "$mode" "$profile" "$jobs" "$elapsed_ms" "$(format_temperature "$peak_milli")" "$artifact_bytes" "$pause_count" "$cooling_ms" "$limit_hold_count"
     exit "$build_status"
-fi
-
-if [ -n "$artifact" ] && [ -f "$artifact" ] && [ "$mode" = shipping ]; then
-    # Consume the full stream: grep -q can SIGPIPE strings and hide a match under pipefail.
-    if strings "$artifact" | grep -E '/home/masih|Desktop/p/' >/dev/null; then
-        printf 'build_result status=path_leak mode=%s profile=%s jobs=%s elapsed_ms=%s peak_c=%s artifact_bytes=%s pause_count=%s cooling_ms=%s limit_hold_count=%s\n' \
-            "$mode" "$profile" "$jobs" "$elapsed_ms" "$(format_temperature "$peak_milli")" "$artifact_bytes" "$pause_count" "$cooling_ms" "$limit_hold_count"
-        exit 1
-    fi
 fi
 
 printf 'build_result status=ok mode=%s profile=%s jobs=%s elapsed_ms=%s peak_c=%s artifact_bytes=%s pause_count=%s cooling_ms=%s limit_hold_count=%s\n' \
