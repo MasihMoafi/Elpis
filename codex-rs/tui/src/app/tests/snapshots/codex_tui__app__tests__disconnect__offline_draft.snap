@@ -2,9 +2,11 @@
 source: tui/src/app/tests/disconnect_tests.rs
 expression: "format!(\"{}\\n{}\",\nlines_to_single_string(&app.transcript_cells.last().unwrap().display_lines(80)),\nrender_bottom_popup(&app.chat_widget, 80))"
 ---
-■ Connection lost. Attempting to reconnect…
+
+› only once
+
  Elpis · model gpt-test default · location /tmp/project
-Reconnecting to app-server… (0s)                │CONTEXT LEDGER  context not
+Reconnecting to server… (0s)                    │CONTEXT LEDGER  context not
                                                 │measured · ≈0 source estimates
 • Queued follow-up inputs                       │Tab controls · Alt+C hide ·
   ↳ queued before disconnect                    │Ctrl+click open file

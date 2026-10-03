@@ -1,33 +1,32 @@
 ---
 source: tui/src/app/composer_hints_tests.rs
-assertion_line: 120
 expression: "crate::chatwidget::tests::helpers::normalize_snapshot_paths(snapshots.join(\"\\n\\n\"))"
 ---
 80 columns, 10 rows, running=false, queued=false
+Conversation
+
+⚠ Heads up, you have less than 10% of your 5h limit left. Run /usage for a
+  breakdown.
  Elpis · model gpt-5.6-sol default · location /tmp/project
-                            ⚠ 5h limit: 8% left │CONTEXT LEDGER  context not
-│                                               │measured · ≈0 source estimates
-› Ask Elpis to do anything                      │Tab controls · Alt+C hide ·
-│                                               │Ctrl+click open file
-  100% context left · Tab Context Led  ⚠ 1 · f2 │
-                                                │SMART PRUNE          [···] SYNC
-                                                │Reading current thread state
-                                                │Syncing… · /smart-prune on|off
-                                                │sets an explicit state
+                                                   ⚠ 5h limit: 8% left · /usage
+┌──────────────────────────────────────────────────────────────────────────────┐
+› Ask Elpis to do anything                                                     │
+└──────────────────────────────────────────────────────────────────────────────┘
+             100% context left · Tab Context Ledger    ⚠ 1 warning · f2 to view
 
 80 columns, 12 rows, running=true, queued=false
+
+⚠ Heads up, you have less than 5% of your 5h limit left. Run /usage for a
+  breakdown.
  Elpis · model gpt-5.6-sol default · location /tmp/project
-                                                │CONTEXT LEDGER  context not
-Elpising… (0s • esc to interrupt)               │measured · ≈0 source estimates
-                                   ⚠ 5h 2% left │Tab controls · Alt+C hide ·
-│                                               │Ctrl+click open file
-› draft stays                                   │
-│                                               │SMART PRUNE          [···] SYNC
-  enter to queue message                        │Reading current thread state
-                                                │Syncing… · /smart-prune on|off
-                                                │sets an explicit state
-                                                │
-                                                │SUBAGENTS             [━━━●] ON
+
+Elpising… (0s • esc to interrupt)
+
+                                              ⚠ 5h limit: only 2% left · /usage
+┌──────────────────────────────────────────────────────────────────────────────┐
+› draft stays                                                                  │
+└──────────────────────────────────────────────────────────────────────────────┘
+  enter to queue message                100% context left · Tab Context Ledger
 
 32 columns, 10 rows, running=true, queued=false
   Run /usage for a breakdown.
@@ -36,9 +35,9 @@ Elpising… (0s • esc to interrupt)               │measured · ≈0 source e
 Elpising… (0s • esc to interrup…
 
                   ⚠ 5h <1% left
-│
-› draft stays
-│
+┌──────────────────────────────┐
+› draft stays                  │
+└──────────────────────────────┘
   enter to queue message
 
 18 columns, 10 rows, running=true, queued=false
@@ -48,48 +47,48 @@ Elpising… (0s • esc to interrup…
 Elpising… (0s • e…
 
      ⚠ 5h 5% left
-│
-› draft stays
-│
+┌────────────────┐
+› draft stays    │
+└────────────────┘
   enter to queue
 
 80 columns, 18 rows, running=true, queued=true
+Conversation row 18
+Conversation row 19
+
+⚠ Heads up, you have less than 5% of your 5h limit left. Run /usage for a
+  breakdown.
  Elpis · model gpt-5.6-sol default · location /tmp/project
-                                                │CONTEXT LEDGER  context not
-Elpising… (0s • esc to interrupt)               │measured · ≈0 source estimates
-                                                │Tab controls · Alt+C hide ·
-• Queued follow-up inputs                       │Ctrl+click open file
-  ↳ queued follow-up                            │
-    ↑ edit all · enter send                     │SMART PRUNE          [···] SYNC
-                                   ⚠ 5h 2% left │Reading current thread state
-│                                               │Syncing… · /smart-prune on|off
-› draft stays                                   │sets an explicit state
-│ second line                                   │
-│                                               │SUBAGENTS             [━━━●] ON
-  enter to queue message                        │May delegate to other agents
-                                                │
-                                                │CONTEXT WINDOW  usage
-                                                │unavailable
-                                                │Context measurement unavailable
-                                                │until the first request
+
+Elpising… (0s • esc to interrupt)
+
+• Queued follow-up inputs
+  ↳ queued follow-up
+    ↑ edit all · enter send
+                                              ⚠ 5h limit: only 2% left · /usage
+┌──────────────────────────────────────────────────────────────────────────────┐
+› draft stays                                                                  │
+│ second line                                                                  │
+└──────────────────────────────────────────────────────────────────────────────┘
+  enter to queue message                100% context left · Tab Context Ledger
 
 80 columns, 11 rows, running=true, queued=true
  Elpis · model gpt-5.6-sol default · location /tmp/project
-Elpising… (0s • esc to interrupt)               │CONTEXT LEDGER  context not
-                                                │measured · ≈0 source estimates
-• Queued follow-up inputs                       │Tab controls · Alt+C hide ·
-  ↳ queued follow-up                            │Ctrl+click open file
-    ↑ edit all · enter send                     │
-│                                               │SMART PRUNE          [···] SYNC
-› draft stays                                   │Reading current thread state
-│ second line                                   │Syncing… · /smart-prune on|off
-│                                               │sets an explicit state
-  enter to queue message                        │
+Elpising… (0s • esc to interrupt)
+
+• Queued follow-up inputs
+  ↳ queued follow-up
+    ↑ edit all · enter send
+┌──────────────────────────────────────────────────────────────────────────────┐
+› draft stays                                                                  │
+│ second line                                                                  │
+└──────────────────────────────────────────────────────────────────────────────┘
+  enter to queue message                100% context left · Tab Context Ledger
 
 80 columns, 6 rows, running=true, queued=false
  Elpis · model gpt-5.6-sol default · location /tmp/project
-Elpising… (0s • esc to interrupt)               │CONTEXT LEDGER  context not
-│                                               │measured · ≈0 source estimates
-› draft stays                                   │Tab controls · Alt+C hide ·
-│                                               │Ctrl+click open file
-  enter to queue message                        │
+Elpising… (0s • esc to interrupt)
+┌──────────────────────────────────────────────────────────────────────────────┐
+› draft stays                                                                  │
+└──────────────────────────────────────────────────────────────────────────────┘
+  enter to queue message                100% context left · Tab Context Ledger

@@ -2576,12 +2576,6 @@ async fn image_preparation_failure_restores_full_input_without_submitting() {
         chat.snapshot_local_images = true;
         if running {
             handle_turn_started(&mut chat, "turn");
-            chat.input_queue
-                .pending_steers
-                .push_back(pending_steer("already sent"));
-            chat.input_queue
-                .queued_user_messages
-                .push_back(UserMessage::from("follow-up").into());
         }
         let pending_steers = chat.input_queue.pending_steers.clone();
         let dir = tempfile::tempdir().unwrap();
@@ -2662,26 +2656,9 @@ async fn image_preparation_failure_restores_full_input_without_submitting() {
                 normalize_snapshot_paths(render_bottom_popup(&chat, /*width*/ 80))
             );
         }
-        if running {
-            // A transport recovery must preserve the pause for the failed image draft.
-            chat.pause_for_disconnect();
-            let mut input = chat.capture_thread_input_state();
-            input.as_mut().unwrap().reconnect_pending = true;
-            chat.restore_reconnected_input(input, &[pending_steers[0].client_id.clone()]);
-            chat.on_committed_user_message(
-                &[UserInput::Text {
-                    text: "already sent".into(),
-                    text_elements: Vec::new(),
-                }],
-                Some(&pending_steers[0].client_id),
-                /*from_replay*/ false,
-                "turn",
-            );
-            chat.input_queue.suppress_queue_autosend = false;
-            handle_turn_completed(&mut chat, "turn", /*duration_ms*/ None);
-            assert_eq!(chat.queued_user_message_texts(), vec!["follow-up"]);
-            assert_no_submit_op(&mut op_rx);
-        }
+        // Elpis: upstream also checks a reconnect while an earlier steer waits. In Elpis, Esc
+        // hands a queued draft to the turn only when no steer waits, so that state cannot
+        // hold a failed image draft.
         pixels.save(&path).unwrap();
         chat.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
         if running {

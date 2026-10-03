@@ -56,8 +56,9 @@ hello world
 
 
 
+ Elpis · model gpt-5.6-sol default · location /tmp/project
                                                Copied 5 chars to host clipboard
-
-› hello world
-
-  GPT-5.6-Sol default · /tmp/project
+┌──────────────────────────────────────────────────────────────────────────────┐
+› hello world                                                                  │
+└──────────────────────────────────────────────────────────────────────────────┘
+                                        100% context left · Tab Context Ledger
