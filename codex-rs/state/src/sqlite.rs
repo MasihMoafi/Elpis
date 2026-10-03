@@ -120,6 +120,8 @@ const WORK_GRAPHS_DB: RuntimeDbSpec = RuntimeDbSpec {
     kind: DbKind::WorkGraphs,
     open_phase: "open_work_graphs",
     migrate_phase: "migrate_work_graphs",
+    // Elpis: work-graph writers are not audited for upstream's reclamation.
+    background_reclamation: false,
 };
 
 const RUNTIME_DBS: [RuntimeDbSpec; 8] = [
