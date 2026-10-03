@@ -201,6 +201,25 @@ async fn the_provider_list_names_every_configured_provider() {
 }
 
 #[tokio::test]
+async fn the_provider_list_has_no_twin_names_and_hides_bedrock_until_used() {
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.5")).await;
+    chat.open_elpis_provider_popup();
+    let popup = render_bottom_popup(&chat, /*width*/ 120);
+    assert!(popup.contains("Ollama (local)"), "{popup}");
+    assert!(!popup.contains("gpt-oss"), "{popup}");
+    assert!(!popup.contains("Bedrock"), "{popup}");
+    let rows: Vec<&str> = popup
+        .lines()
+        .filter_map(|line| line.trim_start_matches(['›', ' ']).split_once(". "))
+        .map(|(_, rest)| rest.split("  ").next().unwrap_or(rest).trim())
+        .collect();
+    let mut unique = rows.clone();
+    unique.sort();
+    unique.dedup();
+    assert_eq!(rows.len(), unique.len(), "{popup}");
+}
+
+#[tokio::test]
 async fn a_saved_key_lands_in_the_home_and_the_provider_is_listed_again() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.5")).await;
     let home = tempfile::tempdir().expect("tempdir");

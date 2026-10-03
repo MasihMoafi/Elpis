@@ -116,6 +116,16 @@ impl ChatWidget {
     }
 
     fn elpis_provider_name(&self, provider_id: &str) -> String {
+        // Codex names both local servers "gpt-oss"; name them apart.
+        match provider_id {
+            codex_model_provider_info::OLLAMA_OSS_PROVIDER_ID => {
+                return "Ollama (local)".to_string();
+            }
+            codex_model_provider_info::LMSTUDIO_OSS_PROVIDER_ID => {
+                return "LM Studio (local)".to_string();
+            }
+            _ => {}
+        }
         self.elpis_provider(provider_id)
             .map(|provider| provider.name.trim().to_string())
             .filter(|name| !name.is_empty())
@@ -245,10 +255,19 @@ impl ChatWidget {
     /// Every configured provider, each with what it needs to answer.
     pub(crate) fn open_elpis_provider_popup(&mut self) {
         let active = self.config.model_provider_id.clone();
+        // Amazon Bedrock needs an AWS account; list it only while a thread runs on it.
         let mut providers: Vec<(String, String)> = self
             .config
             .model_providers
             .keys()
+            .filter(|id| {
+                *id == &active
+                    || ![
+                        codex_model_provider_info::AMAZON_BEDROCK_PROVIDER_ID,
+                        codex_model_provider_info::AMAZON_BEDROCK_RUNTIME_PROVIDER_ID,
+                    ]
+                    .contains(&id.as_str())
+            })
             .map(|id| (id.clone(), self.elpis_provider_name(id)))
             .collect();
         providers.sort_by_key(|(_, name)| name.to_lowercase());
