@@ -109,7 +109,7 @@ Easy, Medium, and Hard are separate difficulty labels. They describe how much re
 
 **R10. Distinctive continuity-first identity** — Elpis uses a restrained ember-and-rose identity on deep charcoal and visibly separates runtime, model, context, memory, permissions, and evidence. Verdigris is reserved for positive facts such as fresh or admitted state. UI design is an acceptance contract, not proof of implementation.
 
-**R11. Claude models use the native provider path** — The removed Claude Code CLI-subprocess bridge is not a supported runtime. Claude models are supported through the native Anthropic Messages API adapter; authentication/provider selection must remain explicit.
+**R11. Claude models use the native provider path** — The removed Claude Code CLI-subprocess bridge is not a supported runtime. Claude models are supported through the native Anthropic Messages API adapter; authentication/provider selection must remain explicit. `elpis claude` (accepted 2026-10-03) is separate: it starts the Claude Code CLI and runs Smart Prune on its requests through a loopback proxy. It is not a model provider for Elpis sessions.
 
 **R12. Deterministic multi-agent orchestration** — Elpis owns a persisted task DAG above the agent lineage graph. It validates dependencies and bounded task roles, controls concurrency and write authority, measures file changes, requires evidence, and requires a directly dependent read-only verifier for writable work. Branch/worktree creation and integration remain deliberate coordinator actions. The exact contract and verification state live in [WORK_GRAPHS.md](WORK_GRAPHS.md).
 
