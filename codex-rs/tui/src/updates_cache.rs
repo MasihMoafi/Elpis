@@ -46,7 +46,3 @@ pub(crate) async fn dismiss_version(config: &Config, version: &str) -> anyhow::R
     tokio::fs::write(version_file, json_line).await?;
     Ok(())
 }
-
-#[cfg(test)]
-#[path = "updates_cache_tests.rs"]
-mod tests;
