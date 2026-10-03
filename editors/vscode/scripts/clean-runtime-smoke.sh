@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
-export HOME=/tmp/elpis-clean-home
-export CODEX_HOME="$HOME/.elpis"
-mkdir -p "$CODEX_HOME"
-coproc RUNTIME { /opt/elpis-app-server 2>/tmp/elpis-runtime.stderr; }
+# The release workflow mounts the released elpis binary at /opt/elpis.
+elpis=${ELPIS_BIN:-/opt/elpis}
+export HOME=${ELPIS_SMOKE_HOME:-/tmp/elpis-clean-home}
+export ELPIS_HOME="$HOME/.elpis"
+mkdir -p "$ELPIS_HOME"
+coproc RUNTIME { "$elpis" app-server 2>"$HOME/elpis-runtime.stderr"; }
 runtime_pid=$RUNTIME_PID
 trap 'kill "$runtime_pid" 2>/dev/null || true' EXIT
 send() { printf '%s\n' "$1" >&"${RUNTIME[1]}"; }

@@ -19,19 +19,28 @@ jobs:
       - name: Install build dependencies
         working-directory: editors/vscode
         run: npm ci
-      - name: Download the candidate package
+      - name: Download the candidate package and the Elpis release that it expects
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           version=$(node -p 'require("./editors/vscode/package.json").version')
+          runtime=$(node -p 'require("./editors/vscode/package.json").elpisRuntime')
+          case "$runtime" in
+            *-*) printf 'elpisRuntime %s is not a released Elpis version\n' "$runtime" >&2; exit 1;;
+          esac
           gh release download "extension-v$version" --repo "$GITHUB_REPOSITORY" --dir "$RUNNER_TEMP/elpis-package" --pattern '*.vsix' --pattern SHA256SUMS
+          gh release download "v$runtime" --repo "$GITHUB_REPOSITORY" --dir "$RUNNER_TEMP/elpis-runtime" --pattern elpis-linux-x86_64 --pattern elpis-linux-x86_64.sha256
+          (cd "$RUNNER_TEMP/elpis-package" && sha256sum --check SHA256SUMS)
+          (cd "$RUNNER_TEMP/elpis-runtime" && sha256sum --check elpis-linux-x86_64.sha256)
+          chmod +x "$RUNNER_TEMP/elpis-runtime/elpis-linux-x86_64"
           cd "$RUNNER_TEMP/elpis-package"
-          sha256sum --check SHA256SUMS
-          unzip -q elpis-editor-linux-x64.vsix -d unpacked
-      - name: Extension checks using the packaged runtime
+          unzip -q "elpis-editor-$version.vsix" -d unpacked
+          # The extension runs the installed elpis. The package must not carry a runtime.
+          test ! -e unpacked/extension/bin
+      - name: Extension checks using the released runtime
         working-directory: editors/vscode
         env:
-          ELPIS_EDITOR_TEST_RUNTIME: ${{ runner.temp }}/elpis-package/unpacked/extension/bin/elpis-app-server
+          ELPIS_EDITOR_TEST_RUNTIME: ${{ runner.temp }}/elpis-runtime/elpis-linux-x86_64
         run: |
           npm test
           npm run build
@@ -40,6 +49,6 @@ jobs:
       - name: Clean offline runtime smoke
         run: |
           timeout 45s docker run --rm --network none --read-only --tmpfs /tmp:rw,exec,mode=1777 --user 1000:1000 \
-            -v "$RUNNER_TEMP/elpis-package/unpacked/extension/bin/elpis-app-server:/opt/elpis-app-server:ro" \
+            -v "$RUNNER_TEMP/elpis-runtime/elpis-linux-x86_64:/opt/elpis:ro" \
             -v "$GITHUB_WORKSPACE/editors/vscode/scripts/clean-runtime-smoke.sh:/opt/smoke.sh:ro" \
             ubuntu:24.04 bash /opt/smoke.sh
