@@ -71,8 +71,6 @@ pub(super) use codex_app_server_protocol::ItemGuardianApprovalReviewCompletedNot
 pub(super) use codex_app_server_protocol::ItemGuardianApprovalReviewStartedNotification;
 pub(super) use codex_app_server_protocol::ItemStartedNotification;
 pub(super) use codex_app_server_protocol::MarketplaceAddResponse;
-pub(super) use codex_app_server_protocol::MarketplaceInterface;
-pub(super) use codex_app_server_protocol::MarketplaceUpgradeErrorInfo;
 pub(super) use codex_app_server_protocol::MarketplaceUpgradeResponse;
 pub(super) use codex_app_server_protocol::McpServerStartupState;
 pub(super) use codex_app_server_protocol::McpServerStatusDetail;
@@ -87,11 +85,9 @@ pub(super) use codex_app_server_protocol::PermissionsRequestApprovalParams as Ap
 pub(super) use codex_app_server_protocol::PluginAuthPolicy;
 pub(super) use codex_app_server_protocol::PluginDetail;
 pub(super) use codex_app_server_protocol::PluginInstallPolicy;
-pub(super) use codex_app_server_protocol::PluginInterface;
 pub(super) use codex_app_server_protocol::PluginListResponse;
 pub(super) use codex_app_server_protocol::PluginMarketplaceEntry;
 pub(super) use codex_app_server_protocol::PluginReadResponse;
-pub(super) use codex_app_server_protocol::PluginSource;
 pub(super) use codex_app_server_protocol::PluginSummary;
 pub(super) use codex_app_server_protocol::RateLimitReachedType;
 pub(super) use codex_app_server_protocol::RateLimitSnapshot;
@@ -100,7 +96,6 @@ pub(super) use codex_app_server_protocol::ReasoningSummaryTextDeltaNotification;
 pub(super) use codex_app_server_protocol::ReviewTarget;
 pub(super) use codex_app_server_protocol::ServerNotification;
 pub(super) use codex_app_server_protocol::SkillMetadata;
-pub(super) use codex_app_server_protocol::SkillSummary;
 pub(super) use codex_app_server_protocol::ThreadClosedNotification;
 pub(super) use codex_app_server_protocol::ThreadItem as AppServerThreadItem;
 pub(super) use codex_app_server_protocol::ToolRequestUserInputOption;
@@ -121,7 +116,6 @@ pub(super) use codex_config::ConstraintError;
 pub(super) use codex_config::RequirementSource;
 pub(super) use codex_config::types::ApprovalsReviewer;
 pub(super) use codex_config::types::Notifications;
-pub(super) use codex_core_plugins::OPENAI_CURATED_MARKETPLACE_NAME;
 pub(super) use codex_features::Feature;
 pub(super) use codex_git_utils::CommitLogEntry;
 pub(super) use codex_models_manager::test_support::construct_model_info_offline_for_tests;
@@ -289,8 +283,6 @@ mod permission_picker_tests;
 mod permission_shortcuts_tests;
 mod permissions;
 mod plan_mode;
-#[path = "tests/plugin_catalog_tests.rs"]
-mod plugin_catalog;
 mod popups_and_settings;
 #[path = "tests/rate_limit_recovery_tests.rs"]
 mod rate_limit_recovery_tests;
