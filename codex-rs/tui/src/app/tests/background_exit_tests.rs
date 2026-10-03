@@ -737,3 +737,22 @@ async fn daemon_ctrl_c_during_mcp_startup_does_not_show_background_exit_menu() -
     assert!(app_event_rx.try_recv().is_err());
     Ok(())
 }
+
+#[tokio::test]
+async fn esc_that_leaves_the_context_ledger_primes_the_rewind() -> Result<()> {
+    let (mut app, _events, _operations) = make_test_app_with_channels().await;
+    let mut app_server = crate::start_embedded_app_server_for_picker(&app.config).await?;
+    let mut tui = crate::tui::test_support::make_test_tui()?;
+    // A drawn frame records the width; the Ledger takes keys only once it is drawn.
+    app.chat_widget.note_rendered_width(/*width*/ 120);
+
+    app.handle_key_event(&mut tui, &mut app_server, KeyCode::Tab.into())
+        .await;
+    assert!(app.chat_widget.context_ledger_has_focus());
+    app.handle_key_event(&mut tui, &mut app_server, KeyCode::Esc.into())
+        .await;
+    assert!(!app.chat_widget.context_ledger_has_focus());
+    // The next Esc opens the rewind, as in Codex.
+    assert!(app.backtrack.primed);
+    Ok(())
+}
