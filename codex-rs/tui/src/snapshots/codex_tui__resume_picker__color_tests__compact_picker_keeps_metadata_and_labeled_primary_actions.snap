@@ -30,7 +30,7 @@ Resume 118x30
 
 
 ─────────────────────────────────────────────────────────────────────────────────────────────────────── 1 / 6 · 100% ─
- enter resume   ctrl+a archive   esc new   ctrl+c quit   tab focus   ←/→ option
+ enter resume   ctrl+a archive   ctrl+d delete   esc new   ctrl+c quit   tab focus   ←/→ option
  ctrl+o dense   ctrl+t preview   ctrl+e exp   ↑/↓ browse
 Resume 70x12
  Resume a previous session
@@ -42,7 +42,7 @@ Resume 70x12
     Session 2
   ↓ more
 ───────────────────────────────────────────────────────── 1 / 6 · 0% ─
- enter resume   ctrl+a archive   esc new   ctrl+c quit   tab focus
+ enter resume   ctrl+a archive   ctrl+d delete   esc new   ctrl+c quit
  ctrl+o dense   ctrl+t preview   ctrl+e exp   ↑/↓ browse
 Resume 38x12
  Resume a previous session

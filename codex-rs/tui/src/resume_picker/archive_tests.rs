@@ -158,7 +158,7 @@ fn archive_footer_shows_shortcut_for_resume_sessions() {
         .join("\n");
 
     insta::assert_snapshot!(footer, @r"
-     enter resume   ctrl+a archive   esc start new   ctrl+c quit   tab focus sort/filter   ←/→ change option
+     enter resume   ctrl+a archive   ctrl+d delete   esc start new   ctrl+c quit   tab focus sort/filter   ←/→ change option
      ctrl+o dense view   ctrl+t transcript   ctrl+e expand   ↑/↓ browse
     ");
 }

@@ -91,6 +91,11 @@ impl PickerState {
             return;
         }
 
+        self.remove_session_row(thread_id);
+    }
+
+    // Elpis: archive and delete use the same row and selection cleanup.
+    pub(super) fn remove_session_row(&mut self, thread_id: ThreadId) {
         let selected_key = self
             .filtered_rows
             .get(self.selected)
@@ -99,7 +104,7 @@ impl PickerState {
 
         self.all_rows.retain(|row| row.thread_id != Some(thread_id));
         // Keep the seen-row key as a tombstone so an older page that is already
-        // in flight cannot put the archived session back into the picker.
+        // in flight cannot put the removed session back into the picker.
         self.transcript_previews.remove(&thread_id);
         self.transcript_cells.remove(&thread_id);
         if self.expanded_thread_id == Some(thread_id) {
