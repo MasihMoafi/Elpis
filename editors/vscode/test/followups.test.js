@@ -8,10 +8,10 @@ async function fixture(run) {
   await fs.writeFile(path.join(home,'config.toml'),`model="gpt-5.4"\nmodel_context_window=128000\nmodel_provider="followup_eval"\n[model_providers.followup_eval]\nname="Followup eval"\nbase_url=${JSON.stringify(provider.url)}\nwire_api="responses"\nrequires_openai_auth=false\n`);
   let release,started;const gate=new Promise(r=>release=r),reading=new Promise(r=>started=r);
   const bridge={epoch:0,cancel(){this.epoch++;release();},async execute(){started();await gate;return {text:'TOOL_GATE_SENTINEL'};}};
-  const session=new Session(root,bridge,{home,transport:{env:{...process.env,CODEX_HOME:home,ELPIS_HOME:home}},executable:process.env.ELPIS_EDITOR_TEST_RUNTIME || path.join(__dirname,'../bin/elpis-app-server')});
+  const session=new Session(root,bridge,{home,executable:require('../src/runtime-query').resolveExecutable(process.env.ELPIS_EDITOR_TEST_RUNTIME)});
   let timer;const deadline=new Promise((_,reject)=>timer=setTimeout(()=>reject(new Error('Follow-up fixture timed out')),20000));
   try{await Promise.race([run({session,provider,reading,release,root}),deadline]);}
-  finally{clearTimeout(timer);session.dispose();await provider.close();await fs.rm(root,{recursive:true,force:true});}
+  finally{clearTimeout(timer);session.dispose();await provider.close();await fs.rm(root,{recursive:true,force:true,maxRetries:20,retryDelay:100});}
 }
 test('queued follow-up waits, then reaches a new real runtime turn',()=>fixture(async({session,provider,reading,release,root})=>{
   provider.actions.push(call('gate','editor_read',{uri:'file://'+root+'/fixture.txt'}),message('FIRST_TURN_COMPLETE'),request=>{assert(JSON.stringify(request.input).includes('QUEUED_SENTINEL'));return message('QUEUED_TURN_COMPLETE');});

@@ -14,7 +14,7 @@ const {Provider, call, message} = require('./runtime-eval');
       const home=path.join(root,'home');await fs.mkdir(home);
       await fs.writeFile(path.join(home,'config.toml'), `model="gpt-5.4"\nmodel_provider="approval_eval"\n[model_providers.approval_eval]\nname="Approval evaluation"\nbase_url=${JSON.stringify(provider.url)}\nwire_api="responses"\nrequires_openai_auth=false\n`);
       let reviewed=0;
-      const session=new Session(root,{cancel(){}},{executable:process.env.ELPIS_EDITOR_TEST_RUNTIME || path.join(process.cwd(),'bin/elpis-app-server'),home,approve:async request=>{assert.equal(request.method,'item/commandExecution/requestApproval');assert(request.params.command.includes('approval-sentinel'));reviewed++;return allow;}});
+      const session=new Session(root,{cancel(){}},{executable:require('../src/runtime-query').resolveExecutable(process.env.ELPIS_EDITOR_TEST_RUNTIME),home,approve:async request=>{assert.equal(request.method,'item/commandExecution/requestApproval');assert(request.params.command.includes('approval-sentinel'));reviewed++;return allow;}});
       provider.actions.push(request=>{
         const tool=request.tools.find(tool=>tool.name==='exec_command'||tool.name==='shell_command');
         assert(tool,'runtime must advertise a command tool');

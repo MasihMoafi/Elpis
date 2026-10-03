@@ -14,7 +14,7 @@ async function loadModels(root, options) {
     const cursors = new Set();
     let cursor;
     do {
-      const page = await rpc.request('model/list', { limit: 100, ...(cursor ? { cursor } : {}), ...(options.provider ? { modelProvider: options.provider } : {}) }, 15000);
+      const page = await rpc.request('model/list', { limit: 100, ...(cursor ? { cursor } : {}) }, 15000);
       if (!Array.isArray(page.data)) throw new Error('Elpis returned an invalid model catalog.');
       for (const model of page.data) {
         if (!model.hidden && typeof model.model === 'string') models.push({ label: model.displayName || model.model, description: model.model, model: model.model, efforts:(model.supportedReasoningEfforts || []).map(e => e.reasoningEffort), defaultEffort:model.defaultReasoningEffort, isDefault:model.isDefault });

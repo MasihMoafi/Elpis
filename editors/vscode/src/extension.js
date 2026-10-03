@@ -2,7 +2,7 @@
 const vscode = require('vscode');
 const fs = require('node:fs');
 const path = require('node:path');
-const { runtimeHome } = require('./runtime-query');
+const { resolveHome, configuredRuntime } = require('./runtime-query');
 const { EditorBridge } = require('./editor');
 const { Session } = require('./session');
 const { panelHtml } = require('./panel');
@@ -17,15 +17,18 @@ const { listHistory, readHistory, transcript, changeHistory } = require('./histo
 
 function activate(context) {
   const contextServices=new Map();let contextDisposed=false;
+  // The Elpis TUI reads editor context from <home>/ipc/ipc.sock when /ide is on.
   async function refreshContextServices(){
-    const homes=new Set((vscode.workspace.workspaceFolders||[]).filter(folder=>folder.uri.scheme==='file').map(folder=>runtimeHome({home:vscode.workspace.getConfiguration('elpis',folder.uri).get('home','')})));
+    if(process.platform==='win32')return;
+    const folders=(vscode.workspace.workspaceFolders||[]).filter(folder=>folder.uri.scheme==='file');
+    const homes=new Set((await Promise.all(folders.map(folder=>Promise.resolve().then(()=>resolveHome(configuredRuntime(vscode.workspace.getConfiguration('elpis',folder.uri)))).catch(error=>{console.error('Elpis home unavailable:',error.message);return null;})))).filter(Boolean));
     for(const [home,promise] of contextServices)if(!homes.has(home)){contextServices.delete(home);void promise.then(service=>service?.dispose());}
-    for(const home of homes)if(!contextServices.has(home)&&process.platform!=='win32'){
+    for(const home of homes)if(!contextServices.has(home)){
       const promise=require('./ide-context').startContextService({home,readContext:root=>require('./ide-context-editor').readEditorContext(vscode,root,home)}).catch(error=>{console.error('Elpis IDE context unavailable:',error.message);return null;});
       contextServices.set(home,promise);if(contextDisposed)void promise.then(service=>service?.dispose());
     }
   }
-  context.subscriptions.push({dispose(){contextDisposed=true;for(const promise of contextServices.values())void promise.then(service=>service?.dispose());}},vscode.workspace.onDidChangeWorkspaceFolders(()=>void refreshContextServices()),vscode.workspace.onDidChangeConfiguration(event=>{if(event.affectsConfiguration('elpis.home'))void refreshContextServices();}));
+  context.subscriptions.push({dispose(){contextDisposed=true;for(const promise of contextServices.values())void promise.then(service=>service?.dispose());}},vscode.workspace.onDidChangeWorkspaceFolders(()=>void refreshContextServices()),vscode.workspace.onDidChangeConfiguration(event=>{if(event.affectsConfiguration('elpis.home')||event.affectsConfiguration('elpis.executable'))void refreshContextServices();}));
   void refreshContextServices();
   const panels = new Map();
   async function openChat(panel) {
@@ -64,10 +67,7 @@ function activate(context) {
     async function connectionOptions() {
       const provider = selectedProvider(config().get('provider', ''));
       const apiKey = provider.key ? await context.secrets.get(`elpis.apiKey.${provider.id}`) : undefined;
-      let executable = config().get('executable', 'elpis-app-server');
-      const bundled = vscode.Uri.joinPath(context.extensionUri, 'bin', 'elpis-app-server').fsPath;
-      if (executable === 'elpis-app-server' && fs.existsSync(bundled)) executable = bundled;
-      return runtimeOptions({ executable, home: config().get('home', ''), accountSource: config().get('accountSource', 'elpis'), provider: provider.id, model: config().get('model', ''), reasoningEffort:config().get('reasoningEffort', ''), approve:request=>reviewApproval(vscode,request,details=>approvals.request(details)) }, apiKey);
+      return runtimeOptions({ ...configuredRuntime(config()), accountSource: config().get('accountSource', 'elpis'), provider: provider.id, model: config().get('model', ''), reasoningEffort:config().get('reasoningEffort', ''), approve:request=>reviewApproval(vscode,request,details=>approvals.request(details)) }, apiKey);
     }
     async function createSession(resumeThreadId,mode=currentMode().id) {
       const s = new Session(root.uri.fsPath, bridge, {...await connectionOptions(), approvalMode:mode, ...(resumeThreadId ? {resumeThreadId} : {})});
@@ -111,6 +111,11 @@ function activate(context) {
       approvals.cancel();
       session.dispose(); session = await createSession(); post({ type: 'reset' }); selection();
     }
+    // Starts a new runtime process with the current settings and keeps the conversation.
+    async function restartSession() {
+      const threadId=session.hasTurns ? session.threadId : undefined;
+      session.dispose();session=await createSession(threadId);await session.connect();selection();
+    }
     panel.webview.html = panelHtml(vscode, panel.webview, context.extensionUri);
     const handleMessage = async (message, propagateError=false) => {
       try {
@@ -150,12 +155,11 @@ function activate(context) {
           if(session.busy)throw new Error('Finish or stop the response before changing accounts.');
           if(!['elpis','codex'].includes(message.value))throw new Error('Unknown login source.');
           await config().update('accountSource',message.value,vscode.ConfigurationTarget.Global);
-          const threadId=session.hasTurns ? session.threadId : undefined;
-          session.dispose();session=await createSession(threadId);await session.connect();selection();
+          await restartSession();
           panel.webview.postMessage({type:'status',text:'Login updated.'});return;
         }
         if (message.type === 'config') {
-          const file = path.join(runtimeHome({home:config().get('home','')}), 'config.toml');
+          const file = path.join(await resolveHome(configuredRuntime(config())), 'config.toml');
           if (!fs.existsSync(file)) throw new Error('No config.toml exists in the configured Elpis home yet.');
           await vscode.window.showTextDocument(await vscode.workspace.openTextDocument(vscode.Uri.file(file)));
         }
@@ -270,17 +274,15 @@ function activate(context) {
           if (!provider.key) throw new Error('Select an explicit provider first. Existing Elpis configuration uses its current authentication.');
           const value = await vscode.window.showInputBox({ title: `${provider.label} API key`, password: true, ignoreFocusOut: true, prompt: 'Stored in VS Code SecretStorage. Leave empty to remove the stored override and use runtime authentication.' });
           if (value === undefined) return;
-          await session.connect();
           if(session.busy)throw new Error('Finish or stop the response before changing authentication.');
-          await session.rpc.request('account/provider/credentials/set',{provider:provider.id,apiKey:value.trim() || null});
           if (value.trim()) await context.secrets.store(`elpis.apiKey.${provider.id}`, value.trim());
           else await context.secrets.delete(`elpis.apiKey.${provider.id}`);
-          session.options.env=value.trim()?{[provider.key]:value.trim()}:{};
-          if(!value.trim())await require('./account-source').connectAccount(session.rpc,session.options);
-          post({ type: 'status', text: 'Authentication updated for this shared runtime.' });
+          // The runtime reads provider keys from its environment, so a new process applies the change.
+          await restartSession();
+          post({ type: 'status', text: 'Authentication updated. Elpis restarted and kept this conversation.' });
         }
         if (message.type === 'runtime') {
-          const files = await vscode.window.showOpenDialog({ title: 'Select the Elpis-built app-server executable', canSelectFiles: true, canSelectFolders: false, canSelectMany: false });
+          const files = await vscode.window.showOpenDialog({ title: 'Select the elpis binary', canSelectFiles: true, canSelectFolders: false, canSelectMany: false });
           if (!files?.length) return;
           await config().update('executable', files[0].fsPath, vscode.ConfigurationTarget.Global);
           await resetSession();

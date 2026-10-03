@@ -53,6 +53,8 @@ async function open({ folder = false, file = false, trusted = true, resumeFailur
     if (name === './session') return { Session };
     if (name === './history') return {...localRequire(name),readHistory:async()=>({id:'resumed'})};
     if (name === './ide-context') return { startContextService: async () => ({ dispose() {} }) };
+    // The real elpis binary never runs here: the home comes from the fixture.
+    if (name === './runtime-query') return { ...localRequire(name), resolveHome: async () => directory };
     return localRequire(name);
   }, module, module.exports);
   module.exports.activate(context);

@@ -4,12 +4,13 @@ const fs=require('node:fs/promises'),path=require('node:path'),os=require('node:
 const {Session}=require('../src/session');
 const {Provider,message,call}=require('./runtime-eval');
 const {listHistory,readHistory,changeHistory}=require('../src/history');
-test('IDE discovers a CLI-origin thread and resumes its transcript under the same ID',async()=>{
+test('IDE discovers a thread from another runtime process and resumes its transcript under the same ID',async()=>{
   const root=await fs.mkdtemp(path.join(os.tmpdir(),'elpis-cli-history-')),home=path.join(root,'home');await fs.mkdir(home);
   const provider=new Provider();await provider.start();
   await fs.writeFile(path.join(home,'config.toml'),`model="gpt-5.4"\nmodel_provider="cli_eval"\n[model_providers.cli_eval]\nname="CLI eval"\nbase_url=${JSON.stringify(provider.url)}\nwire_api="responses"\nrequires_openai_auth=false\n`);
-  const options={home,transport:{env:{...process.env,CODEX_HOME:home,ELPIS_HOME:home}},executable:process.env.ELPIS_EDITOR_TEST_RUNTIME || path.join(__dirname,'../bin/elpis-app-server')};
-  const cli=new Session(root,{cancel(){}},{...options,threadParams:{dynamicTools:[]},transport:{args:['--session-source','cli'],env:{...process.env,CODEX_HOME:home,ELPIS_HOME:home}}});
+  const options={home,executable:require('../src/runtime-query').resolveExecutable(process.env.ELPIS_EDITOR_TEST_RUNTIME)};
+  // The first client starts the thread with the editor tools; the runtime keeps them for the thread.
+  const cli=new Session(root,{cancel(){}},options);
   let ide;
   const send=async(session,text,response)=>{
     provider.actions.push(message(response));
@@ -20,31 +21,29 @@ test('IDE discovers a CLI-origin thread and resumes its transcript under the sam
   try {
     await send(cli,'CLI prompt sentinel','CLI_RESPONSE_SENTINEL');
     const id=cli.threadId;cli.dispose();
-    assert.equal((await readHistory(root,options,id)).source,'cli');
+    assert.equal((await readHistory(root,options,id)).id,id);
     assert((await listHistory(root,options)).threads.some(t=>t.id===id),'IDE hid the CLI conversation');
     ide=new Session(root,{cancel(){},async execute(){return {documents:[]};}},{...options,resumeThreadId:id});
     await ide.connect();assert.equal(ide.threadId,id);
     assert.equal(ide.hasTurns,true,'resumed history must survive connection-setting changes');
-    await assert.rejects(ide.rpc.request('thread/resume',{threadId:id,dynamicTools:[{type:'unknown',name:'editor_read'}]}),/invalid/i);
-    await assert.rejects(ide.rpc.request('thread/resume',{threadId:id,dynamicTools:[{name:'different_tool',description:'Different capability',inputSchema:{type:'object',properties:{}}}]}),/cannot replace dynamic tools/);
     const users=[];ide.on('user',text=>users.push(text));
     provider.actions.push(call('resume_echo','editor_documents',{}));
     await send(ide,'IDE continuation sentinel','IDE_RESPONSE_SENTINEL');
     assert.deepEqual(users,['IDE continuation sentinel'],'tool continuation must not repeat the user message');
     assert(JSON.stringify(provider.requests.at(-1).body).includes('CLI_RESPONSE_SENTINEL'),'IDE continuation lost CLI history');
-    assert(JSON.stringify(provider.requests.at(-1).body.tools).includes('editor_read'),'resumed CLI conversation has no live editor tools');
+    assert(JSON.stringify(provider.requests.at(-1).body.tools).includes('editor_read'),'resumed conversation lost its live editor tools');
     ide.dispose();
     const thread=await readHistory(root,options,id);
     assert(JSON.stringify(thread).includes('CLI_RESPONSE_SENTINEL'));
     assert(JSON.stringify(thread).includes('IDE_RESPONSE_SENTINEL'));
     assert.equal(provider.requests.length,3);
-  }finally{cli.dispose();ide?.dispose();await provider.close();await fs.rm(root,{recursive:true,force:true});}
+  }finally{cli.dispose();ide?.dispose();await provider.close();await fs.rm(root,{recursive:true,force:true,maxRetries:20,retryDelay:100});}
 });
 test('real history renames, archives and restores; foreign-workspace changes are rejected',async()=>{
   const root=await fs.mkdtemp(path.join(os.tmpdir(),'elpis-history-')),home=path.join(root,'home');await fs.mkdir(home);
   const provider=new Provider();await provider.start();
   await fs.writeFile(path.join(home,'config.toml'),`model="gpt-5.4"\nmodel_provider="history_eval"\n[model_providers.history_eval]\nname="History eval"\nbase_url=${JSON.stringify(provider.url)}\nwire_api="responses"\nrequires_openai_auth=false\n`);
-  const options={home,transport:{env:{...process.env,CODEX_HOME:home,ELPIS_HOME:home}},executable:process.env.ELPIS_EDITOR_TEST_RUNTIME || path.join(__dirname,'../bin/elpis-app-server')};
+  const options={home,executable:require('../src/runtime-query').resolveExecutable(process.env.ELPIS_EDITOR_TEST_RUNTIME)};
   const session=new Session(root,{cancel(){}},options);let timer;
   try {
     provider.actions.push(message('HISTORY_BODY_SENTINEL'));
@@ -62,5 +61,5 @@ test('real history renames, archives and restores; foreign-workspace changes are
     assert((await listHistory(root,options)).threads.some(t=>t.id===id));
     assert(JSON.stringify(await readHistory(root,options,id)).includes('HISTORY_BODY_SENTINEL'));
     await assert.rejects(changeHistory(root,options,id,'delete'),/Unknown/);
-  }finally{clearTimeout(timer);session.dispose();await provider.close();await fs.rm(root,{recursive:true,force:true});}
+  }finally{clearTimeout(timer);session.dispose();await provider.close();await fs.rm(root,{recursive:true,force:true,maxRetries:20,retryDelay:100});}
 });

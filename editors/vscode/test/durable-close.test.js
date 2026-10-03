@@ -13,7 +13,7 @@ test('failed durable child resume reports failure and rolls back loading until r
 test('failed durable child spawn reports failure without starting an untracked child', {timeout:80000}, t => durableLifecycle(t, 'spawn'));
 
 async function durableLifecycle(t, operation) {
-  const binary = process.env.ELPIS_EDITOR_TEST_RUNTIME || path.join(__dirname, '../bin/elpis-app-server');
+  const binary = require('../src/runtime-query').resolveExecutable(process.env.ELPIS_EDITOR_TEST_RUNTIME);
   const root = fs.mkdtempSync(path.join(os.tmpdir(), `elpis-durable-${operation}-`));
   const home = path.join(root, 'home'), cwd = path.join(root, 'project');
   for (const dir of [home, cwd]) fs.mkdirSync(dir);
@@ -72,7 +72,7 @@ async function durableLifecycle(t, operation) {
     fs.writeFileSync(path.join(home,'config.toml'),`model = "${model}"\nmodel_provider = "fixture"\nmodel_context_window = 128000\nweb_search = "disabled"\ncheck_for_update_on_startup = false\n[agents]\nmax_threads = 1\n[features]\nmulti_agent = true\nmulti_agent_v2 = false\n[model_providers.fixture]\nname = "Offline close regression"\nbase_url = "http://127.0.0.1:${server.address().port}/v1"\nwire_api = "responses"\nrequires_openai_auth = false\nrequest_max_retries = 0\nstream_max_retries = 0\n`);
     fs.writeFileSync(path.join(home,'hooks.json'),'{}');
     const env={PATH:process.env.PATH,HOME:root,CODEX_HOME:home,ELPIS_HOME:home,NO_PROXY:'127.0.0.1,localhost'};
-    rpc=new AppServer(path.resolve(binary),cwd,{env});
+    rpc=new AppServer(binary,cwd,{args:['app-server'],env});
     rpc.child.stderr.on('data',data=>fs.appendFileSync(path.join(root,'runtime.log'),data));
     rpc.on('disconnect',()=>{});
     rpc.on('notification',n=>notifications.push(n));

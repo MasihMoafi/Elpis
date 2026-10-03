@@ -35,7 +35,7 @@ test('real runtime changes sandbox and reviewer on the same resumed conversation
   await fs.writeFile(path.join(home,'config.toml'),`model="gpt-5.4"\nmodel_provider="mode_eval"\n[model_providers.mode_eval]\nname="Mode eval"\nbase_url=${JSON.stringify(provider.url)}\nwire_api="responses"\nrequires_openai_auth=false\n`);
   try {
     for(const [mode,sandbox,policy,reviewer] of [['ask','readOnly','on-request','user'],['auto','workspaceWrite','on-request','auto_review'],['full','dangerFullAccess','never','user'],['ask','readOnly','on-request','user']]){
-      const session=new Session(root,{cancel(){}},{home,transport:{env:{...process.env,CODEX_HOME:home,ELPIS_HOME:home}},executable:process.env.ELPIS_EDITOR_TEST_RUNTIME || path.join(__dirname,'../bin/elpis-app-server'),approvalMode:mode,...(threadId?{resumeThreadId:threadId}:{})});
+      const session=new Session(root,{cancel(){}},{home,executable:require('../src/runtime-query').resolveExecutable(process.env.ELPIS_EDITOR_TEST_RUNTIME),approvalMode:mode,...(threadId?{resumeThreadId:threadId}:{})});
       try {
         let result=await session.connect();
         if(threadId){
@@ -53,5 +53,5 @@ test('real runtime changes sandbox and reviewer on the same resumed conversation
         }
       }finally{session.dispose();}
     }
-  }finally{await provider.close();await fs.rm(root,{recursive:true,force:true});}
+  }finally{await provider.close();await fs.rm(root,{recursive:true,force:true,maxRetries:20,retryDelay:100});}
 });

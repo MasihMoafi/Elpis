@@ -6,8 +6,7 @@ const path = require('node:path');
 const http = require('node:http');
 const { Session } = require('../src/session');
 const { providers, runtimeOptions } = require('../src/providers');
-const runtime = process.env.ELPIS_EDITOR_TEST_RUNTIME;
-if (!runtime) throw new Error('Set ELPIS_EDITOR_TEST_RUNTIME to an Elpis-built app-server.');
+const runtime = require('../src/runtime-query').resolveExecutable(process.env.ELPIS_EDITOR_TEST_RUNTIME);
 const marker = 'PROVIDER_TOOL_ONLY_734129';
 function event(res, type, data) { res.write(`${type ? `event: ${type}\n` : ''}data: ${JSON.stringify(data)}\n\n`); }
 function respond(res, provider, tool) {

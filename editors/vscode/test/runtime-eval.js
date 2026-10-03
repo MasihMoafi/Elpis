@@ -80,7 +80,7 @@ async function runtimeEvaluation({ vscode, root, bridge, document, sentinel, evi
   const home = path.join(data, 'runtime-home');
   await fs.mkdir(home, { recursive: true });
   await fs.writeFile(path.join(home, 'config.toml'), `model = "gpt-5.4"\nmodel_provider = "editor_eval"\nmodel_context_window = 128000\n[model_providers.editor_eval]\nname = "Deterministic editor acceptance provider"\nbase_url = ${JSON.stringify(provider.url)}\nwire_api = "responses"\nrequires_openai_auth = false\n`);
-  const options = { executable: process.env.ELPIS_EDITOR_TEST_RUNTIME, transport: { env: { ...process.env, CODEX_HOME: home, ELPIS_HOME: home } } };
+  const options = { executable: require('../src/runtime-query').resolveExecutable(process.env.ELPIS_EDITOR_TEST_RUNTIME), home };
   const sessions = [];
   const customInstruction='PERSONALIZATION_SENTINEL: Explain changes before suggesting follow-up work.';
   const configPath=path.join(home,'config.toml');

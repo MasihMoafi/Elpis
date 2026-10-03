@@ -7,8 +7,8 @@ const { spawn } = require('node:child_process');
 
 (async () => {
   const extension = path.resolve(__dirname, '..');
-  const runtime = process.env.ELPIS_EDITOR_TEST_RUNTIME || path.join(extension, 'bin/elpis-app-server');
-  if (!fs.existsSync(runtime)) throw new Error('Set ELPIS_EDITOR_TEST_RUNTIME to an Elpis app-server binary.');
+  const runtime = require('../src/runtime-query').resolveExecutable(process.env.ELPIS_EDITOR_TEST_RUNTIME);
+  if (!fs.existsSync(runtime)) throw new Error('Install elpis, or set ELPIS_EDITOR_TEST_RUNTIME to the elpis binary.');
   const base = fs.mkdtempSync(path.join(os.tmpdir(), 'elpis-ide-startup-'));
   for (const mode of ['empty', 'file', 'folder']) {
     const data = path.join(base, mode);

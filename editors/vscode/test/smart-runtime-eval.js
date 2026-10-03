@@ -15,7 +15,7 @@ async function run(executable){
   const config=`model="gpt-5.6-luna"\nmodel_provider="editor_eval"\n[features]\nautomatic_context_pruning=${mode!=='off'}\n[model_providers.editor_eval]\nname="Local Smart Pruning acceptance"\nbase_url=${JSON.stringify(provider.url)}\nwire_api="responses"\nrequires_openai_auth=false\n`;
   await fs.writeFile(path.join(home,'config.toml'),config);await fs.writeFile(path.join(home,'hooks.json'),'{"hooks":{}}');
   const bridge={epoch:0,cancel(){},execute:async()=>({text:raw,version:1})};
-  const session=new Session(home,bridge,{executable,transport:{env:{...process.env,CODEX_HOME:home,ELPIS_HOME:home}}});
+  const session=new Session(home,bridge,{executable,home});
   const send=async text=>{
    const done=new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(Error('Smart Pruning turn timed out')),90000);session.once('completed',turn=>{clearTimeout(timer);turn.status==='failed'?reject(Error(JSON.stringify(turn.error))):resolve(turn);});});
    await Promise.all([done,session.send(text)]);
@@ -51,5 +51,5 @@ async function run(executable){
  }
  return results;
 }
-if(require.main===module)run(process.env.ELPIS_EDITOR_TEST_RUNTIME).then(results=>console.log(JSON.stringify(results,null,2))).catch(error=>{console.error(error);process.exitCode=1;});
+if(require.main===module)run(require('../src/runtime-query').resolveExecutable(process.env.ELPIS_EDITOR_TEST_RUNTIME)).then(results=>console.log(JSON.stringify(results,null,2))).catch(error=>{console.error(error);process.exitCode=1;});
 module.exports={run};

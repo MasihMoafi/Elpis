@@ -81,15 +81,15 @@
         },
         "elpis.executable": {
           "type": "string",
-          "default": "elpis-app-server",
+          "default": "elpis",
           "scope": "machine",
-          "description": "Standalone app-server built from Elpis (not the elpis TUI or upstream Codex). Existing Elpis authentication/configuration is used."
+          "description": "The elpis binary. A name is found on PATH, then in ~/.local/bin. The terminal runs it, and the chat view runs `elpis app-server`."
         },
         "elpis.home": {
           "type": "string",
           "default": "",
           "scope": "machine",
-          "description": "Optional Elpis state/configuration directory. Empty uses ELPIS_HOME or ~/.elpis, matching the Elpis TUI. Inherited CODEX_HOME is not used."
+          "description": "Optional Elpis home directory, given to elpis as ELPIS_HOME. Empty lets elpis choose its home (ELPIS_HOME, else its default), the same as in your terminal."
         },
         "elpis.provider": {
           "scope": "resource",
@@ -136,11 +136,10 @@
     }
   },
   "scripts": {
-    "package:linux": "npm run build && node scripts/package-linux.js",
     "test:providers": "node test/provider-paths.js",
     "build": "tailwindcss -i src/style.css -o assets/style.css --minify && node scripts/build-assets.js",
-    "package": "npm run build && vsce package --no-dependencies --allow-missing-repository --out elpis-editor-0.1.0.vsix",
-    "test": "node --test test/rpc.test.js test/provider-catalog.test.js test/approvals.test.js test/model-repair.test.js test/settings.test.js test/account-source.test.js test/approval-modes.test.js test/history-controls.test.js test/shared-session.test.js test/automatic-shared.test.js test/shared-credentials.test.js test/durable-close.test.js test/followups.test.js test/inline-approval.test.js test/ide-context.test.js test/smart-pruning.test.js test/startup.test.js test/webview-cdp.test.js",
+    "package": "npm run build && vsce package --no-dependencies --allow-missing-repository --out elpis-editor-$npm_package_version.vsix",
+    "test": "node --test test/rpc.test.js test/provider-catalog.test.js test/approvals.test.js test/model-repair.test.js test/settings.test.js test/account-source.test.js test/approval-modes.test.js test/history-controls.test.js test/durable-close.test.js test/followups.test.js test/inline-approval.test.js test/ide-context.test.js test/smart-pruning.test.js test/startup.test.js test/webview-cdp.test.js",
     "test:editor": "node test/launch.js"
   },
   "devDependencies": {
