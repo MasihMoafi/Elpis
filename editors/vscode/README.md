@@ -1,5 +1,26 @@
 # Elpis for VS Code (Linux)
 
+**Elpis: Open** runs the installed `elpis` in an editor tab. It is the Elpis of
+your terminal: the same binary, home, login, models and commands. In that tab,
+`/ide` turns on editor context: Elpis gets the selection and the open files of
+this window. The connection is local. It respects workspace trust and the
+**Elpis: Editor Access** setting.
+
+The extension does not bundle a runtime. It runs `elpis` from PATH, else from
+`~/.local/bin`. **Elpis: Executable** selects a different binary. **Elpis: Home**
+gives the binary an `ELPIS_HOME`. When it is empty, `elpis` uses its own home.
+When the binary reports a version that is not the `elpisRuntime` version in
+`package.json`, the extension shows a warning.
+
+## Chat view (frozen)
+
+The chat view is off by default. **Elpis: Use Chat View** turns it on. Then
+**Elpis: Open** and **Elpis: Open Chat** open the chat view. Each chat view runs
+its own `elpis app-server` process. It does not share a live runtime with the
+terminal, but its History shows the chats of this folder from the terminal and
+from the chat view. A setting whose description starts with "Chat view only" has
+no effect on the terminal.
+
 Type `/` in the chat composer to search commands. Arrow keys select, Tab completes,
 Enter runs, and Escape dismisses. Supported commands: `/model`, `/permissions`,
 `/new`, `/clear`, `/resume`, `/settings`, `/compact`, `/prune`, `/review`, `/copy`,
@@ -9,90 +30,19 @@ Commands do not run while a response is active. `/review` reviews uncommitted
 changes; `/compact` requires an existing conversation. This is not the full TUI
 command set.
 
-With the same project open in VS Code, the existing Elpis CLI's `/ide on` includes
-the editor selection and open-file metadata. `/ide off` disables CLI inclusion.
-The connection is local, scoped to the project and Elpis home, and respects
-workspace trust and the editor-access setting.
-
-The current local candidate shares one runtime between ordinary Unix CLI and IDE
-launches using the same Elpis home. Open History in the IDE to resume the CLI chat
-while the terminal remains open. Both clients observe messages, active responses,
-and interruptions. Editor tools execute in one attached editor; attaching an
-editor to a CLI-created chat makes those tools available on subsequent turns.
-`/ide` controls editor context inclusion independently of conversation attachment.
-Explicit CLI configuration overrides and profiles currently use a private runtime.
-
-Provider keys saved through the IDE apply to the shared runtime for that Elpis
-home. VS Code SecretStorage retains them; the runtime keeps overrides in memory.
-Removing an override restores runtime authentication without clearing the chat.
-An OpenAI override uses temporary external authentication and preserves the saved
-login. These shared-runtime changes are not included in the published 0.1.17 VSIX.
-
-The published Linux x64 VSIX bundles the tested Elpis app-server. Extension
-versions are separate from Elpis CLI versions.
-
-An installable local VS Code extension with chat, live unsaved document reads,
-diagnostics, definitions, references, and approval-gated editor edits. Elpis's
-existing app-server owns inference, tools, continuity and compression. VS Code
-supplies its own installed language providers. Masih accepted extension 0.1.17
-on 2026-09-09. See `RELEASE.md` for release verification and limits.
-
 ## Install
 
-Download `elpis-editor-linux-x64.vsix` from the
-[extension 0.1.17 release](https://github.com/MasihMoafi/Elpis/releases/tag/extension-v0.1.17).
-You need Linux x64 and VS Code 1.136 or later. Install with:
-
-```sh
-code --install-extension ./elpis-editor-linux-x64.vsix
-```
-
-Building from source additionally needs Node/npm and an
-**app-server built from this Elpis repository**. The installed `elpis` TUI does
-not have an `app-server` subcommand. Upstream Codex's app-server does not establish
-Elpis compression or continuity support; do not substitute it for this runtime.
-
-From this directory:
+You need Linux, VS Code 1.136 or later and an installed `elpis`
+(`elpis --version`). From this directory:
 
 ```sh
 npm ci
-ELPIS_APP_SERVER=/path/to/codex-app-server npm run package:linux
-code --install-extension ./elpis-editor-linux-x64.vsix
+npm run package
+code --install-extension ./elpis-editor-$(node -p 'require("./package.json").version').vsix
 ```
 
-On Masih's workstation source `~/.bash_aliases` and run `nope` before downloads.
-The package includes its styles and script; it does not load a CDN or download a
-model. It has no production npm dependencies.
-
-If no Elpis-built server is available, build the existing standalone target from
-the repository root after reading `docs/LOCAL_BUILD_RULES.md`:
-
-```sh
-cd codex-rs
-CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 \
-  CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_DEV_INCREMENTAL=false \
-  nice -n 10 cargo build --locked -p codex-app-server --bin codex-app-server
-```
-
-This builds `target/debug/codex-app-server`. It does not replace the daily-driver
-binary. Cold builds take time and disk; use a known writable target directory
-via `CARGO_TARGET_DIR` if needed. Either put a copy on PATH named
-`elpis-app-server`, or set **Elpis: Executable** in VS Code's user settings to the
-absolute path of that artifact. The setting is machine-scoped so repositories
-cannot select an executable on your behalf. The default is `elpis-app-server`.
-
-The server reads normal Elpis configuration and authentication (`~/.elpis`, or
-`ELPIS_HOME` / the machine-scoped **Elpis: Home** setting). Inherited `CODEX_HOME`
-is ignored, matching the Elpis TUI and avoiding Codex's separate database.
-Authenticate with Elpis first. The extension
-does not read, copy, render, or change credentials. Optional **Elpis: Model**
-selects a model; leaving it empty retains the configured model/provider.
-
-Open a trusted local project and run **Elpis: Open Chat** from the command
-palette. In a multi-folder workspace, choose the folder for the conversation.
-The identity line shows executable, runtime user agent, model and workspace.
-Each window/folder uses its own child process and fresh thread. Closing the panel
-stops that process; existing Elpis rollouts remain on disk.
+The package has no production npm dependencies and loads no CDN. On Masih's
+workstation, source `~/.bash_aliases` and run `nope` before downloads.
 
 ## Working with code
 
@@ -138,8 +88,7 @@ the original extension bundle predates its Smart Pruning notifications.
 code --uninstall-extension elpis-local.elpis-editor
 ```
 
-Remove any dedicated server copy you installed and the `elpis.*` settings if
-desired. Removal does not delete Elpis credentials, config or conversation
+Remove the `elpis.*` settings if desired. Removal does not delete Elpis credentials, config or conversation
 rollouts. For isolated profiles, use the same `--user-data-dir` and
 `--extensions-dir` arguments for installation/removal.
 
@@ -148,7 +97,7 @@ rollouts. For isolated profiles, use the same `--user-data-dir` and
 ```sh
 npm test
 npm run test:editor
-ELPIS_EDITOR_TEST_RUNTIME=/absolute/path/to/codex-app-server npm run test:editor
+ELPIS_EDITOR_TEST_RUNTIME=/absolute/path/to/elpis npm run test:editor
 ```
 
 The editor harness uses Xvfb and xdotool, an isolated user profile and extensions directory,
