@@ -186,6 +186,12 @@ fi
 export CARGO_BUILD_JOBS=$jobs
 export RUST_TEST_THREADS=1
 export CODEX_SKIP_BWRAP_BUILD=1
+# insta reads and writes snapshot files in this folder. All worktrees use the
+# same target folder. Without this setting, a test binary from a different
+# worktree can write its snapshots into that worktree. The insta macros also
+# read this variable when they compile, thus Cargo compiles a test crate again
+# when you select a different worktree.
+export INSTA_WORKSPACE_ROOT="$repo_root/codex-rs"
 
 append_rustflag() {
     if [ -n "${RUSTFLAGS:-}" ]; then

@@ -137,6 +137,8 @@ For focused tests, use the `next-cargo` mode with one crate per command, for exa
 `ELPIS_NEXT_CARGO_ARGS="test --profile dev-small --locked --offline -p codex-tui --lib <filter>" scripts/build-elpis-local next-cargo`.
 Do not test the TUI and config crates in one command. That enables config's test-only
 networking features throughout the TUI dependency graph and causes a large recompilation.
+The script sets `INSTA_WORKSPACE_ROOT` to the selected worktree's `codex-rs`, so snapshot
+files stay in that worktree.
 The workspace also enables `similar/inline`, matching the snapshot-test dependency
 features so switching between TUI tests and the installable build reuses core.
 
