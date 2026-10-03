@@ -2,7 +2,8 @@
 set -euo pipefail
 helper=$(realpath "${1:-scripts/restore-cargo-cache-source-times.sh}")
 fixture=$(mktemp -d)
-trap 'gio trash "$fixture"' EXIT
+# /tmp is cleared at boot; gio cannot trash on that mount.
+trap 'gio trash "$fixture" 2>/dev/null || true' EXIT
 cd "$fixture"
 git init -q
 git config user.name 'Cache fixture'
@@ -34,7 +35,7 @@ touch -d @123 codex-rs/source.rs
 printf extra > codex-rs/untracked.rs
 bash "$helper" "cache-$cached_sha"
 test "$(stat -c %Y codex-rs/source.rs)" = 123
-gio trash codex-rs/untracked.rs
+mv codex-rs/untracked.rs .git/untracked.rs
 printf dirty >> codex-rs/source.rs
 touch -d @123 codex-rs/source.rs
 bash "$helper" "cache-$cached_sha"
