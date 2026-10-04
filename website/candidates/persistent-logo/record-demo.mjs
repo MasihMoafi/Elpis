@@ -1,6 +1,6 @@
 // Records the illustrative browser candidate using system ffmpeg; no downloads.
 // Start preview.mjs first. Refuses to replace an existing recording.
-import { chromium } from '/home/masih/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright-core/index.mjs';
+import { chromium } from 'playwright-core';
 import { spawn } from 'node:child_process';
 import { access } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
