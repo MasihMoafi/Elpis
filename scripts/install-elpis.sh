@@ -23,7 +23,7 @@ esac
 
 repository=${ELPIS_GITHUB_REPOSITORY:-MasihMoafi/Elpis}
 install_dir=${ELPIS_INSTALL_DIR:-"$HOME/.local/bin"}
-release_version=${ELPIS_RELEASE_VERSION:-v0.4.0}
+release_version=${ELPIS_RELEASE_VERSION:-v0.4.1}
 release_url="https://github.com/$repository/releases/download/$release_version"
 # macOS `mktemp` requires an explicit template, so do not shorten this to `mktemp -d`.
 temporary_dir=$(mktemp -d "${TMPDIR:-/tmp}/elpis-install.XXXXXX")

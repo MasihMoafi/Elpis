@@ -1,10 +1,11 @@
 ---
 source: tui/src/startup_draft_tests.rs
+assertion_line: 203
 expression: "frames.join(\"\\n---\\n\").replace(crate::version::CODEX_CLI_VERSION, \"<VERSION>\")"
 ---
 terminal_app_over_ssh=false, owned=true
 
-  ◆ Elpis (v0.4.1-dev)
+  ◆ Elpis (v0.4.1)
      loading
 
   Pull up a prompt.
@@ -22,7 +23,7 @@ terminal_app_over_ssh=false, owned=true
 ---
 terminal_app_over_ssh=true, owned=false
 
-  ◆ Elpis (v0.4.1-dev)
+  ◆ Elpis (v0.4.1)
      loading
 
   Pull up a prompt.

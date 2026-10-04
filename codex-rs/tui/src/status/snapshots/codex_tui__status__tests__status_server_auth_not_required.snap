@@ -5,7 +5,7 @@ expression: rendered
 ---
 /status
 
-  ◆ Elpis (v0.4.1-dev)
+  ◆ Elpis (v0.4.1)
 
   Model:           gpt-5.6-sol (reasoning none, summaries auto)
   Model provider:  server-ollama

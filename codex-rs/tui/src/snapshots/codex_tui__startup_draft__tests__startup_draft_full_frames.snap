@@ -1,10 +1,11 @@
 ---
 source: tui/src/startup_draft_tests.rs
+assertion_line: 154
 expression: "snapshots.join(\"\\n---\\n\")"
 ---
 empty (48 columns):
 
-  ◆ Elpis (v0.4.1-dev)
+  ◆ Elpis (v0.4.1)
      loading
 
   Pull up a prompt.
@@ -16,7 +17,7 @@ empty (48 columns):
 ---
 resuming (48 columns):
 
-  ◆ Elpis (v0.4.1-dev)
+  ◆ Elpis (v0.4.1)
      loading
   Resuming session…
 ┌──────────────────────────────────────────────┐
@@ -26,7 +27,7 @@ resuming (48 columns):
 ---
 forking (48 columns):
 
-  ◆ Elpis (v0.4.1-dev)
+  ◆ Elpis (v0.4.1)
      loading
   Forking session…
 ┌──────────────────────────────────────────────┐
@@ -36,7 +37,7 @@ forking (48 columns):
 ---
 multiline (48 columns):
 
-  ◆ Elpis (v0.4.1-dev)
+  ◆ Elpis (v0.4.1)
      loading
 
   Pull up a prompt.
@@ -49,7 +50,7 @@ multiline (48 columns):
 ---
 narrow (18 columns):
 
-  ◆ Elpis (v0.4.1…
+  ◆ Elpis (v0.4.1)
      loading
 
   Pull up a promp…

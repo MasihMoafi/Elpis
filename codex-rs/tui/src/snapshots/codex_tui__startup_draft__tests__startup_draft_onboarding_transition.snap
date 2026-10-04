@@ -1,12 +1,13 @@
 ---
 source: tui/src/startup_draft_tests.rs
+assertion_line: 805
 expression: frames
 ---
 before onboarding: hidden (0x0 viewport)
 ---
 after onboarding:
 
-  ◆ Elpis (v0.4.1-dev)
+  ◆ Elpis (v0.4.1)
      loading
 
   Pull up a prompt.

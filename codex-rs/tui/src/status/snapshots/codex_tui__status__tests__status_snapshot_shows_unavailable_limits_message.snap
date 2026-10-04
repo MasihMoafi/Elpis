@@ -1,11 +1,11 @@
 ---
 source: tui/src/status/tests.rs
-assertion_line: 2042
+assertion_line: 2043
 expression: sanitized
 ---
 /status
 
-  ◆ Elpis (v0.4.1-dev)
+  ◆ Elpis (v0.4.1)
 
   Visit https://chatgpt.com/codex/settings/usage for up-to-date
   information on rate limits and credits
