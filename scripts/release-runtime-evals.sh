@@ -2,7 +2,6 @@
 # Run the real multitool with loopback fixtures, then prove the controls fail.
 set -euo pipefail
 binary=$(realpath "${1:?usage: release-runtime-evals.sh BINARY}")
-export ELPIS_EXPECTED_VERSION=${ELPIS_EXPECTED_VERSION:-0.4.0}
 node scripts/elpis-next-identity.test.cjs "$binary"
 positive() { node "scripts/$1-runtime.test.cjs" "$binary" "${@:2}"; }
 negative() {

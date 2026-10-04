@@ -41,6 +41,11 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends libcap-dev libssl-dev pkg-config strace iproute2
           rustup toolchain install 1.95.0 --profile minimal --no-self-update
+      - name: Read the Elpis version from the CLI manifest
+        run: |
+          version=$(sed -n 's/^version = "\(.*\)"$/\1/p' codex-rs/cli/Cargo.toml | head -n 1)
+          test -n "$version"
+          echo "ELPIS_VERSION=$version" >> "$GITHUB_ENV"
       - name: Download and verify the pinned sandbox V8
         shell: bash
         run: |
@@ -95,7 +100,7 @@ jobs:
           cargo build --release --locked -p codex-cli --bin codex -p codex-code-mode-host --bin codex-code-mode-host
           env -u CODEX_SKIP_BWRAP_BUILD cargo build --release --locked -p codex-bwrap --bin bwrap
           cp target/release/codex target/release/elpis
-          test "$(target/release/elpis --version)" = 'elpis 0.4.0'
+          test "$(target/release/elpis --version)" = "elpis $ELPIS_VERSION"
       - name: Real runtime evals and failing controls, without outside network
         run: sudo --preserve-env=PATH unshare -n sh -c 'ip link set lo up; bash scripts/release-runtime-evals.sh "$PWD/codex-rs/target/release/elpis"'
       - name: Clean offline installation
@@ -112,20 +117,20 @@ jobs:
           install -m 0755 dist/elpis-code-mode-host-linux-x86_64 package/usr/bin/codex-code-mode-host
           install -m 0755 dist/elpis-bwrap-linux-x86_64 package/usr/bin/codex-resources/bwrap
           cp codex-rs/vendor/bubblewrap/COPYING dist/bubblewrap.COPYING
-          cat > package/DEBIAN/control <<'CONTROL'
+          cat > package/DEBIAN/control <<CONTROL
           Package: elpis
-          Version: 0.4.0
+          Version: $ELPIS_VERSION
           Architecture: amd64
           Maintainer: Elpis <MasihMoafi@users.noreply.github.com>
           Depends: libc6 (>= 2.39), libssl3t64, libgcc-s1, libstdc++6
           Description: Elpis coding agent with context and continuity controls
           CONTROL
-          dpkg-deb --root-owner-group --build package dist/elpis_0.4.0_amd64.deb
+          dpkg-deb --root-owner-group --build package "dist/elpis_${ELPIS_VERSION}_amd64.deb"
           for file in dist/elpis-* dist/*.deb; do
             (cd dist && sha256sum "$(basename "$file")" > "$(basename "$file").sha256")
           done
       - name: Clean Debian installation
-        run: bash tests/install/clean_linux.sh dist/elpis_0.4.0_amd64.deb
+        run: bash tests/install/clean_linux.sh "dist/elpis_${ELPIS_VERSION}_amd64.deb"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: elpis-linux-x86_64
@@ -158,7 +163,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          test "$GITHUB_REF_NAME" = v0.4.0
+          version=$(sed -n 's/^version = "\(.*\)"$/\1/p' codex-rs/cli/Cargo.toml | head -n 1)
+          test "$GITHUB_REF_NAME" = "v$version"
           gh release create "$GITHUB_REF_NAME" dist/* --verify-tag \
             --repo "$GITHUB_REPOSITORY" --notes-file .github/RELEASE_NOTES.md \
             --title "Elpis $GITHUB_REF_NAME"
