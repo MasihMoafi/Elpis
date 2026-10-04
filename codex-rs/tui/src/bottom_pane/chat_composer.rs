@@ -300,8 +300,6 @@ use ratatui::style::Stylize;
 use ratatui::text::Line;
 use ratatui::text::Span;
 use ratatui::widgets::Block;
-// Elpis: the composer box border.
-use ratatui::widgets::Borders;
 use ratatui::widgets::Paragraph;
 use ratatui::widgets::StatefulWidgetRef;
 use ratatui::widgets::Widget;
@@ -4956,10 +4954,7 @@ impl ChatComposer {
         }
         // Elpis: the Deus Ex composer: a thin teal rule box over a fading wash.
         let style = crate::style::composer_style();
-        Block::default()
-            .borders(Borders::ALL)
-            .border_style(crate::style::composer_border_style())
-            .render(composer_rect, buf);
+        elpis_composer::render_composer_box(composer_rect, buf);
         if !remote_images_rect.is_empty() {
             Paragraph::new(self.attachments.remote_image_lines())
                 .style(style)

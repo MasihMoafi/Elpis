@@ -1,27 +1,28 @@
 ---
 source: tui/src/chatwidget/tests/questions_tests.rs
-assertion_line: 1009
+assertion_line: 1019
 expression: "render_bottom_popup(&chat, 80)"
 ---
  Elpis · model gpt-5.6-sol default · location /tmp/project
-• Queued follow-up inputs                       │CONTEXT LEDGER  context not
-┌──────────────────────────────────────────────┐│measured · ≈0 source estimates
-│ Same title?                                  ││Tab controls · Alt+C hide ·
-│                                              ││Ctrl+click open file
-│ My draft for the second question             ││
-│                                              ││SMART PRUNE          [···] SYNC
-│ enter submit   ctrl+] skip                   ││Reading current thread state
-│ shift+→ main prompt                          ││Syncing… · /smart-prune on|off
-└──────────────────────────────────────────────┘│sets an explicit state
+• Queued follow-up inputs                       │ CONTEXT LEDGER  context not
+┌───────────────────────────────────────────────┤ measured · ≈0 source
+│ Same title?                                   │ estimates
+│                                               │ Tab controls · Alt+C hide ·
+│ My draft for the second question              │ Ctrl+click open file
+│                                               │
+│ enter submit   ctrl+] skip                    │ SMART PRUNE       [···] SYNC
+│ shift+→ main prompt                           │ Reading current thread state
+└───────────────────────────────────────────────┤ Syncing… · /smart-prune on|
+                                                │ off sets an explicit state
                                                 │
-                                                │SUBAGENTS             [━━━●] ON
-                                                │May delegate to other agents
+                                                │ SUBAGENTS          [━━━●] ON
+                                                │ May delegate to other agents
                                                 │
-                                                │CONTEXT WINDOW  usage
-                                                │unavailable
-                                                │Context measurement unavailable
-                                                │until the first request
-                                                │snapshot
+                                                │ CONTEXT WINDOW  usage
+                                                │ unavailable
+                                                │ Context measurement
+                                                │ unavailable until the first
+                                                │ request snapshot
                                                 │
-                                                │No portable context is
-                                                │available.
+                                                │ No portable context is
+                                                │ available.

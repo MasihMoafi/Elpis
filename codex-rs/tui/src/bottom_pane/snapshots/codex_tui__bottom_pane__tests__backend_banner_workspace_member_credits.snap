@@ -1,5 +1,6 @@
 ---
 source: tui/src/bottom_pane/mod.rs
+assertion_line: 2635
 expression: "render_snapshot(&pane, area)"
 ---
                                             
@@ -13,7 +14,7 @@ expression: "render_snapshot(&pane, area)"
                                             
   Press a number to choose · esc to dismiss 
   · type to continue                        
-┌──────────────────────────────────────────┐
+───────────────────────────────────────────┐
 › Ask Elpis to do anything                 │
-└──────────────────────────────────────────┘
+───────────────────────────────────────────┘
     100% context left · Tab Context Ledger

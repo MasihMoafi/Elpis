@@ -14,8 +14,8 @@ use crate::elpis_ledger_events::ManualMemoryRequestTarget;
 use crate::elpis_ledger_events::ManualMemoryStatusCompletion;
 use ratatui::style::Color;
 use ratatui::text::Span;
-use ratatui::widgets::Block;
-use ratatui::widgets::Borders;
+use unicode_width::UnicodeWidthChar;
+use unicode_width::UnicodeWidthStr;
 
 use crate::color::is_light;
 use crate::terminal_palette::StdoutColorLevel;
@@ -25,6 +25,18 @@ use crate::terminal_palette::stdout_color_level;
 
 const LEDGER_MIN_TERMINAL_WIDTH: u16 = 80;
 const LEDGER_WIDTH: u16 = 52;
+/// The rule column and one blank column before the text.
+const LEDGER_LEFT_COLS: u16 = 2;
+/// Codex keeps its last columns free: its footer hints stop `FOOTER_INDENT_COLS` before the
+/// edge. The Ledger keeps the same margin.
+const LEDGER_RIGHT_MARGIN: u16 = crate::ui_consts::FOOTER_INDENT_COLS as u16;
+
+/// The columns for the Ledger's text in a Ledger `ledger_width` columns wide.
+fn ledger_content_width(ledger_width: u16) -> u16 {
+    ledger_width
+        .saturating_sub(LEDGER_LEFT_COLS + LEDGER_RIGHT_MARGIN)
+        .max(1)
+}
 /// User-facing grouping for portable sources. Core categories retain their
 /// admission semantics; this layer only keeps manually selected files from
 /// being presented as Elpis-owned session continuity.
@@ -85,12 +97,12 @@ impl LedgerSourceGroup {
     }
 }
 
-/// The ledger's rendered content: the lines themselves, the line range each source
-/// occupies (for selection scrolling), and `(line index, file:// destination)` for
-/// every source row that maps to a real file on disk.
+/// The ledger's rendered content: its rows, already wrapped to the content width with Codex's
+/// wrapper, the row range each source occupies (for selection scrolling), and
+/// `(row index, file:// destination)` for each row of a source that is a real file on disk.
 pub(super) struct LedgerLines {
-    lines: Vec<Line<'static>>,
-    source_line_ranges: Vec<std::ops::Range<usize>>,
+    rows: Vec<Line<'static>>,
+    source_row_ranges: Vec<std::ops::Range<usize>>,
     source_links: Vec<(usize, String)>,
 }
 
@@ -202,18 +214,10 @@ impl ChatWidget {
         if !self.context_ledger.visible || ledger_width == 0 {
             return None;
         }
-        // Build the real lines and measure them with the same wrap settings the
-        // renderer uses. Hand-counting rows here is what mis-anchored the panel: the
-        // estimate had to mirror the renderer by hand, and it silently missed wrapped
-        // rows and the expanded "WHY INCLUDED" block.
-        let content_width = ledger_width.saturating_sub(1).max(1);
-        let ledger_lines = self.ledger_lines(content_width as usize);
-        let height = u16::try_from(
-            Paragraph::new(ledger_lines.lines.clone())
-                .wrap(Wrap { trim: true })
-                .line_count(content_width),
-        )
-        .unwrap_or(u16::MAX);
+        // The rows are wrapped once, with the same wrapper that draws them, so the height is
+        // their count and the panel cannot be measured differently from what it draws.
+        let ledger_lines = self.ledger_lines(usize::from(ledger_content_width(ledger_width)));
+        let height = u16::try_from(ledger_lines.rows.len()).unwrap_or(u16::MAX);
         Some((height, ledger_lines))
     }
 
@@ -562,14 +566,12 @@ impl ChatWidget {
             if self.context_ledger.focused && self.context_ledger.smart_prune_selected {
                 "› "
             } else {
-                // Paragraph wrapping trims leading blanks; do not count an invisible cursor.
+                // An idle row has no cursor and no leading blanks.
                 ""
             };
         let smart_prune_pad = content_width
             .saturating_sub(
-                smart_prune_cursor.chars().count()
-                    + smart_prune_label.chars().count()
-                    + smart_prune_button.chars().count(),
+                smart_prune_cursor.width() + smart_prune_label.width() + smart_prune_button.width(),
             )
             .max(1);
         let [violet, teal, emerald, green] =
@@ -779,9 +781,7 @@ impl ChatWidget {
             };
         let subagents_pad = content_width
             .saturating_sub(
-                subagents_cursor.chars().count()
-                    + subagents_label.chars().count()
-                    + subagents_button.chars().count(),
+                subagents_cursor.width() + subagents_label.width() + subagents_button.width(),
             )
             .max(1);
         let subagents_switch_spans = if subagents_enabled {
@@ -859,13 +859,14 @@ impl ChatWidget {
                     ),
                     None => format!("≈{}", format_tokens(category.tokens)),
                 };
+                let marker = format!("{} ", category.marker());
                 let pad = content_width
-                    .saturating_sub(2 + 2 + category.label.chars().count() + right.chars().count())
+                    .saturating_sub(2 + marker.width() + category.label.width() + right.width())
                     .max(1);
                 lines.push(Line::from(vec![
                     Span::raw("  "),
                     Span::styled(
-                        format!("{} ", category.marker()),
+                        marker,
                         Style::default()
                             .fg(super::context_usage::context_display_color(category.color)),
                     ),
@@ -952,22 +953,16 @@ impl ChatWidget {
                     format_source_count(source.estimated_tokens),
                 );
                 // "› " + "[x]" + " " ahead of the name; truncate long names from the
-                // left with '…' so the token count and state stay right-aligned.
-                let fixed = prefix.chars().count() + marker.chars().count() + 1;
+                // left with '…' so the token count and state stay right-aligned. Widths are
+                // terminal columns, as Codex measures them, not character counts.
+                let fixed = prefix.width() + marker.width() + 1;
                 let name_budget = content_width
-                    .saturating_sub(fixed + right.chars().count() + 1)
+                    .saturating_sub(fixed + right.width() + 1)
                     .max(1);
-                let name_chars = source.name.chars().count();
-                let shown_name = if name_chars > name_budget {
-                    let tail_start = name_chars - name_budget.saturating_sub(1);
-                    let tail: String = source.name.chars().skip(tail_start).collect();
-                    format!("…{tail}")
-                } else {
-                    source.name.clone()
-                };
+                let shown_name = truncate_start_to_width(&source.name, name_budget);
                 let pad = content_width
-                    .saturating_sub(fixed + shown_name.chars().count())
-                    .saturating_sub(right.chars().count())
+                    .saturating_sub(fixed + shown_name.width())
+                    .saturating_sub(right.width())
                     .max(1);
                 // The whole row opens the file: ctrl+click anywhere on it, the same
                 // affordance /usage gives. Blank padding cells are skipped by
@@ -1062,74 +1057,84 @@ impl ChatWidget {
             lines.pop();
         }
 
+        let (rows, row_starts) = wrap_ledger_rows(&lines, content_width);
+        let row_of = |line: usize| row_starts[line.min(lines.len())];
+        let source_row_ranges = source_line_ranges
+            .into_iter()
+            .map(|range| row_of(range.start)..row_of(range.end))
+            .collect();
+        // Each row of a linked line opens the same file.
+        let source_links = source_links
+            .into_iter()
+            .flat_map(|(line, destination)| {
+                (row_of(line)..row_of(line + 1)).map(move |row| (row, destination.clone()))
+            })
+            .collect();
         LedgerLines {
-            lines,
-            source_line_ranges,
+            rows,
+            source_row_ranges,
             source_links,
         }
     }
 
     #[cfg(test)]
     pub(super) fn render_context_ledger(&self, area: Rect, buf: &mut Buffer) {
-        let content_width = area.width.saturating_sub(1).max(1);
-        self.render_context_ledger_lines(area, buf, self.ledger_lines(content_width as usize));
+        let ledger_lines = self.ledger_lines(usize::from(ledger_content_width(area.width)));
+        self.render_context_ledger_lines(area, buf, ledger_lines, /*box_rules*/ &[]);
     }
 
+    /// Draws the Ledger in `area`: its rule in the first column, then its rows after one blank
+    /// column, so that Codex's right margin stays free. `box_rules` holds the rows of the top
+    /// and bottom rules of each box that ends on the Ledger's rule.
     pub(super) fn render_context_ledger_lines(
         &self,
         area: Rect,
         buf: &mut Buffer,
         ledger_lines: LedgerLines,
+        box_rules: &[(u16, u16)],
     ) {
-        let content_width = area.width.saturating_sub(1).max(1);
         let LedgerLines {
-            lines,
-            source_line_ranges,
+            rows,
+            source_row_ranges,
             source_links,
         } = ledger_lines;
+        render_ledger_rule(area, box_rules, buf);
+        let content_width =
+            ledger_content_width(area.width).min(area.width.saturating_sub(LEDGER_LEFT_COLS));
+        if content_width == 0 {
+            return;
+        }
+        let content = Rect::new(
+            area.x + LEDGER_LEFT_COLS,
+            area.y,
+            content_width,
+            area.height,
+        );
+        let scroll_rows = if self.context_ledger.focused {
+            source_row_ranges
+                .get(self.context_ledger.selected)
+                .map(|rows| selected_source_scroll_offset(rows.clone(), area.height))
+                .unwrap_or(0)
+        } else {
+            0
+        };
+        Paragraph::new(rows.clone())
+            .scroll((scroll_rows, 0))
+            .render(content, buf);
 
-        let scroll_lines = self
-            .context_ledger
-            .focused
-            .then(|| {
-                source_line_ranges
-                    .get(self.context_ledger.selected)
-                    .map(|range| {
-                        selected_source_scroll_offset(
-                            &lines,
-                            range.clone(),
-                            content_width,
-                            area.height.max(1),
-                        )
-                    })
-                    .unwrap_or(0)
-            })
-            .unwrap_or(0);
-
-        Paragraph::new(lines.clone())
-            .block(
-                Block::default()
-                    .borders(Borders::LEFT)
-                    .border_style(crate::style::rule_style()),
-            )
-            .wrap(Wrap { trim: true })
-            .scroll((scroll_lines, 0))
-            .render(area, buf);
-
-        // Attach OSC 8 destinations to the already-drawn cells. Done against the inner
-        // area (past the left border) so columns line up with the rendered text.
-        if !source_links.is_empty() && area.width > 1 {
-            let inner = Rect::new(area.x + 1, area.y, content_width, area.height);
+        // Attach OSC 8 destinations to the cells just drawn. Each row fits the content width,
+        // so one row of text is one row on screen.
+        if !source_links.is_empty() {
             let links: std::collections::HashMap<usize, String> =
                 source_links.into_iter().collect();
-            let hyperlink_lines = lines
+            let hyperlink_lines = rows
                 .into_iter()
                 .enumerate()
                 .map(|(index, line)| {
                     let mut hyperlink_line = crate::terminal_hyperlinks::HyperlinkLine::new(line);
                     if let Some(destination) = links.get(&index) {
                         let mut hyperlink = crate::terminal_hyperlinks::TerminalHyperlink::web(
-                            0..content_width as usize,
+                            0..usize::from(content_width),
                             destination.clone(),
                         );
                         // Ledger rows link files Elpis itself chose, never model output.
@@ -1145,9 +1150,9 @@ impl ChatWidget {
                 .collect::<Vec<_>>();
             crate::terminal_hyperlinks::mark_buffer_hyperlinks(
                 buf,
-                inner,
+                content,
                 &hyperlink_lines,
-                scroll_lines as usize,
+                usize::from(scroll_rows),
             );
         }
     }
@@ -1939,28 +1944,71 @@ fn ledger_palette(
     palette.map(|color| best_color_for_level(color, color_level))
 }
 
-fn selected_source_scroll_offset(
-    lines: &[Line<'_>],
-    source_range: std::ops::Range<usize>,
-    width: u16,
-    visible_rows: u16,
-) -> u16 {
-    let start = source_range.start.min(lines.len());
-    let end = source_range.end.max(start).min(lines.len());
-    let selected_start = wrapped_line_count(&lines[..start], width);
-    let selected_end = wrapped_line_count(&lines[..end], width);
-    selected_end
-        .saturating_sub(visible_rows.max(1))
-        .min(selected_start)
+/// The Ledger's left rule. The top and bottom rules of each box beside it end on it, so it
+/// joins them.
+fn render_ledger_rule(area: Rect, box_rules: &[(u16, u16)], buf: &mut Buffer) {
+    if area.width == 0 {
+        return;
+    }
+    let style = crate::style::rule_style();
+    for y in area.top()..area.bottom() {
+        let joins = box_rules
+            .iter()
+            .any(|(top, bottom)| y == *top || y == *bottom);
+        let (up, down) = (y > area.top(), y + 1 < area.bottom());
+        let symbol = match (joins, up, down) {
+            (false, _, _) => "│",
+            (true, true, true) => "┤",
+            (true, false, true) => "┐",
+            (true, true, false) => "┘",
+            (true, false, false) => "─",
+        };
+        buf[(area.x, y)].set_symbol(symbol).set_style(style);
+    }
 }
 
-fn wrapped_line_count(lines: &[Line<'_>], width: u16) -> u16 {
-    u16::try_from(
-        Paragraph::new(lines.to_vec())
-            .wrap(Wrap { trim: true })
-            .line_count(width.max(1)),
-    )
-    .unwrap_or(u16::MAX)
+/// Wraps each line to `width` with Codex's own wrapper. Returns the rows and, for each line,
+/// the index of its first row, followed by the row count.
+fn wrap_ledger_rows(lines: &[Line<'static>], width: usize) -> (Vec<Line<'static>>, Vec<usize>) {
+    let mut rows = Vec::new();
+    let mut row_starts = Vec::with_capacity(lines.len() + 1);
+    for line in lines {
+        row_starts.push(rows.len());
+        let wrapped = crate::wrapping::word_wrap_lines(std::iter::once(line), width.max(1));
+        if wrapped.is_empty() {
+            rows.push(Line::default());
+        } else {
+            rows.extend(wrapped);
+        }
+    }
+    row_starts.push(rows.len());
+    (rows, row_starts)
+}
+
+/// `text` cut from the left to `max_width` terminal columns, with "…" in front when it is cut.
+fn truncate_start_to_width(text: &str, max_width: usize) -> String {
+    if text.width() <= max_width {
+        return text.to_string();
+    }
+    let budget = max_width.saturating_sub(1);
+    let mut width = 0;
+    let mut start = text.len();
+    for (index, character) in text.char_indices().rev() {
+        let character_width = character.width().unwrap_or(0);
+        if width + character_width > budget {
+            break;
+        }
+        width += character_width;
+        start = index;
+    }
+    format!("…{}", &text[start..])
+}
+
+/// The scroll that shows the selected source's rows in `visible_rows`.
+fn selected_source_scroll_offset(source_rows: std::ops::Range<usize>, visible_rows: u16) -> u16 {
+    let start = u16::try_from(source_rows.start).unwrap_or(u16::MAX);
+    let end = u16::try_from(source_rows.end.max(source_rows.start)).unwrap_or(u16::MAX);
+    end.saturating_sub(visible_rows.max(1)).min(start)
 }
 
 fn format_duration_ms(milliseconds: u64) -> String {
@@ -2067,11 +2115,9 @@ mod tests {
 
     #[test]
     fn selected_source_scrolls_into_a_short_ledger() {
-        let lines = (0..8)
-            .map(|index| Line::from(format!("line {index}")))
-            .collect::<Vec<_>>();
-        assert_eq!(selected_source_scroll_offset(&lines, 1..3, 52, 4), 0);
-        assert_eq!(selected_source_scroll_offset(&lines, 6..8, 52, 4), 4);
+        assert_eq!(selected_source_scroll_offset(1..3, 4), 0);
+        assert_eq!(selected_source_scroll_offset(6..8, 4), 4);
+        assert_eq!(selected_source_scroll_offset(0..0, 4), 0);
     }
 
     #[test]
@@ -2085,10 +2131,20 @@ mod tests {
             Line::from("[x] a source name that wraps on a narrow ledger"),
             Line::from("tokens"),
         ];
-        let wide = selected_source_scroll_offset(&lines, 5..7, 52, 4);
-        let narrow = selected_source_scroll_offset(&lines, 5..7, 12, 4);
-        assert!(narrow > wide);
-        assert_eq!(selected_source_scroll_offset(&[], 0..4, 52, 4), 0);
+        let offset = |width| {
+            let (_, starts) = wrap_ledger_rows(&lines, width);
+            selected_source_scroll_offset(starts[5]..starts[7], 4)
+        };
+        assert!(offset(12) > offset(52));
+    }
+
+    #[test]
+    fn wide_names_are_cut_by_columns_from_the_left() {
+        let name = "数据数据数据.md";
+        let shown = truncate_start_to_width(name, 8);
+        assert_eq!(shown, "…数据.md");
+        assert!(shown.width() <= 8);
+        assert_eq!(truncate_start_to_width("short.md", 8), "short.md");
     }
 
     #[test]

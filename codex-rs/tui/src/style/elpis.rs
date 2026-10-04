@@ -9,8 +9,43 @@ use crate::color::blend;
 use crate::color::is_light;
 use crate::terminal_palette::best_color;
 use crate::terminal_palette::default_bg;
+use ratatui::layout::Rect;
 use ratatui::style::Color;
 use ratatui::style::Style;
+use ratatui::widgets::Borders;
+use std::cell::RefCell;
+
+thread_local! {
+    /// While a frame draws the area to the left of the Context Ledger: the column of the
+    /// Ledger's rule, and the Elpis boxes that end on it.
+    static LEDGER_RULE: RefCell<Option<(u16, Vec<Rect>)>> = const { RefCell::new(None) };
+}
+
+/// Runs `render` for the area whose right neighbor is the Context Ledger's rule at column
+/// `rule_x`. Returns the Elpis boxes that ended on the rule, so the rule can join their top
+/// and bottom rules.
+pub(crate) fn render_against_ledger_rule(rule_x: u16, render: impl FnOnce()) -> Vec<Rect> {
+    LEDGER_RULE.with(|rule| *rule.borrow_mut() = Some((rule_x, Vec::new())));
+    render();
+    LEDGER_RULE
+        .with(|rule| rule.borrow_mut().take())
+        .map(|(_, boxes)| boxes)
+        .unwrap_or_default()
+}
+
+/// The borders of an Elpis box in `area`. A box whose right side would stand next to the
+/// Context Ledger's rule leaves that side out, because the rule is its right side.
+pub(crate) fn box_borders(area: Rect, borders: Borders) -> Borders {
+    LEDGER_RULE.with(|rule| match rule.borrow_mut().as_mut() {
+        Some((rule_x, boxes))
+            if borders.contains(Borders::RIGHT) && area.right() == *rule_x && area.height >= 2 =>
+        {
+            boxes.push(area);
+            borders - Borders::RIGHT
+        }
+        _ => borders,
+    })
+}
 
 // Gold is the product accent; context categories and
 // success/error colors are independent semantic palettes. Use deeper ink on light

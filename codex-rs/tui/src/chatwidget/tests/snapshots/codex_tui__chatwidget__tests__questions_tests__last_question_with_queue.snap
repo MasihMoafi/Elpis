@@ -4,24 +4,25 @@ assertion_line: 739
 expression: "render_bottom_popup(&chat, 80)"
 ---
  Elpis · model gpt-5.6-sol default · location /tmp/project
-• Queued follow-up inputs                       │CONTEXT LEDGER  context not
-  ↳ older                                       │measured · ≈0 source estimates
-  ↳ newer                                       │Tab controls · Alt+C hide ·
-┌──────────────────────────────────────────────┐│Ctrl+click open file
-│ 2 of 2                                       ││
-│ Second?                                      ││SMART PRUNE          [···] SYNC
-│                                              ││Reading current thread state
-│ › 1. Next                                    ││Syncing… · /smart-prune on|off
-│   2. Other                                   ││sets an explicit state
-│                                              ││
-│ enter submit   ctrl+] skip                   ││SUBAGENTS             [━━━●] ON
-│ shift+→ prev question                        ││May delegate to other agents
-│ shift+← queued messages                      ││
-└──────────────────────────────────────────────┘│CONTEXT WINDOW  usage
-                                                │unavailable
-                                                │Context measurement unavailable
-                                                │until the first request
-                                                │snapshot
+• Queued follow-up inputs                       │ CONTEXT LEDGER  context not
+  ↳ older                                       │ measured · ≈0 source
+  ↳ newer                                       │ estimates
+┌───────────────────────────────────────────────┤ Tab controls · Alt+C hide ·
+│ 2 of 2                                        │ Ctrl+click open file
+│ Second?                                       │
+│                                               │ SMART PRUNE       [···] SYNC
+│ › 1. Next                                     │ Reading current thread state
+│   2. Other                                    │ Syncing… · /smart-prune on|
+│                                               │ off sets an explicit state
+│ enter submit   ctrl+] skip                    │
+│ shift+→ prev question                         │ SUBAGENTS          [━━━●] ON
+│ shift+← queued messages                       │ May delegate to other agents
+└───────────────────────────────────────────────┤
+                                                │ CONTEXT WINDOW  usage
+                                                │ unavailable
+                                                │ Context measurement
+                                                │ unavailable until the first
+                                                │ request snapshot
                                                 │
-                                                │No portable context is
-                                                │available.
+                                                │ No portable context is
+                                                │ available.

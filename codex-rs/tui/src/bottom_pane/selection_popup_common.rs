@@ -113,7 +113,7 @@ pub(crate) fn render_menu_surface(area: Rect, buf: &mut Buffer) -> Rect {
     }
     // Elpis: an orange border around the popup surface.
     Block::default()
-        .borders(Borders::ALL)
+        .borders(crate::style::box_borders(area, Borders::ALL))
         .border_style(crate::style::popup_border_style())
         .style(user_message_style())
         .render(area, buf);

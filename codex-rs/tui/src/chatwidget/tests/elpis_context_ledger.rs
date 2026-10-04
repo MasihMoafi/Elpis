@@ -192,6 +192,91 @@ async fn hidden_ledger_gives_the_composer_the_full_width() -> anyhow::Result<()>
     let buf = render_full(&chat.as_renderable());
     let screen = rows(&buf, 0..WIDTH).join("\n");
     assert!(!screen.contains("CONTEXT LEDGER"), "{screen}");
+    // Without the Ledger, the box closes on its own right side.
+    let top = composer_box_top(&buf, 0..WIDTH);
+    assert_eq!(buf[(WIDTH - 1, top)].symbol(), "┐", "{screen}");
+    assert_eq!(buf[(WIDTH - 1, top + 2)].symbol(), "┘", "{screen}");
+    Ok(())
+}
+
+/// The row of the composer box's top rule, found in `columns`.
+fn composer_box_top(buf: &ratatui::buffer::Buffer, columns: std::ops::Range<u16>) -> u16 {
+    rows(buf, columns)
+        .iter()
+        .position(|row| row.contains("──────"))
+        .and_then(|row| u16::try_from(row).ok())
+        .expect("the composer box has a top rule")
+}
+
+#[tokio::test]
+async fn composer_box_and_ledger_share_one_rule() -> anyhow::Result<()> {
+    let root = tempdir()?;
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
+    configure_ledger_sources(&mut chat, root.path())?;
+    let buf = render_full(&chat.as_renderable());
+    let screen = rows(&buf, 0..WIDTH).join("\n");
+    let rule_x = WIDTH - chat.context_ledger_width(WIDTH);
+    let top = composer_box_top(&buf, 0..rule_x);
+    let bottom = top + 2;
+
+    // The box's top and bottom rules end on the Ledger rule and join it.
+    assert_eq!(buf[(rule_x, top)].symbol(), "┐", "{screen}");
+    assert_eq!(buf[(rule_x, top + 1)].symbol(), "│", "{screen}");
+    assert_eq!(buf[(rule_x, bottom)].symbol(), "┤", "{screen}");
+    // The box draws no second line beside the rule.
+    for y in top..=bottom {
+        let edge = buf[(rule_x - 1, y)].symbol();
+        assert!(
+            !matches!(edge, "│" | "┐" | "┘"),
+            "row {y}: {edge:?}\n{screen}"
+        );
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn ledger_keeps_codex_right_margin_and_measures_wide_names() -> anyhow::Result<()> {
+    let root = tempdir()?;
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
+    configure_ledger_sources(&mut chat, root.path())?;
+    // Each of these characters takes two columns, so a count of characters is half the width.
+    let wide = root
+        .path()
+        .join("数据数据数据数据数据数据数据数据数据数据数据数据.md");
+    std::fs::write(&wide, "Wide name")?;
+    submit(&mut chat, &format!("/add {}", wide.display()));
+    seed_ledger_from_disk(&mut chat)?;
+
+    let buf = render_full(&chat.as_renderable());
+    let screen = rows(&buf, 0..WIDTH).join("\n");
+    // Codex keeps its last two columns free (`FOOTER_INDENT_COLS`); so does the Ledger.
+    for row in rows(&buf, WIDTH - 2..WIDTH) {
+        assert_eq!(
+            row.trim(),
+            "",
+            "the Ledger wrote into Codex's right margin\n{screen}"
+        );
+    }
+    let ledger_width = chat.context_ledger_width(WIDTH);
+    let source_rows = rows(&buf, WIDTH - ledger_width..WIDTH)
+        .into_iter()
+        .filter(|row| row.contains("est. tokens"))
+        .collect::<Vec<_>>();
+    assert!(source_rows.len() >= 6, "{screen}");
+    for row in &source_rows {
+        let row = row.trim_end();
+        assert!(
+            row.ends_with("INCLUDED") || row.ends_with("EXCLUDED"),
+            "a source row lost its state word: {row:?}\n{screen}"
+        );
+    }
+    assert!(
+        // A wide character's second cell reads as a space here.
+        source_rows
+            .iter()
+            .any(|row| row.replace(' ', "").contains("…据数据")),
+        "the wide name is shortened from the left\n{screen}"
+    );
     Ok(())
 }
 
@@ -446,7 +531,10 @@ async fn context_window_shows_category_shares_once_the_server_sends_them() {
     for category in ["User messages", "Agent messages", "System instructions"] {
         assert!(ledger.contains(category), "missing {category}:\n{ledger}");
     }
-    assert!(!ledger.contains("category attribution unavailable"), "{ledger}");
+    assert!(
+        !ledger.contains("category attribution unavailable"),
+        "{ledger}"
+    );
 
     // A later update without shares (a replay) keeps the last known ones.
     token_usage_update(&mut chat, /*context_attribution*/ None);
@@ -462,6 +550,9 @@ async fn context_window_says_attribution_is_unavailable_until_shares_arrive() {
     token_usage_update(&mut chat, /*context_attribution*/ None);
 
     let ledger = ledger_words(&chat);
-    assert!(ledger.contains("category attribution unavailable"), "{ledger}");
+    assert!(
+        ledger.contains("category attribution unavailable"),
+        "{ledger}"
+    );
     assert!(!ledger.contains("User messages"), "{ledger}");
 }

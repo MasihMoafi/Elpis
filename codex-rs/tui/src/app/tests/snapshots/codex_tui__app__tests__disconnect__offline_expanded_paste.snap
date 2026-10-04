@@ -1,33 +1,34 @@
 ---
 source: tui/src/app/tests/disconnect_tests.rs
+assertion_line: 164
 expression: draft
 ---
-queued before disconnectcopied text copied   ││Ctrl+click open file
-│ text copied text copied text copied text     ││
-│ copied text copied text copied text copied   ││SMART PRUNE          [···] SYNC
-│ text copied text copied text copied text     ││Reading current thread state
-│ copied text copied text copied text copied   ││Syncing… · /smart-prune on|off
-│ text copied text copied text copied text     ││sets an explicit state
-│ copied text copied text copied text copied   ││
-│ text copied text copied text copied text     ││SUBAGENTS             [━━━●] ON
-│ copied text copied text copied text copied   ││May delegate to other agents
-│ text copied text copied text copied text     ││
-│ copied text copied text copied text copied   ││CONTEXT WINDOW  usage
-│ text copied text copied text copied text     ││unavailable
-│ copied text copied text copied text copied   ││Context measurement unavailable
-│ text copied text copied text copied text     ││until the first request
-│ copied text copied text copied text copied   ││snapshot
-│ text copied text copied text copied text     ││
-│ copied text copied text copied text copied   ││No portable context is
-│ text copied text copied text copied text     ││available.
-│ copied text copied text copied text copied   │
-│ text copied text copied text copied text     │
-│ copied text copied text copied text copied   │
-│ text copied text copied text copied text     │
-│ copied text copied text copied text copied   │
-│ text copied text copied text copied text     │
-│ copied text copied text copied text copied   │
-│ text copied text copied text copied text     │
-│ copied text copied text copied text          │
-└──────────────────────────────────────────────┘
+queued before disconnectcopied text copied    │ Tab controls · Alt+C hide ·
+  text copied text copied text copied text      │ Ctrl+click open file
+  copied text copied text copied text copied    │
+  text copied text copied text copied text      │ SMART PRUNE       [···] SYNC
+  copied text copied text copied text copied    │ Reading current thread state
+  text copied text copied text copied text      │ Syncing… · /smart-prune on|
+  copied text copied text copied text copied    │ off sets an explicit state
+  text copied text copied text copied text      │
+  copied text copied text copied text copied    │ SUBAGENTS          [━━━●] ON
+  text copied text copied text copied text      │ May delegate to other agents
+  copied text copied text copied text copied    │
+  text copied text copied text copied text      │ CONTEXT WINDOW  usage
+  copied text copied text copied text copied    │ unavailable
+  text copied text copied text copied text      │ Context measurement
+  copied text copied text copied text copied    │ unavailable until the first
+  text copied text copied text copied text      │ request snapshot
+  copied text copied text copied text copied    │
+  text copied text copied text copied text      │ No portable context is
+  copied text copied text copied text copied    │ available.
+  text copied text copied text copied text      │
+  copied text copied text copied text copied    │
+  text copied text copied text copied text      │
+  copied text copied text copied text copied    │
+  text copied text copied text copied text      │
+  copied text copied text copied text copied    │
+  text copied text copied text copied text      │
+  copied text copied text copied text           │
+────────────────────────────────────────────────┘
         100% context left · Tab Context Ledger

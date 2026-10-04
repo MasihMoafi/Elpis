@@ -1,9 +1,10 @@
 ---
 source: tui/src/app/tests/backend_banner_fallback_tests.rs
+assertion_line: 245
 expression: normalize_snapshot_paths(rendered)
 ---
  Elpis · model gpt-5.5 default · location /tmp/project
-┌──────────────────────────────────────────────────────────────────────┐
+───────────────────────────────────────────────────────────────────────┐
 › Ask Elpis to do anything                                             │
-└──────────────────────────────────────────────────────────────────────┘
+───────────────────────────────────────────────────────────────────────┘
   ? for shortcuts               100% context left · Tab Context Ledger

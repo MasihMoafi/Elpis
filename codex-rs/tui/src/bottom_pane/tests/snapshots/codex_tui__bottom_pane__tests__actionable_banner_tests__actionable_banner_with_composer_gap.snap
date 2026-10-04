@@ -1,5 +1,6 @@
 ---
 source: tui/src/bottom_pane/tests/actionable_banner_tests.rs
+assertion_line: 135
 expression: rendered
 ---
                                                                       
@@ -9,7 +10,7 @@ expression: rendered
                                                                       
   Press a number to choose · esc to dismiss · type to continue        
                                                                       
-┌────────────────────────────────────────────────────────────────────┐
+─────────────────────────────────────────────────────────────────────┐
 › Ask Elpis to do anything                                           │
-└────────────────────────────────────────────────────────────────────┘
+─────────────────────────────────────────────────────────────────────┘
   esc esc to edit previous message

@@ -1,26 +1,28 @@
 ---
 source: tui/src/chatwidget/tests/luna_reserve_usage_tests.rs
+assertion_line: 218
 expression: rendered
 ---
  Elpis · model gpt-reserve default · location /tmp/project
-Elpising… (0s • esc to interrupt)               │CONTEXT LEDGER  context not
-                                                │measured · ≈0 source estimates
-┌──────────────────────────────────────────────┐│Tab controls · Alt+C hide ·
-› x                                            ││Ctrl+click open file
-└──────────────────────────────────────────────┘│
-  enter to queue message                        │SMART PRUNE          [···] SYNC
-                                                │Reading current thread state
-                                                │Syncing… · /smart-prune on|off
-                                                │sets an explicit state
+Elpising… (0s • esc to interrupt)               │ CONTEXT LEDGER  context not
+                                                │ measured · ≈0 source
+────────────────────────────────────────────────┤ estimates
+› x                                             │ Tab controls · Alt+C hide ·
+────────────────────────────────────────────────┤ Ctrl+click open file
+  enter to queue message                        │
+                                                │ SMART PRUNE       [···] SYNC
+                                                │ Reading current thread state
+                                                │ Syncing… · /smart-prune on|
+                                                │ off sets an explicit state
                                                 │
-                                                │SUBAGENTS             [━━━●] ON
-                                                │May delegate to other agents
+                                                │ SUBAGENTS          [━━━●] ON
+                                                │ May delegate to other agents
                                                 │
-                                                │CONTEXT WINDOW  usage
-                                                │unavailable
-                                                │Context measurement unavailable
-                                                │until the first request
-                                                │snapshot
+                                                │ CONTEXT WINDOW  usage
+                                                │ unavailable
+                                                │ Context measurement
+                                                │ unavailable until the first
+                                                │ request snapshot
                                                 │
-                                                │No portable context is
-                                                │available.
+                                                │ No portable context is
+                                                │ available.

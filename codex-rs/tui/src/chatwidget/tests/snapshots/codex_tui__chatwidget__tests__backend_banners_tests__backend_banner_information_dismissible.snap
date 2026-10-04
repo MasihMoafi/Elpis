@@ -1,5 +1,6 @@
 ---
 source: tui/src/chatwidget/tests/backend_banners_tests.rs
+assertion_line: 123
 expression: normalize_snapshot_paths(rendered)
 ---
  Elpis · model test-model-a default · location /tmp/project
@@ -9,7 +10,7 @@ expression: normalize_snapshot_paths(rendered)
 
   esc to dismiss · type to continue
 
-┌────────────────────────────────────────────────────────────────────┐
+─────────────────────────────────────────────────────────────────────┐
 › Ask Elpis to do anything                                           │
-└────────────────────────────────────────────────────────────────────┘
+─────────────────────────────────────────────────────────────────────┘
   ? for shortcuts             100% context left · Tab Context Ledger

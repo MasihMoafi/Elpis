@@ -1,28 +1,29 @@
 ---
 source: tui/src/chatwidget/tests/status_and_layout.rs
+assertion_line: 5166
 expression: normalize_snapshot_paths(term.backend().vt100().screen().contents())
 ---
 
  Elpis · model gpt-5.6-sol default · location /tmp/project
-Elpising… (0s • esc to interrupt)               │CONTEXT LEDGER  context not
-                                                │measured · ≈0 source estimates
-• Queued follow-up inputs                       │Tab controls · Alt+C hide ·
-  ↳ Hello, world! 0                             │Ctrl+click open file
-  ↳ Hello, world! 1                             │
-  ↳ Hello, world! 2                             │SMART PRUNE          [···] SYNC
-  ↳ Hello, world! 3                             │Reading current thread state
-  ↳ Hello, world! 4                             │Syncing… · /smart-prune on|off
-  ↳ Hello, world! 5                             │sets an explicit state
-  ↳ Hello, world! 6                             │
-  ↳ Hello, world! 7                             │SUBAGENTS             [━━━●] ON
-  ↳ Hello, world! 8                             │May delegate to other agents
-  ↳ Hello, world! 9                             │
-  ↳ Hello, world! 10                            │CONTEXT WINDOW  usage
-  ↳ Hello, world! 11                            │unavailable
-  ↳ Hello, world! 12                            │Context measurement unavailable
-  ↳ Hello, world! 13                            │until the first request
-  ↳ Hello, world! 14                            │snapshot
-┌──────────────────────────────────────────────┐│
-› Ask Elpis to do anything                     ││No portable context is
-└──────────────────────────────────────────────┘│available.
-        100% context left · Tab Context Ledger
+Elpising… (0s • esc to interrupt)               │ CONTEXT LEDGER  context not
+                                                │ measured · ≈0 source
+• Queued follow-up inputs                       │ estimates
+  ↳ Hello, world! 0                             │ Tab controls · Alt+C hide ·
+  ↳ Hello, world! 1                             │ Ctrl+click open file
+  ↳ Hello, world! 2                             │
+  ↳ Hello, world! 3                             │ SMART PRUNE       [···] SYNC
+  ↳ Hello, world! 4                             │ Reading current thread state
+  ↳ Hello, world! 5                             │ Syncing… · /smart-prune on|
+  ↳ Hello, world! 6                             │ off sets an explicit state
+  ↳ Hello, world! 7                             │
+  ↳ Hello, world! 8                             │ SUBAGENTS          [━━━●] ON
+  ↳ Hello, world! 9                             │ May delegate to other agents
+  ↳ Hello, world! 10                            │
+  ↳ Hello, world! 11                            │ CONTEXT WINDOW  usage
+  ↳ Hello, world! 12                            │ unavailable
+  ↳ Hello, world! 13                            │ Context measurement
+  ↳ Hello, world! 14                            │ unavailable until the first
+────────────────────────────────────────────────┤ request snapshot
+› Ask Elpis to do anything                      │
+────────────────────────────────────────────────┤ No portable context is
+        100% context left · Tab Context Ledger  │ available.

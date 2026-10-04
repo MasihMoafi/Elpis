@@ -1,8 +1,8 @@
 ---
 source: tui/src/chatwidget/tests/status_and_layout.rs
+assertion_line: 5060
 expression: normalize_snapshot_paths(term.backend().vt100().screen().contents())
 ---
-
 
 
 
@@ -21,24 +21,25 @@ expression: normalize_snapshot_paths(term.backend().vt100().screen().contents())
     Read diff_render.rs
 
  Elpis · model gpt-5.6-sol default · location /tmp/project
-Investigating rendering code (0s • esc to inter…│CONTEXT LEDGER  context not
-                                                │measured · ≈0 source estimates
-┌──────────────────────────────────────────────┐│Tab controls · Alt+C hide ·
-› Summarize recent commits                     ││Ctrl+click open file
-└──────────────────────────────────────────────┘│
-  enter to queue message                        │SMART PRUNE          [···] SYNC
-                                                │Reading current thread state
-                                                │Syncing… · /smart-prune on|off
-                                                │sets an explicit state
+Investigating rendering code (0s • esc to inter…│ CONTEXT LEDGER  context not
+                                                │ measured · ≈0 source
+────────────────────────────────────────────────┤ estimates
+› Summarize recent commits                      │ Tab controls · Alt+C hide ·
+────────────────────────────────────────────────┤ Ctrl+click open file
+  enter to queue message                        │
+                                                │ SMART PRUNE       [···] SYNC
+                                                │ Reading current thread state
+                                                │ Syncing… · /smart-prune on|
+                                                │ off sets an explicit state
                                                 │
-                                                │SUBAGENTS             [━━━●] ON
-                                                │May delegate to other agents
+                                                │ SUBAGENTS          [━━━●] ON
+                                                │ May delegate to other agents
                                                 │
-                                                │CONTEXT WINDOW  usage
-                                                │unavailable
-                                                │Context measurement unavailable
-                                                │until the first request
-                                                │snapshot
+                                                │ CONTEXT WINDOW  usage
+                                                │ unavailable
+                                                │ Context measurement
+                                                │ unavailable until the first
+                                                │ request snapshot
                                                 │
-                                                │No portable context is
-                                                │available.
+                                                │ No portable context is
+                                                │ available.

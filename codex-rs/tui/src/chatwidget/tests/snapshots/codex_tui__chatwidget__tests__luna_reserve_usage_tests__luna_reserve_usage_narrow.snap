@@ -1,9 +1,10 @@
 ---
 source: tui/src/chatwidget/tests/luna_reserve_usage_tests.rs
+assertion_line: 131
 expression: narrow
 ---
  Elpis · model gpt-reserve default
-┌────────────────────────────────┐
+─────────────────────────────────┐
 › Ask Elpis to do anything       │
-└────────────────────────────────┘
+─────────────────────────────────┘
                100% context left

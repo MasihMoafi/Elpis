@@ -1,5 +1,6 @@
 ---
 source: tui/src/app/owned_transcript_tests.rs
+assertion_line: 1174
 expression: open_text
 ---
 Transcript row 30: content behind the menu
@@ -12,7 +13,7 @@ Transcript row 35: content behind the menu
   /memory-model  set background tasks (pruning and session naming); memory uses
                  the responding agent: /memory-model <id|provider:id|default>
   /mcp           list configured MCP tools; use /mcp verbose for details
-┌──────────────────────────────────────────────────────────────────────────────┐
+───────────────────────────────────────────────────────────────────────────────┐
 › /m                                                                           │
-└──────────────────────────────────────────────────────────────────────────────┘
+───────────────────────────────────────────────────────────────────────────────┘
   model high · fast                     100% context left · Tab Context Ledger

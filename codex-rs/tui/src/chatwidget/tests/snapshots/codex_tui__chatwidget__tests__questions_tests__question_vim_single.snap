@@ -1,52 +1,54 @@
 ---
 source: tui/src/chatwidget/tests/questions_tests.rs
-assertion_line: 518
+assertion_line: 514
 expression: "format!(\"NORMAL\\n{normal}\\n\\nSEARCH\\n{search}\")"
 ---
 NORMAL
  Elpis · model gpt-5.6-sol default · location /tmp/project
-• Queued follow-up inputs                       │CONTEXT LEDGER  context not
-┌──────────────────────────────────────────────┐│measured · ≈0 source estimates
-│ Which way?                                   ││Tab controls · Alt+C hide ·
-│                                              ││Ctrl+click open file
-│ alpha beta                                   ││
-│ alpha gamma                                  ││SMART PRUNE          [···] SYNC
-│                                  Vim: Normal ││Reading current thread state
-│ enter submit   ctrl+] skip                   ││Syncing… · /smart-prune on|off
-│ shift+→ main prompt                          ││sets an explicit state
-└──────────────────────────────────────────────┘│
-                                                │SUBAGENTS             [━━━●] ON
-                                                │May delegate to other agents
+• Queued follow-up inputs                       │ CONTEXT LEDGER  context not
+┌───────────────────────────────────────────────┤ measured · ≈0 source
+│ Which way?                                    │ estimates
+│                                               │ Tab controls · Alt+C hide ·
+│ alpha beta                                    │ Ctrl+click open file
+│ alpha gamma                                   │
+│                                  Vim: Normal  │ SMART PRUNE       [···] SYNC
+│ enter submit   ctrl+] skip                    │ Reading current thread state
+│ shift+→ main prompt                           │ Syncing… · /smart-prune on|
+└───────────────────────────────────────────────┤ off sets an explicit state
                                                 │
-                                                │CONTEXT WINDOW  usage
-                                                │unavailable
-                                                │Context measurement unavailable
-                                                │until the first request
-                                                │snapshot
+                                                │ SUBAGENTS          [━━━●] ON
+                                                │ May delegate to other agents
                                                 │
-                                                │No portable context is
-                                                │available.
+                                                │ CONTEXT WINDOW  usage
+                                                │ unavailable
+                                                │ Context measurement
+                                                │ unavailable until the first
+                                                │ request snapshot
+                                                │
+                                                │ No portable context is
+                                                │ available.
 
 SEARCH
  Elpis · model gpt-5.6-sol default · location /tmp/project
-• Queued follow-up inputs                       │CONTEXT LEDGER  context not
-┌──────────────────────────────────────────────┐│measured · ≈0 source estimates
-│ Which way?                                   ││Tab controls · Alt+C hide ·
-│                                              ││Ctrl+click open file
-│ alpha beta                                   ││
-│ alpha gamma                                  ││SMART PRUNE          [···] SYNC
-│ /gamma                                       ││Reading current thread state
-│                                  Vim: Normal ││Syncing… · /smart-prune on|off
-│ enter submit   ctrl+] skip                   ││sets an explicit state
-│ shift+→ main prompt                          ││
-└──────────────────────────────────────────────┘│SUBAGENTS             [━━━●] ON
-                                                │May delegate to other agents
+• Queued follow-up inputs                       │ CONTEXT LEDGER  context not
+┌───────────────────────────────────────────────┤ measured · ≈0 source
+│ Which way?                                    │ estimates
+│                                               │ Tab controls · Alt+C hide ·
+│ alpha beta                                    │ Ctrl+click open file
+│ alpha gamma                                   │
+│ /gamma                                        │ SMART PRUNE       [···] SYNC
+│                                  Vim: Normal  │ Reading current thread state
+│ enter submit   ctrl+] skip                    │ Syncing… · /smart-prune on|
+│ shift+→ main prompt                           │ off sets an explicit state
+└───────────────────────────────────────────────┤
+                                                │ SUBAGENTS          [━━━●] ON
+                                                │ May delegate to other agents
                                                 │
-                                                │CONTEXT WINDOW  usage
-                                                │unavailable
-                                                │Context measurement unavailable
-                                                │until the first request
-                                                │snapshot
+                                                │ CONTEXT WINDOW  usage
+                                                │ unavailable
+                                                │ Context measurement
+                                                │ unavailable until the first
+                                                │ request snapshot
                                                 │
-                                                │No portable context is
-                                                │available.
+                                                │ No portable context is
+                                                │ available.

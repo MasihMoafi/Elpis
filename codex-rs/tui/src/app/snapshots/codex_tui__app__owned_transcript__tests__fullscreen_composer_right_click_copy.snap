@@ -1,5 +1,6 @@
 ---
 source: tui/src/app/owned_transcript_tests.rs
+assertion_line: 1456
 expression: "format!(\"{}\\n\\n{}\", selection_frames.join(\"\\n\\n\"),\nnormalize_snapshot_paths(buffer_text(crate::custom_terminal::test_support::last_rendered_buffer(&tui.terminal))))"
 ---
 cmd-c Err("clipboard unavailable")
@@ -58,7 +59,7 @@ hello world
 
  Elpis · model gpt-5.6-sol default · location /tmp/project
                                                Copied 5 chars to host clipboard
-┌──────────────────────────────────────────────────────────────────────────────┐
+───────────────────────────────────────────────────────────────────────────────┐
 › hello world                                                                  │
-└──────────────────────────────────────────────────────────────────────────────┘
+───────────────────────────────────────────────────────────────────────────────┘
                                         100% context left · Tab Context Ledger

@@ -1,5 +1,6 @@
 ---
 source: tui/src/app/turn_tips_tests.rs
+assertion_line: 196
 expression: "crate::chatwidget::tests::helpers::normalize_snapshot_paths(screens.join(\"\\n\\n\"))"
 ---
 working=true, response rows=1, 80x12
@@ -11,17 +12,17 @@ Response row 0
 Elpising… (0s • esc to interrupt)
   └ Tip: Try /help.
 
-┌──────────────────────────────────────────────────────────────────────────────┐
+───────────────────────────────────────────────────────────────────────────────┐
 › Ask Elpis to do anything                                                     │
-└──────────────────────────────────────────────────────────────────────────────┘
+───────────────────────────────────────────────────────────────────────────────┘
   ? for shortcuts                       100% context left · Tab Context Ledger
 
 working=true, response rows=1, 80x6
  Elpis · model gpt-test default · location /tmp/project
 Elpising… (0s • esc to interrupt)
-┌──────────────────────────────────────────────────────────────────────────────┐
+───────────────────────────────────────────────────────────────────────────────┐
 › Ask Elpis to do anything                                                     │
-└──────────────────────────────────────────────────────────────────────────────┘
+───────────────────────────────────────────────────────────────────────────────┘
   ? for shortcuts                       100% context left · Tab Context Ledger
 
 working=false, response rows=1, 80x12
@@ -33,9 +34,9 @@ working=false, response rows=1, 80x12
   Worked for [duration] • [completion time]
  Elpis · model gpt-test default · location /tmp/project
 
-┌──────────────────────────────────────────────────────────────────────────────┐
+───────────────────────────────────────────────────────────────────────────────┐
 › Ask Elpis to do anything                                                     │
-└──────────────────────────────────────────────────────────────────────────────┘
+───────────────────────────────────────────────────────────────────────────────┘
   ? for shortcuts                       100% context left · Tab Context Ledger
 
 working=false, response rows=30, 80x12
@@ -47,9 +48,9 @@ working=false, response rows=30, 80x12
   Worked for [duration] • [completion time]
  Elpis · model gpt-test default · location /tmp/project
 
-┌──────────────────────────────────────────────────────────────────────────────┐
+───────────────────────────────────────────────────────────────────────────────┐
 › Ask Elpis to do anything                                                     │
-└──────────────────────────────────────────────────────────────────────────────┘
+───────────────────────────────────────────────────────────────────────────────┘
   ? for shortcuts                       100% context left · Tab Context Ledger
 
 working=false, response rows=1, 80x9
@@ -58,9 +59,9 @@ working=false, response rows=1, 80x9
   Worked for [duration] • [completion time]
  Elpis · model gpt-test default · location /tmp/project
 
-┌──────────────────────────────────────────────────────────────────────────────┐
+───────────────────────────────────────────────────────────────────────────────┐
 › Ask Elpis to do anything                                                     │
-└──────────────────────────────────────────────────────────────────────────────┘
+───────────────────────────────────────────────────────────────────────────────┘
   ? for shortcuts                       100% context left · Tab Context Ledger
 
 working=false, response rows=1, 80x10
@@ -70,9 +71,9 @@ working=false, response rows=1, 80x10
   Worked for [duration] • [completion time]
  Elpis · model gpt-test default · location /tmp/project
 
-┌──────────────────────────────────────────────────────────────────────────────┐
+───────────────────────────────────────────────────────────────────────────────┐
 › Ask Elpis to do anything                                                     │
-└──────────────────────────────────────────────────────────────────────────────┘
+───────────────────────────────────────────────────────────────────────────────┘
   ? for shortcuts                       100% context left · Tab Context Ledger
 
 working=false, response rows=1, 80x11
@@ -83,9 +84,9 @@ working=false, response rows=1, 80x11
   Worked for [duration] • [completion time]
  Elpis · model gpt-test default · location /tmp/project
 
-┌──────────────────────────────────────────────────────────────────────────────┐
+───────────────────────────────────────────────────────────────────────────────┐
 › Ask Elpis to do anything                                                     │
-└──────────────────────────────────────────────────────────────────────────────┘
+───────────────────────────────────────────────────────────────────────────────┘
   ? for shortcuts                       100% context left · Tab Context Ledger
 
 working=false, response rows=1, 12x12
@@ -97,13 +98,13 @@ working=false, response rows=1, 12x12
   [completion time]
  Elpis · mod
 
-┌──────────┐
+───────────┐
 › Ask Elpis│
-└──────────┘
+───────────┘
   100% conte
 
 working=false, response rows=1, 80x4
  Elpis · model gpt-test default · location /tmp/project
-┌──────────────────────────────────────────────────────────────────────────────┐
+───────────────────────────────────────────────────────────────────────────────┐
 › Ask Elpis to do anything                                                     │
-└──────────────────────────────────────────────────────────────────────────────┘
+───────────────────────────────────────────────────────────────────────────────┘

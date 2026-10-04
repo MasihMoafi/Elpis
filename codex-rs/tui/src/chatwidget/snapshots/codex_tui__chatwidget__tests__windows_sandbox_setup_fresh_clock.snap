@@ -1,26 +1,28 @@
 ---
 source: tui/src/chatwidget/tests/permissions.rs
+assertion_line: 743
 expression: "setup.replace(&chat.config.cwd.display().to_string(), \"[CWD]\")"
 ---
  Elpis · model gpt-5.6-sol default · location [CWD]
-Setting up sandbox... (0s)                      │CONTEXT LEDGER  context not
-  └ Hang tight, this may take a few minutes     │measured · ≈0 source estimates
-                                                │Tab controls · Alt+C hide ·
-┌──────────────────────────────────────────────┐│Ctrl+click open file
-› Input disabled until setup completes.        ││
-└──────────────────────────────────────────────┘│SMART PRUNE          [···] SYNC
-        100% context left · Tab Context Ledger  │Reading current thread state
-                                                │Syncing… · /smart-prune on|off
-                                                │sets an explicit state
+Setting up sandbox... (0s)                      │ CONTEXT LEDGER  context not
+  └ Hang tight, this may take a few minutes     │ measured · ≈0 source
+                                                │ estimates
+────────────────────────────────────────────────┤ Tab controls · Alt+C hide ·
+› Input disabled until setup completes.         │ Ctrl+click open file
+────────────────────────────────────────────────┤
+        100% context left · Tab Context Ledger  │ SMART PRUNE       [···] SYNC
+                                                │ Reading current thread state
+                                                │ Syncing… · /smart-prune on|
+                                                │ off sets an explicit state
                                                 │
-                                                │SUBAGENTS             [━━━●] ON
-                                                │May delegate to other agents
+                                                │ SUBAGENTS          [━━━●] ON
+                                                │ May delegate to other agents
                                                 │
-                                                │CONTEXT WINDOW  usage
-                                                │unavailable
-                                                │Context measurement unavailable
-                                                │until the first request
-                                                │snapshot
+                                                │ CONTEXT WINDOW  usage
+                                                │ unavailable
+                                                │ Context measurement
+                                                │ unavailable until the first
+                                                │ request snapshot
                                                 │
-                                                │No portable context is
-                                                │available.
+                                                │ No portable context is
+                                                │ available.

@@ -1,26 +1,28 @@
 ---
 source: tui/src/app/tests/active_reconnect_tests.rs
+assertion_line: 423
 expression: "render_bottom_popup(&app.chat_widget, 80)"
 ---
  Elpis · model gpt-test default · location /tmp/project
-• Queued follow-up inputs                       │CONTEXT LEDGER  context not
-  ↳ old queued input                            │measured · ≈0 source estimates
-    ↑ edit all · enter send                     │Tab controls · Alt+C hide ·
-┌──────────────────────────────────────────────┐│Ctrl+click open file
-› kept draft                                   ││
-└──────────────────────────────────────────────┘│SMART PRUNE          [···] SYNC
-  Plan mode (shift+tab to cycle)                │Reading current thread state
-                                                │Syncing… · /smart-prune on|off
-                                                │sets an explicit state
+────────────────────────────────────────────────┐ CONTEXT LEDGER  context not
+› kept draft                                    │ measured · ≈0 source
+────────────────────────────────────────────────┤ estimates
+  Plan mode (shift+tab to cycle)                │ Tab controls · Alt+C hide ·
+                                                │ Ctrl+click open file
                                                 │
-                                                │SUBAGENTS             [━━━●] ON
-                                                │May delegate to other agents
+                                                │ SMART PRUNE       [···] SYNC
+                                                │ Reading current thread state
+                                                │ Syncing… · /smart-prune on|
+                                                │ off sets an explicit state
                                                 │
-                                                │CONTEXT WINDOW  usage
-                                                │unavailable
-                                                │Context measurement unavailable
-                                                │until the first request
-                                                │snapshot
+                                                │ SUBAGENTS          [━━━●] ON
+                                                │ May delegate to other agents
                                                 │
-                                                │No portable context is
-                                                │available.
+                                                │ CONTEXT WINDOW  usage
+                                                │ unavailable
+                                                │ Context measurement
+                                                │ unavailable until the first
+                                                │ request snapshot
+                                                │
+                                                │ No portable context is
+                                                │ available.

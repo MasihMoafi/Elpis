@@ -16,9 +16,9 @@ terminal_app_over_ssh=false, owned=true
 
 
 
-┌──────────────────────────────────────────────┐
+───────────────────────────────────────────────┐
 › Ask Elpis to do anything                     │
-└──────────────────────────────────────────────┘
+───────────────────────────────────────────────┘
   ? for shortcuts           Tab Context Ledger
 ---
 terminal_app_over_ssh=true, owned=false
@@ -28,7 +28,7 @@ terminal_app_over_ssh=true, owned=false
 
   Pull up a prompt.
 
-┌──────────────────────────────────────────────┐
+───────────────────────────────────────────────┐
 › Ask Elpis to do anything                     │
-└──────────────────────────────────────────────┘
+───────────────────────────────────────────────┘
   ? for shortcuts           Tab Context Ledger

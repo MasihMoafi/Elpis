@@ -16,6 +16,21 @@
 
 use super::*;
 use crate::bottom_pane::BottomPane;
+use ratatui::widgets::Borders;
+
+/// The Deus Ex composer box. It draws only in the cells that Codex leaves blank around the
+/// draft: the row above it, the row below it and the right margin. The first column is Codex's
+/// prompt column, so the box has no left side. Beside the Context Ledger, the Ledger's rule is
+/// the box's right side (`crate::style::box_borders`).
+pub(super) fn render_composer_box(area: Rect, buf: &mut Buffer) {
+    Block::default()
+        .borders(crate::style::box_borders(
+            area,
+            Borders::TOP | Borders::RIGHT | Borders::BOTTOM,
+        ))
+        .border_style(crate::style::composer_border_style())
+        .render(area, buf);
+}
 
 /// The keymap action whose key the footer names as the queue key: Enter queues during a turn.
 pub(super) const QUEUE_HINT_ACTION: &str = "submit";

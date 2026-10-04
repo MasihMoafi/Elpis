@@ -257,67 +257,42 @@ impl BesideContextLedger<'_> {
     }
 }
 
-/// A box beside the Ledger shares the Ledger rule as its right edge, so the two rules
-/// never stand side by side. Only cells in the rule color change; text stays as drawn.
-fn join_boxes_to_ledger_rule(
-    pane: ratatui::layout::Rect,
-    ledger_height: u16,
-    buf: &mut ratatui::buffer::Buffer,
-) {
-    if pane.width == 0 || ledger_height == 0 || pane.right() >= buf.area.right() {
-        return;
-    }
-    // Without a known terminal background the rule is the plain terminal color; then
-    // a rule cannot be told apart from text, so nothing is joined.
-    let Some(rule) = crate::style::rule_style()
-        .fg
-        .filter(|color| *color != ratatui::style::Color::Reset)
-    else {
-        return;
-    };
-    let (edge_x, rule_x) = (pane.right() - 1, pane.right());
-    let (top, bottom) = (pane.y, pane.y + ledger_height - 1);
-    for y in top..=bottom {
-        if buf[(edge_x, y)].fg != rule {
-            continue;
-        }
-        let joins = match buf[(edge_x, y)].symbol() {
-            "┐" | "┘" => true,
-            "│" => false,
-            _ => continue,
-        };
-        buf[(edge_x, y)].set_symbol(if joins { "─" } else { " " });
-        if joins {
-            buf[(rule_x, y)].set_symbol(match (y > top, y < bottom) {
-                (true, true) => "┤",
-                (false, true) => "┐",
-                (true, false) => "┘",
-                (false, false) => "─",
-            });
-        }
-    }
-}
-
 impl crate::render::renderable::Renderable for BesideContextLedger<'_> {
     fn render(&self, area: ratatui::layout::Rect, buf: &mut ratatui::buffer::Buffer) {
         let (pane, ledger_width) = self.split(area);
-        self.bottom_pane.render(pane, buf);
-        if let Some((ledger_height, ledger_lines)) = self
+        let Some((ledger_height, ledger_lines)) = self
             .chat_widget
             .context_ledger_lines_with_height(ledger_width)
-        {
-            self.chat_widget.render_context_ledger_lines(
-                ratatui::layout::Rect::new(
-                    pane.right(),
-                    area.y,
-                    ledger_width,
-                    ledger_height.min(area.height),
-                ),
-                buf,
-                ledger_lines,
-            );
-            join_boxes_to_ledger_rule(pane, ledger_height.min(area.height), buf);
-        }
+        else {
+            self.bottom_pane.render(pane, buf);
+            return;
+        };
+        // Beside the Ledger, its rule is the right side of each Elpis box that ends on it.
+        let boxes = crate::style::render_against_ledger_rule(pane.right(), || {
+            self.bottom_pane.render(pane, buf)
+        });
+        // The rule joins each box's top and bottom rules, so it reaches the lowest box's
+        // bottom rule even when the Ledger is shorter.
+        let box_rules = boxes
+            .iter()
+            .map(|area| (area.top(), area.bottom() - 1))
+            .collect::<Vec<_>>();
+        let rule_rows = box_rules
+            .iter()
+            .map(|(_, bottom)| bottom + 1 - area.y)
+            .max()
+            .unwrap_or(0);
+        self.chat_widget.render_context_ledger_lines(
+            ratatui::layout::Rect::new(
+                pane.right(),
+                area.y,
+                ledger_width,
+                ledger_height.max(rule_rows).min(area.height),
+            ),
+            buf,
+            ledger_lines,
+            &box_rules,
+        );
     }
 
     fn desired_height(&self, width: u16) -> u16 {

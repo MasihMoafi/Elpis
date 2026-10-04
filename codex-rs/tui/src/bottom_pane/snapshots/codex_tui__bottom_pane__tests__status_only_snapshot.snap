@@ -1,10 +1,11 @@
 ---
 source: tui/src/bottom_pane/mod.rs
+assertion_line: 3304
 expression: "render_snapshot(&pane, area)"
 ---
 Elpising… (0s • esc to interrupt)               
                                                 
-┌──────────────────────────────────────────────┐
+───────────────────────────────────────────────┐
 › Ask Elpis to do anything                     │
-└──────────────────────────────────────────────┘
+───────────────────────────────────────────────┘
         100% context left · Tab Context Ledger

@@ -1,5 +1,6 @@
 ---
 source: tui/src/app/owned_transcript_follow_tests.rs
+assertion_line: 54
 expression: "crate::chatwidget::tests::helpers::normalize_snapshot_paths(super::tests::buffer_text(buffer))"
 ---
 transcript row 36
@@ -10,7 +11,7 @@ transcript row 39
 
 Elpising… (0s • esc to interrupt)
 
-┌──────────────────────────────────────────────────────────────────────────────┐
+───────────────────────────────────────────────────────────────────────────────┐
 › draft stays here                                                             │
-└──────────────────────────────────────────────────────────────────────────────┘
+───────────────────────────────────────────────────────────────────────────────┘
   enter to queue message                100% context left · Tab Context Ledger

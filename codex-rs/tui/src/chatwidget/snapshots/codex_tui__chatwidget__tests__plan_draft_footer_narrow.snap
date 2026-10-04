@@ -1,9 +1,10 @@
 ---
 source: tui/src/chatwidget/tests/plan_mode.rs
+assertion_line: 89
 expression: "normalize_snapshot_paths(render_bottom_popup(&chat, 36))"
 ---
  Elpis · model gpt-5 default · locat
-┌──────────────────────────────────┐
+───────────────────────────────────┐
 › make a plan                      │
-└──────────────────────────────────┘
+───────────────────────────────────┘
                  100% context left

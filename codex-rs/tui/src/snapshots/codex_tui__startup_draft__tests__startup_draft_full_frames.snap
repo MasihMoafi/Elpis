@@ -10,9 +10,9 @@ empty (48 columns):
 
   Pull up a prompt.
 
-┌──────────────────────────────────────────────┐
+───────────────────────────────────────────────┐
 › Ask Elpis to do anything                     │
-└──────────────────────────────────────────────┘
+───────────────────────────────────────────────┘
   ? for shortcuts           Tab Context Ledger
 ---
 resuming (48 columns):
@@ -20,9 +20,9 @@ resuming (48 columns):
   ◆ Elpis (v0.4.1)
      loading
   Resuming session…
-┌──────────────────────────────────────────────┐
+───────────────────────────────────────────────┐
 › Ask Elpis to do anything                     │
-└──────────────────────────────────────────────┘
+───────────────────────────────────────────────┘
   ? for shortcuts           Tab Context Ledger
 ---
 forking (48 columns):
@@ -30,9 +30,9 @@ forking (48 columns):
   ◆ Elpis (v0.4.1)
      loading
   Forking session…
-┌──────────────────────────────────────────────┐
+───────────────────────────────────────────────┐
 › draft while loading                          │
-└──────────────────────────────────────────────┘
+───────────────────────────────────────────────┘
                             Tab Context Ledger
 ---
 multiline (48 columns):
@@ -42,10 +42,10 @@ multiline (48 columns):
 
   Pull up a prompt.
 
-┌──────────────────────────────────────────────┐
+───────────────────────────────────────────────┐
 › first startup line                           │
-│ second startup line                          │
-└──────────────────────────────────────────────┘
+  second startup line                          │
+───────────────────────────────────────────────┘
                             Tab Context Ledger
 ---
 narrow (18 columns):
@@ -55,9 +55,9 @@ narrow (18 columns):
 
   Pull up a promp…
 
-┌────────────────┐
+─────────────────┐
 › first startup  │
-│ line           │
-│ second startup │
-│ line           │
-└────────────────┘
+  line           │
+  second startup │
+  line           │
+─────────────────┘

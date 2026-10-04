@@ -1,9 +1,10 @@
 ---
 source: tui/src/app_server_session.rs
+assertion_line: 4148
 expression: "crate::chatwidget::tests::helpers::normalize_snapshot_paths(crate::chatwidget::tests::helpers::render_bottom_popup(&chat,\n40),)"
 ---
  Elpis · model gpt-5.5 default · locatio
-┌──────────────────────────────────────┐
+───────────────────────────────────────┐
 › Ask Elpis to do anything             │
-└──────────────────────────────────────┘
+───────────────────────────────────────┘
   Plan mode (shift+tab to cycle)

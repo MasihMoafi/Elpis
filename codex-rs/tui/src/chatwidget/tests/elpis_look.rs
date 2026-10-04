@@ -215,11 +215,18 @@ async fn composer_wears_the_teal_box_and_keeps_the_draft_intact() {
         .iter()
         .position(|row| row.contains("keep my draft"))
         .expect("draft row");
-    // A thin teal rule box frames the composer; the prompt glyph takes the draft row.
+    // A thin teal rule box frames the composer in the cells that Codex leaves blank around the
+    // draft. The first column stays Codex's prompt column, so the box has no left side.
     let top_row = draft_row as u16 - 1;
-    assert_eq!(buffer[(0, top_row)].symbol(), "┌");
+    assert_eq!(buffer[(0, top_row)].symbol(), "─");
     assert_eq!(buffer[(0, draft_row as u16)].symbol(), "›");
     assert!(is_teal(buffer[(0, top_row)].fg));
+    for (row, line) in rows.iter().enumerate() {
+        assert!(
+            !matches!(buffer[(0, row as u16)].symbol(), "│" | "┌" | "└"),
+            "the box drew in the prompt column: {line:?}"
+        );
+    }
     // The box is drawn around the text, never over it.
     assert!(
         rows[draft_row].contains("› keep my draft"),
@@ -252,9 +259,10 @@ async fn identity_line_sits_directly_above_the_composer() {
             row.starts_with(&format!(" Elpis · model {model} ")) && row.contains(" · location ")
         })
         .unwrap_or_else(|| panic!("no identity line in {rows:#?}"));
+    // The box's top rule; the box has no left side, which is Codex's prompt column.
     let composer_top = rows
         .iter()
-        .position(|row| row.starts_with('┌'))
+        .position(|row| row.starts_with('─'))
         .expect("composer box");
     assert_eq!(identity + 1, composer_top, "{rows:#?}");
     assert!(is_orange(buffer[(1, identity as u16)].fg));
@@ -380,16 +388,16 @@ async fn composer_box_shares_the_ledger_rule_and_closes_itself_without_the_ledge
     let beside = rows_now(&chat);
     let top = beside
         .iter()
-        .find(|row| row.starts_with('┌'))
+        .find(|row| row.starts_with('─'))
         .expect("composer box");
-    assert!(top.contains("─┐CONTEXT LEDGER"), "{beside:#?}");
+    assert!(top.contains("─┐ CONTEXT LEDGER"), "{beside:#?}");
     assert!(beside.iter().all(|row| !row.contains("││")), "{beside:#?}");
 
     chat.close_context_ledger();
     let alone = rows_now(&chat);
     let top = alone
         .iter()
-        .find(|row| row.starts_with('┌'))
+        .find(|row| row.starts_with('─'))
         .expect("composer box");
     assert!(top.trim_end().ends_with('┐'), "{alone:#?}");
 }

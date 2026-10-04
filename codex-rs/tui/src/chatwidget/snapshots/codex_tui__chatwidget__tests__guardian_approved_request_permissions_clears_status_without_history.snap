@@ -1,24 +1,25 @@
 ---
 source: tui/src/chatwidget/tests/guardian.rs
+assertion_line: 463
 expression: normalize_snapshot_paths(term.backend().vt100().screen().contents())
 ---
 
  Elpis · model gpt-5.6-sol default · location /tmp/project
-Elpising… (0s • esc to interrupt)                                 │CONTEXT LEDGER  context not measured · ≈0
-                                                                  │source estimates
-┌────────────────────────────────────────────────────────────────┐│Tab controls · Alt+C hide · Ctrl+click open
-› Ask Elpis to do anything                                       ││file
-└────────────────────────────────────────────────────────────────┘│
-  ? for shortcuts         100% context left · Tab Context Ledger  │SMART PRUNE                      [···] SYNC
-                                                                  │Reading current thread state
-                                                                  │Syncing… · /smart-prune on|off sets an
-                                                                  │explicit state
+Elpising… (0s • esc to interrupt)                                 │ CONTEXT LEDGER  context not measured ·
+                                                                  │ ≈0 source estimates
+──────────────────────────────────────────────────────────────────┤ Tab controls · Alt+C hide · Ctrl+click
+› Ask Elpis to do anything                                        │ open file
+──────────────────────────────────────────────────────────────────┤
+  ? for shortcuts         100% context left · Tab Context Ledger  │ SMART PRUNE                   [···] SYNC
+                                                                  │ Reading current thread state
+                                                                  │ Syncing… · /smart-prune on|off sets an
+                                                                  │ explicit state
                                                                   │
-                                                                  │SUBAGENTS                         [━━━●] ON
-                                                                  │May delegate to other agents
+                                                                  │ SUBAGENTS                      [━━━●] ON
+                                                                  │ May delegate to other agents
                                                                   │
-                                                                  │CONTEXT WINDOW  usage unavailable
-                                                                  │Context measurement unavailable until the
-                                                                  │first request snapshot
+                                                                  │ CONTEXT WINDOW  usage unavailable
+                                                                  │ Context measurement unavailable until
+                                                                  │ the first request snapshot
                                                                   │
-                                                                  │No portable context is available.
+                                                                  │ No portable context is available.
