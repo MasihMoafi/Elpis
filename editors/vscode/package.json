@@ -2,7 +2,7 @@
   "name": "elpis-editor",
   "displayName": "Elpis",
   "description": "Run the installed Elpis in a VS Code editor tab, with live editor context for /ide.",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "elpisRuntime": "0.4.1-dev",
   "publisher": "elpis-local",
   "license": "Apache-2.0",
