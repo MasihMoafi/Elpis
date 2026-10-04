@@ -6,6 +6,7 @@
 //! only as `prune` describes. Each error sends the source unchanged.
 
 mod prune;
+mod session;
 
 use std::collections::HashMap;
 use std::io;
@@ -39,6 +40,8 @@ use tokio::sync::Mutex;
 
 use crate::prune::Candidate;
 use crate::prune::Decisions;
+use crate::session::Outcome;
+use crate::session::SessionStats;
 
 /// Anthropic's API origin, the default upstream.
 pub const ANTHROPIC_ORIGIN: &str = "https://api.anthropic.com";
@@ -72,6 +75,11 @@ impl ProxyHandle {
     pub fn origin(&self) -> &str {
         &self.origin
     }
+
+    /// The live page of this session.
+    pub fn page_url(&self) -> String {
+        format!("{}{}", self.origin, session::PAGE_PATH)
+    }
 }
 
 struct ProxyState {
@@ -82,6 +90,8 @@ struct ProxyState {
     optimizer: Arc<dyn Optimizer>,
     /// Decisions by `tool_use_id`. The lock also makes sure that one block gets one decision.
     decisions: Mutex<Decisions>,
+    /// The counts that the session page shows. The lock is never held across an await.
+    stats: std::sync::Mutex<SessionStats>,
 }
 
 /// Binds a loopback port and serves the proxy until the process exits.
@@ -100,6 +110,7 @@ pub async fn start(
         log_dir: options.log_dir,
         optimizer,
         decisions: Mutex::new(decisions),
+        stats: std::sync::Mutex::new(SessionStats::new()),
     });
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
     let origin = format!("http://{}", listener.local_addr()?);
@@ -122,7 +133,22 @@ async fn forward(
     headers: HeaderMap,
     body: Bytes,
 ) -> Response {
-    let body = if state.prune && method == Method::POST && uri.path() == "/v1/messages" {
+    if method == Method::GET
+        && (uri.path() == session::PAGE_PATH || uri.path().starts_with("/elpis/"))
+    {
+        let Ok(stats) = state.stats.lock() else {
+            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+        };
+        return session::route(uri.path(), &stats, state.prune, &state.log_dir);
+    }
+    let messages = method == Method::POST && uri.path() == "/v1/messages";
+    if messages
+        && let Ok(parsed) = serde_json::from_slice::<Value>(&body)
+        && let Ok(mut stats) = state.stats.lock()
+    {
+        stats.note_request(prune::tool_results(&parsed));
+    }
+    let body = if state.prune && messages {
         prune_body(&state, body).await
     } else {
         body
@@ -212,6 +238,7 @@ async fn decide(state: &ProxyState, body: &Value, pending: &[Candidate]) -> Deci
     };
     let mut decided = Decisions::new();
     let mut items = Vec::new();
+    let mut checked = Vec::new();
     let manifest = manifest.map(|manifest| manifest.into_iter().map(Some).collect::<Vec<_>>());
     let decisions = manifest.unwrap_or_else(|| vec![None; pending.len()]);
     for (candidate, decision) in pending.iter().zip(decisions) {
@@ -234,6 +261,15 @@ async fn decide(state: &ProxyState, body: &Value, pending: &[Candidate]) -> Deci
             "saved_tokens": admitted.as_ref().map_or(0, |admitted| admitted.saved_tokens),
             "admitted": admitted.as_ref().map(|admitted| admitted.text.as_str()),
         }));
+        let outcome = match (&error, &admitted) {
+            (Some(_), _) => Outcome::Error,
+            (None, Some(_)) => Outcome::Compacted,
+            (None, None) => Outcome::Kept,
+        };
+        let sent_tokens = admitted
+            .as_ref()
+            .map_or(candidate.source_tokens, |admitted| admitted.admitted_tokens);
+        checked.push((outcome, candidate.source_tokens, sent_tokens));
         decided.insert(
             candidate.tool_use_id.clone(),
             admitted.map(|admitted| admitted.text),
@@ -252,7 +288,20 @@ async fn decide(state: &ProxyState, body: &Value, pending: &[Candidate]) -> Deci
         "items": items,
     });
     // An admission without a durable record would change a block that nobody can audit.
-    if let Err(error) = write_record(&state.log_dir, &admission_id, &record) {
+    let written = write_record(&state.log_dir, &admission_id, &record);
+    if let Ok(mut stats) = state.stats.lock() {
+        let model = reply.as_ref().map(|reply| reply.model_slug.as_str());
+        for (outcome, source_tokens, sent_tokens) in checked {
+            // Without a record, the source goes out unchanged.
+            let (outcome, sent_tokens) = if written.is_ok() {
+                (outcome, sent_tokens)
+            } else {
+                (Outcome::Error, source_tokens)
+            };
+            stats.note_checked(model, outcome, source_tokens, sent_tokens);
+        }
+    }
+    if let Err(error) = written {
         tracing::warn!("Smart Prune record failed; sending the source: {error}");
         return pending
             .iter()
