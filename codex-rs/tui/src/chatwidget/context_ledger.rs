@@ -92,10 +92,6 @@ pub(super) struct LedgerLines {
     lines: Vec<Line<'static>>,
     source_line_ranges: Vec<std::ops::Range<usize>>,
     source_links: Vec<(usize, String)>,
-    smart_prune_line: usize,
-    smart_prune_columns: std::ops::Range<usize>,
-    subagents_line: usize,
-    subagents_columns: std::ops::Range<usize>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -119,13 +115,6 @@ pub(super) struct ContextLedgerState {
     /// Full screen only: the Ledger would leave the transcript too few rows, so it hides
     /// until Tab or Alt+C focuses it.
     crowded: std::cell::Cell<bool>,
-    last_area: std::cell::Cell<Option<Rect>>,
-    last_scroll: std::cell::Cell<u16>,
-    last_source_ranges: std::cell::RefCell<Vec<(usize, std::ops::Range<usize>)>>,
-    last_smart_prune_row: std::cell::Cell<Option<u16>>,
-    last_smart_prune_columns: std::cell::Cell<Option<(u16, u16)>>,
-    last_subagents_row: std::cell::Cell<Option<u16>>,
-    last_subagents_columns: std::cell::Cell<Option<(u16, u16)>>,
     pub(super) pending_smart_prune_enabled: Option<bool>,
     pub(super) pending_subagents_enabled: Option<bool>,
     pub(super) projected_token_delta: i64,
@@ -146,31 +135,12 @@ impl Default for ContextLedgerState {
             pending_g: false,
             why_visible: false,
             crowded: std::cell::Cell::new(false),
-            last_area: std::cell::Cell::new(None),
-            last_scroll: std::cell::Cell::new(0),
-            last_source_ranges: std::cell::RefCell::new(Vec::new()),
-            last_smart_prune_row: std::cell::Cell::new(None),
-            last_smart_prune_columns: std::cell::Cell::new(None),
-            last_subagents_row: std::cell::Cell::new(None),
-            last_subagents_columns: std::cell::Cell::new(None),
             pending_smart_prune_enabled: None,
             pending_subagents_enabled: None,
             projected_token_delta: 0,
             projection_baseline_turn_id: None,
             pending_context_admissions: std::collections::BTreeMap::new(),
         }
-    }
-}
-
-impl ContextLedgerState {
-    fn clear_rendered_geometry(&self) {
-        self.last_area.set(None);
-        self.last_scroll.set(0);
-        self.last_source_ranges.borrow_mut().clear();
-        self.last_smart_prune_row.set(None);
-        self.last_smart_prune_columns.set(None);
-        self.last_subagents_row.set(None);
-        self.last_subagents_columns.set(None);
     }
 }
 
@@ -230,7 +200,6 @@ impl ChatWidget {
         ledger_width: u16,
     ) -> Option<(u16, LedgerLines)> {
         if !self.context_ledger.visible || ledger_width == 0 {
-            self.context_ledger.clear_rendered_geometry();
             return None;
         }
         // Build the real lines and measure them with the same wrap settings the
@@ -274,7 +243,6 @@ impl ChatWidget {
                 self.context_ledger.focused = false;
                 self.context_ledger.smart_prune_selected = false;
                 self.context_ledger.subagents_selected = false;
-                self.context_ledger.clear_rendered_geometry();
             }
             self.context_ledger.pending_g = false;
             self.request_redraw();
@@ -604,12 +572,6 @@ impl ChatWidget {
                     + smart_prune_button.chars().count(),
             )
             .max(1);
-        let smart_prune_line = lines.len();
-        let smart_prune_column_start = smart_prune_cursor.chars().count()
-            + smart_prune_label.chars().count()
-            + smart_prune_pad;
-        let smart_prune_columns =
-            smart_prune_column_start..smart_prune_column_start + smart_prune_button.chars().count();
         let [violet, teal, emerald, green] =
             smart_prune_on_colors(default_bg(), stdout_color_level());
         let toggle_label_spans = |label, enabled| {
@@ -822,11 +784,6 @@ impl ChatWidget {
                     + subagents_button.chars().count(),
             )
             .max(1);
-        let subagents_line = lines.len();
-        let subagents_column_start =
-            subagents_cursor.chars().count() + subagents_label.chars().count() + subagents_pad;
-        let subagents_columns =
-            subagents_column_start..subagents_column_start + subagents_button.chars().count();
         let subagents_switch_spans = if subagents_enabled {
             vec![
                 Span::styled("[", Style::default().fg(teal)),
@@ -1109,10 +1066,6 @@ impl ChatWidget {
             lines,
             source_line_ranges,
             source_links,
-            smart_prune_line,
-            smart_prune_columns,
-            subagents_line,
-            subagents_columns,
         }
     }
 
@@ -1133,10 +1086,6 @@ impl ChatWidget {
             lines,
             source_line_ranges,
             source_links,
-            smart_prune_line,
-            smart_prune_columns,
-            subagents_line,
-            subagents_columns,
         } = ledger_lines;
 
         let scroll_lines = self
@@ -1156,60 +1105,6 @@ impl ChatWidget {
                     .unwrap_or(0)
             })
             .unwrap_or(0);
-        self.context_ledger.last_area.set(Some(area));
-        self.context_ledger.last_scroll.set(scroll_lines);
-        let rows_before_smart_prune = Paragraph::new(lines[..smart_prune_line].to_vec())
-            .wrap(Wrap { trim: true })
-            .line_count(content_width);
-        let visible_smart_prune_row = u16::try_from(rows_before_smart_prune)
-            .ok()
-            .and_then(|row| row.checked_sub(scroll_lines))
-            .filter(|row| *row < area.height)
-            .map(|row| area.y.saturating_add(row));
-        self.context_ledger
-            .last_smart_prune_row
-            .set(visible_smart_prune_row);
-        let switch_start = u16::try_from(smart_prune_columns.start)
-            .ok()
-            .map(|column| area.x.saturating_add(1).saturating_add(column));
-        let switch_end = u16::try_from(smart_prune_columns.end)
-            .ok()
-            .map(|column| area.x.saturating_add(1).saturating_add(column));
-        self.context_ledger
-            .last_smart_prune_columns
-            .set(switch_start.zip(switch_end));
-        let rows_before_subagents = Paragraph::new(lines[..subagents_line].to_vec())
-            .wrap(Wrap { trim: true })
-            .line_count(content_width);
-        let visible_subagents_row = u16::try_from(rows_before_subagents)
-            .ok()
-            .and_then(|row| row.checked_sub(scroll_lines))
-            .filter(|row| *row < area.height)
-            .map(|row| area.y.saturating_add(row));
-        self.context_ledger
-            .last_subagents_row
-            .set(visible_subagents_row);
-        let subagents_switch_start = u16::try_from(subagents_columns.start)
-            .ok()
-            .map(|column| area.x.saturating_add(1).saturating_add(column));
-        let subagents_switch_end = u16::try_from(subagents_columns.end)
-            .ok()
-            .map(|column| area.x.saturating_add(1).saturating_add(column));
-        self.context_ledger
-            .last_subagents_columns
-            .set(subagents_switch_start.zip(subagents_switch_end));
-        let tracked_ranges = source_line_ranges
-            .into_iter()
-            .enumerate()
-            .filter(|(_, r)| !r.is_empty())
-            .map(|(index, range)| {
-                let start =
-                    wrapped_line_count(&lines[..range.start.min(lines.len())], content_width);
-                let end = wrapped_line_count(&lines[..range.end.min(lines.len())], content_width);
-                (index, usize::from(start)..usize::from(end))
-            })
-            .collect();
-        *self.context_ledger.last_source_ranges.borrow_mut() = tracked_ranges;
 
         Paragraph::new(lines.clone())
             .block(
@@ -1553,7 +1448,6 @@ impl ChatWidget {
         self.context_ledger.smart_prune_selected = false;
         self.context_ledger.subagents_selected = false;
         self.context_ledger.pending_g = false;
-        self.context_ledger.clear_rendered_geometry();
     }
 
     /// Position 0 is the Smart Prune switch; the selectable sources follow it.
