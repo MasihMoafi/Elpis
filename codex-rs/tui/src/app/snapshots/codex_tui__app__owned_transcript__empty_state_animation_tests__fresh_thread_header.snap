@@ -4,7 +4,7 @@ expression: "format!(\"enabled:\\n{}\\n---\\ndisabled:\\n{}\", text(after), text
 ---
 enabled:
 
-  ◆ Elpis (v0.5.0-dev)
+  ◆ Elpis (v0.4.1-dev)
      /tmp/project
 
   Pull up a prompt.
@@ -50,7 +50,7 @@ enabled:
 ---
 disabled:
 
-  ◆ Elpis (v0.5.0-dev)
+  ◆ Elpis (v0.4.1-dev)
      /tmp/project
 
   Pull up a prompt.

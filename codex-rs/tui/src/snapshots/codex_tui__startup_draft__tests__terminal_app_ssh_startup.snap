@@ -4,7 +4,7 @@ expression: "frames.join(\"\\n---\\n\").replace(crate::version::CODEX_CLI_VERSIO
 ---
 terminal_app_over_ssh=false, owned=true
 
-  ◆ Elpis (v0.5.0-dev)
+  ◆ Elpis (v0.4.1-dev)
      loading
 
   Pull up a prompt.
@@ -22,7 +22,7 @@ terminal_app_over_ssh=false, owned=true
 ---
 terminal_app_over_ssh=true, owned=false
 
-  ◆ Elpis (v0.5.0-dev)
+  ◆ Elpis (v0.4.1-dev)
      loading
 
   Pull up a prompt.

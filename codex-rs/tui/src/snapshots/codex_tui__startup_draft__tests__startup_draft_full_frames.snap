@@ -4,7 +4,7 @@ expression: "snapshots.join(\"\\n---\\n\")"
 ---
 empty (48 columns):
 
-  ◆ Elpis (v0.5.0-dev)
+  ◆ Elpis (v0.4.1-dev)
      loading
 
   Pull up a prompt.
@@ -16,7 +16,7 @@ empty (48 columns):
 ---
 resuming (48 columns):
 
-  ◆ Elpis (v0.5.0-dev)
+  ◆ Elpis (v0.4.1-dev)
      loading
   Resuming session…
 ┌──────────────────────────────────────────────┐
@@ -26,7 +26,7 @@ resuming (48 columns):
 ---
 forking (48 columns):
 
-  ◆ Elpis (v0.5.0-dev)
+  ◆ Elpis (v0.4.1-dev)
      loading
   Forking session…
 ┌──────────────────────────────────────────────┐
@@ -36,7 +36,7 @@ forking (48 columns):
 ---
 multiline (48 columns):
 
-  ◆ Elpis (v0.5.0-dev)
+  ◆ Elpis (v0.4.1-dev)
      loading
 
   Pull up a prompt.
@@ -49,7 +49,7 @@ multiline (48 columns):
 ---
 narrow (18 columns):
 
-  ◆ Elpis (v0.5.0…
+  ◆ Elpis (v0.4.1…
      loading
 
   Pull up a promp…
