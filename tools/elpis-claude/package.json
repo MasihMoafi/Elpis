@@ -1,0 +1,10 @@
+{
+  "name": "elpis-claude",
+  "private": true,
+  "type": "module",
+  "description": "Prototype: Claude (subscription, via ACP) answering turns in the Elpis TUI",
+  "dependencies": {
+    "@agentclientprotocol/claude-agent-acp": "0.86.0",
+    "ws": "^8"
+  }
+}
