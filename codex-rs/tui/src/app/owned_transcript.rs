@@ -617,3 +617,8 @@ mod warning_notice_tests;
 #[cfg(test)]
 #[path = "owned_transcript_follow_tests.rs"]
 mod follow_tests;
+
+// Elpis: typing draws at once and its frame cost does not grow with the chat.
+#[cfg(test)]
+#[path = "owned_transcript_render_cost_tests.rs"]
+mod render_cost_tests;
