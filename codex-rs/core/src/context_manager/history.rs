@@ -1000,6 +1000,9 @@ impl ContextManager {
 
         // strip audio when model does not support it
         normalize::strip_audio_when_unsupported(input_modalities, items);
+
+        // Elpis: old tool screenshots leave the prompt
+        normalize::drop_old_tool_screenshots(items);
     }
 
     /// Walk backward from a rollback cut and trim contiguous pre-turn context-update items.
@@ -1426,3 +1429,8 @@ mod tests;
 #[cfg(test)]
 #[path = "history_elpis_tests.rs"]
 mod elpis_tests;
+
+// Elpis: old tool screenshots leave the prompt.
+#[cfg(test)]
+#[path = "history_elpis_image_tests.rs"]
+mod elpis_image_tests;
