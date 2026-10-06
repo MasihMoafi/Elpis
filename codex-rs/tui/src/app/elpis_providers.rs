@@ -7,8 +7,8 @@
 //! it, and a fork keeps the whole history while the old thread keeps its provider. A thread with
 //! no turns yet has nothing to carry, so it is replaced by a fresh session on the new provider.
 
-use super::*;
 use super::session_lifecycle::ThreadAttachPresentation;
+use super::*;
 use crate::app_server_session::ForkGoalContinuation;
 use crate::chatwidget::ElpisProviderEvent;
 
@@ -54,9 +54,7 @@ impl App {
                 .add_error_message(format!("Model provider `{provider_id}` not found"));
             return;
         };
-        if codex_model_provider_info::gateway_route(&provider).is_none()
-            && crate::chatwidget::elpis_catalog_provider().as_deref() == Some(provider_id.as_str())
-        {
+        if crate::chatwidget::elpis_lists_from_app_server(&provider_id, &provider) {
             let presets = self.model_catalog.try_list_models().unwrap_or_default();
             self.chat_widget
                 .open_elpis_provider_models(provider_id, Ok(presets));
@@ -69,12 +67,10 @@ impl App {
                 crate::chatwidget::load_elpis_provider_models(home, provider_id.clone(), provider)
                     .await;
             tx.send(AppEvent::Elpis(
-                crate::elpis_app_event::ElpisAppEvent::Provider(
-                    ElpisProviderEvent::ModelsLoaded {
-                        provider_id,
-                        result,
-                    },
-                ),
+                crate::elpis_app_event::ElpisAppEvent::Provider(ElpisProviderEvent::ModelsLoaded {
+                    provider_id,
+                    result,
+                }),
             ));
         });
     }
@@ -89,9 +85,12 @@ impl App {
         if provider_id == self.chat_widget.config_ref().model_provider_id {
             // The thread's own provider: an ordinary model change.
             self.app_event_tx.send(AppEvent::UpdateModel(model.clone()));
-            self.app_event_tx.send(AppEvent::UpdateReasoningEffort(None));
             self.app_event_tx
-                .send(AppEvent::PersistModelSelection { model, effort: None });
+                .send(AppEvent::UpdateReasoningEffort(None));
+            self.app_event_tx.send(AppEvent::PersistModelSelection {
+                model,
+                effort: None,
+            });
             return;
         }
         let Some(provider) = self.config.model_providers.get(&provider_id).cloned() else {
@@ -162,8 +161,11 @@ impl App {
             .await
         {
             Ok(forked) => {
-                self.detach_current_thread_for_navigation(app_server, Some(forked.session.thread_id))
-                    .await;
+                self.detach_current_thread_for_navigation(
+                    app_server,
+                    Some(forked.session.thread_id),
+                )
+                .await;
                 match self
                     .replace_chat_widget_with_app_server_thread(
                         tui,
@@ -186,7 +188,11 @@ impl App {
                     )),
                 }
             }
-            Err(err) if err.chain().any(|cause| cause.to_string().contains(NO_ROLLOUT)) => {
+            Err(err)
+                if err
+                    .chain()
+                    .any(|cause| cause.to_string().contains(NO_ROLLOUT)) =>
+            {
                 // No turns yet: nothing to carry over.
                 self.start_fresh_session(
                     tui, app_server, /*session_start_source*/ None,

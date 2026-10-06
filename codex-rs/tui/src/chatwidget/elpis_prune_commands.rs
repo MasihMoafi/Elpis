@@ -23,9 +23,10 @@ use crate::slash_command::SlashCommand;
 const SMART_PRUNE_USAGE: &str = "Usage: /smart-prune [on|off]";
 const PRUNER_MODEL_SELECTION_VIEW_ID: &str = "pruner-model-selection";
 
-/// Saves a `/pruner-model` choice to `pruner.json` and returns how the choice reads.
-/// `role_provider` is the provider a bare id runs on when the choice names none.
-fn save_pruner_choice(
+/// Saves a `/pruner-model` choice to `pruner.json` and returns how the choice reads. The
+/// dashboard's Models tab saves through it too. `role_provider` is the provider a bare id runs
+/// on when the choice names none.
+pub(crate) fn save_pruner_choice(
     home: &Path,
     choice: &BackgroundModelChoice,
     role_provider: &str,
@@ -117,7 +118,7 @@ impl ChatWidget {
 
     /// The provider the pruner uses when `pruner.json` names none: the background provider,
     /// else the session's.
-    fn pruner_role_provider(&self) -> &str {
+    pub(crate) fn pruner_role_provider(&self) -> &str {
         self.config
             .background_provider
             .as_deref()
@@ -184,11 +185,12 @@ impl ChatWidget {
                     description: Some(description),
                     is_current,
                     actions: vec![Box::new(move |tx| {
-                        let result = PrunerSettings::load(home.as_path()).and_then(|mut settings| {
-                            settings.model = model.clone();
-                            settings.provider = provider.clone();
-                            settings.save(home.as_path())
-                        });
+                        let result =
+                            PrunerSettings::load(home.as_path()).and_then(|mut settings| {
+                                settings.model = model.clone();
+                                settings.provider = provider.clone();
+                                settings.save(home.as_path())
+                            });
                         let cell = match result {
                             Ok(()) => history_cell::new_info_event(
                                 format!(

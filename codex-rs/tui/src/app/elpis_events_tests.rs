@@ -148,3 +148,93 @@ async fn memory_model_saves_the_background_model_for_this_and_future_chats() -> 
     server.shutdown().await?;
     Ok(())
 }
+
+/// One HTTP exchange with the running dashboard server.
+fn dashboard_http(port: u16, request_head: &str, body: &str) -> String {
+    use std::io::Read;
+    use std::io::Write;
+    let mut socket = std::net::TcpStream::connect(("127.0.0.1", port)).expect("dashboard accepts");
+    socket
+        .set_read_timeout(Some(std::time::Duration::from_secs(60)))
+        .expect("read timeout");
+    write!(
+        socket,
+        "{request_head}\r\nHost: 127.0.0.1:{port}\r\nOrigin: http://127.0.0.1:{port}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+        body.len()
+    )
+    .expect("write request");
+    let mut response = String::new();
+    socket.read_to_string(&mut response).expect("read response");
+    response
+}
+
+/// Positive: a background model picked on the dashboard's Models tab goes through the real
+/// server and the App's `/memory-model` writer: config.toml keeps it, this chat uses it, and the
+/// next poll of `/data.json` shows it. Negative: before the pick the page shows the built-in
+/// default.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_background_model_picked_on_the_dashboard_is_saved_and_shown() -> Result<()> {
+    let (mut app, mut events, _ops) = make_test_app_with_channels().await;
+    let home = tempdir()?;
+    let project = tempdir()?;
+    app.config = config_for_new_chat(home.path(), project.path()).await?;
+    let mut server = crate::start_embedded_app_server_for_picker(&app.config).await?;
+    let mut tui = crate::tui::test_support::make_test_tui()?;
+    let model = crate::test_support::TEST_MODEL_PRESETS
+        .iter()
+        .find(|preset| preset.show_in_picker)
+        .expect("a visible preset")
+        .model
+        .clone();
+    let url = crate::dashboard_server::ensure_running().expect("dashboard server");
+    let (address, token) = url.split_once("#evidence=").expect("token in the address");
+    let port: u16 = address
+        .trim_start_matches("http://127.0.0.1:")
+        .parse()
+        .expect("port");
+    let provider = app.chat_widget.config_ref().model_provider_id.clone();
+    assert_eq!(app.chat_widget.dashboard_models().background.model, None);
+
+    app.handle_event(
+        &mut tui,
+        &mut server,
+        AppEvent::Elpis(ElpisAppEvent::RefreshDashboard),
+    )
+    .await?;
+    let answer = tokio::task::spawn_blocking({
+        let body = format!(r#"{{"role":"background","provider":"{provider}","model":"{model}"}}"#);
+        let head = format!("POST /models/{token} HTTP/1.1");
+        move || dashboard_http(port, &head, &body)
+    })
+    .await?;
+    assert!(answer.starts_with("HTTP/1.1 200"), "{answer}");
+
+    while let Ok(event) = events.try_recv() {
+        app.handle_event(&mut tui, &mut server, event).await?;
+    }
+    assert_eq!(
+        app.chat_widget.config_ref().background_model.as_deref(),
+        Some(model.as_str())
+    );
+    let fresh = config_for_new_chat(home.path(), project.path()).await?;
+    assert_eq!(fresh.background_model.as_deref(), Some(model.as_str()));
+    assert_eq!(
+        fresh.background_provider.as_deref(),
+        Some(provider.as_str())
+    );
+
+    let data =
+        tokio::task::spawn_blocking(move || dashboard_http(port, "GET /data.json HTTP/1.1", ""))
+            .await?;
+    let json = data
+        .split_once("\r\n\r\n")
+        .map(|(_, body)| body)
+        .unwrap_or_default();
+    let state: serde_json::Value = serde_json::from_str(json).expect("data.json");
+    assert_eq!(
+        state["state"]["context"]["models"]["background"],
+        serde_json::json!({ "provider": provider, "model": model })
+    );
+    server.shutdown().await?;
+    Ok(())
+}

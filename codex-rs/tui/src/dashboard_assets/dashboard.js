@@ -162,11 +162,11 @@ function updateFreshness() {
   const node = byId('freshness-status');
   node.classList.remove('is-fresh', 'is-stale');
   if (!isValidTimestamp(lastValidHeartbeat)) {
-    node.textContent = 'Freshness unavailable';
+    node.textContent = 'Not connected yet';
     return;
   }
   const age = Math.max(0, Date.now() - lastValidHeartbeat);
-  node.textContent = (age <= FRESHNESS_LIMIT_MS ? 'Fresh · ' : 'Stale · ') + formatElapsed(age) + ' ago';
+  node.textContent = (age <= FRESHNESS_LIMIT_MS ? 'Checked ' : 'No answer for ') + formatElapsed(age) + (age <= FRESHNESS_LIMIT_MS ? ' ago' : '');
   node.classList.add(age <= FRESHNESS_LIMIT_MS ? 'is-fresh' : 'is-stale');
 }
 
@@ -205,7 +205,7 @@ function renderCurrentTurn(current) {
   const progress = byId('current-progress');
   if (!isObject(current)) {
     setBadge(status, 'idle', STATUS_META);
-    setText('current-title', 'Elpis is ready');
+    setText('current-title', 'Elpis is waiting for you');
     setText('current-elapsed', '—');
     setText('current-started', '—');
     setText('current-cost', 'Cost not reported');
@@ -214,7 +214,7 @@ function renderCurrentTurn(current) {
     return;
   }
   setBadge(status, current.status, STATUS_META);
-  setText('current-title', current.status === 'running' ? 'A turn is in flight' : (STATUS_META[current.status] || ['Unknown'])[0] + ' turn');
+  setText('current-title', current.status === 'running' ? 'Elpis is answering' : 'Last answer: ' + (STATUS_META[current.status] || ['Unknown'])[0].toLowerCase());
   setText('current-elapsed', isValidTimestamp(current.started_at) ? formatElapsed(Date.now() - current.started_at) : 'Unavailable');
   setText('current-started', formatTimestamp(current.started_at));
   setText('current-cost', formatCost(current.cost));
@@ -226,12 +226,12 @@ function renderActivity(activity) {
   const safeActivity = isObject(activity) ? activity : {};
   renderCurrentTurn(safeActivity.current);
   const recent = Array.isArray(safeActivity.recent) ? safeActivity.recent.slice(-20).reverse() : [];
-  setText('activity-summary', safeActivity.current ? 'Live turn plus bounded recent history.' : 'No turn is currently running.');
-  setText('recent-count', recent.length === 1 ? '1 turn' : recent.length + ' turns');
+  setText('activity-summary', safeActivity.current ? 'The answer in progress and the last 20 answers.' : 'Elpis is not answering now.');
+  setText('recent-count', recent.length === 1 ? '1 answer' : recent.length + ' answers');
   const list = byId('activity-recent');
   list.replaceChildren();
   if (recent.length === 0) {
-    list.appendChild(makeNode('p', 'empty-state', 'No recent turns reported.'));
+    list.appendChild(makeNode('p', 'empty-state', 'No answers yet.'));
     return;
   }
   recent.forEach(turn => {
@@ -296,7 +296,7 @@ function renderComposition(categories, usedTokens, windowTokens) {
   if (allocation.allocations.length === 0) {
     for (let cell = 0; cell < allocation.usedCells; cell += 1) {
       const node = makeNode('i', 'composition-cell category-gray');
-      node.title = 'Measured context; category attribution unavailable';
+      node.title = 'In use; its kind is not known yet';
       track.appendChild(node);
     }
   }
@@ -333,10 +333,10 @@ function renderContext(context) {
   list.replaceChildren();
   if (categories === null) {
     list.appendChild(makeNode('p', 'empty-state', 'Category usage unavailable.'));
-    setText('ctx-legend', 'No category snapshot has been published.');
+    setText('ctx-legend', 'Shown after the next answer.');
   } else if (categories.length === 0) {
     list.appendChild(makeNode('p', 'empty-state', 'No category usage reported.'));
-    setText('ctx-legend', 'The latest request contains no attributed rows.');
+    setText('ctx-legend', 'The latest request has no kinds to show.');
   } else {
     categories.forEach(category => {
       const row = makeNode('div', 'category-row');
@@ -346,18 +346,18 @@ function renderContext(context) {
       row.append(identity, makeNode('span', 'category-percent', percent || '—'), makeNode('strong', '', compactNumber(category && category.tokens)));
       list.appendChild(row);
     });
-    setText('ctx-legend', hasCapacity ? 'Estimated category shares of the full context window; rows reconcile to the measured active total.' : 'Estimated category tokens reconcile to the measured active total; capacity unknown.');
+    setText('ctx-legend', hasCapacity ? 'Approximate share of the whole context window for each kind.' : 'Approximate tokens for each kind; the window size is unknown.');
   }
 
   const sources = Array.isArray(safeContext.sources) ? safeContext.sources : null;
   const safeSources = sources || [];
   const admitted = safeSources.filter(source => isObject(source) && source.admitted === true).length;
-  setText('source-summary', sources === null ? 'Unavailable' : admitted + ' / ' + safeSources.length + ' admitted');
+  setText('source-summary', sources === null ? 'Unavailable' : admitted + ' of ' + safeSources.length + ' in context');
   const rows = byId('source-rows');
   rows.replaceChildren();
   if (sources === null || safeSources.length === 0) {
     const row = makeNode('tr');
-    const cell = makeNode('td', '', sources === null ? 'Source data unavailable' : 'No portable sources reported');
+    const cell = makeNode('td', '', sources === null ? 'Source list unavailable' : 'Elpis loads no files in this chat');
     cell.colSpan = 4;
     row.appendChild(cell);
     rows.appendChild(row);
@@ -368,7 +368,7 @@ function renderContext(context) {
     const row = makeNode('tr');
     row.append(makeNode('td', 'source-name', typeof safeSource.name === 'string' ? safeSource.name : 'Unavailable'), makeNode('td', '', typeof safeSource.category === 'string' ? safeSource.category : 'Unavailable'), makeNode('td', 'numeric', formatNumber(safeSource.estimated_tokens)));
     const state = makeNode('td');
-    state.appendChild(makeNode('span', safeSource.admitted === true ? 'badge badge-success badge-outline badge-xs' : 'badge badge-ghost badge-xs', safeSource.admitted === true ? 'Admitted' : 'Excluded'));
+    state.appendChild(makeNode('span', safeSource.admitted === true ? 'badge badge-success badge-outline badge-xs' : 'badge badge-ghost badge-xs', safeSource.admitted === true ? 'Yes' : 'No'));
     row.appendChild(state);
     rows.appendChild(row);
   });
@@ -393,7 +393,7 @@ function renderTokens(tokens) {
 function setLinkage(id, verified) {
   const node = byId(id);
   node.className = verified === true ? 'verified' : verified === false ? 'not-verified' : '';
-  node.textContent = verified === true ? 'Verified locally' : verified === false ? 'Not verified' : 'Unavailable';
+  node.textContent = verified === true ? 'Yes' : verified === false ? 'Not checked' : 'Unavailable';
 }
 
 function renderAttempt(attempt) {
@@ -417,13 +417,13 @@ function renderAttempt(attempt) {
 
 function renderSmartPrune(smart) {
   const safeSmart = isObject(smart) ? smart : {};
-  const configured = safeSmart.configured_enabled;
-  const statePill = byId('smart-state-pill');
-  statePill.className = 'badge ' + (configured === true ? 'badge-success' : configured === false ? 'badge-ghost' : 'badge-outline');
-  statePill.textContent = configured === true ? 'ON' : configured === false ? 'OFF' : 'UNAVAILABLE';
-  setText('smart-configured', 'Configured: ' + (configured === true ? 'On' : configured === false ? 'Off' : 'Unavailable'));
+  // This chat's switch decides the next answer; the saved default only stands in until it is known.
   const threadState = safeSmart.current_thread_next_turn_enabled;
-  setText('smart-thread', threadState === null || threadState === undefined ? 'Thread: syncing' : 'Next turn: ' + (threadState === true ? 'On' : 'Off'));
+  const enabled = typeof threadState === 'boolean' ? threadState : safeSmart.configured_enabled;
+  const statePill = byId('smart-state-pill');
+  statePill.className = 'badge ' + (enabled === true ? 'badge-success' : enabled === false ? 'badge-ghost' : 'badge-outline');
+  statePill.textContent = enabled === true ? 'ON' : enabled === false ? 'OFF' : 'UNAVAILABLE';
+  setText('smart-thread', typeof threadState === 'boolean' ? 'This chat: ' + (threadState ? 'on from the next answer' : 'off from the next answer') : 'This chat: checking');
   setText('smart-examined', formatNumber(safeSmart.examined_outputs));
   setText('smart-admitted', formatNumber(safeSmart.admitted_outputs));
   setText('smart-unchanged', formatNumber(safeSmart.unchanged_outputs));
@@ -433,7 +433,7 @@ function renderSmartPrune(smart) {
   setText('smart-saved', compactNumber(safeSmart.approx_saved_tokens));
   setText('smart-latency', formatMilliseconds(safeSmart.optimizer_latency_ms));
   setText('optimizer-requests', formatNumber(safeSmart.optimizer_requests));
-  setText('optimizer-coverage', isFiniteNumber(safeSmart.optimizer_usage_reports) && isFiniteNumber(safeSmart.optimizer_requests) ? safeSmart.optimizer_usage_reports + ' / ' + safeSmart.optimizer_requests + ' usage reports' : 'Usage unavailable');
+  setText('optimizer-coverage', isFiniteNumber(safeSmart.optimizer_usage_reports) && isFiniteNumber(safeSmart.optimizer_requests) ? safeSmart.optimizer_usage_reports + ' of ' + safeSmart.optimizer_requests + ' requests reported' : 'Unavailable');
   renderTokenTotals('optimizer', safeSmart.optimizer_usage_reports > 0 ? safeSmart.optimizer_usage : null);
   renderAttempt(safeSmart.latest_attempt);
 
@@ -455,23 +455,25 @@ function renderRibbon(state) {
   const current = state.activity && state.activity.current;
   const recent = state.activity && Array.isArray(state.activity.recent) ? state.activity.recent : [];
   const lastTurn = recent.length > 0 ? recent[recent.length - 1] : null;
-  setText('ribbon-title', isObject(current) && current.status === 'running' ? 'Turn in progress' : 'Elpis is ready');
+  setText('ribbon-title', isObject(current) && current.status === 'running' ? 'Elpis is answering' : 'Elpis is waiting for you');
+  setText('ribbon-model', describeChoice(state.context && state.context.models && state.context.models.chat, 'Unavailable'));
   setText('ribbon-context', isFiniteNumber(state.context && state.context.used_tokens) ? compactNumber(state.context.used_tokens) + ' / ' + compactNumber(state.context.window_tokens) : 'Unavailable');
-  setText('ribbon-turn', isObject(lastTurn) ? formatMilliseconds(lastTurn.duration_ms) : 'No recent turn');
+  setText('ribbon-turn', isObject(lastTurn) ? formatMilliseconds(lastTurn.duration_ms) : 'No answer yet');
   const next = state.smart_prune && state.smart_prune.current_thread_next_turn_enabled;
-  setText('ribbon-prune', next === true ? 'On next turn' : next === false ? 'Off next turn' : 'Syncing');
+  setText('ribbon-prune', next === true ? 'On' : next === false ? 'Off' : 'Checking');
 }
 
 function renderState(state) {
   lastValidState = state;
   const context = isObject(state.context) ? state.context : {};
-  setText('model-line', (typeof context.model === 'string' && context.model.length > 0 ? context.model : 'Model unavailable') + ' · revision ' + formatNumber(state.revision));
+  setText('model-line', 'Chat model: ' + (typeof context.model === 'string' && context.model.length > 0 ? context.model : 'unavailable'));
   renderRibbon(state);
   renderActivity(state.activity);
   renderContext(state.context);
   renderTokens(state.tokens);
   renderSmartPrune(state.smart_prune);
-  setText('state-meta', 'Generated ' + formatTimestamp(state.generated_at) + ' · schema ' + formatNumber(state.schema_version) + ' · revision ' + formatNumber(state.revision));
+  renderModels(context.models);
+  setText('state-meta', 'Last change ' + formatTimestamp(state.generated_at) + ' · update ' + formatNumber(state.revision));
 }
 
 function schedulePoll(delay) {
@@ -479,10 +481,16 @@ function schedulePoll(delay) {
   pollTimer = paused ? null : setTimeout(() => { void poll(); }, delay);
 }
 
+// The session token in the page address; every settings page needs it.
+function sessionToken() {
+  const token = new URLSearchParams(location.hash.slice(1)).get('evidence');
+  return /^[a-f0-9]{32}$/.test(token || '') ? token : null;
+}
+
 async function refreshEvidence() {
   const container = byId('evidence-links');
-  const token = new URLSearchParams(location.hash.slice(1)).get('evidence');
-  if (!container || !token || !/^[a-f0-9]{32}$/.test(token)) return;
+  const token = sessionToken();
+  if (!container || !token) return;
   try {
     const prefix = '/evidence/' + token + '/';
     const response = await fetch(prefix + 'index.json', { cache: 'no-store' });
@@ -500,21 +508,18 @@ async function refreshEvidence() {
       link.rel = 'noreferrer noopener';
       container.append(link);
     }
-    if (!container.childNodes.length) container.textContent = 'No readable evidence recorded for this thread yet.';
+    if (!container.childNodes.length) container.textContent = 'No records for this chat yet.';
     lastEvidenceKey = key;
   } catch (_error) {
     lastEvidenceKey = null;
-    setText('evidence-links', 'Evidence unavailable. Open a fresh /dashboard link from Elpis.');
+    setText('evidence-links', 'Records unavailable. Open the dashboard again with /dashboard in Elpis.');
   }
 }
 
 let defaultPrunerPrompt = null;
-// The provider that serves the loaded model; it only travels with that model.
-let loadedPrunerModel = null;
-let loadedPrunerProvider = null;
 function prunerSettingsUrl() {
-  const token = new URLSearchParams(location.hash.slice(1)).get('evidence');
-  return /^[a-f0-9]{32}$/.test(token || '') ? `/pruner-settings/${token}` : null;
+  const token = sessionToken();
+  return token ? `/pruner-settings/${token}` : null;
 }
 
 async function loadPrunerSettings() {
@@ -526,38 +531,28 @@ async function loadPrunerSettings() {
     if (!response.ok) throw new Error(await response.text());
     const payload = await response.json();
     defaultPrunerPrompt = payload.default_system_prompt;
-    byId('pruner-model').value = payload.settings.model ?? '';
-    loadedPrunerModel = payload.settings.model ?? null;
-    loadedPrunerProvider = payload.settings.provider ?? null;
     byId('pruner-prompt').value = payload.settings.system_prompt ?? defaultPrunerPrompt;
     byId('pruner-fields').disabled = false;
-    setText('pruner-feedback', 'Loaded saved settings. Edits are not applied until you save.');
+    setText('pruner-feedback', 'Loaded. Edits apply only after you save.');
   } catch (error) {
-    setText('pruner-feedback', `Settings unavailable: ${error.message}`);
+    setText('pruner-feedback', `Instructions unavailable: ${error.message}`);
   }
 }
 
 async function savePrunerSettings() {
   const url = prunerSettingsUrl();
   if (!url || defaultPrunerPrompt === null) return;
-  const model = byId('pruner-model').value.trim();
   const prompt = byId('pruner-prompt').value;
-  if (!prompt.trim()) { setText('pruner-feedback', 'The system prompt cannot be empty.'); return; }
+  if (!prompt.trim()) { setText('pruner-feedback', 'The instructions cannot be empty.'); return; }
   byId('pruner-fields').disabled = true;
   try {
+    // The model is chosen in the Models tab; this page sends the instructions alone.
     const response = await fetch(url, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      // A changed model follows background maintenance again; the dashboard has no catalogue to pair a provider with it.
-      body: JSON.stringify({
-        model: model || null,
-        provider: (model || null) === loadedPrunerModel ? loadedPrunerProvider : null,
-        system_prompt: prompt === defaultPrunerPrompt ? null : prompt,
-      }),
+      body: JSON.stringify({ system_prompt: prompt === defaultPrunerPrompt ? null : prompt }),
     });
     if (!response.ok) throw new Error(await response.text());
-    loadedPrunerModel = model || null;
-    if (loadedPrunerModel === null || (model || null) !== loadedPrunerModel) loadedPrunerProvider = null;
-    setText('pruner-feedback', 'Saved. Applies to the next optimizer request; chat model unchanged.');
+    setText('pruner-feedback', 'Saved. Smart Prune uses them from its next request.');
   } catch (error) {
     setText('pruner-feedback', `Not saved: ${error.message}`);
   } finally {
@@ -568,19 +563,21 @@ async function savePrunerSettings() {
 function restoreDefaultPrunerPrompt() {
   if (defaultPrunerPrompt !== null) {
     byId('pruner-prompt').value = defaultPrunerPrompt;
-    setText('pruner-feedback', 'Default prompt restored in the editor. Save to apply it.');
+    setText('pruner-feedback', 'The default is back in the editor. Save to use it.');
   }
 }
 
 const KEY_SOURCES = Object.freeze({
-  elpis: 'Stored in Elpis',
+  saved: 'Saved in Elpis',
   environment: 'Environment variable',
-  none: 'Not set'
+  configured: 'config.toml',
+  not_required: 'Not needed',
+  missing: 'Not set'
 });
 
 function providerKeysUrl() {
-  const token = new URLSearchParams(location.hash.slice(1)).get('evidence');
-  return /^[a-f0-9]{32}$/.test(token || '') ? `/provider-keys/${token}` : null;
+  const token = sessionToken();
+  return token ? `/provider-keys/${token}` : null;
 }
 
 function text(value) {
@@ -597,7 +594,7 @@ function renderProviderKeys(rows) {
     const line = makeNode('tr');
     line.append(
       makeNode('td', 'source-name', text(row.name)),
-      makeNode('td', '', text(row.env_var)),
+      makeNode('td', '', typeof row.env_var === 'string' ? row.env_var : '—'),
       makeNode('td', '', typeof row.masked === 'string' ? row.masked : '—'),
       makeNode('td', '', KEY_SOURCES[row.source] || 'Unavailable')
     );
@@ -608,7 +605,7 @@ function renderProviderKeys(rows) {
   }
   if (!rows.length) {
     const empty = makeNode('tr');
-    const cell = makeNode('td', '', 'No provider in this configuration reads an API key.');
+    const cell = makeNode('td', '', 'No provider here takes an API key.');
     cell.colSpan = 4;
     empty.append(cell);
     table.append(empty);
@@ -627,7 +624,7 @@ async function loadProviderKeys() {
     const rows = payload.providers.filter(isObject);
     renderProviderKeys(rows);
     byId('provider-key-fields').disabled = rows.length === 0;
-    setText('provider-key-feedback', rows.length ? 'A saved key applies to the next request. Elpis shows it masked and never sends it back here.' : 'No provider in this configuration reads an API key.');
+    setText('provider-key-feedback', rows.length ? 'A saved key applies to the next request. This page never shows it.' : 'No provider here takes an API key.');
   } catch (error) {
     setText('provider-key-feedback', `Provider keys unavailable: ${error.message}`);
   }
@@ -648,11 +645,183 @@ async function submitProviderKey(apiKey) {
     const payload = await response.json();
     renderProviderKeys(isObject(payload) && Array.isArray(payload.providers) ? payload.providers.filter(isObject) : []);
     byId('provider-key-value').value = '';
-    setText('provider-key-feedback', apiKey === null ? 'Stored key cleared. The environment variable applies again if it is set.' : 'Saved. It applies to the next request.');
+    setText('provider-key-feedback', apiKey === null ? 'Saved key removed. The environment variable applies again if it is set.' : 'Saved. It applies to the next request.');
   } catch (error) {
     setText('provider-key-feedback', `Not saved: ${error.message}`);
   } finally {
     byId('provider-key-fields').disabled = false;
+  }
+}
+
+const MODEL_ROLES = Object.freeze(['chat', 'background', 'pruner']);
+const ROLE_NAMES = Object.freeze({ chat: 'Chat model', background: 'Background model', pruner: 'Smart Prune model' });
+let modelProviders = null;
+// Each provider's list, fetched once per page load; OpenRouter's has hundreds of models.
+const modelLists = new Map();
+let currentModels = null;
+// A role the owner is editing keeps the selection; Elpis's updates do not reset it.
+const touchedRoles = new Set();
+
+function modelsUrl(provider) {
+  const token = sessionToken();
+  if (!token) return null;
+  return `/models/${token}` + (provider ? '/' + encodeURIComponent(provider) : '');
+}
+
+function providerName(id) {
+  const row = Array.isArray(modelProviders) ? modelProviders.find(provider => provider.id === id) : null;
+  return row ? text(row.name) : id;
+}
+
+function describeChoice(choice, fallback) {
+  if (!isObject(choice) || typeof choice.model !== 'string') return fallback;
+  return typeof choice.provider === 'string' ? choice.model + ' on ' + providerName(choice.provider) : choice.model;
+}
+
+function roleDefaultLabel(role) {
+  return byId('model-fields-' + role).dataset.default || '';
+}
+
+function roleProvider(role) {
+  const choice = currentModels && currentModels[role];
+  if (isObject(choice) && typeof choice.provider === 'string') return choice.provider;
+  const chat = currentModels && currentModels.chat;
+  return isObject(chat) && typeof chat.provider === 'string' ? chat.provider : null;
+}
+
+function renderModels(models) {
+  if (!isObject(models)) return;
+  currentModels = models;
+  MODEL_ROLES.forEach(role => {
+    setText('model-current-' + role, describeChoice(models[role], roleDefaultLabel(role) || 'Unavailable'));
+    if (!touchedRoles.has(role)) void selectCurrent(role);
+  });
+}
+
+async function selectCurrent(role) {
+  if (!Array.isArray(modelProviders)) return;
+  const provider = roleProvider(role);
+  const select = byId('model-provider-' + role);
+  if (provider && [...select.options].some(option => option.value === provider)) select.value = provider;
+  await showModels(role);
+}
+
+async function loadModelList(provider) {
+  if (modelLists.has(provider)) return modelLists.get(provider);
+  const response = await fetch(modelsUrl(provider), { cache: 'no-store' });
+  if (!response.ok) throw new Error(await response.text());
+  const payload = await response.json();
+  const models = isObject(payload) && Array.isArray(payload.models)
+    ? payload.models.filter(model => isObject(model) && typeof model.id === 'string')
+    : [];
+  modelLists.set(provider, models);
+  return models;
+}
+
+function optionLabel(model) {
+  return typeof model.name === 'string' && model.name ? model.name : model.id;
+}
+
+async function showModels(role) {
+  const providerSelect = byId('model-provider-' + role);
+  const provider = providerSelect.value;
+  const list = byId('model-list-' + role);
+  if (!provider) return;
+  let models;
+  try {
+    if (!modelLists.has(provider)) list.replaceChildren(makeNode('option', '', 'Loading the list…'));
+    models = await loadModelList(provider);
+  } catch (error) {
+    // The provider list stays usable, so another provider can still be picked.
+    const option = makeNode('option', '', 'No list from this provider');
+    option.disabled = true;
+    list.replaceChildren(option);
+    byId('model-fields-' + role).disabled = false;
+    setText('models-feedback', `${providerName(provider)}: ${error.message}`);
+    return;
+  }
+  if (providerSelect.value !== provider) return;
+  const choice = currentModels && currentModels[role];
+  let keep = list.value;
+  if (!touchedRoles.has(role) && isObject(choice)) {
+    keep = choice.provider === provider && typeof choice.model === 'string' ? choice.model : (choice.model === null ? '' : keep);
+  }
+  const filter = byId('model-filter-' + role).value.trim().toLowerCase();
+  const options = [];
+  const defaultLabel = roleDefaultLabel(role);
+  if (defaultLabel) {
+    const option = makeNode('option', '', defaultLabel);
+    option.value = '';
+    options.push(option);
+  }
+  models
+    .filter(model => !filter || model.id.toLowerCase().includes(filter) || (typeof model.name === 'string' && model.name.toLowerCase().includes(filter)))
+    .forEach(model => {
+      const option = makeNode('option', '', optionLabel(model));
+      option.value = model.id;
+      option.title = model.id;
+      options.push(option);
+    });
+  if (options.length === 0) {
+    const option = makeNode('option', '', 'No model matches');
+    option.disabled = true;
+    options.push(option);
+  }
+  list.replaceChildren(...options);
+  if (options.some(option => option.value === keep)) list.value = keep;
+  byId('model-fields-' + role).disabled = false;
+}
+
+async function saveModel(role) {
+  const url = modelsUrl();
+  if (!url) return;
+  const provider = byId('model-provider-' + role).value;
+  const list = byId('model-list-' + role);
+  const selected = list.selectedOptions[0];
+  if (!selected || selected.disabled || (role === 'chat' && !list.value)) {
+    setText('models-feedback', ROLE_NAMES[role] + ': pick a model from the list first.');
+    return;
+  }
+  const model = list.value;
+  const fields = byId('model-fields-' + role);
+  fields.disabled = true;
+  try {
+    const response = await fetch(url, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ role, provider: model ? provider : null, model: model || null })
+    });
+    if (!response.ok) throw new Error(await response.text());
+    const payload = await response.json();
+    touchedRoles.delete(role);
+    setText('models-feedback', ROLE_NAMES[role] + ': ' + (isObject(payload) && typeof payload.message === 'string' ? payload.message : 'saved.'));
+  } catch (error) {
+    setText('models-feedback', `${ROLE_NAMES[role]} not changed: ${error.message}`);
+  } finally {
+    fields.disabled = false;
+  }
+}
+
+async function loadModelProviders() {
+  const url = modelsUrl();
+  if (!url) return;
+  try {
+    const response = await fetch(url, { cache: 'no-store' });
+    if (!response.ok) throw new Error(await response.text());
+    const payload = await response.json();
+    modelProviders = isObject(payload) && Array.isArray(payload.providers)
+      ? payload.providers.filter(provider => isObject(provider) && typeof provider.id === 'string')
+      : [];
+    MODEL_ROLES.forEach(role => {
+      byId('model-provider-' + role).replaceChildren(...modelProviders.map(provider => {
+        const option = makeNode('option', '', text(provider.name));
+        option.value = provider.id;
+        return option;
+      }));
+    });
+    setText('models-feedback', 'Pick a provider and a model, then press "Use this model".');
+    if (currentModels) renderModels(currentModels);
+  } catch (error) {
+    setText('models-feedback', `Models unavailable: ${error.message}`);
   }
 }
 
@@ -703,14 +872,14 @@ async function poll(force = false) {
   try {
     const response = await fetch('/data.json', { cache: 'no-store' });
     if (!response.ok) {
-      setTransport('Transport unavailable', 'unavailable');
+      setTransport('Elpis is not answering', 'unavailable');
       return;
     }
     const envelope = await response.json();
     const nextState = isObject(envelope) ? envelope.state : null;
     const nextHeartbeat = isObject(envelope) ? envelope.heartbeat_at : null;
     if (!isValidState(nextState) || !isValidTimestamp(nextHeartbeat)) {
-      setTransport('Invalid state', 'unavailable');
+      setTransport('Elpis sent something this page cannot read', 'unavailable');
       return;
     }
     lastValidHeartbeat = nextHeartbeat;
@@ -720,7 +889,7 @@ async function poll(force = false) {
     updateFreshness();
     setTransport(paused ? 'Paused · refreshed' : 'Live', paused ? 'paused' : 'available');
   } catch (_error) {
-    setTransport('Transport unavailable', 'unavailable');
+    setTransport('Elpis is not answering', 'unavailable');
   } finally {
     inFlight = false;
     byId('refresh-now').disabled = false;
@@ -734,7 +903,7 @@ function setPaused(nextPaused) {
     if (pollTimer !== null) clearTimeout(pollTimer);
     pollTimer = null;
     setText('poll-toggle', 'Resume');
-    setTransport('Polling paused', 'paused');
+    setTransport('Paused', 'paused');
     return;
   }
   setText('poll-toggle', 'Pause');
@@ -769,6 +938,19 @@ tabs.forEach(tab => {
   });
 });
 
+MODEL_ROLES.forEach(role => {
+  // Any edit, by pointer, keyboard or focus, keeps the owner's selection.
+  ['focusin', 'change', 'input'].forEach(type => {
+    byId('model-fields-' + role).addEventListener(type, () => touchedRoles.add(role), true);
+  });
+  byId('model-provider-' + role).addEventListener('change', () => {
+    byId('model-filter-' + role).value = '';
+    void showModels(role);
+  });
+  byId('model-filter-' + role).addEventListener('input', () => void showModels(role));
+  byId('model-save-' + role).addEventListener('click', () => void saveModel(role));
+});
+void loadModelProviders();
 byId('pruner-save').addEventListener('click', () => void savePrunerSettings());
 byId('pruner-reload').addEventListener('click', () => void loadPrunerSettings());
 byId('pruner-reset').addEventListener('click', restoreDefaultPrunerPrompt);

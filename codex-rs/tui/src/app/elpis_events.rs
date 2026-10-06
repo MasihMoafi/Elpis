@@ -22,7 +22,9 @@ impl App {
             ElpisAppEvent::WorkGraphLoaded(result) => self.add_loaded_work_graph(result),
             ElpisAppEvent::OpenDashboard => self.open_dashboard(tui),
             ElpisAppEvent::RefreshDashboard => self.publish_dashboard_snapshot(),
-            ElpisAppEvent::OpenUsage(card) => self.open_escape_closable_pager(tui, card, "Usage")?,
+            ElpisAppEvent::OpenUsage(card) => {
+                self.open_escape_closable_pager(tui, card, "Usage")?
+            }
             ledger_event => self.handle_elpis_ledger_event(tui, ledger_event)?,
         }
         Ok(())
@@ -49,9 +51,22 @@ impl App {
         tui.frame_requester().schedule_frame();
     }
 
+    /// Publishes the page's state and tells the dashboard server how to reach this App, so the
+    /// Models, keys and Smart Prune pages act on the current session.
     fn publish_dashboard_snapshot(&self) {
         let totals = crate::elpis_ledger_events::context_usage_totals(&self.transcript_cells);
         self.chat_widget.publish_dashboard_snapshot(&totals);
+        let config = self.chat_widget.config_ref();
+        crate::dashboard_server::register_link(crate::dashboard_server::DashboardLink {
+            tx: self.app_event_tx.clone(),
+            home: config.codex_home.to_path_buf(),
+            providers: config.model_providers.clone(),
+            active_provider: config.model_provider_id.clone(),
+            catalog: self.model_catalog.try_list_models().unwrap_or_default(),
+            pruner_role_provider: self.chat_widget.pruner_role_provider().to_string(),
+            runtime: tokio::runtime::Handle::try_current().ok(),
+            refresh_pending: Default::default(),
+        });
     }
 
     /// `/yolo`: Full Access (no sandbox, never ask) for this chat, saved as the default for

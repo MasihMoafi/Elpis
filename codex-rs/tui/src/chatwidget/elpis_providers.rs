@@ -110,26 +110,61 @@ pub(crate) async fn load_elpis_provider_models(
     Ok(presets)
 }
 
+/// How the pickers and the dashboard name a provider.
+pub(crate) fn elpis_provider_display_name(
+    provider_id: &str,
+    provider: Option<&ModelProviderInfo>,
+) -> String {
+    // Codex names both local servers "gpt-oss"; name them apart.
+    match provider_id {
+        codex_model_provider_info::OLLAMA_OSS_PROVIDER_ID => return "Ollama (local)".to_string(),
+        codex_model_provider_info::LMSTUDIO_OSS_PROVIDER_ID => {
+            return "LM Studio (local)".to_string();
+        }
+        _ => {}
+    }
+    provider
+        .map(|provider| provider.name.trim().to_string())
+        .filter(|name| !name.is_empty())
+        .unwrap_or_else(|| provider_id.to_string())
+}
+
+/// The providers "Change provider…" and the dashboard offer, as `(id, name)` sorted by name.
+/// Amazon Bedrock needs an AWS account; it is listed only while a thread runs on it.
+pub(crate) fn elpis_picker_providers(
+    providers: &std::collections::HashMap<String, ModelProviderInfo>,
+    active: &str,
+) -> Vec<(String, String)> {
+    let mut listed: Vec<(String, String)> = providers
+        .iter()
+        .filter(|(id, _)| {
+            id.as_str() == active
+                || ![
+                    codex_model_provider_info::AMAZON_BEDROCK_PROVIDER_ID,
+                    codex_model_provider_info::AMAZON_BEDROCK_RUNTIME_PROVIDER_ID,
+                ]
+                .contains(&id.as_str())
+        })
+        .map(|(id, provider)| (id.clone(), elpis_provider_display_name(id, Some(provider))))
+        .collect();
+    listed.sort_by_key(|(_, name)| name.to_lowercase());
+    listed
+}
+
+/// Whether the app server's own list is the one to show for `provider_id`: it lists the
+/// provider the process started with, unless the gateway serves that provider.
+pub(crate) fn elpis_lists_from_app_server(provider_id: &str, provider: &ModelProviderInfo) -> bool {
+    codex_model_provider_info::gateway_route(provider).is_none()
+        && elpis_catalog_provider().as_deref() == Some(provider_id)
+}
+
 impl ChatWidget {
     fn elpis_provider(&self, provider_id: &str) -> Option<&ModelProviderInfo> {
         self.config.model_providers.get(provider_id)
     }
 
     fn elpis_provider_name(&self, provider_id: &str) -> String {
-        // Codex names both local servers "gpt-oss"; name them apart.
-        match provider_id {
-            codex_model_provider_info::OLLAMA_OSS_PROVIDER_ID => {
-                return "Ollama (local)".to_string();
-            }
-            codex_model_provider_info::LMSTUDIO_OSS_PROVIDER_ID => {
-                return "LM Studio (local)".to_string();
-            }
-            _ => {}
-        }
-        self.elpis_provider(provider_id)
-            .map(|provider| provider.name.trim().to_string())
-            .filter(|name| !name.is_empty())
-            .unwrap_or_else(|| provider_id.to_string())
+        elpis_provider_display_name(provider_id, self.elpis_provider(provider_id))
     }
 
     fn elpis_key_source(&self, provider_id: &str) -> Option<KeySource> {
@@ -255,22 +290,7 @@ impl ChatWidget {
     /// Every configured provider, each with what it needs to answer.
     pub(crate) fn open_elpis_provider_popup(&mut self) {
         let active = self.config.model_provider_id.clone();
-        // Amazon Bedrock needs an AWS account; list it only while a thread runs on it.
-        let mut providers: Vec<(String, String)> = self
-            .config
-            .model_providers
-            .keys()
-            .filter(|id| {
-                *id == &active
-                    || ![
-                        codex_model_provider_info::AMAZON_BEDROCK_PROVIDER_ID,
-                        codex_model_provider_info::AMAZON_BEDROCK_RUNTIME_PROVIDER_ID,
-                    ]
-                    .contains(&id.as_str())
-            })
-            .map(|id| (id.clone(), self.elpis_provider_name(id)))
-            .collect();
-        providers.sort_by_key(|(_, name)| name.to_lowercase());
+        let providers = elpis_picker_providers(&self.config.model_providers, &active);
         let items: Vec<SelectionItem> = providers
             .into_iter()
             .map(|(id, name)| {

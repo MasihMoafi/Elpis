@@ -1,7 +1,7 @@
 //! Elpis: capability-protected, explicitly registered local evidence. Never part of data.json.
 //!
-//! Copied from v0.3.0 `dashboard_evidence.rs`, less `valid_token`, which only the settings and
-//! key pages this build does not serve used.
+//! Copied from v0.3.0 `dashboard_evidence.rs`. Its token is also the capability the settings,
+//! key and model pages require (`valid_token`).
 use std::fs::File;
 use std::io::Read;
 use std::io::Seek;
@@ -174,6 +174,12 @@ pub(super) fn dashboard_fragment() -> String {
         .lock()
         .map(|e| format!("#evidence={}", e.token))
         .unwrap_or_default()
+}
+
+pub(super) fn valid_token(token: &str) -> bool {
+    EVIDENCE
+        .lock()
+        .is_ok_and(|evidence| evidence.token == token)
 }
 
 pub(crate) fn register(root: &Path, label: &str, path: &Path) -> Option<String> {

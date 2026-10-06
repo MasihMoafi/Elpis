@@ -1,5 +1,6 @@
-//! Copied from v0.3.0 `dashboard_server_tests.rs`, less the provider key tests (no key page in
-//! this build) and the turn profile and backend price cases (nothing here produces them).
+//! Copied from v0.3.0 `dashboard_server_tests.rs`, less the turn profile and backend price
+//! cases (nothing here produces them). The Models, provider key and Smart Prune prompt pages are
+//! tested in `dashboard_write_tests.rs`.
 
 use super::*;
 
@@ -40,6 +41,13 @@ fn context() -> DashboardContext {
             admitted: true,
         }],
         backtrack_points: 2,
+        models: DashboardModels {
+            chat: DashboardModelChoice {
+                provider: Some("openai".to_string()),
+                model: Some("gpt-safe".to_string()),
+            },
+            ..Default::default()
+        },
     }
 }
 
@@ -494,7 +502,9 @@ fn activity_wire_mapping_is_snake_case_and_checked() {
         tokens(),
         running_activity(
             Some(i64::MAX),
-            Some(unavailable(TurnCostAvailability::SubscriptionAuthentication)),
+            Some(unavailable(
+                TurnCostAvailability::SubscriptionAuthentication
+            )),
         ),
         smart_prune(true, Some(true)),
         1_000,
@@ -657,11 +667,11 @@ fn dashboard_asset_exposes_live_activity_and_accessible_polling_controls() {
         "id=\"refresh-now\"",
         "Smart Prune",
         "Experimental",
-        "One window. One denominator.",
-        "measured total and estimated category attribution",
-        "Reported tokens without invented cost",
+        "How full the context window is",
+        "Gray cells are free space",
+        "Tokens used",
         "Approx. saved",
-        "Latest request attribution",
+        "What fills the window",
     ] {
         assert!(
             INDEX_HTML.contains(required),
@@ -669,6 +679,10 @@ fn dashboard_asset_exposes_live_activity_and_accessible_polling_controls() {
         );
     }
     for forbidden in [
+        "One window. One denominator.",
+        "Admission",
+        "linkage",
+        "Session intelligence",
         "aria-label=\"Active context occupancy\"",
         "aria-label=\"Latest request composition\"",
         "Two measurements, clearly separated",
@@ -758,6 +772,50 @@ fn dashboard_asset_exposes_live_activity_and_accessible_polling_controls() {
         assert!(
             DASHBOARD_PACKAGE_JSON.contains(required),
             "missing pinned dashboard dependency: {required}"
+        );
+    }
+}
+
+/// Positive: Models is the first tab and offers a list for each role, never a typed model id.
+/// Negative: the Smart Prune details start collapsed and no model text box remains.
+#[test]
+fn dashboard_asset_puts_model_lists_first_and_tucks_the_details_away() {
+    let first_tab = INDEX_HTML.find("role=\"tab\"").expect("the page has tabs");
+    assert!(
+        INDEX_HTML[first_tab..]
+            .starts_with("role=\"tab\" aria-selected=\"true\" aria-controls=\"panel-models\""),
+        "Models must be the first, selected tab"
+    );
+    for role in ["chat", "background", "pruner"] {
+        for id in ["model-provider", "model-list"] {
+            assert!(
+                INDEX_HTML.contains(&format!(
+                    "<select class=\"select w-full\" id=\"{id}-{role}\""
+                )),
+                "missing {id}-{role} list"
+            );
+        }
+        assert!(INDEX_HTML.contains(&format!("id=\"model-save-{role}\"")));
+    }
+    assert!(
+        !INDEX_HTML.contains("id=\"pruner-model\""),
+        "a free text model box survived"
+    );
+    assert!(
+        INDEX_HTML.contains(
+            "<details class=\"collapse collapse-arrow surface-card\" id=\"prune-details\">"
+        )
+    );
+    assert!(!INDEX_HTML.contains("id=\"prune-details\" open"));
+    for required in [
+        "function renderModels(models)",
+        "role, provider: model ? provider : null, model: model || null",
+        "`/models/${token}`",
+        "system_prompt: prompt === defaultPrunerPrompt ? null : prompt",
+    ] {
+        assert!(
+            DASHBOARD_JS.contains(required),
+            "missing Models contract: {required}"
         );
     }
 }
@@ -879,6 +937,7 @@ fn unknown_facts_remain_null_and_state_has_only_safe_fields() {
             "backtrack_points",
             "categories",
             "model",
+            "models",
             "saved_tokens",
             "sources",
             "used_percent",
@@ -1087,42 +1146,6 @@ fn failed_server_start_does_not_latch_and_success_is_reused() {
 }
 
 #[test]
-fn smart_prune_settings_and_provider_keys_say_they_are_not_in_this_build() {
-    for (path, message) in [
-        (
-            "/pruner-settings/0123",
-            "Smart Prune is not in this Elpis build yet.",
-        ),
-        (
-            "/provider-keys/0123",
-            "Provider keys are not in this Elpis build yet.",
-        ),
-    ] {
-        let response = response_for_at(
-            &request(Method::Get, path, &["127.0.0.1:43123"]),
-            PORT,
-            Some(state()),
-            2_000,
-        );
-        assert_eq!(response.status_code(), 503, "path={path}");
-        assert_security_headers(&response);
-        assert_eq!(
-            String::from_utf8(body(response)).expect("utf-8 body"),
-            message
-        );
-
-        // A foreign host learns nothing, not even that the page is missing.
-        let foreign = response_for_at(
-            &request(Method::Get, path, &["evil.example:43123"]),
-            PORT,
-            Some(state()),
-            2_000,
-        );
-        assert_eq!(foreign.status_code(), 403, "path={path}");
-    }
-}
-
-#[test]
 fn the_running_server_listens_on_loopback_only_and_serves_the_page() {
     use std::io::Read;
     use std::io::Write;
@@ -1211,3 +1234,6 @@ fn evidence_http_route_opens_only_registered_reports() {
     assert!(!get("/data.json", &host, "").contains("REGISTERED_EVIDENCE_HTTP_MARKER"));
     assert!(!get("/", &host, "").contains(url.path().split('/').nth(2).unwrap()));
 }
+
+#[path = "dashboard_write_tests.rs"]
+mod write_tests;

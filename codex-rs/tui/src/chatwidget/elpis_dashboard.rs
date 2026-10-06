@@ -26,6 +26,8 @@ use crate::activity_state::DashboardActivityState;
 use crate::app_event::AppEvent;
 use crate::dashboard_server::DashboardCategory;
 use crate::dashboard_server::DashboardContext;
+use crate::dashboard_server::DashboardModelChoice;
+use crate::dashboard_server::DashboardModels;
 use crate::dashboard_server::DashboardSmartPrune;
 use crate::dashboard_server::DashboardSmartPruneAttempt;
 use crate::dashboard_server::DashboardSmartPruneLatest;
@@ -171,11 +173,46 @@ impl ChatWidget {
                 saved_tokens: snapshot.saved_tokens,
                 sources,
                 backtrack_points: snapshot.backtrack_points,
+                models: self.dashboard_models(),
             },
             tokens,
             self.dashboard_activity_state(),
             self.dashboard_smart_prune(),
         );
+    }
+
+    /// The models the Models tab shows: the chat model, the background model and the Smart
+    /// Prune model, each with the provider that serves it. `None` is the built-in default.
+    pub(crate) fn dashboard_models(&self) -> DashboardModels {
+        let session_provider = &self.config.model_provider_id;
+        let pruner = crate::legacy_core::pruner_settings::PrunerSettings::load(
+            self.config.codex_home.as_path(),
+        )
+        .unwrap_or_default();
+        DashboardModels {
+            chat: DashboardModelChoice {
+                provider: Some(session_provider.clone()),
+                model: Some(self.current_model().to_string()),
+            },
+            background: DashboardModelChoice {
+                provider: self.config.background_model.as_ref().map(|_| {
+                    self.config
+                        .background_provider
+                        .clone()
+                        .unwrap_or_else(|| session_provider.clone())
+                }),
+                model: self.config.background_model.clone(),
+            },
+            pruner: DashboardModelChoice {
+                provider: pruner.model.as_ref().map(|_| {
+                    pruner
+                        .provider
+                        .clone()
+                        .unwrap_or_else(|| self.pruner_role_provider().to_string())
+                }),
+                model: pruner.model,
+            },
+        }
     }
 
     /// Local files the dashboard server opens as readable reports: the thread's rollout and,
@@ -234,16 +271,15 @@ impl ChatWidget {
     /// reads off rather than syncing forever, as the Ledger's switch does.
     fn dashboard_smart_prune(&self) -> DashboardSmartPrune {
         let prune = &self.smart_prune;
-        let breakdown = |usage: &codex_app_server_protocol::TokenUsageBreakdown| {
-            DashboardTokenTotals {
+        let breakdown =
+            |usage: &codex_app_server_protocol::TokenUsageBreakdown| DashboardTokenTotals {
                 input: usage.input_tokens,
                 cached_input: usage.cached_input_tokens,
                 cache_write: Some(usage.cache_write_input_tokens),
                 output: usage.output_tokens,
                 reasoning_output: usage.reasoning_output_tokens,
                 total: usage.total_tokens,
-            }
-        };
+            };
         DashboardSmartPrune {
             configured_enabled: false,
             current_thread_next_turn_enabled: Some(self.smart_prune_synced && prune.enabled),
@@ -271,10 +307,8 @@ impl ChatWidget {
                     response_usage: latest.response_usage.as_ref().map(breakdown),
                     response_linkage_verified: latest.response_linkage_verified,
                 }),
-            latest_attempt: prune
-                .latest_attempt
-                .as_ref()
-                .map(|attempt| DashboardSmartPruneAttempt {
+            latest_attempt: prune.latest_attempt.as_ref().map(|attempt| {
+                DashboardSmartPruneAttempt {
                     status: attempt.status.clone(),
                     model: attempt.model_slug.clone(),
                     reasoning_effort: attempt.reasoning_effort.clone(),
@@ -283,7 +317,8 @@ impl ChatWidget {
                     approx_saved_tokens: attempt.approx_saved_tokens,
                     latency_ms: attempt.latency_ms,
                     usage: attempt.usage.as_ref().map(breakdown),
-                }),
+                }
+            }),
         }
     }
 }
@@ -331,11 +366,18 @@ pub(super) fn smart_prune_attempt_evidence_path(
     codex_home: &Path,
     audit_path: &str,
 ) -> Option<PathBuf> {
-    strict_smart_prune_path(codex_home, audit_path, "attempts", /*append_manifest*/ false)
+    strict_smart_prune_path(
+        codex_home, audit_path, "attempts", /*append_manifest*/ false,
+    )
 }
 
 fn smart_prune_admission_manifest_path(codex_home: &Path, audit_path: &str) -> Option<PathBuf> {
-    strict_smart_prune_path(codex_home, audit_path, "admissions", /*append_manifest*/ true)
+    strict_smart_prune_path(
+        codex_home,
+        audit_path,
+        "admissions",
+        /*append_manifest*/ true,
+    )
 }
 
 /// A Ledger source as the page shows it: a file name, never the absolute path it was added with.
@@ -423,8 +465,11 @@ mod tests {
     fn evidence_links_open_readable_http_reports() {
         let dir = tempfile::tempdir().expect("temp home");
         let path = dir.path().join("attempt.json");
-        std::fs::write(&path, r#"{"status":"admitted","input":"EVIDENCE_ACCESS_MARKER"}"#)
-            .expect("write evidence");
+        std::fs::write(
+            &path,
+            r#"{"status":"admitted","input":"EVIDENCE_ACCESS_MARKER"}"#,
+        )
+        .expect("write evidence");
 
         let line = evidence_url_line("Smart Prune attempt", dir.path(), &path)
             .expect("a file under the home gets a link");
@@ -486,7 +531,10 @@ mod tests {
         .map(dashboard_css_color);
         let page_js = include_str!("../dashboard_assets/dashboard.js");
         for (index, color) in colors.iter().enumerate() {
-            assert!(page_js.contains(color.as_str()), "{color} has no page class");
+            assert!(
+                page_js.contains(color.as_str()),
+                "{color} has no page class"
+            );
             assert!(
                 !colors[index + 1..].contains(color),
                 "{color} is used by two categories"
