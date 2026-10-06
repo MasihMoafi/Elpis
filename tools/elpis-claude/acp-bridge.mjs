@@ -12,6 +12,19 @@ const ADAPTER = process.env.ACP_ADAPTER ?? new URL("./node_modules/@agentclientp
 const CLAUDE = process.env.CLAUDE_CODE_EXECUTABLE ?? `${HOME}/.local/bin/claude`;
 const now = () => Date.now();
 
+async function claudeLimits() {
+  const { readFile } = await import("node:fs/promises");
+  const creds = JSON.parse(await readFile(`${HOME}/.claude/.credentials.json`, "utf8")).claudeAiOauth;
+  const r = await fetch("https://api.anthropic.com/api/oauth/usage", {
+    headers: { Authorization: `Bearer ${creds.accessToken}`, "anthropic-beta": "oauth-2025-04-20", Accept: "application/json" },
+    signal: AbortSignal.timeout(15_000),
+  });
+  if (!r.ok) throw new Error(`Claude usage request failed (HTTP ${r.status})`);
+  const u = await r.json();
+  const win = (w, mins) => w ? { usedPercent: Math.round(w.utilization ?? 0), windowDurationMins: mins, resetsAt: w.resets_at ? Math.floor(Date.parse(w.resets_at) / 1000) : null } : null;
+  return { limitId: "codex", limitName: "Claude", normalModelSlug: null, primary: win(u.five_hour, 300), secondary: win(u.seven_day, 10080), credits: null, individualLimit: null, spendControlReached: null, planType: null, rateLimitReachedType: null };
+}
+
 function lineReader(stream, onLine) {
   let buf = "";
   stream.on("data", (chunk) => {
@@ -144,6 +157,9 @@ wss.on("connection", (ws) => {
           }
           message.text += u.content.text;
           notify("item/agentMessage/delta", { threadId, turnId, itemId: message.id, delta: u.content.text });
+        } else if (u.sessionUpdate === "usage_update" && typeof u.used === "number") {
+          const b = { totalTokens: u.used, inputTokens: u.used, cachedInputTokens: 0, cacheWriteInputTokens: 0, outputTokens: 0, reasoningOutputTokens: 0 };
+          notify("thread/tokenUsage/updated", { threadId, turnId, tokenUsage: { total: b, last: b, modelContextWindow: u.size ?? null } });
         } else if (u.sessionUpdate === "tool_call") {
           closeMessage();
           const item = { type: "commandExecution", id: u.toolCallId, pluginId: null, scriptPath: null, command: u.title ?? u.kind ?? "tool", cwd: threadCwd.get(threadId) ?? process.cwd(), processId: null, source: "agent", status: "inProgress", commandActions: [], aggregatedOutput: null, exitCode: null, durationMs: null, started: now() };
@@ -194,6 +210,8 @@ wss.on("connection", (ws) => {
     const completedAt = Math.floor(now() / 1000);
     notify("turn/completed", { threadId, turn: { id: turnId, items, itemsView: "summary", status, error, startedAt, completedAt, durationMs: (completedAt - startedAt) * 1000 } });
     notify("thread/status/changed", { threadId, status: { type: "idle" } });
+    claudeLimits().then((rateLimits) => { log(`claude limits: 5h ${rateLimits.primary?.usedPercent}% week ${rateLimits.secondary?.usedPercent}%`); notify("account/rateLimits/updated", { rateLimits }); })
+      .catch((e) => log(`claude limits: ${e.message}`));
   }
 
   ws.on("message", (data) => {

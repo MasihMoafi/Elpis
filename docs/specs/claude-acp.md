@@ -66,7 +66,8 @@ Setup once: `cd tools/elpis-claude && npm install --omit=optional` (about 64 MB)
 | A3 Ask mode (`-a on-request`): Elpis approval prompt; decline → no file | Pass |
 | A3 allow → file created | Pass |
 | A2 speed | Spike only (~2 s/turn); not re-measured through the TUI |
-| A4 `/usage` with Claude numbers | Not built |
+| A4 `/usage` token usage and context window from Claude | Pass (28.2K used / 1M) |
+| A4 `/usage` Claude limits | Fetched (5h 39%, week 57%), but the TUI shows limits only from its own ChatGPT-account read (`tui/src/chatwidget/rate_limits.rs:374`). Needs a small TUI change |
 | A5 continuity on runtime switch | Not built |
 
 Approval mapping: Elpis Full Access keeps the user's Claude settings. Any Ask mode starts Claude without the user's personal settings, so Claude must ask through Elpis.
@@ -83,4 +84,4 @@ Known gaps:
 1. R11: reversed for this ACP runtime, as a prototype.
 2. Selection: a separate launcher (`elpis-claude`), no new slash command.
 3. Adapter: installed once with npm, not bundled.
-4. First slice: A1 and A3 (chat, tools, approvals). Next: A4 usage, then history and continuity.
+4. First slice: A1, A3 and A4 token usage. Next: the TUI change for Claude limits, then history and continuity.

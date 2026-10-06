@@ -6,7 +6,7 @@ set -euo pipefail
 here="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
 port="$(node -e 'const s=require("net").createServer().listen(0,"127.0.0.1",()=>{console.log(s.address().port);s.close()})')"
 mkdir -p /tmp/acp-bridge
-PORT="$port" node "$here/acp-bridge.mjs" &
+NODE_USE_ENV_PROXY=1 PORT="$port" node "$here/acp-bridge.mjs" &
 bridge=$!
 trap 'kill "$bridge" 2>/dev/null' EXIT
 for _ in $(seq 1 50); do (exec 3<>"/dev/tcp/127.0.0.1/$port") 2>/dev/null && break; sleep 0.1; done
