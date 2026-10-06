@@ -622,3 +622,8 @@ mod follow_tests;
 #[cfg(test)]
 #[path = "owned_transcript_render_cost_tests.rs"]
 mod render_cost_tests;
+
+// Elpis: Esc never leaves typed text in the air on the full screen.
+#[cfg(test)]
+#[path = "owned_transcript_esc_typing_tests.rs"]
+mod esc_typing_tests;

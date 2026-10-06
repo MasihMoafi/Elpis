@@ -1042,8 +1042,8 @@ async fn offline_backtrack_keeps_the_preview_and_draft_without_reverting() -> Re
             .apply_external_edit("offline draft".to_string());
         app.reconnect.offline = true;
         for key in [
-            KeyEvent::new(KeyCode::Char('j'), KeyModifiers::NONE),
-            KeyEvent::new(KeyCode::Char('h'), KeyModifiers::NONE),
+            KeyEvent::new(KeyCode::Down, KeyModifiers::NONE),
+            KeyEvent::new(KeyCode::Left, KeyModifiers::NONE),
             KeyEvent::new(KeyCode::Char('t'), KeyModifiers::CONTROL),
         ] {
             app.handle_tui_event(&mut tui, &mut app_server, TuiEvent::Key(key))

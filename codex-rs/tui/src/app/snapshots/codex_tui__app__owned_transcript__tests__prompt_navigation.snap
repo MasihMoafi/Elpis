@@ -18,4 +18,4 @@ expression: "normalize_snapshot_paths(buffer_text(crate::custom_terminal::test_s
 ───────────────────────────────────────────────────────────────────────────────┐
 › Ask Elpis to do anything                                                     │
 ───────────────────────────────────────────────────────────────────────────────┘
-  Browsing · ↑↓/jk scroll · ←→/hl prompts · ctrl+t details · ↵ rewind · esc back
+  Browsing · ↑↓ scroll · ←→ prompts · ctrl+t details · ↵ rewind · esc back

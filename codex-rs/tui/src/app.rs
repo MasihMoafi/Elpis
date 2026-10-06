@@ -914,6 +914,12 @@ impl App {
             return Ok(AppRunControl::Continue);
         }
 
+        // Elpis: a typed character leaves transcript browsing and goes to the composer.
+        if let TuiEvent::Key(key_event) = &event
+            && self.typed_key_leaves_browsing(tui, *key_event)
+        {
+            self.cancel_transcript_browsing(tui);
+        }
         let mut event = if let TuiEvent::Key(mut key_event) = event {
             let escape = KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE);
             if self.should_recover_vim_insert_escape(key_event)

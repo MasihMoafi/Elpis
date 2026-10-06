@@ -595,17 +595,8 @@ impl App {
             } else if self.should_reject_side_backtrack_esc(key_event) {
                 self.reject_side_backtrack_esc();
             } else {
-                let leaves_ledger = self.chat_widget.context_ledger_has_focus();
                 let action = self.chat_widget.handle_key_event(key_event);
                 self.handle_clipboard_key_action(tui, action);
-                // Elpis: Esc that leaves the Context Ledger is also the first Esc of a rewind,
-                // so Esc Esc rewinds as in Codex, which has no Ledger to leave.
-                if leaves_ledger
-                    && key_event.kind == KeyEventKind::Press
-                    && self.should_handle_backtrack_esc(key_event)
-                {
-                    self.handle_backtrack_esc_key(tui);
-                }
             }
             return;
         }

@@ -739,7 +739,7 @@ async fn daemon_ctrl_c_during_mcp_startup_does_not_show_background_exit_menu() -
 }
 
 #[tokio::test]
-async fn esc_that_leaves_the_context_ledger_primes_the_rewind() -> Result<()> {
+async fn esc_that_leaves_the_context_ledger_does_not_prime_the_rewind() -> Result<()> {
     let (mut app, _events, _operations) = make_test_app_with_channels().await;
     let mut app_server = crate::start_embedded_app_server_for_picker(&app.config).await?;
     let mut tui = crate::tui::test_support::make_test_tui()?;
@@ -752,7 +752,8 @@ async fn esc_that_leaves_the_context_ledger_primes_the_rewind() -> Result<()> {
     app.handle_key_event(&mut tui, &mut app_server, KeyCode::Esc.into())
         .await;
     assert!(!app.chat_widget.context_ledger_has_focus());
-    // The next Esc opens the rewind, as in Codex.
-    assert!(app.backtrack.primed);
+    // Leaving the Ledger is not the first Esc of a rewind: an Esc Esc rewind must start from
+    // the composer, so the Ledger's Esc never hides the composer behind transcript browsing.
+    assert!(!app.backtrack.primed);
     Ok(())
 }

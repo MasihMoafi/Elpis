@@ -319,7 +319,14 @@ async fn browsing_details_use_the_remapped_chord_without_cancelling_preview() ->
         );
         assert!(text.contains("second prompt"));
         assert!(app.backtrack.overlay_preview_active);
-        for code in [KeyCode::Char('h'), KeyCode::Right] {
+        // On the full screen a letter types into the composer, so a scroll key moves instead
+        // (this keymap makes Left and Up the first strokes of chords).
+        let previous = if owned {
+            KeyCode::Down
+        } else {
+            KeyCode::Char('h')
+        };
+        for code in [previous, KeyCode::Right] {
             if let Some(Overlay::Transcript(overlay)) = &mut app.overlay {
                 overlay.set_history_state(TranscriptHistoryState::LoadingBeginning);
             } else {
@@ -331,7 +338,11 @@ async fn browsing_details_use_the_remapped_chord_without_cancelling_preview() ->
                 Some(Overlay::Transcript(overlay)) => overlay.history_state(),
                 _ => app.transcript_view.history,
             };
-            assert_eq!(state, TranscriptHistoryState::LoadingOlder);
+            assert_eq!(
+                state,
+                TranscriptHistoryState::LoadingOlder,
+                "owned {owned}, {code:?}"
+            );
         }
         app.handle_tui_event(&mut tui, &mut server, TuiEvent::Key(KeyCode::Up.into()))
             .await?;

@@ -19,13 +19,20 @@ impl App {
             .keymap
             .primary_hint(crate::keymap::KeymapContext::Global, "open_transcript")
             .map(|key| (key.display_label(), "details"));
+        // Elpis: on the full screen, letters type into the composer (typed_key_leaves_browsing),
+        // so only the transcript overlay names its letter keys.
+        let (scroll, prompts, both) = if self.overlay.is_some() {
+            ("↑↓/jk", "←→/hl", "↑↓/jk ←→/hl")
+        } else {
+            ("↑↓", "←→", "↑↓ ←→")
+        };
         let mut full_hints = vec![
-            ("↑↓/jk".to_string(), "scroll"),
-            ("←→/hl".to_string(), "prompts"),
+            (scroll.to_string(), "scroll"),
+            (prompts.to_string(), "prompts"),
         ];
         full_hints.extend(details.clone());
         full_hints.extend([("↵".to_string(), "rewind"), ("esc".to_string(), "back")]);
-        let mut compact_hints = vec![("↑↓/jk ←→/hl".to_string(), "")];
+        let mut compact_hints = vec![(both.to_string(), "")];
         compact_hints.extend(details);
         compact_hints.extend([("↵".to_string(), "rewind"), ("esc".to_string(), "back")]);
         let line = first_fitting_line(
@@ -36,7 +43,7 @@ impl App {
                 (
                     "Browsing",
                     vec![
-                        ("↑↓/jk ←→/hl".to_string(), ""),
+                        (both.to_string(), ""),
                         ("↵".to_string(), "rewind"),
                         ("esc".to_string(), ""),
                     ],
