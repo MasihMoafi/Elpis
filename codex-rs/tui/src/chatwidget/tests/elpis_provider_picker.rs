@@ -472,3 +472,162 @@ async fn the_model_command_starts_at_the_provider_list_on_the_current_provider()
     // The long model list does not open first.
     assert!(!popup.contains("Choose a mind and effort"), "{popup}");
 }
+
+const AGY_PROVIDER: &str = "antigravity";
+const AGY_MODEL: &str = "agy/gemini-3.8-flash-high";
+const AGY_NAME: &str = "Gemini 3.8 Flash (High) (Antigravity)";
+
+/// Adds an Antigravity model to the app server's list, as the bridge does.
+fn add_antigravity_model(chat: &mut ChatWidget) {
+    let mut agy = get_available_model(chat, "gpt-5.5");
+    agy.id = AGY_MODEL.to_string();
+    agy.model = AGY_MODEL.to_string();
+    agy.display_name = AGY_NAME.to_string();
+    agy.description = "Gemini through your Antigravity sign-in".to_string();
+    agy.is_default = false;
+    agy.supported_reasoning_efforts = Vec::new();
+    Arc::make_mut(&mut chat.model_catalog).models.insert(0, agy);
+}
+
+/// Positive: with an `agy/` model in the list, the provider list offers Antigravity beside the
+/// Claude subscription. Negative: with only Claude subscription models, it offers no Antigravity.
+#[tokio::test]
+async fn the_antigravity_row_appears_only_with_antigravity_models() {
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    add_claude_subscription_model(&mut chat);
+    chat.open_elpis_provider_popup();
+    let providers = render_bottom_popup(&chat, /*width*/ 120);
+    assert!(providers.contains("Claude subscription"), "{providers}");
+    assert!(!providers.contains("Antigravity"), "{providers}");
+
+    add_antigravity_model(&mut chat);
+    chat.open_elpis_provider_popup();
+    let providers = render_bottom_popup(&chat, /*width*/ 120);
+    assert!(providers.contains("Claude subscription"), "{providers}");
+    assert!(providers.contains("Antigravity"), "{providers}");
+    assert!(
+        providers.contains("your Antigravity sign-in"),
+        "{providers}"
+    );
+}
+
+/// Positive: picking Antigravity in the provider list browses it, and its list holds only the
+/// `agy/` models. Negative: the Claude subscription model and the configured provider's own
+/// models are not in it, and the configured provider's list shows the `agy/` model only once.
+#[tokio::test]
+async fn picking_antigravity_lists_only_antigravity_models() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    add_claude_subscription_model(&mut chat);
+    add_antigravity_model(&mut chat);
+
+    chat.open_elpis_provider_popup();
+    provider_events(&mut rx);
+    for ch in "antigravity".chars() {
+        chat.handle_key_event(KeyEvent::from(KeyCode::Char(ch)));
+    }
+    chat.handle_key_event(KeyEvent::from(KeyCode::Enter));
+    let events = provider_events(&mut rx);
+    assert!(
+        matches!(
+            events.as_slice(),
+            [ElpisProviderEvent::Browse { provider_id }] if provider_id == AGY_PROVIDER
+        ),
+        "{events:?}"
+    );
+
+    // The App lists it from the model list it already has.
+    chat.open_elpis_provider_models(AGY_PROVIDER.to_string(), Ok(Vec::new()));
+    let popup = render_bottom_popup(&chat, /*width*/ 120);
+    assert_eq!(
+        row_names(&popup),
+        vec!["Change provider…", AGY_NAME],
+        "{popup}"
+    );
+    assert!(
+        popup.contains("Provider: Antigravity (antigravity)"),
+        "{popup}"
+    );
+    assert!(
+        popup.contains("Credential: your Antigravity sign-in"),
+        "{popup}"
+    );
+
+    // The configured provider's list, from the app server's list, shows the `agy/` model once.
+    let listed = chat.model_catalog.try_list_models().expect("models");
+    chat.open_elpis_provider_models("openai".to_string(), Ok(listed));
+    let popup = render_bottom_popup(&chat, /*width*/ 120);
+    assert_eq!(popup.matches(AGY_NAME).count(), 1, "{popup}");
+}
+
+/// Positive: picking an Antigravity model changes the model as a Claude subscription row does,
+/// switches no provider, and the status card, the dashboard and the provider list then name
+/// Antigravity. Negative: before the pick, none of them does.
+#[tokio::test]
+async fn picking_an_antigravity_model_selects_it_with_provider_antigravity() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    chat.thread_id = Some(ThreadId::new());
+    add_claude_subscription_model(&mut chat);
+    add_antigravity_model(&mut chat);
+    let status_text = |chat: &mut ChatWidget| {
+        lines_to_single_string(
+            &chat
+                .status_output_cell(
+                    /*refreshing_rate_limits*/ false, /*request_id*/ None,
+                )
+                .display_lines(/*width*/ 120),
+        )
+    };
+    let before = status_text(&mut chat);
+    assert!(!before.contains("Antigravity"), "{before}");
+    assert_eq!(
+        chat.dashboard_models().chat.provider.as_deref(),
+        Some("openai")
+    );
+
+    chat.open_elpis_provider_models(AGY_PROVIDER.to_string(), Ok(Vec::new()));
+    std::iter::from_fn(|| rx.try_recv().ok()).for_each(drop);
+    for ch in "gemini".chars() {
+        chat.handle_key_event(KeyEvent::from(KeyCode::Char(ch)));
+    }
+    chat.handle_key_event(KeyEvent::from(KeyCode::Enter));
+    let preset = assert_matches!(
+        rx.try_recv(),
+        Ok(AppEvent::OpenReasoningPopup { model }) => model
+    );
+    assert_eq!(preset.model, AGY_MODEL);
+    chat.open_reasoning_popup(preset);
+    let events: Vec<AppEvent> = std::iter::from_fn(|| rx.try_recv().ok()).collect();
+    assert!(
+        events
+            .iter()
+            .any(|event| matches!(event, AppEvent::UpdateModel(model) if model == AGY_MODEL)),
+        "{events:?}"
+    );
+    assert!(
+        !events
+            .iter()
+            .any(|event| matches!(event, AppEvent::Elpis(ElpisAppEvent::Provider(_)))),
+        "a provider event was sent: {events:?}"
+    );
+    assert_eq!(chat.config.model_provider_id, "openai");
+
+    // The App applies the model change.
+    chat.set_model(AGY_MODEL);
+    assert_eq!(
+        chat.dashboard_models().chat.provider.as_deref(),
+        Some(AGY_PROVIDER)
+    );
+    let after = status_text(&mut chat);
+    let provider_line = after
+        .lines()
+        .find(|line| line.contains("Model provider"))
+        .unwrap_or_default();
+    assert!(provider_line.contains("Antigravity"), "{after}");
+    chat.open_elpis_provider_popup();
+    let providers = render_bottom_popup(&chat, /*width*/ 120);
+    let selected = providers
+        .lines()
+        .find(|line| line.trim_start().starts_with('›'))
+        .unwrap_or_default();
+    assert!(selected.contains("Antigravity"), "{providers}");
+}

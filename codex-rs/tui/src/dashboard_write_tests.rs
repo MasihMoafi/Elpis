@@ -401,6 +401,110 @@ fn the_claude_subscription_is_a_chat_model_provider_only_with_the_claude_bridge(
     assert_eq!(pruner_settings(harness.home.path()), pruner_before);
 }
 
+/// Positive: while the app server's list carries an `agy/` model, Antigravity is a chat-only
+/// provider that lists its models alone, and choosing one sends the picker's model change.
+/// Negative: without one it is not offered; the Claude subscription does not take its model,
+/// and another role is refused.
+#[test]
+fn antigravity_is_a_chat_model_provider_only_with_antigravity_models() {
+    const AGY: &str = "antigravity";
+    const AGY_MODEL: &str = "agy/gemini-3.8-flash-high";
+    let mut harness = harness();
+    let token = token();
+    let path = format!("/models/{token}");
+    let provider_rows = |link: &DashboardLink| {
+        let (status, body) = send(link, get(&path));
+        assert_eq!(status, 200, "{body}");
+        json(&body)["providers"]
+            .as_array()
+            .expect("providers")
+            .clone()
+    };
+    let listed = |link: &DashboardLink, provider: &str| {
+        let (status, body) = send(link, get(&format!("{path}/{provider}")));
+        (status == 200).then(|| {
+            json(&body)["models"]
+                .as_array()
+                .expect("models")
+                .iter()
+                .map(|row| row["id"].as_str().expect("id").to_string())
+                .collect::<Vec<_>>()
+        })
+    };
+    let preset = |model: &str, name: &str| {
+        let mut preset = crate::test_support::TEST_MODEL_PRESETS
+            .iter()
+            .find(|preset| preset.show_in_picker)
+            .expect("a visible preset")
+            .clone();
+        preset.id = model.to_string();
+        preset.model = model.to_string();
+        preset.display_name = name.to_string();
+        preset.is_default = false;
+        preset
+    };
+    let choose = format!(r#"{{"role":"chat","provider":"{AGY}","model":"{AGY_MODEL}"}}"#);
+
+    // With Claude subscription models alone.
+    harness
+        .link
+        .catalog
+        .insert(0, preset("claude/opus", "Opus 5.5 (Claude subscription)"));
+    assert!(
+        provider_rows(&harness.link)
+            .iter()
+            .all(|row| row["id"] != AGY),
+        "offered without Antigravity models"
+    );
+    assert_eq!(listed(&harness.link, AGY), None);
+    let (status, answer) = send(&harness.link, post(&path, &choose));
+    assert_eq!(status, 400, "{answer}");
+    assert_eq!(drain(&mut harness.events), Vec::<String>::new());
+
+    // With an Antigravity model too.
+    harness.link.catalog.insert(
+        0,
+        preset(AGY_MODEL, "Gemini 3.8 Flash (High) (Antigravity)"),
+    );
+    let rows = provider_rows(&harness.link);
+    assert!(
+        rows.contains(&serde_json::json!({
+            "id": AGY,
+            "name": "Antigravity",
+            "chat_only": true,
+        })),
+        "{rows:?}"
+    );
+    assert_eq!(
+        listed(&harness.link, AGY),
+        Some(vec![AGY_MODEL.to_string()])
+    );
+    let claude = crate::chatwidget::CLAUDE_SUBSCRIPTION_PROVIDER_ID;
+    assert_eq!(
+        listed(&harness.link, claude),
+        Some(vec!["claude/opus".to_string()])
+    );
+    let openai = listed(&harness.link, "openai").expect("openai list");
+    assert!(!openai.contains(&AGY_MODEL.to_string()), "{openai:?}");
+
+    let (status, body) = send(&harness.link, post(&path, &choose));
+    assert_eq!(status, 200, "{body}");
+    assert_eq!(
+        drain(&mut harness.events),
+        vec![format!("chat model {AGY_MODEL}"), "refresh".to_string()]
+    );
+
+    for body in [
+        format!(r#"{{"role":"background","provider":"{AGY}","model":"{AGY_MODEL}"}}"#),
+        format!(r#"{{"role":"chat","provider":"{claude}","model":"{AGY_MODEL}"}}"#),
+        format!(r#"{{"role":"chat","provider":"{AGY}","model":"claude/opus"}}"#),
+    ] {
+        let (status, answer) = send(&harness.link, post(&path, &body));
+        assert_eq!(status, 400, "{body}: {answer}");
+    }
+    assert_eq!(drain(&mut harness.events), Vec::<String>::new());
+}
+
 /// Positive: a same-origin JSON POST with this session's token writes. Negative: a missing or
 /// foreign Origin, a form body, a wrong token or a foreign Host writes nothing, on every page.
 #[test]
