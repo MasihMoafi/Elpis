@@ -173,3 +173,85 @@ async fn check_discovery(mixed_sources: bool) -> Result<()> {
     );
     Ok(())
 }
+
+/// A finished helper is known only from `thread/list`; it still nests under its parent.
+#[tokio::test]
+async fn listed_helpers_nest_under_their_parent() -> Result<()> {
+    let mut app = make_test_app().await;
+    let parent = ThreadId::from_u128(/*value*/ 7);
+    let mut root = overview_thread(
+        parent,
+        /*parent_thread_id*/ None,
+        "Coordinate the release",
+        ThreadStatus::NotLoaded,
+    );
+    root.updated_at += 1;
+    let mut helper = overview_thread(
+        ThreadId::from_u128(/*value*/ 8),
+        /*parent_thread_id*/ None,
+        "Delegated: draft the note",
+        ThreadStatus::NotLoaded,
+    );
+    // Delegated helpers carry only the protocol's parent field.
+    helper.parent_thread_id = Some(parent.to_string());
+    let listed = vec![root, helper];
+    let listener = TcpListener::bind("127.0.0.1:0").await?;
+    let endpoint = crate::resolve_remote_addr(&format!("ws://{}", listener.local_addr()?))?;
+    let server = tokio::spawn(async move {
+        let (stream, _) = listener.accept().await?;
+        let mut socket = tokio_tungstenite::accept_async(stream).await?;
+        while let Some(Ok(Message::Text(text))) = socket.next().await {
+            let JSONRPCMessage::Request(request) = serde_json::from_str(&text)? else {
+                continue;
+            };
+            let params = request.params.unwrap_or_default();
+            let result = match request.method.as_str() {
+                "initialize" => json!({"userAgent": "overview-test/1.0"}),
+                "thread/loaded/list" => json!({"data": [], "nextCursor": null}),
+                "thread/list" if params["sourceKinds"] == json!([]) => {
+                    json!({"data": listed, "nextCursor": null})
+                }
+                "thread/list" => json!({"data": [], "nextCursor": null}),
+                "thread/read" => {
+                    json!({"thread": listed.iter().find(|thread| thread.id == params["threadId"]).unwrap()})
+                }
+                "thread/turns/list" => json!({"data": [], "nextCursor": null}),
+                method => panic!("unexpected request: {method}"),
+            };
+            socket
+                .send(Message::Text(
+                    json!({"id": request.id, "result": result})
+                        .to_string()
+                        .into(),
+                ))
+                .await?;
+        }
+        Ok::<_, color_eyre::Report>(())
+    });
+    let session = AppServerSession::new(
+        crate::connect_remote_app_server(endpoint).await?,
+        ThreadParamsMode::Remote,
+    );
+    let view = app.agents_overview_view(Vec::new(), /*selected_thread_id*/ None);
+    app.chat_widget.show_bottom_pane_view(Box::new(view));
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+    app.app_event_tx = AppEventSender::new(tx);
+    app.refresh_agents_overview_threads(&session);
+    finish_overview_refresh(&mut app, &session, &mut rx).await;
+    let threads = app
+        .agents_overview
+        .threads
+        .values()
+        .flatten()
+        .cloned()
+        .collect();
+    let view = app.agents_overview_view(threads, Some(parent));
+    // The helper follows its parent instead of being dropped from the list.
+    assert_eq!(
+        view.thread_ids(),
+        vec![parent, ThreadId::from_u128(/*value*/ 8)]
+    );
+    session.shutdown().await?;
+    server.await??;
+    Ok(())
+}

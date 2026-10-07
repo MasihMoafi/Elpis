@@ -21,6 +21,9 @@ const PAGE_SIZE: u32 = 10;
 struct SourcePage {
     cursor: Option<String>,
     rows: VecDeque<Thread>,
+    /// Helpers listed on fetched pages. They nest under their parents, so they are
+    /// published with the next batch without counting toward its task limit.
+    helpers: Vec<Thread>,
     exhausted: bool,
     sort_key: ThreadSortKey,
 }
@@ -30,6 +33,7 @@ impl Default for SourcePage {
         Self {
             cursor: None,
             rows: VecDeque::new(),
+            helpers: Vec::new(),
             exhausted: false,
             sort_key: ThreadSortKey::RecencyAt,
         }
@@ -80,6 +84,9 @@ impl AgentsOverviewDiscovery {
                 rows.push(row);
             }
         }
+        for source in &mut self.sources {
+            rows.append(&mut source.helpers);
+        }
         (rows, left && right)
     }
 }
@@ -128,14 +135,18 @@ impl SourcePage {
                 Ok(page) => {
                     self.exhausted = page.next_cursor.is_none();
                     self.cursor = page.next_cursor;
-                    self.rows.extend(page.data.into_iter().filter(|thread| {
-                        !thread.ephemeral
-                            && thread.parent_thread_id.is_none()
+                    for thread in page.data.into_iter().filter(|thread| !thread.ephemeral) {
+                        if thread.parent_thread_id.is_none()
                             && !matches!(
                                 thread.source,
                                 SessionSource::SubAgent(SubAgentSource::ThreadSpawn { .. })
                             )
-                    }));
+                        {
+                            self.rows.push_back(thread);
+                        } else {
+                            self.helpers.push(thread);
+                        }
+                    }
                     return true;
                 }
                 Err(error) => {
