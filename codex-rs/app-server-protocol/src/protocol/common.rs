@@ -872,6 +872,13 @@ client_request_definitions! {
         serialization: thread_id(params.thread_id),
         response: v2::ThreadInjectItemsResponse,
     },
+    // Elpis: the instruction text a thread's model receives, for a client that runs the
+    // thread's turns on another engine (v2/elpis_context.rs).
+    ThreadElpisInstructionsRead => "thread/elpisInstructions/read" {
+        params: v2::ThreadElpisInstructionsReadParams,
+        serialization: thread_id(params.thread_id),
+        response: v2::ThreadElpisInstructionsReadResponse,
+    },
     SkillsList => "skills/list" {
         params: v2::SkillsListParams,
         serialization: global_shared_read("config"),

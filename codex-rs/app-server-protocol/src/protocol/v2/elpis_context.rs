@@ -242,3 +242,26 @@ impl From<CoreSmartPruneAdmissionSnapshot> for ThreadSmartPruneAdmissionSnapshot
         }
     }
 }
+
+/// Reads the Elpis instruction text a thread's next model request carries, so a client that
+/// runs the thread's turns on another engine can give that model the same instructions.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub struct ThreadElpisInstructionsReadParams {
+    pub thread_id: String,
+}
+
+/// Each field is `null` when the thread's model receives nothing from that source.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub struct ThreadElpisInstructionsReadResponse {
+    /// The thread's configured `developer_instructions`.
+    pub developer_instructions: Option<String>,
+    /// The global and project AGENTS.md text the Context Ledger admits.
+    pub agents_md: Option<String>,
+    /// The admitted continuity section: MEMORY.md, development rules, GOAL.md, ES.md and
+    /// files added with `/add`.
+    pub continuity: Option<String>,
+}
