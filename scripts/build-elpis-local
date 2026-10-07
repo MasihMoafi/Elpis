@@ -103,8 +103,8 @@ fi
 # Keep the compiler fingerprint stable when reducing sustained Cargo concurrency.
 default_rustc_threads=1
 jobs=${ELPIS_BUILD_JOBS:-$default_jobs}
-if ! [[ "$jobs" =~ ^[12]$ ]]; then
-    printf 'ELPIS_BUILD_JOBS must be 1 or 2 on this workstation\n' >&2
+if ! [[ "$jobs" =~ ^[1-6]$ ]]; then
+    printf 'ELPIS_BUILD_JOBS must be 1-6 on this workstation (Masih, 2026-10-07: more cores are fine below 75-80 C)\n' >&2
     exit 2
 fi
 
