@@ -185,7 +185,11 @@ wss.on("connection", (ws) => {
     return { systemInstructions: Math.max(0, used - known), ...parts, toolDefinitions: 0, outputSchema: 0, unrecognizedItems: 0, estimatedTotal: used };
   };
   const lastContext = new Map();
-  const usageBreakdown = (u) => ({ totalTokens: u.total ?? 0, inputTokens: u.input ?? 0, cachedInputTokens: u.cachedRead ?? 0, cacheWriteInputTokens: u.cachedWrite ?? 0, outputTokens: u.output ?? 0, reasoningOutputTokens: 0 });
+  // Anthropic reports cache reads and writes apart from input; Elpis (like OpenAI) counts them as input.
+  const usageBreakdown = (u) => {
+    const input = (u.input ?? 0) + (u.cachedRead ?? 0) + (u.cachedWrite ?? 0);
+    return { totalTokens: input + (u.output ?? 0), inputTokens: input, cachedInputTokens: u.cachedRead ?? 0, cacheWriteInputTokens: u.cachedWrite ?? 0, outputTokens: u.output ?? 0, reasoningOutputTokens: 0 };
+  };
   const sendUsage = (threadId, turnId, last) => {
     const sum = tokenSums.get(threadId) ?? {};
     const ctx = lastContext.get(threadId) ?? {};
@@ -200,10 +204,19 @@ wss.on("connection", (ws) => {
     try {
       const a = await ensureAcp();
       const s = await a.call("session/new", { cwd: process.cwd(), mcpServers: [] });
-      const opt = (id) => (s.configOptions ?? []).find((o) => o.id === id);
+      const opt = (opts, id) => (opts ?? []).find((o) => o.id === id);
+      const models = (opt(s.configOptions, "model")?.options ?? []).filter((m) => m.value !== "default");
+      // Each model has its own effort levels and default (Haiku has none). Switching the model of
+      // this scratch session does not change Claude Code's saved settings.
+      const efforts = {};
+      for (const m of models) {
+        const r = await a.call("session/set_config_option", { sessionId: s.sessionId, configId: "model", value: m.value }).catch(() => null);
+        const e = opt(r?.configOptions, "effort");
+        efforts[m.value] = e ? { levels: e.options.map((o) => ({ reasoningEffort: o.value, description: o.name })), current: e.currentValue } : { levels: [], current: null };
+      }
       a.call("session/delete", { sessionId: s.sessionId }).catch(() => {});
-      return { models: opt("model")?.options ?? [], efforts: opt("effort")?.options ?? [] };
-    } catch (e) { log(`claude catalog: ${e.message}`); return { models: [], efforts: [] }; }
+      return { models, efforts };
+    } catch (e) { log(`claude catalog: ${e.message}`); return { models: [], efforts: {} }; }
   })();
   const pendingModelList = new Set();
   const pendingResume = new Set();
@@ -344,13 +357,13 @@ wss.on("connection", (ws) => {
     }
     if (parsed && pendingModelList.has(parsed.id) && Array.isArray(parsed.result?.data)) {
       pendingModelList.delete(parsed.id);
-      const { models, efforts } = await Promise.race([catalog, new Promise((r) => setTimeout(() => r({ models: [], efforts: [] }), 15000))]);
+      const { models, efforts } = await Promise.race([catalog, new Promise((r) => setTimeout(() => r({ models: [], efforts: {} }), 30000))]);
       const tpl = parsed.result.data[0] ?? {};
       const added = [];
-      const levels = efforts.length ? efforts.map((e) => ({ reasoningEffort: e.value, description: e.name })) : tpl.supportedReasoningEfforts;
-      for (const m of models.filter((m) => m.value !== "default")) {
+      for (const m of models) {
         const id = `claude/${m.value}`;
-        added.push({ ...tpl, id, model: id, inputModalities: ["text", "image"], displayName: `${m.name} (Claude subscription)`, description: m.description ?? "Claude Code on your Pro/Max plan", hidden: false, isDefault: false, upgrade: null, upgradeInfo: null, supportedReasoningEfforts: levels, defaultReasoningEffort: levels?.[levels.length - 1]?.reasoningEffort ?? tpl.defaultReasoningEffort });
+        const e = efforts[m.value] ?? { levels: [], current: null };
+        added.push({ ...tpl, id, model: id, inputModalities: ["text", "image"], displayName: `${m.name} (Claude subscription)`, description: m.description ?? "Claude Code on your Pro/Max plan", hidden: false, isDefault: false, upgrade: null, upgradeInfo: null, supportedReasoningEfforts: e.levels, defaultReasoningEffort: e.current ?? "default" });
       }
       parsed.result.data.unshift(...added);
       log(`model/list: added ${added.length} Claude models`);
@@ -449,7 +462,8 @@ wss.on("connection", (ws) => {
           .catch((e) => log(`mode ${wantMode}: ${e.message ?? JSON.stringify(e)}`));
       }
       const effort = claudeEffort.get(threadId);
-      if (effort) await acp.call("session/set_config_option", { sessionId, configId: "effort", value: effort }).catch((e) => log(`effort ${effort}: ${e.message}`));
+      const levels = (await catalog).efforts[want]?.levels ?? [];
+      if (effort && levels.some((l) => l.reasoningEffort === effort)) await acp.call("session/set_config_option", { sessionId, configId: "effort", value: effort }).catch((e) => log(`effort ${effort}: ${e.message}`));
       turnState.sessionId = sessionId;
       sessionReady(sessionId);
       acp.onUpdate = ({ update: u }) => {

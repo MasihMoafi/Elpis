@@ -115,9 +115,11 @@ for (const s of scenarios) {
       if (limits?.primary?.windowDurationMins === 300 && typeof limits.primary.usedPercent === "number") { shown++; five = limits.primary; }
     }
     const asked = usageHits - hitsBefore;
-    shown === 3 && (process.env.E2E_REAL_USAGE || asked <= 1) && tokens?.modelContextWindow > 0
+    // Anthropic reports cached input apart from input; Elpis counts it as input, like OpenAI.
+    const inputCounted = tokens?.total?.inputTokens >= 1000 && tokens.total.inputTokens >= tokens.total.cachedInputTokens;
+    shown === 3 && (process.env.E2E_REAL_USAGE || asked <= 1) && tokens?.modelContextWindow > 0 && inputCounted
       ? console.log(`PASS usage (limits on 3 of 3 turns, endpoint asked ${asked}x, 5h ${five.usedPercent}% used, context ${tokens.last.totalTokens}/${tokens.modelContextWindow})`)
-      : fail(`usage: limits shown on ${shown} of 3 turns, endpoint asked ${asked}x, context window ${tokens?.modelContextWindow}`);
+      : fail(`usage: limits shown on ${shown} of 3 turns, endpoint asked ${asked}x, context window ${tokens?.modelContextWindow}, total ${JSON.stringify(tokens?.total)}`);
   } else if (s === "resume") {
     const word = `PEAR-${Math.floor(Math.random() * 9000 + 1000)}`;
     await turn(threadId, [{ type: "text", text: `Remember this word: ${word}. Reply with just OK.`, text_elements: [] }]);
@@ -240,6 +242,15 @@ for (const s of scenarios) {
     last.some((p) => /look around/i.test(p.step)) && last.every((p) => ["pending", "inProgress", "completed"].includes(p.status))
       ? console.log(`PASS plan (${plans.length} plan updates, last: ${last.map((p) => `${p.step}=${p.status}`).join(", ")})`)
       : fail(`plan: ${plans.length} updates, last=${JSON.stringify(last)}`);
+  } else if (s === "efforts") {
+    // Each Claude model offers its own effort levels: Haiku has none, so none are offered.
+    const list = models.result?.data ?? [];
+    const haiku = list.find((m) => m.id === "claude/haiku");
+    const opus = list.find((m) => m.id === "claude/opus");
+    const opusLevels = (opus?.supportedReasoningEfforts ?? []).map((e) => e.reasoningEffort);
+    haiku && haiku.supportedReasoningEfforts.length === 0 && opusLevels.includes("high") && opusLevels.includes(opus.defaultReasoningEffort)
+      ? console.log(`PASS efforts (haiku: none; opus: ${opusLevels.join(",")}, default ${opus.defaultReasoningEffort})`)
+      : fail(`efforts: haiku=${JSON.stringify(haiku?.supportedReasoningEfforts)} opus=${opusLevels} default=${opus?.defaultReasoningEffort}`);
   } else if (s === "default") {
     // Picking Claude with "enter default" must make new chats and the next start use Claude,
     // as a GPT pick does. Elpis reads its default from config/read, and the TUI sends that
