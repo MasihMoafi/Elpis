@@ -49,7 +49,7 @@ ws.send(JSON.stringify({ method: "initialized" }));
 const models = await call("model/list", { cursor: null, limit: null, includeHidden: true });
 if (!models.result?.data?.some((m) => m.id === "claude/opus")) fail("model/list has no claude/opus");
 
-const dir = mkdtempSync(join(tmpdir(), "elpis-e2e-"));
+const dir = process.env.E2E_CWD ?? mkdtempSync(join(tmpdir(), "elpis-e2e-"));
 const started = await call("thread/start", { cwd: dir, approvalPolicy: "never", sandbox: "danger-full-access" });
 const threadId = started.result?.thread?.id;
 if (!threadId) { fail(`thread/start: ${JSON.stringify(started.error ?? started)}`); process.exit(1); }
@@ -155,6 +155,13 @@ for (const s of scenarios) {
     !cr.error && ct.status === "completed" && claudeAfter < before - 4000 && next.text.includes(word)
       ? console.log(`PASS compact (Claude context ${before} -> ${claudeAfter} on the next Claude turn)`)
       : fail(`compact: err=${JSON.stringify(cr.error)} status=${ct.status} before=${before} after-compact=${after} claude-next=${claudeAfter} next=${next.text.slice(0, 60)}`);
+  } else if (s === "instructions") {
+    const word = `DEVNONCE-${Math.floor(Math.random() * 9000 + 1000)}`;
+    const st = await call("thread/start", { cwd: dir, approvalPolicy: "never", sandbox: "danger-full-access", developerInstructions: `The Elpis session code word is ${word}.` });
+    const tid = st.result?.thread?.id;
+    await call("thread/settings/update", { threadId: tid, model: "claude/opus", effort: "low" });
+    const r = await turn(tid, [{ type: "text", text: "Without using any tools or reading files, what is the Elpis session code word given in your instructions? Reply with only the code word, or NONE if you were not given one.", text_elements: [] }]);
+    r.text.includes(word) ? console.log(`PASS instructions (Claude knew ${word} from Elpis developer instructions)`) : fail(`instructions: reply=${r.text.slice(0, 160)}`);
   } else if (s === "image") {
     const word = process.env.E2E_IMAGE_WORD;
     const path = process.env.E2E_IMAGE_PATH;
