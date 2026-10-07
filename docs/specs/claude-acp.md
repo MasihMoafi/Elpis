@@ -91,7 +91,27 @@ Limits: the delegated agent cannot ask for approval (no UI); writes are opt-in p
 
 ## Automated checks
 
-`node tools/elpis-claude/test/bridge-e2e.mjs [text image interrupt usage approval resume delegate]` acts as the TUI over the app-server protocol against the real engine and Claude. All scenarios passed on 2026-10-07; image, delegate and resume-with-broken-session were also shown failing with the feature removed.
+`node tools/elpis-claude/test/bridge-e2e.mjs [scenario...]` acts as the TUI over the app-server protocol against the real engine and Claude (`E2E_MODEL=claude/haiku` for cheap runs). Each run uses its own bridge store and a stand-in usage endpoint, so it never touches Masih's store or asks Anthropic for limits. All scenarios passed on 2026-10-07; image, delegate and resume-with-broken-session were also shown failing with the feature removed.
+
+### Functional fixes found by using Claude in the Elpis TUI (2026-10-07)
+
+Each fix has an e2e scenario that failed on the bridge before it and passes after it.
+
+| Problem seen | Fix | Scenario |
+| --- | --- | --- |
+| A message sent mid-reply (Esc on a queued message) stopped Claude ("Model interrupted to submit steer instructions") | `turn/steer` goes to the adapter's `_session/steering`, after any running tool ends (a steer cut a running `sleep` and failed the turn) | steer |
+| Tool rows read "Ran Terminal", output in ```` ``` ```` fences, reads "(no output)", edits without diffs | Rows wait for the real command; Bash output from the tool response; reads are Elpis reads; Edit/Write are `fileChange` diffs | tools |
+| Claude's task list invisible | ACP `plan` updates become `turn/plan/updated`; Task*/TodoWrite rows hidden | plan |
+| Claude limits vanished after quick turns (Anthropic answered HTTP 429) | Limits asked at most once a minute; the last answer is reused | usage |
+| Token totals "39 total (0 input …)" for a 32k context | Cache reads/writes count as input | usage |
+| `/new` and the next start forgot a Claude model picked as default | The pick lives in the bridge store (`_default`), is reported by `config/read`, and answers `thread/start`/`thread/fork` | default |
+| Haiku offered six effort levels; "reasoning max" shown for "default" | Per-model levels and defaults from the adapter, saved in `catalog.json`, refreshed daily in the background (startup reads one model; all 12 take ~46 s) | efforts |
+| Esc-Esc edit failed: "thread/revert failed: turn not found" | Rewound Claude turns leave the store; Claude gets a fresh session seeded from the kept history; the engine reverts its own turns from the same point | revert |
+| `/review` ran on the engine's own model (OpenRouter, 401) | Review runs as a Claude turn with Elpis's rubric, Markdown findings, the usual banners | review |
+| Approval "No, and tell Elpis…" refused one command and Claude carried on | Prompts offer accept / decline / cancel; cancel stops the reply. No "don't ask again": Claude Code would save that rule to the project for good | approval |
+| Shift+Tab showed no lasting sign of Plan mode | The idle Elpis tip yields the footer to "Plan mode (shift+tab to cycle)" (TUI test `plan_mode_label_outranks_the_elpis_tip`) | — |
+
+Known gaps: Smart Prune and the Subagents switch in the Context Ledger do nothing for Claude chats; Claude Code also reads CLAUDE.md/AGENTS.md itself, so a file excluded in the Ledger can still reach Claude; after rewinding a Claude chat with no later GPT turn, the engine keeps the rewound turns' recorded text, which a later GPT turn in that chat could see.
 
 ## Decisions (defaults taken overnight under Masih's "go"; change any)
 
