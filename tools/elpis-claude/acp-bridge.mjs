@@ -135,6 +135,16 @@ wss.on("connection", (ws) => {
   const claudeEffort = new Map();
   const sessionModel = new Map();
   const tokenSums = new Map();
+  const ctxChars = new Map();
+  const devChars = new Map();
+  const addChars = (threadId, part, n) => { const c = ctxChars.get(threadId) ?? { user: 0, agent: 0, reasoning: 0, toolCalls: 0, toolResults: 0 }; c[part] += n ?? 0; ctxChars.set(threadId, c); };
+  const attribution = (threadId, used) => {
+    const tok = (n) => Math.round((n ?? 0) / 4);
+    const c = ctxChars.get(threadId) ?? {};
+    const parts = { developerMessages: tok(devChars.get(threadId)), userMessages: tok(c.user), agentMessages: tok(c.agent), reasoning: tok(c.reasoning), toolCalls: tok(c.toolCalls), toolResults: tok(c.toolResults) };
+    const known = Object.values(parts).reduce((a, b) => a + b, 0);
+    return { systemInstructions: Math.max(0, used - known), ...parts, toolDefinitions: 0, outputSchema: 0, unrecognizedItems: 0, estimatedTotal: used };
+  };
   const lastContext = new Map();
   const usageBreakdown = (u) => ({ totalTokens: u.total ?? 0, inputTokens: u.input ?? 0, cachedInputTokens: u.cachedRead ?? 0, cacheWriteInputTokens: u.cachedWrite ?? 0, outputTokens: u.output ?? 0, reasoningOutputTokens: 0 });
   const sendUsage = (threadId, turnId, last) => {
@@ -142,7 +152,8 @@ wss.on("connection", (ws) => {
     const ctx = lastContext.get(threadId) ?? {};
     const lastB = usageBreakdown(last ?? {});
     if (typeof ctx.used === "number") lastB.totalTokens = ctx.used;
-    notify("thread/tokenUsage/updated", { threadId, turnId, tokenUsage: { total: usageBreakdown(sum), last: lastB, modelContextWindow: ctx.size ?? null } });
+    const contextAttribution = typeof ctx.used === "number" ? attribution(threadId, ctx.used) : undefined;
+    notify("thread/tokenUsage/updated", { threadId, turnId, tokenUsage: { total: usageBreakdown(sum), last: lastB, modelContextWindow: ctx.size ?? null, ...(contextAttribution && { contextAttribution }) } });
   };
   const isClaude = (m) => typeof m === "string" && m.startsWith("claude/");
   const ensureAcp = async () => { if (!acp || acp.dead) { acp = new Acp(); await acp.ready; log("acp ready"); } return acp; };
@@ -328,6 +339,7 @@ wss.on("connection", (ws) => {
         const cwd = threadCwd.get(threadId) ?? process.cwd();
         const instructions = await elpisInstructions(threadId);
         let _meta = ask ? { claudeCode: { options: { settingSources: ["project", "local"] } } } : undefined;
+        devChars.set(threadId, instructions.length);
         if (instructions) { _meta = { ...(_meta ?? {}), systemPrompt: { append: instructions } }; log(`Elpis instructions for Claude: ${instructions.length} chars`); }
         await storeChain;
         const store = await loadStore();
@@ -365,8 +377,11 @@ wss.on("connection", (ws) => {
             notify("item/started", { item: message, threadId, turnId, startedAtMs: now() });
           }
           message.text += u.content.text;
+          addChars(threadId, "agent", u.content.text.length);
           firstTokenAt ??= now();
           notify("item/agentMessage/delta", { threadId, turnId, itemId: message.id, delta: u.content.text });
+        } else if (u.sessionUpdate === "agent_thought_chunk" && u.content?.type === "text") {
+          addChars(threadId, "reasoning", u.content.text.length);
         } else if (u.sessionUpdate === "usage_update" && typeof u.used === "number") {
           lastContext.set(threadId, { used: u.used, size: u.size ?? null });
           sendUsage(threadId, turnId, null);
@@ -374,6 +389,7 @@ wss.on("connection", (ws) => {
           closeMessage();
           const item = { type: "commandExecution", id: u.toolCallId, pluginId: null, scriptPath: null, command: u.title ?? u.kind ?? "tool", cwd: threadCwd.get(threadId) ?? process.cwd(), processId: null, source: "agent", status: "inProgress", commandActions: [], aggregatedOutput: null, exitCode: null, durationMs: null, started: now() };
           tools.set(u.toolCallId, item);
+          addChars(threadId, "toolCalls", JSON.stringify(u.rawInput ?? u.title ?? "").length);
           const { started, ...shown } = item;
           notify("item/started", { item: shown, threadId, turnId, startedAtMs: started });
         } else if (u.sessionUpdate === "tool_call_update") {
@@ -381,7 +397,7 @@ wss.on("connection", (ws) => {
           if (!item) return;
           if (u.title) item.command = u.title;
           const text = (u.content ?? []).map((c) => c.content?.text ?? (c.type === "diff" ? `edited ${c.path}` : "")).filter(Boolean).join("\n");
-          if (text) item.aggregatedOutput = text;
+          if (text) { addChars(threadId, "toolResults", text.length - (item.aggregatedOutput?.length ?? 0)); item.aggregatedOutput = text; }
           if (u.status === "completed" || u.status === "failed") {
             item.status = u.status === "completed" ? "completed" : "failed";
             item.exitCode = u.status === "completed" ? 0 : 1;
@@ -416,6 +432,8 @@ wss.on("connection", (ws) => {
           log(`seeded Claude with ${history.length} chars of earlier history`);
         }
       }
+      if (compacting) ctxChars.delete(threadId);
+      else addChars(threadId, "user", prompt.filter((c) => c.type === "text").reduce((n, c) => n + c.text.length, 0));
       const result = await acp.call("session/prompt", { sessionId, prompt });
       const tu = result.usage;
       if (tu) {
