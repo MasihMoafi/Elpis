@@ -372,8 +372,12 @@ impl ChatWidget {
             }
 
             // /wham/usage identifies ordinary and additional model limits separately. Streamed
-            // updates still drive warnings/recovery above, but must not overwrite status data.
-            if matches!(source, RateLimitSnapshotSource::AccountUsage) {
+            // updates still drive warnings/recovery above, but must not overwrite the status data
+            // that a ChatGPT account fetches. Without that fetch (a Claude subscription, for
+            // example), the streamed updates are the only limits there are, so they are kept.
+            if matches!(source, RateLimitSnapshotSource::AccountUsage)
+                || !self.should_prefetch_rate_limits()
+            {
                 let limit_label = snapshot
                     .limit_name
                     .clone()

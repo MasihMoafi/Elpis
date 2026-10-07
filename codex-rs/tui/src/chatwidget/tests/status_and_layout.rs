@@ -826,6 +826,8 @@ async fn status_line_secondary_only_non_weekly_limit_omits_primary_limit_item() 
 #[tokio::test]
 async fn rate_limit_snapshot_keeps_prior_credits_when_missing_from_headers() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    // A ChatGPT account fetches its limits; rolling updates must not overwrite them.
+    set_chatgpt_auth(&mut chat);
 
     chat.on_rate_limit_snapshot(Some(RateLimitSnapshot {
         limit_id: None,
@@ -891,6 +893,8 @@ async fn rate_limit_snapshot_keeps_prior_credits_when_missing_from_headers() {
 #[tokio::test]
 async fn rolling_rate_limit_snapshot_preserves_prior_individual_limit() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    // A ChatGPT account fetches its limits; rolling updates must not overwrite them.
+    set_chatgpt_auth(&mut chat);
     let mut usage_limits = snapshot(/*percent*/ 10.0);
     usage_limits.individual_limit = Some(SpendControlLimitSnapshot {
         limit: "25000".to_string(),
