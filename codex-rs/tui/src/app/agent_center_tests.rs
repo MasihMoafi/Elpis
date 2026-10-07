@@ -78,7 +78,8 @@ async fn live_center_columns() {
     let mut view = app.agents_overview_view(threads, Some(current));
     insta::assert_snapshot!(screen(&view, /*width*/ 160, /*height*/ 22));
     let mut selected_status_styles = Vec::new();
-    for _ in 0..fixtures.len() {
+    // Every row, including the nested child.
+    for _ in 0..=fixtures.len() {
         let area = Rect::new(
             /*x*/ 0, /*y*/ 0, /*width*/ 160, /*height*/ 22,
         );
@@ -93,14 +94,20 @@ async fn live_center_columns() {
             .iter()
             .position(|cell| cell.symbol() == "›")
             .unwrap();
+        // Without a model, the agent's dot keeps the selection's colours.
         assert_eq!(
             selected_row[marker + 2].style(),
             selected_row[marker].style()
         );
+        let header = buffer_rows(&buf)
+            .into_iter()
+            .find(|row| row.contains("Updated"))
+            .unwrap();
+        let status = usize::from(cell_column(&header, "Status").unwrap());
         selected_status_styles.push(format!(
             "{} | {:?}",
-            selected_row[marker + 2].symbol(),
-            selected_row[marker + 2].style()
+            selected_row[status].symbol(),
+            selected_row[status].style()
         ));
         view.handle_key_event(KeyCode::Down.into());
     }
@@ -329,7 +336,8 @@ async fn live_center_navigation_and_complete_hints() {
     }
     view.handle_key_event(KeyCode::Esc.into());
     view.handle_key_event(repeat_help);
-    assert!(screen(&view, /*width*/ 40, /*height*/ 24).contains("Tasks"));
+    let list = screen(&view, /*width*/ 40, /*height*/ 24);
+    assert!(list.contains("Task") && !list.contains("Task shortcuts"));
     assert!(!view.is_complete());
     view.handle_key_event(KeyCode::Esc.into());
     assert!(view.is_complete());
@@ -475,9 +483,9 @@ async fn live_center_search_row_appears_only_while_editing() {
         .iter()
         .map(ratatui::buffer::Cell::symbol)
         .collect::<String>();
-    let styles =
-        ["Tasks", "Status", "Updated"].map(|label| header[text.find(label).unwrap()].style());
-    assert_eq!(styles, [styles[0]; 3]);
+    let styles = ["Task", "Model", "Status", "Updated"]
+        .map(|label| header[text.find(label).unwrap()].style());
+    assert_eq!(styles, [styles[0]; 4]);
     let idle = screen(&view, area.width, area.height);
     view.handle_key_event(KeyCode::Char('f').into());
     view.handle_paste("find".into());
@@ -671,9 +679,8 @@ async fn live_center_rows_show_model_and_effort_in_agent_colour() {
         columns.iter().all(Option::is_some) && columns.is_sorted(),
         "header reads Task / Model / Status / Updated: {header:?}"
     );
-    let label = |model: &str, effort: &str| {
-        format!("{} · {effort}", app.model_catalog.display_name(model))
-    };
+    let label =
+        |model: &str, effort: &str| format!("{} · {effort}", app.model_catalog.display_name(model));
     let mut colours = HashMap::new();
     for (id, title, model, effort) in [
         (42, "Fix the dashboard token count", "claude/opus", "xhigh"),
@@ -728,12 +735,19 @@ async fn live_center_nests_helpers_under_their_parent() {
         matches[0]
     };
     let root = line_of("Fix the dashboard token count");
-    assert_eq!(line_of("Find where usage is emitted"), root + 1, "{rendered}");
+    assert_eq!(
+        line_of("Find where usage is emitted"),
+        root + 1,
+        "{rendered}"
+    );
     assert_eq!(line_of("Check the bridge turns"), root + 2, "{rendered}");
     assert_eq!(line_of("Draft the release note"), root + 3, "{rendered}");
     assert!(line_of("I'm home.") > root + 3, "{rendered}");
     for (title, branch) in [
-        ("Find where usage is emitted", "├─● Find where usage is emitted"),
+        (
+            "Find where usage is emitted",
+            "├─● Find where usage is emitted",
+        ),
         ("Check the bridge turns", "│ └─● Check the bridge turns"),
         ("Draft the release note", "└─● Draft the release note"),
     ] {

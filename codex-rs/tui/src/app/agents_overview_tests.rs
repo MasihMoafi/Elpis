@@ -35,9 +35,13 @@ async fn overview_worktree_creation_busy_state() {
 }
 
 #[tokio::test]
-async fn overview_thread_colors_match_footer_and_respect_color_suppression() {
+async fn overview_agent_colors_follow_the_model_and_respect_color_suppression() {
     let mut app = make_test_app().await;
     let id = ThreadId::from_u128(/*value*/ 42);
+    let light = crate::terminal_probe::DefaultColors {
+        fg: (20, 20, 20),
+        bg: (255, 255, 255),
+    };
     let mut snapshot = Vec::new();
     for enabled in [true, false] {
         app.local_settings.tui.status_line_use_colors = enabled;
@@ -48,6 +52,7 @@ async fn overview_thread_colors_match_footer_and_respect_color_suppression() {
             ThreadStatus::Idle,
         );
         thread.name = Some("Named task".into());
+        thread.model = Some("gpt-6.1-sol".into());
         let mut selected = thread.clone();
         selected.id = ThreadId::from_u128(/*value*/ 43).to_string();
         selected.name = Some("Selected task".into());
@@ -55,23 +60,27 @@ async fn overview_thread_colors_match_footer_and_respect_color_suppression() {
             vec![thread, selected],
             Some(ThreadId::from_u128(/*value*/ 43)),
         );
-        let mut terminal = Terminal::new(TestBackend::new(100, 30)).unwrap();
-        terminal
-            .draw(|frame| view.render(frame.area(), frame.buffer_mut()))
-            .unwrap();
+        let mut terminal = Terminal::new(TestBackend::new(160, 30)).unwrap();
+        crate::terminal_palette::with_test_default_colors(light, || {
+            terminal
+                .draw(|frame| view.render(frame.area(), frame.buffer_mut()))
+                .unwrap();
+        });
         let buffer = terminal.backend().buffer();
-        for row in buffer.content.chunks(100) {
+        for row in buffer.content.chunks(160) {
             let text: String = row.iter().map(ratatui::buffer::Cell::symbol).collect();
             if let Some(x) = text.find("Named task") {
                 let x = text[..x].chars().count();
-                let dot = row.iter().find(|cell| cell.symbol() == "○").unwrap();
-                let mut expected = ratatui::buffer::Cell::default();
-                expected.set_symbol("○").set_style(Style::default().cyan());
-                assert_eq!(dot, &expected);
+                let model = text[..text.find("GPT").unwrap()].chars().count();
+                let status = text[..text.find("◇").unwrap()].chars().count();
+                // Statuses stay neutral; only the agent's dot and model carry its colour.
+                assert_eq!(row[status].style(), row[x].style());
+                assert_eq!(row[x - 2].style(), row[model].style());
                 snapshot.push(format!(
-                    "{} | title style: {:?}",
-                    normalize_agent_center_snapshot(&text),
-                    row[x].style()
+                    "{} | title: {:?} | dot and model: {:?}",
+                    normalize_agent_center_snapshot(&text).trim_end(),
+                    row[x].style(),
+                    row[model].style()
                 ));
             }
         }
@@ -154,7 +163,6 @@ use pretty_assertions::assert_eq;
 use ratatui::Terminal;
 use ratatui::backend::TestBackend;
 use ratatui::layout::Rect;
-use ratatui::style::Style;
 
 static OVERVIEW_TIMESTAMP: std::sync::LazyLock<i64> =
     std::sync::LazyLock::new(|| chrono::Utc::now().timestamp() - 120);

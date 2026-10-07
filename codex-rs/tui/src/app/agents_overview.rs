@@ -12,6 +12,9 @@ mod errors;
 #[path = "agents_overview_loading.rs"]
 mod loading;
 
+#[path = "agents_overview_conversation.rs"]
+mod conversation;
+
 use super::agents_overview_view::AgentsOverviewGroup;
 use super::agents_overview_view::AgentsOverviewRow;
 use super::agents_overview_view::AgentsOverviewView;
@@ -328,6 +331,16 @@ impl App {
             }
         }
 
+        // Newest helper first under each parent, like top-level tasks.
+        for siblings in children.values_mut() {
+            siblings.sort_by(|left, right| {
+                right
+                    .updated_at
+                    .cmp(&left.updated_at)
+                    .then_with(|| left.id.cmp(&right.id))
+            });
+        }
+
         let voice_owner = self.voice_owner_thread_id().map(|id| id.to_string());
         let voice_session = threads
             .iter()
@@ -344,22 +357,49 @@ impl App {
                 .then_with(|| right.updated_at.cmp(&left.updated_at))
                 .then_with(|| left.id.cmp(&right.id))
         });
+        // Each top-level task is followed by its helpers, depth first, so the rows are the
+        // display order of every tree. A helper whose parent is not listed stays hidden.
         let mut rows = Vec::new();
-        for (root, group) in roots {
-            let Ok(thread_id) = ThreadId::from_string(&root.id) else {
-                continue;
-            };
-            if self.agents_overview.hidden_threads.contains(&thread_id) {
-                continue;
+        let mut placed = HashSet::new();
+        for (root, tree_group) in roots {
+            let root_index = rows.len();
+            let mut pending = vec![(root, /*depth*/ 0, /*parent*/ None)];
+            while let Some((thread, depth, parent)) = pending.pop() {
+                let Ok(thread_id) = ThreadId::from_string(&thread.id) else {
+                    continue;
+                };
+                if self.agents_overview.hidden_threads.contains(&thread_id)
+                    || !placed.insert(thread_id)
+                {
+                    continue;
+                }
+                let index = rows.len();
+                rows.push(AgentsOverviewRow {
+                    details: self.agents_overview_details(thread, &children),
+                    thread: thread.clone(),
+                    thread_id,
+                    group: AgentsOverviewGroup::for_status(&thread.status),
+                    tree_group,
+                    depth,
+                    parent,
+                    root: root_index,
+                    model_name: thread
+                        .model
+                        .as_deref()
+                        .filter(|model| !model.is_empty())
+                        .map(|model| self.model_catalog.display_name(model).to_string()),
+                    is_current: self.primary_thread_id == Some(thread_id),
+                    has_voice: depth == 0 && voice_session == Some(&thread.session_id),
+                });
+                pending.extend(
+                    children
+                        .get(&thread.id)
+                        .into_iter()
+                        .flatten()
+                        .rev()
+                        .map(|child| (*child, depth + 1, Some(index))),
+                );
             }
-            rows.push(AgentsOverviewRow {
-                details: self.agents_overview_details(root, &children),
-                thread: root.clone(),
-                thread_id,
-                group,
-                is_current: self.primary_thread_id == Some(thread_id),
-                has_voice: voice_session == Some(&root.session_id),
-            });
         }
 
         AgentsOverviewView::new(
@@ -383,10 +423,46 @@ impl App {
         app_server: &mut AppServerSession,
         thread_id: ThreadId,
     ) -> Result<AppRunControl> {
-        Box::pin(self.attach_agents_overview_thread(
-            tui, app_server, thread_id, /*started*/ None, /*startup_draft*/ None,
+        // A Codex subagent opens inside its top-level session, then switches to the subagent the
+        // way Left/Right would. Other helpers, such as bridge delegations, open directly.
+        let spawn_root = self.agents_overview_spawn_root(thread_id);
+        let control = Box::pin(self.attach_agents_overview_thread(
+            tui,
+            app_server,
+            spawn_root.unwrap_or(thread_id),
+            /*started*/ None,
+            /*startup_draft*/ None,
         ))
-        .await
+        .await?;
+        if let Some(root) = spawn_root
+            && matches!(control, AppRunControl::Continue)
+            && self.current_displayed_thread_id() == Some(root)
+            && self.agent_navigation.get(&thread_id).is_some()
+        {
+            self.select_agent_thread_and_discard_side(tui, app_server, thread_id)
+                .await?;
+        }
+        Ok(control)
+    }
+
+    /// The top-level session above a Codex subagent, following its spawn parents.
+    fn agents_overview_spawn_root(&self, thread_id: ThreadId) -> Option<ThreadId> {
+        let mut root = None;
+        let mut current = thread_id;
+        for _ in 0..self.agents_overview.threads.len() {
+            let Some(Some(thread)) = self.agents_overview.threads.get(&current) else {
+                break;
+            };
+            let SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
+                parent_thread_id, ..
+            }) = &thread.source
+            else {
+                break;
+            };
+            root = Some(*parent_thread_id);
+            current = *parent_thread_id;
+        }
+        root
     }
 
     async fn attach_agents_overview_thread(

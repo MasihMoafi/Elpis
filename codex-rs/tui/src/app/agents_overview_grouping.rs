@@ -26,14 +26,17 @@ impl AgentsOverviewView {
         left: usize,
         right: usize,
     ) -> bool {
+        // Helpers belong to their top-level task's group, so a tree is never split.
+        let (left, right) = (
+            &self.rows[self.rows[left].root],
+            &self.rows[self.rows[right].root],
+        );
         match grouping {
             AgentsOverviewGrouping::Project => {
-                self.project_groups[left].key == self.project_groups[right].key
+                self.project_groups[left.root].key == self.project_groups[right.root].key
             }
-            AgentsOverviewGrouping::Status => self.rows[left].group == self.rows[right].group,
-            AgentsOverviewGrouping::Model => {
-                model_name(&self.rows[left].thread) == model_name(&self.rows[right].thread)
-            }
+            AgentsOverviewGrouping::Status => left.tree_group == right.tree_group,
+            AgentsOverviewGrouping::Model => model_name(&left.thread) == model_name(&right.thread),
         }
     }
 }

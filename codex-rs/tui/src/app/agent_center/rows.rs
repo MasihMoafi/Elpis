@@ -1,6 +1,7 @@
-//! Grouped live tasks with shared identity colors and stable title, status and age columns.
-//! Full titles use the flexible column; metadata drops at narrow widths.
-//! The final cell stays blank inside the full-width selection highlight.
+//! Grouped live tasks with stable title, model, status and age columns. Helpers hang under
+//! the task that started them; each agent's dot and model share its model's colour.
+//! Full titles use the flexible column; the model, then the other metadata, drop at narrow
+//! widths. The final cell stays blank inside the full-width selection highlight.
 
 use super::navigation::CenterRow;
 use super::render::line;
@@ -9,32 +10,102 @@ use super::*;
 use crate::bottom_pane::selection_style;
 use crate::resume_picker::format_relative_time;
 use crate::status::format_directory_display;
+use std::collections::HashMap;
 
-fn columns(area: Rect) -> (Rect, Rect, Rect) {
-    let metadata = if area.width >= 56 { 24 } else { 0 };
+/// A status glyph and the longest label, `◆ Needs input`.
+const STATUS_WIDTH: u16 = 13;
+const UPDATED_WIDTH: u16 = 9;
+/// Fits `Claude Opus 5.5 · xhigh`; longer labels end in an ellipsis.
+const MODEL_WIDTH: u16 = 24;
+
+struct Columns {
+    title: Rect,
+    model: Rect,
+    status: Rect,
+    updated: Rect,
+}
+
+fn columns(area: Rect) -> Columns {
     let gutter = area.width.min(/*other*/ 4);
-    let title = Rect::new(
-        area.x + gutter,
-        area.y,
-        area.width - gutter - metadata,
-        area.height,
-    );
+    let metadata = area.width >= 56;
+    let with_model = area.width >= 80;
+    let updated_width = if metadata { UPDATED_WIDTH } else { 0 };
+    let status_width = if metadata { STATUS_WIDTH } else { 0 };
+    let model_width = if with_model { MODEL_WIDTH } else { 0 };
     let updated = Rect::new(
-        area.right() - metadata.min(/*other*/ 9),
+        area.right() - updated_width,
         area.y,
-        metadata.min(/*other*/ 9),
+        updated_width,
         area.height,
     );
     let status = Rect::new(
-        title.right() + metadata.min(/*other*/ 2),
+        updated.x - if metadata { status_width + 2 } else { 0 },
         area.y,
-        if metadata == 24 { 11 } else { 0 },
+        status_width,
         area.height,
     );
-    (title, status, updated)
+    let model = Rect::new(
+        status.x - if with_model { model_width + 2 } else { 0 },
+        area.y,
+        model_width,
+        area.height,
+    );
+    let title_end = if with_model {
+        model.x - 2
+    } else if metadata {
+        status.x - 2
+    } else {
+        area.right()
+    };
+    Columns {
+        title: Rect::new(
+            area.x + gutter,
+            area.y,
+            title_end.saturating_sub(area.x + gutter),
+            area.height,
+        ),
+        model,
+        status,
+        updated,
+    }
 }
 
 impl AgentsOverviewView {
+    /// Tree branches for each visible helper: `├─` or `└─` for itself, after `│ ` or two
+    /// spaces for each ancestor below the top-level task.
+    fn tree_prefixes(&self, visible: &[usize]) -> HashMap<usize, String> {
+        let position = visible
+            .iter()
+            .enumerate()
+            .map(|(position, index)| (*index, position))
+            .collect::<HashMap<_, _>>();
+        // Trees are contiguous and depth first, so a later sibling comes before any shallower row.
+        let continues = |index: usize| {
+            let depth = self.rows[index].depth;
+            position.get(&index).is_some_and(|position| {
+                visible[position + 1..]
+                    .iter()
+                    .take_while(|next| **next != usize::MAX && self.rows[**next].depth >= depth)
+                    .any(|next| self.rows[*next].depth == depth)
+            })
+        };
+        visible
+            .iter()
+            .copied()
+            .filter(|index| *index != usize::MAX && self.rows[*index].depth > 0)
+            .map(|index| {
+                let mut parts = vec![if continues(index) { "├─" } else { "└─" }];
+                let mut ancestor = self.rows[index].parent;
+                while let Some(current) = ancestor.filter(|current| self.rows[*current].depth > 0) {
+                    parts.push(if continues(current) { "│ " } else { "  " });
+                    ancestor = self.rows[current].parent;
+                }
+                parts.reverse();
+                (index, parts.concat())
+            })
+            .collect()
+    }
+
     pub(super) fn render_center_rows(&self, area: Rect, buf: &mut Buffer) {
         let row_width = area.width;
         let area = Rect {
@@ -77,13 +148,15 @@ impl AgentsOverviewView {
         let padding = u16::from(area.height >= 3);
         let viewport = row(area, padding, area.height - padding * 2);
         if padding > 0 {
-            let (title, status, updated) = columns(row(area, /*offset*/ 0, /*height*/ 1));
-            line("Tasks".dim(), title, buf);
-            line("Status".dim(), status, buf);
+            let header = columns(row(area, /*offset*/ 0, /*height*/ 1));
+            line("Task".dim(), header.title, buf);
+            line("Model".dim(), header.model, buf);
+            line("Status".dim(), header.status, buf);
             Line::from("Updated".dim())
                 .right_aligned()
-                .render(updated, buf);
+                .render(header.updated, buf);
         }
+        let prefixes = self.tree_prefixes(&indices);
         let reference = chrono::Utc::now();
         let height = usize::from(viewport.height);
         state.page_height = height;
@@ -147,8 +220,10 @@ impl AgentsOverviewView {
                             /*max_width*/ None,
                         )
                     }
-                    AgentsOverviewGrouping::Status => task.group.label().to_owned(),
-                    AgentsOverviewGrouping::Model => model_name(&task.thread).to_owned(),
+                    AgentsOverviewGrouping::Status => task.tree_group.label().to_owned(),
+                    AgentsOverviewGrouping::Model => {
+                        model_name(&self.rows[task.root].thread).to_owned()
+                    }
                 };
                 let count = indices
                     .iter()
@@ -177,7 +252,8 @@ impl AgentsOverviewView {
                 line(format!("{group}  {count}").dim(), rect, buf);
                 continue;
             }
-            let style = if index == self.selected {
+            let selected = index == self.selected;
+            let style = if selected {
                 selection_style()
             } else {
                 Style::default()
@@ -189,26 +265,51 @@ impl AgentsOverviewView {
                 },
                 style,
             );
-            let (status, mut dot) = Self::status(task);
-            if index == self.selected {
-                dot.style = style;
-            }
             line(
-                Line::from(if index == self.selected { "›" } else { " " }).style(style),
+                Line::from(if selected { "›" } else { " " }).style(style),
                 rect,
                 buf,
             );
+            // Branches, then the agent's dot, then the title, all shifted by the nesting.
+            let branches = prefixes.get(&index).map(String::as_str).unwrap_or_default();
+            let indent = branches.width() as u16;
+            let branch_x = rect.width.min(/*other*/ 2);
             line(
-                Line::from(dot),
+                Line::from(branches.to_owned()).style(if selected { style } else { style.dim() }),
                 Rect::new(
-                    rect.x + rect.width.min(/*other*/ 2),
+                    rect.x + branch_x,
                     rect.y,
-                    rect.width.saturating_sub(/*rhs*/ 2).min(/*other*/ 1),
+                    (rect.width - branch_x).min(indent),
                     /*height*/ 1,
                 ),
                 buf,
             );
-            let (mut title, status_area, updated) = columns(rect);
+            let Columns {
+                title: mut title,
+                model,
+                status: status_area,
+                updated,
+            } = columns(rect);
+            // Without a status column, the agent's dot takes the status glyph's shape.
+            let dot = if status_area.is_empty() {
+                Self::status(task).1
+            } else {
+                "●"
+            };
+            let dot_x = rect.width.min(2 + indent);
+            line(
+                Line::from(Span::styled(dot, self.agent_style(task, style))),
+                Rect::new(
+                    rect.x + dot_x,
+                    rect.y,
+                    (rect.width - dot_x).min(/*other*/ 1),
+                    /*height*/ 1,
+                ),
+                buf,
+            );
+            let shift = title.width.min(indent);
+            title.x += shift;
+            title.width -= shift;
             if task.has_voice && title.width >= 8 {
                 let badge = Rect::new(
                     title.right() - 8,
@@ -219,17 +320,23 @@ impl AgentsOverviewView {
                 title.width -= 8;
                 line(Line::from("  voice").style(style), badge, buf);
             }
-            let title_style = if index == self.selected {
-                style
-            } else {
-                self.title_style(task.thread_id)
-            };
             line(
-                Line::from(display_title(&task.thread).to_owned()).style(title_style),
+                Line::from(display_title(&task.thread).to_owned()).style(style),
                 title,
                 buf,
             );
-            line(Line::from(status).style(style), status_area, buf);
+            if let Some(label) = task.model_label() {
+                line(
+                    Line::from(Span::styled(label, self.agent_style(task, style))),
+                    model,
+                    buf,
+                );
+            }
+            line(
+                Line::from(self.status_spans(task, style, selected)),
+                status_area,
+                buf,
+            );
             if !updated.is_empty() {
                 let age = format_relative_time(
                     reference,

@@ -88,14 +88,47 @@ impl AgentsOverviewGroup {
     }
 }
 
+/// One task in the list. Helpers follow the task that started them, depth first, so rows
+/// hold every tree in display order.
 #[derive(Clone)]
 pub(super) struct AgentsOverviewRow {
     pub(super) details: AgentsOverviewDetails,
     pub(super) thread: Thread,
     pub(super) thread_id: ThreadId,
+    /// This task's own status.
     pub(super) group: AgentsOverviewGroup,
+    /// The most urgent status in this row's tree; it places the tree when grouping by status.
+    pub(super) tree_group: AgentsOverviewGroup,
+    /// Nesting below the top-level task: 0 for a top-level task.
+    pub(super) depth: usize,
+    /// Row index of the task that started this one.
+    pub(super) parent: Option<usize>,
+    /// Row index of this tree's top-level task (itself for a top-level task).
+    pub(super) root: usize,
+    /// The model's display name, when the thread reports a model.
+    pub(super) model_name: Option<String>,
     pub(super) is_current: bool,
     pub(super) has_voice: bool,
+}
+
+impl AgentsOverviewRow {
+    /// `Model · effort`, without repeating an effort the model's name already carries.
+    pub(super) fn model_label(&self) -> Option<String> {
+        let name = self.model_name.as_deref()?;
+        Some(
+            match self
+                .thread
+                .reasoning_effort
+                .as_ref()
+                .map(codex_protocol::openai_models::ReasoningEffort::as_str)
+            {
+                Some(effort) if !name.to_ascii_lowercase().contains(&format!("({effort})")) => {
+                    format!("{name} · {effort}")
+                }
+                _ => name.to_string(),
+            },
+        )
+    }
 }
 
 fn display_title(thread: &Thread) -> &str {
@@ -151,6 +184,8 @@ pub(super) struct AgentsOverviewViewState {
     pub(super) rename_target: Option<ThreadId>,
     // The picker can finish this retained view when it selects the already active session.
     pub(super) completion: Option<ViewCompletion>,
+    /// The selected task's recent turns, filled in the background as the selection moves.
+    pub(super) conversations: command_center::AgentsOverviewConversations,
 }
 
 impl AgentsOverviewViewState {
@@ -190,9 +225,12 @@ impl AgentsOverviewView {
             .and_then(|thread_id| rows.iter().position(|row| row.thread_id == thread_id))
             .or_else(|| rows.iter().position(|row| row.is_current))
             .unwrap_or(0);
+        // A helper stays in its top-level task's project, even when it works elsewhere.
         let project_groups = rows
             .iter()
-            .map(|row| AgentsOverviewProjectGroup::for_thread(&row.thread, worktrees_enabled))
+            .map(|row| {
+                AgentsOverviewProjectGroup::for_thread(&rows[row.root].thread, worktrees_enabled)
+            })
             .collect();
         let center_shortcut_keys = crate::keymap::keymap_action_ids()
             .filter(|action| matches!(action.context, KeymapContext::List | KeymapContext::Agents))
@@ -238,12 +276,13 @@ impl AgentsOverviewView {
         self.rows.iter().map(|row| row.thread_id).collect()
     }
 
-    fn title_style(&self, thread_id: ThreadId) -> Style {
-        if self.use_theme_colors {
-            Style::default().fg(crate::thread_color::thread_color(thread_id))
-        } else {
-            Style::default()
-        }
+    /// The model's colour for `row` on the surface `base` paints.
+    fn agent_style(&self, row: &AgentsOverviewRow, base: Style) -> Style {
+        command_center::agent_style(
+            command_center::thread_model(&row.thread),
+            base,
+            self.use_theme_colors,
+        )
     }
 
     fn state(&self) -> MutexGuard<'_, AgentsOverviewViewState> {
@@ -260,36 +299,48 @@ impl AgentsOverviewView {
         let state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
         let search = state.search.to_lowercase();
         let (_, status_group) = command_center::TASK_FILTERS[state.status_filter];
-        let mut visible = self
-            .rows
-            .iter()
-            .enumerate()
-            .filter_map(|(index, row)| {
-                let searchable = format!(
-                    "{} {} {}",
-                    row.thread.name.as_deref().unwrap_or_default(),
-                    row.thread.preview,
-                    row.thread.cwd.display(),
-                )
-                .to_lowercase();
-                ((search.is_empty() || searchable.contains(&search))
-                    && (state.rename_target == Some(row.thread_id)
-                        || status_group.is_none_or(|group| group == row.group)))
-                .then_some(index)
-            })
+        let mut shown = vec![false; self.rows.len()];
+        for (index, row) in self.rows.iter().enumerate() {
+            let searchable = format!(
+                "{} {} {}",
+                row.thread.name.as_deref().unwrap_or_default(),
+                row.thread.preview,
+                row.thread.cwd.display(),
+            )
+            .to_lowercase();
+            if (search.is_empty() || searchable.contains(&search))
+                && (state.rename_target == Some(row.thread_id)
+                    || status_group.is_none_or(|group| group == row.group))
+            {
+                // A match keeps the tasks above it, so it stays nested where it belongs.
+                let mut next = Some(index);
+                while let Some(current) = next.filter(|current| !shown[*current]) {
+                    shown[current] = true;
+                    next = self.rows[current].parent;
+                }
+            }
+        }
+        let mut visible = (0..self.rows.len())
+            .filter(|index| shown[*index])
             .collect::<Vec<_>>();
+        // Trees move as a unit; rows keep their depth-first order inside a tree.
+        let tree = |index: &usize| {
+            let root = self.rows[*index].root;
+            (
+                std::cmp::Reverse(self.rows[root].thread.updated_at),
+                root,
+                *index,
+            )
+        };
         match state.grouping {
-            AgentsOverviewGrouping::Project => visible.sort_by_key(|index| {
-                (
-                    &self.project_groups[*index].key,
-                    std::cmp::Reverse(self.rows[*index].thread.updated_at),
-                )
-            }),
+            AgentsOverviewGrouping::Project => {
+                visible.sort_by_key(|index| (&self.project_groups[*index].key, tree(index)))
+            }
             AgentsOverviewGrouping::Status => {}
             AgentsOverviewGrouping::Model => visible.sort_by_key(|index| {
                 (
-                    model_name(&self.rows[*index].thread),
-                    std::cmp::Reverse(self.rows[*index].thread.updated_at),
+                    model_name(&self.rows[self.rows[*index].root].thread),
+                    tree(index),
                 )
             }),
         }
@@ -371,42 +422,80 @@ impl AgentsOverviewView {
         true
     }
 
-    fn status(row: &AgentsOverviewRow) -> (&'static str, Span<'static>) {
+    /// Status label and glyph.
+    fn status(row: &AgentsOverviewRow) -> (&'static str, &'static str) {
         match row.group {
             AgentsOverviewGroup::NeedsYou if row.thread.status == ThreadStatus::SystemError => {
-                ("Error", "!".red())
+                ("Error", "!")
             }
-            AgentsOverviewGroup::NeedsYou => ("Needs input", "●".red()),
-            AgentsOverviewGroup::Working => ("Working", "●".green()),
-            AgentsOverviewGroup::Ready => ("Ready", "○".cyan()),
-            AgentsOverviewGroup::Finished => ("Inactive", "○".dim()),
+            AgentsOverviewGroup::NeedsYou => ("Needs input", "◆"),
+            AgentsOverviewGroup::Working => ("Working", "◐"),
+            AgentsOverviewGroup::Ready => ("Ready", "◇"),
+            AgentsOverviewGroup::Finished => ("Inactive", "○"),
         }
+    }
+
+    /// `glyph label` on the surface `base` paints. Statuses stay neutral, so they never read
+    /// as an agent's colour; only Working is amber.
+    fn status_spans(
+        &self,
+        row: &AgentsOverviewRow,
+        base: Style,
+        selected: bool,
+    ) -> Vec<Span<'static>> {
+        let (label, glyph) = Self::status(row);
+        let style = match row.group {
+            AgentsOverviewGroup::Working => {
+                command_center::working_style(base, self.use_theme_colors)
+            }
+            AgentsOverviewGroup::NeedsYou => base.bold(),
+            AgentsOverviewGroup::Finished if !selected => base.dim(),
+            AgentsOverviewGroup::Ready | AgentsOverviewGroup::Finished => base,
+        };
+        vec![
+            Span::styled(glyph, style),
+            Span::styled(" ", base),
+            Span::styled(label, style),
+        ]
     }
 
     fn render_details(&self, area: Rect, buf: &mut Buffer) {
         let Some(row) = self.selected_row() else {
             return;
         };
-        let (status, dot) = Self::status(row);
         let width = usize::from(area.width);
+        let title = crate::line_truncation::truncate_line_with_ellipsis_if_overflow(
+            Line::from(vec![
+                Span::styled("● ", self.agent_style(row, Style::default())),
+                display_title(&row.thread).to_owned().bold(),
+            ]),
+            width,
+        );
+        let model = match row.model_label() {
+            Some(label) => Span::styled(label, self.agent_style(row, Style::default())),
+            None => "Unknown".into(),
+        };
+        let conversation = self
+            .state()
+            .conversations
+            .entries(row.thread_id)
+            .filter(|entries| !entries.is_empty())
+            .map(<[_]>::to_vec);
+        if let Some(entries) = conversation
+            && self.state().connection_notice.is_none()
+        {
+            self.render_conversation_details(row, title, model, &entries, area, buf);
+            return;
+        }
         let mut lines = vec![
             Line::from("Task details".bold()),
             Line::default(),
-            crate::line_truncation::truncate_line_with_ellipsis_if_overflow(
-                Line::from(Span::styled(
-                    display_title(&row.thread).to_owned(),
-                    self.title_style(row.thread_id).bold(),
-                )),
-                width,
-            ),
-            Line::from(vec![dot, " ".into(), status.into()]),
+            title,
+            Line::from(self.status_spans(row, Style::default(), /*selected*/ false)),
             Line::default(),
             Line::from("Project".dim()),
             Line::from(row.thread.cwd.display().to_string()),
-            Line::from(vec![
-                "Model: ".dim(),
-                model_name(&row.thread).to_string().into(),
-            ]),
+            Line::from(vec!["Model: ".dim(), model]),
         ];
         lines.extend(row.details.usage_lines.clone());
         if let Some(branch) = row

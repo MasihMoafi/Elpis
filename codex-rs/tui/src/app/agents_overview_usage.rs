@@ -39,6 +39,8 @@ impl App {
         app_server: &AppServerSession,
         frame_requester: FrameRequester,
     ) {
+        // Runs before every frame: the selected task's conversation follows the selection.
+        self.refresh_agents_overview_conversation(app_server, &frame_requester);
         if self.reconnect.offline
             || self.agents_overview.usage_disabled
             || self.agents_overview.pending_usage.is_some()

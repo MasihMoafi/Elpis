@@ -56,10 +56,11 @@ impl AgentsOverviewView {
         let body = row(area, header_height, footer.y - header.bottom())
             .inner(Margin::new(/*horizontal*/ 2, /*vertical*/ 0));
         let [list, gap, details] = if body.width >= 90 {
+            // Wide screens give the selected agent's conversation room to read.
             Layout::horizontal([
                 Constraint::Min(46),
                 Constraint::Length(3),
-                Constraint::Length(38),
+                Constraint::Length((body.width * 2 / 5).max(/*other*/ 38)),
             ])
             .areas(body)
         } else {
