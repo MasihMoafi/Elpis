@@ -466,6 +466,31 @@ async fn smart_prune_row_syncs_then_shows_the_thread_state_as_in_v030() {
     assert!(!ledger.contains("SYNC"), "{ledger}");
 }
 
+#[tokio::test]
+async fn smart_prune_row_says_it_does_not_apply_to_claude_chats() {
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
+    chat.last_rendered_width.set(Some(WIDTH));
+    chat.smart_prune_synced = true;
+    chat.smart_prune.enabled = true;
+
+    // Negative: a GPT chat keeps the usual Smart Prune line.
+    let ledger = ledger_words(&chat);
+    assert!(ledger.contains("Before first main-model send"), "{ledger}");
+    assert!(
+        !ledger.contains("Does not apply to Claude chats"),
+        "{ledger}"
+    );
+
+    // Positive: a Claude chat (the bridge's `claude/` models) is told the switch skips it.
+    chat.set_model("claude/opus");
+    let ledger = ledger_words(&chat);
+    assert!(
+        ledger.contains("Does not apply to Claude chats"),
+        "{ledger}"
+    );
+    assert!(!ledger.contains("Before first main-model send"), "{ledger}");
+}
+
 /// One `thread/tokenUsage/updated`, as the app server sends it after a sampled response.
 fn token_usage_update(
     chat: &mut ChatWidget,
