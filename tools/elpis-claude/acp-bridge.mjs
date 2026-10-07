@@ -11,6 +11,26 @@ const log = (s) => { try { appendFileSync(LOG, `${new Date().toISOString().slice
 const ADAPTER = process.env.ACP_ADAPTER ?? new URL("./node_modules/@agentclientprotocol/claude-agent-acp/dist/index.js", import.meta.url).pathname;
 const CLAUDE = process.env.CLAUDE_CODE_EXECUTABLE ?? `${HOME}/.local/bin/claude`;
 const now = () => Date.now();
+const MIME = { png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", gif: "image/gif", webp: "image/webp" };
+async function toAcpPrompt(input) {
+  const { readFile } = await import("node:fs/promises");
+  const out = [];
+  for (const c of input) {
+    if (c.type === "text") out.push({ type: "text", text: c.text });
+    else if (c.type === "localImage" && c.path) {
+      const mimeType = MIME[c.path.split(".").pop().toLowerCase()] ?? "image/png";
+      try { out.push({ type: "image", data: (await readFile(c.path)).toString("base64"), mimeType }); }
+      catch (e) { out.push({ type: "text", text: `[image ${c.path} could not be read: ${e.message}]` }); }
+    } else if (c.type === "image" && typeof c.url === "string") {
+      const m = c.url.match(/^data:([^;,]+);base64,(.*)$/s);
+      if (m) out.push({ type: "image", data: m[2], mimeType: m[1] });
+      else if (/^https?:/.test(c.url)) out.push({ type: "image", uri: c.url });
+    } else if (c.type === "mention" && c.path) out.push({ type: "text", text: `[The user referenced ${c.name ?? "a file"}: ${c.path}]` });
+    else if (c.type === "skill" && c.path) out.push({ type: "text", text: `[Use the skill "${c.name}" described in ${c.path}]` });
+  }
+  return out;
+}
+const inputSummary = (input) => input.map((c) => c.type === "text" ? c.text : c.type === "localImage" ? `[image: ${c.path}]` : c.type === "image" ? "[image]" : c.path ? `[${c.type}: ${c.path}]` : "").filter(Boolean).join("\n");
 const STORE = process.env.ACP_BRIDGE_STORE ?? `${HOME}/.elpis-next/elpis-claude/sessions.json`;
 async function loadStore() { try { const { readFile } = await import("node:fs/promises"); return JSON.parse(await readFile(STORE, "utf8")); } catch { return {}; } }
 let storeChain = Promise.resolve();
@@ -376,8 +396,8 @@ wss.on("connection", (ws) => {
         if (item) item.status = "declined";
         return pick("reject_once") ?? pick("reject_always") ?? null;
       };
-      const userText = input.filter((c) => c.type === "text").map((c) => c.text).join("\n");
-      const prompt = input.filter((c) => c.type === "text").map((c) => ({ type: "text", text: c.text }));
+      const userText = inputSummary(input);
+      const prompt = await toAcpPrompt(input);
       if (freshSession) {
         const history = await priorTranscript(threadId);
         if (history) {
