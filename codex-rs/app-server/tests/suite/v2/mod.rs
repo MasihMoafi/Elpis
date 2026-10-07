@@ -40,6 +40,8 @@ mod cyber_access_program;
 mod daemon_update_recovery;
 mod daybreak_access;
 mod dynamic_tools;
+// Elpis: the instruction text a thread's model receives.
+mod elpis_instructions_read;
 // Elpis: per-turn timing, cost state and category shares.
 mod elpis_turn_activity;
 mod environment_add;

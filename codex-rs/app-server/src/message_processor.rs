@@ -1636,6 +1636,12 @@ impl MessageProcessor {
                     .thread_inject_items(&request_id, params)
                     .await
             }
+            // Elpis: the instruction text a thread's model receives.
+            ClientRequest::ThreadElpisInstructionsRead { params, .. } => {
+                self.thread_processor
+                    .thread_elpis_instructions_read(params)
+                    .await
+            }
             ClientRequest::TurnSteer { params, .. } => {
                 self.turn_processor.turn_steer(&request_id, params).await
             }

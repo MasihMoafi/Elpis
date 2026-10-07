@@ -571,6 +571,8 @@ mod thread_queue_processor;
 mod thread_sections;
 // Elpis: `workGraph/list`.
 mod elpis_work_graphs;
+// Elpis: `thread/elpisInstructions/read`.
+mod elpis_instructions;
 mod token_usage_replay;
 mod turn_processor;
 mod windows_sandbox_processor;
