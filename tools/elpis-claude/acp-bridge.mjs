@@ -2,7 +2,7 @@
 //                         \-stdio-> claude-agent-acp (chat turns -> Claude)
 import { WebSocketServer } from "ws";
 import { execFile, spawn } from "node:child_process";
-import { appendFileSync, readFileSync } from "node:fs";
+import { appendFileSync, existsSync, readFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 
 const HOME = process.env.HOME;
@@ -80,6 +80,16 @@ function updateStore(fn) {
   return storeChain;
 }
 const CATALOG = `${STORE.slice(0, STORE.lastIndexOf("/"))}/catalog.json`;
+// The subscriptions Elpis reaches through ACP, each by a model-id prefix. Antigravity (Gemini on
+// the Google sign-in) runs through agy-acp.mjs and is offered only when `agy` is installed.
+const AGY_BIN = process.env.AGY_BIN ?? `${HOME}/.local/bin/agy`;
+const AGENTS = [
+  { key: "claude", prefix: "claude/", label: "Claude subscription", description: "Claude Code on your Pro/Max plan", adapter: ADAPTER, env: { CLAUDE_CODE_EXECUTABLE: CLAUDE }, catalogFile: CATALOG, limits: true },
+  ...(!process.env.ELPIS_NO_AGY && existsSync(AGY_BIN)
+    ? [{ key: "agy", prefix: "agy/", label: "Antigravity", description: "Antigravity, your Google sign-in", adapter: new URL("./agy-acp.mjs", import.meta.url).pathname, env: { AGY_BIN }, catalogFile: CATALOG.replace(/catalog\.json$/, "catalog-agy.json"), limits: false }]
+    : []),
+];
+const agentOf = (model) => (typeof model === "string" ? AGENTS.find((a) => model.startsWith(a.prefix)) : undefined);
 async function readJson(path) { try { const { readFile } = await import("node:fs/promises"); return JSON.parse(await readFile(path, "utf8")); } catch { return null; } }
 async function writeJson(path, value) {
   const { mkdir, writeFile, rename } = await import("node:fs/promises");
@@ -127,16 +137,16 @@ function lineReader(stream, onLine) {
 }
 
 class Acp {
-  constructor() {
-    this.proc = spawn("node", [ADAPTER], { env: { ...process.env, CLAUDE_CODE_EXECUTABLE: CLAUDE }, stdio: ["pipe", "pipe", "pipe"] });
-    this.proc.stderr.on("data", (d) => log(`acp stderr: ${String(d).trim().slice(0, 300)}`));
+  constructor(agent) {
+    this.proc = spawn("node", [agent.adapter], { env: { ...process.env, ...agent.env }, stdio: ["pipe", "pipe", "pipe"] });
+    this.proc.stderr.on("data", (d) => log(`${agent.key} acp stderr: ${String(d).trim().slice(0, 300)}`));
     this.nextId = 1;
     this.pending = new Map();
     this.onUpdate = null;
     this.onPermission = null;
     lineReader(this.proc.stdout, (line) => this.#handle(JSON.parse(line)));
     this.proc.on("exit", (code) => {
-      this.dead = `the Claude ACP adapter exited (code ${code}). Is it installed at ${ADAPTER}?`;
+      this.dead = `the ${agent.label} ACP adapter exited (code ${code}). Is it installed at ${agent.adapter}?`;
       for (const p of this.pending.values()) p.reject({ message: this.dead });
       this.pending.clear();
     });
@@ -179,7 +189,7 @@ wss.on("connection", (ws) => {
   const threadPolicy = new Map();
   const sessions = new Map();
   const bridgeRequests = new Map();
-  let acp = null;
+  const acps = new Map();
   const claudeModel = new Map();
   const claudeEffort = new Map();
   const sessionModel = new Map();
@@ -210,20 +220,30 @@ wss.on("connection", (ws) => {
     const contextAttribution = typeof ctx.used === "number" ? attribution(threadId, ctx.used) : undefined;
     notify("thread/tokenUsage/updated", { threadId, turnId, tokenUsage: { total: usageBreakdown(sum), last: lastB, modelContextWindow: ctx.size ?? null, ...(contextAttribution && { contextAttribution }) } });
   };
-  const isClaude = (m) => typeof m === "string" && m.startsWith("claude/");
-  const ensureAcp = async () => { if (!acp || acp.dead) { acp = new Acp(); await acp.ready; log("acp ready"); } return acp; };
-  // Claude's models and each model's effort levels (Haiku has none). Reading one model's levels
+  const isBridged = (m) => !!agentOf(m);
+  const ensureAcp = async (agent) => {
+    let a = acps.get(agent.key);
+    if (!a || a.dead) { a = new Acp(agent); acps.set(agent.key, a); await a.ready; log(`${agent.key} acp ready`); }
+    return a;
+  };
+  // Each agent's models and each model's effort levels (Claude's Haiku has none; Antigravity
+  // models carry their effort in the id). Reading one model's levels
   // means switching a scratch session to it (~4 s each, without touching Claude Code's saved
   // settings), so startup reads only the current model; the rest come from catalog.json and are
   // refreshed in the background at most once a day.
-  const catalog = (async () => {
+  const catalogs = new Map();
+  const catalogFor = (agent) => {
+    if (!catalogs.has(agent.key)) catalogs.set(agent.key, readCatalog(agent));
+    return catalogs.get(agent.key);
+  };
+  async function readCatalog(agent) {
     try {
-      const a = await ensureAcp();
+      const a = await ensureAcp(agent);
       const s = await a.call("session/new", { cwd: process.cwd(), mcpServers: [] });
       const opt = (opts, id) => (opts ?? []).find((o) => o.id === id);
       const levelsOf = (opts) => { const e = opt(opts, "effort"); return e ? { levels: e.options.map((o) => ({ reasoningEffort: o.value, description: o.name })), current: e.currentValue } : { levels: [], current: null }; };
       const models = (opt(s.configOptions, "model")?.options ?? []).filter((m) => m.value !== "default");
-      const saved = await readJson(CATALOG);
+      const saved = await readJson(agent.catalogFile);
       const efforts = { ...(saved?.efforts ?? {}) };
       const first = opt(s.configOptions, "model")?.currentValue;
       if (first) efforts[first] = levelsOf(s.configOptions);
@@ -234,14 +254,15 @@ wss.on("connection", (ws) => {
             const r = await a.call("session/set_config_option", { sessionId: s.sessionId, configId: "model", value: m.value }).catch(() => null);
             if (r) efforts[m.value] = levelsOf(r.configOptions);
           }
-          await writeJson(CATALOG, { at: now(), efforts });
-          log(`claude catalog: effort levels of ${models.length} models saved`);
+          await writeJson(agent.catalogFile, { at: now(), efforts });
+          log(`${agent.key} catalog: effort levels of ${models.length} models saved`);
         }
         await a.call("session/delete", { sessionId: s.sessionId }).catch(() => {});
-      })().catch((e) => log(`claude catalog refresh: ${e.message ?? JSON.stringify(e)}`));
+      })().catch((e) => log(`${agent.key} catalog refresh: ${e.message ?? JSON.stringify(e)}`));
       return { models, efforts, fallback: first ? efforts[first] : { levels: [], current: null } };
-    } catch (e) { log(`claude catalog: ${e.message}`); return { models: [], efforts: {}, fallback: { levels: [], current: null } }; }
-  })();
+    } catch (e) { log(`${agent.key} catalog: ${e.message}`); return { models: [], efforts: {}, fallback: { levels: [], current: null } }; }
+  }
+  for (const agent of AGENTS) catalogFor(agent);
   const pendingModelList = new Set();
   const pendingResume = new Set();
   // A Claude model picked as the default ("enter default") lives in the bridge's store, not in
@@ -381,16 +402,19 @@ wss.on("connection", (ws) => {
     }
     if (parsed && pendingModelList.has(parsed.id) && Array.isArray(parsed.result?.data)) {
       pendingModelList.delete(parsed.id);
-      const { models, efforts, fallback } = await Promise.race([catalog, new Promise((r) => setTimeout(() => r({ models: [], efforts: {}, fallback: null }), 30000))]);
+      const lists = await Promise.all(AGENTS.map((agent) => Promise.race([catalogFor(agent), new Promise((r) => setTimeout(() => r({ models: [], efforts: {}, fallback: null }), 30000))])));
       const tpl = parsed.result.data[0] ?? {};
       const added = [];
-      for (const m of models) {
-        const id = `claude/${m.value}`;
-        const e = efforts[m.value] ?? { levels: fallback?.levels ?? [], current: "default" };
-        added.push({ ...tpl, id, model: id, inputModalities: ["text", "image"], displayName: `${m.name} (Claude subscription)`, description: m.description ?? "Claude Code on your Pro/Max plan", hidden: false, isDefault: false, upgrade: null, upgradeInfo: null, supportedReasoningEfforts: e.levels, defaultReasoningEffort: e.current ?? "default" });
-      }
+      AGENTS.forEach((agent, i) => {
+        const { models, efforts, fallback } = lists[i];
+        for (const m of models) {
+          const id = `${agent.prefix}${m.value}`;
+          const e = efforts[m.value] ?? { levels: fallback?.levels ?? [], current: "default" };
+          added.push({ ...tpl, id, model: id, inputModalities: ["text", "image"], displayName: `${m.name} (${agent.label})`, description: m.description ?? agent.description, hidden: false, isDefault: false, upgrade: null, upgradeInfo: null, supportedReasoningEfforts: e.levels, defaultReasoningEffort: e.current ?? "default" });
+        }
+      });
       parsed.result.data.unshift(...added);
-      log(`model/list: added ${added.length} Claude models`);
+      log(`model/list: added ${added.length} subscription models`);
       ws.send(JSON.stringify(parsed));
       return;
     }
@@ -440,15 +464,17 @@ wss.on("connection", (ws) => {
     let status = "completed";
     let error = null;
     const cwd = threadCwd.get(threadId) ?? process.cwd();
+    const agent = agentOf(claudeModel.get(threadId)) ?? AGENTS[0];
     try {
-      await ensureAcp();
+      const acp = await ensureAcp(agent);
+      turnState.acp = acp;
       const policy = req.params.approvalPolicy ?? threadPolicy.get(threadId) ?? "on-request";
       const ask = policy !== "never";
       const mode = ask ? "ask" : "full";
       let live = sessions.get(threadId);
       let sessionId = null;
       let freshSession = false;
-      if (live && live.mode === mode) sessionId = live.id;
+      if (live && live.mode === mode && live.agent === agent.key) sessionId = live.id;
       else {
         const cwd = threadCwd.get(threadId) ?? process.cwd();
         const instructions = await elpisInstructions(threadId);
@@ -457,7 +483,9 @@ wss.on("connection", (ws) => {
         if (instructions) { _meta = { ...(_meta ?? {}), systemPrompt: { append: instructions } }; log(`Elpis instructions for Claude: ${instructions.length} chars`); }
         await storeChain;
         const store = await loadStore();
-        const saved = live?.id ?? store[threadId]?.session ?? Object.values(store[threadId]?.sessions ?? {})[0];
+        // A session belongs to one agent; a chat that switched agent starts a fresh one, seeded below.
+        const sameAgent = (store[threadId]?.agent ?? "claude") === agent.key;
+        const saved = (live?.agent === agent.key ? live.id : null) ?? (sameAgent ? store[threadId]?.session ?? Object.values(store[threadId]?.sessions ?? {})[0] : null);
         if (saved) {
           const prev = acp.onUpdate; acp.onUpdate = null;
           try { await acp.call("session/load", { sessionId: saved, cwd, mcpServers: mcpServersFor(), ...(_meta && { _meta }) }); sessionId = saved; log(`session ${saved} reloaded for thread ${threadId}`); }
@@ -469,13 +497,13 @@ wss.on("connection", (ws) => {
           freshSession = true;
           log(`session ${sessionId} for thread ${threadId} in ${cwd} (${ask ? "Elpis asks" : "full access"}, policy ${policy})`);
         }
-        live = { id: sessionId, mode };
+        live = { id: sessionId, mode, agent: agent.key };
         sessions.set(threadId, live);
         const sid = sessionId;
-        updateStore((st) => { st[threadId] = { ...st[threadId], session: sid, mode }; });
+        updateStore((st) => { st[threadId] = { ...st[threadId], session: sid, mode, agent: agent.key }; });
       }
       updateStore((st) => { st[threadId] = { ...st[threadId], model: claudeModel.get(threadId), effort: claudeEffort.get(threadId) ?? null }; });
-      const want = claudeModel.get(threadId)?.slice("claude/".length);
+      const want = claudeModel.get(threadId)?.slice(agent.prefix.length);
       if (want && sessionModel.get(sessionId) !== want) {
         await acp.call("session/set_config_option", { sessionId, configId: "model", value: want });
         sessionModel.set(sessionId, want);
@@ -488,7 +516,7 @@ wss.on("connection", (ws) => {
           .catch((e) => log(`mode ${wantMode}: ${e.message ?? JSON.stringify(e)}`));
       }
       const effort = claudeEffort.get(threadId);
-      const known = (await catalog).efforts[want];
+      const known = (await catalogFor(agent)).efforts[want];
       if (effort && (!known || known.levels.some((l) => l.reasoningEffort === effort))) await acp.call("session/set_config_option", { sessionId, configId: "effort", value: effort }).catch((e) => log(`effort ${effort}: ${e.message}`));
       turnState.sessionId = sessionId;
       sessionReady(sessionId);
@@ -635,7 +663,7 @@ wss.on("connection", (ws) => {
     notify("turn/completed", { threadId, turn: { id: turnId, items, itemsView: "summary", status, error, startedAt, completedAt, durationMs: (completedAt - startedAt) * 1000 } });
     notify("turn/activityUpdated", { threadId, turnId, status: status === "inProgress" ? "completed" : status, durationMs: now() - t0, timeToFirstTokenMs: firstTokenAt ? firstTokenAt - t0 : null });
     notify("thread/status/changed", { threadId, status: { type: "idle" } });
-    claudeLimitsCached().then((rateLimits) => { log(`claude limits: 5h ${rateLimits.primary?.usedPercent}% week ${rateLimits.secondary?.usedPercent}%`); notify("account/rateLimits/updated", { rateLimits }); })
+    if (agent.limits) claudeLimitsCached().then((rateLimits) => { log(`claude limits: 5h ${rateLimits.primary?.usedPercent}% week ${rateLimits.secondary?.usedPercent}%`); notify("account/rateLimits/updated", { rateLimits }); })
       .catch((e) => log(`claude limits: ${e.message}`));
   }
 
@@ -643,7 +671,7 @@ wss.on("connection", (ws) => {
   async function startThread(msg) {
     const p = msg.params ?? {};
     let pick = null;
-    if (isClaude(p.model)) pick = { model: p.model, effort: p.config?.model_reasoning_effort ?? null };
+    if (isBridged(p.model)) pick = { model: p.model, effort: p.config?.model_reasoning_effort ?? null };
     else {
       await storeChain;
       const def = (await loadStore())._default;
@@ -718,7 +746,7 @@ wss.on("connection", (ws) => {
     await turn.whenToolsIdle();
     if (!sessionId || active !== turn || turn.cancelled) return refuse();
     try {
-      const r = await acp.call("_session/steering", { sessionId, prompt: await toAcpPrompt(input), _meta: { steering: { idleBehavior: "promptRequired" } } });
+      const r = await turn.acp.call("_session/steering", { sessionId, prompt: await toAcpPrompt(input), _meta: { steering: { idleBehavior: "promptRequired" } } });
       if (r?.outcome === "promptRequired") return refuse();
       toTui({ id: msg.id, result: { turnId: turn.turnId } });
       turn.closeMessage();
@@ -757,12 +785,12 @@ wss.on("connection", (ws) => {
     if (msg.method === "thread/items/list" && msg.params?.threadId) pendingItemsList.set(msg.id, msg.params);
     if (msg.method === "thread/settings/update") {
       const p = msg.params ?? {};
-      if (isClaude(p.model)) { claudeModel.set(p.threadId, p.model); p.model = null; log(`thread ${p.threadId} -> ${claudeModel.get(p.threadId)}`); }
+      if (isBridged(p.model)) { claudeModel.set(p.threadId, p.model); p.model = null; log(`thread ${p.threadId} -> ${claudeModel.get(p.threadId)}`); }
       else if (typeof p.model === "string") claudeModel.delete(p.threadId);
       if (p.approvalPolicy) threadPolicy.set(p.threadId, p.approvalPolicy);
       if (p.collaborationMode?.mode) {
         threadCollab.set(p.threadId, p.collaborationMode.mode);
-        if (claudeModel.has(p.threadId) && p.collaborationMode.settings && !isClaude(p.collaborationMode.settings.model)) p.collaborationMode.settings.model = null;
+        if (claudeModel.has(p.threadId) && p.collaborationMode.settings && !isBridged(p.collaborationMode.settings.model)) p.collaborationMode.settings.model = null;
       }
       if (p.effort && claudeModel.has(p.threadId)) { claudeEffort.set(p.threadId, p.effort); p.effort = null; }
       engine.stdin.write(JSON.stringify(msg) + "\n");
@@ -770,7 +798,7 @@ wss.on("connection", (ws) => {
     }
     if (msg.method === "config/batchWrite" && Array.isArray(msg.params?.edits)) {
       const modelEdit = msg.params.edits.find((e) => e.keyPath === "model");
-      const claudePick = isClaude(modelEdit?.value);
+      const claudePick = isBridged(modelEdit?.value);
       if (modelEdit) {
         const effort = msg.params.edits.find((e) => e.keyPath === "model_reasoning_effort")?.value;
         updateStore((st) => { if (claudePick) st._default = { model: modelEdit.value, effort: effort && effort !== "default" ? effort : null }; else delete st._default; });
@@ -783,16 +811,16 @@ wss.on("connection", (ws) => {
     if (msg.method === "turn/start") {
       const tid = msg.params?.threadId;
       if (msg.params?.collaborationMode?.mode) threadCollab.set(tid, msg.params.collaborationMode.mode);
-      if (isClaude(msg.params?.model)) {
+      if (isBridged(msg.params?.model)) {
         claudeModel.set(tid, msg.params.model);
         if (msg.params.effort) claudeEffort.set(tid, msg.params.effort);
       }
       if (claudeModel.has(tid) && !String(msg.id).startsWith("temporary-structured-turn")) {
-        log(`claude turn for thread ${tid} (${claudeModel.get(tid)})`);
+        log(`subscription turn for thread ${tid} (${claudeModel.get(tid)})`);
         claudeTurn(msg);
         return;
       }
-      if (isClaude(msg.params?.model)) msg.params.model = null;
+      if (isBridged(msg.params?.model)) msg.params.model = null;
       engine.stdin.write(JSON.stringify(msg) + "\n");
       return;
     }
@@ -805,7 +833,7 @@ wss.on("connection", (ws) => {
     }
     if (msg.method === "turn/interrupt" && active && msg.params?.threadId === active.threadId) {
       active.cancelled = true;
-      if (active.sessionId) acp.send({ method: "session/cancel", params: { sessionId: active.sessionId } });
+      if (active.sessionId) active.acp?.send({ method: "session/cancel", params: { sessionId: active.sessionId } });
       toTui({ id: msg.id, result: {} });
       return;
     }
