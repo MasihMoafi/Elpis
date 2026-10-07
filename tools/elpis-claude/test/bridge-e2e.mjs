@@ -162,6 +162,21 @@ for (const s of scenarios) {
     await call("thread/settings/update", { threadId: tid, model: "claude/opus", effort: "low" });
     const r = await turn(tid, [{ type: "text", text: "Without using any tools or reading files, what is the Elpis session code word given in your instructions? Reply with only the code word, or NONE if you were not given one.", text_elements: [] }]);
     r.text.includes(word) ? console.log(`PASS instructions (Claude knew ${word} from Elpis developer instructions)`) : fail(`instructions: reply=${r.text.slice(0, 160)}`);
+  } else if (s === "modes") {
+    const { existsSync } = await import("node:fs");
+    const st = await call("thread/start", { cwd: dir, approvalPolicy: "never", sandbox: "danger-full-access" });
+    const tid = st.result?.thread?.id;
+    await call("thread/settings/update", { threadId: tid, model: "claude/opus", effort: "low" });
+    await call("thread/settings/update", { threadId: tid, collaborationMode: { mode: "plan", settings: { model: "apodex/x", reasoning_effort: "medium", developer_instructions: null } } });
+    approvalAnswer = "decline"; approvals.length = 0;
+    await turn(tid, [{ type: "text", text: "Create an empty file named planned.txt in the current folder.", text_elements: [] }], 180000);
+    const planOk = !existsSync(join(dir, "planned.txt"));
+    console.log(`  plan turn asked: ${JSON.stringify(approvals)}`);
+    approvalAnswer = "accept";
+    await call("thread/settings/update", { threadId: tid, collaborationMode: { mode: "default", settings: { model: "apodex/x", reasoning_effort: null, developer_instructions: null } } });
+    await turn(tid, [{ type: "text", text: "Now create the empty file planned.txt in the current folder with your tools, then reply DONE.", text_elements: [] }], 180000);
+    const defaultOk = existsSync(join(dir, "planned.txt"));
+    planOk && defaultOk ? console.log("PASS modes (Plan mode: no file; Default mode: file created)") : fail(`modes: plan kept folder clean=${planOk}, default created file=${defaultOk}`);
   } else if (s === "image") {
     const word = process.env.E2E_IMAGE_WORD;
     const path = process.env.E2E_IMAGE_PATH;

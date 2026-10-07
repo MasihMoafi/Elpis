@@ -134,6 +134,8 @@ wss.on("connection", (ws) => {
   const claudeModel = new Map();
   const claudeEffort = new Map();
   const sessionModel = new Map();
+  const threadCollab = new Map();
+  const sessionMode = new Map();
   const tokenSums = new Map();
   const ctxChars = new Map();
   const devChars = new Map();
@@ -367,6 +369,12 @@ wss.on("connection", (ws) => {
         sessionModel.set(sessionId, want);
         log(`session ${sessionId} model -> ${want}`);
       }
+      const wantMode = threadCollab.get(threadId) === "plan" ? "plan" : ask ? "default" : "bypassPermissions";
+      if (sessionMode.get(sessionId) !== wantMode) {
+        await acp.call("session/set_mode", { sessionId, modeId: wantMode })
+          .then(() => { sessionMode.set(sessionId, wantMode); log(`session ${sessionId} mode -> ${wantMode}`); })
+          .catch((e) => log(`mode ${wantMode}: ${e.message ?? JSON.stringify(e)}`));
+      }
       const effort = claudeEffort.get(threadId);
       if (effort) await acp.call("session/set_config_option", { sessionId, configId: "effort", value: effort }).catch((e) => log(`effort ${effort}: ${e.message}`));
       active = { threadId, turnId, sessionId };
@@ -492,6 +500,10 @@ wss.on("connection", (ws) => {
       if (isClaude(p.model)) { claudeModel.set(p.threadId, p.model); p.model = null; log(`thread ${p.threadId} -> ${claudeModel.get(p.threadId)}`); }
       else if (typeof p.model === "string") claudeModel.delete(p.threadId);
       if (p.approvalPolicy) threadPolicy.set(p.threadId, p.approvalPolicy);
+      if (p.collaborationMode?.mode) {
+        threadCollab.set(p.threadId, p.collaborationMode.mode);
+        if (claudeModel.has(p.threadId) && p.collaborationMode.settings && !isClaude(p.collaborationMode.settings.model)) p.collaborationMode.settings.model = null;
+      }
       if (p.effort && claudeModel.has(p.threadId)) { claudeEffort.set(p.threadId, p.effort); p.effort = null; }
       engine.stdin.write(JSON.stringify(msg) + "\n");
       return;
@@ -505,6 +517,7 @@ wss.on("connection", (ws) => {
     }
     if (msg.method === "turn/start") {
       const tid = msg.params?.threadId;
+      if (msg.params?.collaborationMode?.mode) threadCollab.set(tid, msg.params.collaborationMode.mode);
       if (isClaude(msg.params?.model)) claudeModel.set(tid, msg.params.model);
       if (claudeModel.has(tid) && !String(msg.id).startsWith("temporary-structured-turn")) {
         log(`claude turn for thread ${tid} (${claudeModel.get(tid)})`);
