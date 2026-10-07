@@ -265,3 +265,20 @@ async fn pushed_limits_do_not_overwrite_the_limits_a_chatgpt_account_fetches() {
         Some(10.0)
     );
 }
+
+#[tokio::test]
+async fn the_dashboard_state_carries_the_stored_limits() {
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    assert_eq!(chat.dashboard_limits(), Vec::new());
+
+    chat.on_rolling_rate_limit_snapshot(claude_limits(/*primary_used*/ 42));
+
+    let limits = serde_json::to_value(chat.dashboard_limits()).expect("serialize limits");
+    assert_eq!(
+        limits,
+        serde_json::json!([
+            { "label": "Claude 5h", "used_percent": 42, "resets_at": null },
+            { "label": "Claude weekly", "used_percent": 7, "resets_at": null },
+        ])
+    );
+}

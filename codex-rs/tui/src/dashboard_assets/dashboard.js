@@ -463,6 +463,20 @@ function renderRibbon(state) {
   setText('ribbon-prune', next === true ? 'On' : next === false ? 'Off' : 'Checking');
 }
 
+// One row per usage-limit window, as /usage shows it: label and reset time, then percent used.
+function renderLimits(limits) {
+  const rows = Array.isArray(limits) ? limits.filter(row => isObject(row) && typeof row.label === 'string' && isFiniteNumber(row.used_percent)) : [];
+  byId('limits-rows').replaceChildren(...rows.map(row => {
+    const line = makeNode('div');
+    const resets = typeof row.resets_at === 'string' && row.resets_at ? ' · resets ' + row.resets_at : '';
+    line.append(makeNode('span', null, row.label + resets), makeNode('strong', null, row.used_percent + '% used'));
+    return line;
+  }));
+  byId('limits-rows').hidden = rows.length === 0;
+  byId('limits-empty').hidden = rows.length > 0;
+  setText('limits-summary', rows.length === 0 ? 'Unavailable' : rows.length === 1 ? '1 window' : rows.length + ' windows');
+}
+
 function renderState(state) {
   lastValidState = state;
   const context = isObject(state.context) ? state.context : {};
@@ -473,6 +487,7 @@ function renderState(state) {
   renderTokens(state.tokens);
   renderSmartPrune(state.smart_prune);
   renderModels(context.models);
+  renderLimits(state.limits);
   setText('state-meta', 'Last change ' + formatTimestamp(state.generated_at) + ' · update ' + formatNumber(state.revision));
 }
 

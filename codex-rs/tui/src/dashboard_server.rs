@@ -63,6 +63,19 @@ pub(crate) struct DashboardState {
     pub(crate) tokens: DashboardTokens,
     pub(crate) activity: DashboardActivity,
     pub(crate) smart_prune: DashboardSmartPrune,
+    /// The usage limits `/usage` shows. Empty when none were reported; absent in states written
+    /// before the Limits card.
+    #[serde(default)]
+    pub(crate) limits: Vec<DashboardLimit>,
+}
+
+/// One usage-limit window, such as Claude's 5-hour or weekly limit.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub(crate) struct DashboardLimit {
+    pub(crate) label: String,
+    pub(crate) used_percent: i64,
+    /// Local reset time as `/usage` formats it; `None` when the server sent none.
+    pub(crate) resets_at: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -217,6 +230,7 @@ pub(crate) fn publish_state(
     tokens: DashboardTokens,
     activity: DashboardActivityState,
     smart_prune: DashboardSmartPrune,
+    limits: Vec<DashboardLimit>,
 ) -> bool {
     let Ok(mut slot) = DASHBOARD_STATE.lock() else {
         return false;
@@ -227,6 +241,7 @@ pub(crate) fn publish_state(
         tokens,
         activity,
         smart_prune,
+        limits,
         Utc::now().timestamp_millis(),
     )
 }
@@ -237,6 +252,7 @@ fn publish_state_into(
     tokens: DashboardTokens,
     activity: DashboardActivityState,
     smart_prune: DashboardSmartPrune,
+    limits: Vec<DashboardLimit>,
     generated_at: i64,
 ) -> bool {
     let activity = map_activity(activity);
@@ -245,7 +261,8 @@ fn publish_state_into(
             if current.context == context
                 && current.tokens == tokens
                 && current.activity == activity
-                && current.smart_prune == smart_prune =>
+                && current.smart_prune == smart_prune
+                && current.limits == limits =>
         {
             return false;
         }
@@ -260,6 +277,7 @@ fn publish_state_into(
         tokens,
         activity,
         smart_prune,
+        limits,
     });
     true
 }

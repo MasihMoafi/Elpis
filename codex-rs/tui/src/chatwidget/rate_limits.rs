@@ -390,6 +390,7 @@ impl ChatWidget {
                 );
                 self.rate_limit_snapshots_by_limit_id
                     .insert(limit_id, display);
+                self.request_dashboard_refresh();
             }
 
             if !warnings.is_empty() {

@@ -26,6 +26,7 @@ use crate::activity_state::DashboardActivityState;
 use crate::app_event::AppEvent;
 use crate::dashboard_server::DashboardCategory;
 use crate::dashboard_server::DashboardContext;
+use crate::dashboard_server::DashboardLimit;
 use crate::dashboard_server::DashboardModelChoice;
 use crate::dashboard_server::DashboardModels;
 use crate::dashboard_server::DashboardSmartPrune;
@@ -184,6 +185,7 @@ impl ChatWidget {
             tokens,
             self.dashboard_activity_state(),
             self.dashboard_smart_prune(),
+            self.dashboard_limits(),
         );
     }
 
@@ -196,6 +198,32 @@ impl ChatWidget {
         } else {
             self.config.model_provider_id.as_str()
         }
+    }
+
+    /// The usage limits `/usage` shows, one row per window: label, percent used and reset time.
+    pub(crate) fn dashboard_limits(&self) -> Vec<DashboardLimit> {
+        self.rate_limit_snapshots_by_limit_id
+            .values()
+            .flat_map(|snapshot| {
+                [
+                    (snapshot.primary.as_ref(), /*is_secondary*/ false),
+                    (snapshot.secondary.as_ref(), /*is_secondary*/ true),
+                ]
+                .into_iter()
+                .filter_map(move |(window, is_secondary)| {
+                    let window = window?;
+                    let duration = super::rate_limits::limit_label_for_window(
+                        window.window_minutes,
+                        is_secondary,
+                    );
+                    Some(DashboardLimit {
+                        label: format!("{} {duration}", snapshot.limit_name),
+                        used_percent: window.used_percent.round() as i64,
+                        resets_at: window.resets_at.clone(),
+                    })
+                })
+            })
+            .collect()
     }
 
     /// The models the Models tab shows: the chat model, the background model and the Smart

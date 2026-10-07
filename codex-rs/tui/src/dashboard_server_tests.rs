@@ -158,6 +158,7 @@ fn state() -> DashboardState {
         tokens(),
         empty_activity(),
         smart_prune(true, Some(true)),
+        Vec::new(),
         1_000,
     ));
     slot.expect("first publication creates state")
@@ -221,6 +222,7 @@ fn semantic_publication_versions_only_changed_facts() {
         base_tokens.clone(),
         empty_activity(),
         base_smart_prune.clone(),
+        Vec::new(),
         1_000,
     ));
     assert_eq!(slot.as_ref().map(|state| state.schema_version), Some(1));
@@ -233,6 +235,7 @@ fn semantic_publication_versions_only_changed_facts() {
         base_tokens.clone(),
         empty_activity(),
         base_smart_prune.clone(),
+        Vec::new(),
         2_000,
     ));
     assert_eq!(slot.as_ref().map(|state| state.revision), Some(1));
@@ -244,6 +247,7 @@ fn semantic_publication_versions_only_changed_facts() {
         base_tokens.clone(),
         running_activity(Some(12), None),
         base_smart_prune.clone(),
+        Vec::new(),
         3_000,
     ));
     assert_eq!(slot.as_ref().map(|state| state.revision), Some(2));
@@ -260,6 +264,7 @@ fn semantic_publication_versions_only_changed_facts() {
         base_tokens.clone(),
         completed_activity(None),
         base_smart_prune.clone(),
+        Vec::new(),
         4_000,
     ));
     assert_eq!(slot.as_ref().map(|state| state.revision), Some(3));
@@ -272,6 +277,7 @@ fn semantic_publication_versions_only_changed_facts() {
             TurnCostAvailability::CostObservationDisabled
         ))),
         base_smart_prune,
+        Vec::new(),
         5_000,
     ));
     let state = slot.as_ref().expect("state remains present");
@@ -294,6 +300,7 @@ fn context_token_and_smart_prune_changes_each_increment_once() {
         tokens(),
         empty_activity(),
         smart_prune(true, None),
+        Vec::new(),
         1_000,
     ));
 
@@ -305,6 +312,7 @@ fn context_token_and_smart_prune_changes_each_increment_once() {
         tokens(),
         empty_activity(),
         smart_prune(true, None),
+        Vec::new(),
         2_000,
     ));
     assert_eq!(slot.as_ref().map(|state| state.revision), Some(2));
@@ -317,6 +325,7 @@ fn context_token_and_smart_prune_changes_each_increment_once() {
         changed_tokens.clone(),
         empty_activity(),
         smart_prune(true, None),
+        Vec::new(),
         3_000,
     ));
     assert_eq!(slot.as_ref().map(|state| state.revision), Some(3));
@@ -327,6 +336,7 @@ fn context_token_and_smart_prune_changes_each_increment_once() {
         changed_tokens,
         empty_activity(),
         smart_prune(true, Some(false)),
+        Vec::new(),
         4_000,
     ));
     assert_eq!(slot.as_ref().map(|state| state.revision), Some(4));
@@ -344,6 +354,7 @@ fn cache_write_unreported_and_reported_zero_are_distinct_semantic_states() {
         unreported,
         empty_activity(),
         smart_prune(true, None),
+        Vec::new(),
         1_000,
     ));
     let unreported = serde_json::to_value(slot.as_ref().expect("state")).expect("serialize");
@@ -358,6 +369,7 @@ fn cache_write_unreported_and_reported_zero_are_distinct_semantic_states() {
         tokens(),
         empty_activity(),
         smart_prune(true, None),
+        Vec::new(),
         2_000,
     ));
     let reported = serde_json::to_value(slot.as_ref().expect("state")).expect("serialize");
@@ -374,6 +386,7 @@ fn smart_prune_configured_and_current_thread_states_are_independent_and_safe() {
         tokens(),
         empty_activity(),
         smart_prune(true, None),
+        Vec::new(),
         1_000,
     ));
     let unsynced = serde_json::to_value(slot.as_ref().expect("state")).expect("serialize");
@@ -389,6 +402,7 @@ fn smart_prune_configured_and_current_thread_states_are_independent_and_safe() {
         tokens(),
         empty_activity(),
         smart_prune(true, Some(false)),
+        Vec::new(),
         2_000,
     ));
     let synced = serde_json::to_value(slot.as_ref().expect("state")).expect("serialize");
@@ -405,6 +419,7 @@ fn smart_prune_configured_and_current_thread_states_are_independent_and_safe() {
         tokens(),
         empty_activity(),
         smart_prune(false, Some(false)),
+        Vec::new(),
         3_000,
     ));
     let reconfigured = serde_json::to_value(slot.as_ref().expect("state")).expect("serialize");
@@ -507,6 +522,7 @@ fn activity_wire_mapping_is_snake_case_and_checked() {
             )),
         ),
         smart_prune(true, Some(true)),
+        Vec::new(),
         1_000,
     ));
 
@@ -526,6 +542,7 @@ fn activity_wire_mapping_is_snake_case_and_checked() {
             TurnCostAvailability::CostObservationDisabled
         ))),
         smart_prune(true, Some(true)),
+        Vec::new(),
         2_000,
     ));
     let value = serde_json::to_value(slot.expect("state")).expect("serialize state");
@@ -914,6 +931,7 @@ fn unknown_facts_remain_null_and_state_has_only_safe_fields() {
         },
         empty_activity(),
         smart_prune(false, None),
+        Vec::new(),
         1_000,
     ));
     let value = serde_json::to_value(slot.expect("state")).expect("serialize state");
@@ -924,6 +942,7 @@ fn unknown_facts_remain_null_and_state_has_only_safe_fields() {
             "activity",
             "context",
             "generated_at",
+            "limits",
             "revision",
             "schema_version",
             "smart_prune",
@@ -1237,3 +1256,62 @@ fn evidence_http_route_opens_only_registered_reports() {
 
 #[path = "dashboard_write_tests.rs"]
 mod write_tests;
+
+#[test]
+fn the_served_state_carries_limits_and_a_limit_change_is_a_new_revision() {
+    let claude_5h = DashboardLimit {
+        label: "Claude 5h".to_string(),
+        used_percent: 42,
+        resets_at: Some("14:30".to_string()),
+    };
+    let mut slot = None;
+    assert!(publish_state_into(
+        &mut slot,
+        context(),
+        tokens(),
+        empty_activity(),
+        smart_prune(true, Some(true)),
+        Vec::new(),
+        1_000,
+    ));
+    assert!(publish_state_into(
+        &mut slot,
+        context(),
+        tokens(),
+        empty_activity(),
+        smart_prune(true, Some(true)),
+        vec![claude_5h],
+        2_000,
+    ));
+    let state = slot.expect("state");
+    assert_eq!(state.revision, 2);
+
+    let served = response_for_at(
+        &request(Method::Get, "/data.json", &["127.0.0.1:43123"]),
+        PORT,
+        Some(state),
+        3_000,
+    );
+    let value: Value = serde_json::from_slice(&body(served)).expect("served JSON");
+    assert_eq!(
+        value["state"]["limits"],
+        serde_json::json!([{ "label": "Claude 5h", "used_percent": 42, "resets_at": "14:30" }])
+    );
+}
+
+#[test]
+fn dashboard_asset_shows_limits_or_says_they_are_unavailable() {
+    for required in [
+        "id=\"limits-rows\"",
+        "id=\"limits-empty\"",
+        ">Limits unavailable<",
+    ] {
+        assert!(INDEX_HTML.contains(required), "missing {required}");
+    }
+    for required in [
+        "function renderLimits(limits)",
+        "renderLimits(state.limits);",
+    ] {
+        assert!(DASHBOARD_JS.contains(required), "missing {required}");
+    }
+}
