@@ -242,9 +242,31 @@ for (const s of scenarios) {
     last.some((p) => /look around/i.test(p.step)) && last.every((p) => ["pending", "inProgress", "completed"].includes(p.status))
       ? console.log(`PASS plan (${plans.length} plan updates, last: ${last.map((p) => `${p.step}=${p.status}`).join(", ")})`)
       : fail(`plan: ${plans.length} updates, last=${JSON.stringify(last)}`);
+  } else if (s === "revert") {
+    // Esc-Esc "edit a previous message" on a Claude chat: the rewound turn leaves the history
+    // and Claude's memory.
+    const ids = [];
+    const idL = (m) => { if (m.method === "turn/started" && m.params.threadId === threadId) ids.push(m.params.turn.id); };
+    listeners.add(idL);
+    const a = `APPLE-${Math.floor(Math.random() * 9000 + 1000)}`, b = `BERRY-${Math.floor(Math.random() * 9000 + 1000)}`;
+    await turn(threadId, [{ type: "text", text: `Remember the word ${a}. Reply with just OK.`, text_elements: [] }]);
+    await turn(threadId, [{ type: "text", text: `Also remember the word ${b}. Reply with just OK.`, text_elements: [] }]);
+    listeners.delete(idL);
+    const rv = await call("thread/revert", { threadId, beforeTurnId: ids.at(-1) });
+    const listed = await call("thread/turns/list", { threadId, limit: 50, sortDirection: "desc", itemsView: "full" });
+    const kept = JSON.stringify(listed.result?.data ?? []);
+    const r = await turn(threadId, [{ type: "text", text: "Which words did I ask you to remember in this chat? Reply with only the words.", text_elements: [] }]);
+    !rv.error && rv.result?.thread?.id === threadId && kept.includes(a) && !kept.includes(b) && r.text.includes(a) && !r.text.includes(b)
+      ? console.log(`PASS revert (history and Claude keep ${a}, forget ${b})`)
+      : fail(`revert: error=${JSON.stringify(rv.error)} history has a=${kept.includes(a)} b=${kept.includes(b)} reply=${r.text.slice(0, 120)}`);
   } else if (s === "efforts") {
-    // Each Claude model offers its own effort levels: Haiku has none, so none are offered.
-    const list = models.result?.data ?? [];
+    // Each Claude model offers its own effort levels: Haiku has none, so none are offered. A new
+    // store has no saved levels yet; the bridge reads them in the background (~1 min).
+    let list = models.result?.data ?? [];
+    for (let i = 0; i < 12 && list.find((m) => m.id === "claude/haiku")?.supportedReasoningEfforts?.length; i++) {
+      await new Promise((r) => setTimeout(r, 10000));
+      list = (await call("model/list", { cursor: null, limit: null, includeHidden: true })).result?.data ?? [];
+    }
     const haiku = list.find((m) => m.id === "claude/haiku");
     const opus = list.find((m) => m.id === "claude/opus");
     const opusLevels = (opus?.supportedReasoningEfforts ?? []).map((e) => e.reasoningEffort);

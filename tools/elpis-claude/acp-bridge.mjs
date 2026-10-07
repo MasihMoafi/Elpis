@@ -64,17 +64,20 @@ function toolItem(id, t, cwd) {
   return { type: "commandExecution", id, pluginId: null, scriptPath: null, command, cwd, processId: null, source: "agent", status, commandActions, aggregatedOutput: output, exitCode: status === "completed" ? 0 : status === "inProgress" ? null : 1, durationMs: t.end ? t.end - t.start : null };
 }
 const STORE = process.env.ACP_BRIDGE_STORE ?? `${HOME}/.elpis-next/elpis-claude/sessions.json`;
-async function loadStore() { try { const { readFile } = await import("node:fs/promises"); return JSON.parse(await readFile(STORE, "utf8")); } catch { return {}; } }
+async function loadStore() { return (await readJson(STORE)) ?? {}; }
 let storeChain = Promise.resolve();
 function updateStore(fn) {
   storeChain = storeChain.then(async () => { const st = await loadStore(); fn(st); await saveStore(st); }).catch((e) => log(`store: ${e.message}`));
   return storeChain;
 }
-async function saveStore(store) {
+const CATALOG = `${STORE.slice(0, STORE.lastIndexOf("/"))}/catalog.json`;
+async function readJson(path) { try { const { readFile } = await import("node:fs/promises"); return JSON.parse(await readFile(path, "utf8")); } catch { return null; } }
+async function writeJson(path, value) {
   const { mkdir, writeFile, rename } = await import("node:fs/promises");
-  await mkdir(STORE.slice(0, STORE.lastIndexOf("/")), { recursive: true });
-  await writeFile(`${STORE}.tmp`, JSON.stringify(store, null, 1)); await rename(`${STORE}.tmp`, STORE);
+  await mkdir(path.slice(0, path.lastIndexOf("/")), { recursive: true });
+  await writeFile(`${path}.tmp`, JSON.stringify(value, null, 1)); await rename(`${path}.tmp`, path);
 }
+async function saveStore(store) { await writeJson(STORE, store); }
 
 async function claudeLimits() {
   const { readFile } = await import("node:fs/promises");
@@ -200,23 +203,35 @@ wss.on("connection", (ws) => {
   };
   const isClaude = (m) => typeof m === "string" && m.startsWith("claude/");
   const ensureAcp = async () => { if (!acp || acp.dead) { acp = new Acp(); await acp.ready; log("acp ready"); } return acp; };
+  // Claude's models and each model's effort levels (Haiku has none). Reading one model's levels
+  // means switching a scratch session to it (~4 s each, without touching Claude Code's saved
+  // settings), so startup reads only the current model; the rest come from catalog.json and are
+  // refreshed in the background at most once a day.
   const catalog = (async () => {
     try {
       const a = await ensureAcp();
       const s = await a.call("session/new", { cwd: process.cwd(), mcpServers: [] });
       const opt = (opts, id) => (opts ?? []).find((o) => o.id === id);
+      const levelsOf = (opts) => { const e = opt(opts, "effort"); return e ? { levels: e.options.map((o) => ({ reasoningEffort: o.value, description: o.name })), current: e.currentValue } : { levels: [], current: null }; };
       const models = (opt(s.configOptions, "model")?.options ?? []).filter((m) => m.value !== "default");
-      // Each model has its own effort levels and default (Haiku has none). Switching the model of
-      // this scratch session does not change Claude Code's saved settings.
-      const efforts = {};
-      for (const m of models) {
-        const r = await a.call("session/set_config_option", { sessionId: s.sessionId, configId: "model", value: m.value }).catch(() => null);
-        const e = opt(r?.configOptions, "effort");
-        efforts[m.value] = e ? { levels: e.options.map((o) => ({ reasoningEffort: o.value, description: o.name })), current: e.currentValue } : { levels: [], current: null };
-      }
-      a.call("session/delete", { sessionId: s.sessionId }).catch(() => {});
-      return { models, efforts };
-    } catch (e) { log(`claude catalog: ${e.message}`); return { models: [], efforts: {} }; }
+      const saved = await readJson(CATALOG);
+      const efforts = { ...(saved?.efforts ?? {}) };
+      const first = opt(s.configOptions, "model")?.currentValue;
+      if (first) efforts[first] = levelsOf(s.configOptions);
+      const stale = !saved?.at || now() - saved.at > 86_400_000 || models.some((m) => !efforts[m.value]);
+      (async () => {
+        if (stale) {
+          for (const m of models.filter((m) => m.value !== first)) {
+            const r = await a.call("session/set_config_option", { sessionId: s.sessionId, configId: "model", value: m.value }).catch(() => null);
+            if (r) efforts[m.value] = levelsOf(r.configOptions);
+          }
+          await writeJson(CATALOG, { at: now(), efforts });
+          log(`claude catalog: effort levels of ${models.length} models saved`);
+        }
+        await a.call("session/delete", { sessionId: s.sessionId }).catch(() => {});
+      })().catch((e) => log(`claude catalog refresh: ${e.message ?? JSON.stringify(e)}`));
+      return { models, efforts, fallback: first ? efforts[first] : { levels: [], current: null } };
+    } catch (e) { log(`claude catalog: ${e.message}`); return { models: [], efforts: {}, fallback: { levels: [], current: null } }; }
   })();
   const pendingModelList = new Set();
   const pendingResume = new Set();
@@ -357,12 +372,12 @@ wss.on("connection", (ws) => {
     }
     if (parsed && pendingModelList.has(parsed.id) && Array.isArray(parsed.result?.data)) {
       pendingModelList.delete(parsed.id);
-      const { models, efforts } = await Promise.race([catalog, new Promise((r) => setTimeout(() => r({ models: [], efforts: {} }), 30000))]);
+      const { models, efforts, fallback } = await Promise.race([catalog, new Promise((r) => setTimeout(() => r({ models: [], efforts: {}, fallback: null }), 30000))]);
       const tpl = parsed.result.data[0] ?? {};
       const added = [];
       for (const m of models) {
         const id = `claude/${m.value}`;
-        const e = efforts[m.value] ?? { levels: [], current: null };
+        const e = efforts[m.value] ?? { levels: fallback?.levels ?? [], current: "default" };
         added.push({ ...tpl, id, model: id, inputModalities: ["text", "image"], displayName: `${m.name} (Claude subscription)`, description: m.description ?? "Claude Code on your Pro/Max plan", hidden: false, isDefault: false, upgrade: null, upgradeInfo: null, supportedReasoningEfforts: e.levels, defaultReasoningEffort: e.current ?? "default" });
       }
       parsed.result.data.unshift(...added);
@@ -462,8 +477,8 @@ wss.on("connection", (ws) => {
           .catch((e) => log(`mode ${wantMode}: ${e.message ?? JSON.stringify(e)}`));
       }
       const effort = claudeEffort.get(threadId);
-      const levels = (await catalog).efforts[want]?.levels ?? [];
-      if (effort && levels.some((l) => l.reasoningEffort === effort)) await acp.call("session/set_config_option", { sessionId, configId: "effort", value: effort }).catch((e) => log(`effort ${effort}: ${e.message}`));
+      const known = (await catalog).efforts[want];
+      if (effort && (!known || known.levels.some((l) => l.reasoningEffort === effort))) await acp.call("session/set_config_option", { sessionId, configId: "effort", value: effort }).catch((e) => log(`effort ${effort}: ${e.message}`));
       turnState.sessionId = sessionId;
       sessionReady(sessionId);
       acp.onUpdate = ({ update: u }) => {
@@ -619,6 +634,32 @@ wss.on("connection", (ws) => {
     engine.stdin.write(JSON.stringify(msg) + "\n");
   }
 
+  // Esc-Esc "edit a previous message": revert drops a turn and every later one. Claude's turns
+  // live in the bridge's store and Claude's own session, which the engine cannot see, so the
+  // bridge drops them, gives Claude a fresh session seeded from the kept history, and has the
+  // engine revert its own turns from the same point.
+  async function revertThread(msg) {
+    const { threadId, beforeTurnId } = msg.params ?? {};
+    await storeChain;
+    const stored = (await loadStore())[threadId]?.turns ?? [];
+    if (!stored.length) { engine.stdin.write(JSON.stringify(msg) + "\n"); return; }
+    try {
+      const engineTurns = (await engineCall("thread/turns/list", { threadId, limit: 200, sortDirection: "asc", itemsView: "notLoaded" }).catch(() => ({ data: [] }))).data ?? [];
+      const cutAt = (stored.find((t) => t.id === beforeTurnId) ?? engineTurns.find((t) => t.id === beforeTurnId))?.startedAt;
+      if (cutAt == null) { engine.stdin.write(JSON.stringify(msg) + "\n"); return; }
+      await updateStore((st) => { const e = st[threadId] ?? {}; e.turns = (e.turns ?? []).filter((t) => (t.startedAt ?? 0) < cutAt); delete e.session; delete e.sessions; st[threadId] = e; });
+      sessions.delete(threadId);
+      const engineCut = engineTurns.find((t) => (t.startedAt ?? 0) >= cutAt);
+      const result = engineCut
+        ? await engineCall("thread/revert", { threadId, beforeTurnId: engineCut.id })
+        : { thread: (await engineCall("thread/read", { threadId })).thread, turnsBackwardsCursor: null };
+      log(`reverted thread ${threadId} before ${beforeTurnId} (${stored.filter((t) => (t.startedAt ?? 0) >= cutAt).length} Claude turns dropped${engineCut ? ", engine reverted too" : ""})`);
+      toTui({ id: msg.id, result });
+    } catch (e) {
+      toTui({ id: msg.id, error: { code: -32603, message: `revert failed: ${e?.message ?? JSON.stringify(e)}` } });
+    }
+  }
+
   // A message sent while Claude works joins that reply instead of stopping it. With no
   // running Claude turn, the TUI's "no active turn to steer" fallback starts a new turn.
   async function steerClaude(msg) {
@@ -663,6 +704,7 @@ wss.on("connection", (ws) => {
       pendingStart.set(msg.id, { model: claudeModel.get(src), effort: claudeEffort.get(src) ?? null });
     }
     if (msg.method === "thread/start") { startThread(msg); return; }
+    if (msg.method === "thread/revert") { revertThread(msg); return; }
     if (msg.method === "thread/turns/list" && msg.params?.threadId) pendingTurnsList.set(msg.id, msg.params);
     if (msg.method === "thread/items/list" && msg.params?.threadId) pendingItemsList.set(msg.id, msg.params);
     if (msg.method === "thread/settings/update") {
