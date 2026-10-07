@@ -110,6 +110,9 @@ Each fix has an e2e scenario that failed on the bridge before it and passes afte
 | `/review` ran on the engine's own model (OpenRouter, 401) | Review runs as a Claude turn with Elpis's rubric, Markdown findings, the usual banners | review |
 | Approval "No, and tell Elpis…" refused one command and Claude carried on | Prompts offer accept / decline / cancel; cancel stops the reply. No "don't ask again": Claude Code would save that rule to the project for good | approval |
 | Shift+Tab showed no lasting sign of Plan mode | The idle Elpis tip yields the footer to "Plan mode (shift+tab to cycle)" (TUI test `plan_mode_label_outranks_the_elpis_tip`) | — |
+| Chat titles and `/recap` on a Claude chat ran on the engine's model (OpenRouter, 401) | Hidden `temporary-structured-turn` requests on a Claude thread go to a one-off Claude Haiku session with no tools, MCP servers or user settings, told the JSON schema; nothing is recorded. A `/memory-model` set to a non-Claude model still names chats with that model, by choice | structured |
+| `/goal` and `thread/queue/add` on a Claude chat made the engine start its own model's turn | Refused with a chat warning naming the reason; pausing, completing or clearing a goal still passes | goal |
+| `/side` and `/btw` on a Claude chat answered without knowing the chat | A fork of a Claude chat inherits the parent's Claude turns up to the fork point when its Claude session is seeded | side |
 
 Known gaps: Smart Prune and the Subagents switch in the Context Ledger do nothing for Claude chats; Claude Code also reads CLAUDE.md/AGENTS.md itself, so a file excluded in the Ledger can still reach Claude; after rewinding a Claude chat with no later GPT turn, the engine keeps the rewound turns' recorded text, which a later GPT turn in that chat could see.
 
