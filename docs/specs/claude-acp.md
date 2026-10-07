@@ -83,11 +83,11 @@ Known gaps:
 
 ## Claude runs other-model agents (U26 prototype)
 
-`tools/elpis-claude/elpis-agents-mcp.mjs` is an MCP server the bridge passes to every Claude session (`mcpServers` on ACP `session/new` and `session/load`). Its `delegate` tool starts a normal Elpis thread through `elpis app-server` with the chosen `model` and `provider` (default `openai/gpt-6.1-sol` on the OpenAI sign-in), `approvalPolicy: never`, and a `read-only` sandbox unless `allow_writes` is true. It returns the agent's answer and the commands it ran. The delegated thread is named "Delegated by Claude: …" and stays in Elpis history.
+`tools/elpis-claude/elpis-agents-mcp.mjs` is an MCP server (`elpis-agents`) the bridge passes to every Claude and Antigravity session that has subagents on. Tools: `list_models` (every model Elpis offers, grouped by provider, with Elpis's own descriptions and efforts), `delegate` (any model id, on any provider: engine models, `claude/…`, `agy/…`; optional `effort`), `delegate_status`, `delegate_steer`, `delegate_stop`. Started through the bridge (`ELPIS_BRIDGE_URL`), a helper on a Claude or Antigravity model runs through the same bridge. Each helper is a normal Elpis thread named "Delegated by Claude: …", `approvalPolicy: never`, `read-only` unless `allow_writes` is true. The bridge records its parent (`_delegations` in the store) and adds `parentThreadId` to it in `thread/list` and `thread/read`, so `/agents` nests it under the chat that started it.
 
-Evidence: a direct call ran `cat nonce.txt` on `gpt-6-luna` and returned LUNA-9924. Through Claude, the e2e `delegate` scenario passed (SOL-3120), and failed with `ACP_BRIDGE_NO_AGENTS=1` (Claude reported no such tool).
+Evidence (2026-10-07): e2e `pick` — Opus called `list_models`, gave the easy task to `gpt-6-luna`, the hard one to `gpt-6-astra` and the Gemini task to `agy/gemini-3.8-flash`; on the old code it guessed models and the Gemini task failed. e2e `helper-parent` — the helper lists under its parent; it failed before the parent link. e2e `delegate` (word.txt) failed with `ACP_BRIDGE_NO_AGENTS=1`.
 
-Limits: the delegated agent cannot ask for approval (no UI); writes are opt-in per call. It does not see Claude's conversation, only the task text.
+Limits: a helper cannot ask for approval (no UI); writes are opt-in per call. It does not see the parent's conversation, only the task text.
 
 ## Automated checks
 
