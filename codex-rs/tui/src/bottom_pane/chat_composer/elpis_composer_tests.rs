@@ -222,3 +222,20 @@ fn quit_reminder_outranks_the_elpis_tip() {
     assert!(screen.contains("again to quit"), "{screen}");
     assert!(!screen.contains("open the Context Ledger"), "{screen}");
 }
+
+#[test]
+fn plan_mode_label_outranks_the_elpis_tip() {
+    let (mut composer, _rx) = new_test_composer();
+    composer.set_elpis_tip_visible(/*visible*/ true);
+    let default_mode = rendered(&composer);
+    assert!(default_mode.contains("open the Context Ledger"), "{default_mode}");
+    assert!(!default_mode.contains("Plan mode"), "{default_mode}");
+
+    composer.set_collaboration_mode_indicator(Some(
+        crate::bottom_pane::footer::CollaborationModeIndicator::Plan,
+    ));
+    let plan_mode = rendered(&composer);
+
+    assert!(plan_mode.contains("Plan mode"), "{plan_mode}");
+    assert!(!plan_mode.contains("open the Context Ledger"), "{plan_mode}");
+}

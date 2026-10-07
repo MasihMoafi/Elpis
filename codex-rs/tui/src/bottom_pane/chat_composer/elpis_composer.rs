@@ -213,12 +213,14 @@ impl ChatComposer {
     }
 
     /// The tip to paint in the footer row, when it is visible and nothing outranks it: a flash,
-    /// a hint override (the keys that can finish a pending key chord), or a footer mode with
-    /// something to say (quit reminder, Esc hint, search, shortcut help).
+    /// a hint override (the keys that can finish a pending key chord), the Plan mode label
+    /// (otherwise Shift+Tab shows no lasting sign), or a footer mode with something to say
+    /// (quit reminder, Esc hint, search, shortcut help).
     pub(super) fn elpis_tip_footer_line(&self, hint_rect: Rect) -> Option<Line<'static>> {
         if !self.elpis_tip.visible
             || self.footer.flash_visible()
             || self.footer.hint_override.is_some()
+            || self.footer.collaboration_mode_indicator.is_some()
             || !matches!(self.footer_mode(), FooterMode::ComposerEmpty)
         {
             return None;
