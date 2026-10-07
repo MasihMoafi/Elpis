@@ -21,6 +21,7 @@ use std::path::PathBuf;
 use super::ChatWidget;
 use super::context_ledger::LedgerSourceGroup;
 use super::context_usage;
+use super::elpis_providers::CLAUDE_SUBSCRIPTION_PROVIDER_ID;
 use super::elpis_providers::CLAUDE_SUBSCRIPTION_PROVIDER_NAME;
 use super::elpis_providers::is_claude_subscription_model;
 use crate::activity_state::ActivityState;
@@ -196,6 +197,16 @@ impl ChatWidget {
         }
     }
 
+    /// The provider id the dashboard's Models tab selects for the chat model; the page names it
+    /// from its provider list.
+    fn dashboard_chat_provider(&self) -> &str {
+        if is_claude_subscription_model(self.current_model()) {
+            CLAUDE_SUBSCRIPTION_PROVIDER_ID
+        } else {
+            self.config.model_provider_id.as_str()
+        }
+    }
+
     /// The usage limits `/usage` shows, one row per window: label, percent used and reset time.
     pub(crate) fn dashboard_limits(&self) -> Vec<DashboardLimit> {
         self.rate_limit_snapshots_by_limit_id
@@ -232,7 +243,7 @@ impl ChatWidget {
         .unwrap_or_default();
         DashboardModels {
             chat: DashboardModelChoice {
-                provider: Some(self.displayed_chat_provider().to_string()),
+                provider: Some(self.dashboard_chat_provider().to_string()),
                 model: Some(self.current_model().to_string()),
             },
             background: DashboardModelChoice {

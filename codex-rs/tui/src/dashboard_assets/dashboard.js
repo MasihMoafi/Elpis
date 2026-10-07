@@ -827,7 +827,9 @@ async function loadModelProviders() {
       ? payload.providers.filter(provider => isObject(provider) && typeof provider.id === 'string')
       : [];
     MODEL_ROLES.forEach(role => {
-      byId('model-provider-' + role).replaceChildren(...modelProviders.map(provider => {
+      // The Claude subscription serves the chat model alone.
+      const offered = modelProviders.filter(provider => role === 'chat' || provider.chat_only !== true);
+      byId('model-provider-' + role).replaceChildren(...offered.map(provider => {
         const option = makeNode('option', '', text(provider.name));
         option.value = provider.id;
         return option;

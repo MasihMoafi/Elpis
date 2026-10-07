@@ -336,6 +336,8 @@ mod model_popups;
 mod elpis_providers;
 pub(crate) use self::elpis_providers::CLAUDE_SUBSCRIPTION_PROVIDER_ID;
 pub(crate) use self::elpis_providers::ElpisProviderEvent;
+pub(crate) use self::elpis_providers::claude_subscription_presets;
+pub(crate) use self::elpis_providers::elpis_chat_model_providers;
 pub(crate) use self::elpis_providers::elpis_lists_from_app_server;
 pub(crate) use self::elpis_providers::elpis_picker_providers;
 pub(crate) use self::elpis_providers::is_claude_subscription_model;

@@ -137,6 +137,9 @@ fn drain(events: &mut UnboundedReceiver<AppEvent>) -> Vec<String> {
                 provider_id,
                 model,
             })) => format!("chat {provider_id} {model}"),
+            AppEvent::Elpis(ElpisAppEvent::Provider(ElpisProviderEvent::UseClaudeModel {
+                model,
+            })) => format!("chat model {model}"),
             AppEvent::Elpis(ElpisAppEvent::SaveBackgroundModel(BackgroundModelChoice {
                 model,
                 provider,
@@ -303,6 +306,99 @@ fn choosing_a_model_uses_the_terminals_writers() {
     }
     assert_eq!(drain(&mut harness.events), Vec::<String>::new());
     assert_eq!(pruner_settings(harness.home.path()), saved);
+}
+
+/// Positive: while the app server's list carries a Claude subscription model, the chat model
+/// can come from the Claude subscription, which lists that model alone, and choosing it sends
+/// the picker's model change, not a provider switch. Negative: without one, nothing offers or
+/// accepts it; another role, or a model it does not list, is refused.
+#[test]
+fn the_claude_subscription_is_a_chat_model_provider_only_with_the_claude_bridge() {
+    const CLAUDE: &str = crate::chatwidget::CLAUDE_SUBSCRIPTION_PROVIDER_ID;
+    let mut harness = harness();
+    let token = token();
+    let path = format!("/models/{token}");
+    let provider_rows = |link: &DashboardLink| {
+        let (status, body) = send(link, get(&path));
+        assert_eq!(status, 200, "{body}");
+        json(&body)["providers"]
+            .as_array()
+            .expect("providers")
+            .clone()
+    };
+    let listed = |link: &DashboardLink, provider: &str| {
+        let (status, body) = send(link, get(&format!("{path}/{provider}")));
+        (status == 200).then(|| {
+            json(&body)["models"]
+                .as_array()
+                .expect("models")
+                .iter()
+                .map(|row| row["id"].as_str().expect("id").to_string())
+                .collect::<Vec<_>>()
+        })
+    };
+    let choose_claude = format!(r#"{{"role":"chat","provider":"{CLAUDE}","model":"claude/opus"}}"#);
+    let pruner_before = pruner_settings(harness.home.path());
+
+    // Without the Claude bridge.
+    assert!(
+        provider_rows(&harness.link)
+            .iter()
+            .all(|row| row["id"] != CLAUDE),
+        "offered without Claude models"
+    );
+    assert_eq!(listed(&harness.link, CLAUDE), None);
+    let (status, answer) = send(&harness.link, post(&path, &choose_claude));
+    assert_eq!(status, 400, "{answer}");
+    assert_eq!(drain(&mut harness.events), Vec::<String>::new());
+
+    // With it.
+    let mut claude = crate::test_support::TEST_MODEL_PRESETS
+        .iter()
+        .find(|preset| preset.show_in_picker)
+        .expect("a visible preset")
+        .clone();
+    claude.id = "claude/opus".to_string();
+    claude.model = "claude/opus".to_string();
+    claude.display_name = "Opus 5.5 (Claude subscription)".to_string();
+    claude.is_default = false;
+    harness.link.catalog.insert(0, claude);
+
+    let rows = provider_rows(&harness.link);
+    assert!(
+        rows.contains(&serde_json::json!({
+            "id": CLAUDE,
+            "name": "Claude subscription",
+            "chat_only": true,
+        })),
+        "{rows:?}"
+    );
+    assert_eq!(
+        listed(&harness.link, CLAUDE),
+        Some(vec!["claude/opus".to_string()])
+    );
+    let openai = listed(&harness.link, "openai").expect("openai list");
+    assert!(!openai.contains(&"claude/opus".to_string()), "{openai:?}");
+
+    let (status, body) = send(&harness.link, post(&path, &choose_claude));
+    assert_eq!(status, 200, "{body}");
+    assert_eq!(
+        drain(&mut harness.events),
+        vec!["chat model claude/opus".to_string(), "refresh".to_string()]
+    );
+
+    let model = listed_model();
+    for body in [
+        format!(r#"{{"role":"background","provider":"{CLAUDE}","model":"claude/opus"}}"#),
+        format!(r#"{{"role":"pruner","provider":"{CLAUDE}","model":"claude/opus"}}"#),
+        format!(r#"{{"role":"chat","provider":"{CLAUDE}","model":"{model}"}}"#),
+        format!(r#"{{"role":"chat","provider":"{CLAUDE}","model":null}}"#),
+    ] {
+        let (status, answer) = send(&harness.link, post(&path, &body));
+        assert_eq!(status, 400, "{body}: {answer}");
+    }
+    assert_eq!(drain(&mut harness.events), Vec::<String>::new());
+    assert_eq!(pruner_settings(harness.home.path()), pruner_before);
 }
 
 /// Positive: a same-origin JSON POST with this session's token writes. Negative: a missing or

@@ -198,9 +198,10 @@ async fn a_claude_subscription_model_shows_claude_as_its_provider() {
     };
 
     chat.set_model("claude/opus");
+    // The Models tab selects the Claude subscription by its id and names it from its list.
     assert_eq!(
         chat.dashboard_models().chat.provider.as_deref(),
-        Some("Claude subscription")
+        Some(crate::chatwidget::CLAUDE_SUBSCRIPTION_PROVIDER_ID)
     );
     assert!(
         status_text(&mut chat).contains("Claude subscription"),

@@ -41,6 +41,10 @@ impl App {
                 self.elpis_switch_provider(tui, app_server, provider_id, model)
                     .await;
             }
+            ElpisProviderEvent::UseClaudeModel { model } => {
+                self.chat_widget
+                    .apply_model_and_effort(model, /*effort*/ None);
+            }
         }
         tui.frame_requester().schedule_frame();
     }

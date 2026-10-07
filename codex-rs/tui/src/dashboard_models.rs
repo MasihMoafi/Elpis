@@ -8,6 +8,11 @@
 //!
 //! A choice names a provider and a model that provider listed, so a model never lands on a
 //! provider that cannot serve it.
+//!
+//! While the app server's list carries Claude subscription models (the Claude bridge adds
+//! them), the chat model can also come from the "Claude subscription": its models are listed
+//! there alone, and choosing one goes through the picker's own row action
+//! (`ElpisProviderEvent::UseClaudeModel`), which keeps the provider and the conversation.
 
 use std::collections::BTreeMap;
 use std::collections::HashMap;
@@ -35,6 +40,8 @@ use crate::elpis_background_model::BackgroundModelChoice;
 const MAX_BODY: u64 = 4_096;
 /// The gateway gives up on a vendor's list after 10 s and on a connection after 30 s.
 const LIST_TIMEOUT: Duration = Duration::from_secs(45);
+const CHAT_MODEL_SENT: &str =
+    "Sent to Elpis. The next answer uses it; the terminal confirms the change.";
 
 /// One role's model as the page shows it. `model: None` is the built-in default.
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
@@ -77,8 +84,23 @@ impl DashboardLink {
         }
     }
 
+    /// The Claude subscription models of the app server's list; an error without them.
+    fn claude_models(&self) -> Result<Vec<ModelPreset>, String> {
+        let presets = crate::chatwidget::claude_subscription_presets(&self.catalog);
+        if presets.is_empty() {
+            return Err(
+                "No Claude subscription models are listed; start Elpis with elpis-claude"
+                    .to_string(),
+            );
+        }
+        Ok(presets)
+    }
+
     /// A provider's models as the `/model` picker lists them.
     fn list(&self, provider_id: &str) -> Result<Vec<ModelPreset>, String> {
+        if provider_id == crate::chatwidget::CLAUDE_SUBSCRIPTION_PROVIDER_ID {
+            return self.claude_models();
+        }
         let provider = self
             .providers
             .get(provider_id)
@@ -101,9 +123,13 @@ impl DashboardLink {
             rx.recv_timeout(LIST_TIMEOUT)
                 .map_err(|_| "The provider did not list its models in time".to_string())??
         };
+        // Claude subscription models are listed under the Claude subscription alone.
         let presets: Vec<ModelPreset> = presets
             .into_iter()
-            .filter(|preset| preset.show_in_picker)
+            .filter(|preset| {
+                preset.show_in_picker
+                    && !crate::chatwidget::is_claude_subscription_model(&preset.model)
+            })
             .collect();
         if let Ok(mut listed) = LISTED.lock() {
             listed.insert(
@@ -213,17 +239,60 @@ pub(super) fn route(
     }
 }
 
+/// The providers, each as `{id, name}`. The Claude subscription serves the chat model alone,
+/// so its row also carries `"chat_only": true`.
 fn providers(link: &DashboardLink) -> DashboardResponse {
-    let rows: Vec<_> =
-        crate::chatwidget::elpis_picker_providers(&link.providers, &link.active_provider)
-            .into_iter()
-            .map(|(id, name)| serde_json::json!({ "id": id, "name": name }))
-            .collect();
+    let rows: Vec<_> = crate::chatwidget::elpis_chat_model_providers(
+        &link.providers,
+        &link.active_provider,
+        &link.catalog,
+    )
+    .into_iter()
+    .map(|(id, name)| {
+        if id == crate::chatwidget::CLAUDE_SUBSCRIPTION_PROVIDER_ID {
+            serde_json::json!({ "id": id, "name": name, "chat_only": true })
+        } else {
+            serde_json::json!({ "id": id, "name": name })
+        }
+    })
+    .collect();
     json_response(&serde_json::json!({ "providers": rows }))
+}
+
+/// A Claude subscription model for the chat model, through the `/model` picker's row action.
+fn apply_claude(
+    link: &DashboardLink,
+    role: &Role,
+    model: Option<String>,
+) -> Result<String, (u16, String)> {
+    if !matches!(role, Role::Chat) {
+        return Err((
+            400,
+            "Claude subscription models answer chat turns only; pick another provider for this role"
+                .to_string(),
+        ));
+    }
+    let Some(model) = model else {
+        return Err((400, "Pick a provider and one of its models".to_string()));
+    };
+    let listed = link.claude_models().map_err(|error| (400, error))?;
+    if !listed.iter().any(|preset| preset.model == model) {
+        return Err((
+            400,
+            format!("The Claude subscription does not list `{model}`; pick a model from its list"),
+        ));
+    }
+    link.tx.send(AppEvent::Elpis(ElpisAppEvent::Provider(
+        ElpisProviderEvent::UseClaudeModel { model },
+    )));
+    Ok(CHAT_MODEL_SENT.to_string())
 }
 
 /// Applies a choice through the terminal's own writer and says what happens next.
 fn apply(link: &DashboardLink, edit: ModelEdit) -> Result<String, (u16, String)> {
+    if edit.provider.as_deref() == Some(crate::chatwidget::CLAUDE_SUBSCRIPTION_PROVIDER_ID) {
+        return apply_claude(link, &edit.role, edit.model);
+    }
     let choice = match (edit.provider, edit.model) {
         (None, None) if !matches!(edit.role, Role::Chat) => BackgroundModelChoice {
             model: None,
@@ -258,10 +327,7 @@ fn apply(link: &DashboardLink, edit: ModelEdit) -> Result<String, (u16, String)>
             link.tx.send(AppEvent::Elpis(ElpisAppEvent::Provider(
                 ElpisProviderEvent::Switch { provider_id, model },
             )));
-            Ok(
-                "Sent to Elpis. The next answer uses it; the terminal confirms the change."
-                    .to_string(),
-            )
+            Ok(CHAT_MODEL_SENT.to_string())
         }
         Role::Background => {
             link.tx

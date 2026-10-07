@@ -87,6 +87,9 @@ pub(crate) enum ElpisProviderEvent {
     },
     /// Continue this conversation on `provider_id` with `model`.
     Switch { provider_id: String, model: String },
+    /// Use a Claude subscription `model` for this conversation, as the `/model` picker does: the
+    /// provider and the conversation stay.
+    UseClaudeModel { model: String },
 }
 
 fn send(tx: &AppEventSender, event: ElpisProviderEvent) {

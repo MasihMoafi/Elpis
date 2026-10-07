@@ -798,7 +798,12 @@ impl ChatWidget {
         ))
     }
 
-    fn apply_model_and_effort(&self, model: String, effort: Option<ReasoningEffortConfig>) {
+    /// Applies a model and effort the way the picker's rows do.
+    pub(crate) fn apply_model_and_effort(
+        &self,
+        model: String,
+        effort: Option<ReasoningEffortConfig>,
+    ) {
         for action in self
             .model_selection_actions(model, effort, /*should_prompt_plan_mode_scope*/ false)
         {
