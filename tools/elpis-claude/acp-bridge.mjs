@@ -1,8 +1,8 @@
 // Elpis TUI <-ws-> bridge <-stdio-> real `elpis app-server` (everything else)
 //                         \-stdio-> claude-agent-acp (chat turns -> Claude)
 import { WebSocketServer } from "ws";
-import { spawn } from "node:child_process";
-import { appendFileSync } from "node:fs";
+import { execFile, spawn } from "node:child_process";
+import { appendFileSync, readFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 
 const HOME = process.env.HOME;
@@ -13,6 +13,15 @@ const CLAUDE = process.env.ELPIS_CLAUDE_PRUNE
   ? new URL("./claude-via-elpis", import.meta.url).pathname
   : process.env.CLAUDE_CODE_EXECUTABLE ?? `${HOME}/.local/bin/claude`;
 const now = () => Date.now();
+// Elpis's own review rules (codex-rs/prompts), minus its JSON output format, which only the
+// engine parses; Claude answers in readable Markdown instead.
+const REVIEW_RULES = (() => {
+  try {
+    const t = readFileSync(new URL("../../codex-rs/prompts/templates/review/rubric.md", import.meta.url), "utf8");
+    return t.slice(0, t.indexOf("OUTPUT FORMAT:")).split("\n").filter((l) => !/JSON/.test(l)).join("\n").trim();
+  } catch { return "# Review guidelines:\nYou are reviewing a proposed code change. Flag only real, actionable bugs the author would want fixed."; }
+})();
+const REVIEW_FORMAT = "Report in Markdown. For each finding write its priority as [P0] to [P3], a short title and `path:line`, then one or two sentences on why it is wrong. End with `Overall: correct` or `Overall: incorrect` and one sentence. If nothing is wrong, say so. Do not change any files.";
 const AGENTS_MCP = new URL("./elpis-agents-mcp.mjs", import.meta.url).pathname;
 const mcpServersFor = () => process.env.ACP_BRIDGE_NO_AGENTS ? [] : [{
   name: "elpis-agents", command: process.execPath, args: [AGENTS_MCP],
@@ -398,7 +407,7 @@ wss.on("connection", (ws) => {
     const { threadId, input = [] } = req.params;
     const turnId = randomUUID();
     const turn = { id: turnId, items: [], itemsView: "notLoaded", status: "inProgress", error: null, startedAt: null, completedAt: null, durationMs: null };
-    if (req.id !== undefined) toTui({ id: req.id, result: { turn } });
+    if (req.id !== undefined) toTui({ id: req.id, result: req.kind === "review" ? { turn, reviewThreadId: threadId } : { turn } });
     const compacting = req.kind === "compact";
     const startedAt = Math.floor(now() / 1000);
     notify("thread/status/changed", { threadId, status: { type: "active", activeFlags: [] } });
@@ -406,7 +415,9 @@ wss.on("connection", (ws) => {
     notify("turn/costUpdated", { threadId, turnId, cost: { type: "unavailable", reason: "subscriptionAuthentication" } });
     const t0 = now();
     let firstTokenAt = null;
-    const userItem = { type: "userMessage", id: randomUUID(), clientId: null, content: input };
+    const userItem = req.kind === "review"
+      ? { type: "enteredReviewMode", id: randomUUID(), review: req.reviewHint }
+      : { type: "userMessage", id: randomUUID(), clientId: null, content: input };
     notify("item/started", { item: userItem, threadId, turnId, startedAtMs: now() });
     notify("item/completed", { item: userItem, threadId, turnId, completedAtMs: now() });
 
@@ -547,7 +558,7 @@ wss.on("connection", (ws) => {
         if (t) t.declined = true;
         return pick("reject_once") ?? pick("reject_always") ?? null;
       };
-      const userText = inputSummary(input);
+      const userText = req.kind === "review" ? `[Code review requested: ${req.reviewHint}]` : inputSummary(input);
       const prompt = await toAcpPrompt(input);
       if (freshSession) {
         const history = await priorTranscript(threadId);
@@ -597,6 +608,12 @@ wss.on("connection", (ws) => {
       if (!t.shown || t.end) continue;
       t.status = "failed"; t.end = now();
       notify("item/completed", { item: toolItem(id, t, cwd), threadId, turnId, completedAtMs: now() });
+    }
+    if (req.kind === "review") {
+      const exit = { type: "exitedReviewMode", id: randomUUID(), review: items.filter((i) => i.type === "agentMessage").map((i) => i.text).join("\n\n").trim() };
+      notify("item/started", { item: exit, threadId, turnId, startedAtMs: now() });
+      notify("item/completed", { item: exit, threadId, turnId, completedAtMs: now() });
+      items.push(exit);
     }
     if (active === turnState) active = null;
     turnState.toolsIdle.splice(0).forEach((r) => r());
@@ -660,6 +677,29 @@ wss.on("connection", (ws) => {
     }
   }
 
+  // /review on a Claude chat: Elpis's review rules, answered by Claude, inline.
+  async function reviewClaude(msg) {
+    const { threadId, target = {} } = msg.params;
+    const cwd = threadCwd.get(threadId) ?? process.cwd();
+    let ask, hint;
+    if (target.type === "baseBranch") {
+      const base = await new Promise((r) => execFile("git", ["merge-base", "HEAD", target.branch], { cwd }, (e, out) => r(e ? null : out.trim())));
+      ask = base
+        ? `Review the code changes against the base branch '${target.branch}'. The merge base commit for this comparison is ${base}. Run \`git diff ${base}\` to inspect the changes relative to ${target.branch}. Provide prioritized, actionable findings.`
+        : `Review the code changes against the base branch '${target.branch}'. Find the merge base with \`git merge-base HEAD ${target.branch}\`, then run \`git diff\` against it. Provide prioritized, actionable findings.`;
+      hint = `changes against '${target.branch}'`;
+    } else if (target.type === "commit") {
+      ask = `Review the code changes introduced by commit ${target.sha}${target.title ? ` ("${target.title}")` : ""}. Provide prioritized, actionable findings.`;
+      hint = `commit ${String(target.sha).slice(0, 7)}${target.title ? `: ${target.title}` : ""}`;
+    } else if (target.type === "custom") {
+      ask = target.instructions; hint = String(target.instructions ?? "").trim();
+    } else {
+      ask = "Review the current code changes (staged, unstaged, and untracked files) and provide prioritized findings."; hint = "current changes";
+    }
+    log(`claude review for thread ${threadId}: ${hint}`);
+    claudeTurn({ id: msg.id, kind: "review", reviewHint: hint, params: { threadId, input: [{ type: "text", text: `${REVIEW_RULES}\n\n${REVIEW_FORMAT}\n\n${ask}`, text_elements: [] }] } });
+  }
+
   // A message sent while Claude works joins that reply instead of stopping it. With no
   // running Claude turn, the TUI's "no active turn to steer" fallback starts a new turn.
   async function steerClaude(msg) {
@@ -705,6 +745,7 @@ wss.on("connection", (ws) => {
     }
     if (msg.method === "thread/start") { startThread(msg); return; }
     if (msg.method === "thread/revert") { revertThread(msg); return; }
+    if (msg.method === "review/start" && claudeModel.has(msg.params?.threadId) && !active) { reviewClaude(msg); return; }
     if (msg.method === "thread/turns/list" && msg.params?.threadId) pendingTurnsList.set(msg.id, msg.params);
     if (msg.method === "thread/items/list" && msg.params?.threadId) pendingItemsList.set(msg.id, msg.params);
     if (msg.method === "thread/settings/update") {

@@ -259,6 +259,28 @@ for (const s of scenarios) {
     !rv.error && rv.result?.thread?.id === threadId && kept.includes(a) && !kept.includes(b) && r.text.includes(a) && !r.text.includes(b)
       ? console.log(`PASS revert (history and Claude keep ${a}, forget ${b})`)
       : fail(`revert: error=${JSON.stringify(rv.error)} history has a=${kept.includes(a)} b=${kept.includes(b)} reply=${r.text.slice(0, 120)}`);
+  } else if (s === "review") {
+    // /review on a Claude chat reviews with Claude (it used to run on the engine's own model).
+    const { execFileSync } = await import("node:child_process");
+    const repo = mkdtempSync(join(tmpdir(), "elpis-e2e-review-"));
+    const git = (...a) => execFileSync("git", ["-c", "user.email=e2e@x", "-c", "user.name=e2e", ...a], { cwd: repo });
+    writeFileSync(join(repo, "calc.py"), "def add(a, b):\n    return a + b\n");
+    git("init", "-q"); git("add", "calc.py"); git("commit", "-qm", "add");
+    writeFileSync(join(repo, "calc.py"), "def add(a, b):\n    return a - b\n");
+    const st = await call("thread/start", { cwd: repo, approvalPolicy: "never", sandbox: "danger-full-access" });
+    const tid = st.result?.thread?.id;
+    await call("thread/settings/update", { threadId: tid, model: process.env.E2E_MODEL ?? "claude/opus", effort: "low" });
+    const from = seen.length;
+    const done = new Promise((r) => { const l = (m) => { if (m.method === "turn/completed" && m.params.threadId === tid) { listeners.delete(l); r(m.params.turn); } }; listeners.add(l); setTimeout(() => r({ status: "timeout" }), 300000); });
+    const rs = await call("review/start", { threadId: tid, target: { type: "uncommittedChanges" }, delivery: "inline" });
+    const t = await done;
+    const later = seen.slice(from).filter((m) => m.params?.threadId === tid);
+    const entered = later.some((m) => m.method === "item/started" && m.params.item?.type === "enteredReviewMode");
+    const exited = later.some((m) => m.method === "item/completed" && m.params.item?.type === "exitedReviewMode");
+    const text = later.filter((m) => m.method === "item/agentMessage/delta").map((m) => m.params.delta).join("");
+    !rs.error && rs.result?.reviewThreadId === tid && entered && exited && t.status === "completed" && /calc\.py/.test(text) && /subtract|minus|a - b/i.test(text)
+      ? console.log("PASS review (Claude reviewed the uncommitted change and found the a - b bug in calc.py)")
+      : fail(`review: error=${JSON.stringify(rs.error)} thread=${rs.result?.reviewThreadId} entered=${entered} exited=${exited} status=${t.status} ${JSON.stringify(t.error ?? "")} text=${text.slice(0, 160)}`);
   } else if (s === "efforts") {
     // Each Claude model offers its own effort levels: Haiku has none, so none are offered. A new
     // store has no saved levels yet; the bridge reads them in the background (~1 min).
