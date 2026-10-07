@@ -232,6 +232,8 @@ mod code_mode_warning;
 mod context_cleaner;
 pub(crate) mod context_window;
 mod daemon_recovery;
+// Elpis: the instruction text a thread's model receives, for a client running another engine.
+mod elpis_instructions;
 mod environment;
 mod extension_interruption;
 pub(crate) mod extension_metrics;

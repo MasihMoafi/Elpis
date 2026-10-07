@@ -990,6 +990,14 @@ impl CodexThread {
         self.session.refresh_runtime_config(next_config).await;
     }
 
+    /// Elpis: the developer instructions, admitted AGENTS.md and admitted continuity text this
+    /// thread's next model request carries.
+    pub async fn elpis_instructions(
+        &self,
+    ) -> CodexResult<crate::elpis_admission::ElpisInstructions> {
+        self.session.elpis_instructions().await
+    }
+
     /// Elpis: this thread's Smart Prune switch, counters and latest evidence.
     pub async fn smart_prune_snapshot(
         &self,

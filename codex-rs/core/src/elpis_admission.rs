@@ -107,6 +107,40 @@ impl ElpisContinuityConfig {
             eligible,
         }
     }
+
+    /// The thread's continuity settings, unless it has none or is not eligible.
+    fn for_thread(thread_store: &ExtensionData) -> Option<Arc<Self>> {
+        thread_store.get::<Self>().filter(|config| config.eligible)
+    }
+
+    async fn body(&self) -> Option<String> {
+        elpis_context::build_continuity_prompt_with_dev_rule_roots(
+            Some(self.memories_root.as_path()),
+            self.cwd.as_path(),
+            &self.dev_rule_roots,
+        )
+        .await
+    }
+}
+
+/// The Elpis instruction text a thread's next model request carries, for a client that runs
+/// the thread's turns on another engine (`thread/elpisInstructions/read`).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct ElpisInstructions {
+    /// The thread's configured `developer_instructions`.
+    pub developer_instructions: Option<String>,
+    /// The global and project AGENTS.md text the Context Ledger admits.
+    pub agents_md: Option<String>,
+    /// The admitted continuity section (MEMORY.md, development rules, GOAL.md, ES.md and
+    /// files added with `/add`), exactly as the `elpis_continuity` World State section sends it.
+    pub continuity: Option<String>,
+}
+
+/// The continuity text the thread's next request carries, if any.
+pub(crate) async fn thread_continuity(thread_store: &ExtensionData) -> Option<String> {
+    ElpisContinuityConfig::for_thread(thread_store)?
+        .body()
+        .await
 }
 
 impl ContextContributor for ElpisContinuityExtension {
@@ -115,19 +149,10 @@ impl ContextContributor for ElpisContinuityExtension {
         input: WorldStateContributionInput<'a>,
     ) -> ExtensionFuture<'a, Vec<WorldStateSectionContribution>> {
         Box::pin(async move {
-            let Some(config) = input.thread_store.get::<ElpisContinuityConfig>() else {
+            let Some(config) = ElpisContinuityConfig::for_thread(input.thread_store) else {
                 return Vec::new();
             };
-            if !config.eligible {
-                return Vec::new();
-            }
-            let body = elpis_context::build_continuity_prompt_with_dev_rule_roots(
-                Some(config.memories_root.as_path()),
-                config.cwd.as_path(),
-                &config.dev_rule_roots,
-            )
-            .await;
-            vec![continuity_section(body)]
+            vec![continuity_section(config.body().await)]
         })
     }
 }
