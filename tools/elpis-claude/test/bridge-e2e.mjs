@@ -48,6 +48,9 @@ if (init.error) fail(`initialize: ${JSON.stringify(init.error)}`);
 ws.send(JSON.stringify({ method: "initialized" }));
 const models = await call("model/list", { cursor: null, limit: null, includeHidden: true });
 if (!models.result?.data?.some((m) => m.id === "claude/opus")) fail("model/list has no claude/opus");
+// The TUI refuses a pasted image unless the selected model lists image input.
+const textOnly = (models.result?.data ?? []).filter((m) => m.id.startsWith("claude/") && !m.inputModalities?.includes("image"));
+if (textOnly.length) fail(`Claude models without image input: ${textOnly.map((m) => m.id).join(", ")}`);
 
 const dir = process.env.E2E_CWD ?? mkdtempSync(join(tmpdir(), "elpis-e2e-"));
 const started = await call("thread/start", { cwd: dir, approvalPolicy: "never", sandbox: "danger-full-access" });

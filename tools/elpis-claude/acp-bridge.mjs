@@ -285,7 +285,7 @@ wss.on("connection", (ws) => {
       const levels = efforts.length ? efforts.map((e) => ({ reasoningEffort: e.value, description: e.name })) : tpl.supportedReasoningEfforts;
       for (const m of models.filter((m) => m.value !== "default")) {
         const id = `claude/${m.value}`;
-        added.push({ ...tpl, id, model: id, displayName: `${m.name} (Claude subscription)`, description: m.description ?? "Claude Code on your Pro/Max plan", hidden: false, isDefault: false, upgrade: null, upgradeInfo: null, supportedReasoningEfforts: levels, defaultReasoningEffort: levels?.[levels.length - 1]?.reasoningEffort ?? tpl.defaultReasoningEffort });
+        added.push({ ...tpl, id, model: id, inputModalities: ["text", "image"], displayName: `${m.name} (Claude subscription)`, description: m.description ?? "Claude Code on your Pro/Max plan", hidden: false, isDefault: false, upgrade: null, upgradeInfo: null, supportedReasoningEfforts: levels, defaultReasoningEffort: levels?.[levels.length - 1]?.reasoningEffort ?? tpl.defaultReasoningEffort });
       }
       parsed.result.data.unshift(...added);
       log(`model/list: added ${added.length} Claude models`);
