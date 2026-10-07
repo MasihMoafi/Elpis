@@ -11,6 +11,18 @@ const log = (s) => { try { appendFileSync(LOG, `${new Date().toISOString().slice
 const ADAPTER = process.env.ACP_ADAPTER ?? new URL("./node_modules/@agentclientprotocol/claude-agent-acp/dist/index.js", import.meta.url).pathname;
 const CLAUDE = process.env.CLAUDE_CODE_EXECUTABLE ?? `${HOME}/.local/bin/claude`;
 const now = () => Date.now();
+const STORE = process.env.ACP_BRIDGE_STORE ?? `${HOME}/.elpis-next/elpis-claude/sessions.json`;
+async function loadStore() { try { const { readFile } = await import("node:fs/promises"); return JSON.parse(await readFile(STORE, "utf8")); } catch { return {}; } }
+let storeChain = Promise.resolve();
+function updateStore(fn) {
+  storeChain = storeChain.then(async () => { const st = await loadStore(); fn(st); await saveStore(st); }).catch((e) => log(`store: ${e.message}`));
+  return storeChain;
+}
+async function saveStore(store) {
+  const { mkdir, writeFile, rename } = await import("node:fs/promises");
+  await mkdir(STORE.slice(0, STORE.lastIndexOf("/")), { recursive: true });
+  await writeFile(`${STORE}.tmp`, JSON.stringify(store, null, 1)); await rename(`${STORE}.tmp`, STORE);
+}
 
 async function claudeLimits() {
   const { readFile } = await import("node:fs/promises");
@@ -118,12 +130,91 @@ wss.on("connection", (ws) => {
     } catch (e) { log(`claude catalog: ${e.message}`); return { models: [], efforts: [] }; }
   })();
   const pendingModelList = new Set();
+  const pendingResume = new Set();
+  const pendingTurnsList = new Map();
+  const pendingItemsList = new Map();
+  const engineReqs = new Map();
+  let engineSeq = 0;
+  const engineCall = (method, params) => new Promise((resolve, reject) => {
+    const id = `acp-bridge-engine-${++engineSeq}`;
+    engineReqs.set(id, { resolve, reject });
+    engine.stdin.write(JSON.stringify({ id, method, params }) + "\n");
+  });
+  const textOf = (content) => (content ?? []).filter((c) => c.type === "text").map((c) => c.text).join("\n");
+  async function priorTranscript(threadId) {
+    try {
+      const r = await engineCall("thread/turns/list", { threadId, limit: 30, sortDirection: "desc", itemsView: "full" });
+      const lines = [];
+      for (const turn of (r.data ?? []).reverse()) for (const it of turn.items ?? []) {
+        if (it.type === "userMessage") lines.push(`User: ${textOf(it.content)}`);
+        else if (it.type === "agentMessage" && it.text?.trim()) lines.push(`Assistant: ${it.text.trim()}`);
+        else if (it.type === "commandExecution") lines.push(`(Assistant ran: ${it.command})`);
+      }
+      const t = lines.join("\n\n");
+      return t.length > 12000 ? t.slice(-12000) : t;
+    } catch (e) { log(`history read for ${threadId}: ${e.message ?? JSON.stringify(e)}`); return ""; }
+  }
   let active = null;
   let reqSeq = 0;
 
   lineReader(engine.stdout, async (line) => {
     let parsed = null;
     try { parsed = JSON.parse(line); } catch {}
+    if (parsed && engineReqs.has(parsed.id) && !parsed.method) {
+      const p = engineReqs.get(parsed.id); engineReqs.delete(parsed.id);
+      parsed.error ? p.reject(parsed.error) : p.resolve(parsed.result);
+      return;
+    }
+    if (parsed && pendingTurnsList.has(parsed.id)) {
+      const req = pendingTurnsList.get(parsed.id); pendingTurnsList.delete(parsed.id);
+      await storeChain;
+      const stored = (await loadStore())[req.threadId]?.turns ?? [];
+      if (stored.length && !req.cursor) {
+        const data = parsed.result?.data ?? [];
+        const have = new Set(data.map((t) => t.id));
+        const merged = [...data, ...stored.filter((t) => !have.has(t.id))]
+          .map((t) => (req.itemsView === "notLoaded" ? { ...t, items: [], itemsView: "notLoaded" } : t));
+        merged.sort((a, b) => (a.startedAt ?? 0) - (b.startedAt ?? 0));
+        if (req.sortDirection === "desc") merged.reverse();
+        parsed.result = { ...(parsed.result ?? {}), data: merged, nextCursor: parsed.result?.nextCursor ?? null, backwardsCursor: parsed.result?.backwardsCursor ?? null };
+        delete parsed.error;
+        log(`turns/list ${req.threadId}: +${merged.length - data.length} Claude turns`);
+        ws.send(JSON.stringify(parsed));
+        return;
+      }
+    }
+    if (parsed && pendingItemsList.has(parsed.id)) {
+      const req = pendingItemsList.get(parsed.id); pendingItemsList.delete(parsed.id);
+      await storeChain;
+      const stored = ((await loadStore())[req.threadId]?.turns ?? []).filter((t) => !req.turnId || t.id === req.turnId);
+      if (stored.length && !req.cursor) {
+        const data = parsed.result?.data ?? [];
+        const have = new Set(data.map((e) => e.item?.id));
+        const extra = stored.flatMap((t) => t.items.map((item, i) => ({ turnId: t.id, item, startedAtMs: (t.startedAt ?? 0) * 1000 + i, completedAtMs: (t.completedAt ?? t.startedAt ?? 0) * 1000 })))
+          .filter((e) => !have.has(e.item.id));
+        const merged = [...data, ...extra].sort((a, b) => (a.startedAtMs ?? 0) - (b.startedAtMs ?? 0));
+        if (req.sortDirection === "desc") merged.reverse();
+        parsed.result = { ...(parsed.result ?? {}), data: merged, nextCursor: parsed.result?.nextCursor ?? null, backwardsCursor: parsed.result?.backwardsCursor ?? null };
+        delete parsed.error;
+        log(`items/list ${req.threadId}: +${extra.length} Claude items`);
+        ws.send(JSON.stringify(parsed));
+        return;
+      }
+    }
+    if (parsed && pendingResume.has(parsed.id) && parsed.result?.thread?.id) {
+      pendingResume.delete(parsed.id);
+      await storeChain;
+      const saved = (await loadStore())[parsed.result.thread.id];
+      if (saved?.model) {
+        claudeModel.set(parsed.result.thread.id, saved.model);
+        if (saved.effort) claudeEffort.set(parsed.result.thread.id, saved.effort);
+        parsed.result.model = saved.model;
+        if (saved.effort) parsed.result.reasoningEffort = saved.effort;
+        log(`resume ${parsed.result.thread.id} -> ${saved.model}`);
+        ws.send(JSON.stringify(parsed));
+        return;
+      }
+    }
     if (parsed?.method === "thread/settings/updated" && claudeModel.has(parsed.params?.threadId)) {
       const tid = parsed.params.threadId;
       parsed.params.threadSettings = { ...parsed.params.threadSettings, model: claudeModel.get(tid), effort: claudeEffort.get(tid) ?? parsed.params.threadSettings?.effort ?? null };
@@ -192,13 +283,29 @@ wss.on("connection", (ws) => {
       const ask = policy !== "never";
       const key = `${threadId}|${ask ? "ask" : "full"}`;
       let sessionId = sessions.get(key);
+      let freshSession = false;
       if (!sessionId) {
         const cwd = threadCwd.get(threadId) ?? process.cwd();
         const _meta = ask ? { claudeCode: { options: { settingSources: ["project", "local"] } } } : undefined;
-        sessionId = (await acp.call("session/new", { cwd, mcpServers: [], ...(_meta && { _meta }) })).sessionId;
+        await storeChain;
+        const store = await loadStore();
+        const saved = store[threadId]?.sessions?.[ask ? "ask" : "full"];
+        if (saved) {
+          const prev = acp.onUpdate; acp.onUpdate = null;
+          try { await acp.call("session/load", { sessionId: saved, cwd, mcpServers: [], ...(_meta && { _meta }) }); sessionId = saved; log(`session ${saved} reloaded for thread ${threadId}`); }
+          catch (e) { log(`session reload failed: ${e.message ?? JSON.stringify(e)}`); }
+          acp.onUpdate = prev;
+        }
+        if (!sessionId) {
+          sessionId = (await acp.call("session/new", { cwd, mcpServers: [], ...(_meta && { _meta }) })).sessionId;
+          freshSession = true;
+          log(`session ${sessionId} for thread ${threadId} in ${cwd} (${ask ? "Elpis asks" : "full access"}, policy ${policy})`);
+        }
         sessions.set(key, sessionId);
-        log(`session ${sessionId} for thread ${threadId} in ${cwd} (${ask ? "Elpis asks" : "full access"}, policy ${policy})`);
+        const sid = sessionId;
+        updateStore((st) => { st[threadId] = { ...st[threadId], sessions: { ...st[threadId]?.sessions, [ask ? "ask" : "full"]: sid } }; });
       }
+      updateStore((st) => { st[threadId] = { ...st[threadId], model: claudeModel.get(threadId), effort: claudeEffort.get(threadId) ?? null }; });
       const want = claudeModel.get(threadId)?.slice("claude/".length);
       if (want && sessionModel.get(sessionId) !== want) {
         await acp.call("session/set_config_option", { sessionId, configId: "model", value: want });
@@ -257,7 +364,15 @@ wss.on("connection", (ws) => {
         if (item) item.status = "declined";
         return pick("reject_once") ?? pick("reject_always") ?? null;
       };
+      const userText = input.filter((c) => c.type === "text").map((c) => c.text).join("\n");
       const prompt = input.filter((c) => c.type === "text").map((c) => ({ type: "text", text: c.text }));
+      if (freshSession) {
+        const history = await priorTranscript(threadId);
+        if (history) {
+          prompt.unshift({ type: "text", text: `This conversation started earlier in Elpis, possibly with another model. Here is the conversation so far, for context:\n\n${history}\n\n--- The user's new message follows. ---` });
+          log(`seeded Claude with ${history.length} chars of earlier history`);
+        }
+      }
       const result = await acp.call("session/prompt", { sessionId, prompt });
       const tu = result.usage;
       if (tu) {
@@ -268,6 +383,15 @@ wss.on("connection", (ws) => {
         sendUsage(threadId, turnId, turnUsage);
       }
       if (result.stopReason === "cancelled") status = "interrupted";
+      closeMessage();
+      const reply = items.filter((i) => i.type === "agentMessage").map((i) => i.text).join("\n\n").trim();
+      const used = items.filter((i) => i.type === "commandExecution").map((i) => i.command);
+      const record = [{ type: "message", role: "user", content: [{ type: "input_text", text: userText }] }];
+      if (used.length) record.push({ type: "message", role: "assistant", content: [{ type: "output_text", text: `[${claudeModel.get(threadId) ?? "Claude"} used tools: ${used.join("; ")}]` }] });
+      if (reply) record.push({ type: "message", role: "assistant", content: [{ type: "output_text", text: reply }] });
+      engineCall("thread/inject_items", { threadId, items: record })
+        .then(() => log(`recorded Claude turn in thread ${threadId} (${record.length} items)`))
+        .catch((e) => log(`record failed for ${threadId}: ${e.message ?? JSON.stringify(e)}`));
     } catch (e) {
       status = "failed";
       error = { message: `Claude (ACP) error: ${e?.message ?? JSON.stringify(e)}`, codexErrorInfo: null, additionalDetails: null };
@@ -276,6 +400,11 @@ wss.on("connection", (ws) => {
     closeMessage();
     active = null;
     const completedAt = Math.floor(now() / 1000);
+    {
+      const clip = (it) => (it.aggregatedOutput && it.aggregatedOutput.length > 4000 ? { ...it, aggregatedOutput: it.aggregatedOutput.slice(0, 4000) + "\n…" } : it);
+      const record = { id: turnId, items: [userItem, ...items.map(clip)], itemsView: "full", status, error, startedAt, completedAt, durationMs: (completedAt - startedAt) * 1000 };
+      updateStore((st) => { st[threadId] = { ...st[threadId], turns: [...(st[threadId]?.turns ?? []), record].slice(-200) }; });
+    }
     notify("turn/completed", { threadId, turn: { id: turnId, items, itemsView: "summary", status, error, startedAt, completedAt, durationMs: (completedAt - startedAt) * 1000 } });
     notify("turn/activityUpdated", { threadId, turnId, status: status === "inProgress" ? "completed" : status, durationMs: now() - t0, timeToFirstTokenMs: firstTokenAt ? firstTokenAt - t0 : null });
     notify("thread/status/changed", { threadId, status: { type: "idle" } });
@@ -292,9 +421,12 @@ wss.on("connection", (ws) => {
       bridgeRequests.delete(msg.id);
       return;
     }
-    if (process.env.ACP_BRIDGE_DEBUG && msg.method && !/^thread\/(read|turns\/list|list|loaded)/.test(msg.method)) log(`tui-> ${line.slice(0, 600)}`);
+    if (process.env.ACP_BRIDGE_DEBUG && msg.method && (process.env.ACP_BRIDGE_DEBUG === "all" || !/^thread\/(read|turns\/list|list|loaded)/.test(msg.method))) log(`tui-> ${line.slice(0, 600)}`);
     if (msg.method === "thread/start") startPolicy.set(msg.id, msg.params?.approvalPolicy ?? null);
     if (msg.method === "model/list") pendingModelList.add(msg.id);
+    if (msg.method === "thread/resume") pendingResume.add(msg.id);
+    if (msg.method === "thread/turns/list" && msg.params?.threadId) pendingTurnsList.set(msg.id, msg.params);
+    if (msg.method === "thread/items/list" && msg.params?.threadId) pendingItemsList.set(msg.id, msg.params);
     if (msg.method === "thread/settings/update") {
       const p = msg.params ?? {};
       if (isClaude(p.model)) { claudeModel.set(p.threadId, p.model); p.model = null; log(`thread ${p.threadId} -> ${claudeModel.get(p.threadId)}`); }
