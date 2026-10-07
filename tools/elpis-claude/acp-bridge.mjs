@@ -353,6 +353,27 @@ wss.on("connection", (ws) => {
   // The bridge adds them, previewed by their first message, where they fall in the list's order.
   const pendingThreadList = new Map();
   const pendingChildList = new Map(); // thread/loaded/list (null) or thread/list of a chat's descendants (its id)
+  const pendingHelperMark = new Set(); // thread/list and thread/read answers: mark delegated helpers with their chat
+  // A helper started with the delegate tool is an engine thread the engine does not know as a
+  // child; the bridge's record (_delegations) gives it its parent wherever the TUI reads threads.
+  async function markHelpers(result, ancestor) {
+    const helpers = (await loadStore())._delegations ?? {};
+    let changed = false;
+    for (const t of [result?.thread, ...(Array.isArray(result?.data) ? result.data : [])]) {
+      if (t && typeof t === "object" && helpers[t.id] && t.parentThreadId == null) { t.parentThreadId = helpers[t.id].parentThreadId; changed = true; }
+    }
+    if (ancestor && Array.isArray(result?.data)) {
+      const below = new Set([ancestor]);
+      for (let grew = true; grew;) { grew = false; for (const [id, d] of Object.entries(helpers)) if (below.has(d.parentThreadId) && !below.has(id)) { below.add(id); grew = true; } }
+      const have = new Set(result.data.map((d) => (typeof d === "string" ? d : d.id)));
+      for (const id of below) {
+        if (id === ancestor || have.has(id)) continue;
+        const t = (await engineCall("thread/read", { threadId: id, includeTurns: false }).catch(() => null))?.thread;
+        if (t) { result.data.push({ ...t, parentThreadId: helpers[id].parentThreadId }); changed = true; }
+      }
+    }
+    return changed;
+  }
   const pageFloor = new Map(); // nextCursor -> sort value of the last thread on the page before it
   const previewed = new Set(); // threads the engine lists itself
   const listField = (req) => ({ updated_at: "updatedAt", recency_at: "recencyAt" })[req.sortKey] ?? "createdAt";
@@ -451,6 +472,11 @@ wss.on("connection", (ws) => {
       const p = engineReqs.get(parsed.id); engineReqs.delete(parsed.id);
       parsed.error ? p.reject(parsed.error) : p.resolve(parsed.result);
       return;
+    }
+    let helpersMarked = false;
+    if (parsed && pendingHelperMark.has(parsed.id)) {
+      pendingHelperMark.delete(parsed.id);
+      helpersMarked = await markHelpers(parsed.result, pendingChildList.get(parsed.id)).catch((e) => { log(`helpers: ${e.message ?? e}`); return false; });
     }
     if (parsed && pendingTurnsList.has(parsed.id)) {
       const req = pendingTurnsList.get(parsed.id); pendingTurnsList.delete(parsed.id);
@@ -597,7 +623,7 @@ wss.on("connection", (ws) => {
       ws.send(JSON.stringify(parsed));
       return;
     }
-    ws.send(line);
+    ws.send(helpersMarked ? JSON.stringify(parsed) : line);
   });
 
   const askTui = (method, params) => new Promise((resolve) => {
@@ -1097,6 +1123,7 @@ wss.on("connection", (ws) => {
     if ((msg.method === "thread/read" || msg.method === "thread/resume") && childIds.has(msg.params?.threadId)) { answerChild(msg); return; }
     if (msg.method === "thread/loaded/list") pendingChildList.set(msg.id, null);
     if (msg.method === "thread/list" && msg.params?.ancestorThreadId && !msg.params.cursor) pendingChildList.set(msg.id, msg.params.ancestorThreadId);
+    if (msg.method === "thread/list" || msg.method === "thread/read") pendingHelperMark.add(msg.id);
     if (msg.method === "model/list") pendingModelList.add(msg.id);
     if (msg.method === "thread/resume") pendingResume.add(msg.id);
     if (msg.method === "config/read") pendingConfigRead.add(msg.id);

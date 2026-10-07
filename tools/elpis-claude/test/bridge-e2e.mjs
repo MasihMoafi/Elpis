@@ -521,6 +521,25 @@ for (const s of scenarios) {
     listed && models.length >= 3 && models.some((m) => m.startsWith("agy/")) && models.some((m) => !/^(agy|claude)\//.test(m)) && completed >= 3 && linked >= 3 && r.status === "completed"
       ? console.log(`PASS pick (list_models read; helpers ${models.join(", ")}; ${completed} finished; ${linked} recorded under the chat)`)
       : fail(`pick: list_models=${listed} helpers=${JSON.stringify(models)} finished=${completed} recorded=${linked} status=${r.status} reply=${r.text.slice(-300)}`);
+  } else if (s === "helper-parent") {
+    // A helper started with delegate shows up under the chat that started it: thread/list and
+    // thread/read carry parentThreadId, and the chat's descendants list includes it.
+    const { readFileSync } = await import("node:fs");
+    const work = mkdtempSync(join(tmpdir(), "elpis-e2e-helper-"));
+    writeFileSync(join(work, "word.txt"), "PLUM");
+    const st = await call("thread/start", { cwd: work, approvalPolicy: "never", sandbox: "danger-full-access" });
+    const tid = st.result?.thread?.id;
+    await call("thread/settings/update", { threadId: tid, model: process.env.E2E_MODEL ?? "claude/opus", effort: "low" });
+    await turn(tid, [{ type: "text", text: "Use the delegate tool (model gpt-6-luna, effort low) to have a helper read word.txt. Do not read it yourself. Reply with what the helper reported.", text_elements: [] }], 300000);
+    const store = (() => { try { return JSON.parse(readFileSync(storeEnv.ACP_BRIDGE_STORE, "utf8")); } catch { return {}; } })();
+    const helper = Object.entries(store._delegations ?? {}).find(([, d]) => d.parentThreadId === tid)?.[0];
+    const listed = (await call("thread/list", { cwd: work, limit: 50, sortKey: "updated_at" })).result?.data ?? [];
+    const read = (await call("thread/read", { threadId: helper ?? "none", includeTurns: false })).result?.thread;
+    const kids = (await call("thread/list", { ancestorThreadId: tid, limit: 50 })).result?.data ?? [];
+    const inList = listed.find((t) => t.id === helper);
+    helper && inList?.parentThreadId === tid && read?.parentThreadId === tid && kids.some((t) => t.id === helper)
+      ? console.log(`PASS helper-parent (helper ${helper} is listed, read and a descendant of its chat)`)
+      : fail(`helper-parent: helper=${helper} list.parent=${inList?.parentThreadId} read.parent=${read?.parentThreadId} descendants=${JSON.stringify(kids.map((t) => t.id))}`);
   } else if (s === "image") {
     const word = process.env.E2E_IMAGE_WORD;
     const path = process.env.E2E_IMAGE_PATH;
