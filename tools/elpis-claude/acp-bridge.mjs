@@ -262,30 +262,40 @@ wss.on("connection", (ws) => {
     if (!catalogs.has(agent.key)) catalogs.set(agent.key, readCatalog(agent));
     return catalogs.get(agent.key);
   };
+  // A saved list answers at once (starting Antigravity alone takes ~7 s); the live read
+  // refreshes the file for the next start. The first start waits for the live read.
   async function readCatalog(agent) {
+    const saved = await readJson(agent.catalogFile);
+    const efforts = saved?.efforts ?? {}; // filled in place by the live read
+    const live = liveCatalog(agent, saved, efforts);
+    if (!saved?.models?.length) return live;
+    live.catch(() => {});
+    return { models: saved.models, efforts, fallback: saved.fallback ?? { levels: [], current: null } };
+  }
+  async function liveCatalog(agent, saved, efforts) {
     try {
       const a = await ensureAcp(agent);
       const s = await a.call("session/new", { cwd: process.cwd(), mcpServers: [] });
       const opt = (opts, id) => (opts ?? []).find((o) => o.id === id);
       const levelsOf = (opts) => { const e = opt(opts, "effort"); return e ? { levels: e.options.map((o) => ({ reasoningEffort: o.value, description: o.name })), current: e.currentValue } : { levels: [], current: null }; };
       const models = (opt(s.configOptions, "model")?.options ?? []).filter((m) => m.value !== "default");
-      const saved = await readJson(agent.catalogFile);
-      const efforts = { ...(saved?.efforts ?? {}) };
       const first = opt(s.configOptions, "model")?.currentValue;
       if (first) efforts[first] = levelsOf(s.configOptions);
+      const fallback = first ? efforts[first] : { levels: [], current: null };
       const stale = !saved?.at || now() - saved.at > 86_400_000 || models.some((m) => !efforts[m.value]);
+      await writeJson(agent.catalogFile, { at: stale ? 0 : saved.at, models, efforts, fallback });
       (async () => {
         if (stale) {
           for (const m of models.filter((m) => m.value !== first)) {
             const r = await a.call("session/set_config_option", { sessionId: s.sessionId, configId: "model", value: m.value }).catch(() => null);
-            if (r) efforts[m.value] = levelsOf(r.configOptions);
+            if (r) { efforts[m.value] = levelsOf(r.configOptions); await writeJson(agent.catalogFile, { at: 0, models, efforts, fallback }); }
           }
-          await writeJson(agent.catalogFile, { at: now(), efforts });
+          await writeJson(agent.catalogFile, { at: now(), models, efforts, fallback });
           log(`${agent.key} catalog: effort levels of ${models.length} models saved`);
         }
         await a.call("session/delete", { sessionId: s.sessionId }).catch(() => {});
       })().catch((e) => log(`${agent.key} catalog refresh: ${e.message ?? JSON.stringify(e)}`));
-      return { models, efforts, fallback: first ? efforts[first] : { levels: [], current: null } };
+      return { models, efforts, fallback };
     } catch (e) { log(`${agent.key} catalog: ${e.message}`); return { models: [], efforts: {}, fallback: { levels: [], current: null } }; }
   }
   for (const agent of AGENTS) catalogFor(agent);
