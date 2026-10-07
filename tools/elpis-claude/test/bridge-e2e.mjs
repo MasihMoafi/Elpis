@@ -1,7 +1,7 @@
 // End-to-end check of the bridge, acting as the Elpis TUI over the app-server protocol.
 // Uses the real engine and Claude (subscription). Run: node test/bridge-e2e.mjs [scenario...]
 // Scenarios: text image interrupt approval usage resume delegate compact instructions modes steer tools plan
-// shell picker revert review efforts default antigravity structured goal side subagents.
+// shell picker revert review efforts default antigravity structured goal side subagents claude-subagent.
 // Exit code 0 only if every scenario passes.
 import { spawn } from "node:child_process";
 import { mkdtempSync, writeFileSync } from "node:fs";
@@ -469,6 +469,35 @@ for (const s of scenarios) {
     ok ? console.log(`PASS subagents (on: ${[...own(on), ...del(on)].join(", ")}; off: none of them in Claude Code's ${off.tools.length} tools or Claude's answer; on again: ${[...own(back), ...del(back)].join(", ")})`)
       : fail(`subagents: ${[["on", on], ["off", off], ["on again", back]].map(([k, r]) => `${k} [write ${r.write}, turn ${r.status}]: tools=${JSON.stringify([...own(r), ...del(r)])} of ${r.tools.length}, Claude said: ${r.reply.replace(/\s+/g, " ").slice(0, 400)}`).join(" | ")}`);
     ws3.close(); b3.kill();
+  } else if (s === "claude-subagent") {
+    // A subagent Claude starts with its Agent tool is an Elpis subagent of the chat: a child
+    // thread linked to the chat (what Left/Right and /subagents list), "Started"/"Completed" rows
+    // in the chat's turn, the subagent's own messages streamed into the child thread, and the
+    // child readable again after the turn (resume). Its own chat on Haiku.
+    const st = await call("thread/start", { cwd: dir, approvalPolicy: "never", sandbox: "danger-full-access" });
+    const tid = st.result?.thread?.id;
+    await call("thread/settings/update", { threadId: tid, model: "claude/haiku" });
+    const word = `PONG-${Math.floor(Math.random() * 9000 + 1000)}`;
+    const from = seen.length;
+    const r = await turn(tid, [{ type: "text", text: `Use your Agent tool (subagent_type general-purpose, description "Say ${word}") to have a subagent reply with exactly ${word} and nothing else. Do not reply ${word} yourself before the subagent has. Then reply DONE.`, text_elements: [] }], 300000);
+    const later = seen.slice(from);
+    const child = later.find((m) => m.method === "thread/started" && m.params.thread?.parentThreadId === tid)?.params?.thread;
+    const cid = child?.id;
+    const spawnLink = child?.source?.subAgent?.thread_spawn?.parent_thread_id === tid && child?.canAcceptDirectInput === false && !!child?.agentNickname;
+    const activity = (kind) => later.some((m) => m.method === "item/completed" && m.params.threadId === tid && m.params.item?.type === "subAgentActivity" && m.params.item.kind === kind && m.params.item.agentThreadId === cid);
+    const childMsgs = later.filter((m) => m.params?.threadId === cid);
+    const childText = childMsgs.filter((m) => m.method === "item/agentMessage/delta").map((m) => m.params.delta).join("");
+    const childTurnDone = childMsgs.find((m) => m.method === "turn/completed")?.params?.turn?.status;
+    const parentLeak = later.filter((m) => m.method === "item/agentMessage/delta" && m.params.threadId === tid).map((m) => m.params.delta).join("");
+    // What the TUI asks when it lists and opens the child (agent_navigation, /subagents, resume).
+    const read = cid ? await call("thread/read", { threadId: cid, includeTurns: true }) : {};
+    const loaded = await call("thread/loaded/list", { cursor: null, limit: null });
+    const picker = await call("thread/list", { cursor: null, limit: 100, sortDirection: "desc", modelProviders: [], sourceKinds: ["subAgentThreadSpawn"], useStateDbOnly: true, ancestorThreadId: tid });
+    const replay = JSON.stringify(read.result?.thread?.turns ?? []);
+    const ok = r.status === "completed" && cid && spawnLink && activity("started") && activity("completed") && childText.includes(word) && childTurnDone === "completed"
+      && read.result?.thread?.parentThreadId === tid && replay.includes(word) && (loaded.result?.data ?? []).includes(cid) && (picker.result?.data ?? []).some((t) => t.id === cid);
+    ok ? console.log(`PASS claude-subagent (child ${cid} "${child.agentNickname}" of the chat said ${word}; started/completed rows in the chat; readable, listed, replayable)`)
+      : fail(`claude-subagent: turn=${r.status} child=${cid ?? "none"} link=${spawnLink} started=${activity("started")} completed=${activity("completed")} child-said=${JSON.stringify(childText.slice(0, 80))} child-turn=${childTurnDone} read=${JSON.stringify(read.error ?? read.result?.thread?.parentThreadId ?? null)} replay-has-word=${replay.includes(word)} loaded=${(loaded.result?.data ?? []).includes(cid)} picker=${(picker.result?.data ?? []).some((t) => t.id === cid)} parent-said=${JSON.stringify(parentLeak.slice(0, 120))}`);
   } else if (s === "image") {
     const word = process.env.E2E_IMAGE_WORD;
     const path = process.env.E2E_IMAGE_PATH;
@@ -481,6 +510,8 @@ for (const s of scenarios) {
   }
 }
 writeFileSync(join(dir, ".done"), "");
+// Every message the bridge sent, for checking it against the app-server schema.
+if (process.env.E2E_DUMP) writeFileSync(process.env.E2E_DUMP, JSON.stringify(seen));
 ws.close();
 bridge.kill();
 usageServer.close();

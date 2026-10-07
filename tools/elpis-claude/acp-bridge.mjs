@@ -91,6 +91,11 @@ function toolItem(id, t, cwd) {
   const output = t.name === "Bash" && typeof resp.stdout === "string" ? [resp.stdout, resp.stderr].filter(Boolean).join("\n") : t.text ? unfence(t.text) : null;
   return { type: "commandExecution", id, pluginId: null, scriptPath: null, command, cwd, processId: null, source: "agent", status, commandActions, aggregatedOutput: output, exitCode: status === "completed" ? 0 : status === "inProgress" ? null : 1, durationMs: t.end ? t.end - t.start : null };
 }
+// A finished turn as the store keeps it: long outputs and diffs cut.
+const cut = (s) => (s.length > 4000 ? s.slice(0, 4000) + "\n…" : s);
+const clipItem = (it) => it.type === "fileChange" ? { ...it, changes: it.changes.map((c) => ({ ...c, diff: cut(c.diff) })) }
+  : it.aggregatedOutput ? { ...it, aggregatedOutput: cut(it.aggregatedOutput) } : it;
+const clipTurn = (turn) => ({ ...turn, items: turn.items.map(clipItem) });
 const STORE = process.env.ACP_BRIDGE_STORE ?? `${HOME}/.elpis-next/elpis-claude/sessions.json`;
 async function loadStore() { return (await readJson(STORE)) ?? {}; }
 let storeChain = Promise.resolve();
@@ -172,7 +177,10 @@ class Acp {
       for (const p of this.pending.values()) p.reject({ message: this.dead });
       this.pending.clear();
     });
-    this.ready = this.call("initialize", { protocolVersion: 1, clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false } });
+    // `subagents`: each subagent Claude starts gets its own ACP session (subagent_spawned, its
+    // updates under that session, subagent_state_update), which the bridge draws as an Elpis
+    // child thread.
+    this.ready = this.call("initialize", { protocolVersion: 1, clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false, subagents: {} } });
   }
   send(msg) { this.proc.stdin.write(JSON.stringify({ jsonrpc: "2.0", ...msg }) + "\n"); }
   call(method, params) {
@@ -212,6 +220,31 @@ wss.on("connection", (ws) => {
   const notify = (method, params) => toTui({ method, params, emittedAtMs: now() });
   const engine = spawn(process.env.ELPIS_ENGINE_BIN ?? `${HOME}/.local/bin/elpis`, ["app-server"], { stdio: ["pipe", "pipe", "ignore"] });
   const threadCwd = new Map();
+  const threadSeen = new Map(); // thread id -> the engine's last Thread object for it
+  // Claude's subagents as Elpis child threads (what Left/Right and /subagents list): thread id ->
+  // { thread, lane } while this connection drew it. Finished ones are also in the store, under
+  // their own id with `parentThreadId`, so a resumed chat lists and replays them.
+  const childThreads = new Map();
+  const childThread = (c) => ({ ...c.thread, status: c.lane && !c.lane.done ? { type: "active", activeFlags: [] } : { type: "idle" }, updatedAt: Math.floor(now() / 1000) });
+  async function storedChildren(rootIds) {
+    await storeChain;
+    const out = new Map();
+    for (const [id, saved] of Object.entries(await loadStore())) if (saved?.thread && (!rootIds || rootIds.has(saved.rootThreadId))) out.set(id, { thread: saved.thread, rootThreadId: saved.rootThreadId, turns: saved.turns ?? [] });
+    for (const [id, c] of childThreads) if (!rootIds || rootIds.has(c.rootThreadId)) out.set(id, { thread: childThread(c), rootThreadId: c.rootThreadId, turns: c.lane.done ? out.get(id)?.turns ?? [] : [c.lane.turn()] });
+    return out;
+  }
+  // What the TUI asks about a child thread (thread/read when it lists or opens one) is answered
+  // here; the engine has never heard of it. Nobody types into a subagent's thread, so a
+  // thread/resume is refused and the TUI falls back to thread/read.
+  const childIds = new Set(); // every child thread id the bridge answers for
+  loadStore().then((st) => { for (const [id, saved] of Object.entries(st)) if (saved?.parentThreadId) childIds.add(id); });
+  async function answerChild(msg) {
+    const { threadId, includeTurns } = msg.params;
+    if (msg.method === "thread/resume") return toTui({ id: msg.id, error: { code: -32600, message: "a Claude subagent's thread is read-only; it is shown from thread/read" } });
+    const c = (await storedChildren(null)).get(threadId);
+    if (!c) return toTui({ id: msg.id, error: { code: -32600, message: `thread not found: ${threadId}` } });
+    toTui({ id: msg.id, result: { thread: { ...c.thread, turns: includeTurns ? c.turns : [] } } });
+  }
   const threadPolicy = new Map();
   const sessions = new Map();
   const bridgeRequests = new Map();
@@ -312,6 +345,7 @@ wss.on("connection", (ws) => {
   // preview, and thread/list leaves out threads without one, so /resume could not find them.
   // The bridge adds them, previewed by their first message, where they fall in the list's order.
   const pendingThreadList = new Map();
+  const pendingChildList = new Map(); // thread/loaded/list (null) or thread/list of a chat's descendants (its id)
   const pageFloor = new Map(); // nextCursor -> sort value of the last thread on the page before it
   const previewed = new Set(); // threads the engine lists itself
   const listField = (req) => ({ updated_at: "updatedAt", recency_at: "recencyAt" })[req.sortKey] ?? "createdAt";
@@ -328,7 +362,7 @@ wss.on("connection", (ws) => {
     const cwds = req.cwd == null ? null : [req.cwd].flat();
     const out = [];
     for (const [id, saved] of Object.entries(store)) {
-      if (id.startsWith("_") || have.has(id) || previewed.has(id) || !saved?.turns?.length) continue;
+      if (id.startsWith("_") || have.has(id) || previewed.has(id) || !saved?.turns?.length || saved.parentThreadId) continue;
       const t = (await engineCall("thread/read", { threadId: id, includeTurns: false }).catch(() => null))?.thread;
       if (!t) continue;
       if (t.preview) { previewed.add(id); continue; }
@@ -404,7 +438,7 @@ wss.on("connection", (ws) => {
     let parsed = null;
     try { parsed = JSON.parse(line); } catch {}
     const th = parsed?.result?.thread ?? parsed?.params?.thread;
-    if (th?.id && th?.cwd) threadCwd.set(th.id, th.cwd);
+    if (th?.id && th?.cwd) { threadCwd.set(th.id, th.cwd); threadSeen.set(th.id, { ...th, turns: [] }); }
     if (th?.id && parsed?.result?.approvalPolicy) threadPolicy.set(th.id, parsed.result.approvalPolicy);
     if (parsed && engineReqs.has(parsed.id) && !parsed.method) {
       const p = engineReqs.get(parsed.id); engineReqs.delete(parsed.id);
@@ -445,6 +479,23 @@ wss.on("connection", (ws) => {
         log(`items/list ${req.threadId}: +${extra.length} Claude items`);
         ws.send(JSON.stringify(parsed));
         return;
+      }
+    }
+    // A chat's Claude subagents join the engine's loaded threads (the TUI's backfill after a
+    // resume) and its descendants list (/subagents), so the TUI lists them as its own.
+    if (parsed && pendingChildList.has(parsed.id)) {
+      const ancestor = pendingChildList.get(parsed.id); pendingChildList.delete(parsed.id);
+      const data = parsed.result?.data;
+      if (Array.isArray(data)) {
+        const kids = await storedChildren(new Set(ancestor ? [ancestor] : data)).catch(() => new Map());
+        const have = new Set(data.map((d) => (typeof d === "string" ? d : d.id)));
+        const add = [...kids].filter(([id]) => !have.has(id)).map(([id, c]) => (ancestor ? c.thread : id));
+        if (add.length) {
+          data.push(...add);
+          log(`${ancestor ? "thread/list" : "thread/loaded/list"}: +${add.length} Claude subagent threads`);
+          ws.send(JSON.stringify(parsed));
+          return;
+        }
       }
     }
     if (parsed && pendingThreadList.has(parsed.id)) {
@@ -538,6 +589,98 @@ wss.on("connection", (ws) => {
     toTui({ id, method, params });
   });
 
+  // One transcript drawn from Claude's ACP updates: the chat's turn (`root`), or the turn of a
+  // subagent Claude started, in that subagent's child thread. Only the chat's own lane counts
+  // toward the chat's context and usage.
+  function newLane(threadId, turnId, cwd, root) {
+    const lane = { threadId, turnId, items: [], tools: new Map(), message: null, lastPlan: null, done: false, onIdle: () => {} };
+    const chars = (part, n) => { if (root) addChars(threadId, part, n); };
+    lane.say = (item) => {
+      lane.closeMessage();
+      notify("item/started", { item, threadId, turnId, startedAtMs: now() });
+      notify("item/completed", { item, threadId, turnId, completedAtMs: now() });
+      lane.items.push(item);
+    };
+    // A subagent's start and end, as the rows Elpis's own subagents leave in their parent's turn.
+    lane.activity = (kind, agentThreadId, name) => {
+      lane.closeMessage();
+      const item = { type: "subAgentActivity", id: randomUUID(), kind, agentThreadId, agentPath: name };
+      notify("item/completed", { item, threadId, turnId, completedAtMs: now() });
+      lane.items.push(item);
+    };
+    lane.closeMessage = () => {
+      if (!lane.message) return;
+      notify("item/completed", { item: lane.message, threadId, turnId, completedAtMs: now() });
+      lane.items.push(lane.message);
+      lane.message = null;
+    };
+    lane.turn = () => ({ id: turnId, items: [...lane.items], itemsView: "full", status: lane.done ? "completed" : "inProgress", error: null, startedAt: lane.startedAt ?? null, completedAt: null, durationMs: null });
+    lane.update = (u) => {
+      if (u.sessionUpdate === "agent_message_chunk" && u.content?.type === "text") {
+        if (!lane.message) {
+          lane.message = { type: "agentMessage", id: `msg_${randomUUID()}`, text: "", phase: null, memoryCitation: null, delivery: null, questions: null };
+          notify("item/started", { item: lane.message, threadId, turnId, startedAtMs: now() });
+        }
+        lane.message.text += u.content.text;
+        chars("agent", u.content.text.length);
+        notify("item/agentMessage/delta", { threadId, turnId, itemId: lane.message.id, delta: u.content.text });
+      } else if (u.sessionUpdate === "agent_thought_chunk" && u.content?.type === "text") {
+        chars("reasoning", u.content.text.length);
+      } else if (u.sessionUpdate === "usage_update" && typeof u.used === "number") {
+        if (!root) return;
+        lastContext.set(threadId, { used: u.used, size: u.size ?? null });
+        sendUsage(threadId, turnId, null);
+      } else if (u.sessionUpdate === "plan" && Array.isArray(u.entries)) {
+        const step = { pending: "pending", in_progress: "inProgress", completed: "completed" };
+        const plan = u.entries.map((e) => ({ step: e.content, status: step[e.status] ?? "pending" }));
+        // The adapter repeats an unchanged list (each task tool reports it twice); one row each.
+        if (JSON.stringify(plan) === lane.lastPlan) return;
+        lane.lastPlan = JSON.stringify(plan);
+        notify("turn/plan/updated", { threadId, turnId, explanation: null, plan });
+      } else if (u.sessionUpdate === "tool_call" || u.sessionUpdate === "tool_call_update") {
+        let t = lane.tools.get(u.toolCallId);
+        if (!t) {
+          if (u.sessionUpdate !== "tool_call") return;
+          lane.closeMessage();
+          t = { name: u.kind, title: null, raw: {}, response: null, text: null, diffs: [], status: "inProgress", declined: false, shown: false, start: now(), end: null };
+          lane.tools.set(u.toolCallId, t);
+        }
+        const cc = u._meta?.claudeCode;
+        if (cc?.toolName) t.name = cc.toolName;
+        if (u.title) t.title = u.title;
+        if (u.rawInput && Object.keys(u.rawInput).length) t.raw = u.rawInput;
+        if (cc?.toolResponse) t.response = cc.toolResponse;
+        for (const c of u.content ?? []) { if (c.type === "diff") t.diffs.push(c); else if (c.content?.type === "text") t.text = c.content.text; }
+        const finished = u.status === "completed" || u.status === "failed";
+        if (finished) { t.status = u.status; t.end = now(); lane.onIdle(); }
+        if (/^(TodoWrite|Task(Create|Update|List|Get))$/.test(t.name)) return; // drawn as the plan
+        // Draw the row once the real command is known; edits wait for their diff.
+        if (!t.shown && Object.keys(t.raw).length && !EDIT_TOOLS.has(t.name)) {
+          t.shown = true;
+          notify("item/started", { item: toolItem(u.toolCallId, t, cwd), threadId, turnId, startedAtMs: t.start });
+        }
+        if (finished) {
+          const item = toolItem(u.toolCallId, t, cwd);
+          if (!t.shown) { t.shown = true; notify("item/started", { item: { ...item, status: "inProgress" }, threadId, turnId, startedAtMs: t.start }); }
+          notify("item/completed", { item, threadId, turnId, completedAtMs: now() });
+          lane.items.push(item);
+          chars("toolCalls", JSON.stringify(t.raw).length);
+          chars("toolResults", (item.aggregatedOutput ?? item.changes?.map((c) => c.diff).join("") ?? "").length);
+        }
+      }
+    };
+    // The open message and any row still running are closed, so nothing spins forever.
+    lane.end = () => {
+      lane.closeMessage();
+      for (const [id, t] of lane.tools) {
+        if (!t.shown || t.end) continue;
+        t.status = "failed"; t.end = now();
+        notify("item/completed", { item: toolItem(id, t, cwd), threadId, turnId, completedAtMs: now() });
+      }
+    };
+    return lane;
+  }
+
   async function claudeTurn(req) {
     const { threadId, input = [] } = req.params;
     const turnId = randomUUID();
@@ -556,26 +699,22 @@ wss.on("connection", (ws) => {
     notify("item/started", { item: userItem, threadId, turnId, startedAtMs: now() });
     notify("item/completed", { item: userItem, threadId, turnId, completedAtMs: now() });
 
-    const items = [];
-    let message = null;
-    let lastPlan = null;
-    const tools = new Map();
-    const closeMessage = () => {
-      if (!message) return;
-      notify("item/completed", { item: message, threadId, turnId, completedAtMs: now() });
-      items.push(message);
-      message = null;
-    };
+    const cwd = threadCwd.get(threadId) ?? process.cwd();
+    const lane = newLane(threadId, turnId, cwd, true);
+    const { items, tools, closeMessage } = lane;
+    // Claude's subagents in this turn: ACP session -> the child thread's lane.
+    const subLanes = new Map();
+    const busy = () => [...tools.values()].some((t) => !t.end) || [...subLanes.values()].some((l) => !l.done);
     // The running turn, from its first moment, so a steer or a stop during setup finds it.
     let sessionReady;
     const turnState = { threadId, turnId, sessionId: null, items, closeMessage, cancelled: false, ready: new Promise((r) => { sessionReady = r; }), toolsIdle: [] };
-    // Claude Code takes a steer at once and drops a tool that is still running, so a steer
-    // waits for the running tools, as Claude Code's own queue does.
-    turnState.whenToolsIdle = () => ([...tools.values()].every((t) => t.end) ? Promise.resolve() : new Promise((r) => turnState.toolsIdle.push(r)));
+    // Claude Code takes a steer at once and drops a tool that is still running (a subagent too),
+    // so a steer waits for the running tools, as Claude Code's own queue does.
+    turnState.whenToolsIdle = () => (!busy() ? Promise.resolve() : new Promise((r) => turnState.toolsIdle.push(r)));
+    lane.onIdle = () => { if (!busy()) turnState.toolsIdle.splice(0).forEach((r) => r()); };
     active = turnState;
     let status = "completed";
     let error = null;
-    const cwd = threadCwd.get(threadId) ?? process.cwd();
     const agent = agentOf(claudeModel.get(threadId)) ?? AGENTS[0];
     try {
       const acp = await ensureAcp(agent);
@@ -637,63 +776,60 @@ wss.on("connection", (ws) => {
       if (effort && (!known || known.levels.some((l) => l.reasoningEffort === effort))) await acp.call("session/set_config_option", { sessionId, configId: "effort", value: effort }).catch((e) => log(`effort ${effort}: ${e.message}`));
       turnState.sessionId = sessionId;
       sessionReady(sessionId);
-      acp.onUpdate = ({ update: u }) => {
-        if (u.sessionUpdate === "agent_message_chunk" && u.content?.type === "text") {
-          if (!message) {
-            message = { type: "agentMessage", id: `msg_${randomUUID()}`, text: "", phase: null, memoryCitation: null, delivery: null, questions: null };
-            notify("item/started", { item: message, threadId, turnId, startedAtMs: now() });
-          }
-          message.text += u.content.text;
-          addChars(threadId, "agent", u.content.text.length);
-          firstTokenAt ??= now();
-          notify("item/agentMessage/delta", { threadId, turnId, itemId: message.id, delta: u.content.text });
-        } else if (u.sessionUpdate === "agent_thought_chunk" && u.content?.type === "text") {
-          addChars(threadId, "reasoning", u.content.text.length);
-        } else if (u.sessionUpdate === "usage_update" && typeof u.used === "number") {
-          lastContext.set(threadId, { used: u.used, size: u.size ?? null });
-          sendUsage(threadId, turnId, null);
-        } else if (u.sessionUpdate === "plan" && Array.isArray(u.entries)) {
-          const step = { pending: "pending", in_progress: "inProgress", completed: "completed" };
-          const plan = u.entries.map((e) => ({ step: e.content, status: step[e.status] ?? "pending" }));
-          // The adapter repeats an unchanged list (each task tool reports it twice); one row each.
-          if (JSON.stringify(plan) === lastPlan) return;
-          lastPlan = JSON.stringify(plan);
-          notify("turn/plan/updated", { threadId, turnId, explanation: null, plan });
-        } else if (u.sessionUpdate === "tool_call" || u.sessionUpdate === "tool_call_update") {
-          let t = tools.get(u.toolCallId);
-          if (!t) {
-            if (u.sessionUpdate !== "tool_call") return;
-            closeMessage();
-            t = { name: u.kind, title: null, raw: {}, response: null, text: null, diffs: [], status: "inProgress", declined: false, shown: false, start: now(), end: null };
-            tools.set(u.toolCallId, t);
-          }
-          const cc = u._meta?.claudeCode;
-          if (cc?.toolName) t.name = cc.toolName;
-          if (u.title) t.title = u.title;
-          if (u.rawInput && Object.keys(u.rawInput).length) t.raw = u.rawInput;
-          if (cc?.toolResponse) t.response = cc.toolResponse;
-          for (const c of u.content ?? []) { if (c.type === "diff") t.diffs.push(c); else if (c.content?.type === "text") t.text = c.content.text; }
-          const finished = u.status === "completed" || u.status === "failed";
-          if (finished) { t.status = u.status; t.end = now(); }
-          if (finished && [...tools.values()].every((x) => x.end)) turnState.toolsIdle.splice(0).forEach((r) => r());
-          if (/^(TodoWrite|Task(Create|Update|List|Get))$/.test(t.name)) return; // drawn as the plan
-          // Draw the row once the real command is known; edits wait for their diff.
-          if (!t.shown && Object.keys(t.raw).length && !EDIT_TOOLS.has(t.name)) {
-            t.shown = true;
-            notify("item/started", { item: toolItem(u.toolCallId, t, cwd), threadId, turnId, startedAtMs: t.start });
-          }
-          if (finished) {
-            const item = toolItem(u.toolCallId, t, cwd);
-            if (!t.shown) { t.shown = true; notify("item/started", { item: { ...item, status: "inProgress" }, threadId, turnId, startedAtMs: t.start }); }
-            notify("item/completed", { item, threadId, turnId, completedAtMs: now() });
-            items.push(item);
-            addChars(threadId, "toolCalls", JSON.stringify(t.raw).length);
-            addChars(threadId, "toolResults", (item.aggregatedOutput ?? item.changes?.map((c) => c.diff).join("") ?? "").length);
-          }
-        }
+      // The chat's updates draw into this turn; a subagent's come under its own ACP session and
+      // draw into its child thread (see spawnSubagent).
+      acp.onUpdate = ({ sessionId: sid, update: u }) => {
+        if (u.sessionUpdate === "subagent_spawned") { spawnSubagent(u, sid === sessionId ? lane : subLanes.get(sid) ?? lane); return; }
+        if (u.sessionUpdate === "subagent_state_update") { finishSubagent(subLanes.get(u.subagentSessionId), u.state); return; }
+        const into = sid === sessionId ? lane : subLanes.get(sid);
+        if (!into) { log(`update for unknown session ${sid}: ${u.sessionUpdate}`); return; }
+        if (into === lane && u.sessionUpdate === "agent_message_chunk") firstTokenAt ??= now();
+        into.update(u);
       };
+      const spawnSubagent = (u, parent) => {
+        if (!u.subagentSessionId || subLanes.has(u.subagentSessionId)) return;
+        const childId = randomUUID();
+        const name = u.name?.trim() || "Claude subagent";
+        const task = (u.prompt ?? u.task ?? "").trim();
+        const base = threadSeen.get(threadId) ?? {};
+        const t = Math.floor(now() / 1000);
+        const depth = (parent.depth ?? 0) + 1;
+        const thread = {
+          ...base, id: childId, turns: [], forkedFromId: null, parentThreadId: parent.threadId, preview: task.slice(0, 200), ephemeral: false,
+          name, agentNickname: name, agentRole: "Claude", canAcceptDirectInput: false, threadSource: "subagent", historyMode: "legacy",
+          source: { subAgent: { thread_spawn: { parent_thread_id: parent.threadId, depth, agent_path: null, agent_nickname: name, agent_role: "Claude" } } },
+          model: claudeModel.get(threadId) ?? base.model ?? null, createdAt: t, updatedAt: t, recencyAt: t, path: null,
+        };
+        const sub = newLane(childId, randomUUID(), cwd, false);
+        sub.depth = depth; sub.name = name; sub.parent = parent; sub.startedAt = t;
+        subLanes.set(u.subagentSessionId, sub);
+        childThreads.set(childId, { thread, lane: sub, rootThreadId: threadId });
+        childIds.add(childId);
+        log(`claude subagent "${name}" (session ${u.subagentSessionId}) -> child thread ${childId} of ${parent.threadId}`);
+        notify("thread/started", { thread: { ...thread, status: { type: "active", activeFlags: [] } } });
+        parent.activity("started", childId, name);
+        notify("thread/status/changed", { threadId: childId, status: { type: "active", activeFlags: [] } });
+        notify("turn/started", { threadId: childId, turn: { id: sub.turnId, items: [], itemsView: "notLoaded", status: "inProgress", error: null, startedAt: t, completedAt: null, durationMs: null } });
+        sub.say({ type: "userMessage", id: randomUUID(), clientId: null, content: [{ type: "text", text: task || name, text_elements: [] }] });
+      };
+      const finishSubagent = (sub, state) => {
+        if (!sub || sub.done) return;
+        sub.end();
+        sub.done = true;
+        const turnStatus = state === "completed" ? "completed" : state === "failed" ? "failed" : "interrupted";
+        const completedAt = Math.floor(now() / 1000);
+        const record = { ...sub.turn(), status: turnStatus, completedAt, durationMs: (completedAt - sub.startedAt) * 1000 };
+        notify("turn/completed", { threadId: sub.threadId, turn: { ...record, itemsView: "summary" } });
+        notify("thread/status/changed", { threadId: sub.threadId, status: { type: "idle" } });
+        sub.parent.activity(state === "completed" ? "completed" : "interrupted", sub.threadId, sub.name);
+        log(`claude subagent "${sub.name}" ${state} (child thread ${sub.threadId})`);
+        const thread = { ...childThreads.get(sub.threadId).thread, status: { type: "idle" } };
+        updateStore((st) => { st[sub.threadId] = { parentThreadId: sub.parent.threadId, rootThreadId: threadId, thread, turns: [clipTurn(record)] }; });
+        lane.onIdle();
+      };
+      turnState.endSubagents = () => { for (const sub of subLanes.values()) finishSubagent(sub, "cancelled"); };
       acp.onPermission = async (p) => {
-        const t = tools.get(p.toolCall?.toolCallId);
+        const t = [lane, ...subLanes.values()].map((l) => l.tools.get(p.toolCall?.toolCallId)).find(Boolean);
         const what = (t && t.name === "Bash" && t.raw.command) || p.toolCall?.title || t?.title || "a tool";
         const decision = await askTui("item/commandExecution/requestApproval", {
           kind: "command", threadId, turnId, itemId: p.toolCall?.toolCallId ?? randomUUID(), startedAtMs: now(),
@@ -746,6 +882,7 @@ wss.on("connection", (ws) => {
         if (it.type === "userMessage") { flush(); say("user", inputSummary(it.content)); }
         else if (it.type === "commandExecution") used.push(plainCommand(it.command));
         else if (it.type === "fileChange") used.push(`edited ${it.changes.map((c) => c.path).join(", ")}`);
+        else if (it.type === "subAgentActivity" && it.kind === "started") used.push(`started the subagent "${it.agentPath}"`);
         else if (it.type === "agentMessage" && it.text.trim()) { flush(); say("assistant", it.text.trim()); }
       }
       flush();
@@ -757,14 +894,10 @@ wss.on("connection", (ws) => {
       error = { message: `Claude (ACP) error: ${e?.message ?? JSON.stringify(e)}`, codexErrorInfo: null, additionalDetails: null };
       log(`turn error ${JSON.stringify(e)}`);
     }
-    closeMessage();
     sessionReady(null);
-    // A row still running when the turn ends (stop, error) must not spin forever.
-    for (const [id, t] of tools) {
-      if (!t.shown || t.end) continue;
-      t.status = "failed"; t.end = now();
-      notify("item/completed", { item: toolItem(id, t, cwd), threadId, turnId, completedAtMs: now() });
-    }
+    // A subagent or row still running when the turn ends (stop, error) must not spin forever.
+    turnState.endSubagents?.();
+    lane.end();
     if (req.kind === "review") {
       const exit = { type: "exitedReviewMode", id: randomUUID(), review: items.filter((i) => i.type === "agentMessage").map((i) => i.text).join("\n\n").trim() };
       notify("item/started", { item: exit, threadId, turnId, startedAtMs: now() });
@@ -775,10 +908,7 @@ wss.on("connection", (ws) => {
     turnState.toolsIdle.splice(0).forEach((r) => r());
     const completedAt = Math.floor(now() / 1000);
     {
-      const cut = (s) => (s.length > 4000 ? s.slice(0, 4000) + "\n…" : s);
-      const clip = (it) => it.type === "fileChange" ? { ...it, changes: it.changes.map((c) => ({ ...c, diff: cut(c.diff) })) }
-        : it.aggregatedOutput ? { ...it, aggregatedOutput: cut(it.aggregatedOutput) } : it;
-      const record = { id: turnId, items: [userItem, ...items.map(clip)], itemsView: "full", status, error, startedAt, completedAt, durationMs: (completedAt - startedAt) * 1000 };
+      const record = clipTurn({ id: turnId, items: [userItem, ...items], itemsView: "full", status, error, startedAt, completedAt, durationMs: (completedAt - startedAt) * 1000 });
       await updateStore((st) => { st[threadId] = { ...st[threadId], turns: [...(st[threadId]?.turns ?? []), record].slice(-200) }; });
     }
     notify("turn/completed", { threadId, turn: { id: turnId, items, itemsView: "summary", status, error, startedAt, completedAt, durationMs: (completedAt - startedAt) * 1000 } });
@@ -946,6 +1076,9 @@ wss.on("connection", (ws) => {
       return;
     }
     if (process.env.ACP_BRIDGE_DEBUG && msg.method && (process.env.ACP_BRIDGE_DEBUG === "all" || !/^thread\/(read|turns\/list|list|loaded)/.test(msg.method))) log(`tui-> ${line.slice(0, 600)}`);
+    if ((msg.method === "thread/read" || msg.method === "thread/resume") && childIds.has(msg.params?.threadId)) { answerChild(msg); return; }
+    if (msg.method === "thread/loaded/list") pendingChildList.set(msg.id, null);
+    if (msg.method === "thread/list" && msg.params?.ancestorThreadId && !msg.params.cursor) pendingChildList.set(msg.id, msg.params.ancestorThreadId);
     if (msg.method === "model/list") pendingModelList.add(msg.id);
     if (msg.method === "thread/resume") pendingResume.add(msg.id);
     if (msg.method === "config/read") pendingConfigRead.add(msg.id);
