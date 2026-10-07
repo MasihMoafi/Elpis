@@ -157,3 +157,41 @@ async fn context_links_the_rollout_as_a_readable_local_report() -> anyhow::Resul
     assert!(!report.contains("file://"), "{report}");
     Ok(())
 }
+
+#[tokio::test]
+async fn a_claude_subscription_model_shows_claude_as_its_provider() {
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    chat.config.model_provider_id = "openrouter".to_string();
+    chat.thread_id = Some(ThreadId::new());
+    let status_text = |chat: &mut ChatWidget| {
+        lines_to_single_string(
+            &chat
+                .status_output_cell(
+                    /*refreshing_rate_limits*/ false, /*request_id*/ None,
+                )
+                .display_lines(/*width*/ 120),
+        )
+    };
+
+    chat.set_model("claude/opus");
+    assert_eq!(
+        chat.dashboard_models().chat.provider.as_deref(),
+        Some("Claude subscription")
+    );
+    assert!(
+        status_text(&mut chat).contains("Claude subscription"),
+        "{}",
+        status_text(&mut chat)
+    );
+    // The configured provider still drives /model and the key checks.
+    assert_eq!(chat.config.model_provider_id, "openrouter");
+
+    chat.set_model("apodex/x");
+    assert_eq!(
+        chat.dashboard_models().chat.provider.as_deref(),
+        Some("openrouter")
+    );
+    let text = status_text(&mut chat);
+    assert!(!text.contains("Claude subscription"), "{text}");
+    assert!(text.contains("openrouter"), "{text}");
+}

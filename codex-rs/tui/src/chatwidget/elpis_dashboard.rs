@@ -38,6 +38,12 @@ use crate::elpis_app_event::ElpisAppEvent;
 use crate::elpis_ledger_events::ContextUsageTranscriptTotals;
 use crate::legacy_core::elpis_context::ContinuitySource;
 
+/// Chat models with this prefix are Claude subscription models served by the Claude bridge
+/// (`tools/elpis-claude/acp-bridge.mjs`), not by the configured provider.
+const CLAUDE_MODEL_PREFIX: &str = "claude/";
+/// The provider name shown for a Claude subscription model.
+const CLAUDE_SUBSCRIPTION_PROVIDER: &str = "Claude subscription";
+
 /// What the ChatWidget keeps for the dashboard.
 #[derive(Debug, Default)]
 pub(crate) struct DashboardWidgetState {
@@ -181,6 +187,17 @@ impl ChatWidget {
         );
     }
 
+    /// The provider a person sees for the chat model. A Claude subscription model is served by
+    /// the Claude bridge, so it shows as such; `config.model_provider_id` stays the configured
+    /// provider because `/model` and the key checks read it.
+    pub(crate) fn displayed_chat_provider(&self) -> &str {
+        if self.current_model().starts_with(CLAUDE_MODEL_PREFIX) {
+            CLAUDE_SUBSCRIPTION_PROVIDER
+        } else {
+            self.config.model_provider_id.as_str()
+        }
+    }
+
     /// The models the Models tab shows: the chat model, the background model and the Smart
     /// Prune model, each with the provider that serves it. `None` is the built-in default.
     pub(crate) fn dashboard_models(&self) -> DashboardModels {
@@ -191,7 +208,7 @@ impl ChatWidget {
         .unwrap_or_default();
         DashboardModels {
             chat: DashboardModelChoice {
-                provider: Some(session_provider.clone()),
+                provider: Some(self.displayed_chat_provider().to_string()),
                 model: Some(self.current_model().to_string()),
             },
             background: DashboardModelChoice {
