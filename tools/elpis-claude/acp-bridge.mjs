@@ -22,6 +22,15 @@ const REVIEW_RULES = (() => {
   } catch { return "# Review guidelines:\nYou are reviewing a proposed code change. Flag only real, actionable bugs the author would want fixed."; }
 })();
 const REVIEW_FORMAT = "Report in Markdown. For each finding write its priority as [P0] to [P3], a short title and `path:line`, then one or two sentences on why it is wrong. End with `Overall: correct` or `Overall: incorrect` and one sentence. If nothing is wrong, say so. Do not change any files.";
+// Hidden structured requests (chat titles, /recap) are short; Haiku answers them.
+const STRUCTURED_MODEL = "haiku";
+const STRUCTURED_SYSTEM = "You fulfil one request and answer with exactly one JSON object that matches the JSON Schema given with it. No prose, no Markdown, no code fences.";
+// The JSON object in a reply, re-serialized; null when there is none.
+function jsonIn(text) {
+  const t = unfence(text.trim());
+  for (const s of [t, t.slice(t.indexOf("{"), t.lastIndexOf("}") + 1)]) { try { const v = JSON.parse(s); if (v && typeof v === "object") return JSON.stringify(v); } catch {} }
+  return null;
+}
 const AGENTS_MCP = new URL("./elpis-agents-mcp.mjs", import.meta.url).pathname;
 const mcpServersFor = () => process.env.ACP_BRIDGE_NO_AGENTS ? [] : [{
   name: "elpis-agents", command: process.execPath, args: [AGENTS_MCP],
@@ -144,6 +153,9 @@ class Acp {
     this.pending = new Map();
     this.onUpdate = null;
     this.onPermission = null;
+    // Sessions with their own handlers (hidden structured requests), so they never draw into
+    // the chat's running turn.
+    this.bySession = new Map();
     lineReader(this.proc.stdout, (line) => this.#handle(JSON.parse(line)));
     this.proc.on("exit", (code) => {
       this.dead = `the ${agent.label} ACP adapter exited (code ${code}). Is it installed at ${agent.adapter}?`;
@@ -167,9 +179,10 @@ class Acp {
       this.pending.delete(msg.id);
       if (p) msg.error ? p.reject(msg.error) : p.resolve(msg.result);
     } else if (msg.method === "session/update") {
-      this.onUpdate?.(msg.params);
+      (this.bySession.get(msg.params?.sessionId)?.onUpdate ?? this.onUpdate)?.(msg.params);
     } else if (msg.method === "session/request_permission") {
-      const optionId = await (this.onPermission ? this.onPermission(msg.params) : null);
+      const own = this.bySession.get(msg.params?.sessionId);
+      const optionId = await (own ? null : this.onPermission ? this.onPermission(msg.params) : null);
       this.send({ id: msg.id, result: { outcome: optionId ? { outcome: "selected", optionId } : { outcome: "cancelled" } } });
     } else if (msg.id !== undefined) {
       this.send({ id: msg.id, error: { code: -32601, message: `client does not support ${msg.method}` } });
@@ -290,11 +303,26 @@ wss.on("connection", (ws) => {
       return parts.join("\n\n");
     } catch (e) { log(`elpis instructions for ${threadId}: ${e.message ?? JSON.stringify(e)}`); return ""; }
   }
+  // A fork of a Claude chat (/fork, /side, /btw) starts a fresh Claude session; the parent's
+  // Claude turns up to the fork point live only in the store, under the parent, so the fork
+  // inherits them. The link is kept in memory, and in the store for forks that outlive the chat.
+  const forkParent = new Map();
+  function claudeTurnsOf(store, threadId, depth = 0) {
+    const own = store[threadId]?.turns ?? [];
+    const link = forkParent.get(threadId) ?? store[threadId]?.forkOf;
+    if (!link || depth > 8) return own;
+    const parent = claudeTurnsOf(store, link.threadId, depth + 1);
+    const at = (id) => (id ? parent.find((t) => t.id === id)?.startedAt : undefined);
+    const before = at(link.beforeTurnId), last = at(link.lastTurnId);
+    const kept = parent.filter((t) => (t.startedAt ?? 0) <= link.at && (before == null || (t.startedAt ?? 0) < before) && (last == null || (t.startedAt ?? 0) <= last));
+    const have = new Set(own.map((t) => t.id));
+    return [...kept.filter((t) => !have.has(t.id)), ...own];
+  }
   async function priorTranscript(threadId) {
     try {
       const r = await engineCall("thread/turns/list", { threadId, limit: 30, sortDirection: "desc", itemsView: "full" }).catch(() => ({ data: [] }));
       await storeChain;
-      const stored = (await loadStore())[threadId]?.turns ?? [];
+      const stored = claudeTurnsOf(await loadStore(), threadId);
       const have = new Set((r.data ?? []).map((t) => t.id));
       const all = [...(r.data ?? []), ...stored.filter((t) => !have.has(t.id))].sort((a, b) => (a.startedAt ?? 0) - (b.startedAt ?? 0));
       const lines = [];
@@ -373,6 +401,10 @@ wss.on("connection", (ws) => {
       if (tid && pick?.model) {
         claudeModel.set(tid, pick.model);
         if (pick.effort) claudeEffort.set(tid, pick.effort);
+        if (pick.forkOf) {
+          forkParent.set(tid, pick.forkOf);
+          if (!parsed.result.thread?.ephemeral) updateStore((st) => { st[tid] = { ...st[tid], forkOf: pick.forkOf }; });
+        }
         parsed.result.model = pick.model;
         parsed.result.reasoningEffort = pick.effort ?? null;
         log(`new thread ${tid} -> ${pick.model}`);
@@ -735,6 +767,60 @@ wss.on("connection", (ws) => {
     claudeTurn({ id: msg.id, kind: "review", reviewHint: hint, params: { threadId, input: [{ type: "text", text: `${REVIEW_RULES}\n\n${REVIEW_FORMAT}\n\n${ask}`, text_elements: [] }] } });
   }
 
+  // Chat titles and /recap on a Claude chat: the TUI starts a hidden ephemeral thread on the
+  // chat's model and asks for JSON. A one-off Claude session with no tools, no MCP servers and
+  // no user settings answers it; nothing is recorded in the store or the engine.
+  const structured = new Map(); // hidden thread -> its Claude session
+  async function structuredClaude(msg) {
+    const { threadId, input = [], outputSchema = null } = msg.params;
+    const turnId = randomUUID();
+    const startedAt = Math.floor(now() / 1000);
+    const turn = { id: turnId, items: [], itemsView: "notLoaded", status: "inProgress", error: null, startedAt: null, completedAt: null, durationMs: null };
+    toTui({ id: msg.id, result: { turn } });
+    notify("turn/started", { threadId, turn: { ...turn, startedAt } });
+    const items = [];
+    let status = "completed", error = null, sessionId = null, a = null;
+    try {
+      // Hidden requests always go to Claude (Haiku), whichever subscription the chat uses.
+      a = await ensureAcp(AGENTS[0]);
+      sessionId = (await a.call("session/new", { cwd: threadCwd.get(threadId) ?? process.cwd(), mcpServers: [], _meta: { systemPrompt: STRUCTURED_SYSTEM, claudeCode: { options: { tools: [], settingSources: [] } } } })).sessionId;
+      let text = "";
+      a.bySession.set(sessionId, { onUpdate: ({ update: u }) => { if (u.sessionUpdate === "agent_message_chunk" && u.content?.type === "text") text += u.content.text; } });
+      structured.set(threadId, sessionId);
+      await a.call("session/set_config_option", { sessionId, configId: "model", value: STRUCTURED_MODEL });
+      const ask = outputSchema ? `${inputSummary(input)}\n\nAnswer with only one JSON object that matches this JSON Schema:\n${JSON.stringify(outputSchema)}` : inputSummary(input);
+      const r = await a.call("session/prompt", { sessionId, prompt: [{ type: "text", text: ask }] });
+      if (r.stopReason === "cancelled") status = "interrupted";
+      else {
+        const answer = outputSchema ? jsonIn(text) : text.trim();
+        if (!answer) throw new Error(`Claude did not answer with JSON: ${text.slice(0, 200)}`);
+        const item = { type: "agentMessage", id: `msg_${randomUUID()}`, text: answer, phase: null, memoryCitation: null, delivery: null, questions: null };
+        notify("item/started", { item, threadId, turnId, startedAtMs: now() });
+        notify("item/completed", { item, threadId, turnId, completedAtMs: now() });
+        items.push(item);
+      }
+      log(`structured request on Claude ${STRUCTURED_MODEL} for hidden thread ${threadId}: ${status}`);
+    } catch (e) {
+      status = "failed";
+      error = { message: `Claude (ACP) error: ${e?.message ?? JSON.stringify(e)}`, codexErrorInfo: null, additionalDetails: null };
+      log(`structured request error ${JSON.stringify(e?.message ?? e)}`);
+    }
+    structured.delete(threadId);
+    if (sessionId) { a?.bySession.delete(sessionId); a?.call("session/delete", { sessionId }).catch(() => {}); }
+    const completedAt = Math.floor(now() / 1000);
+    notify("turn/completed", { threadId, turn: { id: turnId, items, itemsView: "summary", status, error, startedAt, completedAt, durationMs: (completedAt - startedAt) * 1000 } });
+  }
+
+  // /goal and queued messages make the engine start turns on its own model, which a Claude chat
+  // must not do silently: refuse, and say why in the chat.
+  function refuseOnClaude(msg, what) {
+    const threadId = msg.params.threadId;
+    const message = `${what} is not available on Claude chats yet: Elpis would run it on its own model, not ${claudeModel.get(threadId)}. Switch this chat to an Elpis model with /model to use it.`;
+    log(`refused ${msg.method} on Claude thread ${threadId}`);
+    notify("warning", { threadId, message });
+    toTui({ id: msg.id, error: { code: -32600, message } });
+  }
+
   // A message sent while Claude works joins that reply instead of stopping it. With no
   // running Claude turn, the TUI's "no active turn to steer" fallback starts a new turn.
   async function steerClaude(msg) {
@@ -776,7 +862,8 @@ wss.on("connection", (ws) => {
     if (msg.method === "config/read") pendingConfigRead.add(msg.id);
     if (msg.method === "thread/fork" && claudeModel.has(msg.params?.threadId)) {
       const src = msg.params.threadId;
-      pendingStart.set(msg.id, { model: claudeModel.get(src), effort: claudeEffort.get(src) ?? null });
+      const forkOf = { threadId: src, at: Math.floor(now() / 1000), beforeTurnId: msg.params.beforeTurnId ?? null, lastTurnId: msg.params.lastTurnId ?? null };
+      pendingStart.set(msg.id, { model: claudeModel.get(src), effort: claudeEffort.get(src) ?? null, forkOf });
     }
     if (msg.method === "thread/start") { startThread(msg); return; }
     if (msg.method === "thread/revert") { revertThread(msg); return; }
@@ -815,7 +902,8 @@ wss.on("connection", (ws) => {
         claudeModel.set(tid, msg.params.model);
         if (msg.params.effort) claudeEffort.set(tid, msg.params.effort);
       }
-      if (claudeModel.has(tid) && !String(msg.id).startsWith("temporary-structured-turn")) {
+      if (claudeModel.has(tid) && String(msg.id).startsWith("temporary-structured-turn")) { structuredClaude(msg); return; }
+      if (claudeModel.has(tid)) {
         log(`subscription turn for thread ${tid} (${claudeModel.get(tid)})`);
         claudeTurn(msg);
         return;
@@ -831,6 +919,13 @@ wss.on("connection", (ws) => {
       claudeTurn({ kind: "compact", params: { threadId: msg.params.threadId, input: [{ type: "text", text: `/compact${extra}`, text_elements: [] }] } });
       return;
     }
+    if (msg.method === "turn/interrupt" && structured.has(msg.params?.threadId)) {
+      acps.get(AGENTS[0].key)?.send({ method: "session/cancel", params: { sessionId: structured.get(msg.params.threadId) } });
+      toTui({ id: msg.id, result: {} });
+      return;
+    }
+    if (msg.method === "thread/goal/set" && claudeModel.has(msg.params?.threadId) && (msg.params.status ?? "active") === "active") { refuseOnClaude(msg, "/goal"); return; }
+    if (msg.method === "thread/queue/add" && claudeModel.has(msg.params?.threadId)) { refuseOnClaude(msg, "Queuing a message for later"); return; }
     if (msg.method === "turn/interrupt" && active && msg.params?.threadId === active.threadId) {
       active.cancelled = true;
       if (active.sessionId) active.acp?.send({ method: "session/cancel", params: { sessionId: active.sessionId } });
@@ -843,5 +938,5 @@ wss.on("connection", (ws) => {
     }
     engine.stdin.write(line + "\n");
   });
-  ws.on("close", async () => { await storeChain; engine.kill(); acp?.kill(); log("tui disconnected"); });
+  ws.on("close", async () => { await storeChain; engine.kill(); for (const a of acps.values()) a.kill(); log("tui disconnected"); });
 });

@@ -328,6 +328,51 @@ for (const s of scenarios) {
     flash?.displayName?.includes("Antigravity") && r.text.includes(word) && ran.includes("ls") && r2.text.includes(word)
       ? console.log(`PASS antigravity (${list.filter((m) => m.id.startsWith("agy/")).length} Antigravity models; Gemini ran "ls", answered ${word} and remembered it)`)
       : fail(`antigravity: listed=${!!flash} reply=${r.text.slice(0, 80)} status=${r.status} ${JSON.stringify(r.error ?? "")} ran=${JSON.stringify(ran)} recall=${r2.text.slice(0, 60)}`);
+  } else if (s === "structured") {
+    // Chat titles and /recap on a Claude chat: the TUI starts a hidden ephemeral thread on the
+    // chat's model and asks for JSON (request id "temporary-structured-turn-…"). Claude answers;
+    // it used to go to the engine's own model.
+    const tmp = await call("thread/start", { model: process.env.E2E_MODEL ?? "claude/opus", cwd: dir, approvalPolicy: "never", sandbox: "read-only", ephemeral: true });
+    const tid = tmp.result?.thread?.id;
+    const schema = { type: "object", properties: { title: { type: "string", minLength: 1, maxLength: 36 } }, required: ["title"], additionalProperties: false };
+    const from = seen.length;
+    const done = new Promise((r) => { const l = (m) => { if (m.method === "turn/completed" && m.params.threadId === tid) { listeners.delete(l); r(m.params.turn); } }; listeners.add(l); setTimeout(() => r({ status: "timeout" }), 60000); });
+    const t0 = Date.now();
+    const ts = await new Promise((r) => { const id = `temporary-structured-turn-${Date.now()}`; pending.set(id, r); ws.send(JSON.stringify({ id, method: "turn/start", params: { threadId: tid, input: [{ type: "text", text: "Generate a concise task title of at most 36 characters. Do not answer the request.\n\nUser prompt:\nPlease fix the login page so that the password reset email is sent again.", text_elements: [] }], outputSchema: schema } })); });
+    const t = await done;
+    const secs = ((Date.now() - t0) / 1000).toFixed(1);
+    const msg = seen.slice(from).filter((m) => m.method === "item/completed" && m.params.threadId === tid && m.params.item?.type === "agentMessage").at(-1)?.params?.item?.text ?? "";
+    let title = null; try { title = JSON.parse(msg).title; } catch {}
+    const { readFileSync: rf, existsSync: ex } = await import("node:fs");
+    const store = ex(storeEnv.ACP_BRIDGE_STORE) ? JSON.parse(rf(storeEnv.ACP_BRIDGE_STORE, "utf8")) : {};
+    !ts.error && t.status === "completed" && typeof title === "string" && title.length >= 1 && title.length <= 36 && /password|reset|login/i.test(title) && !store[tid]?.turns?.length && Date.now() - t0 < 30000
+      ? console.log(`PASS structured (Claude titled the chat "${title}" as JSON in ${secs}s; nothing recorded)`)
+      : fail(`structured: start=${JSON.stringify(ts.error ?? ts.result?.turn?.status)} status=${t.status} ${JSON.stringify(t.error ?? "")} text=${msg.slice(0, 120)} recorded=${store[tid]?.turns?.length ?? 0} in ${secs}s`);
+  } else if (s === "goal") {
+    // /goal on a Claude chat: the engine would pursue the goal with its own model, so the bridge
+    // refuses with a visible reason, and no engine turn starts.
+    const from = seen.length;
+    const g = await call("thread/goal/set", { threadId, objective: "Write the numbers 1 to 3.", status: "active" });
+    await new Promise((r) => setTimeout(r, 6000));
+    const later = seen.slice(from).filter((m) => m.params?.threadId === threadId);
+    const engineTurn = later.some((m) => m.method === "turn/started");
+    const warned = later.find((m) => m.method === "warning")?.params?.message ?? "";
+    const q = await call("thread/queue/add", { threadId, input: [{ type: "text", text: "queued", text_elements: [] }], clientUserMessageId: "q-1" });
+    g.error && /Claude/.test(g.error.message) && /Claude/.test(warned) && !engineTurn && q.error && /Claude/.test(q.error.message)
+      ? console.log(`PASS goal (refused: "${warned.slice(0, 90)}…"; no engine turn)`)
+      : fail(`goal: reply=${JSON.stringify(g.error ?? g.result)?.slice(0, 160)} warning=${warned.slice(0, 80)} engine-turn=${engineTurn} queue=${JSON.stringify(q.error ?? q.result)?.slice(0, 120)}`);
+  } else if (s === "side") {
+    // /side and /btw on a Claude chat: an ephemeral fork (on the chat's Claude model) that knows
+    // the chat so far and answers with Claude.
+    const word = `SIDE-${Math.floor(Math.random() * 9000 + 1000)}`;
+    await turn(threadId, [{ type: "text", text: `Remember the word ${word}. Reply with just OK.`, text_elements: [] }]);
+    const fk = await call("thread/fork", { threadId, model: process.env.E2E_MODEL ?? "claude/opus", ephemeral: true, excludeTurns: true, cwd: dir, approvalPolicy: "never", sandbox: "danger-full-access", developerInstructions: "You are a side-conversation assistant, separate from the main thread." });
+    const child = fk.result?.thread?.id;
+    const inj = child ? await call("thread/inject_items", { threadId: child, items: [{ type: "message", role: "user", content: [{ type: "input_text", text: "Side conversation boundary. Everything before this boundary is inherited history from the parent thread. Only messages after it are active." }] }] }) : { error: "no fork" };
+    const r = child ? await turn(child, [{ type: "text", text: "Which word did I ask you to remember? Reply with only the word.", text_elements: [] }]) : { text: "", status: "no fork" };
+    !fk.error && fk.result?.model === (process.env.E2E_MODEL ?? "claude/opus") && !inj.error && r.status === "completed" && r.text.includes(word)
+      ? console.log(`PASS side (fork on ${fk.result.model} answered ${word} from the parent chat)`)
+      : fail(`side: fork=${JSON.stringify(fk.error ?? fk.result?.model)} inject=${JSON.stringify(inj.error ?? "ok")} status=${r.status} ${JSON.stringify(r.error ?? "")} reply=${r.text.slice(0, 120)}`);
   } else if (s === "image") {
     const word = process.env.E2E_IMAGE_WORD;
     const path = process.env.E2E_IMAGE_PATH;
