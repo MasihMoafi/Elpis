@@ -11,6 +11,11 @@ const log = (s) => { try { appendFileSync(LOG, `${new Date().toISOString().slice
 const ADAPTER = process.env.ACP_ADAPTER ?? new URL("./node_modules/@agentclientprotocol/claude-agent-acp/dist/index.js", import.meta.url).pathname;
 const CLAUDE = process.env.CLAUDE_CODE_EXECUTABLE ?? `${HOME}/.local/bin/claude`;
 const now = () => Date.now();
+const AGENTS_MCP = new URL("./elpis-agents-mcp.mjs", import.meta.url).pathname;
+const mcpServersFor = () => process.env.ACP_BRIDGE_NO_AGENTS ? [] : [{
+  name: "elpis-agents", command: process.execPath, args: [AGENTS_MCP],
+  env: [{ name: "ELPIS_ENGINE_BIN", value: process.env.ELPIS_ENGINE_BIN ?? `${HOME}/.local/bin/elpis` }],
+}];
 const MIME = { png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", gif: "image/gif", webp: "image/webp" };
 async function toAcpPrompt(input) {
   const { readFile } = await import("node:fs/promises");
@@ -326,12 +331,12 @@ wss.on("connection", (ws) => {
         const saved = live?.id ?? store[threadId]?.session ?? Object.values(store[threadId]?.sessions ?? {})[0];
         if (saved) {
           const prev = acp.onUpdate; acp.onUpdate = null;
-          try { await acp.call("session/load", { sessionId: saved, cwd, mcpServers: [], ...(_meta && { _meta }) }); sessionId = saved; log(`session ${saved} reloaded for thread ${threadId}`); }
+          try { await acp.call("session/load", { sessionId: saved, cwd, mcpServers: mcpServersFor(), ...(_meta && { _meta }) }); sessionId = saved; log(`session ${saved} reloaded for thread ${threadId}`); }
           catch (e) { log(`session reload failed: ${e.message ?? JSON.stringify(e)}`); }
           acp.onUpdate = prev;
         }
         if (!sessionId) {
-          sessionId = (await acp.call("session/new", { cwd, mcpServers: [], ...(_meta && { _meta }) })).sessionId;
+          sessionId = (await acp.call("session/new", { cwd, mcpServers: mcpServersFor(), ...(_meta && { _meta }) })).sessionId;
           freshSession = true;
           log(`session ${sessionId} for thread ${threadId} in ${cwd} (${ask ? "Elpis asks" : "full access"}, policy ${policy})`);
         }

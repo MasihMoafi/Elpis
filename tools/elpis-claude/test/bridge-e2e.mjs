@@ -129,6 +129,15 @@ for (const s of scenarios) {
     model === "claude/opus" && shown && text2.includes(word) ? console.log(`PASS resume (model ${model}, history shown, remembered ${word})`) : fail(`resume: model=${model} shown=${shown} reply=${text2}`);
     ws2.close(); b2.kill();
     process.exit();
+  } else if (s === "delegate") {
+    const { writeFileSync: wf, readFileSync } = await import("node:fs");
+    const word = `SOL-${Math.floor(Math.random() * 9000 + 1000)}`;
+    wf(join(dir, "secret.txt"), word);
+    const logBefore = (() => { try { return readFileSync("/tmp/acp-bridge/elpis-agents.log", "utf8").length; } catch { return 0; } })();
+    const r = await turn(threadId, [{ type: "text", text: "Use the elpis-agents delegate tool (model gpt-6-luna, effort low) to have that agent read secret.txt in the current folder. Do not read the file yourself. Reply with only what the agent reported.", text_elements: [] }], 300000);
+    const agentLog = (() => { try { return readFileSync("/tmp/acp-bridge/elpis-agents.log", "utf8").slice(logBefore); } catch { return ""; } })();
+    const delegated = /delegate thread=\S+ status=completed/.test(agentLog);
+    delegated && r.text.includes(word) ? console.log(`PASS delegate (Claude -> gpt-6-luna -> ${word})`) : fail(`delegate: delegated=${delegated} reply=${r.text.slice(0, 200)}`);
   } else if (s === "image") {
     const word = process.env.E2E_IMAGE_WORD;
     const path = process.env.E2E_IMAGE_PATH;
