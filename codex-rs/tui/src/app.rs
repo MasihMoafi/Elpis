@@ -898,7 +898,11 @@ impl App {
             TuiEvent::Key(_) | TuiEvent::Mouse(_) | TuiEvent::Paste(_) | TuiEvent::FocusLost
         ) {
             self.expire_pending_key_chord();
-            self.handle_draw_pre_render(tui, screen_size)?;
+            self.handle_draw_pre_render(
+                tui,
+                screen_size,
+                matches!(&event, TuiEvent::Resize(_)),
+            )?;
         }
 
         if matches!(&event, TuiEvent::Paste(_) | TuiEvent::FocusLost) {
@@ -1166,7 +1170,7 @@ impl App {
         self.disable_ambient_pet_before_shutdown(tui)?;
         self.chat_widget.show_shutdown_in_progress();
         let screen_size = tui.terminal.last_known_screen_size;
-        self.handle_draw_pre_render(tui, screen_size)?;
+        self.handle_draw_pre_render(tui, screen_size, /*terminal_resized*/ false)?;
         self.chat_widget.pre_draw_tick();
         self.render_chat_widget_frame(tui, screen_size)?;
         Ok(())

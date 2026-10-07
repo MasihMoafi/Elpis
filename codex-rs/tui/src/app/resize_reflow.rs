@@ -381,6 +381,7 @@ impl App {
         &mut self,
         size: ratatui::layout::Size,
         last_known_screen_size: ratatui::layout::Size,
+        terminal_resized: bool,
         frame_requester: &tui::FrameRequester,
     ) -> bool {
         if size != last_known_screen_size || self.transcript_reflow.visible_history_rows().is_none()
@@ -390,7 +391,9 @@ impl App {
         let width = self.transcript_reflow.note_width(size.width);
         let reflow_needed = self.transcript_reflow.reflow_needed_for_width(size.width);
         let height_changed = size.height != last_known_screen_size.height;
-        let should_rebuild_transcript = reflow_needed || height_changed;
+        // A shrink and regrow between two size samples still moves the terminal's rows, so a
+        // resize event rebuilds the screen even when the final size equals the last one.
+        let should_rebuild_transcript = reflow_needed || height_changed || terminal_resized;
         if width.changed || width.initialized {
             self.chat_widget.on_terminal_resize(size.width);
         }
@@ -429,7 +432,12 @@ impl App {
         &mut self,
         tui: &mut tui::Tui,
         size: ratatui::layout::Size,
+        terminal_resized: bool,
     ) -> Result<()> {
+        if terminal_resized {
+            // The terminal may have moved rows without changing size; repaint every cell.
+            tui.terminal.invalidate_viewport();
+        }
         self.flush_native_history(tui);
         if tui.is_owned_screen() {
             let width = self.transcript_reflow.note_width(size.width);
@@ -445,6 +453,7 @@ impl App {
         let should_rebuild_transcript = self.handle_draw_size_change(
             size,
             tui.terminal.last_known_screen_size,
+            terminal_resized,
             &tui.frame_requester(),
         );
         if should_rebuild_transcript {
