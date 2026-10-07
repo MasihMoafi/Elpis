@@ -284,3 +284,169 @@ async fn openai_is_listed_from_the_bundled_catalog_and_other_direct_providers_ex
     .expect_err("an app-server-only provider");
     assert!(error.contains("model_provider = \"ollama\""), "{error}");
 }
+
+const CLAUDE_MODEL: &str = "claude/opus";
+const CLAUDE_NAME: &str = "Opus 5.5 (Claude subscription)";
+
+/// Adds a Claude subscription model to the app server's list, as the Claude bridge does.
+fn add_claude_subscription_model(chat: &mut ChatWidget) {
+    let mut claude = get_available_model(chat, "gpt-5.5");
+    claude.id = CLAUDE_MODEL.to_string();
+    claude.model = CLAUDE_MODEL.to_string();
+    claude.display_name = CLAUDE_NAME.to_string();
+    claude.description = "Claude Code on your Pro/Max plan".to_string();
+    claude.is_default = false;
+    claude.supported_reasoning_efforts = Vec::new();
+    Arc::make_mut(&mut chat.model_catalog)
+        .models
+        .insert(0, claude);
+}
+
+/// The names of the rows a rendered model list shows, in order: the lines between its search
+/// field and its key hints.
+fn row_names(popup: &str) -> Vec<String> {
+    popup
+        .lines()
+        .skip_while(|line| line.trim() != "Search models")
+        .skip(1)
+        .map(|line| line.trim_start_matches(['›', ' ']))
+        .filter(|row| !row.is_empty() && !matches!(*row, "↑" | "↓"))
+        .take_while(|row| !row.starts_with("enter "))
+        .map(|row| row.split("  ").next().unwrap_or(row).trim().to_string())
+        .collect()
+}
+
+/// Positive: with a Claude subscription model in the list, the configured provider's own list
+/// (after "Change provider…") shows it once, first; picking it changes the model as the main
+/// list does and switches no provider. Negative: `claude_subscription_rows_appear_only_with_the_claude_bridge`.
+#[tokio::test]
+async fn claude_subscription_models_lead_a_provider_list_and_keep_the_provider() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    add_claude_subscription_model(&mut chat);
+    // The configured provider is listed from the app server's list, which carries the model.
+    let listed = chat.model_catalog.try_list_models().expect("models");
+    chat.open_elpis_provider_models("openai".to_string(), Ok(listed));
+    let popup = render_bottom_popup(&chat, /*width*/ 120);
+
+    let rows = row_names(&popup);
+    assert_eq!(
+        rows.iter().take(2).map(String::as_str).collect::<Vec<_>>(),
+        vec!["Change provider…", CLAUDE_NAME],
+        "{popup}"
+    );
+    assert_eq!(popup.matches(CLAUDE_NAME).count(), 1, "{popup}");
+    std::iter::from_fn(|| rx.try_recv().ok()).for_each(drop);
+
+    for ch in "opus".chars() {
+        chat.handle_key_event(KeyEvent::from(KeyCode::Char(ch)));
+    }
+    chat.handle_key_event(KeyEvent::from(KeyCode::Enter));
+    let preset = assert_matches!(
+        rx.try_recv(),
+        Ok(AppEvent::OpenReasoningPopup { model }) => model
+    );
+    assert_eq!(preset.model, CLAUDE_MODEL);
+    chat.open_reasoning_popup(preset);
+
+    let events: Vec<AppEvent> = std::iter::from_fn(|| rx.try_recv().ok()).collect();
+    assert!(
+        events
+            .iter()
+            .any(|event| matches!(event, AppEvent::UpdateModel(model) if model == CLAUDE_MODEL)),
+        "{events:?}"
+    );
+    assert!(
+        events.iter().any(|event| matches!(
+            event,
+            AppEvent::PersistModelSelection { model, .. } if model == CLAUDE_MODEL
+        )),
+        "{events:?}"
+    );
+    assert!(
+        !events
+            .iter()
+            .any(|event| matches!(event, AppEvent::Elpis(ElpisAppEvent::Provider(_)))),
+        "a provider event was sent: {events:?}"
+    );
+    assert_eq!(chat.config.model_provider_id, "openai");
+}
+
+/// Positive: another provider's list shows the Claude subscription model above its own.
+/// Negative: without one in the model list, that list, the provider list and the main list
+/// show no Claude subscription row.
+#[tokio::test]
+async fn claude_subscription_rows_appear_only_with_the_claude_bridge() {
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    let home = tempfile::tempdir().expect("tempdir");
+    add_keyless_vendor(&mut chat, home.path());
+
+    chat.open_elpis_provider_models(VENDOR.to_string(), Ok(vec![fixture_preset()]));
+    let popup = render_bottom_popup(&chat, /*width*/ 120);
+    assert_eq!(
+        row_names(&popup),
+        vec!["Change provider…", "Add API key…", "Fixture Model"],
+        "{popup}"
+    );
+    chat.open_elpis_provider_popup();
+    let providers = render_bottom_popup(&chat, /*width*/ 120);
+    assert!(!providers.contains("Claude subscription"), "{providers}");
+    chat.open_all_models_popup();
+    let all_models = render_bottom_popup(&chat, /*width*/ 120);
+    assert!(!all_models.contains("Claude subscription"), "{all_models}");
+
+    add_claude_subscription_model(&mut chat);
+    chat.open_elpis_provider_models(VENDOR.to_string(), Ok(vec![fixture_preset()]));
+    let popup = render_bottom_popup(&chat, /*width*/ 120);
+    assert_eq!(
+        row_names(&popup),
+        vec![
+            "Change provider…",
+            "Add API key…",
+            CLAUDE_NAME,
+            "Fixture Model"
+        ],
+        "{popup}"
+    );
+}
+
+/// Positive: with a Claude subscription model in the list, the provider list offers the Claude
+/// subscription, which lists only its models and says how it answers. Negative: without one,
+/// the provider list has no such row (`claude_subscription_rows_appear_only_with_the_claude_bridge`).
+#[tokio::test]
+async fn the_provider_list_offers_the_claude_subscription_with_its_models_alone() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    add_claude_subscription_model(&mut chat);
+
+    chat.open_elpis_provider_popup();
+    let popup = render_bottom_popup(&chat, /*width*/ 120);
+    assert!(popup.contains("Claude subscription"), "{popup}");
+    assert!(popup.contains("your Claude sign-in"), "{popup}");
+    provider_events(&mut rx);
+    for ch in "subscription".chars() {
+        chat.handle_key_event(KeyEvent::from(KeyCode::Char(ch)));
+    }
+    chat.handle_key_event(KeyEvent::from(KeyCode::Enter));
+    let events = provider_events(&mut rx);
+    assert!(
+        matches!(
+            events.as_slice(),
+            [ElpisProviderEvent::Browse { provider_id }]
+                if provider_id == crate::chatwidget::CLAUDE_SUBSCRIPTION_PROVIDER_ID
+        ),
+        "{events:?}"
+    );
+
+    // The App lists it from the model list it already has.
+    chat.open_elpis_provider_models(
+        crate::chatwidget::CLAUDE_SUBSCRIPTION_PROVIDER_ID.to_string(),
+        Ok(Vec::new()),
+    );
+    let popup = render_bottom_popup(&chat, /*width*/ 120);
+    assert_eq!(
+        row_names(&popup),
+        vec!["Change provider…", CLAUDE_NAME],
+        "{popup}"
+    );
+    assert!(popup.contains("Provider: Claude subscription"), "{popup}");
+    assert!(popup.contains("Credential: your Claude sign-in"), "{popup}");
+}

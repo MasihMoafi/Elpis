@@ -21,6 +21,8 @@ use std::path::PathBuf;
 use super::ChatWidget;
 use super::context_ledger::LedgerSourceGroup;
 use super::context_usage;
+use super::elpis_providers::CLAUDE_SUBSCRIPTION_PROVIDER_NAME;
+use super::elpis_providers::is_claude_subscription_model;
 use crate::activity_state::ActivityState;
 use crate::activity_state::DashboardActivityState;
 use crate::app_event::AppEvent;
@@ -38,12 +40,6 @@ use crate::dashboard_server::DashboardTokens;
 use crate::elpis_app_event::ElpisAppEvent;
 use crate::elpis_ledger_events::ContextUsageTranscriptTotals;
 use crate::legacy_core::elpis_context::ContinuitySource;
-
-/// Chat models with this prefix are Claude subscription models served by the Claude bridge
-/// (`tools/elpis-claude/acp-bridge.mjs`), not by the configured provider.
-const CLAUDE_MODEL_PREFIX: &str = "claude/";
-/// The provider name shown for a Claude subscription model.
-const CLAUDE_SUBSCRIPTION_PROVIDER: &str = "Claude subscription";
 
 /// What the ChatWidget keeps for the dashboard.
 #[derive(Debug, Default)]
@@ -193,8 +189,8 @@ impl ChatWidget {
     /// the Claude bridge, so it shows as such; `config.model_provider_id` stays the configured
     /// provider because `/model` and the key checks read it.
     pub(crate) fn displayed_chat_provider(&self) -> &str {
-        if self.current_model().starts_with(CLAUDE_MODEL_PREFIX) {
-            CLAUDE_SUBSCRIPTION_PROVIDER
+        if is_claude_subscription_model(self.current_model()) {
+            CLAUDE_SUBSCRIPTION_PROVIDER_NAME
         } else {
             self.config.model_provider_id.as_str()
         }

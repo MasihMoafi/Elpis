@@ -334,9 +334,11 @@ mod model_popup_state;
 mod model_popups;
 // Elpis: the provider-aware /model picker.
 mod elpis_providers;
+pub(crate) use self::elpis_providers::CLAUDE_SUBSCRIPTION_PROVIDER_ID;
 pub(crate) use self::elpis_providers::ElpisProviderEvent;
 pub(crate) use self::elpis_providers::elpis_lists_from_app_server;
 pub(crate) use self::elpis_providers::elpis_picker_providers;
+pub(crate) use self::elpis_providers::is_claude_subscription_model;
 pub(crate) use self::elpis_providers::load_elpis_provider_models;
 pub(crate) use self::elpis_providers::set_elpis_catalog_provider;
 mod notifications;

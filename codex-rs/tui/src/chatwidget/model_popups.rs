@@ -245,7 +245,7 @@ impl ChatWidget {
 
     fn open_all_models_popup_with_view_id(
         &mut self,
-        presets: Vec<ModelPreset>,
+        mut presets: Vec<ModelPreset>,
         view_id: &'static str,
     ) {
         // Elpis: "Change provider…" and, without a key, "Add API key…" open the list; a provider
@@ -260,41 +260,14 @@ impl ChatWidget {
             return;
         }
 
-        let mut items: Vec<SelectionItem> = Vec::new();
+        // Elpis: Claude subscription models lead the list, as in the provider lists.
+        presets.sort_by_key(|preset| !is_claude_subscription_model(&preset.model));
         let mut model_ids: Vec<String> =
             presets.iter().map(|preset| preset.model.clone()).collect();
-        for preset in presets.into_iter() {
-            let description =
-                (!preset.description.is_empty()).then_some(preset.description.to_string());
-            let is_current = preset.model.as_str() == self.current_model();
-            let direct_effort = match preset.supported_reasoning_efforts.as_slice() {
-                [] => Some(preset.default_reasoning_effort.clone()),
-                [option] => Some(option.effort.clone()),
-                _ => None,
-            }
-            .filter(|effort| !Self::is_advanced_reasoning_effort(effort));
-            let single_supported_effort = direct_effort.is_some();
-            let preset_for_action = preset.clone();
-            let actions: Vec<SelectionAction> = vec![Box::new(move |tx| {
-                let preset_for_event = preset_for_action.clone();
-                tx.send(AppEvent::OpenReasoningPopup {
-                    model: preset_for_event,
-                });
-            })];
-            items.push(SelectionItem {
-                name: preset.display_name.clone(),
-                description,
-                is_current,
-                is_default: preset.is_default,
-                secondary_action: direct_effort.and_then(|effort| {
-                    self.session_model_selection_action(preset.model.clone(), Some(effort))
-                }),
-                actions,
-                dismiss_on_select: single_supported_effort,
-                dismiss_parent_on_child_accept: !single_supported_effort,
-                ..Default::default()
-            });
-        }
+        let mut items: Vec<SelectionItem> = presets
+            .into_iter()
+            .map(|preset| self.catalog_model_item(preset))
+            .collect();
 
         let (ids, rows): (Vec<_>, Vec<_>) = elpis_rows.into_iter().unzip();
         model_ids.splice(0..0, ids);
@@ -309,6 +282,42 @@ impl ChatWidget {
                 ..SelectionViewParams::picker()
             },
         );
+    }
+
+    /// A model list row: picking it opens its reasoning levels, or uses its only level.
+    pub(super) fn catalog_model_item(&self, preset: ModelPreset) -> SelectionItem {
+        let description =
+            (!preset.description.is_empty()).then_some(preset.description.to_string());
+        let is_current = preset.model.as_str() == self.current_model();
+        let direct_effort = match preset.supported_reasoning_efforts.as_slice() {
+            [] => Some(preset.default_reasoning_effort.clone()),
+            [option] => Some(option.effort.clone()),
+            _ => None,
+        }
+        .filter(|effort| !Self::is_advanced_reasoning_effort(effort));
+        let single_supported_effort = direct_effort.is_some();
+        let preset_for_action = preset.clone();
+        let actions: Vec<SelectionAction> = vec![Box::new(move |tx| {
+            let preset_for_event = preset_for_action.clone();
+            tx.send(AppEvent::OpenReasoningPopup {
+                model: preset_for_event,
+            });
+        })];
+        SelectionItem {
+            name: preset.display_name.clone(),
+            description,
+            is_current,
+            is_default: preset.is_default,
+            secondary_action: direct_effort.and_then(|effort| {
+                self.session_model_selection_action(preset.model.clone(), Some(effort))
+            }),
+            actions,
+            dismiss_on_select: single_supported_effort,
+            dismiss_parent_on_child_accept: !single_supported_effort,
+            // Searchable lists hide rows without a search value.
+            search_value: Some(format!("{} {}", preset.display_name, preset.model)),
+            ..Default::default()
+        }
     }
 
     fn model_selection_actions(
