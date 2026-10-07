@@ -53,8 +53,8 @@ impl App {
     /// directly, so a key saved a moment ago counts; another provider the app server started
     /// with uses the app server's list.
     fn elpis_browse_provider(&mut self, provider_id: String) {
-        // The Claude subscription's models are already in the app server's list.
-        if provider_id == crate::chatwidget::CLAUDE_SUBSCRIPTION_PROVIDER_ID {
+        // A bridged subscription's models are already in the app server's list.
+        if crate::chatwidget::bridged_provider(&provider_id).is_some() {
             self.chat_widget
                 .open_elpis_provider_models(provider_id, Ok(Vec::new()));
             return;

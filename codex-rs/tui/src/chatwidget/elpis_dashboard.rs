@@ -21,9 +21,7 @@ use std::path::PathBuf;
 use super::ChatWidget;
 use super::context_ledger::LedgerSourceGroup;
 use super::context_usage;
-use super::elpis_providers::CLAUDE_SUBSCRIPTION_PROVIDER_ID;
-use super::elpis_providers::CLAUDE_SUBSCRIPTION_PROVIDER_NAME;
-use super::elpis_providers::is_claude_subscription_model;
+use super::elpis_providers::bridged_provider_of_model;
 use crate::activity_state::ActivityState;
 use crate::activity_state::DashboardActivityState;
 use crate::app_event::AppEvent;
@@ -186,24 +184,23 @@ impl ChatWidget {
         );
     }
 
-    /// The provider a person sees for the chat model. A Claude subscription model is served by
-    /// the Claude bridge, so it shows as such; `config.model_provider_id` stays the configured
-    /// provider because `/model` and the key checks read it.
+    /// The provider a person sees for the chat model. A bridged subscription's model (Claude
+    /// subscription, Antigravity) is served by the bridge, so it shows as that subscription;
+    /// `config.model_provider_id` stays the configured provider because `/model` and the key
+    /// checks read it.
     pub(crate) fn displayed_chat_provider(&self) -> &str {
-        if is_claude_subscription_model(self.current_model()) {
-            CLAUDE_SUBSCRIPTION_PROVIDER_NAME
-        } else {
-            self.config.model_provider_id.as_str()
+        match bridged_provider_of_model(self.current_model()) {
+            Some(bridged) => bridged.name,
+            None => self.config.model_provider_id.as_str(),
         }
     }
 
     /// The provider id the dashboard's Models tab selects for the chat model; the page names it
     /// from its provider list.
     fn dashboard_chat_provider(&self) -> &str {
-        if is_claude_subscription_model(self.current_model()) {
-            CLAUDE_SUBSCRIPTION_PROVIDER_ID
-        } else {
-            self.config.model_provider_id.as_str()
+        match bridged_provider_of_model(self.current_model()) {
+            Some(bridged) => bridged.id,
+            None => self.config.model_provider_id.as_str(),
         }
     }
 

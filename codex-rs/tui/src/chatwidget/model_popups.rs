@@ -271,8 +271,9 @@ impl ChatWidget {
             return;
         }
 
-        // Elpis: Claude subscription models lead the list, as in the provider lists.
-        presets.sort_by_key(|preset| !is_claude_subscription_model(&preset.model));
+        // Elpis: bridged subscriptions' models (Claude subscription, Antigravity) lead the list,
+        // as in the provider lists.
+        presets.sort_by_key(|preset| !is_bridged_model(&preset.model));
         let mut model_ids: Vec<String> =
             presets.iter().map(|preset| preset.model.clone()).collect();
         let mut items: Vec<SelectionItem> = presets

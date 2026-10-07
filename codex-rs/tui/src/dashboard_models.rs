@@ -9,10 +9,11 @@
 //! A choice names a provider and a model that provider listed, so a model never lands on a
 //! provider that cannot serve it.
 //!
-//! While the app server's list carries Claude subscription models (the Claude bridge adds
-//! them), the chat model can also come from the "Claude subscription": its models are listed
-//! there alone, and choosing one goes through the picker's own row action
-//! (`ElpisProviderEvent::UseClaudeModel`), which keeps the provider and the conversation.
+//! While the app server's list carries a bridged subscription's models (the Claude bridge adds
+//! the "Claude subscription" and "Antigravity" ones), the chat model can also come from that
+//! subscription: its models are listed there alone, and choosing one goes through the picker's
+//! own row action (`ElpisProviderEvent::UseClaudeModel`), which keeps the provider and the
+//! conversation.
 
 use std::collections::BTreeMap;
 use std::collections::HashMap;
@@ -33,6 +34,7 @@ use super::json_response;
 use super::plain;
 use crate::app_event::AppEvent;
 use crate::app_event_sender::AppEventSender;
+use crate::chatwidget::BridgedProvider;
 use crate::chatwidget::ElpisProviderEvent;
 use crate::elpis_app_event::ElpisAppEvent;
 use crate::elpis_background_model::BackgroundModelChoice;
@@ -84,22 +86,22 @@ impl DashboardLink {
         }
     }
 
-    /// The Claude subscription models of the app server's list; an error without them.
-    fn claude_models(&self) -> Result<Vec<ModelPreset>, String> {
-        let presets = crate::chatwidget::claude_subscription_presets(&self.catalog);
+    /// A bridged subscription's models in the app server's list; an error without them.
+    fn bridged_models(&self, bridged: &BridgedProvider) -> Result<Vec<ModelPreset>, String> {
+        let presets = bridged.presets(&self.catalog);
         if presets.is_empty() {
-            return Err(
-                "No Claude subscription models are listed; start Elpis with elpis-claude"
-                    .to_string(),
-            );
+            return Err(format!(
+                "No {} models are listed; start Elpis with elpis-claude",
+                bridged.name
+            ));
         }
         Ok(presets)
     }
 
     /// A provider's models as the `/model` picker lists them.
     fn list(&self, provider_id: &str) -> Result<Vec<ModelPreset>, String> {
-        if provider_id == crate::chatwidget::CLAUDE_SUBSCRIPTION_PROVIDER_ID {
-            return self.claude_models();
+        if let Some(bridged) = crate::chatwidget::bridged_provider(provider_id) {
+            return self.bridged_models(bridged);
         }
         let provider = self
             .providers
@@ -123,12 +125,11 @@ impl DashboardLink {
             rx.recv_timeout(LIST_TIMEOUT)
                 .map_err(|_| "The provider did not list its models in time".to_string())??
         };
-        // Claude subscription models are listed under the Claude subscription alone.
+        // A bridged subscription's models are listed under that subscription alone.
         let presets: Vec<ModelPreset> = presets
             .into_iter()
             .filter(|preset| {
-                preset.show_in_picker
-                    && !crate::chatwidget::is_claude_subscription_model(&preset.model)
+                preset.show_in_picker && !crate::chatwidget::is_bridged_model(&preset.model)
             })
             .collect();
         if let Ok(mut listed) = LISTED.lock() {
@@ -239,8 +240,8 @@ pub(super) fn route(
     }
 }
 
-/// The providers, each as `{id, name}`. The Claude subscription serves the chat model alone,
-/// so its row also carries `"chat_only": true`.
+/// The providers, each as `{id, name}`. A bridged subscription serves the chat model alone, so
+/// its row also carries `"chat_only": true`.
 fn providers(link: &DashboardLink) -> DashboardResponse {
     let rows: Vec<_> = crate::chatwidget::elpis_chat_model_providers(
         &link.providers,
@@ -249,7 +250,7 @@ fn providers(link: &DashboardLink) -> DashboardResponse {
     )
     .into_iter()
     .map(|(id, name)| {
-        if id == crate::chatwidget::CLAUDE_SUBSCRIPTION_PROVIDER_ID {
+        if crate::chatwidget::bridged_provider(&id).is_some() {
             serde_json::json!({ "id": id, "name": name, "chat_only": true })
         } else {
             serde_json::json!({ "id": id, "name": name })
@@ -259,27 +260,33 @@ fn providers(link: &DashboardLink) -> DashboardResponse {
     json_response(&serde_json::json!({ "providers": rows }))
 }
 
-/// A Claude subscription model for the chat model, through the `/model` picker's row action.
-fn apply_claude(
+/// A bridged subscription's model for the chat model, through the `/model` picker's row action.
+fn apply_bridged(
     link: &DashboardLink,
+    bridged: &BridgedProvider,
     role: &Role,
     model: Option<String>,
 ) -> Result<String, (u16, String)> {
     if !matches!(role, Role::Chat) {
         return Err((
             400,
-            "Claude subscription models answer chat turns only; pick another provider for this role"
-                .to_string(),
+            format!(
+                "{} models answer chat turns only; pick another provider for this role",
+                bridged.name
+            ),
         ));
     }
     let Some(model) = model else {
         return Err((400, "Pick a provider and one of its models".to_string()));
     };
-    let listed = link.claude_models().map_err(|error| (400, error))?;
+    let listed = link.bridged_models(bridged).map_err(|error| (400, error))?;
     if !listed.iter().any(|preset| preset.model == model) {
         return Err((
             400,
-            format!("The Claude subscription does not list `{model}`; pick a model from its list"),
+            format!(
+                "{} does not list `{model}`; pick a model from its list",
+                bridged.subject
+            ),
         ));
     }
     link.tx.send(AppEvent::Elpis(ElpisAppEvent::Provider(
@@ -290,8 +297,12 @@ fn apply_claude(
 
 /// Applies a choice through the terminal's own writer and says what happens next.
 fn apply(link: &DashboardLink, edit: ModelEdit) -> Result<String, (u16, String)> {
-    if edit.provider.as_deref() == Some(crate::chatwidget::CLAUDE_SUBSCRIPTION_PROVIDER_ID) {
-        return apply_claude(link, &edit.role, edit.model);
+    if let Some(bridged) = edit
+        .provider
+        .as_deref()
+        .and_then(crate::chatwidget::bridged_provider)
+    {
+        return apply_bridged(link, bridged, &edit.role, edit.model);
     }
     let choice = match (edit.provider, edit.model) {
         (None, None) if !matches!(edit.role, Role::Chat) => BackgroundModelChoice {
