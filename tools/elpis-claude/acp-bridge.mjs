@@ -36,9 +36,15 @@ const AGENTS_MCP = new URL("./elpis-agents-mcp.mjs", import.meta.url).pathname;
 // agents (the subagent tool is "Agent", listed as "Task"; Workflow runs agent scripts;
 // RemoteTrigger runs cloud agents) are disallowed, and the elpis-agents server is left out.
 const SUBAGENT_TOOLS = ["Agent", "Task", "ListAgents", "SendMessage", "Workflow", "RemoteTrigger"];
-const mcpServersFor = (subagents) => !subagents || process.env.ACP_BRIDGE_NO_AGENTS ? [] : [{
+// The delegate tool reaches back into this bridge, so a helper can be any model it serves
+// (engine models, Claude, Antigravity), and it names the chat that started it.
+const mcpServersFor = (subagents, parentThreadId) => !subagents || process.env.ACP_BRIDGE_NO_AGENTS ? [] : [{
   name: "elpis-agents", command: process.execPath, args: [AGENTS_MCP],
-  env: [{ name: "ELPIS_ENGINE_BIN", value: process.env.ELPIS_ENGINE_BIN ?? `${HOME}/.local/bin/elpis` }],
+  env: [
+    { name: "ELPIS_ENGINE_BIN", value: process.env.ELPIS_ENGINE_BIN ?? `${HOME}/.local/bin/elpis` },
+    { name: "ELPIS_BRIDGE_URL", value: `ws://127.0.0.1:${wss.address().port}` },
+    ...(parentThreadId ? [{ name: "ELPIS_PARENT_THREAD", value: parentThreadId }] : []),
+  ],
 }];
 const MIME = { png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", gif: "image/gif", webp: "image/webp" };
 async function toAcpPrompt(input) {
@@ -246,6 +252,8 @@ wss.on("connection", (ws) => {
     toTui({ id: msg.id, result: { thread: { ...c.thread, turns: includeTurns ? c.turns : [] } } });
   }
   const threadPolicy = new Map();
+  const threadSandbox = new Map();
+  const pendingDelegation = new Map(); // thread/start id -> the chat that delegated it
   const sessions = new Map();
   const bridgeRequests = new Map();
   const acps = new Map();
@@ -331,7 +339,6 @@ wss.on("connection", (ws) => {
       return { models, efforts, fallback };
     } catch (e) { log(`${agent.key} catalog: ${e.message}`); return { models: [], efforts: {}, fallback: { levels: [], current: null } }; }
   }
-  for (const agent of AGENTS) catalogFor(agent);
   const pendingModelList = new Set();
   const pendingResume = new Set();
   // A Claude model picked as the default ("enter default") lives in the bridge's store, not in
@@ -523,6 +530,16 @@ wss.on("connection", (ws) => {
         parsed.result.config = { ...parsed.result.config, model: def.model, model_reasoning_effort: def.effort ?? null };
         ws.send(JSON.stringify(parsed));
         return;
+      }
+    }
+    if (parsed && pendingDelegation.has(parsed.id)) {
+      // A helper started by a chat's delegate tool: remember who started it, for the agent console.
+      const d = pendingDelegation.get(parsed.id); pendingDelegation.delete(parsed.id);
+      const tid = parsed.result?.thread?.id;
+      if (tid) {
+        if (d.sandbox) threadSandbox.set(tid, d.sandbox);
+        updateStore((st) => { st._delegations = { ...st._delegations, [tid]: { parentThreadId: d.parentThreadId, model: d.model, startedAt: Math.floor(now() / 1000) } }; });
+        log(`helper thread ${tid} (${d.model}) started by ${d.parentThreadId}`);
       }
     }
     if (parsed && pendingStart.has(parsed.id)) {
@@ -736,7 +753,7 @@ wss.on("connection", (ws) => {
         let _meta = { claudeCode: { options, emitRawSDKMessages: [{ type: "system", subtype: "init" }] } };
         devChars.set(threadId, instructions.length);
         if (instructions) { _meta = { ..._meta, systemPrompt: { append: instructions } }; log(`Elpis instructions for Claude: ${instructions.length} chars`); }
-        const mcpServers = mcpServersFor(subagents);
+        const mcpServers = mcpServersFor(subagents, threadId);
         await storeChain;
         const store = await loadStore();
         // A session belongs to one agent; a chat that switched agent starts a fresh one, seeded below.
@@ -765,7 +782,7 @@ wss.on("connection", (ws) => {
         sessionModel.set(sessionId, want);
         log(`session ${sessionId} model -> ${want}`);
       }
-      const wantMode = threadCollab.get(threadId) === "plan" ? "plan" : ask ? "default" : "bypassPermissions";
+      const wantMode = threadCollab.get(threadId) === "plan" || threadSandbox.get(threadId) === "read-only" ? "plan" : ask ? "default" : "bypassPermissions";
       if (sessionMode.get(sessionId) !== wantMode) {
         await acp.call("session/set_mode", { sessionId, modeId: wantMode })
           .then(() => { sessionMode.set(sessionId, wantMode); log(`session ${sessionId} mode -> ${wantMode}`); })
@@ -921,6 +938,7 @@ wss.on("connection", (ws) => {
   // A new chat on a Claude model: the engine keeps its own model, the TUI is told Claude.
   async function startThread(msg) {
     const p = msg.params ?? {};
+    if (p.elpisParentThreadId) { pendingDelegation.set(msg.id, { parentThreadId: p.elpisParentThreadId, model: p.model ?? null, sandbox: p.sandbox ?? null }); delete p.elpisParentThreadId; }
     let pick = null;
     if (isBridged(p.model)) pick = { model: p.model, effort: p.config?.model_reasoning_effort ?? null };
     else {

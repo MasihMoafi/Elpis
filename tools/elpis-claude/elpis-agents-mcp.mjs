@@ -1,9 +1,10 @@
-// MCP server the bridge gives Claude: delegate a task to another Elpis model (e.g. GPT-6.1-Sol
-// on the OpenAI sign-in), then follow it up, steer it mid-turn or stop it. Each delegation is a
-// normal Elpis thread run by the Elpis engine, with Elpis's own tools, so it also appears in
-// Elpis history (and `elpis resume <thread id>` opens it).
+// MCP server the bridge gives Claude: hand a task to a helper agent on any model Elpis runs (GPT on
+// the OpenAI sign-in, Gemini on the Antigravity sign-in, Claude on the subscription), then follow
+// it up, steer it mid-turn or stop it. list_models says what each model is for. Each helper is a
+// normal Elpis thread, so it appears in Elpis history (`elpis resume <thread id>` opens it).
 import { spawn } from "node:child_process";
 import { appendFileSync } from "node:fs";
+import WebSocket from "ws";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
@@ -12,37 +13,78 @@ const LOG = process.env.ELPIS_AGENTS_LOG ?? "/tmp/acp-bridge/elpis-agents.log";
 const log = (s) => { try { appendFileSync(LOG, `${new Date().toISOString().slice(11, 23)} ${s}\n`); } catch {} };
 const ENGINE = process.env.ELPIS_ENGINE_BIN ?? `${process.env.HOME}/.local/bin/elpis`;
 
-let engine = null;
-function startEngine() {
-  const proc = spawn(ENGINE, ["app-server"], { stdio: ["pipe", "pipe", "ignore"] });
+// Set by the bridge: helpers start through it, so any model it serves can be one, and each
+// records the chat that started it. Without a bridge, helpers run on the Elpis engine alone.
+const BRIDGE = process.env.ELPIS_BRIDGE_URL;
+const PARENT = process.env.ELPIS_PARENT_THREAD ?? null;
+const bridgedModel = (m) => /^(claude|agy)\//.test(m ?? "");
+
+// One app-server connection, to the bridge (WebSocket) or the engine (stdio). A helper never asks
+// for approval: there is nobody to answer, so every request is declined.
+function connect() {
   const pending = new Map();
   const listeners = new Set();
   let seq = 0;
-  let buf = "";
-  proc.stdout.on("data", (chunk) => {
-    buf += chunk;
-    let i;
-    while ((i = buf.indexOf("\n")) >= 0) {
-      const line = buf.slice(0, i).trim();
-      buf = buf.slice(i + 1);
-      if (!line) continue;
-      const m = JSON.parse(line);
-      if (m.id !== undefined && !m.method && pending.has(m.id)) { const p = pending.get(m.id); pending.delete(m.id); m.error ? p.reject(m.error) : p.resolve(m.result); continue; }
-      if (m.id !== undefined && m.method) proc.stdin.write(JSON.stringify({ id: m.id, result: { decision: "decline" } }) + "\n");
-      for (const l of listeners) l(m);
-    }
-  });
+  let send, close, opened;
+  const onMessage = (m) => {
+    if (m.id !== undefined && !m.method && pending.has(m.id)) { const p = pending.get(m.id); pending.delete(m.id); m.error ? p.reject(m.error) : p.resolve(m.result); return; }
+    if (m.id !== undefined && m.method) send({ id: m.id, result: { decision: "decline" } });
+    for (const l of listeners) l(m);
+  };
+  if (BRIDGE) {
+    const ws = new WebSocket(BRIDGE);
+    opened = new Promise((resolve, reject) => { ws.once("open", resolve); ws.once("error", reject); });
+    ws.on("message", (d) => onMessage(JSON.parse(d.toString())));
+    send = (o) => ws.send(JSON.stringify(o));
+    close = () => ws.close();
+  } else {
+    const proc = spawn(ENGINE, ["app-server"], { stdio: ["pipe", "pipe", "ignore"] });
+    let buf = "";
+    proc.stdout.on("data", (chunk) => {
+      buf += chunk;
+      let i;
+      while ((i = buf.indexOf("\n")) >= 0) { const line = buf.slice(0, i).trim(); buf = buf.slice(i + 1); if (line) onMessage(JSON.parse(line)); }
+    });
+    send = (o) => proc.stdin.write(JSON.stringify(o) + "\n");
+    close = () => proc.kill();
+    opened = Promise.resolve();
+  }
   const call = (method, params) => new Promise((resolve, reject) => {
     const id = `agents-${++seq}`;
     pending.set(id, { resolve, reject });
-    proc.stdin.write(JSON.stringify({ id, method, params }) + "\n");
+    send({ id, method, params });
   });
-  const ready = call("initialize", { clientInfo: { name: "elpis-agents", title: null, version: "0.1.0" }, capabilities: { experimentalApi: true } })
-    .then(() => proc.stdin.write(JSON.stringify({ method: "initialized" }) + "\n"));
-  return { proc, call, listeners, ready };
+  const ready = opened
+    .then(() => call("initialize", { clientInfo: { name: "elpis-agents", title: null, version: "0.3.0" }, capabilities: { experimentalApi: true } }))
+    .then(() => send({ method: "initialized" }));
+  return { call, listeners, ready, close };
 }
 
-const server = new McpServer({ name: "elpis-agents", version: "0.2.0" });
+// What each model is for, grouped by where it runs, from the app server's own model list.
+let catalogConn = null;
+async function modelCatalog() {
+  catalogConn ??= connect();
+  await catalogConn.ready;
+  const list = (await catalogConn.call("model/list", { cursor: null, limit: null, includeHidden: false }))?.data ?? [];
+  const groups = [
+    ["Elpis engine (your OpenAI sign-in; provider openai)", (m) => !bridgedModel(m.id)],
+    ["Antigravity (your Google sign-in)", (m) => m.id.startsWith("agy/")],
+    ["Claude subscription", (m) => m.id.startsWith("claude/")],
+  ];
+  const lines = [];
+  for (const [title, has] of groups) {
+    const ms = list.filter(has);
+    if (!ms.length) continue;
+    lines.push(`${title}:`);
+    for (const m of ms) {
+      const efforts = (m.supportedReasoningEfforts ?? []).map((e) => e.reasoningEffort).filter((e) => e !== "default");
+      lines.push(`  ${m.id}: ${m.description ?? m.displayName}${efforts.length ? ` (effort ${efforts.join("/")})` : ""}`);
+    }
+  }
+  return lines.join("\n") || "No models listed.";
+}
+
+const server = new McpServer({ name: "elpis-agents", version: "0.3.0" });
 
 // One entry per delegated thread this server has run: its active turn and what it produced.
 const runs = new Map();
@@ -65,7 +107,7 @@ function startTurn(threadId, task) {
   run.done = new Promise((resolve) => {
     const finish = (status, error) => {
       clearTimeout(timer);
-      engine.listeners.delete(l);
+      run.conn.listeners.delete(l);
       Object.assign(run, { status, error: error ?? null, turnId: null });
       log(`delegate thread=${threadId} status=${status} chars=${run.text.length}`);
       resolve();
@@ -78,8 +120,8 @@ function startTurn(threadId, task) {
       if (m.method === "item/completed" && m.params.item?.type === "commandExecution") run.commands.push(m.params.item.command);
       if (m.method === "turn/completed") finish(m.params.turn?.status ?? "completed", m.params.turn?.error);
     };
-    engine.listeners.add(l);
-    engine.call("turn/start", { threadId, input: [{ type: "text", text: task, text_elements: [] }] })
+    run.conn.listeners.add(l);
+    run.conn.call("turn/start", { threadId, input: [{ type: "text", text: task, text_elements: [] }] })
       .then((r) => { run.turnId ??= r?.turn?.id ?? null; })
       .catch((e) => finish("failed", e));
   });
@@ -97,53 +139,72 @@ const known = (thread_id) => runs.has(thread_id)
   : { content: [{ type: "text", text: `Unknown thread ${thread_id}: delegate with thread_id to reopen it.` }], isError: true };
 
 server.registerTool(
+  "list_models",
+  { description: "List every model you can hand a task to with delegate, grouped by where it runs, each with what it is for and its effort levels. Call it before choosing a helper.", inputSchema: {} },
+  async () => {
+    log("list_models");
+    return { content: [{ type: "text", text: await modelCatalog() }] };
+  },
+);
+
+server.registerTool(
   "delegate",
   {
     description:
-      "Run a task with another Elpis model, such as OpenAI GPT-6.1-Sol, as a separate Elpis agent. " +
-      "It works in the given folder with Elpis's own tools and returns its final answer and the commands it ran. " +
-      "Pass thread_id to send a follow-up to an earlier agent; it keeps that conversation. " +
+      "Hand a task to a helper agent on another model, chosen to fit the task: a fast model for easy work, the strongest for hard work " +
+      "(call list_models to see them all with what each is for). Helpers can be OpenAI GPT models, Gemini via Antigravity (agy/...) " +
+      "or Claude (claude/...). It works in the given folder with its own tools and returns its final answer and the commands it ran. " +
+      "Pass thread_id to send a follow-up to an earlier helper; it keeps that conversation. " +
       "Pass wait=false to return at once and follow it with delegate_status, delegate_steer and delegate_stop.",
     inputSchema: {
       task: z.string().describe("Complete instructions for the agent; it does not see this conversation."),
       thread_id: z.string().optional().describe("Continue this earlier delegated thread instead of starting a new one."),
       wait: z.boolean().default(true).describe("Wait for the answer (true) or return the thread id at once (false)."),
-      model: z.string().default("gpt-6.1-sol").describe("Model id, e.g. gpt-6.1-sol, gpt-6-astra, gpt-6-luna."),
-      provider: z.string().default("openai").describe("Elpis provider id: openai (sign-in), openrouter, ..."),
-      effort: z.enum(["low", "medium", "high"]).default("medium"),
+      model: z.string().default("gpt-6.1-sol").describe("A model id from list_models, e.g. gpt-6-luna, gpt-6-astra, agy/gemini-3.8-flash-high, claude/haiku."),
+      provider: z.string().default("openai").describe("Only for engine models: openai (sign-in) or another configured Elpis provider."),
+      effort: z.enum(["low", "medium", "high", "xhigh", "max"]).optional().describe("Reasoning effort, if the model has levels; omit for its default."),
       cwd: z.string().optional().describe("Working folder; defaults to Claude's folder."),
       allow_writes: z.boolean().default(false).describe("Let the agent change files in the folder."),
     },
   },
   async ({ task, thread_id, wait, model, provider, effort, cwd, allow_writes }) => {
-    engine ??= startEngine();
-    await engine.ready;
     let threadId = thread_id;
     if (threadId) {
       if (runs.get(threadId)?.status === "running") {
         return { content: [{ type: "text", text: `Thread ${threadId} is still working; use delegate_steer or delegate_stop.` }], isError: true };
       }
       if (!runs.has(threadId)) {
-        // A thread from an earlier server process: load it back into this engine.
+        // A thread from an earlier server process: load it back.
+        const conn = connect();
         try {
-          await engine.call("thread/resume", { threadId });
+          await conn.ready;
+          await conn.call("thread/resume", { threadId });
         } catch (e) {
+          conn.close();
           return { content: [{ type: "text", text: `Could not reopen thread ${threadId}: ${e.message ?? JSON.stringify(e)}` }], isError: true };
         }
-        runs.set(threadId, { label: "resumed agent" });
+        runs.set(threadId, { label: "resumed agent", conn });
       }
       log(`delegate follow-up thread=${threadId}`);
     } else {
+      if (bridgedModel(model) && !BRIDGE) {
+        return { content: [{ type: "text", text: `${model} runs only through the Elpis Claude bridge; pick an engine model from list_models.` }], isError: true };
+      }
       const folder = cwd ?? process.cwd();
-      log(`delegate model=${provider}/${model} effort=${effort} writes=${allow_writes} cwd=${folder}`);
-      const started = await engine.call("thread/start", {
-        cwd: folder, model, modelProvider: provider, approvalPolicy: "never",
+      const label = bridgedModel(model) ? model : `${provider}/${model}`;
+      log(`delegate model=${label} effort=${effort ?? "default"} writes=${allow_writes} cwd=${folder}`);
+      // Each helper has its own connection, so helpers on the same model can run side by side.
+      const conn = connect();
+      await conn.ready;
+      const started = await conn.call("thread/start", {
+        cwd: folder, model, ...(bridgedModel(model) ? {} : { modelProvider: provider }), approvalPolicy: "never",
         sandbox: allow_writes ? "workspace-write" : "read-only",
-        config: { model_reasoning_effort: effort },
+        ...(effort && { config: { model_reasoning_effort: effort } }),
+        ...(BRIDGE && PARENT && { elpisParentThreadId: PARENT }),
       });
       threadId = started.thread.id;
-      await engine.call("thread/name/set", { threadId, name: `Delegated by Claude: ${task.slice(0, 60)}` }).catch(() => {});
-      runs.set(threadId, { label: `${provider}/${model}` });
+      await conn.call("thread/name/set", { threadId, name: `Delegated by Claude: ${task.slice(0, 60)}` }).catch(() => {});
+      runs.set(threadId, { label, conn });
     }
     startTurn(threadId, task);
     if (wait) await runs.get(threadId).done;
@@ -172,7 +233,7 @@ server.registerTool(
     if (!turnId) {
       return { content: [{ type: "text", text: `Thread ${thread_id} is not working now (${run.status}); send a follow-up with delegate and thread_id.` }], isError: true };
     }
-    await engine.call("turn/steer", { threadId: thread_id, expectedTurnId: turnId, input: [{ type: "text", text: message, text_elements: [] }] });
+    await run.conn.call("turn/steer", { threadId: thread_id, expectedTurnId: turnId, input: [{ type: "text", text: message, text_elements: [] }] });
     log(`delegate steer thread=${thread_id}`);
     return { content: [{ type: "text", text: `Steered thread ${thread_id}. Check it with delegate_status.` }] };
   },
@@ -189,7 +250,7 @@ server.registerTool(
     if (!turnId) {
       return { content: [{ type: "text", text: `Thread ${thread_id} is not working now (${run.status}).` }] };
     }
-    await engine.call("turn/interrupt", { threadId: thread_id, turnId });
+    await run.conn.call("turn/interrupt", { threadId: thread_id, turnId });
     log(`delegate stop thread=${thread_id}`);
     await Promise.race([run.done, new Promise((r) => setTimeout(r, 15000))]);
     return { content: [{ type: "text", text: report(thread_id) }] };

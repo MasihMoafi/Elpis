@@ -180,9 +180,9 @@ for (const s of scenarios) {
   } else if (s === "delegate") {
     const { writeFileSync: wf, readFileSync } = await import("node:fs");
     const word = `SOL-${Math.floor(Math.random() * 9000 + 1000)}`;
-    wf(join(dir, "secret.txt"), word);
+    wf(join(dir, "word.txt"), word);
     const logBefore = (() => { try { return readFileSync("/tmp/acp-bridge/elpis-agents.log", "utf8").length; } catch { return 0; } })();
-    const r = await turn(threadId, [{ type: "text", text: "Use the elpis-agents delegate tool (model gpt-6-luna, effort low) to have that agent read secret.txt in the current folder. Do not read the file yourself. Reply with only what the agent reported.", text_elements: [] }], 300000);
+    const r = await turn(threadId, [{ type: "text", text: "Use the elpis-agents delegate tool (model gpt-6-luna, effort low) to have that agent read word.txt in the current folder. Do not read the file yourself. Reply with only what the agent reported.", text_elements: [] }], 300000);
     const agentLog = (() => { try { return readFileSync("/tmp/acp-bridge/elpis-agents.log", "utf8").slice(logBefore); } catch { return ""; } })();
     const delegated = /delegate thread=\S+ status=completed/.test(agentLog);
     delegated && r.text.includes(word) ? console.log(`PASS delegate (Claude -> gpt-6-luna -> ${word})`) : fail(`delegate: delegated=${delegated} reply=${r.text.slice(0, 200)}`);
@@ -464,7 +464,8 @@ for (const s of scenarios) {
     const own = (r) => r.tools.filter((n) => delegating.test(n));
     const del = (r) => r.tools.filter((n) => /elpis-agents/.test(n));
     const on = await toolsTurn(undefined), off = await toolsTurn(false), back = await toolsTurn(true);
-    const offReplyClean = !/\b(Agent|Task|ListAgents|SendMessage|Workflow|RemoteTrigger)\b|elpis-agents|delegate/.test(off.reply);
+    // Claude's own list (its first line); a later "correction" sentence may name removed tools.
+    const offReplyClean = !/\b(Agent|Task|ListAgents|SendMessage|Workflow|RemoteTrigger)\b|elpis-agents|delegate/.test(off.reply.trim().split("\n")[0]);
     const ok = [on, back].every((r) => r.tools.some((n) => /^(Agent|Task)$/.test(n)) && del(r).length && r.status === "completed") && off.status === "completed" && off.tools.length > 0 && !own(off).length && !del(off).length && offReplyClean;
     ok ? console.log(`PASS subagents (on: ${[...own(on), ...del(on)].join(", ")}; off: none of them in Claude Code's ${off.tools.length} tools or Claude's answer; on again: ${[...own(back), ...del(back)].join(", ")})`)
       : fail(`subagents: ${[["on", on], ["off", off], ["on again", back]].map(([k, r]) => `${k} [write ${r.write}, turn ${r.status}]: tools=${JSON.stringify([...own(r), ...del(r)])} of ${r.tools.length}, Claude said: ${r.reply.replace(/\s+/g, " ").slice(0, 400)}`).join(" | ")}`);
@@ -498,6 +499,28 @@ for (const s of scenarios) {
       && read.result?.thread?.parentThreadId === tid && replay.includes(word) && (loaded.result?.data ?? []).includes(cid) && (picker.result?.data ?? []).some((t) => t.id === cid);
     ok ? console.log(`PASS claude-subagent (child ${cid} "${child.agentNickname}" of the chat said ${word}; started/completed rows in the chat; readable, listed, replayable)`)
       : fail(`claude-subagent: turn=${r.status} child=${cid ?? "none"} link=${spawnLink} started=${activity("started")} completed=${activity("completed")} child-said=${JSON.stringify(childText.slice(0, 80))} child-turn=${childTurnDone} read=${JSON.stringify(read.error ?? read.result?.thread?.parentThreadId ?? null)} replay-has-word=${replay.includes(word)} loaded=${(loaded.result?.data ?? []).includes(cid)} picker=${(picker.result?.data ?? []).some((t) => t.id === cid)} parent-said=${JSON.stringify(parentLeak.slice(0, 120))}`);
+  } else if (s === "pick") {
+    // The mother agent reads list_models, hands each job to a helper that fits it, across providers
+    // (one must be Gemini through Antigravity), and every helper is recorded under its chat.
+    const { readFileSync } = await import("node:fs");
+    const work = mkdtempSync(join(tmpdir(), "elpis-e2e-pick-"));
+    writeFileSync(join(work, "notes.txt"), "one\ntwo\nthree\n");
+    writeFileSync(join(work, "stats.py"), "def average(xs):\n    return sum(xs) / len(xs) - 1\n");
+    const logPath = "/tmp/acp-bridge/elpis-agents.log";
+    const logAt = (() => { try { return readFileSync(logPath, "utf8").length; } catch { return 0; } })();
+    const st = await call("thread/start", { cwd: work, approvalPolicy: "never", sandbox: "danger-full-access" });
+    const tid = st.result?.thread?.id;
+    await call("thread/settings/update", { threadId: tid, model: process.env.E2E_MODEL ?? "claude/opus", effort: "low" });
+    const r = await turn(tid, [{ type: "text", text: "First call list_models to see which helper agents you can use. Then hand off these three jobs with delegate, each to the model that fits it best; do none of them yourself. Job 1 (easy): count the lines in notes.txt. Job 2 (hard): find the bug in stats.py and give the fix. Job 3: have a Gemini model through Antigravity summarise notes.txt in five words. Reply with one line per job: the model you chose and its result.", text_elements: [] }], 900000);
+    const agentsLog = (() => { try { return readFileSync(logPath, "utf8").slice(logAt); } catch { return ""; } })();
+    const listed = /list_models/.test(agentsLog);
+    const models = [...agentsLog.matchAll(/delegate model=(\S+)/g)].map((m) => m[1]);
+    const completed = (agentsLog.match(/status=completed/g) ?? []).length;
+    const store = (() => { try { return JSON.parse(readFileSync(storeEnv.ACP_BRIDGE_STORE, "utf8")); } catch { return {}; } })();
+    const linked = Object.values(store._delegations ?? {}).filter((d) => d.parentThreadId === tid).length;
+    listed && models.length >= 3 && models.some((m) => m.startsWith("agy/")) && models.some((m) => !/^(agy|claude)\//.test(m)) && completed >= 3 && linked >= 3 && r.status === "completed"
+      ? console.log(`PASS pick (list_models read; helpers ${models.join(", ")}; ${completed} finished; ${linked} recorded under the chat)`)
+      : fail(`pick: list_models=${listed} helpers=${JSON.stringify(models)} finished=${completed} recorded=${linked} status=${r.status} reply=${r.text.slice(-300)}`);
   } else if (s === "image") {
     const word = process.env.E2E_IMAGE_WORD;
     const path = process.env.E2E_IMAGE_PATH;
