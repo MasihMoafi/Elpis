@@ -454,7 +454,12 @@ async fn the_provider_list_offers_the_claude_subscription_with_its_models_alone(
 #[tokio::test]
 async fn the_model_command_starts_at_the_provider_list_on_the_current_provider() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.5")).await;
+    // Before startup completes, /model keeps its old behaviour and opens no provider list.
+    chat.dispatch_command(SlashCommand::Model);
+    let before = render_bottom_popup(&chat, /*width*/ 120);
+    assert!(!before.contains("Choose a provider"), "{before}");
 
+    chat.thread_id = Some(ThreadId::new());
     chat.dispatch_command(SlashCommand::Model);
     let popup = render_bottom_popup(&chat, /*width*/ 120);
 
