@@ -118,6 +118,7 @@ Each fix has an e2e scenario that failed on the bridge before it and passes afte
 | `/resume` did not list a chat only Claude answered: the engine takes a thread's preview only from its own user-message events, and `thread/list` leaves out threads without one | The bridge adds such chats from its store to `thread/list`, previewed by their first message, at their place in the list's order and page | picker |
 | A shell line with an operator read `echo one '&&' echo two`: the TUI splits a command into words and quotes them again | A command that is not plain words goes as `bash -lc '<script>'`, which the TUI shows as the script, as it does Elpis's own | shell |
 | Each task-list change drew two identical "Updated Plan" rows | An unchanged list is not sent again | plan |
+| Gemini wanted from the Antigravity (Google) sign-in, like Claude | `agy-acp.mjs` wraps the `agy` CLI's NDJSON stream mode as an ACP agent; the bridge serves agents by prefix (`claude/`, `agy/`). Approvals do not apply (agy decides its own permissions in print mode); Full Access and Plan map to agy flags | antigravity |
 
 Known gaps: Smart Prune does not reach Claude chats (the Ledger says so); Claude Code also reads CLAUDE.md/AGENTS.md itself, so a file excluded in the Ledger can still reach Claude; after rewinding a Claude chat with no later GPT turn, the engine keeps the rewound turns' recorded text, which a later GPT turn in that chat could see.
 
