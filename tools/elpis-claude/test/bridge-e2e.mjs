@@ -21,10 +21,14 @@ await new Promise((r, j) => { ws.on("open", r); ws.on("error", j); });
 let seq = 0;
 const pending = new Map();
 const listeners = new Set();
+const approvals = [];
+let approvalAnswer = "accept";
+const seen = [];
 ws.on("message", (data) => {
   const m = JSON.parse(data.toString());
   if (m.id !== undefined && !m.method && pending.has(m.id)) { pending.get(m.id)(m); pending.delete(m.id); return; }
-  if (m.id !== undefined && m.method) ws.send(JSON.stringify({ id: m.id, result: { decision: "accept" } }));
+  if (m.id !== undefined && m.method) { approvals.push(m.params?.command ?? m.method); ws.send(JSON.stringify({ id: m.id, result: { decision: approvalAnswer } })); }
+  seen.push(m);
   for (const l of listeners) l(m);
 });
 const call = (method, params) => new Promise((r) => { const id = `e2e-${++seq}`; pending.set(id, r); ws.send(JSON.stringify({ id, method, params })); });
@@ -71,6 +75,60 @@ for (const s of scenarios) {
     r.status === "interrupted" && !ir.error ? console.log(`PASS interrupt (stopped after ${secs}s, ${r.text.length} chars)`) : fail(`interrupt: status=${r.status} after ${secs}s, interrupt reply ${JSON.stringify(ir)}`);
     const after = await turn(threadId, [{ type: "text", text: "Reply with exactly: AFTER-STOP", text_elements: [] }]);
     after.text.includes("AFTER-STOP") ? console.log("PASS turn after interrupt") : fail(`turn after interrupt: ${JSON.stringify(after)}`);
+  } else if (s === "approval") {
+    const { existsSync } = await import("node:fs");
+    const ask = await call("thread/start", { cwd: dir, approvalPolicy: "on-request", sandbox: "workspace-write" });
+    const askId = ask.result?.thread?.id;
+    await call("thread/settings/update", { threadId: askId, model: "claude/opus", effort: "low" });
+    for (const [answer, file, want] of [["decline", "denied.txt", false], ["accept", "allowed.txt", true]]) {
+      approvalAnswer = answer; approvals.length = 0;
+      await turn(askId, [{ type: "text", text: `Use your Bash tool to run exactly: touch ${file}   Then reply DONE.`, text_elements: [] }]);
+      const ok = approvals.length > 0 && existsSync(join(dir, file)) === want;
+      ok ? console.log(`PASS approval ${answer} (asked ${approvals.length}x, file ${want ? "created" : "absent"})`) : fail(`approval ${answer}: asked ${approvals.length}x, file exists=${existsSync(join(dir, file))}`);
+    }
+    approvalAnswer = "accept";
+  } else if (s === "usage") {
+    const from = seen.length;
+    await turn(threadId, [{ type: "text", text: "Reply with exactly: USAGE", text_elements: [] }]);
+    await new Promise((r) => setTimeout(r, 6000));
+    const later = seen.slice(from);
+    const limits = later.find((m) => m.method === "account/rateLimits/updated")?.params?.rateLimits;
+    const tokens = later.find((m) => m.method === "thread/tokenUsage/updated" && m.params.threadId === threadId)?.params?.tokenUsage;
+    const five = limits?.primary;
+    five?.windowDurationMins === 300 && typeof five.usedPercent === "number" && tokens?.modelContextWindow > 0
+      ? console.log(`PASS usage (5h ${five.usedPercent}% used, context ${tokens.last.totalTokens}/${tokens.modelContextWindow})`)
+      : fail(`usage: limits=${JSON.stringify(limits)} tokens=${JSON.stringify(tokens)}`);
+  } else if (s === "resume") {
+    const word = `PEAR-${Math.floor(Math.random() * 9000 + 1000)}`;
+    await turn(threadId, [{ type: "text", text: `Remember this word: ${word}. Reply with just OK.`, text_elements: [] }]);
+    ws.close(); bridge.kill(); await new Promise((r) => setTimeout(r, 1500));
+    if (process.env.E2E_BREAK_SESSION) {
+      const { readFileSync, writeFileSync: wf } = await import("node:fs");
+      const storePath = `${process.env.HOME}/.elpis-next/elpis-claude/sessions.json`;
+      const st = JSON.parse(readFileSync(storePath, "utf8"));
+      st[threadId] = { ...st[threadId], session: "00000000-0000-4000-8000-000000000000", sessions: undefined };
+      wf(storePath, JSON.stringify(st, null, 1));
+      console.log("(saved Claude session link broken on purpose)");
+    }
+    const b2 = spawn("node", [process.env.E2E_BRIDGE ?? join(here, "acp-bridge.mjs")], { env: { ...process.env, PORT: String(port + 1), NODE_USE_ENV_PROXY: "1", ACP_BRIDGE_LOG: "/tmp/acp-bridge/e2e.log" }, stdio: "ignore" });
+    await new Promise((r) => setTimeout(r, 800));
+    const ws2 = new WebSocket(`ws://127.0.0.1:${port + 1}`);
+    await new Promise((r) => ws2.on("open", r));
+    const p2 = new Map(); let t2 = 0; let text2 = ""; let doneT;
+    ws2.on("message", (d) => { const m = JSON.parse(d.toString()); if (m.id !== undefined && !m.method && p2.has(m.id)) { p2.get(m.id)(m); p2.delete(m.id); } if (m.method === "item/agentMessage/delta") text2 += m.params.delta; if (m.method === "turn/completed") doneT?.(); });
+    const c2 = (method, params) => new Promise((r) => { const id = `r-${++t2}`; p2.set(id, r); ws2.send(JSON.stringify({ id, method, params })); });
+    await c2("initialize", { clientInfo: { name: "codex-tui", title: null, version: "0.160.0" }, capabilities: { experimentalApi: true } });
+    ws2.send(JSON.stringify({ method: "initialized" }));
+    const res = await c2("thread/resume", { threadId });
+    const model = res.result?.model;
+    const items = await c2("thread/items/list", { threadId, turnId: null, cursor: null, limit: 100, sortDirection: "desc" });
+    const shown = (items.result?.data ?? []).some((e) => e.item?.type === "userMessage" && JSON.stringify(e.item).includes(word));
+    const finished = new Promise((r) => { doneT = r; setTimeout(r, 120000); });
+    c2("turn/start", { threadId, input: [{ type: "text", text: "What word did I ask you to remember? Reply with only the word.", text_elements: [] }] });
+    await finished;
+    model === "claude/opus" && shown && text2.includes(word) ? console.log(`PASS resume (model ${model}, history shown, remembered ${word})`) : fail(`resume: model=${model} shown=${shown} reply=${text2}`);
+    ws2.close(); b2.kill();
+    process.exit();
   } else if (s === "image") {
     const word = process.env.E2E_IMAGE_WORD;
     const path = process.env.E2E_IMAGE_PATH;

@@ -121,7 +121,6 @@ wss.on("connection", (ws) => {
   const engine = spawn(process.env.ELPIS_ENGINE_BIN ?? `${HOME}/.local/bin/elpis`, ["app-server"], { stdio: ["pipe", "pipe", "ignore"] });
   const threadCwd = new Map();
   const threadPolicy = new Map();
-  const startPolicy = new Map();
   const sessions = new Map();
   const bridgeRequests = new Map();
   let acp = null;
@@ -173,9 +172,13 @@ wss.on("connection", (ws) => {
   }
   async function priorTranscript(threadId) {
     try {
-      const r = await engineCall("thread/turns/list", { threadId, limit: 30, sortDirection: "desc", itemsView: "full" });
+      const r = await engineCall("thread/turns/list", { threadId, limit: 30, sortDirection: "desc", itemsView: "full" }).catch(() => ({ data: [] }));
+      await storeChain;
+      const stored = (await loadStore())[threadId]?.turns ?? [];
+      const have = new Set((r.data ?? []).map((t) => t.id));
+      const all = [...(r.data ?? []), ...stored.filter((t) => !have.has(t.id))].sort((a, b) => (a.startedAt ?? 0) - (b.startedAt ?? 0));
       const lines = [];
-      for (const turn of (r.data ?? []).reverse()) for (const it of turn.items ?? []) {
+      for (const turn of all) for (const it of turn.items ?? []) {
         if (it.type === "userMessage") lines.push(`User: ${textOf(it.content)}`);
         else if (it.type === "agentMessage" && it.text?.trim()) lines.push(`Assistant: ${it.text.trim()}`);
         else if (it.type === "commandExecution") lines.push(`(Assistant ran: ${it.command})`);
@@ -190,6 +193,9 @@ wss.on("connection", (ws) => {
   lineReader(engine.stdout, async (line) => {
     let parsed = null;
     try { parsed = JSON.parse(line); } catch {}
+    const th = parsed?.result?.thread ?? parsed?.params?.thread;
+    if (th?.id && th?.cwd) threadCwd.set(th.id, th.cwd);
+    if (th?.id && parsed?.result?.approvalPolicy) threadPolicy.set(th.id, parsed.result.approvalPolicy);
     if (parsed && engineReqs.has(parsed.id) && !parsed.method) {
       const p = engineReqs.get(parsed.id); engineReqs.delete(parsed.id);
       parsed.error ? p.reject(parsed.error) : p.resolve(parsed.result);
@@ -266,12 +272,6 @@ wss.on("connection", (ws) => {
       ws.send(JSON.stringify(parsed));
       return;
     }
-    try {
-      const msg = JSON.parse(line);
-      const thread = msg.result?.thread ?? msg.params?.thread;
-      if (thread?.id && thread?.cwd) threadCwd.set(thread.id, thread.cwd);
-      if (thread?.id && startPolicy.has(msg.id)) { threadPolicy.set(thread.id, startPolicy.get(msg.id)); startPolicy.delete(msg.id); }
-    } catch {}
     ws.send(line);
   });
 
@@ -311,17 +311,19 @@ wss.on("connection", (ws) => {
       await ensureAcp();
       const policy = req.params.approvalPolicy ?? threadPolicy.get(threadId) ?? "on-request";
       const ask = policy !== "never";
-      const key = `${threadId}|${ask ? "ask" : "full"}`;
-      let sessionId = sessions.get(key);
+      const mode = ask ? "ask" : "full";
+      let live = sessions.get(threadId);
+      let sessionId = null;
       let freshSession = false;
-      if (!sessionId) {
+      if (live && live.mode === mode) sessionId = live.id;
+      else {
         const cwd = threadCwd.get(threadId) ?? process.cwd();
         const instructions = await elpisInstructions(threadId);
         let _meta = ask ? { claudeCode: { options: { settingSources: ["project", "local"] } } } : undefined;
         if (instructions) { _meta = { ...(_meta ?? {}), systemPrompt: { append: instructions } }; log(`Elpis instructions for Claude: ${instructions.length} chars`); }
         await storeChain;
         const store = await loadStore();
-        const saved = store[threadId]?.sessions?.[ask ? "ask" : "full"];
+        const saved = live?.id ?? store[threadId]?.session ?? Object.values(store[threadId]?.sessions ?? {})[0];
         if (saved) {
           const prev = acp.onUpdate; acp.onUpdate = null;
           try { await acp.call("session/load", { sessionId: saved, cwd, mcpServers: [], ...(_meta && { _meta }) }); sessionId = saved; log(`session ${saved} reloaded for thread ${threadId}`); }
@@ -333,9 +335,10 @@ wss.on("connection", (ws) => {
           freshSession = true;
           log(`session ${sessionId} for thread ${threadId} in ${cwd} (${ask ? "Elpis asks" : "full access"}, policy ${policy})`);
         }
-        sessions.set(key, sessionId);
+        live = { id: sessionId, mode };
+        sessions.set(threadId, live);
         const sid = sessionId;
-        updateStore((st) => { st[threadId] = { ...st[threadId], sessions: { ...st[threadId]?.sessions, [ask ? "ask" : "full"]: sid } }; });
+        updateStore((st) => { st[threadId] = { ...st[threadId], session: sid, mode }; });
       }
       updateStore((st) => { st[threadId] = { ...st[threadId], model: claudeModel.get(threadId), effort: claudeEffort.get(threadId) ?? null }; });
       const want = claudeModel.get(threadId)?.slice("claude/".length);
@@ -421,7 +424,7 @@ wss.on("connection", (ws) => {
       const record = [{ type: "message", role: "user", content: [{ type: "input_text", text: userText }] }];
       if (used.length) record.push({ type: "message", role: "assistant", content: [{ type: "output_text", text: `[${claudeModel.get(threadId) ?? "Claude"} used tools: ${used.join("; ")}]` }] });
       if (reply) record.push({ type: "message", role: "assistant", content: [{ type: "output_text", text: reply }] });
-      engineCall("thread/inject_items", { threadId, items: record })
+      await engineCall("thread/inject_items", { threadId, items: record })
         .then(() => log(`recorded Claude turn in thread ${threadId} (${record.length} items)`))
         .catch((e) => log(`record failed for ${threadId}: ${e.message ?? JSON.stringify(e)}`));
     } catch (e) {
@@ -435,7 +438,7 @@ wss.on("connection", (ws) => {
     {
       const clip = (it) => (it.aggregatedOutput && it.aggregatedOutput.length > 4000 ? { ...it, aggregatedOutput: it.aggregatedOutput.slice(0, 4000) + "\n…" } : it);
       const record = { id: turnId, items: [userItem, ...items.map(clip)], itemsView: "full", status, error, startedAt, completedAt, durationMs: (completedAt - startedAt) * 1000 };
-      updateStore((st) => { st[threadId] = { ...st[threadId], turns: [...(st[threadId]?.turns ?? []), record].slice(-200) }; });
+      await updateStore((st) => { st[threadId] = { ...st[threadId], turns: [...(st[threadId]?.turns ?? []), record].slice(-200) }; });
     }
     notify("turn/completed", { threadId, turn: { id: turnId, items, itemsView: "summary", status, error, startedAt, completedAt, durationMs: (completedAt - startedAt) * 1000 } });
     notify("turn/activityUpdated", { threadId, turnId, status: status === "inProgress" ? "completed" : status, durationMs: now() - t0, timeToFirstTokenMs: firstTokenAt ? firstTokenAt - t0 : null });
@@ -454,7 +457,6 @@ wss.on("connection", (ws) => {
       return;
     }
     if (process.env.ACP_BRIDGE_DEBUG && msg.method && (process.env.ACP_BRIDGE_DEBUG === "all" || !/^thread\/(read|turns\/list|list|loaded)/.test(msg.method))) log(`tui-> ${line.slice(0, 600)}`);
-    if (msg.method === "thread/start") startPolicy.set(msg.id, msg.params?.approvalPolicy ?? null);
     if (msg.method === "model/list") pendingModelList.add(msg.id);
     if (msg.method === "thread/resume") pendingResume.add(msg.id);
     if (msg.method === "thread/turns/list" && msg.params?.threadId) pendingTurnsList.set(msg.id, msg.params);
@@ -463,6 +465,7 @@ wss.on("connection", (ws) => {
       const p = msg.params ?? {};
       if (isClaude(p.model)) { claudeModel.set(p.threadId, p.model); p.model = null; log(`thread ${p.threadId} -> ${claudeModel.get(p.threadId)}`); }
       else if (typeof p.model === "string") claudeModel.delete(p.threadId);
+      if (p.approvalPolicy) threadPolicy.set(p.threadId, p.approvalPolicy);
       if (p.effort && claudeModel.has(p.threadId)) { claudeEffort.set(p.threadId, p.effort); p.effort = null; }
       engine.stdin.write(JSON.stringify(msg) + "\n");
       return;
@@ -493,5 +496,5 @@ wss.on("connection", (ws) => {
     }
     engine.stdin.write(line + "\n");
   });
-  ws.on("close", () => { engine.kill(); acp?.kill(); log("tui disconnected"); });
+  ws.on("close", async () => { await storeChain; engine.kill(); acp?.kill(); log("tui disconnected"); });
 });
