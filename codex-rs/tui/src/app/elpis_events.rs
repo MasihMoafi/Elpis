@@ -48,6 +48,8 @@ impl App {
                 .chat_widget
                 .add_error_message("Could not start the local dashboard server".to_string()),
         }
+        // The Agents map starts with the agents this session already knows.
+        self.repaint_agents_overview();
         tui.frame_requester().schedule_frame();
     }
 

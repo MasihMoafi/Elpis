@@ -250,6 +250,11 @@ static DASHBOARD_STATE: Mutex<Option<DashboardState>> = Mutex::new(None);
 static SERVER_URL: Mutex<Option<String>> = Mutex::new(None);
 static DASHBOARD_AGENTS: Mutex<Vec<DashboardAgent>> = Mutex::new(Vec::new());
 
+/// Whether `/dashboard` has started this session's page server.
+pub(crate) fn is_running() -> bool {
+    SERVER_URL.lock().is_ok_and(|url| url.is_some())
+}
+
 /// Replaces the agents the Agents map draws; the page reads them from `/agents.json`.
 pub(crate) fn publish_agents(agents: Vec<DashboardAgent>) {
     if let Ok(mut slot) = DASHBOARD_AGENTS.lock() {

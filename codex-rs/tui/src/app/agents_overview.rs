@@ -264,6 +264,17 @@ impl App {
             .chat_widget
             .selected_index_for_present_view(AGENTS_OVERVIEW_VIEW_ID)
         else {
+            // With this list closed, the dashboard's Agents map still follows the agents.
+            if crate::dashboard_server::is_running() {
+                let threads = self
+                    .agents_overview
+                    .threads
+                    .values()
+                    .flatten()
+                    .cloned()
+                    .collect();
+                self.agents_overview_view(threads, /*selected_thread_id*/ None);
+            }
             return;
         };
         let selected_thread_id = self
@@ -402,6 +413,10 @@ impl App {
             }
         }
 
+        // The dashboard's Agents map shows the same tree as this list.
+        crate::dashboard_server::publish_agents(super::agents_overview_view::dashboard_agents(
+            &rows,
+        ));
         AgentsOverviewView::new(
             rows,
             selected_thread_id,

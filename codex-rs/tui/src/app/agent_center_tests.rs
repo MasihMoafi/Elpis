@@ -947,3 +947,58 @@ async fn live_center_shows_selected_agents_recent_conversation() -> Result<()> {
     assert_eq!(server.await??, vec![helper.to_string()]);
     Ok(())
 }
+
+#[tokio::test]
+async fn dashboard_map_gets_the_lists_tree_titles_models_and_colours() {
+    let app = make_test_app().await;
+    let view = app.agents_overview_view(nested_agents_fixture(), /*selected_thread_id*/ None);
+    let agents = crate::app::agents_overview_view::dashboard_agents(&view.rows);
+    let summary = agents
+        .iter()
+        .map(|agent| {
+            let parent = agent.parent_id.as_ref().map(|parent| {
+                agents
+                    .iter()
+                    .find(|other| &other.id == parent)
+                    .map_or("missing", |other| other.title.as_str())
+            });
+            (
+                agent.title.as_str(),
+                parent,
+                agent.color.as_deref(),
+                agent.status_label.as_str(),
+            )
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        summary,
+        vec![
+            ("Fix the dashboard token count", None, Some("#b4532a"), "Working"),
+            (
+                "Find where usage is emitted",
+                Some("Fix the dashboard token count"),
+                Some("#0b7a5e"),
+                "Working",
+            ),
+            (
+                "Check the bridge turns",
+                Some("Find where usage is emitted"),
+                Some("#6d3fb5"),
+                "Ready",
+            ),
+            (
+                "Draft the release note",
+                Some("Fix the dashboard token count"),
+                Some("#1a5fd0"),
+                "Ready",
+            ),
+            ("I'm home.", None, Some("#b4532a"), "Inactive"),
+        ]
+    );
+    let sol = agents
+        .iter()
+        .find(|agent| agent.title == "Find where usage is emitted")
+        .expect("the helper is on the map");
+    assert_eq!(sol.model, view.rows[1].model_label());
+    assert_eq!(sol.status, crate::dashboard_server::DashboardAgentStatus::Working);
+}

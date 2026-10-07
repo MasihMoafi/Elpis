@@ -13,6 +13,8 @@ use grouping::model_name;
 use super::agents_overview::AGENTS_OVERVIEW_VIEW_ID;
 use super::agents_overview_details::AgentsOverviewDetails;
 use crate::app_event::AgentsOverviewAction;
+use crate::dashboard_server::DashboardAgent;
+use crate::dashboard_server::DashboardAgentStatus;
 use crate::app_event::AppEvent;
 use crate::app_event_sender::AppEventSender;
 use crate::bottom_pane::BottomPaneView;
@@ -129,6 +131,30 @@ impl AgentsOverviewRow {
             },
         )
     }
+}
+
+/// The rows as the dashboard's Agents map draws them: the list's own titles, model labels,
+/// colours and statuses, each helper pointing at the task that started it.
+pub(super) fn dashboard_agents(rows: &[AgentsOverviewRow]) -> Vec<DashboardAgent> {
+    rows.iter()
+        .map(|row| DashboardAgent {
+            id: row.thread.id.clone(),
+            parent_id: row
+                .parent
+                .and_then(|index| rows.get(index))
+                .map(|parent| parent.thread.id.clone()),
+            title: display_title(&row.thread).to_string(),
+            model: row.model_label(),
+            color: command_center::thread_model(&row.thread).map(command_center::agent_hex),
+            status: match row.group {
+                AgentsOverviewGroup::NeedsYou => DashboardAgentStatus::NeedsYou,
+                AgentsOverviewGroup::Working => DashboardAgentStatus::Working,
+                AgentsOverviewGroup::Ready => DashboardAgentStatus::Ready,
+                AgentsOverviewGroup::Finished => DashboardAgentStatus::Inactive,
+            },
+            status_label: row.group.label().to_string(),
+        })
+        .collect()
 }
 
 fn display_title(thread: &Thread) -> &str {

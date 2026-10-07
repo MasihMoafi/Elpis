@@ -8,6 +8,7 @@ mod navigation;
 mod render;
 mod rows;
 
+pub(in crate::app) use colors::agent_hex;
 pub(in crate::app) use colors::agent_style;
 pub(in crate::app) use colors::thread_model;
 pub(in crate::app) use colors::working_style;

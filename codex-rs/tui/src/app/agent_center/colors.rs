@@ -42,6 +42,13 @@ fn agent_rgb(model: &str) -> (u8, u8, u8) {
     }
 }
 
+/// The model's hue as `#rrggbb`, before any terminal adjustment; the dashboard's Agents map
+/// draws with it, so an agent keeps one colour in both places.
+pub(in crate::app) fn agent_hex(model: &str) -> String {
+    let (r, g, b) = agent_rgb(model);
+    format!("#{r:02x}{g:02x}{b:02x}")
+}
+
 /// The thread's model, when it reports one.
 pub(in crate::app) fn thread_model(thread: &Thread) -> Option<&str> {
     thread.model.as_deref().filter(|model| !model.is_empty())
