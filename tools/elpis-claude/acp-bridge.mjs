@@ -96,6 +96,16 @@ wss.on("connection", (ws) => {
   const claudeModel = new Map();
   const claudeEffort = new Map();
   const sessionModel = new Map();
+  const tokenSums = new Map();
+  const lastContext = new Map();
+  const usageBreakdown = (u) => ({ totalTokens: u.total ?? 0, inputTokens: u.input ?? 0, cachedInputTokens: u.cachedRead ?? 0, cacheWriteInputTokens: u.cachedWrite ?? 0, outputTokens: u.output ?? 0, reasoningOutputTokens: 0 });
+  const sendUsage = (threadId, turnId, last) => {
+    const sum = tokenSums.get(threadId) ?? {};
+    const ctx = lastContext.get(threadId) ?? {};
+    const lastB = usageBreakdown(last ?? {});
+    if (typeof ctx.used === "number") lastB.totalTokens = ctx.used;
+    notify("thread/tokenUsage/updated", { threadId, turnId, tokenUsage: { total: usageBreakdown(sum), last: lastB, modelContextWindow: ctx.size ?? null } });
+  };
   const isClaude = (m) => typeof m === "string" && m.startsWith("claude/");
   const ensureAcp = async () => { if (!acp || acp.dead) { acp = new Acp(); await acp.ready; log("acp ready"); } return acp; };
   const catalog = (async () => {
@@ -114,6 +124,12 @@ wss.on("connection", (ws) => {
   lineReader(engine.stdout, async (line) => {
     let parsed = null;
     try { parsed = JSON.parse(line); } catch {}
+    if (parsed?.method === "thread/settings/updated" && claudeModel.has(parsed.params?.threadId)) {
+      const tid = parsed.params.threadId;
+      parsed.params.threadSettings = { ...parsed.params.threadSettings, model: claudeModel.get(tid), effort: claudeEffort.get(tid) ?? parsed.params.threadSettings?.effort ?? null };
+      ws.send(JSON.stringify(parsed));
+      return;
+    }
     if (parsed && pendingModelList.has(parsed.id) && Array.isArray(parsed.result?.data)) {
       pendingModelList.delete(parsed.id);
       const { models, efforts } = await Promise.race([catalog, new Promise((r) => setTimeout(() => r({ models: [], efforts: [] }), 15000))]);
@@ -152,6 +168,9 @@ wss.on("connection", (ws) => {
     const startedAt = Math.floor(now() / 1000);
     notify("thread/status/changed", { threadId, status: { type: "active", activeFlags: [] } });
     notify("turn/started", { threadId, turn: { ...turn, startedAt } });
+    notify("turn/costUpdated", { threadId, turnId, cost: { type: "unavailable", reason: "subscriptionAuthentication" } });
+    const t0 = now();
+    let firstTokenAt = null;
     const userItem = { type: "userMessage", id: randomUUID(), clientId: null, content: input };
     notify("item/started", { item: userItem, threadId, turnId, startedAtMs: now() });
     notify("item/completed", { item: userItem, threadId, turnId, completedAtMs: now() });
@@ -196,10 +215,11 @@ wss.on("connection", (ws) => {
             notify("item/started", { item: message, threadId, turnId, startedAtMs: now() });
           }
           message.text += u.content.text;
+          firstTokenAt ??= now();
           notify("item/agentMessage/delta", { threadId, turnId, itemId: message.id, delta: u.content.text });
         } else if (u.sessionUpdate === "usage_update" && typeof u.used === "number") {
-          const b = { totalTokens: u.used, inputTokens: u.used, cachedInputTokens: 0, cacheWriteInputTokens: 0, outputTokens: 0, reasoningOutputTokens: 0 };
-          notify("thread/tokenUsage/updated", { threadId, turnId, tokenUsage: { total: b, last: b, modelContextWindow: u.size ?? null } });
+          lastContext.set(threadId, { used: u.used, size: u.size ?? null });
+          sendUsage(threadId, turnId, null);
         } else if (u.sessionUpdate === "tool_call") {
           closeMessage();
           const item = { type: "commandExecution", id: u.toolCallId, pluginId: null, scriptPath: null, command: u.title ?? u.kind ?? "tool", cwd: threadCwd.get(threadId) ?? process.cwd(), processId: null, source: "agent", status: "inProgress", commandActions: [], aggregatedOutput: null, exitCode: null, durationMs: null, started: now() };
@@ -239,6 +259,14 @@ wss.on("connection", (ws) => {
       };
       const prompt = input.filter((c) => c.type === "text").map((c) => ({ type: "text", text: c.text }));
       const result = await acp.call("session/prompt", { sessionId, prompt });
+      const tu = result.usage;
+      if (tu) {
+        const turnUsage = { input: tu.inputTokens ?? 0, output: tu.outputTokens ?? 0, cachedRead: tu.cachedReadTokens ?? 0, cachedWrite: tu.cachedWriteTokens ?? 0, total: tu.totalTokens ?? 0 };
+        const sum = tokenSums.get(threadId) ?? { input: 0, output: 0, cachedRead: 0, cachedWrite: 0, total: 0 };
+        for (const k of Object.keys(sum)) sum[k] += turnUsage[k];
+        tokenSums.set(threadId, sum);
+        sendUsage(threadId, turnId, turnUsage);
+      }
       if (result.stopReason === "cancelled") status = "interrupted";
     } catch (e) {
       status = "failed";
@@ -249,6 +277,7 @@ wss.on("connection", (ws) => {
     active = null;
     const completedAt = Math.floor(now() / 1000);
     notify("turn/completed", { threadId, turn: { id: turnId, items, itemsView: "summary", status, error, startedAt, completedAt, durationMs: (completedAt - startedAt) * 1000 } });
+    notify("turn/activityUpdated", { threadId, turnId, status: status === "inProgress" ? "completed" : status, durationMs: now() - t0, timeToFirstTokenMs: firstTokenAt ? firstTokenAt - t0 : null });
     notify("thread/status/changed", { threadId, status: { type: "idle" } });
     claudeLimits().then((rateLimits) => { log(`claude limits: 5h ${rateLimits.primary?.usedPercent}% week ${rateLimits.secondary?.usedPercent}%`); notify("account/rateLimits/updated", { rateLimits }); })
       .catch((e) => log(`claude limits: ${e.message}`));

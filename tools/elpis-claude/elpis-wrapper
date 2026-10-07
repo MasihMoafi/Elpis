@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+# Installed as ~/.local/bin/elpis. Interactive Elpis starts through the Claude
+# bridge so /model also lists Claude subscription models. Every subcommand,
+# --help/--version and --remote go straight to the real binary.
+# Undo: ln -sfn ~/.local/lib/elpis-next/elpis-next ~/.local/bin/elpis
+REAL="$HOME/.local/lib/elpis-next/elpis-next"
+BRIDGE_DIR="$HOME/Desktop/p/Elpis-wt-acp/tools/elpis-claude"
+
+direct() { exec "$REAL" "$@"; }
+[ -n "${ELPIS_NO_CLAUDE:-}" ] && direct "$@"
+command -v node >/dev/null && [ -f "$BRIDGE_DIR/acp-bridge.mjs" ] \
+  && [ -d "$BRIDGE_DIR/node_modules/@agentclientprotocol/claude-agent-acp" ] || direct "$@"
+for a in "$@"; do
+  case "$a" in --remote|--remote=*|-h|--help|-V|--version) direct "$@" ;; esac
+done
+case "${1:-}" in
+  ""|-*|resume) ELPIS_REAL="$REAL" exec "$BRIDGE_DIR/elpis-claude" "$@" ;;
+  *) direct "$@" ;;
+esac
