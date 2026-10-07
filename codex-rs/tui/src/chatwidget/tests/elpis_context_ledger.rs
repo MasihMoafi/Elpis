@@ -302,6 +302,29 @@ async fn tab_focuses_the_ledger_and_alt_c_hides_it_without_touching_the_draft() 
     assert!(op_rx.try_recv().is_err(), "nothing was submitted");
 }
 
+/// Masih types, presses Tab, then Backspace: Backspace must edit the draft, not act on a
+/// Ledger row. Only Tab, arrows and the Ledger's own keys belong to the panel.
+#[tokio::test]
+async fn backspace_in_the_focused_ledger_edits_the_draft() -> anyhow::Result<()> {
+    let root = tempdir()?;
+    let (mut chat, _rx, mut op_rx) = make_chatwidget_manual(None).await;
+    configure_ledger_sources(&mut chat, root.path())?;
+    chat.bottom_pane
+        .set_composer_text("Keep this draft".into(), Vec::new(), Vec::new());
+    let ledger_before = ledger_alone(&chat);
+
+    chat.handle_key_event(KeyEvent::from(KeyCode::Tab));
+    assert!(chat.context_ledger_has_focus());
+    chat.handle_key_event(KeyEvent::from(KeyCode::Backspace));
+    chat.handle_key_event(KeyEvent::from(KeyCode::Backspace));
+
+    assert_eq!(chat.bottom_pane.composer_text(), "Keep this dra");
+    assert!(!chat.context_ledger_has_focus(), "typing returns to the composer");
+    assert_eq!(ledger_alone(&chat), ledger_before, "no Ledger row changed");
+    assert!(op_rx.try_recv().is_err(), "nothing was submitted");
+    Ok(())
+}
+
 #[tokio::test]
 async fn tab_completes_a_slash_command_before_touching_the_ledger() {
     let (mut chat, _rx, mut op_rx) = make_chatwidget_manual(None).await;

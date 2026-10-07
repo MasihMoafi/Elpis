@@ -317,7 +317,7 @@ impl ChatWidget {
                     self.context_ledger.why_visible = !self.context_ledger.why_visible;
                 }
                 _ => {
-                    if matches!(key_event.code, KeyCode::Char(_)) {
+                    if matches!(key_event.code, KeyCode::Char(_) | KeyCode::Backspace) {
                         self.context_ledger.focused = false;
                     }
                     return false;
@@ -417,12 +417,13 @@ impl ChatWidget {
                     return false;
                 }
             }
-            KeyCode::Backspace | KeyCode::Delete => {
+            KeyCode::Delete => {
                 let source = sources[self.context_ledger.selected].clone();
                 self.remove_context_source(&source, &selectable);
             }
             _ => {
-                if matches!(key_event.code, KeyCode::Char(_)) {
+                // Typing, Backspace included, belongs to the draft.
+                if matches!(key_event.code, KeyCode::Char(_) | KeyCode::Backspace) {
                     self.context_ledger.focused = false;
                 }
                 return false;
@@ -1541,7 +1542,7 @@ impl ChatWidget {
         }
     }
 
-    /// Backspace/Delete on a manually added row drops it from the ledger for good.
+    /// Delete on a manually added row drops it from the ledger for good.
     /// Discovered rows (project rules, goal, checkpoint) are rediscovered on the next
     /// scan, so deleting them would silently reappear — those stay toggle-only.
     fn remove_context_source(
