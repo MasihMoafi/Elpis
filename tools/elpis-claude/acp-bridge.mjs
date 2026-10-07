@@ -9,7 +9,9 @@ const HOME = process.env.HOME;
 const LOG = process.env.ACP_BRIDGE_LOG ?? "/tmp/acp-bridge/bridge.log";
 const log = (s) => { try { appendFileSync(LOG, `${new Date().toISOString().slice(11, 23)} ${s}\n`); } catch {} };
 const ADAPTER = process.env.ACP_ADAPTER ?? new URL("./node_modules/@agentclientprotocol/claude-agent-acp/dist/index.js", import.meta.url).pathname;
-const CLAUDE = process.env.CLAUDE_CODE_EXECUTABLE ?? `${HOME}/.local/bin/claude`;
+const CLAUDE = process.env.ELPIS_CLAUDE_PRUNE
+  ? new URL("./claude-via-elpis", import.meta.url).pathname
+  : process.env.CLAUDE_CODE_EXECUTABLE ?? `${HOME}/.local/bin/claude`;
 const now = () => Date.now();
 const AGENTS_MCP = new URL("./elpis-agents-mcp.mjs", import.meta.url).pathname;
 const mcpServersFor = () => process.env.ACP_BRIDGE_NO_AGENTS ? [] : [{

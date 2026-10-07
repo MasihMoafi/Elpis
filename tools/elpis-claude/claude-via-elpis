@@ -1,0 +1,7 @@
+#!/bin/sh
+# Claude Code through `elpis claude` (Elpis Smart Prune proxy). Used by the bridge only when
+# ELPIS_CLAUDE_PRUNE=1; ELPIS_CLAUDE_PRUNE=passthrough routes without pruning.
+if [ "${ELPIS_CLAUDE_PRUNE:-}" = "passthrough" ]; then
+  exec "${ELPIS_ENGINE_BIN:-$HOME/.local/bin/elpis}" claude --no-prune -- "$@"
+fi
+exec "${ELPIS_ENGINE_BIN:-$HOME/.local/bin/elpis}" claude -- "$@"
