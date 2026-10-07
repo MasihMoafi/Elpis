@@ -98,7 +98,7 @@ wss.on("listening", () => log(`LISTENING ${wss.address().port}`));
 wss.on("connection", (ws) => {
   const toTui = (msg) => ws.send(JSON.stringify(msg));
   const notify = (method, params) => toTui({ method, params, emittedAtMs: now() });
-  const engine = spawn(`${HOME}/.local/bin/elpis`, ["app-server"], { stdio: ["pipe", "pipe", "ignore"] });
+  const engine = spawn(process.env.ELPIS_ENGINE_BIN ?? `${HOME}/.local/bin/elpis`, ["app-server"], { stdio: ["pipe", "pipe", "ignore"] });
   const threadCwd = new Map();
   const threadPolicy = new Map();
   const startPolicy = new Map();
@@ -141,6 +141,16 @@ wss.on("connection", (ws) => {
     engine.stdin.write(JSON.stringify({ id, method, params }) + "\n");
   });
   const textOf = (content) => (content ?? []).filter((c) => c.type === "text").map((c) => c.text).join("\n");
+  async function elpisInstructions(threadId) {
+    try {
+      const r = await engineCall("thread/elpisInstructions/read", { threadId });
+      const parts = [];
+      if (r.developerInstructions?.trim()) parts.push(r.developerInstructions.trim());
+      if (r.agentsMd?.trim()) parts.push(`# Project and global instructions admitted by Elpis (AGENTS.md)\n\n${r.agentsMd.trim()}`);
+      if (r.continuity?.trim()) parts.push(r.continuity.trim());
+      return parts.join("\n\n");
+    } catch (e) { log(`elpis instructions for ${threadId}: ${e.message ?? JSON.stringify(e)}`); return ""; }
+  }
   async function priorTranscript(threadId) {
     try {
       const r = await engineCall("thread/turns/list", { threadId, limit: 30, sortDirection: "desc", itemsView: "full" });
@@ -286,7 +296,9 @@ wss.on("connection", (ws) => {
       let freshSession = false;
       if (!sessionId) {
         const cwd = threadCwd.get(threadId) ?? process.cwd();
-        const _meta = ask ? { claudeCode: { options: { settingSources: ["project", "local"] } } } : undefined;
+        const instructions = await elpisInstructions(threadId);
+        let _meta = ask ? { claudeCode: { options: { settingSources: ["project", "local"] } } } : undefined;
+        if (instructions) { _meta = { ...(_meta ?? {}), systemPrompt: { append: instructions } }; log(`Elpis instructions for Claude: ${instructions.length} chars`); }
         await storeChain;
         const store = await loadStore();
         const saved = store[threadId]?.sessions?.[ask ? "ask" : "full"];
