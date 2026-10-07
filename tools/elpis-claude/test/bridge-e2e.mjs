@@ -138,6 +138,23 @@ for (const s of scenarios) {
     const agentLog = (() => { try { return readFileSync("/tmp/acp-bridge/elpis-agents.log", "utf8").slice(logBefore); } catch { return ""; } })();
     const delegated = /delegate thread=\S+ status=completed/.test(agentLog);
     delegated && r.text.includes(word) ? console.log(`PASS delegate (Claude -> gpt-6-luna -> ${word})`) : fail(`delegate: delegated=${delegated} reply=${r.text.slice(0, 200)}`);
+  } else if (s === "compact") {
+    const usedNow = () => [...seen].reverse().find((m) => m.method === "thread/tokenUsage/updated" && m.params.threadId === threadId)?.params?.tokenUsage?.last?.totalTokens;
+    for (let i = 0; i < 2; i++) await turn(threadId, [{ type: "text", text: "Write about 600 words on why tests should be able to fail. Plain prose.", text_elements: [] }], 240000);
+    await new Promise((r) => setTimeout(r, 2000));
+    const before = usedNow();
+    const done = new Promise((r) => { const l = (m) => { if (m.method === "turn/completed" && m.params.threadId === threadId) { listeners.delete(l); r(m.params.turn); } }; listeners.add(l); setTimeout(() => r({ status: "timeout" }), 300000); });
+    const cr = await call("thread/compact/start", { threadId });
+    const ct = await done;
+    await new Promise((r) => setTimeout(r, 2000));
+    const after = usedNow();
+    const word = `FIG-${Math.floor(Math.random() * 9000 + 1000)}`;
+    const next = await turn(threadId, [{ type: "text", text: `Reply with exactly: ${word}`, text_elements: [] }]);
+    await new Promise((r) => setTimeout(r, 2000));
+    const claudeAfter = usedNow();
+    !cr.error && ct.status === "completed" && claudeAfter < before - 4000 && next.text.includes(word)
+      ? console.log(`PASS compact (Claude context ${before} -> ${claudeAfter} on the next Claude turn)`)
+      : fail(`compact: err=${JSON.stringify(cr.error)} status=${ct.status} before=${before} after-compact=${after} claude-next=${claudeAfter} next=${next.text.slice(0, 60)}`);
   } else if (s === "image") {
     const word = process.env.E2E_IMAGE_WORD;
     const path = process.env.E2E_IMAGE_PATH;

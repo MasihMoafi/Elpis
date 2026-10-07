@@ -290,7 +290,8 @@ wss.on("connection", (ws) => {
     const { threadId, input = [] } = req.params;
     const turnId = randomUUID();
     const turn = { id: turnId, items: [], itemsView: "notLoaded", status: "inProgress", error: null, startedAt: null, completedAt: null, durationMs: null };
-    toTui({ id: req.id, result: { turn } });
+    if (req.id !== undefined) toTui({ id: req.id, result: { turn } });
+    const compacting = req.kind === "compact";
     const startedAt = Math.floor(now() / 1000);
     notify("thread/status/changed", { threadId, status: { type: "active", activeFlags: [] } });
     notify("turn/started", { threadId, turn: { ...turn, startedAt } });
@@ -429,7 +430,7 @@ wss.on("connection", (ws) => {
       const record = [{ type: "message", role: "user", content: [{ type: "input_text", text: userText }] }];
       if (used.length) record.push({ type: "message", role: "assistant", content: [{ type: "output_text", text: `[${claudeModel.get(threadId) ?? "Claude"} used tools: ${used.join("; ")}]` }] });
       if (reply) record.push({ type: "message", role: "assistant", content: [{ type: "output_text", text: reply }] });
-      await engineCall("thread/inject_items", { threadId, items: record })
+      if (!compacting) await engineCall("thread/inject_items", { threadId, items: record })
         .then(() => log(`recorded Claude turn in thread ${threadId} (${record.length} items)`))
         .catch((e) => log(`record failed for ${threadId}: ${e.message ?? JSON.stringify(e)}`));
     } catch (e) {
@@ -492,6 +493,13 @@ wss.on("connection", (ws) => {
       }
       if (isClaude(msg.params?.model)) msg.params.model = null;
       engine.stdin.write(JSON.stringify(msg) + "\n");
+      return;
+    }
+    if (msg.method === "thread/compact/start" && claudeModel.has(msg.params?.threadId) && !active) {
+      toTui({ id: msg.id, result: {} });
+      const extra = msg.params.instructions ? ` ${msg.params.instructions}` : "";
+      log(`claude compact for thread ${msg.params.threadId}`);
+      claudeTurn({ kind: "compact", params: { threadId: msg.params.threadId, input: [{ type: "text", text: `/compact${extra}`, text_elements: [] }] } });
       return;
     }
     if (msg.method === "turn/interrupt" && active && msg.params?.threadId === active.threadId) {
