@@ -581,7 +581,8 @@ impl ChatWidget {
             mention_bindings,
             remote_image_urls,
         });
-        self.add_to_history(history_cell::new_warning_event(
+        // Warnings collect behind F2; a refused image must show where it was pasted.
+        self.add_to_history(history_cell::new_error_event(
             self.image_inputs_not_supported_message(),
         ));
         self.request_redraw();

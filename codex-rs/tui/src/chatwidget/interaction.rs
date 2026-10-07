@@ -284,7 +284,8 @@ impl ChatWidget {
     /// warning event so users can switch models or remove attachments.
     pub(crate) fn attach_image(&mut self, path: PathBuf) {
         if !self.current_model_supports_images() {
-            self.add_to_history(history_cell::new_warning_event(
+            // Warnings collect behind F2; a refused image must show where it was pasted.
+            self.add_to_history(history_cell::new_error_event(
                 self.image_inputs_not_supported_message(),
             ));
             self.request_redraw();
