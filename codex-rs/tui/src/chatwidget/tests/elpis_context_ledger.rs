@@ -477,7 +477,7 @@ async fn smart_prune_row_says_it_does_not_apply_to_claude_chats() {
     let ledger = ledger_words(&chat);
     assert!(ledger.contains("Before first main-model send"), "{ledger}");
     assert!(
-        !ledger.contains("Does not apply to Claude chats"),
+        !ledger.contains("Does not apply to Claude or Antigravity chats"),
         "{ledger}"
     );
 
@@ -485,7 +485,7 @@ async fn smart_prune_row_says_it_does_not_apply_to_claude_chats() {
     chat.set_model("claude/opus");
     let ledger = ledger_words(&chat);
     assert!(
-        ledger.contains("Does not apply to Claude chats"),
+        ledger.contains("Does not apply to Claude or Antigravity chats"),
         "{ledger}"
     );
     assert!(!ledger.contains("Before first main-model send"), "{ledger}");

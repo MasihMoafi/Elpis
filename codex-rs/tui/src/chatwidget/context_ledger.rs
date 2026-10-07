@@ -7,7 +7,7 @@ use super::context_usage::weighted_cell_counts;
 use super::elpis_ledger_glue::ManualMemoryCache;
 use super::elpis_ledger_glue::ManualMemoryPhase;
 use super::elpis_ledger_glue::elpis_memory_dir;
-use super::elpis_providers::is_claude_subscription_model;
+use super::elpis_providers::is_bridged_model;
 use super::*;
 use crate::elpis_app_event::ElpisAppEvent;
 use crate::elpis_ledger_events::ManualMemoryMutation;
@@ -618,8 +618,8 @@ impl ChatWidget {
         lines.push(Line::from(smart_prune_spans));
         // Elpis: Claude Code sends a Claude chat's tool results to Claude itself, so Smart
         // Prune never sees them (the Claude bridge, `tools/elpis-claude`).
-        let smart_prune_detail = if is_claude_subscription_model(self.current_model()) {
-            "Does not apply to Claude chats".to_string()
+        let smart_prune_detail = if is_bridged_model(self.current_model()) {
+            "Does not apply to Claude or Antigravity chats".to_string()
         } else if pending_smart_prune_enabled.is_some() {
             "Saving setting · the active turn keeps its current policy".to_string()
         } else if !self.smart_prune_synced {
