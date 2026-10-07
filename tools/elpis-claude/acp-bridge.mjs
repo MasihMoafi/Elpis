@@ -38,6 +38,31 @@ async function toAcpPrompt(input) {
   return out;
 }
 const inputSummary = (input) => input.map((c) => c.type === "text" ? c.text : c.type === "localImage" ? `[image: ${c.path}]` : c.type === "image" ? "[image]" : c.path ? `[${c.type}: ${c.path}]` : "").filter(Boolean).join("\n");
+
+// Claude's tool calls drawn as Elpis's own items: the real command, clean output,
+// reads as reads, edits as diffs.
+const EDIT_TOOLS = new Set(["Edit", "MultiEdit", "Write", "NotebookEdit"]);
+const unfence = (s) => /^```[\w-]*\n([\s\S]*?)\n?```\s*$/.exec(s)?.[1] ?? s;
+const hunks = (patch) => patch.map((h) => `@@ -${h.oldStart},${h.oldLines} +${h.newStart},${h.newLines} @@\n${h.lines.join("\n")}\n`).join("");
+const wholeDiff = (a, b) => { const o = a.split("\n"), n = b.split("\n"); return `@@ -1,${o.length} +1,${n.length} @@\n${[...o.map((l) => `-${l}`), ...n.map((l) => `+${l}`)].join("\n")}\n`; };
+function toolItem(id, t, cwd) {
+  const r = t.raw, resp = t.response ?? {};
+  const status = t.declined ? "declined" : t.status;
+  const path = EDIT_TOOLS.has(t.name) && (resp.filePath ?? r.file_path ?? r.notebook_path ?? t.diffs.at(-1)?.path);
+  if (path) {
+    const d = t.diffs.at(-1);
+    const change = resp.type === "create" || (!resp.structuredPatch && d && !d.oldText)
+      ? { path, kind: { type: "add" }, diff: resp.content ?? r.content ?? d?.newText ?? "" }
+      : { path, kind: { type: "update", move_path: null }, diff: resp.structuredPatch?.length ? hunks(resp.structuredPatch) : d ? wholeDiff(d.oldText ?? "", d.newText ?? "") : "" };
+    return { type: "fileChange", id, changes: [change], status };
+  }
+  const command = (t.name === "Bash" && r.command) || t.title || t.name || "tool";
+  const commandActions = t.name === "Read" && r.file_path ? [{ type: "read", command, name: r.file_path.split("/").pop(), path: r.file_path }]
+    : t.name === "Grep" || t.name === "Glob" ? [{ type: "search", command, query: r.pattern ?? null, path: r.path ?? null }]
+      : t.name === "LS" ? [{ type: "listFiles", command, path: r.path ?? null }] : [];
+  const output = t.name === "Bash" && typeof resp.stdout === "string" ? [resp.stdout, resp.stderr].filter(Boolean).join("\n") : t.text ? unfence(t.text) : null;
+  return { type: "commandExecution", id, pluginId: null, scriptPath: null, command, cwd, processId: null, source: "agent", status, commandActions, aggregatedOutput: output, exitCode: status === "completed" ? 0 : status === "inProgress" ? null : 1, durationMs: t.end ? t.end - t.start : null };
+}
 const STORE = process.env.ACP_BRIDGE_STORE ?? `${HOME}/.elpis-next/elpis-claude/sessions.json`;
 async function loadStore() { try { const { readFile } = await import("node:fs/promises"); return JSON.parse(await readFile(STORE, "utf8")); } catch { return {}; } }
 let storeChain = Promise.resolve();
@@ -54,7 +79,7 @@ async function saveStore(store) {
 async function claudeLimits() {
   const { readFile } = await import("node:fs/promises");
   const creds = JSON.parse(await readFile(`${HOME}/.claude/.credentials.json`, "utf8")).claudeAiOauth;
-  const r = await fetch("https://api.anthropic.com/api/oauth/usage", {
+  const r = await fetch(process.env.ELPIS_CLAUDE_USAGE_URL ?? "https://api.anthropic.com/api/oauth/usage", {
     headers: { Authorization: `Bearer ${creds.accessToken}`, "anthropic-beta": "oauth-2025-04-20", Accept: "application/json" },
     signal: AbortSignal.timeout(15_000),
   });
@@ -62,6 +87,18 @@ async function claudeLimits() {
   const u = await r.json();
   const win = (w, mins) => w ? { usedPercent: Math.round(w.utilization ?? 0), windowDurationMins: mins, resetsAt: w.resets_at ? Math.floor(Date.parse(w.resets_at) / 1000) : null } : null;
   return { limitId: "codex", limitName: "Claude", normalModelSlug: null, primary: win(u.five_hour, 300), secondary: win(u.seven_day, 10080), credits: null, individualLimit: null, spendControlReached: null, planType: null, rateLimitReachedType: null };
+}
+
+// Anthropic refuses (HTTP 429) when asked after every turn, so ask at most once a minute and
+// keep showing the last answer when a request fails.
+const limits = { at: 0, value: null, inFlight: null };
+function claudeLimitsCached() {
+  if (Date.now() - limits.at < 60_000) return limits.value ? Promise.resolve(limits.value) : Promise.reject(new Error("Claude usage unavailable (retrying in a minute)"));
+  limits.inFlight ??= claudeLimits()
+    .then((v) => { limits.value = v; return v; })
+    .catch((e) => { if (limits.value) return limits.value; throw e; })
+    .finally(() => { limits.at = Date.now(); limits.inFlight = null; });
+  return limits.inFlight;
 }
 
 function lineReader(stream, onLine) {
@@ -202,6 +239,7 @@ wss.on("connection", (ws) => {
         if (it.type === "userMessage") lines.push(`User: ${textOf(it.content)}`);
         else if (it.type === "agentMessage" && it.text?.trim()) lines.push(`Assistant: ${it.text.trim()}`);
         else if (it.type === "commandExecution") lines.push(`(Assistant ran: ${it.command})`);
+        else if (it.type === "fileChange") lines.push(`(Assistant edited: ${(it.changes ?? []).map((c) => c.path).join(", ")})`);
       }
       const t = lines.join("\n\n");
       return t.length > 12000 ? t.slice(-12000) : t;
@@ -326,8 +364,16 @@ wss.on("connection", (ws) => {
       items.push(message);
       message = null;
     };
+    // The running turn, from its first moment, so a steer or a stop during setup finds it.
+    let sessionReady;
+    const turnState = { threadId, turnId, sessionId: null, items, closeMessage, cancelled: false, ready: new Promise((r) => { sessionReady = r; }), toolsIdle: [] };
+    // Claude Code takes a steer at once and drops a tool that is still running, so a steer
+    // waits for the running tools, as Claude Code's own queue does.
+    turnState.whenToolsIdle = () => ([...tools.values()].every((t) => t.end) ? Promise.resolve() : new Promise((r) => turnState.toolsIdle.push(r)));
+    active = turnState;
     let status = "completed";
     let error = null;
+    const cwd = threadCwd.get(threadId) ?? process.cwd();
     try {
       await ensureAcp();
       const policy = req.params.approvalPolicy ?? threadPolicy.get(threadId) ?? "on-request";
@@ -377,7 +423,8 @@ wss.on("connection", (ws) => {
       }
       const effort = claudeEffort.get(threadId);
       if (effort) await acp.call("session/set_config_option", { sessionId, configId: "effort", value: effort }).catch((e) => log(`effort ${effort}: ${e.message}`));
-      active = { threadId, turnId, sessionId };
+      turnState.sessionId = sessionId;
+      sessionReady(sessionId);
       acp.onUpdate = ({ update: u }) => {
         if (u.sessionUpdate === "agent_message_chunk" && u.content?.type === "text") {
           if (!message) {
@@ -393,42 +440,55 @@ wss.on("connection", (ws) => {
         } else if (u.sessionUpdate === "usage_update" && typeof u.used === "number") {
           lastContext.set(threadId, { used: u.used, size: u.size ?? null });
           sendUsage(threadId, turnId, null);
-        } else if (u.sessionUpdate === "tool_call") {
-          closeMessage();
-          const item = { type: "commandExecution", id: u.toolCallId, pluginId: null, scriptPath: null, command: u.title ?? u.kind ?? "tool", cwd: threadCwd.get(threadId) ?? process.cwd(), processId: null, source: "agent", status: "inProgress", commandActions: [], aggregatedOutput: null, exitCode: null, durationMs: null, started: now() };
-          tools.set(u.toolCallId, item);
-          addChars(threadId, "toolCalls", JSON.stringify(u.rawInput ?? u.title ?? "").length);
-          const { started, ...shown } = item;
-          notify("item/started", { item: shown, threadId, turnId, startedAtMs: started });
-        } else if (u.sessionUpdate === "tool_call_update") {
-          const item = tools.get(u.toolCallId);
-          if (!item) return;
-          if (u.title) item.command = u.title;
-          const text = (u.content ?? []).map((c) => c.content?.text ?? (c.type === "diff" ? `edited ${c.path}` : "")).filter(Boolean).join("\n");
-          if (text) { addChars(threadId, "toolResults", text.length - (item.aggregatedOutput?.length ?? 0)); item.aggregatedOutput = text; }
-          if (u.status === "completed" || u.status === "failed") {
-            item.status = u.status === "completed" ? "completed" : "failed";
-            item.exitCode = u.status === "completed" ? 0 : 1;
-            item.durationMs = now() - item.started;
-            const { started, ...shown } = item;
-            notify("item/completed", { item: shown, threadId, turnId, completedAtMs: now() });
-            items.push(shown);
+        } else if (u.sessionUpdate === "plan" && Array.isArray(u.entries)) {
+          const step = { pending: "pending", in_progress: "inProgress", completed: "completed" };
+          notify("turn/plan/updated", { threadId, turnId, explanation: null, plan: u.entries.map((e) => ({ step: e.content, status: step[e.status] ?? "pending" })) });
+        } else if (u.sessionUpdate === "tool_call" || u.sessionUpdate === "tool_call_update") {
+          let t = tools.get(u.toolCallId);
+          if (!t) {
+            if (u.sessionUpdate !== "tool_call") return;
+            closeMessage();
+            t = { name: u.kind, title: null, raw: {}, response: null, text: null, diffs: [], status: "inProgress", declined: false, shown: false, start: now(), end: null };
+            tools.set(u.toolCallId, t);
+          }
+          const cc = u._meta?.claudeCode;
+          if (cc?.toolName) t.name = cc.toolName;
+          if (u.title) t.title = u.title;
+          if (u.rawInput && Object.keys(u.rawInput).length) t.raw = u.rawInput;
+          if (cc?.toolResponse) t.response = cc.toolResponse;
+          for (const c of u.content ?? []) { if (c.type === "diff") t.diffs.push(c); else if (c.content?.type === "text") t.text = c.content.text; }
+          const finished = u.status === "completed" || u.status === "failed";
+          if (finished) { t.status = u.status; t.end = now(); }
+          if (finished && [...tools.values()].every((x) => x.end)) turnState.toolsIdle.splice(0).forEach((r) => r());
+          if (/^(TodoWrite|Task(Create|Update|List|Get))$/.test(t.name)) return; // drawn as the plan
+          // Draw the row once the real command is known; edits wait for their diff.
+          if (!t.shown && Object.keys(t.raw).length && !EDIT_TOOLS.has(t.name)) {
+            t.shown = true;
+            notify("item/started", { item: toolItem(u.toolCallId, t, cwd), threadId, turnId, startedAtMs: t.start });
+          }
+          if (finished) {
+            const item = toolItem(u.toolCallId, t, cwd);
+            if (!t.shown) { t.shown = true; notify("item/started", { item: { ...item, status: "inProgress" }, threadId, turnId, startedAtMs: t.start }); }
+            notify("item/completed", { item, threadId, turnId, completedAtMs: now() });
+            items.push(item);
+            addChars(threadId, "toolCalls", JSON.stringify(t.raw).length);
+            addChars(threadId, "toolResults", (item.aggregatedOutput ?? item.changes?.map((c) => c.diff).join("") ?? "").length);
           }
         }
       };
       acp.onPermission = async (p) => {
-        const item = tools.get(p.toolCall?.toolCallId);
+        const t = tools.get(p.toolCall?.toolCallId);
+        const what = (t && t.name === "Bash" && t.raw.command) || p.toolCall?.title || t?.title || "a tool";
         const decision = await askTui("item/commandExecution/requestApproval", {
           kind: "command", threadId, turnId, itemId: p.toolCall?.toolCallId ?? randomUUID(), startedAtMs: now(),
-          environmentId: null, reason: `Claude wants to run: ${p.toolCall?.title ?? item?.command ?? "a tool"}`,
-          command: p.toolCall?.title ?? item?.command ?? null, cwd: threadCwd.get(threadId) ?? process.cwd(),
+          environmentId: null, reason: `Claude wants to run: ${what}`, command: what, cwd,
         });
         const d = decision?.decision;
         const pick = (kind) => p.options.find((o) => o.kind === kind)?.optionId;
-        log(`approval ${p.toolCall?.title} -> ${JSON.stringify(d)}`);
+        log(`approval ${what} -> ${JSON.stringify(d)}`);
         if (d === "acceptForSession") return pick("allow_always") ?? pick("allow_once");
         if (d === "accept") return pick("allow_once") ?? pick("allow_always");
-        if (item) item.status = "declined";
+        if (t) t.declined = true;
         return pick("reject_once") ?? pick("reject_always") ?? null;
       };
       const userText = inputSummary(input);
@@ -442,7 +502,7 @@ wss.on("connection", (ws) => {
       }
       if (compacting) ctxChars.delete(threadId);
       else addChars(threadId, "user", prompt.filter((c) => c.type === "text").reduce((n, c) => n + c.text.length, 0));
-      const result = await acp.call("session/prompt", { sessionId, prompt });
+      const result = turnState.cancelled ? { stopReason: "cancelled" } : await acp.call("session/prompt", { sessionId, prompt });
       const tu = result.usage;
       if (tu) {
         const turnUsage = { input: tu.inputTokens ?? 0, output: tu.outputTokens ?? 0, cachedRead: tu.cachedReadTokens ?? 0, cachedWrite: tu.cachedWriteTokens ?? 0, total: tu.totalTokens ?? 0 };
@@ -453,11 +513,19 @@ wss.on("connection", (ws) => {
       }
       if (result.stopReason === "cancelled") status = "interrupted";
       closeMessage();
-      const reply = items.filter((i) => i.type === "agentMessage").map((i) => i.text).join("\n\n").trim();
-      const used = items.filter((i) => i.type === "commandExecution").map((i) => i.command);
-      const record = [{ type: "message", role: "user", content: [{ type: "input_text", text: userText }] }];
-      if (used.length) record.push({ type: "message", role: "assistant", content: [{ type: "output_text", text: `[${claudeModel.get(threadId) ?? "Claude"} used tools: ${used.join("; ")}]` }] });
-      if (reply) record.push({ type: "message", role: "assistant", content: [{ type: "output_text", text: reply }] });
+      // The engine's copy of this turn, in order, so other models and resume see it.
+      const record = [];
+      const say = (role, text) => record.push({ type: "message", role, content: [{ type: role === "user" ? "input_text" : "output_text", text }] });
+      let used = [];
+      const flush = () => { if (used.length) say("assistant", `[${claudeModel.get(threadId) ?? "Claude"} used tools: ${used.join("; ")}]`); used = []; };
+      say("user", userText);
+      for (const it of items) {
+        if (it.type === "userMessage") { flush(); say("user", inputSummary(it.content)); }
+        else if (it.type === "commandExecution") used.push(it.command);
+        else if (it.type === "fileChange") used.push(`edited ${it.changes.map((c) => c.path).join(", ")}`);
+        else if (it.type === "agentMessage" && it.text.trim()) { flush(); say("assistant", it.text.trim()); }
+      }
+      flush();
       if (!compacting) await engineCall("thread/inject_items", { threadId, items: record })
         .then(() => log(`recorded Claude turn in thread ${threadId} (${record.length} items)`))
         .catch((e) => log(`record failed for ${threadId}: ${e.message ?? JSON.stringify(e)}`));
@@ -467,18 +535,54 @@ wss.on("connection", (ws) => {
       log(`turn error ${JSON.stringify(e)}`);
     }
     closeMessage();
-    active = null;
+    sessionReady(null);
+    // A row still running when the turn ends (stop, error) must not spin forever.
+    for (const [id, t] of tools) {
+      if (!t.shown || t.end) continue;
+      t.status = "failed"; t.end = now();
+      notify("item/completed", { item: toolItem(id, t, cwd), threadId, turnId, completedAtMs: now() });
+    }
+    if (active === turnState) active = null;
+    turnState.toolsIdle.splice(0).forEach((r) => r());
     const completedAt = Math.floor(now() / 1000);
     {
-      const clip = (it) => (it.aggregatedOutput && it.aggregatedOutput.length > 4000 ? { ...it, aggregatedOutput: it.aggregatedOutput.slice(0, 4000) + "\n…" } : it);
+      const cut = (s) => (s.length > 4000 ? s.slice(0, 4000) + "\n…" : s);
+      const clip = (it) => it.type === "fileChange" ? { ...it, changes: it.changes.map((c) => ({ ...c, diff: cut(c.diff) })) }
+        : it.aggregatedOutput ? { ...it, aggregatedOutput: cut(it.aggregatedOutput) } : it;
       const record = { id: turnId, items: [userItem, ...items.map(clip)], itemsView: "full", status, error, startedAt, completedAt, durationMs: (completedAt - startedAt) * 1000 };
       await updateStore((st) => { st[threadId] = { ...st[threadId], turns: [...(st[threadId]?.turns ?? []), record].slice(-200) }; });
     }
     notify("turn/completed", { threadId, turn: { id: turnId, items, itemsView: "summary", status, error, startedAt, completedAt, durationMs: (completedAt - startedAt) * 1000 } });
     notify("turn/activityUpdated", { threadId, turnId, status: status === "inProgress" ? "completed" : status, durationMs: now() - t0, timeToFirstTokenMs: firstTokenAt ? firstTokenAt - t0 : null });
     notify("thread/status/changed", { threadId, status: { type: "idle" } });
-    claudeLimits().then((rateLimits) => { log(`claude limits: 5h ${rateLimits.primary?.usedPercent}% week ${rateLimits.secondary?.usedPercent}%`); notify("account/rateLimits/updated", { rateLimits }); })
+    claudeLimitsCached().then((rateLimits) => { log(`claude limits: 5h ${rateLimits.primary?.usedPercent}% week ${rateLimits.secondary?.usedPercent}%`); notify("account/rateLimits/updated", { rateLimits }); })
       .catch((e) => log(`claude limits: ${e.message}`));
+  }
+
+  // A message sent while Claude works joins that reply instead of stopping it. With no
+  // running Claude turn, the TUI's "no active turn to steer" fallback starts a new turn.
+  async function steerClaude(msg) {
+    const { threadId, input = [], clientUserMessageId = null } = msg.params;
+    const refuse = () => toTui({ id: msg.id, error: { code: -32600, message: "no active turn to steer" } });
+    const turn = active;
+    if (!turn || turn.threadId !== threadId) return refuse();
+    const sessionId = await turn.ready;
+    await turn.whenToolsIdle();
+    if (!sessionId || active !== turn || turn.cancelled) return refuse();
+    try {
+      const r = await acp.call("_session/steering", { sessionId, prompt: await toAcpPrompt(input), _meta: { steering: { idleBehavior: "promptRequired" } } });
+      if (r?.outcome === "promptRequired") return refuse();
+      toTui({ id: msg.id, result: { turnId: turn.turnId } });
+      turn.closeMessage();
+      const item = { type: "userMessage", id: randomUUID(), clientId: clientUserMessageId, content: input };
+      notify("item/started", { item, threadId, turnId: turn.turnId, startedAtMs: now() });
+      notify("item/completed", { item, threadId, turnId: turn.turnId, completedAtMs: now() });
+      turn.items.push(item);
+      addChars(threadId, "user", inputSummary(input).length);
+      log(`steered Claude turn ${turn.turnId} (${r?.outcome ?? "ok"})`);
+    } catch (e) {
+      toTui({ id: msg.id, error: { code: -32603, message: `Claude could not take the message: ${e?.message ?? JSON.stringify(e)}` } });
+    }
   }
 
   ws.on("message", (data) => {
@@ -518,7 +622,10 @@ wss.on("connection", (ws) => {
     if (msg.method === "turn/start") {
       const tid = msg.params?.threadId;
       if (msg.params?.collaborationMode?.mode) threadCollab.set(tid, msg.params.collaborationMode.mode);
-      if (isClaude(msg.params?.model)) claudeModel.set(tid, msg.params.model);
+      if (isClaude(msg.params?.model)) {
+        claudeModel.set(tid, msg.params.model);
+        if (msg.params.effort) claudeEffort.set(tid, msg.params.effort);
+      }
       if (claudeModel.has(tid) && !String(msg.id).startsWith("temporary-structured-turn")) {
         log(`claude turn for thread ${tid} (${claudeModel.get(tid)})`);
         claudeTurn(msg);
@@ -536,8 +643,13 @@ wss.on("connection", (ws) => {
       return;
     }
     if (msg.method === "turn/interrupt" && active && msg.params?.threadId === active.threadId) {
-      acp.send({ method: "session/cancel", params: { sessionId: active.sessionId } });
+      active.cancelled = true;
+      if (active.sessionId) acp.send({ method: "session/cancel", params: { sessionId: active.sessionId } });
       toTui({ id: msg.id, result: {} });
+      return;
+    }
+    if (msg.method === "turn/steer" && claudeModel.has(msg.params?.threadId)) {
+      steerClaude(msg);
       return;
     }
     engine.stdin.write(line + "\n");

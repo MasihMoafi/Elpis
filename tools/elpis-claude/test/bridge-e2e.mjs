@@ -1,6 +1,7 @@
 // End-to-end check of the bridge, acting as the Elpis TUI over the app-server protocol.
 // Uses the real engine and Claude (subscription). Run: node test/bridge-e2e.mjs [scenario...]
-// Scenarios: text, image. Exit code 0 only if every scenario passes.
+// Scenarios: text image interrupt approval usage resume delegate compact instructions modes steer tools plan.
+// Exit code 0 only if every scenario passes.
 import { spawn } from "node:child_process";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -9,8 +10,15 @@ import WebSocket from "ws";
 
 const here = new URL("..", import.meta.url).pathname;
 const port = 47000 + Math.floor(Math.random() * 900);
+// A stand-in for Anthropic's usage endpoint, so tests count requests and never hammer the real
+// one (E2E_REAL_USAGE=1 uses the real one).
+const { createServer } = await import("node:http");
+let usageHits = 0;
+const usageServer = createServer((req, res) => { usageHits++; res.setHeader("content-type", "application/json"); res.end(JSON.stringify({ five_hour: { utilization: 12, resets_at: new Date(Date.now() + 3600e3).toISOString() }, seven_day: { utilization: 34, resets_at: null } })); });
+await new Promise((r) => usageServer.listen(0, "127.0.0.1", r));
+const usageEnv = process.env.E2E_REAL_USAGE ? {} : { ELPIS_CLAUDE_USAGE_URL: `http://127.0.0.1:${usageServer.address().port}/usage`, NO_PROXY: "127.0.0.1,localhost", no_proxy: "127.0.0.1,localhost" };
 const bridge = spawn("node", [process.env.E2E_BRIDGE ?? join(here, "acp-bridge.mjs")], {
-  env: { ...process.env, PORT: String(port), NODE_USE_ENV_PROXY: "1", ACP_BRIDGE_LOG: process.env.ACP_BRIDGE_LOG ?? "/tmp/acp-bridge/e2e.log" },
+  env: { ...process.env, ...usageEnv, PORT: String(port), NODE_USE_ENV_PROXY: "1", ACP_BRIDGE_LOG: process.env.ACP_BRIDGE_LOG ?? "/tmp/acp-bridge/e2e.log" },
   stdio: "ignore",
 });
 const fail = (msg) => { console.log(`FAIL ${msg}`); process.exitCode = 1; };
@@ -56,7 +64,7 @@ const dir = process.env.E2E_CWD ?? mkdtempSync(join(tmpdir(), "elpis-e2e-"));
 const started = await call("thread/start", { cwd: dir, approvalPolicy: "never", sandbox: "danger-full-access" });
 const threadId = started.result?.thread?.id;
 if (!threadId) { fail(`thread/start: ${JSON.stringify(started.error ?? started)}`); process.exit(1); }
-await call("thread/settings/update", { threadId, model: "claude/opus", effort: "low" });
+await call("thread/settings/update", { threadId, model: process.env.E2E_MODEL ?? "claude/opus", effort: "low" });
 
 const scenarios = process.argv.slice(2).length ? process.argv.slice(2) : ["text", "image"];
 for (const s of scenarios) {
@@ -91,16 +99,23 @@ for (const s of scenarios) {
     }
     approvalAnswer = "accept";
   } else if (s === "usage") {
-    const from = seen.length;
-    await turn(threadId, [{ type: "text", text: "Reply with exactly: USAGE", text_elements: [] }]);
-    await new Promise((r) => setTimeout(r, 6000));
-    const later = seen.slice(from);
-    const limits = later.find((m) => m.method === "account/rateLimits/updated")?.params?.rateLimits;
-    const tokens = later.find((m) => m.method === "thread/tokenUsage/updated" && m.params.threadId === threadId)?.params?.tokenUsage;
-    const five = limits?.primary;
-    five?.windowDurationMins === 300 && typeof five.usedPercent === "number" && tokens?.modelContextWindow > 0
-      ? console.log(`PASS usage (5h ${five.usedPercent}% used, context ${tokens.last.totalTokens}/${tokens.modelContextWindow})`)
-      : fail(`usage: limits=${JSON.stringify(limits)} tokens=${JSON.stringify(tokens)}`);
+    // Three quick turns: each shows Claude's limits, and the usage endpoint is asked at most
+    // once (Anthropic refuses with HTTP 429 when asked after every turn).
+    const hitsBefore = usageHits;
+    let shown = 0, tokens = null, five = null;
+    for (let i = 0; i < 3; i++) {
+      const from = seen.length;
+      await turn(threadId, [{ type: "text", text: `Reply with exactly: USAGE-${i}`, text_elements: [] }]);
+      await new Promise((r) => setTimeout(r, 4000));
+      const later = seen.slice(from);
+      const limits = later.find((m) => m.method === "account/rateLimits/updated")?.params?.rateLimits;
+      tokens = later.find((m) => m.method === "thread/tokenUsage/updated" && m.params.threadId === threadId)?.params?.tokenUsage ?? tokens;
+      if (limits?.primary?.windowDurationMins === 300 && typeof limits.primary.usedPercent === "number") { shown++; five = limits.primary; }
+    }
+    const asked = usageHits - hitsBefore;
+    shown === 3 && (process.env.E2E_REAL_USAGE || asked <= 1) && tokens?.modelContextWindow > 0
+      ? console.log(`PASS usage (limits on 3 of 3 turns, endpoint asked ${asked}x, 5h ${five.usedPercent}% used, context ${tokens.last.totalTokens}/${tokens.modelContextWindow})`)
+      : fail(`usage: limits shown on ${shown} of 3 turns, endpoint asked ${asked}x, context window ${tokens?.modelContextWindow}`);
   } else if (s === "resume") {
     const word = `PEAR-${Math.floor(Math.random() * 9000 + 1000)}`;
     await turn(threadId, [{ type: "text", text: `Remember this word: ${word}. Reply with just OK.`, text_elements: [] }]);
@@ -129,7 +144,7 @@ for (const s of scenarios) {
     const finished = new Promise((r) => { doneT = r; setTimeout(r, 120000); });
     c2("turn/start", { threadId, input: [{ type: "text", text: "What word did I ask you to remember? Reply with only the word.", text_elements: [] }] });
     await finished;
-    model === "claude/opus" && shown && text2.includes(word) ? console.log(`PASS resume (model ${model}, history shown, remembered ${word})`) : fail(`resume: model=${model} shown=${shown} reply=${text2}`);
+    model === (process.env.E2E_MODEL ?? "claude/opus") && shown && text2.includes(word) ? console.log(`PASS resume (model ${model}, history shown, remembered ${word})`) : fail(`resume: model=${model} shown=${shown} reply=${text2}`);
     ws2.close(); b2.kill();
     process.exit();
   } else if (s === "delegate") {
@@ -180,6 +195,49 @@ for (const s of scenarios) {
     await turn(tid, [{ type: "text", text: "Now create the empty file planned.txt in the current folder with your tools, then reply DONE.", text_elements: [] }], 180000);
     const defaultOk = existsSync(join(dir, "planned.txt"));
     planOk && defaultOk ? console.log("PASS modes (Plan mode: no file; Default mode: file created)") : fail(`modes: plan kept folder clean=${planOk}, default created file=${defaultOk}`);
+  } else if (s === "steer") {
+    // A message sent while Claude works must join that reply (Elpis Esc / Enter), not stop it.
+    const word = `STEER-${Math.floor(Math.random() * 9000 + 1000)}`;
+    let turnId = null;
+    const idL = (m) => { if (m.method === "turn/started" && m.params.threadId === threadId) { turnId = m.params.turn.id; listeners.delete(idL); } };
+    listeners.add(idL);
+    const echoed = [];
+    const echoL = (m) => { if (m.method === "item/started" && m.params.item?.type === "userMessage" && m.params.item.clientId === "steer-1") echoed.push(m.params.turnId); };
+    listeners.add(echoL);
+    const working = new Promise((r) => { const l = (m) => { if (m.method === "item/started" && m.params.threadId === threadId && m.params.item?.type === "commandExecution") { listeners.delete(l); r(); } }; listeners.add(l); setTimeout(r, 90000); });
+    const done = turn(threadId, [{ type: "text", text: "Use your Bash tool to run `sleep 8`, then reply with one short sentence.", text_elements: [] }], 180000);
+    await working;
+    const sr = await call("turn/steer", { threadId, expectedTurnId: turnId, clientUserMessageId: "steer-1", input: [{ type: "text", text: `Also end your final reply with the code word ${word}.`, text_elements: [] }] });
+    const r = await done;
+    listeners.delete(echoL);
+    !sr.error && sr.result?.turnId === turnId && echoed.includes(turnId) && r.status === "completed" && r.text.includes(word)
+      ? console.log(`PASS steer (joined the running reply, which ended with ${word})`)
+      : fail(`steer: reply=${JSON.stringify(sr)} echoed=${JSON.stringify(echoed)} turn=${turnId} status=${r.status} text=${r.text.slice(-120)}`);
+  } else if (s === "tools") {
+    // Claude's tools must look like Elpis's own: the real command, clean output, reads, diffs.
+    writeFileSync(join(dir, "a.txt"), "alpha\nbeta x\ngamma\n");
+    const from = seen.length;
+    await turn(threadId, [{ type: "text", text: "Do these one at a time with your tools, no commentary: 1) run the shell command `ls` 2) Read a.txt 3) Edit a.txt replacing 'beta x' with 'beta y' 4) Write a new file b.txt containing hello. Then reply DONE.", text_elements: [] }], 240000);
+    const later = seen.slice(from).filter((m) => m.params?.threadId === threadId);
+    const started = later.filter((m) => m.method === "item/started").map((m) => m.params.item);
+    const done = later.filter((m) => m.method === "item/completed").map((m) => m.params.item);
+    const ls = done.find((i) => i.type === "commandExecution" && /^ls\b/.test(i.command));
+    const lsStartedAs = started.find((i) => i.id === ls?.id)?.command;
+    const read = done.find((i) => i.type === "commandExecution" && i.commandActions?.[0]?.type === "read" && /a\.txt$/.test(i.commandActions[0].path));
+    const edit = done.find((i) => i.type === "fileChange" && i.changes?.some((c) => c.path.endsWith("a.txt") && c.diff.includes("-beta x") && c.diff.includes("+beta y")));
+    const write = done.find((i) => i.type === "fileChange" && i.changes?.some((c) => c.path.endsWith("b.txt") && c.kind?.type === "add"));
+    const fenced = done.filter((i) => typeof i.aggregatedOutput === "string" && i.aggregatedOutput.includes("```")).length;
+    ls && lsStartedAs === ls.command && ls.aggregatedOutput?.includes("a.txt") && read && edit && write && !fenced
+      ? console.log(`PASS tools (ran "${ls.command}", read a.txt, edit diff, new b.txt, no code fences)`)
+      : fail(`tools: ls=${ls?.command} started-as=${lsStartedAs} output=${JSON.stringify(ls?.aggregatedOutput)?.slice(0, 60)} read=${!!read} edit=${!!edit} write=${!!write} fenced=${fenced} kinds=${done.map((i) => `${i.type}:${i.command ?? i.changes?.[0]?.path ?? ""}`).join(", ")}`);
+  } else if (s === "plan") {
+    const from = seen.length;
+    await turn(threadId, [{ type: "text", text: "Use your task tools (TaskCreate, then TaskUpdate) to make a task list with exactly two tasks, 'look around' and 'reply', mark both completed, then reply DONE.", text_elements: [] }], 180000);
+    const plans = seen.slice(from).filter((m) => m.method === "turn/plan/updated" && m.params.threadId === threadId);
+    const last = plans.at(-1)?.params?.plan ?? [];
+    last.some((p) => /look around/i.test(p.step)) && last.every((p) => ["pending", "inProgress", "completed"].includes(p.status))
+      ? console.log(`PASS plan (${plans.length} plan updates, last: ${last.map((p) => `${p.step}=${p.status}`).join(", ")})`)
+      : fail(`plan: ${plans.length} updates, last=${JSON.stringify(last)}`);
   } else if (s === "image") {
     const word = process.env.E2E_IMAGE_WORD;
     const path = process.env.E2E_IMAGE_PATH;
@@ -194,4 +252,5 @@ for (const s of scenarios) {
 writeFileSync(join(dir, ".done"), "");
 ws.close();
 bridge.kill();
+usageServer.close();
 process.exit();
