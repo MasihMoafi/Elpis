@@ -450,3 +450,20 @@ async fn the_provider_list_offers_the_claude_subscription_with_its_models_alone(
     assert!(popup.contains("Provider: Claude subscription"), "{popup}");
     assert!(popup.contains("Credential: your Claude sign-in"), "{popup}");
 }
+
+#[tokio::test]
+async fn the_model_command_starts_at_the_provider_list_on_the_current_provider() {
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.5")).await;
+
+    chat.dispatch_command(SlashCommand::Model);
+    let popup = render_bottom_popup(&chat, /*width*/ 120);
+
+    assert!(popup.contains("Choose a provider"), "{popup}");
+    let selected = popup
+        .lines()
+        .find(|line| line.trim_start().starts_with('›'))
+        .unwrap_or_default();
+    assert!(selected.contains("OpenAI"), "current provider not selected:\n{popup}");
+    // The long model list does not open first.
+    assert!(!popup.contains("Choose a mind and effort"), "{popup}");
+}

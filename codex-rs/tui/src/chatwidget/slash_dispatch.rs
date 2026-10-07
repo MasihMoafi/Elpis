@@ -328,7 +328,7 @@ impl ChatWidget {
                 self.show_rename_prompt();
             }
             SlashCommand::Model => {
-                self.open_model_popup();
+                self.open_model_command_popup();
                 self.defer_input_until_settings_applied();
             }
             SlashCommand::Plan => {

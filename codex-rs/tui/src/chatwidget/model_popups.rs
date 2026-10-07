@@ -43,6 +43,17 @@ impl ChatWidget {
         self.app_event_tx.send(AppEvent::FetchModels { request_id });
     }
 
+    /// Elpis: `/model` starts at the provider list with the current provider selected, so a
+    /// provider with hundreds of models does not open as one long list. Enter on a provider
+    /// lists its models.
+    pub(crate) fn open_model_command_popup(&mut self) {
+        if !self.is_session_configured() || self.restrict_model_picker_to_luna_reserve() {
+            self.open_model_popup();
+            return;
+        }
+        self.open_elpis_provider_popup();
+    }
+
     pub(super) fn model_menu_header(&self, title: &str, subtitle: &str) -> Box<dyn Renderable> {
         let title = title.to_string();
         let subtitle = subtitle.to_string();
