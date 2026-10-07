@@ -207,6 +207,11 @@ wss.on("connection", (ws) => {
   })();
   const pendingModelList = new Set();
   const pendingResume = new Set();
+  // A Claude model picked as the default ("enter default") lives in the bridge's store, not in
+  // config.toml, which plain Elpis also reads. New chats, rewinds and the next start follow it.
+  const pendingConfigRead = new Set();
+  const pendingStart = new Map();
+  let engineDefault = null; // asked once, after the TUI has initialized the engine
   const pendingTurnsList = new Map();
   const pendingItemsList = new Map();
   const engineReqs = new Map();
@@ -291,6 +296,28 @@ wss.on("connection", (ws) => {
         parsed.result = { ...(parsed.result ?? {}), data: merged, nextCursor: parsed.result?.nextCursor ?? null, backwardsCursor: parsed.result?.backwardsCursor ?? null };
         delete parsed.error;
         log(`items/list ${req.threadId}: +${extra.length} Claude items`);
+        ws.send(JSON.stringify(parsed));
+        return;
+      }
+    }
+    if (parsed && pendingConfigRead.has(parsed.id)) {
+      pendingConfigRead.delete(parsed.id);
+      const def = (await loadStore())._default;
+      if (def?.model && parsed.result?.config) {
+        parsed.result.config = { ...parsed.result.config, model: def.model, model_reasoning_effort: def.effort ?? null };
+        ws.send(JSON.stringify(parsed));
+        return;
+      }
+    }
+    if (parsed && pendingStart.has(parsed.id)) {
+      const pick = pendingStart.get(parsed.id); pendingStart.delete(parsed.id);
+      const tid = parsed.result?.thread?.id;
+      if (tid && pick?.model) {
+        claudeModel.set(tid, pick.model);
+        if (pick.effort) claudeEffort.set(tid, pick.effort);
+        parsed.result.model = pick.model;
+        parsed.result.reasoningEffort = pick.effort ?? null;
+        log(`new thread ${tid} -> ${pick.model}`);
         ws.send(JSON.stringify(parsed));
         return;
       }
@@ -559,6 +586,25 @@ wss.on("connection", (ws) => {
       .catch((e) => log(`claude limits: ${e.message}`));
   }
 
+  // A new chat on a Claude model: the engine keeps its own model, the TUI is told Claude.
+  async function startThread(msg) {
+    const p = msg.params ?? {};
+    let pick = null;
+    if (isClaude(p.model)) pick = { model: p.model, effort: p.config?.model_reasoning_effort ?? null };
+    else {
+      await storeChain;
+      const def = (await loadStore())._default;
+      engineDefault ??= engineCall("config/read", { includeLayers: false }).then((r) => r?.config?.model ?? null, () => null);
+      if (def?.model && (p.model == null || p.model === await engineDefault)) pick = def;
+    }
+    if (pick) {
+      pendingStart.set(msg.id, pick);
+      p.model = null;
+      if (p.config) delete p.config.model_reasoning_effort;
+    }
+    engine.stdin.write(JSON.stringify(msg) + "\n");
+  }
+
   // A message sent while Claude works joins that reply instead of stopping it. With no
   // running Claude turn, the TUI's "no active turn to steer" fallback starts a new turn.
   async function steerClaude(msg) {
@@ -597,6 +643,12 @@ wss.on("connection", (ws) => {
     if (process.env.ACP_BRIDGE_DEBUG && msg.method && (process.env.ACP_BRIDGE_DEBUG === "all" || !/^thread\/(read|turns\/list|list|loaded)/.test(msg.method))) log(`tui-> ${line.slice(0, 600)}`);
     if (msg.method === "model/list") pendingModelList.add(msg.id);
     if (msg.method === "thread/resume") pendingResume.add(msg.id);
+    if (msg.method === "config/read") pendingConfigRead.add(msg.id);
+    if (msg.method === "thread/fork" && claudeModel.has(msg.params?.threadId)) {
+      const src = msg.params.threadId;
+      pendingStart.set(msg.id, { model: claudeModel.get(src), effort: claudeEffort.get(src) ?? null });
+    }
+    if (msg.method === "thread/start") { startThread(msg); return; }
     if (msg.method === "thread/turns/list" && msg.params?.threadId) pendingTurnsList.set(msg.id, msg.params);
     if (msg.method === "thread/items/list" && msg.params?.threadId) pendingItemsList.set(msg.id, msg.params);
     if (msg.method === "thread/settings/update") {
@@ -613,7 +665,12 @@ wss.on("connection", (ws) => {
       return;
     }
     if (msg.method === "config/batchWrite" && Array.isArray(msg.params?.edits)) {
-      const claudePick = msg.params.edits.some((e) => e.keyPath === "model" && isClaude(e.value));
+      const modelEdit = msg.params.edits.find((e) => e.keyPath === "model");
+      const claudePick = isClaude(modelEdit?.value);
+      if (modelEdit) {
+        const effort = msg.params.edits.find((e) => e.keyPath === "model_reasoning_effort")?.value;
+        updateStore((st) => { if (claudePick) st._default = { model: modelEdit.value, effort: effort && effort !== "default" ? effort : null }; else delete st._default; });
+      }
       if (claudePick) msg.params.edits = msg.params.edits.filter((e) => e.keyPath !== "model" && e.keyPath !== "model_reasoning_effort");
       if (claudePick && msg.params.edits.length === 0) { toTui({ id: msg.id, result: { status: "ok", version: "elpis-claude", filePath: `${HOME}/.elpis-next/config.toml`, overriddenMetadata: null } }); return; }
       engine.stdin.write(JSON.stringify(msg) + "\n");

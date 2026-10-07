@@ -17,8 +17,10 @@ let usageHits = 0;
 const usageServer = createServer((req, res) => { usageHits++; res.setHeader("content-type", "application/json"); res.end(JSON.stringify({ five_hour: { utilization: 12, resets_at: new Date(Date.now() + 3600e3).toISOString() }, seven_day: { utilization: 34, resets_at: null } })); });
 await new Promise((r) => usageServer.listen(0, "127.0.0.1", r));
 const usageEnv = process.env.E2E_REAL_USAGE ? {} : { ELPIS_CLAUDE_USAGE_URL: `http://127.0.0.1:${usageServer.address().port}/usage`, NO_PROXY: "127.0.0.1,localhost", no_proxy: "127.0.0.1,localhost" };
+// The bridge's own store (Claude sessions and the default Claude pick) lives in a test folder.
+const storeEnv = { ACP_BRIDGE_STORE: process.env.ACP_BRIDGE_STORE ?? join(mkdtempSync(join(tmpdir(), "elpis-e2e-store-")), "sessions.json") };
 const bridge = spawn("node", [process.env.E2E_BRIDGE ?? join(here, "acp-bridge.mjs")], {
-  env: { ...process.env, ...usageEnv, PORT: String(port), NODE_USE_ENV_PROXY: "1", ACP_BRIDGE_LOG: process.env.ACP_BRIDGE_LOG ?? "/tmp/acp-bridge/e2e.log" },
+  env: { ...process.env, ...usageEnv, ...storeEnv, PORT: String(port), NODE_USE_ENV_PROXY: "1", ACP_BRIDGE_LOG: process.env.ACP_BRIDGE_LOG ?? "/tmp/acp-bridge/e2e.log" },
   stdio: "ignore",
 });
 const fail = (msg) => { console.log(`FAIL ${msg}`); process.exitCode = 1; };
@@ -122,13 +124,13 @@ for (const s of scenarios) {
     ws.close(); bridge.kill(); await new Promise((r) => setTimeout(r, 1500));
     if (process.env.E2E_BREAK_SESSION) {
       const { readFileSync, writeFileSync: wf } = await import("node:fs");
-      const storePath = `${process.env.HOME}/.elpis-next/elpis-claude/sessions.json`;
+      const storePath = storeEnv.ACP_BRIDGE_STORE;
       const st = JSON.parse(readFileSync(storePath, "utf8"));
       st[threadId] = { ...st[threadId], session: "00000000-0000-4000-8000-000000000000", sessions: undefined };
       wf(storePath, JSON.stringify(st, null, 1));
       console.log("(saved Claude session link broken on purpose)");
     }
-    const b2 = spawn("node", [process.env.E2E_BRIDGE ?? join(here, "acp-bridge.mjs")], { env: { ...process.env, PORT: String(port + 1), NODE_USE_ENV_PROXY: "1", ACP_BRIDGE_LOG: "/tmp/acp-bridge/e2e.log" }, stdio: "ignore" });
+    const b2 = spawn("node", [process.env.E2E_BRIDGE ?? join(here, "acp-bridge.mjs")], { env: { ...process.env, ...usageEnv, ...storeEnv, PORT: String(port + 1), NODE_USE_ENV_PROXY: "1", ACP_BRIDGE_LOG: "/tmp/acp-bridge/e2e.log" }, stdio: "ignore" });
     await new Promise((r) => setTimeout(r, 800));
     const ws2 = new WebSocket(`ws://127.0.0.1:${port + 1}`);
     await new Promise((r) => ws2.on("open", r));
@@ -238,6 +240,20 @@ for (const s of scenarios) {
     last.some((p) => /look around/i.test(p.step)) && last.every((p) => ["pending", "inProgress", "completed"].includes(p.status))
       ? console.log(`PASS plan (${plans.length} plan updates, last: ${last.map((p) => `${p.step}=${p.status}`).join(", ")})`)
       : fail(`plan: ${plans.length} updates, last=${JSON.stringify(last)}`);
+  } else if (s === "default") {
+    // Picking Claude with "enter default" must make new chats and the next start use Claude,
+    // as a GPT pick does. Elpis reads its default from config/read, and the TUI sends that
+    // model in thread/start.
+    const engineDefault = (await call("config/read", { includeLayers: false, cwd: dir })).result?.config?.model;
+    const w = await call("config/batchWrite", { edits: [{ keyPath: "model", value: "claude/haiku", mergeStrategy: "replace" }, { keyPath: "model_reasoning_effort", value: "low", mergeStrategy: "replace" }], filePath: null, expectedVersion: null, reloadUserConfig: true });
+    const read = (await call("config/read", { includeLayers: false, cwd: dir })).result?.config;
+    const fresh = await call("thread/start", { model: read?.model ?? null, cwd: dir, approvalPolicy: "never", sandbox: "danger-full-access" });
+    const restart = await call("thread/start", { model: engineDefault ?? null, cwd: dir, approvalPolicy: "never", sandbox: "danger-full-access" });
+    const word = `NEW-${Math.floor(Math.random() * 9000 + 1000)}`;
+    const r = fresh.result?.thread?.id ? await turn(fresh.result.thread.id, [{ type: "text", text: `Reply with exactly: ${word}`, text_elements: [] }]) : { text: "" };
+    const ok = !w.error && read?.model === "claude/haiku" && fresh.result?.model === "claude/haiku" && restart.result?.model === "claude/haiku" && r.text.includes(word);
+    ok ? console.log(`PASS default (config/read, /new and startup all say claude/haiku; the new chat answered ${word})`)
+      : fail(`default: write=${JSON.stringify(w.error ?? w.result?.status)} read=${read?.model} new-chat=${fresh.result?.model ?? JSON.stringify(fresh.error)} startup(${engineDefault})=${restart.result?.model} reply=${r.text.slice(0, 60)}`);
   } else if (s === "image") {
     const word = process.env.E2E_IMAGE_WORD;
     const path = process.env.E2E_IMAGE_PATH;
