@@ -1,6 +1,7 @@
 // End-to-end check of the bridge, acting as the Elpis TUI over the app-server protocol.
 // Uses the real engine and Claude (subscription). Run: node test/bridge-e2e.mjs [scenario...]
-// Scenarios: text image interrupt approval usage resume delegate compact instructions modes steer tools plan subagents.
+// Scenarios: text image interrupt approval usage resume delegate compact instructions modes steer tools plan
+// shell picker revert review efforts default antigravity structured goal side subagents.
 // Exit code 0 only if every scenario passes.
 import { spawn } from "node:child_process";
 import { mkdtempSync, writeFileSync } from "node:fs";
@@ -53,6 +54,28 @@ const turn = (threadId, input, timeoutMs = 120000) => new Promise((resolve) => {
   setTimeout(() => { listeners.delete(l); resolve({ text, status: "timeout" }); }, timeoutMs);
   call("turn/start", { threadId, input });
 });
+
+// What the TUI draws for a command string (tui/src/exec_command.rs): it splits the string into
+// words; `bash -lc <script>` shows the script, anything else shows the words quoted again.
+const shellWords = (s) => {
+  const out = []; let cur = null, i = 0;
+  while (i < s.length) {
+    const c = s[i];
+    if (/\s/.test(c)) { if (cur !== null) out.push(cur); cur = null; i++; }
+    else if (c === "'") { const j = s.indexOf("'", i + 1); if (j < 0) return null; cur = (cur ?? "") + s.slice(i + 1, j); i = j + 1; }
+    else if (c === '"') { let j = i + 1, v = ""; while (j < s.length && s[j] !== '"') { if (s[j] === "\\" && j + 1 < s.length) { v += s[j + 1]; j += 2; } else v += s[j++]; } if (j >= s.length) return null; cur = (cur ?? "") + v; i = j + 1; }
+    else if (c === "\\" && i + 1 < s.length) { cur = (cur ?? "") + s[i + 1]; i += 2; }
+    else { cur = (cur ?? "") + c; i++; }
+  }
+  if (cur !== null) out.push(cur);
+  return out;
+};
+const tuiShows = (cmd) => {
+  const w = shellWords(cmd);
+  if (!w) return cmd;
+  if (w.length === 3 && /(^|\/)(ba|z)?sh$/.test(w[0]) && ["-lc", "-c"].includes(w[1])) return w[2];
+  return w.map((x) => (/^[\w@%+=:,./-]+$/.test(x) ? x : `'${x.replaceAll("'", "'\\''")}'`)).join(" ");
+};
 
 const init = await call("initialize", { clientInfo: { name: "codex-tui", title: null, version: "0.160.0" }, capabilities: { experimentalApi: true } });
 if (init.error) fail(`initialize: ${JSON.stringify(init.error)}`);
@@ -242,12 +265,44 @@ for (const s of scenarios) {
     await turn(threadId, [{ type: "text", text: "Use your task tools (TaskCreate, then TaskUpdate) to make a task list with exactly two tasks, 'look around' and 'reply', mark both completed, then reply DONE.", text_elements: [] }], 180000);
     const plans = seen.slice(from).filter((m) => m.method === "turn/plan/updated" && m.params.threadId === threadId);
     const last = plans.at(-1)?.params?.plan ?? [];
-    last.some((p) => /look around/i.test(p.step)) && last.every((p) => ["pending", "inProgress", "completed"].includes(p.status))
-      ? console.log(`PASS plan (${plans.length} plan updates, last: ${last.map((p) => `${p.step}=${p.status}`).join(", ")})`)
-      : fail(`plan: ${plans.length} updates, last=${JSON.stringify(last)}`);
+    // Each update draws an "Updated Plan" row, so an unchanged list must not come twice in a row.
+    const repeats = plans.filter((m, i) => i > 0 && JSON.stringify(m.params.plan) === JSON.stringify(plans[i - 1].params.plan)).length;
+    last.some((p) => /look around/i.test(p.step)) && last.every((p) => ["pending", "inProgress", "completed"].includes(p.status)) && repeats === 0
+      ? console.log(`PASS plan (${plans.length} plan updates, none repeated, last: ${last.map((p) => `${p.step}=${p.status}`).join(", ")})`)
+      : fail(`plan: ${plans.length} updates, ${repeats} repeated, last=${JSON.stringify(last)}`);
+  } else if (s === "shell") {
+    // A shell line with an operator must show as typed, not as `echo one '&&' echo two`.
+    const from = seen.length;
+    await turn(threadId, [{ type: "text", text: "Use your Bash tool to run exactly this one command line, unchanged: echo one && echo two   Then reply DONE.", text_elements: [] }], 180000);
+    const rows = seen.slice(from).filter((m) => m.method === "item/completed" && m.params.threadId === threadId && m.params.item?.type === "commandExecution").map((m) => m.params.item);
+    const row = rows.find((i) => /echo one/.test(i.command));
+    const shown = row ? tuiShows(row.command) : null;
+    shown === "echo one && echo two" && /one\s+two/.test(row.aggregatedOutput ?? "")
+      ? console.log(`PASS shell (the row reads "${shown}", output one/two)`)
+      : fail(`shell: command=${JSON.stringify(row?.command)} shows as ${JSON.stringify(shown)} output=${JSON.stringify(row?.aggregatedOutput)}`);
+  } else if (s === "picker") {
+    // A chat only Claude answered must be in /resume, named by its first message. Its turns reach
+    // the engine as injected history, which never sets the preview that thread/list requires.
+    const pdir = mkdtempSync(join(tmpdir(), "elpis-e2e-picker-"));
+    const st = await call("thread/start", { cwd: pdir, approvalPolicy: "never", sandbox: "danger-full-access" });
+    const tid = st.result?.thread?.id;
+    await call("thread/settings/update", { threadId: tid, model: process.env.E2E_MODEL ?? "claude/opus", effort: "low" });
+    const word = `PLUM-${Math.floor(Math.random() * 9000 + 1000)}`;
+    const r = await turn(tid, [{ type: "text", text: `Reply with exactly: ${word}`, text_elements: [] }]);
+    // The /resume picker's request (tui/src/resume_picker.rs), for this folder and for all folders.
+    const ask = async (cwd) => (await call("thread/list", { cursor: null, limit: 25, sortKey: "updated_at", modelProviders: null, sourceKinds: ["cli", "vscode"], archived: false, cwd, useStateDbOnly: false })).result?.data ?? [];
+    const here = await ask(pdir), all = await ask(null);
+    const rows = all.filter((t) => t.id === tid);
+    const hereRow = here.find((t) => t.id === tid);
+    r.text.includes(word) && hereRow?.preview?.includes(word) && rows.length === 1 && rows[0].preview.includes(word)
+      ? console.log(`PASS picker (the Claude-only chat is listed, previewed "${hereRow.preview}")`)
+      : fail(`picker: reply=${r.text.slice(0, 40)} in-folder=${JSON.stringify(hereRow?.preview ?? null)} all-folders=${rows.length}x ${JSON.stringify(rows[0]?.preview ?? null)} (${here.length} listed here)`);
   } else if (s === "revert") {
     // Esc-Esc "edit a previous message" on a Claude chat: the rewound turn leaves the history
-    // and Claude's memory.
+    // and Claude's memory. Its own chat, so words from other scenarios cannot answer.
+    const own = await call("thread/start", { cwd: dir, approvalPolicy: "never", sandbox: "danger-full-access" });
+    const threadId = own.result?.thread?.id;
+    await call("thread/settings/update", { threadId, model: process.env.E2E_MODEL ?? "claude/opus", effort: "low" });
     const ids = [];
     const idL = (m) => { if (m.method === "turn/started" && m.params.threadId === threadId) ids.push(m.params.turn.id); };
     listeners.add(idL);

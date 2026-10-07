@@ -67,6 +67,12 @@ const EDIT_TOOLS = new Set(["Edit", "MultiEdit", "Write", "NotebookEdit"]);
 const unfence = (s) => /^```[\w-]*\n([\s\S]*?)\n?```\s*$/.exec(s)?.[1] ?? s;
 const hunks = (patch) => patch.map((h) => `@@ -${h.oldStart},${h.oldLines} +${h.newStart},${h.newLines} @@\n${h.lines.join("\n")}\n`).join("");
 const wholeDiff = (a, b) => { const o = a.split("\n"), n = b.split("\n"); return `@@ -1,${o.length} +1,${n.length} @@\n${[...o.map((l) => `-${l}`), ...n.map((l) => `+${l}`)].join("\n")}\n`; };
+// The TUI splits a command into words and quotes each again, so `a && b` showed as `a '&&' b`.
+// Anything but plain words goes as `bash -lc '<script>'`, which the TUI shows as the script,
+// as it does Elpis's own commands.
+const PLAIN_WORDS = /^[\w@%+=:,./-]+( [\w@%+=:,./-]+)*$/;
+const shownCommand = (s) => (PLAIN_WORDS.test(s) ? s : `bash -lc '${s.replaceAll("'", "'\\''")}'`);
+const plainCommand = (c) => (c.startsWith("bash -lc '") && c.endsWith("'") ? c.slice(10, -1).replaceAll("'\\''", "'") : c);
 function toolItem(id, t, cwd) {
   const r = t.raw, resp = t.response ?? {};
   const status = t.declined ? "declined" : t.status;
@@ -78,7 +84,7 @@ function toolItem(id, t, cwd) {
       : { path, kind: { type: "update", move_path: null }, diff: resp.structuredPatch?.length ? hunks(resp.structuredPatch) : d ? wholeDiff(d.oldText ?? "", d.newText ?? "") : "" };
     return { type: "fileChange", id, changes: [change], status };
   }
-  const command = (t.name === "Bash" && r.command) || t.title || t.name || "tool";
+  const command = shownCommand((t.name === "Bash" && r.command) || t.title || t.name || "tool");
   const commandActions = t.name === "Read" && r.file_path ? [{ type: "read", command, name: r.file_path.split("/").pop(), path: r.file_path }]
     : t.name === "Grep" || t.name === "Glob" ? [{ type: "search", command, query: r.pattern ?? null, path: r.path ?? null }]
       : t.name === "LS" ? [{ type: "listFiles", command, path: r.path ?? null }] : [];
@@ -292,6 +298,39 @@ wss.on("connection", (ws) => {
   let engineDefault = null; // asked once, after the TUI has initialized the engine
   const pendingTurnsList = new Map();
   const pendingItemsList = new Map();
+  // Claude-only chats reach the engine as injected history, which never sets a thread's
+  // preview, and thread/list leaves out threads without one, so /resume could not find them.
+  // The bridge adds them, previewed by their first message, where they fall in the list's order.
+  const pendingThreadList = new Map();
+  const pageFloor = new Map(); // nextCursor -> sort value of the last thread on the page before it
+  const previewed = new Set(); // threads the engine lists itself
+  const listField = (req) => ({ updated_at: "updatedAt", recency_at: "recencyAt" })[req.sortKey] ?? "createdAt";
+  async function unlistedClaudeThreads(req, page) {
+    const field = listField(req);
+    const value = (t) => t[field] ?? t.updatedAt ?? 0;
+    const ceiling = req.cursor ? pageFloor.get(req.cursor) : Infinity;
+    const floor = page.nextCursor && page.data.length ? value(page.data.at(-1)) : -Infinity;
+    if (page.nextCursor) pageFloor.set(page.nextCursor, floor);
+    if (ceiling === undefined) return [];
+    await storeChain;
+    const store = await loadStore();
+    const have = new Set(page.data.map((t) => t.id));
+    const cwds = req.cwd == null ? null : [req.cwd].flat();
+    const out = [];
+    for (const [id, saved] of Object.entries(store)) {
+      if (id.startsWith("_") || have.has(id) || previewed.has(id) || !saved?.turns?.length) continue;
+      const t = (await engineCall("thread/read", { threadId: id, includeTurns: false }).catch(() => null))?.thread;
+      if (!t) continue;
+      if (t.preview) { previewed.add(id); continue; }
+      if (/\/archived_sessions\//.test(t.path ?? "") || (cwds && !cwds.includes(t.cwd))) continue;
+      if (req.modelProviders?.length && !req.modelProviders.includes(t.modelProvider)) continue;
+      if (value(t) < floor || value(t) >= ceiling) continue;
+      const first = saved.turns[0].items?.[0];
+      const preview = first?.type === "userMessage" ? inputSummary(first.content ?? []) : first?.type === "enteredReviewMode" ? `Code review: ${first.review}` : "";
+      if (preview.trim()) out.push({ ...t, preview: preview.trim() });
+    }
+    return out;
+  }
   const engineReqs = new Map();
   let engineSeq = 0;
   const engineCall = (method, params) => new Promise((resolve, reject) => {
@@ -336,7 +375,7 @@ wss.on("connection", (ws) => {
       for (const turn of all) for (const it of turn.items ?? []) {
         if (it.type === "userMessage") lines.push(`User: ${textOf(it.content)}`);
         else if (it.type === "agentMessage" && it.text?.trim()) lines.push(`Assistant: ${it.text.trim()}`);
-        else if (it.type === "commandExecution") lines.push(`(Assistant ran: ${it.command})`);
+        else if (it.type === "commandExecution") lines.push(`(Assistant ran: ${plainCommand(it.command)})`);
         else if (it.type === "fileChange") lines.push(`(Assistant edited: ${(it.changes ?? []).map((c) => c.path).join(", ")})`);
       }
       const t = lines.join("\n\n");
@@ -396,6 +435,24 @@ wss.on("connection", (ws) => {
         log(`items/list ${req.threadId}: +${extra.length} Claude items`);
         ws.send(JSON.stringify(parsed));
         return;
+      }
+    }
+    if (parsed && pendingThreadList.has(parsed.id)) {
+      const req = pendingThreadList.get(parsed.id); pendingThreadList.delete(parsed.id);
+      if (Array.isArray(parsed.result?.data)) {
+        const added = await unlistedClaudeThreads(req, parsed.result).catch((e) => { log(`thread/list: ${e.message ?? JSON.stringify(e)}`); return []; });
+        if (added.length) {
+          // Each goes before the first engine thread that sorts after it; the engine's own order stays.
+          const field = listField(req);
+          const value = (t) => t[field] ?? t.updatedAt ?? 0;
+          for (const t of added.sort((a, b) => value(b) - value(a))) {
+            const at = parsed.result.data.findIndex((d) => value(d) < value(t));
+            parsed.result.data.splice(at < 0 ? parsed.result.data.length : at, 0, t);
+          }
+          log(`thread/list: +${added.length} Claude-only chats`);
+          ws.send(JSON.stringify(parsed));
+          return;
+        }
       }
     }
     if (parsed && pendingConfigRead.has(parsed.id)) {
@@ -491,6 +548,7 @@ wss.on("connection", (ws) => {
 
     const items = [];
     let message = null;
+    let lastPlan = null;
     const tools = new Map();
     const closeMessage = () => {
       if (!message) return;
@@ -586,7 +644,11 @@ wss.on("connection", (ws) => {
           sendUsage(threadId, turnId, null);
         } else if (u.sessionUpdate === "plan" && Array.isArray(u.entries)) {
           const step = { pending: "pending", in_progress: "inProgress", completed: "completed" };
-          notify("turn/plan/updated", { threadId, turnId, explanation: null, plan: u.entries.map((e) => ({ step: e.content, status: step[e.status] ?? "pending" })) });
+          const plan = u.entries.map((e) => ({ step: e.content, status: step[e.status] ?? "pending" }));
+          // The adapter repeats an unchanged list (each task tool reports it twice); one row each.
+          if (JSON.stringify(plan) === lastPlan) return;
+          lastPlan = JSON.stringify(plan);
+          notify("turn/plan/updated", { threadId, turnId, explanation: null, plan });
         } else if (u.sessionUpdate === "tool_call" || u.sessionUpdate === "tool_call_update") {
           let t = tools.get(u.toolCallId);
           if (!t) {
@@ -672,7 +734,7 @@ wss.on("connection", (ws) => {
       say("user", userText);
       for (const it of items) {
         if (it.type === "userMessage") { flush(); say("user", inputSummary(it.content)); }
-        else if (it.type === "commandExecution") used.push(it.command);
+        else if (it.type === "commandExecution") used.push(plainCommand(it.command));
         else if (it.type === "fileChange") used.push(`edited ${it.changes.map((c) => c.path).join(", ")}`);
         else if (it.type === "agentMessage" && it.text.trim()) { flush(); say("assistant", it.text.trim()); }
       }
@@ -887,6 +949,9 @@ wss.on("connection", (ws) => {
     if (msg.method === "review/start" && claudeModel.has(msg.params?.threadId) && !active) { reviewClaude(msg); return; }
     if (msg.method === "thread/turns/list" && msg.params?.threadId) pendingTurnsList.set(msg.id, msg.params);
     if (msg.method === "thread/items/list" && msg.params?.threadId) pendingItemsList.set(msg.id, msg.params);
+    const lp = msg.params ?? {};
+    if (msg.method === "thread/list" && !lp.archived && !lp.searchTerm && lp.sortKey !== "section_position" && lp.sortDirection !== "asc"
+      && lp.sectionId == null && lp.projectId == null && lp.parentThreadId == null && lp.ancestorThreadId == null) pendingThreadList.set(msg.id, lp);
     if (msg.method === "thread/settings/update") {
       const p = msg.params ?? {};
       if (isBridged(p.model)) { claudeModel.set(p.threadId, p.model); p.model = null; log(`thread ${p.threadId} -> ${claudeModel.get(p.threadId)}`); }
