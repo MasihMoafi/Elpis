@@ -82,6 +82,6 @@ Known gaps:
 ## Decisions (defaults taken overnight under Masih's "go"; change any)
 
 1. R11: reversed for this ACP runtime, as a prototype.
-2. Selection: a separate launcher (`elpis-claude`), no new slash command.
+2. Selection: Claude models appear first in `/model` as "<model> (Claude subscription)" when Elpis is started with `elpis-claude`. Picking one sends turns to Claude with that model and effort; picking any other model returns turns to the Elpis engine. Claude picks are never written to `config.toml`.
 3. Adapter: installed once with npm, not bundled.
 4. First slice: A1, A3 and A4 token usage. Next: the TUI change for Claude limits, then history and continuity.

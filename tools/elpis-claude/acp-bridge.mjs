@@ -93,10 +93,42 @@ wss.on("connection", (ws) => {
   const sessions = new Map();
   const bridgeRequests = new Map();
   let acp = null;
+  const claudeModel = new Map();
+  const claudeEffort = new Map();
+  const sessionModel = new Map();
+  const isClaude = (m) => typeof m === "string" && m.startsWith("claude/");
+  const ensureAcp = async () => { if (!acp || acp.dead) { acp = new Acp(); await acp.ready; log("acp ready"); } return acp; };
+  const catalog = (async () => {
+    try {
+      const a = await ensureAcp();
+      const s = await a.call("session/new", { cwd: process.cwd(), mcpServers: [] });
+      const opt = (id) => (s.configOptions ?? []).find((o) => o.id === id);
+      a.call("session/delete", { sessionId: s.sessionId }).catch(() => {});
+      return { models: opt("model")?.options ?? [], efforts: opt("effort")?.options ?? [] };
+    } catch (e) { log(`claude catalog: ${e.message}`); return { models: [], efforts: [] }; }
+  })();
+  const pendingModelList = new Set();
   let active = null;
   let reqSeq = 0;
 
-  lineReader(engine.stdout, (line) => {
+  lineReader(engine.stdout, async (line) => {
+    let parsed = null;
+    try { parsed = JSON.parse(line); } catch {}
+    if (parsed && pendingModelList.has(parsed.id) && Array.isArray(parsed.result?.data)) {
+      pendingModelList.delete(parsed.id);
+      const { models, efforts } = await Promise.race([catalog, new Promise((r) => setTimeout(() => r({ models: [], efforts: [] }), 15000))]);
+      const tpl = parsed.result.data[0] ?? {};
+      const added = [];
+      const levels = efforts.length ? efforts.map((e) => ({ reasoningEffort: e.value, description: e.name })) : tpl.supportedReasoningEfforts;
+      for (const m of models.filter((m) => m.value !== "default")) {
+        const id = `claude/${m.value}`;
+        added.push({ ...tpl, id, model: id, displayName: `${m.name} (Claude subscription)`, description: m.description ?? "Claude Code on your Pro/Max plan", hidden: false, isDefault: false, upgrade: null, upgradeInfo: null, supportedReasoningEfforts: levels, defaultReasoningEffort: levels?.[levels.length - 1]?.reasoningEffort ?? tpl.defaultReasoningEffort });
+      }
+      parsed.result.data.unshift(...added);
+      log(`model/list: added ${added.length} Claude models`);
+      ws.send(JSON.stringify(parsed));
+      return;
+    }
     try {
       const msg = JSON.parse(line);
       const thread = msg.result?.thread ?? msg.params?.thread;
@@ -136,7 +168,7 @@ wss.on("connection", (ws) => {
     let status = "completed";
     let error = null;
     try {
-      if (!acp || acp.dead) { acp = new Acp(); await acp.ready; log("acp ready"); }
+      await ensureAcp();
       const policy = req.params.approvalPolicy ?? threadPolicy.get(threadId) ?? "on-request";
       const ask = policy !== "never";
       const key = `${threadId}|${ask ? "ask" : "full"}`;
@@ -148,6 +180,14 @@ wss.on("connection", (ws) => {
         sessions.set(key, sessionId);
         log(`session ${sessionId} for thread ${threadId} in ${cwd} (${ask ? "Elpis asks" : "full access"}, policy ${policy})`);
       }
+      const want = claudeModel.get(threadId)?.slice("claude/".length);
+      if (want && sessionModel.get(sessionId) !== want) {
+        await acp.call("session/set_config_option", { sessionId, configId: "model", value: want });
+        sessionModel.set(sessionId, want);
+        log(`session ${sessionId} model -> ${want}`);
+      }
+      const effort = claudeEffort.get(threadId);
+      if (effort) await acp.call("session/set_config_option", { sessionId, configId: "effort", value: effort }).catch((e) => log(`effort ${effort}: ${e.message}`));
       active = { threadId, turnId, sessionId };
       acp.onUpdate = ({ update: u }) => {
         if (u.sessionUpdate === "agent_message_chunk" && u.content?.type === "text") {
@@ -223,10 +263,34 @@ wss.on("connection", (ws) => {
       bridgeRequests.delete(msg.id);
       return;
     }
+    if (process.env.ACP_BRIDGE_DEBUG && msg.method && !/^thread\/(read|turns\/list|list|loaded)/.test(msg.method)) log(`tui-> ${line.slice(0, 600)}`);
     if (msg.method === "thread/start") startPolicy.set(msg.id, msg.params?.approvalPolicy ?? null);
-    if (msg.method === "turn/start" && !String(msg.id).startsWith("temporary-structured-turn")) {
-      log(`claude turn for thread ${msg.params.threadId}`);
-      claudeTurn(msg);
+    if (msg.method === "model/list") pendingModelList.add(msg.id);
+    if (msg.method === "thread/settings/update") {
+      const p = msg.params ?? {};
+      if (isClaude(p.model)) { claudeModel.set(p.threadId, p.model); p.model = null; log(`thread ${p.threadId} -> ${claudeModel.get(p.threadId)}`); }
+      else if (typeof p.model === "string") claudeModel.delete(p.threadId);
+      if (p.effort && claudeModel.has(p.threadId)) { claudeEffort.set(p.threadId, p.effort); p.effort = null; }
+      engine.stdin.write(JSON.stringify(msg) + "\n");
+      return;
+    }
+    if (msg.method === "config/batchWrite" && Array.isArray(msg.params?.edits)) {
+      const claudePick = msg.params.edits.some((e) => e.keyPath === "model" && isClaude(e.value));
+      if (claudePick) msg.params.edits = msg.params.edits.filter((e) => e.keyPath !== "model" && e.keyPath !== "model_reasoning_effort");
+      if (claudePick && msg.params.edits.length === 0) { toTui({ id: msg.id, result: { status: "ok", version: "elpis-claude", filePath: `${HOME}/.elpis-next/config.toml`, overriddenMetadata: null } }); return; }
+      engine.stdin.write(JSON.stringify(msg) + "\n");
+      return;
+    }
+    if (msg.method === "turn/start") {
+      const tid = msg.params?.threadId;
+      if (isClaude(msg.params?.model)) claudeModel.set(tid, msg.params.model);
+      if (claudeModel.has(tid) && !String(msg.id).startsWith("temporary-structured-turn")) {
+        log(`claude turn for thread ${tid} (${claudeModel.get(tid)})`);
+        claudeTurn(msg);
+        return;
+      }
+      if (isClaude(msg.params?.model)) msg.params.model = null;
+      engine.stdin.write(JSON.stringify(msg) + "\n");
       return;
     }
     if (msg.method === "turn/interrupt" && active && msg.params?.threadId === active.threadId) {
