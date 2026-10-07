@@ -1,6 +1,6 @@
 // End-to-end check of the bridge, acting as the Elpis TUI over the app-server protocol.
 // Uses the real engine and Claude (subscription). Run: node test/bridge-e2e.mjs [scenario...]
-// Scenarios: text image interrupt approval usage resume delegate compact instructions modes steer tools plan.
+// Scenarios: text image interrupt approval usage resume delegate compact instructions modes steer tools plan subagents.
 // Exit code 0 only if every scenario passes.
 import { spawn } from "node:child_process";
 import { mkdtempSync, writeFileSync } from "node:fs";
@@ -373,6 +373,47 @@ for (const s of scenarios) {
     !fk.error && fk.result?.model === (process.env.E2E_MODEL ?? "claude/opus") && !inj.error && r.status === "completed" && r.text.includes(word)
       ? console.log(`PASS side (fork on ${fk.result.model} answered ${word} from the parent chat)`)
       : fail(`side: fork=${JSON.stringify(fk.error ?? fk.result?.model)} inject=${JSON.stringify(inj.error ?? "ok")} status=${r.status} ${JSON.stringify(r.error ?? "")} reply=${r.text.slice(0, 120)}`);
+  } else if (s === "subagents") {
+    // The Ledger's Subagents switch, written as the TUI writes it (config/batchWrite of
+    // features.multi_agent). Off: from the next turn of the same chat Claude has neither its own
+    // agent tools (Agent/Task, Workflow…) nor the elpis-agents delegate tool; on again: both are back. The tools are
+    // Claude Code's own list (the bridge logs it each turn) and Claude's answer. Its own bridge
+    // runs the engine in a throwaway Elpis home, so the write never reaches the user's config.
+    const { readFileSync } = await import("node:fs");
+    const home = mkdtempSync(join(tmpdir(), "elpis-e2e-home-"));
+    const logPath = join(home, "bridge.log");
+    const b3 = spawn("node", [process.env.E2E_BRIDGE ?? join(here, "acp-bridge.mjs")], { env: { ...process.env, ...usageEnv, ...storeEnv, ELPIS_HOME: home, PORT: String(port + 2), NODE_USE_ENV_PROXY: "1", ACP_BRIDGE_LOG: logPath }, stdio: "ignore" });
+    await new Promise((r) => setTimeout(r, 800));
+    const ws3 = new WebSocket(`ws://127.0.0.1:${port + 2}`);
+    await new Promise((r, j) => { ws3.on("open", r); ws3.on("error", j); });
+    const p3 = new Map(); let t3 = 0; let text3 = ""; let done3;
+    ws3.on("message", (d) => { const m = JSON.parse(d.toString()); if (m.id !== undefined && !m.method && p3.has(m.id)) { p3.get(m.id)(m); p3.delete(m.id); } if (m.method === "item/agentMessage/delta") text3 += m.params.delta; if (m.method === "turn/completed") done3?.(m.params.turn); });
+    const c3 = (method, params) => new Promise((r) => { const id = `g-${++t3}`; p3.set(id, r); ws3.send(JSON.stringify({ id, method, params })); });
+    await c3("initialize", { clientInfo: { name: "codex-tui", title: null, version: "0.160.0" }, capabilities: { experimentalApi: true } });
+    ws3.send(JSON.stringify({ method: "initialized" }));
+    const tid = (await c3("thread/start", { cwd: dir, approvalPolicy: "never", sandbox: "danger-full-access" })).result?.thread?.id;
+    await c3("thread/settings/update", { threadId: tid, model: process.env.E2E_MODEL ?? "claude/opus", effort: "low" });
+    const logText = () => { try { return readFileSync(logPath, "utf8"); } catch { return ""; } };
+    const toolsTurn = async (subagents) => {
+      const w = subagents === undefined ? null : await c3("config/batchWrite", { edits: [{ keyPath: "features.multi_agent", value: subagents, mergeStrategy: "replace" }], filePath: null, expectedVersion: null, reloadUserConfig: true });
+      const from = logText().length;
+      text3 = "";
+      const finished = new Promise((r) => { done3 = r; setTimeout(() => r({ status: "timeout" }), 180000); });
+      c3("turn/start", { threadId: tid, input: [{ type: "text", text: "Without calling any tool, list the exact names of all the tools you can call, comma-separated, and nothing else.", text_elements: [] }] });
+      const t = await finished;
+      const line = logText().slice(from).split("\n").filter((l) => l.includes("claude tools (session")).at(-1) ?? "";
+      const tools = line ? line.slice(line.indexOf("): ") + 3).split(", ") : [];
+      return { tools, reply: text3, status: t.status, write: w?.error ?? w?.result?.status ?? "default" };
+    };
+    const delegating = /^(Agent|Task|ListAgents|SendMessage|Workflow|RemoteTrigger)$/;
+    const own = (r) => r.tools.filter((n) => delegating.test(n));
+    const del = (r) => r.tools.filter((n) => /elpis-agents/.test(n));
+    const on = await toolsTurn(undefined), off = await toolsTurn(false), back = await toolsTurn(true);
+    const offReplyClean = !/\b(Agent|Task|ListAgents|SendMessage|Workflow|RemoteTrigger)\b|elpis-agents|delegate/.test(off.reply);
+    const ok = [on, back].every((r) => r.tools.some((n) => /^(Agent|Task)$/.test(n)) && del(r).length && r.status === "completed") && off.status === "completed" && off.tools.length > 0 && !own(off).length && !del(off).length && offReplyClean;
+    ok ? console.log(`PASS subagents (on: ${[...own(on), ...del(on)].join(", ")}; off: none of them in Claude Code's ${off.tools.length} tools or Claude's answer; on again: ${[...own(back), ...del(back)].join(", ")})`)
+      : fail(`subagents: ${[["on", on], ["off", off], ["on again", back]].map(([k, r]) => `${k} [write ${r.write}, turn ${r.status}]: tools=${JSON.stringify([...own(r), ...del(r)])} of ${r.tools.length}, Claude said: ${r.reply.replace(/\s+/g, " ").slice(0, 400)}`).join(" | ")}`);
+    ws3.close(); b3.kill();
   } else if (s === "image") {
     const word = process.env.E2E_IMAGE_WORD;
     const path = process.env.E2E_IMAGE_PATH;

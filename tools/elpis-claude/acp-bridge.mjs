@@ -32,7 +32,11 @@ function jsonIn(text) {
   return null;
 }
 const AGENTS_MCP = new URL("./elpis-agents-mcp.mjs", import.meta.url).pathname;
-const mcpServersFor = () => process.env.ACP_BRIDGE_NO_AGENTS ? [] : [{
+// The Context Ledger's Subagents switch off: Claude Code's tools that start or drive other
+// agents (the subagent tool is "Agent", listed as "Task"; Workflow runs agent scripts;
+// RemoteTrigger runs cloud agents) are disallowed, and the elpis-agents server is left out.
+const SUBAGENT_TOOLS = ["Agent", "Task", "ListAgents", "SendMessage", "Workflow", "RemoteTrigger"];
+const mcpServersFor = (subagents) => !subagents || process.env.ACP_BRIDGE_NO_AGENTS ? [] : [{
   name: "elpis-agents", command: process.execPath, args: [AGENTS_MCP],
   env: [{ name: "ELPIS_ENGINE_BIN", value: process.env.ELPIS_ENGINE_BIN ?? `${HOME}/.local/bin/elpis` }],
 }];
@@ -180,6 +184,9 @@ class Acp {
       if (p) msg.error ? p.reject(msg.error) : p.resolve(msg.result);
     } else if (msg.method === "session/update") {
       (this.bySession.get(msg.params?.sessionId)?.onUpdate ?? this.onUpdate)?.(msg.params);
+    } else if (msg.method === "_claude/sdkMessage" && msg.params?.message?.subtype === "init") {
+      // Claude Code's own list of the tools it has this turn.
+      log(`claude tools (session ${msg.params.sessionId}): ${(msg.params.message.tools ?? []).join(", ")}`);
     } else if (msg.method === "session/request_permission") {
       const own = this.bySession.get(msg.params?.sessionId);
       const optionId = await (own ? null : this.onPermission ? this.onPermission(msg.params) : null);
@@ -336,6 +343,11 @@ wss.on("connection", (ws) => {
       return t.length > 12000 ? t.slice(-12000) : t;
     } catch (e) { log(`history read for ${threadId}: ${e.message ?? JSON.stringify(e)}`); return ""; }
   }
+  // The Ledger's Subagents switch is the engine's `features.multi_agent`, written with
+  // config/batchWrite. Asking the engine each Claude turn (~10 ms) follows the switch,
+  // /experimental and hand edits alike, as GPT turns do.
+  const subagentsAllowed = (cwd) => engineCall("config/read", { includeLayers: false, cwd })
+    .then((r) => r?.config?.features?.multi_agent !== false, (e) => { log(`subagents switch unread: ${e.message ?? JSON.stringify(e)}`); return true; });
   let active = null;
   let reqSeq = 0;
 
@@ -503,16 +515,21 @@ wss.on("connection", (ws) => {
       const policy = req.params.approvalPolicy ?? threadPolicy.get(threadId) ?? "on-request";
       const ask = policy !== "never";
       const mode = ask ? "ask" : "full";
+      const subagents = await subagentsAllowed(cwd);
       let live = sessions.get(threadId);
       let sessionId = null;
       let freshSession = false;
-      if (live && live.mode === mode && live.agent === agent.key) sessionId = live.id;
+      // A changed approval mode or Subagents switch reloads the session with the new options;
+      // Claude Code rebuilds it and keeps the conversation. A changed agent starts afresh.
+      if (live && live.mode === mode && live.subagents === subagents && live.agent === agent.key) sessionId = live.id;
       else {
         const cwd = threadCwd.get(threadId) ?? process.cwd();
         const instructions = await elpisInstructions(threadId);
-        let _meta = ask ? { claudeCode: { options: { settingSources: ["project", "local"] } } } : undefined;
+        const options = { ...(ask && { settingSources: ["project", "local"] }), ...(!subagents && { disallowedTools: SUBAGENT_TOOLS }) };
+        let _meta = { claudeCode: { options, emitRawSDKMessages: [{ type: "system", subtype: "init" }] } };
         devChars.set(threadId, instructions.length);
-        if (instructions) { _meta = { ...(_meta ?? {}), systemPrompt: { append: instructions } }; log(`Elpis instructions for Claude: ${instructions.length} chars`); }
+        if (instructions) { _meta = { ..._meta, systemPrompt: { append: instructions } }; log(`Elpis instructions for Claude: ${instructions.length} chars`); }
+        const mcpServers = mcpServersFor(subagents);
         await storeChain;
         const store = await loadStore();
         // A session belongs to one agent; a chat that switched agent starts a fresh one, seeded below.
@@ -520,16 +537,16 @@ wss.on("connection", (ws) => {
         const saved = (live?.agent === agent.key ? live.id : null) ?? (sameAgent ? store[threadId]?.session ?? Object.values(store[threadId]?.sessions ?? {})[0] : null);
         if (saved) {
           const prev = acp.onUpdate; acp.onUpdate = null;
-          try { await acp.call("session/load", { sessionId: saved, cwd, mcpServers: mcpServersFor(), ...(_meta && { _meta }) }); sessionId = saved; log(`session ${saved} reloaded for thread ${threadId}`); }
+          try { await acp.call("session/load", { sessionId: saved, cwd, mcpServers, _meta }); sessionId = saved; log(`session ${saved} reloaded for thread ${threadId} (subagents ${subagents ? "on" : "off"})`); }
           catch (e) { log(`session reload failed: ${e.message ?? JSON.stringify(e)}`); }
           acp.onUpdate = prev;
         }
         if (!sessionId) {
-          sessionId = (await acp.call("session/new", { cwd, mcpServers: mcpServersFor(), ...(_meta && { _meta }) })).sessionId;
+          sessionId = (await acp.call("session/new", { cwd, mcpServers, _meta })).sessionId;
           freshSession = true;
-          log(`session ${sessionId} for thread ${threadId} in ${cwd} (${ask ? "Elpis asks" : "full access"}, policy ${policy})`);
+          log(`session ${sessionId} for thread ${threadId} in ${cwd} (${ask ? "Elpis asks" : "full access"}, policy ${policy}, subagents ${subagents ? "on" : "off"})`);
         }
-        live = { id: sessionId, mode, agent: agent.key };
+        live = { id: sessionId, mode, subagents, agent: agent.key };
         sessions.set(threadId, live);
         const sid = sessionId;
         updateStore((st) => { st[threadId] = { ...st[threadId], session: sid, mode, agent: agent.key }; });
