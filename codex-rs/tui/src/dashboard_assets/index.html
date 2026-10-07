@@ -32,6 +32,7 @@
 
     <nav class="tabs tabs-box dashboard-tabs" role="tablist" aria-label="Dashboard views" aria-orientation="horizontal">
       <button class="tab tab-active" id="tab-models" type="button" role="tab" aria-selected="true" aria-controls="panel-models" tabindex="0" data-tab="models">Models</button>
+      <button class="tab" id="tab-agents" type="button" role="tab" aria-selected="false" aria-controls="panel-agents" tabindex="-1" data-tab="agents">Agents</button>
       <button class="tab" id="tab-activity" type="button" role="tab" aria-selected="false" aria-controls="panel-activity" tabindex="-1" data-tab="activity">Activity</button>
       <button class="tab" id="tab-context" type="button" role="tab" aria-selected="false" aria-controls="panel-context" tabindex="-1" data-tab="context">Context</button>
       <button class="tab" id="tab-tokens" type="button" role="tab" aria-selected="false" aria-controls="panel-tokens" tabindex="-1" data-tab="tokens">Tokens</button>
@@ -87,6 +88,14 @@
       </div>
       <article class="card surface-card"><div class="card-body compact-card-body"><div class="card-heading"><div><p class="section-kicker">LIMITS</p><h3>Usage limits</h3></div><span class="badge badge-ghost" id="limits-summary">Unavailable</span></div><p class="empty-state" id="limits-empty">Limits unavailable</p><div class="token-table" id="limits-rows" hidden></div></div></article>
       <p class="m-0 text-sm model-help" id="models-feedback" role="status" aria-live="polite">Open the dashboard with /dashboard in Elpis to change models.</p>
+    </section>
+
+    <section class="dashboard-panel" id="panel-agents" role="tabpanel" aria-labelledby="tab-agents" tabindex="0" hidden>
+      <header class="panel-heading"><div><p class="section-kicker">AGENTS</p><h2>Who is working on what</h2></div><p>Each box is one agent: its task, then its model. An arrow means one agent handed that task to another. Colours match the agent list in Elpis (/agents).</p></header>
+      <article class="card surface-card"><div class="card-body compact-card-body">
+        <p class="empty-state" id="agents-empty">No agents yet. Chats and the helpers they start appear here.</p>
+        <div class="overflow-x-auto" id="agent-map-scroll" hidden><svg id="agent-map" role="img" aria-label="Map of agents and the helpers they started"></svg></div>
+      </div></article>
     </section>
 
     <section class="dashboard-panel" id="panel-activity" role="tabpanel" aria-labelledby="tab-activity" tabindex="0" hidden>

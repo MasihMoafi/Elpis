@@ -879,6 +879,165 @@ function renderClaude(summary) {
   byId('claude-empty').hidden = recent.length > 0;
 }
 
+const AGENT_NODE_W = 270;
+const AGENT_YOU_W = 140;
+const AGENT_NODE_H = 88;
+const AGENT_GAP_X = 96;
+const AGENT_TITLE_CHARS = 31;
+const AGENT_TRUNK = 26;
+const AGENT_GAP_Y = 20;
+const AGENT_PAD = 12;
+const AGENT_NEUTRAL = '#8a8590';
+// Only the statuses that ask for attention get a colour; the rest stay neutral.
+const AGENT_STATUS_TONES = Object.freeze({ needs_you: '#f0a35a', working: '#e0b048' });
+let lastAgentsFetch = 0;
+let lastAgentsKey = null;
+
+async function refreshAgents() {
+  const now = Date.now();
+  if (now - lastAgentsFetch < 3_000) return;
+  lastAgentsFetch = now;
+  try {
+    const response = await fetch('/agents.json', { cache: 'no-store' });
+    if (response.ok) renderAgents(await response.json());
+  } catch (_error) {
+    // The map keeps its last drawing.
+  }
+}
+
+function agentColor(value) {
+  return typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value) ? value : AGENT_NEUTRAL;
+}
+
+// The agent colour lightened toward white, so its text stays readable on the dark page.
+function agentTextColor(hex) {
+  const value = parseInt(hex.slice(1), 16);
+  const mix = channel => Math.round(channel + (255 - channel) * 0.45);
+  return 'rgb(' + [value >> 16, (value >> 8) & 255, value & 255].map(mix).join(',') + ')';
+}
+
+function svgNode(tag, attributes, text) {
+  const node = document.createElementNS(byId('agent-map').namespaceURI, tag);
+  Object.entries(attributes).forEach(([name, value]) => node.setAttribute(name, String(value)));
+  if (text !== undefined) node.textContent = text;
+  return node;
+}
+
+function clip(value, limit) {
+  return value.length > limit ? value.slice(0, limit - 1) + '…' : value;
+}
+
+// The title on at most two lines, broken between words; the second line ends in … when cut.
+function titleLines(title) {
+  if (title.length <= AGENT_TITLE_CHARS) return [title];
+  const cut = title.lastIndexOf(' ', AGENT_TITLE_CHARS);
+  const at = cut > AGENT_TITLE_CHARS / 2 ? cut : AGENT_TITLE_CHARS;
+  return [title.slice(0, at), clip(title.slice(at).trim(), AGENT_TITLE_CHARS)];
+}
+
+// You on the left, each chat next, then the helpers each one started, one column per level.
+function layoutAgents(agents) {
+  const ids = new Set(agents.map(agent => agent.id));
+  const children = new Map();
+  agents.forEach(agent => {
+    const parent = ids.has(agent.parent_id) && agent.parent_id !== agent.id ? agent.parent_id : null;
+    if (!children.has(parent)) children.set(parent, []);
+    children.get(parent).push(agent);
+  });
+  const placed = [];
+  const seen = new Set();
+  let row = 0;
+  const place = (agent, depth, parent) => {
+    seen.add(agent.id);
+    const rows = (children.get(agent.id) || []).filter(child => !seen.has(child.id))
+      .map(child => place(child, depth + 1, agent.id));
+    const y = rows.length ? (rows[0] + rows[rows.length - 1]) / 2 : row++;
+    placed.push({ agent, depth, y, parent });
+    return y;
+  };
+  const roots = (children.get(null) || []).map(agent => place(agent, 1, 'you'));
+  const you = { agent: { id: 'you', title: 'You', model: null }, depth: 0, y: roots.length ? (roots[0] + roots[roots.length - 1]) / 2 : 0, parent: null };
+  return { nodes: [you, ...placed], rows: Math.max(row, 1) };
+}
+
+function agentX(depth) {
+  return AGENT_PAD + (depth === 0 ? 0 : AGENT_YOU_W + AGENT_GAP_X + (depth - 1) * (AGENT_NODE_W + AGENT_GAP_X));
+}
+
+function agentBox(node, x, y) {
+  const { agent } = node;
+  const color = node.depth === 0 ? AGENT_NEUTRAL : agentColor(agent.color);
+  const status = typeof agent.status_label === 'string' && agent.status_label
+    ? { label: agent.status_label, tone: AGENT_STATUS_TONES[agent.status] || null }
+    : null;
+  const group = svgNode('g', {});
+  const model = typeof agent.model === 'string' ? agent.model : '';
+  group.append(svgNode('title', {}, [agent.title, model, status ? status.label : ''].filter(Boolean).join(' · ')));
+  group.append(svgNode('rect', { x, y, width: node.depth === 0 ? AGENT_YOU_W : AGENT_NODE_W, height: AGENT_NODE_H, rx: 10, fill: '#151318', stroke: color, 'stroke-width': 1.5 }));
+  group.append(svgNode('rect', { x: x + 1, y: y + 10, width: 4, height: AGENT_NODE_H - 20, rx: 2, fill: color }));
+  if (node.depth === 0) {
+    group.append(svgNode('text', { x: x + 18, y: y + 39, fill: '#eee9e7', 'font-size': 15, 'font-weight': 600 }, 'You'));
+    group.append(svgNode('text', { x: x + 18, y: y + 58, fill: '#a8a1a6', 'font-size': 12 }, 'start the chats'));
+    return group;
+  }
+  const title = typeof agent.title === 'string' && agent.title ? agent.title : 'Untitled task';
+  titleLines(title).forEach((line, index) => group.append(
+    svgNode('text', { x: x + 18, y: y + 23 + index * 18, fill: '#eee9e7', 'font-size': 14, 'font-weight': 600 }, line)));
+  group.append(svgNode('text', { x: x + 18, y: y + 62, fill: agentTextColor(color), 'font-size': 12.5 }, clip(model || 'Model not reported', 36)));
+  if (status) {
+    group.append(svgNode('circle', { cx: x + 22, cy: y + 75, r: 3.5, fill: status.tone || '#8a8590' }));
+    group.append(svgNode('text', { x: x + 31, y: y + 79, fill: status.tone || '#a8a1a6', 'font-size': 12 }, status.label));
+  }
+  return group;
+}
+
+// A right-angle connector: out of the parent, along a shared trunk, then straight into the
+// child, where its label sits above the straight part.
+function agentEdge(from, fromWidth, to, color, label) {
+  const group = svgNode('g', {});
+  const x1 = from.x + fromWidth;
+  const y1 = from.y + AGENT_NODE_H / 2;
+  const trunk = x1 + AGENT_TRUNK;
+  const x2 = to.x - 7;
+  const y2 = to.y + AGENT_NODE_H / 2;
+  const turn = Math.min(8, Math.abs(y2 - y1) / 2) * Math.sign(y2 - y1);
+  const d = turn === 0
+    ? `M${x1},${y1} H${x2}`
+    : `M${x1},${y1} H${trunk - Math.abs(turn)} Q${trunk},${y1} ${trunk},${y1 + turn} V${y2 - turn} Q${trunk},${y2} ${trunk + Math.abs(turn)},${y2} H${x2}`;
+  group.append(svgNode('path', { d, fill: 'none', stroke: color, 'stroke-width': 1.5, 'stroke-opacity': 0.85 }));
+  group.append(svgNode('path', { d: `M${x2},${y2 - 5} L${x2 + 7},${y2} L${x2},${y2 + 5} Z`, fill: color }));
+  group.append(svgNode('text', { x: (trunk + x2) / 2, y: y2 - 7, fill: '#a8a1a6', 'font-size': 11, 'text-anchor': 'middle' }, label));
+  return group;
+}
+
+function renderAgents(summary) {
+  const agents = isObject(summary) && Array.isArray(summary.agents)
+    ? summary.agents.filter(agent => isObject(agent) && typeof agent.id === 'string' && agent.id !== 'you')
+    : [];
+  const key = JSON.stringify(agents);
+  if (key === lastAgentsKey) return;
+  lastAgentsKey = key;
+  byId('agents-empty').hidden = agents.length > 0;
+  byId('agent-map-scroll').hidden = agents.length === 0;
+  const map = byId('agent-map');
+  if (agents.length === 0) { map.replaceChildren(); return; }
+  const { nodes, rows } = layoutAgents(agents);
+  const at = new Map(nodes.map(node => [node.agent.id, {
+    x: agentX(node.depth),
+    y: AGENT_PAD + node.y * (AGENT_NODE_H + AGENT_GAP_Y),
+  }]));
+  const depth = Math.max(...nodes.map(node => node.depth));
+  const width = agentX(depth) + (depth === 0 ? AGENT_YOU_W : AGENT_NODE_W) + AGENT_PAD;
+  const height = AGENT_PAD * 2 + rows * AGENT_NODE_H + (rows - 1) * AGENT_GAP_Y;
+  map.setAttribute('width', width);
+  map.setAttribute('height', height);
+  map.setAttribute('viewBox', `0 0 ${width} ${height}`);
+  const edges = nodes.filter(node => node.parent).map(node => agentEdge(
+    at.get(node.parent), node.depth === 1 ? AGENT_YOU_W : AGENT_NODE_W, at.get(node.agent.id),
+    agentColor(node.agent.color), node.depth === 1 ? 'asks' : 'delegates'));
+  map.replaceChildren(...edges, ...nodes.map(node => agentBox(node, at.get(node.agent.id).x, at.get(node.agent.id).y)));
+}
+
 async function poll(force = false) {
   if (inFlight || (paused && !force)) return;
   inFlight = true;
@@ -902,6 +1061,7 @@ async function poll(force = false) {
     lastValidHeartbeat = nextHeartbeat;
     await refreshEvidence();
     await refreshClaude();
+    await refreshAgents();
     if (lastValidState === null || nextState.revision !== lastValidState.revision) renderState(nextState);
     updateFreshness();
     setTransport(paused ? 'Paused · refreshed' : 'Live', paused ? 'paused' : 'available');
