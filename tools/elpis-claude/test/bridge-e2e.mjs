@@ -32,12 +32,13 @@ let seq = 0;
 const pending = new Map();
 const listeners = new Set();
 const approvals = [];
+const approvalOffers = [];
 let approvalAnswer = "accept";
 const seen = [];
 ws.on("message", (data) => {
   const m = JSON.parse(data.toString());
   if (m.id !== undefined && !m.method && pending.has(m.id)) { pending.get(m.id)(m); pending.delete(m.id); return; }
-  if (m.id !== undefined && m.method) { approvals.push(m.params?.command ?? m.method); ws.send(JSON.stringify({ id: m.id, result: { decision: approvalAnswer } })); }
+  if (m.id !== undefined && m.method) { approvals.push(m.params?.command ?? m.method); approvalOffers.push(m.params?.availableDecisions ?? []); ws.send(JSON.stringify({ id: m.id, result: { decision: approvalAnswer } })); }
   seen.push(m);
   for (const l of listeners) l(m);
 });
@@ -93,11 +94,13 @@ for (const s of scenarios) {
     const ask = await call("thread/start", { cwd: dir, approvalPolicy: "on-request", sandbox: "workspace-write" });
     const askId = ask.result?.thread?.id;
     await call("thread/settings/update", { threadId: askId, model: "claude/opus", effort: "low" });
-    for (const [answer, file, want] of [["decline", "denied.txt", false], ["accept", "allowed.txt", true]]) {
-      approvalAnswer = answer; approvals.length = 0;
-      await turn(askId, [{ type: "text", text: `Use your Bash tool to run exactly: touch ${file}   Then reply DONE.`, text_elements: [] }]);
-      const ok = approvals.length > 0 && existsSync(join(dir, file)) === want;
-      ok ? console.log(`PASS approval ${answer} (asked ${approvals.length}x, file ${want ? "created" : "absent"})`) : fail(`approval ${answer}: asked ${approvals.length}x, file exists=${existsSync(join(dir, file))}`);
+    // "cancel" is "No, and tell Elpis what to do differently": the reply stops so the user can type.
+    for (const [answer, file, want, ends] of [["decline", "denied.txt", false, "completed"], ["accept", "allowed.txt", true, "completed"], ["cancel", "stopped.txt", false, "interrupted"]]) {
+      approvalAnswer = answer; approvals.length = 0; approvalOffers.length = 0;
+      const t = await turn(askId, [{ type: "text", text: `Use your Bash tool to run exactly: touch ${file}   Then reply DONE.`, text_elements: [] }]);
+      const offered = approvalOffers.at(-1) ?? [];
+      const ok = approvals.length > 0 && existsSync(join(dir, file)) === want && t.status === ends && ["accept", "decline", "cancel"].every((d) => offered.includes(d));
+      ok ? console.log(`PASS approval ${answer} (asked ${approvals.length}x, file ${want ? "created" : "absent"}, turn ${t.status})`) : fail(`approval ${answer}: asked ${approvals.length}x, file exists=${existsSync(join(dir, file))}, turn ${t.status}, offered ${JSON.stringify(offered)}`);
     }
     approvalAnswer = "accept";
   } else if (s === "usage") {

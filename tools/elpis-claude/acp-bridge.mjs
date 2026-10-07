@@ -549,13 +549,20 @@ wss.on("connection", (ws) => {
         const decision = await askTui("item/commandExecution/requestApproval", {
           kind: "command", threadId, turnId, itemId: p.toolCall?.toolCallId ?? randomUUID(), startedAtMs: now(),
           environmentId: null, reason: `Claude wants to run: ${what}`, command: what, cwd,
+          // No "don't ask again": Claude Code would save that rule to the project for good,
+          // while Elpis's label promises only this session.
+          availableDecisions: ["accept", "decline", "cancel"],
         });
         const d = decision?.decision;
         const pick = (kind) => p.options.find((o) => o.kind === kind)?.optionId;
         log(`approval ${what} -> ${JSON.stringify(d)}`);
-        if (d === "acceptForSession") return pick("allow_always") ?? pick("allow_once");
         if (d === "accept") return pick("allow_once") ?? pick("allow_always");
         if (t) t.declined = true;
+        if (d === "cancel") {
+          // "No, and tell Elpis what to do differently": stop the reply so the user can answer.
+          turnState.cancelled = true;
+          setImmediate(() => acp.send({ method: "session/cancel", params: { sessionId } }));
+        }
         return pick("reject_once") ?? pick("reject_always") ?? null;
       };
       const userText = req.kind === "review" ? `[Code review requested: ${req.reviewHint}]` : inputSummary(input);
