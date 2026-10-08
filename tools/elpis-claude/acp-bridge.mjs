@@ -359,6 +359,30 @@ wss.on("connection", (ws) => {
   const claudeEffort = new Map();
   const sessionModel = new Map();
   const threadCollab = new Map();
+  // thread id -> its permission profile and approvals reviewer, as the TUI or the engine last
+  // named them; with the approval policy and Plan they pick Claude's own mode (claudeModeOf).
+  const threadAccess = new Map();
+  const noteAccess = (threadId, s) => {
+    if (!threadId || !s) return;
+    const sandbox = (s.sandboxPolicy ?? s.sandbox)?.type;
+    const profile = s.permissions ?? s.activePermissionProfile?.id
+      ?? (sandbox && ({ readOnly: ":read-only", dangerFullAccess: ":danger-full-access" }[sandbox] ?? ":workspace"));
+    const prev = threadAccess.get(threadId) ?? {};
+    threadAccess.set(threadId, { profile: profile ?? prev.profile, reviewer: s.approvalsReviewer ?? prev.reviewer });
+  };
+  // The Claude Code mode a chat's turn runs in: Codex's permission modes, mapped to Claude's own.
+  // Read Only = Manual ("default"), Default = Accept edits, Approve for me = Auto, Full Access =
+  // Bypass permissions; Plan is Plan. Antigravity has only its default, Plan and full access. A
+  // read-only helper that may not ask plans.
+  const MODE_NAMES = { default: "Manual", acceptEdits: "Accept edits", plan: "Plan mode", auto: "Auto", bypassPermissions: "Bypass permissions" };
+  const claudeModeOf = (threadId, agentKey, ask) => {
+    if (threadCollab.get(threadId) === "plan") return "plan";
+    const { profile, reviewer } = threadAccess.get(threadId) ?? {};
+    const readOnly = threadSandbox.get(threadId) === "read-only" || !!profile?.includes("read-only");
+    if (!ask) return readOnly ? "plan" : "bypassPermissions";
+    if (agentKey !== "claude" || readOnly) return "default";
+    return reviewer === "auto_review" ? "auto" : "acceptEdits";
+  };
   const sessionMode = new Map();
   const tokenSums = new Map();
   const ctxChars = new Map();
@@ -412,7 +436,7 @@ wss.on("connection", (ws) => {
     const live = liveCatalog(agent, saved, efforts);
     if (!saved?.models?.length) return live;
     live.catch(() => {});
-    return { models: saved.models, efforts, fallback: saved.fallback ?? { levels: [], current: null } };
+    return { models: saved.models, efforts, fallback: saved.fallback ?? { levels: [], current: null }, modes: saved.modes ?? null };
   }
   async function liveCatalog(agent, saved, efforts) {
     try {
@@ -425,20 +449,23 @@ wss.on("connection", (ws) => {
       if (first) efforts[first] = levelsOf(s.configOptions);
       const fallback = first ? efforts[first] : { levels: [], current: null };
       const stale = !saved?.at || now() - saved.at > 86_400_000 || models.some((m) => !efforts[m.value]);
-      await writeJson(agent.catalogFile, { at: stale ? 0 : saved.at, models, efforts, fallback });
+      // The permission modes the agent's own settings allow (Claude's can turn Bypass off), so a
+      // refused switch can say why.
+      const modes = s.modes?.availableModes?.map((m) => m.id) ?? null;
+      await writeJson(agent.catalogFile, { at: stale ? 0 : saved.at, models, efforts, fallback, modes });
       (async () => {
         if (stale) {
           for (const m of models.filter((m) => m.value !== first)) {
             const r = await a.call("session/set_config_option", { sessionId: s.sessionId, configId: "model", value: m.value }).catch(() => null);
-            if (r) { efforts[m.value] = levelsOf(r.configOptions); await writeJson(agent.catalogFile, { at: 0, models, efforts, fallback }); }
+            if (r) { efforts[m.value] = levelsOf(r.configOptions); await writeJson(agent.catalogFile, { at: 0, models, efforts, fallback, modes }); }
           }
-          await writeJson(agent.catalogFile, { at: now(), models, efforts, fallback });
+          await writeJson(agent.catalogFile, { at: now(), models, efforts, fallback, modes });
           log(`${agent.key} catalog: effort levels of ${models.length} models saved`);
         }
         await a.call("session/delete", { sessionId: s.sessionId }).catch(() => {});
       })().catch((e) => log(`${agent.key} catalog refresh: ${e.message ?? JSON.stringify(e)}`));
-      return { models, efforts, fallback };
-    } catch (e) { log(`${agent.key} catalog: ${e.message}`); return { models: [], efforts: {}, fallback: { levels: [], current: null } }; }
+      return { models, efforts, fallback, modes };
+    } catch (e) { log(`${agent.key} catalog: ${e.message}`); return { models: [], efforts: {}, fallback: { levels: [], current: null }, modes: null }; }
   }
   const pendingModelList = new Set();
   const pendingResume = new Set();
@@ -581,7 +608,8 @@ wss.on("connection", (ws) => {
     try { parsed = JSON.parse(line); } catch {}
     const th = parsed?.result?.thread ?? parsed?.params?.thread;
     if (th?.id && th?.cwd) { threadCwd.set(th.id, th.cwd); threadSeen.set(th.id, { ...th, turns: [] }); }
-    if (th?.id && parsed?.result?.approvalPolicy) { threadPolicy.set(th.id, parsed.result.approvalPolicy); chatPolicy.set(th.id, parsed.result.approvalPolicy); }
+    if (th?.id && parsed?.result?.approvalPolicy) { threadPolicy.set(th.id, parsed.result.approvalPolicy); chatPolicy.set(th.id, parsed.result.approvalPolicy); noteAccess(th.id, parsed.result); }
+    if (parsed?.method === "thread/settings/updated") noteAccess(parsed.params?.threadId, parsed.params?.threadSettings);
     shareHelper(parsed);
     notePlan(parsed);
     if (parsed?.method === "thread/smartPrune/updated" && parsed.params?.threadId) smartPrune.set(parsed.params.threadId, !!parsed.params.smartPrune?.enabled);
@@ -766,7 +794,10 @@ wss.on("connection", (ws) => {
         for (const m of models) {
           const id = `${agent.prefix}${m.value}`;
           const e = efforts[m.value] ?? { levels: fallback?.levels ?? [], current: "default" };
-          added.push({ ...tpl, id, model: id, inputModalities: ["text", "image"], displayName: `${m.name} (${agent.label})`, description: m.description ?? agent.description, hidden: false, isDefault: false, upgrade: null, upgradeInfo: null, supportedReasoningEfforts: e.levels, defaultReasoningEffort: e.current ?? "default" });
+          added.push({ ...tpl, id, model: id, inputModalities: ["text", "image"], displayName: `${m.name} (${agent.label})`, description: m.description ?? agent.description, hidden: false, isDefault: false, upgrade: null, upgradeInfo: null, supportedReasoningEfforts: e.levels, defaultReasoningEffort: e.current ?? "default",
+            // The template's GPT-only options, which a subscription model does not have (Claude's
+            // Fast mode bills extra usage, not the plan).
+            additionalSpeedTiers: [], serviceTiers: [], defaultServiceTier: null, availabilityNux: null, availableAccessPrograms: null, modelSpecialty: null, supportsPersonality: false });
         }
       });
       parsed.result.data.unshift(...added);
@@ -965,11 +996,17 @@ wss.on("connection", (ws) => {
         sessionModel.set(sessionId, want);
         log(`session ${sessionId} model -> ${want}`);
       }
-      const wantMode = threadCollab.get(threadId) === "plan" || threadSandbox.get(threadId) === "read-only" ? "plan" : ask ? "default" : "bypassPermissions";
+      const wantMode = claudeModeOf(threadId, agent.key, ask);
       if (sessionMode.get(sessionId) !== wantMode) {
         await acp.call("session/set_mode", { sessionId, modeId: wantMode })
           .then(() => { sessionMode.set(sessionId, wantMode); log(`session ${sessionId} mode -> ${wantMode}`); })
-          .catch((e) => log(`mode ${wantMode}: ${e.message ?? JSON.stringify(e)}`));
+          .catch(async (e) => {
+            log(`mode ${wantMode}: ${e.message ?? JSON.stringify(e)}`);
+            const allowed = (await catalogFor(agent)).modes;
+            const why = allowed && !allowed.includes(wantMode) ? `${agent.speaker}'s own settings turn it off` : (e.message ?? "it refused");
+            const kept = MODE_NAMES[sessionMode.get(sessionId)];
+            notify("warning", { threadId, message: `${agent.speaker} did not switch to ${MODE_NAMES[wantMode] ?? wantMode}: ${why}. ${kept ? `It stays in ${kept}.` : "Its mode is unchanged."}` });
+          });
       }
       const effort = claudeEffort.get(threadId);
       const known = (await catalogFor(agent)).efforts[want];
@@ -1408,6 +1445,7 @@ wss.on("connection", (ws) => {
       if (isBridged(p.model)) { claudeModel.set(p.threadId, p.model); p.model = null; log(`thread ${p.threadId} -> ${claudeModel.get(p.threadId)}`); }
       else if (typeof p.model === "string") claudeModel.delete(p.threadId);
       if (p.approvalPolicy) { threadPolicy.set(p.threadId, p.approvalPolicy); chatPolicy.set(p.threadId, p.approvalPolicy); }
+      noteAccess(p.threadId, p);
       if (p.collaborationMode?.mode) {
         threadCollab.set(p.threadId, p.collaborationMode.mode);
         if (claudeModel.has(p.threadId) && p.collaborationMode.settings && !isBridged(p.collaborationMode.settings.model)) p.collaborationMode.settings.model = null;
@@ -1431,6 +1469,7 @@ wss.on("connection", (ws) => {
     if (msg.method === "turn/start") {
       const tid = msg.params?.threadId;
       if (msg.params?.collaborationMode?.mode) threadCollab.set(tid, msg.params.collaborationMode.mode);
+      noteAccess(tid, msg.params);
       if (isBridged(msg.params?.model)) {
         claudeModel.set(tid, msg.params.model);
         if (msg.params.effort) claudeEffort.set(tid, msg.params.effort);

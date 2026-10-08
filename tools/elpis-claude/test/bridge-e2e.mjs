@@ -1,7 +1,8 @@
 // End-to-end check of the bridge, acting as the Elpis TUI over the app-server protocol.
 // Uses the real engine and Claude (subscription). Run: node test/bridge-e2e.mjs [scenario...]
 // Scenarios: text image interrupt approval usage resume delegate compact instructions modes steer tools plan
-// shell picker revert review efforts default antigravity structured goal side subagents claude-subagent.
+// shell picker revert review efforts default antigravity structured goal side subagents claude-subagent
+// claude-modes.
 // Exit code 0 only if every scenario passes.
 import { spawn } from "node:child_process";
 import { mkdtempSync, writeFileSync } from "node:fs";
@@ -86,6 +87,13 @@ if (!models.result?.data?.some((m) => m.id === "claude/opus")) fail("model/list 
 // The TUI refuses a pasted image unless the selected model lists image input.
 const textOnly = (models.result?.data ?? []).filter((m) => m.id.startsWith("claude/") && !m.inputModalities?.includes("image"));
 if (textOnly.length) fail(`Claude models without image input: ${textOnly.map((m) => m.id).join(", ")}`);
+// A subscription model has none of GPT's speed tiers (Claude's Fast mode bills extra usage); a GPT
+// model keeps them, so the check can fail.
+const fastOf = (m) => [...(m.serviceTiers ?? []).map((t) => t.name), ...(m.additionalSpeedTiers ?? [])];
+const fastSubscription = (models.result?.data ?? []).filter((m) => /^(claude|agy)\//.test(m.id) && fastOf(m).length);
+const gptFast = (models.result?.data ?? []).some((m) => !/^(claude|agy)\//.test(m.id) && fastOf(m).length);
+if (fastSubscription.length || !gptFast) fail(`speed tiers: subscription models with them ${fastSubscription.map((m) => m.id).join(", ") || "none"}; a GPT model has them ${gptFast}`);
+else console.log("PASS tiers (no Fast on subscription models; GPT keeps it)");
 
 const dir = process.env.E2E_CWD ?? mkdtempSync(join(tmpdir(), "elpis-e2e-"));
 const started = await call("thread/start", { cwd: dir, approvalPolicy: "never", sandbox: "danger-full-access" });
@@ -264,6 +272,43 @@ for (const s of scenarios) {
     await turn(tid, [{ type: "text", text: "Now create the empty file planned.txt in the current folder with your tools, then reply DONE.", text_elements: [] }], 180000);
     const defaultOk = existsSync(join(dir, "planned.txt"));
     planOk && defaultOk ? console.log("PASS modes (Plan mode: no file; Default mode: file created)") : fail(`modes: plan kept folder clean=${planOk}, default created file=${defaultOk}`);
+  } else if (s === "claude-modes") {
+    // Each Codex permission mode runs a Claude chat's turn in Claude's matching mode.
+    // Manual asks before an edit (declined: no file); Accept edits writes without asking.
+    const { existsSync, readFileSync } = await import("node:fs");
+    const logFile = process.env.ACP_BRIDGE_LOG ?? "/tmp/acp-bridge/e2e.log";
+    const st = await call("thread/start", { cwd: dir, approvalPolicy: "on-request", sandbox: "workspace-write" });
+    const tid = st.result?.thread?.id;
+    await call("thread/settings/update", { threadId: tid, model: "claude/opus", effort: "low" });
+    approvalAnswer = "decline";
+    const got = [];
+    for (const [want, settings, write] of [
+      ["default", { permissions: ":read-only", approvalPolicy: "on-request", approvalsReviewer: "user" }, true],
+      ["acceptEdits", { permissions: ":workspace", approvalPolicy: "on-request", approvalsReviewer: "user" }, true],
+      ["auto", { permissions: ":workspace", approvalPolicy: "on-request", approvalsReviewer: "auto_review" }, false],
+      ["bypassPermissions", { permissions: ":danger-full-access", approvalPolicy: "never", approvalsReviewer: "user" }, false],
+    ]) {
+      const from = readFileSync(logFile, "utf8").length;
+      const set = await call("thread/settings/update", { threadId: tid, ...settings });
+      approvals.length = 0;
+      const file = `${want}.txt`;
+      const r = await turn(tid, [{ type: "text", text: write ? `Create an empty file named ${file} in the current folder with your file-writing tool, then reply DONE. If you are not allowed, reply DENIED.` : "Reply with exactly: OK", text_elements: [] }], 420000);
+      const mode = /mode -> (\w+)/.exec(readFileSync(logFile, "utf8").slice(from))?.[1] ?? "(unchanged)";
+      got.push({ want, mode, set: set.error ? JSON.stringify(set.error) : "ok", status: r.status, asked: approvals.length, file: write ? existsSync(join(dir, file)) : null });
+    }
+    approvalAnswer = "accept";
+    // Claude's own settings may turn Bypass off (disableBypassPermissionsMode); the bridge's
+    // catalog lists the modes they allow, and a refused switch is said, not swallowed.
+    const { dirname } = await import("node:path");
+    const allowed = JSON.parse(readFileSync(join(dirname(storeEnv.ACP_BRIDGE_STORE), "catalog.json"), "utf8")).modes ?? [];
+    const warned = seen.some((m) => m.method === "warning" && m.params?.threadId === tid && /Bypass permissions/.test(m.params.message));
+    const bypass = got[3];
+    const bypassOk = allowed.includes("bypassPermissions") ? bypass.mode === "bypassPermissions" : bypass.mode === "(unchanged)" && warned;
+    console.log(`  ${JSON.stringify(got)} allowed=${JSON.stringify(allowed)} warned=${warned}`);
+    const [manual, edits] = got;
+    got.slice(0, 3).every((g) => g.mode === g.want) && got.every((g) => g.set === "ok" && g.status === "completed") && manual.asked > 0 && !manual.file && edits.asked === 0 && edits.file && bypassOk
+      ? console.log(`PASS claude-modes (Manual asked and wrote nothing; Accept edits wrote unasked; Auto set; Bypass ${allowed.includes("bypassPermissions") ? "set" : "refused by Claude's settings, with a warning"})`)
+      : fail("claude-modes: see the line above");
   } else if (s === "steer") {
     // A message sent while Claude works must join that reply (Elpis Esc / Enter), not stop it.
     const word = `STEER-${Math.floor(Math.random() * 9000 + 1000)}`;
