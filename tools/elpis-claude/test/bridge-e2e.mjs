@@ -539,8 +539,12 @@ for (const s of scenarios) {
     const inList = listed.find((t) => t.id === helper);
     // The chat itself lists with the model it runs on, not the engine's.
     const chatModel = listed.find((t) => t.id === tid)?.model;
+    // The TUI hears of the helper live: its start, with its parent, and its status changes.
+    const heardStart = seen.some((m) => m.method === "thread/started" && m.params?.thread?.id === helper && m.params.thread.parentThreadId === tid);
+    const heardStatus = seen.some((m) => m.method === "thread/status/changed" && m.params?.threadId === helper);
+    if (!heardStart || !heardStatus) fail(`helper-parent: live start heard=${heardStart} status heard=${heardStatus}`);
     helper && inList?.parentThreadId === tid && read?.parentThreadId === tid && kids.some((t) => t.id === helper)
-      && chatModel === (process.env.E2E_MODEL ?? "claude/opus")
+      && chatModel === (process.env.E2E_MODEL ?? "claude/opus") && heardStart && heardStatus
       ? console.log(`PASS helper-parent (helper ${helper} is listed, read and a descendant of its chat, which lists as ${chatModel})`)
       : fail(`helper-parent: helper=${helper} list.parent=${inList?.parentThreadId} read.parent=${read?.parentThreadId} descendants=${JSON.stringify(kids.map((t) => t.id))} chat.model=${chatModel}`);
   } else if (s === "agy-model") {

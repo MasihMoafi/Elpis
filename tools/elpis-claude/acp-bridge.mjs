@@ -221,8 +221,15 @@ class Acp {
 const wss = new WebSocketServer({ host: "127.0.0.1", port: Number(process.env.PORT ?? 47820) });
 wss.on("listening", () => log(`LISTENING ${wss.address().port}`));
 
+// A helper runs on its delegate tool's own connection, so the TUIs hear of it only through the
+// bridge: its start (with its parent) and its status changes go to every other connection.
+const clients = new Set();
+const helperThreads = new Set();
 wss.on("connection", (ws) => {
-  const toTui = (msg) => ws.send(JSON.stringify(msg));
+  clients.add(ws);
+  const toOthers = (msg) => { const line = JSON.stringify(msg); for (const c of clients) if (c !== ws && c.readyState === 1) c.send(line); };
+  const shareHelper = (msg) => { if (msg?.method === "thread/status/changed" && helperThreads.has(msg.params?.threadId)) toOthers(msg); };
+  const toTui = (msg) => { shareHelper(msg); ws.send(JSON.stringify(msg)); };
   const notify = (method, params) => toTui({ method, params, emittedAtMs: now() });
   const engine = spawn(process.env.ELPIS_ENGINE_BIN ?? `${HOME}/.local/bin/elpis`, ["app-server"], { stdio: ["pipe", "pipe", "ignore"] });
   const threadCwd = new Map();
@@ -478,6 +485,7 @@ wss.on("connection", (ws) => {
     const th = parsed?.result?.thread ?? parsed?.params?.thread;
     if (th?.id && th?.cwd) { threadCwd.set(th.id, th.cwd); threadSeen.set(th.id, { ...th, turns: [] }); }
     if (th?.id && parsed?.result?.approvalPolicy) threadPolicy.set(th.id, parsed.result.approvalPolicy);
+    shareHelper(parsed);
     if (parsed && engineReqs.has(parsed.id) && !parsed.method) {
       const p = engineReqs.get(parsed.id); engineReqs.delete(parsed.id);
       parsed.error ? p.reject(parsed.error) : p.resolve(parsed.result);
@@ -576,6 +584,8 @@ wss.on("connection", (ws) => {
         if (d.sandbox) threadSandbox.set(tid, d.sandbox);
         updateStore((st) => { st._delegations = { ...st._delegations, [tid]: { parentThreadId: d.parentThreadId, model: d.model, startedAt: Math.floor(now() / 1000) } }; });
         log(`helper thread ${tid} (${d.model}) started by ${d.parentThreadId}`);
+        helperThreads.add(tid);
+        toOthers({ method: "thread/started", params: { thread: { ...parsed.result.thread, parentThreadId: d.parentThreadId, turns: [] } }, emittedAtMs: now() });
       }
     }
     if (parsed && pendingStart.has(parsed.id)) {
@@ -1218,5 +1228,5 @@ wss.on("connection", (ws) => {
     }
     engine.stdin.write(line + "\n");
   });
-  ws.on("close", async () => { await storeChain; engine.kill(); for (const a of acps.values()) a.kill(); log("tui disconnected"); });
+  ws.on("close", async () => { clients.delete(ws); await storeChain; engine.kill(); for (const a of acps.values()) a.kill(); log("tui disconnected"); });
 });
