@@ -380,9 +380,15 @@ for (const s of scenarios) {
     const r = await turn(tid, [{ type: "text", text: `Use your shell tool to run \`ls\`, then reply with exactly: ${word}`, text_elements: [] }], 180000);
     const ran = seen.slice(from).filter((m) => m.method === "item/completed" && m.params.threadId === tid && m.params.item?.type === "commandExecution").map((m) => m.params.item.command);
     const r2 = await turn(tid, [{ type: "text", text: "What exact word did you reply with a moment ago? Reply with only that word.", text_elements: [] }], 180000);
+    // Its usage limits reach Elpis like Claude's, and /status can name its Google account.
+    const { readFileSync: readAccounts } = await import("node:fs");
+    const gemLimits = seen.find((m) => m.method === "account/rateLimits/updated" && String(m.params?.rateLimits?.limitId).startsWith("antigravity-gemini"))?.params.rateLimits;
+    const storeDir = storeEnv.ACP_BRIDGE_STORE.slice(0, storeEnv.ACP_BRIDGE_STORE.lastIndexOf("/"));
+    const accounts = (() => { try { return JSON.parse(readAccounts(`${storeDir}/accounts.json`, "utf8")); } catch { return {}; } })();
     flash?.displayName?.includes("Antigravity") && r.text.includes(word) && ran.includes("ls") && r2.text.includes(word)
-      ? console.log(`PASS antigravity (${list.filter((m) => m.id.startsWith("agy/")).length} Antigravity models; Gemini ran "ls", answered ${word} and remembered it)`)
-      : fail(`antigravity: listed=${!!flash} reply=${r.text.slice(0, 80)} status=${r.status} ${JSON.stringify(r.error ?? "")} ran=${JSON.stringify(ran)} recall=${r2.text.slice(0, 60)}`);
+      && gemLimits?.primary && gemLimits?.secondary && /@/.test(accounts.agy?.email ?? "")
+      ? console.log(`PASS antigravity (${list.filter((m) => m.id.startsWith("agy/")).length} Antigravity models; Gemini ran "ls", answered ${word} and remembered it; limits 5h ${gemLimits.primary.usedPercent}% week ${gemLimits.secondary.usedPercent}%; account recorded)`)
+      : fail(`antigravity: listed=${!!flash} reply=${r.text.slice(0, 80)} status=${r.status} ${JSON.stringify(r.error ?? "")} ran=${JSON.stringify(ran)} recall=${r2.text.slice(0, 60)} limits=${JSON.stringify(gemLimits ?? null)} account=${!!accounts.agy}`);
   } else if (s === "structured") {
     // Chat titles and /recap on a Claude chat: the TUI starts a hidden ephemeral thread on the
     // chat's model and asks for JSON (request id "temporary-structured-turn-…"). Claude answers;

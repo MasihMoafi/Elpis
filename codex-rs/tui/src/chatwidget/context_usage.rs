@@ -218,14 +218,19 @@ pub(super) fn run_built_context_categories(
         },
     ];
     categories.retain(|category| category.tokens > 0);
-    debug_assert_eq!(
-        categories
-            .iter()
-            .map(|category| category.tokens)
-            .sum::<u64>(),
-        attribution.estimated_total,
-        "run-built categories must sum to the unpadded request estimate",
-    );
+    // The split comes from the server (for Claude and Antigravity chats, the bridge's estimates);
+    // a total that disagrees is drawn scaled to the measured context, never a crash.
+    let summed = categories
+        .iter()
+        .map(|category| category.tokens)
+        .sum::<u64>();
+    if summed != attribution.estimated_total {
+        tracing::warn!(
+            summed,
+            estimated_total = attribution.estimated_total,
+            "context categories do not sum to the request estimate"
+        );
+    }
     categories
 }
 
@@ -916,6 +921,29 @@ mod tests {
         assert!(text.contains("Tool results"), "{text}");
         assert!(!text.contains("Reasoning + compaction"), "{text}");
         assert!(!text.contains("effort setting"), "{text}");
+    }
+
+    /// A server's split may disagree with its own total (a bridged chat's estimates did: 4379
+    /// against 3210); Elpis draws it, scaled to the measured context, instead of panicking.
+    #[test]
+    fn run_built_categories_tolerate_a_total_that_disagrees() {
+        let attribution = codex_app_server_protocol::ThreadContextAttribution {
+            user_messages: 3000,
+            tool_results: 1379,
+            estimated_total: 3210,
+            ..Default::default()
+        };
+
+        let categories =
+            reconcile_context_categories(&run_built_context_categories(&attribution), 3210);
+
+        assert_eq!(
+            categories
+                .iter()
+                .map(|category| category.tokens)
+                .sum::<u64>(),
+            3210
+        );
     }
 
     #[test]

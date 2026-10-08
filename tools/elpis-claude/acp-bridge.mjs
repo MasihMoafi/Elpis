@@ -1,5 +1,6 @@
 // Elpis TUI <-ws-> bridge <-stdio-> real `elpis app-server` (everything else)
 //                         \-stdio-> claude-agent-acp (chat turns -> Claude)
+import { splitContext } from "./context-split.mjs";
 import { WebSocketServer } from "ws";
 import { execFile, spawn } from "node:child_process";
 import { appendFileSync, existsSync, readFileSync } from "node:fs";
@@ -102,7 +103,8 @@ const cut = (s) => (s.length > 4000 ? s.slice(0, 4000) + "\n…" : s);
 const clipItem = (it) => it.type === "fileChange" ? { ...it, changes: it.changes.map((c) => ({ ...c, diff: cut(c.diff) })) }
   : it.aggregatedOutput ? { ...it, aggregatedOutput: cut(it.aggregatedOutput) } : it;
 const clipTurn = (turn) => ({ ...turn, items: turn.items.map(clipItem) });
-const STORE = process.env.ACP_BRIDGE_STORE ?? `${HOME}/.elpis-next/elpis-claude/sessions.json`;
+const ELPIS_HOME = process.env.ELPIS_HOME || `${HOME}/.elpis-next`;
+const STORE = process.env.ACP_BRIDGE_STORE ?? `${ELPIS_HOME}/elpis-claude/sessions.json`;
 async function loadStore() { return (await readJson(STORE)) ?? {}; }
 let storeChain = Promise.resolve();
 function updateStore(fn) {
@@ -114,9 +116,9 @@ const CATALOG = `${STORE.slice(0, STORE.lastIndexOf("/"))}/catalog.json`;
 // the Google sign-in) runs through agy-acp.mjs and is offered only when `agy` is installed.
 const AGY_BIN = process.env.AGY_BIN ?? `${HOME}/.local/bin/agy`;
 const AGENTS = [
-  { key: "claude", prefix: "claude/", label: "Claude subscription", description: "Claude Code on your Pro/Max plan", adapter: ADAPTER, env: { CLAUDE_CODE_EXECUTABLE: CLAUDE }, catalogFile: CATALOG, limits: true },
+  { key: "claude", prefix: "claude/", label: "Claude subscription", description: "Claude Code on your Pro/Max plan", adapter: ADAPTER, env: { CLAUDE_CODE_EXECUTABLE: CLAUDE }, catalogFile: CATALOG, limits: () => claudeLimitsCached().then((one) => [one]) },
   ...(!process.env.ELPIS_NO_AGY && existsSync(AGY_BIN)
-    ? [{ key: "agy", prefix: "agy/", label: "Antigravity", description: "Antigravity, your Google sign-in", adapter: new URL("./agy-acp.mjs", import.meta.url).pathname, env: { AGY_BIN }, catalogFile: CATALOG.replace(/catalog\.json$/, "catalog-agy.json"), limits: false }]
+    ? [{ key: "agy", prefix: "agy/", label: "Antigravity", description: "Antigravity, your Google sign-in", adapter: new URL("./agy-acp.mjs", import.meta.url).pathname, env: { AGY_BIN }, catalogFile: CATALOG.replace(/catalog\.json$/, "catalog-agy.json"), limits: () => agyLimitsCached() }]
     : []),
 ];
 const agentOf = (model) => (typeof model === "string" ? AGENTS.find((a) => model.startsWith(a.prefix)) : undefined);
@@ -141,17 +143,49 @@ async function claudeLimits() {
   return { limitId: "codex", limitName: "Claude", normalModelSlug: null, primary: win(u.five_hour, 300), secondary: win(u.seven_day, 10080), credits: null, individualLimit: null, spendControlReached: null, planType: null, rateLimitReachedType: null };
 }
 
-// Anthropic refuses (HTTP 429) when asked after every turn, so ask at most once a minute and
-// keep showing the last answer when a request fails.
-const limits = { at: 0, value: null, inFlight: null };
-function claudeLimitsCached() {
-  if (Date.now() - limits.at < 60_000) return limits.value ? Promise.resolve(limits.value) : Promise.reject(new Error("Claude usage unavailable (retrying in a minute)"));
-  limits.inFlight ??= claudeLimits()
-    .then((v) => { limits.value = v; return v; })
-    .catch((e) => { if (limits.value) return limits.value; throw e; })
-    .finally(() => { limits.at = Date.now(); limits.inFlight = null; });
-  return limits.inFlight;
+// Antigravity's own /usage answer: each model group has a 5-hour and a weekly limit.
+async function agyLimits() {
+  const out = await new Promise((resolve, reject) => execFile(AGY_BIN, ["--print", "/usage", "--output-format", "json"], { cwd: HOME, timeout: 30_000 }, (err, stdout) => (err ? reject(err) : resolve(stdout))));
+  const groups = JSON.parse(out).command?.data?.groups ?? [];
+  const win = (b, mins) => b ? { usedPercent: Math.round((1 - (b.remaining_fraction ?? 1)) * 100), windowDurationMins: mins, resetsAt: b.reset_time ? Math.floor(Date.parse(b.reset_time) / 1000) : null } : null;
+  return groups.map((g) => ({
+    limitId: `antigravity-${g.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`, limitName: `Antigravity ${g.name}`, normalModelSlug: null,
+    primary: win(g.buckets?.find((b) => b.window === "5h"), 300), secondary: win(g.buckets?.find((b) => b.window === "weekly"), 10080),
+    credits: null, individualLimit: null, spendControlReached: null, planType: null, rateLimitReachedType: null,
+  }));
 }
+
+// Anthropic refuses (HTTP 429) when asked after every turn, so each subscription is asked at
+// most once a minute, and its last answer stays when a request fails.
+function everyMinute(fetchLimits, what) {
+  const c = { at: 0, value: null, inFlight: null };
+  return () => {
+    if (Date.now() - c.at < 60_000) return c.value ? Promise.resolve(c.value) : Promise.reject(new Error(`${what} unavailable (retrying in a minute)`));
+    c.inFlight ??= fetchLimits()
+      .then((v) => { c.value = v; return v; })
+      .catch((e) => { if (c.value) return c.value; throw e; })
+      .finally(() => { c.at = Date.now(); c.inFlight = null; });
+    return c.inFlight;
+  };
+}
+const claudeLimitsCached = everyMinute(claudeLimits, "Claude usage");
+const agyLimitsCached = everyMinute(agyLimits, "Antigravity usage");
+
+// The account each subscription is signed in with; Elpis's /status reads this file.
+const ACCOUNTS = `${STORE.slice(0, STORE.lastIndexOf("/"))}/accounts.json`;
+async function recordAccounts() {
+  const { readFile } = await import("node:fs/promises");
+  const json = (path) => readFile(path, "utf8").then(JSON.parse).catch(() => null);
+  const out = {};
+  const claude = (await json(`${HOME}/.claude.json`))?.oauthAccount;
+  const plan = (await json(`${HOME}/.claude/.credentials.json`))?.claudeAiOauth?.subscriptionType;
+  if (claude?.emailAddress) out.claude = { email: claude.emailAddress, plan: plan ? plan[0].toUpperCase() + plan.slice(1) : null };
+  const agyLog = await readFile(`${HOME}/.gemini/antigravity-cli/cli.log`, "utf8").catch(() => "");
+  const agyEmail = [...agyLog.matchAll(/authenticated successfully as (\S+)/g)].at(-1)?.[1];
+  if (agyEmail) out.agy = { email: agyEmail };
+  await writeJson(ACCOUNTS, out);
+}
+recordAccounts().catch((e) => log(`accounts: ${e.message}`));
 
 function lineReader(stream, onLine) {
   let buf = "";
@@ -273,13 +307,7 @@ wss.on("connection", (ws) => {
   const ctxChars = new Map();
   const devChars = new Map();
   const addChars = (threadId, part, n) => { const c = ctxChars.get(threadId) ?? { user: 0, agent: 0, reasoning: 0, toolCalls: 0, toolResults: 0 }; c[part] += n ?? 0; ctxChars.set(threadId, c); };
-  const attribution = (threadId, used) => {
-    const tok = (n) => Math.round((n ?? 0) / 4);
-    const c = ctxChars.get(threadId) ?? {};
-    const parts = { developerMessages: tok(devChars.get(threadId)), userMessages: tok(c.user), agentMessages: tok(c.agent), reasoning: tok(c.reasoning), toolCalls: tok(c.toolCalls), toolResults: tok(c.toolResults) };
-    const known = Object.values(parts).reduce((a, b) => a + b, 0);
-    return { systemInstructions: Math.max(0, used - known), ...parts, toolDefinitions: 0, outputSchema: 0, unrecognizedItems: 0, estimatedTotal: used };
-  };
+  const attribution = (threadId, used) => splitContext(ctxChars.get(threadId), devChars.get(threadId), used);
   const lastContext = new Map();
   // Anthropic reports cache reads and writes apart from input; Elpis (like OpenAI) counts them as input.
   const usageBreakdown = (u) => {
@@ -977,8 +1005,9 @@ wss.on("connection", (ws) => {
     notify("turn/completed", { threadId, turn: { id: turnId, items, itemsView: "summary", status, error, startedAt, completedAt, durationMs: (completedAt - startedAt) * 1000 } });
     notify("turn/activityUpdated", { threadId, turnId, status: status === "inProgress" ? "completed" : status, durationMs: now() - t0, timeToFirstTokenMs: firstTokenAt ? firstTokenAt - t0 : null });
     notify("thread/status/changed", { threadId, status: { type: "idle" } });
-    if (agent.limits) claudeLimitsCached().then((rateLimits) => { log(`claude limits: 5h ${rateLimits.primary?.usedPercent}% week ${rateLimits.secondary?.usedPercent}%`); notify("account/rateLimits/updated", { rateLimits }); })
-      .catch((e) => log(`claude limits: ${e.message}`));
+    agent.limits().then((all) => { for (const rateLimits of all) { log(`${rateLimits.limitName} limits: 5h ${rateLimits.primary?.usedPercent}% week ${rateLimits.secondary?.usedPercent}%`); notify("account/rateLimits/updated", { rateLimits }); } })
+      .catch((e) => log(`${agent.key} limits: ${e.message}`));
+    if (agent.key === "agy") recordAccounts().catch((e) => log(`accounts: ${e.message}`));
   }
 
   // A new chat on a Claude model: the engine keeps its own model, the TUI is told Claude.
