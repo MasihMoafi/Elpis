@@ -377,6 +377,8 @@ impl ChatWidget {
             // example), the streamed updates are the only limits there are, so they are kept.
             if matches!(source, RateLimitSnapshotSource::AccountUsage)
                 || !self.should_prefetch_rate_limits()
+                // A Claude or Antigravity limit is never in the ChatGPT fetch; keep it.
+                || super::elpis_providers::is_bridged_limit(&limit_id)
             {
                 let limit_label = snapshot
                     .limit_name

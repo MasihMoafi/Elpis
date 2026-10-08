@@ -41,6 +41,8 @@ pub(crate) struct BridgedProvider {
     answers: &'static str,
     /// Its entry in the bridge's account record (`elpis-claude/accounts.json`).
     account_key: &'static str,
+    /// The start of the limit ids the bridge streams for it (`account/rateLimits/updated`).
+    limit_id_prefix: &'static str,
 }
 
 static BRIDGED_PROVIDERS: [BridgedProvider; 2] = [
@@ -53,6 +55,7 @@ static BRIDGED_PROVIDERS: [BridgedProvider; 2] = [
         route: "Claude Code, through the Elpis Claude bridge",
         answers: "Claude Code answers; this conversation and its provider stay.",
         account_key: "claude",
+        limit_id_prefix: "claude",
     },
     BridgedProvider {
         model_prefix: "agy/",
@@ -63,6 +66,7 @@ static BRIDGED_PROVIDERS: [BridgedProvider; 2] = [
         route: "the Antigravity CLI (agy), through the Elpis Claude bridge",
         answers: "Antigravity answers; this conversation and its provider stay.",
         account_key: "agy",
+        limit_id_prefix: "antigravity",
     },
 ];
 
@@ -101,7 +105,9 @@ pub(crate) fn subscription_account(
     let record = std::fs::read_to_string(codex_home.join("elpis-claude").join("accounts.json"))
         .ok()
         .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok());
-    let entry = record.as_ref().and_then(|record| record.get(bridged.account_key));
+    let entry = record
+        .as_ref()
+        .and_then(|record| record.get(bridged.account_key));
     let field = |name: &str| {
         entry
             .and_then(|entry| entry.get(name))
@@ -113,6 +119,20 @@ pub(crate) fn subscription_account(
         email: field("email"),
         plan: field("plan"),
     })
+}
+
+impl BridgedProvider {
+    /// Whether a usage limit belongs to this subscription.
+    pub(crate) fn owns_limit(&self, limit_id: &str) -> bool {
+        limit_id.starts_with(self.limit_id_prefix)
+    }
+}
+
+/// Whether a usage limit is a bridged subscription's (Claude, Antigravity), not the ChatGPT plan's.
+pub(crate) fn is_bridged_limit(limit_id: &str) -> bool {
+    BRIDGED_PROVIDERS
+        .iter()
+        .any(|bridged| bridged.owns_limit(limit_id))
 }
 
 pub(crate) fn is_bridged_model(model: &str) -> bool {

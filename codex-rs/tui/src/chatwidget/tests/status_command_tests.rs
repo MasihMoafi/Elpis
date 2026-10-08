@@ -683,3 +683,34 @@ async fn status_names_the_subscription_account_of_a_bridged_chat() {
     assert!(rendered.contains("Antigravity"), "{rendered}");
     assert!(!rendered.contains("gpt@example.com"), "{rendered}");
 }
+
+/// Signed in to ChatGPT, a Gemini chat's /usage shows Antigravity's limits (streamed by the
+/// bridge), not the ChatGPT plan's, and no ChatGPT usage link.
+#[tokio::test]
+async fn usage_card_of_a_bridged_chat_shows_that_subscriptions_limits() {
+    let (mut chat, mut rx, _op_rx) =
+        make_chatwidget_manual(Some("agy/gemini-3.8-flash-high")).await;
+    set_chatgpt_auth(&mut chat);
+    let mut chatgpt = snapshot(/*percent*/ 2.0);
+    chatgpt.limit_id = Some("codex".to_string());
+    chatgpt.limit_name = Some("ChatGPT plan".to_string());
+    chat.on_rate_limit_snapshot(Some(chatgpt));
+    let mut gemini = snapshot(/*percent*/ 37.0);
+    gemini.limit_id = Some("antigravity-gemini-models".to_string());
+    gemini.limit_name = Some("Antigravity Gemini Models".to_string());
+    chat.on_rolling_rate_limit_snapshot(gemini);
+    drain_insert_history(&mut rx);
+
+    chat.dispatch_command(SlashCommand::Status);
+
+    let rendered = match rx.try_recv() {
+        Ok(AppEvent::InsertHistoryCell(cell)) => {
+            lines_to_single_string(&cell.display_lines(/*width*/ 100))
+        }
+        other => panic!("expected status output, got {other:?}"),
+    };
+    assert!(rendered.contains("Antigravity Gemini Models"), "{rendered}");
+    assert!(rendered.contains("63% left"), "{rendered}");
+    assert!(!rendered.contains("ChatGPT plan"), "{rendered}");
+    assert!(!rendered.contains("chatgpt.com"), "{rendered}");
+}
