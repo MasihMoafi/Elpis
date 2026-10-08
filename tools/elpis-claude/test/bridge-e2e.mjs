@@ -537,9 +537,12 @@ for (const s of scenarios) {
     const read = (await call("thread/read", { threadId: helper ?? "none", includeTurns: false })).result?.thread;
     const kids = (await call("thread/list", { ancestorThreadId: tid, limit: 50 })).result?.data ?? [];
     const inList = listed.find((t) => t.id === helper);
+    // The chat itself lists with the model it runs on, not the engine's.
+    const chatModel = listed.find((t) => t.id === tid)?.model;
     helper && inList?.parentThreadId === tid && read?.parentThreadId === tid && kids.some((t) => t.id === helper)
-      ? console.log(`PASS helper-parent (helper ${helper} is listed, read and a descendant of its chat)`)
-      : fail(`helper-parent: helper=${helper} list.parent=${inList?.parentThreadId} read.parent=${read?.parentThreadId} descendants=${JSON.stringify(kids.map((t) => t.id))}`);
+      && chatModel === (process.env.E2E_MODEL ?? "claude/opus")
+      ? console.log(`PASS helper-parent (helper ${helper} is listed, read and a descendant of its chat, which lists as ${chatModel})`)
+      : fail(`helper-parent: helper=${helper} list.parent=${inList?.parentThreadId} read.parent=${read?.parentThreadId} descendants=${JSON.stringify(kids.map((t) => t.id))} chat.model=${chatModel}`);
   } else if (s === "image") {
     const word = process.env.E2E_IMAGE_WORD;
     const path = process.env.E2E_IMAGE_PATH;

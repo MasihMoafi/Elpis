@@ -353,14 +353,24 @@ wss.on("connection", (ws) => {
   // The bridge adds them, previewed by their first message, where they fall in the list's order.
   const pendingThreadList = new Map();
   const pendingChildList = new Map(); // thread/loaded/list (null) or thread/list of a chat's descendants (its id)
-  const pendingHelperMark = new Set(); // thread/list and thread/read answers: mark delegated helpers with their chat
+  const pendingHelperMark = new Set(); // thread/list and thread/read answers: helpers get their chat, bridged chats their model
   // A helper started with the delegate tool is an engine thread the engine does not know as a
   // child; the bridge's record (_delegations) gives it its parent wherever the TUI reads threads.
+  // The engine knows only the model it started a bridged chat with; the store has the real one.
+  function ownModel(t, store) {
+    const own = store[t.id];
+    if (!own?.model || t.model === own.model) return false;
+    t.model = own.model; t.reasoningEffort = own.effort ?? null;
+    return true;
+  }
   async function markHelpers(result, ancestor) {
-    const helpers = (await loadStore())._delegations ?? {};
+    const store = await loadStore();
+    const helpers = store._delegations ?? {};
     let changed = false;
     for (const t of [result?.thread, ...(Array.isArray(result?.data) ? result.data : [])]) {
-      if (t && typeof t === "object" && helpers[t.id] && t.parentThreadId == null) { t.parentThreadId = helpers[t.id].parentThreadId; changed = true; }
+      if (!t || typeof t !== "object") continue;
+      if (helpers[t.id] && t.parentThreadId == null) { t.parentThreadId = helpers[t.id].parentThreadId; changed = true; }
+      changed = ownModel(t, store) || changed;
     }
     if (ancestor && Array.isArray(result?.data)) {
       const below = new Set([ancestor]);
@@ -399,7 +409,7 @@ wss.on("connection", (ws) => {
       if (value(t) < floor || value(t) >= ceiling) continue;
       const first = saved.turns[0].items?.[0];
       const preview = first?.type === "userMessage" ? inputSummary(first.content ?? []) : first?.type === "enteredReviewMode" ? `Code review: ${first.review}` : "";
-      if (preview.trim()) out.push({ ...t, preview: preview.trim() });
+      if (preview.trim()) { const listed = { ...t, preview: preview.trim() }; ownModel(listed, store); out.push(listed); }
     }
     return out;
   }
