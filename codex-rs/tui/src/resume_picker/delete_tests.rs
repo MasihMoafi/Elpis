@@ -19,6 +19,7 @@ async fn elpis_delete_shortcut_opens_confirmation_without_deleting() {
         updated_at: None,
         cwd: None,
         git_branch: None,
+        model: None,
     }];
     state.apply_filter();
 
@@ -83,6 +84,7 @@ fn delete_row(thread_id: ThreadId, label: &str) -> Row {
         updated_at: None,
         cwd: None,
         git_branch: None,
+        model: None,
     }
 }
 

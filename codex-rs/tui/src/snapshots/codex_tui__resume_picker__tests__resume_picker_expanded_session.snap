@@ -1,9 +1,11 @@
 ---
 source: tui/src/resume_picker.rs
+assertion_line: 6116
 expression: rendered
 ---
 ⌄ Investigate picker expansion
   │ Session:    019dabc1-0ef5-7431-b81c-03037f51f62c
+  │ Model:      -
   │ Created:    1 hour ago · 2026-04-28 4:30:00 PM
   │ Updated:    15 minutes ago · 2026-04-28 5:45:00 PM
   │ Directory:  /tmp/codex
