@@ -39,14 +39,24 @@ const AGENTS_MCP = new URL("./elpis-agents-mcp.mjs", import.meta.url).pathname;
 const SUBAGENT_TOOLS = ["Agent", "Task", "ListAgents", "SendMessage", "Workflow", "RemoteTrigger"];
 // The delegate tool reaches back into this bridge, so a helper can be any model it serves
 // (engine models, Claude, Antigravity), and it names the chat that started it.
-const mcpServersFor = (subagents, parentThreadId) => !subagents || process.env.ACP_BRIDGE_NO_AGENTS ? [] : [{
-  name: "elpis-agents", command: process.execPath, args: [AGENTS_MCP],
-  env: [
-    { name: "ELPIS_ENGINE_BIN", value: process.env.ELPIS_ENGINE_BIN ?? `${HOME}/.local/bin/elpis` },
-    { name: "ELPIS_BRIDGE_URL", value: `ws://127.0.0.1:${wss.address().port}` },
-    ...(parentThreadId ? [{ name: "ELPIS_PARENT_THREAD", value: parentThreadId }] : []),
-  ],
-}];
+// Elpis's own tools for a Claude or Antigravity session: helpers on other models (when it may
+// delegate) and durable memory (a chat the user started, not a helper; the tool itself checks
+// the workspace opted in).
+const mcpServersFor = (subagents, parentThreadId, memoryCwd) => {
+  const agents = subagents && !process.env.ACP_BRIDGE_NO_AGENTS;
+  if (!agents && !memoryCwd) return [];
+  return [{
+    name: "elpis-agents", command: process.execPath, args: [AGENTS_MCP],
+    env: [
+      { name: "ELPIS_ENGINE_BIN", value: process.env.ELPIS_ENGINE_BIN ?? `${HOME}/.local/bin/elpis` },
+      { name: "ELPIS_BRIDGE_URL", value: `ws://127.0.0.1:${wss.address().port}` },
+      { name: "ELPIS_AGENT_TOOLS", value: agents ? "1" : "0" },
+      ...(parentThreadId ? [{ name: "ELPIS_PARENT_THREAD", value: parentThreadId }] : []),
+      ...(memoryCwd ? [{ name: "ELPIS_MEMORY_CWD", value: memoryCwd }] : []),
+      ...(process.env.ELPIS_HOME ? [{ name: "ELPIS_HOME", value: process.env.ELPIS_HOME }] : []),
+    ],
+  }];
+};
 const MIME = { png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", gif: "image/gif", webp: "image/webp" };
 async function toAcpPrompt(input) {
   const { readFile } = await import("node:fs/promises");
@@ -116,9 +126,9 @@ const CATALOG = `${STORE.slice(0, STORE.lastIndexOf("/"))}/catalog.json`;
 // the Google sign-in) runs through agy-acp.mjs and is offered only when `agy` is installed.
 const AGY_BIN = process.env.AGY_BIN ?? `${HOME}/.local/bin/agy`;
 const AGENTS = [
-  { key: "claude", prefix: "claude/", label: "Claude subscription", description: "Claude Code on your Pro/Max plan", adapter: ADAPTER, env: { CLAUDE_CODE_EXECUTABLE: CLAUDE }, catalogFile: CATALOG, limits: () => claudeLimitsCached().then((one) => [one]) },
+  { key: "claude", speaker: "Claude", prefix: "claude/", label: "Claude subscription", description: "Claude Code on your Pro/Max plan", adapter: ADAPTER, env: { CLAUDE_CODE_EXECUTABLE: CLAUDE }, catalogFile: CATALOG, limits: () => claudeLimitsCached().then((one) => [one]) },
   ...(!process.env.ELPIS_NO_AGY && existsSync(AGY_BIN)
-    ? [{ key: "agy", prefix: "agy/", label: "Antigravity", description: "Antigravity, your Google sign-in", adapter: new URL("./agy-acp.mjs", import.meta.url).pathname, env: { AGY_BIN }, catalogFile: CATALOG.replace(/catalog\.json$/, "catalog-agy.json"), limits: () => agyLimitsCached() }]
+    ? [{ key: "agy", speaker: "Gemini", prefix: "agy/", label: "Antigravity", description: "Antigravity, your Google sign-in", adapter: new URL("./agy-acp.mjs", import.meta.url).pathname, env: { AGY_BIN }, catalogFile: CATALOG.replace(/catalog\.json$/, "catalog-agy.json"), limits: () => agyLimitsCached() }]
     : []),
 ];
 const agentOf = (model) => (typeof model === "string" ? AGENTS.find((a) => model.startsWith(a.prefix)) : undefined);
@@ -883,9 +893,10 @@ wss.on("connection", (ws) => {
         let _meta = { claudeCode: { options, emitRawSDKMessages: [{ type: "system", subtype: "init" }] } };
         devChars.set(threadId, instructions.length);
         if (instructions) { _meta = { ..._meta, systemPrompt: { append: instructions } }; log(`Elpis instructions for Claude: ${instructions.length} chars`); }
-        const mcpServers = mcpServersFor(subagents, threadId);
         await storeChain;
         const store = await loadStore();
+        const helper = !!store._delegations?.[threadId] || !!store[threadId]?.parentThreadId;
+        const mcpServers = mcpServersFor(subagents, threadId, helper ? null : cwd);
         // A session belongs to one agent; a chat that switched agent starts a fresh one, seeded below.
         const sameAgent = (store[threadId]?.agent ?? "claude") === agent.key;
         const saved = (live?.agent === agent.key ? live.id : null) ?? (sameAgent ? store[threadId]?.session ?? Object.values(store[threadId]?.sessions ?? {})[0] : null);
@@ -980,7 +991,7 @@ wss.on("connection", (ws) => {
         const what = (t && t.name === "Bash" && t.raw.command) || p.toolCall?.title || t?.title || "a tool";
         const decision = await askTui("item/commandExecution/requestApproval", {
           kind: "command", threadId, turnId, itemId: p.toolCall?.toolCallId ?? randomUUID(), startedAtMs: now(),
-          environmentId: null, reason: `Claude wants to run: ${what}`, command: what, cwd,
+          environmentId: null, reason: `${agent.speaker} wants to run: ${what}`, command: what, cwd,
           // No "don't ask again": Claude Code would save that rule to the project for good,
           // while Elpis's label promises only this session.
           availableDecisions: ["accept", "decline", "cancel"],

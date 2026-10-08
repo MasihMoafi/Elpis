@@ -126,6 +126,20 @@ for (const s of scenarios) {
       ok ? console.log(`PASS approval ${answer} (asked ${approvals.length}x, file ${want ? "created" : "absent"}, turn ${t.status})`) : fail(`approval ${answer}: asked ${approvals.length}x, file exists=${existsSync(join(dir, file))}, turn ${t.status}, offered ${JSON.stringify(offered)}`);
     }
     approvalAnswer = "accept";
+  } else if (s === "agy-approval") {
+    // Gemini through Antigravity asks in Elpis before running a command, as Claude does: a
+    // declined command does not run, an accepted one does, and it runs in the chat's folder.
+    const { existsSync } = await import("node:fs");
+    const ask = await call("thread/start", { cwd: dir, approvalPolicy: "on-request", sandbox: "workspace-write" });
+    const askId = ask.result?.thread?.id;
+    await call("thread/settings/update", { threadId: askId, model: "agy/gemini-3.8-flash-low" });
+    for (const [answer, file, want] of [["decline", "agy-denied.txt", false], ["accept", "agy-allowed.txt", true]]) {
+      approvalAnswer = answer; approvals.length = 0;
+      const t = await turn(askId, [{ type: "text", text: `Use your shell tool to run exactly: touch ${file}   (in the current folder). Then reply DONE.`, text_elements: [] }], 240000);
+      const ok = approvals.length > 0 && existsSync(join(dir, file)) === want;
+      ok ? console.log(`PASS agy-approval ${answer} (asked ${approvals.length}x: ${approvals[0]}; file ${want ? "created" : "absent"})`) : fail(`agy-approval ${answer}: asked ${approvals.length}x, file exists=${existsSync(join(dir, file))}, turn ${t.status}, reply ${t.text.slice(0, 100)}`);
+    }
+    approvalAnswer = "accept";
   } else if (s === "usage") {
     // Three quick turns: each shows Claude's limits, and the usage endpoint is asked at most
     // once (Anthropic refuses with HTTP 429 when asked after every turn).
@@ -409,6 +423,27 @@ for (const s of scenarios) {
     !a.error && told && !after._delegations?.[tid]
       ? console.log("PASS archive-unsaved (archived, the TUI was told, the record is gone)")
       : fail(`archive-unsaved: ${JSON.stringify(a.error ?? a.result)} told=${told} record=${!!after._delegations?.[tid]}`);
+  } else if (s === "memory") {
+    // A Claude chat saves to Elpis's durable memory with the engine's own guarded save, where
+    // the workspace opted in (as the Context Ledger's MEMORY.md switch does). Never run against
+    // the real Elpis home: MEMORY.md is global.
+    const home = process.env.ELPIS_HOME;
+    if (!home || !home.startsWith(tmpdir())) { fail("memory: run with ELPIS_HOME set to a temporary folder"); continue; }
+    const { createHash } = await import("node:crypto");
+    const { mkdirSync, readFileSync: readMemory } = await import("node:fs");
+    const { basename } = await import("node:path");
+    const slug = basename(dir).replace(/[^A-Za-z0-9_-]/g, "-").slice(0, 40) || "workspace";
+    const key = `${slug}-${createHash("sha256").update(dir).digest("hex").slice(0, 12)}`;
+    mkdirSync(join(home, "context", "workspaces", key), { recursive: true });
+    writeFileSync(join(home, "context", "workspaces", key, "memory-autosave.json"), '{"enabled":true}');
+    const st = await call("thread/start", { model: process.env.E2E_MODEL ?? "claude/opus", cwd: dir, approvalPolicy: "never", sandbox: "danger-full-access" });
+    const tid = st.result?.thread?.id;
+    const word = `MEMTEST-${Math.floor(Math.random() * 9000 + 1000)}`;
+    const r = await turn(tid, [{ type: "text", text: `Use your save_memory tool to append exactly this line to memory: "- Prefers Celsius (${word})." (one memory edit with old_text null; checkpoint null). Then reply DONE.`, text_elements: [] }], 240000);
+    const memory = (() => { try { return readMemory(join(home, "memories", "MEMORY.md"), "utf8"); } catch { return ""; } })();
+    memory.includes(word)
+      ? console.log(`PASS memory (Claude saved "${word}" to MEMORY.md through elpis memory-save)`)
+      : fail(`memory: MEMORY.md=${JSON.stringify(memory.slice(0, 120))} reply=${r.text.slice(0, 120)}`);
   } else if (s === "antigravity") {
     // Gemini from the Antigravity (Google) sign-in, chosen like a Claude model: listed, answers,
     // its tools drawn as Elpis rows, and it remembers the chat across a model switch back.
@@ -424,7 +459,10 @@ for (const s of scenarios) {
     const r2 = await turn(tid, [{ type: "text", text: "What exact word did you reply with a moment ago? Reply with only that word.", text_elements: [] }], 180000);
     // Its usage limits reach Elpis like Claude's, and /status can name its Google account.
     const { readFileSync: readAccounts } = await import("node:fs");
-    const gemLimits = seen.find((m) => m.method === "account/rateLimits/updated" && String(m.params?.rateLimits?.limitId).startsWith("antigravity-gemini"))?.params.rateLimits;
+    // Asking agy for its usage takes a few seconds after the turn.
+    const findLimits = () => seen.find((m) => m.method === "account/rateLimits/updated" && String(m.params?.rateLimits?.limitId).startsWith("antigravity-gemini"))?.params.rateLimits;
+    for (let waited = 0; !findLimits() && waited < 30000; waited += 1000) await new Promise((r) => setTimeout(r, 1000));
+    const gemLimits = findLimits();
     const storeDir = storeEnv.ACP_BRIDGE_STORE.slice(0, storeEnv.ACP_BRIDGE_STORE.lastIndexOf("/"));
     const accounts = (() => { try { return JSON.parse(readAccounts(`${storeDir}/accounts.json`, "utf8")); } catch { return {}; } })();
     flash?.displayName?.includes("Antigravity") && r.text.includes(word) && ran.includes("ls") && r2.text.includes(word)

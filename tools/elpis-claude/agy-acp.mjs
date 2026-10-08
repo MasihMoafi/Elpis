@@ -4,9 +4,15 @@
 // events stream text and tool steps; `result` ends the turn. Tool steps are reported with
 // Claude Code's tool names, which the bridge already draws as Elpis items.
 //
-// Limits: agy decides its own permissions in print mode (it never asks), so Elpis approval
-// prompts do not apply; Full Access passes --dangerously-skip-permissions, Plan mode --mode plan.
+// Approvals: agy has no approval channel in print mode, but runs PreToolUse hooks from each
+// workspace's .agents/hooks.json. While Elpis asks before acting, the wrapper adds its own hooks
+// folder as a workspace; the hook (agy-gate.mjs) asks the Elpis user through a local socket and
+// this wrapper's session/request_permission. Full Access passes --dangerously-skip-permissions,
+// Plan mode --mode plan.
 import { spawn, execFile } from "node:child_process";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { createServer } from "node:net";
+import { fileURLToPath } from "node:url";
 import { readFile, writeFile, mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, basename } from "node:path";
@@ -16,6 +22,47 @@ const AGY = process.env.AGY_BIN ?? `${process.env.HOME}/.local/bin/agy`;
 const DEFAULT_MODEL = process.env.AGY_DEFAULT_MODEL ?? "gemini-3.8-flash-medium";
 const send = (msg) => process.stdout.write(JSON.stringify({ jsonrpc: "2.0", ...msg }) + "\n");
 const notify = (sessionId, update) => send({ method: "session/update", params: { sessionId, update } });
+// Requests this agent sends its client (the bridge), answered on stdin.
+let requestSeq = 0;
+const pendingRequests = new Map();
+const request = (method, params) => new Promise((resolve, reject) => {
+  const id = `agy-${++requestSeq}`;
+  pendingRequests.set(id, { resolve, reject });
+  send({ id, method, params });
+});
+
+// The tools Elpis asks about: commands and file edits; reading and searching run unasked.
+const GATED_TOOLS = "run_command|send_command_input|write_to_file|replace_file_content|multi_replace_file_content|sed_file|notebook_edit|notebook_execution";
+const HOOKS_DIR = join(process.env.ELPIS_HOME || join(process.env.HOME, ".elpis-next"), "elpis-claude", "agy-approvals");
+function writeHooks() {
+  mkdirSync(join(HOOKS_DIR, ".agents"), { recursive: true });
+  const gate = fileURLToPath(new URL("./agy-gate.mjs", import.meta.url));
+  const hook = { command: `"${process.execPath}" "${gate}"`, timeout: 86400 };
+  writeFileSync(join(HOOKS_DIR, ".agents", "hooks.json"), JSON.stringify({ "elpis-approvals": { PreToolUse: [{ matcher: GATED_TOOLS, hooks: [hook] }] } }, null, 1));
+}
+// One socket per session: the hook sends the tool call, Elpis's answer goes back.
+function approvalSocket(s) {
+  const path = join(tmpdir(), `elpis-agy-${process.pid}-${randomUUID().slice(0, 8)}.sock`);
+  const server = createServer((conn) => {
+    let buf = "";
+    conn.on("data", async (d) => {
+      buf += d;
+      const i = buf.indexOf("\n");
+      if (i < 0) return;
+      const asked = JSON.parse(buf.slice(0, i)).toolCall ?? {};
+      const tool = describe({ name: asked.name, parameters: asked.args });
+      const reply = await request("session/request_permission", {
+        sessionId: s.id,
+        toolCall: { toolCallId: randomUUID(), title: tool.title, kind: tool.name === "Bash" ? "execute" : "edit", rawInput: tool.input, _meta: { claudeCode: { toolName: tool.name } } },
+        options: [{ optionId: "allow", name: "Allow", kind: "allow_once" }, { optionId: "reject", name: "Reject", kind: "reject_once" }],
+      }).catch(() => null);
+      conn.end(JSON.stringify({ allowed: reply?.outcome?.outcome === "selected" && reply.outcome.optionId === "allow" }) + "\n");
+    });
+  });
+  server.listen(path);
+  return { path, close: () => server.close() };
+}
+
 const contextSize = (model) => (/^gemini/.test(model) ? 1_048_576 : /^claude/.test(model) ? 200_000 : 131_072);
 
 let modelList = null;
@@ -80,8 +127,12 @@ function startProcess(s) {
   if (s.mode === "bypassPermissions") args.push("--dangerously-skip-permissions");
   if (s.mode === "plan") args.push("--mode", "plan");
   if (s.conversationId) args.push("--conversation", s.conversationId);
+  // Elpis asks before acting: its hooks folder joins the workspaces, after the chat's own.
+  const asks = s.mode === "default";
+  if (asks) { writeHooks(); s.gate ??= approvalSocket(s); args.push("--add-dir", s.cwd, "--add-dir", HOOKS_DIR); }
   args.push("--print=");
-  const proc = spawn(AGY, args, { cwd: s.cwd, stdio: ["pipe", "pipe", "pipe"] });
+  const env = asks ? { ...process.env, ELPIS_AGY_GATE: s.gate.path, ELPIS_AGY_CWD: s.cwd, ELPIS_AGY_HOOKS: HOOKS_DIR } : process.env;
+  const proc = spawn(AGY, args, { cwd: s.cwd, env, stdio: ["pipe", "pipe", "pipe"] });
   s.proc = proc; s.flags = `${s.model}|${s.mode}`;
   let buf = "";
   proc.stdout.on("data", (d) => {
@@ -220,7 +271,7 @@ async function handle(msg) {
       return { outcome: "queued" };
     }
     case "session/delete":
-      if (s) { s.proc?.kill("SIGTERM"); sessions.delete(p.sessionId); }
+      if (s) { s.proc?.kill("SIGTERM"); s.gate?.close(); sessions.delete(p.sessionId); }
       return {};
     default:
       throw { code: -32601, message: `Antigravity adapter does not support ${msg.method}` };
@@ -235,10 +286,16 @@ process.stdin.on("data", (d) => {
     const line = inBuf.slice(0, i).trim(); inBuf = inBuf.slice(i + 1);
     if (!line) continue;
     let msg; try { msg = JSON.parse(line); } catch { continue; }
+    if (msg.method === undefined && msg.id !== undefined) {
+      const waiting = pendingRequests.get(msg.id);
+      pendingRequests.delete(msg.id);
+      if (waiting) msg.error ? waiting.reject(msg.error) : waiting.resolve(msg.result);
+      continue;
+    }
     handle(msg).then(
       (result) => { if (msg.id !== undefined) send({ id: msg.id, result: result ?? null }); },
       (e) => { if (msg.id !== undefined) send({ id: msg.id, error: { code: e?.code ?? -32603, message: e?.message ?? String(e) } }); },
     );
   }
 });
-process.stdin.on("end", () => { for (const s of sessions.values()) s.proc?.kill("SIGTERM"); process.exit(0); });
+process.stdin.on("end", () => { for (const s of sessions.values()) { s.proc?.kill("SIGTERM"); s.gate?.close(); } process.exit(0); });
