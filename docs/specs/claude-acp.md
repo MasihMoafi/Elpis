@@ -133,6 +133,8 @@ Each fix has an e2e scenario that failed on the bridge before it and passes afte
 | A new Claude chat listed as GPT-6.1-Sol | Start answer, `thread/started` and reads name the Claude model | new-chat-model |
 | Helper titles began "Delegated by Claude:" | Titled by their task | helper-parent |
 | Test chats cluttered history; an unsaved helper could not be archived | Each e2e run archives its chats; a chat only the bridge knows archives by leaving its records | archive-unsaved |
+| Live check after install: `/usage` in a Gemini chat showed the ChatGPT plan's limits | Bridged limits (ids `claude`, `antigravity-*`) are kept when signed in to ChatGPT; a Claude or Antigravity chat shows only its subscription's limits | TUI `usage_card_of_a_bridged_chat_shows_that_subscriptions_limits` |
+| Live check after install: Elpis would not start with `FORCE_COLOR` set (Node 26 coloured the port) | The launcher writes the port as plain text | checked with `FORCE_COLOR=1` |
 
 Known gaps: Smart Prune does not reach Claude chats (the Ledger says so); Claude Code also reads CLAUDE.md/AGENTS.md itself, so a file excluded in the Ledger can still reach Claude; after rewinding a Claude chat with no later GPT turn, the engine keeps the rewound turns' recorded text, which a later GPT turn in that chat could see.
 
