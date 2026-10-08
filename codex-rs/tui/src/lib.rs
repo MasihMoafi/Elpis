@@ -144,7 +144,6 @@ mod elpis_context;
 // Elpis: Context Ledger event value types.
 mod elpis_ledger_events;
 // Elpis: the Elpis motion palette.
-mod elpis_motion;
 mod experimental_features;
 mod markdown_copy;
 mod permission_discovery;
@@ -350,6 +349,21 @@ impl AppServerTarget {
         matches!(self, Self::Remote { .. })
     }
 
+    /// Whether the Left arrow lists this server's agents: the local daemon's, and (Elpis) those
+    /// of any server at a loopback address, such as the Claude bridge.
+    pub(crate) fn serves_local_agents(&self) -> bool {
+        match self {
+            Self::LocalDaemon { .. } => true,
+            Self::Remote {
+                endpoint: RemoteAppServerEndpoint::WebSocket { websocket_url, .. },
+            } => Url::parse(websocket_url).is_ok_and(|parsed| websocket_url_is_loopback(&parsed)),
+            Self::Remote {
+                endpoint: RemoteAppServerEndpoint::UnixSocket { .. },
+            } => true,
+            Self::Embedded => false,
+        }
+    }
+
     fn uses_embedded_network_policy(&self) -> bool {
         matches!(
             self,
@@ -457,8 +471,11 @@ fn remote_addr_has_explicit_port(addr: &str, parsed: &Url) -> bool {
 }
 
 fn websocket_url_supports_auth_token(parsed: &Url) -> bool {
+    (parsed.scheme() == "wss" && parsed.host().is_some()) || websocket_url_is_loopback(parsed)
+}
+
+fn websocket_url_is_loopback(parsed: &Url) -> bool {
     match (parsed.scheme(), parsed.host()) {
-        ("wss", Some(_)) => true,
         ("ws", Some(url::Host::Domain(domain))) => domain.eq_ignore_ascii_case("localhost"),
         ("ws", Some(url::Host::Ipv4(addr))) => addr.is_loopback(),
         ("ws", Some(url::Host::Ipv6(addr))) => addr.is_loopback(),
@@ -2394,6 +2411,25 @@ pub(crate) mod tests {
         let size = std::mem::size_of_val(&future);
 
         assert!(size < 64 * 1024, "TUI startup future is {size} bytes");
+    }
+
+    /// Elpis: the Claude bridge is a server on this machine reached at a loopback address, so
+    /// the Left arrow lists its agents as it does a local daemon's. Negative: a server on
+    /// another host, and the embedded server, do not.
+    #[test]
+    fn loopback_servers_list_their_agents() {
+        let ws = |url: &str| AppServerTarget::Remote {
+            endpoint: RemoteAppServerEndpoint::WebSocket {
+                websocket_url: url.to_string(),
+                auth_token: None,
+            },
+        };
+        for url in ["ws://127.0.0.1:38539", "ws://localhost:4000", "ws://[::1]:4000"] {
+            assert!(ws(url).serves_local_agents(), "{url}");
+        }
+        assert!(!ws("wss://elpis.example.com:443").serves_local_agents());
+        assert!(!ws("ws://192.168.1.20:4000").serves_local_agents());
+        assert!(!AppServerTarget::Embedded.serves_local_agents());
     }
 
     async fn build_config(temp_dir: &TempDir) -> std::io::Result<Config> {
