@@ -1030,6 +1030,108 @@ wss.on("connection", (ws) => {
     agent.limits().then((all) => { for (const rateLimits of all) { log(`${rateLimits.limitName} limits: 5h ${rateLimits.primary?.usedPercent}% week ${rateLimits.secondary?.usedPercent}%`); notify("account/rateLimits/updated", { rateLimits }); } })
       .catch((e) => log(`${agent.key} limits: ${e.message}`));
     if (agent.key === "agy") recordAccounts().catch((e) => log(`accounts: ${e.message}`));
+    setImmediate(() => runNext(threadId));
+    const used = lastTurnUsage.get(threadId) ?? {};
+    return { status, turnId, seconds: completedAt - startedAt, tokens: (used.input ?? 0) + (used.cachedRead ?? 0) + (used.cachedWrite ?? 0) + (used.output ?? 0) };
+  }
+
+  // A Claude chat's queued messages (elpis queue, thread/queue/*) and Claude Code's own /goal
+  // (thread/goal/*): each runs as the chat's next Claude turn once the running one ends.
+  const queues = new Map(); // thread id -> [{ id, input, clientUserMessageId, goal? }]
+  const queueOf = (threadId) => queues.get(threadId) ?? queues.set(threadId, []).get(threadId);
+  const shown = (threadId) => queueOf(threadId).filter((q) => !q.goal).map(({ id, input, clientUserMessageId }) => ({ id, input, clientUserMessageId }));
+  function runNext(threadId) {
+    if (active?.threadId === threadId) return;
+    const next = queueOf(threadId).shift();
+    if (!next) return;
+    if (!next.goal) notify("thread/queue/changed", { threadId });
+    claudeTurn({ kind: next.goal ? "goal" : "queued", params: { threadId, input: next.input } }).then((r) => next.after?.(r));
+  }
+  function queueRequest(msg) {
+    const { threadId } = msg.params;
+    const q = queueOf(threadId);
+    const find = (id) => q.findIndex((e) => e.id === id && !e.goal);
+    const changed = () => notify("thread/queue/changed", { threadId });
+    switch (msg.method) {
+      case "thread/queue/add": {
+        const entry = { id: randomUUID(), input: msg.params.input ?? [], clientUserMessageId: msg.params.clientUserMessageId };
+        q.push(entry);
+        toTui({ id: msg.id, result: { queuedSubmission: { id: entry.id, input: entry.input, clientUserMessageId: entry.clientUserMessageId } } });
+        changed(); runNext(threadId); return;
+      }
+      case "thread/queue/list": toTui({ id: msg.id, result: { data: shown(threadId), nextCursor: null } }); return;
+      case "thread/queue/update": {
+        const i = find(msg.params.queuedSubmissionId);
+        if (i < 0) { toTui({ id: msg.id, error: { code: -32600, message: "no such queued message" } }); return; }
+        q[i].input = msg.params.input ?? [];
+        toTui({ id: msg.id, result: { queuedSubmission: shown(threadId).find((e) => e.id === q[i].id) } }); changed(); return;
+      }
+      case "thread/queue/delete": {
+        const i = find(msg.params.queuedSubmissionId);
+        if (i >= 0) q.splice(i, 1);
+        toTui({ id: msg.id, result: { deleted: i >= 0 } }); if (i >= 0) changed(); return;
+      }
+      case "thread/queue/reorder": {
+        const order = msg.params.queuedSubmissionIds ?? [];
+        q.sort((a, b) => (order.indexOf(a.id) >>> 0) - (order.indexOf(b.id) >>> 0));
+        toTui({ id: msg.id, result: {} }); changed(); return;
+      }
+      case "thread/queue/start": {
+        if (active?.threadId === threadId) { toTui({ id: msg.id, error: { code: -32600, message: "thread already has an active or pending turn" } }); return; }
+        const i = msg.params.queuedSubmissionId ? find(msg.params.queuedSubmissionId) : q.findIndex((e) => !e.goal);
+        if (i < 0) { toTui({ id: msg.id, error: { code: -32600, message: "no queued message to start" } }); return; }
+        const [entry] = q.splice(i, 1);
+        changed();
+        claudeTurn({ id: msg.id, kind: "queued", params: { threadId, input: entry.input } });
+        return;
+      }
+    }
+  }
+
+  // Elpis's goal record for a Claude chat (kept in the store, so it survives a restart).
+  const goals = new Map();
+  const nowSecs = () => Math.floor(now() / 1000);
+  async function goalOf(threadId) {
+    if (!goals.has(threadId)) { await storeChain; goals.set(threadId, (await loadStore())[threadId]?.goal ?? null); }
+    return goals.get(threadId);
+  }
+  function saveGoal(threadId, goal) {
+    goals.set(threadId, goal);
+    updateStore((st) => { st[threadId] = { ...st[threadId], goal }; });
+  }
+  function pursue(threadId, text, goal) {
+    const entry = { id: randomUUID(), goal: true, input: [{ type: "text", text, text_elements: [] }], clientUserMessageId: randomUUID() };
+    if (goal) entry.after = (r) => {
+      const now_ = goals.get(threadId);
+      if (!now_ || now_.objective !== goal.objective || now_.status !== "active") return;
+      const status = r.status === "completed" ? "complete" : r.status === "interrupted" ? "paused" : "blocked";
+      const next = { ...now_, status, tokensUsed: now_.tokensUsed + r.tokens, timeUsedSeconds: now_.timeUsedSeconds + r.seconds, updatedAt: nowSecs() };
+      saveGoal(threadId, next);
+      notify("thread/goal/updated", { threadId, turnId: r.turnId, goal: next });
+    };
+    queueOf(threadId).push(entry);
+    runNext(threadId);
+  }
+  async function goalRequest(msg) {
+    const { threadId } = msg.params;
+    const prev = await goalOf(threadId);
+    if (msg.method === "thread/goal/get") { toTui({ id: msg.id, result: { goal: prev } }); return; }
+    if (msg.method === "thread/goal/clear") {
+      saveGoal(threadId, null);
+      toTui({ id: msg.id, result: { cleared: !!prev } });
+      if (prev) { notify("thread/goal/cleared", { threadId }); if (prev.status === "active") pursue(threadId, "/goal clear", null); }
+      return;
+    }
+    const { objective, status = "active", tokenBudget } = msg.params;
+    const text = objective?.trim() || prev?.objective;
+    if (!text) { toTui({ id: msg.id, error: { code: -32600, message: "This chat has no goal to update." } }); return; }
+    const fresh = !prev || text !== prev.objective;
+    const goal = { threadId, objective: text, status, tokenBudget: tokenBudget === undefined ? prev?.tokenBudget ?? null : tokenBudget, tokensUsed: fresh ? 0 : prev.tokensUsed, timeUsedSeconds: fresh ? 0 : prev.timeUsedSeconds, createdAt: fresh ? nowSecs() : prev.createdAt, updatedAt: nowSecs() };
+    saveGoal(threadId, goal);
+    toTui({ id: msg.id, result: { goal } });
+    notify("thread/goal/updated", { threadId, turnId: null, goal });
+    if (status === "active") pursue(threadId, `/goal ${text}`, goal);
+    else if (prev?.status === "active") pursue(threadId, "/goal clear", null);
   }
 
   // A new chat on a Claude model: the engine keeps its own model, the TUI is told Claude.
@@ -1145,16 +1247,6 @@ wss.on("connection", (ws) => {
     notify("turn/completed", { threadId, turn: { id: turnId, items, itemsView: "summary", status, error, startedAt, completedAt, durationMs: (completedAt - startedAt) * 1000 } });
   }
 
-  // /goal and queued messages make the engine start turns on its own model, which a Claude chat
-  // must not do silently: refuse, and say why in the chat.
-  function refuseOnClaude(msg, what) {
-    const threadId = msg.params.threadId;
-    const message = `${what} is not available on Claude chats yet: Elpis would run it on its own model, not ${claudeModel.get(threadId)}. Switch this chat to an Elpis model with /model to use it.`;
-    log(`refused ${msg.method} on Claude thread ${threadId}`);
-    notify("warning", { threadId, message });
-    toTui({ id: msg.id, error: { code: -32600, message } });
-  }
-
   // A message sent while Claude works joins that reply instead of stopping it. With no
   // running Claude turn, the TUI's "no active turn to steer" fallback starts a new turn.
   async function steerClaude(msg) {
@@ -1265,8 +1357,8 @@ wss.on("connection", (ws) => {
       toTui({ id: msg.id, result: {} });
       return;
     }
-    if (msg.method === "thread/goal/set" && claudeModel.has(msg.params?.threadId) && (msg.params.status ?? "active") === "active") { refuseOnClaude(msg, "/goal"); return; }
-    if (msg.method === "thread/queue/add" && claudeModel.has(msg.params?.threadId)) { refuseOnClaude(msg, "Queuing a message for later"); return; }
+    if (/^thread\/goal\/(set|get|clear)$/.test(msg.method) && claudeModel.has(msg.params?.threadId)) { goalRequest(msg); return; }
+    if (/^thread\/queue\//.test(msg.method) && claudeModel.has(msg.params?.threadId)) { queueRequest(msg); return; }
     if (msg.method === "turn/interrupt" && active && msg.params?.threadId === active.threadId) {
       active.cancelled = true;
       if (active.sessionId) active.acp?.send({ method: "session/cancel", params: { sessionId: active.sessionId } });

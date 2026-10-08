@@ -192,7 +192,9 @@ for (const s of scenarios) {
     delegated && r.text.includes(word) ? console.log(`PASS delegate (Claude -> gpt-6-luna -> ${word})`) : fail(`delegate: delegated=${delegated} reply=${r.text.slice(0, 200)}`);
   } else if (s === "compact") {
     const usedNow = () => [...seen].reverse().find((m) => m.method === "thread/tokenUsage/updated" && m.params.threadId === threadId)?.params?.tokenUsage?.last?.totalTokens;
-    for (let i = 0; i < 2; i++) await turn(threadId, [{ type: "text", text: "Write about 600 words on why tests should be able to fail. Plain prose.", text_elements: [] }], 240000);
+    // Claude Code's own system prompt is most of the context; enough conversation that compacting
+    // it shows (two short essays left less than 4k tokens to save).
+    for (let i = 0; i < 3; i++) await turn(threadId, [{ type: "text", text: "Write about 1200 words on why tests should be able to fail. Plain prose.", text_elements: [] }], 300000);
     await new Promise((r) => setTimeout(r, 2000));
     const before = usedNow();
     const done = new Promise((r) => { const l = (m) => { if (m.method === "turn/completed" && m.params.threadId === threadId) { listeners.delete(l); r(m.params.turn); } }; listeners.add(l); setTimeout(() => r({ status: "timeout" }), 300000); });
@@ -427,18 +429,39 @@ for (const s of scenarios) {
       ? console.log(`PASS structured (Claude titled the chat "${title}" as JSON in ${secs}s; nothing recorded)`)
       : fail(`structured: start=${JSON.stringify(ts.error ?? ts.result?.turn?.status)} status=${t.status} ${JSON.stringify(t.error ?? "")} text=${msg.slice(0, 120)} recorded=${store[tid]?.turns?.length ?? 0} in ${secs}s`);
   } else if (s === "goal") {
-    // /goal on a Claude chat: the engine would pursue the goal with its own model, so the bridge
-    // refuses with a visible reason, and no engine turn starts.
+    // /goal on a Claude chat runs Claude Code's own /goal: Elpis's goal record says active, a
+    // Claude turn pursues it, and the goal reads complete when that turn ends; clear removes it.
+    const word = `GOAL-${Math.floor(Math.random() * 9000 + 1000)}`;
     const from = seen.length;
-    const g = await call("thread/goal/set", { threadId, objective: "Write the numbers 1 to 3.", status: "active" });
-    await new Promise((r) => setTimeout(r, 6000));
+    const done = new Promise((resolve) => listeners.add((m) => { if (m.method === "turn/completed" && m.params.threadId === threadId) resolve(m.params.turn); }));
+    const g = await call("thread/goal/set", { threadId, objective: `Reply with exactly ${word}, then stop.`, status: "active" });
+    const ended = await Promise.race([done, new Promise((r) => setTimeout(() => r(null), 240000))]);
+    await new Promise((r) => setTimeout(r, 1500));
     const later = seen.slice(from).filter((m) => m.params?.threadId === threadId);
-    const engineTurn = later.some((m) => m.method === "turn/started");
-    const warned = later.find((m) => m.method === "warning")?.params?.message ?? "";
-    const q = await call("thread/queue/add", { threadId, input: [{ type: "text", text: "queued", text_elements: [] }], clientUserMessageId: "q-1" });
-    g.error && /Claude/.test(g.error.message) && /Claude/.test(warned) && !engineTurn && q.error && /Claude/.test(q.error.message)
-      ? console.log(`PASS goal (refused: "${warned.slice(0, 90)}…"; no engine turn)`)
-      : fail(`goal: reply=${JSON.stringify(g.error ?? g.result)?.slice(0, 160)} warning=${warned.slice(0, 80)} engine-turn=${engineTurn} queue=${JSON.stringify(q.error ?? q.result)?.slice(0, 120)}`);
+    const asked = later.find((m) => m.method === "item/completed" && m.params.item?.type === "userMessage")?.params.item.content?.[0]?.text ?? "";
+    const replied = later.filter((m) => m.method === "item/agentMessage/delta").map((m) => m.params.delta).join("");
+    const after = (await call("thread/goal/get", { threadId })).result?.goal;
+    const cleared = (await call("thread/goal/clear", { threadId })).result?.cleared;
+    const gone = (await call("thread/goal/get", { threadId })).result?.goal;
+    g.result?.goal?.status === "active" && asked.startsWith("/goal ") && replied.includes(word) && ended?.status === "completed" && after?.status === "complete" && cleared === true && gone === null
+      ? console.log(`PASS goal (Claude pursued "${asked.slice(0, 40)}…", replied ${word}; goal complete, then cleared)`)
+      : fail(`goal: set=${JSON.stringify(g.error ?? g.result?.goal?.status)} asked=${asked.slice(0, 60)} replied=${replied.slice(0, 60)} turn=${ended?.status} after=${after?.status} cleared=${cleared} gone=${JSON.stringify(gone)}`);
+  } else if (s === "queue") {
+    // A message queued on a Claude chat (elpis queue, thread/queue/add) runs as its next Claude
+    // turn: at once when idle, after the running turn otherwise.
+    const words = [1, 2].map(() => `Q-${Math.floor(Math.random() * 9000 + 1000)}`);
+    const from = seen.length;
+    const replies = [];
+    const both = new Promise((resolve) => listeners.add((m) => { if (m.method === "turn/completed" && m.params.threadId === threadId) { replies.push(m.params.turn); if (replies.length === 2) resolve(); } }));
+    const a = await call("thread/queue/add", { threadId, input: [{ type: "text", text: `Reply with exactly: ${words[0]}`, text_elements: [] }], clientUserMessageId: "q-a" });
+    const b = await call("thread/queue/add", { threadId, input: [{ type: "text", text: `Reply with exactly: ${words[1]}`, text_elements: [] }], clientUserMessageId: "q-b" });
+    const waiting = (await call("thread/queue/list", { threadId })).result?.data ?? [];
+    await Promise.race([both, new Promise((r) => setTimeout(r, 240000))]);
+    const text = seen.slice(from).filter((m) => m.method === "item/agentMessage/delta" && m.params.threadId === threadId).map((m) => m.params.delta).join("");
+    const left = (await call("thread/queue/list", { threadId })).result?.data ?? [];
+    a.result?.queuedSubmission?.id && b.result?.queuedSubmission?.id && waiting.some((q) => q.clientUserMessageId === "q-b") && replies.length === 2 && text.indexOf(words[0]) >= 0 && text.indexOf(words[1]) > text.indexOf(words[0]) && left.length === 0
+      ? console.log(`PASS queue (two queued messages ran in order: ${words.join(", ")})`)
+      : fail(`queue: add=${JSON.stringify(a.error ?? a.result)?.slice(0, 120)} waiting=${waiting.length} turns=${replies.length} text=${text.slice(0, 80)} left=${left.length}`);
   } else if (s === "side") {
     // /side and /btw on a Claude chat: an ephemeral fork (on the chat's Claude model) that knows
     // the chat so far and answers with Claude.
