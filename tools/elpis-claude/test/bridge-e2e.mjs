@@ -143,9 +143,13 @@ for (const s of scenarios) {
     const asked = usageHits - hitsBefore;
     // Anthropic reports cached input apart from input; Elpis counts it as input, like OpenAI.
     const inputCounted = tokens?.total?.inputTokens >= 1000 && tokens.total.inputTokens >= tokens.total.cachedInputTokens;
-    shown === 3 && (process.env.E2E_REAL_USAGE || asked <= 1) && tokens?.modelContextWindow > 0 && inputCounted
+    // `last` is the latest request, as the engine reports it: its parts add up to its total, the
+    // context now (the dashboard's Last answer card shows them side by side).
+    const l = tokens?.last;
+    const lastAddsUp = l && l.totalTokens === l.inputTokens + l.outputTokens && l.cachedInputTokens <= l.inputTokens;
+    shown === 3 && (process.env.E2E_REAL_USAGE || asked <= 1) && tokens?.modelContextWindow > 0 && inputCounted && lastAddsUp
       ? console.log(`PASS usage (limits on 3 of 3 turns, endpoint asked ${asked}x, 5h ${five.usedPercent}% used, context ${tokens.last.totalTokens}/${tokens.modelContextWindow})`)
-      : fail(`usage: limits shown on ${shown} of 3 turns, endpoint asked ${asked}x, context window ${tokens?.modelContextWindow}, total ${JSON.stringify(tokens?.total)}`);
+      : fail(`usage: limits shown on ${shown} of 3 turns, endpoint asked ${asked}x, context window ${tokens?.modelContextWindow}, total ${JSON.stringify(tokens?.total)} last ${JSON.stringify(l)}`);
   } else if (s === "resume") {
     const word = `PEAR-${Math.floor(Math.random() * 9000 + 1000)}`;
     await turn(threadId, [{ type: "text", text: `Remember this word: ${word}. Reply with just OK.`, text_elements: [] }]);
@@ -367,6 +371,19 @@ for (const s of scenarios) {
     const ok = !w.error && read?.model === "claude/haiku" && fresh.result?.model === "claude/haiku" && restart.result?.model === "claude/haiku" && r.text.includes(word);
     ok ? console.log(`PASS default (config/read, /new and startup all say claude/haiku; the new chat answered ${word})`)
       : fail(`default: write=${JSON.stringify(w.error ?? w.result?.status)} read=${read?.model} new-chat=${fresh.result?.model ?? JSON.stringify(fresh.error)} startup(${engineDefault})=${restart.result?.model} reply=${r.text.slice(0, 60)}`);
+  } else if (s === "new-chat-model") {
+    // A new Claude chat names its model everywhere Elpis reads one (the agent list showed a
+    // fresh Claude chat as GPT-6.1-Sol until its first message). No model is asked.
+    const from = seen.length;
+    const st = await call("thread/start", { model: "claude/haiku", cwd: dir, approvalPolicy: "never", sandbox: "danger-full-access" });
+    const tid = st.result?.thread?.id;
+    await new Promise((r) => setTimeout(r, 1500));
+    const started = seen.slice(from).find((m) => m.method === "thread/started" && m.params?.thread?.id === tid)?.params.thread;
+    const read = (await call("thread/read", { threadId: tid ?? "none", includeTurns: false })).result?.thread;
+    const models = { response: st.result?.model, thread: st.result?.thread?.model, started: started?.model ?? "(none)", read: read?.model };
+    Object.values(models).every((m) => m === "claude/haiku" || m === "(none)")
+      ? console.log(`PASS new-chat-model (${JSON.stringify(models)})`)
+      : fail(`new-chat-model: ${JSON.stringify(models)}`);
   } else if (s === "antigravity") {
     // Gemini from the Antigravity (Google) sign-in, chosen like a Claude model: listed, answers,
     // its tools drawn as Elpis rows, and it remembers the chat across a model switch back.

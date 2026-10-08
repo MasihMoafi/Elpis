@@ -309,6 +309,7 @@ wss.on("connection", (ws) => {
   const addChars = (threadId, part, n) => { const c = ctxChars.get(threadId) ?? { user: 0, agent: 0, reasoning: 0, toolCalls: 0, toolResults: 0 }; c[part] += n ?? 0; ctxChars.set(threadId, c); };
   const attribution = (threadId, used) => splitContext(ctxChars.get(threadId), devChars.get(threadId), used);
   const lastContext = new Map();
+  const lastTurnUsage = new Map(); // thread id -> its latest finished turn's usage
   // Anthropic reports cache reads and writes apart from input; Elpis (like OpenAI) counts them as input.
   const usageBreakdown = (u) => {
     const input = (u.input ?? 0) + (u.cachedRead ?? 0) + (u.cachedWrite ?? 0);
@@ -317,8 +318,16 @@ wss.on("connection", (ws) => {
   const sendUsage = (threadId, turnId, last) => {
     const sum = tokenSums.get(threadId) ?? {};
     const ctx = lastContext.get(threadId) ?? {};
-    const lastB = usageBreakdown(last ?? {});
-    if (typeof ctx.used === "number") lastB.totalTokens = ctx.used;
+    // Elpis reads `last` as the latest request, whose total is the context now. Claude reports
+    // a whole turn (or nothing yet): its output stays, the rest of the context is input.
+    const lastB = usageBreakdown(last ?? lastTurnUsage.get(threadId) ?? {});
+    if (typeof ctx.used === "number") {
+      const output = Math.min(lastB.outputTokens, ctx.used);
+      const input = ctx.used - output;
+      const cached = Math.min(lastB.cachedInputTokens, input);
+      Object.assign(lastB, { totalTokens: ctx.used, inputTokens: input, outputTokens: output, cachedInputTokens: cached, cacheWriteInputTokens: Math.min(lastB.cacheWriteInputTokens, input - cached) });
+    }
+    if (last) lastTurnUsage.set(threadId, last);
     const contextAttribution = typeof ctx.used === "number" ? attribution(threadId, ctx.used) : undefined;
     notify("thread/tokenUsage/updated", { threadId, turnId, tokenUsage: { total: usageBreakdown(sum), last: lastB, modelContextWindow: ctx.size ?? null, ...(contextAttribution && { contextAttribution }) } });
   };
@@ -391,11 +400,13 @@ wss.on("connection", (ws) => {
   const pendingHelperMark = new Set(); // thread/list and thread/read answers: helpers get their chat, bridged chats their model
   // A helper started with the delegate tool is an engine thread the engine does not know as a
   // child; the bridge's record (_delegations) gives it its parent wherever the TUI reads threads.
-  // The engine knows only the model it started a bridged chat with; the store has the real one.
+  // The engine knows only the model it started a bridged chat with; this connection (from the
+  // chat's start) or the store (from its first turn) has the real one.
   function ownModel(t, store) {
-    const own = store[t.id];
-    if (!own?.model || t.model === own.model) return false;
-    t.model = own.model; t.reasoningEffort = own.effort ?? null;
+    const model = claudeModel.get(t.id) ?? store?.[t.id]?.model;
+    if (!model || t.model === model) return false;
+    t.model = model;
+    t.reasoningEffort = (claudeModel.has(t.id) ? claudeEffort.get(t.id) : store?.[t.id]?.effort) ?? null;
     return true;
   }
   async function markHelpers(result, ancestor) {
@@ -520,6 +531,15 @@ wss.on("connection", (ws) => {
       return;
     }
     let helpersMarked = false;
+    // A new Claude chat's thread/started can arrive before its thread/start answer; the one
+    // bridged start in flight names its model then.
+    if (parsed?.method === "thread/started" && parsed.params?.thread) {
+      const t = parsed.params.thread;
+      const starting = [...pendingStart.values()].filter((pick) => pick?.model);
+      const pick = !claudeModel.has(t.id) && starting.length === 1 ? starting[0] : null;
+      if (pick && t.model !== pick.model) { t.model = pick.model; t.reasoningEffort = pick.effort ?? null; helpersMarked = true; } // shown only; routing waits for the answer
+      else helpersMarked = ownModel(t, null);
+    }
     if (parsed && pendingHelperMark.has(parsed.id)) {
       pendingHelperMark.delete(parsed.id);
       helpersMarked = await markHelpers(parsed.result, pendingChildList.get(parsed.id)).catch((e) => { log(`helpers: ${e.message ?? e}`); return false; });
@@ -628,6 +648,7 @@ wss.on("connection", (ws) => {
         }
         parsed.result.model = pick.model;
         parsed.result.reasoningEffort = pick.effort ?? null;
+        Object.assign(parsed.result.thread, { model: pick.model, reasoningEffort: pick.effort ?? null });
         log(`new thread ${tid} -> ${pick.model}`);
         ws.send(JSON.stringify(parsed));
         return;
@@ -642,6 +663,7 @@ wss.on("connection", (ws) => {
         if (saved.effort) claudeEffort.set(parsed.result.thread.id, saved.effort);
         parsed.result.model = saved.model;
         if (saved.effort) parsed.result.reasoningEffort = saved.effort;
+        Object.assign(parsed.result.thread, { model: saved.model, reasoningEffort: saved.effort ?? null });
         log(`resume ${parsed.result.thread.id} -> ${saved.model}`);
         ws.send(JSON.stringify(parsed));
         return;
