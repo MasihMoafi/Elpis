@@ -409,6 +409,7 @@ wss.on("connection", (ws) => {
   // The bridge adds them, previewed by their first message, where they fall in the list's order.
   const pendingThreadList = new Map();
   const pendingChildList = new Map(); // thread/loaded/list (null) or thread/list of a chat's descendants (its id)
+  const pendingArchive = new Map(); // thread/archive id -> thread id
   const pendingHelperMark = new Set(); // thread/list and thread/read answers: helpers get their chat, bridged chats their model
   // A helper started with the delegate tool is an engine thread the engine does not know as a
   // child; the bridge's record (_delegations) gives it its parent wherever the TUI reads threads.
@@ -542,6 +543,22 @@ wss.on("connection", (ws) => {
       const p = engineReqs.get(parsed.id); engineReqs.delete(parsed.id);
       parsed.error ? p.reject(parsed.error) : p.resolve(parsed.result);
       return;
+    }
+    // A chat only the bridge knows (a helper whose one turn failed, so the engine never saved
+    // it) archives by leaving the bridge's records.
+    if (parsed && pendingArchive.has(parsed.id)) {
+      const threadId = pendingArchive.get(parsed.id); pendingArchive.delete(parsed.id);
+      if (/no rollout found/.test(parsed.error?.message ?? "")) {
+        await storeChain;
+        const store = await loadStore();
+        if (store[threadId] || store._delegations?.[threadId] || claudeModel.has(threadId)) {
+          await updateStore((st) => { delete st[threadId]; if (st._delegations) delete st._delegations[threadId]; });
+          log(`archived bridge-only thread ${threadId}`);
+          ws.send(JSON.stringify({ id: parsed.id, result: {} }));
+          notify("thread/archived", { threadId });
+          return;
+        }
+      }
     }
     let helpersMarked = false;
     // A new Claude chat's thread/started can arrive before its thread/start answer; the one
@@ -1306,6 +1323,7 @@ wss.on("connection", (ws) => {
     if (msg.method === "thread/list" || msg.method === "thread/read") pendingHelperMark.add(msg.id);
     if (msg.method === "model/list") pendingModelList.add(msg.id);
     if (msg.method === "thread/resume") pendingResume.add(msg.id);
+    if (msg.method === "thread/archive") pendingArchive.set(msg.id, msg.params?.threadId);
     if (msg.method === "config/read") pendingConfigRead.add(msg.id);
     if (msg.method === "thread/fork" && claudeModel.has(msg.params?.threadId)) {
       const src = msg.params.threadId;

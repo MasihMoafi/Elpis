@@ -203,7 +203,10 @@ server.registerTool(
         ...(BRIDGE && PARENT && { elpisParentThreadId: PARENT }),
       });
       threadId = started.thread.id;
-      await conn.call("thread/name/set", { threadId, name: `Delegated by Claude: ${task.slice(0, 60)}` }).catch(() => {});
+      // Titled by its task: the agent list already shows it under the chat that started it.
+      const firstLine = task.trim().split("\n")[0];
+      const title = firstLine.length <= 80 ? firstLine : `${firstLine.slice(0, 80).replace(/\s+\S*$/, "")}…`;
+      await conn.call("thread/name/set", { threadId, name: title }).catch(() => {});
       runs.set(threadId, { label, conn });
     }
     startTurn(threadId, task);

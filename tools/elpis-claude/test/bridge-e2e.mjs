@@ -392,6 +392,23 @@ for (const s of scenarios) {
     Object.values(models).every((m) => m === "claude/haiku" || m === "(none)")
       ? console.log(`PASS new-chat-model (${JSON.stringify(models)})`)
       : fail(`new-chat-model: ${JSON.stringify(models)}`);
+  } else if (s === "archive-unsaved") {
+    // A helper the engine never saved (its only turn failed, so no rollout) archives like any
+    // other chat, instead of failing with "no rollout found".
+    const { readFileSync: readStore, writeFileSync: writeStore } = await import("node:fs");
+    const { randomUUID } = await import("node:crypto");
+    const tid = randomUUID();
+    const store = (() => { try { return JSON.parse(readStore(storeEnv.ACP_BRIDGE_STORE, "utf8")); } catch { return {}; } })();
+    store._delegations = { ...store._delegations, [tid]: { parentThreadId: threadId, model: "agy/gemini-3.8-flash", startedAt: Math.floor(Date.now() / 1000) } };
+    writeStore(storeEnv.ACP_BRIDGE_STORE, JSON.stringify(store));
+    const from = seen.length;
+    const a = await call("thread/archive", { threadId: tid });
+    await new Promise((r) => setTimeout(r, 500));
+    const told = seen.slice(from).some((m) => m.method === "thread/archived" && m.params?.threadId === tid);
+    const after = JSON.parse(readStore(storeEnv.ACP_BRIDGE_STORE, "utf8"));
+    !a.error && told && !after._delegations?.[tid]
+      ? console.log("PASS archive-unsaved (archived, the TUI was told, the record is gone)")
+      : fail(`archive-unsaved: ${JSON.stringify(a.error ?? a.result)} told=${told} record=${!!after._delegations?.[tid]}`);
   } else if (s === "antigravity") {
     // Gemini from the Antigravity (Google) sign-in, chosen like a Claude model: listed, answers,
     // its tools drawn as Elpis rows, and it remembers the chat across a model switch back.
@@ -591,6 +608,9 @@ for (const s of scenarios) {
     const inList = listed.find((t) => t.id === helper);
     // The chat itself lists with the model it runs on, not the engine's.
     const chatModel = listed.find((t) => t.id === tid)?.model;
+    // The helper is titled by its task alone; the list already nests it under its chat.
+    const titled = /word\.txt/.test(inList?.name ?? "") && !/^Delegated by/.test(inList?.name ?? "");
+    if (!titled) fail(`helper-parent: helper title ${JSON.stringify(inList?.name)}`);
     // The TUI hears of the helper live: its start, with its parent, and its status changes.
     const heardStart = seen.some((m) => m.method === "thread/started" && m.params?.thread?.id === helper && m.params.thread.parentThreadId === tid);
     const heardStatus = seen.some((m) => m.method === "thread/status/changed" && m.params?.threadId === helper);
@@ -622,6 +642,22 @@ for (const s of scenarios) {
     ]);
     r.text.includes(word) ? console.log(`PASS image (${word})`) : fail(`image: ${JSON.stringify(r)}`);
   }
+}
+// The run's chats leave Elpis's history (archived, not deleted): each has a temporary
+// elpis-e2e-* folder. E2E_KEEP_CHATS=1 keeps them for a look.
+if (!process.env.E2E_KEEP_CHATS) {
+  const kinds = ["cli", "vscode", "exec", "appServer", "subAgent", "subAgentReview", "subAgentCompact", "subAgentThreadSpawn", "subAgentOther", "unknown"];
+  const prefix = join(tmpdir(), "elpis-e2e-");
+  const mine = [];
+  let cursor = null;
+  do {
+    const r = await call("thread/list", { limit: 200, cursor, sourceKinds: kinds, modelProviders: [] });
+    mine.push(...(r.result?.data ?? []).filter((t) => (t.cwd ?? "").startsWith(prefix)));
+    cursor = r.result?.nextCursor;
+  } while (cursor);
+  let archived = 0;
+  for (const t of mine) if (!(await call("thread/archive", { threadId: t.id })).error) archived++;
+  console.log(`(archived ${archived} of this run's ${mine.length} chats)`);
 }
 writeFileSync(join(dir, ".done"), "");
 // Every message the bridge sent, for checking it against the app-server schema.
