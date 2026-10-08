@@ -61,6 +61,7 @@ mod desktop_app;
 mod doctor;
 // Elpis: the Elpis home.
 mod elpis_home;
+mod elpis_memory_save;
 // Elpis: v0.3.0's --provider flag.
 mod elpis_provider;
 #[cfg(test)]
@@ -162,6 +163,11 @@ enum Subcommand {
     /// Internal: forward a local TCP socket through an HTTP/3 CONNECT proxy.
     #[clap(hide = true)]
     TcpTunnel(codex_tcp_tunnel::Args),
+
+    /// Internal: save durable memory for a chat whose turns run on another engine (one JSON
+    /// request on stdin, one JSON answer on stdout).
+    #[clap(hide = true)]
+    MemorySave,
     /// Run Elpis non-interactively.
     #[clap(visible_alias = "e")]
     // Elpis: hidden from help; still callable.
@@ -1200,6 +1206,9 @@ async fn cli_main(
             )
             .await?;
             handle_app_exit(exit_info, daemon_cli_executable.as_deref())?;
+        }
+        Some(Subcommand::MemorySave) => {
+            elpis_memory_save::run(find_codex_home()?.to_path_buf())?;
         }
         Some(Subcommand::TcpTunnel(args)) => {
             return codex_tcp_tunnel::run(args).await;
@@ -2330,7 +2339,8 @@ fn unsupported_subcommand_name_for_strict_config(
         | Some(Subcommand::Delete(_))
         | Some(Subcommand::Unarchive(_))
         | Some(Subcommand::Fork(_))
-        | Some(Subcommand::Doctor(_)) => None,
+        | Some(Subcommand::Doctor(_))
+        | Some(Subcommand::MemorySave) => None,
         Some(Subcommand::AppServer(app_server)) if app_server.subcommand.is_none() => None,
         Some(Subcommand::AppServer(app_server)) => {
             Some(app_server_subcommand_name(app_server.subcommand.as_ref()))

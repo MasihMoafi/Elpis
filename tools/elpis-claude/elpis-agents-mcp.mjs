@@ -138,127 +138,165 @@ const known = (thread_id) => runs.has(thread_id)
   ? null
   : { content: [{ type: "text", text: `Unknown thread ${thread_id}: delegate with thread_id to reopen it.` }], isError: true };
 
-server.registerTool(
-  "list_models",
-  { description: "List every model you can hand a task to with delegate, grouped by where it runs, each with what it is for and its effort levels. Call it before choosing a helper.", inputSchema: {} },
-  async () => {
-    log("list_models");
-    return { content: [{ type: "text", text: await modelCatalog() }] };
-  },
-);
-
-server.registerTool(
-  "delegate",
-  {
-    description:
-      "Hand a task to a helper agent on another model, chosen to fit the task: a fast model for easy work, the strongest for hard work " +
-      "(call list_models to see them all with what each is for). Helpers can be OpenAI GPT models, Gemini via Antigravity (agy/...) " +
-      "or Claude (claude/...). It works in the given folder with its own tools and returns its final answer and the commands it ran. " +
-      "Pass thread_id to send a follow-up to an earlier helper; it keeps that conversation. " +
-      "Pass wait=false to return at once and follow it with delegate_status, delegate_steer and delegate_stop.",
-    inputSchema: {
-      task: z.string().describe("Complete instructions for the agent; it does not see this conversation."),
-      thread_id: z.string().optional().describe("Continue this earlier delegated thread instead of starting a new one."),
-      wait: z.boolean().default(true).describe("Wait for the answer (true) or return the thread id at once (false)."),
-      model: z.string().default("gpt-6.1-sol").describe("A model id from list_models, e.g. gpt-6-luna, gpt-6-astra, agy/gemini-3.8-flash-high, claude/haiku."),
-      provider: z.string().default("openai").describe("Only for engine models: openai (sign-in) or another configured Elpis provider."),
-      effort: z.enum(["low", "medium", "high", "xhigh", "max"]).optional().describe("Reasoning effort, if the model has levels; omit for its default."),
-      cwd: z.string().optional().describe("Working folder; defaults to Claude's folder."),
-      allow_writes: z.boolean().default(false).describe("Let the agent change files in the folder."),
+// Helpers on other models: offered when the chat may delegate.
+if (process.env.ELPIS_AGENT_TOOLS !== "0") {
+  server.registerTool(
+    "list_models",
+    { description: "List every model you can hand a task to with delegate, grouped by where it runs, each with what it is for and its effort levels. Call it before choosing a helper.", inputSchema: {} },
+    async () => {
+      log("list_models");
+      return { content: [{ type: "text", text: await modelCatalog() }] };
     },
-  },
-  async ({ task, thread_id, wait, model, provider, effort, cwd, allow_writes }) => {
-    let threadId = thread_id;
-    if (threadId) {
-      if (runs.get(threadId)?.status === "running") {
-        return { content: [{ type: "text", text: `Thread ${threadId} is still working; use delegate_steer or delegate_stop.` }], isError: true };
-      }
-      if (!runs.has(threadId)) {
-        // A thread from an earlier server process: load it back.
-        const conn = connect();
-        try {
-          await conn.ready;
-          await conn.call("thread/resume", { threadId });
-        } catch (e) {
-          conn.close();
-          return { content: [{ type: "text", text: `Could not reopen thread ${threadId}: ${e.message ?? JSON.stringify(e)}` }], isError: true };
+  );
+
+  server.registerTool(
+    "delegate",
+    {
+      description:
+        "Hand a task to a helper agent on another model, chosen to fit the task: a fast model for easy work, the strongest for hard work " +
+        "(call list_models to see them all with what each is for). Helpers can be OpenAI GPT models, Gemini via Antigravity (agy/...) " +
+        "or Claude (claude/...). It works in the given folder with its own tools and returns its final answer and the commands it ran. " +
+        "Pass thread_id to send a follow-up to an earlier helper; it keeps that conversation. " +
+        "Pass wait=false to return at once and follow it with delegate_status, delegate_steer and delegate_stop.",
+      inputSchema: {
+        task: z.string().describe("Complete instructions for the agent; it does not see this conversation."),
+        thread_id: z.string().optional().describe("Continue this earlier delegated thread instead of starting a new one."),
+        wait: z.boolean().default(true).describe("Wait for the answer (true) or return the thread id at once (false)."),
+        model: z.string().default("gpt-6.1-sol").describe("A model id from list_models, e.g. gpt-6-luna, gpt-6-astra, agy/gemini-3.8-flash-high, claude/haiku."),
+        provider: z.string().default("openai").describe("Only for engine models: openai (sign-in) or another configured Elpis provider."),
+        effort: z.enum(["low", "medium", "high", "xhigh", "max"]).optional().describe("Reasoning effort, if the model has levels; omit for its default."),
+        cwd: z.string().optional().describe("Working folder; defaults to Claude's folder."),
+        allow_writes: z.boolean().default(false).describe("Let the agent change files in the folder."),
+      },
+    },
+    async ({ task, thread_id, wait, model, provider, effort, cwd, allow_writes }) => {
+      let threadId = thread_id;
+      if (threadId) {
+        if (runs.get(threadId)?.status === "running") {
+          return { content: [{ type: "text", text: `Thread ${threadId} is still working; use delegate_steer or delegate_stop.` }], isError: true };
         }
-        runs.set(threadId, { label: "resumed agent", conn });
+        if (!runs.has(threadId)) {
+          // A thread from an earlier server process: load it back.
+          const conn = connect();
+          try {
+            await conn.ready;
+            await conn.call("thread/resume", { threadId });
+          } catch (e) {
+            conn.close();
+            return { content: [{ type: "text", text: `Could not reopen thread ${threadId}: ${e.message ?? JSON.stringify(e)}` }], isError: true };
+          }
+          runs.set(threadId, { label: "resumed agent", conn });
+        }
+        log(`delegate follow-up thread=${threadId}`);
+      } else {
+        if (bridgedModel(model) && !BRIDGE) {
+          return { content: [{ type: "text", text: `${model} runs only through the Elpis Claude bridge; pick an engine model from list_models.` }], isError: true };
+        }
+        const folder = cwd ?? process.cwd();
+        const label = bridgedModel(model) ? model : `${provider}/${model}`;
+        log(`delegate model=${label} effort=${effort ?? "default"} writes=${allow_writes} cwd=${folder}`);
+        // Each helper has its own connection, so helpers on the same model can run side by side.
+        const conn = connect();
+        await conn.ready;
+        const started = await conn.call("thread/start", {
+          cwd: folder, model, ...(bridgedModel(model) ? {} : { modelProvider: provider }), approvalPolicy: "never",
+          sandbox: allow_writes ? "workspace-write" : "read-only",
+          ...(effort && { config: { model_reasoning_effort: effort } }),
+          ...(BRIDGE && PARENT && { elpisParentThreadId: PARENT }),
+        });
+        threadId = started.thread.id;
+        // Titled by its task: the agent list already shows it under the chat that started it.
+        const firstLine = task.trim().split("\n")[0];
+        const title = firstLine.length <= 80 ? firstLine : `${firstLine.slice(0, 80).replace(/\s+\S*$/, "")}…`;
+        await conn.call("thread/name/set", { threadId, name: title }).catch(() => {});
+        runs.set(threadId, { label, conn });
       }
-      log(`delegate follow-up thread=${threadId}`);
-    } else {
-      if (bridgedModel(model) && !BRIDGE) {
-        return { content: [{ type: "text", text: `${model} runs only through the Elpis Claude bridge; pick an engine model from list_models.` }], isError: true };
+      startTurn(threadId, task);
+      if (wait) await runs.get(threadId).done;
+      const run = runs.get(threadId);
+      return { content: [{ type: "text", text: report(threadId) }], isError: !["running", "completed"].includes(run.status) };
+    },
+  );
+
+  server.registerTool(
+    "delegate_status",
+    { description: "Show a delegated agent's status, the commands it ran and its answer so far.", inputSchema: { thread_id: threadArg } },
+    async ({ thread_id }) => known(thread_id) ?? { content: [{ type: "text", text: report(thread_id) }] },
+  );
+
+  server.registerTool(
+    "delegate_steer",
+    {
+      description: "Send a correction to a delegated agent while it is still working; it takes effect in the running turn.",
+      inputSchema: { thread_id: threadArg, message: z.string().describe("What the agent should do differently.") },
+    },
+    async ({ thread_id, message }) => {
+      const unknown = known(thread_id);
+      if (unknown) return unknown;
+      const run = runs.get(thread_id);
+      const turnId = await activeTurn(run);
+      if (!turnId) {
+        return { content: [{ type: "text", text: `Thread ${thread_id} is not working now (${run.status}); send a follow-up with delegate and thread_id.` }], isError: true };
       }
-      const folder = cwd ?? process.cwd();
-      const label = bridgedModel(model) ? model : `${provider}/${model}`;
-      log(`delegate model=${label} effort=${effort ?? "default"} writes=${allow_writes} cwd=${folder}`);
-      // Each helper has its own connection, so helpers on the same model can run side by side.
-      const conn = connect();
-      await conn.ready;
-      const started = await conn.call("thread/start", {
-        cwd: folder, model, ...(bridgedModel(model) ? {} : { modelProvider: provider }), approvalPolicy: "never",
-        sandbox: allow_writes ? "workspace-write" : "read-only",
-        ...(effort && { config: { model_reasoning_effort: effort } }),
-        ...(BRIDGE && PARENT && { elpisParentThreadId: PARENT }),
-      });
-      threadId = started.thread.id;
-      // Titled by its task: the agent list already shows it under the chat that started it.
-      const firstLine = task.trim().split("\n")[0];
-      const title = firstLine.length <= 80 ? firstLine : `${firstLine.slice(0, 80).replace(/\s+\S*$/, "")}…`;
-      await conn.call("thread/name/set", { threadId, name: title }).catch(() => {});
-      runs.set(threadId, { label, conn });
-    }
-    startTurn(threadId, task);
-    if (wait) await runs.get(threadId).done;
-    const run = runs.get(threadId);
-    return { content: [{ type: "text", text: report(threadId) }], isError: !["running", "completed"].includes(run.status) };
-  },
-);
+      await run.conn.call("turn/steer", { threadId: thread_id, expectedTurnId: turnId, input: [{ type: "text", text: message, text_elements: [] }] });
+      log(`delegate steer thread=${thread_id}`);
+      return { content: [{ type: "text", text: `Steered thread ${thread_id}. Check it with delegate_status.` }] };
+    },
+  );
 
-server.registerTool(
-  "delegate_status",
-  { description: "Show a delegated agent's status, the commands it ran and its answer so far.", inputSchema: { thread_id: threadArg } },
-  async ({ thread_id }) => known(thread_id) ?? { content: [{ type: "text", text: report(thread_id) }] },
-);
+  server.registerTool(
+    "delegate_stop",
+    { description: "Stop a delegated agent's running turn.", inputSchema: { thread_id: threadArg } },
+    async ({ thread_id }) => {
+      const unknown = known(thread_id);
+      if (unknown) return unknown;
+      const run = runs.get(thread_id);
+      const turnId = await activeTurn(run);
+      if (!turnId) {
+        return { content: [{ type: "text", text: `Thread ${thread_id} is not working now (${run.status}).` }] };
+      }
+      await run.conn.call("turn/interrupt", { threadId: thread_id, turnId });
+      log(`delegate stop thread=${thread_id}`);
+      await Promise.race([run.done, new Promise((r) => setTimeout(r, 15000))]);
+      return { content: [{ type: "text", text: report(thread_id) }] };
+    },
+  );
+}
 
-server.registerTool(
-  "delegate_steer",
-  {
-    description: "Send a correction to a delegated agent while it is still working; it takes effect in the running turn.",
-    inputSchema: { thread_id: threadArg, message: z.string().describe("What the agent should do differently.") },
-  },
-  async ({ thread_id, message }) => {
-    const unknown = known(thread_id);
-    if (unknown) return unknown;
-    const run = runs.get(thread_id);
-    const turnId = await activeTurn(run);
-    if (!turnId) {
-      return { content: [{ type: "text", text: `Thread ${thread_id} is not working now (${run.status}); send a follow-up with delegate and thread_id.` }], isError: true };
-    }
-    await run.conn.call("turn/steer", { threadId: thread_id, expectedTurnId: turnId, input: [{ type: "text", text: message, text_elements: [] }] });
-    log(`delegate steer thread=${thread_id}`);
-    return { content: [{ type: "text", text: `Steered thread ${thread_id}. Check it with delegate_status.` }] };
-  },
-);
-
-server.registerTool(
-  "delegate_stop",
-  { description: "Stop a delegated agent's running turn.", inputSchema: { thread_id: threadArg } },
-  async ({ thread_id }) => {
-    const unknown = known(thread_id);
-    if (unknown) return unknown;
-    const run = runs.get(thread_id);
-    const turnId = await activeTurn(run);
-    if (!turnId) {
-      return { content: [{ type: "text", text: `Thread ${thread_id} is not working now (${run.status}).` }] };
-    }
-    await run.conn.call("turn/interrupt", { threadId: thread_id, turnId });
-    log(`delegate stop thread=${thread_id}`);
-    await Promise.race([run.done, new Promise((r) => setTimeout(r, 15000))]);
-    return { content: [{ type: "text", text: report(thread_id) }] };
-  },
-);
+// Elpis's durable memory, saved by the engine's own guarded save (`elpis memory-save`): offered
+// to a chat the user started, in a workspace where saving is on, as the engine offers it.
+const MEMORY_CWD = process.env.ELPIS_MEMORY_CWD ?? null;
+function memorySave(request) {
+  return new Promise((resolve) => {
+    const child = spawn(ENGINE, ["memory-save"], { stdio: ["pipe", "pipe", "pipe"] });
+    let out = "", err = "";
+    child.stdout.on("data", (d) => { out += d; });
+    child.stderr.on("data", (d) => { err += d; });
+    child.on("error", (e) => resolve({ error: e.message }));
+    child.on("close", () => { try { resolve(JSON.parse(out)); } catch { resolve({ error: err.trim() || out.trim() || "elpis memory-save gave no answer" }); } });
+    child.stdin.end(JSON.stringify({ cwd: MEMORY_CWD, threadId: PARENT, turnId: `bridge-${Date.now()}`, ...request }));
+  });
+}
+const memoryTool = MEMORY_CWD && PARENT ? await memorySave({ checkOnly: true }) : null;
+if (memoryTool?.enabled && memoryTool.description) {
+  server.registerTool(
+    "save_memory",
+    {
+      description: memoryTool.description,
+      inputSchema: {
+        memory_edits: z.array(z.object({ old_text: z.string().nullable(), new_text: z.string().nullable() })).describe(memoryTool.memoryEditsDescription),
+        checkpoint: z.string().nullable().describe(memoryTool.checkpointDescription),
+      },
+    },
+    async ({ memory_edits, checkpoint }) => {
+      const r = await memorySave({ memoryEdits: memory_edits, checkpoint });
+      log(`save_memory thread=${PARENT} ${JSON.stringify(r)}`);
+      if (r.error || !r.enabled) return { content: [{ type: "text", text: `Memory save failed: ${r.error ?? "saving is off for this workspace"}` }], isError: true };
+      const saved = r.memoryChanged || r.checkpointChanged;
+      return { content: [{ type: "text", text: saved ? `Durable context saved (memory_changed=${r.memoryChanged}, checkpoint_changed=${r.checkpointChanged}).` : "No durable context changes requested; existing files were preserved." }] };
+    },
+  );
+}
 
 await server.connect(new StdioServerTransport());
 log("elpis-agents ready");

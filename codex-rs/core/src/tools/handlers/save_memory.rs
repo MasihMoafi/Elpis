@@ -22,10 +22,15 @@ use serde_json::Value as JsonValue;
 use serde_json::json;
 
 use crate::function_tool::FunctionCallError;
+use crate::memory_save::CHECKPOINT_DESCRIPTION;
+use crate::memory_save::MEMORY_EDITS_DESCRIPTION;
 use crate::memory_save::MemoryBaseline;
+use crate::memory_save::MemoryEdit;
 use crate::memory_save::MemorySaveTiming;
 use crate::memory_save::MemorySnapshot;
 use crate::memory_save::MemoryUpdate;
+use crate::memory_save::SAVE_MEMORY_DESCRIPTION;
+use crate::memory_save::apply_memory_edits;
 use crate::tools::context::FunctionToolOutput;
 use crate::tools::context::ToolOutput;
 use crate::tools::context::ToolPayload;
@@ -34,13 +39,6 @@ use crate::tools::handlers::parse_arguments;
 
 const TOOL_NAME: &str = "save_memory";
 const MAX_EVIDENCE_CHARS: usize = 64_000;
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct MemoryEdit {
-    old_text: Option<String>,
-    new_text: Option<String>,
-}
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -113,48 +111,6 @@ impl SaveMemoryHandler {
             turn_id: turn_id.to_string(),
             baseline,
         }
-    }
-
-    fn apply_memory_edits(
-        existing: &str,
-        edits: &[MemoryEdit],
-    ) -> Result<Option<String>, FunctionCallError> {
-        let mut memory = existing.to_string();
-        for edit in edits {
-            match (&edit.old_text, &edit.new_text) {
-                (None, None) => {
-                    return Err(FunctionCallError::RespondToModel(
-                        "a memory edit must append, replace, or remove text".to_string(),
-                    ));
-                }
-                (None, Some(new_text)) => {
-                    if new_text.is_empty() {
-                        return Err(FunctionCallError::RespondToModel(
-                            "appended memory text cannot be empty".to_string(),
-                        ));
-                    }
-                    if !memory.is_empty() && !memory.ends_with('\n') {
-                        memory.push('\n');
-                    }
-                    memory.push_str(new_text);
-                }
-                (Some(old_text), replacement) => {
-                    if old_text.is_empty() {
-                        return Err(FunctionCallError::RespondToModel(
-                            "old_text cannot be empty".to_string(),
-                        ));
-                    }
-                    let matches = memory.match_indices(old_text).count();
-                    if matches != 1 {
-                        return Err(FunctionCallError::RespondToModel(format!(
-                            "old_text must match durable memory exactly once; found {matches} matches"
-                        )));
-                    }
-                    memory = memory.replacen(old_text, replacement.as_deref().unwrap_or(""), 1);
-                }
-            }
-        }
-        Ok((memory != existing).then_some(memory))
     }
 
     fn bounded_turn_evidence(
@@ -233,7 +189,8 @@ impl SaveMemoryHandler {
                     "Memory save is disabled for this workspace".to_string(),
                 )
             })?;
-        let memory = Self::apply_memory_edits(&snapshot.memory, &args.memory_edits)?;
+        let memory = apply_memory_edits(&snapshot.memory, &args.memory_edits)
+            .map_err(FunctionCallError::RespondToModel)?;
         let memory_changed = memory.is_some();
         let checkpoint_changed = args.checkpoint.is_some();
         if !memory_changed && !checkpoint_changed {
@@ -294,23 +251,20 @@ impl<'call> codex_tools::ToolExecutor<ToolCall<'call>> for SaveMemoryHandler {
         );
         ToolSpec::Function(ResponsesApiTool {
             name: TOOL_NAME.to_string(),
-            description: "Persist durable context before your final answer when it changed. MEMORY.md is only for stable global user preferences: use exact edits so unseen memory is preserved. ES is the workspace checkpoint for project state, verification, blockers, and next action. Pass an empty edit list and null checkpoint when nothing should change. Saving is local, opt-in, root-thread only, and rejects stale or conflicting files.".to_string(),
+            description: SAVE_MEMORY_DESCRIPTION.to_string(),
             strict: true,
             defer_loading: None,
             parameters: JsonSchema::object(
                 BTreeMap::from([
                     (
                         "memory_edits".to_string(),
-                        JsonSchema::array(
-                            edit,
-                            Some("Exact MEMORY.md edits. old_text=null appends; new_text=null removes; both strings replace.".to_string()),
-                        ),
+                        JsonSchema::array(edit, Some(MEMORY_EDITS_DESCRIPTION.to_string())),
                     ),
                     (
                         "checkpoint".to_string(),
                         JsonSchema::any_of(
                             vec![JsonSchema::string(None), JsonSchema::null(None)],
-                            Some("Complete replacement for the workspace's Consolidated State, or null to preserve it byte-for-byte.".to_string()),
+                            Some(CHECKPOINT_DESCRIPTION.to_string()),
                         ),
                     ),
                 ]),
@@ -388,7 +342,7 @@ mod tests {
 
     #[test]
     fn exact_edits_preserve_unseen_memory() {
-        let updated = SaveMemoryHandler::apply_memory_edits(
+        let updated = apply_memory_edits(
             "# Elpis Memory\n\n- Existing preference.\n",
             &[
                 MemoryEdit {
@@ -409,7 +363,7 @@ mod tests {
 
     #[test]
     fn ambiguous_edits_are_rejected() {
-        let error = SaveMemoryHandler::apply_memory_edits(
+        let error = apply_memory_edits(
             "same same",
             &[MemoryEdit {
                 old_text: Some("same".to_string()),
@@ -417,7 +371,7 @@ mod tests {
             }],
         )
         .unwrap_err();
-        assert!(error.to_string().contains("exactly once"));
+        assert!(error.contains("exactly once"));
     }
 
     #[test]
