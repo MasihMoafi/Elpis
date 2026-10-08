@@ -7,10 +7,10 @@ expression: "setup.replace(&chat.config.cwd.display().to_string(), \"[CWD]\")"
 Setting up sandbox... (0s)                      │ CONTEXT LEDGER  context not
   └ Hang tight, this may take a few minutes     │ measured · ≈0 source
                                                 │ estimates
-──────────────────────────────────────────────┐ │ Tab controls · Alt+C hide ·
-› Input disabled until setup completes.       │ │ Ctrl+click open file
-──────────────────────────────────────────────┘ │
-       100% context left · Tab Context Ledger   │ SMART PRUNE       [···] SYNC
+────────────────────────────────────────────────┤ Tab controls · Alt+C hide ·
+› Input disabled until setup completes.         │ Ctrl+click open file
+────────────────────────────────────────────────┤
+        100% context left · Tab Context Ledger  │ SMART PRUNE       [···] SYNC
                                                 │ Reading current thread state
                                                 │ Syncing… · /smart-prune on|
                                                 │ off sets an explicit state

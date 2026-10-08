@@ -7,14 +7,14 @@ expression: rendered
 Elpising… (0s • esc to interrupt)               │ CONTEXT LEDGER  context not
                                                 │ measured · ≈0 source
 • Queued follow-up inputs                       │ estimates
-┌─────────────────────────────────────────────┐ │ Tab controls · Alt+C hide ·
-│ Only question?                              │ │ Ctrl+click open file
-│                                             │ │
-│ A typed answer                              │ │ SMART PRUNE       [···] SYNC
-│                                             │ │ Reading current thread state
-│ enter submit   ctrl+] skip                  │ │ Syncing… · /smart-prune on|
-│ shift+→ main prompt                         │ │ off sets an explicit state
-└─────────────────────────────────────────────┘ │
+┌───────────────────────────────────────────────┤ Tab controls · Alt+C hide ·
+│ Only question?                                │ Ctrl+click open file
+│                                               │
+│ A typed answer                                │ SMART PRUNE       [···] SYNC
+│                                               │ Reading current thread state
+│ enter submit   ctrl+] skip                    │ Syncing… · /smart-prune on|
+│ shift+→ main prompt                           │ off sets an explicit state
+└───────────────────────────────────────────────┤
                                                 │ SUBAGENTS          [━━━●] ON
                                                 │ May delegate to other agents
                                                 │

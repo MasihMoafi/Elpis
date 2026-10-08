@@ -8,10 +8,10 @@ expression: snapshot
 › Google Drive  [App] Connected files           │ measured · ≈0 source
                                                 │ estimates
   enter insert · esc close                      │ Tab controls · Alt+C hide ·
-──────────────────────────────────────────────┐ │ Ctrl+click open file
-› $                                           │ │
-──────────────────────────────────────────────┘ │ SMART PRUNE       [···] SYNC
-       100% context left · Tab Context Ledger   │ Reading current thread state
+────────────────────────────────────────────────┤ Ctrl+click open file
+› $                                             │
+────────────────────────────────────────────────┤ SMART PRUNE       [···] SYNC
+        100% context left · Tab Context Ledger  │ Reading current thread state
                                                 │ Syncing… · /smart-prune on|
                                                 │ off sets an explicit state
                                                 │

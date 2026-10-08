@@ -4,4 +4,4 @@ assertion_line: 55
 expression: composer_lines
 ---
  Elpis · model gpt-6.1-sol default · location /tmp/project
-──────────────────────────────────────────────┐ │ CONTEXT LEDGER  context not
+────────────────────────────────────────────────┐ CONTEXT LEDGER  context not

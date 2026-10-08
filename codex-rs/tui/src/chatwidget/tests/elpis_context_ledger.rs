@@ -209,6 +209,32 @@ fn composer_box_top(buf: &ratatui::buffer::Buffer, columns: std::ops::Range<u16>
 }
 
 #[tokio::test]
+async fn composer_box_and_ledger_share_one_rule() -> anyhow::Result<()> {
+    let root = tempdir()?;
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
+    configure_ledger_sources(&mut chat, root.path())?;
+    let buf = render_full(&chat.as_renderable());
+    let screen = rows(&buf, 0..WIDTH).join("\n");
+    let rule_x = WIDTH - chat.context_ledger_width(WIDTH);
+    let top = composer_box_top(&buf, 0..rule_x);
+    let bottom = top + 2;
+
+    // The box's top and bottom rules end on the Ledger rule and join it.
+    assert_eq!(buf[(rule_x, top)].symbol(), "┐", "{screen}");
+    assert_eq!(buf[(rule_x, top + 1)].symbol(), "│", "{screen}");
+    assert_eq!(buf[(rule_x, bottom)].symbol(), "┤", "{screen}");
+    // The box draws no second line beside the rule.
+    for y in top..=bottom {
+        let edge = buf[(rule_x - 1, y)].symbol();
+        assert!(
+            !matches!(edge, "│" | "┐" | "┘"),
+            "row {y}: {edge:?}\n{screen}"
+        );
+    }
+    Ok(())
+}
+
+#[tokio::test]
 async fn ledger_keeps_codex_right_margin_and_measures_wide_names() -> anyhow::Result<()> {
     let root = tempdir()?;
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;

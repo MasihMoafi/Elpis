@@ -35,9 +35,12 @@ use crate::wrapping::word_wrap_lines;
 mod timer;
 pub(crate) use timer::StatusTimer;
 
-// Elpis: the status header is still text; no shimmer.
+// Elpis: the Elpising gradient (crate::elpis_motion) replaces the summary shimmer.
 #[path = "summary_shimmer.rs"]
-#[cfg_attr(not(test), expect(dead_code, reason = "Elpis: the header does not shimmer"))]
+#[cfg_attr(
+    not(test),
+    expect(dead_code, reason = "Elpis: replaced by the Elpising gradient")
+)]
 mod summary_shimmer;
 
 pub(crate) const STATUS_DETAILS_DEFAULT_MAX_LINES: usize = 3;
@@ -223,14 +226,21 @@ impl StatusIndicator<'_> {
         let elapsed_duration = self.elapsed_at(now);
         let pretty_elapsed = fmt_elapsed_compact(elapsed_duration.as_secs());
 
-        // Elpis: "Elpising…" as still text, with no leading spinner.
+        // Elpis: "Elpising…" in the paced orange gradient, with no leading spinner.
         let header = if row.header == "Working" {
             "Elpising…"
         } else {
             row.header.as_str()
         };
         let mut spans = Vec::with_capacity(5);
-        spans.push(Span::from(header.to_string()));
+        if self.elpis_motion_active() {
+            let (sample_at, _) = crate::elpis_motion::paced_motion(elapsed_duration);
+            spans.extend(crate::elpis_motion::animated_text_at(header, sample_at));
+        } else {
+            spans.extend(crate::elpis_motion::animated_text(
+                header, /*animated*/ false,
+            ));
+        }
         if !spans.is_empty() {
             spans.push(" ".into());
         }
@@ -276,6 +286,11 @@ impl StatusIndicator<'_> {
 }
 
 impl StatusIndicator<'_> {
+    // Elpis: the gradient sweeps only while the clock runs and motion is allowed.
+    fn elpis_motion_active(&self) -> bool {
+        self.row.animations_enabled && self.row.effects.shimmer && !self.timer.is_paused
+    }
+
     fn elapsed_at(&self, now: Instant) -> Duration {
         self.timer.display_started_at.map_or_else(
             || self.timer.elapsed_at(now),
@@ -294,10 +309,13 @@ impl Renderable for StatusIndicator<'_> {
             return;
         }
         if self.row.animations_enabled || self.timer.display_started_at.is_some() {
-            // Elpis: still text; the elapsed seconds tick once a second.
-            self.row
-                .frame_requester
-                .schedule_frame_in(Duration::from_millis(1_000));
+            // Elpis: one sweep at the motion tick, then rest until the next sweep.
+            let interval = if self.elpis_motion_active() {
+                crate::elpis_motion::paced_motion(self.elapsed_at(Instant::now())).1
+            } else {
+                Duration::from_millis(1_000)
+            };
+            self.row.frame_requester.schedule_frame_in(interval);
         }
         Paragraph::new(Text::from(self.lines(area.width))).render(area, buf);
     }

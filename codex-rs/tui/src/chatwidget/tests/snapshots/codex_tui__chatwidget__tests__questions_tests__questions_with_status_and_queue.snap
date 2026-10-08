@@ -9,16 +9,16 @@ Elpising… (0s • esc to interrupt)               │ CONTEXT LEDGER  context 
                                                 │ measured · ≈0 source
 • Queued follow-up inputs                       │ estimates
   ↳ queued follow-up                            │ Tab controls · Alt+C hide ·
-┌─────────────────────────────────────────────┐ │ Ctrl+click open file
-│ 1 of 2                                      │ │
-│                                             │ │ SMART PRUNE       [···] SYNC
-│ Which way?                                  │ │ Reading current thread state
-│                                             │ │ Syncing… · /smart-prune on|
-│ Type your answer                            │ │ off sets an explicit state
-│                                             │ │
-│ enter submit   ctrl+] skip                  │ │ SUBAGENTS          [━━━●] ON
-│ shift+→ main prompt   shift+← next question │ │ May delegate to other agents
-└─────────────────────────────────────────────┘ │
+┌───────────────────────────────────────────────┤ Ctrl+click open file
+│ 1 of 2                                        │
+│                                               │ SMART PRUNE       [···] SYNC
+│ Which way?                                    │ Reading current thread state
+│                                               │ Syncing… · /smart-prune on|
+│ Type your answer                              │ off sets an explicit state
+│                                               │
+│ enter submit   ctrl+] skip                    │ SUBAGENTS          [━━━●] ON
+│ shift+→ main prompt   shift+← next question   │ May delegate to other agents
+└───────────────────────────────────────────────┤
                                                 │ CONTEXT WINDOW  usage
                                                 │ unavailable
                                                 │ Context measurement
@@ -33,10 +33,10 @@ ONLY QUESTIONS
 • Queued follow-up inputs                       │ CONTEXT LEDGER  context not
   ? 2 questions                                 │ measured · ≈0 source
     shift+← to answer                           │ estimates
-──────────────────────────────────────────────┐ │ Tab controls · Alt+C hide ·
-› main draft                                  │ │ Ctrl+click open file
-──────────────────────────────────────────────┘ │
-       100% context left · Tab Context Ledger   │ SMART PRUNE       [···] SYNC
+────────────────────────────────────────────────┤ Tab controls · Alt+C hide ·
+› main draft                                    │ Ctrl+click open file
+────────────────────────────────────────────────┤
+        100% context left · Tab Context Ledger  │ SMART PRUNE       [···] SYNC
                                                 │ Reading current thread state
                                                 │ Syncing… · /smart-prune on|
                                                 │ off sets an explicit state

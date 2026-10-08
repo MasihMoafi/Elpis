@@ -1,6 +1,5 @@
 ---
 source: tui/src/bottom_pane/footer.rs
-assertion_line: 1247
 expression: terminal.backend()
 ---
 "                                                                              Plan mode (/plan to leave) · IDE context  "

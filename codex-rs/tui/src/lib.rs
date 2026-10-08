@@ -144,6 +144,7 @@ mod elpis_context;
 // Elpis: Context Ledger event value types.
 mod elpis_ledger_events;
 // Elpis: the Elpis motion palette.
+mod elpis_motion;
 mod experimental_features;
 mod markdown_copy;
 mod permission_discovery;

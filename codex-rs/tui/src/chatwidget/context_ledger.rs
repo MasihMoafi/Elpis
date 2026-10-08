@@ -79,6 +79,16 @@ impl LedgerSourceGroup {
         }
     }
 
+    fn color(self) -> Color {
+        let index = match self {
+            Self::SessionContinuity => 0,
+            Self::UserFiles => 1,
+            Self::DurableMemory => 2,
+            Self::Instructions => 3,
+        };
+        source_group_colors(default_bg(), stdout_color_level())[index]
+    }
+
     fn marker(self) -> &'static str {
         match self {
             Self::SessionContinuity => "⬟",
@@ -166,15 +176,6 @@ impl ChatWidget {
             return 0;
         }
         LEDGER_WIDTH.min(terminal_width * 2 / 5)
-    }
-
-    /// The columns the Ledger takes from the composer's side: its width and one blank column
-    /// between the composer box and the Ledger's rule, so the two never touch.
-    pub(super) fn context_ledger_footprint(&self, terminal_width: u16) -> u16 {
-        match self.context_ledger_width(terminal_width) {
-            0 => 0,
-            width => width + 1,
-        }
     }
 
     /// Full screen keeps at least this many transcript rows above the Ledger.
@@ -464,7 +465,7 @@ impl ChatWidget {
             Style::default().dim()
         };
         let warning = if light || background.is_none() {
-            Style::default().bold()
+            crate::elpis_motion::accent_style().bold()
         } else {
             Style::default().fg(Color::Yellow).bold()
         };
@@ -578,6 +579,20 @@ impl ChatWidget {
             .max(1);
         let [violet, teal, emerald, green] =
             smart_prune_on_colors(default_bg(), stdout_color_level());
+        let toggle_label_spans = |label, enabled| {
+            if enabled {
+                // These rows repaint only when the ledger's own state changes,
+                // so reading a clock here strands the label at whatever phase
+                // the last rebuild happened to catch. Hold the gradient still.
+                let mut spans = crate::elpis_motion::text(label);
+                for span in &mut spans {
+                    span.style = span.style.add_modifier(ratatui::style::Modifier::BOLD);
+                }
+                spans
+            } else {
+                vec![Span::styled(label, brand.bold())]
+            }
+        };
         let switch_spans = if !self.smart_prune_synced && pending_smart_prune_enabled.is_none() {
             vec![Span::styled(
                 smart_prune_button,
@@ -595,7 +610,11 @@ impl ChatWidget {
             vec![Span::styled(smart_prune_button, muted)]
         };
         let mut smart_prune_spans = vec![Span::styled(smart_prune_cursor, brand.bold())];
-        smart_prune_spans.push(smart_prune_label.bold());
+        smart_prune_spans.extend(toggle_label_spans(
+            smart_prune_label,
+            smart_prune_enabled
+                && (self.smart_prune_synced || pending_smart_prune_enabled.is_some()),
+        ));
         smart_prune_spans.push(Span::raw(" ".repeat(smart_prune_pad)));
         smart_prune_spans.extend(switch_spans);
         lines.push(Line::from(smart_prune_spans));
@@ -666,7 +685,7 @@ impl ChatWidget {
         {
             let status = attempt.status.replace('_', " ");
             let status_style = match attempt.status.as_str() {
-                "admitted" => Style::default().bold(),
+                "admitted" => crate::elpis_motion::accent_style(),
                 "unchanged" => muted,
                 _ => warning,
             };
@@ -719,7 +738,7 @@ impl ChatWidget {
                 source_links.push((lines.len(), destination));
                 lines.push(Line::from(Span::styled(
                     "Read attempt evidence",
-                    Style::default().underlined(),
+                    crate::elpis_motion::accent_style().underlined(),
                 )));
             }
         }
@@ -788,7 +807,7 @@ impl ChatWidget {
             vec![Span::styled(subagents_button, muted)]
         };
         let mut subagents_spans = vec![Span::styled(subagents_cursor, brand.bold())];
-        subagents_spans.push(subagents_label.bold());
+        subagents_spans.extend(toggle_label_spans(subagents_label, subagents_enabled));
         subagents_spans.push(Span::raw(" ".repeat(subagents_pad)));
         subagents_spans.extend(subagents_switch_spans);
         lines.push(Line::from(subagents_spans));
@@ -900,7 +919,7 @@ impl ChatWidget {
                 .filter(|(_, source)| source.admitted)
                 .map(|(_, source)| source.estimated_tokens)
                 .sum::<u64>();
-            let cat_style = Style::default();
+            let cat_style = Style::default().fg(group.color());
             lines.push(Line::from(vec![
                 Span::styled(format!("{} ", group.marker()), cat_style),
                 Span::styled(group.display_name(), cat_style.bold()),
@@ -971,7 +990,10 @@ impl ChatWidget {
                     Span::raw(" "),
                 ];
                 if selected {
-                    row.push(shown_name.clone().bold());
+                    row.extend(crate::elpis_motion::animated_text(
+                        &shown_name,
+                        self.config.animations,
+                    ));
                 } else {
                     row.push(Span::styled(
                         shown_name,
@@ -1069,23 +1091,25 @@ impl ChatWidget {
     #[cfg(test)]
     pub(super) fn render_context_ledger(&self, area: Rect, buf: &mut Buffer) {
         let ledger_lines = self.ledger_lines(usize::from(ledger_content_width(area.width)));
-        self.render_context_ledger_lines(area, buf, ledger_lines);
+        self.render_context_ledger_lines(area, buf, ledger_lines, /*box_rules*/ &[]);
     }
 
     /// Draws the Ledger in `area`: its rule in the first column, then its rows after one blank
-    /// column, so that Codex's right margin stays free.
+    /// column, so that Codex's right margin stays free. `box_rules` holds the rows of the top
+    /// and bottom rules of each box that ends on the Ledger's rule.
     pub(super) fn render_context_ledger_lines(
         &self,
         area: Rect,
         buf: &mut Buffer,
         ledger_lines: LedgerLines,
+        box_rules: &[(u16, u16)],
     ) {
         let LedgerLines {
             rows,
             source_row_ranges,
             source_links,
         } = ledger_lines;
-        render_ledger_rule(area, buf);
+        render_ledger_rule(area, box_rules, buf);
         let content_width =
             ledger_content_width(area.width).min(area.width.saturating_sub(LEDGER_LEFT_COLS));
         if content_width == 0 {
@@ -1884,6 +1908,25 @@ fn smart_prune_on_colors(
     )
 }
 
+/// Source group headings: the Deus Ex gold family (style/elpis.rs primary color).
+fn source_group_colors(
+    terminal_bg: Option<(u8, u8, u8)>,
+    color_level: StdoutColorLevel,
+) -> [Color; 4] {
+    ledger_palette(
+        terminal_bg,
+        color_level,
+        Color::Yellow,
+        [(128, 88, 10), (110, 76, 6), (140, 96, 12), (96, 70, 20)],
+        [
+            (229, 187, 104),
+            (245, 205, 128),
+            (214, 170, 90),
+            (196, 160, 96),
+        ],
+    )
+}
+
 fn ledger_palette(
     terminal_bg: Option<(u8, u8, u8)>,
     color_level: StdoutColorLevel,
@@ -1912,14 +1955,26 @@ fn ledger_palette(
     palette.map(|color| best_color_for_level(color, color_level))
 }
 
-/// The Ledger's left rule. It stands apart from the composer box.
-fn render_ledger_rule(area: Rect, buf: &mut Buffer) {
+/// The Ledger's left rule. The top and bottom rules of each box beside it end on it, so it
+/// joins them.
+fn render_ledger_rule(area: Rect, box_rules: &[(u16, u16)], buf: &mut Buffer) {
     if area.width == 0 {
         return;
     }
     let style = crate::style::rule_style();
     for y in area.top()..area.bottom() {
-        buf[(area.x, y)].set_symbol("│").set_style(style);
+        let joins = box_rules
+            .iter()
+            .any(|(top, bottom)| y == *top || y == *bottom);
+        let (up, down) = (y > area.top(), y + 1 < area.bottom());
+        let symbol = match (joins, up, down) {
+            (false, _, _) => "│",
+            (true, true, true) => "┤",
+            (true, false, true) => "┐",
+            (true, true, false) => "┘",
+            (true, false, false) => "─",
+        };
+        buf[(area.x, y)].set_symbol(symbol).set_style(style);
     }
 }
 
@@ -2006,6 +2061,28 @@ mod tests {
             levels[3] - levels[0] > 0.35,
             "categories need distinct brightness"
         );
+    }
+
+    #[test]
+    fn ledger_source_palette_stays_in_the_gold_family() {
+        for bg in [(255, 255, 255), (17, 18, 20)] {
+            crate::terminal_palette::with_test_default_colors(
+                crate::terminal_probe::DefaultColors {
+                    fg: (120, 120, 120),
+                    bg,
+                },
+                || {
+                    for color in LedgerSourceGroup::ALL.map(LedgerSourceGroup::color) {
+                        match color {
+                            Color::Rgb(r, g, b) => assert!(r >= g && g > b),
+                            Color::Black if is_light(bg) => {}
+                            Color::Yellow | Color::Indexed(_) => {}
+                            other => panic!("unexpected ledger accent: {other:?}"),
+                        }
+                    }
+                },
+            );
+        }
     }
 
     #[test]

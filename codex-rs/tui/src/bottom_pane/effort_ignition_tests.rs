@@ -59,7 +59,7 @@ fn paint(tier: EffortTier, style: IgnitionStyle, elapsed: Duration, area: Rect, 
             area.height.saturating_sub(1).min(1),
         ),
         buf,
-        // Elpis: expectations follow the quiet sparks on the composer surface.
+        // Elpis: expectations follow the Elpis gold palette and quiet sparks.
         band_rgb: composer_bg_rgb(term_bg),
         color_level: StdoutColorLevel::TrueColor,
     };
@@ -112,9 +112,9 @@ fn prompt_accent_blends_with_the_terminal_foreground() {
             EffortTier::Ultra,
             (224, 220, 214),
             (18, 22, 28),
-            (205, 176, 233),
+            (226, 200, 136),
         ),
-        (EffortTier::Max, (30, 32, 36), (250, 248, 244), (100, 63, 18)),
+        (EffortTier::Max, (30, 32, 36), (250, 248, 244), (99, 69, 18)),
     ] {
         assert_eq!(
             tier.accent_color_for(

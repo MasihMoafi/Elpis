@@ -231,7 +231,7 @@ impl ChatWidget {
 impl ChatWidget {
     /// The width left of the Context Ledger, where rows beside the composer must fit.
     pub(crate) fn width_beside_context_ledger(&self, width: u16) -> u16 {
-        width.saturating_sub(self.context_ledger_footprint(width))
+        width.saturating_sub(self.context_ledger_width(width))
     }
 }
 
@@ -245,14 +245,12 @@ pub(super) struct BesideContextLedger<'a> {
 }
 
 impl BesideContextLedger<'_> {
-    /// The composer's side and the Ledger's width; a blank column stands between them.
     fn split(&self, area: ratatui::layout::Rect) -> (ratatui::layout::Rect, u16) {
         let ledger_width = self.chat_widget.context_ledger_width(area.width);
         let pane = ratatui::layout::Rect::new(
             area.x,
             area.y,
-            area.width
-                .saturating_sub(self.chat_widget.context_ledger_footprint(area.width)),
+            area.width.saturating_sub(ledger_width),
             area.height,
         );
         (pane, ledger_width)
@@ -262,29 +260,45 @@ impl BesideContextLedger<'_> {
 impl crate::render::renderable::Renderable for BesideContextLedger<'_> {
     fn render(&self, area: ratatui::layout::Rect, buf: &mut ratatui::buffer::Buffer) {
         let (pane, ledger_width) = self.split(area);
-        self.bottom_pane.render(pane, buf);
         let Some((ledger_height, ledger_lines)) = self
             .chat_widget
             .context_ledger_lines_with_height(ledger_width)
         else {
+            self.bottom_pane.render(pane, buf);
             return;
         };
+        // Beside the Ledger, its rule is the right side of each Elpis box that ends on it.
+        let boxes = crate::style::render_against_ledger_rule(pane.right(), || {
+            self.bottom_pane.render(pane, buf)
+        });
+        // The rule joins each box's top and bottom rules, so it reaches the lowest box's
+        // bottom rule even when the Ledger is shorter.
+        let box_rules = boxes
+            .iter()
+            .map(|area| (area.top(), area.bottom() - 1))
+            .collect::<Vec<_>>();
+        let rule_rows = box_rules
+            .iter()
+            .map(|(_, bottom)| bottom + 1 - area.y)
+            .max()
+            .unwrap_or(0);
         self.chat_widget.render_context_ledger_lines(
             ratatui::layout::Rect::new(
-                area.right().saturating_sub(ledger_width),
+                pane.right(),
                 area.y,
                 ledger_width,
-                ledger_height.min(area.height),
+                ledger_height.max(rule_rows).min(area.height),
             ),
             buf,
             ledger_lines,
+            &box_rules,
         );
     }
 
     fn desired_height(&self, width: u16) -> u16 {
         let ledger_width = self.chat_widget.context_ledger_width(width);
         self.bottom_pane
-            .desired_height(width.saturating_sub(self.chat_widget.context_ledger_footprint(width)))
+            .desired_height(width.saturating_sub(ledger_width))
             .max(self.chat_widget.context_ledger_desired_height(ledger_width))
     }
 
