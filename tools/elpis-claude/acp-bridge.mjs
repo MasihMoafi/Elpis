@@ -263,7 +263,19 @@ wss.on("connection", (ws) => {
   clients.add(ws);
   const toOthers = (msg) => { const line = JSON.stringify(msg); for (const c of clients) if (c !== ws && c.readyState === 1) c.send(line); };
   const shareHelper = (msg) => { if (msg?.method === "thread/status/changed" && helperThreads.has(msg.params?.threadId)) toOthers(msg); };
-  const toTui = (msg) => { shareHelper(msg); ws.send(JSON.stringify(msg)); };
+  // A chat's latest plan, kept in the store: the engine sends plans only while a turn runs, so
+  // reopening a chat (GPT or Claude) shows it again.
+  const notePlan = (msg) => {
+    if (msg?.method !== "turn/plan/updated" || !msg.params?.threadId) return;
+    const { threadId, turnId, explanation, plan } = msg.params;
+    updateStore((st) => { st[threadId] = { ...st[threadId], plan: { turnId, explanation: explanation ?? null, plan } }; });
+  };
+  const replayPlan = async (threadId) => {
+    await storeChain;
+    const saved = (await loadStore())[threadId]?.plan;
+    if (saved?.plan?.length) notify("turn/plan/updated", { threadId, turnId: saved.turnId, explanation: saved.explanation, plan: saved.plan });
+  };
+  const toTui = (msg) => { shareHelper(msg); notePlan(msg); ws.send(JSON.stringify(msg)); };
   const notify = (method, params) => toTui({ method, params, emittedAtMs: now() });
   const engine = spawn(process.env.ELPIS_ENGINE_BIN ?? `${HOME}/.local/bin/elpis`, ["app-server"], { stdio: ["pipe", "pipe", "ignore"] });
   const threadCwd = new Map();
@@ -525,6 +537,7 @@ wss.on("connection", (ws) => {
     if (th?.id && th?.cwd) { threadCwd.set(th.id, th.cwd); threadSeen.set(th.id, { ...th, turns: [] }); }
     if (th?.id && parsed?.result?.approvalPolicy) threadPolicy.set(th.id, parsed.result.approvalPolicy);
     shareHelper(parsed);
+    notePlan(parsed);
     if (parsed && engineReqs.has(parsed.id) && !parsed.method) {
       const p = engineReqs.get(parsed.id); engineReqs.delete(parsed.id);
       parsed.error ? p.reject(parsed.error) : p.resolve(parsed.result);
@@ -654,8 +667,10 @@ wss.on("connection", (ws) => {
         return;
       }
     }
+    let reopened = null;
     if (parsed && pendingResume.has(parsed.id) && parsed.result?.thread?.id) {
       pendingResume.delete(parsed.id);
+      reopened = parsed.result.thread.id;
       await storeChain;
       const saved = (await loadStore())[parsed.result.thread.id];
       if (saved?.model) {
@@ -666,6 +681,7 @@ wss.on("connection", (ws) => {
         Object.assign(parsed.result.thread, { model: saved.model, reasoningEffort: saved.effort ?? null });
         log(`resume ${parsed.result.thread.id} -> ${saved.model}`);
         ws.send(JSON.stringify(parsed));
+        replayPlan(parsed.result.thread.id);
         return;
       }
     }
@@ -694,6 +710,7 @@ wss.on("connection", (ws) => {
       return;
     }
     ws.send(helpersMarked ? JSON.stringify(parsed) : line);
+    if (reopened) replayPlan(reopened);
   });
 
   const askTui = (method, params) => new Promise((resolve) => {

@@ -273,9 +273,15 @@ for (const s of scenarios) {
     const last = plans.at(-1)?.params?.plan ?? [];
     // Each update draws an "Updated Plan" row, so an unchanged list must not come twice in a row.
     const repeats = plans.filter((m, i) => i > 0 && JSON.stringify(m.params.plan) === JSON.stringify(plans[i - 1].params.plan)).length;
+    // Reopening the chat shows its latest plan again (the engine sends plans only while live).
+    const reopenFrom = seen.length;
+    await call("thread/resume", { threadId });
+    await new Promise((r) => setTimeout(r, 1500));
+    const replayed = seen.slice(reopenFrom).find((m) => m.method === "turn/plan/updated" && m.params.threadId === threadId)?.params?.plan;
     last.some((p) => /look around/i.test(p.step)) && last.every((p) => ["pending", "inProgress", "completed"].includes(p.status)) && repeats === 0
-      ? console.log(`PASS plan (${plans.length} plan updates, none repeated, last: ${last.map((p) => `${p.step}=${p.status}`).join(", ")})`)
-      : fail(`plan: ${plans.length} updates, ${repeats} repeated, last=${JSON.stringify(last)}`);
+      && JSON.stringify(replayed) === JSON.stringify(last)
+      ? console.log(`PASS plan (${plans.length} plan updates, none repeated, last: ${last.map((p) => `${p.step}=${p.status}`).join(", ")}; shown again on reopen)`)
+      : fail(`plan: ${plans.length} updates, ${repeats} repeated, last=${JSON.stringify(last)} replayed=${JSON.stringify(replayed ?? null)}`);
   } else if (s === "shell") {
     // A shell line with an operator must show as typed, not as `echo one '&&' echo two`.
     const from = seen.length;
