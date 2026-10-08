@@ -750,6 +750,11 @@ impl StatusHistoryCell {
             StatusAccountDisplay::ApiKey => {
                 "API key configured (run elpis login to use ChatGPT)".to_string()
             }
+            StatusAccountDisplay::Subscription { name, email, plan } => match (email, plan) {
+                (Some(email), Some(plan)) => format!("{email} ({plan}) · {name}"),
+                (Some(email), None) => format!("{email} · {name}"),
+                (None, _) => name.clone(),
+            },
         });
 
         let mut labels: Vec<String> = vec!["Model", "Directory", "Permissions", "Agents.md"]

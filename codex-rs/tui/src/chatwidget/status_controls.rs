@@ -250,12 +250,18 @@ impl ChatWidget {
             .collect();
         let agents_summary =
             crate::status::compose_agents_summary(&self.config, &self.instruction_source_paths);
+        let subscription_account = super::elpis_providers::subscription_account(
+            self.config.codex_home.as_path(),
+            self.current_model(),
+        );
         let (cell, handle) = crate::status::new_status_output_with_rate_limits_handle(
             &self.config,
             self.requires_openai_auth,
             self.thread_id.map(|_| self.displayed_chat_provider()),
             self.remote_connection.as_ref(),
-            self.status_account_display.as_ref(),
+            subscription_account
+                .as_ref()
+                .or(self.status_account_display.as_ref()),
             token_info,
             total_usage,
             &self.thread_id,

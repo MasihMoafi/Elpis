@@ -652,3 +652,34 @@ async fn status_command_remains_visible_when_thread_changes_during_usage_refresh
     ));
     assert!(drain_insert_history(&mut rx).is_empty());
 }
+
+/// A Claude or Antigravity chat answers on that subscription, so /status names its account
+/// (recorded by the bridge in Elpis's home), not the ChatGPT one.
+#[tokio::test]
+async fn status_names_the_subscription_account_of_a_bridged_chat() {
+    let (mut chat, mut rx, _op_rx) =
+        make_chatwidget_manual(Some("agy/gemini-3.8-flash-high")).await;
+    chat.status_account_display = Some(StatusAccountDisplay::ChatGpt {
+        email: Some("gpt@example.com".to_string()),
+        plan: Some("Pro".to_string()),
+    });
+    let bridge_dir = chat.config.codex_home.join("elpis-claude");
+    std::fs::create_dir_all(&bridge_dir).expect("bridge dir");
+    std::fs::write(
+        bridge_dir.join("accounts.json"),
+        r#"{"agy":{"email":"gemini@example.com"},"claude":{"email":"claude@example.com","plan":"Max"}}"#,
+    )
+    .expect("accounts file");
+
+    chat.dispatch_command(SlashCommand::Status);
+
+    let rendered = match rx.try_recv() {
+        Ok(AppEvent::InsertHistoryCell(cell)) => {
+            lines_to_single_string(&cell.display_lines(/*width*/ 100))
+        }
+        other => panic!("expected status output, got {other:?}"),
+    };
+    assert!(rendered.contains("gemini@example.com"), "{rendered}");
+    assert!(rendered.contains("Antigravity"), "{rendered}");
+    assert!(!rendered.contains("gpt@example.com"), "{rendered}");
+}

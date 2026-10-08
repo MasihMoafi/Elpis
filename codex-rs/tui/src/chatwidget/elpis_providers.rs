@@ -39,6 +39,8 @@ pub(crate) struct BridgedProvider {
     route: &'static str,
     /// Its model list's subtitle while it lists models.
     answers: &'static str,
+    /// Its entry in the bridge's account record (`elpis-claude/accounts.json`).
+    account_key: &'static str,
 }
 
 static BRIDGED_PROVIDERS: [BridgedProvider; 2] = [
@@ -50,6 +52,7 @@ static BRIDGED_PROVIDERS: [BridgedProvider; 2] = [
         credential: "your Claude sign-in",
         route: "Claude Code, through the Elpis Claude bridge",
         answers: "Claude Code answers; this conversation and its provider stay.",
+        account_key: "claude",
     },
     BridgedProvider {
         model_prefix: "agy/",
@@ -59,6 +62,7 @@ static BRIDGED_PROVIDERS: [BridgedProvider; 2] = [
         credential: "your Antigravity sign-in",
         route: "the Antigravity CLI (agy), through the Elpis Claude bridge",
         answers: "Antigravity answers; this conversation and its provider stay.",
+        account_key: "agy",
     },
 ];
 
@@ -85,6 +89,30 @@ pub(crate) fn bridged_provider_of_model(model: &str) -> Option<&'static BridgedP
     BRIDGED_PROVIDERS
         .iter()
         .find(|bridged| model.starts_with(bridged.model_prefix))
+}
+
+/// The account a Claude or Antigravity chat answers on, as the bridge recorded it in Elpis's
+/// home; `None` for any other model.
+pub(crate) fn subscription_account(
+    codex_home: &std::path::Path,
+    model: &str,
+) -> Option<crate::status::StatusAccountDisplay> {
+    let bridged = bridged_provider_of_model(model)?;
+    let record = std::fs::read_to_string(codex_home.join("elpis-claude").join("accounts.json"))
+        .ok()
+        .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok());
+    let entry = record.as_ref().and_then(|record| record.get(bridged.account_key));
+    let field = |name: &str| {
+        entry
+            .and_then(|entry| entry.get(name))
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_string)
+    };
+    Some(crate::status::StatusAccountDisplay::Subscription {
+        name: bridged.name.to_string(),
+        email: field("email"),
+        plan: field("plan"),
+    })
 }
 
 pub(crate) fn is_bridged_model(model: &str) -> bool {
