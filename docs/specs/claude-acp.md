@@ -87,7 +87,7 @@ Known gaps:
 
 Evidence (2026-10-07): e2e `pick` — Opus called `list_models`, gave the easy task to `gpt-6-luna`, the hard one to `gpt-6-astra` and the Gemini task to `agy/gemini-3.8-flash`; on the old code it guessed models and the Gemini task failed. e2e `helper-parent` — the helper lists under its parent; it failed before the parent link. e2e `delegate` (word.txt) failed with `ACP_BRIDGE_NO_AGENTS=1`.
 
-Limits: a helper cannot ask for approval (no UI); writes are opt-in per call. It does not see the parent's conversation, only the task text.
+A helper asks before acting when its chat does: it inherits the chat's approval policy, and its approval requests travel from the delegate tool's connection to the TUI (e2e helper-approval). Writes are opt-in per call. It does not see the parent's conversation, only the task text.
 
 ## Automated checks
 

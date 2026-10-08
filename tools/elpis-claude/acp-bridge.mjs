@@ -269,6 +269,20 @@ wss.on("listening", () => log(`LISTENING ${wss.address().port}`));
 // bridge: its start (with its parent) and its status changes go to every other connection.
 const clients = new Set();
 const helperThreads = new Set();
+// A helper asks the user like its chat: its approval requests go from the delegate tool's
+// connection to a TUI's, and the answer comes back. The delegate tool names itself
+// "elpis-agents" in initialize; every other connection is a TUI.
+const helperConns = new WeakSet();
+const relayed = new Map(); // id sent to the TUI -> answers the helper's request
+const chatPolicy = new Map(); // a chat's approval policy, for the helpers it starts
+function relayToTui(msg, answer) {
+  const tui = [...clients].find((c) => !helperConns.has(c) && c.readyState === 1);
+  if (!tui) return false;
+  const id = `relay-${randomUUID()}`;
+  relayed.set(id, answer);
+  tui.send(JSON.stringify({ ...msg, id }));
+  return true;
+}
 wss.on("connection", (ws) => {
   clients.add(ws);
   const toOthers = (msg) => { const line = JSON.stringify(msg); for (const c of clients) if (c !== ws && c.readyState === 1) c.send(line); };
@@ -546,9 +560,11 @@ wss.on("connection", (ws) => {
     try { parsed = JSON.parse(line); } catch {}
     const th = parsed?.result?.thread ?? parsed?.params?.thread;
     if (th?.id && th?.cwd) { threadCwd.set(th.id, th.cwd); threadSeen.set(th.id, { ...th, turns: [] }); }
-    if (th?.id && parsed?.result?.approvalPolicy) threadPolicy.set(th.id, parsed.result.approvalPolicy);
+    if (th?.id && parsed?.result?.approvalPolicy) { threadPolicy.set(th.id, parsed.result.approvalPolicy); chatPolicy.set(th.id, parsed.result.approvalPolicy); }
     shareHelper(parsed);
     notePlan(parsed);
+    if (parsed?.method && parsed.id !== undefined && helperConns.has(ws) && helperThreads.has(parsed.params?.threadId)
+      && relayToTui(parsed, (reply) => engine.stdin.write(JSON.stringify({ id: parsed.id, ...(reply.error ? { error: reply.error } : { result: reply.result }) }) + "\n"))) return;
     if (parsed && engineReqs.has(parsed.id) && !parsed.method) {
       const p = engineReqs.get(parsed.id); engineReqs.delete(parsed.id);
       parsed.error ? p.reject(parsed.error) : p.resolve(parsed.result);
@@ -741,6 +757,7 @@ wss.on("connection", (ws) => {
   });
 
   const askTui = (method, params) => new Promise((resolve) => {
+    if (helperConns.has(ws) && relayToTui({ method, params }, (reply) => resolve(reply.result))) return;
     const id = `acp-bridge-${++reqSeq}`;
     bridgeRequests.set(id, resolve);
     toTui({ id, method, params });
@@ -1182,7 +1199,13 @@ wss.on("connection", (ws) => {
   // A new chat on a Claude model: the engine keeps its own model, the TUI is told Claude.
   async function startThread(msg) {
     const p = msg.params ?? {};
-    if (p.elpisParentThreadId) { pendingDelegation.set(msg.id, { parentThreadId: p.elpisParentThreadId, model: p.model ?? null, sandbox: p.sandbox ?? null }); delete p.elpisParentThreadId; }
+    if (p.elpisParentThreadId) {
+      pendingDelegation.set(msg.id, { parentThreadId: p.elpisParentThreadId, model: p.model ?? null, sandbox: p.sandbox ?? null });
+      // The helper asks before acting when its chat does.
+      const inherited = chatPolicy.get(p.elpisParentThreadId);
+      if (inherited && inherited !== "never") p.approvalPolicy = inherited;
+      delete p.elpisParentThreadId;
+    }
     let pick = null;
     if (isBridged(p.model)) pick = { model: p.model, effort: p.config?.model_reasoning_effort ?? null };
     else {
@@ -1327,6 +1350,12 @@ wss.on("connection", (ws) => {
       bridgeRequests.delete(msg.id);
       return;
     }
+    if (msg.id !== undefined && !msg.method && relayed.has(msg.id)) {
+      relayed.get(msg.id)(msg);
+      relayed.delete(msg.id);
+      return;
+    }
+    if (msg.method === "initialize" && msg.params?.clientInfo?.name === "elpis-agents") helperConns.add(ws);
     if (process.env.ACP_BRIDGE_DEBUG && msg.method && (process.env.ACP_BRIDGE_DEBUG === "all" || !/^thread\/(read|turns\/list|list|loaded)/.test(msg.method))) log(`tui-> ${line.slice(0, 600)}`);
     if ((msg.method === "thread/read" || msg.method === "thread/resume") && childIds.has(msg.params?.threadId)) { answerChild(msg); return; }
     if (msg.method === "thread/loaded/list") pendingChildList.set(msg.id, null);
@@ -1353,7 +1382,7 @@ wss.on("connection", (ws) => {
       const p = msg.params ?? {};
       if (isBridged(p.model)) { claudeModel.set(p.threadId, p.model); p.model = null; log(`thread ${p.threadId} -> ${claudeModel.get(p.threadId)}`); }
       else if (typeof p.model === "string") claudeModel.delete(p.threadId);
-      if (p.approvalPolicy) threadPolicy.set(p.threadId, p.approvalPolicy);
+      if (p.approvalPolicy) { threadPolicy.set(p.threadId, p.approvalPolicy); chatPolicy.set(p.threadId, p.approvalPolicy); }
       if (p.collaborationMode?.mode) {
         threadCollab.set(p.threadId, p.collaborationMode.mode);
         if (claudeModel.has(p.threadId) && p.collaborationMode.settings && !isBridged(p.collaborationMode.settings.model)) p.collaborationMode.settings.model = null;

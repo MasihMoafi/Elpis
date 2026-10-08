@@ -36,10 +36,11 @@ const approvals = [];
 const approvalOffers = [];
 let approvalAnswer = "accept";
 const seen = [];
+const approvalThreads = [];
 ws.on("message", (data) => {
   const m = JSON.parse(data.toString());
   if (m.id !== undefined && !m.method && pending.has(m.id)) { pending.get(m.id)(m); pending.delete(m.id); return; }
-  if (m.id !== undefined && m.method) { approvals.push(m.params?.command ?? m.method); approvalOffers.push(m.params?.availableDecisions ?? []); ws.send(JSON.stringify({ id: m.id, result: { decision: approvalAnswer } })); }
+  if (m.id !== undefined && m.method) { approvals.push(m.params?.command ?? m.method); approvalOffers.push(m.params?.availableDecisions ?? []); approvalThreads.push(m.params?.threadId); ws.send(JSON.stringify({ id: m.id, result: { decision: typeof approvalAnswer === "function" ? approvalAnswer(m) : approvalAnswer } })); }
   seen.push(m);
   for (const l of listeners) l(m);
 });
@@ -138,6 +139,24 @@ for (const s of scenarios) {
       const t = await turn(askId, [{ type: "text", text: `Use your shell tool to run exactly: touch ${file}   (in the current folder). Then reply DONE.`, text_elements: [] }], 240000);
       const ok = approvals.length > 0 && existsSync(join(dir, file)) === want;
       ok ? console.log(`PASS agy-approval ${answer} (asked ${approvals.length}x: ${approvals[0]}; file ${want ? "created" : "absent"})`) : fail(`agy-approval ${answer}: asked ${approvals.length}x, file exists=${existsSync(join(dir, file))}, turn ${t.status}, reply ${t.text.slice(0, 100)}`);
+    }
+    approvalAnswer = "accept";
+  } else if (s === "helper-approval") {
+    // A helper started by a chat that asks before acting asks the user too: its request reaches
+    // the TUI (it was declined unseen), a declined command does not run, an accepted one does.
+    const { existsSync } = await import("node:fs");
+    const st = await call("thread/start", { cwd: dir, approvalPolicy: "untrusted", sandbox: "workspace-write" });
+    const tid = st.result?.thread?.id;
+    await call("thread/settings/update", { threadId: tid, model: process.env.E2E_MODEL ?? "claude/opus", effort: "low" });
+    // The chat's own use of the delegate tool is accepted; the helper's commands are judged.
+    approvalAnswer = (m) => (/helper-denied/.test(m.params?.command ?? "") ? "decline" : "accept");
+    for (const [file, want] of [["helper-denied.txt", false], ["helper-made.txt", true]]) {
+      approvals.length = 0; approvalThreads.length = 0;
+      await turn(tid, [{ type: "text", text: `Use the delegate tool (model gpt-6-luna, effort low, allow_writes true) to have a helper run exactly: touch ${file}   in the current folder. Do not run it yourself. Then reply DONE.`, text_elements: [] }], 300000);
+      const fromHelper = approvalThreads.some((t) => t && t !== tid);
+      const ok = fromHelper && approvals.some((c) => String(c).includes(file)) && existsSync(join(dir, file)) === want;
+      ok ? console.log(`PASS helper-approval ${want ? "accept" : "decline"} (the helper asked: ${approvals.find((c) => String(c).includes(file))}; file ${want ? "created" : "absent"})`)
+        : fail(`helper-approval ${file}: approvals=${JSON.stringify(approvals)} from-helper=${fromHelper} exists=${existsSync(join(dir, file))}`);
     }
     approvalAnswer = "accept";
   } else if (s === "usage") {
