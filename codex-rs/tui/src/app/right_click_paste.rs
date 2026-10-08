@@ -71,7 +71,8 @@ impl App {
             }
             PasteSource::Primary => self.right_click_paste_environment.primary,
         };
-        if !tui.is_owned_screen()
+        // Elpis: Ctrl+V pastes in the inline screen too; mouse buttons there are the terminal's.
+        if (!tui.is_owned_screen() && !by_key)
             || self.overlay.is_some()
             || self.transcript_view.is_search_active()
             || !allowed

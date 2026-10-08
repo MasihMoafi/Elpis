@@ -1505,3 +1505,27 @@ async fn fullscreen_composer_mouse_copy_and_input_ownership() -> Result<()> {
     tui.set_owned_screen(/*owned*/ false)?;
     Ok(())
 }
+
+/// Elpis: the keyboard selects in the composer in either screen mode. Positive: inline, Ctrl+C
+/// copies a keyboard selection and keeps the draft. Negative: with nothing selected, Ctrl+C is
+/// left to its ordinary meaning.
+#[tokio::test]
+async fn inline_ctrl_c_copies_a_keyboard_selection() -> Result<()> {
+    let mut app = crate::app::test_support::make_test_app().await;
+    let mut tui = crate::tui::test_support::make_test_tui()?;
+    assert!(!tui.is_owned_screen());
+    let ctrl_c = TuiEvent::Key(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL));
+    app.chat_widget.apply_external_edit("copy me".into());
+    assert!(!app.handle_composer_copy_event(&mut tui, &ctrl_c, |_, _| unreachable!()));
+
+    app.chat_widget
+        .handle_key_event(KeyEvent::new(KeyCode::Char('a'), KeyModifiers::CONTROL));
+    let mut copied = None;
+    assert!(app.handle_composer_copy_event(&mut tui, &ctrl_c, |_, text| {
+        copied = Some(text.to_string());
+        Ok(crate::clipboard_copy::CopyStatus::Confirmed)
+    }));
+    assert_eq!(copied.as_deref(), Some("copy me"));
+    assert_eq!(app.chat_widget.composer_text_with_pending(), "copy me");
+    Ok(())
+}
