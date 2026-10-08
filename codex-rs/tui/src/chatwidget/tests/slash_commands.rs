@@ -331,11 +331,11 @@ async fn queued_bang_shell_waits_for_user_shell_completion_before_next_input() {
 
 #[tokio::test]
 async fn queued_settings_selection_applies_before_next_input() {
+    use crate::chatwidget::ElpisProviderEvent;
+    use crate::elpis_app_event::ElpisAppEvent;
     let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(Some("gpt-5.2")).await;
     chat.thread_id = Some(ThreadId::new());
-    let mut preset = get_available_model(&chat, "gpt-5.6-terra");
-    preset.supported_reasoning_efforts.truncate(1);
-    let selected_effort = preset.supported_reasoning_efforts[0].effort.clone();
+    let preset = get_available_model(&chat, "gpt-5.6-terra");
     chat.model_catalog = std::sync::Arc::new(ModelCatalog::new(vec![preset]));
     handle_turn_started(&mut chat, "turn-1");
 
@@ -350,33 +350,42 @@ async fn queued_settings_selection_applies_before_next_input() {
 
     let popup = render_bottom_popup(&chat, /*width*/ 80);
     assert!(
-        popup.contains("Choose a mind and effort"),
-        "expected model menu to open; popup:\n{popup}"
+        popup.contains("Choose a provider"),
+        "expected the provider list to open; popup:\n{popup}"
     );
 
-    chat.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
-    assert_matches!(op_rx.try_recv(), Err(TryRecvError::Empty));
-    while let Ok(event) = rx.try_recv() {
-        match event {
-            AppEvent::OpenReasoningPopup { model } => chat.open_reasoning_popup(model),
-            AppEvent::UpdateModel(model) => chat.set_model(&model),
-            AppEvent::UpdateReasoningEffort(effort) => chat.set_reasoning_effort(effort),
-            AppEvent::SettingsSelectionClosed => {
-                chat.app_event_tx.send(AppEvent::SettingsSelectionSettled);
+    // Enter on the current provider lists its models, then Enter picks one. Events are handled
+    // as the App does: the current provider is listed from the app server's list at once, and
+    // a model of the current provider is an ordinary model change.
+    for _ in 0..2 {
+        chat.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+        assert_matches!(op_rx.try_recv(), Err(TryRecvError::Empty));
+        while let Ok(event) = rx.try_recv() {
+            match event {
+                AppEvent::Elpis(ElpisAppEvent::Provider(ElpisProviderEvent::Browse {
+                    provider_id,
+                })) => {
+                    let listed = chat.model_catalog.try_list_models().expect("models");
+                    chat.open_elpis_provider_models(provider_id, Ok(listed));
+                }
+                AppEvent::Elpis(ElpisAppEvent::Provider(ElpisProviderEvent::Switch {
+                    model,
+                    ..
+                })) => chat.set_model(&model),
+                AppEvent::SettingsSelectionClosed => {
+                    chat.app_event_tx.send(AppEvent::SettingsSelectionSettled);
+                }
+                AppEvent::SettingsSelectionSettled if chat.no_modal_or_popup_active() => {
+                    chat.set_queue_autosend_suppressed(/*suppressed*/ false);
+                    chat.maybe_send_next_queued_input();
+                }
+                _ => {}
             }
-            AppEvent::SettingsSelectionSettled if chat.no_modal_or_popup_active() => {
-                chat.set_queue_autosend_suppressed(/*suppressed*/ false);
-                chat.maybe_send_next_queued_input();
-            }
-            _ => {}
         }
     }
 
     match next_submit_op(&mut op_rx) {
-        Op::UserTurn { model, effort, .. } => assert_eq!(
-            (model, effort),
-            ("gpt-5.6-terra".to_string(), Some(selected_effort))
-        ),
+        Op::UserTurn { model, .. } => assert_eq!(model, "gpt-5.6-terra"),
         other => panic!("expected queued message with updated model, got {other:?}"),
     }
     assert!(chat.input_queue.queued_user_messages.is_empty());
@@ -2400,7 +2409,7 @@ async fn queued_menu_slash_keeps_agent_turn_complete_notification() {
         chat.pending_notification,
         Some(Notification::AgentTurnComplete { ref response }) if response == "Done"
     );
-    assert!(render_bottom_popup(&chat, /*width*/ 80).contains("Choose a mind"));
+    assert!(render_bottom_popup(&chat, /*width*/ 80).contains("Choose a provider"));
     assert_matches!(op_rx.try_recv(), Err(TryRecvError::Empty));
 }
 

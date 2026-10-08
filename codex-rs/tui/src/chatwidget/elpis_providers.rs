@@ -19,6 +19,17 @@ pub(super) const ELPIS_PROVIDER_MODELS_VIEW_ID: &str = "elpis-provider-models";
 
 /// The pickers' and the dashboard's id for the Claude subscription.
 pub(crate) const CLAUDE_SUBSCRIPTION_PROVIDER_ID: &str = "claude-subscription";
+pub(super) const ANTIGRAVITY_PROVIDER_ID: &str = "antigravity";
+
+/// The providers the pickers and the dashboard offer, in this order. The others Elpis knows
+/// (Anthropic and Gemini API keys, Ollama, LM Studio, Bedrock, configured vendors) do not answer
+/// for the owner; one of them is listed only while a chat runs on it.
+const LISTED_PROVIDERS: [&str; 4] = [
+    codex_model_provider_info::OPENAI_PROVIDER_ID,
+    CLAUDE_SUBSCRIPTION_PROVIDER_ID,
+    ANTIGRAVITY_PROVIDER_ID,
+    codex_model_provider_info::OPENROUTER_PROVIDER_ID,
+];
 
 /// A subscription the Elpis bridge (`tools/elpis-claude/acp-bridge.mjs`) serves: the bridge adds
 /// the models whose ids start with its prefix to the model list and answers their turns through
@@ -59,7 +70,7 @@ static BRIDGED_PROVIDERS: [BridgedProvider; 2] = [
     },
     BridgedProvider {
         model_prefix: "agy/",
-        id: "antigravity",
+        id: ANTIGRAVITY_PROVIDER_ID,
         name: "Antigravity",
         subject: "Antigravity",
         credential: "your Antigravity sign-in",
@@ -137,14 +148,6 @@ pub(crate) fn is_bridged_limit(limit_id: &str) -> bool {
 
 pub(crate) fn is_bridged_model(model: &str) -> bool {
     bridged_provider_of_model(model).is_some()
-}
-
-/// Every bridged subscription's models in a model list, one subscription after another.
-fn bridged_presets(catalog: &[ModelPreset]) -> Vec<ModelPreset> {
-    BRIDGED_PROVIDERS
-        .iter()
-        .flat_map(|bridged| bridged.presets(catalog))
-        .collect()
 }
 
 /// The provider whose models the app server lists: the one the process started with.
@@ -265,45 +268,38 @@ pub(crate) fn elpis_provider_display_name(
         .unwrap_or_else(|| provider_id.to_string())
 }
 
-/// The providers "Change provider…" and the dashboard offer, as `(id, name)` sorted by name.
-/// Amazon Bedrock needs an AWS account; it is listed only while a thread runs on it.
+/// The configured providers "Change provider…" and the dashboard's API keys offer, as
+/// `(id, name)` in [`LISTED_PROVIDERS`] order.
 pub(crate) fn elpis_picker_providers(
     providers: &std::collections::HashMap<String, ModelProviderInfo>,
     active: &str,
 ) -> Vec<(String, String)> {
-    let mut listed: Vec<(String, String)> = providers
-        .iter()
-        .filter(|(id, _)| {
-            id.as_str() == active
-                || ![
-                    codex_model_provider_info::AMAZON_BEDROCK_PROVIDER_ID,
-                    codex_model_provider_info::AMAZON_BEDROCK_RUNTIME_PROVIDER_ID,
-                ]
-                .contains(&id.as_str())
-        })
-        .map(|(id, provider)| (id.clone(), elpis_provider_display_name(id, Some(provider))))
-        .collect();
-    listed.sort_by_key(|(_, name)| name.to_lowercase());
-    listed
+    elpis_chat_model_providers(providers, active, /*catalog*/ &[])
 }
 
-/// [`elpis_picker_providers`] and each bridged subscription whose models `catalog` carries, in
-/// name order. Only the chat model can be one of their models.
+/// [`LISTED_PROVIDERS`] in order: the configured ones, and each bridged subscription whose models
+/// `catalog` carries (only the chat model can be one of theirs); then `active`, if it is another.
 pub(crate) fn elpis_chat_model_providers(
     providers: &std::collections::HashMap<String, ModelProviderInfo>,
     active: &str,
     catalog: &[ModelPreset],
 ) -> Vec<(String, String)> {
-    let mut listed = elpis_picker_providers(providers, active);
-    listed.extend(
-        BRIDGED_PROVIDERS
-            .iter()
-            .filter(|bridged| !bridged.presets(catalog).is_empty())
-            .map(|bridged| (bridged.id.to_string(), bridged.name.to_string())),
-    );
-    // A stable sort: the configured providers keep their order.
-    listed.sort_by_key(|(_, name)| name.to_lowercase());
-    listed
+    let listed_ids = LISTED_PROVIDERS
+        .iter()
+        .copied()
+        .chain((!LISTED_PROVIDERS.contains(&active)).then_some(active));
+    listed_ids
+        .filter_map(|id| match bridged_provider(id) {
+            Some(bridged) => (!bridged.presets(catalog).is_empty())
+                .then(|| (id.to_string(), bridged.name.to_string())),
+            None => providers.get(id).map(|provider| {
+                (
+                    id.to_string(),
+                    elpis_provider_display_name(id, Some(provider)),
+                )
+            }),
+        })
+        .collect()
 }
 
 /// Whether the app server's own list is the one to show for `provider_id`: it lists the
@@ -500,10 +496,9 @@ impl ChatWidget {
         });
     }
 
-    /// A provider's models, below the bridged subscriptions' models while the model list
-    /// carries them. Picking a provider's model on another provider continues this conversation
-    /// there; picking a bridged subscription's model works as in the main list and keeps the
-    /// provider. A bridged subscription (see [`bridged_provider`]) lists only its own models.
+    /// A provider's own models. Picking a provider's model on another provider continues this
+    /// conversation there; picking a bridged subscription's model (see [`bridged_provider`])
+    /// works as in the main list and keeps the provider.
     pub(crate) fn open_elpis_provider_models(
         &mut self,
         provider_id: String,
@@ -513,13 +508,12 @@ impl ChatWidget {
         let current_model = self.current_model().to_string();
         let bridged = bridged_provider(&provider_id);
         let catalog = self.model_catalog.try_list_models().unwrap_or_default();
-        let bridged_rows: Vec<SelectionItem> = match bridged {
-            Some(bridged) => bridged.presets(&catalog),
-            None => bridged_presets(&catalog),
-        }
-        .into_iter()
-        .map(|preset| self.catalog_model_item(preset))
-        .collect();
+        let bridged_rows: Vec<SelectionItem> = bridged
+            .map(|bridged| bridged.presets(&catalog))
+            .unwrap_or_default()
+            .into_iter()
+            .map(|preset| self.catalog_model_item(preset))
+            .collect();
         let mut items: Vec<SelectionItem> = Vec::new();
         let (presets, subtitle) = match (result, bridged) {
             (Ok(_), Some(bridged)) => {
@@ -532,7 +526,7 @@ impl ChatWidget {
             }
             (Ok(presets), None) => {
                 // The app server's list carries the bridged subscriptions' models; they are
-                // listed once, above the provider's own.
+                // listed under their own providers.
                 let presets: Vec<ModelPreset> = presets
                     .into_iter()
                     .filter(|preset| preset.show_in_picker && !is_bridged_model(&preset.model))
@@ -573,9 +567,8 @@ impl ChatWidget {
             });
         }
         let elpis_rows = self.elpis_picker_rows(&provider_id);
+        // Without a current model, the first model starts highlighted.
         let first_model = elpis_rows.len();
-        // Without a current model, the provider's own first model starts highlighted.
-        let first_own_model = first_model + bridged_rows.len();
         items.splice(0..0, bridged_rows);
         items.splice(0..0, elpis_rows.into_iter().map(|(_, item)| item));
         let mut header = vec![
@@ -588,7 +581,6 @@ impl ChatWidget {
         let initial_selected_idx = items
             .iter()
             .position(|item| item.is_current)
-            .or((items.len() > first_own_model).then_some(first_own_model))
             .or((items.len() > first_model).then_some(first_model));
         self.bottom_pane.show_selection_view(SelectionViewParams {
             view_id: Some(ELPIS_PROVIDER_MODELS_VIEW_ID),
