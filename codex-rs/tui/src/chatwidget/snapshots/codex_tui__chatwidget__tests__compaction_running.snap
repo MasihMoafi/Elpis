@@ -7,10 +7,10 @@ expression: "normalize_compaction_snapshot(render_bottom_popup(&chat, 80))"
 Compacting context (<elapsed> • esc to interrupt)  │ CONTEXT LEDGER  context not
   └ Making room to continue.                    │ measured · ≈0 source
                                                 │ estimates
-────────────────────────────────────────────────┤ Tab controls · Alt+C hide ·
-› Ask Elpis to do anything                      │ Ctrl+click open file
-────────────────────────────────────────────────┤
-        100% context left · Tab Context Ledger  │ SMART PRUNE       [···] SYNC
+──────────────────────────────────────────────┐ │ Tab controls · Alt+C hide ·
+› Ask Elpis to do anything                    │ │ Ctrl+click open file
+──────────────────────────────────────────────┘ │
+       100% context left · Tab Context Ledger   │ SMART PRUNE       [···] SYNC
                                                 │ Reading current thread state
                                                 │ Syncing… · /smart-prune on|
                                                 │ off sets an explicit state
