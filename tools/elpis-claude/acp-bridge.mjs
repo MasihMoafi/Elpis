@@ -1002,6 +1002,8 @@ wss.on("connection", (ws) => {
           .then(() => { sessionMode.set(sessionId, wantMode); log(`session ${sessionId} mode -> ${wantMode}`); })
           .catch(async (e) => {
             log(`mode ${wantMode}: ${e.message ?? JSON.stringify(e)}`);
+            // A refused Bypass changes nothing the user sees: Full Access answers every question.
+            if (wantMode === "bypassPermissions") return;
             const allowed = (await catalogFor(agent)).modes;
             const why = allowed && !allowed.includes(wantMode) ? `${agent.speaker}'s own settings turn it off` : (e.message ?? "it refused");
             const kept = MODE_NAMES[sessionMode.get(sessionId)];
@@ -1068,6 +1070,13 @@ wss.on("connection", (ws) => {
       acp.onPermission = async (p) => {
         const t = [lane, ...subLanes.values()].map((l) => l.tools.get(p.toolCall?.toolCallId)).find(Boolean);
         const what = (t && t.name === "Bash" && t.raw.command) || p.toolCall?.title || t?.title || "a tool";
+        const pick = (kind) => p.options.find((o) => o.kind === kind)?.optionId;
+        // Full Access never asks, as in Codex: whatever the agent's own mode (its settings may
+        // refuse Bypass, and Claude Code still asks before writing in .claude), the bridge says yes.
+        if (wantMode === "bypassPermissions") {
+          log(`approval ${what} -> allowed (Full Access)`);
+          return pick("allow_once") ?? pick("allow_always");
+        }
         const decision = await askTui("item/commandExecution/requestApproval", {
           kind: "command", threadId, turnId, itemId: p.toolCall?.toolCallId ?? randomUUID(), startedAtMs: now(),
           environmentId: null, reason: `${agent.speaker} wants to run: ${what}`, command: what, cwd,
@@ -1076,7 +1085,6 @@ wss.on("connection", (ws) => {
           availableDecisions: ["accept", "decline", "cancel"],
         });
         const d = decision?.decision;
-        const pick = (kind) => p.options.find((o) => o.kind === kind)?.optionId;
         log(`approval ${what} -> ${JSON.stringify(d)}`);
         if (d === "accept") return pick("allow_once") ?? pick("allow_always");
         if (t) t.declined = true;
