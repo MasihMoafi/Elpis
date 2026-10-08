@@ -334,6 +334,8 @@ mod model_popup_state;
 mod model_popups;
 // Elpis: the provider-aware /model picker.
 mod elpis_providers;
+// Elpis: `/effort`.
+mod elpis_effort;
 pub(crate) use self::elpis_providers::BridgedProvider;
 #[cfg(test)]
 pub(crate) use self::elpis_providers::CLAUDE_SUBSCRIPTION_PROVIDER_ID;

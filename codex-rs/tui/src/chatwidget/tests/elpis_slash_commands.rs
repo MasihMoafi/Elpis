@@ -17,9 +17,7 @@ const NOT_IN_THIS_BUILD: &str =
 /// The commands that wait for the rest of the Elpis context engine. `/prune`, `/smart-prune`
 /// and `/pruner-model` work (tests/elpis_smart_prune.rs); `/memory-model` saves the
 /// background model; `/dashboard` works (elpis_dashboard.rs).
-const LATER_BUILD: [SlashCommand; 1] = [
-    SlashCommand::ForcePrune,
-];
+const LATER_BUILD: [SlashCommand; 1] = [SlashCommand::ForcePrune];
 
 fn history_text(rx: &mut tokio::sync::mpsc::UnboundedReceiver<AppEvent>) -> Vec<String> {
     drain_insert_history(rx)
@@ -36,6 +34,10 @@ fn elpis_commands_are_listed_in_their_v030_order_with_v030_descriptions() {
         .collect::<Vec<_>>();
     let expected = [
         ("model", None),
+        (
+            "effort",
+            Some("change how hard the model thinks: /effort [low|medium|high|…]"),
+        ),
         (
             "pruner-model",
             Some(
@@ -102,6 +104,7 @@ fn typed_elpis_names_reach_elpis_commands_and_upstream_names_stay_upstream() {
     let flags = BuiltinCommandFlags::default();
     for (name, cmd) in [
         ("yolo", SlashCommand::Yolo),
+        ("effort", SlashCommand::Effort),
         ("agent", SlashCommand::Agent),
         ("pruner-model", SlashCommand::PrunerModel),
         ("memory-model", SlashCommand::MemoryModel),
@@ -254,9 +257,10 @@ async fn memory_model_saves_the_typed_choice() {
     chat.dispatch_memory_model_with_args("   ");
     let events = std::iter::from_fn(|| rx.try_recv().ok()).collect::<Vec<_>>();
     assert!(
-        events
-            .iter()
-            .all(|event| !matches!(event, AppEvent::Elpis(ElpisAppEvent::SaveBackgroundModel(_)))),
+        events.iter().all(|event| !matches!(
+            event,
+            AppEvent::Elpis(ElpisAppEvent::SaveBackgroundModel(_))
+        )),
         "{events:?}"
     );
 }
@@ -385,8 +389,14 @@ fn commands_v030_kept_out_of_the_popup_still_work_under_their_v030_names() {
         assert!(!listed.contains(&alias), "/{alias} is listed");
         assert_eq!(find_builtin_command(alias, flags), Some(cmd), "/{alias}");
     }
-    assert_eq!(find_builtin_command("stop", flags), Some(SlashCommand::Stop));
-    assert_eq!(find_builtin_command("delete", flags), Some(SlashCommand::Delete));
+    assert_eq!(
+        find_builtin_command("stop", flags),
+        Some(SlashCommand::Stop)
+    );
+    assert_eq!(
+        find_builtin_command("delete", flags),
+        Some(SlashCommand::Delete)
+    );
 }
 
 fn usage_card(rx: &mut tokio::sync::mpsc::UnboundedReceiver<AppEvent>) -> Option<String> {

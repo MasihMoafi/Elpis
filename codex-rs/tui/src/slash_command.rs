@@ -16,6 +16,7 @@ pub enum SlashCommand {
     // DO NOT ALPHA-SORT! Enum order is presentation order in the popup, so
     // more frequently used commands should be listed first.
     Model,
+    Effort, // Elpis
     // Elpis: v0.3.0 commands, in their v0.3.0 popup positions.
     PrunerModel,
     MemoryModel,

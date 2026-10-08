@@ -1090,6 +1090,8 @@ impl ChatWidget {
             }
             // Elpis: `/add <path>` adds a source to the Context Ledger.
             SlashCommand::Add if !trimmed.is_empty() => self.add_context_source_command(trimmed),
+            // Elpis: `/effort <level>` uses that level of the current model.
+            SlashCommand::Effort if !trimmed.is_empty() => self.dispatch_effort_with_args(trimmed),
             // Elpis: `/memory-model <id|provider:id|default>` saves the background model.
             SlashCommand::MemoryModel if !trimmed.is_empty() => {
                 self.dispatch_memory_model_with_args(trimmed)

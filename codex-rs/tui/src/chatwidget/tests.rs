@@ -238,6 +238,8 @@ mod elpis_compact;
 mod elpis_composer;
 // Elpis: Context Ledger evals.
 mod elpis_context_ledger;
+// Elpis: evals for /effort.
+mod elpis_effort;
 // Elpis: evals for what the dashboard reads.
 mod elpis_dashboard;
 // Elpis: evals for the Elpis look.
