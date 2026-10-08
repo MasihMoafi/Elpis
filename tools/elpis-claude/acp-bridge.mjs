@@ -1,9 +1,11 @@
 // Elpis TUI <-ws-> bridge <-stdio-> real `elpis app-server` (everything else)
 //                         \-stdio-> claude-agent-acp (chat turns -> Claude)
-import { splitContext } from "./context-split.mjs";
+import { splitContext, splitTokens, transcriptTokens } from "./context-split.mjs";
 import { WebSocketServer } from "ws";
 import { execFile, spawn } from "node:child_process";
-import { appendFileSync, existsSync, readFileSync } from "node:fs";
+import { appendFileSync, existsSync, readFileSync, statSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 
 const HOME = process.env.HOME;
@@ -375,8 +377,11 @@ wss.on("connection", (ws) => {
   // Bypass permissions; Plan is Plan. Antigravity has only its default, Plan and full access. A
   // read-only helper that may not ask plans.
   const MODE_NAMES = { default: "Manual", acceptEdits: "Accept edits", plan: "Plan mode", auto: "Auto", bypassPermissions: "Bypass permissions" };
-  const claudeModeOf = (threadId, agentKey, ask) => {
-    if (threadCollab.get(threadId) === "plan") return "plan";
+  const claudeModeOf = (threadId, agentKey, ask) =>
+    threadCollab.get(threadId) === "plan" ? "plan" : accessModeOf(threadId, agentKey, ask);
+  // The mode of the chat's permission mode alone, which a Plan turn returns to once its plan is
+  // approved.
+  const accessModeOf = (threadId, agentKey, ask) => {
     const { profile, reviewer } = threadAccess.get(threadId) ?? {};
     const readOnly = threadSandbox.get(threadId) === "read-only" || !!profile?.includes("read-only");
     if (!ask) return readOnly ? "plan" : "bypassPermissions";
@@ -388,7 +393,27 @@ wss.on("connection", (ws) => {
   const ctxChars = new Map();
   const devChars = new Map();
   const addChars = (threadId, part, n) => { const c = ctxChars.get(threadId) ?? { user: 0, agent: 0, reasoning: 0, toolCalls: 0, toolResults: 0 }; c[part] += n ?? 0; ctxChars.set(threadId, c); };
-  const attribution = (threadId, used) => splitContext(ctxChars.get(threadId), devChars.get(threadId), used);
+  // A Claude chat's parts come from Claude's own token counts in its Claude Code transcript, so
+  // they hold after Elpis restarts and count the thinking Claude keeps in context. Other chats,
+  // and a transcript not found, count text length as their turns stream.
+  const transcripts = new Map(); // transcript path -> { stamp, tokens }
+  const transcriptOf = (threadId) => {
+    const live = sessions.get(threadId);
+    if (live?.agent !== "claude") return null;
+    const project = (threadCwd.get(threadId) ?? process.cwd()).replace(/[^a-zA-Z0-9]/g, "-");
+    return join(process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), ".claude"), "projects", project, `${live.id}.jsonl`);
+  };
+  const attribution = (threadId, used) => {
+    const file = transcriptOf(threadId);
+    if (file && existsSync(file)) {
+      const { mtimeMs, size } = statSync(file);
+      let seen = transcripts.get(file);
+      if (seen?.stamp !== `${mtimeMs}:${size}`) transcripts.set(file, seen = { stamp: `${mtimeMs}:${size}`, tokens: transcriptTokens(readFileSync(file, "utf8")) });
+      const t = seen.tokens;
+      return splitTokens({ developerMessages: Math.round((devChars.get(threadId) ?? 0) / 4), userMessages: t.user, agentMessages: t.agent, reasoning: t.reasoning, toolCalls: t.toolCalls, toolResults: t.toolResults }, used);
+    }
+    return splitContext(ctxChars.get(threadId), devChars.get(threadId), used);
+  };
   const lastContext = new Map();
   const lastTurnUsage = new Map(); // thread id -> its latest finished turn's usage
   // Anthropic reports cache reads and writes apart from input; Elpis (like OpenAI) counts them as input.
@@ -1071,9 +1096,13 @@ wss.on("connection", (ws) => {
         const t = [lane, ...subLanes.values()].map((l) => l.tools.get(p.toolCall?.toolCallId)).find(Boolean);
         const what = (t && t.name === "Bash" && t.raw.command) || p.toolCall?.title || t?.title || "a tool";
         const pick = (kind) => p.options.find((o) => o.kind === kind)?.optionId;
+        const access = accessModeOf(threadId, agent.key, ask);
+        // Approving a plan is the user's to decide, in every mode (as Codex asks to implement it).
+        const planIds = p.options.map((o) => o.optionId).filter((id) => id?.startsWith("exit-plan-"));
         // Full Access never asks, as in Codex: whatever the agent's own mode (its settings may
-        // refuse Bypass, and Claude Code still asks before writing in .claude), the bridge says yes.
-        if (wantMode === "bypassPermissions") {
+        // refuse Bypass, Claude Code still asks before writing in .claude, and a Plan turn goes on
+        // after its plan), the bridge says yes.
+        if (access === "bypassPermissions" && !planIds.length) {
           log(`approval ${what} -> allowed (Full Access)`);
           return pick("allow_once") ?? pick("allow_always");
         }
@@ -1086,6 +1115,22 @@ wss.on("connection", (ws) => {
         });
         const d = decision?.decision;
         log(`approval ${what} -> ${JSON.stringify(d)}`);
+        if (d === "accept" && planIds.length) {
+          // An approved plan goes on in the chat's permission mode, not Claude's "manually
+          // approve edits". Claude offers Accept edits only when it offers neither Auto nor Bypass;
+          // then the bridge switches to it once Claude has left Plan.
+          const want = { bypassPermissions: ["bypass", "auto", "accept-edits"], auto: ["auto", "accept-edits"], acceptEdits: ["accept-edits"] }[access] ?? [];
+          const id = want.map((m) => `exit-plan-${m}`).find((x) => planIds.includes(x)) ?? "exit-plan-default";
+          const mode = { "exit-plan-bypass": "bypassPermissions", "exit-plan-auto": "auto", "exit-plan-accept-edits": "acceptEdits" }[id] ?? "default";
+          sessionMode.set(sessionId, mode);
+          if (access === "acceptEdits" && mode === "default") {
+            setTimeout(() => acp.call("session/set_mode", { sessionId, modeId: "acceptEdits" })
+              .then(() => { sessionMode.set(sessionId, "acceptEdits"); log(`session ${sessionId} mode -> acceptEdits (plan approved)`); })
+              .catch((e) => log(`mode acceptEdits after the plan: ${e.message ?? JSON.stringify(e)}`)), 200);
+          }
+          log(`plan approved: ${id}`);
+          return planIds.includes(id) ? id : pick("allow_once");
+        }
         if (d === "accept") return pick("allow_once") ?? pick("allow_always");
         if (t) t.declined = true;
         if (d === "cancel") {

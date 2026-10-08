@@ -2,7 +2,7 @@
 // Uses the real engine and Claude (subscription). Run: node test/bridge-e2e.mjs [scenario...]
 // Scenarios: text image interrupt approval usage resume delegate compact instructions modes steer tools plan
 // shell picker revert review efforts default antigravity structured goal side subagents claude-subagent
-// claude-modes full-access.
+// claude-modes full-access plan-full-access context-parts.
 // Exit code 0 only if every scenario passes.
 import { spawn } from "node:child_process";
 import { mkdtempSync, writeFileSync } from "node:fs";
@@ -332,6 +332,46 @@ for (const s of scenarios) {
     r.status === "completed" && approvals.length === 0 && made
       ? console.log("PASS full-access (no question reached Elpis; the file was made)")
       : fail("full-access: see the line above");
+  } else if (s === "context-parts") {
+    // A Claude chat's context parts are Claude's own token counts from its transcript (which also
+    // holds after Elpis restarts), not text length: the tool result and the thinking Elpis draws
+    // are those the transcript gives, and they add up to the context Claude reports.
+    const { readFileSync } = await import("node:fs");
+    const { homedir } = await import("node:os");
+    const { transcriptTokens } = await import(join(here, "context-split.mjs"));
+    const st = await call("thread/start", { cwd: dir, approvalPolicy: "never", sandbox: "danger-full-access" });
+    const tid = st.result?.thread?.id;
+    await call("thread/settings/update", { threadId: tid, model: process.env.E2E_MODEL ?? "claude/opus", effort: "low" });
+    const from = seen.length;
+    const r = await turn(tid, [{ type: "text", text: "Use your Bash tool to run exactly: seq 1 3000 | paste -sd' ' -   Then reply DONE.", text_elements: [] }], 420000);
+    const attr = seen.slice(from).filter((m) => m.method === "thread/tokenUsage/updated" && m.params.threadId === tid).at(-1)?.params?.tokenUsage?.contextAttribution;
+    const session = JSON.parse(readFileSync(storeEnv.ACP_BRIDGE_STORE, "utf8"))[tid]?.session;
+    const t = transcriptTokens(readFileSync(join(homedir(), ".claude", "projects", dir.replace(/[^a-zA-Z0-9]/g, "-"), `${session}.jsonl`), "utf8"));
+    const parts = attr ? Object.entries(attr).filter(([k]) => k !== "estimatedTotal").reduce((n, [, v]) => n + v, 0) : -1;
+    const near = (a, b) => Math.abs(a - b) <= Math.max(50, 0.2 * b);
+    console.log(`  status=${r.status} drawn=${JSON.stringify(attr)} transcript=${JSON.stringify(t)}`);
+    r.status === "completed" && attr && parts === attr.estimatedTotal && t.toolResults > 2000 && near(attr.toolResults, t.toolResults) && near(attr.reasoning, t.reasoning) && attr.systemInstructions < attr.estimatedTotal
+      ? console.log(`PASS context-parts (tool results ${attr.toolResults}, thinking ${attr.reasoning}, system ${attr.systemInstructions} of ${attr.estimatedTotal}: Claude's own counts)`)
+      : fail("context-parts: see the line above");
+  } else if (s === "plan-full-access") {
+    // A Plan turn in Full Access asks only to approve its plan; the approved plan goes on in Full
+    // Access, so nothing after it asks, even with Bypass turned off in the project's Claude
+    // settings. Every other question is declined here, so one that reached Elpis leaves no file.
+    const { existsSync, mkdirSync } = await import("node:fs");
+    mkdirSync(join(dir, ".claude"), { recursive: true });
+    writeFileSync(join(dir, ".claude", "settings.json"), JSON.stringify({ permissions: { disableBypassPermissionsMode: "disable" } }));
+    const st = await call("thread/start", { cwd: dir, approvalPolicy: "never", sandbox: "danger-full-access" });
+    const tid = st.result?.thread?.id;
+    await call("thread/settings/update", { threadId: tid, model: process.env.E2E_MODEL ?? "claude/opus", effort: "low", collaborationMode: { mode: "plan", settings: { model: process.env.E2E_MODEL ?? "claude/opus", reasoning_effort: "low", developer_instructions: null } } });
+    approvals.length = 0;
+    approvalAnswer = (m) => (/plan/i.test(m.params?.command ?? "") ? "accept" : "decline");
+    const r = await turn(tid, [{ type: "text", text: "Plan this, in one line: create an empty file at .claude/made.txt with your file-writing tool. Present the plan for approval now; once it is approved, do it and reply DONE.", text_elements: [] }], 420000);
+    approvalAnswer = "accept";
+    const made = existsSync(join(dir, ".claude", "made.txt"));
+    console.log(`  status=${r.status} asked=${JSON.stringify(approvals)} made=${made}`);
+    r.status === "completed" && approvals.length === 1 && /plan/i.test(approvals[0]) && made
+      ? console.log("PASS plan-full-access (only the plan was asked; the file was made after it)")
+      : fail("plan-full-access: see the line above");
   } else if (s === "steer") {
     // A message sent while Claude works must join that reply (Elpis Esc / Enter), not stop it.
     const word = `STEER-${Math.floor(Math.random() * 9000 + 1000)}`;
