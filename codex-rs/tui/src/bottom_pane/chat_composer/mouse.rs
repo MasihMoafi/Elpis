@@ -12,11 +12,15 @@ use crossterm::event::MouseEventKind;
 
 impl ChatComposer {
     pub(crate) fn can_paste_on_right_click(&self) -> bool {
+        self.can_paste_by_key() && self.draft.textarea.mouse_selection_range().is_none()
+    }
+
+    /// Elpis: Ctrl+V pastes over a selection, as in an IDE; a right click copies one instead.
+    pub(crate) fn can_paste_by_key(&self) -> bool {
         self.draft.input_enabled
             && !self.blocks_direct_input
             && self.history_search.is_none()
             && self.draft.textarea.vim_query().is_none()
-            && self.draft.textarea.mouse_selection_range().is_none()
     }
 
     pub(in crate::bottom_pane) fn finish_copy(

@@ -31,9 +31,15 @@ impl ChatWidget {
         self.bottom_pane.handle_composer_mouse(event)
     }
 
-    /// Snapshot only the editable paste target, without changing pending submissions.
-    pub(crate) fn right_click_paste_target(&self) -> Option<(String, usize)> {
-        self.bottom_pane.can_paste_on_right_click().then(|| {
+    /// Snapshot only the editable paste target, without changing pending submissions. Elpis:
+    /// Ctrl+V (`by_key`) may paste over a selection.
+    pub(crate) fn right_click_paste_target(&self, by_key: bool) -> Option<(String, usize)> {
+        let editable = if by_key {
+            self.bottom_pane.can_paste_by_key()
+        } else {
+            self.bottom_pane.can_paste_on_right_click()
+        };
+        editable.then(|| {
             (
                 self.bottom_pane.composer_text(),
                 self.bottom_pane.composer_cursor(),

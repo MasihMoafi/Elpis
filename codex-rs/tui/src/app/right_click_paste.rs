@@ -81,7 +81,7 @@ impl App {
         }
         Some((
             self.current_displayed_thread_id(),
-            self.chat_widget.right_click_paste_target()?,
+            self.chat_widget.right_click_paste_target(by_key)?,
         ))
     }
 

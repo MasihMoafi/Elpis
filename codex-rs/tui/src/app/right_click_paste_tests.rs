@@ -62,7 +62,8 @@ async fn pending_primary_paste_survives_release_but_not_other_input() {
 }
 
 /// Positive: Ctrl+V with no image on the clipboard reads its text for the composer even with
-/// right-click paste off and in the inline screen, and releasing the keys keeps that read.
+/// right-click paste off, in the inline screen and over a selection (a paste replaces it), and
+/// releasing the keys keeps that read.
 /// Negative: a right click with it off reads nothing, and a typed key drops the read.
 #[tokio::test]
 async fn ctrl_v_pastes_clipboard_text_whatever_the_right_click_setting() -> std::io::Result<()> {
@@ -90,6 +91,12 @@ async fn ctrl_v_pastes_clipboard_text_whatever_the_right_click_setting() -> std:
     assert!(app.pending_right_click_paste.is_none());
 
     tui.set_owned_screen(/*owned*/ false)?;
+    app.chat_widget.apply_external_edit("replace me".into());
+    app.chat_widget
+        .handle_key_event(crossterm::event::KeyEvent::new(
+            crossterm::event::KeyCode::Char('a'),
+            crossterm::event::KeyModifiers::CONTROL,
+        ));
     app.start_key_paste(&mut tui);
     assert!(
         app.pending_right_click_paste

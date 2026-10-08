@@ -1798,6 +1798,10 @@ impl BottomPane {
         self.no_modal_or_popup_active() && self.composer.can_paste_on_right_click()
     }
 
+    pub(crate) fn can_paste_by_key(&self) -> bool {
+        self.no_modal_or_popup_active() && self.composer.can_paste_by_key()
+    }
+
     pub(crate) fn prepare_composer_mouse(&mut self, event: crossterm::event::MouseEvent) -> bool {
         if self.has_active_view() || self.questions.as_ref().is_some_and(|q| q.expanded) {
             self.composer.end_mouse_drag();
