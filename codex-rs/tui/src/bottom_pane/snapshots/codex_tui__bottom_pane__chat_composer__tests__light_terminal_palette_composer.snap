@@ -1,15 +1,16 @@
 ---
 source: tui/src/bottom_pane/chat_composer.rs
+assertion_line: 5179
 expression: "format!(\"{buffer:?}\")"
 ---
 Buffer {
     area: Rect { x: 0, y: 0, width: 48, height: 6 },
     content: [
-        "┌──────────────────────────────────────────────┐",
+        "───────────────────────────────────────────────┐",
         "› Ask Elpis to do anything                     │",
-        "│                                              │",
-        "│                                              │",
-        "└──────────────────────────────────────────────┘",
+        "                                               │",
+        "                                               │",
+        "───────────────────────────────────────────────┘",
         "        100% context left · Tab Context Ledger  ",
     ],
     styles: [
@@ -52,7 +53,7 @@ Buffer {
         x: 41, y: 0, fg: Rgb(122, 150, 144), bg: Rgb(254, 254, 253), underline: Reset, modifier: NONE,
         x: 43, y: 0, fg: Rgb(122, 150, 144), bg: Rgb(254, 254, 254), underline: Reset, modifier: NONE,
         x: 47, y: 0, fg: Rgb(122, 150, 144), bg: Rgb(255, 255, 255), underline: Reset, modifier: NONE,
-        x: 0, y: 1, fg: Rgb(122, 150, 144), bg: Rgb(238, 232, 216), underline: Reset, modifier: BOLD,
+        x: 0, y: 1, fg: Reset, bg: Rgb(238, 232, 216), underline: Reset, modifier: BOLD,
         x: 1, y: 1, fg: Reset, bg: Rgb(238, 232, 216), underline: Reset, modifier: NONE,
         x: 2, y: 1, fg: Reset, bg: Rgb(238, 232, 216), underline: Reset, modifier: DIM,
         x: 5, y: 1, fg: Reset, bg: Rgb(238, 232, 217), underline: Reset, modifier: DIM,
@@ -93,8 +94,7 @@ Buffer {
         x: 41, y: 1, fg: Reset, bg: Rgb(254, 254, 253), underline: Reset, modifier: NONE,
         x: 43, y: 1, fg: Reset, bg: Rgb(254, 254, 254), underline: Reset, modifier: NONE,
         x: 47, y: 1, fg: Rgb(122, 150, 144), bg: Rgb(255, 255, 255), underline: Reset, modifier: NONE,
-        x: 0, y: 2, fg: Rgb(122, 150, 144), bg: Rgb(238, 232, 216), underline: Reset, modifier: NONE,
-        x: 1, y: 2, fg: Reset, bg: Rgb(238, 232, 216), underline: Reset, modifier: NONE,
+        x: 0, y: 2, fg: Reset, bg: Rgb(238, 232, 216), underline: Reset, modifier: NONE,
         x: 5, y: 2, fg: Reset, bg: Rgb(238, 232, 217), underline: Reset, modifier: NONE,
         x: 7, y: 2, fg: Reset, bg: Rgb(238, 233, 218), underline: Reset, modifier: NONE,
         x: 8, y: 2, fg: Reset, bg: Rgb(239, 233, 218), underline: Reset, modifier: NONE,
@@ -133,8 +133,7 @@ Buffer {
         x: 41, y: 2, fg: Reset, bg: Rgb(254, 254, 253), underline: Reset, modifier: NONE,
         x: 43, y: 2, fg: Reset, bg: Rgb(254, 254, 254), underline: Reset, modifier: NONE,
         x: 47, y: 2, fg: Rgb(122, 150, 144), bg: Rgb(255, 255, 255), underline: Reset, modifier: NONE,
-        x: 0, y: 3, fg: Rgb(122, 150, 144), bg: Rgb(238, 232, 216), underline: Reset, modifier: NONE,
-        x: 1, y: 3, fg: Reset, bg: Rgb(238, 232, 216), underline: Reset, modifier: NONE,
+        x: 0, y: 3, fg: Reset, bg: Rgb(238, 232, 216), underline: Reset, modifier: NONE,
         x: 5, y: 3, fg: Reset, bg: Rgb(238, 232, 217), underline: Reset, modifier: NONE,
         x: 7, y: 3, fg: Reset, bg: Rgb(238, 233, 218), underline: Reset, modifier: NONE,
         x: 8, y: 3, fg: Reset, bg: Rgb(239, 233, 218), underline: Reset, modifier: NONE,

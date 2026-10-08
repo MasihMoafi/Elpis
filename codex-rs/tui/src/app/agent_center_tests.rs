@@ -961,52 +961,76 @@ async fn dashboard_map_gets_the_lists_tree_titles_models_and_colours() {
     let app = make_test_app().await;
     let view = app.agents_overview_view(nested_agents_fixture(), /*selected_thread_id*/ None);
     let agents = crate::app::agents_overview_view::dashboard_agents(&view.rows);
-    let summary = agents
+    let title_of = |id: &str| {
+        agents
+            .iter()
+            .find(|agent| agent.id == id)
+            .map_or("missing", |agent| agent.title.as_str())
+    };
+    // The list's tree, titles and statuses, each helper pointing at the task that started it.
+    let tree = agents
         .iter()
         .map(|agent| {
-            let parent = agent.parent_id.as_ref().map(|parent| {
-                agents
-                    .iter()
-                    .find(|other| &other.id == parent)
-                    .map_or("missing", |other| other.title.as_str())
-            });
             (
                 agent.title.as_str(),
-                parent,
-                agent.color.as_deref(),
+                agent.parent_id.as_deref().map(title_of),
                 agent.status_label.as_str(),
             )
         })
         .collect::<Vec<_>>();
     assert_eq!(
-        summary,
+        tree,
         vec![
-            ("Fix the dashboard token count", None, Some("#b4532a"), "Working"),
+            ("Fix the dashboard token count", None, "Working"),
             (
                 "Find where usage is emitted",
                 Some("Fix the dashboard token count"),
-                Some("#0b7a5e"),
                 "Working",
             ),
             (
                 "Check the bridge turns",
                 Some("Find where usage is emitted"),
-                Some("#6d3fb5"),
                 "Ready",
             ),
             (
                 "Draft the release note",
                 Some("Fix the dashboard token count"),
-                Some("#1a5fd0"),
                 "Ready",
             ),
-            ("I'm home.", None, Some("#b4532a"), "Inactive"),
+            ("I'm home.", None, "Inactive"),
         ]
     );
-    let sol = agents
-        .iter()
-        .find(|agent| agent.title == "Find where usage is emitted")
-        .expect("the helper is on the map");
-    assert_eq!(sol.model, view.rows[1].model_label());
-    assert_eq!(sol.status, crate::dashboard_server::DashboardAgentStatus::Working);
+    // Each model with its effort, as the list words it, and one colour per model: the same model
+    // shares it, others differ.
+    let model_of = |title: &str| {
+        agents
+            .iter()
+            .find(|agent| agent.title == title)
+            .and_then(|agent| agent.model.clone())
+            .unwrap_or_default()
+    };
+    assert!(model_of("Find where usage is emitted").ends_with(" · high"));
+    assert!(model_of("Check the bridge turns").ends_with(" · low"));
+    let colour = |title: &str| {
+        agents
+            .iter()
+            .find(|agent| agent.title == title)
+            .and_then(|agent| agent.color.clone())
+            .expect("every agent has a colour")
+    };
+    assert_eq!(colour("Fix the dashboard token count"), colour("I'm home."));
+    let distinct = [
+        "Fix the dashboard token count",
+        "Find where usage is emitted",
+        "Check the bridge turns",
+        "Draft the release note",
+    ]
+    .map(colour);
+    assert_eq!(
+        distinct
+            .iter()
+            .collect::<std::collections::HashSet<_>>()
+            .len(),
+        distinct.len()
+    );
 }

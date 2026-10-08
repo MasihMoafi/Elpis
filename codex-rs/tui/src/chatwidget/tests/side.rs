@@ -444,11 +444,19 @@ async fn side_context_label_shows_hidden_side_snapshot() {
     terminal
         .draw(|f| chat.render(f.area(), f.buffer_mut()))
         .expect("draw hidden side conversation footer");
-    let hint_start = width - "ctrl+/ for side".len() as u16 - 2;
+    // The hint sits in the composer's footer, wherever the Context Ledger leaves it.
+    let buffer = terminal.backend().buffer();
+    let (hint_start, hint_row) = (0..height)
+        .find_map(|y| {
+            let row: String = (0..width).map(|x| buffer[(x, y)].symbol()).collect();
+            row.find("ctrl+/ for side")
+                .map(|index| (row[..index].chars().count() as u16, y))
+        })
+        .expect("the side hint is drawn");
     let key_style = crate::key_hint::ctrl(KeyCode::Char('/')).spans()[0].style;
     let secondary_style = crate::style::secondary_text_style();
     let styles = [hint_start, hint_start + 4, hint_start + 5, hint_start + 7].map(|x| {
-        let cell = &terminal.backend().buffer()[(x, height - 1)];
+        let cell = &buffer[(x, hint_row)];
         (cell.fg, cell.modifier)
     });
     assert_eq!(

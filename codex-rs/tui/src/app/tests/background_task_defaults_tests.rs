@@ -750,10 +750,14 @@ async fn command_center_new_preserves_only_selected_server_profiles() -> Result<
     app.new_agents_overview_session(&mut tui, &mut server, /*cwd*/ None)
         .await?;
     assert_eq!(app.chat_widget.thread_id(), Some(thread_id));
-    insta::assert_snapshot!(
-        "command_center_pending_server_permissions",
-        crate::chatwidget::tests::helpers::render_bottom_popup(&app.chat_widget, /*width*/ 80)
-    );
+    // The header names the folder the test runs in; the snapshot must not depend on the checkout.
+    let rendered =
+        crate::chatwidget::tests::helpers::render_bottom_popup(&app.chat_widget, /*width*/ 80);
+    let rendered = regex_lite::Regex::new(r"location \S+")
+        .unwrap()
+        .replace_all(&rendered, "location [cwd]")
+        .into_owned();
+    insta::assert_snapshot!("command_center_pending_server_permissions", rendered);
     let settings = next_thread_settings_updated(&mut server, thread_id).await;
     app.enqueue_thread_notification(
         thread_id,

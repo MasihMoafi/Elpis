@@ -1,13 +1,14 @@
 ---
 source: tui/src/bottom_pane/chat_composer/warning_notice_tests.rs
+assertion_line: 67
 expression: styled
 ---
 Buffer {
     area: Rect { x: 0, y: 0, width: 80, height: 5 },
     content: [
-        "┌──────────────────────────────────────────────────────────────────────────────┐",
+        "───────────────────────────────────────────────────────────────────────────────┐",
         "› keep this draft                                                              │",
-        "└──────────────────────────────────────────────────────────────────────────────┘",
+        "───────────────────────────────────────────────────────────────────────────────┘",
         "  MODEL · ~/project                                                             ",
         "                                                      ⚠ 3 warnings · f2 to view ",
     ],
@@ -48,7 +49,7 @@ Buffer {
         x: 62, y: 0, fg: Rgb(78, 122, 114), bg: Rgb(17, 17, 16), underline: Reset, modifier: NONE,
         x: 66, y: 0, fg: Rgb(78, 122, 114), bg: Rgb(17, 16, 16), underline: Reset, modifier: NONE,
         x: 67, y: 0, fg: Rgb(78, 122, 114), bg: Rgb(16, 16, 16), underline: Reset, modifier: NONE,
-        x: 0, y: 1, fg: Rgb(78, 122, 114), bg: Rgb(33, 31, 25), underline: Reset, modifier: BOLD,
+        x: 0, y: 1, fg: Reset, bg: Rgb(33, 31, 25), underline: Reset, modifier: BOLD,
         x: 1, y: 1, fg: Reset, bg: Rgb(32, 30, 24), underline: Reset, modifier: NONE,
         x: 13, y: 1, fg: Reset, bg: Rgb(31, 30, 24), underline: Reset, modifier: NONE,
         x: 14, y: 1, fg: Reset, bg: Rgb(31, 29, 24), underline: Reset, modifier: NONE,

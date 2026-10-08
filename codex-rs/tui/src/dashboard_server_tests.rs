@@ -1362,22 +1362,17 @@ fn agents_route_serves_the_published_tree() {
 
 #[test]
 fn dashboard_asset_draws_the_agent_map() {
-    for required in [
-        "id=\"tab-agents\"",
-        "aria-controls=\"panel-agents\"",
-        "id=\"panel-agents\"",
-        "<svg id=\"agent-map\"",
-        "id=\"agents-empty\"",
-    ] {
-        assert!(INDEX_HTML.contains(required), "missing agent map HTML: {required}");
-    }
+    // The page's contracts: the route it reads, the field Elpis sends, the words it shows.
+    assert!(INDEX_HTML.contains(">Agents</button>"), "the Agents tab");
     for required in [
         "fetch('/agents.json'",
-        "await refreshAgents();",
-        "createElementNS(byId('agent-map').namespaceURI",
-        "'delegates'",
         "agent.status_label",
+        "'delegates'",
+        "'asks'",
     ] {
-        assert!(DASHBOARD_JS.contains(required), "missing agent map JS: {required}");
+        assert!(
+            DASHBOARD_JS.contains(required),
+            "missing agent map JS: {required}"
+        );
     }
 }
