@@ -1,14 +1,15 @@
 ---
 source: tui/src/app/agents_overview_tests.rs
+assertion_line: 915
 expression: normalize_agent_center_snapshot(&cached)
 ---
 "  Agent command center  Group: Project  g                                                       "
 "   All 1   Needs you 0   Working 0   Ready 1   Inactive 0                 tab/shift+tab filter  "
 "  ────────────────────────────────────────────────────────────────────────────────────────────  "
-"      Tasks                                           │ Task details                            "
+"      Task                                            │ Task details                            "
 "  /tmp/project  1                                     │                                         "
-"  › ○ Review parser                                   │ Review parser                           "
-"                                                      │ ○ Ready                                 "
+"  › ◇ Review parser                                   │ ● Review parser                         "
+"                                                      │ ◇ Ready                                 "
 "                                                      │                                         "
 "                                                      │ Last message                            "
 "                                                      │ ## Findings                             "

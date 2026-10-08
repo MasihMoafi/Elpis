@@ -1,18 +1,18 @@
 ---
 source: tui/src/app/agents_overview_tests.rs
-assertion_line: 1264
+assertion_line: 1296
 expression: "render_bottom_popup(&app.chat_widget,\n96).replace(&format!(\"{project}  3\"),\n&normalized_project_group).replace(&project, \"/tmp/project\")"
 ---
  Elpis · model gpt-5.6-sol default · location /tmp/project
   Agent command center  Group: Project  g
-   All 3   Needs you 1   Working 1   Ready 0   Inactive 1                 tab/shift+tab filter
+   All 4   Needs you 1   Working 1   Ready 1   Inactive 1                 tab/shift+tab filter
   ────────────────────────────────────────────────────────────────────────────────────────────
-      Tasks                                           │ Task details
-  /tmp/project  3                                     │
-  › ● Build the dashboard                             │ Build the dashboard
-    ● Repair authentication                           │ ● Needs input
-    ○ Review yesterday's changes                      │
-                                                      │ Agent: Inspect keyboard shortcuts
+      Task                                            │ Task details
+  /tmp/project  4                                     │
+  › ◇ Build the dashboard                             │ ● Build the dashboard
+    └─◆ Inspect keyboard shortcuts                    │ ◇ Ready
+    ◐ Repair authentication                           │
+    ○ Review yesterday's changes                      │ Agent: Inspect keyboard shortcuts
                                                       │ Open task to review.
                                                       │ Waiting for approval.
                                                       │

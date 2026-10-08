@@ -525,6 +525,12 @@ async fn lifecycle_removes_background_and_current_tasks_without_losing_the_dashb
         let mut tui = crate::tui::test_support::make_test_tui()?;
         tui.pause_events();
         app.open_agents_overview(&app_server);
+        // The attached subagent is listed under its root task.
+        let listed = if attach_child {
+            vec![id, primary]
+        } else {
+            vec![id]
+        };
         if action == AgentsOverviewAction::Archive {
             let rollout = app_server
                 .thread_read(id, /*include_turns*/ false)
@@ -542,7 +548,7 @@ async fn lifecycle_removes_background_and_current_tasks_without_losing_the_dashb
                 (app.primary_thread_id, app.chat_widget.thread_id()),
                 (None, None)
             );
-            assert_eq!(app.agents_overview.visible_thread_ids, vec![id]);
+            assert_eq!(app.agents_overview.visible_thread_ids, listed);
             assert_eq!(
                 app_server
                     .thread_read(primary, /*include_turns*/ false)
@@ -619,7 +625,7 @@ async fn lifecycle_removes_background_and_current_tasks_without_losing_the_dashb
             (app.primary_thread_id, app.chat_widget.thread_id()),
             (Some(primary), Some(primary))
         );
-        assert_eq!(app.agents_overview.visible_thread_ids, vec![id]);
+        assert_eq!(app.agents_overview.visible_thread_ids, listed);
         assert_eq!(
             app.agents_overview
                 .threads
@@ -670,6 +676,16 @@ async fn lifecycle_removes_background_and_current_tasks_without_losing_the_dashb
                 .status,
             ThreadStatus::Active { .. }
         ));
+        if attach_child {
+            // The attached subagent's own row starts selected; act on its root task instead,
+            // which removes both.
+            let selected = app
+                .chat_widget
+                .selected_index_for_present_view(AGENTS_OVERVIEW_VIEW_ID)
+                .expect("dashboard is open");
+            assert_eq!(app.agents_overview.visible_thread_ids[selected], primary);
+            app.chat_widget.handle_key_event(KeyCode::Up.into());
+        }
         app.chat_widget.handle_key_event(key);
         let confirmation = std::iter::from_fn(|| rx.try_recv().ok())
             .find(|event| matches!(event, AppEvent::ConfirmAgentsOverviewAction { .. }))

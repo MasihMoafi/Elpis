@@ -1,0 +1,27 @@
+---
+source: tui/src/app/agent_center_tests.rs
+assertion_line: 767
+expression: rendered
+---
+  Agent command center  Group: Project  g
+   All 5   Needs you 0   Working 2   Ready 2   Inactive 1                                                                                 tab/shift+tab filter
+  ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+      Task                                Model                     Status           Updated  │ Task details
+  /tmp/project  5                                                                             │
+  › ● Fix the dashboard token count       claude/opus · xhigh       ◐ Working         2m ago  │ ● Fix the dashboard token count
+    ├─● Find where usage is emitted       GPT-6.1-Sol · high        ◐ Working         3m ago  │ ◐ Working
+    │ └─● Check the bridge turns          GPT-6-Luna · low          ◇ Ready           5m ago  │
+    └─● Draft the release note            agy/gemini-3.8-flash-hi…  ◇ Ready          10m ago  │ Project
+    ● I'm home.                           claude/opus · xhigh       ○ Inactive       41m ago  │ /tmp/project
+                                                                                              │ Model: claude/opus · xhigh
+                                                                                              │
+                                                                                              │ Prompt
+                                                                                              │ Fix the dashboard token count
+                                                                                              │
+                                                                                              │
+                                                                                              │
+                                                                                              │
+                                                                                              │
+                                                                                              │
+                                                                                              │
+  ? help  esc back  ↑/↓ move  enter open  n new

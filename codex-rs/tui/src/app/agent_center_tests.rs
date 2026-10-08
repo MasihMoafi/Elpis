@@ -603,7 +603,7 @@ fn nested_agents_fixture() -> Vec<Thread> {
             "claude/opus",
             Some(ReasoningEffort::XHigh),
             working.clone(),
-            10,
+            120,
         ),
         (
             43,
@@ -612,7 +612,7 @@ fn nested_agents_fixture() -> Vec<Thread> {
             "gpt-6.1-sol",
             Some(ReasoningEffort::High),
             working,
-            12,
+            180,
         ),
         (
             44,
@@ -621,7 +621,7 @@ fn nested_agents_fixture() -> Vec<Thread> {
             "gpt-6-luna",
             Some(ReasoningEffort::Low),
             ThreadStatus::Idle,
-            30,
+            300,
         ),
         (
             45,
@@ -630,7 +630,7 @@ fn nested_agents_fixture() -> Vec<Thread> {
             "agy/gemini-3.8-flash-high",
             None,
             ThreadStatus::Idle,
-            60,
+            600,
         ),
         (
             46,
@@ -723,7 +723,15 @@ async fn live_center_nests_helpers_under_their_parent() {
         Some(ThreadId::from_u128(/*value*/ 42)),
     );
     let rendered = screen(&view, /*width*/ 160, /*height*/ 22);
-    let lines = rendered.lines().collect::<Vec<_>>();
+    // Only the task list counts: the details pane on the right repeats the selected title.
+    let divider = rendered
+        .lines()
+        .find_map(|line| cell_column(line, "│ Task details"))
+        .expect("details divider");
+    let lines = rendered
+        .lines()
+        .map(|line| line.chars().take(usize::from(divider)).collect::<String>())
+        .collect::<Vec<_>>();
     let line_of = |title: &str| {
         let matches = lines
             .iter()

@@ -1,17 +1,17 @@
 ---
 source: tui/src/app/agents_overview_tests.rs
-assertion_line: 818
+assertion_line: 847
 expression: "render_bottom_popup(&app.chat_widget,\n96).replace(&format!(\"{project}  2\"),\n&normalized_group).replace(&project, \"/tmp/project\")"
 ---
  Elpis · model gpt-5.6-sol default · location /tmp/project
   Agent command center  Group: Project  g
-   All 2   Needs you 1   Working 0   Ready 0   Inactive 1                 tab/shift+tab filter
+   All 3   Needs you 2   Working 0   Ready 0   Inactive 1                 tab/shift+tab filter
   ────────────────────────────────────────────────────────────────────────────────────────────
-      Tasks                                           │ Task details
-  /tmp/project  2                                     │
-  › ● Repair authentication                           │ Repair authentication
-    ○ Investigate parser                              │ ● Needs input
-                                                      │
+      Task                                            │ Task details
+  /tmp/project  3                                     │
+  › ◆ Repair authentication                           │ ● Repair authentication
+    └─◆ Check dependencies                            │ ◆ Needs input
+    ○ Investigate parser                              │
                                                       │ Agent: Check dependencies
                                                       │ Which dependency version should I use?
                                                       │ Open task to review.

@@ -634,7 +634,21 @@ async fn shared_overview_seeds_once_and_retains_locally_resumed_history() -> Res
     finish_overview_refresh(&mut restarted, &app_server, &mut event_rx).await;
     let retained: HashSet<_> = restarted.agents_overview.threads.keys().copied().collect();
     assert_eq!(retained, recent_ids);
+    let debug_seed = format!(
+        "DEBUG-RECENT after seed: view has_more={} discovery has_more={} initialized={}\n",
+        restarted.agents_overview.view_state.lock().unwrap().has_more,
+        restarted.agents_overview.discovery.has_more(),
+        restarted.agents_overview.initialized
+    );
     restarted.open_agents_overview(&app_server);
+    let debug_open = {
+        let state = restarted.agents_overview.view_state.lock().unwrap();
+        format!(
+            "DEBUG-RECENT after open: view has_more={} loading={}\n",
+            state.has_more, state.loading
+        )
+    };
+    std::fs::write("/tmp/agent-console-debug-recent.txt", debug_seed + &debug_open)?;
     let rendered = render_bottom_popup(&restarted.chat_widget, /*width*/ 80)
         .replace(&test_path_display("/"), "/");
     let age = regex_lite::Regex::new(r" +[0-9]+d ago").unwrap();
@@ -777,7 +791,7 @@ async fn check_hidden_thread_does_not_refresh_shared_overview(source: &str) {
 }
 
 #[tokio::test]
-async fn agents_overview_details_show_available_attention_without_expanding_rows() -> Result<()> {
+async fn agents_overview_details_show_a_helpers_attention_on_its_root() -> Result<()> {
     let mut app = make_test_app().await;
     let app_server = crate::start_embedded_app_server_for_picker(&app.config).await?;
     let [root, child, unloaded] = std::array::from_fn(|_| ThreadId::new());
@@ -840,11 +854,11 @@ async fn agents_overview_details_show_available_attention_without_expanding_rows
     app.chat_widget.show_bottom_pane_view(Box::new(view));
     let project = test_path_display("/tmp/project");
     let normalized_group = format!(
-        "/tmp/project  2{}",
+        "/tmp/project  3{}",
         " ".repeat(project.len().saturating_sub("/tmp/project".len()))
     );
     insta::with_settings!({snapshot_path => "../snapshots"}, {
-        insta::assert_snapshot!("agents_overview_attention", render_bottom_popup(&app.chat_widget, /*width*/ 96).replace(&format!("{project}  2"), &normalized_group).replace(&project, "/tmp/project"));
+        insta::assert_snapshot!("agents_overview_attention", render_bottom_popup(&app.chat_widget, /*width*/ 96).replace(&format!("{project}  3"), &normalized_group).replace(&project, "/tmp/project"));
     });
     app.handle_app_server_event(
         &app_server,
@@ -865,7 +879,7 @@ async fn agents_overview_details_show_available_attention_without_expanding_rows
     let view = app.agents_overview_view(threads, Some(unloaded));
     app.chat_widget.show_bottom_pane_view(Box::new(view));
     insta::with_settings!({snapshot_path => "../snapshots"}, {
-        insta::assert_snapshot!("agents_overview_last_message", render_bottom_popup(&app.chat_widget, /*width*/ 96).replace(&format!("{project}  2"), &normalized_group).replace(&project, "/tmp/project"));
+        insta::assert_snapshot!("agents_overview_last_message", render_bottom_popup(&app.chat_widget, /*width*/ 96).replace(&format!("{project}  3"), &normalized_group).replace(&project, "/tmp/project"));
     });
     app.track_agents_overview_notification(&ServerNotification::ThreadReverted(
         codex_app_server_protocol::ThreadRevertedNotification {
@@ -1205,7 +1219,7 @@ async fn overview_model_grouping_shows_details_and_preserves_selection() {
 }
 
 #[tokio::test]
-async fn shared_overview_shows_only_root_sessions() {
+async fn shared_overview_lists_root_sessions_with_their_helpers() {
     assert_eq!(
         AgentsOverviewGroup::for_status(&ThreadStatus::SystemError),
         AgentsOverviewGroup::NeedsYou
@@ -1289,14 +1303,14 @@ async fn shared_overview_shows_only_root_sessions() {
     app.chat_widget.show_bottom_pane_view(Box::new(view));
     let project = test_path_display("/tmp/project");
     let normalized_project_group = format!(
-        "/tmp/project  3{}",
+        "/tmp/project  4{}",
         " ".repeat(project.len().saturating_sub("/tmp/project".len()))
     );
     insta::with_settings!({snapshot_path => "../snapshots"}, {
         insta::assert_snapshot!(
             "agents_overview",
             render_bottom_popup(&app.chat_widget, /*width*/ 96)
-                .replace(&format!("{project}  3"), &normalized_project_group)
+                .replace(&format!("{project}  4"), &normalized_project_group)
                 .replace(&project, "/tmp/project")
         );
     });
@@ -1343,7 +1357,7 @@ async fn shared_overview_shows_only_root_sessions() {
     assert!(
         rendered
             .lines()
-            .any(|line| line.contains("› ● Inspect unnamed task"))
+            .any(|line| line.contains("› ◆ Inspect unnamed task"))
     );
 
     app.transcript_cells.push(std::sync::Arc::new(
