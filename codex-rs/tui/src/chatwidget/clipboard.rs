@@ -10,7 +10,9 @@ pub(super) enum PendingCopy {
 }
 
 impl ChatWidget {
-    pub(crate) fn paste_image(&mut self) {
+    /// Attaches the clipboard's image. Elpis: says whether the clipboard held one, so Ctrl+V can
+    /// paste its text instead.
+    pub(crate) fn paste_image(&mut self) -> bool {
         match paste_image_to_temp_png() {
             Ok((path, info)) => {
                 tracing::debug!(
@@ -21,6 +23,7 @@ impl ChatWidget {
                 );
                 self.attach_image(path);
             }
+            Err(crate::clipboard_paste::PasteImageError::NoImage(_)) => return false,
             Err(err) => {
                 tracing::warn!("failed to paste image: {err}");
                 self.add_to_history(history_cell::new_error_event(format!(
@@ -28,6 +31,7 @@ impl ChatWidget {
                 )));
             }
         }
+        true
     }
 
     pub(super) fn show_clipboard_flash(&mut self, result: &CopyResult) {

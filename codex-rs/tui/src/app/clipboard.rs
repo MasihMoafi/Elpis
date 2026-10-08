@@ -25,8 +25,9 @@ impl App {
                         "Clipboard busy; try image paste after it finishes".into(),
                         /*hint*/ None,
                     );
-                } else {
-                    self.chat_widget.paste_image();
+                } else if !self.chat_widget.paste_image() {
+                    // Elpis: with no image on the clipboard, Ctrl+V pastes its text, as in an IDE.
+                    self.start_key_paste(tui);
                 }
             }
         }

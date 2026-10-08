@@ -1709,7 +1709,8 @@ impl RuntimeKeymap {
                     raw(KeyBinding::new(KeyCode::Right, KeyModifiers::ALT)),
                     raw(KeyBinding::new(KeyCode::Right, KeyModifiers::CONTROL))
                 ],
-                move_line_start: default_bindings![plain(KeyCode::Home), ctrl(KeyCode::Char('a'))],
+                // Elpis: Ctrl+A selects everything (bottom_pane/textarea/elpis_selection.rs).
+                move_line_start: default_bindings![plain(KeyCode::Home)],
                 move_line_end: default_bindings![plain(KeyCode::End), ctrl(KeyCode::Char('e'))],
                 delete_backward: default_bindings![
                     plain(KeyCode::Backspace),

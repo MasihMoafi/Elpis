@@ -49,6 +49,8 @@ use std::ops::Range;
 use std::sync::Arc;
 use unicode_segmentation::UnicodeSegmentation;
 
+// Elpis: IDE-style keyboard selection.
+mod elpis_selection;
 mod hyperlinks;
 mod mouse;
 mod vim;
@@ -727,6 +729,11 @@ impl TextArea {
                 }
             );
             self.apply_vim_insert_action(VimAction::MoveLineEnd { move_down_at_eol });
+            return;
+        }
+        // Elpis: Shift with a movement selects and Ctrl+A selects everything, as in an IDE,
+        // where no editor binding claims the key.
+        if self.elpis_select(event) {
             return;
         }
 

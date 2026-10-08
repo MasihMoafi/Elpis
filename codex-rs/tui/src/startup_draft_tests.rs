@@ -555,7 +555,8 @@ fn startup_draft_allows_local_editor_shortcuts_without_startup_actions() {
             KeyEvent::new(KeyCode::Char('b'), KeyModifiers::ALT),
             "first ".len(),
         ),
-        (KeyEvent::new(KeyCode::Char('a'), KeyModifiers::CONTROL), 0),
+        // Elpis: Ctrl+A selects everything; Home moves to the line start.
+        (KeyEvent::new(KeyCode::Home, KeyModifiers::NONE), 0),
         (
             KeyEvent::new(KeyCode::Char('e'), KeyModifiers::CONTROL),
             "first second".len(),

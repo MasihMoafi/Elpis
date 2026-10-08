@@ -259,3 +259,99 @@ async fn busy_draft_footer_offers_enter_to_queue_and_the_ledger() {
     assert!(footer.contains("Tab Context Ledger"), "{footer}");
     assert!(!footer.contains("open the Context Ledger"), "{footer}");
 }
+
+// IDE-style keyboard selection in the composer.
+
+fn press(chat: &mut ChatWidget, code: KeyCode, modifiers: KeyModifiers) {
+    chat.handle_key_event(KeyEvent::new(code, modifiers));
+}
+
+/// The text Ctrl+C copies from the composer, if anything is selected.
+fn copied(chat: &mut ChatWidget) -> Option<String> {
+    let mut copied = None;
+    let ctrl_c =
+        crate::tui::TuiEvent::Key(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL));
+    chat.copy_composer_selection(&ctrl_c, |text| {
+        copied = Some(text.to_string());
+        Ok(crate::clipboard_copy::CopyStatus::Confirmed)
+    });
+    copied
+}
+
+/// Positive: each Ctrl+Shift+Left (and Alt+Shift+Left, which GNOME Terminal delivers instead)
+/// selects one more word to the left, and Backspace deletes the selection whole.
+/// Negative: Ctrl+Left alone selects nothing, so Backspace deletes one character.
+#[tokio::test]
+async fn shift_word_moves_select_words_and_backspace_deletes_the_selection() {
+    for word_modifier in [KeyModifiers::CONTROL, KeyModifiers::ALT] {
+        let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+        chat.bottom_pane
+            .set_composer_text("one two three".to_string(), Vec::new(), Vec::new());
+
+        press(
+            &mut chat,
+            KeyCode::Left,
+            word_modifier | KeyModifiers::SHIFT,
+        );
+        press(
+            &mut chat,
+            KeyCode::Left,
+            word_modifier | KeyModifiers::SHIFT,
+        );
+        press(&mut chat, KeyCode::Backspace, KeyModifiers::NONE);
+
+        assert_eq!(chat.bottom_pane.composer_text(), "one ");
+    }
+
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    chat.bottom_pane
+        .set_composer_text("one two".to_string(), Vec::new(), Vec::new());
+    press(&mut chat, KeyCode::Left, KeyModifiers::CONTROL);
+    assert_eq!(copied(&mut chat), None);
+    press(&mut chat, KeyCode::Backspace, KeyModifiers::NONE);
+    assert_eq!(chat.bottom_pane.composer_text(), "onetwo");
+}
+
+/// Positive: Shift+Left selects one character at a time, Shift+Right gives one back, typing
+/// replaces the selection and Ctrl+C copies one. Negative: plain Left drops the selection.
+#[tokio::test]
+async fn shift_arrows_select_characters_and_typing_replaces_them() {
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    chat.bottom_pane
+        .set_composer_text("hello".to_string(), Vec::new(), Vec::new());
+
+    press(&mut chat, KeyCode::Left, KeyModifiers::SHIFT);
+    press(&mut chat, KeyCode::Left, KeyModifiers::SHIFT);
+    press(&mut chat, KeyCode::Left, KeyModifiers::SHIFT);
+    press(&mut chat, KeyCode::Right, KeyModifiers::SHIFT);
+    press(&mut chat, KeyCode::Char('p'), KeyModifiers::NONE);
+    // The next key delivers the typed letter, as a pause in typing does.
+    press(&mut chat, KeyCode::End, KeyModifiers::NONE);
+    assert_eq!(chat.bottom_pane.composer_text(), "help");
+    press(&mut chat, KeyCode::Left, KeyModifiers::SHIFT);
+    press(&mut chat, KeyCode::Left, KeyModifiers::SHIFT);
+    assert_eq!(copied(&mut chat).as_deref(), Some("lp"));
+
+    press(&mut chat, KeyCode::Left, KeyModifiers::SHIFT);
+    press(&mut chat, KeyCode::Left, KeyModifiers::NONE);
+    assert_eq!(copied(&mut chat), None);
+    assert_eq!(chat.bottom_pane.composer_text(), "help");
+}
+
+/// Positive: Ctrl+A (Ctrl+Shift+A sends the same key) selects the whole draft for Ctrl+C and
+/// Backspace. Negative: Home still only moves to the line start.
+#[tokio::test]
+async fn ctrl_a_selects_everything() {
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    chat.bottom_pane
+        .set_composer_text("first line\nsecond".to_string(), Vec::new(), Vec::new());
+
+    press(&mut chat, KeyCode::Home, KeyModifiers::NONE);
+    assert_eq!(copied(&mut chat), None);
+    press(&mut chat, KeyCode::Char('a'), KeyModifiers::CONTROL);
+    assert_eq!(copied(&mut chat).as_deref(), Some("first line\nsecond"));
+    press(&mut chat, KeyCode::Char('a'), KeyModifiers::CONTROL);
+    press(&mut chat, KeyCode::Backspace, KeyModifiers::NONE);
+
+    assert_eq!(chat.bottom_pane.composer_text(), "");
+}

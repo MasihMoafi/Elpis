@@ -1,4 +1,6 @@
 //! Right-click CLIPBOARD and local X11 middle-click PRIMARY fallback for an editable composer.
+//! Elpis: Ctrl+V with no image on the clipboard pastes its text the same way, whatever the
+//! right-click setting.
 //! Existing selection handlers run first. Only a draw may deliver a read, so real input
 //! invalidates pending paste before completion and is never replaced by clipboard text.
 
@@ -14,6 +16,8 @@ pub(super) struct PendingPaste {
     thread: Option<ThreadId>,
     draft: (String, usize),
     source: PasteSource,
+    /// Ctrl+V asked for it, not a mouse button.
+    by_key: bool,
     _request: Arc<()>,
 }
 
@@ -55,8 +59,10 @@ impl App {
         &self,
         tui: &tui::Tui,
         source: PasteSource,
+        by_key: bool,
     ) -> Option<(Option<ThreadId>, (String, usize))> {
         let allowed = match source {
+            PasteSource::Clipboard if by_key => !self.right_click_paste_environment.ssh,
             PasteSource::Clipboard => {
                 !self.transcript_view.has_selection_range()
                     && self
@@ -84,10 +90,22 @@ impl App {
             MouseEventKind::Down(MouseButton::Middle) => PasteSource::Primary,
             _ => return,
         };
-        if !mouse.modifiers.is_empty() || self.pending_right_click_paste.is_some() {
+        if !mouse.modifiers.is_empty() {
             return;
         }
-        let Some((thread, draft)) = self.right_click_paste_target(tui, source) else {
+        self.start_paste(tui, source, /*by_key*/ false);
+    }
+
+    /// Elpis: Ctrl+V found no image on the clipboard; paste its text.
+    pub(super) fn start_key_paste(&mut self, tui: &mut tui::Tui) {
+        self.start_paste(tui, PasteSource::Clipboard, /*by_key*/ true);
+    }
+
+    fn start_paste(&mut self, tui: &mut tui::Tui, source: PasteSource, by_key: bool) {
+        if self.pending_right_click_paste.is_some() {
+            return;
+        }
+        let Some((thread, draft)) = self.right_click_paste_target(tui, source, by_key) else {
             return;
         };
         match tui.clipboard.read_text(source, tui.frame_requester()) {
@@ -96,6 +114,7 @@ impl App {
                     thread,
                     draft,
                     source,
+                    by_key,
                     _request: request,
                 });
                 tui.frame_requester().schedule_frame();
@@ -121,7 +140,9 @@ impl App {
                     || mouse.kind == MouseEventKind::Up(button)
                     || (mouse.kind == MouseEventKind::Down(button) && mouse.modifiers.is_empty())
             }
-            TuiEvent::Key(_) | TuiEvent::Paste(_) | TuiEvent::FocusLost | TuiEvent::Resume => false,
+            // Elpis: releasing Ctrl+V does not change the draft.
+            TuiEvent::Key(key) => key.kind == crossterm::event::KeyEventKind::Release,
+            TuiEvent::Paste(_) | TuiEvent::FocusLost | TuiEvent::Resume => false,
         };
         if !keep {
             self.pending_right_click_paste = None;
@@ -140,7 +161,9 @@ impl App {
             tui.clipboard.take_text_result();
             return event;
         };
-        let Some((thread, draft)) = self.right_click_paste_target(tui, pending.source) else {
+        let Some((thread, draft)) =
+            self.right_click_paste_target(tui, pending.source, pending.by_key)
+        else {
             self.pending_right_click_paste = None;
             return event;
         };
