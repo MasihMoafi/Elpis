@@ -89,8 +89,11 @@ async fn switching_from_ultra_thread_restores_configured_plan_effort() {
         },
         /*resume_restored_queue*/ false,
     );
+    // Elpis: Shift+Tab cycles permissions, so Plan mode is entered as `/plan` enters it.
+    let plan_mask =
+        crate::collaboration_modes::plan_mask(app.model_catalog.as_ref()).expect("plan mode");
     app.chat_widget
-        .handle_key_event(KeyEvent::from(KeyCode::BackTab));
+        .set_collaboration_mask_from_user_action(plan_mask);
 
     assert_eq!(
         app.chat_widget.active_collaboration_mode_kind(),

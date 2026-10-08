@@ -157,7 +157,8 @@ async fn restored_conversation_ultra_remains_selected_after_switching_to_plan() 
         network_proxy: None,
         rollout_path: None,
     });
-    chat.handle_key_event(KeyEvent::from(KeyCode::BackTab));
+    // Elpis: Shift+Tab cycles permissions; `/plan` enters Plan mode.
+    chat.dispatch_command(SlashCommand::Plan);
 
     assert_eq!(chat.active_collaboration_mode_kind(), ModeKind::Plan);
     assert_eq!(
