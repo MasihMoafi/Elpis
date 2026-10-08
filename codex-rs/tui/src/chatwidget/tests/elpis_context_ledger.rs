@@ -319,7 +319,10 @@ async fn backspace_in_the_focused_ledger_edits_the_draft() -> anyhow::Result<()>
     chat.handle_key_event(KeyEvent::from(KeyCode::Backspace));
 
     assert_eq!(chat.bottom_pane.composer_text(), "Keep this dra");
-    assert!(!chat.context_ledger_has_focus(), "typing returns to the composer");
+    assert!(
+        !chat.context_ledger_has_focus(),
+        "typing returns to the composer"
+    );
     assert_eq!(ledger_alone(&chat), ledger_before, "no Ledger row changed");
     assert!(op_rx.try_recv().is_err(), "nothing was submitted");
     Ok(())
@@ -490,7 +493,7 @@ async fn smart_prune_row_syncs_then_shows_the_thread_state_as_in_v030() {
 }
 
 #[tokio::test]
-async fn smart_prune_row_says_it_does_not_apply_to_claude_chats() {
+async fn smart_prune_row_says_what_it_does_on_claude_and_antigravity_chats() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
     chat.last_rendered_width.set(Some(WIDTH));
     chat.smart_prune_synced = true;
@@ -504,11 +507,17 @@ async fn smart_prune_row_says_it_does_not_apply_to_claude_chats() {
         "{ledger}"
     );
 
-    // Positive: a Claude chat (the bridge's `claude/` models) is told the switch skips it.
+    // A Claude chat's tool results shrink in the bridge's Claude proxy while the switch is on.
     chat.set_model("claude/opus");
     let ledger = ledger_words(&chat);
+    assert!(ledger.contains("through the Claude proxy"), "{ledger}");
+    assert!(!ledger.contains("Does not apply"), "{ledger}");
+
+    // An Antigravity chat's requests go to Google: the switch skips them.
+    chat.set_model("agy/gemini-3.8-flash-high");
+    let ledger = ledger_words(&chat);
     assert!(
-        ledger.contains("Does not apply to Claude or Antigravity chats"),
+        ledger.contains("Does not apply to Antigravity chats"),
         "{ledger}"
     );
     assert!(!ledger.contains("Before first main-model send"), "{ledger}");

@@ -181,6 +181,26 @@ function everyMinute(fetchLimits, what) {
 const claudeLimitsCached = everyMinute(claudeLimits, "Claude usage");
 const agyLimitsCached = everyMinute(agyLimits, "Antigravity usage");
 
+// Smart Prune for Claude chats: the proxy `elpis claude` runs (`elpis claude --serve`), started
+// once and shared. It shrinks large tool results before Anthropic sees them; a Claude chat's
+// requests go through it while that chat's Smart Prune switch is on.
+let pruneProxy = null;
+function smartPruneProxy() {
+  pruneProxy ??= new Promise((resolve) => {
+    const proxy = spawn(process.env.ELPIS_ENGINE_BIN ?? `${HOME}/.local/bin/elpis`, ["claude", "--serve", "--no-browser"], { stdio: ["pipe", "pipe", "ignore"] });
+    let out = "";
+    proxy.stdout.on("data", (d) => {
+      out += d;
+      const i = out.indexOf("\n");
+      if (i >= 0) { const origin = out.slice(0, i).trim(); log(`smart prune proxy at ${origin}`); resolve(origin); }
+    });
+    proxy.on("error", (e) => { log(`smart prune proxy: ${e.message}`); resolve(null); });
+    proxy.on("exit", (code) => { log(`smart prune proxy exited (${code})`); pruneProxy = null; resolve(null); });
+    setTimeout(() => resolve(null), 30_000);
+  });
+  return pruneProxy;
+}
+
 // The account each subscription is signed in with; Elpis's /status reads this file.
 const ACCOUNTS = `${STORE.slice(0, STORE.lastIndexOf("/"))}/accounts.json`;
 async function recordAccounts() {
@@ -329,6 +349,7 @@ wss.on("connection", (ws) => {
     toTui({ id: msg.id, result: { thread: { ...c.thread, turns: includeTurns ? c.turns : [] } } });
   }
   const threadPolicy = new Map();
+  const smartPrune = new Map(); // thread id -> its Smart Prune switch, as the engine reports it
   const threadSandbox = new Map();
   const pendingDelegation = new Map(); // thread/start id -> the chat that delegated it
   const sessions = new Map();
@@ -563,6 +584,7 @@ wss.on("connection", (ws) => {
     if (th?.id && parsed?.result?.approvalPolicy) { threadPolicy.set(th.id, parsed.result.approvalPolicy); chatPolicy.set(th.id, parsed.result.approvalPolicy); }
     shareHelper(parsed);
     notePlan(parsed);
+    if (parsed?.method === "thread/smartPrune/updated" && parsed.params?.threadId) smartPrune.set(parsed.params.threadId, !!parsed.params.smartPrune?.enabled);
     if (parsed?.method && parsed.id !== undefined && helperConns.has(ws) && helperThreads.has(parsed.params?.threadId)
       && relayToTui(parsed, (reply) => engine.stdin.write(JSON.stringify({ id: parsed.id, ...(reply.error ? { error: reply.error } : { result: reply.result }) }) + "\n"))) return;
     if (parsed && engineReqs.has(parsed.id) && !parsed.method) {
@@ -900,13 +922,16 @@ wss.on("connection", (ws) => {
       let live = sessions.get(threadId);
       let sessionId = null;
       let freshSession = false;
-      // A changed approval mode or Subagents switch reloads the session with the new options;
-      // Claude Code rebuilds it and keeps the conversation. A changed agent starts afresh.
-      if (live && live.mode === mode && live.subagents === subagents && live.agent === agent.key) sessionId = live.id;
+      // Smart Prune on: Claude's requests go through the proxy (`smartPruneProxy`).
+      const prune = agent.key === "claude" && smartPrune.get(threadId) === true;
+      // A changed approval mode, Subagents or Smart Prune switch reloads the session with the new
+      // options; Claude Code rebuilds it and keeps the conversation. A changed agent starts afresh.
+      if (live && live.mode === mode && live.subagents === subagents && live.agent === agent.key && live.prune === prune) sessionId = live.id;
       else {
         const cwd = threadCwd.get(threadId) ?? process.cwd();
         const instructions = await elpisInstructions(threadId);
-        const options = { ...(ask && { settingSources: ["project", "local"] }), ...(!subagents && { disallowedTools: SUBAGENT_TOOLS }) };
+        const proxy = prune ? await smartPruneProxy() : null;
+        const options = { ...(ask && { settingSources: ["project", "local"] }), ...(!subagents && { disallowedTools: SUBAGENT_TOOLS }), ...(proxy && { env: { ANTHROPIC_BASE_URL: proxy, NO_PROXY: [process.env.NO_PROXY, "127.0.0.1", "localhost"].filter(Boolean).join(",") } }) };
         let _meta = { claudeCode: { options, emitRawSDKMessages: [{ type: "system", subtype: "init" }] } };
         devChars.set(threadId, instructions.length);
         if (instructions) { _meta = { ..._meta, systemPrompt: { append: instructions } }; log(`Elpis instructions for Claude: ${instructions.length} chars`); }
@@ -928,7 +953,7 @@ wss.on("connection", (ws) => {
           freshSession = true;
           log(`session ${sessionId} for thread ${threadId} in ${cwd} (${ask ? "Elpis asks" : "full access"}, policy ${policy}, subagents ${subagents ? "on" : "off"})`);
         }
-        live = { id: sessionId, mode, subagents, agent: agent.key };
+        live = { id: sessionId, mode, subagents, agent: agent.key, prune };
         sessions.set(threadId, live);
         const sid = sessionId;
         updateStore((st) => { st[threadId] = { ...st[threadId], session: sid, mode, agent: agent.key }; });

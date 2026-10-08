@@ -102,6 +102,7 @@ sys-locale = { workspace = true }
 tempfile = { workspace = true }
 tokio = { workspace = true, features = [
     "io-std",
+    "io-util",
     "macros",
     "net",
     "process",

@@ -463,6 +463,33 @@ for (const s of scenarios) {
     memory.includes(word)
       ? console.log(`PASS memory (Claude saved "${word}" to MEMORY.md through elpis memory-save)`)
       : fail(`memory: MEMORY.md=${JSON.stringify(memory.slice(0, 120))} reply=${r.text.slice(0, 120)}`);
+  } else if (s === "smart-prune") {
+    // A Claude chat with Smart Prune on sends its requests through the proxy `elpis claude`
+    // uses (it shrinks large tool results before Anthropic sees them); with the switch off, it
+    // does not. The switch is a global feature flag: run with ELPIS_HOME set to a temporary
+    // folder, so the real config is never touched.
+    const home = process.env.ELPIS_HOME;
+    if (!home || !home.startsWith(tmpdir())) { fail("smart-prune: run with ELPIS_HOME set to a temporary folder"); continue; }
+    const { readFileSync: readLog } = await import("node:fs");
+    const flip = (on) => call("config/batchWrite", { edits: [{ keyPath: "features.automatic_context_pruning", value: on, mergeStrategy: "replace" }], filePath: null, expectedVersion: null, reloadUserConfig: true });
+    const proxied = async () => {
+      const origin = [...readLog(process.env.ACP_BRIDGE_LOG ?? "/tmp/acp-bridge/e2e.log", "utf8").matchAll(/smart prune proxy at (\S+)/g)].at(-1)?.[1];
+      if (!origin) return 0;
+      try { return (await (await fetch(`${origin}/elpis/session.json`)).json()).requests ?? 0; } catch { return 0; }
+    };
+    const st = await call("thread/start", { model: process.env.E2E_MODEL ?? "claude/opus", cwd: dir, approvalPolicy: "never", sandbox: "danger-full-access" });
+    const tid = st.result?.thread?.id;
+    await flip(false);
+    await new Promise((r) => setTimeout(r, 1500));
+    await turn(tid, [{ type: "text", text: "Reply with exactly: OFF", text_elements: [] }]);
+    const whileOff = await proxied();
+    await flip(true);
+    await new Promise((r) => setTimeout(r, 1500));
+    const r = await turn(tid, [{ type: "text", text: "Reply with exactly: ON", text_elements: [] }]);
+    const whileOn = await proxied();
+    whileOff === 0 && whileOn > 0 && r.text.includes("ON")
+      ? console.log(`PASS smart-prune (off: no requests through the proxy; on: ${whileOn} request(s) through it, and Claude answered)`)
+      : fail(`smart-prune: through the proxy while off=${whileOff}, while on=${whileOn}, reply=${r.text.slice(0, 60)}`);
   } else if (s === "antigravity") {
     // Gemini from the Antigravity (Google) sign-in, chosen like a Claude model: listed, answers,
     // its tools drawn as Elpis rows, and it remembers the chat across a model switch back.
