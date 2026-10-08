@@ -543,6 +543,19 @@ for (const s of scenarios) {
       && chatModel === (process.env.E2E_MODEL ?? "claude/opus")
       ? console.log(`PASS helper-parent (helper ${helper} is listed, read and a descendant of its chat, which lists as ${chatModel})`)
       : fail(`helper-parent: helper=${helper} list.parent=${inList?.parentThreadId} read.parent=${read?.parentThreadId} descendants=${JSON.stringify(kids.map((t) => t.id))} chat.model=${chatModel}`);
+  } else if (s === "agy-model") {
+    // A bare Antigravity family id, as a delegating agent may write it, runs as its medium version.
+    const { spawn } = await import("node:child_process");
+    const agy = spawn(process.execPath, [new URL("../agy-acp.mjs", import.meta.url).pathname], { stdio: ["pipe", "pipe", "inherit"] });
+    let buf = ""; const waiting = new Map(); let n = 0;
+    agy.stdout.on("data", (d) => { buf += d; for (let i; (i = buf.indexOf("\n")) >= 0;) { const l = buf.slice(0, i); buf = buf.slice(i + 1); try { const m = JSON.parse(l); waiting.get(m.id)?.(m); } catch {} } });
+    const rpc = (method, params) => new Promise((r) => { const id = ++n; waiting.set(id, r); agy.stdin.write(JSON.stringify({ jsonrpc: "2.0", id, method, params }) + "\n"); });
+    await rpc("initialize", { protocolVersion: 1, clientCapabilities: {} });
+    const sid = (await rpc("session/new", { cwd: process.cwd(), mcpServers: [] })).result?.sessionId;
+    const set = await rpc("session/set_config_option", { sessionId: sid, configId: "model", value: "gemini-3.8-flash" });
+    agy.kill();
+    const chosen = set.result?.configOptions?.[0]?.currentValue;
+    chosen === "gemini-3.8-flash-medium" ? console.log(`PASS agy-model (gemini-3.8-flash runs as ${chosen})`) : fail(`agy-model: got ${chosen}`);
   } else if (s === "image") {
     const word = process.env.E2E_IMAGE_WORD;
     const path = process.env.E2E_IMAGE_PATH;

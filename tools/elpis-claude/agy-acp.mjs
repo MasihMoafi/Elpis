@@ -28,6 +28,14 @@ function models() {
   }));
   return modelList;
 }
+// Antigravity's ids carry the effort (gemini-3.8-flash-high); a bare family id, as a delegating
+// agent may write it, takes its medium version, else the first one listed.
+async function resolveModel(value) {
+  const list = await models();
+  if (list.some((m) => m.value === value)) return value;
+  const family = list.filter((m) => m.value.startsWith(`${value}-`));
+  return (family.find((m) => m.value === `${value}-medium`) ?? family[0])?.value ?? value;
+}
 const configOptions = async (s) => [{ id: "model", name: "Model", type: "select", currentValue: s.model, options: await models() }];
 
 // Smallest one-hunk diff (common head and tail kept as context) in Claude Code's structuredPatch form.
@@ -184,7 +192,7 @@ async function handle(msg) {
     }
     case "session/set_config_option":
       if (!s) throw { code: -32602, message: "unknown session" };
-      if (p.configId === "model") s.model = p.value;
+      if (p.configId === "model") s.model = await resolveModel(p.value);
       else throw { code: -32602, message: `Antigravity has no ${p.configId} option` };
       return { configOptions: await configOptions(s) };
     case "session/set_mode":
