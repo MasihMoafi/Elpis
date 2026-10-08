@@ -54,8 +54,8 @@ pub(crate) fn codex_title(version: &str) -> Vec<Span<'static>> {
         version
     };
     vec![
-        Span::from("◆ ").style(crate::elpis_motion::accent_style()),
-        Span::from(crate::branding::CODEX_RUNTIME_TITLE).style(crate::elpis_motion::accent_style()),
+        "◆ ".dim(),
+        Span::from(crate::branding::CODEX_RUNTIME_TITLE).bold(),
         format!(" (v{version})").dim(),
     ]
 }

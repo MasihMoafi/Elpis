@@ -4,11 +4,11 @@ assertion_line: 636
 expression: "render_bottom_popup(&app.chat_widget, 80)"
 ---
  Elpis · model gpt-5.6-sol default · location /tmp/project
-Reconnect failed — check the endpoint, then rel…│ CONTEXT LEDGER  context not
+Reconnect failed — check the endpoint, then re… │ CONTEXT LEDGER  context not
                                                 │ measured · ≈0 source
-────────────────────────────────────────────────┤ estimates
-› Ask Elpis to do anything                      │ Tab controls · Alt+C hide ·
-────────────────────────────────────────────────┤ Ctrl+click open file
+──────────────────────────────────────────────┐ │ estimates
+› Ask Elpis to do anything                    │ │ Tab controls · Alt+C hide ·
+──────────────────────────────────────────────┘ │ Ctrl+click open file
   ctrl+c quit                                   │
                                                 │ SMART PRUNE       [···] SYNC
                                                 │ Reading current thread state

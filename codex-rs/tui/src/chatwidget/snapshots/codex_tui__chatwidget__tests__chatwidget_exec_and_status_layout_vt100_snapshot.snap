@@ -1,6 +1,6 @@
 ---
 source: tui/src/chatwidget/tests/status_and_layout.rs
-assertion_line: 5060
+assertion_line: 5064
 expression: normalize_snapshot_paths(term.backend().vt100().screen().contents())
 ---
 
@@ -21,11 +21,11 @@ expression: normalize_snapshot_paths(term.backend().vt100().screen().contents())
     Read diff_render.rs
 
  Elpis · model gpt-5.6-sol default · location /tmp/project
-Investigating rendering code (0s • esc to inter…│ CONTEXT LEDGER  context not
+Investigating rendering code (0s • esc to inte… │ CONTEXT LEDGER  context not
                                                 │ measured · ≈0 source
-────────────────────────────────────────────────┤ estimates
-› Summarize recent commits                      │ Tab controls · Alt+C hide ·
-────────────────────────────────────────────────┤ Ctrl+click open file
+──────────────────────────────────────────────┐ │ estimates
+› Summarize recent commits                    │ │ Tab controls · Alt+C hide ·
+──────────────────────────────────────────────┘ │ Ctrl+click open file
   enter to queue message                        │
                                                 │ SMART PRUNE       [···] SYNC
                                                 │ Reading current thread state

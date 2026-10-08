@@ -19,6 +19,7 @@ use crate::terminal_hyperlinks::HyperlinkLine;
 use crate::terminal_hyperlinks::LogicalLineSource;
 use crate::terminal_hyperlinks::adaptive_wrap_hyperlink_lines;
 use crate::terminal_hyperlinks::plain_hyperlink_lines;
+use crate::style::accent_color;
 use crate::terminal_hyperlinks::prefix_hyperlink_lines;
 use crate::terminal_hyperlinks::remap_source_wrapped_line;
 use crate::terminal_hyperlinks::visible_lines;
@@ -426,12 +427,7 @@ impl ExecCell {
                     );
                 }
                 let line = Line::from(line);
-                // Elpis: exploring titles in the Elpis gradient, moving while active.
-                let mut initial_indent = Line::from(crate::elpis_motion::animated_text(
-                    title,
-                    self.animations_enabled() && self.active_start_time().is_some(),
-                ));
-                initial_indent.spans.push(" ".into());
+                let initial_indent = Line::from(vec![title.fg(accent_color()), " ".into()]);
                 let subsequent_indent = " ".repeat(initial_indent.width()).into();
                 let wrapped = adaptive_wrap_hyperlink_lines(
                     &[line.into()],
@@ -464,8 +460,8 @@ impl ExecCell {
             .duration
             .and_then(|_| call.output.as_ref().map(|o| o.exit_code == 0));
         let bullet = match success {
-            // Elpis: success in the accent, failure as a warning.
-            Some(true) => Span::from("•").style(crate::elpis_motion::accent_style()),
+            // Elpis: failure as a warning.
+            Some(true) => "•".green().bold(),
             Some(false) => Span::from("•").style(crate::style::status_style(
                 crate::style::StatusTone::Attention,
             )),

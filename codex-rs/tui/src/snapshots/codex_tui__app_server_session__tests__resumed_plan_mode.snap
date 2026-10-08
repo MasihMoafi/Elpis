@@ -7,4 +7,4 @@ expression: "crate::chatwidget::tests::helpers::normalize_snapshot_paths(crate::
 ───────────────────────────────────────┐
 › Ask Elpis to do anything             │
 ───────────────────────────────────────┘
-  Plan mode (shift+tab to cycle)
+  Plan mode (/plan to leave)

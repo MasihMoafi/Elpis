@@ -1351,23 +1351,20 @@ async fn enter_queues_when_plan_turn_is_active_without_plan_stream() {
     assert_no_submit_op(&mut op_rx);
 }
 
+/// Elpis: Shift+Tab cycles the permission modes, so bare /plan both enters and leaves Plan mode,
+/// keeping the conversation's own settings.
 #[tokio::test]
-async fn collab_mode_shift_tab_cycles_only_when_idle() {
+async fn bare_plan_command_toggles_plan_mode() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
 
     let initial = chat.current_collaboration_mode().clone();
-    chat.handle_key_event(KeyEvent::from(KeyCode::BackTab));
+    chat.dispatch_command(SlashCommand::Plan);
     assert_eq!(chat.active_collaboration_mode_kind(), ModeKind::Plan);
     assert_eq!(chat.current_collaboration_mode(), &initial);
 
-    chat.handle_key_event(KeyEvent::from(KeyCode::BackTab));
+    chat.dispatch_command(SlashCommand::Plan);
     assert_eq!(chat.active_collaboration_mode_kind(), ModeKind::Default);
     assert_eq!(chat.current_collaboration_mode(), &initial);
-
-    chat.on_task_started();
-    let before = chat.active_collaboration_mode_kind();
-    chat.handle_key_event(KeyEvent::from(KeyCode::BackTab));
-    assert_eq!(chat.active_collaboration_mode_kind(), before);
 }
 
 #[tokio::test]

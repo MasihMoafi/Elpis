@@ -248,19 +248,13 @@ impl ChatWidget {
         }
 
         match key_event {
+            // Elpis: Shift+Tab cycles the permission modes, as in v0.3.0; /plan enters Plan mode.
             KeyEvent {
                 code: KeyCode::BackTab,
                 kind: KeyEventKind::Press,
                 ..
-            } if self.collaboration_modes_enabled()
-                && !self.bottom_pane.is_task_running()
-                && self.bottom_pane.no_modal_or_popup_active() =>
-            {
-                if self.blocks_direct_input {
-                    self.add_error_message(PARENT_OWNED_INPUT_MESSAGE.to_string());
-                } else {
-                    self.cycle_collaboration_mode();
-                }
+            } if self.bottom_pane.no_modal_or_popup_active() => {
+                self.cycle_permission_mode(/*forward*/ true, /*include_full_access*/ true);
             }
             _ => {
                 let had_modal_or_popup = !self.bottom_pane.no_modal_or_popup_active();

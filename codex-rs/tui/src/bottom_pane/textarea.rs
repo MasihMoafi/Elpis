@@ -37,6 +37,7 @@ use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::style::Color;
 use ratatui::style::Style;
+use ratatui::style::Stylize;
 use ratatui::text::Span;
 use ratatui::widgets::StatefulWidgetRef;
 use ratatui::widgets::WidgetRef;
@@ -431,13 +432,11 @@ impl TextArea {
         if !self.vim_enabled {
             return None;
         }
-        // Elpis: every Vim mode label wears the Elpis accent.
-        let label = match self.vim_mode {
-            VimMode::Normal => "Vim: Normal",
-            VimMode::Insert => "Vim: Insert",
-            VimMode::Replace => "Vim: Replace",
-        };
-        Some(Span::from(label).style(crate::elpis_motion::accent_style()))
+        Some(match self.vim_mode {
+            VimMode::Normal => "Vim: Normal".magenta(),
+            VimMode::Insert => "Vim: Insert".green(),
+            VimMode::Replace => "Vim: Replace".cyan(),
+        })
     }
 
     pub fn text(&self) -> &str {

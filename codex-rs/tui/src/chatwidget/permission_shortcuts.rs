@@ -1,4 +1,5 @@
-//! Session-scoped shortcuts for the ordinary built-in permission modes.
+//! Session-scoped shortcuts for the ordinary built-in permission modes. Elpis: Shift+Tab cycles
+//! them too, Full Access included, as in v0.3.0.
 
 use super::*;
 
@@ -15,6 +16,12 @@ impl ChatWidget {
         } else {
             return false;
         };
+        self.cycle_permission_mode(forward, /*include_full_access*/ false)
+    }
+
+    /// Moves to the next (or previous) built-in permission mode. Returns whether the key was
+    /// used. Elpis: Shift+Tab includes Full Access.
+    pub(super) fn cycle_permission_mode(&mut self, forward: bool, include_full_access: bool) -> bool {
         if !self.bottom_pane.no_modal_or_popup_active() {
             return false;
         }
@@ -34,7 +41,9 @@ impl ChatWidget {
         let active_profile = self.config.permissions.active_permission_profile();
         let mut choices = Vec::new();
         for preset in builtin_approval_presets() {
-            if !matches!(preset.id, "read-only" | "auto") {
+            if !matches!(preset.id, "read-only" | "auto")
+                && !(include_full_access && preset.id == "full-access")
+            {
                 continue;
             }
             for reviewer in [ApprovalsReviewer::User, ApprovalsReviewer::AutoReview] {

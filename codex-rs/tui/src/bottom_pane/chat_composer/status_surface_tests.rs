@@ -96,7 +96,7 @@ fn fullscreen_plan_indicator_keeps_the_cycle_hint_when_it_fits() {
     composer.set_collaboration_mode_indicator(Some(CollaborationModeIndicator::Plan));
     let (wide, _) = render(&composer, /*width*/ 100, /*footer*/ None);
     assert!(
-        wide.contains("Plan mode (shift+tab to cycle)"),
+        wide.contains("Plan mode (/plan to leave)"),
         "idle fullscreen must explain how to leave Plan mode: {wide}"
     );
     insta::assert_snapshot!("fullscreen_plan_cycle_hint", wide);
@@ -129,7 +129,7 @@ fn fullscreen_plan_indicator_keeps_the_cycle_hint_when_it_fits() {
     );
     let (empty_wide, _) = render(&composer, /*width*/ 100, /*footer*/ None);
     assert!(
-        empty_wide.contains("Plan mode (shift+tab to cycle)"),
+        empty_wide.contains("Plan mode (/plan to leave)"),
         "{empty_wide}"
     );
 

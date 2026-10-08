@@ -142,3 +142,65 @@ async fn permission_shortcuts_respect_managed_mode_requirements() {
         assert!(rx.try_recv().is_err(), "must not submit a forbidden mode");
     }
 }
+
+/// Elpis: Shift+Tab cycles the permission modes, Full Access included, as in v0.3.0, through the
+/// same selection flow as the permission shortcuts. Negative: it no longer switches Plan mode.
+#[tokio::test]
+async fn shift_tab_cycles_permission_modes_including_full_access() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    let thread_id = ThreadId::new();
+    chat.thread_id = Some(thread_id);
+    chat.config.approvals_reviewer = User;
+    // Without auto-review, Default is followed directly by Full Access.
+    chat.set_feature_enabled(Feature::GuardianApproval, /*enabled*/ false);
+    let mode_before = chat.active_mode_kind();
+    let full_access = codex_utils_approval_presets::builtin_approval_presets()
+        .into_iter()
+        .find(|preset| preset.id == "full-access")
+        .expect("full access preset");
+    let mut next_after = |chat: &mut ChatWidget| {
+        chat.handle_key_event(KeyEvent::from(KeyCode::BackTab));
+        let AppEvent::ApplyPermissionShortcut { selection, .. } =
+            rx.try_recv().expect("permission selection")
+        else {
+            panic!("expected one permission selection");
+        };
+        chat.complete_permission_shortcut(thread_id);
+        selection
+    };
+
+    // From Default (the workspace mode), the next mode is Full Access.
+    chat.config
+        .permissions
+        .set_permission_profile_from_session_snapshot(PermissionProfileSnapshot::active(
+            PermissionProfile::workspace_write(),
+            ActivePermissionProfile::new(":workspace"),
+        ))
+        .expect("set default profile");
+    chat.config.permissions.approval_policy =
+        codex_config::Constrained::allow_any(AskForApproval::OnRequest.to_core());
+    let selection = next_after(&mut chat);
+    assert_eq!(
+        (selection.profile_id.as_str(), selection.approval_policy),
+        (
+            full_access.active_permission_profile.id.as_str(),
+            Some(AskForApproval::Never)
+        )
+    );
+
+    // From Full Access, it wraps round to a sandboxed mode that asks.
+    chat.config
+        .permissions
+        .set_permission_profile_from_session_snapshot(PermissionProfileSnapshot::active(
+            full_access.permission_profile.clone(),
+            full_access.active_permission_profile.clone(),
+        ))
+        .expect("set full access profile");
+    chat.config.permissions.approval_policy =
+        codex_config::Constrained::allow_any(AskForApproval::Never.to_core());
+    let selection = next_after(&mut chat);
+    assert_ne!(selection.profile_id, full_access.active_permission_profile.id);
+    assert_eq!(selection.approval_policy, Some(AskForApproval::OnRequest));
+
+    assert_eq!(chat.active_mode_kind(), mode_before);
+}

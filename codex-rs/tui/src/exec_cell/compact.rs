@@ -91,7 +91,7 @@ impl ExecCell {
             )
             .unwrap_or_else(|| "•".dim())
         } else {
-            ratatui::text::Span::from("•").style(crate::elpis_motion::accent_style())
+            "•".green().bold()
         };
         let title = if let Some(output) = failed {
             format!("Failed (exit {})", output.exit_code)

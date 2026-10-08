@@ -1,12 +1,7 @@
-//! The Elpis identity line (" Elpis · model X · location Y · title") above the composer, and the
-//! turn clock the paced Elpis motion samples.
+//! The Elpis identity line (" Elpis · model X · location Y · title") above the composer.
 //!
 //! Copied from Elpis v0.3.0 `chatwidget/rendering.rs` (`IdentityLineRenderable`,
-//! `render_identity_line`) and `chatwidget/status_surfaces.rs`
-//! (`terminal_title_animation_elapsed_at`), tag `stage0-stop-bleeding`.
-
-use std::time::Duration;
-use std::time::Instant;
+//! `render_identity_line`), tag `stage0-stop-bleeding`.
 
 use super::ChatWidget;
 use crate::render::renderable::Renderable;
@@ -40,23 +35,7 @@ impl ChatWidget {
         }
         let model = self.current_model();
         let location = format_directory_display(self.status_line_cwd(), /*max_width*/ None);
-        let animate_identity =
-            self.local_settings.tui.animations && self.turn_lifecycle.agent_turn_running;
-        let mut spans = if animate_identity {
-            let elapsed = self
-                .turn_lifecycle
-                .goal_status_active_turn_started_at
-                .map(|started| started.elapsed())
-                .unwrap_or_else(crate::elpis_motion::elapsed);
-            let (sample_at, next_frame_in) = crate::elpis_motion::paced_motion(elapsed);
-            self.frame_requester.schedule_frame_in(next_frame_in);
-            crate::elpis_motion::animated_text_at(" Elpis ", sample_at)
-        } else {
-            crate::elpis_motion::animated_text(" Elpis ", /*animated*/ false)
-        };
-        for span in &mut spans {
-            span.style = span.style.add_modifier(ratatui::style::Modifier::BOLD);
-        }
+        let mut spans = vec![" Elpis ".bold()];
         // The reasoning effort follows the model, so Alt+, and Alt+. are visible as they act.
         spans.extend([
             "· model ".dim(),
@@ -75,12 +54,5 @@ impl ChatWidget {
             spans.extend([" · ".dim(), Span::raw(title)]);
         }
         Line::from(spans).render(area, buf);
-    }
-
-    pub(super) fn terminal_title_animation_elapsed_at(&self, now: Instant) -> Duration {
-        self.turn_lifecycle
-            .goal_status_active_turn_started_at
-            .map(|started| now.saturating_duration_since(started))
-            .unwrap_or_else(|| now.saturating_duration_since(self.terminal_title_animation_origin))
     }
 }

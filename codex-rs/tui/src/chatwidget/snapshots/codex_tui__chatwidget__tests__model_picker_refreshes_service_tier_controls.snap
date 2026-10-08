@@ -4,10 +4,10 @@ assertion_line: 712
 expression: "normalize_snapshot_paths(render_bottom_popup(&chat, 80))"
 ---
  Elpis · model gpt-5.4 default · location /tmp/project
-────────────────────────────────────────────────┐ CONTEXT LEDGER  context not
-› /fast                                         │ measured · ≈0 source
-────────────────────────────────────────────────┤ estimates
-        100% context left · Tab Context Ledger  │ Tab controls · Alt+C hide ·
+──────────────────────────────────────────────┐ │ CONTEXT LEDGER  context not
+› /fast                                       │ │ measured · ≈0 source
+──────────────────────────────────────────────┘ │ estimates
+       100% context left · Tab Context Ledger   │ Tab controls · Alt+C hide ·
                                                 │ Ctrl+click open file
                                                 │
                                                 │ SMART PRUNE       [···] SYNC

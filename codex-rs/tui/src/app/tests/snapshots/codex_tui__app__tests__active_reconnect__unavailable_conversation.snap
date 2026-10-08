@@ -5,10 +5,10 @@ expression: "format!(\"{history}\\n{}\",\nrender_bottom_popup(&app.chat_widget,\
 ---
 • This conversation is unavailable. Its cached transcript and draft remain here; input is paused. Open the agent picker or return to the parent to continue.
  Elpis · model gpt-test default · location /tmp/project
-────────────────────────────────────────────────┐ CONTEXT LEDGER  context not
-› unavailable draft                             │ measured · ≈0 source
-────────────────────────────────────────────────┤ estimates
-        100% context left · Tab Context Ledger  │ Tab controls · Alt+C hide ·
+──────────────────────────────────────────────┐ │ CONTEXT LEDGER  context not
+› unavailable draft                           │ │ measured · ≈0 source
+──────────────────────────────────────────────┘ │ estimates
+       100% context left · Tab Context Ledger   │ Tab controls · Alt+C hide ·
                                                 │ Ctrl+click open file
                                                 │
                                                 │ SMART PRUNE       [···] SYNC

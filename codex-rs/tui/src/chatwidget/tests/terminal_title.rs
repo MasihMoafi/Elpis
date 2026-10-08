@@ -71,7 +71,7 @@ async fn terminal_title_shows_action_required_while_exec_approval_is_pending() {
     chat.terminal_title_animation_origin = Instant::now();
     let before_refresh = Instant::now();
     chat.refresh_terminal_title();
-    let spinner_interval = crate::elpis_motion::FRAME_TICK;
+    let spinner_interval = std::time::Duration::from_millis(/*millis*/ 100);
     assert!(
         (before_refresh + spinner_interval..=Instant::now() + spinner_interval)
             .contains(&chat.terminal_title_next_refresh.expect("spinner deadline"))

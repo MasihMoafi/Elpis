@@ -332,7 +332,12 @@ impl ChatWidget {
                 self.defer_input_until_settings_applied();
             }
             SlashCommand::Plan => {
-                self.apply_plan_slash_command();
+                // Elpis: Shift+Tab cycles the permission modes, so bare /plan also leaves Plan mode.
+                if self.active_mode_kind() == ModeKind::Plan {
+                    self.cycle_collaboration_mode();
+                } else {
+                    self.apply_plan_slash_command();
+                }
             }
             SlashCommand::Goal => {
                 if !self.config.features.enabled(Feature::Goals) {

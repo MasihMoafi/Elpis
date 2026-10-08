@@ -427,14 +427,8 @@ impl ChatWidget {
             return Some(TERMINAL_TITLE_ACTION_REQUIRED_INTERVAL);
         }
 
-        // Elpis: the title spinner follows the paced Elpis motion (a sweep, then a rest).
         self.should_animate_terminal_title_spinner_with_selections(selections)
-            .then(|| {
-                crate::elpis_motion::paced_motion(
-                    self.terminal_title_animation_elapsed_at(Instant::now()),
-                )
-                .1
-            })
+            .then_some(TERMINAL_TITLE_SPINNER_INTERVAL)
     }
 
     pub(super) fn request_status_line_branch_refresh(&mut self) {
@@ -1038,9 +1032,7 @@ impl ChatWidget {
     }
 
     pub(super) fn terminal_title_spinner_frame_at(&self, now: Instant) -> &'static str {
-        // Elpis: sample the spinner at the paced motion time, so it rests between sweeps.
-        let (elapsed, _) =
-            crate::elpis_motion::paced_motion(self.terminal_title_animation_elapsed_at(now));
+        let elapsed = now.saturating_duration_since(self.terminal_title_animation_origin);
         let frame_index =
             (elapsed.as_millis() / TERMINAL_TITLE_SPINNER_INTERVAL.as_millis()) as usize;
         TERMINAL_TITLE_SPINNER_FRAMES[frame_index % TERMINAL_TITLE_SPINNER_FRAMES.len()]

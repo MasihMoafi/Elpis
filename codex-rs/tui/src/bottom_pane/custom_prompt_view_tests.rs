@@ -133,40 +133,37 @@ fn vim_insert_escape_clears_paste_burst_before_enter() {
 
 #[test]
 fn vim_prompt_hint_tracks_escape_behavior() {
-    // Elpis: every Vim mode label wears the one Elpis accent, not a color per mode.
-    crate::test_support::with_elpis_accent(|accent| {
-        let (mut view, _submitted_rx) = custom_prompt_view();
-        let rendered_hint = |view: &CustomPromptView, width: u16| {
-            let area = Rect::new(/*x*/ 0, /*y*/ 0, width, /*height*/ 5);
-            let mut buf = Buffer::empty(area);
-            view.render(area, &mut buf);
-            (0..area.width)
-                .map(|x| buf[(x, area.height - 1)].symbol())
-                .collect::<String>()
-                .trim_end()
-                .to_string()
-        };
-        let vim_color = |view: &CustomPromptView| {
-            let area = Rect::new(
-                /*x*/ 0, /*y*/ 0, /*width*/ 80, /*height*/ 5,
-            );
-            let mut buf = Buffer::empty(area);
-            view.render(area, &mut buf);
-            buf[(67, 4)].style().fg
-        };
+    let (mut view, _submitted_rx) = custom_prompt_view();
+    let rendered_hint = |view: &CustomPromptView, width: u16| {
+        let area = Rect::new(/*x*/ 0, /*y*/ 0, width, /*height*/ 5);
+        let mut buf = Buffer::empty(area);
+        view.render(area, &mut buf);
+        (0..area.width)
+            .map(|x| buf[(x, area.height - 1)].symbol())
+            .collect::<String>()
+            .trim_end()
+            .to_string()
+    };
+    let vim_color = |view: &CustomPromptView| {
+        let area = Rect::new(
+            /*x*/ 0, /*y*/ 0, /*width*/ 80, /*height*/ 5,
+        );
+        let mut buf = Buffer::empty(area);
+        view.render(area, &mut buf);
+        buf[(67, 4)].style().fg
+    };
 
-        let mut hints = vec![rendered_hint(&view, /*width*/ 80)];
-        view.enable_vim_in_insert_mode();
-        hints.extend([80, 60, 14].map(|width| rendered_hint(&view, width)));
-        assert_eq!(vim_color(&view), accent);
+    let mut hints = vec![rendered_hint(&view, /*width*/ 80)];
+    view.enable_vim_in_insert_mode();
+    hints.extend([80, 60, 14].map(|width| rendered_hint(&view, width)));
+    assert_eq!(vim_color(&view), Some(ratatui::style::Color::Green));
 
-        view.handle_key_event(KeyEvent::from(KeyCode::Esc));
-        hints.push(rendered_hint(&view, /*width*/ 80));
-        assert_eq!(vim_color(&view), accent);
-        view.handle_key_event(KeyEvent::from(KeyCode::Char('R')));
-        hints.push(rendered_hint(&view, /*width*/ 80));
-        insta::assert_snapshot!(hints.join("\n"));
-    });
+    view.handle_key_event(KeyEvent::from(KeyCode::Esc));
+    hints.push(rendered_hint(&view, /*width*/ 80));
+    assert_eq!(vim_color(&view), Some(ratatui::style::Color::Magenta));
+    view.handle_key_event(KeyEvent::from(KeyCode::Char('R')));
+    hints.push(rendered_hint(&view, /*width*/ 80));
+    insta::assert_snapshot!(hints.join("\n"));
 }
 
 #[test]

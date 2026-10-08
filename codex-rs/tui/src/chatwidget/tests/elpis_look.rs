@@ -1,5 +1,6 @@
-//! Evals for the Elpis look: the product name on every title, the orange palette, the
-//! composer rail, the identity line above the composer and the paced "Elpising…" status.
+//! Evals for the Elpis look: the product name on every title, no Elpis gold, the composer box
+//! standing apart from the Context Ledger, the identity line above the composer and the still
+//! "Elpising…" status.
 //!
 //! Each behaviour has a positive case (the Elpis look is there) and a negative case
 //! (the upstream Codex look is gone, or the thing Elpis must not disturb is intact).
@@ -99,23 +100,21 @@ fn session_header_names_elpis_and_never_openai_codex() {
     );
 }
 
+/// Masih asked for the Elpis gold to go: product titles use the terminal's own text color and
+/// the shared accent is Codex's own again. Negative: neither is gold.
 #[test]
-fn accent_is_elpis_orange_not_upstream_blue() {
+fn the_look_has_no_elpis_gold() {
     with_test_default_colors(DARK, || {
+        assert_eq!(crate::style::brand_style().fg, None);
         let accent = crate::style::accent_style_for(Some(DARK.bg))
             .fg
             .expect("accent color");
-        assert!(is_orange(accent), "{accent:?}");
-        assert!(
-            !matches!(accent, ratatui::style::Color::Rgb(r, g, b)
-                if (r, g, b) == crate::style::CHATGPT_BLUE_200),
-            "{accent:?}"
-        );
+        assert!(!is_orange(accent), "{accent:?}");
     });
 }
 
 #[test]
-fn working_status_reads_elpising_in_an_orange_gradient_without_a_spinner() {
+fn working_status_reads_elpising_as_still_text_without_a_spinner() {
     with_test_default_colors(DARK, || {
         let (tx, _rx) = unbounded_channel::<AppEvent>();
         for animations in [false, true] {
@@ -134,10 +133,10 @@ fn working_status_reads_elpising_in_an_orange_gradient_without_a_spinner() {
             assert!(row.starts_with("Elpising… (0s"), "{row}");
             assert!(!row.contains("Working"), "{row}");
             for column in 0..8 {
-                assert!(
-                    is_orange(buffer[(column, 0)].fg),
-                    "column {column} is {:?}",
-                    buffer[(column, 0)].fg
+                assert_eq!(
+                    buffer[(column, 0)].fg,
+                    ratatui::style::Color::Reset,
+                    "column {column} is colored"
                 );
             }
         }
@@ -162,8 +161,9 @@ fn other_status_headers_are_not_renamed() {
     assert!(rows(&buffer)[0].starts_with("Compacting context (0s"));
 }
 
+/// No motion: with animations on, the status redraws only for its seconds counter.
 #[tokio::test]
-async fn elpising_sweeps_fast_then_rests_between_sweeps() {
+async fn elpising_redraws_only_for_the_clock() {
     let (tx, _rx) = unbounded_channel::<AppEvent>();
     let (frame_requester, mut frames) = FrameRequester::test_channel();
     let widget = StatusIndicatorWidget::new(
@@ -173,7 +173,7 @@ async fn elpising_sweeps_fast_then_rests_between_sweeps() {
         Default::default(),
     );
     let area = Rect::new(0, 0, 80, 1);
-    let mut next_frame_after = |elapsed: Duration| {
+    for elapsed in [Duration::ZERO, Duration::from_millis(300)] {
         let mut timer = StatusTimer::default();
         timer.reset(elapsed);
         let before = Instant::now();
@@ -184,15 +184,11 @@ async fn elpising_sweeps_fast_then_rests_between_sweeps() {
         while let Ok(at) = frames.try_recv() {
             deadline = Some(at);
         }
-        deadline
-            .expect("an animated status schedules a frame")
-            .saturating_duration_since(before)
-    };
-
-    // Mid-sweep: the next frame is one 40 ms motion tick away.
-    assert!(next_frame_after(Duration::ZERO) < Duration::from_millis(100));
-    // At rest: nothing redraws until the next sweep, seconds later.
-    assert!(next_frame_after(Duration::from_secs(1)) >= Duration::from_secs(3));
+        let wait = deadline
+            .expect("a running status schedules its clock")
+            .saturating_duration_since(before);
+        assert!(wait >= Duration::from_millis(900), "{wait:?}");
+    }
 }
 
 #[tokio::test]
@@ -265,7 +261,10 @@ async fn identity_line_sits_directly_above_the_composer() {
         .position(|row| row.starts_with('─'))
         .expect("composer box");
     assert_eq!(identity + 1, composer_top, "{rows:#?}");
-    assert!(is_orange(buffer[(1, identity as u16)].fg));
+    // " Elpis " is bold in the terminal's own text color.
+    let name = &buffer[(1, identity as u16)];
+    assert_eq!(name.fg, ratatui::style::Color::Reset);
+    assert!(name.modifier.contains(ratatui::style::Modifier::BOLD));
     // The upstream footer status line stays off: the identity line replaces it, so the
     // model is named once, not again in the footer.
     assert_eq!(
@@ -377,8 +376,10 @@ async fn footer_shows_the_goal_state_beside_the_context_indicator() {
     assert!(shown.contains("Pursuing goal (40K / 50K)"), "{shown}");
 }
 
+/// Masih asked for the composer box and the Context Ledger to stand apart: the box closes itself
+/// and one blank column separates it from the Ledger's rule, which joins nothing.
 #[tokio::test]
-async fn composer_box_shares_the_ledger_rule_and_closes_itself_without_the_ledger() {
+async fn composer_box_stands_apart_from_the_ledger() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
     let rows_now = |chat: &ChatWidget| {
         rows(&with_test_default_colors(DARK, || {
@@ -390,8 +391,10 @@ async fn composer_box_shares_the_ledger_rule_and_closes_itself_without_the_ledge
         .iter()
         .find(|row| row.starts_with('─'))
         .expect("composer box");
-    assert!(top.contains("─┐ CONTEXT LEDGER"), "{beside:#?}");
-    assert!(beside.iter().all(|row| !row.contains("││")), "{beside:#?}");
+    assert!(top.contains("─┐ │ CONTEXT LEDGER"), "{beside:#?}");
+    for row in &beside {
+        assert!(!row.contains('┤') && !row.contains("││"), "{beside:#?}");
+    }
 
     chat.close_context_ledger();
     let alone = rows_now(&chat);

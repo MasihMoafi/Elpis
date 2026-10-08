@@ -107,7 +107,6 @@ pub(crate) enum GoalStatusIndicator {
     Complete { usage: Option<String> },
 }
 
-const MODE_CYCLE_HINT: &str = "shift+tab to cycle";
 const FOOTER_CONTEXT_GAP_COLS: u16 = 1;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -148,6 +147,9 @@ impl FooterKeyHints {
     }
 }
 
+// Elpis: Shift+Tab cycles the permission modes, so the hint names /plan, which leaves Plan mode.
+const MODE_CYCLE_HINT: &str = "/plan to leave";
+
 impl CollaborationModeIndicator {
     fn label(self, show_cycle_hint: bool) -> String {
         let suffix = if show_cycle_hint {
@@ -161,15 +163,11 @@ impl CollaborationModeIndicator {
     }
 
     fn styled_line(self, show_cycle_hint: bool) -> Line<'static> {
-        // Elpis: footer mode indicators wear the Elpis accent.
-        let mut line = Line::from(
-            self.label(/*show_cycle_hint*/ false)
-                .set_style(crate::elpis_motion::accent_style()),
-        );
+        let mut line = Line::from(self.label(/*show_cycle_hint*/ false).magenta());
         if show_cycle_hint {
             line.push_span(" (".set_style(secondary_text_style()));
-            line.extend(key_hint::shift(KeyCode::Tab).spans());
-            line.push_span(" to cycle)".set_style(secondary_text_style()));
+            line.push_span("/plan".bold());
+            line.push_span(" to leave)".set_style(secondary_text_style()));
         }
         line
     }
@@ -611,8 +609,7 @@ pub(crate) fn goal_status_indicator_line(
         }
     };
 
-    // Elpis: the goal line in the Elpis gradient.
-    Some(Line::from(crate::elpis_motion::text(&label)))
+    Some(Line::from(vec![Span::from(label).magenta()]))
 }
 
 pub(crate) fn status_line_right_indicator_line(
@@ -646,13 +643,7 @@ pub(crate) fn status_line_right_indicator_line(
 pub(crate) fn side_conversation_context_line(label: &str) -> Line<'static> {
     let mut line = Line::default();
     let rest = if let Some(rest) = label.strip_prefix("Side ") {
-        // Elpis: accent, not magenta.
-        line.extend([
-            Span::from("Side")
-                .style(crate::elpis_motion::accent_style())
-                .bold(),
-            " ".into(),
-        ]);
+        line.extend(["Side".magenta().bold(), " ".into()]);
         rest
     } else {
         label
@@ -668,8 +659,7 @@ pub(crate) fn side_conversation_context_line(label: &str) -> Line<'static> {
             line.extend(key_hint::key_label_spans(keys));
             line.push_span(action.set_style(secondary_text_style()));
         } else {
-            // Elpis: accent, not magenta.
-            line.push_span(Span::from(part.to_owned()).style(crate::elpis_motion::accent_style()));
+            line.push_span(part.to_owned().magenta());
         }
     }
     line
@@ -1713,7 +1703,7 @@ mod tests {
             "mode indicator should remain visible"
         );
         assert!(
-            !collapsed.contains("shift+tab to cycle"),
+            !collapsed.contains("/plan to leave"),
             "compact mode indicator should be used when space is tight"
         );
         assert!(
