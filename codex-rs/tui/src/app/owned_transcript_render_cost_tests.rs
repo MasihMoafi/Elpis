@@ -16,6 +16,26 @@ use std::time::Duration;
 
 const SCREEN: Size = Size::new(/*width*/ 120, /*height*/ 40);
 
+#[tokio::test]
+async fn both_transcript_modes_leave_room_above_a_crowded_ledger() -> Result<()> {
+    let screen = Size::new(/*width*/ 120, /*height*/ 20);
+    for owned in [false, true] {
+        let (mut app, _events, _operations) = make_test_app_with_channels().await;
+        crate::chatwidget::tests::helpers::show_context_ledger(&mut app.chat_widget);
+        attach_thread(&mut app, ThreadId::new());
+        let mut tui = crate::tui::test_support::make_test_tui_with_size(screen)?;
+        tui.set_owned_screen(owned)?;
+        app.render_chat_widget_frame(&mut tui, screen)?;
+        assert_eq!(
+            app.chat_widget.context_ledger_width(screen.width),
+            0,
+            "the Ledger must leave room for replies (owned screen: {owned})"
+        );
+        tui.set_owned_screen(false)?;
+    }
+    Ok(())
+}
+
 /// One user prompt, one command output and one long Markdown answer per turn.
 fn long_chat(turns: usize) -> Vec<Arc<dyn HistoryCell>> {
     let mut cells: Vec<Arc<dyn HistoryCell>> = Vec::with_capacity(turns * 3);
