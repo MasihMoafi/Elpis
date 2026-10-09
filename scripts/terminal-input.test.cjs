@@ -1,6 +1,6 @@
 'use strict';
 // Remote TUI and a private websocket app-server, with an isolated home and local Responses fixture.
-// Usage: node scripts/terminal-input.test.cjs /absolute/path/to/elpis
+// Usage: node scripts/terminal-input.test.cjs /absolute/path/to/elpis [--bridge]
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -9,6 +9,7 @@ const { DatabaseSync } = require('node:sqlite');
 const { execFileSync, spawn } = require('node:child_process');
 const { Provider, message, call } = require('../editors/vscode/test/runtime-eval');
 const binary = process.argv[2];
+const useBridge = process.argv.includes('--bridge');
 assert(binary && path.isAbsolute(binary), 'provide the engine binary');
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'elpis-terminal-input-'));
 const home = path.join(root, 'home'), cwd = path.join(root, 'long-project-directory-for-title-visibility');
@@ -16,7 +17,7 @@ fs.mkdirSync(home); fs.mkdirSync(cwd);
 const socket = path.join(root, 'tmux.sock');
 const provider = new Provider();
 const checks = [];
-let savedPermissions;
+let savedPermissions, releaseTool;
 let appServer, appServerExit, appServerError;
 let appServerLog = '';
 const tmux = (...args) => execFileSync('tmux', ['-S', socket, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
@@ -40,11 +41,18 @@ function threadSettings() {
   const filename = fs.readdirSync(home).find(name => /^state_\d+\.sqlite$/.test(name));
   if (!filename) return [];
   const db = new DatabaseSync(path.join(home, filename), { readOnly: true });
-  try { return db.prepare('SELECT id, sandbox_policy, approval_mode, rollout_path FROM threads').all(); }
+  try { return db.prepare('SELECT id, name, sandbox_policy, approval_mode, rollout_path FROM threads').all(); }
   finally { db.close(); }
 }
 async function startAppServer(env) {
-  appServer = spawn(binary, ['app-server', '--listen', 'ws://127.0.0.1:0'], { cwd, env, stdio: ['ignore', 'pipe', 'pipe'] });
+  const bridgeLog = path.join(root, 'bridge.log');
+  appServer = useBridge
+    ? spawn(process.execPath, [path.resolve(__dirname, '../tools/elpis-claude/acp-bridge.mjs')], {
+      cwd, env: { ...env, PORT: '0', ELPIS_ENGINE_BIN: binary, ELPIS_NO_AGY: '1', ACP_BRIDGE_LOG: bridgeLog,
+        ACP_ADAPTER: path.resolve(__dirname, 'permissions-bridge.test.cjs'), PERMISSION_FIXTURE_ADAPTER: '1' },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+    : spawn(binary, ['app-server', '--listen', 'ws://127.0.0.1:0'], { cwd, env, stdio: ['ignore', 'pipe', 'pipe'] });
   appServerExit = new Promise(resolve => appServer.once('exit', (code, signal) => resolve({ code, signal })));
   appServer.on('error', error => { appServerError = error; });
   const log = chunk => {
@@ -57,7 +65,9 @@ async function startAppServer(env) {
   while (Date.now() < deadline) {
     if (appServerError) throw appServerError;
     if (appServer.exitCode !== null || appServer.signalCode !== null) throw Error(`App-server exited before startup; evidence ${root}`);
-    const address = appServerLog.match(/ws:\/\/127\.0\.0\.1:\d+/)?.[0];
+    const bridgePort = useBridge && fs.existsSync(bridgeLog)
+      ? fs.readFileSync(bridgeLog, 'utf8').match(/LISTENING (\d+)/)?.[1] : null;
+    const address = bridgePort ? `ws://127.0.0.1:${bridgePort}` : appServerLog.match(/ws:\/\/127\.0\.0\.1:\d+/)?.[0];
     if (address) return address;
     await pause(100);
   }
@@ -123,6 +133,7 @@ async function stopAppServer() {
   fs.writeFileSync(path.join(root, 'saved-permissions.json'), JSON.stringify(savedPermissions, null, 2));
   pass('/permissions Full Access saves disabled sandbox and never approval in the engine thread');
   const ready = path.join(cwd, 'tool-ready'), release = path.join(cwd, 'tool-release');
+  releaseTool = release;
   const protectedDir = path.join(cwd, '.git');
   fs.mkdirSync(protectedDir);
   const protectedSentinel = path.join(protectedDir, 'full-access-sentinel');
@@ -158,7 +169,8 @@ async function stopAppServer() {
   key('S-Right'); key('Escape');
   await screenWhen(s => !s.includes('esc to interrupt'), 'interrupted');
   type('/rename Visible session sentinel'); await pause(250); key('Enter');
-  await screenWhen(s => s.includes('Visible session sentinel'), 'renamed-title-80');
+  await screenWhen(s => threadSettings().some(thread => thread.name === 'Visible session sentinel')
+    && !s.includes('/rename Visible session sentinel'), 'renamed-title-80');
   key('Left');
   screen = await screenWhen(s => s.includes('Agent command center') && s.includes('Visible session sentinel'), 'agents-80');
   assert(screen.includes('GPT-5.5') && screen.includes('Group: Project'), screen);
@@ -175,12 +187,14 @@ async function stopAppServer() {
   await screenWhen(s => s.includes('Permanently delete'), 'delete-confirmation');
   key('Escape');
   await screenWhen(s => s.includes('Visible session sentinel'), 'delete-cancelled');
+  assert(threadSettings().some(thread => thread.id === savedPermissions[0].id && thread.name === 'Visible session sentinel'));
   pass('cancelling task deletion preserves the fixture session');
   assert(!provider.error, provider.error?.message);
 })().catch(error => { console.error(error); process.exitCode = 1; }).finally(async () => {
+  if (releaseTool) fs.writeFileSync(releaseTool, 'cleanup');
   try { tmux('kill-server'); } catch {}
   await stopAppServer();
   provider.close();
-  fs.writeFileSync(path.join(root, 'evidence.json'), JSON.stringify({ checks, savedPermissions, requests: provider.requests, titleRequests: provider.titleRequests, appServerExit: appServer && !appServerError ? await appServerExit : null }, null, 2));
+  fs.writeFileSync(path.join(root, 'evidence.json'), JSON.stringify({ useBridge, checks, savedPermissions, requests: provider.requests, titleRequests: provider.titleRequests, appServerExit: appServer && !appServerError ? await appServerExit : null }, null, 2));
   console.log(`Evidence: ${root}`);
 });

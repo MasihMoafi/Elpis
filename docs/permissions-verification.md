@@ -1,6 +1,6 @@
 # Permission verification — 9 October 2026
 
-Current candidate: `Elpis-wt-parity`, exact Codex 0.162.0 source integration completed; verification in progress. **Not yet compiled or installed.** Earlier build/test claims belonged to the 0.160 candidate and do not establish this candidate's correctness.
+Current candidate: `Elpis-wt-parity`, exact Codex 0.162.0 source integration completed; verification in progress. **Core, UI, CLI and their tests compile (CI 37918373073); runtime build and behavioral verification are pending. Not installed.** Earlier build/test claims belonged to the 0.160 candidate and do not establish this candidate's correctness.
 
 The coordinator reran the bridge fixtures against the older, uninstalled engine at `Elpis-next/codex-rs/target/release/codex`: 34 Claude checks and 27 Gemini checks passed. Both runs failed saved Full Access after a process restart: `never` was retained but `:danger-full-access` resumed as `:workspace`. This remains a required final-engine check.
 
@@ -17,6 +17,7 @@ node scripts/permissions-runtime.test.cjs /absolute/path/to/elpis --code-mode
 node scripts/permissions-bridge.test.cjs /absolute/path/to/elpis
 node scripts/permissions-bridge.test.cjs /absolute/path/to/elpis --gemini
 node scripts/terminal-input.test.cjs /absolute/path/to/elpis
+node scripts/terminal-input.test.cjs /absolute/path/to/elpis --bridge
 ```
 
 The build guard passed 17 isolated fake-compiler checks, including early pause, hard ceiling, lost sensor and process cleanup. This does not replace temperature monitoring during a real build. Local Rust compilation is deferred to hosted CI because free disk is below the project's 40 GB floor.

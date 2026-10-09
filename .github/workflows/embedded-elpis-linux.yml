@@ -212,6 +212,7 @@ jobs:
       - name: Provider history and message retention checks
         run: |
           node scripts/history-list.test.cjs
+          node scripts/bridge-launcher.test.cjs
           node scripts/agy-steering.test.cjs
           node scripts/build-elpis-local.test.cjs
       - name: Build the runtime, Code Mode host, and sandbox
@@ -229,7 +230,8 @@ jobs:
         run: |
           cargo test --release --locked -p codex-tui --lib -- \
             elpis_ keymap question composer_submission plan_mode review_mode slash_commands \
-            goal_validation command_popup agents_overview agents_navigation footer_collapse \
+            goal_validation command_popup agents_overview agents_navigation \
+            loopback_servers_list_their_agents footer_collapse \
             context_usage context_ledger exec_cell effort_ignition style:: light_terminal_palette \
             chatwidget_exec_and_status_layout_vt100_snapshot luna_reserve_usage_running \
             render_cost_tests esc_typing_tests status_and_layout resume_picker stream_controller \

@@ -129,6 +129,13 @@ async fn parent_at(child: &Session, preset: Preset) -> SessionSettingsUpdate {
     permission_update(&configuration(child, preset).await)
 }
 
+/// Limits `child` to the `never` approval policy, so it rejects any revocation that asks.
+async fn allow_only_never_asking(child: &Session) {
+    let mut state = child.state.lock().await;
+    Arc::make_mut(&mut state.session_configuration.step_settings).approval_policy =
+        crate::config::Constrained::allow_only(AskForApproval::Never);
+}
+
 /// Fails if a parent's later grant releases what an existing child owes: the child, which
 /// rejected the revocation, would act with Full Access again without ever taking the lower
 /// setting.
@@ -140,12 +147,8 @@ async fn a_rejected_revocation_stays_owed_after_the_parent_regains_full_access()
         parent_at(&child, Preset::Default).await,
         parent_at(&child, Preset::FullAccess).await,
     );
-    // The child's own limits allow only `never`, and it existed at the revocation.
-    {
-        let mut state = child.state.lock().await;
-        Arc::make_mut(&mut state.session_configuration.step_settings).approval_policy =
-            crate::config::Constrained::allow_only(AskForApproval::Never);
-    }
+    allow_only_never_asking(&child).await;
+    // The child existed at the revocation.
     child.owe_parent_reductions_from(&parent, /*generation*/ 1);
 
     let history = vec![revoked.clone()];
@@ -316,11 +319,7 @@ async fn a_reloaded_parent_does_not_clear_an_owed_revocation() {
     let earlier = Arc::new(Reductions::default());
     let revoked = parent_at(&child, Preset::Default).await;
     let regained = parent_at(&child, Preset::FullAccess).await;
-    {
-        let mut state = child.state.lock().await;
-        Arc::make_mut(&mut state.session_configuration.step_settings).approval_policy =
-            crate::config::Constrained::allow_only(AskForApproval::Never);
-    }
+    allow_only_never_asking(&child).await;
     earlier.history.lock().unwrap().push(revoked);
     child.owe_parent_reductions_from(&earlier, /*generation*/ 1);
     drop(earlier);
@@ -331,5 +330,84 @@ async fn a_reloaded_parent_does_not_clear_an_owed_revocation() {
             .await
             .is_err(),
         "a fresh parent record must not erase an existing child's pending restriction"
+    );
+}
+
+/// A child rejected its parent's revocation; the parent then reloaded, revoked again and
+/// regained Full Access before the child acted. Fails if the reloaded parent's revocation
+/// replaces the earlier record: the child would take the later revocation, which it can
+/// accept, and act without ever taking the one it rejected.
+#[tokio::test]
+async fn a_reloaded_parents_revocation_keeps_an_earlier_rejected_one_owed() {
+    let child = child_at(Preset::FullAccess).await;
+    let (rejected, acceptable, regained) = (
+        parent_at(&child, Preset::Default).await,
+        parent_at(&child, Preset::WorkspaceNeverAsk).await,
+        parent_at(&child, Preset::FullAccess).await,
+    );
+    allow_only_never_asking(&child).await;
+    let earlier = Arc::new(Reductions::default());
+    earlier.history.lock().unwrap().push(rejected.clone());
+    child.owe_parent_reductions_from(&earlier, /*generation*/ 1);
+    assert!(
+        child
+            .take_parent_reductions(&earlier, vec![rejected.clone()], rejected)
+            .await
+            .is_err()
+    );
+
+    let reloaded = Arc::new(Reductions::default());
+    reloaded.history.lock().unwrap().push(acceptable.clone());
+    child.owe_parent_reductions_from(&reloaded, /*generation*/ 1);
+    drop(earlier);
+
+    assert!(
+        child
+            .take_parent_reductions(&reloaded, vec![acceptable], regained)
+            .await
+            .is_err(),
+        "a reloaded parent's revocation must not release the one the child rejected"
+    );
+    let snapshot = child.thread_config_snapshot().await;
+    assert_eq!(
+        (snapshot.approval_policy, snapshot.permission_profile),
+        (AskForApproval::Never, PermissionProfile::Disabled)
+    );
+}
+
+/// The child is still taking the earlier parent record's revocation when the reloaded parent
+/// marks it for its own; the reloaded parent then regains Full Access. Fails if progress on
+/// one record moves another's baseline: the reloaded parent's narrowing would be skipped.
+#[tokio::test]
+async fn each_parent_record_keeps_its_own_baseline() {
+    let child = child_at(Preset::FullAccess).await;
+    let (default, read_only, full_access) = (
+        parent_at(&child, Preset::Default).await,
+        parent_at(&child, Preset::ReadOnly).await,
+        parent_at(&child, Preset::FullAccess).await,
+    );
+    let earlier = Arc::new(Reductions::default());
+    earlier.history.lock().unwrap().push(default.clone());
+    child.owe_parent_reductions_from(&earlier, /*generation*/ 1);
+    let reloaded = Arc::new(Reductions::default());
+    reloaded.history.lock().unwrap().push(read_only.clone());
+    child.owe_parent_reductions_from(&reloaded, /*generation*/ 1);
+
+    child
+        .take_owed_reductions(&earlier, vec![default])
+        .await
+        .expect("earlier revocation");
+    assert_eq!(
+        profile_id(&child).await,
+        Some(BUILT_IN_PERMISSION_PROFILE_WORKSPACE.to_string())
+    );
+    child
+        .take_parent_reductions(&reloaded, vec![read_only], full_access)
+        .await
+        .expect("reloaded narrowing");
+
+    assert_eq!(
+        profile_id(&child).await,
+        Some(BUILT_IN_PERMISSION_PROFILE_READ_ONLY.to_string())
     );
 }

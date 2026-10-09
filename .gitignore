@@ -21,6 +21,7 @@ src/.env.cuda
 uv.lock
 src/uv.lock
 package-lock.json
+!tools/elpis-claude/package-lock.json
 website/node_modules/
 
 # IDE

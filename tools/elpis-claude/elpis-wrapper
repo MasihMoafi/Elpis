@@ -14,6 +14,6 @@ for a in "$@"; do
   case "$a" in --remote|--remote=*|-h|--help|-V|--version) direct "$@" ;; esac
 done
 case "${1:-}" in
-  ""|-*|resume) ELPIS_REAL="$REAL" exec "$BRIDGE_DIR/elpis-claude" "$@" ;;
+  ""|-*|resume) ELPIS_ENGINE_BIN="$REAL" exec "$BRIDGE_DIR/elpis-claude" "$@" ;;
   *) direct "$@" ;;
 esac
