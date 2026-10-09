@@ -74,6 +74,8 @@ pub(super) struct AgentsOverviewState {
     pub(super) selected_permission_profiles: HashMap<ThreadId, String>,
     /// Accepted menu requests; unchanged settings may never produce a notification.
     pub(super) requested_permission_profiles: HashMap<ThreadId, PermissionProfileSelection>,
+    /// `/yolo` saves its original config target only after the engine confirms Full Access.
+    pub(super) pending_yolo_defaults: HashMap<ThreadId, Config>,
     /// Keep new tasks subscribed and reusable until a first turn makes them resumable.
     pub(super) blank_sessions: HashMap<ThreadId, crate::app_server_session::AppServerStartedThread>,
     pub(super) input_states: HashMap<ThreadId, ThreadInputState>,
