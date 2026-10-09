@@ -63,9 +63,13 @@ pub(crate) fn summary_shimmer(
             let distance = ((center - position).abs() / half_width).min(/*other*/ 1.0);
             let intensity = 0.5 * (1.0 + (std::f64::consts::PI * distance).cos());
             let alpha = (0.5 + 0.5 * intensity) as f32;
-            let style = accent
-                .unwrap_or_default()
-                .fg(rgb_color(blend(fg, bg, alpha)));
+            let color = rgb_color(blend(fg, bg, alpha));
+            let color = if accent.is_some() {
+                crate::style::readable_color_on(color, /*background*/ None)
+            } else {
+                color
+            };
+            let style = accent.unwrap_or_default().fg(color);
             Span::styled(grapheme.to_owned(), style)
         })
         .collect()
