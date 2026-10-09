@@ -2,7 +2,7 @@
 //!
 //! Copied from v0.3.0 `chatwidget.rs` (the Manual Memory cache), `settings.rs` (the Smart
 //! Prune and Subagents switches), `slash_dispatch.rs` (`/add`), `session_flow.rs` (the reset
-//! on thread change) and `interaction.rs` (the Tab/Alt+C toggle). Upstream files reach this
+//! on thread change) and `interaction.rs` (the Alt+C toggle). Upstream files reach this
 //! module through one-line seams marked `Elpis:`.
 
 use std::path::PathBuf;
@@ -186,7 +186,7 @@ impl ChatWidget {
             Ok(paths) if paths.len() == 1 => self.add_info_message(
                 format!("Added {} to the Context Ledger.", paths[0].display()),
                 Some(
-                    "It is enabled for the next turn. Open the ledger with Tab to toggle it."
+                    "It is enabled for the next turn. Open the ledger with Alt+C to toggle it."
                         .to_string(),
                 ),
             ),
@@ -196,7 +196,7 @@ impl ChatWidget {
                     paths.len()
                 ),
                 Some(
-                    "They are enabled for the next turn. Open the ledger with Tab to toggle them."
+                    "They are enabled for the next turn. Open the ledger with Alt+C to toggle them."
                         .to_string(),
                 ),
             ),
