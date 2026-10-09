@@ -218,7 +218,9 @@ async function promptText(s, prompt) {
   }
   let text = parts.join("\n");
   if (s.instructions && !s.instructionsSent) { text = `<elpis_instructions>\n${s.instructions}\n</elpis_instructions>\n\n${text}`; s.instructionsSent = true; }
-  return text;
+  // The extra hooks workspace is visible to the model, including on resumed conversations.
+  // Restate the actual chat directory on every prompt instead of letting that workspace win.
+  return `<elpis_session>\nProject directory: ${JSON.stringify(s.cwd)}\nResolve relative task paths in this project. The additional workspace ${JSON.stringify(HOOKS_DIR)} is only Elpis permission infrastructure, not the task project.\n</elpis_session>\n\n${text}`;
 }
 
 async function handle(msg) {

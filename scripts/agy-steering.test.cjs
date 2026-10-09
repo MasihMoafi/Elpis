@@ -15,11 +15,13 @@ if (process.argv.includes('--fake-agy')) {
     console.log('gemini-3.8-flash-medium\tGemini fixture');
   } else {
     const send = event => process.stdout.write(JSON.stringify(event) + '\n');
+    fs.writeFileSync(`${process.env.AGY_FIXTURE_LOG}.argv`, JSON.stringify({ args: process.argv, cwd: process.cwd() }));
     send({ event: 'init', conversation_id: 'fixture' });
     readline.createInterface({ input: process.stdin }).on('line', async line => {
       const input = JSON.parse(line);
-      const text = input.message.content;
-      fs.appendFileSync(process.env.AGY_FIXTURE_LOG, JSON.stringify({ text }) + '\n');
+      const raw = input.message.content;
+      const text = raw.split('</elpis_session>\n\n').at(-1);
+      fs.appendFileSync(process.env.AGY_FIXTURE_LOG, JSON.stringify({ text, raw }) + '\n');
       const deliveredCase = process.env.AGY_FIXTURE_KIND.startsWith('delivered');
       const firstSteer = text === 'retained one' && deliveredCase && !fs.existsSync(`${process.env.AGY_FIXTURE_LOG}.sent`);
       if (firstSteer) {
@@ -90,6 +92,20 @@ if (process.argv.includes('--fake-agy')) {
     try {
       assert((await rpc('initialize', {})).result);
       assert((await rpc('session/load', { sessionId: kind, cwd })).result);
+      if (kind === 'workspace') {
+        assert.equal((await rpc('session/prompt', { sessionId: kind, prompt: prompt('workspace check') })).result?.stopReason, 'end_turn');
+        const launched = JSON.parse(fs.readFileSync(`${log}.argv`, 'utf8'));
+        const roots = launched.args.flatMap((arg, index) => arg === '--add-dir' ? [launched.args[index + 1]] : []);
+        assert(roots.includes(path.join(home, 'elpis-claude', 'agy-approvals')), 'restricted tools still load the approval hook');
+        assert.equal(launched.cwd, cwd);
+        const delivered = JSON.parse(fs.readFileSync(log, 'utf8').trim());
+        assert(delivered.raw.startsWith('<elpis_session>\n'), 'resumed turns must identify the actual project');
+        assert(delivered.raw.includes(`Project directory: ${JSON.stringify(cwd)}`));
+        assert(delivered.raw.includes('permission infrastructure'));
+        checks.push('workspace: resumed prompts identify the real project separately from approval hooks');
+        console.log(`PASS ${checks.at(-1)}`);
+        return;
+      }
       assert((await rpc('session/set_mode', { sessionId: kind, modeId: 'bypassPermissions' })).result);
       const running = rpc('session/prompt', { sessionId: kind, prompt: prompt(`initial:${kind}`) });
       await eventually(() => messages.some(message => message.params?.update?.sessionUpdate === 'tool_call'));
@@ -132,7 +148,7 @@ if (process.argv.includes('--fake-agy')) {
     }
   }
 
-  (async () => { for (const kind of ['success', 'failure', 'exit', 'cancel', 'deliveredFailure', 'deliveredExit', 'deliveredCancel']) await scenario(kind); })()
+  (async () => { for (const kind of ['success', 'failure', 'exit', 'cancel', 'deliveredFailure', 'deliveredExit', 'deliveredCancel', 'workspace']) await scenario(kind); })()
     .catch(error => { console.error(error.stack); process.exitCode = 1; })
     .finally(() => {
       fs.writeFileSync(path.join(root, 'evidence.json'), JSON.stringify({ checks, evidence }, null, 2));
