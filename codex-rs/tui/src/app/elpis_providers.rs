@@ -157,7 +157,7 @@ impl App {
                 .workspace_roots
                 .clone_from(&self.chat_widget.config_ref().workspace_roots);
         }
-        let selected_profile = self.confirmed_server_profile(thread_id);
+        let selected_profile = self.selected_server_profile(thread_id);
         match app_server
             .fork_thread_at(
                 &self.local_settings,

@@ -552,7 +552,6 @@ impl ChatWidget {
                 // Searchable rows need a search value, or a search hides them.
                 search_value: Some(format!("{} {model}", preset.display_name)),
                 is_current: is_active && model == current_model,
-                is_default: preset.is_default,
                 actions: vec![Box::new(move |tx| {
                     send(
                         tx,

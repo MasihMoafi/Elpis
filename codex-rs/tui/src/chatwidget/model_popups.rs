@@ -318,7 +318,6 @@ impl ChatWidget {
             name: preset.display_name.clone(),
             description,
             is_current,
-            is_default: preset.is_default,
             secondary_action: direct_effort.and_then(|effort| {
                 self.session_model_selection_action(preset.model.clone(), Some(effort))
             }),

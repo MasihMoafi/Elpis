@@ -57,6 +57,8 @@ pub(crate) struct CustomPromptView {
     completion: Option<ViewCompletion>,
     pending_suggestion: Option<PendingTextSuggestion>,
     user_edited: bool,
+    /// Render secrets as bullets while preserving their submission value.
+    masked: bool,
 }
 
 impl CustomPromptView {
@@ -84,7 +86,13 @@ impl CustomPromptView {
             completion: None,
             pending_suggestion: None,
             user_edited: false,
+            masked: false,
         }
+    }
+
+    pub(crate) fn masked(mut self) -> Self {
+        self.masked = true;
+        self
     }
 
     /// Apply the same editor and Vim bindings used by the main composer.
