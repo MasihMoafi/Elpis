@@ -2,9 +2,9 @@
 //! active reasoning effort changes to Max or Ultra, plus the persistent
 //! prompt accent that remains while one of those tiers is active.
 //!
-//! Wave, Aurora, and Pulse are text-safe: backgrounds blend underneath the
-//! draft and glyphs only land in empty cells. Real tier changes choose a
-//! random style without repeating the previous one.
+//! Wave, Aurora, and Pulse are text-safe: dark backgrounds blend underneath the
+//! draft, light backgrounds stay flat, and glyphs only land in empty cells. Real tier
+//! changes choose a random style without repeating the previous one.
 //!
 //! The clock starts on the first rendered frame. Browser-backed and native
 //! terminals without reliable ANSI-256/truecolor support, and sessions with
@@ -239,6 +239,7 @@ impl EffortIgnition {
             protected,
             buf,
             band_rgb: composer_bg_rgb(term_bg),
+            on_light_bg: is_light(term_bg),
             color_level,
         };
         paint_style(

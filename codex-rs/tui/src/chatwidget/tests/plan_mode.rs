@@ -1329,7 +1329,7 @@ async fn submit_user_message_emits_structured_plugin_mentions_from_bindings() {
 }
 
 #[tokio::test]
-async fn enter_queues_when_plan_turn_is_active_without_plan_stream() {
+async fn enter_steers_when_plan_turn_is_active_without_plan_stream() {
     let (mut chat, _rx, mut op_rx) = make_chatwidget_manual(Some("gpt-5.5")).await;
     chat.thread_id = Some(ThreadId::new());
     chat.set_feature_enabled(Feature::CollaborationModes, /*enabled*/ true);
@@ -1342,13 +1342,27 @@ async fn enter_queues_when_plan_turn_is_active_without_plan_stream() {
         .set_composer_text("submitted immediately".to_string(), Vec::new(), Vec::new());
     chat.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
 
-    assert_eq!(chat.input_queue.queued_user_messages.len(), 1);
+    assert!(chat.input_queue.queued_user_messages.is_empty());
+    assert_eq!(chat.input_queue.pending_steers.len(), 1);
     assert_eq!(
-        chat.input_queue.queued_user_messages.front().unwrap().text,
+        chat.input_queue
+            .pending_steers
+            .front()
+            .unwrap()
+            .user_message
+            .text,
         "submitted immediately"
     );
-    assert!(chat.input_queue.pending_steers.is_empty());
-    assert_no_submit_op(&mut op_rx);
+    let Op::UserTurn { items, .. } = next_submit_op(&mut op_rx) else {
+        panic!("expected submitted steer");
+    };
+    assert_eq!(
+        items,
+        vec![UserInput::Text {
+            text: "submitted immediately".into(),
+            text_elements: Vec::new(),
+        }]
+    );
 }
 
 /// Elpis: Shift+Tab cycles the permission modes, so bare /plan both enters and leaves Plan mode,

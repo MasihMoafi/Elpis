@@ -48,9 +48,14 @@ struct CenterLayout {
 
 impl AgentsOverviewView {
     fn center_layout(&self, area: Rect) -> CenterLayout {
-        let state = self.state();
-        let footer_height = u16::from(area.height >= 2);
         let header_height = if area.height >= 6 { 3 } else { 0 };
+        let footer_height = if area.height >= 2 {
+            self.center_footer_lines(area.width.saturating_sub(/*rhs*/ 4))
+                .len()
+                .min(usize::from(area.height.saturating_sub(header_height + 1))) as u16
+        } else {
+            0
+        };
         let footer = row(area, area.height - footer_height, footer_height);
         let header = row(area, /*offset*/ 0, header_height);
         let body = row(area, header_height, footer.y - header.bottom())
@@ -66,7 +71,11 @@ impl AgentsOverviewView {
         } else {
             [body, Rect::default(), Rect::default()]
         };
-        let search = row(list, /*offset*/ 0, u16::from(state.editing_metadata()));
+        let search = row(
+            list,
+            /*offset*/ 0,
+            u16::from(self.state().editing_metadata()),
+        );
         let list = row(
             list,
             search.height,
@@ -119,7 +128,7 @@ impl Renderable for AgentsOverviewView {
         let layout = self.center_layout(area);
         let inset =
             |area: Rect| area.inner(Margin::new(/*horizontal*/ 2, /*vertical*/ 0));
-        let footer_hints = self.center_footer_hints();
+        let footer_lines = self.center_footer_lines(layout.footer.width.saturating_sub(/*rhs*/ 4));
         let state = self.state();
         let filter_keys = if state.editing_metadata() {
             String::new()
@@ -195,22 +204,12 @@ impl Renderable for AgentsOverviewView {
                 buf,
             );
         }
-        let notice = state
-            .connection_notice
-            .map(str::to_owned)
-            .or_else(|| {
-                state
-                    .creating_worktree
-                    .then(|| "Creating worktree…".to_owned())
-            })
-            .or_else(|| {
-                (state.refresh_failed && !state.loading).then(|| "Error loading tasks".to_owned())
-            })
-            .or_else(|| state.server_version_notice.clone());
-        if let Some(notice) = notice.filter(|_| !state.help && state.key_chord_hint.is_none()) {
-            line(notice.dim(), inset(layout.footer), buf);
-        } else {
-            line(hint_line(&footer_hints), inset(layout.footer), buf);
+        for (offset, hint) in footer_lines.into_iter().enumerate() {
+            line(
+                hint,
+                inset(row(layout.footer, offset as u16, /*height*/ 1)),
+                buf,
+            );
         }
         let help = state.help;
         drop(state);

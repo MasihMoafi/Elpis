@@ -194,9 +194,11 @@ async function onEvent(s, m) {
     const r = m.result ?? {};
     const u = r.usage ?? {};
     turn.usage.input += u.input_tokens ?? 0; turn.usage.output += u.output_tokens ?? 0; turn.usage.cached += u.cache_read_tokens ?? 0;
-    // A message sent mid-turn (steer) runs as the next turn of the same reply.
-    const next = turn.steers.shift();
-    if (next && r.status === "SUCCESS" && s.proc) { s.proc.stdin.write(JSON.stringify({ event: "user", message: { content: next } }) + "\n"); return; }
+    // agy's stream input runs one turn per user message, not a tool-boundary steer. Keep
+    // unsent acknowledged messages on the session when the current turn fails or its process
+    // stops. Dequeue when handed to agy so failed/cancelled work is never silently replayed.
+    const next = s.pendingSteers[0];
+    if (next && r.status === "SUCCESS" && s.proc) { s.proc.stdin.write(JSON.stringify({ event: "user", message: { content: next } }) + "\n"); s.pendingSteers.shift(); return; }
     s.turn = null;
     if (r.status !== "SUCCESS") return turn.cancelled ? turn.resolve({ stopReason: "cancelled" }) : turn.reject({ code: -32603, message: r.error || `Antigravity turn ${r.status ?? "failed"}` });
     turn.resolve({ stopReason: "end_turn", usage: { inputTokens: turn.usage.input - turn.usage.cached, outputTokens: turn.usage.output, cachedReadTokens: turn.usage.cached, cachedWriteTokens: 0, totalTokens: turn.usage.input + turn.usage.output } });
@@ -228,7 +230,7 @@ async function handle(msg) {
     case "session/new":
     case "session/load": {
       const id = msg.method === "session/load" ? p.sessionId : randomUUID();
-      const sess = sessions.get(id) ?? { id, cwd: p.cwd ?? process.cwd(), model: DEFAULT_MODEL, mode: "default", conversationId: msg.method === "session/load" ? id : null, proc: null, turn: null, initWaiters: [], instructions: null, instructionsSent: msg.method === "session/load" };
+      const sess = sessions.get(id) ?? { id, cwd: p.cwd ?? process.cwd(), model: DEFAULT_MODEL, mode: "default", conversationId: msg.method === "session/load" ? id : null, proc: null, turn: null, pendingSteers: [], initWaiters: [], instructions: null, instructionsSent: msg.method === "session/load" };
       sess.cwd = p.cwd ?? sess.cwd;
       if (p._meta?.systemPrompt?.append) sess.instructions = p._meta.systemPrompt.append;
       sessions.set(id, sess);
@@ -258,8 +260,11 @@ async function handle(msg) {
       if (!s.proc) throw { code: -32603, message: "Antigravity did not start" };
       const text = await promptText(s, p.prompt);
       return new Promise((resolve, reject) => {
-        s.turn = { resolve, reject, tools: new Map(), steers: [], usage: { input: 0, output: 0, cached: 0 }, cancelled: false };
-        s.proc.stdin.write(JSON.stringify({ event: "user", message: { content: text } }) + "\n");
+        const hasPendingSteers = s.pendingSteers.length > 0;
+        if (hasPendingSteers) s.pendingSteers.push(text);
+        s.turn = { resolve, reject, tools: new Map(), usage: { input: 0, output: 0, cached: 0 }, cancelled: false };
+        s.proc.stdin.write(JSON.stringify({ event: "user", message: { content: hasPendingSteers ? s.pendingSteers[0] : text } }) + "\n");
+        if (hasPendingSteers) s.pendingSteers.shift();
       });
     }
     case "session/cancel":
@@ -267,8 +272,11 @@ async function handle(msg) {
       return undefined;
     case "_session/steering": {
       if (!s?.turn) return { outcome: "promptRequired", reason: "noRunningTurn" };
-      s.turn.steers.push(await promptText(s, p.prompt));
-      return { outcome: "queued" };
+      const turn = s.turn;
+      const text = await promptText(s, p.prompt);
+      if (s.turn !== turn) return { outcome: "promptRequired", reason: "noRunningTurn" };
+      s.pendingSteers.push(text);
+      return { outcome: "queued", _meta: { delivery: "nextTurn" } };
     }
     case "session/delete":
       if (s) { s.proc?.kill("SIGTERM"); s.gate?.close(); sessions.delete(p.sessionId); }

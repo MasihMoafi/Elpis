@@ -462,6 +462,61 @@ rename = 'z r'
 }
 
 #[tokio::test]
+async fn live_center_chat_actions_remain_visible_at_narrow_widths() {
+    let app = make_test_app().await;
+    let mut view = app.agents_overview_view(
+        vec![overview_thread(
+            ThreadId::new(),
+            /*parent_thread_id*/ None,
+            "Retained chat",
+            ThreadStatus::Idle,
+        )],
+        /*selected_thread_id*/ None,
+    );
+    for width in [40, 48, 80, 100] {
+        let rendered = screen(&view, width, /*height*/ 18);
+        for hint in [
+            "? help",
+            "esc back",
+            "enter open",
+            "n new",
+            "r rename",
+            "backspace delete",
+        ] {
+            assert!(
+                rendered.contains(hint),
+                "{hint} missing at width {width}:\n{rendered}"
+            );
+        }
+    }
+    view.handle_key_event(KeyCode::Char('r').into());
+    let editing = screen(&view, /*width*/ 40, /*height*/ 18);
+    assert!(editing.contains("enter rename"));
+    assert!(!editing.contains("backspace delete"));
+    assert!(!editing.contains("  r rename"));
+}
+
+#[tokio::test]
+async fn live_center_chat_action_hints_use_remaps_and_omit_disabled_actions() {
+    let mut app = make_test_app().await;
+    let config: TuiKeymap = toml::from_str("[agents]\nrename = 'z r'\ndelete = 'ctrl-d'").unwrap();
+    app.keymap = RuntimeKeymap::from_config(&config).unwrap();
+    let view = app.agents_overview_view(Vec::new(), /*selected_thread_id*/ None);
+    let rendered = screen(&view, /*width*/ 40, /*height*/ 18);
+    assert!(rendered.contains("z r rename"));
+    assert!(rendered.contains("ctrl+d delete"));
+    assert!(!rendered.contains("backspace delete"));
+
+    let config: TuiKeymap = toml::from_str("[agents]\nrename = []\ndelete = []").unwrap();
+    app.keymap = RuntimeKeymap::from_config(&config).unwrap();
+    let view = app.agents_overview_view(Vec::new(), /*selected_thread_id*/ None);
+    let rendered = screen(&view, /*width*/ 40, /*height*/ 18);
+    assert!(!rendered.contains("rename"));
+    assert!(!rendered.contains("delete"));
+    assert!(rendered.contains("n new"));
+}
+
+#[tokio::test]
 async fn live_center_search_row_appears_only_while_editing() {
     let app = make_test_app().await;
     let mut view = app.agents_overview_view(

@@ -65,20 +65,36 @@ async fn up_leaves_steers_already_sent_to_the_turn_alone() {
     assert_eq!(chat.input_queue.pending_steers.len(), 1);
 }
 
-// Enter queues a follow-up during a turn instead of steering it.
+// Enter submits a steer to the running turn.
 
 #[tokio::test]
-async fn enter_during_a_turn_queues_instead_of_steering() {
-    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+async fn enter_during_a_turn_submits_a_steer_without_waiting_for_completion() {
+    let (mut chat, _rx, mut op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
     chat.thread_id = Some(ThreadId::new());
     handle_turn_started(&mut chat, "turn-1");
     chat.bottom_pane
-        .set_composer_text("queued one".to_string(), Vec::new(), Vec::new());
+        .set_composer_text("steer now".to_string(), Vec::new(), Vec::new());
 
     chat.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
 
-    assert_eq!(chat.queued_user_message_texts(), vec!["queued one"]);
-    assert!(chat.input_queue.pending_steers.is_empty());
+    assert!(chat.queued_user_message_texts().is_empty());
+    assert_eq!(chat.input_queue.pending_steers.len(), 1);
+    assert_eq!(
+        chat.input_queue.pending_steers[0].user_message.text,
+        "steer now"
+    );
+    let Op::UserTurn { items, .. } = next_submit_op(&mut op_rx) else {
+        panic!("expected submitted steer");
+    };
+    assert_eq!(
+        items,
+        vec![UserInput::Text {
+            text: "steer now".into(),
+            text_elements: Vec::new(),
+        }]
+    );
+    assert!(chat.turn_lifecycle.agent_turn_running);
+    assert!(op_rx.try_recv().is_err());
     assert!(chat.bottom_pane.composer_text().is_empty());
 }
 
@@ -189,7 +205,7 @@ async fn esc_with_a_queued_slash_command_still_interrupts() {
     );
 }
 
-// Footer hints: the idle Elpis tip, the Ledger hint, and Enter to queue while busy.
+// Footer hints: the idle Elpis tip, the Ledger hint, and the configured queue key.
 
 /// Renders below the Context Ledger's width threshold so the footer keeps the full row.
 fn footer_after_tick(chat: &mut ChatWidget) -> String {
@@ -247,15 +263,23 @@ async fn a_draft_a_turn_or_a_picker_hides_the_tip() {
 }
 
 #[tokio::test]
-async fn busy_draft_footer_offers_enter_to_queue_and_the_ledger() {
+async fn busy_draft_footer_follows_the_queue_keymap_and_shows_the_ledger() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
     chat.bottom_pane.set_task_running(/*running*/ true);
     chat.bottom_pane
         .set_composer_text("follow-up".to_string(), Vec::new(), Vec::new());
 
+    let default_footer = footer_after_tick(&mut chat);
+    assert!(
+        !default_footer.contains("enter to queue"),
+        "{default_footer}"
+    );
+    let mut keymap = crate::keymap::RuntimeKeymap::defaults();
+    keymap.composer.queue = vec![crate::key_hint::ctrl(KeyCode::Char('q'))];
+    chat.bottom_pane.set_keymap_bindings(&keymap);
     let footer = footer_after_tick(&mut chat);
 
-    assert!(footer.contains("enter to queue message"), "{footer}");
+    assert!(footer.contains("ctrl+q to queue message"), "{footer}");
     assert!(footer.contains("Tab Context Ledger"), "{footer}");
     assert!(!footer.contains("open the Context Ledger"), "{footer}");
 }

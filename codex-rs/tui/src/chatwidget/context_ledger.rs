@@ -452,6 +452,7 @@ impl ChatWidget {
             .sum::<u64>();
         // Labels and values identify categories; the palette follows Elpis appearance.
         let brand = crate::style::brand_style().not_bold();
+        let context = crate::style::context_style();
         let background = default_bg();
         let light = background.is_some_and(is_light);
         let muted = Style::default().fg(crate::style::adaptive_palette_color(
@@ -503,7 +504,7 @@ impl ChatWidget {
             })
             .collect::<Vec<_>>();
         if attribution_segments.is_empty() && has_request_snapshot && used_tokens > 0 {
-            attribution_segments.push((used_tokens, Color::DarkGray));
+            attribution_segments.push((used_tokens, context.fg.unwrap_or(Color::Reset)));
         }
         let source_change_status = if !self.context_ledger.pending_context_admissions.is_empty() {
             Some("changes queued")
@@ -542,9 +543,9 @@ impl ChatWidget {
         let mut lines = self.agent_ledger_lines(content_width);
         lines.extend(vec![
             Line::from(vec![
-                Span::styled("CONTEXT LEDGER", brand.bold()),
+                Span::styled("CONTEXT LEDGER", context.bold()),
                 Span::raw("  "),
-                Span::styled(context_header, brand),
+                Span::styled(context_header, context),
             ]),
             Line::from(Span::styled(interaction_hint, muted)),
             Line::from(""),
@@ -827,7 +828,7 @@ impl ChatWidget {
         lines.push(Line::from(""));
 
         lines.push(Line::from(vec![
-            Span::styled("CONTEXT WINDOW", brand.bold()),
+            Span::styled("CONTEXT WINDOW", context.bold()),
             Span::raw("  "),
             Span::styled(
                 if let (true, Some(window)) = (has_request_snapshot, context_window) {
@@ -842,7 +843,7 @@ impl ChatWidget {
                 } else {
                     "usage unavailable".to_string()
                 },
-                muted,
+                context,
             ),
         ]));
         if let (true, Some(window)) = (has_request_snapshot, context_window) {
@@ -1908,7 +1909,7 @@ fn smart_prune_on_colors(
     )
 }
 
-/// Source group headings: the Deus Ex gold family (style/elpis.rs primary color).
+/// Source group headings: the olive context family, deepened on light terminals.
 fn source_group_colors(
     terminal_bg: Option<(u8, u8, u8)>,
     color_level: StdoutColorLevel,
@@ -1917,14 +1918,20 @@ fn source_group_colors(
         terminal_bg,
         color_level,
         Color::Yellow,
-        [(128, 88, 10), (110, 76, 6), (140, 96, 12), (96, 70, 20)],
         [
-            (229, 187, 104),
-            (245, 205, 128),
-            (214, 170, 90),
-            (196, 160, 96),
+            crate::style::CONTEXT_LIGHT_RGB,
+            (92, 106, 20),
+            (100, 112, 28),
+            (82, 94, 18),
+        ],
+        [
+            crate::style::CONTEXT_DARK_RGB,
+            (226, 226, 136),
+            (195, 201, 94),
+            (180, 189, 82),
         ],
     )
+    .map(|color| crate::style::readable_color_on(color, None))
 }
 
 fn ledger_palette(
@@ -2064,7 +2071,7 @@ mod tests {
     }
 
     #[test]
-    fn ledger_source_palette_stays_in_the_gold_family() {
+    fn ledger_source_palette_stays_in_the_olive_family() {
         for bg in [(255, 255, 255), (17, 18, 20)] {
             crate::terminal_palette::with_test_default_colors(
                 crate::terminal_probe::DefaultColors {
@@ -2074,7 +2081,7 @@ mod tests {
                 || {
                     for color in LedgerSourceGroup::ALL.map(LedgerSourceGroup::color) {
                         match color {
-                            Color::Rgb(r, g, b) => assert!(r >= g && g > b),
+                            Color::Rgb(r, g, b) => assert!(g >= r && r > b),
                             Color::Black if is_light(bg) => {}
                             Color::Yellow | Color::Indexed(_) => {}
                             other => panic!("unexpected ledger accent: {other:?}"),

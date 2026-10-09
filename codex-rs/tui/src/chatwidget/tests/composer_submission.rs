@@ -1924,7 +1924,7 @@ async fn restore_thread_input_state_applies_running_state_policy() {
 #[tokio::test]
 async fn default_shortcuts_edit_most_recent_queued_message() {
     for key in [
-        KeyEvent::new(KeyCode::Left, KeyModifiers::SHIFT),
+        KeyEvent::new(KeyCode::Up, KeyModifiers::SHIFT),
         KeyEvent::new(KeyCode::Up, KeyModifiers::ALT),
     ] {
         let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
@@ -1957,7 +1957,7 @@ async fn unbound_queued_message_edit_does_not_fall_back_to_alt_up() {
     chat.refresh_pending_input_preview();
 
     assert!(!render_bottom_popup(&chat, /*width*/ 100).contains("edit last queued message"));
-    chat.handle_key_event(KeyEvent::new(KeyCode::Left, KeyModifiers::SHIFT));
+    chat.handle_key_event(KeyEvent::new(KeyCode::Up, KeyModifiers::SHIFT));
     chat.handle_key_event(KeyEvent::new(KeyCode::Up, KeyModifiers::ALT));
 
     assert!(chat.bottom_pane.composer_text().is_empty());
@@ -2607,12 +2607,7 @@ async fn image_preparation_failure_restores_full_input_without_submitting() {
             std::fs::remove_file(&path).unwrap();
         }
         chat.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
-        if running {
-            // Elpis: Enter queues the message during a turn and prepares nothing; Esc hands the
-            // queued message to the running turn, which prepares its images.
-            assert_eq!(chat.input_queue.queued_user_messages.len(), 1);
-            chat.handle_key_event(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
-        }
+        assert!(chat.input_queue.queued_user_messages.is_empty());
         while let Some(event) = rx.recv().await {
             if let AppEvent::ImagesPrepared(id) = event {
                 chat.on_images_prepared(id);
@@ -2656,15 +2651,8 @@ async fn image_preparation_failure_restores_full_input_without_submitting() {
                 normalize_snapshot_paths(render_bottom_popup(&chat, /*width*/ 80))
             );
         }
-        // Elpis: upstream also checks a reconnect while an earlier steer waits. In Elpis, Esc
-        // hands a queued draft to the turn only when no steer waits, so that state cannot
-        // hold a failed image draft.
         pixels.save(&path).unwrap();
         chat.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
-        if running {
-            // Elpis: the retry is queued too, and Esc hands it to the running turn.
-            chat.handle_key_event(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
-        }
         while let Some(event) = rx.recv().await {
             if let AppEvent::ImagesPrepared(id) = event {
                 chat.on_images_prepared(id);

@@ -18,6 +18,7 @@ use codex_protocol::protocol::TurnContextItem;
 use tokio_util::sync::CancellationToken;
 
 /// Request-scoped state that may change between model sampling requests.
+#[derive(Clone)]
 pub(crate) struct StepContext {
     pub(crate) turn: Arc<TurnContext>,
     /// Preempts this request and yields its code-mode observations when user input arrives.
@@ -60,5 +61,29 @@ impl StepContext {
                 .effective_reasoning_effort()
                 .map(|effort| effort.to_string()),
         }
+    }
+}
+
+/// Only explicit, accepted permission selections may replace an in-flight step's authority.
+#[derive(Clone, Debug, Default)]
+pub(super) struct LivePermissions {
+    pub(super) approval_policy: Option<codex_protocol::protocol::AskForApproval>,
+    pub(super) approvals_reviewer: Option<codex_protocol::config_types::ApprovalsReviewer>,
+    pub(super) profile: Option<codex_protocol::models::PermissionProfileSnapshot>,
+}
+
+impl StepContext {
+    pub(crate) fn with_current_permissions(
+        self: Arc<Self>,
+    ) -> crate::config::ConstraintResult<Arc<Self>> {
+        let Some(permissions) = self.turn.live_permissions.load_full() else {
+            return Ok(self);
+        };
+        let mut current = self.as_ref().clone();
+        current.settings = Arc::new(current.settings.with_live_permissions(&permissions)?);
+        if let Some(profile) = &permissions.profile {
+            current.environments.apply_live_permission_profile(profile);
+        }
+        Ok(Arc::new(current))
     }
 }

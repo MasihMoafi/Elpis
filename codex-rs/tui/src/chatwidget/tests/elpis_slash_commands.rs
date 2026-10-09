@@ -312,7 +312,7 @@ async fn during_a_turn_yolo_runs_and_pruning_waits() {
 }
 
 #[test]
-fn commands_v030_removed_stay_hidden_and_new_upstream_commands_leave_the_popup() {
+fn commands_v030_removed_stay_hidden_and_other_unlisted_commands_leave_the_popup() {
     let flags = BuiltinCommandFlags::default();
     let listed = built_in_slash_commands()
         .into_iter()
@@ -338,7 +338,6 @@ fn commands_v030_removed_stay_hidden_and_new_upstream_commands_leave_the_popup()
     }
     // Commands Codex added since July are out of the popup but still typeable.
     for (name, cmd) in [
-        ("agents", SlashCommand::Agents),
         ("export", SlashCommand::Export),
         ("recap", SlashCommand::Recap),
         ("pwd", SlashCommand::Pwd),
@@ -361,10 +360,8 @@ fn commands_v030_kept_out_of_the_popup_still_work_under_their_v030_names() {
         .collect::<Vec<_>>();
     for (name, cmd) in [
         ("approve", SlashCommand::AutoReview),
-        ("archive", SlashCommand::Archive),
         ("btw", SlashCommand::Btw),
         ("debug-config", SlashCommand::DebugConfig),
-        ("del", SlashCommand::Delete),
         ("import", SlashCommand::Import),
         ("kill", SlashCommand::Stop),
         ("logout", SlashCommand::Logout),
@@ -393,6 +390,28 @@ fn commands_v030_kept_out_of_the_popup_still_work_under_their_v030_names() {
         find_builtin_command("stop", flags),
         Some(SlashCommand::Stop)
     );
+    assert_eq!(
+        find_builtin_command("delete", flags),
+        Some(SlashCommand::Delete)
+    );
+}
+
+#[test]
+fn chat_management_commands_are_listed_without_changing_their_names_or_aliases() {
+    let flags = BuiltinCommandFlags::default();
+    let listed = built_in_slash_commands();
+    for (name, command) in [
+        ("agents", SlashCommand::Agents),
+        ("rename", SlashCommand::Rename),
+        ("new", SlashCommand::New),
+        ("archive", SlashCommand::Archive),
+        ("del", SlashCommand::Delete),
+        ("resume", SlashCommand::Resume),
+    ] {
+        assert!(listed.contains(&(name, command)), "/{name} is missing");
+        assert_eq!(find_builtin_command(name, flags), Some(command));
+    }
+    assert!(!listed.iter().any(|(name, _)| *name == "delete"));
     assert_eq!(
         find_builtin_command("delete", flags),
         Some(SlashCommand::Delete)

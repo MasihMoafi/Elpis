@@ -364,6 +364,10 @@ impl ToolRouter {
             ..
         } = call;
 
+        let step_context = step_context.with_current_permissions().map_err(|error| {
+            FunctionCallError::RespondToModel(format!("Permission selection rejected: {error}"))
+        })?;
+
         // Keep the legacy ToolInvocation.turn field tied to the same request state until handlers migrate.
         let turn = Arc::clone(&step_context.turn);
         let invocation = ToolInvocation {

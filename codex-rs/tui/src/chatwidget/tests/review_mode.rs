@@ -474,9 +474,9 @@ async fn esc_steers_queued_input_uses_pending_steers_while_turn_is_running_witho
     chat.thread_id = Some(ThreadId::new());
     chat.on_task_started();
 
-    chat.bottom_pane
-        .set_composer_text("queued while running".to_string(), Vec::new(), Vec::new());
-    chat.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+    chat.queue_user_message(UserMessage::from("queued while running"));
+    assert_eq!(chat.input_queue.queued_user_messages.len(), 1);
+    assert!(chat.input_queue.pending_steers.is_empty());
     chat.handle_key_event(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
 
     assert!(chat.input_queue.queued_user_messages.is_empty());
@@ -490,10 +490,12 @@ async fn esc_steers_queued_input_uses_pending_steers_while_turn_is_running_witho
             .text,
         "queued while running"
     );
-    match next_submit_op(&mut op_rx) {
-        Op::UserTurn { .. } => {}
-        other => panic!("expected Op::UserTurn, got {other:?}"),
-    }
+    let ops = std::iter::from_fn(|| op_rx.try_recv().ok()).collect::<Vec<_>>();
+    assert!(
+        ops.iter().any(|op| matches!(op, Op::UserTurn { .. })),
+        "{ops:?}"
+    );
+    assert!(ops.iter().all(|op| !matches!(op, Op::Interrupt)), "{ops:?}");
     assert!(drain_insert_history(&mut rx).is_empty());
 
     complete_user_message(&mut chat, "user-1", "queued while running");
@@ -509,16 +511,12 @@ async fn esc_steers_queued_input_uses_pending_steers_while_final_answer_stream_i
     let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
     chat.thread_id = Some(ThreadId::new());
     chat.on_task_started();
-    // Keep the assistant stream open (no commit tick/finalize) to model the repro window:
-    // user presses Enter while the final answer is still streaming.
+    // Keep the assistant stream open (no commit tick/finalize) while a queued message waits.
     chat.on_agent_message_delta("Final answer line\n".to_string());
 
-    chat.bottom_pane.set_composer_text(
-        "queued while streaming".to_string(),
-        Vec::new(),
-        Vec::new(),
-    );
-    chat.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+    chat.queue_user_message(UserMessage::from("queued while streaming"));
+    assert_eq!(chat.input_queue.queued_user_messages.len(), 1);
+    assert!(chat.input_queue.pending_steers.is_empty());
     chat.handle_key_event(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
 
     assert!(chat.input_queue.queued_user_messages.is_empty());
@@ -532,10 +530,12 @@ async fn esc_steers_queued_input_uses_pending_steers_while_final_answer_stream_i
             .text,
         "queued while streaming"
     );
-    match next_submit_op(&mut op_rx) {
-        Op::UserTurn { .. } => {}
-        other => panic!("expected Op::UserTurn, got {other:?}"),
-    }
+    let ops = std::iter::from_fn(|| op_rx.try_recv().ok()).collect::<Vec<_>>();
+    assert!(
+        ops.iter().any(|op| matches!(op, Op::UserTurn { .. })),
+        "{ops:?}"
+    );
+    assert!(ops.iter().all(|op| !matches!(op, Op::Interrupt)), "{ops:?}");
     assert!(drain_insert_history(&mut rx).is_empty());
 
     complete_user_message(&mut chat, "user-1", "queued while streaming");
@@ -1448,7 +1448,7 @@ async fn review_branch_picker_escape_navigates_back_then_dismisses() {
 }
 
 #[tokio::test]
-async fn enter_queues_follow_up_while_review_is_running() {
+async fn enter_submits_steer_and_preserves_it_when_review_rejects_steering() {
     let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
     chat.thread_id = Some(ThreadId::new());
     handle_turn_started(&mut chat, "turn-1");
@@ -1463,14 +1463,43 @@ async fn enter_queues_follow_up_while_review_is_running() {
     );
     chat.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
 
-    assert_eq!(chat.input_queue.queued_user_messages.len(), 1);
+    assert!(chat.input_queue.queued_user_messages.is_empty());
+    assert_eq!(chat.input_queue.pending_steers.len(), 1);
     assert_eq!(
-        chat.input_queue.queued_user_messages.front().unwrap().text,
+        chat.input_queue
+            .pending_steers
+            .front()
+            .unwrap()
+            .user_message
+            .text,
         "Steer submitted while /review was running."
     );
-    assert!(chat.input_queue.pending_steers.is_empty());
-    assert_no_submit_op(&mut op_rx);
+    match next_submit_op(&mut op_rx) {
+        Op::UserTurn { items, .. } => assert_eq!(
+            items,
+            vec![UserInput::Text {
+                text: "Steer submitted while /review was running.".to_string(),
+                text_elements: Vec::new(),
+            }]
+        ),
+        other => panic!("expected running-turn steer submit, got {other:?}"),
+    }
     assert!(drain_insert_history(&mut rx).is_empty());
+
+    handle_error(
+        &mut chat,
+        "cannot steer a review turn",
+        Some(CodexErrorInfo::ActiveTurnNotSteerable {
+            turn_kind: NonSteerableTurnKind::Review,
+        }),
+    );
+
+    assert!(chat.input_queue.pending_steers.is_empty());
+    assert_eq!(
+        chat.queued_user_message_texts(),
+        vec!["Steer submitted while /review was running."]
+    );
+    assert_no_submit_op(&mut op_rx);
 }
 
 #[tokio::test]

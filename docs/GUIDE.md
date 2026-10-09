@@ -48,8 +48,13 @@ The product succeeds only when these behaviors pass their acceptance checks and 
 ## Proof Standard
 
 Masih rejected the September 11 installed UI; corrections remain in progress.
-Enter queues a follow-up during an active response. Up in an empty composer
-recalls all queued follow-ups in order; there is no default Ctrl+Q shortcut.
+Enter sends steering during an active response, consumed at the next supported
+tool/model boundary. Gemini's agy adapter accepts only serial follow-up turns;
+its queued-delivery notice explains that the current reply must finish first.
+Commands that cannot run during a response wait until it finishes.
+Up in an empty composer recalls queued follow-ups; Shift+Up opens pending questions.
+There is no default Ctrl+Q shortcut. `/agents` opens the task list; its footer shows
+the configured rename and delete controls, and deletion requires confirmation.
 The September 12 correction gives Tab to active completion popups first;
 otherwise Tab opens/focuses the Context Ledger, then closes it. Alt+C toggles
 ledger visibility directly. Elpising, streaming, ledger updates, and permission
@@ -212,6 +217,11 @@ Keep ownership seams intact when changing shared rendering or permission code:
 - **Default:** may read/edit within the workspace and run commands; internet or work outside the workspace requires approval.
 - **Full Access:** no approval prompts; filesystem and internet restrictions are off.
 
+Confirmed permission changes govern subsequent tool dispatches in an active turn.
+Switching Claude or Gemini out of Full Access stops the active turn so its provider
+process cannot retain bypass permissions; the next message uses the selected mode.
+Environment-owner restrictions remain authoritative for attached environments.
+
 ## Runtime Architecture
 
 ```text
@@ -289,6 +299,10 @@ Elpis should feel unique because the interface exposes what Elpis uniquely owns:
 > The model may change; the work continues.
 
 The identity is continuity-first: deep charcoal structure, bone text, restrained ember/rose accents, and motion only when it communicates active work. UI changes should make runtime/model ownership, context, memory, permission state, and evidence legible without degrading the contained TUI's interaction quality.
+
+Context labels, usage indicators, and tool-output connectors use olive yellow-green
+accents in both appearances. The light composer keeps a flat terminal background,
+including during Max/Ultra effort effects; the dark composer retains its wash.
 
 Implementation status belongs in `TASKS.md`; context-specific UI mechanics belong in [context.md](context.md).
 

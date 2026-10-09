@@ -126,8 +126,8 @@ fn gradient_text_at(text: &str, time: Duration) -> Vec<Span<'static>> {
         .collect()
 }
 
-/// The selected Quiet Rail wash fades into the terminal background without
-/// changing draft text, selection colors, or activity effects.
+/// Dark terminals keep the Quiet Rail wash; light terminals use a flat terminal background.
+/// Draft text, selection colors, and activity effects stay intact.
 pub(crate) fn paint_surface(area: Rect, buf: &mut Buffer) {
     let Some(background) = default_bg() else {
         return;
@@ -136,15 +136,16 @@ pub(crate) fn paint_surface(area: Rect, buf: &mut Buffer) {
     let base = crate::style::composer_style()
         .bg
         .unwrap_or(ratatui::style::Color::Reset);
-    let wash = if is_light(background) {
-        (238, 232, 216)
-    } else {
-        (33, 31, 25)
-    };
+    let light = is_light(background);
+    let wash = (33, 31, 25);
     for y in area.y..area.bottom() {
         for x in area.x..area.right() {
             let cell = &mut buf[(x, y)];
             if cell.bg != base && cell.bg != ratatui::style::Color::Reset {
+                continue;
+            }
+            if light {
+                cell.set_bg(best_color(background));
                 continue;
             }
             let amount = 1.0
@@ -245,6 +246,40 @@ mod tests {
                 assert_eq!(buf[(29, 4)], original[(29, 4)]);
             },
         );
+    }
+
+    #[test]
+    fn light_surface_is_flat_and_preserves_draft_styles_selection_and_neighbors() {
+        for background in [(255, 255, 255), (248, 246, 239)] {
+            crate::terminal_palette::with_test_default_colors(
+                crate::terminal_probe::DefaultColors {
+                    fg: (32, 32, 32),
+                    bg: background,
+                },
+                || {
+                    let area = Rect::new(0, 1, 25, 3);
+                    let mut buf = Buffer::empty(Rect::new(0, 0, 30, 5));
+                    buf.set_string(2, 2, "Keep my draft", Style::default().bold());
+                    buf[(3, 2)].set_bg(ratatui::style::Color::Blue);
+                    let original = buf.clone();
+                    paint_surface(area, &mut buf);
+                    for y in area.y..area.bottom() {
+                        for x in area.x..area.right() {
+                            if (x, y) != (3, 2) {
+                                assert_eq!(buf[(x, y)].bg, best_color(background));
+                            }
+                        }
+                    }
+                    assert_eq!(buf[(3, 2)], original[(3, 2)]);
+                    for (before, after) in original.content.iter().zip(&buf.content) {
+                        assert_eq!(before.symbol(), after.symbol());
+                        assert_eq!(before.fg, after.fg);
+                        assert_eq!(before.modifier, after.modifier);
+                    }
+                    assert_eq!(buf[(29, 4)], original[(29, 4)]);
+                },
+            );
+        }
     }
     #[test]
     fn unknown_background_keeps_terminal_foreground_without_a_white_highlight() {

@@ -5,9 +5,9 @@ on:
   push:
     tags: ['v*']
     branches: [next]
-    paths: ['codex-rs/**', 'scripts/**', 'tests/install/**', '.github/workflows/embedded-elpis-linux.yml']
+    paths: ['codex-rs/**', 'tools/elpis-claude/**', 'scripts/**', 'tests/install/**', '.github/workflows/embedded-elpis-linux.yml']
   pull_request:
-    paths: ['codex-rs/**', 'scripts/**', 'tests/install/**', '.github/workflows/embedded-elpis-linux.yml']
+    paths: ['codex-rs/**', 'tools/elpis-claude/**', 'scripts/**', 'tests/install/**', '.github/workflows/embedded-elpis-linux.yml']
 
 permissions:
   contents: read
@@ -84,10 +84,18 @@ jobs:
         run: |
           bash tests/install/test_install.sh
           bash tests/install/test_cache_source_times.sh
+      - name: Provider history and message retention checks
+        run: |
+          node scripts/history-list.test.cjs
+          node scripts/agy-steering.test.cjs
       - name: Focused Elpis Rust checks
         working-directory: codex-rs
         run: |
-          cargo test --release --locked -p codex-tui --lib elpis_
+          cargo test --release --locked -p codex-tui --lib -- \
+            elpis_ keymap question composer_submission plan_mode review_mode slash_commands \
+            goal_validation command_popup live_center agents_navigation footer_collapse \
+            context_usage context_ledger exec_cell effort_ignition style:: light_terminal_palette \
+            chatwidget_exec_and_status_layout_vt100_snapshot luna_reserve_usage_running
           cargo test --release --locked -p codex-core --lib elpis_
           cargo test --release --locked -p codex-core --lib smart_prune
           cargo test --release --locked -p codex-elpis-gateway --lib

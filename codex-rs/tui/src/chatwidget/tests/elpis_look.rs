@@ -283,25 +283,27 @@ async fn identity_line_names_the_conversation_once_it_has_a_title() {
     let thread_id = ThreadId::new();
     chat.thread_id = Some(thread_id);
     chat.refresh_status_surfaces();
-    let identity_row = |chat: &ChatWidget| {
-        let buffer = with_test_default_colors(DARK, || render_widget(chat, /*width*/ 120));
+    let identity_row = |chat: &ChatWidget, width| {
+        let buffer = with_test_default_colors(DARK, || render_widget(chat, width));
         rows(&buffer)
             .into_iter()
-            .find(|row| row.starts_with(" Elpis · model "))
+            .find(|row| row.starts_with(" Elpis · "))
             .expect("identity line")
     };
 
-    let untitled = identity_row(&chat);
+    let untitled = identity_row(&chat, 80);
     assert!(!untitled.contains("Fix login refresh bug"), "{untitled}");
 
     chat.on_thread_name_updated(thread_id, Some("  Fix login refresh bug ".to_string()));
-    assert!(
-        identity_row(&chat)
-            .trim_end()
-            .ends_with("· Fix login refresh bug"),
-        "{}",
-        identity_row(&chat)
-    );
+    for width in [40, 80, 120] {
+        let row = identity_row(&chat, width);
+        assert!(row.starts_with(" Elpis · Fix login refresh bug ·"), "{row}");
+    }
+
+    chat.on_thread_name_updated(thread_id, Some("Renamed conversation".to_string()));
+    let renamed = identity_row(&chat, 80);
+    assert!(renamed.contains("Renamed conversation"), "{renamed}");
+    assert!(!renamed.contains("Fix login refresh bug"), "{renamed}");
 }
 
 #[tokio::test]

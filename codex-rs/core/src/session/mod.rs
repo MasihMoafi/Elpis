@@ -3823,7 +3823,7 @@ impl Session {
     ) -> CodexResult<Arc<StepContext>> {
         // Read the step's model and record its environments together so an update cannot split them.
         // Wait for executor startup below, after releasing the lock.
-        let (mut settings, environments) = {
+        let (mut settings, environments, permissions) = {
             let _active = self
                 .active_turn
                 .lock()
@@ -3832,6 +3832,7 @@ impl Session {
             (
                 turn_context.next_step_settings.load_full(),
                 self.services.turn_environments.snapshot(),
+                turn_context.live_permissions.load_full(),
             )
         };
         if matches!(
@@ -3858,7 +3859,17 @@ impl Session {
             settings.model_info.as_ref(),
         );
         let session_telemetry = settings.telemetry(&turn_context.session_telemetry);
-        let environments = environments.or_cancel(cancellation_token).await?;
+        let mut environments = environments.or_cancel(cancellation_token).await?;
+        if let Some(permissions) = permissions {
+            settings = Arc::new(
+                settings
+                    .with_live_permissions(&permissions)
+                    .map_err(|error| CodexErr::InvalidRequest(error.to_string()))?,
+            );
+            if let Some(profile) = &permissions.profile {
+                environments.apply_live_permission_profile(profile);
+            }
+        }
         // Keep both preparation futures off caller stacks while they are live together.
         let load_agents_md = Box::pin(async {
             let (loaded_agents_md, warnings) = self

@@ -1055,6 +1055,30 @@ pub struct TurnEnvironmentSnapshot {
 }
 
 impl TurnEnvironmentSnapshot {
+    /// Retain executor, cwd, roots and owner-provided restrictions while updating thread-owned
+    /// permissions. A tool sampled before the user's selection must use the new authority.
+    pub(crate) fn apply_live_permission_profile(
+        &mut self,
+        profile: &codex_protocol::models::PermissionProfileSnapshot,
+    ) {
+        for environment in &mut self.environments {
+            let (selection, origin) = match environment {
+                TurnEnvironmentState::Ready(environment) => {
+                    (&mut environment.selection, environment.config_origin)
+                }
+                TurnEnvironmentState::Starting(environment) => {
+                    (&mut environment.selection, environment.config_origin)
+                }
+                TurnEnvironmentState::Failed { .. } => continue,
+            };
+            if origin == EnvironmentConfigOrigin::Thread
+                && let EnvironmentConfigState::Ready(config) = &mut selection.config
+            {
+                config.permission_profile = profile.clone();
+            }
+        }
+    }
+
     pub(crate) fn has_full_access(
         &self,
         approval_policy: AskForApproval,

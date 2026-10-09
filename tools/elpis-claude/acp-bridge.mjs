@@ -366,6 +366,10 @@ wss.on("connection", (ws) => {
   const threadAccess = new Map();
   const noteAccess = (threadId, s) => {
     if (!threadId || !s) return;
+    if (s.approvalPolicy) {
+      threadPolicy.set(threadId, s.approvalPolicy);
+      chatPolicy.set(threadId, s.approvalPolicy);
+    }
     const sandbox = (s.sandboxPolicy ?? s.sandbox)?.type;
     const profile = s.permissions ?? s.activePermissionProfile?.id
       ?? (sandbox && ({ readOnly: ":read-only", dangerFullAccess: ":danger-full-access" }[sandbox] ?? ":workspace"));
@@ -384,7 +388,9 @@ wss.on("connection", (ws) => {
   const accessModeOf = (threadId, agentKey, ask) => {
     const { profile, reviewer } = threadAccess.get(threadId) ?? {};
     const readOnly = threadSandbox.get(threadId) === "read-only" || !!profile?.includes("read-only");
-    if (!ask) return readOnly ? "plan" : "bypassPermissions";
+    // Never asking is an approval policy, not permission to leave a restricted profile.
+    // Unknown/custom profiles stay restricted unless the engine explicitly names Full Access.
+    if (!ask) return readOnly ? "plan" : profile === ":danger-full-access" ? "bypassPermissions" : "default";
     if (agentKey !== "claude" || readOnly) return "default";
     return reviewer === "auto_review" ? "auto" : "acceptEdits";
   };
@@ -559,12 +565,15 @@ wss.on("connection", (ws) => {
       if (id.startsWith("_") || have.has(id) || previewed.has(id) || !saved?.turns?.length || saved.parentThreadId) continue;
       const t = (await engineCall("thread/read", { threadId: id, includeTurns: false }).catch(() => null))?.thread;
       if (!t) continue;
+      const interactive = t.source === "cli" || t.source === "vscode" || ["atlas", "chatgpt"].includes(t.source?.custom);
+      if (req.sourceKinds?.length ? !req.sourceKinds.includes(t.source) : !interactive) continue;
       if (t.preview) { previewed.add(id); continue; }
       if (/\/archived_sessions\//.test(t.path ?? "") || (cwds && !cwds.includes(t.cwd))) continue;
       if (req.modelProviders?.length && !req.modelProviders.includes(t.modelProvider)) continue;
       if (value(t) < floor || value(t) >= ceiling) continue;
       const first = saved.turns[0].items?.[0];
       const preview = first?.type === "userMessage" ? inputSummary(first.content ?? []) : first?.type === "enteredReviewMode" ? `Code review: ${first.review}` : "";
+      if (req.searchTerm && ![t.name ?? "", preview].some((text) => text.includes(req.searchTerm))) continue;
       if (preview.trim()) { const listed = { ...t, preview: preview.trim() }; ownModel(listed, store); out.push(listed); }
     }
     return out;
@@ -633,8 +642,21 @@ wss.on("connection", (ws) => {
     try { parsed = JSON.parse(line); } catch {}
     const th = parsed?.result?.thread ?? parsed?.params?.thread;
     if (th?.id && th?.cwd) { threadCwd.set(th.id, th.cwd); threadSeen.set(th.id, { ...th, turns: [] }); }
-    if (th?.id && parsed?.result?.approvalPolicy) { threadPolicy.set(th.id, parsed.result.approvalPolicy); chatPolicy.set(th.id, parsed.result.approvalPolicy); noteAccess(th.id, parsed.result); }
-    if (parsed?.method === "thread/settings/updated") noteAccess(parsed.params?.threadId, parsed.params?.threadSettings);
+    if (th?.id && parsed?.result?.approvalPolicy) noteAccess(th.id, parsed.result);
+    if (parsed?.method === "thread/settings/updated") {
+      const tid = parsed.params?.threadId;
+      const previousAccess = accessModeOf(tid, "claude", threadPolicy.get(tid) !== "never");
+      noteAccess(tid, parsed.params?.threadSettings);
+      const nextAccess = accessModeOf(tid, "claude", threadPolicy.get(tid) !== "never");
+      const authority = { plan: 0, default: 0, acceptEdits: 1, auto: 2, bypassPermissions: 3 };
+      // Providers may edit without callbacks in Accept edits, Auto, or Bypass. Stop any
+      // reduction in that authority; the next prompt applies the confirmed restricted mode.
+      if (active?.threadId === tid && authority[nextAccess] < authority[previousAccess]) {
+        active.cancelled = true;
+        if (active.sessionId) active.acp?.send({ method: "session/cancel", params: { sessionId: active.sessionId } });
+        notify("warning", { threadId: tid, message: "Stopped the active turn to apply restricted permissions. Send a message to continue." });
+      }
+    }
     shareHelper(parsed);
     notePlan(parsed);
     if (parsed?.method === "thread/smartPrune/updated" && parsed.params?.threadId) smartPrune.set(parsed.params.threadId, !!parsed.params.smartPrune?.enabled);
@@ -1032,7 +1054,7 @@ wss.on("connection", (ws) => {
             const allowed = (await catalogFor(agent)).modes;
             const why = allowed && !allowed.includes(wantMode) ? `${agent.speaker}'s own settings turn it off` : (e.message ?? "it refused");
             const kept = MODE_NAMES[sessionMode.get(sessionId)];
-            notify("warning", { threadId, message: `${agent.speaker} did not switch to ${MODE_NAMES[wantMode] ?? wantMode}: ${why}. ${kept ? `It stays in ${kept}.` : "Its mode is unchanged."}` });
+            throw new Error(`${agent.speaker} did not switch to ${MODE_NAMES[wantMode] ?? wantMode}: ${why}. ${kept ? `It stays in ${kept}.` : "Its mode is unchanged."} The turn was not started.`);
           });
       }
       const effort = claudeEffort.get(threadId);
@@ -1096,7 +1118,8 @@ wss.on("connection", (ws) => {
         const t = [lane, ...subLanes.values()].map((l) => l.tools.get(p.toolCall?.toolCallId)).find(Boolean);
         const what = (t && t.name === "Bash" && t.raw.command) || p.toolCall?.title || t?.title || "a tool";
         const pick = (kind) => p.options.find((o) => o.kind === kind)?.optionId;
-        const access = accessModeOf(threadId, agent.key, ask);
+        if (turnState.cancelled) return undefined;
+        let access = accessModeOf(threadId, agent.key, (threadPolicy.get(threadId) ?? policy) !== "never");
         // Approving a plan is the user's to decide, in every mode (as Codex asks to implement it).
         const planIds = p.options.map((o) => o.optionId).filter((id) => id?.startsWith("exit-plan-"));
         // Full Access never asks, as in Codex: whatever the agent's own mode (its settings may
@@ -1106,6 +1129,11 @@ wss.on("connection", (ws) => {
           log(`approval ${what} -> allowed (Full Access)`);
           return pick("allow_once") ?? pick("allow_always");
         }
+        if ((threadPolicy.get(threadId) ?? policy) === "never" && !planIds.length) {
+          log(`approval ${what} -> denied (restricted permissions cannot ask)`);
+          if (t) t.declined = true;
+          return pick("reject_once") ?? pick("reject_always") ?? null;
+        }
         const decision = await askTui("item/commandExecution/requestApproval", {
           kind: "command", threadId, turnId, itemId: p.toolCall?.toolCallId ?? randomUUID(), startedAtMs: now(),
           environmentId: null, reason: `${agent.speaker} wants to run: ${what}`, command: what, cwd,
@@ -1113,6 +1141,12 @@ wss.on("connection", (ws) => {
           // while Elpis's label promises only this session.
           availableDecisions: ["accept", "decline", "cancel"],
         });
+        if (turnState.cancelled) return undefined;
+        access = accessModeOf(threadId, agent.key, (threadPolicy.get(threadId) ?? policy) !== "never");
+        if ((threadPolicy.get(threadId) ?? policy) === "never" && access !== "bypassPermissions" && !planIds.length) {
+          if (t) t.declined = true;
+          return pick("reject_once") ?? pick("reject_always") ?? null;
+        }
         const d = decision?.decision;
         log(`approval ${what} -> ${JSON.stringify(d)}`);
         if (d === "accept" && planIds.length) {
@@ -1124,9 +1158,13 @@ wss.on("connection", (ws) => {
           const mode = { "exit-plan-bypass": "bypassPermissions", "exit-plan-auto": "auto", "exit-plan-accept-edits": "acceptEdits" }[id] ?? "default";
           sessionMode.set(sessionId, mode);
           if (access === "acceptEdits" && mode === "default") {
-            setTimeout(() => acp.call("session/set_mode", { sessionId, modeId: "acceptEdits" })
-              .then(() => { sessionMode.set(sessionId, "acceptEdits"); log(`session ${sessionId} mode -> acceptEdits (plan approved)`); })
-              .catch((e) => log(`mode acceptEdits after the plan: ${e.message ?? JSON.stringify(e)}`)), 200);
+            setTimeout(() => {
+              if (turnState.cancelled || active !== turnState
+                || accessModeOf(threadId, agent.key, (threadPolicy.get(threadId) ?? policy) !== "never") !== "acceptEdits") return;
+              acp.call("session/set_mode", { sessionId, modeId: "acceptEdits" })
+                .then(() => { sessionMode.set(sessionId, "acceptEdits"); log(`session ${sessionId} mode -> acceptEdits (plan approved)`); })
+                .catch((e) => log(`mode acceptEdits after the plan: ${e.message ?? JSON.stringify(e)}`));
+            }, 200);
           }
           log(`plan approved: ${id}`);
           return planIds.includes(id) ? id : pick("allow_once");
@@ -1444,6 +1482,9 @@ wss.on("connection", (ws) => {
       const r = await turn.acp.call("_session/steering", { sessionId, prompt: await toAcpPrompt(input), _meta: { steering: { idleBehavior: "promptRequired" } } });
       if (r?.outcome === "promptRequired") return refuse();
       toTui({ id: msg.id, result: { turnId: turn.turnId } });
+      if (r?._meta?.delivery === "nextTurn") {
+        notify("warning", { threadId, message: "Gemini will read this message after its current reply finishes." });
+      }
       turn.closeMessage();
       const item = { type: "userMessage", id: randomUUID(), clientId: clientUserMessageId, content: input };
       notify("item/started", { item, threadId, turnId: turn.turnId, startedAtMs: now() });
@@ -1491,14 +1532,14 @@ wss.on("connection", (ws) => {
     if (msg.method === "thread/turns/list" && msg.params?.threadId) pendingTurnsList.set(msg.id, msg.params);
     if (msg.method === "thread/items/list" && msg.params?.threadId) pendingItemsList.set(msg.id, msg.params);
     const lp = msg.params ?? {};
-    if (msg.method === "thread/list" && !lp.archived && !lp.searchTerm && lp.sortKey !== "section_position" && lp.sortDirection !== "asc"
+    if (msg.method === "thread/list" && !lp.archived && lp.sortKey !== "section_position" && lp.sortDirection !== "asc"
       && lp.sectionId == null && lp.projectId == null && lp.parentThreadId == null && lp.ancestorThreadId == null) pendingThreadList.set(msg.id, lp);
     if (msg.method === "thread/settings/update") {
       const p = msg.params ?? {};
       if (isBridged(p.model)) { claudeModel.set(p.threadId, p.model); p.model = null; log(`thread ${p.threadId} -> ${claudeModel.get(p.threadId)}`); }
       else if (typeof p.model === "string") claudeModel.delete(p.threadId);
-      if (p.approvalPolicy) { threadPolicy.set(p.threadId, p.approvalPolicy); chatPolicy.set(p.threadId, p.approvalPolicy); }
-      noteAccess(p.threadId, p);
+      // Permissions become authoritative only on thread/settings/updated. A rejected or queued
+      // request must never grant the bridge permission ahead of the engine.
       if (p.collaborationMode?.mode) {
         threadCollab.set(p.threadId, p.collaborationMode.mode);
         if (claudeModel.has(p.threadId) && p.collaborationMode.settings && !isBridged(p.collaborationMode.settings.model)) p.collaborationMode.settings.model = null;

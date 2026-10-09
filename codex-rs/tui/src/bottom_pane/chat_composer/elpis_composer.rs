@@ -7,11 +7,11 @@
 //!   with a newline before submission or queuing is considered. The replacement uses the same
 //!   [`TextArea`] edit primitive as the editor newline path. Active paste bursts keep
 //!   backslashes literal.
-//! - Enter queues a follow-up while a turn runs instead of steering the running turn, and the
-//!   queued-messages preview says Up pulls them all back. The ChatWidget half (Up recall) lives
+//! - Enter steers a running turn; slash commands that cannot run during a turn queue until it
+//!   finishes. The queued-messages preview says Up pulls them all back. The ChatWidget half lives
 //!   in `chatwidget/elpis_composer.rs`.
 //! - Footer hints: an idle, empty composer shows one Elpis tip in place of the ambient footer;
-//!   the context indicator is followed by "Tab Context Ledger"; the queue hint names Enter. The
+//!   the context indicator is followed by "Tab Context Ledger"; the queue hint follows its keymap. The
 //!   ChatWidget decides when the tip is visible (`chatwidget/elpis_composer.rs`).
 
 use super::*;
@@ -31,9 +31,6 @@ pub(super) fn render_composer_box(area: Rect, buf: &mut Buffer) {
         .border_style(crate::style::composer_border_style())
         .render(area, buf);
 }
-
-/// The keymap action whose key the footer names as the queue key: Enter queues during a turn.
-pub(super) const QUEUE_HINT_ACTION: &str = "submit";
 
 /// Things Elpis has that its upstream does not.
 ///
@@ -168,16 +165,13 @@ impl ChatComposer {
         true
     }
 
-    /// Enter queues the draft as a follow-up while a turn runs, as v0.3.0 did, instead of
-    /// steering the running turn.
-    ///
-    /// A slash command that can run during a turn (`/side`, `/btw`, `/goal`) takes the ordinary
-    /// path and acts at once, as in v0.3.0; one that cannot (`/compact`, `/review`) queues and runs
-    /// after the turn instead of being rejected. Enter inside a paste burst stays a newline exactly
-    /// as it does on the ordinary send path. Returns `None` when Enter should take that path.
+    /// Queues a slash command that cannot run during an agent turn (`/compact`, `/review`).
+    /// Ordinary messages take the upstream submission path and steer the running turn; commands
+    /// available during a turn act at once. Enter inside a paste burst keeps its newline behavior.
+    /// Returns `None` when Enter should take the ordinary submission path.
     pub(super) fn queue_submission_during_turn(&mut self) -> Option<(InputResult, bool)> {
         // MCP startup also marks the composer busy; only an agent turn queues.
-        if !self.is_task_running || !self.elpis_turn_running || self.slash_runs_during_turn() {
+        if !self.is_task_running || !self.elpis_turn_running || !self.slash_waits_for_turn() {
             return None;
         }
         if self.handle_paste_enter(tokio::time::Instant::now().into_std()) {
@@ -186,13 +180,13 @@ impl ChatComposer {
         Some(self.handle_submission(/*should_queue*/ true))
     }
 
-    fn slash_runs_during_turn(&self) -> bool {
+    fn slash_waits_for_turn(&self) -> bool {
         let slash = self.slash_input();
         let text = self.draft.textarea.text();
         slash
             .bare_command(text)
             .or_else(|| slash.inline_command(text).map(|inline| inline.command))
-            .is_some_and(|command| command.available_during_task())
+            .is_some_and(|command| !command.available_during_task())
     }
 
     /// Updates whether the idle Elpis tip replaces the ambient footer row.
@@ -234,7 +228,7 @@ impl ChatComposer {
 }
 
 impl BottomPane {
-    /// Tells the composer whether an agent turn is running, so Enter queues only then.
+    /// Tells the composer whether an agent turn is running, so blocked commands queue only then.
     pub(crate) fn set_elpis_turn_running(&mut self, running: bool) {
         self.composer.elpis_turn_running = running;
     }

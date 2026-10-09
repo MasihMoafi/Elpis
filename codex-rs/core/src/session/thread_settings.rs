@@ -33,8 +33,43 @@ pub(super) async fn update(
     session: &Session,
     overrides: ThreadSettingsOverrides,
 ) -> ConstraintResult<ThreadSettingsSnapshot> {
+    let policy_changed = overrides.approval_policy.is_some();
+    let reviewer_changed = overrides.approvals_reviewer.is_some();
+    let profile_changed =
+        overrides.permission_profile.is_some() || overrides.sandbox_policy.is_some();
     let updates = prepare_update(overrides);
     let commit = session.update_settings(updates).await?;
+    if policy_changed || reviewer_changed || profile_changed {
+        let active = session.active_turn.lock().await;
+        if let Some(task) = active.as_ref().and_then(|active| active.task.as_ref()) {
+            let mut permissions = task
+                .turn_context
+                .live_permissions
+                .load_full()
+                .as_deref()
+                .cloned()
+                .unwrap_or_default();
+            if policy_changed {
+                permissions.approval_policy =
+                    Some(commit.configuration.step_settings.approval_policy.value());
+            }
+            if reviewer_changed {
+                permissions.approvals_reviewer =
+                    Some(commit.configuration.step_settings.approvals_reviewer);
+            }
+            if profile_changed {
+                permissions.profile = Some(
+                    commit
+                        .configuration
+                        .inferred_environment_config()
+                        .permission_profile,
+                );
+            }
+            task.turn_context
+                .live_permissions
+                .store(Some(std::sync::Arc::new(permissions)));
+        }
+    }
     // Standalone settings changes supersede a pending automatic continuation.
     session.state.lock().await.last_started_turn_id = None;
     Ok(commit.snapshot)

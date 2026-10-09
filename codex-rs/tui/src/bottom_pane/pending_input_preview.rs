@@ -23,7 +23,7 @@ pub(crate) struct PendingInputPreview {
     pub pending_steers: Vec<String>,
     pub rejected_steers: Vec<String>,
     pub queued_messages: Vec<String>,
-    /// Key combination rendered in the hint line. Defaults to Shift+Left.
+    /// Key combination rendered in the hint line. Defaults to Shift+Up.
     pub(super) edit_binding: Option<key_hint::ShortcutHint>,
     /// Key combination rendered for immediately interrupting and sending steers.
     interrupt_binding: Option<key_hint::ShortcutHint>,
@@ -42,7 +42,7 @@ impl PendingInputPreview {
             pending_steers: Vec::new(),
             rejected_steers: Vec::new(),
             queued_messages: Vec::new(),
-            edit_binding: Some(key_hint::shift(KeyCode::Left).into()),
+            edit_binding: Some(key_hint::shift(KeyCode::Up).into()),
             interrupt_binding: Some(key_hint::plain(KeyCode::Esc).into()),
         }
     }

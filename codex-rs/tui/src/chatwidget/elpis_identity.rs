@@ -1,4 +1,4 @@
-//! The Elpis identity line (" Elpis · model X · location Y · title") above the composer, and the
+//! The Elpis identity line (" Elpis · title · model X · location Y") above the composer, and the
 //! turn clock the paced Elpis motion samples.
 //!
 //! Copied from Elpis v0.3.0 `chatwidget/rendering.rs` (`IdentityLineRenderable`,
@@ -57,6 +57,14 @@ impl ChatWidget {
         for span in &mut spans {
             span.style = span.style.add_modifier(ratatui::style::Modifier::BOLD);
         }
+        // Keep the conversation name visible even when a long model or path fills the row.
+        if let Some(title) = self
+            .thread_name
+            .as_deref()
+            .and_then(super::normalize_thread_name)
+        {
+            spans.extend(["· ".dim(), Span::raw(title), " ".into()]);
+        }
         // The reasoning effort follows the model, so Alt+, and Alt+. are visible as they act.
         spans.extend([
             "· model ".dim(),
@@ -66,14 +74,6 @@ impl ChatWidget {
             " · location ".dim(),
             location.dim(),
         ]);
-        // The generated conversation title, which upstream shows in its footer status line.
-        if let Some(title) = self
-            .thread_name
-            .as_deref()
-            .and_then(super::normalize_thread_name)
-        {
-            spans.extend([" · ".dim(), Span::raw(title)]);
-        }
         Line::from(spans).render(area, buf);
     }
 

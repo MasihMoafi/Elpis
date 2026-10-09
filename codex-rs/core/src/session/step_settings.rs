@@ -76,6 +76,25 @@ impl ResolvedStepSettings {
         }
     }
 
+    pub(super) fn with_live_permissions(
+        &self,
+        permissions: &super::step_context::LivePermissions,
+    ) -> crate::config::ConstraintResult<Self> {
+        let mut selected = self.selected.as_ref().clone();
+        if let Some(policy) = permissions.approval_policy {
+            selected.approval_policy.set(policy)?;
+        }
+        if let Some(reviewer) = permissions.approvals_reviewer {
+            selected.approvals_reviewer = reviewer;
+        }
+        let mut updated = self.clone();
+        updated.selected = Arc::new(selected);
+        if let Some(reviewer) = permissions.approvals_reviewer {
+            updated.mcp_approvals_reviewer_override = Some(reviewer);
+        }
+        Ok(updated)
+    }
+
     pub(crate) fn reasoning_effort(&self) -> Option<&ReasoningEffort> {
         self.selected
             .collaboration_mode

@@ -27,4 +27,4 @@ Toggle Raw Output | alt-r | Global toggle_raw_output Toggle Raw Output Toggle ra
 Toggle Side Conversation | ctrl-/ | Global toggle_side_conversation Toggle Side Conversation Switch between a side conversation and its parent. ctrl-/ Default
 Interrupt Turn | esc | Chat interrupt_turn Interrupt Turn Interrupt the active turn. esc Default
 Decrease Reasoning Effort | alt-,, shift-down | Chat decrease_reasoning_effort Decrease Reasoning Effort Decrease reasoning effort. alt-,, shift-down Default
-Increase Reasoning Effort | alt-., shift-up | Chat increase_reasoning_effort Increase Reasoning Effort Increase reasoning effort. alt-., shift-up Default
+Increase Reasoning Effort | alt-. | Chat increase_reasoning_effort Increase Reasoning Effort Increase reasoning effort. alt-. Default

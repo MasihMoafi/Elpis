@@ -171,13 +171,57 @@ impl AgentsOverviewView {
                 .into(),
             ));
         }
-        if !state.editing_metadata()
-            && let Some(hint) = self
-                .agents_keymap
-                .primary_hint("new_task", &self.agents_keymap.new_task)
-        {
-            hints.push((hint.display_label(), "new".into()));
+        if !state.editing_metadata() {
+            for (action, bindings, label) in [
+                ("new_task", &self.agents_keymap.new_task, "new"),
+                ("rename", &self.agents_keymap.rename, "rename"),
+                ("delete", &self.agents_keymap.delete, "delete"),
+            ] {
+                if let Some(hint) = self.agents_keymap.primary_hint(action, bindings) {
+                    hints.push((hint.display_label(), label.into()));
+                }
+            }
         }
         hints
+    }
+
+    pub(super) fn center_footer_lines(&self, width: u16) -> Vec<Line<'static>> {
+        let state = self.state();
+        let notice = state
+            .connection_notice
+            .map(str::to_owned)
+            .or_else(|| {
+                state
+                    .creating_worktree
+                    .then(|| "Creating worktree…".to_owned())
+            })
+            .or_else(|| {
+                (state.refresh_failed && !state.loading).then(|| "Error loading tasks".to_owned())
+            })
+            .or_else(|| state.server_version_notice.clone())
+            .filter(|_| !state.help && state.key_chord_hint.is_none());
+        drop(state);
+        if let Some(notice) = notice {
+            return vec![notice.dim().into()];
+        }
+        let mut lines = Vec::new();
+        let mut line = Line::default();
+        for item in self
+            .center_footer_hints()
+            .iter()
+            .filter(|(key, _)| !key.is_empty())
+        {
+            let hint = hint_line(std::slice::from_ref(item));
+            if !line.spans.is_empty() && line.width() + 2 + hint.width() > usize::from(width) {
+                lines.push(line);
+                line = Line::default();
+            }
+            if !line.spans.is_empty() {
+                line.spans.push("  ".dim());
+            }
+            line.spans.extend(hint.spans);
+        }
+        lines.push(line);
+        lines
     }
 }

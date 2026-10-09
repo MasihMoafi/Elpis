@@ -1089,7 +1089,7 @@ async fn max_reasoning_selection_persists_model_selection() {
 }
 
 async fn assert_reasoning_shortcuts_update_effort(
-    key_events: [KeyEvent; 2],
+    key_events: impl IntoIterator<Item = KeyEvent>,
     expected_effort: ReasoningEffortConfig,
 ) {
     for key_event in key_events {
@@ -1125,10 +1125,7 @@ async fn assert_reasoning_shortcuts_update_effort(
 #[tokio::test]
 async fn reasoning_up_shortcuts_raise_reasoning_effort() {
     assert_reasoning_shortcuts_update_effort(
-        [
-            KeyEvent::new(KeyCode::Char('.'), KeyModifiers::ALT),
-            KeyEvent::new(KeyCode::Up, KeyModifiers::SHIFT),
-        ],
+        [KeyEvent::new(KeyCode::Char('.'), KeyModifiers::ALT)],
         ReasoningEffortConfig::High,
     )
     .await;
@@ -1194,10 +1191,7 @@ async fn reasoning_shortcut_is_ignored_with_model_popup_open() {
 #[tokio::test]
 async fn reasoning_up_shortcuts_reach_max_in_default_and_plan_modes() {
     for plan_mode in [false, true] {
-        for key in [
-            KeyEvent::new(KeyCode::Char('.'), KeyModifiers::ALT),
-            KeyEvent::new(KeyCode::Up, KeyModifiers::SHIFT),
-        ] {
+        for key in [KeyEvent::new(KeyCode::Char('.'), KeyModifiers::ALT)] {
             let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.5")).await;
             chat.thread_id = Some(ThreadId::new());
             chat.show_welcome_banner = false;

@@ -153,7 +153,10 @@ pub(crate) fn output_lines(
         } else {
             "    "
         };
-        line.spans.insert(/*index*/ 0, prefix.dim());
+        line.spans.insert(
+            /*index*/ 0,
+            Span::styled(prefix, crate::style::context_style()),
+        );
         out.push(line);
     }
 
@@ -445,7 +448,7 @@ impl ExecCell {
 
         out.extend(prefix_hyperlink_lines(
             out_indented,
-            "  └ ".dim(),
+            Span::styled("  └ ", crate::style::context_style()),
             "    ".into(),
         ));
         out
@@ -572,7 +575,8 @@ impl ExecCell {
                     preview.iter().any(|line| line.source.is_none()) && output.line_counts().0 > 0;
                 lines.extend(prefix_hyperlink_lines(
                     preview,
-                    Span::from(layout.output_block.initial_prefix).dim(),
+                    Span::from(layout.output_block.initial_prefix)
+                        .style(crate::style::context_style()),
                     Span::from(layout.output_block.subsequent_prefix),
                 ));
                 return CommandDisplay {
@@ -594,7 +598,8 @@ impl ExecCell {
                 if !call.is_unified_exec_interaction() {
                     lines.extend(prefix_hyperlink_lines(
                         vec![Line::from("(no output)".dim()).into()],
-                        Span::from(layout.output_block.initial_prefix).dim(),
+                        Span::from(layout.output_block.initial_prefix)
+                            .style(crate::style::context_style()),
                         Span::from(layout.output_block.subsequent_prefix),
                     ));
                 }
@@ -613,7 +618,8 @@ impl ExecCell {
 
                 let prefixed_output = prefix_hyperlink_lines(
                     wrapped_output,
-                    Span::from(layout.output_block.initial_prefix).dim(),
+                    Span::from(layout.output_block.initial_prefix)
+                        .style(crate::style::context_style()),
                     Span::from(layout.output_block.subsequent_prefix),
                 );
                 let trimmed_output = Self::truncate_lines_middle(
@@ -856,6 +862,52 @@ mod tests {
             .iter()
             .map(|span| span.content.as_ref())
             .collect::<String>()
+    }
+
+    #[test]
+    fn tool_output_connectors_use_olive_without_recoloring_output() {
+        for bg in [(17, 18, 20), (248, 246, 239)] {
+            crate::terminal_palette::with_test_default_colors(
+                crate::terminal_probe::DefaultColors {
+                    fg: (32, 32, 32),
+                    bg,
+                },
+                || {
+                    for source in [ExecCommandSource::Agent, ExecCommandSource::UserShell] {
+                        let cell = ExecCell::new(
+                            ExecCall {
+                                call_id: "olive-output".into(),
+                                command: vec!["printf".into(), "output".into()],
+                                parsed: Vec::new(),
+                                output: Some(CommandOutput::new(
+                                    0,
+                                    "\u{1b}[31mprovider output\u{1b}[0m\n".into(),
+                                )),
+                                source,
+                                start_time: None,
+                                duration: Some(std::time::Duration::from_millis(1)),
+                                interaction_input: None,
+                            },
+                            false,
+                        );
+                        let lines = cell.display_lines(80);
+                        let connector = lines
+                            .iter()
+                            .flat_map(|line| &line.spans)
+                            .find(|span| span.content.contains('└'))
+                            .expect("output connector");
+                        assert_eq!(connector.style, crate::style::context_style());
+                        let output = lines
+                            .iter()
+                            .flat_map(|line| &line.spans)
+                            .find(|span| span.content.contains("provider output"))
+                            .expect("source output");
+                        assert_eq!(output.style.fg, Some(Color::Red));
+                        assert_ne!(output.style.fg, connector.style.fg);
+                    }
+                },
+            );
+        }
     }
 
     #[test]

@@ -61,6 +61,7 @@ fn paint(tier: EffortTier, style: IgnitionStyle, elapsed: Duration, area: Rect, 
         buf,
         // Elpis: expectations follow the Elpis gold palette and quiet sparks.
         band_rgb: composer_bg_rgb(term_bg),
+        on_light_bg: is_light(term_bg),
         color_level: StdoutColorLevel::TrueColor,
     };
     paint_style(
@@ -263,6 +264,60 @@ fn spark_only_fires_after_landing() {
             .map(|millis| spark_frame(Duration::from_millis(millis), start)),
         [None, Some("·"), Some("∙"), Some("·"), None]
     );
+}
+
+#[test]
+fn effort_ignition_preserves_flat_light_background_and_dark_tint() {
+    let area = Rect::new(0, 0, WIDTH, HEIGHT);
+    let protected = Rect::new(0, 1, WIDTH, 1);
+    for bg in [
+        (18, 22, 28),
+        (255, 255, 255),
+        (248, 246, 239),
+        (129, 129, 129),
+    ] {
+        crate::terminal_palette::with_test_default_colors(
+            crate::terminal_probe::DefaultColors {
+                fg: (32, 32, 32),
+                bg,
+            },
+            || {
+                for style in IgnitionStyle::ALL {
+                    for tier in [EffortTier::Max, EffortTier::Ultra] {
+                        let mut tinted = false;
+                        for millis in [180, 420, 720, 950] {
+                            let ignition = EffortIgnition::new(tier, style);
+                            ignition
+                                .started_at
+                                .set(Some(Instant::now() - Duration::from_millis(millis)));
+                            let mut buf = test_buffer(area);
+                            buf.set_style(area, Style::default().bg(rgb_color(bg)));
+                            assert!(ignition.render(area, protected, &mut buf));
+                            assert!(frame(area, &buf)[1].starts_with(DRAFT));
+                            let has_tint = buf.content.iter().any(|cell| cell.bg != rgb_color(bg));
+                            if is_light(bg) {
+                                assert!(
+                                    !has_tint,
+                                    "{style:?} {tier:?} at {millis}ms tinted light background {bg:?}"
+                                );
+                            }
+                            tinted |= has_tint;
+                            if style == IgnitionStyle::Wave
+                                && tier == EffortTier::Ultra
+                                && millis == 950
+                            {
+                                assert_eq!(buf[(WIDTH - 2, 0)].symbol(), "·");
+                                assert_ne!(buf[(WIDTH - 2, 0)].fg, Color::Reset);
+                            }
+                        }
+                        if !is_light(bg) {
+                            assert!(tinted, "{style:?} {tier:?} lost its dark background effect");
+                        }
+                    }
+                }
+            },
+        );
+    }
 }
 
 #[test]

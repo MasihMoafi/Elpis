@@ -35,6 +35,20 @@ or implemented outcomes.
 
 ## Requested outcomes
 
+October 9 terminal repair: Full Access must stop asking for tool approval across
+providers, including when selected during an active turn. Questions use Shift+Up.
+Preserve Codex's ordinary terminal behavior and expose conversation names, task-list
+access, rename and delete controls. Investigate disappearing older chats without
+deleting history. Enter-submitted messages during work must reach the agent after a
+tool boundary rather than wait for the whole response. Compare the local Codex clone;
+the user requested no web lookup. These outcomes remain under implementation and
+require Masih's acceptance.
+
+October 9 visual follow-up: use a light olive-oil, yellow-green context color in
+the Context Ledger, consider the same accent for tool outputs in both themes,
+and remove the orange chatbox gradient completely from light mode. Pending
+visual acceptance; the dark-mode chatbox gradient was not requested for removal.
+
 September 12 follow-up: record each newly requested change here; cross-project
 requests are indexed in `../TASKS.md` from the repository root. Masih's later
 clarification prefers existing TASKS.md files; do not create further request ledgers.

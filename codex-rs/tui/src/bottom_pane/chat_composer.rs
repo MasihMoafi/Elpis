@@ -114,12 +114,13 @@
 //!
 //! # Submission and Prompt Expansion
 //!
-//! `Enter` submits immediately. `Tab` requests queuing while a task is running; if no task is
-//! running, `Tab` submits just like Enter so input is never dropped.
+//! `Enter` submits immediately, steering an active turn at its next tool boundary. Slash commands
+//! unavailable during a turn queue until it finishes. The configured queue key requests queuing
+//! while a task is running and submits while idle; plain `Tab` belongs to the Context Ledger.
 //! Vim Replace shares Insert's composer actions; only textarea editing differs.
 //! Literal completion/paste edits discard stale Replace recovery; subsequent typing records anew.
 //! Token markers added during Replace are removed when restoring overwritten characters.
-//! `Tab` does not submit when entering a `!` shell command.
+//! The queue key does not submit when entering a `!` shell command while idle.
 //!
 //! On submit/queue paths, the composer:
 //!
@@ -622,7 +623,7 @@ pub(crate) struct ChatComposer {
     luna_reserve_active: bool,
     // Elpis: the idle footer tip (v0.3.0).
     elpis_tip: elpis_composer::ElpisFooterTip,
-    /// Elpis: an agent turn (not MCP startup) is running, so Enter queues.
+    /// Elpis: an agent turn (not MCP startup) is running, so blocked slash commands queue.
     elpis_turn_running: bool,
     attachments: AttachmentState,
     placeholder_text: String,
@@ -778,9 +779,7 @@ impl ChatComposer {
                     use_shift_enter_hint,
                 )
                 .map(ShortcutHint::from),
-                // Elpis: Enter queues during a turn, so the queue hint names it.
-                queue_key: default_keymap
-                    .primary_hint(KeymapContext::Composer, elpis_composer::QUEUE_HINT_ACTION),
+                queue_key: default_keymap.primary_hint(KeymapContext::Composer, "queue"),
                 toggle_shortcuts_key: default_keymap
                     .primary_hint(KeymapContext::Composer, "toggle_shortcuts"),
                 history_search_key: default_keymap
@@ -1067,9 +1066,7 @@ impl ChatComposer {
                 )
                 .map(ShortcutHint::from),
             };
-        // Elpis: Enter queues during a turn, so the queue hint names it.
-        self.footer.queue_key =
-            keymap.primary_hint(KeymapContext::Composer, elpis_composer::QUEUE_HINT_ACTION);
+        self.footer.queue_key = keymap.primary_hint(KeymapContext::Composer, "queue");
         self.footer.toggle_shortcuts_key =
             keymap.primary_hint(KeymapContext::Composer, "toggle_shortcuts");
         self.footer.history_search_key =
@@ -3545,7 +3542,7 @@ impl ChatComposer {
         }
 
         if self.submit_keys.is_pressed(key_event) {
-            // Elpis: Enter queues a follow-up during a turn (v0.3.0).
+            // Elpis: only slash commands unavailable during a turn must wait for it to finish.
             if let Some(result) = self.queue_submission_during_turn() {
                 return result;
             }
@@ -5171,10 +5168,10 @@ mod tests {
             let mut buffer = Buffer::empty(area);
             composer.render(area, &mut buffer);
 
-            // Elpis: the light composer wears the warm Quiet Rail wash, not upstream's grey.
+            // Light mode keeps a flat terminal background throughout the composer.
             assert_eq!(
                 buffer[(0, 1)].bg,
-                crate::terminal_palette::rgb_color((238, 232, 216))
+                crate::terminal_palette::rgb_color(colors.bg)
             );
             insta::assert_snapshot!("light_terminal_palette_composer", format!("{buffer:?}"));
         });

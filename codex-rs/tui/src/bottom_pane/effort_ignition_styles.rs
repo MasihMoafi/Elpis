@@ -43,12 +43,13 @@ pub(super) struct Canvas<'a> {
     pub(super) protected: Rect,
     pub(super) buf: &'a mut Buffer,
     pub(super) band_rgb: (u8, u8, u8),
+    pub(super) on_light_bg: bool,
     pub(super) color_level: StdoutColorLevel,
 }
 
 impl Canvas<'_> {
     fn tint(&mut self, x: u16, y: u16, hue: (u8, u8, u8), alpha: f32) {
-        if alpha < 0.02 || x >= self.area.width || y >= self.area.height {
+        if self.on_light_bg || alpha < 0.02 || x >= self.area.width || y >= self.area.height {
             return;
         }
         let color = best_color_for_level(

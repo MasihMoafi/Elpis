@@ -12,6 +12,7 @@ use crate::shell_snapshot::ShellSnapshotSandbox;
 use crate::tools::sandboxing::configured_windows_sandbox_selection;
 use crate::tools::sandboxing::executor_windows_sandbox_selection;
 use arc_swap::ArcSwap;
+use arc_swap::ArcSwapOption;
 use codex_core_plugins::PluginCommandAttribution;
 use codex_core_plugins::ResolvedPluginMetricsOperation;
 use codex_core_plugins::TrustedPluginRoots;
@@ -324,6 +325,7 @@ pub struct TurnContext {
     pub(super) active_host_plugin_identities: Option<Vec<PluginIdentity>>,
     /// Settings for the next step; environments are owned by `ThreadEnvironments`.
     pub(super) next_step_settings: ArcSwap<ResolvedStepSettings>,
+    pub(super) live_permissions: ArcSwapOption<super::step_context::LivePermissions>,
     /// Turn-wide telemetry; model-attributed step work should use `StepContext::session_telemetry`.
     pub(crate) session_telemetry: SessionTelemetry,
     pub(crate) provider: SharedModelProvider,
@@ -693,6 +695,7 @@ impl TurnContext {
             disabled_plugin_ids: self.disabled_plugin_ids.clone(),
             active_host_plugin_identities: self.active_host_plugin_identities.clone(),
             next_step_settings: ArcSwap::from(step_settings),
+            live_permissions: ArcSwapOption::empty(),
             session_telemetry,
             provider: self.provider.clone(),
             session_source: self.session_source.clone(),
@@ -1012,6 +1015,7 @@ impl Session {
             disabled_plugin_ids: session_configuration.disabled_plugin_ids.clone(),
             active_host_plugin_identities: None,
             next_step_settings: ArcSwap::from(step_settings),
+            live_permissions: ArcSwapOption::empty(),
             session_telemetry: session_telemetry_for_context,
             provider,
             session_source,

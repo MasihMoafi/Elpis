@@ -1,6 +1,6 @@
-//! Elpis palette (Deus Ex): the gold product accent, the composer surface and the quiet
-//! teal rules around the composer, popups and the Context Ledger. Teal switch colors live
-//! with the Ledger (`smart_prune_on_colors`).
+//! Elpis palette (Deus Ex): the gold product accent, olive context accents, the composer
+//! surface and quiet teal rules around the composer, popups and Context Ledger.
+//! Teal switch colors live with the Ledger (`smart_prune_on_colors`).
 //!
 //! Copied from the Elpis v0.3.0 additions to `style.rs` (tag `stage0-stop-bleeding`);
 //! kept in its own file so the upstream `style.rs` carries only a re-export seam.
@@ -52,6 +52,8 @@ pub(crate) fn box_borders(area: Rect, borders: Borders) -> Borders {
 // terminal backgrounds. The theme covers only the Elpis wrapper, never transcript colors.
 pub(super) const LIGHT_BG_PRIMARY_RGB: (u8, u8, u8) = (128, 88, 10);
 pub(super) const DARK_BG_PRIMARY_RGB: (u8, u8, u8) = (229, 187, 104);
+pub(crate) const CONTEXT_LIGHT_RGB: (u8, u8, u8) = (105, 120, 24);
+pub(crate) const CONTEXT_DARK_RGB: (u8, u8, u8) = (212, 214, 105);
 // Rules are lines, not text, so they need 3:1 against the terminal, not 4.5:1.
 const LIGHT_BG_RULE_RGB: (u8, u8, u8) = (122, 150, 144);
 const DARK_BG_RULE_RGB: (u8, u8, u8) = (78, 122, 114);
@@ -69,6 +71,14 @@ pub(crate) fn composer_style() -> Style {
 /// Returns the shared Elpis style for product titles.
 pub(crate) fn brand_style() -> Style {
     primary_style_for(default_bg())
+}
+
+/// Olive context and tool-result emphasis, resolved against the terminal's actual background.
+pub(crate) fn context_style() -> Style {
+    Style::default().fg(super::readable_color_on(
+        adaptive_palette_color(default_bg(), CONTEXT_LIGHT_RGB, CONTEXT_DARK_RGB),
+        None,
+    ))
 }
 
 /// Returns the border style for the focused composer.

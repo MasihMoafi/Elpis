@@ -307,6 +307,28 @@ mod tests {
     }
 
     #[test]
+    fn chat_management_commands_are_discoverable_in_default_and_filtered_popup() {
+        let mut popup = CommandPopup::new(CommandPopupFlags::default(), Vec::new());
+        let commands = popup.filtered_items();
+        for command in [
+            SlashCommand::Agents,
+            SlashCommand::Rename,
+            SlashCommand::New,
+            SlashCommand::Archive,
+            SlashCommand::Delete,
+            SlashCommand::Resume,
+        ] {
+            assert!(commands.contains(&CommandItem::Builtin(command)));
+            popup.on_composer_text_change(format!("/{}", command.command()));
+            assert_eq!(popup.selected_item(), Some(CommandItem::Builtin(command)));
+        }
+        // Existing hidden commands remain typeable without appearing in suggestions.
+        assert!(!commands.contains(&CommandItem::Builtin(SlashCommand::Export)));
+        popup.on_composer_text_change("/export".to_string());
+        assert!(popup.filtered_items().is_empty());
+    }
+
+    #[test]
     fn selecting_init_by_exact_match() {
         let mut popup = CommandPopup::new(CommandPopupFlags::default(), Vec::new());
         popup.on_composer_text_change("/init".to_string());

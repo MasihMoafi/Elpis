@@ -87,40 +87,57 @@ fn backslash_enter_keeps_backslash_literal_in_active_paste_burst() {
 }
 
 #[test]
-fn backslash_away_from_cursor_still_queues_during_a_turn() {
+fn backslash_away_from_cursor_still_submits_during_a_turn() {
     let mut composer = composer_with_text("keep \\ literal", /*running*/ true);
 
     let (result, _) = press(&mut composer, KeyCode::Enter);
 
     assert_eq!(
-        InputResult::Queued {
+        InputResult::Submitted {
             text: "keep \\ literal".to_string(),
             text_elements: Vec::new(),
-            action: QueuedInputAction::Plain,
-            pending_pastes: Vec::new(),
         },
         result
     );
 }
 
-// Enter queues a follow-up during a turn instead of steering it.
+// Enter submits to the running turn; explicit queueing remains available through its keymap.
 
 #[test]
-fn enter_queues_the_draft_during_a_turn() {
-    let mut composer = composer_with_text("queued follow-up", /*running*/ true);
+fn enter_submits_the_draft_during_a_turn() {
+    let mut composer = composer_with_text("steer now", /*running*/ true);
 
     let (result, _) = press(&mut composer, KeyCode::Enter);
 
     assert_eq!(
+        InputResult::Submitted {
+            text: "steer now".to_string(),
+            text_elements: Vec::new(),
+        },
+        result
+    );
+    assert!(composer.draft.textarea.is_empty());
+}
+
+#[test]
+fn configured_queue_key_keeps_the_draft_for_after_the_turn() {
+    let mut composer = composer_with_text("wait until done", /*running*/ true);
+    let mut keymap = crate::keymap::RuntimeKeymap::defaults();
+    keymap.composer.queue = vec![key_hint::ctrl(KeyCode::Char('q'))];
+    composer.set_keymap_bindings(&keymap);
+
+    let (result, _) =
+        composer.handle_key_event(KeyEvent::new(KeyCode::Char('q'), KeyModifiers::CONTROL));
+
+    assert_eq!(
         InputResult::Queued {
-            text: "queued follow-up".to_string(),
+            text: "wait until done".to_string(),
             text_elements: Vec::new(),
             action: QueuedInputAction::Plain,
             pending_pastes: Vec::new(),
         },
         result
     );
-    assert!(composer.draft.textarea.is_empty());
 }
 
 #[test]
@@ -165,7 +182,7 @@ fn during_a_turn_slash_commands_that_can_run_act_and_the_rest_queue() {
     let (result, _) = press(&mut composer, KeyCode::Enter);
     assert!(!matches!(result, InputResult::Queued { .. }), "{result:?}");
     // `/compact` cannot run during a turn, so it queues rather than being rejected.
-    for text in ["/compact", "/review check regressions", "plain follow-up"] {
+    for text in ["/compact", "/review check regressions"] {
         let mut composer = composer_with_text(text, /*running*/ true);
         let (result, _) = press(&mut composer, KeyCode::Enter);
         match result {
@@ -176,6 +193,16 @@ fn during_a_turn_slash_commands_that_can_run_act_and_the_rest_queue() {
     // Negative: idle, a slash command is not queued.
     let mut composer = composer_with_text("/compact", /*running*/ false);
     let (result, _) = press(&mut composer, KeyCode::Enter);
+    assert!(!matches!(result, InputResult::Queued { .. }), "{result:?}");
+}
+
+#[test]
+fn mcp_startup_does_not_queue_commands_as_an_agent_turn() {
+    let mut composer = composer_with_text("/compact", /*running*/ false);
+    composer.set_task_running(/*running*/ true);
+
+    let (result, _) = press(&mut composer, KeyCode::Enter);
+
     assert!(!matches!(result, InputResult::Queued { .. }), "{result:?}");
 }
 

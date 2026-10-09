@@ -164,6 +164,7 @@ pub(super) async fn spawn_review_thread(
         disabled_plugin_ids: parent_turn_context.disabled_plugin_ids.clone(),
         active_host_plugin_identities: None,
         next_step_settings: ArcSwap::from(step_settings),
+        live_permissions: arc_swap::ArcSwapOption::empty(),
         session_telemetry: session_telemetry_for_context,
         provider: provider_for_context,
         session_source,

@@ -114,8 +114,7 @@ pub(crate) fn unlisted(cmd: SlashCommand) -> bool {
     matches!(
         cmd,
         // Commands Codex added after v0.3.0, kept typeable (Masih asked for v0.3.0's list).
-        SlashCommand::Agents
-            | SlashCommand::Cd
+        SlashCommand::Cd
             | SlashCommand::Daemon
             | SlashCommand::Export
             | SlashCommand::Pwd
@@ -123,11 +122,9 @@ pub(crate) fn unlisted(cmd: SlashCommand) -> bool {
             | SlashCommand::Tui
             | SlashCommand::Warnings
             // Commands v0.3.0 kept out of the popup.
-            | SlashCommand::Archive
             | SlashCommand::AutoReview
             | SlashCommand::Btw
             | SlashCommand::DebugConfig
-            | SlashCommand::Delete
             | SlashCommand::Import
             | SlashCommand::Logout
             | SlashCommand::Mention

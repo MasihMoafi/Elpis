@@ -133,7 +133,7 @@ Status: **works**, **partial**, **stub** (says "not in this build yet"), **missi
 | F13 | `--resume <id>` flag (U14 compatibility) | `elpis-next --resume <id>` | missing: "unexpected argument" |
 | F14 | `\` then Enter inserts a newline (U20) | Type `a\` and press Enter | works (tested: backslash_enter_* composer tests) |
 | F15 | Up during a turn brings every queued message plus the draft back into the composer | Queue two, then press Up | works (tested: Up pulls every queued message plus the draft) |
-| F16 | Enter during a reply queues the message | Type during a reply, press Enter | works (tested) |
+| F16 | Enter during a reply sends steering at the next supported boundary; Gemini's adapter queues until the current reply ends | Type during a running tool, press Enter | patched; candidate terminal verification pending |
 | F17 | Empty Enter during a reply interrupts and sends the queue once | Queue one, then Enter on an empty box | works (tested, with a no-queue negative); fixed 2026-10-01 |
 | F18 | Tab never queues; Tab belongs to the Ledger | Type during a reply, press Tab | works |
 | F19 | Shift+Tab cycles permissions (Read Only / Default / Full Access), with a lasting footer label | Shift+Tab | missing: cycles Plan (collaboration) mode |
@@ -228,7 +228,7 @@ The subagent switch and the subagent list are B19 and B20.
 | R13 | The full multitool CLI (exec, login, logout, mcp, plugin, app-server, remote-control, completion, update, doctor, sandbox, debug, apply, queue, migrate-rollouts, fork, cloud, exec-server, features, agents, review, app) | Only resume/delete/archive/unarchive plus Elpis flags | no: all back; `exec` prints "OpenAI Codex v0.159.0" and labels replies "codex" |
 | R14 | Shift+Tab cycles Plan (collaboration) mode | Cycles permission presets | no (F19) |
 | R15 | Tab queues a follow-up | Unbound; Tab opens the Ledger | yes |
-| R16 | Alt+Up / Shift+Left edits the last queued message | Plain Up recalls all queued messages plus the draft | no (F15) |
+| R16 | Alt+Up / Shift+Up edits the last queued message | Plain Up recalls all queued messages plus the draft | no (F15) |
 | R17 | Footer status line (model · dir · title) | Suppressed; the identity line replaces it | yes, with side effects: `/statusline` does nothing and the title shows only via G3 |
 | R18 | Full-screen transcript (0.159) | n/a (v0.3.0 was inline) | yes: forced off (`tui.fullscreen_transcript=false`). Masih decides |
 | R19 | Upstream defaults on: apps, plugins, tool_suggest, remote_plugin, guardian_approval | All five off | partial: apps, plugins and tool_suggest off; remote_plugin and guardian_approval still on |

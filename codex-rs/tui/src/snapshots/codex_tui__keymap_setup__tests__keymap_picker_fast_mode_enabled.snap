@@ -25,10 +25,10 @@ expression: "render_picker(params, 120)"
   Global         Toggle Side Conversation   ctrl-/
   Chat           Interrupt Turn             esc
   Chat           Decrease Reasoning Effort  alt-,, shift-down
-  Chat           Increase Reasoning Effort  alt-., shift-up
+  Chat           Increase Reasoning Effort  alt-.
   Chat         - Previous Permission Mode   unbound
   Chat         - Next Permission Mode       unbound
-  Chat           Edit Queued Message        shift-left, alt-up
+  Chat           Edit Queued Message        shift-up, alt-up
   Chat           Prompt Stack Back          shift-right, alt-down
   Chat           Skip Question              ctrl-]
   Chat           Toggle Voice               f8

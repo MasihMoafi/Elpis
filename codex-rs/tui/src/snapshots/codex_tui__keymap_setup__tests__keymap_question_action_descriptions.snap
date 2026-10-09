@@ -5,7 +5,7 @@ expression: descriptions
 
   Edit Shortcut
   Edit Queued Message · Chat
-  Current shift-left, alt-up · Default keymap
+  Current shift-up, alt-up · Default keymap
   Config `tui.keymap.chat.edit_queued_message`
   Move forward through questions, then edit the last queued message.
 

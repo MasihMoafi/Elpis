@@ -14,7 +14,7 @@ expression: "render_bottom_popup(&chat, 100)"
 │ Type your answer                                          │ Syncing… · /smart-prune on|off sets
 │                                                           │ an explicit state
 │ enter submit   ctrl+] skip   shift+→ main prompt          │
-│ shift+← next question                                     │ SUBAGENTS                  [━━━●] ON
+│ shift+↑ next question                                     │ SUBAGENTS                  [━━━●] ON
 └───────────────────────────────────────────────────────────┤ May delegate to other agents
                                                             │
                                                             │ CONTEXT WINDOW  usage unavailable

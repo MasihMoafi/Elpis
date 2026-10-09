@@ -251,6 +251,18 @@ impl ExecCommandHandler {
         }
         let sandbox_permissions =
             resolve_sandbox_permissions(args.sandbox_permissions, args.justification.as_deref())?;
+        // A call sampled before Full Access was selected can still carry an escalation.
+        // It is redundant only when this executor actually has unrestricted permissions.
+        let sandbox_permissions = if context.step_context.settings.approval_policy()
+            == codex_protocol::protocol::AskForApproval::Never
+            && turn_environment.permission_profile()
+                == &codex_protocol::models::PermissionProfile::Disabled
+            && sandbox_permissions == codex_protocol::models::SandboxPermissions::RequireEscalated
+        {
+            codex_protocol::models::SandboxPermissions::UseDefault
+        } else {
+            sandbox_permissions
+        };
         let hook_command = args.cmd.clone();
         maybe_emit_implicit_skill_invocation(
             session.as_ref(),
