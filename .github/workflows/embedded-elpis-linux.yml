@@ -167,6 +167,11 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends libcap-dev libssl-dev pkg-config strace iproute2
           rustup toolchain install 1.95.0 --profile minimal --no-self-update
+          # This disposable runner must permit the namespaces that the sandbox tests create.
+          # https://github.com/ubuntu/ubuntu-release-notes/blob/main/docs/24.04/index.md
+          if [[ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]]; then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          fi
       - name: Read the Elpis version from the CLI manifest
         run: |
           version=$(sed -n 's/^version = "\(.*\)"$/\1/p' codex-rs/cli/Cargo.toml | head -n 1)
