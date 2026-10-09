@@ -31,13 +31,23 @@ pub(crate) fn summary_shimmer(
     elapsed: Duration,
     motion: MotionMode,
 ) -> Vec<Span<'static>> {
+    // Elpis uses its recorded Deus Ex gold only for the product's working label.
+    // The native cadence, wave and all other status colors stay unchanged.
+    let accent = (text == crate::branding::WORKING_LABEL).then(crate::style::brand_style);
     if motion == MotionMode::Reduced {
-        return vec![text.to_owned().into()];
+        return vec![Span::styled(text.to_owned(), accent.unwrap_or_default())];
     }
     let (StdoutColorLevel::TrueColor, Some(fg), Some(bg)) =
         (effective_stdout_color_level(), default_fg(), default_bg())
     else {
-        return vec![Span::styled(text.to_owned(), Style::default().dim())];
+        return vec![Span::styled(
+            text.to_owned(),
+            accent.unwrap_or_else(|| Style::default().dim()),
+        )];
+    };
+    let fg = match accent.and_then(|style| style.fg) {
+        Some(ratatui::style::Color::Rgb(r, g, b)) => (r, g, b),
+        _ => fg,
     };
     let width = text.width() as f64;
     let half_width = (width * 0.1).max(/*other*/ 3.0);
@@ -53,7 +63,9 @@ pub(crate) fn summary_shimmer(
             let distance = ((center - position).abs() / half_width).min(/*other*/ 1.0);
             let intensity = 0.5 * (1.0 + (std::f64::consts::PI * distance).cos());
             let alpha = (0.5 + 0.5 * intensity) as f32;
-            let style = Style::default().fg(rgb_color(blend(fg, bg, alpha)));
+            let style = accent
+                .unwrap_or_default()
+                .fg(rgb_color(blend(fg, bg, alpha)));
             Span::styled(grapheme.to_owned(), style)
         })
         .collect()

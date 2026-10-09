@@ -241,8 +241,14 @@ impl StatusIndicator<'_> {
             spans.push(indicator);
             spans.push(" ".into());
         }
+        // Elpis changes the product label, keeping native status state and timing.
+        let header = if row.header == "Working" {
+            crate::branding::WORKING_LABEL
+        } else {
+            &row.header
+        };
         spans.extend(summary_shimmer(
-            &row.header,
+            header,
             now.saturating_duration_since(row.header_started_at),
             shimmer,
         ));
@@ -449,7 +455,7 @@ mod tests {
             .map(ratatui::buffer::Cell::symbol)
             .collect::<String>();
 
-        assert!(line.starts_with("Working (0s • esc to interrupt)"));
+        assert!(line.starts_with("Elpising (0s • esc to interrupt)"));
     }
 
     #[test]
@@ -499,7 +505,7 @@ mod tests {
             ),
         ] {
             w.update_inline_message(background.map(str::to_string));
-            let mut expected = "Working (0s • esc to interrupt)".to_string();
+            let mut expected = "Elpising (0s • esc to interrupt)".to_string();
             if let Some(background) = background {
                 expected.push_str(&format!(" · {background}"));
             }

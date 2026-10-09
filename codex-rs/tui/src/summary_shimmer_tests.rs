@@ -5,6 +5,47 @@ use crate::terminal_palette::with_test_default_colors;
 use crate::terminal_probe::DefaultColors;
 
 #[test]
+fn elpis_working_label_uses_gold_with_native_cadence_and_reduced_motion() {
+    for colors in [
+        DefaultColors {
+            fg: (240, 240, 240),
+            bg: (16, 16, 16),
+        },
+        DefaultColors {
+            fg: (16, 16, 16),
+            bg: (240, 240, 240),
+        },
+    ] {
+        with_test_default_colors(colors, || {
+            let label = crate::branding::WORKING_LABEL;
+            let still = summary_shimmer(label, Duration::ZERO, MotionMode::Reduced);
+            assert_eq!(
+                still,
+                vec![Span::styled("Elpising", crate::style::brand_style())]
+            );
+            assert_eq!(
+                still,
+                summary_shimmer(label, Duration::from_secs(1), MotionMode::Reduced)
+            );
+            let quiet = summary_shimmer(label, Duration::ZERO, MotionMode::Animated);
+            let sweeping =
+                summary_shimmer(label, Duration::from_millis(1100), MotionMode::Animated);
+            assert_ne!(quiet, sweeping);
+            assert_eq!(
+                quiet,
+                summary_shimmer(label, Duration::from_millis(4500), MotionMode::Animated)
+            );
+            for span in quiet.iter().chain(&sweeping) {
+                let Some(ratatui::style::Color::Rgb(r, g, b)) = span.style.fg else {
+                    panic!("expected gold RGB text");
+                };
+                assert!(r > g && g > b, "expected gold, got {r},{g},{b}");
+            }
+        });
+    }
+}
+
+#[test]
 fn short_and_long_labels_sweep_smoothly_in_both_themes() {
     let mut frames = Vec::new();
     for (theme, colors) in [

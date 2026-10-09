@@ -265,17 +265,8 @@ jobs:
         working-directory: codex-rs
         shell: bash
         run: |
-          cargo test --profile dev-small --locked -p codex-tui --lib -- \
-            elpis_ keymap question composer_submission plan_mode review_mode slash_commands \
-            goal_validation command_popup agents_overview agents_navigation \
-            loopback_servers_list_their_agents footer_collapse \
-            context_usage context_ledger exec_cell effort_ignition style:: light_terminal_palette \
-            chatwidget_exec_and_status_layout_vt100_snapshot luna_reserve_usage_running \
-            render_cost_tests esc_typing_tests status_and_layout resume_picker stream_controller \
-            custom_prompt_view session_info_ catalog_model_session_header_startup \
-            owned_prompt_revert_retained_history voice_buffered_replay_reconciles_captions \
-            voice_replay_reconciles_matching_captions voice_partial_completed_after_thread_switch \
-            voice_completed_after_thread_switch 2>&1 | tee "$RUNNER_TEMP/elpis-ui-checks.log"
+          # The product's working label appears across the TUI; review every affected render.
+          cargo test --profile dev-small --locked -p codex-tui --lib 2>&1 | tee "$RUNNER_TEMP/elpis-ui-checks.log"
       - name: Core permissions and continuity unit tests
         if: ${{ !cancelled() }}
         working-directory: codex-rs

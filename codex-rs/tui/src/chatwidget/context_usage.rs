@@ -33,6 +33,7 @@ pub(super) const SYSTEM_INSTRUCTIONS_COLOR: Color = Color::Rgb(240, 68, 93);
 pub(super) const DEVELOPER_MESSAGES_COLOR: Color = Color::Rgb(239, 140, 255);
 pub(super) const TOOL_DEFINITIONS_COLOR: Color = Color::Rgb(145, 145, 145);
 pub(super) const UNRECOGNIZED_ITEMS_COLOR: Color = Color::Rgb(166, 252, 24);
+pub(super) const CONTEXT_CATEGORY_MARKER: &str = "●";
 
 // The same hues on paper, muted, alternating a lighter and a darker tone so
 // neighbouring bar segments read apart without loud color. Darkening the charcoal
@@ -103,26 +104,6 @@ pub(super) struct CategoryUsage {
     pub(super) label: &'static str,
     pub(super) tokens: u64,
     pub(super) color: Color,
-}
-
-impl CategoryUsage {
-    /// A shape identifier shared by `/context` and the persistent Ledger. Shapes
-    /// keep categories distinguishable when a terminal theme or color vision
-    /// makes two hues harder to tell apart.
-    pub(super) fn marker(&self) -> &'static str {
-        match self.color {
-            USER_MESSAGES_COLOR => "●",
-            AGENT_RESPONSES_COLOR => "◆",
-            REASONING_COLOR => "▲",
-            TOOL_CALLS_COLOR => "■",
-            TOOL_RESULTS_COLOR => "⬟",
-            SYSTEM_INSTRUCTIONS_COLOR => "✦",
-            DEVELOPER_MESSAGES_COLOR => "✚",
-            TOOL_DEFINITIONS_COLOR => "▣",
-            UNRECOGNIZED_ITEMS_COLOR => "?",
-            _ => "●",
-        }
-    }
 }
 
 // Elpis: shared with the dashboard (elpis_dashboard.rs).
@@ -605,7 +586,7 @@ fn build_category_bar_chart(
         if narrow {
             lines.push(Line::from(vec![
                 Span::styled(
-                    format!("   {} ", category.marker()),
+                    format!("   {CONTEXT_CATEGORY_MARKER} "),
                     Style::default().fg(context_display_color(category.color)),
                 ),
                 Span::from(format!(
@@ -618,7 +599,7 @@ fn build_category_bar_chart(
         } else {
             lines.push(Line::from(vec![
                 Span::styled(
-                    format!("   {} ", category.marker()),
+                    format!("   {CONTEXT_CATEGORY_MARKER} "),
                     Style::default().fg(context_display_color(category.color)),
                 ),
                 Span::from(format!("{:<27}", category.label)),
@@ -1266,7 +1247,7 @@ mod tests {
                     assert!(
                         spans
                             .iter()
-                            .any(|span| span.content.contains('⬟') && span.style.fg == Some(olive))
+                            .any(|span| span.content.contains('●') && span.style.fg == Some(olive))
                     );
                     assert!(spans.iter().any(|span| span.content.contains('█')
                         && span.style.fg == Some(context_display_color(USER_MESSAGES_COLOR))));

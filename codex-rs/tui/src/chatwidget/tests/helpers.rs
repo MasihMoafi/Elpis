@@ -1794,7 +1794,7 @@ pub(super) async fn assert_hook_events(
     assert!(
         running
             .lines()
-            .any(|line| line.contains("Working") && line.contains(status_message)),
+            .any(|line| line.contains("Elpising") && line.contains(status_message)),
         "hook start should render its status in the activity row: {running}"
     );
 

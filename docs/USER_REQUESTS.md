@@ -35,6 +35,8 @@ or implemented outcomes.
 
 ## Requested outcomes
 
+October 9 visual follow-up: replace the context category shapes with colored circles, align the Ledger usage bar with its text, and replace the displayed “Working” with “Elpising” in the previously selected Deus Ex gold. This refines the parity contract; implementation and Masih's acceptance remain pending.
+
 October 9 final clarification: the accepted [Codex parity contract](specs/codex-parity.md)
 supersedes earlier conflicting shortcut, color and animation requests below. Use
 Codex's exact shared foundation and layout, including agents ordering and folders.
