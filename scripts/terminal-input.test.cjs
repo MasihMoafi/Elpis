@@ -1,6 +1,6 @@
 'use strict';
 // Remote TUI and a private websocket app-server, with an isolated home and local Responses fixture.
-// Usage: node scripts/terminal-input.test.cjs /absolute/path/to/elpis [--bridge]
+// Usage: node scripts/terminal-input.test.cjs /absolute/path/to/elpis [--bridge | --codex-reference]
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -10,10 +10,13 @@ const { execFileSync, spawn } = require('node:child_process');
 const { Provider, message, call } = require('../editors/vscode/test/runtime-eval');
 const binary = process.argv[2];
 const useBridge = process.argv.includes('--bridge');
+const reference = process.argv.includes('--codex-reference');
+assert(!(useBridge && reference), 'reference Codex uses its local daemon');
 assert(binary && path.isAbsolute(binary), 'provide the engine binary');
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'elpis-terminal-input-'));
 const home = path.join(root, 'home'), cwd = path.join(root, 'long-project-directory-for-title-visibility');
-fs.mkdirSync(home); fs.mkdirSync(cwd);
+const otherCwd = path.join(root, 'second-project');
+fs.mkdirSync(home); fs.mkdirSync(cwd); fs.mkdirSync(otherCwd);
 const socket = path.join(root, 'tmux.sock');
 const provider = new Provider();
 const checks = [];
@@ -21,27 +24,27 @@ let savedPermissions, releaseTool;
 let appServer, appServerExit, appServerError;
 let appServerLog = '';
 const tmux = (...args) => execFileSync('tmux', ['-S', socket, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
-const capture = () => tmux('capture-pane', '-p', '-t', 'test');
+const capture = (target = 'test') => tmux('capture-pane', '-p', '-t', target);
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
-async function screenWhen(predicate, label) {
+async function screenWhen(predicate, label, target = 'test') {
   const deadline = Date.now() + 20000;
   let screen = '';
   while (Date.now() < deadline) {
-    screen = capture();
-    if (predicate(screen)) { fs.writeFileSync(path.join(root, `${label}.txt`), screen); fs.writeFileSync(path.join(root, `${label}.ansi`), tmux('capture-pane', '-p', '-e', '-t', 'test')); return screen; }
+    screen = capture(target);
+    if (predicate(screen)) { fs.writeFileSync(path.join(root, `${label}.txt`), screen); fs.writeFileSync(path.join(root, `${label}.ansi`), tmux('capture-pane', '-p', '-e', '-t', target)); return screen; }
     await pause(100);
   }
   fs.writeFileSync(path.join(root, `${label}.txt`), screen);
   throw Error(`Timed out: ${label}; evidence ${root}`);
 }
-const type = text => tmux('send-keys', '-t', 'test', '-l', text);
-const key = name => tmux('send-keys', '-t', 'test', name);
+const type = (text, target = 'test') => tmux('send-keys', '-t', target, '-l', text);
+const key = (name, target = 'test') => tmux('send-keys', '-t', target, name);
 function pass(label) { checks.push(label); console.log(`PASS ${label}`); }
 function threadSettings() {
   const filename = fs.readdirSync(home).find(name => /^state_\d+\.sqlite$/.test(name));
   if (!filename) return [];
   const db = new DatabaseSync(path.join(home, filename), { readOnly: true });
-  try { return db.prepare('SELECT id, name, sandbox_policy, approval_mode, rollout_path FROM threads').all(); }
+  try { return db.prepare('SELECT id, name, cwd, model, sandbox_policy, approval_mode, rollout_path FROM threads').all(); }
   finally { db.close(); }
 }
 async function startAppServer(env) {
@@ -52,7 +55,7 @@ async function startAppServer(env) {
         ACP_ADAPTER: path.resolve(__dirname, 'permissions-bridge.test.cjs'), PERMISSION_FIXTURE_ADAPTER: '1' },
       stdio: ['ignore', 'pipe', 'pipe'],
     })
-    : spawn(binary, ['app-server', '--listen', 'ws://127.0.0.1:0'], { cwd, env, stdio: ['ignore', 'pipe', 'pipe'] });
+    : spawn(binary, ['app-server', '--listen', reference ? 'unix://' : 'ws://127.0.0.1:0'], { cwd, env, stdio: ['ignore', 'pipe', 'pipe'] });
   appServerExit = new Promise(resolve => appServer.once('exit', (code, signal) => resolve({ code, signal })));
   appServer.on('error', error => { appServerError = error; });
   const log = chunk => {
@@ -68,6 +71,7 @@ async function startAppServer(env) {
     const bridgePort = useBridge && fs.existsSync(bridgeLog)
       ? fs.readFileSync(bridgeLog, 'utf8').match(/LISTENING (\d+)/)?.[1] : null;
     const address = bridgePort ? `ws://127.0.0.1:${bridgePort}` : appServerLog.match(/ws:\/\/127\.0\.0\.1:\d+/)?.[0];
+    if (reference && fs.existsSync(path.join(home, 'app-server-control', 'app-server-control.sock'))) return 'unix://';
     if (address) return address;
     await pause(100);
   }
@@ -85,19 +89,21 @@ async function stopAppServer() {
   await provider.start();
   const catalog = require('../codex-rs/models-manager/models.json');
   const model = catalog.models.find(model => model.slug === 'gpt-5.5');
-  assert(model, 'fixture model must exist');
+  const otherModel = catalog.models.find(model => model.slug === 'gpt-6.1-sol');
+  assert(model && otherModel, 'fixture models must exist');
   model.experimental_supported_tools = [...(model.experimental_supported_tools ?? []), 'request_user_input_async'];
   const catalogPath = path.join(home, 'models.json');
-  fs.writeFileSync(catalogPath, JSON.stringify({ models: [model] }));
+  fs.writeFileSync(catalogPath, JSON.stringify({ models: [model, otherModel] }));
   fs.writeFileSync(path.join(home, 'config.toml'), `model="gpt-5.5"\nmodel_provider="fixture"\nmodel_reasoning_effort="medium"\nmodel_catalog_json=${JSON.stringify(catalogPath)}\napproval_policy="on-request"\nsandbox_mode="workspace-write"\n[features]\ncode_mode=false\n[model_providers.fixture]\nname="Terminal fixture"\nbase_url=${JSON.stringify(provider.url)}\nwire_api="responses"\nrequires_openai_auth=false\n[tui]\nanimations=false\n[projects.${JSON.stringify(cwd)}]\ntrust_level="trusted"\n`);
+  fs.appendFileSync(path.join(home, 'config.toml'), `[projects.${JSON.stringify(otherCwd)}]\ntrust_level="trusted"\n`);
   const isolatedEnv = { ...process.env, HOME: home, CODEX_HOME: home, ELPIS_HOME: home, CODEX_AUTH_HOME: home, TERM: 'xterm-256color' };
   const remote = await startAppServer(isolatedEnv);
   const quote = text => `'${text.replaceAll("'", "'\\''")}'`;
-  const command = ['env', `HOME=${home}`, `CODEX_HOME=${home}`, `ELPIS_HOME=${home}`, `CODEX_AUTH_HOME=${home}`, 'TERM=xterm-256color', binary, '--remote', remote, '--no-alt-screen', '-C', cwd].map(quote).join(' ');
-  tmux('new-session', '-d', '-s', 'test', '-x', '80', '-y', '32', command);
+  const command = (directory, selectedModel) => ['env', `HOME=${home}`, `CODEX_HOME=${home}`, `ELPIS_HOME=${home}`, `CODEX_AUTH_HOME=${home}`, 'TERM=xterm-256color', binary, ...(reference ? [] : ['--remote', remote]), '--no-alt-screen', '-C', directory, ...(selectedModel ? ['--model', selectedModel] : [])].map(quote).join(' ');
+  tmux('new-session', '-d', '-s', 'test', '-x', '80', '-y', '32', command(cwd));
   await screenWhen(s => {
     if (s.includes('Hooks need review')) { key('Escape'); return false; }
-    return s.includes('Elpis') && /gpt-5[.]5/i.test(s);
+    return s.includes(reference ? 'Codex' : 'Elpis') && /gpt-5[.]5/i.test(s);
   }, 'startup');
   provider.actions.push(message('PERMISSION_FIXTURE_READY'));
   type('Create this isolated fixture thread.'); await pause(250); key('Enter');
@@ -140,7 +146,7 @@ async function stopAppServer() {
   const steering = 'STEER_BOUNDARY_d128';
   let deliveredAtBoundary;
   provider.actions.push(
-    call('running_tool_fixture', 'exec_command', { cmd: `printf 'full-access' > '${protectedSentinel}'; touch '${ready}'; while [ ! -f '${release}' ]; do sleep 0.05; done`, sandbox_permissions: 'require_escalated', justification: 'Fixture checks the selected Full Access mode.', yield_time_ms: 10000 }),
+    call('running_tool_fixture', 'exec_command', { cmd: `printf 'full-access' > '${protectedSentinel}'; touch '${ready}'; while [ ! -f '${release}' ]; do sleep 0.05; done`, ...(reference ? {} : { sandbox_permissions: 'require_escalated', justification: 'Fixture checks the selected Full Access mode.' }), yield_time_ms: 10000 }),
     request => {
       deliveredAtBoundary = request.input.some(item => item.role === 'user' && JSON.stringify(item.content).includes(steering));
       return call('question_fixture', 'request_user_input_async', { questions: [{ title: 'Choose a fixture color', options: ['Amber', 'Blue'] }] });
@@ -171,14 +177,37 @@ async function stopAppServer() {
   type('/rename Visible session sentinel'); await pause(250); key('Enter');
   await screenWhen(s => threadSettings().some(thread => thread.name === 'Visible session sentinel')
     && !s.includes('/rename Visible session sentinel'), 'renamed-title-80');
+  // A later session in another folder proves grouping, ordering, and per-row models.
+  provider.actions.push(message('SECOND_FOLDER_READY'));
+  tmux('new-session', '-d', '-s', 'second', '-x', '80', '-y', '32', command(otherCwd, otherModel.slug));
+  await screenWhen(s => {
+    if (s.includes('Hooks need review')) { key('Escape', 'second'); return false; }
+    return s.includes(otherModel.display_name);
+  }, 'second-startup', 'second');
+  type('Create the second folder fixture.', 'second'); await pause(250); key('Enter', 'second');
+  await screenWhen(s => s.includes('SECOND_FOLDER_READY') && !s.includes('esc to interrupt'), 'second-complete', 'second');
+  type('/rename Second folder sentinel', 'second'); await pause(250); key('Enter', 'second');
+  await screenWhen(s => threadSettings().some(thread => thread.name === 'Second folder sentinel')
+    && !s.includes('/rename Second folder sentinel'), 'second-renamed', 'second');
   key('Left');
-  screen = await screenWhen(s => s.includes('Agent command center') && s.includes('Visible session sentinel'), 'agents-80');
-  assert(screen.includes('GPT-5.5') && screen.includes('Group: Project'), screen);
-  pass('Left opens Codex agents grouped by project, retaining the task title and model');
+  screen = await screenWhen(s => s.includes('Agent command center') && s.includes('Visible session sentinel') && s.includes('Second folder sentinel'), 'agents-80');
+  assert(screen.includes('Group: Project'), screen);
+  const lines = screen.split('\n');
+  const secondGroup = lines.findIndex(line => line.includes('second-project'));
+  const firstGroup = lines.findIndex(line => line.includes(path.basename(cwd)));
+  const secondTask = lines.findIndex(line => line.includes('Second folder sentinel'));
+  const firstTask = lines.findIndex(line => line.includes('Visible session sentinel'));
+  assert(firstGroup >= 0 && firstGroup < firstTask && firstTask < secondGroup && secondGroup < secondTask, screen);
+  if (!reference) {
+    assert(lines[firstTask].includes('GPT-5.5'), screen);
+    assert(lines[secondTask].includes(otherModel.display_name), screen);
+  }
+  pass('Left lists tasks beneath their folders, in Codex project order');
+  if (!reference) pass('each task retains its own selected model');
   tmux('resize-window', '-t', 'test', '-x', '40', '-y', '32');
-  screen = await screenWhen(s => s.includes('Agent command center') && s.includes('GPT-5.5'), 'agents-40');
+  screen = await screenWhen(s => s.includes('Agent command center') && (reference ? s.includes('Visible') : s.includes('GPT-5.5')), 'agents-40');
   assert(screen.includes('Visible'), 'the task title stays visible beside its model');
-  pass('model and task name remain visible at 40 columns');
+  pass(reference ? 'task name remains visible at 40 columns' : 'model and task name remain visible at 40 columns');
   tmux('resize-window', '-t', 'test', '-x', '80', '-y', '32');
   key('?');
   screen = await screenWhen(s => s.includes('Rename') && s.includes('Delete'), 'agents-help');
@@ -195,6 +224,6 @@ async function stopAppServer() {
   try { tmux('kill-server'); } catch {}
   await stopAppServer();
   provider.close();
-  fs.writeFileSync(path.join(root, 'evidence.json'), JSON.stringify({ useBridge, checks, savedPermissions, requests: provider.requests, titleRequests: provider.titleRequests, appServerExit: appServer && !appServerError ? await appServerExit : null }, null, 2));
+  fs.writeFileSync(path.join(root, 'evidence.json'), JSON.stringify({ useBridge, reference, checks, savedPermissions, requests: provider.requests, titleRequests: provider.titleRequests, appServerExit: appServer && !appServerError ? await appServerExit : null }, null, 2));
   console.log(`Evidence: ${root}`);
 });
