@@ -1,14 +1,13 @@
 ---
 source: tui/src/bottom_pane/chat_composer.rs
-assertion_line: 5345
 expression: terminal.backend()
 ---
 "                                                                                                    "
 "› unbound-skill  [Skill] Example skill used in tests.                                               "
 "                                                                                                    "
 "  enter insert · esc close                                                                          "
-"───────────────────────────────────────────────────────────────────────────────────────────────────┐"
-"› $bound-skill$unbound-skill                                                                       │"
-"                                                                                                   │"
-"───────────────────────────────────────────────────────────────────────────────────────────────────┘"
-"                                                            100% context left · Tab Context Ledger  "
+"                                                                                                    "
+"› $bound-skill$unbound-skill                                                                        "
+"                                                                                                    "
+"                                                                                                    "
+"                                                                                 100% context left  "

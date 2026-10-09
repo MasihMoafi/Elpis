@@ -1,18 +1,15 @@
 ---
 source: tui/src/chatwidget/tests/permissions.rs
-assertion_line: 549
 expression: popup
 ---
- Elpis · model gpt-5.6-sol default · location /tmp/project
-
-  Enable full access?
-  When Elpis runs with full access, it can edit any file on your computer and
-  run commands with network, without your approval. Exercise caution when
-  enabling full access. This significantly increases the risk of data loss,
-  leaks, or unexpected behavior.
+      Enable full access?
+› As  When Elpis runs with full access, it can edit any file on your
+      computer and run commands with network, without your approval.
+  GP  Exercise caution when enabling full access. This significantly
+      increases the risk of data loss, leaks, or unexpected behavior.
 
 
-› 1. Yes, continue anyway  Apply full access for this session
-  2. Cancel                Go back without enabling full access
+    › 1. Yes, continue anyway  Apply full access for this session
+      2. Cancel                Go back without enabling full access
 
-  enter select · esc back
+      enter select · esc back

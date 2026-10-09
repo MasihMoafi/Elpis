@@ -1,8 +1,7 @@
 ---
-source: tui/src/chatwidget/tests/status_and_layout.rs
-assertion_line: 2312
-expression: normalized_backend_snapshot(terminal.backend())
+source: tui/src/chatwidget/tests.rs
+expression: terminal.backend()
 ---
 "                                        "
-" Elpis · model gpt-5.6-sol default · loc"
-"───────────────────────────────────────┐"
+"                                        "
+"                                        "

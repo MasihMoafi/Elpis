@@ -1,8 +1,8 @@
 ---
 source: tui/src/app/tests.rs
-assertion_line: 5873
+assertion_line: 5874
 expression: rendered
 ---
 
-  ◆ Elpis (v<VERSION>)
+  >_ OpenAI Codex (v<VERSION>)
      /tmp/project

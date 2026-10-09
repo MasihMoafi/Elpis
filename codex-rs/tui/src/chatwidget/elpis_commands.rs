@@ -114,7 +114,10 @@ pub(crate) fn unlisted(cmd: SlashCommand) -> bool {
     matches!(
         cmd,
         // Commands Codex added after v0.3.0, kept typeable (Masih asked for v0.3.0's list).
-        SlashCommand::Cd
+        SlashCommand::Agents
+            | SlashCommand::Archive
+            | SlashCommand::Delete
+            | SlashCommand::Cd
             | SlashCommand::Daemon
             | SlashCommand::Export
             | SlashCommand::Pwd
@@ -143,7 +146,8 @@ pub(crate) fn unlisted(cmd: SlashCommand) -> bool {
 pub(crate) fn hidden(cmd: SlashCommand) -> bool {
     matches!(
         cmd,
-        SlashCommand::App
+        SlashCommand::Daybreak
+            | SlashCommand::App
             | SlashCommand::Apps
             | SlashCommand::ElevateSandbox
             | SlashCommand::Exit

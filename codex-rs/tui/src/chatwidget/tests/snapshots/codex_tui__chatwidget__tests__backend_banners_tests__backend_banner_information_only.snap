@@ -1,14 +1,12 @@
 ---
 source: tui/src/chatwidget/tests/backend_banners_tests.rs
-assertion_line: 128
-expression: normalize_snapshot_paths(rendered)
+assertion_line: 62
+expression: rendered
 ---
- Elpis · model test-model-a default · location /tmp/project
-
   Selected model usage exhausted
   Ask your owner for credits or switch to another model.
 
-─────────────────────────────────────────────────────────────────────┐
-› Ask Elpis to do anything                                           │
-─────────────────────────────────────────────────────────────────────┘
-  ? for shortcuts             100% context left · Tab Context Ledger
+
+› Ask Elpis to do anything
+
+  test-model-a default · /tmp/project

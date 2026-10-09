@@ -7,6 +7,9 @@ use futures::SinkExt;
 use futures::StreamExt;
 use pretty_assertions::assert_eq;
 use serde_json::json;
+use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
+use std::sync::atomic::Ordering;
 use tokio::net::TcpListener;
 use tokio_tungstenite::tungstenite::Message;
 
@@ -47,12 +50,21 @@ async fn check_discovery(mixed_sources: bool) -> Result<()> {
             )
         })
         .collect();
+    let reopened_pin = overview_thread(
+        ThreadId::new(),
+        /*parent_thread_id*/ None,
+        "Pinned after reopen",
+        ThreadStatus::NotLoaded,
+    );
+    let reopened_pin_id = ThreadId::from_string(&reopened_pin.id).unwrap();
+    let show_reopened_pin = Arc::new(AtomicBool::new(false));
     let expected_first_twenty: HashSet<_> = rows[1..21]
         .iter()
         .map(|row| ThreadId::from_string(&row.id).unwrap())
         .collect();
     let listener = TcpListener::bind("127.0.0.1:0").await?;
     let endpoint = crate::resolve_remote_addr(&format!("ws://{}", listener.local_addr()?))?;
+    let server_show_reopened_pin = Arc::clone(&show_reopened_pin);
     let server = tokio::spawn(async move {
         let (stream, _) = listener.accept().await?;
         let mut socket = tokio_tungstenite::accept_async(stream).await?;
@@ -66,6 +78,34 @@ async fn check_discovery(mixed_sources: bool) -> Result<()> {
                 "initialize" => json!({"userAgent": "overview-test/1.0"}),
                 "thread/loaded/list" => json!({"data": [], "nextCursor": null}),
                 "thread/list" => {
+                    if params["sortKey"] == "section_position" {
+                        assert_eq!(params["sectionId"], codex_state::PINNED_THREAD_SECTION_ID);
+                        let interactive = params["sourceKinds"] == json!([]);
+                        let cursor = params["cursor"].as_str();
+                        let reopened = server_show_reopened_pin.load(Ordering::SeqCst);
+                        let data = if reopened && interactive && cursor.is_none() {
+                            vec![reopened_pin.clone()]
+                        } else if interactive && cursor == Some("pinned-page-2") {
+                            vec![rows[1].clone()]
+                        } else {
+                            Vec::new()
+                        };
+                        socket
+                            .send(Message::Text(
+                                json!({
+                                    "id": request.id,
+                                    "result": {
+                                        "data": data,
+                                        "nextCursor": (!reopened && interactive && cursor.is_none())
+                                            .then_some("pinned-page-2"),
+                                    }
+                                })
+                                .to_string()
+                                .into(),
+                            ))
+                            .await?;
+                        continue;
+                    }
                     assert_eq!(params["sortKey"], "recency_at");
                     assert_eq!(params["limit"], 10);
                     {
@@ -113,6 +153,7 @@ async fn check_discovery(mixed_sources: bool) -> Result<()> {
     app.refresh_agents_overview_threads(&session);
     finish_overview_refresh(&mut app, &session, &mut rx).await;
     assert_eq!(app.agents_overview.threads.len(), 10);
+    assert_eq!(app.agents_overview.pinned_thread_ids, Some(vec![ids[1]]));
     assert!(app.agents_overview.discovery.has_more());
     app.track_agents_overview_notification(&ServerNotification::ThreadArchived(
         ThreadArchivedNotification {
@@ -162,6 +203,17 @@ async fn check_discovery(mixed_sources: bool) -> Result<()> {
     finish_overview_refresh(&mut app, &session, &mut rx).await;
     assert_eq!(app.agents_overview.threads, expected);
     assert!(!app.agents_overview.discovery.has_more());
+    app.agents_overview.threads.clear();
+    app.agents_overview.pinned_thread_ids = Some(Vec::new());
+    app.agents_overview.refill_count = 0;
+    show_reopened_pin.store(true, Ordering::SeqCst);
+    app.refresh_agents_overview_threads(&session);
+    finish_overview_refresh(&mut app, &session, &mut rx).await;
+    assert_eq!(
+        app.agents_overview.pinned_thread_ids,
+        Some(vec![reopened_pin_id])
+    );
+    assert!(app.agents_overview.threads.contains_key(&reopened_pin_id));
     session.shutdown().await?;
     assert_eq!(
         server.await??,
@@ -171,87 +223,5 @@ async fn check_discovery(mixed_sources: bool) -> Result<()> {
             vec![0, 10, 10, 20]
         }
     );
-    Ok(())
-}
-
-/// A finished helper is known only from `thread/list`; it still nests under its parent.
-#[tokio::test]
-async fn listed_helpers_nest_under_their_parent() -> Result<()> {
-    let mut app = make_test_app().await;
-    let parent = ThreadId::from_u128(/*value*/ 7);
-    let mut root = overview_thread(
-        parent,
-        /*parent_thread_id*/ None,
-        "Coordinate the release",
-        ThreadStatus::NotLoaded,
-    );
-    root.updated_at += 1;
-    let mut helper = overview_thread(
-        ThreadId::from_u128(/*value*/ 8),
-        /*parent_thread_id*/ None,
-        "Delegated: draft the note",
-        ThreadStatus::NotLoaded,
-    );
-    // Delegated helpers carry only the protocol's parent field.
-    helper.parent_thread_id = Some(parent.to_string());
-    let listed = vec![root, helper];
-    let listener = TcpListener::bind("127.0.0.1:0").await?;
-    let endpoint = crate::resolve_remote_addr(&format!("ws://{}", listener.local_addr()?))?;
-    let server = tokio::spawn(async move {
-        let (stream, _) = listener.accept().await?;
-        let mut socket = tokio_tungstenite::accept_async(stream).await?;
-        while let Some(Ok(Message::Text(text))) = socket.next().await {
-            let JSONRPCMessage::Request(request) = serde_json::from_str(&text)? else {
-                continue;
-            };
-            let params = request.params.unwrap_or_default();
-            let result = match request.method.as_str() {
-                "initialize" => json!({"userAgent": "overview-test/1.0"}),
-                "thread/loaded/list" => json!({"data": [], "nextCursor": null}),
-                "thread/list" if params["sourceKinds"] == json!([]) => {
-                    json!({"data": listed, "nextCursor": null})
-                }
-                "thread/list" => json!({"data": [], "nextCursor": null}),
-                "thread/read" => {
-                    json!({"thread": listed.iter().find(|thread| thread.id == params["threadId"]).unwrap()})
-                }
-                "thread/turns/list" => json!({"data": [], "nextCursor": null}),
-                method => panic!("unexpected request: {method}"),
-            };
-            socket
-                .send(Message::Text(
-                    json!({"id": request.id, "result": result})
-                        .to_string()
-                        .into(),
-                ))
-                .await?;
-        }
-        Ok::<_, color_eyre::Report>(())
-    });
-    let session = AppServerSession::new(
-        crate::connect_remote_app_server(endpoint).await?,
-        ThreadParamsMode::Remote,
-    );
-    let view = app.agents_overview_view(Vec::new(), /*selected_thread_id*/ None);
-    app.chat_widget.show_bottom_pane_view(Box::new(view));
-    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
-    app.app_event_tx = AppEventSender::new(tx);
-    app.refresh_agents_overview_threads(&session);
-    finish_overview_refresh(&mut app, &session, &mut rx).await;
-    let threads = app
-        .agents_overview
-        .threads
-        .values()
-        .flatten()
-        .cloned()
-        .collect();
-    let view = app.agents_overview_view(threads, Some(parent));
-    // The helper follows its parent instead of being dropped from the list.
-    assert_eq!(
-        view.thread_ids(),
-        vec![parent, ThreadId::from_u128(/*value*/ 8)]
-    );
-    session.shutdown().await?;
-    server.await??;
     Ok(())
 }

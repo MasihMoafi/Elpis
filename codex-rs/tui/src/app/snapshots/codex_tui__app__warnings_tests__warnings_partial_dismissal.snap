@@ -1,6 +1,5 @@
 ---
 source: tui/src/app/warnings_tests.rs
-assertion_line: 126
 expression: "crate::chatwidget::tests::helpers::normalize_snapshot_paths(screen)"
 ---
 Earlier transcript row 12
@@ -21,9 +20,9 @@ Earlier transcript row 26
 Earlier transcript row 27
 Earlier transcript row 28
 Earlier transcript row 29
- Elpis · model gpt-5.6-sol default · location /tmp/project
                              ↓ Back to bottom · esc
-───────────────────────────────────────────────────────────────────────────────┐
-› draft                                                                        │
-───────────────────────────────────────────────────────────────────────────────┘
+
+› draft
+
+  GPT-5.6-Sol default · /tmp/project
   esc latest                                           ⚠ 1 warning · f2 to view

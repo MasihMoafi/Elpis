@@ -1,28 +1,10 @@
 ---
 source: tui/src/app/tests/active_reconnect_tests.rs
-assertion_line: 636
 expression: "render_bottom_popup(&app.chat_widget, 80)"
 ---
- Elpis · model gpt-5.6-sol default · location /tmp/project
-Reconnect failed — check the endpoint, then rel…│ CONTEXT LEDGER  context not
-                                                │ measured · ≈0 source
-────────────────────────────────────────────────┤ estimates
-› Ask Elpis to do anything                      │ Tab controls · Alt+C hide ·
-────────────────────────────────────────────────┤ Ctrl+click open file
-  ctrl+c quit                                   │
-                                                │ SMART PRUNE       [···] SYNC
-                                                │ Reading current thread state
-                                                │ Syncing… · /smart-prune on|
-                                                │ off sets an explicit state
-                                                │
-                                                │ SUBAGENTS          [━━━●] ON
-                                                │ May delegate to other agents
-                                                │
-                                                │ CONTEXT WINDOW  usage
-                                                │ unavailable
-                                                │ Context measurement
-                                                │ unavailable until the first
-                                                │ request snapshot
-                                                │
-                                                │ No portable context is
-                                                │ available.
+• Reconnect failed — check the endpoint, then relaunch (0s)
+
+
+› Ask Elpis to do anything
+
+  ⌃c quit

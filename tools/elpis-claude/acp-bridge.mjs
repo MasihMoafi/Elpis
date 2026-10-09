@@ -238,11 +238,11 @@ class Acp {
     this.proc.stderr.on("data", (d) => log(`${agent.key} acp stderr: ${String(d).trim().slice(0, 300)}`));
     this.nextId = 1;
     this.pending = new Map();
-    this.onUpdate = null;
-    this.onPermission = null;
-    // Sessions with their own handlers (hidden structured requests), so they never draw into
-    // the chat's running turn.
+    // Each session's own handlers: a chat's running turn (also under its Claude subagents'
+    // sessions) or a hidden structured request. Chats run at once, so updates and approvals go
+    // only to their session's turn; an approval asked by any other session is refused.
     this.bySession = new Map();
+    this.loading = new Set(); // sessions being reloaded: their replayed history draws nowhere
     lineReader(this.proc.stdout, (line) => this.#handle(JSON.parse(line)));
     this.proc.on("exit", (code) => {
       this.dead = `the ${agent.label} ACP adapter exited (code ${code}). Is it installed at ${agent.adapter}?`;
@@ -269,13 +269,14 @@ class Acp {
       this.pending.delete(msg.id);
       if (p) msg.error ? p.reject(msg.error) : p.resolve(msg.result);
     } else if (msg.method === "session/update") {
-      (this.bySession.get(msg.params?.sessionId)?.onUpdate ?? this.onUpdate)?.(msg.params);
+      if (!this.loading.has(msg.params?.sessionId)) this.bySession.get(msg.params?.sessionId)?.onUpdate?.(msg.params);
     } else if (msg.method === "_claude/sdkMessage" && msg.params?.message?.subtype === "init") {
       // Claude Code's own list of the tools it has this turn.
       log(`claude tools (session ${msg.params.sessionId}): ${(msg.params.message.tools ?? []).join(", ")}`);
     } else if (msg.method === "session/request_permission") {
       const own = this.bySession.get(msg.params?.sessionId);
-      const optionId = await (own ? null : this.onPermission ? this.onPermission(msg.params) : null);
+      if (!own) log(`approval asked by unknown session ${msg.params?.sessionId} -> refused`);
+      const optionId = own?.onPermission ? await own.onPermission(msg.params) : null;
       this.send({ id: msg.id, result: { outcome: optionId ? { outcome: "selected", optionId } : { outcome: "cancelled" } } });
     } else if (msg.id !== undefined) {
       this.send({ id: msg.id, error: { code: -32601, message: `client does not support ${msg.method}` } });
@@ -361,8 +362,8 @@ wss.on("connection", (ws) => {
   const claudeEffort = new Map();
   const sessionModel = new Map();
   const threadCollab = new Map();
-  // thread id -> its permission profile and approvals reviewer, as the TUI or the engine last
-  // named them; with the approval policy and Plan they pick Claude's own mode (claudeModeOf).
+  // thread id -> its permission profile and approvals reviewer, as the engine last confirmed
+  // them; with the approval policy and Plan they pick Claude's own mode (claudeModeOf).
   const threadAccess = new Map();
   const noteAccess = (threadId, s) => {
     if (!threadId || !s) return;
@@ -634,7 +635,7 @@ wss.on("connection", (ws) => {
   // /experimental and hand edits alike, as GPT turns do.
   const subagentsAllowed = (cwd) => engineCall("config/read", { includeLayers: false, cwd })
     .then((r) => r?.config?.features?.multi_agent !== false, (e) => { log(`subagents switch unread: ${e.message ?? JSON.stringify(e)}`); return true; });
-  let active = null;
+  const activeTurns = new Map(); // thread id -> its running Claude or Antigravity turn
   let reqSeq = 0;
 
   lineReader(engine.stdout, async (line) => {
@@ -651,9 +652,10 @@ wss.on("connection", (ws) => {
       const authority = { plan: 0, default: 0, acceptEdits: 1, auto: 2, bypassPermissions: 3 };
       // Providers may edit without callbacks in Accept edits, Auto, or Bypass. Stop any
       // reduction in that authority; the next prompt applies the confirmed restricted mode.
-      if (active?.threadId === tid && authority[nextAccess] < authority[previousAccess]) {
-        active.cancelled = true;
-        if (active.sessionId) active.acp?.send({ method: "session/cancel", params: { sessionId: active.sessionId } });
+      const running = activeTurns.get(tid);
+      if (running && authority[nextAccess] < authority[previousAccess]) {
+        running.cancelled = true;
+        if (running.sessionId) running.acp?.send({ method: "session/cancel", params: { sessionId: running.sessionId } });
         notify("warning", { threadId: tid, message: "Stopped the active turn to apply restricted permissions. Send a message to continue." });
       }
     }
@@ -986,14 +988,16 @@ wss.on("connection", (ws) => {
     // so a steer waits for the running tools, as Claude Code's own queue does.
     turnState.whenToolsIdle = () => (!busy() ? Promise.resolve() : new Promise((r) => turnState.toolsIdle.push(r)));
     lane.onIdle = () => { if (!busy()) turnState.toolsIdle.splice(0).forEach((r) => r()); };
-    active = turnState;
+    activeTurns.set(threadId, turnState);
     let status = "completed";
     let error = null;
     const agent = agentOf(claudeModel.get(threadId)) ?? AGENTS[0];
     try {
       const acp = await ensureAcp(agent);
       turnState.acp = acp;
-      const policy = req.params.approvalPolicy ?? threadPolicy.get(threadId) ?? "on-request";
+      // The engine's confirmed policy only: the TUI puts its own choice on every turn/start,
+      // also one the engine has not accepted yet, or refused.
+      const policy = threadPolicy.get(threadId) ?? "on-request";
       const ask = policy !== "never";
       const mode = ask ? "ask" : "full";
       const subagents = await subagentsAllowed(cwd);
@@ -1021,10 +1025,10 @@ wss.on("connection", (ws) => {
         const sameAgent = (store[threadId]?.agent ?? "claude") === agent.key;
         const saved = (live?.agent === agent.key ? live.id : null) ?? (sameAgent ? store[threadId]?.session ?? Object.values(store[threadId]?.sessions ?? {})[0] : null);
         if (saved) {
-          const prev = acp.onUpdate; acp.onUpdate = null;
+          acp.loading.add(saved);
           try { await acp.call("session/load", { sessionId: saved, cwd, mcpServers, _meta }); sessionId = saved; log(`session ${saved} reloaded for thread ${threadId} (subagents ${subagents ? "on" : "off"})`); }
           catch (e) { log(`session reload failed: ${e.message ?? JSON.stringify(e)}`); }
-          acp.onUpdate = prev;
+          acp.loading.delete(saved);
         }
         if (!sessionId) {
           sessionId = (await acp.call("session/new", { cwd, mcpServers, _meta })).sessionId;
@@ -1063,8 +1067,9 @@ wss.on("connection", (ws) => {
       turnState.sessionId = sessionId;
       sessionReady(sessionId);
       // The chat's updates draw into this turn; a subagent's come under its own ACP session and
-      // draw into its child thread (see spawnSubagent).
-      acp.onUpdate = ({ sessionId: sid, update: u }) => {
+      // draw into its child thread (see spawnSubagent). The turn hears only its own sessions.
+      const own = turnState.own = {};
+      own.onUpdate = ({ sessionId: sid, update: u }) => {
         if (u.sessionUpdate === "subagent_spawned") { spawnSubagent(u, sid === sessionId ? lane : subLanes.get(sid) ?? lane); return; }
         if (u.sessionUpdate === "subagent_state_update") { finishSubagent(subLanes.get(u.subagentSessionId), u.state); return; }
         const into = sid === sessionId ? lane : subLanes.get(sid);
@@ -1089,6 +1094,7 @@ wss.on("connection", (ws) => {
         const sub = newLane(childId, randomUUID(), cwd, false);
         sub.depth = depth; sub.name = name; sub.parent = parent; sub.startedAt = t;
         subLanes.set(u.subagentSessionId, sub);
+        acp.bySession.set(u.subagentSessionId, own);
         childThreads.set(childId, { thread, lane: sub, rootThreadId: threadId });
         childIds.add(childId);
         log(`claude subagent "${name}" (session ${u.subagentSessionId}) -> child thread ${childId} of ${parent.threadId}`);
@@ -1114,7 +1120,7 @@ wss.on("connection", (ws) => {
         lane.onIdle();
       };
       turnState.endSubagents = () => { for (const sub of subLanes.values()) finishSubagent(sub, "cancelled"); };
-      acp.onPermission = async (p) => {
+      own.onPermission = async (p) => {
         const t = [lane, ...subLanes.values()].map((l) => l.tools.get(p.toolCall?.toolCallId)).find(Boolean);
         const what = (t && t.name === "Bash" && t.raw.command) || p.toolCall?.title || t?.title || "a tool";
         const pick = (kind) => p.options.find((o) => o.kind === kind)?.optionId;
@@ -1159,7 +1165,7 @@ wss.on("connection", (ws) => {
           sessionMode.set(sessionId, mode);
           if (access === "acceptEdits" && mode === "default") {
             setTimeout(() => {
-              if (turnState.cancelled || active !== turnState
+              if (turnState.cancelled || activeTurns.get(threadId) !== turnState
                 || accessModeOf(threadId, agent.key, (threadPolicy.get(threadId) ?? policy) !== "never") !== "acceptEdits") return;
               acp.call("session/set_mode", { sessionId, modeId: "acceptEdits" })
                 .then(() => { sessionMode.set(sessionId, "acceptEdits"); log(`session ${sessionId} mode -> acceptEdits (plan approved)`); })
@@ -1178,6 +1184,7 @@ wss.on("connection", (ws) => {
         }
         return pick("reject_once") ?? pick("reject_always") ?? null;
       };
+      acp.bySession.set(sessionId, own);
       const userText = req.kind === "review" ? `[Code review requested: ${req.reviewHint}]` : inputSummary(input);
       const prompt = await toAcpPrompt(input);
       if (freshSession) {
@@ -1223,6 +1230,10 @@ wss.on("connection", (ws) => {
       log(`turn error ${JSON.stringify(e)}`);
     }
     sessionReady(null);
+    // The ended turn answers for its sessions no more: a late approval from them is refused.
+    for (const sid of [turnState.sessionId, ...subLanes.keys()]) {
+      if (turnState.own && turnState.acp.bySession.get(sid) === turnState.own) turnState.acp.bySession.delete(sid);
+    }
     // A subagent or row still running when the turn ends (stop, error) must not spin forever.
     turnState.endSubagents?.();
     lane.end();
@@ -1232,7 +1243,7 @@ wss.on("connection", (ws) => {
       notify("item/completed", { item: exit, threadId, turnId, completedAtMs: now() });
       items.push(exit);
     }
-    if (active === turnState) active = null;
+    if (activeTurns.get(threadId) === turnState) activeTurns.delete(threadId);
     turnState.toolsIdle.splice(0).forEach((r) => r());
     const completedAt = Math.floor(now() / 1000);
     {
@@ -1256,7 +1267,7 @@ wss.on("connection", (ws) => {
   const queueOf = (threadId) => queues.get(threadId) ?? queues.set(threadId, []).get(threadId);
   const shown = (threadId) => queueOf(threadId).filter((q) => !q.goal).map(({ id, input, clientUserMessageId }) => ({ id, input, clientUserMessageId }));
   function runNext(threadId) {
-    if (active?.threadId === threadId) return;
+    if (activeTurns.has(threadId)) return;
     const next = queueOf(threadId).shift();
     if (!next) return;
     if (!next.goal) notify("thread/queue/changed", { threadId });
@@ -1292,7 +1303,7 @@ wss.on("connection", (ws) => {
         toTui({ id: msg.id, result: {} }); changed(); return;
       }
       case "thread/queue/start": {
-        if (active?.threadId === threadId) { toTui({ id: msg.id, error: { code: -32600, message: "thread already has an active or pending turn" } }); return; }
+        if (activeTurns.has(threadId)) { toTui({ id: msg.id, error: { code: -32600, message: "thread already has an active or pending turn" } }); return; }
         const i = msg.params.queuedSubmissionId ? find(msg.params.queuedSubmissionId) : q.findIndex((e) => !e.goal);
         if (i < 0) { toTui({ id: msg.id, error: { code: -32600, message: "no queued message to start" } }); return; }
         const [entry] = q.splice(i, 1);
@@ -1473,11 +1484,11 @@ wss.on("connection", (ws) => {
   async function steerClaude(msg) {
     const { threadId, input = [], clientUserMessageId = null } = msg.params;
     const refuse = () => toTui({ id: msg.id, error: { code: -32600, message: "no active turn to steer" } });
-    const turn = active;
-    if (!turn || turn.threadId !== threadId) return refuse();
+    const turn = activeTurns.get(threadId);
+    if (!turn) return refuse();
     const sessionId = await turn.ready;
     await turn.whenToolsIdle();
-    if (!sessionId || active !== turn || turn.cancelled) return refuse();
+    if (!sessionId || activeTurns.get(threadId) !== turn || turn.cancelled) return refuse();
     try {
       const r = await turn.acp.call("_session/steering", { sessionId, prompt: await toAcpPrompt(input), _meta: { steering: { idleBehavior: "promptRequired" } } });
       if (r?.outcome === "promptRequired") return refuse();
@@ -1528,7 +1539,7 @@ wss.on("connection", (ws) => {
     }
     if (msg.method === "thread/start") { startThread(msg); return; }
     if (msg.method === "thread/revert") { revertThread(msg); return; }
-    if (msg.method === "review/start" && claudeModel.has(msg.params?.threadId) && !active) { reviewClaude(msg); return; }
+    if (msg.method === "review/start" && claudeModel.has(msg.params?.threadId) && !activeTurns.has(msg.params.threadId)) { reviewClaude(msg); return; }
     if (msg.method === "thread/turns/list" && msg.params?.threadId) pendingTurnsList.set(msg.id, msg.params);
     if (msg.method === "thread/items/list" && msg.params?.threadId) pendingItemsList.set(msg.id, msg.params);
     const lp = msg.params ?? {};
@@ -1563,13 +1574,19 @@ wss.on("connection", (ws) => {
     if (msg.method === "turn/start") {
       const tid = msg.params?.threadId;
       if (msg.params?.collaborationMode?.mode) threadCollab.set(tid, msg.params.collaborationMode.mode);
-      noteAccess(tid, msg.params);
+      // Its permission fields are the TUI's unconfirmed choice: a Claude turn ignores them (see
+      // claudeTurn), and the engine reports what it accepts for its own turn in
+      // thread/settings/updated.
       if (isBridged(msg.params?.model)) {
         claudeModel.set(tid, msg.params.model);
         if (msg.params.effort) claudeEffort.set(tid, msg.params.effort);
       }
       if (claudeModel.has(tid) && String(msg.id).startsWith("temporary-structured-turn")) { structuredClaude(msg); return; }
       if (claudeModel.has(tid)) {
+        if (activeTurns.has(tid)) {
+          toTui({ id: msg.id, error: { code: -32600, message: "thread already has an active or pending turn; steer or queue the message instead" } });
+          return;
+        }
         log(`subscription turn for thread ${tid} (${claudeModel.get(tid)})`);
         claudeTurn(msg);
         return;
@@ -1578,7 +1595,7 @@ wss.on("connection", (ws) => {
       engine.stdin.write(JSON.stringify(msg) + "\n");
       return;
     }
-    if (msg.method === "thread/compact/start" && claudeModel.has(msg.params?.threadId) && !active) {
+    if (msg.method === "thread/compact/start" && claudeModel.has(msg.params?.threadId) && !activeTurns.has(msg.params.threadId)) {
       toTui({ id: msg.id, result: {} });
       const extra = msg.params.instructions ? ` ${msg.params.instructions}` : "";
       log(`claude compact for thread ${msg.params.threadId}`);
@@ -1592,9 +1609,10 @@ wss.on("connection", (ws) => {
     }
     if (/^thread\/goal\/(set|get|clear)$/.test(msg.method) && claudeModel.has(msg.params?.threadId)) { goalRequest(msg); return; }
     if (/^thread\/queue\//.test(msg.method) && claudeModel.has(msg.params?.threadId)) { queueRequest(msg); return; }
-    if (msg.method === "turn/interrupt" && active && msg.params?.threadId === active.threadId) {
-      active.cancelled = true;
-      if (active.sessionId) active.acp?.send({ method: "session/cancel", params: { sessionId: active.sessionId } });
+    if (msg.method === "turn/interrupt" && activeTurns.has(msg.params?.threadId)) {
+      const running = activeTurns.get(msg.params.threadId);
+      running.cancelled = true;
+      if (running.sessionId) running.acp?.send({ method: "session/cancel", params: { sessionId: running.sessionId } });
       toTui({ id: msg.id, result: {} });
       return;
     }

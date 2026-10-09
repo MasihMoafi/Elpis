@@ -1,50 +1,20 @@
-# Terminal permission repair — October 9, 2026
+# Permission verification — 9 October 2026
 
-Full Access could appear selected while an active turn retained its previous
-approval policy and sandbox. Native dispatch now reads accepted permission changes;
-the ACP bridge reads confirmed engine settings instead of its turn-start policy.
-Revoking ACP bypass stops the active turn. Rejected updates never grant access.
+Current candidate: `Elpis-wt-parity`, exact Codex 0.162.0 integration in progress. **Not yet compiled or installed.** Earlier build/test claims belonged to the 0.160 candidate and do not establish this candidate's correctness.
 
-Reproduce with an absolute engine path:
+The coordinator reran the bridge fixtures against the older, uninstalled engine at `Elpis-next/codex-rs/target/release/codex`: 34 Claude checks and 27 Gemini checks passed. Both runs failed saved Full Access after a process restart: `never` was retained but `:danger-full-access` resumed as `:workspace`. This remains a required final-engine check.
 
+Covered: restricted/default access, Full Access, live promotion/revocation, rejected settings, delayed approvals/plan changes, unconfirmed `turn/start` fields, concurrent chats with opposite permissions, interruption/revocation of one chat, unknown ACP session rejection, duplicate-turn rejection, and cold resume after revocation. Providers are deterministic local fixtures, not live Claude/Gemini accounts.
+
+Evidence: `/tmp/elpis-bridge-permissions-RON2nK` (Claude), `/tmp/elpis-bridge-permissions-AWkmq3` (Gemini). Logs: `.tmp/bridge-claude-verification.log`, `.tmp/bridge-gemini-verification.log`.
+
+Run against the final binary:
 ```sh
-node scripts/permissions-runtime.test.cjs /path/to/elpis
-node scripts/permissions-runtime.test.cjs /path/to/elpis --code-mode
-node scripts/permissions-bridge.test.cjs /path/to/elpis
-node scripts/permissions-bridge.test.cjs /path/to/elpis --gemini
+node scripts/permissions-runtime.test.cjs /absolute/path/to/elpis
+node scripts/permissions-runtime.test.cjs /absolute/path/to/elpis --code-mode
+node scripts/permissions-bridge.test.cjs /absolute/path/to/elpis
+node scripts/permissions-bridge.test.cjs /absolute/path/to/elpis --gemini
+node scripts/terminal-input.test.cjs /absolute/path/to/elpis
 ```
 
-These use the real engine/bridge, isolated homes, and deterministic local provider
-fixtures. Native tests assert actual writes into protected workspace metadata. Bridge tests
-assert ACP approval outcomes and fixture writes through Claude's ACP interface and
-Gemini's real adapter/approval socket. No provider credentials are used.
-
-Installed baseline failed the mid-turn switch on native tools, code mode, Claude
-and Gemini. Baseline evidence: `/tmp/elpis-live-permissions-EK63pC`,
-`/tmp/elpis-live-permissions-yEGVdd`, `/tmp/elpis-bridge-permissions-KPi5sg`,
-`/tmp/elpis-bridge-permissions-6TsVQR`.
-The built candidate passes 12 native checks and 14 code-mode checks (including
-nested tools in an already-running cell), plus 20 Claude and 14 Gemini checks.
-Coverage includes restricted/never, rejected updates, automatic-edit revocation,
-refusing a prompt when the provider rejects a restricted mode, and rejecting
-stale approvals or delayed plan-mode changes after revocation. Evidence:
-`/tmp/elpis-live-permissions-ZPrxvA`, `/tmp/elpis-live-permissions-2Lf9Nz`,
-`/tmp/elpis-bridge-permissions-MPSFYH`, `/tmp/elpis-bridge-permissions-xy6MUk`.
-Seven real terminal checks pass: Full Access selection and protected writes,
-Enter steering, Shift+Up questions, visible names at 40/80 columns, and task
-rename/delete controls. Evidence: `/tmp/elpis-terminal-input-LajZ0z`.
-Production build passed. Focused Rust tests and the final color build remain in
-progress. Nothing installed yet.
-
-The October 8 security-session notes match the current Elpis defaults:
-`:workspace` with `on-request`. Those defaults remain unchanged; an explicit
-Full Access selection must take effect on the current turn. Login shells also
-source Ubuntu's im-config initializer, whose systemd journal logging can emit
-`Failed to create stream fd` inside the sandbox even when the requested command
-succeeds. An isolated `pwd` comparison reproduces the warning only with login
-startup, and `systemd-cat` reproduces the same error directly.
-
-User check after installation: restart Elpis, select Full Access during a reply,
-and confirm the following command runs without an approval prompt. Repeat with
-GPT, Claude and Gemini. Switch back to Default and confirm restrictions return.
-Automated evidence does not replace Masih's acceptance of the terminal behavior.
+The build guard passed 17 isolated fake-compiler checks, including early pause, hard ceiling, lost sensor and process cleanup. This does not replace temperature monitoring during a real build. Local Rust compilation is deferred to hosted CI because free disk is below the project's 40 GB floor.

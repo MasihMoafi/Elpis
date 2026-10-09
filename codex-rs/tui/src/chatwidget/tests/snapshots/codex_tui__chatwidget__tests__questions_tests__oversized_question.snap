@@ -1,28 +1,11 @@
 ---
 source: tui/src/chatwidget/tests/questions_tests.rs
-assertion_line: 441
 expression: "render_bottom_popup(&chat, 80)"
 ---
- Elpis · model gpt-5.6-sol default · location /tmp/project
-• Queued follow-up inputs                       │ CONTEXT LEDGER  context not
-┌───────────────────────────────────────────────┤ measured · ≈0 source
-│ What next?                                    │ estimates
-│                                               │ Tab controls · Alt+C hide ·
-│ Type your answer                              │ Ctrl+click open file
-│                                               │
-│ enter submit   ctrl+] skip                    │ SMART PRUNE       [···] SYNC
-│ shift+→ main prompt                           │ Reading current thread state
-└───────────────────────────────────────────────┤ Syncing… · /smart-prune on|
-                                                │ off sets an explicit state
-                                                │
-                                                │ SUBAGENTS          [━━━●] ON
-                                                │ May delegate to other agents
-                                                │
-                                                │ CONTEXT WINDOW  usage
-                                                │ unavailable
-                                                │ Context measurement
-                                                │ unavailable until the first
-                                                │ request snapshot
-                                                │
-                                                │ No portable context is
-                                                │ available.
+• Queued follow-up inputs
+
+  What next?
+
+  Type your answer
+
+  enter submit   ⌃] skip   ⇧→ main prompt

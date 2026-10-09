@@ -1,5 +1,4 @@
-//! Session-scoped shortcuts for the ordinary built-in permission modes. Elpis: Shift+Tab cycles
-//! them too, Full Access included, as in v0.3.0.
+//! Cycle ordinary built-in modes using the last permission catalog received from the server.
 
 use super::*;
 
@@ -16,12 +15,6 @@ impl ChatWidget {
         } else {
             return false;
         };
-        self.cycle_permission_mode(forward, /*include_full_access*/ false)
-    }
-
-    /// Moves to the next (or previous) built-in permission mode. Returns whether the key was
-    /// used. Elpis: Shift+Tab includes Full Access.
-    pub(super) fn cycle_permission_mode(&mut self, forward: bool, include_full_access: bool) -> bool {
         if !self.bottom_pane.no_modal_or_popup_active() {
             return false;
         }
@@ -36,14 +29,30 @@ impl ChatWidget {
             return true;
         };
 
+        let Some(discovery) = self.permission_discovery.as_ref() else {
+            self.request_permission_profiles();
+            return true;
+        };
+        let server_requirements = codex_config::ConfigRequirements {
+            auto_review_required_models: discovery
+                .requirements
+                .as_ref()
+                .and_then(|requirements| requirements.auto_review.as_ref())
+                .and_then(|auto_review| auto_review.required_on_models.as_ref())
+                .map(|models| {
+                    codex_config::Sourced::new(
+                        models.iter().cloned().collect(),
+                        codex_config::RequirementSource::Unknown,
+                    )
+                }),
+            ..Default::default()
+        };
         let current_approval =
             AskForApproval::from(self.config.permissions.approval_policy.value());
         let active_profile = self.config.permissions.active_permission_profile();
         let mut choices = Vec::new();
         for preset in builtin_approval_presets() {
-            if !matches!(preset.id, "read-only" | "auto")
-                && !(include_full_access && preset.id == "full-access")
-            {
+            if !matches!(preset.id, "read-only" | "auto") {
                 continue;
             }
             for reviewer in [ApprovalsReviewer::User, ApprovalsReviewer::AutoReview] {
@@ -54,12 +63,14 @@ impl ChatWidget {
                     continue;
                 }
                 let approval = AskForApproval::from(preset.approval);
-                let requirements = self.config.config_layer_stack.requirements();
-                if self
-                    .permission_mode_disabled_reason(&preset, approval)
+                if discovery
+                    .disabled_reason(
+                        &preset.active_permission_profile.id,
+                        Some(approval),
+                        Some(reviewer.into()),
+                    )
                     .is_some()
-                    || requirements.approvals_reviewer.can_set(&reviewer).is_err()
-                    || (requirements.auto_review_required_for_model(self.current_model())
+                    || (server_requirements.auto_review_required_for_model(self.current_model())
                         && reviewer != ApprovalsReviewer::AutoReview)
                 {
                     continue;

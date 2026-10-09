@@ -162,7 +162,6 @@ impl ChatWidget {
                     name: preset.display_name.clone(),
                     description,
                     is_current: model.as_str() == current_model,
-                    is_default: preset.is_default,
                     secondary_action: if requires_advanced_selection {
                         None
                     } else {

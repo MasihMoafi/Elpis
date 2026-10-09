@@ -1,6 +1,6 @@
 ---
 source: tui/src/bottom_pane/chat_composer.rs
-assertion_line: 5345
+assertion_line: 5328
 expression: terminal.backend()
 ---
 "  Mentions                                                                                          "
@@ -8,7 +8,7 @@ expression: terminal.backend()
 "  migr                                                                                              "
 "› Review database migration  /workspace/project                                               Task  "
 "  enter/tab insert · esc close · ↑/↓ select · ←/→ filter                                            "
-"───────────────────────────────────────────────────────────────────────────────────────────────────┐"
-"› @migr                                                                                            │"
-"───────────────────────────────────────────────────────────────────────────────────────────────────┘"
-"                                                            100% context left · Tab Context Ledger  "
+"                                                                                                    "
+"› @migr                                                                                             "
+"                                                                                                    "
+"                                                                                 100% context left  "

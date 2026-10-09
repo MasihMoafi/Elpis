@@ -1,6 +1,5 @@
 ---
 source: tui/src/app/owned_transcript_tests.rs
-assertion_line: 321
 expression: "normalize_snapshot_paths(snapshots.join(\"\\n\\n\"))"
 ---
 80x10, Recap at tail
@@ -8,36 +7,36 @@ History 20
 
   ↳ Recap: The draft is ready.
 
- Elpis · model gpt-test default · location /tmp/project
 
-───────────────────────────────────────────────────────────────────────────────┐
-› Ask Elpis to do anything                                                     │
-───────────────────────────────────────────────────────────────────────────────┘
-  ? for shortcuts                       100% context left · Tab Context Ledger
+
+› Ask Elpis to do anything
+
+  gpt-test default · /tmp/project
+  ? for shortcuts
 
 80x10, Message after recap
 
   ↳ Recap: The draft is ready.
 
 • Follow-up response.
- Elpis · model gpt-test default · location /tmp/project
 
-───────────────────────────────────────────────────────────────────────────────┐
-› Ask Elpis to do anything                                                     │
-───────────────────────────────────────────────────────────────────────────────┘
-  ? for shortcuts                       100% context left · Tab Context Ledger
+
+› Ask Elpis to do anything
+
+  gpt-test default · /tmp/project
+  ? for shortcuts
 
 80x10, Live message after recap
 
   ↳ Recap: The draft is ready.
 
 • Streaming response.
- Elpis · model gpt-test default · location /tmp/project
 
-───────────────────────────────────────────────────────────────────────────────┐
-› Ask Elpis to do anything                                                     │
-───────────────────────────────────────────────────────────────────────────────┘
-  ? for shortcuts                       100% context left · Tab Context Ledger
+
+› Ask Elpis to do anything
+
+  gpt-test default · /tmp/project
+  ? for shortcuts
 
 80x12, Recap at tail
 History 19
@@ -46,12 +45,12 @@ History 20
   ↳ Recap: The draft is ready.
            Next: Review the changes.
 
- Elpis · model gpt-test default · location /tmp/project
 
-───────────────────────────────────────────────────────────────────────────────┐
-› Ask Elpis to do anything                                                     │
-───────────────────────────────────────────────────────────────────────────────┘
-  ? for shortcuts                       100% context left · Tab Context Ledger
+
+› Ask Elpis to do anything
+
+  gpt-test default · /tmp/project
+  ? for shortcuts
 
 80x12, Message after recap
 History 20
@@ -60,12 +59,12 @@ History 20
            Next: Review the changes.
 
 • Follow-up response.
- Elpis · model gpt-test default · location /tmp/project
 
-───────────────────────────────────────────────────────────────────────────────┐
-› Ask Elpis to do anything                                                     │
-───────────────────────────────────────────────────────────────────────────────┘
-  ? for shortcuts                       100% context left · Tab Context Ledger
+
+› Ask Elpis to do anything
+
+  gpt-test default · /tmp/project
+  ? for shortcuts
 
 80x12, Live message after recap
 History 20
@@ -74,12 +73,12 @@ History 20
            Next: Review the changes.
 
 • Streaming response.
- Elpis · model gpt-test default · location /tmp/project
 
-───────────────────────────────────────────────────────────────────────────────┐
-› Ask Elpis to do anything                                                     │
-───────────────────────────────────────────────────────────────────────────────┘
-  ? for shortcuts                       100% context left · Tab Context Ledger
+
+› Ask Elpis to do anything
+
+  gpt-test default · /tmp/project
+  ? for shortcuts
 
 32x12, Recap at tail
 History 20
@@ -88,12 +87,12 @@ History 20
            Next: Review the
            changes.
 
- Elpis · model gpt-test default
 
-───────────────────────────────┐
-› Ask Elpis to do anything     │
-───────────────────────────────┘
-             100% context left
+
+› Ask Elpis to do anything
+
+  gpt-test default · /tmp/proje…
+  ? for shortcuts
 
 32x12, Message after recap
 
@@ -102,12 +101,12 @@ History 20
            changes.
 
 • Follow-up response.
- Elpis · model gpt-test default
 
-───────────────────────────────┐
-› Ask Elpis to do anything     │
-───────────────────────────────┘
-             100% context left
+
+› Ask Elpis to do anything
+
+  gpt-test default · /tmp/proje…
+  ? for shortcuts
 
 32x12, Live message after recap
 
@@ -116,60 +115,60 @@ History 20
            changes.
 
 • Streaming response.
- Elpis · model gpt-test default
 
-───────────────────────────────┐
-› Ask Elpis to do anything     │
-───────────────────────────────┘
-             100% context left
+
+› Ask Elpis to do anything
+
+  gpt-test default · /tmp/proje…
+  ? for shortcuts
 
 80x7, Recap at tail
            Next: Review the changes.
- Elpis · model gpt-test default · location /tmp/project
 
-───────────────────────────────────────────────────────────────────────────────┐
-› Ask Elpis to do anything                                                     │
-───────────────────────────────────────────────────────────────────────────────┘
-  ? for shortcuts                       100% context left · Tab Context Ledger
+
+› Ask Elpis to do anything
+
+  gpt-test default · /tmp/project
+  ? for shortcuts
 
 80x7, Message after recap
 • Follow-up response.
- Elpis · model gpt-test default · location /tmp/project
 
-───────────────────────────────────────────────────────────────────────────────┐
-› Ask Elpis to do anything                                                     │
-───────────────────────────────────────────────────────────────────────────────┘
-  ? for shortcuts                       100% context left · Tab Context Ledger
+
+› Ask Elpis to do anything
+
+  gpt-test default · /tmp/project
+  ? for shortcuts
 
 80x7, Live message after recap
 • Streaming response.
- Elpis · model gpt-test default · location /tmp/project
 
-───────────────────────────────────────────────────────────────────────────────┐
-› Ask Elpis to do anything                                                     │
-───────────────────────────────────────────────────────────────────────────────┘
-  ? for shortcuts                       100% context left · Tab Context Ledger
+
+› Ask Elpis to do anything
+
+  gpt-test default · /tmp/project
+  ? for shortcuts
 
 32x6, Recap at tail
- Elpis · model gpt-test default
 
-───────────────────────────────┐
-› Ask Elpis to do anything     │
-───────────────────────────────┘
-             100% context left
+
+› Ask Elpis to do anything
+
+  gpt-test default · /tmp/proje…
+  ? for shortcuts
 
 32x6, Message after recap
- Elpis · model gpt-test default
 
-───────────────────────────────┐
-› Ask Elpis to do anything     │
-───────────────────────────────┘
-             100% context left
+
+› Ask Elpis to do anything
+
+  gpt-test default · /tmp/proje…
+  ? for shortcuts
 
 32x6, Live message after recap
- Elpis · model gpt-test default
 
-───────────────────────────────┐
-› Ask Elpis to do anything     │
-───────────────────────────────┘
-             100% context left
+
+› Ask Elpis to do anything
+
+  gpt-test default · /tmp/proje…
+  ? for shortcuts

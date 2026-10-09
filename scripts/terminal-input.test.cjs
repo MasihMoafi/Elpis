@@ -1,6 +1,6 @@
 'use strict';
 // Remote TUI and a private websocket app-server, with an isolated home and local Responses fixture.
-// Usage: node scripts/terminal-input.test.cjs /absolute/path/to/elpis [--baseline]
+// Usage: node scripts/terminal-input.test.cjs /absolute/path/to/elpis
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -10,7 +10,6 @@ const { execFileSync, spawn } = require('node:child_process');
 const { Provider, message, call } = require('../editors/vscode/test/runtime-eval');
 const binary = process.argv[2];
 assert(binary && path.isAbsolute(binary), 'provide the engine binary');
-const baseline = process.argv.includes('--baseline');
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'elpis-terminal-input-'));
 const home = path.join(root, 'home'), cwd = path.join(root, 'long-project-directory-for-title-visibility');
 fs.mkdirSync(home); fs.mkdirSync(cwd);
@@ -28,7 +27,7 @@ async function screenWhen(predicate, label) {
   let screen = '';
   while (Date.now() < deadline) {
     screen = capture();
-    if (predicate(screen)) { fs.writeFileSync(path.join(root, `${label}.txt`), screen); return screen; }
+    if (predicate(screen)) { fs.writeFileSync(path.join(root, `${label}.txt`), screen); fs.writeFileSync(path.join(root, `${label}.ansi`), tmux('capture-pane', '-p', '-e', '-t', 'test')); return screen; }
     await pause(100);
   }
   fs.writeFileSync(path.join(root, `${label}.txt`), screen);
@@ -88,7 +87,7 @@ async function stopAppServer() {
   tmux('new-session', '-d', '-s', 'test', '-x', '80', '-y', '32', command);
   await screenWhen(s => {
     if (s.includes('Hooks need review')) { key('Escape'); return false; }
-    return s.includes('Elpis') && s.includes('gpt-5.5 medium');
+    return s.includes('Elpis') && /gpt-5[.]5/i.test(s);
   }, 'startup');
   provider.actions.push(message('PERMISSION_FIXTURE_READY'));
   type('Create this isolated fixture thread.'); await pause(250); key('Enter');
@@ -126,7 +125,7 @@ async function stopAppServer() {
   const steering = 'STEER_BOUNDARY_d128';
   let deliveredAtBoundary;
   provider.actions.push(
-    call('running_tool_fixture', 'exec_command', { cmd: `printf 'full-access' > '${protectedSentinel}'; touch '${ready}'; while [ ! -f '${release}' ]; do sleep 0.05; done`, ...(!baseline && { sandbox_permissions: 'require_escalated', justification: 'Fixture checks the selected Full Access mode.' }), yield_time_ms: 10000 }),
+    call('running_tool_fixture', 'exec_command', { cmd: `printf 'full-access' > '${protectedSentinel}'; touch '${ready}'; while [ ! -f '${release}' ]; do sleep 0.05; done`, sandbox_permissions: 'require_escalated', justification: 'Fixture checks the selected Full Access mode.', yield_time_ms: 10000 }),
     request => {
       deliveredAtBoundary = request.input.some(item => item.role === 'user' && JSON.stringify(item.content).includes(steering));
       return call('question_fixture', 'request_user_input_async', { questions: [{ title: 'Choose a fixture color', options: ['Amber', 'Blue'] }] });
@@ -146,43 +145,34 @@ async function stopAppServer() {
   fs.writeFileSync(path.join(root, 'steering-during-tool.txt'), capture());
   fs.writeFileSync(release, 'continue');
   let screen = await screenWhen(s => s.includes('to answer'), 'collapsed-question');
-  assert.equal(deliveredAtBoundary, !baseline, 'Enter must reach the next inference request after the tool finishes');
-  pass(baseline ? 'baseline Enter waits past the tool boundary' : 'Enter delivers steering at the next tool boundary');
-  if (baseline) {
-    assert(screen.includes('shift+← to answer'));
-    key('S-Up'); await pause(250);
-    assert(!capture().includes('main prompt'));
-    key('S-Left');
-    await screenWhen(s => s.includes('main prompt'), 'baseline-expanded-question');
-    pass('baseline Shift+Up does not open the question');
-    return;
-  }
-  assert(screen.includes('shift+↑ to answer'), screen);
-  key('S-Left'); await pause(250);
-  assert(capture().includes('shift+↑ to answer'), 'Shift+Left must leave the question collapsed');
-  key('S-Up');
+  assert.equal(deliveredAtBoundary, true, 'Enter must reach the next inference request after the tool finishes');
+  pass('Enter delivers steering at the next tool boundary');
+  assert(screen.includes('shift+← to answer'), screen);
+  key('S-Left');
   screen = await screenWhen(s => s.includes('main prompt') && s.includes('Choose a fixture color'), 'expanded-question');
-  assert(screen.includes('gpt-5.5 medium'), 'opening the question must not raise reasoning effort');
-  pass('Shift+Up opens questions, Shift+Left does not, and reasoning effort is unchanged');
+  assert(/gpt-5[.]5/i.test(screen), 'the current model remains visible while answering');
+  pass('Codex Shift+Left opens the question and preserves the current model');
   key('S-Right'); key('Escape');
   await screenWhen(s => !s.includes('esc to interrupt'), 'interrupted');
   type('/rename Visible session sentinel'); await pause(250); key('Enter');
-  screen = await screenWhen(s => s.split('\n').some(line => line.startsWith(' Elpis · Visible session sentinel ·')), 'renamed-title-80');
-  pass('renamed session title is visible before the long folder path at 80 columns');
+  await screenWhen(s => s.includes('Visible session sentinel'), 'renamed-title-80');
+  key('Left');
+  screen = await screenWhen(s => s.includes('Agent command center') && s.includes('Visible session sentinel'), 'agents-80');
+  assert(screen.includes('GPT-5.5') && screen.includes('Group: Project'), screen);
+  pass('Left opens Codex agents grouped by project, retaining the task title and model');
   tmux('resize-window', '-t', 'test', '-x', '40', '-y', '32');
-  await screenWhen(s => s.split('\n').some(line => line.startsWith(' Elpis · Visible session sentinel ·')), 'renamed-title-40');
-  pass('session title remains visible at 40 columns');
+  screen = await screenWhen(s => s.includes('Agent command center') && s.includes('GPT-5.5'), 'agents-40');
+  assert(screen.includes('Visible'), 'the task title stays visible beside its model');
+  pass('model and task name remain visible at 40 columns');
   tmux('resize-window', '-t', 'test', '-x', '80', '-y', '32');
-  type('/agents'); await pause(250); key('Enter');
-  screen = await screenWhen(s => s.includes('Agent command center') && s.includes('backspace delete'), 'task-controls-80');
-  assert(screen.includes('r rename') && screen.includes('Visible session sentinel'), screen);
-  tmux('resize-window', '-t', 'test', '-x', '40', '-y', '32');
-  await screenWhen(s => s.includes('r rename') && s.includes('backspace delete'), 'task-controls-40');
-  key('BSpace');
+  key('?');
+  screen = await screenWhen(s => s.includes('Rename') && s.includes('Delete'), 'agents-help');
+  pass('native agents help exposes rename and delete shortcuts');
+  key('Escape'); key('BSpace');
   await screenWhen(s => s.includes('Permanently delete'), 'delete-confirmation');
   key('Escape');
   await screenWhen(s => s.includes('Visible session sentinel'), 'delete-cancelled');
-  pass('/agents opens task controls; rename/delete remain visible and deletion can be cancelled');
+  pass('cancelling task deletion preserves the fixture session');
   assert(!provider.error, provider.error?.message);
 })().catch(error => { console.error(error); process.exitCode = 1; }).finally(async () => {
   try { tmux('kill-server'); } catch {}

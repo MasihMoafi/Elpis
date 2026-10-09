@@ -52,6 +52,7 @@ mod global_find_tests;
 pub(crate) use bindings::KeymapActionId;
 pub(crate) use bindings::KeymapContext;
 pub(crate) use bindings::bindings_for_action;
+pub(crate) use bindings::configured_binding_for_action;
 pub(crate) use bindings::keymap_action_id;
 pub(crate) use bindings::keymap_action_ids;
 use bindings::runtime_action_bindings;
@@ -425,11 +426,13 @@ pub(crate) struct AgentsKeymap {
     pub(crate) search: Vec<KeyBinding>,
     pub(crate) new_task: Vec<KeyBinding>,
     pub(crate) new_worktree: Vec<KeyBinding>,
+    pub(crate) fork: Vec<KeyBinding>,
     pub(crate) rename: Vec<KeyBinding>,
     pub(crate) stop: Vec<KeyBinding>,
     pub(crate) archive: Vec<KeyBinding>,
     pub(crate) delete: Vec<KeyBinding>,
     pub(crate) hide: Vec<KeyBinding>,
+    pub(crate) toggle_pin: Vec<KeyBinding>,
     pub(crate) toggle_grouping: Vec<KeyBinding>,
     chord_hints: Arc<RuntimeChordKeymap>,
 }
@@ -1289,14 +1292,6 @@ impl RuntimeKeymap {
         // New question shortcuts yield individually to existing explicit bindings.
         for (configured, bindings, aliases) in [
             (
-                keymap.chat.edit_queued_message.as_ref(),
-                &mut chat.edit_queued_message,
-                vec![
-                    ("shift-up", key_hint::shift(KeyCode::Up)),
-                    ("alt-up", key_hint::alt(KeyCode::Up)),
-                ],
-            ),
-            (
                 keymap.chat.prompt_stack_back.as_ref(),
                 &mut chat.prompt_stack_back,
                 vec![
@@ -1334,6 +1329,12 @@ impl RuntimeKeymap {
             chat.decrease_reasoning_effort
                 .retain(|binding| *binding != key_hint::shift(KeyCode::Down));
         }
+        if keymap.chat.increase_reasoning_effort.is_none()
+            && configured_main_surface_alias_is_used(keymap, "shift-up")
+        {
+            chat.increase_reasoning_effort
+                .retain(|binding| *binding != key_hint::shift(KeyCode::Up));
+        }
 
         let pager = PagerKeymap {
             scroll_up: resolve_local!(keymap, defaults, pager, scroll_up),
@@ -1355,50 +1356,48 @@ impl RuntimeKeymap {
             search: resolve_local!(keymap, defaults, agents, search),
             new_task: resolve_local!(keymap, defaults, agents, new_task),
             new_worktree: resolve_local!(keymap, defaults, agents, new_worktree),
+            fork: resolve_local!(keymap, defaults, agents, fork),
             rename: resolve_local!(keymap, defaults, agents, rename),
             stop: resolve_local!(keymap, defaults, agents, stop),
             archive: resolve_local!(keymap, defaults, agents, archive),
             delete: resolve_local!(keymap, defaults, agents, delete),
             hide: resolve_local!(keymap, defaults, agents, hide),
+            toggle_pin: resolve_local!(keymap, defaults, agents, toggle_pin),
             toggle_grouping: resolve_local!(keymap, defaults, agents, toggle_grouping),
             chord_hints: Arc::clone(&chords),
         };
 
         // New defaults yield to explicit bindings, including existing list shortcuts.
-        for (configured, bindings, alias) in [
-            (keymap.agents.resume.as_ref(), &mut agents.resume, "o"),
-            (keymap.agents.search.as_ref(), &mut agents.search, "f"),
-            (keymap.agents.new_task.as_ref(), &mut agents.new_task, "n"),
+        for (configured, bindings) in [
+            (keymap.agents.resume.as_ref(), &mut agents.resume),
+            (keymap.agents.search.as_ref(), &mut agents.search),
+            (keymap.agents.new_task.as_ref(), &mut agents.new_task),
             (
                 keymap.agents.new_worktree.as_ref(),
                 &mut agents.new_worktree,
-                "w",
             ),
-            (keymap.agents.rename.as_ref(), &mut agents.rename, "r"),
-            (keymap.agents.stop.as_ref(), &mut agents.stop, "x"),
-            (keymap.agents.archive.as_ref(), &mut agents.archive, "a"),
-            (
-                keymap.agents.delete.as_ref(),
-                &mut agents.delete,
-                "backspace",
-            ),
-            (keymap.agents.hide.as_ref(), &mut agents.hide, "h"),
+            (keymap.agents.fork.as_ref(), &mut agents.fork),
+            (keymap.agents.rename.as_ref(), &mut agents.rename),
+            (keymap.agents.stop.as_ref(), &mut agents.stop),
+            (keymap.agents.archive.as_ref(), &mut agents.archive),
+            (keymap.agents.delete.as_ref(), &mut agents.delete),
+            (keymap.agents.hide.as_ref(), &mut agents.hide),
+            (keymap.agents.toggle_pin.as_ref(), &mut agents.toggle_pin),
             (
                 keymap.agents.toggle_grouping.as_ref(),
                 &mut agents.toggle_grouping,
-                "g",
             ),
         ] {
-            if configured.is_none()
-                && (configured_context_alias_is_used(&keymap.agents, alias)
-                    || configured_context_alias_is_used(&keymap.list, alias)
-                    || configured_context_alias_is_used(&keymap.global, alias)
-                    || chords.bindings.iter().any(|chord| {
-                        chord.action.context.overlaps(KeymapContext::Agents)
-                            && bindings.contains(&chord.chord.prefix)
-                    }))
-            {
-                bindings.clear();
+            if configured.is_none() {
+                bindings.retain(|binding| {
+                    !configured_context_binding_is_used(&keymap.agents, *binding)
+                        && !configured_context_binding_is_used(&keymap.list, *binding)
+                        && !configured_context_binding_is_used(&keymap.global, *binding)
+                        && !chords.bindings.iter().any(|chord| {
+                            chord.action.context.overlaps(KeymapContext::Agents)
+                                && chord.chord.prefix == *binding
+                        })
+                });
             }
         }
 
@@ -1544,11 +1543,13 @@ impl RuntimeKeymap {
                 keymap.agents.new_worktree.as_ref(),
                 &mut agents.new_worktree,
             ),
+            (keymap.agents.fork.as_ref(), &mut agents.fork),
             (keymap.agents.rename.as_ref(), &mut agents.rename),
             (keymap.agents.stop.as_ref(), &mut agents.stop),
             (keymap.agents.archive.as_ref(), &mut agents.archive),
             (keymap.agents.delete.as_ref(), &mut agents.delete),
             (keymap.agents.hide.as_ref(), &mut agents.hide),
+            (keymap.agents.toggle_pin.as_ref(), &mut agents.toggle_pin),
             (
                 keymap.agents.toggle_grouping.as_ref(),
                 &mut agents.toggle_grouping,
@@ -1668,17 +1669,19 @@ impl RuntimeKeymap {
                     alt(KeyCode::Char(',')),
                     shift(KeyCode::Down)
                 ],
-                increase_reasoning_effort: default_bindings![alt(KeyCode::Char('.'))],
+                increase_reasoning_effort: default_bindings![
+                    alt(KeyCode::Char('.')),
+                    shift(KeyCode::Up)
+                ],
                 previous_permission_mode: default_bindings![],
                 next_permission_mode: default_bindings![],
-                edit_queued_message: default_bindings![shift(KeyCode::Up), alt(KeyCode::Up)],
+                edit_queued_message: default_bindings![shift(KeyCode::Left), alt(KeyCode::Up)],
                 prompt_stack_back: default_bindings![shift(KeyCode::Right), alt(KeyCode::Down)],
                 skip_question: default_bindings![ctrl(KeyCode::Char(']'))],
             },
             composer: ComposerKeymap {
                 submit: default_bindings![plain(KeyCode::Enter)],
-                // Elpis: Tab belongs to the Context Ledger, as in v0.3.0.
-                queue: Vec::new(),
+                queue: default_bindings![plain(KeyCode::Tab)],
                 toggle_shortcuts: default_bindings![
                     plain(KeyCode::Char('?')),
                     shift(KeyCode::Char('?'))
@@ -1708,8 +1711,7 @@ impl RuntimeKeymap {
                     raw(KeyBinding::new(KeyCode::Right, KeyModifiers::ALT)),
                     raw(KeyBinding::new(KeyCode::Right, KeyModifiers::CONTROL))
                 ],
-                // Elpis: Ctrl+A selects everything (bottom_pane/textarea/elpis_selection.rs).
-                move_line_start: default_bindings![plain(KeyCode::Home)],
+                move_line_start: default_bindings![plain(KeyCode::Home), ctrl(KeyCode::Char('a'))],
                 move_line_end: default_bindings![plain(KeyCode::End), ctrl(KeyCode::Char('e'))],
                 delete_backward: default_bindings![
                     plain(KeyCode::Backspace),
@@ -1913,14 +1915,16 @@ impl RuntimeKeymap {
             },
             agents: AgentsKeymap {
                 resume: default_bindings![plain(KeyCode::Char('o'))],
-                search: default_bindings![plain(KeyCode::Char('f'))],
+                search: default_bindings![plain(KeyCode::F(3)), plain(KeyCode::Char('/'))],
                 new_task: default_bindings![plain(KeyCode::Char('n'))],
                 new_worktree: default_bindings![plain(KeyCode::Char('w'))],
+                fork: default_bindings![plain(KeyCode::Char('f'))],
                 rename: default_bindings![plain(KeyCode::Char('r'))],
                 stop: default_bindings![plain(KeyCode::Char('x'))],
                 archive: default_bindings![plain(KeyCode::Char('a'))],
                 delete: default_bindings![plain(KeyCode::Backspace)],
                 hide: default_bindings![plain(KeyCode::Char('h'))],
+                toggle_pin: default_bindings![plain(KeyCode::Char('p'))],
                 toggle_grouping: default_bindings![plain(KeyCode::Char('g'))],
                 chord_hints: Arc::default(),
             },
@@ -2313,7 +2317,11 @@ impl RuntimeKeymap {
             "agents",
             context_bindings(KeymapContext::Agents),
             MAIN_RESERVED_BINDINGS,
-            [],
+            [(
+                "search",
+                "fixed.slash_command",
+                key_hint::plain(KeyCode::Char('/')),
+            )],
         )?;
         for (action, bindings) in context_bindings(KeymapContext::Agents) {
             #[cfg(unix)]
@@ -2466,8 +2474,7 @@ const MAIN_RESERVED_BINDINGS: &[(&str, KeyBinding)] = &[
     ("fixed.paste_image", key_hint::ctrl(KeyCode::Char('v'))),
     ("fixed.paste_image", key_hint::ctrl_alt(KeyCode::Char('v'))),
     (
-        // Elpis: Shift+Tab cycles the permission modes.
-        "fixed.cycle_permission_mode",
+        "fixed.cycle_collaboration_mode",
         key_hint::shift(KeyCode::Tab),
     ),
     ("fixed.backtrack", key_hint::plain(KeyCode::Esc)),
@@ -2939,11 +2946,14 @@ mod tests {
         );
         assert_eq!(
             runtime.chat.increase_reasoning_effort,
-            vec![key_hint::alt(KeyCode::Char('.'))]
+            vec![
+                key_hint::alt(KeyCode::Char('.')),
+                key_hint::shift(KeyCode::Up),
+            ]
         );
         assert_eq!(
             runtime.chat.edit_queued_message,
-            vec![key_hint::shift(KeyCode::Up), key_hint::alt(KeyCode::Up)]
+            vec![key_hint::shift(KeyCode::Left), key_hint::alt(KeyCode::Up)]
         );
         assert_eq!(
             runtime.composer.history_search_previous,
@@ -3014,7 +3024,7 @@ mod tests {
     }
 
     #[test]
-    fn configured_main_surface_bindings_prune_default_arrow_aliases() {
+    fn configured_main_surface_bindings_prune_reasoning_fallback_aliases() {
         let mut keymap = TuiKeymap::default();
         keymap.editor.move_up = Some(one("shift-up"));
         keymap.vim_text_object.word = Some(one("shift-down"));
@@ -3022,10 +3032,6 @@ mod tests {
         let runtime = RuntimeKeymap::from_config(&keymap).expect("config should parse");
 
         assert_eq!(runtime.editor.move_up, vec![key_hint::shift(KeyCode::Up)]);
-        assert_eq!(
-            runtime.chat.edit_queued_message,
-            vec![key_hint::alt(KeyCode::Up)]
-        );
         assert_eq!(
             runtime.vim_text_object.word,
             vec![key_hint::shift(KeyCode::Down)]

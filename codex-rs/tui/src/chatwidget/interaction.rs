@@ -31,15 +31,9 @@ impl ChatWidget {
         self.bottom_pane.handle_composer_mouse(event)
     }
 
-    /// Snapshot only the editable paste target, without changing pending submissions. Elpis:
-    /// Ctrl+V (`by_key`) may paste over a selection.
-    pub(crate) fn right_click_paste_target(&self, by_key: bool) -> Option<(String, usize)> {
-        let editable = if by_key {
-            self.bottom_pane.can_paste_by_key()
-        } else {
-            self.bottom_pane.can_paste_on_right_click()
-        };
-        editable.then(|| {
+    /// Snapshot only the editable paste target, without changing pending submissions.
+    pub(crate) fn right_click_paste_target(&self) -> Option<(String, usize)> {
+        self.bottom_pane.can_paste_on_right_click().then(|| {
             (
                 self.bottom_pane.composer_text(),
                 self.bottom_pane.composer_cursor(),
@@ -64,16 +58,13 @@ impl ChatWidget {
     }
 
     pub(crate) fn handle_key_event(&mut self, key_event: KeyEvent) -> KeyEventAction {
-        // Elpis: blocked slash commands queue during an agent turn, not while MCP servers start.
-        self.bottom_pane
-            .set_elpis_turn_running(self.turn_lifecycle.agent_turn_running);
         if self.handle_startup_submission_key(key_event) {
             return KeyEventAction::None;
         }
         if self.handle_question_key(key_event) {
             return KeyEventAction::None;
         }
-        // Elpis: Tab and Alt+C open, focus and hide the Context Ledger.
+        // Elpis: Alt+C opens the Context Ledger; native submission keys stay unchanged.
         if self.handle_context_ledger_pre_modal_key(key_event) {
             return KeyEventAction::None;
         }
@@ -134,7 +125,6 @@ impl ChatWidget {
             return KeyEventAction::None;
         }
 
-        // Elpis: keys for a focused Context Ledger.
         if self.handle_context_ledger_key_event(key_event) {
             return KeyEventAction::None;
         }
@@ -179,23 +169,25 @@ impl ChatWidget {
             } if modifiers.intersects(KeyModifiers::CONTROL | KeyModifiers::ALT)
                 && c.eq_ignore_ascii_case(&'v') =>
             {
+                if Instant::now() < self.suppress_image_paste_until {
+                    self.suppress_image_paste_until =
+                        Instant::now() + clipboard::IMAGE_PASTE_REPEAT_WINDOW;
+                    return KeyEventAction::None;
+                }
+                self.suppress_image_paste_until =
+                    Instant::now() + clipboard::IMAGE_PASTE_REPEAT_WINDOW;
                 return KeyEventAction::PasteImage;
             }
             other if other.kind == KeyEventKind::Press => {
+                self.suppress_image_paste_until = Instant::now();
                 self.bottom_pane.clear_quit_shortcut_hint();
                 self.quit_shortcut_expires_at = None;
                 self.quit_shortcut_key = None;
             }
+            other if other.kind == KeyEventKind::Release => {
+                self.suppress_image_paste_until = Instant::now();
+            }
             _ => {}
-        }
-
-        // Elpis: Up pulls every queued follow-up back into the composer (v0.3.0).
-        if self.recall_queued_follow_ups_on_up(key_event) {
-            return KeyEventAction::None;
-        }
-        // Elpis: empty Enter and Esc deliver queued follow-ups during a turn (v0.3.0).
-        if self.send_queued_follow_ups_on_key(key_event) {
-            return KeyEventAction::None;
         }
 
         if key_event.kind == KeyEventKind::Press
@@ -248,13 +240,19 @@ impl ChatWidget {
         }
 
         match key_event {
-            // Elpis: Shift+Tab cycles the permission modes, as in v0.3.0; /plan enters Plan mode.
             KeyEvent {
                 code: KeyCode::BackTab,
                 kind: KeyEventKind::Press,
                 ..
-            } if self.bottom_pane.no_modal_or_popup_active() => {
-                self.cycle_permission_mode(/*forward*/ true, /*include_full_access*/ true);
+            } if self.collaboration_modes_enabled()
+                && !self.bottom_pane.is_task_running()
+                && self.bottom_pane.no_modal_or_popup_active() =>
+            {
+                if self.blocks_direct_input {
+                    self.add_error_message(PARENT_OWNED_INPUT_MESSAGE.to_string());
+                } else {
+                    self.cycle_collaboration_mode();
+                }
             }
             _ => {
                 let had_modal_or_popup = !self.bottom_pane.no_modal_or_popup_active();
@@ -284,8 +282,7 @@ impl ChatWidget {
     /// warning event so users can switch models or remove attachments.
     pub(crate) fn attach_image(&mut self, path: PathBuf) {
         if !self.current_model_supports_images() {
-            // Warnings collect behind F2; a refused image must show where it was pasted.
-            self.add_to_history(history_cell::new_error_event(
+            self.add_to_history(history_cell::new_warning_event(
                 self.image_inputs_not_supported_message(),
             ));
             self.request_redraw();

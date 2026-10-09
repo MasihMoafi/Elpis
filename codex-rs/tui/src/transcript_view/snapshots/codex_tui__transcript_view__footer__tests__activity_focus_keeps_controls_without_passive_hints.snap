@@ -30,7 +30,7 @@ Buffer {
     styles: [
         x: 0, y: 0, fg: Reset, bg: Reset, underline: Reset, modifier: UNDERLINED,
         x: 0, y: 1, fg: Reset, bg: Reset, underline: Reset, modifier: DIM,
-        x: 4, y: 1, fg: Rgb(229, 187, 104), bg: Reset, underline: Reset, modifier: BOLD,
+        x: 4, y: 1, fg: Reset, bg: Reset, underline: Reset, modifier: BOLD,
         x: 18, y: 1, fg: Reset, bg: Reset, underline: Reset, modifier: DIM,
         x: 0, y: 2, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
     ]
@@ -50,7 +50,7 @@ Buffer {
         x: 0, y: 0, fg: Reset, bg: Reset, underline: Reset, modifier: UNDERLINED,
         x: 0, y: 1, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
         x: 0, y: 2, fg: Reset, bg: Reset, underline: Reset, modifier: DIM,
-        x: 4, y: 2, fg: Rgb(229, 187, 104), bg: Reset, underline: Reset, modifier: BOLD,
+        x: 4, y: 2, fg: Reset, bg: Reset, underline: Reset, modifier: BOLD,
         x: 15, y: 2, fg: Reset, bg: Reset, underline: Reset, modifier: DIM,
     ]
 }

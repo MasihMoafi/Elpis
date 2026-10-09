@@ -1,10 +1,7 @@
 ---
 source: tui/src/app/agents_overview_actions_tests.rs
-assertion_line: 642
 expression: "render_bottom_popup(&app.chat_widget, 80)"
 ---
- Elpis · model gpt-5.2 default · location /
-
   Could not delete task
   failed to delete session: thread/delete failed: no rollout found for thread
   id 00000000-0000-0000-0000-000000000001 (code -32600)

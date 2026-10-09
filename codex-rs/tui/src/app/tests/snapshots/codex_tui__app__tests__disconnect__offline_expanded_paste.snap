@@ -1,34 +1,20 @@
 ---
 source: tui/src/app/tests/disconnect_tests.rs
-assertion_line: 164
 expression: draft
 ---
-queued before disconnectcopied text copied    │ Tab controls · Alt+C hide ·
-  text copied text copied text copied text      │ Ctrl+click open file
-  copied text copied text copied text copied    │
-  text copied text copied text copied text      │ SMART PRUNE       [···] SYNC
-  copied text copied text copied text copied    │ Reading current thread state
-  text copied text copied text copied text      │ Syncing… · /smart-prune on|
-  copied text copied text copied text copied    │ off sets an explicit state
-  text copied text copied text copied text      │
-  copied text copied text copied text copied    │ SUBAGENTS          [━━━●] ON
-  text copied text copied text copied text      │ May delegate to other agents
-  copied text copied text copied text copied    │
-  text copied text copied text copied text      │ CONTEXT WINDOW  usage
-  copied text copied text copied text copied    │ unavailable
-  text copied text copied text copied text      │ Context measurement
-  copied text copied text copied text copied    │ unavailable until the first
-  text copied text copied text copied text      │ request snapshot
-  copied text copied text copied text copied    │
-  text copied text copied text copied text      │ No portable context is
-  copied text copied text copied text copied    │ available.
-  text copied text copied text copied text      │
-  copied text copied text copied text copied    │
-  text copied text copied text copied text      │
-  copied text copied text copied text copied    │
-  text copied text copied text copied text      │
-  copied text copied text copied text copied    │
-  text copied text copied text copied text      │
-  copied text copied text copied text           │
-────────────────────────────────────────────────┘
-        100% context left · Tab Context Ledger
+queued before disconnectcopied text copied text copied text copied text
+  copied text copied text copied text copied text copied text copied text
+  copied text copied text copied text copied text copied text copied text
+  copied text copied text copied text copied text copied text copied text
+  copied text copied text copied text copied text copied text copied text
+  copied text copied text copied text copied text copied text copied text
+  copied text copied text copied text copied text copied text copied text
+  copied text copied text copied text copied text copied text copied text
+  copied text copied text copied text copied text copied text copied text
+  copied text copied text copied text copied text copied text copied text
+  copied text copied text copied text copied text copied text copied text
+  copied text copied text copied text copied text copied text copied text
+  copied text copied text copied text copied text copied text copied text
+  copied text copied text copied text copied text copied text copied text
+  copied text copied text copied text copied text copied text copied text
+  copied text copied text copied text copied text

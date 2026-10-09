@@ -209,7 +209,7 @@ async fn ledger_p_toggles_smart_prune() {
     // Positive: with the ledger focused, `p` switches Smart Prune off.
     chat.bottom_pane
         .set_composer_text(String::new(), Vec::new(), Vec::new());
-    chat.handle_key_event(KeyEvent::from(KeyCode::Tab));
+    chat.handle_key_event(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::ALT));
     chat.handle_key_event(KeyEvent::from(KeyCode::Char('p')));
     assert_eq!(
         feature_updates(&mut rx),

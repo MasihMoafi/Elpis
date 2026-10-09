@@ -1,11 +1,10 @@
 ---
 source: tui/src/bottom_pane/chat_composer/snapshot_tests.rs
-assertion_line: 120
 expression: rows
 ---
-───────────────────────────────────────────────────────────┐
- voice ● listening                /voice mute   /voice stop│
-                                                           │
-› Ask Elpis to do anything                                 │
-───────────────────────────────────────────────────────────┘
-  ? for shortcuts   100% context left · Tab Context Ledger
+                                                            
+ voice ● listening                /voice mute   /voice stop 
+                                                            
+› Ask Elpis to do anything                                  
+                                                            
+  ? for shortcuts                        100% context left

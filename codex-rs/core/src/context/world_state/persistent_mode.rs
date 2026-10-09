@@ -2,8 +2,10 @@
 //! Mode changes retire prior instructions; callers provide the resolved instruction template.
 
 use super::PreviousSectionState;
+use super::SectionTransition;
 use super::WorldStateHash;
 use super::WorldStateSection;
+use super::WorldStateUpdate;
 use crate::context::ContextualUserFragment;
 use codex_protocol::models::ContentItemKind;
 use serde::Deserialize;
@@ -72,13 +74,6 @@ impl WorldStateSection for PersistentModeState {
     const ID: &'static str = "persistent_mode";
     type Snapshot = PersistentModeSnapshot;
 
-    fn snapshot(&self) -> Self::Snapshot {
-        PersistentModeSnapshot {
-            instructions: (!self.instructions.is_empty())
-                .then(|| WorldStateHash::from_fragment(self)),
-        }
-    }
-
     fn matches_legacy_fragment(role: &str, text: &str) -> bool {
         role == "developer" && Self::matches_text(text)
     }
@@ -94,10 +89,13 @@ impl WorldStateSection for PersistentModeState {
     fn render_diff(
         &self,
         previous: PreviousSectionState<'_, Self::Snapshot>,
-    ) -> Option<Box<dyn ContextualUserFragment>> {
-        if matches!(previous, PreviousSectionState::Known(previous) if previous == &self.snapshot())
-        {
-            return None;
+    ) -> SectionTransition<Self::Snapshot> {
+        let current = PersistentModeSnapshot {
+            instructions: (!self.instructions.is_empty())
+                .then(|| WorldStateHash::from_fragment(self)),
+        };
+        if matches!(previous, PreviousSectionState::Known(previous) if previous == &current) {
+            return (None, Vec::new());
         }
         let previous_had_instructions = match previous {
             PreviousSectionState::Absent => false,
@@ -105,12 +103,15 @@ impl WorldStateSection for PersistentModeState {
             PreviousSectionState::Known(previous) => previous.instructions.is_some(),
         };
         let instructions = match (self.instructions.as_str(), previous_had_instructions) {
-            ("", false) => return None,
+            ("", false) => return (Some(current), Vec::new()),
             ("", true) => REMOVAL_NOTICE.to_string(),
             (instructions, true) => format!("{REPLACEMENT_NOTICE}\n\n{instructions}"),
             (instructions, false) => instructions.to_string(),
         };
-        Some(Box::new(Self { instructions }))
+        (
+            Some(current),
+            vec![WorldStateUpdate::fragment(Self { instructions })],
+        )
     }
 }
 

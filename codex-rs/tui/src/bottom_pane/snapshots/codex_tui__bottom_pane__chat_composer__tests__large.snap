@@ -1,15 +1,14 @@
 ---
 source: tui/src/bottom_pane/chat_composer.rs
-assertion_line: 9361
 expression: terminal.backend()
 ---
-"───────────────────────────────────────────────────────────────────────────────────────────────────┐"
-"› [Pasted Content 1005 chars]                                                                      │"
-"                                                                                                   │"
-"                                                                                                   │"
-"                                                                                                   │"
-"                                                                                                   │"
-"                                                                                                   │"
-"                                                                                                   │"
-"───────────────────────────────────────────────────────────────────────────────────────────────────┘"
-"                                                            100% context left · Tab Context Ledger  "
+"                                                                                                    "
+"› [Pasted Content 1005 chars]                                                                       "
+"                                                                                                    "
+"                                                                                                    "
+"                                                                                                    "
+"                                                                                                    "
+"                                                                                                    "
+"                                                                                                    "
+"                                                                                                    "
+"                                                                                 100% context left  "

@@ -33,9 +33,9 @@ fn agents_md_world_state(instructions: Option<&str>) -> WorldState {
 /// Applies one update the way the session does: render, then record what it produced.
 /// Returns the number of fragments rendered.
 fn apply_world_state(history: &mut ContextManager, world_state: &WorldState) -> usize {
-    let (fragments, _) = history.update_world_state(world_state);
-    let emitted = fragments.len();
-    let items = crate::context_manager::updates::merge_contextual_fragments(fragments);
+    let (updates, _) = history.update_world_state(world_state);
+    let emitted = updates.len();
+    let items = crate::context_manager::updates::merge_world_state_updates(updates);
     history.record_items(items.iter(), TruncationPolicy::Tokens(10_000));
     emitted
 }
@@ -127,6 +127,32 @@ fn changed_instructions_replace_the_earlier_copy() {
     assert_eq!(instruction_lifecycle_notices(&history), 0);
 }
 
+/// A withdrawal between sampling steps of one turn removes the copy before the next request,
+/// and persists the change only once the session commits the step's baseline.
+#[test]
+fn step_withdrawal_removes_the_earlier_copy_before_the_next_request() {
+    let mut history = ContextManager::new();
+    apply_world_state(&mut history, &agents_md_world_state(Some("project rule")));
+
+    let (snapshot, updates, rollout_item) =
+        history.render_step_world_state(&agents_md_world_state(/*instructions*/ None));
+    assert!(updates.is_empty());
+    assert_eq!(instruction_copies(&history), 0);
+    assert!(
+        rollout_item.is_some(),
+        "the withdrawal changes the snapshot"
+    );
+
+    history.set_world_state_baseline(snapshot);
+    let (updates, rollout_item) =
+        history.update_world_state(&agents_md_world_state(/*instructions*/ None));
+    assert!(updates.is_empty());
+    assert!(
+        rollout_item.is_none(),
+        "an unchanged withdrawal is not persisted again"
+    );
+}
+
 /// History rewrites drop the World State baseline while the rendered copy survives. The
 /// section may resupply its text, but the request still carries exactly one copy.
 #[test]
@@ -149,26 +175,23 @@ fn history_rewrites_keep_exactly_one_instruction_copy() {
 fn extension_single_slot(body: Option<&str>) -> WorldState {
     let body = body.map(str::to_string);
     let has_model_visible_content = body.is_some();
-    let snapshot_body = body.clone();
     let mut state = WorldState::default();
     state.add_extension_section(
-        WorldStateSectionContribution::new(
-            "extension_single_slot",
-            json!({ "body": snapshot_body }),
-            move |previous| {
-                if matches!(
-                    previous,
-                    PreviousWorldStateSection::Known(previous)
-                        if previous.get("body").and_then(serde_json::Value::as_str)
-                            == body.as_deref()
-                ) {
-                    return None;
-                }
-                body.as_ref().map(|body| {
-                    RenderedWorldStateFragment::new("developer", ("", ""), body.clone())
-                })
-            },
-        )
+        WorldStateSectionContribution::new("extension_single_slot", move |previous| {
+            let snapshot = Some(json!({ "body": body }));
+            if matches!(
+                previous,
+                PreviousWorldStateSection::Known(previous)
+                    if previous.get("body").and_then(serde_json::Value::as_str)
+                        == body.as_deref()
+            ) {
+                return (snapshot, None);
+            }
+            let fragment = body
+                .as_ref()
+                .map(|body| RenderedWorldStateFragment::new("developer", ("", ""), body.clone()));
+            (snapshot, fragment)
+        })
         .with_retained_fragment_matcher(|role, text| {
             role == "developer" && matches!(text, "extension before" | "extension after")
         })
@@ -209,9 +232,8 @@ fn first_message_kinds(history: &ContextManager) -> Option<Vec<ContentItemKind>>
 #[test]
 fn extension_single_slot_replaces_then_removes_only_its_own_content() {
     let mut history = ContextManager::new();
-    let (fragments, _) =
-        history.update_world_state(&extension_single_slot(Some("extension before")));
-    let mut initial_items = crate::context_manager::updates::merge_contextual_fragments(fragments);
+    let (updates, _) = history.update_world_state(&extension_single_slot(Some("extension before")));
+    let mut initial_items = crate::context_manager::updates::merge_world_state_updates(updates);
     let ResponseItem::Message {
         content,
         internal_chat_message_metadata_passthrough,
@@ -257,13 +279,10 @@ fn extension_single_slot_replaces_then_removes_only_its_own_content() {
         developer_msg(&["extension after"]),
     ]);
     let latest = extension_single_slot(Some("extension after"));
-    history.set_world_state_baseline(latest.snapshot());
+    history.set_world_state_baseline(latest.render_full().0);
     let version_before_deduplication = history.history_version();
     let (fragments, rollout_item) = history.update_world_state(&latest);
-    assert!(
-        fragments.is_empty(),
-        "an unchanged slot must not re-render"
-    );
+    assert!(fragments.is_empty(), "an unchanged slot must not re-render");
     assert_eq!(rollout_item, None);
     assert_eq!(
         history.history_version(),
@@ -306,7 +325,7 @@ fn sections_without_a_slot_are_never_removed() {
     ]);
     let mut state = WorldState::default();
     state.add_extension_section(
-        WorldStateSectionContribution::new("extension_append_only", json!({}), |_| None)
+        WorldStateSectionContribution::new("extension_append_only", |_| (Some(json!({})), None))
             .with_retained_fragment_matcher(|role, text| {
                 role == "developer" && matches!(text, "extension before" | "extension after")
             }),

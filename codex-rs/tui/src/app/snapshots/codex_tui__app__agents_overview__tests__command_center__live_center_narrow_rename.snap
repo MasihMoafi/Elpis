@@ -1,15 +1,14 @@
 ---
 source: tui/src/app/agent_center_tests.rs
-assertion_line: 209
 expression: rendered
 ---
   Agent command center  Group: Projec…
    All 1   Needs you 0   Working 0   ›
   ────────────────────────────────────
   Rename › 界 界 界 界 界 界 界 日 本 語  é 👩‍💻
-      Task
+      Tasks
   /tmp/project  1
-  › ◇ Retained task
+  › ○ Retained task
 
 
 

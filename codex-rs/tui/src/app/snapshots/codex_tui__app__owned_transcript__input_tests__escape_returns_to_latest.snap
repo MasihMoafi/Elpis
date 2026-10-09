@@ -1,6 +1,6 @@
 ---
 source: tui/src/app/owned_transcript_input_tests.rs
-assertion_line: 498
+assertion_line: 299
 expression: "format!(\"before\\n{before}\\n\\nafter\\n{}\", screen(&tui))"
 ---
 before
@@ -10,11 +10,11 @@ row 16
 row 17
 row 18
 row 19
- Elpis · model gpt-5.6-sol default · location /tmp/project
                      New activity · ↓ Back to bottom · esc
-───────────────────────────────────────────────────────────────────────────────┐
-› draft preserved                                                              │
-───────────────────────────────────────────────────────────────────────────────┘
+
+› draft preserved
+
+  GPT-5.6-Sol default · /tmp/project
   New activity · esc latest
 
 after
@@ -24,9 +24,8 @@ row 28
 row 29
 
 new output
- Elpis · model gpt-5.6-sol default · location /tmp/project
 
-───────────────────────────────────────────────────────────────────────────────┐
-› draft preserved                                                              │
-───────────────────────────────────────────────────────────────────────────────┘
-                                        100% context left · Tab Context Ledger
+
+› draft preserved
+
+  GPT-5.6-Sol default · /tmp/project

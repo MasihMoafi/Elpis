@@ -1,20 +1,10 @@
 //! Status filters and viewport state survive refreshes of the shared task projection.
 
-mod colors;
-mod conversation;
 mod hints;
 mod input;
 mod navigation;
 mod render;
 mod rows;
-
-pub(in crate::app) use colors::agent_hex;
-pub(in crate::app) use colors::agent_style;
-pub(in crate::app) use colors::thread_model;
-pub(in crate::app) use colors::working_style;
-pub(in crate::app) use conversation::AgentsOverviewConversations;
-pub(in crate::app) use conversation::RECENT_TURNS;
-pub(in crate::app) use conversation::conversation_entries;
 
 use super::*;
 

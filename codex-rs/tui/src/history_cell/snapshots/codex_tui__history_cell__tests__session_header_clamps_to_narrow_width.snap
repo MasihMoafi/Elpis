@@ -4,6 +4,6 @@ assertion_line: 1867
 expression: "render_lines(&lines).join(\"\\n\")"
 ---
 
-  ◆ Elpis (vtest)
+  >_ OpenAI Codex (vtest)
      project
   permissions: YOLO mode

@@ -100,6 +100,25 @@ fn elpis_commands_are_listed_in_their_v030_order_with_v030_descriptions() {
 }
 
 #[test]
+fn hand_selected_slash_command_set_is_unchanged() {
+    let mut expected = vec![
+        "model", "effort", "pruner-model", "memory-model", "ide", "permissions", "yolo",
+        "hotkeys", "settings", "add", "skills", "hooks", "rename", "new", "resume", "fork",
+        "init", "compact", "prune", "smart-prune", "force-prune", "plan", "voice", "goal",
+        "agent", "copy", "diff", "usage", "context", "dashboard", "theme", "mcp", "quit",
+        "clear", "subagents",
+    ];
+    if cfg!(target_os = "android") {
+        expected.retain(|name| *name != "copy");
+    }
+    assert_eq!(
+        built_in_slash_commands().into_iter().map(|(name, _)| name).collect::<Vec<_>>(),
+        expected,
+        "Changing Masih's selected command set requires his explicit agreement",
+    );
+}
+
+#[test]
 fn typed_elpis_names_reach_elpis_commands_and_upstream_names_stay_upstream() {
     let flags = BuiltinCommandFlags::default();
     for (name, cmd) in [
@@ -305,10 +324,10 @@ async fn during_a_turn_yolo_runs_and_pruning_waits() {
         Ok(AppEvent::Elpis(ElpisAppEvent::EnableYolo))
     );
 
-    // Pruning waits: it queues for after the turn instead of being rejected.
+    // Native Codex rejects commands that cannot run during a turn.
     chat.dispatch_command(SlashCommand::Prune);
-    assert!(history_text(&mut rx).is_empty());
-    assert_eq!(chat.queued_user_message_texts(), vec!["/prune"]);
+    assert!(history_text(&mut rx).join("\n").contains("disabled while a task is in progress"));
+    assert!(chat.queued_user_message_texts().is_empty());
 }
 
 #[test]
@@ -397,25 +416,25 @@ fn commands_v030_kept_out_of_the_popup_still_work_under_their_v030_names() {
 }
 
 #[test]
-fn chat_management_commands_are_listed_without_changing_their_names_or_aliases() {
+fn selected_chat_commands_stay_listed_and_removed_commands_stay_unlisted() {
     let flags = BuiltinCommandFlags::default();
     let listed = built_in_slash_commands();
     for (name, command) in [
-        ("agents", SlashCommand::Agents),
         ("rename", SlashCommand::Rename),
         ("new", SlashCommand::New),
-        ("archive", SlashCommand::Archive),
-        ("del", SlashCommand::Delete),
         ("resume", SlashCommand::Resume),
     ] {
         assert!(listed.contains(&(name, command)), "/{name} is missing");
+    }
+    for (name, command) in [
+        ("agents", SlashCommand::Agents),
+        ("archive", SlashCommand::Archive),
+        ("del", SlashCommand::Delete),
+    ] {
+        assert!(!listed.contains(&(name, command)), "/{name} was restored to the popup");
         assert_eq!(find_builtin_command(name, flags), Some(command));
     }
-    assert!(!listed.iter().any(|(name, _)| *name == "delete"));
-    assert_eq!(
-        find_builtin_command("delete", flags),
-        Some(SlashCommand::Delete)
-    );
+    assert_eq!(find_builtin_command("daybreak", flags), None);
 }
 
 fn usage_card(rx: &mut tokio::sync::mpsc::UnboundedReceiver<AppEvent>) -> Option<String> {

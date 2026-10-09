@@ -1,7 +1,10 @@
 //! Startup handoff preserves the loading frame until replayed cells can replace it.
 
 use super::*;
+use crate::chatwidget::tests::helpers::normalize_agent_center_snapshot;
+use crate::chatwidget::tests::helpers::normalize_snapshot_paths;
 use crate::custom_terminal::test_support::last_rendered_buffer;
+use crate::history_cell::HistoryRenderMode;
 use crate::startup_draft::tests::quiet_startup_test_pump;
 use pretty_assertions::assert_eq;
 
@@ -11,6 +14,80 @@ fn frame_text(tui: &tui::Tui) -> String {
         .iter()
         .map(ratatui::buffer::Cell::symbol)
         .collect()
+}
+
+#[tokio::test]
+async fn owned_startup_hides_tip_in_transcript() -> Result<()> {
+    let mut app = crate::app::test_support::make_test_app().await;
+    app.local_settings.tui.show_tooltips = true;
+    app.local_settings.tui.animations = false;
+    let session = test_thread_session(ThreadId::new(), app.config.cwd.to_path_buf());
+    let session_info = new_session_info(
+        &app.config,
+        &app.local_settings,
+        &session.model,
+        &session.model,
+        &session,
+        /*is_first_event*/ false,
+        Some("Use /mcp to list configured MCP tools.".into()),
+        /*auth_plan*/ None,
+    );
+    app.transcript_cells = vec![
+        Arc::new(session_info),
+        Arc::new(AgentMessageCell::new(
+            vec!["Conversation continues here.".into()],
+            /*is_first_line*/ true,
+        )),
+    ];
+    let mut tui = crate::tui::test_support::make_test_tui()?;
+    tui.set_owned_screen(/*owned*/ true)?;
+    let mut snapshots = Vec::new();
+    for width in [80, 32] {
+        let size = Size::new(width, /*height*/ 20);
+        tui.screen_size_for_event(&TuiEvent::Resize(size))?;
+        app.render_owned_transcript(&mut tui, size)?;
+        let buffer = last_rendered_buffer(&tui.terminal);
+        let screen = buffer
+            .content()
+            .chunks(usize::from(buffer.area.width))
+            .map(|row| {
+                row.iter()
+                    .map(ratatui::buffer::Cell::symbol)
+                    .collect::<String>()
+                    .trim_end()
+                    .to_owned()
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        snapshots.push(format!("{width} columns\n{screen}"));
+    }
+    insta::assert_snapshot!(
+        "startup_tip_in_transcript",
+        normalize_snapshot_paths(normalize_agent_center_snapshot(snapshots.join("\n\n"))),
+    );
+    // The source remains available to terminal scrollback in both presentation modes.
+    for mode in [HistoryRenderMode::Rich, HistoryRenderMode::Raw] {
+        let lines = app.transcript_cells[0].display_lines_for_mode(/*width*/ 80, mode);
+        let text = lines
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(text.contains("Use /mcp"));
+        assert_eq!(text.contains("model:"), mode == HistoryRenderMode::Raw);
+        assert!(!text.contains('╭'));
+    }
+    app.transcript_view.begin_search();
+    app.render_owned_transcript(&mut tui, Size::new(/*width*/ 80, /*height*/ 20))?;
+    assert!(!frame_text(&tui).contains("Use /mcp"));
+    app.open_transcript_overlay(&mut tui);
+    app.render_owned_transcript(&mut tui, Size::new(/*width*/ 80, /*height*/ 20))?;
+    assert!(!frame_text(&tui).contains("Use /mcp"));
+    app.apply_raw_output_mode(&mut tui, /*enabled*/ true, /*notify*/ false);
+    app.render_owned_transcript(&mut tui, Size::new(/*width*/ 80, /*height*/ 20))?;
+    assert!(!frame_text(&tui).contains("Use /mcp"));
+    tui.set_owned_screen(/*owned*/ false)?;
+    Ok(())
 }
 
 #[tokio::test]
@@ -33,7 +110,10 @@ async fn owned_startup_preserves_loading_until_resume_replay_is_applied() -> Res
         tui.set_owned_screen(/*owned*/ true)?;
         let thread_id = ThreadId::new();
         let mut startup = quiet_startup_test_pump();
-        startup.apply_config(&app.config);
+        startup.apply_settings(
+            &crate::local_settings::LocalSettings::from(&app.config),
+            app.config.cwd.as_path(),
+        );
         startup.update_session_selection(
             &mut tui,
             &SessionSelection::Resume(crate::resume_picker::SessionTarget {
@@ -69,9 +149,6 @@ async fn owned_startup_preserves_loading_until_resume_replay_is_applied() -> Res
             let control = Box::pin(app.handle_event(&mut tui, &mut app_server, event)).await?;
             assert!(matches!(control, AppRunControl::Continue));
         }
-        // Elpis: the Context Ledger takes the bottom rows, so the resumed screen is read without
-        // it.
-        crate::app::test_support::hide_context_ledger(&mut app);
         app.chat_widget.restore_startup_draft_when_ready(&mut draft);
         app.render_startup_frame(&mut tui, &events)?;
         assert!(draft.is_none());
@@ -80,7 +157,7 @@ async fn owned_startup_preserves_loading_until_resume_replay_is_applied() -> Res
         if has_answer {
             assert!(rendered.contains("Retained answer after resume."));
         } else {
-            assert!(rendered.contains("Elpis (v"));
+            assert!(rendered.contains("OpenAI Codex"));
         }
         tui.set_owned_screen(/*owned*/ false)?;
         app_server.shutdown().await?;

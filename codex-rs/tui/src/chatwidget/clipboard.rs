@@ -4,15 +4,15 @@
 use super::*;
 use crate::clipboard_copy::worker::CopyResult;
 
+pub(super) const IMAGE_PASTE_REPEAT_WINDOW: Duration = Duration::from_millis(/*millis*/ 250);
+
 pub(super) enum PendingCopy {
     Message(u64, String),
     Selection(u64),
 }
 
 impl ChatWidget {
-    /// Attaches the clipboard's image. Elpis: says whether the clipboard held one, so Ctrl+V can
-    /// paste its text instead.
-    pub(crate) fn paste_image(&mut self) -> bool {
+    pub(crate) fn paste_image(&mut self) {
         match paste_image_to_temp_png() {
             Ok((path, info)) => {
                 tracing::debug!(
@@ -23,7 +23,6 @@ impl ChatWidget {
                 );
                 self.attach_image(path);
             }
-            Err(crate::clipboard_paste::PasteImageError::NoImage(_)) => return false,
             Err(err) => {
                 tracing::warn!("failed to paste image: {err}");
                 self.add_to_history(history_cell::new_error_event(format!(
@@ -31,7 +30,7 @@ impl ChatWidget {
                 )));
             }
         }
-        true
+        self.suppress_image_paste_until = Instant::now() + IMAGE_PASTE_REPEAT_WINDOW;
     }
 
     pub(super) fn show_clipboard_flash(&mut self, result: &CopyResult) {

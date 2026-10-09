@@ -25,6 +25,9 @@ use crate::key_hint;
 use crate::key_hint::ShortcutHint;
 use crate::line_truncation::line_width;
 use crate::line_truncation::truncate_line_with_ellipsis_if_overflow;
+use crate::motion::MotionMode;
+use crate::motion::ReducedMotionIndicator;
+use crate::motion::activity_indicator;
 use crate::render::renderable::Renderable;
 use crate::text_formatting::capitalize_first;
 use crate::tui::FrameRequester;
@@ -35,13 +38,9 @@ use crate::wrapping::word_wrap_lines;
 mod timer;
 pub(crate) use timer::StatusTimer;
 
-// Elpis: the Elpising gradient (crate::elpis_motion) replaces the summary shimmer.
 #[path = "summary_shimmer.rs"]
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "Elpis: replaced by the Elpising gradient")
-)]
 mod summary_shimmer;
+use summary_shimmer::summary_shimmer;
 
 pub(crate) const STATUS_DETAILS_DEFAULT_MAX_LINES: usize = 3;
 const DETAILS_PREFIX: &str = "  └ ";
@@ -223,24 +222,30 @@ impl StatusIndicator<'_> {
     fn lines(&self, width: u16) -> Vec<Line<'static>> {
         let row = self.row;
         let now = Instant::now();
-        let elapsed_duration = self.elapsed_at(now);
+        let elapsed_duration = self.timer.display_started_at.map_or_else(
+            || self.timer.elapsed_at(now),
+            |started_at| now.saturating_duration_since(started_at),
+        );
         let pretty_elapsed = fmt_elapsed_compact(elapsed_duration.as_secs());
+        let progress =
+            MotionMode::from_animations_enabled(row.animations_enabled && row.effects.progress);
+        let shimmer =
+            MotionMode::from_animations_enabled(row.animations_enabled && row.effects.shimmer);
 
-        // Elpis: "Elpising…" in the paced orange gradient, with no leading spinner.
-        let header = if row.header == "Working" {
-            "Elpising…"
-        } else {
-            row.header.as_str()
-        };
         let mut spans = Vec::with_capacity(5);
-        if self.elpis_motion_active() {
-            let (sample_at, _) = crate::elpis_motion::paced_motion(elapsed_duration);
-            spans.extend(crate::elpis_motion::animated_text_at(header, sample_at));
-        } else {
-            spans.extend(crate::elpis_motion::animated_text(
-                header, /*animated*/ false,
-            ));
+        if let Some(indicator) = activity_indicator(
+            Some(self.timer.last_resume_at),
+            progress,
+            ReducedMotionIndicator::Hidden,
+        ) {
+            spans.push(indicator);
+            spans.push(" ".into());
         }
+        spans.extend(summary_shimmer(
+            &row.header,
+            now.saturating_duration_since(row.header_started_at),
+            shimmer,
+        ));
         if !spans.is_empty() {
             spans.push(" ".into());
         }
@@ -285,20 +290,6 @@ impl StatusIndicator<'_> {
     }
 }
 
-impl StatusIndicator<'_> {
-    // Elpis: the gradient sweeps only while the clock runs and motion is allowed.
-    fn elpis_motion_active(&self) -> bool {
-        self.row.animations_enabled && self.row.effects.shimmer && !self.timer.is_paused
-    }
-
-    fn elapsed_at(&self, now: Instant) -> Duration {
-        self.timer.display_started_at.map_or_else(
-            || self.timer.elapsed_at(now),
-            |started_at| now.saturating_duration_since(started_at),
-        )
-    }
-}
-
 impl Renderable for StatusIndicator<'_> {
     fn desired_height(&self, width: u16) -> u16 {
         self.lines(width).len() as u16
@@ -309,13 +300,16 @@ impl Renderable for StatusIndicator<'_> {
             return;
         }
         if self.row.animations_enabled || self.timer.display_started_at.is_some() {
-            // Elpis: one sweep at the motion tick, then rest until the next sweep.
-            let interval = if self.elpis_motion_active() {
-                crate::elpis_motion::paced_motion(self.elapsed_at(Instant::now())).1
+            let interval_ms = if self.row.animations_enabled
+                && (self.row.effects.progress || self.row.effects.shimmer)
+            {
+                32
             } else {
-                Duration::from_millis(1_000)
+                1_000
             };
-            self.row.frame_requester.schedule_frame_in(interval);
+            self.row
+                .frame_requester
+                .schedule_frame_in(Duration::from_millis(interval_ms));
         }
         Paragraph::new(Text::from(self.lines(area.width))).render(area, buf);
     }
@@ -455,7 +449,7 @@ mod tests {
             .map(ratatui::buffer::Cell::symbol)
             .collect::<String>();
 
-        assert!(line.starts_with("Elpising… (0s • esc to interrupt)"));
+        assert!(line.starts_with("Working (0s • esc to interrupt)"));
     }
 
     #[test]
@@ -505,7 +499,7 @@ mod tests {
             ),
         ] {
             w.update_inline_message(background.map(str::to_string));
-            let mut expected = "Elpising… (0s • esc to interrupt)".to_string();
+            let mut expected = "Working (0s • esc to interrupt)".to_string();
             if let Some(background) = background {
                 expected.push_str(&format!(" · {background}"));
             }

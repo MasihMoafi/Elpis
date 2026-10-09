@@ -405,7 +405,7 @@ fn proposed_plan_cell_preserves_wrapped_table_web_links() {
 
 #[test]
 fn composite_cell_preserves_child_web_links() {
-    let destination = "https://chatgpt.com/codex/settings/usage";
+    let destination = "https://chatgpt.com/settings/usage";
     let cell = CompositeHistoryCell::new(vec![
         Box::new(PlainHistoryCell::new(vec![Line::from("/status")])),
         Box::new(WebHyperlinkHistoryCell::new(vec![Line::from(destination)])),
@@ -603,6 +603,7 @@ fn image_generation_call_renders_saved_path() {
 
 fn session_configured_event(model: &str) -> ThreadSessionState {
     ThreadSessionState {
+        daybreak_enabled: false,
         windows_sandbox_host: crate::app::WindowsSandboxHost::Local,
         thread_id: ThreadId::new(),
         forked_from_id: None,
@@ -620,7 +621,6 @@ fn session_configured_event(model: &str) -> ThreadSessionState {
         instruction_source_paths: Vec::new(),
         reasoning_effort: None,
         collaboration_mode: None,
-        personality: None,
         message_history: None,
         network_proxy: None,
         rollout_path: Some(PathBuf::new()),
@@ -736,6 +736,99 @@ fn ps_output_empty_snapshot() {
 }
 
 #[tokio::test]
+async fn session_info_uses_availability_nux_tooltip_override() {
+    let config = test_config().await;
+    let cell = new_session_info(
+        &config,
+        &crate::local_settings::LocalSettings::from(&config),
+        "gpt-5",
+        "gpt-5",
+        &session_configured_event("gpt-5"),
+        /*is_first_event*/ false,
+        Some("Model just became available".to_string()),
+        Some(PlanType::Free),
+    );
+
+    let rendered = render_transcript(&cell).join("\n");
+    assert!(rendered.contains("Model just became available"));
+}
+
+#[tokio::test]
+#[cfg_attr(
+    target_os = "windows",
+    ignore = "snapshot path rendering differs on Windows"
+)]
+async fn session_info_availability_nux_tooltip_snapshot() {
+    let mut config = test_config().await;
+    config.cwd = test_path_buf("/tmp/project").abs();
+    let cell = new_session_info(
+        &config,
+        &crate::local_settings::LocalSettings::from(&config),
+        "gpt-5",
+        "gpt-5",
+        &session_configured_event("gpt-5"),
+        /*is_first_event*/ false,
+        Some("Model just became available".to_string()),
+        Some(PlanType::Free),
+    );
+
+    let rendered = render_transcript(&cell).join("\n");
+    insta::assert_snapshot!(rendered);
+}
+
+#[tokio::test]
+async fn session_info_preserves_styled_tooltip_links() {
+    let config = test_config().await;
+    let cell = new_session_info(
+        &config,
+        &crate::local_settings::LocalSettings::from(&config),
+        "gpt-5",
+        "gpt-5",
+        &session_configured_event("gpt-5"),
+        /*is_first_event*/ false,
+        Some(
+            "Use **/copy** or `ctrl+y`; visit the [Elpis community forum](https://example.com)."
+                .to_string(),
+        ),
+        Some(PlanType::Free),
+    );
+
+    let lines = cell.transcript_hyperlink_lines(/*width*/ 30);
+    assert_eq!(lines, cell.display_hyperlink_lines(/*width*/ 30));
+    assert_eq!(lines, cell.compact_hyperlink_lines(/*width*/ 30));
+    assert_eq!(
+        visible_lines(lines.clone()),
+        cell.transcript_lines(/*width*/ 30)
+    );
+    let tip_start = lines
+        .iter()
+        .position(|line| line.line.to_string().starts_with("  Tip:"))
+        .unwrap();
+    let tip_lines = &lines[tip_start..];
+    let command = tip_lines
+        .iter()
+        .flat_map(|line| &line.line.spans)
+        .find(|span| span.content == "/copy")
+        .unwrap();
+    assert!(command.style.add_modifier.contains(Modifier::BOLD));
+    let mut rendered = Vec::new();
+    for line in tip_lines {
+        let text = line.line.to_string();
+        rendered.push(text.clone());
+        for link in &line.hyperlinks {
+            // This ASCII fixture makes byte offsets equal to terminal columns.
+            rendered.push(format!(
+                "    link {:?}: {} -> {}",
+                link.columns,
+                &text[link.columns.clone()],
+                link.destination,
+            ));
+        }
+    }
+    insta::assert_snapshot!(rendered.join("\n"));
+}
+
+#[tokio::test]
 async fn session_info_first_event_suppresses_tooltips_and_nux() {
     let config = test_config().await;
     let cell = new_session_info(
@@ -822,9 +915,17 @@ fn cyber_policy_error_event_astra_snapshot() {
 }
 
 #[test]
-fn cyber_policy_error_event_limited_snapshot() {
-    let cell = new_cyber_policy_error_event(crate::daybreak::Notice::Limited);
-    let rendered = render_lines(&cell.display_lines(/*width*/ 80)).join("\n");
+fn cyber_policy_error_event_available_snapshot() {
+    let rendered = [
+        crate::daybreak::Notice::Disabled,
+        crate::daybreak::Notice::Enabled,
+    ]
+    .into_iter()
+    .map(|notice| {
+        render_lines(&new_cyber_policy_error_event(notice).display_lines(/*width*/ 80)).join("\n")
+    })
+    .collect::<Vec<_>>()
+    .join("\n\n");
     insta::assert_snapshot!(rendered);
 }
 
@@ -1270,6 +1371,33 @@ fn web_search_history_cell_snapshot() {
 }
 
 #[test]
+fn standalone_unix_update_available_history_cell_snapshot() {
+    let cell =
+        UpdateAvailableHistoryCell::new("9.9.9".to_string(), Some(UpdateAction::StandaloneUnix));
+    let rendered = render_lines(&cell.display_lines(/*width*/ 110)).join("\n");
+
+    insta::assert_snapshot!(rendered);
+}
+
+#[test]
+fn standalone_windows_update_available_history_cell_snapshot() {
+    let cell =
+        UpdateAvailableHistoryCell::new("9.9.9".to_string(), Some(UpdateAction::StandaloneWindows));
+    let rendered = render_lines(&cell.display_lines(/*width*/ 110)).join("\n");
+
+    insta::assert_snapshot!(rendered);
+}
+
+#[test]
+fn pnpm_update_available_history_cell_snapshot() {
+    let cell =
+        UpdateAvailableHistoryCell::new("9.9.9".to_string(), Some(UpdateAction::PnpmGlobalLatest));
+    let rendered = render_lines(&cell.display_lines(/*width*/ 110)).join("\n");
+
+    insta::assert_snapshot!(rendered);
+}
+
+#[test]
 fn web_search_history_cell_without_detail_snapshot() {
     let cell = new_web_search_call("call-1".to_string(), String::new(), WebSearchAction::Other);
     let rendered = render_lines(&cell.display_lines(/*width*/ 64)).join("\n");
@@ -1390,7 +1518,7 @@ fn code_mode_tool_call_uses_title_and_preserves_full_transcript() {
       └ 012345678901234567890123456789012345
         678901234567890123456789012345678901
         234567890123456789012345678901234567
-        +1 line (ctrl+t to view transcript)
+        +1 line (⌃t to view transcript)
 
     transcript:
     • Called node_repl.js({"title":"Inspect Spotify workspace","code":"await tools.exec_command({ cmd: 'git status' })"})

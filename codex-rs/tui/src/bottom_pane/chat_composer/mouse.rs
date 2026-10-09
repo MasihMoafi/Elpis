@@ -2,6 +2,7 @@
 //! editable text using the textarea's last rendered viewport and hides completion suggestions.
 //! Double/triple clicks select words/logical lines using the transcript's shared gesture rules.
 //! Copy preserves the draft and cursor; confirmed copies clear selection for every gesture.
+//! Wheel browsing uses the current viewport without changing popup or selection ownership.
 
 use super::*;
 use crate::clipboard_copy::CopyStatus;
@@ -12,15 +13,11 @@ use crossterm::event::MouseEventKind;
 
 impl ChatComposer {
     pub(crate) fn can_paste_on_right_click(&self) -> bool {
-        self.can_paste_by_key() && self.draft.textarea.mouse_selection_range().is_none()
-    }
-
-    /// Elpis: Ctrl+V pastes over a selection, as in an IDE; a right click copies one instead.
-    pub(crate) fn can_paste_by_key(&self) -> bool {
         self.draft.input_enabled
             && !self.blocks_direct_input
             && self.history_search.is_none()
             && self.draft.textarea.vim_query().is_none()
+            && self.draft.textarea.mouse_selection_range().is_none()
     }
 
     pub(in crate::bottom_pane) fn finish_copy(
@@ -89,11 +86,19 @@ impl ChatComposer {
 
     /// Dispatch after preparation and rendering have refreshed the viewport.
     pub(crate) fn handle_mouse(&mut self, event: MouseEvent) -> bool {
+        if self
+            .draft
+            .textarea
+            .scroll_mouse(event, &mut self.draft.textarea_state.borrow_mut())
+        {
+            return true;
+        }
         let handled = self
             .draft
             .textarea
             .handle_mouse(event, *self.draft.textarea_state.borrow());
         if handled {
+            self.draft.textarea_state.borrow_mut().follow_cursor();
             self.attachments.clear_remote_image_selection();
             self.sync_popups();
         }

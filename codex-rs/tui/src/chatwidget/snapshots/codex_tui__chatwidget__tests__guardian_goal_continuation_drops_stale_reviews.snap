@@ -1,13 +1,11 @@
 ---
 source: tui/src/chatwidget/tests/guardian.rs
-assertion_line: 837
 expression: normalize_snapshot_paths(rendered)
 ---
- Elpis · model gpt-5.6-sol default · location /tmp/project
-Reviewing approval request (0s • esc to interrupt)
+• Reviewing approval request (0s • esc to interrupt)
   └ rm -rf '/tmp/current-review'
 
-───────────────────────────────────────────────────────────────────────┐
-› Ask Elpis to do anything                                             │
-───────────────────────────────────────────────────────────────────────┘
-  ? for shortcuts               100% context left · Tab Context Ledger
+
+› Ask Elpis to do anything
+
+  GPT-5.6-Sol default · /tmp/project

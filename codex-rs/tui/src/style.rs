@@ -17,6 +17,7 @@ pub(crate) use elpis::popup_border_style;
 pub(crate) use elpis::render_against_ledger_rule;
 pub(crate) use elpis::rule_style;
 
+
 use crate::color::blend;
 use crate::color::is_light;
 use crate::terminal_palette::StdoutColorLevel;
@@ -29,8 +30,7 @@ use crate::terminal_palette::stdout_color_level;
 use ratatui::style::Color;
 use ratatui::style::Style;
 
-// Elpis: the accent is Elpis orange, not ChatGPT blue.
-const LIGHT_BG_ACCENT_RGB: (u8, u8, u8) = elpis::LIGHT_BG_PRIMARY_RGB;
+const LIGHT_BG_ACCENT_RGB: (u8, u8, u8) = (28, 100, 200);
 
 /// ChatGPT Blue 100 (#A4CDFB), used for selection fills on light backgrounds.
 pub(crate) const CHATGPT_BLUE_100: (u8, u8, u8) = (164, 205, 251);
@@ -39,8 +39,7 @@ pub(crate) const CHATGPT_BLUE_100: (u8, u8, u8) = (164, 205, 251);
 pub(crate) const CHATGPT_BLUE_200: (u8, u8, u8) = (99, 168, 248);
 
 /// Shared accent for picker selection backgrounds and transcript foreground emphasis.
-// Elpis: orange accent.
-pub(crate) const UI_ACCENT: (u8, u8, u8) = elpis::DARK_BG_PRIMARY_RGB;
+pub(crate) const UI_ACCENT: (u8, u8, u8) = CHATGPT_BLUE_200;
 
 #[derive(Clone, Copy)]
 pub(crate) enum StatusTone {
@@ -79,8 +78,15 @@ pub fn user_message_style() -> Style {
 
 /// Submitted prompts use a lighter fill than the editable composer in either theme.
 pub(crate) fn history_prompt_style() -> Style {
-    // Elpis: submitted prompts keep the v0.3.0 orange tint.
-    user_message_style()
+    let Some(background) = default_bg() else {
+        return Style::default();
+    };
+    let (foreground, alpha) = if is_light(background) {
+        ((0, 0, 0), 0.02)
+    } else {
+        ((255, 255, 255), 0.16)
+    };
+    Style::default().bg(best_color(blend(foreground, background, alpha)))
 }
 
 pub fn proposed_plan_style() -> Style {
@@ -265,11 +271,10 @@ pub fn user_message_bg(terminal_bg: (u8, u8, u8)) -> Color {
 }
 
 pub(crate) fn user_message_bg_rgb(terminal_bg: (u8, u8, u8)) -> (u8, u8, u8) {
-    // Elpis: user surfaces carry a faint orange tint.
     let (top, alpha) = if is_light(terminal_bg) {
-        (LIGHT_BG_ACCENT_RGB, 0.06)
+        ((0, 0, 0), 0.04)
     } else {
-        (UI_ACCENT, 0.12)
+        ((255, 255, 255), 0.12)
     };
     blend(top, terminal_bg, alpha)
 }

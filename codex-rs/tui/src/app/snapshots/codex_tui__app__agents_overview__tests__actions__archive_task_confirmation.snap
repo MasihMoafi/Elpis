@@ -1,16 +1,28 @@
 ---
 source: tui/src/app/agents_overview_actions_tests.rs
-assertion_line: 678
-expression: "render_bottom_popup(&app.chat_widget, 72)"
+expression: "render_bottom_popup(&app.chat_widget, 80)"
 ---
- Elpis · model gpt-5.2 default · location /
+  Agent command center  Group: Project  g
+   All 1   Needs you 0   Working 0   Ready 1   Inactive 0
+  ────────────────────────────────────────────────────────────────────────────
+      Tasks                                            Status         Updated
+  /tmp/project  1
+  › ○ Current task                                     Ready           2m ago
 
-  Archive “Current task”?
-  This stops any running work in this task and its child agents, then
-  archives them. Their history can be restored from the resume picker.
+
+      Archive “Current task”?
+      This stops any running work in this task and its child agents, then
+      archives them. Their history can be restored from the resume picker.
 
 
-› 1. Cancel
-  2. Archive task and child agents
+    › 1. Cancel
+      2. Archive task and child agents
 
-  enter select · esc back
+      enter select · esc back
+
+
+
+
+
+
+  ? help  esc back  ↑/↓ move  enter open  n new

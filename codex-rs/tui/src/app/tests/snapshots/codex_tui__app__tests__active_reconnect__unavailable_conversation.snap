@@ -1,29 +1,10 @@
 ---
 source: tui/src/app/tests/active_reconnect_tests.rs
-assertion_line: 719
 expression: "format!(\"{history}\\n{}\",\nrender_bottom_popup(&app.chat_widget,\n80)).replace(&test_path_buf(\"/tmp/project\").display().to_string(),\n\"/tmp/project\")"
 ---
 • This conversation is unavailable. Its cached transcript and draft remain here; input is paused. Open the agent picker or return to the parent to continue.
- Elpis · model gpt-test default · location /tmp/project
-────────────────────────────────────────────────┐ CONTEXT LEDGER  context not
-› unavailable draft                             │ measured · ≈0 source
-────────────────────────────────────────────────┤ estimates
-        100% context left · Tab Context Ledger  │ Tab controls · Alt+C hide ·
-                                                │ Ctrl+click open file
-                                                │
-                                                │ SMART PRUNE       [···] SYNC
-                                                │ Reading current thread state
-                                                │ Syncing… · /smart-prune on|
-                                                │ off sets an explicit state
-                                                │
-                                                │ SUBAGENTS          [━━━●] ON
-                                                │ May delegate to other agents
-                                                │
-                                                │ CONTEXT WINDOW  usage
-                                                │ unavailable
-                                                │ Context measurement
-                                                │ unavailable until the first
-                                                │ request snapshot
-                                                │
-                                                │ No portable context is
-                                                │ available.
+⚠ A background Elpis service is running v2.0.0, different from your Elpis CLI
+  v0.0.0.
+› unavailable draft
+
+  gpt-test default · /tmp/project

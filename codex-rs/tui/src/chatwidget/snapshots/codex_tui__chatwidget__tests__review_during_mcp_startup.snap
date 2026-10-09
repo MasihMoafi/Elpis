@@ -1,10 +1,7 @@
 ---
 source: tui/src/chatwidget/tests/mcp_startup.rs
-assertion_line: 239
 expression: "render_bottom_popup(&chat, 80)"
 ---
- Elpis · model gpt-5.6-sol default · location /tmp/project
-
   Select a review preset
 
 

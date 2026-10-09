@@ -22,6 +22,8 @@ pub mod approvals;
 pub mod capabilities;
 mod codex_error_info;
 pub mod config_types;
+mod guardian_transcript;
+pub use guardian_transcript::TranscriptFormat;
 pub mod dynamic_tools;
 // Elpis: Smart Prune state reported per thread.
 pub mod elpis_smart_prune;

@@ -133,15 +133,24 @@ if [ "${#max_temp_c}" -gt 2 ] || [ "$max_temp_c" -gt 80 ]; then
     exit 2
 fi
 max_temp_milli=$((max_temp_c * 1000))
+# Pause 3 C below the limit and resume 6 C below it: the pause leaves room for
+# the reading to keep rising between polls, and the 3 C band stops flapping.
+# The limit itself is a hard stop (see the build loop), never a hold.
 pause_margin_milli=$((max_temp_milli / 3))
-if [ "$pause_margin_milli" -gt 2000 ]; then pause_margin_milli=2000; fi
+if [ "$pause_margin_milli" -gt 3000 ]; then pause_margin_milli=3000; fi
 resume_margin_milli=$(((max_temp_milli * 2) / 3))
-# Keep the ceiling intact without waiting for unrelated system load to cool
-# thirteen degrees below it before compilation can resume.
-if [ "$resume_margin_milli" -gt 4000 ]; then resume_margin_milli=4000; fi
+if [ "$resume_margin_milli" -gt 6000 ]; then resume_margin_milli=6000; fi
 pause_temp_milli=$((max_temp_milli - pause_margin_milli))
 resume_temp_milli=$((max_temp_milli - resume_margin_milli))
 poll_seconds=${ELPIS_TEMP_POLL_SECONDS:-0.5}
+# A long interval lets the temperature pass the limit between readings; zero
+# would spin.
+if ! [[ "$poll_seconds" =~ ^[0-9]+(\.[0-9]+)?$ ]] \
+    || ! awk -v p="$poll_seconds" 'BEGIN { exit !(p >= 0.05 && p <= 1) }'
+then
+    printf 'ELPIS_TEMP_POLL_SECONDS must be a decimal number of seconds from 0.05 to 1\n' >&2
+    exit 2
+fi
 
 temperature_files=()
 shopt -s nullglob
@@ -154,11 +163,23 @@ else
 fi
 shopt -u nullglob
 
+# Keep only the sensors that read as a number now. Losing one of them later is
+# a failure: the maximum of the remaining sensors could hide the hot one.
+keep_readable_sensors() {
+    local path raw kept=()
+    for path in "${temperature_files[@]}"; do
+        IFS= read -r raw <"$path" 2>/dev/null || continue
+        [[ "$raw" =~ ^[0-9]+$ ]] && kept+=("$path")
+    done
+    temperature_files=("${kept[@]+"${kept[@]}"}")
+}
+keep_readable_sensors
+
 read_max_temperature_milli() {
     local path raw current max=-1
     for path in "${temperature_files[@]}"; do
-        IFS= read -r raw <"$path" 2>/dev/null || continue
-        [[ "$raw" =~ ^[0-9]+$ ]] || continue
+        IFS= read -r raw <"$path" 2>/dev/null || return 1
+        [[ "$raw" =~ ^[0-9]+$ ]] || return 1
         if [ "$raw" -lt 1000 ]; then
             current=$((raw * 1000))
         else
@@ -237,12 +258,10 @@ pause_count=0
 cooling_started_ns=0
 cooling_ms=0
 limit_hold_count=0
-limit_hold_active=0
 resume_build() {
     if [ "${build_paused:-0}" -eq 1 ] && [ -n "${build_pid:-}" ]; then
         kill -CONT -- "-$build_pid" 2>/dev/null || true
         build_paused=0
-        limit_hold_active=0
         if [ "$cooling_started_ns" -gt 0 ]; then
             cooling_ms=$((cooling_ms + (($(date +%s%N) - cooling_started_ns) / 1000000)))
         fi
@@ -251,13 +270,25 @@ resume_build() {
         cooling_started_ns=0
     fi
 }
+# Stop the whole owned process group: TERM, then KILL after two seconds.
 terminate_build() {
+    local waited=0
     if [ -n "${build_pid:-}" ]; then
         resume_build
-        kill -TERM -- "-$build_pid" 2>/dev/null || true
+        kill -TERM -- "-$build_pid" 2>/dev/null || return 0
+        while kill -0 -- "-$build_pid" 2>/dev/null; do
+            if [ "$waited" -ge 20 ]; then
+                kill -KILL -- "-$build_pid" 2>/dev/null || true
+                break
+            fi
+            waited=$((waited + 1))
+            sleep 0.1
+        done
     fi
 }
 trap 'terminate_build; exit 130' INT TERM
+trap 'terminate_build; exit 129' HUP
+trap terminate_build EXIT
 
 # Disk guard: target/ once filled the disk (2026-09-30, 143 GB of dev-small incremental
 # cache). Refuse to start, and stop a running build, below these free-space floors.
@@ -291,29 +322,15 @@ while kill -0 "$build_pid" 2>/dev/null || kill -0 -- "-$build_pid" 2>/dev/null; 
         if [ "$current_milli" -gt "$peak_milli" ]; then
             peak_milli=$current_milli
         fi
-        if [ "$current_milli" -ge "$max_temp_milli" ] && [ "$build_paused" -eq 0 ]; then
-            build_paused=1
-            pause_count=$((pause_count + 1))
+        if [ "$current_milli" -ge "$max_temp_milli" ]; then
+            # Fail closed. Holding at the limit let a build that had already
+            # passed it resume once the reading fell again.
             limit_hold_count=$((limit_hold_count + 1))
-            limit_hold_active=1
-            cooling_started_ns=$(date +%s%N)
-            kill -STOP -- "-$build_pid" 2>/dev/null || {
-                build_paused=0
-                cooling_started_ns=0
-                thermal_failure=thermal_abort
-                printf 'unable to hold build at temperature limit\n' >&2
-                terminate_build
-                break
-            }
-            printf 'thermal_limit_hold current_c=%s limit_c=%s pause_count=%s\n' \
-                "$(format_temperature "$current_milli")" "$max_temp_c" "$pause_count" >&2
-        elif [ "$current_milli" -ge "$max_temp_milli" ]; then
-            if [ "$limit_hold_active" -eq 0 ]; then
-                limit_hold_count=$((limit_hold_count + 1))
-                limit_hold_active=1
-                printf 'thermal_limit_hold current_c=%s limit_c=%s pause_count=%s\n' \
-                    "$(format_temperature "$current_milli")" "$max_temp_c" "$pause_count" >&2
-            fi
+            thermal_failure=thermal_limit
+            printf 'temperature limit reached: current_c=%s limit_c=%s; stopping build\n' \
+                "$(format_temperature "$current_milli")" "$max_temp_c" >&2
+            terminate_build
+            break
         elif [ "$build_paused" -eq 0 ] && [ "$current_milli" -ge "$pause_temp_milli" ]; then
             build_paused=1
             pause_count=$((pause_count + 1))
@@ -344,7 +361,9 @@ set +e
 wait "$build_pid"
 build_status=$?
 set -e
-trap - INT TERM
+terminate_build
+build_pid=
+trap - INT TERM HUP EXIT
 finished_ns=$(date +%s%N)
 elapsed_ms=$(((finished_ns - started_ns) / 1000000))
 artifact_bytes=0

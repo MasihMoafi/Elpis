@@ -1,10 +1,10 @@
 ---
 source: tui/src/app/tests.rs
-assertion_line: 6412
+assertion_line: 6513
 expression: rendered
 ---
 
-  ◆ Elpis (v0.4.1)
+  >_ OpenAI Codex (v0.0.0)
      <thread cwd>
 
 

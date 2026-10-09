@@ -1,14 +1,13 @@
 ---
 source: tui/src/keymap_setup.rs
-assertion_line: 1253
 expression: "render_picker(params, 78)"
 ---
 
   Keymap
   All configurable shortcuts.
-  150 actions, 0 customized, 6 unbound.
+  151 actions, 0 customized, 5 unbound.
 
-   All   Common   Customized (0)   Unbound (6)   App   Composer   Editor   ›
+   All   Common   Customized (0)   Unbound (5)   App   Composer   Editor   ›
 
   Type to search shortcuts
 
@@ -24,16 +23,16 @@ expression: "render_picker(params, 78)"
   Global         Toggle Side Conversation   ctrl-/
   Chat           Interrupt Turn             esc
   Chat           Decrease Reasoning Effort  alt-,, shift-down
-  Chat           Increase Reasoning Effort  alt-.
+  Chat           Increase Reasoning Effort  alt-., shift-up
   Chat         - Previous Permission Mode   unbound
   Chat         - Next Permission Mode       unbound
-  Chat           Edit Queued Message        shift-up, alt-up
+  Chat           Edit Queued Message        shift-left, alt-up
   Chat           Prompt Stack Back          shift-right, alt-down
   Chat           Skip Question              ctrl-]
   Chat           Toggle Voice               f8
   Chat           Toggle Voice Mute          ctrl-x
   Composer       Submit                     enter
-  Composer     - Queue                      unbound
+  Composer       Queue                      tab
   Composer       Toggle Shortcuts           ?, shift-?
   Composer       History Search Previous    ctrl-r
 ↓

@@ -155,7 +155,8 @@ objc2-foundation = { version = "0.3.2", default-features = false, features = ["s
 zbus = "4.4.0"
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.52", features = [
+which = { workspace = true }
+windows-sys = { workspace = true, features = [
     "Win32_Foundation",
     "Win32_Globalization",
     "Win32_Security",

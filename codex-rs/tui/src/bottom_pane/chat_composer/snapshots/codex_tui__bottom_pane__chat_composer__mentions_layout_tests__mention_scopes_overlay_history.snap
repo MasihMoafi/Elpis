@@ -1,6 +1,5 @@
 ---
 source: tui/src/bottom_pane/chat_composer/mentions_layout_tests.rs
-assertion_line: 141
 expression: buffer_text(&open)
 ---
 Transcript row 00: behind the menu
@@ -31,7 +30,7 @@ Transcript row 10: behind the menu
   Plugin07  Plugin description 07                                         Plugin
 ↓
   enter/tab insert · esc close · ↑/↓ select · ←/→ filter
-───────────────────────────────────────────────────────────────────────────────┐
-› @                                                                            │
-───────────────────────────────────────────────────────────────────────────────┘
+
+› @
+
   TRANSCRIPT STATUS

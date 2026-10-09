@@ -1,9 +1,7 @@
 ---
 source: tui/src/app/tests/navigation_reconnect_tests.rs
-assertion_line: 292
 expression: "render_bottom_popup(&app.chat_widget, 100)"
 ---
- Elpis · model gpt-5.6-sol default · location /tmp/project
   Agent command center  Group: Project  g
    All 2   Needs you 0   Working 1   Ready 1   Inactive 0
   ────────────────────────────────────────────────────────────────────────────────────────────────
@@ -12,14 +10,14 @@ expression: "render_bottom_popup(&app.chat_widget, 100)"
   /tmp/project  2                                         │ Selected task
   › ● Selected task                                       │ ● Working
     ○ Vanished task                                       │
+                                                          │ Model: Unknown
+                                                          │ Reasoning: Unknown
+                                                          │
                                                           │ Project
                                                           │ /tmp/project
-                                                          │ Model: Unknown
                                                           │
                                                           │ Prompt
                                                           │ Selected task
-                                                          │
-                                                          │
                                                           │
                                                           │
                                                           │

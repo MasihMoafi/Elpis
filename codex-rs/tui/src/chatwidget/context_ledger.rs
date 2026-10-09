@@ -127,7 +127,7 @@ pub(super) struct ContextLedgerState {
     pending_g: bool,
     why_visible: bool,
     /// Full screen only: the Ledger would leave the transcript too few rows, so it hides
-    /// until Tab or Alt+C focuses it.
+    /// until Alt+C focuses it.
     crowded: std::cell::Cell<bool>,
     pub(super) pending_smart_prune_enabled: Option<bool>,
     pub(super) pending_subagents_enabled: Option<bool>,
@@ -163,8 +163,8 @@ impl ChatWidget {
         self.context_ledger.visible && self.context_ledger.focused
     }
 
-    /// The ledger is a sidebar shown by default and toggled with `Tab` or `Alt+C`:
-    /// Tab focuses a visible sidebar, then closes it; Alt+C always toggles it.
+    /// The ledger is a sidebar shown by default and controlled with `Alt+C`:
+    /// Alt+C focuses the sidebar, then closes it. Tab closes only a focused sidebar.
     /// On narrower terminals it takes a proportional slice instead of a fixed
     /// 52 columns so the composer keeps room.
     pub(super) fn context_ledger_width(&self, terminal_width: u16) -> u16 {
@@ -182,7 +182,7 @@ impl ChatWidget {
     const FULL_SCREEN_MIN_TRANSCRIPT_ROWS: u16 = 8;
 
     /// Full screen only: an unfocused Ledger that would leave the transcript fewer than
-    /// `FULL_SCREEN_MIN_TRANSCRIPT_ROWS` rows hides; Tab or Alt+C still opens it whole.
+    /// `FULL_SCREEN_MIN_TRANSCRIPT_ROWS` rows hides; Alt+C still opens it whole.
     /// Inline mode passes `None`, which always shows the Ledger.
     pub(crate) fn fit_context_ledger_to_screen(&self, screen: Option<ratatui::layout::Size>) {
         self.context_ledger.crowded.set(false);
@@ -228,12 +228,13 @@ impl ChatWidget {
             return false;
         }
         let is_tab = matches!(key_event.code, KeyCode::Tab) && key_event.modifiers.is_empty();
-        let is_toggle_key = is_tab || key_hint::alt(KeyCode::Char('c')).is_press(key_event);
+        let is_toggle_key = (is_tab && self.context_ledger.focused)
+            || key_hint::alt(KeyCode::Char('c')).is_press(key_event);
         if is_toggle_key {
             let crowded_out = self.context_ledger.crowded.get() && !self.context_ledger.focused;
             if !self.context_ledger.visible
                 || crowded_out
-                || (is_tab && !self.context_ledger.focused && !self.bottom_pane.has_active_view())
+                || !self.context_ledger.focused
             {
                 self.context_ledger.visible = true;
                 self.context_ledger.focused = true;
@@ -538,7 +539,7 @@ impl ChatWidget {
         let interaction_hint = if self.context_ledger.focused {
             "Up/Down move · Space/Enter toggle · p prune · s subagents · i all · w why · Tab/Esc close"
         } else {
-            "Tab controls · Alt+C hide · Ctrl+click open file"
+            "Alt+C controls · Ctrl+click open file"
         };
         let mut lines = self.agent_ledger_lines(content_width);
         lines.extend(vec![

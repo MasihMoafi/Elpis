@@ -1,9 +1,11 @@
-//! Status tabs, task rows and read-only details share a simple wide/narrow layout.
+//! Status tabs, task rows, the rename editor and details share a wide/narrow layout.
 
 use super::hints::hint_line;
 use super::*;
 use crate::bottom_pane::render_filled_tab_bar;
 use crate::line_truncation::truncate_line_with_ellipsis_if_overflow;
+use crossterm::cursor::SetCursorStyle;
+use ratatui::widgets::WidgetRef;
 use unicode_segmentation::UnicodeSegmentation;
 
 pub(super) fn row(area: Rect, offset: u16, height: u16) -> Rect {
@@ -48,34 +50,24 @@ struct CenterLayout {
 
 impl AgentsOverviewView {
     fn center_layout(&self, area: Rect) -> CenterLayout {
+        let state = self.state();
+        let footer_height = u16::from(area.height >= 2);
         let header_height = if area.height >= 6 { 3 } else { 0 };
-        let footer_height = if area.height >= 2 {
-            self.center_footer_lines(area.width.saturating_sub(/*rhs*/ 4))
-                .len()
-                .min(usize::from(area.height.saturating_sub(header_height + 1))) as u16
-        } else {
-            0
-        };
         let footer = row(area, area.height - footer_height, footer_height);
         let header = row(area, /*offset*/ 0, header_height);
         let body = row(area, header_height, footer.y - header.bottom())
             .inner(Margin::new(/*horizontal*/ 2, /*vertical*/ 0));
         let [list, gap, details] = if body.width >= 90 {
-            // Wide screens give the selected agent's conversation room to read.
             Layout::horizontal([
                 Constraint::Min(46),
                 Constraint::Length(3),
-                Constraint::Length((body.width * 2 / 5).max(/*other*/ 38)),
+                Constraint::Length(38),
             ])
             .areas(body)
         } else {
             [body, Rect::default(), Rect::default()]
         };
-        let search = row(
-            list,
-            /*offset*/ 0,
-            u16::from(self.state().editing_metadata()),
-        );
+        let search = row(list, /*offset*/ 0, u16::from(state.editing_metadata()));
         let list = row(
             list,
             search.height,
@@ -97,20 +89,28 @@ impl Renderable for AgentsOverviewView {
         24
     }
 
+    fn cursor_style(&self, _area: Rect) -> SetCursorStyle {
+        let state = self.state();
+        if state.rename_target.is_some() && state.input.uses_vim_insert_cursor() {
+            SetCursorStyle::SteadyBar
+        } else {
+            SetCursorStyle::DefaultUserShape
+        }
+    }
+
     fn cursor_pos(&self, area: Rect) -> Option<(u16, u16)> {
         let layout = self.center_layout(area);
         let state = self.state();
         if state.editing_metadata() && !layout.search.is_empty() {
-            let input = if state.rename_target.is_some() {
-                &state.input
-            } else {
-                &state.search
-            };
-            let prefix = if state.rename_target.is_some() {
-                "Rename › "
-            } else {
-                "Search › "
-            };
+            if state.rename_target.is_some() {
+                let mut area = layout.search;
+                let prefix_width = 9.min(area.width);
+                area.x += prefix_width;
+                area.width -= prefix_width;
+                return state.input.cursor_pos(area);
+            }
+            let input = &state.search;
+            let prefix = "Search › ";
             let available = usize::from(layout.search.width).saturating_sub(prefix.width() + 1);
             return Some((
                 layout.search.x
@@ -128,7 +128,7 @@ impl Renderable for AgentsOverviewView {
         let layout = self.center_layout(area);
         let inset =
             |area: Rect| area.inner(Margin::new(/*horizontal*/ 2, /*vertical*/ 0));
-        let footer_lines = self.center_footer_lines(layout.footer.width.saturating_sub(/*rhs*/ 4));
+        let footer_hints = self.center_footer_hints();
         let state = self.state();
         let filter_keys = if state.editing_metadata() {
             String::new()
@@ -188,28 +188,43 @@ impl Renderable for AgentsOverviewView {
             buf,
         );
         if state.editing_metadata() {
-            let (label, input) = if state.rename_target.is_some() {
-                ("Rename › ", &state.input)
-            } else {
-                ("Search › ", &state.search)
-            };
-            let available = usize::from(layout.search.width).saturating_sub(label.width() + 1);
             buf.set_style(layout.search, crate::bottom_pane::active_tab_style());
-            line(
-                vec![
-                    label.cyan().bold(),
-                    visible_suffix(input, available).to_owned().into(),
-                ],
-                layout.search,
-                buf,
-            );
+            if state.rename_target.is_some() {
+                line("Rename › ".cyan().bold(), layout.search, buf);
+                let mut area = layout.search;
+                let prefix_width = 9.min(area.width);
+                area.x += prefix_width;
+                area.width -= prefix_width;
+                WidgetRef::render_ref(&&state.input, area, buf);
+            } else {
+                let label = "Search › ";
+                let available = usize::from(layout.search.width).saturating_sub(label.width() + 1);
+                line(
+                    vec![
+                        label.cyan().bold(),
+                        visible_suffix(&state.search, available).to_owned().into(),
+                    ],
+                    layout.search,
+                    buf,
+                );
+            }
         }
-        for (offset, hint) in footer_lines.into_iter().enumerate() {
-            line(
-                hint,
-                inset(row(layout.footer, offset as u16, /*height*/ 1)),
-                buf,
-            );
+        let notice = state
+            .connection_notice
+            .map(str::to_owned)
+            .or_else(|| {
+                state
+                    .creating_worktree
+                    .then(|| "Creating worktree…".to_owned())
+            })
+            .or_else(|| {
+                (state.refresh_failed && !state.loading).then(|| "Error loading tasks".to_owned())
+            })
+            .or_else(|| state.server_version_notice.clone());
+        if let Some(notice) = notice.filter(|_| !state.help && state.key_chord_hint.is_none()) {
+            line(notice.dim(), inset(layout.footer), buf);
+        } else {
+            line(hint_line(&footer_hints), inset(layout.footer), buf);
         }
         let help = state.help;
         drop(state);

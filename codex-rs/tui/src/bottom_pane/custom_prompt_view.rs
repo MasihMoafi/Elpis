@@ -57,8 +57,6 @@ pub(crate) struct CustomPromptView {
     completion: Option<ViewCompletion>,
     pending_suggestion: Option<PendingTextSuggestion>,
     user_edited: bool,
-    /// Elpis: render the input as bullets, for an API key.
-    masked: bool,
 }
 
 impl CustomPromptView {
@@ -86,14 +84,7 @@ impl CustomPromptView {
             completion: None,
             pending_suggestion: None,
             user_edited: false,
-            masked: false,
         }
-    }
-
-    /// Elpis: show the typed text as bullets, for an API key.
-    pub(crate) fn masked(mut self) -> Self {
-        self.masked = true;
-        self
     }
 
     /// Apply the same editor and Vim bindings used by the main composer.
