@@ -224,6 +224,25 @@ jobs:
           env -u CODEX_SKIP_BWRAP_BUILD cargo build --release --locked -p codex-bwrap --bin bwrap
           cp target/release/codex target/release/elpis
           test "$(target/release/elpis --version)" = "elpis $ELPIS_VERSION"
+      - name: Record diagnostic runtime provenance
+        if: ${{ !cancelled() && steps.runtime_build.outcome == 'success' }}
+        working-directory: codex-rs/target/release
+        run: |
+          printf '%s\n' "$GITHUB_SHA" > runtime-source.txt
+          sha256sum elpis codex-code-mode-host bwrap > runtime-SHA256SUMS
+      - name: Preserve unverified runtime for parallel terminal checks
+        if: ${{ !cancelled() && steps.runtime_build.outcome == 'success' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: unverified-diagnostic-runtime
+          path: |
+            codex-rs/target/release/elpis
+            codex-rs/target/release/codex-code-mode-host
+            codex-rs/target/release/bwrap
+            codex-rs/target/release/runtime-source.txt
+            codex-rs/target/release/runtime-SHA256SUMS
+          if-no-files-found: error
+          retention-days: 7
       - name: Native UI and retained Elpis interaction tests
         if: ${{ !cancelled() }}
         working-directory: codex-rs
@@ -308,25 +327,6 @@ jobs:
         with:
           name: elpis-linux-x86_64
           path: dist/*
-          if-no-files-found: error
-          retention-days: 7
-      - name: Record diagnostic runtime provenance
-        if: failure() && steps.runtime_build.outcome == 'success'
-        working-directory: codex-rs/target/release
-        run: |
-          printf '%s\n' "$GITHUB_SHA" > runtime-source.txt
-          sha256sum elpis codex-code-mode-host bwrap > runtime-SHA256SUMS
-      - name: Preserve runtime for investigating failed checks
-        if: failure() && steps.runtime_build.outcome == 'success'
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with:
-          name: unverified-diagnostic-runtime
-          path: |
-            codex-rs/target/release/elpis
-            codex-rs/target/release/codex-code-mode-host
-            codex-rs/target/release/bwrap
-            codex-rs/target/release/runtime-source.txt
-            codex-rs/target/release/runtime-SHA256SUMS
           if-no-files-found: error
           retention-days: 7
       - name: Preserve failed rendering snapshots for review
