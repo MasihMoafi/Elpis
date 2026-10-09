@@ -3363,8 +3363,12 @@ async fn deferred_executor_guardian_uses_newly_ready_step_environment(
     Ok(())
 }
 
+#[test_case(false; "withheld")]
+#[test_case(true; "admitted")]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn deferred_executor_loads_agents_md_when_environment_becomes_ready() -> Result<()> {
+async fn deferred_executor_loads_agents_md_when_environment_becomes_ready(
+    admitted: bool,
+) -> Result<()> {
     const AGENTS_CONTENT: &str = "REMOTE_AGENTS_INSTRUCTIONS";
 
     let listener = TcpListener::bind("127.0.0.1:0").await?;
@@ -3412,6 +3416,15 @@ async fn deferred_executor_loads_agents_md_when_environment_becomes_ready() -> R
         shutdown_rx,
     ));
     let test = expect_startup(builder.build(&server)).await;
+    // Elpis discovers both cases, but only a Ledger-admitted file reaches the model.
+    if admitted {
+        codex_core::elpis_context::set_continuity_source_admitted(
+            Some(codex_core::elpis_admission::memory_dir(&test.config).as_path()),
+            test.config.cwd.as_path(),
+            "Project AGENTS.md",
+            true,
+        )?;
+    }
 
     test.codex
         .start_or_steer_turn(TurnInputRequest::user_input(vec![UserInput::Text {
@@ -3440,8 +3453,14 @@ async fn deferred_executor_loads_agents_md_when_environment_becomes_ready() -> R
         tool_names(&requests[0].body_json()),
     );
     assert_eq!(agents_md_occurrences(&requests[0], AGENTS_CONTENT), 0);
-    assert_eq!(agents_md_occurrences(&requests[1], AGENTS_CONTENT), 1);
-    assert_eq!(agents_md_occurrences(&requests[2], AGENTS_CONTENT), 1);
+    assert_eq!(
+        agents_md_occurrences(&requests[1], AGENTS_CONTENT),
+        usize::from(admitted)
+    );
+    assert_eq!(
+        agents_md_occurrences(&requests[2], AGENTS_CONTENT),
+        usize::from(admitted)
+    );
     assert_eq!(environment_instructions_occurrences(&requests[0]), 1);
     assert_eq!(environment_instructions_occurrences(&requests[1]), 1);
     assert_eq!(environment_instructions_occurrences(&requests[2]), 1);

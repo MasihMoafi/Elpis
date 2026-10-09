@@ -13,9 +13,15 @@ Goal: make Elpis as usable as Masih’s installed Codex 0.162.0 while retaining 
 ## Acceptance evidence
 - Compare against the installed Codex version, not only Elpis’s older 0.160.0 vendor snapshot.
 - Exercise new and long chats, typing, streaming, queued messages, narrow/wide agents pages, folder ordering, model labels and the exact slash-command set.
+- Exercise two ordinary launcher windows with one Elpis home and different project folders. Their agents views must share live sessions and later connections, reflect rename/archive changes, and open an existing running session without starting a duplicate execution loop. A fixture with two clients on one bridge is insufficient.
 - Check permission promotion, revocation, rejected updates and resume across providers using actual runtime paths and failing controls.
 - Run focused Rust checks, terminal interaction checks and visual checks on the exact candidate. Record failures and provider limitations plainly.
 - Test final installed paths, retain a rollback copy, and give Masih a short user check. Automated evidence is not Masih’s acceptance.
+
+## Shared-session implementation
+One bridge serves an Elpis home; its ordinary terminal connections use one native app-server. Delegate connections retain private engines so a failed helper restriction can stop that helper. Provider turns retain one owner inside the bridge; other terminals subscribe and route requests to it. The bridge exits after all clients and active work are gone, without boot startup. A new installation must not silently reuse an incompatible running bridge.
+
+Checks must cover late attachment, owner disconnect, provider continuation/interruption, request-id collisions, approval routing to the parent chat, shared-engine failure, real cold restarts, and launcher races. Preserve existing terminals during installation; activate only a tested immutable bundle, with the existing rollback script.
 
 ## Authorization and limits
 Local implementation, tests, commits and installation are authorized. GitHub Actions is authorized for parallel verification; use only a scoped validation branch if a push is required, with no release/deployment steps. No main push, tags, publication, history/config deletion, or session restart.

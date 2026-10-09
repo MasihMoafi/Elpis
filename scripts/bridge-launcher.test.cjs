@@ -1,5 +1,5 @@
 'use strict';
-// Exercise the real launcher with a private home and a loopback-only bridge.
+// Exercise the real launcher with private homes and shared Unix-socket bridges.
 // A moving default command must not change the runtime selected for this session.
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -26,13 +26,29 @@ function launch(script, args, extra = {}) {
   assert.equal(result.status, 0, result.stderr);
   return result.stdout;
 }
-let output = launch('elpis-wrapper', ['resume', 'fixture-session']);
-assert(output.includes(`selected:${expected}`), output);
-assert(!output.includes('fallback'), output);
-assert.match(output, /arg:--remote\narg:ws:\/\/127\.0\.0\.1:\d+\narg:resume\narg:fixture-session/);
-console.log('PASS interactive wrapper pins the same runtime for bridge and TUI');
-output = launch('elpis-claude', ['resume', 'fixture-session']);
-assert(output.includes('fallback'), output);
-assert(!output.includes('selected:'), output);
-console.log('PASS standalone bridge launcher retains the default command when no runtime is selected');
-console.log(`Evidence: ${root}`);
+async function main() {
+  const standaloneHome = path.join(root, 'standalone');
+  fs.mkdirSync(standaloneHome);
+  try {
+    let output = launch('elpis-wrapper', ['resume', 'fixture-session']);
+    assert(output.includes(`selected:${expected}`), output);
+    assert(!output.includes('fallback'), output);
+    assert.match(output, /arg:--remote\narg:unix:\/\/[^\n]+\narg:resume\narg:fixture-session/);
+    console.log('PASS interactive wrapper pins the same runtime for bridge and TUI');
+    output = launch('elpis-claude', ['resume', 'fixture-session'], { ELPIS_HOME: standaloneHome });
+    assert(output.includes('fallback'), output);
+    assert(!output.includes('selected:'), output);
+    console.log('PASS standalone bridge launcher retains the default command when no runtime is selected');
+  } finally {
+    const { runtimeDir, startToken } = await import('../tools/elpis-claude/shared-runtime.mjs');
+    for (const home of [root, standaloneHome]) {
+      const stateFile = runtimeDir(home).state;
+      if (fs.existsSync(stateFile)) {
+        const state = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
+        if (startToken(state.pid) === state.token) process.kill(state.pid, 'SIGTERM');
+      }
+    }
+    console.log(`Evidence: ${root}`);
+  }
+}
+main().catch(e => { console.error(e); process.exitCode = 1; });
