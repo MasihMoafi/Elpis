@@ -1,6 +1,6 @@
 'use strict';
 // Remote TUI and a private websocket app-server, with an isolated home and local Responses fixture.
-// Usage: node scripts/terminal-input.test.cjs /absolute/path/to/elpis
+// Usage: node scripts/terminal-input.test.cjs /absolute/path/to/elpis [--bridge]
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -9,6 +9,7 @@ const { DatabaseSync } = require('node:sqlite');
 const { execFileSync, spawn } = require('node:child_process');
 const { Provider, message, call } = require('../editors/vscode/test/runtime-eval');
 const binary = process.argv[2];
+const useBridge = process.argv.includes('--bridge');
 assert(binary && path.isAbsolute(binary), 'provide the engine binary');
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'elpis-terminal-input-'));
 const home = path.join(root, 'home'), cwd = path.join(root, 'long-project-directory-for-title-visibility');
@@ -44,7 +45,13 @@ function threadSettings() {
   finally { db.close(); }
 }
 async function startAppServer(env) {
-  appServer = spawn(binary, ['app-server', '--listen', 'ws://127.0.0.1:0'], { cwd, env, stdio: ['ignore', 'pipe', 'pipe'] });
+  const bridgeLog = path.join(root, 'bridge.log');
+  appServer = useBridge
+    ? spawn(process.execPath, [path.resolve(__dirname, '../tools/elpis-claude/acp-bridge.mjs')], {
+      cwd, env: { ...env, PORT: '0', ELPIS_ENGINE_BIN: binary, ELPIS_NO_AGY: '1', ACP_BRIDGE_LOG: bridgeLog },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+    : spawn(binary, ['app-server', '--listen', 'ws://127.0.0.1:0'], { cwd, env, stdio: ['ignore', 'pipe', 'pipe'] });
   appServerExit = new Promise(resolve => appServer.once('exit', (code, signal) => resolve({ code, signal })));
   appServer.on('error', error => { appServerError = error; });
   const log = chunk => {
@@ -57,7 +64,9 @@ async function startAppServer(env) {
   while (Date.now() < deadline) {
     if (appServerError) throw appServerError;
     if (appServer.exitCode !== null || appServer.signalCode !== null) throw Error(`App-server exited before startup; evidence ${root}`);
-    const address = appServerLog.match(/ws:\/\/127\.0\.0\.1:\d+/)?.[0];
+    const bridgePort = useBridge && fs.existsSync(bridgeLog)
+      ? fs.readFileSync(bridgeLog, 'utf8').match(/LISTENING (\d+)/)?.[1] : null;
+    const address = bridgePort ? `ws://127.0.0.1:${bridgePort}` : appServerLog.match(/ws:\/\/127\.0\.0\.1:\d+/)?.[0];
     if (address) return address;
     await pause(100);
   }
@@ -185,6 +194,6 @@ async function stopAppServer() {
   try { tmux('kill-server'); } catch {}
   await stopAppServer();
   provider.close();
-  fs.writeFileSync(path.join(root, 'evidence.json'), JSON.stringify({ checks, savedPermissions, requests: provider.requests, titleRequests: provider.titleRequests, appServerExit: appServer && !appServerError ? await appServerExit : null }, null, 2));
+  fs.writeFileSync(path.join(root, 'evidence.json'), JSON.stringify({ useBridge, checks, savedPermissions, requests: provider.requests, titleRequests: provider.titleRequests, appServerExit: appServer && !appServerError ? await appServerExit : null }, null, 2));
   console.log(`Evidence: ${root}`);
 });
