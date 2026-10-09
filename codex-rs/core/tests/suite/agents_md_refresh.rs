@@ -173,6 +173,7 @@ async fn failed_global_read_keeps_instructions_until_recovery() -> Result<()> {
     let source = write_global_file(&home, GLOBAL_AGENTS_FILENAME, GLOBAL_INSTRUCTIONS)?;
     let mut builder = test_codex().with_home(Arc::clone(&home));
     let test = builder.build_with_auto_env(&server).await?;
+    admit_agents_md_rows(&test.config)?;
     test.submit_turn("initial instructions").await?;
 
     std::fs::remove_file(&source)?;
@@ -190,21 +191,16 @@ async fn failed_global_read_keeps_instructions_until_recovery() -> Result<()> {
     std::fs::remove_file(&source)?;
     write_global_file(&home, GLOBAL_AGENTS_FILENAME, NEW_GLOBAL_INSTRUCTIONS)?;
     test.submit_turn("load recovered instructions").await?;
+    // The recovered file replaces the retained copy; no replacement notice remains.
     let initial = expected_provider_only_instruction_fragment(GLOBAL_INSTRUCTIONS);
-    let replacement = expected_provider_only_instruction_fragment(&format!(
-        "These AGENTS.md instructions replace all previously provided AGENTS.md instructions.\n\n{NEW_GLOBAL_INSTRUCTIONS}"
-    ));
+    let replacement = expected_provider_only_instruction_fragment(NEW_GLOBAL_INSTRUCTIONS);
     assert_eq!(
         requests
             .requests()
             .iter()
             .map(instruction_fragments)
             .collect::<Vec<_>>(),
-        vec![
-            vec![initial.clone()],
-            vec![initial.clone()],
-            vec![initial, replacement]
-        ],
+        vec![vec![initial.clone()], vec![initial], vec![replacement]],
     );
     Ok(())
 }
@@ -238,6 +234,7 @@ async fn live_global_removal_preserves_repository_instructions(
             Ok(())
         });
     let test = builder.build_with_auto_env(&server).await?;
+    admit_agents_md_rows(&test.config)?;
     test.submit_turn("initial instructions").await?;
     match contents {
         Some(contents) => std::fs::write(&source, contents)?,
@@ -254,23 +251,15 @@ async fn live_global_removal_preserves_repository_instructions(
         cwd,
         &format!("{GLOBAL_INSTRUCTIONS}\n\n{PROJECT_SEPARATOR}\n\n{PROJECT_INSTRUCTIONS}"),
     );
-    let replacement = expected_instruction_fragment(
-        cwd,
-        &format!(
-            "These AGENTS.md instructions replace all previously provided AGENTS.md instructions.\n\n{PROJECT_INSTRUCTIONS}"
-        ),
-    );
+    // Removing the global file refills the one slot with the repository instructions alone.
+    let replacement = expected_instruction_fragment(cwd, PROJECT_INSTRUCTIONS);
     assert_eq!(
         requests
             .requests()
             .iter()
             .map(instruction_fragments)
             .collect::<Vec<_>>(),
-        vec![
-            vec![initial.clone()],
-            vec![initial.clone(), replacement.clone()],
-            vec![initial, replacement]
-        ],
+        vec![vec![initial], vec![replacement.clone()], vec![replacement]],
     );
     Ok(())
 }
@@ -305,6 +294,7 @@ async fn global_instructions_refresh_after_a_tool_in_the_same_turn() -> Result<(
                 .expect("test config should allow request-user-input feature");
         });
     let test = builder.build_with_auto_env(&server).await?;
+    admit_agents_md_rows(&test.config)?;
     test.codex
         .start_or_steer_turn(TurnInputRequest::user_input(vec![UserInput::Text {
             text: "ask before continuing".to_string(),
@@ -337,16 +327,14 @@ async fn global_instructions_refresh_after_a_tool_in_the_same_turn() -> Result<(
     })
     .await;
     let initial = expected_provider_only_instruction_fragment(GLOBAL_INSTRUCTIONS);
-    let replacement = expected_provider_only_instruction_fragment(&format!(
-        "These AGENTS.md instructions replace all previously provided AGENTS.md instructions.\n\n{NEW_GLOBAL_INSTRUCTIONS}"
-    ));
+    let replacement = expected_provider_only_instruction_fragment(NEW_GLOBAL_INSTRUCTIONS);
     assert_eq!(
         requests
             .requests()
             .iter()
             .map(instruction_fragments)
             .collect::<Vec<_>>(),
-        vec![vec![initial.clone()], vec![initial, replacement]],
+        vec![vec![initial], vec![replacement]],
     );
     Ok(())
 }
@@ -382,6 +370,7 @@ async fn interrupting_a_provider_read_allows_the_next_turn_to_refresh() -> Resul
         .with_home(Arc::clone(&home))
         .with_user_instructions_provider(provider.clone());
     let test = builder.build_with_auto_env(&server).await?;
+    admit_agents_md_rows(&test.config)?;
     provider.block_next.store(/*val*/ true, Ordering::SeqCst);
     test.codex
         .start_or_steer_turn(TurnInputRequest::user_input(vec![UserInput::Text {

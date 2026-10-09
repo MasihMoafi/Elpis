@@ -105,35 +105,35 @@ async fn running_descendants_refresh_only_shared_thread_instructions(shared: boo
     }));
     let previous_loads = previous_provider.load_count();
 
-    let replacement = format!(
-        "These AGENTS.md instructions replace all previously provided AGENTS.md instructions.\n\n{UPDATED}"
-    );
+    // Each step sets the provider's text and names the text a descendant sharing the provider
+    // then carries. AGENTS.md owns one history slot: an update replaces the earlier copy,
+    // clearing removes it, and neither adds a lifecycle notice.
     let updates = [
-        (Some(INITIAL), INITIAL),
-        (Some(UPDATED), replacement.as_str()),
-        (
-            None,
-            "The previously provided AGENTS.md instructions no longer apply.",
-        ),
-        (None, ""),
+        (Some(INITIAL), Some(INITIAL)),
+        (Some(UPDATED), Some(UPDATED)),
+        (None, None),
+        (None, None),
     ];
     let loads_before = provider.load_count();
     let mut request_history = Vec::new();
     // Both descendants stayed alive across the restart and must switch without another root turn.
     for descendant in descendants {
-        let mut expected = Vec::new();
-        for (contents, appended_fragment) in updates {
+        for (contents, shared_text) in updates {
             provider.set_instructions(contents.map(|text| Instructions {
                 text: text.to_owned(),
                 source: None,
             }));
             let response = mount_sse_once(&server, responses::sse_completed("child-step")).await;
             submit_thread_turn(&descendant, "continue with the current instructions").await?;
-            if expected.is_empty() || (shared && !appended_fragment.is_empty()) {
-                expected.push(expected_provider_only_instruction_fragment(
-                    appended_fragment,
-                ));
-            }
+            // Without sharing, a descendant keeps the instructions inherited when it started.
+            let expected: Vec<String> = if shared {
+                shared_text
+                    .map(expected_provider_only_instruction_fragment)
+                    .into_iter()
+                    .collect()
+            } else {
+                vec![expected_provider_only_instruction_fragment(INITIAL)]
+            };
             let request = response.single_request();
             assert_eq!(instruction_fragments(&request), expected);
             request_history.push(request);
@@ -258,12 +258,10 @@ async fn guardian_tracks_shared_instruction_updates_in_running_descendants() -> 
     }
     let requests = requests.requests();
     assert_eq!(requests.len(), 9);
-    let initial = format!("# AGENTS.md instructions\n\n<INSTRUCTIONS>\n{INITIAL}\n</INSTRUCTIONS>");
-    let updated = format!("# AGENTS.md instructions\n\n<INSTRUCTIONS>\n{UPDATED}\n</INSTRUCTIONS>");
-    let replacement = format!(
-        "# AGENTS.md instructions\n\n<INSTRUCTIONS>\nThese AGENTS.md instructions replace all previously provided AGENTS.md instructions.\n\n{UPDATED}\n</INSTRUCTIONS>"
-    );
-    let cleared = "# AGENTS.md instructions\n\n<INSTRUCTIONS>\nThe previously provided AGENTS.md instructions no longer apply.\n</INSTRUCTIONS>".to_owned();
+    let initial = expected_provider_only_instruction_fragment(INITIAL);
+    let updated = expected_provider_only_instruction_fragment(UPDATED);
+    // The worker holds one AGENTS.md copy at a time: the update replaces the initial copy and
+    // clearing removes it, with no lifecycle notice. Guardian reviews the applied snapshot.
     assert_eq!(
         requests
             .iter()
@@ -271,14 +269,14 @@ async fn guardian_tracks_shared_instruction_updates_in_running_descendants() -> 
             .collect::<Vec<_>>(),
         vec![
             vec![initial.clone()],
-            vec![initial.clone()],
-            vec![initial.clone(), replacement.clone()],
-            vec![initial.clone(), replacement.clone()],
+            vec![initial],
+            vec![updated.clone()],
+            vec![updated.clone()],
             vec![updated],
-            vec![initial.clone(), replacement.clone(), cleared.clone()],
-            vec![initial.clone(), replacement.clone(), cleared.clone()],
             vec![],
-            vec![initial, replacement, cleared],
+            vec![],
+            vec![],
+            vec![],
         ],
     );
     let reviewers = [1, 4, 7].map(|index| {
