@@ -480,7 +480,6 @@ wss.on("connection", (ws) => {
   const threadSandbox = new Map();
   const pendingDelegation = new Map(); // thread/start id -> the chat that delegated it
   const sessions = new Map();
-  const bridgeRequests = new Map();
   const acps = new Map();
   const claudeModel = new Map();
   const claudeEffort = new Map();
@@ -811,7 +810,6 @@ wss.on("connection", (ws) => {
     .then((r) => r?.config?.features?.multi_agent !== false, (e) => { log(`subagents switch unread: ${e.message ?? JSON.stringify(e)}`); return true; });
   const activeTurns = new Map(); // thread id -> its running Claude or Antigravity turn
   const engineTurns = new Map(); // thread id -> its running engine turn
-  let reqSeq = 0;
   // Providers may edit without callbacks in Accept edits, Auto, or Bypass. Stop a running turn
   // whose authority a restriction reduces; its next prompt applies the confirmed restricted mode.
   const stopIfReduced = (tid, previousAccess) => {
@@ -1896,11 +1894,6 @@ wss.on("connection", (ws) => {
     const line = data.toString();
     let msg;
     try { msg = JSON.parse(line); } catch { engine.stdin.write(line + "\n"); return; }
-    if (msg.id !== undefined && !msg.method && bridgeRequests.has(msg.id)) {
-      bridgeRequests.get(msg.id)(msg.result);
-      bridgeRequests.delete(msg.id);
-      return;
-    }
     if (msg.id !== undefined && !msg.method && relayed.has(msg.id)) {
       const relay = relayed.get(msg.id);
       if (relay.client !== ws) return;
