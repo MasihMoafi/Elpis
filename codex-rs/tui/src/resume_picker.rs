@@ -4,8 +4,6 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use crate::model_catalog::ModelCatalog;
-
 use crate::app_server_session::AppServerSession;
 use crate::clipboard_paste::normalize_pasted_search_query;
 use crate::clock_format::ClockFormat;
@@ -354,8 +352,6 @@ struct SessionPickerRunOptions {
     view_persistence: Option<SessionPickerViewPersistence>,
     keymap: RuntimeKeymap,
     initial_page_mode: PageLoadMode,
-    /// Elpis: names each chat's model as the agent center does.
-    model_catalog: Arc<ModelCatalog>,
 }
 
 /// Interactive session picker that lists app-server threads with simple search,
@@ -394,7 +390,6 @@ pub async fn run_resume_picker_with_app_server(
         app_server,
         archive_request_handle,
         SessionPickerLaunchContext::Startup,
-        Arc::new(ModelCatalog::new(Vec::new())),
     )
     .await
 }
@@ -413,7 +408,6 @@ pub async fn run_resume_picker_from_existing_session_with_app_server(
     app_server: AppServerSession,
     archive_request_handle: AppServerRequestHandle,
     current_thread_id: Option<ThreadId>,
-    model_catalog: Arc<ModelCatalog>,
 ) -> Result<SessionSelection> {
     run_resume_picker_with_launch_context(
         uses_remote_filesystem,
@@ -425,7 +419,6 @@ pub async fn run_resume_picker_from_existing_session_with_app_server(
         app_server,
         archive_request_handle,
         SessionPickerLaunchContext::ExistingSession { current_thread_id },
-        model_catalog,
     )
     .await
 }
@@ -444,7 +437,6 @@ async fn run_resume_picker_with_launch_context(
     app_server: AppServerSession,
     archive_request_handle: AppServerRequestHandle,
     launch_context: SessionPickerLaunchContext,
-    model_catalog: Arc<ModelCatalog>,
 ) -> Result<SessionSelection> {
     let (bg_tx, bg_rx) = mpsc::unbounded_channel();
     let uses_remote_workspace = app_server.uses_remote_workspace();
@@ -480,7 +472,6 @@ async fn run_resume_picker_with_launch_context(
         } else {
             PageLoadMode::StateDbOnly
         },
-        model_catalog,
     };
     run_session_picker_with_loader(
         tui,
@@ -519,7 +510,6 @@ pub async fn run_fork_picker_with_app_server(
     let local_filter_cwd = local_picker_cwd_filter(&cwd_filter, uses_remote_filesystem);
     let provider_filter = picker_provider_filter(config, &app_server).await?;
     let runtime_keymap = picker_runtime_keymap(local_settings)?;
-    let model_catalog = Arc::new(ModelCatalog::new(Vec::new()));
     let options = SessionPickerRunOptions {
         use_theme_colors: local_settings.tui.status_line_use_colors,
         copy_on_select: local_settings.copy_on_select(&codex_terminal_detection::terminal_info()),
@@ -543,7 +533,6 @@ pub async fn run_fork_picker_with_app_server(
         } else {
             PageLoadMode::StateDbOnly
         },
-        model_catalog,
     };
     run_session_picker_with_loader(
         tui,
@@ -587,7 +576,6 @@ async fn run_session_picker_with_loader(
     state.keymap = options.keymap;
     state.launch_context = options.launch_context;
     state.initial_page_mode = options.initial_page_mode;
-    state.model_catalog = options.model_catalog;
     state.start_initial_load();
     state.request_frame();
 
@@ -855,8 +843,6 @@ struct PickerState {
     clock_format: ClockFormat,
     use_theme_colors: bool,
     copy_on_select: bool,
-    /// Elpis: names each chat's model.
-    model_catalog: Arc<ModelCatalog>,
     mouse_scroll_speed: f64,
     // Resolve local filesystem membership once per cwd for each page-loading cycle.
     local_cwd_matches: HashMap<PathBuf, bool>,
@@ -993,33 +979,12 @@ struct Row {
     updated_at: Option<DateTime<Utc>>,
     cwd: Option<PathBuf>,
     git_branch: Option<String>,
-    /// Elpis: the model the chat last ran on, as the app server lists it.
-    model: Option<String>,
 }
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 enum SeenRowKey {
     Path(PathBuf),
     Thread(ThreadId),
-}
-
-impl PickerState {
-    /// Elpis: the display name of the model `row` last ran on.
-    fn model_name<'a>(&'a self, row: &'a Row) -> Option<&'a str> {
-        row.model
-            .as_deref()
-            .map(|model| self.model_catalog.display_name(model))
-    }
-
-    /// Elpis: the dense view's model column fits the longest name among the listed chats.
-    fn model_column_width(&self) -> usize {
-        self.all_rows
-            .iter()
-            .filter_map(|row| self.model_name(row))
-            .map(UnicodeWidthStr::width)
-            .max()
-            .map_or(0, |width| width + 2)
-    }
 }
 
 impl Row {
@@ -1080,7 +1045,6 @@ impl PickerState {
             clock_format: ClockFormat::system(),
             use_theme_colors: true,
             copy_on_select: false,
-            model_catalog: Arc::new(ModelCatalog::new(Vec::new())),
             mouse_scroll_speed: 1.0,
             requester,
             relative_time_reference: None,
@@ -2113,7 +2077,6 @@ fn row_from_app_server_thread(thread: Thread) -> Option<Row> {
             .map(|dt| dt.with_timezone(&Utc)),
         cwd: Some(thread.cwd.to_path_buf()),
         git_branch: thread.git_info.and_then(|git_info| git_info.branch),
-        model: thread.model.filter(|model| !model.is_empty()),
     })
 }
 
@@ -2926,7 +2889,6 @@ fn render_comfortable_session_lines(
         state.sort_key,
         &created,
         &updated,
-        state.model_name(row),
         branch,
         cwd.as_deref(),
         show_cwd,
@@ -2995,8 +2957,6 @@ fn render_dense_session_lines(
         marker,
         date: &date,
         title: row.display_preview(),
-        model: state.model_name(row),
-        model_width: state.model_column_width(),
         thread_id: row.thread_id,
         use_theme_colors: state.use_theme_colors,
         is_selected,
@@ -3015,8 +2975,6 @@ struct DenseSummaryInput<'a> {
     marker: Span<'static>,
     date: &'a str,
     title: &'a str,
-    model: Option<&'a str>,
-    model_width: usize,
     is_selected: bool,
     is_zebra: bool,
     width: u16,
@@ -3025,7 +2983,7 @@ struct DenseSummaryInput<'a> {
 fn dense_summary_line(input: DenseSummaryInput<'_>) -> Line<'static> {
     let marker_width = input.marker.width();
     let available = (input.width as usize).saturating_sub(marker_width);
-    let columns = dense_columns(available, input.model_width);
+    let columns = dense_columns(available);
     let title = session_title_span(
         dense_column_text(input.title, columns.title_width),
         input.thread_id,
@@ -3033,17 +2991,11 @@ fn dense_summary_line(input: DenseSummaryInput<'_>) -> Line<'static> {
         input.is_selected,
     );
 
-    let mut spans = vec![
+    let spans = vec![
         input.marker,
         dense_column_text(input.date, columns.date_width).set_style(secondary_text_style()),
         title,
     ];
-    if columns.model_width > 0 {
-        spans.push(
-            dense_column_text(input.model.unwrap_or_default(), columns.model_width)
-                .set_style(secondary_text_style()),
-        );
-    }
     let line = Line::from(spans);
     let row_style = if input.is_selected {
         dense_selected_style()
@@ -3058,17 +3010,13 @@ fn dense_summary_line(input: DenseSummaryInput<'_>) -> Line<'static> {
 struct DenseColumns {
     date_width: usize,
     title_width: usize,
-    model_width: usize,
 }
 
-/// Elpis: the model column takes at most a third of what the date leaves.
-fn dense_columns(width: usize, model_width: usize) -> DenseColumns {
+fn dense_columns(width: usize) -> DenseColumns {
     let date_width = SESSION_META_DATE_WIDTH;
-    let model_width = model_width.min(width.saturating_sub(date_width) / 3);
     DenseColumns {
         date_width,
-        title_width: width.saturating_sub(date_width + model_width),
-        model_width,
+        title_width: width.saturating_sub(date_width),
     }
 }
 
@@ -3128,7 +3076,6 @@ fn render_footer_lines(
     sort_key: ThreadSortKey,
     created: &str,
     updated: &str,
-    model: Option<&str>,
     branch: Option<&str>,
     cwd: Option<&str>,
     show_cwd: bool,
@@ -3141,7 +3088,6 @@ fn render_footer_lines(
         }
     };
     let mut parts = vec![FooterPart::Date(date.to_string())];
-    parts.extend(model.map(|model| FooterPart::Model(model.to_string())));
     if show_cwd {
         parts.push(FooterPart::Cwd(cwd.map(str::to_string)));
     }
@@ -3151,8 +3097,6 @@ fn render_footer_lines(
 
 enum FooterPart {
     Date(String),
-    /// Elpis: the model the chat last ran on.
-    Model(String),
     Branch(Option<String>),
     Cwd(Option<String>),
 }
@@ -3160,7 +3104,7 @@ enum FooterPart {
 impl FooterPart {
     fn text(&self) -> &str {
         match self {
-            FooterPart::Date(text) | FooterPart::Model(text) => text,
+            FooterPart::Date(text) => text,
             FooterPart::Branch(Some(text)) | FooterPart::Cwd(Some(text)) => text,
             FooterPart::Branch(None) => "no branch",
             FooterPart::Cwd(None) => "no cwd",
@@ -3169,7 +3113,7 @@ impl FooterPart {
 
     fn prefix(&self) -> Option<&'static str> {
         match self {
-            FooterPart::Date(_) | FooterPart::Model(_) => None,
+            FooterPart::Date(_) => None,
             FooterPart::Branch(_) => Some(SESSION_META_BRANCH_ICON),
             FooterPart::Cwd(_) => Some(SESSION_META_CWD_ICON),
         }
@@ -3252,10 +3196,7 @@ fn footer_line(parts: Vec<FooterPart>, width: usize, cwd_width: usize) -> Line<'
         let target_width = match part {
             FooterPart::Date(_) if padded => Some(SESSION_META_DATE_WIDTH),
             FooterPart::Cwd(_) if padded => Some(cwd_width),
-            FooterPart::Date(_)
-            | FooterPart::Model(_)
-            | FooterPart::Branch(_)
-            | FooterPart::Cwd(_) => None,
+            FooterPart::Date(_) | FooterPart::Branch(_) | FooterPart::Cwd(_) => None,
         };
         let used_width = push_footer_part(&mut spans, part, target_width, remaining_width);
         remaining_width = remaining_width.saturating_sub(used_width);
@@ -3376,10 +3317,8 @@ fn render_expanded_session_details(
         row.git_branch.as_deref().unwrap_or("no branch")
     );
 
-    let model = state.model_name(row).unwrap_or("-");
     vec![
         expanded_detail_line("Session:", &session, width),
-        expanded_detail_line("Model:", model, width),
         expanded_time_detail_line(
             "Created:",
             reference,
@@ -3726,7 +3665,6 @@ mod tests {
             updated_at: Some(timestamp),
             cwd: None,
             git_branch: None,
-            model: None,
         }
     }
 
@@ -3807,7 +3745,6 @@ mod tests {
             updated_at: None,
             cwd: None,
             git_branch: None,
-            model: None,
         };
 
         assert_eq!(row.display_preview(), "My session");
@@ -4197,7 +4134,6 @@ mod tests {
             updated_at: None,
             cwd: Some(PathBuf::from("/tmp/codex-session-picker")),
             git_branch: Some(String::from("fcoury/session-picker")),
-            model: None,
         };
 
         assert!(row.matches_query("session-picker"));
@@ -4259,7 +4195,6 @@ mod tests {
             updated_at: parse_timestamp_str("2026-05-02T14:48:19Z"),
             cwd: Some(PathBuf::from("/Users/felipe.coury/code/codex")),
             git_branch: Some(String::from("codex/raw-scrollback-mode")),
-            model: None,
         };
 
         let rendered = render_expanded_session_details(&row, &state, /*width*/ 120)
@@ -4286,7 +4221,6 @@ mod tests {
             ThreadSortKey::UpdatedAt,
             "5h ago",
             "3h ago",
-            /*model*/ None,
             Some("main"),
             Some("tmp/codex"),
             /*show_cwd*/ true,
@@ -4296,7 +4230,6 @@ mod tests {
             ThreadSortKey::CreatedAt,
             "5h ago",
             "3h ago",
-            /*model*/ None,
             Some("main"),
             Some("tmp/codex"),
             /*show_cwd*/ true,
@@ -4319,7 +4252,6 @@ mod tests {
             ThreadSortKey::UpdatedAt,
             "5h ago",
             "3h ago",
-            /*model*/ None,
             /*branch*/ None,
             Some("/tmp/codex"),
             /*show_cwd*/ true,
@@ -4340,7 +4272,6 @@ mod tests {
             ThreadSortKey::UpdatedAt,
             "5h ago",
             "4h ago",
-            /*model*/ None,
             Some(branch),
             Some("~/code/codex.etraut-animations-false-improvements/codex-rs"),
             /*show_cwd*/ true,
@@ -4359,7 +4290,6 @@ mod tests {
             ThreadSortKey::UpdatedAt,
             "5h ago",
             "4h ago",
-            /*model*/ None,
             Some(branch),
             Some(cwd),
             /*show_cwd*/ true,
@@ -4380,7 +4310,6 @@ mod tests {
             ThreadSortKey::UpdatedAt,
             "5h ago",
             "4h ago",
-            /*model*/ None,
             Some("owner/branch"),
             Some("~/code/codex.owner-worktree/codex-rs"),
             /*show_cwd*/ false,
@@ -4512,7 +4441,6 @@ mod tests {
             updated_at: None,
             cwd: Some(PathBuf::from("/srv/real-project")),
             git_branch: None,
-            model: None,
         };
 
         assert!(state.row_matches_filter(&row));
@@ -4538,7 +4466,6 @@ mod tests {
             updated_at: None,
             cwd: Some(PathBuf::from("/srv/remote-project")),
             git_branch: None,
-            model: None,
         };
 
         assert!(state.row_matches_filter(&row));
@@ -4567,7 +4494,6 @@ mod tests {
                 updated_at: Some(now - Duration::seconds(42)),
                 cwd: None,
                 git_branch: None,
-                model: None,
             },
             Row {
                 path: Some(PathBuf::from("/tmp/b.jsonl")),
@@ -4578,7 +4504,6 @@ mod tests {
                 updated_at: Some(now - Duration::minutes(35)),
                 cwd: None,
                 git_branch: None,
-                model: None,
             },
             Row {
                 path: Some(PathBuf::from("/tmp/c.jsonl")),
@@ -4589,7 +4514,6 @@ mod tests {
                 updated_at: Some(now - Duration::hours(2)),
                 cwd: None,
                 git_branch: None,
-                model: None,
             },
         ];
         state.all_rows = rows.clone();
@@ -5015,7 +4939,6 @@ mod tests {
             updated_at: None,
             cwd: None,
             git_branch: None,
-            model: None,
         }];
 
         state
@@ -5054,7 +4977,6 @@ mod tests {
                 updated_at: None,
                 cwd: None,
                 git_branch: None,
-                model: None,
             },
             Row {
                 path: None,
@@ -5065,7 +4987,6 @@ mod tests {
                 updated_at: None,
                 cwd: None,
                 git_branch: None,
-                model: None,
             },
         ];
         state.pending_transcript_open = Some(thread_id);
@@ -5190,7 +5111,6 @@ mod tests {
                 updated_at: None,
                 cwd: None,
                 git_branch: None,
-                model: None,
             },
             Row {
                 path: None,
@@ -5201,7 +5121,6 @@ mod tests {
                 updated_at: None,
                 cwd: None,
                 git_branch: None,
-                model: None,
             },
         ];
         state.update_viewport(/*rows*/ 7, /*width*/ 80);
@@ -5257,7 +5176,6 @@ mod tests {
             updated_at: None,
             cwd: None,
             git_branch: None,
-            model: None,
         }];
 
         state
@@ -5288,7 +5206,6 @@ mod tests {
             updated_at: None,
             cwd: None,
             git_branch: None,
-            model: None,
         }];
 
         state
@@ -5430,7 +5347,6 @@ mod tests {
             updated_at: None,
             cwd: None,
             git_branch: None,
-            model: None,
         }];
         state.transcript_cells.insert(
             thread_id,
@@ -5595,7 +5511,6 @@ session_picker_view = "dense"
             updated_at: None,
             cwd: None,
             git_branch: None,
-            model: None,
         }];
 
         state
@@ -5635,7 +5550,6 @@ session_picker_view = "dense"
             updated_at: None,
             cwd: None,
             git_branch: None,
-            model: None,
         }];
 
         state
@@ -5715,7 +5629,6 @@ session_picker_view = "dense"
                 "/Users/felipe.coury/code/codex.fcoury-session-picker/codex-rs",
             )),
             git_branch: Some(String::from("fcoury/session-picker")),
-            model: None,
         }
     }
 
@@ -5781,63 +5694,6 @@ session_picker_view = "dense"
         );
     }
 
-    /// Elpis: each chat names its model, as the agent center does, in both views and in the
-    /// expanded details. Negative: a chat with no recorded model names none.
-    #[test]
-    fn session_rows_name_their_model() {
-        let mut preset = crate::test_support::TEST_MODEL_PRESETS[0].clone();
-        preset.model = String::from("claude/opus");
-        preset.display_name = String::from("Opus 5.5 (Claude subscription)");
-        let loader = page_only_loader(|_| {});
-        let mut state = PickerState::new(
-            FrameRequester::test_dummy(),
-            loader,
-            ProviderFilter::MatchDefault(String::from("openai")),
-            /*show_all*/ true,
-            /*filter_cwd*/ None,
-            SessionPickerAction::Resume,
-        );
-        state.relative_time_reference =
-            Some(parse_timestamp_str("2026-04-28T18:00:00Z").expect("timestamp"));
-        state.model_catalog = Arc::new(crate::model_catalog::ModelCatalog::new(vec![preset]));
-        let mut claude = dense_snapshot_row();
-        claude.model = Some(String::from("claude/opus"));
-        let unknown = dense_snapshot_row();
-        state.all_rows = vec![claude.clone(), unknown.clone()];
-        let text = |lines: Vec<Line<'static>>| {
-            lines
-                .into_iter()
-                .map(|line| line.to_string())
-                .collect::<Vec<_>>()
-                .join("\n")
-        };
-        let dense = |row: &Row| {
-            text(render_dense_session_lines(
-                row, &state, /*is_selected*/ false, /*is_expanded*/ false,
-                /*is_zebra*/ false, /*width*/ 140,
-            ))
-        };
-        let comfortable = |row: &Row| {
-            text(render_comfortable_session_lines(
-                row, &state, /*is_selected*/ false, /*is_expanded*/ false,
-                /*is_zebra*/ false, /*width*/ 140,
-            ))
-        };
-
-        for shown in [
-            dense(&claude),
-            comfortable(&claude),
-            text(render_expanded_session_details(
-                &claude, &state, /*width*/ 140,
-            )),
-        ] {
-            assert!(shown.contains("Opus 5.5 (Claude subscription)"), "{shown}");
-        }
-        for shown in [dense(&unknown), comfortable(&unknown)] {
-            assert!(!shown.contains("Opus"), "{shown}");
-        }
-    }
-
     #[test]
     fn dense_session_line_prefers_thread_name_over_preview() {
         let mut row = dense_snapshot_row();
@@ -5875,8 +5731,6 @@ session_picker_view = "dense"
             marker: selection_marker(/*is_selected*/ true, /*is_expanded*/ false),
             date: "15m ago",
             title: "Selected dense row",
-            model: None,
-            model_width: 0,
             thread_id: None,
             use_theme_colors: true,
             is_selected: true,
@@ -5895,8 +5749,6 @@ session_picker_view = "dense"
             marker: selection_marker(/*is_selected*/ false, /*is_expanded*/ false),
             date: "15m ago",
             title: "Zebra dense row",
-            model: None,
-            model_width: 0,
             thread_id: None,
             use_theme_colors: true,
             is_selected: false,
@@ -6003,7 +5855,6 @@ session_picker_view = "dense"
             updated_at: parse_timestamp_str("2026-04-28T17:45:00Z"),
             cwd: Some(PathBuf::from("/tmp/codex")),
             git_branch: Some(String::from("fcoury/session-picker")),
-            model: None,
         };
         let mut state = PickerState::new(
             FrameRequester::test_dummy(),
@@ -6076,7 +5927,6 @@ session_picker_view = "dense"
             updated_at: parse_timestamp_str("2026-04-28T17:45:00Z"),
             cwd: Some(PathBuf::from("/tmp/codex")),
             git_branch: Some(String::from("fcoury/session-picker")),
-            model: None,
         };
         let mut state = PickerState::new(
             FrameRequester::test_dummy(),
@@ -6135,7 +5985,6 @@ session_picker_view = "dense"
                 updated_at: Some(now - Duration::minutes(idx * 5)),
                 cwd: None,
                 git_branch: None,
-                model: None,
             })
             .collect();
         state.filtered_rows = state.all_rows.clone();
@@ -6188,7 +6037,6 @@ session_picker_view = "dense"
                 updated_at: Some(now - Duration::minutes(idx * 5)),
                 cwd: None,
                 git_branch: None,
-                model: None,
             })
             .collect();
         state.filtered_rows = state.all_rows.clone();
@@ -6756,7 +6604,6 @@ session_picker_view = "dense"
             updated_at: None,
             cwd: None,
             git_branch: None,
-            model: None,
         };
         state.all_rows = vec![row.clone()];
         state.filtered_rows = vec![row];
@@ -6796,7 +6643,6 @@ session_picker_view = "dense"
             updated_at: None,
             cwd: None,
             git_branch: None,
-            model: None,
         };
         state.all_rows = vec![row.clone()];
         state.filtered_rows = vec![row];
@@ -6836,7 +6682,7 @@ session_picker_view = "dense"
             daybreak_enabled: None,
             history_mode: Default::default(),
             model_provider: String::from("openai"),
-            model: Some(String::from("claude/opus")),
+            model: None,
             reasoning_effort: None,
             created_at: 1,
             updated_at: 2,
@@ -6860,8 +6706,6 @@ session_picker_view = "dense"
         assert_eq!(row.path, None);
         assert_eq!(row.thread_id, Some(thread_id));
         assert_eq!(row.thread_name, Some(String::from("Named thread")));
-        // Elpis: the model the chat ran on.
-        assert_eq!(row.model.as_deref(), Some("claude/opus"));
     }
 
     #[test]
