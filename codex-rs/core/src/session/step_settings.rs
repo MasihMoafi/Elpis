@@ -74,23 +74,27 @@ impl ResolvedStepSettings {
         }
     }
 
-    pub(super) fn with_live_permissions(
-        &self,
-        permissions: &super::step_context::LivePermissions,
-    ) -> crate::config::ConstraintResult<Self> {
+    /// Elpis: an approval policy accepted after these settings were captured. The policy must
+    /// satisfy the same constraint as the captured one.
+    pub(super) fn with_approval_policy(&self, policy: AskForApproval) -> ConstraintResult<Self> {
         let mut selected = self.selected.as_ref().clone();
-        if let Some(policy) = permissions.approval_policy {
-            selected.approval_policy.set(policy)?;
+        selected.approval_policy.set(policy)?;
+        Ok(Self {
+            selected: Arc::new(selected),
+            ..self.clone()
+        })
+    }
+
+    /// Elpis: a reviewer accepted after these settings were captured. Like 0.162's live
+    /// reviewer update, it also binds MCP.
+    pub(super) fn with_approvals_reviewer(&self, reviewer: ApprovalsReviewer) -> Self {
+        let mut selected = self.selected.as_ref().clone();
+        selected.approvals_reviewer = reviewer;
+        Self {
+            selected: Arc::new(selected),
+            mcp_approvals_reviewer_override: Some(reviewer),
+            ..self.clone()
         }
-        if let Some(reviewer) = permissions.approvals_reviewer {
-            selected.approvals_reviewer = reviewer;
-        }
-        let mut updated = self.clone();
-        updated.selected = Arc::new(selected);
-        if let Some(reviewer) = permissions.approvals_reviewer {
-            updated.mcp_approvals_reviewer_override = Some(reviewer);
-        }
-        Ok(updated)
     }
 
     pub(crate) fn reasoning_effort(&self) -> Option<&ReasoningEffort> {

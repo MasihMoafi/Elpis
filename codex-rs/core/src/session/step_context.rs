@@ -2,7 +2,10 @@
 
 use std::sync::Arc;
 
+use super::session::Session;
+use super::session::SessionConfiguration;
 use crate::agents_md::LoadedAgentsMd;
+use crate::config::ConstraintResult;
 use crate::config::TokenBudgetConfig;
 use crate::environment_selection::TurnEnvironmentSnapshot;
 use crate::realtime_conversation::RealtimeConversationSnapshot;
@@ -16,7 +19,10 @@ use codex_extension_api::ExtensionData;
 use codex_file_system::EnvironmentAccess;
 use codex_mcp::McpBinding;
 use codex_otel::SessionTelemetry;
+use codex_protocol::config_types::ApprovalsReviewer;
 use codex_protocol::items::ModelInvocationContext;
+use codex_protocol::models::PermissionProfileSnapshot;
+use codex_protocol::protocol::AskForApproval;
 use codex_protocol::protocol::TurnContextItem;
 use tokio_util::sync::CancellationToken;
 
@@ -92,54 +98,176 @@ impl StepContext {
     }
 }
 
-/// Only explicit, accepted permission selections may replace an in-flight step's authority.
+/// Elpis: an approval policy and thread profile accepted after a turn started. `None` keeps
+/// the turn's own value. A reviewer accepted during the turn goes into 0.162's live step
+/// settings instead, so whichever reviewer update is accepted last applies.
 #[derive(Clone, Debug, Default)]
 pub(super) struct LivePermissions {
-    pub(super) approval_policy: Option<codex_protocol::protocol::AskForApproval>,
-    pub(super) approvals_reviewer: Option<codex_protocol::config_types::ApprovalsReviewer>,
-    pub(super) profile: Option<codex_protocol::models::PermissionProfileSnapshot>,
+    pub(super) approval_policy: Option<AskForApproval>,
+    pub(super) profile: Option<PermissionProfileSnapshot>,
+}
+
+impl LivePermissions {
+    /// The thread's accepted permissions, for work that outlived the turn it started in.
+    fn of_thread(configuration: &SessionConfiguration) -> Self {
+        Self {
+            approval_policy: Some(configuration.step_settings.approval_policy.value()),
+            profile: Some(
+                configuration
+                    .inferred_environment_config()
+                    .permission_profile,
+            ),
+        }
+    }
+
+    /// Applies these permissions to captured settings and to the thread-owned environments.
+    pub(super) fn apply(
+        &self,
+        settings: Arc<ResolvedStepSettings>,
+        environments: &mut TurnEnvironmentSnapshot,
+    ) -> ConstraintResult<Arc<ResolvedStepSettings>> {
+        if let Some(profile) = &self.profile {
+            environments.apply_live_permission_profile(profile);
+        }
+        match self.approval_policy {
+            Some(policy) => settings.with_approval_policy(policy).map(Arc::new),
+            None => Ok(settings),
+        }
+    }
+}
+
+/// Elpis: the permissions accepted for a turn so far. Readers that act for the turn after it
+/// started use these, not the turn's starting configuration.
+impl TurnContext {
+    /// 0.162's live step settings with the approval policy accepted since the turn started.
+    pub(crate) fn current_step_settings(&self) -> ConstraintResult<Arc<ResolvedStepSettings>> {
+        let settings = self.next_step_settings.load_full();
+        match self
+            .live_permissions
+            .load()
+            .as_ref()
+            .and_then(|permissions| permissions.approval_policy)
+        {
+            Some(policy) => settings.with_approval_policy(policy).map(Arc::new),
+            None => Ok(settings),
+        }
+    }
+
+    /// The approval policy accepted for this turn so far.
+    pub(crate) fn current_approval_policy(&self) -> AskForApproval {
+        self.live_permissions
+            .load()
+            .as_ref()
+            .and_then(|permissions| permissions.approval_policy)
+            .unwrap_or_else(|| self.approval_policy())
+    }
+
+    /// The reviewer accepted for this turn so far, held in 0.162's live step settings.
+    pub(crate) fn current_approvals_reviewer(&self) -> ApprovalsReviewer {
+        self.next_step_settings.load().approvals_reviewer()
+    }
+
+    /// The thread permission profile accepted for this turn so far.
+    pub(crate) fn current_thread_permission_profile(&self) -> PermissionProfileSnapshot {
+        self.live_permissions
+            .load()
+            .as_ref()
+            .and_then(|permissions| permissions.profile.clone())
+            .unwrap_or_else(|| {
+                self.config
+                    .permissions
+                    .permission_profile_state()
+                    .snapshot()
+            })
+    }
+
+    /// Gives the turn's thread-owned environments the profile accepted since it started.
+    pub(crate) fn apply_current_permission_profile(
+        &self,
+        environments: &mut TurnEnvironmentSnapshot,
+    ) {
+        if let Some(permissions) = self.live_permissions.load_full()
+            && let Some(profile) = &permissions.profile
+        {
+            environments.apply_live_permission_profile(profile);
+        }
+    }
+
+    /// Whether the turn's next action has Full Access. A selection the turn's constraints
+    /// reject counts as restricted.
+    pub(crate) fn has_current_full_access(&self) -> bool {
+        let Ok(settings) = self.current_step_settings() else {
+            return false;
+        };
+        let mut environments = self.initial_environments.clone();
+        self.apply_current_permission_profile(&mut environments);
+        environments.has_full_access(
+            settings.approval_policy(),
+            self.current_thread_permission_profile()
+                .permission_profile(),
+        )
+    }
 }
 
 impl StepContext {
-    pub(crate) fn with_current_permissions(
+    /// This step under the permissions its turn accepted after the step was captured.
+    fn with_turn_permissions(self: Arc<Self>) -> ConstraintResult<Arc<Self>> {
+        let reviewer = self.turn.current_approvals_reviewer();
+        let permissions = self.turn.live_permissions.load_full();
+        self.with_permissions(reviewer, permissions.as_deref())
+    }
+
+    fn with_permissions(
         self: Arc<Self>,
-    ) -> crate::config::ConstraintResult<Arc<Self>> {
-        let Some(permissions) = self.turn.live_permissions.load_full() else {
+        reviewer: ApprovalsReviewer,
+        permissions: Option<&LivePermissions>,
+    ) -> ConstraintResult<Arc<Self>> {
+        let reviewer_changed = reviewer != self.settings.approvals_reviewer();
+        if !reviewer_changed && permissions.is_none() {
             return Ok(self);
-        };
+        }
         let mut current = self.as_ref().clone();
-        current.settings = Arc::new(current.settings.with_live_permissions(&permissions)?);
-        if let Some(profile) = &permissions.profile {
-            current.environments.apply_live_permission_profile(profile);
+        if reviewer_changed {
+            current.settings = Arc::new(current.settings.with_approvals_reviewer(reviewer));
+        }
+        if let Some(permissions) = permissions {
+            current.settings =
+                permissions.apply(Arc::clone(&current.settings), &mut current.environments)?;
         }
         Ok(Arc::new(current))
     }
+}
 
-    /// A permission change accepted during this turn also binds a child it spawns; the turn's
-    /// config still holds the permissions it started with.
-    pub(crate) fn apply_live_permissions_to_child(
+impl Session {
+    /// Elpis: a tool call's step under the permissions accepted now. A step of the running
+    /// turn takes that turn's accepted changes. A step that outlived its turn, such as a Code
+    /// Mode cell's, takes the thread's: its turn no longer receives changes.
+    pub(crate) async fn with_current_permissions(
         &self,
-        config: &mut crate::config::Config,
-    ) -> Result<(), String> {
-        let Some(permissions) = self.turn.live_permissions.load_full() else {
-            return Ok(());
+        step: Arc<StepContext>,
+    ) -> ConstraintResult<Arc<StepContext>> {
+        let running = self
+            .active_turn
+            .lock()
+            .await
+            .as_ref()
+            .and_then(|turn| turn.task.as_ref())
+            .is_some_and(|task| Arc::ptr_eq(&task.turn_context, &step.turn));
+        if running {
+            return step.with_turn_permissions();
+        }
+        let (reviewer, permissions) = {
+            let state = self.state.lock().await;
+            let configuration = &state.session_configuration;
+            (
+                configuration.step_settings.approvals_reviewer,
+                LivePermissions::of_thread(configuration),
+            )
         };
-        if let Some(policy) = permissions.approval_policy {
-            config
-                .permissions
-                .approval_policy
-                .set(policy)
-                .map_err(|err| format!("approval_policy is invalid: {err}"))?;
-        }
-        if let Some(reviewer) = permissions.approvals_reviewer {
-            config.approvals_reviewer = reviewer;
-        }
-        if let Some(profile) = &permissions.profile {
-            config
-                .permissions
-                .set_permission_profile_from_session_snapshot(profile.clone())
-                .map_err(|err| format!("permission_profile is invalid: {err}"))?;
-        }
-        Ok(())
+        step.with_permissions(reviewer, Some(&permissions))
     }
 }
+
+#[cfg(test)]
+#[path = "live_permissions_tests.rs"]
+mod tests;

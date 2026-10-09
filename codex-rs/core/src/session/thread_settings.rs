@@ -2,6 +2,7 @@
 //! with checkpoints written directly to storage.
 
 use super::session::Session;
+use super::session::SessionConfiguration;
 use super::session::SessionSettingsCommit;
 use super::session::SessionSettingsUpdate;
 use super::step_settings::StepSettingsUpdate;
@@ -15,6 +16,7 @@ use codex_protocol::protocol::ThreadSettingsAppliedEvent;
 use codex_protocol::protocol::ThreadSettingsOverrides;
 use codex_protocol::protocol::ThreadSettingsSnapshot;
 use codex_thread_store::ThreadStoreResult;
+use std::sync::Arc;
 use tokio::sync::SemaphorePermit;
 
 impl Session {
@@ -49,42 +51,84 @@ async fn commit_update(
     session: &Session,
     updates: SessionSettingsUpdate,
 ) -> ConstraintResult<SessionSettingsCommit> {
+    let Some(commit) = commit_update_if(session, updates, |_, _| true).await? else {
+        unreachable!("unconditional settings updates must commit");
+    };
+    Ok(commit)
+}
+
+/// Elpis: `commit_update` when `should_commit` accepts the current and proposed settings,
+/// judged under the lock that publishes them.
+async fn commit_update_if(
+    session: &Session,
+    updates: SessionSettingsUpdate,
+    should_commit: impl FnOnce(&SessionConfiguration, &SessionConfiguration) -> bool + Send,
+) -> ConstraintResult<Option<SessionSettingsCommit>> {
     let policy_changed = updates.step_settings.approval_policy.is_some();
     let reviewer_changed = updates.step_settings.approvals_reviewer.is_some();
     let profile_changed = updates.permission_profile.is_some() || updates.sandbox_policy.is_some();
-    let commit = session.update_settings(updates).await?;
+    let Some(commit) = session.update_settings_if(updates, should_commit).await? else {
+        return Ok(None);
+    };
     if policy_changed || reviewer_changed || profile_changed {
         let active = session.active_turn.lock().await;
         if let Some(task) = active.as_ref().and_then(|active| active.task.as_ref()) {
-            let mut permissions = task
-                .turn_context
-                .live_permissions
-                .load_full()
-                .as_deref()
-                .cloned()
-                .unwrap_or_default();
-            if policy_changed {
-                permissions.approval_policy =
-                    Some(commit.configuration.step_settings.approval_policy.value());
-            }
+            let turn = &task.turn_context;
             if reviewer_changed {
-                permissions.approvals_reviewer =
-                    Some(commit.configuration.step_settings.approvals_reviewer);
+                // 0.162's live reviewer slot: a later turn-settings update replaces it.
+                let settings = turn.next_step_settings.load_full();
+                turn.next_step_settings
+                    .store(Arc::new(settings.with_approvals_reviewer(
+                        commit.configuration.step_settings.approvals_reviewer,
+                    )));
             }
-            if profile_changed {
-                permissions.profile = Some(
-                    commit
-                        .configuration
-                        .inferred_environment_config()
-                        .permission_profile,
-                );
+            if policy_changed || profile_changed {
+                let mut permissions = turn
+                    .live_permissions
+                    .load_full()
+                    .as_deref()
+                    .cloned()
+                    .unwrap_or_default();
+                if policy_changed {
+                    permissions.approval_policy =
+                        Some(commit.configuration.step_settings.approval_policy.value());
+                }
+                if profile_changed {
+                    permissions.profile = Some(
+                        commit
+                            .configuration
+                            .inferred_environment_config()
+                            .permission_profile,
+                    );
+                }
+                turn.live_permissions.store(Some(Arc::new(permissions)));
             }
-            task.turn_context
-                .live_permissions
-                .store(Some(std::sync::Arc::new(permissions)));
         }
     }
-    Ok(commit)
+    Ok(Some(commit))
+}
+
+impl Session {
+    /// Elpis: takes a parent's reduced permissions when they remove authority this thread
+    /// holds and add none, as an accepted update that also reaches its running turn.
+    /// Returns whether this thread changed.
+    pub(crate) async fn follow_parent_permission_reduction(
+        &self,
+        updates: SessionSettingsUpdate,
+    ) -> ConstraintResult<bool> {
+        let _settings_guard = acquire_persistence_lock(self).await;
+        let Some(commit) = commit_update_if(
+            self,
+            updates,
+            super::inherited_permissions::removes_authority,
+        )
+        .await?
+        else {
+            return Ok(false);
+        };
+        emit_applied(self, self.next_internal_sub_id(), commit.snapshot).await;
+        Ok(true)
+    }
 }
 
 /// Converts protocol overrides into the internal settings update shape.

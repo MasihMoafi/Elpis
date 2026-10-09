@@ -111,8 +111,6 @@ pub(crate) fn build_agent_spawn_config(
     step_context: &StepContext,
 ) -> Result<Config, String> {
     let mut config = build_agent_shared_config(step_context.turn.as_ref())?;
-    // Elpis: permissions selected during this turn, not those it started with.
-    step_context.apply_live_permissions_to_child(&mut config)?;
     let settings = &step_context.settings;
     config.model = Some(settings.model_info.slug.clone());
     config.model_reasoning_effort = settings.effective_reasoning_effort();
@@ -170,6 +168,8 @@ fn reject_full_fork_agent_type_override(agent_type: Option<&str>) -> Result<(), 
 ///
 /// These values are chosen by the live turn rather than persisted config, so leaving them stale can
 /// make a child agent disagree with its parent about approval policy, cwd, or sandboxing.
+/// Elpis: a child the turn starts or resumes takes the permissions accepted so far in the
+/// turn, not those it started with.
 fn apply_spawn_agent_runtime_overrides(
     config: &mut Config,
     turn: &TurnContext,
@@ -177,20 +177,15 @@ fn apply_spawn_agent_runtime_overrides(
     config
         .permissions
         .approval_policy
-        .set(turn.approval_policy())
+        .set(turn.current_approval_policy())
         .map_err(|err| format!("approval_policy is invalid: {err}"))?;
-    config.approvals_reviewer = turn.config.approvals_reviewer;
+    config.approvals_reviewer = turn.current_approvals_reviewer();
     #[allow(deprecated)]
     let turn_cwd = turn.cwd.clone();
     config.cwd = turn_cwd;
     config
         .permissions
-        .set_permission_profile_from_session_snapshot(
-            turn.config
-                .permissions
-                .permission_profile_state()
-                .snapshot(),
-        )
+        .set_permission_profile_from_session_snapshot(turn.current_thread_permission_profile())
         .map_err(|err| format!("permission_profile is invalid: {err}"))?;
     Ok(())
 }

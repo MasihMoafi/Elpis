@@ -5584,3 +5584,83 @@ async fn resume_agent_from_rollout_skips_descendants_when_parent_resume_fails() 
         .await
         .expect("tree shutdown after partial subtree resume should succeed");
 }
+
+/// Elpis: a loaded child holding the Full Access its parent gives up loses it as well.
+/// Fails if the parent's reduction does not reach its children: the child keeps `never`
+/// with no sandbox.
+#[tokio::test]
+async fn loaded_children_give_up_the_full_access_their_parent_gives_up() {
+    let (home, config) = test_config_with_cli_overrides(vec![
+        (
+            "approval_policy".to_string(),
+            TomlValue::String("never".to_string()),
+        ),
+        (
+            "sandbox_mode".to_string(),
+            TomlValue::String("danger-full-access".to_string()),
+        ),
+    ])
+    .await;
+    let harness = AgentControlHarness::new_with_config(home, config).await;
+    let (parent_thread_id, parent_thread) = harness.start_thread().await;
+    let child_thread_id = harness
+        .control
+        .spawn_agent(
+            harness.config.clone(),
+            text_input("hello child"),
+            Some(SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
+                parent_thread_id,
+                depth: 1,
+                agent_path: None,
+                agent_nickname: None,
+                agent_role: None,
+            })),
+        )
+        .await
+        .expect("child spawn should succeed");
+    let child_thread = harness
+        .manager
+        .get_thread(child_thread_id)
+        .await
+        .expect("child thread should be registered");
+    let inherited = child_thread.config_snapshot().await;
+    assert_eq!(
+        (inherited.approval_policy, inherited.permission_profile),
+        (AskForApproval::Never, PermissionProfile::Disabled),
+        "the child starts with its parent's Full Access"
+    );
+
+    parent_thread
+        .update_thread_settings(codex_protocol::protocol::ThreadSettingsOverrides {
+            approval_policy: Some(AskForApproval::OnRequest),
+            permission_profile: Some(PermissionProfile::workspace_write()),
+            active_permission_profile: Some(codex_protocol::models::ActivePermissionProfile::new(
+                codex_protocol::models::BUILT_IN_PERMISSION_PROFILE_WORKSPACE,
+            )),
+            ..Default::default()
+        })
+        .await
+        .expect("parent revokes Full Access");
+
+    let lowered = timeout(Duration::from_secs(10), async {
+        loop {
+            let snapshot = child_thread.config_snapshot().await;
+            if snapshot.approval_policy != AskForApproval::Never {
+                return snapshot;
+            }
+            sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .expect("the child should follow its parent's revocation");
+    assert_eq!(
+        (
+            lowered.approval_policy,
+            lowered.active_permission_profile.map(|profile| profile.id),
+        ),
+        (
+            AskForApproval::OnRequest,
+            Some(codex_protocol::models::BUILT_IN_PERMISSION_PROFILE_WORKSPACE.to_string()),
+        )
+    );
+}

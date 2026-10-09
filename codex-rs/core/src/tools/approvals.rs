@@ -483,7 +483,8 @@ impl Session {
     ) -> Result<ReviewDecision, ToolError> {
         // Stdin that exceeds current permissions needs a fresh sandbox approval.
         // Strict review of ordinary input follows the same routing as ordinary exec.
-        let policy = ctx.review_context.turn().approval_policy();
+        // Elpis: the policy accepted for this action, not the one its turn started with.
+        let policy = ctx.review_context.approval_policy;
         if matches!(&action, ApprovalAction::WriteStdin { sandbox_permissions, .. }
             if sandbox_permissions.requests_sandbox_override())
             && !(ctx.strict_auto_review && matches!(policy, AskForApproval::Never))

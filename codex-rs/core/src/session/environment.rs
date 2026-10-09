@@ -212,6 +212,19 @@ impl Session {
         snapshot.await
     }
 
+    /// Elpis: installs the saved permission defaults while no task runs, as the next task
+    /// would. Context recorded without a turn, such as a bridged client's injected items, then
+    /// saves the permissions the thread accepted rather than those of its last turn. A
+    /// running task keeps its environments; its accepted changes reach it separately.
+    pub(super) async fn refresh_idle_thread_defaults(&self, configuration: &SessionConfiguration) {
+        let active = self.active_turn.lock().await;
+        if active.as_ref().is_none_or(|turn| turn.task.is_none()) {
+            self.services
+                .turn_environments
+                .set_active_thread_defaults(configuration.inferred_environment_config());
+        }
+    }
+
     pub(crate) async fn environment_ready(
         &self,
         selection: &TurnEnvironmentSelection,

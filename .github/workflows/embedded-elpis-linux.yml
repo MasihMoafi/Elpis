@@ -90,7 +90,7 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
-          fetch-depth: 2
+          fetch-depth: 50
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: '24'
@@ -128,10 +128,6 @@ jobs:
         env:
           CACHE_KEY: ${{ steps.cargo_cache.outputs.cache-matched-key }}
         run: |
-          cached_sha=${CACHE_KEY##*-}
-          if [[ $cached_sha =~ ^[0-9a-f]{40}$ ]] && ! git cat-file -e "$cached_sha^{commit}" 2>/dev/null; then
-            git fetch --no-tags --depth=1 origin "$cached_sha"
-          fi
           bash scripts/restore-cargo-cache-source-times.sh "$CACHE_KEY"
       - name: Check core, UI, CLI and their tests
         working-directory: codex-rs
@@ -162,7 +158,7 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
-          fetch-depth: 2
+          fetch-depth: 50
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: '24'
@@ -205,10 +201,6 @@ jobs:
         env:
           CACHE_KEY: ${{ steps.cargo_cache.outputs.cache-matched-key }}
         run: |
-          cached_sha=${CACHE_KEY##*-}
-          if [[ $cached_sha =~ ^[0-9a-f]{40}$ ]] && ! git cat-file -e "$cached_sha^{commit}" 2>/dev/null; then
-            git fetch --no-tags --depth=1 origin "$cached_sha"
-          fi
           bash scripts/restore-cargo-cache-source-times.sh "$CACHE_KEY"
       - name: Installer checks
         run: |
@@ -229,12 +221,14 @@ jobs:
             elpis_ keymap question composer_submission plan_mode review_mode slash_commands \
             goal_validation command_popup agents_overview agents_navigation footer_collapse \
             context_usage context_ledger exec_cell effort_ignition style:: light_terminal_palette \
-            chatwidget_exec_and_status_layout_vt100_snapshot luna_reserve_usage_running
+            chatwidget_exec_and_status_layout_vt100_snapshot luna_reserve_usage_running \
+            render_cost_tests status_and_layout resume_picker stream_controller
           cargo test --release --locked -p codex-core --lib -- \
             elpis_ smart_prune compact_instructions world_state build_agent_spawn_config \
             live_permissions inherited_permissions step_activation thread_settings turn_input
           cargo test --release --locked -p codex-core --test all -- \
-            elpis_ledger_admission elpis_context_attribution work_graphs
+            elpis_ledger_admission elpis_context_attribution work_graphs settings_commits \
+            agents_md scenarios_shared_instructions
           cargo test --release --locked -p codex-elpis-gateway --lib
           cargo test --release --locked -p codex-model-provider-info --lib
           cargo test --release --locked -p codex-cli --lib
