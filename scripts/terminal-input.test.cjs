@@ -15,9 +15,16 @@ const reference = process.argv.includes('--codex-reference');
 assert([useBridge, useLauncher, reference].filter(Boolean).length <= 1, 'choose one connection mode');
 assert(binary && path.isAbsolute(binary), 'provide the engine binary');
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'elpis-terminal-input-'));
-const home = path.join(root, 'home'), cwd = path.join(root, 'long-project-directory-for-title-visibility');
-const otherCwd = path.join(root, 'second-project');
-fs.mkdirSync(home); fs.mkdirSync(cwd); fs.mkdirSync(otherCwd);
+const userHome = path.join(root, 'home');
+const home = path.join(userHome, reference ? '.codex' : '.elpis-next');
+const cwd = path.join(userHome, 'long-project-directory-for-title-visibility');
+const otherCwd = path.join(userHome, 'second-project');
+fs.mkdirSync(home, { recursive: true }); fs.mkdirSync(cwd); fs.mkdirSync(otherCwd);
+if (!reference) {
+  const codexHome = path.join(userHome, '.codex');
+  fs.mkdirSync(codexHome);
+  fs.writeFileSync(path.join(codexHome, 'config.toml'), 'model="codex-user-sentinel"\n[otel]\nexporter="none"\n');
+}
 const socket = path.join(root, 'tmux.sock');
 const provider = new Provider();
 const checks = [];
@@ -97,10 +104,11 @@ async function stopAppServer() {
   fs.writeFileSync(catalogPath, JSON.stringify({ models: [model, otherModel] }));
   fs.writeFileSync(path.join(home, 'config.toml'), `model="gpt-5.5"\nmodel_provider="fixture"\nmodel_reasoning_effort="medium"\nmodel_catalog_json=${JSON.stringify(catalogPath)}\napproval_policy="on-request"\nsandbox_mode="workspace-write"\n[features]\ncode_mode=false\n[model_providers.fixture]\nname="Terminal fixture"\nbase_url=${JSON.stringify(provider.url)}\nwire_api="responses"\nrequires_openai_auth=false\n[tui]\nanimations=false\n[projects.${JSON.stringify(cwd)}]\ntrust_level="trusted"\n`);
   fs.appendFileSync(path.join(home, 'config.toml'), `[projects.${JSON.stringify(otherCwd)}]\ntrust_level="trusted"\n`);
-  const isolatedEnv = { ...process.env, HOME: home, CODEX_HOME: home, ELPIS_HOME: home, CODEX_AUTH_HOME: home, TERM: 'xterm-256color' };
+  fs.appendFileSync(path.join(home, 'config.toml'), `[projects.${JSON.stringify(userHome)}]\ntrust_level="trusted"\n`);
+  const isolatedEnv = { ...process.env, HOME: userHome, CODEX_HOME: home, ELPIS_HOME: home, CODEX_AUTH_HOME: home, TERM: 'xterm-256color' };
   const remote = useLauncher ? null : await startAppServer(isolatedEnv);
   const quote = text => `'${text.replaceAll("'", "'\\''")}'`;
-  const command = (directory, selectedModel) => ['env', `HOME=${home}`, `CODEX_HOME=${home}`, `ELPIS_HOME=${home}`, `CODEX_AUTH_HOME=${home}`, 'TERM=xterm-256color', ...(useLauncher ? [`ELPIS_ENGINE_BIN=${binary}`, 'ELPIS_NO_AGY=1', 'PERMISSION_FIXTURE_ADAPTER=1', `ACP_ADAPTER=${path.resolve(__dirname, 'permissions-bridge.test.cjs')}`, process.env.ELPIS_LAUNCHER ?? path.resolve(__dirname, '../tools/elpis-claude/elpis-claude')] : [binary]), ...(reference || useLauncher ? [] : ['--remote', remote]), '--no-alt-screen', '-C', directory, ...(selectedModel ? ['--model', selectedModel] : [])].map(quote).join(' ');
+  const command = (directory, selectedModel) => ['env', `HOME=${userHome}`, `CODEX_HOME=${home}`, `ELPIS_HOME=${home}`, `CODEX_AUTH_HOME=${home}`, 'TERM=xterm-256color', ...(useLauncher ? [`ELPIS_ENGINE_BIN=${binary}`, 'ELPIS_NO_AGY=1', 'PERMISSION_FIXTURE_ADAPTER=1', `ACP_ADAPTER=${path.resolve(__dirname, 'permissions-bridge.test.cjs')}`, process.env.ELPIS_LAUNCHER ?? path.resolve(__dirname, '../tools/elpis-claude/elpis-claude')] : [binary]), ...(reference || useLauncher ? [] : ['--remote', remote]), '--no-alt-screen', '-C', directory, ...(selectedModel ? ['--model', selectedModel] : [])].map(quote).join(' ');
   tmux('new-session', '-d', '-s', 'test', '-x', '80', '-y', '32', command(cwd));
   await screenWhen(s => {
     if (s.includes('Hooks need review')) { key('Escape'); return false; }
@@ -117,6 +125,8 @@ async function stopAppServer() {
   }, 'permissions-initial-thread');
   const initialPermissions = threadSettings();
   assert.equal(initialPermissions.length, 1);
+  assert.equal(initialPermissions[0].model, 'gpt-5.5', 'separate Codex user config must not override the model');
+  assert(!tmux('capture-pane', '-p', '-S', '-', '-t', 'test').includes('Ignored unsupported project-local config keys'), 'Codex user config must not cause project warnings');
   assert.equal(initialPermissions[0].approval_mode, 'on-request');
   assert.notEqual(JSON.parse(initialPermissions[0].sandbox_policy).type, 'disabled');
   fs.writeFileSync(path.join(root, 'initial-permissions.json'), JSON.stringify(initialPermissions, null, 2));
@@ -178,6 +188,10 @@ async function stopAppServer() {
   type('/rename Visible session sentinel'); await pause(250); key('Enter');
   await screenWhen(s => threadSettings().some(thread => thread.name === 'Visible session sentinel')
     && !s.includes('/rename Visible session sentinel'), 'renamed-title-80');
+  await screenWhen(() => fs.readFileSync(savedPermissions[0].rollout_path, 'utf8').split('\n').slice(0, -1)
+    .some(line => { const item = JSON.parse(line); return item.type === 'event_msg' && item.payload?.type === 'turn_aborted'; }), 'first-turn-aborted');
+  // Interrupt may precede the follow-up inference request. Discard responses reserved for that turn.
+  provider.actions.length = 0;
   // A later session in another folder proves grouping, ordering, and per-row models.
   provider.actions.push(message('SECOND_FOLDER_READY'));
   tmux('new-session', '-d', '-s', 'second', '-x', '80', '-y', '32', command(otherCwd, otherModel.slug));

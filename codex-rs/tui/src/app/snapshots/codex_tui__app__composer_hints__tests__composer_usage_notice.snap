@@ -5,9 +5,9 @@ expression: "crate::chatwidget::tests::helpers::normalize_snapshot_paths(snapsho
 80 columns, 10 rows, running=false, queued=false
 Conversation
 
-⚠ Heads up, you have less than 10% of your 5h limit left. Run /status for a
+⚠ Heads up, you have less than 10% of your 5h limit left. Run /usage for a
   breakdown.
-                                                  ⚠ 5h limit: 8% left · /status
+                                                   ⚠ 5h limit: 8% left · /usage
 
 › Ask Elpis to do anything
 
@@ -16,12 +16,12 @@ Conversation
 
 80 columns, 12 rows, running=true, queued=false
 
-⚠ Heads up, you have less than 5% of your 5h limit left. Run /status for a
+⚠ Heads up, you have less than 5% of your 5h limit left. Run /usage for a
   breakdown.
 
-• Working (0s • esc to interrupt)
+• Elpising (0s • esc to interrupt)
 
-                                             ⚠ 5h limit: only 2% left · /status
+                                              ⚠ 5h limit: only 2% left · /usage
 
 › draft stays
 
@@ -29,9 +29,9 @@ Conversation
   tab to queue message
 
 32 columns, 10 rows, running=true, queued=false
-  Run /status for a breakdown.
+  Run /usage for a breakdown.
 
-• Working (0s • esc to interrup…
+• Elpising (0s • esc to interru…
 
                   ⚠ 5h <1% left
 
@@ -41,9 +41,9 @@ Conversation
   tab to queue message
 
 18 columns, 10 rows, running=true, queued=false
-  a breakdown.
+  breakdown.
 
-• Working (0s • e…
+• Elpising (0s • …
 
      ⚠ 5h 5% left
 
@@ -56,15 +56,15 @@ Conversation
 Conversation row 18
 Conversation row 19
 
-⚠ Heads up, you have less than 5% of your 5h limit left. Run /status for a
+⚠ Heads up, you have less than 5% of your 5h limit left. Run /usage for a
   breakdown.
 
-• Working (0s • esc to interrupt)
+• Elpising (0s • esc to interrupt)
 
 • Queued follow-up inputs
   ↳ queued follow-up
     ⇧← edit last queued message
-                                             ⚠ 5h limit: only 2% left · /status
+                                              ⚠ 5h limit: only 2% left · /usage
 
 › draft stays
   second line
@@ -73,7 +73,7 @@ Conversation row 19
   tab to queue message
 
 80 columns, 11 rows, running=true, queued=true
-• Working (0s • esc to interrupt)
+• Elpising (0s • esc to interrupt)
 
 • Queued follow-up inputs
   ↳ queued follow-up
@@ -86,7 +86,7 @@ Conversation row 19
   tab to queue message
 
 80 columns, 6 rows, running=true, queued=false
-• Working (0s • esc to interrupt)
+• Elpising (0s • esc to interrupt)
 
 › draft stays
 

@@ -119,6 +119,7 @@ async fn new_session_preserves_vim_line_yank() -> Result<()> {
         app.chat_widget.composer_text_with_pending(),
         "new line\nsaved line"
     );
+    crate::chatwidget::tests::helpers::hide_context_ledger(&mut app.chat_widget);
     let composer_lines = render_bottom_popup(&app.chat_widget, /*width*/ 80)
         .lines()
         .take(2)

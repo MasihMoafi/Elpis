@@ -4,7 +4,7 @@ expression: "format!(\"before interrupt:\\n{before_interrupt}\\nafter interrupt:
 ---
 before interrupt:
 "                                                                                "
-"• Working (0s • esc to interrupt) · checking command policy                     "
+"• Elpising (0s • esc to interrupt) · checking command policy                    "
 "                                                                                "
 "                                                                                "
 "› Ask Elpis to do anything                                                      "

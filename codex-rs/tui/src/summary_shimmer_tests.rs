@@ -6,6 +6,17 @@ use crate::terminal_probe::DefaultColors;
 
 #[test]
 fn elpis_working_label_uses_gold_with_native_cadence_and_reduced_motion() {
+    let luminance = |(r, g, b): (u8, u8, u8)| {
+        let linear = |channel: u8| {
+            let value = f64::from(channel) / 255.0;
+            if value <= 0.04045 {
+                value / 12.92
+            } else {
+                ((value + 0.055) / 1.055).powf(2.4)
+            }
+        };
+        0.2126 * linear(r) + 0.7152 * linear(g) + 0.0722 * linear(b)
+    };
     for colors in [
         DefaultColors {
             fg: (240, 240, 240),
@@ -35,11 +46,16 @@ fn elpis_working_label_uses_gold_with_native_cadence_and_reduced_motion() {
                 quiet,
                 summary_shimmer(label, Duration::from_millis(4500), MotionMode::Animated)
             );
-            for span in quiet.iter().chain(&sweeping) {
+            for span in quiet.iter().chain(&sweeping).chain(&still) {
                 let Some(ratatui::style::Color::Rgb(r, g, b)) = span.style.fg else {
                     panic!("expected gold RGB text");
                 };
                 assert!(r > g && g > b, "expected gold, got {r},{g},{b}");
+                let foreground = luminance((r, g, b));
+                let background = luminance(colors.bg);
+                let contrast =
+                    (foreground.max(background) + 0.05) / (foreground.min(background) + 0.05);
+                assert!(contrast >= 4.5, "gold text contrast: {contrast}");
             }
         });
     }

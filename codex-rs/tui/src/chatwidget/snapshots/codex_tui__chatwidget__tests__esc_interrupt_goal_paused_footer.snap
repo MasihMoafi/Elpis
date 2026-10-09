@@ -3,7 +3,7 @@ source: tui/src/chatwidget/tests/status_and_layout.rs
 expression: snapshot
 ---
 "                                                                                "
-"• Working (0s • esc to interrupt)                                               "
+"• Elpising (0s • esc to interrupt)                                              "
 "                                                                                "
 "                                                                                "
 "› Ask Elpis to do anything                                                      "

@@ -4,7 +4,7 @@ expression: "format!(\"before completion:\\n{before_completion}\\nafter completi
 ---
 before completion:
 "                                                                                "
-"• Working (0s • esc to interrupt) · Running hook                                "
+"• Elpising (0s • esc to interrupt) · Running hook                               "
 "                                                                                "
 "                                                                                "
 "› Ask Elpis to do anything                                                      "

@@ -727,6 +727,7 @@ async fn reconnect_allows_slow_hydration_but_bounds_a_stalled_server() -> Result
             )
             .await?;
             assert!(app.thread_unavailable(id));
+            crate::chatwidget::tests::helpers::hide_context_ledger(&mut app.chat_widget);
             app.handle_tui_event(
                 &mut tui,
                 &mut session,

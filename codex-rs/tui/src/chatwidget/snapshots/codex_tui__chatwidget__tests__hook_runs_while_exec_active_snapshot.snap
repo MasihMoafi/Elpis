@@ -9,7 +9,7 @@ exec and hook running:
 "                                                                                "
 "• Running echo done                                                             "
 "                                                                                "
-"• Working (0s • esc to interrupt) · checking output policy                      "
+"• Elpising (0s • esc to interrupt) · checking output policy                     "
 "                                                                                "
 "                                                                                "
 "› Ask Elpis to do anything                                                      "
@@ -21,7 +21,7 @@ history after exec:
 
 hook running after exec:
 "                                                                                "
-"• Working (0s • esc to interrupt) · checking output policy                      "
+"• Elpising (0s • esc to interrupt) · checking output policy                     "
 "                                                                                "
 "                                                                                "
 "› Ask Elpis to do anything                                                      "
@@ -29,7 +29,7 @@ hook running after exec:
 "  GPT-5.6-Sol default · /tmp/project                                            "
 quiet hook completed:
 "                                                                                "
-"• Working (0s • esc to interrupt)                                               "
+"• Elpising (0s • esc to interrupt)                                              "
 "                                                                                "
 "                                                                                "
 "› Ask Elpis to do anything                                                      "

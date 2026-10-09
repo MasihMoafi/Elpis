@@ -55,6 +55,11 @@ async fn choose_model(
     preset.show_in_picker = true;
     preset.supported_reasoning_efforts.truncate(/*len*/ 1);
     preset.default_reasoning_effort = preset.supported_reasoning_efforts[0].effort.clone();
+    // /model opens Elpis's provider picker; replace that fixture with the model list.
+    if app.chat_widget.has_active_view() {
+        app.chat_widget.handle_key_event(KeyCode::Esc.into());
+    }
+    assert!(!app.chat_widget.has_active_view());
     app.chat_widget.open_model_popup_with_presets(vec![preset]);
     app.chat_widget
         .handle_key_event(KeyEvent::new(key, KeyModifiers::NONE));
@@ -501,6 +506,7 @@ async fn astra_picker_confirms_the_model_at_application_after_an_automatic_updat
             /*initial_user_message*/ None,
         )
         .await?;
+        crate::chatwidget::tests::helpers::hide_context_ledger(&mut app.chat_widget);
         if switches_away {
             app.chat_widget.set_model("gpt-6-astra");
         }

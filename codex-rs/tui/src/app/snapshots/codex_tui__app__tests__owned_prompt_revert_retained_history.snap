@@ -1,8 +1,8 @@
 ---
 source: tui/src/app/tests.rs
-assertion_line: 8342
 expression: transcript
 ---
+  /usage - show this session's usage and limits
   /permissions - choose what Elpis is allowed to do
   /model - choose what model and reasoning effort to use
 

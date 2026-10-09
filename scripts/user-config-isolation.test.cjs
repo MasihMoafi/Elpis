@@ -22,7 +22,9 @@ fs.writeFileSync(path.join(codexHome, 'config.toml'), foreignConfig);
 fs.writeFileSync(path.join(elpisHome, 'config.toml'), `model="gpt-5.5"\n[projects.${JSON.stringify(home)}]\ntrust_level="trusted"\n[projects.${JSON.stringify(project)}]\ntrust_level="trusted"\n`);
 fs.writeFileSync(path.join(project, '.codex/config.toml'), 'model="gpt-6.1-sol"\n[otel]\nexporter="none"\n');
 
+let nextProbe = 0;
 async function probe(cwd) {
+  const probeId = ++nextProbe;
   const child = spawn(binary, ['app-server'], {
     cwd,
     env: { ...process.env, HOME: home, ELPIS_HOME: elpisHome, CODEX_HOME: codexHome, CODEX_AUTH_HOME: elpisHome },
@@ -66,7 +68,7 @@ async function probe(cwd) {
     await exited;
     clearTimeout(kill);
     lines.close();
-    fs.writeFileSync(path.join(root, `probe-${path.basename(cwd)}.json`), JSON.stringify({ messages, stderr }, null, 2));
+    fs.writeFileSync(path.join(root, `probe-${probeId}-${path.basename(cwd)}.json`), JSON.stringify({ messages, stderr }, null, 2));
   }
 }
 
@@ -86,5 +88,19 @@ async function probe(cwd) {
   const malformed = await probe(home);
   assert.equal(malformed.config.config.model, 'gpt-5.5', 'unrelated malformed Codex config must not break Elpis');
   console.log('PASS malformed Codex config cannot block Elpis startup');
+  const activeConfig = path.join(elpisHome, 'config.toml');
+  fs.writeFileSync(activeConfig, fs.readFileSync(activeConfig, 'utf8').replace(
+    `[projects.${JSON.stringify(home)}]\ntrust_level="trusted"`,
+    `[projects.${JSON.stringify(home)}]\ntrust_level="untrusted"`));
+  const untrusted = await probe(home);
+  assert.equal(untrusted.config.config.model, 'gpt-5.5');
+  assert(!JSON.stringify(untrusted.config.layers).includes(codexHome));
+  console.log('PASS user-home isolation also holds before directory trust');
+  fs.renameSync(path.join(project, '.codex'), path.join(project, 'saved-project-config'));
+  fs.symlinkSync(codexHome, path.join(project, '.codex'), 'dir');
+  const linked = await probe(project);
+  assert.equal(linked.config.config.model, 'gpt-5.5');
+  assert(!JSON.stringify(linked.config.layers).includes(path.join(project, '.codex')));
+  console.log('PASS a project symlink cannot reclassify Codex user config');
   console.log(`Evidence: ${root}`);
 })().catch(error => { console.error(error); console.error(`Evidence: ${root}`); process.exitCode = 1; });

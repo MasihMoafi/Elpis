@@ -138,6 +138,7 @@ async fn backend_banner_state_survives_widget_replacement() -> Result<()> {
             /*initial_user_message*/ None,
         );
         app.replace_chat_widget(ChatWidget::new_with_app_event(init));
+        crate::chatwidget::tests::helpers::hide_context_ledger(&mut app.chat_widget);
         set_active_cell(
             &mut app.chat_widget,
             Box::new(PlainHistoryCell::new(Vec::new())),

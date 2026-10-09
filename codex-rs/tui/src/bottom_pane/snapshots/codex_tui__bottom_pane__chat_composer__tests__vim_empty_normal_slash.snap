@@ -1,13 +1,12 @@
 ---
 source: tui/src/bottom_pane/chat_composer.rs
-assertion_line: 5217
 expression: terminal.backend()
 ---
-"› /model          choose what model and reasoning effort to "
-"                  use                                       "
-"  /ide            include current selection, open files, and"
-"                  other context from your IDE               "
-"  /permissions    choose what Elpis is allowed to do        "
+"› /model         choose what model and reasoning effort to  "
+"                 use                                        "
+"  /effort        change how hard the model thinks: /effort  "
+"                 [low|medium|high|…]                        "
+"  /pruner-model  view or set the model that prunes context; "
 "                                                            "
 "› /                                                         "
 "                                                            "

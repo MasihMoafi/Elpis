@@ -1,8 +1,8 @@
 ---
 source: tui/src/chatwidget/tests/history_replay.rs
-expression: "normalize_completion_timestamps(& (render_bottom_popup(&chat, 80)))"
+expression: "normalize_snapshot_paths(render_bottom_popup(&chat, 80))"
 ---
-• Working (0s • esc to interrupt)
+• Elpising (0s • esc to interrupt)
 
 
 › Ask Elpis to do anything
