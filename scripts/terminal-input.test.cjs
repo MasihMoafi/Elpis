@@ -40,7 +40,7 @@ function threadSettings() {
   const filename = fs.readdirSync(home).find(name => /^state_\d+\.sqlite$/.test(name));
   if (!filename) return [];
   const db = new DatabaseSync(path.join(home, filename), { readOnly: true });
-  try { return db.prepare('SELECT id, sandbox_policy, approval_mode, rollout_path FROM threads').all(); }
+  try { return db.prepare('SELECT id, name, sandbox_policy, approval_mode, rollout_path FROM threads').all(); }
   finally { db.close(); }
 }
 async function startAppServer(env) {
@@ -158,7 +158,8 @@ async function stopAppServer() {
   key('S-Right'); key('Escape');
   await screenWhen(s => !s.includes('esc to interrupt'), 'interrupted');
   type('/rename Visible session sentinel'); await pause(250); key('Enter');
-  await screenWhen(s => s.includes('Visible session sentinel'), 'renamed-title-80');
+  await screenWhen(s => threadSettings().some(thread => thread.name === 'Visible session sentinel')
+    && !s.includes('/rename Visible session sentinel'), 'renamed-title-80');
   key('Left');
   screen = await screenWhen(s => s.includes('Agent command center') && s.includes('Visible session sentinel'), 'agents-80');
   assert(screen.includes('GPT-5.5') && screen.includes('Group: Project'), screen);
@@ -175,6 +176,7 @@ async function stopAppServer() {
   await screenWhen(s => s.includes('Permanently delete'), 'delete-confirmation');
   key('Escape');
   await screenWhen(s => s.includes('Visible session sentinel'), 'delete-cancelled');
+  assert(threadSettings().some(thread => thread.id === savedPermissions[0].id && thread.name === 'Visible session sentinel'));
   pass('cancelling task deletion preserves the fixture session');
   assert(!provider.error, provider.error?.message);
 })().catch(error => { console.error(error); process.exitCode = 1; }).finally(async () => {
