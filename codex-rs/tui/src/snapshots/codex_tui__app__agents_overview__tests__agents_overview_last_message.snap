@@ -8,7 +8,7 @@ expression: "render_bottom_popup(&app.chat_widget,\n96).replace(&format!(\"{proj
       Tasks                       Model               │ Task details
   /tmp/project  2                                     │
     ● Repair authentication       Unknown             │ Investigate parser
-  › ○ Investigate parser          Unknown             │ ○ Inactive
+  › ○ Investigate parser          provider/provider…  │ ○ Inactive
                                                       │
                                                       │ Model: provider/provider/provider/pro…
                                                       │ Reasoning: deliberatedeliberatedelibe…
