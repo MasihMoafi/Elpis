@@ -22,18 +22,29 @@ const MODES = { default: [':workspace', 'on-request'], readOnly: [':read-only', 
 if (process.argv.includes('--engine-fault')) engineFault();
 else main().catch(error => { console.error(error.stack); process.exitCode = 1; });
 
-// The engine, unchanged, except that a thread/settings/update the bridge sends itself (a helper
-// restriction) is refused or left unanswered while ENGINE_FAULT_CONTROL says so.
+// The engine, unchanged, except as ENGINE_FAULT_CONTROL says: a thread/settings/update the bridge
+// sends itself (a helper restriction) is refused or left unanswered, or a helper's thread/start
+// (from the delegate tool) is answered only once a release file appears.
 function engineFault() {
   const readline = require('node:readline');
   const engine = spawn(process.env.ENGINE_FAULT_REAL, process.argv.slice(process.argv.indexOf('--engine-fault') + 1), { stdio: ['pipe', 'pipe', 'ignore'] });
   const out = line => process.stdout.write(line + '\n');
-  readline.createInterface({ input: engine.stdout }).on('line', out);
+  const heldStarts = new Map(); // thread/start id -> its hold's files
+  readline.createInterface({ input: engine.stdout }).on('line', line => {
+    let id;
+    try { id = JSON.parse(line).id; } catch {}
+    const hold = heldStarts.get(id);
+    if (!hold) { out(line); return; }
+    heldStarts.delete(id);
+    fs.writeFileSync(hold.held, 'held');
+    const timer = setInterval(() => { if (fs.existsSync(hold.release)) { clearInterval(timer); out(line); } }, 10);
+  });
   readline.createInterface({ input: process.stdin }).on('line', line => {
     let msg = null;
     try { msg = JSON.parse(line); } catch {}
-    const fault = msg?.method === 'thread/settings/update' && String(msg.id).startsWith('acp-bridge-engine-')
-      && JSON.parse(fs.readFileSync(process.env.ENGINE_FAULT_CONTROL, 'utf8')).settings;
+    const control = JSON.parse(fs.readFileSync(process.env.ENGINE_FAULT_CONTROL, 'utf8'));
+    if (msg?.method === 'thread/start' && String(msg.id).startsWith('agents-') && control.holdStart) heldStarts.set(msg.id, control.holdStart);
+    const fault = msg?.method === 'thread/settings/update' && String(msg.id).startsWith('acp-bridge-engine-') && control.settings;
     if (fault === 'reject') out(JSON.stringify({ id: msg.id, error: { code: -32600, message: 'Fixture engine refuses the update' } }));
     else if (fault !== 'hang') engine.stdin.write(line + '\n');
   }).on('close', () => engine.stdin.end());
@@ -57,8 +68,10 @@ async function main() {
   // a writable default lets a reopened helper write, so the bridge's own limit on it shows.
   fs.writeFileSync(path.join(home, 'config.toml'), `model="gpt-5.5"\nmodel_provider="fixture"\nsandbox_mode="workspace-write"\n[features]\nsubagents=false\n[model_providers.fixture]\nname="Delegation fixture"\nbase_url=${JSON.stringify(provider.url)}\nwire_api="responses"\nrequires_openai_auth=false\n`);
   const control = path.join(root, 'control.json'), log = path.join(root, 'bridge.log');
+  const storeDir = path.join(root, 'store');
+  fs.mkdirSync(storeDir);
   const faultControl = path.join(root, 'engine-fault.json');
-  const fault = settings => fs.writeFileSync(faultControl, JSON.stringify({ settings }));
+  const fault = (settings, holdStart) => fs.writeFileSync(faultControl, JSON.stringify({ settings, holdStart }));
   fault(null);
   const engineShim = path.join(root, 'engine'), agyShim = path.join(root, 'agy');
   fs.writeFileSync(engineShim, `#!/usr/bin/env node\nprocess.argv.splice(2, 0, '--engine-fault'); require(${JSON.stringify(__filename)});\n`, { mode: 0o755 });
@@ -75,7 +88,7 @@ async function main() {
     cwd, env: { PATH: process.env.PATH, HOME: home, ELPIS_HOME: home, CODEX_HOME: home, CODEX_AUTH_HOME: home,
       PORT: '0', ELPIS_ENGINE_BIN: engineShim, ENGINE_FAULT_REAL: binary, ENGINE_FAULT_CONTROL: faultControl,
       ACP_ADAPTER: path.join(__dirname, 'permissions-bridge.test.cjs'), AGY_BIN: agyShim,
-      ACP_BRIDGE_NO_AGENTS: '1', ACP_BRIDGE_LOG: log, ACP_BRIDGE_STORE: path.join(home, 'sessions.json'),
+      ACP_BRIDGE_NO_AGENTS: '1', ACP_BRIDGE_LOG: log, ACP_BRIDGE_STORE: path.join(storeDir, 'sessions.json'),
       PERMISSION_FIXTURE_ADAPTER: '1', PERMISSION_FIXTURE_CONTROL: control }, stdio: ['ignore', 'ignore', 'ignore'],
   });
   let ws;
@@ -174,31 +187,55 @@ async function main() {
       const t = await turn(delegate, { model: 'claude/haiku', ...args }, () => fs.existsSync(ctl.ready), () => fs.writeFileSync(ctl.release, 'release'), during);
       return { ...t, wrote: fs.existsSync(ctl.marker) };
     }
-    // An engine helper: the model asks to write in the workspace with the default sandbox.
-    async function engineHelper(delegate, args, during) {
-      const marker = path.join(cwd, `engine-${++files}`);
-      const item = call(`write_${files}`, 'exec_command', { cmd: `printf helper > '${marker}'` });
+    // The model's step in an engine turn: once released, write in the workspace with the default sandbox.
+    function scriptedWrite() {
+      const id = ++files, marker = path.join(cwd, `engine-${id}`);
+      const item = call(`write_${id}`, 'exec_command', { cmd: `printf helper > '${marker}'` });
       provider.actions.push({ hang: true }, message('Done.'));
-      const t = await turn(delegate, { model: 'gpt-5.5', provider: 'fixture', ...args }, () => provider.hanging.size > 0, () => {
+      return { marker, release: () => {
         const response = [...provider.hanging][0];
         if (!response) return;
         provider.hanging.delete(response);
         response.writeHead(200, { 'content-type': 'text/event-stream' });
-        response.end([{ type: 'response.created', response: { id: `r_${files}` } }, { type: 'response.output_item.done', output_index: 0, item },
-          { type: 'response.completed', response: { id: `r_${files}`, usage: { input_tokens: 100, output_tokens: 10, total_tokens: 110 } } }]
+        response.end([{ type: 'response.created', response: { id: `r_${id}` } }, { type: 'response.output_item.done', output_index: 0, item },
+          { type: 'response.completed', response: { id: `r_${id}`, usage: { input_tokens: 100, output_tokens: 10, total_tokens: 110 } } }]
           .map(event => `data: ${JSON.stringify(event)}\n\n`).join(''));
-      }, during);
+      } };
+    }
+    // An engine helper's turn through its delegate tool.
+    async function engineHelper(delegate, args, during) {
+      const step = scriptedWrite();
+      const t = await turn(delegate, { model: 'gpt-5.5', provider: 'fixture', ...args }, () => provider.hanging.size > 0, step.release, during);
       if (t.status === 'completed') assert.equal(provider.actions.length, 0, 'the helper used every scripted model response');
       provider.actions.length = 0;
-      return { ...t, wrote: fs.existsSync(marker) };
+      return { ...t, wrote: fs.existsSync(step.marker) };
     }
+    // The TUI's turn on an engine thread it opened, with the permission fields the TUI sends;
+    // `refused` when the bridge refuses to start it.
+    const tuiFields = { approvalPolicy: 'on-request', permissions: ':workspace' };
+    async function tuiTurn(threadId, during) {
+      const step = scriptedWrite(), start = approvals.length;
+      try { await request('turn/start', { threadId, input: [{ type: 'text', text: 'Fixture write.' }], ...tuiFields }); } catch (error) {
+        provider.actions.length = 0;
+        return { refused: error.message, wrote: false };
+      }
+      let completed;
+      const done = notification('turn/completed', threadId).then(p => { completed = p; }, () => {});
+      await waitFor(() => provider.hanging.size > 0 || completed, 'TUI turn');
+      if (during && !completed) await during();
+      step.release();
+      await done;
+      provider.actions.length = 0;
+      return { status: completed?.turn.status, prompts: approvals.length - start, wrote: fs.existsSync(step.marker) };
+    }
+    const profileOf = r => r.activePermissionProfile?.id ?? { readOnly: ':read-only', workspaceWrite: ':workspace', dangerFullAccess: ':danger-full-access' }[r.sandbox?.type];
     async function group(label, run) {
       try { await run(); } catch (error) {
         if (!keepGoing) throw error;
         failures.push(`${label}: ${error.message}`); console.log(`FAIL ${label}: ${error.message}`);
         for (const ctl of controls) fs.writeFileSync(ctl.release, 'release');
         for (const response of provider.hanging) response.destroy();
-        provider.hanging.clear(); provider.actions.length = 0; fault(null);
+        provider.hanging.clear(); provider.actions.length = 0; fault(null); fs.chmodSync(storeDir, 0o755);
         await pause(1000);
       } finally {
         // Each group's parents have their own elpis-agents server; its helper connections close with it.
@@ -333,8 +370,8 @@ async function main() {
       assert.equal(t.wrote, false, 'a rejected grant must not let a helper write');
       pass('a rejected chat update does not let a new helper write');
     });
-    // The helper's engine refuses its restriction, or never confirms it: the helper stops, and
-    // stays closed until a restriction applies.
+    // The helper's engine refuses its restriction, or never confirms it: the helper stops. Reopened,
+    // it is read-only from the reopening itself, which does not need that refused update.
     const refused = (name, mode) => group(name, async () => {
       const parentId = await parent('default');
       let delegate = await delegateServer(parentId);
@@ -345,14 +382,10 @@ async function main() {
       if (mode !== 'reject') { fault(null); return; }
       await delegate.stop();
       delegate = await delegateServer(parentId);
-      assert.match((await delegate({ thread_id: t.threadId })).text, /Could not reopen/, 'reopening applies the restriction first');
-      pass('a helper whose engine refuses its restriction is not reopened');
-      fault(null);
-      await delegate.stop();
-      delegate = await delegateServer(parentId);
       const reopened = await engineHelper(delegate, { thread_id: t.threadId });
-      assert.equal(reopened.status, 'completed', 'status'); assert.equal(reopened.wrote, false, 'write');
-      pass('once its engine applies the restriction, the reopened helper runs read-only');
+      assert.equal(reopened.status, 'completed', `status: ${reopened.text}`); assert.equal(reopened.wrote, false, 'write');
+      pass('the stopped helper, reopened while its engine still refuses updates, runs read-only');
+      fault(null);
     });
     await refused('a helper whose engine refuses its restriction is stopped before its next tool', 'reject');
     await refused('a helper whose engine does not confirm its restriction is stopped before its next tool', 'hang');
@@ -372,6 +405,93 @@ async function main() {
       const t = await claudeHelper(await delegateServer(await parent('readOnly')), { model: 'agy/gemini-3.8-flash-medium', allow_writes: true });
       assert.equal(t.prompts, 1, 'its question reaches the parent TUI'); assert.equal(t.wrote, false, 'write');
       pass('Read Only parent: a writable Gemini helper asks, and the declined write stays absent');
+    });
+    // A helper start the engine has not answered yet keeps a reduction made meanwhile.
+    await group('helper start pending across a revoke and grant', async () => {
+      const parentId = await parent('default');
+      const delegate = await delegateServer(parentId);
+      const hold = { held: path.join(root, `${++files}.start-held`), release: path.join(root, `${files}.start-release`) };
+      fault(null, hold);
+      const starting = engineHelper(delegate, { allow_writes: true }).then(t => t, e => e);
+      await waitFor(() => fs.existsSync(hold.held), 'held helper start');
+      fault(null);
+      await select(parentId, 'readOnly'); await select(parentId, 'default');
+      fs.writeFileSync(hold.release, 'release');
+      const t = await starting;
+      if (t instanceof Error) throw t;
+      assert.equal(t.wrote, false, 'a helper whose start straddled a revoke must not write');
+      pass('a helper starting while its chat is revoked and regranted starts read-only');
+      const fresh = await engineHelper(delegate, { allow_writes: true });
+      assert.equal(fresh.wrote, true, 'a helper started after the grant writes');
+      pass('a helper started after the grant still writes');
+    });
+    // The TUI opening a helper (as from the agents page) gets no more than the helper's ceiling.
+    await group('helper opened in the TUI', async () => {
+      const keptParent = await parent('default'), reducedParent = await parent('default');
+      const keptServer = await delegateServer(keptParent), reducedServer = await delegateServer(reducedParent);
+      const kept = await engineHelper(keptServer, { allow_writes: true }), reduced = await engineHelper(reducedServer, { allow_writes: true });
+      assert.equal(kept.wrote && reduced.wrote, true, 'both helpers write before');
+      await keptServer.stop(); await reducedServer.stop();
+      await select(reducedParent, 'readOnly'); await select(reducedParent, 'default');
+      assert.equal(profileOf(await request('thread/resume', { threadId: reduced.threadId })), ':read-only', 'the TUI is shown the reduced helper read-only');
+      const t = await tuiTurn(reduced.threadId);
+      assert.equal(t.wrote, false, 'the TUI\'s own permission fields must not raise the helper');
+      pass('a reduced helper opened in the TUI stays read-only, also under the TUI\'s permission fields');
+      assert.equal(profileOf(await request('thread/resume', { threadId: kept.threadId })), ':workspace', 'an unreduced helper keeps its scope');
+      const k = await tuiTurn(kept.threadId);
+      assert.equal(k.wrote, true, 'write');
+      pass('an unreduced helper opened in the TUI keeps its write scope');
+    });
+    // A TUI's engine also runs the user's other chats: a refused restriction stops only the helper.
+    await group('restriction refused for a helper open in the TUI', async () => {
+      const parentId = await parent('default');
+      const server = await delegateServer(parentId);
+      const h = await engineHelper(server, { allow_writes: true });
+      await server.stop();
+      await request('thread/resume', { threadId: h.threadId });
+      const t = await tuiTurn(h.threadId, () => { fault('reject'); return select(parentId, 'readOnly'); });
+      assert.equal(t.wrote, false, 'the helper must not write after its chat\'s reduction');
+      assert.equal(ws.readyState, WebSocket.OPEN, 'the TUI connection stays open');
+      await request('thread/read', { threadId: parentId });
+      assert.match((await tuiTurn(h.threadId)).refused ?? '', /stopped/, 'the helper does not run until its restriction applies');
+      pass('a refused restriction stops a TUI-hosted helper without closing the TUI');
+      fault(null);
+      const applied = await tuiTurn(h.threadId);
+      assert.equal(applied.status, 'completed', 'status'); assert.equal(applied.wrote, false, 'write');
+      pass('once its restriction applies, the TUI-hosted helper runs read-only');
+    });
+    // A second delegate server reopening an open helper: the engine may refuse a second writer;
+    // if it allows one, a reduction must reach both copies.
+    await group('one helper on two delegate servers', async () => {
+      const parentId = await parent('default');
+      const first = await delegateServer(parentId), second = await delegateServer(parentId);
+      const h = await engineHelper(first, { allow_writes: true });
+      assert.equal(h.wrote, true, 'the first copy writes before the reduction');
+      const reopened = await engineHelper(second, { thread_id: h.threadId });
+      const both = !/already has an active writer/.test(reopened.text);
+      if (both) assert.equal(reopened.wrote, true, `the second copy writes before the reduction: ${reopened.text}`);
+      await select(parentId, 'readOnly');
+      assert.equal((await engineHelper(first, { thread_id: h.threadId })).wrote, false, 'the first server\'s copy');
+      if (both) assert.equal((await engineHelper(second, { thread_id: h.threadId })).wrote, false, 'the second server\'s copy');
+      pass(both ? 'a reduction reaches both delegate servers that have the helper open'
+        : 'the engine refuses a second writer, and the reduction reaches the open copy');
+    });
+    // A reduction the store could not save is reported, and holds while the bridge runs.
+    await group('reduction not saved', async () => {
+      const parentId = await parent('default');
+      let delegate = await delegateServer(parentId);
+      const h = await engineHelper(delegate, { allow_writes: true });
+      await delegate.stop();
+      fs.chmodSync(storeDir, 0o555);
+      const warned = notification('warning', parentId);
+      await select(parentId, 'readOnly');
+      assert.match((await warned).message, /could not save/, 'the TUI is told the reduction was not saved');
+      fs.chmodSync(storeDir, 0o755);
+      await select(parentId, 'default');
+      delegate = await delegateServer(parentId);
+      const reopened = await engineHelper(delegate, { thread_id: h.threadId });
+      assert.equal(reopened.wrote, false, 'the unsaved reduction still holds');
+      pass('a reduction the store could not save is reported, and holds while the bridge runs');
     });
     if (failures.length) process.exitCode = 1;
   } finally {

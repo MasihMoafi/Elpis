@@ -7,10 +7,10 @@ expression: "render_bottom_popup(&app.chat_widget,\n96).replace(&format!(\"{proj
   ────────────────────────────────────────────────────────────────────────────────────────────
       Tasks                       Model               │ Task details
   /tmp/project  3                                     │
-  › ● Build the dashboard         Unknown             │ Build the dashboard
+  › ● Build the dashboard         GPT-6.1-Sol         │ Build the dashboard
     ● Repair authentication       Unknown             │ ● Needs input
     ○ Review yesterday's changes  Unknown             │
-                                                      │ Model: gpt-6.1-sol
+                                                      │ Model: GPT-6.1-Sol
                                                       │ Reasoning: Unknown
                                                       │
                                                       │ Project

@@ -451,7 +451,7 @@ async fn assert_cancelled_queued_menu_drains_next_input(
 async fn queued_slash_menu_cancel_drains_next_input() {
     assert_cancelled_queued_menu_drains_next_input(
         "/model",
-        "Select Model",
+        "Choose a provider",
         KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE),
     )
     .await;
@@ -465,11 +465,12 @@ async fn queued_slash_menu_cancel_drains_next_input() {
 
 #[tokio::test]
 async fn queued_settings_selection_applies_before_next_input() {
+    use crate::chatwidget::ElpisProviderEvent;
+    use crate::elpis_app_event::ElpisAppEvent;
+
     let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(Some("gpt-5.2")).await;
     chat.thread_id = Some(ThreadId::new());
-    let mut preset = get_available_model(&chat, "gpt-5.6-terra");
-    preset.supported_reasoning_efforts.truncate(1);
-    let selected_effort = preset.supported_reasoning_efforts[0].effort.clone();
+    let preset = get_available_model(&chat, "gpt-5.6-terra");
     chat.model_catalog = std::sync::Arc::new(ModelCatalog::new(vec![preset]));
     handle_turn_started(&mut chat, "turn-1");
 
@@ -478,35 +479,62 @@ async fn queued_settings_selection_applies_before_next_input() {
 
     complete_turn_with_message(&mut chat, "turn-1", Some("done"));
 
+    // Elpis: `/model` starts at the provider list; the App answers each pick as it does here.
+    let apply_app_events =
+        |chat: &mut ChatWidget, rx: &mut tokio::sync::mpsc::UnboundedReceiver<AppEvent>| {
+            while let Ok(event) = rx.try_recv() {
+                match event {
+                    AppEvent::Elpis(ElpisAppEvent::Provider(ElpisProviderEvent::Browse {
+                        provider_id,
+                    })) => {
+                        let presets = chat.model_catalog.try_list_models().unwrap_or_default();
+                        chat.open_elpis_provider_models(provider_id, Ok(presets));
+                    }
+                    AppEvent::Elpis(ElpisAppEvent::Provider(ElpisProviderEvent::Switch {
+                        model,
+                        ..
+                    })) => {
+                        // The current provider's pick is an ordinary model change.
+                        chat.set_model(&model);
+                        chat.set_reasoning_effort(/*effort*/ None);
+                    }
+                    AppEvent::SettingsSelectionClosed => {
+                        chat.app_event_tx.send(AppEvent::SettingsSelectionSettled);
+                    }
+                    AppEvent::SettingsSelectionSettled if chat.no_modal_or_popup_active() => {
+                        chat.set_queue_autosend_suppressed(/*suppressed*/ false);
+                        chat.maybe_send_next_queued_input();
+                    }
+                    _ => {}
+                }
+            }
+        };
+
     let popup = render_bottom_popup(&chat, /*width*/ 80);
     assert!(
-        popup.contains("Select Model and Effort"),
-        "expected model menu to open; popup:\n{popup}"
+        popup.contains("Choose a provider"),
+        "expected provider list to open; popup:\n{popup}"
     );
+
+    // Choosing the current provider lists its models; the queued input keeps waiting.
+    chat.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+    apply_app_events(&mut chat, &mut rx);
+    let popup = render_bottom_popup(&chat, /*width*/ 80);
+    assert!(
+        popup.contains("Choose a mind"),
+        "expected model list to open; popup:\n{popup}"
+    );
+    assert_matches!(op_rx.try_recv(), Err(TryRecvError::Empty));
+    assert_eq!(chat.input_queue.queued_user_messages.len(), 1);
 
     chat.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
     assert_matches!(op_rx.try_recv(), Err(TryRecvError::Empty));
-    while let Ok(event) = rx.try_recv() {
-        match event {
-            AppEvent::OpenReasoningPopup { model } => chat.open_reasoning_popup(model),
-            AppEvent::UpdateModel(model) => chat.set_model(&model),
-            AppEvent::UpdateReasoningEffort(effort) => chat.set_reasoning_effort(effort),
-            AppEvent::SettingsSelectionClosed => {
-                chat.app_event_tx.send(AppEvent::SettingsSelectionSettled);
-            }
-            AppEvent::SettingsSelectionSettled if chat.no_modal_or_popup_active() => {
-                chat.set_queue_autosend_suppressed(/*suppressed*/ false);
-                chat.maybe_send_next_queued_input();
-            }
-            _ => {}
-        }
-    }
+    apply_app_events(&mut chat, &mut rx);
 
     match next_submit_op(&mut op_rx) {
-        Op::UserTurn { model, effort, .. } => assert_eq!(
-            (model, effort),
-            ("gpt-5.6-terra".to_string(), Some(selected_effort))
-        ),
+        Op::UserTurn { model, effort, .. } => {
+            assert_eq!((model, effort), ("gpt-5.6-terra".to_string(), None));
+        }
         other => panic!("expected queued message with updated model, got {other:?}"),
     }
     assert!(chat.input_queue.queued_user_messages.is_empty());
@@ -689,13 +717,14 @@ async fn queued_unknown_slash_reports_error_when_dequeued() {
         lines_to_single_string(lines).contains("Unrecognized command '/worktree'")
     }));
 
+    // Elpis removed `/worktree`; enabling the feature and local operations does not bring it back.
     chat.set_local_worktree_operations(/*enabled*/ true);
     let non_git = tempfile::tempdir().unwrap();
     chat.config.cwd = non_git.path().to_path_buf().abs();
     let drain = chat.submit_queued_slash_prompt(UserMessage::from("/worktree").into());
     assert_matches!(drain, QueueDrain::Continue);
     assert!(drain_insert_history(&mut rx).iter().any(|lines| {
-        lines_to_single_string(lines).contains("Managed worktrees require a local Git repository.")
+        lines_to_single_string(lines).contains("Unrecognized command '/worktree'")
     }));
 }
 
@@ -1541,23 +1570,31 @@ async fn unavailable_slash_command_is_available_from_local_recall() {
     assert_eq!(recall_latest_after_clearing(&mut chat), "/review");
 }
 
+/// Elpis removed Codex's no-op debugging stubs; they stay removed, so typing one is rejected
+/// like any unknown command and is not kept for recall.
 #[tokio::test]
-async fn no_op_stub_slash_command_is_available_from_local_recall() {
+async fn removed_debug_slash_commands_stay_unrecognized() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
 
-    submit_composer_text(&mut chat, "/debug-m-drop");
+    for command in ["/debug-m-drop", "/debug-m-update"] {
+        submit_composer_text(&mut chat, command);
 
-    let cells = drain_insert_history(&mut rx);
-    let rendered = cells
-        .iter()
-        .map(|cell| lines_to_single_string(cell))
-        .collect::<Vec<_>>()
-        .join("\n");
-    assert!(
-        rendered.contains("Memory maintenance"),
-        "expected stub message, got: {rendered:?}"
-    );
-    assert_eq!(recall_latest_after_clearing(&mut chat), "/debug-m-drop");
+        let rendered = drain_insert_history(&mut rx)
+            .iter()
+            .map(|cell| lines_to_single_string(cell))
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(
+            rendered.contains(&format!("Unrecognized command '{command}'")),
+            "expected unrecognized-command message for {command}, got: {rendered:?}"
+        );
+        assert!(
+            !rendered.contains("Memory maintenance"),
+            "the removed stub ran: {rendered:?}"
+        );
+        assert_eq!(chat.bottom_pane.composer_text(), command);
+        assert_eq!(recall_latest_after_clearing(&mut chat), "");
+    }
 }
 
 #[tokio::test]
@@ -2603,7 +2640,7 @@ async fn queued_menu_slash_keeps_agent_turn_complete_notification() {
         chat.pending_notification,
         Some(Notification::AgentTurnComplete { ref response }) if response == "Done"
     );
-    assert!(render_bottom_popup(&chat, /*width*/ 80).contains("Select Model"));
+    assert!(render_bottom_popup(&chat, /*width*/ 80).contains("Choose a provider"));
     assert_matches!(op_rx.try_recv(), Err(TryRecvError::Empty));
 }
 

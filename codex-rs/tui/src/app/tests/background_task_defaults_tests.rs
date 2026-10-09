@@ -161,6 +161,8 @@ async fn review_regression_agents_overview_creation_is_fresh_but_returning_is_no
             .await?;
         let original = app.chat_widget.thread_id().expect("new dashboard task");
         assert_eq!(app.chat_widget.current_model(), model);
+        // A new chat widget shows the Ledger, which covers part of the starfield this test reads.
+        crate::app::test_support::hide_context_ledger(&mut app);
         let created = render(&app.chat_widget);
         assert_eq!(has_stars(&created), model == "gpt-6-astra", "{model}");
         if model != "gpt-6-astra" {
@@ -176,6 +178,7 @@ async fn review_regression_agents_overview_creation_is_fresh_but_returning_is_no
         app.select_agents_overview_thread(&mut tui, &mut server, original)
             .await?;
         assert_eq!(app.chat_widget.thread_id(), Some(original));
+        crate::app::test_support::hide_context_ledger(&mut app);
         let returned = render(&app.chat_widget);
         assert!(!has_stars(&returned));
         app.chat_widget

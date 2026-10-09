@@ -1,23 +1,22 @@
 # Permission verification — 9 October 2026
 
-Current candidate: `Elpis-wt-parity`, exact Codex 0.162.0 source integration completed; verification in progress. **Core, UI, CLI and their tests compile (CI 37918373073); runtime build and behavioral verification are pending. Not installed.** Earlier build/test claims belonged to the 0.160 candidate and do not establish this candidate's correctness.
+The Codex 0.162 recovery runtime builds and runs. **Not installed:** the inline Ledger layout fix still needs a rebuilt candidate, and the corrected UI checks still need the final full run.
 
-The coordinator reran the bridge fixtures against the older, uninstalled engine at `Elpis-next/codex-rs/target/release/codex`: 34 Claude checks and 27 Gemini checks passed. Both runs failed saved Full Access after a process restart: `never` was retained but `:danger-full-access` resumed as `:workspace`. This remains a required final-engine check.
+| Actual runtime check | Result | Evidence |
+| --- | --- | --- |
+| Installed Elpis, Full Access from the terminal | Reproduced an unwanted rejection: “approval policy is Never” | `/tmp/elpis-terminal-input-dfXoDi` |
+| Candidate, native permission changes | 11 passed | `/tmp/elpis-live-permissions-W8iHA0` |
+| Candidate, Code Mode including cells retained across turns | 15 passed | `/tmp/elpis-live-permissions-zR1all` |
+| Candidate, Claude bridge including cold Full Access resume | 35 passed | `/tmp/elpis-bridge-permissions-mRYjqe` |
+| Candidate, Gemini bridge including cold Full Access resume | 28 passed | `/tmp/elpis-bridge-permissions-wiPM25` |
+| Helper start, revocation and TUI resume | 32 passed, independently rerun | `/tmp/elpis-bridge-delegation-lXMB11` |
+| `/yolo` in the actual terminal | Applies Full Access, permits the write and saves the default | `/tmp/elpis-terminal-input-HqgfR2` |
+| Core permission and continuity unit tests | 301 passed in CI 37925769646 | Build job 113804212137 |
 
-Covered: restricted/default access, Full Access, live promotion/revocation, rejected settings, delayed approvals/plan changes, unconfirmed `turn/start` fields, concurrent chats with opposite permissions, interruption/revocation of one chat, unknown ACP session rejection, duplicate-turn rejection, and cold resume after revocation. Providers are deterministic local fixtures, not live Claude/Gemini accounts.
+Candidate runtime: CI source `8451f9ca2fb016012a962b987fd04f9cb29a75b6`, matching local `4d3d1fcd3`; SHA-256 `f449a04786bfeb9b1fdc992729b64ae6d2e2d85256a30a61edabc525b3e0f340`. Bridge runs above include the final helper fix `dc89275a8`; the coordinator independently reran the helper suite. Providers are deterministic local fixtures, not live Claude/Gemini accounts.
 
-Evidence: `/tmp/elpis-bridge-permissions-RON2nK` (Claude), `/tmp/elpis-bridge-permissions-AWkmq3` (Gemini). Logs: `.tmp/bridge-claude-verification.log`, `.tmp/bridge-gemini-verification.log`.
+Coverage includes promotion, revocation, rejected updates, delayed approvals, unconfirmed settings, simultaneous chats, unknown ACP sessions, duplicate turns, and persisted choices after restart. The new runtime fixes the older engine’s cold Full Access resume and cross-turn Code Mode failures. Helper checks cover delayed starts across revoke/regrant, reopened helpers, rejected restrictions and a failed persistence write. A save failure warns that reduced helper permissions survive only until restart; custom workspace roots are not intersected by the bridge.
 
-A second coordinator run on the same old engine passed all 12 ordinary/native Code Mode cases, then reproduced an extra approval after Full Access for a code cell retained from an earlier turn. The cell completed, so this is a permission failure, not an unfinished-cell timeout. Evidence: `/tmp/elpis-live-permissions-odYOYJ`; log: `.tmp/code-mode-old-regression.log`. The final engine must also pass this case and cross-turn revocation.
+Run on the final installed binary: `scripts/permissions-runtime.test.cjs` (native and `--code-mode`), `scripts/permissions-bridge.test.cjs` (Claude and `--gemini`), `scripts/permissions-bridge-delegation.test.cjs`, and `scripts/terminal-input.test.cjs` (native and `--bridge`). The original 32-row terminal test must pass; the diagnostic runtime currently hides the completed reply behind the Ledger at that size.
 
-Run against the final binary:
-```sh
-node scripts/permissions-runtime.test.cjs /absolute/path/to/elpis
-node scripts/permissions-runtime.test.cjs /absolute/path/to/elpis --code-mode
-node scripts/permissions-bridge.test.cjs /absolute/path/to/elpis
-node scripts/permissions-bridge.test.cjs /absolute/path/to/elpis --gemini
-node scripts/terminal-input.test.cjs /absolute/path/to/elpis
-node scripts/terminal-input.test.cjs /absolute/path/to/elpis --bridge
-```
-
-The build guard passed 17 isolated fake-compiler checks, including early pause, hard ceiling, lost sensor and process cleanup. This does not replace temperature monitoring during a real build. Local Rust compilation is deferred to hosted CI because free disk is below the project's 40 GB floor.
+Hosted CI performs Rust builds because local free space is below the 40 GB floor. The thermal guard passed 17 isolated checks; that is not evidence of a real local build. Automated results remain separate from Masih’s acceptance.

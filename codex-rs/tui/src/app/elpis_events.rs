@@ -80,17 +80,40 @@ impl App {
         if self.reject_pending_permission_change() {
             return;
         }
-        self.select_permission_profile(
-            app_server,
-            PermissionProfileSelection {
-                profile_id: BUILT_IN_PERMISSION_PROFILE_DANGER_FULL_ACCESS.to_string(),
-                approval_policy: Some(AskForApproval::Never),
-                approvals_reviewer: Some(ApprovalsReviewer::User),
-                display_label: "Full Access".to_string(),
-            },
-        )
-        .await;
-        match self.persist_full_access_default().await {
+        if !self
+            .select_permission_profile(
+                app_server,
+                PermissionProfileSelection {
+                    profile_id: BUILT_IN_PERMISSION_PROFILE_DANGER_FULL_ACCESS.to_string(),
+                    approval_policy: Some(AskForApproval::Never),
+                    approvals_reviewer: Some(ApprovalsReviewer::User),
+                    display_label: "Full Access".to_string(),
+                },
+            )
+            .await
+        {
+            return;
+        }
+        let Some(thread_id) = self.chat_widget.thread_id() else {
+            return;
+        };
+        let config = self.config.clone();
+        if self
+            .agents_overview
+            .requested_permission_profiles
+            .contains_key(&thread_id)
+        {
+            self.agents_overview
+                .pending_yolo_defaults
+                .insert(thread_id, config);
+        } else {
+            // Full Access was already confirmed, so reselecting it produces no new snapshot.
+            self.save_confirmed_yolo_default(config).await;
+        }
+    }
+
+    pub(super) async fn save_confirmed_yolo_default(&mut self, config: Config) {
+        match Self::persist_full_access_default(&config).await {
             Ok(()) => self.chat_widget.add_info_message(
                 "Full Access saved as the default for future chats.".to_string(),
                 /*hint*/ None,
@@ -130,7 +153,7 @@ impl App {
     }
 
     /// Save Full Access as the config.toml default, as v0.3.0 did.
-    async fn persist_full_access_default(&self) -> anyhow::Result<()> {
+    async fn persist_full_access_default(config: &Config) -> anyhow::Result<()> {
         let mut edits = vec![ConfigEdit::ClearPath {
             segments: vec!["sandbox_mode".into()],
         }];
@@ -147,7 +170,7 @@ impl App {
                 value: value.into(),
             });
         }
-        ConfigEditsBuilder::for_config(&self.config)
+        ConfigEditsBuilder::for_config(config)
             .with_edits(edits)
             .apply()
             .await

@@ -33,7 +33,7 @@ The public website may borrow RAG Studio's standard of polish, but not its compo
 
 The accepted September 30 release was v0.4.0 on Codex rust-v0.159.0. The current recovery candidate targets the installed Codex 0.162.0 foundation and preserves Elpis providers, Ledger controls, memory/continuity, pruning, dashboard and work graphs. It is under verification, not accepted or installed.
 
-Core, UI, CLI and their tests compiled in CI 37918373073. Later permission fixes are undergoing new compiler checks. A complete runtime build and behavior checks are still pending. `docs/permissions-verification.md` distinguishes old-engine failures from candidate evidence. `ES.md` is the local continuation note; the accepted contract governs scope.
+The diagnostic runtime built in CI 37925769646. Its core permission tests and local native, Code Mode and provider-bridge checks pass. A real short-window check exposed a Ledger layout bug; the fix compiles in CI 37931392632 and awaits a rebuilt runtime. UI expectations and CI sandbox setup are being corrected before the final full run. `docs/permissions-verification.md` records actual candidate evidence. `ES.md` is the local continuation note; the accepted contract governs scope.
 
 Runtime source is in `codex-rs/`, provider bridges in `tools/elpis-claude/`, checks in `scripts/` and `tests/`, and product contracts in `docs/`. State remains in `~/.elpis-next`. The website is a separate deployment boundary and is outside this recovery task.
 

@@ -3608,10 +3608,10 @@ mod tests {
 
         // Repro: a running task + slash-command popup + Esc should dismiss the popup without
         // interrupting the task.
-        pane.insert_str("/rev");
+        pane.insert_str("/for");
         assert!(
             pane.composer.popup_active(),
-            "expected command popup after typing `/rev`"
+            "expected command popup after typing `/for`"
         );
 
         // Owned transcript mode must reserve the popup's rows while task status is visible.
@@ -3644,7 +3644,7 @@ mod tests {
             );
         }
         assert!(!pane.composer.popup_active());
-        assert_eq!(pane.composer_text(), "/rev");
+        assert_eq!(pane.composer_text(), "/for");
 
         let width = 60;
         let area = Rect::new(0, 0, width, pane.desired_height(width));
@@ -3653,7 +3653,7 @@ mod tests {
             render_snapshot(&pane, area)
         );
 
-        pane.insert_str("i");
+        pane.insert_str("k");
         assert!(pane.composer.popup_active());
     }
 

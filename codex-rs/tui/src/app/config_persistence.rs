@@ -269,9 +269,9 @@ impl App {
         &mut self,
         app_server: &mut AppServerSession,
         mut selection: PermissionProfileSelection,
-    ) {
+    ) -> bool {
         if self.reject_pending_permission_change() {
-            return;
+            return false;
         }
         let Some(thread_id) = self.chat_widget.thread_id() else {
             self.chat_widget
@@ -279,8 +279,10 @@ impl App {
             self.chat_widget.add_error_message(
                 "Wait for the task to connect before selecting permissions.".into(),
             );
-            return;
+            return false;
         };
+        // A new choice supersedes an unconfirmed `/yolo` save.
+        self.agents_overview.pending_yolo_defaults.remove(&thread_id);
         let config = self.chat_widget.config_ref();
         if !self
             .agents_overview
@@ -302,7 +304,7 @@ impl App {
                 .selected_permission_profiles
                 .insert(thread_id, selection.profile_id);
             self.chat_widget.submit_initial_user_message_if_pending();
-            return;
+            return true;
         }
         let params = ThreadSettingsUpdateParams {
             thread_id: thread_id.to_string(),
@@ -341,18 +343,21 @@ impl App {
                     /*hint*/ None,
                 );
                 self.chat_widget.submit_initial_user_message_if_pending();
+                true
             }
             Ok(false) => {
                 self.chat_widget
                     .retain_input_after_failed_permission_selection();
                 self.chat_widget
                     .add_error_message("Permission selection requires a newer app server.".into());
+                false
             }
             Err(error) => {
                 self.chat_widget
                     .retain_input_after_failed_permission_selection();
                 self.chat_widget
                     .add_error_message(format!("Failed to select permissions: {error:#}"));
+                false
             }
         }
     }

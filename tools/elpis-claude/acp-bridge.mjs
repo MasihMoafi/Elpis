@@ -119,8 +119,9 @@ const ELPIS_HOME = process.env.ELPIS_HOME || `${HOME}/.elpis-next`;
 const STORE = process.env.ACP_BRIDGE_STORE ?? `${ELPIS_HOME}/elpis-claude/sessions.json`;
 async function loadStore() { return (await readJson(STORE)) ?? {}; }
 let storeChain = Promise.resolve();
+// Resolves true once saved, false if saving failed.
 function updateStore(fn) {
-  storeChain = storeChain.then(async () => { const st = await loadStore(); fn(st); await saveStore(st); }).catch((e) => log(`store: ${e.message}`));
+  storeChain = storeChain.then(async () => { const st = await loadStore(); fn(st); await saveStore(st); return true; }).catch((e) => { log(`store: ${e.message}`); return false; });
   return storeChain;
 }
 const CATALOG = `${STORE.slice(0, STORE.lastIndexOf("/"))}/catalog.json`;
@@ -300,28 +301,37 @@ const relayed = new Map(); // id sent to the TUI -> answers the helper's request
 const chatAccess = new Map(); // a chat's confirmed approval policy and profile, for the helpers it starts
 // A helper's ceiling is the sandbox it may have: what it asked for (read-only unless it asked to
 // write), never more than its chat allowed at its start, and only ever lowered after that, as
-// the engine's own subagents inherit a reduction; its chat's later grants never raise it. Each
-// helper open on a connection is here, with that connection's `restrict`; the store keeps the
-// ceiling in `_delegations`, for a helper reopened later.
-const helperScope = new Map(); // helper thread id -> { parentThreadId, requested, ceiling, restrict, applying, waiting }
+// the engine's own subagents inherit a reduction; its chat's later grants never raise it. Every
+// helper this bridge has seen stays here, with the `restrict` of each connection that has it
+// open (a delegate server, a second one, or a TUI); the store keeps the ceiling in
+// `_delegations`, for a helper reopened after a restart.
+const helperScope = new Map(); // helper thread id -> { parentThreadId, requested, ceiling, owners }
+// Helpers the engine is still starting or reopening, not yet in helperScope; a reduction
+// meanwhile lowers them too.
+const pendingHelpers = new Set(); // { parentThreadId, requested, ceiling }
 const AUTHORITY = { plan: 0, default: 0, acceptEdits: 1, auto: 2, bypassPermissions: 3 };
 // Only the built-in Workspace and Full Access profiles let a chat's helpers write; a custom or
 // unknown profile does not.
 const WRITABLE = [":workspace", ":danger-full-access"];
 const writableFor = (threadId) => WRITABLE.includes(chatAccess.get(threadId)?.profile) && helperScope.get(threadId)?.ceiling !== "read-only";
-// Lowers the ceiling of every open helper below a chat that may still write. Resolves once each
-// has applied it or been stopped; null when there was nothing to lower.
+// A reopened helper's ceiling: the lower of the stored one and this bridge's, lowered to what
+// its chat allows now. A record from before ceilings were kept is read-only.
+const ceilingOf = (threadId, d) => d.requested === "workspace-write" && d.ceiling === "workspace-write"
+  && helperScope.get(threadId)?.ceiling !== "read-only" && writableFor(d.parentThreadId) ? "workspace-write" : "read-only";
+// Lowers the ceiling of every helper below a chat that may still write. Resolves once each open
+// copy has applied it or been stopped; null when there was nothing to lower.
 function reduceHelpers(threadId) {
   const work = [];
+  for (const d of pendingHelpers) if (d.parentThreadId === threadId) d.ceiling = "read-only";
   for (const [id, h] of helperScope) {
     if (h.parentThreadId !== threadId) continue;
-    if (h.ceiling === "workspace-write") { h.ceiling = "read-only"; work.push(h.restrict(id)); }
+    if (h.ceiling === "workspace-write") { h.ceiling = "read-only"; for (const restrict of h.owners) work.push(restrict(id)); }
     const nested = reduceHelpers(id);
     if (nested) work.push(nested);
   }
   return work.length ? Promise.all(work) : null;
 }
-// The same reduction in the store, for helpers below the chat that are not open now.
+// The same reduction in the store, for a helper reopened after a restart. False if it was not saved.
 async function persistReduction(threadId) {
   await storeChain;
   const below = (dels) => {
@@ -330,8 +340,8 @@ async function persistReduction(threadId) {
     ids.delete(threadId);
     return [...ids].filter((id) => dels[id].ceiling !== "read-only");
   };
-  if (!below((await loadStore())._delegations ?? {}).length) return;
-  await updateStore((st) => { for (const id of below(st._delegations ?? {})) st._delegations[id].ceiling = "read-only"; });
+  if (!below((await loadStore())._delegations ?? {}).length) return true;
+  return updateStore((st) => { for (const id of below(st._delegations ?? {})) st._delegations[id].ceiling = "read-only"; });
 }
 function relayToTui(msg, answer) {
   const tui = [...clients].find((c) => !helperConns.has(c) && c.readyState === 1);
@@ -414,7 +424,11 @@ wss.on("connection", (ws) => {
     for (const confirm of confirmations.get(threadId) ?? []) confirm(threadAccess.get(threadId).profile);
     // A chat that can no longer write lowers its helpers' ceilings.
     if (writableFor(threadId)) return null;
-    if (wasWritable !== false) persistReduction(threadId).catch((e) => log(`store: ${e.message}`));
+    if (wasWritable !== false) persistReduction(threadId).then((saved) => {
+      if (saved) return;
+      log(`helpers of ${threadId}: reduction not saved`);
+      notify("warning", { threadId, message: "Elpis could not save its helpers' reduced permissions; they stay reduced only until Elpis restarts." });
+    });
     return reduceHelpers(threadId);
   };
   // The Claude Code mode a chat's turn runs in: Codex's permission modes, mapped to Claude's own.
@@ -700,49 +714,98 @@ wss.on("connection", (ws) => {
     confirmations.get(tid).add(confirm);
     engineCall("thread/settings/update", { threadId: tid, permissions: profile }).catch((e) => settle(false, e?.message ?? JSON.stringify(e)));
   });
-  // A helper this connection's engine runs, which could not be restricted, stops: its delegate
-  // tool hears that its turn failed, and its engine (serving only this delegate connection) ends.
-  const stopHelper = (tid, reason) => {
+  const ownHelpers = new Map(); // helper thread id open on this connection -> { applying, waiting, failed }
+  // A helper this connection's engine runs, which could not be restricted, stops. A delegate
+  // connection serves only its helper: its tool hears that the turn failed, and its engine ends.
+  // A TUI's engine also runs the user's other chats: only the helper's turn is interrupted, and
+  // the helper runs again only once its restriction applies.
+  const failHelper = async (tid, reason) => {
     log(`helper ${tid} stopped: ${reason}`);
     const error = { code: -32600, message: `The helper was stopped: ${reason}.` };
-    for (const id of helperScope.get(tid)?.waiting.splice(0) ?? []) ws.send(JSON.stringify({ id, error }));
+    for (const id of ownHelpers.get(tid)?.waiting.splice(0) ?? []) ws.send(JSON.stringify({ id, error }));
     const turnId = engineTurns.get(tid);
-    if (turnId) ws.send(JSON.stringify({ method: "turn/completed", params: { threadId: tid, turn: { id: turnId, items: [], status: "failed", error: { message: error.message } } } }));
-    ws.close();
-    engine.kill();
+    if (helperConns.has(ws)) {
+      if (turnId) ws.send(JSON.stringify({ method: "turn/completed", params: { threadId: tid, turn: { id: turnId, items: [], status: "failed", error: { message: error.message } } } }));
+      ws.close();
+      engine.kill();
+      return;
+    }
+    if (turnId) {
+      const interrupted = engineCall("turn/interrupt", { threadId: tid, turnId }).catch((e) => log(`helper ${tid} interrupt: ${e?.message ?? JSON.stringify(e)}`));
+      await Promise.race([interrupted, new Promise((resolve) => setTimeout(resolve, HELPER_RESTRICT_MS))]);
+    }
+    notify("warning", { threadId: tid, message: `${error.message} It runs again once they apply.` });
   };
-  // Lowers a helper on this connection to read-only. A Claude or Antigravity helper's next tool
-  // follows the bridge at once; its engine's copy is only the record. An engine helper's next tool
-  // follows its engine: its turns wait until the engine confirms, and stop if it does not.
-  const restrictHelper = (tid) => {
-    const h = helperScope.get(tid);
-    const previousAccess = accessModeOf(tid, "claude", threadPolicy.get(tid) !== "never");
-    threadSandbox.set(tid, "read-only");
-    stopIfReduced(tid, previousAccess);
-    if (claudeModel.has(tid)) { applyProfile(tid, ":read-only"); return null; }
-    const applying = h.applying = applyProfile(tid, ":read-only").then((ok) => {
-      if (h.applying === applying) h.applying = null;
-      if (ok) h.waiting.length = 0;
-      else stopHelper(tid, "its chat's restricted permissions could not be applied");
+  // Restricts an engine helper on this connection to read-only; its turns wait until its engine
+  // confirms, and it stops if the engine does not.
+  const enforceHelper = (tid) => {
+    const own = ownHelpers.get(tid);
+    const applying = own.applying = applyProfile(tid, ":read-only").then(async (ok) => {
+      own.failed = !ok;
+      if (ok) own.waiting.length = 0;
+      else await failHelper(tid, "its chat's restricted permissions could not be applied");
+      if (own.applying === applying) own.applying = null;
       return ok;
     });
     return applying;
   };
-  const registerHelper = (tid, d, ceiling) => {
-    helperScope.set(tid, { parentThreadId: d.parentThreadId, requested: d.requested, ceiling, restrict: restrictHelper, applying: null, waiting: [] });
-    threadSandbox.set(tid, ceiling);
+  // Lowers a helper on this connection to read-only. A Claude or Antigravity helper's next tool
+  // follows the bridge at once; its engine's copy is only the record. An engine helper's next tool
+  // follows its engine.
+  const restrictHelper = (tid) => {
+    const previousAccess = accessModeOf(tid, "claude", threadPolicy.get(tid) !== "never");
+    threadSandbox.set(tid, "read-only");
+    stopIfReduced(tid, previousAccess);
+    if (claudeModel.has(tid)) { applyProfile(tid, ":read-only"); return null; }
+    return enforceHelper(tid);
   };
-  // A helper a fresh delegate connection reopens: the ceiling it was left with, lowered to what
-  // its chat allows now, applied before the reopened thread is answered. A record from before
-  // ceilings were kept is read-only.
-  async function adoptHelper(tid, d, bridged) {
-    const ceiling = d.ceiling === "workspace-write" && d.requested === "workspace-write" && writableFor(d.parentThreadId) ? "workspace-write" : "read-only";
-    registerHelper(tid, { parentThreadId: d.parentThreadId, requested: d.requested ?? "read-only" }, ceiling);
-    if (ceiling !== d.ceiling) updateStore((st) => { if (st._delegations?.[tid]) st._delegations[tid].ceiling = ceiling; });
+  // Opens a helper on this connection, under the lower of its known ceiling and `ceiling`.
+  const openHelper = (tid, d, ceiling) => {
+    let h = helperScope.get(tid);
+    if (!h) helperScope.set(tid, h = { parentThreadId: d.parentThreadId, requested: d.requested, ceiling, owners: new Set() });
+    if (ceiling === "read-only") h.ceiling = "read-only";
+    h.owners.add(restrictHelper);
+    ownHelpers.set(tid, { applying: null, waiting: [], failed: false });
+    threadSandbox.set(tid, h.ceiling);
+    return h;
+  };
+  // A request for a helper's thread asks for no more than its ceiling: a read-only helper is
+  // asked to be read-only, and none is given Full Access. `field` is the request's sandbox field.
+  const boundAccess = (p, ceiling, field) => {
+    const wide = p.permissions === ":danger-full-access" || p[field] === "danger-full-access" || ["dangerFullAccess", "externalSandbox"].includes(p[field]?.type);
+    if (ceiling === "workspace-write" && !wide) return;
+    delete p.permissions; delete p[field];
+    if (field === "sandbox") p.sandbox = ceiling;
+    else p.permissions = ceiling === "read-only" ? ":read-only" : ":workspace";
+  };
+  // A reopened helper (resumeThread bounded its request): its ceiling, saved if it fell, and its
+  // engine checked to be within it. False if the engine could not be brought within it.
+  async function adoptHelper(tid, r, bridged) {
+    const h = openHelper(tid, r, r.ceiling);
+    if (h.ceiling !== r.stored) updateStore((st) => { if (st._delegations?.[tid]) st._delegations[tid].ceiling = h.ceiling; });
     const profile = threadAccess.get(tid)?.profile;
-    const want = ceiling === "read-only" ? ":read-only" : profile === ":danger-full-access" ? ":workspace" : null;
-    if (!want || bridged) { if (want) applyProfile(tid, want); return true; }
-    return applyProfile(tid, want);
+    const want = h.ceiling === "read-only" ? ":read-only" : profile === ":danger-full-access" ? ":workspace" : null;
+    if (!want || profile === want) return true;
+    if (bridged) { applyProfile(tid, want); return true; }
+    const ok = await applyProfile(tid, want);
+    ownHelpers.get(tid).failed = !ok;
+    return ok;
+  }
+  // Reopening a helper (by a fresh delegate server, or by the TUI from the agents page) bounds its
+  // permissions by its ceiling before the engine loads it, so the reopened thread and what the
+  // TUI shows are already within it.
+  const pendingAdopt = new Map(); // thread/resume id -> the helper it reopens
+  async function resumeThread(msg) {
+    const tid = msg.params?.threadId;
+    await storeChain;
+    const d = tid && (await loadStore())._delegations?.[tid];
+    if (d) {
+      const r = { parentThreadId: d.parentThreadId, requested: d.requested ?? "read-only", ceiling: ceilingOf(tid, d), stored: d.ceiling };
+      pendingHelpers.add(r);
+      pendingAdopt.set(msg.id, r);
+      boundAccess(msg.params, r.ceiling, "sandbox");
+    }
+    engine.stdin.write(JSON.stringify(msg) + "\n");
   }
   // A thread/settings/updated that waits for helpers to apply a reduction keeps its place: any
   // later one for this connection waits behind it, so a fast revoke and grant arrive in order.
@@ -891,12 +954,12 @@ wss.on("connection", (ws) => {
     }
     if (parsed && pendingDelegation.has(parsed.id)) {
       // A helper started by a chat's delegate tool: remember who started it, for the agent console.
-      const d = pendingDelegation.get(parsed.id); pendingDelegation.delete(parsed.id);
+      const d = pendingDelegation.get(parsed.id); pendingDelegation.delete(parsed.id); pendingHelpers.delete(d);
       const tid = parsed.result?.thread?.id;
       if (tid) {
-        registerHelper(tid, d, d.sandbox);
+        if (!writableFor(d.parentThreadId)) d.ceiling = "read-only";
         // Its chat lost write access while it was starting.
-        if (d.sandbox === "workspace-write" && !writableFor(d.parentThreadId)) { helperScope.get(tid).ceiling = "read-only"; restrictHelper(tid); }
+        if (openHelper(tid, d, d.ceiling).ceiling !== d.sandbox) restrictHelper(tid);
         const { ceiling } = helperScope.get(tid);
         updateStore((st) => { st._delegations = { ...st._delegations, [tid]: { parentThreadId: d.parentThreadId, model: d.model, startedAt: Math.floor(now() / 1000), requested: d.requested, ceiling } }; });
         log(`helper thread ${tid} (${d.model}) started by ${d.parentThreadId}`);
@@ -923,16 +986,17 @@ wss.on("connection", (ws) => {
       }
     }
     let reopened = null;
+    if (parsed && pendingAdopt.has(parsed.id) && !parsed.result?.thread?.id) { pendingHelpers.delete(pendingAdopt.get(parsed.id)); pendingAdopt.delete(parsed.id); }
     if (parsed && pendingResume.has(parsed.id) && parsed.result?.thread?.id) {
       pendingResume.delete(parsed.id);
       reopened = parsed.result.thread.id;
       await storeChain;
-      const store = await loadStore();
-      const saved = store[parsed.result.thread.id];
-      const delegation = helperConns.has(ws) && store._delegations?.[reopened];
-      if (delegation && !(await adoptHelper(reopened, delegation, !!saved?.model))) {
+      const saved = (await loadStore())[parsed.result.thread.id];
+      const helper = pendingAdopt.get(parsed.id);
+      pendingAdopt.delete(parsed.id); pendingHelpers.delete(helper);
+      if (helper && !(await adoptHelper(reopened, helper, !!saved?.model))) {
         ws.send(JSON.stringify({ id: parsed.id, error: { code: -32600, message: "The helper was not reopened: its chat's restricted permissions could not be applied." } }));
-        stopHelper(reopened, "its chat's restricted permissions could not be applied");
+        if (helperConns.has(ws)) failHelper(reopened, "its chat's restricted permissions could not be applied");
         return;
       }
       if (saved?.model) {
@@ -1489,7 +1553,9 @@ wss.on("connection", (ws) => {
       const requested = p.sandbox === "workspace-write" ? "workspace-write" : "read-only";
       p.sandbox = requested === "workspace-write" && writableFor(parentThreadId) ? "workspace-write" : "read-only";
       delete p.permissions;
-      pendingDelegation.set(msg.id, { parentThreadId, model: p.model ?? null, sandbox: p.sandbox, requested });
+      const d = { parentThreadId, model: p.model ?? null, sandbox: p.sandbox, requested, ceiling: p.sandbox };
+      pendingDelegation.set(msg.id, d);
+      pendingHelpers.add(d);
       // The helper asks before acting when its chat does.
       const inherited = chatAccess.get(parentThreadId)?.policy;
       if (inherited && inherited !== "never") p.approvalPolicy = inherited;
@@ -1654,7 +1720,7 @@ wss.on("connection", (ws) => {
     if (msg.method === "thread/list" && msg.params?.ancestorThreadId && !msg.params.cursor) pendingChildList.set(msg.id, msg.params.ancestorThreadId);
     if (msg.method === "thread/list" || msg.method === "thread/read") pendingHelperMark.add(msg.id);
     if (msg.method === "model/list") pendingModelList.add(msg.id);
-    if (msg.method === "thread/resume") pendingResume.add(msg.id);
+    if (msg.method === "thread/resume") { pendingResume.add(msg.id); resumeThread(msg); return; }
     if (msg.method === "thread/archive") pendingArchive.set(msg.id, msg.params?.threadId);
     if (msg.method === "config/read") pendingConfigRead.add(msg.id);
     if (msg.method === "thread/fork" && claudeModel.has(msg.params?.threadId)) {
@@ -1672,6 +1738,7 @@ wss.on("connection", (ws) => {
       && lp.sectionId == null && lp.projectId == null && lp.parentThreadId == null && lp.ancestorThreadId == null) pendingThreadList.set(msg.id, lp);
     if (msg.method === "thread/settings/update") {
       const p = msg.params ?? {};
+      if (ownHelpers.has(p.threadId)) boundAccess(p, helperScope.get(p.threadId).ceiling, "sandboxPolicy");
       if (isBridged(p.model)) { claudeModel.set(p.threadId, p.model); p.model = null; log(`thread ${p.threadId} -> ${claudeModel.get(p.threadId)}`); }
       else if (typeof p.model === "string") claudeModel.delete(p.threadId);
       // Permissions become authoritative only on thread/settings/updated. A rejected or queued
@@ -1698,6 +1765,7 @@ wss.on("connection", (ws) => {
     }
     if (msg.method === "turn/start") {
       const tid = msg.params?.threadId;
+      if (ownHelpers.has(tid)) boundAccess(msg.params, helperScope.get(tid).ceiling, "sandboxPolicy");
       if (msg.params?.collaborationMode?.mode) threadCollab.set(tid, msg.params.collaborationMode.mode);
       // Its permission fields are the TUI's unconfirmed choice: a Claude turn ignores them (see
       // claudeTurn), and the engine reports what it accepts for its own turn in
@@ -1717,11 +1785,11 @@ wss.on("connection", (ws) => {
         return;
       }
       if (isBridged(msg.params?.model)) msg.params.model = null;
-      const helper = helperScope.get(tid);
-      if (helper?.restrict === restrictHelper && helper.applying) {
+      const own = ownHelpers.get(tid);
+      if (own?.applying || own?.failed) {
         // An engine helper starts its next turn only once its engine has confirmed its restriction.
-        helper.waiting.push(msg.id);
-        helper.applying.then((ok) => { if (ok) engine.stdin.write(JSON.stringify(msg) + "\n"); });
+        own.waiting.push(msg.id);
+        (own.applying ?? enforceHelper(tid)).then((ok) => { if (ok) engine.stdin.write(JSON.stringify(msg) + "\n"); });
         return;
       }
       engine.stdin.write(JSON.stringify(msg) + "\n");
@@ -1755,7 +1823,8 @@ wss.on("connection", (ws) => {
     engine.stdin.write(line + "\n");
   });
   ws.on("close", async () => {
-    for (const [id, h] of helperScope) if (h.restrict === restrictHelper) helperScope.delete(id);
+    for (const tid of ownHelpers.keys()) helperScope.get(tid)?.owners.delete(restrictHelper);
+    for (const d of [...pendingDelegation.values(), ...pendingAdopt.values()]) pendingHelpers.delete(d);
     clients.delete(ws); await storeChain; engine.kill(); for (const a of acps.values()) a.kill(); log("tui disconnected");
   });
 });

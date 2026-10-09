@@ -1230,6 +1230,9 @@ impl App {
                 &notification,
                 ServerNotification::ItemStarted(_) | ServerNotification::ItemCompleted(_)
             );
+        if matches!(&notification, ServerNotification::Error(error) if !error.will_retry) {
+            self.agents_overview.pending_yolo_defaults.remove(&thread_id);
+        }
         let mut confirmed_profile = None;
         if let ServerNotification::ThreadSettingsUpdated(notification) = &notification {
             self.apply_thread_settings_to_cached_session(thread_id, &notification.thread_settings)
@@ -1351,7 +1354,13 @@ impl App {
                 .on_thread_settings_updated(settings.clone());
             notification = None;
         }
-        if confirmed_profile.is_some() {
+        if let Some(profile) = confirmed_profile {
+            if let Some(config) = self.agents_overview.pending_yolo_defaults.remove(&thread_id)
+                && profile.profile_id == BUILT_IN_PERMISSION_PROFILE_DANGER_FULL_ACCESS
+                && profile.approval_policy == Some(AskForApproval::Never)
+            {
+                self.save_confirmed_yolo_default(config).await;
+            }
             if self.chat_widget.thread_id() == Some(thread_id) {
                 self.adopt_server_permissions();
             }

@@ -16,6 +16,9 @@ use codex_model_provider_info::ModelProviderInfo;
 
 pub(super) const ELPIS_PROVIDER_SELECTION_VIEW_ID: &str = "elpis-provider-selection";
 pub(super) const ELPIS_PROVIDER_MODELS_VIEW_ID: &str = "elpis-provider-models";
+/// Held open while a provider's models load, so the popup stack is never empty between the
+/// provider list closing and the model list opening.
+pub(super) const ELPIS_PROVIDER_LOADING_VIEW_ID: &str = "elpis-provider-loading";
 
 /// The pickers' and the dashboard's id for the Claude subscription.
 pub(crate) const CLAUDE_SUBSCRIPTION_PROVIDER_ID: &str = "claude-subscription";
@@ -186,6 +189,8 @@ pub(crate) enum ElpisProviderEvent {
     /// A provider's models arrived.
     ModelsLoaded {
         provider_id: String,
+        /// The id [`ChatWidget::begin_elpis_models_loading`] returned for this lookup.
+        request_id: uuid::Uuid,
         result: Result<Vec<ModelPreset>, String>,
     },
     /// Ask for a provider's key ("Add API key…").
@@ -494,6 +499,55 @@ impl ChatWidget {
             initial_selected_idx,
             ..SelectionViewParams::picker()
         });
+    }
+
+    /// Shows a "loading" picker while the App lists `provider_id`'s models, and returns the id
+    /// its reply must carry. The picker keeps the popup stack occupied, so input queued behind
+    /// `/model` waits until a model is picked or the picker is cancelled, instead of leaving for
+    /// the old model between the provider list closing and the model list opening.
+    pub(crate) fn begin_elpis_models_loading(&mut self, provider_id: &str) -> uuid::Uuid {
+        self.bottom_pane
+            .dismiss_view_by_id(ELPIS_PROVIDER_LOADING_VIEW_ID);
+        let request_id = uuid::Uuid::new_v4();
+        // The same slot native model replies use: a newer model picker or an account change
+        // invalidates this lookup.
+        self.model_popup_request_id = Some(request_id);
+        self.bottom_pane.show_selection_view(SelectionViewParams {
+            view_id: Some(ELPIS_PROVIDER_LOADING_VIEW_ID),
+            title: Some("Choose a mind".to_string()),
+            subtitle: Some(format!(
+                "Loading {} models…",
+                self.elpis_provider_name(provider_id)
+            )),
+            items: vec![SelectionItem {
+                name: "Loading models…".to_string(),
+                is_disabled: true,
+                ..Default::default()
+            }],
+            ..SelectionViewParams::picker()
+        });
+        request_id
+    }
+
+    /// The reply to [`Self::begin_elpis_models_loading`]: the model list replaces the loading
+    /// picker. A reply is dropped when its lookup was superseded, or when the loading picker was
+    /// cancelled or covered, so it never reopens a popup the owner has left.
+    pub(crate) fn finish_elpis_models_loading(
+        &mut self,
+        request_id: uuid::Uuid,
+        provider_id: String,
+        result: Result<Vec<ModelPreset>, String>,
+    ) {
+        if self.model_popup_request_id != Some(request_id) {
+            return;
+        }
+        self.model_popup_request_id = None;
+        if self
+            .bottom_pane
+            .dismiss_active_view_if_id(ELPIS_PROVIDER_LOADING_VIEW_ID)
+        {
+            self.open_elpis_provider_models(provider_id, result);
+        }
     }
 
     /// A provider's own models. Picking a provider's model on another provider continues this

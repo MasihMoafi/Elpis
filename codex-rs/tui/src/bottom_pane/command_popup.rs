@@ -346,13 +346,13 @@ mod tests {
         assert!(
             !popup
                 .filtered_items()
-                .contains(&CommandItem::Builtin(SlashCommand::Archive))
+                .contains(&CommandItem::Builtin(SlashCommand::New))
         );
 
-        popup.on_composer_text_change("/arch".to_string());
+        popup.on_composer_text_change("/new".to_string());
         assert_eq!(
             popup.filtered_items(),
-            vec![CommandItem::Builtin(SlashCommand::Archive)]
+            vec![CommandItem::Builtin(SlashCommand::New)]
         );
         assert_eq!(popup.selected_item(), None);
 
@@ -366,7 +366,7 @@ mod tests {
         let mut buf = Buffer::empty(area);
         popup.render_ref(area, &mut buf);
         insta::assert_snapshot!("side_conversation_unavailable_command", format!("{buf:?}"));
-        popup.on_composer_text_change("/a".to_string());
+        popup.on_composer_text_change("/c".to_string());
         popup.move_up();
         assert!(popup.selected_item().is_some());
     }

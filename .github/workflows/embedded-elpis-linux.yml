@@ -167,6 +167,11 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends libcap-dev libssl-dev pkg-config strace iproute2
           rustup toolchain install 1.95.0 --profile minimal --no-self-update
+          # This disposable runner must permit the namespaces that the sandbox tests create.
+          # https://github.com/ubuntu/ubuntu-release-notes/blob/main/docs/24.04/index.md
+          if [[ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]]; then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          fi
       - name: Read the Elpis version from the CLI manifest
         run: |
           version=$(sed -n 's/^version = "\(.*\)"$/\1/p' codex-rs/cli/Cargo.toml | head -n 1)
@@ -223,6 +228,10 @@ jobs:
           cargo build --release --locked -p codex-cli --bin codex -p codex-code-mode-host --bin codex-code-mode-host
           env -u CODEX_SKIP_BWRAP_BUILD cargo build --release --locked -p codex-bwrap --bin bwrap
           cp target/release/codex target/release/elpis
+          mkdir -p target/release/codex-resources
+          install -m 0755 target/release/bwrap target/release/codex-resources/bwrap
+          # Test harness binaries also need the pinned sandbox on PATH.
+          echo "$PWD/target/release/codex-resources" >> "$GITHUB_PATH"
           test "$(target/release/elpis --version)" = "elpis $ELPIS_VERSION"
       - name: Record diagnostic runtime provenance
         if: ${{ !cancelled() && steps.runtime_build.outcome == 'success' }}
@@ -244,6 +253,8 @@ jobs:
           if-no-files-found: error
           retention-days: 7
       - name: Native UI and retained Elpis interaction tests
+        env:
+          INSTA_UPDATE: new
         if: ${{ !cancelled() }}
         working-directory: codex-rs
         run: |
@@ -291,6 +302,9 @@ jobs:
       - name: Gemini bridge permission regressions
         if: ${{ !cancelled() && steps.runtime_build.outcome == 'success' }}
         run: node scripts/permissions-bridge.test.cjs "$PWD/codex-rs/target/release/elpis" --gemini
+      - name: Delegated helper permission regressions
+        if: ${{ !cancelled() && steps.runtime_build.outcome == 'success' }}
+        run: node scripts/permissions-bridge-delegation.test.cjs "$PWD/codex-rs/target/release/elpis"
       - name: Real runtime evals and failing controls, without outside network
         if: ${{ !cancelled() && steps.runtime_build.outcome == 'success' }}
         run: sudo --preserve-env=PATH unshare -n sh -c 'ip link set lo up; bash scripts/release-runtime-evals.sh "$PWD/codex-rs/target/release/elpis"'

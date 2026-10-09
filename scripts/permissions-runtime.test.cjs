@@ -53,9 +53,9 @@ function releaseResponse(item) {
     { type: 'response.completed', response: { id: `r_${checks.length}`, usage: { input_tokens: 100, output_tokens: 10, total_tokens: 110 } } },
   ].map(event => `data: ${JSON.stringify(event)}\n\n`).join(''));
 }
-async function probe(threadId, { name, before, after, escalation, patch, inner, writes, prompts }) {
+async function probe(threadId, { name, before, after, escalation, patch, inner, workspace, writes, prompts }) {
   await select(threadId, before);
-  const marker = path.join(protectedDir, `sentinel-${checks.length}`);
+  const marker = path.join(workspace ? cwd : protectedDir, `sentinel-${checks.length}`);
   const args = {
     cmd: `printf permission-sentinel > '${marker}'`,
     sandbox_permissions: escalation ? 'require_escalated' : 'use_default',
@@ -74,7 +74,7 @@ async function probe(threadId, { name, before, after, escalation, patch, inner, 
   if (after !== undefined) {
     const deadline = Date.now() + 10000;
     while (inner ? !fs.existsSync(ready) : !provider.hanging.size) {
-      assert(Date.now() < deadline, 'provider request did not arrive');
+      assert(Date.now() < deadline, inner ? 'sandboxed gate did not start' : 'provider request did not arrive');
       await new Promise(resolve => setTimeout(resolve, 10));
     }
     await select(threadId, after);
@@ -139,6 +139,7 @@ async function probeCrossTurnCell(threadId, { before, after, writes, prompts }) 
   await rpc.request('initialize', { clientInfo: { name: 'permission_fixture', version: '1' }, capabilities: { experimentalApi: true } });
   rpc.send({ method: 'initialized' });
   const { thread } = await rpc.request('thread/start', { cwd, approvalPolicy: 'on-request', permissions: ':workspace' });
+  await probe(thread.id, { name: 'workspace mode permits an ordinary project write', before: false, workspace: true, writes: true, prompts: 0 });
   await probe(thread.id, { name: 'idle Full Access writes without approval', before: true, writes: true, prompts: 0 });
   await probe(thread.id, { name: 'idle restricted mode asks and denied write stays absent', before: false, escalation: true, writes: false, prompts: 1 });
   await probe(thread.id, { name: 'idle restricted sandbox blocks the unapproved write', before: false, writes: false, prompts: 0 });

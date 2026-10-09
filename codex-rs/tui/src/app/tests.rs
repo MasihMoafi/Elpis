@@ -403,7 +403,7 @@ async fn chat_widget_frame_reuses_active_cell_height_across_frame_passes() {
     assert_eq!(desired_height_calls.load(Ordering::Relaxed), 1);
 }
 
-async fn next_thread_settings_updated(
+pub(super) async fn next_thread_settings_updated(
     app_server: &mut AppServerSession,
     thread_id: ThreadId,
 ) -> ThreadSettingsUpdatedNotification {
