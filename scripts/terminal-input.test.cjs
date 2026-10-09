@@ -48,7 +48,8 @@ async function startAppServer(env) {
   const bridgeLog = path.join(root, 'bridge.log');
   appServer = useBridge
     ? spawn(process.execPath, [path.resolve(__dirname, '../tools/elpis-claude/acp-bridge.mjs')], {
-      cwd, env: { ...env, PORT: '0', ELPIS_ENGINE_BIN: binary, ELPIS_NO_AGY: '1', ACP_BRIDGE_LOG: bridgeLog },
+      cwd, env: { ...env, PORT: '0', ELPIS_ENGINE_BIN: binary, ELPIS_NO_AGY: '1', ACP_BRIDGE_LOG: bridgeLog,
+        ACP_ADAPTER: path.resolve(__dirname, 'permissions-bridge.test.cjs'), PERMISSION_FIXTURE_ADAPTER: '1' },
       stdio: ['ignore', 'pipe', 'pipe'],
     })
     : spawn(binary, ['app-server', '--listen', 'ws://127.0.0.1:0'], { cwd, env, stdio: ['ignore', 'pipe', 'pipe'] });
