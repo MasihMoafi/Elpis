@@ -17,13 +17,6 @@ impl ChatWidget {
         }
     }
 
-    /// Whether the displayed thread has a title request in flight. The footer status line that
-    /// drew its spinner is off in Elpis (R17), so tests read the flag the spinner followed.
-    #[cfg(test)]
-    pub(crate) fn thread_title_generation_pending(&self) -> bool {
-        self.status_state.thread_title_generation_pending
-    }
-
     pub(super) fn status_line_value_for_item(&mut self, item: StatusLineItem) -> Option<String> {
         let value = self.status_line_value(item);
         if matches!(
