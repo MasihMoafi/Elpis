@@ -227,7 +227,8 @@ jobs:
             elpis_ smart_prune compact_instructions world_state build_agent_spawn_config \
             live_permissions inherited_permissions step_activation thread_settings turn_input
           cargo test --release --locked -p codex-core --test all -- \
-            elpis_ledger_admission elpis_context_attribution work_graphs
+            elpis_ledger_admission elpis_context_attribution work_graphs settings_commits \
+            agents_md scenarios_shared_instructions
           cargo test --release --locked -p codex-elpis-gateway --lib
           cargo test --release --locked -p codex-model-provider-info --lib
           cargo test --release --locked -p codex-cli --lib
