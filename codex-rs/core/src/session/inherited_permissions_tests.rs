@@ -114,107 +114,222 @@ async fn profile_id(session: &Session) -> Option<String> {
         .map(|profile| profile.id)
 }
 
-/// Fails if a rejected reduction counted as applied: the child would keep Full Access for
-/// every later action instead of failing each one.
-#[tokio::test]
-async fn a_reduction_the_child_rejects_stays_pending() {
+/// A child session at `preset`, created as if spawned by a parent.
+async fn child_at(preset: Preset) -> Session {
     let (session, _) = make_session_and_context().await;
     session
-        .update_settings(Preset::FullAccess.update())
+        .update_settings(preset.update())
         .await
-        .expect("full access");
-    let parent = permission_update(&configuration(&session, Preset::Default).await);
-    // The child's own limits allow only `never`.
+        .expect("child permissions");
+    session
+}
+
+/// A parent's permissions at `preset`, as a child receives them.
+async fn parent_at(child: &Session, preset: Preset) -> SessionSettingsUpdate {
+    permission_update(&configuration(child, preset).await)
+}
+
+/// Fails if a parent's later grant releases what an existing child owes: the child, which
+/// rejected the revocation, would act with Full Access again without ever taking the lower
+/// setting.
+#[tokio::test]
+async fn a_rejected_revocation_stays_owed_after_the_parent_regains_full_access() {
+    let child = child_at(Preset::FullAccess).await;
+    let parent = Arc::new(Reductions::default());
+    let (revoked, regained) = (
+        parent_at(&child, Preset::Default).await,
+        parent_at(&child, Preset::FullAccess).await,
+    );
+    // The child's own limits allow only `never`, and it existed at the revocation.
     {
-        let mut state = session.state.lock().await;
+        let mut state = child.state.lock().await;
         Arc::make_mut(&mut state.session_configuration.step_settings).approval_policy =
             crate::config::Constrained::allow_only(AskForApproval::Never);
     }
+    child.owe_parent_reductions_from(&parent, /*generation*/ 1);
 
-    for _ in 0..2 {
-        assert!(
-            session
-                .apply_parent_reduction(/*generation*/ 1, parent.clone())
-                .await
-                .is_err()
-        );
-    }
-    let snapshot = session.thread_config_snapshot().await;
+    let history = vec![revoked.clone()];
+    assert!(
+        child
+            .take_parent_reductions(&parent, history.clone(), revoked)
+            .await
+            .is_err()
+    );
+    assert!(
+        child
+            .take_parent_reductions(&parent, history, regained)
+            .await
+            .is_err(),
+        "the parent regaining Full Access must not release the child"
+    );
+    let snapshot = child.thread_config_snapshot().await;
     assert_eq!(
         (snapshot.approval_policy, snapshot.permission_profile),
         (AskForApproval::Never, PermissionProfile::Disabled)
     );
 }
 
-/// Each numbered reduction applies once, so a late delivery of an older one changes nothing.
+/// An existing child takes each reduction once, in order, and a parent's later grant does not
+/// raise it.
 #[tokio::test]
-async fn a_parent_reduction_applies_once() {
-    let (session, _) = make_session_and_context().await;
-    session
-        .update_settings(Preset::FullAccess.update())
-        .await
-        .expect("full access");
-    let default = permission_update(&configuration(&session, Preset::Default).await);
-    let read_only = permission_update(&configuration(&session, Preset::ReadOnly).await);
+async fn an_existing_child_takes_each_reduction_and_is_not_raised() {
+    let child = child_at(Preset::FullAccess).await;
+    let parent = Arc::new(Reductions::default());
+    let (default, read_only, full_access) = (
+        parent_at(&child, Preset::Default).await,
+        parent_at(&child, Preset::ReadOnly).await,
+        parent_at(&child, Preset::FullAccess).await,
+    );
+    child.owe_parent_reductions_from(&parent, /*generation*/ 1);
 
-    session
-        .apply_parent_reduction(/*generation*/ 1, default)
+    child
+        .take_parent_reductions(&parent, vec![default.clone()], default.clone())
         .await
         .expect("first reduction");
-    session
-        .apply_parent_reduction(/*generation*/ 1, read_only.clone())
-        .await
-        .expect("already applied");
     assert_eq!(
-        profile_id(&session).await,
+        profile_id(&child).await,
         Some(BUILT_IN_PERMISSION_PROFILE_WORKSPACE.to_string())
     );
-    session
-        .apply_parent_reduction(/*generation*/ 2, read_only)
+    let history = vec![default, read_only.clone()];
+    child
+        .take_parent_reductions(&parent, history.clone(), read_only)
         .await
         .expect("second reduction");
+    child
+        .take_parent_reductions(&parent, history, full_access)
+        .await
+        .expect("a grant is not a reduction");
     assert_eq!(
-        profile_id(&session).await,
+        profile_id(&child).await,
         Some(BUILT_IN_PERMISSION_PROFILE_READ_ONLY.to_string())
     );
 }
 
-/// A reduction is numbered for children until the thread provably gains authority again.
-/// Fails if a later grant leaves the old reduction pending: a child started with the new Full
-/// Access would be lowered to the old reduction on its first tool call.
+/// Runs what any background lowering does to a child that started after its parent regained
+/// Full Access, more than once and with the earlier revocation still recorded. Fails if work
+/// for an older reduction reaches a later child: it would lose the Full Access it inherited.
 #[tokio::test]
-async fn a_later_grant_forgets_the_pending_reduction() {
+async fn a_child_started_after_a_grant_keeps_what_it_inherited() {
+    let child = child_at(Preset::FullAccess).await;
+    let parent = Arc::new(Reductions::default());
+    let (revoked, regained) = (
+        parent_at(&child, Preset::Default).await,
+        parent_at(&child, Preset::FullAccess).await,
+    );
+
+    for _ in 0..2 {
+        child
+            .take_parent_reductions(&parent, vec![revoked.clone()], regained.clone())
+            .await
+            .expect("nothing owed");
+    }
+
+    let snapshot = child.thread_config_snapshot().await;
+    assert_eq!(
+        (snapshot.approval_policy, snapshot.permission_profile),
+        (AskForApproval::Never, PermissionProfile::Disabled)
+    );
+}
+
+/// A child whose start was in flight when its parent revoked Full Access takes the parent's
+/// current permissions when it first meets them.
+#[tokio::test]
+async fn a_child_started_during_a_revocation_takes_it() {
+    let child = child_at(Preset::FullAccess).await;
+    let parent = Arc::new(Reductions::default());
+    let revoked = parent_at(&child, Preset::Default).await;
+
+    child
+        .take_parent_reductions(&parent, vec![revoked.clone()], revoked)
+        .await
+        .expect("revocation taken");
+
+    assert_eq!(
+        profile_id(&child).await,
+        Some(BUILT_IN_PERMISSION_PROFILE_WORKSPACE.to_string())
+    );
+}
+
+/// Reductions stay numbered in commit order; a grant between them removes none.
+#[tokio::test]
+async fn a_grant_keeps_earlier_reductions_recorded() {
     let (session, _) = make_session_and_context().await;
     let (full_access, default, read_only) = (
         configuration(&session, Preset::FullAccess).await,
         configuration(&session, Preset::Default).await,
         configuration(&session, Preset::ReadOnly).await,
     );
-    let pending = |session: &Session| {
-        let reductions = session.reductions();
-        let latest = reductions
-            .latest
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner);
-        (latest.generation, latest.updates.is_some())
-    };
 
-    assert!(
-        session
-            .note_permission_change(&full_access, &default)
-            .is_some()
-    );
-    assert_eq!(pending(&session), (1, true));
-    assert!(
-        session
-            .note_permission_change(&default, &full_access)
-            .is_none()
-    );
-    assert_eq!(pending(&session), (1, false));
+    let numbers = [
+        session.note_permission_change(&full_access, &default),
+        session.note_permission_change(&default, &full_access),
+        session.note_permission_change(&full_access, &read_only),
+    ];
+
+    assert_eq!(numbers, [Some(1), None, Some(2)]);
     assert_eq!(
         session
-            .note_permission_change(&full_access, &read_only)
-            .map(|(generation, _)| generation),
-        Some(2)
+            .reductions()
+            .history
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .len(),
+        2
+    );
+}
+
+/// A reloaded parent numbers its reductions afresh. Fails if a child's baseline from the
+/// earlier parent record carries over: the reloaded parent's first revocation would be
+/// skipped.
+#[tokio::test]
+async fn a_reloaded_parent_starts_a_fresh_count() {
+    let child = child_at(Preset::FullAccess).await;
+    let (earlier, reloaded) = (
+        Arc::new(Reductions::default()),
+        Arc::new(Reductions::default()),
+    );
+    let full_access = parent_at(&child, Preset::FullAccess).await;
+    let revoked = parent_at(&child, Preset::Default).await;
+    child
+        .take_parent_reductions(
+            &earlier,
+            vec![full_access.clone(), full_access.clone()],
+            full_access,
+        )
+        .await
+        .expect("nothing owed to the earlier record");
+
+    child
+        .take_parent_reductions(&reloaded, vec![revoked.clone()], revoked)
+        .await
+        .expect("revocation taken");
+
+    assert_eq!(
+        profile_id(&child).await,
+        Some(BUILT_IN_PERMISSION_PROFILE_WORKSPACE.to_string())
+    );
+}
+
+#[tokio::test]
+async fn a_reloaded_parent_does_not_clear_an_owed_revocation() {
+    let child = child_at(Preset::FullAccess).await;
+    let earlier = Arc::new(Reductions::default());
+    let revoked = parent_at(&child, Preset::Default).await;
+    let regained = parent_at(&child, Preset::FullAccess).await;
+    {
+        let mut state = child.state.lock().await;
+        Arc::make_mut(&mut state.session_configuration.step_settings).approval_policy =
+            crate::config::Constrained::allow_only(AskForApproval::Never);
+    }
+    earlier.history.lock().unwrap().push(revoked);
+    child.owe_parent_reductions_from(&earlier, /*generation*/ 1);
+    drop(earlier);
+
+    assert!(
+        child
+            .take_parent_reductions(&Arc::new(Reductions::default()), vec![], regained)
+            .await
+            .is_err(),
+        "a fresh parent record must not erase an existing child's pending restriction"
     );
 }

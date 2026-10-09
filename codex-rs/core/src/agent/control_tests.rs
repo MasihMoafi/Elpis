@@ -5743,8 +5743,9 @@ async fn a_child_that_cannot_take_its_parents_revocation_cannot_act() {
     );
 }
 
-/// Elpis: a child started after its parent regains Full Access keeps it. Fails if the
-/// parent's earlier revocation stays pending: the child's first tool call would lower it.
+/// Elpis: a child started after its parent regains Full Access keeps it. The test runs the
+/// step background lowering runs, after the child exists, so the result does not depend on
+/// when that task ran. Fails if work for the earlier revocation reaches the later child.
 #[tokio::test]
 async fn a_child_started_after_its_parent_regains_full_access_keeps_it() {
     let harness = full_access_harness().await;
@@ -5753,6 +5754,11 @@ async fn a_child_started_after_its_parent_regains_full_access_keeps_it() {
     grant_full_access(&parent_thread).await;
     let child_thread = spawn_child(&harness, parent_thread_id, harness.config.clone()).await;
 
+    child_thread
+        .session
+        .follow_parent_reductions(&child_thread.session_source)
+        .await
+        .expect("nothing owed");
     let call = next_tool_call(&child_thread)
         .await
         .expect("child tool call");
@@ -5761,5 +5767,75 @@ async fn a_child_started_after_its_parent_regains_full_access_keeps_it() {
     assert_eq!(
         child_thread.config_snapshot().await.permission_profile,
         PermissionProfile::Disabled
+    );
+}
+
+/// Elpis: a loaded child keeps a revocation after its parent regains Full Access; the grant
+/// does not raise it. Passes whether or not background lowering ran before the grant.
+#[tokio::test]
+async fn an_existing_child_keeps_a_revocation_after_its_parent_regains_full_access() {
+    let harness = full_access_harness().await;
+    let (parent_thread_id, parent_thread) = harness.start_thread().await;
+    let child_thread = spawn_child(&harness, parent_thread_id, harness.config.clone()).await;
+    revoke_full_access(&parent_thread).await;
+    grant_full_access(&parent_thread).await;
+
+    let call = next_tool_call(&child_thread)
+        .await
+        .expect("child tool call");
+
+    assert_eq!(call.settings.approval_policy(), AskForApproval::OnRequest);
+    assert_eq!(
+        child_thread
+            .config_snapshot()
+            .await
+            .active_permission_profile
+            .map(|profile| profile.id),
+        Some(codex_protocol::models::BUILT_IN_PERMISSION_PROFILE_WORKSPACE.to_string())
+    );
+}
+
+/// Elpis: a child that could not take its parent's revocation stays blocked after the parent
+/// regains Full Access. Background lowering fails for this child too, so the result cannot
+/// come from it. Fails if the grant releases the child before it takes the lower setting.
+#[tokio::test]
+async fn a_child_that_rejected_a_revocation_stays_blocked_after_its_parent_regains_full_access() {
+    let harness = full_access_harness().await;
+    let (parent_thread_id, parent_thread) = harness.start_thread().await;
+    let mut child_config = harness.config.clone();
+    child_config.permissions.approval_policy =
+        crate::config::Constrained::allow_only(AskForApproval::Never);
+    let child_thread = spawn_child(&harness, parent_thread_id, child_config).await;
+    revoke_full_access(&parent_thread).await;
+    grant_full_access(&parent_thread).await;
+
+    assert!(
+        next_tool_call(&child_thread).await.is_err(),
+        "the child still owes the revocation"
+    );
+}
+
+#[tokio::test]
+async fn a_child_that_rejected_a_revocation_stays_blocked_after_parent_unload() {
+    let harness = full_access_harness().await;
+    let (parent_thread_id, parent_thread) = harness.start_thread().await;
+    let mut child_config = harness.config.clone();
+    child_config.permissions.approval_policy =
+        crate::config::Constrained::allow_only(AskForApproval::Never);
+    let child_thread = spawn_child(&harness, parent_thread_id, child_config).await;
+    revoke_full_access(&parent_thread).await;
+    grant_full_access(&parent_thread).await;
+    assert!(
+        harness
+            .manager
+            .remove_thread(&parent_thread_id)
+            .await
+            .is_some()
+    );
+    drop(parent_thread);
+
+    assert!(
+        next_tool_call(&child_thread).await.is_err(),
+        "unloading the parent must not release an unaccepted revocation"
     );
 }

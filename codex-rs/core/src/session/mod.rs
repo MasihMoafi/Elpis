@@ -2013,8 +2013,8 @@ impl Session {
             )
         };
         self.emit_config_changed_contributors(previous_config.as_ref(), new_config.as_ref());
-        if let Some((generation, updates)) = reduced_permissions {
-            self.lower_loaded_children(generation, updates);
+        if let Some(generation) = reduced_permissions {
+            self.lower_loaded_children(generation).await;
         }
         if permission_profile_changed {
             self.refresh_managed_network_proxy_for_current_permission_profile()

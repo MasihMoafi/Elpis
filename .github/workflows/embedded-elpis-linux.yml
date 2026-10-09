@@ -214,7 +214,17 @@ jobs:
           node scripts/history-list.test.cjs
           node scripts/agy-steering.test.cjs
           node scripts/build-elpis-local.test.cjs
-      - name: Focused Elpis Rust checks
+      - name: Build the runtime, Code Mode host, and sandbox
+        id: runtime_build
+        if: ${{ !cancelled() }}
+        working-directory: codex-rs
+        run: |
+          cargo build --release --locked -p codex-cli --bin codex -p codex-code-mode-host --bin codex-code-mode-host
+          env -u CODEX_SKIP_BWRAP_BUILD cargo build --release --locked -p codex-bwrap --bin bwrap
+          cp target/release/codex target/release/elpis
+          test "$(target/release/elpis --version)" = "elpis $ELPIS_VERSION"
+      - name: Native UI and retained Elpis interaction tests
+        if: ${{ !cancelled() }}
         working-directory: codex-rs
         run: |
           cargo test --release --locked -p codex-tui --lib -- \
@@ -224,35 +234,47 @@ jobs:
             chatwidget_exec_and_status_layout_vt100_snapshot luna_reserve_usage_running \
             render_cost_tests esc_typing_tests status_and_layout resume_picker stream_controller \
             custom_prompt_view
+      - name: Core permissions and continuity unit tests
+        if: ${{ !cancelled() }}
+        working-directory: codex-rs
+        run: |
           cargo test --release --locked -p codex-core --lib -- \
             elpis_ smart_prune compact_instructions world_state build_agent_spawn_config \
             live_permissions inherited_permissions step_activation thread_settings turn_input \
             loaded_children_give_up_the_full_access_their_parent_gives_up \
-            a_child_that_cannot_take_its_parents_revocation_cannot_act \
-            a_child_started_after_its_parent_regains_full_access_keeps_it
+            revocation regains_full_access
+      - name: Context and session integration tests
+        if: ${{ !cancelled() }}
+        working-directory: codex-rs
+        run: |
           cargo test --release --locked -p codex-core --test all -- \
             elpis_ledger_admission elpis_context_attribution work_graphs settings_commits \
             agents_md scenarios_shared_instructions
+      - name: Provider configuration and CLI tests
+        if: ${{ !cancelled() }}
+        working-directory: codex-rs
+        run: |
           cargo test --release --locked -p codex-elpis-gateway --lib
           cargo test --release --locked -p codex-model-provider-info --lib
           cargo test --release --locked -p codex-cli --lib
           cargo test --release --locked -p codex-tui --lib branding::tests
-      - name: Build the runtime, Code Mode host, and sandbox
-        working-directory: codex-rs
-        run: |
-          cargo build --release --locked -p codex-cli --bin codex -p codex-code-mode-host --bin codex-code-mode-host
-          env -u CODEX_SKIP_BWRAP_BUILD cargo build --release --locked -p codex-bwrap --bin bwrap
-          cp target/release/codex target/release/elpis
-          test "$(target/release/elpis --version)" = "elpis $ELPIS_VERSION"
-      - name: Native and provider permission regressions
-        run: |
-          node scripts/permissions-runtime.test.cjs "$PWD/codex-rs/target/release/elpis"
-          node scripts/permissions-runtime.test.cjs "$PWD/codex-rs/target/release/elpis" --code-mode
-          node scripts/permissions-bridge.test.cjs "$PWD/codex-rs/target/release/elpis"
-          node scripts/permissions-bridge.test.cjs "$PWD/codex-rs/target/release/elpis" --gemini
+      - name: Native permission regressions
+        if: ${{ !cancelled() && steps.runtime_build.outcome == 'success' }}
+        run: node scripts/permissions-runtime.test.cjs "$PWD/codex-rs/target/release/elpis"
+      - name: Code Mode permission regressions
+        if: ${{ !cancelled() && steps.runtime_build.outcome == 'success' }}
+        run: node scripts/permissions-runtime.test.cjs "$PWD/codex-rs/target/release/elpis" --code-mode
+      - name: Claude bridge permission regressions
+        if: ${{ !cancelled() && steps.runtime_build.outcome == 'success' }}
+        run: node scripts/permissions-bridge.test.cjs "$PWD/codex-rs/target/release/elpis"
+      - name: Gemini bridge permission regressions
+        if: ${{ !cancelled() && steps.runtime_build.outcome == 'success' }}
+        run: node scripts/permissions-bridge.test.cjs "$PWD/codex-rs/target/release/elpis" --gemini
       - name: Real runtime evals and failing controls, without outside network
+        if: ${{ !cancelled() && steps.runtime_build.outcome == 'success' }}
         run: sudo --preserve-env=PATH unshare -n sh -c 'ip link set lo up; bash scripts/release-runtime-evals.sh "$PWD/codex-rs/target/release/elpis"'
       - name: Clean offline installation
+        if: ${{ !cancelled() && steps.runtime_build.outcome == 'success' }}
         run: bash tests/install/clean_linux.sh codex-rs/target/release
       - name: Package Linux binaries and Debian installer
         shell: bash
@@ -284,6 +306,25 @@ jobs:
         with:
           name: elpis-linux-x86_64
           path: dist/*
+          if-no-files-found: error
+          retention-days: 7
+      - name: Record diagnostic runtime provenance
+        if: failure() && steps.runtime_build.outcome == 'success'
+        working-directory: codex-rs/target/release
+        run: |
+          printf '%s\n' "$GITHUB_SHA" > runtime-source.txt
+          sha256sum elpis codex-code-mode-host bwrap > runtime-SHA256SUMS
+      - name: Preserve runtime for investigating failed checks
+        if: failure() && steps.runtime_build.outcome == 'success'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: unverified-diagnostic-runtime
+          path: |
+            codex-rs/target/release/elpis
+            codex-rs/target/release/codex-code-mode-host
+            codex-rs/target/release/bwrap
+            codex-rs/target/release/runtime-source.txt
+            codex-rs/target/release/runtime-SHA256SUMS
           if-no-files-found: error
           retention-days: 7
       - name: Preserve failed rendering snapshots for review

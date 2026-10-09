@@ -17,8 +17,6 @@ use futures::future::BoxFuture;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::PoisonError;
-use std::sync::atomic::AtomicU64;
-use std::sync::atomic::Ordering;
 use tracing::warn;
 
 /// What a thread may do without asking: its approval policy and permission profile.
@@ -39,6 +37,18 @@ impl Authority {
         }
     }
 
+    /// The authority a settings update from `permission_update` sets.
+    fn of_update(updates: &SessionSettingsUpdate) -> Option<Self> {
+        Some(Self {
+            policy: updates.step_settings.approval_policy?,
+            profile: updates.permission_profile.clone()?,
+            profile_id: updates
+                .active_permission_profile
+                .as_ref()
+                .map(|profile| profile.id.clone()),
+        })
+    }
+
     fn is_full_access(&self) -> bool {
         self.policy == AskForApproval::Never && matches!(self.profile, PermissionProfile::Disabled)
     }
@@ -54,6 +64,19 @@ impl Authority {
             _ => None,
         }
     }
+
+    /// Whether moving to `to` removes authority this has and adds none. Pairs this cannot
+    /// order count as possible grants.
+    fn can_lose_to(&self, to: &Self) -> bool {
+        if self.is_full_access() {
+            return !to.is_full_access();
+        }
+        self.policy == to.policy
+            && matches!(
+                (self.profile_rank(), to.profile_rank()),
+                (Some(from_rank), Some(to_rank)) if to_rank < from_rank
+            )
+    }
 }
 
 /// Whether `updated` removes authority `current` has and adds none. Pairs this cannot
@@ -62,15 +85,7 @@ pub(super) fn removes_authority(
     current: &SessionConfiguration,
     updated: &SessionConfiguration,
 ) -> bool {
-    let (from, to) = (Authority::of(current), Authority::of(updated));
-    if from.is_full_access() {
-        return !to.is_full_access();
-    }
-    from.policy == to.policy
-        && matches!(
-            (from.profile_rank(), to.profile_rank()),
-            (Some(from), Some(to)) if to < from
-        )
+    Authority::of(current).can_lose_to(&Authority::of(updated))
 }
 
 /// A thread's approval policy and permission profile, as an update for its children.
@@ -92,21 +107,44 @@ pub(super) fn permission_update(configuration: &SessionConfiguration) -> Session
     }
 }
 
-/// The latest reduction a thread accepted, numbered in commit order, and the number of the
-/// latest parent reduction it applied. Kept in the thread's extension data, which each
-/// thread creates for itself, so session construction stays as upstream has it.
+/// A thread's reductions for its children, and what it still owes its own parent. Kept in the
+/// thread's extension data, which each thread creates for itself, so session construction
+/// stays as upstream has it.
 #[derive(Default)]
 struct Reductions {
-    latest: Mutex<LatestReduction>,
-    applied_parent: AtomicU64,
+    /// This thread's reductions in commit order; the Nth is numbered N. A later grant removes
+    /// none of them: children that existed at a reduction still owe it.
+    history: Mutex<Vec<SessionSettingsUpdate>>,
+    owed: Mutex<Owed>,
 }
 
+/// What a thread owes its parent's reductions.
 #[derive(Default)]
-struct LatestReduction {
-    generation: u64,
-    /// `None` once the thread provably gains authority again. Children started after that
-    /// inherit the new authority and must not be lowered to the earlier reduction.
-    updates: Option<SessionSettingsUpdate>,
+struct Owed {
+    /// Retain the record until owed restrictions are applied, even if the parent unloads.
+    /// Records reference ancestors only, so retaining one does not create a cycle.
+    parent: Option<Arc<Reductions>>,
+    /// Number of the latest parent reduction this thread has taken or already reflects; `None`
+    /// until it first meets its parent's reductions.
+    baseline: Option<usize>,
+    /// The parent's permissions found at that first meeting, until this thread takes them.
+    floor: Option<SessionSettingsUpdate>,
+}
+
+impl Owed {
+    /// Starts over when `parent` is not the record the baseline counts in.
+    fn meet(&mut self, parent: &Arc<Reductions>) {
+        if !self
+            .parent
+            .as_ref()
+            .is_some_and(|previous| Arc::ptr_eq(previous, parent))
+        {
+            *self = Self {
+                parent: Some(Arc::clone(parent)),
+                ..Self::default()
+            };
+        }
+    }
 }
 
 impl Session {
@@ -116,46 +154,51 @@ impl Session {
             .get_or_init(Reductions::default)
     }
 
-    /// Notes an accepted permission change for this thread's children. Returns a numbered
-    /// reduction for them, or forgets the pending one when the change provably grants
-    /// authority. Called under the lock that publishes the change, so numbers follow commit
-    /// order and a child can see a reduction before this thread acknowledges it.
+    /// Records an accepted permission change that removes authority, for this thread's
+    /// children, and returns its number. Called under the lock that publishes the change, so
+    /// numbers follow commit order and a child sees a reduction before this thread
+    /// acknowledges it.
     pub(super) fn note_permission_change(
         &self,
         current: &SessionConfiguration,
         updated: &SessionConfiguration,
-    ) -> Option<(u64, SessionSettingsUpdate)> {
-        let reduces = removes_authority(current, updated);
-        if !reduces && !removes_authority(updated, current) {
+    ) -> Option<usize> {
+        if !removes_authority(current, updated) {
             return None;
         }
         let reductions = self.reductions();
-        let mut latest = reductions
-            .latest
+        let mut history = reductions
+            .history
             .lock()
             .unwrap_or_else(PoisonError::into_inner);
-        if !reduces {
-            latest.updates = None;
-            return None;
-        }
-        let updates = permission_update(updated);
-        latest.generation += 1;
-        latest.updates = Some(updates.clone());
-        Some((latest.generation, updates))
+        history.push(permission_update(updated));
+        Some(history.len())
     }
 
-    /// Gives a recorded reduction to the loaded children this thread spawned, so idle children
-    /// change promptly. This runs apart from the caller, which may hold this thread's locks.
-    /// A child that has not applied it yet applies it before its next tool call instead; see
-    /// `follow_parent_reductions`.
-    pub(super) fn lower_loaded_children(&self, generation: u64, updates: SessionSettingsUpdate) {
-        let runtime = self.services.local_agent_runtime.clone();
+    /// Runs before this thread acknowledges reduction `generation`. Loaded children it spawned
+    /// that have not met its reductions are marked as predating this one, so they owe it even
+    /// if this thread regains authority before they act. Children started later are not
+    /// marked: they inherit what this thread allows when they start. The children are then
+    /// lowered in the background, so idle children change promptly; each child's next tool
+    /// call does the same if that has not happened yet.
+    pub(super) async fn lower_loaded_children(&self, generation: usize) {
         let parent_thread_id = self.thread_id();
+        let children = self
+            .services
+            .local_agent_runtime
+            .loaded_thread_spawn_children(parent_thread_id)
+            .await;
+        let reductions = self.reductions();
+        for child in &children {
+            child
+                .session
+                .owe_parent_reductions_from(&reductions, generation);
+        }
         drop(tokio::spawn(async move {
-            for child in runtime.loaded_thread_spawn_children(parent_thread_id).await {
+            for child in children {
                 if let Err(error) = child
                     .session
-                    .apply_parent_reduction(generation, updates.clone())
+                    .follow_parent_reductions(&child.session_source)
                     .await
                 {
                     warn!(
@@ -168,13 +211,26 @@ impl Session {
         }));
     }
 
-    /// Applies the reductions this thread's spawning ancestors accepted and it has not applied
-    /// yet. Tool calls, and the children they start or resume, wait for this, so authority a
-    /// parent gave up is gone before a child acts again. A reduction this thread rejects fails
-    /// the action. Callers hold none of this thread's session locks while an ancestor is read
-    /// or changed, and an ancestor never waits on its children, so the waits cannot form a
-    /// cycle.
-    pub(super) fn follow_parent_reductions<'a>(
+    /// Marks this thread as existing before parent reduction `generation`, unless it has
+    /// already met that parent record.
+    fn owe_parent_reductions_from(&self, parent: &Arc<Reductions>, generation: usize) {
+        let reductions = self.reductions();
+        let mut owed = reductions
+            .owed
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        owed.meet(parent);
+        if owed.baseline.is_none() {
+            owed.baseline = Some(generation.saturating_sub(1));
+        }
+    }
+
+    /// Takes what this thread owes its spawning ancestors' reductions. Tool calls, and the
+    /// children they start or resume, wait for this, so authority a parent gave up is gone
+    /// before a child acts again. A reduction this thread rejects fails the action. Callers
+    /// hold none of this thread's session locks while an ancestor is read or changed, and an
+    /// ancestor never waits on its children, so the waits cannot form a cycle.
+    pub(crate) fn follow_parent_reductions<'a>(
         &'a self,
         session_source: &'a SessionSource,
     ) -> BoxFuture<'a, ConstraintResult<()>> {
@@ -191,45 +247,133 @@ impl Session {
                 .loaded_thread(*parent_thread_id)
                 .await
             else {
-                return Ok(());
+                return self.take_recorded_parent_reductions().await;
             };
             parent
                 .session
                 .follow_parent_reductions(&parent.session_source)
                 .await?;
-            let latest = {
-                let reductions = parent.session.reductions();
-                let latest = reductions
-                    .latest
-                    .lock()
-                    .unwrap_or_else(PoisonError::into_inner);
-                let generation = latest.generation;
-                latest.updates.clone().map(|updates| (generation, updates))
-            };
-            match latest {
-                Some((generation, updates)) => {
-                    self.apply_parent_reduction(generation, updates).await
-                }
-                None => Ok(()),
-            }
+            let (record, history, current) = parent.session.reduction_snapshot().await;
+            self.take_parent_reductions(&record, history, current).await
         })
     }
 
-    /// Applies one parent reduction once. A rejected reduction stays pending, so every later
-    /// action fails until this thread can take it.
-    async fn apply_parent_reduction(
+    /// This thread's reduction record, its reductions and its current permissions, read
+    /// together.
+    async fn reduction_snapshot(
         &self,
-        generation: u64,
-        updates: SessionSettingsUpdate,
+    ) -> (
+        Arc<Reductions>,
+        Vec<SessionSettingsUpdate>,
+        SessionSettingsUpdate,
+    ) {
+        let state = self.state.lock().await;
+        let record = self.reductions();
+        let history = record
+            .history
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone();
+        (
+            record,
+            history,
+            permission_update(&state.session_configuration),
+        )
+    }
+
+    /// Takes what this thread owes a parent with these reductions and current permissions.
+    /// Each owed reduction is taken once, in order, and only where it removes authority, so
+    /// nothing here raises this thread. At first meeting the thread owes the parent's current
+    /// permissions where they are lower: it reflects the parent as of the action that started
+    /// or resumed it. A reduction this thread rejects stays owed, also after the parent
+    /// regains authority, so every later action fails until this thread can take it.
+    async fn take_parent_reductions(
+        &self,
+        parent: &Arc<Reductions>,
+        history: Vec<SessionSettingsUpdate>,
+        current: SessionSettingsUpdate,
+    ) -> ConstraintResult<()> {
+        // A reload starts a fresh record, but cannot discharge restrictions from the old one.
+        self.take_recorded_parent_reductions().await?;
+        let reductions = self.reductions();
+        {
+            let mut owed = reductions
+                .owed
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner);
+            owed.meet(parent);
+            if owed.baseline.is_none() {
+                owed.baseline = Some(history.len());
+                owed.floor = Some(current);
+            }
+        }
+        self.take_owed_reductions(history).await
+    }
+
+    async fn take_recorded_parent_reductions(&self) -> ConstraintResult<()> {
+        let parent = self
+            .reductions()
+            .owed
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .parent
+            .clone();
+        if let Some(parent) = parent {
+            let history = parent
+                .history
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .clone();
+            self.take_owed_reductions(history).await?;
+        }
+        Ok(())
+    }
+
+    async fn take_owed_reductions(
+        &self,
+        history: Vec<SessionSettingsUpdate>,
     ) -> ConstraintResult<()> {
         let reductions = self.reductions();
-        if reductions.applied_parent.load(Ordering::Acquire) >= generation {
-            return Ok(());
+        let (floor, baseline) = {
+            let owed = reductions
+                .owed
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner);
+            (owed.floor.clone(), owed.baseline.unwrap_or_default())
+        };
+        if let Some(floor) = floor {
+            self.take_parent_permissions(floor).await?;
+            reductions
+                .owed
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .floor = None;
         }
-        self.follow_parent_permission_reduction(updates).await?;
-        reductions
-            .applied_parent
-            .fetch_max(generation, Ordering::AcqRel);
+        for (index, updates) in history.into_iter().enumerate().skip(baseline) {
+            self.take_parent_permissions(updates).await?;
+            let mut owed = reductions
+                .owed
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner);
+            owed.baseline = owed.baseline.max(Some(index + 1));
+        }
+        Ok(())
+    }
+
+    /// Takes a parent's permissions where they remove authority this thread holds. Permissions
+    /// that remove none are skipped, even if this thread could not accept them.
+    async fn take_parent_permissions(
+        &self,
+        updates: SessionSettingsUpdate,
+    ) -> ConstraintResult<()> {
+        let needed = {
+            let state = self.state.lock().await;
+            Authority::of_update(&updates)
+                .is_some_and(|to| Authority::of(&state.session_configuration).can_lose_to(&to))
+        };
+        if needed {
+            self.follow_parent_permission_reduction(updates).await?;
+        }
         Ok(())
     }
 }
