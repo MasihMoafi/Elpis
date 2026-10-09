@@ -5,47 +5,11 @@
 //! Copied from the Elpis v0.3.0 additions to `style.rs` (tag `stage0-stop-bleeding`);
 //! kept in its own file so the upstream `style.rs` carries only a re-export seam.
 
-use crate::color::blend;
 use crate::color::is_light;
 use crate::terminal_palette::best_color;
 use crate::terminal_palette::default_bg;
-use ratatui::layout::Rect;
 use ratatui::style::Color;
 use ratatui::style::Style;
-use ratatui::widgets::Borders;
-use std::cell::RefCell;
-
-thread_local! {
-    /// While a frame draws the area to the left of the Context Ledger: the column of the
-    /// Ledger's rule, and the Elpis boxes that end on it.
-    static LEDGER_RULE: RefCell<Option<(u16, Vec<Rect>)>> = const { RefCell::new(None) };
-}
-
-/// Runs `render` for the area whose right neighbor is the Context Ledger's rule at column
-/// `rule_x`. Returns the Elpis boxes that ended on the rule, so the rule can join their top
-/// and bottom rules.
-pub(crate) fn render_against_ledger_rule(rule_x: u16, render: impl FnOnce()) -> Vec<Rect> {
-    LEDGER_RULE.with(|rule| *rule.borrow_mut() = Some((rule_x, Vec::new())));
-    render();
-    LEDGER_RULE
-        .with(|rule| rule.borrow_mut().take())
-        .map(|(_, boxes)| boxes)
-        .unwrap_or_default()
-}
-
-/// The borders of an Elpis box in `area`. A box whose right side would stand next to the
-/// Context Ledger's rule leaves that side out, because the rule is its right side.
-pub(crate) fn box_borders(area: Rect, borders: Borders) -> Borders {
-    LEDGER_RULE.with(|rule| match rule.borrow_mut().as_mut() {
-        Some((rule_x, boxes))
-            if borders.contains(Borders::RIGHT) && area.right() == *rule_x && area.height >= 2 =>
-        {
-            boxes.push(area);
-            borders - Borders::RIGHT
-        }
-        _ => borders,
-    })
-}
 
 // Gold is the product accent; context categories and
 // success/error colors are independent semantic palettes. Use deeper ink on light
@@ -58,16 +22,6 @@ pub(crate) const CONTEXT_DARK_RGB: (u8, u8, u8) = (212, 214, 105);
 const LIGHT_BG_RULE_RGB: (u8, u8, u8) = (122, 150, 144);
 const DARK_BG_RULE_RGB: (u8, u8, u8) = (78, 122, 114);
 
-pub(crate) fn composer_bg_rgb(bg: (u8, u8, u8)) -> (u8, u8, u8) {
-    blend((128, 128, 128), bg, if is_light(bg) { 0.035 } else { 0.06 })
-}
-
-pub(crate) fn composer_style() -> Style {
-    Style::default().bg(default_bg()
-        .map(|bg| best_color(composer_bg_rgb(bg)))
-        .unwrap_or(Color::Reset))
-}
-
 /// Returns the shared Elpis style for product titles.
 pub(crate) fn brand_style() -> Style {
     primary_style_for(default_bg())
@@ -79,11 +33,6 @@ pub(crate) fn context_style() -> Style {
         adaptive_palette_color(default_bg(), CONTEXT_LIGHT_RGB, CONTEXT_DARK_RGB),
         None,
     ))
-}
-
-/// Returns the border style for the focused composer.
-pub(crate) fn composer_border_style() -> Style {
-    rule_style()
 }
 
 /// Returns the border style for popup surfaces.

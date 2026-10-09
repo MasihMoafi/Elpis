@@ -257,31 +257,17 @@ impl crate::render::renderable::Renderable for BesideContextLedger<'_> {
             self.bottom_pane.render(pane, buf);
             return;
         };
-        // Beside the Ledger, its rule is the right side of each Elpis box that ends on it.
-        let boxes = crate::style::render_against_ledger_rule(pane.right(), || {
-            self.bottom_pane.render(pane, buf)
-        });
-        // The rule joins each box's top and bottom rules, so it reaches the lowest box's
-        // bottom rule even when the Ledger is shorter.
-        let box_rules = boxes
-            .iter()
-            .map(|area| (area.top(), area.bottom() - 1))
-            .collect::<Vec<_>>();
-        let rule_rows = box_rules
-            .iter()
-            .map(|(_, bottom)| bottom + 1 - area.y)
-            .max()
-            .unwrap_or(0);
+        self.bottom_pane.render(pane, buf);
         self.chat_widget.render_context_ledger_lines(
             ratatui::layout::Rect::new(
                 pane.right(),
                 area.y,
                 ledger_width,
-                ledger_height.max(rule_rows).min(area.height),
+                ledger_height.min(area.height),
             ),
             buf,
             ledger_lines,
-            &box_rules,
+            &[],
         );
     }
 
