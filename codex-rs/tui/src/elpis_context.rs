@@ -492,6 +492,7 @@ mod tests {
             .context("enabled memory baseline")?;
         let snapshot = MemorySnapshot::open(&root, cwd)?.context("enabled saver")?;
         let turn = Turn {
+            root_turn_id: None,
             id: "current-turn".into(),
             items: vec![ThreadItem::AgentMessage {
                 id: "result".into(),
@@ -731,6 +732,7 @@ mod tests {
         let memories_root = home.path().join(".elpis/memories");
         let cwd = Path::new("/tmp/project");
         let turn = Turn {
+            root_turn_id: None,
             id: "turn-one".to_string(),
             items: vec![
                 ThreadItem::FileChange {
@@ -789,6 +791,7 @@ mod tests {
     {
         let home = tempdir()?;
         let turn = Turn {
+            root_turn_id: None,
             id: "long-turn".into(),
             items: vec![
                 ThreadItem::AgentMessage {
@@ -842,6 +845,7 @@ mod tests {
         let memories_root = home.path().join("memories");
         let cwd = Path::new("/tmp/project");
         let mut turn = Turn {
+            root_turn_id: None,
             id: "completed-turn".into(),
             items: vec![ThreadItem::AgentMessage {
                 id: "result".into(),
@@ -895,6 +899,7 @@ mod tests {
     #[test]
     fn empty_turn_completed_notification_uses_buffered_items_for_its_turn_only() {
         let empty_turn = Turn {
+            root_turn_id: None,
             id: "turn-two".to_string(),
             items: vec![],
             items_view: TurnItemsView::NotLoaded,

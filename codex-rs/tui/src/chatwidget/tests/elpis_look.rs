@@ -44,29 +44,16 @@ fn session_header_names_elpis_and_never_openai_codex() {
     let full = text_of(&header.display_lines(/*width*/ 80));
     let raw = text_of(&header.raw_lines());
 
-    let greeting = Arc::new(std::sync::OnceLock::new());
-    greeting
-        .set(crate::empty_state_animation::Greeting {
-            phrase: "Pull up a prompt.",
-        })
-        .expect("greeting");
-    let mut compact = SessionHeaderHistoryCell::new(
-        "gpt-test".to_string(),
-        /*reasoning_effort*/ None,
-        PathBuf::from("/tmp/project"),
-        "test",
-    );
-    crate::history_cell::set_session_greeting(&mut compact, &greeting);
-    let compact = text_of(&compact.display_lines(/*width*/ 80));
+    let narrow = text_of(&header.display_lines(/*width*/ 24));
 
     assert!(
         full.iter()
             .any(|row| row.trim_start().starts_with(">_ Elpis (vtest)")),
         "{full:?}"
     );
-    assert!(compact.iter().any(|row| row.contains(">_ Elpis (vtest)")));
+    assert!(narrow.iter().any(|row| row.contains(">_ Elpis (vtest)")));
     assert_eq!(raw[0], "Elpis (vtest)");
-    for row in full.iter().chain(&compact).chain(&raw) {
+    for row in full.iter().chain(&narrow).chain(&raw) {
         assert!(!row.contains("OpenAI Codex"), "upstream title left: {row}");
     }
     // Codex 0.159 dropped the enclosing card, so there is no card to replace with the
