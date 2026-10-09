@@ -13,6 +13,7 @@ Goal: make Elpis as usable as Masih’s installed Codex 0.162.0 while retaining 
 ## Acceptance evidence
 - Compare against the installed Codex version, not only Elpis’s older 0.160.0 vendor snapshot.
 - Exercise new and long chats, typing, streaming, queued messages, narrow/wide agents pages, folder ordering, model labels and the exact slash-command set.
+- Exercise two ordinary launcher windows with one Elpis home and different project folders. Their agents views must share live sessions and later connections, reflect rename/archive changes, and open an existing running session without starting a duplicate execution loop. A fixture with two clients on one bridge is insufficient.
 - Check permission promotion, revocation, rejected updates and resume across providers using actual runtime paths and failing controls.
 - Run focused Rust checks, terminal interaction checks and visual checks on the exact candidate. Record failures and provider limitations plainly.
 - Test final installed paths, retain a rollback copy, and give Masih a short user check. Automated evidence is not Masih’s acceptance.
