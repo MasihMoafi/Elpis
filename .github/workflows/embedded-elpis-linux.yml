@@ -223,6 +223,10 @@ jobs:
           cargo build --release --locked -p codex-cli --bin codex -p codex-code-mode-host --bin codex-code-mode-host
           env -u CODEX_SKIP_BWRAP_BUILD cargo build --release --locked -p codex-bwrap --bin bwrap
           cp target/release/codex target/release/elpis
+          mkdir -p target/release/codex-resources
+          install -m 0755 target/release/bwrap target/release/codex-resources/bwrap
+          # Test harness binaries also need the pinned sandbox on PATH.
+          echo "$PWD/target/release/codex-resources" >> "$GITHUB_PATH"
           test "$(target/release/elpis --version)" = "elpis $ELPIS_VERSION"
       - name: Record diagnostic runtime provenance
         if: ${{ !cancelled() && steps.runtime_build.outcome == 'success' }}
@@ -244,6 +248,8 @@ jobs:
           if-no-files-found: error
           retention-days: 7
       - name: Native UI and retained Elpis interaction tests
+        env:
+          INSTA_UPDATE: new
         if: ${{ !cancelled() }}
         working-directory: codex-rs
         run: |
