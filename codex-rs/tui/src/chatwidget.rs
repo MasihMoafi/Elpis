@@ -334,6 +334,8 @@ mod model_popup_state;
 mod model_popups;
 // Elpis: the provider-aware /model picker.
 mod elpis_providers;
+// Elpis: `/effort`.
+mod elpis_effort;
 pub(crate) use self::elpis_providers::BridgedProvider;
 #[cfg(test)]
 pub(crate) use self::elpis_providers::CLAUDE_SUBSCRIPTION_PROVIDER_ID;
@@ -386,13 +388,11 @@ pub(crate) use realtime::realtime_delegation_display_text;
 pub(crate) use realtime::realtime_delegation_input;
 #[cfg(test)]
 pub(crate) use realtime::tests::activate_voice_for_thread;
+#[cfg(test)]
+pub(crate) use realtime::tests::commit_realtime_history_events;
 mod reasoning_shortcuts;
 use self::realtime::RealtimeConversationUiState;
 mod rendering;
-// Elpis: the identity line above the composer.
-mod elpis_identity;
-// Elpis: the ChatWidget half of the v0.3.0 composer behaviour.
-mod elpis_composer;
 // Elpis: the Context Ledger's category shares, the dashboard and the local evidence links.
 mod elpis_dashboard;
 mod replay;
@@ -542,7 +542,7 @@ pub(crate) enum ExternalEditorState {
 pub(crate) struct ChatWidget {
     pub(crate) empty_state_animation:
         std::cell::RefCell<crate::empty_state_animation::EmptyStateAnimation>,
-    pub(crate) cyber_policy_notice: crate::daybreak::NoticeCache,
+    pub(crate) daybreak_enabled: bool,
     app_event_tx: AppEventSender,
     codex_op_target: CodexOpTarget,
     bottom_pane: BottomPane,
@@ -568,6 +568,7 @@ pub(crate) struct ChatWidget {
     model_catalog: Arc<ModelCatalog>,
     model_popup_request_id: Option<uuid::Uuid>,
     permission_popup_request_id: Option<uuid::Uuid>,
+    permission_discovery: Option<crate::permission_discovery::PermissionDiscovery>,
     worktree_popup_request_id: Option<uuid::Uuid>,
     permission_profiles_menu_opened: bool,
     model_popup_model_ids: Vec<String>,
@@ -632,13 +633,15 @@ pub(crate) struct ChatWidget {
     pending_stream_consolidations: usize,
     /// Copy feedback is discarded with its originating conversation.
     pending_clipboard: Option<clipboard::PendingCopy>,
+    /// Legacy terminals report auto-repeat as new presses; suppress the burst after a slow paste.
+    suppress_image_paste_until: Instant,
     copy_last_response_binding: Vec<KeyBinding>,
     running_commands: HashMap<String, RunningCommand>,
     collab_agent_metadata: HashMap<ThreadId, AgentMetadata>,
     pending_collab_spawn_requests: HashMap<String, multi_agents::SpawnRequestSummary>,
     suppressed_exec_calls: HashSet<String>,
     skills_all: Vec<SkillMetadata>,
-    skills_initial_state: Option<HashMap<AbsolutePathBuf, bool>>,
+    skills_initial_state: Option<HashMap<PathUri, bool>>,
     last_unified_wait: Option<UnifiedExecWaitState>,
     unified_exec_wait_streak: Option<UnifiedExecWaitStreak>,
     turn_lifecycle: TurnLifecycleState,
@@ -1116,7 +1119,7 @@ impl ChatWidget {
                     ..Default::default()
                 },
             ],
-            ..SelectionViewParams::picker()
+            ..SelectionViewParams::confirmation()
         });
     }
 
@@ -1203,8 +1206,6 @@ impl ChatWidget {
         self.update_due_hook_visibility();
         self.schedule_hook_timer_if_needed();
         self.bottom_pane.pre_draw_tick();
-        // Elpis: the idle footer tip follows the composer state (v0.3.0).
-        self.refresh_elpis_tip();
         self.flush_realtime_transcript_history();
         self.refresh_realtime_microphone_level();
         if let Some(pet) = self.ambient_pet.as_ref() {
@@ -1760,6 +1761,10 @@ impl ChatWidget {
 
     pub(crate) fn composer_is_empty(&self) -> bool {
         self.bottom_pane.composer_is_empty() && !self.bottom_pane.is_in_paste_burst()
+    }
+
+    pub(crate) fn composer_is_vim_enabled(&self) -> bool {
+        self.bottom_pane.composer_is_vim_enabled()
     }
 
     #[cfg(test)]

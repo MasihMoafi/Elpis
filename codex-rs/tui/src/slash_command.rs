@@ -16,9 +16,11 @@ pub enum SlashCommand {
     // DO NOT ALPHA-SORT! Enum order is presentation order in the popup, so
     // more frequently used commands should be listed first.
     Model,
+    Effort, // Elpis
     // Elpis: v0.3.0 commands, in their v0.3.0 popup positions.
     PrunerModel,
     MemoryModel,
+    Daybreak,
     Ide,
     Permissions,
     Yolo, // Elpis
@@ -149,13 +151,14 @@ impl SlashCommand {
             SlashCommand::MemoryDrop => "DO NOT USE",
             SlashCommand::MemoryUpdate => "DO NOT USE",
             SlashCommand::Model => "choose what model and reasoning effort to use",
+            SlashCommand::Daybreak => "turn Daybreak on or off",
             SlashCommand::Ide => {
                 "include current selection, open files, and other context from your IDE"
             }
             SlashCommand::Plan => "switch to Plan mode",
             SlashCommand::Voice => "start or stop voice; use /voice settings to choose a voice",
             SlashCommand::Goal => "set or view the goal for a long-running task",
-            SlashCommand::Agents => "open the agent command center",
+            SlashCommand::Agents => "open the task list to resume, rename or delete chats",
             SlashCommand::MultiAgents => "switch between this session's subagents",
             SlashCommand::Side | SlashCommand::Btw => {
                 "start a side conversation in an ephemeral fork"
@@ -167,7 +170,7 @@ impl SlashCommand {
             SlashCommand::Experimental => "toggle experimental features",
             SlashCommand::AutoReview => "approve one retry of a recent auto-review denial",
             SlashCommand::Memories => "configure memory use and generation",
-            SlashCommand::Mcp => "list configured MCP tools; use /mcp verbose for details",
+            SlashCommand::Mcp => "list MCP tools; use /mcp verbose or /mcp login <name>",
             SlashCommand::Apps => "manage apps",
             SlashCommand::Plugins => "browse plugins",
             SlashCommand::Logout => "log out of Elpis",
@@ -271,7 +274,6 @@ impl SlashCommand {
     pub fn available_during_task(self) -> bool {
         match self {
             SlashCommand::New
-            | SlashCommand::Archive
             | SlashCommand::Delete
             | SlashCommand::Fork
             | SlashCommand::Worktree
@@ -294,8 +296,10 @@ impl SlashCommand {
             | SlashCommand::MemoryDrop
             | SlashCommand::MemoryUpdate => false,
             SlashCommand::Diff
+            | SlashCommand::Archive
             | SlashCommand::Resume
             | SlashCommand::Model
+            | SlashCommand::Daybreak
             | SlashCommand::Permissions
             | SlashCommand::Copy
             | SlashCommand::Raw

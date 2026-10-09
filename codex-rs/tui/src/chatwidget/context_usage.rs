@@ -25,7 +25,10 @@ pub(super) const AGENT_RESPONSES_COLOR: Color = Color::Rgb(3, 155, 44);
 pub(super) const REASONING_COLOR: Color = Color::Rgb(245, 239, 202);
 const REASONING_CATEGORY_LABEL: &str = "Reasoning + compaction";
 pub(super) const TOOL_CALLS_COLOR: Color = Color::Rgb(162, 129, 11);
-pub(super) const TOOL_RESULTS_COLOR: Color = Color::Rgb(252, 178, 79);
+pub(super) const TOOL_RESULTS_COLOR: Color = {
+    let (r, g, b) = crate::style::CONTEXT_DARK_RGB;
+    Color::Rgb(r, g, b)
+};
 pub(super) const SYSTEM_INSTRUCTIONS_COLOR: Color = Color::Rgb(240, 68, 93);
 pub(super) const DEVELOPER_MESSAGES_COLOR: Color = Color::Rgb(239, 140, 255);
 pub(super) const TOOL_DEFINITIONS_COLOR: Color = Color::Rgb(145, 145, 145);
@@ -39,7 +42,10 @@ const LIGHT_USER_MESSAGES_COLOR: Color = Color::Rgb(70, 110, 170);
 const LIGHT_AGENT_RESPONSES_COLOR: Color = Color::Rgb(30, 90, 50);
 const LIGHT_REASONING_COLOR: Color = Color::Rgb(40, 120, 125);
 const LIGHT_TOOL_CALLS_COLOR: Color = Color::Rgb(95, 80, 30);
-const LIGHT_TOOL_RESULTS_COLOR: Color = Color::Rgb(160, 95, 40);
+const LIGHT_TOOL_RESULTS_COLOR: Color = {
+    let (r, g, b) = crate::style::CONTEXT_LIGHT_RGB;
+    Color::Rgb(r, g, b)
+};
 const LIGHT_SYSTEM_INSTRUCTIONS_COLOR: Color = Color::Rgb(140, 45, 60);
 const LIGHT_DEVELOPER_MESSAGES_COLOR: Color = Color::Rgb(130, 90, 160);
 const LIGHT_TOOL_DEFINITIONS_COLOR: Color = Color::Rgb(80, 80, 80);
@@ -67,6 +73,9 @@ fn light_category_color(color: Color) -> Color {
 /// Shared by the Ledger and `/context`; the charcoal palette as-is, its paper
 /// counterpart on a light background.
 pub(super) fn context_display_color(color: Color) -> Color {
+    if color == TOOL_RESULTS_COLOR {
+        return crate::style::context_style().fg.unwrap_or(Color::Reset);
+    }
     let Some(background) = crate::terminal_palette::default_bg() else {
         return Color::Reset;
     };
@@ -218,14 +227,19 @@ pub(super) fn run_built_context_categories(
         },
     ];
     categories.retain(|category| category.tokens > 0);
-    debug_assert_eq!(
-        categories
-            .iter()
-            .map(|category| category.tokens)
-            .sum::<u64>(),
-        attribution.estimated_total,
-        "run-built categories must sum to the unpadded request estimate",
-    );
+    // The split comes from the server (for Claude and Antigravity chats, the bridge's estimates);
+    // a total that disagrees is drawn scaled to the measured context, never a crash.
+    let summed = categories
+        .iter()
+        .map(|category| category.tokens)
+        .sum::<u64>();
+    if summed != attribution.estimated_total {
+        tracing::warn!(
+            summed,
+            estimated_total = attribution.estimated_total,
+            "context categories do not sum to the request estimate"
+        );
+    }
     categories
 }
 
@@ -551,7 +565,7 @@ fn build_category_bar_chart(
     if categories.is_empty() && used_cells > 0 {
         bar.push(Span::styled(
             "█".repeat(used_cells),
-            Style::default().fg(Color::Reset),
+            crate::style::context_style(),
         ));
     } else {
         for (category, cells) in categories.iter().zip(counts) {
@@ -918,6 +932,29 @@ mod tests {
         assert!(!text.contains("effort setting"), "{text}");
     }
 
+    /// A server's split may disagree with its own total (a bridged chat's estimates did: 4379
+    /// against 3210); Elpis draws it, scaled to the measured context, instead of panicking.
+    #[test]
+    fn run_built_categories_tolerate_a_total_that_disagrees() {
+        let attribution = codex_app_server_protocol::ThreadContextAttribution {
+            user_messages: 3000,
+            tool_results: 1379,
+            estimated_total: 3210,
+            ..Default::default()
+        };
+
+        let categories =
+            reconcile_context_categories(&run_built_context_categories(&attribution), 3210);
+
+        assert_eq!(
+            categories
+                .iter()
+                .map(|category| category.tokens)
+                .sum::<u64>(),
+            3210
+        );
+    }
+
     #[test]
     fn run_built_categories_reconcile_to_measured_context_without_a_gap() {
         let attribution = codex_app_server_protocol::ThreadContextAttribution {
@@ -1185,6 +1222,61 @@ mod tests {
                             .iter()
                             .flat_map(|line| &line.spans)
                             .any(|span| span.content.contains("50.0% of window"))
+                    );
+                },
+            );
+        }
+    }
+
+    #[test]
+    fn used_context_and_tool_results_share_readable_olive_in_both_appearances() {
+        for bg in [(17, 18, 20), (248, 246, 239)] {
+            crate::terminal_palette::with_test_default_colors(
+                crate::terminal_probe::DefaultColors {
+                    fg: (32, 32, 32),
+                    bg,
+                },
+                || {
+                    let olive = context_display_color(TOOL_RESULTS_COLOR);
+                    let (r, g, b) = rgb(olive);
+                    assert!(g >= r && r > b);
+                    assert_eq!(crate::style::context_style().fg, Some(olive));
+                    let categories = [
+                        CategoryUsage {
+                            label: "Tool results",
+                            tokens: 25,
+                            color: TOOL_RESULTS_COLOR,
+                        },
+                        CategoryUsage {
+                            label: "User messages",
+                            tokens: 25,
+                            color: USER_MESSAGES_COLOR,
+                        },
+                    ];
+                    let chart = build_category_bar_chart(&categories, 50, 100, 80);
+                    let spans = chart
+                        .iter()
+                        .flat_map(|line| &line.spans)
+                        .collect::<Vec<_>>();
+                    assert!(
+                        spans
+                            .iter()
+                            .any(|span| span.content.contains('█') && span.style.fg == Some(olive))
+                    );
+                    assert!(
+                        spans
+                            .iter()
+                            .any(|span| span.content.contains('⬟') && span.style.fg == Some(olive))
+                    );
+                    assert!(spans.iter().any(|span| span.content.contains('█')
+                        && span.style.fg == Some(context_display_color(USER_MESSAGES_COLOR))));
+                    assert_ne!(olive, context_display_color(USER_MESSAGES_COLOR));
+                    let unattributed = build_category_bar_chart(&[], 50, 100, 80);
+                    assert!(
+                        unattributed
+                            .iter()
+                            .flat_map(|line| &line.spans)
+                            .any(|span| span.content.contains('█') && span.style.fg == Some(olive))
                     );
                 },
             );

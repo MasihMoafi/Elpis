@@ -74,13 +74,13 @@ async fn async_question_answers_preserve_ambiguous_skill_selection_and_dismiss_r
         short_description: None,
         interface: None,
         dependencies: None,
-        path: test_path_buf("/tmp/route/SKILL.md").abs(),
+        path: test_path_buf("/tmp/route/SKILL.md").abs().into(),
         scope: crate::test_support::skill_scope_repo(),
         enabled: true,
         plugin_id: None,
     };
     let mut duplicate = skill.clone();
-    duplicate.path = test_path_buf("/tmp/other-route/SKILL.md").abs();
+    duplicate.path = test_path_buf("/tmp/other-route/SKILL.md").abs().into();
     chat.set_skills(Some(vec![skill.clone(), duplicate]));
     chat.add_async_questions("message", &questions());
     chat.handle_key_event(KeyEvent::new(KeyCode::Up, KeyModifiers::ALT));
@@ -99,7 +99,7 @@ async fn async_question_answers_preserve_ambiguous_skill_selection_and_dismiss_r
             },
             UserInput::Skill {
                 name: skill.name,
-                path: skill.path.to_path_buf()
+                path: PathBuf::from(skill.path.as_str())
             },
         ]
     );
@@ -878,7 +878,7 @@ async fn questions_keep_resolved_shortcut_and_queue_uses_up() {
         .queued_user_messages
         .push_back(UserMessage::from("queued".to_string()).into());
     chat.refresh_pending_input_preview();
-    let forward_hint = key_hint::shift(KeyCode::Left).display_label();
+    let forward_hint = key_hint::shift(KeyCode::Up).display_label();
     let backward_hint = key_hint::shift(KeyCode::Right).display_label();
     assert!(render_bottom_popup(&chat, /*width*/ 100).contains("↑ edit all · enter send"));
     chat.add_async_questions("message", &questions());
@@ -886,9 +886,13 @@ async fn questions_keep_resolved_shortcut_and_queue_uses_up() {
         render_bottom_popup(&chat, /*width*/ 100).contains(&format!("{forward_hint} to answer"))
     );
 
+    let effort = chat.reasoning_display_name();
+    chat.handle_key_event(KeyEvent::new(KeyCode::Left, KeyModifiers::SHIFT));
+    assert!(!chat.bottom_pane.questions.as_ref().unwrap().expanded);
+
     for (forward, backward) in [
         (
-            KeyEvent::new(KeyCode::Left, KeyModifiers::SHIFT),
+            KeyEvent::new(KeyCode::Up, KeyModifiers::SHIFT),
             KeyEvent::new(KeyCode::Right, KeyModifiers::SHIFT),
         ),
         (
@@ -897,12 +901,13 @@ async fn questions_keep_resolved_shortcut_and_queue_uses_up() {
         ),
     ] {
         chat.handle_key_event(forward);
+        assert_eq!(chat.reasoning_display_name(), effort);
         let rendered = render_bottom_popup(&chat, /*width*/ 100);
         assert!(rendered.contains(&format!("{backward_hint} main prompt")));
         assert!(rendered.contains(&format!("{forward_hint} next question")));
-        if forward.code == KeyCode::Left {
+        if forward.modifiers == KeyModifiers::SHIFT {
             insta::assert_snapshot!(
-                "question_queue_hint_Left",
+                "question_queue_hint_ShiftUp",
                 render_bottom_popup(&chat, /*width*/ 100)
             );
         }

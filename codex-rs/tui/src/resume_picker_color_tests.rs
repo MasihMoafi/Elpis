@@ -23,6 +23,7 @@ fn thread_colors_and_selection_contrast_in_both_picker_layouts() {
         updated_at: None,
         cwd: None,
         git_branch: None,
+        model: None,
     };
     let mut state = PickerState::new(
         FrameRequester::test_dummy(),
@@ -167,6 +168,7 @@ fn compact_picker_keeps_metadata_and_labeled_primary_actions() {
             updated_at: timestamp,
             cwd: Some(PathBuf::from("/tmp/codex")),
             git_branch: Some("fcoury/contrast".into()),
+            model: None,
         })
         .collect();
     let mut snapshots = Vec::new();

@@ -44,6 +44,20 @@ impl ChatWidget {
             self.restore_retry_status_header_if_present();
         }
         match notification {
+            ServerNotification::McpServerOauthLoginCompleted(notification) => {
+                if notification.success {
+                    self.add_info_message(
+                        format!("Signed in to {}.", notification.name),
+                        /*hint*/ None,
+                    );
+                } else {
+                    self.add_error_message(
+                        notification
+                            .error
+                            .unwrap_or_else(|| "MCP sign-in failed.".to_string()),
+                    );
+                }
+            }
             ServerNotification::ThreadTokenUsageUpdated(notification) => {
                 // Elpis: a measured turn replaces the ledger's projected admission delta.
                 self.reconcile_context_projection_for_turn(&notification.turn_id);
@@ -378,6 +392,7 @@ impl ChatWidget {
             | ServerNotification::ThreadStatusChanged(_)
             | ServerNotification::ThreadReverted(_)
             | ServerNotification::ThreadQueueChanged(_)
+            | ServerNotification::ThreadPredictionUpdated(_)
             | ServerNotification::ThreadArchived(_)
             | ServerNotification::ThreadDeleted(_)
             | ServerNotification::ThreadUnarchived(_)
@@ -390,7 +405,6 @@ impl ChatWidget {
             | ServerNotification::McpServerEventStream(_)
             | ServerNotification::FileChangePatchUpdated(_)
             | ServerNotification::McpToolCallProgress(_)
-            | ServerNotification::McpServerOauthLoginCompleted(_)
             | ServerNotification::AppListUpdated(_)
             | ServerNotification::EnvironmentConnected(_)
             | ServerNotification::EnvironmentDisconnected(_)
@@ -529,6 +543,12 @@ impl ChatWidget {
                         == Some(&(notification.turn.id.clone(), error.message.clone()))
                     {
                         self.last_non_retry_error = None;
+                        if replay_kind.is_none() {
+                            if !self.input_queue.user_turn_pending_start {
+                                self.update_task_running_state();
+                            }
+                            self.maybe_send_next_queued_input();
+                        }
                     } else {
                         self.handle_non_retry_error(error.message, error.codex_error_info);
                     }

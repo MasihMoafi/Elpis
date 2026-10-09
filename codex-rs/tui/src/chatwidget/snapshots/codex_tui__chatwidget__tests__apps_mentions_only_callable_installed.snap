@@ -1,35 +1,16 @@
 ---
 source: tui/src/chatwidget/tests/popups_and_settings.rs
-assertion_line: 201
 expression: snapshot
 ---
- Elpis · model gpt-5.6-sol default · location /tmp/project
-                                                │ CONTEXT LEDGER  context not
-› Google Drive  [App] Connected files           │ measured · ≈0 source
-                                                │ estimates
-  enter insert · esc close                      │ Tab controls · Alt+C hide ·
-────────────────────────────────────────────────┤ Ctrl+click open file
-› $                                             │
-────────────────────────────────────────────────┤ SMART PRUNE       [···] SYNC
-        100% context left · Tab Context Ledger  │ Reading current thread state
-                                                │ Syncing… · /smart-prune on|
-                                                │ off sets an explicit state
-                                                │
-                                                │ SUBAGENTS          [━━━●] ON
-                                                │ May delegate to other agents
-                                                │
-                                                │ CONTEXT WINDOW  usage
-                                                │ unavailable
-                                                │ Context measurement
-                                                │ unavailable until the first
-                                                │ request snapshot
-                                                │
-                                                │ No portable context is
-                                                │ available.
+› Google Drive  [App] Connected files
+
+  enter insert · esc close
+
+› $
+
+  GPT-5.6-Sol default · /tmp/project
 
 --- plugin authentication ---
- Elpis · model gpt-5.6-sol default · location /tmp/project
-
   Plugins
   Plugin plugin installed.
   App setup 1/1: % Arabica UAE

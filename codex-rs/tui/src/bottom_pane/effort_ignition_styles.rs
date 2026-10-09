@@ -17,8 +17,7 @@ const WAVE_HALF_WIDTH: f32 = 9.0;
 const PULSE_HALF_WIDTH: f32 = 4.5;
 const SPARK_START: Duration = Duration::from_millis(900);
 const SPARK_FRAME: Duration = Duration::from_millis(100);
-// Elpis: quiet sparks and a softer wash (the four changed lines in this file).
-const SPARK_GLYPHS: &[&str] = &["·", "∙", "·"];
+const SPARK_GLYPHS: &[&str] = &["·", "✦", "✧"];
 
 /// Band entries are `(launch_or_speed, travel_or_phase, strength_or_hue)`.
 type Band = (f32, f32, f32);
@@ -52,7 +51,7 @@ impl Canvas<'_> {
             return;
         }
         let color = best_color_for_level(
-            blend(hue, self.band_rgb, alpha.clamp(0.0, 0.6) * 0.28),
+            blend(hue, self.band_rgb, alpha.clamp(0.0, 0.6)),
             self.color_level,
         );
         if color != Color::default() {
@@ -76,13 +75,13 @@ impl Canvas<'_> {
             return;
         }
         let color = best_color_for_level(
-            blend(hue, self.band_rgb, strength.clamp(0.25, 1.0) * 0.45),
+            blend(hue, self.band_rgb, strength.clamp(0.25, 1.0)),
             self.color_level,
         );
         if color != Color::default() {
             self.buf[(x, y)]
                 .set_symbol(glyph)
-                .set_style(Style::default().fg(color).remove_modifier(Modifier::BOLD));
+                .set_style(Style::default().fg(color).add_modifier(Modifier::BOLD));
         }
     }
 }

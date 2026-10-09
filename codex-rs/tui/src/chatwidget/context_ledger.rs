@@ -7,7 +7,8 @@ use super::context_usage::weighted_cell_counts;
 use super::elpis_ledger_glue::ManualMemoryCache;
 use super::elpis_ledger_glue::ManualMemoryPhase;
 use super::elpis_ledger_glue::elpis_memory_dir;
-use super::elpis_providers::is_bridged_model;
+use super::elpis_providers::CLAUDE_SUBSCRIPTION_PROVIDER_ID;
+use super::elpis_providers::bridged_provider_of_model;
 use super::*;
 use crate::elpis_app_event::ElpisAppEvent;
 use crate::elpis_ledger_events::ManualMemoryMutation;
@@ -126,7 +127,7 @@ pub(super) struct ContextLedgerState {
     pending_g: bool,
     why_visible: bool,
     /// Full screen only: the Ledger would leave the transcript too few rows, so it hides
-    /// until Tab or Alt+C focuses it.
+    /// until Alt+C focuses it.
     crowded: std::cell::Cell<bool>,
     pub(super) pending_smart_prune_enabled: Option<bool>,
     pub(super) pending_subagents_enabled: Option<bool>,
@@ -162,8 +163,8 @@ impl ChatWidget {
         self.context_ledger.visible && self.context_ledger.focused
     }
 
-    /// The ledger is a sidebar shown by default and toggled with `Tab` or `Alt+C`:
-    /// Tab focuses a visible sidebar, then closes it; Alt+C always toggles it.
+    /// The ledger is a sidebar shown by default and controlled with `Alt+C`:
+    /// Alt+C focuses the sidebar, then closes it. Tab closes only a focused sidebar.
     /// On narrower terminals it takes a proportional slice instead of a fixed
     /// 52 columns so the composer keeps room.
     pub(super) fn context_ledger_width(&self, terminal_width: u16) -> u16 {
@@ -181,7 +182,7 @@ impl ChatWidget {
     const FULL_SCREEN_MIN_TRANSCRIPT_ROWS: u16 = 8;
 
     /// Full screen only: an unfocused Ledger that would leave the transcript fewer than
-    /// `FULL_SCREEN_MIN_TRANSCRIPT_ROWS` rows hides; Tab or Alt+C still opens it whole.
+    /// `FULL_SCREEN_MIN_TRANSCRIPT_ROWS` rows hides; Alt+C still opens it whole.
     /// Inline mode passes `None`, which always shows the Ledger.
     pub(crate) fn fit_context_ledger_to_screen(&self, screen: Option<ratatui::layout::Size>) {
         self.context_ledger.crowded.set(false);
@@ -227,12 +228,13 @@ impl ChatWidget {
             return false;
         }
         let is_tab = matches!(key_event.code, KeyCode::Tab) && key_event.modifiers.is_empty();
-        let is_toggle_key = is_tab || key_hint::alt(KeyCode::Char('c')).is_press(key_event);
+        let is_toggle_key = (is_tab && self.context_ledger.focused)
+            || key_hint::alt(KeyCode::Char('c')).is_press(key_event);
         if is_toggle_key {
             let crowded_out = self.context_ledger.crowded.get() && !self.context_ledger.focused;
             if !self.context_ledger.visible
                 || crowded_out
-                || (is_tab && !self.context_ledger.focused && !self.bottom_pane.has_active_view())
+                || !self.context_ledger.focused
             {
                 self.context_ledger.visible = true;
                 self.context_ledger.focused = true;
@@ -451,6 +453,7 @@ impl ChatWidget {
             .sum::<u64>();
         // Labels and values identify categories; the palette follows Elpis appearance.
         let brand = crate::style::brand_style().not_bold();
+        let context = crate::style::context_style();
         let background = default_bg();
         let light = background.is_some_and(is_light);
         let muted = Style::default().fg(crate::style::adaptive_palette_color(
@@ -502,7 +505,7 @@ impl ChatWidget {
             })
             .collect::<Vec<_>>();
         if attribution_segments.is_empty() && has_request_snapshot && used_tokens > 0 {
-            attribution_segments.push((used_tokens, Color::DarkGray));
+            attribution_segments.push((used_tokens, context.fg.unwrap_or(Color::Reset)));
         }
         let source_change_status = if !self.context_ledger.pending_context_admissions.is_empty() {
             Some("changes queued")
@@ -536,14 +539,14 @@ impl ChatWidget {
         let interaction_hint = if self.context_ledger.focused {
             "Up/Down move · Space/Enter toggle · p prune · s subagents · i all · w why · Tab/Esc close"
         } else {
-            "Tab controls · Alt+C hide · Ctrl+click open file"
+            "Alt+C controls · Ctrl+click open file"
         };
         let mut lines = self.agent_ledger_lines(content_width);
         lines.extend(vec![
             Line::from(vec![
-                Span::styled("CONTEXT LEDGER", brand.bold()),
+                Span::styled("CONTEXT LEDGER", context.bold()),
                 Span::raw("  "),
-                Span::styled(context_header, brand),
+                Span::styled(context_header, context),
             ]),
             Line::from(Span::styled(interaction_hint, muted)),
             Line::from(""),
@@ -617,10 +620,14 @@ impl ChatWidget {
         smart_prune_spans.push(Span::raw(" ".repeat(smart_prune_pad)));
         smart_prune_spans.extend(switch_spans);
         lines.push(Line::from(smart_prune_spans));
-        // Elpis: Claude Code sends a Claude chat's tool results to Claude itself, so Smart
-        // Prune never sees them (the Claude bridge, `tools/elpis-claude`).
-        let smart_prune_detail = if is_bridged_model(self.current_model()) {
-            "Does not apply to Claude or Antigravity chats".to_string()
+        // Elpis: a Claude chat's requests go through the Claude bridge's Smart Prune proxy while
+        // the switch is on (`tools/elpis-claude`); an Antigravity chat's go to Google unseen.
+        let bridged = bridged_provider_of_model(self.current_model());
+        let smart_prune_detail = if bridged.is_some_and(|b| b.id != CLAUDE_SUBSCRIPTION_PROVIDER_ID)
+        {
+            "Does not apply to Antigravity chats".to_string()
+        } else if bridged.is_some() && smart_prune_enabled {
+            "Large tool results shrink through the Claude proxy".to_string()
         } else if pending_smart_prune_enabled.is_some() {
             "Saving setting · the active turn keeps its current policy".to_string()
         } else if !self.smart_prune_synced {
@@ -822,7 +829,7 @@ impl ChatWidget {
         lines.push(Line::from(""));
 
         lines.push(Line::from(vec![
-            Span::styled("CONTEXT WINDOW", brand.bold()),
+            Span::styled("CONTEXT WINDOW", context.bold()),
             Span::raw("  "),
             Span::styled(
                 if let (true, Some(window)) = (has_request_snapshot, context_window) {
@@ -837,7 +844,7 @@ impl ChatWidget {
                 } else {
                     "usage unavailable".to_string()
                 },
-                muted,
+                context,
             ),
         ]));
         if let (true, Some(window)) = (has_request_snapshot, context_window) {
@@ -1903,7 +1910,7 @@ fn smart_prune_on_colors(
     )
 }
 
-/// Source group headings: the Deus Ex gold family (style/elpis.rs primary color).
+/// Source group headings: the olive context family, deepened on light terminals.
 fn source_group_colors(
     terminal_bg: Option<(u8, u8, u8)>,
     color_level: StdoutColorLevel,
@@ -1912,14 +1919,20 @@ fn source_group_colors(
         terminal_bg,
         color_level,
         Color::Yellow,
-        [(128, 88, 10), (110, 76, 6), (140, 96, 12), (96, 70, 20)],
         [
-            (229, 187, 104),
-            (245, 205, 128),
-            (214, 170, 90),
-            (196, 160, 96),
+            crate::style::CONTEXT_LIGHT_RGB,
+            (92, 106, 20),
+            (100, 112, 28),
+            (82, 94, 18),
+        ],
+        [
+            crate::style::CONTEXT_DARK_RGB,
+            (226, 226, 136),
+            (195, 201, 94),
+            (180, 189, 82),
         ],
     )
+    .map(|color| crate::style::readable_color_on(color, None))
 }
 
 fn ledger_palette(
@@ -2059,7 +2072,7 @@ mod tests {
     }
 
     #[test]
-    fn ledger_source_palette_stays_in_the_gold_family() {
+    fn ledger_source_palette_stays_in_the_olive_family() {
         for bg in [(255, 255, 255), (17, 18, 20)] {
             crate::terminal_palette::with_test_default_colors(
                 crate::terminal_probe::DefaultColors {
@@ -2069,7 +2082,7 @@ mod tests {
                 || {
                     for color in LedgerSourceGroup::ALL.map(LedgerSourceGroup::color) {
                         match color {
-                            Color::Rgb(r, g, b) => assert!(r >= g && g > b),
+                            Color::Rgb(r, g, b) => assert!(g >= r && r > b),
                             Color::Black if is_light(bg) => {}
                             Color::Yellow | Color::Indexed(_) => {}
                             other => panic!("unexpected ledger accent: {other:?}"),

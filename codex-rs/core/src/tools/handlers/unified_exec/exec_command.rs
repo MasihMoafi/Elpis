@@ -58,11 +58,11 @@ const EXEC_COMMAND_REJECTION_MAX_BYTES: usize = 900;
 
 #[derive(Clone, Copy)]
 pub(crate) struct ExecCommandHandlerOptions {
-    pub(crate) allow_login_shell: bool,
+    pub(crate) include_login_parameter: bool,
+    pub(crate) include_shell_parameter: bool,
     pub(crate) allow_tty: bool,
     pub(crate) exec_permission_approvals_enabled: bool,
     pub(crate) include_environment_id: bool,
-    pub(crate) include_shell_parameter: bool,
     pub(crate) include_windows_shell_guidance: bool,
 }
 
@@ -82,11 +82,11 @@ impl Default for ExecCommandHandler {
         Self {
             lifetime: ExecCommandLifetime::Interactive,
             options: ExecCommandHandlerOptions {
-                allow_login_shell: false,
+                include_login_parameter: false,
+                include_shell_parameter: true,
                 allow_tty: true,
                 exec_permission_approvals_enabled: false,
                 include_environment_id: false,
-                include_shell_parameter: true,
                 include_windows_shell_guidance: cfg!(windows),
             },
         }
@@ -117,7 +117,7 @@ impl ToolExecutor<ToolInvocation> for ExecCommandHandler {
     fn spec(&self) -> ToolSpec {
         let spec = create_exec_command_tool_with_environment_id(
             CommandToolOptions {
-                allow_login_shell: self.options.allow_login_shell,
+                include_login_parameter: self.options.include_login_parameter,
                 exec_permission_approvals_enabled: self.options.exec_permission_approvals_enabled,
             },
             self.options.include_environment_id,
@@ -184,15 +184,11 @@ impl ExecCommandHandler {
             call_id.clone(),
         );
         let environment_args: ExecCommandEnvironmentArgs = parse_arguments(&arguments)?;
-        let Some(turn_environment) = resolve_tool_environment(
-            &step_context.environments,
+        let turn_environment = resolve_tool_environment(
+            &step_context,
             environment_args.environment_id.as_deref(),
-        )?
-        else {
-            return Err(FunctionCallError::RespondToModel(
-                "unified exec is unavailable in this session".to_string(),
-            ));
-        };
+            "unified exec is unavailable in this session",
+        )?;
         let native_environment_cwd = turn_environment.cwd().clone();
         let cwd = environment_args
             .workdir
@@ -251,6 +247,18 @@ impl ExecCommandHandler {
         }
         let sandbox_permissions =
             resolve_sandbox_permissions(args.sandbox_permissions, args.justification.as_deref())?;
+        // A call sampled before Full Access was selected can still carry an escalation.
+        // It is redundant only when this executor actually has unrestricted permissions.
+        let sandbox_permissions = if context.step_context.settings.approval_policy()
+            == codex_protocol::protocol::AskForApproval::Never
+            && turn_environment.permission_profile()
+                == &codex_protocol::models::PermissionProfile::Disabled
+            && sandbox_permissions == codex_protocol::models::SandboxPermissions::RequireEscalated
+        {
+            codex_protocol::models::SandboxPermissions::UseDefault
+        } else {
+            sandbox_permissions
+        };
         let hook_command = args.cmd.clone();
         maybe_emit_implicit_skill_invocation(
             session.as_ref(),
@@ -297,7 +305,6 @@ impl ExecCommandHandler {
         )
         .map_err(FunctionCallError::RespondToModel)?;
         let command = resolved_command.command;
-        let shell_type = resolved_command.shell_type;
         let ExecCommandArgs {
             mut tty,
             yield_time_ms,
@@ -326,13 +333,12 @@ impl ExecCommandHandler {
             turn_environment.sandbox_context(/*additional_permissions*/ None);
         let permission_context = file_system_sandbox_policy_context_for_cwd(&sandbox_context, &cwd);
         let effective_additional_permissions = apply_granted_turn_permissions(
-            context.session.as_ref(),
+            &context.step_context,
             turn_environment,
             &cwd,
             sandbox_permissions,
             additional_permissions,
-        )
-        .await;
+        );
         let additional_permissions_allowed = exec_permission_approvals_enabled
             || (session.features().enabled(Feature::RequestPermissionsTool)
                 && effective_additional_permissions.permissions_preapproved);
@@ -418,7 +424,7 @@ impl ExecCommandHandler {
         let process_id = manager.allocate_process_id().await;
         let request = ExecCommandRequest {
             command,
-            shell_type,
+            shell: resolved_command.shell,
             hook_command: hook_command.clone(),
             process_id,
             yield_time_ms,

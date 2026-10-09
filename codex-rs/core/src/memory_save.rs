@@ -33,6 +33,57 @@ pub struct MemoryUpdate {
     pub memory: Option<String>,
 }
 
+/// The `save_memory` tool as an agent sees it, wherever it is offered (the engine's tool, and
+/// the Claude bridge's through `elpis memory-save`).
+pub const SAVE_MEMORY_DESCRIPTION: &str = "Persist durable context before your final answer when it changed. MEMORY.md is only for stable global user preferences: use exact edits so unseen memory is preserved. ES is the workspace checkpoint for project state, verification, blockers, and next action. Pass an empty edit list and null checkpoint when nothing should change. Saving is local, opt-in, root-thread only, and rejects stale or conflicting files.";
+pub const MEMORY_EDITS_DESCRIPTION: &str =
+    "Exact MEMORY.md edits. old_text=null appends; new_text=null removes; both strings replace.";
+pub const CHECKPOINT_DESCRIPTION: &str = "Complete replacement for the workspace's Consolidated State, or null to preserve it byte-for-byte.";
+
+/// One exact MEMORY.md edit an agent asks for: `old_text: None` appends `new_text`,
+/// `new_text: None` removes `old_text`, and both strings replace its only occurrence.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MemoryEdit {
+    pub old_text: Option<String>,
+    pub new_text: Option<String>,
+}
+
+/// MEMORY.md after `edits`, or `None` when they change nothing. Shared by the engine's
+/// `save_memory` tool and `elpis memory-save` (a Claude or Antigravity chat's tool).
+pub fn apply_memory_edits(existing: &str, edits: &[MemoryEdit]) -> Result<Option<String>, String> {
+    let mut memory = existing.to_string();
+    for edit in edits {
+        match (&edit.old_text, &edit.new_text) {
+            (None, None) => {
+                return Err("a memory edit must append, replace, or remove text".to_string());
+            }
+            (None, Some(new_text)) => {
+                if new_text.is_empty() {
+                    return Err("appended memory text cannot be empty".to_string());
+                }
+                if !memory.is_empty() && !memory.ends_with('\n') {
+                    memory.push('\n');
+                }
+                memory.push_str(new_text);
+            }
+            (Some(old_text), replacement) => {
+                if old_text.is_empty() {
+                    return Err("old_text cannot be empty".to_string());
+                }
+                let matches = memory.match_indices(old_text).count();
+                if matches != 1 {
+                    return Err(format!(
+                        "old_text must match durable memory exactly once; found {matches} matches"
+                    ));
+                }
+                memory = memory.replacen(old_text, replacement.as_deref().unwrap_or(""), 1);
+            }
+        }
+    }
+    Ok((memory != existing).then_some(memory))
+}
+
 #[derive(Clone, Debug)]
 pub struct MemoryBaseline {
     memory: String,
@@ -382,6 +433,14 @@ impl MemorySnapshot {
             memory,
             checkpoint.unwrap_or_else(|| self.checkpoint.clone()),
         ))
+    }
+
+    /// The files as this snapshot read them, for a save that began now.
+    pub fn baseline(&self) -> MemoryBaseline {
+        MemoryBaseline {
+            memory: self.memory.clone(),
+            checkpoint: self.checkpoint.clone(),
+        }
     }
 
     pub fn validate_baseline(&self, baseline: &MemoryBaseline) -> anyhow::Result<()> {

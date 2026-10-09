@@ -1,8 +1,7 @@
 ---
 source: tui/src/status_indicator_widget.rs
-assertion_line: 433
 expression: terminal.backend()
 ---
-"Elpising… (0s)                "
+"Working (0s)                  "
 "  └ A man a plan a canal      "
 "    panama                    "

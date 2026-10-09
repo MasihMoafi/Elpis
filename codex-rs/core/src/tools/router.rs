@@ -148,8 +148,6 @@ impl ToolRouter {
     }
 
     /// The normalized nested identities chosen after exclusions and collisions.
-    // Consumed by the follow-up cell-origin migration.
-    #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) fn code_mode_tool_names(&self) -> &BTreeMap<String, ToolName> {
         &self.code_mode_tool_names
     }
@@ -173,7 +171,7 @@ impl ToolRouter {
     }
 
     // Answers if the tool plan lets the model invoke the tool directly, through code mode, or deferred tool search.
-    pub(super) fn exposes_tool(&self, name: &ToolName) -> bool {
+    pub(crate) fn exposes_tool(&self, name: &ToolName) -> bool {
         let name = name.clone().with_default_namespace();
         if self
             .code_mode_tool_names
@@ -363,6 +361,10 @@ impl ToolRouter {
             payload,
             ..
         } = call;
+
+        let step_context = step_context.with_current_permissions().map_err(|error| {
+            FunctionCallError::RespondToModel(format!("Permission selection rejected: {error}"))
+        })?;
 
         // Keep the legacy ToolInvocation.turn field tied to the same request state until handlers migrate.
         let turn = Arc::clone(&step_context.turn);

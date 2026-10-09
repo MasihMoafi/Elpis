@@ -1,31 +1,16 @@
 ---
 source: tui/src/app/tests/disconnect_tests.rs
-assertion_line: 114
 expression: "format!(\"{}\\n{}\",\nlines_to_single_string(&app.transcript_cells.last().unwrap().display_lines(80)),\nrender_bottom_popup(&app.chat_widget, 80))"
 ---
 
 › only once
 
- Elpis · model gpt-test default · location /tmp/project
-Reconnecting to server… (0s)                    │ CONTEXT LEDGER  context not
-                                                │ measured · ≈0 source
-• Queued follow-up inputs                       │ estimates
-  ↳ queued before disconnect                    │ Tab controls · Alt+C hide ·
-    ↑ edit all · enter send                     │ Ctrl+click open file
-────────────────────────────────────────────────┤
-› keep this draft!                              │ SMART PRUNE       [···] SYNC
-────────────────────────────────────────────────┤ Reading current thread state
-  ctrl+c quit                                   │ Syncing… · /smart-prune on|
-                                                │ off sets an explicit state
-                                                │
-                                                │ SUBAGENTS          [━━━●] ON
-                                                │ May delegate to other agents
-                                                │
-                                                │ CONTEXT WINDOW  usage
-                                                │ unavailable
-                                                │ Context measurement
-                                                │ unavailable until the first
-                                                │ request snapshot
-                                                │
-                                                │ No portable context is
-                                                │ available.
+• Reconnecting to server… (0s)
+
+• Queued follow-up inputs
+  ↳ queued before disconnect
+    ⇧← edit last queued message
+
+› keep this draft!
+
+  ⌃c quit

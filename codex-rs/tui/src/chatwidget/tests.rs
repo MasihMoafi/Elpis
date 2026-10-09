@@ -123,7 +123,6 @@ pub(super) use codex_protocol::approvals::GuardianRiskLevel;
 pub(super) use codex_protocol::approvals::GuardianUserAuthorization;
 pub(super) use codex_protocol::config_types::CollaborationMode;
 pub(super) use codex_protocol::config_types::ModeKind;
-pub(super) use codex_protocol::config_types::Personality;
 pub(super) use codex_protocol::config_types::SERVICE_TIER_DEFAULT_REQUEST_VALUE;
 pub(super) use codex_protocol::config_types::ServiceTier;
 pub(super) use codex_protocol::models::ActivePermissionProfile;
@@ -234,10 +233,10 @@ mod copy_export_picker_tests;
 mod dynamic_activity_tests;
 // Elpis: evals for `/compact N` and `/compact <text>`.
 mod elpis_compact;
-// Elpis: evals for the v0.3.0 composer behaviour.
-mod elpis_composer;
 // Elpis: Context Ledger evals.
 mod elpis_context_ledger;
+// Elpis: evals for /effort.
+mod elpis_effort;
 // Elpis: evals for what the dashboard reads.
 mod elpis_dashboard;
 // Elpis: evals for the Elpis look.

@@ -1,9 +1,8 @@
 ---
 source: tui/src/app/agents_overview_tests.rs
-assertion_line: 627
+assertion_line: 633
 expression: "age.replace_all(&rendered, \" [age]\")"
 ---
- Elpis · model gpt-5.6-sol default · location /tmp/project
   Agent command center  Group: Project  g
    All 10   Needs you 0   Working 0   Ready 0   Inactive 10
   ────────────────────────────────────────────────────────────────────────────
@@ -20,7 +19,7 @@ expression: "age.replace_all(&rendered, \" [age]\")"
     ○ Task 4                                           Inactive [age]
     ○ Task 3                                           Inactive [age]
 
-
+      Show more
 
 
 

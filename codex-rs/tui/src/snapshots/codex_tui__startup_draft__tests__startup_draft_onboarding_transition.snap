@@ -1,18 +1,15 @@
 ---
 source: tui/src/startup_draft_tests.rs
-assertion_line: 805
 expression: frames
 ---
 before onboarding: hidden (0x0 viewport)
 ---
 after onboarding:
 
-  ◆ Elpis (v0.4.1)
+  >_ OpenAI Codex (v<VERSION>)
      loading
 
-  Pull up a prompt.
 
-───────────────────────────────────────────────────────────────────────────────┐
-› Ask Elpis to do anything                                                     │
-───────────────────────────────────────────────────────────────────────────────┘
-  ? for shortcuts                                           Tab Context Ledger
+› Ask Elpis to do anything
+
+  ? for shortcuts

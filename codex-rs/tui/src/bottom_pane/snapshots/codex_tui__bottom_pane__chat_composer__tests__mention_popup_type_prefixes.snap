@@ -1,6 +1,5 @@
 ---
 source: tui/src/bottom_pane/chat_composer.rs
-assertion_line: 5345
 expression: terminal.backend()
 ---
 "                                                                        "
@@ -8,7 +7,7 @@ expression: terminal.backend()
 "  Google Calendar  [App] Look up events and availability                "
 "                                                                        "
 "  enter insert · esc close                                              "
-"───────────────────────────────────────────────────────────────────────┐"
-"› $goog                                                                │"
-"───────────────────────────────────────────────────────────────────────┘"
-"                                100% context left · Tab Context Ledger  "
+"                                                                        "
+"› $goog                                                                 "
+"                                                                        "
+"                                                     100% context left  "

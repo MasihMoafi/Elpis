@@ -44,7 +44,8 @@ use ratatui::widgets::Wrap;
 /// Or-pattern of every Elpis-owned `SlashCommand` variant, for the exhaustive upstream matches.
 macro_rules! elpis_slash_commands {
     () => {
-        $crate::slash_command::SlashCommand::PrunerModel
+        $crate::slash_command::SlashCommand::Effort
+            | $crate::slash_command::SlashCommand::PrunerModel
             | $crate::slash_command::SlashCommand::MemoryModel
             | $crate::slash_command::SlashCommand::Yolo
             | $crate::slash_command::SlashCommand::Prune
@@ -61,6 +62,7 @@ pub(crate) use elpis_slash_commands;
 /// The v0.3.0 popup descriptions.
 pub(crate) fn description(cmd: SlashCommand) -> &'static str {
     match cmd {
+        SlashCommand::Effort => "change how hard the model thinks: /effort [low|medium|high|…]",
         SlashCommand::PrunerModel => {
             "view or set the model that prunes context; follows /memory-model when unset: /pruner-model <id|default>"
         }
@@ -113,6 +115,8 @@ pub(crate) fn unlisted(cmd: SlashCommand) -> bool {
         cmd,
         // Commands Codex added after v0.3.0, kept typeable (Masih asked for v0.3.0's list).
         SlashCommand::Agents
+            | SlashCommand::Archive
+            | SlashCommand::Delete
             | SlashCommand::Cd
             | SlashCommand::Daemon
             | SlashCommand::Export
@@ -121,11 +125,9 @@ pub(crate) fn unlisted(cmd: SlashCommand) -> bool {
             | SlashCommand::Tui
             | SlashCommand::Warnings
             // Commands v0.3.0 kept out of the popup.
-            | SlashCommand::Archive
             | SlashCommand::AutoReview
             | SlashCommand::Btw
             | SlashCommand::DebugConfig
-            | SlashCommand::Delete
             | SlashCommand::Import
             | SlashCommand::Logout
             | SlashCommand::Mention
@@ -144,7 +146,8 @@ pub(crate) fn unlisted(cmd: SlashCommand) -> bool {
 pub(crate) fn hidden(cmd: SlashCommand) -> bool {
     matches!(
         cmd,
-        SlashCommand::App
+        SlashCommand::Daybreak
+            | SlashCommand::App
             | SlashCommand::Apps
             | SlashCommand::ElevateSandbox
             | SlashCommand::Exit
@@ -165,7 +168,8 @@ pub(crate) fn hidden(cmd: SlashCommand) -> bool {
 pub(crate) fn supports_inline_args(cmd: SlashCommand) -> bool {
     matches!(
         cmd,
-        SlashCommand::PrunerModel
+        SlashCommand::Effort
+            | SlashCommand::PrunerModel
             | SlashCommand::MemoryModel
             | SlashCommand::SmartPrune
             | SlashCommand::ForcePrune
@@ -181,7 +185,8 @@ pub(crate) fn available_in_side_conversation(cmd: SlashCommand) -> bool {
 pub(crate) fn available_during_task(cmd: SlashCommand) -> bool {
     matches!(
         cmd,
-        SlashCommand::PrunerModel
+        SlashCommand::Effort
+            | SlashCommand::PrunerModel
             | SlashCommand::MemoryModel
             | SlashCommand::Yolo
             | SlashCommand::Agent
@@ -278,6 +283,7 @@ impl ChatWidget {
             SlashCommand::Prune | SlashCommand::SmartPrune | SlashCommand::PrunerModel => {
                 self.dispatch_prune_command(cmd)
             }
+            SlashCommand::Effort => self.open_effort_popup(),
             SlashCommand::Context => self.request_fresh_context_usage_report(),
             SlashCommand::MemoryModel => self.open_background_model_popup(),
             SlashCommand::Dashboard => self.open_dashboard(),

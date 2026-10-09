@@ -1,7 +1,8 @@
 // End-to-end check of the bridge, acting as the Elpis TUI over the app-server protocol.
 // Uses the real engine and Claude (subscription). Run: node test/bridge-e2e.mjs [scenario...]
 // Scenarios: text image interrupt approval usage resume delegate compact instructions modes steer tools plan
-// shell picker revert review efforts default antigravity structured goal side subagents claude-subagent.
+// shell picker revert review efforts default antigravity structured goal side subagents claude-subagent
+// claude-modes full-access plan-full-access context-parts.
 // Exit code 0 only if every scenario passes.
 import { spawn } from "node:child_process";
 import { mkdtempSync, writeFileSync } from "node:fs";
@@ -36,10 +37,11 @@ const approvals = [];
 const approvalOffers = [];
 let approvalAnswer = "accept";
 const seen = [];
+const approvalThreads = [];
 ws.on("message", (data) => {
   const m = JSON.parse(data.toString());
   if (m.id !== undefined && !m.method && pending.has(m.id)) { pending.get(m.id)(m); pending.delete(m.id); return; }
-  if (m.id !== undefined && m.method) { approvals.push(m.params?.command ?? m.method); approvalOffers.push(m.params?.availableDecisions ?? []); ws.send(JSON.stringify({ id: m.id, result: { decision: approvalAnswer } })); }
+  if (m.id !== undefined && m.method) { approvals.push(m.params?.command ?? m.method); approvalOffers.push(m.params?.availableDecisions ?? []); approvalThreads.push(m.params?.threadId); ws.send(JSON.stringify({ id: m.id, result: { decision: typeof approvalAnswer === "function" ? approvalAnswer(m) : approvalAnswer } })); }
   seen.push(m);
   for (const l of listeners) l(m);
 });
@@ -85,6 +87,13 @@ if (!models.result?.data?.some((m) => m.id === "claude/opus")) fail("model/list 
 // The TUI refuses a pasted image unless the selected model lists image input.
 const textOnly = (models.result?.data ?? []).filter((m) => m.id.startsWith("claude/") && !m.inputModalities?.includes("image"));
 if (textOnly.length) fail(`Claude models without image input: ${textOnly.map((m) => m.id).join(", ")}`);
+// A subscription model has none of GPT's speed tiers (Claude's Fast mode bills extra usage); a GPT
+// model keeps them, so the check can fail.
+const fastOf = (m) => [...(m.serviceTiers ?? []).map((t) => t.name), ...(m.additionalSpeedTiers ?? [])];
+const fastSubscription = (models.result?.data ?? []).filter((m) => /^(claude|agy)\//.test(m.id) && fastOf(m).length);
+const gptFast = (models.result?.data ?? []).some((m) => !/^(claude|agy)\//.test(m.id) && fastOf(m).length);
+if (fastSubscription.length || !gptFast) fail(`speed tiers: subscription models with them ${fastSubscription.map((m) => m.id).join(", ") || "none"}; a GPT model has them ${gptFast}`);
+else console.log("PASS tiers (no Fast on subscription models; GPT keeps it)");
 
 const dir = process.env.E2E_CWD ?? mkdtempSync(join(tmpdir(), "elpis-e2e-"));
 const started = await call("thread/start", { cwd: dir, approvalPolicy: "never", sandbox: "danger-full-access" });
@@ -118,12 +127,46 @@ for (const s of scenarios) {
     const askId = ask.result?.thread?.id;
     await call("thread/settings/update", { threadId: askId, model: "claude/opus", effort: "low" });
     // "cancel" is "No, and tell Elpis what to do differently": the reply stops so the user can type.
+    // Default is Claude's Accept edits, which runs plain file commands (touch) unasked, so the file
+    // is made by a program Claude asks about.
     for (const [answer, file, want, ends] of [["decline", "denied.txt", false, "completed"], ["accept", "allowed.txt", true, "completed"], ["cancel", "stopped.txt", false, "interrupted"]]) {
       approvalAnswer = answer; approvals.length = 0; approvalOffers.length = 0;
-      const t = await turn(askId, [{ type: "text", text: `Use your Bash tool to run exactly: touch ${file}   Then reply DONE.`, text_elements: [] }]);
+      const t = await turn(askId, [{ type: "text", text: `Use your Bash tool to run exactly: python3 -c "open('${file}', 'w')"   Then reply DONE.`, text_elements: [] }]);
       const offered = approvalOffers.at(-1) ?? [];
       const ok = approvals.length > 0 && existsSync(join(dir, file)) === want && t.status === ends && ["accept", "decline", "cancel"].every((d) => offered.includes(d));
       ok ? console.log(`PASS approval ${answer} (asked ${approvals.length}x, file ${want ? "created" : "absent"}, turn ${t.status})`) : fail(`approval ${answer}: asked ${approvals.length}x, file exists=${existsSync(join(dir, file))}, turn ${t.status}, offered ${JSON.stringify(offered)}`);
+    }
+    approvalAnswer = "accept";
+  } else if (s === "agy-approval") {
+    // Gemini through Antigravity asks in Elpis before running a command, as Claude does: a
+    // declined command does not run, an accepted one does, and it runs in the chat's folder.
+    const { existsSync } = await import("node:fs");
+    const ask = await call("thread/start", { cwd: dir, approvalPolicy: "on-request", sandbox: "workspace-write" });
+    const askId = ask.result?.thread?.id;
+    await call("thread/settings/update", { threadId: askId, model: "agy/gemini-3.8-flash-low" });
+    for (const [answer, file, want] of [["decline", "agy-denied.txt", false], ["accept", "agy-allowed.txt", true]]) {
+      approvalAnswer = answer; approvals.length = 0;
+      const t = await turn(askId, [{ type: "text", text: `Use your shell tool to run exactly: touch ${file}   (in the current folder). Then reply DONE.`, text_elements: [] }], 240000);
+      const ok = approvals.length > 0 && existsSync(join(dir, file)) === want;
+      ok ? console.log(`PASS agy-approval ${answer} (asked ${approvals.length}x: ${approvals[0]}; file ${want ? "created" : "absent"})`) : fail(`agy-approval ${answer}: asked ${approvals.length}x, file exists=${existsSync(join(dir, file))}, turn ${t.status}, reply ${t.text.slice(0, 100)}`);
+    }
+    approvalAnswer = "accept";
+  } else if (s === "helper-approval") {
+    // A helper started by a chat that asks before acting asks the user too: its request reaches
+    // the TUI (it was declined unseen), a declined command does not run, an accepted one does.
+    const { existsSync } = await import("node:fs");
+    const st = await call("thread/start", { cwd: dir, approvalPolicy: "untrusted", sandbox: "workspace-write" });
+    const tid = st.result?.thread?.id;
+    await call("thread/settings/update", { threadId: tid, model: process.env.E2E_MODEL ?? "claude/opus", effort: "low" });
+    // The chat's own use of the delegate tool is accepted; the helper's commands are judged.
+    approvalAnswer = (m) => (/helper-denied/.test(m.params?.command ?? "") ? "decline" : "accept");
+    for (const [file, want] of [["helper-denied.txt", false], ["helper-made.txt", true]]) {
+      approvals.length = 0; approvalThreads.length = 0;
+      await turn(tid, [{ type: "text", text: `Use the delegate tool (model gpt-6-luna, effort low, allow_writes true) to have a helper run exactly: touch ${file}   in the current folder. Do not run it yourself. Then reply DONE.`, text_elements: [] }], 300000);
+      const fromHelper = approvalThreads.some((t) => t && t !== tid);
+      const ok = fromHelper && approvals.some((c) => String(c).includes(file)) && existsSync(join(dir, file)) === want;
+      ok ? console.log(`PASS helper-approval ${want ? "accept" : "decline"} (the helper asked: ${approvals.find((c) => String(c).includes(file))}; file ${want ? "created" : "absent"})`)
+        : fail(`helper-approval ${file}: approvals=${JSON.stringify(approvals)} from-helper=${fromHelper} exists=${existsSync(join(dir, file))}`);
     }
     approvalAnswer = "accept";
   } else if (s === "usage") {
@@ -143,9 +186,13 @@ for (const s of scenarios) {
     const asked = usageHits - hitsBefore;
     // Anthropic reports cached input apart from input; Elpis counts it as input, like OpenAI.
     const inputCounted = tokens?.total?.inputTokens >= 1000 && tokens.total.inputTokens >= tokens.total.cachedInputTokens;
-    shown === 3 && (process.env.E2E_REAL_USAGE || asked <= 1) && tokens?.modelContextWindow > 0 && inputCounted
+    // `last` is the latest request, as the engine reports it: its parts add up to its total, the
+    // context now (the dashboard's Last answer card shows them side by side).
+    const l = tokens?.last;
+    const lastAddsUp = l && l.totalTokens === l.inputTokens + l.outputTokens && l.cachedInputTokens <= l.inputTokens;
+    shown === 3 && (process.env.E2E_REAL_USAGE || asked <= 1) && tokens?.modelContextWindow > 0 && inputCounted && lastAddsUp
       ? console.log(`PASS usage (limits on 3 of 3 turns, endpoint asked ${asked}x, 5h ${five.usedPercent}% used, context ${tokens.last.totalTokens}/${tokens.modelContextWindow})`)
-      : fail(`usage: limits shown on ${shown} of 3 turns, endpoint asked ${asked}x, context window ${tokens?.modelContextWindow}, total ${JSON.stringify(tokens?.total)}`);
+      : fail(`usage: limits shown on ${shown} of 3 turns, endpoint asked ${asked}x, context window ${tokens?.modelContextWindow}, total ${JSON.stringify(tokens?.total)} last ${JSON.stringify(l)}`);
   } else if (s === "resume") {
     const word = `PEAR-${Math.floor(Math.random() * 9000 + 1000)}`;
     await turn(threadId, [{ type: "text", text: `Remember this word: ${word}. Reply with just OK.`, text_elements: [] }]);
@@ -180,15 +227,17 @@ for (const s of scenarios) {
   } else if (s === "delegate") {
     const { writeFileSync: wf, readFileSync } = await import("node:fs");
     const word = `SOL-${Math.floor(Math.random() * 9000 + 1000)}`;
-    wf(join(dir, "secret.txt"), word);
+    wf(join(dir, "word.txt"), word);
     const logBefore = (() => { try { return readFileSync("/tmp/acp-bridge/elpis-agents.log", "utf8").length; } catch { return 0; } })();
-    const r = await turn(threadId, [{ type: "text", text: "Use the elpis-agents delegate tool (model gpt-6-luna, effort low) to have that agent read secret.txt in the current folder. Do not read the file yourself. Reply with only what the agent reported.", text_elements: [] }], 300000);
+    const r = await turn(threadId, [{ type: "text", text: "Use the elpis-agents delegate tool (model gpt-6-luna, effort low) to have that agent read word.txt in the current folder. Do not read the file yourself. Reply with only what the agent reported.", text_elements: [] }], 300000);
     const agentLog = (() => { try { return readFileSync("/tmp/acp-bridge/elpis-agents.log", "utf8").slice(logBefore); } catch { return ""; } })();
     const delegated = /delegate thread=\S+ status=completed/.test(agentLog);
     delegated && r.text.includes(word) ? console.log(`PASS delegate (Claude -> gpt-6-luna -> ${word})`) : fail(`delegate: delegated=${delegated} reply=${r.text.slice(0, 200)}`);
   } else if (s === "compact") {
     const usedNow = () => [...seen].reverse().find((m) => m.method === "thread/tokenUsage/updated" && m.params.threadId === threadId)?.params?.tokenUsage?.last?.totalTokens;
-    for (let i = 0; i < 2; i++) await turn(threadId, [{ type: "text", text: "Write about 600 words on why tests should be able to fail. Plain prose.", text_elements: [] }], 240000);
+    // Claude Code's own system prompt is most of the context; enough conversation that compacting
+    // it shows (two short essays left less than 4k tokens to save).
+    for (let i = 0; i < 3; i++) await turn(threadId, [{ type: "text", text: "Write about 1200 words on why tests should be able to fail. Plain prose.", text_elements: [] }], 300000);
     await new Promise((r) => setTimeout(r, 2000));
     const before = usedNow();
     const done = new Promise((r) => { const l = (m) => { if (m.method === "turn/completed" && m.params.threadId === threadId) { listeners.delete(l); r(m.params.turn); } }; listeners.add(l); setTimeout(() => r({ status: "timeout" }), 300000); });
@@ -225,6 +274,104 @@ for (const s of scenarios) {
     await turn(tid, [{ type: "text", text: "Now create the empty file planned.txt in the current folder with your tools, then reply DONE.", text_elements: [] }], 180000);
     const defaultOk = existsSync(join(dir, "planned.txt"));
     planOk && defaultOk ? console.log("PASS modes (Plan mode: no file; Default mode: file created)") : fail(`modes: plan kept folder clean=${planOk}, default created file=${defaultOk}`);
+  } else if (s === "claude-modes") {
+    // Each Codex permission mode runs a Claude chat's turn in Claude's matching mode.
+    // Manual asks before an edit (declined: no file); Accept edits writes without asking.
+    const { existsSync, readFileSync } = await import("node:fs");
+    const logFile = process.env.ACP_BRIDGE_LOG ?? "/tmp/acp-bridge/e2e.log";
+    const st = await call("thread/start", { cwd: dir, approvalPolicy: "on-request", sandbox: "workspace-write" });
+    const tid = st.result?.thread?.id;
+    await call("thread/settings/update", { threadId: tid, model: "claude/opus", effort: "low" });
+    approvalAnswer = "decline";
+    const got = [];
+    for (const [want, settings, write] of [
+      ["default", { permissions: ":read-only", approvalPolicy: "on-request", approvalsReviewer: "user" }, true],
+      ["acceptEdits", { permissions: ":workspace", approvalPolicy: "on-request", approvalsReviewer: "user" }, true],
+      ["auto", { permissions: ":workspace", approvalPolicy: "on-request", approvalsReviewer: "auto_review" }, false],
+      ["bypassPermissions", { permissions: ":danger-full-access", approvalPolicy: "never", approvalsReviewer: "user" }, false],
+    ]) {
+      const from = readFileSync(logFile, "utf8").length;
+      const set = await call("thread/settings/update", { threadId: tid, ...settings });
+      approvals.length = 0;
+      const file = `${want}.txt`;
+      const r = await turn(tid, [{ type: "text", text: write ? `Create an empty file named ${file} in the current folder with your file-writing tool, then reply DONE. If you are not allowed, reply DENIED.` : "Reply with exactly: OK", text_elements: [] }], 420000);
+      const mode = /mode -> (\w+)/.exec(readFileSync(logFile, "utf8").slice(from))?.[1] ?? "(unchanged)";
+      got.push({ want, mode, set: set.error ? JSON.stringify(set.error) : "ok", status: r.status, asked: approvals.length, file: write ? existsSync(join(dir, file)) : null });
+    }
+    approvalAnswer = "accept";
+    // Claude's own settings may turn Bypass off (disableBypassPermissionsMode); the bridge's
+    // catalog lists the modes they allow. A refused Bypass is not warned of: Full Access answers
+    // every question itself (the full-access scenario).
+    const { dirname } = await import("node:path");
+    const allowed = JSON.parse(readFileSync(join(dirname(storeEnv.ACP_BRIDGE_STORE), "catalog.json"), "utf8")).modes ?? [];
+    const warned = seen.some((m) => m.method === "warning" && m.params?.threadId === tid && /Bypass permissions/.test(m.params.message));
+    const bypass = got[3];
+    const bypassOk = allowed.includes("bypassPermissions") ? bypass.mode === "bypassPermissions" : bypass.mode === "(unchanged)" && !warned;
+    console.log(`  ${JSON.stringify(got)} allowed=${JSON.stringify(allowed)} warned=${warned}`);
+    const [manual, edits] = got;
+    got.slice(0, 3).every((g) => g.mode === g.want) && got.every((g) => g.set === "ok" && g.status === "completed") && manual.asked > 0 && !manual.file && edits.asked === 0 && edits.file && bypassOk
+      ? console.log(`PASS claude-modes (Manual asked and wrote nothing; Accept edits wrote unasked; Auto set; Bypass ${allowed.includes("bypassPermissions") ? "set" : "refused by Claude's settings, unwarned"})`)
+      : fail("claude-modes: see the line above");
+  } else if (s === "full-access") {
+    // Full Access never asks, whatever the agent's own mode does (as in Codex, and in Cloudroom).
+    // The project's Claude settings turn Bypass off, so Claude stays in a mode that asks before
+    // writing in its .claude folder; the bridge answers yes itself. Approvals are declined here,
+    // so a question that reached Elpis leaves no file.
+    const { existsSync, mkdirSync } = await import("node:fs");
+    mkdirSync(join(dir, ".claude"), { recursive: true });
+    writeFileSync(join(dir, ".claude", "settings.json"), JSON.stringify({ permissions: { disableBypassPermissionsMode: "disable" } }));
+    const st = await call("thread/start", { cwd: dir, approvalPolicy: "never", sandbox: "danger-full-access" });
+    const tid = st.result?.thread?.id;
+    await call("thread/settings/update", { threadId: tid, model: process.env.E2E_MODEL ?? "claude/opus", effort: "low" });
+    approvalAnswer = "decline";
+    approvals.length = 0;
+    const r = await turn(tid, [{ type: "text", text: "Create an empty file at .claude/full.txt in the current folder with your file-writing tool, then reply DONE. If you are not allowed, reply DENIED.", text_elements: [] }], 420000);
+    approvalAnswer = "accept";
+    const made = existsSync(join(dir, ".claude", "full.txt"));
+    console.log(`  status=${r.status} asked=${approvals.length} made=${made}`);
+    r.status === "completed" && approvals.length === 0 && made
+      ? console.log("PASS full-access (no question reached Elpis; the file was made)")
+      : fail("full-access: see the line above");
+  } else if (s === "context-parts") {
+    // A Claude chat's context parts are Claude's own token counts from its transcript (which also
+    // holds after Elpis restarts), not text length: the tool result and the thinking Elpis draws
+    // are those the transcript gives, and they add up to the context Claude reports.
+    const { readFileSync } = await import("node:fs");
+    const { homedir } = await import("node:os");
+    const { transcriptTokens } = await import(join(here, "context-split.mjs"));
+    const st = await call("thread/start", { cwd: dir, approvalPolicy: "never", sandbox: "danger-full-access" });
+    const tid = st.result?.thread?.id;
+    await call("thread/settings/update", { threadId: tid, model: process.env.E2E_MODEL ?? "claude/opus", effort: "low" });
+    const from = seen.length;
+    const r = await turn(tid, [{ type: "text", text: "Use your Bash tool to run exactly: seq 1 3000 | paste -sd' ' -   Then reply DONE.", text_elements: [] }], 420000);
+    const attr = seen.slice(from).filter((m) => m.method === "thread/tokenUsage/updated" && m.params.threadId === tid).at(-1)?.params?.tokenUsage?.contextAttribution;
+    const session = JSON.parse(readFileSync(storeEnv.ACP_BRIDGE_STORE, "utf8"))[tid]?.session;
+    const t = transcriptTokens(readFileSync(join(homedir(), ".claude", "projects", dir.replace(/[^a-zA-Z0-9]/g, "-"), `${session}.jsonl`), "utf8"));
+    const parts = attr ? Object.entries(attr).filter(([k]) => k !== "estimatedTotal").reduce((n, [, v]) => n + v, 0) : -1;
+    const near = (a, b) => Math.abs(a - b) <= Math.max(50, 0.2 * b);
+    console.log(`  status=${r.status} drawn=${JSON.stringify(attr)} transcript=${JSON.stringify(t)}`);
+    r.status === "completed" && attr && parts === attr.estimatedTotal && t.toolResults > 2000 && near(attr.toolResults, t.toolResults) && near(attr.reasoning, t.reasoning) && attr.systemInstructions < attr.estimatedTotal
+      ? console.log(`PASS context-parts (tool results ${attr.toolResults}, thinking ${attr.reasoning}, system ${attr.systemInstructions} of ${attr.estimatedTotal}: Claude's own counts)`)
+      : fail("context-parts: see the line above");
+  } else if (s === "plan-full-access") {
+    // A Plan turn in Full Access asks only to approve its plan; the approved plan goes on in Full
+    // Access, so nothing after it asks, even with Bypass turned off in the project's Claude
+    // settings. Every other question is declined here, so one that reached Elpis leaves no file.
+    const { existsSync, mkdirSync } = await import("node:fs");
+    mkdirSync(join(dir, ".claude"), { recursive: true });
+    writeFileSync(join(dir, ".claude", "settings.json"), JSON.stringify({ permissions: { disableBypassPermissionsMode: "disable" } }));
+    const st = await call("thread/start", { cwd: dir, approvalPolicy: "never", sandbox: "danger-full-access" });
+    const tid = st.result?.thread?.id;
+    await call("thread/settings/update", { threadId: tid, model: process.env.E2E_MODEL ?? "claude/opus", effort: "low", collaborationMode: { mode: "plan", settings: { model: process.env.E2E_MODEL ?? "claude/opus", reasoning_effort: "low", developer_instructions: null } } });
+    approvals.length = 0;
+    approvalAnswer = (m) => (/plan/i.test(m.params?.command ?? "") ? "accept" : "decline");
+    const r = await turn(tid, [{ type: "text", text: "Plan this, in one line: create an empty file at .claude/made.txt with your file-writing tool. Present the plan for approval now; once it is approved, do it and reply DONE.", text_elements: [] }], 420000);
+    approvalAnswer = "accept";
+    const made = existsSync(join(dir, ".claude", "made.txt"));
+    console.log(`  status=${r.status} asked=${JSON.stringify(approvals)} made=${made}`);
+    r.status === "completed" && approvals.length === 1 && /plan/i.test(approvals[0]) && made
+      ? console.log("PASS plan-full-access (only the plan was asked; the file was made after it)")
+      : fail("plan-full-access: see the line above");
   } else if (s === "steer") {
     // A message sent while Claude works must join that reply (Elpis Esc / Enter), not stop it.
     const word = `STEER-${Math.floor(Math.random() * 9000 + 1000)}`;
@@ -267,9 +414,15 @@ for (const s of scenarios) {
     const last = plans.at(-1)?.params?.plan ?? [];
     // Each update draws an "Updated Plan" row, so an unchanged list must not come twice in a row.
     const repeats = plans.filter((m, i) => i > 0 && JSON.stringify(m.params.plan) === JSON.stringify(plans[i - 1].params.plan)).length;
+    // Reopening the chat shows its latest plan again (the engine sends plans only while live).
+    const reopenFrom = seen.length;
+    await call("thread/resume", { threadId });
+    await new Promise((r) => setTimeout(r, 1500));
+    const replayed = seen.slice(reopenFrom).find((m) => m.method === "turn/plan/updated" && m.params.threadId === threadId)?.params?.plan;
     last.some((p) => /look around/i.test(p.step)) && last.every((p) => ["pending", "inProgress", "completed"].includes(p.status)) && repeats === 0
-      ? console.log(`PASS plan (${plans.length} plan updates, none repeated, last: ${last.map((p) => `${p.step}=${p.status}`).join(", ")})`)
-      : fail(`plan: ${plans.length} updates, ${repeats} repeated, last=${JSON.stringify(last)}`);
+      && JSON.stringify(replayed) === JSON.stringify(last)
+      ? console.log(`PASS plan (${plans.length} plan updates, none repeated, last: ${last.map((p) => `${p.step}=${p.status}`).join(", ")}; shown again on reopen)`)
+      : fail(`plan: ${plans.length} updates, ${repeats} repeated, last=${JSON.stringify(last)} replayed=${JSON.stringify(replayed ?? null)}`);
   } else if (s === "shell") {
     // A shell line with an operator must show as typed, not as `echo one '&&' echo two`.
     const from = seen.length;
@@ -367,6 +520,84 @@ for (const s of scenarios) {
     const ok = !w.error && read?.model === "claude/haiku" && fresh.result?.model === "claude/haiku" && restart.result?.model === "claude/haiku" && r.text.includes(word);
     ok ? console.log(`PASS default (config/read, /new and startup all say claude/haiku; the new chat answered ${word})`)
       : fail(`default: write=${JSON.stringify(w.error ?? w.result?.status)} read=${read?.model} new-chat=${fresh.result?.model ?? JSON.stringify(fresh.error)} startup(${engineDefault})=${restart.result?.model} reply=${r.text.slice(0, 60)}`);
+  } else if (s === "new-chat-model") {
+    // A new Claude chat names its model everywhere Elpis reads one (the agent list showed a
+    // fresh Claude chat as GPT-6.1-Sol until its first message). No model is asked.
+    const from = seen.length;
+    const st = await call("thread/start", { model: "claude/haiku", cwd: dir, approvalPolicy: "never", sandbox: "danger-full-access" });
+    const tid = st.result?.thread?.id;
+    await new Promise((r) => setTimeout(r, 1500));
+    const started = seen.slice(from).find((m) => m.method === "thread/started" && m.params?.thread?.id === tid)?.params.thread;
+    const read = (await call("thread/read", { threadId: tid ?? "none", includeTurns: false })).result?.thread;
+    const models = { response: st.result?.model, thread: st.result?.thread?.model, started: started?.model ?? "(none)", read: read?.model };
+    Object.values(models).every((m) => m === "claude/haiku" || m === "(none)")
+      ? console.log(`PASS new-chat-model (${JSON.stringify(models)})`)
+      : fail(`new-chat-model: ${JSON.stringify(models)}`);
+  } else if (s === "archive-unsaved") {
+    // A helper the engine never saved (its only turn failed, so no rollout) archives like any
+    // other chat, instead of failing with "no rollout found".
+    const { readFileSync: readStore, writeFileSync: writeStore } = await import("node:fs");
+    const { randomUUID } = await import("node:crypto");
+    const tid = randomUUID();
+    const store = (() => { try { return JSON.parse(readStore(storeEnv.ACP_BRIDGE_STORE, "utf8")); } catch { return {}; } })();
+    store._delegations = { ...store._delegations, [tid]: { parentThreadId: threadId, model: "agy/gemini-3.8-flash", startedAt: Math.floor(Date.now() / 1000) } };
+    writeStore(storeEnv.ACP_BRIDGE_STORE, JSON.stringify(store));
+    const from = seen.length;
+    const a = await call("thread/archive", { threadId: tid });
+    await new Promise((r) => setTimeout(r, 500));
+    const told = seen.slice(from).some((m) => m.method === "thread/archived" && m.params?.threadId === tid);
+    const after = JSON.parse(readStore(storeEnv.ACP_BRIDGE_STORE, "utf8"));
+    !a.error && told && !after._delegations?.[tid]
+      ? console.log("PASS archive-unsaved (archived, the TUI was told, the record is gone)")
+      : fail(`archive-unsaved: ${JSON.stringify(a.error ?? a.result)} told=${told} record=${!!after._delegations?.[tid]}`);
+  } else if (s === "memory") {
+    // A Claude chat saves to Elpis's durable memory with the engine's own guarded save, where
+    // the workspace opted in (as the Context Ledger's MEMORY.md switch does). Never run against
+    // the real Elpis home: MEMORY.md is global.
+    const home = process.env.ELPIS_HOME;
+    if (!home || !home.startsWith(tmpdir())) { fail("memory: run with ELPIS_HOME set to a temporary folder"); continue; }
+    const { createHash } = await import("node:crypto");
+    const { mkdirSync, readFileSync: readMemory } = await import("node:fs");
+    const { basename } = await import("node:path");
+    const slug = basename(dir).replace(/[^A-Za-z0-9_-]/g, "-").slice(0, 40) || "workspace";
+    const key = `${slug}-${createHash("sha256").update(dir).digest("hex").slice(0, 12)}`;
+    mkdirSync(join(home, "context", "workspaces", key), { recursive: true });
+    writeFileSync(join(home, "context", "workspaces", key, "memory-autosave.json"), '{"enabled":true}');
+    const st = await call("thread/start", { model: process.env.E2E_MODEL ?? "claude/opus", cwd: dir, approvalPolicy: "never", sandbox: "danger-full-access" });
+    const tid = st.result?.thread?.id;
+    const word = `MEMTEST-${Math.floor(Math.random() * 9000 + 1000)}`;
+    const r = await turn(tid, [{ type: "text", text: `Use your save_memory tool to append exactly this line to memory: "- Prefers Celsius (${word})." (one memory edit with old_text null; checkpoint null). Then reply DONE.`, text_elements: [] }], 240000);
+    const memory = (() => { try { return readMemory(join(home, "memories", "MEMORY.md"), "utf8"); } catch { return ""; } })();
+    memory.includes(word)
+      ? console.log(`PASS memory (Claude saved "${word}" to MEMORY.md through elpis memory-save)`)
+      : fail(`memory: MEMORY.md=${JSON.stringify(memory.slice(0, 120))} reply=${r.text.slice(0, 120)}`);
+  } else if (s === "smart-prune") {
+    // A Claude chat with Smart Prune on sends its requests through the proxy `elpis claude`
+    // uses (it shrinks large tool results before Anthropic sees them); with the switch off, it
+    // does not. The switch is a global feature flag: run with ELPIS_HOME set to a temporary
+    // folder, so the real config is never touched.
+    const home = process.env.ELPIS_HOME;
+    if (!home || !home.startsWith(tmpdir())) { fail("smart-prune: run with ELPIS_HOME set to a temporary folder"); continue; }
+    const { readFileSync: readLog } = await import("node:fs");
+    const flip = (on) => call("config/batchWrite", { edits: [{ keyPath: "features.automatic_context_pruning", value: on, mergeStrategy: "replace" }], filePath: null, expectedVersion: null, reloadUserConfig: true });
+    const proxied = async () => {
+      const origin = [...readLog(process.env.ACP_BRIDGE_LOG ?? "/tmp/acp-bridge/e2e.log", "utf8").matchAll(/smart prune proxy at (\S+)/g)].at(-1)?.[1];
+      if (!origin) return 0;
+      try { return (await (await fetch(`${origin}/elpis/session.json`)).json()).requests ?? 0; } catch { return 0; }
+    };
+    const st = await call("thread/start", { model: process.env.E2E_MODEL ?? "claude/opus", cwd: dir, approvalPolicy: "never", sandbox: "danger-full-access" });
+    const tid = st.result?.thread?.id;
+    await flip(false);
+    await new Promise((r) => setTimeout(r, 1500));
+    await turn(tid, [{ type: "text", text: "Reply with exactly: OFF", text_elements: [] }]);
+    const whileOff = await proxied();
+    await flip(true);
+    await new Promise((r) => setTimeout(r, 1500));
+    const r = await turn(tid, [{ type: "text", text: "Reply with exactly: ON", text_elements: [] }]);
+    const whileOn = await proxied();
+    whileOff === 0 && whileOn > 0 && r.text.includes("ON")
+      ? console.log(`PASS smart-prune (off: no requests through the proxy; on: ${whileOn} request(s) through it, and Claude answered)`)
+      : fail(`smart-prune: through the proxy while off=${whileOff}, while on=${whileOn}, reply=${r.text.slice(0, 60)}`);
   } else if (s === "antigravity") {
     // Gemini from the Antigravity (Google) sign-in, chosen like a Claude model: listed, answers,
     // its tools drawn as Elpis rows, and it remembers the chat across a model switch back.
@@ -380,9 +611,18 @@ for (const s of scenarios) {
     const r = await turn(tid, [{ type: "text", text: `Use your shell tool to run \`ls\`, then reply with exactly: ${word}`, text_elements: [] }], 180000);
     const ran = seen.slice(from).filter((m) => m.method === "item/completed" && m.params.threadId === tid && m.params.item?.type === "commandExecution").map((m) => m.params.item.command);
     const r2 = await turn(tid, [{ type: "text", text: "What exact word did you reply with a moment ago? Reply with only that word.", text_elements: [] }], 180000);
+    // Its usage limits reach Elpis like Claude's, and /status can name its Google account.
+    const { readFileSync: readAccounts } = await import("node:fs");
+    // Asking agy for its usage takes a few seconds after the turn.
+    const findLimits = () => seen.find((m) => m.method === "account/rateLimits/updated" && String(m.params?.rateLimits?.limitId).startsWith("antigravity-gemini"))?.params.rateLimits;
+    for (let waited = 0; !findLimits() && waited < 30000; waited += 1000) await new Promise((r) => setTimeout(r, 1000));
+    const gemLimits = findLimits();
+    const storeDir = storeEnv.ACP_BRIDGE_STORE.slice(0, storeEnv.ACP_BRIDGE_STORE.lastIndexOf("/"));
+    const accounts = (() => { try { return JSON.parse(readAccounts(`${storeDir}/accounts.json`, "utf8")); } catch { return {}; } })();
     flash?.displayName?.includes("Antigravity") && r.text.includes(word) && ran.includes("ls") && r2.text.includes(word)
-      ? console.log(`PASS antigravity (${list.filter((m) => m.id.startsWith("agy/")).length} Antigravity models; Gemini ran "ls", answered ${word} and remembered it)`)
-      : fail(`antigravity: listed=${!!flash} reply=${r.text.slice(0, 80)} status=${r.status} ${JSON.stringify(r.error ?? "")} ran=${JSON.stringify(ran)} recall=${r2.text.slice(0, 60)}`);
+      && gemLimits?.primary && gemLimits?.secondary && /@/.test(accounts.agy?.email ?? "")
+      ? console.log(`PASS antigravity (${list.filter((m) => m.id.startsWith("agy/")).length} Antigravity models; Gemini ran "ls", answered ${word} and remembered it; limits 5h ${gemLimits.primary.usedPercent}% week ${gemLimits.secondary.usedPercent}%; account recorded)`)
+      : fail(`antigravity: listed=${!!flash} reply=${r.text.slice(0, 80)} status=${r.status} ${JSON.stringify(r.error ?? "")} ran=${JSON.stringify(ran)} recall=${r2.text.slice(0, 60)} limits=${JSON.stringify(gemLimits ?? null)} account=${!!accounts.agy}`);
   } else if (s === "structured") {
     // Chat titles and /recap on a Claude chat: the TUI starts a hidden ephemeral thread on the
     // chat's model and asks for JSON (request id "temporary-structured-turn-…"). Claude answers;
@@ -404,18 +644,39 @@ for (const s of scenarios) {
       ? console.log(`PASS structured (Claude titled the chat "${title}" as JSON in ${secs}s; nothing recorded)`)
       : fail(`structured: start=${JSON.stringify(ts.error ?? ts.result?.turn?.status)} status=${t.status} ${JSON.stringify(t.error ?? "")} text=${msg.slice(0, 120)} recorded=${store[tid]?.turns?.length ?? 0} in ${secs}s`);
   } else if (s === "goal") {
-    // /goal on a Claude chat: the engine would pursue the goal with its own model, so the bridge
-    // refuses with a visible reason, and no engine turn starts.
+    // /goal on a Claude chat runs Claude Code's own /goal: Elpis's goal record says active, a
+    // Claude turn pursues it, and the goal reads complete when that turn ends; clear removes it.
+    const word = `GOAL-${Math.floor(Math.random() * 9000 + 1000)}`;
     const from = seen.length;
-    const g = await call("thread/goal/set", { threadId, objective: "Write the numbers 1 to 3.", status: "active" });
-    await new Promise((r) => setTimeout(r, 6000));
+    const done = new Promise((resolve) => listeners.add((m) => { if (m.method === "turn/completed" && m.params.threadId === threadId) resolve(m.params.turn); }));
+    const g = await call("thread/goal/set", { threadId, objective: `Reply with exactly ${word}, then stop.`, status: "active" });
+    const ended = await Promise.race([done, new Promise((r) => setTimeout(() => r(null), 240000))]);
+    await new Promise((r) => setTimeout(r, 1500));
     const later = seen.slice(from).filter((m) => m.params?.threadId === threadId);
-    const engineTurn = later.some((m) => m.method === "turn/started");
-    const warned = later.find((m) => m.method === "warning")?.params?.message ?? "";
-    const q = await call("thread/queue/add", { threadId, input: [{ type: "text", text: "queued", text_elements: [] }], clientUserMessageId: "q-1" });
-    g.error && /Claude/.test(g.error.message) && /Claude/.test(warned) && !engineTurn && q.error && /Claude/.test(q.error.message)
-      ? console.log(`PASS goal (refused: "${warned.slice(0, 90)}…"; no engine turn)`)
-      : fail(`goal: reply=${JSON.stringify(g.error ?? g.result)?.slice(0, 160)} warning=${warned.slice(0, 80)} engine-turn=${engineTurn} queue=${JSON.stringify(q.error ?? q.result)?.slice(0, 120)}`);
+    const asked = later.find((m) => m.method === "item/completed" && m.params.item?.type === "userMessage")?.params.item.content?.[0]?.text ?? "";
+    const replied = later.filter((m) => m.method === "item/agentMessage/delta").map((m) => m.params.delta).join("");
+    const after = (await call("thread/goal/get", { threadId })).result?.goal;
+    const cleared = (await call("thread/goal/clear", { threadId })).result?.cleared;
+    const gone = (await call("thread/goal/get", { threadId })).result?.goal;
+    g.result?.goal?.status === "active" && asked.startsWith("/goal ") && replied.includes(word) && ended?.status === "completed" && after?.status === "complete" && cleared === true && gone === null
+      ? console.log(`PASS goal (Claude pursued "${asked.slice(0, 40)}…", replied ${word}; goal complete, then cleared)`)
+      : fail(`goal: set=${JSON.stringify(g.error ?? g.result?.goal?.status)} asked=${asked.slice(0, 60)} replied=${replied.slice(0, 60)} turn=${ended?.status} after=${after?.status} cleared=${cleared} gone=${JSON.stringify(gone)}`);
+  } else if (s === "queue") {
+    // A message queued on a Claude chat (elpis queue, thread/queue/add) runs as its next Claude
+    // turn: at once when idle, after the running turn otherwise.
+    const words = [1, 2].map(() => `Q-${Math.floor(Math.random() * 9000 + 1000)}`);
+    const from = seen.length;
+    const replies = [];
+    const both = new Promise((resolve) => listeners.add((m) => { if (m.method === "turn/completed" && m.params.threadId === threadId) { replies.push(m.params.turn); if (replies.length === 2) resolve(); } }));
+    const a = await call("thread/queue/add", { threadId, input: [{ type: "text", text: `Reply with exactly: ${words[0]}`, text_elements: [] }], clientUserMessageId: "q-a" });
+    const b = await call("thread/queue/add", { threadId, input: [{ type: "text", text: `Reply with exactly: ${words[1]}`, text_elements: [] }], clientUserMessageId: "q-b" });
+    const waiting = (await call("thread/queue/list", { threadId })).result?.data ?? [];
+    await Promise.race([both, new Promise((r) => setTimeout(r, 240000))]);
+    const text = seen.slice(from).filter((m) => m.method === "item/agentMessage/delta" && m.params.threadId === threadId).map((m) => m.params.delta).join("");
+    const left = (await call("thread/queue/list", { threadId })).result?.data ?? [];
+    a.result?.queuedSubmission?.id && b.result?.queuedSubmission?.id && waiting.some((q) => q.clientUserMessageId === "q-b") && replies.length === 2 && text.indexOf(words[0]) >= 0 && text.indexOf(words[1]) > text.indexOf(words[0]) && left.length === 0
+      ? console.log(`PASS queue (two queued messages ran in order: ${words.join(", ")})`)
+      : fail(`queue: add=${JSON.stringify(a.error ?? a.result)?.slice(0, 120)} waiting=${waiting.length} turns=${replies.length} text=${text.slice(0, 80)} left=${left.length}`);
   } else if (s === "side") {
     // /side and /btw on a Claude chat: an ephemeral fork (on the chat's Claude model) that knows
     // the chat so far and answers with Claude.
@@ -464,7 +725,8 @@ for (const s of scenarios) {
     const own = (r) => r.tools.filter((n) => delegating.test(n));
     const del = (r) => r.tools.filter((n) => /elpis-agents/.test(n));
     const on = await toolsTurn(undefined), off = await toolsTurn(false), back = await toolsTurn(true);
-    const offReplyClean = !/\b(Agent|Task|ListAgents|SendMessage|Workflow|RemoteTrigger)\b|elpis-agents|delegate/.test(off.reply);
+    // Claude's own list (its first line); a later "correction" sentence may name removed tools.
+    const offReplyClean = !/\b(Agent|Task|ListAgents|SendMessage|Workflow|RemoteTrigger)\b|elpis-agents|delegate/.test(off.reply.trim().split("\n")[0]);
     const ok = [on, back].every((r) => r.tools.some((n) => /^(Agent|Task)$/.test(n)) && del(r).length && r.status === "completed") && off.status === "completed" && off.tools.length > 0 && !own(off).length && !del(off).length && offReplyClean;
     ok ? console.log(`PASS subagents (on: ${[...own(on), ...del(on)].join(", ")}; off: none of them in Claude Code's ${off.tools.length} tools or Claude's answer; on again: ${[...own(back), ...del(back)].join(", ")})`)
       : fail(`subagents: ${[["on", on], ["off", off], ["on again", back]].map(([k, r]) => `${k} [write ${r.write}, turn ${r.status}]: tools=${JSON.stringify([...own(r), ...del(r)])} of ${r.tools.length}, Claude said: ${r.reply.replace(/\s+/g, " ").slice(0, 400)}`).join(" | ")}`);
@@ -498,6 +760,70 @@ for (const s of scenarios) {
       && read.result?.thread?.parentThreadId === tid && replay.includes(word) && (loaded.result?.data ?? []).includes(cid) && (picker.result?.data ?? []).some((t) => t.id === cid);
     ok ? console.log(`PASS claude-subagent (child ${cid} "${child.agentNickname}" of the chat said ${word}; started/completed rows in the chat; readable, listed, replayable)`)
       : fail(`claude-subagent: turn=${r.status} child=${cid ?? "none"} link=${spawnLink} started=${activity("started")} completed=${activity("completed")} child-said=${JSON.stringify(childText.slice(0, 80))} child-turn=${childTurnDone} read=${JSON.stringify(read.error ?? read.result?.thread?.parentThreadId ?? null)} replay-has-word=${replay.includes(word)} loaded=${(loaded.result?.data ?? []).includes(cid)} picker=${(picker.result?.data ?? []).some((t) => t.id === cid)} parent-said=${JSON.stringify(parentLeak.slice(0, 120))}`);
+  } else if (s === "pick") {
+    // The mother agent reads list_models, hands each job to a helper that fits it, across providers
+    // (one must be Gemini through Antigravity), and every helper is recorded under its chat.
+    const { readFileSync } = await import("node:fs");
+    const work = mkdtempSync(join(tmpdir(), "elpis-e2e-pick-"));
+    writeFileSync(join(work, "notes.txt"), "one\ntwo\nthree\n");
+    writeFileSync(join(work, "stats.py"), "def average(xs):\n    return sum(xs) / len(xs) - 1\n");
+    const logPath = "/tmp/acp-bridge/elpis-agents.log";
+    const logAt = (() => { try { return readFileSync(logPath, "utf8").length; } catch { return 0; } })();
+    const st = await call("thread/start", { cwd: work, approvalPolicy: "never", sandbox: "danger-full-access" });
+    const tid = st.result?.thread?.id;
+    await call("thread/settings/update", { threadId: tid, model: process.env.E2E_MODEL ?? "claude/opus", effort: "low" });
+    const r = await turn(tid, [{ type: "text", text: "First call list_models to see which helper agents you can use. Then hand off these three jobs with delegate, each to the model that fits it best; do none of them yourself. Job 1 (easy): count the lines in notes.txt. Job 2 (hard): find the bug in stats.py and give the fix. Job 3: have a Gemini model through Antigravity summarise notes.txt in five words. Reply with one line per job: the model you chose and its result.", text_elements: [] }], 900000);
+    const agentsLog = (() => { try { return readFileSync(logPath, "utf8").slice(logAt); } catch { return ""; } })();
+    const listed = /list_models/.test(agentsLog);
+    const models = [...agentsLog.matchAll(/delegate model=(\S+)/g)].map((m) => m[1]);
+    const completed = (agentsLog.match(/status=completed/g) ?? []).length;
+    const store = (() => { try { return JSON.parse(readFileSync(storeEnv.ACP_BRIDGE_STORE, "utf8")); } catch { return {}; } })();
+    const linked = Object.values(store._delegations ?? {}).filter((d) => d.parentThreadId === tid).length;
+    listed && models.length >= 3 && models.some((m) => m.startsWith("agy/")) && models.some((m) => !/^(agy|claude)\//.test(m)) && completed >= 3 && linked >= 3 && r.status === "completed"
+      ? console.log(`PASS pick (list_models read; helpers ${models.join(", ")}; ${completed} finished; ${linked} recorded under the chat)`)
+      : fail(`pick: list_models=${listed} helpers=${JSON.stringify(models)} finished=${completed} recorded=${linked} status=${r.status} reply=${r.text.slice(-300)}`);
+  } else if (s === "helper-parent") {
+    // A helper started with delegate shows up under the chat that started it: thread/list and
+    // thread/read carry parentThreadId, and the chat's descendants list includes it.
+    const { readFileSync } = await import("node:fs");
+    const work = mkdtempSync(join(tmpdir(), "elpis-e2e-helper-"));
+    writeFileSync(join(work, "word.txt"), "PLUM");
+    const st = await call("thread/start", { cwd: work, approvalPolicy: "never", sandbox: "danger-full-access" });
+    const tid = st.result?.thread?.id;
+    await call("thread/settings/update", { threadId: tid, model: process.env.E2E_MODEL ?? "claude/opus", effort: "low" });
+    await turn(tid, [{ type: "text", text: "Use the delegate tool (model gpt-6-luna, effort low) to have a helper read word.txt. Do not read it yourself. Reply with what the helper reported.", text_elements: [] }], 300000);
+    const store = (() => { try { return JSON.parse(readFileSync(storeEnv.ACP_BRIDGE_STORE, "utf8")); } catch { return {}; } })();
+    const helper = Object.entries(store._delegations ?? {}).find(([, d]) => d.parentThreadId === tid)?.[0];
+    const listed = (await call("thread/list", { cwd: work, limit: 50, sortKey: "updated_at" })).result?.data ?? [];
+    const read = (await call("thread/read", { threadId: helper ?? "none", includeTurns: false })).result?.thread;
+    const kids = (await call("thread/list", { ancestorThreadId: tid, limit: 50 })).result?.data ?? [];
+    const inList = listed.find((t) => t.id === helper);
+    // The chat itself lists with the model it runs on, not the engine's.
+    const chatModel = listed.find((t) => t.id === tid)?.model;
+    // The helper is titled by its task alone; the list already nests it under its chat.
+    const titled = /word\.txt/.test(inList?.name ?? "") && !/^Delegated by/.test(inList?.name ?? "");
+    if (!titled) fail(`helper-parent: helper title ${JSON.stringify(inList?.name)}`);
+    // The TUI hears of the helper live: its start, with its parent, and its status changes.
+    const heardStart = seen.some((m) => m.method === "thread/started" && m.params?.thread?.id === helper && m.params.thread.parentThreadId === tid);
+    const heardStatus = seen.some((m) => m.method === "thread/status/changed" && m.params?.threadId === helper);
+    if (!heardStart || !heardStatus) fail(`helper-parent: live start heard=${heardStart} status heard=${heardStatus}`);
+    helper && inList?.parentThreadId === tid && read?.parentThreadId === tid && kids.some((t) => t.id === helper)
+      && chatModel === (process.env.E2E_MODEL ?? "claude/opus") && heardStart && heardStatus
+      ? console.log(`PASS helper-parent (helper ${helper} is listed, read and a descendant of its chat, which lists as ${chatModel})`)
+      : fail(`helper-parent: helper=${helper} list.parent=${inList?.parentThreadId} read.parent=${read?.parentThreadId} descendants=${JSON.stringify(kids.map((t) => t.id))} chat.model=${chatModel}`);
+  } else if (s === "agy-model") {
+    // A bare Antigravity family id, as a delegating agent may write it, runs as its medium version.
+    const { spawn } = await import("node:child_process");
+    const agy = spawn(process.execPath, [new URL("../agy-acp.mjs", import.meta.url).pathname], { stdio: ["pipe", "pipe", "inherit"] });
+    let buf = ""; const waiting = new Map(); let n = 0;
+    agy.stdout.on("data", (d) => { buf += d; for (let i; (i = buf.indexOf("\n")) >= 0;) { const l = buf.slice(0, i); buf = buf.slice(i + 1); try { const m = JSON.parse(l); waiting.get(m.id)?.(m); } catch {} } });
+    const rpc = (method, params) => new Promise((r) => { const id = ++n; waiting.set(id, r); agy.stdin.write(JSON.stringify({ jsonrpc: "2.0", id, method, params }) + "\n"); });
+    await rpc("initialize", { protocolVersion: 1, clientCapabilities: {} });
+    const sid = (await rpc("session/new", { cwd: process.cwd(), mcpServers: [] })).result?.sessionId;
+    const set = await rpc("session/set_config_option", { sessionId: sid, configId: "model", value: "gemini-3.8-flash" });
+    agy.kill();
+    const chosen = set.result?.configOptions?.[0]?.currentValue;
+    chosen === "gemini-3.8-flash-medium" ? console.log(`PASS agy-model (gemini-3.8-flash runs as ${chosen})`) : fail(`agy-model: got ${chosen}`);
   } else if (s === "image") {
     const word = process.env.E2E_IMAGE_WORD;
     const path = process.env.E2E_IMAGE_PATH;
@@ -508,6 +834,22 @@ for (const s of scenarios) {
     ]);
     r.text.includes(word) ? console.log(`PASS image (${word})`) : fail(`image: ${JSON.stringify(r)}`);
   }
+}
+// The run's chats leave Elpis's history (archived, not deleted): each has a temporary
+// elpis-e2e-* folder. E2E_KEEP_CHATS=1 keeps them for a look.
+if (!process.env.E2E_KEEP_CHATS) {
+  const kinds = ["cli", "vscode", "exec", "appServer", "subAgent", "subAgentReview", "subAgentCompact", "subAgentThreadSpawn", "subAgentOther", "unknown"];
+  const prefix = join(tmpdir(), "elpis-e2e-");
+  const mine = [];
+  let cursor = null;
+  do {
+    const r = await call("thread/list", { limit: 200, cursor, sourceKinds: kinds, modelProviders: [] });
+    mine.push(...(r.result?.data ?? []).filter((t) => (t.cwd ?? "").startsWith(prefix)));
+    cursor = r.result?.nextCursor;
+  } while (cursor);
+  let archived = 0;
+  for (const t of mine) if (!(await call("thread/archive", { threadId: t.id })).error) archived++;
+  console.log(`(archived ${archived} of this run's ${mine.length} chats)`);
 }
 writeFileSync(join(dir, ".done"), "");
 // Every message the bridge sent, for checking it against the app-server schema.

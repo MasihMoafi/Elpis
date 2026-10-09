@@ -17,9 +17,7 @@ const NOT_IN_THIS_BUILD: &str =
 /// The commands that wait for the rest of the Elpis context engine. `/prune`, `/smart-prune`
 /// and `/pruner-model` work (tests/elpis_smart_prune.rs); `/memory-model` saves the
 /// background model; `/dashboard` works (elpis_dashboard.rs).
-const LATER_BUILD: [SlashCommand; 1] = [
-    SlashCommand::ForcePrune,
-];
+const LATER_BUILD: [SlashCommand; 1] = [SlashCommand::ForcePrune];
 
 fn history_text(rx: &mut tokio::sync::mpsc::UnboundedReceiver<AppEvent>) -> Vec<String> {
     drain_insert_history(rx)
@@ -36,6 +34,10 @@ fn elpis_commands_are_listed_in_their_v030_order_with_v030_descriptions() {
         .collect::<Vec<_>>();
     let expected = [
         ("model", None),
+        (
+            "effort",
+            Some("change how hard the model thinks: /effort [low|medium|high|…]"),
+        ),
         (
             "pruner-model",
             Some(
@@ -98,10 +100,30 @@ fn elpis_commands_are_listed_in_their_v030_order_with_v030_descriptions() {
 }
 
 #[test]
+fn hand_selected_slash_command_set_is_unchanged() {
+    let mut expected = vec![
+        "model", "effort", "pruner-model", "memory-model", "ide", "permissions", "yolo",
+        "hotkeys", "settings", "add", "skills", "hooks", "rename", "new", "resume", "fork",
+        "init", "compact", "prune", "smart-prune", "force-prune", "plan", "voice", "goal",
+        "agent", "copy", "diff", "usage", "context", "dashboard", "theme", "mcp", "quit",
+        "clear", "subagents",
+    ];
+    if cfg!(target_os = "android") {
+        expected.retain(|name| *name != "copy");
+    }
+    assert_eq!(
+        built_in_slash_commands().into_iter().map(|(name, _)| name).collect::<Vec<_>>(),
+        expected,
+        "Changing Masih's selected command set requires his explicit agreement",
+    );
+}
+
+#[test]
 fn typed_elpis_names_reach_elpis_commands_and_upstream_names_stay_upstream() {
     let flags = BuiltinCommandFlags::default();
     for (name, cmd) in [
         ("yolo", SlashCommand::Yolo),
+        ("effort", SlashCommand::Effort),
         ("agent", SlashCommand::Agent),
         ("pruner-model", SlashCommand::PrunerModel),
         ("memory-model", SlashCommand::MemoryModel),
@@ -254,9 +276,10 @@ async fn memory_model_saves_the_typed_choice() {
     chat.dispatch_memory_model_with_args("   ");
     let events = std::iter::from_fn(|| rx.try_recv().ok()).collect::<Vec<_>>();
     assert!(
-        events
-            .iter()
-            .all(|event| !matches!(event, AppEvent::Elpis(ElpisAppEvent::SaveBackgroundModel(_)))),
+        events.iter().all(|event| !matches!(
+            event,
+            AppEvent::Elpis(ElpisAppEvent::SaveBackgroundModel(_))
+        )),
         "{events:?}"
     );
 }
@@ -301,14 +324,14 @@ async fn during_a_turn_yolo_runs_and_pruning_waits() {
         Ok(AppEvent::Elpis(ElpisAppEvent::EnableYolo))
     );
 
-    // Pruning waits: it queues for after the turn instead of being rejected.
+    // Native Codex rejects commands that cannot run during a turn.
     chat.dispatch_command(SlashCommand::Prune);
-    assert!(history_text(&mut rx).is_empty());
-    assert_eq!(chat.queued_user_message_texts(), vec!["/prune"]);
+    assert!(history_text(&mut rx).join("\n").contains("disabled while a task is in progress"));
+    assert!(chat.queued_user_message_texts().is_empty());
 }
 
 #[test]
-fn commands_v030_removed_stay_hidden_and_new_upstream_commands_leave_the_popup() {
+fn commands_v030_removed_stay_hidden_and_other_unlisted_commands_leave_the_popup() {
     let flags = BuiltinCommandFlags::default();
     let listed = built_in_slash_commands()
         .into_iter()
@@ -334,7 +357,6 @@ fn commands_v030_removed_stay_hidden_and_new_upstream_commands_leave_the_popup()
     }
     // Commands Codex added since July are out of the popup but still typeable.
     for (name, cmd) in [
-        ("agents", SlashCommand::Agents),
         ("export", SlashCommand::Export),
         ("recap", SlashCommand::Recap),
         ("pwd", SlashCommand::Pwd),
@@ -357,10 +379,8 @@ fn commands_v030_kept_out_of_the_popup_still_work_under_their_v030_names() {
         .collect::<Vec<_>>();
     for (name, cmd) in [
         ("approve", SlashCommand::AutoReview),
-        ("archive", SlashCommand::Archive),
         ("btw", SlashCommand::Btw),
         ("debug-config", SlashCommand::DebugConfig),
-        ("del", SlashCommand::Delete),
         ("import", SlashCommand::Import),
         ("kill", SlashCommand::Stop),
         ("logout", SlashCommand::Logout),
@@ -385,8 +405,36 @@ fn commands_v030_kept_out_of_the_popup_still_work_under_their_v030_names() {
         assert!(!listed.contains(&alias), "/{alias} is listed");
         assert_eq!(find_builtin_command(alias, flags), Some(cmd), "/{alias}");
     }
-    assert_eq!(find_builtin_command("stop", flags), Some(SlashCommand::Stop));
-    assert_eq!(find_builtin_command("delete", flags), Some(SlashCommand::Delete));
+    assert_eq!(
+        find_builtin_command("stop", flags),
+        Some(SlashCommand::Stop)
+    );
+    assert_eq!(
+        find_builtin_command("delete", flags),
+        Some(SlashCommand::Delete)
+    );
+}
+
+#[test]
+fn selected_chat_commands_stay_listed_and_removed_commands_stay_unlisted() {
+    let flags = BuiltinCommandFlags::default();
+    let listed = built_in_slash_commands();
+    for (name, command) in [
+        ("rename", SlashCommand::Rename),
+        ("new", SlashCommand::New),
+        ("resume", SlashCommand::Resume),
+    ] {
+        assert!(listed.contains(&(name, command)), "/{name} is missing");
+    }
+    for (name, command) in [
+        ("agents", SlashCommand::Agents),
+        ("archive", SlashCommand::Archive),
+        ("del", SlashCommand::Delete),
+    ] {
+        assert!(!listed.contains(&(name, command)), "/{name} was restored to the popup");
+        assert_eq!(find_builtin_command(name, flags), Some(command));
+    }
+    assert_eq!(find_builtin_command("daybreak", flags), None);
 }
 
 fn usage_card(rx: &mut tokio::sync::mpsc::UnboundedReceiver<AppEvent>) -> Option<String> {

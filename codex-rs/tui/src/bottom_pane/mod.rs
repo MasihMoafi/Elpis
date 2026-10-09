@@ -2,7 +2,8 @@
 //!
 //! The pane owns the [`ChatComposer`] (editable prompt input) and a stack of transient
 //! [`BottomPaneView`]s (popups/modals) that temporarily replace the composer for focused
-//! interactions like selection lists.
+//! interactions like selection lists. Centered views retain earlier views as a backdrop,
+//! while input remains routed exclusively to the top of the stack.
 //!
 //! Input routing is layered: `BottomPane` decides which local surface receives a key (view vs
 //! composer), while higher-level intent such as "interrupt" or "quit" is decided by the parent
@@ -47,6 +48,7 @@ use crate::terminal_palette::effective_stdout_color_level;
 use crate::tui::FrameRequester;
 pub(crate) use bottom_pane_view::BottomPaneView;
 pub(crate) use bottom_pane_view::ViewCompletion;
+pub(crate) use bottom_pane_view::ViewPresentation;
 use codex_app_server_protocol::SkillMetadata;
 use codex_app_server_protocol::ToolRequestUserInputParams;
 use codex_features::Features;
@@ -77,6 +79,8 @@ mod empty_state_policy;
 mod hook_status;
 mod mcp_server_elicitation;
 mod multi_select_picker;
+pub(crate) use multi_select_picker::MultiSelectItem;
+pub(crate) use multi_select_picker::MultiSelectPicker;
 #[cfg(test)]
 #[path = "questions_tests.rs"]
 mod question_tests;
@@ -117,6 +121,9 @@ pub(crate) use voice_strip::VoiceStripState;
 mod bottom_pane_view;
 mod composer_gap;
 mod effort_ignition;
+mod view_stack;
+pub(crate) use view_stack::CenteredView;
+pub(crate) use view_stack::DialogOverlay;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct LocalImageAttachment {
@@ -201,7 +208,6 @@ pub(crate) mod popup_consts;
 mod scroll_state;
 mod selection_popup_common;
 pub(crate) use selection_popup_common::menu_surface_padding_height;
-pub(crate) use selection_popup_common::render_bordered_panel;
 pub(crate) use selection_popup_common::render_menu_surface;
 mod selection_row_layout;
 mod selection_tabs;
@@ -600,6 +606,11 @@ impl BottomPane {
 
     pub fn set_service_tier_commands_enabled(&mut self, enabled: bool) {
         self.composer.set_service_tier_commands_enabled(enabled);
+        self.request_redraw();
+    }
+
+    pub fn set_daybreak_command_description(&mut self, description: Option<&'static str>) {
+        self.composer.set_daybreak_command_description(description);
         self.request_redraw();
     }
 
@@ -1719,6 +1730,11 @@ impl BottomPane {
                 .is_some_and(bottom_pane_view::BottomPaneView::terminal_title_requires_action)
     }
 
+    pub(crate) fn has_centered_view(&self) -> bool {
+        self.active_view()
+            .is_some_and(|view| view.presentation() == ViewPresentation::Centered)
+    }
+
     pub(crate) fn has_active_view(&self) -> bool {
         self.warnings_view.is_some() || self.has_active_modal()
     }
@@ -2159,7 +2175,35 @@ impl BottomPane {
 
     pub(crate) fn as_renderable_with_options<'a>(
         &'a self,
+        options: ComposerRenderOptions<'a>,
+    ) -> RenderableItem<'a> {
+        self.renderable_for_views(options, &self.view_stack)
+    }
+
+    pub(crate) fn centered_dialog(&self) -> Option<CenteredView<'_>> {
+        self.active_view()
+            .filter(|view| {
+                !self.warnings_active() && view.presentation() == ViewPresentation::Centered
+            })
+            .map(CenteredView)
+    }
+
+    pub(crate) fn backdrop_with_options<'a>(
+        &'a self,
+        options: ComposerRenderOptions<'a>,
+    ) -> RenderableItem<'a> {
+        let views = if self.centered_dialog().is_some() {
+            &self.view_stack[..self.view_stack.len() - 1]
+        } else {
+            &self.view_stack
+        };
+        self.renderable_for_views(options, views)
+    }
+
+    fn renderable_for_views<'a>(
+        &'a self,
         mut options: ComposerRenderOptions<'a>,
+        views: &'a [Box<dyn BottomPaneView>],
     ) -> RenderableItem<'a> {
         if self.warnings_active()
             && let Some(warnings) = &self.warnings_view
@@ -2171,8 +2215,12 @@ impl BottomPane {
         {
             banner.visible.set(false);
         }
-        if let Some(view) = self.active_view() {
-            RenderableItem::Borrowed(view)
+        if let Some(view) = views.last() {
+            if view.presentation() == ViewPresentation::Centered {
+                RenderableItem::Owned(Box::new(view_stack::ViewStack(views)))
+            } else {
+                RenderableItem::Borrowed(view.as_ref())
+            }
         } else {
             let mut flex = FlexRenderable::new();
             if let Some(banner) = self
@@ -2289,7 +2337,8 @@ impl BottomPane {
             flex2.push(/*flex*/ 1, RenderableItem::Owned(above_composer));
             let composer: RenderableItem<'_> = if let Some(questions) = question_editor {
                 RenderableItem::Borrowed(questions.as_ref())
-            } else if options.textarea_right_reserve == 0
+            } else if options.max_height.is_none()
+                && options.textarea_right_reserve == 0
                 && options.warning_count == 0
                 && options.footer.is_none()
                 && !options.separate_status_line
@@ -2372,6 +2421,7 @@ impl Renderable for ChatComposerPresentation<'_> {
     fn desired_height(&self, width: u16) -> u16 {
         self.composer
             .desired_height_with_options(width, self.options)
+            .min(self.options.max_height.unwrap_or(u16::MAX))
     }
 
     fn cursor_pos(&self, area: Rect) -> Option<(u16, u16)> {
@@ -2645,7 +2695,7 @@ mod tests {
             assert_eq!(
                 selected,
                 if action == "view_usage" {
-                    "https://chatgpt.com/codex/settings/usage"
+                    "https://chatgpt.com/settings/usage"
                 } else {
                     "Credits"
                 }
@@ -3148,10 +3198,9 @@ mod tests {
         for x in 0..area.width {
             row0.push(buf[(x, 0)].symbol().chars().next().unwrap_or(' '));
         }
-        // Elpis: the status header reads "Elpising…", not "Working".
         assert!(
-            row0.contains("Elpising"),
-            "expected Elpising header after denial on row 0: {row0:?}"
+            row0.contains("Working"),
+            "expected Working header after denial on row 0: {row0:?}"
         );
 
         // Composer placeholder should be visible somewhere below.
@@ -3197,8 +3246,7 @@ mod tests {
         pane.render(area, &mut buf);
 
         let bufs = snapshot_buffer(&buf);
-        // Elpis: the status header reads "Elpising…", not "• Working".
-        assert!(bufs.contains("Elpising…"), "expected Elpising header");
+        assert!(bufs.contains("• Working"), "expected Working header");
 
         pane.reset_status_timer(Duration::from_secs(/*secs*/ 42));
         pane.hide_status_indicator();
@@ -3510,7 +3558,7 @@ mod tests {
                 short_description: None,
                 interface: None,
                 dependencies: None,
-                path: test_path_buf("/tmp/test-skill/SKILL.md").abs(),
+                path: test_path_buf("/tmp/test-skill/SKILL.md").abs().into(),
                 scope: crate::test_support::skill_scope_user(),
                 enabled: true,
                 plugin_id: None,
@@ -3560,10 +3608,10 @@ mod tests {
 
         // Repro: a running task + slash-command popup + Esc should dismiss the popup without
         // interrupting the task.
-        pane.insert_str("/ren");
+        pane.insert_str("/rev");
         assert!(
             pane.composer.popup_active(),
-            "expected command popup after typing `/ren`"
+            "expected command popup after typing `/rev`"
         );
 
         // Owned transcript mode must reserve the popup's rows while task status is visible.
@@ -3596,7 +3644,7 @@ mod tests {
             );
         }
         assert!(!pane.composer.popup_active());
-        assert_eq!(pane.composer_text(), "/ren");
+        assert_eq!(pane.composer_text(), "/rev");
 
         let width = 60;
         let area = Rect::new(0, 0, width, pane.desired_height(width));
@@ -3605,7 +3653,7 @@ mod tests {
             render_snapshot(&pane, area)
         );
 
-        pane.insert_str("a");
+        pane.insert_str("i");
         assert!(pane.composer.popup_active());
     }
 

@@ -174,14 +174,6 @@ impl ChatWidget {
             return;
         }
         if self.slash_command_blocked_by_active_task(cmd, source) {
-            // Elpis: a command that must wait is queued for after the turn.
-            if self.queue_command_blocked_by_turn(
-                cmd,
-                /*args*/ None,
-                source == SlashCommandDispatchSource::Live,
-            ) {
-                return;
-            }
             let message = format!(
                 "'/{}' is disabled while a task is in progress.",
                 cmd.command()
@@ -196,6 +188,39 @@ impl ChatWidget {
         }
 
         match cmd {
+            SlashCommand::Daybreak => {
+                if !self.config.features.enabled(Feature::CliDaybreak) {
+                    return;
+                }
+                if !self.daybreak_enabled {
+                    if !self.daybreak_account_eligible() {
+                        self.add_error_message("Daybreak requires the OpenAI provider with either ChatGPT sign-in or an API key with Daybreak support enabled.".into());
+                        return;
+                    }
+                    if !crate::daybreak::available(&self.model_catalog.models) {
+                        if crate::daybreak::availability(&self.model_catalog.models) == Some(false)
+                        {
+                            self.add_info_message(
+                                "Daybreak is not available for this account. Apply at https://openai.com/form/enterprise-trusted-access-for-cyber/. Learn more at https://help.openai.com/en/articles/20001326.".into(),
+                                /*hint*/ None,
+                            );
+                        } else {
+                            self.add_error_message("Daybreak availability could not be determined from the connected host's model catalog.".into());
+                        }
+                        return;
+                    }
+                }
+                let Some(thread_id) = self.thread_id else {
+                    self.add_error_message(
+                        "Daybreak is unavailable until the thread starts.".into(),
+                    );
+                    return;
+                };
+                self.app_event_tx.send(AppEvent::PersistDaybreakSelection {
+                    thread_id,
+                    enabled: !self.daybreak_enabled,
+                });
+            }
             SlashCommand::Feedback => {
                 if !self.config.feedback_enabled {
                     let params = crate::bottom_pane::feedback_disabled_params();
@@ -216,7 +241,12 @@ impl ChatWidget {
                 self.bottom_pane.show_selection_view(SelectionViewParams {
                     title: Some("Archive this session?".to_string()),
                     subtitle: Some(
-                        "Are you sure? This will archive the current session".to_string(),
+                        if self.bottom_pane.is_task_running() {
+                            "This will stop the current turn and archive the session."
+                        } else {
+                            "Are you sure? This will archive the current session"
+                        }
+                        .to_string(),
                     ),
                     footer_hint: Some(standard_popup_hint_line()),
                     items: vec![
@@ -236,7 +266,7 @@ impl ChatWidget {
                             ..Default::default()
                         },
                     ],
-                    ..SelectionViewParams::picker()
+                    ..SelectionViewParams::confirmation()
                 });
                 self.request_redraw();
             }
@@ -269,7 +299,7 @@ impl ChatWidget {
                             ..Default::default()
                         },
                     ],
-                    ..SelectionViewParams::picker()
+                    ..SelectionViewParams::confirmation()
                 });
                 self.request_redraw();
             }
@@ -666,10 +696,6 @@ impl ChatWidget {
             return;
         }
         if self.slash_command_blocked_by_active_task(cmd, SlashCommandDispatchSource::Live) {
-            // Elpis: a command that must wait is queued, with its arguments, for after the turn.
-            if self.queue_command_blocked_by_turn(cmd, Some(&args), /*typed_live*/ true) {
-                return;
-            }
             let message = format!(
                 "'/{}' is disabled while a task is in progress.",
                 cmd.command()
@@ -832,10 +858,27 @@ impl ChatWidget {
             SlashCommand::Ide => {
                 self.handle_ide_command_args(trimmed);
             }
-            SlashCommand::Mcp => match trimmed.to_ascii_lowercase().as_str() {
-                "verbose" => self.add_mcp_output(McpServerStatusDetail::Full),
-                _ => self.add_error_message("Usage: /mcp [verbose]".to_string()),
-            },
+            SlashCommand::Mcp => {
+                if trimmed.eq_ignore_ascii_case("verbose") {
+                    self.add_mcp_output(McpServerStatusDetail::Full);
+                } else if let Some((command, name)) = trimmed.split_once(' ')
+                    && command.eq_ignore_ascii_case("login")
+                    && !name.trim().is_empty()
+                {
+                    if let Some(thread_id) = self.thread_id {
+                        self.app_event_tx.send(AppEvent::StartMcpLogin {
+                            name: name.trim().to_string(),
+                            thread_id,
+                        });
+                    } else {
+                        self.add_error_message(
+                            "MCP sign-in requires an active session.".to_string(),
+                        );
+                    }
+                } else {
+                    self.add_error_message("Usage: /mcp [verbose | login <name>]".to_string());
+                }
+            }
             SlashCommand::Keymap => match trimmed.to_ascii_lowercase().as_str() {
                 "" => self.open_keymap_picker(),
                 "debug" => {
@@ -1090,6 +1133,8 @@ impl ChatWidget {
             }
             // Elpis: `/add <path>` adds a source to the Context Ledger.
             SlashCommand::Add if !trimmed.is_empty() => self.add_context_source_command(trimmed),
+            // Elpis: `/effort <level>` uses that level of the current model.
+            SlashCommand::Effort if !trimmed.is_empty() => self.dispatch_effort_with_args(trimmed),
             // Elpis: `/memory-model <id|provider:id|default>` saves the background model.
             SlashCommand::MemoryModel if !trimmed.is_empty() => {
                 self.dispatch_memory_model_with_args(trimmed)
@@ -1235,7 +1280,8 @@ impl ChatWidget {
             connectors_enabled: self.connectors_enabled(),
             plugins_command_enabled: self.config.features.enabled(Feature::Plugins),
             goal_command_enabled: self.config.features.enabled(Feature::Goals),
-            service_tier_commands_enabled: self.fast_mode_enabled(),
+            service_tier_commands_enabled: !self.current_model_service_tier_commands().is_empty(),
+            daybreak_command_description: self.daybreak_command_description(),
             voice_command_enabled: self.realtime_conversation_available_for_thread,
             worktrees_enabled: self.config.features.enabled(Feature::Worktrees)
                 && self.local_worktree_operations,
@@ -1274,6 +1320,7 @@ impl ChatWidget {
             | SlashCommand::Copy
             | SlashCommand::Raw
             | SlashCommand::Vim
+            | SlashCommand::Daybreak
             | SlashCommand::Diff
             | SlashCommand::App
             | SlashCommand::Rename

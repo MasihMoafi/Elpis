@@ -1,0 +1,183 @@
+'use strict';
+// Remote TUI and a private websocket app-server, with an isolated home and local Responses fixture.
+// Usage: node scripts/terminal-input.test.cjs /absolute/path/to/elpis
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+const { DatabaseSync } = require('node:sqlite');
+const { execFileSync, spawn } = require('node:child_process');
+const { Provider, message, call } = require('../editors/vscode/test/runtime-eval');
+const binary = process.argv[2];
+assert(binary && path.isAbsolute(binary), 'provide the engine binary');
+const root = fs.mkdtempSync(path.join(os.tmpdir(), 'elpis-terminal-input-'));
+const home = path.join(root, 'home'), cwd = path.join(root, 'long-project-directory-for-title-visibility');
+fs.mkdirSync(home); fs.mkdirSync(cwd);
+const socket = path.join(root, 'tmux.sock');
+const provider = new Provider();
+const checks = [];
+let savedPermissions;
+let appServer, appServerExit, appServerError;
+let appServerLog = '';
+const tmux = (...args) => execFileSync('tmux', ['-S', socket, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+const capture = () => tmux('capture-pane', '-p', '-t', 'test');
+const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
+async function screenWhen(predicate, label) {
+  const deadline = Date.now() + 20000;
+  let screen = '';
+  while (Date.now() < deadline) {
+    screen = capture();
+    if (predicate(screen)) { fs.writeFileSync(path.join(root, `${label}.txt`), screen); fs.writeFileSync(path.join(root, `${label}.ansi`), tmux('capture-pane', '-p', '-e', '-t', 'test')); return screen; }
+    await pause(100);
+  }
+  fs.writeFileSync(path.join(root, `${label}.txt`), screen);
+  throw Error(`Timed out: ${label}; evidence ${root}`);
+}
+const type = text => tmux('send-keys', '-t', 'test', '-l', text);
+const key = name => tmux('send-keys', '-t', 'test', name);
+function pass(label) { checks.push(label); console.log(`PASS ${label}`); }
+function threadSettings() {
+  const filename = fs.readdirSync(home).find(name => /^state_\d+\.sqlite$/.test(name));
+  if (!filename) return [];
+  const db = new DatabaseSync(path.join(home, filename), { readOnly: true });
+  try { return db.prepare('SELECT id, sandbox_policy, approval_mode, rollout_path FROM threads').all(); }
+  finally { db.close(); }
+}
+async function startAppServer(env) {
+  appServer = spawn(binary, ['app-server', '--listen', 'ws://127.0.0.1:0'], { cwd, env, stdio: ['ignore', 'pipe', 'pipe'] });
+  appServerExit = new Promise(resolve => appServer.once('exit', (code, signal) => resolve({ code, signal })));
+  appServer.on('error', error => { appServerError = error; });
+  const log = chunk => {
+    appServerLog += chunk;
+    fs.appendFileSync(path.join(root, 'app-server.log'), chunk);
+  };
+  appServer.stdout.on('data', log);
+  appServer.stderr.on('data', log);
+  const deadline = Date.now() + 20000;
+  while (Date.now() < deadline) {
+    if (appServerError) throw appServerError;
+    if (appServer.exitCode !== null || appServer.signalCode !== null) throw Error(`App-server exited before startup; evidence ${root}`);
+    const address = appServerLog.match(/ws:\/\/127\.0\.0\.1:\d+/)?.[0];
+    if (address) return address;
+    await pause(100);
+  }
+  throw Error(`Timed out: app-server startup; evidence ${root}`);
+}
+async function stopAppServer() {
+  if (!appServer || appServerError) return;
+  if (appServer.exitCode === null && appServer.signalCode === null) appServer.kill('SIGTERM');
+  if (!await Promise.race([appServerExit, pause(5000).then(() => false)])) {
+    appServer.kill('SIGKILL');
+    await appServerExit;
+  }
+}
+(async () => {
+  await provider.start();
+  const catalog = require('../codex-rs/models-manager/models.json');
+  const model = catalog.models.find(model => model.slug === 'gpt-5.5');
+  assert(model, 'fixture model must exist');
+  model.experimental_supported_tools = [...(model.experimental_supported_tools ?? []), 'request_user_input_async'];
+  const catalogPath = path.join(home, 'models.json');
+  fs.writeFileSync(catalogPath, JSON.stringify({ models: [model] }));
+  fs.writeFileSync(path.join(home, 'config.toml'), `model="gpt-5.5"\nmodel_provider="fixture"\nmodel_reasoning_effort="medium"\nmodel_catalog_json=${JSON.stringify(catalogPath)}\napproval_policy="on-request"\nsandbox_mode="workspace-write"\n[features]\ncode_mode=false\n[model_providers.fixture]\nname="Terminal fixture"\nbase_url=${JSON.stringify(provider.url)}\nwire_api="responses"\nrequires_openai_auth=false\n[tui]\nanimations=false\n[projects.${JSON.stringify(cwd)}]\ntrust_level="trusted"\n`);
+  const isolatedEnv = { ...process.env, HOME: home, CODEX_HOME: home, ELPIS_HOME: home, CODEX_AUTH_HOME: home, TERM: 'xterm-256color' };
+  const remote = await startAppServer(isolatedEnv);
+  const quote = text => `'${text.replaceAll("'", "'\\''")}'`;
+  const command = ['env', `HOME=${home}`, `CODEX_HOME=${home}`, `ELPIS_HOME=${home}`, `CODEX_AUTH_HOME=${home}`, 'TERM=xterm-256color', binary, '--remote', remote, '--no-alt-screen', '-C', cwd].map(quote).join(' ');
+  tmux('new-session', '-d', '-s', 'test', '-x', '80', '-y', '32', command);
+  await screenWhen(s => {
+    if (s.includes('Hooks need review')) { key('Escape'); return false; }
+    return s.includes('Elpis') && /gpt-5[.]5/i.test(s);
+  }, 'startup');
+  provider.actions.push(message('PERMISSION_FIXTURE_READY'));
+  type('Create this isolated fixture thread.'); await pause(250); key('Enter');
+  await screenWhen(s => {
+    const threads = threadSettings();
+    if (threads.length !== 1 || s.includes('esc to interrupt')) return false;
+    // The ledger can push a short completed reply above a 32-row viewport.
+    return fs.readFileSync(threads[0].rollout_path, 'utf8').trim().split('\n')
+      .some(line => { const item = JSON.parse(line); return item.type === 'event_msg' && item.payload?.type === 'task_complete'; });
+  }, 'permissions-initial-thread');
+  const initialPermissions = threadSettings();
+  assert.equal(initialPermissions.length, 1);
+  assert.equal(initialPermissions[0].approval_mode, 'on-request');
+  assert.notEqual(JSON.parse(initialPermissions[0].sandbox_policy).type, 'disabled');
+  fs.writeFileSync(path.join(root, 'initial-permissions.json'), JSON.stringify(initialPermissions, null, 2));
+  type('/permissions'); await pause(250); key('Enter');
+  let permissionsScreen = await screenWhen(s => s.includes('Update Model Permissions') && s.includes('Full Access'), 'permissions-picker');
+  for (let move = 0; move < 5 && !permissionsScreen.split('\n').some(line => /^\s*›.*Full Access/.test(line)); move++) {
+    key('Down'); await pause(150); permissionsScreen = capture();
+  }
+  assert(permissionsScreen.split('\n').some(line => /^\s*›.*Full Access/.test(line)), permissionsScreen);
+  key('Enter');
+  await screenWhen(s => s.includes('Enable full access?') && s.includes('Yes, continue anyway'), 'full-access-confirmation');
+  key('Enter');
+  await screenWhen(() => {
+    savedPermissions = threadSettings();
+    return savedPermissions.length === 1 && savedPermissions[0].approval_mode === 'never' && JSON.parse(savedPermissions[0].sandbox_policy).type === 'disabled';
+  }, 'full-access-applied');
+  fs.writeFileSync(path.join(root, 'saved-permissions.json'), JSON.stringify(savedPermissions, null, 2));
+  pass('/permissions Full Access saves disabled sandbox and never approval in the engine thread');
+  const ready = path.join(cwd, 'tool-ready'), release = path.join(cwd, 'tool-release');
+  const protectedDir = path.join(cwd, '.git');
+  fs.mkdirSync(protectedDir);
+  const protectedSentinel = path.join(protectedDir, 'full-access-sentinel');
+  const steering = 'STEER_BOUNDARY_d128';
+  let deliveredAtBoundary;
+  provider.actions.push(
+    call('running_tool_fixture', 'exec_command', { cmd: `printf 'full-access' > '${protectedSentinel}'; touch '${ready}'; while [ ! -f '${release}' ]; do sleep 0.05; done`, sandbox_permissions: 'require_escalated', justification: 'Fixture checks the selected Full Access mode.', yield_time_ms: 10000 }),
+    request => {
+      deliveredAtBoundary = request.input.some(item => item.role === 'user' && JSON.stringify(item.content).includes(steering));
+      return call('question_fixture', 'request_user_input_async', { questions: [{ title: 'Choose a fixture color', options: ['Amber', 'Blue'] }] });
+    },
+    { hang: true },
+  );
+  type('Ask the fixture question.'); await pause(250); key('Enter');
+  await screenWhen(() => fs.existsSync(ready), 'running-tool');
+  assert.equal(fs.readFileSync(protectedSentinel, 'utf8'), 'full-access');
+  const rollout = fs.readFileSync(savedPermissions[0].rollout_path, 'utf8').trim().split('\n').map(line => JSON.parse(line));
+  const turnContext = rollout.findLast(item => item.type === 'turn_context')?.payload;
+  assert.equal(turnContext?.approval_policy, 'never', 'the actual tool turn must use never approval');
+  assert.equal(turnContext?.sandbox_policy?.type, 'danger-full-access', 'the actual tool turn must use Full Access');
+  assert(!capture().includes('Would you like to run'), 'redundant escalation under Full Access must not show an approval popup');
+  pass('Full Access reaches the actual tool turn and writes protected workspace metadata without approval');
+  type(steering); await pause(250); key('Enter'); await pause(400);
+  fs.writeFileSync(path.join(root, 'steering-during-tool.txt'), capture());
+  fs.writeFileSync(release, 'continue');
+  let screen = await screenWhen(s => s.includes('to answer'), 'collapsed-question');
+  assert.equal(deliveredAtBoundary, true, 'Enter must reach the next inference request after the tool finishes');
+  pass('Enter delivers steering at the next tool boundary');
+  assert(screen.includes('shift+← to answer'), screen);
+  key('S-Left');
+  screen = await screenWhen(s => s.includes('main prompt') && s.includes('Choose a fixture color'), 'expanded-question');
+  assert(/gpt-5[.]5/i.test(screen), 'the current model remains visible while answering');
+  pass('Codex Shift+Left opens the question and preserves the current model');
+  key('S-Right'); key('Escape');
+  await screenWhen(s => !s.includes('esc to interrupt'), 'interrupted');
+  type('/rename Visible session sentinel'); await pause(250); key('Enter');
+  await screenWhen(s => s.includes('Visible session sentinel'), 'renamed-title-80');
+  key('Left');
+  screen = await screenWhen(s => s.includes('Agent command center') && s.includes('Visible session sentinel'), 'agents-80');
+  assert(screen.includes('GPT-5.5') && screen.includes('Group: Project'), screen);
+  pass('Left opens Codex agents grouped by project, retaining the task title and model');
+  tmux('resize-window', '-t', 'test', '-x', '40', '-y', '32');
+  screen = await screenWhen(s => s.includes('Agent command center') && s.includes('GPT-5.5'), 'agents-40');
+  assert(screen.includes('Visible'), 'the task title stays visible beside its model');
+  pass('model and task name remain visible at 40 columns');
+  tmux('resize-window', '-t', 'test', '-x', '80', '-y', '32');
+  key('?');
+  screen = await screenWhen(s => s.includes('Rename') && s.includes('Delete'), 'agents-help');
+  pass('native agents help exposes rename and delete shortcuts');
+  key('Escape'); key('BSpace');
+  await screenWhen(s => s.includes('Permanently delete'), 'delete-confirmation');
+  key('Escape');
+  await screenWhen(s => s.includes('Visible session sentinel'), 'delete-cancelled');
+  pass('cancelling task deletion preserves the fixture session');
+  assert(!provider.error, provider.error?.message);
+})().catch(error => { console.error(error); process.exitCode = 1; }).finally(async () => {
+  try { tmux('kill-server'); } catch {}
+  await stopAppServer();
+  provider.close();
+  fs.writeFileSync(path.join(root, 'evidence.json'), JSON.stringify({ checks, savedPermissions, requests: provider.requests, titleRequests: provider.titleRequests, appServerExit: appServer && !appServerError ? await appServerExit : null }, null, 2));
+  console.log(`Evidence: ${root}`);
+});

@@ -216,6 +216,17 @@ impl ChatWidget {
         self.add_to_history(cell);
     }
 
+    /// The usage limits /usage shows: a Claude or Antigravity chat shows that subscription's
+    /// limits, not the ChatGPT plan's.
+    fn status_rate_limit_snapshots(&self) -> Vec<RateLimitSnapshotDisplay> {
+        let bridged = super::elpis_providers::bridged_provider_of_model(self.current_model());
+        self.rate_limit_snapshots_by_limit_id
+            .iter()
+            .filter(|(limit_id, _)| bridged.is_none_or(|bridged| bridged.owns_limit(limit_id)))
+            .map(|(_, snapshot)| snapshot.clone())
+            .collect()
+    }
+
     pub(crate) fn status_output_cell(
         &mut self,
         refreshing_rate_limits: bool,
@@ -243,19 +254,23 @@ impl ChatWidget {
                 .or_else(|| self.config.model_reasoning_effort.clone())
                 .or(model_default_reasoning_effort),
         );
-        let rate_limit_snapshots: Vec<RateLimitSnapshotDisplay> = self
-            .rate_limit_snapshots_by_limit_id
-            .values()
-            .cloned()
-            .collect();
+        let rate_limit_snapshots = self.status_rate_limit_snapshots();
         let agents_summary =
             crate::status::compose_agents_summary(&self.config, &self.instruction_source_paths);
+        let subscription_account = super::elpis_providers::subscription_account(
+            self.config.codex_home.as_path(),
+            self.current_model(),
+        );
+        let bridged =
+            super::elpis_providers::bridged_provider_of_model(self.current_model()).is_some();
         let (cell, handle) = crate::status::new_status_output_with_rate_limits_handle(
             &self.config,
-            self.requires_openai_auth,
+            self.requires_openai_auth && !bridged,
             self.thread_id.map(|_| self.displayed_chat_provider()),
             self.remote_connection.as_ref(),
-            self.status_account_display.as_ref(),
+            subscription_account
+                .as_ref()
+                .or(self.status_account_display.as_ref()),
             token_info,
             total_usage,
             &self.thread_id,
@@ -317,11 +332,7 @@ impl ChatWidget {
             self.on_rate_limit_snapshot(Some(snapshot));
         }
 
-        let rate_limit_snapshots: Vec<RateLimitSnapshotDisplay> = self
-            .rate_limit_snapshots_by_limit_id
-            .values()
-            .cloned()
-            .collect();
+        let rate_limit_snapshots = self.status_rate_limit_snapshots();
         let now = Local::now();
         let mut remaining = Vec::with_capacity(self.refreshing_status_outputs.len());
         let mut updated_any = false;

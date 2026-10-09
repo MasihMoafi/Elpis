@@ -1,15 +1,12 @@
 ---
 source: tui/src/app/tests.rs
-assertion_line: 6392
 expression: "render_bottom_popup(&app.chat_widget, 80)"
 ---
- Elpis · model gpt-5.6-sol default · location /tmp/project
+      Replace goal?
+› As  New objective: New goal
 
-  Replace goal?
-  New objective: New goal
+  GP
+    › 1. Replace current goal  Set the new objective and start it now
+      2. Cancel                Keep the current goal
 
-
-› 1. Replace current goal  Set the new objective and start it now
-  2. Cancel                Keep the current goal
-
-  enter select · esc back
+      enter select · esc back

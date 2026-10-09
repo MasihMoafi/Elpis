@@ -57,6 +57,7 @@ impl App {
                 app_server.request_handle(),
                 self.primary_thread_id
                     .or(self.current_displayed_thread_id()),
+                self.model_catalog.clone(),
             )
             .await;
         match selection {

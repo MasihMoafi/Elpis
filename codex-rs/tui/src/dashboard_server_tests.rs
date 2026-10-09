@@ -1315,3 +1315,64 @@ fn dashboard_asset_shows_limits_or_says_they_are_unavailable() {
         assert!(DASHBOARD_JS.contains(required), "missing {required}");
     }
 }
+
+#[test]
+fn agents_route_serves_the_published_tree() {
+    let empty: Value = serde_json::from_slice(&agents_body(&[])).expect("agents JSON");
+    assert_eq!(empty, serde_json::json!({ "agents": [] }));
+    publish_agents(vec![
+        DashboardAgent {
+            id: "chat".to_string(),
+            parent_id: None,
+            title: "Fix the token count".to_string(),
+            model: Some("Claude Opus 5.5 · xhigh".to_string()),
+            color: Some("#b4532a".to_string()),
+            status: DashboardAgentStatus::Working,
+            status_label: "Working".to_string(),
+        },
+        DashboardAgent {
+            id: "helper".to_string(),
+            parent_id: Some("chat".to_string()),
+            title: "Find where usage is emitted".to_string(),
+            model: None,
+            color: None,
+            status: DashboardAgentStatus::NeedsYou,
+            status_label: "Needs input".to_string(),
+        },
+    ]);
+    let response = response_for_at(
+        &request(Method::Get, "/agents.json", &["127.0.0.1:43123"]),
+        PORT,
+        None,
+        0,
+    );
+    assert_eq!(response.status_code().0, 200);
+    let served: Value = serde_json::from_slice(&body(response)).expect("agents JSON");
+    assert_eq!(
+        served,
+        serde_json::json!({ "agents": [
+            { "id": "chat", "parent_id": null, "title": "Fix the token count",
+              "model": "Claude Opus 5.5 · xhigh", "color": "#b4532a",
+              "status": "working", "status_label": "Working" },
+            { "id": "helper", "parent_id": "chat", "title": "Find where usage is emitted",
+              "model": null, "color": null, "status": "needs_you", "status_label": "Needs input" },
+        ] })
+    );
+}
+
+#[test]
+fn dashboard_asset_draws_the_agent_map() {
+    // The page's contracts: the route it reads, the field Elpis sends, the words it shows.
+    assert!(INDEX_HTML.contains(">Agents</button>"), "the Agents tab");
+    for required in [
+        "fetch('/agents.json'",
+        "agent.status_label",
+        "'delegates'",
+        "'asks'",
+    ] {
+        assert!(
+            DASHBOARD_JS.contains(required),
+            "missing agent map JS: {required}"
+        );
+    }
+}

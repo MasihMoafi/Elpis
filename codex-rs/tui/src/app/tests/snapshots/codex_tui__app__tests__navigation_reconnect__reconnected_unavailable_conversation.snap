@@ -1,36 +1,11 @@
 ---
 source: tui/src/app/tests/navigation_reconnect_tests.rs
-assertion_line: 464
-expression: "regex_lite::Regex::new(r\"Idle · [0-9a-f]{8}-[0-9a-f-]+\\.*\").unwrap().replace_all(&format!(\"{content}\\n{}\",\nrender_bottom_popup(&app.chat_widget, 80)), \"Idle · [thread id]\",)"
+expression: "format!(\"{content}\\n{}\", render_bottom_popup(&app.chat_widget, 80))"
 ---
 Cached previous conversation
  
 • This conversation is unavailable. Its cached transcript and draft remain here; input is paused. Open the agent picker or return to the parent to continue.
 • The rename target disappeared. Unsubmitted title: Keep this task draft!
- Elpis · model gpt-test default · location /tmp/project
-────────────────────────────────────────────────┐ SUBAGENT LEDGER · 1
-› latest draft                                  │ /agent to inspect or switch
-────────────────────────────────────────────────┤ Idle · [thread id]
-        100% context left · Tab Context Ledger  │
-                                                │ CONTEXT LEDGER  context not
-                                                │ measured · ≈0 source
-                                                │ estimates
-                                                │ Tab controls · Alt+C hide ·
-                                                │ Ctrl+click open file
-                                                │
-                                                │ SMART PRUNE       [···] SYNC
-                                                │ Reading current thread state
-                                                │ Syncing… · /smart-prune on|
-                                                │ off sets an explicit state
-                                                │
-                                                │ SUBAGENTS          [━━━●] ON
-                                                │ May delegate to other agents
-                                                │
-                                                │ CONTEXT WINDOW  usage
-                                                │ unavailable
-                                                │ Context measurement
-                                                │ unavailable until the first
-                                                │ request snapshot
-                                                │
-                                                │ No portable context is
-                                                │ available.
+› latest draft
+
+  gpt-test default · /tmp/project

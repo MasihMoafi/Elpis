@@ -68,20 +68,10 @@ fn clean_dropped_path(raw: &str) -> String {
 }
 
 impl ChatWidget {
-    /// Tab and Alt+C open, focus and hide the ledger before any modal sees the key.
-    ///
-    /// With a popup open (for example the slash-command list) Tab still belongs to it.
+    /// Alt+C opens the Context Ledger without changing Codex's submission keys.
     pub(super) fn handle_context_ledger_pre_modal_key(&mut self, key_event: KeyEvent) -> bool {
-        if key_hint::plain(KeyCode::Tab).is_press(key_event)
-            && !self.bottom_pane.has_active_view()
-            && !self.bottom_pane.no_modal_or_popup_active()
-        {
-            self.bottom_pane.handle_key_event(key_event);
-            return true;
-        }
-        let ledger_toggle = key_hint::plain(KeyCode::Tab).is_press(key_event)
-            || key_hint::alt(KeyCode::Char('c')).is_press(key_event);
-        ledger_toggle && self.handle_context_ledger_key_event(key_event)
+        key_hint::alt(KeyCode::Char('c')).is_press(key_event)
+            && self.handle_context_ledger_key_event(key_event)
     }
 
     /// Asks to switch Smart Prune on or off for subsequent turns. The switch shows the
@@ -267,31 +257,17 @@ impl crate::render::renderable::Renderable for BesideContextLedger<'_> {
             self.bottom_pane.render(pane, buf);
             return;
         };
-        // Beside the Ledger, its rule is the right side of each Elpis box that ends on it.
-        let boxes = crate::style::render_against_ledger_rule(pane.right(), || {
-            self.bottom_pane.render(pane, buf)
-        });
-        // The rule joins each box's top and bottom rules, so it reaches the lowest box's
-        // bottom rule even when the Ledger is shorter.
-        let box_rules = boxes
-            .iter()
-            .map(|area| (area.top(), area.bottom() - 1))
-            .collect::<Vec<_>>();
-        let rule_rows = box_rules
-            .iter()
-            .map(|(_, bottom)| bottom + 1 - area.y)
-            .max()
-            .unwrap_or(0);
+        self.bottom_pane.render(pane, buf);
         self.chat_widget.render_context_ledger_lines(
             ratatui::layout::Rect::new(
                 pane.right(),
                 area.y,
                 ledger_width,
-                ledger_height.max(rule_rows).min(area.height),
+                ledger_height.min(area.height),
             ),
             buf,
             ledger_lines,
-            &box_rules,
+            &[],
         );
     }
 

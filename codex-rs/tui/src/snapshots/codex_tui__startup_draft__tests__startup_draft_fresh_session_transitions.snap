@@ -1,82 +1,69 @@
 ---
 source: tui/src/startup_draft_tests.rs
-assertion_line: 294
 expression: "snapshots.join(\"\\n---\\n\")"
 ---
 resume lookup fallback:
 before:
 
-  ◆ Elpis (v0.4.1)
+  >_ OpenAI Codex (v<VERSION>)
      loading
-
-  Pull up a prompt.
   Resuming session…
-───────────────────────────────────────────────┐
-› draft while loading                          │
-───────────────────────────────────────────────┘
-                            Tab Context Ledger
+
+› draft while loading
+
+
 after:
 
-  ◆ Elpis (v0.4.1)
+  >_ OpenAI Codex (v<VERSION>)
      loading
 
-  Pull up a prompt.
 
-───────────────────────────────────────────────┐
-› draft while loading                          │
-───────────────────────────────────────────────┘
-                            Tab Context Ledger
+› draft while loading
+
+
 ---
 fork lookup fallback:
 before:
 
-  ◆ Elpis (v0.4.1)
+  >_ OpenAI Codex (v<VERSION>)
      loading
-
-  Pull up a prompt.
   Forking session…
-───────────────────────────────────────────────┐
-› draft while loading                          │
-───────────────────────────────────────────────┘
-                            Tab Context Ledger
+
+› draft while loading
+
+
 after:
 
-  ◆ Elpis (v0.4.1)
+  >_ OpenAI Codex (v<VERSION>)
      loading
 
-  Pull up a prompt.
 
-───────────────────────────────────────────────┐
-› draft while loading                          │
-───────────────────────────────────────────────┘
-                            Tab Context Ledger
+› draft while loading
+
+
 ---
 resume picker cancellation:
 before:
 hidden while picker owns input
 after:
 
-  ◆ Elpis (v0.4.1)
+  >_ OpenAI Codex (v<VERSION>)
      loading
 
-  Pull up a prompt.
 
-───────────────────────────────────────────────┐
-› Ask Elpis to do anything                     │
-───────────────────────────────────────────────┘
-  ? for shortcuts           Tab Context Ledger
+› Ask Elpis to do anything
+
+  ? for shortcuts
 ---
 fork picker cancellation:
 before:
 hidden while picker owns input
 after:
 
-  ◆ Elpis (v0.4.1)
+  >_ OpenAI Codex (v<VERSION>)
      loading
 
-  Pull up a prompt.
 
-───────────────────────────────────────────────┐
-› Ask Elpis to do anything                     │
-───────────────────────────────────────────────┘
-  ? for shortcuts           Tab Context Ledger
+› Ask Elpis to do anything
+
+  ? for shortcuts

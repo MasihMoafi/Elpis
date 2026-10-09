@@ -1,5 +1,5 @@
 const assert = require('node:assert/strict');
-const { spawnSync } = require('node:child_process');
+const { spawn, spawnSync } = require('node:child_process');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
@@ -126,4 +126,145 @@ test('a force-pass run fails when it writes snapshot files', () => {
   const notRequested = runGuard(50000, 'core-check', undefined, { FAKE_PENDING_SNAPSHOT: '1' });
   assert.equal(notRequested.status, 0, notRequested.stdout + notRequested.stderr);
   assert.doesNotMatch(notRequested.stdout, /snapshot_pending/);
+});
+
+// Simulation: a fake cargo ticks into a file while a controlled thermal sensor is moved by the test.
+function startSim({ sensors = 1, startTemp = 50000, extraEnv = {} } = {}) {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'elpis-build-guard-sim-'));
+  for (const directory of ['scripts', 'codex-rs', 'bin', 'sim', 'thermal/hwmon/hwmon0']) {
+    fs.mkdirSync(path.join(root, directory), { recursive: true });
+  }
+  const script = path.join(root, 'scripts/build-elpis-local');
+  fs.copyFileSync(path.join(__dirname, 'build-elpis-local'), script);
+  fs.writeFileSync(path.join(root, 'codex-rs/Cargo.toml'), '[workspace]\n');
+  fs.writeFileSync(path.join(root, 'bin/rustc'), '#!/bin/sh\nexit 1\n', { mode: 0o755 });
+  fs.writeFileSync(path.join(root, 'bin/cargo'), [
+    '#!/bin/sh', 'echo $$ > "$SIM/cargo.pid"', 'sleep 60 &', 'echo $! > "$SIM/child.pid"',
+    'i=0', 'while [ $i -lt 100 ]; do i=$((i+1)); echo $i >> "$SIM/ticks"; sleep 0.05; done', ''].join('\n'),
+    { mode: 0o755 });
+  const sensorFile = (n) => path.join(root, `thermal/hwmon/hwmon0/temp${n}_input`);
+  const setSensor = (milli, n = 1) => {
+    fs.writeFileSync(`${sensorFile(n)}.tmp`, `${milli}\n`);
+    fs.renameSync(`${sensorFile(n)}.tmp`, sensorFile(n));
+  };
+  for (let n = 1; n <= sensors; n += 1) setSensor(startTemp, n);
+  const sim = path.join(root, 'sim');
+  const child = spawn('bash', [script, 'core-check'], {
+    env: { ...process.env, PATH: `${root}/bin:${process.env.PATH}`, SIM: sim,
+      ELPIS_BUILD_JOBS: '1', ELPIS_RUSTC_THREADS: '1', ELPIS_MAX_TEMP_C: '75',
+      ELPIS_THERMAL_ROOT: `${root}/thermal`, ELPIS_TEMP_POLL_SECONDS: '0.05',
+      ELPIS_BUILD_MIN_FREE_GB: '0', ELPIS_BUILD_ABORT_FREE_GB: '0',
+      ELPIS_TEST_THREADS: '', INSTA_FORCE_PASS: '', ELPIS_BUILD_REPO_ROOT: '', ...extraEnv },
+  });
+  const sink = { stdout: '', stderr: '' };
+  child.stdout.on('data', (d) => { sink.stdout += d; });
+  child.stderr.on('data', (d) => { sink.stderr += d; });
+  const exited = new Promise((resolve) => child.on('exit', (code) => resolve(code)));
+  const read = (name) => (fs.existsSync(path.join(sim, name)) ? fs.readFileSync(path.join(sim, name), 'utf8') : '');
+  const pid = (name) => Number(read(name).trim()) || 0;
+  const alive = (p) => { try { process.kill(p, 0); return true; } catch { return false; } };
+  const ticks = () => read('ticks').split('\n').filter(Boolean).length;
+  const cleanup = () => {
+    for (const p of [pid('cargo.pid'), pid('child.pid')]) if (p && alive(p)) process.kill(p, 'SIGKILL');
+    child.kill('SIGKILL');
+    child.stdout.destroy();
+    child.stderr.destroy();
+    fs.rmSync(root, { recursive: true, force: true });
+  };
+  return { root, child, sink, exited, setSensor, sensorFile, pid, alive, ticks, cleanup };
+}
+
+const sleepMs = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+async function until(what, condition, ms = 3000) {
+  const deadline = Date.now() + ms;
+  while (Date.now() < deadline) {
+    if (condition()) return;
+    await sleepMs(20);
+  }
+  assert.fail(`timed out waiting for ${what}`);
+}
+async function withSim(options, body) {
+  const sim = startSim(options);
+  try {
+    await until('the build to tick', () => sim.ticks() >= 3);
+    await body(sim);
+  } finally {
+    sim.cleanup();
+  }
+}
+const ownedGone = (sim) => until('owned processes to be gone',
+  () => !sim.alive(sim.pid('cargo.pid')) && !sim.alive(sim.pid('child.pid')));
+async function assertFailedClosed(sim, status) {
+  const code = await Promise.race([sim.exited, sleepMs(3000).then(() => 'still running')]);
+  assert.equal(code, 75, sim.sink.stdout + sim.sink.stderr);
+  assert.match(sim.sink.stdout, new RegExp(`build_result status=${status} `));
+  await ownedGone(sim);
+}
+
+test('simulation: pauses 3 C below the limit and resumes only after a 6 C margin', async () => {
+  await withSim({}, async (sim) => {
+    sim.setSensor(71000);
+    await sleepMs(300);
+    assert.doesNotMatch(sim.sink.stderr, /thermal_pause/);
+    sim.setSensor(72000);
+    await until('thermal_pause', () => /thermal_pause/.test(sim.sink.stderr));
+    await sleepMs(200);
+    const frozen = sim.ticks();
+    await sleepMs(300);
+    assert.equal(sim.ticks(), frozen, 'build advanced while paused');
+    sim.setSensor(70000);
+    await sleepMs(300);
+    assert.equal(sim.ticks(), frozen, 'build resumed inside the hysteresis band');
+    sim.setSensor(68000);
+    await until('thermal_resume', () => /thermal_resume/.test(sim.sink.stderr));
+    await until('progress after resume', () => sim.ticks() > frozen);
+  });
+});
+
+test('simulation: reaching the limit while paused stops the build instead of resuming it later', async () => {
+  await withSim({}, async (sim) => {
+    sim.setSensor(72000);
+    await until('thermal_pause', () => /thermal_pause/.test(sim.sink.stderr));
+    sim.setSensor(75000);
+    await assertFailedClosed(sim, 'thermal_limit');
+  });
+});
+
+test('simulation: reaching the limit while running stops the build and its children', async () => {
+  await withSim({}, async (sim) => {
+    sim.setSensor(76000);
+    await assertFailedClosed(sim, 'thermal_limit');
+  });
+});
+
+test('simulation: losing any sensor that was readable at the start stops the build', async () => {
+  await withSim({ sensors: 2 }, async (sim) => {
+    fs.unlinkSync(sim.sensorFile(2));
+    await assertFailedClosed(sim, 'temperature_unavailable');
+  });
+});
+
+test('simulation: losing every sensor stops the build and its children', async () => {
+  await withSim({}, async (sim) => {
+    fs.unlinkSync(sim.sensorFile(1));
+    await assertFailedClosed(sim, 'temperature_unavailable');
+  });
+});
+
+test('simulation: a hangup terminates the owned build', async () => {
+  await withSim({}, async (sim) => {
+    sim.child.kill('SIGHUP');
+    await sim.exited;
+    await ownedGone(sim);
+  });
+});
+
+test('polling interval must be a short positive decimal', () => {
+  for (const poll of ['0', '0.0', 'abc', '-1', '1e3', '0.01', '5', '1.5.2']) {
+    const result = runGuard(50000, 'core-check', undefined, { ELPIS_TEMP_POLL_SECONDS: poll });
+    assert.equal(result.status, 2, `${poll}: ${result.stdout}${result.stderr}`);
+    assert.equal(result.compilerStarted, false, poll);
+  }
+  const ok = runGuard(50000, 'core-check', undefined, { ELPIS_TEMP_POLL_SECONDS: '0.25' });
+  assert.equal(ok.status, 0, ok.stdout + ok.stderr);
 });

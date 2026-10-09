@@ -12,8 +12,8 @@ Earlier transcript row 18
 Earlier transcript row 19
 Earlier transcript row 20
 Earlier transcript row 21
+Earlier transcript row 22
 
- Elpis · model gpt-5.6-sol default · location /tmp/project
   Warnings · 1 of 1 · Warning
 
   Example warning
@@ -25,4 +25,4 @@ Earlier transcript row 21
 
 
 
-  k keep & next · esc dismiss & close · ctrl+o copy · ←/→ warning · ↓ scroll
+  k keep & next · esc dismiss & close · ⌃o copy · ←/→ warning · ↓ scroll

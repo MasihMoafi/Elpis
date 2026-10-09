@@ -2,12 +2,19 @@ name: Elpis Linux verification
 
 on:
   workflow_dispatch:
+    inputs:
+      verification:
+        description: 'Compiler checks or full runtime validation'
+        required: true
+        default: full
+        type: choice
+        options: [check, full]
   push:
     tags: ['v*']
     branches: [next]
-    paths: ['codex-rs/**', 'scripts/**', 'tests/install/**', '.github/workflows/embedded-elpis-linux.yml']
+    paths: ['codex-rs/**', 'tools/elpis-claude/**', 'scripts/**', 'tests/install/**', '.github/workflows/embedded-elpis-linux.yml']
   pull_request:
-    paths: ['codex-rs/**', 'scripts/**', 'tests/install/**', '.github/workflows/embedded-elpis-linux.yml']
+    paths: ['codex-rs/**', 'tools/elpis-claude/**', 'scripts/**', 'tests/install/**', '.github/workflows/embedded-elpis-linux.yml']
 
 permissions:
   contents: read
@@ -17,7 +24,130 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  schemas:
+    if: github.event_name == 'workflow_dispatch' && inputs.verification == 'check'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      CODEX_SKIP_BWRAP_BUILD: '1'
+      CARGO_BUILD_JOBS: '2'
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      - name: Install Rust and system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libcap-dev libssl-dev pkg-config
+          rustup toolchain install 1.95.0 --profile minimal --no-self-update
+      - id: schema_cache
+        uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            codex-rs/target
+          key: elpis-parity-schema-${{ runner.os }}-${{ hashFiles('codex-rs/Cargo.lock') }}-${{ github.sha }}
+          restore-keys: elpis-parity-schema-${{ runner.os }}-${{ hashFiles('codex-rs/Cargo.lock') }}-
+      - name: Regenerate protocol and configuration schemas from the candidate
+        working-directory: codex-rs
+        run: |
+          export CODEX_APP_SERVER_SCHEMA_ROOT="$PWD/app-server-protocol/schema"
+          for experimental in 0 1; do
+            CODEX_APP_SERVER_SCHEMA_EXPERIMENTAL=$experimental cargo test --locked -p codex-app-server-protocol --lib schema_fixtures_tests::write_schema_fixtures_from_env -- --exact --ignored
+          done
+          cargo run --locked -p codex-config-schema -- --out core/config.schema.json
+          cargo test --locked -p codex-app-server-protocol --lib schema_fixtures_tests
+          tar -czf ../schemas.tar.gz app-server-protocol/schema core/config.schema.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: candidate-schemas
+          path: schemas.tar.gz
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Retain schema compiler outputs
+        if: always() && steps.schema_cache.outputs.cache-hit != 'true' && steps.schema_cache.outputs.cache-primary-key != ''
+        uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            codex-rs/target
+          key: ${{ steps.schema_cache.outputs.cache-primary-key }}
+
+  check:
+    if: github.event_name == 'workflow_dispatch' && inputs.verification == 'check'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      CODEX_SKIP_BWRAP_BUILD: '1'
+      CARGO_BUILD_JOBS: '2'
+      RUST_TEST_THREADS: '1'
+      CARGO_PROFILE_RELEASE_LTO: 'false'
+      CARGO_PROFILE_RELEASE_OPT_LEVEL: '1'
+      CARGO_PROFILE_RELEASE_CODEGEN_UNITS: '256'
+      CARGO_PROFILE_RELEASE_DEBUG: 'none'
+      CARGO_PROFILE_RELEASE_STRIP: 'symbols'
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          fetch-depth: 2
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24'
+      - name: Install build dependencies and Rust
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libcap-dev libssl-dev pkg-config strace iproute2
+          rustup toolchain install 1.95.0 --profile minimal --no-self-update
+      - name: Download and verify the pinned sandbox V8
+        shell: bash
+        run: |
+          set -euo pipefail
+          base=https://github.com/openai/codex/releases/download/rusty-v8-v150.4.0
+          directory="$RUNNER_TEMP/elpis-v8"
+          mkdir -p "$directory"
+          archive=librusty_v8_ptrcomp_sandbox_release_x86_64-unknown-linux-gnu.a.gz
+          binding=src_binding_ptrcomp_sandbox_release_x86_64-unknown-linux-gnu.rs
+          curl -fL "$base/$archive" -o "$directory/$archive"
+          curl -fL "$base/$binding" -o "$directory/$binding"
+          printf '%s  %s\n' a35c75d1f26e6a983885a45b33490a4ebe54f05050568b32b89cfb421b30b583 "$archive" \
+            7727826ae479bdb645e807239fb12d1f8e2e23de7a6cf16f5ee592690d1d8506 "$binding" > "$directory/SHA256SUMS"
+          (cd "$directory" && sha256sum -c SHA256SUMS)
+          echo "RUSTY_V8_ARCHIVE=$directory/$archive" >> "$GITHUB_ENV"
+          echo "RUSTY_V8_SRC_BINDING_PATH=$directory/$binding" >> "$GITHUB_ENV"
+      - uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7
+        id: cargo_cache
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            codex-rs/target
+          key: elpis-parity-check-${{ runner.os }}-${{ hashFiles('codex-rs/Cargo.lock') }}-${{ github.sha }}
+          restore-keys: elpis-parity-check-${{ runner.os }}-${{ hashFiles('codex-rs/Cargo.lock') }}-
+      - name: Reuse only unchanged cached Rust sources
+        env:
+          CACHE_KEY: ${{ steps.cargo_cache.outputs.cache-matched-key }}
+        run: |
+          cached_sha=${CACHE_KEY##*-}
+          if [[ $cached_sha =~ ^[0-9a-f]{40}$ ]] && ! git cat-file -e "$cached_sha^{commit}" 2>/dev/null; then
+            git fetch --no-tags --depth=1 origin "$cached_sha"
+          fi
+          bash scripts/restore-cargo-cache-source-times.sh "$CACHE_KEY"
+      - name: Check core, UI, CLI and their tests
+        working-directory: codex-rs
+        run: cargo check --locked --tests -p codex-core -p codex-tui -p codex-cli
+      - name: Retain compiler outputs
+        if: always() && steps.cargo_cache.outputs.cache-hit != 'true' && steps.cargo_cache.outputs.cache-primary-key != ''
+        uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            codex-rs/target
+          key: ${{ steps.cargo_cache.outputs.cache-primary-key }}
+
   build:
+    if: github.event_name != 'workflow_dispatch' || inputs.verification == 'full'
     runs-on: ubuntu-24.04
     timeout-minutes: 180
     env:
@@ -84,10 +214,22 @@ jobs:
         run: |
           bash tests/install/test_install.sh
           bash tests/install/test_cache_source_times.sh
+      - name: Install locked bridge dependencies
+        working-directory: tools/elpis-claude
+        run: npm ci --ignore-scripts
+      - name: Provider history and message retention checks
+        run: |
+          node scripts/history-list.test.cjs
+          node scripts/agy-steering.test.cjs
+          node scripts/build-elpis-local.test.cjs
       - name: Focused Elpis Rust checks
         working-directory: codex-rs
         run: |
-          cargo test --release --locked -p codex-tui --lib elpis_
+          cargo test --release --locked -p codex-tui --lib -- \
+            elpis_ keymap question composer_submission plan_mode review_mode slash_commands \
+            goal_validation command_popup live_center agents_navigation footer_collapse \
+            context_usage context_ledger exec_cell effort_ignition style:: light_terminal_palette \
+            chatwidget_exec_and_status_layout_vt100_snapshot luna_reserve_usage_running
           cargo test --release --locked -p codex-core --lib elpis_
           cargo test --release --locked -p codex-core --lib smart_prune
           cargo test --release --locked -p codex-elpis-gateway --lib
@@ -101,6 +243,12 @@ jobs:
           env -u CODEX_SKIP_BWRAP_BUILD cargo build --release --locked -p codex-bwrap --bin bwrap
           cp target/release/codex target/release/elpis
           test "$(target/release/elpis --version)" = "elpis $ELPIS_VERSION"
+      - name: Native and provider permission regressions
+        run: |
+          node scripts/permissions-runtime.test.cjs "$PWD/codex-rs/target/release/elpis"
+          node scripts/permissions-runtime.test.cjs "$PWD/codex-rs/target/release/elpis" --code-mode
+          node scripts/permissions-bridge.test.cjs "$PWD/codex-rs/target/release/elpis"
+          node scripts/permissions-bridge.test.cjs "$PWD/codex-rs/target/release/elpis" --gemini
       - name: Real runtime evals and failing controls, without outside network
         run: sudo --preserve-env=PATH unshare -n sh -c 'ip link set lo up; bash scripts/release-runtime-evals.sh "$PWD/codex-rs/target/release/elpis"'
       - name: Clean offline installation
@@ -136,6 +284,14 @@ jobs:
           name: elpis-linux-x86_64
           path: dist/*
           if-no-files-found: error
+          retention-days: 7
+      - name: Preserve failed rendering snapshots for review
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: candidate-rendering-differences
+          path: codex-rs/**/*.snap.new
+          if-no-files-found: ignore
           retention-days: 7
       - name: Retain compiled outputs after checks
         if: always() && steps.cargo_cache.outputs.cache-hit != 'true' && steps.cargo_cache.outputs.cache-primary-key != ''

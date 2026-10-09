@@ -175,48 +175,64 @@ async fn a_listing_error_is_shown_instead_of_models() {
     assert!(popup.contains("Change provider…"), "{popup}");
 }
 
+/// The provider names a rendered provider list shows, in order: the lines between its search
+/// field and its key hints.
+fn provider_rows(popup: &str) -> Vec<String> {
+    popup
+        .lines()
+        .skip_while(|line| line.trim() != "Search providers")
+        .skip(1)
+        .map(|line| line.trim_start_matches(['›', ' ']))
+        .filter(|row| !row.is_empty())
+        .take_while(|row| !row.starts_with("enter "))
+        .map(|row| {
+            let name = row.split("  ").next().unwrap_or(row);
+            name.trim_end_matches(" (current)").trim().to_string()
+        })
+        .collect()
+}
+
+/// Positive: the provider list is OpenAI, the Claude subscription, Antigravity and OpenRouter,
+/// in that order. Negative: the providers that do not answer here (Anthropic and Gemini API keys,
+/// Ollama, LM Studio, Bedrock, a configured vendor) are not listed.
 #[tokio::test]
-async fn the_provider_list_names_every_configured_provider() {
+async fn the_provider_list_is_openai_claude_antigravity_openrouter() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.5")).await;
     let home = tempfile::tempdir().expect("tempdir");
     add_keyless_vendor(&mut chat, home.path());
+    add_claude_subscription_model(&mut chat);
+    add_antigravity_model(&mut chat);
 
     chat.open_elpis_provider_popup();
     let popup = render_bottom_popup(&chat, /*width*/ 120);
 
-    for name in [
-        "Choose a provider",
-        "Anthropic Claude",
-        "Google Gemini",
-        "Fixture Vendor",
-    ] {
-        assert!(popup.contains(name), "{name} missing:\n{popup}");
-    }
-    // OpenRouter sorts below the visible rows; the search finds it.
-    for ch in "openrouter".chars() {
-        chat.handle_key_event(KeyEvent::from(KeyCode::Char(ch)));
-    }
-    let popup = render_bottom_popup(&chat, /*width*/ 120);
-    assert!(popup.contains("OpenRouter"), "OpenRouter missing:\n{popup}");
+    assert_eq!(
+        provider_rows(&popup),
+        vec!["OpenAI", "Claude subscription", "Antigravity", "OpenRouter"],
+        "{popup}"
+    );
 }
 
+/// Positive: a chat running on a provider the list leaves out still finds it there, selected.
+/// Negative: without such a chat, it is not listed (`the_provider_list_is_openai_claude_antigravity_openrouter`).
 #[tokio::test]
-async fn the_provider_list_has_no_twin_names_and_hides_bedrock_until_used() {
+async fn a_left_out_provider_is_listed_while_the_chat_runs_on_it() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.5")).await;
+    chat.config.model_provider_id = codex_model_provider_info::OLLAMA_OSS_PROVIDER_ID.to_string();
+
     chat.open_elpis_provider_popup();
     let popup = render_bottom_popup(&chat, /*width*/ 120);
-    assert!(popup.contains("Ollama (local)"), "{popup}");
-    assert!(!popup.contains("gpt-oss"), "{popup}");
-    assert!(!popup.contains("Bedrock"), "{popup}");
-    let rows: Vec<&str> = popup
+
+    assert_eq!(
+        provider_rows(&popup),
+        vec!["OpenAI", "OpenRouter", "Ollama (local)"],
+        "{popup}"
+    );
+    let selected = popup
         .lines()
-        .filter_map(|line| line.trim_start_matches(['›', ' ']).split_once(". "))
-        .map(|(_, rest)| rest.split("  ").next().unwrap_or(rest).trim())
-        .collect();
-    let mut unique = rows.clone();
-    unique.sort();
-    unique.dedup();
-    assert_eq!(rows.len(), unique.len(), "{popup}");
+        .find(|line| line.trim_start().starts_with('›'))
+        .unwrap_or_default();
+    assert!(selected.contains("Ollama (local)"), "{popup}");
 }
 
 #[tokio::test]
@@ -316,97 +332,38 @@ fn row_names(popup: &str) -> Vec<String> {
         .collect()
 }
 
-/// Positive: with a Claude subscription model in the list, the configured provider's own list
-/// (after "Change provider…") shows it once, first; picking it changes the model as the main
-/// list does and switches no provider. Negative: `claude_subscription_rows_appear_only_with_the_claude_bridge`.
+/// Positive: OpenAI's list, from the app server's list, shows OpenAI's own models, and so does
+/// the full list. Negative: the Claude subscription and Antigravity models the app server's list
+/// carries are in neither; they are under their own providers.
 #[tokio::test]
-async fn claude_subscription_models_lead_a_provider_list_and_keep_the_provider() {
-    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+async fn a_provider_lists_only_its_own_models() {
+    // On the default model the lists open at their top, where other providers' rows went.
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    let gpt = get_available_model(&chat, chat.current_model()).display_name;
     add_claude_subscription_model(&mut chat);
-    // The configured provider is listed from the app server's list, which carries the model.
+    add_antigravity_model(&mut chat);
+
     let listed = chat.model_catalog.try_list_models().expect("models");
     chat.open_elpis_provider_models("openai".to_string(), Ok(listed));
-    let popup = render_bottom_popup(&chat, /*width*/ 120);
+    let openai = render_bottom_popup(&chat, /*width*/ 120);
+    chat.open_all_models_popup();
+    let all_models = render_bottom_popup(&chat, /*width*/ 120);
 
-    let rows = row_names(&popup);
-    assert_eq!(
-        rows.iter().take(2).map(String::as_str).collect::<Vec<_>>(),
-        vec!["Change provider…", CLAUDE_NAME],
-        "{popup}"
-    );
-    assert_eq!(popup.matches(CLAUDE_NAME).count(), 1, "{popup}");
-    std::iter::from_fn(|| rx.try_recv().ok()).for_each(drop);
-
-    for ch in "opus".chars() {
-        chat.handle_key_event(KeyEvent::from(KeyCode::Char(ch)));
+    for popup in [openai, all_models] {
+        assert!(popup.contains(&gpt), "{popup}");
+        assert!(!popup.contains(CLAUDE_NAME), "{popup}");
+        assert!(!popup.contains(AGY_NAME), "{popup}");
     }
-    chat.handle_key_event(KeyEvent::from(KeyCode::Enter));
-    let preset = assert_matches!(
-        rx.try_recv(),
-        Ok(AppEvent::OpenReasoningPopup { model }) => model
-    );
-    assert_eq!(preset.model, CLAUDE_MODEL);
-    chat.open_reasoning_popup(preset);
-
-    let events: Vec<AppEvent> = std::iter::from_fn(|| rx.try_recv().ok()).collect();
-    assert!(
-        events
-            .iter()
-            .any(|event| matches!(event, AppEvent::UpdateModel(model) if model == CLAUDE_MODEL)),
-        "{events:?}"
-    );
-    assert!(
-        events.iter().any(|event| matches!(
-            event,
-            AppEvent::PersistModelSelection { model, .. } if model == CLAUDE_MODEL
-        )),
-        "{events:?}"
-    );
-    assert!(
-        !events
-            .iter()
-            .any(|event| matches!(event, AppEvent::Elpis(ElpisAppEvent::Provider(_)))),
-        "a provider event was sent: {events:?}"
-    );
-    assert_eq!(chat.config.model_provider_id, "openai");
 }
 
-/// Positive: another provider's list shows the Claude subscription model above its own.
-/// Negative: without one in the model list, that list, the provider list and the main list
-/// show no Claude subscription row.
+/// Negative: without a Claude subscription model in the model list, the provider list offers no
+/// Claude subscription. Positive: `the_antigravity_row_appears_only_with_antigravity_models`.
 #[tokio::test]
 async fn claude_subscription_rows_appear_only_with_the_claude_bridge() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
-    let home = tempfile::tempdir().expect("tempdir");
-    add_keyless_vendor(&mut chat, home.path());
-
-    chat.open_elpis_provider_models(VENDOR.to_string(), Ok(vec![fixture_preset()]));
-    let popup = render_bottom_popup(&chat, /*width*/ 120);
-    assert_eq!(
-        row_names(&popup),
-        vec!["Change provider…", "Add API key…", "Fixture Model"],
-        "{popup}"
-    );
     chat.open_elpis_provider_popup();
     let providers = render_bottom_popup(&chat, /*width*/ 120);
     assert!(!providers.contains("Claude subscription"), "{providers}");
-    chat.open_all_models_popup();
-    let all_models = render_bottom_popup(&chat, /*width*/ 120);
-    assert!(!all_models.contains("Claude subscription"), "{all_models}");
-
-    add_claude_subscription_model(&mut chat);
-    chat.open_elpis_provider_models(VENDOR.to_string(), Ok(vec![fixture_preset()]));
-    let popup = render_bottom_popup(&chat, /*width*/ 120);
-    assert_eq!(
-        row_names(&popup),
-        vec![
-            "Change provider…",
-            "Add API key…",
-            CLAUDE_NAME,
-            "Fixture Model"
-        ],
-        "{popup}"
-    );
 }
 
 /// Positive: with a Claude subscription model in the list, the provider list offers the Claude
@@ -468,7 +425,10 @@ async fn the_model_command_starts_at_the_provider_list_on_the_current_provider()
         .lines()
         .find(|line| line.trim_start().starts_with('›'))
         .unwrap_or_default();
-    assert!(selected.contains("OpenAI"), "current provider not selected:\n{popup}");
+    assert!(
+        selected.contains("OpenAI"),
+        "current provider not selected:\n{popup}"
+    );
     // The long model list does not open first.
     assert!(!popup.contains("Choose a mind and effort"), "{popup}");
 }
@@ -513,7 +473,7 @@ async fn the_antigravity_row_appears_only_with_antigravity_models() {
 
 /// Positive: picking Antigravity in the provider list browses it, and its list holds only the
 /// `agy/` models. Negative: the Claude subscription model and the configured provider's own
-/// models are not in it, and the configured provider's list shows the `agy/` model only once.
+/// models are not in it.
 #[tokio::test]
 async fn picking_antigravity_lists_only_antigravity_models() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
@@ -551,12 +511,6 @@ async fn picking_antigravity_lists_only_antigravity_models() {
         popup.contains("Credential: your Antigravity sign-in"),
         "{popup}"
     );
-
-    // The configured provider's list, from the app server's list, shows the `agy/` model once.
-    let listed = chat.model_catalog.try_list_models().expect("models");
-    chat.open_elpis_provider_models("openai".to_string(), Ok(listed));
-    let popup = render_bottom_popup(&chat, /*width*/ 120);
-    assert_eq!(popup.matches(AGY_NAME).count(), 1, "{popup}");
 }
 
 /// Positive: picking an Antigravity model changes the model as a Claude subscription row does,

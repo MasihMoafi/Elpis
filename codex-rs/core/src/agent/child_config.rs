@@ -111,6 +111,8 @@ pub(crate) fn build_agent_spawn_config(
     step_context: &StepContext,
 ) -> Result<Config, String> {
     let mut config = build_agent_shared_config(step_context.turn.as_ref())?;
+    // Elpis: permissions selected during this turn, not those it started with.
+    step_context.apply_live_permissions_to_child(&mut config)?;
     let settings = &step_context.settings;
     config.model = Some(settings.model_info.slug.clone());
     config.model_reasoning_effort = settings.effective_reasoning_effort();

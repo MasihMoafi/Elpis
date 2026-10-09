@@ -1,7 +1,6 @@
 ---
 source: tui/src/status_indicator_widget.rs
-assertion_line: 383
 expression: terminal.backend()
 ---
-"Elpising… (0s • esc to interrupt)                                               "
+"• Working (0s • esc to interrupt)                                               "
 "                                                                                "

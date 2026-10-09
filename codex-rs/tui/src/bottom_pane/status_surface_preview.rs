@@ -34,6 +34,7 @@ pub(crate) enum StatusSurfacePreviewItem {
     EstimatedThreadCost,
     SessionId,
     FastMode,
+    Daybreak,
     RawOutput,
     WorkspaceHeadline,
     Model,
@@ -45,13 +46,12 @@ pub(crate) enum StatusSurfacePreviewItem {
 impl StatusSurfacePreviewItem {
     fn placeholder(self) -> &'static str {
         match self {
-            // Elpis: product name and working label.
-            StatusSurfacePreviewItem::AppName => "elpis",
+            StatusSurfacePreviewItem::AppName => "codex",
             StatusSurfacePreviewItem::ProjectName => "my-project",
             StatusSurfacePreviewItem::ProjectRoot => "my-project",
             StatusSurfacePreviewItem::CurrentDir => "~/my-project/subdir",
             StatusSurfacePreviewItem::Hostname => "my-host",
-            StatusSurfacePreviewItem::Status => "Elpising…",
+            StatusSurfacePreviewItem::Status => "Working",
             StatusSurfacePreviewItem::ThreadName => "thread name",
             StatusSurfacePreviewItem::ThreadTitle => "thread title",
             StatusSurfacePreviewItem::GitBranch => "feat/awesome-feature",
@@ -72,6 +72,7 @@ impl StatusSurfacePreviewItem {
             StatusSurfacePreviewItem::EstimatedThreadCost => "~$1.82",
             StatusSurfacePreviewItem::SessionId => "550e8400-e29b-41d4",
             StatusSurfacePreviewItem::FastMode => "Fast on",
+            StatusSurfacePreviewItem::Daybreak => "Daybreak off",
             StatusSurfacePreviewItem::RawOutput => "raw output",
             StatusSurfacePreviewItem::WorkspaceHeadline => "Workspace headline",
             StatusSurfacePreviewItem::Model => "gpt-5.2-codex",
@@ -109,6 +110,7 @@ impl StatusSurfacePreviewItem {
             Self::EstimatedThreadCost,
             Self::SessionId,
             Self::FastMode,
+            Self::Daybreak,
             Self::RawOutput,
             Self::WorkspaceHeadline,
             Self::Model,

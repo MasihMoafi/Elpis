@@ -1,28 +1,17 @@
 ---
 source: tui/src/chatwidget/tests/questions_tests.rs
-assertion_line: 441
 expression: "render_bottom_popup(&chat, 80)"
 ---
- Elpis · model gpt-5.6-sol default · location /tmp/project
-• Queued follow-up inputs                       │ CONTEXT LEDGER  context not
-┌───────────────────────────────────────────────┤ measured · ≈0 source
-│ What next?                                    │ estimates
-│                                               │ Tab controls · Alt+C hide ·
-│ › 1.                                          │ Ctrl+click open file
-│      xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  │
-│      xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  │ SMART PRUNE       [···] SYNC
-│      xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  │ Reading current thread state
-│      xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  │ Syncing… · /smart-prune on|
-│      xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  │ off sets an explicit state
-│      xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  │
-│      xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  │ SUBAGENTS          [━━━●] ON
-│      xxxxxxxxxxxxxxxxxxxxxxxxxxx but do not   │ May delegate to other agents
-│      deploy                                   │
-│   2. Other                                    │ CONTEXT WINDOW  usage
-│                                               │ unavailable
-│ enter submit   ctrl+] skip                    │ Context measurement
-│ shift+→ main prompt                           │ unavailable until the first
-└───────────────────────────────────────────────┤ request snapshot
-                                                │
-                                                │ No portable context is
-                                                │ available.
+• Queued follow-up inputs
+
+  What next?
+
+  › 1.
+       xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+       xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+       xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+       xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+       xxxxxxxxxxxxxxxx but do not deploy
+    2. Other
+
+  enter submit   ⌃] skip   ⇧→ main prompt

@@ -75,8 +75,10 @@ async fn live_center_columns() {
         ThreadStatus::Idle,
     ));
     crate::chatwidget::activate_voice_for_thread(&mut app.chat_widget, child);
+    app.agents_overview.pinned_thread_ids = Some(vec![current, ThreadId::from_u128(/*value*/ 44)]);
     let mut view = app.agents_overview_view(threads, Some(current));
     insta::assert_snapshot!(screen(&view, /*width*/ 160, /*height*/ 22));
+    view.pinned_thread_ranks = None;
     let mut selected_status_styles = Vec::new();
     for _ in 0..fixtures.len() {
         let area = Rect::new(
@@ -137,7 +139,7 @@ async fn live_center_pages_visible_rows_without_wrapping() {
                 .lock()
                 .unwrap()
                 .connection_notice = Some("Reconnecting…");
-            view.handle_key_event(KeyCode::Char('f').into());
+            view.handle_key_event(KeyCode::Char('/').into());
             view.handle_paste("Paging".into());
         }
         screen(&view, /*width*/ 110, /*height*/ 18);
@@ -185,7 +187,7 @@ async fn live_center_metadata_clips_at_grapheme_boundaries() {
         /*selected_thread_id*/ None,
     );
     let input = format!("{}日本語 e\u{301} 👩\u{200d}💻", "界".repeat(/*n*/ 100_000));
-    for (key, label) in [('r', "Rename › "), ('f', "Search › ")] {
+    for (key, label) in [('r', "Rename › "), ('/', "Search › ")] {
         view.handle_key_event(KeyCode::Char(key).into());
         view.handle_paste(input.clone());
         let rendered = screen(&view, /*width*/ 40, /*height*/ 18);
@@ -199,6 +201,12 @@ async fn live_center_metadata_clips_at_grapheme_boundaries() {
             Some((36, 3))
         );
         if key == 'r' {
+            let cursor = view
+                .cursor_pos(Rect::new(
+                    /*x*/ 0, /*y*/ 0, /*width*/ 24, /*height*/ 18,
+                ))
+                .unwrap();
+            assert!(cursor.0 < 24);
             insta::assert_snapshot!("live_center_narrow_rename", rendered);
         }
         view.handle_key_event(KeyCode::Esc.into());
@@ -208,6 +216,7 @@ async fn live_center_metadata_clips_at_grapheme_boundaries() {
 #[tokio::test]
 async fn live_center_rename_retains_target_when_status_leaves_filter() -> Result<()> {
     let mut app = make_test_app().await;
+    app.chat_widget.toggle_vim_mode_and_notify();
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
     app.app_event_tx = AppEventSender::new(tx);
     let id = ThreadId::new();
@@ -216,7 +225,7 @@ async fn live_center_rename_retains_target_when_status_leaves_filter() -> Result
         overview_thread(
             id,
             /*parent_thread_id*/ None,
-            "Target",
+            "Tar\nget",
             ThreadStatus::Idle,
         ),
         overview_thread(
@@ -236,10 +245,32 @@ async fn live_center_rename_retains_target_when_status_leaves_filter() -> Result
             }
         }
         view.handle_key_event(KeyCode::Char('r').into());
+        assert_eq!(
+            view.cursor_style(Rect::default()),
+            crossterm::cursor::SetCursorStyle::SteadyBar
+        );
         threads[0].status = ThreadStatus::SystemError;
         view = app.agents_overview_view(threads.clone(), Some(id));
+        if key == KeyCode::Enter {
+            for edit in [
+                KeyCode::Esc,
+                KeyCode::Char('0'),
+                KeyCode::Char('c'),
+                KeyCode::Char('w'),
+            ] {
+                view.handle_key_event(edit.into());
+            }
+            view.handle_paste("Target".into());
+        }
         view.handle_key_event(KeyCode::Char('!').into());
         view.handle_key_event(key.into());
+        if key == KeyCode::Esc {
+            assert_eq!(
+                view.cursor_style(Rect::default()),
+                crossterm::cursor::SetCursorStyle::DefaultUserShape
+            );
+            view.handle_key_event(KeyCode::Esc.into());
+        }
         assert_eq!(view.rows[view.selected_index().unwrap()].thread_id, other);
         if key == KeyCode::Enter {
             let rename = rx.try_recv().unwrap();
@@ -340,7 +371,7 @@ async fn live_center_fixed_shortcuts_yield_to_configured_actions() {
     let mut app = make_test_app().await;
     let config: TuiKeymap = toml::from_str("[list]\ncancel = 'q'").unwrap();
     app.keymap = RuntimeKeymap::from_config(&config).unwrap();
-    for editor_key in ['f', 'r'] {
+    for editor_key in ['/', 'r'] {
         let mut view = app.agents_overview_view(
             vec![overview_thread(
                 ThreadId::from_u128(/*value*/ 42),
@@ -411,7 +442,7 @@ async fn live_center_fixed_shortcuts_yield_to_configured_actions() {
                 .lock()
                 .unwrap()
                 .server_version_notice = None;
-            view.handle_key_event(KeyCode::Char('f').into());
+            view.handle_key_event(KeyCode::Char('/').into());
             assert!(!screen(&view, /*width*/ 100, /*height*/ 24).contains("enter open"));
         }
         view.handle_key_event(key);
@@ -437,14 +468,26 @@ page_up = []
 [agents]
 archive = []
 rename = 'z r'
+toggle_pin = 'z p'
 "#,
     )
     .unwrap();
     app.keymap = RuntimeKeymap::from_config(&config).unwrap();
-    let mut view = app.agents_overview_view(Vec::new(), /*selected_thread_id*/ None);
+    app.agents_overview.pinned_thread_ids = Some(Vec::new());
+    let view = app.agents_overview_view(Vec::new(), /*selected_thread_id*/ None);
     insta::assert_snapshot!(
         "live_center_custom_footer",
         screen(&view, /*width*/ 100, /*height*/ 12)
+    );
+    let thread_id = ThreadId::from_u128(/*value*/ 42);
+    let mut view = app.agents_overview_view(
+        vec![overview_thread(
+            thread_id,
+            /*parent_thread_id*/ None,
+            "Task",
+            ThreadStatus::Idle,
+        )],
+        Some(thread_id),
     );
     view.handle_key_event(KeyCode::Char('?').into());
     insta::assert_snapshot!(
@@ -479,14 +522,16 @@ async fn live_center_search_row_appears_only_while_editing() {
         ["Tasks", "Status", "Updated"].map(|label| header[text.find(label).unwrap()].style());
     assert_eq!(styles, [styles[0]; 3]);
     let idle = screen(&view, area.width, area.height);
-    view.handle_key_event(KeyCode::Char('f').into());
-    view.handle_paste("find".into());
-    insta::assert_snapshot!(
-        "live_center_search_active",
-        screen(&view, area.width, area.height)
-    );
-    view.handle_key_event(KeyCode::Esc.into());
-    assert_eq!(screen(&view, area.width, area.height), idle);
+    for key in [KeyCode::Char('/'), KeyCode::F(3)] {
+        view.handle_key_event(key.into());
+        view.handle_paste("find".into());
+        insta::assert_snapshot!(
+            "live_center_search_active",
+            screen(&view, area.width, area.height)
+        );
+        view.handle_key_event(KeyCode::Esc.into());
+        assert_eq!(screen(&view, area.width, area.height), idle);
+    }
 }
 
 #[tokio::test]
@@ -503,7 +548,7 @@ async fn backspace_edits_search_and_rename_without_deleting_tasks() {
         )],
         /*selected_thread_id*/ None,
     );
-    for key in ['f', 'r'] {
+    for key in ['/', 'r'] {
         view.handle_key_event(KeyCode::Char(key).into());
         let initial = screen(&view, /*width*/ 88, /*height*/ 16);
         view.handle_paste("!".into());
@@ -512,6 +557,47 @@ async fn backspace_edits_search_and_rename_without_deleting_tasks() {
         assert!(rx.try_recv().is_err());
         view.handle_key_event(KeyCode::Esc.into());
     }
+}
+
+#[tokio::test]
+async fn overview_clears_voice_badge_after_async_close() -> Result<()> {
+    let (mut app, mut events, _) = crate::app::tests::make_test_app_with_channels().await;
+    let owner = ThreadId::new();
+    crate::chatwidget::activate_voice_for_thread(&mut app.chat_widget, owner);
+    app.chat_widget.park_voice();
+    let (visible, _, _, _) = crate::chatwidget::tests::make_chatwidget_manual_with_sender().await;
+    app.background_voice = Some(Box::new(std::mem::replace(&mut app.chat_widget, visible)));
+    app.primary_thread_id = Some(owner);
+    let thread = overview_thread(
+        owner,
+        /*parent_thread_id*/ None,
+        "Voice owner",
+        ThreadStatus::Idle,
+    );
+    app.agents_overview
+        .threads
+        .insert(owner, Some(thread.clone()));
+    let view = app.agents_overview_view(vec![thread], Some(owner));
+    app.agents_overview.visible_thread_ids = view.thread_ids();
+    app.chat_widget.show_bottom_pane_view(Box::new(view));
+    assert!(render_bottom_popup(&app.chat_widget, /*width*/ 100).contains("  voice"));
+    let mut server = crate::start_embedded_app_server_for_picker(&app.config).await?;
+    let mut tui = crate::tui::test_support::make_test_tui()?;
+    app.deliver_background_voice_notification(
+        owner,
+        &ServerNotification::ThreadRealtimeClosed(
+            codex_app_server_protocol::ThreadRealtimeClosedNotification {
+                thread_id: owner.to_string(),
+                reason: Some("requested".into()),
+            },
+        ),
+    );
+    while let Ok(event) = events.try_recv() {
+        Box::pin(app.handle_event(&mut tui, &mut server, event)).await?;
+    }
+    assert!(!render_bottom_popup(&app.chat_widget, /*width*/ 100).contains("  voice"));
+    server.shutdown().await?;
+    Ok(())
 }
 
 #[tokio::test]
@@ -542,7 +628,7 @@ async fn live_center_show_more_navigation_search_and_loading() {
         state.loading = false;
         state.refresh_failed = true;
     }
-    view.handle_key_event(KeyCode::Char('f').into());
+    view.handle_key_event(KeyCode::Char('/').into());
     view.handle_paste("Older task".into());
     insta::assert_snapshot!(
         "live_center_show_more_search_retry",
@@ -550,4 +636,86 @@ async fn live_center_show_more_navigation_search_and_loading() {
     );
     view.handle_key_event(KeyCode::Enter.into());
     assert_matches!(rx.try_recv(), Ok(AppEvent::ShowMoreAgentsOverview));
+}
+
+/// Elpis: every row shows its catalog model name in a column between the title and the status,
+/// in Codex's row order; narrow layouts share title space and long names end in an ellipsis.
+#[tokio::test]
+async fn live_center_rows_show_each_model_at_wide_and_narrow_widths() {
+    let mut app = make_test_app().await;
+    let mut preset = crate::test_support::TEST_MODEL_PRESETS[0].clone();
+    preset.model = String::from("claude/opus");
+    preset.display_name = String::from("Opus 5.5 (Claude subscription)");
+    app.model_catalog = std::sync::Arc::new(crate::model_catalog::ModelCatalog::new(vec![preset]));
+    let threads = [
+        ("First task", Some("claude/opus")),
+        ("Second task", Some("model-a")),
+        ("Third task", None),
+    ]
+    .into_iter()
+    .enumerate()
+    .map(|(index, (name, model))| {
+        let mut thread = overview_thread(
+            ThreadId::from_u128(index as u128 + 1),
+            /*parent_thread_id*/ None,
+            name,
+            ThreadStatus::Idle,
+        );
+        thread.model = model.map(str::to_string);
+        thread.updated_at -= index as i64;
+        thread
+    })
+    .collect();
+    let view = app.agents_overview_view(threads, /*selected_thread_id*/ None);
+
+    let wide = screen(&view, /*width*/ 160, /*height*/ 18);
+    let lines = wide.lines().collect::<Vec<_>>();
+    let header = lines
+        .iter()
+        .find(|line| line.contains("Tasks") && line.contains("Model"))
+        .unwrap();
+    let column = |line: &str, needle: &str| line[..line.find(needle).unwrap()].chars().count();
+    let model_column = column(header, "Model");
+    assert!(column(header, "Tasks") < model_column && model_column < column(header, "Status"));
+    let rows = ["First task", "Second task", "Third task"].map(|title| {
+        let position = lines.iter().position(|line| line.contains(title)).unwrap();
+        (position, lines[position])
+    });
+    assert!(rows[0].0 < rows[1].0 && rows[1].0 < rows[2].0);
+    let labels = rows.map(|(_, line)| {
+        assert!(column(line, "Ready") > model_column + 18);
+        let chars = line.chars().collect::<Vec<_>>();
+        // The title ends before the model column, and two spaces separate the model from the status.
+        assert!(
+            chars[..model_column]
+                .iter()
+                .collect::<String>()
+                .contains("task")
+        );
+        assert!(
+            chars[model_column - 2..model_column]
+                .iter()
+                .all(|c| *c == ' ')
+        );
+        chars[model_column..model_column + 18]
+            .iter()
+            .collect::<String>()
+    });
+    assert!(labels[0].starts_with("Opus 5.5 (Claude") && labels[0].ends_with('…'));
+    assert_eq!(labels[1].trim_end(), "model-a");
+    assert_eq!(labels[2].trim_end(), "Unknown");
+
+    // Model labels remain visible as status metadata drops on smaller screens.
+    assert!(screen(&view, /*width*/ 80, /*height*/ 18).contains("model-a"));
+    for (width, status) in [(79, true), (55, false), (40, false)] {
+        let narrow = screen(&view, width, /*height*/ 18);
+        assert!(narrow.contains("Second task"));
+        assert!(narrow.contains("Model") && narrow.contains("model-a"));
+        assert_eq!(narrow.contains("Status"), status);
+        assert!(
+            narrow
+                .lines()
+                .all(|line| line.chars().count() <= usize::from(width))
+        );
+    }
 }

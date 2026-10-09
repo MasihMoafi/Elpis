@@ -53,21 +53,3 @@ where
             panic!("app-server wire value should map to legacy helper type: {err}")
         })
 }
-
-/// Runs `test` on a dark terminal, where the Elpis accent is a real color rather than the reset
-/// default, and hands it that accent. Elpis draws one accent where Codex drew one color per role.
-pub(crate) fn with_elpis_accent<T>(test: impl FnOnce(Option<ratatui::style::Color>) -> T) -> T {
-    let colors = crate::terminal_probe::DefaultColors {
-        fg: (0xee, 0xee, 0xee),
-        bg: (0x10, 0x10, 0x10),
-    };
-    crate::terminal_palette::with_test_default_colors(colors, || {
-        let accent = crate::elpis_motion::accent_style().fg;
-        assert_ne!(
-            accent,
-            Some(ratatui::style::Color::Reset),
-            "the accent must be a real color"
-        );
-        test(accent)
-    })
-}

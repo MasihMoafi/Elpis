@@ -13,7 +13,10 @@ pub(crate) fn with_additional_compaction_instructions(
     instructions: Option<&str>,
 ) -> BaseInstructions {
     if let Some(instructions) = instructions {
-        base_instructions.text.push_str("\n\n");
+        // History may already carry the base instructions, leaving this request's text empty.
+        if !base_instructions.text.is_empty() {
+            base_instructions.text.push_str("\n\n");
+        }
         base_instructions
             .text
             .push_str(ADDITIONAL_COMPACTION_INSTRUCTIONS_HEADER);
@@ -43,6 +46,21 @@ mod tests {
         assert_eq!(
             augmented.text,
             "normal base guidance\n\nAdditional compaction instructions:\nPreserve unresolved blockers — ۳ نکته."
+        );
+    }
+
+    #[test]
+    fn guidance_alone_when_history_carries_the_base_instructions() {
+        let base = BaseInstructions {
+            text: String::new(),
+            provenance: None,
+        };
+
+        let augmented = with_additional_compaction_instructions(base, Some("Keep the plan."));
+
+        assert_eq!(
+            augmented.text,
+            "Additional compaction instructions:\nKeep the plan."
         );
     }
 

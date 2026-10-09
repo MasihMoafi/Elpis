@@ -1,19 +1,18 @@
 ---
 source: tui/src/keymap_setup.rs
-assertion_line: 1466
 expression: "format!(\"{:?}\", render_capture(&view, 80, 8))"
 ---
 Buffer {
     area: Rect { x: 0, y: 0, width: 80, height: 8 },
     content: [
-        "┌──────────────────────────────────────────────────────────────────────────────┐",
-        "│ Remap Shortcut                                                               │",
-        "│ Action: Submit  composer.submit                                              │",
-        "│ Current: enter                                                               │",
-        "│ Press the new key now. Esc cancels.                                          │",
-        "│                                                                              │",
-        "│                                                                              │",
-        "└──────────────────────────────────────────────────────────────────────────────┘",
+        "                                                                                ",
+        "  Remap Shortcut                                                                ",
+        "  Action: Submit  composer.submit                                               ",
+        "  Current: enter                                                                ",
+        "  Press the new key now. Esc cancels.                                           ",
+        "                                                                                ",
+        "                                                                                ",
+        "                                                                                ",
     ],
     styles: [
         x: 0, y: 0, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,

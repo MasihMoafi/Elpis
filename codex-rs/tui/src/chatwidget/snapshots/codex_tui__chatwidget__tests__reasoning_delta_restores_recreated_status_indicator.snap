@@ -1,29 +1,12 @@
 ---
 source: tui/src/chatwidget/tests/status_and_layout.rs
-assertion_line: 4217
+assertion_line: 4833
 expression: normalized_backend_snapshot(terminal.backend())
 ---
 "                                                                                "
-" Elpis · model gpt-5.6-sol default · location /tmp/project                      "
-"Checking files and preparing a response (0s • e…│ CONTEXT LEDGER  context not   "
-"                                                │ measured · ≈0 source          "
-"────────────────────────────────────────────────┤ estimates                     "
-"› Ask Elpis to do anything                      │ Tab controls · Alt+C hide ·   "
-"────────────────────────────────────────────────┤ Ctrl+click open file          "
-"        100% context left · Tab Context Ledger  │                               "
-"                                                │ SMART PRUNE       [···] SYNC  "
-"                                                │ Reading current thread state  "
-"                                                │ Syncing… · /smart-prune on|   "
-"                                                │ off sets an explicit state    "
-"                                                │                               "
-"                                                │ SUBAGENTS          [━━━●] ON  "
-"                                                │ May delegate to other agents  "
-"                                                │                               "
-"                                                │ CONTEXT WINDOW  usage         "
-"                                                │ unavailable                   "
-"                                                │ Context measurement           "
-"                                                │ unavailable until the first   "
-"                                                │ request snapshot              "
-"                                                │                               "
-"                                                │ No portable context is        "
-"                                                │ available.                    "
+"• Checking files and preparing a response (0s • esc to interrupt) · 1 backgroun…"
+"                                                                                "
+"                                                                                "
+"› Ask Elpis to do anything                                                      "
+"                                                                                "
+"  GPT-5.6-Sol default · /tmp/project                                            "

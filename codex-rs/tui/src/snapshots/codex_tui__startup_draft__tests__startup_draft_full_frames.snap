@@ -1,63 +1,66 @@
 ---
 source: tui/src/startup_draft_tests.rs
-assertion_line: 154
+assertion_line: 144
 expression: "snapshots.join(\"\\n---\\n\")"
 ---
 empty (48 columns):
 
-  ◆ Elpis (v0.4.1)
+  >_ OpenAI Codex (v<VERSION>)
      loading
 
-  Pull up a prompt.
 
-───────────────────────────────────────────────┐
-› Ask Elpis to do anything                     │
-───────────────────────────────────────────────┘
-  ? for shortcuts           Tab Context Ledger
+› Ask Elpis to do anything
+
+  ? for shortcuts
+---
+configured (48 columns):
+
+  >_ OpenAI Codex (v<VERSION>)
+     workspace
+
+
+› Ask Elpis to do anything
+
+  ? for shortcuts
 ---
 resuming (48 columns):
 
-  ◆ Elpis (v0.4.1)
+  >_ OpenAI Codex (v<VERSION>)
      loading
   Resuming session…
-───────────────────────────────────────────────┐
-› Ask Elpis to do anything                     │
-───────────────────────────────────────────────┘
-  ? for shortcuts           Tab Context Ledger
+
+› Ask Elpis to do anything
+
+  ? for shortcuts
 ---
 forking (48 columns):
 
-  ◆ Elpis (v0.4.1)
+  >_ OpenAI Codex (v<VERSION>)
      loading
   Forking session…
-───────────────────────────────────────────────┐
-› draft while loading                          │
-───────────────────────────────────────────────┘
-                            Tab Context Ledger
+
+› draft while loading
+
+
 ---
 multiline (48 columns):
 
-  ◆ Elpis (v0.4.1)
+  >_ OpenAI Codex (v<VERSION>)
      loading
 
-  Pull up a prompt.
 
-───────────────────────────────────────────────┐
-› first startup line                           │
-  second startup line                          │
-───────────────────────────────────────────────┘
-                            Tab Context Ledger
+› first startup line
+  second startup line
+
+
 ---
 narrow (18 columns):
 
-  ◆ Elpis (v0.4.1)
+  >_ OpenAI Codex…
      loading
 
-  Pull up a promp…
 
-─────────────────┐
-› first startup  │
-  line           │
-  second startup │
-  line           │
-─────────────────┘
+› first startup
+  line
+  second startup
+  line

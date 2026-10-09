@@ -1,6 +1,7 @@
 //! Archived-session recovery with shared picker rows and scoped terminal ownership.
 
 use crate::bottom_pane::picker_option_list;
+use crate::bottom_pane::render_menu_surface;
 use crate::key_hint;
 use crate::render::Insets;
 use crate::render::renderable::FlexRenderable;
@@ -212,8 +213,12 @@ impl WidgetRef for &UnarchivePrompt {
     fn render_ref(&self, area: Rect, buf: &mut Buffer) {
         Clear.render(area, buf);
         let content = self.content();
-        // Elpis: content stays inside the popup border.
-        crate::bottom_pane::render_bordered_panel(area, buf, &content);
+        let panel = Rect {
+            height: content.desired_height(area.width).min(area.height),
+            ..area
+        };
+        render_menu_surface(panel, buf);
+        content.render(panel, buf);
     }
 }
 

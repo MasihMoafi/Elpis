@@ -1,15 +1,14 @@
 ---
 source: tui/src/status/tests.rs
-assertion_line: 1906
 expression: "format!(\"before:\\n{before}\\n\\nafter:\\n{after}\")"
 ---
 before:
 / T R A N S C R I P T / / / / / / / / / / / / / / / / / / / / / / / / / / / / /
 /status
 
-  ◆ Elpis (v0.4.1)
+  >_ OpenAI Codex (v0.0.0)
 
-  Visit https://chatgpt.com/codex/settings/usage for up-to-date
+  Visit https://chatgpt.com/settings/usage for up-to-date
   information on rate limits and credits
 
   Model:        gpt-5.1-codex-max (reasoning none, summaries auto)
@@ -18,7 +17,7 @@ before:
   Agents.md:    <none>
 
   Token usage:  0 total  (0 input + 0 output)
-  Limits:       refresh requested; run /usage again shortly.
+  Limits:       refresh requested; run /status again shortly.
 
 
 
@@ -30,7 +29,7 @@ before:
 
 
 
-Ctrl+Space select
+⌃space select
  ↑/↓ to scroll · pgup/pgdn to page · home/end to jump
  q close · f3 find · esc browse prompts
 
@@ -39,9 +38,9 @@ after:
 / T R A N S C R I P T / / / / / / / / / / / / / / / / / / / / / / / / / / / / /
 /status
 
-  ◆ Elpis (v0.4.1)
+  >_ OpenAI Codex (v0.0.0)
 
-  Visit https://chatgpt.com/codex/settings/usage for up-to-date
+  Visit https://chatgpt.com/settings/usage for up-to-date
   information on rate limits and credits
 
   Model:         gpt-5.1-codex-max (reasoning none, summaries auto)
@@ -62,6 +61,6 @@ next message
 
 
 
-Ctrl+Space select
+⌃space select
  ↑/↓ to scroll · pgup/pgdn to page · home/end to jump
  q close · f3 find · esc browse prompts

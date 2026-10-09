@@ -5,6 +5,34 @@ use crate::bottom_pane::goal_status_indicator_line;
 use pretty_assertions::assert_eq;
 
 #[tokio::test]
+async fn daybreak_status_surfaces_follow_the_thread_preference() {
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    chat.local_settings.tui.terminal_title = Some(vec!["daybreak".into()]);
+    let mut values = Vec::new();
+    for enabled in [false, true] {
+        chat.daybreak_enabled = enabled;
+        chat.refresh_terminal_title();
+        values.push(format!(
+            "{} | {}",
+            chat.status_line_value(StatusLineItem::Daybreak).unwrap(),
+            chat.last_terminal_title.as_deref().unwrap()
+        ));
+    }
+    chat.set_side_conversation_active(/*active*/ true);
+    chat.refresh_terminal_title();
+    values.push(format!(
+        "{} | {}",
+        chat.status_line_value(StatusLineItem::Daybreak).unwrap(),
+        chat.last_terminal_title.as_deref().unwrap()
+    ));
+    insta::assert_snapshot!(values.join("\n"), @r"
+    Daybreak off | Daybreak off
+    Daybreak on | Daybreak on
+    Daybreak off | Daybreak off
+    ");
+}
+
+#[tokio::test]
 async fn goal_clock_refresh_redraws_only_when_elapsed_label_changes() {
     let (frame_requester, mut draw_rx) = FrameRequester::test_channel();
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual_with_auth(
@@ -68,10 +96,9 @@ async fn terminal_title_shows_action_required_while_exec_approval_is_pending() {
     let (frame_requester, mut draw_rx) = FrameRequester::test_channel();
     chat.frame_requester = frame_requester;
     chat.bottom_pane.set_task_running(/*running*/ true);
-    chat.terminal_title_animation_origin = Instant::now();
     let before_refresh = Instant::now();
     chat.refresh_terminal_title();
-    let spinner_interval = crate::elpis_motion::FRAME_TICK;
+    let spinner_interval = std::time::Duration::from_millis(/*millis*/ 100);
     assert!(
         (before_refresh + spinner_interval..=Instant::now() + spinner_interval)
             .contains(&chat.terminal_title_next_refresh.expect("spinner deadline"))
@@ -356,11 +383,15 @@ async fn thread_title_progress_animates_when_main_turn_is_idle() {
 }
 
 #[tokio::test]
-async fn thread_title_progress_preserves_suffix_after_truncation() {
-    // Elpis never shows the footer status line (R17), so the progress shows in the title only.
+async fn thread_title_progress_preserves_suffix_after_truncation_and_in_default_footer() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
     chat.local_settings.tui.animations = false;
     chat.set_thread_title_generation_pending(/*pending*/ true);
+    chat.show_welcome_banner = false;
+    assert_chatwidget_snapshot!(
+        "default_footer_generating_thread_title",
+        normalize_snapshot_paths(render_bottom_popup(&chat, /*width*/ 100))
+    );
     chat.thread_name = Some("Long title ".repeat(/*n*/ 12));
     for item in [TerminalTitleItem::ThreadName, TerminalTitleItem::Thread] {
         let title = chat

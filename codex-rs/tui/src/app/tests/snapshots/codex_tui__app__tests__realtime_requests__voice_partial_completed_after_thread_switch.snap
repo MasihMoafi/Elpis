@@ -1,0 +1,28 @@
+---
+source: tui/src/app/tests/realtime_requests.rs
+expression: "normalize_voice_snapshot_directory(&format!(\"Other task:\\n{other_ui}\\nRestored owner:\\n{}\\n{rendered}\",\nrender_bottom_popup(&app.chat_widget, 80)), &app.config.cwd,)"
+---
+Other task:
+› Ask Elpis to do anything
+
+  gpt-test default · /tmp/project
+Restored owner:
+ voice ● listening                                      ⌃x mute     /voice stop
+   mic ▁▁▁▁▁▁  codex ▁▁▁▁▁▁
+
+› Ask Elpis to do anything
+
+  gpt-test default · /tmp/project
+
+  >_ OpenAI Codex (v0.0.0)
+     /tmp/project
+
+  To get started, describe a task or try one of these commands:
+
+  /init - create an AGENTS.md file with instructions for Elpis
+  /status - show current session configuration
+  /permissions - choose what Elpis is allowed to do
+  /model - choose what model and reasoning effort to use
+  /review - review any changes and find issues
+
+› spoken partial completed

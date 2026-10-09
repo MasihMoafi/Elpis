@@ -12,4 +12,4 @@ expression: rendered
   f}{g+h}
  
 
-■ Conversation interrupted - tell the model what to do differently
+■ Conversation interrupted - use /feedback if something went wrong

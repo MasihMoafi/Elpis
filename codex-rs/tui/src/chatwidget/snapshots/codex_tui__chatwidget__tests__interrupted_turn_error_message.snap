@@ -2,4 +2,4 @@
 source: tui/src/chatwidget/tests/review_mode.rs
 expression: last
 ---
-■ Conversation interrupted - tell the model what to do differently
+■ Conversation interrupted - use /feedback if something went wrong

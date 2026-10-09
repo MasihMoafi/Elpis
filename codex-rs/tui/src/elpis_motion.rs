@@ -5,18 +5,15 @@
 //! TachyonFX curve still used, sine-in-out, is inlined so the crate is not a dependency.
 use crate::color::{blend, is_light};
 use crate::terminal_palette::{best_color, default_bg};
-use ratatui::{buffer::Buffer, layout::Rect, style::Style, text::Span};
+use ratatui::{style::Style, text::Span};
 use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
-pub(crate) const FRAME_TICK: Duration = Duration::from_millis(40);
 /// One complete pass of the highlight, from just before the first glyph to
-/// just past the last. The paced cycle runs whole sweeps so the motion always
-/// comes to rest with the highlight off the text.
+/// just past the last.
 const SWEEP: Duration = Duration::from_millis(800);
-const MOTION_WAIT: Duration = Duration::from_secs(4);
 
 /// TachyonFX's `Interpolation::SineInOut`, the same curve v0.3.0 used.
 fn sine_in_out(t: f32) -> f32 {
@@ -64,28 +61,6 @@ pub(crate) fn animated_text_at(text: &str, time: Duration) -> Vec<Span<'static>>
     gradient_text_at(text, time)
 }
 
-/// Run one complete shimmer, then leave the terminal untouched long enough for
-/// native click-and-drag selection to remain stable.
-///
-/// The wait starts only once a whole sweep has finished, so the highlight has
-/// already left the text when the motion settles. The sample only ever moves
-/// forward, so the next sweep picks the colour up where the last one left it
-/// instead of snapping back to the start.
-pub(crate) fn paced_motion(elapsed: Duration) -> (Duration, Duration) {
-    let cycle = SWEEP + MOTION_WAIT;
-    let swept = SWEEP * u32::try_from(elapsed.as_nanos() / cycle.as_nanos()).unwrap_or(u32::MAX);
-    let position_nanos = u64::try_from(elapsed.as_nanos() % cycle.as_nanos()).unwrap_or(u64::MAX);
-    let position = Duration::from_nanos(position_nanos);
-    if position < SWEEP {
-        (
-            swept + position,
-            FRAME_TICK.min(SWEEP.saturating_sub(position)),
-        )
-    } else {
-        (swept + SWEEP, cycle.saturating_sub(position))
-    }
-}
-
 fn gradient_text_at(text: &str, time: Duration) -> Vec<Span<'static>> {
     let Some(background) = default_bg() else {
         return text
@@ -124,36 +99,6 @@ fn gradient_text_at(text: &str, time: Duration) -> Vec<Span<'static>> {
             )
         })
         .collect()
-}
-
-/// The selected Quiet Rail wash fades into the terminal background without
-/// changing draft text, selection colors, or activity effects.
-pub(crate) fn paint_surface(area: Rect, buf: &mut Buffer) {
-    let Some(background) = default_bg() else {
-        return;
-    };
-    let area = area.intersection(buf.area);
-    let base = crate::style::composer_style()
-        .bg
-        .unwrap_or(ratatui::style::Color::Reset);
-    let wash = if is_light(background) {
-        (238, 232, 216)
-    } else {
-        (33, 31, 25)
-    };
-    for y in area.y..area.bottom() {
-        for x in area.x..area.right() {
-            let cell = &mut buf[(x, y)];
-            if cell.bg != base && cell.bg != ratatui::style::Color::Reset {
-                continue;
-            }
-            let amount = 1.0
-                - sine_in_out(
-                    f32::from(x - area.x) / f32::from(area.width.saturating_sub(1).max(1)),
-                );
-            cell.set_bg(best_color(blend(wash, background, amount)));
-        }
-    }
 }
 
 #[cfg(test)]
@@ -218,35 +163,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn surface_gradient_preserves_draft_styles_selection_and_neighbors() {
-        crate::terminal_palette::with_test_default_colors(
-            crate::terminal_probe::DefaultColors {
-                fg: (222, 222, 219),
-                bg: (17, 18, 20),
-            },
-            || {
-                let mut buf = Buffer::empty(Rect::new(0, 0, 30, 5));
-                buf.set_string(
-                    2,
-                    2,
-                    "Keep my draft",
-                    Style::default().fg(ratatui::style::Color::White),
-                );
-                buf[(3, 2)].set_bg(ratatui::style::Color::Blue);
-                let original = buf.clone();
-                paint_surface(Rect::new(0, 1, 25, 3), &mut buf);
-                assert_ne!(buf[(0, 1)].bg, buf[(24, 1)].bg);
-                assert_eq!(buf[(3, 2)], original[(3, 2)]);
-                for (before, after) in original.content.iter().zip(&buf.content) {
-                    assert_eq!(before.symbol(), after.symbol());
-                    assert_eq!(before.fg, after.fg);
-                    assert_eq!(before.modifier, after.modifier);
-                }
-                assert_eq!(buf[(29, 4)], original[(29, 4)]);
-            },
-        );
-    }
-    #[test]
     fn unknown_background_keeps_terminal_foreground_without_a_white_highlight() {
         assert_eq!(default_bg(), None);
         let fallback = Style::default().fg(ratatui::style::Color::Reset);
@@ -306,61 +222,6 @@ mod tests {
     }
 
     #[test]
-    fn paced_motion_rests_on_a_finished_sweep_and_never_rewinds() {
-        assert_eq!(paced_motion(Duration::ZERO), (Duration::ZERO, FRAME_TICK));
-        assert_eq!(paced_motion(SWEEP), (SWEEP, MOTION_WAIT));
-        assert_eq!(
-            paced_motion(Duration::from_secs(1)),
-            (SWEEP, Duration::from_millis(3_800))
-        );
-        // A new sweep resumes from the colour the last one settled on.
-        assert_eq!(paced_motion(SWEEP + MOTION_WAIT), (SWEEP, FRAME_TICK));
-        assert_eq!(
-            paced_motion(SWEEP + MOTION_WAIT + SWEEP),
-            (SWEEP * 2, MOTION_WAIT)
-        );
-        let mut previous = Duration::ZERO;
-        for millis in (0..20_000).step_by(37) {
-            let (sample, _) = paced_motion(Duration::from_millis(millis));
-            assert!(sample >= previous, "the motion rewound at {millis}ms");
-            previous = sample;
-        }
-    }
-
-    #[test]
-    fn the_paced_rest_leaves_no_highlight_sitting_on_the_text() {
-        crate::terminal_palette::with_test_default_colors(
-            crate::terminal_probe::DefaultColors {
-                fg: (222, 222, 219),
-                bg: (17, 18, 20),
-            },
-            || {
-                let label = "Elpising…";
-                let (rest, wait) = paced_motion(SWEEP + Duration::from_secs(1));
-                assert!(wait > FRAME_TICK, "the sample must be taken during a wait");
-                let width = label.width().max(1) as f64;
-                let mut column = 0.0;
-                for (span, glyph) in gradient_text_at(label, rest)
-                    .iter()
-                    .zip(label.graphemes(true))
-                {
-                    let center = column + glyph.width() as f64 / 2.0;
-                    column += glyph.width() as f64;
-                    assert_eq!(
-                        span.style.fg,
-                        Some(best_color(pigment(
-                            center / width * 0.75,
-                            rest.as_secs_f64(),
-                            false
-                        ))),
-                        "{glyph} still wears the highlight where the motion stopped"
-                    );
-                }
-            },
-        );
-    }
-
-    #[test]
     fn gradient_moves_gently() {
         // Part-way through the cycle, for the same reason as above.
         let sample = Duration::from_millis(2_500);
@@ -370,7 +231,7 @@ mod tests {
         );
         for light in [false, true] {
             let a = pigment(0.2, 0.0, light);
-            let b = pigment(0.2, FRAME_TICK.as_secs_f64(), light);
+            let b = pigment(0.2, Duration::from_millis(40).as_secs_f64(), light);
             assert!(a.0.abs_diff(b.0) <= 2 && a.1.abs_diff(b.1) <= 2 && a.2.abs_diff(b.2) <= 2);
         }
     }

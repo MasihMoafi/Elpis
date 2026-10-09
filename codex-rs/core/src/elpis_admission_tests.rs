@@ -99,22 +99,27 @@ fn continuity_section_owns_one_slot_and_resends_only_changes() {
     let empty = continuity_section(/*body*/ None);
     assert!(empty.owns_single_history_slot());
     assert!(!empty.has_model_visible_content());
-    assert!(empty.render_diff(PreviousWorldStateSection::Absent).is_none());
+    assert!(
+        empty
+            .render_diff(PreviousWorldStateSection::Absent)
+            .1
+            .is_none()
+    );
 
     let body = format!("{ELPIS_CONTINUITY_PROMPT_PREFIX}### Source: /tmp/MEMORY.md\n\nfact");
     let filled = continuity_section(Some(body.clone()));
     assert!(filled.owns_single_history_slot());
     assert!(filled.has_model_visible_content());
+    let (snapshot, fragment) = filled.render_diff(PreviousWorldStateSection::Absent);
     assert_eq!(
-        filled
-            .render_diff(PreviousWorldStateSection::Absent)
-            .map(|fragment| (fragment.role(), fragment.body().to_string())),
+        fragment.map(|fragment| (fragment.role(), fragment.body().to_string())),
         Some(("developer", body.clone()))
     );
-    let snapshot = filled.snapshot().clone();
+    let snapshot = snapshot.expect("a filled section persists its body");
     assert!(
         filled
             .render_diff(PreviousWorldStateSection::Known(&snapshot))
+            .1
             .is_none(),
         "an unchanged body is not sent again"
     );

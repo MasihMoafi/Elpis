@@ -78,6 +78,30 @@ pub(crate) struct DashboardLimit {
     pub(crate) resets_at: Option<String>,
 }
 
+/// One agent on the Agents map: a chat, or a helper another agent started.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub(crate) struct DashboardAgent {
+    pub(crate) id: String,
+    /// The agent that started this one; `None` for a chat the user started.
+    pub(crate) parent_id: Option<String>,
+    pub(crate) title: String,
+    pub(crate) model: Option<String>,
+    /// `#rrggbb`: the hue the agent list in Elpis gives this agent.
+    pub(crate) color: Option<String>,
+    pub(crate) status: DashboardAgentStatus,
+    /// The status in the agent list's words.
+    pub(crate) status_label: String,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum DashboardAgentStatus {
+    NeedsYou,
+    Working,
+    Ready,
+    Inactive,
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub(crate) struct DashboardEnvelope {
     pub(crate) state: DashboardState,
@@ -224,6 +248,24 @@ pub(crate) struct DashboardSmartPruneAttempt {
 
 static DASHBOARD_STATE: Mutex<Option<DashboardState>> = Mutex::new(None);
 static SERVER_URL: Mutex<Option<String>> = Mutex::new(None);
+static DASHBOARD_AGENTS: Mutex<Vec<DashboardAgent>> = Mutex::new(Vec::new());
+
+/// Whether `/dashboard` has started this session's page server.
+pub(crate) fn is_running() -> bool {
+    SERVER_URL.lock().is_ok_and(|url| url.is_some())
+}
+
+/// Replaces the agents the Agents map draws; the page reads them from `/agents.json`.
+pub(crate) fn publish_agents(agents: Vec<DashboardAgent>) {
+    if let Ok(mut slot) = DASHBOARD_AGENTS.lock() {
+        *slot = agents;
+    }
+}
+
+fn agents_body(agents: &[DashboardAgent]) -> Vec<u8> {
+    serde_json::to_vec(&serde_json::json!({ "agents": agents }))
+        .unwrap_or_else(|_| br#"{"agents":[]}"#.to_vec())
+}
 
 pub(crate) fn publish_state(
     context: DashboardContext,
@@ -529,6 +571,11 @@ fn response_for_at(
             200,
             "application/json; charset=utf-8",
             claude::summary_json(),
+        ),
+        "/agents.json" => response(
+            200,
+            "application/json; charset=utf-8",
+            agents_body(&DASHBOARD_AGENTS.lock().map(|agents| agents.clone()).unwrap_or_default()),
         ),
         "/data.json" => match state {
             Some(state) => data_response_with(state, heartbeat_at, serde_json::to_vec),

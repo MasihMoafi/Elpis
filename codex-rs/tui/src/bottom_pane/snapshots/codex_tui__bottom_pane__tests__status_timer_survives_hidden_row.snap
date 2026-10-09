@@ -1,11 +1,11 @@
 ---
 source: tui/src/bottom_pane/mod.rs
-assertion_line: 3208
+assertion_line: 2570
 expression: "render_snapshot(&pane, area)"
 ---
-Elpising… (42s • esc to interrupt)      
+• Working (42s • esc to interrupt)      
                                         
-───────────────────────────────────────┐
-› Ask Elpis to do anything             │
-───────────────────────────────────────┘
-  100% context left · Tab Context Ledger
+                                        
+› Ask Elpis to do anything              
+                                        
+  ? for shortcuts    100% context left

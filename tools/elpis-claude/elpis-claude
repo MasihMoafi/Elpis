@@ -4,7 +4,7 @@
 # Usage: elpis-claude [elpis options], e.g. elpis-claude -a on-request
 set -euo pipefail
 here="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
-port="$(node -e 'const s=require("net").createServer().listen(0,"127.0.0.1",()=>{console.log(s.address().port);s.close()})')"
+port="$(node -e 'const s=require("net").createServer().listen(0,"127.0.0.1",()=>{process.stdout.write(String(s.address().port));s.close()})')"
 mkdir -p /tmp/acp-bridge
 NODE_USE_ENV_PROXY=1 PORT="$port" node "$here/acp-bridge.mjs" &
 bridge=$!

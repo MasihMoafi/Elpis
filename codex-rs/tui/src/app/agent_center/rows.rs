@@ -1,5 +1,6 @@
-//! Grouped live tasks with shared identity colors and stable title, status and age columns.
-//! Full titles use the flexible column; metadata drops at narrow widths.
+//! Grouped live tasks with shared identity colors and stable title, model, status and age
+//! columns. Full titles use the flexible column; the model, then the other metadata, drops at
+//! narrow widths.
 //! The final cell stays blank inside the full-width selection highlight.
 
 use super::navigation::CenterRow;
@@ -10,13 +11,31 @@ use crate::bottom_pane::selection_style;
 use crate::resume_picker::format_relative_time;
 use crate::status::format_directory_display;
 
-fn columns(area: Rect) -> (Rect, Rect, Rect) {
+/// Fits `Claude Opus 5.5`; longer catalog names end in an ellipsis.
+const MODEL_WIDTH: u16 = 18;
+
+struct Columns {
+    title: Rect,
+    model: Rect,
+    status: Rect,
+    updated: Rect,
+}
+
+/// Keep model names visible on narrow terminals by sharing the flexible title space.
+fn columns(area: Rect) -> Columns {
     let metadata = if area.width >= 56 { 24 } else { 0 };
     let gutter = area.width.min(/*other*/ 4);
+    let flexible = area.width - gutter - metadata;
+    let model_width = if area.width >= 32 {
+        MODEL_WIDTH.min(flexible.saturating_sub(2) / 2)
+    } else {
+        0
+    };
+    let model = if model_width > 0 { model_width + 2 } else { 0 };
     let title = Rect::new(
         area.x + gutter,
         area.y,
-        area.width - gutter - metadata,
+        area.width - gutter - metadata - model,
         area.height,
     );
     let updated = Rect::new(
@@ -26,12 +45,22 @@ fn columns(area: Rect) -> (Rect, Rect, Rect) {
         area.height,
     );
     let status = Rect::new(
-        title.right() + metadata.min(/*other*/ 2),
+        title.right() + metadata.min(/*other*/ 2) + model,
         area.y,
         if metadata == 24 { 11 } else { 0 },
         area.height,
     );
-    (title, status, updated)
+    Columns {
+        title,
+        model: Rect::new(
+            title.right() + if model_width > 0 { 2 } else { 0 },
+            area.y,
+            model_width,
+            area.height,
+        ),
+        status,
+        updated,
+    }
 }
 
 impl AgentsOverviewView {
@@ -77,12 +106,13 @@ impl AgentsOverviewView {
         let padding = u16::from(area.height >= 3);
         let viewport = row(area, padding, area.height - padding * 2);
         if padding > 0 {
-            let (title, status, updated) = columns(row(area, /*offset*/ 0, /*height*/ 1));
-            line("Tasks".dim(), title, buf);
-            line("Status".dim(), status, buf);
+            let columns = columns(row(area, /*offset*/ 0, /*height*/ 1));
+            line("Tasks".dim(), columns.title, buf);
+            line("Model".dim(), columns.model, buf);
+            line("Status".dim(), columns.status, buf);
             Line::from("Updated".dim())
                 .right_aligned()
-                .render(updated, buf);
+                .render(columns.updated, buf);
         }
         let reference = chrono::Utc::now();
         let height = usize::from(viewport.height);
@@ -140,15 +170,19 @@ impl AgentsOverviewView {
             let task = &self.rows[index];
             let rect = row(viewport, offset as u16, /*height*/ 1);
             if matches!(entry, CenterRow::Group(_)) {
-                let group = match state.grouping {
-                    AgentsOverviewGrouping::Project => {
-                        format_directory_display(
-                            &self.project_groups[index].heading,
-                            /*max_width*/ None,
-                        )
+                let group = if self.is_pinned(index) {
+                    "Pinned".to_owned()
+                } else {
+                    match state.grouping {
+                        AgentsOverviewGrouping::Project => {
+                            format_directory_display(
+                                &self.project_groups[index].heading,
+                                /*max_width*/ None,
+                            )
+                        }
+                        AgentsOverviewGrouping::Status => task.group.label().to_owned(),
+                        AgentsOverviewGrouping::Model => task.model_display_name().to_owned(),
                     }
-                    AgentsOverviewGrouping::Status => task.group.label().to_owned(),
-                    AgentsOverviewGrouping::Model => model_name(&task.thread).to_owned(),
                 };
                 let count = indices
                     .iter()
@@ -164,7 +198,9 @@ impl AgentsOverviewView {
                 } else {
                     format!("{count} of {total}")
                 };
-                let group = if state.grouping == AgentsOverviewGrouping::Project {
+                let group = if state.grouping == AgentsOverviewGrouping::Project
+                    && !self.is_pinned(index)
+                {
                     crate::text_formatting::center_truncate_path(
                         &group,
                         usize::from(rect.width)
@@ -208,7 +244,12 @@ impl AgentsOverviewView {
                 ),
                 buf,
             );
-            let (mut title, status_area, updated) = columns(rect);
+            let Columns {
+                mut title,
+                model,
+                status: status_area,
+                updated,
+            } = columns(rect);
             if task.has_voice && title.width >= 8 {
                 let badge = Rect::new(
                     title.right() - 8,
@@ -227,6 +268,11 @@ impl AgentsOverviewView {
             line(
                 Line::from(display_title(&task.thread).to_owned()).style(title_style),
                 title,
+                buf,
+            );
+            line(
+                Line::from(task.model_display_name().to_owned()).style(style),
+                model,
                 buf,
             );
             line(Line::from(status).style(style), status_area, buf);

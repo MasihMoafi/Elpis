@@ -12,12 +12,14 @@
 #[path = "history_user_authorization.rs"]
 mod user_authorization;
 
+use crate::context::BaseInstructionsFragment;
 use crate::context::ContextualUserFragment;
 use crate::context::ModelSwitchInstructions;
 use crate::context::is_guardian_context_message;
 use crate::context::world_state::PersistentModeState;
 use crate::context::world_state::WorldState;
 use crate::context::world_state::WorldStateSnapshot;
+use crate::context::world_state::WorldStateUpdate;
 use crate::context_manager::normalize;
 use crate::event_mapping::has_non_contextual_dev_message_content;
 use crate::event_mapping::is_contextual_dev_message_content;
@@ -446,39 +448,46 @@ impl ContextManager {
     pub(crate) fn update_world_state(
         &mut self,
         world_state: &WorldState,
-    ) -> (Vec<Box<dyn ContextualUserFragment>>, Option<WorldStateItem>) {
-        let snapshot = world_state.snapshot();
+    ) -> (Vec<WorldStateUpdate>, Option<WorldStateItem>) {
         // Elpis: renders through the single-slot reconciliation.
-        let fragments = Self::render_world_state_reconciling(
+        let (snapshot, fragments) = Self::render_world_state_reconciling(
             &mut self.items,
             &mut self.history_version,
             world_state,
             self.world_state_baseline.as_ref(),
         );
-        let rollout_item = self.world_state_baseline.as_ref().map_or_else(
+        let rollout_item = self.world_state_item(&snapshot);
+        self.world_state_baseline = Some(snapshot);
+        (fragments, rollout_item)
+    }
+
+    // Elpis: `&mut self` because rendering also reconciles single-slot sections with history.
+    pub(crate) fn render_step_world_state(
+        &mut self,
+        world_state: &WorldState,
+    ) -> (
+        WorldStateSnapshot,
+        Vec<WorldStateUpdate>,
+        Option<WorldStateItem>,
+    ) {
+        let (snapshot, fragments) = Self::render_world_state_reconciling(
+            &mut self.items,
+            &mut self.history_version,
+            world_state,
+            self.world_state_baseline.as_ref(),
+        );
+        let rollout_item = self.world_state_item(&snapshot);
+        (snapshot, fragments, rollout_item)
+    }
+
+    fn world_state_item(&self, snapshot: &WorldStateSnapshot) -> Option<WorldStateItem> {
+        self.world_state_baseline.as_ref().map_or_else(
             || Some(WorldStateItem::full(snapshot.clone().into_object())),
             |previous| {
                 snapshot
                     .merge_patch_from(previous)
                     .map(WorldStateItem::patch)
             },
-        );
-        self.world_state_baseline = Some(snapshot);
-        (fragments, rollout_item)
-    }
-
-    /// Elpis: renders one step's World State against the previous step's snapshot, with the
-    /// same single-slot reconciliation as `update_world_state`.
-    pub(crate) fn render_world_state_step(
-        &mut self,
-        world_state: &WorldState,
-        previous: &WorldStateSnapshot,
-    ) -> Vec<Box<dyn ContextualUserFragment>> {
-        Self::render_world_state_reconciling(
-            &mut self.items,
-            &mut self.history_version,
-            world_state,
-            Some(previous),
         )
     }
 
@@ -490,16 +499,13 @@ impl ContextManager {
         history_version: &mut u64,
         world_state: &WorldState,
         previous: Option<&WorldStateSnapshot>,
-    ) -> Vec<Box<dyn ContextualUserFragment>> {
-        let rendered = world_state.render_history_diff_with_ids(
-            previous,
-            items.iter().map(|envelope| &envelope.item),
-        );
-        let refilled = rendered.iter().map(|(id, _)| *id).collect();
+    ) -> (WorldStateSnapshot, Vec<WorldStateUpdate>) {
+        let (snapshot, updates, refilled) = world_state
+            .render_history_diff_with_ids(previous, items.iter().map(|envelope| &envelope.item));
         if world_state.vacate_single_slot_fragments(items, &refilled) {
             *history_version = history_version.saturating_add(1);
         }
-        rendered.into_iter().map(|(_, fragment)| fragment).collect()
+        (snapshot, updates)
     }
 
     pub(crate) fn set_world_state_baseline(&mut self, snapshot: WorldStateSnapshot) {
@@ -641,6 +647,11 @@ impl ContextManager {
         self.items.iter().map(|envelope| &envelope.item)
     }
 
+    pub(crate) fn has_tool_declarations(&self) -> bool {
+        self.raw_items()
+            .any(|item| matches!(item, ResponseItem::AdditionalTools { .. }))
+    }
+
     /// Returns annotated history items without cloning their response payloads.
     pub(crate) fn annotated_items(&self) -> &[ResponseItemEnvelope] {
         &self.items
@@ -675,8 +686,14 @@ impl ContextManager {
         &self,
         base_instructions: &BaseInstructions,
     ) -> Option<i64> {
-        let base_tokens =
-            i64::try_from(approx_token_count(&base_instructions.text)).unwrap_or(i64::MAX);
+        // Incremental windows already account for their recorded base instructions below.
+        let has_recorded_instructions =
+            self.raw_items().any(BaseInstructionsFragment::matches_item);
+        let base_tokens = if has_recorded_instructions {
+            0
+        } else {
+            i64::try_from(approx_token_count(&base_instructions.text)).unwrap_or(i64::MAX)
+        };
 
         let items_tokens = self
             .items

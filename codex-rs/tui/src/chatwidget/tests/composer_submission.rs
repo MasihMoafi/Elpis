@@ -414,6 +414,7 @@ async fn submission_preserves_text_elements_and_local_images() {
     let thread_id = ThreadId::new();
     let rollout_file = NamedTempFile::new().unwrap();
     let configured = crate::session_state::ThreadSessionState {
+        daybreak_enabled: false,
         windows_sandbox_host: crate::app::WindowsSandboxHost::Local,
         thread_id,
         forked_from_id: None,
@@ -431,7 +432,6 @@ async fn submission_preserves_text_elements_and_local_images() {
         instruction_source_paths: Vec::new(),
         reasoning_effort: Some(ReasoningEffortConfig::default()),
         collaboration_mode: None,
-        personality: None,
         message_history: None,
         network_proxy: None,
         rollout_path: Some(rollout_file.path().to_path_buf()),
@@ -524,6 +524,7 @@ async fn submission_includes_configured_active_permission_profile() {
     };
     let expected_active_permission_profile = ActivePermissionProfile::new("custom");
     let configured = crate::session_state::ThreadSessionState {
+        daybreak_enabled: false,
         windows_sandbox_host: crate::app::WindowsSandboxHost::Local,
         thread_id,
         forked_from_id: None,
@@ -541,7 +542,6 @@ async fn submission_includes_configured_active_permission_profile() {
         instruction_source_paths: Vec::new(),
         reasoning_effort: Some(ReasoningEffortConfig::default()),
         collaboration_mode: None,
-        personality: None,
         message_history: None,
         network_proxy: None,
         rollout_path: Some(rollout_file.path().to_path_buf()),
@@ -580,6 +580,7 @@ async fn submission_omits_active_permission_profile_for_legacy_snapshot() {
         file_system: ManagedFileSystemPermissions::Unrestricted,
     };
     let configured = crate::session_state::ThreadSessionState {
+        daybreak_enabled: false,
         windows_sandbox_host: crate::app::WindowsSandboxHost::Local,
         thread_id,
         forked_from_id: None,
@@ -597,7 +598,6 @@ async fn submission_omits_active_permission_profile_for_legacy_snapshot() {
         instruction_source_paths: Vec::new(),
         reasoning_effort: Some(ReasoningEffortConfig::default()),
         collaboration_mode: None,
-        personality: None,
         message_history: None,
         network_proxy: None,
         rollout_path: Some(rollout_file.path().to_path_buf()),
@@ -626,6 +626,7 @@ async fn submission_with_remote_and_local_images_keeps_local_placeholder_numberi
     let thread_id = ThreadId::new();
     let rollout_file = NamedTempFile::new().unwrap();
     let configured = crate::session_state::ThreadSessionState {
+        daybreak_enabled: false,
         windows_sandbox_host: crate::app::WindowsSandboxHost::Local,
         thread_id,
         forked_from_id: None,
@@ -643,7 +644,6 @@ async fn submission_with_remote_and_local_images_keeps_local_placeholder_numberi
         instruction_source_paths: Vec::new(),
         reasoning_effort: Some(ReasoningEffortConfig::default()),
         collaboration_mode: None,
-        personality: None,
         message_history: None,
         network_proxy: None,
         rollout_path: Some(rollout_file.path().to_path_buf()),
@@ -727,6 +727,7 @@ async fn enter_with_only_remote_images_submits_user_turn() {
     let thread_id = ThreadId::new();
     let rollout_file = NamedTempFile::new().unwrap();
     let configured = crate::session_state::ThreadSessionState {
+        daybreak_enabled: false,
         windows_sandbox_host: crate::app::WindowsSandboxHost::Local,
         thread_id,
         forked_from_id: None,
@@ -744,7 +745,6 @@ async fn enter_with_only_remote_images_submits_user_turn() {
         instruction_source_paths: Vec::new(),
         reasoning_effort: Some(ReasoningEffortConfig::default()),
         collaboration_mode: None,
-        personality: None,
         message_history: None,
         network_proxy: None,
         rollout_path: Some(rollout_file.path().to_path_buf()),
@@ -797,6 +797,7 @@ async fn shift_enter_with_only_remote_images_does_not_submit_user_turn() {
     let thread_id = ThreadId::new();
     let rollout_file = NamedTempFile::new().unwrap();
     let configured = crate::session_state::ThreadSessionState {
+        daybreak_enabled: false,
         windows_sandbox_host: crate::app::WindowsSandboxHost::Local,
         thread_id,
         forked_from_id: None,
@@ -814,7 +815,6 @@ async fn shift_enter_with_only_remote_images_does_not_submit_user_turn() {
         instruction_source_paths: Vec::new(),
         reasoning_effort: Some(ReasoningEffortConfig::default()),
         collaboration_mode: None,
-        personality: None,
         message_history: None,
         network_proxy: None,
         rollout_path: Some(rollout_file.path().to_path_buf()),
@@ -839,6 +839,7 @@ async fn enter_with_only_remote_images_does_not_submit_when_modal_is_active() {
     let thread_id = ThreadId::new();
     let rollout_file = NamedTempFile::new().unwrap();
     let configured = crate::session_state::ThreadSessionState {
+        daybreak_enabled: false,
         windows_sandbox_host: crate::app::WindowsSandboxHost::Local,
         thread_id,
         forked_from_id: None,
@@ -856,7 +857,6 @@ async fn enter_with_only_remote_images_does_not_submit_when_modal_is_active() {
         instruction_source_paths: Vec::new(),
         reasoning_effort: Some(ReasoningEffortConfig::default()),
         collaboration_mode: None,
-        personality: None,
         message_history: None,
         network_proxy: None,
         rollout_path: Some(rollout_file.path().to_path_buf()),
@@ -881,6 +881,7 @@ async fn enter_with_only_remote_images_does_not_submit_when_input_disabled() {
     let thread_id = ThreadId::new();
     let rollout_file = NamedTempFile::new().unwrap();
     let configured = crate::session_state::ThreadSessionState {
+        daybreak_enabled: false,
         windows_sandbox_host: crate::app::WindowsSandboxHost::Local,
         thread_id,
         forked_from_id: None,
@@ -898,7 +899,6 @@ async fn enter_with_only_remote_images_does_not_submit_when_input_disabled() {
         instruction_source_paths: Vec::new(),
         reasoning_effort: Some(ReasoningEffortConfig::default()),
         collaboration_mode: None,
-        personality: None,
         message_history: None,
         network_proxy: None,
         rollout_path: Some(rollout_file.path().to_path_buf()),
@@ -926,6 +926,7 @@ async fn submission_prefers_selected_duplicate_skill_path() {
     let thread_id = ThreadId::new();
     let rollout_file = NamedTempFile::new().unwrap();
     let configured = crate::session_state::ThreadSessionState {
+        daybreak_enabled: false,
         windows_sandbox_host: crate::app::WindowsSandboxHost::Local,
         thread_id,
         forked_from_id: None,
@@ -943,7 +944,6 @@ async fn submission_prefers_selected_duplicate_skill_path() {
         instruction_source_paths: Vec::new(),
         reasoning_effort: Some(ReasoningEffortConfig::default()),
         collaboration_mode: None,
-        personality: None,
         message_history: None,
         network_proxy: None,
         rollout_path: Some(rollout_file.path().to_path_buf()),
@@ -960,7 +960,7 @@ async fn submission_prefers_selected_duplicate_skill_path() {
             short_description: None,
             interface: None,
             dependencies: None,
-            path: repo_skill_path,
+            path: repo_skill_path.into(),
             scope: crate::test_support::skill_scope_repo(),
             enabled: true,
             plugin_id: None,
@@ -971,7 +971,7 @@ async fn submission_prefers_selected_duplicate_skill_path() {
             short_description: None,
             interface: None,
             dependencies: None,
-            path: user_skill_path.clone(),
+            path: user_skill_path.clone().into(),
             scope: crate::test_support::skill_scope_user(),
             enabled: true,
             plugin_id: None,
@@ -1492,7 +1492,6 @@ async fn interrupted_turn_restore_keeps_active_mode_for_resubmission() {
     match next_submit_op(&mut op_rx) {
         Op::UserTurn {
             collaboration_mode: Some(CollaborationMode { mode, .. }),
-            personality: None,
             ..
         } => assert_eq!(mode, expected_mode),
         other => {
@@ -1924,7 +1923,7 @@ async fn restore_thread_input_state_applies_running_state_policy() {
 #[tokio::test]
 async fn default_shortcuts_edit_most_recent_queued_message() {
     for key in [
-        KeyEvent::new(KeyCode::Left, KeyModifiers::SHIFT),
+        KeyEvent::new(KeyCode::Up, KeyModifiers::SHIFT),
         KeyEvent::new(KeyCode::Up, KeyModifiers::ALT),
     ] {
         let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
@@ -1957,7 +1956,7 @@ async fn unbound_queued_message_edit_does_not_fall_back_to_alt_up() {
     chat.refresh_pending_input_preview();
 
     assert!(!render_bottom_popup(&chat, /*width*/ 100).contains("edit last queued message"));
-    chat.handle_key_event(KeyEvent::new(KeyCode::Left, KeyModifiers::SHIFT));
+    chat.handle_key_event(KeyEvent::new(KeyCode::Up, KeyModifiers::SHIFT));
     chat.handle_key_event(KeyEvent::new(KeyCode::Up, KeyModifiers::ALT));
 
     assert!(chat.bottom_pane.composer_text().is_empty());
@@ -2607,12 +2606,7 @@ async fn image_preparation_failure_restores_full_input_without_submitting() {
             std::fs::remove_file(&path).unwrap();
         }
         chat.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
-        if running {
-            // Elpis: Enter queues the message during a turn and prepares nothing; Esc hands the
-            // queued message to the running turn, which prepares its images.
-            assert_eq!(chat.input_queue.queued_user_messages.len(), 1);
-            chat.handle_key_event(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
-        }
+        assert!(chat.input_queue.queued_user_messages.is_empty());
         while let Some(event) = rx.recv().await {
             if let AppEvent::ImagesPrepared(id) = event {
                 chat.on_images_prepared(id);
@@ -2656,15 +2650,8 @@ async fn image_preparation_failure_restores_full_input_without_submitting() {
                 normalize_snapshot_paths(render_bottom_popup(&chat, /*width*/ 80))
             );
         }
-        // Elpis: upstream also checks a reconnect while an earlier steer waits. In Elpis, Esc
-        // hands a queued draft to the turn only when no steer waits, so that state cannot
-        // hold a failed image draft.
         pixels.save(&path).unwrap();
         chat.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
-        if running {
-            // Elpis: the retry is queued too, and Esc hands it to the running turn.
-            chat.handle_key_event(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
-        }
         while let Some(event) = rx.recv().await {
             if let AppEvent::ImagesPrepared(id) = event {
                 chat.on_images_prepared(id);

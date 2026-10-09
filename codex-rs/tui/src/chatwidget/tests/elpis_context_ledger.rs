@@ -134,19 +134,21 @@ fn assert_ledger_beside_composer(chat: &ChatWidget, buf: &ratatui::buffer::Buffe
     assert!(ledger_width > 0, "the ledger is hidden");
     let left = rows(buf, 0..WIDTH - ledger_width);
     let right = rows(buf, WIDTH - ledger_width..WIDTH);
-    let identity_row = left
+    let composer_row = left
         .iter()
-        .position(|row| row.contains("· location"))
-        .expect("the identity line sits directly above the composer");
+        .position(|row| row.contains("›"))
+        .expect("the native composer remains beside the Ledger");
     let ledger_top = right
         .iter()
         .position(|row| row.contains("CONTEXT LEDGER"))
         .expect("the ledger is drawn beside the composer");
-    assert_eq!(
-        ledger_top,
-        identity_row + 1,
-        "the ledger must start on the composer box's top row\n{}",
-        rows(buf, 0..WIDTH).join("\n")
+    assert!(
+        ledger_top <= composer_row,
+        "Ledger starts below the composer"
+    );
+    assert!(
+        !left.iter().any(|row| row.contains("· location")),
+        "custom identity row returned"
     );
     let last = ledger_alone(chat)
         .into_iter()
@@ -281,14 +283,14 @@ async fn ledger_keeps_codex_right_margin_and_measures_wide_names() -> anyhow::Re
 }
 
 #[tokio::test]
-async fn tab_focuses_the_ledger_and_alt_c_hides_it_without_touching_the_draft() {
+async fn alt_c_focuses_and_hides_the_ledger_without_touching_the_draft() {
     let (mut chat, _rx, mut op_rx) = make_chatwidget_manual(None).await;
     chat.last_rendered_width.set(Some(WIDTH));
     chat.bottom_pane
         .set_composer_text("Keep this draft".into(), Vec::new(), Vec::new());
     assert!(chat.context_ledger_width(WIDTH) > 0, "visible by default");
 
-    chat.handle_key_event(KeyEvent::from(KeyCode::Tab));
+    chat.handle_key_event(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::ALT));
     assert!(chat.context_ledger_has_focus());
     let area = Rect::new(0, 0, WIDTH, 40);
     assert_eq!(chat.as_renderable().cursor_pos(area), None);
@@ -302,7 +304,7 @@ async fn tab_focuses_the_ledger_and_alt_c_hides_it_without_touching_the_draft() 
     assert!(op_rx.try_recv().is_err(), "nothing was submitted");
 }
 
-/// Masih types, presses Tab, then Backspace: Backspace must edit the draft, not act on a
+/// Typing, Alt+C, then Backspace: Backspace must edit the draft, not act on a
 /// Ledger row. Only Tab, arrows and the Ledger's own keys belong to the panel.
 #[tokio::test]
 async fn backspace_in_the_focused_ledger_edits_the_draft() -> anyhow::Result<()> {
@@ -313,13 +315,16 @@ async fn backspace_in_the_focused_ledger_edits_the_draft() -> anyhow::Result<()>
         .set_composer_text("Keep this draft".into(), Vec::new(), Vec::new());
     let ledger_before = ledger_alone(&chat);
 
-    chat.handle_key_event(KeyEvent::from(KeyCode::Tab));
+    chat.handle_key_event(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::ALT));
     assert!(chat.context_ledger_has_focus());
     chat.handle_key_event(KeyEvent::from(KeyCode::Backspace));
     chat.handle_key_event(KeyEvent::from(KeyCode::Backspace));
 
     assert_eq!(chat.bottom_pane.composer_text(), "Keep this dra");
-    assert!(!chat.context_ledger_has_focus(), "typing returns to the composer");
+    assert!(
+        !chat.context_ledger_has_focus(),
+        "typing returns to the composer"
+    );
     assert_eq!(ledger_alone(&chat), ledger_before, "no Ledger row changed");
     assert!(op_rx.try_recv().is_err(), "nothing was submitted");
     Ok(())
@@ -354,7 +359,7 @@ async fn space_on_a_focused_row_writes_its_admission() -> anyhow::Result<()> {
     configure_ledger_sources(&mut chat, root.path())?;
     let before = row_state(&chat, "ES.md");
 
-    chat.handle_key_event(KeyEvent::from(KeyCode::Tab));
+    chat.handle_key_event(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::ALT));
     for _ in 0..16 {
         if chat
             .selected_continuity_source()
@@ -490,7 +495,7 @@ async fn smart_prune_row_syncs_then_shows_the_thread_state_as_in_v030() {
 }
 
 #[tokio::test]
-async fn smart_prune_row_says_it_does_not_apply_to_claude_chats() {
+async fn smart_prune_row_says_what_it_does_on_claude_and_antigravity_chats() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
     chat.last_rendered_width.set(Some(WIDTH));
     chat.smart_prune_synced = true;
@@ -504,11 +509,17 @@ async fn smart_prune_row_says_it_does_not_apply_to_claude_chats() {
         "{ledger}"
     );
 
-    // Positive: a Claude chat (the bridge's `claude/` models) is told the switch skips it.
+    // A Claude chat's tool results shrink in the bridge's Claude proxy while the switch is on.
     chat.set_model("claude/opus");
     let ledger = ledger_words(&chat);
+    assert!(ledger.contains("through the Claude proxy"), "{ledger}");
+    assert!(!ledger.contains("Does not apply"), "{ledger}");
+
+    // An Antigravity chat's requests go to Google: the switch skips them.
+    chat.set_model("agy/gemini-3.8-flash-high");
+    let ledger = ledger_words(&chat);
     assert!(
-        ledger.contains("Does not apply to Claude or Antigravity chats"),
+        ledger.contains("Does not apply to Antigravity chats"),
         "{ledger}"
     );
     assert!(!ledger.contains("Before first main-model send"), "{ledger}");

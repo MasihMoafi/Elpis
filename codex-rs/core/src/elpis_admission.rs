@@ -68,11 +68,12 @@ fn admitted_agents_md_for(
 ) -> Option<Arc<LoadedAgentsMd>> {
     let admission_failed = Cell::new(false);
     let admitted = loaded.admitted_by(&|path| {
-        elpis_context::instruction_source_admitted(Some(memories_root), cwd, path)
-            .unwrap_or_else(|_| {
+        elpis_context::instruction_source_admitted(Some(memories_root), cwd, path).unwrap_or_else(
+            |_| {
                 admission_failed.set(true);
                 false
-            })
+            },
+        )
     });
     if admission_failed.get() {
         return None;
@@ -160,24 +161,22 @@ impl ContextContributor for ElpisContinuityExtension {
 /// One single-slot section holding the admitted continuity text, if any.
 fn continuity_section(body: Option<String>) -> WorldStateSectionContribution {
     let has_model_visible_content = body.is_some();
-    let snapshot_body = body.clone();
-    WorldStateSectionContribution::new(
-        ELPIS_CONTINUITY_WORLD_STATE_ID,
-        json!({ "body": snapshot_body }),
-        move |previous| {
-            if matches!(
-                previous,
-                PreviousWorldStateSection::Known(previous)
-                    if previous.get("body").and_then(serde_json::Value::as_str)
-                        == body.as_deref()
-            ) {
-                return None;
-            }
-            body.as_ref().map(|body| {
-                RenderedWorldStateFragment::new("developer", ("", ""), body.clone())
-            })
-        },
-    )
+    WorldStateSectionContribution::new(ELPIS_CONTINUITY_WORLD_STATE_ID, move |previous| {
+        // A withdrawn body persists as an empty section; the slot reconciliation removes
+        // the earlier copy.
+        let snapshot = Some(json!({ "body": body }));
+        if matches!(
+            previous,
+            PreviousWorldStateSection::Known(previous)
+                if previous.get("body").and_then(serde_json::Value::as_str) == body.as_deref()
+        ) {
+            return (snapshot, None);
+        }
+        let fragment = body
+            .as_ref()
+            .map(|body| RenderedWorldStateFragment::new("developer", ("", ""), body.clone()));
+        (snapshot, fragment)
+    })
     .with_retained_fragment_matcher(is_elpis_continuity_fragment)
     .with_single_history_slot(has_model_visible_content)
 }

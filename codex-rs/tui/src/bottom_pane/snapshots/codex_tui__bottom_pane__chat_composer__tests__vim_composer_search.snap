@@ -2,12 +2,12 @@
 source: tui/src/bottom_pane/chat_composer.rs
 expression: terminal.backend()
 ---
-"┌──────────────────────────────────────┐"
-"› a ǵg b हि gg                         │" Hidden by multi-width symbols: [(10, " ")]
-"│                                      │"
-"│                                      │"
-"│                                      │"
-"│                                      │"
-"│                                      │"
-"└──────────────────────────────────────┘"
+"                                        "
+"› a ǵg b हि gg                          " Hidden by multi-width symbols: [(10, " ")]
+"                                        "
+"                                        "
+"                                        "
+"                                        "
+"                                        "
+"                                        "
 "  ?ह                                    "

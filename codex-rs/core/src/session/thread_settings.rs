@@ -2,10 +2,13 @@
 //! with checkpoints written directly to storage.
 
 use super::session::Session;
+use super::session::SessionSettingsCommit;
 use super::session::SessionSettingsUpdate;
 use super::step_settings::StepSettingsUpdate;
+use crate::WithTurnExtensionData;
 use crate::config::ConstraintResult;
 use codex_history::RolloutItem;
+use codex_protocol::capabilities::SelectedCapabilityRoot;
 use codex_protocol::protocol::Event;
 use codex_protocol::protocol::EventMsg;
 use codex_protocol::protocol::ThreadSettingsAppliedEvent;
@@ -31,19 +34,70 @@ impl Session {
 /// Applies standalone thread settings. The caller holds the persistence permit through notification.
 pub(super) async fn update(
     session: &Session,
-    overrides: ThreadSettingsOverrides,
+    overrides: impl Into<WithTurnExtensionData<ThreadSettingsOverrides>>,
 ) -> ConstraintResult<ThreadSettingsSnapshot> {
-    let updates = prepare_update(overrides);
-    let commit = session.update_settings(updates).await?;
+    let updates = prepare_update(overrides, &session.services.selected_capability_roots);
+    let commit = commit_update(session, updates).await?;
     // Standalone settings changes supersede a pending automatic continuation.
     session.state.lock().await.last_started_turn_id = None;
     Ok(commit.snapshot)
 }
 
+/// Elpis: commits settings, then gives accepted permission changes to the running turn so
+/// its later steps use them. A rejected update changes nothing.
+async fn commit_update(
+    session: &Session,
+    updates: SessionSettingsUpdate,
+) -> ConstraintResult<SessionSettingsCommit> {
+    let policy_changed = updates.step_settings.approval_policy.is_some();
+    let reviewer_changed = updates.step_settings.approvals_reviewer.is_some();
+    let profile_changed = updates.permission_profile.is_some() || updates.sandbox_policy.is_some();
+    let commit = session.update_settings(updates).await?;
+    if policy_changed || reviewer_changed || profile_changed {
+        let active = session.active_turn.lock().await;
+        if let Some(task) = active.as_ref().and_then(|active| active.task.as_ref()) {
+            let mut permissions = task
+                .turn_context
+                .live_permissions
+                .load_full()
+                .as_deref()
+                .cloned()
+                .unwrap_or_default();
+            if policy_changed {
+                permissions.approval_policy =
+                    Some(commit.configuration.step_settings.approval_policy.value());
+            }
+            if reviewer_changed {
+                permissions.approvals_reviewer =
+                    Some(commit.configuration.step_settings.approvals_reviewer);
+            }
+            if profile_changed {
+                permissions.profile = Some(
+                    commit
+                        .configuration
+                        .inferred_environment_config()
+                        .permission_profile,
+                );
+            }
+            task.turn_context
+                .live_permissions
+                .store(Some(std::sync::Arc::new(permissions)));
+        }
+    }
+    Ok(commit)
+}
+
 /// Converts protocol overrides into the internal settings update shape.
-pub(super) fn prepare_update(overrides: ThreadSettingsOverrides) -> SessionSettingsUpdate {
+pub(super) fn prepare_update(
+    overrides: impl Into<WithTurnExtensionData<ThreadSettingsOverrides>>,
+    roots: &[SelectedCapabilityRoot],
+) -> SessionSettingsUpdate {
+    let WithTurnExtensionData {
+        request: overrides,
+        turn_extension_init,
+    } = overrides.into();
     let ThreadSettingsOverrides {
-        environments,
+        environments: environment_requests,
         runtime_workspace_roots,
         profile_workspace_roots,
         approval_policy,
@@ -61,6 +115,7 @@ pub(super) fn prepare_update(overrides: ThreadSettingsOverrides) -> SessionSetti
         disabled_plugin_ids,
     } = overrides;
     SessionSettingsUpdate {
+        turn_extension_init,
         step_settings: StepSettingsUpdate {
             model,
             effort,
@@ -71,7 +126,7 @@ pub(super) fn prepare_update(overrides: ThreadSettingsOverrides) -> SessionSetti
             approval_policy,
             approvals_reviewer,
         },
-        environments,
+        environments: environment_requests.map(|requests| requests.select(roots)),
         runtime_workspace_roots,
         profile_workspace_roots,
         sandbox_policy,
@@ -99,7 +154,8 @@ pub(super) async fn apply_update(
     updates: SessionSettingsUpdate,
 ) -> ConstraintResult<()> {
     let _settings_guard = acquire_persistence_lock(session).await;
-    let commit = session.update_settings(updates).await?;
+    // Elpis: settings steered into a running turn also reach its later steps.
+    let commit = commit_update(session, updates).await?;
     emit_applied(session, submission_id, commit.snapshot).await;
     Ok(())
 }

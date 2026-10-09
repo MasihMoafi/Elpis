@@ -81,6 +81,5 @@ pub(super) fn render(frame: &mut crate::custom_terminal::Frame, state: &PickerSt
     if state.is_transcript_loading() {
         render_transcript_loading_overlay(frame, list);
     }
-    super::delete::render_prompt(frame, list, state);
     render_picker_footer(frame, footer, state, list.height);
 }

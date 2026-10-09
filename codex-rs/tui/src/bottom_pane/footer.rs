@@ -107,7 +107,6 @@ pub(crate) enum GoalStatusIndicator {
     Complete { usage: Option<String> },
 }
 
-const MODE_CYCLE_HINT: &str = "shift+tab to cycle";
 const FOOTER_CONTEXT_GAP_COLS: u16 = 1;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -151,7 +150,10 @@ impl FooterKeyHints {
 impl CollaborationModeIndicator {
     fn label(self, show_cycle_hint: bool) -> String {
         let suffix = if show_cycle_hint {
-            format!(" ({MODE_CYCLE_HINT})")
+            format!(
+                " ({} to cycle)",
+                key_hint::shift(KeyCode::Tab).display_label()
+            )
         } else {
             String::new()
         };
@@ -161,11 +163,7 @@ impl CollaborationModeIndicator {
     }
 
     fn styled_line(self, show_cycle_hint: bool) -> Line<'static> {
-        // Elpis: footer mode indicators wear the Elpis accent.
-        let mut line = Line::from(
-            self.label(/*show_cycle_hint*/ false)
-                .set_style(crate::elpis_motion::accent_style()),
-        );
+        let mut line = Line::from(self.label(/*show_cycle_hint*/ false).magenta());
         if show_cycle_hint {
             line.push_span(" (".set_style(secondary_text_style()));
             line.extend(key_hint::shift(KeyCode::Tab).spans());
@@ -611,8 +609,7 @@ pub(crate) fn goal_status_indicator_line(
         }
     };
 
-    // Elpis: the goal line in the Elpis gradient.
-    Some(Line::from(crate::elpis_motion::text(&label)))
+    Some(Line::from(vec![Span::from(label).magenta()]))
 }
 
 pub(crate) fn status_line_right_indicator_line(
@@ -646,13 +643,7 @@ pub(crate) fn status_line_right_indicator_line(
 pub(crate) fn side_conversation_context_line(label: &str) -> Line<'static> {
     let mut line = Line::default();
     let rest = if let Some(rest) = label.strip_prefix("Side ") {
-        // Elpis: accent, not magenta.
-        line.extend([
-            Span::from("Side")
-                .style(crate::elpis_motion::accent_style())
-                .bold(),
-            " ".into(),
-        ]);
+        line.extend(["Side".magenta().bold(), " ".into()]);
         rest
     } else {
         label
@@ -668,8 +659,7 @@ pub(crate) fn side_conversation_context_line(label: &str) -> Line<'static> {
             line.extend(key_hint::key_label_spans(keys));
             line.push_span(action.set_style(secondary_text_style()));
         } else {
-            // Elpis: accent, not magenta.
-            line.push_span(Span::from(part.to_owned()).style(crate::elpis_motion::accent_style()));
+            line.push_span(part.to_owned().magenta());
         }
     }
     line
@@ -987,9 +977,47 @@ mod tests {
     use crate::line_truncation::truncate_line_with_ellipsis_if_overflow;
     use crate::test_backend::VT100Backend;
     use insta::assert_snapshot;
+    use pretty_assertions::assert_eq;
     use ratatui::Terminal;
     use ratatui::backend::Backend;
     use ratatui::backend::TestBackend;
+
+    #[test]
+    fn voice_live_microphone_indicator_is_red() {
+        let line = footer_hint_items_line(&[("voice".into(), "● listen".into())]);
+        assert_eq!(line.spans[1].style.fg, Some(ratatui::style::Color::Red));
+    }
+
+    #[test]
+    fn voice_footer_rendering_preserves_text_and_styles() {
+        let items = [
+            ("voice".into(), "● listen".into()),
+            ("ctrl+m".into(), "mute".into()),
+        ];
+        let mut terminal =
+            Terminal::new(TestBackend::new(/*width*/ 40, /*height*/ 1)).expect("create terminal");
+        terminal
+            .draw(|frame| render_footer_hint_items(frame.area(), frame.buffer_mut(), &items))
+            .expect("render voice footer");
+        let backend = terminal.backend();
+        let mut previous_style = None;
+        let style_runs = (0..40)
+            .filter_map(|x| {
+                let cell = backend.buffer().cell((x, 0))?;
+                let style = cell.style();
+                if previous_style == Some(style) {
+                    None
+                } else {
+                    previous_style = Some(style);
+                    Some((x, style))
+                }
+            })
+            .collect::<Vec<_>>();
+        insta::assert_debug_snapshot!(
+            "voice_footer_rendered_styles",
+            (backend.to_string(), style_runs)
+        );
+    }
 
     fn snapshot_footer(name: &str, props: FooterProps) {
         snapshot_footer_with_mode_indicator(
@@ -1348,23 +1376,6 @@ mod tests {
         );
 
         snapshot_footer(
-            "footer_ctrl_c_quit_running",
-            FooterProps {
-                mode: FooterMode::QuitShortcutReminder,
-                esc_backtrack_hint: false,
-                is_task_running: true,
-                queue_submissions: false,
-                collaboration_modes_enabled: false,
-                is_wsl: false,
-                quit_shortcut_key: key_hint::ctrl(KeyCode::Char('c')),
-                status_line_value: None,
-                status_line_enabled: false,
-                key_hints: FooterKeyHints::default_bindings(),
-                active_agent_label: None,
-            },
-        );
-
-        snapshot_footer(
             "footer_esc_hint_idle",
             FooterProps {
                 mode: FooterMode::EscHint,
@@ -1476,7 +1487,7 @@ mod tests {
 
         snapshot_footer_with_mode_indicator(
             "footer_mode_indicator_narrow_overlap_hides",
-            /*width*/ 50,
+            /*width*/ 40,
             &props,
             Some(CollaborationModeIndicator::Plan),
         );
@@ -1713,7 +1724,7 @@ mod tests {
             "mode indicator should remain visible"
         );
         assert!(
-            !collapsed.contains("shift+tab to cycle"),
+            !collapsed.contains("⇧tab to cycle"),
             "compact mode indicator should be used when space is tight"
         );
         assert!(

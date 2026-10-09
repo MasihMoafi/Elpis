@@ -1,6 +1,5 @@
 ---
 source: tui/src/chatwidget/tests/reasoning_status_tests.rs
-assertion_line: 130
 expression: terminal.backend()
 ---
-"Preparing evidence report (42s • esc to interrupt) · 1 background terminal runn…"
+"• Preparing evidence report (42s • esc to interrupt) · 1 background terminal ru…"

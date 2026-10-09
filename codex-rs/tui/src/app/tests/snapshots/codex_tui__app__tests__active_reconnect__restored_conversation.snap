@@ -1,28 +1,7 @@
 ---
 source: tui/src/app/tests/active_reconnect_tests.rs
-assertion_line: 423
 expression: "render_bottom_popup(&app.chat_widget, 80)"
 ---
- Elpis · model gpt-test default · location /tmp/project
-────────────────────────────────────────────────┐ CONTEXT LEDGER  context not
-› kept draft                                    │ measured · ≈0 source
-────────────────────────────────────────────────┤ estimates
-  Plan mode (shift+tab to cycle)                │ Tab controls · Alt+C hide ·
-                                                │ Ctrl+click open file
-                                                │
-                                                │ SMART PRUNE       [···] SYNC
-                                                │ Reading current thread state
-                                                │ Syncing… · /smart-prune on|
-                                                │ off sets an explicit state
-                                                │
-                                                │ SUBAGENTS          [━━━●] ON
-                                                │ May delegate to other agents
-                                                │
-                                                │ CONTEXT WINDOW  usage
-                                                │ unavailable
-                                                │ Context measurement
-                                                │ unavailable until the first
-                                                │ request snapshot
-                                                │
-                                                │ No portable context is
-                                                │ available.
+› kept draft
+
+  gpt-test default                                   Plan mode (⇧tab to cycle)

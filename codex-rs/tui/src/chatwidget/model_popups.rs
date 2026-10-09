@@ -162,7 +162,6 @@ impl ChatWidget {
                     name: preset.display_name.clone(),
                     description,
                     is_current: model.as_str() == current_model,
-                    is_default: preset.is_default,
                     secondary_action: if requires_advanced_selection {
                         None
                     } else {
@@ -259,6 +258,9 @@ impl ChatWidget {
         mut presets: Vec<ModelPreset>,
         view_id: &'static str,
     ) {
+        // Elpis: bridged subscriptions' models (Claude subscription, Antigravity) are listed
+        // under their own providers, not this provider's.
+        presets.retain(|preset| !is_bridged_model(&preset.model));
         // Elpis: "Change provider…" and, without a key, "Add API key…" open the list; a provider
         // that lists nothing for want of a key still offers a way on.
         let elpis_rows = self.elpis_picker_rows(&self.config.model_provider_id);
@@ -271,9 +273,6 @@ impl ChatWidget {
             return;
         }
 
-        // Elpis: bridged subscriptions' models (Claude subscription, Antigravity) lead the list,
-        // as in the provider lists.
-        presets.sort_by_key(|preset| !is_bridged_model(&preset.model));
         let mut model_ids: Vec<String> =
             presets.iter().map(|preset| preset.model.clone()).collect();
         let mut items: Vec<SelectionItem> = presets
@@ -332,7 +331,7 @@ impl ChatWidget {
         }
     }
 
-    fn model_selection_actions(
+    pub(super) fn model_selection_actions(
         &self,
         model_for_action: String,
         effort_for_action: Option<ReasoningEffortConfig>,
