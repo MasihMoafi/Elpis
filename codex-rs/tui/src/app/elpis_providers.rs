@@ -27,10 +27,11 @@ impl App {
             ElpisProviderEvent::Browse { provider_id } => self.elpis_browse_provider(provider_id),
             ElpisProviderEvent::ModelsLoaded {
                 provider_id,
+                request_id,
                 result,
             } => self
                 .chat_widget
-                .open_elpis_provider_models(provider_id, result),
+                .finish_elpis_models_loading(request_id, provider_id, result),
             ElpisProviderEvent::OpenKeyPrompt { provider_id } => {
                 self.chat_widget.open_elpis_api_key_prompt(provider_id);
             }
@@ -70,6 +71,8 @@ impl App {
                 .open_elpis_provider_models(provider_id, Ok(presets));
             return;
         }
+        // The catalog arrives later; until then a loading picker holds the queued input back.
+        let request_id = self.chat_widget.begin_elpis_models_loading(&provider_id);
         let home = self.config.codex_home.to_path_buf();
         let tx = self.app_event_tx.clone();
         tokio::spawn(async move {
@@ -79,6 +82,7 @@ impl App {
             tx.send(AppEvent::Elpis(
                 crate::elpis_app_event::ElpisAppEvent::Provider(ElpisProviderEvent::ModelsLoaded {
                     provider_id,
+                    request_id,
                     result,
                 }),
             ));
@@ -219,3 +223,7 @@ impl App {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "elpis_providers_tests.rs"]
+mod tests;
