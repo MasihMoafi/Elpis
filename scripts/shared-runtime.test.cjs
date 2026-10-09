@@ -36,29 +36,31 @@ async function until(predicate, label, ms = 15000) {
 }
 const readLines = file => (fs.existsSync(file) ? fs.readFileSync(file, 'utf8').split('\n').filter(Boolean) : []);
 const tracked = new Set(); // pids to stop at the end
+const CONFIGURATION = ['HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY', 'NO_PROXY', 'http_proxy', 'https_proxy', 'all_proxy', 'no_proxy', 'NODE_USE_ENV_PROXY', 'NODE_EXTRA_CA_CERTS', 'CLAUDE_CODE_EXECUTABLE', 'CLAUDE_CONFIG_DIR', 'ELPIS_CLAUDE_PRUNE', 'ELPIS_CLAUDE_USAGE_URL', 'ELPIS_NO_AGY', 'AGY_BIN', 'AGY_DEFAULT_MODEL', 'ACP_ADAPTER', 'ACP_BRIDGE_STORE', 'ACP_BRIDGE_NO_AGENTS', 'ELPIS_AGENT_TOOLS', 'CODEX_AUTH_HOME'];
 
 // An engine that speaks just enough: stdio for `app-server`, a WebSocket on a unix socket for `--listen`.
 const fakeEngine = (name, version = '1') => {
   const file = path.join(root, name);
-  fs.writeFileSync(file, `#!/usr/bin/env node\n// fake engine ${version}\nconst fs = require('fs');\nconst WebSocket = require(${JSON.stringify(path.join(tools, 'node_modules/ws'))});\nconst args = process.argv.slice(2);\nconst log = s => process.env.FAKE_ENGINE_LOG && fs.appendFileSync(process.env.FAKE_ENGINE_LOG, process.pid + ' ' + args.join(' ') + ' ' + s + '\\n');\nlog('start');\nconst sessions = [], conns = new Set();\nlet seq = 0;\nfunction handle(msg, send, mode, conn) {\n  if (msg.method === 'initialize') return send({ id: msg.id, result: { mode, pid: process.pid, conn, client: msg.params && msg.params.clientInfo && msg.params.clientInfo.name } });\n  if (msg.method === 'thread/start') { const id = 't' + (++seq) + '-' + process.pid; sessions.push(id); send({ id: msg.id, result: { thread: { id } } }); for (const c of conns) c.send(JSON.stringify({ method: 'thread/started', params: { thread: { id } } })); return; }\n  if (msg.method === 'thread/loaded/list') return send({ id: msg.id, result: { data: sessions.slice() } });\n  if (msg.id !== undefined) send({ id: msg.id, result: { echo: msg.method, mode, pid: process.pid } });\n}\nif (args[0] === 'app-server' && args[1] === '--listen') {\n  const sock = args[2].replace(/^unix:\\/\\//, '');\n  const server = require('http').createServer();\n  const wss = new WebSocket.Server({ server });\n  let n = 0;\n  wss.on('connection', ws => { conns.add(ws); const conn = ++n; ws.on('close', () => conns.delete(ws)); ws.on('message', d => handle(JSON.parse(String(d)), m => ws.send(JSON.stringify(m)), 'shared', conn)); });\n  server.listen(sock);\n  process.on('SIGTERM', () => { try { fs.unlinkSync(sock); } catch {} process.exit(0); });\n} else if (args[0] === 'app-server') {\n  process.on('SIGTERM', () => process.exit(0));\n  require('readline').createInterface({ input: process.stdin }).on('line', line => handle(JSON.parse(line), m => process.stdout.write(JSON.stringify(m) + '\\n'), 'private', 0));\n} else { process.exit(9); }\n`, { mode: 0o755 });
+  fs.writeFileSync(file, `#!/usr/bin/env node\n// fake engine ${version}\nconst fs = require('fs');\nconst WebSocket = require(${JSON.stringify(path.join(tools, 'node_modules/ws'))});\nconst args = process.argv.slice(2);\nconst log = s => process.env.FAKE_ENGINE_LOG && fs.appendFileSync(process.env.FAKE_ENGINE_LOG, process.pid + ' ' + args.join(' ') + ' ' + s + '\\n');\nlog('start');\nconst sessions = [], conns = new Set();\nlet seq = 0;\nfunction handle(msg, send, mode, conn) {\n  if (msg.method === 'initialize') return send({ id: msg.id, result: { mode, pid: process.pid, conn, client: msg.params && msg.params.clientInfo && msg.params.clientInfo.name } });\n  if (msg.method === 'thread/start') { const id = 't' + (++seq) + '-' + process.pid; sessions.push(id); send({ id: msg.id, result: { thread: { id } } }); for (const c of conns) c.send(JSON.stringify({ method: 'thread/started', params: { thread: { id } } })); return; }\n  if (msg.method === 'thread/loaded/list') return send({ id: msg.id, result: { data: sessions.slice() } });\n  if (msg.method === 'held/request') { log('held ' + msg.id); return; }\n  if (msg.method === 'emit/notify') { send({ method: 'note/one', params: { n: 1 } }); return send({ id: msg.id, result: { done: true } }); }\n  if (msg.method === 'emit/partial') { const line = JSON.stringify({ method: 'note/split', params: { text: 'a-b' } }) + '\\n'; process.stdout.write(line.slice(0, 12)); return setTimeout(() => { process.stdout.write(line.slice(12)); send({ id: msg.id, result: { done: true } }); }, 150); }\n  if (msg.id !== undefined) send({ id: msg.id, result: { echo: msg.method, mode, pid: process.pid } });\n}\nif (args[0] === 'app-server' && args[1] === '--listen') {\n  const sock = args[2].replace(/^unix:\\/\\//, '');\n  const server = require('http').createServer();\n  const wss = new WebSocket.Server({ server });\n  let n = 0;\n  wss.on('connection', ws => { conns.add(ws); const conn = ++n; ws.on('close', () => conns.delete(ws)); ws.on('message', d => handle(JSON.parse(String(d)), m => ws.send(JSON.stringify(m)), 'shared', conn)); });\n  server.listen(sock);\n  process.on('SIGTERM', () => { try { fs.unlinkSync(sock); } catch {} process.exit(0); });\n} else if (args[0] === 'app-server') {\n  process.on('SIGTERM', () => process.exit(0));\n  require('readline').createInterface({ input: process.stdin }).on('line', line => handle(JSON.parse(line), m => process.stdout.write(JSON.stringify(m) + '\\n'), 'private', 0));\n} else { process.exit(9); }\n`, { mode: 0o755 });
   return file;
 };
 
 // A client of one engine surface (what acp-bridge.mjs reads and writes).
 function wire(engine) {
-  const c = { frames: [], waiters: [], exited: false, errors: [] };
+  const c = { frames: [], waiters: [], exited: false, errors: [], raw: [], order: [] };
   let buf = '';
   engine.stdout.on('data', chunk => {
+    c.raw.push(String(chunk));
     buf += chunk;
     let i;
     while ((i = buf.indexOf('\n')) >= 0) {
       const line = buf.slice(0, i); buf = buf.slice(i + 1);
       if (!line) continue;
-      const msg = JSON.parse(line); c.frames.push(msg);
+      const msg = JSON.parse(line); c.frames.push(msg); c.order.push(msg.id ?? msg.method);
       for (const w of c.waiters.splice(0)) w();
     }
   });
-  engine.stdout.on('exit', () => { c.exited = true; });
+  engine.stdout.on('exit', () => { c.exited = true; c.order.push('exit'); });
   engine.stdin.on('error', e => c.errors.push(e.message));
   let id = 0;
   c.request = async (method, params) => {
@@ -66,6 +68,8 @@ function wire(engine) {
     engine.stdin.write(JSON.stringify({ id: mine, method, params }) + '\n');
     return until(() => c.frames.find(f => f.id === mine), `${method} answer`);
   };
+  c.send = (method, id, params = {}) => engine.stdin.write(JSON.stringify({ id, method, params }) + '\n');
+  c.errorsFor = id => c.frames.filter(f => f.id === id && f.error);
   c.event = method => c.frames.filter(f => f.method === method);
   c.init = async name => (await c.request('initialize', { clientInfo: { name, version: '1' }, capabilities: {} })).result;
   c.engine = engine;
@@ -145,12 +149,63 @@ async function main() {
   await runtime.shutdownRuntime();
   const f = wire(runtime.createEngine());
   f.engine.stdin.write(JSON.stringify({ id: 'first', method: 'initialize', params: { clientInfo: { name: 'codex-tui' } } }) + '\n');
+  f.engine.stdin.write(JSON.stringify({ method: 'initialized' }) + '\n' + JSON.stringify({ id: 'second', method: 'thread/list' }) + '\n');
   const failure = await until(() => f.frames.find(x => x.id === 'first'), 'error answer');
   assert(failure.error && /native engine/.test(failure.error.message), JSON.stringify(failure));
+  await until(() => f.errorsFor('second').length, 'error answer for the queued request');
+  await pause(300);
+  assert.deepEqual([f.errorsFor('first').length, f.errorsFor('second').length, f.frames.length], [1, 1, 2], 'each queued request is answered once; the notification is not an answer');
   set({ ELPIS_ENGINE_BIN: fake });
   const g = wire(runtime.createEngine());
   assert.equal((await g.init('codex-tui')).mode, 'shared');
   pass('an engine that cannot start answers with an error, and the next client retries');
+
+  // a request the engine received and had not answered when the engine died is answered with an error, once
+  const waitHeld = id => until(() => readLines(engineLog).some(l => l.endsWith(` held ${id}`)), `the engine received ${id}`);
+  const k1 = wire(runtime.createEngine()), k2 = wire(runtime.createEngine());
+  await k1.init('codex-tui'); await k2.init('codex-tui');
+  assert.equal((await k1.request('emit/notify', {})).result.done, true);
+  k1.send('held/request', 'h1'); k2.send('held/request', 'h2'); k2.send('held/request', 'h3');
+  await Promise.all(['h1', 'h2', 'h3'].map(waitHeld));
+  const victim = (await k1.request('x/ping', {})).result.pid;
+  const startsBefore = sharedEngines().size;
+  process.kill(victim, 'SIGKILL');
+  await until(() => k1.exited && k2.exited, 'both clients learn the engine is gone');
+  await pause(1300); // past the engine-gone fallback
+  for (const [k, ids] of [[k1, ['h1']], [k2, ['h2', 'h3']]]) {
+    for (const id of ids) {
+      assert.equal(k.errorsFor(id).length, 1, `${id} is answered exactly once`);
+      assert.match(k.errorsFor(id)[0].error.message, /engine/);
+      assert(k.order.indexOf(id) < k.order.indexOf('exit'), 'the answer comes before exit');
+    }
+    assert.equal(k.frames.filter(x => x.error).length, ids.length, 'requests that were answered are not failed');
+  }
+  assert.equal(k1.event('note/one').length, 1, 'notifications received before the loss are kept');
+  k1.send('later/request', 'l1'); k1.send('initialize', 'l2', { clientInfo: { name: 'codex-tui' } });
+  assert.equal(k1.errorsFor('l1').length, 1); assert.equal(k1.errorsFor('l2').length, 1);
+  assert.equal(sharedEngines().size, startsBefore, 'a dead proxy does not start an engine for itself');
+  // a deliberate close is quiet
+  const k3 = wire(runtime.createEngine());
+  await k3.init('codex-tui');
+  k3.send('held/request', 'h4'); await waitHeld('h4');
+  k3.engine.kill();
+  await pause(300);
+  assert.equal(k3.frames.filter(x => x.error).length, 0); assert.deepEqual(k3.errors, []); assert.equal(k3.exited, true);
+  // the same for the delegate tool's private engine, whose stdout is a pipe: chunks arrive as written
+  const hp = wire(runtime.createEngine());
+  await hp.init('elpis-agents');
+  assert.equal((await hp.request('emit/partial', {})).result.done, true);
+  const splitLine = JSON.stringify({ method: 'note/split', params: { text: 'a-b' } }) + '\n';
+  assert(hp.raw.join('').includes(splitLine), 'a line the engine wrote in two parts arrives whole');
+  assert.equal(hp.event('note/split').length, 1);
+  hp.send('held/request', 'h5'); await waitHeld('h5');
+  process.kill(hp.engine.pid, 'SIGKILL');
+  await until(() => hp.exited, 'the helper learns its engine is gone');
+  assert.equal(hp.errorsFor('h5').length, 1); assert.equal(hp.frames.filter(x => x.error).length, 1);
+  assert(hp.order.indexOf('h5') < hp.order.indexOf('exit'));
+  hp.send('later/request', 'l3');
+  assert.equal(hp.errorsFor('l3').length, 1);
+  pass('a request the engine had received but not answered gets exactly one error when the engine dies (shared and private); answered ones, notifications and split chunks are kept; a deliberate close is quiet');
 
   // shutdown stops what this bridge started and removes what it made
   const h = wire(runtime.createEngine());
@@ -159,7 +214,9 @@ async function main() {
   await new Promise((resolve, reject) => { wss.once('listening', resolve); wss.once('error', reject); });
   assert.equal(runtime.bridgeUrl(wss), `ws+unix://${process.env.ELPIS_BRIDGE_SOCKET}:/`);
   assert.equal(fs.statSync(process.env.ELPIS_BRIDGE_SOCKET).mode & 0o077, 0, 'the bridge socket is private');
-  const sharedNow = (await g.request('thread/loaded/list', {})).result && sharedEngines();
+  const live = wire(runtime.createEngine());
+  await live.init('codex-tui');
+  const sharedNow = sharedEngines();
   const livePids = [ih2.pid, ...[...sharedNow].filter(alive)];
   await runtime.shutdownRuntime();
   await until(() => livePids.every(pid => !alive(pid)), 'shutdown stops every engine this bridge started');
@@ -207,6 +264,57 @@ async function main() {
   pass('the bridge listener refuses a living socket or a file at its path and replaces a dead socket');
   set({ ELPIS_BRIDGE_SOCKET: path.join(bridgeDir, 'bridge.sock') });
 
+  // stopBridgeListener: synchronous unpublish; a later bridge's socket and state are never touched
+  const stopSock = path.join(bridgeDir, 'stop.sock'), stopState = path.join(bridgeDir, 'state.json');
+  set({ ELPIS_SHARED_BRIDGE: '1', ELPIS_BRIDGE_SOCKET: stopSock });
+  fs.writeFileSync(stopState, JSON.stringify({ pid: process.pid }));
+  const stoppable = runtime.createBridgeServer();
+  await new Promise((resolve, reject) => { stoppable.once('listening', resolve); stoppable.once('error', reject); });
+  const joined = new WebSocket(`ws+unix://${stopSock}:/`);
+  await new Promise((resolve, reject) => { joined.once('open', resolve); joined.once('error', reject); });
+  const closing = runtime.stopBridgeListener();
+  assert(!fs.existsSync(stopSock), 'the socket is gone in the same tick');
+  assert(!fs.existsSync(stopState), 'so is this bridge\'s state');
+  assert(closing instanceof Promise); assert.equal(runtime.stopBridgeListener(), closing, 'stopping twice is the same stop');
+  const refusedLate = await new Promise(resolve => net.connect(stopSock).once('connect', () => resolve('connected')).once('error', e => resolve(e.code)));
+  assert(['ENOENT', 'ECONNREFUSED'].includes(refusedLate), `a client arriving now gets ${refusedLate}`);
+  joined.terminate(); await closing;
+  const newDaemon = spawn('sleep', ['60'], { stdio: 'ignore' }); tracked.add(newDaemon.pid);
+  const newcomer = net.createServer().listen(stopSock);
+  await new Promise(resolve => newcomer.once('listening', resolve));
+  fs.writeFileSync(stopState, JSON.stringify({ pid: newDaemon.pid }));
+  runtime.stopBridgeListener(); await runtime.shutdownRuntime(); await runtime.shutdownRuntime();
+  assert(isSocket(stopSock), 'a bridge that started afterwards keeps its socket through repeated shutdowns');
+  const probeNew = net.connect(stopSock); await new Promise((resolve, reject) => probeNew.once('connect', resolve).once('error', reject)); probeNew.destroy();
+  assert.equal(JSON.parse(fs.readFileSync(stopState, 'utf8')).pid, newDaemon.pid, 'and its state');
+  // a connection that reaches this bridge while it closes starts no engine
+  const enginesBefore = sharedEngines().size;
+  const latecomer = wire(runtime.createEngine());
+  latecomer.send('initialize', 'late', { clientInfo: { name: 'codex-tui' } });
+  assert.match(latecomer.errorsFor('late')[0]?.error.message ?? '', /shutting down/);
+  await pause(200);
+  assert.equal(sharedEngines().size, enginesBefore, 'no engine was started'); assert(!fs.readdirSync(bridgeDir).some(n => n.startsWith('engine-')));
+  await new Promise(resolve => newcomer.close(resolve)); fs.rmSync(stopState, { force: true });
+  // its socket was replaced by another bridge's before it stopped: the replacement and that bridge's state stay
+  fs.rmSync(stopState, { force: true });
+  const replaced2 = runtime.createBridgeServer();
+  await new Promise((resolve, reject) => { replaced2.once('listening', resolve); replaced2.once('error', reject); });
+  fs.rmSync(stopSock);
+  const usurper = net.createServer().listen(stopSock);
+  await new Promise(resolve => usurper.once('listening', resolve));
+  fs.writeFileSync(stopState, JSON.stringify({ pid: newDaemon.pid }));
+  await runtime.stopBridgeListener();
+  assert(isSocket(stopSock), 'a socket this bridge did not create is not removed'); assert.equal(JSON.parse(fs.readFileSync(stopState, 'utf8')).pid, newDaemon.pid, 'nor a state it does not own');
+  await new Promise(resolve => usurper.close(resolve)); fs.rmSync(stopState, { force: true }); newDaemon.kill();
+  // stopped before it ever bound
+  const unborn = runtime.createBridgeServer();
+  runtime.stopBridgeListener();
+  await pause(400);
+  assert(!fs.existsSync(stopSock), 'a listener stopped before binding never binds'); assert.equal(unborn.address(), null);
+  await runtime.shutdownRuntime();
+  pass('stopBridgeListener unpublishes synchronously and idempotently, refuses later clients and engines, and never removes a later bridge\'s socket or state');
+  set({ ELPIS_BRIDGE_SOCKET: path.join(bridgeDir, 'bridge.sock') });
+
   // ---- B. native candidate --------------------------------------------------------------------
   const provider = new Provider();
   await provider.start();
@@ -215,10 +323,14 @@ async function main() {
   fs.writeFileSync(path.join(nativeHome, 'config.toml'), `model="gpt-5.5"\nmodel_provider="fixture"\nsandbox_mode="workspace-write"\n[features]\nsubagents=false\n[model_providers.fixture]\nname="Shared runtime fixture"\nbase_url=${JSON.stringify(provider.url)}\nwire_api="responses"\nrequires_openai_auth=false\n`);
   set({ HOME: nativeHome, ELPIS_HOME: nativeHome, CODEX_HOME: nativeHome, CODEX_AUTH_HOME: nativeHome, ELPIS_ENGINE_BIN: binary, ELPIS_SHARED_BRIDGE: '1', ELPIS_BRIDGE_SOCKET: path.join(bridgeDir, 'bridge.sock'), PORT: undefined });
   try {
+    const nativeWss = runtime.createBridgeServer(); // a bridge lives where its engines do
+    await new Promise((resolve, reject) => { nativeWss.once('listening', resolve); nativeWss.once('error', reject); });
     const n1 = wire(runtime.createEngine()), n2 = wire(runtime.createEngine()), nh = wire(runtime.createEngine());
     await n1.init('codex-tui'); await n2.init('codex-tui'); await nh.init('elpis-agents');
     n1.engine.stdin.write(JSON.stringify({ method: 'initialized' }) + '\n'); n2.engine.stdin.write(JSON.stringify({ method: 'initialized' }) + '\n'); nh.engine.stdin.write(JSON.stringify({ method: 'initialized' }) + '\n');
-    const started = (await n1.request('thread/start', { cwd, model: 'gpt-5.5' })).result.thread.id;
+    const startAnswer = await n1.request('thread/start', { cwd, model: 'gpt-5.5' });
+    assert(startAnswer.result, `thread/start: ${JSON.stringify(startAnswer.error)}`);
+    const started = startAnswer.result.thread.id;
     await until(() => n2.event('thread/started').some(m => m.params.thread.id === started), 'native: second connection hears of the session');
     assert.deepEqual((await n2.request('thread/loaded/list', {})).result.data, [started]);
     provider.actions.push(message('SHARED_DONE'));
@@ -254,7 +366,7 @@ async function main() {
 function fakeBridgeDir(name, extra = '') {
   const dir = path.join(root, name);
   fs.mkdirSync(dir);
-  fs.writeFileSync(path.join(dir, 'bridge.mjs'), `// ${name}\nimport fs from 'node:fs';\nimport { createBridgeServer, createEngine, shutdownRuntime } from ${JSON.stringify(pathToFileURL(runtimePath).href)};\nfs.appendFileSync(process.env.FAKE_BRIDGE_STARTS, process.pid + '\\n');\n${extra}\nconst wss = createBridgeServer();\nwss.on('error', e => { console.error('bridge error: ' + e.message); process.exit(1); });\nwss.on('connection', ws => {\n  const engine = createEngine();\n  engine.stdout.on('data', d => { for (const l of String(d).split('\\n')) if (l) ws.send(l); });\n  ws.on('message', m => engine.stdin.write(String(m) + '\\n'));\n  ws.on('close', () => engine.kill());\n});\nprocess.on('SIGTERM', async () => { await shutdownRuntime(); process.exit(0); });\n`);
+  fs.writeFileSync(path.join(dir, 'bridge.mjs'), `// ${name}\nimport fs from 'node:fs';\nimport { createBridgeServer, createEngine, shutdownRuntime, stopBridgeListener } from ${JSON.stringify(pathToFileURL(runtimePath).href)};\nfs.appendFileSync(process.env.FAKE_BRIDGE_STARTS, process.pid + '\\n');\n${extra}\nconst wss = createBridgeServer();\nwss.on('error', e => { console.error('bridge error: ' + e.message); process.exit(1); });\nwss.on('connection', ws => {\n  const engine = createEngine();\n  engine.stdout.on('data', d => { for (const l of String(d).split('\\n')) if (l) ws.send(l); });\n  ws.on('message', m => engine.stdin.write(String(m) + '\\n'));\n  ws.on('close', () => engine.kill());\n});\nprocess.on('SIGTERM', async () => { const closed = stopBridgeListener(); if (process.env.FAKE_BRIDGE_SLOW_STOP) await new Promise(r => setTimeout(r, Number(process.env.FAKE_BRIDGE_SLOW_STOP))); await shutdownRuntime(); await closed; process.exit(0); });\n`);
   return path.join(dir, 'bridge.mjs');
 }
 
@@ -267,6 +379,7 @@ async function launcherGroup(runtime) {
     const base = path.join(lroot, `s${n}`);
     const env = { ...process.env, HOME: path.join(base, 'h'), ELPIS_HOME: path.join(base, 'h'), XDG_RUNTIME_DIR: path.join(base, 'x'), FAKE_BRIDGE_STARTS: path.join(base, 'starts'), FAKE_ENGINE_LOG: path.join(base, 'engine.log'), ELPIS_ENGINE_BIN: fakeEngine(`engine-s${n}`) };
     delete env.ELPIS_SHARED_BRIDGE; delete env.ELPIS_BRIDGE_SOCKET; delete env.PORT;
+    for (const name of CONFIGURATION) delete env[name]; // what the bridge keeps from its first terminal is set per scenario
     fs.mkdirSync(env.HOME, { recursive: true }); fs.mkdirSync(env.XDG_RUNTIME_DIR, { mode: 0o700 });
     const rt = () => path.join(env.XDG_RUNTIME_DIR, 'elpis-bridge', fs.readdirSync(path.join(env.XDG_RUNTIME_DIR, 'elpis-bridge'))[0]);
     return { env, starts: () => readLines(env.FAKE_BRIDGE_STARTS).map(Number), rt, state: () => JSON.parse(fs.readFileSync(path.join(rt(), 'state.json'), 'utf8')) };
@@ -420,6 +533,105 @@ async function launcherGroup(runtime) {
   await stop(s.starts()[0]);
   void sock4;
   pass('the runtime directory must be a real directory of this user, is made private, and a path too long for a socket falls back');
+
+  // the bridge keeps its first terminal's environment: a later terminal that differs is refused by name, not value
+  s = setup();
+  const secret = 'sekrit-token-XYZ', other = 'other-secret-QRS';
+  const first = { ...s.env, HTTPS_PROXY: `http://user:${secret}@proxy.invalid:10808`, TERM: 'xterm-256color', PWD: '/one', OLDPWD: '/zero', ACP_BRIDGE_LOG: path.join(lroot, 'one.log') };
+  const started = await helper(bridgeA, first);
+  const sockE = endpointOf(started); tracked.add(s.starts()[0]);
+  const joinedLater = await helper(bridgeA, { ...first, TERM: 'screen-256color', PWD: '/two', OLDPWD: '/one', ACP_BRIDGE_LOG: path.join(lroot, 'two.log'), COLUMNS: '80' });
+  assert.equal(endpointOf(joinedLater), sockE); assert.equal(s.starts().length, 1, 'terminal, working directory and log path are not configuration');
+  const bridgeNow = s.starts()[0];
+  for (const [what, env, name] of [
+    ['another proxy', { ...first, HTTPS_PROXY: `http://user:${other}@elsewhere.invalid:1` }, 'HTTPS_PROXY'],
+    ['no proxy (nopr)', Object.fromEntries(Object.entries(first).filter(([k]) => k !== 'HTTPS_PROXY')), 'HTTPS_PROXY'],
+    ['a custom adapter', { ...first, ACP_ADAPTER: path.join(lroot, 'adapter.js') }, 'ACP_ADAPTER'],
+    ['another Claude program', { ...first, CLAUDE_CODE_EXECUTABLE: path.join(lroot, 'claude') }, 'CLAUDE_CODE_EXECUTABLE'],
+    ['another store', { ...first, ACP_BRIDGE_STORE: path.join(lroot, 'store.json') }, 'ACP_BRIDGE_STORE'],
+  ]) {
+    const refusedEnv = await helper(bridgeA, env);
+    assert.equal(refusedEnv.code, 1, what); assert.equal(refusedEnv.stdout, '', what);
+    assert(refusedEnv.stderr.includes(name), `${what}: names ${name}`); assert.match(refusedEnv.stderr, /different configuration/); assert.match(refusedEnv.stderr, /No sessions are lost/);
+    for (const value of [secret, other]) assert(!refusedEnv.stderr.includes(value), `${what}: no secret on stderr`);
+    assert(alive(bridgeNow), `${what}: the running bridge is not signalled`);
+  }
+  assert.equal(s.starts().length, 1);
+  assert(!fs.readFileSync(path.join(s.rt(), 'state.json'), 'utf8').includes(secret), 'the state file holds no proxy value');
+  assert(!fs.readFileSync(path.join(s.rt(), 'state.json'), 'utf8').includes('proxy.invalid'));
+  const changedFiles = fakeBridgeDir('bridge-pkg');
+  fs.writeFileSync(path.join(path.dirname(changedFiles), 'package.json'), '{"name":"one"}');
+  const pkgEnv = setup();
+  const pkgStart = await helper(changedFiles, pkgEnv.env); endpointOf(pkgStart); tracked.add(pkgEnv.starts()[0]);
+  fs.writeFileSync(path.join(path.dirname(changedFiles), 'package.json'), '{"name":"two"}');
+  const pkgRefused = await helper(changedFiles, pkgEnv.env);
+  assert.equal(pkgRefused.code, 1); assert.match(pkgRefused.stderr, /different installation/); assert(alive(pkgEnv.starts()[0]));
+  const copy = path.join(lroot, 'bridge-copy'); fs.mkdirSync(copy);
+  for (const name of fs.readdirSync(path.dirname(bridgeA))) fs.copyFileSync(path.join(path.dirname(bridgeA), name), path.join(copy, name));
+  const sameContentElsewhere = await helper(path.join(copy, 'bridge.mjs'), first);
+  assert.equal(sameContentElsewhere.code, 1); assert.match(sameContentElsewhere.stderr, /different installation/);
+  await stop(bridgeNow); await stop(pkgEnv.starts()[0]);
+  const idA = runtime.codeIdentity(bridgeA), idB = runtime.codeIdentity(bridgeA, '/bin/sh');
+  assert.equal(runtime.codeIdentity(bridgeA).hash, idA.hash); assert.notEqual(idA.hash, idB.hash, 'the node binary is part of the identity');
+  assert.deepEqual(runtime.environmentDigest({ HTTPS_PROXY: 'a', TERM: 'x' }, 's1'), runtime.environmentDigest({ HTTPS_PROXY: 'a', TERM: 'y', PWD: '/' }, 's1'));
+  assert.notDeepEqual(runtime.environmentDigest({ HTTPS_PROXY: 'a' }, 's1'), runtime.environmentDigest({ HTTPS_PROXY: 'a' }, 's2'), 'salted');
+  // eight launchers with the same environment, a proxy among it, still start one bridge
+  s = setup();
+  const raceEnv = { ...s.env, HTTPS_PROXY: `http://user:${secret}@proxy.invalid:10808`, NODE_USE_ENV_PROXY: '1' };
+  const raced = await Promise.all(Array.from({ length: 8 }, () => helper(bridgeA, { ...raceEnv, PWD: `/dir${Math.random()}` })));
+  assert.deepEqual(raced.map(o => o.code), Array(8).fill(0)); assert.equal(new Set(raced.map(endpointOf)).size, 1); assert.equal(s.starts().length, 1);
+  tracked.add(s.starts()[0]); await stop(s.starts()[0]);
+  pass('a bridge keeps its first terminal\'s configuration: proxy, adapter, program, store, packages, node and path differences are refused by name and never by value; incidental variables and an identical race are not');
+
+  // idle shutdown against a new launch: the closing bridge is unpublished at once, the new one is separate, nothing leaks
+  s = setup();
+  const slowEnv = { ...s.env, FAKE_BRIDGE_SLOW_STOP: '1500' };
+  const bridgeSlow = fakeBridgeDir('bridge-slow');
+  const slowStart = await helper(bridgeSlow, slowEnv);
+  const sockSlow = endpointOf(slowStart), oldPid = s.starts()[0]; tracked.add(oldPid);
+  const oldClient = new WebSocket(`ws+unix://${sockSlow}:/`);
+  await new Promise((resolve, reject) => { oldClient.once('open', resolve); oldClient.once('error', reject); });
+  oldClient.send(JSON.stringify({ id: 1, method: 'initialize', params: { clientInfo: { name: 'codex-tui' } } }));
+  await until(() => readLines(s.env.FAKE_ENGINE_LOG).some(l => l.includes('--listen')), 'the old bridge started its engine');
+  const oldEngine = Number(readLines(s.env.FAKE_ENGINE_LOG).find(l => l.includes('--listen')).split(' ')[0]); tracked.add(oldEngine);
+  process.kill(oldPid, 'SIGTERM');
+  await until(() => !fs.existsSync(sockSlow), 'the closing bridge unpublishes its socket');
+  assert(alive(oldPid), 'the old bridge is still shutting down');
+  const fresh = await helper(bridgeSlow, slowEnv);
+  assert.equal(endpointOf(fresh), sockSlow);
+  assert.equal(s.starts().length, 2, 'a launch during the old bridge\'s shutdown starts its own bridge'); const newPid = s.starts()[1]; tracked.add(newPid);
+  assert.notEqual(newPid, oldPid);
+  const newClient = new WebSocket(`ws+unix://${sockSlow}:/`);
+  await new Promise((resolve, reject) => { newClient.once('open', resolve); newClient.once('error', reject); });
+  newClient.send(JSON.stringify({ id: 1, method: 'initialize', params: { clientInfo: { name: 'codex-tui' } } }));
+  await until(() => readLines(s.env.FAKE_ENGINE_LOG).filter(l => l.includes('--listen')).length === 2, 'the new bridge started its engine');
+  await until(() => !alive(oldPid), 'the old bridge exits', 20000);
+  const newEngine = Number(readLines(s.env.FAKE_ENGINE_LOG).filter(l => l.includes('--listen'))[1].split(' ')[0]); tracked.add(newEngine);
+  assert(!alive(oldEngine), 'the old engine was stopped'); assert(alive(newEngine) && alive(newPid), 'the new bridge and its engine are untouched by the old one\'s exit');
+  assert.equal(s.state().pid, newPid); assert.equal((await answers(sockSlow)).mode, 'shared');
+  assert.equal(fs.readdirSync(s.rt()).filter(n => n.startsWith('engine-')).length, 1, 'one engine directory remains');
+  oldClient.terminate(); newClient.terminate(); await stop(newPid);
+  pass('a launch during an idle shutdown gets its own bridge and engine; the closing bridge removes only what is its own and leaks no engine');
+
+  // owned paths and live processes: only an engine of this directory is stopped; a symlinked directory is never followed
+  s = setup();
+  const rt6 = JSON.parse(spawnSync(process.execPath, ['-e', `import(${JSON.stringify(pathToFileURL(runtimePath).href)}).then(m => console.log(JSON.stringify(m.runtimeDir())))`], { env: s.env, encoding: 'utf8' }).stdout);
+  const stranger = spawn('sleep', ['60'], { stdio: 'ignore' }); tracked.add(stranger.pid);
+  const goneBridge = spawnSync(process.execPath, ['-e', 'process.stdout.write(String(process.pid))'], { encoding: 'utf8' }).stdout;
+  const notEngine = path.join(rt6.dir, 'engine-notmine'); fs.mkdirSync(notEngine, { mode: 0o700 });
+  fs.writeFileSync(path.join(notEngine, 'engine.json'), JSON.stringify({ pid: stranger.pid, token: runtime.startToken(stranger.pid), bridgePid: Number(goneBridge), bridgeToken: '1' }));
+  const target = path.join(lroot, 'victim-dir'); fs.mkdirSync(target); fs.writeFileSync(path.join(target, 'sentinel'), 'keep');
+  fs.writeFileSync(path.join(target, 'engine.json'), JSON.stringify({ pid: stranger.pid, token: runtime.startToken(stranger.pid), bridgePid: Number(goneBridge), bridgeToken: '1' }));
+  fs.symlinkSync(target, path.join(rt6.dir, 'engine-link'));
+  const cleaned = await helper(bridgeA, s.env);
+  endpointOf(cleaned); tracked.add(s.starts()[0]);
+  assert(alive(stranger.pid), 'a process whose token matches but which is not an engine of that directory is not stopped');
+  assert(!fs.existsSync(notEngine), 'its record directory is removed');
+  assert.equal(fs.readFileSync(path.join(target, 'sentinel'), 'utf8'), 'keep', 'a symlinked engine-* entry is not followed');
+  assert(fs.lstatSync(path.join(rt6.dir, 'engine-link')).isSymbolicLink());
+  assert.doesNotMatch(cleaned.stderr, /left behind/);
+  stranger.kill(); await stop(s.starts()[0]);
+  pass('cleanup stops only an engine whose command line names its own directory and never follows or removes a symlinked entry');
 
   // the real launcher script: arguments unchanged, the bridge outlives the terminal, a refusal runs no TUI
   s = setup();

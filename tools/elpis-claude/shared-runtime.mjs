@@ -116,18 +116,60 @@ export function runtimeDir(home = homeDir()) {
 
 // ---- the bridge's listener ------------------------------------------------------------------------
 
-let bridgeHttp = null;
+// The published listener: its socket is identified by device and inode, so that a socket (or state
+// file) a later bridge publishes at the same path is never mistaken for this one's.
+let listener = null; // { server, sock, id, stopped, closed }
+let stopped = false; // a listener was stopped: no engine starts until the next createBridgeServer
 export function createBridgeServer() {
+  stopped = false;
   if (!shared()) return new WebSocketServer({ host: "127.0.0.1", port: Number(process.env.PORT ?? 47820) });
   const sock = process.env.ELPIS_BRIDGE_SOCKET;
   if (!sock || !path.isAbsolute(sock)) throw new Error("ELPIS_SHARED_BRIDGE needs an absolute ELPIS_BRIDGE_SOCKET");
-  const server = bridgeHttp = http.createServer((req, res) => { res.statusCode = 426; res.end("WebSocket upgrade required\n"); });
-  const wss = new WebSocketServer({ server });
+  const server = http.createServer((req, res) => { res.statusCode = 426; res.end("WebSocket upgrade required\n"); });
+  const entry = listener = { server, sock, id: null, stopped: false, closed: null };
+  // An upgrade that was accepted just before the listener stopped is refused too.
+  const wss = new WebSocketServer({ server, verifyClient: () => !entry.stopped });
   // After the caller has attached its handlers; a failure surfaces as the server's 'error'.
   setImmediate(() => {
-    removeStaleSocket(sock).then(() => server.listen(sock, () => fs.chmodSync(sock, 0o600)), (e) => wss.emit("error", e));
+    if (entry.stopped) return;
+    removeStaleSocket(sock).then(() => {
+      if (entry.stopped) return;
+      server.listen(sock, () => {
+        if (entry.stopped) { try { if (fs.lstatSync(sock).isSocket()) fs.rmSync(sock, { force: true }); } catch {} return; } // stopped while binding
+        fs.chmodSync(sock, 0o600);
+        const st = fs.lstatSync(sock);
+        entry.id = `${st.dev}:${st.ino}`;
+      });
+    }, (e) => wss.emit("error", e));
   });
   return wss;
+}
+// Synchronous and idempotent: stops accepting, then removes this bridge's own socket and state, and
+// nothing a later bridge published. Returns when the server has closed.
+export function stopBridgeListener() {
+  const entry = listener;
+  if (!entry) return Promise.resolve();
+  if (entry.stopped) return entry.closed;
+  entry.stopped = true;
+  stopped = true;
+  const sock = entry.sock;
+  const stateFile = path.join(path.dirname(sock), "state.json");
+  try { if (JSON.parse(fs.readFileSync(stateFile, "utf8")).pid === process.pid) fs.rmSync(stateFile, { force: true }); } catch {}
+  // Closing a server unlinks whatever is at its path. If another bridge's socket has replaced ours,
+  // it is moved aside for the instant that takes.
+  let aside = null;
+  try {
+    const st = fs.lstatSync(sock);
+    if (st.isSocket() && entry.id === `${st.dev}:${st.ino}`) fs.rmSync(sock, { force: true });
+    else if (st.isSocket() && entry.id !== null) { aside = `${sock}.aside-${process.pid}`; fs.renameSync(sock, aside); }
+  } catch { aside = null; }
+  entry.closed = new Promise((resolve) => {
+    try { entry.server.close(() => resolve()); } catch { resolve(); }
+    entry.server.closeIdleConnections?.();
+    setTimeout(resolve, 2000).unref();
+  });
+  if (aside) { try { if (fs.existsSync(sock)) fs.rmSync(aside, { force: true }); else fs.renameSync(aside, sock); } catch {} }
+  return entry.closed;
 }
 export function bridgeUrl(wss) {
   const address = wss.address();
@@ -183,23 +225,41 @@ function startSharedEngine() {
   entry.promise.catch(() => { if (sharedEngine === entry) sharedEngine = null; cleanEngineDir(entry.dir); });
   return entry;
 }
-// Removes an engine directory and, if the engine left its socket target behind in the native
-// socket directory (a symlink points there), that dead socket.
+// Removes an engine directory made by a bridge, and, if the engine left its socket target behind in
+// the native socket directory (the symlink points there), that dead socket. Only a real directory
+// of this user named `engine-*` is removed, and only socket files of this user are touched.
 function cleanEngineDir(dir) {
   if (!dir || !path.basename(dir).startsWith("engine-")) return;
+  try {
+    const st = fs.lstatSync(dir);
+    if (!st.isDirectory() || st.uid !== process.getuid()) return;
+  } catch { return; }
   try {
     const link = path.join(dir, "e.sock");
     const st = fs.lstatSync(link);
     if (st.isSymbolicLink()) {
       const target = fs.readlinkSync(link);
-      if (path.basename(path.dirname(target)).startsWith("codex-daemon-") && isSocket(target)) probe(target).then((r) => { if (!r.ok) fs.rmSync(target, { force: true }); });
+      const owned = (() => { try { const t = fs.lstatSync(target); return t.isSocket() && t.uid === process.getuid(); } catch { return false; } })();
+      if (owned && path.basename(path.dirname(target)).startsWith("codex-daemon-")) probe(target).then((r) => { if (!r.ok) fs.rmSync(target, { force: true }); });
     }
   } catch {}
   fs.rmSync(dir, { recursive: true, force: true });
 }
+// Whether `pid` is the engine this directory's record describes: same start token and, where the
+// kernel shows command lines, an `app-server` listening on this directory's socket.
+function isEngineOf(info, dir) {
+  if (!info || !alive(info.pid, info.token)) return false;
+  if (!fs.existsSync("/proc/self/stat")) return true; // no command lines to read: the start token stands
+  try {
+    const argv = fs.readFileSync(`/proc/${info.pid}/cmdline`, "utf8").split("\0");
+    return argv.includes("app-server") && argv.includes(`unix://${path.join(dir, "e.sock")}`);
+  } catch { return false; }
+}
 
 // What the bridge sees of an engine in shared mode. The first frame decides: `initialize` from the
-// delegate tool gets a private engine, everything else the shared one. Same surface as a child.
+// delegate tool gets a private engine, everything else the shared one. Same surface as a child, plus
+// the guarantee a pipe lacks: when the engine or its connection ends unexpectedly, every request
+// that was queued or already sent and not answered gets one JSON-RPC error answer, then `exit`.
 class EngineProxy {
   constructor() {
     this.stdin = new EventEmitter();
@@ -209,40 +269,58 @@ class EngineProxy {
     this.mode = null;
     this.pid = undefined;
     this.pending = []; // frames before the connection opens
+    this.inflight = new Map(); // JSON id -> id of requests written and not yet answered
+    this.scan = ""; // a private engine's stdout, for answers (the bridge still gets every chunk as it came)
     this.socket = null;
     this.child = null;
     this.gone = false;
     this.closing = false;
     proxies.add(this);
   }
-  #reject(frame, why) {
-    let msg;
-    try { msg = JSON.parse(frame); } catch { return; }
-    if (msg?.id !== undefined && msg.method) this.stdout.emit("data", `${JSON.stringify({ id: msg.id, error: { code: -32603, message: why } })}\n`);
-    else note(`dropped ${msg?.method ?? "a message"}: ${why}`);
+  #error(id, why) { this.stdout.emit("data", `${JSON.stringify({ id, error: { code: -32603, message: why } })}\n`); }
+  #answered(text) {
+    for (const line of text.split("\n")) {
+      if (!line.includes('"id"')) continue;
+      let msg;
+      try { msg = JSON.parse(line); } catch { continue; }
+      if (msg?.id !== undefined && !msg.method) this.inflight.delete(JSON.stringify(msg.id));
+    }
   }
   #fail(why) {
-    for (const frame of this.pending.splice(0)) this.#reject(frame, why);
+    const unanswered = [...this.inflight.values()];
+    this.inflight.clear();
+    for (const frame of this.pending.splice(0)) {
+      try { if (JSON.parse(frame).id === undefined) note(`dropped ${JSON.parse(frame).method ?? "a message"}: ${why}`); } catch {}
+    }
+    for (const id of unanswered) this.#error(id, why);
     if (this.stdin.listenerCount("error")) this.stdin.emit("error", new Error(why)); else note(why);
   }
   #write(text) {
     for (const frame of text.split("\n")) {
       if (!frame) continue;
-      if (this.gone) { this.#fail("the engine connection is closed"); this.#reject(frame, "the engine connection is closed"); continue; }
-      if (!this.mode) this.#choose(frame);
+      let msg = null;
+      try { msg = JSON.parse(frame); } catch {}
+      if (this.gone || (!this.mode && stopped)) {
+        const why = this.gone ? "the engine connection is closed" : "the bridge is shutting down";
+        if (!this.gone) this.#end(why);
+        if (msg?.id !== undefined && msg.method) this.#error(msg.id, why); else note(`dropped ${msg?.method ?? "a message"}: ${why}`);
+        continue;
+      }
+      if (!this.mode) this.#choose(frame, msg);
+      if (msg?.id !== undefined && msg.method) this.inflight.set(JSON.stringify(msg.id), msg.id);
       this.#send(frame);
     }
   }
-  #choose(first) {
-    let helper = false;
-    try { const m = JSON.parse(first); helper = m.method === "initialize" && m.params?.clientInfo?.name === "elpis-agents"; } catch {}
+  #choose(first, msg) {
+    const helper = msg?.method === "initialize" && msg.params?.clientInfo?.name === "elpis-agents";
     this.mode = helper ? "private" : "shared";
     if (helper) {
       const child = this.child = spawnPrivate();
       this.pid = child.pid;
-      child.stdout.on("data", (d) => this.stdout.emit("data", d));
+      child.stdout.on("data", (d) => { this.scan = (this.scan + d.toString("latin1")).slice(-1 << 20); const cut = this.scan.lastIndexOf("\n"); if (cut >= 0) { this.#answered(this.scan.slice(0, cut)); this.scan = this.scan.slice(cut + 1); } this.stdout.emit("data", d); });
       child.stdin.on("error", (e) => (this.stdin.listenerCount("error") ? this.stdin.emit("error", e) : note(`engine input: ${e.message}`)));
-      child.once("exit", () => this.#end());
+      // After its output has been read, so an answer already in the pipe is not replaced by an error.
+      child.once("close", (code, signal) => this.#end(`the helper's engine exited (${signal ?? code})`));
       return;
     }
     (sharedEngine ?? startSharedEngine()).promise.then((engine) => {
@@ -250,30 +328,36 @@ class EngineProxy {
       this.pid = engine.child.pid;
       const socket = this.socket = new WebSocket(`ws+unix://${engine.sock}:/`);
       socket.on("open", () => { for (const frame of this.pending.splice(0)) socket.send(frame); });
-      socket.on("message", (data) => this.stdout.emit("data", `${String(data)}\n`));
-      socket.on("error", (e) => { note(`engine connection: ${e.message}`); this.#fail(`engine connection: ${e.message}`); });
-      socket.on("close", () => this.#end());
-    }, (e) => { this.#fail(e.message); this.#end(); });
+      socket.on("message", (data) => { const text = String(data); this.#answered(text); this.stdout.emit("data", `${text}\n`); });
+      socket.on("error", (e) => note(`engine connection: ${e.message}`));
+      // 'close' follows the last message, so nothing the engine answered is rejected.
+      socket.on("close", () => this.#end("the native engine connection closed"));
+    }, (e) => this.#end(e.message));
   }
   #send(frame) {
     if (this.child) { this.child.stdin.write(`${frame}\n`); return; }
     if (this.socket?.readyState === WebSocket.OPEN) this.socket.send(frame);
     else this.pending.push(frame);
   }
-  #end() {
+  #end(why) {
     if (this.gone) return;
     this.gone = true;
     proxies.delete(this);
-    if (this.closing) this.pending.length = 0; else this.#fail("the engine connection ended");
-    this.stdout.emit("exit");
+    if (this.closing) { this.pending.length = 0; this.inflight.clear(); } else this.#fail(why);
+    this.stdout.emit("exit", why);
   }
-  engineGone() { if (this.mode === "shared") this.#end(); }
+  // The shared engine's process ended. Its connection reports it after the last message arrived.
+  engineGone() {
+    if (this.mode !== "shared" || this.gone) return;
+    if (this.socket) setTimeout(() => this.socket.terminate(), 1000).unref();
+    else this.#end("the shared native engine exited");
+  }
   // Closes this connection only. A helper's private engine is stopped.
   kill() {
     this.closing = true;
     if (this.child) { this.child.kill(); return; }
     this.socket?.close();
-    this.#end();
+    this.#end("closed");
   }
 }
 
@@ -282,21 +366,10 @@ export function createEngine() {
 }
 
 // Stops the engines this bridge started, and removes what it created (not the launcher's files of
-// other bridges). The caller exits afterwards.
+// other bridges). Unpublishing comes first, so a launcher arriving now starts a new bridge instead
+// of joining this one. The caller exits afterwards.
 export async function shutdownRuntime() {
-  // Unpublish first, so a launcher arriving now starts a new bridge instead of joining this one.
-  const sock = process.env.ELPIS_BRIDGE_SOCKET;
-  if (shared() && sock) {
-    const stateFile = path.join(path.dirname(sock), "state.json");
-    try { if (JSON.parse(fs.readFileSync(stateFile, "utf8")).pid === process.pid) fs.rmSync(stateFile, { force: true }); } catch {}
-    if (isSocket(sock)) fs.rmSync(sock, { force: true });
-  }
-  if (bridgeHttp) {
-    const server = bridgeHttp;
-    bridgeHttp = null;
-    server.closeAllConnections?.();
-    await Promise.race([new Promise((resolve) => server.close(() => resolve())), pause(2000)]);
-  }
+  const closed = stopBridgeListener();
   for (const p of [...proxies]) p.kill();
   const stopping = [...privateEngines].map((child) => terminate(child));
   const entry = sharedEngine;
@@ -304,17 +377,46 @@ export async function shutdownRuntime() {
     sharedEngine = null;
     stopping.push(entry.promise.then(() => terminate(entry.child), () => entry.child && terminate(entry.child)).then(() => cleanEngineDir(entry.dir)));
   }
-  await Promise.all(stopping);
+  await Promise.all([closed, ...stopping]);
 }
 
 // ---- launcher helper -----------------------------------------------------------------------------
 
 const sha = (data) => createHash("sha256").update(data).digest("hex");
-// What must match between the running bridge and a new launch: the bridge's own code and the engine.
-function identityOf(bridgeScript) {
-  const dir = path.dirname(fs.realpathSync(bridgeScript));
+// The environment the bridge inherits from the terminal that started it and that changes what it
+// does: network proxy, the Claude and Antigravity programs and adapters, stores and auth homes.
+// Request, working-directory, terminal and log-path variables are incidental and not listed.
+const ENV_NAMES = [
+  "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY", "http_proxy", "https_proxy", "all_proxy", "no_proxy",
+  "NODE_USE_ENV_PROXY", "NODE_EXTRA_CA_CERTS",
+  "CLAUDE_CODE_EXECUTABLE", "CLAUDE_CONFIG_DIR", "ELPIS_CLAUDE_PRUNE", "ELPIS_CLAUDE_USAGE_URL",
+  "ELPIS_NO_AGY", "AGY_BIN", "AGY_DEFAULT_MODEL", "ACP_ADAPTER", "ACP_BRIDGE_STORE", "ACP_BRIDGE_NO_AGENTS", "ELPIS_AGENT_TOOLS",
+  "CODEX_HOME", "CODEX_AUTH_HOME",
+];
+// Salted hashes of the set variables, so a state file never holds a proxy URL or a key.
+export function environmentDigest(env, salt) {
+  const digest = {};
+  for (const name of ENV_NAMES) if (env[name] !== undefined) digest[name] = sha(`${salt}\0${name}\0${env[name]}`);
+  return digest;
+}
+// The names whose value differs between a running bridge's record and this launch.
+function differingNames(recorded, env) {
+  if (!recorded?.envSalt || !recorded.env) return ENV_NAMES.filter((name) => env[name] !== undefined);
+  const now = environmentDigest(env, recorded.envSalt);
+  return ENV_NAMES.filter((name) => now[name] !== recorded.env[name]);
+}
+// What must match between the running bridge and a new launch besides the environment: the bridge's
+// own code and packages, the engine, and the node that runs it.
+export function codeIdentity(bridgeScript, node = process.execPath) {
+  const script = fs.realpathSync(bridgeScript);
+  const dir = path.dirname(script);
   const files = {};
-  for (const name of fs.readdirSync(dir).filter((n) => n.endsWith(".mjs")).sort()) files[name] = sha(fs.readFileSync(path.join(dir, name)));
+  for (const name of fs.readdirSync(dir).filter((n) => n.endsWith(".mjs") || n === "package.json" || n === "package-lock.json").sort()) files[name] = sha(fs.readFileSync(path.join(dir, name)));
+  let modules = null;
+  try {
+    const adapter = JSON.parse(fs.readFileSync(path.join(dir, "node_modules/@agentclientprotocol/claude-agent-acp/package.json"), "utf8"));
+    modules = { path: fs.realpathSync(path.join(dir, "node_modules")), adapter: adapter.version };
+  } catch {}
   const bin = engineBin();
   let engine;
   try {
@@ -322,7 +424,14 @@ function identityOf(bridgeScript) {
     const st = fs.statSync(real);
     engine = { path: real, id: st.size <= 1 << 20 ? sha(fs.readFileSync(real)) : `${st.size}:${st.mtimeMs}` };
   } catch (e) { throw new Error(`engine binary ${bin} is not usable: ${e.message}`); }
-  return { hash: sha(JSON.stringify({ files, engine })).slice(0, 16), script: fs.realpathSync(bridgeScript), engine: engine.path };
+  let runtime;
+  try {
+    const real = fs.realpathSync(node);
+    const st = fs.statSync(real);
+    runtime = { path: real, version: node === process.execPath ? process.version : null, id: `${st.size}:${st.mtimeMs}` };
+  } catch (e) { throw new Error(`node ${node} is not usable: ${e.message}`); }
+  // The script's own path too: its helpers (adapters, MCP server) load from beside it for as long as the bridge lives.
+  return { hash: sha(JSON.stringify({ script, files, modules, engine, runtime })).slice(0, 16), script, engine: engine.path };
 }
 
 function readJson(file) { try { return JSON.parse(fs.readFileSync(file, "utf8")); } catch { return null; } }
@@ -354,7 +463,7 @@ async function reapOrphans(rt) {
     const dir = path.join(rt.dir, name);
     const info = readJson(path.join(dir, "engine.json"));
     if (info && alive(info.bridgePid, info.bridgeToken)) continue; // its bridge is still shutting down
-    if (info && alive(info.pid, info.token)) {
+    if (isEngineOf(info, dir)) {
       note(`stopping native engine ${info.pid} left behind by a bridge that exited`);
       await terminatePid(info.pid, info.token);
     }
@@ -371,16 +480,23 @@ async function ensureBridge(rt, bridgeScript, identity) {
   const reachable = await probe(rt.sock);
   if (state && alive(state.pid, state.token)) {
     if (reachable.ok) {
-      if (state.identity === identity.hash) return;
-      throw new Error([
-        `an Elpis bridge for ${rt.home} is already running from a different installation, so this terminal was not started.`,
-        `  running: bridge ${state.script}, engine ${state.engine} (pid ${state.pid})`,
-        `  this launch: bridge ${identity.script}, engine ${identity.engine}`,
-        "Close the Elpis terminals that use the running bridge; it exits once they are closed and it is idle. No sessions are lost. Then start Elpis again.",
-      ].join("\n"));
+      const config = differingNames(state, process.env);
+      if (state.identity === identity.hash && !config.length) return;
+      const lines = [];
+      if (state.identity !== identity.hash) {
+        lines.push(`an Elpis bridge for ${rt.home} is already running from a different installation, so this terminal was not started.`,
+          `  running: bridge ${state.script}, engine ${state.engine} (pid ${state.pid})`,
+          `  this launch: bridge ${identity.script}, engine ${identity.engine}`);
+        if (config.length) lines.push(`  its configuration also differs (${config.join(", ")}; values not shown)`);
+      } else {
+        lines.push(`an Elpis bridge for ${rt.home} is already running with a different configuration, so this terminal was not started.`,
+          `  differing variables: ${config.join(", ")} (values not shown); running bridge pid ${state.pid}`);
+      }
+      lines.push("Close the Elpis terminals that use the running bridge; it exits once they are closed and it is idle. No sessions are lost. Then start Elpis again.");
+      throw new Error(lines.join("\n"));
     }
     for (let i = 0; i < 100 && alive(state.pid, state.token); i++) { await pause(100); if ((await probe(rt.sock)).ok) return ensureBridge(rt, bridgeScript, identity); }
-    if (alive(state.pid, state.token)) throw new Error(`the Elpis bridge (pid ${state.pid}) is running but does not accept connections at ${rt.sock}; see ${rt.log}`);
+    if (alive(state.pid, state.token)) throw new Error(`the Elpis bridge (pid ${state.pid}) is running but does not accept connections at ${rt.sock} (it may be shutting down; try again in a few seconds); see ${rt.log}`);
   } else if (reachable.ok) {
     throw new Error(`${rt.sock} is served by a process this launcher did not record; close the Elpis terminals using it and start again`);
   }
@@ -401,7 +517,8 @@ async function ensureBridge(rt, bridgeScript, identity) {
   child.once("error", (e) => { early = `failed to start: ${e.message}`; });
   child.unref();
   if (!child.pid) { await pause(50); throw new Error(`the bridge ${early ?? "did not start"}`); }
-  fs.writeFileSync(rt.state, JSON.stringify({ pid: child.pid, token: startToken(child.pid), identity: identity.hash, script: identity.script, engine: identity.engine, socket: rt.sock, startedAt: new Date().toISOString() }), { mode: 0o600 });
+  const envSalt = randomBytes(16).toString("hex");
+  fs.writeFileSync(rt.state, JSON.stringify({ pid: child.pid, token: startToken(child.pid), identity: identity.hash, envSalt, env: environmentDigest(process.env, envSalt), script: identity.script, engine: identity.engine, socket: rt.sock, startedAt: new Date().toISOString() }), { mode: 0o600 });
   const deadline = Date.now() + 20000;
   for (;;) {
     if (early || !alive(child.pid)) {
@@ -421,7 +538,7 @@ async function ensureBridge(rt, bridgeScript, identity) {
 async function launcherMain(bridgeScript) {
   if (!bridgeScript) throw new Error("usage: node shared-runtime.mjs <bridge script>");
   bridgeScript = path.resolve(bridgeScript);
-  const identity = identityOf(bridgeScript);
+  const identity = codeIdentity(bridgeScript);
   const rt = runtimeDir();
   const release = await acquireLock(rt.lock);
   try { await ensureBridge(rt, bridgeScript, identity); } finally { release(); }
