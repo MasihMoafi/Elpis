@@ -9,6 +9,7 @@ Goal: make Elpis as usable as Masih’s installed Codex 0.162.0 while retaining 
 - Retain provider switching, Claude/Gemini, Context Ledger and controls, memory/continuity, pruning, dashboard, and work graphs. The dashboard is the dashboard, not a pruning dashboard.
 - Full Access must actually apply across native, Claude and Gemini tools, including changes during a turn. Restricted modes must remain enforced, rejected updates must not grant access, and resumed permissions must match saved choices.
 - Preserve all chats, settings and running sessions. Preserve existing privacy boundaries and explicitly removed optional features.
+- Keep Codex and Elpis user configuration separate, including when started from the user's home. Codex's user config and symlink aliases must not become project layers or cause project-config warnings. Real project configuration and its restrictions must continue to apply.
 
 ## Acceptance evidence
 - Compare against the installed Codex version, not only Elpis’s older 0.160.0 vendor snapshot.

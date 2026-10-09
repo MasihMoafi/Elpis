@@ -1693,6 +1693,12 @@ async fn discover_project_layers(
     let codex_home_abs = AbsolutePathBuf::from_absolute_path(codex_home)?;
     let codex_home_normalized =
         normalize_path(codex_home_abs.as_path()).unwrap_or_else(|_| codex_home_abs.to_path_buf());
+    // Elpis uses its own CODEX_HOME, but ~/.codex is still Codex's user config.
+    // Never reclassify that directory (or a symlink to it) as project input.
+    let default_codex_home = AbsolutePathBufGuard::home_directory().map(|home| home.join(".codex"));
+    let default_codex_home_normalized = default_codex_home
+        .as_ref()
+        .map(|home| normalize_path(home).unwrap_or_else(|_| home.clone()));
     let mut dirs = cwd
         .ancestors()
         .scan(false, |done, a| {
@@ -1727,7 +1733,11 @@ async fn discover_project_layers(
         let hooks_config_folder_override = trust_context.root_checkout_hooks_folder_for_dir(&dir);
         let dot_codex_normalized =
             normalize_path(dot_codex_abs.as_path()).unwrap_or_else(|_| dot_codex_abs.to_path_buf());
-        if dot_codex_abs == codex_home_abs || dot_codex_normalized == codex_home_normalized {
+        if dot_codex_abs == codex_home_abs
+            || dot_codex_normalized == codex_home_normalized
+            || default_codex_home.as_deref() == Some(dot_codex_abs.as_path())
+            || default_codex_home_normalized.as_ref() == Some(&dot_codex_normalized)
+        {
             continue;
         }
         let config_file = dot_codex_abs.join(CONFIG_TOML_FILE);

@@ -252,6 +252,12 @@ jobs:
             codex-rs/target/release/runtime-SHA256SUMS
           if-no-files-found: error
           retention-days: 7
+      - name: User and project configuration isolation
+        if: ${{ !cancelled() && steps.runtime_build.outcome == 'success' }}
+        working-directory: codex-rs
+        run: |
+          cargo test --profile dev-small --locked -p codex-config --lib -- projectless_directory_tests project_config_
+          node ../scripts/user-config-isolation.test.cjs "$PWD/target/release/elpis"
       - name: Native UI and retained Elpis interaction tests
         env:
           INSTA_UPDATE: new
