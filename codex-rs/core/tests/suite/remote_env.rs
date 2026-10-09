@@ -3431,7 +3431,14 @@ async fn deferred_executor_loads_agents_md_when_environment_becomes_ready() -> R
 
     let requests = response_mock.requests();
     assert_eq!(requests.len(), 3);
-    assert_eq!(agents_md_reads, 1);
+    assert_eq!(
+        agents_md_reads,
+        1,
+        "ready-environment tool results: first={:?}, second={:?}; advertised tools={:?}",
+        requests[1].function_call_output("wait-1"),
+        requests[2].function_call_output("wait-2"),
+        tool_names(&requests[0].body_json()),
+    );
     assert_eq!(agents_md_occurrences(&requests[0], AGENTS_CONTENT), 0);
     assert_eq!(agents_md_occurrences(&requests[1], AGENTS_CONTENT), 1);
     assert_eq!(agents_md_occurrences(&requests[2], AGENTS_CONTENT), 1);
