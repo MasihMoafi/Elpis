@@ -267,6 +267,14 @@ jobs:
         run: |
           # The product's working label appears across the TUI; review every affected render.
           cargo test --profile dev-small --locked -p codex-tui --lib 2>&1 | tee "$RUNNER_TEMP/elpis-ui-checks.log"
+      - name: Preserve failed rendering snapshots for review
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: candidate-rendering-differences
+          path: codex-rs/**/*.snap.new
+          if-no-files-found: ignore
+          retention-days: 7
       - name: Core permissions and continuity unit tests
         if: ${{ !cancelled() }}
         working-directory: codex-rs
@@ -363,14 +371,6 @@ jobs:
           name: elpis-linux-x86_64
           path: dist/*
           if-no-files-found: error
-          retention-days: 7
-      - name: Preserve failed rendering snapshots for review
-        if: failure()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with:
-          name: candidate-rendering-differences
-          path: codex-rs/**/*.snap.new
-          if-no-files-found: ignore
           retention-days: 7
       - name: Retain compiled outputs after checks
         if: always() && steps.cargo_cache.outputs.cache-hit != 'true' && steps.cargo_cache.outputs.cache-primary-key != ''
