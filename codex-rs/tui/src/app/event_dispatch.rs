@@ -547,7 +547,7 @@ impl App {
                     self.chat_widget.fork_in_progress = true;
                     // This handler awaits the fork outside the draw loop. Paint before waiting.
                     let screen_size = tui.terminal.last_known_screen_size;
-                    self.handle_draw_pre_render(tui, screen_size, /*terminal_resized*/ false)?;
+                    self.handle_draw_pre_render(tui, screen_size)?;
                     self.chat_widget.pre_draw_tick();
                     self.render_chat_widget_frame(tui, screen_size)?;
                     self.refresh_in_memory_config_from_disk_best_effort("forking the thread")
@@ -1086,7 +1086,7 @@ impl App {
                 );
                 if is_user_turn {
                     let screen_size = tui.terminal.last_known_screen_size;
-                    self.handle_draw_pre_render(tui, screen_size, /*terminal_resized*/ false)?;
+                    self.handle_draw_pre_render(tui, screen_size)?;
                     if self.transcript_reflow.has_pending_reflow() {
                         self.transcript_reflow.schedule_immediate();
                         self.maybe_run_resize_reflow(tui, screen_size)?;

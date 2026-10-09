@@ -18,14 +18,13 @@ use ratatui::widgets::Widget;
 
 impl App {
     /// Copy draft selections before key shortcuts, or after mouse layout has been refreshed.
-    /// Elpis: the keyboard selects in the inline screen too, so a key copies there as well.
     pub(super) fn handle_composer_copy_event(
         &mut self,
         tui: &mut tui::Tui,
         event: &TuiEvent,
         copy: impl FnOnce(&mut tui::Tui, &str) -> Result<crate::clipboard_copy::CopyStatus, String>,
     ) -> bool {
-        if (tui.is_owned_screen() || matches!(event, TuiEvent::Key(_)))
+        if tui.is_owned_screen()
             && self.overlay.is_none()
             && !self.transcript_view.has_active_interaction()
             && let Some((char_count, result)) = self

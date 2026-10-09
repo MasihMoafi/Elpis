@@ -913,11 +913,7 @@ impl App {
             TuiEvent::Key(_) | TuiEvent::Mouse(_) | TuiEvent::Paste(_) | TuiEvent::FocusLost
         ) {
             self.expire_pending_key_chord();
-            self.handle_draw_pre_render(
-                tui,
-                screen_size,
-                matches!(&event, TuiEvent::Resize(_)),
-            )?;
+            self.handle_draw_pre_render(tui, screen_size)?;
         }
 
         if matches!(&event, TuiEvent::Paste(_) | TuiEvent::FocusLost) {
@@ -933,12 +929,6 @@ impl App {
             return Ok(AppRunControl::Continue);
         }
 
-        // Elpis: a typed character leaves transcript browsing and goes to the composer.
-        if let TuiEvent::Key(key_event) = &event
-            && self.typed_key_leaves_browsing(tui, *key_event)
-        {
-            self.cancel_transcript_browsing(tui);
-        }
         let mut event = if let TuiEvent::Key(mut key_event) = event {
             let escape = KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE);
             if self.should_recover_vim_insert_escape(key_event)
@@ -1185,7 +1175,7 @@ impl App {
         self.disable_ambient_pet_before_shutdown(tui)?;
         self.chat_widget.show_shutdown_in_progress();
         let screen_size = tui.terminal.last_known_screen_size;
-        self.handle_draw_pre_render(tui, screen_size, /*terminal_resized*/ false)?;
+        self.handle_draw_pre_render(tui, screen_size)?;
         self.chat_widget.pre_draw_tick();
         self.render_chat_widget_frame(tui, screen_size)?;
         Ok(())

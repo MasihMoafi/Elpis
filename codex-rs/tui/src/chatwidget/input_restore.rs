@@ -385,9 +385,8 @@ impl ChatWidget {
                     ShellEscapePolicy::Allow,
                     UserMessageSource::Prompt,
                 );
-            } else {
-                // Elpis: an interrupt asked for by empty Enter sends the queue (v0.3.0).
-                self.maybe_send_next_queued_input();
+            } else if let Some(combined) = self.drain_pending_messages_for_restore() {
+                self.restore_composer_state(combined);
             }
         } else if let Some(combined) = self.drain_pending_messages_for_restore() {
             self.restore_composer_state(combined);
@@ -403,8 +402,7 @@ impl ChatWidget {
     /// placeholders in a stable order and rebase text element byte ranges so the restored composer
     /// state stays aligned with the merged attachment list. Returns `None` when there is nothing to
     /// restore.
-    // Elpis: visible to the Up recall in elpis_composer.rs.
-    pub(super) fn drain_pending_messages_for_restore(&mut self) -> Option<ThreadComposerState> {
+    fn drain_pending_messages_for_restore(&mut self) -> Option<ThreadComposerState> {
         if self.input_queue.pending_steers.is_empty() && !self.has_queued_follow_up_messages() {
             return None;
         }
