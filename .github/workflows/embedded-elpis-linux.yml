@@ -159,6 +159,15 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
           fetch-depth: 50
+      - uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7
+        id: cargo_cache
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            codex-rs/target
+          key: elpis-040-${{ runner.os }}-${{ hashFiles('codex-rs/Cargo.lock') }}-${{ github.sha }}
+          restore-keys: elpis-040-${{ runner.os }}-${{ hashFiles('codex-rs/Cargo.lock') }}-
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: '24'
@@ -193,15 +202,6 @@ jobs:
           (cd "$directory" && sha256sum -c SHA256SUMS)
           echo "RUSTY_V8_ARCHIVE=$directory/$archive" >> "$GITHUB_ENV"
           echo "RUSTY_V8_SRC_BINDING_PATH=$directory/$binding" >> "$GITHUB_ENV"
-      - uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7
-        id: cargo_cache
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            codex-rs/target
-          key: elpis-040-${{ runner.os }}-${{ hashFiles('codex-rs/Cargo.lock') }}-${{ github.sha }}
-          restore-keys: elpis-040-${{ runner.os }}-${{ hashFiles('codex-rs/Cargo.lock') }}-
       - name: Reuse only unchanged cached Rust sources
         env:
           CACHE_KEY: ${{ steps.cargo_cache.outputs.cache-matched-key }}
