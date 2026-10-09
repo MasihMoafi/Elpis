@@ -425,11 +425,12 @@ correctness, recall quality, task completion, total usage and latency, retaining
 negative results and excluding invalid runs. There is no defensible current claim
 that Elpis has proven superior memory or uniformly cheaper agent execution.
 
-## 4. Context Ledger (`Tab` / `Alt+C`) & `admission.toml`
+## 4. Context Ledger (`Alt+C`) & `admission.toml`
 
 Elpis provides interactive context admission control in the TUI:
 
-- **Context Ledger Panel (`Tab` or `Alt+C`):** A side panel shown by default, listing portable context sources with their byte sizes, per-source estimates, and the percentage of the model context window in use. It is 52 columns wide, narrowing to a proportional slice on smaller terminals so the composer keeps room. Tab completes an active composer popup first; otherwise it opens/focuses the ledger, then closes it. `p` toggles Smart Prune while the ledger is focused; Esc returns to editing. Alt+C always toggles visibility. Enter queues a draft during an active reply. With an empty chatbox, Enter interrupts the reply and sends the next queued input; Up recalls all queued inputs for editing. Tab never submits queued messages.
+- **Context Ledger Panel (`Alt+C`):** A side panel listing portable context sources, byte sizes, estimates and context-window usage. It is up to 52 columns wide and narrows proportionally to keep room for the composer. Alt+C opens or focuses the Ledger; pressing it while focused hides the panel. `p` toggles Smart Prune while focused. Esc returns to editing; Tab closes the focused Ledger. Outside the Ledger, submission and completion keys follow the [Codex parity contract](specs/codex-parity.md): Enter steers an active reply, while Tab queues the draft when no completion popup owns it.
+
 - **`admission.toml` Control:** Toggling a row in the ledger writes `~/.elpis/context/workspaces/<workspace>/admission.toml`, which dynamically governs next-turn admission for:
   - `GOAL.md` (Active Goal)
   - `ES.md` (Executive Summary)
@@ -448,13 +449,10 @@ and leaves Full Access active only for the current chat.
 
 ### Terminal appearance
 
-Elpis follows the terminal's foreground and background by default. A terminal
-configured to follow the desktop theme therefore switches Elpis with it. Light
-backgrounds use darker gold accents and a dark moving highlight; dark backgrounds
-retain the orange-yellow palette. `/theme` opens the Codex syntax-theme picker
-directly, including live preview and cancel/restore. It changes code highlighting,
-not the terminal's base colors. Existing explicit `tui.appearance` overrides remain
-supported in configuration; use `appearance = "system"` to follow the terminal.
+Shared terminal styling and animations follow the [Codex parity contract](specs/codex-parity.md).
+`/theme` opens the Codex syntax-theme picker with live preview and cancel/restore.
+It changes code highlighting, not the terminal's base colors. The retained Ledger
+uses its existing context colors; it does not impose a separate chatbox theme.
 
 ### Manual memory is explicit
 
