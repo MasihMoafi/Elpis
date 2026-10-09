@@ -1,13 +1,12 @@
 #!/usr/bin/env bash
 # Elpis TUI with Claude (Pro/Max subscription, via ACP) answering the turns.
 # Everything else (Context Ledger, settings, account) stays on the Elpis engine.
+# One bridge serves every terminal of an ELPIS_HOME and outlives them; shared-runtime.mjs starts it
+# if needed and prints its endpoint. A different installed version already serving this home is
+# reported, not replaced.
 # Usage: elpis-claude [elpis options], e.g. elpis-claude -a on-request
 set -euo pipefail
 here="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
-port="$(node -e 'const s=require("net").createServer().listen(0,"127.0.0.1",()=>{process.stdout.write(String(s.address().port));s.close()})')"
 mkdir -p /tmp/acp-bridge
-NODE_USE_ENV_PROXY=1 PORT="$port" node "$here/acp-bridge.mjs" &
-bridge=$!
-trap 'kill "$bridge" 2>/dev/null' EXIT
-for _ in $(seq 1 50); do (exec 3<>"/dev/tcp/127.0.0.1/$port") 2>/dev/null && break; sleep 0.1; done
-"${ELPIS_ENGINE_BIN:-$HOME/.local/bin/elpis}" --remote "ws://127.0.0.1:$port" "$@"
+endpoint="$(NODE_USE_ENV_PROXY=1 node "$here/shared-runtime.mjs" "$here/acp-bridge.mjs")"
+exec "${ELPIS_ENGINE_BIN:-$HOME/.local/bin/elpis}" --remote "$endpoint" "$@"
