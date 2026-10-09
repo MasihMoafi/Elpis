@@ -1,7 +1,7 @@
 // Elpis TUI <-ws-> bridge <-stdio-> real `elpis app-server` (everything else)
 //                         \-stdio-> claude-agent-acp (chat turns -> Claude)
 import { splitContext, splitTokens, transcriptTokens } from "./context-split.mjs";
-import { createBridgeServer, bridgeUrl, createEngine, shutdownRuntime } from "./shared-runtime.mjs";
+import { createBridgeServer, bridgeUrl, createEngine, stopBridgeListener, shutdownRuntime } from "./shared-runtime.mjs";
 import { execFile, spawn } from "node:child_process";
 import { appendFileSync, existsSync, readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
@@ -357,50 +357,54 @@ function relayToTui(msg, answer, origin) {
   let threadId = msg.params?.threadId;
   while (helperScope.get(threadId)?.parentThreadId) threadId = helperScope.get(threadId).parentThreadId;
   if (!threadId) return false;
-  const tui = viewers(threadId)[0] ?? null;
+  const watching = new Set(viewers(threadId));
   const id = `relay-${randomUUID()}`;
-  relayed.set(id, { answer, origin, client: tui, message: { ...msg, id }, threadId });
-  if (tui) sendClient(tui, { ...msg, id });
+  relayed.set(id, { answer, origin, clients: watching, message: { ...msg, id }, threadId });
+  for (const client of watching) sendClient(client, { ...msg, id });
   return true;
 }
 function cancelRelays(origin, threadId, turnId) {
   for (const [id, relay] of relayed) {
     if (relay.origin !== origin || (threadId && relay.message.params?.threadId !== threadId) || (turnId && relay.message.params?.turnId !== turnId)) continue;
     relayed.delete(id);
-    if (relay.client) sendClient(relay.client, { method: "serverRequest/resolved", params: { threadId: relay.message.params.threadId, requestId: id } });
+    for (const client of relay.clients) sendClient(client, { method: "serverRequest/resolved", params: { threadId: relay.message.params.threadId, requestId: id } });
     relay.answer({ error: { code: -32603, message: "The requesting turn ended." } });
   }
 }
-function subscribe(client, threadId) {
-  subscriptions.get(client)?.add(threadId);
-  if (helperConns.has(client)) return;
-  for (const relay of relayed.values()) if (relay.threadId === threadId && !relay.client) {
-    relay.client = client; sendClient(client, relay.message);
+function flushApprovals(client, threadId) {
+  if (helperConns.has(client) || !subscriptions.get(client)?.has(threadId)) return;
+  for (const relay of relayed.values()) if (relay.threadId === threadId && !relay.clients.has(client)) {
+    relay.clients.add(client); sendClient(client, relay.message);
   }
 }
 function decorateThread(thread) {
   if (!thread?.id) return;
   providerOwners.get(thread.id)?.decorate(thread);
 }
-let idleTimer;
-function checkIdle() {
+let idleTimer, stopping = false;
+async function stopBridge() {
+  if (stopping) return;
+  stopping = true;
   clearTimeout(idleTimer);
-  if (!process.env.ELPIS_SHARED_BRIDGE || clients.size || [...contexts].some((c) => c.busy())) return;
-  idleTimer = setTimeout(async () => {
-    if (clients.size || [...contexts].some((c) => c.busy())) return;
-    await storeChain;
-    for (const c of contexts) c.close();
-    await shutdownRuntime();
-    process.exit(0);
-  }, 30_000);
-}
-for (const signal of ["SIGTERM", "SIGINT"]) process.once(signal, async () => {
+  stopBridgeListener();
   await storeChain;
   for (const c of contexts) c.close();
   await shutdownRuntime();
   process.exit(0);
-});
+}
+function checkIdle() {
+  if (stopping) return;
+  for (const c of [...contexts]) c.releaseIfUnused();
+  clearTimeout(idleTimer);
+  if (!process.env.ELPIS_SHARED_BRIDGE || clients.size || [...contexts].some((c) => c.busy())) return;
+  idleTimer = setTimeout(async () => {
+    if (clients.size || [...contexts].some((c) => c.busy())) return;
+    await stopBridge();
+  }, 30_000);
+}
+for (const signal of ["SIGTERM", "SIGINT"]) process.once(signal, stopBridge);
 wss.on("connection", (ws) => {
+  if (stopping) { ws.close(1012, "Session backend is stopping"); return; }
   clients.add(ws);
   clearTimeout(idleTimer);
   subscriptions.set(ws, new Set());
@@ -418,8 +422,14 @@ wss.on("connection", (ws) => {
       if (model) msg.params.threadSettings = { ...msg.params.threadSettings, model, effort: owner.effort() };
     }
     const route = !msg.method && forwarded.get(msg.id);
-    if (route) { forwarded.delete(msg.id); sendClient(route.client, { ...msg, id: route.id }); }
-    else sendClient(ws, msg);
+    const recipient = route?.client ?? ws;
+    if (!msg.method && openingReplies.delete(msg.id) && msg.result?.thread) subscriptions.get(recipient)?.add(msg.result.thread.id);
+    if (route) { forwarded.delete(msg.id); sendClient(recipient, { ...msg, id: route.id }); }
+    else if (owner?.ws === ws && msg.method && msg.id === undefined && !["thread/status/changed", "thread/name/updated", "thread/archived", "thread/closed", "thread/deleted", "thread/unarchived"].includes(msg.method)) {
+      for (const client of viewers(msg.params.threadId)) sendClient(client, msg);
+    } else sendClient(recipient, msg);
+    // Hydration reaches the terminal before a pending question for that chat.
+    if (msg.result?.thread) flushApprovals(recipient, msg.result.thread.id);
   };
   const toOthers = (msg) => { const line = JSON.stringify(msg); for (const c of clients) if (c !== ws && c.readyState === 1) c.send(line); };
   const shareHelper = (msg) => { if (msg?.method === "thread/status/changed" && helperThreads.has(msg.params?.threadId)) toOthers(msg); };
@@ -485,14 +495,24 @@ wss.on("connection", (ws) => {
   const claudeEffort = new Map();
   const resumeResults = new Map();
   const context = {
-    busy: () => activeTurns.size > 0 || engineTurns.size > 0 || structured.size > 0,
+    failed: false,
+    busy: () => activeTurns.size > 0 || engineTurns.size > 0 || structured.size > 0 || pendingStart.size > 0 || pendingResume.size > 0 || engineReqs.size > 0
+      || [...forwarded.values()].some((r) => r.owner === ws),
     close: () => { cancelRelays(ws); engine.kill(); for (const a of acps.values()) a.kill(); },
+    releaseIfUnused: () => {
+      if (ws.readyState === 1 || context.busy() || [...relayed.values()].some((r) => r.origin === ws)
+        || [...providerOwners].some(([tid, owner]) => owner.ws === ws && viewers(tid).length)) return;
+      context.close(); contexts.delete(context);
+      for (const [tid, owner] of providerOwners) if (owner.ws === ws) providerOwners.delete(tid);
+      for (const tid of ownHelpers.keys()) helperScope.get(tid)?.owners.delete(restrictHelper);
+      for (const d of [...pendingDelegation.values(), ...pendingAdopt.values()]) pendingHelpers.delete(d);
+    },
   };
   contexts.add(context);
   function claimProvider(tid, result) {
     if (!claudeModel.has(tid)) return;
     if (result) resumeResults.set(tid, { ...result, thread: { ...result.thread } });
-    if (providerOwners.has(tid) && providerOwners.get(tid).ws !== ws) throw new Error(`provider thread already owned: ${tid}`);
+    if (providerOwners.has(tid) && providerOwners.get(tid).ws !== ws) return providerOwners.get(tid);
     const owner = {
       ws,
       model: () => claudeModel.get(tid),
@@ -505,9 +525,8 @@ wss.on("connection", (ws) => {
         }
       },
       dispatch: (msg, client) => {
-        if (msg.method === "thread/resume") subscribe(client, tid);
         const id = `forward-${randomUUID()}`;
-        forwarded.set(id, { client, id: msg.id });
+        forwarded.set(id, { client, id: msg.id, owner: ws });
         handleMessage(JSON.stringify({ ...msg, id }));
       },
     };
@@ -515,9 +534,11 @@ wss.on("connection", (ws) => {
   }
   function rememberStart(id, pick) {
     pendingStart.set(id, pick);
-    let resolve;
-    const ready = new Promise((r) => { resolve = r; });
-    startingProviders.set(`${connectionId}:${id}`, { ready, resolve });
+    const key = `${connectionId}:${id}`;
+    let release;
+    const ready = new Promise((r) => { release = r; });
+    const timer = setTimeout(() => { startingProviders.delete(key); release(); log("provider start notification wait expired"); }, 30000);
+    startingProviders.set(key, { ready, resolve: () => { clearTimeout(timer); release(); } });
   }
   const connectionId = randomUUID();
   const sessionModel = new Map();
@@ -673,7 +694,7 @@ wss.on("connection", (ws) => {
     } catch (e) { log(`${agent.key} catalog: ${e.message}`); return { models: [], efforts: {}, fallback: { levels: [], current: null }, modes: null }; }
   }
   const pendingModelList = new Set();
-  const pendingResume = new Set();
+  const pendingResume = new Map();
   // A Claude model picked as the default ("enter default") lives in the bridge's store, not in
   // config.toml, which plain Elpis also reads. New chats, rewinds and the next start follow it.
   const pendingConfigRead = new Set();
@@ -784,6 +805,14 @@ wss.on("connection", (ws) => {
     const kept = parent.filter((t) => (t.startedAt ?? 0) <= link.at && (before == null || (t.startedAt ?? 0) < before) && (last == null || (t.startedAt ?? 0) <= last));
     const have = new Set(own.map((t) => t.id));
     return [...kept.filter((t) => !have.has(t.id)), ...own];
+  }
+  async function providerHistory(threadId, store) {
+    const page = await engineCall("thread/turns/list", { threadId, limit: 200, sortDirection: "desc", itemsView: "full" }).catch(() => null);
+    const native = page?.data ?? resumeResults.get(threadId)?.thread?.turns ?? [];
+    const running = activeTurns.get(threadId);
+    const merged = new Map(native.map((t) => [t.id, t]));
+    for (const t of [...claudeTurnsOf(store, threadId), ...(running ? [running.snapshot()] : [])]) merged.set(t.id, t);
+    return { turns: [...merged.values()].sort((a, b) => (a.startedAt ?? 0) - (b.startedAt ?? 0)), cursor: page?.nextCursor ?? null };
   }
   async function priorTranscript(threadId) {
     try {
@@ -919,7 +948,10 @@ wss.on("connection", (ws) => {
     const savedStore = await loadStore();
     const d = tid && savedStore._delegations?.[tid];
     const existing = providerOwners.get(tid);
-    if (existing && existing.ws !== ws) { existing.dispatch(msg, forwarded.get(msg.id)?.client ?? ws); return; }
+    if (existing && existing.ws !== ws) {
+      const route = forwarded.get(msg.id); forwarded.delete(msg.id); pendingResume.delete(msg.id); openingReplies.delete(msg.id);
+      existing.dispatch({ ...msg, id: route?.id ?? msg.id }, route?.client ?? ws); return;
+    }
     if (claudeModel.has(tid) && resumeResults.has(tid)) {
       const params = { threadId: tid };
       for (const k of ["approvalPolicy", "approvalsReviewer", "permissions", "model", "effort"]) if (msg.params[k] != null) params[k] = msg.params[k];
@@ -931,8 +963,10 @@ wss.on("connection", (ws) => {
           await engineCall("thread/settings/update", params);
         }
         const result = { ...resumeResults.get(tid), model: claudeModel.get(tid), reasoningEffort: claudeEffort.get(tid) ?? null };
-        const running = activeTurns.get(tid);
-        result.thread = { ...result.thread, ...threadSeen.get(tid), turns: [...claudeTurnsOf(savedStore, tid), ...(running ? [running.snapshot()] : [])] };
+        const history = await providerHistory(tid, savedStore);
+        result.thread = { ...result.thread, ...threadSeen.get(tid), turns: history.turns };
+        result.turnsBackwardsCursor = history.cursor;
+        await markHelpers(result);
         pendingResume.delete(msg.id);
         toTui({ id: msg.id, result });
         replayPlan(tid);
@@ -960,10 +994,6 @@ wss.on("connection", (ws) => {
     let parsed = null;
     try { parsed = JSON.parse(line); } catch {}
     const th = parsed?.result?.thread ?? parsed?.params?.thread;
-    const isStart = parsed && !parsed.method && pendingNativeStarts.delete(parsed.id);
-    if (parsed?.result?.thread && (pendingStart.has(parsed.id) || pendingResume.has(parsed.id) || isStart)) {
-      subscribe(forwarded.get(parsed.id)?.client ?? ws, th.id);
-    }
     if (th?.id && th?.cwd) { threadCwd.set(th.id, th.cwd); threadSeen.set(th.id, { ...th, turns: [] }); }
     if (th?.id && parsed?.result?.approvalPolicy) { noteAccess(th.id, parsed.result); resumeResults.set(th.id, { ...parsed.result, thread: { ...th } }); }
     if (parsed?.method === "thread/name/updated") {
@@ -989,7 +1019,7 @@ wss.on("connection", (ws) => {
     shareHelper(parsed);
     notePlan(parsed);
     if (parsed?.method === "thread/smartPrune/updated" && parsed.params?.threadId) smartPrune.set(parsed.params.threadId, !!parsed.params.smartPrune?.enabled);
-    if (parsed?.method && parsed.id !== undefined && helperConns.has(ws) && helperThreads.has(parsed.params?.threadId)
+    if (parsed?.method && parsed.id !== undefined && ((helperConns.has(ws) && helperThreads.has(parsed.params?.threadId)) || providerOwners.get(parsed.params?.threadId)?.ws === ws)
       && relayToTui(parsed, (reply) => engine.stdin.write(JSON.stringify({ id: parsed.id, ...(reply.error ? { error: reply.error } : { result: reply.result }) }) + "\n"), ws)) return;
     if (parsed && engineReqs.has(parsed.id) && !parsed.method) {
       const p = engineReqs.get(parsed.id); engineReqs.delete(parsed.id);
@@ -1154,8 +1184,8 @@ wss.on("connection", (ws) => {
     }
     let reopened = null;
     if (parsed?.error && pendingResume.has(parsed.id)) {
-      pendingResume.delete(parsed.id);
-      for (const [tid, owner] of providerOwners) if (owner.ws === ws && !resumeResults.has(tid)) providerOwners.delete(tid);
+      const tid = pendingResume.get(parsed.id); pendingResume.delete(parsed.id);
+      if (providerOwners.get(tid)?.ws === ws && !resumeResults.has(tid)) providerOwners.delete(tid);
     }
     if (parsed && pendingAdopt.has(parsed.id) && !parsed.result?.thread?.id) { pendingHelpers.delete(pendingAdopt.get(parsed.id)); pendingAdopt.delete(parsed.id); }
     if (parsed && pendingResume.has(parsed.id) && parsed.result?.thread?.id) {
@@ -1889,29 +1919,42 @@ wss.on("connection", (ws) => {
       engine.stdin.write(JSON.stringify(msg) + "\n");
     } catch (e) { pendingArchive.delete(msg.id); toTui({ id: msg.id, error: { code: -32603, message: e.message } }); }
   }
-  const pendingNativeStarts = new Set();
+  const openingReplies = new Set();
   function handleMessage(data) {
     const line = data.toString();
     let msg;
     try { msg = JSON.parse(line); } catch { engine.stdin.write(line + "\n"); return; }
-    if (msg.id !== undefined && !msg.method && relayed.has(msg.id)) {
+    if (msg.id !== undefined && !msg.method && String(msg.id).startsWith("relay-")) {
       const relay = relayed.get(msg.id);
-      if (relay.client !== ws) return;
-      relay.answer(msg);
-      relayed.delete(msg.id);
+      if (relay?.clients.has(ws)) {
+        relayed.delete(msg.id);
+        relay.answer(msg);
+        for (const client of relay.clients) sendClient(client, { method: "serverRequest/resolved", params: { threadId: relay.message.params.threadId, requestId: msg.id } });
+      }
       return;
     }
     if (msg.method === "initialize" && msg.params?.clientInfo?.name === "elpis-agents") helperConns.add(ws);
+    if (context.failed && msg.method && msg.id !== undefined) { toTui({ id: msg.id, error: { code: -32603, message: "The session backend disconnected; reopen this chat." } }); return; }
     const owner = providerOwners.get(msg.params?.threadId);
+    if (msg.method === "thread/unsubscribe" && owner) {
+      const tid = msg.params.threadId;
+      const subscribed = subscriptions.get(ws)?.delete(tid);
+      for (const [id, relay] of relayed) if (relay.threadId === tid && relay.clients.delete(ws)) {
+        sendClient(ws, { method: "serverRequest/resolved", params: { threadId: relay.message.params.threadId, requestId: id } });
+      }
+      // The provider runtime still needs its engine subscription for confirmed permissions.
+      toTui({ id: msg.id, result: { status: subscribed ? "unsubscribed" : "notSubscribed" } });
+      checkIdle(); return;
+    }
     if (msg.method && owner && owner.ws !== ws) { owner.dispatch(msg, ws); return; }
-    if (msg.method === "thread/start" || msg.method === "thread/fork") pendingNativeStarts.add(msg.id);
-    if (msg.method === "thread/resume") subscribe(forwarded.get(msg.id)?.client ?? ws, msg.params?.threadId);
+    if (["thread/start", "thread/fork", "thread/resume"].includes(msg.method)) openingReplies.add(msg.id);
     if (process.env.ACP_BRIDGE_DEBUG && msg.method && (process.env.ACP_BRIDGE_DEBUG === "all" || !/^thread\/(read|turns\/list|list|loaded)/.test(msg.method))) log(`tui-> ${line.slice(0, 600)}`);
     if (msg.method === "thread/read" && claudeModel.has(msg.params?.threadId) && resumeResults.has(msg.params.threadId)) {
       const tid = msg.params.threadId;
-      storeChain.then(loadStore).then((store) => {
-        const running = activeTurns.get(tid);
-        const thread = { ...resumeResults.get(tid).thread, ...threadSeen.get(tid), turns: msg.params.includeTurns ? [...claudeTurnsOf(store, tid), ...(running ? [running.snapshot()] : [])] : [] };
+      storeChain.then(loadStore).then(async (store) => {
+        const history = msg.params.includeTurns ? await providerHistory(tid, store) : { turns: [], cursor: null };
+        const thread = { ...resumeResults.get(tid).thread, ...threadSeen.get(tid), turns: history.turns };
+        await markHelpers({ thread });
         toTui({ id: msg.id, result: { thread } });
       }).catch((e) => toTui({ id: msg.id, error: { code: -32603, message: e.message } }));
       return;
@@ -1921,7 +1964,7 @@ wss.on("connection", (ws) => {
     if (msg.method === "thread/list" && msg.params?.ancestorThreadId && !msg.params.cursor) pendingChildList.set(msg.id, msg.params.ancestorThreadId);
     if (msg.method === "thread/list" || msg.method === "thread/read") pendingHelperMark.add(msg.id);
     if (msg.method === "model/list") pendingModelList.add(msg.id);
-    if (msg.method === "thread/resume") { pendingResume.add(msg.id); resumeThread(msg); return; }
+    if (msg.method === "thread/resume") { pendingResume.set(msg.id, msg.params?.threadId); resumeThread(msg); return; }
     if (msg.method === "thread/archive") {
       pendingArchive.set(msg.id, msg.params?.threadId);
       if (claudeModel.has(msg.params?.threadId)) { archiveProvider(msg); return; }
@@ -2027,14 +2070,25 @@ wss.on("connection", (ws) => {
     }
     engine.stdin.write(line + "\n");
   }
+  const engineExited = () => {
+    if (context.failed || engine.closing) return;
+    context.failed = true;
+    const error = { code: -32603, message: "The session backend disconnected. Reopen Elpis to continue this chat." };
+    for (const request of engineReqs.values()) request.reject(error);
+    engineReqs.clear(); engineTurns.clear();
+    for (const [key, start] of startingProviders) if (key.startsWith(`${connectionId}:`)) { start.resolve(); startingProviders.delete(key); }
+    for (const id of new Set([...pendingStart.keys(), ...pendingResume.keys(), ...openingReplies])) toTui({ id, error });
+    pendingStart.clear(); pendingResume.clear(); openingReplies.clear();
+    for (const [id, route] of forwarded) if (route.owner === ws) { forwarded.delete(id); sendClient(route.client, { id: route.id, error }); }
+    for (const [tid, owner] of providerOwners) if (owner.ws === ws) for (const client of viewers(tid)) client.close(1011, "Session backend disconnected");
+    context.close(); ws.close(1011, "Session backend disconnected"); checkIdle();
+  };
+  engine.stdout.on("exit", engineExited);
+  engine.once?.("exit", engineExited);
   ws.on("message", handleMessage);
   ws.on("close", async () => {
     clients.delete(ws); subscriptions.delete(ws);
-    for (const [id, relay] of relayed) if (relay.client === ws) {
-      const next = viewers(relay.threadId)[0];
-      if (next) { relay.client = next; sendClient(next, relay.message); }
-      else relay.client = null;
-    }
+    for (const relay of relayed.values()) relay.clients.delete(ws);
     for (const [id, route] of forwarded) if (route.client === ws) forwarded.delete(id);
     if (!process.env.ELPIS_SHARED_BRIDGE || helperConns.has(ws)) {
       for (const tid of ownHelpers.keys()) helperScope.get(tid)?.owners.delete(restrictHelper);

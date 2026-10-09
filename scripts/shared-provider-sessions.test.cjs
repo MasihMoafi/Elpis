@@ -6,6 +6,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
 const WebSocket = require('../tools/elpis-claude/node_modules/ws');
+const { Provider, message } = require('../editors/vscode/test/runtime-eval');
 const pause = ms => new Promise(r => setTimeout(r, ms));
 const wait = async (f, label) => { const until = Date.now() + 20000; while (!f()) { assert(Date.now() < until, `timed out: ${label}`); await pause(20); } };
 async function main() {
@@ -13,10 +14,11 @@ async function main() {
   const gemini = process.argv.includes('--gemini');
   const model = gemini ? 'agy/gemini-3.8-flash-medium' : 'claude/haiku';
   assert(path.isAbsolute(binary), 'absolute engine path required');
+  const provider = new Provider(); await provider.start();
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'elpis-shared-provider-'));
   const home = path.join(root, 'home'), cwd = path.join(root, 'work'), other = path.join(root, 'other');
   for (const p of [home, cwd, other]) fs.mkdirSync(p);
-  fs.writeFileSync(path.join(home, 'config.toml'), 'model="gpt-5.5"\n[features]\nmulti_agent=false\n');
+  fs.writeFileSync(path.join(home, 'config.toml'), `model="gpt-5.5"\nmodel_provider="fixture"\n[features]\nmulti_agent=false\n[model_providers.fixture]\nname="offline fixture"\nbase_url=${JSON.stringify(provider.url)}\nwire_api="responses"\nrequires_openai_auth=false\nrequest_max_retries=0\nstream_max_retries=0\n`);
   const sock = path.join(root, 'bridge.sock'), log = path.join(root, 'bridge.log'), control = path.join(root, 'control.json'), calls = path.join(root, 'calls.jsonl');
   const adapter = path.join(root, 'adapter.cjs');
   const agy = path.join(root, 'agy.cjs');
@@ -89,6 +91,9 @@ async function main() {
     await b.req('thread/settings/update', { threadId: thread.id, approvalPolicy: 'on-request', permissions: ':workspace' });
     const helper = await connect('elpis-agents');
     const h = await helper.req('thread/start', { cwd: other, model, approvalPolicy: 'on-request', sandbox: 'read-only', elpisParentThreadId: thread.id });
+    assert.equal((await b.req('thread/read', { threadId: h.thread.id, includeTurns: false })).thread.parentThreadId, thread.id);
+    assert.equal((await b.req('thread/resume', { threadId: h.thread.id })).thread.parentThreadId, thread.id);
+    pass('reading and opening a provider helper preserves its parent link');
     const f3 = hold();
     await helper.req('turn/start', { threadId: h.thread.id, input: [{ type: 'text', text: 'ask parent terminal', text_elements: [] }] });
     await wait(() => fs.existsSync(f3.ready), 'helper running'); fs.writeFileSync(f3.release, 'release');
@@ -105,6 +110,7 @@ async function main() {
     const reopened = await later.req('thread/resume', { threadId: thread.id });
     assert.equal(reopened.activePermissionProfile.id, ':workspace'); assert.equal(reopened.approvalPolicy, 'on-request');
     await wait(() => later.approvals.length === 1, 'reconnected approval');
+    assert(later.seen.findIndex(m => m.result?.thread?.id === thread.id) < later.seen.findIndex(m => m.method && m.id !== undefined), 'the resumed chat must reach the terminal before its pending approval');
     await wait(() => later.event('turn/completed', thread.id).some(m => m.params.turn.id === beforeReconnect.turn.id), 'reconnected approval completion');
     assert(!fs.existsSync(f4.marker));
     pass('pending approval waits for its chat to reopen and preserves the latest restricted permissions');
@@ -122,11 +128,71 @@ async function main() {
     const active = await unrelated.req('thread/loaded/list');
     assert(!active.data.includes(thread.id)); assert(!fs.existsSync(f5.marker));
     pass('archiving from another terminal ends its provider turn and unloads the session');
+    // Leaving a chat changes the viewer subscription, never the runtime's permission subscription.
+    const subscriber = await connect();
+    const controlled = (await later.req('thread/start', { cwd, model, approvalPolicy: 'never', permissions: ':danger-full-access' })).thread;
+    const settingsCount = c => c.event('thread/settings/updated', controlled.id).length;
+    const select = async (c, full) => {
+      const before = settingsCount(c);
+      await c.req('thread/settings/update', { threadId: controlled.id, approvalPolicy: full ? 'never' : 'on-request', permissions: full ? ':danger-full-access' : ':read-only' });
+      await wait(() => settingsCount(c) > before, 'confirmed permission update');
+    };
+    const deniedTurn = async c => {
+      const f = hold(); const turn = (await c.req('turn/start', { threadId: controlled.id, input: [{ type: 'text', text: 'write after revocation', text_elements: [] }] })).turn;
+      await wait(() => fs.existsSync(f.ready), 'revoked provider turn'); fs.writeFileSync(f.release, 'release');
+      await wait(() => c.event('turn/completed', controlled.id).some(m => m.params.turn.id === turn.id), 'revoked turn completion');
+      assert(!fs.existsSync(f.marker));
+    };
+    await subscriber.req('thread/resume', { threadId: controlled.id });
+    assert.equal((await subscriber.req('thread/unsubscribe', { threadId: controlled.id })).status, 'unsubscribed');
+    await select(later, false); await deniedTurn(later);
+    pass('subscriber unsubscribe cannot disable permission revocation');
+    await select(later, true); await subscriber.req('thread/resume', { threadId: controlled.id });
+    await later.req('thread/unsubscribe', { threadId: controlled.id });
+    await select(subscriber, false); await deniedTurn(subscriber);
+    pass('owner unsubscribe preserves subscriber control and permission revocation');
+    await later.req('thread/resume', { threadId: controlled.id });
+    const ownerUpdates = settingsCount(later), subscriberUpdates = settingsCount(subscriber);
+    await select(subscriber, true);
+    await wait(() => settingsCount(later) > ownerUpdates && settingsCount(subscriber) > subscriberUpdates, 'both viewers hear settings');
+    pass('every subscribed terminal receives the confirmed permission settings');
+    await select(subscriber, false);
+    const ownerApprovals = later.approvals.length, senderApprovals = subscriber.approvals.length;
+    await deniedTurn(subscriber);
+    assert.equal(later.approvals.length, ownerApprovals + 1); assert.equal(subscriber.approvals.length, senderApprovals + 1);
+    const approvalId = subscriber.approvals.at(-1).id;
+    for (const c of [later, subscriber]) assert(c.seen.some(m => m.method === 'serverRequest/resolved' && m.params.requestId === approvalId));
+    pass('all viewers receive an approval and its first answer resolves the other copies');
+    const mixed = (await later.req('thread/start', { cwd, model: 'gpt-5.5', approvalPolicy: 'never', permissions: ':danger-full-access' })).thread;
+    provider.actions.push(message('Native history retained.'));
+    await later.req('turn/start', { threadId: mixed.id, model: 'gpt-5.5', input: [{ type: 'text', text: 'native history sentinel', text_elements: [] }] });
+    await wait(() => later.event('turn/completed', mixed.id).length, 'offline native turn saved');
+    await later.req('thread/settings/update', { threadId: mixed.id, model });
+    const fm = hold();
+    const providerTurn = (await later.req('turn/start', { threadId: mixed.id, input: [{ type: 'text', text: 'provider history sentinel', text_elements: [] }] })).turn;
+    await wait(() => fs.existsSync(fm.ready), 'mixed provider turn'); fs.writeFileSync(fm.release, 'release');
+    await wait(() => later.event('turn/completed', mixed.id).some(m => m.params.turn.id === providerTurn.id), 'mixed provider saved');
+    const resumedMixed = await subscriber.req('thread/resume', { threadId: mixed.id });
+    const userMessages = resumedMixed.thread.turns.flatMap(t => t.items.filter(i => i.type === 'userMessage').flatMap(i => i.content.map(c => c.text)));
+    assert(userMessages.includes('native history sentinel')); assert(userMessages.includes('provider history sentinel'));
+    pass('another terminal resumes both native and provider history after a model switch');
+    const engineDir = fs.readdirSync(root).find(n => n.startsWith('engine-'));
+    const engine = JSON.parse(fs.readFileSync(path.join(root, engineDir, 'engine.json'), 'utf8'));
+    process.kill(engine.pid, 'SIGSTOP');
+    const interruptedStart = later.req('thread/start', { cwd, model }).then(() => { throw Error('a stopped backend unexpectedly answered'); }, e => e.message);
+    await pause(150); process.kill(engine.pid, 'SIGKILL');
+    assert(!/timeout/.test(await interruptedStart), 'a sent request must receive a disconnect error');
+    await wait(() => later.ws.readyState !== 1, 'failed connection closes');
+    const fresh = await connect(), observer = await connect();
+    const created = await fresh.req('thread/start', { cwd, model: 'gpt-5.5' });
+    await wait(() => observer.event('thread/started', created.thread.id).length, 'new session visible after backend failure');
+    pass('backend failure answers in-flight starts and cannot block later session announcements');
     assert.equal(bridge.exitCode, null, errors);
   } finally {
     for (const c of clients) { for (const p of c.pending.values()) clearTimeout(p.timer); c.ws.terminate(); }
     bridge.kill('SIGTERM');
     await Promise.race([new Promise(r => bridge.once('exit', r)), pause(5000).then(() => bridge.kill('SIGKILL'))]);
+    provider.close();
     fs.writeFileSync(path.join(root, 'stderr.log'), errors); console.log(`Evidence ${root}`);
   }
 }
