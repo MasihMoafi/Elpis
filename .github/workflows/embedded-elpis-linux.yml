@@ -222,10 +222,14 @@ jobs:
             goal_validation command_popup agents_overview agents_navigation footer_collapse \
             context_usage context_ledger exec_cell effort_ignition style:: light_terminal_palette \
             chatwidget_exec_and_status_layout_vt100_snapshot luna_reserve_usage_running \
-            render_cost_tests status_and_layout resume_picker stream_controller
+            render_cost_tests esc_typing_tests status_and_layout resume_picker stream_controller \
+            custom_prompt_view
           cargo test --release --locked -p codex-core --lib -- \
             elpis_ smart_prune compact_instructions world_state build_agent_spawn_config \
-            live_permissions inherited_permissions step_activation thread_settings turn_input
+            live_permissions inherited_permissions step_activation thread_settings turn_input \
+            loaded_children_give_up_the_full_access_their_parent_gives_up \
+            a_child_that_cannot_take_its_parents_revocation_cannot_act \
+            a_child_started_after_its_parent_regains_full_access_keeps_it
           cargo test --release --locked -p codex-core --test all -- \
             elpis_ledger_admission elpis_context_attribution work_graphs settings_commits \
             agents_md scenarios_shared_instructions
