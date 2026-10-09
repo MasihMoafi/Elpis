@@ -648,8 +648,8 @@ mod tests {
     fn unavailable_side_conversation_command_still_opens_popup() {
         let mut composer = test_composer();
         composer.set_side_conversation_active(/*active*/ true);
-        composer.draft.textarea.set_text_clearing_elements("/arch");
-        composer.draft.textarea.set_cursor(/*pos*/ 5);
+        composer.draft.textarea.set_text_clearing_elements("/mo");
+        composer.draft.textarea.set_cursor(/*pos*/ 3);
         composer.sync_popups();
 
         assert!(matches!(composer.popups.active, ActivePopup::Command(_)));
@@ -659,12 +659,12 @@ mod tests {
     fn side_conversation_tab_completes_available_match_after_unavailable_rows() {
         let mut composer = test_composer();
         composer.set_side_conversation_active(/*active*/ true);
-        composer.draft.textarea.set_text_clearing_elements("/a");
+        composer.draft.textarea.set_text_clearing_elements("/c");
         composer.draft.textarea.set_cursor(/*pos*/ 2);
         composer.sync_popups();
 
         assert_eq!(press(&mut composer, KeyCode::Tab), InputResult::None);
-        assert_eq!(composer.draft.textarea.text(), "/agents ");
+        assert_eq!(composer.draft.textarea.text(), "/copy ");
     }
 
     #[test]
@@ -672,12 +672,12 @@ mod tests {
         let mut composer = test_composer();
         composer.set_side_conversation_active(/*active*/ true);
         composer.set_task_running(/*running*/ true);
-        composer.draft.textarea.set_text_clearing_elements("/arch");
-        composer.draft.textarea.set_cursor(/*pos*/ 5);
+        composer.draft.textarea.set_text_clearing_elements("/mo");
+        composer.draft.textarea.set_cursor(/*pos*/ 3);
         composer.sync_popups();
 
         assert_eq!(press(&mut composer, KeyCode::Tab), InputResult::None);
-        assert_eq!(composer.draft.textarea.text(), "/arch");
+        assert_eq!(composer.draft.textarea.text(), "/mo");
     }
 
     #[test]

@@ -4327,6 +4327,7 @@ async fn reasoning_popup_escape_returns_to_model_popup() {
     chat.thread_id = Some(ThreadId::new());
     chat.open_model_popup();
 
+    let model_popup = render_bottom_popup(&chat, /*width*/ 80);
     let preset = get_available_model(&chat, "gpt-5.5");
     chat.open_reasoning_popup(preset);
 
@@ -4336,7 +4337,7 @@ async fn reasoning_popup_escape_returns_to_model_popup() {
     chat.handle_key_event(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
 
     let after_escape = render_bottom_popup(&chat, /*width*/ 80);
-    assert!(after_escape.contains("Select Model"));
+    assert_eq!(after_escape, model_popup);
     assert!(!after_escape.contains("Select Reasoning Level"));
 }
 

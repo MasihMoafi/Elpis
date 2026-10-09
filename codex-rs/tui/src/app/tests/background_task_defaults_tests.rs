@@ -909,6 +909,7 @@ async fn command_center_new_restores_blank_drafts_and_builtin_permissions() -> R
         app.chat_widget.composer_text_with_pending(),
         "Keep this unsent draft"
     );
+    crate::chatwidget::tests::helpers::hide_context_ledger(&mut app.chat_widget);
     insta::assert_snapshot!(
         crate::chatwidget::tests::helpers::render_bottom_popup(&app.chat_widget, /*width*/ 80)
             .lines().next().unwrap(), @"› Keep this unsent draft");

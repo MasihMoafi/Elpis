@@ -9316,10 +9316,10 @@ mod tests {
         for (input, expected) in [
             ("/mo", "model"),
             ("/res", "resume"),
-            ("/ar", "archive"),
-            ("/pet", "pets"),
-            ("/bt", "btw"),
-            ("/si", "side"),
+            ("/age", "agent"),
+            ("/con", "context"),
+            ("/dash", "dashboard"),
+            ("/mem", "memory-model"),
         ] {
             let (tx, _rx) = unbounded_channel::<AppEvent>();
             let sender = AppEventSender::new(tx);

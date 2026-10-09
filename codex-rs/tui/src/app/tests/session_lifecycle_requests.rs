@@ -44,7 +44,7 @@ pub(super) type RecordedRequests = Arc<Mutex<Vec<JSONRPCRequest>>>;
 pub(super) type RecordingAppServer = (AppServerSession, RecordedRequests, JoinHandle<Result<()>>);
 
 #[tokio::test]
-async fn daybreak_command_persists_and_confirms_each_selection() -> Result<()> {
+async fn daybreak_selection_persists_and_confirms_each_selection() -> Result<()> {
     use codex_protocol::openai_models::ModelAccessPrograms;
     use codex_protocol::turn_input::CyberAccessProgram;
 
@@ -114,14 +114,8 @@ async fn daybreak_command_persists_and_confirms_each_selection() -> Result<()> {
     let mut tui = crate::tui::test_support::make_test_tui()?;
     let mut confirmations = Vec::new();
     for enabled in [true, false] {
-        app.chat_widget.insert_str("/daybreak");
-        app.chat_widget
-            .handle_key_event(KeyEvent::from(KeyCode::Esc));
-        app.chat_widget
-            .handle_key_event(KeyEvent::from(KeyCode::Enter));
-        let selection = std::iter::from_fn(|| events.try_recv().ok())
-            .find(|event| matches!(event, AppEvent::PersistDaybreakSelection { .. }))
-            .expect("Daybreak selection event");
+        // The native setting persists, while /daybreak remains outside Elpis's command list.
+        let selection = AppEvent::PersistDaybreakSelection { thread_id, enabled };
         app.handle_event(&mut tui, &mut server, selection).await?;
         confirmations.push(next_history_message(&mut events));
         assert_eq!(

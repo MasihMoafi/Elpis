@@ -322,8 +322,6 @@ async fn daemon_ctrl_c_shows_background_exit_menu_and_escape_dismisses_it() -> R
 
     assert!(!app.chat_widget.no_modal_or_popup_active());
     assert_snapshot!(render_bottom_popup(&app.chat_widget, /*width*/ 90), @r"
-     Elpis · model gpt-test default · location /tmp/project
-
       Task is still running
       Choose what happens to the current task.
 
@@ -593,8 +591,6 @@ async fn daemon_ctrl_c_hides_background_exit_for_running_background_side_thread(
 
     open_running_task_exit_menu(&mut app, &mut tui, &mut app_server).await;
     assert_snapshot!(render_bottom_popup(&app.chat_widget, /*width*/ 90), @r"
-     Elpis · model gpt-test default · location /tmp/project
-
       Task is still running
       Choose what happens to the current task.
 
@@ -628,7 +624,7 @@ async fn daemon_ctrl_c_hides_background_exit_with_queued_follow_up() -> Result<(
     app.chat_widget
         .apply_external_edit("queued follow-up".to_string());
     app.chat_widget
-        .handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+        .handle_key_event(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
     assert_eq!(
         app.chat_widget.queued_user_message_texts(),
         vec!["queued follow-up".to_string()]
