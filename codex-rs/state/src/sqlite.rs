@@ -141,6 +141,8 @@ const WORK_GRAPHS_DB: RuntimeDbSpec = RuntimeDbSpec {
     migrate_phase: "migrate_work_graphs",
     // Elpis: work-graph writers are not audited for upstream's reclamation.
     background_reclamation: false,
+    // Work graphs have no source from which to rebuild their stored state.
+    recovery: RecoveryMode::Unavailable,
 };
 
 const RUNTIME_DBS: [RuntimeDbSpec; 8] = [

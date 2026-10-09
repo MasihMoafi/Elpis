@@ -86,6 +86,48 @@ async function probe(threadId, { name, before, after, escalation, patch, inner, 
   assert.equal(fs.existsSync(marker), writes, `${name}: actual write`);
   checks.push(name); console.log(`PASS ${name}`);
 }
+// A cell can survive its original turn. Its next tool must use the thread's current
+// authority, including when the update happens while no turn is active.
+async function probeCrossTurnCell(threadId, { before, after, writes, prompts }) {
+  await select(threadId, before);
+  const gate = `cross-turn-${checks.length}`;
+  const marker = path.join(protectedDir, gate);
+  const release = path.join(cwd, `${gate}-release`);
+  const parked = { cmd: `while [ ! -f '${release}' ]; do sleep 0.01; done`, yield_time_ms: 30000, login: false };
+  const args = { cmd: `printf cross-turn > '${marker}'`, sandbox_permissions: 'require_escalated', justification: 'Isolated cross-turn permission probe.' };
+  let cellId;
+  const initialApprovals = approvals.length;
+  provider.actions.push(
+    { type: 'custom_tool_call', call_id: `park_${checks.length}`, name: 'exec', input:
+      `const pending = tools.exec_command(${JSON.stringify(parked)}); yield_control(); await pending; text(await tools.exec_command(${JSON.stringify(args)}));` },
+    request => {
+      cellId = JSON.stringify(request.input).match(/Script running with cell ID (\d+)/)?.[1];
+      assert(cellId, 'the first turn must leave a running code cell');
+      return message('The fixture cell is parked.');
+    },
+  );
+  let completed = notification('turn/completed');
+  await rpc.request('turn/start', { threadId, input: [{ type: 'text', text: 'Park the isolated code cell.' }] });
+  assert.equal((await completed).turn.status, 'completed');
+  assert(!fs.existsSync(marker), 'the parked cell must not write early');
+  await select(threadId, after);
+  fs.writeFileSync(release, 'continue');
+  provider.actions.push(
+    call(`join_${checks.length}`, 'wait', { cell_id: cellId, yield_time_ms: 10000 }),
+    request => {
+      const joined = request.input.findLast(item => item.call_id === `join_${checks.length}` && item.type === 'function_call_output');
+      assert(joined && !JSON.stringify(joined.output).includes('Script running'), 'the cross-turn cell must finish before checking its write');
+      return message('The fixture cell finished.');
+    },
+  );
+  completed = notification('turn/completed');
+  await rpc.request('turn/start', { threadId, input: [{ type: 'text', text: 'Release and wait for the earlier cell.' }] });
+  assert.equal((await completed).turn.status, 'completed');
+  assert.equal(approvals.length - initialApprovals, prompts, 'cross-turn approval count');
+  assert.equal(fs.existsSync(marker), writes, 'cross-turn actual protected write');
+  const label = `cell from an earlier turn adopts ${after ? 'Full Access' : 'revoked access'}`;
+  checks.push(label); console.log(`PASS ${label}`);
+}
 (async () => {
   await provider.start();
   fs.writeFileSync(path.join(home, 'config.toml'), `model="gpt-5.5"\nmodel_provider="fixture"\n[features]\ncode_mode=${codeMode}\n[model_providers.fixture]\nname="Permission fixture"\nbase_url=${JSON.stringify(provider.url)}\nwire_api="responses"\nrequires_openai_auth=false\n`);
@@ -110,6 +152,8 @@ async function probe(threadId, { name, before, after, escalation, patch, inner, 
   if (codeMode) {
     await probe(thread.id, { name: 'running code cell adopts Full Access for its next nested tool', before: false, after: true, inner: true, escalation: true, writes: true, prompts: 0 });
     await probe(thread.id, { name: 'running code cell adopts restrictions for its next nested tool', before: true, after: false, inner: true, escalation: true, writes: false, prompts: 1 });
+    await probeCrossTurnCell(thread.id, { before: false, after: true, writes: true, prompts: 0 });
+    await probeCrossTurnCell(thread.id, { before: true, after: false, writes: false, prompts: 1 });
   }
   await select(thread.id, false);
   const restored = await rpc.request('thread/resume', { threadId: thread.id });
