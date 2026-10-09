@@ -3,7 +3,7 @@ source: tui/src/chatwidget/tests/popups_and_settings.rs
 expression: popup
 ---
   Reset all memories?
-  This clears local memory files and rollout summaries for the current Codex
+  This clears local memory files and rollout summaries for the current Elpis
   home.
 
 
