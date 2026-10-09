@@ -291,6 +291,9 @@ jobs:
       - name: Gemini bridge permission regressions
         if: ${{ !cancelled() && steps.runtime_build.outcome == 'success' }}
         run: node scripts/permissions-bridge.test.cjs "$PWD/codex-rs/target/release/elpis" --gemini
+      - name: Delegated helper permission regressions
+        if: ${{ !cancelled() && steps.runtime_build.outcome == 'success' }}
+        run: node scripts/permissions-bridge-delegation.test.cjs "$PWD/codex-rs/target/release/elpis"
       - name: Real runtime evals and failing controls, without outside network
         if: ${{ !cancelled() && steps.runtime_build.outcome == 'success' }}
         run: sudo --preserve-env=PATH unshare -n sh -c 'ip link set lo up; bash scripts/release-runtime-evals.sh "$PWD/codex-rs/target/release/elpis"'
