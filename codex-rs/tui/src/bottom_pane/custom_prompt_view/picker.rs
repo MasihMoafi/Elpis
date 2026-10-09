@@ -78,7 +78,12 @@ impl CustomPromptView {
         self.picker_header().render(areas.header, buf);
         if !areas.input.is_empty() {
             let mut state = self.textarea_state.borrow_mut();
-            StatefulWidgetRef::render_ref(&(&self.textarea), areas.input, buf, &mut state);
+            if self.masked {
+                Paragraph::new("•".repeat(self.textarea.text().chars().count()))
+                    .render(areas.input, buf);
+            } else {
+                StatefulWidgetRef::render_ref(&(&self.textarea), areas.input, buf, &mut state);
+            }
             if self.textarea.text().is_empty() {
                 Paragraph::new(self.placeholder.as_str().dim()).render(areas.input, buf);
             }
