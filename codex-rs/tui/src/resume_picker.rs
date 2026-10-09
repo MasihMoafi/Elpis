@@ -75,13 +75,8 @@ use unicode_width::UnicodeWidthStr;
 use uuid::Uuid;
 
 mod archive;
-// Elpis: confirmation and deletion for saved sessions.
-mod delete;
 mod layout;
 mod page_loading;
-
-#[cfg(test)]
-mod delete_tests;
 
 #[cfg(test)]
 #[path = "resume_picker_color_tests.rs"]
@@ -204,9 +199,6 @@ enum PickerLoadRequest {
     Unarchive {
         thread_id: ThreadId,
     },
-    Delete {
-        thread_id: ThreadId,
-    },
 }
 
 #[derive(Clone)]
@@ -326,10 +318,6 @@ enum BackgroundEvent {
     Unarchive {
         thread_id: ThreadId,
         result: std::io::Result<SessionTarget>,
-    },
-    Delete {
-        thread_id: ThreadId,
-        result: std::io::Result<()>,
     },
 }
 
@@ -823,13 +811,6 @@ fn spawn_app_server_page_loader(
                         .map_err(std::io::Error::other);
                     let _ = bg_tx.send(BackgroundEvent::Unarchive { thread_id, result });
                 }
-                PickerLoadRequest::Delete { thread_id } => {
-                    let result = app_server
-                        .thread_delete(thread_id)
-                        .await
-                        .map_err(|err| std::io::Error::other(format!("{err:#}")));
-                    let _ = bg_tx.send(BackgroundEvent::Delete { thread_id, result });
-                }
             }
         }
         if let Err(err) = app_server.shutdown().await {
@@ -911,7 +892,6 @@ struct PickerState {
     sort_key: ThreadSortKey,
     inline_error: Option<String>,
     archive_state: archive::ArchiveState,
-    delete_state: delete::DeleteState,
     expanded_thread_id: Option<ThreadId>,
     transcript_previews: HashMap<ThreadId, TranscriptPreviewState>,
     transcript_cells: HashMap<ThreadId, SessionTranscriptState>,
@@ -1135,7 +1115,6 @@ impl PickerState {
             sort_key: ThreadSortKey::UpdatedAt,
             inline_error: None,
             archive_state: archive::ArchiveState::default(),
-            delete_state: delete::DeleteState::default(),
             expanded_thread_id: None,
             transcript_previews: HashMap::new(),
             transcript_cells: HashMap::new(),
@@ -1150,10 +1129,6 @@ impl PickerState {
     }
 
     fn route_key_chord(&mut self, key: KeyEvent) -> Option<KeyEvent> {
-        if self.delete_state != delete::DeleteState::Idle {
-            self.chord_matcher.cancel();
-            return Some(key);
-        }
         if matches!(&self.overlay, Some(Overlay::Transcript(overlay)) if overlay.owns_interaction_key(key))
         {
             self.chord_matcher.cancel();
@@ -1301,9 +1276,6 @@ impl PickerState {
 
     async fn handle_key(&mut self, key: KeyEvent) -> Result<Option<SessionSelection>> {
         self.inline_error = None;
-        if self.delete_state != delete::DeleteState::Idle {
-            return Ok(self.handle_delete_key(key));
-        }
         if self.is_transcript_loading() {
             return Ok(self.handle_transcript_loading_key(key));
         }
@@ -1482,11 +1454,6 @@ impl PickerState {
             {
                 self.request_archive_for_selected_session();
             }
-            _ if self.delete_shortcut_available()
-                && crate::key_hint::ctrl(KeyCode::Char('d')).is_press(key) =>
-            {
-                self.request_delete_for_selected_session();
-            }
             KeyEvent {
                 code: KeyCode::Char(c),
                 modifiers,
@@ -1506,7 +1473,7 @@ impl PickerState {
     }
 
     fn handle_paste(&mut self, pasted: String) {
-        if self.is_transcript_loading() || self.delete_state != delete::DeleteState::Idle {
+        if self.is_transcript_loading() {
             return;
         }
         let Some(pasted) = normalize_pasted_search_query(&pasted) else {
@@ -1658,9 +1625,6 @@ impl PickerState {
             }
             BackgroundEvent::Unarchive { thread_id, result } => {
                 return Ok(self.handle_unarchive_result(thread_id, result));
-            }
-            BackgroundEvent::Delete { thread_id, result } => {
-                self.handle_delete_result(thread_id, result);
             }
         }
         Ok(None)
@@ -2501,9 +2465,6 @@ fn picker_footer_scroll_percent(state: &PickerState, list_height: u16) -> u8 {
 }
 
 fn footer_hint_lines(state: &PickerState, width: u16) -> Vec<Line<'static>> {
-    if state.delete_state != delete::DeleteState::Idle {
-        return delete::footer_hints(state, width);
-    }
     if state.is_transcript_loading() {
         let hints = [
             PickerFooterHint {
@@ -2565,19 +2526,6 @@ fn footer_hint_lines(state: &PickerState, width: u16) -> Vec<Line<'static>> {
             key: crate::key_hint::ctrl(KeyCode::Char('a')).display_label(),
             wide_label: String::from("archive"),
             compact_label: String::from("archive"),
-            priority: 2,
-        });
-    }
-    if state
-        .filtered_rows
-        .get(state.selected)
-        .is_some_and(|row| row.thread_id.is_some())
-        && state.delete_shortcut_available()
-    {
-        first_row_hints.push(PickerFooterHint {
-            key: "ctrl+d".to_string(),
-            wide_label: String::from("delete"),
-            compact_label: String::from("delete"),
             priority: 2,
         });
     }
@@ -5879,7 +5827,9 @@ session_picker_view = "dense"
         for shown in [
             dense(&claude),
             comfortable(&claude),
-            text(render_expanded_session_details(&claude, &state, /*width*/ 140)),
+            text(render_expanded_session_details(
+                &claude, &state, /*width*/ 140,
+            )),
         ] {
             assert!(shown.contains("Opus 5.5 (Claude subscription)"), "{shown}");
         }
