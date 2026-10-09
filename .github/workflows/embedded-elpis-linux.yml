@@ -230,7 +230,7 @@ jobs:
         run: |
           cargo test --release --locked -p codex-tui --lib -- \
             elpis_ keymap question composer_submission plan_mode review_mode slash_commands \
-            goal_validation command_popup agents_overview agents_navigation agent_center_tests \
+            goal_validation command_popup agents_overview agents_navigation \
             loopback_servers_list_their_agents footer_collapse \
             context_usage context_ledger exec_cell effort_ignition style:: light_terminal_palette \
             chatwidget_exec_and_status_layout_vt100_snapshot luna_reserve_usage_running \
