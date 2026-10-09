@@ -72,7 +72,7 @@ fn embedded_composer_shows_validation_error_without_losing_draft() {
     let footer = (0..area.width)
         .map(|x| buffer[(x, area.bottom() - 1)].symbol())
         .collect::<String>();
-    insta::assert_snapshot!(footer.trim_end(), @"  Message too long; limit 1048576 characters                Tab Context Ledger");
+    insta::assert_snapshot!(footer.trim_end(), @"  Message too long; limit 1048576 characters");
     assert!(composer.footer_flash_delay().is_some());
     composer.footer.flash.as_mut().unwrap().expires_at = Instant::now() - Duration::from_secs(1);
     assert_eq!(composer.footer_flash_delay(), None);

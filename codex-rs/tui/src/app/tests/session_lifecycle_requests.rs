@@ -416,6 +416,22 @@ pub(super) enum RealtimeRequestBehavior {
     AcceptSpeechAndStallStop,
 }
 
+pub(super) async fn start_recording_realtime_speech_app_server(
+    config: &Config,
+    realtime_behavior: RealtimeRequestBehavior,
+) -> Result<RecordingAppServer> {
+    start_recording_app_server_with_realtime_speech(
+        config,
+        HistoryCapabilities::Current,
+        /*blocked_thread_list*/ None,
+        /*failed_thread_name*/ None,
+        crate::app_server_session::ThreadParamsMode::Embedded,
+        realtime_behavior,
+        LoaderOverrides::default(),
+    )
+    .await
+}
+
 pub(super) async fn start_recording_app_server_with_realtime_speech(
     config: &Config,
     history_capabilities: HistoryCapabilities,
@@ -4727,8 +4743,6 @@ fn session_lifecycle_avoids_redundant_subagent_metadata_reads() -> Result<()> {
                         .replace(&root_thread_id.to_string(), "[root]")
                         .replace(&child_thread_id.to_string(), "[child]"),
                     @r###"
-                     Elpis · model gpt-6.1-sol default · location /tmp/project
-
                       Subagents
                       Select an agent to watch. ⌥← previous, ⌥→ next.
 
@@ -5058,8 +5072,6 @@ async fn command_center_read_only_open_requests_and_failure_preservation() -> Re
             let error = render_bottom_popup(&app.chat_widget, /*width*/ 96);
             insta::allow_duplicates! {
                 insta::assert_snapshot!(error, @"
-                 Elpis · model gpt-5.6-sol default · location /tmp/project
-
                   Unable to complete action
                   Couldn't load this conversation. Please try again.
 

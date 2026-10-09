@@ -112,16 +112,23 @@ async fn hidden_shell_paste_recalled_from_history_submits_literal_prompt() {
 
 #[tokio::test]
 async fn hidden_shell_paste_queued_during_turn_submits_literal_prompt() {
-    // Elpis: Enter queues during a turn; Tab opens the Context Ledger and never queues (R15).
-    let (mut chat, _rx, mut op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
-    chat.thread_id = Some(ThreadId::new());
-    handle_turn_started(&mut chat, "turn-1");
-    let payload = paste_hidden_shell_payload(&mut chat);
+    for key in [KeyCode::Tab, KeyCode::Enter] {
+        let (mut chat, _rx, mut op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+        chat.thread_id = Some(ThreadId::new());
+        handle_turn_started(&mut chat, "turn-1");
+        let payload = paste_hidden_shell_payload(&mut chat);
 
-    chat.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
-    handle_turn_completed(&mut chat, "turn-1", /*duration_ms*/ None);
+        chat.handle_key_event(KeyEvent::new(key, KeyModifiers::NONE));
+        if key == KeyCode::Tab {
+            assert_chatwidget_snapshot!(
+                "hidden_shell_paste_queued_preview",
+                normalize_snapshot_paths(render_bottom_popup(&chat, /*width*/ 80))
+            );
+        }
+        handle_turn_completed(&mut chat, "turn-1", /*duration_ms*/ None);
 
-    assert_hidden_shell_payload_is_literal(op_rx.try_recv(), payload);
+        assert_hidden_shell_payload_is_literal(op_rx.try_recv(), payload);
+    }
 }
 
 #[tokio::test]
@@ -199,7 +206,7 @@ async fn rejected_hidden_shell_paste_preserves_colliding_draft_paste() {
     let model = chat.current_model().to_string();
     handle_turn_started(&mut chat, "turn-1");
     let payload = paste_hidden_shell_payload(&mut chat);
-    chat.handle_key_event(KeyEvent::from(KeyCode::Enter));
+    chat.handle_key_event(KeyEvent::from(KeyCode::Tab));
     let draft_payload = format!("draft {}", "y".repeat(1000));
     chat.handle_paste(draft_payload.clone());
     chat.set_model("");
@@ -1923,7 +1930,7 @@ async fn restore_thread_input_state_applies_running_state_policy() {
 #[tokio::test]
 async fn default_shortcuts_edit_most_recent_queued_message() {
     for key in [
-        KeyEvent::new(KeyCode::Up, KeyModifiers::SHIFT),
+        KeyEvent::new(KeyCode::Left, KeyModifiers::SHIFT),
         KeyEvent::new(KeyCode::Up, KeyModifiers::ALT),
     ] {
         let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
@@ -1956,7 +1963,7 @@ async fn unbound_queued_message_edit_does_not_fall_back_to_alt_up() {
     chat.refresh_pending_input_preview();
 
     assert!(!render_bottom_popup(&chat, /*width*/ 100).contains("edit last queued message"));
-    chat.handle_key_event(KeyEvent::new(KeyCode::Up, KeyModifiers::SHIFT));
+    chat.handle_key_event(KeyEvent::new(KeyCode::Left, KeyModifiers::SHIFT));
     chat.handle_key_event(KeyEvent::new(KeyCode::Up, KeyModifiers::ALT));
 
     assert!(chat.bottom_pane.composer_text().is_empty());
@@ -1964,7 +1971,7 @@ async fn unbound_queued_message_edit_does_not_fall_back_to_alt_up() {
 }
 
 #[tokio::test]
-async fn queued_message_edit_hint_uses_up_with_configured_chord() {
+async fn queued_message_edit_hint_displays_configured_chords() {
     use codex_config::types::KeybindingSpec;
     use codex_config::types::KeybindingsSpec;
     use codex_config::types::TuiKeymap;
@@ -1981,12 +1988,14 @@ async fn queued_message_edit_hint_uses_up_with_configured_chord() {
         .push_back(UserMessage::from("queued".to_string()).into());
     chat.refresh_pending_input_preview();
 
-    let rendered = render_bottom_popup(&chat, /*width*/ 100);
-    assert!(rendered.contains("↑ edit all · enter send"));
-    assert!(!rendered.contains("edit last queued message"));
-    chat.handle_key_event(KeyEvent::new(KeyCode::Up, KeyModifiers::NONE));
-    assert_eq!(chat.bottom_pane.composer_text(), "queued");
-    assert!(chat.input_queue.queued_user_messages.is_empty());
+    let hint = crate::key_hint::ShortcutHint::Chord {
+        prefix: crate::key_hint::ctrl(KeyCode::Char('x')),
+        completion: crate::key_hint::plain(KeyCode::Up),
+    };
+    assert!(render_bottom_popup(&chat, /*width*/ 100).contains(&format!(
+        "{} edit last queued message",
+        hint.display_label()
+    )));
 }
 
 /// Pressing Up to recall the most recent history entry and immediately queuing
@@ -2011,12 +2020,10 @@ async fn enqueueing_history_prompt_multiple_times_is_stable() {
         assert_eq!(chat.bottom_pane.composer_text(), "repeat me");
 
         // Queue the prompt while the task is running.
-        chat.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+        chat.handle_key_event(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
     }
 
-    // Elpis: Up pulls the queued messages back before it reaches history (R16), so each round
-    // recalls the one queued prompt and queues it again.
-    assert_eq!(chat.input_queue.queued_user_messages.len(), 1);
+    assert_eq!(chat.input_queue.queued_user_messages.len(), 3);
     for message in chat.input_queue.queued_user_messages.iter() {
         assert_eq!(message.text, "repeat me");
     }
@@ -2575,6 +2582,12 @@ async fn image_preparation_failure_restores_full_input_without_submitting() {
         chat.snapshot_local_images = true;
         if running {
             handle_turn_started(&mut chat, "turn");
+            chat.input_queue
+                .pending_steers
+                .push_back(pending_steer("already sent"));
+            chat.input_queue
+                .queued_user_messages
+                .push_back(UserMessage::from("follow-up").into());
         }
         let pending_steers = chat.input_queue.pending_steers.clone();
         let dir = tempfile::tempdir().unwrap();
@@ -2606,7 +2619,6 @@ async fn image_preparation_failure_restores_full_input_without_submitting() {
             std::fs::remove_file(&path).unwrap();
         }
         chat.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
-        assert!(chat.input_queue.queued_user_messages.is_empty());
         while let Some(event) = rx.recv().await {
             if let AppEvent::ImagesPrepared(id) = event {
                 chat.on_images_prepared(id);
@@ -2649,6 +2661,26 @@ async fn image_preparation_failure_restores_full_input_without_submitting() {
                 "image_preparation_restored_input",
                 normalize_snapshot_paths(render_bottom_popup(&chat, /*width*/ 80))
             );
+        }
+        if running {
+            // A transport recovery must preserve the pause for the failed image draft.
+            chat.pause_for_disconnect();
+            let mut input = chat.capture_thread_input_state();
+            input.as_mut().unwrap().reconnect_pending = true;
+            chat.restore_reconnected_input(input, &[pending_steers[0].client_id.clone()]);
+            chat.on_committed_user_message(
+                &[UserInput::Text {
+                    text: "already sent".into(),
+                    text_elements: Vec::new(),
+                }],
+                Some(&pending_steers[0].client_id),
+                /*from_replay*/ false,
+                "turn",
+            );
+            chat.input_queue.suppress_queue_autosend = false;
+            handle_turn_completed(&mut chat, "turn", /*duration_ms*/ None);
+            assert_eq!(chat.queued_user_message_texts(), vec!["follow-up"]);
+            assert_no_submit_op(&mut op_rx);
         }
         pixels.save(&path).unwrap();
         chat.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));

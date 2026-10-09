@@ -101,6 +101,7 @@ async fn placeholder_invites_elpis_not_codex() {
 #[tokio::test]
 async fn full_screen_hides_a_crowded_ledger_until_it_is_opened() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    show_context_ledger(&mut chat);
     let short = ratatui::layout::Size::new(/*width*/ 120, /*height*/ 20);
     let tall = ratatui::layout::Size::new(/*width*/ 120, /*height*/ 80);
 

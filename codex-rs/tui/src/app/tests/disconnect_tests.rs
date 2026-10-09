@@ -247,6 +247,56 @@ async fn disconnected_command_center_keeps_input_and_blocks_actions() -> Result<
     Ok(())
 }
 
+#[tokio::test]
+async fn remote_disconnect_retires_voice_before_reconnecting() -> Result<()> {
+    let (mut app, _events, _ops) = make_test_app_with_channels().await;
+    let thread_id = ThreadId::new();
+    app.active_thread_id = Some(thread_id);
+    app.chat_widget
+        .handle_thread_session_quiet(test_thread_session(thread_id, app.config.cwd.to_path_buf()));
+    app.app_server_target = AppServerTarget::Remote {
+        endpoint: crate::resolve_remote_addr("ws://127.0.0.1:9")?,
+    };
+    crate::chatwidget::activate_voice_for_thread(&mut app.chat_widget, thread_id);
+    assert!(app.chat_widget.is_current_realtime_attempt(
+        thread_id, /*attempt_id*/ 0, /*input_generation*/ 0
+    ));
+
+    let (replacement, _, _, _) = make_chatwidget_manual_with_sender().await;
+    app.replace_chat_widget(replacement);
+    app.active_thread_id = None;
+    let (mut session, _, proxy) =
+        super::session_lifecycle_requests::start_recording_remote_app_server(&app.config).await?;
+    proxy.abort();
+    assert!(proxy.await.unwrap_err().is_cancelled());
+    let mut tui = crate::tui::test_support::make_test_tui()?;
+    app.handle_event(
+        &mut tui,
+        &mut session,
+        AppEvent::CodexOp(Op::RealtimeConversationStop { thread_id }),
+    )
+    .await?;
+    assert_eq!(
+        (app.voice_owner_thread_id(), app.active_thread_id),
+        (None, None)
+    );
+    assert_eq!(
+        (
+            app.reconnect.offline,
+            app.chat_widget.is_current_realtime_attempt(
+                thread_id, /*attempt_id*/ 0, /*input_generation*/ 0
+            ),
+        ),
+        (true, false)
+    );
+    assert!(app.begin_reconnect());
+    assert!(!app.chat_widget.is_current_realtime_attempt(
+        thread_id, /*attempt_id*/ 0, /*input_generation*/ 0
+    ));
+    session.shutdown().await?;
+    Ok(())
+}
+
 // Common framing/bootstrap for both transports. Returning None deliberately loses a reply.
 pub(super) async fn serve_reconnect_requests<S, F>(
     mut socket: tokio_tungstenite::WebSocketStream<S>,

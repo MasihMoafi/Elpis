@@ -166,6 +166,7 @@ fn assert_ledger_beside_composer(chat: &ChatWidget, buf: &ratatui::buffer::Buffe
 async fn ledger_top_aligns_with_the_composer_and_runs_down_untrimmed() -> anyhow::Result<()> {
     let root = tempdir()?;
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
+    show_context_ledger(&mut chat);
     configure_ledger_sources(&mut chat, root.path())?;
 
     // Inline screen.
@@ -187,52 +188,47 @@ async fn ledger_top_aligns_with_the_composer_and_runs_down_untrimmed() -> anyhow
 async fn hidden_ledger_gives_the_composer_the_full_width() -> anyhow::Result<()> {
     let root = tempdir()?;
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
+    show_context_ledger(&mut chat);
     configure_ledger_sources(&mut chat, root.path())?;
-    chat.handle_key_event(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::ALT));
+    // Alt+C focuses the Ledger first, then hides it.
+    for _ in 0..2 {
+        chat.handle_key_event(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::ALT));
+    }
 
     assert_eq!(chat.context_ledger_width(WIDTH), 0);
     let buf = render_full(&chat.as_renderable());
     let screen = rows(&buf, 0..WIDTH).join("\n");
     assert!(!screen.contains("CONTEXT LEDGER"), "{screen}");
-    // Without the Ledger, the box closes on its own right side.
-    let top = composer_box_top(&buf, 0..WIDTH);
-    assert_eq!(buf[(WIDTH - 1, top)].symbol(), "┐", "{screen}");
-    assert_eq!(buf[(WIDTH - 1, top + 2)].symbol(), "┘", "{screen}");
+    assert!(
+        !screen.contains('│'),
+        "a Ledger rule is left behind\n{screen}"
+    );
+    assert!(
+        screen.contains('›'),
+        "the native composer is missing\n{screen}"
+    );
     Ok(())
 }
 
-/// The row of the composer box's top rule, found in `columns`.
-fn composer_box_top(buf: &ratatui::buffer::Buffer, columns: std::ops::Range<u16>) -> u16 {
-    rows(buf, columns)
-        .iter()
-        .position(|row| row.contains("──────"))
-        .and_then(|row| u16::try_from(row).ok())
-        .expect("the composer box has a top rule")
-}
-
 #[tokio::test]
-async fn composer_box_and_ledger_share_one_rule() -> anyhow::Result<()> {
+async fn ledger_rule_runs_down_beside_the_native_composer() -> anyhow::Result<()> {
     let root = tempdir()?;
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
+    show_context_ledger(&mut chat);
     configure_ledger_sources(&mut chat, root.path())?;
     let buf = render_full(&chat.as_renderable());
     let screen = rows(&buf, 0..WIDTH).join("\n");
-    let rule_x = WIDTH - chat.context_ledger_width(WIDTH);
-    let top = composer_box_top(&buf, 0..rule_x);
-    let bottom = top + 2;
+    let ledger_width = chat.context_ledger_width(WIDTH);
+    let rule_x = WIDTH - ledger_width;
 
-    // The box's top and bottom rules end on the Ledger rule and join it.
-    assert_eq!(buf[(rule_x, top)].symbol(), "┐", "{screen}");
-    assert_eq!(buf[(rule_x, top + 1)].symbol(), "│", "{screen}");
-    assert_eq!(buf[(rule_x, bottom)].symbol(), "┤", "{screen}");
-    // The box draws no second line beside the rule.
-    for y in top..=bottom {
-        let edge = buf[(rule_x - 1, y)].symbol();
-        assert!(
-            !matches!(edge, "│" | "┐" | "┘"),
-            "row {y}: {edge:?}\n{screen}"
-        );
+    // The native composer draws no box, so the Ledger's left rule is a plain line.
+    for y in 0..chat.context_ledger_desired_height(ledger_width) {
+        assert_eq!(buf[(rule_x, y)].symbol(), "│", "row {y}\n{screen}");
     }
+    assert!(
+        !screen.contains(['┌', '└', '┐', '┘', '┤']),
+        "composer box returned\n{screen}"
+    );
     Ok(())
 }
 
@@ -240,6 +236,7 @@ async fn composer_box_and_ledger_share_one_rule() -> anyhow::Result<()> {
 async fn ledger_keeps_codex_right_margin_and_measures_wide_names() -> anyhow::Result<()> {
     let root = tempdir()?;
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
+    show_context_ledger(&mut chat);
     configure_ledger_sources(&mut chat, root.path())?;
     // Each of these characters takes two columns, so a count of characters is half the width.
     let wide = root
@@ -285,6 +282,7 @@ async fn ledger_keeps_codex_right_margin_and_measures_wide_names() -> anyhow::Re
 #[tokio::test]
 async fn alt_c_focuses_and_hides_the_ledger_without_touching_the_draft() {
     let (mut chat, _rx, mut op_rx) = make_chatwidget_manual(None).await;
+    show_context_ledger(&mut chat);
     chat.last_rendered_width.set(Some(WIDTH));
     chat.bottom_pane
         .set_composer_text("Keep this draft".into(), Vec::new(), Vec::new());
@@ -310,6 +308,7 @@ async fn alt_c_focuses_and_hides_the_ledger_without_touching_the_draft() {
 async fn backspace_in_the_focused_ledger_edits_the_draft() -> anyhow::Result<()> {
     let root = tempdir()?;
     let (mut chat, _rx, mut op_rx) = make_chatwidget_manual(None).await;
+    show_context_ledger(&mut chat);
     configure_ledger_sources(&mut chat, root.path())?;
     chat.bottom_pane
         .set_composer_text("Keep this draft".into(), Vec::new(), Vec::new());
@@ -333,6 +332,7 @@ async fn backspace_in_the_focused_ledger_edits_the_draft() -> anyhow::Result<()>
 #[tokio::test]
 async fn tab_completes_a_slash_command_before_touching_the_ledger() {
     let (mut chat, _rx, mut op_rx) = make_chatwidget_manual(None).await;
+    show_context_ledger(&mut chat);
     chat.last_rendered_width.set(Some(WIDTH));
     chat.bottom_pane
         .set_composer_text("/com".into(), Vec::new(), Vec::new());
@@ -356,6 +356,7 @@ fn row_state(chat: &ChatWidget, name: &str) -> String {
 async fn space_on_a_focused_row_writes_its_admission() -> anyhow::Result<()> {
     let root = tempdir()?;
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
+    show_context_ledger(&mut chat);
     configure_ledger_sources(&mut chat, root.path())?;
     let before = row_state(&chat, "ES.md");
 
@@ -386,6 +387,7 @@ async fn space_on_a_focused_row_writes_its_admission() -> anyhow::Result<()> {
 async fn space_with_the_ledger_unfocused_leaves_admissions_alone() -> anyhow::Result<()> {
     let root = tempdir()?;
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
+    show_context_ledger(&mut chat);
     configure_ledger_sources(&mut chat, root.path())?;
     let before = row_state(&chat, "ES.md");
 
@@ -407,6 +409,7 @@ fn submit(chat: &mut ChatWidget, text: &str) {
 async fn add_puts_a_file_under_user_files() -> anyhow::Result<()> {
     let root = tempdir()?;
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
+    show_context_ledger(&mut chat);
     configure_ledger_sources(&mut chat, root.path())?;
     let notes = root.path().join("user-notes.md");
     std::fs::write(&notes, "Manually selected context")?;
@@ -430,6 +433,7 @@ async fn add_puts_a_file_under_user_files() -> anyhow::Result<()> {
 async fn bare_add_prints_its_usage_and_adds_nothing() -> anyhow::Result<()> {
     let root = tempdir()?;
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
+    show_context_ledger(&mut chat);
     configure_ledger_sources(&mut chat, root.path())?;
 
     submit(&mut chat, "/add");
@@ -449,6 +453,7 @@ async fn bare_add_prints_its_usage_and_adds_nothing() -> anyhow::Result<()> {
 async fn context_asks_the_app_for_the_report_once_the_ledger_is_loaded() -> anyhow::Result<()> {
     let root = tempdir()?;
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
+    show_context_ledger(&mut chat);
     configure_ledger_sources(&mut chat, root.path())?;
 
     submit(&mut chat, "/context");
@@ -466,6 +471,7 @@ async fn context_asks_the_app_for_the_report_once_the_ledger_is_loaded() -> anyh
 #[tokio::test]
 async fn context_before_the_ledger_loads_says_so_and_asks_for_nothing() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
+    show_context_ledger(&mut chat);
 
     submit(&mut chat, "/context");
 
@@ -479,6 +485,7 @@ async fn context_before_the_ledger_loads_says_so_and_asks_for_nothing() {
 #[tokio::test]
 async fn smart_prune_row_syncs_then_shows_the_thread_state_as_in_v030() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
+    show_context_ledger(&mut chat);
     chat.last_rendered_width.set(Some(WIDTH));
 
     let ledger = ledger_alone(&chat).join("\n");
@@ -497,6 +504,7 @@ async fn smart_prune_row_syncs_then_shows_the_thread_state_as_in_v030() {
 #[tokio::test]
 async fn smart_prune_row_says_what_it_does_on_claude_and_antigravity_chats() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
+    show_context_ledger(&mut chat);
     chat.last_rendered_width.set(Some(WIDTH));
     chat.smart_prune_synced = true;
     chat.smart_prune.enabled = true;
@@ -582,6 +590,7 @@ fn planted_attribution() -> codex_app_server_protocol::ThreadContextAttribution 
 #[tokio::test]
 async fn context_window_shows_category_shares_once_the_server_sends_them() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
+    show_context_ledger(&mut chat);
     chat.last_rendered_width.set(Some(WIDTH));
 
     token_usage_update(&mut chat, Some(planted_attribution()));
@@ -604,6 +613,7 @@ async fn context_window_shows_category_shares_once_the_server_sends_them() {
 #[tokio::test]
 async fn context_window_says_attribution_is_unavailable_until_shares_arrive() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
+    show_context_ledger(&mut chat);
     chat.last_rendered_width.set(Some(WIDTH));
 
     token_usage_update(&mut chat, /*context_attribution*/ None);
