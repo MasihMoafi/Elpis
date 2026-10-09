@@ -52,6 +52,15 @@ function advertisedCommand(body) {
   return call;
 }
 
+function optimizerPayload(body) {
+  // Codex 0.162 carries the developer instructions as an input item too.
+  const messages = body.input.filter(item => item.role === 'user');
+  assert.equal(messages.length, 1, 'optimizer must receive exactly one source packet');
+  const text = messages[0].content.filter(part => part.type === 'input_text');
+  assert.equal(text.length, 1, 'optimizer source packet must be text');
+  return JSON.parse(text[0].text);
+}
+
 const server = http.createServer((req, res) => { void (async () => {
   let raw = ''; for await (const chunk of req) raw += chunk;
   if (!req.url.includes('/responses')) {res.writeHead(404); res.end(); return;}
@@ -148,7 +157,7 @@ async function runCase(nextMode) {
   } else if(mode !== 'disabled') {
     assert(followup.includes('Z'.repeat(256)),'original missing after '+mode);
     assert(!followup.includes('[ELPIS SMART PRUNE]'));
-    const source = JSON.parse(calls[1].input[0].content[0].text).items[0].source_output;
+    const source = optimizerPayload(calls[1]).items[0].source_output;
     const admitted = followupCall.input.find(item=>item.type==='function_call_output' && item.call_id==='prune-fixture');
     assert.equal(admitted.output,source.output,'source output changed after '+mode);
   } else {
@@ -182,7 +191,7 @@ async function runCase(nextMode) {
     for(const item of manifest.items) {
       const source = JSON.parse(fs.readFileSync(path.join(admissionDir,item.source_artifact),'utf8'));
       const admitted = JSON.parse(fs.readFileSync(path.join(admissionDir,item.admitted_artifact),'utf8'));
-      const offered = JSON.parse(calls[1].input[0].content[0].text).items
+      const offered = optimizerPayload(calls[1]).items
         .find(candidate => candidate.call_id === item.call_id).source_output;
       const observed = followupCall.input.find(candidate =>
         candidate.type === 'function_call_output' && candidate.call_id === item.call_id);
