@@ -1,9 +1,4 @@
-//! Elpis palette (Deus Ex): the gold product accent, olive context accents, the composer
-//! surface and quiet teal rules around the composer, popups and Context Ledger.
-//! Teal switch colors live with the Ledger (`smart_prune_on_colors`).
-//!
-//! Copied from the Elpis v0.3.0 additions to `style.rs` (tag `stage0-stop-bleeding`);
-//! kept in its own file so the upstream `style.rs` carries only a re-export seam.
+//! Colors used by the retained Elpis context controls and Ledger.
 
 use crate::color::is_light;
 use crate::terminal_palette::best_color;
@@ -33,11 +28,6 @@ pub(crate) fn context_style() -> Style {
         adaptive_palette_color(default_bg(), CONTEXT_LIGHT_RGB, CONTEXT_DARK_RGB),
         None,
     ))
-}
-
-/// Returns the border style for popup surfaces.
-pub(crate) fn popup_border_style() -> Style {
-    rule_style()
 }
 
 /// Returns the quiet teal line style for wrapper borders and the Ledger rule.

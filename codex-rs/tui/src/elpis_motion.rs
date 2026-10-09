@@ -1,8 +1,5 @@
-//! Gold motion composed with TachyonFX. Never paint over draft text.
-//!
-//! Copied from Elpis v0.3.0 (tag `stage0-stop-bleeding`). Two adaptations: the streamed
-//! text reveal (`TextReveal`) is not wired into this build yet and is left out, and the one
-//! TachyonFX curve still used, sine-in-out, is inlined so the crate is not a dependency.
+//! Color effects for the retained Context Ledger.
+
 use crate::color::{blend, is_light};
 use crate::terminal_palette::{best_color, default_bg};
 use ratatui::{style::Style, text::Span};

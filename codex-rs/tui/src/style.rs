@@ -9,7 +9,6 @@ pub(crate) use elpis::CONTEXT_LIGHT_RGB;
 pub(crate) use elpis::adaptive_palette_color;
 pub(crate) use elpis::brand_style;
 pub(crate) use elpis::context_style;
-pub(crate) use elpis::popup_border_style;
 pub(crate) use elpis::rule_style;
 
 use crate::color::blend;
