@@ -737,7 +737,8 @@ fn ps_output_empty_snapshot() {
 
 #[tokio::test]
 async fn session_info_uses_availability_nux_tooltip_override() {
-    let config = test_config().await;
+    let mut config = test_config().await;
+    config.show_tooltips = true;
     let cell = new_session_info(
         &config,
         &crate::local_settings::LocalSettings::from(&config),
@@ -760,6 +761,7 @@ async fn session_info_uses_availability_nux_tooltip_override() {
 )]
 async fn session_info_availability_nux_tooltip_snapshot() {
     let mut config = test_config().await;
+    config.show_tooltips = true;
     config.cwd = test_path_buf("/tmp/project").abs();
     let cell = new_session_info(
         &config,
@@ -778,7 +780,8 @@ async fn session_info_availability_nux_tooltip_snapshot() {
 
 #[tokio::test]
 async fn session_info_preserves_styled_tooltip_links() {
-    let config = test_config().await;
+    let mut config = test_config().await;
+    config.show_tooltips = true;
     let cell = new_session_info(
         &config,
         &crate::local_settings::LocalSettings::from(&config),
@@ -830,7 +833,8 @@ async fn session_info_preserves_styled_tooltip_links() {
 
 #[tokio::test]
 async fn session_info_first_event_suppresses_tooltips_and_nux() {
-    let config = test_config().await;
+    let mut config = test_config().await;
+    config.show_tooltips = true;
     let cell = new_session_info(
         &config,
         &crate::local_settings::LocalSettings::from(&config),
