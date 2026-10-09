@@ -3,6 +3,7 @@
 
 use super::LocalAgentRuntime;
 use crate::agent::types::AgentMetadata;
+use crate::codex_thread::CodexThread;
 use crate::session_prefix::format_subagent_context_line;
 use crate::thread_manager::ThreadManagerState;
 use codex_protocol::ThreadId;
@@ -102,6 +103,25 @@ impl LocalAgentRuntime {
         }
 
         Ok(children_by_parent)
+    }
+
+    /// Elpis: loaded threads that `parent_thread_id` spawned.
+    pub(crate) async fn loaded_thread_spawn_children(
+        &self,
+        parent_thread_id: ThreadId,
+    ) -> Vec<Arc<CodexThread>> {
+        let Ok(state) = self.upgrade() else {
+            return Vec::new();
+        };
+        let mut children = Vec::new();
+        for (parent, child) in state.list_live_thread_spawn_edges().await {
+            if parent == parent_thread_id
+                && let Ok(thread) = state.get_thread(child).await
+            {
+                children.push(thread);
+            }
+        }
+        children
     }
 
     pub(super) async fn live_thread_spawn_descendants(

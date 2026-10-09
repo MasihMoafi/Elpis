@@ -3,11 +3,18 @@ use codex_core::StartIfIdleSubmission;
 use codex_core::TurnInputRequest;
 use codex_core::TurnInputSubmission;
 use codex_core::config::Config;
+use codex_core::config::Constrained;
 use codex_extension_api::ConfigContributor;
 use codex_extension_api::ExtensionData;
 use codex_extension_api::ExtensionRegistryBuilder;
 use codex_history::RolloutItem;
 use codex_history::RolloutLine;
+use codex_protocol::models::ActivePermissionProfile;
+use codex_protocol::models::BUILT_IN_PERMISSION_PROFILE_DANGER_FULL_ACCESS;
+use codex_protocol::models::BUILT_IN_PERMISSION_PROFILE_WORKSPACE;
+use codex_protocol::models::PermissionProfile;
+use codex_protocol::models::ResponseItem;
+use codex_protocol::protocol::AskForApproval;
 use codex_protocol::protocol::EventMsg;
 use codex_protocol::protocol::Op;
 use codex_protocol::protocol::ThreadHistoryMode;
@@ -372,5 +379,87 @@ async fn compaction_checkpoints_settings_changed_during_its_model_request() -> R
         Some((Some(test.session_configured.thread_id), &expected))
     );
     server.shutdown().await;
+    Ok(())
+}
+
+/// Elpis: a client that records items without an engine turn, as the Claude and Gemini
+/// bridges do, must save the permissions the thread accepted, because resume restores the
+/// latest saved permissions. Fails before the fix: the saved context paired the new
+/// approval policy with the thread's starting profile.
+#[test_case(false; "full access granted before any turn")]
+#[test_case(true; "full access revoked before any turn")]
+#[tokio::test]
+async fn injected_context_saves_accepted_permissions(revoke: bool) -> Result<()> {
+    skip_if_no_network!(Ok(()));
+
+    let server = responses::start_mock_server().await;
+    let test = test_codex()
+        .with_config(move |config| {
+            if revoke {
+                config.permissions.approval_policy = Constrained::allow_any(AskForApproval::Never);
+                config
+                    .permissions
+                    .set_permission_profile(PermissionProfile::Disabled)
+                    .expect("test config should allow Full Access");
+            }
+        })
+        .build_with_auto_env(&server)
+        .await?;
+    let (policy, profile, profile_id) = if revoke {
+        (
+            AskForApproval::OnRequest,
+            PermissionProfile::workspace_write(),
+            BUILT_IN_PERMISSION_PROFILE_WORKSPACE,
+        )
+    } else {
+        (
+            AskForApproval::Never,
+            PermissionProfile::Disabled,
+            BUILT_IN_PERMISSION_PROFILE_DANGER_FULL_ACCESS,
+        )
+    };
+    submit_thread_settings(
+        &test.codex,
+        ThreadSettingsOverrides {
+            approval_policy: Some(policy),
+            permission_profile: Some(profile),
+            active_permission_profile: Some(ActivePermissionProfile::new(profile_id)),
+            ..Default::default()
+        },
+    )
+    .await?;
+    let bridged: ResponseItem = serde_json::from_value(serde_json::json!({
+        "type": "message",
+        "role": "developer",
+        "content": [{"type": "input_text", "text": "bridged context"}],
+    }))?;
+    test.codex.inject_response_items(vec![bridged]).await?;
+
+    let rollout_path = test.codex.rollout_path().expect("rollout path");
+    let rollout: Vec<RolloutLine> = std::fs::read_to_string(rollout_path)?
+        .lines()
+        .map(codex_rollout::parse_rollout_line)
+        .collect::<std::result::Result<_, _>>()?;
+    // The app server resumes from the latest saved context or settings checkpoint.
+    let latest = rollout.iter().rev().find_map(|line| match &line.item {
+        RolloutItem::TurnContext(context) => Some((
+            context.approval_policy,
+            context
+                .active_permission_profile
+                .as_ref()
+                .map(|profile| profile.id.clone()),
+        )),
+        RolloutItem::EventMsg(EventMsg::ThreadSettingsApplied(applied)) => Some((
+            applied.thread_settings.approval_policy,
+            applied
+                .thread_settings
+                .active_permission_profile
+                .as_ref()
+                .map(|profile| profile.id.clone()),
+        )),
+        _ => None,
+    });
+    assert_eq!(latest, Some((policy, Some(profile_id.to_string()))));
+    test.codex.shutdown_and_wait().await?;
     Ok(())
 }

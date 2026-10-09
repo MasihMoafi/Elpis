@@ -1459,6 +1459,9 @@ impl Session {
 
     async fn new_default_turn_for(&self, build_mode: TurnContextBuildMode) -> Arc<TurnContext> {
         let session_configuration = self.default_turn_configuration().await;
+        // Elpis: the context records the permissions the thread accepted, not its last turn's.
+        self.refresh_idle_thread_defaults(&session_configuration)
+            .await;
         let turn_environments = self.services.turn_environments.snapshot().await;
         self.new_turn_context_from_configuration(
             self.next_internal_sub_id(),

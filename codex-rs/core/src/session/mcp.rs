@@ -790,14 +790,8 @@ async fn review_guardian_mcp_elicitation(
         });
 
     // Full Access skips inference, not the active-turn and cancellation checks.
-    if (user_cua_execution
-        || turn_context.initial_environments.has_full_access(
-            turn_context.approval_policy(),
-            &turn_context
-                .config
-                .permissions
-                .effective_permission_profile(),
-        ))
+    // Elpis: Full Access accepted so far in the turn, so a mid-turn revocation stops it.
+    if (user_cua_execution || turn_context.has_current_full_access())
         && matches!(
             &request.elicitation,
             Elicitation::Mcp(rmcp::model::ElicitRequestParams::FormElicitationParams {
