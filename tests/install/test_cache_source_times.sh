@@ -10,6 +10,7 @@ git config user.name 'Cache fixture'
 git config user.email 'fixture@example.invalid'
 mkdir codex-rs
 printf original > codex-rs/source.rs
+printf unchanged > codex-rs/unchanged.rs
 mkdir -p .github/workflows
 printf '      - name: Download and verify the pinned sandbox V8\n        checksum: original\n      - uses: actions/cache/restore@fixture\n' > .github/workflows/embedded-elpis-linux.yml
 export RUSTY_V8_ARCHIVE="$fixture/archive"
@@ -42,10 +43,22 @@ bash "$helper" "cache-$cached_sha"
 test "$(stat -c %Y codex-rs/source.rs)" = 123
 git add codex-rs/source.rs
 git commit -qm changed
+touch -d @123 codex-rs/unchanged.rs
 bash "$helper" "cache-$cached_sha"
 test "$(stat -c %Y codex-rs/source.rs)" = 123
+test "$(stat -c %Y codex-rs/unchanged.rs)" = 0
+# Added and renamed inputs stay fresh too; old paths in dep-info stay missing.
+git mv codex-rs/unchanged.rs codex-rs/renamed.rs
+printf added > codex-rs/added.rs
+git add codex-rs/renamed.rs codex-rs/added.rs
+git commit -qm moved
+touch -d @456 codex-rs/renamed.rs codex-rs/added.rs
+bash "$helper" "cache-$cached_sha"
+test ! -e codex-rs/unchanged.rs
+test "$(stat -c %Y codex-rs/renamed.rs)" = 456
+test "$(stat -c %Y codex-rs/added.rs)" = 456
 bash "$helper" unknown
 bash "$helper" cache-0000000000000000000000000000000000000000
 test "$(stat -c %Y codex-rs/source.rs)" = 123
 test "$(cat codex-rs/source.rs)" = originaldirty
-printf 'PASS unchanged tree reused; changed, dirty, untracked and unknown trees stay fresh\n'
+printf 'PASS unchanged inputs reused; changed, added, renamed, dirty, untracked and unknown inputs stay fresh\n'
