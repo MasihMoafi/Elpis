@@ -51,6 +51,7 @@ fn turn_completed(thread_id: ThreadId, turn_id: &str) -> ServerNotification {
     ServerNotification::TurnCompleted(TurnCompletedNotification {
         thread_id: thread_id.to_string(),
         turn: Turn {
+            root_turn_id: None,
             id: turn_id.to_string(),
             items: Vec::new(),
             items_view: TurnItemsView::NotLoaded,
@@ -107,7 +108,10 @@ async fn a_finished_turn_checkpoints_its_result_files_and_commands() -> anyhow::
     .await;
     app.mirror_elpis_context_notification(&turn_completed(ThreadId::new(), "child-turn"))
         .await;
-    assert!(!checkpoint.exists(), "a child thread wrote the workspace checkpoint");
+    assert!(
+        !checkpoint.exists(),
+        "a child thread wrote the workspace checkpoint"
+    );
 
     for item in [
         ThreadItem::FileChange {

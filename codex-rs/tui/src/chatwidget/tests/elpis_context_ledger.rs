@@ -174,12 +174,10 @@ async fn ledger_top_aligns_with_the_composer_and_runs_down_untrimmed() -> anyhow
     assert_ledger_beside_composer(&chat, &inline);
 
     // Fullscreen (owned) screen.
-    let owned = chat.bottom_pane_renderable(
-        /*footer*/ None,
-        crate::bottom_pane::CommandPopupPlacement::Overlay,
-        /*composer_gap*/ None,
-        /*working_tip*/ None,
-    );
+    let owned = chat.bottom_pane_renderable(crate::bottom_pane::ComposerRenderOptions {
+        command_popup_placement: crate::bottom_pane::CommandPopupPlacement::Overlay,
+        ..Default::default()
+    });
     assert_ledger_beside_composer(&chat, &render_full(&owned));
     Ok(())
 }

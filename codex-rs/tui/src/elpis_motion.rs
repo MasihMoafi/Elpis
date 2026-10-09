@@ -96,6 +96,8 @@ fn gradient_text_at(text: &str, time: Duration) -> Vec<Span<'static>> {
 
 #[cfg(test)]
 mod tests {
+    use ratatui::buffer::Buffer;
+    use ratatui::layout::Rect;
     #[test]
     fn light_activity_labels_remain_readable_through_the_white_sweep() {
         fn luminance(rgb: (u8, u8, u8)) -> f64 {
