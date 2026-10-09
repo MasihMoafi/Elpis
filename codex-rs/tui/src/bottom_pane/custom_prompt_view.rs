@@ -267,6 +267,10 @@ impl BottomPaneView for CustomPromptView {
 #[path = "custom_prompt_view_tests.rs"]
 mod tests;
 
+#[cfg(test)]
+#[path = "custom_prompt_view_masking_tests.rs"]
+mod masking_tests;
+
 impl Renderable for CustomPromptView {
     fn desired_height(&self, width: u16) -> u16 {
         self.picker_desired_height(width)
