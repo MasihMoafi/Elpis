@@ -5,9 +5,9 @@ expression: "render_bottom_popup(&app.chat_widget, 80)"
   Agent command center  Group: Project  g
    All 1   Needs you 0   Working 0   Ready 1   Inactive 0
   ────────────────────────────────────────────────────────────────────────────
-      Tasks                                            Status         Updated
+      Tasks                        Model               Status         Updated
   /tmp/project  1
-  › ○ Current task                                     Ready           2m ago
+  › ○ Current task                 Unknown             Ready           2m ago
 
 
       Archive “Current task”?

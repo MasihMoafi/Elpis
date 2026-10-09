@@ -2,8 +2,6 @@
 source: tui/src/chatwidget/tests/popups_and_settings.rs
 expression: popup
 ---
- Elpis · model test-visible-model default · location /tmp/project
-
   Choose a mind and effort
   Provider: OpenAI (openai)
   Route: the provider's default endpoint

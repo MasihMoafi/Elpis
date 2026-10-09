@@ -4,7 +4,7 @@ expression: "format!(\"cursor={:?}\\n{frame}\",\nlayout.cursor_pos(area)).replac
 ---
 cursor=Some((13, 12))
                                                 
-  >_ OpenAI Codex (v<VERSION>)                      
+  >_ Elpis (v<VERSION>)                             
      loading                                    
                                                 
                                                 

@@ -6,7 +6,7 @@ before onboarding: hidden (0x0 viewport)
 ---
 after onboarding:
 
-  >_ OpenAI Codex (v<VERSION>)
+  >_ Elpis (v<VERSION>)
      loading
 
 

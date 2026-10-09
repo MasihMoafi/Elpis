@@ -197,3 +197,7 @@ fn append_voice_history(
         ));
     }
 }
+
+#[cfg(test)]
+#[path = "voice_strip_tests.rs"]
+mod tests;

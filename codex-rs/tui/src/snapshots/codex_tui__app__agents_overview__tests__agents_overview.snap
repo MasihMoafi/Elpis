@@ -5,11 +5,11 @@ expression: "render_bottom_popup(&app.chat_widget,\n96).replace(&format!(\"{proj
   Agent command center  Group: Project  g
    All 3   Needs you 1   Working 1   Ready 0   Inactive 1                      tab/⇧tab filter
   ────────────────────────────────────────────────────────────────────────────────────────────
-      Tasks                                           │ Task details
+      Tasks                       Model               │ Task details
   /tmp/project  3                                     │
-  › ● Build the dashboard                             │ Build the dashboard
-    ● Repair authentication                           │ ● Needs input
-    ○ Review yesterday's changes                      │
+  › ● Build the dashboard         Unknown             │ Build the dashboard
+    ● Repair authentication       Unknown             │ ● Needs input
+    ○ Review yesterday's changes  Unknown             │
                                                       │ Model: gpt-6.1-sol
                                                       │ Reasoning: Unknown
                                                       │

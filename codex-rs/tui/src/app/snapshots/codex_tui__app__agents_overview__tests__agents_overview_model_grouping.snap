@@ -5,16 +5,16 @@ expression: "render_bottom_popup(&app.chat_widget,\n100).replace(&test_path_disp
   Agent command center  Group: Model  g
    All 4   Needs you 0   Working 0   Ready 4   Inactive 0                          tab/⇧tab filter
   ────────────────────────────────────────────────────────────────────────────────────────────────
-      Tasks                                               │ Task details
+      Tasks                           Model               │ Task details
   Unknown  1                                              │
-  › ○ Legacy task                                         │ Legacy task
+  › ○ Legacy task                     Unknown             │ Legacy task
                                                           │ ○ Ready
   model-a  2                                              │
-    ○ Recent task                                         │ Model: Unknown
-    ○ Older task                                          │ Reasoning: Unknown
+    ○ Recent task                     model-a             │ Model: Unknown
+    ○ Older task                      model-a             │ Reasoning: Unknown
                                                           │
   model-b  1                                              │ Project
-    ○ Other model                                         │ /tmp/project
+    ○ Other model                     model-b             │ /tmp/project
                                                           │
                                                           │ Prompt
                                                           │ Legacy task

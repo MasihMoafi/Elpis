@@ -5,16 +5,16 @@ expression: normalize_agent_center_snapshot(grouping)
   Agent command center  Group: Project  g
    All 4   Needs you 0   Working 0   Ready 4   Inactive 0                                                                                      tab/⇧tab filter
   ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-      Tasks                                                                                   Status         Updated
+      Tasks                                                               Model               Status         Updated
   /tmp/worktree-root/primary  2
-  › ○ Task                                                                                    Ready           2m ago
-    ○ Task                                                                                    Ready           2m ago
+  › ○ Task                                                                Unknown             Ready           2m ago
+    ○ Task                                                                Unknown             Ready           2m ago
 
   /tmp/worktree-root/primary/subdir/child  1
-    ○ Task                                                                                    Ready           2m ago
+    ○ Task                                                                Unknown             Ready           2m ago
 
   /tmp/worktree-root/primary/subdir/child  1
-    ○ Task                                                                                    Ready           2m ago
+    ○ Task                                                                Unknown             Ready           2m ago
 
 
 

@@ -1,0 +1,11 @@
+---
+source: tui/src/chatwidget/tests/popups_and_settings.rs
+expression: before
+---
+  Apps
+  Loading installed and available apps...
+
+
+›    Loading apps...  This updates when the full list is ready
+
+  enter select · esc back

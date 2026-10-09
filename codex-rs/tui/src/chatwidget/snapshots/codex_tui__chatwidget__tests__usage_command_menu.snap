@@ -3,8 +3,6 @@ source: tui/src/chatwidget/tests/usage.rs
 assertion_line: 132
 expression: "render_bottom_popup(&chat, 80)"
 ---
- Elpis · model gpt-5.6-sol default · location /tmp/project
-
   Usage
   Account usage and resets.
 
