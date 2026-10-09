@@ -188,6 +188,10 @@ async function stopAppServer() {
   type('/rename Visible session sentinel'); await pause(250); key('Enter');
   await screenWhen(s => threadSettings().some(thread => thread.name === 'Visible session sentinel')
     && !s.includes('/rename Visible session sentinel'), 'renamed-title-80');
+  await screenWhen(() => fs.readFileSync(savedPermissions[0].rollout_path, 'utf8').split('\n').slice(0, -1)
+    .some(line => { const item = JSON.parse(line); return item.type === 'event_msg' && item.payload?.type === 'turn_aborted'; }), 'first-turn-aborted');
+  // Interrupt may precede the follow-up inference request. Discard responses reserved for that turn.
+  provider.actions.length = 0;
   // A later session in another folder proves grouping, ordering, and per-row models.
   provider.actions.push(message('SECOND_FOLDER_READY'));
   tmux('new-session', '-d', '-s', 'second', '-x', '80', '-y', '32', command(otherCwd, otherModel.slug));
