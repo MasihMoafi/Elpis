@@ -17,7 +17,7 @@ Elpis should make four things visible and inspectable:
 
 ## Design direction
 
-Elpis should feel like a serious instrument rather than another chat wrapper. Its visual language is deep charcoal with ember and rose for activity, while verdigris is reserved for confirmed or admitted state. Dense operational detail should remain legible, calm, and subordinate to the current goal.
+Masih selected exact Codex shared behavior and layout on October 9, 2026. The terminal uses that foundation for input, streaming, animations, shortcuts and the agents view. Conflicting Elpis appearance customizations yield to Codex. Keep the hand-selected slash commands unchanged and retain each agent’s model label. The accepted boundaries are in `docs/specs/codex-parity.md`.
 
 The public website may borrow RAG Studio's standard of polish, but not its composition or palette. It should explain Elpis to someone who has never used an agent harness, show the continuity model directly, and keep experimental work clearly separated from available behavior.
 
@@ -29,18 +29,14 @@ The public website may borrow RAG Studio's standard of polish, but not its compo
 - Elpis is a Linux-first early-access project. Do not describe the current candidate as production-ready until daily-driver acceptance is complete.
 - Local, inspectable state is a product property; provider requests still follow the provider or runtime the user selects.
 
-## Near-term outcome
+## Current state — October 9, 2026
 
-September 30, 2026: release the accepted v0.4.0 candidate on Codex rust-v0.159.0.
-Masih lifted the previous port restriction on September 29 and selected a vendor-first
-method: keep the upstream release, copy Elpis files, and adapt call sites. On September
-30 he tested the installed candidate, accepted the observed experience and authorized
-release. Focused evidence and clean-install checks gate publication; the full inherited
-suite and all historical outcome cases are not claimed accepted.
+The accepted September 30 release was v0.4.0 on Codex rust-v0.159.0. The current recovery candidate targets the installed Codex 0.162.0 foundation and preserves Elpis providers, Ledger controls, memory/continuity, pruning, dashboard and work graphs. It is under verification, not accepted or installed.
 
-State stays in ~/.elpis-next because v0.3.0's database is incompatible. The release
-includes the runtime, Code Mode host and sandbox. /force-prune, Auto routing and
-appearance settings remain unported. Memory benefit beyond the observed save/recall
-checks remains unproven. The live website retains its deployment boundary and is not
-part of this release. TASKS.md records local execution and acceptance; release notes
-record the public limits.
+Core, UI, CLI and their tests compiled in CI 37918373073. Later permission fixes are undergoing new compiler checks. A complete runtime build and behavior checks are still pending. `docs/permissions-verification.md` distinguishes old-engine failures from candidate evidence. `ES.md` is the local continuation note; the accepted contract governs scope.
+
+Runtime source is in `codex-rs/`, provider bridges in `tools/elpis-claude/`, checks in `scripts/` and `tests/`, and product contracts in `docs/`. State remains in `~/.elpis-next`. The website is a separate deployment boundary and is outside this recovery task.
+
+## What this file is for
+
+Resume project work from this identity, current direction and evidence. Keep implementation claims dated and linked to checks. Only Masih can accept the resulting experience.
