@@ -35,19 +35,14 @@ or implemented outcomes.
 
 ## Requested outcomes
 
-October 9 terminal repair: Full Access must stop asking for tool approval across
-providers, including when selected during an active turn. Questions use Shift+Up.
-Preserve Codex's ordinary terminal behavior and expose conversation names, task-list
-access, rename and delete controls. Investigate disappearing older chats without
-deleting history. Enter-submitted messages during work must reach the agent after a
-tool boundary rather than wait for the whole response. Compare the local Codex clone;
-the user requested no web lookup. These outcomes remain under implementation and
-require Masih's acceptance.
-
-October 9 visual follow-up: use a light olive-oil, yellow-green context color in
-the Context Ledger, consider the same accent for tool outputs in both themes,
-and remove the orange chatbox gradient completely from light mode. Pending
-visual acceptance; the dark-mode chatbox gradient was not requested for removal.
+October 9 final clarification: the accepted [Codex parity contract](specs/codex-parity.md)
+supersedes earlier conflicting shortcut, color and animation requests below. Use
+Codex's exact shared foundation and layout, including agents ordering and folders.
+Keep each agent's model label, the hand-selected slash commands with no additions,
+and the existing Elpis features. Full Access must apply across providers, active
+turns and resume. Preserve chats, settings and running sessions. Investigate missing
+older chats without deleting history; retain conversation names, rename and delete
+controls. The dashboard is not a pruning dashboard. Implementation and Masih's acceptance remain pending.
 
 September 12 follow-up: record each newly requested change here; cross-project
 requests are indexed in `../TASKS.md` from the repository root. Masih's later
@@ -66,7 +61,7 @@ clarification prefers existing TASKS.md files; do not create further request led
 | U5 | **A genuinely useful, visually strong dashboard.** `/dashboard` should prioritize actionable session/context/agent information, strong UX, and a next-level Elpis-specific visual design—not a cosmetic data dump. | Under visual acceptance | Manually review the rendered dashboard and accept both usefulness and appearance. |
 | U6 | **An agent-handling interface and accountable work graph.** `/agent` should open quickly, allow safe ordinary-agent handling, and expose the existing work graph as clearly Experimental and read-only until mutation semantics are trustworthy. Generic swarm complexity is not a goal by itself. | Work graph under acceptance; human controls deferred | Exercise agent navigation/controls and work-graph inspection, including rejection and stale-result cases. |
 | U7 | **Understandable manual memory.** Elpis should explain and expose the actual `MEMORY.md` admission model, show truthful status without leaking contents, and let Masih create/admit/withdraw it explicitly. Do not claim an automatic memory pipeline exists. | Under acceptance | Plant a fact, admit/withdraw it, and verify the next real request follows the visible state. |
-| U8 | **Elpis's own visual identity.** Functional correctness comes first; then restore and improve the distinctive Elpis look rather than copying Codex. Preserve the liked reddish/black direction and Elpising animation, reconsider the older Ledger colors, and apply strong UI/UX design to the dashboard and core surfaces. | Under visual acceptance | Manually compare the finished TUI/dashboard and approve the Elpis identity. |
+| U8 | **Exact Codex shared behavior and layout.** On October 9 Masih replaced the earlier distinctive TUI styling request with the [Codex parity contract](specs/codex-parity.md). Retain Elpis controls and per-agent model labels. | Under implementation and visual acceptance | Compare the candidate against Codex for typing, streaming, animations, shortcuts and the agents hierarchy; inspect retained controls and the dashboard. |
 | U9 | **Fast, maintainable change and verification cycles.** Small feature changes should not take hours. Reuse upstream mechanisms, keep source slices narrow, and make verification proportional. Never run an all-core/max-frequency local build; use the documented two-job low-priority throttle, or hosted CI only when pushing is separately authorized. | In progress | Make a representative small change and review measured edit/check/build effort plus workstation impact. |
 | U10 | **One integrated local candidate, not a premature release.** Audit Elpis worktrees, integrate distinct correct compatible work into local `main`, preserve unrelated/auth/context/memory changes, build and atomically install one optimized `elpis` only after functional issues close, and prove artifact/installed hashes match. Do not push, tag, publish, or call it a release. | Installed; under acceptance | Masih runs the installed candidate and performs the final checklist; only then may it be called verified. |
 | U11 | **Side-by-side Codex regression check.** Compare Elpis with current Codex for startup, interaction, Ctrl+C/exit latency, compaction, model/reasoning selection, and other important daily-driver behavior before acceptance. | Planned | Review recorded comparison evidence and personally test the important differences. |

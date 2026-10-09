@@ -86,29 +86,29 @@ async fn placeholder_invites_elpis_not_codex() {
 }
 
 #[tokio::test]
-async fn full_screen_hides_a_crowded_ledger_until_it_is_opened() {
+async fn a_crowded_ledger_hides_until_it_is_opened() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
     show_context_ledger(&mut chat);
     let short = ratatui::layout::Size::new(/*width*/ 120, /*height*/ 20);
     let tall = ratatui::layout::Size::new(/*width*/ 120, /*height*/ 80);
 
-    chat.fit_context_ledger_to_screen(Some(tall));
+    chat.fit_context_ledger_to_screen(tall);
     assert!(chat.context_ledger_width(120) > 0, "room: the Ledger shows");
-    chat.fit_context_ledger_to_screen(Some(short));
+    chat.fit_context_ledger_to_screen(short);
     assert_eq!(
         chat.context_ledger_width(120),
         0,
         "crowded: the Ledger hides"
     );
-    chat.fit_context_ledger_to_screen(/*screen*/ None);
+    chat.fit_context_ledger_to_screen(tall);
     assert!(
         chat.context_ledger_width(120) > 0,
-        "inline mode always shows it"
+        "more room restores the Ledger"
     );
 
-    chat.fit_context_ledger_to_screen(Some(short));
+    chat.fit_context_ledger_to_screen(short);
     chat.handle_key_event(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::ALT));
-    chat.fit_context_ledger_to_screen(Some(short));
+    chat.fit_context_ledger_to_screen(short);
     assert!(
         chat.context_ledger_width(120) > 0,
         "Alt+C opens a crowded Ledger"

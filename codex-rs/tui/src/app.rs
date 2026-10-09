@@ -1188,9 +1188,8 @@ impl App {
         if tui.is_owned_screen() {
             return self.render_owned_transcript(tui, screen_size);
         }
-        // Elpis: inline mode always shows the Ledger.
-        self.chat_widget
-            .fit_context_ledger_to_screen(/*screen*/ None);
+        // Elpis: leave transcript space in inline mode too.
+        self.chat_widget.fit_context_ledger_to_screen(screen_size);
         self.chat_widget
             .empty_state_animation
             .borrow_mut()

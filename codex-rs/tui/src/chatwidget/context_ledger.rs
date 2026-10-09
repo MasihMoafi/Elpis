@@ -178,17 +178,13 @@ impl ChatWidget {
         LEDGER_WIDTH.min(terminal_width * 2 / 5)
     }
 
-    /// Full screen keeps at least this many transcript rows above the Ledger.
-    const FULL_SCREEN_MIN_TRANSCRIPT_ROWS: u16 = 8;
+    /// Keep at least this many transcript rows above the Ledger in either terminal mode.
+    const MIN_TRANSCRIPT_ROWS: u16 = 8;
 
-    /// Full screen only: an unfocused Ledger that would leave the transcript fewer than
-    /// `FULL_SCREEN_MIN_TRANSCRIPT_ROWS` rows hides; Alt+C still opens it whole.
-    /// Inline mode passes `None`, which always shows the Ledger.
-    pub(crate) fn fit_context_ledger_to_screen(&self, screen: Option<ratatui::layout::Size>) {
+    /// An unfocused Ledger that would leave the transcript fewer than `MIN_TRANSCRIPT_ROWS`
+    /// rows hides; Alt+C still opens it whole.
+    pub(crate) fn fit_context_ledger_to_screen(&self, screen: ratatui::layout::Size) {
         self.context_ledger.crowded.set(false);
-        let Some(screen) = screen else {
-            return;
-        };
         let width = self.context_ledger_width(screen.width);
         if width == 0 || self.context_ledger.focused {
             return;
@@ -196,7 +192,7 @@ impl ChatWidget {
         let height = self.context_ledger_desired_height(width);
         self.context_ledger
             .crowded
-            .set(height + Self::FULL_SCREEN_MIN_TRANSCRIPT_ROWS > screen.height);
+            .set(height + Self::MIN_TRANSCRIPT_ROWS > screen.height);
     }
 
     pub(super) fn context_ledger_desired_height(&self, ledger_width: u16) -> u16 {

@@ -47,23 +47,12 @@ The product succeeds only when these behaviors pass their acceptance checks and 
 
 ## Proof Standard
 
-Masih rejected the September 11 installed UI; corrections remain in progress.
-Enter sends steering during an active response, consumed at the next supported
-tool/model boundary. Gemini's agy adapter accepts only serial follow-up turns;
-its queued-delivery notice explains that the current reply must finish first.
-Commands that cannot run during a response wait until it finishes.
-Up in an empty composer recalls queued follow-ups; Shift+Up opens pending questions.
-There is no default Ctrl+Q shortcut. `/agents` opens the task list; its footer shows
-the configured rename and delete controls, and deletion requires confirmation.
-The September 12 correction gives Tab to active completion popups first;
-otherwise Tab opens/focuses the Context Ledger, then closes it. Alt+C toggles
-ledger visibility directly. Elpising, streaming, ledger updates, and permission
-labels retain animation; the live Elpis name also has the requested warm highlight,
-with no separate spinner
-beside Elpising. Current source comparison and verification limits live in
-[`evals/ui-upstream-audit-20260912.md`](evals/ui-upstream-audit-20260912.md).
-Installed artifact evidence is separate in the release handoff; source changes
-and automated tests do not constitute visual acceptance.
+The accepted October 9 recovery contract is [Codex parity](specs/codex-parity.md).
+Use the installed Codex 0.162.0 foundation for shared terminal behavior and layout.
+Earlier Elpis-specific colors, animations and shortcut assignments yield to that
+contract. Keep the selected slash commands, per-agent model labels, and retained
+Elpis features. Candidate code and automated checks remain subject to Masih's
+acceptance; they do not establish that the installed experience is fixed.
 
 A feature is real only when its user-visible acceptance check passes and the evidence is recorded. Documentation, hidden code, or a plausible architecture is not proof. `TASKS.md` is the current-state record against this standard.
 
@@ -112,9 +101,9 @@ Easy, Medium, and Hard are separate difficulty labels. They describe how much re
 
 **R9. Proportionate, measured development cycle** — Ordinary changes receive focused checks. Exhaustive inherited TUI/app-server regression runs belong to nightly/manual/release verification unless a change directly touches that surface. CI must not edit source or create status-only commits. Dependency deletion follows measured cost and product optionality, not crate names.
 
-**R10. Distinctive continuity-first identity** — Elpis uses a restrained ember-and-rose identity on deep charcoal and visibly separates runtime, model, context, memory, permissions, and evidence. Verdigris is reserved for positive facts such as fresh or admitted state. UI design is an acceptance contract, not proof of implementation.
+**R10. Codex shared interface with Elpis controls** — Follow the accepted [Codex parity contract](specs/codex-parity.md). Elpis makes runtime, model, context, memory, permissions, and evidence visible through its retained controls. Earlier custom styling must not override the shared Codex interface.
 
-**R11. Claude models use the native provider path** — The removed Claude Code CLI-subprocess bridge is not a supported runtime. Claude models are supported through the native Anthropic Messages API adapter; authentication/provider selection must remain explicit. `elpis claude` (accepted 2026-10-03) is separate: it starts the Claude Code CLI and runs Smart Prune on its requests through a loopback proxy. It is not a model provider for Elpis sessions.
+**R11. Explicit Claude provider and subscription paths** — Preserve the native Anthropic API path and the later user-selected Claude subscription ACP bridge described in [claude-acp.md](specs/claude-acp.md). Authentication and provider selection remain explicit. `elpis claude` (accepted 2026-10-03) separately starts Claude Code through a loopback Smart Prune proxy.
 
 **R12. Deterministic multi-agent orchestration** — Elpis owns a persisted task DAG above the agent lineage graph. It validates dependencies and bounded task roles, controls concurrency and write authority, measures file changes, requires evidence, and requires a directly dependent read-only verifier for writable work. Branch/worktree creation and integration remain deliberate coordinator actions. The exact contract and verification state live in [WORK_GRAPHS.md](WORK_GRAPHS.md).
 
@@ -294,17 +283,10 @@ Reasoning tokens count toward usage, but hidden reasoning is not a useful transc
 
 ## UI Identity
 
-Elpis should feel unique because the interface exposes what Elpis uniquely owns: runtime identity, admitted context, durable memory, continuity, permissions, and evidence.
-
-> The model may change; the work continues.
-
-The identity is continuity-first: deep charcoal structure, bone text, restrained ember/rose accents, and motion only when it communicates active work. UI changes should make runtime/model ownership, context, memory, permission state, and evidence legible without degrading the contained TUI's interaction quality.
-
-Context labels, usage indicators, and tool-output connectors use olive yellow-green
-accents in both appearances. The light composer keeps a flat terminal background,
-including during Max/Ultra effort effects; the dark composer retains its wash.
-
-Implementation status belongs in `TASKS.md`; context-specific UI mechanics belong in [context.md](context.md).
+Follow [R10](#confirmed-requirements) and the accepted parity contract for shared
+surfaces. Elpis-specific controls must keep context, memory, provider and permission
+state legible. Context-specific mechanics belong in [context.md](context.md).
+The dashboard remains a dashboard, with its existing scope preserved.
 
 ### Acceptance
 
