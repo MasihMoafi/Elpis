@@ -10,4 +10,4 @@ NODE_USE_ENV_PROXY=1 PORT="$port" node "$here/acp-bridge.mjs" &
 bridge=$!
 trap 'kill "$bridge" 2>/dev/null' EXIT
 for _ in $(seq 1 50); do (exec 3<>"/dev/tcp/127.0.0.1/$port") 2>/dev/null && break; sleep 0.1; done
-"$HOME/.local/bin/elpis" --remote "ws://127.0.0.1:$port" "$@"
+"${ELPIS_ENGINE_BIN:-$HOME/.local/bin/elpis}" --remote "ws://127.0.0.1:$port" "$@"
