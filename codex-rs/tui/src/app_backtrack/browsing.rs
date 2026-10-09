@@ -20,21 +20,6 @@ impl App {
             }
     }
 
-    /// Elpis: on the full screen, browsing hides the composer, so a typed character must not be
-    /// lost to browsing keys (`h`, `j`, `k`, `l`, `g`). It leaves browsing and reaches the
-    /// composer; arrows, Page Up/Down, Enter and Esc keep their browsing meaning. The second
-    /// stroke of a pending chord (`ctrl+x h`) stays with the chord.
-    pub(crate) fn typed_key_leaves_browsing(&self, tui: &tui::Tui, key: KeyEvent) -> bool {
-        tui.is_owned_screen()
-            && !self.key_chord_matcher.is_pending()
-            && self.overlay.is_none()
-            && self.backtrack.overlay_preview_active
-            && !self.transcript_view.has_active_interaction()
-            && self.chat_widget.no_modal_or_popup_active()
-            && matches!(key.kind, KeyEventKind::Press | KeyEventKind::Repeat)
-            && crate::key_hint::is_plain_text_key_event(key)
-    }
-
     pub(crate) fn cancel_primed_browsing_for_event(&mut self, event: &TuiEvent) {
         let interrupts_escape_pair = match event {
             TuiEvent::Key(key) => key.code != KeyCode::Esc && key.kind != KeyEventKind::Release,
