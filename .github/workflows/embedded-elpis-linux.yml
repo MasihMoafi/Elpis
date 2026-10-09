@@ -257,7 +257,7 @@ jobs:
         working-directory: codex-rs
         shell: bash
         run: |
-          cargo test --profile dev-small --locked -p codex-config --lib -- projectless_directory_tests project_config_ 2>&1 | tee "$RUNNER_TEMP/elpis-config-checks.log"
+          cargo test --profile dev-small --locked -p codex-config --lib -- projectless_directory_tests project_config_ default_off_disables_every_skill_until_one_is_turned_on 2>&1 | tee "$RUNNER_TEMP/elpis-config-checks.log"
           node ../scripts/user-config-isolation.test.cjs "$PWD/target/release/elpis" 2>&1 | tee -a "$RUNNER_TEMP/elpis-config-checks.log"
       - name: Preserve configuration failure details immediately
         if: failure()

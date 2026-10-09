@@ -253,7 +253,9 @@ fn default_off_disables_every_skill_until_one_is_turned_on() {
     let codex_home = TempDir::new().expect("temp dir");
     let chosen = codex_home.path().join("chosen/SKILL.md").abs();
     let other = codex_home.path().join("other/SKILL.md").abs();
-    let skills = [("chosen", &chosen), ("other", &other)];
+    let chosen_uri = PathUri::from_abs_path(&chosen);
+    let other_uri = PathUri::from_abs_path(&other);
+    let skills = [("chosen", &chosen_uri), ("other", &other_uri)];
 
     let upstream = skill_config_rules_from_stack(&stack(&codex_home, "", ""));
     assert_eq!(
@@ -269,7 +271,7 @@ fn default_off_disables_every_skill_until_one_is_turned_on() {
     let elpis = skill_config_rules_from_stack(&stack(&codex_home, &user, ""));
     assert_eq!(
         elpis.resolve_disabled_paths(skills),
-        [other.clone()].into_iter().collect()
+        [other_uri].into_iter().collect()
     );
 }
 
