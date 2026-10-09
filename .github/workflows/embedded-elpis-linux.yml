@@ -230,8 +230,8 @@ jobs:
             goal_validation command_popup live_center agents_navigation footer_collapse \
             context_usage context_ledger exec_cell effort_ignition style:: light_terminal_palette \
             chatwidget_exec_and_status_layout_vt100_snapshot luna_reserve_usage_running
-          cargo test --release --locked -p codex-core --lib elpis_
-          cargo test --release --locked -p codex-core --lib smart_prune
+          cargo test --release --locked -p codex-core --lib --             elpis_ smart_prune compact_instructions world_state build_agent_spawn_config             live_permissions step_activation thread_settings turn_input
+          cargo test --release --locked -p codex-core --test all --             elpis_ledger_admission elpis_context_attribution work_graphs
           cargo test --release --locked -p codex-elpis-gateway --lib
           cargo test --release --locked -p codex-model-provider-info --lib
           cargo test --release --locked -p codex-cli --lib
