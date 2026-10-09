@@ -6,7 +6,7 @@ before:
 / T R A N S C R I P T / / / / / / / / / / / / / / / / / / / / / / / / / / / / /
 /status
 
-  >_ OpenAI Codex (v0.0.0)
+  >_ Elpis (v0.4.1)
 
   Visit https://chatgpt.com/settings/usage for up-to-date
   information on rate limits and credits
@@ -17,7 +17,7 @@ before:
   Agents.md:    <none>
 
   Token usage:  0 total  (0 input + 0 output)
-  Limits:       refresh requested; run /status again shortly.
+  Limits:       refresh requested; run /usage again shortly.
 
 
 
@@ -38,7 +38,7 @@ after:
 / T R A N S C R I P T / / / / / / / / / / / / / / / / / / / / / / / / / / / / /
 /status
 
-  >_ OpenAI Codex (v0.0.0)
+  >_ Elpis (v0.4.1)
 
   Visit https://chatgpt.com/settings/usage for up-to-date
   information on rate limits and credits

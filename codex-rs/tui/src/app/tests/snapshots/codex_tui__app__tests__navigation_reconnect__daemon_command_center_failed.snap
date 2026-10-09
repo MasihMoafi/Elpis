@@ -6,10 +6,10 @@ expression: "render_bottom_popup(&app.chat_widget, 100)"
    All 2   Needs you 0   Working 1   Ready 1   Inactive 0
   ────────────────────────────────────────────────────────────────────────────────────────────────
   Rename › Keep this task draft!                          │ Task details
-      Tasks                                               │
+      Tasks                           Model               │
   /tmp/project  2                                         │ Selected task
-  › ● Selected task                                       │ ● Working
-    ○ Vanished task                                       │
+  › ● Selected task                   Unknown             │ ● Working
+    ○ Vanished task                   Unknown             │
                                                           │ Model: Unknown
                                                           │ Reasoning: Unknown
                                                           │

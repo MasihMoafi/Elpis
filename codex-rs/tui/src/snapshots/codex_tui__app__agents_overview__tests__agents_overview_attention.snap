@@ -5,10 +5,10 @@ expression: "render_bottom_popup(&app.chat_widget,\n96).replace(&format!(\"{proj
   Agent command center  Group: Project  g
    All 2   Needs you 1   Working 0   Ready 0   Inactive 1                      tab/⇧tab filter
   ────────────────────────────────────────────────────────────────────────────────────────────
-      Tasks                                           │ Task details
+      Tasks                       Model               │ Task details
   /tmp/project  2                                     │
-  › ● Repair authentication                           │ Repair authentication
-    ○ Investigate parser                              │ ● Needs input
+  › ● Repair authentication       Unknown             │ Repair authentication
+    ○ Investigate parser          Unknown             │ ● Needs input
                                                       │
                                                       │ Model: Unknown
                                                       │ Reasoning: Unknown

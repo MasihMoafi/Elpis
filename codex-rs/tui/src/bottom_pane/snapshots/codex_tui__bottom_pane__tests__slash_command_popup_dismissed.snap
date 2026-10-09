@@ -1,11 +1,10 @@
 ---
 source: tui/src/bottom_pane/mod.rs
-assertion_line: 3603
 expression: "render_snapshot(&pane, area)"
 ---
-Elpising… (0s • esc to interrupt)                           
+• Working (0s • esc to interrupt)                           
                                                             
-───────────────────────────────────────────────────────────┐
-› /ren                                                     │
-───────────────────────────────────────────────────────────┘
-  enter to queue    100% context left · Tab Context Ledger
+                                                            
+› /rev                                                      
+                                                            
+  tab to queue message                   100% context left

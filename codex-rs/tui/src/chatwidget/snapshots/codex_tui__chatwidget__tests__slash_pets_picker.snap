@@ -1,0 +1,20 @@
+---
+source: tui/src/chatwidget/tests/slash_commands.rs
+assertion_line: 2890
+expression: popup
+---
+  Select Pet
+  Choose a pet to wake in the terminal.
+
+  Type to filter pets...
+
+  Disable terminal pets
+  BSOD                                                Loading preview...
+› Codex
+  Dewey
+  Fireball
+  Null Signal
+  Rocky
+  Seedy
+↓
+  enter select · esc back

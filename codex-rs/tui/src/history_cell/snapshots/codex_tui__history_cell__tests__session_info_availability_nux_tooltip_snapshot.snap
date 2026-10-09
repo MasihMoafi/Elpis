@@ -1,0 +1,10 @@
+---
+source: tui/src/history_cell/tests.rs
+assertion_line: 778
+expression: rendered
+---
+
+  >_ Elpis (v0.4.1)
+     /tmp/project
+
+  Tip: Model just became available

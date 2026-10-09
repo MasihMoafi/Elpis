@@ -4,5 +4,5 @@ assertion_line: 5874
 expression: rendered
 ---
 
-  >_ OpenAI Codex (v<VERSION>)
+  >_ Elpis (v<VERSION>)
      /tmp/project

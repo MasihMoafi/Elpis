@@ -5,9 +5,9 @@ expression: "screen(&view, 40, 12)"
   Agent command center  Group: Projec…
   ‹  Working 0   Ready 1   Inactive 1
   ────────────────────────────────────
-      Tasks
+      Tasks            Model
   /tmp/project  1 of 3
-  › ○ Unloaded task
+  › ○ Unloaded task    Unknown
 
 
 
