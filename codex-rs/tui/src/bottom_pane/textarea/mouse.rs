@@ -57,21 +57,6 @@ impl TextArea {
         }
     }
 
-    /// Elpis: moves the cursor with `movement` and selects from the selection's anchor, or from
-    /// where the cursor was, to where it lands, as Shift with a movement key does in an IDE.
-    pub(super) fn extend_selection(&mut self, movement: impl FnOnce(&mut Self)) {
-        let anchor = self.cursor_pos;
-        let selection = self.mouse_selection.take().unwrap_or(MouseSelection {
-            pending_copy: None,
-            origin: anchor..anchor,
-            unit: SelectionUnit::Character,
-            dragging: false,
-            moved: true,
-        });
-        movement(self);
-        self.mouse_selection = Some(selection);
-    }
-
     pub(crate) fn mouse_selection_range(&self) -> Option<Range<usize>> {
         let origin = &self.mouse_selection.as_ref()?.origin;
         let range = origin.start.min(self.cursor_pos)..origin.end.max(self.cursor_pos);

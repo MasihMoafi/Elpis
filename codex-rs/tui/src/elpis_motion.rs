@@ -54,10 +54,6 @@ pub(crate) fn animated_text(text: &str, animated: bool) -> Vec<Span<'static>> {
     gradient_text_at(text, if animated { elapsed() } else { Duration::ZERO })
 }
 
-pub(crate) fn animated_text_at(text: &str, time: Duration) -> Vec<Span<'static>> {
-    gradient_text_at(text, time)
-}
-
 fn gradient_text_at(text: &str, time: Duration) -> Vec<Span<'static>> {
     let Some(background) = default_bg() else {
         return text
