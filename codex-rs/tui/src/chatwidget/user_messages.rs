@@ -166,6 +166,23 @@ pub(crate) struct ThreadInputState {
     pub(super) agent_turn_running: bool,
 }
 
+impl ThreadInputState {
+    /// Move unsent input when a provider switch continues the conversation elsewhere.
+    /// Questions, submitted steers, running turns and model settings belong to their thread.
+    pub(crate) fn move_draft_and_queue_to(&mut self, target: &mut Self) {
+        if let Some(composer) = self.composer.take() {
+            target.composer = Some(composer);
+        }
+        target.recovered_queue |= self.recovered_queue && !self.queued_user_messages.is_empty();
+        target
+            .queued_user_messages
+            .append(&mut self.queued_user_messages);
+        target
+            .queued_user_message_history_records
+            .append(&mut self.queued_user_message_history_records);
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct ThreadInputStateRestoreMode {
     pub(crate) preserve_in_flight_turn: bool,
@@ -856,5 +873,59 @@ impl ThreadInputState {
         self.queued_user_messages
             .iter()
             .any(|message| matches!(message.delivery, MessageDelivery::Unconfirmed(_)))
+    }
+}
+
+#[cfg(test)]
+mod provider_switch_tests {
+    use super::*;
+    use pretty_assertions::assert_eq;
+
+    #[tokio::test]
+    async fn elpis_provider_switch_moves_unsent_input_without_moving_thread_state() {
+        let (mut chat, _tx, _events, _ops) =
+            crate::chatwidget::tests::helpers::make_chatwidget_manual_with_sender().await;
+        let mut source = chat.capture_thread_input_state().expect("source input");
+        let mut target = source.clone();
+        source.composer = Some(ThreadComposerState {
+            text: "draft for the next provider".into(),
+            ..Default::default()
+        });
+        source
+            .queued_user_messages
+            .push_back(QueuedUserMessage::from(UserMessage::from(
+                "queued follow-up",
+            )));
+        source
+            .queued_user_message_history_records
+            .push_back(UserMessageHistoryRecord::UserMessageText);
+        source.questions = Some(Default::default());
+        source.pending_user_message_client_id = Some("already-submitted".into());
+        source.agent_turn_running = true;
+        source.current_collaboration_mode.settings.model = "previous-model".into();
+        let selected_mode = target.current_collaboration_mode.clone();
+
+        source.move_draft_and_queue_to(&mut target);
+        source.move_draft_and_queue_to(&mut target);
+
+        assert!(source.composer.is_none());
+        assert!(source.queued_user_messages.is_empty());
+        assert!(source.queued_user_message_history_records.is_empty());
+        assert!(source.questions.is_some());
+        assert_eq!(
+            source.pending_user_message_client_id.as_deref(),
+            Some("already-submitted")
+        );
+        assert!(source.agent_turn_running);
+        assert_eq!(
+            target.composer.as_ref().unwrap().text,
+            "draft for the next provider"
+        );
+        assert_eq!(target.queued_user_messages.len(), 1);
+        assert_eq!(target.queued_user_message_history_records.len(), 1);
+        assert!(target.questions.is_none());
+        assert!(target.pending_user_message_client_id.is_none());
+        assert!(!target.agent_turn_running);
+        assert_eq!(target.current_collaboration_mode, selected_mode);
     }
 }
