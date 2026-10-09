@@ -89,6 +89,42 @@ impl App {
         });
     }
 
+    /// Move only unsent input to the replacement chat. The source keeps its questions and
+    /// running work, and the destination keeps its selected model and current turn state.
+    async fn carry_input_after_provider_switch(
+        &mut self,
+        source: Option<ThreadId>,
+        input: Option<ThreadInputState>,
+    ) {
+        let Some(mut input) = input else {
+            return;
+        };
+        if self.chat_widget.thread_id() == source {
+            return;
+        }
+        let Some(mut target) = self.chat_widget.capture_thread_input_state() else {
+            return;
+        };
+        let mut source_store = match source.and_then(|id| self.thread_event_channels.get(&id)) {
+            Some(channel) => Some(channel.store.lock().await),
+            None => None,
+        };
+        // Replacement saves the latest source input, including notifications drained during
+        // attachment. Moving from that store also prevents replay on the previous provider.
+        source_store
+            .as_mut()
+            .and_then(|store| store.input_state.as_mut())
+            .unwrap_or(&mut input)
+            .move_draft_and_queue_to(&mut target);
+        drop(source_store);
+        self.chat_widget.restore_thread_input_state(
+            Some(target),
+            crate::chatwidget::ThreadInputStateRestoreMode {
+                preserve_in_flight_turn: true,
+            },
+        );
+    }
+
     async fn elpis_switch_provider(
         &mut self,
         tui: &mut tui::Tui,
@@ -148,11 +184,14 @@ impl App {
         self.config.model_reasoning_effort = None;
 
         let Some(thread_id) = self.chat_widget.thread_id() else {
+            let input = self.chat_widget.capture_thread_input_state();
             self.start_fresh_session(
                 tui, app_server, /*session_start_source*/ None,
                 /*initial_user_message*/ None, /*new_thread_name*/ None,
             )
             .await;
+            self.carry_input_after_provider_switch(/*source*/ None, input)
+                .await;
             return;
         };
         let mut fork_config = self.config.clone();
@@ -175,6 +214,7 @@ impl App {
             .await
         {
             Ok(forked) => {
+                let input = self.chat_widget.capture_thread_input_state();
                 self.detach_current_thread_for_navigation(
                     app_server,
                     Some(forked.session.thread_id),
@@ -189,14 +229,18 @@ impl App {
                     )
                     .await
                 {
-                    Ok(()) => self.chat_widget.add_info_message(
-                        format!("Now on {name} · {model}."),
-                        Some(
-                            "This conversation continues in a fork; the previous thread keeps \
-                             its provider."
-                                .to_string(),
-                        ),
-                    ),
+                    Ok(()) => {
+                        self.carry_input_after_provider_switch(Some(thread_id), input)
+                            .await;
+                        self.chat_widget.add_info_message(
+                            format!("Now on {name} · {model}."),
+                            Some(
+                                "This conversation continues in a fork; the previous thread \
+                                 keeps its provider."
+                                    .to_string(),
+                            ),
+                        );
+                    }
                     Err(err) => self.chat_widget.add_error_message(format!(
                         "Could not open the conversation on {name}: {err}"
                     )),
@@ -207,12 +251,15 @@ impl App {
                     .chain()
                     .any(|cause| cause.to_string().contains(NO_ROLLOUT)) =>
             {
-                // No turns yet: nothing to carry over.
+                // No turns yet: nothing to carry over but the owner's input.
+                let input = self.chat_widget.capture_thread_input_state();
                 self.start_fresh_session(
                     tui, app_server, /*session_start_source*/ None,
                     /*initial_user_message*/ None, /*new_thread_name*/ None,
                 )
                 .await;
+                self.carry_input_after_provider_switch(Some(thread_id), input)
+                    .await;
                 self.chat_widget
                     .add_info_message(format!("Now on {name} · {model}."), /*hint*/ None);
             }

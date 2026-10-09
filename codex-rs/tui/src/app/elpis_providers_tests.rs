@@ -26,6 +26,13 @@ struct Fixture {
     tui: tui::Tui,
     /// `ModelsLoaded` events taken off the channel but not yet delivered.
     held: Vec<AppEvent>,
+    /// Whether `pump` hands `Switch` to the App (the real fork or fresh-session path).
+    follow_switch: bool,
+    /// The turns sent so far, as `(items, model)`, from the old chat's operation channel and from
+    /// the `CodexOp` events a replacement chat sends.
+    turns: Vec<(String, String)>,
+    /// The thread the queued messages were written on.
+    source: Option<ThreadId>,
 }
 
 impl Fixture {
@@ -53,6 +60,9 @@ impl Fixture {
             server,
             tui: crate::tui::test_support::make_test_tui()?,
             held: Vec::new(),
+            follow_switch: false,
+            turns: Vec::new(),
+            source: Some(thread_id),
         };
         fixture.notify(codex_app_server_protocol::ServerNotification::TurnStarted(
             codex_app_server_protocol::TurnStartedNotification {
@@ -117,6 +127,16 @@ impl Fixture {
                 AppEvent::Elpis(ElpisAppEvent::Provider(ElpisProviderEvent::ModelsLoaded {
                     ..
                 })) => self.held.push(event),
+                AppEvent::CodexOp(AppCommand::UserTurn { items, model, .. }) => {
+                    self.turns.push((format!("{items:?}"), model));
+                }
+                AppEvent::Elpis(ElpisAppEvent::Provider(ElpisProviderEvent::Switch { .. }))
+                    if self.follow_switch =>
+                {
+                    self.app
+                        .handle_event(&mut self.tui, &mut self.server, event)
+                        .await?;
+                }
                 AppEvent::Elpis(ElpisAppEvent::Provider(ElpisProviderEvent::Browse { .. }))
                 | AppEvent::SettingsSelectionClosed
                 | AppEvent::SettingsSelectionSettled => {
@@ -175,10 +195,19 @@ impl Fixture {
         self.pump().await
     }
 
+    /// The turns sent so far.
+    fn sent_turns(&mut self) -> &[(String, String)] {
+        while let Ok(op) = self.ops.try_recv() {
+            if let AppCommand::UserTurn { items, model, .. } = op {
+                self.turns.push((format!("{items:?}"), model));
+            }
+        }
+        &self.turns
+    }
+
     /// Whether the queued follow-up has been sent as a turn.
     fn follow_up_sent(&mut self) -> bool {
-        std::iter::from_fn(|| self.ops.try_recv().ok())
-            .any(|op| matches!(op, AppCommand::UserTurn { .. }))
+        !self.sent_turns().is_empty()
     }
 
     fn follow_up_waits(&mut self) -> bool {
@@ -319,4 +348,87 @@ async fn cancelling_the_loading_picker_drops_the_late_catalog() -> Result<()> {
 #[tokio::test]
 async fn a_late_catalog_does_not_replace_a_newer_picker() -> Result<()> {
     late_catalog_after_cancelling(/*newer_picker*/ true).await
+}
+
+/// `Switch` through the App: the follow-up queued behind `/model` moves to the chat on the new
+/// provider and is sent there once, on the selected model. It does not also wait on the previous
+/// thread, and the `/model` command is not run again. The source thread has no turns, so the App
+/// takes its fresh-session path; the fork path stores and restores input the same way.
+#[tokio::test]
+async fn switching_provider_sends_the_queued_follow_up_once_on_the_selected_model() -> Result<()> {
+    let mut fixture = Fixture::with_provider_list_open().await?;
+    let source = fixture.source.expect("a source thread");
+    fixture.choose_the_gateway_provider().await?;
+    let reply = fixture.catalog_reply().await;
+    let models = some_models(&fixture.app);
+    let model = models[0].model.clone();
+    fixture.deliver(&reply, Ok(models)).await?;
+    assert!(fixture.follow_up_waits());
+
+    fixture.follow_switch = true;
+    fixture.key(KeyCode::Enter);
+    fixture.pump().await?;
+
+    assert_ne!(
+        fixture.app.chat_widget.thread_id(),
+        Some(source),
+        "the chat was not replaced: {}",
+        fixture.popup()
+    );
+    let turns = fixture.sent_turns().to_vec();
+    assert_eq!(turns.len(), 1, "{turns:?}");
+    assert!(turns[0].0.contains("hello after catalog"), "{turns:?}");
+    assert_eq!(turns[0].1, model);
+    assert!(!fixture.app.chat_widget.has_queued_follow_up_messages());
+    // Restoring the source thread must not restore a second copy of the sent message.
+    let previous = fixture
+        .app
+        .thread_event_channels
+        .get(&source)
+        .map(|channel| channel.store.clone());
+    if let Some(store) = previous {
+        let previous_input = store.lock().await.input_state.clone();
+        fixture.app.chat_widget.restore_thread_input_state(
+            previous_input,
+            crate::chatwidget::ThreadInputStateRestoreMode {
+                preserve_in_flight_turn: false,
+            },
+        );
+        assert!(!fixture.app.chat_widget.has_queued_follow_up_messages());
+    }
+    Ok(())
+}
+
+/// A switch that cannot start (an unknown provider) replaces nothing: the follow-up stays with
+/// the chat that holds it and is sent once, on its own model.
+#[tokio::test]
+async fn a_switch_that_fails_keeps_the_follow_up_on_the_old_chat() -> Result<()> {
+    let mut fixture = Fixture::with_provider_list_open().await?;
+    let source = fixture.source.expect("a source thread");
+    let old_model = fixture.app.chat_widget.current_model().to_string();
+    fixture.choose_the_gateway_provider().await?;
+    let reply = fixture.catalog_reply().await;
+    let models = some_models(&fixture.app);
+    fixture.deliver(&reply, Ok(models)).await?;
+    assert!(fixture.follow_up_waits());
+
+    fixture.follow_switch = true;
+    let switch = AppEvent::Elpis(ElpisAppEvent::Provider(ElpisProviderEvent::Switch {
+        provider_id: "no-such-provider".to_string(),
+        model: "unused".to_string(),
+    }));
+    fixture
+        .app
+        .handle_event(&mut fixture.tui, &mut fixture.server, switch)
+        .await?;
+    // The owner dismisses the model list.
+    fixture.key(KeyCode::Esc);
+    fixture.pump().await?;
+
+    assert_eq!(fixture.app.chat_widget.thread_id(), Some(source));
+    let turns = fixture.sent_turns().to_vec();
+    assert_eq!(turns.len(), 1, "{turns:?}");
+    assert!(turns[0].0.contains("hello after catalog"), "{turns:?}");
+    assert_eq!(turns[0].1, old_model);
+    Ok(())
 }
