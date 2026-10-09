@@ -279,7 +279,7 @@ jobs:
           cargo test --profile dev-small --locked -p codex-tui --lib 2>&1 | tee "$RUNNER_TEMP/elpis-ui-checks.log"
           # Collect all renders in each test, while still rejecting unreviewed changes.
           shopt -s globstar nullglob
-          snapshots=(tui/**/*.snap.new)
+          snapshots=(tui/**/*.snap.new tui/**/.*.pending-snap)
           if ((${#snapshots[@]})); then
             printf 'Rendering changes require review: %s snapshots\n' "${#snapshots[@]}"
             exit 1
@@ -289,7 +289,10 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: candidate-rendering-differences
-          path: codex-rs/**/*.snap.new
+          path: |
+            codex-rs/**/*.snap.new
+            codex-rs/**/.*.pending-snap
+          include-hidden-files: true
           if-no-files-found: ignore
           retention-days: 7
       - name: Core permissions and continuity unit tests
