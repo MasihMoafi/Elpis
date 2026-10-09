@@ -4,11 +4,11 @@ on:
   workflow_dispatch:
     inputs:
       verification:
-        description: 'Compiler checks or full runtime validation'
+        description: 'Compiler, UI-only, or full runtime validation'
         required: true
         default: full
         type: choice
-        options: [check, full]
+        options: [check, ui, full]
   push:
     tags: ['v*']
     branches: [next]
@@ -143,7 +143,7 @@ jobs:
           key: ${{ steps.cargo_cache.outputs.cache-primary-key }}
 
   build:
-    if: github.event_name != 'workflow_dispatch' || inputs.verification == 'full'
+    if: github.event_name != 'workflow_dispatch' || inputs.verification == 'full' || inputs.verification == 'ui'
     runs-on: ubuntu-24.04
     timeout-minutes: 180
     env:
@@ -222,7 +222,7 @@ jobs:
           node scripts/build-elpis-local.test.cjs
       - name: Build the runtime, Code Mode host, and sandbox
         id: runtime_build
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && inputs.verification != 'ui' }}
         working-directory: codex-rs
         run: |
           cargo build --release --locked -p codex-cli --bin codex -p codex-code-mode-host --bin codex-code-mode-host
@@ -296,7 +296,7 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
       - name: Core permissions and continuity unit tests
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && inputs.verification != 'ui' }}
         working-directory: codex-rs
         run: |
           cargo test --profile dev-small --locked -p codex-core --lib -- \
@@ -305,7 +305,7 @@ jobs:
             loaded_children_give_up_the_full_access_their_parent_gives_up \
             revocation regains_full_access
       - name: Context and session integration tests
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && inputs.verification != 'ui' }}
         working-directory: codex-rs
         shell: bash
         run: |
@@ -323,7 +323,7 @@ jobs:
           if-no-files-found: error
           retention-days: 7
       - name: Provider configuration and CLI tests
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && inputs.verification != 'ui' }}
         working-directory: codex-rs
         run: |
           cargo test --profile dev-small --locked -p codex-elpis-gateway --lib
@@ -361,6 +361,7 @@ jobs:
         if: ${{ !cancelled() && steps.runtime_build.outcome == 'success' }}
         run: bash tests/install/clean_linux.sh codex-rs/target/release
       - name: Package Linux binaries and Debian installer
+        if: inputs.verification != 'ui'
         shell: bash
         run: |
           set -euo pipefail
@@ -385,15 +386,18 @@ jobs:
             (cd dist && sha256sum "$(basename "$file")" > "$(basename "$file").sha256")
           done
       - name: Clean Debian installation
+        if: inputs.verification != 'ui'
         run: bash tests/install/clean_linux.sh "dist/elpis_${ELPIS_VERSION}_amd64.deb"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: inputs.verification != 'ui'
         with:
           name: elpis-linux-x86_64
           path: dist/*
           if-no-files-found: error
           retention-days: 7
       - name: Retain compiled outputs after checks
-        if: always() && steps.cargo_cache.outputs.cache-hit != 'true' && steps.cargo_cache.outputs.cache-primary-key != ''
+        # UI-only runs do not rebuild release outputs, so must not label that cache with their source SHA.
+        if: always() && inputs.verification != 'ui' && steps.cargo_cache.outputs.cache-hit != 'true' && steps.cargo_cache.outputs.cache-primary-key != ''
         uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7
         with:
           path: |
