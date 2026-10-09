@@ -31,9 +31,9 @@ The public website may borrow RAG Studio's standard of polish, but not its compo
 
 ## Current state — October 9, 2026
 
-The accepted September 30 release was v0.4.0 on Codex rust-v0.159.0. The current recovery candidate targets the installed Codex 0.162.0 foundation and preserves Elpis providers, Ledger controls, memory/continuity, pruning, dashboard and work graphs. It is under verification, not accepted or installed.
+The accepted September 30 release was v0.4.0 on Codex rust-v0.159.0. The local recovery candidate, Elpis 0.4.1 from `0c5e5518f`, is now installed on the Codex 0.162.0 foundation. It preserves the selected commands, provider support, Ledger controls, memory/continuity, pruning, dashboard and work graphs. It awaits Masih’s daily use and acceptance; no new release was published.
 
-The diagnostic runtime built in CI 37925769646. Its core permission tests and local native, Code Mode and provider-bridge checks pass. A real short-window check exposed a Ledger layout bug; the fix compiles in CI 37931392632 and awaits a rebuilt runtime. UI expectations and CI sandbox setup are being corrected before the final full run. `docs/permissions-verification.md` records actual candidate evidence. `ES.md` is the local continuation note; the accepted contract governs scope.
+Full CI 37953792953 passed. The installed runtime matches its artifact byte for byte. Two ordinary launcher windows now share the native backend and provider sessions, with folder ordering and model labels checked at wide and narrow widths. Permission changes, cold resume, failure handling and real Sonnet/Gemini file tasks passed. See `docs/permissions-verification.md` for evidence, remaining visual limits, a short user check and rollback. `ES.md` is the local continuation note; the accepted contract governs scope.
 
 Runtime source is in `codex-rs/`, provider bridges in `tools/elpis-claude/`, checks in `scripts/` and `tests/`, and product contracts in `docs/`. State remains in `~/.elpis-next`. The website is a separate deployment boundary and is outside this recovery task.
 

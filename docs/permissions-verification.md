@@ -1,24 +1,21 @@
-# Permission verification — 9 October 2026
+# Installed candidate — 9 October 2026
 
-The final Rust source and tests compile in CI 37938751599. **Not installed:** full build 37939342716 is checking the Ledger, queued-input and `/yolo` fixes.
+**Elpis 0.4.1 is installed**, source `0c5e5518f`, on Codex 0.162.0. [Full CI passed](https://github.com/MasihMoafi/Elpis/actions/runs/37953792953); all three runtime binaries match the installed bundle exactly. [Install receipt](../.tmp/parity-install-receipt.json). Masih’s acceptance remains open.
 
-| Actual runtime check | Result | Evidence |
-| --- | --- | --- |
-| Installed Elpis, Full Access from the terminal | Reproduced an unwanted rejection: “approval policy is Never” | `/tmp/elpis-terminal-input-dfXoDi` |
-| Candidate, native permission changes | 11 passed | `/tmp/elpis-live-permissions-W8iHA0` |
-| Candidate, Code Mode including cells retained across turns | 15 passed | `/tmp/elpis-live-permissions-zR1all` |
-| Candidate, Claude bridge including cold Full Access resume | 35 passed | `/tmp/elpis-bridge-permissions-mRYjqe` |
-| Candidate, Gemini bridge including cold Full Access resume | 28 passed | `/tmp/elpis-bridge-permissions-xshsVS` |
-| Helper start, revocation and TUI resume | 32 passed, independently rerun | `/tmp/elpis-bridge-delegation-lXMB11` |
-| `/yolo` in the actual terminal | Applies Full Access, permits the write and saves the default | `/tmp/elpis-terminal-input-HqgfR2` |
-| Core permission and continuity unit tests | 301 passed again in CI 37936240250 | Build job 113838904301 |
-| Live Claude Sonnet High | Reply and protected-folder write, zero approvals | `/tmp/elpis-live-claude-v9h_9jmg` |
-| Live Gemini 3.8 Flash High | Correct project write; shell/read/edit/write, zero approvals | `/tmp/elpis-live-gemini-context-4mc9jy7e`, `/tmp/elpis-live-gemini-tools-aoajobup` |
+| Check | Passed |
+| --- | --- |
+| UI / core / context-session Rust tests | 1,226 / 301 / 61; one manual export helper ignored |
+| Provider configuration / CLI / branding | 120 |
+| Native / Code Mode / Claude / Gemini / helper permissions | 11 / 15 / 35 / 28 / 32 |
+| Shared provider sessions / transport and launcher races | 32 / 24 |
+| Terminal and Ledger checks / installed launcher checks | 25 / 9 |
+| Real Sonnet High and Gemini Flash 3.8 High | File tasks, zero Full Access approval prompts |
+| Failure controls; offline and Debian installs | Passed |
 
-Candidate runtime: CI source `8451f9ca2fb016012a962b987fd04f9cb29a75b6`, matching local `4d3d1fcd3`; SHA-256 `f449a04786bfeb9b1fdc992729b64ae6d2e2d85256a30a61edabc525b3e0f340`. Bridge runs above include the final helper fix `dc89275a8`; the coordinator independently reran the helper suite. The first provider suites use deterministic fixtures; the final two rows use real accounts. Live Gemini revealed that its helper workspace could win over the chat directory. Explicit project context now accompanies every prompt; eight adapter regressions and both live file checks pass. Test Elpis homes are private, but provider sessions use normal account storage; a failed project-selection experiment also created a temporary Antigravity project record.
+Records: [permissions](../.tmp/final-permissions-results.json), [shared sessions](../.tmp/final-sharing-results.json), [terminal](../.tmp/final-terminal-results.json), reviewed [wide](../.tmp/final-ui-evidence/agents-80.png)/[narrow](../.tmp/final-ui-evidence/agents-40.png) captures.
 
-Coverage includes promotion, revocation, rejected updates, delayed approvals, unconfirmed settings, simultaneous chats, unknown ACP sessions, duplicate turns, and persisted choices after restart. The new runtime fixes the older engine’s cold Full Access resume and cross-turn Code Mode failures. Helper checks cover delayed starts across revoke/regrant, reopened helpers, rejected restrictions and a failed persistence write. A save failure warns that reduced helper permissions survive only until restart; custom workspace roots are not intersected by the bridge.
+**Try two new windows** in different folders: check ← Agents, model labels, typing and queued messages. Select Full Access or `/yolo`, perform a file task, then resume it. The saved default remains Ask for approval. Chats/settings were preserved; existing windows keep their earlier runtime.
 
-Run on the final installed binary: `scripts/permissions-runtime.test.cjs` (native and `--code-mode`), `scripts/permissions-bridge.test.cjs` (Claude and `--gemini`), `scripts/permissions-bridge-delegation.test.cjs`, and `scripts/terminal-input.test.cjs` (native and `--bridge`). The original 32-row terminal test must pass; the diagnostic runtime currently hides the completed reply behind the Ledger at that size.
+Limits: the browser dashboard was not visually rechecked. Shared animation/streaming modules match Codex source; no FPS claim. A failed helper-permission save warns that restrictions last only until restart; the bridge does not intersect custom workspace roots.
 
-Hosted CI performs Rust builds because local free space is below the 40 GB floor. The thermal guard passed 17 isolated checks; that is not evidence of a real local build. Automated results remain separate from Masih’s acceptance.
+[Rollback script](/home/masih/.local/lib/elpis-next/versions/before-parity-20261009T115727Z/rollback.sh) restores the earlier runtime and bridge while preserving chats/settings. It was tested in a private destination.
