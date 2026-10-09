@@ -123,7 +123,6 @@ pub(crate) fn find_builtin_command(name: &str, flags: BuiltinCommandFlags) -> Op
         return Some(cmd);
     }
     builtins_for_input(BuiltinCommandFlags {
-        token_activity_command_enabled: true,
         daybreak_command_description: Some(""),
         side_conversation_active: false,
         ..flags
