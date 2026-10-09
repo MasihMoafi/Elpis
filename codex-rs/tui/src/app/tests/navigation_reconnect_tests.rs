@@ -468,18 +468,13 @@ async fn reconnect_daemon_command_center_after_socket_replacement_without_a_conv
             let content = &preserved_history[preserved_history
                 .find("Cached previous conversation")
                 .unwrap()..];
+            crate::chatwidget::tests::helpers::hide_context_ledger(&mut app.chat_widget);
             assert_snapshot!(
                 "reconnected_unavailable_conversation",
-                // Elpis: the Ledger names the new thread; its id changes on every run.
-                regex_lite::Regex::new(r"Idle · [0-9a-f]{8}-[0-9a-f-]+\.*")
-                    .unwrap()
-                    .replace_all(
-                        &format!(
-                            "{content}\n{}",
-                            render_bottom_popup(&app.chat_widget, /*width*/ 80)
-                        ),
-                        "Idle · [thread id]",
-                    )
+                format!(
+                    "{content}\n{}",
+                    render_bottom_popup(&app.chat_widget, /*width*/ 80)
+                )
             );
 
             app.handle_tui_event(
