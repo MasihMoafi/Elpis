@@ -247,7 +247,7 @@ jobs:
         if: ${{ !cancelled() }}
         working-directory: codex-rs
         run: |
-          cargo test --release --locked -p codex-tui --lib -- \
+          cargo test --profile dev-small --locked -p codex-tui --lib -- \
             elpis_ keymap question composer_submission plan_mode review_mode slash_commands \
             goal_validation command_popup agents_overview agents_navigation \
             loopback_servers_list_their_agents footer_collapse \
@@ -259,7 +259,7 @@ jobs:
         if: ${{ !cancelled() }}
         working-directory: codex-rs
         run: |
-          cargo test --release --locked -p codex-core --lib -- \
+          cargo test --profile dev-small --locked -p codex-core --lib -- \
             elpis_ smart_prune compact_instructions world_state build_agent_spawn_config \
             live_permissions inherited_permissions step_activation thread_settings turn_input \
             loaded_children_give_up_the_full_access_their_parent_gives_up \
@@ -268,17 +268,17 @@ jobs:
         if: ${{ !cancelled() }}
         working-directory: codex-rs
         run: |
-          cargo test --release --locked -p codex-core --test all -- \
+          cargo test --profile dev-small --locked -p codex-core --test all -- \
             elpis_ledger_admission elpis_context_attribution work_graphs settings_commits \
             agents_md scenarios_shared_instructions
       - name: Provider configuration and CLI tests
         if: ${{ !cancelled() }}
         working-directory: codex-rs
         run: |
-          cargo test --release --locked -p codex-elpis-gateway --lib
-          cargo test --release --locked -p codex-model-provider-info --lib
-          cargo test --release --locked -p codex-cli --lib
-          cargo test --release --locked -p codex-tui --lib branding::tests
+          cargo test --profile dev-small --locked -p codex-elpis-gateway --lib
+          cargo test --profile dev-small --locked -p codex-model-provider-info --lib
+          cargo test --profile dev-small --locked -p codex-cli --lib
+          cargo test --profile dev-small --locked -p codex-tui --lib branding::tests
       - name: Native permission regressions
         if: ${{ !cancelled() && steps.runtime_build.outcome == 'success' }}
         run: node scripts/permissions-runtime.test.cjs "$PWD/codex-rs/target/release/elpis"
