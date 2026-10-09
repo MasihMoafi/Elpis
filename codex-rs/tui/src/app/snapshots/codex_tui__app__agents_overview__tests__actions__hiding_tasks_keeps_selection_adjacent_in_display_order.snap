@@ -2,24 +2,24 @@
 source: tui/src/app/agents_overview_actions_tests.rs
 expression: "selections.join(\"\\n\")"
 ---
-Project, filtered=false: › ○ Task 3
-Project, filtered=false: › ○ Task 4
-Project, filtered=false: › ○ Other 2
-Project, filtered=false: › ○ Task 1
-Project, filtered=true: › ○ Task 3
-Project, filtered=true: › ○ Task 4
-Project, filtered=true: › ○ Task 1
-Status, filtered=false: › ○ Task 3
-Status, filtered=false: › ○ Other 2
-Status, filtered=false: › ○ Task 1
-Status, filtered=false: › ○ Task 4
-Status, filtered=true: › ○ Task 3
-Status, filtered=true: › ○ Task 1
-Status, filtered=true: › ○ Task 4
-Model, filtered=false: › ○ Task 3
-Model, filtered=false: › ○ Task 4
-Model, filtered=false: › ○ Other 2
-Model, filtered=false: › ○ Task 1
-Model, filtered=true: › ○ Task 3
-Model, filtered=true: › ○ Task 4
-Model, filtered=true: › ○ Task 1
+Project, filtered=false: › ○ Task 3                          model-3
+Project, filtered=false: › ○ Task 4                          model-4
+Project, filtered=false: › ○ Other 2                         model-2
+Project, filtered=false: › ○ Task 1                          model-1
+Project, filtered=true: › ○ Task 3                          model-3
+Project, filtered=true: › ○ Task 4                          model-4
+Project, filtered=true: › ○ Task 1                          model-1
+Status, filtered=false: › ○ Task 3                          model-3
+Status, filtered=false: › ○ Other 2                         model-2
+Status, filtered=false: › ○ Task 1                          model-1
+Status, filtered=false: › ○ Task 4                          model-4
+Status, filtered=true: › ○ Task 3                          model-3
+Status, filtered=true: › ○ Task 1                          model-1
+Status, filtered=true: › ○ Task 4                          model-4
+Model, filtered=false: › ○ Task 3                          model-3
+Model, filtered=false: › ○ Task 4                          model-4
+Model, filtered=false: › ○ Other 2                         model-2
+Model, filtered=false: › ○ Task 1                          model-1
+Model, filtered=true: › ○ Task 3                          model-3
+Model, filtered=true: › ○ Task 4                          model-4
+Model, filtered=true: › ○ Task 1                          model-1

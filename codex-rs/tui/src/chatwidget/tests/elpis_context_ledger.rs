@@ -219,9 +219,21 @@ async fn ledger_rule_runs_down_beside_the_native_composer() -> anyhow::Result<()
     let ledger_width = chat.context_ledger_width(WIDTH);
     let rule_x = WIDTH - ledger_width;
 
-    // The native composer draws no box, so the Ledger's left rule is a plain line.
-    for y in 0..chat.context_ledger_desired_height(ledger_width) {
+    // The native composer draws no box, so the Ledger's left rule is a plain line. It starts on
+    // the Ledger's first row, below the blank row Codex leaves above the composer.
+    let ledger_top = rows(&buf, rule_x + 1..WIDTH)
+        .iter()
+        .position(|row| row.contains("CONTEXT LEDGER"))
+        .expect("the Ledger is drawn") as u16;
+    for y in ledger_top..ledger_top + chat.context_ledger_desired_height(ledger_width) {
         assert_eq!(buf[(rule_x, y)].symbol(), "│", "row {y}\n{screen}");
+    }
+    if let Some(above) = ledger_top.checked_sub(1) {
+        assert_eq!(
+            buf[(rule_x, above)].symbol(),
+            " ",
+            "the rule extends above the Ledger\n{screen}"
+        );
     }
     assert!(
         !screen.contains(['┌', '└', '┐', '┘', '┤']),

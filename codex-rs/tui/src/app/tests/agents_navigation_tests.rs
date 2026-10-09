@@ -2,24 +2,40 @@ use super::*;
 use pretty_assertions::assert_eq;
 
 #[tokio::test]
-async fn agents_navigation_requires_local_daemon() -> Result<()> {
+async fn agents_navigation_requires_a_local_agent_server() -> Result<()> {
     let (mut app, mut events, _op_rx) = make_test_app_with_channels().await;
     let mut tui = crate::tui::test_support::make_test_tui()?;
     let mut app_server = start_config_write_test_app_server(&app).await?;
     let endpoint = crate::RemoteAppServerEndpoint::UnixSocket {
         socket_path: AbsolutePathBuf::relative_to_current_dir("codex.sock")?,
     };
-    for target in [
-        AppServerTarget::Embedded,
-        AppServerTarget::Remote {
-            endpoint: endpoint.clone(),
+    let websocket = |websocket_url: &str| AppServerTarget::Remote {
+        endpoint: crate::RemoteAppServerEndpoint::WebSocket {
+            websocket_url: websocket_url.to_string(),
+            auth_token: None,
         },
-        AppServerTarget::LocalDaemon {
-            endpoint,
-            allow_embedded_fallback: true,
-        },
+    };
+    // Elpis: Left lists the agents of a local daemon, of a Unix socket and of a loopback server
+    // such as the Claude bridge; the embedded server and a server on another host list none.
+    for (target, enabled) in [
+        (AppServerTarget::Embedded, false),
+        (websocket("wss://elpis.example.com:443"), false),
+        (websocket("ws://192.168.1.20:4000"), false),
+        (websocket("ws://127.0.0.1:38539"), true),
+        (
+            AppServerTarget::Remote {
+                endpoint: endpoint.clone(),
+            },
+            true,
+        ),
+        (
+            AppServerTarget::LocalDaemon {
+                endpoint,
+                allow_embedded_fallback: true,
+            },
+            true,
+        ),
     ] {
-        let enabled = matches!(target, AppServerTarget::LocalDaemon { .. });
         app.app_server_target = target;
         let init = app.chatwidget_init_for_forked_or_resumed_thread(
             &mut tui,

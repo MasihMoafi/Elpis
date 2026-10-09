@@ -3,7 +3,7 @@ source: tui/src/app/agents_overview_actions_tests.rs
 assertion_line: 301
 expression: "selections.join(\"\\n\")"
 ---
-› ○ Task 3
-› ○ Other 2
-› ○ Task 1
-› ○ Task 4
+› ○ Task 3                          model-3
+› ○ Other 2                         model-2
+› ○ Task 1                          model-1
+› ○ Task 4                          model-4

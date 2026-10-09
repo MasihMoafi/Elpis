@@ -1736,6 +1736,8 @@ async fn root_switch_preserves_vim_line_yank() -> Result<()> {
         .await?;
 
     assert_eq!(app.current_displayed_thread_id(), Some(target_thread_id));
+    // The switch built a new chat widget, which shows the Ledger; this test reads the composer rows.
+    crate::app::test_support::hide_context_ledger(&mut app);
     app.chat_widget.toggle_vim_mode_and_notify();
     app.chat_widget.insert_str("new line");
     app.chat_widget
