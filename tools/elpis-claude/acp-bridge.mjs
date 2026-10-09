@@ -293,6 +293,13 @@ wss.on("listening", () => log(`LISTENING ${wss.address().port}`));
 // bridge: its start (with its parent) and its status changes go to every other connection.
 const clients = new Set();
 const helperThreads = new Set();
+// Each connection has its own engine, so a root session is known only to the connection that
+// started or resumed it. The bridge tells the other TUIs (their agents view lists it) of its
+// start, status, name and end, as one engine would its clients. Only its owners send these: turn
+// events, requests and settings stay on their connection.
+const rootOwners = new Map(); // root thread id -> connections whose engine holds it
+const rootStatus = new Map(); // root thread id -> its last status, for a TUI whose engine reads it as not loaded
+const ROOT_EVENTS = ["thread/status/changed", "thread/name/updated", "thread/archived", "thread/unarchived", "thread/deleted", "thread/closed"];
 // A helper asks the user like its chat: its approval requests go from the delegate tool's
 // connection to a TUI's, and the answer comes back. The delegate tool names itself
 // "elpis-agents" in initialize; every other connection is a TUI.
@@ -355,6 +362,44 @@ wss.on("connection", (ws) => {
   clients.add(ws);
   const toOthers = (msg) => { const line = JSON.stringify(msg); for (const c of clients) if (c !== ws && c.readyState === 1) c.send(line); };
   const shareHelper = (msg) => { if (msg?.method === "thread/status/changed" && helperThreads.has(msg.params?.threadId)) toOthers(msg); };
+  // To every TUI that does not hold the session itself (a delegate tool is not a TUI).
+  const toViewers = (msg, threadId) => {
+    const line = JSON.stringify(msg);
+    for (const c of clients) if (c !== ws && c.readyState === 1 && !helperConns.has(c) && !rootOwners.get(threadId)?.has(c)) c.send(line);
+  };
+  const forgetRoots = () => {
+    for (const [id, owners] of rootOwners) if (owners.delete(ws) && !owners.size) { rootOwners.delete(id); rootStatus.delete(id); toViewers({ method: "thread/closed", params: { threadId: id }, emittedAtMs: now() }, id); }
+  };
+  // In order, so a session's start reaches the others before its status.
+  let rootQueue = Promise.resolve();
+  const shareRoot = (msg) => {
+    if (msg?.method !== "thread/started" && !ROOT_EVENTS.includes(msg?.method)) return;
+    rootQueue = rootQueue.then(async () => {
+      if (helperConns.has(ws)) return;
+      const t = msg.params?.thread;
+      if (t) {
+        // A helper, a subagent or a hidden thread is not a session of its own.
+        if (t.ephemeral || t.parentThreadId || (t.source && typeof t.source === "object" && !t.source.custom) || helperThreads.has(t.id)) return;
+        await storeChain;
+        const store = await loadStore();
+        if (store._delegations?.[t.id]) return;
+        rootOwners.set(t.id, (rootOwners.get(t.id) ?? new Set()).add(ws));
+        rootStatus.set(t.id, t.status ?? { type: "idle" });
+        const shown = { ...t, turns: [] };
+        ownModel(shown, store); // a Claude chat's model, not the engine's
+        toViewers({ ...msg, params: { thread: shown } }, t.id);
+        return;
+      }
+      const id = msg.params?.threadId, owners = rootOwners.get(id);
+      if (!owners?.has(ws)) return;
+      if (msg.method === "thread/status/changed") rootStatus.set(id, msg.params.status);
+      if (msg.method === "thread/closed") owners.delete(ws);
+      // A session still open on another connection is not closed.
+      if (msg.method === "thread/closed" && owners.size) return;
+      toViewers(msg, id);
+      if (["thread/closed", "thread/archived", "thread/deleted"].includes(msg.method)) { rootOwners.delete(id); rootStatus.delete(id); }
+    }).catch((e) => log(`root share: ${e.message ?? e}`));
+  };
   // A chat's latest plan, kept in the store: the engine sends plans only while a turn runs, so
   // reopening a chat (GPT or Claude) shows it again.
   const notePlan = (msg) => {
@@ -367,7 +412,7 @@ wss.on("connection", (ws) => {
     const saved = (await loadStore())[threadId]?.plan;
     if (saved?.plan?.length) notify("turn/plan/updated", { threadId, turnId: saved.turnId, explanation: saved.explanation, plan: saved.plan });
   };
-  const toTui = (msg) => { shareHelper(msg); notePlan(msg); ws.send(JSON.stringify(msg)); };
+  const toTui = (msg) => { shareHelper(msg); shareRoot(msg); notePlan(msg); ws.send(JSON.stringify(msg)); };
   const notify = (method, params) => toTui({ method, params, emittedAtMs: now() });
   const engine = spawn(process.env.ELPIS_ENGINE_BIN ?? `${HOME}/.local/bin/elpis`, ["app-server"], { stdio: ["pipe", "pipe", "ignore"] });
   engine.stdin.on("error", (e) => log(`engine input: ${e.message}`)); // a stopped helper's engine
@@ -588,6 +633,8 @@ wss.on("connection", (ws) => {
       if (!t || typeof t !== "object") continue;
       if (helpers[t.id] && t.parentThreadId == null) { t.parentThreadId = helpers[t.id].parentThreadId; changed = true; }
       changed = ownModel(t, store) || changed;
+      // Open on another connection: this engine reads it as not loaded, the session is not idle.
+      if (t.status?.type === "notLoaded" && rootStatus.has(t.id) && rootOwners.get(t.id)?.size && !rootOwners.get(t.id).has(ws)) { t.status = rootStatus.get(t.id); changed = true; }
     }
     if (ancestor && Array.isArray(result?.data)) {
       const below = new Set([ancestor]);
@@ -868,6 +915,7 @@ wss.on("connection", (ws) => {
       if (pick && t.model !== pick.model) { t.model = pick.model; t.reasoningEffort = pick.effort ?? null; helpersMarked = true; } // shown only; routing waits for the answer
       else helpersMarked = ownModel(t, null);
     }
+    shareRoot(parsed);
     if (parsed && pendingHelperMark.has(parsed.id)) {
       pendingHelperMark.delete(parsed.id);
       helpersMarked = await markHelpers(parsed.result, pendingChildList.get(parsed.id)).catch((e) => { log(`helpers: ${e.message ?? e}`); return false; });
@@ -1825,6 +1873,6 @@ wss.on("connection", (ws) => {
   ws.on("close", async () => {
     for (const tid of ownHelpers.keys()) helperScope.get(tid)?.owners.delete(restrictHelper);
     for (const d of [...pendingDelegation.values(), ...pendingAdopt.values()]) pendingHelpers.delete(d);
-    clients.delete(ws); await storeChain; engine.kill(); for (const a of acps.values()) a.kill(); log("tui disconnected");
+    clients.delete(ws); rootQueue = rootQueue.then(forgetRoots); await storeChain; engine.kill(); for (const a of acps.values()) a.kill(); log("tui disconnected");
   });
 });
