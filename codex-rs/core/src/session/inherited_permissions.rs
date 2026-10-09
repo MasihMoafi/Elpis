@@ -115,35 +115,48 @@ struct Reductions {
     /// This thread's reductions in commit order; the Nth is numbered N. A later grant removes
     /// none of them: children that existed at a reduction still owe it.
     history: Mutex<Vec<SessionSettingsUpdate>>,
-    owed: Mutex<Owed>,
+    /// What this thread owes each parent record it has met, oldest first. A reloaded parent
+    /// starts a fresh record, so one record cannot stand for another.
+    owed: Mutex<Vec<Owed>>,
 }
 
-/// What a thread owes its parent's reductions.
-#[derive(Default)]
+/// What a thread owes one parent record's reductions.
 struct Owed {
-    /// Retain the record until owed restrictions are applied, even if the parent unloads.
-    /// Records reference ancestors only, so retaining one does not create a cycle.
-    parent: Option<Arc<Reductions>>,
-    /// Number of the latest parent reduction this thread has taken or already reflects; `None`
-    /// until it first meets its parent's reductions.
-    baseline: Option<usize>,
-    /// The parent's permissions found at that first meeting, until this thread takes them.
+    /// Kept for this thread's lifetime, even if the parent unloads, so a reload cannot
+    /// discharge what is owed. Records reference ancestors only, so this creates no cycle.
+    parent: Arc<Reductions>,
+    /// Number of the latest reduction in `parent` this thread has taken or already reflects.
+    baseline: usize,
+    /// The parent's permissions found at the first meeting, until this thread takes them.
     floor: Option<SessionSettingsUpdate>,
 }
 
-impl Owed {
-    /// Starts over when `parent` is not the record the baseline counts in.
-    fn meet(&mut self, parent: &Arc<Reductions>) {
-        if !self
-            .parent
-            .as_ref()
-            .is_some_and(|previous| Arc::ptr_eq(previous, parent))
-        {
-            *self = Self {
-                parent: Some(Arc::clone(parent)),
-                ..Self::default()
-            };
+impl Reductions {
+    /// Starts owing `parent` from `baseline` and `floor`, unless this thread has met it.
+    fn meet(
+        &self,
+        parent: &Arc<Reductions>,
+        baseline: usize,
+        floor: Option<SessionSettingsUpdate>,
+    ) {
+        let mut owed = self.owed.lock().unwrap_or_else(PoisonError::into_inner);
+        if !owed.iter().any(|owed| Arc::ptr_eq(&owed.parent, parent)) {
+            owed.push(Owed {
+                parent: Arc::clone(parent),
+                baseline,
+                floor,
+            });
         }
+    }
+
+    /// Applies `f` to what this thread owes `parent`, if it has met it.
+    fn owed_to<T>(&self, parent: &Arc<Reductions>, f: impl FnOnce(&mut Owed) -> T) -> Option<T> {
+        self.owed
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .iter_mut()
+            .find(|owed| Arc::ptr_eq(&owed.parent, parent))
+            .map(f)
     }
 }
 
@@ -214,15 +227,8 @@ impl Session {
     /// Marks this thread as existing before parent reduction `generation`, unless it has
     /// already met that parent record.
     fn owe_parent_reductions_from(&self, parent: &Arc<Reductions>, generation: usize) {
-        let reductions = self.reductions();
-        let mut owed = reductions
-            .owed
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner);
-        owed.meet(parent);
-        if owed.baseline.is_none() {
-            owed.baseline = Some(generation.saturating_sub(1));
-        }
+        self.reductions()
+            .meet(parent, generation.saturating_sub(1), /*floor*/ None);
     }
 
     /// Takes what this thread owes its spawning ancestors' reductions. Tool calls, and the
@@ -295,67 +301,49 @@ impl Session {
     ) -> ConstraintResult<()> {
         // A reload starts a fresh record, but cannot discharge restrictions from the old one.
         self.take_recorded_parent_reductions().await?;
-        let reductions = self.reductions();
-        {
-            let mut owed = reductions
-                .owed
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner);
-            owed.meet(parent);
-            if owed.baseline.is_none() {
-                owed.baseline = Some(history.len());
-                owed.floor = Some(current);
-            }
-        }
-        self.take_owed_reductions(history).await
+        self.reductions().meet(parent, history.len(), Some(current));
+        self.take_owed_reductions(parent, history).await
     }
 
+    /// Takes what this thread owes every parent record it has met, oldest first.
     async fn take_recorded_parent_reductions(&self) -> ConstraintResult<()> {
-        let parent = self
+        let parents: Vec<Arc<Reductions>> = self
             .reductions()
             .owed
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .parent
-            .clone();
-        if let Some(parent) = parent {
+            .iter()
+            .map(|owed| Arc::clone(&owed.parent))
+            .collect();
+        for parent in parents {
             let history = parent
                 .history
                 .lock()
                 .unwrap_or_else(PoisonError::into_inner)
                 .clone();
-            self.take_owed_reductions(history).await?;
+            self.take_owed_reductions(&parent, history).await?;
         }
         Ok(())
     }
 
+    /// Takes what this thread owes `parent`, whose reductions are `history`. Progress is kept
+    /// against `parent` alone, so work for one record never moves another's baseline.
     async fn take_owed_reductions(
         &self,
+        parent: &Arc<Reductions>,
         history: Vec<SessionSettingsUpdate>,
     ) -> ConstraintResult<()> {
         let reductions = self.reductions();
-        let (floor, baseline) = {
-            let owed = reductions
-                .owed
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner);
-            (owed.floor.clone(), owed.baseline.unwrap_or_default())
-        };
+        let (floor, baseline) = reductions
+            .owed_to(parent, |owed| (owed.floor.clone(), owed.baseline))
+            .unwrap_or_default();
         if let Some(floor) = floor {
             self.take_parent_permissions(floor).await?;
-            reductions
-                .owed
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .floor = None;
+            reductions.owed_to(parent, |owed| owed.floor = None);
         }
         for (index, updates) in history.into_iter().enumerate().skip(baseline) {
             self.take_parent_permissions(updates).await?;
-            let mut owed = reductions
-                .owed
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner);
-            owed.baseline = owed.baseline.max(Some(index + 1));
+            reductions.owed_to(parent, |owed| owed.baseline = owed.baseline.max(index + 1));
         }
         Ok(())
     }
