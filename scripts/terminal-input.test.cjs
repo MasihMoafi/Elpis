@@ -16,7 +16,7 @@ fs.mkdirSync(home); fs.mkdirSync(cwd);
 const socket = path.join(root, 'tmux.sock');
 const provider = new Provider();
 const checks = [];
-let savedPermissions;
+let savedPermissions, releaseTool;
 let appServer, appServerExit, appServerError;
 let appServerLog = '';
 const tmux = (...args) => execFileSync('tmux', ['-S', socket, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
@@ -123,6 +123,7 @@ async function stopAppServer() {
   fs.writeFileSync(path.join(root, 'saved-permissions.json'), JSON.stringify(savedPermissions, null, 2));
   pass('/permissions Full Access saves disabled sandbox and never approval in the engine thread');
   const ready = path.join(cwd, 'tool-ready'), release = path.join(cwd, 'tool-release');
+  releaseTool = release;
   const protectedDir = path.join(cwd, '.git');
   fs.mkdirSync(protectedDir);
   const protectedSentinel = path.join(protectedDir, 'full-access-sentinel');
@@ -180,6 +181,7 @@ async function stopAppServer() {
   pass('cancelling task deletion preserves the fixture session');
   assert(!provider.error, provider.error?.message);
 })().catch(error => { console.error(error); process.exitCode = 1; }).finally(async () => {
+  if (releaseTool) fs.writeFileSync(releaseTool, 'cleanup');
   try { tmux('kill-server'); } catch {}
   await stopAppServer();
   provider.close();
