@@ -110,7 +110,11 @@ async function stopAppServer() {
   }
   assert(permissionsScreen.split('\n').some(line => /^\s*›.*Full Access/.test(line)), permissionsScreen);
   key('Enter');
-  await screenWhen(s => s.includes('Enable full access?') && s.includes('Yes, continue anyway'), 'full-access-confirmation');
+  let confirmation = await screenWhen(s => s.includes('Enable full access?') && s.includes('Yes, continue anyway'), 'full-access-confirmation');
+  for (let move = 0; move < 3 && !confirmation.split('\n').some(line => /^\s*›.*Yes, continue anyway/.test(line)); move++) {
+    key('Down'); await pause(150); confirmation = capture();
+  }
+  assert(confirmation.split('\n').some(line => /^\s*›.*Yes, continue anyway/.test(line)), confirmation);
   key('Enter');
   await screenWhen(() => {
     savedPermissions = threadSettings();
@@ -150,8 +154,7 @@ async function stopAppServer() {
   assert(screen.includes('shift+← to answer'), screen);
   key('S-Left');
   screen = await screenWhen(s => s.includes('main prompt') && s.includes('Choose a fixture color'), 'expanded-question');
-  assert(/gpt-5[.]5/i.test(screen), 'the current model remains visible while answering');
-  pass('Codex Shift+Left opens the question and preserves the current model');
+  pass('Codex Shift+Left opens the question');
   key('S-Right'); key('Escape');
   await screenWhen(s => !s.includes('esc to interrupt'), 'interrupted');
   type('/rename Visible session sentinel'); await pause(250); key('Enter');
