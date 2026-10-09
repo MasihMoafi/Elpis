@@ -411,7 +411,7 @@ impl LocalAgentControl {
                 .session
                 .new_turn_with_default_settings(Uuid::now_v7().to_string(), Default::default())
                 .await;
-            config = build_agent_resume_config(&turn).map_err(|_| {
+            config = build_agent_resume_config(&turn, &turn.inherited_permissions()).map_err(|_| {
                 CodexErr::InvalidRequest(format!(
                     "cannot resume multi-agent v2 child {thread_id} with the current parent settings"
                 ))

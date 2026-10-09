@@ -303,6 +303,7 @@ impl StepContext {
                 &[],
             )),
             loaded_agents_md: None,
+            accepted_profile: None,
         })
     }
 

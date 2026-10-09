@@ -105,6 +105,11 @@ impl LocalAgentRuntime {
         Ok(children_by_parent)
     }
 
+    /// Elpis: the thread with this ID, if it is loaded.
+    pub(crate) async fn loaded_thread(&self, thread_id: ThreadId) -> Option<Arc<CodexThread>> {
+        self.upgrade().ok()?.get_thread(thread_id).await.ok()
+    }
+
     /// Elpis: loaded threads that `parent_thread_id` spawned.
     pub(crate) async fn loaded_thread_spawn_children(
         &self,

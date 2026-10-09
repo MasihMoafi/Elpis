@@ -1978,10 +1978,10 @@ impl Session {
             if mcp_inputs_changed {
                 self.mark_mcp_runtime_dirty();
             }
-            // Elpis: loaded children give up the authority this change removes.
+            // Elpis: children give up the authority this change removes. Noting it before
+            // publication lets a child see it before this thread acknowledges the change.
             let reduced_permissions =
-                inherited_permissions::removes_authority(&state.session_configuration, &updated)
-                    .then(|| inherited_permissions::permission_update(&updated));
+                self.note_permission_change(&state.session_configuration, &updated);
             // Save new environment defaults for future turns. The running turn keeps its own.
             state.session_configuration = updated;
             if root_service_tier_changed {
@@ -2013,8 +2013,8 @@ impl Session {
             )
         };
         self.emit_config_changed_contributors(previous_config.as_ref(), new_config.as_ref());
-        if let Some(updates) = reduced_permissions {
-            self.lower_loaded_children(updates);
+        if let Some((generation, updates)) = reduced_permissions {
+            self.lower_loaded_children(generation, updates);
         }
         if permission_profile_changed {
             self.refresh_managed_network_proxy_for_current_permission_profile()
@@ -3791,6 +3791,9 @@ impl Session {
         );
         let session_telemetry = settings.telemetry(&turn_context.session_telemetry);
         let mut environments = environments.or_cancel(cancellation_token).await?;
+        let accepted_profile = permissions
+            .as_ref()
+            .and_then(|permissions| permissions.profile.clone());
         if let Some(permissions) = permissions {
             settings = permissions
                 .apply(settings, &mut environments)
@@ -3915,6 +3918,7 @@ impl Session {
             mcp,
             tool_router,
             loaded_agents_md,
+            accepted_profile,
         }))
     }
 

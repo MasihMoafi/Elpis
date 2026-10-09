@@ -40,6 +40,7 @@ impl Handler {
         let ToolInvocation {
             session,
             turn,
+            step_context,
             payload,
             call_id,
             ..
@@ -55,8 +56,11 @@ impl Handler {
             .control(session.session_id());
         let receiver_agent = local_agent_control.get_agent_metadata(receiver_thread_id);
         if receiver_agent.is_some() {
-            let resume_config = build_agent_resume_config(turn.as_ref())
-                .map_err(FunctionCallError::RespondToModel)?;
+            // Elpis: the permissions this call was dispatched with, also from a Code Mode cell
+            // that outlived its turn.
+            let resume_config =
+                build_agent_resume_config(turn.as_ref(), &step_context.inherited_permissions())
+                    .map_err(FunctionCallError::RespondToModel)?;
             local_agent_control
                 .ensure_v2_agent_loaded(resume_config, receiver_thread_id, /*parent*/ None)
                 .await

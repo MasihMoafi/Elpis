@@ -277,7 +277,6 @@ async fn run_work_graph(
     cancellation_token: CancellationToken,
     arguments: String,
 ) -> Result<FunctionToolOutput, FunctionCallError> {
-    let turn = Arc::clone(&step_context.turn);
     let args: RunAgentWorkGraphArgs = parse_arguments(arguments.as_str())?;
     validate_runner_args(&args)?;
     let db = required_state_db(&session)?;
@@ -348,7 +347,7 @@ async fn run_work_graph(
     };
     let scheduled = run_scheduler(
         Arc::clone(&session),
-        Arc::clone(&turn),
+        Arc::clone(&step_context),
         Arc::clone(&db),
         graph_id.as_str(),
         &options,
@@ -597,8 +596,12 @@ async fn build_runner_options(
         .clamp(1, MAX_WORK_GRAPH_CONCURRENCY);
     let max_concurrency = agent_limit.map_or(requested, |limit| requested.min(limit.max(1)));
     let base_instructions = session.get_base_instructions().await;
-    let spawn_config = build_agent_spawn_config(&base_instructions, step_context)
-        .map_err(FunctionCallError::RespondToModel)?;
+    let spawn_config = build_agent_spawn_config(
+        &base_instructions,
+        step_context,
+        &step_context.inherited_permissions(),
+    )
+    .map_err(FunctionCallError::RespondToModel)?;
     Ok(RunnerOptions {
         max_concurrency,
         max_runtime: args
@@ -613,12 +616,13 @@ async fn build_runner_options(
 
 async fn run_scheduler(
     session: Arc<Session>,
-    turn: Arc<TurnContext>,
+    step_context: Arc<StepContext>,
     db: Arc<codex_state::StateRuntime>,
     graph_id: &str,
     options: &RunnerOptions,
     cancellation_token: &CancellationToken,
 ) -> anyhow::Result<()> {
+    let turn = Arc::clone(&step_context.turn);
     let mut active = HashMap::<ThreadId, ActiveTask>::new();
     loop {
         if cancellation_token.is_cancelled() {
@@ -666,14 +670,23 @@ async fn run_scheduler(
         let ready = select_ready_tasks(tasks.as_slice(), slots);
         let mut progressed = false;
         for task in ready {
+            // Elpis: a worker started later in the run takes the permissions accepted now.
+            let permissions = session
+                .with_current_permissions(Arc::clone(&step_context))
+                .await
+                .map(|step| step.inherited_permissions());
             let setup = (|| {
                 let prompt = build_worker_prompt(&task, tasks.as_slice())?;
                 let environments = task_environment_selection(
                     options.environments.as_slice(),
                     task.environment_id.as_deref(),
                 )?;
-                let spawn_config =
-                    scoped_spawn_config(&options.spawn_config, &task, &environments[0])?;
+                let mut base_config = options.spawn_config.clone();
+                permissions
+                    .map_err(|err| anyhow::anyhow!("permissions are invalid: {err}"))?
+                    .apply_to(&mut base_config)
+                    .map_err(anyhow::Error::msg)?;
+                let spawn_config = scoped_spawn_config(&base_config, &task, &environments[0])?;
                 let baseline = task
                     .kind
                     .is_writable()

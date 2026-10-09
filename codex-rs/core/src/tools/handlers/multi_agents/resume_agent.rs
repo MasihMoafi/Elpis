@@ -36,6 +36,7 @@ async fn handle_resume_agent(
     let ToolInvocation {
         session,
         turn,
+        step_context,
         payload,
         call_id,
         ..
@@ -83,7 +84,10 @@ async fn handle_resume_agent(
         .await;
 
     let result = async {
-        let config = build_agent_resume_config(&turn).map_err(FunctionCallError::RespondToModel)?;
+        // Elpis: the permissions this call was dispatched with, also from a Code Mode cell
+        // that outlived its turn.
+        let config = build_agent_resume_config(&turn, &step_context.inherited_permissions())
+            .map_err(FunctionCallError::RespondToModel)?;
         let source = thread_spawn_source(
             session.thread_id(),
             &turn.session_source,

@@ -4631,8 +4631,12 @@ async fn build_agent_spawn_config_uses_captured_step_settings_and_turn_context_v
     settings.reasoning_summary = ReasoningSummary::Detailed;
 
     let turn = step_context.turn.as_ref();
-    let config =
-        build_agent_spawn_config(&base_instructions, step_context.as_ref()).expect("spawn config");
+    let config = build_agent_spawn_config(
+        &base_instructions,
+        step_context.as_ref(),
+        &step_context.turn.inherited_permissions(),
+    )
+    .expect("spawn config");
     expected.base_instructions_provenance = base_instructions.provenance.clone();
     expected.base_instructions = Some(base_instructions.text);
     expected.model = Some("captured-step-model".to_string());
@@ -4683,7 +4687,8 @@ async fn build_agent_resume_config_clears_base_instructions() {
     environment.config_mut().permission_profile =
         PermissionProfileSnapshot::legacy(environment_permission_profile);
 
-    let config = build_agent_resume_config(&turn).expect("resume config");
+    let config =
+        build_agent_resume_config(&turn, &turn.inherited_permissions()).expect("resume config");
 
     let mut expected = (*turn.config).clone();
     expected.base_instructions = None;
