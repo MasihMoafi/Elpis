@@ -54,6 +54,9 @@ pub(crate) struct StepContext {
     pub(crate) tool_router: Arc<ToolRouter>,
     /// The canonical AGENTS.md value observed with this environment snapshot.
     pub(crate) loaded_agents_md: Option<Arc<LoadedAgentsMd>>,
+    /// Elpis: the thread permission profile accepted after this step's turn started, if any.
+    /// Its environments already use it; children its actions start or resume inherit it.
+    pub(crate) accepted_profile: Option<PermissionProfileSnapshot>,
 }
 
 impl StepContext {
@@ -153,15 +156,6 @@ impl TurnContext {
         }
     }
 
-    /// The approval policy accepted for this turn so far.
-    pub(crate) fn current_approval_policy(&self) -> AskForApproval {
-        self.live_permissions
-            .load()
-            .as_ref()
-            .and_then(|permissions| permissions.approval_policy)
-            .unwrap_or_else(|| self.approval_policy())
-    }
-
     /// The reviewer accepted for this turn so far, held in 0.162's live step settings.
     pub(crate) fn current_approvals_reviewer(&self) -> ApprovalsReviewer {
         self.next_step_settings.load().approvals_reviewer()
@@ -207,14 +201,46 @@ impl TurnContext {
                 .permission_profile(),
         )
     }
+
+    /// What a child this turn starts or resumes inherits while the turn runs. For a fresh turn
+    /// these are the thread's accepted permissions.
+    pub(crate) fn inherited_permissions(&self) -> InheritedPermissions {
+        let permissions = self.live_permissions.load_full();
+        InheritedPermissions {
+            approval_policy: permissions
+                .as_ref()
+                .and_then(|permissions| permissions.approval_policy)
+                .unwrap_or_else(|| self.approval_policy()),
+            approvals_reviewer: self.current_approvals_reviewer(),
+            profile: self.current_thread_permission_profile(),
+        }
+    }
+}
+
+/// Elpis: the permissions a child started or resumed by an action inherits. Its model and
+/// history still come from the action's own turn and step.
+pub(crate) struct InheritedPermissions {
+    pub(crate) approval_policy: AskForApproval,
+    pub(crate) approvals_reviewer: ApprovalsReviewer,
+    pub(crate) profile: PermissionProfileSnapshot,
 }
 
 impl StepContext {
-    /// This step under the permissions its turn accepted after the step was captured.
-    fn with_turn_permissions(self: Arc<Self>) -> ConstraintResult<Arc<Self>> {
-        let reviewer = self.turn.current_approvals_reviewer();
-        let permissions = self.turn.live_permissions.load_full();
-        self.with_permissions(reviewer, permissions.as_deref())
+    /// Elpis: what a child started or resumed by this step's action inherits. A tool call's
+    /// step was refreshed with the permissions accepted when the call was dispatched, also when
+    /// the step outlived its turn.
+    pub(crate) fn inherited_permissions(&self) -> InheritedPermissions {
+        InheritedPermissions {
+            approval_policy: self.settings.approval_policy(),
+            approvals_reviewer: self.settings.approvals_reviewer(),
+            profile: self.accepted_profile.clone().unwrap_or_else(|| {
+                self.turn
+                    .config
+                    .permissions
+                    .permission_profile_state()
+                    .snapshot()
+            }),
+        }
     }
 
     fn with_permissions(
@@ -233,28 +259,36 @@ impl StepContext {
         if let Some(permissions) = permissions {
             current.settings =
                 permissions.apply(Arc::clone(&current.settings), &mut current.environments)?;
+            if let Some(profile) = &permissions.profile {
+                current.accepted_profile = Some(profile.clone());
+            }
         }
         Ok(Arc::new(current))
     }
 }
 
 impl Session {
-    /// Elpis: a tool call's step under the permissions accepted now. A step of the running
-    /// turn takes that turn's accepted changes. A step that outlived its turn, such as a Code
-    /// Mode cell's, takes the thread's: its turn no longer receives changes.
+    /// Elpis: a tool call's step under the permissions accepted now. Reductions this thread's
+    /// parents accepted are applied first. While the step's turn runs, the step takes that
+    /// turn's accepted changes. Once the turn has ended, as for a Code Mode cell that outlived
+    /// it, the step takes the thread's, because the turn no longer receives changes.
     pub(crate) async fn with_current_permissions(
         &self,
         step: Arc<StepContext>,
     ) -> ConstraintResult<Arc<StepContext>> {
+        self.follow_parent_reductions(&step.turn.session_source)
+            .await?;
         let running = self
             .active_turn
             .lock()
             .await
             .as_ref()
-            .and_then(|turn| turn.task.as_ref())
+            .and_then(|active| active.task.as_ref())
             .is_some_and(|task| Arc::ptr_eq(&task.turn_context, &step.turn));
         if running {
-            return step.with_turn_permissions();
+            let reviewer = step.turn.current_approvals_reviewer();
+            let permissions = step.turn.live_permissions.load_full();
+            return step.with_permissions(reviewer, permissions.as_deref());
         }
         let (reviewer, permissions) = {
             let state = self.state.lock().await;

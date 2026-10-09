@@ -7,6 +7,7 @@ use crate::agent::role::DEFAULT_ROLE_NAME;
 use crate::agent::role::apply_role_to_config;
 use crate::config::Config;
 use crate::session::session::Session;
+use crate::session::step_context::InheritedPermissions;
 use crate::session::step_context::StepContext;
 use crate::session::turn_context::TurnContext;
 use codex_models_manager::manager::RefreshStrategy;
@@ -54,8 +55,13 @@ pub(crate) async fn prepare_agent_spawn_config(
     options: SpawnConfigOptions<'_>,
 ) -> Result<PreparedSpawnConfig, String> {
     let turn = step_context.turn.as_ref();
-    let mut config =
-        build_agent_spawn_config(&session.get_base_instructions().await, step_context)?;
+    // Elpis: the permissions this call was dispatched with, also when its step outlived its turn.
+    let permissions = step_context.inherited_permissions();
+    let mut config = build_agent_spawn_config(
+        &session.get_base_instructions().await,
+        step_context,
+        &permissions,
+    )?;
     if options.version == SpawnConfigVersion::V1 && options.full_history_fork {
         reject_full_fork_agent_type_override(options.role_name)?;
     }
@@ -81,7 +87,7 @@ pub(crate) async fn prepare_agent_spawn_config(
         }
     }
     apply_spawn_agent_service_tier(session, &mut config).await?;
-    apply_spawn_agent_runtime_overrides(&mut config, turn)?;
+    apply_spawn_agent_runtime_overrides(&mut config, turn, &permissions)?;
 
     // Remember an applied configured default so cold reload reapplies its restrictions.
     let role_name = options
@@ -109,8 +115,9 @@ pub(crate) async fn prepare_agent_spawn_config(
 pub(crate) fn build_agent_spawn_config(
     base_instructions: &BaseInstructions,
     step_context: &StepContext,
+    permissions: &InheritedPermissions,
 ) -> Result<Config, String> {
-    let mut config = build_agent_shared_config(step_context.turn.as_ref())?;
+    let mut config = build_agent_shared_config(step_context.turn.as_ref(), permissions)?;
     let settings = &step_context.settings;
     config.model = Some(settings.model_info.slug.clone());
     config.model_reasoning_effort = settings.effective_reasoning_effort();
@@ -120,15 +127,23 @@ pub(crate) fn build_agent_spawn_config(
     Ok(config)
 }
 
-pub(crate) fn build_agent_resume_config(turn: &TurnContext) -> Result<Config, String> {
-    let mut config = build_agent_shared_config(turn)?;
+/// Elpis: `permissions` come from the resuming action, so a child resumed by a Code Mode cell
+/// that outlived its turn gets the thread's current permissions, not that turn's.
+pub(crate) fn build_agent_resume_config(
+    turn: &TurnContext,
+    permissions: &InheritedPermissions,
+) -> Result<Config, String> {
+    let mut config = build_agent_shared_config(turn, permissions)?;
     // For resume, keep base instructions sourced from rollout/session metadata.
     config.base_instructions = None;
     config.base_instructions_provenance = None;
     Ok(config)
 }
 
-fn build_agent_shared_config(turn: &TurnContext) -> Result<Config, String> {
+fn build_agent_shared_config(
+    turn: &TurnContext,
+    permissions: &InheritedPermissions,
+) -> Result<Config, String> {
     let base_config = turn.config.clone();
     let mut config = (*base_config).clone();
     // Preserve activation for history forks without freezing the parent's model-owned prompts.
@@ -151,7 +166,7 @@ fn build_agent_shared_config(turn: &TurnContext) -> Result<Config, String> {
     {
         config.developer_instructions = Some(developer_instructions);
     }
-    apply_spawn_agent_runtime_overrides(&mut config, turn)?;
+    apply_spawn_agent_runtime_overrides(&mut config, turn, permissions)?;
 
     Ok(config)
 }
@@ -168,26 +183,34 @@ fn reject_full_fork_agent_type_override(agent_type: Option<&str>) -> Result<(), 
 ///
 /// These values are chosen by the live turn rather than persisted config, so leaving them stale can
 /// make a child agent disagree with its parent about approval policy, cwd, or sandboxing.
-/// Elpis: a child the turn starts or resumes takes the permissions accepted so far in the
-/// turn, not those it started with.
+/// Elpis: the permissions are those accepted when the action ran, not those its turn started
+/// with.
 fn apply_spawn_agent_runtime_overrides(
     config: &mut Config,
     turn: &TurnContext,
+    permissions: &InheritedPermissions,
 ) -> Result<(), String> {
-    config
-        .permissions
-        .approval_policy
-        .set(turn.current_approval_policy())
-        .map_err(|err| format!("approval_policy is invalid: {err}"))?;
-    config.approvals_reviewer = turn.current_approvals_reviewer();
     #[allow(deprecated)]
     let turn_cwd = turn.cwd.clone();
     config.cwd = turn_cwd;
-    config
-        .permissions
-        .set_permission_profile_from_session_snapshot(turn.current_thread_permission_profile())
-        .map_err(|err| format!("permission_profile is invalid: {err}"))?;
-    Ok(())
+    permissions.apply_to(config)
+}
+
+impl InheritedPermissions {
+    /// Elpis: gives a child's config these permissions.
+    pub(crate) fn apply_to(&self, config: &mut Config) -> Result<(), String> {
+        config
+            .permissions
+            .approval_policy
+            .set(self.approval_policy)
+            .map_err(|err| format!("approval_policy is invalid: {err}"))?;
+        config.approvals_reviewer = self.approvals_reviewer;
+        config
+            .permissions
+            .set_permission_profile_from_session_snapshot(self.profile.clone())
+            .map_err(|err| format!("permission_profile is invalid: {err}"))?;
+        Ok(())
+    }
 }
 
 async fn apply_requested_spawn_agent_model_overrides(

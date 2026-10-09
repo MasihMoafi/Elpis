@@ -145,6 +145,35 @@ async fn reasoning_status_tracks_items_and_restores_after_tool_activity() {
 }
 
 #[tokio::test]
+async fn voice_handoff_preserves_typed_reasoning_and_ignores_private_items() {
+    let (mut chat, _rx, _ops) = make_chatwidget_manual(/*model_override*/ None).await;
+    chat.on_task_started();
+    handle_agent_reasoning_started(&mut chat, "typed");
+    delta(&mut chat, "typed", "**Checking repository**");
+
+    chat.remember_realtime_delegated_reasoning_turn("turn-1");
+    handle_agent_reasoning_started(&mut chat, "private");
+    delta(&mut chat, "private", "**Private voice reasoning**");
+    complete(&mut chat, "private");
+    assert_eq!(
+        chat.status_state.reasoning_item_id.as_deref(),
+        Some("typed")
+    );
+    assert_eq!(
+        chat.bottom_pane.status_widget().unwrap().header(),
+        "Checking repository"
+    );
+
+    delta(&mut chat, "typed", "\n**Verifying changes**");
+    assert_eq!(
+        chat.bottom_pane.status_widget().unwrap().header(),
+        "Verifying changes"
+    );
+    complete(&mut chat, "typed");
+    assert_eq!(chat.status_state.reasoning_item_id, None);
+}
+
+#[tokio::test]
 async fn reasoning_status_preserves_an_explicit_wait_and_restores_the_heading() {
     let (mut chat, _rx, _ops) = make_chatwidget_manual(/*model_override*/ None).await;
     chat.on_task_started();

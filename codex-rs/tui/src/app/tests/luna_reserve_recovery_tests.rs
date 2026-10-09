@@ -125,11 +125,8 @@ async fn luna_reserve_entry_dispatches_an_already_queued_turn_with_accepted_sett
             .set_feature_enabled(Feature::FastMode, /*enabled*/ true);
         app.chat_widget.set_service_tier(Some("fast".into()));
         if mode == ModeKind::Plan {
-            // Elpis: Shift+Tab cycles permissions, so Plan mode is entered as `/plan` enters it.
-            let plan_mask = crate::collaboration_modes::plan_mask(app.model_catalog.as_ref())
-                .expect("plan mode");
             app.chat_widget
-                .set_collaboration_mask_from_user_action(plan_mask);
+                .handle_key_event(KeyEvent::from(KeyCode::BackTab));
         }
         app.chat_widget
             .restore_user_message_to_composer(UserMessage::from("continue"));

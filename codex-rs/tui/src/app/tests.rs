@@ -71,6 +71,12 @@ mod history_hydration_tests;
 #[path = "tests/permission_shortcuts_tests.rs"]
 mod permission_shortcuts_tests;
 mod rate_limits;
+#[path = "tests/realtime_handoff_e2e.rs"]
+mod realtime_handoff_e2e;
+#[path = "tests/realtime_requests.rs"]
+mod realtime_requests;
+#[path = "tests/realtime_start.rs"]
+mod realtime_start;
 #[path = "tests/reasoning_resume_tests.rs"]
 mod reasoning_resume_tests;
 #[path = "tests/recap_generation_tests.rs"]
@@ -1277,7 +1283,7 @@ async fn replay_thread_snapshot_restores_draft_and_queued_input() {
     app.chat_widget
         .apply_external_edit("outgoing queued input".to_string());
     app.chat_widget
-        .handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+        .handle_key_event(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
     app.chat_widget
         .set_queue_autosend_suppressed(/*suppressed*/ true);
     app.chat_widget.handle_server_notification(
@@ -1391,7 +1397,7 @@ async fn replayed_turn_complete_submits_restored_queued_follow_up() {
     app.chat_widget
         .apply_external_edit("queued follow-up".to_string());
     app.chat_widget
-        .handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+        .handle_key_event(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
     let input_state = app
         .chat_widget
         .capture_thread_input_state()
@@ -1454,7 +1460,7 @@ async fn replay_only_thread_keeps_restored_queue_visible() {
     app.chat_widget
         .apply_external_edit("queued follow-up".to_string());
     app.chat_widget
-        .handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+        .handle_key_event(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
     let mut input_state = app
         .chat_widget
         .capture_thread_input_state()
@@ -1508,7 +1514,7 @@ async fn replay_thread_snapshot_keeps_queue_when_running_state_only_comes_from_s
     app.chat_widget
         .apply_external_edit("queued follow-up".to_string());
     app.chat_widget
-        .handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+        .handle_key_event(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
     let input_state = app
         .chat_widget
         .capture_thread_input_state()
@@ -1559,7 +1565,7 @@ async fn replay_thread_snapshot_in_progress_turn_restores_running_queue_state() 
     app.chat_widget
         .apply_external_edit("queued follow-up".to_string());
     app.chat_widget
-        .handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+        .handle_key_event(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
     let input_state = app
         .chat_widget
         .capture_thread_input_state()
@@ -1638,7 +1644,7 @@ async fn replay_thread_snapshot_does_not_submit_queue_before_replay_catches_up()
     app.chat_widget
         .apply_external_edit("queued follow-up".to_string());
     app.chat_widget
-        .handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+        .handle_key_event(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
     let mut input_state = app
         .chat_widget
         .capture_thread_input_state()
@@ -1983,6 +1989,26 @@ async fn replayed_interrupted_turn_restores_queued_input_to_composer() {
     assert!(
         new_op_rx.try_recv().is_err(),
         "replayed interrupted turns should restore queued input for editing, not submit it"
+    );
+}
+
+#[tokio::test]
+async fn token_usage_update_refreshes_status_line_with_runtime_context_window() {
+    let mut app = make_test_app().await;
+    app.chat_widget.setup_status_line(
+        vec![crate::bottom_pane::StatusLineItem::ContextWindowSize],
+        /*use_theme_colors*/ true,
+    );
+
+    assert_eq!(app.chat_widget.status_line_text(), None);
+
+    app.handle_thread_event_now(ThreadBufferedEvent::Notification(Box::new(
+        token_usage_notification(ThreadId::new(), "turn-1", Some(950_000)),
+    )));
+
+    assert_eq!(
+        app.chat_widget.status_line_text(),
+        Some("950K window".into())
     );
 }
 
@@ -7018,35 +7044,13 @@ async fn height_shrink_schedules_resize_reflow() {
     assert!(!app.handle_draw_size_change(
         ratatui::layout::Size::new(/*width*/ 118, /*height*/ 35),
         ratatui::layout::Size::new(/*width*/ 118, /*height*/ 35),
-        /*terminal_resized*/ false,
         &frame_requester,
     ));
 
     assert!(app.handle_draw_size_change(
         ratatui::layout::Size::new(/*width*/ 118, /*height*/ 24),
         ratatui::layout::Size::new(/*width*/ 118, /*height*/ 35),
-        /*terminal_resized*/ true,
         &frame_requester,
-    ));
-    assert!(app.transcript_reflow.has_pending_reflow());
-}
-
-/// A terminal that shrinks and regrows between two size samples moves its rows (VTE pushes them
-/// into scrollback and pulls them back) while the size Elpis reads stays the same. Repainting at
-/// the old rows paints the composer over history, so any resize event must rebuild the screen.
-#[tokio::test]
-async fn resize_event_with_unchanged_size_schedules_resize_reflow() {
-    let (mut app, _rx, _op_rx) = make_test_app_with_channels().await;
-    let frame_requester = crate::tui::FrameRequester::test_dummy();
-    let size = ratatui::layout::Size::new(/*width*/ 200, /*height*/ 46);
-
-    assert!(!app.handle_draw_size_change(
-        size, size, /*terminal_resized*/ false, &frame_requester
-    ));
-    assert!(!app.transcript_reflow.has_pending_reflow());
-
-    assert!(app.handle_draw_size_change(
-        size, size, /*terminal_resized*/ true, &frame_requester
     ));
     assert!(app.transcript_reflow.has_pending_reflow());
 }
@@ -7059,21 +7063,11 @@ async fn resizing_empty_transcript_schedules_settled_size_recheck() {
     let initial_size = ratatui::layout::Size::new(/*width*/ 80, /*height*/ 24);
     let resized_size = ratatui::layout::Size::new(/*width*/ 100, /*height*/ 24);
 
-    assert!(!app.handle_draw_size_change(
-        initial_size,
-        initial_size,
-        /*terminal_resized*/ false,
-        &frame_requester,
-    ));
+    assert!(!app.handle_draw_size_change(initial_size, initial_size, &frame_requester));
     tui.screen_size_for_event(&TuiEvent::Resize(resized_size))
         .expect("resolve resize event");
     tui.terminal.resize(resized_size).expect("apply event size");
-    assert!(app.handle_draw_size_change(
-        resized_size,
-        initial_size,
-        /*terminal_resized*/ true,
-        &frame_requester,
-    ));
+    assert!(app.handle_draw_size_change(resized_size, initial_size, &frame_requester));
     tokio::time::sleep(crate::transcript_reflow::TRANSCRIPT_REFLOW_DEBOUNCE).await;
     assert_eq!(
         tui.screen_size_for_event(&TuiEvent::Draw)

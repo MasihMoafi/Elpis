@@ -8,8 +8,6 @@ use pretty_assertions::assert_eq;
 #[tokio::test]
 async fn escape_restores_reading_origin_after_details_navigation_and_resize() -> Result<()> {
     let mut app = crate::app::test_support::make_test_app().await;
-    // Elpis: the Context Ledger takes the bottom rows, so the owned screen is tested without it.
-    crate::app::test_support::hide_context_ledger(&mut app);
     attach_thread(&mut app, ThreadId::new());
     app.transcript_cells = vec![
         user_cell("first prompt"),
@@ -247,8 +245,6 @@ async fn inline_browsing_is_compact_and_escape_restores_the_existing_overlay() -
 #[tokio::test]
 async fn browsing_details_use_the_remapped_chord_without_cancelling_preview() -> Result<()> {
     let mut app = crate::app::test_support::make_test_app().await;
-    // Elpis: the Context Ledger takes the bottom rows, so the owned screen is tested without it.
-    crate::app::test_support::hide_context_ledger(&mut app);
     attach_thread(&mut app, ThreadId::new());
     app.transcript_cells = vec![
         user_cell("first prompt"),
@@ -324,14 +320,7 @@ async fn browsing_details_use_the_remapped_chord_without_cancelling_preview() ->
         );
         assert!(text.contains("second prompt"));
         assert!(app.backtrack.overlay_preview_active);
-        // On the full screen a letter types into the composer, so a scroll key moves instead
-        // (this keymap makes Left and Up the first strokes of chords).
-        let previous = if owned {
-            KeyCode::Down
-        } else {
-            KeyCode::Char('h')
-        };
-        for code in [previous, KeyCode::Right] {
+        for code in [KeyCode::Char('h'), KeyCode::Right] {
             if let Some(Overlay::Transcript(overlay)) = &mut app.overlay {
                 overlay.set_history_state(TranscriptHistoryState::LoadingBeginning);
             } else {
@@ -343,11 +332,7 @@ async fn browsing_details_use_the_remapped_chord_without_cancelling_preview() ->
                 Some(Overlay::Transcript(overlay)) => overlay.history_state(),
                 _ => app.transcript_view.history,
             };
-            assert_eq!(
-                state,
-                TranscriptHistoryState::LoadingOlder,
-                "owned {owned}, {code:?}"
-            );
+            assert_eq!(state, TranscriptHistoryState::LoadingOlder);
         }
         app.handle_tui_event(&mut tui, &mut server, TuiEvent::Key(KeyCode::Up.into()))
             .await?;
@@ -490,8 +475,6 @@ async fn browsing_requires_fresh_escape_presses_and_ignores_confirmation_repeats
 #[tokio::test]
 async fn browsing_arrows_and_vim_keys_navigate_without_editing_the_draft() -> Result<()> {
     let mut app = crate::app::test_support::make_test_app().await;
-    // Elpis: the Context Ledger takes the bottom rows, so the owned screen is tested without it.
-    crate::app::test_support::hide_context_ledger(&mut app);
     attach_thread(&mut app, ThreadId::new());
     app.transcript_cells = vec![
         user_cell("first prompt"),

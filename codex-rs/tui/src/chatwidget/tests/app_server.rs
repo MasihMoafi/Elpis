@@ -96,6 +96,8 @@ async fn session_header_uses_catalog_display_name_without_changing_model() {
             .map(|lines| lines_to_single_string(lines))
             .collect::<String>()
             .replace(CODEX_CLI_VERSION, "<VERSION>")
+            // Elpis: the header shows the Elpis release.
+            .replace(crate::branding::ELPIS_VERSION, "<VERSION>")
             .replace("C:\\tmp\\thread-settings", "/tmp/thread-settings");
         assert_chatwidget_snapshot!(format!("catalog_model_session_header_{name}"), rendered);
         assert_eq!(chat.current_model(), slug);

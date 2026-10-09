@@ -746,8 +746,12 @@ async fn esc_that_leaves_the_context_ledger_does_not_prime_the_rewind() -> Resul
     // A drawn frame records the width; the Ledger takes keys only once it is drawn.
     app.chat_widget.note_rendered_width(/*width*/ 120);
 
-    app.handle_key_event(&mut tui, &mut app_server, KeyCode::Tab.into())
-        .await;
+    app.handle_key_event(
+        &mut tui,
+        &mut app_server,
+        KeyEvent::new(KeyCode::Char('c'), KeyModifiers::ALT),
+    )
+    .await;
     assert!(app.chat_widget.context_ledger_has_focus());
     app.handle_key_event(&mut tui, &mut app_server, KeyCode::Esc.into())
         .await;

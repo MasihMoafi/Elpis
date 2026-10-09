@@ -30,6 +30,8 @@ fn owned_startup_keeps_the_live_bottom_geometry() {
         "owned_startup_layout",
         format!("cursor={:?}\n{frame}", layout.cursor_pos(area))
             .replace(crate::version::CODEX_CLI_VERSION, "<VERSION>")
+            // Elpis: the header shows the Elpis release.
+            .replace(crate::branding::ELPIS_VERSION, "<VERSION>")
     );
 }
 

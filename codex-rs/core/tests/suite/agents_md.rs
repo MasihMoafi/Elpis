@@ -3,6 +3,9 @@ use anyhow::anyhow;
 use codex_core::ForkSnapshot;
 use codex_core::StartThreadOptions;
 use codex_core::TurnInputRequest;
+use codex_core::config::Config;
+use codex_core::elpis_admission::memory_dir;
+use codex_core::elpis_context::set_continuity_source_admitted;
 use codex_exec_server::CreateDirectoryOptions;
 use codex_exec_server::LOCAL_ENVIRONMENT_ID;
 use codex_exec_server::REMOTE_ENVIRONMENT_ID;
@@ -174,6 +177,22 @@ impl ThreadInstructionsProvider for RecordingThreadInstructionsProvider {
     }
 }
 
+/// Elpis: global and project AGENTS.md reach the model only while the Context Ledger admits
+/// their rows, and a workspace the user has not touched admits neither. This admits both for
+/// `config`'s workspace, as the TUI does. Discovery and `instruction_sources` do not depend
+/// on it. Call it only where a test exercises an admitted source.
+fn admit_agents_md_rows(config: &Config) -> Result<()> {
+    for row in ["Global AGENTS.md", "Project AGENTS.md"] {
+        set_continuity_source_admitted(
+            Some(memory_dir(config).as_path()),
+            config.cwd.as_path(),
+            row,
+            /*admitted*/ true,
+        )?;
+    }
+    Ok(())
+}
+
 async fn agents_instructions(mut builder: TestCodexBuilder) -> Result<String> {
     let server = start_mock_server().await;
     let resp_mock = mount_sse_once(
@@ -183,6 +202,7 @@ async fn agents_instructions(mut builder: TestCodexBuilder) -> Result<String> {
     .await;
 
     let test = builder.build_with_auto_env(&server).await?;
+    admit_agents_md_rows(&test.config)?;
     test.submit_turn("hello").await?;
 
     let request = resp_mock.single_request();
@@ -234,6 +254,52 @@ pub(super) fn instruction_fragments(request: &responses::ResponsesRequest) -> Ve
         .message_input_texts("user")
         .into_iter()
         .filter(|text| text.starts_with("# AGENTS.md instructions"))
+        .collect()
+}
+
+/// Elpis: AGENTS.md owns one history slot, so a refill removes the earlier copy from the
+/// history a later request replays. This is the request input without any AGENTS.md fragment,
+/// for asserting that everything else is still replayed exactly.
+fn input_without_instruction_fragments(
+    request: &responses::ResponsesRequest,
+) -> Vec<serde_json::Value> {
+    request
+        .input()
+        .into_iter()
+        .filter_map(|mut item| {
+            let Some(content) = item.get("content").and_then(|content| content.as_array()) else {
+                return Some(item);
+            };
+            let fragments = content
+                .iter()
+                .enumerate()
+                .filter(|(_, entry)| {
+                    entry["text"]
+                        .as_str()
+                        .is_some_and(|text| text.starts_with("# AGENTS.md instructions"))
+                })
+                .map(|(index, _)| index)
+                .collect::<Vec<_>>();
+            let length = content.len();
+            if fragments.is_empty() {
+                return Some(item);
+            }
+            let remaining = length - fragments.len();
+            // Content kinds are aligned with content entries; keep them aligned.
+            for path in [
+                "/content",
+                "/internal_chat_message_metadata_passthrough/content_item_kinds",
+            ] {
+                if let Some(entries) = item.pointer_mut(path).and_then(|v| v.as_array_mut())
+                    && entries.len() == length
+                {
+                    for index in fragments.iter().rev() {
+                        entries.remove(*index);
+                    }
+                }
+            }
+            (remaining > 0).then_some(item)
+        })
         .collect()
 }
 
@@ -433,6 +499,7 @@ async fn invalid_fallback_paths_do_not_prevent_loading_valid_filenames() -> Resu
         })
         .build_with_auto_env(&server)
         .await?;
+    admit_agents_md_rows(&test.config)?;
     test.submit_turn("hello").await?;
 
     assert_single_instruction_fragment(
@@ -567,6 +634,7 @@ async fn symlinked_cwd_uses_logical_parent_for_agents_discovery() -> Result<()> 
             Ok(())
         });
     let test = builder.build(&server).await?;
+    admit_agents_md_rows(&test.config)?;
     let logical_root = test
         .config
         .cwd
@@ -621,6 +689,7 @@ async fn selected_environment_sources_match_model_visible_instructions() -> Resu
             Ok::<(), anyhow::Error>(())
         });
     let test = builder.build_with_auto_env(&server).await?;
+    admit_agents_md_rows(&test.config)?;
     let global_agents = global_agents.abs();
 
     assert_eq!(
@@ -671,6 +740,8 @@ async fn untrusted_project_excludes_project_instructions() -> Result<()> {
             Ok::<(), anyhow::Error>(())
         });
     let test = builder.build_with_auto_env(&server).await?;
+    // Both rows are admitted, so the project file is absent because the project is untrusted.
+    admit_agents_md_rows(&test.config)?;
 
     assert_eq!(
         test.codex.instruction_sources().await,
@@ -721,6 +792,7 @@ async fn runtime_trust_reload_refreshes_project_instructions() -> Result<()> {
             Ok::<(), anyhow::Error>(())
         });
     let test = builder.build_with_auto_env(&server).await?;
+    admit_agents_md_rows(&test.config)?;
     let project_agents = test.workspace_path_uri(GLOBAL_AGENTS_FILENAME)?;
     let global_agents = PathUri::from_abs_path(&global_agents);
 
@@ -1064,6 +1136,7 @@ async fn loads_user_instructions_without_a_primary_environment() -> Result<()> {
             Ok(())
         });
     let test = builder.build_with_auto_env(&server).await?;
+    admit_agents_md_rows(&test.config)?;
     assert_eq!(provider.load_count(), 1);
 
     let no_environment_thread = test
@@ -1136,6 +1209,7 @@ impl ThreadInstructionsFixture {
                 Ok(())
             });
         let test = builder.build_with_auto_env(server).await?;
+        admit_agents_md_rows(&test.config)?;
         assert_eq!(global_provider.load_count(), 1);
         let provider = Arc::new(RecordingThreadInstructionsProvider::with_text(
             TASK_USER_INSTRUCTIONS,
@@ -1199,11 +1273,11 @@ async fn thread_provider_composes_and_clears_only_its_instructions() -> Result<(
             "{GLOBAL_INSTRUCTIONS}\n\n{TASK_USER_INSTRUCTIONS}\n\n{PROJECT_SEPARATOR}\n\n{PROJECT_INSTRUCTIONS}"
         ),
     );
+    // Clearing the thread text refills the one AGENTS.md slot with the remaining sources and
+    // removes the earlier copy; no replacement notice is added.
     let cleared = expected_instruction_fragment(
         cwd,
-        &format!(
-            "These AGENTS.md instructions replace all previously provided AGENTS.md instructions.\n\n{GLOBAL_INSTRUCTIONS}\n\n{PROJECT_SEPARATOR}\n\n{PROJECT_INSTRUCTIONS}"
-        ),
+        &format!("{GLOBAL_INSTRUCTIONS}\n\n{PROJECT_SEPARATOR}\n\n{PROJECT_INSTRUCTIONS}"),
     );
     assert_eq!(
         response_mock
@@ -1213,10 +1287,82 @@ async fn thread_provider_composes_and_clears_only_its_instructions() -> Result<(
             .collect::<Vec<_>>(),
         vec![
             vec![initial.clone()],
-            vec![initial.clone()],
-            vec![initial.clone(), cleared.clone()],
-            vec![initial, cleared],
+            vec![initial],
+            vec![cleared.clone()],
+            vec![cleared],
         ],
+    );
+    Ok(())
+}
+
+/// Elpis: the Context Ledger gates instruction files. Host-provided text has no file behind
+/// it, so it is not a Ledger row and reaches the model while the workspace's global and
+/// project files stay out; admitting their rows then replaces the one copy with all of them.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn ledger_withholds_files_but_not_source_less_thread_instructions() -> Result<()> {
+    let server = start_mock_server().await;
+    let response_mock = responses::mount_sse_sequence(
+        &server,
+        ["withheld", "admitted"]
+            .map(|id| sse(vec![ev_response_created(id), ev_completed(id)]))
+            .to_vec(),
+    )
+    .await;
+    let home = Arc::new(TempDir::new()?);
+    write_global_file(home.as_ref(), GLOBAL_AGENTS_FILENAME, GLOBAL_INSTRUCTIONS)?;
+    let mut builder = test_codex()
+        .with_home(home)
+        .with_workspace_setup(|cwd, fs| async move {
+            fs.write_file(
+                &executor_path_uri(cwd.join(GLOBAL_AGENTS_FILENAME))?,
+                PROJECT_INSTRUCTIONS.as_bytes().to_vec(),
+                Default::default(),
+                /*sandbox*/ None,
+            )
+            .await?;
+            Ok(())
+        });
+    let test = builder.build_with_auto_env(&server).await?;
+    let thread = test
+        .thread_manager
+        .start_thread(StartThreadOptions {
+            environments: Some(vec![test.executor_environment().request()]),
+            thread_instructions_provider: Some(Arc::new(
+                RecordingThreadInstructionsProvider::with_text(TASK_USER_INSTRUCTIONS),
+            )),
+            ..StartThreadOptions::new(test.config.clone())
+        })
+        .await?
+        .thread;
+    let sources = vec![
+        PathUri::from_abs_path(&test.config.codex_home.join(GLOBAL_AGENTS_FILENAME)),
+        test.workspace_path_uri(GLOBAL_AGENTS_FILENAME)?,
+    ];
+
+    submit_thread_turn(&thread, "files not yet admitted").await?;
+    assert_eq!(
+        thread.instruction_sources().await,
+        sources,
+        "discovery keeps listing both files so the Ledger can offer them"
+    );
+    admit_agents_md_rows(&test.config)?;
+    submit_thread_turn(&thread, "files admitted").await?;
+
+    let cwd = &test.executor_environment().selection().cwd;
+    let requests = response_mock.requests();
+    assert_eq!(requests.len(), 2);
+    assert_single_instruction_fragment(
+        &requests[0],
+        &expected_provider_only_instruction_fragment(TASK_USER_INSTRUCTIONS),
+    );
+    assert_single_instruction_fragment(
+        &requests[1],
+        &expected_instruction_fragment(
+            cwd,
+            &format!(
+                "{GLOBAL_INSTRUCTIONS}\n\n{TASK_USER_INSTRUCTIONS}\n\n{PROJECT_SEPARATOR}\n\n{PROJECT_INSTRUCTIONS}"
+            ),
+        ),
     );
     Ok(())
 }
@@ -1306,7 +1452,7 @@ async fn thread_provider_refreshes_at_the_next_step_of_an_active_turn() -> Resul
     let updated = expected_instruction_fragment(
         cwd,
         &format!(
-            "These AGENTS.md instructions replace all previously provided AGENTS.md instructions.\n\n{GLOBAL_INSTRUCTIONS}\n\n{UPDATED_TASK_USER_INSTRUCTIONS}\n\n{PROJECT_SEPARATOR}\n\n{PROJECT_INSTRUCTIONS}"
+            "{GLOBAL_INSTRUCTIONS}\n\n{UPDATED_TASK_USER_INSTRUCTIONS}\n\n{PROJECT_SEPARATOR}\n\n{PROJECT_INSTRUCTIONS}"
         ),
     );
     assert_eq!(
@@ -1315,7 +1461,7 @@ async fn thread_provider_refreshes_at_the_next_step_of_an_active_turn() -> Resul
             .iter()
             .map(instruction_fragments)
             .collect::<Vec<_>>(),
-        vec![vec![initial.clone()], vec![initial, updated]],
+        vec![vec![initial], vec![updated]],
     );
     Ok(())
 }
@@ -1460,7 +1606,7 @@ async fn thread_provider_enforces_its_own_limit_before_startup_and_sampling() ->
     // Changing environments must also remove the previously selected repository docs.
     let host_text = "x".repeat(approx_bytes_for_tokens(/*tokens*/ 10_000));
     let expected = expected_provider_only_instruction_fragment(&format!(
-        "These AGENTS.md instructions replace all previously provided AGENTS.md instructions.\n\n{GLOBAL_INSTRUCTIONS}\n\n{host_text}"
+        "{GLOBAL_INSTRUCTIONS}\n\n{host_text}"
     ));
     fixture.provider.set_instructions(Some(Instructions {
         text: host_text,
@@ -1488,7 +1634,7 @@ async fn thread_provider_enforces_its_own_limit_before_startup_and_sampling() ->
     .await;
     let requests = response_mock.requests();
     assert_eq!(requests.len(), 2);
-    assert_eq!(instruction_fragments(&requests[1]).last(), Some(&expected));
+    assert_single_instruction_fragment(&requests[1], &expected);
     Ok(())
 }
 
@@ -1621,12 +1767,9 @@ async fn fork_preserves_thread_instructions(
     assert_eq!(parent_provider.load_count(), parent_loads);
     let initial = expected_provider_only_instruction_fragment(TASK_USER_INSTRUCTIONS);
     let final_fragments = if offline {
-        vec![
-            initial.clone(),
-            expected_provider_only_instruction_fragment(&format!(
-                "These AGENTS.md instructions replace all previously provided AGENTS.md instructions.\n\n{UPDATED_TASK_USER_INSTRUCTIONS}"
-            )),
-        ]
+        vec![expected_provider_only_instruction_fragment(
+            UPDATED_TASK_USER_INSTRUCTIONS,
+        )]
     } else {
         vec![initial.clone()]
     };
@@ -1721,11 +1864,9 @@ async fn thread_provider_lives_with_its_session_across_resume() -> Result<()> {
         &requests[0],
         &expected_provider_only_instruction_fragment(UPDATED_TASK_USER_INSTRUCTIONS),
     );
-    assert_eq!(
-        instruction_fragments(&requests[1]).last(),
-        Some(&expected_provider_only_instruction_fragment(
-            "These AGENTS.md instructions replace all previously provided AGENTS.md instructions.\n\ncold session instructions",
-        )),
+    assert_single_instruction_fragment(
+        &requests[1],
+        &expected_provider_only_instruction_fragment("cold session instructions"),
     );
     Ok(())
 }
@@ -1766,6 +1907,7 @@ async fn fresh_thread_composes_global_before_project_and_reports_sources() -> Re
             Ok(())
         });
     let test = builder.build_with_auto_env(&server).await?;
+    admit_agents_md_rows(&test.config)?;
     let creation_sources = vec![
         PathUri::from_abs_path(&global_source),
         test.workspace_path_uri(GLOBAL_AGENTS_FILENAME)?,
@@ -1797,7 +1939,7 @@ async fn fresh_thread_composes_global_before_project_and_reports_sources() -> Re
     test.submit_turn("second turn").await?;
 
     // The global provider refreshes, while repository discovery keeps its cached snapshot.
-    // Append the changed instructions without rewriting the earlier model input.
+    // The changed instructions replace the earlier copy: AGENTS.md owns one history slot.
     let requests = response_mock.requests();
     assert_eq!(requests.len(), 2);
     let expected_contents =
@@ -1810,14 +1952,9 @@ async fn fresh_thread_composes_global_before_project_and_reports_sources() -> Re
     assert_eq!(fragments, vec![expected_fragment.clone()]);
     let updated_fragment = expected_instruction_fragment(
         &test.executor_environment().selection().cwd,
-        &format!(
-            "These AGENTS.md instructions replace all previously provided AGENTS.md instructions.\n\n{NEW_GLOBAL_INSTRUCTIONS}\n\n{PROJECT_SEPARATOR}\n\n{PROJECT_INSTRUCTIONS}"
-        ),
+        &format!("{NEW_GLOBAL_INSTRUCTIONS}\n\n{PROJECT_SEPARATOR}\n\n{PROJECT_INSTRUCTIONS}"),
     );
-    assert_eq!(
-        instruction_fragments(&requests[1]),
-        vec![expected_fragment, updated_fragment]
-    );
+    assert_eq!(instruction_fragments(&requests[1]), vec![updated_fragment]);
     let rendered = fragments
         .into_iter()
         .next()
@@ -1845,12 +1982,12 @@ async fn fresh_thread_composes_global_before_project_and_reports_sources() -> Re
         creation_sources,
         "same-path global refresh preserves source paths and composition order"
     );
-    let first_input = requests[0].input();
-    let second_input = requests[1].input();
+    let first_input = input_without_instruction_fragments(&requests[0]);
+    let second_input = input_without_instruction_fragments(&requests[1]);
     assert_eq!(
         second_input.get(..first_input.len()),
         Some(first_input.as_slice()),
-        "the ordinary second turn should retain the cached prefix"
+        "the second turn should retain all earlier history except the replaced AGENTS.md copy"
     );
 
     Ok(())
@@ -1885,6 +2022,7 @@ async fn multi_environment_project_instructions_share_one_byte_budget() -> Resul
             Ok(())
         });
     let test = builder.build_with_remote_and_local_env(&server).await?;
+    admit_agents_md_rows(&test.config)?;
     let thread = test
         .thread_manager
         .start_thread(StartThreadOptions {
@@ -1968,6 +2106,7 @@ async fn multi_environment_thread_refreshes_global_and_keeps_repository_snapshot
             Ok(())
         });
     let test = builder.build_with_remote_and_local_env(&server).await?;
+    admit_agents_md_rows(&test.config)?;
     let remote_source = test.config.cwd.join(GLOBAL_AGENTS_FILENAME);
     let thread = test
         .thread_manager
@@ -2033,14 +2172,10 @@ async fn multi_environment_thread_refreshes_global_and_keeps_repository_snapshot
     let requests = response_mock.requests();
     assert_eq!(requests.len(), 2);
     assert_single_instruction_fragment(&requests[0], &expected);
-    let replacement = expected_provider_only_instruction_fragment(&format!(
-        "These AGENTS.md instructions replace all previously provided AGENTS.md instructions.\n\n{}",
-        contents.replace(GLOBAL_INSTRUCTIONS, NEW_GLOBAL_INSTRUCTIONS),
-    ));
-    assert_eq!(
-        instruction_fragments(&requests[1]),
-        vec![expected, replacement]
+    let replacement = expected_provider_only_instruction_fragment(
+        &contents.replace(GLOBAL_INSTRUCTIONS, NEW_GLOBAL_INSTRUCTIONS),
     );
+    assert_eq!(instruction_fragments(&requests[1]), vec![replacement]);
     assert_eq!(provider.load_count(), 4);
     assert_eq!(
         thread.thread.instruction_sources().await,
@@ -2090,6 +2225,7 @@ async fn global_instruction_warnings_reappear_only_after_recovery() -> Result<()
     );
     let mut builder = test_codex().with_home(Arc::clone(&home));
     let test = builder.build_with_auto_env(&server).await?;
+    admit_agents_md_rows(&test.config)?;
     wait_for_event(
         &test.codex,
         |event| matches!(event, EventMsg::Warning(warning) if warning.message == expected_warning),
@@ -2155,6 +2291,7 @@ async fn invalid_utf8_global_instructions_are_lossy() -> Result<()> {
 
     let mut builder = test_codex().with_home(home);
     let test = builder.build(&server).await?;
+    admit_agents_md_rows(&test.config)?;
     test.submit_turn("inspect lossy global instructions")
         .await?;
 
@@ -2202,6 +2339,7 @@ async fn cold_resume_invalidates_deleted_legacy_agents_md_once() -> Result<()> {
     // Create the initial thread and persist its creation-time instruction snapshot.
     let mut initial_builder = test_codex().with_home(Arc::clone(&home));
     let initial = initial_builder.build(&server).await?;
+    admit_agents_md_rows(&initial.config)?;
 
     // Assert the pre-resume thread reports the source used to create its snapshot.
     assert_eq!(
@@ -2229,6 +2367,8 @@ async fn cold_resume_invalidates_deleted_legacy_agents_md_once() -> Result<()> {
     let resumed = resume_builder
         .resume(&server, Arc::clone(&home), rollout_path)
         .await?;
+    // The resumed thread runs in a new workspace, which has its own Context Ledger record.
+    admit_agents_md_rows(&resumed.config)?;
 
     // Model history still contains the old fragment, but the source no longer exists.
     assert_eq!(
@@ -2244,31 +2384,20 @@ async fn cold_resume_invalidates_deleted_legacy_agents_md_once() -> Result<()> {
 
     let requests = response_mock.requests();
     assert_eq!(requests.len(), 4);
-    let initial_input = requests[0].input();
-    let resumed_input = requests[1].input();
+    let initial_input = input_without_instruction_fragments(&requests[0]);
+    let resumed_input = input_without_instruction_fragments(&requests[1]);
     assert_eq!(
         resumed_input.get(..initial_input.len()),
         Some(initial_input.as_slice()),
-        "cold resume should replay the original structured input prefix"
+        "cold resume should replay the original structured input except the stale AGENTS.md copy"
     );
+    // The deleted source's copy leaves history once, with no removal notice, and stays gone.
     let initial = expected_provider_only_instruction_fragment(OLD_GLOBAL_INSTRUCTIONS);
-    let removal = expected_provider_only_instruction_fragment(
-        "The previously provided AGENTS.md instructions no longer apply.",
-    );
-    assert_eq!(instruction_fragments(&requests[0]), vec![initial.clone()]);
-    assert_eq!(
-        instruction_fragments(&requests[1]),
-        vec![initial.clone(), removal.clone()]
-    );
-    assert_eq!(
-        instruction_fragments(&requests[2]),
-        vec![initial.clone(), removal.clone()]
-    );
+    assert_eq!(instruction_fragments(&requests[0]), vec![initial]);
+    assert_eq!(instruction_fragments(&requests[1]), Vec::<String>::new());
+    assert_eq!(instruction_fragments(&requests[2]), Vec::<String>::new());
     let replacement = expected_provider_only_instruction_fragment(NEW_GLOBAL_INSTRUCTIONS);
-    assert_eq!(
-        instruction_fragments(&requests[3]),
-        vec![initial, removal, replacement]
-    );
+    assert_eq!(instruction_fragments(&requests[3]), vec![replacement]);
 
     Ok(())
 }
@@ -2306,6 +2435,7 @@ async fn fork_injects_changed_agents_md_once() -> Result<()> {
     // Create the parent and persist its creation-time instruction snapshot.
     let mut builder = test_codex().with_home(Arc::clone(&home));
     let parent = builder.build(&server).await?;
+    admit_agents_md_rows(&parent.config)?;
 
     // Assert the parent reports the source used to create its snapshot.
     assert_eq!(
@@ -2363,35 +2493,26 @@ async fn fork_injects_changed_agents_md_once() -> Result<()> {
     // Assert the forked model request replays the parent's exact structured history.
     let requests = response_mock.requests();
     assert_eq!(requests.len(), 4);
-    let parent_input = requests[0].input();
-    let mut fork_input = requests[1].input();
+    let parent_input = input_without_instruction_fragments(&requests[0]);
+    let mut fork_input = input_without_instruction_fragments(&requests[1]);
     // The request prefix has a thread-scoped ID; retained history IDs stay unchanged.
     fork_input[0]["id"] = parent_input[0]["id"].clone();
     assert_eq!(
         fork_input.get(..parent_input.len()),
         Some(parent_input.as_slice()),
-        "fork should replay the parent's original structured input prefix"
+        "fork should replay the parent's structured input except the replaced AGENTS.md copy"
     );
+    // Each change leaves exactly one copy: the parent's is replaced, not followed by a notice.
     let initial = expected_provider_only_instruction_fragment(OLD_GLOBAL_INSTRUCTIONS);
-    let replacement = expected_provider_only_instruction_fragment(&format!(
-        "These AGENTS.md instructions replace all previously provided AGENTS.md instructions.\n\n{NEW_GLOBAL_INSTRUCTIONS}"
-    ));
-    assert_eq!(instruction_fragments(&requests[0]), vec![initial.clone()]);
+    let replacement = expected_provider_only_instruction_fragment(NEW_GLOBAL_INSTRUCTIONS);
+    assert_eq!(instruction_fragments(&requests[0]), vec![initial]);
     assert_eq!(
         instruction_fragments(&requests[1]),
-        vec![initial.clone(), replacement.clone()]
+        vec![replacement.clone()]
     );
-    assert_eq!(
-        instruction_fragments(&requests[2]),
-        vec![initial.clone(), replacement.clone()]
-    );
-    let refreshed = expected_provider_only_instruction_fragment(
-        "These AGENTS.md instructions replace all previously provided AGENTS.md instructions.\n\ninstructions changed after fork",
-    );
-    assert_eq!(
-        instruction_fragments(&requests[3]),
-        vec![initial, replacement, refreshed]
-    );
+    assert_eq!(instruction_fragments(&requests[2]), vec![replacement]);
+    let refreshed = expected_provider_only_instruction_fragment("instructions changed after fork");
+    assert_eq!(instruction_fragments(&requests[3]), vec![refreshed]);
 
     Ok(())
 }
@@ -2483,6 +2604,7 @@ async fn run_subagent_global_instruction_case(fork_context: bool) -> Result<()> 
             let _ = config.features.disable(Feature::EnableRequestCompression);
         });
     let test = builder.build(&server).await?;
+    admit_agents_md_rows(&test.config)?;
 
     // Assert the parent reports the creation-time source before spawning.
     assert_eq!(
@@ -2527,10 +2649,9 @@ async fn run_subagent_global_instruction_case(fork_context: bool) -> Result<()> 
     // that applied snapshot without independently loading the global provider.
     let expected_fragment = expected_provider_only_instruction_fragment(OLD_GLOBAL_INSTRUCTIONS);
     assert_single_instruction_fragment(&seed_request, &expected_fragment);
-    let replacement = expected_provider_only_instruction_fragment(&format!(
-        "These AGENTS.md instructions replace all previously provided AGENTS.md instructions.\n\n{NEW_GLOBAL_INSTRUCTIONS}"
-    ));
-    let inherited_fragments = vec![expected_fragment, replacement];
+    // The parent's refresh replaced its first copy, so that is all a forked child can inherit.
+    let replacement = expected_provider_only_instruction_fragment(NEW_GLOBAL_INSTRUCTIONS);
+    let inherited_fragments = vec![replacement];
     assert_eq!(instruction_fragments(&spawn_request), inherited_fragments);
     if fork_context {
         assert_eq!(instruction_fragments(&child_request), inherited_fragments);
@@ -2551,14 +2672,14 @@ async fn run_subagent_global_instruction_case(fork_context: bool) -> Result<()> 
         "subagent reports the parent's applied global source"
     );
     if fork_context {
-        let seed_input = seed_request.input();
-        let mut child_input = child_request.input();
+        let seed_input = input_without_instruction_fragments(&seed_request);
+        let mut child_input = input_without_instruction_fragments(&child_request);
         // The request prefix has a thread-scoped ID; retained history IDs stay unchanged.
         child_input[0]["id"] = seed_input[0]["id"].clone();
         assert_eq!(
             child_input.get(..seed_input.len()),
             Some(seed_input.as_slice()),
-            "forked subagent should replay the parent's original structured input prefix"
+            "forked subagent should replay the parent's structured input except the replaced AGENTS.md copy"
         );
     } else {
         let child_user_texts = child_request.message_input_texts("user");
@@ -2600,14 +2721,11 @@ async fn run_subagent_global_instruction_case(fork_context: bool) -> Result<()> 
     let parent_follow_up =
         responses::mount_sse_once(&server, responses::sse_completed("parent-refresh")).await;
     test.submit_turn("refresh the parent independently").await?;
-    let refreshed = expected_provider_only_instruction_fragment(
-        "These AGENTS.md instructions replace all previously provided AGENTS.md instructions.\n\ninstructions changed after child creation",
-    );
-    let mut parent_fragments = instruction_fragments(&spawn_request);
-    parent_fragments.push(refreshed);
+    let refreshed =
+        expected_provider_only_instruction_fragment("instructions changed after child creation");
     assert_eq!(
         instruction_fragments(&parent_follow_up.single_request()),
-        parent_fragments
+        vec![refreshed]
     );
 
     Ok(())

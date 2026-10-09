@@ -132,7 +132,9 @@ fn startup_draft_renders_full_empty_and_multiline_composer_frames() {
             })
             .collect::<Vec<_>>()
             .join("\n")
-            .replace(crate::version::CODEX_CLI_VERSION, "<VERSION>");
+            .replace(crate::version::CODEX_CLI_VERSION, "<VERSION>")
+            // Elpis: the header shows the Elpis release.
+            .replace(crate::branding::ELPIS_VERSION, "<VERSION>");
 
         assert!(
             cursor.1 >= pump.header.desired_height(width),
@@ -198,6 +200,8 @@ fn terminal_app_ssh_fallback_renders_inline_startup() {
         frames
             .join("\n---\n")
             .replace(crate::version::CODEX_CLI_VERSION, "<VERSION>")
+            // Elpis: the header shows the Elpis release.
+            .replace(crate::branding::ELPIS_VERSION, "<VERSION>")
     );
 }
 
@@ -227,6 +231,8 @@ async fn startup_draft_clears_loading_status_when_starting_fresh() {
             .collect::<Vec<_>>()
             .join("\n")
             .replace(crate::version::CODEX_CLI_VERSION, "<VERSION>")
+            // Elpis: the header shows the Elpis release.
+            .replace(crate::branding::ELPIS_VERSION, "<VERSION>")
     };
 
     for (label, initial_screen, session_action) in [
@@ -797,7 +803,9 @@ async fn startup_draft_waits_for_onboarding_before_accepting_input() {
         })
         .collect::<Vec<_>>()
         .join("\n")
-        .replace(crate::version::CODEX_CLI_VERSION, "<VERSION>");
+        .replace(crate::version::CODEX_CLI_VERSION, "<VERSION>")
+        // Elpis: the header shows the Elpis release.
+        .replace(crate::branding::ELPIS_VERSION, "<VERSION>");
     drop(renderable);
     frames.push_str(&format!("\n---\nafter onboarding:\n{visible_frame}"));
     insta::assert_snapshot!("startup_draft_onboarding_transition", frames);

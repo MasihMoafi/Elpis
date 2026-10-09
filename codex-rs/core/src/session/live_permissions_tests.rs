@@ -2,7 +2,10 @@
 //! turn and of the work it outlives. Each test names the stale value the defect produced.
 
 use super::*;
+use crate::agent::child_config::SpawnConfigOptions;
+use crate::agent::child_config::SpawnConfigVersion;
 use crate::agent::child_config::build_agent_resume_config;
+use crate::agent::child_config::prepare_agent_spawn_config;
 use crate::session::session::SessionSettingsUpdate;
 use crate::session::step_settings::StepSettingsUpdate;
 use crate::session::tests::HeldStepTask;
@@ -177,35 +180,110 @@ async fn mid_turn_revocation_reaches_every_reader() {
     session.abort_all_tasks(TurnAbortReason::Interrupted).await;
 }
 
-/// Fails before the fix: a child resumed, or reloaded to receive a message, took the
+/// The configs a tool call dispatched from `step` would start and resume a child with.
+async fn child_configs(
+    session: &Arc<Session>,
+    step: Arc<StepContext>,
+) -> (Arc<StepContext>, [crate::config::Config; 2]) {
+    let call = session
+        .with_current_permissions(step)
+        .await
+        .expect("tool call step");
+    let spawned = prepare_agent_spawn_config(
+        session,
+        &call,
+        SpawnConfigOptions {
+            version: SpawnConfigVersion::V1,
+            full_history_fork: false,
+            role_name: None,
+            model: None,
+            reasoning_effort: None,
+        },
+    )
+    .await
+    .expect("spawn config")
+    .config;
+    let resumed = build_agent_resume_config(&call.turn, &call.inherited_permissions())
+        .expect("resume config");
+    (call, [spawned, resumed])
+}
+
+fn child_access(config: &crate::config::Config) -> (AskForApproval, bool) {
+    (
+        config.permissions.approval_policy.value(),
+        matches!(
+            config.permissions.permission_profile(),
+            PermissionProfile::Disabled
+        ),
+    )
+}
+
+async fn start_next_turn(session: &Arc<Session>) {
+    let next_turn = session
+        .new_turn_with_default_settings("next-turn".to_string(), Default::default())
+        .await;
+    session
+        .spawn_task(
+            next_turn,
+            Vec::new(),
+            HeldStepTask {
+                kind: TaskKind::Regular,
+                finish: Arc::new(Notify::new()),
+            },
+        )
+        .await;
+}
+
+/// Fails before the fix: a child spawned, resumed, or reloaded to receive a message took the
 /// permissions the turn started with.
 #[test_case(false; "revoked full access")]
 #[test_case(true; "granted full access")]
 #[tokio::test]
-async fn resumed_children_take_permissions_accepted_during_the_turn(grant: bool) {
+async fn children_take_permissions_accepted_during_the_turn(grant: bool) {
     let (start, accepted) = if grant {
         (default_access(), full_access())
     } else {
         (full_access(), default_access())
     };
-    let expected_policy = accepted.approval_policy.expect("policy");
-    let expected_full_access = grant;
-    let (session, turn, _) = running_turn(start).await;
+    let expected = (accepted.approval_policy.expect("policy"), grant);
+    let (session, _turn, step) = running_turn(start).await;
 
     thread_settings::update(&session, accepted)
         .await
         .expect("update accepted");
 
-    let child = build_agent_resume_config(&turn).expect("child config");
+    let (_, configs) = child_configs(&session, step).await;
+    assert_eq!(configs.each_ref().map(child_access), [expected; 2]);
+    session.abort_all_tasks(TurnAbortReason::Interrupted).await;
+}
+
+/// Fails before the fix: a Code Mode cell still running in a later turn started and resumed
+/// children with the permissions of the turn that created it.
+#[test_case(false; "revoked between turns")]
+#[test_case(true; "granted between turns")]
+#[tokio::test]
+async fn children_of_a_step_that_outlives_its_turn_take_the_thread_permissions(grant: bool) {
+    let (start, accepted) = if grant {
+        (default_access(), full_access())
+    } else {
+        (full_access(), default_access())
+    };
+    let expected = (accepted.approval_policy.expect("policy"), grant);
+    let (session, _turn, cell_step) = running_turn(start).await;
+    session.abort_all_tasks(TurnAbortReason::Interrupted).await;
+    thread_settings::update(&session, accepted)
+        .await
+        .expect("update between turns accepted");
+    start_next_turn(&session).await;
+
+    let (call, configs) = child_configs(&session, Arc::clone(&cell_step)).await;
+
+    assert_eq!(configs.each_ref().map(child_access), [expected; 2]);
+    // Only the permissions change: the call keeps the cell's turn and model.
+    assert!(Arc::ptr_eq(&call.turn, &cell_step.turn));
     assert_eq!(
-        (
-            child.permissions.approval_policy.value(),
-            matches!(
-                child.permissions.permission_profile(),
-                PermissionProfile::Disabled
-            ),
-        ),
-        (expected_policy, expected_full_access)
+        configs[0].model.as_deref(),
+        Some(cell_step.settings.model_info.slug.as_str())
     );
     session.abort_all_tasks(TurnAbortReason::Interrupted).await;
 }
@@ -298,19 +376,7 @@ async fn a_step_that_outlives_its_turn_takes_the_thread_permissions() {
     thread_settings::update(&session, default_access())
         .await
         .expect("revocation between turns accepted");
-    let next_turn = session
-        .new_turn_with_default_settings("next-turn".to_string(), Default::default())
-        .await;
-    session
-        .spawn_task(
-            next_turn,
-            Vec::new(),
-            HeldStepTask {
-                kind: TaskKind::Regular,
-                finish: Arc::new(Notify::new()),
-            },
-        )
-        .await;
+    start_next_turn(&session).await;
 
     let later_call = session
         .with_current_permissions(cell_step)

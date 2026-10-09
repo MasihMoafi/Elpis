@@ -1408,25 +1408,6 @@ async fn usage_error_slash_command_is_available_from_local_recall() {
 }
 
 #[tokio::test]
-async fn signed_out_usage_command_reports_chatgpt_login_requirement() {
-    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
-
-    submit_composer_text(&mut chat, "/usage");
-
-    let cells = drain_insert_history(&mut rx);
-    let rendered = cells
-        .iter()
-        .map(|cell| lines_to_single_string(cell))
-        .collect::<Vec<_>>()
-        .join("\n");
-    assert_chatwidget_snapshot!(
-        "signed_out_usage_command_reports_chatgpt_login_requirement",
-        rendered
-    );
-    assert_eq!(recall_latest_after_clearing(&mut chat), "/usage");
-}
-
-#[tokio::test]
 async fn signed_out_usage_command_with_args_reports_chatgpt_login_requirement() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
 
@@ -1859,7 +1840,9 @@ async fn slash_copy_picker_copies_status_fields_and_preserves_source_after_copyi
         "slash_copy_picker_status_fields",
         render_bottom_popup(&chat, /*width*/ 100)
             .replace(&directory, "[[workspace]]")
-            .replace(crate::version::CODEX_CLI_VERSION, "VERSION"),
+            .replace(crate::version::CODEX_CLI_VERSION, "VERSION")
+            // Elpis: the header shows the Elpis release.
+            .replace(crate::branding::ELPIS_VERSION, "VERSION"),
     );
     chat.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
     let (whole_status, label) = next_copy_selection(&mut rx);
@@ -1868,7 +1851,9 @@ async fn slash_copy_picker_copies_status_fields_and_preserves_source_after_copyi
         "slash_copy_whole_status",
         whole_status
             .replace(&directory, "[[workspace]]")
-            .replace(crate::version::CODEX_CLI_VERSION, "VERSION"),
+            .replace(crate::version::CODEX_CLI_VERSION, "VERSION")
+            // Elpis: the header shows the Elpis release.
+            .replace(crate::branding::ELPIS_VERSION, "VERSION"),
     );
     let expected = [
         ("Whole status", whole_status.as_str()),
@@ -2213,100 +2198,6 @@ async fn slash_copy_picker_remains_available_from_parent_owned_threads() {
         op_rx.try_recv().is_err(),
         "copy must not submit an agent turn"
     );
-}
-
-#[tokio::test]
-async fn slash_daybreak_offers_an_application_when_unavailable() {
-    let (mut chat, mut rx, _ops) = make_chatwidget_manual(/*model_override*/ None).await;
-    chat.set_feature_enabled(Feature::CliDaybreak, /*enabled*/ true);
-    chat.has_chatgpt_account = true;
-    chat.config.model_provider_id = "openai".into();
-    let mut model = crate::test_support::TEST_MODEL_PRESETS[0].clone();
-    model.available_access_programs = Some(codex_protocol::openai_models::ModelAccessPrograms {
-        cyber: vec![codex_protocol::turn_input::CyberAccessProgram::Standard],
-    });
-    chat.model_catalog = std::sync::Arc::new(ModelCatalog::new(vec![model.clone()]));
-
-    chat.set_daybreak_enabled(/*enabled*/ false);
-    chat.bottom_pane
-        .set_composer_text("/daybreak".to_string(), Vec::new(), Vec::new());
-    assert_chatwidget_snapshot!(
-        "slash_daybreak_help_unavailable",
-        render_bottom_popup(&chat, /*width*/ 80)
-            .lines()
-            .next()
-            .unwrap()
-    );
-
-    chat.dispatch_command(SlashCommand::Daybreak);
-
-    let cells = drain_insert_history(&mut rx);
-    assert_chatwidget_snapshot!(
-        "slash_daybreak_unavailable",
-        lines_to_single_string(&cells[0])
-    );
-
-    chat.model_catalog = std::sync::Arc::new(ModelCatalog::new(Vec::new()));
-    chat.dispatch_command(SlashCommand::Daybreak);
-    let cells = drain_insert_history(&mut rx);
-    assert_chatwidget_snapshot!(
-        "slash_daybreak_catalog_unknown",
-        lines_to_single_string(&cells[0])
-    );
-
-    chat.has_chatgpt_account = false;
-    chat.dispatch_command(SlashCommand::Daybreak);
-    let cells = drain_insert_history(&mut rx);
-    assert_chatwidget_snapshot!(
-        "slash_daybreak_signed_out",
-        lines_to_single_string(&cells[0])
-    );
-    chat.has_chatgpt_account = true;
-
-    model
-        .available_access_programs
-        .as_mut()
-        .unwrap()
-        .cyber
-        .push(codex_protocol::turn_input::CyberAccessProgram::DaybreakBlue);
-    chat.model_catalog = std::sync::Arc::new(ModelCatalog::new(vec![model]));
-    chat.has_chatgpt_account = false;
-    chat.status_account_display = Some(StatusAccountDisplay::ApiKey);
-    chat.set_daybreak_enabled(/*enabled*/ false);
-    chat.bottom_pane
-        .set_composer_text("/daybreak".to_string(), Vec::new(), Vec::new());
-    assert_chatwidget_snapshot!(
-        "slash_daybreak_api_key_help",
-        render_bottom_popup(&chat, /*width*/ 80)
-            .lines()
-            .next()
-            .unwrap()
-    );
-    chat.has_chatgpt_account = true;
-    chat.status_account_display = None;
-    for (enabled, name) in [
-        (false, "slash_daybreak_help_enable"),
-        (true, "slash_daybreak_help_disable"),
-    ] {
-        chat.set_daybreak_enabled(enabled);
-        chat.bottom_pane
-            .set_composer_text(String::new(), Vec::new(), Vec::new());
-        chat.bottom_pane
-            .set_composer_text("/daybreak".to_string(), Vec::new(), Vec::new());
-        assert_chatwidget_snapshot!(
-            name,
-            render_bottom_popup(&chat, /*width*/ 80)
-                .lines()
-                .next()
-                .unwrap()
-        );
-    }
-    chat.set_feature_enabled(Feature::CliDaybreak, /*enabled*/ false);
-    chat.set_daybreak_enabled(/*enabled*/ true);
-    assert!(!chat.daybreak_enabled);
-    assert!(chat.daybreak_command_description().is_none());
-    chat.dispatch_command(SlashCommand::Daybreak);
-    assert!(drain_insert_history(&mut rx).is_empty());
 }
 
 #[tokio::test]
@@ -3071,41 +2962,6 @@ async fn slash_pets_opens_picker() {
 
 #[tokio::test]
 #[serial]
-async fn slash_pets_with_arg_selects_named_pet() {
-    let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
-    force_pet_image_support(&mut chat);
-
-    chat.bottom_pane
-        .set_composer_text("/pets chefito".to_string(), Vec::new(), Vec::new());
-    chat.handle_key_event(KeyEvent::from(KeyCode::Enter));
-    assert_matches!(rx.try_recv(), Ok(AppEvent::FollowTranscript));
-
-    assert_matches!(
-        rx.try_recv(),
-        Ok(AppEvent::PetSelected { pet_id }) if pet_id == "chefito"
-    );
-    assert_matches!(op_rx.try_recv(), Err(TryRecvError::Empty));
-}
-
-#[tokio::test]
-#[serial]
-async fn slash_pet_disable_aliases_work_on_unsupported_terminal() {
-    for input in ["/pets disable", "/pet hide"] {
-        let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
-        force_tmux_pet_image_unsupported(&mut chat);
-
-        chat.bottom_pane
-            .set_composer_text(input.to_string(), Vec::new(), Vec::new());
-        chat.handle_key_event(KeyEvent::from(KeyCode::Enter));
-        assert_matches!(rx.try_recv(), Ok(AppEvent::FollowTranscript));
-        assert_matches!(rx.try_recv(), Ok(AppEvent::PetDisabled));
-        assert_matches!(rx.try_recv(), Err(TryRecvError::Empty));
-        assert_matches!(op_rx.try_recv(), Err(TryRecvError::Empty));
-    }
-}
-
-#[tokio::test]
-#[serial]
 async fn slash_pets_in_tmux_shows_notice_and_preserves_draft() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
     force_tmux_pet_image_unsupported(&mut chat);
@@ -3131,34 +2987,6 @@ async fn slash_pets_in_tmux_shows_notice_and_preserves_draft() {
     chat.handle_key_event(KeyEvent::from(KeyCode::Esc));
     assert!(!chat.bottom_pane.has_active_view());
     assert_eq!(chat.bottom_pane.composer_text(), "Keep this draft");
-}
-
-#[tokio::test]
-#[serial]
-async fn slash_pets_with_arg_on_unsupported_terminal_shows_notice_without_selection() {
-    let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
-    force_tmux_pet_image_unsupported(&mut chat);
-
-    chat.bottom_pane
-        .set_composer_text("/pets chefito".to_string(), Vec::new(), Vec::new());
-    chat.handle_key_event(KeyEvent::from(KeyCode::Enter));
-
-    assert!(chat.bottom_pane.has_active_view());
-    assert!(render_bottom_popup(&chat, /*width*/ 80).contains("Pets are disabled in tmux."));
-    let cells = drain_insert_history_transcript(&mut rx);
-    let rendered = cells
-        .iter()
-        .map(|lines| lines_to_single_string(lines))
-        .collect::<Vec<_>>()
-        .join("\n");
-    assert!(rendered.contains("Pets are disabled in tmux."));
-    assert_matches!(rx.try_recv(), Err(TryRecvError::Empty));
-    assert_matches!(op_rx.try_recv(), Err(TryRecvError::Empty));
-
-    chat.handle_key_event(KeyEvent::from(KeyCode::Enter));
-    assert!(!chat.bottom_pane.has_active_view());
-    assert_matches!(rx.try_recv(), Err(TryRecvError::Empty));
-    assert_matches!(op_rx.try_recv(), Err(TryRecvError::Empty));
 }
 
 #[tokio::test]

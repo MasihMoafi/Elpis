@@ -65,23 +65,19 @@ fn chord_capture_instruction_snapshots() {
     let (mut view, _rx) = capture_view();
 
     insta::assert_snapshot!(capture_lines_at_width(&view, /*width*/ 80), @r"
-    ┌──────────────────────────────────────────────────────────────────────────────┐
-    │ Remap Shortcut                                                               │
-    │ Action: Jump Top  list.jump_top                                              │
-    │ Current: home                                                                │
-    │ Press the first key, then the second. Esc cancels.                           │
-    └──────────────────────────────────────────────────────────────────────────────┘
+    Remap Shortcut
+    Action: Jump Top  list.jump_top
+    Current: home
+    Press the first key, then the second. Esc cancels.
     ");
 
     view.handle_key_event(ctrl_key(KeyCode::Char('x')));
 
     insta::assert_snapshot!(capture_lines_at_width(&view, /*width*/ 80), @r"
-    ┌──────────────────────────────────────────────────────────────────────────────┐
-    │ Remap Shortcut                                                               │
-    │ Action: Jump Top  list.jump_top                                              │
-    │ Current: home                                                                │
-    │ First key: ctrl-x. Press the second key. Esc cancels.                        │
-    └──────────────────────────────────────────────────────────────────────────────┘
+    Remap Shortcut
+    Action: Jump Top  list.jump_top
+    Current: home
+    First key: ctrl-x. Press the second key. Esc cancels.
     ");
 }
 
@@ -89,16 +85,15 @@ fn chord_capture_instruction_snapshots() {
 fn chord_capture_instructions_wrap_to_narrow_panes() {
     let (mut view, _rx) = capture_view();
 
-    insta::assert_snapshot!(capture_lines_at_width(&view, /*width*/ 24), @r"
-    ┌──────────────────────┐
-    │ Remap Shortcut       │
-    │ Action: Jump Top     │
-    │ list.jump_top        │
-    │ Current: home        │
-    │ Press the first key, │
-    │ then the second. Esc │
-    │ cancels.             │
-    └──────────────────────┘
+    insta::assert_snapshot!(capture_lines_at_width(&view, /*width*/ 24), @"
+
+    Remap Shortcut
+    Action: Jump Top
+    list.jump_top
+    Current: home
+    Press the first key,
+    then the second. Esc
+    cancels.
     ");
     assert_eq!(view.desired_height(/*width*/ 24), 9);
 
@@ -107,17 +102,16 @@ fn chord_capture_instructions_wrap_to_narrow_panes() {
         KeyModifiers::CONTROL | KeyModifiers::ALT | KeyModifiers::SHIFT,
     ));
 
-    insta::assert_snapshot!(capture_lines_at_width(&view, /*width*/ 24), @r"
-    ┌──────────────────────┐
-    │ Remap Shortcut       │
-    │ Action: Jump Top     │
-    │ list.jump_top        │
-    │ Current: home        │
-    │ First key: ctrl-     │
-    │ alt-shift-f24. Press │
-    │ the second key. Esc  │
-    │ cancels.             │
-    └──────────────────────┘
+    insta::assert_snapshot!(capture_lines_at_width(&view, /*width*/ 24), @"
+
+    Remap Shortcut
+    Action: Jump Top
+    list.jump_top
+    Current: home
+    First key: ctrl-
+    alt-shift-f24. Press
+    the second key. Esc
+    cancels.
     ");
     assert_eq!(view.desired_height(/*width*/ 24), 10);
 }

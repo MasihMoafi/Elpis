@@ -1212,7 +1212,7 @@ async fn user_shell_command_renders_output_not_exploring() {
 }
 
 #[tokio::test]
-async fn bang_shell_enter_while_task_running_queues_until_completion() {
+async fn bang_shell_enter_while_task_running_submits_run_user_shell_command() {
     let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
     let thread_id = ThreadId::new();
     let rollout_file = NamedTempFile::new().unwrap();
@@ -1248,27 +1248,16 @@ async fn bang_shell_enter_while_task_running_queues_until_completion() {
         .set_composer_text("!echo hi".to_string(), Vec::new(), Vec::new());
     chat.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
 
-    assert_eq!(chat.input_queue.queued_user_messages.len(), 1);
-    assert_no_submit_op(&mut op_rx);
-    assert_matches!(rx.try_recv(), Ok(AppEvent::FollowTranscript));
-    assert_matches!(rx.try_recv(), Err(TryRecvError::Empty));
-    handle_turn_completed(&mut chat, "turn-1", /*duration_ms*/ None);
-    let events = std::iter::from_fn(|| rx.try_recv().ok()).collect::<Vec<_>>();
-    assert_eq!(
-        events
-            .iter()
-            .filter(|event| matches!(event,
-                AppEvent::AppendMessageHistoryEntry { text, .. } if text == "!echo hi"
-            ))
-            .count(),
-        1
-    );
-
     match op_rx.try_recv() {
         Ok(Op::RunUserShellCommand { command }) => assert_eq!(command, "echo hi"),
         other => panic!("expected RunUserShellCommand op, got {other:?}"),
     }
-    assert!(chat.input_queue.queued_user_messages.is_empty());
+    assert_matches!(rx.try_recv(), Ok(AppEvent::FollowTranscript));
+    assert_matches!(
+        rx.try_recv(),
+        Ok(AppEvent::AppendMessageHistoryEntry { text, .. }) if text == "!echo hi"
+    );
+    assert_matches!(rx.try_recv(), Err(TryRecvError::Empty));
 }
 
 #[tokio::test]

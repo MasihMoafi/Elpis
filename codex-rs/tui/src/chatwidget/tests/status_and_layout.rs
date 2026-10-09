@@ -4,11 +4,41 @@ use crate::bottom_pane::goal_status_indicator_line;
 use crate::chatwidget::ThreadUsageOutcome;
 use crate::chatwidget::rate_limits::NUDGE_MODEL_SLUG;
 use crate::chatwidget::rate_limits::get_limits_duration;
+use crate::chatwidget::realtime::tests::activate_voice_for_thread;
 use codex_app_server_protocol::SpendControlLimitSnapshot;
 use codex_app_server_protocol::ThreadUsage;
 use pretty_assertions::assert_eq;
+use ratatui::Terminal;
 use ratatui::backend::TestBackend;
 use serial_test::serial;
+
+#[tokio::test]
+async fn finalized_voice_transcript_renders_beside_the_streamed_cell() {
+    let (mut chat, _rx, _ops) = make_chatwidget_manual(/*model_override*/ None).await;
+    chat.local_settings.tui.animations = false;
+    activate_voice_for_thread(&mut chat, ThreadId::new());
+    chat.update_realtime_footer();
+    chat.transcript.active_cell = Some(Box::new(history_cell::StreamingAgentTailCell::new(
+        vec![Line::from("Agent answer arriving").into()],
+        /*is_first_line*/ true,
+    )));
+    chat.on_realtime_transcript_delta("user".into(), "pick a number".into());
+    for (finalized, snapshot) in [
+        (false, "voice_partial_transcript_hidden"),
+        (true, "voice_live_transcript_and_stream"),
+    ] {
+        if finalized {
+            chat.on_realtime_transcript_done("user".into(), "pick a number".into());
+        }
+        let width = 60;
+        let height = chat.desired_height(width);
+        let mut terminal = Terminal::new(TestBackend::new(width, height)).expect("create terminal");
+        terminal
+            .draw(|frame| chat.render(frame.area(), frame.buffer_mut()))
+            .expect("render voice transcript");
+        assert_chatwidget_snapshot!(snapshot, normalized_backend_snapshot(terminal.backend()));
+    }
+}
 
 fn take_workspace_headline_request_id(
     rx: &mut tokio::sync::mpsc::UnboundedReceiver<AppEvent>,
@@ -77,14 +107,10 @@ async fn resumed_session_hides_unknown_token_usage_until_an_update_arrives() {
         )),
     );
     chat.refresh_status_line();
-    assert_eq!(status_line_text(&chat), None);
-    assert_eq!(chat.bottom_pane.context_window_percent(), Some(30));
-    let height = chat.desired_height(width);
-    let mut terminal = ratatui::Terminal::new(TestBackend::new(width, height)).unwrap();
-    terminal
-        .draw(|frame| chat.render(frame.area(), frame.buffer_mut()))
-        .unwrap();
-    assert!(normalized_backend_snapshot(terminal.backend()).contains("30% context left"));
+    assert_eq!(
+        status_line_text(&chat),
+        Some("Context 30% left · Context 70% used · 0 in · 0 out".to_string())
+    );
 }
 
 #[tokio::test]
@@ -2109,7 +2135,7 @@ async fn streaming_final_answer_keeps_task_running_state() {
 
     chat.bottom_pane
         .set_composer_text("queued submission".to_string(), Vec::new(), Vec::new());
-    chat.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+    chat.handle_key_event(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
 
     assert_eq!(chat.input_queue.queued_user_messages.len(), 1);
     assert_eq!(
@@ -2321,7 +2347,6 @@ async fn final_answer_completion_restores_status_indicator_for_pending_steer() {
         Vec::new(),
     );
     chat.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
-    chat.handle_key_event(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
 
     assert_eq!(chat.input_queue.pending_steers.len(), 1);
     let items = match next_submit_op(&mut op_rx) {
@@ -2668,16 +2693,79 @@ async fn status_line_invalid_items_warn_once() {
 }
 
 #[tokio::test]
+async fn status_line_hostname_renders_current_machine_hostname() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    chat.thread_id = Some(ThreadId::new());
+    chat.local_settings.tui.status_line = Some(vec!["hostname".to_string()]);
+
+    chat.refresh_status_line();
+
+    assert_eq!(status_line_text(&chat), codex_config::os_host_name());
+    assert!(
+        drain_insert_history(&mut rx).is_empty(),
+        "hostname should be accepted as a status line item"
+    );
+}
+
+#[tokio::test]
+async fn status_line_context_used_renders_labeled_percent() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    chat.thread_id = Some(ThreadId::new());
+    chat.local_settings.tui.status_line = Some(vec!["context-used".to_string()]);
+
+    chat.refresh_status_line();
+
+    assert_eq!(status_line_text(&chat), Some("Context 0% used".to_string()));
+    assert!(
+        drain_insert_history(&mut rx).is_empty(),
+        "context-used should remain a valid status line item"
+    );
+}
+
+#[tokio::test]
+async fn status_line_context_remaining_renders_labeled_percent() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    chat.thread_id = Some(ThreadId::new());
+    chat.local_settings.tui.status_line = Some(vec!["context-remaining".to_string()]);
+
+    chat.refresh_status_line();
+
+    assert_eq!(
+        status_line_text(&chat),
+        Some("Context 100% left".to_string())
+    );
+    assert!(
+        drain_insert_history(&mut rx).is_empty(),
+        "context-remaining should remain a valid status line item"
+    );
+}
+
+#[tokio::test]
+async fn status_line_legacy_context_usage_renders_context_used_percent() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    chat.thread_id = Some(ThreadId::new());
+    chat.local_settings.tui.status_line = Some(vec!["context-usage".to_string()]);
+
+    chat.refresh_status_line();
+
+    assert_eq!(status_line_text(&chat), Some("Context 0% used".to_string()));
+    assert!(
+        drain_insert_history(&mut rx).is_empty(),
+        "legacy context-usage should remain a valid status line item"
+    );
+}
+
+#[tokio::test]
 async fn status_line_estimated_thread_cost_fetches_and_renders_backend_estimate() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
     let thread_id = ThreadId::new();
     chat.thread_id = Some(thread_id);
     chat.has_codex_backend_auth = true;
     chat.plan_type = Some(PlanType::Business);
-    chat.local_settings.tui.terminal_title = Some(vec!["estimated-thread-cost".to_string()]);
+    chat.local_settings.tui.status_line = Some(vec!["estimated-thread-cost".to_string()]);
 
-    chat.refresh_terminal_title();
-    assert_eq!(chat.last_terminal_title.clone(), None);
+    chat.refresh_status_line();
+    assert_eq!(status_line_text(&chat), None);
     let request_id = match rx.try_recv() {
         Ok(AppEvent::RefreshThreadUsage {
             thread_id: requested_thread_id,
@@ -2699,7 +2787,7 @@ async fn status_line_estimated_thread_cost_fetches_and_renders_backend_estimate(
             groups: Vec::new(),
         })),
     ));
-    assert_eq!(chat.last_terminal_title.clone(), Some("~$1.82".to_string()));
+    assert_eq!(status_line_text(&chat), Some("~$1.82".to_string()));
     assert!(rx.try_recv().is_err(), "idle refresh must not poll");
 }
 
@@ -2710,10 +2798,10 @@ async fn status_line_thread_credits_fetches_and_renders_fractional_credits() {
     chat.thread_id = Some(thread_id);
     chat.has_codex_backend_auth = true;
     chat.plan_type = Some(PlanType::Business);
-    chat.local_settings.tui.terminal_title = Some(vec!["thread-credits".to_string()]);
+    chat.local_settings.tui.status_line = Some(vec!["thread-credits".to_string()]);
 
-    chat.refresh_terminal_title();
-    assert_eq!(chat.last_terminal_title.clone(), None);
+    chat.refresh_status_line();
+    assert_eq!(status_line_text(&chat), None);
     let request_id = match rx.try_recv() {
         Ok(AppEvent::RefreshThreadUsage {
             thread_id: requested_thread_id,
@@ -2735,10 +2823,7 @@ async fn status_line_thread_credits_fetches_and_renders_fractional_credits() {
             groups: Vec::new(),
         })),
     ));
-    assert_eq!(
-        chat.last_terminal_title.clone(),
-        Some("5.2 credits".to_string())
-    );
+    assert_eq!(status_line_text(&chat), Some("5.2 credits".to_string()));
     assert!(rx.try_recv().is_err(), "idle refresh must not poll");
 }
 
@@ -2749,12 +2834,12 @@ async fn status_line_thread_credits_and_cost_share_one_backend_request() {
     chat.thread_id = Some(thread_id);
     chat.has_codex_backend_auth = true;
     chat.plan_type = Some(PlanType::Business);
-    chat.local_settings.tui.terminal_title = Some(vec![
+    chat.local_settings.tui.status_line = Some(vec![
         "thread-credits".to_string(),
         "estimated-thread-cost".to_string(),
     ]);
 
-    chat.refresh_terminal_title();
+    chat.refresh_status_line();
     let request_id = match rx.try_recv() {
         Ok(AppEvent::RefreshThreadUsage { request_id, .. }) => request_id,
         event => panic!("expected a shared thread usage refresh, got {event:?}"),
@@ -2772,8 +2857,8 @@ async fn status_line_thread_credits_and_cost_share_one_backend_request() {
         })),
     ));
     assert_eq!(
-        chat.last_terminal_title.clone(),
-        Some("5.2 credits | ~$0.21".to_string())
+        status_line_text(&chat),
+        Some("5.2 credits · ~$0.21".to_string())
     );
     assert!(rx.try_recv().is_err(), "idle refresh must not poll");
 }
@@ -2785,12 +2870,12 @@ async fn status_line_thread_credits_remain_visible_when_usd_is_unavailable() {
     chat.thread_id = Some(thread_id);
     chat.has_codex_backend_auth = true;
     chat.plan_type = Some(PlanType::Business);
-    chat.local_settings.tui.terminal_title = Some(vec![
+    chat.local_settings.tui.status_line = Some(vec![
         "thread-credits".to_string(),
         "estimated-thread-cost".to_string(),
     ]);
 
-    chat.refresh_terminal_title();
+    chat.refresh_status_line();
     let request_id = match rx.try_recv() {
         Ok(AppEvent::RefreshThreadUsage { request_id, .. }) => request_id,
         event => panic!("expected a shared thread usage refresh, got {event:?}"),
@@ -2806,10 +2891,7 @@ async fn status_line_thread_credits_remain_visible_when_usd_is_unavailable() {
         })),
     ));
 
-    assert_eq!(
-        chat.last_terminal_title.clone(),
-        Some("5.2 credits".to_string())
-    );
+    assert_eq!(status_line_text(&chat), Some("5.2 credits".to_string()));
     assert!(
         rx.try_recv().is_err(),
         "credits-only estimates must not trigger retries"
@@ -2926,13 +3008,7 @@ async fn terminal_title_and_status_line_share_one_thread_usage_request() {
     ));
 
     assert_eq!(chat.last_terminal_title, Some("5.2 credits".to_string()));
-    assert_eq!(status_line_text(&chat), None);
-    assert_eq!(
-        chat.estimated_thread_usage()
-            .unwrap()
-            .estimated_usage_usd_micros,
-        Some(210_000)
-    );
+    assert_eq!(status_line_text(&chat), Some("~$0.21".to_string()));
 }
 
 #[tokio::test]
@@ -2948,7 +3024,7 @@ async fn status_line_estimated_thread_cost_avoids_unsupported_plan_requests() {
 
     chat.refresh_status_line();
 
-    assert_eq!(status_line_text(&chat), None);
+    assert_eq!(status_line_text(&chat), Some("Ready".to_string()));
     assert!(
         rx.try_recv().is_err(),
         "unsupported plans must not query usage"
@@ -2987,8 +3063,8 @@ async fn status_line_estimated_thread_cost_preserves_cached_amount_during_settle
     chat.thread_id = Some(thread_id);
     chat.has_codex_backend_auth = true;
     chat.plan_type = Some(PlanType::Business);
-    chat.local_settings.tui.terminal_title = Some(vec!["estimated-thread-cost".to_string()]);
-    chat.refresh_terminal_title();
+    chat.local_settings.tui.status_line = Some(vec!["estimated-thread-cost".to_string()]);
+    chat.refresh_status_line();
     let initial_request_id = match rx.try_recv() {
         Ok(AppEvent::RefreshThreadUsage { request_id, .. }) => request_id,
         event => panic!("expected initial thread usage refresh, got {event:?}"),
@@ -3020,7 +3096,7 @@ async fn status_line_estimated_thread_cost_preserves_cached_amount_during_settle
         })),
     ));
 
-    assert_eq!(chat.last_terminal_title.clone(), Some("~$1.82".to_string()));
+    assert_eq!(status_line_text(&chat), Some("~$1.82".to_string()));
     assert!(
         rx.try_recv().is_err(),
         "settlement must not poll continuously"
@@ -3034,8 +3110,8 @@ async fn completed_turn_refreshes_estimated_thread_cost() {
     chat.thread_id = Some(thread_id);
     chat.has_codex_backend_auth = true;
     chat.plan_type = Some(PlanType::Business);
-    chat.local_settings.tui.terminal_title = Some(vec!["estimated-thread-cost".to_string()]);
-    chat.refresh_terminal_title();
+    chat.local_settings.tui.status_line = Some(vec!["estimated-thread-cost".to_string()]);
+    chat.refresh_status_line();
 
     let initial_request_id = match rx.try_recv() {
         Ok(AppEvent::RefreshThreadUsage { request_id, .. }) => request_id,
@@ -3075,7 +3151,7 @@ async fn completed_turn_refreshes_estimated_thread_cost() {
             groups: Vec::new(),
         })),
     ));
-    assert_eq!(chat.last_terminal_title.clone(), Some("~$2.10".to_string()));
+    assert_eq!(status_line_text(&chat), Some("~$2.10".to_string()));
 }
 
 #[tokio::test]
@@ -3223,15 +3299,15 @@ async fn status_line_estimated_thread_cost_rejects_stale_thread_completions() {
     chat.thread_id = Some(previous_thread_id);
     chat.has_codex_backend_auth = true;
     chat.plan_type = Some(PlanType::Business);
-    chat.local_settings.tui.terminal_title = Some(vec!["estimated-thread-cost".to_string()]);
-    chat.refresh_terminal_title();
+    chat.local_settings.tui.status_line = Some(vec!["estimated-thread-cost".to_string()]);
+    chat.refresh_status_line();
     let previous_request_id = match rx.try_recv() {
         Ok(AppEvent::RefreshThreadUsage { request_id, .. }) => request_id,
         event => panic!("expected previous-thread usage refresh, got {event:?}"),
     };
 
     chat.thread_id = Some(active_thread_id);
-    chat.refresh_terminal_title();
+    chat.refresh_status_line();
     let active_request_id = match rx.try_recv() {
         Ok(AppEvent::RefreshThreadUsage { request_id, .. }) => request_id,
         event => panic!("expected active-thread usage refresh, got {event:?}"),
@@ -3246,7 +3322,7 @@ async fn status_line_estimated_thread_cost_rejects_stale_thread_completions() {
             groups: Vec::new(),
         })),
     ));
-    assert_eq!(chat.last_terminal_title.clone(), None);
+    assert_eq!(status_line_text(&chat), None);
 
     assert!(chat.finish_thread_usage_refresh(
         active_thread_id,
@@ -3258,9 +3334,87 @@ async fn status_line_estimated_thread_cost_rejects_stale_thread_completions() {
             groups: Vec::new(),
         })),
     ));
+    assert_eq!(status_line_text(&chat), Some("~$0.0004".to_string()));
+}
+
+#[tokio::test]
+async fn status_line_estimated_thread_cost_footer_snapshot() {
+    use ratatui::Terminal;
+    use ratatui::backend::TestBackend;
+
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    let thread_id = ThreadId::new();
+    chat.thread_id = Some(thread_id);
+    chat.has_codex_backend_auth = true;
+    chat.plan_type = Some(PlanType::Business);
+    chat.show_welcome_banner = false;
+    chat.local_settings.tui.status_line = Some(vec![
+        "model-with-reasoning".to_string(),
+        "thread-credits".to_string(),
+        "estimated-thread-cost".to_string(),
+    ]);
+    chat.refresh_status_line();
+    let request_id = match rx.try_recv() {
+        Ok(AppEvent::RefreshThreadUsage { request_id, .. }) => request_id,
+        event => panic!("expected estimated thread usage refresh, got {event:?}"),
+    };
+    assert!(chat.finish_thread_usage_refresh(
+        thread_id,
+        request_id,
+        Ok(ThreadUsageOutcome::Available(ThreadUsage {
+            thread_id: thread_id.to_string(),
+            estimated_usage_credits_micros: 5_200_000,
+            estimated_usage_usd_micros: Some(210_000),
+            groups: Vec::new(),
+        })),
+    ));
+
+    let width = 80;
+    let height = chat.desired_height(width);
+    let mut terminal = Terminal::new(TestBackend::new(width, height)).expect("create terminal");
+    terminal
+        .draw(|frame| chat.render(frame.area(), frame.buffer_mut()))
+        .expect("draw estimated-thread-cost footer");
+    assert_chatwidget_snapshot!(
+        "status_line_estimated_thread_cost_footer",
+        normalized_backend_snapshot(terminal.backend())
+    );
+}
+
+#[tokio::test]
+async fn status_line_workspace_headline_renders_cached_value() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    chat.thread_id = Some(ThreadId::new());
+    chat.local_settings.tui.status_line = Some(vec!["workspace-headline".to_string()]);
+    chat.status_line_workspace_headline = Some("Workspace maintenance starts at 5pm".to_string());
+
+    chat.refresh_status_line();
+
     assert_eq!(
-        chat.last_terminal_title.clone(),
-        Some("~$0.0004".to_string())
+        status_line_text(&chat),
+        Some("Workspace maintenance starts at 5pm".to_string())
+    );
+    assert!(
+        drain_insert_history(&mut rx).is_empty(),
+        "workspace-headline should be a valid status line item"
+    );
+}
+
+#[tokio::test]
+async fn status_line_workspace_headline_omits_when_unavailable() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    chat.thread_id = Some(ThreadId::new());
+    chat.local_settings.tui.status_line = Some(vec![
+        "workspace-headline".to_string(),
+        "run-state".to_string(),
+    ]);
+
+    chat.refresh_status_line();
+
+    assert_eq!(status_line_text(&chat), Some("Ready".to_string()));
+    assert!(
+        drain_insert_history(&mut rx).is_empty(),
+        "workspace-headline should be omitted without warning when no headline is cached"
     );
 }
 
@@ -3298,7 +3452,7 @@ async fn workspace_headline_update_applies_available_headline() {
     ));
 
     assert_eq!(
-        chat.status_line_workspace_headline.clone(),
+        status_line_text(&chat),
         Some("Fresh workspace headline".to_string())
     );
     assert!(!chat.status_line_workspace_messages_disabled);
@@ -3405,7 +3559,7 @@ async fn account_update_discards_stale_workspace_headline_results() {
     ));
     assert_eq!(
         (
-            chat.status_line_workspace_headline.clone(),
+            status_line_text(&chat),
             chat.status_line_workspace_headline_pending_request_id,
             chat.status_line_workspace_messages_disabled,
         ),
@@ -3540,6 +3694,101 @@ async fn completed_turn_clears_visible_running_hook() {
 }
 
 #[tokio::test]
+async fn status_line_fast_mode_renders_on_and_off() {
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.4")).await;
+    set_fast_mode_test_catalog(&mut chat);
+    chat.local_settings.tui.status_line = Some(vec!["fast-mode".to_string()]);
+
+    chat.refresh_status_line();
+    assert_eq!(status_line_text(&chat), Some("Fast off".to_string()));
+
+    chat.set_service_tier(Some(ServiceTier::Fast.request_value().to_string()));
+    chat.refresh_status_line();
+    assert_eq!(status_line_text(&chat), Some("Fast on".to_string()));
+}
+
+#[tokio::test]
+async fn status_line_fast_mode_updates_visibility_on_model_change() {
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.4")).await;
+    set_fast_mode_test_catalog(&mut chat);
+    chat.local_settings.tui.status_line = Some(vec!["fast-mode".to_string()]);
+
+    chat.refresh_status_line();
+    assert_eq!(status_line_text(&chat), Some("Fast off".to_string()));
+
+    chat.set_model("gpt-5.2");
+    assert_eq!(status_line_text(&chat), None);
+
+    chat.set_model("gpt-5.4");
+    assert_eq!(status_line_text(&chat), Some("Fast off".to_string()));
+
+    chat.set_model("uncatalogued-model");
+    assert_eq!(status_line_text(&chat), Some("Fast off".to_string()));
+    chat.set_service_tier(Some(ServiceTier::Fast.request_value().to_string()));
+    assert_eq!(status_line_text(&chat), Some("Fast on".to_string()));
+}
+
+#[tokio::test]
+async fn status_line_fast_mode_footer_snapshot() {
+    use ratatui::Terminal;
+    use ratatui::backend::TestBackend;
+
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.2")).await;
+    set_fast_mode_test_catalog(&mut chat);
+    chat.show_welcome_banner = false;
+    chat.local_settings.tui.status_line = Some(vec![
+        "model-with-reasoning".to_string(),
+        "fast-mode".to_string(),
+    ]);
+    chat.set_reasoning_effort(Some(ReasoningEffortConfig::High));
+    chat.refresh_status_line();
+
+    let width = 80;
+    let height = chat.desired_height(width);
+    let mut terminal = Terminal::new(TestBackend::new(width, height)).expect("create terminal");
+    terminal
+        .draw(|f| chat.render(f.area(), f.buffer_mut()))
+        .expect("draw fast-mode footer");
+    assert_chatwidget_snapshot!(
+        "status_line_fast_mode_footer",
+        normalized_backend_snapshot(terminal.backend())
+    );
+}
+
+#[tokio::test]
+async fn status_line_model_with_reasoning_includes_fast_for_fast_capable_models() {
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.4")).await;
+    set_fast_mode_test_catalog(&mut chat);
+    assert!(get_available_model(&chat, "gpt-5.4").supports_fast_mode());
+    chat.config.cwd = test_project_path().abs();
+    chat.local_settings.tui.status_line = Some(vec![
+        "model-with-reasoning".to_string(),
+        "context-used".to_string(),
+        "current-dir".to_string(),
+    ]);
+    chat.set_reasoning_effort(Some(ReasoningEffortConfig::XHigh));
+    chat.set_service_tier(Some(ServiceTier::Fast.request_value().to_string()));
+    set_chatgpt_auth(&mut chat);
+    set_fast_mode_test_catalog(&mut chat);
+    assert!(get_available_model(&chat, "gpt-5.4").supports_fast_mode());
+    chat.refresh_status_line();
+    let test_cwd = test_path_display("/tmp/project");
+
+    assert_eq!(
+        status_line_text(&chat),
+        Some(format!("gpt-5.4 xhigh fast · Context 0% used · {test_cwd}"))
+    );
+
+    chat.set_model("gpt-5.2");
+    chat.refresh_status_line();
+
+    assert_eq!(
+        status_line_text(&chat),
+        Some(format!("gpt-5.2 xhigh · Context 0% used · {test_cwd}"))
+    );
+}
+
+#[tokio::test]
 async fn terminal_title_model_updates_on_model_change_without_manual_refresh() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.5")).await;
     chat.local_settings.tui.terminal_title = Some(vec!["model".to_string()]);
@@ -3566,8 +3815,46 @@ async fn status_line_and_terminal_title_reasoning_render_only_effort() {
     chat.refresh_status_line();
     chat.refresh_terminal_title();
 
-    assert_eq!(status_line_text(&chat), None);
+    assert_eq!(status_line_text(&chat), Some("xhigh".to_string()));
     assert_eq!(chat.last_terminal_title, Some("xhigh".to_string()));
+}
+
+#[tokio::test]
+async fn status_line_reasoning_updates_on_mode_switch_without_manual_refresh() {
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.2")).await;
+    chat.set_feature_enabled(Feature::CollaborationModes, /*enabled*/ true);
+    chat.local_settings.tui.status_line = Some(vec!["reasoning".to_string()]);
+    chat.set_reasoning_effort(Some(ReasoningEffortConfig::High));
+
+    assert_eq!(status_line_text(&chat), Some("high".to_string()));
+
+    let plan_mask = collaboration_modes::plan_mask(chat.model_catalog.as_ref())
+        .expect("expected plan collaboration mode");
+    chat.set_collaboration_mask(plan_mask);
+
+    assert_eq!(status_line_text(&chat), Some("medium".to_string()));
+}
+
+#[tokio::test]
+async fn status_line_model_with_reasoning_updates_on_mode_switch_without_manual_refresh() {
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.2")).await;
+    chat.set_feature_enabled(Feature::CollaborationModes, /*enabled*/ true);
+    chat.local_settings.tui.status_line = Some(vec!["model-with-reasoning".to_string()]);
+    chat.set_reasoning_effort(Some(ReasoningEffortConfig::High));
+
+    assert_eq!(status_line_text(&chat), Some("gpt-5.2 high".to_string()));
+
+    let plan_mask = collaboration_modes::plan_mask(chat.model_catalog.as_ref())
+        .expect("expected plan collaboration mode");
+    chat.set_collaboration_mask(plan_mask);
+
+    assert_eq!(status_line_text(&chat), Some("gpt-5.2 medium".to_string()));
+
+    let default_mask = collaboration_modes::default_mask(chat.model_catalog.as_ref())
+        .expect("expected default collaboration mode");
+    chat.set_collaboration_mask(default_mask);
+
+    assert_eq!(status_line_text(&chat), Some("gpt-5.2 high".to_string()));
 }
 
 #[tokio::test]
@@ -3631,6 +3918,74 @@ async fn renamed_thread_footer_title_snapshot() {
         .expect("draw renamed-thread footer");
     assert_chatwidget_snapshot!(
         "renamed_thread_footer_title",
+        normalized_backend_snapshot(terminal.backend())
+    );
+}
+
+#[tokio::test]
+async fn status_line_model_with_reasoning_fast_footer_snapshot() {
+    use ratatui::Terminal;
+    use ratatui::backend::TestBackend;
+
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.4")).await;
+    set_fast_mode_test_catalog(&mut chat);
+    assert!(get_available_model(&chat, "gpt-5.4").supports_fast_mode());
+    chat.show_welcome_banner = false;
+    chat.config.cwd = test_project_path().abs();
+    chat.local_settings.tui.status_line = Some(vec![
+        "model-with-reasoning".to_string(),
+        "context-used".to_string(),
+        "current-dir".to_string(),
+    ]);
+    chat.set_reasoning_effort(Some(ReasoningEffortConfig::XHigh));
+    chat.set_service_tier(Some(ServiceTier::Fast.request_value().to_string()));
+    set_chatgpt_auth(&mut chat);
+    set_fast_mode_test_catalog(&mut chat);
+    assert!(get_available_model(&chat, "gpt-5.4").supports_fast_mode());
+    chat.refresh_status_line();
+
+    let width = 80;
+    let height = chat.desired_height(width);
+    let mut terminal = Terminal::new(TestBackend::new(width, height)).expect("create terminal");
+    terminal
+        .draw(|f| chat.render(f.area(), f.buffer_mut()))
+        .expect("draw model-with-reasoning footer");
+    assert_chatwidget_snapshot!(
+        "status_line_model_with_reasoning_fast_footer",
+        normalized_backend_snapshot(terminal.backend())
+    );
+}
+
+#[tokio::test]
+async fn status_line_model_with_reasoning_context_remaining_footer_snapshot() {
+    use ratatui::Terminal;
+    use ratatui::backend::TestBackend;
+
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.4")).await;
+    set_fast_mode_test_catalog(&mut chat);
+    assert!(get_available_model(&chat, "gpt-5.4").supports_fast_mode());
+    chat.show_welcome_banner = false;
+    chat.config.cwd = test_project_path().abs();
+    chat.local_settings.tui.status_line = Some(vec![
+        "model-with-reasoning".to_string(),
+        "context-remaining".to_string(),
+        "current-dir".to_string(),
+    ]);
+    chat.set_reasoning_effort(Some(ReasoningEffortConfig::XHigh));
+    chat.set_service_tier(Some(ServiceTier::Fast.request_value().to_string()));
+    set_chatgpt_auth(&mut chat);
+    set_fast_mode_test_catalog(&mut chat);
+    assert!(get_available_model(&chat, "gpt-5.4").supports_fast_mode());
+    chat.refresh_status_line();
+
+    let width = 80;
+    let height = chat.desired_height(width);
+    let mut terminal = Terminal::new(TestBackend::new(width, height)).expect("create terminal");
+    terminal
+        .draw(|f| chat.render(f.area(), f.buffer_mut()))
+        .expect("draw model-with-reasoning footer");
+    assert_chatwidget_snapshot!(
+        "status_line_model_with_reasoning_context_remaining_footer",
         normalized_backend_snapshot(terminal.backend())
     );
 }

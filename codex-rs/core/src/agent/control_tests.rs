@@ -1577,8 +1577,11 @@ async fn cold_resume_with_thread_instructions_preserves_lazy_v2_child_inheritanc
             .send(crate::SendRequest {
                 caller: parent_thread_id,
                 target: crate::AgentTarget::Id(target_thread_id),
-                resume_config: crate::agent::child_config::build_agent_resume_config(&turn)
-                    .expect("capture resume config"),
+                resume_config: crate::agent::child_config::build_agent_resume_config(
+                    &turn,
+                    &turn.inherited_permissions(),
+                )
+                .expect("capture resume config"),
                 input: crate::AgentInput::Message {
                     message: AgentMessage::Plaintext("hello after resume".to_string()),
                     mode: MessageDeliveryMode::QueueOnly,
@@ -1726,8 +1729,11 @@ async fn v2_reload_preserves_shared_instructions_after_root_unloads(
         .send(crate::SendRequest {
             caller: sender_id,
             target: crate::AgentTarget::Id(target_id),
-            resume_config: crate::agent::child_config::build_agent_resume_config(&sender_turn)
-                .expect("capture resume config"),
+            resume_config: crate::agent::child_config::build_agent_resume_config(
+                &sender_turn,
+                &sender_turn.inherited_permissions(),
+            )
+            .expect("capture resume config"),
             input: crate::AgentInput::Message {
                 message: AgentMessage::Plaintext("wake the unloaded target".to_string()),
                 mode: MessageDeliveryMode::QueueOnly,
@@ -5585,11 +5591,8 @@ async fn resume_agent_from_rollout_skips_descendants_when_parent_resume_fails() 
         .expect("tree shutdown after partial subtree resume should succeed");
 }
 
-/// Elpis: a loaded child holding the Full Access its parent gives up loses it as well.
-/// Fails if the parent's reduction does not reach its children: the child keeps `never`
-/// with no sandbox.
-#[tokio::test]
-async fn loaded_children_give_up_the_full_access_their_parent_gives_up() {
+/// Elpis: Full Access configuration for a parent and the children it spawns.
+async fn full_access_harness() -> AgentControlHarness {
     let (home, config) = test_config_with_cli_overrides(vec![
         (
             "approval_policy".to_string(),
@@ -5601,12 +5604,18 @@ async fn loaded_children_give_up_the_full_access_their_parent_gives_up() {
         ),
     ])
     .await;
-    let harness = AgentControlHarness::new_with_config(home, config).await;
-    let (parent_thread_id, parent_thread) = harness.start_thread().await;
+    AgentControlHarness::new_with_config(home, config).await
+}
+
+async fn spawn_child(
+    harness: &AgentControlHarness,
+    parent_thread_id: ThreadId,
+    config: Config,
+) -> Arc<CodexThread> {
     let child_thread_id = harness
         .control
         .spawn_agent(
-            harness.config.clone(),
+            config,
             text_input("hello child"),
             Some(SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
                 parent_thread_id,
@@ -5618,18 +5627,28 @@ async fn loaded_children_give_up_the_full_access_their_parent_gives_up() {
         )
         .await
         .expect("child spawn should succeed");
-    let child_thread = harness
+    harness
         .manager
         .get_thread(child_thread_id)
         .await
-        .expect("child thread should be registered");
-    let inherited = child_thread.config_snapshot().await;
-    assert_eq!(
-        (inherited.approval_policy, inherited.permission_profile),
-        (AskForApproval::Never, PermissionProfile::Disabled),
-        "the child starts with its parent's Full Access"
-    );
+        .expect("child thread should be registered")
+}
 
+async fn grant_full_access(parent_thread: &CodexThread) {
+    parent_thread
+        .update_thread_settings(codex_protocol::protocol::ThreadSettingsOverrides {
+            approval_policy: Some(AskForApproval::Never),
+            permission_profile: Some(PermissionProfile::Disabled),
+            active_permission_profile: Some(codex_protocol::models::ActivePermissionProfile::new(
+                codex_protocol::models::BUILT_IN_PERMISSION_PROFILE_DANGER_FULL_ACCESS,
+            )),
+            ..Default::default()
+        })
+        .await
+        .expect("parent grants Full Access");
+}
+
+async fn revoke_full_access(parent_thread: &CodexThread) {
     parent_thread
         .update_thread_settings(codex_protocol::protocol::ThreadSettingsOverrides {
             approval_policy: Some(AskForApproval::OnRequest),
@@ -5641,7 +5660,41 @@ async fn loaded_children_give_up_the_full_access_their_parent_gives_up() {
         })
         .await
         .expect("parent revokes Full Access");
+}
 
+/// The step a tool call of `thread` would run with, as the router refreshes it.
+async fn next_tool_call(thread: &CodexThread) -> crate::config::ConstraintResult<Arc<StepContext>> {
+    let turn = thread.session.new_default_turn().await;
+    let step = thread
+        .session
+        .capture_step_context(turn, &CancellationToken::new())
+        .await
+        .expect("child step");
+    thread.session.with_current_permissions(step).await
+}
+
+/// Elpis: a loaded child holding the Full Access its parent gives up loses it as well, and its
+/// next tool call is restricted as soon as the parent acknowledges the change. Fails if the
+/// reduction reaches the child only through the background update: until that runs, the call
+/// keeps `never`.
+#[tokio::test]
+async fn loaded_children_give_up_the_full_access_their_parent_gives_up() {
+    let harness = full_access_harness().await;
+    let (parent_thread_id, parent_thread) = harness.start_thread().await;
+    let child_thread = spawn_child(&harness, parent_thread_id, harness.config.clone()).await;
+    let inherited = child_thread.config_snapshot().await;
+    assert_eq!(
+        (inherited.approval_policy, inherited.permission_profile),
+        (AskForApproval::Never, PermissionProfile::Disabled),
+        "the child starts with its parent's Full Access"
+    );
+
+    revoke_full_access(&parent_thread).await;
+
+    let call = next_tool_call(&child_thread)
+        .await
+        .expect("child tool call");
+    assert_eq!(call.settings.approval_policy(), AskForApproval::OnRequest);
     let lowered = timeout(Duration::from_secs(10), async {
         loop {
             let snapshot = child_thread.config_snapshot().await;
@@ -5662,5 +5715,51 @@ async fn loaded_children_give_up_the_full_access_their_parent_gives_up() {
             AskForApproval::OnRequest,
             Some(codex_protocol::models::BUILT_IN_PERMISSION_PROFILE_WORKSPACE.to_string()),
         )
+    );
+}
+
+/// Elpis: a child whose own limits cannot take its parent's revocation must not act on the
+/// authority the parent gave up. Fails if the child's next tool call skips pending parent
+/// reductions: the call would run with Full Access.
+#[tokio::test]
+async fn a_child_that_cannot_take_its_parents_revocation_cannot_act() {
+    let harness = full_access_harness().await;
+    let (parent_thread_id, parent_thread) = harness.start_thread().await;
+    let mut child_config = harness.config.clone();
+    child_config.permissions.approval_policy =
+        crate::config::Constrained::allow_only(AskForApproval::Never);
+    let child_thread = spawn_child(&harness, parent_thread_id, child_config).await;
+
+    revoke_full_access(&parent_thread).await;
+
+    assert!(
+        next_tool_call(&child_thread).await.is_err(),
+        "the child's tool calls fail while it holds revoked authority"
+    );
+    assert_eq!(
+        child_thread.config_snapshot().await.approval_policy,
+        AskForApproval::Never,
+        "the child could not take the lower setting"
+    );
+}
+
+/// Elpis: a child started after its parent regains Full Access keeps it. Fails if the
+/// parent's earlier revocation stays pending: the child's first tool call would lower it.
+#[tokio::test]
+async fn a_child_started_after_its_parent_regains_full_access_keeps_it() {
+    let harness = full_access_harness().await;
+    let (parent_thread_id, parent_thread) = harness.start_thread().await;
+    revoke_full_access(&parent_thread).await;
+    grant_full_access(&parent_thread).await;
+    let child_thread = spawn_child(&harness, parent_thread_id, harness.config.clone()).await;
+
+    let call = next_tool_call(&child_thread)
+        .await
+        .expect("child tool call");
+
+    assert_eq!(call.settings.approval_policy(), AskForApproval::Never);
+    assert_eq!(
+        child_thread.config_snapshot().await.permission_profile,
+        PermissionProfile::Disabled
     );
 }

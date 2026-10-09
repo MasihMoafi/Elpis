@@ -21,7 +21,7 @@ async fn unavailable_thread_routes_local_and_recovery_commands() -> Result<()> {
     app.chat_widget.handle_key_event(KeyCode::Enter.into());
     app.chat_widget
         .restore_user_message_to_composer("keep queued input".into());
-    app.chat_widget.handle_key_event(KeyCode::Enter.into());
+    app.chat_widget.handle_key_event(KeyCode::Tab.into());
     assert_eq!(
         app.chat_widget.queued_user_message_texts(),
         vec!["keep queued input"]

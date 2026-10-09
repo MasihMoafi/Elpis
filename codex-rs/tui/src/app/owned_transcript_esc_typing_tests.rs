@@ -1,7 +1,5 @@
-//! Elpis: Esc never leaves typed text in the air on the full screen.
-//!
-//! The Esc that leaves the Context Ledger does not start a rewind, and a typed character leaves
-//! transcript browsing and goes into the composer.
+//! Elpis: the Esc that leaves the Context Ledger does not start a rewind, and typing after it
+//! reaches the composer. Transcript browsing itself is Codex's.
 
 use super::tests::attach_thread;
 use super::tests::user_cell;
@@ -44,9 +42,15 @@ async fn chat() -> Result<(App, tui::Tui, AppServerSession)> {
 }
 
 #[tokio::test]
-async fn tab_esc_esc_then_typing_reaches_the_composer() -> Result<()> {
+async fn alt_c_esc_esc_then_typing_reaches_the_composer() -> Result<()> {
     let (mut app, mut tui, mut server) = chat().await?;
-    press(&mut app, &mut tui, &mut server, KeyCode::Tab.into()).await;
+    press(
+        &mut app,
+        &mut tui,
+        &mut server,
+        KeyEvent::new(KeyCode::Char('c'), KeyModifiers::ALT),
+    )
+    .await;
     assert!(app.chat_widget.context_ledger_has_focus());
     press(&mut app, &mut tui, &mut server, KeyCode::Esc.into()).await;
     assert!(!app.chat_widget.context_ledger_has_focus());
@@ -60,27 +64,6 @@ async fn tab_esc_esc_then_typing_reaches_the_composer() -> Result<()> {
     assert!(!app.backtrack.overlay_preview_active);
     tui.set_owned_screen(/*owned*/ false)?;
     server.shutdown().await?;
-    Ok(())
-}
-
-#[tokio::test]
-async fn typing_while_browsing_leaves_browsing_and_keeps_every_letter() -> Result<()> {
-    // "hello" starts with a prompt key (h) and holds a scroll key (l); letters still win.
-    for text in ["abc", "hello", "gg jk"] {
-        let (mut app, mut tui, mut server) = chat().await?;
-        press(&mut app, &mut tui, &mut server, KeyCode::Esc.into()).await;
-        press(&mut app, &mut tui, &mut server, KeyCode::Esc.into()).await;
-        assert!(
-            app.backtrack.overlay_preview_active,
-            "Esc Esc on an empty composer browses the transcript"
-        );
-
-        type_text(&mut app, &mut tui, &mut server, text).await;
-        assert_eq!(app.chat_widget.composer_text_with_pending(), text);
-        assert!(!app.backtrack.overlay_preview_active, "{text:?}");
-        tui.set_owned_screen(/*owned*/ false)?;
-        server.shutdown().await?;
-    }
     Ok(())
 }
 

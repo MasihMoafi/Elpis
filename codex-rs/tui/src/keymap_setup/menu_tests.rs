@@ -12,9 +12,9 @@ use tokio::sync::mpsc::unbounded_channel;
 
 fn child_menus(runtime: &RuntimeKeymap) -> [(&'static str, SelectionViewParams); 3] {
     let config = TuiKeymap::default();
-    let conflicting = keymap_with_replacement(&config, "composer", "submit", "ctrl-t")
+    let conflicting = keymap_with_replacement(&config, "composer", "submit", "tab")
         .expect("valid key specification");
-    let error = RuntimeKeymap::from_config(&conflicting).expect_err("Ctrl+T opens the transcript");
+    let error = RuntimeKeymap::from_config(&conflicting).expect_err("tab already queues a message");
     [
         (
             "action",
@@ -38,7 +38,7 @@ fn child_menus(runtime: &RuntimeKeymap) -> [(&'static str, SelectionViewParams);
             build_keymap_conflict_params(
                 "composer".to_string(),
                 "submit".to_string(),
-                "ctrl-t".to_string(),
+                "tab".to_string(),
                 KeymapEditIntent::ReplaceAll,
                 error,
                 runtime,
@@ -74,15 +74,7 @@ fn child_menu_hints_and_actions_follow_configured_list_bindings() {
         let mut view =
             ListSelectionView::new(params, AppEventSender::new(tx), runtime.list.clone());
         let rows = render_menu(&view);
-        assert_eq!(
-            rows.iter()
-                .find(|row| row.contains("f3 select · f2 back"))
-                .unwrap()
-                .trim()
-                .trim_matches('│')
-                .trim(),
-            "f3 select · f2 back"
-        );
+        assert_eq!(rows.last().unwrap().trim(), "f3 select · f2 back");
         view.handle_key_event(KeyEvent::from(KeyCode::Enter));
         assert!(rx.try_recv().is_err());
         view.handle_key_event(KeyEvent::from(KeyCode::F(/*n*/ 3)));

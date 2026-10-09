@@ -408,7 +408,10 @@ async fn transient_zero_cost_preserves_fresh_credits_and_breakdowns() {
             ..fresh_usage
         })
     );
-    assert_eq!(chat.status_line_text(), None);
+    assert_eq!(
+        chat.status_line_text(),
+        Some("50 credits · ~$1.82".to_string())
+    );
     assert_eq!(
         chat.last_terminal_title,
         Some("50 credits | ~$1.82".to_string())
@@ -462,7 +465,7 @@ async fn transient_zero_credits_preserves_credits_only_estimates() {
     ));
 
     assert_eq!(chat.estimated_thread_usage(), Some(&previous_usage));
-    assert_eq!(chat.status_line_text(), None);
+    assert_eq!(chat.status_line_text(), Some("46 credits".to_string()));
     assert_eq!(chat.last_terminal_title, Some("46 credits".to_string()));
     assert!(chat.thread_usage.settlement_refresh_due_at.is_some());
 }
@@ -479,8 +482,8 @@ async fn cost_settlement_waits_for_new_or_missing_usd_estimates() {
         chat.thread_id = Some(thread_id);
         chat.has_codex_backend_auth = true;
         chat.plan_type = Some(PlanType::Business);
-        chat.local_settings.tui.terminal_title = Some(vec!["estimated-thread-cost".to_string()]);
-        chat.refresh_terminal_title();
+        chat.local_settings.tui.status_line = Some(vec!["estimated-thread-cost".to_string()]);
+        chat.refresh_status_line();
         let request_id = thread_usage_request_id(&mut rx);
         assert!(chat.finish_thread_usage_refresh(
             thread_id,
@@ -526,7 +529,7 @@ async fn cost_settlement_waits_for_new_or_missing_usd_estimates() {
             ))),
         ));
 
-        assert_eq!(chat.last_terminal_title.clone(), Some("~$2.10".to_string()));
+        assert_eq!(chat.status_line_text(), Some("~$2.10".to_string()));
         assert_eq!(chat.thread_usage.settlement_baseline_credits_micros, None);
         assert_eq!(chat.thread_usage.settlement_baseline_usd_micros, None);
         assert_eq!(chat.thread_usage.settlement_refresh_due_at, None);
@@ -655,7 +658,10 @@ async fn billing_surfaces_render_for_every_supported_enterprise_plan() {
             ))),
         ));
 
-        assert_eq!(chat.status_line_text(), None);
+        assert_eq!(
+            chat.status_line_text(),
+            Some("5.2 credits · ~$0.21".to_string())
+        );
         assert_eq!(
             chat.last_terminal_title,
             Some("5.2 credits | ~$0.21".to_string())

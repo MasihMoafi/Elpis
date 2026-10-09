@@ -97,11 +97,6 @@ fn submit_prompt(app: &mut App, prompt: &str) {
     app.chat_widget.apply_external_edit(prompt.to_string());
     app.chat_widget
         .handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
-    // Elpis: during a turn Enter queues the prompt; Esc hands it to the running turn as a steer.
-    if !app.chat_widget.queued_user_message_texts().is_empty() {
-        app.chat_widget
-            .handle_key_event(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
-    }
 }
 
 fn drain_active_thread_events(app: &mut App) {

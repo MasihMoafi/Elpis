@@ -105,6 +105,7 @@ struct Chat {
 impl Chat {
     async fn new(turns: usize) -> Result<Self> {
         let (mut app, _events, _operations) = make_test_app_with_channels().await;
+        crate::chatwidget::tests::helpers::show_context_ledger(&mut app.chat_widget);
         let server = Box::pin(crate::start_embedded_app_server_for_picker(&app.config)).await?;
         attach_thread(&mut app, ThreadId::new());
         app.transcript_cells = long_chat(turns);

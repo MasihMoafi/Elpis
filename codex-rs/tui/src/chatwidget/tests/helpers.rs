@@ -27,6 +27,13 @@ pub(super) async fn test_config() -> (tempfile::TempDir, Config) {
     (codex_home, config)
 }
 
+/// Elpis: the Context Ledger is visible by default and takes the right of a wide composer. The
+/// harness hides it so that tests compare the native composer rows against Codex's snapshots;
+/// the Ledger's own tests call `show_context_ledger`.
+pub(crate) fn show_context_ledger(chat: &mut ChatWidget) {
+    chat.context_ledger = Default::default();
+}
+
 pub(super) fn test_project_path() -> PathBuf {
     PathBuf::from(test_path_display("/tmp/project"))
 }
@@ -258,6 +265,7 @@ pub(super) async fn make_chatwidget_manual_with_auth(
     widget.transcript.active_cell = None;
     widget.transcript.active_cell_revision = 0;
     widget.set_model(&resolved_model);
+    widget.close_context_ledger();
     (widget, rx, op_rx)
 }
 

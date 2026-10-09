@@ -6,10 +6,19 @@ use super::session::Session;
 use super::session::SessionConfiguration;
 use super::session::SessionSettingsUpdate;
 use super::step_settings::StepSettingsUpdate;
+use crate::config::ConstraintResult;
 use codex_protocol::models::BUILT_IN_PERMISSION_PROFILE_READ_ONLY;
 use codex_protocol::models::BUILT_IN_PERMISSION_PROFILE_WORKSPACE;
 use codex_protocol::models::PermissionProfile;
 use codex_protocol::protocol::AskForApproval;
+use codex_protocol::protocol::SessionSource;
+use codex_protocol::protocol::SubAgentSource;
+use futures::future::BoxFuture;
+use std::sync::Arc;
+use std::sync::Mutex;
+use std::sync::PoisonError;
+use std::sync::atomic::AtomicU64;
+use std::sync::atomic::Ordering;
 use tracing::warn;
 
 /// What a thread may do without asking: its approval policy and permission profile.
@@ -83,19 +92,70 @@ pub(super) fn permission_update(configuration: &SessionConfiguration) -> Session
     }
 }
 
+/// The latest reduction a thread accepted, numbered in commit order, and the number of the
+/// latest parent reduction it applied. Kept in the thread's extension data, which each
+/// thread creates for itself, so session construction stays as upstream has it.
+#[derive(Default)]
+struct Reductions {
+    latest: Mutex<LatestReduction>,
+    applied_parent: AtomicU64,
+}
+
+#[derive(Default)]
+struct LatestReduction {
+    generation: u64,
+    /// `None` once the thread provably gains authority again. Children started after that
+    /// inherit the new authority and must not be lowered to the earlier reduction.
+    updates: Option<SessionSettingsUpdate>,
+}
+
 impl Session {
-    /// Gives this thread's reduced permissions to the loaded children it spawned. Each child
-    /// rechecks under its own lock that the update only removes authority, so a child that
-    /// holds less keeps what it has. This runs apart from the caller, which may hold this
-    /// thread's locks while a child waits on this thread.
-    pub(super) fn lower_loaded_children(&self, updates: SessionSettingsUpdate) {
+    fn reductions(&self) -> Arc<Reductions> {
+        self.services
+            .thread_extension_data
+            .get_or_init(Reductions::default)
+    }
+
+    /// Notes an accepted permission change for this thread's children. Returns a numbered
+    /// reduction for them, or forgets the pending one when the change provably grants
+    /// authority. Called under the lock that publishes the change, so numbers follow commit
+    /// order and a child can see a reduction before this thread acknowledges it.
+    pub(super) fn note_permission_change(
+        &self,
+        current: &SessionConfiguration,
+        updated: &SessionConfiguration,
+    ) -> Option<(u64, SessionSettingsUpdate)> {
+        let reduces = removes_authority(current, updated);
+        if !reduces && !removes_authority(updated, current) {
+            return None;
+        }
+        let reductions = self.reductions();
+        let mut latest = reductions
+            .latest
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        if !reduces {
+            latest.updates = None;
+            return None;
+        }
+        let updates = permission_update(updated);
+        latest.generation += 1;
+        latest.updates = Some(updates.clone());
+        Some((latest.generation, updates))
+    }
+
+    /// Gives a recorded reduction to the loaded children this thread spawned, so idle children
+    /// change promptly. This runs apart from the caller, which may hold this thread's locks.
+    /// A child that has not applied it yet applies it before its next tool call instead; see
+    /// `follow_parent_reductions`.
+    pub(super) fn lower_loaded_children(&self, generation: u64, updates: SessionSettingsUpdate) {
         let runtime = self.services.local_agent_runtime.clone();
         let parent_thread_id = self.thread_id();
         drop(tokio::spawn(async move {
             for child in runtime.loaded_thread_spawn_children(parent_thread_id).await {
                 if let Err(error) = child
                     .session
-                    .follow_parent_permission_reduction(updates.clone())
+                    .apply_parent_reduction(generation, updates.clone())
                     .await
                 {
                     warn!(
@@ -106,6 +166,71 @@ impl Session {
                 }
             }
         }));
+    }
+
+    /// Applies the reductions this thread's spawning ancestors accepted and it has not applied
+    /// yet. Tool calls, and the children they start or resume, wait for this, so authority a
+    /// parent gave up is gone before a child acts again. A reduction this thread rejects fails
+    /// the action. Callers hold none of this thread's session locks while an ancestor is read
+    /// or changed, and an ancestor never waits on its children, so the waits cannot form a
+    /// cycle.
+    pub(super) fn follow_parent_reductions<'a>(
+        &'a self,
+        session_source: &'a SessionSource,
+    ) -> BoxFuture<'a, ConstraintResult<()>> {
+        Box::pin(async move {
+            let SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
+                parent_thread_id, ..
+            }) = session_source
+            else {
+                return Ok(());
+            };
+            let Some(parent) = self
+                .services
+                .local_agent_runtime
+                .loaded_thread(*parent_thread_id)
+                .await
+            else {
+                return Ok(());
+            };
+            parent
+                .session
+                .follow_parent_reductions(&parent.session_source)
+                .await?;
+            let latest = {
+                let reductions = parent.session.reductions();
+                let latest = reductions
+                    .latest
+                    .lock()
+                    .unwrap_or_else(PoisonError::into_inner);
+                let generation = latest.generation;
+                latest.updates.clone().map(|updates| (generation, updates))
+            };
+            match latest {
+                Some((generation, updates)) => {
+                    self.apply_parent_reduction(generation, updates).await
+                }
+                None => Ok(()),
+            }
+        })
+    }
+
+    /// Applies one parent reduction once. A rejected reduction stays pending, so every later
+    /// action fails until this thread can take it.
+    async fn apply_parent_reduction(
+        &self,
+        generation: u64,
+        updates: SessionSettingsUpdate,
+    ) -> ConstraintResult<()> {
+        let reductions = self.reductions();
+        if reductions.applied_parent.load(Ordering::Acquire) >= generation {
+            return Ok(());
+        }
+        self.follow_parent_permission_reduction(updates).await?;
+        reductions
+            .applied_parent
+            .fetch_max(generation, Ordering::AcqRel);
+        Ok(())
     }
 }
 
