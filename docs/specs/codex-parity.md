@@ -18,6 +18,11 @@ Goal: make Elpis as usable as Masih’s installed Codex 0.162.0 while retaining 
 - Run focused Rust checks, terminal interaction checks and visual checks on the exact candidate. Record failures and provider limitations plainly.
 - Test final installed paths, retain a rollback copy, and give Masih a short user check. Automated evidence is not Masih’s acceptance.
 
+## Shared-session implementation
+One bridge serves an Elpis home; its ordinary terminal connections use one native app-server. Delegate connections retain private engines so a failed helper restriction can stop that helper. Provider turns retain one owner inside the bridge; other terminals subscribe and route requests to it. The bridge exits after all clients and active work are gone, without boot startup. A new installation must not silently reuse an incompatible running bridge.
+
+Checks must cover late attachment, owner disconnect, provider continuation/interruption, request-id collisions, approval routing to the parent chat, shared-engine failure, real cold restarts, and launcher races. Preserve existing terminals during installation; activate only a tested immutable bundle, with the existing rollback script.
+
 ## Authorization and limits
 Local implementation, tests, commits and installation are authorized. GitHub Actions is authorized for parallel verification; use only a scoped validation branch if a push is required, with no release/deployment steps. No main push, tags, publication, history/config deletion, or session restart.
 Claude workers: Sonnet high/xhigh, Opus for harder tasks. No Fable. One owner per file and one local compiler. Repair and test the thermal guard before compilation; pause early and stop at the configured limit below 80°C. Check disk space before builds.

@@ -1,7 +1,7 @@
 // Elpis TUI <-ws-> bridge <-stdio-> real `elpis app-server` (everything else)
 //                         \-stdio-> claude-agent-acp (chat turns -> Claude)
 import { splitContext, splitTokens, transcriptTokens } from "./context-split.mjs";
-import { WebSocketServer } from "ws";
+import { createBridgeServer, bridgeUrl, createEngine, shutdownRuntime } from "./shared-runtime.mjs";
 import { execFile, spawn } from "node:child_process";
 import { appendFileSync, existsSync, readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
@@ -51,7 +51,7 @@ const mcpServersFor = (subagents, parentThreadId, memoryCwd) => {
     name: "elpis-agents", command: process.execPath, args: [AGENTS_MCP],
     env: [
       { name: "ELPIS_ENGINE_BIN", value: process.env.ELPIS_ENGINE_BIN ?? `${HOME}/.local/bin/elpis` },
-      { name: "ELPIS_BRIDGE_URL", value: `ws://127.0.0.1:${wss.address().port}` },
+      { name: "ELPIS_BRIDGE_URL", value: bridgeUrl(wss) },
       { name: "ELPIS_AGENT_TOOLS", value: agents ? "1" : "0" },
       ...(parentThreadId ? [{ name: "ELPIS_PARENT_THREAD", value: parentThreadId }] : []),
       ...(memoryCwd ? [{ name: "ELPIS_MEMORY_CWD", value: memoryCwd }] : []),
@@ -286,8 +286,8 @@ class Acp {
   kill() { this.proc.kill(); }
 }
 
-const wss = new WebSocketServer({ host: "127.0.0.1", port: Number(process.env.PORT ?? 47820) });
-wss.on("listening", () => log(`LISTENING ${wss.address().port}`));
+const wss = createBridgeServer();
+wss.on("listening", () => { log(`LISTENING ${wss.address().port ?? wss.address()}`); checkIdle(); });
 
 // A helper runs on its delegate tool's own connection, so the TUIs hear of it only through the
 // bridge: its start (with its parent) and its status changes go to every other connection.
@@ -343,16 +343,84 @@ async function persistReduction(threadId) {
   if (!below((await loadStore())._delegations ?? {}).length) return true;
   return updateStore((st) => { for (const id of below(st._delegations ?? {})) st._delegations[id].ceiling = "read-only"; });
 }
-function relayToTui(msg, answer) {
-  const tui = [...clients].find((c) => !helperConns.has(c) && c.readyState === 1);
-  if (!tui) return false;
+// Provider turns live in this bridge, while native turns live in the shared engine.
+// A provider thread has one runtime owner. Other terminals subscribe to that runtime;
+// their requests and replies keep their own ids, including when both clients use id 1.
+const providerOwners = new Map();
+const subscriptions = new Map(); // physical client -> threads it opened
+const forwarded = new Map(); // bridge id -> original client and request id
+const startingProviders = new Map(); // start response must name the model before its notification
+const contexts = new Set();
+const sendClient = (client, msg) => { if (client.readyState === 1) client.sendWire(JSON.stringify(msg)); };
+const viewers = (threadId) => [...clients].filter((c) => c.readyState === 1 && !helperConns.has(c) && subscriptions.get(c)?.has(threadId));
+function relayToTui(msg, answer, origin) {
+  let threadId = msg.params?.threadId;
+  while (helperScope.get(threadId)?.parentThreadId) threadId = helperScope.get(threadId).parentThreadId;
+  if (!threadId) return false;
+  const tui = viewers(threadId)[0] ?? null;
   const id = `relay-${randomUUID()}`;
-  relayed.set(id, answer);
-  tui.send(JSON.stringify({ ...msg, id }));
+  relayed.set(id, { answer, origin, client: tui, message: { ...msg, id }, threadId });
+  if (tui) sendClient(tui, { ...msg, id });
   return true;
 }
+function cancelRelays(origin, threadId, turnId) {
+  for (const [id, relay] of relayed) {
+    if (relay.origin !== origin || (threadId && relay.message.params?.threadId !== threadId) || (turnId && relay.message.params?.turnId !== turnId)) continue;
+    relayed.delete(id);
+    if (relay.client) sendClient(relay.client, { method: "serverRequest/resolved", params: { threadId: relay.message.params.threadId, requestId: id } });
+    relay.answer({ error: { code: -32603, message: "The requesting turn ended." } });
+  }
+}
+function subscribe(client, threadId) {
+  subscriptions.get(client)?.add(threadId);
+  if (helperConns.has(client)) return;
+  for (const relay of relayed.values()) if (relay.threadId === threadId && !relay.client) {
+    relay.client = client; sendClient(client, relay.message);
+  }
+}
+function decorateThread(thread) {
+  if (!thread?.id) return;
+  providerOwners.get(thread.id)?.decorate(thread);
+}
+let idleTimer;
+function checkIdle() {
+  clearTimeout(idleTimer);
+  if (!process.env.ELPIS_SHARED_BRIDGE || clients.size || [...contexts].some((c) => c.busy())) return;
+  idleTimer = setTimeout(async () => {
+    if (clients.size || [...contexts].some((c) => c.busy())) return;
+    await storeChain;
+    for (const c of contexts) c.close();
+    await shutdownRuntime();
+    process.exit(0);
+  }, 30_000);
+}
+for (const signal of ["SIGTERM", "SIGINT"]) process.once(signal, async () => {
+  await storeChain;
+  for (const c of contexts) c.close();
+  await shutdownRuntime();
+  process.exit(0);
+});
 wss.on("connection", (ws) => {
   clients.add(ws);
+  clearTimeout(idleTimer);
+  subscriptions.set(ws, new Set());
+  ws.sendWire = ws.send.bind(ws);
+  ws.send = (line) => {
+    let msg;
+    try { msg = JSON.parse(String(line)); } catch { if (ws.readyState === 1) ws.sendWire(line); return; }
+    decorateThread(msg.result?.thread);
+    decorateThread(msg.params?.thread);
+    if (Array.isArray(msg.result?.data)) for (const t of msg.result.data) if (typeof t === "object") decorateThread(t);
+    const owner = providerOwners.get(msg.params?.threadId);
+    if (msg.method === "thread/status/changed" && owner) msg.params.status = owner.status();
+    if (msg.method === "thread/settings/updated" && owner) {
+      const model = owner.model();
+      if (model) msg.params.threadSettings = { ...msg.params.threadSettings, model, effort: owner.effort() };
+    }
+    const route = !msg.method && forwarded.get(msg.id);
+    if (route) { forwarded.delete(msg.id); sendClient(route.client, { ...msg, id: route.id }); }
+    else sendClient(ws, msg);
+  };
   const toOthers = (msg) => { const line = JSON.stringify(msg); for (const c of clients) if (c !== ws && c.readyState === 1) c.send(line); };
   const shareHelper = (msg) => { if (msg?.method === "thread/status/changed" && helperThreads.has(msg.params?.threadId)) toOthers(msg); };
   // A chat's latest plan, kept in the store: the engine sends plans only while a turn runs, so
@@ -368,8 +436,18 @@ wss.on("connection", (ws) => {
     if (saved?.plan?.length) notify("turn/plan/updated", { threadId, turnId: saved.turnId, explanation: saved.explanation, plan: saved.plan });
   };
   const toTui = (msg) => { shareHelper(msg); notePlan(msg); ws.send(JSON.stringify(msg)); };
-  const notify = (method, params) => toTui({ method, params, emittedAtMs: now() });
-  const engine = spawn(process.env.ELPIS_ENGINE_BIN ?? `${HOME}/.local/bin/elpis`, ["app-server"], { stdio: ["pipe", "pipe", "ignore"] });
+  const notify = (method, params) => {
+    const msg = { method, params, emittedAtMs: now() };
+    notePlan(msg);
+    // Overview changes reach every terminal; transcript events reach only subscribers.
+    const all = ["thread/started", "thread/status/changed", "thread/archived", "thread/closed"].includes(method);
+    const tid = params.threadId ?? params.thread?.id;
+    const recipients = all ? [...clients].filter((c) => !helperConns.has(c)) : viewers(tid);
+    if (helperConns.has(ws) && ws.readyState === 1) recipients.push(ws);
+    for (const c of new Set(recipients)) sendClient(c, msg);
+    checkIdle();
+  };
+  const engine = createEngine();
   engine.stdin.on("error", (e) => log(`engine input: ${e.message}`)); // a stopped helper's engine
   const threadCwd = new Map();
   const threadSeen = new Map(); // thread id -> the engine's last Thread object for it
@@ -406,6 +484,43 @@ wss.on("connection", (ws) => {
   const acps = new Map();
   const claudeModel = new Map();
   const claudeEffort = new Map();
+  const resumeResults = new Map();
+  const context = {
+    busy: () => activeTurns.size > 0 || engineTurns.size > 0 || structured.size > 0,
+    close: () => { cancelRelays(ws); engine.kill(); for (const a of acps.values()) a.kill(); },
+  };
+  contexts.add(context);
+  function claimProvider(tid, result) {
+    if (!claudeModel.has(tid)) return;
+    if (result) resumeResults.set(tid, { ...result, thread: { ...result.thread } });
+    if (providerOwners.has(tid) && providerOwners.get(tid).ws !== ws) throw new Error(`provider thread already owned: ${tid}`);
+    const owner = {
+      ws,
+      model: () => claudeModel.get(tid),
+      effort: () => claudeEffort.get(tid) ?? null,
+      status: () => activeTurns.has(tid) ? { type: "active", activeFlags: [] } : { type: "idle" },
+      decorate: (thread) => {
+        if (claudeModel.has(tid)) {
+          thread.model = claudeModel.get(tid); thread.reasoningEffort = claudeEffort.get(tid) ?? null;
+          thread.status = owner.status();
+        }
+      },
+      dispatch: (msg, client) => {
+        if (msg.method === "thread/resume") subscribe(client, tid);
+        const id = `forward-${randomUUID()}`;
+        forwarded.set(id, { client, id: msg.id });
+        handleMessage(JSON.stringify({ ...msg, id }));
+      },
+    };
+    providerOwners.set(tid, owner);
+  }
+  function rememberStart(id, pick) {
+    pendingStart.set(id, pick);
+    let resolve;
+    const ready = new Promise((r) => { resolve = r; });
+    startingProviders.set(`${connectionId}:${id}`, { ready, resolve });
+  }
+  const connectionId = randomUUID();
   const sessionModel = new Map();
   const threadCollab = new Map();
   // thread id -> its permission profile and approvals reviewer, as the engine last confirmed
@@ -413,6 +528,11 @@ wss.on("connection", (ws) => {
   const threadAccess = new Map();
   const noteAccess = (threadId, s) => {
     if (!threadId || !s) return;
+    const cached = resumeResults.get(threadId);
+    if (cached) {
+      for (const k of ["approvalPolicy", "approvalsReviewer", "activePermissionProfile", "cwd", "collaborationMode", "serviceTier", "disabledPluginIds"]) if (s[k] !== undefined) cached[k] = s[k];
+      if (s.sandboxPolicy) cached.sandbox = s.sandboxPolicy;
+    }
     const wasWritable = chatAccess.has(threadId) ? writableFor(threadId) : null;
     if (s.approvalPolicy) threadPolicy.set(threadId, s.approvalPolicy);
     const sandbox = (s.sandboxPolicy ?? s.sandbox)?.type;
@@ -574,7 +694,7 @@ wss.on("connection", (ws) => {
   // The engine knows only the model it started a bridged chat with; this connection (from the
   // chat's start) or the store (from its first turn) has the real one.
   function ownModel(t, store) {
-    const model = claudeModel.get(t.id) ?? store?.[t.id]?.model;
+    const model = providerOwners.get(t.id)?.model() ?? claudeModel.get(t.id) ?? store?.[t.id]?.model;
     if (!model || t.model === model) return false;
     t.model = model;
     t.reasoningEffort = (claudeModel.has(t.id) ? claudeEffort.get(t.id) : store?.[t.id]?.effort) ?? null;
@@ -798,7 +918,34 @@ wss.on("connection", (ws) => {
   async function resumeThread(msg) {
     const tid = msg.params?.threadId;
     await storeChain;
-    const d = tid && (await loadStore())._delegations?.[tid];
+    const savedStore = await loadStore();
+    const d = tid && savedStore._delegations?.[tid];
+    const existing = providerOwners.get(tid);
+    if (existing && existing.ws !== ws) { existing.dispatch(msg, forwarded.get(msg.id)?.client ?? ws); return; }
+    if (claudeModel.has(tid) && resumeResults.has(tid)) {
+      const params = { threadId: tid };
+      for (const k of ["approvalPolicy", "approvalsReviewer", "permissions", "model", "effort"]) if (msg.params[k] != null) params[k] = msg.params[k];
+      if (msg.params.sandbox) params.permissions ??= { "read-only": ":read-only", "workspace-write": ":workspace", "danger-full-access": ":danger-full-access" }[msg.params.sandbox];
+      if (d) boundAccess(params, ceilingOf(tid, d), "sandboxPolicy");
+      try {
+        if (Object.keys(params).length > 1) {
+          if (isBridged(params.model)) { claudeModel.set(tid, params.model); delete params.model; }
+          await engineCall("thread/settings/update", params);
+        }
+        const result = { ...resumeResults.get(tid), model: claudeModel.get(tid), reasoningEffort: claudeEffort.get(tid) ?? null };
+        const running = activeTurns.get(tid);
+        result.thread = { ...result.thread, ...threadSeen.get(tid), turns: [...claudeTurnsOf(savedStore, tid), ...(running ? [running.snapshot()] : [])] };
+        pendingResume.delete(msg.id);
+        toTui({ id: msg.id, result });
+        replayPlan(tid);
+      } catch (e) { pendingResume.delete(msg.id); toTui({ id: msg.id, error: { code: -32603, message: e.message ?? String(e) } }); }
+      return;
+    }
+    if (!existing && savedStore[tid]?.model) {
+      claudeModel.set(tid, savedStore[tid].model);
+      if (savedStore[tid].effort) claudeEffort.set(tid, savedStore[tid].effort);
+      claimProvider(tid);
+    }
     if (d) {
       const r = { parentThreadId: d.parentThreadId, requested: d.requested ?? "read-only", ceiling: ceilingOf(tid, d), stored: d.ceiling };
       pendingHelpers.add(r);
@@ -815,10 +962,19 @@ wss.on("connection", (ws) => {
     let parsed = null;
     try { parsed = JSON.parse(line); } catch {}
     const th = parsed?.result?.thread ?? parsed?.params?.thread;
+    const isStart = parsed && !parsed.method && pendingNativeStarts.delete(parsed.id);
+    if (parsed?.result?.thread && (pendingStart.has(parsed.id) || pendingResume.has(parsed.id) || isStart)) {
+      subscribe(forwarded.get(parsed.id)?.client ?? ws, th.id);
+    }
     if (th?.id && th?.cwd) { threadCwd.set(th.id, th.cwd); threadSeen.set(th.id, { ...th, turns: [] }); }
-    if (th?.id && parsed?.result?.approvalPolicy) noteAccess(th.id, parsed.result);
+    if (th?.id && parsed?.result?.approvalPolicy) { noteAccess(th.id, parsed.result); resumeResults.set(th.id, { ...parsed.result, thread: { ...th } }); }
+    if (parsed?.method === "thread/name/updated") {
+      const { threadId, threadName } = parsed.params;
+      if (threadSeen.has(threadId)) threadSeen.get(threadId).name = threadName;
+      if (resumeResults.has(threadId)) resumeResults.get(threadId).thread.name = threadName;
+    }
     if (parsed?.method === "turn/started" && parsed.params?.turn?.id) engineTurns.set(parsed.params.threadId, parsed.params.turn.id);
-    if (parsed?.method === "turn/completed") engineTurns.delete(parsed.params?.threadId);
+    if (parsed?.method === "turn/completed") { engineTurns.delete(parsed.params?.threadId); checkIdle(); }
     if (parsed?.method === "thread/settings/updated") {
       const tid = parsed.params?.threadId;
       const previousAccess = accessModeOf(tid, "claude", threadPolicy.get(tid) !== "never");
@@ -836,7 +992,7 @@ wss.on("connection", (ws) => {
     notePlan(parsed);
     if (parsed?.method === "thread/smartPrune/updated" && parsed.params?.threadId) smartPrune.set(parsed.params.threadId, !!parsed.params.smartPrune?.enabled);
     if (parsed?.method && parsed.id !== undefined && helperConns.has(ws) && helperThreads.has(parsed.params?.threadId)
-      && relayToTui(parsed, (reply) => engine.stdin.write(JSON.stringify({ id: parsed.id, ...(reply.error ? { error: reply.error } : { result: reply.result }) }) + "\n"))) return;
+      && relayToTui(parsed, (reply) => engine.stdin.write(JSON.stringify({ id: parsed.id, ...(reply.error ? { error: reply.error } : { result: reply.result }) }) + "\n"), ws)) return;
     if (parsed && engineReqs.has(parsed.id) && !parsed.method) {
       const p = engineReqs.get(parsed.id); engineReqs.delete(parsed.id);
       parsed.error ? p.reject(parsed.error) : p.resolve(parsed.result);
@@ -846,6 +1002,11 @@ wss.on("connection", (ws) => {
     // it) archives by leaving the bridge's records.
     if (parsed && pendingArchive.has(parsed.id)) {
       const threadId = pendingArchive.get(parsed.id); pendingArchive.delete(parsed.id);
+      if (!parsed.error) {
+        providerOwners.delete(threadId); claudeModel.delete(threadId); resumeResults.delete(threadId);
+        sessions.delete(threadId); threadSeen.delete(threadId); queues.delete(threadId);
+        for (const watched of subscriptions.values()) watched.delete(threadId);
+      }
       if (/no rollout found/.test(parsed.error?.message ?? "")) {
         await storeChain;
         const store = await loadStore();
@@ -863,10 +1024,11 @@ wss.on("connection", (ws) => {
     // bridged start in flight names its model then.
     if (parsed?.method === "thread/started" && parsed.params?.thread) {
       const t = parsed.params.thread;
+      await Promise.all([...startingProviders.values()].map((p) => p.ready));
       const starting = [...pendingStart.values()].filter((pick) => pick?.model);
       const pick = !claudeModel.has(t.id) && starting.length === 1 ? starting[0] : null;
       if (pick && t.model !== pick.model) { t.model = pick.model; t.reasoningEffort = pick.effort ?? null; helpersMarked = true; } // shown only; routing waits for the answer
-      else helpersMarked = ownModel(t, null);
+      else helpersMarked = ownModel(t, await loadStore());
     }
     if (parsed && pendingHelperMark.has(parsed.id)) {
       pendingHelperMark.delete(parsed.id);
@@ -875,7 +1037,8 @@ wss.on("connection", (ws) => {
     if (parsed && pendingTurnsList.has(parsed.id)) {
       const req = pendingTurnsList.get(parsed.id); pendingTurnsList.delete(parsed.id);
       await storeChain;
-      const stored = (await loadStore())[req.threadId]?.turns ?? [];
+      const running = activeTurns.get(req.threadId);
+      const stored = [...((await loadStore())[req.threadId]?.turns ?? []), ...(running ? [running.snapshot()] : [])];
       if (stored.length && !req.cursor) {
         const data = parsed.result?.data ?? [];
         const have = new Set(data.map((t) => t.id));
@@ -970,6 +1133,8 @@ wss.on("connection", (ws) => {
     if (parsed && pendingStart.has(parsed.id)) {
       const pick = pendingStart.get(parsed.id); pendingStart.delete(parsed.id);
       const tid = parsed.result?.thread?.id;
+      const starting = startingProviders.get(`${connectionId}:${parsed.id}`);
+      startingProviders.delete(`${connectionId}:${parsed.id}`);
       if (tid && pick?.model) {
         claudeModel.set(tid, pick.model);
         if (pick.effort) claudeEffort.set(tid, pick.effort);
@@ -980,12 +1145,20 @@ wss.on("connection", (ws) => {
         parsed.result.model = pick.model;
         parsed.result.reasoningEffort = pick.effort ?? null;
         Object.assign(parsed.result.thread, { model: pick.model, reasoningEffort: pick.effort ?? null });
+        claimProvider(tid, parsed.result);
+        if (!parsed.result.thread.ephemeral) await updateStore((st) => { st[tid] = { ...st[tid], model: pick.model, effort: pick.effort ?? null }; });
+        starting?.resolve();
         log(`new thread ${tid} -> ${pick.model}`);
         ws.send(JSON.stringify(parsed));
         return;
       }
+      starting?.resolve();
     }
     let reopened = null;
+    if (parsed?.error && pendingResume.has(parsed.id)) {
+      pendingResume.delete(parsed.id);
+      for (const [tid, owner] of providerOwners) if (owner.ws === ws && !resumeResults.has(tid)) providerOwners.delete(tid);
+    }
     if (parsed && pendingAdopt.has(parsed.id) && !parsed.result?.thread?.id) { pendingHelpers.delete(pendingAdopt.get(parsed.id)); pendingAdopt.delete(parsed.id); }
     if (parsed && pendingResume.has(parsed.id) && parsed.result?.thread?.id) {
       pendingResume.delete(parsed.id);
@@ -1005,6 +1178,7 @@ wss.on("connection", (ws) => {
         parsed.result.model = saved.model;
         if (saved.effort) parsed.result.reasoningEffort = saved.effort;
         Object.assign(parsed.result.thread, { model: saved.model, reasoningEffort: saved.effort ?? null });
+        claimProvider(parsed.result.thread.id, parsed.result);
         log(`resume ${parsed.result.thread.id} -> ${saved.model}`);
         ws.send(JSON.stringify(parsed));
         replayPlan(parsed.result.thread.id);
@@ -1043,10 +1217,7 @@ wss.on("connection", (ws) => {
   });
 
   const askTui = (method, params) => new Promise((resolve) => {
-    if (helperConns.has(ws) && relayToTui({ method, params }, (reply) => resolve(reply.result))) return;
-    const id = `acp-bridge-${++reqSeq}`;
-    bridgeRequests.set(id, resolve);
-    toTui({ id, method, params });
+    if (!relayToTui({ method, params }, (reply) => resolve(reply.result), ws)) resolve(null);
   });
 
   // One transcript drawn from Claude's ACP updates: the chat's turn (`root`), or the turn of a
@@ -1166,12 +1337,14 @@ wss.on("connection", (ws) => {
     const subLanes = new Map();
     const busy = () => [...tools.values()].some((t) => !t.end) || [...subLanes.values()].some((l) => !l.done);
     // The running turn, from its first moment, so a steer or a stop during setup finds it.
-    let sessionReady;
-    const turnState = { threadId, turnId, sessionId: null, items, closeMessage, cancelled: false, ready: new Promise((r) => { sessionReady = r; }), toolsIdle: [] };
+    let sessionReady, finishTurn;
+    const done = new Promise((resolve) => { finishTurn = resolve; });
+    const turnState = { threadId, turnId, done, sessionId: null, items, closeMessage, cancelled: false, ready: new Promise((r) => { sessionReady = r; }), toolsIdle: [] };
     // Claude Code takes a steer at once and drops a tool that is still running (a subagent too),
     // so a steer waits for the running tools, as Claude Code's own queue does.
     turnState.whenToolsIdle = () => (!busy() ? Promise.resolve() : new Promise((r) => turnState.toolsIdle.push(r)));
     lane.onIdle = () => { if (!busy()) turnState.toolsIdle.splice(0).forEach((r) => r()); };
+    turnState.snapshot = () => ({ ...turn, startedAt, itemsView: "full", items: [userItem, ...items, ...(lane.message ? [lane.message] : [])] });
     activeTurns.set(threadId, turnState);
     let status = "completed";
     let error = null;
@@ -1428,6 +1601,7 @@ wss.on("connection", (ws) => {
       items.push(exit);
     }
     if (activeTurns.get(threadId) === turnState) activeTurns.delete(threadId);
+    cancelRelays(ws, threadId, turnId);
     turnState.toolsIdle.splice(0).forEach((r) => r());
     const completedAt = Math.floor(now() / 1000);
     {
@@ -1442,6 +1616,7 @@ wss.on("connection", (ws) => {
     if (agent.key === "agy") recordAccounts().catch((e) => log(`accounts: ${e.message}`));
     setImmediate(() => runNext(threadId));
     const used = lastTurnUsage.get(threadId) ?? {};
+    finishTurn();
     return { status, turnId, seconds: completedAt - startedAt, tokens: (used.input ?? 0) + (used.cachedRead ?? 0) + (used.cachedWrite ?? 0) + (used.output ?? 0) };
   }
 
@@ -1570,7 +1745,7 @@ wss.on("connection", (ws) => {
       if (def?.model && (p.model == null || p.model === await engineDefault)) pick = def;
     }
     if (pick) {
-      pendingStart.set(msg.id, pick);
+      rememberStart(msg.id, pick);
       p.model = null;
       if (p.config) delete p.config.model_reasoning_effort;
     }
@@ -1699,7 +1874,25 @@ wss.on("connection", (ws) => {
     }
   }
 
-  ws.on("message", (data) => {
+  async function archiveProvider(msg) {
+    const tid = msg.params.threadId;
+    queueOf(tid).splice(0);
+    const running = activeTurns.get(tid);
+    try {
+      if (running) {
+        running.cancelled = true;
+        const sessionId = await running.ready;
+        if (sessionId) running.acp?.send({ method: "session/cancel", params: { sessionId } });
+        let timer;
+        try {
+          await Promise.race([running.done, new Promise((_, reject) => { timer = setTimeout(() => reject(new Error("The provider has not stopped yet; the chat was not archived.")), 10000); })]);
+        } finally { clearTimeout(timer); }
+      }
+      engine.stdin.write(JSON.stringify(msg) + "\n");
+    } catch (e) { pendingArchive.delete(msg.id); toTui({ id: msg.id, error: { code: -32603, message: e.message } }); }
+  }
+  const pendingNativeStarts = new Set();
+  function handleMessage(data) {
     const line = data.toString();
     let msg;
     try { msg = JSON.parse(line); } catch { engine.stdin.write(line + "\n"); return; }
@@ -1709,24 +1902,42 @@ wss.on("connection", (ws) => {
       return;
     }
     if (msg.id !== undefined && !msg.method && relayed.has(msg.id)) {
-      relayed.get(msg.id)(msg);
+      const relay = relayed.get(msg.id);
+      if (relay.client !== ws) return;
+      relay.answer(msg);
       relayed.delete(msg.id);
       return;
     }
     if (msg.method === "initialize" && msg.params?.clientInfo?.name === "elpis-agents") helperConns.add(ws);
+    const owner = providerOwners.get(msg.params?.threadId);
+    if (msg.method && owner && owner.ws !== ws) { owner.dispatch(msg, ws); return; }
+    if (msg.method === "thread/start" || msg.method === "thread/fork") pendingNativeStarts.add(msg.id);
+    if (msg.method === "thread/resume") subscribe(forwarded.get(msg.id)?.client ?? ws, msg.params?.threadId);
     if (process.env.ACP_BRIDGE_DEBUG && msg.method && (process.env.ACP_BRIDGE_DEBUG === "all" || !/^thread\/(read|turns\/list|list|loaded)/.test(msg.method))) log(`tui-> ${line.slice(0, 600)}`);
+    if (msg.method === "thread/read" && claudeModel.has(msg.params?.threadId) && resumeResults.has(msg.params.threadId)) {
+      const tid = msg.params.threadId;
+      storeChain.then(loadStore).then((store) => {
+        const running = activeTurns.get(tid);
+        const thread = { ...resumeResults.get(tid).thread, ...threadSeen.get(tid), turns: msg.params.includeTurns ? [...claudeTurnsOf(store, tid), ...(running ? [running.snapshot()] : [])] : [] };
+        toTui({ id: msg.id, result: { thread } });
+      }).catch((e) => toTui({ id: msg.id, error: { code: -32603, message: e.message } }));
+      return;
+    }
     if ((msg.method === "thread/read" || msg.method === "thread/resume") && childIds.has(msg.params?.threadId)) { answerChild(msg); return; }
     if (msg.method === "thread/loaded/list") pendingChildList.set(msg.id, null);
     if (msg.method === "thread/list" && msg.params?.ancestorThreadId && !msg.params.cursor) pendingChildList.set(msg.id, msg.params.ancestorThreadId);
     if (msg.method === "thread/list" || msg.method === "thread/read") pendingHelperMark.add(msg.id);
     if (msg.method === "model/list") pendingModelList.add(msg.id);
     if (msg.method === "thread/resume") { pendingResume.add(msg.id); resumeThread(msg); return; }
-    if (msg.method === "thread/archive") pendingArchive.set(msg.id, msg.params?.threadId);
+    if (msg.method === "thread/archive") {
+      pendingArchive.set(msg.id, msg.params?.threadId);
+      if (claudeModel.has(msg.params?.threadId)) { archiveProvider(msg); return; }
+    }
     if (msg.method === "config/read") pendingConfigRead.add(msg.id);
     if (msg.method === "thread/fork" && claudeModel.has(msg.params?.threadId)) {
       const src = msg.params.threadId;
       const forkOf = { threadId: src, at: Math.floor(now() / 1000), beforeTurnId: msg.params.beforeTurnId ?? null, lastTurnId: msg.params.lastTurnId ?? null };
-      pendingStart.set(msg.id, { model: claudeModel.get(src), effort: claudeEffort.get(src) ?? null, forkOf });
+      rememberStart(msg.id, { model: claudeModel.get(src), effort: claudeEffort.get(src) ?? null, forkOf });
     }
     if (msg.method === "thread/start") { startThread(msg); return; }
     if (msg.method === "thread/revert") { revertThread(msg); return; }
@@ -1739,7 +1950,7 @@ wss.on("connection", (ws) => {
     if (msg.method === "thread/settings/update") {
       const p = msg.params ?? {};
       if (ownHelpers.has(p.threadId)) boundAccess(p, helperScope.get(p.threadId).ceiling, "sandboxPolicy");
-      if (isBridged(p.model)) { claudeModel.set(p.threadId, p.model); p.model = null; log(`thread ${p.threadId} -> ${claudeModel.get(p.threadId)}`); }
+      if (isBridged(p.model)) { claudeModel.set(p.threadId, p.model); claimProvider(p.threadId); p.model = null; log(`thread ${p.threadId} -> ${claudeModel.get(p.threadId)}`); }
       else if (typeof p.model === "string") claudeModel.delete(p.threadId);
       // Permissions become authoritative only on thread/settings/updated. A rejected or queued
       // request must never grant the bridge permission ahead of the engine.
@@ -1772,6 +1983,7 @@ wss.on("connection", (ws) => {
       // thread/settings/updated.
       if (isBridged(msg.params?.model)) {
         claudeModel.set(tid, msg.params.model);
+        claimProvider(tid);
         if (msg.params.effort) claudeEffort.set(tid, msg.params.effort);
       }
       if (claudeModel.has(tid) && String(msg.id).startsWith("temporary-structured-turn")) { structuredClaude(msg); return; }
@@ -1821,10 +2033,22 @@ wss.on("connection", (ws) => {
       return;
     }
     engine.stdin.write(line + "\n");
-  });
+  }
+  ws.on("message", handleMessage);
   ws.on("close", async () => {
-    for (const tid of ownHelpers.keys()) helperScope.get(tid)?.owners.delete(restrictHelper);
-    for (const d of [...pendingDelegation.values(), ...pendingAdopt.values()]) pendingHelpers.delete(d);
-    clients.delete(ws); await storeChain; engine.kill(); for (const a of acps.values()) a.kill(); log("tui disconnected");
+    clients.delete(ws); subscriptions.delete(ws);
+    for (const [id, relay] of relayed) if (relay.client === ws) {
+      const next = viewers(relay.threadId)[0];
+      if (next) { relay.client = next; sendClient(next, relay.message); }
+      else relay.client = null;
+    }
+    for (const [id, route] of forwarded) if (route.client === ws) forwarded.delete(id);
+    if (!process.env.ELPIS_SHARED_BRIDGE || helperConns.has(ws)) {
+      for (const tid of ownHelpers.keys()) helperScope.get(tid)?.owners.delete(restrictHelper);
+      for (const d of [...pendingDelegation.values(), ...pendingAdopt.values()]) pendingHelpers.delete(d);
+      await storeChain; context.close(); contexts.delete(context);
+      for (const [tid, owner] of providerOwners) if (owner.ws === ws) providerOwners.delete(tid);
+    }
+    checkIdle(); log("tui disconnected");
   });
 });

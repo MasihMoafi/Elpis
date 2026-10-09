@@ -97,7 +97,7 @@ jobs:
       - name: Install build dependencies and Rust
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends libcap-dev libssl-dev pkg-config strace iproute2
+          sudo apt-get install -y --no-install-recommends libcap-dev libssl-dev pkg-config strace iproute2 tmux
           rustup toolchain install 1.95.0 --profile minimal --no-self-update
       - name: Download and verify the pinned sandbox V8
         shell: bash
@@ -165,7 +165,7 @@ jobs:
       - name: Install build dependencies and Rust
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends libcap-dev libssl-dev pkg-config strace iproute2
+          sudo apt-get install -y --no-install-recommends libcap-dev libssl-dev pkg-config strace iproute2 tmux
           rustup toolchain install 1.95.0 --profile minimal --no-self-update
           # This disposable runner must permit the namespaces that the sandbox tests create.
           # https://github.com/ubuntu/ubuntu-release-notes/blob/main/docs/24.04/index.md
@@ -286,7 +286,9 @@ jobs:
         run: |
           cargo test --profile dev-small --locked -p codex-core --test all -- \
             elpis_ledger_admission elpis_context_attribution work_graphs settings_commits \
-            agents_md scenarios_shared_instructions 2>&1 | tee "$RUNNER_TEMP/elpis-integration-checks.log"
+            agents_md scenarios_shared_instructions \
+            deferred_executor_promotes_primary_environment_when_startup_completes \
+            deferred_executor_stays_pending_after_materialization 2>&1 | tee "$RUNNER_TEMP/elpis-integration-checks.log"
       - name: Preserve UI and integration check diagnostics
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
@@ -318,6 +320,15 @@ jobs:
       - name: Delegated helper permission regressions
         if: ${{ !cancelled() && steps.runtime_build.outcome == 'success' }}
         run: node scripts/permissions-bridge-delegation.test.cjs "$PWD/codex-rs/target/release/elpis"
+      - name: Shared launcher, native transport, and provider session ownership
+        if: ${{ !cancelled() && steps.runtime_build.outcome == 'success' }}
+        run: |
+          node scripts/shared-runtime.test.cjs "$PWD/codex-rs/target/release/elpis"
+          node scripts/terminal-input.test.cjs "$PWD/codex-rs/target/release/elpis" --launcher
+          node scripts/shared-provider-sessions.test.cjs "$PWD/codex-rs/target/release/elpis"
+          node scripts/shared-provider-sessions.test.cjs "$PWD/codex-rs/target/release/elpis" --gemini
+          node scripts/permissions-bridge.test.cjs "$PWD/codex-rs/target/release/elpis" --shared
+          node scripts/permissions-bridge.test.cjs "$PWD/codex-rs/target/release/elpis" --shared --gemini
       - name: Real runtime evals and failing controls, without outside network
         if: ${{ !cancelled() && steps.runtime_build.outcome == 'success' }}
         run: sudo --preserve-env=PATH unshare -n sh -c 'ip link set lo up; bash scripts/release-runtime-evals.sh "$PWD/codex-rs/target/release/elpis"'

@@ -1,6 +1,6 @@
 'use strict';
 // Remote TUI and a private websocket app-server, with an isolated home and local Responses fixture.
-// Usage: node scripts/terminal-input.test.cjs /absolute/path/to/elpis [--bridge | --codex-reference]
+// Usage: node scripts/terminal-input.test.cjs /absolute/path/to/elpis [--bridge | --launcher | --codex-reference]
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -10,8 +10,9 @@ const { execFileSync, spawn } = require('node:child_process');
 const { Provider, message, call } = require('../editors/vscode/test/runtime-eval');
 const binary = process.argv[2];
 const useBridge = process.argv.includes('--bridge');
+const useLauncher = process.argv.includes('--launcher');
 const reference = process.argv.includes('--codex-reference');
-assert(!(useBridge && reference), 'reference Codex uses its local daemon');
+assert([useBridge, useLauncher, reference].filter(Boolean).length <= 1, 'choose one connection mode');
 assert(binary && path.isAbsolute(binary), 'provide the engine binary');
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'elpis-terminal-input-'));
 const home = path.join(root, 'home'), cwd = path.join(root, 'long-project-directory-for-title-visibility');
@@ -97,9 +98,9 @@ async function stopAppServer() {
   fs.writeFileSync(path.join(home, 'config.toml'), `model="gpt-5.5"\nmodel_provider="fixture"\nmodel_reasoning_effort="medium"\nmodel_catalog_json=${JSON.stringify(catalogPath)}\napproval_policy="on-request"\nsandbox_mode="workspace-write"\n[features]\ncode_mode=false\n[model_providers.fixture]\nname="Terminal fixture"\nbase_url=${JSON.stringify(provider.url)}\nwire_api="responses"\nrequires_openai_auth=false\n[tui]\nanimations=false\n[projects.${JSON.stringify(cwd)}]\ntrust_level="trusted"\n`);
   fs.appendFileSync(path.join(home, 'config.toml'), `[projects.${JSON.stringify(otherCwd)}]\ntrust_level="trusted"\n`);
   const isolatedEnv = { ...process.env, HOME: home, CODEX_HOME: home, ELPIS_HOME: home, CODEX_AUTH_HOME: home, TERM: 'xterm-256color' };
-  const remote = await startAppServer(isolatedEnv);
+  const remote = useLauncher ? null : await startAppServer(isolatedEnv);
   const quote = text => `'${text.replaceAll("'", "'\\''")}'`;
-  const command = (directory, selectedModel) => ['env', `HOME=${home}`, `CODEX_HOME=${home}`, `ELPIS_HOME=${home}`, `CODEX_AUTH_HOME=${home}`, 'TERM=xterm-256color', binary, ...(reference ? [] : ['--remote', remote]), '--no-alt-screen', '-C', directory, ...(selectedModel ? ['--model', selectedModel] : [])].map(quote).join(' ');
+  const command = (directory, selectedModel) => ['env', `HOME=${home}`, `CODEX_HOME=${home}`, `ELPIS_HOME=${home}`, `CODEX_AUTH_HOME=${home}`, 'TERM=xterm-256color', ...(useLauncher ? [`ELPIS_ENGINE_BIN=${binary}`, 'ELPIS_NO_AGY=1', 'PERMISSION_FIXTURE_ADAPTER=1', `ACP_ADAPTER=${path.resolve(__dirname, 'permissions-bridge.test.cjs')}`, process.env.ELPIS_LAUNCHER ?? path.resolve(__dirname, '../tools/elpis-claude/elpis-claude')] : [binary]), ...(reference || useLauncher ? [] : ['--remote', remote]), '--no-alt-screen', '-C', directory, ...(selectedModel ? ['--model', selectedModel] : [])].map(quote).join(' ');
   tmux('new-session', '-d', '-s', 'test', '-x', '80', '-y', '32', command(cwd));
   await screenWhen(s => {
     if (s.includes('Hooks need review')) { key('Escape'); return false; }
@@ -223,6 +224,14 @@ async function stopAppServer() {
   if (releaseTool) fs.writeFileSync(releaseTool, 'cleanup');
   try { tmux('kill-server'); } catch {}
   await stopAppServer();
+  if (useLauncher) {
+    const { runtimeDir, startToken } = await import('../tools/elpis-claude/shared-runtime.mjs');
+    const stateFile = runtimeDir(home).state;
+    if (fs.existsSync(stateFile)) {
+      const state = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
+      if (startToken(state.pid) === state.token) process.kill(state.pid, 'SIGTERM');
+    }
+  }
   provider.close();
   fs.writeFileSync(path.join(root, 'evidence.json'), JSON.stringify({ useBridge, reference, checks, savedPermissions, requests: provider.requests, titleRequests: provider.titleRequests, appServerExit: appServer && !appServerError ? await appServerExit : null }, null, 2));
   console.log(`Evidence: ${root}`);

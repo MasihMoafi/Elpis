@@ -1,6 +1,6 @@
 'use strict';
 // Real websocket bridge and engine, deterministic ACP adapter, isolated home.
-// Usage: node scripts/permissions-bridge.test.cjs /absolute/engine [absolute/bridge] [--gemini]
+// Usage: node scripts/permissions-bridge.test.cjs /absolute/engine [absolute/bridge] [--gemini] [--shared]
 const fs = require('node:fs');
 const path = require('node:path');
 const { randomUUID } = require('node:crypto');
@@ -116,6 +116,7 @@ async function main() {
   fs.writeFileSync(path.join(home, 'config.toml'), 'model="gpt-5.5"\n[features]\nsubagents=false\n[permissions.fixture-restricted]\nextends=":read-only"\n');
   const control = path.join(root, 'control.json');
   const agy = process.argv.includes('--gemini');
+  const shared = process.argv.includes('--shared');
   const agyBinary = path.join(root, 'agy');
   if (agy) fs.writeFileSync(agyBinary, `#!/usr/bin/env node\nprocess.argv.push('--agy-fixture'); require(${JSON.stringify(__filename)});\n`, { mode: 0o755 });
   const bridgePath = process.argv[3]?.startsWith('--') ? undefined : process.argv[3];
@@ -133,16 +134,17 @@ async function main() {
   // One bridge process, with its own engine, and its websocket. A restart is a new one on the same home.
   async function launch() {
     const log = path.join(root, `bridge-${clients.length + 1}.log`);
+    const socket = path.join(root, `bridge-${clients.length + 1}.sock`);
     const bridge = spawn(process.execPath, [bridgePath ?? path.resolve(__dirname, '../tools/elpis-claude/acp-bridge.mjs')], {
       cwd, env: { PATH: process.env.PATH, HOME: home, ELPIS_HOME: home, CODEX_HOME: home, CODEX_AUTH_HOME: home,
-        PORT: '0', ELPIS_ENGINE_BIN: binary, ACP_ADAPTER: __filename, ...(agy ? { AGY_BIN: agyBinary } : { ELPIS_NO_AGY: '1' }), ACP_BRIDGE_NO_AGENTS: '1',
+        PORT: '0', ...(shared ? { ELPIS_SHARED_BRIDGE: '1', ELPIS_BRIDGE_SOCKET: socket } : {}), ELPIS_ENGINE_BIN: binary, ACP_ADAPTER: __filename, ...(agy ? { AGY_BIN: agyBinary } : { ELPIS_NO_AGY: '1' }), ACP_BRIDGE_NO_AGENTS: '1',
         ACP_BRIDGE_LOG: log, ACP_BRIDGE_STORE: path.join(home, 'sessions.json'),
         PERMISSION_FIXTURE_ADAPTER: '1', PERMISSION_FIXTURE_CONTROL: control }, stdio: ['ignore', 'pipe', 'pipe'],
     });
     const c = { bridge, log, messages: [], events: new EventEmitter(), pending: new Map(), nextId: 1, approvals: [], held: null, full: new Map() };
     clients.push(c);
-    await waitFor(() => logged(log, /LISTENING (\d+)/), 'bridge start');
-    c.ws = new WebSocket(`ws://127.0.0.1:${fs.readFileSync(log, 'utf8').match(/LISTENING (\d+)/)[1]}`);
+    await waitFor(() => logged(log, /LISTENING /), 'bridge start');
+    c.ws = new WebSocket(shared ? `ws+unix://${socket}:/` : `ws://127.0.0.1:${fs.readFileSync(log, 'utf8').match(/LISTENING (\d+)/)[1]}`);
     await new Promise((resolve, reject) => { c.ws.once('open', resolve); c.ws.once('error', reject); });
     c.ws.on('message', data => {
       const msg = JSON.parse(String(data)); c.messages.push(msg);
@@ -165,6 +167,7 @@ async function main() {
       c.ws.close();
       await waitFor(() => logged(log, /tui disconnected/), 'bridge disconnect');
       if (bridge.exitCode === null && bridge.signalCode === null) await new Promise(resolve => { bridge.once('exit', resolve); bridge.kill(); });
+      if (shared) assert(!fs.existsSync(socket), 'cold restart must remove the old shared listener after its engine stops');
     };
     await c.request('initialize', { clientInfo: { name: 'bridge_permission_fixture', version: '1' }, capabilities: { experimentalApi: true } });
     c.ws.send(JSON.stringify({ method: 'initialized' }));
