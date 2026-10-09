@@ -20,7 +20,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: elpis-linux-${{ github.ref }}
+  group: elpis-linux-${{ github.ref }}-${{ inputs.verification || 'full' }}
   cancel-in-progress: false
 
 jobs:
