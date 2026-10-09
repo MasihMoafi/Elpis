@@ -242,8 +242,7 @@ jobs:
             elpis_ smart_prune compact_instructions world_state build_agent_spawn_config \
             live_permissions inherited_permissions step_activation thread_settings turn_input \
             loaded_children_give_up_the_full_access_their_parent_gives_up \
-            a_child_that_cannot_take_its_parents_revocation_cannot_act \
-            a_child_started_after_its_parent_regains_full_access_keeps_it
+            revocation regains_full_access
       - name: Context and session integration tests
         if: ${{ !cancelled() }}
         working-directory: codex-rs

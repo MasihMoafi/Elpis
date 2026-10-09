@@ -5814,3 +5814,28 @@ async fn a_child_that_rejected_a_revocation_stays_blocked_after_its_parent_regai
         "the child still owes the revocation"
     );
 }
+
+#[tokio::test]
+async fn a_child_that_rejected_a_revocation_stays_blocked_after_parent_unload() {
+    let harness = full_access_harness().await;
+    let (parent_thread_id, parent_thread) = harness.start_thread().await;
+    let mut child_config = harness.config.clone();
+    child_config.permissions.approval_policy =
+        crate::config::Constrained::allow_only(AskForApproval::Never);
+    let child_thread = spawn_child(&harness, parent_thread_id, child_config).await;
+    revoke_full_access(&parent_thread).await;
+    grant_full_access(&parent_thread).await;
+    assert!(
+        harness
+            .manager
+            .remove_thread(&parent_thread_id)
+            .await
+            .is_some()
+    );
+    drop(parent_thread);
+
+    assert!(
+        next_tool_call(&child_thread).await.is_err(),
+        "unloading the parent must not release an unaccepted revocation"
+    );
+}

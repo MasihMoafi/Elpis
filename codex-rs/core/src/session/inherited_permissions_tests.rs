@@ -309,3 +309,27 @@ async fn a_reloaded_parent_starts_a_fresh_count() {
         Some(BUILT_IN_PERMISSION_PROFILE_WORKSPACE.to_string())
     );
 }
+
+#[tokio::test]
+async fn a_reloaded_parent_does_not_clear_an_owed_revocation() {
+    let child = child_at(Preset::FullAccess).await;
+    let earlier = Arc::new(Reductions::default());
+    let revoked = parent_at(&child, Preset::Default).await;
+    let regained = parent_at(&child, Preset::FullAccess).await;
+    {
+        let mut state = child.state.lock().await;
+        Arc::make_mut(&mut state.session_configuration.step_settings).approval_policy =
+            crate::config::Constrained::allow_only(AskForApproval::Never);
+    }
+    earlier.history.lock().unwrap().push(revoked);
+    child.owe_parent_reductions_from(&earlier, /*generation*/ 1);
+    drop(earlier);
+
+    assert!(
+        child
+            .take_parent_reductions(&Arc::new(Reductions::default()), vec![], regained)
+            .await
+            .is_err(),
+        "a fresh parent record must not erase an existing child's pending restriction"
+    );
+}

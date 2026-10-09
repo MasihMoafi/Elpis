@@ -17,7 +17,6 @@ use futures::future::BoxFuture;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::PoisonError;
-use std::sync::Weak;
 use tracing::warn;
 
 /// What a thread may do without asking: its approval policy and permission profile.
@@ -122,9 +121,9 @@ struct Reductions {
 /// What a thread owes its parent's reductions.
 #[derive(Default)]
 struct Owed {
-    /// The parent record the baseline counts in. A reloaded parent numbers afresh, so a change
-    /// of record counts as a first meeting.
-    parent: Weak<Reductions>,
+    /// Retain the record until owed restrictions are applied, even if the parent unloads.
+    /// Records reference ancestors only, so retaining one does not create a cycle.
+    parent: Option<Arc<Reductions>>,
     /// Number of the latest parent reduction this thread has taken or already reflects; `None`
     /// until it first meets its parent's reductions.
     baseline: Option<usize>,
@@ -135,10 +134,13 @@ struct Owed {
 impl Owed {
     /// Starts over when `parent` is not the record the baseline counts in.
     fn meet(&mut self, parent: &Arc<Reductions>) {
-        let parent = Arc::downgrade(parent);
-        if !Weak::ptr_eq(&self.parent, &parent) {
+        if !self
+            .parent
+            .as_ref()
+            .is_some_and(|previous| Arc::ptr_eq(previous, parent))
+        {
             *self = Self {
-                parent,
+                parent: Some(Arc::clone(parent)),
                 ..Self::default()
             };
         }
@@ -245,7 +247,7 @@ impl Session {
                 .loaded_thread(*parent_thread_id)
                 .await
             else {
-                return Ok(());
+                return self.take_recorded_parent_reductions().await;
             };
             parent
                 .session
@@ -291,8 +293,10 @@ impl Session {
         history: Vec<SessionSettingsUpdate>,
         current: SessionSettingsUpdate,
     ) -> ConstraintResult<()> {
+        // A reload starts a fresh record, but cannot discharge restrictions from the old one.
+        self.take_recorded_parent_reductions().await?;
         let reductions = self.reductions();
-        let (floor, baseline) = {
+        {
             let mut owed = reductions
                 .owed
                 .lock()
@@ -302,6 +306,39 @@ impl Session {
                 owed.baseline = Some(history.len());
                 owed.floor = Some(current);
             }
+        }
+        self.take_owed_reductions(history).await
+    }
+
+    async fn take_recorded_parent_reductions(&self) -> ConstraintResult<()> {
+        let parent = self
+            .reductions()
+            .owed
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .parent
+            .clone();
+        if let Some(parent) = parent {
+            let history = parent
+                .history
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .clone();
+            self.take_owed_reductions(history).await?;
+        }
+        Ok(())
+    }
+
+    async fn take_owed_reductions(
+        &self,
+        history: Vec<SessionSettingsUpdate>,
+    ) -> ConstraintResult<()> {
+        let reductions = self.reductions();
+        let (floor, baseline) = {
+            let owed = reductions
+                .owed
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner);
             (owed.floor.clone(), owed.baseline.unwrap_or_default())
         };
         if let Some(floor) = floor {
