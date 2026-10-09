@@ -1,9 +1,8 @@
 ---
 source: tui/src/chatwidget/tests/slash_commands.rs
-assertion_line: 2937
 expression: popup
 ---
-• Wo  Archive this session?
+• El  Archive this session?
       This will stop the current turn and archive the session.
 
 › As

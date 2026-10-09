@@ -21,7 +21,7 @@ Settings:
       - function/list_worktrees
 -- request 1 (request) --
 00:message/developer:
-    You are a coding agent running in the Elpis CLI, a terminal-based coding assistant. Elpis CLI is an open...I. You are expected to be precise, safe, and helpful. [hash=5125daec1ed78d99]
+    You are a coding agent running in the Elpis CLI, a terminal-based coding assistant. Elpis CLI is an open...t. You are expected to be precise, safe, and helpful. [hash=b341506b208ae085]
 
     Your capabilities:
 
@@ -29,7 +29,7 @@ Settings:
     - Communicate with the user by streaming thinking & responses, and by making & updating plans.
     - Emit function calls to run terminal commands and apply patches. Depending on how this specific run is ... More on this in the "Sandbox and approvals" section. [hash=31cf026fa7b25d6d]
 
-    <OMITTED 180 LINES; ~3987 TOKENS; hash=dd34d4527287c62a>
+    <OMITTED 180 LINES; ~3987 TOKENS; hash=89eeed2cf64c7e32>
     ## Shell commands
 
     When using the shell, you must adhere to the following guidelines:
@@ -38,9 +38,8 @@ Settings:
     - Do not use python scripts to attempt to output larger chunks of a file.
 
 
-01:message/developer[2]:
-    [01] <SKILLS_INSTRUCTIONS>
-    [02] <PERMISSIONS_INSTRUCTIONS>
+01:message/developer:
+    <PERMISSIONS_INSTRUCTIONS>
 02:message/user:
     <ENVIRONMENT_CONTEXT>
 03:message/user:
