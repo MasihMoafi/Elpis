@@ -845,6 +845,18 @@ async fn session_info_first_event_suppresses_tooltips_and_nux() {
     let rendered = render_transcript(&cell).join("\n");
     assert!(!rendered.contains("Model just became available"));
     assert!(rendered.contains("To get started"));
+    // Startup hints must stay within Masih's selected command list.
+    let visible_commands = crate::slash_command::built_in_slash_commands();
+    for command in rendered.lines().filter_map(|line| {
+        line.trim_start()
+            .strip_prefix('/')
+            .and_then(|line| line.split_whitespace().next())
+    }) {
+        assert!(
+            visible_commands.iter().any(|(name, _)| *name == command),
+            "unlisted startup command: {command}"
+        );
+    }
 }
 
 #[tokio::test]
