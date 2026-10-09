@@ -27,8 +27,8 @@ async fn both_transcript_modes_leave_room_above_a_crowded_ledger() -> Result<()>
         tui.set_owned_screen(owned)?;
         app.render_chat_widget_frame(&mut tui, screen)?;
         assert_eq!(
-            app.chat_widget.context_ledger_width(screen.width),
-            0,
+            app.chat_widget.width_beside_context_ledger(screen.width),
+            screen.width,
             "the Ledger must leave room for replies (owned screen: {owned})"
         );
         tui.set_owned_screen(false)?;
