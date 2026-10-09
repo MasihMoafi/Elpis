@@ -6,6 +6,7 @@
 
 pub(crate) const PRODUCT_NAME: &str = "Elpis";
 pub(crate) const CODEX_RUNTIME_TITLE: &str = "Elpis";
+pub(crate) const WORKING_LABEL: &str = "Elpising";
 
 /// The Elpis release, as `elpis --version` prints it. The vendored crates keep Codex's
 /// version (0.158.0) because the model catalog keys on it.

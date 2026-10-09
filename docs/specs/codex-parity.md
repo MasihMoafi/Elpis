@@ -5,6 +5,7 @@ Goal: make Elpis as usable as Masih’s installed Codex 0.162.0 while retaining 
 ## Accepted boundaries
 - Use the exact Codex foundation and shared behavior: typing, streaming, animations, shortcuts, and shared layouts. Conflicting Elpis UI customizations yield to Codex.
 - The agents page keeps Codex’s ordering and folder hierarchy AND Elpis’s model names.
+- October 9 visual refinement: use colored circles for context categories, align the Ledger usage bar with its text, and show “Elpising” in the recorded Deus Ex gold instead of “Working,” preserving native animation timing.
 - Keep Masih’s hand-selected slash commands exactly. Do not restore removed commands or add commands.
 - Retain provider switching, Claude/Gemini, Context Ledger and controls, memory/continuity, pruning, dashboard, and work graphs. The dashboard is the dashboard, not a pruning dashboard.
 - Full Access must actually apply across native, Claude and Gemini tools, including changes during a turn. Restricted modes must remain enforced, rejected updates must not grant access, and resumed permissions must match saved choices.

@@ -69,7 +69,7 @@ async fn run_state_uses_native_working_and_ready_labels() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
     chat.status_state.terminal_title_status_kind = TerminalTitleStatusKind::Working;
     chat.bottom_pane.set_task_running(/*running*/ true);
-    assert_eq!(chat.run_state_status_text(), "Working");
+    assert_eq!(chat.run_state_status_text(), "Elpising");
     chat.bottom_pane.set_task_running(/*running*/ false);
     assert_eq!(chat.run_state_status_text(), "Ready");
 }

@@ -1,5 +1,6 @@
 //! Persistent, user-controlled view of Elpis-owned portable context.
 
+use super::context_usage::CONTEXT_CATEGORY_MARKER;
 use super::context_usage::context_used_percent;
 use super::context_usage::reconcile_context_categories;
 use super::context_usage::run_built_context_categories;
@@ -87,15 +88,6 @@ impl LedgerSourceGroup {
             Self::Instructions => 3,
         };
         source_group_colors(default_bg(), stdout_color_level())[index]
-    }
-
-    fn marker(self) -> &'static str {
-        match self {
-            Self::SessionContinuity => "⬟",
-            Self::UserFiles => "●",
-            Self::DurableMemory => "◆",
-            Self::Instructions => "✦",
-        }
     }
 }
 
@@ -868,7 +860,7 @@ impl ChatWidget {
                     ),
                     None => format!("≈{}", format_tokens(category.tokens)),
                 };
-                let marker = format!("{} ", category.marker());
+                let marker = format!("{CONTEXT_CATEGORY_MARKER} ");
                 let pad = content_width
                     .saturating_sub(2 + marker.width() + category.label.width() + right.width())
                     .max(1);
@@ -919,7 +911,7 @@ impl ChatWidget {
                 .sum::<u64>();
             let cat_style = Style::default().fg(group.color());
             lines.push(Line::from(vec![
-                Span::styled(format!("{} ", group.marker()), cat_style),
+                Span::styled(format!("{CONTEXT_CATEGORY_MARKER} "), cat_style),
                 Span::styled(group.display_name(), cat_style.bold()),
                 Span::raw("  "),
                 Span::styled(
@@ -1824,8 +1816,8 @@ fn usage_bar_line(
     context_window: u64,
     segments: &[(u64, Color)],
 ) -> Line<'static> {
-    let bar_width = content_width.saturating_sub(2).max(10);
-    let mut spans = vec![Span::raw("  ")];
+    let bar_width = content_width.max(1);
+    let mut spans = Vec::new();
     let total_tokens = segments
         .iter()
         .map(|(tokens, _)| *tokens)
@@ -2165,7 +2157,7 @@ mod tests {
     #[test]
     fn usage_bar_never_fills_more_cells_than_total_usage() {
         let line = usage_bar_line(
-            12,
+            10,
             1_000,
             &[
                 (25, Color::Blue),
@@ -2180,5 +2172,19 @@ mod tests {
             .map(|span| span.content.matches('█').count())
             .sum::<usize>();
         assert_eq!(filled, 1, "100/1000 of a ten-cell bar is one cell");
+    }
+
+    #[test]
+    fn usage_bar_aligns_with_ledger_text_and_fits_the_available_width() {
+        for width in [1, 10, 32, 48] {
+            let line = usage_bar_line(width, 100, &[(25, Color::Blue)]);
+            let text: String = line
+                .spans
+                .iter()
+                .map(|span| span.content.as_ref())
+                .collect();
+            assert!(text.starts_with(['█', '░']));
+            assert_eq!(text.width(), width);
+        }
     }
 }
