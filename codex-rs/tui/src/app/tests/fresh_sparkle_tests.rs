@@ -501,6 +501,7 @@ async fn astra_picker_confirms_the_model_at_application_after_an_automatic_updat
             /*initial_user_message*/ None,
         )
         .await?;
+        crate::chatwidget::tests::helpers::hide_context_ledger(&mut app.chat_widget);
         if switches_away {
             app.chat_widget.set_model("gpt-6-astra");
         }

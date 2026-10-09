@@ -262,6 +262,7 @@ async fn check_thread_title_generation(scenario: TitleScenario) -> color_eyre::R
         /*initial_user_message*/ None,
     )
     .await?;
+    crate::chatwidget::tests::helpers::hide_context_ledger(&mut app.chat_widget);
     app.ensure_thread_channel(thread_id)
         .store
         .lock()

@@ -34,6 +34,11 @@ pub(crate) fn show_context_ledger(chat: &mut ChatWidget) {
     chat.context_ledger = Default::default();
 }
 
+/// Reapply the native-composer fixture after a test replaces its chat widget.
+pub(crate) fn hide_context_ledger(chat: &mut ChatWidget) {
+    chat.close_context_ledger();
+}
+
 pub(super) fn test_project_path() -> PathBuf {
     PathBuf::from(test_path_display("/tmp/project"))
 }
@@ -265,7 +270,7 @@ pub(super) async fn make_chatwidget_manual_with_auth(
     widget.transcript.active_cell = None;
     widget.transcript.active_cell_revision = 0;
     widget.set_model(&resolved_model);
-    widget.close_context_ledger();
+    hide_context_ledger(&mut widget);
     (widget, rx, op_rx)
 }
 
