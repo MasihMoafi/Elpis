@@ -14,4 +14,4 @@ Masih requested all three overview improvements and any missing Codex review/wor
 2. Implement bridge refresh and thread isolation in separate worktrees. Restore upstream workflow access and repair project orientation.
 3. Integrate, run focused checks and prepare a reviewable local candidate with rollback. Record actual checks and gaps.
 
-No new desktop app, unrelated feature restoration, provider calls, publication, push, real-chat migration or deletion is included. Do not infer that an existing review/worktree implementation is absent. Use bounded local builds; one compiler owner. Ask only if the upstream behavior needs unavailable proprietary code or a material product choice.
+No new desktop app, unrelated feature restoration, provider calls, publication or real-chat migration/deletion is included. Masih authorized a dedicated GitHub validation branch, Actions checks and artifact downloads on October 10. Do not infer that an existing review/worktree implementation is absent. Use bounded local builds; one compiler owner. Ask only if the upstream behavior needs unavailable proprietary code or a material product choice.

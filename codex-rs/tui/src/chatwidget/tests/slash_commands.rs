@@ -717,14 +717,14 @@ async fn queued_unknown_slash_reports_error_when_dequeued() {
         lines_to_single_string(lines).contains("Unrecognized command '/worktree'")
     }));
 
-    // Elpis removed `/worktree`; enabling the feature and local operations does not bring it back.
+    // An enabled local command resolves, then explains why this directory cannot use it.
     chat.set_local_worktree_operations(/*enabled*/ true);
     let non_git = tempfile::tempdir().unwrap();
     chat.config.cwd = non_git.path().to_path_buf().abs();
     let drain = chat.submit_queued_slash_prompt(UserMessage::from("/worktree").into());
     assert_matches!(drain, QueueDrain::Continue);
     assert!(drain_insert_history(&mut rx).iter().any(|lines| {
-        lines_to_single_string(lines).contains("Unrecognized command '/worktree'")
+        lines_to_single_string(lines).contains("Managed worktrees require a local Git repository.")
     }));
 }
 

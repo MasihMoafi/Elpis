@@ -284,12 +284,13 @@ jobs:
             printf 'Rendering changes require review: %s snapshots\n' "${#snapshots[@]}"
             exit 1
           fi
-      - name: Preserve failed rendering snapshots for review
+      - name: Preserve UI failures and rendering snapshots immediately
         if: failure()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: candidate-rendering-differences
           path: |
+            ${{ runner.temp }}/elpis-ui-checks.log
             codex-rs/**/*.snap.new
             codex-rs/**/.*.pending-snap
           include-hidden-files: true
