@@ -134,6 +134,53 @@ fn ledger_alone(chat: &ChatWidget) -> Vec<String> {
     rows(&buf, 0..width)
 }
 
+#[tokio::test]
+async fn source_headings_and_included_markers_use_deus_ex_gold() -> anyhow::Result<()> {
+    let root = tempdir()?;
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
+    show_context_ledger(&mut chat);
+    configure_ledger_sources(&mut chat, root.path())?;
+    for (bg, gold) in [
+        ((255, 255, 255), Color::Rgb(128, 88, 10)),
+        ((24, 24, 24), Color::Rgb(229, 187, 104)),
+    ] {
+        crate::terminal_palette::with_test_default_colors(
+            crate::terminal_probe::DefaultColors {
+                fg: (32, 32, 32),
+                bg,
+            },
+            || {
+                let width = chat.context_ledger_width(WIDTH);
+                let area = Rect::new(0, 0, width, chat.context_ledger_desired_height(width));
+                let mut buf = ratatui::buffer::Buffer::empty(area);
+                chat.render_context_ledger(area, &mut buf);
+                let text = rows(&buf, 0..width);
+                for label in [
+                    "SESSION CONTINUITY",
+                    "DURABLE MEMORY",
+                    "INSTRUCTIONS",
+                    "INCLUDED",
+                ] {
+                    let (y, line) = text
+                        .iter()
+                        .enumerate()
+                        .find(|(_, line)| line.contains(label))
+                        .unwrap_or_else(|| panic!("missing {label}"));
+                    let x = line
+                        .chars()
+                        .collect::<Vec<_>>()
+                        .windows(label.len())
+                        .position(|chars| chars.iter().collect::<String>() == label)
+                        .unwrap();
+                    assert_eq!(buf[(x as u16, y as u16)].fg, gold, "{label}");
+                }
+                assert_ne!(Some(gold), crate::style::context_style().fg);
+            },
+        );
+    }
+    Ok(())
+}
+
 /// The ledger's top row is the composer box's top row, and its last line is on screen.
 fn assert_ledger_beside_composer(chat: &ChatWidget, buf: &ratatui::buffer::Buffer) {
     let ledger_width = chat.context_ledger_width(WIDTH);

@@ -79,16 +79,6 @@ impl LedgerSourceGroup {
             Self::Instructions => "INSTRUCTIONS",
         }
     }
-
-    fn color(self) -> Color {
-        let index = match self {
-            Self::SessionContinuity => 0,
-            Self::UserFiles => 1,
-            Self::DurableMemory => 2,
-            Self::Instructions => 3,
-        };
-        source_group_colors(default_bg(), stdout_color_level())[index]
-    }
 }
 
 /// The ledger's rendered content: its rows, already wrapped to the content width with Codex's
@@ -229,10 +219,7 @@ impl ChatWidget {
             || is_ctrl_x;
         if is_toggle_key {
             let crowded_out = self.context_ledger.crowded.get() && !self.context_ledger.focused;
-            if !self.context_ledger.visible
-                || crowded_out
-                || !self.context_ledger.focused
-            {
+            if !self.context_ledger.visible || crowded_out || !self.context_ledger.focused {
                 self.context_ledger.visible = true;
                 self.context_ledger.focused = true;
                 // Start at the top row on screen rather than wherever the
@@ -918,7 +905,8 @@ impl ChatWidget {
                 .filter(|(_, source)| source.admitted)
                 .map(|(_, source)| source.estimated_tokens)
                 .sum::<u64>();
-            let cat_style = Style::default().fg(group.color());
+            let cat_style =
+                crate::style::brand_style().remove_modifier(ratatui::style::Modifier::BOLD);
             lines.push(Line::from(vec![
                 Span::styled(format!("{CONTEXT_CATEGORY_MARKER} "), cat_style),
                 Span::styled(group.display_name(), cat_style.bold()),
@@ -1905,31 +1893,6 @@ fn smart_prune_on_colors(
             (200, 240, 230),
         ],
     )
-}
-
-/// Source group headings: the olive context family, deepened on light terminals.
-fn source_group_colors(
-    terminal_bg: Option<(u8, u8, u8)>,
-    color_level: StdoutColorLevel,
-) -> [Color; 4] {
-    ledger_palette(
-        terminal_bg,
-        color_level,
-        Color::Yellow,
-        [
-            crate::style::CONTEXT_LIGHT_RGB,
-            (92, 106, 20),
-            (100, 112, 28),
-            (82, 94, 18),
-        ],
-        [
-            crate::style::CONTEXT_DARK_RGB,
-            (226, 226, 136),
-            (195, 201, 94),
-            (180, 189, 82),
-        ],
-    )
-    .map(|color| crate::style::readable_color_on(color, None))
 }
 
 fn ledger_palette(

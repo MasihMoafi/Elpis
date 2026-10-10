@@ -158,7 +158,7 @@ fn archive_footer_shows_shortcut_for_resume_sessions() {
         .join("\n");
 
     insta::assert_snapshot!(footer, @"
-    enter resume   ⌃a archive   esc start new   ⌃c quit   tab focus sort/filter   ←/→ change option
+    enter resume   ⌃a archive   backspace delete   esc start new   ⌃c quit   tab focus sort/filter   ←/→ change option
     ⌃o dense view   ⌃t transcript   ⌃e expand   ↑/↓ browse
     ");
 }
@@ -208,7 +208,7 @@ fn archived_status_preserves_directory_filter_and_hides_archive_shortcut() {
         .collect::<Vec<_>>()
         .join("\n");
     insta::assert_snapshot!(footer, @"
-    enter restore   esc start new   ⌃c quit   tab focus sort/filter   ←/→ change option
+    enter restore   backspace delete   esc start new   ⌃c quit   tab focus sort/filter   ←/→ change option
     ⌃o dense view   ⌃t transcript   ⌃e expand   ↑/↓ browse
     ");
     insta::assert_snapshot!(

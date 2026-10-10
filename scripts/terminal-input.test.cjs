@@ -279,6 +279,47 @@ async function stopAppServer() {
   await screenWhen(s => s.includes('Visible session sentinel'), 'delete-cancelled');
   assert(threadSettings().some(thread => thread.id === savedPermissions[0].id && thread.name === 'Visible session sentinel'));
   pass('cancelling task deletion preserves the fixture session');
+  if (!reference) {
+    // Exercise the actual /resume picker, not the separate Left-arrow agents view.
+    const disposable = threadSettings().find(thread => thread.name === 'Second folder sentinel');
+    assert(disposable, 'isolated second session exists before deletion');
+    tmux('kill-session', '-t', 'second');
+    key('Escape');
+    type('/resume'); await pause(250); key('Enter');
+    await screenWhen(s => s.includes('Resume') && s.includes('Visible session sentinel'), 'resume-picker');
+    key('Right'); // Filter toolbar starts focused; toggle Cwd to All.
+    await screenWhen(s => s.includes('Second folder sentinel'), 'resume-all-folders');
+    type('Second folder sentinel'); await pause(400);
+    await screenWhen(s => s.includes('Second folder sentinel') && !s.includes('Visible session sentinel'), 'resume-search');
+    key('BSpace'); await pause(250);
+    assert(!capture().includes('Delete session?'), 'Backspace must edit a nonempty search');
+    tmux('send-keys', '-t', 'test', '-N', String('Second folder sentinel'.length - 1), 'BSpace');
+    await pause(400);
+    await screenWhen(s => s.includes('Second folder sentinel') && s.includes('Visible session sentinel'), 'resume-search-cleared');
+    // Native updated-at ordering may change while a fixture closes. Select by title.
+    for (let move = 0; move < 3 && !capture().split('\n').some(line => /^\s*›.*Second folder sentinel/.test(line)); move++) {
+      key('Down'); await pause(150);
+    }
+    assert(capture().split('\n').some(line => /^\s*›.*Second folder sentinel/.test(line)), capture());
+    const requests = provider.requests.length;
+    key('BSpace');
+    await screenWhen(s => s.includes('Delete session?') && s.includes('Second folder sentinel'), 'resume-delete-confirmation');
+    key('Escape');
+    await screenWhen(s => !s.includes('Delete session?') && s.includes('Second folder sentinel'), 'resume-delete-cancelled');
+    assert(threadSettings().some(thread => thread.id === disposable.id), 'cancel preserves saved chat');
+    assert(fs.existsSync(disposable.rollout_path), 'cancel preserves saved history');
+    pass('/resume Backspace edits search; empty-search delete confirmation can be cancelled');
+    key('BSpace');
+    await screenWhen(s => s.includes('Delete session?'), 'resume-delete-confirm-again');
+    key('y');
+    await screenWhen(s => !s.includes('Delete session?') && !s.includes('Second folder sentinel')
+      && s.includes('Visible session sentinel'), 'resume-delete-complete');
+    assert(!threadSettings().some(thread => thread.id === disposable.id), 'confirmed delete removes only target index row');
+    assert(!fs.existsSync(disposable.rollout_path), 'confirmed delete removes target saved history');
+    assert(threadSettings().some(thread => thread.id === savedPermissions[0].id), 'other session survives');
+    assert.equal(provider.requests.length, requests, 'picker deletion makes no inference requests');
+    pass('/resume confirmed deletion removes isolated saved chat and preserves the other session');
+  }
   assert(!provider.error, provider.error?.message);
 })().catch(error => { console.error(error); process.exitCode = 1; }).finally(async () => {
   if (releaseTool) fs.writeFileSync(releaseTool, 'cleanup');

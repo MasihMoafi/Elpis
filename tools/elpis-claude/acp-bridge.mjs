@@ -755,29 +755,54 @@ wss.on("connection", (ws) => {
     const store = await loadStore();
     const have = new Set(page.data.map((t) => t.id));
     const cwds = req.cwd == null ? null : [req.cwd].flat();
-    const out = [];
-    for (const [id, saved] of Object.entries(store)) {
-      if (id.startsWith("_") || have.has(id) || previewed.has(id) || !saved?.turns?.length || saved.parentThreadId) continue;
-      const t = (await engineCall("thread/read", { threadId: id, includeTurns: false }).catch(() => null))?.thread;
-      if (!t) continue;
+    const candidates = Object.entries(store).filter(([id, saved]) =>
+      !id.startsWith("_") && !have.has(id) && !previewed.has(id) && saved?.turns?.length && !saved.parentThreadId);
+    const out = new Array(candidates.length);
+    let next = 0, failure;
+    async function readCandidate(index) {
+      const [id, saved] = candidates[index];
+      const t = (await engineCall("thread/read", { threadId: id, includeTurns: false }, 5000).catch((e) => {
+        if (e.code === "ETIMEDOUT") throw e;
+        log(`thread/list: cannot read saved thread ${id}: ${e.message ?? JSON.stringify(e)}`);
+        return null;
+      }))?.thread;
+      if (!t) return;
       const interactive = t.source === "cli" || t.source === "vscode" || ["atlas", "chatgpt"].includes(t.source?.custom);
-      if (req.sourceKinds?.length ? !req.sourceKinds.includes(t.source) : !interactive) continue;
-      if (t.preview) { previewed.add(id); continue; }
-      if (/\/archived_sessions\//.test(t.path ?? "") || (cwds && !cwds.includes(t.cwd))) continue;
-      if (req.modelProviders?.length && !req.modelProviders.includes(t.modelProvider)) continue;
-      if (value(t) < floor || value(t) >= ceiling) continue;
+      if (req.sourceKinds?.length ? !req.sourceKinds.includes(t.source) : !interactive) return;
+      if (t.preview) { previewed.add(id); return; }
+      if (/\/archived_sessions\//.test(t.path ?? "") || (cwds && !cwds.includes(t.cwd))) return;
+      if (req.modelProviders?.length && !req.modelProviders.includes(t.modelProvider)) return;
+      if (value(t) < floor || value(t) >= ceiling) return;
       const first = saved.turns[0].items?.[0];
       const preview = first?.type === "userMessage" ? inputSummary(first.content ?? []) : first?.type === "enteredReviewMode" ? `Code review: ${first.review}` : "";
-      if (req.searchTerm && ![t.name ?? "", preview].some((text) => text.includes(req.searchTerm))) continue;
-      if (preview.trim()) { const listed = { ...t, preview: preview.trim() }; ownModel(listed, store); out.push(listed); }
+      if (req.searchTerm && ![t.name ?? "", preview].some((text) => text.includes(req.searchTerm))) return;
+      if (preview.trim()) { const listed = { ...t, preview: preview.trim() }; ownModel(listed, store); out[index] = listed; }
     }
-    return out;
+    // The engine serializes reads per thread, so independent roots can overlap. Keep the
+    // window bounded and retain store order for equal timestamps despite out-of-order replies.
+    await Promise.all(Array.from({ length: Math.min(8, candidates.length) }, async () => {
+      while (!failure && next < candidates.length) {
+        try { await readCandidate(next++); } catch (e) { failure ??= e; }
+      }
+    }));
+    if (failure) throw failure;
+    return out.filter(Boolean);
   }
   const engineReqs = new Map();
   let engineSeq = 0;
-  const engineCall = (method, params) => new Promise((resolve, reject) => {
+  const engineCall = (method, params, timeoutMs = 0) => new Promise((resolve, reject) => {
     const id = `acp-bridge-engine-${++engineSeq}`;
-    engineReqs.set(id, { resolve, reject });
+    const timer = timeoutMs ? setTimeout(() => {
+      engineReqs.delete(id);
+      // Shared EngineProxy tracks unanswered frames separately from this bridge's callbacks.
+      engine.inflight?.delete(JSON.stringify(id));
+      reject(Object.assign(new Error("Reading saved sessions timed out. Retry /resume."), { code: "ETIMEDOUT" }));
+      checkIdle();
+    }, timeoutMs) : null;
+    engineReqs.set(id, {
+      resolve: (result) => { clearTimeout(timer); resolve(result); },
+      reject: (error) => { clearTimeout(timer); reject(error); },
+    });
     engine.stdin.write(JSON.stringify({ id, method, params }) + "\n");
   });
   const textOf = (content) => (content ?? []).filter((c) => c.type === "text").map((c) => c.text).join("\n");
@@ -1026,6 +1051,8 @@ wss.on("connection", (ws) => {
       parsed.error ? p.reject(parsed.error) : p.resolve(parsed.result);
       return;
     }
+    // A timed-out internal read may still answer later; it is never a client reply.
+    if (!parsed?.method && typeof parsed?.id === "string" && parsed.id.startsWith("acp-bridge-engine-")) return;
     // A chat only the bridge knows (a helper whose one turn failed, so the engine never saved
     // it) archives by leaving the bridge's records.
     if (parsed && pendingArchive.has(parsed.id)) {
@@ -1119,7 +1146,13 @@ wss.on("connection", (ws) => {
     if (parsed && pendingThreadList.has(parsed.id)) {
       const req = pendingThreadList.get(parsed.id); pendingThreadList.delete(parsed.id);
       if (Array.isArray(parsed.result?.data)) {
-        const added = await unlistedClaudeThreads(req, parsed.result).catch((e) => { log(`thread/list: ${e.message ?? JSON.stringify(e)}`); return []; });
+        let added;
+        try { added = await unlistedClaudeThreads(req, parsed.result); }
+        catch (e) {
+          log(`thread/list: ${e.message ?? JSON.stringify(e)}`);
+          ws.send(JSON.stringify({ id: parsed.id, error: { code: -32603, message: e.message ?? String(e) } }));
+          return;
+        }
         if (added.length) {
           // Each goes before the first engine thread that sorts after it; the engine's own order stays.
           const field = listField(req);

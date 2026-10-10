@@ -25,7 +25,7 @@ pub(super) const AGENT_RESPONSES_COLOR: Color = Color::Rgb(80, 193, 111);
 pub(super) const REASONING_COLOR: Color = Color::Rgb(54, 199, 205);
 const REASONING_CATEGORY_LABEL: &str = "Reasoning + compaction";
 pub(super) const TOOL_CALLS_COLOR: Color = Color::Rgb(244, 153, 61);
-pub(super) const TOOL_RESULTS_COLOR: Color = Color::Rgb(235, 208, 60);
+pub(super) const TOOL_RESULTS_COLOR: Color = Color::Rgb(217, 219, 117);
 pub(super) const SYSTEM_INSTRUCTIONS_COLOR: Color = Color::Rgb(240, 68, 93);
 pub(super) const DEVELOPER_MESSAGES_COLOR: Color = Color::Rgb(210, 153, 244);
 pub(super) const TOOL_DEFINITIONS_COLOR: Color = Color::Rgb(160, 160, 160);
@@ -34,12 +34,12 @@ pub(super) const CONTEXT_CATEGORY_MARKER: &str = "●";
 
 // On paper and white, these graphical markers keep at least 3:1 contrast and
 // 25 CIELAB units of separation. Requiring text contrast for the markers made
-// yellow and orange look brown. Text does not use this palette.
+// olive and orange look brown. Text does not use this palette.
 const LIGHT_USER_MESSAGES_COLOR: Color = Color::Rgb(78, 127, 195);
 const LIGHT_AGENT_RESPONSES_COLOR: Color = Color::Rgb(50, 142, 75);
 const LIGHT_REASONING_COLOR: Color = Color::Rgb(30, 140, 145);
 const LIGHT_TOOL_CALLS_COLOR: Color = Color::Rgb(205, 111, 15);
-const LIGHT_TOOL_RESULTS_COLOR: Color = Color::Rgb(168, 138, 0);
+const LIGHT_TOOL_RESULTS_COLOR: Color = Color::Rgb(116, 132, 27);
 const LIGHT_SYSTEM_INSTRUCTIONS_COLOR: Color = Color::Rgb(140, 45, 60);
 const LIGHT_DEVELOPER_MESSAGES_COLOR: Color = Color::Rgb(147, 99, 181);
 const LIGHT_TOOL_DEFINITIONS_COLOR: Color = Color::Rgb(100, 100, 100);
@@ -1171,7 +1171,7 @@ mod tests {
     }
 
     #[test]
-    fn tool_results_use_the_same_yellow_in_bar_and_legend() {
+    fn tool_results_keep_slightly_lighter_olive_in_bar_and_legend() {
         for bg in [(17, 18, 20), (248, 246, 239)] {
             crate::terminal_palette::with_test_default_colors(
                 crate::terminal_probe::DefaultColors {
@@ -1179,10 +1179,18 @@ mod tests {
                     bg,
                 },
                 || {
-                    let yellow = context_display_color(TOOL_RESULTS_COLOR);
-                    let (r, g, b) = rgb(yellow);
-                    assert!(r >= g && g > b.saturating_add(100));
-                    assert_ne!(crate::style::context_style().fg, Some(yellow));
+                    let olive = context_display_color(TOOL_RESULTS_COLOR);
+                    let (r, g, b) = rgb(olive);
+                    assert!(g > r && r > b.saturating_add(60));
+                    // The hue remains olive; its declared light/dark pigments brighten
+                    // the original by only a small step.
+                    let expected = if crate::color::is_light(bg) {
+                        Color::Rgb(116, 132, 27)
+                    } else {
+                        Color::Rgb(217, 219, 117)
+                    };
+                    assert_eq!(olive, expected);
+                    assert_ne!(crate::style::context_style().fg, Some(olive));
                     let categories = [
                         CategoryUsage {
                             label: "Tool results",
@@ -1203,16 +1211,16 @@ mod tests {
                     assert!(
                         spans
                             .iter()
-                            .any(|span| span.content.contains('█') && span.style.fg == Some(yellow))
+                            .any(|span| span.content.contains('█') && span.style.fg == Some(olive))
                     );
                     assert!(
                         spans
                             .iter()
-                            .any(|span| span.content.contains('●') && span.style.fg == Some(yellow))
+                            .any(|span| span.content.contains('●') && span.style.fg == Some(olive))
                     );
                     assert!(spans.iter().any(|span| span.content.contains('█')
                         && span.style.fg == Some(context_display_color(USER_MESSAGES_COLOR))));
-                    assert_ne!(yellow, context_display_color(USER_MESSAGES_COLOR));
+                    assert_ne!(olive, context_display_color(USER_MESSAGES_COLOR));
                     let unattributed = build_category_bar_chart(&[], 50, 100, 80);
                     assert!(
                         unattributed
