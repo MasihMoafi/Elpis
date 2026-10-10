@@ -905,8 +905,8 @@ impl ChatWidget {
                 .filter(|(_, source)| source.admitted)
                 .map(|(_, source)| source.estimated_tokens)
                 .sum::<u64>();
-            let cat_style =
-                crate::style::brand_style().remove_modifier(ratatui::style::Modifier::BOLD);
+            let gold = crate::style::brand_style().fg.unwrap_or(Color::Reset);
+            let cat_style = Style::default().fg(crate::style::readable_color_on(gold, None));
             lines.push(Line::from(vec![
                 Span::styled(format!("{CONTEXT_CATEGORY_MARKER} "), cat_style),
                 Span::styled(group.display_name(), cat_style.bold()),
