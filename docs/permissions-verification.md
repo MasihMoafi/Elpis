@@ -1,23 +1,18 @@
-# Installed candidate — 9 October 2026
+# Installed follow-up — 10 October 2026
 
-**Elpis 0.4.1, source `4f44937c2`, is installed on Codex 0.162.0.** Colored circles, the aligned Ledger bar, gold “Elpising,” the startup-config fix and corrected Alt+C hint are installed. Masih’s acceptance remains open.
+**Elpis 0.4.1, source `fb0b04a60`, is installed on Codex 0.162.0.** Shift+Tab changes permissions with confirmed feedback. Session names appear before the directory. Ledger colors are lighter and distinct; Tool results remain separate. “Elpising” uses lighter Deus Ex gold with Codex’s animation and normal font weight.
 
-[Runtime checks](https://github.com/MasihMoafi/Elpis/actions/runs/37978565974) passed; that run’s screen-review gate found eight screen differences. The [full UI recheck](https://github.com/MasihMoafi/Elpis/actions/runs/37983082438) passed after test-only corrections. Production code is identical between the runs, and the installed binaries match the downloaded artifact.
-
-| Check | Passed |
+| Check on the installed candidate | Result |
 | --- | --- |
-| Full UI / core / context-session tests | 5,770 / 301 / 61; five UI direct-run exclusions |
-| Configuration Rust / actual runtime | 16 / 5, including genuine-project and malformed-config controls |
-| Provider configuration / CLI / branding | 120 |
-| Native / Code Mode / Claude / Gemini / helper permissions | 11 / 15 / 35 / 28 / 32 |
-| Shared sessions, transport, launcher and shared permissions | 128 |
-| Local config and light/dark visual checks / installed-launcher checks | 27 / 14 |
-| Offline runtime evals, failing controls and clean installation | Passed |
+| [Full CI](https://github.com/MasihMoafi/Elpis/actions/runs/38044290925) | All gates passed; 5,780 UI tests, 317 core tests, 65 integration tests; five existing UI exclusions |
+| Permission regressions | Native, Code Mode, Claude/Gemini bridges and helpers passed, including active-turn updates, protected edits and restrictions |
+| Ordinary launcher | All 11 checks passed before and after installation, including Full Access cancellation, confirmed settings and a protected write without an approval popup |
+| Light/dark appearance and animation | 22 checks passed; 70 frames per theme; six rendered captures reviewed |
 
-Evidence: [receipt](../.tmp/config-ui-install-receipt.json), reviewed [installed Ledger](../.tmp/config-ui-final-evidence/installed-visual/aligned-ledger.png), [gold status](../.tmp/config-ui-final-evidence/installed-visual/elpising-status.png), [light theme](../.tmp/config-ui-final-evidence/light-static/aligned-ledger.png). Animated gold remained readable across 25 sampled frames per theme. Earlier real Sonnet/Gemini smoke tests belong to the [previous candidate](../.tmp/parity-install-receipt.json).
+The installed runtime, Code Mode host and sandbox match the CI artifacts byte for byte. [Receipt and hashes](../.tmp/palette/state.json), [permission feedback](../.tmp/palette/final-evidence/terminal_launcher/full-access-applied.png), [80-column name](../.tmp/palette/final-evidence/terminal_launcher/automatic-title-visible-80.png), reviewed [light](../.tmp/palette/final-evidence/appearance_light/aligned-ledger.png)/[dark](../.tmp/palette/final-evidence/appearance_dark/aligned-ledger.png) Ledger captures, and [installed-launcher evidence](../.tmp/palette/final-evidence/installed-launcher/evidence.json) record the checks.
 
-**When ready:** open a new Elpis window, use **Alt+C** for the Ledger, and send a message to see **Elpising**. Existing windows keep their earlier runtime. Chats and settings were preserved.
+**User check:** finish current work, close **all** Elpis windows, wait about **30 seconds** for the old bridge to exit, reopen/resume, then use Shift+Tab to select Full Access and check its confirmation. Alt+C opens the Ledger; `/plan` toggles Plan. Existing windows keep the old runtime, and mixed versions are refused.
 
-Limits: dashboard visuals were not rechecked; native animation timing is retained with the requested gold label, without an FPS benchmark. A failed helper-permission save warns that restrictions last only until restart; the bridge does not intersect custom workspace roots.
+Limits: this is not a Codex version upgrade or complete-parity claim. Live provider services and dashboard visuals were not rechecked here. Failed helper-permission saves leave restrictions temporary; the bridge does not intersect custom workspace roots. Native light-theme animation retains its dim phase. Masih’s daily-use acceptance remains open.
 
-[Rollback](/home/masih/.local/lib/elpis-next/versions/before-config-ui-20261009T194239Z/rollback.sh) restores the previous installation and preserves chats/settings. It passed a check in a private destination.
+[Tested rollback](/home/masih/.local/lib/elpis-next/versions/before-palette-20261010T080310Z/rollback.sh) restores the previous continuity installation. Chats and settings were preserved. Earlier [October 9 evidence](../../Elpis-wt-parity/.tmp/config-ui-install-receipt.json) and [continuity verification](continuity-verification.md) remain historical.

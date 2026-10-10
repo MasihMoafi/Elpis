@@ -427,11 +427,12 @@ correctness, recall quality, task completion, total usage and latency, retaining
 negative results and excluding invalid runs. There is no defensible current claim
 that Elpis has proven superior memory or uniformly cheaper agent execution.
 
-## 4. Context Ledger (`Alt+C`) & `admission.toml`
+## 4. Context Ledger (`Alt+C` / `Ctrl+X`) & `admission.toml`
 
 Elpis provides interactive context admission control in the TUI:
 
 - **Context Ledger Panel (`Alt+C`):** A side panel listing portable context sources, byte sizes, estimates and context-window usage. It is up to 52 columns wide and narrows proportionally to keep room for the composer. Alt+C opens or focuses the Ledger; pressing it while focused hides the panel. `p` toggles Smart Prune while focused. Esc returns to editing; Tab closes the focused Ledger. Outside the Ledger, submission and completion keys follow the [Codex parity contract](specs/codex-parity.md): Enter steers an active reply, while Tab queues the draft when no completion popup owns it.
+- **Ctrl+X alternative:** The same Ledger action is available in ordinary text chat. During voice sessions it retains mute/unmute. Menus, completions and explicitly configured shortcuts/chords keep ownership of Ctrl+X; Alt+C remains available.
 
 - **`admission.toml` Control:** Toggling a row in the ledger writes `~/.elpis/context/workspaces/<workspace>/admission.toml`, which dynamically governs next-turn admission for:
   - `GOAL.md` (Active Goal)
