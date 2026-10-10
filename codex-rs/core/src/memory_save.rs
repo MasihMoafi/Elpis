@@ -35,10 +35,10 @@ pub struct MemoryUpdate {
 
 /// The `save_memory` tool as an agent sees it, wherever it is offered (the engine's tool, and
 /// the Claude bridge's through `elpis memory-save`).
-pub const SAVE_MEMORY_DESCRIPTION: &str = "Persist durable context before your final answer when it changed. MEMORY.md is only for stable global user preferences: use exact edits so unseen memory is preserved. ES is the workspace checkpoint for project state, verification, blockers, and next action. Pass an empty edit list and null checkpoint when nothing should change. Saving is local, opt-in, root-thread only, and rejects stale or conflicting files.";
+pub const SAVE_MEMORY_DESCRIPTION: &str = "Persist durable context before your final answer when it changed. MEMORY.md is only for stable global user preferences: use exact edits so unseen memory is preserved. ES is this thread's checkpoint for project state, verification, blockers, and next action. Pass an empty edit list and null checkpoint when nothing should change. Saving is local, opt-in, root-thread only, and rejects stale or conflicting files.";
 pub const MEMORY_EDITS_DESCRIPTION: &str =
     "Exact MEMORY.md edits. old_text=null appends; new_text=null removes; both strings replace.";
-pub const CHECKPOINT_DESCRIPTION: &str = "Complete replacement for the workspace's Consolidated State, or null to preserve it byte-for-byte.";
+pub const CHECKPOINT_DESCRIPTION: &str = "Complete replacement for the thread's Consolidated State, or null to preserve it byte-for-byte.";
 
 /// One exact MEMORY.md edit an agent asks for: `old_text: None` appends `new_text`,
 /// `new_text: None` removes `old_text`, and both strings replace its only occurrence.
@@ -86,6 +86,7 @@ pub fn apply_memory_edits(existing: &str, edits: &[MemoryEdit]) -> Result<Option
 
 #[derive(Clone, Debug)]
 pub struct MemoryBaseline {
+    checkpoint_path: PathBuf,
     memory: String,
     checkpoint: String,
 }
@@ -162,7 +163,9 @@ pub fn parse_decision_or_skip_oversized(text: &str) -> anyhow::Result<Option<Mem
 
 pub struct MemorySnapshot {
     root: PathBuf,
-    workspace: PathBuf,
+    thread_directory: PathBuf,
+    cwd: PathBuf,
+    thread_id: String,
     pub checkpoint: String,
     pub memory: String,
     pub goal: String,
@@ -178,8 +181,8 @@ pub fn try_lock_memory(root: &Path) -> anyhow::Result<Option<File>> {
     try_lock_file(root, "memory-save.lock")
 }
 
-pub fn try_lock_checkpoint(workspace: &Path) -> anyhow::Result<Option<File>> {
-    try_lock_file(workspace, "checkpoint.lock")
+pub fn try_lock_checkpoint(thread_directory: &Path) -> anyhow::Result<Option<File>> {
+    try_lock_file(thread_directory, "checkpoint.lock")
 }
 
 fn try_lock_file(directory: &Path, name: &str) -> anyhow::Result<Option<File>> {
@@ -204,27 +207,58 @@ fn read_optional(path: &Path) -> anyhow::Result<String> {
     }
 }
 
+fn read_thread_file(
+    root: &Path,
+    cwd: &Path,
+    thread_id: &str,
+    file: &str,
+) -> anyhow::Result<String> {
+    let Some(path) =
+        crate::elpis_context::thread_continuity_path(Some(root), cwd, thread_id, file)?
+    else {
+        return Ok(String::new());
+    };
+    let content = read_optional(&path)?;
+    let legacy = crate::elpis_context::workspace_context_dir(Some(root), cwd)
+        .context("workspace memory path unavailable")?
+        .join(file);
+    // An older client may replace the legacy file after discovery. Never load its new owner.
+    if path == legacy && !crate::elpis_context::continuity_belongs_to_thread(&content, thread_id) {
+        return Ok(String::new());
+    }
+    Ok(content)
+}
+
 impl MemorySnapshot {
     pub fn baseline_when_enabled(
         root: &Path,
         cwd: &Path,
+        thread_id: &str,
     ) -> anyhow::Result<Option<MemoryBaseline>> {
         let workspace = crate::elpis_context::workspace_context_dir(Some(root), cwd)
             .context("workspace memory path unavailable")?;
+        let thread_directory =
+            crate::elpis_context::thread_context_dir(Some(root), cwd, thread_id)?
+                .context("thread memory path unavailable")?;
         let settings = read_optional(&workspace.join("memory-autosave.json"))?;
         if settings.is_empty() || !serde_json::from_str::<Settings>(&settings)?.enabled {
             return Ok(None);
         }
         Ok(Some(MemoryBaseline {
+            checkpoint_path: thread_directory.join("ES.md"),
             memory: read_optional(&root.join("MEMORY.md"))?,
-            checkpoint: read_optional(&workspace.join("ES.md"))?,
+            checkpoint: read_thread_file(root, cwd, thread_id, "ES.md")?,
         }))
     }
 
-    pub async fn open_when_available(root: &Path, cwd: &Path) -> anyhow::Result<Option<Self>> {
+    pub async fn open_when_available(
+        root: &Path,
+        cwd: &Path,
+        thread_id: &str,
+    ) -> anyhow::Result<Option<Self>> {
         let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(1);
         loop {
-            match Self::open(root, cwd) {
+            match Self::open(root, cwd, thread_id) {
                 Err(error) if error.is::<MemoryLockBusy>() => {
                     if tokio::time::Instant::now() >= deadline {
                         // A saver already owns the complete snapshot and its locks.
@@ -239,9 +273,12 @@ impl MemorySnapshot {
         }
     }
 
-    pub fn open(root: &Path, cwd: &Path) -> anyhow::Result<Option<Self>> {
+    pub fn open(root: &Path, cwd: &Path, thread_id: &str) -> anyhow::Result<Option<Self>> {
         let workspace = crate::elpis_context::workspace_context_dir(Some(root), cwd)
             .context("workspace memory path unavailable")?;
+        let thread_directory =
+            crate::elpis_context::thread_context_dir(Some(root), cwd, thread_id)?
+                .context("thread memory path unavailable")?;
         let settings = read_optional(&workspace.join("memory-autosave.json"))?;
         if settings.is_empty() || !serde_json::from_str::<Settings>(&settings)?.enabled {
             return Ok(None);
@@ -250,11 +287,11 @@ impl MemorySnapshot {
         // this lock on cancellation or process exit; there is no stale lock cleanup.
         let lock = try_lock_memory(root)?.ok_or(MemoryLockBusy)?;
         // Acquire shared memory first, so waiting savers do not block unrelated
-        // workspace checkpoint writers. Both guards protect the snapshot through commit.
-        let checkpoint_lock = try_lock_checkpoint(&workspace)?.ok_or(MemoryLockBusy)?;
+        // thread checkpoint writers. Both guards protect the snapshot through commit.
+        let checkpoint_lock = try_lock_checkpoint(&thread_directory)?.ok_or(MemoryLockBusy)?;
         let memory = read_optional(&root.join("MEMORY.md"))?;
-        let checkpoint = read_optional(&workspace.join("ES.md"))?;
-        let goal = read_optional(&workspace.join("GOAL.md"))?;
+        let checkpoint = read_thread_file(root, cwd, thread_id, "ES.md")?;
+        let goal = read_thread_file(root, cwd, thread_id, "GOAL.md")?;
         anyhow::ensure!(goal.chars().count() <= 8_000, "existing goal is oversized");
         anyhow::ensure!(
             memory.chars().count() <= EXISTING_INPUT_CHARS,
@@ -262,7 +299,9 @@ impl MemorySnapshot {
         );
         Ok(Some(Self {
             root: root.into(),
-            workspace,
+            thread_directory,
+            cwd: cwd.to_path_buf(),
+            thread_id: thread_id.to_string(),
             memory,
             checkpoint,
             goal,
@@ -310,14 +349,18 @@ impl MemorySnapshot {
     ) -> anyhow::Result<(String, String)> {
         let commit_started = std::time::Instant::now();
         self.validate_baseline(baseline)?;
+        anyhow::ensure!(
+            thread == self.thread_id,
+            "memory snapshot belongs to another thread"
+        );
         let memory_path = self.root.join("MEMORY.md");
-        let checkpoint_path = self.workspace.join("ES.md");
+        let checkpoint_path = self.thread_directory.join("ES.md");
         anyhow::ensure!(
             read_optional(&memory_path)? == self.memory,
             "memory was edited during consolidation"
         );
         anyhow::ensure!(
-            read_optional(&checkpoint_path)? == self.checkpoint,
+            read_thread_file(&self.root, &self.cwd, &self.thread_id, "ES.md")? == self.checkpoint,
             "checkpoint changed during consolidation"
         );
         let memory = update.memory.as_deref().unwrap_or(&self.memory);
@@ -399,7 +442,7 @@ impl MemorySnapshot {
             "checkpoint": update.checkpoint, "memory": memory,
             "model_memory": update.memory, "usage": usage,
         });
-        let receipt_dir = self.workspace.join("memory-saves");
+        let receipt_dir = self.thread_directory.join("memory-saves");
         std::fs::create_dir_all(&receipt_dir)?;
         let receipt_path = receipt_dir.join(format!("{}.json", uuid::Uuid::new_v4()));
         atomic_write(&receipt_path, &serde_json::to_string_pretty(&receipt)?)?;
@@ -438,12 +481,17 @@ impl MemorySnapshot {
     /// The files as this snapshot read them, for a save that began now.
     pub fn baseline(&self) -> MemoryBaseline {
         MemoryBaseline {
+            checkpoint_path: self.thread_directory.join("ES.md"),
             memory: self.memory.clone(),
             checkpoint: self.checkpoint.clone(),
         }
     }
 
     pub fn validate_baseline(&self, baseline: &MemoryBaseline) -> anyhow::Result<()> {
+        anyhow::ensure!(
+            self.thread_directory.join("ES.md") == baseline.checkpoint_path,
+            "memory baseline belongs to another thread or workspace"
+        );
         anyhow::ensure!(
             self.memory == baseline.memory,
             "memory changed after this turn began"
@@ -612,8 +660,11 @@ fn atomic_write(path: &Path, text: &str) -> anyhow::Result<()> {
 mod tests {
     use super::*;
 
+    const THREAD: &str = "019a0c4e-7b1e-7a41-9b4e-2f0d8c1a5e10";
+
     fn baseline(snapshot: &MemorySnapshot) -> MemoryBaseline {
         MemoryBaseline {
+            checkpoint_path: snapshot.thread_directory.join("ES.md"),
             memory: snapshot.memory.clone(),
             checkpoint: snapshot.checkpoint.clone(),
         }
@@ -654,11 +705,14 @@ mod tests {
         let root = dir.path().join("memories");
         let cwd = dir.path().join("project");
         let workspace = crate::elpis_context::workspace_context_dir(Some(&root), &cwd).unwrap();
+        let thread_workspace =
+            crate::elpis_context::thread_context_dir(Some(&root), &cwd, THREAD)?.unwrap();
+        std::fs::create_dir_all(&thread_workspace)?;
         std::fs::create_dir_all(&workspace)?;
         let settings = workspace.join("memory-autosave.json");
         std::fs::write(&settings, "{\"enabled\":true}")?;
-        let lock = try_lock_checkpoint(&workspace)?.unwrap();
-        assert!(MemorySnapshot::open(&root, &cwd).is_err());
+        let lock = try_lock_checkpoint(&thread_workspace)?.unwrap();
+        assert!(MemorySnapshot::open(&root, &cwd, THREAD).is_err());
         assert!(
             try_lock_memory(&root)?.is_some(),
             "failed checkpoint acquisition retained the global lock"
@@ -667,26 +721,28 @@ mod tests {
             tokio::time::sleep(std::time::Duration::from_millis(50)).await;
             drop(lock);
         };
-        let (snapshot, ()) =
-            tokio::join!(MemorySnapshot::open_when_available(&root, &cwd), release);
+        let (snapshot, ()) = tokio::join!(
+            MemorySnapshot::open_when_available(&root, &cwd, THREAD),
+            release
+        );
         let snapshot = snapshot?.unwrap();
-        assert!(try_lock_checkpoint(&workspace)?.is_none());
+        assert!(try_lock_checkpoint(&thread_workspace)?.is_none());
         assert!(try_lock_memory(&root)?.is_none());
         assert!(try_lock_checkpoint(&dir.path().join("other-workspace"))?.is_some());
         let started = tokio::time::Instant::now();
-        let contended = MemorySnapshot::open_when_available(&root, &cwd).await?;
+        let contended = MemorySnapshot::open_when_available(&root, &cwd, THREAD).await?;
         assert!(contended.is_none());
         assert_eq!(started.elapsed(), std::time::Duration::from_secs(1));
         std::fs::write(&settings, "invalid settings")?;
         let started = tokio::time::Instant::now();
-        let error = MemorySnapshot::open_when_available(&root, &cwd)
+        let error = MemorySnapshot::open_when_available(&root, &cwd, THREAD)
             .await
             .err()
             .unwrap();
         assert!(!error.is::<MemoryLockBusy>());
         assert!(started.elapsed().is_zero());
         drop(snapshot);
-        assert!(try_lock_checkpoint(&workspace)?.is_some());
+        assert!(try_lock_checkpoint(&thread_workspace)?.is_some());
         assert!(try_lock_memory(&root)?.is_some());
         Ok(())
     }
@@ -727,16 +783,19 @@ mod tests {
         let root = dir.path().join("memories");
         let cwd = dir.path().join("project");
         let workspace = crate::elpis_context::workspace_context_dir(Some(&root), &cwd).unwrap();
+        let thread_workspace =
+            crate::elpis_context::thread_context_dir(Some(&root), &cwd, THREAD)?.unwrap();
+        std::fs::create_dir_all(&thread_workspace)?;
         std::fs::create_dir_all(&workspace)?;
         std::fs::write(workspace.join("memory-autosave.json"), "{\"enabled\":true}")?;
         let checkpoint = format!(
-            "# Elpis Session Checkpoint\n\n- Thread: `legacy`\n\n## Consolidated State\n\ncurrent-state\n{}\nlatest-result",
+            "# Elpis Session Checkpoint\n\n- Thread: `019a0c4e-7b1e-7a41-9b4e-2f0d8c1a5e10`\n\n## Consolidated State\n\ncurrent-state\n{}\nlatest-result",
             "界".repeat(EXISTING_INPUT_CHARS + 1)
         );
         let checkpoint_path = workspace.join("ES.md");
         std::fs::write(&checkpoint_path, &checkpoint)?;
 
-        let snapshot = MemorySnapshot::open(&root, &cwd)?.expect("enabled memory snapshot");
+        let snapshot = MemorySnapshot::open(&root, &cwd, THREAD)?.expect("enabled memory snapshot");
         assert_eq!(snapshot.checkpoint, checkpoint);
         assert_eq!(std::fs::read_to_string(&checkpoint_path)?, checkpoint);
 
@@ -747,13 +806,14 @@ mod tests {
                 memory: String::new(),
             },
             "gpt-5.6-luna",
-            "thread",
+            THREAD,
             "turn",
             None,
             None,
             MemorySaveTiming::default(),
         )?;
-        let replaced = std::fs::read_to_string(checkpoint_path)?;
+        assert_eq!(std::fs::read_to_string(&checkpoint_path)?, checkpoint);
+        let replaced = std::fs::read_to_string(thread_workspace.join("ES.md"))?;
         assert!(replaced.contains("bounded replacement"));
         assert!(replaced.chars().count() <= EXISTING_INPUT_CHARS);
 
@@ -766,12 +826,15 @@ mod tests {
         let root = dir.path().join("memories");
         let cwd = dir.path().join("project");
         let workspace = crate::elpis_context::workspace_context_dir(Some(&root), &cwd).unwrap();
+        let thread_workspace =
+            crate::elpis_context::thread_context_dir(Some(&root), &cwd, THREAD)?.unwrap();
+        std::fs::create_dir_all(&thread_workspace)?;
         std::fs::create_dir_all(&workspace)?;
-        assert!(MemorySnapshot::open(&root, &cwd)?.is_none());
-        assert!(!workspace.join("memory-saves").exists());
+        assert!(MemorySnapshot::open(&root, &cwd, THREAD)?.is_none());
+        assert!(!thread_workspace.join("memory-saves").exists());
         std::fs::write(workspace.join("memory-autosave.json"), "{\"enabled\":true}")?;
-        let snapshot = MemorySnapshot::open(&root, &cwd)?.unwrap();
-        assert!(MemorySnapshot::open(&root, &cwd).is_err());
+        let snapshot = MemorySnapshot::open(&root, &cwd, THREAD)?.unwrap();
+        assert!(MemorySnapshot::open(&root, &cwd, THREAD).is_err());
         snapshot.commit(
             &baseline(&snapshot),
             &MemoryDecision {
@@ -779,7 +842,7 @@ mod tests {
                 memory: "- Cedar port 4812 [u1]".into(),
             },
             "gpt-5.6-luna",
-            "thread",
+            THREAD,
             "turn1",
             None,
             None,
@@ -789,7 +852,7 @@ mod tests {
                 commit_ms: 0,
             },
         )?;
-        let receipt_path = std::fs::read_dir(workspace.join("memory-saves"))?
+        let receipt_path = std::fs::read_dir(thread_workspace.join("memory-saves"))?
             .next()
             .unwrap()?
             .path();
@@ -798,7 +861,7 @@ mod tests {
         assert_eq!(receipt["timing"]["request_ms"], 34);
         assert!(receipt["timing"]["commit_ms"].is_u64());
         drop(snapshot);
-        let snapshot = MemorySnapshot::open(&root, &cwd)?.unwrap();
+        let snapshot = MemorySnapshot::open(&root, &cwd, THREAD)?.unwrap();
         assert!(snapshot.memory.contains("4812"));
         snapshot.commit(
             &baseline(&snapshot),
@@ -807,7 +870,7 @@ mod tests {
                 memory: "- Cedar port 5823 [u2]".into(),
             },
             "gpt-5.6-luna",
-            "thread",
+            THREAD,
             "turn2",
             None,
             None,
@@ -818,7 +881,7 @@ mod tests {
             },
         )?;
         drop(snapshot);
-        let snapshot = MemorySnapshot::open(&root, &cwd)?.unwrap();
+        let snapshot = MemorySnapshot::open(&root, &cwd, THREAD)?.unwrap();
         assert!(!snapshot.memory.contains("4812"));
         std::fs::write(root.join("MEMORY.md"), "User edit")?;
         assert!(
@@ -830,7 +893,7 @@ mod tests {
                         memory: "replacement".into()
                     },
                     "gpt-5.6-luna",
-                    "thread",
+                    THREAD,
                     "turn3",
                     None,
                     None,
@@ -852,17 +915,20 @@ mod tests {
         let root = dir.path().join("memories");
         let cwd = dir.path().join("project");
         let workspace = crate::elpis_context::workspace_context_dir(Some(&root), &cwd).unwrap();
+        let thread_workspace =
+            crate::elpis_context::thread_context_dir(Some(&root), &cwd, THREAD)?.unwrap();
+        std::fs::create_dir_all(&thread_workspace)?;
         std::fs::create_dir_all(root.join("memory-references"))?;
         std::fs::create_dir_all(&workspace)?;
         std::fs::write(workspace.join("memory-autosave.json"), "{\"enabled\":true}")?;
         std::fs::write(root.join("MEMORY.md"), "memory A")?;
-        std::fs::write(workspace.join("ES.md"), "checkpoint A")?;
+        std::fs::write(thread_workspace.join("ES.md"), "checkpoint A")?;
         std::fs::write(root.join("memory-references/sources.md"), "references A")?;
-        let baseline = MemorySnapshot::baseline_when_enabled(&root, &cwd)?.unwrap();
+        let baseline = MemorySnapshot::baseline_when_enabled(&root, &cwd, THREAD)?.unwrap();
 
         std::fs::write(root.join("MEMORY.md"), "memory B")?;
-        std::fs::write(workspace.join("ES.md"), "checkpoint B")?;
-        let snapshot = MemorySnapshot::open(&root, &cwd)?.unwrap();
+        std::fs::write(thread_workspace.join("ES.md"), "checkpoint B")?;
+        let snapshot = MemorySnapshot::open(&root, &cwd, THREAD)?.unwrap();
         let result = snapshot.commit_update(
             &baseline,
             &MemoryUpdate {
@@ -870,7 +936,7 @@ mod tests {
                 checkpoint: Some("checkpoint C".to_string()),
             },
             "responding-agent",
-            "thread",
+            THREAD,
             "turn",
             None,
             None,
@@ -880,14 +946,124 @@ mod tests {
         assert!(result.is_err());
         assert_eq!(std::fs::read_to_string(root.join("MEMORY.md"))?, "memory B");
         assert_eq!(
-            std::fs::read_to_string(workspace.join("ES.md"))?,
+            std::fs::read_to_string(thread_workspace.join("ES.md"))?,
             "checkpoint B"
         );
         assert_eq!(
             std::fs::read_to_string(root.join("memory-references/sources.md"))?,
             "references A"
         );
-        assert!(!workspace.join("memory-saves").exists());
+        assert!(!thread_workspace.join("memory-saves").exists());
+        Ok(())
+    }
+
+    #[test]
+    fn thread_saves_keep_independent_baselines_and_shared_memory_protection() -> anyhow::Result<()>
+    {
+        let home = tempfile::tempdir()?;
+        let root = home.path().join("memories");
+        let cwd = home.path().join("project");
+        let first = codex_protocol::ThreadId::new().to_string();
+        let second = codex_protocol::ThreadId::new().to_string();
+        let workspace = crate::elpis_context::workspace_context_dir(Some(&root), &cwd).unwrap();
+        std::fs::create_dir_all(&workspace)?;
+        std::fs::write(
+            workspace.join("memory-autosave.json"),
+            r#"{"enabled":true}"#,
+        )?;
+        let legacy = format!("- Thread: `{second}`\nLegacy second-thread checkpoint");
+        std::fs::write(workspace.join("ES.md"), &legacy)?;
+        let first_baseline = MemorySnapshot::baseline_when_enabled(&root, &cwd, &first)?.unwrap();
+        assert!(
+            first_baseline.checkpoint.is_empty(),
+            "another thread's legacy state was inherited"
+        );
+        let second_snapshot = MemorySnapshot::open(&root, &cwd, &second)?.unwrap();
+        assert_eq!(second_snapshot.checkpoint, legacy);
+        assert!(
+            MemorySnapshot::open(&root, &cwd, &first).is_err(),
+            "shared MEMORY lock must still serialize threads"
+        );
+        assert!(second_snapshot.validate_baseline(&first_baseline).is_err());
+        second_snapshot.commit_update(
+            &second_snapshot.baseline(),
+            &MemoryUpdate {
+                checkpoint: Some("Second thread's own state".into()),
+                memory: None,
+            },
+            "responding-agent",
+            &second,
+            "second-turn",
+            None,
+            None,
+            MemorySaveTiming::default(),
+        )?;
+        drop(second_snapshot);
+        let first_snapshot = MemorySnapshot::open(&root, &cwd, &first)?.unwrap();
+        first_snapshot.validate_baseline(&first_baseline)?;
+        first_snapshot.commit_update(
+            &first_baseline,
+            &MemoryUpdate {
+                checkpoint: Some("First thread's own state".into()),
+                memory: None,
+            },
+            "responding-agent",
+            &first,
+            "first-turn",
+            None,
+            None,
+            MemorySaveTiming::default(),
+        )?;
+        assert!(
+            first_snapshot
+                .commit_update(
+                    &first_snapshot.baseline(),
+                    &MemoryUpdate::default(),
+                    "responding-agent",
+                    &second,
+                    "wrong-thread",
+                    None,
+                    None,
+                    MemorySaveTiming::default()
+                )
+                .is_err()
+        );
+        drop(first_snapshot);
+        assert_eq!(std::fs::read_to_string(workspace.join("ES.md"))?, legacy);
+        let first_snapshot = MemorySnapshot::open(&root, &cwd, &first)?.unwrap();
+        assert!(
+            first_snapshot
+                .checkpoint
+                .contains("First thread's own state")
+        );
+        assert!(!first_snapshot.checkpoint.contains("Second thread"));
+        let first_baseline = first_snapshot.baseline();
+        drop(first_snapshot);
+        let second_snapshot = MemorySnapshot::open(&root, &cwd, &second)?.unwrap();
+        assert!(
+            second_snapshot
+                .checkpoint
+                .contains("Second thread's own state")
+        );
+        second_snapshot.commit_update(
+            &second_snapshot.baseline(),
+            &MemoryUpdate {
+                checkpoint: None,
+                memory: Some("Shared preference changed".into()),
+            },
+            "responding-agent",
+            &second,
+            "memory-turn",
+            None,
+            None,
+            MemorySaveTiming::default(),
+        )?;
+        drop(second_snapshot);
+        let first_snapshot = MemorySnapshot::open(&root, &cwd, &first)?.unwrap();
+        assert!(
+            first_snapshot.validate_baseline(&first_baseline).is_err(),
+            "global memory edits must invalidate stale turns"
+        );
         Ok(())
     }
 }

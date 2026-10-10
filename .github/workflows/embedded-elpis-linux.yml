@@ -4,11 +4,11 @@ on:
   workflow_dispatch:
     inputs:
       verification:
-        description: 'Compiler checks or full runtime validation'
+        description: 'Compiler, UI-only, or full runtime validation'
         required: true
         default: full
         type: choice
-        options: [check, full]
+        options: [check, ui, full]
   push:
     tags: ['v*']
     branches: [next]
@@ -131,7 +131,7 @@ jobs:
           bash scripts/restore-cargo-cache-source-times.sh "$CACHE_KEY"
       - name: Check core, UI, CLI and their tests
         working-directory: codex-rs
-        run: cargo check --locked --tests -p codex-core -p codex-tui -p codex-cli
+        run: cargo check --locked --tests -p codex-core -p codex-tui -p codex-cli -p codex-app-server
       - name: Retain compiler outputs
         if: always() && steps.cargo_cache.outputs.cache-hit != 'true' && steps.cargo_cache.outputs.cache-primary-key != ''
         uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7
@@ -143,7 +143,7 @@ jobs:
           key: ${{ steps.cargo_cache.outputs.cache-primary-key }}
 
   build:
-    if: github.event_name != 'workflow_dispatch' || inputs.verification == 'full'
+    if: github.event_name != 'workflow_dispatch' || inputs.verification == 'full' || inputs.verification == 'ui'
     runs-on: ubuntu-24.04
     timeout-minutes: 180
     env:
@@ -222,7 +222,7 @@ jobs:
           node scripts/build-elpis-local.test.cjs
       - name: Build the runtime, Code Mode host, and sandbox
         id: runtime_build
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && inputs.verification != 'ui' }}
         working-directory: codex-rs
         run: |
           cargo build --release --locked -p codex-cli --bin codex -p codex-code-mode-host --bin codex-code-mode-host
@@ -296,16 +296,16 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
       - name: Core permissions and continuity unit tests
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && inputs.verification != 'ui' }}
         working-directory: codex-rs
         run: |
           cargo test --profile dev-small --locked -p codex-core --lib -- \
-            elpis_ smart_prune compact_instructions world_state build_agent_spawn_config \
+            elpis_ memory_save save_memory smart_prune compact_instructions world_state build_agent_spawn_config \
             live_permissions inherited_permissions step_activation thread_settings turn_input \
             loaded_children_give_up_the_full_access_their_parent_gives_up \
             revocation regains_full_access
       - name: Context and session integration tests
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && inputs.verification != 'ui' }}
         working-directory: codex-rs
         shell: bash
         run: |
@@ -314,6 +314,8 @@ jobs:
             agents_md scenarios_shared_instructions \
             deferred_executor_promotes_primary_environment_when_startup_completes \
             deferred_executor_stays_pending_after_materialization 2>&1 | tee "$RUNNER_TEMP/elpis-integration-checks.log"
+          cargo test --profile dev-small --locked -p codex-app-server --test all -- \
+            elpis_instructions_read 2>&1 | tee -a "$RUNNER_TEMP/elpis-integration-checks.log"
       - name: Preserve UI and integration check diagnostics
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
@@ -323,7 +325,7 @@ jobs:
           if-no-files-found: error
           retention-days: 7
       - name: Provider configuration and CLI tests
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && inputs.verification != 'ui' }}
         working-directory: codex-rs
         run: |
           cargo test --profile dev-small --locked -p codex-elpis-gateway --lib
@@ -342,6 +344,11 @@ jobs:
       - name: Gemini bridge permission regressions
         if: ${{ !cancelled() && steps.runtime_build.outcome == 'success' }}
         run: node scripts/permissions-bridge.test.cjs "$PWD/codex-rs/target/release/elpis" --gemini
+      - name: Live admitted context refresh across providers
+        if: ${{ !cancelled() && steps.runtime_build.outcome == 'success' }}
+        run: |
+          node scripts/bridge-context.test.cjs "$PWD/codex-rs/target/release/elpis"
+          node scripts/bridge-context.test.cjs "$PWD/codex-rs/target/release/elpis" --gemini
       - name: Delegated helper permission regressions
         if: ${{ !cancelled() && steps.runtime_build.outcome == 'success' }}
         run: node scripts/permissions-bridge-delegation.test.cjs "$PWD/codex-rs/target/release/elpis"
@@ -350,6 +357,7 @@ jobs:
         run: |
           node scripts/shared-runtime.test.cjs "$PWD/codex-rs/target/release/elpis"
           node scripts/terminal-input.test.cjs "$PWD/codex-rs/target/release/elpis" --launcher
+          node scripts/continuity-workflows-terminal.test.cjs "$PWD/codex-rs/target/release/elpis"
           node scripts/shared-provider-sessions.test.cjs "$PWD/codex-rs/target/release/elpis"
           node scripts/shared-provider-sessions.test.cjs "$PWD/codex-rs/target/release/elpis" --gemini
           node scripts/permissions-bridge.test.cjs "$PWD/codex-rs/target/release/elpis" --shared
@@ -361,6 +369,7 @@ jobs:
         if: ${{ !cancelled() && steps.runtime_build.outcome == 'success' }}
         run: bash tests/install/clean_linux.sh codex-rs/target/release
       - name: Package Linux binaries and Debian installer
+        if: inputs.verification != 'ui'
         shell: bash
         run: |
           set -euo pipefail
@@ -385,15 +394,18 @@ jobs:
             (cd dist && sha256sum "$(basename "$file")" > "$(basename "$file").sha256")
           done
       - name: Clean Debian installation
+        if: inputs.verification != 'ui'
         run: bash tests/install/clean_linux.sh "dist/elpis_${ELPIS_VERSION}_amd64.deb"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: inputs.verification != 'ui'
         with:
           name: elpis-linux-x86_64
           path: dist/*
           if-no-files-found: error
           retention-days: 7
       - name: Retain compiled outputs after checks
-        if: always() && steps.cargo_cache.outputs.cache-hit != 'true' && steps.cargo_cache.outputs.cache-primary-key != ''
+        # UI-only runs do not rebuild release outputs, so must not label that cache with their source SHA.
+        if: always() && inputs.verification != 'ui' && steps.cargo_cache.outputs.cache-hit != 'true' && steps.cargo_cache.outputs.cache-primary-key != ''
         uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7
         with:
           path: |

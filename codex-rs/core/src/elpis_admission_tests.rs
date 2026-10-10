@@ -147,3 +147,105 @@ fn guardian_reviewers_are_ineligible_for_continuity() {
         InternalSessionSource::Guardian
     )));
 }
+
+#[tokio::test]
+async fn native_and_bridge_admission_follow_the_same_thread_and_explicit_handoffs()
+-> anyhow::Result<()> {
+    let workspace = workspace();
+    let first = codex_protocol::ThreadId::new();
+    let second = codex_protocol::ThreadId::new();
+    let legacy_directory =
+        workspace_context_dir(Some(&workspace.memories_root), &workspace.cwd).unwrap();
+    std::fs::create_dir_all(&legacy_directory)?;
+    let legacy = format!("- Thread: `{first}`\nFIRST_LEGACY_CHECKPOINT");
+    std::fs::write(legacy_directory.join("ES.md"), &legacy)?;
+    for name in ["GOAL.md", "ES.md"] {
+        set_continuity_source_admitted(Some(&workspace.memories_root), &workspace.cwd, name, true)?;
+    }
+    let second_directory = elpis_context::thread_context_dir(
+        Some(&workspace.memories_root),
+        &workspace.cwd,
+        &second.to_string(),
+    )?
+    .unwrap();
+    std::fs::create_dir_all(&second_directory)?;
+    std::fs::write(
+        second_directory.join("ES.md"),
+        format!("- Thread: `{second}`\nSECOND_CHECKPOINT"),
+    )?;
+    std::fs::write(
+        second_directory.join("GOAL.md"),
+        format!("- Thread: `{second}`\nSECOND_GOAL"),
+    )?;
+    let session_store = ExtensionData::new("session");
+    let turn_store = ExtensionData::new("turn");
+    let step_store = ExtensionData::new("step");
+    let model_info = codex_models_manager::model_info::model_info_from_slug("test-model");
+    for (thread, expected, excluded) in [
+        (first, "FIRST_LEGACY_CHECKPOINT", "SECOND_CHECKPOINT"),
+        (second, "SECOND_CHECKPOINT", "FIRST_LEGACY_CHECKPOINT"),
+    ] {
+        // Recreate the store as on exact resume: lookup still selects the same portable state.
+        for _ in 0..2 {
+            let thread_store = ExtensionData::new(thread.to_string());
+            thread_store.insert(ElpisContinuityConfig {
+                memories_root: AbsolutePathBuf::try_from(workspace.memories_root.clone())?,
+                cwd: AbsolutePathBuf::try_from(workspace.cwd.clone())?,
+                dev_rule_roots: Vec::new(),
+                eligible: true,
+            });
+            let bridge = thread_continuity(&thread_store)
+                .await
+                .expect("admitted checkpoint");
+            assert!(bridge.contains(expected));
+            assert!(!bridge.contains(excluded));
+            let native = ElpisContinuityExtension
+                .contribute_world_state(WorldStateContributionInput {
+                    thread_id: thread,
+                    turn_id: "turn",
+                    model_info: &model_info,
+                    environments: &[],
+                    ready_selected_capability_roots: &[],
+                    executor_capability_discovery: None,
+                    extension_metrics: None,
+                    session_store: &session_store,
+                    thread_store: &thread_store,
+                    turn_store: &turn_store,
+                    step_store: &step_store,
+                    previous_world_state: None,
+                })
+                .await;
+            let (_, fragment) = native[0].render_diff(PreviousWorldStateSection::Absent);
+            assert_eq!(fragment.expect("native fragment").body(), bridge);
+        }
+    }
+    assert_eq!(
+        std::fs::read_to_string(legacy_directory.join("ES.md"))?,
+        legacy
+    );
+    let third = codex_protocol::ThreadId::new().to_string();
+    let no_implicit_handoff = elpis_context::build_continuity_prompt_with_dev_rule_roots(
+        Some(&workspace.memories_root),
+        &workspace.cwd,
+        &[],
+        Some(&third),
+    )
+    .await
+    .unwrap_or_default();
+    assert!(!no_implicit_handoff.contains("FIRST_LEGACY_CHECKPOINT"));
+    elpis_context::add_continuity_sources(
+        Some(&workspace.memories_root),
+        &workspace.cwd,
+        &legacy_directory.join("ES.md"),
+    )?;
+    let explicit = elpis_context::build_continuity_prompt_with_dev_rule_roots(
+        Some(&workspace.memories_root),
+        &workspace.cwd,
+        &[],
+        Some(&third),
+    )
+    .await
+    .expect("explicitly admitted handoff");
+    assert!(explicit.contains("FIRST_LEGACY_CHECKPOINT"));
+    Ok(())
+}

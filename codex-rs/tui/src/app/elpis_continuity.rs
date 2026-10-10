@@ -1,6 +1,6 @@
 //! Elpis: the App mirrors `/goal` into GOAL.md and checkpoints each finished turn into ES.md.
 //!
-//! Both files live under `<home>/context/workspaces/<workspace>/` (`crate::elpis_context`)
+//! Both files live under `<home>/context/workspaces/<workspace>/threads/<thread>/` (`crate::elpis_context`)
 //! and feed the Context Ledger's SESSION CONTINUITY row, which refreshes after each write.
 //! Copied from v0.3.0 `app/app_server_events.rs` (`mirror_elpis_context_notification`,
 //! `goal_status_label`) and `app/background_requests.rs`
@@ -20,7 +20,7 @@ use crate::elpis_ledger_events::ManualMemoryStorageTarget;
 
 impl App {
     /// Buffers the primary thread's completed items, writes ES.md when its turn completes,
-    /// and mirrors goal updates into GOAL.md. Other threads leave the workspace files alone.
+    /// and mirrors goal updates into GOAL.md. Child-thread notifications do not write root-thread files.
     pub(super) async fn mirror_elpis_context_notification(
         &mut self,
         notification: &ServerNotification,

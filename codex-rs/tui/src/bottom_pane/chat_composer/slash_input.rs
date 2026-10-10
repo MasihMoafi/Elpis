@@ -769,8 +769,7 @@ mod tests {
             press(&mut composer, KeyCode::Enter),
             InputResult::Command(SlashCommand::Rename)
         );
-        // Elpis: /review is unlisted, and it was the one command that kept its text for dispatch
-        // validation; a bare /rename dispatches at once and leaves the composer empty.
+        // A bare /rename dispatches at once and leaves the composer empty.
         assert_eq!(composer.draft.textarea.text(), "");
     }
 }

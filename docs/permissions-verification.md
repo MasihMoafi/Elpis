@@ -1,21 +1,23 @@
 # Installed candidate — 9 October 2026
 
-**Elpis 0.4.1 is installed**, source `0c5e5518f`, on Codex 0.162.0. [Full CI passed](https://github.com/MasihMoafi/Elpis/actions/runs/37953792953); all three runtime binaries match the installed bundle exactly. [Install receipt](../.tmp/parity-install-receipt.json). Masih’s acceptance remains open.
+**Elpis 0.4.1, source `4f44937c2`, is installed on Codex 0.162.0.** Colored circles, the aligned Ledger bar, gold “Elpising,” the startup-config fix and corrected Alt+C hint are installed. Masih’s acceptance remains open.
+
+[Runtime checks](https://github.com/MasihMoafi/Elpis/actions/runs/37978565974) passed; that run’s screen-review gate found eight screen differences. The [full UI recheck](https://github.com/MasihMoafi/Elpis/actions/runs/37983082438) passed after test-only corrections. Production code is identical between the runs, and the installed binaries match the downloaded artifact.
 
 | Check | Passed |
 | --- | --- |
-| UI / core / context-session Rust tests | 1,226 / 301 / 61; one manual export helper ignored |
+| Full UI / core / context-session tests | 5,770 / 301 / 61; five UI direct-run exclusions |
+| Configuration Rust / actual runtime | 16 / 5, including genuine-project and malformed-config controls |
 | Provider configuration / CLI / branding | 120 |
 | Native / Code Mode / Claude / Gemini / helper permissions | 11 / 15 / 35 / 28 / 32 |
-| Shared provider sessions / transport and launcher races | 32 / 24 |
-| Terminal and Ledger checks / installed launcher checks | 25 / 9 |
-| Real Sonnet High and Gemini Flash 3.8 High | File tasks, zero Full Access approval prompts |
-| Failure controls; offline and Debian installs | Passed |
+| Shared sessions, transport, launcher and shared permissions | 128 |
+| Local config and light/dark visual checks / installed-launcher checks | 27 / 14 |
+| Offline runtime evals, failing controls and clean installation | Passed |
 
-Records: [permissions](../.tmp/final-permissions-results.json), [shared sessions](../.tmp/final-sharing-results.json), [terminal](../.tmp/final-terminal-results.json), reviewed [wide](../.tmp/final-ui-evidence/agents-80.png)/[narrow](../.tmp/final-ui-evidence/agents-40.png) captures.
+Evidence: [receipt](../.tmp/config-ui-install-receipt.json), reviewed [installed Ledger](../.tmp/config-ui-final-evidence/installed-visual/aligned-ledger.png), [gold status](../.tmp/config-ui-final-evidence/installed-visual/elpising-status.png), [light theme](../.tmp/config-ui-final-evidence/light-static/aligned-ledger.png). Animated gold remained readable across 25 sampled frames per theme. Earlier real Sonnet/Gemini smoke tests belong to the [previous candidate](../.tmp/parity-install-receipt.json).
 
-**Try two new windows** in different folders: check ← Agents, model labels, typing and queued messages. Select Full Access or `/yolo`, perform a file task, then resume it. The saved default remains Ask for approval. Chats/settings were preserved; existing windows keep their earlier runtime.
+**When ready:** open a new Elpis window, use **Alt+C** for the Ledger, and send a message to see **Elpising**. Existing windows keep their earlier runtime. Chats and settings were preserved.
 
-Limits: the browser dashboard was not visually rechecked. Shared animation/streaming modules match Codex source; no FPS claim. A failed helper-permission save warns that restrictions last only until restart; the bridge does not intersect custom workspace roots.
+Limits: dashboard visuals were not rechecked; native animation timing is retained with the requested gold label, without an FPS benchmark. A failed helper-permission save warns that restrictions last only until restart; the bridge does not intersect custom workspace roots.
 
-[Rollback script](/home/masih/.local/lib/elpis-next/versions/before-parity-20261009T115727Z/rollback.sh) restores the earlier runtime and bridge while preserving chats/settings. It was tested in a private destination.
+[Rollback](/home/masih/.local/lib/elpis-next/versions/before-config-ui-20261009T194239Z/rollback.sh) restores the previous installation and preserves chats/settings. It passed a check in a private destination.

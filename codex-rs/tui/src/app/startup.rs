@@ -64,7 +64,9 @@ pub(super) async fn prepare_fresh_startup_config(
     environments: &EnvironmentManager,
 ) -> Result<FreshStartupDefaults> {
     let defaults_cwd = match app_server_target {
-        AppServerTarget::Embedded | AppServerTarget::LocalDaemon { .. } => config.cwd.as_path(),
+        AppServerTarget::Embedded
+        | AppServerTarget::LocalDaemon { .. }
+        | AppServerTarget::LocalBridge { .. } => config.cwd.as_path(),
         AppServerTarget::Remote { .. } => {
             app_server.remote_cwd_override().unwrap_or(Path::new("."))
         }
@@ -435,7 +437,9 @@ impl App {
         let dynamic_tool_status_updates = tokio::sync::broadcast::channel(/*capacity*/ 64).0;
         if matches!(
             &app_server_target,
-            AppServerTarget::LocalDaemon { .. } | AppServerTarget::Embedded
+            AppServerTarget::LocalDaemon { .. }
+                | AppServerTarget::LocalBridge { .. }
+                | AppServerTarget::Embedded
         ) && !crate::uses_remote_workspace_or_environment(
             &app_server_target,
             environment_manager.as_ref(),

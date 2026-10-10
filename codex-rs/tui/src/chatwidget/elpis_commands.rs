@@ -133,7 +133,6 @@ pub(crate) fn unlisted(cmd: SlashCommand) -> bool {
             | SlashCommand::Mention
             | SlashCommand::Ps
             | SlashCommand::Raw
-            | SlashCommand::Review
             | SlashCommand::Side
             | SlashCommand::Statusline
             | SlashCommand::Stop
@@ -160,8 +159,6 @@ pub(crate) fn hidden(cmd: SlashCommand) -> bool {
             | SlashCommand::Rollout
             | SlashCommand::Status
             | SlashCommand::TestApproval
-            // Codex's worktree chooser, added after v0.3.0 and feature-gated upstream.
-            | SlashCommand::Worktree
     )
 }
 

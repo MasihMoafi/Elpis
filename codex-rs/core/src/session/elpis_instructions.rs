@@ -19,13 +19,13 @@ impl Session {
                 state.session_configuration.developer_instructions.clone(),
             )
         };
-        // The refresh a turn runs: it reuses the cached discovery while the environments are
-        // unchanged and re-reads the Ledger's admission record every time.
+        // A bridge cannot observe the native instruction cache. Rediscover through the same
+        // serialized, permission-aware loader so edits and withdrawals reach its next turn.
         let environments = self.services.turn_environments.snapshot().await;
         let (agents_md, _warnings) = self
             .services
             .agents_md_manager
-            .refresh(&config, &environments)
+            .refresh_for_elpis(&config, &environments)
             .await;
         let continuity =
             elpis_admission::thread_continuity(&self.services.thread_extension_data).await;

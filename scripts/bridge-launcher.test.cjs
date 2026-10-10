@@ -33,8 +33,11 @@ async function main() {
     let output = launch('elpis-wrapper', ['resume', 'fixture-session']);
     assert(output.includes(`selected:${expected}`), output);
     assert(!output.includes('fallback'), output);
-    assert.match(output, /arg:--remote\narg:unix:\/\/[^\n]+\narg:resume\narg:fixture-session/);
+    assert.match(output, /arg:--elpis-local-bridge\narg:--remote\narg:unix:\/\/[^\n]+\narg:resume\narg:fixture-session/);
     console.log('PASS interactive wrapper pins the same runtime for bridge and TUI');
+    output = launch('elpis-wrapper', ['--worktree', 'worktree fixture']);
+    assert.match(output, /arg:--elpis-local-bridge\narg:--remote\narg:unix:\/\/[^\n]+\narg:--worktree\narg:worktree fixture/);
+    console.log('PASS ordinary worktree launch explicitly selects the private local bridge');
     output = launch('elpis-claude', ['resume', 'fixture-session'], { ELPIS_HOME: standaloneHome });
     assert(output.includes('fallback'), output);
     assert(!output.includes('selected:'), output);

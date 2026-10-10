@@ -9,4 +9,4 @@ set -euo pipefail
 here="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
 mkdir -p /tmp/acp-bridge
 endpoint="$(NODE_USE_ENV_PROXY=1 node "$here/shared-runtime.mjs" "$here/acp-bridge.mjs")"
-exec "${ELPIS_ENGINE_BIN:-$HOME/.local/bin/elpis}" --remote "$endpoint" "$@"
+exec "${ELPIS_ENGINE_BIN:-$HOME/.local/bin/elpis}" --elpis-local-bridge --remote "$endpoint" "$@"

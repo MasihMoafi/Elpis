@@ -675,6 +675,7 @@ async fn session_only_astra_picker_shows_stars_only_on_an_untouched_task() -> Re
             /*initial_user_message*/ None,
         )
         .await?;
+        crate::chatwidget::tests::helpers::hide_context_ledger(&mut app.chat_widget);
         assert!(!visible(&app.chat_widget));
         if scenario == "typed then erased" {
             type_into(&mut app.chat_widget, "x");

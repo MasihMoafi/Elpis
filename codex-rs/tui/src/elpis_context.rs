@@ -1,10 +1,13 @@
-//! Elpis: the portable continuity files under `<home>/context/workspaces/<workspace>/`.
+//! Elpis: the portable continuity files under `<home>/context/workspaces/<workspace>/threads/<thread>/`.
 //!
 //! GOAL.md mirrors `/goal` and ES.md checkpoints every finished turn (result, changed files,
 //! commands) for the Context Ledger's SESSION CONTINUITY row. `app/elpis_continuity.rs`
 //! calls these writers from the app-server notifications. Copied from v0.3.0
 //! `tui/src/elpis_context.rs`; only the test literals gained 0.159's `AgentMessage` fields.
 
+use crate::legacy_core::elpis_context::continuity_belongs_to_thread as belongs_to_thread;
+use crate::legacy_core::elpis_context::thread_context_dir;
+use crate::legacy_core::elpis_context::thread_continuity_path;
 use anyhow::Context;
 use anyhow::Result;
 use codex_app_server_protocol::CommandExecutionStatus;
@@ -26,13 +29,6 @@ fn goal_is_finished(status: &str) -> bool {
     matches!(status, "complete" | "completed" | "abandoned")
 }
 
-fn belongs_to_thread(content: &str, thread_id: &str) -> bool {
-    content
-        .lines()
-        .find(|line| line.starts_with("- Thread: "))
-        .is_some_and(|line| line == format!("- Thread: `{thread_id}`"))
-}
-
 pub(crate) async fn write_goal(
     memories_root: Option<&Path>,
     cwd: &Path,
@@ -47,7 +43,7 @@ pub(crate) async fn write_goal(
     if goal_is_finished(status) {
         return clear_goal(memories_root, cwd, thread_id).await;
     }
-    let Some(goal_path) = goal_path(memories_root, cwd) else {
+    let Some(goal_path) = goal_path(memories_root, cwd, thread_id)? else {
         return Ok(None);
     };
     let parent = goal_path
@@ -88,7 +84,7 @@ pub(crate) async fn clear_goal(
     cwd: &Path,
     thread_id: &str,
 ) -> Result<Option<PathBuf>> {
-    let Some(goal_path) = goal_path(memories_root, cwd) else {
+    let Some(goal_path) = thread_continuity_path(memories_root, cwd, thread_id, GOAL_FILE)? else {
         return Ok(None);
     };
     let content = match tokio::fs::read_to_string(&goal_path).await {
@@ -103,10 +99,7 @@ pub(crate) async fn clear_goal(
         return Ok(None);
     }
     clear_session_checkpoint(memories_root, cwd, thread_id).await?;
-    tokio::fs::remove_file(&goal_path)
-        .await
-        .with_context(|| format!("remove Elpis goal file {}", goal_path.display()))?;
-    Ok(Some(goal_path))
+    clear_owned_file(memories_root, cwd, thread_id, GOAL_FILE, &goal_path).await
 }
 
 pub(crate) async fn clear_session_checkpoint(
@@ -114,7 +107,7 @@ pub(crate) async fn clear_session_checkpoint(
     cwd: &Path,
     thread_id: &str,
 ) -> Result<Option<PathBuf>> {
-    let Some(workspace_dir) = workspace_dir(memories_root, cwd) else {
+    let Some(workspace_dir) = thread_context_dir(memories_root, cwd, thread_id)? else {
         return Ok(None);
     };
     // Removing the checkpoint under an in-flight save makes the saver's commit
@@ -125,19 +118,25 @@ pub(crate) async fn clear_session_checkpoint(
     else {
         return Ok(None);
     };
-    let checkpoint_path = workspace_dir.join(SESSION_CHECKPOINT_FILE);
+    let Some(checkpoint_path) =
+        thread_continuity_path(memories_root, cwd, thread_id, SESSION_CHECKPOINT_FILE)?
+    else {
+        return Ok(None);
+    };
     let content = match tokio::fs::read_to_string(&checkpoint_path).await {
         Ok(content) => content,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
         Err(error) => return Err(error).context("read Elpis checkpoint before clearing it"),
     };
     if belongs_to_thread(&content, thread_id) {
-        tokio::fs::remove_file(&checkpoint_path)
-            .await
-            .with_context(|| {
-                format!("remove Elpis checkpoint file {}", checkpoint_path.display())
-            })?;
-        Ok(Some(checkpoint_path))
+        clear_owned_file(
+            memories_root,
+            cwd,
+            thread_id,
+            SESSION_CHECKPOINT_FILE,
+            &checkpoint_path,
+        )
+        .await
     } else {
         Ok(None)
     }
@@ -164,7 +163,7 @@ pub(crate) async fn write_session_checkpoint(
     thread_id: &str,
     turn: &Turn,
 ) -> Result<Option<PathBuf>> {
-    let Some(workspace_dir) = workspace_dir(memories_root, cwd) else {
+    let Some(workspace_dir) = thread_context_dir(memories_root, cwd, thread_id)? else {
         return Ok(None);
     };
     // The saver owns the consolidated checkpoint while it reads and updates it.
@@ -212,7 +211,10 @@ pub(crate) async fn write_session_checkpoint(
     }
 
     let checkpoint_path = workspace_dir.join(SESSION_CHECKPOINT_FILE);
-    let previous = match tokio::fs::read_to_string(&checkpoint_path).await {
+    let previous_path =
+        thread_continuity_path(memories_root, cwd, thread_id, SESSION_CHECKPOINT_FILE)?
+            .unwrap_or_else(|| checkpoint_path.clone());
+    let previous = match tokio::fs::read_to_string(&previous_path).await {
         Ok(content) => content,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => String::new(),
         Err(error) => return Err(error).context("read previous checkpoint"),
@@ -314,10 +316,54 @@ fn append_recent_checkpoint_entries(
     }
 }
 
-fn goal_path(memories_root: Option<&Path>, cwd: &Path) -> Option<PathBuf> {
-    Some(workspace_dir(memories_root, cwd)?.join(GOAL_FILE))
+fn goal_path(memories_root: Option<&Path>, cwd: &Path, thread_id: &str) -> Result<Option<PathBuf>> {
+    Ok(thread_context_dir(memories_root, cwd, thread_id)?
+        .map(|directory| directory.join(GOAL_FILE)))
 }
 
+/// Clearing a legacy-owned file leaves that file untouched. An empty thread-local file
+/// prevents the read-only fallback from reviving it on the next request or resume.
+async fn clear_owned_file(
+    memories_root: Option<&Path>,
+    cwd: &Path,
+    thread_id: &str,
+    file: &str,
+    source: &Path,
+) -> Result<Option<PathBuf>> {
+    let Some(workspace) =
+        crate::legacy_core::elpis_context::workspace_context_dir(memories_root, cwd)
+    else {
+        return Ok(None);
+    };
+    let legacy = workspace.join(file);
+    let legacy_content = match tokio::fs::read_to_string(&legacy).await {
+        Ok(content) => content,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => String::new(),
+        Err(error) => return Err(error).context("read legacy continuity before clearing"),
+    };
+    if source == legacy && !belongs_to_thread(&legacy_content, thread_id) {
+        // Discovery raced an older client's write. Legacy files are never ours to remove.
+        return Ok(None);
+    }
+    if belongs_to_thread(&legacy_content, thread_id) {
+        let Some(directory) = thread_context_dir(memories_root, cwd, thread_id)? else {
+            return Ok(None);
+        };
+        tokio::fs::create_dir_all(&directory).await?;
+        let target = directory.join(file);
+        let temporary = target.with_extension(format!("md.tmp-{thread_id}"));
+        tokio::fs::write(&temporary, "").await?;
+        tokio::fs::rename(&temporary, &target).await?;
+        Ok(Some(target))
+    } else {
+        tokio::fs::remove_file(source)
+            .await
+            .with_context(|| format!("remove Elpis continuity file {}", source.display()))?;
+        Ok(Some(source.to_path_buf()))
+    }
+}
+
+#[cfg(test)]
 fn workspace_dir(memories_root: Option<&Path>, cwd: &Path) -> Option<PathBuf> {
     crate::legacy_core::elpis_context::workspace_context_dir(memories_root, cwd)
 }
@@ -369,6 +415,9 @@ mod tests {
     use codex_app_server_protocol::TurnItemsView;
     use tempfile::tempdir;
 
+    const THREAD: &str = "019a0c4e-7b1e-7a41-9b4e-2f0d8c1a5e10";
+    const OTHER_THREAD: &str = "019a0c4e-7b1e-7a41-9b4e-2f0d8c1a5e11";
+
     #[tokio::test]
     async fn memory_commit_keeps_short_citations_and_separate_provenance() -> Result<()> {
         use crate::legacy_core::memory_save::{MemoryDecision, MemorySaveTiming, MemorySnapshot};
@@ -392,9 +441,9 @@ mod tests {
             r#"{{"evidence":[{{"id":"{id}:1","item":{{"role":"user"}}}},{{"id":"{id}:10","item":{{"role":"user"}}}}]}}"#
         );
         for _ in 0..2 {
-            let baseline = MemorySnapshot::baseline_when_enabled(&root, &cwd)?
+            let baseline = MemorySnapshot::baseline_when_enabled(&root, &cwd, THREAD)?
                 .context("enabled memory baseline")?;
-            let snapshot = MemorySnapshot::open(&root, &cwd)?.context("enabled saver")?;
+            let snapshot = MemorySnapshot::open(&root, &cwd, THREAD)?.context("enabled saver")?;
             snapshot.commit(
                 &baseline,
                 &MemoryDecision {
@@ -402,7 +451,7 @@ mod tests {
                     memory: original.clone(),
                 },
                 "gpt-5.6-luna",
-                "thread",
+                THREAD,
                 "turn",
                 None,
                 Some(evidence.as_str()),
@@ -426,10 +475,13 @@ mod tests {
         let root = home.path().join("memories");
         let cwd = Path::new("/tmp/checkpoint-clear-race");
         let workspace = workspace_dir(Some(&root), cwd).context("workspace")?;
+        let thread_workspace =
+            thread_context_dir(Some(&root), cwd.as_ref(), THREAD)?.context("thread workspace")?;
+        std::fs::create_dir_all(&thread_workspace)?;
         tokio::fs::create_dir_all(&workspace).await?;
         tokio::fs::write(
-            workspace.join("ES.md"),
-            "- Thread: `thread`\nOriginal checkpoint",
+            thread_workspace.join("ES.md"),
+            "- Thread: `019a0c4e-7b1e-7a41-9b4e-2f0d8c1a5e10`\nOriginal checkpoint",
         )
         .await?;
         tokio::fs::write(
@@ -437,27 +489,28 @@ mod tests {
             r#"{"enabled":true}"#,
         )
         .await?;
-        let baseline = MemorySnapshot::baseline_when_enabled(&root, cwd)?
+        let baseline = MemorySnapshot::baseline_when_enabled(&root, cwd, THREAD)?
             .context("enabled memory baseline")?;
-        let snapshot = MemorySnapshot::open(&root, cwd)?.context("enabled saver")?;
+        let snapshot = MemorySnapshot::open(&root, cwd, THREAD)?.context("enabled saver")?;
         assert!(
-            clear_session_checkpoint(Some(&root), cwd, "thread")
+            clear_session_checkpoint(Some(&root), cwd, THREAD)
                 .await?
                 .is_none(),
             "clearing must defer to the in-flight save"
         );
         assert!(
-            workspace.join("ES.md").exists(),
+            thread_workspace.join("ES.md").exists(),
             "the saver's snapshot source must survive a concurrent clear"
         );
         snapshot.commit(
             &baseline,
             &MemoryDecision {
-                checkpoint: "- Thread: `thread`\nConsolidated plan.".into(),
+                checkpoint: "- Thread: `019a0c4e-7b1e-7a41-9b4e-2f0d8c1a5e10`\nConsolidated plan."
+                    .into(),
                 memory: "Retain the verified lesson.".into(),
             },
             "gpt-5.6-luna",
-            "thread",
+            THREAD,
             "current-turn",
             None,
             None,
@@ -465,7 +518,7 @@ mod tests {
         )?;
         drop(snapshot);
         assert!(
-            clear_session_checkpoint(Some(&root), cwd, "thread")
+            clear_session_checkpoint(Some(&root), cwd, THREAD)
                 .await?
                 .is_some(),
             "clearing must work once the save released the checkpoint"
@@ -481,16 +534,19 @@ mod tests {
         let root = home.path().join("memories");
         let cwd = Path::new("/tmp/checkpoint-race");
         let workspace = workspace_dir(Some(&root), cwd).context("workspace")?;
+        let thread_workspace =
+            thread_context_dir(Some(&root), cwd.as_ref(), THREAD)?.context("thread workspace")?;
+        std::fs::create_dir_all(&thread_workspace)?;
         tokio::fs::create_dir_all(&workspace).await?;
-        tokio::fs::write(workspace.join("ES.md"), "Original checkpoint").await?;
+        tokio::fs::write(thread_workspace.join("ES.md"), "Original checkpoint").await?;
         tokio::fs::write(
             workspace.join("memory-autosave.json"),
             r#"{"enabled":true}"#,
         )
         .await?;
-        let baseline = MemorySnapshot::baseline_when_enabled(&root, cwd)?
+        let baseline = MemorySnapshot::baseline_when_enabled(&root, cwd, THREAD)?
             .context("enabled memory baseline")?;
-        let snapshot = MemorySnapshot::open(&root, cwd)?.context("enabled saver")?;
+        let snapshot = MemorySnapshot::open(&root, cwd, THREAD)?.context("enabled saver")?;
         let turn = Turn {
             root_turn_id: None,
             id: "current-turn".into(),
@@ -509,12 +565,12 @@ mod tests {
             completed_at: Some(2),
             duration_ms: Some(1_000),
         };
-        let result = write_session_checkpoint(Some(&root), cwd, "thread", &turn).await?;
+        let result = write_session_checkpoint(Some(&root), cwd, THREAD, &turn).await?;
         assert!(
             write_session_checkpoint(
                 Some(&root),
                 Path::new("/tmp/unrelated-checkpoint"),
-                "other",
+                OTHER_THREAD,
                 &turn
             )
             .await?
@@ -529,7 +585,7 @@ mod tests {
             &baseline,
             &decision,
             "gpt-5.6-luna",
-            "thread",
+            THREAD,
             "current-turn",
             None,
             None,
@@ -541,11 +597,11 @@ mod tests {
         );
         drop(snapshot);
         assert!(
-            write_session_checkpoint(Some(&root), cwd, "thread", &turn)
+            write_session_checkpoint(Some(&root), cwd, THREAD, &turn)
                 .await?
                 .is_some()
         );
-        let mirrored = tokio::fs::read_to_string(workspace.join("ES.md")).await?;
+        let mirrored = tokio::fs::read_to_string(thread_workspace.join("ES.md")).await?;
         assert!(mirrored.contains(&decision.checkpoint));
         assert!(mirrored.contains("Response finished while the responding agent saves memory."));
         Ok(())
@@ -559,7 +615,10 @@ mod tests {
         let root = home.path().join("memories");
         let cwd = Path::new("/tmp/checkpoint-lock-order");
         let workspace = workspace_dir(Some(&root), cwd).context("workspace")?;
-        let lock = try_lock_checkpoint(&workspace)?.context("writer lock")?;
+        let thread_workspace =
+            thread_context_dir(Some(&root), cwd.as_ref(), THREAD)?.context("thread workspace")?;
+        std::fs::create_dir_all(&thread_workspace)?;
+        let lock = try_lock_checkpoint(&thread_workspace)?.context("writer lock")?;
         tokio::fs::write(
             workspace.join("memory-autosave.json"),
             r#"{"enabled":true}"#,
@@ -567,12 +626,14 @@ mod tests {
         .await?;
         let writer = async {
             tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-            tokio::fs::write(workspace.join("ES.md"), "Newly finished checkpoint").await?;
+            tokio::fs::write(thread_workspace.join("ES.md"), "Newly finished checkpoint").await?;
             drop(lock);
             Ok::<(), anyhow::Error>(())
         };
-        let (snapshot, written) =
-            tokio::join!(MemorySnapshot::open_when_available(&root, cwd), writer);
+        let (snapshot, written) = tokio::join!(
+            MemorySnapshot::open_when_available(&root, cwd, THREAD),
+            writer
+        );
         written?;
         assert_eq!(
             snapshot?.context("enabled saver")?.checkpoint,
@@ -589,17 +650,20 @@ mod tests {
         let root = home.path().join("memories");
         let cwd = Path::new("/tmp/manual-checkpoint");
         let workspace = workspace_dir(Some(&root), cwd).context("workspace")?;
+        let thread_workspace =
+            thread_context_dir(Some(&root), cwd.as_ref(), THREAD)?.context("thread workspace")?;
+        std::fs::create_dir_all(&thread_workspace)?;
         tokio::fs::create_dir_all(&workspace).await?;
-        tokio::fs::write(workspace.join("ES.md"), "Original checkpoint").await?;
+        tokio::fs::write(thread_workspace.join("ES.md"), "Original checkpoint").await?;
         tokio::fs::write(
             workspace.join("memory-autosave.json"),
             r#"{"enabled":true}"#,
         )
         .await?;
-        let baseline = MemorySnapshot::baseline_when_enabled(&root, cwd)?
+        let baseline = MemorySnapshot::baseline_when_enabled(&root, cwd, THREAD)?
             .context("enabled memory baseline")?;
-        let snapshot = MemorySnapshot::open(&root, cwd)?.context("enabled saver")?;
-        tokio::fs::write(workspace.join("ES.md"), "Newer manual correction").await?;
+        let snapshot = MemorySnapshot::open(&root, cwd, THREAD)?.context("enabled saver")?;
+        tokio::fs::write(thread_workspace.join("ES.md"), "Newer manual correction").await?;
         let error = snapshot
             .commit(
                 &baseline,
@@ -608,7 +672,7 @@ mod tests {
                     memory: "Lesson".into(),
                 },
                 "gpt-5.6-luna",
-                "thread",
+                THREAD,
                 "turn",
                 None,
                 None,
@@ -617,7 +681,7 @@ mod tests {
             .expect_err("manual changes must remain protected");
         assert!(error.to_string().contains("checkpoint changed"));
         assert_eq!(
-            tokio::fs::read_to_string(workspace.join("ES.md")).await?,
+            tokio::fs::read_to_string(thread_workspace.join("ES.md")).await?,
             "Newer manual correction"
         );
         Ok(())
@@ -632,7 +696,7 @@ mod tests {
         let path = write_goal(
             Some(&memories_root),
             cwd,
-            "thread-one",
+            THREAD,
             "Ship the context layer",
             "active",
             42,
@@ -643,15 +707,15 @@ mod tests {
         let content = tokio::fs::read_to_string(&path).await?;
         assert!(path.starts_with(home.path().join(".elpis/context/workspaces")));
         assert!(content.contains("Ship the context layer"));
-        assert!(content.contains("- Thread: `thread-one`"));
+        assert!(content.contains("- Thread: `019a0c4e-7b1e-7a41-9b4e-2f0d8c1a5e10`"));
         let checkpoint = path.with_file_name(SESSION_CHECKPOINT_FILE);
         tokio::fs::write(
             &checkpoint,
-            "# Elpis Session Checkpoint\n- Thread: `thread-one`\n",
+            "# Elpis Session Checkpoint\n- Thread: `019a0c4e-7b1e-7a41-9b4e-2f0d8c1a5e10`\n",
         )
         .await?;
         assert_eq!(
-            clear_goal(Some(&memories_root), cwd, "thread-two").await?,
+            clear_goal(Some(&memories_root), cwd, OTHER_THREAD).await?,
             None
         );
         assert!(path.exists());
@@ -660,7 +724,7 @@ mod tests {
             "another thread must not clear the checkpoint"
         );
         assert_eq!(
-            clear_goal(Some(&memories_root), cwd, "thread-one").await?,
+            clear_goal(Some(&memories_root), cwd, THREAD).await?,
             Some(path.clone())
         );
         assert!(!path.exists());
@@ -673,23 +737,16 @@ mod tests {
         let home = tempdir()?;
         let memories_root = home.path().join("memories");
         let cwd = Path::new("/tmp/shared-project");
-        let goal = write_goal(
-            Some(&memories_root),
-            cwd,
-            "thread-one",
-            "Finish",
-            "active",
-            1,
-        )
-        .await?
-        .context("goal path")?;
+        let goal = write_goal(Some(&memories_root), cwd, THREAD, "Finish", "active", 1)
+            .await?
+            .context("goal path")?;
         let checkpoint = goal.with_file_name(SESSION_CHECKPOINT_FILE);
-        let content = "# Elpis Session Checkpoint\n- Thread: `thread-two`\n\n## Latest Result\nQuoted metadata:\n- Thread: `thread-one`\nOther work remains.\n";
+        let content = "# Elpis Session Checkpoint\n- Thread: `019a0c4e-7b1e-7a41-9b4e-2f0d8c1a5e11`\n\n## Latest Result\nQuoted metadata:\n- Thread: `019a0c4e-7b1e-7a41-9b4e-2f0d8c1a5e10`\nOther work remains.\n";
         tokio::fs::write(&checkpoint, content).await?;
-        clear_goal(Some(&memories_root), cwd, "thread-one").await?;
+        clear_goal(Some(&memories_root), cwd, THREAD).await?;
         assert!(!goal.exists());
         assert_eq!(tokio::fs::read_to_string(&checkpoint).await?, content);
-        clear_goal(Some(&memories_root), cwd, "thread-one").await?;
+        clear_goal(Some(&memories_root), cwd, THREAD).await?;
         assert_eq!(tokio::fs::read_to_string(&checkpoint).await?, content);
         Ok(())
     }
@@ -704,7 +761,7 @@ mod tests {
         let path = write_goal(
             Some(&memories_root),
             cwd,
-            "thread-one",
+            THREAD,
             "Ship the ledger",
             "active",
             1,
@@ -716,7 +773,7 @@ mod tests {
         write_goal(
             Some(&memories_root),
             cwd,
-            "thread-one",
+            THREAD,
             "Ship the ledger",
             "complete",
             2,
@@ -761,7 +818,7 @@ mod tests {
             duration_ms: Some(2_000),
         };
 
-        let path = write_session_checkpoint(Some(&memories_root), cwd, "thread-one", &turn)
+        let path = write_session_checkpoint(Some(&memories_root), cwd, THREAD, &turn)
             .await?
             .context("checkpoint path")?;
         let content = tokio::fs::read_to_string(&path).await?;
@@ -773,11 +830,11 @@ mod tests {
         let consolidated = "- [ ] Verify the release; passing tests are not user acceptance.";
         tokio::fs::write(
             &path,
-            format!("- Thread: `thread-one`\n\n## Consolidated State\n\n{consolidated}\n"),
+            format!("- Thread: `019a0c4e-7b1e-7a41-9b4e-2f0d8c1a5e10`\n\n## Consolidated State\n\n{consolidated}\n"),
         )
         .await?;
         for _ in 0..2 {
-            write_session_checkpoint(Some(&memories_root), cwd, "thread-one", &turn).await?;
+            write_session_checkpoint(Some(&memories_root), cwd, THREAD, &turn).await?;
             let updated = tokio::fs::read_to_string(&path).await?;
             assert_eq!(updated.matches(consolidated).count(), 1);
             assert_eq!(updated.matches("Implemented the checkpoint.").count(), 1);
@@ -821,14 +878,10 @@ mod tests {
             completed_at: Some(2),
             duration_ms: Some(1000),
         };
-        let path = write_session_checkpoint(
-            Some(home.path()),
-            Path::new("/tmp/project"),
-            "thread",
-            &turn,
-        )
-        .await?
-        .context("checkpoint path")?;
+        let path =
+            write_session_checkpoint(Some(home.path()), Path::new("/tmp/project"), THREAD, &turn)
+                .await?
+                .context("checkpoint path")?;
         let content = tokio::fs::read_to_string(path).await?;
         assert!(content.chars().count() <= 8_000);
         assert!(content.contains("Next: verify IDE; preserve user changes."));
@@ -862,14 +915,14 @@ mod tests {
             completed_at: Some(2),
             duration_ms: Some(1_000),
         };
-        let path = write_session_checkpoint(Some(&memories_root), cwd, "thread-one", &turn)
+        let path = write_session_checkpoint(Some(&memories_root), cwd, THREAD, &turn)
             .await?
             .context("checkpoint path")?;
         let previous = tokio::fs::read(&path).await?;
         turn.id = "interrupted-turn".into();
         turn.status = TurnStatus::Interrupted;
         turn.items.clear();
-        write_session_checkpoint(Some(&memories_root), cwd, "thread-one", &turn).await?;
+        write_session_checkpoint(Some(&memories_root), cwd, THREAD, &turn).await?;
         assert_eq!(tokio::fs::read(&path).await?, previous);
 
         turn.items.push(ThreadItem::AgentMessage {
@@ -880,19 +933,25 @@ mod tests {
             delivery: None,
             questions: None,
         });
-        write_session_checkpoint(Some(&memories_root), cwd, "thread-one", &turn).await?;
+        write_session_checkpoint(Some(&memories_root), cwd, THREAD, &turn).await?;
         let content = tokio::fs::read_to_string(&path).await?;
         assert!(content.contains("IDE verification found a startup error."));
         assert!(content.contains("- Status: interrupted"));
 
         turn.items.clear();
-        write_session_checkpoint(Some(&memories_root), cwd, "thread-two", &turn).await?;
-        let content = tokio::fs::read_to_string(&path).await?;
-        assert!(content.contains("- Thread: `thread-two`"));
-        assert!(!content.contains("IDE verification found"));
-        tokio::fs::remove_file(&path).await?;
-        write_session_checkpoint(Some(&memories_root), cwd, "thread-two", &turn).await?;
-        assert!(path.exists(), "first interruption still records its status");
+        let other_path = write_session_checkpoint(Some(&memories_root), cwd, OTHER_THREAD, &turn)
+            .await?
+            .context("first interruption still records its status")?;
+        assert_eq!(tokio::fs::read_to_string(&path).await?, content);
+        assert_ne!(
+            path, other_path,
+            "same-workspace threads own separate checkpoints"
+        );
+        let other_content = tokio::fs::read_to_string(&other_path).await?;
+        assert!(other_content.contains("- Thread: `019a0c4e-7b1e-7a41-9b4e-2f0d8c1a5e11`"));
+        assert!(!other_content.contains("IDE verification found"));
+        write_session_checkpoint(Some(&memories_root), cwd, OTHER_THREAD, &turn).await?;
+        assert_eq!(tokio::fs::read_to_string(&other_path).await?, other_content);
         Ok(())
     }
 
@@ -929,5 +988,142 @@ mod tests {
             &turn.items[0],
             ThreadItem::AgentMessage { text, .. } if text == "New turn result."
         ));
+    }
+
+    #[tokio::test]
+    async fn same_workspace_goals_and_legacy_clear_remain_thread_owned() -> Result<()> {
+        let home = tempdir()?;
+        let root = home.path().join("memories");
+        let cwd = home.path().join("project");
+        let first = codex_protocol::ThreadId::new().to_string();
+        let second = codex_protocol::ThreadId::new().to_string();
+        let workspace = workspace_dir(Some(&root), &cwd).context("workspace")?;
+        tokio::fs::create_dir_all(&workspace).await?;
+        let legacy_goal = format!("- Thread: `{first}`\nLegacy goal");
+        let legacy_checkpoint = format!("- Thread: `{first}`\nLegacy checkpoint");
+        tokio::fs::write(workspace.join(GOAL_FILE), &legacy_goal).await?;
+        tokio::fs::write(workspace.join(SESSION_CHECKPOINT_FILE), &legacy_checkpoint).await?;
+        let second_goal = write_goal(Some(&root), &cwd, &second, "Second goal", "active", 1)
+            .await?
+            .context("second goal")?;
+        assert!(clear_goal(Some(&root), &cwd, &first).await?.is_some());
+        for _ in 0..2 {
+            for name in [GOAL_FILE, SESSION_CHECKPOINT_FILE] {
+                let path = thread_continuity_path(Some(&root), &cwd, &first, name)?
+                    .context("suppression marker")?;
+                assert!(tokio::fs::read_to_string(path).await?.is_empty());
+            }
+            assert!(clear_goal(Some(&root), &cwd, &first).await?.is_none());
+        }
+        assert_eq!(
+            tokio::fs::read_to_string(workspace.join(GOAL_FILE)).await?,
+            legacy_goal
+        );
+        assert_eq!(
+            tokio::fs::read_to_string(workspace.join(SESSION_CHECKPOINT_FILE)).await?,
+            legacy_checkpoint
+        );
+        assert!(
+            tokio::fs::read_to_string(&second_goal)
+                .await?
+                .contains("Second goal")
+        );
+        let first_goal = write_goal(Some(&root), &cwd, &first, "First goal", "active", 2)
+            .await?
+            .context("first goal")?;
+        assert_ne!(first_goal, second_goal);
+        clear_goal(Some(&root), &cwd, &second).await?;
+        assert!(
+            tokio::fs::read_to_string(first_goal)
+                .await?
+                .contains("First goal")
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn invalid_thread_ids_cannot_write_or_clear_continuity() -> Result<()> {
+        let home = tempdir()?;
+        let root = home.path().join("memories");
+        for thread in [
+            "",
+            "../escape",
+            "/absolute",
+            "thread/../../escape",
+            "not-a-thread",
+        ] {
+            assert!(
+                write_goal(Some(&root), home.path(), thread, "goal", "active", 0)
+                    .await
+                    .is_err()
+            );
+            assert!(clear_goal(Some(&root), home.path(), thread).await.is_err());
+            assert!(
+                clear_session_checkpoint(Some(&root), home.path(), thread)
+                    .await
+                    .is_err()
+            );
+        }
+        assert!(!root.exists());
+        assert!(!home.path().join("context").exists());
+        Ok(())
+    }
+    #[tokio::test]
+    async fn legacy_owner_change_during_clear_never_deletes_the_other_threads_file() -> Result<()> {
+        let home = tempdir()?;
+        let root = home.path().join("memories");
+        let cwd = home.path();
+        let workspace = workspace_dir(Some(&root), cwd).context("workspace")?;
+        tokio::fs::create_dir_all(&workspace).await?;
+        let path = workspace.join(GOAL_FILE);
+        tokio::fs::write(&path, format!("- Thread: `{THREAD}`\nOriginal")).await?;
+        let discovered = thread_continuity_path(Some(&root), cwd, THREAD, GOAL_FILE)?
+            .context("own legacy goal")?;
+        let newer = format!("- Thread: `{OTHER_THREAD}`\nNewer owner's goal");
+        tokio::fs::write(&path, &newer).await?;
+        assert!(
+            clear_owned_file(Some(&root), cwd, THREAD, GOAL_FILE, &discovered)
+                .await?
+                .is_none()
+        );
+        assert_eq!(tokio::fs::read_to_string(path).await?, newer);
+        Ok(())
+    }
+    #[tokio::test]
+    async fn concurrent_same_workspace_goals_keep_both_objectives() -> Result<()> {
+        let home = tempdir()?;
+        let root = home.path().join("memories");
+        let cwd = home.path();
+        let (first, second) = tokio::join!(
+            write_goal(Some(&root), cwd, THREAD, "First objective", "active", 1),
+            write_goal(
+                Some(&root),
+                cwd,
+                OTHER_THREAD,
+                "Second objective",
+                "active",
+                1
+            ),
+        );
+        let first = first?.context("first goal")?;
+        let second = second?.context("second goal")?;
+        assert_ne!(first, second);
+        assert!(
+            tokio::fs::read_to_string(&first)
+                .await?
+                .contains("First objective")
+        );
+        assert!(
+            tokio::fs::read_to_string(&second)
+                .await?
+                .contains("Second objective")
+        );
+        clear_goal(Some(&root), cwd, THREAD).await?;
+        assert!(
+            tokio::fs::read_to_string(second)
+                .await?
+                .contains("Second objective")
+        );
+        Ok(())
     }
 }

@@ -90,6 +90,10 @@ pub struct Cli {
     #[arg(long)]
     pub no_daemon: bool,
 
+    /// Use the launcher's private local provider bridge with local workspace semantics.
+    #[arg(long, hide = true)]
+    pub elpis_local_bridge: bool,
+
     #[clap(skip)]
     pub config_overrides: CliConfigOverrides,
 }

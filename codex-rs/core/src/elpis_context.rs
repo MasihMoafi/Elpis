@@ -265,6 +265,61 @@ pub fn workspace_context_dir(memories_root: Option<&Path>, cwd: &Path) -> Option
     )
 }
 
+/// Continuity belongs to a validated provider-neutral thread, while admission and saving
+/// preferences remain workspace-wide. Parse before joining so external IDs cannot escape.
+pub fn thread_context_dir(
+    memories_root: Option<&Path>,
+    cwd: &Path,
+    thread_id: &str,
+) -> std::io::Result<Option<PathBuf>> {
+    let thread_id = codex_protocol::ThreadId::from_string(thread_id)
+        .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidInput, error))?;
+    Ok(workspace_context_dir(memories_root, cwd)
+        .map(|workspace| workspace.join("threads").join(thread_id.to_string())))
+}
+
+pub fn continuity_belongs_to_thread(content: &str, thread_id: &str) -> bool {
+    content
+        .lines()
+        .find(|line| line.starts_with("- Thread: "))
+        .is_some_and(|line| line == format!("- Thread: `{thread_id}`"))
+}
+
+/// Read a thread's generated file, falling back to legacy workspace state only for its
+/// recorded owner. An existing empty thread file suppresses fallback after an explicit clear.
+/// This never changes the legacy file. Explicit `/add` admission bypasses automatic discovery.
+pub fn thread_continuity_path(
+    memories_root: Option<&Path>,
+    cwd: &Path,
+    thread_id: &str,
+    file: &str,
+) -> std::io::Result<Option<PathBuf>> {
+    if !matches!(file, "GOAL.md" | "ES.md") {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "invalid continuity file",
+        ));
+    }
+    let Some(directory) = thread_context_dir(memories_root, cwd, thread_id)? else {
+        return Ok(None);
+    };
+    let path = directory.join(file);
+    match std::fs::metadata(&path) {
+        Ok(_) => return Ok(Some(path)),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => return Err(error),
+    }
+    let Some(workspace) = workspace_context_dir(memories_root, cwd) else {
+        return Ok(None);
+    };
+    let legacy = workspace.join(file);
+    match std::fs::read_to_string(&legacy) {
+        Ok(content) => Ok(continuity_belongs_to_thread(&content, thread_id).then_some(legacy)),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(error),
+    }
+}
+
 /// Returns the two stable paths that identify manual-memory storage for a workspace.
 /// Neither path has to exist yet.
 pub fn manual_memory_storage_paths(
@@ -432,14 +487,16 @@ pub fn create_manual_memory(
         })
 }
 
-pub async fn build_continuity_prompt(memories_root: Option<&Path>, cwd: &Path) -> Option<String> {
-    build_continuity_prompt_with_dev_rule_roots(memories_root, cwd, &[]).await
+#[cfg(test)]
+async fn build_continuity_prompt(memories_root: Option<&Path>, cwd: &Path) -> Option<String> {
+    build_continuity_prompt_with_dev_rule_roots(memories_root, cwd, &[], None).await
 }
 
 pub async fn build_continuity_prompt_with_dev_rule_roots(
     memories_root: Option<&Path>,
     cwd: &Path,
     dev_rule_roots: &[AbsolutePathBuf],
+    thread_id: Option<&str>,
 ) -> Option<String> {
     let mut sections = Vec::new();
     // Global/project AGENTS.md are deliberately NOT injected here: the app server
@@ -453,7 +510,7 @@ pub async fn build_continuity_prompt_with_dev_rule_roots(
     // out: the skills service advertises compact metadata and loads a selected skill
     // through its native path rather than admitting a whole library as always-on context.
     let Ok(sources) =
-        continuity_sources_with_dev_rule_roots(memories_root, cwd, &[], dev_rule_roots)
+        continuity_sources_with_dev_rule_roots(memories_root, cwd, &[], dev_rule_roots, thread_id)
     else {
         return None;
     };
@@ -461,7 +518,9 @@ pub async fn build_continuity_prompt_with_dev_rule_roots(
         if !source.admitted || source.name == GLOBAL_RULES || source.name == PROJECT_RULES {
             continue;
         }
-        if let Some(section) = read_continuity_source_section(&source, memories_root, cwd).await {
+        if let Some(section) =
+            read_continuity_source_section(&source, memories_root, cwd, thread_id).await
+        {
             sections.push(section);
         }
     }
@@ -478,8 +537,18 @@ async fn read_continuity_source_section(
     source: &ContinuitySource,
     memories_root: Option<&Path>,
     cwd: &Path,
+    thread_id: Option<&str>,
 ) -> Option<String> {
     let content = tokio::fs::read_to_string(&source.path).await.ok()?;
+    // Legacy workspace files can still be changed by an older running client between
+    // discovery and reading. Recheck the exact bytes being admitted, not only the path.
+    if let Some(thread_id) = thread_id
+        && matches!(source.name.as_str(), "GOAL.md" | "ES.md")
+        && source.path == workspace_context_dir(memories_root, cwd)?.join(&source.name)
+        && !continuity_belongs_to_thread(&content, thread_id)
+    {
+        return None;
+    }
     let content = truncate_chars(content.trim(), source_char_limit(&source.name));
     if content.is_empty() {
         return None;
@@ -512,12 +581,13 @@ async fn read_continuity_source_section(
 /// sends natively — never from guessed filesystem locations, so the two surfaces
 /// can no longer disagree. A manually `/add`-ed file whose canonical path is already
 /// covered by another row is skipped (dedupe).
-pub fn continuity_sources(
+#[cfg(test)]
+fn continuity_sources(
     memories_root: Option<&Path>,
     cwd: &Path,
     instruction_source_paths: &[PathBuf],
 ) -> std::io::Result<Vec<ContinuitySource>> {
-    continuity_sources_with_dev_rule_roots(memories_root, cwd, instruction_source_paths, &[])
+    continuity_sources_with_dev_rule_roots(memories_root, cwd, instruction_source_paths, &[], None)
 }
 
 pub fn continuity_sources_with_dev_rule_roots(
@@ -525,6 +595,7 @@ pub fn continuity_sources_with_dev_rule_roots(
     cwd: &Path,
     instruction_source_paths: &[PathBuf],
     dev_rule_roots: &[AbsolutePathBuf],
+    thread_id: Option<&str>,
 ) -> std::io::Result<Vec<ContinuitySource>> {
     let Some(memories_root) = memories_root else {
         return Ok(Vec::new());
@@ -543,6 +614,7 @@ pub fn continuity_sources_with_dev_rule_roots(
         &admission,
         Some(&manual_memory),
         &workspace_dir,
+        thread_id,
     )
 }
 
@@ -552,6 +624,7 @@ pub fn continuity_sources_from_manual_memory_status(
     instruction_source_paths: &[PathBuf],
     dev_rule_roots: &[AbsolutePathBuf],
     manual_memory: Option<&ManualMemoryStatus>,
+    thread_id: Option<&str>,
 ) -> std::io::Result<Vec<ContinuitySource>> {
     let Some(memories_root) = memories_root else {
         return Ok(Vec::new());
@@ -568,6 +641,7 @@ pub fn continuity_sources_from_manual_memory_status(
         &admission,
         manual_memory,
         &workspace_dir,
+        thread_id,
     )
 }
 
@@ -579,6 +653,7 @@ fn continuity_sources_with_state(
     admission: &ContinuityAdmission,
     manual_memory: Option<&ManualMemoryStatus>,
     workspace_dir: &Path,
+    thread_id: Option<&str>,
 ) -> std::io::Result<Vec<ContinuitySource>> {
     let mut sources = Vec::new();
     let mut canonical_paths = std::collections::HashSet::new();
@@ -700,39 +775,28 @@ fn continuity_sources_with_state(
         }
     }
 
-    let goal_path = workspace_dir.join("GOAL.md");
-    // Completion metadata is descriptive. The user's explicit Ledger selection is the
-    // sole authority over whether this optional source occupies the next request.
-    let goal_admitted = admission.goal;
-    if let Some(source) = existing_file_source(
-        "GOAL.md".to_string(),
-        goal_path.clone(),
-        ContinuitySourceCategory::Files,
-        "Elpis workspace state",
-        "active workspace goal",
-        goal_admitted,
-    ) {
-        if let Ok(canonical) = goal_path.canonicalize() {
-            canonical_paths.insert(canonical);
+    for (name, admitted, reason) in [
+        ("GOAL.md", admission.goal, "active thread goal"),
+        ("ES.md", admission.checkpoint, "lean thread checkpoint"),
+    ] {
+        let path = match thread_id {
+            Some(thread_id) => thread_continuity_path(Some(memories_root), cwd, thread_id, name)?,
+            None => Some(workspace_dir.join(name)),
+        };
+        let Some(path) = path else { continue };
+        if let Some(source) = existing_file_source(
+            name.to_string(),
+            path.clone(),
+            ContinuitySourceCategory::Files,
+            "Elpis thread state",
+            reason,
+            admitted,
+        ) {
+            if let Ok(canonical) = path.canonicalize() {
+                canonical_paths.insert(canonical);
+            }
+            sources.push(source);
         }
-        sources.push(source);
-    }
-    let checkpoint_path = workspace_dir.join("ES.md");
-    // ES.md sits with GOAL.md, not under evidence. Both exist to carry the session
-    // forward; neither is a tool observation, which is what the evidence category means.
-    let checkpoint_admitted = admission.checkpoint;
-    if let Some(source) = existing_file_source(
-        "ES.md".to_string(),
-        checkpoint_path.clone(),
-        ContinuitySourceCategory::Files,
-        "Elpis workspace state",
-        "lean session checkpoint",
-        checkpoint_admitted,
-    ) {
-        if let Ok(canonical) = checkpoint_path.canonicalize() {
-            canonical_paths.insert(canonical);
-        }
-        sources.push(source);
     }
     // Durable memory is listed like the goal and the checkpoint: visible in the ledger from
     // the start, and switchable there. Memory that rewrites itself in the background without
@@ -2354,6 +2418,7 @@ mod tests {
             &[],
             &[],
             Some(&status),
+            None,
         )?;
         let source = sources
             .iter()
@@ -2708,7 +2773,7 @@ mod tests {
         set_continuity_source_admitted(Some(&memories), &cwd, MANUAL_MEMORY_FILE, false)?;
 
         assert_eq!(
-            read_continuity_source_section(&source, Some(&memories), &cwd).await,
+            read_continuity_source_section(&source, Some(&memories), &cwd, None).await,
             None,
             "a durable withdrawal after source discovery must win before injection"
         );
@@ -3140,6 +3205,7 @@ mod tests {
                 configured_later_root.clone(),
                 configured_dev_root.clone(),
             ],
+            None,
         )?;
         let rows = sources
             .iter()
@@ -3166,6 +3232,7 @@ mod tests {
                 configured_later_root.clone(),
                 configured_dev_root.clone(),
             ],
+            None,
         )
         .await
         .expect("configured development rule should reach the prompt");
@@ -3183,6 +3250,7 @@ mod tests {
                 configured_later_root,
                 configured_dev_root,
             ],
+            None,
         )?;
         let source = sources
             .iter()
@@ -3229,7 +3297,8 @@ mod tests {
             AbsolutePathBuf::from_absolute_path(&duplicate_root)?,
             AbsolutePathBuf::from_absolute_path(&unique_root)?,
         ];
-        let sources = continuity_sources_with_dev_rule_roots(Some(&memories), &cwd, &[], &roots)?;
+        let sources =
+            continuity_sources_with_dev_rule_roots(Some(&memories), &cwd, &[], &roots, None)?;
         let dev_sources = sources
             .iter()
             .filter(|source| source.name.starts_with(DEV_SOURCE_PREFIX))
@@ -3243,6 +3312,45 @@ mod tests {
             vec!["dev/AGENTS.md", "dev/ZETA.md", "dev/RULES.md"],
         );
         assert_eq!(dev_sources[2].path, unique_root.join("RULES.md"));
+        Ok(())
+    }
+    #[tokio::test]
+    async fn legacy_admission_rechecks_owner_after_discovery() -> std::io::Result<()> {
+        let home = tempdir()?;
+        let memories = home.path().join("memories");
+        let cwd = home.path().join("project");
+        let first = codex_protocol::ThreadId::new().to_string();
+        let second = codex_protocol::ThreadId::new().to_string();
+        let workspace = workspace_context_dir(Some(&memories), &cwd).unwrap();
+        std::fs::create_dir_all(&workspace)?;
+        let path = workspace.join("ES.md");
+        std::fs::write(&path, format!("- Thread: `{first}`\nOwn legacy checkpoint"))?;
+        set_continuity_source_admitted(Some(&memories), &cwd, "ES.md", true)?;
+        let sources =
+            continuity_sources_with_dev_rule_roots(Some(&memories), &cwd, &[], &[], Some(&first))?;
+        let source = sources
+            .iter()
+            .find(|source| source.name == "ES.md")
+            .unwrap();
+        assert!(
+            read_continuity_source_section(source, Some(&memories), &cwd, Some(&first))
+                .await
+                .unwrap()
+                .contains("Own legacy checkpoint")
+        );
+        std::fs::write(
+            &path,
+            format!("- Thread: `{second}`\nOther thread checkpoint"),
+        )?;
+        assert!(
+            read_continuity_source_section(source, Some(&memories), &cwd, Some(&first))
+                .await
+                .is_none()
+        );
+        for invalid in ["", "../escape", "/absolute", "not-a-thread"] {
+            assert!(thread_context_dir(Some(&memories), &cwd, invalid).is_err());
+        }
+        assert!(thread_continuity_path(Some(&memories), &cwd, &first, "../ES.md").is_err());
         Ok(())
     }
 }

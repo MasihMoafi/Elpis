@@ -789,7 +789,7 @@ wss.on("connection", (ws) => {
       if (r.agentsMd?.trim()) parts.push(`# Project and global instructions admitted by Elpis (AGENTS.md)\n\n${r.agentsMd.trim()}`);
       if (r.continuity?.trim()) parts.push(r.continuity.trim());
       return parts.join("\n\n");
-    } catch (e) { log(`elpis instructions for ${threadId}: ${e.message ?? JSON.stringify(e)}`); return ""; }
+    } catch (e) { throw new Error(`Could not read admitted Elpis instructions: ${e.message ?? JSON.stringify(e)}`); }
   }
   // A fork of a Claude chat (/fork, /side, /btw) starts a fresh Claude session; the parent's
   // Claude turns up to the fork point live only in the store, under the parent, so the fork
@@ -1391,17 +1391,18 @@ wss.on("connection", (ws) => {
       let freshSession = false;
       // Smart Prune on: Claude's requests go through the proxy (`smartPruneProxy`).
       const prune = agent.key === "claude" && smartPrune.get(threadId) === true;
-      // A changed approval mode, Subagents or Smart Prune switch reloads the session with the new
-      // options; Claude Code rebuilds it and keeps the conversation. A changed agent starts afresh.
-      if (live && live.mode === mode && live.subagents === subagents && live.agent === agent.key && live.prune === prune) sessionId = live.id;
+      // Capture admitted context at the turn boundary. Changed instructions (including an empty
+      // selection), approval mode, Subagents or Smart Prune reload the native conversation.
+      // Nothing reloads an in-flight turn; a changed agent starts afresh.
+      const instructions = await elpisInstructions(threadId);
+      if (live && live.mode === mode && live.subagents === subagents && live.agent === agent.key && live.prune === prune && live.instructions === instructions) sessionId = live.id;
       else {
         const cwd = threadCwd.get(threadId) ?? process.cwd();
-        const instructions = await elpisInstructions(threadId);
         const proxy = prune ? await smartPruneProxy() : null;
         const options = { ...(ask && { settingSources: ["project", "local"] }), ...(!subagents && { disallowedTools: SUBAGENT_TOOLS }), ...(proxy && { env: { ANTHROPIC_BASE_URL: proxy, NO_PROXY: [process.env.NO_PROXY, "127.0.0.1", "localhost"].filter(Boolean).join(",") } }) };
-        let _meta = { claudeCode: { options, emitRawSDKMessages: [{ type: "system", subtype: "init" }] } };
+        const _meta = { systemPrompt: { append: instructions }, claudeCode: { options, emitRawSDKMessages: [{ type: "system", subtype: "init" }] } };
         devChars.set(threadId, instructions.length);
-        if (instructions) { _meta = { ..._meta, systemPrompt: { append: instructions } }; log(`Elpis instructions for Claude: ${instructions.length} chars`); }
+        log(`Elpis instructions for ${agent.speaker}: ${instructions.length} chars`);
         await storeChain;
         const store = await loadStore();
         const helper = !!store._delegations?.[threadId] || !!store[threadId]?.parentThreadId;
@@ -1420,7 +1421,7 @@ wss.on("connection", (ws) => {
           freshSession = true;
           log(`session ${sessionId} for thread ${threadId} in ${cwd} (${ask ? "Elpis asks" : "full access"}, policy ${policy}, subagents ${subagents ? "on" : "off"})`);
         }
-        live = { id: sessionId, mode, subagents, agent: agent.key, prune };
+        live = { id: sessionId, mode, subagents, agent: agent.key, prune, instructions };
         sessions.set(threadId, live);
         const sid = sessionId;
         updateStore((st) => { st[threadId] = { ...st[threadId], session: sid, mode, agent: agent.key }; });

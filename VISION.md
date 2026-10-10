@@ -1,5 +1,7 @@
 # Elpis Vision
 
+Current workstation source and installed runtime: [Elpis/CURRENT.md](../Elpis/CURRENT.md). This worktree implements the [October 10 continuity/workflow contract](docs/specs/continuity-workflows.md); see `ES.md` for checks and remaining work.
+
 Elpis is the continuity layer around an AI coding runtime.
 
 The user should be able to change a provider, model, or local runtime without losing the working agreement that makes an agent useful: the current goal, admitted context, permissions, decisions, and evidence. Elpis owns that durable boundary; the provider owns inference.
@@ -17,7 +19,7 @@ Elpis should make four things visible and inspectable:
 
 ## Design direction
 
-Masih selected exact Codex shared behavior and layout on October 9, 2026. The terminal uses that foundation for input, streaming, animations, shortcuts and the agents view. Conflicting Elpis appearance customizations yield to Codex. Keep the hand-selected slash commands unchanged and retain each agent’s model label. The accepted boundaries are in `docs/specs/codex-parity.md`.
+Masih selected exact Codex shared behavior and layout on October 9, 2026. The terminal uses that foundation for input, streaming, animations, shortcuts and the agents view. Conflicting Elpis appearance customizations yield to Codex. Retain the hand-selected slash commands and each agent’s model label. On October 10, Masih additionally requested access to the inherited `/review` and `/worktree` workflows. The accepted boundaries are in `docs/specs/codex-parity.md`.
 
 The public website may borrow RAG Studio's standard of polish, but not its composition or palette. It should explain Elpis to someone who has never used an agent harness, show the continuity model directly, and keep experimental work clearly separated from available behavior.
 
@@ -31,9 +33,9 @@ The public website may borrow RAG Studio's standard of polish, but not its compo
 
 ## Current state — October 9, 2026
 
-The accepted September 30 release was v0.4.0 on Codex rust-v0.159.0. The local recovery candidate, Elpis 0.4.1 from `0c5e5518f`, is now installed on the Codex 0.162.0 foundation. It preserves the selected commands, provider support, Ledger controls, memory/continuity, pruning, dashboard and work graphs. It awaits Masih’s daily use and acceptance; no new release was published.
+The accepted September 30 release was v0.4.0 on Codex rust-v0.159.0. The local recovery candidate, Elpis 0.4.1 from `4f44937c2`, is installed on the Codex 0.162.0 foundation. It preserves the selected commands, provider support, Ledger controls, memory/continuity, pruning, dashboard and work graphs. The October 9 follow-up separates Codex user settings from Elpis project settings, corrects the Alt+C hint, replaces category shapes with colored circles, aligns the Ledger bar and displays “Elpising” in Deus Ex gold. It awaits Masih’s daily use and acceptance; no new release was published.
 
-Full CI 37953792953 passed. The installed runtime matches its artifact byte for byte. Two ordinary launcher windows now share the native backend and provider sessions, with folder ordering and model labels checked at wide and narrow widths. Permission changes, cold resume, failure handling and real Sonnet/Gemini file tasks passed. See `docs/permissions-verification.md` for evidence, remaining visual limits, a short user check and rollback. `ES.md` is the local continuation note; the accepted contract governs scope.
+Runtime run 37978565974 passed its configuration, core, provider, permission, session and offline-install checks; its screen-review gate found eight screen differences. Test-only corrections passed the full UI suite in run 37983082438: 5,770 passed, five direct-run exclusions, no unreviewed snapshots. Production code is identical between those runs, and the installed runtime matches the downloaded artifact byte for byte. Four light/dark captures were reviewed, animated gold met the contrast threshold, and all 14 installed-launcher checks passed, including Full Access, folder ordering and model labels. See `docs/permissions-verification.md` for evidence, remaining limits, a short user check and tested rollback. `ES.md` is the continuation note; the accepted contract governs scope.
 
 Runtime source is in `codex-rs/`, provider bridges in `tools/elpis-claude/`, checks in `scripts/` and `tests/`, and product contracts in `docs/`. State remains in `~/.elpis-next`. The website is a separate deployment boundary and is outside this recovery task.
 

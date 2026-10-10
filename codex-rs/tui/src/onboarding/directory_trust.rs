@@ -51,7 +51,10 @@ pub(crate) async fn check_directory_trust(
     // Another client can load the saved task while consent is pending. Check both folders.
     let saved_cwd = resumed_thread
         .filter(|thread| {
-            matches!(target, AppServerTarget::LocalDaemon { .. }) && thread.cwd.as_path() != cwd
+            matches!(
+                target,
+                AppServerTarget::LocalDaemon { .. } | AppServerTarget::LocalBridge { .. }
+            ) && thread.cwd.as_path() != cwd
         })
         .map(|thread| thread.cwd.as_path());
     let mut pending_cwds: VecDeque<_> = std::iter::once(cwd)
@@ -132,8 +135,10 @@ pub(crate) async fn check_directory_trust(
             return Ok(result);
         }
         consent.directory_trust_persisted |= result.directory_trust_persisted;
-        if matches!(target, AppServerTarget::LocalDaemon { .. })
-            && let Some(thread) = resumed_thread
+        if matches!(
+            target,
+            AppServerTarget::LocalDaemon { .. } | AppServerTarget::LocalBridge { .. }
+        ) && let Some(thread) = resumed_thread
         {
             // Another client may have reopened this task in a different folder during consent.
             let request_handle = app_server.request_handle();

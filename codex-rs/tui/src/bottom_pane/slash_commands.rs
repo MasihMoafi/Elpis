@@ -193,13 +193,15 @@ mod tests {
     }
 
     #[test]
-    fn worktree_command_lookup_is_hidden_even_with_the_feature() {
-        // Elpis: /worktree is on the hidden list, so no feature flag brings it back.
+    fn worktree_command_lookup_requires_the_feature() {
         assert_eq!(
             find_builtin_command("worktree", BuiltinCommandFlags::default()),
             None
         );
-        assert_eq!(find_builtin_command("worktree", all_enabled_flags()), None);
+        assert_eq!(
+            find_builtin_command("worktree", all_enabled_flags()),
+            Some(SlashCommand::Worktree)
+        );
     }
 
     #[test]

@@ -42,7 +42,11 @@ pub(crate) fn run(codex_home: PathBuf) -> anyhow::Result<()> {
 }
 
 fn answer(codex_home: &std::path::Path, request: MemorySaveRequest) -> serde_json::Value {
-    let snapshot = match MemorySnapshot::open(&codex_home.join("memories"), &request.cwd) {
+    let snapshot = match MemorySnapshot::open(
+        &codex_home.join("memories"),
+        &request.cwd,
+        &request.thread_id,
+    ) {
         Ok(Some(snapshot)) => snapshot,
         Ok(None) => return json!({ "enabled": false }),
         Err(error) => return json!({ "enabled": true, "error": format!("{error:#}") }),

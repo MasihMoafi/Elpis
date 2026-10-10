@@ -67,6 +67,24 @@ impl AgentsMdManager {
         config: &Config,
         environments: &TurnEnvironmentSnapshot,
     ) -> (CodexResult<Option<Arc<LoadedAgentsMd>>>, Vec<String>) {
+        self.refresh_repository(config, environments, false).await
+    }
+
+    /// A provider bridge asks explicitly for the next turn's current admitted files.
+    pub(crate) async fn refresh_for_elpis(
+        &self,
+        config: &Config,
+        environments: &TurnEnvironmentSnapshot,
+    ) -> (CodexResult<Option<Arc<LoadedAgentsMd>>>, Vec<String>) {
+        self.refresh_repository(config, environments, true).await
+    }
+
+    async fn refresh_repository(
+        &self,
+        config: &Config,
+        environments: &TurnEnvironmentSnapshot,
+        force: bool,
+    ) -> (CodexResult<Option<Arc<LoadedAgentsMd>>>, Vec<String>) {
         // Serialize overlapping captures without blocking reads of the applied snapshot.
         let Ok(_refresh_guard) = self.refresh_lock.acquire().await else {
             return (
@@ -83,7 +101,8 @@ impl AgentsMdManager {
         let active_project_trust_level = config.active_project.trust_level;
         let (mut instructions, cached, refresh_repository) = {
             let mut state = self.state.lock().await;
-            let refresh_repository = state.cache.selections.as_ref() != Some(&selections)
+            let refresh_repository = force
+                || state.cache.selections.as_ref() != Some(&selections)
                 || state.cache.active_project_trust_level != active_project_trust_level;
             if refresh_repository {
                 // Tightened read permissions must not leave inaccessible instructions visible,

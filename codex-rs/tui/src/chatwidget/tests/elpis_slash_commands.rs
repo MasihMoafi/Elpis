@@ -100,10 +100,10 @@ fn elpis_commands_are_listed_in_their_v030_order_with_v030_descriptions() {
 }
 
 #[test]
-fn hand_selected_slash_command_set_is_unchanged() {
+fn hand_selected_slash_command_set_adds_approved_review_and_worktree() {
     let mut expected = vec![
         "model", "effort", "pruner-model", "memory-model", "ide", "permissions", "yolo",
-        "hotkeys", "settings", "add", "skills", "hooks", "rename", "new", "resume", "fork",
+        "hotkeys", "settings", "add", "skills", "hooks", "review", "rename", "new", "resume", "fork", "worktree",
         "init", "compact", "prune", "smart-prune", "force-prune", "plan", "voice", "goal",
         "agent", "copy", "diff", "usage", "context", "dashboard", "theme", "mcp", "quit",
         "clear", "subagents",
@@ -387,7 +387,6 @@ fn commands_v030_kept_out_of_the_popup_still_work_under_their_v030_names() {
         ("mention", SlashCommand::Mention),
         ("ps", SlashCommand::Ps),
         ("raw", SlashCommand::Raw),
-        ("review", SlashCommand::Review),
         ("side", SlashCommand::Side),
         ("statusline", SlashCommand::Statusline),
         ("title", SlashCommand::Title),

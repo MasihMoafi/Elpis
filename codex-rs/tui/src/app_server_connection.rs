@@ -19,6 +19,11 @@ pub(crate) async fn connect(target: &AppServerTarget) -> color_eyre::Result<AppS
         AppServerTarget::Embedded => {
             color_eyre::eyre::bail!("embedded sessions have no remote connection")
         }
+        AppServerTarget::LocalBridge { endpoint } => {
+            // A reconnect must not trust a socket replaced since startup.
+            crate::elpis_local_bridge::validate(endpoint)?;
+            connect_remote_app_server(endpoint.clone()).await
+        }
         #[cfg(windows)]
         AppServerTarget::LocalDaemon {
             endpoint: RemoteAppServerEndpoint::UnixSocket { socket_path },
