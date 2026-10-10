@@ -35,6 +35,8 @@ or implemented outcomes.
 
 ## Requested outcomes
 
+October 10 correction: refine the palette and gold animation, make generated session names visible, and restore Shift+Tab permission changes with visible feedback and effective tool access. The [refined contract](specs/codex-parity.md) records these explicit exceptions. Tool-result attribution is already correct. Implementation is under verification; the earlier installed candidate does not establish acceptance of these corrections.
+
 October 9 visual follow-up: replace the context category shapes with colored circles, align the Ledger usage bar with its text, and replace the displayed “Working” with “Elpising” in the previously selected Deus Ex gold. This refines the parity contract. Implemented and installed October 9; automated and visual evidence is in `docs/permissions-verification.md`. Masih's acceptance remains pending.
 
 October 9 final clarification: the accepted [Codex parity contract](specs/codex-parity.md)
