@@ -81,7 +81,7 @@ async function main() {
   const stateDir = path.join(home, 'context/workspaces', `work-${createHash('sha256').update(cwd).digest('hex').slice(0, 12)}`);
   fs.mkdirSync(stateDir, { recursive: true });
   const admission = path.join(stateDir, 'admission.toml');
-  const admit = (included = true) => fs.writeFileSync(admission, `memory=${included}\n[dev_sources]\n"fixture.md"=${included}\n[custom_sources]\n${JSON.stringify(custom)}=${included}\n`);
+  const admit = (included = true) => fs.writeFileSync(admission, `memory=${included}\nproject_rules=${included}\n[dev_sources]\n"fixture.md"=${included}\n[custom_sources]\n${JSON.stringify(custom)}=${included}\n`);
   admit();
   fs.writeFileSync(path.join(home, 'config.toml'), 'model="gpt-5.5"\n[features]\nsubagents=false\n');
   const controlPath = path.join(root, 'control.json'), callsPath = path.join(root, 'calls.jsonl');
@@ -190,6 +190,20 @@ async function main() {
       assert(fallback.prompt[0].text.includes('Context fixture turn 1.'));
       pass('failed native reload starts fresh with current instructions and preserved transcript');
     }
+    const projectRules = path.join(cwd, 'AGENTS.md');
+    fs.writeFileSync(projectRules, 'PROJECT_RULE_LIVE_ALPHA');
+    assert(text(await run()).includes('PROJECT_RULE_LIVE_ALPHA'), 'new project instructions reach the next turn');
+    fs.writeFileSync(projectRules, 'PROJECT_RULE_LIVE_BETA');
+    const editedRules = text(await run());
+    assert(editedRules.includes('PROJECT_RULE_LIVE_BETA'));
+    assert(!editedRules.includes('PROJECT_RULE_LIVE_ALPHA'));
+    admit(false);
+    assert(!text(await run()).includes('PROJECT_RULE_LIVE_'), 'withdrawn project instructions leave the current request');
+    admit();
+    assert(text(await run()).includes('PROJECT_RULE_LIVE_BETA'), 're-admission uses the current project file');
+    fs.unlinkSync(projectRules);
+    assert(!text(await run()).includes('PROJECT_RULE_LIVE_'), 'deleted project instructions leave the current request');
+    pass('project instruction discovery, edits, withdrawal, re-admission and deletion reach live provider turns');
   } finally {
     fs.writeFileSync(path.join(root, 'evidence.json'), JSON.stringify({ checks, messages, stderr }, null, 2));
     console.log(`Evidence: ${root}`);
