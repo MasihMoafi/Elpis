@@ -217,6 +217,7 @@ jobs:
       - name: Provider history and message retention checks
         run: |
           node scripts/history-list.test.cjs
+          node --test tools/elpis-claude/test/resume-list.test.mjs
           node scripts/bridge-launcher.test.cjs
           node scripts/agy-steering.test.cjs
           node scripts/build-elpis-local.test.cjs
