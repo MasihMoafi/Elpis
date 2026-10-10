@@ -9,7 +9,7 @@ use super::SessionSelection;
 use super::archive::ArchiveState;
 use super::hint_line_for_row;
 use crate::keymap::KeymapContext;
-use crate::style::popup_border_style;
+use crate::style::accent_style;
 use crate::text_formatting::truncate_text;
 use codex_protocol::ThreadId;
 use crossterm::event::KeyCode;
@@ -156,9 +156,7 @@ pub(super) fn render_prompt(
         DeleteState::Pending { label, .. } => (" Deleting session… ", label),
     };
     Clear.render(area, frame.buffer);
-    let block = Block::bordered()
-        .title(title)
-        .border_style(popup_border_style());
+    let block = Block::bordered().title(title).border_style(accent_style());
     let inner = block.inner(area);
     frame.render_widget_ref(&block, area);
     let lines = vec![
