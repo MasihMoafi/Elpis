@@ -905,8 +905,7 @@ impl ChatWidget {
                 .filter(|(_, source)| source.admitted)
                 .map(|(_, source)| source.estimated_tokens)
                 .sum::<u64>();
-            let gold = crate::style::brand_style().fg.unwrap_or(Color::Reset);
-            let cat_style = Style::default().fg(crate::style::readable_color_on(gold, None));
+            let cat_style = source_heading_style();
             lines.push(Line::from(vec![
                 Span::styled(format!("{CONTEXT_CATEGORY_MARKER} "), cat_style),
                 Span::styled(group.display_name(), cat_style.bold()),
@@ -1895,6 +1894,11 @@ fn smart_prune_on_colors(
     )
 }
 
+fn source_heading_style() -> Style {
+    let gold = crate::style::brand_style().fg.unwrap_or(Color::Reset);
+    Style::default().fg(crate::style::readable_color_on(gold, None))
+}
+
 fn ledger_palette(
     terminal_bg: Option<(u8, u8, u8)>,
     color_level: StdoutColorLevel,
@@ -2032,7 +2036,7 @@ mod tests {
     }
 
     #[test]
-    fn ledger_source_palette_stays_in_the_olive_family() {
+    fn ledger_source_headings_use_gold() {
         for bg in [(255, 255, 255), (17, 18, 20)] {
             crate::terminal_palette::with_test_default_colors(
                 crate::terminal_probe::DefaultColors {
@@ -2040,14 +2044,10 @@ mod tests {
                     bg,
                 },
                 || {
-                    for color in LedgerSourceGroup::ALL.map(LedgerSourceGroup::color) {
-                        match color {
-                            Color::Rgb(r, g, b) => assert!(g >= r && r > b),
-                            Color::Black if is_light(bg) => {}
-                            Color::Yellow | Color::Indexed(_) => {}
-                            other => panic!("unexpected ledger accent: {other:?}"),
-                        }
-                    }
+                    let Some(Color::Rgb(r, g, b)) = source_heading_style().fg else {
+                        panic!("expected truecolor gold");
+                    };
+                    assert!(r > g && g > b);
                 },
             );
         }

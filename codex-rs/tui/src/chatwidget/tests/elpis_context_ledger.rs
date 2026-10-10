@@ -11,6 +11,7 @@ use crate::elpis_ledger_events::ManualMemoryStorageTarget;
 use crate::elpis_ledger_events::ManualMemoryViewKey;
 use crate::render::renderable::Renderable;
 use pretty_assertions::assert_eq;
+use ratatui::style::Color;
 use tempfile::tempdir;
 
 const WIDTH: u16 = 150;
