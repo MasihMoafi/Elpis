@@ -15,4 +15,4 @@ The installed runtime, Code Mode host and sandbox match the CI artifacts byte fo
 
 Limits: this is not a Codex version upgrade or complete-parity claim. Live provider services and dashboard visuals were not rechecked here. Failed helper-permission saves leave restrictions temporary; the bridge does not intersect custom workspace roots. Native light-theme animation retains its dim phase. Masih’s daily-use acceptance remains open.
 
-[Tested rollback](/home/masih/.local/lib/elpis-next/versions/before-palette-20261010T080310Z/rollback.sh) restores the previous continuity installation. Chats and settings were preserved. Earlier [October 9 evidence](../.tmp/config-ui-install-receipt.json) and [continuity verification](continuity-verification.md) remain historical.
+[Tested rollback](/home/masih/.local/lib/elpis-next/versions/before-palette-20261010T080310Z/rollback.sh) restores the previous continuity installation. Chats and settings were preserved. Earlier [October 9 evidence](../../Elpis-wt-parity/.tmp/config-ui-install-receipt.json) and [continuity verification](continuity-verification.md) remain historical.
