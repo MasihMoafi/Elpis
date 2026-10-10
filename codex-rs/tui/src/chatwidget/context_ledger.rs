@@ -229,10 +229,7 @@ impl ChatWidget {
             || is_ctrl_x;
         if is_toggle_key {
             let crowded_out = self.context_ledger.crowded.get() && !self.context_ledger.focused;
-            if !self.context_ledger.visible
-                || crowded_out
-                || !self.context_ledger.focused
-            {
+            if !self.context_ledger.visible || crowded_out || !self.context_ledger.focused {
                 self.context_ledger.visible = true;
                 self.context_ledger.focused = true;
                 // Start at the top row on screen rather than wherever the
@@ -918,7 +915,8 @@ impl ChatWidget {
                 .filter(|(_, source)| source.admitted)
                 .map(|(_, source)| source.estimated_tokens)
                 .sum::<u64>();
-            let cat_style = Style::default().fg(group.color());
+            let cat_style =
+                crate::style::brand_style().remove_modifier(ratatui::style::Modifier::BOLD);
             lines.push(Line::from(vec![
                 Span::styled(format!("{CONTEXT_CATEGORY_MARKER} "), cat_style),
                 Span::styled(group.display_name(), cat_style.bold()),
