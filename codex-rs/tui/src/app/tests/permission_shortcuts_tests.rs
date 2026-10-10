@@ -237,6 +237,10 @@ async fn permission_shortcut_confirms_without_persisting() -> Result<()> {
     );
     assert_eq!(profile, Some(ActivePermissionProfile::new(":read-only")));
     assert_eq!(app.config.approvals_reviewer, ApprovalsReviewer::User);
+    insta::assert_snapshot!(
+        next_history_message(&mut events),
+        @"• Permissions updated to Read Only"
+    );
     assert_eq!(std::fs::read_to_string(config_path)?, contents);
     app_server.shutdown().await?;
     Ok(())

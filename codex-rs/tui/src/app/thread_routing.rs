@@ -1364,6 +1364,10 @@ impl App {
             }
             if self.chat_widget.thread_id() == Some(thread_id) {
                 self.adopt_server_permissions();
+                self.chat_widget.add_info_message(
+                    format!("Permissions updated to {}", profile.display_label),
+                    /*hint*/ None,
+                );
             }
             self.app_event_tx.send(AppEvent::SettingsSelectionSettled);
         }
