@@ -30,10 +30,12 @@ fn primary(app: &mut App) -> ThreadId {
 
 fn workspace(app: &App) -> std::path::PathBuf {
     let config = app.chat_widget.config_ref();
-    crate::legacy_core::elpis_context::workspace_context_dir(
+    crate::legacy_core::elpis_context::thread_context_dir(
         Some(elpis_memory_dir(config).as_path()),
         config.cwd.as_path(),
+        &app.primary_thread_id.expect("primary thread").to_string(),
     )
+    .expect("valid thread")
     .expect("workspace context directory")
 }
 

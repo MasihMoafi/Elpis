@@ -227,6 +227,7 @@ impl App {
             instruction_source_paths,
             dev_rule_roots,
             Some(&status),
+            Some(&target.view.displayed_thread_id.to_string()),
         ) {
             Ok(sources) => ManualMemoryStatusCompletion::Ready { status, sources },
             Err(_) => ManualMemoryStatusCompletion::Unavailable(

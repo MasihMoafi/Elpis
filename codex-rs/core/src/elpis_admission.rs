@@ -114,11 +114,12 @@ impl ElpisContinuityConfig {
         thread_store.get::<Self>().filter(|config| config.eligible)
     }
 
-    async fn body(&self) -> Option<String> {
+    async fn body(&self, thread_id: &str) -> Option<String> {
         elpis_context::build_continuity_prompt_with_dev_rule_roots(
             Some(self.memories_root.as_path()),
             self.cwd.as_path(),
             &self.dev_rule_roots,
+            Some(thread_id),
         )
         .await
     }
@@ -140,7 +141,7 @@ pub struct ElpisInstructions {
 /// The continuity text the thread's next request carries, if any.
 pub(crate) async fn thread_continuity(thread_store: &ExtensionData) -> Option<String> {
     ElpisContinuityConfig::for_thread(thread_store)?
-        .body()
+        .body(thread_store.level_id())
         .await
 }
 
@@ -153,7 +154,9 @@ impl ContextContributor for ElpisContinuityExtension {
             let Some(config) = ElpisContinuityConfig::for_thread(input.thread_store) else {
                 return Vec::new();
             };
-            vec![continuity_section(config.body().await)]
+            vec![continuity_section(
+                config.body(input.thread_store.level_id()).await,
+            )]
         })
     }
 }

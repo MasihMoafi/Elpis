@@ -72,7 +72,10 @@ impl TurnBaseline {
     }
 
     fn get(&self) -> Option<(String, MemoryBaseline)> {
-        self.0.lock().unwrap_or_else(PoisonError::into_inner).clone()
+        self.0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
     }
 }
 
@@ -88,7 +91,9 @@ impl ThreadLifecycleContributor<Config> for SaveMemoryExtension {
     ) -> ExtensionFuture<'a, ()> {
         Box::pin(async move {
             if saves_for(input.session_source) {
-                input.thread_store.insert(SavePaths::from_config(input.config));
+                input
+                    .thread_store
+                    .insert(SavePaths::from_config(input.config));
             }
         })
     }
@@ -117,6 +122,7 @@ impl TurnLifecycleContributor for SaveMemoryExtension {
             let baseline = match MemorySnapshot::baseline_when_enabled(
                 paths.memory_root.as_path(),
                 paths.cwd.as_path(),
+                input.thread_store.level_id(),
             ) {
                 Ok(baseline) => baseline,
                 Err(error) => {
@@ -156,7 +162,8 @@ impl ToolContributor for SaveMemoryExtension {
             thread_store.level_id(),
             &turn_id,
             baseline,
-        )) as Arc<dyn for<'call> ToolExecutor<ToolCall<'call>>>]
+        ))
+            as Arc<dyn for<'call> ToolExecutor<ToolCall<'call>>>]
     }
 }
 
@@ -207,8 +214,12 @@ mod tests {
                 .ok_or_else(|| anyhow::anyhow!("workspace"))?;
         std::fs::create_dir_all(&workspace)?;
         std::fs::write(workspace.join("memory-autosave.json"), "{\"enabled\":true}")?;
-        let baseline = MemorySnapshot::baseline_when_enabled(root.as_path(), cwd.as_path())?
-            .ok_or_else(|| anyhow::anyhow!("saving is enabled"))?;
+        let baseline = MemorySnapshot::baseline_when_enabled(
+            root.as_path(),
+            cwd.as_path(),
+            "019a0c4e-7b1e-7a41-9b4e-2f0d8c1a5e10",
+        )?
+        .ok_or_else(|| anyhow::anyhow!("saving is enabled"))?;
         thread_store
             .get_or_init(TurnBaseline::default)
             .set(Some(("turn-1".to_string(), baseline)));

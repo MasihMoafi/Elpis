@@ -14,6 +14,7 @@ use pretty_assertions::assert_eq;
 use tempfile::tempdir;
 
 const WIDTH: u16 = 150;
+const LEDGER_THREAD: &str = "019a0c4e-7b1e-7a41-9b4e-2f0d8c1a5e10";
 
 /// Point the widget at a temporary Elpis home and project holding every kind of ledger source,
 /// then load the rows the way the App's loader does.
@@ -25,8 +26,12 @@ fn configure_ledger_sources(
     let memories = home.join("memories");
     let cwd = root.join("project");
     let global = root.join("global/AGENTS.md");
-    let workspace = crate::legacy_core::elpis_context::workspace_context_dir(Some(&memories), &cwd)
-        .expect("workspace path");
+    let workspace = crate::legacy_core::elpis_context::thread_context_dir(
+        Some(&memories),
+        &cwd,
+        LEDGER_THREAD,
+    )?
+    .expect("workspace path");
     std::fs::create_dir_all(global.parent().expect("global parent"))?;
     std::fs::create_dir_all(&cwd)?;
     std::fs::create_dir_all(&workspace)?;
@@ -59,7 +64,7 @@ fn seed_ledger_from_disk(chat: &mut ChatWidget) -> anyhow::Result<ManualMemoryRe
     let (admission_path, memory_path) =
         crate::legacy_core::elpis_context::manual_memory_storage_paths(Some(&memories), &cwd)
             .ok_or_else(|| anyhow::anyhow!("ledger storage is unavailable"))?;
-    let thread_id = ThreadId::new();
+    let thread_id = ThreadId::from_string(LEDGER_THREAD)?;
     let target = ManualMemoryRequestTarget {
         view: ManualMemoryViewKey {
             epoch: chat
@@ -83,6 +88,7 @@ fn seed_ledger_from_disk(chat: &mut ChatWidget) -> anyhow::Result<ManualMemoryRe
         &chat.instruction_source_paths_as_path_bufs(),
         /*dev_rule_roots*/ &[],
         Some(&status),
+        Some(&target.view.displayed_thread_id.to_string()),
     )?;
     chat.bind_manual_memory_loading(
         target.clone(),

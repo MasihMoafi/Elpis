@@ -144,7 +144,7 @@ not guarantees established by the current implementation.
 flowchart LR
     U[User objective] --> G[GOAL.md]
     H[Current root turn evidence] --> S[Responding agent calls save_memory]
-    E[ES: workspace state] --> S
+    E[ES: thread state] --> S
     M[MEMORY: global preferences] --> S
     S --> V{Validate and check concurrent edits}
     V --> E
@@ -159,8 +159,8 @@ flowchart LR
 
 | Source | Purpose and writer | Scope and admission limit |
 | --- | --- | --- |
-| `GOAL.md` | Explicit objective and goal state; the goal runtime owns it. `save_memory` does not rewrite the objective. | Workspace, 6,000 characters |
-| Generated `ES.md` | Current decisions, unfinished work, verification, blockers and next action. The CLI writes turn details; enabled `save_memory` can replace its consolidated state. Later same-thread CLI writes retain that consolidated state. | Workspace, 8,000 characters |
+| `GOAL.md` | Explicit objective and goal state; the goal runtime owns it. `save_memory` does not rewrite the objective. | Thread, 6,000 characters |
+| Generated `ES.md` | Current decisions, unfinished work, verification, blockers and next action. The CLI writes turn details; enabled `save_memory` can replace its consolidated state. Later same-thread CLI writes retain that consolidated state. | Thread, 8,000 characters |
 | `MEMORY.md` | Explicit, stable global user preferences. Users can edit it; enabled `save_memory` can apply exact append, replace, or remove edits without replacing unseen text. | Shared memory directory, 8,000 characters |
 | Repository `ES.md` | Ordinary project notes maintained by a person or agent. It is a separate file from the generated checkpoint. | Ordinary file admission, when selected |
 
@@ -184,7 +184,7 @@ pre-compaction, background-model, or other auxiliary save request. The agent cal
 the tool before its final answer when durable state changed; without that call,
 no curated memory or new Consolidated State is saved. Deterministic turn evidence
 in ES is separate (see [Sessions](sessions.md)). Internal, review, and subagent sessions cannot receive
-or invoke it. The runtime fixes the memory root and workspace paths; the caller
+or invoke it. The runtime fixes the memory root and thread checkpoint paths; the caller
 cannot choose a write path.
 
 The tool accepts exact edits to `MEMORY.md` and either a complete replacement for
@@ -197,7 +197,7 @@ user and assistant evidence; half of that evidence capacity is reserved for user
 messages so a large assistant response cannot displace the correction being saved.
 
 The runtime rechecks the saving opt-in and fixed paths, acquires the global memory
-and workspace checkpoint locks, and rejects invalid or oversized content, empty ES,
+and thread checkpoint locks, and rejects invalid or oversized content, empty ES,
 attempted erasure of existing memory, unsupported evidence citations, or any
 MEMORY/ES change since the turn began. Each save records prepared/committed state
 in a unique recovery receipt. Individual file replacements are atomic; the
@@ -227,7 +227,9 @@ is allowed. This check does not validate rewritten prose or interior citations;
 ordinary bracketed values coinciding with registered labels remain ambiguous.
 
 ES can dilute attention: length limits bound context use, not truth or relevance.
-The shared workspace checkpoint also remains subject to the last thread writer.
+Generated GOAL/ES files are isolated by thread in the October 10 local candidate;
+legacy workspace files are read only for their recorded owner. An intentional handoff
+uses explicit file admission. See [Sessions](sessions.md) for paths and bridge limits.
 Model summaries can omit facts or preserve bad assumptions. Receipts support
 inspection; they do not prove semantic fidelity. The live memory file previously
 stayed heading-only because automatic promotion had been removed and Memory

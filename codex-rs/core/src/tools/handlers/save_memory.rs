@@ -178,7 +178,7 @@ impl SaveMemoryHandler {
             ));
         };
         let args: SaveMemoryArgs = parse_arguments(arguments)?;
-        let snapshot = MemorySnapshot::open(&self.memory_root, &self.cwd)
+        let snapshot = MemorySnapshot::open(&self.memory_root, &self.cwd, &self.thread_id)
             .map_err(|error| {
                 FunctionCallError::RespondToModel(format!(
                     "Memory save failed before writing: {error:#}"
@@ -337,7 +337,9 @@ mod tests {
             .ok_or_else(|| anyhow::anyhow!("workspace"))?;
         std::fs::create_dir_all(&workspace)?;
         std::fs::write(workspace.join("memory-autosave.json"), "{\"enabled\":true}")?;
-        Ok((root, cwd, workspace))
+        let thread_workspace = crate::elpis_context::thread_context_dir(Some(&root), &cwd, THREAD)?
+            .ok_or_else(|| anyhow::anyhow!("thread workspace"))?;
+        Ok((root, cwd, thread_workspace))
     }
 
     #[test]
@@ -400,7 +402,7 @@ mod tests {
     async fn the_offering_turn_saves_memory_checkpoint_and_receipt() -> anyhow::Result<()> {
         let dir = tempfile::tempdir()?;
         let (root, cwd, workspace) = enabled_workspace(dir.path())?;
-        let baseline = MemorySnapshot::baseline_when_enabled(&root, &cwd)?
+        let baseline = MemorySnapshot::baseline_when_enabled(&root, &cwd, THREAD)?
             .ok_or_else(|| anyhow::anyhow!("saving is enabled"))?;
         let handler = SaveMemoryHandler::new(&root, &cwd, THREAD, TURN, baseline);
 
@@ -435,7 +437,7 @@ mod tests {
     async fn a_call_from_another_turn_is_rejected_without_writing() -> anyhow::Result<()> {
         let dir = tempfile::tempdir()?;
         let (root, cwd, workspace) = enabled_workspace(dir.path())?;
-        let baseline = MemorySnapshot::baseline_when_enabled(&root, &cwd)?
+        let baseline = MemorySnapshot::baseline_when_enabled(&root, &cwd, THREAD)?
             .ok_or_else(|| anyhow::anyhow!("saving is enabled"))?;
         let handler = SaveMemoryHandler::new(&root, &cwd, THREAD, TURN, baseline);
 
