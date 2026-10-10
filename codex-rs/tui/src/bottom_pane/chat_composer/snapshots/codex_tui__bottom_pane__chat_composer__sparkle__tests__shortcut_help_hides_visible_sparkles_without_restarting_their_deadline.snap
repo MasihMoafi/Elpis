@@ -1,5 +1,6 @@
 ---
 source: tui/src/bottom_pane/chat_composer/sparkle_tests.rs
+assertion_line: 454
 expression: "snapshots.join(\"\\n\\n\")"
 ---
 expires during help: false
@@ -12,14 +13,15 @@ shortcut help:
   Keyboard shortcuts
 
   Compose                       Session
-  /        Commands             tab  Send message
-  @        Mention files        ⌥,   Less reasoning
-  !        Shell command        ⌥.   More reasoning
-  ⌃j       New line             f4   Inspect activity
-  ⌃v       Paste image          ⌃c   Quit
-  ⌃g       External editor
-  ⌃r       Search history       Transcript (open first)
-  esc esc  Edit last message    ⌃t            Open transcript
+  /        Commands             tab   Send message
+  @        Mention files        ⇧tab  Permissions
+  !        Shell command        ⌥,    Less reasoning
+  ⌃j       New line             ⌥.    More reasoning
+  ⌃v       Paste image          f4    Inspect activity
+  ⌃g       External editor      ⌃c    Quit
+  ⌃r       Search history
+  esc esc  Edit last message    Transcript (open first)
+                                ⌃t            Open transcript
                                 f3            Find text
                                 pgup / pgdn   Scroll
                                 ⌃space        Start selection
@@ -47,14 +49,15 @@ shortcut help:
   Keyboard shortcuts
 
   Compose                       Session
-  /        Commands             tab  Send message
-  @        Mention files        ⌥,   Less reasoning
-  !        Shell command        ⌥.   More reasoning
-  ⌃j       New line             f4   Inspect activity
-  ⌃v       Paste image          ⌃c   Quit
-  ⌃g       External editor
-  ⌃r       Search history       Transcript (open first)
-  esc esc  Edit last message    ⌃t            Open transcript
+  /        Commands             tab   Send message
+  @        Mention files        ⇧tab  Permissions
+  !        Shell command        ⌥,    Less reasoning
+  ⌃j       New line             ⌥.    More reasoning
+  ⌃v       Paste image          f4    Inspect activity
+  ⌃g       External editor      ⌃c    Quit
+  ⌃r       Search history
+  esc esc  Edit last message    Transcript (open first)
+                                ⌃t            Open transcript
                                 f3            Find text
                                 pgup / pgdn   Scroll
                                 ⌃space        Start selection

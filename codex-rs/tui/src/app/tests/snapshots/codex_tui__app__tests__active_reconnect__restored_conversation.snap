@@ -1,7 +1,8 @@
 ---
 source: tui/src/app/tests/active_reconnect_tests.rs
+assertion_line: 446
 expression: "render_bottom_popup(&app.chat_widget, 80)"
 ---
 › kept draft
 
-  gpt-test default                                   Plan mode (⇧tab to cycle)
+  gpt-test default                                   Plan mode (/plan to exit)

@@ -1,19 +1,20 @@
 ---
 source: tui/src/status_indicator_widget/effects_tests.rs
+assertion_line: 54
 expression: "snapshots.join(\"\\n\\n\")"
 ---
 animations=true, shimmer=false, progress=false
 Elpising (0s • esc to interrupt)
-[Span::from("Elpising").fg(Color::Rgb(229, 187, 104)).bold(), Span::from(" "), Span::from("(0s • ").dim(), Span::from("esc").fg(Color::Rgb(240, 240, 240)).bold().not_dim(), Span::from(" to interrupt)").dim()]
+[Span::from("Elpising").fg(Color::Rgb(255, 235, 172)), Span::from(" "), Span::from("(0s • ").dim(), Span::from("esc").fg(Color::Rgb(240, 240, 240)).bold().not_dim(), Span::from(" to interrupt)").dim()]
 
 animations=true, shimmer=false, progress=true
 • Elpising (0s • esc to interrupt)
-[Span::from("Elpising").fg(Color::Rgb(229, 187, 104)).bold(), Span::from(" "), Span::from("(0s • ").dim(), Span::from("esc").fg(Color::Rgb(240, 240, 240)).bold().not_dim(), Span::from(" to interrupt)").dim()]
+[Span::from("Elpising").fg(Color::Rgb(255, 235, 172)), Span::from(" "), Span::from("(0s • ").dim(), Span::from("esc").fg(Color::Rgb(240, 240, 240)).bold().not_dim(), Span::from(" to interrupt)").dim()]
 
 animations=true, shimmer=true, progress=false
 Elpising (0s • esc to interrupt)
-[Span::from("E").fg(Color::Rgb(139, 121, 86)).bold(), Span::from("l").fg(Color::Rgb(139, 121, 86)).bold(), Span::from("p").fg(Color::Rgb(139, 121, 86)).bold(), Span::from("i").fg(Color::Rgb(139, 121, 86)).bold(), Span::from("s").fg(Color::Rgb(139, 121, 86)).bold(), Span::from("i").fg(Color::Rgb(139, 121, 86)).bold(), Span::from("n").fg(Color::Rgb(139, 121, 86)).bold(), Span::from("g").fg(Color::Rgb(139, 121, 86)).bold(), Span::from(" "), Span::from("(0s • ").dim(), Span::from("esc").fg(Color::Rgb(240, 240, 240)).bold().not_dim(), Span::from(" to interrupt)").dim()]
+[Span::from("E").fg(Color::Rgb(135, 125, 94)), Span::from("l").fg(Color::Rgb(135, 125, 94)), Span::from("p").fg(Color::Rgb(135, 125, 94)), Span::from("i").fg(Color::Rgb(135, 125, 94)), Span::from("s").fg(Color::Rgb(135, 125, 94)), Span::from("i").fg(Color::Rgb(135, 125, 94)), Span::from("n").fg(Color::Rgb(135, 125, 94)), Span::from("g").fg(Color::Rgb(135, 125, 94)), Span::from(" "), Span::from("(0s • ").dim(), Span::from("esc").fg(Color::Rgb(240, 240, 240)).bold().not_dim(), Span::from(" to interrupt)").dim()]
 
 animations=false, shimmer=true, progress=true
 Elpising (0s • esc to interrupt)
-[Span::from("Elpising").fg(Color::Rgb(229, 187, 104)).bold(), Span::from(" "), Span::from("(0s • ").dim(), Span::from("esc").fg(Color::Rgb(240, 240, 240)).bold().not_dim(), Span::from(" to interrupt)").dim()]
+[Span::from("Elpising").fg(Color::Rgb(255, 235, 172)), Span::from(" "), Span::from("(0s • ").dim(), Span::from("esc").fg(Color::Rgb(240, 240, 240)).bold().not_dim(), Span::from(" to interrupt)").dim()]

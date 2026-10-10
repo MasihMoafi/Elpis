@@ -1,18 +1,20 @@
 ---
 source: tui/src/bottom_pane/footer.rs
+assertion_line: 1243
 expression: terminal.backend()
 ---
 "  Keyboard shortcuts                                                            "
 "                                                                                "
 "  Compose                       Session                                         "
-"  /        Commands             tab  Queue message                              "
-"  @        Mention files        ⌥,   Less reasoning                             "
-"  !        Shell command        ⌥.   More reasoning                             "
-"  ⌃j       New line             f8   Voice                                      "
-"  ⌃v       Paste image          f4   Inspect activity                           "
-"  ⌃g       External editor      ⌃c   Interrupt                                  "
-"  ⌃r       Search history                                                       "
-"  esc esc  Edit last message    Transcript (open first)                         "
+"  /        Commands             tab   Queue message                             "
+"  @        Mention files        ⇧tab  Permissions                               "
+"  !        Shell command        ⌥,    Less reasoning                            "
+"  ⌃j       New line             ⌥.    More reasoning                            "
+"  ⌃v       Paste image          f8    Voice                                     "
+"  ⌃g       External editor      f4    Inspect activity                          "
+"  ⌃r       Search history       ⌃c    Interrupt                                 "
+"  esc esc  Edit last message                                                    "
+"                                Transcript (open first)                         "
 "                                ⌃t            Open transcript                   "
 "                                f3            Find text                         "
 "                                pgup / pgdn   Scroll                            "

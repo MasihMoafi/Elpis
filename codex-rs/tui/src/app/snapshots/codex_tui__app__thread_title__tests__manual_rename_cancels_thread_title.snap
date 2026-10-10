@@ -1,8 +1,8 @@
 ---
 source: tui/src/app/thread_title_tests.rs
-assertion_line: 363
+assertion_line: 385
 expression: normalize_snapshot_paths(popup)
 ---
 › Ask Elpis to do anything
 
-  gpt-5.2 default · /tmp/project · Keep this title
+  gpt-5.2 default · Keep this title · /tmp/project
