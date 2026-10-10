@@ -74,9 +74,6 @@ fs.writeFileSync(path.join(home, "AGENTS.md"), `${GLOBAL_AGENTS_SENTINEL}\n`);
 fs.writeFileSync(path.join(cwd, "AGENTS.md"), `${PROJECT_AGENTS_SENTINEL}\n`);
 fs.writeFileSync(path.join(devRules, devRuleName), `${DEV_RULE_SENTINEL}\n`);
 fs.writeFileSync(addedFile, `${ADDED_FILE_SENTINEL}\n`);
-// GOAL.md and ES.md are the workspace's continuity files (/goal mirror and turn checkpoint).
-fs.writeFileSync(path.join(workspace, "GOAL.md"), `# Elpis Goal\n\n## Objective\n\n${GOAL_SENTINEL}\n`);
-fs.writeFileSync(path.join(workspace, "ES.md"), `# Elpis Session Checkpoint\n\n## Latest Result\n\n${CHECKPOINT_SENTINEL}\n`);
 // `/add` stores the canonical path as a custom source key.
 const addedSourceKey = JSON.stringify(fs.realpathSync(addedFile));
 fs.writeFileSync(path.join(home, "hooks.json"), "{}");
@@ -363,6 +360,10 @@ async function run() {
     developerInstructions: `Keep this unrelated instruction: ${DEVELOPER_SENTINEL}`,
   })).thread.id;
   await rpc.request("thread/name/set", { threadId: thread, name: "Continuity admission eval" });
+  const threadDir = path.join(workspace, "threads", thread);
+  fs.mkdirSync(threadDir, { recursive: true });
+  fs.writeFileSync(path.join(threadDir, "GOAL.md"), `# Elpis Goal\n\n- Thread: \`${thread}\`\n\n## Objective\n\n${GOAL_SENTINEL}\n`);
+  fs.writeFileSync(path.join(threadDir, "ES.md"), `# Elpis Session Checkpoint\n\n- Thread: \`${thread}\`\n\n## Latest Result\n\n${CHECKPOINT_SENTINEL}\n`);
 
   await runStage(
     thread,

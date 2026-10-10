@@ -21,7 +21,13 @@ const workspace = path.join(
   "project-" + crypto.createHash("sha256").update(cwd).digest("hex").slice(0, 12),
 );
 const memoryFile = path.join(home, "memories/MEMORY.md");
-const checkpointFile = path.join(workspace, "ES.md");
+const legacyCheckpointFile = path.join(workspace, "ES.md");
+let checkpointFile = legacyCheckpointFile;
+function seedCheckpoint(thread) {
+  checkpointFile = path.join(workspace, "threads", thread, "ES.md");
+  fs.mkdirSync(path.dirname(checkpointFile), { recursive: true });
+  fs.writeFileSync(checkpointFile, `# Elpis Session Checkpoint\n\n- Thread: \`${thread}\`\n\n## Consolidated State\n\n- Existing work.\n`);
+}
 const settingsFile = path.join(workspace, "memory-autosave.json");
 for (const directory of [cwd, workspace, path.dirname(memoryFile)]) {
   fs.mkdirSync(directory, { recursive: true });
@@ -220,10 +226,11 @@ function assertDurableBytesEqual(actual, expected, label) {
 
 async function runRejectedSave(name, expectedMessage) {
   mode = name;
-  const before = durableBytes();
   const thread = (await rpc.request("thread/start", {
     model: "gpt-5.6-terra", cwd, approvalPolicy: "never", sandbox: "read-only",
   })).thread.id;
+  seedCheckpoint(thread);
+  const before = durableBytes();
   await complete(thread, `Exercise the ${name} save rejection.`);
   const output = failedToolOutputs.get(name);
   assert(output, `${name} save did not return a tool result to the responding agent`);
@@ -283,6 +290,8 @@ async function run() {
     sandbox: "read-only",
   })).thread.id;
 
+  const legacyBefore = fs.readFileSync(legacyCheckpointFile);
+  seedCheckpoint(thread);
   await complete(thread, "I prefer Celsius. Continue project Cedar on port 5823.");
   assert(sawMemoryTool, "responding agent was not offered save_memory");
   assert(sawMemoryToolOutput, "save_memory did not run in the responding agent's tool loop");
@@ -292,6 +301,8 @@ async function run() {
   assert(fs.readFileSync(checkpointFile, "utf8").includes("Verify Cedar on port 5823"));
   assert(admissionOffHidMemory, "saving opt-in implicitly enabled memory admission");
 
+  const firstCheckpointFile = checkpointFile;
+  const firstCheckpointBytes = fs.readFileSync(checkpointFile);
   mode = "observe-off";
   const offThread = (await rpc.request("thread/start", {
     model: "gpt-5.6-terra", cwd, approvalPolicy: "never", sandbox: "read-only",
@@ -314,6 +325,7 @@ async function run() {
   const staleThread = (await rpc.request("thread/start", {
     model: "gpt-5.6-terra", cwd, approvalPolicy: "never", sandbox: "read-only",
   })).thread.id;
+  seedCheckpoint(staleThread);
   await complete(staleThread, "Exercise a stale-baseline save rejection.");
   const staleOutput = failedToolOutputs.get("stale");
   assert(staleOutput, "stale save did not return a tool result to the responding agent");
@@ -338,11 +350,14 @@ async function run() {
   await complete(disabledThread, "Do not save this turn.");
   assert(disabledHidTool, "save_memory remained available after saving was disabled");
 
+  assert(fs.readFileSync(firstCheckpointFile).equals(firstCheckpointBytes), "another thread changed the first checkpoint");
+  assert(fs.readFileSync(legacyCheckpointFile).equals(legacyBefore), "legacy checkpoint was migrated or overwritten");
   console.log(JSON.stringify({
     passed: true,
     checks: [
       "responding agent owns the save_memory call",
       "guarded memory and checkpoint files are persisted",
+      "separate chats and legacy checkpoints remain intact",
       "no auxiliary memory request runs",
       "saving and admission remain independent",
       "malformed and oversized tool calls preserve both durable files",
