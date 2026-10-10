@@ -137,7 +137,8 @@ fn ledger_alone(chat: &ChatWidget) -> Vec<String> {
 #[tokio::test]
 async fn source_headings_and_included_markers_use_deus_ex_gold() -> anyhow::Result<()> {
     let root = tempdir()?;
-    let (mut chat, _rx, _op_rx) = make_chatwidget().await;
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
+    show_context_ledger(&mut chat);
     configure_ledger_sources(&mut chat, root.path())?;
     for (bg, gold) in [
         ((255, 255, 255), Color::Rgb(128, 88, 10)),
