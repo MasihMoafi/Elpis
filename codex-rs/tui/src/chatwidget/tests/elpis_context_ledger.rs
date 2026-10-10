@@ -441,6 +441,9 @@ async fn plain_x_and_repeated_ctrl_x_do_not_toggle_the_ledger() {
         assert!(!chat.context_ledger_has_focus());
     }
     chat.handle_key_event(KeyEvent::from(KeyCode::Char('x')));
+    assert!(!chat.context_ledger_has_focus());
+    // A normal non-character key flushes the composer's held first character.
+    chat.handle_key_event(KeyEvent::from(KeyCode::Right));
     assert_eq!(chat.composer_text_with_pending(), "x");
     assert!(!chat.context_ledger_has_focus());
     assert!(op_rx.try_recv().is_err());
