@@ -131,7 +131,7 @@ jobs:
           bash scripts/restore-cargo-cache-source-times.sh "$CACHE_KEY"
       - name: Check core, UI, CLI and their tests
         working-directory: codex-rs
-        run: cargo check --locked --tests -p codex-core -p codex-tui -p codex-cli
+        run: cargo check --locked --tests -p codex-core -p codex-tui -p codex-cli -p codex-app-server
       - name: Retain compiler outputs
         if: always() && steps.cargo_cache.outputs.cache-hit != 'true' && steps.cargo_cache.outputs.cache-primary-key != ''
         uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7
@@ -300,7 +300,7 @@ jobs:
         working-directory: codex-rs
         run: |
           cargo test --profile dev-small --locked -p codex-core --lib -- \
-            elpis_ smart_prune compact_instructions world_state build_agent_spawn_config \
+            elpis_ memory_save save_memory smart_prune compact_instructions world_state build_agent_spawn_config \
             live_permissions inherited_permissions step_activation thread_settings turn_input \
             loaded_children_give_up_the_full_access_their_parent_gives_up \
             revocation regains_full_access
@@ -314,6 +314,8 @@ jobs:
             agents_md scenarios_shared_instructions \
             deferred_executor_promotes_primary_environment_when_startup_completes \
             deferred_executor_stays_pending_after_materialization 2>&1 | tee "$RUNNER_TEMP/elpis-integration-checks.log"
+          cargo test --profile dev-small --locked -p codex-app-server --test all -- \
+            elpis_instructions_read 2>&1 | tee -a "$RUNNER_TEMP/elpis-integration-checks.log"
       - name: Preserve UI and integration check diagnostics
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
@@ -342,6 +344,11 @@ jobs:
       - name: Gemini bridge permission regressions
         if: ${{ !cancelled() && steps.runtime_build.outcome == 'success' }}
         run: node scripts/permissions-bridge.test.cjs "$PWD/codex-rs/target/release/elpis" --gemini
+      - name: Live admitted context refresh across providers
+        if: ${{ !cancelled() && steps.runtime_build.outcome == 'success' }}
+        run: |
+          node scripts/bridge-context.test.cjs "$PWD/codex-rs/target/release/elpis"
+          node scripts/bridge-context.test.cjs "$PWD/codex-rs/target/release/elpis" --gemini
       - name: Delegated helper permission regressions
         if: ${{ !cancelled() && steps.runtime_build.outcome == 'success' }}
         run: node scripts/permissions-bridge-delegation.test.cjs "$PWD/codex-rs/target/release/elpis"
@@ -350,6 +357,7 @@ jobs:
         run: |
           node scripts/shared-runtime.test.cjs "$PWD/codex-rs/target/release/elpis"
           node scripts/terminal-input.test.cjs "$PWD/codex-rs/target/release/elpis" --launcher
+          node scripts/continuity-workflows-terminal.test.cjs "$PWD/codex-rs/target/release/elpis"
           node scripts/shared-provider-sessions.test.cjs "$PWD/codex-rs/target/release/elpis"
           node scripts/shared-provider-sessions.test.cjs "$PWD/codex-rs/target/release/elpis" --gemini
           node scripts/permissions-bridge.test.cjs "$PWD/codex-rs/target/release/elpis" --shared
