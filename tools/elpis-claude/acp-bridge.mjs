@@ -119,9 +119,16 @@ const ELPIS_HOME = process.env.ELPIS_HOME || `${HOME}/.elpis-next`;
 const STORE = process.env.ACP_BRIDGE_STORE ?? `${ELPIS_HOME}/elpis-claude/sessions.json`;
 async function loadStore() { return (await readJson(STORE)) ?? {}; }
 let storeChain = Promise.resolve();
+const deletingThreads = new Set();
+const deletedThreads = new Set();
 // Resolves true once saved, false if saving failed.
 function updateStore(fn) {
-  storeChain = storeChain.then(async () => { const st = await loadStore(); fn(st); await saveStore(st); return true; }).catch((e) => { log(`store: ${e.message}`); return false; });
+  storeChain = storeChain.then(async () => {
+    const st = await loadStore(); fn(st);
+    // Late plan/tool notifications cannot recreate a deleted transcript.
+    for (const tid of deletedThreads) { delete st[tid]; if (st._delegations) delete st._delegations[tid]; }
+    await saveStore(st); return true;
+  }).catch((e) => { log(`store: ${e.message}`); return false; });
   return storeChain;
 }
 const CATALOG = `${STORE.slice(0, STORE.lastIndexOf("/"))}/catalog.json`;
@@ -412,6 +419,7 @@ wss.on("connection", (ws) => {
   ws.send = (line) => {
     let msg;
     try { msg = JSON.parse(String(line)); } catch { if (ws.readyState === 1) ws.sendWire(line); return; }
+    if (msg.result?.thread && deletedThreads.has(msg.result.thread.id)) msg = { id: msg.id, error: { code: -32600, message: `thread not found: ${msg.result.thread.id}` } };
     decorateThread(msg.result?.thread);
     decorateThread(msg.params?.thread);
     if (Array.isArray(msg.result?.data)) for (const t of msg.result.data) if (typeof t === "object") decorateThread(t);
@@ -450,7 +458,7 @@ wss.on("connection", (ws) => {
     const msg = { method, params, emittedAtMs: now() };
     notePlan(msg);
     // Overview changes reach every terminal; transcript events reach only subscribers.
-    const all = ["thread/started", "thread/status/changed", "thread/archived", "thread/closed"].includes(method);
+    const all = ["thread/started", "thread/status/changed", "thread/archived", "thread/closed", "thread/deleted"].includes(method);
     const tid = params.threadId ?? params.thread?.id;
     const recipients = all ? [...clients].filter((c) => !helperConns.has(c)) : viewers(tid);
     if (helperConns.has(ws) && ws.readyState === 1) recipients.push(ws);
@@ -496,6 +504,14 @@ wss.on("connection", (ws) => {
   const resumeResults = new Map();
   const context = {
     failed: false,
+    stopProvider: (tid) => stopProvider(tid, "deleted"),
+    childrenOf: (ids) => [...childThreads].filter(([, child]) => ids.has(child.rootThreadId) || ids.has(child.thread.parentThreadId)).map(([id]) => id),
+    forgetThread: (tid) => {
+      cancelRelays(ws, tid);
+      for (const cache of [threadCwd, threadSeen, childThreads, childIds, threadPolicy, smartPrune,
+        threadSandbox, sessions, claudeModel, claudeEffort, resumeResults, sessionModel,
+        threadCollab, threadAccess, lastTurnUsage, forkParent, queues, goals, ownHelpers]) cache.delete(tid);
+    },
     busy: () => activeTurns.size > 0 || engineTurns.size > 0 || structured.size > 0 || pendingStart.size > 0 || pendingResume.size > 0 || engineReqs.size > 0
       || [...forwarded.values()].some((r) => r.owner === ws),
     close: () => { cancelRelays(ws); engine.kill(); for (const a of acps.values()) a.kill(); },
@@ -1688,7 +1704,7 @@ wss.on("connection", (ws) => {
   const queueOf = (threadId) => queues.get(threadId) ?? queues.set(threadId, []).get(threadId);
   const shown = (threadId) => queueOf(threadId).filter((q) => !q.goal).map(({ id, input, clientUserMessageId }) => ({ id, input, clientUserMessageId }));
   function runNext(threadId) {
-    if (activeTurns.has(threadId)) return;
+    if (activeTurns.has(threadId) || deletingThreads.has(threadId) || deletedThreads.has(threadId)) return;
     const next = queueOf(threadId).shift();
     if (!next) return;
     if (!next.goal) notify("thread/queue/changed", { threadId });
@@ -1936,22 +1952,89 @@ wss.on("connection", (ws) => {
     }
   }
 
+  async function stopProvider(tid, action) {
+    const running = activeTurns.get(tid);
+    if (!running) return;
+    running.cancelled = true;
+    let timer;
+    try {
+      const stopped = (async () => {
+        const sessionId = await running.ready;
+        if (sessionId) running.acp?.send({ method: "session/cancel", params: { sessionId } });
+        await running.done;
+      })();
+      await Promise.race([stopped, new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(`The provider has not stopped yet; the chat was not ${action}.`)), 10000); })]);
+    } finally { clearTimeout(timer); }
+  }
   async function archiveProvider(msg) {
     const tid = msg.params.threadId;
     queueOf(tid).splice(0);
-    const running = activeTurns.get(tid);
     try {
-      if (running) {
-        running.cancelled = true;
-        const sessionId = await running.ready;
-        if (sessionId) running.acp?.send({ method: "session/cancel", params: { sessionId } });
-        let timer;
-        try {
-          await Promise.race([running.done, new Promise((_, reject) => { timer = setTimeout(() => reject(new Error("The provider has not stopped yet; the chat was not archived.")), 10000); })]);
-        } finally { clearTimeout(timer); }
-      }
+      await stopProvider(tid, "archived");
       engine.stdin.write(JSON.stringify(msg) + "\n");
     } catch (e) { pendingArchive.delete(msg.id); toTui({ id: msg.id, error: { code: -32603, message: e.message } }); }
+  }
+  async function deleteThread(msg) {
+    const tid = msg.params.threadId;
+    const ids = new Set([tid]);
+    const acquired = new Set([tid]);
+    deletingThreads.add(tid);
+    try {
+      let store;
+      // Provider children are not all represented in the native spawn tree.
+      const stopped = new Set();
+      while (true) {
+        await storeChain;
+        store = await loadStore();
+        let changed;
+        do {
+          changed = false;
+          for (const [id, saved] of Object.entries(store)) {
+            const parent = store._delegations?.[id]?.parentThreadId ?? saved?.parentThreadId ?? saved?.rootThreadId;
+            if (!id.startsWith("_") && ids.has(parent) && !ids.has(id)) { ids.add(id); changed = true; }
+          }
+          for (const [id, helper] of Object.entries(store._delegations ?? {})) {
+            if (ids.has(helper.parentThreadId) && !ids.has(id)) { ids.add(id); changed = true; }
+          }
+          for (const c of contexts) for (const id of c.childrenOf(ids)) {
+            if (!ids.has(id)) { ids.add(id); changed = true; }
+          }
+        } while (changed);
+        for (const id of ids) if (!acquired.has(id)) {
+          if (deletingThreads.has(id)) throw new Error("A child chat is already being deleted. Retry after it finishes.");
+          deletingThreads.add(id); acquired.add(id);
+        }
+        if ([...pendingHelpers].some(helper => ids.has(helper.parentThreadId))) throw new Error("A helper is still starting. Retry deletion once it has started.");
+        // Match the native store's refusal to erase history still used by a fork.
+        if (Object.entries(store).some(([id, saved]) => !ids.has(id) && ids.has(saved?.forkOf?.threadId))) throw new Error(`cannot delete thread ${tid}: forked history still references it`);
+        const next = [...ids].filter(id => !stopped.has(id));
+        if (!next.length) break;
+        await Promise.all([...contexts].flatMap(c => next.map(id => c.stopProvider(id))));
+        next.forEach(id => stopped.add(id));
+        // Cancellation can finish and persist a child that did not exist in the first snapshot.
+      }
+      // Validate/delete the root first so a native fork conflict cannot erase its helpers.
+      for (const id of ids) {
+        let nativeDeleted = true;
+        try { await engineCall("thread/delete", { threadId: id }); }
+        catch (e) {
+          // Bridge-only children and retries after a persistence failure have no native row.
+          if (!/thread not found|no rollout found/.test(e.message ?? "") || (id === tid && !store[id] && !store._delegations?.[id] && !deletedThreads.has(id))) throw e;
+          nativeDeleted = false;
+        }
+        deletedThreads.add(id);
+        for (const c of contexts) c.forgetThread(id);
+        providerOwners.delete(id); chatAccess.delete(id); helperScope.delete(id); helperThreads.delete(id);
+        if (!nativeDeleted) notify("thread/deleted", { threadId: id });
+        for (const watched of subscriptions.values()) watched.delete(id);
+      }
+      if (!await updateStore(() => {})) throw new Error("The native chat was deleted, but bridge history could not be removed. Retry deletion.");
+      toTui({ id: msg.id, result: {} });
+    } catch (e) {
+      // Persist cleanup even if native deletion stopped partway through a subtree.
+      if ([...ids].some(id => deletedThreads.has(id))) await updateStore(() => {});
+      toTui({ id: msg.id, error: { code: -32603, message: e.message ?? String(e) } });
+    } finally { for (const id of acquired) deletingThreads.delete(id); }
   }
   const openingReplies = new Set();
   function handleMessage(data) {
@@ -1969,6 +2052,10 @@ wss.on("connection", (ws) => {
     }
     if (msg.method === "initialize" && msg.params?.clientInfo?.name === "elpis-agents") helperConns.add(ws);
     if (context.failed && msg.method && msg.id !== undefined) { toTui({ id: msg.id, error: { code: -32603, message: "The session backend disconnected; reopen this chat." } }); return; }
+    const target = msg.params?.threadId ?? msg.params?.elpisParentThreadId;
+    if (msg.method && (deletingThreads.has(target) || (deletedThreads.has(target) && msg.method !== "thread/delete"))) {
+      toTui({ id: msg.id, error: { code: -32600, message: deletedThreads.has(target) ? `thread not found: ${target}` : "The chat is being deleted; wait for deletion to finish." } }); return;
+    }
     const owner = providerOwners.get(msg.params?.threadId);
     if (msg.method === "thread/unsubscribe" && owner) {
       const tid = msg.params.threadId;
@@ -1981,6 +2068,7 @@ wss.on("connection", (ws) => {
       checkIdle(); return;
     }
     if (msg.method && owner && owner.ws !== ws) { owner.dispatch(msg, ws); return; }
+    if (msg.method === "thread/delete") { deleteThread(msg); return; }
     if (["thread/start", "thread/fork", "thread/resume"].includes(msg.method)) openingReplies.add(msg.id);
     if (process.env.ACP_BRIDGE_DEBUG && msg.method && (process.env.ACP_BRIDGE_DEBUG === "all" || !/^thread\/(read|turns\/list|list|loaded)/.test(msg.method))) log(`tui-> ${line.slice(0, 600)}`);
     if (msg.method === "thread/read" && claudeModel.has(msg.params?.threadId) && resumeResults.has(msg.params.threadId)) {

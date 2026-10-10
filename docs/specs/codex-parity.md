@@ -20,6 +20,7 @@ Goal: make Elpis as usable as Masih’s installed Codex 0.162.0 while retaining 
 - Keep Codex and Elpis user configuration separate, including when started from the user's home. Codex's user config and symlink aliases must not become project layers or cause project-config warnings. Real project configuration and its restrictions must continue to apply.
 
 ## Acceptance evidence
+- October 10 broader regression audit: deleting a provider-backed chat must first stop its active and queued work, then remove bridge history/cache after native deletion succeeds. Deleted chats cannot be resumed through another terminal. Preserve unrelated chats and independent forks; report cancellation, native-delete or persistence failures explicitly. Verify with a Full Access fixture that writes after deletion on the old bridge and cannot write on the correction.
 - Compare against the installed Codex version, not only Elpis’s older 0.160.0 vendor snapshot.
 - Exercise new and long chats, typing, streaming, queued messages, narrow/wide agents pages, folder ordering, model labels and the exact slash-command set.
 - Exercise two ordinary launcher windows with one Elpis home and different project folders. Their agents views must share live sessions and later connections, reflect rename/archive changes, and open an existing running session without starting a duplicate execution loop. A fixture with two clients on one bridge is insufficient.
