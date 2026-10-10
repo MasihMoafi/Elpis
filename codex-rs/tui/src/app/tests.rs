@@ -122,6 +122,7 @@ async fn drain_managed_worktree_start(app: &mut App, server: &mut AppServerSessi
 use codex_utils_absolute_path::test_support::PathExt;
 
 use crate::chatwidget::ChatWidgetInit;
+use crate::chatwidget::UserMessage;
 use crate::chatwidget::create_initial_user_message;
 use crate::chatwidget::tests::helpers::render_bottom_popup;
 use crate::chatwidget::tests::helpers::set_active_cell;
