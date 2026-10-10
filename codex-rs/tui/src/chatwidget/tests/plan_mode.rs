@@ -1325,22 +1325,15 @@ async fn enter_submits_when_plan_stream_is_not_active() {
 }
 
 #[tokio::test]
-async fn collab_mode_shift_tab_cycles_only_when_idle() {
+async fn shift_tab_before_first_thread_opens_permissions_without_changing_plan() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
 
     let initial = chat.current_collaboration_mode().clone();
     chat.handle_key_event(KeyEvent::from(KeyCode::BackTab));
-    assert_eq!(chat.active_collaboration_mode_kind(), ModeKind::Plan);
-    assert_eq!(chat.current_collaboration_mode(), &initial);
-
-    chat.handle_key_event(KeyEvent::from(KeyCode::BackTab));
     assert_eq!(chat.active_collaboration_mode_kind(), ModeKind::Default);
     assert_eq!(chat.current_collaboration_mode(), &initial);
-
-    chat.on_task_started();
-    let before = chat.active_collaboration_mode_kind();
-    chat.handle_key_event(KeyEvent::from(KeyCode::BackTab));
-    assert_eq!(chat.active_collaboration_mode_kind(), before);
+    assert!(chat.bottom_pane.has_active_view());
+    assert!(render_bottom_popup(&chat, 80).contains("Permissions"));
 }
 
 #[tokio::test]
@@ -1419,6 +1412,9 @@ async fn plan_slash_command_switches_to_plan_mode() {
     }
     assert_eq!(chat.active_collaboration_mode_kind(), ModeKind::Plan);
     assert_eq!(chat.current_collaboration_mode(), &initial);
+    chat.dispatch_command(SlashCommand::Plan);
+    assert_eq!(chat.active_collaboration_mode_kind(), ModeKind::Default);
+    assert_eq!(chat.current_collaboration_mode(), &initial);
 }
 
 #[tokio::test]
@@ -1427,6 +1423,8 @@ async fn plan_slash_command_with_args_submits_prompt_in_plan_mode() {
     chat.set_feature_enabled(Feature::CollaborationModes, /*enabled*/ true);
 
     chat.handle_thread_session(plan_test_session(ThreadId::new()));
+    chat.dispatch_command(SlashCommand::Plan);
+    assert_eq!(chat.active_collaboration_mode_kind(), ModeKind::Plan);
 
     chat.bottom_pane
         .set_composer_text("/plan build the plan".to_string(), Vec::new(), Vec::new());
