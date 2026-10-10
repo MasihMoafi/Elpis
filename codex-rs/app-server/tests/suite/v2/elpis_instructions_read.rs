@@ -152,6 +152,47 @@ async fn withdrawn_agents_md_is_left_out() -> Result<()> {
 }
 
 #[tokio::test]
+async fn live_project_instructions_refresh_edits_withdrawals_and_discovery() -> Result<()> {
+    let mut fixture = start_thread().await?;
+    fixture.set_row(PROJECT_RULES_ROW, true)?;
+    assert!(contains(&fixture.read().await?, "agentsMd", AGENTS_NONCE));
+    let agents_path = fixture.cwd.join("AGENTS.md");
+    std::fs::write(&agents_path, "CURRENT_RULE_SENTINEL")?;
+    let changed = fixture.read().await?;
+    assert!(contains(&changed, "agentsMd", "CURRENT_RULE_SENTINEL"));
+    assert!(!contains(&changed, "agentsMd", AGENTS_NONCE));
+    fixture.set_row(PROJECT_RULES_ROW, false)?;
+    std::fs::write(&agents_path, "WITHDRAWN_EDIT_SENTINEL")?;
+    assert!(!contains(
+        &fixture.read().await?,
+        "agentsMd",
+        "WITHDRAWN_EDIT_SENTINEL"
+    ));
+    fixture.set_row(PROJECT_RULES_ROW, true)?;
+    assert!(contains(
+        &fixture.read().await?,
+        "agentsMd",
+        "WITHDRAWN_EDIT_SENTINEL"
+    ));
+    std::fs::remove_file(&agents_path)?;
+    assert!(!contains(
+        &fixture.read().await?,
+        "agentsMd",
+        "WITHDRAWN_EDIT_SENTINEL"
+    ));
+    std::fs::write(
+        fixture.cwd.join("AGENTS.override.md"),
+        "NEW_OVERRIDE_SENTINEL",
+    )?;
+    assert!(contains(
+        &fixture.read().await?,
+        "agentsMd",
+        "NEW_OVERRIDE_SENTINEL"
+    ));
+    Ok(())
+}
+
+#[tokio::test]
 async fn continuity_carries_memory_only_while_admitted() -> Result<()> {
     let mut fixture = start_thread().await?;
 
