@@ -84,13 +84,11 @@ async fn shift_tab_skips_forbidden_full_access_and_preserves_modal_keys() {
         .unwrap();
     let mut discovery = crate::permission_discovery::PermissionDiscovery::local(&chat.config);
     discovery.requirements = Some(
-        serde_json::from_value(
-            serde_json::json!({"allowedPermissionProfiles": {
-                ":read-only": true,
-                ":workspace": true,
-                ":danger-full-access": false
-            }}),
-        )
+        serde_json::from_value(serde_json::json!({"allowedPermissionProfiles": {
+            ":read-only": true,
+            ":workspace": true,
+            ":danger-full-access": false
+        }}))
         .unwrap(),
     );
     chat.permission_discovery = Some(discovery);
