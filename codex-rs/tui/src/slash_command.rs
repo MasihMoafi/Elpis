@@ -155,7 +155,7 @@ impl SlashCommand {
             SlashCommand::Ide => {
                 "include current selection, open files, and other context from your IDE"
             }
-            SlashCommand::Plan => "switch to Plan mode",
+            SlashCommand::Plan => "toggle Plan mode",
             SlashCommand::Voice => "start or stop voice; use /voice settings to choose a voice",
             SlashCommand::Goal => "set or view the goal for a long-running task",
             SlashCommand::Agents => "open the task list to resume, rename or delete chats",

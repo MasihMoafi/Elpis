@@ -15,6 +15,8 @@ async fn shift_tab_cycles_permissions_without_changing_plan_mode() {
     chat.permission_discovery = Some(crate::permission_discovery::PermissionDiscovery::local(
         &chat.config,
     ));
+    chat.bottom_pane.set_task_running(true);
+    assert!(chat.bottom_pane.is_task_running());
     let original_mode = chat.active_collaboration_mode_kind();
     for (profile, reviewer, expected, expected_reviewer) in [
         (":read-only", User, ":workspace", User),
@@ -26,24 +28,45 @@ async fn shift_tab_cycles_permissions_without_changing_plan_mode() {
             .into_iter()
             .find(|preset| preset.active_permission_profile.id == profile)
             .unwrap();
-        chat.config.permissions.approval_policy.set(preset.approval).unwrap();
-        chat.config.permissions.set_permission_profile_from_session_snapshot(
-            PermissionProfileSnapshot::active(preset.permission_profile, preset.active_permission_profile),
-        ).unwrap();
+        chat.config
+            .permissions
+            .approval_policy
+            .set(preset.approval)
+            .unwrap();
+        chat.config
+            .permissions
+            .set_permission_profile_from_session_snapshot(PermissionProfileSnapshot::active(
+                preset.permission_profile,
+                preset.active_permission_profile,
+            ))
+            .unwrap();
         chat.config.approvals_reviewer = reviewer;
-        for key in [KeyEvent::from(KeyCode::BackTab), KeyEvent::new(KeyCode::Tab, KeyModifiers::SHIFT)] {
+        for key in [
+            KeyEvent::from(KeyCode::BackTab),
+            KeyEvent::new(KeyCode::Tab, KeyModifiers::SHIFT),
+        ] {
             chat.handle_key_event(key);
             chat.handle_key_event(key);
             let selection = assert_matches!(events.try_recv(), Ok(AppEvent::ApplyPermissionShortcut { thread_id: target, selection }) if target == thread_id => selection);
             assert_eq!(selection.profile_id, expected);
             assert_eq!(selection.approvals_reviewer, Some(expected_reviewer));
-            assert!(events.try_recv().is_err(), "pending key must not submit twice");
+            assert!(
+                events.try_recv().is_err(),
+                "pending key must not submit twice"
+            );
             assert_eq!(chat.active_collaboration_mode_kind(), original_mode);
             chat.complete_permission_shortcut(thread_id);
         }
     }
-    chat.handle_key_event(KeyEvent::new_with_kind(KeyCode::BackTab, KeyModifiers::NONE, KeyEventKind::Repeat));
-    assert!(events.try_recv().is_err(), "holding Shift+Tab must not cycle repeatedly");
+    chat.handle_key_event(KeyEvent::new_with_kind(
+        KeyCode::BackTab,
+        KeyModifiers::NONE,
+        KeyEventKind::Repeat,
+    ));
+    assert!(
+        events.try_recv().is_err(),
+        "holding Shift+Tab must not cycle repeatedly"
+    );
 }
 
 #[tokio::test]
@@ -52,18 +75,30 @@ async fn shift_tab_skips_forbidden_full_access_and_preserves_modal_keys() {
     chat.thread_id = Some(ThreadId::new());
     chat.set_feature_enabled(Feature::GuardianApproval, true);
     chat.config.approvals_reviewer = AutoReview;
-    chat.config.permissions.set_permission_profile_from_session_snapshot(
-        PermissionProfileSnapshot::active(PermissionProfile::workspace_write(), ActivePermissionProfile::new(":workspace")),
-    ).unwrap();
+    chat.config
+        .permissions
+        .set_permission_profile_from_session_snapshot(PermissionProfileSnapshot::active(
+            PermissionProfile::workspace_write(),
+            ActivePermissionProfile::new(":workspace"),
+        ))
+        .unwrap();
     let mut discovery = crate::permission_discovery::PermissionDiscovery::local(&chat.config);
-    discovery.requirements = Some(serde_json::from_value(serde_json::json!({"allowedPermissionProfiles": {":danger-full-access": false}})).unwrap());
+    discovery.requirements = Some(
+        serde_json::from_value(
+            serde_json::json!({"allowedPermissionProfiles": {":danger-full-access": false}}),
+        )
+        .unwrap(),
+    );
     chat.permission_discovery = Some(discovery);
     chat.handle_key_event(KeyEvent::from(KeyCode::BackTab));
     assert_matches!(events.try_recv(), Ok(AppEvent::ApplyPermissionShortcut { selection, .. }) if selection.profile_id == ":read-only");
     chat.complete_permission_shortcut(chat.thread_id.unwrap());
     chat.open_permissions_popup();
     chat.handle_key_event(KeyEvent::from(KeyCode::BackTab));
-    assert!(events.try_recv().is_err(), "picker navigation must not change permissions");
+    assert!(
+        events.try_recv().is_err(),
+        "picker navigation must not change permissions"
+    );
 }
 
 #[tokio::test]

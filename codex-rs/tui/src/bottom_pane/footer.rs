@@ -32,8 +32,8 @@
 //!      even if it means dropping the right-side context earlier; the queue
 //!      hint may also be shortened before it is removed.
 //!    - When the queue hint is not active but the mode cycle hint is applicable,
-//!      drop "? for shortcuts" before dropping "(shift+tab to cycle)".
-//!    - If "(shift+tab to cycle)" cannot fit, also hide the right-side
+//!      drop "? for shortcuts" before dropping "(/plan to exit)".
+//!    - If "(/plan to exit)" cannot fit, also hide the right-side
 //!      context to avoid too many state transitions in quick succession.
 //!    - Finally, try a mode-only line (with and without context), and fall
 //!      back to no left-side footer if nothing can fit.
@@ -150,10 +150,7 @@ impl FooterKeyHints {
 impl CollaborationModeIndicator {
     fn label(self, show_cycle_hint: bool) -> String {
         let suffix = if show_cycle_hint {
-            format!(
-                " ({} to cycle)",
-                key_hint::shift(KeyCode::Tab).display_label()
-            )
+            " (/plan to exit)".to_string()
         } else {
             String::new()
         };
@@ -166,8 +163,8 @@ impl CollaborationModeIndicator {
         let mut line = Line::from(self.label(/*show_cycle_hint*/ false).magenta());
         if show_cycle_hint {
             line.push_span(" (".set_style(secondary_text_style()));
-            line.extend(key_hint::shift(KeyCode::Tab).spans());
-            line.push_span(" to cycle)".set_style(secondary_text_style()));
+            line.push_span("/plan");
+            line.push_span(" to exit)".set_style(secondary_text_style()));
         }
         line
     }
@@ -435,7 +432,7 @@ pub(crate) fn single_line_footer_layout(
         }
     }
     // When the mode cycle hint is applicable (idle, non-queue mode), only show
-    // the right-side context indicator if the "(shift+tab to cycle)" variant
+    // the right-side context indicator if the "(/plan to exit)" variant
     // can also fit.
     let context_requires_cycle_hint = show_cycle_hint && !show_queue_hint;
 
@@ -506,7 +503,7 @@ pub(crate) fn single_line_footer_layout(
 
         // Next fallback: mode label only. If the cycle hint is applicable but
         // cannot fit, we also suppress context so the right side does not
-        // outlive "(shift+tab to cycle)" on the left.
+        // outlive "(/plan to exit)" on the left.
         let mode_only_state = LeftSideState {
             hint: SummaryHintKind::None,
             show_cycle_hint: false,
@@ -1724,7 +1721,7 @@ mod tests {
             "mode indicator should remain visible"
         );
         assert!(
-            !collapsed.contains("⇧tab to cycle"),
+            !collapsed.contains("/plan to exit"),
             "compact mode indicator should be used when space is tight"
         );
         assert!(

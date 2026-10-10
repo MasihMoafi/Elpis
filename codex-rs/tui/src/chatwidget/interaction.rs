@@ -239,40 +239,21 @@ impl ChatWidget {
             return KeyEventAction::None;
         }
 
-        match key_event {
-            KeyEvent {
-                code: KeyCode::BackTab,
-                kind: KeyEventKind::Press,
-                ..
-            } if self.collaboration_modes_enabled()
-                && !self.bottom_pane.is_task_running()
-                && self.bottom_pane.no_modal_or_popup_active() =>
-            {
-                if self.blocks_direct_input {
-                    self.add_error_message(PARENT_OWNED_INPUT_MESSAGE.to_string());
-                } else {
-                    self.cycle_collaboration_mode();
-                }
-            }
-            _ => {
-                let had_modal_or_popup = !self.bottom_pane.no_modal_or_popup_active();
-                let should_pause_active_goal =
-                    self.bottom_pane.should_interrupt_running_task(key_event);
-                let input_result = self.bottom_pane.handle_key_event(key_event);
-                if matches!(
-                    input_result,
-                    InputResult::None | InputResult::ParentOwnedInputBlocked
-                ) {
-                    self.refresh_startup_recovery();
-                }
-                crate::startup_recovery::submitted(&input_result);
-                self.sync_backend_banner_view();
-                if should_pause_active_goal {
-                    self.pause_active_goal_for_interrupt();
-                }
-                self.handle_composer_input_result(input_result, had_modal_or_popup);
-            }
+        let had_modal_or_popup = !self.bottom_pane.no_modal_or_popup_active();
+        let should_pause_active_goal = self.bottom_pane.should_interrupt_running_task(key_event);
+        let input_result = self.bottom_pane.handle_key_event(key_event);
+        if matches!(
+            input_result,
+            InputResult::None | InputResult::ParentOwnedInputBlocked
+        ) {
+            self.refresh_startup_recovery();
         }
+        crate::startup_recovery::submitted(&input_result);
+        self.sync_backend_banner_view();
+        if should_pause_active_goal {
+            self.pause_active_goal_for_interrupt();
+        }
+        self.handle_composer_input_result(input_result, had_modal_or_popup);
         KeyEventAction::None
     }
 

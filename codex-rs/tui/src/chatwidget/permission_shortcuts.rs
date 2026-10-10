@@ -1,10 +1,13 @@
-//! Cycle ordinary built-in modes using the last permission catalog received from the server.
+//! Cycle server-allowed modes; Shift+Tab also offers the confirmed Full Access flow.
 
 use super::*;
 
 impl ChatWidget {
     pub(super) fn handle_permission_shortcut(&mut self, key_event: KeyEvent) -> bool {
-        let forward = if self.chat_keymap.next_permission_mode.is_pressed(key_event) {
+        let shift_tab = matches!(key_event.code, KeyCode::BackTab)
+            && (key_event.modifiers.is_empty() || key_event.modifiers == KeyModifiers::SHIFT)
+            || key_hint::shift(KeyCode::Tab).is_press(key_event);
+        let forward = if shift_tab || self.chat_keymap.next_permission_mode.is_pressed(key_event) {
             true
         } else if self
             .chat_keymap
@@ -18,6 +21,9 @@ impl ChatWidget {
         if !self.bottom_pane.no_modal_or_popup_active() {
             return false;
         }
+        if shift_tab && key_event.kind != KeyEventKind::Press {
+            return true;
+        }
         if self.permission_shortcut_pending {
             return true;
         }
@@ -26,6 +32,7 @@ impl ChatWidget {
             return true;
         }
         let Some(thread_id) = self.thread_id else {
+            self.open_permissions_popup();
             return true;
         };
 
@@ -52,7 +59,9 @@ impl ChatWidget {
         let active_profile = self.config.permissions.active_permission_profile();
         let mut choices = Vec::new();
         for preset in builtin_approval_presets() {
-            if !matches!(preset.id, "read-only" | "auto") {
+            if !matches!(preset.id, "read-only" | "auto")
+                && !(shift_tab && preset.id == "full-access")
+            {
                 continue;
             }
             for reviewer in [ApprovalsReviewer::User, ApprovalsReviewer::AutoReview] {

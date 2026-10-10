@@ -66,10 +66,14 @@ pub(super) fn lines(props: &FooterProps, width: u16) -> Vec<Line<'static>> {
             "Send message"
         },
     );
+    session
+        .entries
+        .push(Shortcut::new(key_hint::shift(KeyCode::Tab), "Permissions"));
     if props.collaboration_modes_enabled {
-        session
-            .entries
-            .push(Shortcut::new(key_hint::shift(KeyCode::Tab), "Change mode"));
+        session.entries.push(Shortcut {
+            key: "/plan".into(),
+            action: "Toggle Plan mode",
+        });
     }
     session.push(hints.reasoning_down, "Less reasoning");
     session.push(hints.reasoning_up, "More reasoning");
