@@ -1,9 +1,10 @@
 ---
 source: tui/src/chatwidget/tests/popups_and_settings.rs
+assertion_line: 4050
 expression: snapshot
 ---
 "                                                                                "
 "                                                                                "
 "› Ask Elpis to do anything                                                      "
 "                                                                                "
-"  GPT-5.5 max                                        Plan mode (⇧tab to cycle)  "
+"  GPT-5.5 max                                        Plan mode (/plan to exit)  "
