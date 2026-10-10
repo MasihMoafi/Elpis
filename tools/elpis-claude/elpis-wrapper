@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Installed as ~/.local/bin/elpis. Interactive Elpis starts through the Claude
-# bridge so /model also lists Claude subscription models. Every subcommand,
-# --help/--version and --remote go straight to the real binary.
+# bridge so /model also lists Claude subscription models, including resume/fork.
+# Headless subcommands, --help/--version and --remote go straight to the real binary.
 # Undo: ln -sfn ~/.local/lib/elpis-next/elpis-next ~/.local/bin/elpis
 REAL="$HOME/.local/lib/elpis-next/elpis-next"
 BRIDGE_DIR="$HOME/Desktop/p/Elpis-wt-acp/tools/elpis-claude"
@@ -14,6 +14,6 @@ for a in "$@"; do
   case "$a" in --remote|--remote=*|-h|--help|-V|--version) direct "$@" ;; esac
 done
 case "${1:-}" in
-  ""|-*|resume) ELPIS_ENGINE_BIN="$REAL" exec "$BRIDGE_DIR/elpis-claude" "$@" ;;
+  ""|-*|resume|fork) ELPIS_ENGINE_BIN="$REAL" exec "$BRIDGE_DIR/elpis-claude" "$@" ;;
   *) direct "$@" ;;
 esac

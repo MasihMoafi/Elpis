@@ -35,6 +35,9 @@ async function main() {
     assert(!output.includes('fallback'), output);
     assert.match(output, /arg:--elpis-local-bridge\narg:--remote\narg:unix:\/\/[^\n]+\narg:resume\narg:fixture-session/);
     console.log('PASS interactive wrapper pins the same runtime for bridge and TUI');
+    output = launch('elpis-wrapper', ['fork', 'fixture-session', '--worktree']);
+    assert.match(output, /arg:--elpis-local-bridge\narg:--remote\narg:unix:\/\/[^\n]+\narg:fork\narg:fixture-session\narg:--worktree/);
+    console.log('PASS interactive fork uses the same local provider bridge');
     output = launch('elpis-wrapper', ['--worktree', 'worktree fixture']);
     assert.match(output, /arg:--elpis-local-bridge\narg:--remote\narg:unix:\/\/[^\n]+\narg:--worktree\narg:worktree fixture/);
     console.log('PASS ordinary worktree launch explicitly selects the private local bridge');
