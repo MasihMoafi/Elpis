@@ -387,7 +387,6 @@ fn commands_v030_kept_out_of_the_popup_still_work_under_their_v030_names() {
         ("mention", SlashCommand::Mention),
         ("ps", SlashCommand::Ps),
         ("raw", SlashCommand::Raw),
-        ("review", SlashCommand::Review),
         ("side", SlashCommand::Side),
         ("statusline", SlashCommand::Statusline),
         ("title", SlashCommand::Title),
