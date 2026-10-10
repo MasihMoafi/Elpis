@@ -18,39 +18,32 @@ use super::ChatWidget;
 use crate::elpis_ledger_events::ContextUsageTranscriptTotals;
 use crate::history_cell::HistoryCell;
 
-// Adjacent categories deliberately alternate light/dark luminance while retaining
-// distinct hues and at least 4.5:1 contrast against the reference charcoal surface.
+// Recognizable hues for category dots and bar segments. Labels keep the terminal
+// foreground; charcoal markers retain at least 4.5:1 contrast.
 pub(super) const USER_MESSAGES_COLOR: Color = Color::Rgb(111, 181, 253);
-pub(super) const AGENT_RESPONSES_COLOR: Color = Color::Rgb(3, 155, 44);
-pub(super) const REASONING_COLOR: Color = Color::Rgb(245, 239, 202);
+pub(super) const AGENT_RESPONSES_COLOR: Color = Color::Rgb(80, 193, 111);
+pub(super) const REASONING_COLOR: Color = Color::Rgb(54, 199, 205);
 const REASONING_CATEGORY_LABEL: &str = "Reasoning + compaction";
-pub(super) const TOOL_CALLS_COLOR: Color = Color::Rgb(162, 129, 11);
-pub(super) const TOOL_RESULTS_COLOR: Color = {
-    let (r, g, b) = crate::style::CONTEXT_DARK_RGB;
-    Color::Rgb(r, g, b)
-};
+pub(super) const TOOL_CALLS_COLOR: Color = Color::Rgb(244, 153, 61);
+pub(super) const TOOL_RESULTS_COLOR: Color = Color::Rgb(235, 208, 60);
 pub(super) const SYSTEM_INSTRUCTIONS_COLOR: Color = Color::Rgb(240, 68, 93);
-pub(super) const DEVELOPER_MESSAGES_COLOR: Color = Color::Rgb(239, 140, 255);
-pub(super) const TOOL_DEFINITIONS_COLOR: Color = Color::Rgb(145, 145, 145);
-pub(super) const UNRECOGNIZED_ITEMS_COLOR: Color = Color::Rgb(166, 252, 24);
+pub(super) const DEVELOPER_MESSAGES_COLOR: Color = Color::Rgb(210, 153, 244);
+pub(super) const TOOL_DEFINITIONS_COLOR: Color = Color::Rgb(160, 160, 160);
+pub(super) const UNRECOGNIZED_ITEMS_COLOR: Color = Color::Rgb(240, 136, 187);
 pub(super) const CONTEXT_CATEGORY_MARKER: &str = "●";
 
-// The same hues on paper, muted, alternating a lighter and a darker tone so
-// neighbouring bar segments read apart without loud color. Darkening the charcoal
-// palette uniformly had pushed every category into one muddy band. Each color is
-// at least 4.5:1 on paper and white and 25 CIELAB units from every other one.
-const LIGHT_USER_MESSAGES_COLOR: Color = Color::Rgb(70, 110, 170);
-const LIGHT_AGENT_RESPONSES_COLOR: Color = Color::Rgb(30, 90, 50);
-const LIGHT_REASONING_COLOR: Color = Color::Rgb(40, 120, 125);
-const LIGHT_TOOL_CALLS_COLOR: Color = Color::Rgb(95, 80, 30);
-const LIGHT_TOOL_RESULTS_COLOR: Color = {
-    let (r, g, b) = crate::style::CONTEXT_LIGHT_RGB;
-    Color::Rgb(r, g, b)
-};
+// On paper and white, these graphical markers keep at least 3:1 contrast and
+// 25 CIELAB units of separation. Requiring text contrast for the markers made
+// yellow and orange look brown. Text does not use this palette.
+const LIGHT_USER_MESSAGES_COLOR: Color = Color::Rgb(78, 127, 195);
+const LIGHT_AGENT_RESPONSES_COLOR: Color = Color::Rgb(50, 142, 75);
+const LIGHT_REASONING_COLOR: Color = Color::Rgb(30, 140, 145);
+const LIGHT_TOOL_CALLS_COLOR: Color = Color::Rgb(205, 111, 15);
+const LIGHT_TOOL_RESULTS_COLOR: Color = Color::Rgb(168, 138, 0);
 const LIGHT_SYSTEM_INSTRUCTIONS_COLOR: Color = Color::Rgb(140, 45, 60);
-const LIGHT_DEVELOPER_MESSAGES_COLOR: Color = Color::Rgb(130, 90, 160);
-const LIGHT_TOOL_DEFINITIONS_COLOR: Color = Color::Rgb(80, 80, 80);
-const LIGHT_UNRECOGNIZED_ITEMS_COLOR: Color = Color::Rgb(150, 95, 120);
+const LIGHT_DEVELOPER_MESSAGES_COLOR: Color = Color::Rgb(147, 99, 181);
+const LIGHT_TOOL_DEFINITIONS_COLOR: Color = Color::Rgb(100, 100, 100);
+const LIGHT_UNRECOGNIZED_ITEMS_COLOR: Color = Color::Rgb(173, 86, 132);
 
 fn light_category_color(color: Color) -> Color {
     match color {
@@ -74,9 +67,6 @@ fn light_category_color(color: Color) -> Color {
 /// Shared by the Ledger and `/context`; the charcoal palette as-is, its paper
 /// counterpart on a light background.
 pub(super) fn context_display_color(color: Color) -> Color {
-    if color == TOOL_RESULTS_COLOR {
-        return crate::style::context_style().fg.unwrap_or(Color::Reset);
-    }
     let Some(background) = crate::terminal_palette::default_bg() else {
         return Color::Reset;
     };
@@ -990,14 +980,10 @@ mod tests {
 
     fn colors_have_minimum_distance(colors: &[Color], minimum: f64) -> bool {
         colors.iter().enumerate().all(|(index, left)| {
-            let (left_red, left_green, left_blue) = rgb(*left);
-            colors.iter().skip(index + 1).all(|right| {
-                let (right_red, right_green, right_blue) = rgb(*right);
-                let red = f64::from(left_red) - f64::from(right_red);
-                let green = f64::from(left_green) - f64::from(right_green);
-                let blue = f64::from(left_blue) - f64::from(right_blue);
-                red.hypot(green).hypot(blue) >= minimum
-            })
+            colors
+                .iter()
+                .skip(index + 1)
+                .all(|right| lab_distance(*left, *right) >= minimum)
         })
     }
 
@@ -1027,7 +1013,7 @@ mod tests {
 
     #[test]
     fn context_category_palette_uses_distinct_high_contrast_hues() {
-        const MINIMUM_RGB_DISTANCE: f64 = 100.0;
+        const MINIMUM_LAB_DISTANCE: f64 = 25.0;
         const MINIMUM_CONTRAST: f64 = 4.5;
         let terminal_colors = [
             USER_MESSAGES_COLOR,
@@ -1044,31 +1030,18 @@ mod tests {
 
         assert!(colors_have_minimum_distance(
             &terminal_colors,
-            MINIMUM_RGB_DISTANCE
+            MINIMUM_LAB_DISTANCE
         ));
         assert!(
             terminal_colors
                 .iter()
                 .all(|color| contrast_ratio(*color, terminal_background) >= MINIMUM_CONTRAST)
         );
-        for (index, pair) in terminal_colors.windows(2).enumerate() {
-            let left = relative_luminance(pair[0]);
-            let right = relative_luminance(pair[1]);
-            assert!(
-                if index % 2 == 0 {
-                    left - right >= 0.10
-                } else {
-                    right - left >= 0.10
-                },
-                "category {index} and {} do not alternate light/dark: {left:.3} vs {right:.3}",
-                index + 1,
-            );
-        }
 
         let near_duplicate = [Color::Rgb(95, 135, 255), Color::Rgb(96, 136, 255)];
         assert!(!colors_have_minimum_distance(
             &near_duplicate,
-            MINIMUM_RGB_DISTANCE
+            MINIMUM_LAB_DISTANCE
         ));
         assert!(contrast_ratio(Color::Rgb(36, 36, 36), terminal_background) < MINIMUM_CONTRAST);
     }
@@ -1129,22 +1102,10 @@ mod tests {
             }
             for background in [Color::Rgb(248, 246, 239), Color::Rgb(255, 255, 255)] {
                 assert!(
-                    contrast_ratio(*left, background) >= 4.5,
+                    contrast_ratio(*left, background) >= 3.0,
                     "{left:?} on {background:?}"
                 );
             }
-        }
-        for (index, pair) in colors.windows(2).enumerate() {
-            let gap = lab(pair[0]).0 - lab(pair[1]).0;
-            assert!(
-                if index % 2 == 0 {
-                    gap >= 8.0
-                } else {
-                    gap <= -8.0
-                },
-                "categories {index} and {} do not alternate lighter/darker on paper: {gap:.1}",
-                index + 1,
-            );
         }
         // The uniform darkening this replaces is what made the bar unreadable.
         let darkened = [TOOL_CALLS_COLOR, TOOL_RESULTS_COLOR].map(|color| {
@@ -1164,7 +1125,7 @@ mod tests {
 
     #[test]
     fn context_colors_remain_visible_in_both_appearances() {
-        for bg in [(17, 18, 20), (248, 246, 239)] {
+        for bg in [(17, 18, 20), (248, 246, 239), (255, 255, 255)] {
             crate::terminal_palette::with_test_default_colors(
                 crate::terminal_probe::DefaultColors {
                     fg: (220, 220, 220),
@@ -1186,7 +1147,7 @@ mod tests {
                             contrast_ratio(
                                 context_display_color(color),
                                 Color::Rgb(bg.0, bg.1, bg.2)
-                            ) >= 4.5
+                            ) >= 3.0
                         );
                     }
                     let lines = build_category_bar_chart(&[], 50, 100, 80);
@@ -1210,7 +1171,7 @@ mod tests {
     }
 
     #[test]
-    fn used_context_and_tool_results_share_readable_olive_in_both_appearances() {
+    fn tool_results_use_the_same_yellow_in_bar_and_legend() {
         for bg in [(17, 18, 20), (248, 246, 239)] {
             crate::terminal_palette::with_test_default_colors(
                 crate::terminal_probe::DefaultColors {
@@ -1218,10 +1179,10 @@ mod tests {
                     bg,
                 },
                 || {
-                    let olive = context_display_color(TOOL_RESULTS_COLOR);
-                    let (r, g, b) = rgb(olive);
-                    assert!(g >= r && r > b);
-                    assert_eq!(crate::style::context_style().fg, Some(olive));
+                    let yellow = context_display_color(TOOL_RESULTS_COLOR);
+                    let (r, g, b) = rgb(yellow);
+                    assert!(r >= g && g > b.saturating_add(100));
+                    assert_ne!(crate::style::context_style().fg, Some(yellow));
                     let categories = [
                         CategoryUsage {
                             label: "Tool results",
@@ -1242,22 +1203,23 @@ mod tests {
                     assert!(
                         spans
                             .iter()
-                            .any(|span| span.content.contains('█') && span.style.fg == Some(olive))
+                            .any(|span| span.content.contains('█') && span.style.fg == Some(yellow))
                     );
                     assert!(
                         spans
                             .iter()
-                            .any(|span| span.content.contains('●') && span.style.fg == Some(olive))
+                            .any(|span| span.content.contains('●') && span.style.fg == Some(yellow))
                     );
                     assert!(spans.iter().any(|span| span.content.contains('█')
                         && span.style.fg == Some(context_display_color(USER_MESSAGES_COLOR))));
-                    assert_ne!(olive, context_display_color(USER_MESSAGES_COLOR));
+                    assert_ne!(yellow, context_display_color(USER_MESSAGES_COLOR));
                     let unattributed = build_category_bar_chart(&[], 50, 100, 80);
                     assert!(
                         unattributed
                             .iter()
                             .flat_map(|line| &line.spans)
-                            .any(|span| span.content.contains('█') && span.style.fg == Some(olive))
+                            .any(|span| span.content.contains('█')
+                                && span.style.fg == crate::style::context_style().fg)
                     );
                 },
             );
