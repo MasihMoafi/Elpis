@@ -157,6 +157,16 @@ async function worktreeMenu(label) {
   assert.equal(threads().filter(thread => thread.cwd === forked.cwd).length, 1, 'resume reuses the original fork thread');
   assert.equal(worktrees().length, 3, 'resume does not create another worktree');
   pass('ordinary launcher resumes the saved worktree thread and its history');
+  const beforeCli = new Set(worktrees());
+  tmux('new-session', '-d', '-s', 'cli', '-c', cwd, '-x', '110', '-y', '46', command(['-C', cwd, '--worktree']));
+  await ready('cli');
+  const cliRequest = await answer('Confirm the command-line worktree is ready.', 'CLI_WORKTREE_READY', 'cli');
+  const cliWorktree = worktrees().find(directory => !beforeCli.has(directory));
+  assert(cliWorktree && cliWorktree.startsWith(`${home}${path.sep}worktrees${path.sep}`));
+  assert.equal(worktrees().length, 4, '--worktree creates one additional checkout');
+  assert(JSON.stringify(cliRequest).includes(cliWorktree), 'command-line worktree uses the created checkout');
+  assert(!JSON.stringify(cliRequest).includes('SOURCE_CONVERSATION_TOKEN'));
+  pass('ordinary --worktree launch starts a fresh conversation in a real isolated checkout');
   assert.equal(fs.readFileSync(path.join(cwd, 'tracked.txt'), 'utf8'), 'UNCOMMITTED_SOURCE_MARKER\n');
   assert.equal(fs.readFileSync(path.join(cwd, 'untracked.txt'), 'utf8'), 'UNTRACKED_SOURCE_MARKER\n');
   assert.equal(git('status', '--porcelain'), initialStatus); assert.equal(git('rev-parse', 'HEAD'), initialHead);
