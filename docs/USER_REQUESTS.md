@@ -35,6 +35,8 @@ or implemented outcomes.
 
 ## Requested outcomes
 
+October 10 follow-up: retain Alt+C and add Ctrl+X without shortcut conflicts; fix slow `/resume` loading and restore Backspace deletion. Keep Tool results olive with a small brightness increase; use Deus Ex gold for the source headings. Implementation and actual-picker checks are in progress; no new candidate installed yet. The reported missing context was corrected by Masih: it appeared after sending a message on resume.
+
 October 10 correction: refine the palette and gold animation, make generated session names visible, and restore Shift+Tab permission changes with visible feedback and effective tool access. The [refined contract](specs/codex-parity.md) records these explicit exceptions. Tool-result attribution is already correct. Implemented and installed from `fb0b04a60`; full CI, strict candidate/installed-launcher checks and light/dark appearance checks passed. [Evidence and user check](permissions-verification.md). Masih’s daily-use acceptance remains pending.
 
 October 9 visual follow-up: replace the context category shapes with colored circles, align the Ledger usage bar with its text, and replace the displayed “Working” with “Elpising” in the previously selected Deus Ex gold. This refines the parity contract. Implemented and installed October 9; automated and visual evidence is in `docs/permissions-verification.md`. Masih's acceptance remains pending.
