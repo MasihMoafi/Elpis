@@ -12,6 +12,109 @@ fn read_only_selection() -> PermissionProfileSelection {
 }
 
 #[tokio::test]
+async fn full_access_shortcut_requires_confirmation_and_cancel_does_not_apply() -> Result<()> {
+    let (mut app, mut events, _ops) = make_test_app_with_channels().await;
+    app.config
+        .permissions
+        .set_permission_profile_from_session_snapshot(PermissionProfileSnapshot::active(
+            PermissionProfile::workspace_write(),
+            ActivePermissionProfile::new(":workspace"),
+        ))?;
+    app.config
+        .permissions
+        .approval_policy
+        .set(AskForApproval::OnRequest.to_core())?;
+    let mut server = start_config_write_test_app_server(&app).await?;
+    let started = server.start_thread(&app.config).await?;
+    let thread_id = started.session.thread_id;
+    app.enqueue_primary_thread_session(started.session, started.turns)
+        .await?;
+    let before = RuntimePermissionProfileOverride::from_config(app.chat_widget.config_ref());
+    let selection = PermissionProfileSelection {
+        profile_id: ":danger-full-access".into(),
+        approval_policy: Some(AskForApproval::Never),
+        approvals_reviewer: Some(ApprovalsReviewer::User),
+        display_label: "Full Access".into(),
+    };
+    while events.try_recv().is_ok() {}
+    app.apply_permission_shortcut(&mut server, ThreadId::new(), selection.clone())
+        .await;
+    assert!(!app.chat_widget.has_active_view());
+    app.chat_widget
+        .set_feature_enabled(Feature::GuardianApproval, false);
+    app.chat_widget.request_permission_profiles();
+    let request_id = assert_matches!(events.try_recv(), Ok(AppEvent::FetchPermissionProfiles { request_id, .. }) => request_id);
+    let discovery =
+        crate::permission_discovery::PermissionDiscovery::local(app.chat_widget.config_ref());
+    app.chat_widget
+        .on_permission_profiles_loaded(request_id, Ok(discovery));
+    app.chat_widget
+        .handle_key_event(KeyEvent::from(KeyCode::Esc));
+    for cancel in [true, false] {
+        app.chat_widget
+            .handle_key_event(KeyEvent::from(KeyCode::BackTab));
+        let selected = assert_matches!(events.try_recv(), Ok(AppEvent::ApplyPermissionShortcut { selection, .. }) => selection);
+        assert_eq!(selected.profile_id, selection.profile_id);
+        app.apply_permission_shortcut(&mut server, thread_id, selected)
+            .await;
+        assert!(render_bottom_popup(&app.chat_widget, 100).contains("Enable full access?"));
+        assert_eq!(
+            RuntimePermissionProfileOverride::from_config(app.chat_widget.config_ref()),
+            before
+        );
+        assert!(
+            !app.agents_overview
+                .requested_permission_profiles
+                .contains_key(&thread_id)
+        );
+        assert!(
+            events.try_recv().is_err(),
+            "no settings request before confirmation"
+        );
+        if cancel {
+            app.chat_widget
+                .handle_key_event(KeyEvent::from(KeyCode::Down));
+            app.chat_widget
+                .handle_key_event(KeyEvent::from(KeyCode::Enter));
+            assert_matches!(events.try_recv(), Ok(AppEvent::OpenPermissionsPopup));
+            assert!(
+                events.try_recv().is_err(),
+                "cancel must not select Full Access"
+            );
+        } else {
+            app.chat_widget
+                .handle_key_event(KeyEvent::from(KeyCode::Enter));
+            let accepted = assert_matches!(events.try_recv(), Ok(AppEvent::SelectPermissionProfile(selection)) => selection);
+            assert!(events.try_recv().is_err(), "only one confirmed selection");
+            app.select_permission_profile(&mut server, accepted).await;
+            let notification = next_thread_settings_updated(&mut server, thread_id).await;
+            app.enqueue_thread_notification(
+                thread_id,
+                ServerNotification::ThreadSettingsUpdated(notification),
+            )
+            .await?;
+            assert_eq!(
+                app.chat_widget
+                    .config_ref()
+                    .permissions
+                    .permission_profile(),
+                &PermissionProfile::Disabled
+            );
+            assert_eq!(
+                app.chat_widget
+                    .config_ref()
+                    .permissions
+                    .approval_policy
+                    .value(),
+                AskForApproval::Never.to_core()
+            );
+        }
+    }
+    server.shutdown().await?;
+    Ok(())
+}
+
+#[tokio::test]
 async fn permission_shortcut_rejections_leave_state_unchanged() -> Result<()> {
     for experimental_api in [false, true] {
         let (mut app, mut events, _op_rx) = make_test_app_with_channels().await;

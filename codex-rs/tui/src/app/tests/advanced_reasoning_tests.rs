@@ -100,7 +100,9 @@ async fn switching_from_ultra_thread_restores_configured_plan_effort() {
         /*resume_restored_queue*/ false,
     );
     app.chat_widget
-        .handle_key_event(KeyEvent::from(KeyCode::BackTab));
+        .restore_user_message_to_composer(UserMessage::from("/plan"));
+    app.chat_widget
+        .handle_key_event(KeyEvent::from(KeyCode::Enter));
 
     assert_eq!(
         app.chat_widget.active_collaboration_mode_kind(),

@@ -10,4 +10,4 @@ expression: terminal.backend()
 "                                                            "
 "                                                            "
 "                                                            "
-"  Plan mode (⇧tab to cycle)              100% context left  "
+"  Plan mode (/plan to exit)              100% context left  "

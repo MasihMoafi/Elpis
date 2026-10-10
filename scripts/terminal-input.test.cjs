@@ -137,25 +137,43 @@ async function stopAppServer() {
   assert.equal(initialPermissions[0].approval_mode, 'on-request');
   assert.notEqual(JSON.parse(initialPermissions[0].sandbox_policy).type, 'disabled');
   fs.writeFileSync(path.join(root, 'initial-permissions.json'), JSON.stringify(initialPermissions, null, 2));
-  type('/permissions'); await pause(250); key('Enter');
+  if (reference) { type('/permissions'); await pause(250); key('Enter'); }
+  else { key('BTab'); }
   let permissionsScreen = await screenWhen(s => s.includes('Update Model Permissions') && s.includes('Full Access'), 'permissions-picker');
-  for (let move = 0; move < 5 && !permissionsScreen.split('\n').some(line => /^\s*›.*Full Access/.test(line)); move++) {
-    key('Down'); await pause(150); permissionsScreen = capture();
+  if (reference) {
+    for (let move = 0; move < 5 && !permissionsScreen.split('\n').some(line => /^\s*›.*Full Access/.test(line)); move++) {
+      key('Down'); await pause(150); permissionsScreen = capture();
+    }
+    assert(permissionsScreen.split('\n').some(line => /^\s*›.*Full Access/.test(line)), permissionsScreen);
+    key('Enter');
+  } else {
+    key('Escape');
+    await screenWhen(s => !s.includes('Update Model Permissions'), 'permissions-picker-cancelled');
+    key('BTab');
+    await screenWhen(s => s.includes('Permissions updated to Approve for me'), 'shift-tab-auto-review');
+    key('BTab');
+    await screenWhen(s => s.includes('Enable full access?'), 'shift-tab-full-access-cancel');
+    key('Escape');
+    await screenWhen(s => !s.includes('Enable full access?'), 'shift-tab-confirmation-cancelled');
+    const cancelled = threadSettings()[0];
+    assert.equal(cancelled.approval_mode, 'on-request', 'cancelling Full Access must preserve approval');
+    assert.notEqual(JSON.parse(cancelled.sandbox_policy).type, 'disabled', 'cancelling Full Access must preserve the sandbox');
+    key('BTab');
+    pass('Shift+Tab visibly cycles permissions; cancelling Full Access preserves restrictions and releases the shortcut');
   }
-  assert(permissionsScreen.split('\n').some(line => /^\s*›.*Full Access/.test(line)), permissionsScreen);
-  key('Enter');
   let confirmation = await screenWhen(s => s.includes('Enable full access?') && s.includes('Yes, continue anyway'), 'full-access-confirmation');
   for (let move = 0; move < 3 && !confirmation.split('\n').some(line => /^\s*›.*Yes, continue anyway/.test(line)); move++) {
     key('Down'); await pause(150); confirmation = capture();
   }
   assert(confirmation.split('\n').some(line => /^\s*›.*Yes, continue anyway/.test(line)), confirmation);
   key('Enter');
-  await screenWhen(() => {
+  await screenWhen(s => {
     savedPermissions = threadSettings();
-    return savedPermissions.length === 1 && savedPermissions[0].approval_mode === 'never' && JSON.parse(savedPermissions[0].sandbox_policy).type === 'disabled';
+    return savedPermissions.length === 1 && savedPermissions[0].approval_mode === 'never' && JSON.parse(savedPermissions[0].sandbox_policy).type === 'disabled'
+      && (reference || s.includes('Permissions updated to Full Access'));
   }, 'full-access-applied');
   fs.writeFileSync(path.join(root, 'saved-permissions.json'), JSON.stringify(savedPermissions, null, 2));
-  pass('/permissions Full Access saves disabled sandbox and never approval in the engine thread');
+  pass(`${reference ? '/permissions' : 'Shift+Tab'} Full Access saves disabled sandbox and never approval in the engine thread`);
   const ready = path.join(cwd, 'tool-ready'), release = path.join(cwd, 'tool-release');
   releaseTool = release;
   const protectedDir = path.join(cwd, '.git');

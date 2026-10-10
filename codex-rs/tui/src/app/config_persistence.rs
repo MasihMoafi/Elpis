@@ -1550,7 +1550,9 @@ mod tests {
         app.chat_widget
             .set_plan_mode_reasoning_effort(Some(ReasoningEffortConfig::High));
         app.chat_widget
-            .handle_key_event(KeyEvent::from(KeyCode::BackTab));
+            .restore_user_message_to_composer(UserMessage::from("/plan"));
+        app.chat_widget
+            .handle_key_event(KeyEvent::from(KeyCode::Enter));
 
         let default_effort =
             app.on_apply_advanced_reasoning("gpt-5.5", ReasoningEffortConfig::Ultra);
@@ -1561,13 +1563,17 @@ mod tests {
             Some(ReasoningEffortConfig::Ultra)
         );
         app.chat_widget
-            .handle_key_event(KeyEvent::from(KeyCode::BackTab));
+            .restore_user_message_to_composer(UserMessage::from("/plan"));
+        app.chat_widget
+            .handle_key_event(KeyEvent::from(KeyCode::Enter));
         assert_eq!(
             app.chat_widget.current_reasoning_effort(),
             Some(ReasoningEffortConfig::Ultra)
         );
         app.chat_widget
-            .handle_key_event(KeyEvent::from(KeyCode::BackTab));
+            .restore_user_message_to_composer(UserMessage::from("/plan"));
+        app.chat_widget
+            .handle_key_event(KeyEvent::from(KeyCode::Enter));
         assert_eq!(
             app.chat_widget.current_reasoning_effort(),
             Some(ReasoningEffortConfig::Ultra)
@@ -1597,7 +1603,9 @@ mod tests {
         app.on_apply_advanced_reasoning("gpt-5.4", ReasoningEffortConfig::Ultra);
         app.on_update_reasoning_effort(Some(ReasoningEffortConfig::Medium));
         app.chat_widget
-            .handle_key_event(KeyEvent::from(KeyCode::BackTab));
+            .restore_user_message_to_composer(UserMessage::from("/plan"));
+        app.chat_widget
+            .handle_key_event(KeyEvent::from(KeyCode::Enter));
 
         assert_eq!(
             app.chat_widget.current_reasoning_effort(),
@@ -1619,12 +1627,16 @@ mod tests {
         app.chat_widget
             .set_plan_mode_reasoning_effort(Some(ReasoningEffortConfig::High));
         app.chat_widget
-            .handle_key_event(KeyEvent::from(KeyCode::BackTab));
+            .restore_user_message_to_composer(UserMessage::from("/plan"));
+        app.chat_widget
+            .handle_key_event(KeyEvent::from(KeyCode::Enter));
 
         app.on_apply_advanced_reasoning("gpt-5.4", ReasoningEffortConfig::Ultra);
         app.on_update_plan_mode_reasoning_effort(Some(ReasoningEffortConfig::Medium));
         app.chat_widget
-            .handle_key_event(KeyEvent::from(KeyCode::BackTab));
+            .restore_user_message_to_composer(UserMessage::from("/plan"));
+        app.chat_widget
+            .handle_key_event(KeyEvent::from(KeyCode::Enter));
 
         assert_eq!(
             app.chat_widget.current_reasoning_effort(),

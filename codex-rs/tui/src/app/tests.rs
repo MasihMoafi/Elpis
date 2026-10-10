@@ -1930,7 +1930,9 @@ async fn replay_thread_snapshot_restores_collaboration_mode_without_input() {
     );
     for _ in 0..2 {
         app.chat_widget
-            .handle_key_event(KeyEvent::from(KeyCode::BackTab));
+            .restore_user_message_to_composer(UserMessage::from("/plan"));
+        app.chat_widget
+            .handle_key_event(KeyEvent::from(KeyCode::Enter));
     }
     assert_eq!(
         app.chat_widget.current_reasoning_effort(),

@@ -33,6 +33,8 @@ The public website may borrow RAG Studio's standard of polish, but not its compo
 
 ## Current state — October 10, 2026
 
+Active follow-up: lighter category colors, native gold animation, visible session names and Shift+Tab permission controls are under implementation/verification. They are not installed yet; [the refined contract](docs/specs/codex-parity.md) and `ES.md` distinguish these corrections from the previous installed checkpoint.
+
 The continuity candidate `continuity-7aeef7edb4f6` is installed. It restores inherited review/worktree workflows through the local provider launcher, refreshes admitted context each turn and isolates goals/checkpoints by thread. Final CI run 38032311498 passed all gates; its binaries match the installed runtime, Code Mode host and sandbox byte for byte. The installed launcher passed all seven workflow checks. [Verification and tested rollback](docs/continuity-verification.md) record scope and evidence. Daily-use acceptance remains pending; no release was published.
 
 ## Previous checkpoint — October 9, 2026
