@@ -5,18 +5,7 @@ use crate::terminal_palette::with_test_default_colors;
 use crate::terminal_probe::DefaultColors;
 
 #[test]
-fn elpis_working_label_uses_gold_with_native_cadence_and_reduced_motion() {
-    let luminance = |(r, g, b): (u8, u8, u8)| {
-        let linear = |channel: u8| {
-            let value = f64::from(channel) / 255.0;
-            if value <= 0.04045 {
-                value / 12.92
-            } else {
-                ((value + 0.055) / 1.055).powf(2.4)
-            }
-        };
-        0.2126 * linear(r) + 0.7152 * linear(g) + 0.0722 * linear(b)
-    };
+fn elpis_gold_preserves_every_native_animation_frame_and_reduced_motion() {
     for colors in [
         DefaultColors {
             fg: (240, 240, 240),
@@ -30,33 +19,40 @@ fn elpis_working_label_uses_gold_with_native_cadence_and_reduced_motion() {
         with_test_default_colors(colors, || {
             let label = crate::branding::WORKING_LABEL;
             let still = summary_shimmer(label, Duration::ZERO, MotionMode::Reduced);
-            assert_eq!(
-                still,
-                vec![Span::styled("Elpising", crate::style::brand_style())]
-            );
+            assert_eq!(still.len(), 1);
+            assert_eq!(still[0].content, label);
+            assert!(still[0].style.add_modifier.is_empty());
+            let Some(ratatui::style::Color::Rgb(r, g, b)) = still[0].style.fg else {
+                panic!("expected gold RGB text");
+            };
+            assert!(r > g && g > b, "expected gold, got {r},{g},{b}");
             assert_eq!(
                 still,
                 summary_shimmer(label, Duration::from_secs(1), MotionMode::Reduced)
             );
-            let quiet = summary_shimmer(label, Duration::ZERO, MotionMode::Animated);
-            let sweeping =
-                summary_shimmer(label, Duration::from_millis(1100), MotionMode::Animated);
-            assert_ne!(quiet, sweeping);
-            assert_eq!(
-                quiet,
-                summary_shimmer(label, Duration::from_millis(4500), MotionMode::Animated)
-            );
-            for span in quiet.iter().chain(&sweeping).chain(&still) {
-                let Some(ratatui::style::Color::Rgb(r, g, b)) = span.style.fg else {
-                    panic!("expected gold RGB text");
-                };
-                assert!(r > g && g > b, "expected gold, got {r},{g},{b}");
-                let foreground = luminance((r, g, b));
-                let background = luminance(colors.bg);
-                let contrast =
-                    (foreground.max(background) + 0.05) / (foreground.min(background) + 0.05);
-                assert!(contrast >= 4.5, "gold text contrast: {contrast}");
+            // Equal-width ordinary text takes Codex's untouched path. Supplying
+            // gold as its terminal foreground must produce identical styles at
+            // every frame, including the delay and gaps between sweeps.
+            for ms in (0..=8600).step_by(32) {
+                let elapsed = Duration::from_millis(ms);
+                let actual = summary_shimmer(label, elapsed, MotionMode::Animated);
+                let native = with_test_default_colors(
+                    DefaultColors {
+                        fg: (r, g, b),
+                        bg: colors.bg,
+                    },
+                    || summary_shimmer("Working!", elapsed, MotionMode::Animated),
+                );
+                assert_eq!(
+                    actual.iter().map(|span| span.style).collect::<Vec<_>>(),
+                    native.iter().map(|span| span.style).collect::<Vec<_>>(),
+                    "gold must change only the foreground at {ms} ms"
+                );
             }
+            assert_ne!(
+                summary_shimmer(label, Duration::ZERO, MotionMode::Animated),
+                summary_shimmer(label, Duration::from_millis(1100), MotionMode::Animated)
+            );
         });
     }
 }
