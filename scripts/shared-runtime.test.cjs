@@ -648,8 +648,9 @@ async function launcherGroup(runtime) {
   const run = spawnSync(path.join(toolDir, 'elpis-claude'), ['resume', 'fixture session', '--flag=1'], { env: { ...tuiEnv, HOME: s.env.HOME }, encoding: 'utf8' });
   assert.equal(run.status, 3, 'the TUI\'s exit status passes through');
   const lines = fs.readFileSync(tuiEnv.TUI_OUT, 'utf8').trim().split('\n');
-  assert.equal(lines[0], 'arg:--remote'); assert.match(lines[1], /^arg:unix:\/\/\/.+\/bridge\.sock$/);
-  assert.deepEqual(lines.slice(2), ['arg:resume', 'arg:fixture session', 'arg:--flag=1']);
+  assert.deepEqual(lines.slice(0, 2), ['arg:--elpis-local-bridge', 'arg:--remote']);
+  assert.match(lines[2], /^arg:unix:\/\/\/.+\/bridge\.sock$/);
+  assert.deepEqual(lines.slice(3), ['arg:resume', 'arg:fixture session', 'arg:--flag=1']);
   const bridgeAlive = s.starts()[0];
   tracked.add(bridgeAlive);
   await pause(500);
@@ -660,7 +661,7 @@ async function launcherGroup(runtime) {
   assert.notEqual(blocked.status, 0); assert.match(blocked.stderr, /different installation/);
   assert(!fs.existsSync(tuiEnv.TUI_OUT), 'no TUI starts when the version differs');
   assert(alive(bridgeAlive));
-  pass('elpis-claude passes its arguments unchanged after --remote unix://…, leaves the bridge running, and starts no TUI against a different version');
+  pass('elpis-claude marks the private local bridge and preserves user arguments, leaves the bridge running, and starts no TUI against a different version');
   await stop(bridgeAlive);
 }
 
