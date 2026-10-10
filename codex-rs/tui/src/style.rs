@@ -4,8 +4,6 @@
 mod contrast;
 // Elpis: the Elpis palette lives in style/elpis.rs.
 mod elpis;
-pub(crate) use elpis::CONTEXT_DARK_RGB;
-pub(crate) use elpis::CONTEXT_LIGHT_RGB;
 pub(crate) use elpis::adaptive_palette_color;
 pub(crate) use elpis::brand_style;
 pub(crate) use elpis::context_style;
