@@ -1,6 +1,6 @@
 # Continuity and workflow candidate — October 10, 2026
 
-The candidate is staged, **not installed**. Runtime source `dff3d29f2` was compiled in [run 38027132112](https://github.com/MasihMoafi/Elpis/actions/runs/38027132112); its downloaded checksum and source record match. The staged wrapper adds the verified interactive-fork correction from `d3dab8b15`. Hosted compilation and configuration checks passed; the remaining suites are running.
+The candidate is staged, **not installed**. Runtime source `dff3d29f2` was compiled in [run 38027132112](https://github.com/MasihMoafi/Elpis/actions/runs/38027132112); its downloaded checksum and source record match. The staged wrapper adds the verified interactive-fork correction from `d3dab8b15`. Hosted compilation and configuration checks passed. Core checks and 65 integration tests passed. UI had 5,776 passes and one stale `/worktree` expectation, corrected in `309470655`; its recheck is pending. Provider/runtime suites are still running.
 
 | Local check on the candidate | Result |
 | --- | --- |
