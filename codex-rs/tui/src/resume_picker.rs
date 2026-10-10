@@ -73,6 +73,9 @@ use unicode_width::UnicodeWidthStr;
 use uuid::Uuid;
 
 mod archive;
+
+#[cfg(test)]
+mod delete_tests;
 mod layout;
 mod page_loading;
 
