@@ -142,6 +142,7 @@ mod elpis_app_event;
 mod elpis_background_model;
 // Elpis: GOAL.md and the ES.md turn checkpoint.
 mod elpis_context;
+mod elpis_local_bridge;
 // Elpis: Context Ledger event value types.
 mod elpis_ledger_events;
 // Elpis: the Elpis motion palette.
@@ -340,6 +341,9 @@ async fn start_embedded_app_server(
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum AppServerTarget {
     Embedded,
+    LocalBridge {
+        endpoint: RemoteAppServerEndpoint,
+    },
     LocalDaemon {
         endpoint: RemoteAppServerEndpoint,
         allow_embedded_fallback: bool,
@@ -358,7 +362,7 @@ impl AppServerTarget {
     /// of any server at a loopback address, such as the Claude bridge.
     pub(crate) fn serves_local_agents(&self) -> bool {
         match self {
-            Self::LocalDaemon { .. } => true,
+            Self::LocalDaemon { .. } | Self::LocalBridge { .. } => true,
             Self::Remote {
                 endpoint: RemoteAppServerEndpoint::WebSocket { websocket_url, .. },
             } => Url::parse(websocket_url).is_ok_and(|parsed| websocket_url_is_loopback(&parsed)),
@@ -396,6 +400,7 @@ impl AppServerTarget {
                 allow_embedded_fallback: false,
                 ..
             }
+            | Self::LocalBridge { .. }
             | Self::Remote { .. } => factory,
         }
     }
@@ -430,9 +435,9 @@ async fn init_state_db_for_app_server_target(
                 .unwrap_or_else(|| config.sqlite_config().state_db_path());
             std::io::Error::other(LocalStateDbStartupError::new(database_path, err))
         }),
-        AppServerTarget::LocalDaemon { .. } | AppServerTarget::Remote { .. } => {
-            Ok(state_db::get_state_db(config).await)
-        }
+        AppServerTarget::LocalDaemon { .. }
+        | AppServerTarget::LocalBridge { .. }
+        | AppServerTarget::Remote { .. } => Ok(state_db::get_state_db(config).await),
     }
 }
 
@@ -1859,8 +1864,11 @@ async fn run_ratatui_app(
     // Remote startup keeps its existing explicit --cd trust check. Resolving other
     // remote folders requires authoritative project-root information from the server.
     if !uses_remote_workspace || remote_cwd_override.is_some() {
-        let resumed_thread = if matches!(app_server_target, AppServerTarget::LocalDaemon { .. })
-            && let resume_picker::SessionSelection::Resume(target) = &session_selection
+        let resumed_thread = if matches!(
+            app_server_target,
+            AppServerTarget::LocalDaemon { .. } | AppServerTarget::LocalBridge { .. }
+        ) && let resume_picker::SessionSelection::Resume(target) =
+            &session_selection
         {
             Some(
                 startup_draft

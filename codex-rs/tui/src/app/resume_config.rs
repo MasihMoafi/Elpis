@@ -113,22 +113,24 @@ impl App {
         if self.reject_remote_resume_permission_override(&resume_config.0) {
             return Err(AppRunControl::Continue);
         }
-        let resumed_thread =
-            if matches!(self.app_server_target, AppServerTarget::LocalDaemon { .. }) {
-                Some(
-                    app_server
-                        .thread_read(target_session.thread_id, /*include_turns*/ false)
-                        .await
-                        .map_err(|error| {
-                            self.add_session_picker_error(format!(
-                                "Unable to check resumed folder: {error}"
-                            ));
-                            AppRunControl::Continue
-                        })?,
-                )
-            } else {
-                None
-            };
+        let resumed_thread = if matches!(
+            self.app_server_target,
+            AppServerTarget::LocalDaemon { .. } | AppServerTarget::LocalBridge { .. }
+        ) {
+            Some(
+                app_server
+                    .thread_read(target_session.thread_id, /*include_turns*/ false)
+                    .await
+                    .map_err(|error| {
+                        self.add_session_picker_error(format!(
+                            "Unable to check resumed folder: {error}"
+                        ));
+                        AppRunControl::Continue
+                    })?,
+            )
+        } else {
+            None
+        };
         let trust_cwd = resume_config.0.cwd.to_path_buf();
         if let Some(local_settings) = self
             .confirm_directory_trust(
