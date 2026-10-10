@@ -30,7 +30,7 @@ Resume 118x30
 
 
 ─────────────────────────────────────────────────────────────────────────────────────────────────────── 1 / 6 · 100% ─
- enter resume   ⌃a archive   esc new   ⌃c quit   tab focus   ←/→ option
+ enter resume   ⌃a archive   backspace delete   esc new   ⌃c quit   tab focus   ←/→ option
  ⌃o dense   ⌃t preview   ⌃e exp   ↑/↓ browse
 Resume 70x12
  Resume a previous session
@@ -42,7 +42,7 @@ Resume 70x12
     Session 2
   ↓ more
 ───────────────────────────────────────────────────────── 1 / 6 · 0% ─
- enter resume   ⌃a archive   esc new   ⌃c quit   tab focus
+ enter resume   ⌃a archive   backspace delete   esc new   ⌃c quit
  ⌃o dense   ⌃t preview   ⌃e exp   ↑/↓ browse
 Resume 38x12
  Resume a previous session
