@@ -4,7 +4,7 @@ Masih requested all three overview improvements and any missing Codex review/wor
 
 ## Acceptance
 - `/review` and `/worktree` are discoverable and use the inherited menus, tools and execution paths. The ordinary launcher supports the same worktree lifecycle. Preserve unrelated command choices and never push or delete user work as a side effect.
-- Changing admitted rules, memory or files reaches the next Claude/Gemini bridge turn. Unchanged context reuses its session. Failed reads never silently substitute empty/stale context. Changes do not mutate an in-flight request.
+- Changing admitted rules, memory or files reaches the next Claude/Gemini bridge turn. Unchanged context reuses its session. Failed instruction RPCs never silently substitute empty/stale context. Changes do not mutate an in-flight request. Existing native handling of missing optional files remains unchanged.
 - Each thread retains its own goal/checkpoint across concurrent turns, interruption, saving and resume. Another thread cannot replace or silently inherit it. Existing workspace files remain intact; legacy recovery must verify ownership. Intentional handoff remains explicit.
 - One current project pointer identifies the active source, installed artifact and status record. Legacy checkouts point there without losing unrelated work or rewriting historical acceptance.
 - Each behavioral correction has a failing control and a passing focused test. Run relevant integration checks and inspect changed UI before claiming readiness.

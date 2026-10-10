@@ -1,5 +1,7 @@
 # Elpis Vision
 
+Current workstation source and installed runtime: [Elpis/CURRENT.md](../Elpis/CURRENT.md). This worktree implements the [October 10 continuity/workflow contract](docs/specs/continuity-workflows.md); see `ES.md` for checks and remaining work.
+
 Elpis is the continuity layer around an AI coding runtime.
 
 The user should be able to change a provider, model, or local runtime without losing the working agreement that makes an agent useful: the current goal, admitted context, permissions, decisions, and evidence. Elpis owns that durable boundary; the provider owns inference.
@@ -17,7 +19,7 @@ Elpis should make four things visible and inspectable:
 
 ## Design direction
 
-Masih selected exact Codex shared behavior and layout on October 9, 2026. The terminal uses that foundation for input, streaming, animations, shortcuts and the agents view. Conflicting Elpis appearance customizations yield to Codex. Keep the hand-selected slash commands unchanged and retain each agent’s model label. The accepted boundaries are in `docs/specs/codex-parity.md`.
+Masih selected exact Codex shared behavior and layout on October 9, 2026. The terminal uses that foundation for input, streaming, animations, shortcuts and the agents view. Conflicting Elpis appearance customizations yield to Codex. Retain the hand-selected slash commands and each agent’s model label. On October 10, Masih additionally requested access to the inherited `/review` and `/worktree` workflows. The accepted boundaries are in `docs/specs/codex-parity.md`.
 
 The public website may borrow RAG Studio's standard of polish, but not its composition or palette. It should explain Elpis to someone who has never used an agent harness, show the continuity model directly, and keep experimental work clearly separated from available behavior.
 
