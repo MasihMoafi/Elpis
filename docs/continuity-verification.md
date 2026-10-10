@@ -1,16 +1,11 @@
-# Continuity and workflow candidate — October 10, 2026
+# Verified Elpis update — October 10, 2026
 
-The candidate is staged, **not installed**. Runtime source `dff3d29f2` was compiled in [run 38027132112](https://github.com/MasihMoafi/Elpis/actions/runs/38027132112); its downloaded checksum and source record match. The staged wrapper adds the verified interactive-fork correction from `d3dab8b15`. Hosted compilation and configuration checks passed. Core checks and 65 integration tests passed. UI had 5,776 passes and one stale `/worktree` expectation, corrected in `309470655`; its recheck is pending. Provider, permission, runtime evaluations and offline installation checks passed. The shared-launcher step hit a second stale argument assertion; its correction passes all 24 local shared-runtime checks. Hosted revalidation remains pending.
+Installed: `continuity-7aeef7edb4f6`, Elpis 0.4.1 on Codex 0.162.0. [Final CI](https://github.com/MasihMoafi/Elpis/actions/runs/38032311498) passed. Its runtime, Code Mode host and sandbox match the installed binaries byte for byte. [Source and installation receipt](../.tmp/continuity-install-receipt.json).
 
-| Local check on the candidate | Result |
-| --- | --- |
-| Claude / Gemini live admitted-context refresh | 9 / 8 passed, including new/edited/withdrawn project instructions and read failures |
-| Per-thread checkpoints and guarded saves | 9 passed; other chats and legacy files preserved |
-| Context admission | 10 passed; 5 actual provider requests |
-| Review and worktree lifecycle | 7 passed through both source and staged installation launchers |
-| Shared runtime and launcher ownership | 24 passed after correcting the old launcher-argument expectation |
-| Permissions and terminal navigation | 9 passed, including actual Full Access tool behavior and cancelled deletion |
+- **Delivered:** inherited `/review`, `/worktree` and `--worktree` workflows; live admitted-context refresh; separate thread goals/checkpoints; one [current source pointer](../../Elpis/CURRENT.md).
+- **Hosted checks:** 5,777 UI tests passed (five existing direct-run exclusions), 317 core tests, 65 integrations, plus configuration, provider, permissions, shared-session, runtime controls and both installation suites.
+- **Local checks:** Claude/Gemini context refresh 9/8; guarded checkpoints 9; admission 10; workflow lifecycle 7 through each launcher, including the installed command; terminal navigation/permissions 9; shared runtime 24. [Evidence](../.tmp/local-runtime-checks.json).
 
-Review, worktree and resume captures were visually inspected: labels and controls fit and remain readable. [Local evidence](../.tmp/local-runtime-checks.json) includes capture paths. Providers were deterministic local fixtures. The installed predecessor failed both new checkpoint and live project-rule controls before the fixes.
+Review, worktree and resume screens were visually inspected. Provider tests used deterministic local fixtures; they do not measure live-model coding quality. Daily-use acceptance remains Masih’s decision.
 
-[Rollback](../.tmp/activation-backup.json) was tested in a private destination. [Approved cleanup](../.tmp/build-cleanup-receipt.json) recovered 28 GiB from exactly two inactive build caches. Chats, settings, the installed runtime and rollback binaries were preserved. Current workstation source: [CURRENT.md](../../Elpis/CURRENT.md).
+Close existing Elpis windows, then reopen to load the new version. [Tested rollback](/home/masih/.local/lib/elpis-next/versions/before-continuity-20261010T053542Z/rollback.sh) preserves chats and settings. [Approved cleanup](../.tmp/build-cleanup-receipt.json) recovered **28 GiB** from exactly two inactive caches.

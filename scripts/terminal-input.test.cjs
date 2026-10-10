@@ -123,6 +123,13 @@ async function stopAppServer() {
     return fs.readFileSync(threads[0].rollout_path, 'utf8').trim().split('\n')
       .some(line => { const item = JSON.parse(line); return item.type === 'event_msg' && item.payload?.type === 'task_complete'; });
   }, 'permissions-initial-thread');
+  await screenWhen(() => threadSettings().some(thread => thread.name === 'Editor test session'), 'automatic-title-saved');
+  assert.equal(provider.titleRequests.length, 1, 'first task should generate one session name');
+  assert(tmux('display-message', '-p', '-t', 'test', '#{pane_title}').includes('Editor test session'), 'generated name must reach the terminal title');
+  if (!reference) {
+    await screenWhen(s => s.includes('Editor test session'), 'automatic-title-visible-80');
+    pass('automatic session name is saved and visible at 80 columns beside a long project path');
+  }
   const initialPermissions = threadSettings();
   assert.equal(initialPermissions.length, 1);
   assert.equal(initialPermissions[0].model, 'gpt-5.5', 'separate Codex user config must not override the model');

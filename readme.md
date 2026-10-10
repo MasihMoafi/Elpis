@@ -27,7 +27,7 @@ v0.3.0's state database is incompatible with the new foundation. Elpis refuses t
 
 ## Included
 
-The October 10 candidate restores the inherited Codex `/review` and `/worktree` menus and `--worktree` launch option through the local provider launcher. It refreshes admitted bridge context each turn and isolates generated goal/checkpoint files by thread. See the [acceptance contract](docs/specs/continuity-workflows.md); runtime validation is pending.
+The October 10 candidate restores the inherited Codex `/review` and `/worktree` menus and `--worktree` launch option through the local provider launcher. It refreshes admitted bridge context each turn and isolates generated goal/checkpoint files by thread. The installed candidate passed its hosted and local checks; see the [contract](docs/specs/continuity-workflows.md) and [verification with rollback](docs/continuity-verification.md).
 
 - Context Ledger controls admission of workspace instructions, chosen files and memory; `/add` and `/context` expose the working set.
 - The responding agent explicitly saves durable knowledge and the workspace checkpoint through a guarded local tool. Saving and admission are separate choices.

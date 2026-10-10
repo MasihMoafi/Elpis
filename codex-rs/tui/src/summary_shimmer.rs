@@ -31,9 +31,15 @@ pub(crate) fn summary_shimmer(
     elapsed: Duration,
     motion: MotionMode,
 ) -> Vec<Span<'static>> {
-    // Elpis uses its recorded Deus Ex gold only for the product's working label.
-    // The native cadence, wave and all other status colors stay unchanged.
-    let accent = (text == crate::branding::WORKING_LABEL).then(crate::style::brand_style);
+    // Tint only the foreground: keep Codex's weight, dim fallback and complete
+    // brightness wave, without clipping individual animation frames.
+    let accent = (text == crate::branding::WORKING_LABEL).then(|| {
+        Style::default().fg(crate::style::adaptive_palette_color(
+            default_bg(),
+            (145, 101, 12),
+            (255, 235, 172),
+        ))
+    });
     if motion == MotionMode::Reduced {
         return vec![Span::styled(text.to_owned(), accent.unwrap_or_default())];
     }
@@ -42,7 +48,7 @@ pub(crate) fn summary_shimmer(
     else {
         return vec![Span::styled(
             text.to_owned(),
-            accent.unwrap_or_else(|| Style::default().dim()),
+            accent.unwrap_or_default().dim(),
         )];
     };
     let fg = match accent.and_then(|style| style.fg) {
@@ -64,12 +70,7 @@ pub(crate) fn summary_shimmer(
             let intensity = 0.5 * (1.0 + (std::f64::consts::PI * distance).cos());
             let alpha = (0.5 + 0.5 * intensity) as f32;
             let color = rgb_color(blend(fg, bg, alpha));
-            let color = if accent.is_some() {
-                crate::style::readable_color_on(color, /*background*/ None)
-            } else {
-                color
-            };
-            let style = accent.unwrap_or_default().fg(color);
+            let style = Style::default().fg(color);
             Span::styled(grapheme.to_owned(), style)
         })
         .collect()
