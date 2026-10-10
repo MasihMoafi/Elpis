@@ -31,9 +31,13 @@ The public website may borrow RAG Studio's standard of polish, but not its compo
 - Elpis is a Linux-first early-access project. Do not describe the current candidate as production-ready until daily-driver acceptance is complete.
 - Local, inspectable state is a product property; provider requests still follow the provider or runtime the user selects.
 
-## Current state — October 9, 2026
+## Current state — October 10, 2026
 
-The accepted September 30 release was v0.4.0 on Codex rust-v0.159.0. The local recovery candidate, Elpis 0.4.1 from `4f44937c2`, is installed on the Codex 0.162.0 foundation. It preserves the selected commands, provider support, Ledger controls, memory/continuity, pruning, dashboard and work graphs. The October 9 follow-up separates Codex user settings from Elpis project settings, corrects the Alt+C hint, replaces category shapes with colored circles, aligns the Ledger bar and displays “Elpising” in Deus Ex gold. It awaits Masih’s daily use and acceptance; no new release was published.
+The continuity candidate `continuity-7aeef7edb4f6` is installed. It restores inherited review/worktree workflows through the local provider launcher, refreshes admitted context each turn and isolates goals/checkpoints by thread. Final CI run 38032311498 passed all gates; its binaries match the installed runtime, Code Mode host and sandbox byte for byte. The installed launcher passed all seven workflow checks. [Verification and tested rollback](docs/continuity-verification.md) record scope and evidence. Daily-use acceptance remains pending; no release was published.
+
+## Previous checkpoint — October 9, 2026
+
+The accepted September 30 release was v0.4.0 on Codex rust-v0.159.0. The local recovery candidate, Elpis 0.4.1 from `4f44937c2`, was installed on the Codex 0.162.0 foundation. It preserves the selected commands, provider support, Ledger controls, memory/continuity, pruning, dashboard and work graphs. The October 9 follow-up separates Codex user settings from Elpis project settings, corrects the Alt+C hint, replaces category shapes with colored circles, aligns the Ledger bar and displays “Elpising” in Deus Ex gold. It awaits Masih’s daily use and acceptance; no new release was published.
 
 Runtime run 37978565974 passed its configuration, core, provider, permission, session and offline-install checks; its screen-review gate found eight screen differences. Test-only corrections passed the full UI suite in run 37983082438: 5,770 passed, five direct-run exclusions, no unreviewed snapshots. Production code is identical between those runs, and the installed runtime matches the downloaded artifact byte for byte. Four light/dark captures were reviewed, animated gold met the contrast threshold, and all 14 installed-launcher checks passed, including Full Access, folder ordering and model labels. See `docs/permissions-verification.md` for evidence, remaining limits, a short user check and tested rollback. `ES.md` is the continuation note; the accepted contract governs scope.
 
