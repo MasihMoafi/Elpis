@@ -217,7 +217,12 @@ async function promptText(s, prompt) {
     } else if (c.type === "image" && c.uri) parts.push(`[The user attached an image: ${c.uri}]`);
   }
   let text = parts.join("\n");
-  if (s.instructions && !s.instructionsSent) { text = `<elpis_instructions>\n${s.instructions}\n</elpis_instructions>\n\n${text}`; s.instructionsSent = true; }
+  if (s.instructions !== null && !s.instructionsSent) {
+    // agy accepts instructions in its conversation, not a replaceable system prompt. Keep the
+    // native history, but explicitly supersede its earlier instruction blocks on every change.
+    text = `<elpis_instructions>\nThese are the current instructions admitted by Elpis. This block completely replaces every earlier elpis_instructions block; those earlier blocks are historical and no longer apply.\n\n${s.instructions || "No Elpis instruction sources are currently admitted."}\n</elpis_instructions>\n\n${text}`;
+    s.instructionsSent = true;
+  }
   // The extra hooks workspace is visible to the model, including on resumed conversations.
   // Restate the actual chat directory on every prompt instead of letting that workspace win.
   return `<elpis_session>\nProject directory: ${JSON.stringify(s.cwd)}\nResolve relative task paths in this project. The additional workspace ${JSON.stringify(HOOKS_DIR)} is only Elpis permission infrastructure, not the task project.\n</elpis_session>\n\n${text}`;
@@ -234,7 +239,11 @@ async function handle(msg) {
       const id = msg.method === "session/load" ? p.sessionId : randomUUID();
       const sess = sessions.get(id) ?? { id, cwd: p.cwd ?? process.cwd(), model: DEFAULT_MODEL, mode: "default", conversationId: msg.method === "session/load" ? id : null, proc: null, turn: null, pendingSteers: [], initWaiters: [], instructions: null, instructionsSent: msg.method === "session/load" };
       sess.cwd = p.cwd ?? sess.cwd;
-      if (p._meta?.systemPrompt?.append) sess.instructions = p._meta.systemPrompt.append;
+      const instructions = p._meta?.systemPrompt?.append;
+      if (typeof instructions === "string" && instructions !== sess.instructions) {
+        sess.instructions = instructions;
+        sess.instructionsSent = false;
+      }
       sessions.set(id, sess);
       // The Antigravity conversation id is the ACP session id, so the bridge can reload it later.
       if (msg.method === "session/new") {
