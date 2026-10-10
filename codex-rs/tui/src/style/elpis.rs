@@ -22,7 +22,7 @@ pub(crate) fn brand_style() -> Style {
     primary_style_for(default_bg())
 }
 
-/// Olive context and tool-result emphasis, resolved against the terminal's actual background.
+/// Olive context heading emphasis, resolved against the terminal's actual background.
 pub(crate) fn context_style() -> Style {
     Style::default().fg(super::readable_color_on(
         adaptive_palette_color(default_bg(), CONTEXT_LIGHT_RGB, CONTEXT_DARK_RGB),
