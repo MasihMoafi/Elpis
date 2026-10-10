@@ -886,13 +886,16 @@ mod tests {
         assert!(content.contains("- Status: interrupted"));
 
         turn.items.clear();
+        let other_path = write_session_checkpoint(Some(&memories_root), cwd, "thread-two", &turn)
+            .await?
+            .context("first interruption still records its status")?;
+        assert_eq!(tokio::fs::read_to_string(&path).await?, content);
+        assert_ne!(path, other_path, "same-workspace threads own separate checkpoints");
+        let other_content = tokio::fs::read_to_string(&other_path).await?;
+        assert!(other_content.contains("- Thread: `thread-two`"));
+        assert!(!other_content.contains("IDE verification found"));
         write_session_checkpoint(Some(&memories_root), cwd, "thread-two", &turn).await?;
-        let content = tokio::fs::read_to_string(&path).await?;
-        assert!(content.contains("- Thread: `thread-two`"));
-        assert!(!content.contains("IDE verification found"));
-        tokio::fs::remove_file(&path).await?;
-        write_session_checkpoint(Some(&memories_root), cwd, "thread-two", &turn).await?;
-        assert!(path.exists(), "first interruption still records its status");
+        assert_eq!(tokio::fs::read_to_string(&other_path).await?, other_content);
         Ok(())
     }
 
