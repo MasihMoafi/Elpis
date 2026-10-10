@@ -48,6 +48,21 @@ async function screenWhen(predicate, label, target = 'test') {
 const type = (text, target = 'test') => tmux('send-keys', '-t', target, '-l', text);
 const key = (name, target = 'test') => tmux('send-keys', '-t', target, name);
 function pass(label) { checks.push(label); console.log(`PASS ${label}`); }
+async function checkLedgerShortcuts(draft, label) {
+  const requests = provider.requests.length;
+  // Give the focused Ledger enough rows to expose its controls and selected source.
+  tmux('resize-window', '-t', 'test', '-x', '150', '-y', '90');
+  type(draft); await pause(250);
+  for (const [open, close] of [['C-x', 'M-c'], ['M-c', 'C-x']]) {
+    key(open);
+    await screenWhen(s => s.includes('CONTEXT LEDGER') && s.includes('Space/Enter'), `${label}-${open}-focused`);
+    key(close);
+    await screenWhen(s => !s.includes('CONTEXT LEDGER') && s.includes(draft), `${label}-${close}-closed`);
+  }
+  assert.equal(provider.requests.length, requests, 'Ledger shortcuts must not submit the draft');
+  tmux('resize-window', '-t', 'test', '-x', '80', '-y', '32');
+  pass(`Ctrl+X and Alt+C open and close the Ledger ${label}, preserving the draft`);
+}
 function threadSettings() {
   const filename = fs.readdirSync(home).find(name => /^state_\d+\.sqlite$/.test(name));
   if (!filename) return [];
@@ -137,6 +152,10 @@ async function stopAppServer() {
   assert.equal(initialPermissions[0].approval_mode, 'on-request');
   assert.notEqual(JSON.parse(initialPermissions[0].sandbox_policy).type, 'disabled');
   fs.writeFileSync(path.join(root, 'initial-permissions.json'), JSON.stringify(initialPermissions, null, 2));
+  if (!reference) {
+    await checkLedgerShortcuts('LEDGER_IDLE_DRAFT_x7', 'idle');
+    key('C-u');
+  }
   if (reference) { type('/permissions'); await pause(250); key('Enter'); }
   else { key('BTab'); }
   let permissionsScreen = await screenWhen(s => s.includes('Update Model Permissions') && s.includes('Full Access'), 'permissions-picker');
@@ -198,7 +217,9 @@ async function stopAppServer() {
   assert.equal(turnContext?.sandbox_policy?.type, 'danger-full-access', 'the actual tool turn must use Full Access');
   assert(!capture().includes('Would you like to run'), 'redundant escalation under Full Access must not show an approval popup');
   pass('Full Access reaches the actual tool turn and writes protected workspace metadata without approval');
-  type(steering); await pause(250); key('Enter'); await pause(400);
+  if (!reference) await checkLedgerShortcuts(steering, 'during-tool');
+  else { type(steering); await pause(250); }
+  key('Enter'); await pause(400);
   fs.writeFileSync(path.join(root, 'steering-during-tool.txt'), capture());
   fs.writeFileSync(release, 'continue');
   let screen = await screenWhen(s => s.includes('to answer'), 'collapsed-question');

@@ -224,6 +224,10 @@ async fn voice_mute_shortcut_reaches_the_active_widget() -> Result<()> {
         tui::TuiEvent::Key(KeyEvent::new(KeyCode::Char('x'), KeyModifiers::CONTROL)),
     )
     .await?;
+    assert!(
+        !app.chat_widget.context_ledger_has_focus(),
+        "voice mute owns Ctrl+X"
+    );
     // The fixture has no microphone handle, so reaching mute reports that limitation.
     assert!(std::iter::from_fn(|| events.try_recv().ok()).any(|event| {
         matches!(event, AppEvent::InsertHistoryCell(cell) if cell.display_lines(/*width*/ 80)

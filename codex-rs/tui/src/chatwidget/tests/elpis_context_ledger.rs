@@ -296,26 +296,107 @@ async fn ledger_keeps_codex_right_margin_and_measures_wide_names() -> anyhow::Re
 }
 
 #[tokio::test]
-async fn alt_c_focuses_and_hides_the_ledger_without_touching_the_draft() {
+async fn ledger_shortcuts_focus_and_hide_without_touching_the_draft() {
+    for key in [
+        KeyEvent::new(KeyCode::Char('c'), KeyModifiers::ALT),
+        KeyEvent::new(KeyCode::Char('x'), KeyModifiers::CONTROL),
+    ] {
+        let (mut chat, _rx, mut op_rx) = make_chatwidget_manual(None).await;
+        show_context_ledger(&mut chat);
+        chat.last_rendered_width.set(Some(WIDTH));
+        chat.bottom_pane
+            .set_composer_text("Keep this draft".into(), Vec::new(), Vec::new());
+        assert!(chat.context_ledger_width(WIDTH) > 0, "visible by default");
+
+        chat.handle_key_event(key);
+        assert!(chat.context_ledger_has_focus());
+        let area = Rect::new(0, 0, WIDTH, 40);
+        assert_eq!(chat.as_renderable().cursor_pos(area), None);
+
+        chat.handle_key_event(key);
+        assert_eq!(chat.context_ledger_width(WIDTH), 0);
+        chat.handle_key_event(key);
+        assert!(chat.context_ledger_width(WIDTH) > 0);
+
+        assert_eq!(chat.bottom_pane.composer_text(), "Keep this draft");
+        assert!(op_rx.try_recv().is_err(), "nothing was submitted");
+    }
+}
+
+#[tokio::test]
+async fn ctrl_x_preserves_custom_editor_binding_after_live_keymap_update() {
     let (mut chat, _rx, mut op_rx) = make_chatwidget_manual(None).await;
-    show_context_ledger(&mut chat);
-    chat.last_rendered_width.set(Some(WIDTH));
+    let config = toml::from_str("[editor]\nkill_line_end = 'ctrl-x'").unwrap();
+    let runtime = crate::keymap::RuntimeKeymap::from_config(&config).unwrap();
+    chat.apply_keymap_update(config, &runtime);
     chat.bottom_pane
-        .set_composer_text("Keep this draft".into(), Vec::new(), Vec::new());
-    assert!(chat.context_ledger_width(WIDTH) > 0, "visible by default");
-
+        .set_composer_text("Cut this draft".into(), Vec::new(), Vec::new());
+    chat.handle_key_event(KeyEvent::new(KeyCode::Char('a'), KeyModifiers::CONTROL));
+    chat.handle_key_event(KeyEvent::new(KeyCode::Char('x'), KeyModifiers::CONTROL));
+    assert_eq!(chat.bottom_pane.composer_text(), "");
+    assert!(!chat.context_ledger_has_focus());
+    assert!(op_rx.try_recv().is_err());
     chat.handle_key_event(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::ALT));
-    assert!(chat.context_ledger_has_focus());
-    let area = Rect::new(0, 0, WIDTH, 40);
-    assert_eq!(chat.as_renderable().cursor_pos(area), None);
+    assert!(chat.context_ledger_has_focus(), "Alt+C remains available");
+}
 
-    chat.handle_key_event(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::ALT));
-    assert_eq!(chat.context_ledger_width(WIDTH), 0);
-    chat.handle_key_event(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::ALT));
-    assert!(chat.context_ledger_width(WIDTH) > 0);
+#[tokio::test]
+async fn ctrl_x_preserves_custom_vim_search_after_live_keymap_update() {
+    let (mut chat, _rx, mut op_rx) = make_chatwidget_manual(None).await;
+    let config =
+        toml::from_str("[chat]\ntoggle_voice_mute = []\n[vim_search]\nforward = 'ctrl-x'").unwrap();
+    let runtime = crate::keymap::RuntimeKeymap::from_config(&config).unwrap();
+    chat.apply_keymap_update(config, &runtime);
+    chat.toggle_vim_mode_and_notify();
+    chat.bottom_pane
+        .set_composer_text("Find this draft".into(), Vec::new(), Vec::new());
+    chat.handle_key_event(KeyEvent::from(KeyCode::Esc));
+    assert!(chat.bottom_pane.no_modal_or_popup_active());
+    chat.handle_key_event(KeyEvent::new(KeyCode::Char('x'), KeyModifiers::CONTROL));
+    assert!(
+        !chat.bottom_pane.no_modal_or_popup_active(),
+        "Vim search must open"
+    );
+    assert!(!chat.context_ledger_has_focus());
+    assert_eq!(chat.bottom_pane.composer_text(), "Find this draft");
+    assert!(op_rx.try_recv().is_err());
+}
 
-    assert_eq!(chat.bottom_pane.composer_text(), "Keep this draft");
-    assert!(op_rx.try_recv().is_err(), "nothing was submitted");
+#[tokio::test]
+async fn ctrl_x_leaves_menus_and_completions_in_control() {
+    let (mut chat, _rx, mut op_rx) = make_chatwidget_manual(None).await;
+    chat.dispatch_command(SlashCommand::Feedback);
+    let before = render_bottom_popup(&chat, 80);
+    chat.handle_key_event(KeyEvent::new(KeyCode::Char('x'), KeyModifiers::CONTROL));
+    assert_eq!(render_bottom_popup(&chat, 80), before);
+    assert!(!chat.context_ledger_has_focus());
+    chat.handle_key_event(KeyEvent::from(KeyCode::Esc));
+    chat.bottom_pane
+        .set_composer_text("/com".into(), Vec::new(), Vec::new());
+    chat.bottom_pane.pre_draw_tick();
+    chat.handle_key_event(KeyEvent::new(KeyCode::Char('x'), KeyModifiers::CONTROL));
+    assert!(!chat.context_ledger_has_focus());
+    assert_eq!(chat.bottom_pane.composer_text(), "/com");
+    chat.handle_key_event(KeyEvent::from(KeyCode::Tab));
+    assert_eq!(chat.bottom_pane.composer_text(), "/compact ");
+    assert!(op_rx.try_recv().is_err());
+}
+
+#[tokio::test]
+async fn plain_x_and_repeated_ctrl_x_do_not_toggle_the_ledger() {
+    let (mut chat, _rx, mut op_rx) = make_chatwidget_manual(None).await;
+    for kind in [KeyEventKind::Repeat, KeyEventKind::Release] {
+        chat.handle_key_event(KeyEvent::new_with_kind(
+            KeyCode::Char('x'),
+            KeyModifiers::CONTROL,
+            kind,
+        ));
+        assert!(!chat.context_ledger_has_focus());
+    }
+    chat.handle_key_event(KeyEvent::from(KeyCode::Char('x')));
+    assert_eq!(chat.composer_text_with_pending(), "x");
+    assert!(!chat.context_ledger_has_focus());
+    assert!(op_rx.try_recv().is_err());
 }
 
 /// Typing, Alt+C, then Backspace: Backspace must edit the draft, not act on a

@@ -2560,7 +2560,7 @@ fn configured_bindings_to_preserve<const N: usize>(
     configured_bindings
 }
 
-fn configured_main_surface_alias_is_used(keymap: &TuiKeymap, alias: &str) -> bool {
+pub(crate) fn configured_main_surface_alias_is_used(keymap: &TuiKeymap, alias: &str) -> bool {
     let mut global = keymap.global.clone();
     if keymap.composer.submit.is_some() {
         global.submit = None;
@@ -2581,6 +2581,7 @@ fn configured_main_surface_alias_is_used(keymap: &TuiKeymap, alias: &str) -> boo
         || configured_context_alias_is_used(&keymap.editor, alias)
         || configured_context_alias_is_used(&keymap.vim_normal, alias)
         || configured_context_alias_is_used(&keymap.vim_operator, alias)
+        || configured_context_alias_is_used(&keymap.vim_search, alias)
         || configured_context_alias_is_used(&keymap.vim_text_object, alias)
 }
 

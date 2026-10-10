@@ -216,8 +216,17 @@ impl ChatWidget {
             return false;
         }
         let is_tab = matches!(key_event.code, KeyCode::Tab) && key_event.modifiers.is_empty();
+        // Voice mute and chords are routed by App first. Menus and explicit user
+        // bindings keep Ctrl+X; Alt+C remains the existing Ledger shortcut.
+        let is_ctrl_x = key_hint::ctrl(KeyCode::Char('x')).is_press(key_event)
+            && self.bottom_pane.no_modal_or_popup_active()
+            && !crate::keymap::configured_main_surface_alias_is_used(
+                &self.local_settings.tui.keymap,
+                "ctrl-x",
+            );
         let is_toggle_key = (is_tab && self.context_ledger.focused)
-            || key_hint::alt(KeyCode::Char('c')).is_press(key_event);
+            || key_hint::alt(KeyCode::Char('c')).is_press(key_event)
+            || is_ctrl_x;
         if is_toggle_key {
             let crowded_out = self.context_ledger.crowded.get() && !self.context_ledger.focused;
             if !self.context_ledger.visible
