@@ -1995,6 +1995,7 @@ mod tests {
                 bg: (255, 255, 255),
             },
             || {
+                chat.context_ledger.visible = true;
                 chat.local_settings.tui.animations = true;
                 chat.local_settings.tui.effects.shimmer = true;
                 assert!(chat.ledger_title_animation_delay(&(2..3), 0, 4).is_some());
