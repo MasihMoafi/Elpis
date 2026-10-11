@@ -33,7 +33,7 @@ The public website may borrow RAG Studio's standard of polish, but not its compo
 
 ## Current state — October 11, 2026
 
-The selected accent palette and shared Elpising animation on CONTEXT LEDGER are installed as `accent-refresh-5beaae1bed39`: teal section headings, gold titles/model, olive active states/path and pink session names. Category colors and background gaps remain intact. Runtime gates, the full UI rerun (5,801 passed, five existing exclusions), real VTE light/dark color and motion checks, all 15 launcher checks before and after installation, and rollback passed. Root and reviewer inspected the actual captures. Masih closed the old window; guarded activation and installed hash checks passed. Design review stayed local, without a paid upload. Masih’s visual acceptance remains open. [Current evidence and rollback](docs/permissions-verification.md).
+Masih rejected the pale CONTEXT LEDGER title in installed `accent-refresh-5beaae1bed39`. The correction, `ledger-gold-3529b45cdd6d`, is checked and staged: saturated solid gold retains the native wave, with minimum observed title contrast of 4.63:1 light and 8.52:1 dark. Full CI (5,801 UI tests, five existing exclusions), actual VTE light/dark checks, all 15 candidate launcher checks and rollback passed. Root and reviewer inspected actual captures. Activation awaits closure of the open Elpis windows; the baseline remains installed. Teal headings, gold model/Elpising, olive active states/path, pink session names, category colors and gaps remain unchanged. Design review stayed local. Masih’s visual acceptance remains open. [Current evidence and rollback](docs/permissions-verification.md).
 
 ## Installed checkpoint — October 10, 2026
 

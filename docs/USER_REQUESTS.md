@@ -35,7 +35,7 @@ or implemented outcomes.
 
 ## Requested outcomes
 
-October 11 title-visibility correction: the installed CONTEXT LEDGER gold is too pale to see. Match the reference gold with more saturation and keep it readable at rest as well as during the shimmer. A solid-gold color range on the existing wave is under implementation; other selected colors and Elpising stay unchanged. [Contract](specs/codex-parity.md).
+October 11 title-visibility correction: the installed CONTEXT LEDGER gold is too pale to see. Match the reference gold with more saturation and keep it readable at rest as well as during the shimmer. Implemented and checked as `ledger-gold-3529b45cdd6d`; full CI, actual light/dark terminals and all 15 candidate launcher checks passed. Activation awaits closure of the old Elpis windows. Other selected colors and Elpising stay unchanged. [Contract](specs/codex-parity.md) · [Evidence](permissions-verification.md). Visual acceptance remains Masih’s.
 
 October 11 accent and motion refinement: replace brown headings with the selected teal/gold/olive/pink palette, coordinated with the rest of the TUI and both themes. Reuse the exact Elpising animation on CONTEXT LEDGER. Installed as `accent-refresh-5beaae1bed39` after Masih closed the old window; runtime gates, 5,801 UI tests, actual light/dark color and motion checks, and all 15 launcher checks before and after installation passed. Category colors and gaps remain intact. User chose local Product Design review; no design upload or charge occurred. [Contract](specs/codex-parity.md) · [Evidence](permissions-verification.md). Visual acceptance remains Masih’s.
 
