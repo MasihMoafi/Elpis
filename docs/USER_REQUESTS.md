@@ -35,7 +35,7 @@ or implemented outcomes.
 
 ## Requested outcomes
 
-October 11 Elpising correction: the active Elpising label remains too faint. Use its current light-theme gold for dark mode and make both themes readable throughout the native animation. Implementation and active-turn verification are in progress. The corrected Ledger and other selected colors stay unchanged. [Contract](specs/codex-parity.md).
+October 11 Elpising correction: the active Elpising label remains too faint. Use its current light-theme gold for dark mode and make both themes readable throughout the native animation. Installed as `elpising-gold-ab1bb00e5a84`. Full CI, 5,802 UI tests, actual light/dark active-turn checks, visual review, all 15 launcher checks before and after installation, and rollback passed. Guarded activation and installed hashes passed. Visual acceptance remains Masih’s. The corrected Ledger and other selected colors stay unchanged. [Contract](specs/codex-parity.md).
 
 October 11 title-visibility correction: the installed CONTEXT LEDGER gold is too pale to see. Match the reference gold with more saturation and keep it readable at rest as well as during the shimmer. Installed as `ledger-gold-3529b45cdd6d`; full CI, actual light/dark terminals and all 15 launcher checks before and after installation passed. Guarded activation and installed hashes passed after Masih closed Elpis. Other selected colors and Elpising stay unchanged. [Contract](specs/codex-parity.md) · [Evidence](permissions-verification.md). Visual acceptance remains Masih’s.
 
