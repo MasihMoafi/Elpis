@@ -28,6 +28,13 @@
 - Use daisyUI components and semantic theme colors first, Tailwind utilities second, and custom CSS only when neither can express the required design.
 - This rule applies to every HTML or JSX edit in this project unless Masih explicitly overrides it.
 
+## Local update handover
+
+Masih authorized proactive Elpis shutdowns for checked updates on October 11, 2026.
+Gracefully close only the Elpis clients and bridge that block activation, preserve
+saved sessions, and verify bridge exit before selecting the bundle. Do not wait
+for Masih to close them or ask again for this handover.
+
 ## Contrast
 
 - Keep text readable against its actual background in both light and dark themes: no dark-on-dark or light-on-light text. Check secondary labels and animated highlights as well as primary text, including the TUI footer and ledgers.
