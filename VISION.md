@@ -31,7 +31,11 @@ The public website may borrow RAG Studio's standard of polish, but not its compo
 - Elpis is a Linux-first early-access project. Do not describe the current candidate as production-ready until daily-driver acceptance is complete.
 - Local, inspectable state is a product property; provider requests still follow the provider or runtime the user selects.
 
-## Current state — October 10, 2026
+## Current state — October 11, 2026
+
+The Ledger palette correction is installed as `category-palette-519e32dc0247`. All nine categories passed real VTE light/dark dot/bar/label checks; captures were inspected and all 15 normal-launcher regressions passed before and after installation. Full CI succeeded. Activation waited for the old bridge to exit naturally; installed wrapper/runtime hashes match the checked bundle. Olive Tool results, red System instructions and gold source headings remain. Masih’s visual acceptance is open. [Current evidence and rollback](docs/permissions-verification.md).
+
+## Installed checkpoint — October 10, 2026
 
 Installed `provider-delete-c6085bc2f370` corrects provider work continuing after chat deletion, discovered in the broader audit. Forty shared-session checks, 63 permission checks and 15 installed-launcher checks passed; dashboard browser checks, memory, pruning, context refresh and review/worktree checks also passed. Its runtime is unchanged from `resume-ledger-14a9f9cd7fce`, which adds Ctrl+X alongside Alt+C, bounded concurrent history discovery, confirmed Backspace deletion in `/resume`, slightly lighter olive Tool results and Deus Ex gold source headings. It passed 15 ordinary-launcher checks before and after installation, light/dark rendering checks, all runtime gates and the full UI rerun (5,799 passed, five existing exclusions). After Masih closed the old terminal, guarded activation succeeded and the real-profile `/resume` list appeared in 826 ms; All loaded in 547 ms. The installed files match the checked bundle. [Verification, limits and rollback](docs/permissions-verification.md) record the evidence; daily-use acceptance remains Masih’s.
 
