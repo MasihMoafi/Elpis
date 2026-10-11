@@ -33,7 +33,7 @@ The public website may borrow RAG Studio's standard of polish, but not its compo
 
 ## Current state — October 11, 2026
 
-The thin background-gap refinement is installed as `ledger-gaps-c330b6c53b4a`: full CI, real VTE light/dark pixel checks, all 15 launcher checks before and after installation, and rollback passed. Root and reviewer inspected both captures. At Masih’s request, the previous bridge and sole client were stopped before guarded activation; the shell remains open. Installed hashes match the tested bundle. The palette, olive Tool results, red System instructions and gold headings remain unchanged. Masih’s visual acceptance is open. [Current evidence and rollback](docs/permissions-verification.md).
+The selected accent palette and shared Elpising animation on CONTEXT LEDGER are installed as `accent-refresh-5beaae1bed39`: teal section headings, gold titles/model, olive active states/path and pink session names. Category colors and background gaps remain intact. Runtime gates, the full UI rerun (5,801 passed, five existing exclusions), real VTE light/dark color and motion checks, all 15 launcher checks before and after installation, and rollback passed. Root and reviewer inspected the actual captures. Masih closed the old window; guarded activation and installed hash checks passed. Design review stayed local, without a paid upload. Masih’s visual acceptance remains open. [Current evidence and rollback](docs/permissions-verification.md).
 
 ## Installed checkpoint — October 10, 2026
 
