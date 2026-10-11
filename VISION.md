@@ -33,7 +33,7 @@ The public website may borrow RAG Studio's standard of polish, but not its compo
 
 ## Current state — October 11, 2026
 
-The Ledger palette correction is installed as `category-palette-519e32dc0247`. All nine categories passed real VTE light/dark dot/bar/label checks; captures were inspected and all 15 normal-launcher regressions passed before and after installation. Full CI succeeded. Activation waited for the old bridge to exit naturally; installed wrapper/runtime hashes match the checked bundle. Olive Tool results, red System instructions and gold source headings remain. Masih’s visual acceptance is open. [Current evidence and rollback](docs/permissions-verification.md).
+The Ledger palette correction remains installed as `category-palette-519e32dc0247`. The thin background-gap refinement is staged as `ledger-gaps-c330b6c53b4a`: full CI, real VTE light/dark pixel checks, all 15 candidate-launcher checks and rollback passed. Root and reviewer inspected both captures. Activation waits for the running real-profile bridge to close; no user process was stopped. The palette, olive Tool results, red System instructions and gold headings remain unchanged. Masih’s visual acceptance is open. [Current evidence and rollback](docs/permissions-verification.md).
 
 ## Installed checkpoint — October 10, 2026
 
