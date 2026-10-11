@@ -35,6 +35,8 @@ or implemented outcomes.
 
 ## Requested outcomes
 
+October 11 separator refinement: add small background-colored gaps between the usage bar's category segments, light in light mode and dark in dark mode, as shown in Masih's reference. Preserve the selected category colors. Implementation and visual acceptance remain open.
+
 October 11 Ledger correction: Masih rejected the similar category colors. Give every category a clearly different color, readable on the actual light/dark background; inspect dots, labels and stacked bar together in the real terminal and show both results. The [contract](specs/codex-parity.md) records this correction. Implementation and visual acceptance remain open.
 
 October 10 follow-up: retain Alt+C and add Ctrl+X without shortcut conflicts; fix slow `/resume` loading and restore Backspace deletion. Keep Tool results olive with a small brightness increase; use Deus Ex gold for the source headings. Installed from `14a9f9cd7` after Masih closed the old terminal. All 15 actual-launcher checks, light/dark color checks and the full UI rerun passed; the real-profile `/resume` list loaded in under one second. [Evidence and current installation](permissions-verification.md). Daily-use acceptance remains Masih’s. The reported missing context was corrected by Masih: it appeared after sending a message on resume.

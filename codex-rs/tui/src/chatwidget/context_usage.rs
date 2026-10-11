@@ -505,6 +505,30 @@ impl ChatWidget {
     }
 }
 
+/// Leave one eighth of a cell unpainted at category boundaries. Replacing the
+/// last block instead of adding spaces preserves allocation and tiny segments.
+pub(super) fn category_bar_spans(
+    segments: impl IntoIterator<Item = (usize, Color)>,
+) -> Vec<Span<'static>> {
+    let mut segments = segments
+        .into_iter()
+        .filter(|(cells, _)| *cells > 0)
+        .peekable();
+    let mut spans = Vec::new();
+    while let Some((cells, color)) = segments.next() {
+        let blocks = if segments.peek().is_some() {
+            format!("{}▉", "█".repeat(cells - 1))
+        } else {
+            "█".repeat(cells)
+        };
+        spans.push(Span::styled(
+            blocks,
+            Style::default().fg(color).bg(Color::Reset),
+        ));
+    }
+    spans
+}
+
 fn build_category_bar_chart(
     categories: &[CategoryUsage],
     used: u64,
@@ -540,14 +564,9 @@ fn build_category_bar_chart(
             crate::style::context_style(),
         ));
     } else {
-        for (category, cells) in categories.iter().zip(counts) {
-            if cells > 0 {
-                bar.push(Span::styled(
-                    "█".repeat(cells),
-                    Style::default().fg(context_display_color(category.color)),
-                ));
-            }
-        }
+        bar.extend(category_bar_spans(categories.iter().zip(counts).map(
+            |(category, cells)| (cells, context_display_color(category.color)),
+        )));
     }
     if used_cells < bar_width {
         bar.push(Span::styled(
@@ -803,8 +822,30 @@ mod tests {
         assert!(text.contains("210k/200k · 105.0% used"), "{text}");
         assert!(text.contains("100k · 50.0% of context window"), "{text}");
         assert!(text.contains("110k · 55.0% of context window"), "{text}");
-        assert_eq!(text.matches('█').count(), 80);
+        assert_eq!(text.matches(['█', '▉']).count(), 80);
+        assert_eq!(text.matches('▉').count(), 1);
         assert_eq!(text.matches('░').count(), 0);
+    }
+
+    #[test]
+    fn category_bar_gaps_preserve_tiny_segments_and_the_final_usage_edge() {
+        let spans = category_bar_spans([
+            (1, Color::Blue),
+            (0, Color::Green),
+            (3, Color::Red),
+            (1, Color::Yellow),
+        ]);
+        assert_eq!(spans.len(), 3);
+        assert_eq!(spans[0].content, "▉");
+        assert_eq!(spans[1].content, "██▉");
+        assert_eq!(spans[2].content, "█");
+        assert_eq!(Line::from(spans.clone()).width(), 5);
+        for (span, color) in spans.iter().zip([Color::Blue, Color::Red, Color::Yellow]) {
+            assert_eq!(span.style.fg, Some(color));
+            assert_eq!(span.style.bg, Some(Color::Reset));
+        }
+        assert!(category_bar_spans([(0, Color::Blue)]).is_empty());
+        assert_eq!(category_bar_spans([(1, Color::Blue)])[0].content, "█");
     }
 
     #[test]
