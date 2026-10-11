@@ -136,7 +136,7 @@ fn ledger_alone(chat: &ChatWidget) -> Vec<String> {
 }
 
 #[tokio::test]
-async fn source_headings_and_included_markers_use_deus_ex_gold() -> anyhow::Result<()> {
+async fn source_headings_are_teal_and_included_markers_are_olive() -> anyhow::Result<()> {
     let root = tempdir()?;
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
     show_context_ledger(&mut chat);
@@ -147,10 +147,7 @@ async fn source_headings_and_included_markers_use_deus_ex_gold() -> anyhow::Resu
         .first_mut()
         .expect("fixture has a ledger source")
         .admitted = true;
-    for (bg, gold) in [
-        ((255, 255, 255), Color::Rgb(128, 88, 10)),
-        ((24, 24, 24), Color::Rgb(229, 187, 104)),
-    ] {
+    for bg in [(255, 255, 255), (24, 24, 24)] {
         crate::terminal_palette::with_test_default_colors(
             crate::terminal_probe::DefaultColors {
                 fg: (32, 32, 32),
@@ -179,9 +176,17 @@ async fn source_headings_and_included_markers_use_deus_ex_gold() -> anyhow::Resu
                         .windows(label.len())
                         .position(|chars| chars.iter().collect::<String>() == label)
                         .unwrap();
-                    assert_eq!(buf[(x as u16, y as u16)].fg, gold, "{label}");
+                    let style = if label == "INCLUDED" {
+                        crate::style::context_style()
+                    } else {
+                        crate::style::section_style()
+                    };
+                    assert_eq!(Some(buf[(x as u16, y as u16)].fg), style.fg, "{label}");
                 }
-                assert_ne!(Some(gold), crate::style::context_style().fg);
+                assert_ne!(
+                    crate::style::section_style().fg,
+                    crate::style::context_style().fg
+                );
             },
         );
     }

@@ -40,7 +40,9 @@ pub(crate) use timer::StatusTimer;
 
 #[path = "summary_shimmer.rs"]
 mod summary_shimmer;
+pub(crate) use summary_shimmer::next_summary_shimmer_frame;
 use summary_shimmer::summary_shimmer;
+pub(crate) use summary_shimmer::summary_shimmer_with_style;
 
 pub(crate) const STATUS_DETAILS_DEFAULT_MAX_LINES: usize = 3;
 const DETAILS_PREFIX: &str = "  └ ";

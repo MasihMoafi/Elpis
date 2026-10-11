@@ -10,7 +10,6 @@ use super::status_line_setup::StatusLineItem;
 use crate::render::highlight::foreground_style_for_scopes;
 use crate::style::readable_color_on;
 use crate::style::secondary_text_style;
-use crate::thread_color::thread_color;
 use codex_protocol::ThreadId;
 
 const STATUS_LINE_SEPARATOR: &str = " · ";
@@ -99,7 +98,12 @@ where
     I: IntoIterator<Item = (StatusLineItem, String)>,
 {
     status_line_from_segments_with_resolver(segments, use_theme_colors, thread_id, |accent| {
-        foreground_style_for_scopes(accent.scopes())
+        match accent {
+            StatusLineAccent::Model => Some(crate::style::brand_style().not_bold()),
+            StatusLineAccent::Path => Some(crate::style::context_style()),
+            StatusLineAccent::Thread => Some(crate::style::session_name_style()),
+            _ => foreground_style_for_scopes(accent.scopes()),
+        }
     })
 }
 
@@ -123,9 +127,9 @@ where
                 item,
                 StatusLineItem::ThreadName | StatusLineItem::ThreadTitle
             )
-            && let Some(thread_id) = thread_id
+            && thread_id.is_some()
         {
-            Style::default().fg(thread_color(thread_id))
+            crate::style::session_name_style()
         } else if use_theme_colors {
             let accent = StatusLineAccent::for_item(item);
             soften_status_line_style(

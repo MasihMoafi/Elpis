@@ -3,16 +3,17 @@
 use crate::color::is_light;
 use crate::terminal_palette::best_color;
 use crate::terminal_palette::default_bg;
+use crate::terminal_palette::effective_stdout_color_level;
 use ratatui::style::Color;
 use ratatui::style::Style;
 
 // Gold is the product accent; context categories and
 // success/error colors are independent semantic palettes. Use deeper ink on light
 // terminal backgrounds. The theme covers only the Elpis wrapper, never transcript colors.
-pub(super) const LIGHT_BG_PRIMARY_RGB: (u8, u8, u8) = (128, 88, 10);
-pub(super) const DARK_BG_PRIMARY_RGB: (u8, u8, u8) = (229, 187, 104);
-pub(crate) const CONTEXT_LIGHT_RGB: (u8, u8, u8) = (105, 120, 24);
-pub(crate) const CONTEXT_DARK_RGB: (u8, u8, u8) = (212, 214, 105);
+pub(super) const LIGHT_BG_PRIMARY_RGB: (u8, u8, u8) = (146, 112, 0);
+pub(super) const DARK_BG_PRIMARY_RGB: (u8, u8, u8) = (235, 198, 75);
+pub(crate) const CONTEXT_LIGHT_RGB: (u8, u8, u8) = (110, 125, 0);
+pub(crate) const CONTEXT_DARK_RGB: (u8, u8, u8) = (189, 206, 85);
 // Rules are lines, not text, so they need 3:1 against the terminal, not 4.5:1.
 const LIGHT_BG_RULE_RGB: (u8, u8, u8) = (122, 150, 144);
 const DARK_BG_RULE_RGB: (u8, u8, u8) = (78, 122, 114);
@@ -24,10 +25,27 @@ pub(crate) fn brand_style() -> Style {
 
 /// Olive context heading emphasis, resolved against the terminal's actual background.
 pub(crate) fn context_style() -> Style {
-    Style::default().fg(super::readable_color_on(
-        adaptive_palette_color(default_bg(), CONTEXT_LIGHT_RGB, CONTEXT_DARK_RGB),
-        None,
-    ))
+    text_style_for(default_bg(), CONTEXT_LIGHT_RGB, CONTEXT_DARK_RGB)
+}
+
+/// Teal identifies sections and controls; enabled state uses olive separately.
+pub(crate) fn section_style() -> Style {
+    text_style_for(default_bg(), (0, 124, 120), (91, 200, 192))
+}
+
+/// Pink identifies session names in the footer.
+pub(crate) fn session_name_style() -> Style {
+    text_style_for(default_bg(), (211, 54, 130), (255, 153, 194))
+}
+
+fn text_style_for(bg: Option<(u8, u8, u8)>, light: (u8, u8, u8), dark: (u8, u8, u8)) -> Style {
+    Style::default().fg(bg.map_or(Color::Reset, |bg| {
+        super::contrast::foreground(
+            if is_light(bg) { light } else { dark },
+            Some(bg),
+            effective_stdout_color_level(),
+        )
+    }))
 }
 
 /// Returns the quiet teal line style for wrapper borders and the Ledger rule.
@@ -36,13 +54,7 @@ pub(crate) fn rule_style() -> Style {
 }
 
 fn primary_style_for(terminal_bg: Option<(u8, u8, u8)>) -> Style {
-    Style::default()
-        .fg(adaptive_palette_color(
-            terminal_bg,
-            LIGHT_BG_PRIMARY_RGB,
-            DARK_BG_PRIMARY_RGB,
-        ))
-        .bold()
+    text_style_for(terminal_bg, LIGHT_BG_PRIMARY_RGB, DARK_BG_PRIMARY_RGB).bold()
 }
 
 fn rule_style_for(terminal_bg: Option<(u8, u8, u8)>) -> Style {
@@ -77,17 +89,17 @@ mod tests {
                 LIGHT_BG_PRIMARY_RGB,
                 DARK_BG_PRIMARY_RGB
             ),
-            best_color((128, 88, 10)),
+            best_color(LIGHT_BG_PRIMARY_RGB),
         );
         let style = primary_style_for(Some((255, 255, 255)));
 
-        assert_eq!(style.fg, Some(best_color((128, 88, 10))));
+        assert_eq!(style.fg, Some(best_color(LIGHT_BG_PRIMARY_RGB)));
         assert!(style.add_modifier.contains(Modifier::BOLD));
     }
 
     #[test]
     fn brand_style_uses_bright_gold_on_dark_backgrounds() {
-        let expected = Style::default().fg(best_color((229, 187, 104))).bold();
+        let expected = Style::default().fg(best_color(DARK_BG_PRIMARY_RGB)).bold();
 
         assert_eq!(primary_style_for(Some((0, 0, 0))), expected);
     }
@@ -113,19 +125,27 @@ mod tests {
             };
             0.2126 * linear(rgb.0) + 0.7152 * linear(rgb.1) + 0.0722 * linear(rgb.2)
         }
-        for (background, colors) in [
-            ((250, 248, 245), [LIGHT_BG_PRIMARY_RGB]),
-            ((24, 24, 24), [DARK_BG_PRIMARY_RGB]),
-        ] {
-            for color in colors.into_iter().chain((0..32).map(|step| {
-                crate::elpis_motion::pigment(f64::from(step) / 32.0, 0.0, is_light(background))
-            })) {
-                let foreground = luminance(color);
-                let background = luminance(background);
-                let contrast =
-                    (foreground.max(background) + 0.05) / (foreground.min(background) + 0.05);
-                assert!(contrast >= 4.5, "{color:?}: contrast {contrast}");
-            }
+        for background in [(255, 255, 255), (250, 248, 245), (24, 24, 24)] {
+            crate::terminal_palette::with_test_default_colors(
+                crate::terminal_probe::DefaultColors {
+                    fg: (128, 128, 128),
+                    bg: background,
+                },
+                || {
+                    for style in [
+                        brand_style(),
+                        context_style(),
+                        section_style(),
+                        session_name_style(),
+                    ] {
+                        let Some(Color::Rgb(r, g, b)) = style.fg else {
+                            panic!("expected RGB")
+                        };
+                        let (a, b) = (luminance((r, g, b)), luminance(background));
+                        assert!((a.max(b) + 0.05) / (a.min(b) + 0.05) >= 4.5);
+                    }
+                },
+            );
         }
     }
 

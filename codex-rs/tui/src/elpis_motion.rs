@@ -29,9 +29,9 @@ const SPEED: f64 = 3.0;
 pub(crate) fn pigment(position: f64, seconds: f64, light: bool) -> (u8, u8, u8) {
     // The Deus Ex gold family (style/elpis.rs); deeper ink on light terminals.
     let colors = if light {
-        [(128, 88, 10), (104, 72, 4), (140, 96, 12)]
+        [(140, 107, 0), (124, 94, 0), (142, 109, 0)]
     } else {
-        [(229, 187, 104), (255, 226, 160), (214, 170, 90)]
+        [(235, 198, 75), (255, 221, 112), (208, 172, 53)]
     };
     let offset = (position + seconds * SPEED / 24.0).rem_euclid(1.0) * 3.0;
     let index = offset.floor() as usize;

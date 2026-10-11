@@ -30,7 +30,7 @@ impl ChatWidget {
         ));
         let mut lines = vec![Line::from(Span::styled(
             format!("SUBAGENT LEDGER · {}", self.agent_ledger.len()),
-            crate::style::brand_style().bold(),
+            crate::style::section_style().bold(),
         ))];
         lines.push(Line::from(Span::styled(
             "/agent to inspect or switch",

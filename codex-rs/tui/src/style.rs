@@ -8,6 +8,8 @@ pub(crate) use elpis::adaptive_palette_color;
 pub(crate) use elpis::brand_style;
 pub(crate) use elpis::context_style;
 pub(crate) use elpis::rule_style;
+pub(crate) use elpis::section_style;
+pub(crate) use elpis::session_name_style;
 
 use crate::color::blend;
 use crate::color::is_light;

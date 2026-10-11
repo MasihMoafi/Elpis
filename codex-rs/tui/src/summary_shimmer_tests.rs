@@ -5,6 +5,60 @@ use crate::terminal_palette::with_test_default_colors;
 use crate::terminal_probe::DefaultColors;
 
 #[test]
+fn ledger_title_reuses_the_complete_status_wave_in_both_themes() {
+    for bg in [(255, 255, 255), (16, 16, 16)] {
+        with_test_default_colors(
+            DefaultColors {
+                fg: (128, 128, 128),
+                bg,
+            },
+            || {
+                let accent = crate::style::brand_style().not_bold();
+                let Some(ratatui::style::Color::Rgb(r, g, b)) = accent.fg else {
+                    panic!("expected RGB")
+                };
+                for ms in (0..=8600).step_by(32) {
+                    let elapsed = Duration::from_millis(ms);
+                    for mode in [MotionMode::Animated, MotionMode::Reduced] {
+                        let actual = summary_shimmer_with_style(
+                            "CONTEXT LEDGER",
+                            elapsed,
+                            mode,
+                            Some(accent),
+                        );
+                        let native =
+                            with_test_default_colors(DefaultColors { fg: (r, g, b), bg }, || {
+                                summary_shimmer("CONTEXT LEDGER", elapsed, mode)
+                            });
+                        if mode == MotionMode::Animated {
+                            assert_eq!(actual, native, "native wave at {ms} ms");
+                        } else {
+                            assert_eq!(actual, vec![Span::styled("CONTEXT LEDGER", accent)]);
+                        }
+                    }
+                }
+            },
+        );
+    }
+}
+
+#[test]
+fn idle_header_sleeps_between_sweeps() {
+    for (elapsed, delay) in [
+        (0, 600),
+        (599, 1),
+        (600, 32),
+        (1100, 32),
+        (1600, 3000),
+        (4599, 1),
+        (4600, 32),
+    ] {
+        let actual = next_summary_shimmer_frame(Duration::from_millis(elapsed));
+        assert!(actual.abs_diff(Duration::from_millis(delay)) < Duration::from_micros(1));
+    }
+}
+
+#[test]
 fn elpis_gold_preserves_every_native_animation_frame_and_reduced_motion() {
     for colors in [
         DefaultColors {

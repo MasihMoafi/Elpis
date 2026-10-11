@@ -33,13 +33,18 @@ pub(crate) fn summary_shimmer(
 ) -> Vec<Span<'static>> {
     // Tint only the foreground: keep Codex's weight, dim fallback and complete
     // brightness wave, without clipping individual animation frames.
-    let accent = (text == crate::branding::WORKING_LABEL).then(|| {
-        Style::default().fg(crate::style::adaptive_palette_color(
-            default_bg(),
-            (145, 101, 12),
-            (255, 235, 172),
-        ))
-    });
+    let accent =
+        (text == crate::branding::WORKING_LABEL).then(|| crate::style::brand_style().not_bold());
+    summary_shimmer_with_style(text, elapsed, motion, accent)
+}
+
+/// The same status wave with an explicit product accent, also used by the Ledger title.
+pub(crate) fn summary_shimmer_with_style(
+    text: &str,
+    elapsed: Duration,
+    motion: MotionMode,
+    accent: Option<Style>,
+) -> Vec<Span<'static>> {
     if motion == MotionMode::Reduced {
         return vec![Span::styled(text.to_owned(), accent.unwrap_or_default())];
     }
@@ -74,6 +79,19 @@ pub(crate) fn summary_shimmer(
             Span::styled(grapheme.to_owned(), style)
         })
         .collect()
+}
+
+/// Idle titles do not need continuous redraws during the delay or between sweeps.
+pub(crate) fn next_summary_shimmer_frame(elapsed: Duration) -> Duration {
+    if elapsed < START_DELAY {
+        return START_DELAY - elapsed;
+    }
+    let phase = elapsed.saturating_sub(START_DELAY).as_secs_f64() % INTERVAL_SECONDS;
+    if phase < SWEEP_SECONDS {
+        Duration::from_millis(32)
+    } else {
+        Duration::from_secs_f64(INTERVAL_SECONDS - phase)
+    }
 }
 
 #[cfg(test)]

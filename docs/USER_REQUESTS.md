@@ -35,6 +35,8 @@ or implemented outcomes.
 
 ## Requested outcomes
 
+October 11 accent and motion refinement: replace brown headings with the selected teal/gold/olive/pink palette, coordinated with the rest of the TUI and both themes. Reuse the exact Elpising animation on CONTEXT LEDGER. The preview is selected; implementation and installation checks are in progress. User requested design tools and chose a local Product Design review after 12ui’s optional paid image conversion was explained. No design upload or charge occurred. Preserve category colors and gaps. [Contract](specs/codex-parity.md).
+
 October 11 separator refinement: add small background-colored gaps between the usage bar's category segments, light in light mode and dark in dark mode, as shown in Masih's reference. Preserve the selected category colors. Installed from `c330b6c53`; real VTE captures, full CI and all 15 launcher checks before and after installation passed. Masih authorized closing the old Elpis session for activation. [Evidence](permissions-verification.md); visual acceptance remains open.
 
 October 11 Ledger correction: Masih rejected the similar category colors. Give every category a clearly different color, readable on the actual light/dark background; inspect dots, labels and stacked bar together in the real terminal and show both results. The [contract](specs/codex-parity.md) records this correction. The palette from `519e32dc0` is included in the separator bundle above; real VTE light/dark checks passed. Visual acceptance remains open.

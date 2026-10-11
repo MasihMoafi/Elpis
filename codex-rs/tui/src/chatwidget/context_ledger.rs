@@ -23,10 +23,11 @@ use unicode_width::UnicodeWidthStr;
 
 use crate::color::is_light;
 use crate::terminal_palette::StdoutColorLevel;
-use crate::terminal_palette::best_color_for_level;
 use crate::terminal_palette::default_bg;
-use crate::terminal_palette::stdout_color_level;
+use crate::terminal_palette::default_fg;
+use crate::terminal_palette::effective_stdout_color_level;
 
+const CONTEXT_LEDGER_TITLE: &str = "CONTEXT LEDGER";
 const LEDGER_MIN_TERMINAL_WIDTH: u16 = 80;
 const LEDGER_WIDTH: u16 = 52;
 /// The rule column and one blank column before the text.
@@ -87,6 +88,7 @@ impl LedgerSourceGroup {
 /// `(row index, file:// destination)` for each row of a source that is a real file on disk.
 pub(super) struct LedgerLines {
     rows: Vec<Line<'static>>,
+    title_rows: std::ops::Range<usize>,
     source_row_ranges: Vec<std::ops::Range<usize>>,
     source_links: Vec<(usize, String)>,
 }
@@ -99,6 +101,7 @@ pub(super) struct PendingContextAdmission {
 
 pub(super) struct ContextLedgerState {
     visible: bool,
+    title_started_at: Instant,
     focused: bool,
     selected: usize,
     /// The Smart Prune switch sits above the source rows and is part of the same
@@ -125,6 +128,7 @@ impl Default for ContextLedgerState {
         Self {
             // Visible by default; keyboard focus stays in the composer.
             visible: true,
+            title_started_at: Instant::now(),
             focused: false,
             selected: 0,
             smart_prune_selected: false,
@@ -221,6 +225,9 @@ impl ChatWidget {
         if is_toggle_key {
             let crowded_out = self.context_ledger.crowded.get() && !self.context_ledger.focused;
             if !self.context_ledger.visible || crowded_out || !self.context_ledger.focused {
+                if !self.context_ledger.visible || crowded_out {
+                    self.context_ledger.title_started_at = Instant::now();
+                }
                 self.context_ledger.visible = true;
                 self.context_ledger.focused = true;
                 // Start at the top row on screen rather than wherever the
@@ -439,6 +446,7 @@ impl ChatWidget {
         // Labels and values identify categories; the palette follows Elpis appearance.
         let brand = crate::style::brand_style().not_bold();
         let context = crate::style::context_style();
+        let section = crate::style::section_style();
         let background = default_bg();
         let light = background.is_some_and(is_light);
         let muted = Style::default().fg(crate::style::adaptive_palette_color(
@@ -527,12 +535,18 @@ impl ChatWidget {
             "Alt+C controls · Ctrl+click open file"
         };
         let mut lines = self.agent_ledger_lines(content_width);
+        let title_line = lines.len();
+        let mut title = crate::status_indicator_widget::summary_shimmer_with_style(
+            CONTEXT_LEDGER_TITLE,
+            self.context_ledger.title_started_at.elapsed(),
+            crate::motion::MotionMode::from_animations_enabled(
+                self.local_settings.tui.animations && self.local_settings.tui.effects.shimmer,
+            ),
+            Some(brand),
+        );
+        title.extend([Span::raw("  "), Span::styled(context_header, context)]);
         lines.extend(vec![
-            Line::from(vec![
-                Span::styled("CONTEXT LEDGER", context.bold()),
-                Span::raw("  "),
-                Span::styled(context_header, context),
-            ]),
+            Line::from(title),
             Line::from(Span::styled(interaction_hint, muted)),
             Line::from(""),
         ]);
@@ -564,44 +578,15 @@ impl ChatWidget {
                 smart_prune_cursor.width() + smart_prune_label.width() + smart_prune_button.width(),
             )
             .max(1);
-        let [violet, teal, emerald, green] =
-            smart_prune_on_colors(default_bg(), stdout_color_level());
-        let toggle_label_spans = |label, enabled| {
-            if enabled {
-                // These rows repaint only when the ledger's own state changes,
-                // so reading a clock here strands the label at whatever phase
-                // the last rebuild happened to catch. Hold the gradient still.
-                let mut spans = crate::elpis_motion::text(label);
-                for span in &mut spans {
-                    span.style = span.style.add_modifier(ratatui::style::Modifier::BOLD);
-                }
-                spans
-            } else {
-                vec![Span::styled(label, brand.bold())]
-            }
-        };
         let switch_spans = if !self.smart_prune_synced && pending_smart_prune_enabled.is_none() {
-            vec![Span::styled(
-                smart_prune_button,
-                Style::default().fg(teal).bold(),
-            )]
+            vec![Span::styled(smart_prune_button, section.bold())]
         } else if smart_prune_enabled {
-            vec![
-                Span::styled("[", Style::default().fg(teal)),
-                Span::styled("━", Style::default().fg(violet)),
-                Span::styled("━", Style::default().fg(teal)),
-                Span::styled("━", Style::default().fg(emerald)),
-                Span::styled("●] ON", Style::default().fg(green).bold()),
-            ]
+            vec![Span::styled("[━━━●] ON", context)]
         } else {
             vec![Span::styled(smart_prune_button, muted)]
         };
         let mut smart_prune_spans = vec![Span::styled(smart_prune_cursor, brand.bold())];
-        smart_prune_spans.extend(toggle_label_spans(
-            smart_prune_label,
-            smart_prune_enabled
-                && (self.smart_prune_synced || pending_smart_prune_enabled.is_some()),
-        ));
+        smart_prune_spans.push(Span::styled(smart_prune_label, section.bold()));
         smart_prune_spans.push(Span::raw(" ".repeat(smart_prune_pad)));
         smart_prune_spans.extend(switch_spans);
         lines.push(Line::from(smart_prune_spans));
@@ -783,18 +768,12 @@ impl ChatWidget {
             )
             .max(1);
         let subagents_switch_spans = if subagents_enabled {
-            vec![
-                Span::styled("[", Style::default().fg(teal)),
-                Span::styled("━", Style::default().fg(violet)),
-                Span::styled("━", Style::default().fg(teal)),
-                Span::styled("━", Style::default().fg(emerald)),
-                Span::styled("●] ON", Style::default().fg(green).bold()),
-            ]
+            vec![Span::styled("[━━━●] ON", context)]
         } else {
             vec![Span::styled(subagents_button, muted)]
         };
         let mut subagents_spans = vec![Span::styled(subagents_cursor, brand.bold())];
-        subagents_spans.extend(toggle_label_spans(subagents_label, subagents_enabled));
+        subagents_spans.push(Span::styled(subagents_label, section.bold()));
         subagents_spans.push(Span::raw(" ".repeat(subagents_pad)));
         subagents_spans.extend(subagents_switch_spans);
         lines.push(Line::from(subagents_spans));
@@ -935,14 +914,8 @@ impl ChatWidget {
                 } else {
                     "EXCLUDED"
                 };
-                let state_style = if source.admitted {
-                    cat_style
-                } else if light {
-                    muted
-                } else {
-                    cat_style.dim()
-                };
-                let marker_style = if source.admitted { cat_style } else { muted };
+                let state_style = if source.admitted { context } else { muted };
+                let marker_style = if source.admitted { context } else { muted };
                 let prefix = if selected { "› " } else { "  " };
                 // Per-source estimates stay exact so similarly sized files remain
                 // distinguishable; category and context totals remain compact.
@@ -1010,7 +983,7 @@ impl ChatWidget {
                     } else {
                         "Excluded; when enabled, included"
                     };
-                    lines.push(Line::from(Span::styled("WHY INCLUDED", brand.bold())));
+                    lines.push(Line::from(Span::styled("WHY INCLUDED", section.bold())));
                     lines.push(Line::from(Span::styled(source.name.clone(), brand)));
                     lines.push(Line::from(Span::styled(
                         format!("{inclusion} because {}.", source.reason),
@@ -1068,7 +1041,11 @@ impl ChatWidget {
                 (row_of(line)..row_of(line + 1)).map(move |row| (row, destination.clone()))
             })
             .collect();
+        let title_height = wrap_ledger_rows(&[Line::from(CONTEXT_LEDGER_TITLE)], content_width)
+            .0
+            .len();
         LedgerLines {
+            title_rows: row_of(title_line)..row_of(title_line) + title_height,
             rows,
             source_row_ranges,
             source_links,
@@ -1093,13 +1070,14 @@ impl ChatWidget {
     ) {
         let LedgerLines {
             rows,
+            title_rows,
             source_row_ranges,
             source_links,
         } = ledger_lines;
         render_ledger_rule(area, box_rules, buf);
         let content_width =
             ledger_content_width(area.width).min(area.width.saturating_sub(LEDGER_LEFT_COLS));
-        if content_width == 0 {
+        if content_width == 0 || area.height == 0 {
             return;
         }
         let content = Rect::new(
@@ -1116,6 +1094,11 @@ impl ChatWidget {
         } else {
             0
         };
+        if let Some(delay) =
+            self.ledger_title_animation_delay(&title_rows, scroll_rows, area.height)
+        {
+            self.frame_requester.schedule_frame_in(delay);
+        }
         Paragraph::new(rows.clone())
             .scroll((scroll_rows, 0))
             .render(content, buf);
@@ -1153,6 +1136,29 @@ impl ChatWidget {
                 usize::from(scroll_rows),
             );
         }
+    }
+
+    fn ledger_title_animation_delay(
+        &self,
+        title_rows: &std::ops::Range<usize>,
+        scroll_rows: u16,
+        visible_rows: u16,
+    ) -> Option<Duration> {
+        let scroll = usize::from(scroll_rows);
+        (self.context_ledger.visible
+            && self.local_settings.tui.animations
+            && self.local_settings.tui.effects.shimmer
+            && effective_stdout_color_level() == StdoutColorLevel::TrueColor
+            && default_bg().is_some()
+            && default_fg().is_some()
+            && visible_rows > 0
+            && title_rows.start < scroll + usize::from(visible_rows)
+            && title_rows.end > scroll)
+            .then(|| {
+                crate::status_indicator_widget::next_summary_shimmer_frame(
+                    self.context_ledger.title_started_at.elapsed(),
+                )
+            })
     }
 
     /// The source under the cursor, if the cursor is on a source rather than on
@@ -1876,56 +1882,8 @@ fn format_source_count(value: u64) -> String {
     grouped
 }
 
-/// The switched-on state: teal, dim to bright.
-fn smart_prune_on_colors(
-    terminal_bg: Option<(u8, u8, u8)>,
-    color_level: StdoutColorLevel,
-) -> [Color; 4] {
-    ledger_palette(
-        terminal_bg,
-        color_level,
-        Color::Cyan,
-        [(34, 122, 106), (26, 110, 96), (20, 94, 82), (16, 84, 72)],
-        [
-            (96, 162, 150),
-            (130, 196, 182),
-            (160, 216, 203),
-            (200, 240, 230),
-        ],
-    )
-}
-
 fn source_heading_style() -> Style {
-    let gold = crate::style::brand_style().fg.unwrap_or(Color::Reset);
-    Style::default().fg(crate::style::readable_color_on(gold, None))
-}
-
-fn ledger_palette(
-    terminal_bg: Option<(u8, u8, u8)>,
-    color_level: StdoutColorLevel,
-    ansi16_on_dark: Color,
-    light: [(u8, u8, u8); 4],
-    dark: [(u8, u8, u8); 4],
-) -> [Color; 4] {
-    if terminal_bg.is_none() {
-        return [Color::Reset; 4];
-    }
-    if matches!(
-        color_level,
-        StdoutColorLevel::Ansi16 | StdoutColorLevel::Unknown
-    ) {
-        return [if terminal_bg.is_some_and(is_light) {
-            Color::Black
-        } else {
-            ansi16_on_dark
-        }; 4];
-    }
-    let palette = if terminal_bg.is_some_and(is_light) {
-        light
-    } else {
-        dark
-    };
-    palette.map(|color| best_color_for_level(color, color_level))
+    crate::style::section_style()
 }
 
 /// The Ledger's left rule. The top and bottom rules of each box beside it end on it, so it
@@ -2008,36 +1966,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn dark_ledger_accents_have_readable_contrast_and_distinct_brightness() {
-        let luminance = |rgb: (u8, u8, u8)| {
-            let linear = |v: u8| {
-                let v = f64::from(v) / 255.0;
-                if v <= 0.04045 {
-                    v / 12.92
-                } else {
-                    ((v + 0.055) / 1.055).powf(2.4)
-                }
-            };
-            0.2126 * linear(rgb.0) + 0.7152 * linear(rgb.1) + 0.0722 * linear(rgb.2)
-        };
-        let mut levels = Vec::new();
-        for color in smart_prune_on_colors(Some((17, 18, 20)), StdoutColorLevel::TrueColor) {
-            let Color::Rgb(r, g, b) = color else {
-                panic!("expected truecolor")
-            };
-            let level = luminance((r, g, b));
-            assert!((level + 0.05) / (luminance((17, 18, 20)) + 0.05) >= 4.5);
-            levels.push(level);
-        }
-        levels.sort_by(f64::total_cmp);
-        assert!(
-            levels[3] - levels[0] > 0.35,
-            "categories need distinct brightness"
-        );
-    }
-
-    #[test]
-    fn ledger_source_headings_use_gold() {
+    fn ledger_sections_and_admitted_states_have_distinct_roles() {
         for bg in [(255, 255, 255), (17, 18, 20)] {
             crate::terminal_palette::with_test_default_colors(
                 crate::terminal_probe::DefaultColors {
@@ -2046,50 +1975,41 @@ mod tests {
                 },
                 || {
                     let Some(Color::Rgb(r, g, b)) = source_heading_style().fg else {
-                        panic!("expected truecolor gold");
+                        panic!("expected truecolor teal");
                     };
-                    assert!(r > g && g > b);
+                    assert!(g > r && b > r);
+                    assert_ne!(source_heading_style().fg, crate::style::context_style().fg);
+                    assert_ne!(source_heading_style().fg, crate::style::brand_style().fg);
                 },
             );
         }
     }
 
-    #[test]
-    fn smart_prune_palette_uses_a_readable_low_color_fallback() {
-        for level in [
-            StdoutColorLevel::TrueColor,
-            StdoutColorLevel::Ansi256,
-            StdoutColorLevel::Ansi16,
-            StdoutColorLevel::Unknown,
-        ] {
-            assert_eq!(smart_prune_on_colors(None, level), [Color::Reset; 4]);
-        }
-        assert_eq!(
-            smart_prune_on_colors(
-                Some((0, 0, 0)),
-                crate::terminal_palette::StdoutColorLevel::Ansi16,
-            ),
-            [Color::Cyan; 4]
-        );
-        assert_eq!(
-            smart_prune_on_colors(Some((255, 255, 255)), StdoutColorLevel::Ansi16),
-            [Color::Black; 4]
-        );
-    }
-
-    #[test]
-    fn smart_prune_palette_adapts_for_a_light_terminal() {
-        assert_eq!(
-            smart_prune_on_colors(
-                Some((255, 255, 255)),
-                crate::terminal_palette::StdoutColorLevel::TrueColor,
-            ),
-            [
-                Color::Rgb(34, 122, 106),
-                Color::Rgb(26, 110, 96),
-                Color::Rgb(20, 94, 82),
-                Color::Rgb(16, 84, 72),
-            ]
+    #[tokio::test]
+    async fn ledger_title_only_requests_motion_while_visible_and_enabled() {
+        let (mut chat, _sender, _rx, _op_rx) =
+            crate::chatwidget::tests::make_chatwidget_manual_with_sender().await;
+        crate::terminal_palette::with_test_default_colors(
+            crate::terminal_probe::DefaultColors {
+                fg: (16, 16, 16),
+                bg: (255, 255, 255),
+            },
+            || {
+                chat.local_settings.tui.animations = true;
+                chat.local_settings.tui.effects.shimmer = true;
+                assert!(chat.ledger_title_animation_delay(&(2..3), 0, 4).is_some());
+                assert!(chat.ledger_title_animation_delay(&(2..3), 3, 4).is_none());
+                assert!(chat.ledger_title_animation_delay(&(4..5), 0, 4).is_none());
+                assert!(chat.ledger_title_animation_delay(&(2..3), 0, 0).is_none());
+                chat.local_settings.tui.effects.shimmer = false;
+                assert!(chat.ledger_title_animation_delay(&(2..3), 0, 4).is_none());
+                chat.local_settings.tui.effects.shimmer = true;
+                chat.local_settings.tui.animations = false;
+                assert!(chat.ledger_title_animation_delay(&(2..3), 0, 4).is_none());
+                chat.local_settings.tui.animations = true;
+                chat.context_ledger.visible = false;
+                assert!(chat.ledger_title_animation_delay(&(2..3), 0, 4).is_none());
+            },
         );
     }
 
