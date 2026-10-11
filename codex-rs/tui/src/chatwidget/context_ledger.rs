@@ -1,6 +1,7 @@
 //! Persistent, user-controlled view of Elpis-owned portable context.
 
 use super::context_usage::CONTEXT_CATEGORY_MARKER;
+use super::context_usage::category_bar_spans;
 use super::context_usage::context_used_percent;
 use super::context_usage::reconcile_context_categories;
 use super::context_usage::run_built_context_categories;
@@ -1813,7 +1814,6 @@ fn usage_bar_line(
     segments: &[(u64, Color)],
 ) -> Line<'static> {
     let bar_width = content_width.max(1);
-    let mut spans = Vec::new();
     let total_tokens = segments
         .iter()
         .map(|(tokens, _)| *tokens)
@@ -1829,11 +1829,12 @@ fn usage_bar_line(
             .collect::<Vec<_>>(),
         cells_used,
     );
-    for ((_, color), cells) in segments.iter().zip(counts) {
-        if cells > 0 {
-            spans.push(Span::styled("█".repeat(cells), Style::default().fg(*color)));
-        }
-    }
+    let mut spans = category_bar_spans(
+        segments
+            .iter()
+            .zip(counts)
+            .map(|((_, color), cells)| (cells, *color)),
+    );
     if cells_used < bar_width {
         spans.push(Span::styled(
             "░".repeat(bar_width - cells_used),
@@ -2157,6 +2158,29 @@ mod tests {
                 .collect();
             assert!(text.starts_with(['█', '░']));
             assert_eq!(text.width(), width);
+        }
+    }
+
+    #[test]
+    fn usage_bar_gaps_keep_allocated_width_at_low_full_and_excess_usage() {
+        for width in [1, 2, 10, 32, 48] {
+            for tokens in [0, 1, 25, 50, 100] {
+                let line =
+                    usage_bar_line(width, 100, &[(tokens, Color::Blue), (tokens, Color::Red)]);
+                let text: String = line
+                    .spans
+                    .iter()
+                    .map(|span| span.content.as_ref())
+                    .collect();
+                let used = (((tokens * 2).min(100) as usize * width + 50) / 100).min(width);
+                assert_eq!(line.width(), width);
+                assert_eq!(text.matches(['█', '▉']).count(), used);
+                assert_eq!(text.matches('░').count(), width - used);
+                assert_eq!(text.matches('▉').count(), usize::from(used >= 2));
+                if used > 0 {
+                    assert_eq!(text.chars().nth(used - 1), Some('█'));
+                }
+            }
         }
     }
 }
