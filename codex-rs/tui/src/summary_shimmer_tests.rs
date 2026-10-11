@@ -4,8 +4,11 @@ use pretty_assertions::assert_eq;
 use crate::terminal_palette::with_test_default_colors;
 use crate::terminal_probe::DefaultColors;
 
-#[test]
-fn ledger_title_keeps_solid_gold_and_the_native_wave_in_both_themes() {
+fn assert_readable_native_gold_wave(
+    label: &str,
+    shimmer: fn(&str, Duration, MotionMode) -> Vec<Span<'static>>,
+    palette: fn() -> (Style, Style),
+) {
     let rgb = |style: Style| match style.fg {
         Some(ratatui::style::Color::Rgb(r, g, b)) => (r, g, b),
         _ => panic!("expected RGB"),
@@ -17,33 +20,44 @@ fn ledger_title_keeps_solid_gold_and_the_native_wave_in_both_themes() {
                 bg,
             },
             || {
-                let (resting, peak) = crate::style::ledger_title_styles();
+                let (resting, peak) = palette();
                 let (rest_rgb, peak_rgb) = (rgb(resting), rgb(peak));
-                let label = "CONTEXT LEDGER";
+                assert!(resting.add_modifier.is_empty());
                 assert_eq!(
-                    ledger_title_shimmer(label, Duration::ZERO, MotionMode::Reduced),
+                    shimmer(label, Duration::ZERO, MotionMode::Reduced),
                     vec![Span::styled(label, resting)],
                 );
+                assert_eq!(
+                    shimmer(label, Duration::from_secs(1), MotionMode::Reduced),
+                    shimmer(label, Duration::ZERO, MotionMode::Reduced),
+                );
                 assert!(
-                    ledger_title_shimmer(label, Duration::ZERO, MotionMode::Animated)
+                    shimmer(label, Duration::ZERO, MotionMode::Animated)
                         .iter()
                         .all(|span| rgb(span.style) == rest_rgb)
                 );
                 for ms in (0..=8600).step_by(32) {
                     let elapsed = Duration::from_millis(ms);
-                    let actual = ledger_title_shimmer(label, elapsed, MotionMode::Animated);
-                    // Recover the native wave from a neutral 127..254 ramp. The
-                    // Ledger changes only its color endpoints, never this envelope.
+                    let actual = shimmer(label, elapsed, MotionMode::Animated);
+                    // Recover the native wave from an equal-width neutral label.
+                    // Gold changes only the color endpoints, never this envelope.
+                    let native_label = ".".repeat(label.len());
                     let native = with_test_default_colors(
                         DefaultColors {
                             fg: (254, 254, 254),
                             bg: (0, 0, 0),
                         },
-                        || summary_shimmer(label, elapsed, MotionMode::Animated),
+                        || summary_shimmer(&native_label, elapsed, MotionMode::Animated),
                     );
                     assert_eq!(actual.len(), native.len());
+                    assert_eq!(
+                        actual
+                            .iter()
+                            .map(|span| span.content.as_ref())
+                            .collect::<String>(),
+                        label,
+                    );
                     for (actual, native) in actual.iter().zip(native) {
-                        assert_eq!(actual.content, native.content);
                         let intensity = f32::from(rgb(native.style).0 - 127) / 127.0;
                         let expected = blend(peak_rgb, rest_rgb, intensity);
                         let color = rgb(actual.style);
@@ -60,7 +74,7 @@ fn ledger_title_keeps_solid_gold_and_the_native_wave_in_both_themes() {
                         }
                         assert!(color.0 > color.1 && color.1 > color.2, "gold hue at {ms}ms");
                         assert!(
-                            color.2 <= 43,
+                            color.2 <= rest_rgb.2.max(peak_rgb.2),
                             "gold must not fade into the background at {ms}ms"
                         );
                     }
@@ -68,6 +82,15 @@ fn ledger_title_keeps_solid_gold_and_the_native_wave_in_both_themes() {
             },
         );
     }
+}
+
+#[test]
+fn ledger_title_keeps_solid_gold_and_the_native_wave_in_both_themes() {
+    assert_readable_native_gold_wave(
+        "CONTEXT LEDGER",
+        ledger_title_shimmer,
+        crate::style::ledger_title_styles,
+    );
 }
 
 #[test]
@@ -87,56 +110,45 @@ fn idle_header_sleeps_between_sweeps() {
 }
 
 #[test]
-fn elpis_gold_preserves_every_native_animation_frame_and_reduced_motion() {
-    for colors in [
-        DefaultColors {
-            fg: (240, 240, 240),
-            bg: (16, 16, 16),
-        },
-        DefaultColors {
-            fg: (16, 16, 16),
-            bg: (240, 240, 240),
-        },
-    ] {
-        with_test_default_colors(colors, || {
-            let label = crate::branding::WORKING_LABEL;
-            let still = summary_shimmer(label, Duration::ZERO, MotionMode::Reduced);
-            assert_eq!(still.len(), 1);
-            assert_eq!(still[0].content, label);
-            assert!(still[0].style.add_modifier.is_empty());
-            let Some(ratatui::style::Color::Rgb(r, g, b)) = still[0].style.fg else {
-                panic!("expected gold RGB text");
-            };
-            assert!(r > g && g > b, "expected gold, got {r},{g},{b}");
-            assert_eq!(
-                still,
-                summary_shimmer(label, Duration::from_secs(1), MotionMode::Reduced)
-            );
-            // Equal-width ordinary text takes Codex's untouched path. Supplying
-            // gold as its terminal foreground must produce identical styles at
-            // every frame, including the delay and gaps between sweeps.
-            for ms in (0..=8600).step_by(32) {
-                let elapsed = Duration::from_millis(ms);
-                let actual = summary_shimmer(label, elapsed, MotionMode::Animated);
-                let native = with_test_default_colors(
-                    DefaultColors {
-                        fg: (r, g, b),
-                        bg: colors.bg,
-                    },
-                    || summary_shimmer("Working!", elapsed, MotionMode::Animated),
+fn elpising_keeps_reference_gold_readable_through_the_native_wave() {
+    assert_readable_native_gold_wave(
+        crate::branding::WORKING_LABEL,
+        summary_shimmer,
+        crate::style::working_label_styles,
+    );
+    // Masih selected the former light-theme resting gold for the dark theme.
+    for bg in [(16, 16, 16), (40, 40, 40)] {
+        with_test_default_colors(
+            DefaultColors {
+                fg: (240, 240, 240),
+                bg,
+            },
+            || {
+                let spans = summary_shimmer(
+                    crate::branding::WORKING_LABEL,
+                    Duration::ZERO,
+                    MotionMode::Animated,
                 );
-                assert_eq!(
-                    actual.iter().map(|span| span.style).collect::<Vec<_>>(),
-                    native.iter().map(|span| span.style).collect::<Vec<_>>(),
-                    "gold must change only the foreground at {ms} ms"
+                assert!(
+                    spans
+                        .iter()
+                        .all(|span| span.style.fg == Some(rgb_color((200, 183, 127))))
                 );
-            }
-            assert_ne!(
-                summary_shimmer(label, Duration::ZERO, MotionMode::Animated),
-                summary_shimmer(label, Duration::from_millis(1100), MotionMode::Animated)
-            );
-        });
+            },
+        );
     }
+}
+
+#[test]
+fn elpising_unknown_palette_stays_undimmed() {
+    let label = crate::branding::WORKING_LABEL;
+    let fallback = summary_shimmer(label, Duration::ZERO, MotionMode::Animated);
+    assert_eq!(fallback.len(), 1);
+    assert!(fallback[0].style.add_modifier.is_empty());
+    assert_eq!(
+        fallback,
+        summary_shimmer(label, Duration::from_secs(1), MotionMode::Reduced),
+    );
 }
 
 #[test]

@@ -25,10 +25,19 @@ pub(crate) fn brand_style() -> Style {
 
 /// Solid gold endpoints keep the Ledger title readable even between sweeps.
 pub(crate) fn ledger_title_styles() -> (Style, Style) {
+    gold_wave_styles((212, 168, 0), (246, 205, 43))
+}
+
+/// Use the former light-theme resting gold on dark terminals, without fading it.
+pub(crate) fn working_label_styles() -> (Style, Style) {
+    gold_wave_styles((200, 183, 127), DARK_BG_PRIMARY_RGB)
+}
+
+fn gold_wave_styles(dark_resting: (u8, u8, u8), dark_peak: (u8, u8, u8)) -> (Style, Style) {
     let bg = default_bg();
     (
-        text_style_for(bg, LIGHT_BG_PRIMARY_RGB, (212, 168, 0)).not_bold(),
-        text_style_for(bg, (104, 76, 0), (246, 205, 43)).not_bold(),
+        text_style_for(bg, LIGHT_BG_PRIMARY_RGB, dark_resting).not_bold(),
+        text_style_for(bg, (104, 76, 0), dark_peak).not_bold(),
     )
 }
 

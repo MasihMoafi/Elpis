@@ -5,7 +5,7 @@
 //! least six terminal columns so short labels do not flash one letter at a time.
 //! New headers wait 600 ms, then sweep for one second every four seconds.
 //! Unknown palettes use static dim text instead of a stepped animation, except
-//! the Ledger title: its solid gold wave and undimmed fallback retain legibility.
+//! Elpising and the Ledger title: solid gold waves and undimmed fallbacks retain legibility.
 
 use std::time::Duration;
 
@@ -32,11 +32,12 @@ pub(crate) fn summary_shimmer(
     elapsed: Duration,
     motion: MotionMode,
 ) -> Vec<Span<'static>> {
-    // Tint only the foreground: keep Codex's weight, dim fallback and complete
-    // brightness wave, without clipping individual animation frames.
-    let accent =
-        (text == crate::branding::WORKING_LABEL).then(|| crate::style::brand_style().not_bold());
-    summary_shimmer_with_colors(text, elapsed, motion, accent, None)
+    if text == crate::branding::WORKING_LABEL {
+        let (resting, peak) = crate::style::working_label_styles();
+        summary_shimmer_with_colors(text, elapsed, motion, Some(resting), Some(peak))
+    } else {
+        summary_shimmer_with_colors(text, elapsed, motion, None, None)
+    }
 }
 
 /// Preserve the status wave while keeping the Ledger's gold solid and readable.

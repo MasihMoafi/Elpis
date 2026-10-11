@@ -13,6 +13,7 @@ pub(crate) use elpis::ledger_title_styles;
 pub(crate) use elpis::rule_style;
 pub(crate) use elpis::section_style;
 pub(crate) use elpis::session_name_style;
+pub(crate) use elpis::working_label_styles;
 
 use crate::color::blend;
 use crate::color::is_light;
