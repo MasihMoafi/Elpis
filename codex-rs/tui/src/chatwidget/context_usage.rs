@@ -20,30 +20,31 @@ use crate::history_cell::HistoryCell;
 
 // Recognizable hues for category dots and bar segments. Labels keep the terminal
 // foreground; charcoal markers retain at least 4.5:1 contrast.
-pub(super) const USER_MESSAGES_COLOR: Color = Color::Rgb(111, 181, 253);
-pub(super) const AGENT_RESPONSES_COLOR: Color = Color::Rgb(80, 193, 111);
-pub(super) const REASONING_COLOR: Color = Color::Rgb(54, 199, 205);
+pub(super) const USER_MESSAGES_COLOR: Color = Color::Rgb(83, 177, 255);
+pub(super) const AGENT_RESPONSES_COLOR: Color = Color::Rgb(63, 211, 148);
+pub(super) const REASONING_COLOR: Color = Color::Rgb(171, 132, 255);
 const REASONING_CATEGORY_LABEL: &str = "Reasoning + compaction";
-pub(super) const TOOL_CALLS_COLOR: Color = Color::Rgb(244, 153, 61);
+pub(super) const TOOL_CALLS_COLOR: Color = Color::Rgb(255, 161, 58);
 pub(super) const TOOL_RESULTS_COLOR: Color = Color::Rgb(217, 219, 117);
 pub(super) const SYSTEM_INSTRUCTIONS_COLOR: Color = Color::Rgb(240, 68, 93);
-pub(super) const DEVELOPER_MESSAGES_COLOR: Color = Color::Rgb(210, 153, 244);
+pub(super) const DEVELOPER_MESSAGES_COLOR: Color = Color::Rgb(255, 153, 194);
 pub(super) const TOOL_DEFINITIONS_COLOR: Color = Color::Rgb(160, 160, 160);
-pub(super) const UNRECOGNIZED_ITEMS_COLOR: Color = Color::Rgb(240, 136, 187);
+pub(super) const UNRECOGNIZED_ITEMS_COLOR: Color = Color::Rgb(29, 209, 226);
 pub(super) const CONTEXT_CATEGORY_MARKER: &str = "●";
 
-// On paper and white, these graphical markers keep at least 3:1 contrast and
-// 25 CIELAB units of separation. Requiring text contrast for the markers made
-// olive and orange look brown. Text does not use this palette.
-const LIGHT_USER_MESSAGES_COLOR: Color = Color::Rgb(78, 127, 195);
-const LIGHT_AGENT_RESPONSES_COLOR: Color = Color::Rgb(50, 142, 75);
-const LIGHT_REASONING_COLOR: Color = Color::Rgb(30, 140, 145);
-const LIGHT_TOOL_CALLS_COLOR: Color = Color::Rgb(205, 111, 15);
+// Each category has the same hue role on paper and charcoal. In particular,
+// reasoning is violet, separate from green agents and olive tool results.
+// Markers keep at least 3:1 contrast on light backgrounds; labels use the
+// terminal foreground rather than inheriting a graphical marker's color.
+const LIGHT_USER_MESSAGES_COLOR: Color = Color::Rgb(0, 108, 206);
+const LIGHT_AGENT_RESPONSES_COLOR: Color = Color::Rgb(0, 135, 92);
+const LIGHT_REASONING_COLOR: Color = Color::Rgb(113, 67, 214);
+const LIGHT_TOOL_CALLS_COLOR: Color = Color::Rgb(205, 103, 0);
 const LIGHT_TOOL_RESULTS_COLOR: Color = Color::Rgb(116, 132, 27);
 const LIGHT_SYSTEM_INSTRUCTIONS_COLOR: Color = Color::Rgb(140, 45, 60);
-const LIGHT_DEVELOPER_MESSAGES_COLOR: Color = Color::Rgb(147, 99, 181);
+const LIGHT_DEVELOPER_MESSAGES_COLOR: Color = Color::Rgb(206, 71, 143);
 const LIGHT_TOOL_DEFINITIONS_COLOR: Color = Color::Rgb(100, 100, 100);
-const LIGHT_UNRECOGNIZED_ITEMS_COLOR: Color = Color::Rgb(173, 86, 132);
+const LIGHT_UNRECOGNIZED_ITEMS_COLOR: Color = Color::Rgb(0, 131, 149);
 
 fn light_category_color(color: Color) -> Color {
     match color {
@@ -1013,7 +1014,7 @@ mod tests {
 
     #[test]
     fn context_category_palette_uses_distinct_high_contrast_hues() {
-        const MINIMUM_LAB_DISTANCE: f64 = 25.0;
+        const MINIMUM_LAB_DISTANCE: f64 = 40.0;
         const MINIMUM_CONTRAST: f64 = 4.5;
         let terminal_colors = [
             USER_MESSAGES_COLOR,
@@ -1041,6 +1042,12 @@ mod tests {
         let near_duplicate = [Color::Rgb(95, 135, 255), Color::Rgb(96, 136, 255)];
         assert!(!colors_have_minimum_distance(
             &near_duplicate,
+            MINIMUM_LAB_DISTANCE
+        ));
+        // The old purple/pink markers were different RGBs but visually too close.
+        let old_markers = [Color::Rgb(210, 153, 244), Color::Rgb(240, 136, 187)];
+        assert!(!colors_have_minimum_distance(
+            &old_markers,
             MINIMUM_LAB_DISTANCE
         ));
         assert!(contrast_ratio(Color::Rgb(36, 36, 36), terminal_background) < MINIMUM_CONTRAST);
@@ -1079,7 +1086,7 @@ mod tests {
 
     #[test]
     fn light_category_palette_keeps_every_pair_apart() {
-        const MINIMUM_LAB_DISTANCE: f64 = 25.0;
+        const MINIMUM_LAB_DISTANCE: f64 = 30.0;
         let colors = [
             USER_MESSAGES_COLOR,
             AGENT_RESPONSES_COLOR,
@@ -1100,13 +1107,22 @@ mod tests {
                     "{left:?} and {right:?} are only {distance:.1} apart on paper"
                 );
             }
-            for background in [Color::Rgb(248, 246, 239), Color::Rgb(255, 255, 255)] {
+            for background in [
+                Color::Rgb(240, 240, 240),
+                Color::Rgb(248, 246, 239),
+                Color::Rgb(255, 255, 255),
+            ] {
                 assert!(
                     contrast_ratio(*left, background) >= 3.0,
                     "{left:?} on {background:?}"
                 );
             }
         }
+        let old_markers = [Color::Rgb(147, 99, 181), Color::Rgb(173, 86, 132)];
+        assert!(!colors_have_minimum_distance(
+            &old_markers,
+            MINIMUM_LAB_DISTANCE
+        ));
         // The uniform darkening this replaces is what made the bar unreadable.
         let darkened = [TOOL_CALLS_COLOR, TOOL_RESULTS_COLOR].map(|color| {
             let (r, g, b) = rgb(color);

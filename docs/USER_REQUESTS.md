@@ -35,7 +35,11 @@ or implemented outcomes.
 
 ## Requested outcomes
 
-October 10 follow-up: retain Alt+C and add Ctrl+X without shortcut conflicts; fix slow `/resume` loading and restore Backspace deletion. Keep Tool results olive with a small brightness increase; use Deus Ex gold for the source headings. Implementation and actual-picker checks are in progress; no new candidate installed yet. The reported missing context was corrected by Masih: it appeared after sending a message on resume.
+October 11 Ledger correction: Masih rejected the similar category colors. Give every category a clearly different color, readable on the actual light/dark background; inspect dots, labels and stacked bar together in the real terminal and show both results. The [contract](specs/codex-parity.md) records this correction. Implementation and visual acceptance remain open.
+
+October 10 follow-up: retain Alt+C and add Ctrl+X without shortcut conflicts; fix slow `/resume` loading and restore Backspace deletion. Keep Tool results olive with a small brightness increase; use Deus Ex gold for the source headings. Installed from `14a9f9cd7` after Masih closed the old terminal. All 15 actual-launcher checks, light/dark color checks and the full UI rerun passed; the real-profile `/resume` list loaded in under one second. [Evidence and current installation](permissions-verification.md). Daily-use acceptance remains Masih’s. The reported missing context was corrected by Masih: it appeared after sending a message on resume.
+
+October 10 broader-check request: audit the installed features beyond the latest corrections. Reproduced and corrected provider work continuing after deletion; installed bridge `c6085bc2f` with unchanged Rust runtime. Shared sessions, permissions, launcher, review/worktree, context, guarded memory, pruning and browser dashboard checks passed within the recorded fixture limits. [Evidence](permissions-verification.md); daily-use acceptance remains Masih’s.
 
 October 10 correction: refine the palette and gold animation, make generated session names visible, and restore Shift+Tab permission changes with visible feedback and effective tool access. The [refined contract](specs/codex-parity.md) records these explicit exceptions. Tool-result attribution is already correct. Implemented and installed from `fb0b04a60`; full CI, strict candidate/installed-launcher checks and light/dark appearance checks passed. [Evidence and user check](permissions-verification.md). Masih’s daily-use acceptance remains pending.
 

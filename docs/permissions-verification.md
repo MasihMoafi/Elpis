@@ -1,18 +1,20 @@
-# Installed follow-up — 10 October 2026
+# Installed regression check — 10 October 2026
 
-**Elpis 0.4.1, source `fb0b04a60`, is installed on Codex 0.162.0.** Shift+Tab changes permissions with confirmed feedback. Session names appear before the directory. Ledger colors are lighter and distinct; Tool results remain separate. “Elpising” uses lighter Deus Ex gold with Codex’s animation and normal font weight.
+**Installed: `provider-delete-c6085bc2f370`**, Elpis 0.4.1 on Codex 0.162.0. The audit found provider tools continuing after chat deletion. The corrected bridge stops active/queued work, clears history and children, and preserves native failure/fork protections. The failing old-bundle control wrote a file after deletion; the correction prevented it.
 
-| Check on the installed candidate | Result |
+| Checked | Evidence |
 | --- | --- |
-| [Full CI](https://github.com/MasihMoafi/Elpis/actions/runs/38044290925) | All gates passed; 5,780 UI tests, 317 core tests, 65 integration tests; five existing UI exclusions |
-| Permission regressions | Native, Code Mode, Claude/Gemini bridges and helpers passed, including active-turn updates, protected edits and restrictions |
-| Ordinary launcher | All 11 checks passed before and after installation, including Full Access cancellation, confirmed settings and a protected write without an approval popup |
-| Light/dark appearance and animation | 22 checks passed; 70 frames per theme; six rendered captures reviewed |
+| Shared sessions and deletion | 20 checks each for Claude/Gemini on the exact staged bundle. |
+| Permissions | 35 Claude and 28 Gemini checks passed. |
+| Normal launcher | 15 checks passed before and after activation: shortcuts, naming, permissions, steering and resume deletion. |
+| Other workflows | Seven review/worktree checks, 17 provider-context checks, nine guarded-memory checks and four Smart Prune cases passed. |
+| Browser dashboard | Seven tabs, polling, model save, pruning-instruction save/reload/default restore, activity, tokens and sources checked. Screenshot reviewed; no browser warnings/errors captured. |
+| Unchanged Rust runtime | Prior [UI run](https://github.com/MasihMoafi/Elpis/actions/runs/38066331079): 5,799 passed, five existing exclusions. [Runtime run](https://github.com/MasihMoafi/Elpis/actions/runs/38063459154): all runtime gates passed, including 317 core and 65 integration tests. |
 
-The installed runtime, Code Mode host and sandbox match the CI artifacts byte for byte. [Receipt and hashes](../.tmp/palette/state.json), [permission feedback](../.tmp/palette/final-evidence/terminal_launcher/full-access-applied.png), [80-column name](../.tmp/palette/final-evidence/terminal_launcher/automatic-title-visible-80.png), reviewed [light](../.tmp/palette/final-evidence/appearance_light/aligned-ledger.png)/[dark](../.tmp/palette/final-evidence/appearance_dark/aligned-ledger.png) Ledger captures, and [installed-launcher evidence](../.tmp/palette/final-evidence/installed-launcher/evidence.json) record the checks.
+[Audit receipt, exact hashes and logs](../.tmp/ledger-shortcuts/audit-state.json) · [Dashboard capture](../.tmp/ledger-shortcuts/audit-dashboard.png) · [Earlier Ledger/color evidence](../.tmp/ledger-shortcuts/state.json).
 
-**User check:** finish current work, close **all** Elpis windows, wait about **30 seconds** for the old bridge to exit, reopen/resume, then use Shift+Tab to select Full Access and check its confirmation. Alt+C opens the Ledger; `/plan` toggles Plan. Existing windows keep the old runtime, and mixed versions are refused.
+The runtime and colors are unchanged. Activation waited for the old bridge to exit naturally; no user process was killed. User chats were not modified by testing.
 
-Limits: this is not a Codex version upgrade or complete-parity claim. Live provider services and dashboard visuals were not rechecked here. Failed helper-permission saves leave restrictions temporary; the bridge does not intersect custom workspace roots. Native light-theme animation retains its dim phase. Masih’s daily-use acceptance remains open.
+**Limits:** live-provider authentication/inference, populated live-agent dashboard and pruning-evidence links were not checked. This is broad regression evidence, not a guarantee of every behavior. Masih’s daily-use acceptance remains open.
 
-[Tested rollback](/home/masih/.local/lib/elpis-next/versions/before-palette-20261010T080310Z/rollback.sh) restores the previous continuity installation. Chats and settings were preserved. Earlier [October 9 evidence](../../Elpis-wt-parity/.tmp/config-ui-install-receipt.json) and [continuity verification](continuity-verification.md) remain historical.
+**Rollback:** from this worktree, `python3 .tmp/ledger-shortcuts/audit-select.py --rollback` restores the previous Ledger bundle. It refuses while a real-profile bridge runs. Rollback selection passed in an isolated directory. No release was published.
