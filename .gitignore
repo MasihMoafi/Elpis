@@ -138,3 +138,9 @@ docs/evals/ling/
 # Eval archive: personal session evidence, local only
 docs/evals/archive/
 ES.md
+
+# Private notes, kept locally
+/AGENTS.md
+/VISION.md
+/docs/USER_REQUESTS.md
+/docs/TASKS_ARCHIVE.md
