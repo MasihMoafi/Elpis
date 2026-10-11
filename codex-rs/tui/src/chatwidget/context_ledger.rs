@@ -536,13 +536,12 @@ impl ChatWidget {
         };
         let mut lines = self.agent_ledger_lines(content_width);
         let title_line = lines.len();
-        let mut title = crate::status_indicator_widget::summary_shimmer_with_style(
+        let mut title = crate::status_indicator_widget::ledger_title_shimmer(
             CONTEXT_LEDGER_TITLE,
             self.context_ledger.title_started_at.elapsed(),
             crate::motion::MotionMode::from_animations_enabled(
                 self.local_settings.tui.animations && self.local_settings.tui.effects.shimmer,
             ),
-            Some(brand),
         );
         title.extend([Span::raw("  "), Span::styled(context_header, context)]);
         lines.extend(vec![

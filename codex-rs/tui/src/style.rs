@@ -2,11 +2,14 @@
 //! Informative accents meet minimum contrast on known backgrounds and supported palettes.
 
 mod contrast;
+#[cfg(test)]
+pub(crate) use contrast::ratio as contrast_ratio;
 // Elpis: the Elpis palette lives in style/elpis.rs.
 mod elpis;
 pub(crate) use elpis::adaptive_palette_color;
 pub(crate) use elpis::brand_style;
 pub(crate) use elpis::context_style;
+pub(crate) use elpis::ledger_title_styles;
 pub(crate) use elpis::rule_style;
 pub(crate) use elpis::section_style;
 pub(crate) use elpis::session_name_style;

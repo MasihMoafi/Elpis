@@ -23,6 +23,15 @@ pub(crate) fn brand_style() -> Style {
     primary_style_for(default_bg())
 }
 
+/// Solid gold endpoints keep the Ledger title readable even between sweeps.
+pub(crate) fn ledger_title_styles() -> (Style, Style) {
+    let bg = default_bg();
+    (
+        text_style_for(bg, LIGHT_BG_PRIMARY_RGB, (212, 168, 0)).not_bold(),
+        text_style_for(bg, (104, 76, 0), (246, 205, 43)).not_bold(),
+    )
+}
+
 /// Olive context heading emphasis, resolved against the terminal's actual background.
 pub(crate) fn context_style() -> Style {
     text_style_for(default_bg(), CONTEXT_LIGHT_RGB, CONTEXT_DARK_RGB)
@@ -132,7 +141,10 @@ mod tests {
                     bg: background,
                 },
                 || {
+                    let (title_resting, title_peak) = ledger_title_styles();
                     for style in [
+                        title_resting,
+                        title_peak,
                         brand_style(),
                         context_style(),
                         section_style(),

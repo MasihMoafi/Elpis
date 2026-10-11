@@ -4,7 +4,8 @@
 //! the remaining text blends halfway into the background. The wave spans at
 //! least six terminal columns so short labels do not flash one letter at a time.
 //! New headers wait 600 ms, then sweep for one second every four seconds.
-//! Unknown palettes use static dim text instead of a stepped animation.
+//! Unknown palettes use static dim text instead of a stepped animation, except
+//! the Ledger title: its solid gold wave and undimmed fallback retain legibility.
 
 use std::time::Duration;
 
@@ -35,15 +36,25 @@ pub(crate) fn summary_shimmer(
     // brightness wave, without clipping individual animation frames.
     let accent =
         (text == crate::branding::WORKING_LABEL).then(|| crate::style::brand_style().not_bold());
-    summary_shimmer_with_style(text, elapsed, motion, accent)
+    summary_shimmer_with_colors(text, elapsed, motion, accent, None)
 }
 
-/// The same status wave with an explicit product accent, also used by the Ledger title.
-pub(crate) fn summary_shimmer_with_style(
+/// Preserve the status wave while keeping the Ledger's gold solid and readable.
+pub(crate) fn ledger_title_shimmer(
+    text: &str,
+    elapsed: Duration,
+    motion: MotionMode,
+) -> Vec<Span<'static>> {
+    let (resting, peak) = crate::style::ledger_title_styles();
+    summary_shimmer_with_colors(text, elapsed, motion, Some(resting), Some(peak))
+}
+
+fn summary_shimmer_with_colors(
     text: &str,
     elapsed: Duration,
     motion: MotionMode,
     accent: Option<Style>,
+    peak: Option<Style>,
 ) -> Vec<Span<'static>> {
     if motion == MotionMode::Reduced {
         return vec![Span::styled(text.to_owned(), accent.unwrap_or_default())];
@@ -53,12 +64,20 @@ pub(crate) fn summary_shimmer_with_style(
     else {
         return vec![Span::styled(
             text.to_owned(),
-            accent.unwrap_or_default().dim(),
+            if peak.is_some() {
+                accent.unwrap_or_default()
+            } else {
+                accent.unwrap_or_default().dim()
+            },
         )];
     };
     let fg = match accent.and_then(|style| style.fg) {
         Some(ratatui::style::Color::Rgb(r, g, b)) => (r, g, b),
         _ => fg,
+    };
+    let (resting, peak, minimum_alpha) = match peak.and_then(|style| style.fg) {
+        Some(ratatui::style::Color::Rgb(r, g, b)) => (fg, (r, g, b), 0.0),
+        _ => (bg, fg, 0.5),
     };
     let width = text.width() as f64;
     let half_width = (width * 0.1).max(/*other*/ 3.0);
@@ -73,8 +92,8 @@ pub(crate) fn summary_shimmer_with_style(
             column += glyph_width;
             let distance = ((center - position).abs() / half_width).min(/*other*/ 1.0);
             let intensity = 0.5 * (1.0 + (std::f64::consts::PI * distance).cos());
-            let alpha = (0.5 + 0.5 * intensity) as f32;
-            let color = rgb_color(blend(fg, bg, alpha));
+            let alpha = (minimum_alpha + (1.0 - minimum_alpha) * intensity) as f32;
+            let color = rgb_color(blend(peak, resting, alpha));
             let style = Style::default().fg(color);
             Span::styled(grapheme.to_owned(), style)
         })

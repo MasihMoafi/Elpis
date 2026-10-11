@@ -5,36 +5,64 @@ use crate::terminal_palette::with_test_default_colors;
 use crate::terminal_probe::DefaultColors;
 
 #[test]
-fn ledger_title_reuses_the_complete_status_wave_in_both_themes() {
-    for bg in [(255, 255, 255), (16, 16, 16)] {
+fn ledger_title_keeps_solid_gold_and_the_native_wave_in_both_themes() {
+    let rgb = |style: Style| match style.fg {
+        Some(ratatui::style::Color::Rgb(r, g, b)) => (r, g, b),
+        _ => panic!("expected RGB"),
+    };
+    for bg in [(255, 255, 255), (250, 248, 245), (16, 16, 16), (40, 40, 40)] {
         with_test_default_colors(
             DefaultColors {
                 fg: (128, 128, 128),
                 bg,
             },
             || {
-                let accent = crate::style::brand_style().not_bold();
-                let Some(ratatui::style::Color::Rgb(r, g, b)) = accent.fg else {
-                    panic!("expected RGB")
-                };
+                let (resting, peak) = crate::style::ledger_title_styles();
+                let (rest_rgb, peak_rgb) = (rgb(resting), rgb(peak));
+                let label = "CONTEXT LEDGER";
+                assert_eq!(
+                    ledger_title_shimmer(label, Duration::ZERO, MotionMode::Reduced),
+                    vec![Span::styled(label, resting)],
+                );
+                assert!(
+                    ledger_title_shimmer(label, Duration::ZERO, MotionMode::Animated)
+                        .iter()
+                        .all(|span| rgb(span.style) == rest_rgb)
+                );
                 for ms in (0..=8600).step_by(32) {
                     let elapsed = Duration::from_millis(ms);
-                    for mode in [MotionMode::Animated, MotionMode::Reduced] {
-                        let actual = summary_shimmer_with_style(
-                            "CONTEXT LEDGER",
-                            elapsed,
-                            mode,
-                            Some(accent),
+                    let actual = ledger_title_shimmer(label, elapsed, MotionMode::Animated);
+                    // Recover the native wave from a neutral 127..254 ramp. The
+                    // Ledger changes only its color endpoints, never this envelope.
+                    let native = with_test_default_colors(
+                        DefaultColors {
+                            fg: (254, 254, 254),
+                            bg: (0, 0, 0),
+                        },
+                        || summary_shimmer(label, elapsed, MotionMode::Animated),
+                    );
+                    assert_eq!(actual.len(), native.len());
+                    for (actual, native) in actual.iter().zip(native) {
+                        assert_eq!(actual.content, native.content);
+                        let intensity = f32::from(rgb(native.style).0 - 127) / 127.0;
+                        let expected = blend(peak_rgb, rest_rgb, intensity);
+                        let color = rgb(actual.style);
+                        assert!(
+                            crate::style::contrast_ratio(color, bg) >= 4.5,
+                            "title contrast on {bg:?} at {ms}ms: {color:?}"
                         );
-                        let native =
-                            with_test_default_colors(DefaultColors { fg: (r, g, b), bg }, || {
-                                summary_shimmer("CONTEXT LEDGER", elapsed, mode)
-                            });
-                        if mode == MotionMode::Animated {
-                            assert_eq!(actual, native, "native wave at {ms} ms");
-                        } else {
-                            assert_eq!(actual, vec![Span::styled("CONTEXT LEDGER", accent)]);
+                        for (got, want) in [
+                            (color.0, expected.0),
+                            (color.1, expected.1),
+                            (color.2, expected.2),
+                        ] {
+                            assert!(got.abs_diff(want) <= 1, "native wave at {ms}ms");
                         }
+                        assert!(color.0 > color.1 && color.1 > color.2, "gold hue at {ms}ms");
+                        assert!(
+                            color.2 <= 43,
+                            "gold must not fade into the background at {ms}ms"
+                        );
                     }
                 }
             },

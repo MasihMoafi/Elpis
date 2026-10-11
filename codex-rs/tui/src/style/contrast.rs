@@ -132,7 +132,7 @@ pub(super) fn foreground(
     })
 }
 
-fn ratio(a: (u8, u8, u8), b: (u8, u8, u8)) -> f64 {
+pub(crate) fn ratio(a: (u8, u8, u8), b: (u8, u8, u8)) -> f64 {
     let a = luminance(a);
     let b = luminance(b);
     (a.max(b) + 0.05) / (a.min(b) + 0.05)
