@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta name="description" content="The complete Elpis technical write-up: context engineering, continuity, memory, providers, deterministic work graphs, pruning, and evaluation evidence.">
+  <meta name="description" content="The current Elpis README: installation, admitted context, memory, continuity, providers, experimental pruning and work graphs, with verification limits and linked contracts.">
   <meta name="robots" content="index,follow">
   <meta name="theme-color" content="#0b0e0c">
   <title>Elpis Technical Guide — Architecture, Context, and Evidence</title>
@@ -24,13 +24,13 @@
 <a class="sr-only focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:z-[100] focus:bg-base-content focus:px-4 focus:py-2 focus:text-base-100" href="#main">Skip to content</a>
 <header class="navbar sticky top-0 z-50 border-b border-base-300 bg-base-100/90 px-5 backdrop-blur-xl lg:px-12">
   <div class="navbar-start"><a class="text-xl font-black" href="./index.html" aria-label="Elpis home">Elpis<span class="text-warning">.</span></a></div>
-  <nav class="navbar-center hidden gap-6 text-sm text-base-content/65 lg:flex" aria-label="Primary navigation"><a href="./index.html#demo">Demo</a><a href="./index.html#context">Context</a><a href="./technical.html#live-session-dashboard">Dashboard</a><a href="./index.html#work-graph">Work graph</a><a href="./technical.html" aria-current="page">Technical</a><a href="./index.html#install">Install</a></nav>
+  <nav class="navbar-center hidden gap-6 text-sm text-base-content/65 lg:flex" aria-label="Primary navigation"><a href="./index.html#demo">Demo</a><a href="./index.html#context">Context</a><a href="./index.html#current-interface">Interface</a><a href="./index.html#continuity">Continuity</a><a href="./technical.html" aria-current="page">Technical</a><a href="./index.html#install">Install</a></nav>
   <div class="navbar-end"><a class="btn btn-ghost btn-sm" href="https://github.com/MasihMoafi/Elpis">View source ↗</a></div>
 </header>
 <main id="main">
   <section class="hero hero-grid technical-hero">
     <svg class="hero-flow" viewBox="0 0 1440 610" preserveAspectRatio="none" aria-hidden="true"><path d="M-80 490C220 490 260 370 560 370S890 170 1520 170"/><path d="M-60 560C280 560 350 460 650 460S980 330 1500 330"/><circle r="4"><animateMotion dur="8s" repeatCount="indefinite" path="M-80 490C220 490 260 370 560 370S890 170 1520 170"/></circle></svg>
-    <div class="hero-content relative z-10 w-full max-w-7xl items-start px-6 py-24 lg:px-12"><div class="max-w-4xl"><p class="mb-6 font-mono text-xs font-bold uppercase tracking-[.24em] text-base-content/55"><span class="status status-warning mr-2"></span>Technical</p><h1 class="text-6xl font-semibold leading-[.9] tracking-[-.06em] sm:text-7xl lg:text-8xl">How Elpis<br><em class="font-normal text-base-content/50">works.</em></h1><p class="mt-8 max-w-2xl text-lg leading-8 text-base-content/68">The full project write-up—context engineering, continuity, memory, providers, work graphs, and the evidence behind them.</p><div class="mt-8 flex flex-wrap gap-3"><a class="btn btn-primary" href="#never-lose-a-thread-again">Start reading ↓</a><a class="btn btn-soft hero-secondary" href="./index.html">Back to overview</a></div></div></div>
+    <div class="hero-content relative z-10 w-full max-w-7xl items-start px-6 py-24 lg:px-12"><div class="max-w-4xl"><p class="mb-6 font-mono text-xs font-bold uppercase tracking-[.24em] text-base-content/55"><span class="status status-warning mr-2"></span>Technical</p><h1 class="text-6xl font-semibold leading-[.9] tracking-[-.06em] sm:text-7xl lg:text-8xl">How Elpis<br><em class="font-normal text-base-content/50">works.</em></h1><p class="mt-8 max-w-2xl text-lg leading-8 text-base-content/68">The full project write-up: context control, continuity, memory, providers, work graphs and historical evidence, with current defaults and release limits.</p><div class="mt-8 flex flex-wrap gap-3"><a class="btn btn-primary" href="#never-lose-a-thread-again">Start reading ↓</a><a class="btn btn-soft hero-secondary" href="./index.html">Back to overview</a></div></div></div>
   </section>
   <div class="site-section technical-layout">
 $if(toc)$

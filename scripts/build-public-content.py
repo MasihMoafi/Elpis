@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build the technical page and its local evidence links from the README."""
+"""Build the maintained technical article and its local evidence links."""
 from pathlib import Path
 import re
 import hashlib
@@ -25,7 +25,7 @@ def main():
     ]
     for name in local_docs:
         shutil.copyfile(ROOT / name, evidence / Path(name).name)
-    source = (ROOT / 'readme.md').read_text()
+    source = (SITE / 'technical.md').read_text()
     for name in set(re.findall(r'docs/assets/[^\s)"<>]+', source)):
         shutil.copyfile(ROOT / name, assets / Path(name).name)
         source = source.replace(name, './assets/technical/' + Path(name).name)
@@ -40,9 +40,9 @@ def main():
         text=True, capture_output=True, check=True)
     html = re.sub(r'(<table\b.*?</table>)', r'<div class="technical-table">\1</div>', result.stdout, flags=re.S)
     html = re.sub(r'(<pre\b.*?</pre>)', r'<div class="technical-code">\1</div>', html, flags=re.S)
-    digest = hashlib.sha256((ROOT / 'readme.md').read_bytes() + (SITE / 'technical-template.html').read_bytes()).hexdigest()
-    (SITE / 'technical.html').write_text(f'<!-- README/template SHA256: {digest} -->\n' + html)
-    print('Built technical.html from readme.md; copied referenced media and frozen evidence.')
+    digest = hashlib.sha256((ROOT / 'readme.md').read_bytes() + (SITE / 'technical.md').read_bytes() + (SITE / 'technical-template.html').read_bytes()).hexdigest()
+    (SITE / 'technical.html').write_text(f'<!-- README/article/template SHA256: {digest} -->\n' + html)
+    print('Built technical.html from technical.md; copied referenced media and frozen evidence.')
 
 if __name__ == '__main__':
     main()

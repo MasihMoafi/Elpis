@@ -1,10 +1,10 @@
-<!-- README/template SHA256: b43f76dc8724600a3d08f2b87a2bfb1cb98125cb482c9488ec60be55dcd40870 -->
+<!-- README/article/template SHA256: 92687bf2248b5fcf0d4eb3c97154d14b8e02b8454f8c1d33d7c72b653cc633a3 -->
 <!doctype html>
 <html lang="en" data-theme="elpis">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta name="description" content="The complete Elpis technical write-up: context engineering, continuity, memory, providers, deterministic work graphs, pruning, and evaluation evidence.">
+  <meta name="description" content="The current Elpis README: installation, admitted context, memory, continuity, providers, experimental pruning and work graphs, with verification limits and linked contracts.">
   <meta name="robots" content="index,follow">
   <meta name="theme-color" content="#0b0e0c">
   <title>Elpis Technical Guide — Architecture, Context, and Evidence</title>
@@ -25,19 +25,18 @@
 <a class="sr-only focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:z-[100] focus:bg-base-content focus:px-4 focus:py-2 focus:text-base-100" href="#main">Skip to content</a>
 <header class="navbar sticky top-0 z-50 border-b border-base-300 bg-base-100/90 px-5 backdrop-blur-xl lg:px-12">
   <div class="navbar-start"><a class="text-xl font-black" href="./index.html" aria-label="Elpis home">Elpis<span class="text-warning">.</span></a></div>
-  <nav class="navbar-center hidden gap-6 text-sm text-base-content/65 lg:flex" aria-label="Primary navigation"><a href="./index.html#demo">Demo</a><a href="./index.html#context">Context</a><a href="./technical.html#live-session-dashboard">Dashboard</a><a href="./index.html#work-graph">Work graph</a><a href="./technical.html" aria-current="page">Technical</a><a href="./index.html#install">Install</a></nav>
+  <nav class="navbar-center hidden gap-6 text-sm text-base-content/65 lg:flex" aria-label="Primary navigation"><a href="./index.html#demo">Demo</a><a href="./index.html#context">Context</a><a href="./index.html#current-interface">Interface</a><a href="./index.html#continuity">Continuity</a><a href="./technical.html" aria-current="page">Technical</a><a href="./index.html#install">Install</a></nav>
   <div class="navbar-end"><a class="btn btn-ghost btn-sm" href="https://github.com/MasihMoafi/Elpis">View source ↗</a></div>
 </header>
 <main id="main">
   <section class="hero hero-grid technical-hero">
     <svg class="hero-flow" viewBox="0 0 1440 610" preserveAspectRatio="none" aria-hidden="true"><path d="M-80 490C220 490 260 370 560 370S890 170 1520 170"/><path d="M-60 560C280 560 350 460 650 460S980 330 1500 330"/><circle r="4"><animateMotion dur="8s" repeatCount="indefinite" path="M-80 490C220 490 260 370 560 370S890 170 1520 170"/></circle></svg>
-    <div class="hero-content relative z-10 w-full max-w-7xl items-start px-6 py-24 lg:px-12"><div class="max-w-4xl"><p class="mb-6 font-mono text-xs font-bold uppercase tracking-[.24em] text-base-content/55"><span class="status status-warning mr-2"></span>Technical</p><h1 class="text-6xl font-semibold leading-[.9] tracking-[-.06em] sm:text-7xl lg:text-8xl">How Elpis<br><em class="font-normal text-base-content/50">works.</em></h1><p class="mt-8 max-w-2xl text-lg leading-8 text-base-content/68">The full project write-up—context engineering, continuity, memory, providers, work graphs, and the evidence behind them.</p><div class="mt-8 flex flex-wrap gap-3"><a class="btn btn-primary" href="#never-lose-a-thread-again">Start reading ↓</a><a class="btn btn-soft hero-secondary" href="./index.html">Back to overview</a></div></div></div>
+    <div class="hero-content relative z-10 w-full max-w-7xl items-start px-6 py-24 lg:px-12"><div class="max-w-4xl"><p class="mb-6 font-mono text-xs font-bold uppercase tracking-[.24em] text-base-content/55"><span class="status status-warning mr-2"></span>Technical</p><h1 class="text-6xl font-semibold leading-[.9] tracking-[-.06em] sm:text-7xl lg:text-8xl">How Elpis<br><em class="font-normal text-base-content/50">works.</em></h1><p class="mt-8 max-w-2xl text-lg leading-8 text-base-content/68">The full project write-up: context control, continuity, memory, providers, work graphs and historical evidence, with current defaults and release limits.</p><div class="mt-8 flex flex-wrap gap-3"><a class="btn btn-primary" href="#never-lose-a-thread-again">Start reading ↓</a><a class="btn btn-soft hero-secondary" href="./index.html">Back to overview</a></div></div></div>
   </section>
   <div class="site-section technical-layout">
     <aside class="card card-border technical-toc" aria-label="Technical guide contents"><strong>On this page</strong><ul>
 <li><a href="#never-lose-a-thread-again"
-id="toc-never-lose-a-thread-again">Never lose a thread again.</a>
-<ul>
+id="toc-never-lose-a-thread-again">Never lose a thread again.</a></li>
 <li><a href="#contents" id="toc-contents">Contents</a></li>
 <li><a href="#quickstart" id="toc-quickstart">Quickstart</a></li>
 <li><a href="#what-is-elpis" id="toc-what-is-elpis">What is
@@ -84,12 +83,11 @@ id="toc-current-ui-verification">Current UI verification</a></li>
 <li><a href="#documentation"
 id="toc-documentation">Documentation</a></li>
 <li><a href="#license" id="toc-license">License</a></li>
-</ul></li>
 </ul></aside>
     <article class="technical-prose">
 <div align="center">
 
-<h1 id="never-lose-a-thread-again">Never lose a thread again.</h1>
+<h2 id="never-lose-a-thread-again">Never lose a thread again.</h2>
 <p><strong>You run an agent inside Elpis, and it becomes
 Elpis.</strong></p>
 <p><strong>Elpis is an open-source fork of OpenAI's Codex CLI that keeps
@@ -111,15 +109,6 @@ href="#evaluation-status">Evaluation</a> • <a
 href="#documentation">Docs</a></p>
 </div>
 
-<p><a
-href="https://github.com/MasihMoafi/Elpis/releases/tag/v0.2.0">Elpis
-v0.2.0 is available for Linux x86_64</a>. Start with the <a
-href="https://github.com/MasihMoafi/Elpis/blob/v0.2.0/readme.md">versioned
-guide</a> or <a href="https://elpis.masihmoafi.com">interactive
-demo</a>. The accepted release passed its <a
-href="https://github.com/MasihMoafi/Elpis/actions/runs/33965914155">exact-source
-shipping checks</a>. The release tag, not this development branch,
-identifies the shipped runtime.</p>
 <p><img src="./assets/technical/demo.gif"
 alt="Elpis interactive terminal demo" /></p>
 <p><img src="./assets/technical/evidence.gif"
@@ -182,16 +171,24 @@ Auditability</a></li>
 <li><a href="#license">License</a></li>
 </ul>
 <h2 id="quickstart">Quickstart</h2>
-<p>Linux x86_64; macOS and Windows are not included in v0.2.0. Review
-the installer before running it:</p>
+<p><a
+href="https://github.com/MasihMoafi/Elpis/releases/tag/v0.4.1">v0.4.1</a>
+is the Linux x86_64 release, based on Codex <code>rust-v0.160.0</code>.
+Review the installer before running it:</p>
 <div class="sourceCode" id="cb1"><div class="technical-code"><pre
-class="sourceCode bash"><code class="sourceCode bash"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="ex">curl</span> <span class="at">-fsSL</span> https://raw.githubusercontent.com/MasihMoafi/Elpis/v0.2.0/scripts/install-elpis.sh <span class="kw">|</span> <span class="fu">bash</span> <span class="kw">&amp;&amp;</span> <span class="ex">~/.local/bin/elpis</span></span></code></pre></div></div>
-<p>The installer downloads the latest published Elpis Linux binary and
-verifies its SHA-256 sidecar. <a
-href="https://github.com/rtk-ai/rtk">RTK</a> is an optional, separate
-shell-output filter; this installer does not install it. On first
-launch, choose a provider and sign in or enter its API key.</p>
-<p><code>v0.2.0</code> is the current release.</p>
+class="sourceCode bash"><code class="sourceCode bash"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="ex">curl</span> <span class="at">-fsSL</span> https://raw.githubusercontent.com/MasihMoafi/Elpis/v0.4.1/scripts/install-elpis.sh <span class="kw">|</span> <span class="fu">bash</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="ex">~/.local/bin/elpis</span></span></code></pre></div></div>
+<p>The installer verifies SHA-256 checksums and includes the Code Mode
+host and Linux sandbox. RTK is optional and is not installed
+automatically. macOS and Windows binaries are not included. Choose a
+provider and sign in or configure its API key, then select a model with
+<code>/model</code>.</p>
+<p>State lives in <code>~/.elpis-next</code>, or the directory selected
+by <code>ELPIS_HOME</code>; inherited <code>CODEX_HOME</code> is
+ignored. The v0.3.0 database is incompatible with this foundation and is
+preserved rather than automatically migrated. See the <a
+href="https://github.com/MasihMoafi/Elpis">current release README</a>
+for upgrades and rollback.</p>
 <h2 id="what-is-elpis">What is Elpis</h2>
 <p>Elpis is a provider-neutral coding-agent environment. The selected
 model or runtime performs inference; Elpis owns the surrounding working
@@ -224,60 +221,52 @@ flight. Pruning rewrites only harness-supplied tool output, using a
 separate model instance sequenced against the main agent.</p>
 <h2 id="core-features">Core Features</h2>
 <h3 id="context-engineering">Context engineering</h3>
-<p>Context is a budgeted working set, not a dumped transcript. Elpis
-makes admission visible and uses a layered pipeline to keep useful
-findings while removing disposable exploration:</p>
+<p>Elpis makes admitted instructions, chosen files and saved memory
+inspectable. Saving information and choosing to include it in the next
+request are separate controls. Durable evidence remains available
+outside the working context.</p>
 <p><img src="./assets/technical/elpis-context-control.svg"
 alt="Elpis Context Architecture" /></p>
+<p>Historical architecture illustration. Current defaults and controls
+are described below.</p>
 <div class="technical-table"><table>
 <thead>
-<tr class="header">
-<th>Layer</th>
+<tr>
+<th>Control</th>
 <th>What it does</th>
 <th>When</th>
 </tr>
 </thead>
 <tbody>
-<tr class="odd">
-<td><strong>1. RTK shell-output filtering</strong></td>
-<td>Compacts supported command output before it reaches the model.</td>
-<td>Before the agent sees it</td>
+<tr>
+<td>Optional RTK filtering</td>
+<td>An external shell-output filter; not installed automatically.</td>
+<td>Before eligible output reaches the model</td>
 </tr>
-<tr class="even">
-<td><strong>2. Deterministic safety cap</strong></td>
-<td>Bounds exceptionally large tool results. This is inherited from
-Codex.</td>
-<td>Before the agent sees it</td>
+<tr>
+<td>Deterministic safety cap</td>
+<td>Bounds exceptionally large tool results, inherited from Codex.</td>
+<td>Before the agent sees them</td>
 </tr>
-<tr class="odd">
-<td><strong>3. Smart Prune — Experimental</strong></td>
-<td>Optimizes eligible fresh tool results before the main model's first
-exposure to them. Once admitted, Smart Prune does not revisit that
-history.</td>
-<td><code>/prune</code> enables it for subsequent turns;
-<code>/force-prune &lt;1-100&gt;</code> remains an explicit one-shot
-action that may reduce prompt-cache reuse</td>
+<tr>
+<td>Experimental Smart Prune</td>
+<td>Can shorten eligible fresh tool output; a failed attempt passes the
+original through.</td>
+<td>Once, before its first main-model admission</td>
 </tr>
 </tbody>
 </table></div>
-<p><code>/prune</code> enables Smart Prune (the ACE pruning layer) for
-subsequent turns without rewriting already-sent history.
-<code>/force-prune &lt;1-100&gt;</code> is an explicit emergency action
-that may reduce prompt-cache reuse. <code>/compact</code> immediately
-runs Codex native compaction, independent of Smart Prune. Automatic
-native compaction uses the model-window threshold and usable-window
-headroom. Smart Prune is Experimental and off by default;
-<code>/settings</code> saves its value for the next turn while leaving
-any turn already in flight unchanged.</p>
+<p>Smart Prune is off by default. Already-sent history stays stable.
+Native <code>/compact</code> summarizes conversation history
+independently; it does not run Ace first. The legacy
+<code>/force-prune</code> command is not ported to the current
+foundation.</p>
 <p><img src="./assets/technical/diagram_ace_lifecycle.svg"
-alt="Ace pruning lifecycle from a retired automatic threshold-triggered configuration" /></p>
-<p>This diagram illustrates the automatic, threshold-triggered
-pressure-cycling configuration used in the historical evaluation runs
-below — retired, and not current default behavior. Current Smart Prune
-optimizes a fresh tool result once, before its first admission, and
-never revisits already-sent history the way this sequence shows.</p>
-<h4 id="historical-emergency-pruning-example">Historical
-emergency-pruning example</h4>
+alt="Ace Pruning and Context Lifecycle" /></p>
+<p>This diagram describes the retired automatic threshold-triggered
+configuration, not current Smart Prune behavior.</p>
+<h4 id="historical-pruning-example">Historical pruning example</h4>
+<p>The following artifact comes from the retired configuration.</p>
 <p><img src="./assets/technical/sankey_context_flow.svg"
 alt="Task 1 Context Flow and Pruning Lifecycle" /></p>
 <p>From a configured historical run with automatic pruning enabled under
@@ -322,88 +311,86 @@ available candidates and their origins, but mentions and the
 model-visible list contain enabled skills only. The Ledger has no
 skills-catalog token row; its per-source estimates are not tokenizer
 measurements.</p>
-<p><img src="./assets/technical/elpis-ui-20260909.png"
-alt="Current Context Ledger with distinct amber and pale-yellow source rows" /></p>
+<p><a
+href="./assets/technical/elpis-context-ledger-20261013.png"><img src="./assets/technical/elpis-context-ledger-20261013.png" alt="Elpis Context Ledger showing admitted memory and instructions, context categories, Smart Prune and subagent controls" width="676" height="1012"></a></p>
+<p>Context Ledger · 13 October 2026 · light theme. Smart Prune and
+subagent delegation are enabled in this session. Smart Prune is
+experimental and off by default. Category shares and source sizes are
+estimates; the measured request total is separate. Open the original
+image to inspect it at full size.</p>
 <p>In v0.2.0, Ledger and <code>/context</code> share category colors and
 a full-window scale. They distinguish active context usage from locally
 estimated request categories: user and agent messages, reasoning, tool
 calls/results, instructions, developer messages, and tool definitions.
 Category estimates are not provider-billed counts. Available backtrack
 checkpoints and local evidence links remain inspectable.</p>
-<img src="./assets/technical/elpis-context-slash.webp" alt="The /context view showing token usage by category and available backtrack checkpoints" width="720">
-
 <p>Earlier category-view capture; this image is retained to explain
 <code>/context</code>, not the September 9 appearance.</p>
 <h3 id="live-session-dashboard">Live session dashboard</h3>
-<p><code>/dashboard</code> opens a local HTML view in your browser — no
-transcript content leaves the machine. It gives the same context and
-token accounting as the Ledger and <code>/context</code>, plus what a
-turn is doing right now and, when Smart Prune (the ACE pruning layer
-above) is on, its admission and optimizer-cost accounting:</p>
-<p>The September 9 development dashboard also supports authorized pruner
-settings edits. The captures below use the checked-in
-<strong>illustrative fixture</strong>, with preview settings disabled.
-Their counters are demonstration data, not experiment results.</p>
-<p><img src="./assets/technical/dashboard-activity-20260909.png"
-alt="Current dashboard Activity tab" /></p>
-<details><summary>Context — window composition and admitted sources</summary>
-
-<p><img src="./assets/technical/dashboard-context-20260909.png"
-alt="Current dashboard Context tab" /></p>
-</details>
-
-<details><summary>Tokens — recorded usage breakdown</summary>
-
-<p><img src="./assets/technical/dashboard-tokens-20260909.png"
-alt="Current dashboard Tokens tab" /></p>
-</details>
-
-<details><summary>Smart Prune — settings, accounting, and failure evidence</summary>
-
-<p><img src="./assets/technical/dashboard-smart-prune-20260909.png"
-alt="Current dashboard Smart Prune tab, including incomplete usage and timeout evidence" /></p>
-</details>
-
+<p><code>/dashboard</code> opens the local session dashboard. Its seven
+views cover models, agents, activity, context, token usage, experimental
+Smart Prune and API keys. Agent hierarchy and model choices remain
+visible alongside the working session.</p>
+<p>These views show the October 13 visual refresh with sample data and
+disabled settings. They are separate from the live Context Ledger
+capture above and from research measurements. Recorded usage may be
+incomplete; unavailable subscription prices are shown explicitly.</p>
+<p><img src="./assets/technical/dashboard-activity-20261013.png"
+alt="Dashboard Activity preview" /></p>
+<p><img src="./assets/technical/dashboard-context-20261013.png"
+alt="Dashboard Context preview" /></p>
+<p><img src="./assets/technical/dashboard-tokens-20261013.png"
+alt="Dashboard Tokens preview" /></p>
+<p><img src="./assets/technical/dashboard-smart-prune-20261013.png"
+alt="Dashboard Smart Prune preview" /></p>
 <h3 id="sessions-and-continuity">Sessions and continuity</h3>
-<p>Keep the working context across model switches, compaction, and
-restarts:</p>
-<ul>
-<li><strong><code>GOAL.md</code></strong> holds the current task. It is
-carried into each request, stays visible across compaction, and is
-editable during a run.</li>
-<li><strong><code>ES.md</code></strong> is an event-derived executive
-summary. It records modified files, commands run, blockers, and next
-steps, and is updated as the run progresses.</li>
-<li><strong>Exact resume</strong> continues an existing thread with its
-full history, using the provider-native session when one is
-available.</li>
-<li><strong>Lean continuation</strong> starts a clean thread from the
-current <code>GOAL.md</code>, <code>ES.md</code>, and active rules. This
-sheds old exploration without losing the objective.</li>
-</ul>
+<p>Elpis keeps a working checkpoint alongside the runtime's conversation
+history. That checkpoint carries the goal, decisions, changed files,
+verification, blockers and next step into later work.</p>
+<h4 id="resume-and-handoff">Resume and handoff</h4>
+<p>Exact resume reopens the original runtime thread. A portable
+checkpoint supplies a compact working state; it does not reproduce the
+complete transcript. Elpis refreshes admitted context between turns so
+changes to included sources can reach the next request.</p>
+<p>The October 10 local candidate isolates generated goals and
+checkpoints by thread, including simultaneous chats in the same
+workspace. A fresh thread does not automatically inherit another chat's
+generated state. A handoff explicitly admits the desired checkpoint.</p>
+<p>The local candidate also restores the inherited review and worktree
+workflows. These changes and their validation are described in the <a
+href="https://github.com/MasihMoafi/Elpis/blob/main/docs/specs/continuity-workflows.md">continuity
+contract</a>. The screenshot above shows a local candidate; published
+release behavior is documented separately.</p>
+<h4 id="multi-agent-work">Multi-agent work</h4>
+<p>The agents view makes the hierarchy and each agent's model visible.
+Experimental work graphs add task dependencies, bounded write scopes,
+concurrency limits and a required verifier for writable tasks. They are
+off by default; recorded checks do not guarantee a correct result.</p>
+<p>See the <a
+href="https://github.com/MasihMoafi/Elpis/blob/main/docs/sessions.md">session
+contract</a> and <a
+href="https://github.com/MasihMoafi/Elpis/blob/main/docs/WORK_GRAPHS.md">work-graph
+contract</a>.</p>
 <h3 id="memory">Memory</h3>
-<p>Durable memory is one Markdown file, <code>MEMORY.md</code>, in the
-Elpis memory directory (derived from <code>CODEX_HOME</code>). The
-Context Ledger discovers it and lists it as a row, switched
-<strong>off</strong> until you admit it: like every optional row, memory
-does not reach the model unasked.</p>
-<ul>
-<li><strong>One visible file.</strong> Plain text. Read it, edit it,
-commit it to git, or delete it.</li>
-<li><strong>Admitted in the open.</strong> Because it is a Ledger row,
-you can always see whether memory reached the model, switch it on when
-you want it, and drop it when you do not.</li>
-<li><strong>Retrieval beyond that file is your choice.</strong> Register
-an MCP server — for example <a
-href="https://github.com/MasihMoafi/rag-mcp">rag-mcp</a> — and Elpis
-will use it.</li>
-</ul>
-<p>Elpis previously ran an extraction, consolidation, and promotion
-pipeline. It was removed because it did not work: across two threshold
-settings it produced zero durable promotions, every sweep landing one
-recall short of the gate. Memory that rewrites itself in the background
-without appearing anywhere is the failure mode the Ledger row exists to
-prevent.</p>
+<p>The responding agent can explicitly save useful knowledge and the
+workspace checkpoint through a guarded local tool. Saving makes
+information durable; the Context Ledger separately decides whether it
+enters future working context.</p>
+<h4 id="control-over-recall">Control over recall</h4>
+<p>Admitting <code>MEMORY.md</code> includes up to 8,000 trimmed Unicode
+characters in the working context. Excluding it stops that admission. A
+saved fact still needs source evidence and correction when circumstances
+change.</p>
+<p>The former extraction and consolidation pipeline is superseded.
+Current memory does not depend on a second model summarizing
+conversations in the background. Available verification covers specific
+save, correction and recall paths; it does not establish a general
+improvement in coding quality.</p>
+<p>See the <a
+href="https://github.com/MasihMoafi/Elpis#included">current README</a>
+and the <a
+href="https://github.com/MasihMoafi/Elpis/blob/main/docs/context.md">memory
+section of the context contract</a>.</p>
 <h3 id="deterministic-work-graphs">Deterministic work graphs</h3>
 <p>A coordinator can fan work out to several agents under an engine that
 validates the plan before anything runs. This is Elpis's own; it is not
@@ -437,18 +424,26 @@ deliberate review.</p>
 graph schema are in <a
 href="https://github.com/MasihMoafi/Elpis/blob/main/docs/WORK_GRAPHS.md">docs/WORK_GRAPHS.md</a>.</p>
 <h3 id="bring-your-own-provider">Bring your own provider</h3>
-<p>Elpis is not tied to a single model vendor:</p>
-<ul>
-<li><strong>OpenAI:</strong> GPT-4o, GPT-5.6-Luna, o1, o3, and
-compatible endpoints.</li>
-<li><strong>Anthropic:</strong> Claude 3.5 Sonnet, Claude 3 Opus, Claude
-3.5 Haiku.</li>
-<li><strong>Google:</strong> Gemini 2.0 Flash, Gemini 1.5 Pro.</li>
-<li><strong>Local &amp; self-hosted:</strong> Ollama, vLLM, and any
-OpenAI-compatible server.</li>
-</ul>
-<p>Switch models mid-session without restarting. The working context,
-goal, and session memory are preserved across provider boundaries.</p>
+<p>Elpis keeps context, continuity, permissions and evidence around the
+selected model or runtime. Provider selection and authentication are
+separate decisions.</p>
+<h4 id="choose-a-route">Choose a route</h4>
+<p>Use <code>/model</code> or the supported <code>--provider</code>
+launch option. The local gateway supports Anthropic, Gemini and
+OpenRouter routes alongside OpenAI. Configure credentials for the
+selected route; a key alone does not select it. Available models depend
+on that route and account.</p>
+<p>The session dashboard exposes current model selections and recorded
+usage. It shows unavailable subscription prices explicitly rather than
+estimating a provider's internal cost.</p>
+<p>A Claude Code subscription uses the official Claude runtime through a
+separate adapter path. It is distinct from direct Anthropic API access,
+which needs its own API credentials. Capabilities and authentication
+follow the selected path.</p>
+<p>See the <a href="https://github.com/MasihMoafi/Elpis">current
+README</a> and <a
+href="https://github.com/MasihMoafi/Elpis/blob/main/docs/providers.md">provider
+contract</a> for installation and version-specific configuration.</p>
 <h3 id="integrations-and-tools">Integrations and tools</h3>
 <p>Extend Elpis with external capabilities that stay in their own
 processes through MCP:</p>
@@ -467,6 +462,10 @@ explicitly configure an exporter. Bring your own provider keys. Durable
 Elpis state is local files and SQLite that you can inspect, edit,
 export, or delete.</p>
 <h2 id="evaluation-status">Evaluation status</h2>
+<p>Current automated checks cover specific runtime, installer and
+continuity paths; they do not establish general coding-quality gains.
+The inherited whole Codex suite is not claimed green. Historical
+research below describes earlier configurations.</p>
 <p><strong>Evidence reviewed September 9, 2026.</strong> RQ1, RQ2, and
 RQ5 below describe historical evaluations. RQ4 includes the newer
 frozen-build cost study: 61 accepted pairs in 17 batches. Neither study
@@ -535,7 +534,7 @@ September 8 rates; they are estimates, not invoices. Cache-hit fractions
 were observed, not controlled.</p>
 <div class="technical-table"><table>
 <thead>
-<tr class="header">
+<tr>
 <th>Requests per session</th>
 <th>Optimizer effort</th>
 <th>Accepted pairs</th>
@@ -543,43 +542,43 @@ were observed, not controlled.</p>
 </tr>
 </thead>
 <tbody>
-<tr class="odd">
+<tr>
 <td>3</td>
 <td>Max</td>
 <td>8</td>
 <td>+162.5%</td>
 </tr>
-<tr class="even">
+<tr>
 <td>3</td>
 <td>Medium</td>
 <td>5</td>
 <td>+41.4%</td>
 </tr>
-<tr class="odd">
+<tr>
 <td>3</td>
 <td>Low</td>
 <td>8</td>
 <td>+54.5%</td>
 </tr>
-<tr class="even">
+<tr>
 <td>3</td>
 <td>None</td>
 <td>8</td>
 <td>+24.8%</td>
 </tr>
-<tr class="odd">
+<tr>
 <td>11</td>
 <td>Low</td>
 <td>8</td>
 <td>−3.0%</td>
 </tr>
-<tr class="even">
+<tr>
 <td>35</td>
 <td>Low</td>
 <td>8 across two batches</td>
 <td>−9.8%</td>
 </tr>
-<tr class="odd">
+<tr>
 <td>35</td>
 <td>None</td>
 <td>8</td>
@@ -612,39 +611,39 @@ context tokens (0.83 reclaimed per spent token).</p>
 <p><img src="./assets/technical/elpis-what-pruning-spent.svg"
 alt="What Pruning Spent to Hold That Window (41-Pass Breakdown)" /></p>
 <h3 id="rq5-forensic-auditability">RQ5: Forensic Auditability</h3>
-<p>Every pruning event produces an immutable audit record on disk under
+<p>The historical configuration recorded pruning events on disk under
 <code>~/.elpis/logs/pruning/</code>. In full forensic reconstruction
 evaluations, <strong>7 of 9 properties</strong> were completely
 recoverable from disk, 2 partial, and 0 absent.</p>
 <div class="technical-table"><table>
 <thead>
-<tr class="header">
+<tr>
 <th>Research Question</th>
 <th>Empirical Finding</th>
 </tr>
 </thead>
 <tbody>
-<tr class="odd">
+<tr>
 <td><strong>RQ1 — Context Efficiency</strong></td>
 <td>Historical superseded high-frequency setup: peak reduction of
 47–65%; median context stabilized at 26.6–27.0% of the 258k window.</td>
 </tr>
-<tr class="even">
+<tr>
 <td><strong>RQ2 — Information Retention</strong></td>
 <td>6/6 tested post-prune targets preserved intact (100%
 retention).</td>
 </tr>
-<tr class="odd">
+<tr>
 <td><strong>RQ3 — Task Performance</strong></td>
 <td>Not established. The available runs do not support a comparative
 correctness claim.</td>
 </tr>
-<tr class="even">
+<tr>
 <td><strong>RQ4 — Pruning Economics</strong></td>
 <td>Frozen synthetic study: short sessions cost more; longer sessions
 can cost less. Quality and general savings remain unproven.</td>
 </tr>
-<tr class="odd">
+<tr>
 <td><strong>RQ5 — Forensic Auditability</strong></td>
 <td>Historical audit: 7/9 properties fully recoverable, 2 partial, 0
 absent properties.</td>

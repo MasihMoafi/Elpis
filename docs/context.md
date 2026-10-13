@@ -144,7 +144,7 @@ not guarantees established by the current implementation.
 flowchart LR
     U[User objective] --> G[GOAL.md]
     H[Current root turn evidence] --> S[Responding agent calls save_memory]
-    E[ES: workspace state] --> S
+    E[ES: thread state] --> S
     M[MEMORY: global preferences] --> S
     S --> V{Validate and check concurrent edits}
     V --> E
@@ -159,8 +159,8 @@ flowchart LR
 
 | Source | Purpose and writer | Scope and admission limit |
 | --- | --- | --- |
-| `GOAL.md` | Explicit objective and goal state; the goal runtime owns it. `save_memory` does not rewrite the objective. | Workspace, 6,000 characters |
-| Generated `ES.md` | Current decisions, unfinished work, verification, blockers and next action. The CLI writes turn details; enabled `save_memory` can replace its consolidated state. Later same-thread CLI writes retain that consolidated state. | Workspace, 8,000 characters |
+| `GOAL.md` | Explicit objective and goal state; the goal runtime owns it. `save_memory` does not rewrite the objective. | Thread, 6,000 characters |
+| Generated `ES.md` | Current decisions, unfinished work, verification, blockers and next action. The CLI writes turn details; enabled `save_memory` can replace its consolidated state. Later same-thread CLI writes retain that consolidated state. | Thread, 8,000 characters |
 | `MEMORY.md` | Explicit, stable global user preferences. Users can edit it; enabled `save_memory` can apply exact append, replace, or remove edits without replacing unseen text. | Shared memory directory, 8,000 characters |
 | Repository `ES.md` | Ordinary project notes maintained by a person or agent. It is a separate file from the generated checkpoint. | Ordinary file admission, when selected |
 
@@ -184,7 +184,7 @@ pre-compaction, background-model, or other auxiliary save request. The agent cal
 the tool before its final answer when durable state changed; without that call,
 no curated memory or new Consolidated State is saved. Deterministic turn evidence
 in ES is separate (see [Sessions](sessions.md)). Internal, review, and subagent sessions cannot receive
-or invoke it. The runtime fixes the memory root and workspace paths; the caller
+or invoke it. The runtime fixes the memory root and thread checkpoint paths; the caller
 cannot choose a write path.
 
 The tool accepts exact edits to `MEMORY.md` and either a complete replacement for
@@ -197,7 +197,7 @@ user and assistant evidence; half of that evidence capacity is reserved for user
 messages so a large assistant response cannot displace the correction being saved.
 
 The runtime rechecks the saving opt-in and fixed paths, acquires the global memory
-and workspace checkpoint locks, and rejects invalid or oversized content, empty ES,
+and thread checkpoint locks, and rejects invalid or oversized content, empty ES,
 attempted erasure of existing memory, unsupported evidence citations, or any
 MEMORY/ES change since the turn began. Each save records prepared/committed state
 in a unique recovery receipt. Individual file replacements are atomic; the
@@ -227,7 +227,9 @@ is allowed. This check does not validate rewritten prose or interior citations;
 ordinary bracketed values coinciding with registered labels remain ambiguous.
 
 ES can dilute attention: length limits bound context use, not truth or relevance.
-The shared workspace checkpoint also remains subject to the last thread writer.
+Generated GOAL/ES files are isolated by thread in the October 10 local candidate;
+legacy workspace files are read only for their recorded owner. An intentional handoff
+uses explicit file admission. See [Sessions](sessions.md) for paths and bridge limits.
 Model summaries can omit facts or preserve bad assumptions. Receipts support
 inspection; they do not prove semantic fidelity. The live memory file previously
 stayed heading-only because automatic promotion had been removed and Memory
@@ -425,11 +427,13 @@ correctness, recall quality, task completion, total usage and latency, retaining
 negative results and excluding invalid runs. There is no defensible current claim
 that Elpis has proven superior memory or uniformly cheaper agent execution.
 
-## 4. Context Ledger (`Tab` / `Alt+C`) & `admission.toml`
+## 4. Context Ledger (`Alt+C` / `Ctrl+X`) & `admission.toml`
 
 Elpis provides interactive context admission control in the TUI:
 
-- **Context Ledger Panel (`Tab` or `Alt+C`):** A side panel shown by default, listing portable context sources with their byte sizes, per-source estimates, and the percentage of the model context window in use. It is 52 columns wide, narrowing to a proportional slice on smaller terminals so the composer keeps room. Tab completes an active composer popup first; otherwise it opens/focuses the ledger, then closes it. `p` toggles Smart Prune while the ledger is focused; Esc returns to editing. Alt+C always toggles visibility. Enter queues a draft during an active reply. With an empty chatbox, Enter interrupts the reply and sends the next queued input; Up recalls all queued inputs for editing. Tab never submits queued messages.
+- **Context Ledger Panel (`Alt+C`):** A side panel listing portable context sources, byte sizes, estimates and context-window usage. It is up to 52 columns wide and narrows proportionally to keep room for the composer. Alt+C opens or focuses the Ledger; pressing it while focused hides the panel. `p` toggles Smart Prune while focused. Esc returns to editing; Tab closes the focused Ledger. Outside the Ledger, submission and completion keys follow the [Codex parity contract](specs/codex-parity.md): Enter steers an active reply, while Tab queues the draft when no completion popup owns it.
+- **Ctrl+X alternative:** The same Ledger action is available in ordinary text chat. During voice sessions it retains mute/unmute. Menus, completions and explicitly configured shortcuts/chords keep ownership of Ctrl+X; Alt+C remains available.
+
 - **`admission.toml` Control:** Toggling a row in the ledger writes `~/.elpis/context/workspaces/<workspace>/admission.toml`, which dynamically governs next-turn admission for:
   - `GOAL.md` (Active Goal)
   - `ES.md` (Executive Summary)
@@ -448,13 +452,10 @@ and leaves Full Access active only for the current chat.
 
 ### Terminal appearance
 
-Elpis follows the terminal's foreground and background by default. A terminal
-configured to follow the desktop theme therefore switches Elpis with it. Light
-backgrounds use darker gold accents and a dark moving highlight; dark backgrounds
-retain the orange-yellow palette. `/theme` opens the Codex syntax-theme picker
-directly, including live preview and cancel/restore. It changes code highlighting,
-not the terminal's base colors. Existing explicit `tui.appearance` overrides remain
-supported in configuration; use `appearance = "system"` to follow the terminal.
+Shared terminal styling and animations follow the [Codex parity contract](specs/codex-parity.md).
+`/theme` opens the Codex syntax-theme picker with live preview and cancel/restore.
+It changes code highlighting, not the terminal's base colors. The retained Ledger
+uses its existing context colors; it does not impose a separate chatbox theme.
 
 ### Manual memory is explicit
 
@@ -524,8 +525,6 @@ The ledger answers *what is admitted*. `/context` answers *what filled the windo
 usage as a grid broken down by category — user messages, agent responses, tool calls,
 system prompt, Development rules, and free space — alongside the backtrack checkpoints available via
 `Esc Esc`. The two are separate surfaces and neither replaces the other.
-
-![/context showing token usage as a grid, broken down by category, with available backtrack checkpoints](assets/elpis-context-slash.webp)
 
 ### Context Accounting Contract
 

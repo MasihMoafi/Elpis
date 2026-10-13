@@ -9,15 +9,24 @@ const root = new URL("../", import.meta.url);
 test("current public media and evidence links resolve locally", async () => {
   for (const page of ["index.html", "technical.html"]) {
     const html = await read(page);
+    assert.equal([...html.matchAll(/<h1\b/g)].length, 1, `${page}: one page heading`);
     for (const match of html.matchAll(/(?:src|href)="(\.\/[^"#]+)(?:#[^"]*)?"/g)) {
       const path = match[1].split("?")[0];
       assert.ok(existsSync(new URL(path, root)), `${page}: missing ${path}`);
     }
-    assert.match(html, /40838f83/);
-    assert.match(html, /illustrative/i);
-    assert.match(html, /historical/i);
+    assert.match(html, /elpis-context-ledger-20261013\.png/);
+    assert.doesNotMatch(html, /elpis-session-20261013\.png/);
+    assert.match(html, /13 October 2026/);
   }
   const html = await read("index.html");
+  const ledger = html.indexOf('id="context-ledger-snapshot"');
+  assert.ok(ledger > html.indexOf('id="context"') && ledger < html.indexOf('id="pruning"'));
+  assert.match(html, /elpis-ui-20260909\.png/);
+  const article = await read("technical.md");
+  assert.match(article, /docs\/assets\/demo\.gif/);
+  assert.match(article, /docs\/assets\/evidence\.gif/);
+  assert.match(html, /sample data/i);
+  assert.match(html, /historical/i);
   assert.equal([...html.matchAll(/data-dashboard-panel="/g)].length, 4);
   assert.equal([...html.matchAll(/data-dashboard-panel="[^"]+" hidden/g)].length, 3);
 });
@@ -34,10 +43,11 @@ test("public chart provenance matches the frozen source and copied evidence", as
   }
 });
 
-test("technical page was generated from the current README and template", async () => {
+test("technical page was generated from the maintained article, README and template", async () => {
   const digest = createHash("sha256").update(await read("../readme.md"))
+    .update(await read("technical.md"))
     .update(await read("technical-template.html")).digest("hex");
-  assert.ok((await read("technical.html")).startsWith(`<!-- README/template SHA256: ${digest} -->`));
+  assert.ok((await read("technical.html")).startsWith(`<!-- README/article/template SHA256: ${digest} -->`));
 });
 
 async function read(path) {
@@ -71,7 +81,7 @@ test("builds the page from local daisyUI components and semantic theme colors", 
 
 test("keeps context and pruning claims inside the proven boundary", async () => {
   const html = await read("index.html");
-  assert.match(html, /user-maintained memory/i);
+  assert.match(html, /admitted instructions, files and memory/i);
   assert.match(html, /experimental and user-enabled/i);
   assert.doesNotMatch(html, /automatic memory|production.ready|zero runtime overhead|cryptographic checkpoint/i);
 });

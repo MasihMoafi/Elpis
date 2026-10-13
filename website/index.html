@@ -242,6 +242,9 @@
             </ol>
           </footer>
         </div>
+
+        <div class="section-heading mt-16"><div><p class="section-kicker">Context Ledger · October 13</p><h3 class="section-title">Choose what<br /><em>the agent receives.</em></h3></div><p class="section-copy">Inspect admitted instructions, files and memory, and choose what stays in working context. This live capture shows the controls and category breakdown in the light theme.</p></div>
+        <figure class="current-media mx-auto max-w-xl" id="context-ledger-snapshot"><a href="./assets/technical/elpis-context-ledger-20261013.png"><img src="./assets/technical/elpis-context-ledger-20261013.png" alt="Elpis Context Ledger with admitted memory and instructions, context categories, Smart Prune and subagent controls" width="676" height="1012" loading="lazy" /></a><figcaption>13 October 2026 · live Context Ledger. Smart Prune and subagent delegation are on in this session. Smart Prune is experimental and off by default. Category shares and source sizes are estimates; the measured request total is separate. Open the original image at full size.</figcaption></figure>
       </section>
 
       <section class="site-section border-b border-base-300" id="pruning" aria-labelledby="pruning-title">
@@ -265,19 +268,20 @@
         </div>
         <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <article class="card card-border bg-base-200"><div class="card-body"><span class="font-mono text-xs text-base-content/45">01</span><h3 class="card-title">Goal</h3><p class="text-base-content/65">Current objective and status.</p></div></article>
-          <article class="card card-border bg-base-200"><div class="card-body"><span class="font-mono text-xs text-base-content/45">02</span><h3 class="card-title">Context</h3><p class="text-base-content/65">Explicitly admitted project rules and user-maintained memory.</p></div></article>
+          <article class="card card-border bg-base-200"><div class="card-body"><span class="font-mono text-xs text-base-content/45">02</span><h3 class="card-title">Context</h3><p class="text-base-content/65">Explicitly admitted project rules, files and saved memory.</p></div></article>
           <article class="card card-border bg-base-200"><div class="card-body"><span class="font-mono text-xs text-base-content/45">03</span><h3 class="card-title">Control</h3><p class="text-base-content/65">Visible tool and workspace boundaries.</p></div></article>
           <article class="card card-border bg-base-200"><div class="card-body"><span class="font-mono text-xs text-base-content/45">04</span><h3 class="card-title">Evidence</h3><p class="text-base-content/65">Files, commands, checks, and transcript evidence.</p></div></article>
         </div>
+        <p class="evidence-note mt-6">Multiple agents remain visible through their hierarchy and model selections. Experimental work graphs add task dependencies, bounded write scopes and required verification for writable tasks. Work graphs are off by default. <a class="link" href="https://github.com/MasihMoafi/Elpis/blob/main/docs/WORK_GRAPHS.md">Read the work-graph contract</a>.</p>
       </section>
 
       <section class="site-section border-b border-base-300" id="current-interface" aria-labelledby="current-interface-title">
         <div class="section-heading">
-          <div><p class="section-kicker">September 9 · Development preview</p><h2 id="current-interface-title" class="section-title">See the current<br /><em>Elpis interface.</em></h2></div>
-          <p class="section-copy">The native dark interface, amber ledger, startup dissolve, and coalescing responses. UI commit <code>40838f83</code> is newer than the September 5 v0.2.0 release. These captures use illustrative session data.</p>
+          <div><p class="section-kicker">Native interface · September 9 capture</p><h2 id="current-interface-title" class="section-title">See the Elpis<br /><em>interface.</em></h2></div>
+          <p class="section-copy">The original native interface capture remains here, with illustrative session data. The updated Context Ledger has its own live capture in the context section above.</p>
         </div>
         <figure class="current-media"><img src="./assets/technical/elpis-ui-20260909.png" alt="Current Elpis native interface with contrasting amber ledger rows and Quiet Rail composer" loading="lazy" /><figcaption>Native Rust widget capture · September 9, 2026. This is separate from the concept illustration above.</figcaption></figure>
-        <div class="section-heading dashboard-heading"><div><p class="section-kicker">Local observability</p><h3 class="section-title">Four views.<br /><em>One session.</em></h3></div><p class="section-copy">Current dashboard assets with the checked-in illustrative fixture. These counters are demonstration data, not research results. Preview settings are disabled; an authorized live dashboard can edit pruner settings.</p></div>
+        <div class="section-heading dashboard-heading"><div><p class="section-kicker">Local observability</p><h3 class="section-title">Your session.<br /><em>In view.</em></h3></div><p class="section-copy">The dashboard brings models, agents, activity, context, token usage, experimental Smart Prune and provider settings together. These four views preview the October 13 visual refresh with sample data and disabled settings. They are separate from the live terminal capture and research results.</p></div>
         <div class="dashboard-showcase">
           <div class="dashboard-switcher" role="group" aria-label="Dashboard view">
             <button type="button" aria-pressed="true" aria-controls="dashboard-activity" data-dashboard-view="activity">Activity</button>
@@ -285,17 +289,17 @@
             <button type="button" aria-pressed="false" aria-controls="dashboard-tokens" data-dashboard-view="tokens">Tokens</button>
             <button type="button" aria-pressed="false" aria-controls="dashboard-prune" data-dashboard-view="prune">Smart Prune</button>
           </div>
-          <figure id="dashboard-activity" data-dashboard-panel="activity"><a href="./assets/technical/dashboard-activity-20260909.png"><img src="./assets/technical/dashboard-activity-20260909.png" alt="Dashboard Activity: current turn and history" loading="lazy" /></a><figcaption>Activity · turn progress and history</figcaption></figure>
-          <figure id="dashboard-context" data-dashboard-panel="context" hidden><a href="./assets/technical/dashboard-context-20260909.png"><img src="./assets/technical/dashboard-context-20260909.png" alt="Dashboard Context: window composition and admitted sources" loading="lazy" /></a><figcaption>Context · composition and admitted sources</figcaption></figure>
-          <figure id="dashboard-tokens" data-dashboard-panel="tokens" hidden><a href="./assets/technical/dashboard-tokens-20260909.png"><img src="./assets/technical/dashboard-tokens-20260909.png" alt="Dashboard Tokens: recorded usage breakdown" loading="lazy" /></a><figcaption>Tokens · recorded usage breakdown</figcaption></figure>
-          <figure id="dashboard-prune" data-dashboard-panel="prune" hidden><a href="./assets/technical/dashboard-smart-prune-20260909.png"><img src="./assets/technical/dashboard-smart-prune-20260909.png" alt="Dashboard Smart Prune: settings, admission accounting, and incomplete usage evidence" loading="lazy" /></a><figcaption>Smart Prune · settings, accounting, and failure evidence</figcaption></figure>
+          <figure id="dashboard-activity" data-dashboard-panel="activity"><a href="./assets/technical/dashboard-activity-20261013.png"><img src="./assets/technical/dashboard-activity-20261013.png" alt="Dashboard preview: current turn and recent completed and failed answers" loading="lazy" /></a><figcaption>Activity · turn progress and history · sample data</figcaption></figure>
+          <figure id="dashboard-context" data-dashboard-panel="context" hidden><a href="./assets/technical/dashboard-context-20261013.png"><img src="./assets/technical/dashboard-context-20261013.png" alt="Dashboard preview: context capacity, category breakdown and admitted sources" loading="lazy" /></a><figcaption>Context · composition and admitted sources · sample data</figcaption></figure>
+          <figure id="dashboard-tokens" data-dashboard-panel="tokens" hidden><a href="./assets/technical/dashboard-tokens-20261013.png"><img src="./assets/technical/dashboard-tokens-20261013.png" alt="Dashboard preview: recorded token usage with unavailable costs explicitly labelled" loading="lazy" /></a><figcaption>Tokens · recorded usage breakdown · sample data</figcaption></figure>
+          <figure id="dashboard-prune" data-dashboard-panel="prune" hidden><a href="./assets/technical/dashboard-smart-prune-20261013.png"><img src="./assets/technical/dashboard-smart-prune-20261013.png" alt="Dashboard preview: experimental Smart Prune settings, accounting and failure evidence" loading="lazy" /></a><figcaption>Smart Prune · settings, accounting, and failure evidence · sample data</figcaption></figure>
         </div>
       </section>
 
       <section class="site-section border-b border-base-300" id="current-evidence" aria-labelledby="current-evidence-title">
         <div class="section-heading"><div><p class="section-kicker">Research in progress</p><h2 id="current-evidence-title" class="section-title">Still being<br /><em>evaluated.</em></h2></div><p class="section-copy">Smart Prune is experimental. Early synthetic studies explore its costs and tradeoffs; they do not establish reliable savings or improved coding quality in real projects.</p></div>
         <p class="evidence-note">The research notes include measured results, failed probes, limitations, and the distinction between reported tests and independently repeated checks.</p>
-        <a class="btn btn-soft" href="./technical.html#evaluation-status">Read the research notes</a>
+        <a class="btn btn-soft" href="https://github.com/MasihMoafi/Elpis/tree/main/docs/evals">Read the research notes</a>
       </section>
 
       <section class="site-section grid gap-12 lg:grid-cols-[.8fr_1.2fr] lg:items-center" id="install" aria-labelledby="install-title">
@@ -306,10 +310,10 @@
           <a class="btn btn-ghost mt-5" href="https://github.com/MasihMoafi/Elpis">Read installation and source <span aria-hidden="true">↗</span></a>
         </div>
         <div class="mockup-code install-terminal relative bg-neutral text-neutral-content">
-          <pre data-prefix="$"><code data-command>curl -fsSL https://raw.githubusercontent.com/MasihMoafi/Elpis/main/scripts/install-elpis.sh | bash &amp;&amp; ~/.local/bin/elpis</code></pre>
+          <pre data-prefix="$"><code data-command>curl -fsSL https://raw.githubusercontent.com/MasihMoafi/Elpis/v0.4.1/scripts/install-elpis.sh | bash &amp;&amp; ~/.local/bin/elpis</code></pre>
           <button type="button" class="btn btn-sm absolute top-4 right-4" data-copy-button aria-describedby="copy-status">Copy</button>
           <span class="sr-only" id="copy-status" data-copy-status role="status" aria-live="polite"></span>
-          <pre data-prefix=""><code class="text-neutral-content/45">Current candidate · early access · review before running</code></pre>
+          <pre data-prefix=""><code class="text-neutral-content/70">Published v0.4.1 · Linux x86_64 · review before running</code></pre>
         </div>
       </section>
     </main>

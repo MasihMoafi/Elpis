@@ -4,6 +4,10 @@ Elpis is a Linux coding-agent environment built on OpenAI's Codex CLI. It keeps 
 
 **Change the runtime. Keep the thread.**
 
+See what your agent is working with. Elpis makes its admitted instructions, files and
+memory inspectable, lets you control that context, and keeps a working checkpoint
+across sessions. Its local dashboard shows activity, context and recorded usage.
+
 [Releases](https://github.com/MasihMoafi/Elpis/releases) · [Website](https://elpis.masihmoafi.com) · [Technical guide](docs/GUIDE.md) · [License](LICENSE)
 
 ## Install
@@ -27,6 +31,8 @@ v0.3.0's state database is incompatible with the new foundation. Elpis refuses t
 
 ## Included
 
+The October 10 candidate restores the inherited Codex `/review` and `/worktree` menus and `--worktree` launch option through the local provider launcher. It refreshes admitted bridge context each turn and isolates generated goal/checkpoint files by thread. The installed candidate passed its hosted and local checks; see the [contract](docs/specs/continuity-workflows.md) and [verification with rollback](docs/continuity-verification.md).
+
 - Context Ledger controls admission of workspace instructions, chosen files and memory; `/add` and `/context` expose the working set.
 - The responding agent explicitly saves durable knowledge and the workspace checkpoint through a guarded local tool. Saving and admission are separate choices.
 - `/compact` accepts a pressure threshold or custom instructions. Experimental Smart Prune and reasoning expiry limit disposable context.
@@ -34,7 +40,21 @@ v0.3.0's state database is incompatible with the new foundation. Elpis refuses t
 - `/dashboard` and `/usage` expose local session information. Subscription price remains unavailable.
 - Elpis identity, composer queuing, chosen skills and permission controls surround the selected model.
 
+Multi-agent work is inspectable too: the agents view shows the hierarchy and each
+agent's model. Experimental work graphs add task dependencies, bounded write scopes
+and verification requirements; they are off by default. See the
+[work-graph contract](docs/WORK_GRAPHS.md).
+
 No model weights, retrieval engine or speech engine are bundled. External capabilities come through tools or explicitly registered integrations.
+
+## Context Ledger
+
+[<img src="docs/assets/elpis-context-ledger-20261013.png" alt="Elpis Context Ledger showing admitted memory and instructions, context categories, Smart Prune and subagent controls" width="676" height="1012">](docs/assets/elpis-context-ledger-20261013.png)
+
+Context Ledger · 13 October 2026 · light theme. Smart Prune and subagent
+delegation are enabled in this session. Smart Prune is experimental and off by
+default. Category shares and source sizes are estimates; the measured request
+total is separate. Open the original image to inspect it at full size.
 
 ## Verification and limits
 
@@ -44,6 +64,6 @@ The whole inherited Codex suite is not claimed green: appearance/snapshot differ
 
 ## Development
 
-Read [AGENTS.md](AGENTS.md), [the guide](docs/GUIDE.md), [shipping rules](docs/SHIPPING_RULES.md) and [local build rules](docs/LOCAL_BUILD_RULES.md) before changing or building Elpis. The upstream Rust workspace version stays at `0.160.0`; the Elpis product version lives in the CLI manifest and TUI branding constant.
+Read [the guide](docs/GUIDE.md), [shipping rules](docs/SHIPPING_RULES.md) and [local build rules](docs/LOCAL_BUILD_RULES.md) before changing or building Elpis. The upstream Rust workspace version stays at `0.160.0`; the Elpis product version lives in the CLI manifest and TUI branding constant.
 
 Upstream Codex is Apache-2.0. Elpis retains its attribution and notices. See [LICENSE](LICENSE).
