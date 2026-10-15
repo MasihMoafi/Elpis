@@ -82,6 +82,7 @@ pub(crate) fn request(conversation: &Conversation) -> Result<Value, GatewayError
         "max_tokens": ANTHROPIC_MAX_TOKENS,
         "stream": true,
         "messages": messages,
+        "cache_control": {"type": "ephemeral"},
     });
     if !system.is_empty() {
         body["system"] = Value::Array(system);
