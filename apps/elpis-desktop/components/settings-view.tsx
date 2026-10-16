@@ -32,7 +32,7 @@ const TABS = [
   { id: "shortcuts", label: "Keyboard shortcuts", group: "Personal", Icon: KeyboardIcon, words: "keys hotkeys" },
   { id: "voice", label: "Voice", group: "Personal", Icon: MicIcon, words: "dictation transcription microphone whisper" },
   { id: "personalization", label: "Personalization", group: "Personal", Icon: PersonIcon, words: "instructions memories memory" },
-  { id: "usage", label: "Usage & limits", group: "Personal", Icon: ContextIcon, words: "limits plan quota context window" },
+  { id: "usage", label: "Usage & limits", group: "Personal", Icon: ContextIcon, words: "limits plan quota" },
   { id: "archived", label: "Archived chats", group: "Personal", Icon: ArchiveIcon, words: "archive restore delete" },
   { id: "providers", label: "Models & accounts", group: "Integrations", Icon: AgentsIcon, words: "providers api key sign in chatgpt anthropic openrouter gemini" },
   { id: "mcp", label: "MCP servers", group: "Integrations", Icon: ToolIcon, words: "tools servers rag" },
@@ -45,30 +45,29 @@ const GROUPS = ["Personal", "Integrations", "Coding"] as const;
 export type Tab = (typeof TABS)[number]["id"];
 // Pages that edit the shared Elpis config snapshot refresh it when opened, so their saves use the current version.
 const CONFIG_PAGES: Tab[] = ["general", "personalization", "git", "worktrees", "configuration"];
-// "elpis" was the former page with the selected chat's context, now under Usage & limits.
-const resolve = (tab: Tab | "elpis"): Tab => tab === "elpis" ? "usage" : tab;
 
 /** Settings sections side by side, as in ChatGPT: one nav, one page at a time. Visited pages stay mounted to keep unsaved edits. */
 type Props = {
-  initialTab?: Tab | "elpis";
-  navigationKey?: number; active?: boolean;
-  threadId?: string; accountRefresh: number; onProvidersChanged?: () => Promise<void> | void;
+  initialTab?: Tab;
+  navigationKey?: number;
+  /** Unused since Usage & limits no longer shows the selected chat; app/page.tsx still passes them. */
+  active?: boolean; threadId?: string;
+  accountRefresh: number; onProvidersChanged?: () => Promise<void> | void;
   theme: ThemeChoice; onTheme: (theme: ThemeChoice) => void;
   onUnarchived: (thread: Thread) => void; onDeleteThread: (thread: Thread) => Promise<void>; onBack?: () => void;
 };
 
-export function SettingsView({ initialTab = "providers", navigationKey = 0, active = true, threadId, accountRefresh, onProvidersChanged, theme, onTheme, onUnarchived, onDeleteThread, onBack }: Props) {
+export function SettingsView({ initialTab = "providers", navigationKey = 0, accountRefresh, onProvidersChanged, theme, onTheme, onUnarchived, onDeleteThread, onBack }: Props) {
   const [query, setQuery] = useState("");
   const terms = query.toLowerCase().trim().split(/\s+/).filter(Boolean);
   const shown = TABS.filter(item => terms.every(term => `${item.label} ${item.words}`.toLowerCase().includes(term)));
-  const first = resolve(initialTab);
-  const [tab, setTab] = useState<Tab>(first);
-  const [visited, setVisited] = useState<Tab[]>([first]);
+  const [tab, setTab] = useState<Tab>(initialTab);
+  const [visited, setVisited] = useState<Tab[]>([initialTab]);
   const selectTab = (next: Tab) => {
     setVisited(previous => previous.includes(next) ? previous : [...previous, next]); setTab(next);
     if (settingsLoaded() && CONFIG_PAGES.includes(next)) reloadSettings().catch(() => {});
   };
-  useEffect(() => { selectTab(resolve(initialTab)); }, [initialTab, navigationKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { selectTab(initialTab); }, [initialTab, navigationKey]); // eslint-disable-line react-hooks/exhaustive-deps
   const page = (section: Tab) => {
     switch (section) {
       case "general": return <GeneralSettings />;
@@ -79,7 +78,7 @@ export function SettingsView({ initialTab = "providers", navigationKey = 0, acti
       case "personalization": return <PersonalizationSettings />;
       case "providers": return <><SettingsHeader title="Models & accounts" /><ProvidersSettings refreshKey={accountRefresh} onChanged={onProvidersChanged} /></>;
       case "mcp": return <><SettingsHeader title="MCP servers" /><McpSettings onOpenVoice={() => selectTab("voice")} /></>;
-      case "usage": return <UsageSettings refreshKey={accountRefresh} threadId={threadId} active={active && tab === "usage"} />;
+      case "usage": return <UsageSettings refreshKey={accountRefresh} />;
       case "git": return <GitSettings />;
       case "worktrees": return <WorktreeSettings />;
       case "hooks": return <HooksSettings />;

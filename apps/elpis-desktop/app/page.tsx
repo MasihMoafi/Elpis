@@ -1,8 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { AgentsIcon, ArchiveIcon, BranchIcon, FolderIcon, NewChatIcon, PinIcon, PlusIcon, SearchIcon, SendIcon, SettingsIcon, SplitIcon, WorkflowsIcon } from "@/components/elpis-icons";
-import { Archive, ChevronRight, PanelRight, Pin, Menu, Moon, RefreshCw, Search, Square, Sun, X } from "lucide-react";
+import { AgentsIcon, ArchiveIcon, FolderIcon, NewChatIcon, PinIcon, PlusIcon, SearchIcon, SendIcon, SettingsIcon, SplitIcon } from "@/components/elpis-icons";
+import { Archive, ChevronRight, PanelLeft, PanelRight, Pin, Moon, RefreshCw, Search, Square, Sun, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { OptionSelect } from "@/components/ui/option-select";
 import { Input } from "@/components/ui/input";
@@ -25,11 +25,11 @@ import { replacementEligibility } from "@/lib/turn-replacement";
 import { AgentsView } from "@/components/agents-view";
 import { NewAgentForm } from "@/components/new-agent-form";
 import { SettingsView, type Tab as SettingsTab } from "@/components/settings-view";
-import { ThreadActions } from "@/components/thread-actions";
-import { WorkflowEditor } from "@/components/workflow-editor";
+import { DeleteChatsDialog, ThreadActions } from "@/components/thread-actions";
+import { SlashMenu, useSlashMenu, type SlashCommand } from "@/components/slash-menu";
 import { UsagePanel } from "@/components/provider-usage";
 import { Dictation } from "@/components/dictation";
-import { ProjectActions, ProjectDialog, ProjectMenu } from "@/components/project-picker";
+import { chooseProject, ProjectActions, ProjectDialog, ProjectMenu } from "@/components/project-picker";
 import { ModelPicker } from "@/components/model-picker";
 import { appStorage, readProjects, saveProjects, type Project } from "@/lib/projects";
 import { agentState, mergeListedThreads } from "@/lib/agents";
@@ -85,7 +85,7 @@ function ApprovalCard({ approval, answer, answers, onAnswerChange, busy }: { app
   </section>;
 }
 
-type View = "chat" | "agents" | "newAgent" | "workflows" | "settings";
+type View = "chat" | "agents" | "newAgent" | "settings";
 type NextTurn = { model?: string; effort?: string; permissions?: PermissionMode; plan?: boolean };
 type Live = { thread: Thread; activeTurnId?: string | null; permissions?: PermissionMode | null; planMode?: boolean };
 /** The terminal's answer to a finished plan: Plan mode off, then this message. */
@@ -133,7 +133,12 @@ export default function Home() {
   const [newPlan, setNewPlan] = useState(false);
   const [planAnswered, setPlanAnswered] = useState<Record<string, string>>({});
   const [pins, setPins] = useState<string[]>([]);
-  const [deleteRequest, setDeleteRequest] = useState<string | null>(null);
+  /** Chats awaiting the shared delete confirmation (a row's menu, D, or the header's Chat actions). */
+  const [deleteTargets, setDeleteTargets] = useState<Thread[] | null>(null);
+  /** Chats marked with Ctrl+click or Shift+click in the sidebar; `markAnchor` is where a Shift range starts. */
+  const [marked, setMarked] = useState<string[]>([]);
+  const markAnchor = useRef<string | null>(null);
+  const threadList = useRef<HTMLDivElement>(null);
   const [collapsedProjects, setCollapsedProjects] = useState<Record<string, boolean>>({});
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -236,7 +241,6 @@ export default function Home() {
   const [loadingChildren, setLoadingChildren] = useState<Record<string, boolean>>({});
   const rootPaging = useRef(false), loadedRootPages = useRef(false);
   const childPaging = useRef(new Set<string>()), loadedChildPages = useRef(new Set<string>());
-  const [workflowVisited, setWorkflowVisited] = useState(false);
   const [settingsVisited, setSettingsVisited] = useState(false);
   const [newAgentVisited, setNewAgentVisited] = useState(false);
   const [newAgentVersion, setNewAgentVersion] = useState(0);
@@ -307,6 +311,7 @@ export default function Home() {
       setMessageEdits(previous => Object.fromEntries(Object.entries(previous).filter(([key]) => !ids.has((JSON.parse(key) as [string, string, string])[0]))));
     }
     setThreads(prev => prev.filter(thread => !ids.has(thread.id)));
+    setMarked(prev => prev.some(id => ids.has(id)) ? prev.filter(id => !ids.has(id)) : prev);
     setApprovals(prev => prev.filter(approval => !ids.has(approval.params.threadId ?? "")));
     if (selectedRef.current && ids.has(selectedRef.current.id)) { request.current++; select(null); setText(savedDraft(newDraftKey.current)); restoreAttachments(newDraftKey.current); setEntries([]); setItemCursor(null); }
   }, [select, setText, savedDraft, restoreAttachments]);
@@ -367,7 +372,7 @@ export default function Home() {
 
   useEffect(() => { setText(savedDraft(newDraftKey.current)); }, [savedDraft]);
 
-  useEffect(() => { document.documentElement.classList.toggle("dark", dark); }, [dark]);
+  useEffect(() => { document.documentElement.classList.toggle("dark", dark); window.elpisDesktop?.setTheme?.(dark); }, [dark]);
   useEffect(() => {
     let saved: string | null = null;
     try { saved = appStorage().getItem("elpis-theme"); const stored = readProjects(); newDraftKey.current = stored.selectedId ? `new-${stored.selectedId}` : "new"; setText(savedDraft(newDraftKey.current)); restoreAttachments(newDraftKey.current); setProjects(stored.projects); setProjectId(stored.selectedId); setCwd(stored.projects.find(item => item.id === stored.selectedId)?.cwd ?? ""); }
@@ -605,13 +610,22 @@ export default function Home() {
     if (known) { await saveProjects(updated, projectId); setProjects(updated); if (projectId === next.id) setCwd(next.cwd); return; }
     await saveProjects(updated, next.id); setProjects(updated); setProjectId(next.id); setCwd(next.cwd); openNewChat(`new-${next.id}`);
   }
+  /** "Add new project" in the sidebar and the project menu: one click opens the native folder chooser, as in the ChatGPT app.
+   * A browser has no chooser, so it asks for the path instead. */
+  async function addProject() {
+    try {
+      const chosen = await chooseProject(projects);
+      if (chosen === undefined) setProjectEdit(null);
+      else if (chosen) await (projects.some(item => item.id === chosen.id) ? selectProject(chosen) : saveProject(chosen));
+    } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+  }
   /** Forgets the project; its folder and chats stay as they are. */
   async function removeProject(item: Project) {
     const updated = projects.filter(other => other.id !== item.id), current = projectId === item.id ? null : projectId;
     try { await saveProjects(updated, current); setProjects(updated); if (!current) { setProjectId(null); setCwd(""); } }
     catch (e) { setError(e instanceof Error ? e.message : String(e)); }
   }
-  const show = (next: View) => { if (next === "workflows") setWorkflowVisited(true); if (next === "settings") { setSettingsVisited(true); setSettingsNavigation(value => value + 1); } if (next === "newAgent") setNewAgentVisited(true); setView(next); setSidebar(false); };
+  const show = (next: View) => { if (next === "settings") { setSettingsVisited(true); setSettingsNavigation(value => value + 1); } if (next === "newAgent") setNewAgentVisited(true); setView(next); setSidebar(false); };
   const manageConnections = () => { setSettingsSection("providers"); show("settings"); };
   /** ChatGPT's "Fork chat from here": a new chat with the history through that turn, opened at once. */
   async function forkFrom(thread: Thread, lastTurnId: string) {
@@ -755,26 +769,29 @@ export default function Home() {
     if (selectedRef.current?.id === thread.id) { stickToBottom.current = true; setEntries(prev => prev.filter(entry => !stale.has(entry.turnId))); }
     if (!completedTurns.current.has(startedTurn.id)) setActiveTurns(prev => ({ ...prev, [thread.id]: startedTurn.id }));
   }
-  async function createWorkflowTarget(options: { cwd?: string; model?: string; provider?: string }) {
-    const requestId = request.current; saveDraft(selectedRef.current?.id || newDraftKey.current, textRef.current);
-    const result = await api<{ thread: Thread }>("/threads", options);
-    setThreads(previous => [result.thread, ...previous.filter(thread => thread.id !== result.thread.id)]);
-    if (request.current === requestId) { ++request.current; stickToBottom.current = true; restoreScroll.current = null; select(result.thread); setEntries([]); setItemCursor(null); setText(savedDraft(result.thread.id)); setLoading(false); setError(""); restoreAttachments(result.thread.id); }
-    return result.thread;
-  }
-  async function resumeWorkflowTarget() {
-    const thread = selectedRef.current; if (!thread || isAgent(thread)) throw new Error("Select a root conversation.");
-    const result = await api<Live>(`/threads/${encodeURIComponent(thread.id)}/resume`, {});
-    upsertThread(result.thread); if (selectedRef.current?.id === thread.id) select(result.thread);
-    if (result.activeTurnId && !completedTurns.current.has(result.activeTurnId)) setActiveTurns(previous => ({ ...previous, [thread.id]: result.activeTurnId! }));
-  }
-  function workflowStarted(ack: { threadId: string; turnId: string }) {
-    if (!completedTurns.current.has(ack.turnId)) setActiveTurns(previous => ({ ...previous, [ack.threadId]: ack.turnId }));
-    void refreshThreads();
-  }
   async function answer(id: string, body: unknown, key: string) { await submitDraft(key, () => api(`/approvals/${encodeURIComponent(id)}`, body)); setApprovals(prev => prev.filter(a => a.id !== id)); clearApprovalDraft(id); }
   async function older() { if (!selected || !itemCursor) return; setLoading(true); const id = selected.id; try { const result = await api<{ data: Entry[]; nextCursor: string | null }>(`/threads/${encodeURIComponent(id)}?limit=100&cursor=${encodeURIComponent(itemCursor)}`); if (selectedRef.current?.id === id) { stickToBottom.current = false; if (scroll.current) restoreScroll.current = { height: scroll.current.scrollHeight, top: scroll.current.scrollTop }; setEntries(prev => [...result.data.reverse(), ...prev]); setItemCursor(result.nextCursor); } } catch (e) { setError(String(e)); } finally { setLoading(false); } }
   const openById = (id: string) => loadThread(threads.find(thread => thread.id === id) || related[id] || { id });
+  /** The terminal's slash commands this app performs (codex-rs/tui/src/slash_command.rs), in its popup order. */
+  const openSettings = (tab: SettingsTab) => { setSettingsSection(tab); show("settings"); };
+  const openControl = (label: string) => requestAnimationFrame(() => composerRef.current?.form?.querySelector<HTMLElement>(`[aria-label="${label}"]`)?.click());
+  const lastTurn = entries.at(-1)?.turnId;
+  const slashCommands: SlashCommand[] = [
+    { name: "model", description: "Choose the model", available: !busy, run: () => openControl("Model") },
+    { name: "permissions", description: "Choose what Elpis is allowed to do", available: !busy, run: () => openControl("Change permissions") },
+    { name: "settings", description: "Open Settings", run: () => openSettings("general") },
+    { name: "memories", description: "Configure memory use and generation", run: () => openSettings("personalization") },
+    { name: "hooks", description: "View and manage lifecycle hooks", run: () => openSettings("hooks") },
+    { name: "rename", description: "Rename this chat", available: !!selected, run: () => setRenameRequest(true) },
+    { name: "new", description: "Start a new chat", run: newChat },
+    { name: "archive", description: "Archive this chat", available: !!selected, run: () => { if (selected) void archiveThread(selected); } },
+    { name: "fork", description: "Fork this chat into a new one", available: !!selected && !!lastTurn && !activeTurn, run: () => { if (selected && lastTurn) void forkFrom(selected, lastTurn); } },
+    { name: "plan", description: planMode ? "Turn Plan mode off" : "Turn Plan mode on", available: !busy, run: () => setPlan(!planMode) },
+    { name: "agents", description: "Open Agents", run: () => show("agents") },
+    { name: "usage", description: "Show usage and limits", run: () => openSettings("usage") },
+    { name: "mcp", description: "Manage MCP servers", run: () => openSettings("mcp") },
+  ];
+  const slash = useSlashMenu(text, slashCommands, () => editDraft(""));
 
   const searchedThreads = searchTerm && searchResults.query === searchTerm ? mergeListedThreads(threads, searchResults.data, hidden.current) : threads;
   const matchedOnServer = new Set(searchTerm && searchResults.query === searchTerm ? searchResults.data.map(thread => thread.id) : []);
@@ -786,7 +803,7 @@ export default function Home() {
     const at = selected ? ordered.findIndex(t => t.id === selected.id) : -1;
     if (id === "new-chat") newChat();
     else if (id === "search") { setSidebar(true); setSidebarCollapsed(false); requestAnimationFrame(() => { searchInput.current?.focus(); searchInput.current?.select(); }); }
-    else if (id === "sidebar") setSidebarCollapsed(value => !value);
+    else if (id === "sidebar") showSidebar(narrow() ? !sidebar : sidebarCollapsed);
     else if (id === "settings") { setSettingsSection("general"); show("settings"); }
     else if (id === "shortcuts") setShortcutsOpen(true);
     else if (id === "previous-chat" && ordered.length) void loadThread(ordered[at <= 0 ? 0 : at - 1]);
@@ -802,47 +819,76 @@ export default function Home() {
     const next = pins.includes(thread.id) ? pins.filter(id => id !== thread.id) : [thread.id, ...pins];
     setPins(next); savePins(next);
   }
-  /** Claude's shortcut: D on a focused chat row asks to delete it. */
-  function rowKeys(thread: Thread) {
-    return (event: React.KeyboardEvent) => {
-      if ((event.key === "d" || event.key === "D") && !event.ctrlKey && !event.metaKey && !event.altKey && !(event.target instanceof HTMLInputElement) && !(event.target instanceof HTMLTextAreaElement)) { event.preventDefault(); setDeleteRequest(thread.id); }
-    };
+  /** A narrow window slides the sidebar over the page; a wide one collapses it (the sidebar button and Ctrl+B), as in ChatGPT and Claude. */
+  function narrow() { return matchMedia("(max-width: 760px)").matches; }
+  function showSidebar(open: boolean) { if (!narrow()) { setSidebarCollapsed(!open); return; } setSidebar(open); if (open) setSidebarCollapsed(false); }
+  /** The sidebar's chat buttons in screen order (a project's chats also appear under Recents). */
+  const rowLinks = () => [...threadList.current?.querySelectorAll<HTMLButtonElement>(".thread-row > .thread-link") ?? []];
+  const rowOf = (element: Element | null) => element?.closest<HTMLElement>(".thread-row")?.dataset.threadId ?? null;
+  /** Opens the shared delete confirmation for these chats. */
+  function deleteChats(ids: string[]) {
+    const targets = ids.map(id => searchedThreads.find(thread => thread.id === id) ?? find(id)).filter((thread): thread is Thread => !!thread);
+    if (targets.length) setDeleteTargets(targets);
+  }
+  /** A click opens the chat; Ctrl+click marks or unmarks it; Shift+click marks the range from the last click, as in a file manager. */
+  function clickRow(thread: Thread, event: React.MouseEvent<HTMLButtonElement>) {
+    const ids = [...new Set(rowLinks().map(rowOf).filter((id): id is string => !!id))];
+    if (event.ctrlKey || event.metaKey) {
+      const base = marked.length ? marked : selected && ids.includes(selected.id) ? [selected.id] : [];
+      setMarked(base.includes(thread.id) ? base.filter(id => id !== thread.id) : [...base, thread.id]); markAnchor.current = thread.id;
+    } else if (event.shiftKey) {
+      const to = ids.indexOf(thread.id), at = ids.indexOf(markAnchor.current ?? selected?.id ?? thread.id), from = at < 0 ? to : at;
+      setMarked(ids.slice(Math.min(from, to), Math.max(from, to) + 1)); event.currentTarget.focus();
+    } else { setMarked([]); markAnchor.current = thread.id; void loadThread(thread); }
+  }
+  /** Keys on a focused chat row: D deletes the marked chats, else this one (Claude's shortcut); ↑/↓ open the chat above or below; Escape clears the marks. */
+  function listKeys(event: React.KeyboardEvent<HTMLDivElement>) {
+    const target = event.target as HTMLElement, id = rowOf(target);
+    if (!id || !event.currentTarget.contains(target) || event.ctrlKey || event.metaKey || event.altKey) return;
+    if (event.key === "Escape" && marked.length) setMarked([]);
+    else if (event.key.toLowerCase() === "d") deleteChats(marked.length ? marked : [id]);
+    else if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      const links = rowLinks(), next = links[links.findIndex(link => link.parentElement === target.closest(".thread-row")) + (event.key === "ArrowDown" ? 1 : -1)];
+      if (!next) return;
+      next.focus(); next.click();
+    } else return;
+    event.preventDefault();
   }
   function threadRow(thread: Thread, depth = 0) {
     const name = title(thread), state = agentState(thread, waitingIds), pinned = pins.includes(thread.id);
     const stateTitle = state === "waiting" ? "Needs input" : "Working";
-    return <div key={thread.id} className={`thread-row${depth ? " child" : ""}${selected?.id === thread.id && view === "chat" ? " active" : ""}`} data-thread-id={thread.id} style={depth ? { paddingLeft: `${Math.min(depth, 5) * 14}px` } : undefined} onKeyDown={rowKeys(thread)}>
-      <button className="thread-link" onClick={() => loadThread(thread)} title={name}>
+    return <div key={thread.id} className={`thread-row${depth ? " child" : ""}${selected?.id === thread.id && view === "chat" ? " active" : ""}${marked.includes(thread.id) ? " selected" : ""}`} data-thread-id={thread.id} style={depth ? { paddingLeft: `${Math.min(depth, 5) * 14}px` } : undefined}>
+      <button className="thread-link" onMouseDown={event => { if (event.shiftKey) event.preventDefault(); }} onClick={event => clickRow(thread, event)} title={name}>
         <span className="thread-title">{name}</span>
         {thread.forkedFromId && <span className="thread-nickname">Continued agent chat</span>}
       </button>
       {(state === "working" || state === "waiting") && <span className={`thread-working${state === "waiting" ? " waiting" : ""}`} title={stateTitle} aria-label={stateTitle} />}
-      {!depth && !isAgent(thread) && <Button variant="ghost" size="icon-xs" aria-label={`Show agents of ${name}`} aria-expanded={!!expanded[thread.id]} onClick={() => expanded[thread.id] ? setExpanded(prev => ({ ...prev, [thread.id]: false })) : loadChildren(thread.id)}><BranchIcon size={13} /></Button>}
       {!depth && <span className="row-hover-actions"><Button variant="ghost" size="icon-xs" aria-label={pinned ? `Unpin ${name}` : `Pin ${name}`} title={pinned ? "Unpin" : "Pin"} onClick={() => togglePin(thread)}><PinIcon size={13} className={pinned ? "fill-current" : undefined} /></Button><Button variant="ghost" size="icon-xs" aria-label={`Archive ${name}`} title="Archive" onClick={() => void archiveThread(thread)}><ArchiveIcon size={13} /></Button></span>}
-      <ThreadActions thread={thread} onDelete={deleteThread} onRename={renameThread} onArchive={archiveThread} pinned={pinned} onPin={togglePin} deleteRequested={deleteRequest === thread.id} onDeleteRequestHandled={() => setDeleteRequest(null)} />
+      <ThreadActions thread={thread} onRequestDelete={() => deleteChats(marked.includes(thread.id) ? marked : [thread.id])} onRename={renameThread} onArchive={archiveThread} pinned={pinned} onPin={togglePin}
+        agents={!depth && !isAgent(thread) ? { shown: !!expanded[thread.id], onToggle: () => expanded[thread.id] ? setExpanded(prev => ({ ...prev, [thread.id]: false })) : void loadChildren(thread.id) } : undefined} />
     </div>;
   }
   function descendants(parentId: string, depth: number, seen = new Set<string>()): React.ReactNode {
     if (seen.has(parentId)) return null; const next = new Set(seen).add(parentId);
     return filtered.filter(c => c.parentThreadId === parentId).map(child => <div key={child.id}>{threadRow(child, depth)}{descendants(child.id, depth + 1, next)}</div>);
   }
-  const heading = view === "chat" ? (selected ? title(selected) : "") : { agents: "Agents", newAgent: "New agent", workflows: "Workflows", settings: "Settings" }[view];
+  const heading = view === "chat" ? (selected ? title(selected) : "") : { agents: "Agents", newAgent: "New agent", settings: "Settings" }[view];
   const meta = selected ? [selected.agentNickname, selected.agentRole && selected.agentRole !== "default" ? selected.agentRole : null].filter(Boolean).join(" · ") : "";
 
-  return <div className={`app-shell${dark ? " dark" : ""}${sidebarCollapsed ? " sidebar-collapsed" : ""}${view === "settings" ? " settings-mode" : ""}`}>
+  return <div className={`app-shell${dark ? " dark" : ""}${desktop ? " has-title-bar" : ""}${sidebarCollapsed ? " sidebar-collapsed" : ""}${view === "settings" ? " settings-mode" : ""}`}>
+    {desktop && <div className="title-bar"><Button variant="ghost" size="icon" aria-label={sidebarCollapsed ? "Open sidebar" : "Close sidebar"} title={`${sidebarCollapsed ? "Open" : "Close"} sidebar (Ctrl+B)`} onClick={() => showSidebar(narrow() ? !sidebar : sidebarCollapsed)}><PanelLeft /></Button></div>}
     <ShortcutsDialog open={shortcutsOpen} onOpenChange={setShortcutsOpen} />
     {desktop && <StartupSplash done={ready && connected} steps={[{ label: "Elpis engine connected", ok: connected }, { label: "models loaded", ok: models.length > 0 }, { label: "conversations loaded", ok: ready }]} />}
     <ProjectDialog projects={projects} editing={projectEdit} onClose={() => setProjectEdit(undefined)} onSave={saveProject} />
+    <DeleteChatsDialog threads={deleteTargets} onDelete={deleteThread} onClose={() => setDeleteTargets(null)} />
     <aside className={`sidebar${sidebar ? " open" : ""}`} aria-label="Workspace navigation">
-      <div className="brand"><img src={brandMark} alt="Elpis" width={28} height={28} /><span>Elpis</span><Button className="ml-auto mobile-menu" variant="ghost" size="icon-sm" aria-label="Close sidebar" onClick={() => setSidebar(false)}><X size={16} /></Button></div>
+      <div className="brand"><Button className="sidebar-toggle" variant="ghost" size="icon-sm" aria-label="Close sidebar" title="Close sidebar (Ctrl+B)" onClick={() => showSidebar(false)}><PanelLeft size={16} /></Button><img src={brandMark} alt="Elpis" width={28} height={28} /><span>Elpis</span></div>
       <nav className="nav-list" aria-label="Workspace">
         <Button className="new-chat" variant="ghost" aria-current={view === "chat" && !selected ? "page" : undefined} disabled={projectChanging} onClick={newChat}><NewChatIcon size={16} />New chat</Button>
-        <Button variant="ghost" aria-current={view === "agents" ? "page" : undefined} onClick={() => show("agents")}><AgentsIcon size={16} />Agents{working > 0 && <span className="nav-badge" aria-hidden="true"><i />{working}</span>}</Button>
-        <Button variant="ghost" aria-current={view === "workflows" ? "page" : undefined} onClick={() => show("workflows")}><WorkflowsIcon size={16} />Workflows</Button>
-      </nav>
+        <Button variant="ghost" aria-current={view === "agents" ? "page" : undefined} onClick={() => show("agents")}><AgentsIcon size={16} />Agents{working > 0 && <span className="nav-badge" aria-hidden="true"><i />{working}</span>}</Button>      </nav>
       <label className="sidebar-search"><SearchIcon size={14} aria-hidden="true" /><Input ref={searchInput} aria-label="Search conversations" placeholder="Search conversations" maxLength={200} value={search} onChange={e => setSearch(e.target.value)} /><kbd aria-hidden="true">Ctrl K</kbd></label>
-      <div className="thread-list">
-        {!searchTerm && <section aria-label="Projects"><div className="section-label section-label-row">Projects<Button variant="ghost" size="icon-xs" aria-label="Add new project" title="Add new project" onClick={() => setProjectEdit(null)}><PlusIcon size={13} /></Button></div>
+      <div className="thread-list" ref={threadList} onKeyDown={listKeys}>
+        {!searchTerm && <section aria-label="Projects"><div className="section-label section-label-row">Projects<Button variant="ghost" size="icon-xs" aria-label="Add new project" title="Add new project: choose a folder" onClick={() => void addProject()}><PlusIcon size={13} /></Button></div>
           {projects.map(item => { const open = !collapsedProjects[item.id], chats = threads.filter(t => !t.parentThreadId && sameFolder(t.cwd, item.cwd)).slice(0, 5);
             return <div key={item.id} className="project-group">
               <div className={`project-row${project?.id === item.id ? " active" : ""}`}><button className="project-toggle" aria-expanded={open} title={item.cwd} onClick={() => setCollapsedProjects(prev => ({ ...prev, [item.id]: open }))}><ChevronRight size={13} className="project-chevron" /><FolderIcon size={14} /><span>{item.name}</span></button>
@@ -865,9 +911,9 @@ export default function Home() {
       <span className="status-line"><i className={`status-dot${connected ? " connected" : ""}`} />{connected ? "Local workspace" : "Disconnected"}</span>
     </aside>
     <main className="workspace">
-      <header className={`workspace-header${view === "workflows" && !outsideChatApprovals.length && !desktop ? " desktop-hidden" : ""}${heading ? "" : " untitled"}`}>
+      <header className={`workspace-header${heading ? "" : " untitled"}`}>
         {outsideChatApprovals.length > 0 && <div className="pending-input-anchor"><Button ref={pendingInputButton} className="pending-input-trigger" variant="secondary" size="sm" aria-label={`Needs input (${outsideChatApprovals.length})`} aria-expanded={pendingInputOpen} aria-controls="pending-input-panel" onKeyDown={event => { if (event.key === "Escape") setPendingInputOpen(false); }} onClick={() => setPendingInputOpen(value => !value)}><span className="pending-count">{outsideChatApprovals.length}</span>Needs input<span className="pending-task-name">{title(threads.find(thread => thread.id === outsideChatApprovals[0].params.threadId) || outsideChatApprovals[0].thread || {id:outsideChatApprovals[0].params.threadId || "unreported"})}</span></Button></div>}
-        <Button className="mobile-menu" variant="ghost" size="icon-sm" aria-label="Open sidebar" onClick={() => setSidebar(true)}><Menu size={18} /></Button>
+        <Button className="mobile-menu sidebar-open" variant="ghost" size="icon-sm" aria-label="Open sidebar" title="Open sidebar (Ctrl+B)" onClick={() => showSidebar(true)}><PanelLeft size={16} /></Button>
         <img className="mobile-brand" src={brandMark} alt="" aria-hidden="true" width={24} height={24} />
         <div className="header-titles min-w-0 flex-1">
           {view === "chat" && desktop
@@ -902,7 +948,6 @@ export default function Home() {
         })}</div>
       </section>}
       <div className={`workspace-body${browserOpen && !browserFull ? " browser-open" : ""}${browserFull ? " browser-full" : ""}${view === "settings" ? " no-browser" : ""}`}><div className="workspace-content">
-      {workflowVisited && <div className="page-scroll workflow-page" hidden={view !== "workflows"}><WorkflowEditor runtime={{ visible: view === "workflows", connected, target: selected, targetIsChild: !!selected && isAgent(selected), activeTurnId: activeTurn, models, providerSettings, onConfigure: manageConnections, defaultCwd: selected?.cwd || cwd, defaultModel: selected?.model || model, defaultProvider: selected?.modelProvider || newChoice?.provider || "", onCreateTarget: createWorkflowTarget, onResumeTarget: resumeWorkflowTarget, onStarted: workflowStarted, onStop: async ack => { await api(`/threads/${encodeURIComponent(ack.threadId)}/interrupt`, { turnId: ack.turnId }); }, onOpenThread: openById }} /></div>}
       {settingsVisited && <div className="page-scroll" hidden={view !== "settings"}><SettingsView initialTab={settingsSection} navigationKey={settingsNavigation} active={view === "settings"} threadId={selected?.id} accountRefresh={accountRefresh} theme={theme} onTheme={setTheme} onUnarchived={unarchived} onDeleteThread={deleteThread} onBack={() => show("chat")} onProvidersChanged={async () => { const settings = await api<ProviderSettings>("/settings"); setProviderSettings(settings); void refreshModels(); }} /></div>}
       {view === "agents" && <div className="page-scroll"><AgentsView threads={threads} activity={activity} models={models} providers={providerSettings?.providers} loading={agentsLoading} pendingThreadIds={approvals.map(approval => approval.params.threadId ?? approval.ownerThreadId)} moreConversations={!!nextCursor} loadingMore={moreLoading} onMoreConversations={loadMoreConversations} childCursors={childCursors} loadingChildren={loadingChildren} onMoreAgents={id => void loadChildren(id, childCursors[id] ?? undefined, false)} onOpen={loadThread} onStop={stop} onDelete={deleteThread} onNewAgent={() => show("newAgent")} /></div>}
       {newAgentVisited && <div className="page-scroll" hidden={view !== "newAgent"}><Button variant="ghost" size="sm" onClick={() => show("agents")}>Back to Agents</Button><NewAgentForm key={newAgentVersion} models={models} settings={providerSettings} defaultCwd={cwd} connected={connected} onConfigure={manageConnections} onCreated={(thread, turnId, unsent, failure) => { setNewAgentVersion(value => value + 1); upsertThread(thread); if (unsent) saveDraft(thread.id, unsent); if (turnId && !completedTurns.current.has(turnId)) setActiveTurns(prev => ({ ...prev, [thread.id]: turnId })); void loadThread(thread).then(() => { if (failure && selectedRef.current?.id === thread.id) setError(failure); }); }} /></div>}
@@ -910,7 +955,7 @@ export default function Home() {
         <div className="chat-scroll" ref={scroll} onScroll={event => { const element = event.currentTarget; stickToBottom.current = element.scrollHeight - element.scrollTop - element.clientHeight < 80; }}><div className="chat-content">
           {itemCursor && <Button variant="outline" disabled={loading} onClick={older}>Load earlier messages</Button>}
           {loading && <p role="status" className="text-muted-foreground">Loading conversation…</p>}
-          {!loading && !entries.length && <div className="empty-state">{selected ? <><h2>This conversation has no messages yet.</h2><p>Messages and tool activity appear here.</p></> : <><img className="empty-mark" src={brandMark} alt="" aria-hidden="true" /><h2>{project ? <>What should we build in <ProjectMenu variant="heading" projects={projects} selected={project} disabled={!ready || busy} onSelect={selectProject} onEdit={setProjectEdit} />?</> : "What should we build?"}</h2></>}</div>}
+          {!loading && !entries.length && <div className="empty-state">{selected ? <><h2>This conversation has no messages yet.</h2><p>Messages and tool activity appear here.</p></> : <><img className="empty-mark" src={brandMark} alt="" aria-hidden="true" /><h2>{project ? <>What should we build in <ProjectMenu variant="heading" projects={projects} selected={project} disabled={!ready || busy} onSelect={selectProject} onAdd={() => void addProject()} />?</> : "What should we build?"}</h2></>}</div>}
           <Transcript entries={entries} activeTurnId={activeTurn ?? null} renderItem={e => { const editKey = JSON.stringify([selected?.id, e.turnId, e.item.id]); return <ChatMessage key={editKey} item={e.item} mediaBase={selected ? `/api/threads/${encodeURIComponent(selected.id)}/turns/${encodeURIComponent(e.turnId)}/items/${encodeURIComponent(e.item.id)}/media` : undefined} threads={threads} speaker={selected?.agentNickname || "Elpis"} onOpenThread={openById}
             editDraft={messageEdits[editKey]} editPending={!!pendingDrafts[editKey]} onEditDraftChange={value => setMessageEdits(previous => value === null ? without(previous, editKey) : { ...previous, [editKey]: value })}
             onEdit={replaceable && e.item.type === "userMessage" && replacementOptions.get(e.turnId)?.allowed ? text => replaceFrom(e.turnId, text, editKey) : undefined}
@@ -925,8 +970,9 @@ export default function Home() {
         </div></div>
         <div className="composer-wrap">
           <QueuedFollowUps threadId={selected?.id} activeTurnId={activeTurn} onError={setError} />
-          {!selected && <div className="composer-tray"><ProjectMenu variant="chip" projects={projects} selected={project} disabled={!ready || busy} onSelect={selectProject} onEdit={setProjectEdit} /></div>}
+          {!selected && <div className="composer-tray"><ProjectMenu variant="chip" projects={projects} selected={project} disabled={!ready || busy} onSelect={selectProject} onAdd={() => void addProject()} /></div>}
           <form className="composer" onSubmit={e => { e.preventDefault(); send(); }} onDragOver={e => { if (e.dataTransfer.types.includes("Files")) e.preventDefault(); }} onDrop={e => { if (e.dataTransfer.files.length || e.dataTransfer.types.includes("Files")) { e.preventDefault(); void addFiles(Array.from(e.dataTransfer.files)); } }}>
+            <SlashMenu menu={slash} />
             <input ref={filePickerRef} type="file" multiple accept={ATTACHMENT_ACCEPT} className="hidden" aria-label="Choose files" onChange={e => { const files = Array.from(e.target.files ?? []); e.target.value = ""; void addFiles(files); }} />
             {attachments.length > 0 && <ul aria-label="Message attachments" className="flex flex-wrap gap-2 p-2">{attachments.map(part => <li key={part.id} className="flex max-w-full items-start gap-2 rounded-md border p-2 text-sm">
               {part.type === "image" ? <img src={part.dataUrl} alt={part.name} className="h-16 w-16 rounded object-contain" /> : <span aria-hidden="true">📄</span>}
@@ -935,7 +981,7 @@ export default function Home() {
             </li>)}</ul>}
             {attaching && <p role="status" className="px-3 py-2 text-sm text-muted-foreground">Reading files…</p>}
             {imageBlocked && <p role="alert" className="m-2 text-sm text-destructive">This model accepts text only. Choose an image-capable model or remove the images.</p>}
-            <Textarea ref={composerRef} aria-label="Message Elpis" placeholder={continues ? `Message ${title(selected!)}…` : selected ? "Ask for a follow-up" : "Ask Elpis to build, fix or explain something"} value={text} onChange={e => editDraft(e.target.value)} onPaste={e => { const files = Array.from(e.clipboardData.files); if (files.length) { if (!e.clipboardData.getData("text/plain")) e.preventDefault(); void addFiles(files); } }} disabled={!ready || !connected || projectChanging} onKeyDown={e => { if (isSendKey(e)) { e.preventDefault(); send(); } }} />
+            <Textarea ref={composerRef} aria-label="Message Elpis" {...slash.inputProps} onBlur={slash.close} placeholder={continues ? `Message ${title(selected!)}…` : selected ? "Ask for a follow-up" : "Ask Elpis to build, fix or explain something"} value={text} onChange={e => editDraft(e.target.value)} onPaste={e => { const files = Array.from(e.clipboardData.files); if (files.length) { if (!e.clipboardData.getData("text/plain")) e.preventDefault(); void addFiles(files); } }} disabled={!ready || !connected || projectChanging} onKeyDown={e => { if (slash.onKeyDown(e)) return; if (isSendKey(e)) { e.preventDefault(); send(); } }} />
             {fileNotice && <div className="flex items-center gap-2 px-3 text-sm text-destructive" role="alert"><span>{fileNotice}</span><Button type="button" variant="ghost" size="icon-xs" aria-label="Dismiss file notice" onClick={() => setFileNotice("")}><X size={14} /></Button></div>}
             <div className="composer-controls"><div className="model-controls"><PlusMenu disabled={!ready || !connected || busy || projectChanging} attachDisabled={attaching || attachments.length >= 3} plan={planMode} onAttach={() => filePickerRef.current?.click()} onPlan={setPlan} />
               {planMode && <PlanPill disabled={!ready || busy} onOff={() => setPlan(false)} />}

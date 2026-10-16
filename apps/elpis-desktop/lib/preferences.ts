@@ -11,12 +11,14 @@ export type Preferences = {
   followUp: "steer" | "queue";
   showContextUsage: boolean;
   confirmClose: boolean;
+  /** Off after "Don’t show me this again" in the delete confirmation; Settings → General turns it back on. */
+  confirmDeleteChats: boolean;
   turnNotifications: "never" | "unfocused" | "always";
   inputNotifications: boolean;
   notificationSound: boolean;
 };
 export const DEFAULT_PREFERENCES: Preferences = {
-  defaultFolder: "", sendShortcut: "enter", followUp: "steer", showContextUsage: true, confirmClose: false,
+  defaultFolder: "", sendShortcut: "enter", followUp: "steer", showContextUsage: true, confirmClose: false, confirmDeleteChats: true,
   turnNotifications: "unfocused", inputNotifications: true, notificationSound: false,
 };
 export const PREFERENCES_KEY = "elpis-preferences-v1";

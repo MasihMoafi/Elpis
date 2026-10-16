@@ -13,6 +13,7 @@ contextBridge.exposeInMainWorld('elpisDesktop',{
     onError:callback=>{ errors.add(callback); if(saved.error)callback(saved.error); return()=>errors.delete(callback); },
   },
   chooseFolder:()=>ipcRenderer.invoke('elpis:folder'),
+  setTheme:dark=>ipcRenderer.send('elpis:theme',dark===true),
   resolveFolder:folder=>ipcRenderer.invoke('elpis:folder:resolve',folder),
   openFile:target=>ipcRenderer.invoke('elpis:file:open',target).then(result=>{
     if(typeof result?.error==='string')throw Error(result.error);

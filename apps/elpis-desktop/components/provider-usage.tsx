@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useSyncExternalStore } from "react";
 import { api } from "@/lib/api";
 
 // Usage as Elpis reports it from account/rateLimits/read, one provider at a time (Cloudroom's usage card).
@@ -52,31 +52,63 @@ export function UsageWindows({ status }: { status: UsageStatus }) {
   })}</ul>;
 }
 
-export type Providers = { openai: OpenAIAccount; claude: Subscription; gemini: Subscription };
+export type ConfiguredProvider = { id: string; name: string; baseUrl: string | null; envKey: string | null; keySet: boolean | null };
+export type Providers = { openai: OpenAIAccount; claude: Subscription; gemini: Subscription; openrouter: ConfiguredProvider[] };
 
-/** Every account's reported usage, reloaded when an account changes and every five minutes. A subscription's
- * bridge reads its usage in the background, so it can be missing at first, and the first request can fail while
- * Elpis starts: then it asks twice more. */
+/** A later answer can omit an account's usage while its bridge rereads it (a subscription then reads "available").
+ * A reported value stays until the account signs out or reports a new one; it is never replaced by "not reported". */
+export function keepReportedUsage(previous: Providers | null, next: Providers): Providers {
+  if (!previous) return next;
+  const openai = next.openai?.auth?.state === "signedOut" || next.openai?.usage?.length || !previous.openai?.usage?.length ? next.openai
+    : { ...next.openai, usage: previous.openai.usage, usageError: null };
+  const subscription = (before: Subscription, after: Subscription): Subscription => after?.state === "notConnected" || after?.usage?.length || !before?.usage?.length ? after
+    : { ...after, state: "connected", usage: before.usage };
+  return { ...next, openai, claude: subscription(previous.claude, next.claude), gemini: subscription(previous.gemini, next.gemini) };
+}
+
+// One store for the whole app: the sidebar, Usage & limits and Models & accounts read the same answer, and only one
+// request runs at a time; a reload asked for meanwhile runs once after it.
+type UsageState = { data: Providers | null; error: string; loading: boolean };
+let usage: UsageState = { data: null, error: "", loading: false };
+const listeners = new Set<() => void>();
+let running: Promise<void> | null = null, queued = false, seenKey: number | null = null, retries = 0;
+let retryTimer: ReturnType<typeof setTimeout> | undefined, interval: ReturnType<typeof setInterval> | undefined;
+const update = (next: Partial<UsageState>) => { usage = { ...usage, ...next }; for (const listener of listeners) listener(); };
+
+function reload(): Promise<void> {
+  if (running) { queued = true; return running; }
+  clearTimeout(retryTimer); update({ loading: true });
+  running = (async () => {
+    try { update({ data: keepReportedUsage(usage.data, await api<Providers>("/providers")), error: "" }); }
+    catch (e) { update({ error: e instanceof Error ? e.message : String(e) }); }
+    finally {
+      running = null; update({ loading: false });
+      if (queued) { queued = false; void reload(); }
+      // A subscription's bridge reads its usage in the background, so it can be missing at first, and the first
+      // request can fail while Elpis starts: then it asks twice more.
+      else if ((usage.error || [usage.data?.claude, usage.data?.gemini].some(item => item?.models?.length && !item.usage?.length)) && retries < 2) retryTimer = setTimeout(() => { retries++; void reload(); }, 6000);
+    }
+  })();
+  return running;
+}
+/** Reads every account again now, as the Refresh buttons and account changes do. */
+export function refreshUsage() { retries = 0; return reload(); }
+function subscribe(listener: () => void) {
+  listeners.add(listener);
+  interval ??= setInterval(() => void reload(), 5 * 60_000);
+  return () => { listeners.delete(listener); if (!listeners.size) { clearInterval(interval); interval = undefined; } };
+}
+const snapshot = () => usage;
+
+/** Every account's reported usage, from the shared store: loaded once, again when an account changes (refreshKey),
+ * and every five minutes. */
 export function useProviderUsage(refreshKey: number) {
-  const [data, setData] = useState<Providers | null>(null);
-  const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
-  const retries = useRef(0);
-  const load = useCallback(async () => {
-    setLoading(true);
-    try { setData(await api<Providers>("/providers")); setError(""); }
-    catch (e) { setError(e instanceof Error ? e.message : String(e)); }
-    finally { setLoading(false); }
-  }, []);
-  useEffect(() => { retries.current = 0; void load(); const timer = setInterval(() => void load(), 5 * 60_000); return () => clearInterval(timer); }, [refreshKey, load]);
+  const state = useSyncExternalStore(subscribe, snapshot, snapshot);
   useEffect(() => {
-    // Also when the first request failed, as it can while Elpis is still starting.
-    const missing = error || (data && [data.claude, data.gemini].some(item => item?.state === "connected" && !item.usage?.length));
-    if (!missing || retries.current >= 2) return;
-    const timer = setTimeout(() => { retries.current++; void load(); }, 6000);
-    return () => clearTimeout(timer);
-  }, [data, error, load]);
-  return { data, error, loading, load };
+    if (refreshKey === seenKey && (usage.data || running)) return;
+    seenKey = refreshKey; void refreshUsage();
+  }, [refreshKey]);
+  return { ...state, load: refreshUsage };
 }
 
 /** The reported window closest to its limit: the one that will stop work first. */

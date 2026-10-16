@@ -157,22 +157,6 @@ try {
   assert.equal(await page.getByLabel('Message Elpis').inputValue(), draft);
   assert.equal(provider.requests.length, settingsRequests, 'model selection and transcription settings never send a message');
   checks.push('Actual desktop model search and native transcription config save work without recording or sending');
-  await page.locator('aside').getByRole('button', { name: 'Workflows', exact: true }).click();
-  await page.getByLabel('Workflow name', { exact: true }).fill('Restart-safe Elpis workflow');
-  await page.getByRole('button', { name: 'Add task', exact: true }).click();
-  await page.getByLabel('Task title', { exact: true }).fill('Inspect the selected project');
-  await page.getByLabel('Task instructions', { exact: true }).fill('Read input.txt and report its contents.');
-  await fs.chmod(path.dirname(stateFile), 0o500);
-  try {
-    await page.getByRole('button', { name: 'Save draft', exact: true }).click();
-    await page.getByRole('status').filter({ hasText: 'Could not save:' }).waitFor();
-    assert.equal(await page.getByLabel('Workflow name', { exact: true }).inputValue(), 'Restart-safe Elpis workflow');
-    assert.equal(await page.getByLabel('Task title', { exact: true }).inputValue(), 'Inspect the selected project');
-  } finally { await fs.chmod(path.dirname(stateFile), 0o700); }
-  checks.push('Actual workflow save failure is visible, retains edits, and can be retried');
-  await page.getByRole('button', { name: 'Save draft', exact: true }).click();
-  await page.getByRole('status').filter({ hasText: 'Saved in' }).waitFor();
-  await shot('08-workflow-before-reopen.png');
   await page.locator('.thread-row .thread-link').first().click();
   const before = provider.requests.length;
   await desktop.close(); desktop = null;
@@ -187,13 +171,6 @@ try {
   checks.push('Desktop reopen on a different port restores selected project, chat, theme and exact draft without inference');
   await page.waitForFunction(() => document.querySelector('button[aria-label="Dictate message"]').title.includes('Local WhisperType'));
   checks.push('Transcription engine remains Local after desktop reopen');
-  await page.locator('aside').getByRole('button', { name: 'Workflows', exact: true }).click();
-  await page.waitForFunction(() => document.querySelector('input[aria-label="Workflow name"]').value === 'Restart-safe Elpis workflow');
-  assert.equal(await page.getByLabel('Task title', { exact: true }).inputValue(), 'Inspect the selected project');
-  assert.equal(await page.getByLabel('Task instructions', { exact: true }).inputValue(), 'Read input.txt and report its contents.');
-  assert.equal(provider.requests.length, before, 'restoring a workflow must not execute it');
-  await shot('09-workflow-after-reopen.png');
-  checks.push('Saved workflow and task fields survive actual desktop restart on a different port without executing');
   // An independent profile sees native history but cannot recover this profile's
   // draft/project. This is the negative control for native workspace recovery.
   await desktop.close(); desktop = null;

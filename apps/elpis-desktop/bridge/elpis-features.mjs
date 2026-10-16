@@ -21,12 +21,22 @@ export const CONFIG_OPTIONS = {
   automaticPruning: { keyPath: 'features.automatic_context_pruning', values: [true, false] },
 };
 const configValue = (config, keyPath) => keyPath.split('.').reduce((value, key) => value && typeof value === 'object' ? value[key] : undefined, config);
-function optionSnapshot(config) {
+/** The built-in permission profiles by the sandbox each one is (codex-rs/protocol/src/models.rs). */
+const PROFILES = { 'read-only': ':read-only', 'workspace-write': ':workspace', 'danger-full-access': ':danger-full-access' };
+/** Whether the engine takes the default sandbox from `default_permissions`, as
+ * codex-rs/core/src/config/mod.rs resolve_permission_config_syntax decides: the highest layer naming either key
+ * wins, and within a layer `default_permissions` wins over `sandbox_mode`. */
+function usesPermissionProfiles(read) {
+  const layer = (read?.layers ?? []).find(layer => layer?.config?.default_permissions != null || layer?.config?.sandbox_mode != null);
+  return layer ? layer.config.default_permissions != null : read?.config?.default_permissions != null;
+}
+function optionSnapshot(config, profiles) {
   const approval = config.approval_policy;
   const tier = string(config.service_tier);
+  const profile = string(config.default_permissions);
   return {
     approvalPolicy: typeof approval === 'string' ? approval : approval && typeof approval === 'object' ? 'granular' : null,
-    sandboxMode: string(config.sandbox_mode), webSearch: string(config.web_search),
+    sandboxMode: !profiles ? string(config.sandbox_mode) : profile && (Object.keys(PROFILES).find(mode => PROFILES[mode] === profile) ?? 'custom'), webSearch: string(config.web_search),
     verbosity: string(config.model_verbosity), reasoningSummary: string(config.model_reasoning_summary),
     serviceTier: tier === 'priority' ? 'fast' : tier,
     developerInstructions: string(config.developer_instructions),
@@ -34,8 +44,9 @@ function optionSnapshot(config) {
     worktreeRoot: string(configValue(config, 'desktop.git-worktree-root')),
   };
 }
-/** Native edits for the submitted options; rejects anything outside CONFIG_OPTIONS or managed policy. */
-export function optionEdits(input, managed = {}) {
+/** Native edits for the submitted options; rejects anything outside CONFIG_OPTIONS or managed policy. With
+ * `profiles`, the default sandbox is saved as the built-in permission profile the engine reads instead. */
+export function optionEdits(input, managed = {}, profiles = false) {
   if (!input || typeof input !== 'object' || Array.isArray(input) || Object.keys(input).some(key => !Object.hasOwn(CONFIG_OPTIONS, key))) throw new Error('Unsupported setting');
   return Object.entries(input).map(([name, value]) => {
     const option = CONFIG_OPTIONS[name];
@@ -56,6 +67,7 @@ export function optionEdits(input, managed = {}) {
         if (value !== null && !value.startsWith('/')) throw new Error('Give an absolute folder path');
       }
     }
+    if (name === 'sandboxMode' && profiles) return { keyPath: 'default_permissions', value: value && PROFILES[value], mergeStrategy: 'replace' };
     return { keyPath: option.keyPath, value, mergeStrategy: 'replace' };
   });
 }
@@ -74,6 +86,7 @@ export function settingsSnapshot(read, requirementsRead, prunerRead = null, save
     definitions[provider.id] = { name: string(provider.displayName) ?? provider.id };
   }
   const userLayer = read?.layers?.find(layer => layer.name?.type === 'user' && !layer.name.profile);
+  const permissionProfiles = usesPermissionProfiles(read);
   return {
     main: { model: string(config.model), provider: string(config.model_provider) },
     background: { model: string(config.background_model), provider: string(config.background_provider), purpose: 'smartPruneFallback' },
@@ -89,7 +102,7 @@ export function settingsSnapshot(read, requirementsRead, prunerRead = null, save
       extractionModel: string(config.memories?.extract_model), consolidationModel: string(config.memories?.consolidation_model),
       admissionPolicy: null,
     },
-    options: optionSnapshot(config),
+    options: optionSnapshot(config, permissionProfiles), permissionProfiles,
     providers: [...providerIds].sort().map(id => ({ id, displayName: string(definitions[id]?.name) ?? id, ...(needsKey(config.model_providers?.[id] ?? BUILT_IN_KEY_PROVIDERS[id], saved, id, env) ? { needsKey: true } : {}) })),
     managed: {
       available: requirementsRead !== null,
@@ -164,7 +177,6 @@ export function providersSnapshot({ account, limits, config, models, env = proce
     claude: subscription('claude/', 'claude'),
     gemini: subscription('agy/', 'antigravity'),
     openrouter: configured.filter(([, def]) => hostOf(def.base_url).endsWith('openrouter.ai')).map(describe),
-    local: configured.filter(([, def]) => /^(localhost|127\.\d+\.\d+\.\d+|::1|0\.0\.0\.0)$/.test(hostOf(def.base_url))).map(describe),
   };
 }
 

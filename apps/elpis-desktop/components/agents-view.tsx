@@ -58,7 +58,8 @@ export function AgentsView({ threads, activity, models, providers, loading, pend
   }
   return <section className="agents-view" aria-label="Agents">
     <div className="agents-toolbar"><div className="agent-filters" role="group" aria-label="Filter conversations and agents">{filters.map(option => <Button key={option.id} variant={filter === option.id ? "secondary" : "ghost"} size="sm" aria-pressed={filter === option.id} onClick={() => setFilter(option.id)}>{option.label}<span className="filter-count">{threads.filter(thread => matches(thread,option.id)).length}</span></Button>)}</div><Button size="sm" variant="outline" onClick={onNewAgent}><Plus size={14} />New agent</Button></div>
-    {loading && <p role="status" className="agents-loading">Updating agents…</p>}
+    {/* Refreshes stay silent once rows are listed: a line inserted above them on every poll made the page jump. */}
+    {loading && !threads.length && <p role="status" className="agents-loading">Updating agents…</p>}
     {!visible.size && !loading && <p className="agents-empty-state">{threads.length ? "No conversations or agents match this status." : "No conversations yet. Start one, or create an agent."}</p>}
     {roots.map(rootThread => <div key={rootThread.id} className="agent-conversation-group">{row(rootThread, 0)}{tree(rootThread.id, 1, new Set())}{moreAgents(rootThread)}</div>)}
     {unlinked.length > 0 && <section className="agent-conversation-group" aria-label="Agents whose parent is not listed"><h2 className="agent-group-label"><span>Other agents</span><span className="agent-group-hint">Their parent conversation is not listed.</span></h2>{unlinked.map(thread => <div key={thread.id}>{row(thread, 0)}{tree(thread.id, 1, new Set())}{moreAgents(thread)}</div>)}</section>}

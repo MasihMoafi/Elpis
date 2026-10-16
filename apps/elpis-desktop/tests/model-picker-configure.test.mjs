@@ -25,8 +25,7 @@ function fixture(relative, name, props, seed = {}) {
       return load(['.tsx', '.ts'].map(extension => target + extension).find(existsSync));
     };
     const { outputText } = transpileModule(readFileSync(file, 'utf8'), { compilerOptions: { module: ModuleKind.CommonJS, jsx: JsxEmit.ReactJSX, target: ScriptTarget.ES2022 } });
-    const expose = file.endsWith('workflow-editor.tsx') ? '\nexports.WorkflowExecution = WorkflowExecution;' : '';
-    new Function('require', 'module', 'exports', outputText + expose)(imports, module, module.exports);
+    new Function('require', 'module', 'exports', outputText)(imports, module, module.exports);
     return module.exports;
   }
   const Component = load(path.join(root, relative))[name];
@@ -72,22 +71,6 @@ test('new-agent form forwards the same connection setup callback to its model pi
   const onConfigure = () => {};
   const view = fixture('components/new-agent-form.tsx', 'NewAgentForm', { models, settings, defaultCwd: '/workspace', connected: true, onCreated() {}, onConfigure });
   assert.equal(named(view.render(), 'ModelPicker').props.onConfigure, onConfigure);
-});
-
-test('workflow task and target creation pass connection setup through the shared control', () => {
-  const onConfigure = () => {};
-  const task = { id: 'task_1', title: 'Inspect', instruction: 'Read', kind: 'explore', depends_on: [], write_scopes: [], acceptance_criteria: ['Report'] };
-  const draft = { name: 'Research', max_concurrency: 2, tasks: [task] };
-  const runtime = { visible: true, connected: true, target: { id: 'root', model: 'sol', modelProvider: 'openai', desktopAccess: { writable: true } }, targetIsChild: false, models, providerSettings: settings, defaultCwd: '/workspace', defaultModel: 'sol', defaultProvider: 'openai', onConfigure,
-    onCreateTarget: async () => {}, onResumeTarget: async () => {}, onStarted() {}, onStop: async () => {}, onOpenThread() {} };
-  const editor = fixture('components/workflow-editor.tsx', 'WorkflowEditor', { runtime }, { 0: draft, 3: task.id });
-  const taskControl = named(editor.render(), 'WorkflowModelChoice');
-  assert.equal(taskControl.props.onConfigure, onConfigure);
-  const shared = fixture('components/workflow-editor.tsx', 'WorkflowModelChoice', taskControl.props);
-  assert.equal(named(shared.render(), 'ModelPicker').props.onConfigure, onConfigure);
-  const execution = fixture('components/workflow-editor.tsx', 'WorkflowExecution', { draft, runtime, toolbar: null, onRun() {}, onSubmitted() {} });
-  elements(execution.render()).find(element => element.props['aria-label'] === 'Create workflow conversation').props.onClick();
-  assert.equal(named(execution.render(), 'WorkflowModelChoice').props.onConfigure, onConfigure);
 });
 
 test('inherited subscription defaults retain their provider identity while exact route matches take precedence', () => {

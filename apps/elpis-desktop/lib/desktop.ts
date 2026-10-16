@@ -6,4 +6,4 @@ export type DesktopBrowser = {
   subscribe:(callback:(state:BrowserState)=>void)=>()=>void;
 };
 export type DesktopStorage = Pick<Storage, "getItem" | "setItem" | "removeItem"> & { saveItem?:(key:string,value:string)=>Promise<void>;onError:(callback:(message:string)=>void)=>()=>void };
-declare global { interface Window { elpisDesktop?:{browser:DesktopBrowser;storage?:DesktopStorage;chooseFolder?:()=>Promise<string|null>;resolveFolder?:(folder:string)=>Promise<string>;openFile?:(target:string)=>Promise<void>;openFolder?:(folder:string)=>Promise<void>} } }
+declare global { interface Window { elpisDesktop?:{browser:DesktopBrowser;storage?:DesktopStorage;chooseFolder?:()=>Promise<string|null>;setTheme?:(dark:boolean)=>void;resolveFolder?:(folder:string)=>Promise<string>;openFile?:(target:string)=>Promise<void>;openFolder?:(folder:string)=>Promise<void>} } }

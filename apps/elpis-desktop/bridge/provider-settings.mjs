@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { BridgeError, object, text } from './client.mjs';
+import { gatewayRouted } from './provider-models.mjs';
 const reserved = new Set(['openai', 'claude', 'agy', 'antigravity']);
 
 /** The engine's built-in key providers, served through its gateway (codex-rs/model-provider-info/src/elpis_gateway.rs,
@@ -43,10 +44,12 @@ export function providerSettingsSnapshot(read, requirementsRead, env = process.e
     providers: Object.entries(read?.config?.model_providers ?? {}).filter(([, def]) => def && typeof def === 'object').sort(([a], [b]) => a.localeCompare(b)).map(([id, def]) => {
       const command = Boolean(def.auth || def.aws || def.gateway_oauth || Object.keys(def.http_headers ?? {}).some(key => key.toLowerCase() === 'authorization') || Object.keys(def.env_http_headers ?? {}).some(key => key.toLowerCase() === 'authorization'));
       const subscription = reserved.has(id) || def.requires_openai_auth === true;
+      // The engine's own gateway route: its address and headers are internal, and an edit here would overwrite the vendor's.
+      const gateway = gatewayRouted(def);
       const envKey = typeof def.env_key === 'string' ? def.env_key : null;
       let baseUrl = null; try { const url = new URL(def.base_url); baseUrl = `${url.origin}${url.pathname}`.replace(/\/$/, ''); } catch {}
-      return { id, name: typeof def.name === 'string' ? def.name : id, baseUrl,
-        wireApi: typeof def.wire_api === 'string' ? def.wire_api : 'responses', editable: available && !subscription && !command && !managed?.modelProviders?.[id],
+      return { id, name: typeof def.name === 'string' ? def.name : id, baseUrl, gateway,
+        wireApi: typeof def.wire_api === 'string' ? def.wire_api : 'responses', editable: available && !subscription && !command && !gateway && !managed?.modelProviders?.[id],
         auth: { source: subscription ? 'subscription' : command ? 'command' : envKey && saved.has(id) ? 'saved' : envKey ? 'environment' : def.experimental_bearer_token ? 'stored' : 'none',
           keySet: envKey ? saved.has(id) || Boolean(env[envKey]) : Boolean(def.experimental_bearer_token), envKey,
           // A key can be pasted for a provider that reads one from a variable, as the terminal's /provider does.

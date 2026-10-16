@@ -5,7 +5,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { parseArgs } from 'node:util';
 
 const productionFiles = [
-  'bridge/client.mjs', 'bridge/elpis-features.mjs', 'bridge/provider-settings.mjs', 'bridge/provider-models.mjs',
+  'bridge/client.mjs', 'bridge/elpis-features.mjs', 'bridge/provider-keys.mjs', 'bridge/provider-settings.mjs', 'bridge/provider-models.mjs',
   'bridge/rag-command.mjs', 'bridge/server.mjs', 'bridge/tools.mjs', 'bridge/transcription.mjs', 'bridge/attachments.mjs',
   'bridge/resources/rag.md', 'desktop/browser-policy.cjs', 'desktop/browser.cjs',
   'desktop/main.cjs', 'desktop/media-policy.cjs', 'desktop/preload.cjs', 'desktop/files.cjs',

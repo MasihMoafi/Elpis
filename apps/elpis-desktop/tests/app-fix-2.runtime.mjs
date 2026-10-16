@@ -19,7 +19,6 @@ const { chromium } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright
 const binary = process.argv[2];
 assert(binary && path.isAbsolute(binary), 'Provide an absolute Elpis executable');
 const shots = process.argv.includes('--shots') ? path.resolve(process.argv[process.argv.indexOf('--shots') + 1]) : null;
-const workflowOnly = process.argv.includes('--only-workflow');
 const designOnly = process.argv.includes('--only-design');
 const modelsOnly = process.argv.includes('--only-models');
 const appRoot = fileURLToPath(new URL('..', import.meta.url));
@@ -182,9 +181,8 @@ async function until(predicate, label, timeout = 15000) {
   throw new Error(`Timed out: ${label}`);
 }
 async function check(name, run) {
-  if (workflowOnly && !name.startsWith('workflow task form')) return;
   if (modelsOnly && !/^(child approval|titles-not-nicknames|live activity|interrupt any agent|writable child chat|existing chat|a chat working|new agent passes|model and effort change)/.test(name)) return;
-  if (designOnly && !/^(child approval|titles-not-nicknames|live activity|interrupt any agent|workflow task form)/.test(name)) return;
+  if (designOnly && !/^(child approval|titles-not-nicknames|live activity|interrupt any agent)/.test(name)) return;
   try { await run(); results.push({ name, ok: true }); console.log(`PASS ${name}`); }
   catch (error) {
     results.push({ name, ok: false, error: String(error.message).split('\n')[0] }); console.log(`FAIL ${name}: ${String(error.message).split('\n')[0]}`);
@@ -278,8 +276,10 @@ try {
     assert.notEqual((await row.locator('.agent-title').innerText()).trim(), childThread.agentNickname);
     assert.match(await row.locator('.agent-nickname').innerText(), new RegExp(childThread.agentNickname));
     const rootRow = page.locator(`.thread-row[data-thread-id="${rootThread.id}"]`);
-    const expand = rootRow.getByRole('button', { name: /^Show agents of/ });
-    if (await expand.getAttribute('aria-expanded') !== 'true') await expand.click();
+    // A chat's agents are shown from its row menu (the row's hover shows only Pin and Archive, as in the ChatGPT app).
+    await rootRow.first().getByRole('button', { name: /^Actions for / }).click();
+    const agentsItem = page.getByRole('menuitem', { name: /^(Show|Hide) agents$/ });
+    if ((await agentsItem.innerText()).startsWith('Show')) await agentsItem.click(); else await page.keyboard.press('Escape');
     const sideChild = page.locator(`.thread-row[data-thread-id="${childThread.id}"]`);
     await sideChild.waitFor({ timeout: 10000 });
     assert.equal((await sideChild.locator('.thread-title').innerText()).trim(), childTitle);
@@ -546,100 +546,6 @@ try {
     assert.equal(fixture.requests.at(-1).body.model,'fixture/custom-model');
     await nav('Settings').click();await page.getByRole('tab',{name:'Models & accounts',exact:true}).click();
     await shoot('native-api-provider');
-  });
-
-  await check('workflow task form routes two connected tasks through the app to distinct native providers and models', async () => {
-    fixture.keyed.set('APP_WORKFLOW_A_4242', [message('APP_WORKFLOW_A_DONE_4242')]);
-    fixture.keyed.set('APP_WORKFLOW_B_4242', [message('APP_WORKFLOW_B_DONE_4242')]);
-    await nav('Workflows').click();
-    await page.getByRole('button', { name: 'Create workflow conversation', exact: true }).click();
-    await page.getByLabel('Workflow workspace', { exact: true }).fill(cwd);
-    await chooseOption(page.getByLabel('Workflow provider', { exact: true }), 'fixture');
-    await chooseOption(page.getByLabel('Workflow model', { exact: true }), 'gpt-5.5');
-    const createdResponse = page.waitForResponse(response => new URL(response.url()).pathname === '/api/threads' && response.request().method() === 'POST');
-    await page.getByRole('button', { name: 'Create conversation', exact: true }).click();
-    const target = (await (await createdResponse).json()).thread;
-    await page.getByRole('status').filter({ hasText: 'Conversation created. Review the target' }).waitFor();
-    await page.getByText('Import a workflow', { exact: true }).click();
-    const graph = { name: 'Two native workflow routes', max_concurrency: 1, tasks: [
-      { id: 'endpoint_a', title: 'Inspect endpoint A', instruction: 'Return APP_WORKFLOW_A_4242', kind: 'explore', depends_on: [], write_scopes: [], acceptance_criteria: ['Report endpoint A evidence'] },
-      { id: 'endpoint_b', title: 'Review endpoint B', instruction: 'Return APP_WORKFLOW_B_4242', kind: 'explore', depends_on: ['endpoint_a'], write_scopes: [], acceptance_criteria: ['Report endpoint B evidence'] },
-    ] };
-    await page.getByLabel('Workflow JSON').fill(JSON.stringify(graph));
-    await page.getByRole('button', { name: 'Import', exact: true }).click();
-    for (const [id, provider, model] of [['endpoint_a', 'workflow-a', 'workflow/custom-a'], ['endpoint_b', 'workflow-b', 'workflow/custom-b']]) {
-      await page.locator(`[data-task="${id}"]`).click();
-      await chooseOption(page.getByLabel('Task provider', { exact: true }), provider);
-      await page.getByLabel('Task model', { exact: true }).fill(model);
-    }
-    const startedResponse = page.waitForResponse(response => new URL(response.url()).pathname === '/api/workflows/run' && response.request().method() === 'POST');
-    await page.getByRole('button', { name: 'Run workflow', exact: true }).click();
-    const response = await startedResponse, ack = await response.json(), submitted = response.request().postDataJSON();
-    assert.equal(response.status(), 200, JSON.stringify(ack));
-    assert.equal(submitted.rootThreadId, target.id);
-    assert.deepEqual(submitted.tasks.map(task => ({ id: task.id, provider: task.provider, model: task.model, dependsOn: task.dependsOn })), [
-      { id: 'endpoint_a', provider: 'workflow-a', model: 'workflow/custom-a', dependsOn: [] },
-      { id: 'endpoint_b', provider: 'workflow-b', model: 'workflow/custom-b', dependsOn: ['endpoint_a'] },
-    ]);
-    let recorded;
-    await until(async () => {
-      const listed = await api(`/workflows?threadId=${target.id}`);
-      recorded = listed.body.data?.find(run => run.id === ack.graphId);
-      return recorded?.status === 'succeeded' && recorded.tasks.length === 2 && recorded.tasks.every(task => task.status === 'succeeded');
-    }, 'real workflow completed both routed tasks', 60000);
-    const proof = [];
-    for (const [id, provider, model, port, bearer] of [
-      ['endpoint_a', 'workflow-a', 'workflow/custom-a', server.address().port, 'Bearer fixture-workflow-a-4242'],
-      ['endpoint_b', 'workflow-b', 'workflow/custom-b', workflowServer.address().port, 'Bearer fixture-workflow-b-4242'],
-    ]) {
-      const task = recorded.tasks.find(task => task.id === id);
-      assert.equal(task.provider, provider); assert.equal(task.model, model); assert.ok(task.assignedThreadId);
-      const requests = fixture.requests.filter(request => request.body.model === model);
-      assert.equal(requests.length, 2); for (const request of requests) { assert.equal(request.endpointPort, port); assert.equal(request.authorization, bearer); }
-      const thread = (await api(`/threads/${task.assignedThreadId}`)).body.thread;
-      assert.equal(thread.model, model); assert.equal(thread.modelProvider, provider); assert.equal(thread.workflowTaskTitle, graph.tasks.find(row => row.id === id).title);
-      proof.push({ taskId: id, assignedThreadId: task.assignedThreadId, provider, model, endpoint: `http://127.0.0.1:${port}/v1`, authorizationMatchesConfigured: true, inferenceRequests: requests.length, status: task.status });
-    }
-    await fs.writeFile(path.join(root, 'workflow-route-proof.json'), JSON.stringify({ graphId: ack.graphId, rootThreadId: target.id, status: recorded.status, submitted, tasks: proof }, null, 2));
-    await page.getByRole('button', { name: 'Refresh runs', exact: true }).click();
-    await until(async () => await page.locator('.workflow-run-record').getByText('succeeded', { exact: true }).count() === 3, 'graph and both task successes are rendered');
-    const rootAgents = page.locator(`.thread-row[data-thread-id="${target.id}"]`).getByRole('button', { name: /^Show agents of / });
-    if (await rootAgents.getAttribute('aria-expanded') !== 'true') await rootAgents.click();
-    for (const task of proof) await until(async () => await page.locator(`.thread-row[data-thread-id="${task.assignedThreadId}"] .thread-link`).innerText() === graph.tasks.find(row => row.id === task.taskId).title, 'recorded task title appears in sidebar');
-    await nav('Agents').click();
-    for (const task of proof) assert.equal(await page.locator(`.agent-row[data-thread-id="${task.assignedThreadId}"] .agent-title`).innerText(), graph.tasks.find(row => row.id === task.taskId).title);
-    assert.equal((await api(`/threads/${target.id}`)).body.thread.workflowTaskTitle, undefined, 'Unrelated workflow root must not inherit a worker task title');
-    await shoot('native-workflow-task-titles');
-    await nav('Workflows').click();
-    await page.locator('.workflow-run-record').getByRole('button', { name: 'Open chat', exact: true }).first().waitFor();
-    await shoot('native-two-provider-workflow');
-    await page.getByLabel('Workflow editor', { exact: true }).evaluate(element => { const page = element.closest('.page-scroll'); if (page) page.scrollTop = 0; });
-    await page.getByRole('button', { name: 'Edit Review endpoint B', exact: true }).click();
-    const output = page.getByRole('region', { name: 'Recorded task output', exact: true });
-    await output.waitFor();
-    const nativeResult = recorded.tasks.find(task => task.id === 'endpoint_b').result;
-    assert.ok(nativeResult, 'native run must carry an actual result');
-    assert.ok((await output.innerText()).includes(nativeResult.summary), 'node inspector shows the actual native result summary');
-    const selectedNode = page.getByRole('button', { name: 'Edit Review endpoint B', exact: true });
-    await until(async () => (await selectedNode.getAttribute('class')).includes('status-succeeded'), 'acknowledged run is bound to the submitted draft');
-    const requestsBeforeEdit = fixture.requests.length;
-    await page.getByLabel('Task instructions', { exact: true }).fill('A changed instruction that has not run.');
-    await output.getByRole('status').filter({ hasText: 'Draft changed since this run' }).waitFor();
-    assert(!(await selectedNode.getAttribute('class')).includes('status-succeeded'));
-    assert.ok((await output.innerText()).includes(nativeResult.summary), 'historical result remains inspectable after editing');
-    assert.equal(fixture.requests.length, requestsBeforeEdit, 'editing cannot start native inference');
-    await shoot('native-workflow-changed-draft');
-    await page.getByLabel('Task instructions', { exact: true }).fill(graph.tasks.find(task => task.id === 'endpoint_b').instruction);
-    await until(async () => (await selectedNode.getAttribute('class')).includes('status-succeeded'), 'restoring the exact submitted draft restores its recorded status');
-    await shoot('native-workflow-canvas');
-    await api(`/threads/${proof[0].assignedThreadId}/rename`, { name: 'Explicit workflow chat name' });
-    await until(async () => await page.locator(`.thread-row[data-thread-id="${proof[0].assignedThreadId}"] .thread-link`).innerText() === 'Explicit workflow chat name', 'explicit rename keeps priority over recorded task title');
-    const openedResponse = page.waitForResponse(response => new URL(response.url()).pathname === `/api/threads/${proof[0].assignedThreadId}` && response.request().method() === 'GET');
-    await page.locator('.workflow-run-record').getByRole('button', { name: 'Open chat', exact: true }).first().click();
-    assert.equal((await (await openedResponse).json()).thread.id, proof[0].assignedThreadId);
-    await composer().waitFor();
-    await nav('New chat').click();
-    await chooseOption(page.getByLabel('Model', { exact: true }), 'gpt-5.5');
   });
 
   // APP-FIX-3: ChatGPT/Claude parity. Each check plants a marker only the feature can move.

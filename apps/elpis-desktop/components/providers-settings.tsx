@@ -8,15 +8,11 @@ import { Input } from "@/components/ui/input";
 import { api } from "@/lib/api";
 import { providerFormId, type ProviderType } from "@/lib/provider-form";
 
-import type { OpenAIAccount, Subscription } from "@/components/provider-usage";
-type Configured = { id: string; name: string; baseUrl: string | null; envKey: string | null; keySet: boolean | null };
-type ProviderConfig = { id: string; name: string; baseUrl: string | null; wireApi: string; editable: boolean; auth: { source: string; keySet: boolean; envKey: string | null } };
+import { useProviderUsage, type ConfiguredProvider as Configured, type Subscription } from "@/components/provider-usage";
+// `gateway`: a route the engine serves through its own gateway (such as the Anthropic credits), not a server the user added.
+type ProviderConfig = { id: string; name: string; baseUrl: string | null; wireApi: string; editable: boolean; gateway?: boolean; auth: { source: string; keySet: boolean; envKey: string | null } };
 type ProviderConfigs = { application?: { scope: string; message: string; credentialClearMessage: string }; version: string | null; configPath: string | null; write: { available: boolean; reason?: string | null }; managed: { modelProvider: string | null }; providers: ProviderConfig[] };
 type ProviderEdit = { id: string; type: ProviderType; name: string; baseUrl: string; existing: boolean; credential: "preserve" | "replace" | "clear"; secret: string };
-type Providers = {
-  openai: OpenAIAccount;
-  claude: Subscription; gemini: Subscription; openrouter: Configured[]; local: Configured[];
-};
 
 const plural = (count: number, noun: string) => `${count} ${noun}${count === 1 ? "" : "s"}`;
 const State = ({ tone, children }: { tone: "ok" | "warn" | "off"; children: React.ReactNode }) => <span className={`provider-state ${tone}`}>{children}</span>;
@@ -37,7 +33,7 @@ function ConfiguredList({ items, empty, config, onEdit }: { items: Configured[];
 }
 
 export function ProvidersSettings({ refreshKey, onChanged }: { refreshKey: number; onChanged?: () => Promise<void> | void }) {
-  const [data, setData] = useState<Providers | null>(null);
+  const { data, error: accountsError, load: loadAccounts } = useProviderUsage(refreshKey);
   const [config, setConfig] = useState<ProviderConfigs | null>(null);
   const [editing, setEditing] = useState<ProviderEdit | null>(null);
   const [saving, setSaving] = useState(false);
@@ -45,12 +41,12 @@ export function ProvidersSettings({ refreshKey, onChanged }: { refreshKey: numbe
   const [error, setError] = useState("");
   const [waiting, setWaiting] = useState(false);
   const [busy, setBusy] = useState(false);
-  const load = useCallback(async () => {
-    try {
-      const [providers, configured] = await Promise.all([api<Providers>("/providers"), api<ProviderConfigs>("/providers/settings").catch(() => null)]);
-      setData(providers); setConfig(configured && Array.isArray(configured.providers) ? configured : null); setError("");
-    } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+  const loadConfig = useCallback(async () => {
+    const configured = await api<ProviderConfigs>("/providers/settings").catch(() => null);
+    setConfig(configured && Array.isArray(configured.providers) ? configured : null);
   }, []);
+  // Accounts come from the app's shared usage store, which also reloads them when an account changes.
+  const load = useCallback(async () => { setError(""); await Promise.all([loadConfig(), loadAccounts()]); }, [loadConfig, loadAccounts]);
   function edit(provider: ProviderConfig) { setNotice(""); setError(""); setEditing({ id: provider.id, type: "custom", name: provider.name, baseUrl: provider.baseUrl ?? "", existing: true, credential: "preserve", secret: "" }); }
   async function saveProvider(event: React.FormEvent) {
     event.preventDefault(); if (!editing || !config?.write?.available || saving) return;
@@ -62,7 +58,7 @@ export function ProvidersSettings({ refreshKey, onChanged }: { refreshKey: numbe
     } catch (e) { const fresh = await api<ProviderConfigs>("/providers/settings").catch(() => null); if (fresh && Array.isArray(fresh.providers)) setConfig(fresh); setError(e instanceof Error ? e.message : String(e)); }
     finally { setSaving(false); }
   }
-  useEffect(() => { void load(); setWaiting(false); }, [load, refreshKey]);
+  useEffect(() => { void loadConfig(); setWaiting(false); }, [loadConfig, refreshKey]);
   async function account(action: "chatgpt" | "signOut") {
     setBusy(true); setError("");
     try {
@@ -71,11 +67,12 @@ export function ProvidersSettings({ refreshKey, onChanged }: { refreshKey: numbe
     } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
     finally { setBusy(false); }
   }
+  const custom = config && data ? config.providers.filter(provider => provider.id !== "openai" && provider.auth.source !== "subscription" && !provider.gateway && !data.openrouter.some(item => item.id === provider.id)) : [];
   const sub = (value: Subscription) => value.state === "connected" ? <State tone="ok">Connected</State> : value.state === "available" ? <State tone="warn">Models available</State> : <State tone="off">Not connected</State>;
   return <div className="grid gap-4" aria-label="Providers">
     <div className="flex flex-wrap items-center justify-between gap-3"><p className="text-sm text-muted-foreground">Elpis models use the accounts connected on this computer.</p><Button variant="ghost" size="sm" onClick={() => void load()}><RefreshCw size={14} />Refresh</Button></div>
     <details className="provider-advanced"><summary>Advanced API connections</summary><p className="provider-note">Connect OpenRouter, a local server or another compatible service.</p><Button size="sm" variant="outline" disabled={!config?.write?.available || saving} onClick={() => { setNotice(""); setError(""); setEditing({ id: "", type: "custom", name: "", baseUrl: "", existing: false, credential: "preserve", secret: "" }); }}>Add API provider</Button></details>
-    {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
+    {(error || accountsError) && <p role="alert" className="text-sm text-destructive">{error || accountsError}</p>}
     {notice && <p role="status" className="text-sm text-muted-foreground">{notice}</p>}
     {config?.write?.reason && !config.write?.available && <p className="text-sm text-muted-foreground">{config.write?.reason}</p>}
     {editing && <form className="settings-card grid gap-4 p-5" aria-label="API provider settings" onSubmit={saveProvider}>
@@ -91,7 +88,7 @@ export function ProvidersSettings({ refreshKey, onChanged }: { refreshKey: numbe
       {editing.existing && <p className="text-xs text-muted-foreground">Current key: {config?.providers.find(provider => provider.id === editing.id)?.auth.keySet ? "set" : "not set"}</p>}
       <div className="flex gap-2"><Button type="submit" disabled={!config?.write?.available || saving || !editing.name.trim() || !editing.baseUrl.trim()}>{saving ? "Saving…" : "Save provider"}</Button><Button type="button" variant="outline" disabled={saving} onClick={() => setEditing(null)}>Cancel</Button></div>
     </form>}
-    {!data && !error && <p role="status" className="text-sm text-muted-foreground">Reading providers…</p>}
+    {!data && !accountsError && <p role="status" className="text-sm text-muted-foreground">Reading providers…</p>}
     {data && <>
       <Card id="openai" name="OpenAI / ChatGPT" state={data.openai.auth.state === "signedIn" ? <State tone="ok">Signed in{data.openai.auth.method ? ` with ${data.openai.auth.method}` : ""}</State> : data.openai.auth.state === "unknown" ? <State tone="warn">Sign-in state unavailable</State> : <State tone="off">Not signed in</State>}>
         {data.openai.auth.email && <p className="text-sm">{data.openai.auth.email}{data.openai.auth.plan ? ` · ${data.openai.auth.plan} plan` : ""}</p>}
@@ -111,10 +108,7 @@ export function ProvidersSettings({ refreshKey, onChanged }: { refreshKey: numbe
       {data.openrouter.length > 0 && <Card id="openrouter" name="OpenRouter" state={data.openrouter.length ? (data.openrouter.every(item => item.keySet) ? <State tone="ok">Key set</State> : <State tone="warn">Key missing</State>) : <State tone="off">Not configured</State>}>
         <ConfiguredList config={config} onEdit={edit} items={data.openrouter} empty="No OpenRouter connection yet." />
       </Card>}
-      {data.local.length > 0 && <Card id="local" name="Local servers" state={data.local.length ? <State tone="ok">{data.local.length} configured</State> : <State tone="off">Not configured</State>}>
-        <ConfiguredList config={config} onEdit={edit} items={data.local} empty="No local server connected yet." />
-      </Card>}
-      {config && config.providers.some(provider => provider.id !== "openai" && provider.auth.source !== "subscription" && ![...data.openrouter, ...data.local].some(item => item.id === provider.id)) && <Card id="custom" name="Custom API providers" state={<State tone="ok">Configured</State>}><ConfiguredList config={config} onEdit={edit} empty="No custom providers configured." items={config.providers.filter(provider => provider.id !== "openai" && provider.auth.source !== "subscription" && ![...data.openrouter, ...data.local].some(item => item.id === provider.id)).map(provider => ({ id: provider.id, name: provider.name, baseUrl: provider.baseUrl, envKey: provider.auth.envKey, keySet: provider.auth.keySet }))} /></Card>}
+      {custom.length > 0 && <Card id="custom" name="Custom API providers" state={<State tone="ok">Configured</State>}><ConfiguredList config={config} onEdit={edit} empty="No custom providers configured." items={custom.map(provider => ({ id: provider.id, name: provider.name, baseUrl: provider.baseUrl, envKey: provider.auth.envKey, keySet: provider.auth.keySet }))} /></Card>}
     </>}
   </div>;
 }

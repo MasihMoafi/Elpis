@@ -717,7 +717,7 @@ test('providers report separate sign-in and usage per provider; MCP shows creden
   assert.equal(providers.claude.state, 'connected'); assert.deepEqual(providers.claude.models, ['Opus (Claude subscription)']);
   assert.deepEqual(providers.gemini.usage.map(limit => limit.limitId), ['antigravity-pro']); assert.equal(providers.gemini.state, 'connected');
   assert.deepEqual(providers.openrouter, [{ id: 'openrouter', name: 'OpenRouter', baseUrl: 'https://openrouter.ai/api/v1', envKey: 'APP_TEST_OPENROUTER_KEY', keySet: true }]);
-  assert.deepEqual(providers.local.map(item => [item.id, item.baseUrl]), [['local', 'http://127.0.0.1:1234/v1']]);
+  assert.equal('local' in providers, false, 'loopback addresses are not listed as local servers');
   const mcp = await client.mcp();
   assert.deepEqual(mcp.servers.map(server => [server.name, server.enabled, server.transport]), [['rag', true, 'stdio'], ['remote', false, 'http'], ['whispertype', true, 'stdio']]);
   assert.deepEqual(mcp.servers[0].credentials, [{ name: 'OPENROUTER_API_KEY', source: 'config', set: true }]);
@@ -859,6 +859,46 @@ test('settings pages read and write only listed native options, respecting manag
   requirementsRead.requirements = { allowedSandboxModes: ['read-only'] };
   await assert.rejects(client.saveSettings({ version: 'user-version', options: { sandboxMode: 'danger-full-access' } }), error => error.status === 403 && /managed/.test(error.message));
   assert.equal(writes(), before, 'refused options write nothing');
+  client.close();
+});
+
+test('the default sandbox reads and writes the permission profile when the config selects one', async () => {
+  const { client, socket, configRead } = fixture(); await client.initialize();
+  const user = configRead.layers[0];
+  const save = async sandboxMode => { await client.saveSettings({ version: 'user-version', options: { sandboxMode } }); return socket.sent.findLast(row => row.method === 'config/batchWrite').params.edits; };
+  // As Masih's config: the engine prefers a layer's default_permissions to its sandbox_mode.
+  Object.assign(configRead.config, { default_permissions: ':workspace', sandbox_mode: 'read-only' }); Object.assign(user.config, { default_permissions: ':workspace', sandbox_mode: 'read-only' });
+  assert.equal((await client.settings()).options.sandboxMode, 'workspace-write');
+  assert.deepEqual(await save('danger-full-access'), [{ keyPath: 'default_permissions', value: ':danger-full-access', mergeStrategy: 'replace' }]);
+  assert.deepEqual(await save('read-only'), [{ keyPath: 'default_permissions', value: ':read-only', mergeStrategy: 'replace' }]);
+  assert.deepEqual(await save(null), [{ keyPath: 'default_permissions', value: null, mergeStrategy: 'replace' }]);
+  configRead.config.default_permissions = ':danger-full-access';
+  assert.equal((await client.settings()).options.sandboxMode, 'danger-full-access');
+  // A named profile from the config file is not one of the built-in choices.
+  configRead.config.default_permissions = user.config.default_permissions = 'dev';
+  assert.equal((await client.settings()).options.sandboxMode, 'custom');
+  // A config without profiles keeps the legacy key.
+  delete configRead.config.default_permissions; delete user.config.default_permissions;
+  assert.equal((await client.settings()).options.sandboxMode, 'read-only');
+  assert.deepEqual(await save('danger-full-access'), [{ keyPath: 'sandbox_mode', value: 'danger-full-access', mergeStrategy: 'replace' }]);
+  client.close();
+});
+
+test('internal gateway routes are neither local servers nor editable custom providers', async () => {
+  const { client, socket, configRead } = fixture(); await client.initialize();
+  // How config/read reports a provider the engine routes through its own gateway (here, the Anthropic credits).
+  configRead.config.model_providers['anthropic-credits'] = { name: 'Anthropic promotional credits', base_url: 'http://127.0.0.1:44103/v1', wire_api: 'responses', requires_openai_auth: false,
+    http_headers: { 'x-elpis-gateway-token': 'GATEWAY SECRET', 'x-elpis-provider': 'anthropic-credits', 'x-elpis-wire': 'anthropic_messages', 'x-elpis-upstream': 'https://api.anthropic.com/v1' } };
+  const providers = await client.providers();
+  assert.equal('local' in providers, false);
+  assert.doesNotMatch(JSON.stringify(providers), /anthropic-credits|44103/);
+  const settings = await client.providerSettings();
+  const credits = settings.providers.find(provider => provider.id === 'anthropic-credits');
+  assert.equal(credits.gateway, true); assert.equal(credits.editable, false); assert.equal(credits.auth.acceptsKey, false);
+  assert.equal(settings.providers.find(provider => provider.id === 'openrouter').gateway, false);
+  assert.doesNotMatch(JSON.stringify(settings), /GATEWAY SECRET/);
+  await assert.rejects(client.saveProvider({ version: 'user-version', id: 'anthropic-credits', name: 'Changed', baseUrl: 'https://api.anthropic.com/v1', credential: { action: 'preserve' } }), error => error.status === 403);
+  assert.equal(socket.sent.filter(row => row.method === 'config/batchWrite').length, 0, 'an internal route is never rewritten');
   client.close();
 });
 

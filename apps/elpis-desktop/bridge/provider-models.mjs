@@ -11,6 +11,13 @@ const BLOCKED_HEADERS = new Set(['host', 'connection', 'content-length', 'transf
 const LISTINGS = { responses: {}, chat: {}, anthropic_messages: { limit: '1000' }, gemini_generate_content: { pageSize: '1000' } };
 const wireOf = definition => definition.wire_api === undefined ? 'responses' : definition.wire_api;
 
+/** Whether the engine serves this provider through its own gateway: config/read then reports the gateway's loopback
+ * address and its internal `x-elpis-` headers instead of the vendor's (codex-rs/model-provider-info/src/elpis_gateway.rs). */
+export const gatewayRouted = definition => ['http_headers', 'env_http_headers'].some(field => {
+  const headers = definition?.[field];
+  return headers !== null && typeof headers === 'object' && Object.keys(headers).some(name => name.toLowerCase().startsWith('x-elpis-'));
+});
+
 class CatalogueError extends Error {}
 const unavailable = message => new CatalogueError(message);
 const record = value => value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -28,10 +35,8 @@ function endpoint(definition) {
   for (const field of ['http_headers', 'env_http_headers']) {
     const headers = definition[field];
     if (headers != null && !record(headers)) throw unavailable('This connection has invalid HTTP header configuration.');
-    if (headers && Object.keys(headers).some(name => name.toLowerCase().startsWith('x-elpis-'))) {
-      throw unavailable('Model browsing is not available through an internal provider gateway.');
-    }
   }
+  if (gatewayRouted(definition)) throw unavailable('Model browsing is not available through an internal provider gateway.');
   const input = typeof definition.base_url === 'string' ? definition.base_url.trim() : '';
   if (!/^https?:\/\/[^/\\\s]/i.test(input) || /[\x00-\x20\x7f\\?#]/.test(input)) {
     throw unavailable('This connection needs a valid API base URL without credentials, query parameters or fragments.');

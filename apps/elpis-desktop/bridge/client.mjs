@@ -443,7 +443,7 @@ export class DesktopClient extends EventEmitter {
       }
     }
     if (input.options !== undefined) {
-      try { edits.push(...optionEdits(input.options, current.managed)); }
+      try { edits.push(...optionEdits(input.options, current.managed, current.permissionProfiles)); }
       catch (error) { throw new BridgeError(error.message, /managed/.test(error.message) ? 403 : 400); }
     }
     if (!edits.length) throw new BridgeError('No settings were changed');

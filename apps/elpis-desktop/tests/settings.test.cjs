@@ -1,4 +1,3 @@
-const { leaveSettings } = require('./controls.cjs');
 // Actual exported settings UI, deterministic local HTTP. No model calls.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
@@ -8,16 +7,15 @@ const path = require('node:path');
 const { chromium } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright');
 const root = path.resolve(__dirname, '../out');
 
-test('settings keep unknowns honest, show failed optimizer identity, and reject stale chat snapshots', async () => {
-  const clients = new Set(); let held; let aRequests = 0; let mismatch = false;
-  const threads = ['A', 'B'].map(id => ({ id, name: `Context conversation ${id}`, source: 'cli', status: { type: 'idle' }, desktopAccess: { writable: false, reason: 'Read-only fixture' } }));
+test('settings keep unknowns honest, and Usage & limits shows no chat context', async () => {
+  const clients = new Set();
+  const threads = [{ id: 'A', name: 'Context conversation A', source: 'cli', status: { type: 'idle' }, desktopAccess: { writable: false, reason: 'Read-only fixture' } }];
   const settings = {
     main: { model: null, provider: null }, background: { model: null, provider: null }, providers: [],
     smartPrune: { enabled: null, explicitOverride: { reason: 'Pruning override unavailable' } },
     memory: { generate: null, use: null, extractionModel: null, consolidationModel: null },
     write: { reason: 'Read-only settings' },
   };
-  const snapshot = (id, model) => ({ threadId: id, tokenUsage: null, smartPrune: { latestAttempt: { status: 'failed', modelSlug: model, failureReason: 'Optimizer connection failed' } }, reason: 'Live events from this connection only' });
   const server = http.createServer(async (req, res) => {
     const url = new URL(req.url, 'http://localhost'); for await (const _ of req) { /* consume body */ }
     const json = value => { res.setHeader('content-type', 'application/json'); res.end(JSON.stringify(value)); };
@@ -27,10 +25,8 @@ test('settings keep unknowns honest, show failed optimizer identity, and reject 
     if (url.pathname === '/api/settings') return json(settings);
     if (url.pathname === '/api/models') return json({ data: [], nextCursor: null });
     if (url.pathname === '/api/threads') return json({ data: url.searchParams.has('ancestorThreadId') ? [] : threads, nextCursor: null });
-    if (url.pathname === '/api/threads/A/context') { aRequests++; held = () => json(snapshot('A', 'OLD_OPTIMIZER_MUST_NOT_APPEAR')); return; }
-    if (url.pathname === '/api/threads/B/context') return json(snapshot(mismatch ? 'A' : 'B', mismatch ? 'WRONG_THREAD_OPTIMIZER' : 'B_OPTIMIZER'));
-    const thread = threads.find(item => url.pathname === `/api/threads/${item.id}`);
-    if (thread) return json({ thread, data: [], nextCursor: null });
+    if (url.pathname === '/api/threads/A/context') return json({ threadId: 'A', tokenUsage: null, smartPrune: { latestAttempt: { status: 'failed', modelSlug: 'OPTIMIZER_FIXTURE', failureReason: 'Optimizer connection failed' } }, reason: 'Live events from this connection only' });
+    if (url.pathname === '/api/threads/A') return json({ thread: threads[0], data: [], nextCursor: null });
     try {
       const file = path.join(root, url.pathname === '/' ? 'index.html' : url.pathname);
       res.setHeader('content-type', file.endsWith('.js') ? 'text/javascript' : file.endsWith('.css') ? 'text/css' : 'text/html');
@@ -50,22 +46,12 @@ test('settings keep unknowns honest, show failed optimizer identity, and reject 
     assert.ok(await configuration.getByText('Not reported', { exact: true }).count() >= 3);
     await page.getByRole('tab', { name: 'Personalization', exact: true }).click();
     assert.ok(await page.getByRole('tabpanel', { name: 'Personalization', exact: true }).getByText('Not reported', { exact: true }).count() >= 5);
+    // Masih removed the selected chat's context from this page; it shows account limits only.
     await page.getByRole('tab', { name: 'Usage & limits', exact: true }).click();
-    await page.waitForTimeout(5500);
-    assert.equal(aRequests, 1, 'Do not start another context poll while the first response is pending');
-    await leaveSettings(page); await page.getByRole('button', { name: 'Context conversation B', exact: true }).click();
-    await page.getByRole('button', { name: 'Settings', exact: true }).click(); await page.getByRole('tab', { name: 'Usage & limits', exact: true }).click();
-    await page.getByText('B_OPTIMIZER', { exact: true }).waitFor();
-    await page.getByText('failed', { exact: true }).waitFor();
-    await page.getByText('Optimizer connection failed', { exact: true }).waitFor();
-    held();
-    await page.waitForTimeout(150);
-    assert.equal(await page.getByText('OLD_OPTIMIZER_MUST_NOT_APPEAR', { exact: true }).count(), 0);
-    assert.equal(await page.getByText('B_OPTIMIZER', { exact: true }).count(), 1);
-    mismatch = true;
-    await page.getByRole('alert').filter({ hasText: 'another conversation' }).waitFor();
-    assert.equal(await page.getByText('WRONG_THREAD_OPTIMIZER', { exact: true }).count(), 0);
-    assert.equal(await page.getByText('B_OPTIMIZER', { exact: true }).count(), 0, 'Failed refresh must not leave old data presented as current');
+    const usage = page.getByRole('tabpanel', { name: 'Usage & limits', exact: true });
+    await usage.getByText('Limits reported by each connected account.', { exact: true }).waitFor();
+    await page.waitForTimeout(500);
+    for (const text of ['Selected conversation · context', 'OPTIMIZER_FIXTURE', 'Optimizer connection failed', 'Latest input tokens']) assert.equal(await usage.getByText(text).count(), 0, `${text} is not shown`);
     assert.deepEqual(errors, []);
   } finally {
     await browser.close(); for (const client of clients) client.end();

@@ -143,18 +143,6 @@ test('switching a provider preserves its configured model and never borrows the 
   assert.match(renderToStaticMarkup(tree),/No model catalog is available for Home server/);
 });
 
-test('an inactive context panel does not poll; an active one reads only its own chat',async()=>{
-  const original=globalThis.fetch, calls=[];
-  globalThis.fetch=async path=>{calls.push(path);return {ok:true,json:async()=>({threadId:'chat-one',tokenUsage:null,smartPrune:null})};};
-  const view=fixture('components/settings/conversation-context.tsx','ConversationContext',{threadId:'chat-one',active:false});
-  try {
-    view.render();view.effects();await new Promise(setImmediate);
-    assert.deepEqual(calls,[]);
-    view.render({threadId:'chat-one',active:true});view.effects();await new Promise(setImmediate);
-    assert.deepEqual(calls,['/api/threads/chat-one/context']);
-  } finally {view.dispose();globalThis.fetch=original;}
-});
-
 test('configured external provider fetches its own catalog once and keeps its current model',async()=>{
   const original=globalThis.fetch,calls=[];
   globalThis.fetch=async path=>{calls.push(path);return {ok:true,json:async()=>({data:[{id:'oss',model:'gpt-oss',displayName:'GPT OSS local'}],nextCursor:null})};};

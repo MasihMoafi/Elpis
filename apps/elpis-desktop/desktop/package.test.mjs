@@ -11,7 +11,7 @@ import { stageDesktop } from './package.mjs';
 
 const run = promisify(execFile);
 const production = [
-  'bridge/client.mjs', 'bridge/elpis-features.mjs', 'bridge/provider-settings.mjs', 'bridge/provider-models.mjs',
+  'bridge/client.mjs', 'bridge/elpis-features.mjs', 'bridge/provider-keys.mjs', 'bridge/provider-settings.mjs', 'bridge/provider-models.mjs',
   'bridge/rag-command.mjs', 'bridge/server.mjs', 'bridge/tools.mjs', 'bridge/transcription.mjs', 'bridge/attachments.mjs',
   'bridge/resources/rag.md', 'desktop/browser-policy.cjs', 'desktop/browser.cjs',
   'desktop/main.cjs', 'desktop/media-policy.cjs', 'desktop/preload.cjs', 'desktop/files.cjs',

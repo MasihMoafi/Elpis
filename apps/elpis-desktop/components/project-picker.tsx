@@ -12,9 +12,9 @@ const message = (e: unknown) => e instanceof Error ? e.message.replace(/^Error i
 
 /** Where a new chat works, as in the ChatGPT app: the project named in the new-chat heading
  * and the folder chip above the composer open the same menu. */
-export function ProjectMenu({ projects, selected, disabled, variant, onSelect, onEdit }: {
+export function ProjectMenu({ projects, selected, disabled, variant, onSelect, onAdd }: {
   projects: Project[]; selected: Project | null; disabled: boolean; variant: "heading" | "chip";
-  onSelect: (project: Project | null) => Promise<void>; onEdit: (project: Project | null) => void;
+  onSelect: (project: Project | null) => Promise<void>; onAdd: () => void;
 }) {
   const [busy, setBusy] = useState(false), [error, setError] = useState("");
   async function choose(project: Project | null) { setBusy(true); setError(""); try { await onSelect(project); } catch (e) { setError(message(e)); } finally { setBusy(false); } }
@@ -28,12 +28,21 @@ export function ProjectMenu({ projects, selected, disabled, variant, onSelect, o
           <FolderIcon aria-hidden="true" /><span className="project-option"><strong>{project.name}</strong><small>{project.cwd}</small></span>
           {project.id === selected?.id && <Check className="ml-auto" aria-label="Current" />}
         </DropdownMenuItem>)}
-        <DropdownMenuItem className="hud-menu-item" onClick={() => onEdit(null)}><PlusIcon aria-hidden="true" />New project…</DropdownMenuItem>
+        <DropdownMenuItem className="hud-menu-item" onClick={onAdd}><PlusIcon aria-hidden="true" />New project…</DropdownMenuItem>
         {selected && <DropdownMenuItem className="hud-menu-item" onClick={() => void choose(null)}><X aria-hidden="true" />Don’t work in a project</DropdownMenuItem>}
       </DropdownMenuContent>
     </DropdownMenu>
     {error && <span role="alert" className="project-error">{error}</span>}
   </>;
+}
+
+/** The ChatGPT app's "Add new project": the native folder chooser, then a project named after the folder;
+ * a project that already has the folder is returned instead. Null when cancelled; undefined without a desktop chooser. */
+export async function chooseProject(projects: Project[]): Promise<Project | null | undefined> {
+  const choose = window.elpisDesktop?.chooseFolder; if (!choose) return undefined;
+  const folder = await choose().catch((e: unknown) => { throw Error(message(e)); });
+  if (!folder) return null;
+  return projects.find(project => project.cwd.replace(/\/+$/, "") === folder.replace(/\/+$/, "")) ?? { id: crypto.randomUUID(), name: folder.split("/").filter(Boolean).at(-1) || folder, cwd: folder };
 }
 
 /** A sidebar project's menu, after the ChatGPT app's project actions. */

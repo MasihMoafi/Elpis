@@ -64,6 +64,9 @@ export function GeneralSettings() {
       <SettingRow title="Confirm before closing the window" description="Ask before Elpis closes. Running chats continue either way.">
         <Switch aria-label="Confirm before closing the window" checked={preferences.confirmClose} onCheckedChange={confirmClose => save({ confirmClose })} />
       </SettingRow>
+      <SettingRow title="Confirm before deleting chats" description="Ask before Delete or D removes chats. “Don’t show me this again” turns this off.">
+        <Switch aria-label="Confirm before deleting chats" checked={preferences.confirmDeleteChats} onCheckedChange={confirmDeleteChats => save({ confirmDeleteChats })} />
+      </SettingRow>
       <Speed />
     </SettingsGroup>
     <SettingsGroup title="Composer">
