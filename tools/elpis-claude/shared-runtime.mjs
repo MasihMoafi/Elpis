@@ -393,10 +393,17 @@ const ENV_NAMES = [
   "ELPIS_NO_AGY", "AGY_BIN", "AGY_DEFAULT_MODEL", "ACP_ADAPTER", "ACP_BRIDGE_STORE", "ACP_BRIDGE_NO_AGENTS", "ELPIS_AGENT_TOOLS",
   "CODEX_HOME", "CODEX_AUTH_HOME",
 ];
+// The proxy bypass list as a set, without the loopback hosts the desktop launcher adds: a
+// terminal and the app with the same proxy then share one bridge. Empty means unset.
+const LOOPBACK = new Set(["localhost", "127.0.0.1", "::1"]);
+const bypassList = (value) => value.split(",").map((host) => host.trim()).filter((host) => host && !LOOPBACK.has(host)).sort().join(",") || undefined;
 // Salted hashes of the set variables, so a state file never holds a proxy URL or a key.
 export function environmentDigest(env, salt) {
   const digest = {};
-  for (const name of ENV_NAMES) if (env[name] !== undefined) digest[name] = sha(`${salt}\0${name}\0${env[name]}`);
+  for (const name of ENV_NAMES) {
+    const value = env[name] !== undefined && /^no_proxy$/i.test(name) ? bypassList(env[name]) : env[name];
+    if (value !== undefined) digest[name] = sha(`${salt}\0${name}\0${value}`);
+  }
   return digest;
 }
 // The names whose value differs between a running bridge's record and this launch.
