@@ -45,7 +45,7 @@ async function createOrFocusWindow() {
       preload: path.join(__dirname, 'preload.cjs'),
     },
   });
-  const browser = createBrowser({ host: window, origin, WebContentsView, session, ipcMain });
+  const browser = createBrowser({ host: window, origin, WebContentsView, session, ipcMain, openExternal: url => shell.openExternal(url) });
   const disposeState = registerState({ host: window, origin, ipcMain, dialog,
     store: createStateStore(path.join(app.getPath('userData'), 'workspace.json')) });
   const disposeFiles = registerFiles({ host: window, origin, ipcMain, shell });

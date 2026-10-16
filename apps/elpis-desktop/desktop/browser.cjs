@@ -2,7 +2,7 @@
 const {randomUUID}=require('node:crypto');
 const {browserUrl,trustedBrowserSender,nativeBounds}=require('./browser-policy.cjs');
 
-function createBrowser({host,origin,WebContentsView,session,ipcMain}) {
+function createBrowser({host,origin,WebContentsView,session,ipcMain,openExternal}) {
   const tabs=new Map();let activeId=null,visible=false,bounds=null,obscured=false,focusAddress=0,disposed=false,popups=[];
   const browserSession=session.fromPartition('persist:elpis-browser');
   browserSession.setPermissionRequestHandler((_contents,_permission,callback)=>callback(false));
@@ -96,6 +96,7 @@ function createBrowser({host,origin,WebContentsView,session,ipcMain}) {
       case 'forward':if(tab?.view.webContents.navigationHistory.canGoForward())tab.view.webContents.navigationHistory.goForward();break;
       case 'reload':tab?.view.webContents.reload();break;
       case 'stop':tab?.view.webContents.stop();break;
+      case 'external':if(tab&&/^https?:/.test(tab.url)&&openExternal)void openExternal(tab.url);break;
       default:throw Error('Unknown browser command.');
     }
     return snapshot();

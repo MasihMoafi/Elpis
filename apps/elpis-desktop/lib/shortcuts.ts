@@ -12,6 +12,7 @@ export const SHORTCUTS: Shortcut[] = [
   { id: "previous-chat", group: "Navigation", label: "Previous chat", keys: ["Ctrl+Shift+[", "Ctrl+PageUp"] },
   { id: "next-chat", group: "Navigation", label: "Next chat", keys: ["Ctrl+Shift+]", "Ctrl+PageDown"] },
   { id: "go-to-chat", group: "Navigation", label: "Go to chat 1–9", keys: ["Alt+1…9"] },
+  { id: "new-tab", group: "App", label: "Open browser tab", keys: ["Ctrl+T"] },
   { id: "sidebar", group: "App", label: "Toggle sidebar", keys: ["Ctrl+Shift+S", "Ctrl+B"] },
   { id: "copy-folder", group: "App", label: "Copy working directory", keys: ["Ctrl+Shift+C"] },
   { id: "settings", group: "App", label: "Settings", keys: ["Ctrl+,"] },
@@ -26,6 +27,7 @@ export function shortcutFor(event: KeyboardEvent, typing: boolean): { id: string
     if (key === "n") return { id: "new-chat" };
     if (key === "k") return { id: "search" };
     if (key === "b") return { id: "sidebar" };
+    if (key === "t") return { id: "new-tab" };
     if (key === ",") return { id: "settings" };
     if (key === "/") return { id: "shortcuts" };
     if (key === "pageup") return { id: "previous-chat" };

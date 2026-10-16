@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Archive, ArrowUp, ChevronRight, PanelRight, Pin, Folder, GitBranch, Globe, Menu, Moon, Plus, RefreshCw, Search, Settings2, Square, SquarePen, Sun, Workflow, X } from "lucide-react";
+import { Archive, ArrowUp, ChevronRight, Columns2, PanelRight, Pin, Folder, GitBranch, Globe, Menu, Moon, Plus, RefreshCw, Search, Settings2, Square, SquarePen, Sun, Workflow, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { OptionSelect } from "@/components/ui/option-select";
 import { Input } from "@/components/ui/input";
@@ -27,7 +27,7 @@ import { ModelPicker } from "@/components/model-picker";
 import { appStorage, readProjects, saveProjects, type Project } from "@/lib/projects";
 import { agentState, mergeListedThreads } from "@/lib/agents";
 import { insertTranscript } from "@/lib/dictation";
-import { BrowserPanel } from "@/components/browser-panel";
+import { BrowserPanel, TaskTabs, useBrowser } from "@/components/browser-panel";
 import { readDraft, writeDraft } from "@/lib/drafts";
 import { ATTACHMENT_ACCEPT, attachmentFromFile, readAttachmentDraft, validateAttachments, withoutSubmittedAttachments, writeAttachmentDraft, type Attachment } from "@/lib/attachments";
 import { scanDeletionThreads } from "@/lib/thread-deletion";
@@ -240,7 +240,16 @@ export default function Home() {
   const [view, setView] = useState<View>("chat");
   const [settingsSection, setSettingsSection] = useState<"providers" | "elpis">("providers");
   const [desktop, setDesktop] = useState(false);
-  const [browserOpen, setBrowserOpen] = useState(false);
+  const browser = useBrowser();
+  const [browserView, setBrowserView] = useState<"chat" | "browser">("chat");
+  const [split, setSplit] = useState(false);
+  const browserOpen = !!browser.state?.visible && view !== "settings";
+  const browserFull = browserOpen && browserView === "browser" && !split;
+  useEffect(() => { if (browser.state?.visible) setBrowserView("browser"); }, [browser.state?.visible]);
+  // Opening a chat brings its tab forward, as in the ChatGPT app.
+  useEffect(() => { if (selected?.id) setBrowserView(current => { if (current === "browser" && !split) void browser.command("hide"); return "chat"; }); }, [selected?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  /** The chat tab: in full view the page steps aside; in split view both stay. */
+  const showChat = () => { setBrowserView("chat"); if (!split) void browser.command("hide"); };
   useEffect(() => { setDesktop(!!window.elpisDesktop?.browser); }, []);
   const [pendingInputOpen, setPendingInputOpen] = useState(false);
   const pendingInputButton = useRef<HTMLButtonElement>(null);
@@ -751,6 +760,7 @@ export default function Home() {
     else if (id === "archive" && selected) void archiveThread(selected);
     else if (id === "pin" && selected) togglePin(selected);
     else if (id === "copy-folder" && (selected?.cwd || cwd)) void navigator.clipboard.writeText(selected?.cwd || cwd);
+    else if (id === "new-tab" && desktop) { setBrowserView("browser"); void browser.command("new"); }
   };
   function togglePin(thread: Thread) {
     const next = pins.includes(thread.id) ? pins.filter(id => id !== thread.id) : [thread.id, ...pins];
@@ -824,7 +834,10 @@ export default function Home() {
         <Button className="mobile-menu" variant="ghost" size="icon-sm" aria-label="Open sidebar" onClick={() => setSidebar(true)}><Menu size={18} /></Button>
         <img className="mobile-brand" src={brandMark} alt="" aria-hidden="true" width={24} height={24} />
         <div className="header-titles min-w-0 flex-1">
-          <div className="header-title-row"><h1>{heading}</h1>{view === "chat" && selected && <ThreadActions label="Chat actions" thread={selected} onDelete={deleteThread} onRename={renameThread} onArchive={archiveThread} pinned={pins.includes(selected.id)} onPin={togglePin} renameRequested={renameRequest} onRenameRequestHandled={() => setRenameRequest(false)} />}</div>
+          {view === "chat" && desktop
+            ? <TaskTabs browser={browser} chatTitle={heading} chatActive={!browserFull && browserView === "chat" || !browserOpen} onChat={showChat} onPage={() => setBrowserView("browser")}
+                chatMenu={selected && <ThreadActions label="Chat actions" thread={selected} onDelete={deleteThread} onRename={renameThread} onArchive={archiveThread} pinned={pins.includes(selected.id)} onPin={togglePin} renameRequested={renameRequest} onRenameRequestHandled={() => setRenameRequest(false)} />} />
+            : <div className="header-title-row"><h1>{heading}</h1>{view === "chat" && selected && <ThreadActions label="Chat actions" thread={selected} onDelete={deleteThread} onRename={renameThread} onArchive={archiveThread} pinned={pins.includes(selected.id)} onPin={togglePin} renameRequested={renameRequest} onRenameRequestHandled={() => setRenameRequest(false)} />}</div>}
           {view === "agents" && <p className="page-description">Your conversations and agents. Open a chat or follow a running task.</p>}
           {view === "chat" && selected && meta && <p className="thread-meta">{meta}</p>}
           {view === "chat" && selected && (selected.parentThreadId || selected.forkedFromId) && <p className="thread-links">
@@ -833,7 +846,7 @@ export default function Home() {
           </p>}
           {view === "chat" && pending && <p className="next-turn">Next turn: {[pending.model && modelLabel(pending.model, models), pending.effort && `${pending.effort} reasoning`].filter(Boolean).join(" · ")}</p>}
         </div>
-        {desktop && view !== "settings" && <Button className="header-action" variant="ghost" size="sm" aria-label={browserOpen ? "Hide browser" : "Open browser"} aria-pressed={browserOpen} onClick={() => { void window.elpisDesktop?.browser.command("toggle").catch(error => setError(error.message)); }}><Globe size={15}/>Browser</Button>}
+        {view === "chat" && desktop && (browser.state?.tabs.length ?? 0) > 0 && <Button className="header-action" variant="ghost" size="icon-sm" aria-pressed={split} aria-label={split ? "Exit split view" : "Enter split view"} title={split ? "Exit split view" : "Split view: chat and page side by side"} onClick={() => { setSplit(value => !value); if (!split) { setBrowserView("browser"); if (!browser.state?.visible && browser.state?.activeId) void browser.command("select", { id: browser.state.activeId }); } }}><Columns2 size={16} /></Button>}
         {selected && view === "chat" && <Button className="header-action" variant="ghost" size="sm" onClick={() => { setSettingsSection("elpis"); show("settings"); }}>Context</Button>}
         {selected && view === "chat" && team.length > 0 && !browserOpen && <Button className="header-action" variant="ghost" size="icon-sm" aria-label={agentsPanel ? "Hide agents panel" : "Show agents panel"} aria-pressed={agentsPanel} onClick={() => setAgentsPanel(value => !value)}><PanelRight size={16} /></Button>}
         {selected && view === "chat" && <Button className="header-action" variant="ghost" size="icon-sm" aria-label="Refresh conversation" disabled={loading} onClick={() => loadThread(selected)}><RefreshCw size={16} /></Button>}
@@ -852,7 +865,7 @@ export default function Home() {
           return <div key={approvalDraftKey(approval)} className="pending-request"><div className="pending-request-heading"><p>{name}</p>{approval.params.threadId && <Button variant="ghost" size="sm" onClick={() => { setPendingInputOpen(false); openById(approval.params.threadId!); }}>Open chat</Button>}</div><ApprovalCard approval={approval} answer={(id, body) => answer(id, body, approvalDraftKey(approval))} busy={!!pendingDrafts[approvalDraftKey(approval)]} answers={approvalDrafts[approvalDraftKey(approval)]?.answers ?? {}} onAnswerChange={(id, value) => draftAnswer(approval, id, value)} /></div>;
         })}</div>
       </section>}
-      <div className={`workspace-body${browserOpen && view !== "settings" ? " browser-open" : ""}${view === "settings" ? " no-browser" : ""}`}><div className="workspace-content">
+      <div className={`workspace-body${browserOpen && !browserFull ? " browser-open" : ""}${browserFull ? " browser-full" : ""}${view === "settings" ? " no-browser" : ""}`}><div className="workspace-content">
       {workflowVisited && <div className="page-scroll workflow-page" hidden={view !== "workflows"}><WorkflowEditor runtime={{ visible: view === "workflows", connected, target: selected, targetIsChild: !!selected && isAgent(selected), activeTurnId: activeTurn, models, providerSettings, onConfigure: manageConnections, defaultCwd: selected?.cwd || cwd, defaultModel: selected?.model || model, defaultProvider: selected?.modelProvider || newChoice?.provider || "", onCreateTarget: createWorkflowTarget, onResumeTarget: resumeWorkflowTarget, onStarted: workflowStarted, onStop: async ack => { await api(`/threads/${encodeURIComponent(ack.threadId)}/interrupt`, { turnId: ack.turnId }); }, onOpenThread: openById }} /></div>}
       {settingsVisited && <div className="page-scroll" hidden={view !== "settings"}><SettingsView initialTab={settingsSection} navigationKey={settingsNavigation} active={view === "settings"} threadId={selected?.id} accountRefresh={accountRefresh} theme={theme} onTheme={setTheme} onUnarchived={unarchived} onDeleteThread={deleteThread} onProvidersChanged={async () => { const settings = await api<ProviderSettings>("/settings"); setProviderSettings(settings); void refreshModels(); }} /></div>}
       {view === "agents" && <div className="page-scroll"><AgentsView threads={threads} activity={activity} models={models} providers={providerSettings?.providers} loading={agentsLoading} pendingThreadIds={approvals.map(approval => approval.params.threadId ?? approval.ownerThreadId)} moreConversations={!!nextCursor} loadingMore={moreLoading} onMoreConversations={loadMoreConversations} childCursors={childCursors} loadingChildren={loadingChildren} onMoreAgents={id => void loadChildren(id, childCursors[id] ?? undefined, false)} onOpen={loadThread} onStop={stop} onDelete={deleteThread} onNewAgent={() => show("newAgent")} /></div>}
@@ -922,7 +935,7 @@ export default function Home() {
           </button>; })}
       </aside>}
       </div>}
-      </div><BrowserPanel onVisibleChange={setBrowserOpen} covered={pendingInputOpen || sidebar || view === "settings"}/></div>
+      </div><BrowserPanel browser={browser} full={browserFull} covered={pendingInputOpen || sidebar || view === "settings"}/></div>
     </main>
   </div>;
 }

@@ -7,7 +7,10 @@ test('browser accepts web addresses and local development URLs but not executabl
   assert.equal(browserUrl('localhost:3000/review'),'http://localhost:3000/review');
   assert.equal(browserUrl('127.0.0.1:43155/test'),'http://127.0.0.1:43155/test');
   assert.equal(browserUrl('about:blank'),'about:blank');
-  for(const value of ['javascript:alert(1)','file:///etc/passwd','data:text/html,hello','https://user:secret@example.com','not an address'])assert.throws(()=>browserUrl(value));
+  for(const value of ['javascript:alert(1)','file:///etc/passwd','data:text/html,hello','https://user:secret@example.com'])assert.throws(()=>browserUrl(value));
+  assert.equal(browserUrl('not an address'),'https://www.google.com/search?q=not%20an%20address');
+  assert.equal(browserUrl('rust'),'https://www.google.com/search?q=rust');
+  assert.equal(browserUrl('192.168.1.10:8080/x'),'https://192.168.1.10:8080/x');
   assert.throws(()=>browserUrl('http://127.0.0.1:43147/api/session','http://127.0.0.1:43147'));
 });
 test('only the app main frame can control its native browser',()=>{

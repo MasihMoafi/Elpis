@@ -593,3 +593,27 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .shortcut-keys { display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end; }
 .shortcut-keys kbd { font:500 11px/1 var(--mono); padding:4px 6px; border:1px solid var(--border); border-radius:3px; background:var(--recessed); color:var(--foreground); }
 .header-title-row { display:flex; align-items:center; gap:4px; min-width:0; } .header-title-row .thread-actions { opacity:.7; flex-shrink:0; }
+/* Task tabs and browser, as in the ChatGPT app */
+.task-tabs { display:flex; align-items:center; gap:2px; min-width:0; overflow-x:auto; scrollbar-width:none; padding:6px 0; }
+.task-tab { display:flex; align-items:center; gap:2px; min-width:0; max-width:240px; flex:0 1 auto; border:1px solid transparent; border-radius:4px; color:var(--muted-foreground); padding:0 2px 0 0; position:relative; }
+.task-tab > button[role="tab"] { display:flex; align-items:center; gap:7px; min-width:0; border:0; background:none; color:inherit; font:inherit; font-size:13px; padding:5px 6px 5px 9px; }
+.task-tab > button[role="tab"] span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.task-tab > button[role="tab"] svg { flex-shrink:0; }
+.task-tab:hover { background:var(--hover); color:var(--foreground); }
+.task-tab.active { background:var(--card); border-color:var(--border); color:var(--foreground); }
+.task-tab.active::after { content:""; position:absolute; left:8px; right:8px; bottom:-1px; height:1.5px; background:var(--primary); box-shadow:0 0 8px var(--primary); }
+.task-tab.chat-tab { max-width:340px; font-weight:500; }
+.task-tab.chat-tab.active > button svg { color:var(--primary); }
+.task-tab + .task-tab:not(.active):not(:hover)::before { content:""; position:absolute; left:-2px; top:9px; bottom:9px; width:1px; background:var(--hairline); }
+.task-tab-new { flex-shrink:0; color:var(--muted-foreground); }
+.workspace-body.browser-full > .workspace-content { display:none; }
+.browser-panel.full { width:100%; max-width:none; border-inline-start:0; }
+.browser-toolbar { gap:4px; background:var(--sidebar); }
+.browser-toolbar input { border-radius:4px; border-color:var(--hairline); background:var(--recessed); }
+.browser-toolbar input:focus-visible { border-color:color-mix(in oklch, var(--primary) 50%, var(--border)); }
+.workspace-body { position:relative; }
+.composer .model-controls { flex-wrap:nowrap; flex-shrink:0; }
+.composer-right { flex:1; justify-content:flex-end; }
+.composer .model-picker-trigger { min-width:0; max-width:300px; flex:0 1 auto; }
+.header-action[aria-pressed="true"] { color:var(--primary); background:var(--selected); }
+@container workspace (max-width: 760px) { .composer .model-trigger-provider { display:none; } .composer-pill span { display:none; } }
