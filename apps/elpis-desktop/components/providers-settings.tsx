@@ -30,7 +30,7 @@ function ConfiguredList({ items, empty, config, onEdit }: { items: Configured[];
   if (!items.length) return <p className="provider-note">{empty}</p>;
   return <ul className="grid gap-3">{items.map(item => {
     const provider = config?.providers.find(provider => provider.id === item.id);
-    return <li key={item.id} className="text-sm"><div className="flex flex-wrap items-center justify-between gap-2"><p className="min-w-0 break-all"><span className="font-medium">{item.name}</span><span className="text-muted-foreground"> · {item.baseUrl ?? "no base URL"}</span></p>{provider && <Button variant="outline" size="sm" disabled={!config?.write.available || !provider.editable} onClick={() => onEdit(provider)}>Edit {item.name}</Button>}</div>
+    return <li key={item.id} className="text-sm"><div className="flex flex-wrap items-center justify-between gap-2"><p className="min-w-0 break-all"><span className="font-medium">{item.name}</span><span className="text-muted-foreground"> · {item.baseUrl ?? "no base URL"}</span></p>{provider && <Button variant="outline" size="sm" disabled={!config?.write?.available || !provider.editable} onClick={() => onEdit(provider)}>Edit {item.name}</Button>}</div>
       {(item.envKey || provider?.auth.keySet) && <p className="mt-1 text-xs text-muted-foreground">API key {item.keySet || provider?.auth.keySet ? "set" : "not set"}</p>}
     </li>;
   })}</ul>;
@@ -53,7 +53,7 @@ export function ProvidersSettings({ refreshKey, onChanged }: { refreshKey: numbe
   }, []);
   function edit(provider: ProviderConfig) { setNotice(""); setError(""); setEditing({ id: provider.id, type: "custom", name: provider.name, baseUrl: provider.baseUrl ?? "", existing: true, credential: "preserve", secret: "" }); }
   async function saveProvider(event: React.FormEvent) {
-    event.preventDefault(); if (!editing || !config?.write.available || saving) return;
+    event.preventDefault(); if (!editing || !config?.write?.available || saving) return;
     setSaving(true); setError(""); setNotice("");
     try {
       const id = providerFormId({ type: editing.type, name: editing.name, ...(editing.existing ? { existingId: editing.id } : {}) }, config.providers.map(provider => provider.id));
@@ -74,10 +74,10 @@ export function ProvidersSettings({ refreshKey, onChanged }: { refreshKey: numbe
   const sub = (value: Subscription) => value.state === "connected" ? <State tone="ok">Connected</State> : value.state === "available" ? <State tone="warn">Models available</State> : <State tone="off">Not connected</State>;
   return <div className="grid gap-4" aria-label="Providers">
     <div className="flex flex-wrap items-center justify-between gap-3"><p className="text-sm text-muted-foreground">Elpis models use the accounts connected on this computer.</p><Button variant="ghost" size="sm" onClick={() => void load()}><RefreshCw size={14} />Refresh</Button></div>
-    <details className="provider-advanced"><summary>Advanced API connections</summary><p className="provider-note">Connect OpenRouter, a local server or another compatible service.</p><Button size="sm" variant="outline" disabled={!config?.write.available || saving} onClick={() => { setNotice(""); setError(""); setEditing({ id: "", type: "custom", name: "", baseUrl: "", existing: false, credential: "preserve", secret: "" }); }}>Add API provider</Button></details>
+    <details className="provider-advanced"><summary>Advanced API connections</summary><p className="provider-note">Connect OpenRouter, a local server or another compatible service.</p><Button size="sm" variant="outline" disabled={!config?.write?.available || saving} onClick={() => { setNotice(""); setError(""); setEditing({ id: "", type: "custom", name: "", baseUrl: "", existing: false, credential: "preserve", secret: "" }); }}>Add API provider</Button></details>
     {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
     {notice && <p role="status" className="text-sm text-muted-foreground">{notice}</p>}
-    {config?.write.reason && !config.write.available && <p className="text-sm text-muted-foreground">{config.write.reason}</p>}
+    {config?.write?.reason && !config.write?.available && <p className="text-sm text-muted-foreground">{config.write?.reason}</p>}
     {editing && <form className="settings-card grid gap-4 p-5" aria-label="API provider settings" onSubmit={saveProvider}>
       <h3 className="font-semibold">{editing.existing ? `Edit ${editing.name}` : "Add API provider"}</h3>
       <p className="text-sm text-muted-foreground">Provider settings apply to new conversations and agents. Existing conversations keep their original connection settings and credentials.</p>
@@ -89,7 +89,7 @@ export function ProvidersSettings({ refreshKey, onChanged }: { refreshKey: numbe
       {editing.credential === "clear" && <p className="text-sm text-muted-foreground">{config?.application?.credentialClearMessage ?? "This clears the saved key for new conversations. Existing conversations keep their original credentials."}</p>}
       {editing.credential === "replace" && <label className="field">API key<Input aria-label="Provider API key" type="password" autoComplete="new-password" value={editing.secret} disabled={saving} onChange={event => setEditing({ ...editing, secret: event.target.value })} placeholder="Enter API key" /><span className="text-xs text-muted-foreground">Saved keys are never displayed. An empty field keeps the current key.</span></label>}
       {editing.existing && <p className="text-xs text-muted-foreground">Current key: {config?.providers.find(provider => provider.id === editing.id)?.auth.keySet ? "set" : "not set"}</p>}
-      <div className="flex gap-2"><Button type="submit" disabled={!config?.write.available || saving || !editing.name.trim() || !editing.baseUrl.trim()}>{saving ? "Saving…" : "Save provider"}</Button><Button type="button" variant="outline" disabled={saving} onClick={() => setEditing(null)}>Cancel</Button></div>
+      <div className="flex gap-2"><Button type="submit" disabled={!config?.write?.available || saving || !editing.name.trim() || !editing.baseUrl.trim()}>{saving ? "Saving…" : "Save provider"}</Button><Button type="button" variant="outline" disabled={saving} onClick={() => setEditing(null)}>Cancel</Button></div>
     </form>}
     {!data && !error && <p role="status" className="text-sm text-muted-foreground">Reading providers…</p>}
     {data && <>

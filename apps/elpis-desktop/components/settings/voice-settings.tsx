@@ -70,7 +70,7 @@ export function VoiceSettings({ onOpenMcp }: { onOpenMcp: () => void }) {
       <SettingRow title="Status" description={route?.available ? `Ready. Transcribes with ${route.label ?? route.backend}.` : route?.reason ?? "Status not reported."}>
         <span className={`settings-badge ${route?.available ? "ok" : "warn"}`}>{route?.available ? "Ready" : "Unavailable"}</span>
       </SettingRow>
-      {server ? <WhisperTypeSettings layout="rows" server={server} disabled={!config.write.available} save={save} />
+      {server ? <WhisperTypeSettings layout="rows" server={server} disabled={!config.write?.available} save={save} />
         : <SettingRow title="WhisperType server" description="Dictation uses the whispertype MCP server. Add it under MCP servers."><Button variant="outline" size="sm" onClick={onOpenMcp}>Open MCP servers</Button></SettingRow>}
       {server && <SettingRow title="API keys" description="WhisperType's keys are managed with its MCP server."><Button variant="outline" size="sm" onClick={onOpenMcp}>Open MCP servers</Button></SettingRow>}
     </SettingsGroup>}

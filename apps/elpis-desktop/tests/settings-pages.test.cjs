@@ -62,7 +62,7 @@ test('settings pages appear in order and each control writes only its own backin
     await panel.getByRole('status').filter({ hasText: 'Speed saved' }).waitFor();
     assert.deepEqual(lastPost(), { path: '/api/settings', body: { version: 'v1', options: { serviceTier: 'fast' } } });
     const stored = JSON.parse(await page.evaluate(() => localStorage.getItem('elpis-preferences-v1')));
-    assert.deepEqual([stored.sendShortcut, stored.followUp, stored.showContextUsage, stored.defaultFolder], ['modEnter', 'queue', true, '/tmp/work']);
+    assert.deepEqual([stored.sendShortcut, stored.followUp, stored.showContextUsage, stored.defaultFolder], ['modEnter', 'queue', false, '/tmp/work']); // the switch turned the default-on ring off
     await page.reload(); await page.locator('aside').getByRole('button', { name: 'Settings', exact: true }).click();
     panel = await open('General');
     assert.equal(await controlValue(panel.getByLabel('Send shortcut', { exact: true })), 'modEnter');

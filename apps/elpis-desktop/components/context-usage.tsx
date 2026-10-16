@@ -27,10 +27,13 @@ export function ContextUsage({ threadId }: { threadId?: string }) {
   }, [threadId, showContextUsage]);
   if (!showContextUsage || !snapshot || snapshot.threadId !== threadId) return null;
   const share = Math.min(100, snapshot.used / snapshot.window * 100);
-  const radius = 6, circumference = 2 * Math.PI * radius;
-  return <span className="composer-chip" role="meter" aria-label="Context window used" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(share)}
-    title={`Latest request: ${snapshot.used.toLocaleString()} of ${snapshot.window.toLocaleString()} tokens`}>
-    <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r={radius} fill="none" stroke="currentColor" strokeOpacity="0.25" strokeWidth="2.5" /><circle cx="8" cy="8" r={radius} fill="none" stroke="currentColor" strokeWidth="2.5" strokeDasharray={`${share / 100 * circumference} ${circumference}`} transform="rotate(-90 8 8)" /></svg>
-    {Math.round(share)}% context
+  const radius = 7, circumference = 2 * Math.PI * radius;
+  const label = `Context: ${snapshot.used.toLocaleString()} of ${snapshot.window.toLocaleString()} tokens (${Math.round(share)}%)`;
+  // A ring with its numbers in the tooltip, as in the ChatGPT app's composer.
+  return <span className="context-ring" role="meter" aria-label="Context window used" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(share)} title={label}>
+    <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">
+      <circle cx="9" cy="9" r={radius} className="context-ring-track" />
+      <circle cx="9" cy="9" r={radius} className="context-ring-fill" strokeDasharray={circumference} strokeDashoffset={circumference * (1 - share / 100)} transform="rotate(-90 9 9)" />
+    </svg>
   </span>;
 }

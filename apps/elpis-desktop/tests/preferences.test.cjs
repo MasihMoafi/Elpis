@@ -45,7 +45,7 @@ test('preferences keep valid choices on this device, and the desktop reads the s
   assert.equal(closeNeedsConfirmation({ read: () => Object.fromEntries(env.values) }), true);
   env.values.set(PREFERENCES_KEY, JSON.stringify({ sendShortcut: 'always', followUp: 'queue', defaultFolder: 'relative', showContextUsage: 'yes' }));
   const fresh = loader()('lib/preferences.ts').readPreferences();
-  assert.deepEqual([fresh.sendShortcut, fresh.followUp, fresh.defaultFolder, fresh.showContextUsage], ['enter', 'queue', '', false], 'unknown or unsafe values fall back to defaults');
+  assert.deepEqual([fresh.sendShortcut, fresh.followUp, fresh.defaultFolder, fresh.showContextUsage], ['enter', 'queue', '', true], 'unknown or unsafe values fall back to defaults (the context ring is on by default, as in the ChatGPT app)');
 });
 
 test('send shortcut, hint and new-chat folder follow the saved preferences', () => {

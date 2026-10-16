@@ -44,7 +44,7 @@ export async function saveSettings(path: "/settings" | "/pruner", body: unknown)
 }
 /** Whether a page has loaded the snapshot yet (a reload is then worth doing). */
 export const settingsLoaded = () => state.data !== null;
-export const editable = (data: ElpisSettings | null): boolean => data?.write.available === true && typeof data.version === "string";
+export const editable = (data: ElpisSettings | null): boolean => data?.write?.available === true && typeof data.version === "string";
 
 export function useElpisSettings() {
   const snapshot = useSyncExternalStore(listener => { listeners.add(listener); return () => { listeners.delete(listener); }; }, () => state, () => state);

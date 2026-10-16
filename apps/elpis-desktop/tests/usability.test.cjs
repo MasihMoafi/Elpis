@@ -148,6 +148,7 @@ test('maintenance settings read the real catalog response and keep model lists w
 
 test('API setup omits internal IDs and keeps unsaved values across sections and pages', () => fixture(async ({ page, shot }) => {
   await page.locator('aside').getByRole('button', { name: 'Settings', exact: true }).click();
+  if (await page.getByRole('tab', { name: 'Models & accounts', exact: true }).count()) await page.getByRole('tab', { name: 'Models & accounts', exact: true }).click();
   await page.getByText('Advanced API connections', { exact: true }).click();
   await page.getByRole('button', { name: 'Add API provider', exact: true }).click();
   const form = page.getByRole('form', { name: 'API provider settings', exact: true });
@@ -159,6 +160,7 @@ test('API setup omits internal IDs and keeps unsaved values across sections and 
   assert.equal(await form.getByLabel('Provider display name', { exact: true }).inputValue(), 'My research server');
   await page.locator('aside').getByRole('button', { name: 'Agents', exact: true }).click();
   await page.locator('aside').getByRole('button', { name: 'Settings', exact: true }).click();
+  await page.getByRole('tab', { name: 'Models & accounts', exact: true }).click();
   assert.equal(await form.getByLabel('API endpoint', { exact: true }).inputValue(), 'http://127.0.0.1:1234/v1');
   await shot('04-api-draft-light');
   await page.getByRole('button', { name: 'Use dark theme', exact: true }).click();

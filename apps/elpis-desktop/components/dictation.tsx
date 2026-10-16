@@ -122,8 +122,8 @@ export function Dictation({ disabled, selection, onTranscript, onBusy }: Props) 
     <Popover open={settingsOpen} onOpenChange={open => void openSettings(open)}><PopoverTrigger render={<Button type="button" variant="ghost" size="sm" className="dictation-route" aria-label="Transcription settings" disabled={disabled || active || saving} />}><span>{route?.label || "Transcription"}</span><ChevronDown size={12} /></PopoverTrigger><PopoverContent className="transcription-popover"><h3 className="mb-3 text-sm font-semibold">Transcription</h3>
       {settingsError && <p role="alert" className="text-sm text-destructive">{settingsError}</p>}
       {!settings && !settingsError && <p role="status" className="text-sm text-muted-foreground">Reading transcription settings…</p>}
-      {settings?.servers.find(server => server.name === "whispertype") ? <WhisperTypeSettings server={settings.servers.find(server => server.name === "whispertype")!} disabled={!settings.write.available || saving} save={saveSettings} /> : settings && <p className="text-sm text-muted-foreground">Configure WhisperType in Settings → MCP servers to use transcription.</p>}
-      {settings?.write.reason && !settings.write.available && <p className="mt-2 text-xs text-muted-foreground">{settings.write.reason}</p>}
+      {settings?.servers.find(server => server.name === "whispertype") ? <WhisperTypeSettings server={settings.servers.find(server => server.name === "whispertype")!} disabled={!settings.write?.available || saving} save={saveSettings} /> : settings && <p className="text-sm text-muted-foreground">Configure WhisperType in Settings → MCP servers to use transcription.</p>}
+      {settings?.write?.reason && !settings.write?.available && <p className="mt-2 text-xs text-muted-foreground">{settings.write?.reason}</p>}
     </PopoverContent></Popover>
     <span className={`dictation-status${error ? " dictation-error" : ""}`} role="status">{error || (active ? label : route?.available ? "" : route?.reason || "Checking dictation…")}</span>
   </div>;

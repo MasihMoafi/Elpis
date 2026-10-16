@@ -17,6 +17,7 @@ import { ShortcutSettings } from "@/components/settings/shortcut-settings";
 import { UsageSettings } from "@/components/settings/usage-settings";
 import { VoiceSettings } from "@/components/settings/voice-settings";
 import { Button } from "@/components/ui/button";
+import { PageBoundary } from "@/components/settings/page-boundary";
 import type { Thread } from "@/lib/api";
 import { reloadSettings, settingsLoaded } from "@/lib/settings-store";
 
@@ -36,7 +37,7 @@ const TABS = [
   { id: "configuration", label: "Configuration" },
   { id: "archived", label: "Archived chats" },
 ] as const;
-type Tab = (typeof TABS)[number]["id"];
+export type Tab = (typeof TABS)[number]["id"];
 // Pages that edit the shared Elpis config snapshot refresh it when opened, so their saves use the current version.
 const CONFIG_PAGES: Tab[] = ["general", "personalization", "git", "worktrees", "configuration"];
 // "elpis" was the former page with the selected chat's context, now under Usage & limits.
@@ -82,8 +83,8 @@ export function SettingsView({ initialTab = "providers", navigationKey = 0, acti
     <nav className="settings-nav" role="tablist" aria-label="Settings sections" aria-orientation="vertical">
       {TABS.map(item => <Button key={item.id} variant="ghost" role="tab" type="button" id={`settings-tab-${item.id}`} aria-selected={tab === item.id} aria-controls={`settings-panel-${item.id}`} className={tab === item.id ? "active" : ""} onClick={() => selectTab(item.id)}>{item.label}</Button>)}
     </nav>
-    <div className="settings-page">{visited.map(section => <div key={section} role="tabpanel" id={`settings-panel-${section}`} aria-labelledby={`settings-tab-${section}`} hidden={tab !== section}>
+    <div className="settings-page">{visited.map(section => <div key={section} role="tabpanel" id={`settings-panel-${section}`} aria-labelledby={`settings-tab-${section}`} hidden={tab !== section}><PageBoundary>
       {page(section)}
-    </div>)}</div>
+    </PageBoundary></div>)}</div>
   </div>;
 }

@@ -89,7 +89,7 @@ export function McpSettings({ onOpenVoice }: { onOpenVoice?: () => void }) {
   return <div className="grid gap-4" aria-label="MCP servers">
     <div className="flex flex-wrap items-center justify-between gap-3">
       <p className="text-sm text-muted-foreground">Manage the tools available to your agents and their API keys.</p>
-      <Button size="sm" onClick={() => setAdding(true)} disabled={!data?.write.available}><Plus size={14} />Add MCP server</Button>
+      <Button size="sm" onClick={() => setAdding(true)} disabled={!data?.write?.available}><Plus size={14} />Add MCP server</Button>
     </div>
     {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
     {notice && <p role="status" className="text-sm text-muted-foreground">{notice}</p>}
@@ -108,11 +108,11 @@ export function McpSettings({ onOpenVoice }: { onOpenVoice?: () => void }) {
       <header className="flex flex-wrap items-center gap-x-3 gap-y-2">
         <h3 className="font-mono">{server.name}</h3>
         <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground" title={server.command ?? server.url ?? ""}>{server.transport === "http" ? server.url : server.command}</span>
-        <label className="flex items-center gap-2 text-sm"><input type="checkbox" aria-label={`Enable ${server.name}`} checked={server.enabled} disabled={!data.write.available} onChange={e => void save(server.name, { action: "enable", enabled: e.target.checked }).catch(() => {})} />Enabled</label>
-        <Button variant="ghost" size="icon-sm" aria-label={`Remove ${server.name}`} disabled={!data.write.available} onClick={() => setRemoving(server.name)}><Trash2 size={14} /></Button>
+        <label className="flex items-center gap-2 text-sm"><input type="checkbox" aria-label={`Enable ${server.name}`} checked={server.enabled} disabled={!data.write?.available} onChange={e => void save(server.name, { action: "enable", enabled: e.target.checked }).catch(() => {})} />Enabled</label>
+        <Button variant="ghost" size="icon-sm" aria-label={`Remove ${server.name}`} disabled={!data.write?.available} onClick={() => setRemoving(server.name)}><Trash2 size={14} /></Button>
       </header>
       {server.credentials.length > 0 && <ul className="grid gap-1 text-sm">{server.credentials.map(item => <Key key={`${item.source}:${item.name}`} name={item.name} set={item.set} note={item.source === "environment" ? "from the environment" : "in config"} />)}</ul>}
-      <CredentialSettings server={server} disabled={!data.write.available} save={body => save(server.name, body)} />
+      <CredentialSettings server={server} disabled={!data.write?.available} save={body => save(server.name, body)} />
       {server.name === "rag" && <RagSettings version={data.version} />}
       {server.name === "whispertype" && <p className="provider-note">The microphone’s transcription route is set under Voice.{onOpenVoice && <> <Button variant="link" size="xs" className="h-auto p-0 align-baseline" onClick={onOpenVoice}>Open Voice settings</Button></>}</p>}
     </section>)}

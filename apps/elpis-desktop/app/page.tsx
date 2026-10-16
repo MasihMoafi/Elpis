@@ -11,14 +11,19 @@ import { ChatMessage } from "@/components/chat-message";
 import { Transcript } from "@/components/transcript";
 import { readPins, savePins } from "@/lib/pins";
 import { shortcutFor } from "@/lib/shortcuts";
+import { isSendKey, newChatFolder, useAppPreferences } from "@/lib/preferences";
+import { notifyApproval, notifyRuntimeEvent } from "@/lib/notifications";
+import { queueFollowUp, sendQueuedFollowUp } from "@/lib/follow-ups";
+import { QueuedFollowUps } from "@/components/queued-follow-ups";
+import { ContextUsage } from "@/components/context-usage";
 import { ShortcutsDialog } from "@/components/shortcuts-dialog";
-import { ContextRing, PermissionsMenu, type PermissionMode } from "@/components/composer-controls";
+import { PermissionsMenu, type PermissionMode } from "@/components/composer-controls";
 import { CopyButton } from "@/components/markdown-text";
 import { liveEventItemKey, mergeHistoryWithLive, mergeLiveItem, runtimeErrorNotice } from "@/lib/live-events";
 import { replacementEligibility } from "@/lib/turn-replacement";
 import { AgentsView } from "@/components/agents-view";
 import { NewAgentForm } from "@/components/new-agent-form";
-import { SettingsView } from "@/components/settings-view";
+import { SettingsView, type Tab as SettingsTab } from "@/components/settings-view";
 import { ThreadActions } from "@/components/thread-actions";
 import { WorkflowEditor } from "@/components/workflow-editor";
 import { UsagePanel } from "@/components/provider-usage";
@@ -88,6 +93,7 @@ const greeting = () => { const hour = new Date().getHours(); return hour < 5 ? "
 const sameFolder = (a: string | undefined, b: string) => !!a && a.replace(/\/+$/, "") === b.replace(/\/+$/, "");
 
 export default function Home() {
+  useAppPreferences();
   const [threads, setThreads] = useState<Thread[]>([]);
   const [selected, setSelected] = useState<Thread | null>(null);
   const selectedRef = useRef<Thread | null>(null);
@@ -128,7 +134,6 @@ export default function Home() {
   const shortcutAction = useRef<(id: string, index?: number) => void>(() => {});
   useEffect(() => { setPins(readPins()); }, []);
   const [newMode, setNewMode] = useState<PermissionMode | null>(null);
-  const [contextUsage, setContextUsage] = useState<Record<string, { used: number; window: number }>>({});
   const [text, setTextState] = useState("");
   const textRef = useRef("");
   const composerRef = useRef<HTMLTextAreaElement>(null);
@@ -239,7 +244,7 @@ export default function Home() {
   const [related, setRelated] = useState<Record<string, Thread>>({});
   const [accountRefresh, setAccountRefresh] = useState(0);
   const [view, setView] = useState<View>("chat");
-  const [settingsSection, setSettingsSection] = useState<"providers" | "elpis">("providers");
+  const [settingsSection, setSettingsSection] = useState<SettingsTab>("general");
   const [desktop, setDesktop] = useState(false);
   const browser = useBrowser();
   const [browserView, setBrowserView] = useState<"chat" | "browser">("chat");
@@ -347,7 +352,7 @@ export default function Home() {
     try {
       const live = await api<{ thread: Thread; activeTurnId?: string | null; permissions?: PermissionMode | null }>(`/threads/${encodeURIComponent(thread.id)}/resume`, {});
       if (request.current !== id || live.thread?.id !== thread.id) return;
-      remember(live.thread); select({ ...selectedRef.current, ...live.thread }); upsertThread(live.thread); if (live.permissions) setThreadModes(prev => ({ ...prev, [thread.id]: live.permissions! })); void refreshContext(thread.id);
+      remember(live.thread); select({ ...selectedRef.current, ...live.thread }); upsertThread(live.thread); if (live.permissions) setThreadModes(prev => ({ ...prev, [thread.id]: live.permissions! }));
       if (live.activeTurnId && !completedTurns.current.has(live.activeTurnId)) setActiveTurns(prev => ({ ...prev, [thread.id]: live.activeTurnId! }));
       setLiveError(prev => without(prev, thread.id));
     } catch (e) { if (request.current === id) setLiveError(prev => ({ ...prev, [thread.id]: e instanceof Error ? e.message : String(e) })); }
@@ -395,7 +400,7 @@ export default function Home() {
         select(remember(history.thread)); setEntries(previous => mergeHistoryWithLive(previous, [...history.data].reverse(), liveKeysAfter(historyRevision))); setItemCursor(history.nextCursor);
         const live = await api<{ thread: Thread; activeTurnId?: string | null; permissions?: PermissionMode | null }>(`/threads/${encodeURIComponent(thread.id)}/resume`, {});
         if (disposed || attempt !== recovery || request.current !== requestId || selectedRef.current?.id !== thread.id) return;
-        remember(live.thread); select({ ...selectedRef.current, ...live.thread }); upsertThread(live.thread); if (live.permissions) setThreadModes(prev => ({ ...prev, [thread.id]: live.permissions! })); void refreshContext(thread.id);
+        remember(live.thread); select({ ...selectedRef.current, ...live.thread }); upsertThread(live.thread); if (live.permissions) setThreadModes(prev => ({ ...prev, [thread.id]: live.permissions! }));
         setActiveTurns(previous => live.activeTurnId && !completedTurns.current.has(live.activeTurnId) ? { ...previous, [thread.id]: live.activeTurnId } : without(previous, thread.id));
         setLiveError(previous => without(previous, thread.id));
       } catch (error) {
@@ -423,10 +428,11 @@ export default function Home() {
         events.onerror = disconnected;
         events.addEventListener("message", event => {
           const { method, params } = JSON.parse(event.data);
+          notifyRuntimeEvent(method, params, threadsRef.current, id => void loadThread({ id } as Thread)); void sendQueuedFollowUp(method, params).catch(e => setError(String(e)));
           const threadId: string | undefined = params.threadId ?? params.thread?.id;
           if (method === "turn/started" && !completedTurns.current.has(params.turn.id)) { setActiveTurns(prev => ({ ...prev, [params.threadId]: params.turn.id })); setRuntimeNotices(prev => without(prev, params.threadId)); patchThread(params.threadId, { status: { type: "active" } }); }
           if (method === "turn/completed") {
-            completedTurns.current.add(params.turn.id); void refreshContext(params.threadId);
+            completedTurns.current.add(params.turn.id);
             setActiveTurns(prev => prev[params.threadId] !== params.turn.id ? prev : without(prev, params.threadId));
             refreshThreads().catch(e => setError(String(e)));
             if (params.turn?.error) setRuntimeNotices(prev => ({ ...prev, [params.threadId]: params.turn.error.message || "The turn failed." }));
@@ -457,7 +463,7 @@ export default function Home() {
           if (itemKey) liveVersions.current.set(itemKey, ++liveRevision.current);
           setEntries(prev => mergeLiveItem(prev, method, params, threadId));
         });
-        events.addEventListener("approval", event => { const approval = JSON.parse(event.data); setApprovals(prev => [...prev.filter(a => a.id !== approval.id), approval]); });
+        events.addEventListener("approval", event => { const approval = JSON.parse(event.data); notifyApproval(approval, threadsRef.current, id => void loadThread({ id } as Thread)); setApprovals(prev => [...prev.filter(a => a.id !== approval.id), approval]); });
         events.addEventListener("approvalResolved", event => { const { id } = JSON.parse(event.data); setApprovals(prev => prev.filter(a => a.id !== id)); clearApprovalDraft(id); });
         events.addEventListener("unsupportedApproval", () => setError("Elpis requested an approval this app cannot answer. Use the original client to continue."));
         events.addEventListener("account", () => { setAccountRefresh(n => n + 1); void refreshModels(); });
@@ -592,14 +598,6 @@ export default function Home() {
     try { const result = await api<{ thread: Thread }>(`/threads/${encodeURIComponent(thread.id)}/fork`, { lastTurnId }); upsertThread(result.thread); await loadThread(result.thread); }
     catch (error) { setError(error instanceof Error ? error.message : String(error)); }
   }
-  /** The composer's context ring: the chat's latest request against its window, when reported. */
-  async function refreshContext(id: string) {
-    try {
-      const value = await api<{ tokenUsage: { last: { inputTokens?: number } | null; modelContextWindow: number | null } | null }>(`/threads/${encodeURIComponent(id)}/context`);
-      const used = value.tokenUsage?.last?.inputTokens, window = value.tokenUsage?.modelContextWindow;
-      if (typeof used === "number" && typeof window === "number" && window > 0) setContextUsage(prev => ({ ...prev, [id]: { used, window } }));
-    } catch { /* No ring without a reported window. */ }
-  }
   function setOverride(id: string, patch: NextTurn) {
     const thread = selectedRef.current; if (!thread) return;
     setNextTurn(prev => {
@@ -622,7 +620,7 @@ export default function Home() {
     try {
       let thread = selected;
       if (!thread) {
-        const result = await api<{ thread: Thread }>("/threads", { ...(newMode ? { permissions: newMode } : {}), ...(model.trim() ? { model: model.trim() } : {}), ...(newChoice?.provider ? { provider: newChoice.provider } : {}), ...(cwd.trim() ? { cwd: cwd.trim() } : {}) });
+        const result = await api<{ thread: Thread }>("/threads", { ...(newMode ? { permissions: newMode } : {}), ...(model.trim() ? { model: model.trim() } : {}), ...(newChoice?.provider ? { provider: newChoice.provider } : {}), ...(newChatFolder(cwd) ? { cwd: newChatFolder(cwd) } : {}) });
         thread = result.thread; errorThreadId = thread.id; if (newMode) setThreadModes(prev => ({ ...prev, [result.thread.id]: newMode }));
         saveDraft(thread.id, originalRequest === request.current ? textRef.current : sentText);
         saveAttachments(thread.id, originalRequest === request.current ? attachmentsRef.current : sentAttachments);
@@ -630,7 +628,7 @@ export default function Home() {
         setThreads(prev => [thread!, ...prev]);
       }
       const used = selected ? pending : effort ? { effort } : undefined;
-      if (activeTurn && !continues) {
+      if (activeTurn && !continues && queueFollowUp(thread.id, sentText, sentAttachments)) { /* queued until the running turn completes */ } else if (activeTurn && !continues) {
         await api(`/threads/${encodeURIComponent(thread.id)}/steer`, { text: sentText, expectedTurnId: activeTurn, ...attached });
       } else {
         const result = await api<{ turn?: { id: string }; thread?: Thread; continuedFrom?: string; sendError?: string }>(`/threads/${encodeURIComponent(thread.id)}/turns`, { text: sentText, ...attached, ...(used?.model ? { model: used.model } : {}), ...(used?.effort ? { effort: used.effort } : {}), ...(used?.permissions ? { permissions: used.permissions } : {}), ...(continues ? { continueAs: `${title(thread)} (continued)` } : {}) });
@@ -752,7 +750,7 @@ export default function Home() {
     if (id === "new-chat") newChat();
     else if (id === "search") { setSidebar(true); setSidebarCollapsed(false); requestAnimationFrame(() => { searchInput.current?.focus(); searchInput.current?.select(); }); }
     else if (id === "sidebar") setSidebarCollapsed(value => !value);
-    else if (id === "settings") show("settings");
+    else if (id === "settings") { setSettingsSection("general"); show("settings"); }
     else if (id === "shortcuts") setShortcutsOpen(true);
     else if (id === "previous-chat" && ordered.length) void loadThread(ordered[at <= 0 ? 0 : at - 1]);
     else if (id === "next-chat" && ordered.length) void loadThread(ordered[at < 0 ? 0 : Math.min(ordered.length - 1, at + 1)]);
@@ -826,7 +824,7 @@ export default function Home() {
         {searchTerm ? searchResults.nextCursor && <Button variant="ghost" className="w-full" disabled={searchResults.loading} onClick={() => void loadMoreSearch()}>More search results</Button> : nextCursor && <Button variant="ghost" className="w-full" disabled={moreLoading} onClick={() => void loadMoreConversations()}>Load more</Button>}
       </div>
       <UsagePanel refreshKey={accountRefresh} />
-      <div className="sidebar-footer"><nav className="nav-list flex-1" aria-label="Settings"><Button variant="ghost" aria-current={view === "settings" ? "page" : undefined} onClick={() => { setSettingsSection("providers"); show("settings"); }}><SettingsIcon size={16} />Settings</Button></nav><Button size="icon-sm" variant="ghost" aria-label={dark ? "Use light theme" : "Use dark theme"} onClick={() => setTheme(dark ? "light" : "dark")}>{dark ? <Sun size={15} /> : <Moon size={15} />}</Button></div>
+      <div className="sidebar-footer"><nav className="nav-list flex-1" aria-label="Settings"><Button variant="ghost" aria-current={view === "settings" ? "page" : undefined} onClick={() => { setSettingsSection("general"); show("settings"); }}><SettingsIcon size={16} />Settings</Button></nav><Button size="icon-sm" variant="ghost" aria-label={dark ? "Use light theme" : "Use dark theme"} onClick={() => setTheme(dark ? "light" : "dark")}>{dark ? <Sun size={15} /> : <Moon size={15} />}</Button></div>
       <span className="status-line"><i className={`status-dot${connected ? " connected" : ""}`} />{connected ? "Local workspace" : "Disconnected"}</span>
     </aside>
     <main className="workspace">
@@ -848,7 +846,7 @@ export default function Home() {
           {view === "chat" && pending && <p className="next-turn">Next turn: {[pending.model && modelLabel(pending.model, models), pending.effort && `${pending.effort} reasoning`].filter(Boolean).join(" · ")}</p>}
         </div>
         {view === "chat" && desktop && (browser.state?.tabs.length ?? 0) > 0 && <Button className="header-action" variant="ghost" size="icon-sm" aria-pressed={split} aria-label={split ? "Exit split view" : "Enter split view"} title={split ? "Exit split view" : "Split view: chat and page side by side"} onClick={() => { setSplit(value => !value); if (!split) { setBrowserView("browser"); if (!browser.state?.visible && browser.state?.activeId) void browser.command("select", { id: browser.state.activeId }); } }}><SplitIcon size={16} /></Button>}
-        {selected && view === "chat" && <Button className="header-action" variant="ghost" size="sm" onClick={() => { setSettingsSection("elpis"); show("settings"); }}>Context</Button>}
+        {selected && view === "chat" && <Button className="header-action" variant="ghost" size="sm" onClick={() => { setSettingsSection("usage"); show("settings"); }}>Context</Button>}
         {selected && view === "chat" && team.length > 0 && !browserOpen && <Button className="header-action" variant="ghost" size="icon-sm" aria-label={agentsPanel ? "Hide agents panel" : "Show agents panel"} aria-pressed={agentsPanel} onClick={() => setAgentsPanel(value => !value)}><PanelRight size={16} /></Button>}
         {selected && view === "chat" && <Button className="header-action" variant="ghost" size="icon-sm" aria-label="Refresh conversation" disabled={loading} onClick={() => loadThread(selected)}><RefreshCw size={16} /></Button>}
       </header>
@@ -886,6 +884,7 @@ export default function Home() {
           {approvals.filter(a => a.params.threadId === selected?.id).map(a => <ApprovalCard key={approvalDraftKey(a)} approval={a} answer={(id, body) => answer(id, body, approvalDraftKey(a))} busy={!!pendingDrafts[approvalDraftKey(a)]} answers={approvalDrafts[approvalDraftKey(a)]?.answers ?? {}} onAnswerChange={(id, value) => draftAnswer(a, id, value)} />)}
         </div></div>
         <div className="composer-wrap">
+          <QueuedFollowUps threadId={selected?.id} activeTurnId={activeTurn} onError={setError} />
           <form className="composer" onSubmit={e => { e.preventDefault(); send(); }} onDragOver={e => { if (e.dataTransfer.types.includes("Files")) e.preventDefault(); }} onDrop={e => { if (e.dataTransfer.files.length || e.dataTransfer.types.includes("Files")) { e.preventDefault(); void addFiles(Array.from(e.dataTransfer.files)); } }}>
             <input ref={filePickerRef} type="file" multiple accept={ATTACHMENT_ACCEPT} className="hidden" aria-label="Choose files" onChange={e => { const files = Array.from(e.target.files ?? []); e.target.value = ""; void addFiles(files); }} />
             {attachments.length > 0 && <ul aria-label="Message attachments" className="flex flex-wrap gap-2 p-2">{attachments.map(part => <li key={part.id} className="flex max-w-full items-start gap-2 rounded-md border p-2 text-sm">
@@ -895,12 +894,12 @@ export default function Home() {
             </li>)}</ul>}
             {attaching && <p role="status" className="px-3 py-2 text-sm text-muted-foreground">Reading files…</p>}
             {imageBlocked && <p role="alert" className="m-2 text-sm text-destructive">This model accepts text only. Choose an image-capable model or remove the images.</p>}
-            <Textarea ref={composerRef} aria-label="Message Elpis" placeholder={continues ? `Message ${title(selected!)}…` : selected ? "Ask for a follow-up" : "Ask Elpis to build, fix or explain something"} value={text} onChange={e => editDraft(e.target.value)} onPaste={e => { const files = Array.from(e.clipboardData.files); if (files.length) { if (!e.clipboardData.getData("text/plain")) e.preventDefault(); void addFiles(files); } }} disabled={!ready || !connected || projectChanging} onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); send(); } }} />
+            <Textarea ref={composerRef} aria-label="Message Elpis" placeholder={continues ? `Message ${title(selected!)}…` : selected ? "Ask for a follow-up" : "Ask Elpis to build, fix or explain something"} value={text} onChange={e => editDraft(e.target.value)} onPaste={e => { const files = Array.from(e.clipboardData.files); if (files.length) { if (!e.clipboardData.getData("text/plain")) e.preventDefault(); void addFiles(files); } }} disabled={!ready || !connected || projectChanging} onKeyDown={e => { if (isSendKey(e)) { e.preventDefault(); send(); } }} />
             {fileNotice && <div className="flex items-center gap-2 px-3 text-sm text-destructive" role="alert"><span>{fileNotice}</span><Button type="button" variant="ghost" size="icon-xs" aria-label="Dismiss file notice" onClick={() => setFileNotice("")}><X size={14} /></Button></div>}
             <div className="composer-controls"><div className="model-controls"><Button type="button" variant="ghost" size="icon-sm" className="composer-plus" aria-label="Attach files" title="Attach images, PDF, or text files" disabled={!ready || !connected || busy || attaching || projectChanging || attachments.length >= 3} onClick={() => filePickerRef.current?.click()}><PlusIcon className="size-4" /></Button>
               <PermissionsMenu mode={permissionMode} disabled={!ready || busy || projectChanging} onChange={next => selected ? setOverride(selected.id, { permissions: next }) : setNewMode(next)} />
             </div><div className="composer-right">
-              {selected && contextUsage[selected.id] && <ContextRing used={contextUsage[selected.id].used} window={contextUsage[selected.id].window} />}
+              {selected && <ContextUsage threadId={selected.id} />}
               <ModelPicker choices={!selected ? choices : selectedChoice?.provider ? [selectedChoice] : choices.filter(choice => !choice.provider)} models={models}
                 model={selected ? turnModel : model} choiceId={selected ? selectedChoice?.id || "" : choiceId} defaultModel={selected ? null : providerSettings?.main.model}
                 disabled={!ready || busy || projectChanging} onConfigure={manageConnections} onChange={choice => { if (selected) setOverride(selected.id, { model: choice.model }); else { setChoiceId(choice.choiceId); setModel(choice.model); setEffort(""); } }} />

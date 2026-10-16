@@ -81,6 +81,7 @@ test('bridged models are labelled by their prefix; providers keep separate sign-
     assert.equal(await row.locator('.agent-nickname').innerText(), 'Sagan');
     assert.equal(await row.locator('.agent-meta').innerText(), 'Antigravity · Gemini 3 Pro (Antigravity)');
     await page.locator('aside').getByRole('button', { name: 'Settings', exact: true }).click();
+    await page.getByRole('tab', { name: 'Models & accounts', exact: true }).click();
     const account = id => page.locator(`.provider-card[data-provider="${id}"]`);
     await account('claude').waitFor();
     assert.match(await account('openai').innerText(), /Signed in with ChatGPT[\s\S]*person@example\.com · pro plan/);

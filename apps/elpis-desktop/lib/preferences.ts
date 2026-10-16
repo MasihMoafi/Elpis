@@ -16,7 +16,7 @@ export type Preferences = {
   notificationSound: boolean;
 };
 export const DEFAULT_PREFERENCES: Preferences = {
-  defaultFolder: "", sendShortcut: "enter", followUp: "steer", showContextUsage: false, confirmClose: false,
+  defaultFolder: "", sendShortcut: "enter", followUp: "steer", showContextUsage: true, confirmClose: false,
   turnNotifications: "unfocused", inputNotifications: true, notificationSound: false,
 };
 export const PREFERENCES_KEY = "elpis-preferences-v1";

@@ -36,6 +36,8 @@ test('provider setup preserves edits on conflict, refreshes choices and never re
  try{
   await page.goto(`http://127.0.0.1:${server.address().port}`);
   await page.locator('aside').getByRole('button',{name:'Settings',exact:true}).click();
+  // Settings opens on General, as in the ChatGPT app; connections live under Models & accounts.
+  if(await page.getByRole('tab',{name:'Models & accounts',exact:true}).count())await page.getByRole('tab',{name:'Models & accounts',exact:true}).click();
   await page.getByText('Advanced API connections',{exact:true}).click();
   await page.getByRole('button',{name:'Add API provider',exact:true}).click();
   assert.equal(await page.getByLabel('Provider ID',{exact:true}).count(),0,'internal connection keys are generated for the user');
@@ -60,6 +62,7 @@ test('provider setup preserves edits on conflict, refreshes choices and never re
   await page.getByRole('button',{name:'Use model',exact:true}).click();
   assert.equal(await controlValue(page.getByLabel('Model',{exact:true})),'custom/native-model');
   await page.locator('aside').getByRole('button',{name:'Settings',exact:true}).click();
+  await page.getByRole('tab',{name:'Models & accounts',exact:true}).click();
   await page.getByRole('button',{name:'Edit My API',exact:true}).click();
   assert.equal(await page.getByLabel('Provider API key',{exact:true}).count(),0);
   await chooseOption(page.getByLabel('API key action',{exact:true}), 'clear');

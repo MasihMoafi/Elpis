@@ -47,8 +47,8 @@ export function HooksSettings() {
           <span className="mt-1 block">{[hook.pluginId ? `Plugin ${hook.pluginId}` : hook.source, hook.sourcePath, hook.timeoutSec ? `${hook.timeoutSec}s timeout` : null].filter(Boolean).join(" · ")}</span>
         </>}>
           <span className={`settings-badge ${trust.tone}`}>{trust.label}</span>
-          {(hook.trust === "untrusted" || hook.trust === "modified") && <Button variant="outline" size="sm" disabled={!data.write.available || saver.pending !== null} onClick={() => change(hook, { trust: true }, "Hook trusted.")}>Trust</Button>}
-          <Switch aria-label={`Enable ${label}`} checked={hook.enabled} disabled={hook.managed || !data.write.available || saver.pending !== null} onCheckedChange={enabled => change(hook, { enabled }, enabled ? "Hook turned on." : "Hook turned off.")} />
+          {(hook.trust === "untrusted" || hook.trust === "modified") && <Button variant="outline" size="sm" disabled={!data.write?.available || saver.pending !== null} onClick={() => change(hook, { trust: true }, "Hook trusted.")}>Trust</Button>}
+          <Switch aria-label={`Enable ${label}`} checked={hook.enabled} disabled={hook.managed || !data.write?.available || saver.pending !== null} onCheckedChange={enabled => change(hook, { enabled }, enabled ? "Hook turned on." : "Hook turned off.")} />
         </SettingRow>;
       })}
     </SettingsGroup>}

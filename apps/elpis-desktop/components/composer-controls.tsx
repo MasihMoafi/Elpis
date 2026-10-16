@@ -29,18 +29,3 @@ export function PermissionsMenu({ mode, disabled, onChange }: { mode: Permission
     </DropdownMenuContent>
   </DropdownMenu>;
 }
-
-/** The share of the context window in use, as ChatGPT's composer ring. */
-export function ContextRing({ used, window }: { used: number; window: number }) {
-  const share = Math.min(1, Math.max(0, used / window));
-  const radius = 7, circumference = 2 * Math.PI * radius;
-  const label = `Context: ${formatTokens(used)} of ${formatTokens(window)} (${Math.round(share * 100)}%)`;
-  return <span className="context-ring" role="img" aria-label={label} title={label}>
-    <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">
-      <circle cx="9" cy="9" r={radius} className="context-ring-track" />
-      <circle cx="9" cy="9" r={radius} className="context-ring-fill" strokeDasharray={circumference} strokeDashoffset={circumference * (1 - share)} transform="rotate(-90 9 9)" />
-    </svg>
-  </span>;
-}
-
-const formatTokens = (value: number) => value >= 1_000_000 ? `${(value / 1_000_000).toFixed(1)}M` : value >= 1_000 ? `${Math.round(value / 1_000)}k` : String(value);
