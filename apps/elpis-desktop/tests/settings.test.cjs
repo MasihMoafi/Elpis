@@ -1,3 +1,4 @@
+const { leaveSettings } = require('./controls.cjs');
 // Actual exported settings UI, deterministic local HTTP. No model calls.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
@@ -52,7 +53,7 @@ test('settings keep unknowns honest, show failed optimizer identity, and reject 
     await page.getByRole('tab', { name: 'Usage & limits', exact: true }).click();
     await page.waitForTimeout(5500);
     assert.equal(aRequests, 1, 'Do not start another context poll while the first response is pending');
-    await page.getByRole('button', { name: 'Context conversation B', exact: true }).click();
+    await leaveSettings(page); await page.getByRole('button', { name: 'Context conversation B', exact: true }).click();
     await page.getByRole('button', { name: 'Settings', exact: true }).click(); await page.getByRole('tab', { name: 'Usage & limits', exact: true }).click();
     await page.getByText('B_OPTIMIZER', { exact: true }).waitFor();
     await page.getByText('failed', { exact: true }).waitFor();

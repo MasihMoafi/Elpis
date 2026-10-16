@@ -55,7 +55,8 @@ export function UsageWindows({ status }: { status: UsageStatus }) {
 export type Providers = { openai: OpenAIAccount; claude: Subscription; gemini: Subscription };
 
 /** Every account's reported usage, reloaded when an account changes and every five minutes. A subscription's
- * bridge reads its usage in the background, so it can be missing at first: then it asks twice more. */
+ * bridge reads its usage in the background, so it can be missing at first, and the first request can fail while
+ * Elpis starts: then it asks twice more. */
 export function useProviderUsage(refreshKey: number) {
   const [data, setData] = useState<Providers | null>(null);
   const [error, setError] = useState("");
@@ -69,10 +70,12 @@ export function useProviderUsage(refreshKey: number) {
   }, []);
   useEffect(() => { retries.current = 0; void load(); const timer = setInterval(() => void load(), 5 * 60_000); return () => clearInterval(timer); }, [refreshKey, load]);
   useEffect(() => {
-    if (!data || retries.current >= 2 || ![data.claude, data.gemini].some(item => item?.state === "connected" && !item.usage?.length)) return;
+    // Also when the first request failed, as it can while Elpis is still starting.
+    const missing = error || (data && [data.claude, data.gemini].some(item => item?.state === "connected" && !item.usage?.length));
+    if (!missing || retries.current >= 2) return;
     const timer = setTimeout(() => { retries.current++; void load(); }, 6000);
     return () => clearTimeout(timer);
-  }, [data, load]);
+  }, [data, error, load]);
   return { data, error, loading, load };
 }
 

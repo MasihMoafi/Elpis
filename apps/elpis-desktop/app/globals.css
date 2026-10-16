@@ -217,6 +217,27 @@ section:hover > .section-label-row > button, .section-label-row > button:focus-v
 .next-turn { color:var(--warning) !important; font-weight:500; }
 .thread-working.waiting { background:var(--primary); animation:none; }
 .settings-layout { display:grid; grid-template-columns:180px minmax(0,1fr); gap:32px; max-width:1060px; margin:0 auto; }
+/* As in the ChatGPT app, Settings takes over the window: its sections replace the sidebar and the page sits centred. */
+.app-shell.settings-mode { grid-template-columns:minmax(0,1fr); }
+.app-shell.settings-mode > .sidebar { display:none; }
+/* The header stays only while something needs input, so an approval is never hidden behind Settings. */
+.app-shell.settings-mode .workspace-header:not(:has(.pending-input-anchor)) { display:none; }
+.settings-mode .page-scroll:has(> .settings-layout) { padding:0; overflow:hidden; }
+.settings-mode .settings-layout { height:100%; max-width:none; gap:0; grid-template-columns:256px minmax(0,1fr); }
+.settings-mode .settings-nav { position:static; height:100%; overflow:auto; align-content:start; background:var(--sidebar); border-right:1px solid var(--hairline); padding:10px 8px 16px; gap:6px; }
+.settings-mode .settings-page { max-width:none; height:100%; overflow:auto; padding:48px 40px 64px; }
+.settings-mode .settings-page > [role="tabpanel"] { max-width:860px; margin:0 auto; }
+.settings-back { display:flex; align-items:center; gap:8px; height:30px; padding:0 8px; border:0; border-radius:6px; background:none; color:var(--muted-foreground); font-size:13px; cursor:pointer; }
+.settings-back:hover { background:var(--hover); color:var(--foreground); }
+.settings-title { margin:10px 8px 4px; font:500 19px/1.3 var(--serif); }
+.settings-search { display:flex; align-items:center; gap:6px; padding:0 8px; border-radius:6px; background:var(--muted); color:var(--muted-foreground); }
+.settings-search input { border:0; background:transparent; height:32px; padding:0; box-shadow:none; }
+.settings-nav [role="tablist"] { display:grid; gap:1px; }
+.settings-nav-group { display:grid; gap:1px; }
+.settings-nav button[role="tab"] { gap:10px; }
+.settings-nav button[role="tab"] svg { color:var(--muted-foreground); flex-shrink:0; }
+.settings-nav button[role="tab"].active svg { color:var(--primary); }
+.settings-nav-empty { padding:8px; font-size:12px; color:var(--muted-foreground); }
 .settings-nav { display:grid; align-content:start; gap:2px; position:sticky; top:0; }
 .settings-nav button { justify-content:flex-start; text-align:left; height:30px; padding:0 10px; border-radius:7px; border:0; background:none; color:var(--foreground); font-size:13px; }
 .settings-nav button:hover { background:var(--hover); }

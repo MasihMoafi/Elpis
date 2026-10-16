@@ -1,4 +1,4 @@
-const { chooseOption, controlValue } = require("./controls.cjs");
+const { chooseOption, controlValue, leaveSettings, sidebar } = require('./controls.cjs');
 const {test}=require('node:test');
 const assert=require('node:assert/strict');
 const http=require('node:http');
@@ -35,7 +35,7 @@ test('provider setup preserves edits on conflict, refreshes choices and never re
  const page=await browser.newPage({viewport:{width:1440,height:1000}});page.setDefaultTimeout(7000);
  try{
   await page.goto(`http://127.0.0.1:${server.address().port}`);
-  await page.locator('aside').getByRole('button',{name:'Settings',exact:true}).click();
+  await (await sidebar(page)).getByRole('button',{name:'Settings',exact:true}).click();
   // Settings opens on General, as in the ChatGPT app; connections live under Models & accounts.
   if(await page.getByRole('tab',{name:'Models & accounts',exact:true}).count())await page.getByRole('tab',{name:'Models & accounts',exact:true}).click();
   await page.getByText('Advanced API connections',{exact:true}).click();
@@ -54,14 +54,14 @@ test('provider setup preserves edits on conflict, refreshes choices and never re
   assert.equal(writes[1].version,'v2');assert.deepEqual(writes[1].credential,{action:'replace',value:'fixture-only-secret'});
   assert.equal(writes[1].id,'api-my-api');
   assert(!(await page.content()).includes('fixture-only-secret'));
-  await page.locator('aside').getByRole('button',{name:'New chat',exact:true}).click();
+  await (await sidebar(page)).getByRole('button',{name:'New chat',exact:true}).click();
   await page.getByLabel('Model',{exact:true}).click();
   await page.getByText('Advanced: use an unlisted model',{exact:true}).click();
   await chooseOption(page.getByLabel('Provider',{exact:true}), 'api-my-api');
   await page.getByLabel('Model ID',{exact:true}).fill('custom/native-model');
   await page.getByRole('button',{name:'Use model',exact:true}).click();
   assert.equal(await controlValue(page.getByLabel('Model',{exact:true})),'custom/native-model');
-  await page.locator('aside').getByRole('button',{name:'Settings',exact:true}).click();
+  await (await sidebar(page)).getByRole('button',{name:'Settings',exact:true}).click();
   await page.getByRole('tab',{name:'Models & accounts',exact:true}).click();
   await page.getByRole('button',{name:'Edit My API',exact:true}).click();
   assert.equal(await page.getByLabel('Provider API key',{exact:true}).count(),0);

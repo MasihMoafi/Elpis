@@ -3,7 +3,7 @@ const { chooseOption, controlValue } = require('./controls.cjs');
 const test = require('node:test'), assert = require('node:assert/strict'), fs = require('node:fs/promises'), path = require('node:path'), http = require('node:http');
 const { chromium } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright');
 
-const PAGES = ['General', 'Notifications', 'Appearance', 'Keyboard shortcuts', 'Voice', 'Personalization', 'Models & accounts', 'MCP servers', 'Usage & limits', 'Git', 'Worktrees', 'Hooks', 'Configuration', 'Archived chats'];
+const PAGES = ['General', 'Notifications', 'Appearance', 'Keyboard shortcuts', 'Voice', 'Personalization', 'Usage & limits', 'Archived chats', 'Models & accounts', 'MCP servers', 'Git', 'Worktrees', 'Hooks', 'Configuration'];
 
 test('settings pages appear in order and each control writes only its own backing setting', async () => {
   let version = 1;

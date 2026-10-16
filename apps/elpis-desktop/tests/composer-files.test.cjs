@@ -1,3 +1,4 @@
+const { leaveSettings, sidebar } = require('./controls.cjs');
 // Real exported UI with synthetic transfer events. Never reads/writes the system clipboard.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
@@ -103,7 +104,7 @@ async function transfer(view, kind, { text = '', file, target = 'input' } = {}) 
 
 const attachments = view => view.page.locator('.composer').getByRole('list', { name: 'Message attachments', exact: true });
 const sends = view => view.posts.filter(post => /\/(turns|steer)$/.test(post.path));
-async function openChat(view, name) { await view.page.locator('.thread-row .thread-link').filter({ hasText: name }).click(); await eventually(async () => assert.equal(await view.input.isEnabled(), true)); }
+async function openChat(view, name) { await leaveSettings(view.page); await view.page.locator('.thread-row .thread-link').filter({ hasText: name }).click(); await eventually(async () => assert.equal(await view.input.isEnabled(), true)); }
 async function visibleFile(view, name) { try { await eventually(async () => assert.equal(await attachments(view).getByRole('button', { name: `Remove ${name}`, exact: true }).count(), 1)); } catch (error) { console.error('Attachment fixture diagnostic', await view.page.evaluate(() => ({ lastChat: localStorage.getItem('elpis-last-chat'), storage: Object.fromEntries(Object.keys(sessionStorage).map(key => [key, sessionStorage.getItem(key)?.slice(0, 400)])), body: document.body.innerText.slice(-1800) }))); throw error; } }
 async function noSend(view) { assert.equal(sends(view).length, 0); assert.deepEqual(view.errors, []); }
 
