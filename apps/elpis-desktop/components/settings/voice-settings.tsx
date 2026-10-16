@@ -67,8 +67,8 @@ export function VoiceSettings({ onOpenMcp }: { onOpenMcp: () => void }) {
     {error && <SettingsNotice tone="alert">Could not read voice settings: {error}</SettingsNotice>}
     {!config && !error && <SettingsNotice>Reading voice settings…</SettingsNotice>}
     {config && <SettingsGroup title="Dictation">
-      <SettingRow title="Status" description={route?.available ? `Ready. Transcribes with ${route.label ?? route.backend}.` : route?.reason ?? "Status not reported."}>
-        <span className={`settings-badge ${route?.available ? "ok" : "warn"}`}>{route?.available ? "Ready" : "Unavailable"}</span>
+      <SettingRow title="Status" description={route?.available ? `Configured to transcribe with ${route.label ?? route.backend}. The first dictation checks that it runs.` : route?.reason ?? "Status not reported."}>
+        <span className={`settings-badge ${route?.available ? "ok" : "warn"}`}>{route?.available ? "Configured" : "Unavailable"}</span>
       </SettingRow>
       {server ? <WhisperTypeSettings layout="rows" server={server} disabled={!config.write?.available} save={save} />
         : <SettingRow title="WhisperType server" description="Dictation uses the whispertype MCP server. Add it under MCP servers."><Button variant="outline" size="sm" onClick={onOpenMcp}>Open MCP servers</Button></SettingRow>}

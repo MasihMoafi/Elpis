@@ -546,7 +546,9 @@ export default function Home() {
   useEffect(() => { const element = scroll.current; if (!element) return; if (restoreScroll.current) { const previous = restoreScroll.current; restoreScroll.current = null; element.scrollTop = previous.top + element.scrollHeight - previous.height; } else if (stickToBottom.current) element.scrollTo({ top: element.scrollHeight }); }, [entries, selected?.id]);
 
   const activeTurn = selected ? activeTurns[selected.id] : undefined;
-  const permissionMode: PermissionMode = selected ? nextTurn[selected.id]?.permissions ?? threadModes[selected.id] ?? "ask" : newMode ?? "ask";
+  // A new chat runs with the configured defaults until a mode is chosen, so the button shows those.
+  const configuredMode: PermissionMode = providerSettings?.options?.approvalPolicy === "never" && providerSettings.options.sandboxMode === "danger-full-access" ? "full" : "ask";
+  const permissionMode: PermissionMode = selected ? nextTurn[selected.id]?.permissions ?? threadModes[selected.id] ?? "ask" : newMode ?? configuredMode;
   const planMode = selected ? nextTurn[selected.id]?.plan ?? threadPlans[selected.id] ?? false : newPlan;
   // The last finished turn's proposed plan, while the chat is still in Plan mode and it is unanswered.
   const lastTurnId = entries.at(-1)?.turnId;

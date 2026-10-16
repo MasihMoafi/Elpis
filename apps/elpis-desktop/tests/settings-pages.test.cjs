@@ -84,7 +84,7 @@ test('settings pages appear in order and each control writes only its own backin
 
     // Voice saves WhisperType's route through the MCP config writer.
     panel = await open('Voice');
-    await panel.getByText('Ready', { exact: true }).waitFor();
+    await panel.getByText('Configured', { exact: true }).waitFor();
     await chooseOption(panel.getByLabel('Transcription engine', { exact: true }), 'local');
     await panel.getByRole('button', { name: 'Save transcription settings' }).click();
     await panel.getByRole('status').filter({ hasText: 'Transcription settings saved' }).waitFor();

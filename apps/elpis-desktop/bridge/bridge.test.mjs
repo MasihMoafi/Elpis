@@ -992,3 +992,12 @@ test('fork chat from here copies history through the chosen turn and names the c
     assert.equal('lastTurnId' in socket.sent.findLast(message => message.method === 'thread/fork').params, false);
   } finally { client.close(); }
 });
+
+test('Smart Prune is switched by its feature key, and a writable config gives no "cannot save" reason', async () => {
+  const { optionEdits, settingsSnapshot } = await import('./elpis-features.mjs');
+  assert.deepEqual(optionEdits({ automaticPruning: true }), [{ keyPath: 'features.automatic_context_pruning', value: true, mergeStrategy: 'replace' }]);
+  assert.throws(() => optionEdits({ automaticPruning: 'yes' }), /listed values/);
+  const writable = settingsSnapshot({ config: {}, layers: [{ name: { type: 'user', file: '/home/fixture/.elpis/config.toml' }, version: 'v1' }] }, { requirements: {} });
+  assert.deepEqual(writable.write, { available: true, reason: null });
+  assert.match(settingsSnapshot({ config: {}, layers: [] }, { requirements: {} }).write.reason, /no writable config\.toml/);
+});

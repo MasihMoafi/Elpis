@@ -124,7 +124,11 @@ export function PrunerSettings({ value, models }: { value: ElpisSettings; models
   const reload = () => void saver.run("reload", async () => { await reloadSettings(); setDraft(null); }, reloaded.text);
   const editableOverride = override.available === true && typeof override.version === "string";
   return <SettingsGroup title="Smart Prune" description="Optimizes fresh tool results before the main model reads them.">
-    <SettingRow title="Automatic pruning" description={<>Turned on or off with <code className="settings-code">features.automatic_context_pruning</code> in the Elpis config.</>}><span className="text-sm">{shown(value.smartPrune.enabled)}</span></SettingRow>
+    <SettingRow title="Automatic pruning" description={<>Saved as <code className="settings-code">features.automatic_context_pruning</code>; off unless turned on. Applies to new conversations.</>}>
+      {editable(value) ? <Switch aria-label="Automatic pruning" checked={value.smartPrune.enabled ?? false} disabled={saver.pending !== null}
+        onCheckedChange={next => void saver.run("pruning", () => saveSettings("/settings", { version: value.version, options: { automaticPruning: next } }), next ? "Smart Prune on. Applies to new conversations." : "Smart Prune off. Applies to new conversations.")} />
+        : <span className="text-sm">{shown(value.smartPrune.enabled ?? false)}</span>}
+    </SettingRow>
     {editableOverride ? <>
       <SettingRow title="Pruning model selection" description="Applies to the next pruning attempt.">
         <OptionSelect aria-label="Pruning model selection" className="settings-choice" value={current.mode} onChange={event => update({ mode: event.target.value as "background" | "explicit" })} disabled={saver.pending !== null}><option value="background">Use background model</option><option value="explicit">Choose model and provider</option></OptionSelect>

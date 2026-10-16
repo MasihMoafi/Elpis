@@ -18,6 +18,7 @@ export const CONFIG_OPTIONS = {
   developerInstructions: { keyPath: 'developer_instructions', text: 32000 },
   projectRootMarkers: { keyPath: 'project_root_markers', names: 16 },
   worktreeRoot: { keyPath: 'desktop.git-worktree-root', absolutePath: 4096 },
+  automaticPruning: { keyPath: 'features.automatic_context_pruning', values: [true, false] },
 };
 const configValue = (config, keyPath) => keyPath.split('.').reduce((value, key) => value && typeof value === 'object' ? value[key] : undefined, config);
 function optionSnapshot(config) {
@@ -97,7 +98,7 @@ export function settingsSnapshot(read, requirementsRead, prunerRead = null, save
       allowedSandboxModes: strings(requirements?.allowedSandboxModes),
     },
     version: string(userLayer?.version),
-    write: { available: typeof userLayer?.version === 'string', reason: 'Background and memory changes apply to new conversations.' },
+    write: { available: typeof userLayer?.version === 'string', reason: typeof userLayer?.version === 'string' ? null : 'Elpis reported no writable config.toml, so this cannot be saved here. Edit the file or restart Elpis.' },
   };
 }
 

@@ -26,6 +26,8 @@ function CredentialSettings({ server, disabled, save }: { server: Server; disabl
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
   if (!names.length) return null;
+  // Elpis gives an HTTP server only the token named by bearer_token_env_var, read from its environment; it refuses `env` there.
+  if (server.transport === "http") return <p className="text-xs text-muted-foreground">This server reads its key from {names.map(name => <code key={name}>{name}</code>)} in the environment Elpis starts with; set it there and restart Elpis.</p>;
   return <form className="mcp-tool-settings" aria-label={`API keys for ${server.name}`} onSubmit={async event => {
     event.preventDefault(); setBusy(true); setSaved(false);
     try { await save({ action: "credentials", env: Object.fromEntries(Object.entries(values).filter(([, value]) => value.trim())) }); setValues({}); setSaved(true); }
