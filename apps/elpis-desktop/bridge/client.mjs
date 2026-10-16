@@ -375,7 +375,8 @@ export class DesktopClient extends EventEmitter {
       sourceKinds: ['cli', 'vscode', 'exec', 'appServer', 'subAgent', 'subAgentReview', 'subAgentCompact', 'subAgentThreadSpawn', 'subAgentOther', 'unknown'],
       ...(options.ancestorThreadId ? { ancestorThreadId: threadId(options.ancestorThreadId) } : {}) });
     await this.#loadWorkflowTitles(result.data);
-    const data = result.data.map(thread => this.#decorate(thread));
+    // Auto-review's reviewer works in threads of its own; they are not the user's chats.
+    const data = result.data.filter(thread => thread.source?.subAgent?.other !== 'guardian').map(thread => this.#decorate(thread));
     // Follow working agents live: only subscribers receive their items, approvals and deltas.
     for (const thread of data) if (thread.status?.type === 'active' && !this.#owned.has(thread.id)) void this.#attach(thread.id).catch(() => {});
     return { ...result, data };

@@ -149,6 +149,14 @@ test('saved-conversation search passes its term and cursor to the native list be
   } finally { client.close(); }
 });
 
+test('the auto-review reviewer\'s own threads are never listed as chats', async () => {
+  const { client, threads } = fixture(); await client.initialize();
+  const reviewer = 'guardian-review-thread';
+  threads.set(reviewer, { ...threads.get(ROOT), id: reviewer, name: 'Guardian review', source: { subAgent: { other: 'guardian' } } });
+  try { assert.deepEqual((await client.listThreads()).data.map(thread => thread.id).filter(id => id === reviewer), []); }
+  finally { client.close(); }
+});
+
 test('existing chats are written directly after a native rejoin; parent-owned agents continue in a fork', async () => {
   const { client, socket, threads } = fixture(); await client.initialize();
   const listed = await client.listThreads();
