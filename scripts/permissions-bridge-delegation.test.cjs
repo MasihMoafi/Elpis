@@ -14,7 +14,7 @@ const path = require('node:path');
 const { spawn } = require('node:child_process');
 const { EventEmitter } = require('node:events');
 const WebSocket = require('../tools/elpis-claude/node_modules/ws');
-const { Provider, message, call } = require('../editors/vscode/test/runtime-eval');
+const { Provider, message, call } = require('./lib/mock-provider.js');
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 // The TUI's permission modes: profile and approval policy.
 const MODES = { default: [':workspace', 'on-request'], readOnly: [':read-only', 'on-request'], full: [':danger-full-access', 'never'] };

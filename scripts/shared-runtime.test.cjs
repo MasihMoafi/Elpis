@@ -14,7 +14,7 @@ const net = require('node:net');
 const { spawn, spawnSync } = require('node:child_process');
 const { pathToFileURL } = require('node:url');
 const WebSocket = require('../tools/elpis-claude/node_modules/ws');
-const { Provider, message } = require('../editors/vscode/test/runtime-eval');
+const { Provider, message } = require('./lib/mock-provider.js');
 
 const binary = process.argv[2];
 assert(binary && path.isAbsolute(binary), 'provide the absolute path of the engine binary');

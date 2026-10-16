@@ -8,7 +8,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { DatabaseSync } = require('node:sqlite');
 const { execFileSync } = require('node:child_process');
-const { Provider, message } = require('../editors/vscode/test/runtime-eval');
+const { Provider, message } = require('./lib/mock-provider.js');
 const binary = process.argv[2];
 assert(binary && path.isAbsolute(binary), 'provide an absolute engine path');
 const launcher = process.argv[3] ?? path.resolve(__dirname, '../tools/elpis-claude/elpis-claude');

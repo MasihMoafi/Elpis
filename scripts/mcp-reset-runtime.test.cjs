@@ -33,7 +33,7 @@ if (process.argv[2] === "--mcp-fixture") {
 }
 
 async function run() {
-  const { AppServer } = require("../editors/vscode/src/rpc");
+  const { AppServer } = require("./lib/rpc.js");
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "elpis-mcp-reset-"));
   const home = path.join(root, "home");
   const cwd = path.join(root, "project");

@@ -6,7 +6,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
 const WebSocket = require('../tools/elpis-claude/node_modules/ws');
-const { Provider, message } = require('../editors/vscode/test/runtime-eval');
+const { Provider, message } = require('./lib/mock-provider.js');
 const pause = ms => new Promise(r => setTimeout(r, ms));
 const wait = async (f, label) => { const until = Date.now() + 20000; while (!f()) { assert(Date.now() < until, `timed out: ${label}`); await pause(20); } };
 async function main() {

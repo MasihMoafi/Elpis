@@ -3,7 +3,7 @@ const fs = require('node:fs');
 const http = require('node:http');
 const os = require('node:os');
 const path = require('node:path');
-const { AppServer } = require('../editors/vscode/src/rpc');
+const { AppServer } = require('./lib/rpc.js');
 
 const home = fs.mkdtempSync(path.join(os.tmpdir(), 'elpis-title-test-'));
 let rpc;

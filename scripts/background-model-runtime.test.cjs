@@ -8,7 +8,7 @@ const fs = require("node:fs");
 const http = require("node:http");
 const os = require("node:os");
 const path = require("node:path");
-const { AppServer } = require("../editors/vscode/src/rpc");
+const { AppServer } = require("./lib/rpc.js");
 
 const BACKGROUND_MODEL = "deepseek/deepseek-v4.1-flash";
 const MAIN_MODEL = "some-main-model";

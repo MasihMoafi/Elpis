@@ -6,7 +6,7 @@ const http = require("node:http");
 const os = require("node:os");
 const path = require("node:path");
 const { performance } = require("node:perf_hooks");
-const { AppServer } = require("../editors/vscode/src/rpc");
+const { AppServer } = require("./lib/rpc.js");
 
 const binary = path.resolve(process.argv[2] || "codex-rs/target/local-release/codex-app-server");
 const injectDelay = process.argv.includes("--delay-delivery");

@@ -9,7 +9,7 @@ const fs = require('node:fs');
 const http = require('node:http');
 const os = require('node:os');
 const path = require('node:path');
-const {AppServer} = require('../editors/vscode/src/rpc');
+const {AppServer} = require('./lib/rpc.js');
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'elpis-pressure-runtime-'));
 const home = path.join(root, 'home'), cwd = path.join(root, 'project');

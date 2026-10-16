@@ -12,7 +12,7 @@ const fs = require('node:fs');
 const http = require('node:http');
 const os = require('node:os');
 const path = require('node:path');
-const {AppServer} = require('../editors/vscode/src/rpc');
+const {AppServer} = require('./lib/rpc.js');
 
 const SENTINEL = 'ELPIS_REASONING_SENTINEL_4c1e7b09d2';
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'elpis-reasoning-expiry-'));
