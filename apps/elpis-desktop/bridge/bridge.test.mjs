@@ -860,3 +860,37 @@ test('desktop server closes even when a local request body never finishes', asyn
   assert.equal(completed,true,'quitting cannot wait indefinitely for an unfinished HTTP body');
   assert.equal(socket.closed,true,'desktop detaches its connection to the native runtime');
 });
+
+test('permission modes become Elpis approval and sandbox settings, and resume reports the mode', async () => {
+  const { client, socket, threads } = fixture(); await client.initialize();
+  try {
+    threads.get(ROOT).status = { type: 'idle' };
+    await client.send(ROOT, { text: 'go', permissions: 'full' });
+    const full = socket.sent.findLast(message => message.method === 'turn/start').params;
+    assert.deepEqual([full.approvalPolicy, full.approvalsReviewer, full.sandboxPolicy], ['never', 'user', { type: 'dangerFullAccess' }]);
+    threads.get(ROOT).status = { type: 'idle' };
+    await client.send(ROOT, { text: 'again', permissions: 'auto' });
+    const auto = socket.sent.findLast(message => message.method === 'turn/start').params;
+    assert.deepEqual([auto.approvalPolicy, auto.approvalsReviewer, auto.sandboxPolicy], ['on-request', 'auto_review', { type: 'workspaceWrite' }]);
+    threads.get(ROOT).status = { type: 'idle' };
+    await client.send(ROOT, { text: 'plain' });
+    const plain = socket.sent.findLast(message => message.method === 'turn/start').params;
+    assert.equal('approvalPolicy' in plain || 'sandboxPolicy' in plain, false, 'no mode chosen leaves the chat as configured');
+    await assert.rejects(client.send(ROOT, { text: 'x', permissions: 'root' }), /permission mode/);
+    await client.createThread({ permissions: 'ask' });
+    const started = socket.sent.findLast(message => message.method === 'thread/start').params;
+    assert.deepEqual([started.approvalPolicy, started.approvalsReviewer, started.sandbox], ['on-request', 'user', 'workspace-write']);
+  } finally { client.close(); }
+});
+
+test('fork chat from here copies history through the chosen turn and names the copy', async () => {
+  const { client, socket } = fixture(); await client.initialize();
+  try {
+    const result = await client.forkThread(ROOT, { lastTurnId: 'turn-3' });
+    const fork = socket.sent.findLast(message => message.method === 'thread/fork').params;
+    assert.equal(fork.threadId, ROOT); assert.equal(fork.lastTurnId, 'turn-3');
+    assert.equal(result.thread.id, FORK); assert.equal(result.thread.name, 'Existing root (fork)');
+    await client.forkThread(ROOT, {});
+    assert.equal('lastTurnId' in socket.sent.findLast(message => message.method === 'thread/fork').params, false);
+  } finally { client.close(); }
+});

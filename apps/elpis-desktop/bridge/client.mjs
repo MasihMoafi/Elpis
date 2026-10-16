@@ -675,6 +675,17 @@ export class DesktopClient extends EventEmitter {
     });
   }
   /** Renames a chat in Elpis; every client shows the stored name. */
+  /** ChatGPT's "Fork chat from here": a new chat with this one's history through `lastTurnId`. */
+  async forkThread(id, body) {
+    object(body, ['lastTurnId']);
+    const lastTurnId = body.lastTurnId === undefined ? undefined : text(body.lastTurnId, 'turn ID', 200);
+    const thread = await this.#current(id);
+    const fork = await this.#rpc('thread/fork', { threadId: id, ...(lastTurnId ? { lastTurnId } : {}), ...(thread.model ? { model: thread.model } : {}), ...(thread.modelProvider ? { modelProvider: thread.modelProvider } : {}) });
+    threadId(fork.thread?.id); this.#owned.add(fork.thread.id);
+    const name = `${(thread.name?.trim() || String(thread.preview ?? '').split('\n')[0].trim() || 'Chat').slice(0, 110)} (fork)`;
+    try { await this.#rpc('thread/name/set', { threadId: fork.thread.id, name }); fork.thread.name = name; } catch { /* The fork stands; it keeps its default title. */ }
+    return { thread: this.#decorate(fork.thread) };
+  }
   async renameThread(id, body) {
     object(body, ['name']); const name = text(body.name, 'name', 120).trim();
     if (!name) throw new BridgeError('Enter a name');

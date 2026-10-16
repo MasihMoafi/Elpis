@@ -117,13 +117,13 @@ export async function startDesktopServer(options = {}) {
           if (method === 'GET') return json(response, 200, await client.listThreads(pageQuery(url, true)));
           return json(response, 201, await client.createThread(await body(request)));
         }
-        const thread = url.pathname.match(/^\/api\/threads\/([^/]+)(?:\/(turns|steer|interrupt|resume|context|delete|rename|archive|unarchive|revert))?$/);
+        const thread = url.pathname.match(/^\/api\/threads\/([^/]+)(?:\/(turns|steer|interrupt|resume|context|delete|rename|archive|unarchive|revert|fork))?$/);
         if (thread) {
           const id = decodeURIComponent(thread[1]);
           if (!thread[2] && method === 'GET') return json(response, 200, await client.readThread(id, pageQuery(url)));
           if (thread[2] === 'context' && method === 'GET') return json(response, 200, await client.context(id));
           if (thread[2] && thread[2] !== 'context' && method === 'POST') {
-            const operation = { turns: 'send', steer: 'steer', interrupt: 'interrupt', resume: 'resume', delete: 'deleteThread', rename: 'renameThread', archive: 'archiveThread', unarchive: 'unarchiveThread', revert: 'revert' }[thread[2]];
+            const operation = { turns: 'send', steer: 'steer', interrupt: 'interrupt', resume: 'resume', delete: 'deleteThread', rename: 'renameThread', archive: 'archiveThread', unarchive: 'unarchiveThread', revert: 'revert', fork: 'forkThread' }[thread[2]];
             return json(response, 200, await client[operation](id, await body(request, ['send', 'steer'].includes(operation) ? ATTACHMENT_BODY_LIMIT : 65536)));
           }
           throw new BridgeError('Method is not allowed', 405);

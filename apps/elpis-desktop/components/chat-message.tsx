@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { FileDiff, GitBranch, Globe, Pencil, RefreshCw, Terminal, Wrench } from "lucide-react";
+import { FileDiff, GitBranch, GitFork, Globe, Pencil, RefreshCw, Terminal, Wrench } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { CopyButton, MarkdownText } from "@/components/markdown-text";
@@ -45,7 +45,7 @@ function Activity({label,icon,status,detail,children}:{label:string;icon:React.R
   return <details className="activity-card"><summary className="activity-heading"><span className="activity-icon">{icon}</span><span className="activity-title">{label}</span>{detail&&<span className="activity-preview">{detail}</span>}{statusLabel(status)&&<span className={`activity-status status-${text(status)}`}>{statusLabel(status)}</span>}</summary><div className="activity-body">{children}</div></details>;
 }
 /** Sending an edit replaces this message and every later turn through Elpis (thread/revert), then starts the edited turn. */
-function UserMessage({body,attachments,attachmentContent,copyText,onEdit,editBlockedReason,editDraft,onEditDraftChange,editPending}:{body:string;attachments:string[];attachmentContent?:React.ReactNode;copyText?:string;onEdit?:(text:string)=>Promise<void>;editBlockedReason?:string;editDraft?:string;onEditDraftChange?:(value:string|null)=>void;editPending?:boolean}) {
+function UserMessage({body,attachments,attachmentContent,copyText,onEdit,editBlockedReason,editDraft,onEditDraftChange,editPending,time}:{body:string;attachments:string[];attachmentContent?:React.ReactNode;copyText?:string;onEdit?:(text:string)=>Promise<void>;editBlockedReason?:string;editDraft?:string;onEditDraftChange?:(value:string|null)=>void;editPending?:boolean;time?:number}) {
   const [localEditing,setEditing]=useState(false);const [localDraft,setLocalDraft]=useState(body);const [localBusy,setBusy]=useState(false);const [error,setError]=useState("");
   const busy=localBusy||!!editPending;
   const editing=onEditDraftChange?editDraft!==undefined:localEditing,draft=onEditDraftChange?editDraft??body:localDraft;
@@ -59,19 +59,20 @@ function UserMessage({body,attachments,attachmentContent,copyText,onEdit,editBlo
     <div className="flex justify-end gap-2"><Button type="button" variant="outline" size="sm" disabled={busy} onClick={cancel}>Cancel</Button><Button type="submit" size="sm" disabled={busy||!onEdit||!draft.trim()}>{busy?"Sending…":"Send"}</Button></div>
   </form>;
   return <div className="user-turn"><div className="message user">{body}{attachmentContent || (attachments.length>0&&<ul className="mt-2 space-y-1 text-sm" aria-label="Message attachments">{attachments.map((label,index)=><li key={index}>{label}</li>)}</ul>)}{!body&&!attachments.length&&<span>Message content unavailable.</span>}</div><div className="message-actions">
+    {time&&<time className="message-time" dateTime={new Date(time).toISOString()} title={new Date(time).toLocaleString()}>{new Date(time).toLocaleTimeString([],{hour:"numeric",minute:"2-digit"})}</time>}
     <CopyButton label="Copy message" text={()=>copyText ?? [body,...attachments].filter(Boolean).join("\n")}/>
     {onEdit&&<Button variant="ghost" size="icon-xs" aria-label="Edit message" title="Edit and resend" onClick={()=>{setDraft(body);setError("");setEditing(true);}}><Pencil size={14}/></Button>}
     {!onEdit&&editBlockedReason&&<Button variant="ghost" size="icon-xs" aria-label="Why editing is unavailable" title={editBlockedReason} onClick={()=>setError(previous=>previous?"":editBlockedReason)}><Pencil size={14}/></Button>}
   </div>{error&&<p role="status" className="mb-3 text-xs text-muted-foreground">{error}</p>}</div>;
 }
-export function ChatMessage({item,speaker="Elpis",threads=[],onOpenThread,onEdit,onRegenerate,editBlockedReason,editDraft,onEditDraftChange,editPending,mediaBase}:{item:Item;speaker?:string;threads?:Thread[];onOpenThread?:(id:string)=>void;onEdit?:(text:string)=>Promise<void>;onRegenerate?:()=>void;editBlockedReason?:string;editDraft?:string;onEditDraftChange?:(value:string|null)=>void;editPending?:boolean;mediaBase?:string}) {
+export function ChatMessage({item,speaker="Elpis",threads=[],onOpenThread,onEdit,onRegenerate,onFork,time,editBlockedReason,editDraft,onEditDraftChange,editPending,mediaBase}:{item:Item;speaker?:string;threads?:Thread[];onOpenThread?:(id:string)=>void;onEdit?:(text:string)=>Promise<void>;onRegenerate?:()=>void;onFork?:()=>void;time?:number;editBlockedReason?:string;editDraft?:string;onEditDraftChange?:(value:string|null)=>void;editPending?:boolean;mediaBase?:string}) {
   if(item.type==="userMessage"){
     const content=list(item.content).map(object),attached=content.map((part,index)=>({part,index,file:fileAttachment(part)})).filter(({part,file})=>part.type!=="text" || file),attachments=attached.map(({part,file})=>file || attachmentLabel(part));
     const reason=editBlockedReason||(attachments.length?"This message contains attachments that this app cannot safely resend.":undefined);
     const attachmentContent=attached.length ? <ul className="mt-2 space-y-3 text-sm" aria-label="Message attachments">{attached.map(({part,index,file})=><li key={index}>{file ? <details className="max-w-full rounded-md border border-border p-2"><summary className="cursor-pointer break-all">{file}</summary><pre className="mt-2 max-h-80 max-w-full overflow-auto whitespace-pre-wrap break-words text-left">{text(part.text).slice(`File: ${file}\n`.length)}</pre></details> : <RecordedAttachment part={part} index={index} mediaBase={mediaBase}/>}</li>)}</ul> : undefined;
-    return <UserMessage body={content.filter(part=>part.type==="text"&&!fileAttachment(part)).map(part=>text(part.text)).join("\n")} copyText={content.map(part=>part.type==="text"?text(part.text):attachmentLabel(part)).join("\n")} attachments={attachments} attachmentContent={attachmentContent} onEdit={reason?undefined:onEdit} editBlockedReason={reason} editDraft={editDraft} onEditDraftChange={onEditDraftChange} editPending={editPending}/>;
+    return <UserMessage body={content.filter(part=>part.type==="text"&&!fileAttachment(part)).map(part=>text(part.text)).join("\n")} copyText={content.map(part=>part.type==="text"?text(part.text):attachmentLabel(part)).join("\n")} attachments={attachments} attachmentContent={attachmentContent} onEdit={reason?undefined:onEdit} editBlockedReason={reason} editDraft={editDraft} onEditDraftChange={onEditDraftChange} editPending={editPending} time={time}/>;
   }
-  if(item.type==="agentMessage")return <article className="message agent">{speaker!=="Elpis"&&<div className="speaker">{speaker}</div>}<MarkdownText text={item.text||""}/>{item.text&&<div className="message-actions"><CopyButton label="Copy reply" text={()=>item.text||""}/>{onRegenerate&&<Button variant="ghost" size="icon-xs" aria-label="Regenerate reply" title="Regenerate" onClick={onRegenerate}><RefreshCw size={14}/></Button>}</div>}</article>;
+  if(item.type==="agentMessage")return <article className="message agent">{speaker!=="Elpis"&&<div className="speaker">{speaker}</div>}<MarkdownText text={item.text||""}/>{item.text&&<div className="message-actions"><CopyButton label="Copy reply" text={()=>item.text||""}/>{onRegenerate&&<Button variant="ghost" size="icon-xs" aria-label="Regenerate reply" title="Regenerate" onClick={onRegenerate}><RefreshCw size={14}/></Button>}{onFork&&<Button variant="ghost" size="icon-xs" aria-label="Fork chat from here" title="Fork chat from here" onClick={onFork}><GitFork size={14}/></Button>}</div>}</article>;
   if(item.type==="commandExecution")return <Activity label="Terminal" icon={<Terminal size={15}/>} status={item.status} detail={item.command?.split("\n")[0]}><TextOutput value={item.command}/>{text(item.cwd)&&<p className="activity-location">{text(item.cwd)}</p>}<TextOutput value={item.aggregatedOutput}/><div className="activity-footer">{typeof item.exitCode==="number"&&<span>Exit {item.exitCode}</span>}{typeof item.durationMs==="number"&&<span>{(item.durationMs/1000).toFixed(1)}s</span>}</div></Activity>;
   if(item.type==="fileChange"){
     const changes=list(item.changes).map(object);

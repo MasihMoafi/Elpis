@@ -20,10 +20,15 @@ type Props = {
   /** Set when the row asked to delete (Claude's D shortcut); the confirmation opens once. */
   deleteRequested?: boolean;
   onDeleteRequestHandled?: () => void;
+  /** Set by the rename shortcut; the rename dialog opens once. */
+  renameRequested?: boolean;
+  onRenameRequestHandled?: () => void;
+  /** The trigger's name; the header's copy is "Chat actions", as in the ChatGPT app. */
+  label?: string;
 };
 
 /** Row menu: Rename, Archive and Delete, each through Elpis. Failures are shown as Elpis reported them. */
-export function ThreadActions({ thread, onDelete, onRename, onArchive, pinned, onPin, deleteRequested, onDeleteRequestHandled }: Props) {
+export function ThreadActions({ thread, onDelete, onRename, onArchive, pinned, onPin, deleteRequested, onDeleteRequestHandled, renameRequested, onRenameRequestHandled, label }: Props) {
   const [action, setAction] = useState<Action>(null);
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
@@ -35,6 +40,11 @@ export function ThreadActions({ thread, onDelete, onRename, onArchive, pinned, o
     open("delete");
     onDeleteRequestHandled?.();
   }, [deleteRequested]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!renameRequested || !onRename) return;
+    open("rename");
+    onRenameRequestHandled?.();
+  }, [renameRequested]); // eslint-disable-line react-hooks/exhaustive-deps
   async function run(work: () => Promise<void>) {
     setBusy(true); setError("");
     try { await work(); setAction(null); }
@@ -43,7 +53,7 @@ export function ThreadActions({ thread, onDelete, onRename, onArchive, pinned, o
   }
   return <>
     <DropdownMenu>
-      <DropdownMenuTrigger render={<Button variant="ghost" size="icon-xs" className="thread-actions" aria-label={`Actions for ${current}`} title="Rename, archive or delete" />}>
+      <DropdownMenuTrigger render={<Button variant="ghost" size="icon-xs" className="thread-actions" aria-label={label ?? `Actions for ${current}`} title="Rename, archive or delete" />}>
         <MoreHorizontal size={14} />
       </DropdownMenuTrigger>
       <DropdownMenuContent>

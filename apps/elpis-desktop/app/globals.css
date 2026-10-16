@@ -578,3 +578,18 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .project-row.active .project-toggle svg:not(.project-chevron) { color:var(--primary); }
 .project-chats { padding-left:18px; }
 .project-empty { margin:0; padding:3px 8px 6px; font-size:12px; color:var(--subtle-foreground); }
+.workspace-header h1 { display:flex; align-items:center; gap:4px; }
+.workspace-header h1 .thread-actions { opacity:.7; }
+.message-time { font-size:11px; color:var(--subtle-foreground); margin-right:4px; opacity:0; transition:opacity .12s; font-variant-numeric:tabular-nums; }
+.user-turn:hover .message-time { opacity:1; }
+.message-actions { opacity:.0; transition:opacity .12s; }
+.user-turn:hover .message-actions, .message.agent:hover .message-actions, .message-actions:focus-within { opacity:1; }
+.app-shell.sidebar-collapsed { grid-template-columns:minmax(0,1fr); }
+.app-shell.sidebar-collapsed > .sidebar { display:none; }
+.shortcuts-dialog { display:grid; gap:12px; max-width:520px; border-radius:6px; border-color:var(--border); box-shadow:var(--shadow), var(--glow, none); }
+.shortcuts-list { display:grid; gap:14px; max-height:min(60vh, 520px); overflow:auto; padding-right:4px; }
+.shortcuts-list h3 { margin:0 0 6px; color:var(--primary); }
+.shortcut-row { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:5px 0; border-bottom:1px solid var(--hairline); font-size:13px; }
+.shortcut-keys { display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end; }
+.shortcut-keys kbd { font:500 11px/1 var(--mono); padding:4px 6px; border:1px solid var(--border); border-radius:3px; background:var(--recessed); color:var(--foreground); }
+.header-title-row { display:flex; align-items:center; gap:4px; min-width:0; } .header-title-row .thread-actions { opacity:.7; flex-shrink:0; }

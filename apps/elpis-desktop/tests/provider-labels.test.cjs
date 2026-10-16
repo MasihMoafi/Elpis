@@ -55,9 +55,10 @@ test('bridged models are labelled by their prefix; providers keep separate sign-
     assert.deepEqual(providerOptions, ['All', 'OpenAI', 'Claude subscription', 'Antigravity']);
     await page.getByLabel('Search models', { exact: true }).press('Escape');
     await page.locator('.thread-row[data-thread-id="claude-root"] .thread-link').click();
-    const meta = page.locator('.thread-meta');
-    await meta.filter({ hasText: 'Claude subscription' }).waitFor();
-    assert.equal(await meta.innerText(), 'Claude subscription · Opus (Claude subscription) · high');
+    // As in the ChatGPT app, the chat's model and its provider show in the composer's model chip.
+    const chip = page.getByLabel('Model', { exact: true });
+    await chip.filter({ hasText: 'Claude subscription' }).waitFor();
+    assert.match(await chip.innerText(), /Opus \(Claude subscription\)/);
     assert.doesNotMatch(await page.locator('.workspace-header').innerText(), /OpenAI|gpt-6\.1-sol|GPT-6\.1 Sol/);
     await page.getByLabel('Model', { exact: true }).click();
     await page.getByLabel('Search models', { exact: true }).waitFor();
@@ -67,7 +68,7 @@ test('bridged models are labelled by their prefix; providers keep separate sign-
     // A list refresh without model metadata keeps the last reported route.
     const listed = () => new Promise(resolve => { const check = () => listRequests > before ? resolve() : setTimeout(check, 50); const before = listRequests; for (const stream of streams) stream.write(`event: message\ndata: ${JSON.stringify({ method: 'turn/completed', params: { threadId: 'elsewhere', turn: { id: 'turn-elsewhere' } } })}\n\n`); check(); });
     await listed(); await new Promise(resolve => setTimeout(resolve, 300));
-    assert.equal(await meta.innerText(), 'Claude subscription · Opus (Claude subscription) · high', 'header keeps the read model after a list refresh');
+    assert.match(await chip.innerText(), /Opus \(Claude subscription\)/, 'the composer keeps the read model after a list refresh');
     await page.locator('aside').getByRole('button', { name: 'Agents', exact: true }).click();
     const row = page.locator('.agent-row[data-thread-id="gemini-agent"]');
     await row.waitFor();

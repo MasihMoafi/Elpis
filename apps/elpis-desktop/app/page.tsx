@@ -9,6 +9,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { ChatMessage } from "@/components/chat-message";
 import { Transcript } from "@/components/transcript";
 import { readPins, savePins } from "@/lib/pins";
+import { shortcutFor } from "@/lib/shortcuts";
+import { ShortcutsDialog } from "@/components/shortcuts-dialog";
 import { ContextRing, PermissionsMenu, type PermissionMode } from "@/components/composer-controls";
 import { CopyButton } from "@/components/markdown-text";
 import { liveEventItemKey, mergeHistoryWithLive, mergeLiveItem, runtimeErrorNotice } from "@/lib/live-events";
@@ -119,6 +121,10 @@ export default function Home() {
   const [pins, setPins] = useState<string[]>([]);
   const [deleteRequest, setDeleteRequest] = useState<string | null>(null);
   const [collapsedProjects, setCollapsedProjects] = useState<Record<string, boolean>>({});
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [renameRequest, setRenameRequest] = useState(false);
+  const shortcutAction = useRef<(id: string, index?: number) => void>(() => {});
   useEffect(() => { setPins(readPins()); }, []);
   const [newMode, setNewMode] = useState<PermissionMode | null>(null);
   const [contextUsage, setContextUsage] = useState<Record<string, { used: number; window: number }>>({});
@@ -350,11 +356,13 @@ export default function Home() {
     media.addEventListener("change", follow); return () => media.removeEventListener("change", follow);
   }, []);
   useEffect(() => window.elpisDesktop?.storage?.onError(setError), []);
-  // Ctrl+K (Cmd+K on macOS) searches chats, as in ChatGPT and Claude.
+  // The ChatGPT app's shortcuts (lib/shortcuts.ts); the action reads this render's state.
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (!(event.ctrlKey || event.metaKey) || event.altKey || event.shiftKey || event.key.toLowerCase() !== "k") return;
-      event.preventDefault(); setSidebar(true); searchInput.current?.focus(); searchInput.current?.select();
+      const target = event.target as HTMLElement | null;
+      const typing = !!target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable);
+      const hit = shortcutFor(event, typing); if (!hit) return;
+      event.preventDefault(); shortcutAction.current(hit.id, hit.index);
     };
     window.addEventListener("keydown", onKey); return () => window.removeEventListener("keydown", onKey);
   }, []);
@@ -569,6 +577,11 @@ export default function Home() {
   }
   const show = (next: View) => { if (next === "workflows") setWorkflowVisited(true); if (next === "settings") { setSettingsVisited(true); setSettingsNavigation(value => value + 1); } if (next === "newAgent") setNewAgentVisited(true); setView(next); setSidebar(false); };
   const manageConnections = () => { setSettingsSection("providers"); show("settings"); };
+  /** ChatGPT's "Fork chat from here": a new chat with the history through that turn, opened at once. */
+  async function forkFrom(thread: Thread, lastTurnId: string) {
+    try { const result = await api<{ thread: Thread }>(`/threads/${encodeURIComponent(thread.id)}/fork`, { lastTurnId }); upsertThread(result.thread); await loadThread(result.thread); }
+    catch (error) { setError(error instanceof Error ? error.message : String(error)); }
+  }
   /** The composer's context ring: the chat's latest request against its window, when reported. */
   async function refreshContext(id: string) {
     try {
@@ -723,6 +736,22 @@ export default function Home() {
   const filtered = searchedThreads.filter(t => inProject(t) && (matchedOnServer.has(t.id) || `${title(t)} ${t.agentNickname || ""} ${t.model || ""} ${t.id}`.toLowerCase().includes(searchTerm.toLowerCase())));
   const roots = filtered.filter(t => !isUnlinkedAgent(t, searchedThreads) && (!t.parentThreadId || !filtered.some(p => p.id === t.parentThreadId)));
   const unlinked = filtered.filter(t => isUnlinkedAgent(t, searchedThreads));
+  const ordered = [...roots.filter(t => pins.includes(t.id)), ...roots.filter(t => !pins.includes(t.id))];
+  shortcutAction.current = (id, index) => {
+    const at = selected ? ordered.findIndex(t => t.id === selected.id) : -1;
+    if (id === "new-chat") newChat();
+    else if (id === "search") { setSidebar(true); setSidebarCollapsed(false); requestAnimationFrame(() => { searchInput.current?.focus(); searchInput.current?.select(); }); }
+    else if (id === "sidebar") setSidebarCollapsed(value => !value);
+    else if (id === "settings") show("settings");
+    else if (id === "shortcuts") setShortcutsOpen(true);
+    else if (id === "previous-chat" && ordered.length) void loadThread(ordered[at <= 0 ? 0 : at - 1]);
+    else if (id === "next-chat" && ordered.length) void loadThread(ordered[at < 0 ? 0 : Math.min(ordered.length - 1, at + 1)]);
+    else if (id === "go-to-chat" && index !== undefined && ordered[index]) void loadThread(ordered[index]);
+    else if (id === "rename" && selected) setRenameRequest(true);
+    else if (id === "archive" && selected) void archiveThread(selected);
+    else if (id === "pin" && selected) togglePin(selected);
+    else if (id === "copy-folder" && (selected?.cwd || cwd)) void navigator.clipboard.writeText(selected?.cwd || cwd);
+  };
   function togglePin(thread: Thread) {
     const next = pins.includes(thread.id) ? pins.filter(id => id !== thread.id) : [thread.id, ...pins];
     setPins(next); savePins(next);
@@ -752,9 +781,10 @@ export default function Home() {
     return filtered.filter(c => c.parentThreadId === parentId).map(child => <div key={child.id}>{threadRow(child, depth)}{descendants(child.id, depth + 1, next)}</div>);
   }
   const heading = view === "chat" ? (selected ? title(selected) : "") : { agents: "Agents", newAgent: "New agent", workflows: "Workflows", settings: "Settings" }[view];
-  const meta = selected ? [selected.agentNickname, selected.agentRole && selected.agentRole !== "default" ? selected.agentRole : null, providerLabel(selected.model, selected.modelProvider, providerSettings?.providers), modelLabel(selected.model, models), selected.reasoningEffort].filter(Boolean).join(" · ") : "";
+  const meta = selected ? [selected.agentNickname, selected.agentRole && selected.agentRole !== "default" ? selected.agentRole : null].filter(Boolean).join(" · ") : "";
 
-  return <div className={`app-shell${dark ? " dark" : ""}`}>
+  return <div className={`app-shell${dark ? " dark" : ""}${sidebarCollapsed ? " sidebar-collapsed" : ""}`}>
+    <ShortcutsDialog open={shortcutsOpen} onOpenChange={setShortcutsOpen} />
     <aside className={`sidebar${sidebar ? " open" : ""}`} aria-label="Workspace navigation">
       <div className="brand"><img src={brandMark} alt="Elpis" width={28} height={28} /><span>Elpis</span><Button className="ml-auto mobile-menu" variant="ghost" size="icon-sm" aria-label="Close sidebar" onClick={() => setSidebar(false)}><X size={16} /></Button></div>
       <nav className="nav-list" aria-label="Workspace">
@@ -794,16 +824,15 @@ export default function Home() {
         <Button className="mobile-menu" variant="ghost" size="icon-sm" aria-label="Open sidebar" onClick={() => setSidebar(true)}><Menu size={18} /></Button>
         <img className="mobile-brand" src={brandMark} alt="" aria-hidden="true" width={24} height={24} />
         <div className="header-titles min-w-0 flex-1">
-          <h1>{heading}</h1>
+          <div className="header-title-row"><h1>{heading}</h1>{view === "chat" && selected && <ThreadActions label="Chat actions" thread={selected} onDelete={deleteThread} onRename={renameThread} onArchive={archiveThread} pinned={pins.includes(selected.id)} onPin={togglePin} renameRequested={renameRequest} onRenameRequestHandled={() => setRenameRequest(false)} />}</div>
           {view === "agents" && <p className="page-description">Your conversations and agents. Open a chat or follow a running task.</p>}
-          {view === "chat" && selected && <p className="thread-meta">{meta}</p>}
+          {view === "chat" && selected && meta && <p className="thread-meta">{meta}</p>}
           {view === "chat" && selected && (selected.parentThreadId || selected.forkedFromId) && <p className="thread-links">
             {selected.parentThreadId && <Button variant="link" size="xs" aria-label={`Open parent: ${parent ? title(parent) : "parent conversation"}`} onClick={() => openById(selected.parentThreadId!)}>Agent of {parent ? title(parent) : "its parent conversation"}</Button>}
             {selected.forkedFromId && <Button variant="link" size="xs" aria-label={`Open original: ${source ? title(source) : "original chat"}`} onClick={() => openById(selected.forkedFromId!)}>Continued from {source ? title(source) : "the original chat"}</Button>}
           </p>}
           {view === "chat" && pending && <p className="next-turn">Next turn: {[pending.model && modelLabel(pending.model, models), pending.effort && `${pending.effort} reasoning`].filter(Boolean).join(" · ")}</p>}
         </div>
-        {activeTurn && view === "chat" && <span className="header-action text-xs text-muted-foreground">Working…</span>}
         {desktop && view !== "settings" && <Button className="header-action" variant="ghost" size="sm" aria-label={browserOpen ? "Hide browser" : "Open browser"} aria-pressed={browserOpen} onClick={() => { void window.elpisDesktop?.browser.command("toggle").catch(error => setError(error.message)); }}><Globe size={15}/>Browser</Button>}
         {selected && view === "chat" && <Button className="header-action" variant="ghost" size="sm" onClick={() => { setSettingsSection("elpis"); show("settings"); }}>Context</Button>}
         {selected && view === "chat" && team.length > 0 && !browserOpen && <Button className="header-action" variant="ghost" size="icon-sm" aria-label={agentsPanel ? "Hide agents panel" : "Show agents panel"} aria-pressed={agentsPanel} onClick={() => setAgentsPanel(value => !value)}><PanelRight size={16} /></Button>}
@@ -837,6 +866,8 @@ export default function Home() {
             editDraft={messageEdits[editKey]} editPending={!!pendingDrafts[editKey]} onEditDraftChange={value => setMessageEdits(previous => value === null ? without(previous, editKey) : { ...previous, [editKey]: value })}
             onEdit={replaceable && e.item.type === "userMessage" && replacementOptions.get(e.turnId)?.allowed ? text => replaceFrom(e.turnId, text, editKey) : undefined}
             editBlockedReason={replaceable && e.item.type === "userMessage" && replacementOptions.get(e.turnId)?.allowed === false ? (replacementOptions.get(e.turnId) as { allowed: false; reason: string }).reason : undefined}
+            time={e.item.type === "userMessage" ? e.startedAtMs : undefined}
+            onFork={selected && e.item.type === "agentMessage" && e.turnId !== activeTurn ? () => void forkFrom(selected, e.turnId) : undefined}
             onRegenerate={regenerate && e.item.id === regenerate.replyId ? () => { replaceFrom(regenerate.turnId, regenerate.prompt).catch(error => setError(String(error instanceof Error ? error.message : error))); } : undefined} />; }} />
           {approvals.filter(a => a.params.threadId === selected?.id).map(a => <ApprovalCard key={approvalDraftKey(a)} approval={a} answer={(id, body) => answer(id, body, approvalDraftKey(a))} busy={!!pendingDrafts[approvalDraftKey(a)]} answers={approvalDrafts[approvalDraftKey(a)]?.answers ?? {}} onAnswerChange={(id, value) => draftAnswer(a, id, value)} />)}
         </div></div>
