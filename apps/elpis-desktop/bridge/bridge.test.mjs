@@ -53,7 +53,7 @@ function fixture({ prunerSupported = false, omitWorkflowParentInList = false, re
       // Like native stored rows, listed threads do not report forkedFromId; thread/read does.
       case 'thread/list': result = { data: [...threads.values()].filter(thread => !!thread.archived === !!request.params.archived).filter(thread => !request.params.ancestorThreadId || thread.parentThreadId === request.params.ancestorThreadId).map(thread => ({ ...thread, forkedFromId: null, ...(omitWorkflowParentInList && thread.source?.subAgent?.other?.startsWith('work_graph:') ? {parentThreadId:null} : {}) })), nextCursor: null }; break;
       case 'thread/read': result = { thread: structuredClone(threads.get(request.params.threadId)) }; break;
-      case 'thread/resume': result = { thread: structuredClone(threads.get(request.params.threadId)), model: threads.get(request.params.threadId).model ?? MODEL, initialTurnsPage: { data: [] } }; break;
+      case 'thread/resume': result = { thread: structuredClone(threads.get(request.params.threadId)), model: threads.get(request.params.threadId).model ?? MODEL, collaborationMode: threads.get(request.params.threadId).collaborationMode, initialTurnsPage: { data: [] } }; break;
       case 'thread/turns/list': result = { data: threads.get(request.params.threadId).status?.type === 'active' ? [{ id: 'running-turn', status: 'inProgress' }] : [] }; break;
       case 'thread/fork': { const thread = { id: FORK, forkedFromId: request.params.threadId, source: 'appServer', canAcceptDirectInput: true, model: request.params.model, modelProvider: request.params.modelProvider, status: { type: 'idle' } }; threads.set(FORK, thread); result = { thread }; break; }
       case 'thread/name/set': threads.get(request.params.threadId).name = request.params.name; result = {}; break;
@@ -941,6 +941,25 @@ test('permission modes become Elpis approval and sandbox settings, and resume re
     await client.createThread({ permissions: 'ask' });
     const started = socket.sent.findLast(message => message.method === 'thread/start').params;
     assert.deepEqual([started.approvalPolicy, started.approvalsReviewer, started.sandbox], ['on-request', 'user', 'workspace-write']);
+  } finally { client.close(); }
+});
+
+test('plan mode is sent with the chat model only when it changes, and resume reports it', async () => {
+  const { client, socket, threads } = fixture(); await client.initialize(); await client.models();
+  try {
+    Object.assign(threads.get(ROOT), { status: { type: 'idle' }, model: 'gpt-6-luna', reasoningEffort: 'high', collaborationMode: { mode: 'plan', settings: {} } });
+    assert.equal((await client.resume(ROOT, {})).planMode, true, 'a chat left in Plan mode reopens in it');
+    await client.send(ROOT, { text: 'plan it', mode: 'plan' });
+    const plan = socket.sent.findLast(message => message.method === 'turn/start').params;
+    assert.deepEqual(plan.collaborationMode, { mode: 'plan', settings: { model: 'gpt-6-luna', reasoning_effort: 'high', developer_instructions: null } });
+    threads.get(ROOT).status = { type: 'idle' };
+    await client.send(ROOT, { text: 'Implement the plan.', mode: 'default', model: MODEL });
+    assert.deepEqual(socket.sent.findLast(message => message.method === 'turn/start').params.collaborationMode.mode, 'default');
+    assert.equal(socket.sent.findLast(message => message.method === 'turn/start').params.collaborationMode.settings.model, MODEL);
+    threads.get(ROOT).status = { type: 'idle' };
+    await client.send(ROOT, { text: 'plain' });
+    assert.equal('collaborationMode' in socket.sent.findLast(message => message.method === 'turn/start').params, false, 'an unchanged mode is left to the engine');
+    await assert.rejects(client.send(ROOT, { text: 'x', mode: 'pair' }), /chat mode/);
   } finally { client.close(); }
 });
 

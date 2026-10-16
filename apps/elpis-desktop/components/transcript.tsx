@@ -1,7 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { BranchIcon, BrowserIcon, ContextIcon, FileEditIcon, TerminalIcon, ToolIcon, WorkflowsIcon } from "@/components/elpis-icons";
+import { BranchIcon, BrowserIcon, ContextIcon, FileEditIcon, TerminalIcon, ToolIcon } from "@/components/elpis-icons";
 import type { Entry, Item } from "@/lib/api";
 
 /** The conversation as the ChatGPT app shows it: each user message, then the turn's work
@@ -26,7 +26,9 @@ function turnsOf(entries: Entry[]): TurnEntries[] {
 function Turn({ turn, active, renderItem }: { turn: TurnEntries; active: boolean; renderItem: (entry: Entry) => ReactNode }) {
   const users = turn.entries.filter(entry => entry.item.type === "userMessage");
   const work = turn.entries.filter(entry => entry.item.type !== "userMessage");
-  const finalReply = active ? -1 : findLastIndex(work, entry => entry.item.type === "agentMessage");
+  // A proposed plan is the turn's answer as much as its last reply, so neither folds away.
+  const lastReply = findLastIndex(work, entry => entry.item.type === "agentMessage"), plan = work.findIndex(entry => entry.item.type === "plan");
+  const finalReply = active ? -1 : plan >= 0 && (lastReply < 0 || plan < lastReply) ? plan : lastReply;
   const folded = finalReply > 0 ? work.slice(0, finalReply) : [];
   const visible = finalReply > 0 ? work.slice(finalReply) : work;
   return <section className="turn" aria-label="Turn">
@@ -49,7 +51,7 @@ function Flow({ entries, renderItem, live = false }: { entries: Entry[]; renderI
     run = [];
   };
   for (const entry of entries) {
-    if (entry.item.type === "agentMessage") {
+    if (entry.item.type === "agentMessage" || entry.item.type === "plan") {
       flush();
       blocks.push(<div key={entry.item.id}>{renderItem(entry)}</div>);
     } else run.push(entry);
@@ -91,7 +93,6 @@ export function summarize(items: Item[]): string {
     else if (item.type === "dynamicToolCall" || item.type === "functionCallOutput") phrases.set("tools", count(tools, "used a tool", "used # tools"));
     else if (item.type === "webSearch") phrases.set("search", count(searches, "searched the web", "searched the web # times"));
     else if (item.type === "collabAgentToolCall" || item.type === "subAgentActivity") phrases.set("agents", count(agents, "worked with an agent", "worked with agents"));
-    else if (item.type === "plan") phrases.set("plan", "updated the plan");
     else if (item.type === "contextCompaction") phrases.set("compaction", "compacted the context");
   }
   const text = [...phrases.values()].join(", ") || (items.some(item => item.type === "reasoning") ? "thought" : `${items.length} steps`);
@@ -112,7 +113,6 @@ function iconFor(items: Item[]) {
   if (types.has("fileChange")) return FileEditIcon;
   if (types.has("webSearch")) return BrowserIcon;
   if (types.has("collabAgentToolCall") || types.has("subAgentActivity")) return BranchIcon;
-  if (types.has("plan")) return WorkflowsIcon;
   if (types.has("mcpToolCall") || types.has("dynamicToolCall")) return ToolIcon;
   return ContextIcon;
 }

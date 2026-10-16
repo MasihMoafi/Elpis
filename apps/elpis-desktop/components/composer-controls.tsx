@@ -1,7 +1,8 @@
 "use client";
 
-import { Check, ChevronDown } from "lucide-react";
-import { ShieldIcon } from "@/components/elpis-icons";
+import { Check, ChevronDown, Lightbulb, Paperclip, X } from "lucide-react";
+import { PlusIcon, ShieldIcon } from "@/components/elpis-icons";
+import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 
 export type PermissionMode = "ask" | "auto" | "full";
@@ -28,4 +29,21 @@ export function PermissionsMenu({ mode, disabled, onChange }: { mode: Permission
       </DropdownMenuItem>)}
     </DropdownMenuContent>
   </DropdownMenu>;
+}
+
+/** The ChatGPT app's "+" menu, limited to what Elpis runs: files and Plan mode. */
+export function PlusMenu({ disabled, attachDisabled, plan, onAttach, onPlan }: { disabled?: boolean; attachDisabled?: boolean; plan: boolean; onAttach: () => void; onPlan: (on: boolean) => void }) {
+  return <DropdownMenu>
+    <DropdownMenuTrigger render={<Button type="button" variant="ghost" size="icon-sm" className="composer-plus" aria-label="Add files and more" title="Add files and more" disabled={disabled} />}><PlusIcon className="size-4" /></DropdownMenuTrigger>
+    <DropdownMenuContent align="start" className="hud-menu w-80">
+      <p className="hud-menu-title">Add</p>
+      <DropdownMenuItem className="hud-menu-item" disabled={attachDisabled} onClick={onAttach}><Paperclip aria-hidden="true" /><span className="grid gap-0.5"><span>Files</span><small>Images, PDF or text, up to 3</small></span></DropdownMenuItem>
+      <DropdownMenuItem className="hud-menu-item" onClick={() => onPlan(!plan)}><Lightbulb aria-hidden="true" /><span className="grid gap-0.5"><span>Plan mode</span><small>{plan ? "Turn plan mode off" : "Turn plan mode on"}</small></span>{plan && <Check className="ml-auto" aria-label="On" />}</DropdownMenuItem>
+    </DropdownMenuContent>
+  </DropdownMenu>;
+}
+
+/** Shown beside "+" while Plan mode is on; its button turns it off. */
+export function PlanPill({ disabled, onOff }: { disabled?: boolean; onOff: () => void }) {
+  return <span className="composer-pill plan-pill"><Lightbulb size={14} aria-hidden="true" /><span>Plan</span><button type="button" aria-label="Turn plan mode off" title="Turn plan mode off" disabled={disabled} onClick={onOff}><X size={12} /></button></span>;
 }

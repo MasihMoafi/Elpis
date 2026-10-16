@@ -17,7 +17,7 @@ import { queueFollowUp, sendQueuedFollowUp } from "@/lib/follow-ups";
 import { QueuedFollowUps } from "@/components/queued-follow-ups";
 import { ContextUsage } from "@/components/context-usage";
 import { ShortcutsDialog } from "@/components/shortcuts-dialog";
-import { PermissionsMenu, type PermissionMode } from "@/components/composer-controls";
+import { PermissionsMenu, PlanPill, PlusMenu, type PermissionMode } from "@/components/composer-controls";
 import { CopyButton } from "@/components/markdown-text";
 import { liveEventItemKey, mergeHistoryWithLive, mergeLiveItem, runtimeErrorNotice } from "@/lib/live-events";
 import { replacementEligibility } from "@/lib/turn-replacement";
@@ -85,7 +85,10 @@ function ApprovalCard({ approval, answer, answers, onAnswerChange, busy }: { app
 }
 
 type View = "chat" | "agents" | "newAgent" | "workflows" | "settings";
-type NextTurn = { model?: string; effort?: string; permissions?: PermissionMode };
+type NextTurn = { model?: string; effort?: string; permissions?: PermissionMode; plan?: boolean };
+type Live = { thread: Thread; activeTurnId?: string | null; permissions?: PermissionMode | null; planMode?: boolean };
+/** The terminal's answer to a finished plan: Plan mode off, then this message. */
+const IMPLEMENT_PLAN = "Implement the plan.";
 const without = <T,>(record: Record<string, T>, key: string) => { if (!(key in record)) return record; const next = { ...record }; delete next[key]; return next; };
 // Sidebar sections by last activity, as in ChatGPT and Claude; the list keeps Elpis's own order inside each.
 /** Whether a chat ran in a project's folder (trailing slashes ignored). */
@@ -125,6 +128,9 @@ export default function Home() {
   // Existing conversations: overrides for their next turn only.
   const [nextTurn, setNextTurn] = useState<Record<string, NextTurn>>({});
   const [threadModes, setThreadModes] = useState<Record<string, PermissionMode>>({});
+  const [threadPlans, setThreadPlans] = useState<Record<string, boolean>>({});
+  const [newPlan, setNewPlan] = useState(false);
+  const [planAnswered, setPlanAnswered] = useState<Record<string, string>>({});
   const [pins, setPins] = useState<string[]>([]);
   const [deleteRequest, setDeleteRequest] = useState<string | null>(null);
   const [collapsedProjects, setCollapsedProjects] = useState<Record<string, boolean>>({});
@@ -350,9 +356,9 @@ export default function Home() {
     finally { if (request.current === id) setLoading(false); }
     // Follow it live in this app: subscribe, and learn the turn it is running now.
     try {
-      const live = await api<{ thread: Thread; activeTurnId?: string | null; permissions?: PermissionMode | null }>(`/threads/${encodeURIComponent(thread.id)}/resume`, {});
+      const live = await api<Live>(`/threads/${encodeURIComponent(thread.id)}/resume`, {});
       if (request.current !== id || live.thread?.id !== thread.id) return;
-      remember(live.thread); select({ ...selectedRef.current, ...live.thread }); upsertThread(live.thread); if (live.permissions) setThreadModes(prev => ({ ...prev, [thread.id]: live.permissions! }));
+      remember(live.thread); select({ ...selectedRef.current, ...live.thread }); upsertThread(live.thread); rememberModes(thread.id, live);
       if (live.activeTurnId && !completedTurns.current.has(live.activeTurnId)) setActiveTurns(prev => ({ ...prev, [thread.id]: live.activeTurnId! }));
       setLiveError(prev => without(prev, thread.id));
     } catch (e) { if (request.current === id) setLiveError(prev => ({ ...prev, [thread.id]: e instanceof Error ? e.message : String(e) })); }
@@ -398,9 +404,9 @@ export default function Home() {
         const history = await api<{ thread: Thread; data: Entry[]; nextCursor: string | null }>(`/threads/${encodeURIComponent(thread.id)}?limit=100`);
         if (disposed || attempt !== recovery || request.current !== requestId || selectedRef.current?.id !== thread.id) return;
         select(remember(history.thread)); setEntries(previous => mergeHistoryWithLive(previous, [...history.data].reverse(), liveKeysAfter(historyRevision))); setItemCursor(history.nextCursor);
-        const live = await api<{ thread: Thread; activeTurnId?: string | null; permissions?: PermissionMode | null }>(`/threads/${encodeURIComponent(thread.id)}/resume`, {});
+        const live = await api<Live>(`/threads/${encodeURIComponent(thread.id)}/resume`, {});
         if (disposed || attempt !== recovery || request.current !== requestId || selectedRef.current?.id !== thread.id) return;
-        remember(live.thread); select({ ...selectedRef.current, ...live.thread }); upsertThread(live.thread); if (live.permissions) setThreadModes(prev => ({ ...prev, [thread.id]: live.permissions! }));
+        remember(live.thread); select({ ...selectedRef.current, ...live.thread }); upsertThread(live.thread); rememberModes(thread.id, live);
         setActiveTurns(previous => live.activeTurnId && !completedTurns.current.has(live.activeTurnId) ? { ...previous, [thread.id]: live.activeTurnId } : without(previous, thread.id));
         setLiveError(previous => without(previous, thread.id));
       } catch (error) {
@@ -540,6 +546,10 @@ export default function Home() {
 
   const activeTurn = selected ? activeTurns[selected.id] : undefined;
   const permissionMode: PermissionMode = selected ? nextTurn[selected.id]?.permissions ?? threadModes[selected.id] ?? "ask" : newMode ?? "ask";
+  const planMode = selected ? nextTurn[selected.id]?.plan ?? threadPlans[selected.id] ?? false : newPlan;
+  // The last finished turn's proposed plan, while the chat is still in Plan mode and it is unanswered.
+  const lastTurnId = entries.at(-1)?.turnId;
+  const proposedPlan = selected && planMode && lastTurnId && lastTurnId !== activeTurn && planAnswered[selected.id] !== lastTurnId && entries.some(entry => entry.turnId === lastTurnId && entry.item.type === "plan") ? lastTurnId : null;
   const outsideChatApprovals = approvals.filter(approval => view !== "chat" || approval.params.threadId !== selected?.id);
   const continues = selected?.desktopAccess?.mode === "continue";
   const choices = providerChoices(models, providerSettings);
@@ -605,6 +615,22 @@ export default function Home() {
     try { const result = await api<{ thread: Thread }>(`/threads/${encodeURIComponent(thread.id)}/fork`, { lastTurnId }); upsertThread(result.thread); await loadThread(result.thread); }
     catch (error) { setError(error instanceof Error ? error.message : String(error)); }
   }
+  /** What a reopened chat reports about its approval mode and Plan mode. */
+  function rememberModes(id: string, live: Live) {
+    if (live.permissions) setThreadModes(prev => ({ ...prev, [id]: live.permissions! }));
+    if (typeof live.planMode === "boolean") setThreadPlans(prev => ({ ...prev, [id]: live.planMode! }));
+  }
+  const setPlan = (on: boolean) => selected ? setOverride(selected.id, { plan: on }) : setNewPlan(on);
+  /** "Yes, implement this plan": leaves Plan mode and asks Elpis to carry the plan out. */
+  async function implementPlan(thread: Thread, turnId: string) {
+    setPlanAnswered(prev => ({ ...prev, [thread.id]: turnId })); setError("");
+    try {
+      const result = await api<{ turn?: { id: string } }>(`/threads/${encodeURIComponent(thread.id)}/turns`, { text: IMPLEMENT_PLAN, mode: "default" });
+      if (!result.turn?.id) throw new Error("Elpis did not acknowledge the new turn. Check the conversation before retrying.");
+      setThreadPlans(prev => ({ ...prev, [thread.id]: false })); setNextTurn(prev => { const { plan: _, ...rest } = prev[thread.id] ?? {}; return Object.keys(rest).length ? { ...prev, [thread.id]: rest } : without(prev, thread.id); });
+      if (!completedTurns.current.has(result.turn.id)) setActiveTurns(prev => ({ ...prev, [thread.id]: result.turn!.id }));
+    } catch (e) { setPlanAnswered(prev => without(prev, thread.id)); setError(e instanceof Error ? e.message : String(e)); }
+  }
   function setOverride(id: string, patch: NextTurn) {
     const thread = selectedRef.current; if (!thread) return;
     setNextTurn(prev => {
@@ -612,6 +638,7 @@ export default function Home() {
       if (merged.model === (thread.model ?? undefined)) delete merged.model;
       if (merged.effort === (thread.reasoningEffort ?? undefined) || merged.effort === "") delete merged.effort;
       if (merged.permissions === (threadModes[id] ?? "ask")) delete merged.permissions;
+      if (merged.plan === (threadPlans[id] ?? false)) delete merged.plan;
       return Object.keys(merged).length ? { ...prev, [id]: merged } : without(prev, id);
     });
   }
@@ -634,11 +661,11 @@ export default function Home() {
         if (originalRequest === request.current) { saveDraft(originalId, ""); saveAttachments(originalId, []); select(thread); }
         setThreads(prev => [thread!, ...prev]);
       }
-      const used = selected ? pending : effort ? { effort } : undefined;
+      const used: NextTurn | undefined = selected ? pending : effort || newPlan ? { ...(effort ? { effort } : {}), ...(newPlan ? { plan: true } : {}) } : undefined;
       if (activeTurn && !continues && queueFollowUp(thread.id, sentText, sentAttachments)) { /* queued until the running turn completes */ } else if (activeTurn && !continues) {
         await api(`/threads/${encodeURIComponent(thread.id)}/steer`, { text: sentText, expectedTurnId: activeTurn, ...attached });
       } else {
-        const result = await api<{ turn?: { id: string }; thread?: Thread; continuedFrom?: string; sendError?: string }>(`/threads/${encodeURIComponent(thread.id)}/turns`, { text: sentText, ...attached, ...(used?.model ? { model: used.model } : {}), ...(used?.effort ? { effort: used.effort } : {}), ...(used?.permissions ? { permissions: used.permissions } : {}), ...(continues ? { continueAs: `${title(thread)} (continued)` } : {}) });
+        const result = await api<{ turn?: { id: string }; thread?: Thread; continuedFrom?: string; sendError?: string }>(`/threads/${encodeURIComponent(thread.id)}/turns`, { text: sentText, ...attached, ...(used?.model ? { model: used.model } : {}), ...(used?.effort ? { effort: used.effort } : {}), ...(used?.permissions ? { permissions: used.permissions } : {}), ...(used?.plan !== undefined ? { mode: used.plan ? "plan" : "default" } : {}), ...(continues ? { continueAs: `${title(thread)} (continued)` } : {}) });
         if (result.thread && result.sendError) {
           const forkDraft = savedDraft(result.thread.id);
           const hasNewerForkDraft = !!forkDraft.trim() && forkDraft !== sentText || savedAttachments(result.thread.id).length > 0;
@@ -653,6 +680,7 @@ export default function Home() {
         }
         if (!result.turn?.id) throw new Error("Elpis did not acknowledge the new turn. Check the conversation before retrying.");
         if (!completedTurns.current.has(result.turn.id)) setActiveTurns(prev => ({ ...prev, [result.thread?.id || thread!.id]: result.turn!.id }));
+        if (used?.plan !== undefined) { setThreadPlans(prev => ({ ...prev, [result.thread?.id || thread!.id]: used.plan! })); if (!selected) setNewPlan(false); }
         if (selected && used) {
           setNextTurn(prev => without(prev, selected.id));
           if (used.permissions) setThreadModes(prev => ({ ...prev, [thread!.id]: used.permissions! }));
@@ -733,7 +761,7 @@ export default function Home() {
   }
   async function resumeWorkflowTarget() {
     const thread = selectedRef.current; if (!thread || isAgent(thread)) throw new Error("Select a root conversation.");
-    const result = await api<{ thread: Thread; activeTurnId?: string | null; permissions?: PermissionMode | null }>(`/threads/${encodeURIComponent(thread.id)}/resume`, {});
+    const result = await api<Live>(`/threads/${encodeURIComponent(thread.id)}/resume`, {});
     upsertThread(result.thread); if (selectedRef.current?.id === thread.id) select(result.thread);
     if (result.activeTurnId && !completedTurns.current.has(result.activeTurnId)) setActiveTurns(previous => ({ ...previous, [thread.id]: result.activeTurnId! }));
   }
@@ -886,6 +914,9 @@ export default function Home() {
             time={e.item.type === "userMessage" ? e.startedAtMs : undefined}
             onFork={selected && e.item.type === "agentMessage" && e.turnId !== activeTurn ? () => void forkFrom(selected, e.turnId) : undefined}
             onRegenerate={regenerate && e.item.id === regenerate.replyId ? () => { replaceFrom(regenerate.turnId, regenerate.prompt).catch(error => setError(String(error instanceof Error ? error.message : error))); } : undefined} />; }} />
+          {selected && proposedPlan && <div className="plan-prompt" role="group" aria-label="Implement this plan?"><h3>Implement this plan?</h3>
+            <Button size="sm" disabled={busy || !connected} onClick={() => void implementPlan(selected, proposedPlan)}>Yes, implement this plan</Button>
+            <Button size="sm" variant="ghost" onClick={() => setPlanAnswered(prev => ({ ...prev, [selected.id]: proposedPlan }))}>No, stay in Plan mode</Button></div>}
           {approvals.filter(a => a.params.threadId === selected?.id).map(a => <ApprovalCard key={approvalDraftKey(a)} approval={a} answer={(id, body) => answer(id, body, approvalDraftKey(a))} busy={!!pendingDrafts[approvalDraftKey(a)]} answers={approvalDrafts[approvalDraftKey(a)]?.answers ?? {}} onAnswerChange={(id, value) => draftAnswer(a, id, value)} />)}
         </div></div>
         <div className="composer-wrap">
@@ -902,7 +933,8 @@ export default function Home() {
             {imageBlocked && <p role="alert" className="m-2 text-sm text-destructive">This model accepts text only. Choose an image-capable model or remove the images.</p>}
             <Textarea ref={composerRef} aria-label="Message Elpis" placeholder={continues ? `Message ${title(selected!)}…` : selected ? "Ask for a follow-up" : "Ask Elpis to build, fix or explain something"} value={text} onChange={e => editDraft(e.target.value)} onPaste={e => { const files = Array.from(e.clipboardData.files); if (files.length) { if (!e.clipboardData.getData("text/plain")) e.preventDefault(); void addFiles(files); } }} disabled={!ready || !connected || projectChanging} onKeyDown={e => { if (isSendKey(e)) { e.preventDefault(); send(); } }} />
             {fileNotice && <div className="flex items-center gap-2 px-3 text-sm text-destructive" role="alert"><span>{fileNotice}</span><Button type="button" variant="ghost" size="icon-xs" aria-label="Dismiss file notice" onClick={() => setFileNotice("")}><X size={14} /></Button></div>}
-            <div className="composer-controls"><div className="model-controls"><Button type="button" variant="ghost" size="icon-sm" className="composer-plus" aria-label="Attach files" title="Attach images, PDF, or text files" disabled={!ready || !connected || busy || attaching || projectChanging || attachments.length >= 3} onClick={() => filePickerRef.current?.click()}><PlusIcon className="size-4" /></Button>
+            <div className="composer-controls"><div className="model-controls"><PlusMenu disabled={!ready || !connected || busy || projectChanging} attachDisabled={attaching || attachments.length >= 3} plan={planMode} onAttach={() => filePickerRef.current?.click()} onPlan={setPlan} />
+              {planMode && <PlanPill disabled={!ready || busy} onOff={() => setPlan(false)} />}
               <PermissionsMenu mode={permissionMode} disabled={!ready || busy || projectChanging} onChange={next => selected ? setOverride(selected.id, { permissions: next }) : setNewMode(next)} />
             </div><div className="composer-right">
               {selected && <ContextUsage threadId={selected.id} />}

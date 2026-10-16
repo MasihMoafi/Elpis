@@ -80,6 +80,14 @@ function permissionMode(value) {
   if (typeof value !== 'string' || !Object.hasOwn(PERMISSIONS, value)) throw new BridgeError('Choose a permission mode: ask, auto or full');
   return value;
 }
+/** Plan mode or the default mode for a turn, as the terminal's Shift+Tab switches them; the
+ * engine keeps the mode for later turns, so it is sent only when it changes. */
+function collaborationMode(value, model, effort) {
+  if (value === undefined) return {};
+  if (value !== 'plan' && value !== 'default') throw new BridgeError('Choose a chat mode: plan or default');
+  if (!model) throw new BridgeError('Choose a model before switching Plan mode', 409);
+  return { collaborationMode: { mode: value, settings: { model, reasoning_effort: effort ?? null, developer_instructions: null } } };
+}
 const threadPermissions = mode => mode ? { approvalPolicy: PERMISSIONS[mode].approvalPolicy, approvalsReviewer: PERMISSIONS[mode].approvalsReviewer, sandbox: PERMISSIONS[mode].sandbox } : {};
 const turnPermissions = mode => mode ? { approvalPolicy: PERMISSIONS[mode].approvalPolicy, approvalsReviewer: PERMISSIONS[mode].approvalsReviewer, sandboxPolicy: PERMISSIONS[mode].sandboxPolicy } : {};
 /** The mode a resumed chat runs in, read back from its approval and sandbox settings. */
@@ -778,7 +786,7 @@ export class DesktopClient extends EventEmitter {
     const result = await this.#attach(id);
     if (result) {
       const active = (result.initialTurnsPage?.data ?? result.thread.turns ?? []).find(turn => turn.status === 'inProgress');
-      return { thread: this.#decorate({ ...result.thread, model: result.model ?? result.thread.model, reasoningEffort: result.reasoningEffort ?? result.thread.reasoningEffort }), activeTurnId: active?.id ?? null, permissions: modeOf(result) };
+      return { thread: this.#decorate({ ...result.thread, model: result.model ?? result.thread.model, reasoningEffort: result.reasoningEffort ?? result.thread.reasoningEffort }), activeTurnId: active?.id ?? null, permissions: modeOf(result), planMode: result.collaborationMode?.mode === 'plan' };
     }
     const [{ thread }, turns] = await Promise.all([this.#rpc('thread/read', { threadId: id, includeTurns: false }),
       this.#rpc('thread/turns/list', { threadId: id, limit: 1, sortDirection: 'desc', itemsView: 'notLoaded' }).catch(() => ({ data: [] }))]);
@@ -797,13 +805,13 @@ export class DesktopClient extends EventEmitter {
     return value;
   }
   async send(id, body) {
-    object(body, ['text', 'model', 'effort', 'continueAs', 'attachments', 'permissions']);
+    object(body, ['text', 'model', 'effort', 'continueAs', 'attachments', 'permissions', 'mode']);
     const input = attachmentInput(typeof body.text === 'string' && body.text.trim() ? ragMessage(text(body.text, 'message')) : body.text, body.attachments);
     const effort = this.#effort(body.effort), permissions = permissionMode(body.permissions);
     return this.#mutate(id, async () => {
       const thread = await this.#current(id);
       const model = await this.#providerModel(body.model, thread.modelProvider);
-      const overrides = { ...(model ? { model } : {}), ...(effort ? { effort } : {}), ...turnPermissions(permissions) };
+      const overrides = { ...(model ? { model } : {}), ...(effort ? { effort } : {}), ...turnPermissions(permissions), ...collaborationMode(body.mode, model ?? thread.model, effort ?? thread.reasoningEffort) };
       if (thread.desktopAccess.mode === 'continue') {
         // The agent's own thread refuses direct turns; a fork carries its whole history and recorded model.
         const name = text(body.continueAs, 'continued conversation name', 200).trim();
