@@ -28,7 +28,7 @@ import { ThreadActions } from "@/components/thread-actions";
 import { WorkflowEditor } from "@/components/workflow-editor";
 import { UsagePanel } from "@/components/provider-usage";
 import { Dictation } from "@/components/dictation";
-import { ProjectPicker } from "@/components/project-picker";
+import { ProjectActions, ProjectDialog, ProjectMenu } from "@/components/project-picker";
 import { ModelPicker } from "@/components/model-picker";
 import { appStorage, readProjects, saveProjects, type Project } from "@/lib/projects";
 import { agentState, mergeListedThreads } from "@/lib/agents";
@@ -87,7 +87,6 @@ function ApprovalCard({ approval, answer, answers, onAnswerChange, busy }: { app
 type View = "chat" | "agents" | "newAgent" | "workflows" | "settings";
 type NextTurn = { model?: string; effort?: string; permissions?: PermissionMode };
 const without = <T,>(record: Record<string, T>, key: string) => { if (!(key in record)) return record; const next = { ...record }; delete next[key]; return next; };
-const greeting = () => { const hour = new Date().getHours(); return hour < 5 ? "Working late?" : hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening"; };
 // Sidebar sections by last activity, as in ChatGPT and Claude; the list keeps Elpis's own order inside each.
 /** Whether a chat ran in a project's folder (trailing slashes ignored). */
 const sameFolder = (a: string | undefined, b: string) => !!a && a.replace(/\/+$/, "") === b.replace(/\/+$/, "");
@@ -122,6 +121,7 @@ export default function Home() {
   const [projectId, setProjectId] = useState<string | null>(null);
   const [projectChanging, setProjectChanging] = useState(false);
   const project = projects.find(item => item.id === projectId) ?? null;
+  const [projectEdit, setProjectEdit] = useState<Project | null | undefined>(undefined);
   // Existing conversations: overrides for their next turn only.
   const [nextTurn, setNextTurn] = useState<Record<string, NextTurn>>({});
   const [threadModes, setThreadModes] = useState<Record<string, PermissionMode>>({});
@@ -588,8 +588,15 @@ export default function Home() {
     } finally { setProjectChanging(false); }
   }
   async function saveProject(next: Project) {
-    const updated = [...projects.filter(item => item.id !== next.id), next];
+    const known = projects.some(item => item.id === next.id), updated = known ? projects.map(item => item.id === next.id ? next : item) : [...projects, next];
+    if (known) { await saveProjects(updated, projectId); setProjects(updated); if (projectId === next.id) setCwd(next.cwd); return; }
     await saveProjects(updated, next.id); setProjects(updated); setProjectId(next.id); setCwd(next.cwd); openNewChat(`new-${next.id}`);
+  }
+  /** Forgets the project; its folder and chats stay as they are. */
+  async function removeProject(item: Project) {
+    const updated = projects.filter(other => other.id !== item.id), current = projectId === item.id ? null : projectId;
+    try { await saveProjects(updated, current); setProjects(updated); if (!current) { setProjectId(null); setCwd(""); } }
+    catch (e) { setError(e instanceof Error ? e.message : String(e)); }
   }
   const show = (next: View) => { if (next === "workflows") setWorkflowVisited(true); if (next === "settings") { setSettingsVisited(true); setSettingsNavigation(value => value + 1); } if (next === "newAgent") setNewAgentVisited(true); setView(next); setSidebar(false); };
   const manageConnections = () => { setSettingsSection("providers"); show("settings"); };
@@ -738,10 +745,9 @@ export default function Home() {
   async function older() { if (!selected || !itemCursor) return; setLoading(true); const id = selected.id; try { const result = await api<{ data: Entry[]; nextCursor: string | null }>(`/threads/${encodeURIComponent(id)}?limit=100&cursor=${encodeURIComponent(itemCursor)}`); if (selectedRef.current?.id === id) { stickToBottom.current = false; if (scroll.current) restoreScroll.current = { height: scroll.current.scrollHeight, top: scroll.current.scrollTop }; setEntries(prev => [...result.data.reverse(), ...prev]); setItemCursor(result.nextCursor); } } catch (e) { setError(String(e)); } finally { setLoading(false); } }
   const openById = (id: string) => loadThread(threads.find(thread => thread.id === id) || related[id] || { id });
 
-  const inProject = (thread: Thread) => { const seen = new Set<string>(); let root = thread; while (root.parentThreadId && !seen.has(root.id)) { seen.add(root.id); const parent = searchedThreads.find(item => item.id === root.parentThreadId); if (!parent) break; root = parent; } return !project || root.cwd?.replace(/\/+$/, "") === project.cwd.replace(/\/+$/, ""); };
   const searchedThreads = searchTerm && searchResults.query === searchTerm ? mergeListedThreads(threads, searchResults.data, hidden.current) : threads;
   const matchedOnServer = new Set(searchTerm && searchResults.query === searchTerm ? searchResults.data.map(thread => thread.id) : []);
-  const filtered = searchedThreads.filter(t => inProject(t) && (matchedOnServer.has(t.id) || `${title(t)} ${t.agentNickname || ""} ${t.model || ""} ${t.id}`.toLowerCase().includes(searchTerm.toLowerCase())));
+  const filtered = searchedThreads.filter(t => (matchedOnServer.has(t.id) || `${title(t)} ${t.agentNickname || ""} ${t.model || ""} ${t.id}`.toLowerCase().includes(searchTerm.toLowerCase())));
   const roots = filtered.filter(t => !isUnlinkedAgent(t, searchedThreads) && (!t.parentThreadId || !filtered.some(p => p.id === t.parentThreadId)));
   const unlinked = filtered.filter(t => isUnlinkedAgent(t, searchedThreads));
   const ordered = [...roots.filter(t => pins.includes(t.id)), ...roots.filter(t => !pins.includes(t.id))];
@@ -794,6 +800,7 @@ export default function Home() {
 
   return <div className={`app-shell${dark ? " dark" : ""}${sidebarCollapsed ? " sidebar-collapsed" : ""}`}>
     <ShortcutsDialog open={shortcutsOpen} onOpenChange={setShortcutsOpen} />
+    <ProjectDialog projects={projects} editing={projectEdit} onClose={() => setProjectEdit(undefined)} onSave={saveProject} />
     <aside className={`sidebar${sidebar ? " open" : ""}`} aria-label="Workspace navigation">
       <div className="brand"><img src={brandMark} alt="Elpis" width={28} height={28} /><span>Elpis</span><Button className="ml-auto mobile-menu" variant="ghost" size="icon-sm" aria-label="Close sidebar" onClick={() => setSidebar(false)}><X size={16} /></Button></div>
       <nav className="nav-list" aria-label="Workspace">
@@ -802,13 +809,12 @@ export default function Home() {
         <Button variant="ghost" aria-current={view === "workflows" ? "page" : undefined} onClick={() => show("workflows")}><WorkflowsIcon size={16} />Workflows</Button>
       </nav>
       <label className="sidebar-search"><SearchIcon size={14} aria-hidden="true" /><Input ref={searchInput} aria-label="Search conversations" placeholder="Search conversations" maxLength={200} value={search} onChange={e => setSearch(e.target.value)} /><kbd aria-hidden="true">Ctrl K</kbd></label>
-      <ProjectPicker projects={projects} selected={project} disabled={!ready || busy} onSelect={selectProject} onSave={saveProject} />
       <div className="thread-list">
-        {!searchTerm && projects.length > 0 && <section aria-label="Projects"><div className="section-label">Projects</div>
+        {!searchTerm && <section aria-label="Projects"><div className="section-label section-label-row">Projects<Button variant="ghost" size="icon-xs" aria-label="Add new project" title="Add new project" onClick={() => setProjectEdit(null)}><PlusIcon size={13} /></Button></div>
           {projects.map(item => { const open = !collapsedProjects[item.id], chats = threads.filter(t => !t.parentThreadId && sameFolder(t.cwd, item.cwd)).slice(0, 5);
             return <div key={item.id} className="project-group">
               <div className={`project-row${project?.id === item.id ? " active" : ""}`}><button className="project-toggle" aria-expanded={open} title={item.cwd} onClick={() => setCollapsedProjects(prev => ({ ...prev, [item.id]: open }))}><ChevronRight size={13} className="project-chevron" /><FolderIcon size={14} /><span>{item.name}</span></button>
-                <Button variant="ghost" size="icon-xs" aria-label={`Start new chat in ${item.name}`} title="New chat in this project" disabled={!ready || busy} onClick={() => void selectProject(item)}><NewChatIcon size={13} /></Button></div>
+                <span className="project-row-actions"><ProjectActions project={item} onEdit={setProjectEdit} onRemove={removeProject} /><Button variant="ghost" size="icon-xs" aria-label={`Start new chat in ${item.name}`} title="New chat in this project" disabled={!ready || busy} onClick={() => void selectProject(item)}><NewChatIcon size={13} /></Button></span></div>
               {open && <div className="project-chats">{chats.map(t => threadRow(t))}{!chats.length && <p className="project-empty">No chats yet</p>}</div>}
             </div>; })}
         </section>}
@@ -819,8 +825,7 @@ export default function Home() {
         {ready && !threads.length && <p className="px-2 text-xs text-muted-foreground">Your conversations will appear here.</p>}
         {searchTerm && searchResults.query === searchTerm && searchResults.loading && <p role="status" className="px-2 py-3 text-xs text-muted-foreground">Searching saved conversations…</p>}
         {searchTerm && searchResults.query === searchTerm && searchResults.error && <p role="alert" className="px-2 py-3 text-xs text-destructive">Could not search saved conversations: {searchResults.error}</p>}
-        {searchTerm && searchResults.query === searchTerm && !searchResults.loading && !searchResults.error && !filtered.length && <p className="px-2 py-3 text-xs text-muted-foreground">No matching conversations{project ? " in this project" : ""}.</p>}
-        {!searchTerm && ready && project && threads.length > 0 && !roots.length && <p className="px-2 text-xs text-muted-foreground">No conversations in this project yet.</p>}
+        {searchTerm && searchResults.query === searchTerm && !searchResults.loading && !searchResults.error && !filtered.length && <p className="px-2 py-3 text-xs text-muted-foreground">No matching conversations.</p>}
         {searchTerm ? searchResults.nextCursor && <Button variant="ghost" className="w-full" disabled={searchResults.loading} onClick={() => void loadMoreSearch()}>More search results</Button> : nextCursor && <Button variant="ghost" className="w-full" disabled={moreLoading} onClick={() => void loadMoreConversations()}>Load more</Button>}
       </div>
       <UsagePanel refreshKey={accountRefresh} />
@@ -873,7 +878,7 @@ export default function Home() {
         <div className="chat-scroll" ref={scroll} onScroll={event => { const element = event.currentTarget; stickToBottom.current = element.scrollHeight - element.scrollTop - element.clientHeight < 80; }}><div className="chat-content">
           {itemCursor && <Button variant="outline" disabled={loading} onClick={older}>Load earlier messages</Button>}
           {loading && <p role="status" className="text-muted-foreground">Loading conversation…</p>}
-          {!loading && !entries.length && <div className="empty-state">{selected ? <><h2>This conversation has no messages yet.</h2><p>Messages and tool activity appear here.</p></> : <><img className="empty-mark" src={brandMark} alt="" aria-hidden="true" /><h2>{greeting()}</h2><p>What should Elpis work on?</p></>}</div>}
+          {!loading && !entries.length && <div className="empty-state">{selected ? <><h2>This conversation has no messages yet.</h2><p>Messages and tool activity appear here.</p></> : <><img className="empty-mark" src={brandMark} alt="" aria-hidden="true" /><h2>{project ? <>What should we build in <ProjectMenu variant="heading" projects={projects} selected={project} disabled={!ready || busy} onSelect={selectProject} onEdit={setProjectEdit} />?</> : "What should we build?"}</h2></>}</div>}
           <Transcript entries={entries} activeTurnId={activeTurn ?? null} renderItem={e => { const editKey = JSON.stringify([selected?.id, e.turnId, e.item.id]); return <ChatMessage key={editKey} item={e.item} mediaBase={selected ? `/api/threads/${encodeURIComponent(selected.id)}/turns/${encodeURIComponent(e.turnId)}/items/${encodeURIComponent(e.item.id)}/media` : undefined} threads={threads} speaker={selected?.agentNickname || "Elpis"} onOpenThread={openById}
             editDraft={messageEdits[editKey]} editPending={!!pendingDrafts[editKey]} onEditDraftChange={value => setMessageEdits(previous => value === null ? without(previous, editKey) : { ...previous, [editKey]: value })}
             onEdit={replaceable && e.item.type === "userMessage" && replacementOptions.get(e.turnId)?.allowed ? text => replaceFrom(e.turnId, text, editKey) : undefined}
@@ -885,6 +890,7 @@ export default function Home() {
         </div></div>
         <div className="composer-wrap">
           <QueuedFollowUps threadId={selected?.id} activeTurnId={activeTurn} onError={setError} />
+          {!selected && <div className="composer-tray"><ProjectMenu variant="chip" projects={projects} selected={project} disabled={!ready || busy} onSelect={selectProject} onEdit={setProjectEdit} /></div>}
           <form className="composer" onSubmit={e => { e.preventDefault(); send(); }} onDragOver={e => { if (e.dataTransfer.types.includes("Files")) e.preventDefault(); }} onDrop={e => { if (e.dataTransfer.files.length || e.dataTransfer.types.includes("Files")) { e.preventDefault(); void addFiles(Array.from(e.dataTransfer.files)); } }}>
             <input ref={filePickerRef} type="file" multiple accept={ATTACHMENT_ACCEPT} className="hidden" aria-label="Choose files" onChange={e => { const files = Array.from(e.target.files ?? []); e.target.value = ""; void addFiles(files); }} />
             {attachments.length > 0 && <ul aria-label="Message attachments" className="flex flex-wrap gap-2 p-2">{attachments.map(part => <li key={part.id} className="flex max-w-full items-start gap-2 rounded-md border p-2 text-sm">
@@ -917,11 +923,9 @@ export default function Home() {
               {activeTurn && <Button type="button" size="icon" variant="secondary" aria-label="Stop generation" onClick={() => selected && stop(selected)}><Square size={16} /></Button>}<Button type="submit" className="send-button" size={activeTurn && !continues ? "sm" : "icon"} aria-label={activeTurn && !continues ? "Send follow-up" : "Send message"} disabled={(!text.trim() && !attachments.length) || busy || dictating || attaching || imageBlocked || !ready || !connected || (needsModelId && !model.trim())}>{activeTurn && !continues ? "Send follow-up" : <SendIcon size={18} />}</Button></div></div>
           </form>
           <div className="composer-meta">
-            {!selected && <span className="composer-chip" title={cwd || "Use the folder configured in Elpis"}><FolderIcon size={13} />{project?.name || "Default workspace"}</span>}
             {selected?.cwd && <span className="composer-chip" title={selected.cwd}><FolderIcon size={13} />{folder(selected.cwd)}</span>}
             <span className="composer-hint">{continues ? "Elpis takes direct messages for this agent only from its parent; sending continues its history in a new chat with the same model." : selectedLiveError ? `Not following live (${selectedLiveError}); the chat refreshes every few seconds.` : ""}</span>
           </div>
-          {!selected && !entries.length && roots.length > 0 && <section className="home-recents" aria-label="Recent chats"><h3>Recent</h3>{roots.slice(0, 4).map(thread => <button key={thread.id} onClick={() => loadThread(thread)}><span>{title(thread)}</span><small>{[providerLabel(thread.model, thread.modelProvider, providerSettings?.providers), modelLabel(thread.model, models)].filter(Boolean).join(" · ")}</small></button>)}</section>}
         </div>
       </div>
       {selected && teamRoot && team.length > 0 && agentsPanel && !browserOpen && <aside className="team-panel" aria-label="Agents in this chat">

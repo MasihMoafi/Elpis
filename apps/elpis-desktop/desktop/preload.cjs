@@ -18,6 +18,10 @@ contextBridge.exposeInMainWorld('elpisDesktop',{
     if(typeof result?.error==='string')throw Error(result.error);
     if(result?.opened!==true)throw Error('Could not open this file.');
   }),
+  openFolder:target=>ipcRenderer.invoke('elpis:folder:open',target).then(result=>{
+    if(typeof result?.error==='string')throw Error(result.error);
+    if(result?.opened!==true)throw Error('Could not open this folder.');
+  }),
   browser:{
     command:(action,data={})=>ipcRenderer.invoke('elpis:browser',{action,...data}).then(result=>{if(typeof result?.error==='string')throw Error(result.error);return result;}),
     layout:value=>ipcRenderer.send('elpis:browser:layout',value),

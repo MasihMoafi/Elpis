@@ -19,21 +19,32 @@ function localFilePath(target) {
   return file;
 }
 
+/** A project's folder: a plain absolute path, as saved in the project list. */
+function localFolderPath(target) {
+  if (typeof target !== 'string' || target.length > 4096 || !path.isAbsolute(target) || target.startsWith('//') || /[\x00-\x1f\x7f]/.test(target)) {
+    throw Error('Choose an absolute local folder path.');
+  }
+  return target;
+}
+
 function registerFiles({ host, origin, ipcMain, shell }) {
-  ipcMain.handle('elpis:file:open', async (event, target) => {
+  const opener = (kind, toPath) => async (event, target) => {
     if (!trustedBrowserSender(event, host.webContents, origin)) throw Error('Elpis application frame required');
     try {
-      let file = localFilePath(target);
+      let file = toPath(target);
       try {
         file = await fs.realpath(file);
-        if (!(await fs.stat(file)).isFile()) throw Error('Not a regular file');
-      } catch { throw Error('This file is unavailable. Choose an existing local file.'); }
+        const stat = await fs.stat(file);
+        if (kind === 'file' ? !stat.isFile() : !stat.isDirectory()) throw Error(`Not a ${kind}`);
+      } catch { throw Error(`This ${kind} is unavailable. Choose an existing local ${kind}.`); }
       const error = await shell.openPath(file);
-      if (error) throw Error(`Could not open this file: ${error}`);
+      if (error) throw Error(`Could not open this ${kind}: ${error}`);
       return { opened: true };
-    } catch (error) { return { error: error.message || 'Could not open this file.' }; }
-  });
-  return () => ipcMain.removeHandler('elpis:file:open');
+    } catch (error) { return { error: error.message || `Could not open this ${kind}.` }; }
+  };
+  ipcMain.handle('elpis:file:open', opener('file', localFilePath));
+  ipcMain.handle('elpis:folder:open', opener('folder', localFolderPath));
+  return () => { ipcMain.removeHandler('elpis:file:open'); ipcMain.removeHandler('elpis:folder:open'); };
 }
 
 module.exports = { registerFiles };

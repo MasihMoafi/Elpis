@@ -97,3 +97,18 @@ test('websites, subframes and a navigated app frame cannot open local files', as
   assert.equal(calls, 0);
   context.dispose();
 });
+
+test('a project folder opens in the file manager; files, missing and relative paths are refused', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'elpis-folder-open-'));
+  const file = path.join(root, 'notes.md');
+  fs.writeFileSync(file, 'fixture');
+  const opened = [];
+  const { handlers, event } = setup(async target => { opened.push(target); return ''; });
+  const api = preload((channel, target) => handlers.get(channel)(event, target));
+  await api.openFolder(root);
+  assert.deepEqual(opened, [fs.realpathSync(root)]);
+  await assert.rejects(api.openFolder(file), /folder is unavailable/);
+  await assert.rejects(api.openFolder(path.join(root, 'missing')), /folder is unavailable/);
+  await assert.rejects(api.openFolder('relative/path'), /absolute local folder/);
+  assert.equal(opened.length, 1);
+});
