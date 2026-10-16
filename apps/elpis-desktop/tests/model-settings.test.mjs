@@ -17,13 +17,14 @@ function load(relative, react = React) {
     const source = readFileSync(absolute, 'utf8');
     const code = transpileModule(source, { compilerOptions: { module: ModuleKind.CommonJS, jsx: JsxEmit.ReactJSX, target: ScriptTarget.ES2022 } }).outputText;
     const localRequire = id => {
-      if (id === 'react' && absolute === path.resolve(root, relative)) return react;
+      // Hooks of the rendered component and its shared save hook use the fixture's hook slots.
+      if (id === 'react' && (absolute === path.resolve(root, relative) || absolute === path.resolve(root, 'components/settings/use-saver.ts'))) return react;
       if (!id.startsWith('@/') && !id.startsWith('.')) return require(id);
       const base = id.startsWith('@/') ? path.join(root, id.slice(2)) : path.resolve(path.dirname(absolute), id);
       for (const extension of ['', '.tsx', '.ts', '.js']) { try { readFileSync(base + extension); return compiled(base + extension); } catch (error) { if (error.code !== 'ENOENT' && error.code !== 'EISDIR') throw error; } }
       throw new Error(`Missing local module ${id}`);
     };
-    new Function('require', 'exports', 'module', code + (relative.endsWith('elpis-settings.tsx') && absolute.endsWith('elpis-settings.tsx') ? '\nexports.MaintenanceSettings = MaintenanceSettings;' : ''))(localRequire, module.exports, module);
+    new Function('require', 'exports', 'module', code)(localRequire, module.exports, module);
     return module.exports;
   }
   return compiled(relative);
@@ -48,9 +49,11 @@ test('new agent uses the catalog model picker and a readable inherited selection
   assert.match(html, /Choose folder/);
 });
 
+const MAINTENANCE='components/settings/maintenance.tsx';
+const render=(name,props)=>renderToStaticMarkup(React.createElement(load(MAINTENANCE)[name],props));
+
 test('catalog-backed maintenance models are selections instead of identifier fields', () => {
-  const { MaintenanceSettings } = load('components/elpis-settings.tsx');
-  const html = renderToStaticMarkup(React.createElement(MaintenanceSettings, { value: settings, models, onSaved() {} }));
+  const html = render('BackgroundSettings', { value: settings, models }) + render('MemorySettings', { value: settings, models });
   assert.equal((html.match(/<input[^>]*>/g)??[]).filter(tag=>!tag.includes('aria-hidden="true"')&&!tag.includes('type="hidden"')).some(tag=>tag.includes('value="gpt-6-sol"')),false);
   assert.match(html, /Sol 6/);
   assert.match(html, /Memory extraction model/);
@@ -58,13 +61,13 @@ test('catalog-backed maintenance models are selections instead of identifier fie
 });
 
 test('an external provider without a catalog keeps an honest advanced model path', () => {
-  const { MaintenanceSettings } = load('components/elpis-settings.tsx');
   const external = { ...settings, background: { model: 'gpt-oss', provider: 'ollama' }, smartPrune: { enabled: true, explicitOverride: { available: false, model: null, provider: null } } };
-  const html = renderToStaticMarkup(React.createElement(MaintenanceSettings, { value: external, models, onSaved() {} }));
+  const html = render('BackgroundSettings', { value: external, models });
   assert.match(html, /No model catalog is available for/);
   assert.match(html, /gpt-oss · Ollama/);
   assert.match(html, /value="gpt-oss"/);
   assert.match(html, /Advanced/);
+  assert.match(render('PrunerSettings', { value: external, models }), /Pruning model settings are unavailable/);
 });
 
 function fixture(relative, exportName, props) {
@@ -84,7 +87,7 @@ function fixture(relative, exportName, props) {
 }
 function elements(node) {
   if(!React.isValidElement(node))return Array.isArray(node)?node.flatMap(elements):[];
-  if(typeof node.type==='function'&&node.type.name==='ModelSetting')return elements(node.type(node.props));
+  if(typeof node.type==='function'&&node.type.name==='ModelChoice')return elements(node.type(node.props));
   return [node,...React.Children.toArray(node.props.children).flatMap(elements)];
 }
 function control(tree,label) {
@@ -101,39 +104,35 @@ function values(control) { return elements(control.props.children).filter(elemen
 
 test('model options stay within their provider and retain unknown current values',()=>{
   const current={...settings,background:{model:'legacy-model',provider:'openai'}};
-  const view=fixture('components/elpis-settings.tsx','MaintenanceSettings',{value:current,models,onSaved(){}});
-  const tree=view.render();
-  assert.deepEqual(values(control(tree,'Background model')),['','legacy-model','gpt-6-sol']);
-  assert.deepEqual(values(control(tree,'Memory extraction model')),['','gpt-6-sol']);
-  assert.equal(control(tree,'Memory consolidation model').props.value,'');
-  assert.equal(control(tree,'Pruning model').props.value,'gpt-6-sol');
+  assert.deepEqual(values(control(fixture(MAINTENANCE,'BackgroundSettings',{value:current,models}).render(),'Background model')),['','legacy-model','gpt-6-sol']);
+  const memory=fixture(MAINTENANCE,'MemorySettings',{value:current,models}).render();
+  assert.deepEqual(values(control(memory,'Memory extraction model')),['','gpt-6-sol']);
+  assert.equal(control(memory,'Memory consolidation model').props.value,'');
+  assert.equal(control(fixture(MAINTENANCE,'PrunerSettings',{value:current,models}).render(),'Pruning model').props.value,'gpt-6-sol');
 });
 
 test('inherited selections survive a failed save without changing provider or other settings',async()=>{
   const posts=[], original=globalThis.fetch;
   globalThis.fetch=async(path,init)=>{posts.push({path,body:JSON.parse(init.body)});return {ok:false,status:409,json:async()=>({error:'Settings changed elsewhere'})};};
-  let saved=false;
   try {
-    const view=fixture('components/elpis-settings.tsx','MaintenanceSettings',{value:settings,models,onSaved(){saved=true;}});
-    let tree=view.render();
-    control(tree,'Background model').props.onChange({target:{value:''}});
-    control(tree,'Memory extraction model').props.onChange({target:{value:''}});
-    tree=view.render();
-    assert.equal(control(tree,'Background model').props.value,'');
-    assert.equal(control(tree,'Memory extraction model').props.value,'');
-    button(tree,'Save background and memory').props.onClick();
-    await new Promise(setImmediate);
-    tree=view.render();
-    assert.equal(control(tree,'Background model').props.value,'');
-    assert.equal(control(tree,'Memory extraction model').props.value,'');
-    assert.equal(saved,false);
-    assert.deepEqual(posts,[{path:'/api/settings',body:{version:'v1',background:{model:null},memory:{extractionModel:null}}}]);
-    assert.match(renderToStaticMarkup(tree),/Settings changed elsewhere/);
+    for (const [name,label,saveLabel] of [['BackgroundSettings','Background model','Save background model'],['MemorySettings','Memory extraction model','Save memory models']]) {
+      const view=fixture(MAINTENANCE,name,{value:settings,models});
+      let tree=view.render();
+      control(tree,label).props.onChange({target:{value:''}});
+      tree=view.render();
+      assert.equal(control(tree,label).props.value,'');
+      button(tree,saveLabel).props.onClick();
+      await new Promise(setImmediate);
+      tree=view.render();
+      assert.equal(control(tree,label).props.value,'',`${label} keeps the unsaved choice`);
+      assert.match(renderToStaticMarkup(tree),/Settings changed elsewhere/);
+    }
+    assert.deepEqual(posts,[{path:'/api/settings',body:{version:'v1',background:{model:null}}},{path:'/api/settings',body:{version:'v1',memory:{extractionModel:null}}}]);
   } finally { globalThis.fetch=original; }
 });
 
 test('switching a provider preserves its configured model and never borrows the main catalog',()=>{
-  const view=fixture('components/elpis-settings.tsx','MaintenanceSettings',{value:settings,models,onSaved(){}});
+  const view=fixture(MAINTENANCE,'BackgroundSettings',{value:settings,models});
   let tree=view.render();
   control(tree,'Background provider').props.onChange({target:{value:'ollama'}});
   tree=view.render();
@@ -144,18 +143,15 @@ test('switching a provider preserves its configured model and never borrows the 
   assert.match(renderToStaticMarkup(tree),/No model catalog is available for gpt-oss · Ollama/);
 });
 
-test('inactive mounted settings load settings/catalog once but do not start context polling',async()=>{
+test('an inactive context panel does not poll; an active one reads only its own chat',async()=>{
   const original=globalThis.fetch, calls=[];
-  globalThis.fetch=async path=>{calls.push(path);return {ok:true,json:async()=>path==='/api/models'?{data:models,nextCursor:null}:settings};};
-  const props={threadId:'chat-one',active:false};
-  const view=fixture('components/elpis-settings.tsx','ElpisSettings',props);
+  globalThis.fetch=async path=>{calls.push(path);return {ok:true,json:async()=>({threadId:'chat-one',tokenUsage:null,smartPrune:null})};};
+  const view=fixture('components/settings/conversation-context.tsx','ConversationContext',{threadId:'chat-one',active:false});
   try {
-    view.render();view.effects();
-    await new Promise(setImmediate);
-    const tree=view.render();view.effects();
-    await new Promise(setImmediate);
-    assert.match(renderToStaticMarkup(tree),/Sol 6/);
-    assert.deepEqual(calls.sort(),['/api/models','/api/settings']);
+    view.render();view.effects();await new Promise(setImmediate);
+    assert.deepEqual(calls,[]);
+    view.render({threadId:'chat-one',active:true});view.effects();await new Promise(setImmediate);
+    assert.deepEqual(calls,['/api/threads/chat-one/context']);
   } finally {view.dispose();globalThis.fetch=original;}
 });
 
@@ -163,26 +159,34 @@ test('configured external provider fetches its own catalog once and keeps its cu
   const original=globalThis.fetch,calls=[];
   globalThis.fetch=async path=>{calls.push(path);return {ok:true,json:async()=>({data:[{id:'oss',model:'gpt-oss',displayName:'GPT OSS local'}],nextCursor:null})};};
   const value={...settings,background:{model:'gpt-oss',provider:'ollama'},smartPrune:{...settings.smartPrune,explicitOverride:{...settings.smartPrune.explicitOverride,model:'gpt-oss',provider:'ollama'}}};
-  const view=fixture('components/elpis-settings.tsx','MaintenanceSettings',{value,models,onSaved(){}});
   try {
-    view.render();view.effects();
-    let tree=view.render();
-    assert.equal(control(tree,'Background model').props.value,'gpt-oss');
-    await new Promise(setImmediate);
-    tree=view.render();view.effects();
-    assert.deepEqual(values(control(tree,'Background model')),['','gpt-oss']);
-    assert.deepEqual(values(control(tree,'Pruning model')),['','gpt-oss']);
+    for (const [name,label] of [['BackgroundSettings','Background model'],['PrunerSettings','Pruning model']]) {
+      calls.length=0;
+      const view=fixture(MAINTENANCE,name,{value,models});
+      view.render();view.effects();
+      let tree=view.render();
+      assert.equal(control(tree,label).props.value,'gpt-oss');
+      await new Promise(setImmediate);
+      tree=view.render();view.effects();
+      assert.deepEqual(values(control(tree,label)),['','gpt-oss']);
+      assert.match(renderToStaticMarkup(tree),/GPT OSS local/);
+      assert.deepEqual(calls,['/api/models?provider=ollama']);
+      view.dispose();
+    }
+    calls.length=0;
+    const memory=fixture(MAINTENANCE,'MemorySettings',{value,models});
+    const tree=memory.render();memory.effects();await new Promise(setImmediate);
     assert.deepEqual(values(control(tree,'Memory extraction model')),['','gpt-6-sol']);
-    assert.match(renderToStaticMarkup(tree),/GPT OSS local/);
-    assert.deepEqual(calls,['/api/models?provider=ollama']);
-  } finally {view.dispose();globalThis.fetch=original;}
+    assert.deepEqual(calls,[],'memory models use the main catalog');
+    memory.dispose();
+  } finally {globalThis.fetch=original;}
 });
 
 test('failed external catalog keeps current model and does not retry on every render',async()=>{
   const original=globalThis.fetch,calls=[];
   globalThis.fetch=async path=>{calls.push(path);throw Error('Connection unavailable');};
   const value={...settings,background:{model:'private-model',provider:'lmstudio'}};
-  const view=fixture('components/elpis-settings.tsx','MaintenanceSettings',{value,models,onSaved(){}});
+  const view=fixture(MAINTENANCE,'BackgroundSettings',{value,models});
   try {
     view.render();view.effects();
     await new Promise(setImmediate);
@@ -194,25 +198,31 @@ test('failed external catalog keeps current model and does not retry on every re
 });
 
 test('inherited provider uses main catalog while unknown providers are never fetched',()=>{
+  const original=globalThis.fetch,calls=[];
+  globalThis.fetch=async path=>{calls.push(path);throw Error('unexpected');};
   const value={...settings,background:{model:null,provider:null},smartPrune:{...settings.smartPrune,explicitOverride:{...settings.smartPrune.explicitOverride,model:'old-model',provider:'removed-provider'}}};
-  const view=fixture('components/elpis-settings.tsx','MaintenanceSettings',{value,models,onSaved(){}});
-  const tree=view.render();view.effects();
-  assert.deepEqual(values(control(tree,'Background model')),['','gpt-6-sol']);
-  assert.equal(control(tree,'Pruning model').props.value,'old-model');
-  assert.deepEqual(values(control(tree,'Pruning model')),[]);
-  view.dispose();
+  try {
+    const background=fixture(MAINTENANCE,'BackgroundSettings',{value,models}), pruner=fixture(MAINTENANCE,'PrunerSettings',{value,models});
+    assert.deepEqual(values(control(background.render(),'Background model')),['','gpt-6-sol']);background.effects();
+    const tree=pruner.render();pruner.effects();
+    assert.equal(control(tree,'Pruning model').props.value,'old-model');
+    assert.deepEqual(values(control(tree,'Pruning model')),[]);
+    assert.deepEqual(calls,[]);
+    background.dispose();pruner.dispose();
+  } finally {globalThis.fetch=original;}
 });
 
-test('malformed main model catalog renders a recoverable error without crashing settings',async()=>{
+test('malformed main model catalog gives a recoverable error instead of crashing settings',async()=>{
   const original=globalThis.fetch;
-  globalThis.fetch=async path=>({ok:true,json:async()=>path==='/api/models'?{data:null}:settings});
-  const view=fixture('components/elpis-settings.tsx','ElpisSettings',{active:false});
+  globalThis.fetch=async()=>({ok:true,json:async()=>({data:null})});
+  const view=fixture(MAINTENANCE,'useModelCatalog',{});
   try {
     view.render();view.effects();
     await new Promise(setImmediate);
-    const html=renderToStaticMarkup(view.render());
-    assert.match(html,/Model catalog response did not contain models/);
-    assert.match(html,/Main model/);
+    const catalog=view.render();
+    assert.deepEqual(catalog.models,[]);
+    assert.equal(catalog.error,'Model catalog response did not contain models.');
+    assert.match(render('CatalogNotice',{error:catalog.error}),/Model choices could not be loaded: Model catalog response did not contain models/);
   } finally {view.dispose();globalThis.fetch=original;}
 });
 
@@ -220,7 +230,7 @@ test('malformed provider model catalog preserves existing provider/model as an a
   const original=globalThis.fetch;
   globalThis.fetch=async()=>({ok:true,json:async()=>({data:null})});
   const value={...settings,background:{model:'private-model',provider:'lmstudio'}};
-  const view=fixture('components/elpis-settings.tsx','MaintenanceSettings',{value,models,onSaved(){}});
+  const view=fixture(MAINTENANCE,'BackgroundSettings',{value,models});
   try {
     view.render();view.effects();
     await new Promise(setImmediate);
@@ -232,39 +242,39 @@ test('malformed provider model catalog preserves existing provider/model as an a
 
 test('changed configuration version refreshes provider models without discarding background, memory or pruning drafts',async()=>{
   const original=globalThis.fetch,calls=[];
-  globalThis.fetch=async path=>{calls.push(path);return {ok:true,json:async()=>({data:calls.length===1?[{id:'selected-old',model:'selected-old',displayName:'Selected old model'},{id:'old-only',model:'old-only',displayName:'Old endpoint model'}]:[{id:'new-model',model:'new-model',displayName:'New endpoint model'}]})};};
   const value={...settings,background:{model:'original-background',provider:'ollama'},smartPrune:{...settings.smartPrune,explicitOverride:{...settings.smartPrune.explicitOverride,model:'original-pruner',provider:'ollama'}}};
-  const props={value,models,onSaved(){}};
-  const view=fixture('components/elpis-settings.tsx','MaintenanceSettings',props);
   try {
-    view.render();view.effects();await new Promise(setImmediate);
-    let tree=view.render();view.effects();
-    assert.ok(values(control(tree,'Background model')).includes('old-only'));
-    control(tree,'Background model').props.onChange({target:{value:'selected-old'}});
-    control(tree,'Memory extraction model').props.onChange({target:{value:''}});
-    control(tree,'Pruning model').props.onChange({target:{value:'selected-old'}});
-    view.render();view.effects();
-    const next={...props,value:{...value,version:'v2'}};
-    tree=view.render(next);
-    assert.ok(!values(control(tree,'Background model')).includes('old-only'));
-    assert.equal(control(tree,'Background model').props.value,'selected-old');
-    assert.equal(control(tree,'Memory extraction model').props.value,'');
-    assert.equal(control(tree,'Pruning model').props.value,'selected-old');
-    view.effects();await new Promise(setImmediate);
-    tree=view.render(next);view.effects();
-    assert.deepEqual(calls,['/api/models?provider=ollama','/api/models?provider=ollama']);
-    assert.deepEqual(values(control(tree,'Background model')),['','selected-old','new-model']);
-    assert.deepEqual(values(control(tree,'Pruning model')),['','selected-old','new-model']);
-    assert.equal(control(tree,'Memory extraction model').props.value,'');
-  } finally {view.dispose();globalThis.fetch=original;}
+    for (const [name,label] of [['BackgroundSettings','Background model'],['PrunerSettings','Pruning model']]) {
+      calls.length=0;
+      globalThis.fetch=async path=>{calls.push(path);return {ok:true,json:async()=>({data:calls.length===1?[{id:'selected-old',model:'selected-old',displayName:'Selected old model'},{id:'old-only',model:'old-only',displayName:'Old endpoint model'}]:[{id:'new-model',model:'new-model',displayName:'New endpoint model'}]})};};
+      const props={value,models}, view=fixture(MAINTENANCE,name,props);
+      view.render();view.effects();await new Promise(setImmediate);
+      let tree=view.render();view.effects();
+      assert.ok(values(control(tree,label)).includes('old-only'));
+      control(tree,label).props.onChange({target:{value:'selected-old'}});
+      view.render();view.effects();
+      const next={...props,value:{...value,version:'v2'}};
+      tree=view.render(next);
+      assert.ok(!values(control(tree,label)).includes('old-only'));
+      assert.equal(control(tree,label).props.value,'selected-old');
+      view.effects();await new Promise(setImmediate);
+      tree=view.render(next);view.effects();
+      assert.deepEqual(calls,['/api/models?provider=ollama','/api/models?provider=ollama']);
+      assert.deepEqual(values(control(tree,label)),['','selected-old','new-model']);
+      view.dispose();
+    }
+    const memory=fixture(MAINTENANCE,'MemorySettings',{value,models});
+    control(memory.render(),'Memory extraction model').props.onChange({target:{value:''}});
+    assert.equal(control(memory.render({value:{...value,version:'v2'},models}),'Memory extraction model').props.value,'');
+  } finally {globalThis.fetch=original;}
 });
 
 for(const staleResult of ['success','failure'])test(`late old-version catalog ${staleResult} cannot overwrite the refreshed model list`,async()=>{
   const original=globalThis.fetch,requests=[];
   globalThis.fetch=path=>new Promise((resolve,reject)=>requests.push({path,resolve,reject}));
   const value={...settings,background:{model:'kept-model',provider:'ollama'}};
-  const props={value,models,onSaved(){}};
-  const view=fixture('components/elpis-settings.tsx','MaintenanceSettings',props);
+  const props={value,models};
+  const view=fixture(MAINTENANCE,'BackgroundSettings',props);
   try {
     view.render();view.effects();
     const next={...props,value:{...value,version:'v2'}};

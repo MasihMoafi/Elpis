@@ -81,18 +81,25 @@ test('bridged models are labelled by their prefix; providers keep separate sign-
     assert.equal(await row.locator('.agent-nickname').innerText(), 'Sagan');
     assert.equal(await row.locator('.agent-meta').innerText(), 'Antigravity · Gemini 3 Pro (Antigravity)');
     await page.locator('aside').getByRole('button', { name: 'Settings', exact: true }).click();
-    const card = id => page.locator(`.provider-card[data-provider="${id}"]`);
+    const account = id => page.locator(`.provider-card[data-provider="${id}"]`);
+    await account('claude').waitFor();
+    assert.match(await account('openai').innerText(), /Signed in with ChatGPT[\s\S]*person@example\.com · pro plan/);
+    assert.match(await account('claude').innerText(), /Connected/);
+    // Usage moved to its own page; each account card there shows only its own limits.
+    await page.getByRole('tab', { name: 'Usage & limits', exact: true }).click();
+    const card = id => page.locator(`.usage-card[data-provider="${id}"]`);
     await card('claude').waitFor();
-    assert.match(await card('openai').innerText(), /Signed in with ChatGPT[\s\S]*person@example\.com · pro plan[\s\S]*12% used/);
-    assert.match(await card('claude').innerText(), /Connected[\s\S]*Claude · 5-hour limit[\s\S]*40% used[\s\S]*Weekly limit[\s\S]*7% used/);
+    assert.match(await card('openai').innerText(), /12% used/);
+    assert.match(await card('claude').innerText(), /Claude · 5-hour limit[\s\S]*40% used[\s\S]*Weekly limit[\s\S]*7% used/);
     // An unreported share is said so, never drawn as an empty 0% bar; reset times are counted down.
     assert.match(await card('gemini').innerText(), /Gemini Pro · 5-hour limit[\s\S]*Share not reported/);
     assert.doesNotMatch(await card('gemini').innerText(), /\b0% used/);
     assert.equal(await card('gemini').getByRole('meter').count(), 0);
     assert.match(await card('claude').innerText(), /Claude · 5-hour limit[\s\S]*40% used[\s\S]*Resets in 2h \d+m/);
     for (const [id, foreign] of [['openai', /40%|3% used/], ['claude', /12%|3% used/], ['gemini', /12%|40%/]]) assert.doesNotMatch(await card(id).innerText(), foreign, `${id} shows only its own usage`);
-    assert.match(await card('openrouter').innerText(), /API key not set/);
-    assert.doesNotMatch(await card('openrouter').innerText(), /OPENROUTER_API_KEY/, 'ordinary setup explains key status without environment-variable identifiers');
+    await page.getByRole('tab', { name: 'Models & accounts', exact: true }).click();
+    assert.match(await account('openrouter').innerText(), /API key not set/);
+    assert.doesNotMatch(await account('openrouter').innerText(), /OPENROUTER_API_KEY/, 'ordinary setup explains key status without environment-variable identifiers');
     if (process.env.ELPIS_APP_SHOTS) for (const dark of [false, true]) for (const [label, width, height] of [['desktop', 1440, 1000], ['mobile', 390, 844]]) {
       await page.evaluate(dark => { document.documentElement.classList.toggle('dark', dark); document.querySelector('.app-shell').classList.toggle('dark', dark); }, dark);
       await page.setViewportSize({ width, height }); await new Promise(resolve => setTimeout(resolve, 250));

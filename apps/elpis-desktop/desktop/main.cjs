@@ -4,7 +4,8 @@ const { app, BrowserWindow, WebContentsView, session, ipcMain, Menu, dialog, she
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const { createBrowser } = require('./browser.cjs');
-const { appAudio } = require('./media-policy.cjs');
+const { appPermission } = require('./media-policy.cjs');
+const { closeNeedsConfirmation } = require('./preferences.cjs');
 const { createStateStore, registerState } = require('./state.cjs');
 const { registerFiles } = require('./files.cjs');
 
@@ -13,6 +14,16 @@ let server;
 let window;
 let closing = false;
 let opening;
+let store;
+let closeConfirmed = false;
+
+// Settings → General → Confirm before closing. Returns false when the person keeps the window.
+function mayClose() {
+  if (closeConfirmed || !window || window.isDestroyed() || !store || !closeNeedsConfirmation(store)) return true;
+  const choice = dialog.showMessageBoxSync(window, { type: 'question', buttons: ['Close', 'Cancel'], defaultId: 0, cancelId: 1, title: 'Close Elpis?', message: 'Close Elpis?', detail: 'Running conversations continue in Elpis and stay available when you reopen it.' });
+  closeConfirmed = choice === 0;
+  return closeConfirmed;
+}
 
 function openWindow() {
   if (!opening) opening = createOrFocusWindow().finally(() => { opening = null; });
@@ -46,12 +57,12 @@ async function createOrFocusWindow() {
     },
   });
   const browser = createBrowser({ host: window, origin, WebContentsView, session, ipcMain, openExternal: url => shell.openExternal(url) });
-  const disposeState = registerState({ host: window, origin, ipcMain, dialog,
-    store: createStateStore(path.join(app.getPath('userData'), 'workspace.json')) });
+  store = createStateStore(path.join(app.getPath('userData'), 'workspace.json')); closeConfirmed = false;
+  const disposeState = registerState({ host: window, origin, ipcMain, dialog, store });
   const disposeFiles = registerFiles({ host: window, origin, ipcMain, shell });
   // Website permissions are handled by the browser's separate session.
-  window.webContents.session.setPermissionRequestHandler((contents, permission, callback, details) => callback(appAudio(contents, window, permission, details, origin)));
-  window.webContents.session.setPermissionCheckHandler((contents, permission, _requestingOrigin, details) => appAudio(contents, window, permission, details, origin));
+  window.webContents.session.setPermissionRequestHandler((contents, permission, callback, details) => callback(appPermission(contents, window, permission, details, origin)));
+  window.webContents.session.setPermissionCheckHandler((contents, permission, _requestingOrigin, details) => appPermission(contents, window, permission, details, origin));
   window.webContents.on('will-attach-webview', event => event.preventDefault());
   window.webContents.on('will-navigate', (event, target) => {
     if (new URL(target).origin !== origin) event.preventDefault();
@@ -61,7 +72,12 @@ async function createOrFocusWindow() {
     return { action: 'deny' };
   });
   window.once('ready-to-show', () => window?.show());
-  window.once('close', () => { disposeFiles(); disposeState(); browser.dispose(); });
+  let disposed = false;
+  window.on('close', event => {
+    if (!mayClose()) { event.preventDefault(); return; }
+    if (disposed) return; disposed = true;
+    disposeFiles(); disposeState(); browser.dispose();
+  });
   window.on('closed', () => { window = undefined; });
   await window.loadURL(server.url);
 }
@@ -89,6 +105,7 @@ if (!app.requestSingleInstanceLock()) {
   app.on('before-quit', event => {
     if (!server || closing) return;
     event.preventDefault();
+    if (!mayClose()) return;
     closing = true;
     // Detach this UI only. The shared Elpis runtime owns running conversations.
     Promise.resolve(server.close()).finally(() => app.quit());

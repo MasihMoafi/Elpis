@@ -11,3 +11,14 @@ test('only the Elpis main frame can capture audio; websites, camera and other pe
   assert.equal(appAudio({}, host, 'media', details, origin), false);
   assert.equal(appAudio(contents, host, 'display-capture', details, origin), false);
 });
+
+test('only the Elpis page may show notifications; websites and subframes may not', () => {
+  const { appNotifications, appPermission } = require('./media-policy.cjs');
+  const origin = 'http://127.0.0.1:4000'; const contents = { getURL: () => origin + '/' }; const host = { webContents: contents };
+  const details = { requestingUrl: origin + '/', isMainFrame: true };
+  assert.equal(appNotifications(contents, host, 'notifications', details, origin), true);
+  assert.equal(appPermission(contents, host, 'notifications', { requestingUrl: origin + '/' }, origin), true);
+  for (const invalid of [{ ...details, isMainFrame: false }, { ...details, requestingUrl: 'https://example.com/' }]) assert.equal(appNotifications(contents, host, 'notifications', invalid, origin), false);
+  assert.equal(appNotifications({ getURL: () => origin + '/' }, host, 'notifications', details, origin), false);
+  assert.equal(appPermission(contents, host, 'geolocation', details, origin), false);
+});

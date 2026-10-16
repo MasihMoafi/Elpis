@@ -132,8 +132,8 @@ test('rendered local file links use desktop opening and explain failures without
 
 test('maintenance settings read the real catalog response and keep model lists with their provider', () => fixture(async ({ page, shot }) => {
   await page.locator('aside').getByRole('button', { name: 'Settings', exact: true }).click();
-  await page.getByRole('tab', { name: 'Elpis', exact: true }).click();
-  const section = page.getByRole('region', { name: 'Elpis settings', exact: true });
+  await page.getByRole('tab', { name: 'Configuration', exact: true }).click();
+  const section = page.getByRole('region', { name: 'Models', exact: true });
   await chooseOption(section.getByLabel('Background model', { exact: true }), { label: 'Sol' });
   await chooseOption(section.getByLabel('Background provider', { exact: true }), 'lmstudio');
   await section.getByLabel('Background model', { exact: true }).click();

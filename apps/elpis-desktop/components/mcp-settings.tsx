@@ -3,11 +3,12 @@
 import { useCallback, useEffect, useState } from "react";
 import { Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { OptionSelect } from "@/components/ui/option-select";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { AlertDialog, AlertDialogClose, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { api } from "@/lib/api";
+
+export { WhisperTypeSettings } from "@/components/settings/voice-settings";
 
 type Credential = { name: string; source: "config" | "environment"; set: boolean };
 type Server = { name: string; enabled: boolean; transport: "stdio" | "http"; command: string | null; url: string | null; credentials: Credential[]; whispertype?: { backend: "openrouter" | "codex" | "local"; model: string | null } };
@@ -67,25 +68,7 @@ function RagSettings({ version }: { version: string | null }) {
   </div>;
 }
 
-export function WhisperTypeSettings({ server, save, disabled = false }: { server: Pick<Server, "whispertype">; save: (body: Record<string, unknown>) => Promise<void>; disabled?: boolean }) {
-  const [backend, setBackend] = useState(server.whispertype?.backend ?? "openrouter");
-  const [model, setModel] = useState(server.whispertype?.model ?? "");
-  const [busy, setBusy] = useState(false), [error, setError] = useState("");
-  async function submit(event: React.FormEvent) {
-    event.preventDefault(); event.stopPropagation(); if (busy || disabled) return; setBusy(true); setError("");
-    try { await save({ action: "whispertype", backend, ...(backend === "openrouter" ? { model: model.trim() || null } : {}) }); }
-    catch (e) { setError(message(e)); } finally { setBusy(false); }
-  }
-  return <form className="grid gap-3" onSubmit={submit}>
-    <label className="field">Transcription engine<OptionSelect aria-label="Transcription engine" className="w-full" value={backend} disabled={disabled || busy} onChange={e => setBackend(e.target.value as "openrouter" | "codex" | "local")}><option value="local">Local WhisperType</option><option value="openrouter">OpenRouter</option><option value="codex">ChatGPT sign-in</option></OptionSelect></label>
-    {backend === "openrouter" && <label className="field">Transcription model<Input aria-label="Transcription model" value={model} onChange={e => setModel(e.target.value)} placeholder="openai/gpt-4o-mini-transcribe" disabled={disabled || busy} /></label>}
-    <p className="text-xs text-muted-foreground">{backend === "local" ? "Audio stays on this computer. Uses your installed WhisperType model." : backend === "codex" ? "Uses WhisperType's existing ChatGPT sign-in for cloud transcription." : "Audio uses your configured OpenRouter transcription model and credentials."}</p>
-    {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
-    <Button type="submit" variant="outline" aria-label="Save transcription settings" disabled={disabled || busy}>{busy ? "Saving…" : "Save"}</Button>
-  </form>;
-}
-
-export function McpSettings() {
+export function McpSettings({ onOpenVoice }: { onOpenVoice?: () => void }) {
   const [notice, setNotice] = useState("");
   const [data, setData] = useState<Mcp | null>(null);
   const [error, setError] = useState("");
@@ -131,7 +114,7 @@ export function McpSettings() {
       {server.credentials.length > 0 && <ul className="grid gap-1 text-sm">{server.credentials.map(item => <Key key={`${item.source}:${item.name}`} name={item.name} set={item.set} note={item.source === "environment" ? "from the environment" : "in config"} />)}</ul>}
       <CredentialSettings server={server} disabled={!data.write.available} save={body => save(server.name, body)} />
       {server.name === "rag" && <RagSettings version={data.version} />}
-      {server.name === "whispertype" && <WhisperTypeSettings server={server} disabled={!data.write.available} save={body => save(server.name, body)} />}
+      {server.name === "whispertype" && <p className="provider-note">The microphone’s transcription route is set under Voice.{onOpenVoice && <> <Button variant="link" size="xs" className="h-auto p-0 align-baseline" onClick={onOpenVoice}>Open Voice settings</Button></>}</p>}
     </section>)}
     <AlertDialog open={!!removing} onOpenChange={open => { if (!open) setRemoving(null); }}>
       <AlertDialogContent>

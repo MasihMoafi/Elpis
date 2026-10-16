@@ -1,0 +1,62 @@
+"use client";
+
+import type { ReactNode } from "react";
+import { Button } from "@/components/ui/button";
+import { OptionSelect } from "@/components/ui/option-select";
+
+/** The last save's result. A failure offers to reload the saved settings; unsaved edits are only discarded then. */
+export function SaveFeedback({ outcome, onReload }: { outcome: { ok: boolean; text: string } | null; onReload?: () => void }) {
+  if (!outcome) return null;
+  return <div className="flex flex-wrap items-center gap-2">
+    <SettingsNotice tone={outcome.ok ? "status" : "alert"}>{outcome.text}</SettingsNotice>
+    {!outcome.ok && onReload && <Button variant="outline" size="sm" className="mt-2" onClick={onReload}>Reload settings</Button>}
+  </div>;
+}
+
+/** ChatGPT-style settings building blocks: a page header, titled groups, and rows with a
+ * title, a one-line description and a control on the right. */
+export function SettingsHeader({ title, description }: { title: string; description?: ReactNode }) {
+  return <header className="settings-page-header"><h2>{title}</h2>{description && <p>{description}</p>}</header>;
+}
+
+export function SettingsGroup({ title, description, action, children }: { title?: string; description?: ReactNode; action?: ReactNode; children: ReactNode }) {
+  return <section className="settings-group" aria-label={title}>
+    {(title || action) && <div className="settings-group-heading">{title && <h3>{title}</h3>}{action}</div>}
+    {description && <p className="settings-group-description">{description}</p>}
+    <div className="settings-rows">{children}</div>
+  </section>;
+}
+
+type RowProps = { title: ReactNode; description?: ReactNode; children?: ReactNode; stacked?: boolean; id?: string };
+/** One setting. Its control carries its own label. `stacked` puts a wide control (text area, list) under the text. */
+export function SettingRow({ title, description, children, stacked, id }: RowProps) {
+  return <div className={`settings-row${stacked ? " stacked" : ""}`}>
+    <div className="settings-row-text"><div className="settings-row-title" id={id}>{title}</div>{description && <div className="settings-row-description">{description}</div>}</div>
+    {children && <div className="settings-row-control">{children}</div>}
+  </div>;
+}
+
+/** The last row of a group with a Save button and its feedback. */
+export function SettingsActions({ children, feedback }: { children: ReactNode; feedback?: ReactNode }) {
+  return <div className="settings-row settings-actions"><div className="settings-row-text">{feedback}</div><div className="settings-row-control">{children}</div></div>;
+}
+
+/** Feedback under a group or row: saved, failed, or why a control is unavailable. */
+export function SettingsNotice({ tone = "status", children }: { tone?: "status" | "alert"; children: ReactNode }) {
+  return <p className={`settings-notice${tone === "alert" ? " alert" : ""}`} role={tone}>{children}</p>;
+}
+
+type Option<T extends string> = { value: T; label: string; disabled?: boolean };
+/** A small set of mutually exclusive choices shown side by side. */
+export function Segmented<T extends string>({ label, value, options, onChange, disabled }: { label: string; value: T; options: Option<T>[]; onChange: (value: T) => void; disabled?: boolean }) {
+  return <div role="radiogroup" aria-label={label} className="settings-segmented">
+    {options.map(option => <Button key={option.value} type="button" variant="ghost" size="sm" role="radio" aria-checked={value === option.value} disabled={disabled || option.disabled} onClick={() => onChange(option.value)}>{option.label}</Button>)}
+  </div>;
+}
+
+/** A labelled drop-down for longer lists of choices. */
+export function Choice<T extends string>({ label, value, options, onChange, disabled }: { label: string; value: T; options: Option<T>[]; onChange: (value: T) => void; disabled?: boolean }) {
+  return <OptionSelect aria-label={label} className="settings-choice" value={value} disabled={disabled} onChange={event => onChange(event.target.value as T)}>
+    {options.map(option => <option key={option.value} value={option.value} disabled={option.disabled}>{option.label}</option>)}
+  </OptionSelect>;
+}

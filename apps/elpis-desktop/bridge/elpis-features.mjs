@@ -5,6 +5,59 @@ const strings = value => Array.isArray(value) ? value.filter(item => typeof item
 const numericFields = (value, keys) => value && typeof value === 'object'
   ? Object.fromEntries(keys.filter(key => typeof value[key] === 'number' && Number.isFinite(value[key])).map(key => [key, value[key]])) : null;
 
+// Config fields the Settings pages edit, by their native key. Values are the
+// native serde spellings; null removes the key so Elpis uses its own default.
+export const CONFIG_OPTIONS = {
+  approvalPolicy: { keyPath: 'approval_policy', values: ['untrusted', 'on-request', 'never'] },
+  sandboxMode: { keyPath: 'sandbox_mode', values: ['read-only', 'workspace-write', 'danger-full-access'] },
+  webSearch: { keyPath: 'web_search', values: ['disabled', 'cached', 'indexed', 'live'] },
+  verbosity: { keyPath: 'model_verbosity', values: ['low', 'medium', 'high'] },
+  reasoningSummary: { keyPath: 'model_reasoning_summary', values: ['auto', 'concise', 'detailed', 'none'] },
+  serviceTier: { keyPath: 'service_tier', values: ['default', 'fast', 'flex'] },
+  developerInstructions: { keyPath: 'developer_instructions', text: 32000 },
+  projectRootMarkers: { keyPath: 'project_root_markers', names: 16 },
+  worktreeRoot: { keyPath: 'desktop.git-worktree-root', absolutePath: 4096 },
+};
+const configValue = (config, keyPath) => keyPath.split('.').reduce((value, key) => value && typeof value === 'object' ? value[key] : undefined, config);
+function optionSnapshot(config) {
+  const approval = config.approval_policy;
+  const tier = string(config.service_tier);
+  return {
+    approvalPolicy: typeof approval === 'string' ? approval : approval && typeof approval === 'object' ? 'granular' : null,
+    sandboxMode: string(config.sandbox_mode), webSearch: string(config.web_search),
+    verbosity: string(config.model_verbosity), reasoningSummary: string(config.model_reasoning_summary),
+    serviceTier: tier === 'priority' ? 'fast' : tier,
+    developerInstructions: string(config.developer_instructions),
+    projectRootMarkers: strings(config.project_root_markers),
+    worktreeRoot: string(configValue(config, 'desktop.git-worktree-root')),
+  };
+}
+/** Native edits for the submitted options; rejects anything outside CONFIG_OPTIONS or managed policy. */
+export function optionEdits(input, managed = {}) {
+  if (!input || typeof input !== 'object' || Array.isArray(input) || Object.keys(input).some(key => !Object.hasOwn(CONFIG_OPTIONS, key))) throw new Error('Unsupported setting');
+  return Object.entries(input).map(([name, value]) => {
+    const option = CONFIG_OPTIONS[name];
+    if (value !== null) {
+      if (option.values) {
+        if (!option.values.includes(value)) throw new Error('Choose one of the listed values');
+        const allowed = name === 'approvalPolicy' ? managed.allowedApprovalPolicies : name === 'sandboxMode' ? managed.allowedSandboxModes : null;
+        if (Array.isArray(allowed) && !allowed.includes(value)) throw new Error('This choice is restricted by managed settings');
+      } else if (option.text) {
+        if (typeof value !== 'string' || value.length > option.text) throw new Error('Instructions are too long');
+        value = value.trim() ? value : null;
+      } else if (option.names) {
+        if (!Array.isArray(value) || !value.length || value.length > option.names || value.some(item => typeof item !== 'string' || !/^[^/\\\0\r\n]{1,100}$/.test(item.trim()) || ['.', '..'].includes(item.trim()))) throw new Error('Give one to sixteen file or folder names, without slashes');
+        value = value.map(item => item.trim());
+      } else if (option.absolutePath) {
+        if (typeof value !== 'string' || value.length > option.absolutePath || /[\0\r\n]/.test(value)) throw new Error('Give an absolute folder path');
+        value = value.trim() || null;
+        if (value !== null && !value.startsWith('/')) throw new Error('Give an absolute folder path');
+      }
+    }
+    return { keyPath: option.keyPath, value, mergeStrategy: 'replace' };
+  });
+}
+
 export function settingsSnapshot(read, requirementsRead, prunerRead = null) {
   const config = read?.config ?? {};
   const requirements = requirementsRead?.requirements;
@@ -25,10 +78,13 @@ export function settingsSnapshot(read, requirementsRead, prunerRead = null) {
         : { available: false, reason: 'The running Elpis version does not expose the separate pruning override. Update and restart Elpis to edit it here.' },
     },
     memory: {
+      enabled: boolean(config.features?.memories),
       generate: boolean(config.memories?.generate_memories), use: boolean(config.memories?.use_memories),
+      skipExternalContext: boolean(config.memories?.disable_on_external_context),
       extractionModel: string(config.memories?.extract_model), consolidationModel: string(config.memories?.consolidation_model),
       admissionPolicy: null,
     },
+    options: optionSnapshot(config),
     providers: [...providerIds].sort().map(id => ({ id, displayName: string(definitions[id]?.name) ?? id })),
     managed: {
       available: requirementsRead !== null,
@@ -105,6 +161,28 @@ export function providersSnapshot({ account, limits, config, models, env = proce
     openrouter: configured.filter(([, def]) => hostOf(def.base_url).endsWith('openrouter.ai')).map(describe),
     local: configured.filter(([, def]) => /^(localhost|127\.\d+\.\d+\.\d+|::1|0\.0\.0\.0)$/.test(hostOf(def.base_url))).map(describe),
   };
+}
+
+/** Lifecycle hooks as Elpis discovered them, with the user-layer version their state writes need. */
+export function hooksSnapshot(list, read) {
+  const userLayer = read?.layers?.find(layer => layer.name?.type === 'user' && !layer.name.profile);
+  const seen = new Set(), hooks = [], warnings = [], errors = [];
+  for (const entry of Array.isArray(list?.data) ? list.data : []) {
+    for (const hook of Array.isArray(entry?.hooks) ? entry.hooks : []) {
+      if (typeof hook?.key !== 'string' || seen.has(hook.key)) continue;
+      seen.add(hook.key);
+      hooks.push({
+        key: hook.key, event: string(hook.eventName), handler: string(hook.handlerType),
+        command: string(hook.command), server: string(hook.server), tool: string(hook.tool),
+        matcher: string(hook.matcher), timeoutSec: number(hook.timeoutSec), statusMessage: string(hook.statusMessage),
+        source: string(hook.source), sourcePath: string(hook.sourcePath), pluginId: string(hook.pluginId),
+        enabled: hook.enabled === true, managed: hook.isManaged === true, trust: string(hook.trustStatus), currentHash: string(hook.currentHash),
+      });
+    }
+    for (const warning of Array.isArray(entry?.warnings) ? entry.warnings : []) if (typeof warning === 'string' && !warnings.includes(warning)) warnings.push(warning);
+    for (const error of Array.isArray(entry?.errors) ? entry.errors : []) if (typeof error?.message === 'string') errors.push({ path: string(error.path), message: error.message });
+  }
+  return { version: string(userLayer?.version), write: { available: typeof userLayer?.version === 'string' }, hooks, warnings, errors };
 }
 
 const CREDENTIAL = /KEY|TOKEN|SECRET|PASSWORD|AUTH|CREDENTIAL/i;

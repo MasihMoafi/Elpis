@@ -28,6 +28,10 @@ function fixture({ prunerSupported = false, omitWorkflowParentInList = false, re
     api_key: 'PRIVATE CONFIG SECRET',
   }, layers: [{ name: { type: 'user', file: '/private/config.toml' }, version: 'user-version', config: { secret: 'PRIVATE CONFIG SECRET' } }] };
   const requirementsRead = { requirements: null };
+  const hooksList = { data: [{ cwd: '/work', warnings: ['hooks.json: unknown field ignored'], errors: [], hooks: [
+    { key: 'user:/private/hooks.json:pre_tool_use:0:0', eventName: 'preToolUse', handlerType: 'command', command: 'rtk hook claude', async: false, matcher: '^Bash$', timeoutSec: 5, statusMessage: 'compressing shell output', sourcePath: '/home/person/.elpis-next/hooks.json', source: 'user', pluginId: null, displayOrder: 0, enabled: true, isManaged: false, currentHash: 'sha256:current', trustStatus: 'untrusted' },
+    { key: 'managed:/etc/requirements.toml:stop:0:0', eventName: 'stop', handlerType: 'command', command: 'audit', matcher: null, timeoutSec: 30, statusMessage: null, sourcePath: '/etc/requirements.toml', source: 'system', pluginId: null, displayOrder: 1, enabled: true, isManaged: true, currentHash: 'sha256:managed', trustStatus: 'managed' },
+  ] }] };
   const threads = new Map([
     [ROOT, { id: ROOT, name: 'Existing root', source: 'cli', status: { type: 'idle' } }],
     [CHILD, { id: CHILD, name: null, preview: '', agentNickname: 'Sagan', model: MODEL, modelProvider: 'openai', parentThreadId: ROOT, canAcceptDirectInput: false, source: { subAgent: { thread_spawn: { parent_thread_id: ROOT, agent_path: '/root/failure_reporting' } } }, status: { type: 'active' } }],
@@ -44,6 +48,8 @@ function fixture({ prunerSupported = false, omitWorkflowParentInList = false, re
       case 'pruner/read': if (prunerSupported) {result=pruner;break;} queueMicrotask(() => socket.emit('message', JSON.stringify({ id: request.id, error: {code: -32601, message: 'Unknown method'} }))); return;
       case 'pruner/write': pruner={...pruner,model:request.params.model,provider:request.params.provider,version:'pruner-v2'};result=pruner;break;
       case 'config/batchWrite': result = {status:'ok'}; break;
+      case 'hooks/list': result = hooksList; break;
+      case 'memory/reset': result = {}; break;
       // Like native stored rows, listed threads do not report forkedFromId; thread/read does.
       case 'thread/list': result = { data: [...threads.values()].filter(thread => !!thread.archived === !!request.params.archived).filter(thread => !request.params.ancestorThreadId || thread.parentThreadId === request.params.ancestorThreadId).map(thread => ({ ...thread, forkedFromId: null, ...(omitWorkflowParentInList && thread.source?.subAgent?.other?.startsWith('work_graph:') ? {parentThreadId:null} : {}) })), nextCursor: null }; break;
       case 'thread/read': result = { thread: structuredClone(threads.get(request.params.threadId)) }; break;
@@ -81,7 +87,7 @@ function fixture({ prunerSupported = false, omitWorkflowParentInList = false, re
   };
   socket.close = () => { socket.closed = true; socket.emit('close'); };
   const client = new DesktopClient(socket);
-  return { socket, client, threads, configRead, requirementsRead, workflowRecords };
+  return { socket, client, threads, configRead, requirementsRead, workflowRecords, hooksList };
 }
 
 test('configured connection models use only that endpoint and never authorize the same ID on the main route', async () => {
@@ -825,6 +831,61 @@ test('maintenance edits are narrow, preserve unknowns, and reject stale versions
   client.close();
 });
 
+
+test('settings pages read and write only listed native options, respecting managed policy', async () => {
+  const { client, socket, configRead, requirementsRead } = fixture(); await client.initialize();
+  Object.assign(configRead.config, { approval_policy: { granular: { sandbox_approval: true } }, sandbox_mode: 'workspace-write', service_tier: 'priority', developer_instructions: 'Be brief.', project_root_markers: ['.git', '.hg'], desktop: { 'git-worktree-root': '/work/trees' } });
+  configRead.config.features.memories = true; configRead.config.memories.disable_on_external_context = true;
+  const settings = await client.settings();
+  assert.deepEqual(settings.options, { approvalPolicy: 'granular', sandboxMode: 'workspace-write', webSearch: null, verbosity: null, reasoningSummary: null, serviceTier: 'fast', developerInstructions: 'Be brief.', projectRootMarkers: ['.git', '.hg'], worktreeRoot: '/work/trees' });
+  assert.equal(settings.memory.enabled, true); assert.equal(settings.memory.skipExternalContext, true);
+  await client.saveSettings({ version: 'user-version', options: { approvalPolicy: 'never', webSearch: null, developerInstructions: '  ', projectRootMarkers: [' .git ', 'package.json'], worktreeRoot: '/tmp/trees' }, memory: { enabled: false, skipExternalContext: false } });
+  assert.deepEqual(socket.sent.findLast(row => row.method === 'config/batchWrite').params, { expectedVersion: 'user-version', reloadUserConfig: false, edits: [
+    { keyPath: 'features.memories', value: false, mergeStrategy: 'replace' },
+    { keyPath: 'memories.disable_on_external_context', value: false, mergeStrategy: 'replace' },
+    { keyPath: 'approval_policy', value: 'never', mergeStrategy: 'replace' },
+    { keyPath: 'web_search', value: null, mergeStrategy: 'replace' },
+    { keyPath: 'developer_instructions', value: null, mergeStrategy: 'replace' },
+    { keyPath: 'project_root_markers', value: ['.git', 'package.json'], mergeStrategy: 'replace' },
+    { keyPath: 'desktop.git-worktree-root', value: '/tmp/trees', mergeStrategy: 'replace' },
+  ] });
+  const writes = () => socket.sent.filter(row => row.method === 'config/batchWrite').length;
+  const before = writes();
+  await assert.rejects(client.saveSettings({ version: 'user-version', options: { model: 'other' } }), /Unsupported setting/);
+  await assert.rejects(client.saveSettings({ version: 'user-version', options: { sandboxMode: 'everything' } }), /listed values/);
+  await assert.rejects(client.saveSettings({ version: 'user-version', options: { worktreeRoot: 'relative/trees' } }), /absolute folder/);
+  await assert.rejects(client.saveSettings({ version: 'user-version', options: { projectRootMarkers: ['../up'] } }), /without slashes/);
+  await assert.rejects(client.saveSettings({ version: 'user-version', options: { projectRootMarkers: [] } }), /one to sixteen/);
+  requirementsRead.requirements = { allowedSandboxModes: ['read-only'] };
+  await assert.rejects(client.saveSettings({ version: 'user-version', options: { sandboxMode: 'danger-full-access' } }), error => error.status === 403 && /managed/.test(error.message));
+  assert.equal(writes(), before, 'refused options write nothing');
+  client.close();
+});
+
+test('hooks list native discovery and change only hooks.state for a listed, unmanaged hook', async () => {
+  const { client, socket, hooksList } = fixture(); await client.initialize();
+  const hooks = await client.hooks();
+  assert.equal(hooks.version, 'user-version');
+  assert.deepEqual(hooks.warnings, ['hooks.json: unknown field ignored']);
+  assert.deepEqual(hooks.hooks.map(hook => [hook.event, hook.command, hook.trust, hook.managed]), [['preToolUse', 'rtk hook claude', 'untrusted', false], ['stop', 'audit', 'managed', true]]);
+  const key = hooksList.data[0].hooks[0].key;
+  await client.saveHook({ version: 'user-version', key, trust: true });
+  await client.saveHook({ version: 'user-version', key, enabled: false });
+  assert.deepEqual(socket.sent.filter(row => row.method === 'config/batchWrite').map(row => row.params), [
+    { edits: [{ keyPath: 'hooks.state', value: { [key]: { trusted_hash: 'sha256:current' } }, mergeStrategy: 'upsert' }], expectedVersion: 'user-version', reloadUserConfig: true },
+    { edits: [{ keyPath: 'hooks.state', value: { [key]: { enabled: false } }, mergeStrategy: 'upsert' }], expectedVersion: 'user-version', reloadUserConfig: true },
+  ]);
+  await assert.rejects(client.saveHook({ version: 'user-version', key: hooksList.data[0].hooks[1].key, enabled: false }), /Managed hooks/);
+  await assert.rejects(client.saveHook({ version: 'user-version', key: 'user:/missing:stop:0:0', enabled: false }), /no longer configured/);
+  await assert.rejects(client.saveHook({ version: 'outdated', key, enabled: true }), /Reload settings/);
+  await assert.rejects(client.saveHook({ version: 'user-version', key, enabled: true, trust: true }), /enable, disable or trust/);
+  await assert.rejects(client.saveHook({ version: 'user-version', key, trust: false }), /confirmed/);
+  assert.equal(socket.sent.filter(row => row.method === 'config/batchWrite').length, 2);
+  await client.resetMemories({});
+  assert.equal(socket.sent.filter(row => row.method === 'memory/reset').length, 1);
+  await assert.rejects(client.resetMemories({ all: true }), /Unsupported/);
+  client.close();
+});
 
 test('pruning override edits preserve separation and reject stale or incomplete pairs', async () => {
   const {client,socket,configRead}=fixture({prunerSupported:true}); await client.initialize();

@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { ragMessage } from './rag-command.mjs';
 import { providerSettingsSnapshot, providerEdits, privateConfigFile } from './provider-settings.mjs';
-import { settingsSnapshot, tokenUsageSnapshot, smartPruneSnapshot, providersSnapshot, mcpSnapshot } from './elpis-features.mjs';
+import { settingsSnapshot, tokenUsageSnapshot, smartPruneSnapshot, providersSnapshot, mcpSnapshot, optionEdits, hooksSnapshot } from './elpis-features.mjs';
 import { replacementEligibility } from '../lib/turn-replacement.ts';
 import { providerModels } from './provider-models.mjs';
 import { attachmentInput, recordedMedia } from './attachments.mjs';
@@ -67,7 +67,7 @@ const APPROVALS = new Set(['item/commandExecution/requestApproval', 'item/fileCh
 const LISTED = new Set(['thread/started', 'thread/status/changed', 'thread/name/updated']);
 const ACCOUNT_NOTIFICATIONS = new Set(['account/updated', 'account/login/completed', 'account/rateLimits/updated']);
 // Native refusals the person can act on (a fork still referencing a chat, a busy agent) are shown as Elpis wrote them.
-const READ_RPCS = new Set(['initialize','thread/list','thread/read','thread/items/list','thread/turns/list','model/list','account/read','account/rateLimits/read','config/read','configRequirements/read','pruner/read','workGraph/list']);
+const READ_RPCS = new Set(['initialize','thread/list','thread/read','thread/items/list','thread/turns/list','model/list','account/read','account/rateLimits/read','config/read','configRequirements/read','pruner/read','workGraph/list','hooks/list']);
 const readRpc = (method, params) => READ_RPCS.has(method) || (method === 'thread/resume' && Object.keys(params || {}).every(key => ['threadId','excludeTurns','initialTurnsPage'].includes(key)));
 /** The ChatGPT app's three permission modes as Elpis approval and sandbox settings. */
 const PERMISSIONS = {
@@ -88,7 +88,7 @@ function modeOf(result) {
   if (result.sandbox?.type === 'dangerFullAccess' && result.approvalPolicy === 'never') return 'full';
   return result.approvalsReviewer === 'auto_review' || result.approvalsReviewer === 'guardian_subagent' ? 'auto' : 'ask';
 }
-const EXPLAINED = new Set(['account/read', 'account/rateLimits/read', 'thread/delete', 'thread/fork', 'thread/start', 'thread/resume', 'thread/name/set', 'thread/archive', 'thread/unarchive', 'thread/revert', 'turn/start', 'turn/interrupt', 'config/batchWrite', 'account/login/start', 'account/logout']);
+const EXPLAINED = new Set(['account/read', 'account/rateLimits/read', 'thread/delete', 'thread/fork', 'thread/start', 'thread/resume', 'thread/name/set', 'thread/archive', 'thread/unarchive', 'thread/revert', 'turn/start', 'turn/interrupt', 'config/batchWrite', 'account/login/start', 'account/logout', 'hooks/list', 'memory/reset']);
 const DECISIONS = ['accept', 'acceptForSession', 'decline', 'cancel'];
 const EFFORT = /^[a-z]{2,16}$/;
 const MCP_NAME = /^[A-Za-z0-9_-]{1,64}$/;
@@ -408,7 +408,7 @@ export class DesktopClient extends EventEmitter {
     return settingsSnapshot(read, requirements, pruner);
   }
   async saveSettings(input) {
-    object(input, ['version', 'background', 'memory']);
+    object(input, ['version', 'background', 'memory', 'options']);
     text(input.version, 'settings version', 200);
     const current = await this.settings();
     if (!current.write.available || current.version !== input.version) throw new BridgeError('Settings changed in another client. Reload settings before saving again.', 409);
@@ -424,13 +424,18 @@ export class DesktopClient extends EventEmitter {
       }
     }
     if (input.memory !== undefined) {
-      object(input.memory, ['generate', 'use', 'extractionModel', 'consolidationModel']);
-      for (const [field, key] of Object.entries({ generate: 'generate_memories', use: 'use_memories', extractionModel: 'extract_model', consolidationModel: 'consolidation_model' })) {
+      object(input.memory, ['enabled', 'generate', 'use', 'skipExternalContext', 'extractionModel', 'consolidationModel']);
+      const switches = ['enabled', 'generate', 'use', 'skipExternalContext'];
+      for (const [field, key] of Object.entries({ enabled: 'features.memories', generate: 'memories.generate_memories', use: 'memories.use_memories', skipExternalContext: 'memories.disable_on_external_context', extractionModel: 'memories.extract_model', consolidationModel: 'memories.consolidation_model' })) {
         if (!(field in input.memory)) continue;
         const value = input.memory[field];
-        if (['generate', 'use'].includes(field) && typeof value !== 'boolean') throw new BridgeError('Memory choices must be enabled or disabled');
-        edits.push({ keyPath: `memories.${key}`, value: ['generate', 'use'].includes(field) ? value : nullableModel(value), mergeStrategy: 'replace' });
+        if (switches.includes(field) && typeof value !== 'boolean') throw new BridgeError('Memory choices must be enabled or disabled');
+        edits.push({ keyPath: key, value: switches.includes(field) ? value : nullableModel(value), mergeStrategy: 'replace' });
       }
+    }
+    if (input.options !== undefined) {
+      try { edits.push(...optionEdits(input.options, current.managed)); }
+      catch (error) { throw new BridgeError(error.message, /managed/.test(error.message) ? 403 : 400); }
     }
     if (!edits.length) throw new BridgeError('No settings were changed');
     await this.#rpc('config/batchWrite', { edits, expectedVersion: input.version, reloadUserConfig: false });
@@ -486,6 +491,32 @@ export class DesktopClient extends EventEmitter {
     return { authUrl: result.authUrl, loginId: string(result.loginId) };
   }
   async mcp() { return mcpSnapshot(await this.#rpc('config/read', { includeLayers: true })); }
+  async hooks() {
+    const [list, read] = await Promise.all([this.#rpc('hooks/list', {}), this.#rpc('config/read', { includeLayers: true })]);
+    return hooksSnapshot(list, read);
+  }
+  /** Enables, disables or trusts one discovered hook through native `hooks.state`, as the Elpis terminal does. */
+  async saveHook(input) {
+    object(input, ['version', 'key', 'enabled', 'trust']);
+    text(input.version, 'hooks version', 200); text(input.key, 'hook', 1000);
+    if ((input.enabled === undefined) === (input.trust === undefined)) throw new BridgeError('Choose enable, disable or trust');
+    if (input.enabled !== undefined && typeof input.enabled !== 'boolean') throw new BridgeError('Choose enabled or disabled');
+    if (input.trust !== undefined && input.trust !== true) throw new BridgeError('Trust must be confirmed');
+    const current = await this.hooks();
+    if (!current.write.available || current.version !== input.version) throw new BridgeError('Settings changed in another client. Reload settings before saving again.', 409);
+    const hook = current.hooks.find(item => item.key === input.key);
+    if (!hook) throw new BridgeError('This hook is no longer configured. Reload hooks.', 409);
+    if (hook.managed) throw new BridgeError('Managed hooks cannot be changed here', 403);
+    if (input.trust && !hook.currentHash) throw new BridgeError('Elpis did not report this hook’s current version', 502);
+    const state = input.trust ? { trusted_hash: hook.currentHash } : { enabled: input.enabled };
+    await this.#rpc('config/batchWrite', { edits: [{ keyPath: 'hooks.state', value: { [hook.key]: state }, mergeStrategy: 'upsert' }], expectedVersion: input.version, reloadUserConfig: true });
+    return this.hooks();
+  }
+  async resetMemories(body) {
+    object(body, []);
+    await this.#rpc('memory/reset', undefined);
+    return { reset: true };
+  }
   // Private subprocess configuration. HTTP responses expose only the selected route, never this object.
   async transcriptionDefinition() {
     const read = await this.#rpc('config/read', { includeLayers: false });

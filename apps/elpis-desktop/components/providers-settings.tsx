@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { api } from "@/lib/api";
 import { providerFormId, type ProviderType } from "@/lib/provider-form";
 
-import { openAIUsage, subscriptionUsage, UsageWindows, type OpenAIAccount, type Subscription } from "@/components/provider-usage";
+import type { OpenAIAccount, Subscription } from "@/components/provider-usage";
 type Configured = { id: string; name: string; baseUrl: string | null; envKey: string | null; keySet: boolean | null };
 type ProviderConfig = { id: string; name: string; baseUrl: string | null; wireApi: string; editable: boolean; auth: { source: string; keySet: boolean; envKey: string | null } };
 type ProviderConfigs = { application?: { scope: string; message: string; credentialClearMessage: string }; version: string | null; configPath: string | null; write: { available: boolean; reason?: string | null }; managed: { modelProvider: string | null }; providers: ProviderConfig[] };
@@ -95,7 +95,6 @@ export function ProvidersSettings({ refreshKey, onChanged }: { refreshKey: numbe
     {data && <>
       <Card id="openai" name="OpenAI / ChatGPT" state={data.openai.auth.state === "signedIn" ? <State tone="ok">Signed in{data.openai.auth.method ? ` with ${data.openai.auth.method}` : ""}</State> : data.openai.auth.state === "unknown" ? <State tone="warn">Sign-in state unavailable</State> : <State tone="off">Not signed in</State>}>
         {data.openai.auth.email && <p className="text-sm">{data.openai.auth.email}{data.openai.auth.plan ? ` · ${data.openai.auth.plan} plan` : ""}</p>}
-        <UsageWindows status={openAIUsage(data.openai)} />
         <div className="flex flex-wrap gap-2">
           {data.openai.auth.state === "signedIn"
             ? <Button variant="outline" size="sm" disabled={busy} onClick={() => void account("signOut")}>Sign out</Button>
@@ -105,11 +104,9 @@ export function ProvidersSettings({ refreshKey, onChanged }: { refreshKey: numbe
       </Card>
       <Card id="claude" name="Claude subscription" state={sub(data.claude)}>
         <p className="provider-note">{data.claude.models.length ? `${plural(data.claude.models.length, "Claude model")} available through your Claude Code connection.` : "Sign in to Claude Code on this computer to connect your subscription."}</p>
-        <UsageWindows status={subscriptionUsage(data.claude, "Claude", "Sign in with Claude Code")} />
       </Card>
       <Card id="gemini" name="Antigravity" state={sub(data.gemini)}>
         <p className="provider-note">{data.gemini.models.length ? `${plural(data.gemini.models.length, "model")} available through your existing Google/Antigravity connection.` : "Sign in to Antigravity with Google on this computer to connect its models."}</p>
-        <UsageWindows status={subscriptionUsage(data.gemini, "Antigravity", "Sign in to Antigravity")} />
       </Card>
       {data.openrouter.length > 0 && <Card id="openrouter" name="OpenRouter" state={data.openrouter.length ? (data.openrouter.every(item => item.keySet) ? <State tone="ok">Key set</State> : <State tone="warn">Key missing</State>) : <State tone="off">Not configured</State>}>
         <ConfiguredList config={config} onEdit={edit} items={data.openrouter} empty="No OpenRouter connection yet." />

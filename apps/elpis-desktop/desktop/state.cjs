@@ -3,7 +3,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { randomUUID } = require('node:crypto');
 
-const allowed = key => typeof key === 'string' && /^(elpis-theme|elpis-projects-v1|elpis-last-chat|elpis-workflow-draft-v1|(?:elpis-draft-v1|elpis-attachments-v1):[A-Za-z0-9_-]{1,200})$/.test(key);
+const allowed = key => typeof key === 'string' && /^(elpis-theme|elpis-preferences-v1|elpis-projects-v1|elpis-last-chat|elpis-workflow-draft-v1|(?:elpis-draft-v1|elpis-attachments-v1):[A-Za-z0-9_-]{1,200})$/.test(key);
 
 // App-owned preferences live outside the changing loopback origin. No runtime
 // configuration or conversation history is written through this interface.

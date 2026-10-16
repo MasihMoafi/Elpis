@@ -460,9 +460,13 @@ try {
     await until(async () => (await fs.readFile(path.join(home,'config.toml'),'utf8')).includes(whisperKey),'WhisperType key saved');
     assert(!JSON.stringify((await api('/mcp')).body).includes(whisperKey),'WhisperType key is redacted');
     await shoot('mcp');
-    await chooseOption(whisper.getByLabel('Transcription engine'), 'local');
-    await whisper.getByRole('button', { name: 'Save transcription settings' }).click();
+    // The transcription route moved to Settings → Voice; it still writes WhisperType's MCP env.
+    await whisper.getByRole('button', { name: 'Open Voice settings', exact: true }).click();
+    const voice = page.getByRole('tabpanel', { name: 'Voice', exact: true });
+    await chooseOption(voice.getByLabel('Transcription engine'), 'local');
+    await voice.getByRole('button', { name: 'Save transcription settings' }).click();
     await until(async () => /WHISPERTYPE_BACKEND\s*=\s*"local"/.test(await fs.readFile(path.join(home, 'config.toml'), 'utf8')), 'whispertype provider written');
+    await page.getByRole('tab', { name: 'MCP servers', exact: true }).click();
     await page.getByRole('button', { name: 'Add MCP server' }).click();
     await page.getByLabel('Server name').fill('fixture-extra');
     await page.getByLabel('Command').fill('/bin/true');
