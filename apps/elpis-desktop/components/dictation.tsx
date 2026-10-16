@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { ChevronDown, LoaderCircle, Mic, Square, X } from "lucide-react";
+import { MicIcon } from "@/components/elpis-icons";
+import { ChevronDown, LoaderCircle, Square, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { WhisperTypeSettings } from "@/components/mcp-settings";
@@ -114,7 +115,7 @@ export function Dictation({ disabled, selection, onTranscript, onBusy }: Props) 
       <Button type="button" size="icon" variant={active ? "secondary" : "ghost"} disabled={active ? phase !== "recording" : disabled || settingsOpen || !route?.available}
         aria-label={phase === "recording" ? "Stop recording and transcribe" : "Dictate message"} title={active ? label : route?.available ? `Dictate with ${route.label}. Inserts text without sending.` : route?.reason || "Checking dictation…"}
         onClick={() => phase === "recording" ? recorder.current?.stop() : void start()}>
-        {phase === "recording" ? <Square size={15} className="text-red-400" /> : active ? <LoaderCircle size={17} className="animate-spin" /> : <Mic size={17} />}
+        {phase === "recording" ? <Square size={15} className="text-red-400" /> : active ? <LoaderCircle size={17} className="animate-spin" /> : <MicIcon size={17} />}
       </Button>
       {active && <Button type="button" size="icon" variant="ghost" aria-label="Cancel dictation" onClick={cancel}><X size={15} /></Button>}
     </div>

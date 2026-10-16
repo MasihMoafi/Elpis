@@ -1,7 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { FileDiff, GitBranch, Globe, ListChecks, Sparkles, Terminal, Wrench } from "lucide-react";
+import { BranchIcon, BrowserIcon, ContextIcon, FileEditIcon, TerminalIcon, ToolIcon, WorkflowsIcon } from "@/components/elpis-icons";
 import type { Entry, Item } from "@/lib/api";
 
 /** The conversation as the ChatGPT app shows it: each user message, then the turn's work
@@ -108,13 +108,13 @@ function runningLabel(item: Item): string {
 
 function iconFor(items: Item[]) {
   const types = new Set(items.map(item => item.type));
-  if (types.has("commandExecution")) return Terminal;
-  if (types.has("fileChange")) return FileDiff;
-  if (types.has("webSearch")) return Globe;
-  if (types.has("collabAgentToolCall") || types.has("subAgentActivity")) return GitBranch;
-  if (types.has("plan")) return ListChecks;
-  if (types.has("mcpToolCall") || types.has("dynamicToolCall")) return Wrench;
-  return Sparkles;
+  if (types.has("commandExecution")) return TerminalIcon;
+  if (types.has("fileChange")) return FileEditIcon;
+  if (types.has("webSearch")) return BrowserIcon;
+  if (types.has("collabAgentToolCall") || types.has("subAgentActivity")) return BranchIcon;
+  if (types.has("plan")) return WorkflowsIcon;
+  if (types.has("mcpToolCall") || types.has("dynamicToolCall")) return ToolIcon;
+  return ContextIcon;
 }
 
 /** "Worked for 14m 42s": from the user's message to the last recorded item. */

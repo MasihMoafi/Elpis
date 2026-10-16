@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { ArchiveIcon, PinIcon } from "@/components/elpis-icons";
 import { Archive, MoreHorizontal, Pencil, Pin, PinOff, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -58,8 +59,8 @@ export function ThreadActions({ thread, onDelete, onRename, onArchive, pinned, o
       </DropdownMenuTrigger>
       <DropdownMenuContent>
         {onRename && <DropdownMenuItem onClick={() => open("rename")}><Pencil size={14} />Rename</DropdownMenuItem>}
-        {onPin && <DropdownMenuItem onClick={() => onPin(thread)}>{pinned ? <PinOff size={14} /> : <Pin size={14} />}{pinned ? "Unpin" : "Pin"}</DropdownMenuItem>}
-        {onArchive && <DropdownMenuItem onClick={() => void onArchive(thread)}><Archive size={14} />Archive</DropdownMenuItem>}
+        {onPin && <DropdownMenuItem onClick={() => onPin(thread)}>{pinned ? <PinOff size={14} /> : <PinIcon size={14} />}{pinned ? "Unpin" : "Pin"}</DropdownMenuItem>}
+        {onArchive && <DropdownMenuItem onClick={() => void onArchive(thread)}><ArchiveIcon size={14} />Archive</DropdownMenuItem>}
         <DropdownMenuItem variant="destructive" onClick={() => open("delete")}><Trash2 size={14} />Delete<kbd aria-hidden="true" className="ml-auto text-xs opacity-70">D</kbd></DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

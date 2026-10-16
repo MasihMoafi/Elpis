@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Archive, ArrowUp, ChevronRight, Columns2, PanelRight, Pin, Folder, GitBranch, Globe, Menu, Moon, Plus, RefreshCw, Search, Settings2, Square, SquarePen, Sun, Workflow, X } from "lucide-react";
+import { AgentsIcon, ArchiveIcon, BranchIcon, FolderIcon, NewChatIcon, PinIcon, PlusIcon, SearchIcon, SendIcon, SettingsIcon, SplitIcon, WorkflowsIcon } from "@/components/elpis-icons";
+import { Archive, ChevronRight, PanelRight, Pin, Menu, Moon, RefreshCw, Search, Square, Sun, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { OptionSelect } from "@/components/ui/option-select";
 import { Input } from "@/components/ui/input";
@@ -781,8 +782,8 @@ export default function Home() {
         {thread.forkedFromId && <span className="thread-nickname">Continued agent chat</span>}
       </button>
       {(state === "working" || state === "waiting") && <span className={`thread-working${state === "waiting" ? " waiting" : ""}`} title={stateTitle} aria-label={stateTitle} />}
-      {!depth && !isAgent(thread) && <Button variant="ghost" size="icon-xs" aria-label={`Show agents of ${name}`} aria-expanded={!!expanded[thread.id]} onClick={() => expanded[thread.id] ? setExpanded(prev => ({ ...prev, [thread.id]: false })) : loadChildren(thread.id)}><GitBranch size={13} /></Button>}
-      {!depth && <span className="row-hover-actions"><Button variant="ghost" size="icon-xs" aria-label={pinned ? `Unpin ${name}` : `Pin ${name}`} title={pinned ? "Unpin" : "Pin"} onClick={() => togglePin(thread)}><Pin size={13} className={pinned ? "fill-current" : undefined} /></Button><Button variant="ghost" size="icon-xs" aria-label={`Archive ${name}`} title="Archive" onClick={() => void archiveThread(thread)}><Archive size={13} /></Button></span>}
+      {!depth && !isAgent(thread) && <Button variant="ghost" size="icon-xs" aria-label={`Show agents of ${name}`} aria-expanded={!!expanded[thread.id]} onClick={() => expanded[thread.id] ? setExpanded(prev => ({ ...prev, [thread.id]: false })) : loadChildren(thread.id)}><BranchIcon size={13} /></Button>}
+      {!depth && <span className="row-hover-actions"><Button variant="ghost" size="icon-xs" aria-label={pinned ? `Unpin ${name}` : `Pin ${name}`} title={pinned ? "Unpin" : "Pin"} onClick={() => togglePin(thread)}><PinIcon size={13} className={pinned ? "fill-current" : undefined} /></Button><Button variant="ghost" size="icon-xs" aria-label={`Archive ${name}`} title="Archive" onClick={() => void archiveThread(thread)}><ArchiveIcon size={13} /></Button></span>}
       <ThreadActions thread={thread} onDelete={deleteThread} onRename={renameThread} onArchive={archiveThread} pinned={pinned} onPin={togglePin} deleteRequested={deleteRequest === thread.id} onDeleteRequestHandled={() => setDeleteRequest(null)} />
     </div>;
   }
@@ -798,18 +799,18 @@ export default function Home() {
     <aside className={`sidebar${sidebar ? " open" : ""}`} aria-label="Workspace navigation">
       <div className="brand"><img src={brandMark} alt="Elpis" width={28} height={28} /><span>Elpis</span><Button className="ml-auto mobile-menu" variant="ghost" size="icon-sm" aria-label="Close sidebar" onClick={() => setSidebar(false)}><X size={16} /></Button></div>
       <nav className="nav-list" aria-label="Workspace">
-        <Button className="new-chat" variant="ghost" aria-current={view === "chat" && !selected ? "page" : undefined} disabled={projectChanging} onClick={newChat}><SquarePen size={16} />New chat</Button>
-        <Button variant="ghost" aria-current={view === "agents" ? "page" : undefined} onClick={() => show("agents")}><GitBranch size={16} />Agents{working > 0 && <span className="nav-badge" aria-hidden="true"><i />{working}</span>}</Button>
-        <Button variant="ghost" aria-current={view === "workflows" ? "page" : undefined} onClick={() => show("workflows")}><Workflow size={16} />Workflows</Button>
+        <Button className="new-chat" variant="ghost" aria-current={view === "chat" && !selected ? "page" : undefined} disabled={projectChanging} onClick={newChat}><NewChatIcon size={16} />New chat</Button>
+        <Button variant="ghost" aria-current={view === "agents" ? "page" : undefined} onClick={() => show("agents")}><AgentsIcon size={16} />Agents{working > 0 && <span className="nav-badge" aria-hidden="true"><i />{working}</span>}</Button>
+        <Button variant="ghost" aria-current={view === "workflows" ? "page" : undefined} onClick={() => show("workflows")}><WorkflowsIcon size={16} />Workflows</Button>
       </nav>
-      <label className="sidebar-search"><Search size={14} aria-hidden="true" /><Input ref={searchInput} aria-label="Search conversations" placeholder="Search conversations" maxLength={200} value={search} onChange={e => setSearch(e.target.value)} /><kbd aria-hidden="true">Ctrl K</kbd></label>
+      <label className="sidebar-search"><SearchIcon size={14} aria-hidden="true" /><Input ref={searchInput} aria-label="Search conversations" placeholder="Search conversations" maxLength={200} value={search} onChange={e => setSearch(e.target.value)} /><kbd aria-hidden="true">Ctrl K</kbd></label>
       <ProjectPicker projects={projects} selected={project} disabled={!ready || busy} onSelect={selectProject} onSave={saveProject} />
       <div className="thread-list">
         {!searchTerm && projects.length > 0 && <section aria-label="Projects"><div className="section-label">Projects</div>
           {projects.map(item => { const open = !collapsedProjects[item.id], chats = threads.filter(t => !t.parentThreadId && sameFolder(t.cwd, item.cwd)).slice(0, 5);
             return <div key={item.id} className="project-group">
-              <div className={`project-row${project?.id === item.id ? " active" : ""}`}><button className="project-toggle" aria-expanded={open} title={item.cwd} onClick={() => setCollapsedProjects(prev => ({ ...prev, [item.id]: open }))}><ChevronRight size={13} className="project-chevron" /><Folder size={14} /><span>{item.name}</span></button>
-                <Button variant="ghost" size="icon-xs" aria-label={`Start new chat in ${item.name}`} title="New chat in this project" disabled={!ready || busy} onClick={() => void selectProject(item)}><SquarePen size={13} /></Button></div>
+              <div className={`project-row${project?.id === item.id ? " active" : ""}`}><button className="project-toggle" aria-expanded={open} title={item.cwd} onClick={() => setCollapsedProjects(prev => ({ ...prev, [item.id]: open }))}><ChevronRight size={13} className="project-chevron" /><FolderIcon size={14} /><span>{item.name}</span></button>
+                <Button variant="ghost" size="icon-xs" aria-label={`Start new chat in ${item.name}`} title="New chat in this project" disabled={!ready || busy} onClick={() => void selectProject(item)}><NewChatIcon size={13} /></Button></div>
               {open && <div className="project-chats">{chats.map(t => threadRow(t))}{!chats.length && <p className="project-empty">No chats yet</p>}</div>}
             </div>; })}
         </section>}
@@ -825,7 +826,7 @@ export default function Home() {
         {searchTerm ? searchResults.nextCursor && <Button variant="ghost" className="w-full" disabled={searchResults.loading} onClick={() => void loadMoreSearch()}>More search results</Button> : nextCursor && <Button variant="ghost" className="w-full" disabled={moreLoading} onClick={() => void loadMoreConversations()}>Load more</Button>}
       </div>
       <UsagePanel refreshKey={accountRefresh} />
-      <div className="sidebar-footer"><nav className="nav-list flex-1" aria-label="Settings"><Button variant="ghost" aria-current={view === "settings" ? "page" : undefined} onClick={() => { setSettingsSection("providers"); show("settings"); }}><Settings2 size={16} />Settings</Button></nav><Button size="icon-sm" variant="ghost" aria-label={dark ? "Use light theme" : "Use dark theme"} onClick={() => setTheme(dark ? "light" : "dark")}>{dark ? <Sun size={15} /> : <Moon size={15} />}</Button></div>
+      <div className="sidebar-footer"><nav className="nav-list flex-1" aria-label="Settings"><Button variant="ghost" aria-current={view === "settings" ? "page" : undefined} onClick={() => { setSettingsSection("providers"); show("settings"); }}><SettingsIcon size={16} />Settings</Button></nav><Button size="icon-sm" variant="ghost" aria-label={dark ? "Use light theme" : "Use dark theme"} onClick={() => setTheme(dark ? "light" : "dark")}>{dark ? <Sun size={15} /> : <Moon size={15} />}</Button></div>
       <span className="status-line"><i className={`status-dot${connected ? " connected" : ""}`} />{connected ? "Local workspace" : "Disconnected"}</span>
     </aside>
     <main className="workspace">
@@ -846,7 +847,7 @@ export default function Home() {
           </p>}
           {view === "chat" && pending && <p className="next-turn">Next turn: {[pending.model && modelLabel(pending.model, models), pending.effort && `${pending.effort} reasoning`].filter(Boolean).join(" · ")}</p>}
         </div>
-        {view === "chat" && desktop && (browser.state?.tabs.length ?? 0) > 0 && <Button className="header-action" variant="ghost" size="icon-sm" aria-pressed={split} aria-label={split ? "Exit split view" : "Enter split view"} title={split ? "Exit split view" : "Split view: chat and page side by side"} onClick={() => { setSplit(value => !value); if (!split) { setBrowserView("browser"); if (!browser.state?.visible && browser.state?.activeId) void browser.command("select", { id: browser.state.activeId }); } }}><Columns2 size={16} /></Button>}
+        {view === "chat" && desktop && (browser.state?.tabs.length ?? 0) > 0 && <Button className="header-action" variant="ghost" size="icon-sm" aria-pressed={split} aria-label={split ? "Exit split view" : "Enter split view"} title={split ? "Exit split view" : "Split view: chat and page side by side"} onClick={() => { setSplit(value => !value); if (!split) { setBrowserView("browser"); if (!browser.state?.visible && browser.state?.activeId) void browser.command("select", { id: browser.state.activeId }); } }}><SplitIcon size={16} /></Button>}
         {selected && view === "chat" && <Button className="header-action" variant="ghost" size="sm" onClick={() => { setSettingsSection("elpis"); show("settings"); }}>Context</Button>}
         {selected && view === "chat" && team.length > 0 && !browserOpen && <Button className="header-action" variant="ghost" size="icon-sm" aria-label={agentsPanel ? "Hide agents panel" : "Show agents panel"} aria-pressed={agentsPanel} onClick={() => setAgentsPanel(value => !value)}><PanelRight size={16} /></Button>}
         {selected && view === "chat" && <Button className="header-action" variant="ghost" size="icon-sm" aria-label="Refresh conversation" disabled={loading} onClick={() => loadThread(selected)}><RefreshCw size={16} /></Button>}
@@ -896,7 +897,7 @@ export default function Home() {
             {imageBlocked && <p role="alert" className="m-2 text-sm text-destructive">This model accepts text only. Choose an image-capable model or remove the images.</p>}
             <Textarea ref={composerRef} aria-label="Message Elpis" placeholder={continues ? `Message ${title(selected!)}…` : selected ? "Ask for a follow-up" : "Ask Elpis to build, fix or explain something"} value={text} onChange={e => editDraft(e.target.value)} onPaste={e => { const files = Array.from(e.clipboardData.files); if (files.length) { if (!e.clipboardData.getData("text/plain")) e.preventDefault(); void addFiles(files); } }} disabled={!ready || !connected || projectChanging} onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); send(); } }} />
             {fileNotice && <div className="flex items-center gap-2 px-3 text-sm text-destructive" role="alert"><span>{fileNotice}</span><Button type="button" variant="ghost" size="icon-xs" aria-label="Dismiss file notice" onClick={() => setFileNotice("")}><X size={14} /></Button></div>}
-            <div className="composer-controls"><div className="model-controls"><Button type="button" variant="ghost" size="icon-sm" className="composer-plus" aria-label="Attach files" title="Attach images, PDF, or text files" disabled={!ready || !connected || busy || attaching || projectChanging || attachments.length >= 3} onClick={() => filePickerRef.current?.click()}><Plus className="size-4" /></Button>
+            <div className="composer-controls"><div className="model-controls"><Button type="button" variant="ghost" size="icon-sm" className="composer-plus" aria-label="Attach files" title="Attach images, PDF, or text files" disabled={!ready || !connected || busy || attaching || projectChanging || attachments.length >= 3} onClick={() => filePickerRef.current?.click()}><PlusIcon className="size-4" /></Button>
               <PermissionsMenu mode={permissionMode} disabled={!ready || busy || projectChanging} onChange={next => selected ? setOverride(selected.id, { permissions: next }) : setNewMode(next)} />
             </div><div className="composer-right">
               {selected && contextUsage[selected.id] && <ContextRing used={contextUsage[selected.id].used} window={contextUsage[selected.id].window} />}
@@ -914,11 +915,11 @@ export default function Home() {
                   const result = insertTranscript(textRef.current, selection, transcript); editDraft(result.text);
                   requestAnimationFrame(() => { composerRef.current?.focus(); composerRef.current?.setSelectionRange(result.caret, result.caret); });
                 }} />}
-              {activeTurn && <Button type="button" size="icon" variant="secondary" aria-label="Stop generation" onClick={() => selected && stop(selected)}><Square size={16} /></Button>}<Button type="submit" className="send-button" size={activeTurn && !continues ? "sm" : "icon"} aria-label={activeTurn && !continues ? "Send follow-up" : "Send message"} disabled={(!text.trim() && !attachments.length) || busy || dictating || attaching || imageBlocked || !ready || !connected || (needsModelId && !model.trim())}>{activeTurn && !continues ? "Send follow-up" : <ArrowUp size={18} />}</Button></div></div>
+              {activeTurn && <Button type="button" size="icon" variant="secondary" aria-label="Stop generation" onClick={() => selected && stop(selected)}><Square size={16} /></Button>}<Button type="submit" className="send-button" size={activeTurn && !continues ? "sm" : "icon"} aria-label={activeTurn && !continues ? "Send follow-up" : "Send message"} disabled={(!text.trim() && !attachments.length) || busy || dictating || attaching || imageBlocked || !ready || !connected || (needsModelId && !model.trim())}>{activeTurn && !continues ? "Send follow-up" : <SendIcon size={18} />}</Button></div></div>
           </form>
           <div className="composer-meta">
-            {!selected && <span className="composer-chip" title={cwd || "Use the folder configured in Elpis"}><Folder size={13} />{project?.name || "Default workspace"}</span>}
-            {selected?.cwd && <span className="composer-chip" title={selected.cwd}><Folder size={13} />{folder(selected.cwd)}</span>}
+            {!selected && <span className="composer-chip" title={cwd || "Use the folder configured in Elpis"}><FolderIcon size={13} />{project?.name || "Default workspace"}</span>}
+            {selected?.cwd && <span className="composer-chip" title={selected.cwd}><FolderIcon size={13} />{folder(selected.cwd)}</span>}
             <span className="composer-hint">{continues ? "Elpis takes direct messages for this agent only from its parent; sending continues its history in a new chat with the same model." : selectedLiveError ? `Not following live (${selectedLiveError}); the chat refreshes every few seconds.` : ""}</span>
           </div>
           {!selected && !entries.length && roots.length > 0 && <section className="home-recents" aria-label="Recent chats"><h3>Recent</h3>{roots.slice(0, 4).map(thread => <button key={thread.id} onClick={() => loadThread(thread)}><span>{title(thread)}</span><small>{[providerLabel(thread.model, thread.modelProvider, providerSettings?.providers), modelLabel(thread.model, models)].filter(Boolean).join(" · ")}</small></button>)}</section>}

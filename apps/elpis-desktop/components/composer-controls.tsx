@@ -1,15 +1,16 @@
 "use client";
 
-import { Check, ChevronDown, ShieldAlert, ShieldCheck, ShieldQuestion } from "lucide-react";
+import { Check, ChevronDown } from "lucide-react";
+import { ShieldIcon } from "@/components/elpis-icons";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 
 export type PermissionMode = "ask" | "auto" | "full";
 
 /** ChatGPT's three approval modes; the bridge maps each to Elpis approval and sandbox settings. */
-const MODES: { id: PermissionMode; label: string; description: string; Icon: typeof ShieldCheck }[] = [
-  { id: "ask", label: "Ask for approval", description: "Always ask to edit files outside the workspace and to use the internet", Icon: ShieldQuestion },
-  { id: "auto", label: "Approve for me", description: "Only ask for actions a reviewer judges potentially unsafe", Icon: ShieldCheck },
-  { id: "full", label: "Full access", description: "Unrestricted access to the internet and any file on this computer", Icon: ShieldAlert },
+const MODES: { id: PermissionMode; label: string; description: string; Icon: typeof ShieldIcon }[] = [
+  { id: "ask", label: "Ask for approval", description: "Always ask to edit files outside the workspace and to use the internet", Icon: ShieldIcon },
+  { id: "auto", label: "Approve for me", description: "Only ask for actions a reviewer judges potentially unsafe", Icon: ShieldIcon },
+  { id: "full", label: "Full access", description: "Unrestricted access to the internet and any file on this computer", Icon: ShieldIcon },
 ];
 
 export function PermissionsMenu({ mode, disabled, onChange }: { mode: PermissionMode; disabled?: boolean; onChange: (mode: PermissionMode) => void }) {

@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { ArrowLeft, ArrowRight, ExternalLink, Globe, MessageSquare, Plus, RefreshCw, Square, X } from "lucide-react";
+import { BrowserIcon, ChatIcon, PlusIcon } from "@/components/elpis-icons";
+import { ExternalLink, ArrowLeft, ArrowRight, RefreshCw, Square, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { BrowserState, DesktopBrowser } from "@/lib/desktop";
@@ -34,19 +35,19 @@ export function TaskTabs({ browser, chatTitle, chatActive, chatMenu, onChat, onP
   const tabs = browser.state?.tabs ?? [];
   return <div className="task-tabs" role="tablist" aria-label="Task tabs">
     <div className={`task-tab chat-tab${chatActive ? " active" : ""}`}>
-      <button type="button" role="tab" aria-selected={chatActive} onClick={onChat} title={chatTitle}><MessageSquare size={14} aria-hidden="true" /><span>{chatTitle || "New chat"}</span></button>
+      <button type="button" role="tab" aria-selected={chatActive} onClick={onChat} title={chatTitle}><ChatIcon size={14} aria-hidden="true" /><span>{chatTitle || "New chat"}</span></button>
       {chatMenu}
     </div>
     {tabs.map(tab => {
       const active = !chatActive && browser.state?.visible && tab.id === browser.state.activeId;
       return <div key={tab.id} className={`task-tab${active ? " active" : ""}`}>
         <button type="button" role="tab" aria-selected={!!active} title={tab.url === "about:blank" ? tab.title : `${tab.title}\n${tab.url}`} onClick={() => { onPage(); void browser.command("select", { id: tab.id }); }}>
-          {tab.loading ? <RefreshCw size={13} className="animate-spin" aria-hidden="true" /> : <Globe size={13} aria-hidden="true" />}<span>{tab.title}</span>
+          {tab.loading ? <RefreshCw size={13} className="animate-spin" aria-hidden="true" /> : <BrowserIcon size={13} aria-hidden="true" />}<span>{tab.title}</span>
         </button>
         <Button type="button" variant="ghost" size="icon-xs" aria-label={`Close ${tab.title} tab`} onClick={() => void browser.command("close", { id: tab.id })}><X size={12} /></Button>
       </div>;
     })}
-    <Button type="button" variant="ghost" size="icon-sm" className="task-tab-new" aria-label="New tab" title="New browser tab" onClick={() => { onPage(); void browser.command("new"); }}><Plus size={15} /></Button>
+    <Button type="button" variant="ghost" size="icon-sm" className="task-tab-new" aria-label="New tab" title="New browser tab" onClick={() => { onPage(); void browser.command("new"); }}><PlusIcon size={15} /></Button>
   </div>;
 }
 
