@@ -1,12 +1,15 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ArrowUp, PanelRight, Folder, GitBranch, Globe, Menu, Moon, Paperclip, Plus, RefreshCw, Search, Settings2, Square, SquarePen, Sun, Workflow, X } from "lucide-react";
+import { Archive, ArrowUp, ChevronRight, PanelRight, Pin, Folder, GitBranch, Globe, Menu, Moon, Plus, RefreshCw, Search, Settings2, Square, SquarePen, Sun, Workflow, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { OptionSelect } from "@/components/ui/option-select";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { ChatMessage } from "@/components/chat-message";
+import { Transcript } from "@/components/transcript";
+import { readPins, savePins } from "@/lib/pins";
+import { ContextRing, PermissionsMenu, type PermissionMode } from "@/components/composer-controls";
 import { CopyButton } from "@/components/markdown-text";
 import { liveEventItemKey, mergeHistoryWithLive, mergeLiveItem, runtimeErrorNotice } from "@/lib/live-events";
 import { replacementEligibility } from "@/lib/turn-replacement";
@@ -74,17 +77,12 @@ function ApprovalCard({ approval, answer, answers, onAnswerChange, busy }: { app
 }
 
 type View = "chat" | "agents" | "newAgent" | "workflows" | "settings";
-type NextTurn = { model?: string; effort?: string };
+type NextTurn = { model?: string; effort?: string; permissions?: PermissionMode };
 const without = <T,>(record: Record<string, T>, key: string) => { if (!(key in record)) return record; const next = { ...record }; delete next[key]; return next; };
 const greeting = () => { const hour = new Date().getHours(); return hour < 5 ? "Working late?" : hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening"; };
 // Sidebar sections by last activity, as in ChatGPT and Claude; the list keeps Elpis's own order inside each.
-function recencyGroups(threads: Thread[]) {
-  const day = 86400, midnight = new Date().setHours(0, 0, 0, 0) / 1000;
-  const label = (seconds?: number) => !seconds ? "Earlier" : seconds >= midnight ? "Today" : seconds >= midnight - day ? "Yesterday" : seconds >= midnight - 7 * day ? "Previous 7 days" : seconds >= midnight - 30 * day ? "Previous 30 days" : "Earlier";
-  const groups: { label: string; threads: Thread[] }[] = [];
-  for (const thread of threads) { const name = label(thread.recencyAt ?? thread.updatedAt); const group = groups.find(item => item.label === name); if (group) group.threads.push(thread); else groups.push({ label: name, threads: [thread] }); }
-  return groups;
-}
+/** Whether a chat ran in a project's folder (trailing slashes ignored). */
+const sameFolder = (a: string | undefined, b: string) => !!a && a.replace(/\/+$/, "") === b.replace(/\/+$/, "");
 
 export default function Home() {
   const [threads, setThreads] = useState<Thread[]>([]);
@@ -117,6 +115,13 @@ export default function Home() {
   const project = projects.find(item => item.id === projectId) ?? null;
   // Existing conversations: overrides for their next turn only.
   const [nextTurn, setNextTurn] = useState<Record<string, NextTurn>>({});
+  const [threadModes, setThreadModes] = useState<Record<string, PermissionMode>>({});
+  const [pins, setPins] = useState<string[]>([]);
+  const [deleteRequest, setDeleteRequest] = useState<string | null>(null);
+  const [collapsedProjects, setCollapsedProjects] = useState<Record<string, boolean>>({});
+  useEffect(() => { setPins(readPins()); }, []);
+  const [newMode, setNewMode] = useState<PermissionMode | null>(null);
+  const [contextUsage, setContextUsage] = useState<Record<string, { used: number; window: number }>>({});
   const [text, setTextState] = useState("");
   const textRef = useRef("");
   const composerRef = useRef<HTMLTextAreaElement>(null);
@@ -324,9 +329,9 @@ export default function Home() {
     finally { if (request.current === id) setLoading(false); }
     // Follow it live in this app: subscribe, and learn the turn it is running now.
     try {
-      const live = await api<{ thread: Thread; activeTurnId?: string | null }>(`/threads/${encodeURIComponent(thread.id)}/resume`, {});
+      const live = await api<{ thread: Thread; activeTurnId?: string | null; permissions?: PermissionMode | null }>(`/threads/${encodeURIComponent(thread.id)}/resume`, {});
       if (request.current !== id || live.thread?.id !== thread.id) return;
-      remember(live.thread); select({ ...selectedRef.current, ...live.thread }); upsertThread(live.thread);
+      remember(live.thread); select({ ...selectedRef.current, ...live.thread }); upsertThread(live.thread); if (live.permissions) setThreadModes(prev => ({ ...prev, [thread.id]: live.permissions! })); void refreshContext(thread.id);
       if (live.activeTurnId && !completedTurns.current.has(live.activeTurnId)) setActiveTurns(prev => ({ ...prev, [thread.id]: live.activeTurnId! }));
       setLiveError(prev => without(prev, thread.id));
     } catch (e) { if (request.current === id) setLiveError(prev => ({ ...prev, [thread.id]: e instanceof Error ? e.message : String(e) })); }
@@ -370,9 +375,9 @@ export default function Home() {
         const history = await api<{ thread: Thread; data: Entry[]; nextCursor: string | null }>(`/threads/${encodeURIComponent(thread.id)}?limit=100`);
         if (disposed || attempt !== recovery || request.current !== requestId || selectedRef.current?.id !== thread.id) return;
         select(remember(history.thread)); setEntries(previous => mergeHistoryWithLive(previous, [...history.data].reverse(), liveKeysAfter(historyRevision))); setItemCursor(history.nextCursor);
-        const live = await api<{ thread: Thread; activeTurnId?: string | null }>(`/threads/${encodeURIComponent(thread.id)}/resume`, {});
+        const live = await api<{ thread: Thread; activeTurnId?: string | null; permissions?: PermissionMode | null }>(`/threads/${encodeURIComponent(thread.id)}/resume`, {});
         if (disposed || attempt !== recovery || request.current !== requestId || selectedRef.current?.id !== thread.id) return;
-        remember(live.thread); select({ ...selectedRef.current, ...live.thread }); upsertThread(live.thread);
+        remember(live.thread); select({ ...selectedRef.current, ...live.thread }); upsertThread(live.thread); if (live.permissions) setThreadModes(prev => ({ ...prev, [thread.id]: live.permissions! })); void refreshContext(thread.id);
         setActiveTurns(previous => live.activeTurnId && !completedTurns.current.has(live.activeTurnId) ? { ...previous, [thread.id]: live.activeTurnId } : without(previous, thread.id));
         setLiveError(previous => without(previous, thread.id));
       } catch (error) {
@@ -403,7 +408,7 @@ export default function Home() {
           const threadId: string | undefined = params.threadId ?? params.thread?.id;
           if (method === "turn/started" && !completedTurns.current.has(params.turn.id)) { setActiveTurns(prev => ({ ...prev, [params.threadId]: params.turn.id })); setRuntimeNotices(prev => without(prev, params.threadId)); patchThread(params.threadId, { status: { type: "active" } }); }
           if (method === "turn/completed") {
-            completedTurns.current.add(params.turn.id);
+            completedTurns.current.add(params.turn.id); void refreshContext(params.threadId);
             setActiveTurns(prev => prev[params.threadId] !== params.turn.id ? prev : without(prev, params.threadId));
             refreshThreads().catch(e => setError(String(e)));
             if (params.turn?.error) setRuntimeNotices(prev => ({ ...prev, [params.threadId]: params.turn.error.message || "The turn failed." }));
@@ -510,6 +515,7 @@ export default function Home() {
   useEffect(() => { const element = scroll.current; if (!element) return; if (restoreScroll.current) { const previous = restoreScroll.current; restoreScroll.current = null; element.scrollTop = previous.top + element.scrollHeight - previous.height; } else if (stickToBottom.current) element.scrollTo({ top: element.scrollHeight }); }, [entries, selected?.id]);
 
   const activeTurn = selected ? activeTurns[selected.id] : undefined;
+  const permissionMode: PermissionMode = selected ? nextTurn[selected.id]?.permissions ?? threadModes[selected.id] ?? "ask" : newMode ?? "ask";
   const outsideChatApprovals = approvals.filter(approval => view !== "chat" || approval.params.threadId !== selected?.id);
   const continues = selected?.desktopAccess?.mode === "continue";
   const choices = providerChoices(models, providerSettings);
@@ -563,12 +569,21 @@ export default function Home() {
   }
   const show = (next: View) => { if (next === "workflows") setWorkflowVisited(true); if (next === "settings") { setSettingsVisited(true); setSettingsNavigation(value => value + 1); } if (next === "newAgent") setNewAgentVisited(true); setView(next); setSidebar(false); };
   const manageConnections = () => { setSettingsSection("providers"); show("settings"); };
+  /** The composer's context ring: the chat's latest request against its window, when reported. */
+  async function refreshContext(id: string) {
+    try {
+      const value = await api<{ tokenUsage: { last: { inputTokens?: number } | null; modelContextWindow: number | null } | null }>(`/threads/${encodeURIComponent(id)}/context`);
+      const used = value.tokenUsage?.last?.inputTokens, window = value.tokenUsage?.modelContextWindow;
+      if (typeof used === "number" && typeof window === "number" && window > 0) setContextUsage(prev => ({ ...prev, [id]: { used, window } }));
+    } catch { /* No ring without a reported window. */ }
+  }
   function setOverride(id: string, patch: NextTurn) {
     const thread = selectedRef.current; if (!thread) return;
     setNextTurn(prev => {
       const merged = { ...prev[id], ...patch };
       if (merged.model === (thread.model ?? undefined)) delete merged.model;
       if (merged.effort === (thread.reasoningEffort ?? undefined) || merged.effort === "") delete merged.effort;
+      if (merged.permissions === (threadModes[id] ?? "ask")) delete merged.permissions;
       return Object.keys(merged).length ? { ...prev, [id]: merged } : without(prev, id);
     });
   }
@@ -584,8 +599,8 @@ export default function Home() {
     try {
       let thread = selected;
       if (!thread) {
-        const result = await api<{ thread: Thread }>("/threads", { ...(model.trim() ? { model: model.trim() } : {}), ...(newChoice?.provider ? { provider: newChoice.provider } : {}), ...(cwd.trim() ? { cwd: cwd.trim() } : {}) });
-        thread = result.thread; errorThreadId = thread.id;
+        const result = await api<{ thread: Thread }>("/threads", { ...(newMode ? { permissions: newMode } : {}), ...(model.trim() ? { model: model.trim() } : {}), ...(newChoice?.provider ? { provider: newChoice.provider } : {}), ...(cwd.trim() ? { cwd: cwd.trim() } : {}) });
+        thread = result.thread; errorThreadId = thread.id; if (newMode) setThreadModes(prev => ({ ...prev, [result.thread.id]: newMode }));
         saveDraft(thread.id, originalRequest === request.current ? textRef.current : sentText);
         saveAttachments(thread.id, originalRequest === request.current ? attachmentsRef.current : sentAttachments);
         if (originalRequest === request.current) { saveDraft(originalId, ""); saveAttachments(originalId, []); select(thread); }
@@ -595,7 +610,7 @@ export default function Home() {
       if (activeTurn && !continues) {
         await api(`/threads/${encodeURIComponent(thread.id)}/steer`, { text: sentText, expectedTurnId: activeTurn, ...attached });
       } else {
-        const result = await api<{ turn?: { id: string }; thread?: Thread; continuedFrom?: string; sendError?: string }>(`/threads/${encodeURIComponent(thread.id)}/turns`, { text: sentText, ...attached, ...(used?.model ? { model: used.model } : {}), ...(used?.effort ? { effort: used.effort } : {}), ...(continues ? { continueAs: `${title(thread)} (continued)` } : {}) });
+        const result = await api<{ turn?: { id: string }; thread?: Thread; continuedFrom?: string; sendError?: string }>(`/threads/${encodeURIComponent(thread.id)}/turns`, { text: sentText, ...attached, ...(used?.model ? { model: used.model } : {}), ...(used?.effort ? { effort: used.effort } : {}), ...(used?.permissions ? { permissions: used.permissions } : {}), ...(continues ? { continueAs: `${title(thread)} (continued)` } : {}) });
         if (result.thread && result.sendError) {
           const forkDraft = savedDraft(result.thread.id);
           const hasNewerForkDraft = !!forkDraft.trim() && forkDraft !== sentText || savedAttachments(result.thread.id).length > 0;
@@ -612,6 +627,7 @@ export default function Home() {
         if (!completedTurns.current.has(result.turn.id)) setActiveTurns(prev => ({ ...prev, [result.thread?.id || thread!.id]: result.turn!.id }));
         if (selected && used) {
           setNextTurn(prev => without(prev, selected.id));
+          if (used.permissions) setThreadModes(prev => ({ ...prev, [thread!.id]: used.permissions! }));
           const effective = { ...settingsOf.current[thread.id], ...(used.model ? { model: used.model } : {}), ...(used.effort ? { reasoningEffort: used.effort } : {}) };
           settingsOf.current[thread.id] = effective; patchThread(thread.id, effective);
         }
@@ -689,7 +705,7 @@ export default function Home() {
   }
   async function resumeWorkflowTarget() {
     const thread = selectedRef.current; if (!thread || isAgent(thread)) throw new Error("Select a root conversation.");
-    const result = await api<{ thread: Thread; activeTurnId?: string | null }>(`/threads/${encodeURIComponent(thread.id)}/resume`, {});
+    const result = await api<{ thread: Thread; activeTurnId?: string | null; permissions?: PermissionMode | null }>(`/threads/${encodeURIComponent(thread.id)}/resume`, {});
     upsertThread(result.thread); if (selectedRef.current?.id === thread.id) select(result.thread);
     if (result.activeTurnId && !completedTurns.current.has(result.activeTurnId)) setActiveTurns(previous => ({ ...previous, [thread.id]: result.activeTurnId! }));
   }
@@ -707,17 +723,28 @@ export default function Home() {
   const filtered = searchedThreads.filter(t => inProject(t) && (matchedOnServer.has(t.id) || `${title(t)} ${t.agentNickname || ""} ${t.model || ""} ${t.id}`.toLowerCase().includes(searchTerm.toLowerCase())));
   const roots = filtered.filter(t => !isUnlinkedAgent(t, searchedThreads) && (!t.parentThreadId || !filtered.some(p => p.id === t.parentThreadId)));
   const unlinked = filtered.filter(t => isUnlinkedAgent(t, searchedThreads));
+  function togglePin(thread: Thread) {
+    const next = pins.includes(thread.id) ? pins.filter(id => id !== thread.id) : [thread.id, ...pins];
+    setPins(next); savePins(next);
+  }
+  /** Claude's shortcut: D on a focused chat row asks to delete it. */
+  function rowKeys(thread: Thread) {
+    return (event: React.KeyboardEvent) => {
+      if ((event.key === "d" || event.key === "D") && !event.ctrlKey && !event.metaKey && !event.altKey && !(event.target instanceof HTMLInputElement) && !(event.target instanceof HTMLTextAreaElement)) { event.preventDefault(); setDeleteRequest(thread.id); }
+    };
+  }
   function threadRow(thread: Thread, depth = 0) {
-    const name = title(thread), state = agentState(thread, waitingIds);
+    const name = title(thread), state = agentState(thread, waitingIds), pinned = pins.includes(thread.id);
     const stateTitle = state === "waiting" ? "Needs input" : "Working";
-    return <div key={thread.id} className={`thread-row${depth ? " child" : ""}${selected?.id === thread.id && view === "chat" ? " active" : ""}`} data-thread-id={thread.id} style={depth ? { paddingLeft: `${Math.min(depth, 5) * 14}px` } : undefined}>
+    return <div key={thread.id} className={`thread-row${depth ? " child" : ""}${selected?.id === thread.id && view === "chat" ? " active" : ""}`} data-thread-id={thread.id} style={depth ? { paddingLeft: `${Math.min(depth, 5) * 14}px` } : undefined} onKeyDown={rowKeys(thread)}>
       <button className="thread-link" onClick={() => loadThread(thread)} title={name}>
         <span className="thread-title">{name}</span>
         {thread.forkedFromId && <span className="thread-nickname">Continued agent chat</span>}
       </button>
       {(state === "working" || state === "waiting") && <span className={`thread-working${state === "waiting" ? " waiting" : ""}`} title={stateTitle} aria-label={stateTitle} />}
       {!depth && !isAgent(thread) && <Button variant="ghost" size="icon-xs" aria-label={`Show agents of ${name}`} aria-expanded={!!expanded[thread.id]} onClick={() => expanded[thread.id] ? setExpanded(prev => ({ ...prev, [thread.id]: false })) : loadChildren(thread.id)}><GitBranch size={13} /></Button>}
-      <ThreadActions thread={thread} onDelete={deleteThread} onRename={renameThread} onArchive={archiveThread} />
+      {!depth && <span className="row-hover-actions"><Button variant="ghost" size="icon-xs" aria-label={pinned ? `Unpin ${name}` : `Pin ${name}`} title={pinned ? "Unpin" : "Pin"} onClick={() => togglePin(thread)}><Pin size={13} className={pinned ? "fill-current" : undefined} /></Button><Button variant="ghost" size="icon-xs" aria-label={`Archive ${name}`} title="Archive" onClick={() => void archiveThread(thread)}><Archive size={13} /></Button></span>}
+      <ThreadActions thread={thread} onDelete={deleteThread} onRename={renameThread} onArchive={archiveThread} pinned={pinned} onPin={togglePin} deleteRequested={deleteRequest === thread.id} onDeleteRequestHandled={() => setDeleteRequest(null)} />
     </div>;
   }
   function descendants(parentId: string, depth: number, seen = new Set<string>()): React.ReactNode {
@@ -738,8 +765,16 @@ export default function Home() {
       <label className="sidebar-search"><Search size={14} aria-hidden="true" /><Input ref={searchInput} aria-label="Search conversations" placeholder="Search conversations" maxLength={200} value={search} onChange={e => setSearch(e.target.value)} /><kbd aria-hidden="true">Ctrl K</kbd></label>
       <ProjectPicker projects={projects} selected={project} disabled={!ready || busy} onSelect={selectProject} onSave={saveProject} />
       <div className="thread-list">
-        {recencyGroups(roots).map(group => <section key={group.label} aria-label={group.label}><div className="section-label">{group.label}</div>
-          {group.threads.map(t => <div key={t.id}>{threadRow(t)}{expanded[t.id] && descendants(t.id, 1)}{expanded[t.id] && childCursors[t.id] && <Button variant="ghost" size="xs" onClick={() => loadChildren(t.id, childCursors[t.id]!)}>More agents</Button>}</div>)}
+        {!searchTerm && projects.length > 0 && <section aria-label="Projects"><div className="section-label">Projects</div>
+          {projects.map(item => { const open = !collapsedProjects[item.id], chats = threads.filter(t => !t.parentThreadId && sameFolder(t.cwd, item.cwd)).slice(0, 5);
+            return <div key={item.id} className="project-group">
+              <div className={`project-row${project?.id === item.id ? " active" : ""}`}><button className="project-toggle" aria-expanded={open} title={item.cwd} onClick={() => setCollapsedProjects(prev => ({ ...prev, [item.id]: open }))}><ChevronRight size={13} className="project-chevron" /><Folder size={14} /><span>{item.name}</span></button>
+                <Button variant="ghost" size="icon-xs" aria-label={`Start new chat in ${item.name}`} title="New chat in this project" disabled={!ready || busy} onClick={() => void selectProject(item)}><SquarePen size={13} /></Button></div>
+              {open && <div className="project-chats">{chats.map(t => threadRow(t))}{!chats.length && <p className="project-empty">No chats yet</p>}</div>}
+            </div>; })}
+        </section>}
+        {[{ label: "Pinned", list: roots.filter(t => pins.includes(t.id)) }, { label: searchTerm ? "Results" : "Recents", list: roots.filter(t => !pins.includes(t.id)) }].filter(group => group.list.length).map(group => <section key={group.label} aria-label={group.label}><div className="section-label">{group.label}</div>
+          {group.list.map(t => <div key={t.id}>{threadRow(t)}{expanded[t.id] && descendants(t.id, 1)}{expanded[t.id] && childCursors[t.id] && <Button variant="ghost" size="xs" onClick={() => loadChildren(t.id, childCursors[t.id]!)}>More agents</Button>}</div>)}
         </section>)}
         {unlinked.length > 0 && <div className="unlinked-thread-list" aria-label="Agents whose parent is not listed"><div className="section-label mt-4" title="Their parent conversation is not in the current list.">Other agents</div>{unlinked.map(thread => threadRow(thread))}</div>}
         {ready && !threads.length && <p className="px-2 text-xs text-muted-foreground">Your conversations will appear here.</p>}
@@ -769,7 +804,7 @@ export default function Home() {
           {view === "chat" && pending && <p className="next-turn">Next turn: {[pending.model && modelLabel(pending.model, models), pending.effort && `${pending.effort} reasoning`].filter(Boolean).join(" · ")}</p>}
         </div>
         {activeTurn && view === "chat" && <span className="header-action text-xs text-muted-foreground">Working…</span>}
-        {desktop && <Button className="header-action" variant="ghost" size="sm" aria-label={browserOpen ? "Hide browser" : "Open browser"} aria-pressed={browserOpen} onClick={() => { void window.elpisDesktop?.browser.command("toggle").catch(error => setError(error.message)); }}><Globe size={15}/>Browser</Button>}
+        {desktop && view !== "settings" && <Button className="header-action" variant="ghost" size="sm" aria-label={browserOpen ? "Hide browser" : "Open browser"} aria-pressed={browserOpen} onClick={() => { void window.elpisDesktop?.browser.command("toggle").catch(error => setError(error.message)); }}><Globe size={15}/>Browser</Button>}
         {selected && view === "chat" && <Button className="header-action" variant="ghost" size="sm" onClick={() => { setSettingsSection("elpis"); show("settings"); }}>Context</Button>}
         {selected && view === "chat" && team.length > 0 && !browserOpen && <Button className="header-action" variant="ghost" size="icon-sm" aria-label={agentsPanel ? "Hide agents panel" : "Show agents panel"} aria-pressed={agentsPanel} onClick={() => setAgentsPanel(value => !value)}><PanelRight size={16} /></Button>}
         {selected && view === "chat" && <Button className="header-action" variant="ghost" size="icon-sm" aria-label="Refresh conversation" disabled={loading} onClick={() => loadThread(selected)}><RefreshCw size={16} /></Button>}
@@ -788,7 +823,7 @@ export default function Home() {
           return <div key={approvalDraftKey(approval)} className="pending-request"><div className="pending-request-heading"><p>{name}</p>{approval.params.threadId && <Button variant="ghost" size="sm" onClick={() => { setPendingInputOpen(false); openById(approval.params.threadId!); }}>Open chat</Button>}</div><ApprovalCard approval={approval} answer={(id, body) => answer(id, body, approvalDraftKey(approval))} busy={!!pendingDrafts[approvalDraftKey(approval)]} answers={approvalDrafts[approvalDraftKey(approval)]?.answers ?? {}} onAnswerChange={(id, value) => draftAnswer(approval, id, value)} /></div>;
         })}</div>
       </section>}
-      <div className={`workspace-body${browserOpen ? " browser-open" : ""}`}><div className="workspace-content">
+      <div className={`workspace-body${browserOpen && view !== "settings" ? " browser-open" : ""}${view === "settings" ? " no-browser" : ""}`}><div className="workspace-content">
       {workflowVisited && <div className="page-scroll workflow-page" hidden={view !== "workflows"}><WorkflowEditor runtime={{ visible: view === "workflows", connected, target: selected, targetIsChild: !!selected && isAgent(selected), activeTurnId: activeTurn, models, providerSettings, onConfigure: manageConnections, defaultCwd: selected?.cwd || cwd, defaultModel: selected?.model || model, defaultProvider: selected?.modelProvider || newChoice?.provider || "", onCreateTarget: createWorkflowTarget, onResumeTarget: resumeWorkflowTarget, onStarted: workflowStarted, onStop: async ack => { await api(`/threads/${encodeURIComponent(ack.threadId)}/interrupt`, { turnId: ack.turnId }); }, onOpenThread: openById }} /></div>}
       {settingsVisited && <div className="page-scroll" hidden={view !== "settings"}><SettingsView initialTab={settingsSection} navigationKey={settingsNavigation} active={view === "settings"} threadId={selected?.id} accountRefresh={accountRefresh} theme={theme} onTheme={setTheme} onUnarchived={unarchived} onDeleteThread={deleteThread} onProvidersChanged={async () => { const settings = await api<ProviderSettings>("/settings"); setProviderSettings(settings); void refreshModels(); }} /></div>}
       {view === "agents" && <div className="page-scroll"><AgentsView threads={threads} activity={activity} models={models} providers={providerSettings?.providers} loading={agentsLoading} pendingThreadIds={approvals.map(approval => approval.params.threadId ?? approval.ownerThreadId)} moreConversations={!!nextCursor} loadingMore={moreLoading} onMoreConversations={loadMoreConversations} childCursors={childCursors} loadingChildren={loadingChildren} onMoreAgents={id => void loadChildren(id, childCursors[id] ?? undefined, false)} onOpen={loadThread} onStop={stop} onDelete={deleteThread} onNewAgent={() => show("newAgent")} /></div>}
@@ -798,11 +833,11 @@ export default function Home() {
           {itemCursor && <Button variant="outline" disabled={loading} onClick={older}>Load earlier messages</Button>}
           {loading && <p role="status" className="text-muted-foreground">Loading conversation…</p>}
           {!loading && !entries.length && <div className="empty-state">{selected ? <><h2>This conversation has no messages yet.</h2><p>Messages and tool activity appear here.</p></> : <><img className="empty-mark" src={brandMark} alt="" aria-hidden="true" /><h2>{greeting()}</h2><p>What should Elpis work on?</p></>}</div>}
-          {entries.map(e => { const editKey = JSON.stringify([selected?.id, e.turnId, e.item.id]); return <ChatMessage key={editKey} item={e.item} mediaBase={selected ? `/api/threads/${encodeURIComponent(selected.id)}/turns/${encodeURIComponent(e.turnId)}/items/${encodeURIComponent(e.item.id)}/media` : undefined} threads={threads} speaker={selected?.agentNickname || "Elpis"} onOpenThread={openById}
+          <Transcript entries={entries} activeTurnId={activeTurn ?? null} renderItem={e => { const editKey = JSON.stringify([selected?.id, e.turnId, e.item.id]); return <ChatMessage key={editKey} item={e.item} mediaBase={selected ? `/api/threads/${encodeURIComponent(selected.id)}/turns/${encodeURIComponent(e.turnId)}/items/${encodeURIComponent(e.item.id)}/media` : undefined} threads={threads} speaker={selected?.agentNickname || "Elpis"} onOpenThread={openById}
             editDraft={messageEdits[editKey]} editPending={!!pendingDrafts[editKey]} onEditDraftChange={value => setMessageEdits(previous => value === null ? without(previous, editKey) : { ...previous, [editKey]: value })}
             onEdit={replaceable && e.item.type === "userMessage" && replacementOptions.get(e.turnId)?.allowed ? text => replaceFrom(e.turnId, text, editKey) : undefined}
             editBlockedReason={replaceable && e.item.type === "userMessage" && replacementOptions.get(e.turnId)?.allowed === false ? (replacementOptions.get(e.turnId) as { allowed: false; reason: string }).reason : undefined}
-            onRegenerate={regenerate && e.item.id === regenerate.replyId ? () => { replaceFrom(regenerate.turnId, regenerate.prompt).catch(error => setError(String(error instanceof Error ? error.message : error))); } : undefined} />; })}
+            onRegenerate={regenerate && e.item.id === regenerate.replyId ? () => { replaceFrom(regenerate.turnId, regenerate.prompt).catch(error => setError(String(error instanceof Error ? error.message : error))); } : undefined} />; }} />
           {approvals.filter(a => a.params.threadId === selected?.id).map(a => <ApprovalCard key={approvalDraftKey(a)} approval={a} answer={(id, body) => answer(id, body, approvalDraftKey(a))} busy={!!pendingDrafts[approvalDraftKey(a)]} answers={approvalDrafts[approvalDraftKey(a)]?.answers ?? {}} onAnswerChange={(id, value) => draftAnswer(a, id, value)} />)}
         </div></div>
         <div className="composer-wrap">
@@ -817,7 +852,10 @@ export default function Home() {
             {imageBlocked && <p role="alert" className="m-2 text-sm text-destructive">This model accepts text only. Choose an image-capable model or remove the images.</p>}
             <Textarea ref={composerRef} aria-label="Message Elpis" placeholder={continues ? `Message ${title(selected!)}…` : selected ? "Ask for a follow-up" : "Ask Elpis to build, fix or explain something"} value={text} onChange={e => editDraft(e.target.value)} onPaste={e => { const files = Array.from(e.clipboardData.files); if (files.length) { if (!e.clipboardData.getData("text/plain")) e.preventDefault(); void addFiles(files); } }} disabled={!ready || !connected || projectChanging} onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); send(); } }} />
             {fileNotice && <div className="flex items-center gap-2 px-3 text-sm text-destructive" role="alert"><span>{fileNotice}</span><Button type="button" variant="ghost" size="icon-xs" aria-label="Dismiss file notice" onClick={() => setFileNotice("")}><X size={14} /></Button></div>}
-            <div className="composer-controls"><div className="model-controls"><Button type="button" variant="ghost" size="icon-sm" aria-label="Attach files" title="Attach images, PDF, or text files" disabled={!ready || !connected || busy || attaching || projectChanging || attachments.length >= 3} onClick={() => filePickerRef.current?.click()}><Paperclip className="size-4" /></Button>
+            <div className="composer-controls"><div className="model-controls"><Button type="button" variant="ghost" size="icon-sm" className="composer-plus" aria-label="Attach files" title="Attach images, PDF, or text files" disabled={!ready || !connected || busy || attaching || projectChanging || attachments.length >= 3} onClick={() => filePickerRef.current?.click()}><Plus className="size-4" /></Button>
+              <PermissionsMenu mode={permissionMode} disabled={!ready || busy || projectChanging} onChange={next => selected ? setOverride(selected.id, { permissions: next }) : setNewMode(next)} />
+            </div><div className="composer-right">
+              {selected && contextUsage[selected.id] && <ContextRing used={contextUsage[selected.id].used} window={contextUsage[selected.id].window} />}
               <ModelPicker choices={!selected ? choices : selectedChoice?.provider ? [selectedChoice] : choices.filter(choice => !choice.provider)} models={models}
                 model={selected ? turnModel : model} choiceId={selected ? selectedChoice?.id || "" : choiceId} defaultModel={selected ? null : providerSettings?.main.model}
                 disabled={!ready || busy || projectChanging} onConfigure={manageConnections} onChange={choice => { if (selected) setOverride(selected.id, { model: choice.model }); else { setChoiceId(choice.choiceId); setModel(choice.model); setEffort(""); } }} />
@@ -826,19 +864,18 @@ export default function Home() {
                 {turnEffort && !turnEfforts.includes(turnEffort) && <option value={turnEffort}>{turnEffort}</option>}
                 {turnEfforts.map(value => <option key={value} value={value}>{value}</option>)}
               </OptionSelect>}
-            </div><div className="flex items-center gap-2">{activeTurn && <Button type="button" size="icon" variant="secondary" aria-label="Stop generation" onClick={() => selected && stop(selected)}><Square size={16} /></Button>}<Button type="submit" className="send-button" size={activeTurn && !continues ? "sm" : "icon"} aria-label={activeTurn && !continues ? "Send follow-up" : "Send message"} disabled={(!text.trim() && !attachments.length) || busy || dictating || attaching || imageBlocked || !ready || !connected || (needsModelId && !model.trim())}>{activeTurn && !continues ? "Send follow-up" : <ArrowUp size={18} />}</Button></div></div>
-            {ready && <Dictation key={selected?.id || newDraftKey.current} disabled={!ready || !connected || busy || projectChanging} onBusy={setDictating}
-              selection={() => ({ text: textRef.current, start: composerRef.current?.selectionStart ?? textRef.current.length, end: composerRef.current?.selectionEnd ?? textRef.current.length })}
-              onTranscript={(selection, transcript) => {
-                const result = insertTranscript(textRef.current, selection, transcript); editDraft(result.text);
-                requestAnimationFrame(() => { composerRef.current?.focus(); composerRef.current?.setSelectionRange(result.caret, result.caret); });
-              }} />}
+              {ready && <Dictation key={selected?.id || newDraftKey.current} disabled={!ready || !connected || busy || projectChanging} onBusy={setDictating}
+                selection={() => ({ text: textRef.current, start: composerRef.current?.selectionStart ?? textRef.current.length, end: composerRef.current?.selectionEnd ?? textRef.current.length })}
+                onTranscript={(selection, transcript) => {
+                  const result = insertTranscript(textRef.current, selection, transcript); editDraft(result.text);
+                  requestAnimationFrame(() => { composerRef.current?.focus(); composerRef.current?.setSelectionRange(result.caret, result.caret); });
+                }} />}
+              {activeTurn && <Button type="button" size="icon" variant="secondary" aria-label="Stop generation" onClick={() => selected && stop(selected)}><Square size={16} /></Button>}<Button type="submit" className="send-button" size={activeTurn && !continues ? "sm" : "icon"} aria-label={activeTurn && !continues ? "Send follow-up" : "Send message"} disabled={(!text.trim() && !attachments.length) || busy || dictating || attaching || imageBlocked || !ready || !connected || (needsModelId && !model.trim())}>{activeTurn && !continues ? "Send follow-up" : <ArrowUp size={18} />}</Button></div></div>
           </form>
           <div className="composer-meta">
             {!selected && <span className="composer-chip" title={cwd || "Use the folder configured in Elpis"}><Folder size={13} />{project?.name || "Default workspace"}</span>}
             {selected?.cwd && <span className="composer-chip" title={selected.cwd}><Folder size={13} />{folder(selected.cwd)}</span>}
-            {selected && <span className="composer-chip" title={providerLabel(selected.model, selected.modelProvider, providerSettings?.providers)}>{providerLabel(selected.model, selected.modelProvider, providerSettings?.providers)}</span>}
-            <span className="composer-hint">{continues ? "Elpis takes direct messages for this agent only from its parent; sending continues its history in a new chat with the same model." : selectedLiveError ? `Not following live (${selectedLiveError}); the chat refreshes every few seconds.` : "Enter to send · Shift+Enter for a new line"}</span>
+            <span className="composer-hint">{continues ? "Elpis takes direct messages for this agent only from its parent; sending continues its history in a new chat with the same model." : selectedLiveError ? `Not following live (${selectedLiveError}); the chat refreshes every few seconds.` : ""}</span>
           </div>
           {!selected && !entries.length && roots.length > 0 && <section className="home-recents" aria-label="Recent chats"><h3>Recent</h3>{roots.slice(0, 4).map(thread => <button key={thread.id} onClick={() => loadThread(thread)}><span>{title(thread)}</span><small>{[providerLabel(thread.model, thread.modelProvider, providerSettings?.providers), modelLabel(thread.model, models)].filter(Boolean).join(" · ")}</small></button>)}</section>}
         </div>
@@ -854,7 +891,7 @@ export default function Home() {
           </button>; })}
       </aside>}
       </div>}
-      </div><BrowserPanel onVisibleChange={setBrowserOpen} covered={pendingInputOpen || sidebar}/></div>
+      </div><BrowserPanel onVisibleChange={setBrowserOpen} covered={pendingInputOpen || sidebar || view === "settings"}/></div>
     </main>
   </div>;
 }

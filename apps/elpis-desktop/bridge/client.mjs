@@ -69,6 +69,25 @@ const ACCOUNT_NOTIFICATIONS = new Set(['account/updated', 'account/login/complet
 // Native refusals the person can act on (a fork still referencing a chat, a busy agent) are shown as Elpis wrote them.
 const READ_RPCS = new Set(['initialize','thread/list','thread/read','thread/items/list','thread/turns/list','model/list','account/read','account/rateLimits/read','config/read','configRequirements/read','pruner/read','workGraph/list']);
 const readRpc = (method, params) => READ_RPCS.has(method) || (method === 'thread/resume' && Object.keys(params || {}).every(key => ['threadId','excludeTurns','initialTurnsPage'].includes(key)));
+/** The ChatGPT app's three permission modes as Elpis approval and sandbox settings. */
+const PERMISSIONS = {
+  ask: { approvalPolicy: 'on-request', approvalsReviewer: 'user', sandbox: 'workspace-write', sandboxPolicy: { type: 'workspaceWrite' } },
+  auto: { approvalPolicy: 'on-request', approvalsReviewer: 'auto_review', sandbox: 'workspace-write', sandboxPolicy: { type: 'workspaceWrite' } },
+  full: { approvalPolicy: 'never', approvalsReviewer: 'user', sandbox: 'danger-full-access', sandboxPolicy: { type: 'dangerFullAccess' } },
+};
+function permissionMode(value) {
+  if (value === undefined) return;
+  if (typeof value !== 'string' || !Object.hasOwn(PERMISSIONS, value)) throw new BridgeError('Choose a permission mode: ask, auto or full');
+  return value;
+}
+const threadPermissions = mode => mode ? { approvalPolicy: PERMISSIONS[mode].approvalPolicy, approvalsReviewer: PERMISSIONS[mode].approvalsReviewer, sandbox: PERMISSIONS[mode].sandbox } : {};
+const turnPermissions = mode => mode ? { approvalPolicy: PERMISSIONS[mode].approvalPolicy, approvalsReviewer: PERMISSIONS[mode].approvalsReviewer, sandboxPolicy: PERMISSIONS[mode].sandboxPolicy } : {};
+/** The mode a resumed chat runs in, read back from its approval and sandbox settings. */
+function modeOf(result) {
+  if (!result?.approvalPolicy) return null;
+  if (result.sandbox?.type === 'dangerFullAccess' && result.approvalPolicy === 'never') return 'full';
+  return result.approvalsReviewer === 'auto_review' || result.approvalsReviewer === 'guardian_subagent' ? 'auto' : 'ask';
+}
 const EXPLAINED = new Set(['account/read', 'account/rateLimits/read', 'thread/delete', 'thread/fork', 'thread/start', 'thread/resume', 'thread/name/set', 'thread/archive', 'thread/unarchive', 'thread/revert', 'turn/start', 'turn/interrupt', 'config/batchWrite', 'account/login/start', 'account/logout']);
 const DECISIONS = ['accept', 'acceptForSession', 'decline', 'cancel'];
 const EFFORT = /^[a-z]{2,16}$/;
@@ -601,7 +620,8 @@ export class DesktopClient extends EventEmitter {
     });
   }
   async createThread(body) {
-    object(body, ['cwd', 'model', 'provider', 'name', 'instructions']);
+    object(body, ['cwd', 'model', 'provider', 'name', 'instructions', 'permissions']);
+    const permissions = permissionMode(body.permissions);
     const name = body.name === undefined ? undefined : text(body.name, 'agent name', 120).trim();
     const instructions = body.instructions === undefined ? undefined : text(body.instructions, 'agent instructions', 32000);
     if (body.cwd !== undefined && !path.isAbsolute(text(body.cwd, 'working directory', 4096))) throw new BridgeError('Working directory must be absolute');
@@ -616,7 +636,7 @@ export class DesktopClient extends EventEmitter {
     if (differentProvider) text(body.model, 'model for this provider', 200);
     const model = await this.#providerModel(body.model, body.provider);
     const result = await this.#rpc('thread/start', { ...(body.cwd ? { cwd: body.cwd } : {}), ...(model ? { model } : {}),
-      ...(body.provider ? { modelProvider: body.provider } : {}), ...(instructions ? { developerInstructions: instructions } : {}) });
+      ...(body.provider ? { modelProvider: body.provider } : {}), ...(instructions ? { developerInstructions: instructions } : {}), ...threadPermissions(permissions) });
     threadId(result.thread?.id);
     this.#owned.add(result.thread.id);
     if (name) { await this.#rpc('thread/name/set', { threadId: result.thread.id, name }); result.thread.name = name; }
@@ -716,7 +736,7 @@ export class DesktopClient extends EventEmitter {
     const result = await this.#attach(id);
     if (result) {
       const active = (result.initialTurnsPage?.data ?? result.thread.turns ?? []).find(turn => turn.status === 'inProgress');
-      return { thread: this.#decorate({ ...result.thread, model: result.model ?? result.thread.model, reasoningEffort: result.reasoningEffort ?? result.thread.reasoningEffort }), activeTurnId: active?.id ?? null };
+      return { thread: this.#decorate({ ...result.thread, model: result.model ?? result.thread.model, reasoningEffort: result.reasoningEffort ?? result.thread.reasoningEffort }), activeTurnId: active?.id ?? null, permissions: modeOf(result) };
     }
     const [{ thread }, turns] = await Promise.all([this.#rpc('thread/read', { threadId: id, includeTurns: false }),
       this.#rpc('thread/turns/list', { threadId: id, limit: 1, sortDirection: 'desc', itemsView: 'notLoaded' }).catch(() => ({ data: [] }))]);
@@ -735,13 +755,13 @@ export class DesktopClient extends EventEmitter {
     return value;
   }
   async send(id, body) {
-    object(body, ['text', 'model', 'effort', 'continueAs', 'attachments']);
+    object(body, ['text', 'model', 'effort', 'continueAs', 'attachments', 'permissions']);
     const input = attachmentInput(typeof body.text === 'string' && body.text.trim() ? ragMessage(text(body.text, 'message')) : body.text, body.attachments);
-    const effort = this.#effort(body.effort);
+    const effort = this.#effort(body.effort), permissions = permissionMode(body.permissions);
     return this.#mutate(id, async () => {
       const thread = await this.#current(id);
       const model = await this.#providerModel(body.model, thread.modelProvider);
-      const overrides = { ...(model ? { model } : {}), ...(effort ? { effort } : {}) };
+      const overrides = { ...(model ? { model } : {}), ...(effort ? { effort } : {}), ...turnPermissions(permissions) };
       if (thread.desktopAccess.mode === 'continue') {
         // The agent's own thread refuses direct turns; a fork carries its whole history and recorded model.
         const name = text(body.continueAs, 'continued conversation name', 200).trim();

@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { Archive, MoreHorizontal, Pencil, Trash2 } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Archive, MoreHorizontal, Pencil, Pin, PinOff, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { AlertDialog, AlertDialogClose, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogTitle } from "@/components/ui/alert-dialog";
@@ -15,16 +15,26 @@ type Props = {
   onRename?: (thread: Thread, name: string) => Promise<void>;
   /** Reports its own failures; the menu closes immediately. */
   onArchive?: (thread: Thread) => Promise<void>;
+  pinned?: boolean;
+  onPin?: (thread: Thread) => void;
+  /** Set when the row asked to delete (Claude's D shortcut); the confirmation opens once. */
+  deleteRequested?: boolean;
+  onDeleteRequestHandled?: () => void;
 };
 
 /** Row menu: Rename, Archive and Delete, each through Elpis. Failures are shown as Elpis reported them. */
-export function ThreadActions({ thread, onDelete, onRename, onArchive }: Props) {
+export function ThreadActions({ thread, onDelete, onRename, onArchive, pinned, onPin, deleteRequested, onDeleteRequestHandled }: Props) {
   const [action, setAction] = useState<Action>(null);
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const current = title(thread);
   const open = (next: Action) => { setError(""); setName(thread.name?.trim() || current); setAction(next); };
+  useEffect(() => {
+    if (!deleteRequested) return;
+    open("delete");
+    onDeleteRequestHandled?.();
+  }, [deleteRequested]); // eslint-disable-line react-hooks/exhaustive-deps
   async function run(work: () => Promise<void>) {
     setBusy(true); setError("");
     try { await work(); setAction(null); }
@@ -38,8 +48,9 @@ export function ThreadActions({ thread, onDelete, onRename, onArchive }: Props) 
       </DropdownMenuTrigger>
       <DropdownMenuContent>
         {onRename && <DropdownMenuItem onClick={() => open("rename")}><Pencil size={14} />Rename</DropdownMenuItem>}
+        {onPin && <DropdownMenuItem onClick={() => onPin(thread)}>{pinned ? <PinOff size={14} /> : <Pin size={14} />}{pinned ? "Unpin" : "Pin"}</DropdownMenuItem>}
         {onArchive && <DropdownMenuItem onClick={() => void onArchive(thread)}><Archive size={14} />Archive</DropdownMenuItem>}
-        <DropdownMenuItem variant="destructive" onClick={() => open("delete")}><Trash2 size={14} />Delete</DropdownMenuItem>
+        <DropdownMenuItem variant="destructive" onClick={() => open("delete")}><Trash2 size={14} />Delete<kbd aria-hidden="true" className="ml-auto text-xs opacity-70">D</kbd></DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
     <AlertDialog open={action === "rename"} onOpenChange={value => { if (!busy && !value) setAction(null); }}>

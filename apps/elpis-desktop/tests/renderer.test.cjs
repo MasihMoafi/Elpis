@@ -55,7 +55,7 @@ test('actual exported renderer: chat, steering, interrupt, existing writable his
     assert.deepEqual(calls.find(c=>c.path.endsWith('/steer')).data,{text:'Also check the pruning overhead.',expectedTurnId:'turn-1'});
     await page.getByRole('button',{name:'Stop generation'}).click();await page.getByRole('button',{name:'Send message',exact:true}).waitFor();
     await page.getByLabel('Message Elpis').fill('Keep my draft');
-    await page.getByRole('button',{name:'Investigate pruning quality',exact:true}).click();
+    await page.getByRole('button',{name:'Investigate pruning quality',exact:true}).first().click();
     await page.getByText('The cache prefix remains unchanged.',{exact:true}).waitFor();
     // An existing chat opens writable: its own empty draft, followed live through a plain native rejoin.
     assert.equal(await controlValue(page.getByLabel('Message Elpis')),'');
@@ -64,7 +64,7 @@ test('actual exported renderer: chat, steering, interrupt, existing writable his
     assert.equal(await page.getByRole('button',{name:'Continue here',exact:true}).count(),0);assert.deepEqual(calls.find(c=>c.path==='/api/threads/existing/resume').data,{});
     await page.getByLabel('Search conversations').fill('Inspect cache');assert.equal(await page.getByRole('button',{name:'Investigate pruning quality',exact:true}).count(),0);
     await page.getByLabel('Search conversations').fill('');
-    await page.locator('.thread-link[title="New chat"]').click();await page.getByRole('heading',{name:'New chat',exact:true}).waitFor();await page.getByLabel('Message Elpis').waitFor();assert.equal(await controlValue(page.getByLabel('Message Elpis')),'Keep my draft');
+    await page.locator('.thread-link[title="New chat"]').first().click();await page.getByRole('heading',{name:'New chat',exact:true}).waitFor();await page.getByLabel('Message Elpis').waitFor();assert.equal(await controlValue(page.getByLabel('Message Elpis')),'Keep my draft');
     const output=process.env.ELPIS_APP_SCREENSHOTS||'/tmp';
     await page.waitForFunction(()=>document.querySelector('.brand img')?.naturalWidth>0);
     assert.match(await page.locator('.brand img').getAttribute('src'), /amber-loop\.svg$/);

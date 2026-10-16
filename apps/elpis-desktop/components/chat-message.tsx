@@ -90,7 +90,8 @@ export function ChatMessage({item,speaker="Elpis",threads=[],onOpenThread,onEdit
   }
   if(item.type==="collabAgentToolCall"){
     const ids=list(item.receiverThreadIds).filter((id):id is string=>typeof id==="string");
-    return <Activity label={readable(text(item.tool))||"Agent activity"} icon={<GitBranch size={15}/>} status={item.status}>{text(item.prompt)&&<p className="activity-prompt">{text(item.prompt)}</p>}{text(item.model)&&<p className="activity-location">{text(item.model)}</p>}<div className="activity-agents">{ids.filter(Boolean).map(id=><Button key={id} variant="outline" size="sm" onClick={()=>onOpenThread?.(id)} disabled={!onOpenThread}>{threads.some(t=>t.id===id)?title(threads.find(t=>t.id===id)!):"Open agent conversation"}</Button>)}</div></Activity>;
+    const agentTool=({spawn_agent:"Started an agent",spawnAgent:"Started an agent",wait:"Waited for agents",wait_agent:"Waited for agents",close_agent:"Closed an agent",closeAgent:"Closed an agent",send_input:"Messaged an agent",sendInput:"Messaged an agent",resume_agent:"Resumed an agent",interrupt_agent:"Interrupted an agent"} as Record<string,string>)[text(item.tool)];
+    return <Activity label={agentTool||readable(text(item.tool))||"Agent activity"} icon={<GitBranch size={15}/>} status={item.status}>{text(item.prompt)&&<p className="activity-prompt">{text(item.prompt)}</p>}{text(item.model)&&<p className="activity-location">{text(item.model)}</p>}<div className="activity-agents">{ids.filter(Boolean).map(id=><Button key={id} variant="outline" size="sm" onClick={()=>onOpenThread?.(id)} disabled={!onOpenThread}>{threads.some(t=>t.id===id)?title(threads.find(t=>t.id===id)!):"Open agent conversation"}</Button>)}</div></Activity>;
   }
   if(item.type==="reasoning"){
     const reasoning=[...list(item.summary),...list(item.content)].filter((v):v is string=>typeof v==="string"&&Boolean(v.trim())).join("\n\n");
