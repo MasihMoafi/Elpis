@@ -103,10 +103,30 @@ test('missing referenced keys and unsupported authentication stop before any req
   await assert.rejects(providerModels({ ...local, env_key: 'MISSING_KEY', experimental_bearer_token: 'do-not-fallback' }, { env: {}, fetchImpl }), /MISSING_KEY/);
   await assert.rejects(providerModels({ ...local, env_http_headers: { 'X-Organization': 'MISSING_ORG' } }, { env: {}, fetchImpl }), /MISSING_ORG/);
   for (const extra of [{ auth: { command: ['never-run-this'] } }, { aws: {} }, { gateway_oauth: {} }, { requires_openai_auth: true },
-    { wire_api: 'bedrock_converse' }, { query_params: { 'api-version': 'required' } },
-    { http_headers: { 'x-elpis-gateway-token': 'internal-secret' } }]) {
+    { wire_api: 'bedrock_converse' }, { query_params: { 'api-version': 'required' } }]) {
     await assert.rejects(providerModels({ ...local, ...extra }, { env: {}, fetchImpl }), /not available|not supported|unsupported/i);
   }
+  assert.equal(calls, 0);
+});
+
+// How config/read reports a provider the engine serves through its own loopback gateway (here, the Anthropic credits).
+const gateway = { base_url: 'http://127.0.0.1:44103/v1', wire_api: 'responses', env_key: 'ANTHROPIC_CREDITS_KEY',
+  http_headers: { 'x-elpis-gateway-token': 'internal-secret', 'x-elpis-provider': 'anthropic-credits', 'x-elpis-wire': 'anthropic_messages' } };
+
+test('a gateway-routed connection lists the models its loopback gateway serves, with the gateway resolving the key', async () => {
+  const result = await providerModels(gateway, { env: {}, fetchImpl: async (url, options) => {
+    assert.equal(url, 'http://127.0.0.1:44103/v1/models');
+    assert.equal(options.headers.get('x-elpis-gateway-token'), 'internal-secret');
+    assert.equal(options.headers.get('x-api-key'), null); assert.equal(options.headers.get('authorization'), null);
+    return json({ models: [{ slug: 'claude-opus-5-5', display_name: 'Claude Opus 5.5', context_window: 1000000 }, { slug: 'claude-sonnet-5-5', display_name: 'Claude Sonnet 5.5' }] });
+  } });
+  assert.deepEqual(result.data.map(row => [row.model, row.displayName, row.description]),
+    [['claude-opus-5-5', 'Claude Opus 5.5', '≈1000k context'], ['claude-sonnet-5-5', 'Claude Sonnet 5.5', undefined]]);
+});
+
+test('a gateway token is sent only to a loopback gateway', async () => {
+  let calls = 0;
+  await assert.rejects(providerModels({ ...gateway, base_url: 'https://gateway.example.com/v1' }, { env: {}, fetchImpl: async () => { calls++; return listed(); } }), /loopback/);
   assert.equal(calls, 0);
 });
 

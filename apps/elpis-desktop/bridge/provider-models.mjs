@@ -36,7 +36,6 @@ function endpoint(definition) {
     const headers = definition[field];
     if (headers != null && !record(headers)) throw unavailable('This connection has invalid HTTP header configuration.');
   }
-  if (gatewayRouted(definition)) throw unavailable('Model browsing is not available through an internal provider gateway.');
   const input = typeof definition.base_url === 'string' ? definition.base_url.trim() : '';
   if (!/^https?:\/\/[^/\\\s]/i.test(input) || /[\x00-\x20\x7f\\?#]/.test(input)) {
     throw unavailable('This connection needs a valid API base URL without credentials, query parameters or fragments.');
@@ -46,10 +45,15 @@ function endpoint(definition) {
   catch { throw unavailable('This connection has an invalid API base URL.'); }
   const authority = input.slice(input.indexOf('://') + 3).split('/')[0];
   if (url.username || url.password || authority.includes('@')) throw unavailable('API base URLs cannot contain credentials.');
-  if (url.protocol !== 'https:' && !(url.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname))) {
+  const loopback = ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname);
+  // The engine's own gateway lists the vendor's models with the key it resolves (elpis-gateway: GET /v1/models);
+  // its internal token must never leave this computer.
+  if (gatewayRouted(definition) && !loopback) throw unavailable('An internal gateway route must use a loopback address.');
+  if (url.protocol !== 'https:' && !(url.protocol === 'http:' && loopback)) {
     throw unavailable('This connection requires HTTPS; HTTP is allowed only for a loopback address.');
   }
   url.pathname = `${url.pathname.replace(/\/+$/, '')}/models`;
+  if (gatewayRouted(definition)) return url.href;
   for (const [name, value] of Object.entries(LISTINGS[wire])) url.searchParams.set(name, value);
   return url.href;
 }
@@ -140,8 +144,15 @@ function geminiRows(catalogue) {
     .map(row => ({ id: row.name.replace(/^models\//, ''), name: row.displayName, context_length: row.inputTokenLimit }));
 }
 
+/** The gateway answers in the engine's own catalogue shape: `{models: [{slug, display_name, context_window}]}`. */
+function gatewayRows(catalogue) {
+  if (!record(catalogue) || !Array.isArray(catalogue.models)) throw unavailable('The Elpis gateway did not return a model list.');
+  return catalogue.models.filter(record).map(row => ({ id: row.slug, display_name: row.display_name, context_window: row.context_window }));
+}
+
 function choices(catalogue, wire = 'responses') {
   if (wire === 'gemini_generate_content') catalogue = { data: geminiRows(catalogue) };
+  if (wire === 'gateway') catalogue = { data: gatewayRows(catalogue) };
   if (!record(catalogue) || !Array.isArray(catalogue.data)) throw unavailable('This connection did not return an OpenAI-compatible model list.');
   if (catalogue.data.length > MAX_ROWS) throw unavailable('This connection returned too many models (maximum 2000).');
   const seen = new Set();
@@ -176,7 +187,9 @@ async function codingFirst(models, url, headers, fetchImpl, signal) {
 /** List one server-owned configured OpenAI-compatible connection; never changes configuration or resolves external auth. */
 export async function providerModels(definition, { env = process.env, fetchImpl = fetch, signal, savedKey = null } = {}) {
   const url = endpoint(definition);
-  const headers = requestHeaders(definition, env, savedKey);
+  const gateway = gatewayRouted(definition);
+  // Through the gateway only its own headers go along; it adds the vendor key itself.
+  const headers = gateway ? requestHeaders({ ...definition, env_key: null, experimental_bearer_token: null }, env, null) : requestHeaders(definition, env, savedKey);
   if (signal?.aborted) throw unavailable('Model loading was cancelled.');
   const timeout = new AbortController();
   const requestSignal = signal ? AbortSignal.any([signal, timeout.signal]) : timeout.signal;
@@ -194,7 +207,7 @@ export async function providerModels(definition, { env = process.env, fetchImpl 
       if (response.status === 429) throw unavailable('This connection is rate limiting model requests. Try again later.');
       throw unavailable(`This connection could not list models (HTTP ${Number.isInteger(response.status) ? response.status : 'error'}).`);
     }
-    const listed = choices(await readCatalogue(response, requestSignal), wireOf(definition));
+    const listed = choices(await readCatalogue(response, requestSignal), gateway ? 'gateway' : wireOf(definition));
     return new URL(url).hostname === 'openrouter.ai' ? { ...listed, data: await codingFirst(listed.data, url, headers, fetchImpl, requestSignal) } : listed;
   } catch (error) {
     if (signal?.aborted) throw unavailable('Model loading was cancelled.');

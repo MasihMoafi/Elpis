@@ -1038,6 +1038,10 @@ test('internal gateway routes are neither local servers nor editable custom prov
   assert.doesNotMatch(JSON.stringify(settings), /GATEWAY SECRET/);
   await assert.rejects(client.saveProvider({ version: 'user-version', id: 'anthropic-credits', name: 'Changed', baseUrl: 'https://api.anthropic.com/v1', credential: { action: 'preserve' } }), error => error.status === 403);
   assert.equal(socket.sent.filter(row => row.method === 'config/batchWrite').length, 0, 'an internal route is never rewritten');
+  // Its models come from the gateway's own list, so a chat can start on one of them.
+  await client.createThread({ provider: 'anthropic-credits', model: 'claude-sonnet-5-5' });
+  const start = socket.sent.findLast(row => row.method === 'thread/start').params;
+  assert.deepEqual([start.model, start.modelProvider], ['claude-sonnet-5-5', 'anthropic-credits']);
   client.close();
 });
 

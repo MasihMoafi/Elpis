@@ -728,7 +728,8 @@ export class DesktopClient extends EventEmitter {
   async #providerModel(model, provider) {
     if (model !== undefined && provider) {
       const current = await this.providerSettings();
-      if (current.providers.some(entry => entry.id === provider && entry.editable)) {
+      // A custom connection, or the engine's gateway route (e.g. the Anthropic credits), whose models it lists itself.
+      if (current.providers.some(entry => entry.id === provider && (entry.editable || entry.gateway))) {
         if (typeof model !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,199}$/.test(model)) throw new BridgeError('Give a model ID supported by this API provider');
         if (/^(claude|agy|antigravity)\//i.test(model)) throw new BridgeError('Subscription model routes cannot be used with an API provider');
         return model;
