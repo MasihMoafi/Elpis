@@ -49,6 +49,10 @@ test('bridged models are labelled by their prefix; providers keep separate sign-
   try {
     const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } }); page.setDefaultTimeout(8000);
     await page.goto(`http://127.0.0.1:${server.address().port}`);
+    // As the ChatGPT app's "Usage 73% left": each account's tightest limit shows in the sidebar without opening anything.
+    const usage = page.getByRole('button', { name: 'Usage and limits', exact: true });
+    await usage.filter({ hasText: 'Anthropic' }).waitFor();
+    assert.equal((await usage.innerText()).replace(/\s+/g, ' ').trim(), 'ChatGPT 88% left Anthropic 60% left', 'an account that reports no share (Antigravity here) is left out');
     await page.getByLabel('Model', { exact: true }).click();
     await page.getByLabel('Search models', { exact: true }).waitFor();
     const providerOptions = await page.getByRole('tab').allInnerTexts();

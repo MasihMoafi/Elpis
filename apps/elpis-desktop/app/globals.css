@@ -280,14 +280,14 @@ section:hover > .section-label-row > button, .section-label-row > button:focus-v
 .markdown :not(pre) > code { unicode-bidi:isolate; }
 .usage-reset { font-size:12px; color:var(--muted-foreground); margin:2px 0 0; }
 .usage-value.high { color:var(--warning, #b45309); } .usage-value.critical { color:var(--destructive); }
-.usage-panel { margin:0; font-size:13px; }
-.usage-panel summary { cursor:pointer; height:30px; display:flex; align-items:center; gap:8px; padding:0 8px; border-radius:7px; font-size:13px; font-weight:450; list-style:none; }
-.usage-panel summary::-webkit-details-marker { display:none; }
-.usage-panel summary::before { content:""; width:6px; height:6px; border-right:1.5px solid var(--muted-foreground); border-bottom:1.5px solid var(--muted-foreground); transform:rotate(-45deg); margin:0 5px 0 4px; transition:transform .15s; }
-.usage-panel[open] summary::before { transform:rotate(45deg); }
-.usage-panel summary:hover { background:var(--hover); }
-.usage-panel-body { display:grid; gap:10px; padding:2px 8px 8px; max-height:40vh; overflow:auto; }
-.usage-panel h4 { font-size:13px; font-weight:600; margin:0 0 4px; }
+.usage-summary { display:grid; gap:6px; width:100%; margin:0; padding:8px; border:0; border-radius:6px; background:none; color:var(--foreground); text-align:left; cursor:pointer; }
+.usage-summary:hover { background:var(--hover); }
+.usage-row { display:grid; grid-template-columns:1fr auto; gap:3px 8px; font-size:12px; }
+.usage-row .usage-left { color:var(--muted-foreground); font-variant-numeric:tabular-nums; }
+.usage-row i { grid-column:1/-1; height:3px; border-radius:2px; background:linear-gradient(to right, var(--primary) var(--used), color-mix(in oklch, var(--foreground) 12%, transparent) var(--used)); }
+.usage-row.high i { background:linear-gradient(to right, var(--warning) var(--used), color-mix(in oklch, var(--foreground) 12%, transparent) var(--used)); }
+.usage-row.critical i { background:linear-gradient(to right, var(--destructive) var(--used), color-mix(in oklch, var(--foreground) 12%, transparent) var(--used)); }
+.usage-row-note { font-size:12px; color:var(--muted-foreground); }
 
 /* Workspace hierarchy and requests stay separate from the scrolling task list. */
 .workspace-header > .min-w-0 { order:1; }

@@ -1,8 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import { RefreshCw } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
 
 // Usage as Elpis reports it from account/rateLimits/read, one provider at a time (Cloudroom's usage card).
@@ -54,32 +52,49 @@ export function UsageWindows({ status }: { status: UsageStatus }) {
   })}</ul>;
 }
 
-type Providers = { openai: OpenAIAccount; claude: Subscription; gemini: Subscription };
+export type Providers = { openai: OpenAIAccount; claude: Subscription; gemini: Subscription };
 
-/** Sidebar disclosure with each subscription's limits; loads when opened and when an account changes. */
-export function UsagePanel({ refreshKey }: { refreshKey: number }) {
-  const [open, setOpen] = useState(false);
+/** Every account's reported usage, reloaded when an account changes and every five minutes. A subscription's
+ * bridge reads its usage in the background, so it can be missing at first: then it asks twice more. */
+export function useProviderUsage(refreshKey: number) {
   const [data, setData] = useState<Providers | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const retries = useRef(0);
   const load = useCallback(async () => {
     setLoading(true);
     try { setData(await api<Providers>("/providers")); setError(""); }
     catch (e) { setError(e instanceof Error ? e.message : String(e)); }
     finally { setLoading(false); }
   }, []);
-  useEffect(() => { if (open) void load(); }, [open, refreshKey, load]);
-  return <details className="usage-panel" open={open} onToggle={event => setOpen(event.currentTarget.open)}>
-    <summary>Provider usage</summary>
-    <div className="usage-panel-body">
-      <div className="flex items-center justify-end"><Button variant="ghost" size="icon-xs" aria-label="Reload provider usage" disabled={loading} onClick={() => void load()}><RefreshCw size={13} /></Button></div>
-      {error && <p className="provider-note" role="alert">Usage unavailable: {error}</p>}
-      {!data && !error && <p className="provider-note" role="status">Loading usage…</p>}
-      {data && <>
-        <section aria-label="OpenAI / ChatGPT usage"><h4>OpenAI / ChatGPT</h4><UsageWindows status={openAIUsage(data.openai)} /></section>
-        <section aria-label="Claude usage"><h4>Claude</h4><UsageWindows status={subscriptionUsage(data.claude, "Claude", "Sign in with Claude Code")} /></section>
-        <section aria-label="Antigravity usage"><h4>Antigravity</h4><UsageWindows status={subscriptionUsage(data.gemini, "Antigravity", "Sign in to Antigravity")} /></section>
-      </>}
-    </div>
-  </details>;
+  useEffect(() => { retries.current = 0; void load(); const timer = setInterval(() => void load(), 5 * 60_000); return () => clearInterval(timer); }, [refreshKey, load]);
+  useEffect(() => {
+    if (!data || retries.current >= 2 || ![data.claude, data.gemini].some(item => item?.state === "connected" && !item.usage?.length)) return;
+    const timer = setTimeout(() => { retries.current++; void load(); }, 6000);
+    return () => clearTimeout(timer);
+  }, [data, load]);
+  return { data, error, loading, load };
+}
+
+/** The reported window closest to its limit: the one that will stop work first. */
+export function tightest(limits: UsageLimit[]) {
+  const windows = limits.flatMap(limit => [limit.primary, limit.secondary]).filter((window): window is UsageWindow => typeof window?.usedPercent === "number");
+  return windows.sort((a, b) => b.usedPercent! - a.usedPercent!)[0] ?? null;
+}
+
+/** The sidebar's usage, as the ChatGPT app's "Usage 73% left": each account's share left on its tightest limit,
+ * loaded at start and every five minutes; selecting it opens Usage & limits. */
+export function UsagePanel({ refreshKey, onOpen }: { refreshKey: number; onOpen: () => void }) {
+  const { data, error } = useProviderUsage(refreshKey);
+  const rows = data ? ([["ChatGPT", data.openai?.auth?.state === "signedIn" ? data.openai.usage : []], ["Anthropic", data.claude?.usage], ["Antigravity", data.gemini?.usage]] as const)
+    .map(([name, limits]) => ({ name, window: tightest([...(limits ?? [])]) })).filter(row => row.window) : [];
+  return <button type="button" className="usage-summary" aria-label="Usage and limits" title="Usage and limits" onClick={onOpen}>
+    {rows.map(({ name, window }) => { const used = Math.max(0, Math.min(100, window!.usedPercent!));
+      return <span key={name} className={`usage-row${used >= 95 ? " critical" : used >= 80 ? " high" : ""}`} title={[`${windowLabel(window!.windowDurationMins)} limit`, countdown(window!.resetsAt)].filter(Boolean).join(" · ")}>
+        <span>{name}</span><span className="usage-left">{Math.round(100 - used)}% left</span><i style={{ "--used": `${used}%` } as React.CSSProperties} />
+      </span>; })}
+    {!data && !error && <span className="usage-row-note">Loading usage…</span>}
+    {error && <span className="usage-row-note">Usage unavailable</span>}
+    {data && !rows.length && <span className="usage-row-note">Usage not reported</span>}
+  </button>;
 }

@@ -858,7 +858,7 @@ export default function Home() {
         {searchTerm && searchResults.query === searchTerm && !searchResults.loading && !searchResults.error && !filtered.length && <p className="px-2 py-3 text-xs text-muted-foreground">No matching conversations.</p>}
         {searchTerm ? searchResults.nextCursor && <Button variant="ghost" className="w-full" disabled={searchResults.loading} onClick={() => void loadMoreSearch()}>More search results</Button> : nextCursor && <Button variant="ghost" className="w-full" disabled={moreLoading} onClick={() => void loadMoreConversations()}>Load more</Button>}
       </div>
-      <UsagePanel refreshKey={accountRefresh} />
+      <UsagePanel refreshKey={accountRefresh} onOpen={() => { setSettingsSection("usage"); show("settings"); }} />
       <div className="sidebar-footer"><nav className="nav-list flex-1" aria-label="Settings"><Button variant="ghost" aria-current={view === "settings" ? "page" : undefined} onClick={() => { setSettingsSection("general"); show("settings"); }}><SettingsIcon size={16} />Settings</Button></nav><Button size="icon-sm" variant="ghost" aria-label={dark ? "Use light theme" : "Use dark theme"} onClick={() => setTheme(dark ? "light" : "dark")}>{dark ? <Sun size={15} /> : <Moon size={15} />}</Button></div>
       <span className="status-line"><i className={`status-dot${connected ? " connected" : ""}`} />{connected ? "Local workspace" : "Disconnected"}</span>
     </aside>
