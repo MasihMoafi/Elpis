@@ -59,13 +59,51 @@ test('stored keys work without an environment reference and IPv6 loopback remain
   } });
 });
 
+test('a key saved in the Elpis home stands before the variable, and models without tools are left out', async () => {
+  let auth;
+  const fetchImpl = async (url, options) => { auth = options.headers.get('authorization'); return new Response(JSON.stringify({ data: [
+    { id: 'deepseek/deepseek-v4.1-flash', name: 'DeepSeek V4.1 Flash', context_length: 163840, supported_parameters: ['tools', 'reasoning'] },
+    { id: 'some/chat-only', name: 'Chat only', supported_parameters: ['temperature'] }] }), { status: 200 }); };
+  const result = await providerModels({ base_url: 'https://openrouter.ai/api/v1', wire_api: 'chat', env_key: 'OPENROUTER_API_KEY' }, { env: {}, savedKey: 'saved-key', fetchImpl });
+  assert.equal(auth, 'Bearer saved-key');
+  assert.deepEqual(result.data, [{ id: 'deepseek/deepseek-v4.1-flash', model: 'deepseek/deepseek-v4.1-flash', displayName: 'DeepSeek V4.1 Flash', description: 'Top for coding #1 · ≈164k context' }]);
+});
+
+test('Anthropic and Gemini list their models with their own key headers and shapes', async () => {
+  const seen = [];
+  const fetchImpl = async (url, options) => {
+    seen.push([url, options.headers.get('x-api-key'), options.headers.get('anthropic-version'), options.headers.get('x-goog-api-key'), options.headers.get('authorization')]);
+    const body = url.includes('anthropic') ? { data: [{ id: 'claude-opus-5-5', display_name: 'Claude Opus 5.5', max_input_tokens: 1000000 }] }
+      : { models: [{ name: 'models/gemini-4-pro', displayName: 'Gemini 4 Pro', inputTokenLimit: 2000000, supportedGenerationMethods: ['generateContent'] }, { name: 'models/text-embedding', displayName: 'Embedding', supportedGenerationMethods: ['embedContent'] }] };
+    return new Response(JSON.stringify(body), { status: 200 });
+  };
+  const anthropic = await providerModels({ base_url: 'https://api.anthropic.com/v1', env_key: 'ANTHROPIC_API_KEY', wire_api: 'anthropic_messages' }, { env: {}, savedKey: 'a-key', fetchImpl });
+  const gemini = await providerModels({ base_url: 'https://generativelanguage.googleapis.com/v1beta', env_key: 'GEMINI_API_KEY', wire_api: 'gemini_generate_content' }, { env: {}, savedKey: 'g-key', fetchImpl });
+  assert.deepEqual(seen, [
+    ['https://api.anthropic.com/v1/models?limit=1000', 'a-key', '2023-06-01', null, null],
+    ['https://generativelanguage.googleapis.com/v1beta/models?pageSize=1000', null, null, 'g-key', null]]);
+  assert.deepEqual(anthropic.data, [{ id: 'claude-opus-5-5', model: 'claude-opus-5-5', displayName: 'Claude Opus 5.5', description: '≈1000k context' }]);
+  assert.deepEqual(gemini.data, [{ id: 'gemini-4-pro', model: 'gemini-4-pro', displayName: 'Gemini 4 Pro', description: '≈2000k context' }]);
+});
+
+test('OpenRouter lists its top programming models first, marked, then the rest newest first', async () => {
+  const urls = [];
+  const fetchImpl = async url => { urls.push(url); const ranked = url.includes('category=programming');
+    return new Response(JSON.stringify({ data: ranked ? [{ id: 'deepseek/deepseek-v4.1-flash', supported_parameters: ['tools'] }, { id: 'z-ai/glm-5.3', supported_parameters: ['tools'] }]
+      : [{ id: 'new/obscure', name: 'Obscure', supported_parameters: ['tools'] }, { id: 'z-ai/glm-5.3', name: 'GLM 5.3', context_length: 1048576, supported_parameters: ['tools'] }, { id: 'deepseek/deepseek-v4.1-flash', name: 'DeepSeek V4.1 Flash', context_length: 1048576, supported_parameters: ['tools'] }] }), { status: 200 }); };
+  const result = await providerModels({ base_url: 'https://openrouter.ai/api/v1', wire_api: 'chat', env_key: 'OPENROUTER_API_KEY' }, { env: { OPENROUTER_API_KEY: 'k' }, fetchImpl });
+  assert.deepEqual(urls, ['https://openrouter.ai/api/v1/models', 'https://openrouter.ai/api/v1/models?category=programming']);
+  assert.deepEqual(result.data.map(row => [row.id, row.description ?? '']), [
+    ['deepseek/deepseek-v4.1-flash', 'Top for coding #1 · ≈1049k context'], ['z-ai/glm-5.3', 'Top for coding #2 · ≈1049k context'], ['new/obscure', '']]);
+});
+
 test('missing referenced keys and unsupported authentication stop before any request', async () => {
   let calls = 0;
   const fetchImpl = async () => { calls++; return listed(); };
   await assert.rejects(providerModels({ ...local, env_key: 'MISSING_KEY', experimental_bearer_token: 'do-not-fallback' }, { env: {}, fetchImpl }), /MISSING_KEY/);
   await assert.rejects(providerModels({ ...local, env_http_headers: { 'X-Organization': 'MISSING_ORG' } }, { env: {}, fetchImpl }), /MISSING_ORG/);
   for (const extra of [{ auth: { command: ['never-run-this'] } }, { aws: {} }, { gateway_oauth: {} }, { requires_openai_auth: true },
-    { wire_api: 'anthropic_messages' }, { wire_api: 'gemini_generate_content' }, { query_params: { 'api-version': 'required' } },
+    { wire_api: 'bedrock_converse' }, { query_params: { 'api-version': 'required' } },
     { http_headers: { 'x-elpis-gateway-token': 'internal-secret' } }]) {
     await assert.rejects(providerModels({ ...local, ...extra }, { env: {}, fetchImpl }), /not available|not supported|unsupported/i);
   }

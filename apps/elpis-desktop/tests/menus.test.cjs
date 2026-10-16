@@ -46,7 +46,7 @@ test('model picker searches actual models, supports keyboard selection and retur
   await page.getByRole('combobox', { name: 'Model', exact: true }).click();
   await page.getByLabel('Search models', { exact: true }).waitFor();
   assert.equal(await page.getByLabel('Search models', { exact: true }).count(), 1, 'model menu needs real search');
-  await page.getByRole('tab',{name:'Claude subscription',exact:true}).click();
+  await page.getByRole('tab',{name:'Anthropic',exact:true}).click();
   await page.getByRole('option').filter({hasText:'Opus'}).waitFor();
   assert.equal(await page.getByRole('option').count(),1);
   await page.getByRole('tab',{name:'All',exact:true}).click();

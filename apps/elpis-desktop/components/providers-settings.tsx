@@ -102,7 +102,7 @@ export function ProvidersSettings({ refreshKey, onChanged }: { refreshKey: numbe
           {waiting && <span role="status" className="self-center text-sm text-muted-foreground">Complete sign-in in the page that opened.</span>}
         </div>
       </Card>
-      <Card id="claude" name="Claude subscription" state={sub(data.claude)}>
+      <Card id="claude" name="Anthropic" state={sub(data.claude)}>
         <p className="provider-note">{data.claude.models.length ? `${plural(data.claude.models.length, "Claude model")} available through your Claude Code connection.` : "Sign in to Claude Code on this computer to connect your subscription."}</p>
       </Card>
       <Card id="gemini" name="Antigravity" state={sub(data.gemini)}>

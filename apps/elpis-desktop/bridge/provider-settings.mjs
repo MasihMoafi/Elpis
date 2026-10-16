@@ -3,6 +3,18 @@ import path from 'node:path';
 import { BridgeError, object, text } from './client.mjs';
 const reserved = new Set(['openai', 'claude', 'agy', 'antigravity']);
 
+/** The engine's built-in key providers, served through its gateway (codex-rs/model-provider-info/src/elpis_gateway.rs,
+ * BUILT_IN_GATEWAY_PROVIDERS). They are not in config.toml, so the desktop needs their address and key variable here. */
+export const BUILT_IN_KEY_PROVIDERS = {
+  anthropic: { name: 'Anthropic Claude', base_url: 'https://api.anthropic.com/v1', env_key: 'ANTHROPIC_API_KEY', wire_api: 'anthropic_messages' },
+  'google-gemini': { name: 'Google Gemini', base_url: 'https://generativelanguage.googleapis.com/v1beta', env_key: 'GEMINI_API_KEY', wire_api: 'gemini_generate_content' },
+  openrouter: { name: 'OpenRouter', base_url: 'https://openrouter.ai/api/v1', env_key: 'OPENROUTER_API_KEY', wire_api: 'chat', http_headers: { 'X-OpenRouter-Title': 'Elpis' } },
+};
+/** A provider's definition: the user's config first, then the engine's built-in one. */
+export const providerDefinition = (read, id) => read?.config?.model_providers?.[id] ?? BUILT_IN_KEY_PROVIDERS[id] ?? null;
+/** Whether a key can be pasted for this provider: it reads one from a variable, and no command or subscription signs it in. */
+export const acceptsPastedKey = (id, definition) => !reserved.has(id) && typeof definition?.env_key === 'string' && !definition.requires_openai_auth && !definition.auth && !definition.aws && !definition.gateway_oauth;
+
 export function privateConfigFile(configPath) {
   try {
     if (!configPath || !path.isAbsolute(configPath)) throw new Error();
@@ -12,7 +24,10 @@ export function privateConfigFile(configPath) {
   } catch { throw new BridgeError('Credential settings require a writable config file owned by the current user, without a symbolic link.', 403); }
 }
 
-export function providerSettingsSnapshot(read, requirementsRead, env = process.env) {
+/** The Elpis home: the folder of the user's config.toml. */
+export const configHome = read => { const file = read?.layers?.find(layer => layer.name?.type === 'user' && !layer.name.profile)?.name?.file; return typeof file === 'string' && path.isAbsolute(file) ? path.dirname(file) : null; };
+
+export function providerSettingsSnapshot(read, requirementsRead, env = process.env, saved = new Set()) {
   const user = read?.layers?.find(layer => layer.name?.type === 'user' && !layer.name.profile);
   const managed = requirementsRead?.requirements;
   const available = typeof user?.version === 'string' && requirementsRead !== null && !managed?.modelProvider;
@@ -32,7 +47,10 @@ export function providerSettingsSnapshot(read, requirementsRead, env = process.e
       let baseUrl = null; try { const url = new URL(def.base_url); baseUrl = `${url.origin}${url.pathname}`.replace(/\/$/, ''); } catch {}
       return { id, name: typeof def.name === 'string' ? def.name : id, baseUrl,
         wireApi: typeof def.wire_api === 'string' ? def.wire_api : 'responses', editable: available && !subscription && !command && !managed?.modelProviders?.[id],
-        auth: { source: subscription ? 'subscription' : command ? 'command' : envKey ? 'environment' : def.experimental_bearer_token ? 'stored' : 'none', keySet: envKey ? Boolean(env[envKey]) : Boolean(def.experimental_bearer_token), envKey },
+        auth: { source: subscription ? 'subscription' : command ? 'command' : envKey && saved.has(id) ? 'saved' : envKey ? 'environment' : def.experimental_bearer_token ? 'stored' : 'none',
+          keySet: envKey ? saved.has(id) || Boolean(env[envKey]) : Boolean(def.experimental_bearer_token), envKey,
+          // A key can be pasted for a provider that reads one from a variable, as the terminal's /provider does.
+          acceptsKey: available && !subscription && !command && Boolean(envKey) },
       };
     }),
   };

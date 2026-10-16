@@ -6,24 +6,45 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { OptionSelect } from "@/components/ui/option-select";
 import { Combobox, ComboboxContent, ComboboxEmpty, ComboboxInput, ComboboxItem, ComboboxList, ComboboxTrigger } from "@/components/ui/combobox";
-import { api, modelLabel, subscriptionOf, type ProviderChoice, type Model } from "@/lib/api";
+import { api, modelLabel, modelName, subscriptionOf, type ProviderChoice, type Model } from "@/lib/api";
 type Choice = { key: string; model: string; choiceId: string; label: string; providerLabel: string; description?: string };
+/** Where each built-in API provider issues keys, as the terminal's /provider names them. */
+const KEY_PAGES: Record<string, string> = { openrouter: "openrouter.ai/keys", anthropic: "console.anthropic.com/settings/keys", "google-gemini": "aistudio.google.com/apikey" };
+
+/** The terminal's "paste the key" step, in the picker: saved where Elpis keeps provider keys, never shown again. */
+function ProviderKeyForm({ provider, label, onSaved }: { provider: string; label: string; onSaved: () => void }) {
+  const [key, setKey] = useState(""), [busy, setBusy] = useState(false), [error, setError] = useState("");
+  async function save(event: React.FormEvent) {
+    event.preventDefault(); event.stopPropagation(); setBusy(true); setError("");
+    try { await api("/providers/key", { provider, key }); setKey(""); onSaved(); }
+    catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
+    finally { setBusy(false); }
+  }
+  return <form className="provider-key-form" aria-label={`${label} API key`} onSubmit={save} onKeyDown={event => event.stopPropagation()}>
+    <p><strong>{label} needs an API key.</strong> {KEY_PAGES[provider] && <>Get one at {KEY_PAGES[provider]}. </>}It is saved on this computer, readable by you alone, and never shown again.</p>
+    <div className="provider-key-row"><Input type="password" aria-label={`${label} API key`} placeholder="Paste the key" value={key} maxLength={8192} autoComplete="off" spellCheck={false} onChange={event => setKey(event.target.value)} />
+      <Button type="submit" size="sm" disabled={busy || !key.trim()}>{busy ? "Saving…" : "Save key"}</Button></div>
+    {error && <p role="alert" className="text-destructive">{error}</p>}
+  </form>;
+}
 
 /** Cloudroom's searchable model/provider pattern, backed by Elpis's own catalog. */
-export function ModelPicker({ choices, models, model, choiceId, defaultModel, disabled, allowCustom = true, onChange, onConfigure }: {
+export function ModelPicker({ choices, models, model, choiceId, defaultModel, disabled, allowCustom = true, onChange, onConfigure, onKeySaved }: {
   choices: ProviderChoice[]; models: Model[]; model: string; choiceId: string; defaultModel?: string | null; disabled: boolean; allowCustom?: boolean;
-  onChange: (choice: { model: string; choiceId: string }) => void; onConfigure?: () => void;
+  onChange: (choice: { model: string; choiceId: string }) => void; onConfigure?: () => void; onKeySaved?: () => void;
 }) {
   const [open, setOpen] = useState(false), [query, setQuery] = useState(""), [tab, setTab] = useState("all");
   const [customProvider, setCustomProvider] = useState(""), [customModel, setCustomModel] = useState("");
   const [catalogs, setCatalogs] = useState<Record<string, { version: string; data: Model[]; loaded: boolean; loading: boolean; error: string }>>({});
   const [retry, setRetry] = useState(0);
+  const [keysSaved, setKeysSaved] = useState<string[]>([]);
   const activeConnection = choices.find(choice => choice.id === tab);
   const catalogFor = (choice?: ProviderChoice) => {
     const cached = choice ? catalogs[choice.id] : undefined;
     return cached?.version === (choice?.catalogVersion ?? "") ? cached : undefined;
   };
   const catalog = catalogFor(activeConnection);
+  const needsKey = !!activeConnection?.needsKey && !keysSaved.includes(activeConnection.id);
   useEffect(() => {
     if (!open || disabled || !activeConnection?.provider || catalog?.loaded) return;
     let disposed = false;
@@ -38,7 +59,7 @@ export function ModelPicker({ choices, models, model, choiceId, defaultModel, di
       .catch(cause => { if (!disposed) setCatalogs(previous => ({ ...previous, [id]: { version, data: [], loaded: false, loading: false, error: cause instanceof Error ? cause.message : String(cause) } })); });
     return () => { disposed = true; };
   }, [open, disabled, activeConnection?.id, activeConnection?.provider, activeConnection?.catalogVersion, retry]); // Reuse successful catalogs only for the same saved configuration.
-  const available: Choice[] = [...new Map(choices.flatMap(choice => (catalogFor(choice)?.data ?? choice.models).map(item => ({ key: `${choice.id}:${item.model}`, model: item.model, choiceId: choice.id, label: item.displayName || item.model, providerLabel: choice.label, description: item.description }))).map(item => [item.key, item])).values()];
+  const available: Choice[] = [...new Map(choices.flatMap(choice => (catalogFor(choice)?.data ?? choice.models).map(item => ({ key: `${choice.id}:${item.model}`, model: item.model, choiceId: choice.id, label: modelName(item.displayName || item.model), providerLabel: choice.label, description: item.description }))).map(item => [item.key, item])).values()];
   const currentModel = model || defaultModel || "";
   const current = available.find(item => item.model === currentModel && item.choiceId === choiceId) ?? null;
   const connection = choices.find(choice => choice.id === choiceId);
@@ -58,7 +79,7 @@ export function ModelPicker({ choices, models, model, choiceId, defaultModel, di
       <Tabs.Root value={tab} onValueChange={setTab}>
         <Tabs.List className="model-provider-tabs" aria-label="Model providers"><Tabs.Tab value="all">All</Tabs.Tab>{groups.length > 1 && groups.map(group => <Tabs.Tab key={group.id} value={group.id}>{group.label}</Tabs.Tab>)}</Tabs.List>
         <Tabs.Panel value={tab}>
-          {catalog?.loading ? <p role="status" className="p-4 text-sm text-muted-foreground">Loading models from {activeConnection?.label}…</p> : catalog?.error ? <div className="p-3 text-sm"><p role="alert" className="text-destructive">{catalog.error}</p><div className="mt-2 flex gap-2"><Button type="button" variant="outline" size="sm" onClick={() => setRetry(value => value + 1)}>Try again</Button>{onConfigure && <Button type="button" variant="outline" size="sm" onClick={() => { setOpen(false); onConfigure(); }}>Manage connections</Button>}</div></div> : <ComboboxEmpty>{tab !== "all" && !rows.length ? "This connection has not reported a model list." : "No matching models."}</ComboboxEmpty>}
+          {needsKey && activeConnection?.provider ? <ProviderKeyForm provider={activeConnection.provider} label={activeConnection.label} onSaved={() => { setKeysSaved(saved => [...saved, activeConnection.id]); setRetry(value => value + 1); onKeySaved?.(); }} /> : catalog?.loading ? <p role="status" className="p-4 text-sm text-muted-foreground">Loading models from {activeConnection?.label}…</p> : catalog?.error ? <div className="p-3 text-sm"><p role="alert" className="text-destructive">{catalog.error}</p><div className="mt-2 flex gap-2"><Button type="button" variant="outline" size="sm" onClick={() => setRetry(value => value + 1)}>Try again</Button>{onConfigure && <Button type="button" variant="outline" size="sm" onClick={() => { setOpen(false); onConfigure(); }}>Manage connections</Button>}</div></div> : <ComboboxEmpty>{tab !== "all" && !rows.length ? "This connection has not reported a model list." : "No matching models."}</ComboboxEmpty>}
           <ComboboxList>{(item: Choice) => <ComboboxItem key={item.key} value={item} data-value={item.model}><span className="model-option-name">{item.label}{item.description && <small title={item.description}>{item.description}</small>}</span><span className="model-option-provider">{item.providerLabel}</span></ComboboxItem>}</ComboboxList>
         </Tabs.Panel>
       </Tabs.Root>

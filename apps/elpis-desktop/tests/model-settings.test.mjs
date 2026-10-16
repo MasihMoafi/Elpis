@@ -31,7 +31,7 @@ function load(relative, react = React) {
 }
 
 const models = [{ id: 'sol', model: 'gpt-6-sol', displayName: 'Sol 6' }, { id: 'claude', model: 'claude/opus', displayName: 'Opus' }];
-const providers = [{ id: 'openai', displayName: 'OpenAI' }, { id: 'lmstudio', displayName: 'gpt-oss' }, { id: 'ollama', displayName: 'gpt-oss' }];
+const providers = [{ id: 'openai', displayName: 'OpenAI' }, { id: 'lab', displayName: 'Lab server' }, { id: 'home', displayName: 'Home server' }];
 const settings = {
   version: 'v1', main: { model: 'gpt-6-sol', provider: 'openai' }, providers,
   background: { model: 'gpt-6-sol', provider: 'openai' },
@@ -61,10 +61,10 @@ test('catalog-backed maintenance models are selections instead of identifier fie
 });
 
 test('an external provider without a catalog keeps an honest advanced model path', () => {
-  const external = { ...settings, background: { model: 'gpt-oss', provider: 'ollama' }, smartPrune: { enabled: true, explicitOverride: { available: false, model: null, provider: null } } };
+  const external = { ...settings, background: { model: 'gpt-oss', provider: 'home' }, smartPrune: { enabled: true, explicitOverride: { available: false, model: null, provider: null } } };
   const html = render('BackgroundSettings', { value: external, models });
   assert.match(html, /No model catalog is available for/);
-  assert.match(html, /gpt-oss · Ollama/);
+  assert.match(html, /Home server/);
   assert.match(html, /value="gpt-oss"/);
   assert.match(html, /Advanced/);
   assert.match(render('PrunerSettings', { value: external, models }), /Pruning model settings are unavailable/);
@@ -134,13 +134,13 @@ test('inherited selections survive a failed save without changing provider or ot
 test('switching a provider preserves its configured model and never borrows the main catalog',()=>{
   const view=fixture(MAINTENANCE,'BackgroundSettings',{value:settings,models});
   let tree=view.render();
-  control(tree,'Background provider').props.onChange({target:{value:'ollama'}});
+  control(tree,'Background provider').props.onChange({target:{value:'home'}});
   tree=view.render();
   const model=control(tree,'Background model');
   assert.equal(model.props.value,'gpt-6-sol');
   assert.equal(model.props.placeholder,'Model name supplied by this connection');
   assert.deepEqual(values(model),[]);
-  assert.match(renderToStaticMarkup(tree),/No model catalog is available for gpt-oss · Ollama/);
+  assert.match(renderToStaticMarkup(tree),/No model catalog is available for Home server/);
 });
 
 test('an inactive context panel does not poll; an active one reads only its own chat',async()=>{
@@ -158,7 +158,7 @@ test('an inactive context panel does not poll; an active one reads only its own 
 test('configured external provider fetches its own catalog once and keeps its current model',async()=>{
   const original=globalThis.fetch,calls=[];
   globalThis.fetch=async path=>{calls.push(path);return {ok:true,json:async()=>({data:[{id:'oss',model:'gpt-oss',displayName:'GPT OSS local'}],nextCursor:null})};};
-  const value={...settings,background:{model:'gpt-oss',provider:'ollama'},smartPrune:{...settings.smartPrune,explicitOverride:{...settings.smartPrune.explicitOverride,model:'gpt-oss',provider:'ollama'}}};
+  const value={...settings,background:{model:'gpt-oss',provider:'home'},smartPrune:{...settings.smartPrune,explicitOverride:{...settings.smartPrune.explicitOverride,model:'gpt-oss',provider:'home'}}};
   try {
     for (const [name,label] of [['BackgroundSettings','Background model'],['PrunerSettings','Pruning model']]) {
       calls.length=0;
@@ -170,7 +170,7 @@ test('configured external provider fetches its own catalog once and keeps its cu
       tree=view.render();view.effects();
       assert.deepEqual(values(control(tree,label)),['','gpt-oss']);
       assert.match(renderToStaticMarkup(tree),/GPT OSS local/);
-      assert.deepEqual(calls,['/api/models?provider=ollama']);
+      assert.deepEqual(calls,['/api/models?provider=home']);
       view.dispose();
     }
     calls.length=0;
@@ -185,7 +185,7 @@ test('configured external provider fetches its own catalog once and keeps its cu
 test('failed external catalog keeps current model and does not retry on every render',async()=>{
   const original=globalThis.fetch,calls=[];
   globalThis.fetch=async path=>{calls.push(path);throw Error('Connection unavailable');};
-  const value={...settings,background:{model:'private-model',provider:'lmstudio'}};
+  const value={...settings,background:{model:'private-model',provider:'lab'}};
   const view=fixture(MAINTENANCE,'BackgroundSettings',{value,models});
   try {
     view.render();view.effects();
@@ -193,7 +193,7 @@ test('failed external catalog keeps current model and does not retry on every re
     const tree=view.render();view.effects();
     assert.equal(control(tree,'Background model').props.value,'private-model');
     assert.match(renderToStaticMarkup(tree),/Connection unavailable/);
-    assert.deepEqual(calls,['/api/models?provider=lmstudio']);
+    assert.deepEqual(calls,['/api/models?provider=lab']);
   } finally {view.dispose();globalThis.fetch=original;}
 });
 
@@ -229,7 +229,7 @@ test('malformed main model catalog gives a recoverable error instead of crashing
 test('malformed provider model catalog preserves existing provider/model as an advanced setting',async()=>{
   const original=globalThis.fetch;
   globalThis.fetch=async()=>({ok:true,json:async()=>({data:null})});
-  const value={...settings,background:{model:'private-model',provider:'lmstudio'}};
+  const value={...settings,background:{model:'private-model',provider:'lab'}};
   const view=fixture(MAINTENANCE,'BackgroundSettings',{value,models});
   try {
     view.render();view.effects();
@@ -242,7 +242,7 @@ test('malformed provider model catalog preserves existing provider/model as an a
 
 test('changed configuration version refreshes provider models without discarding background, memory or pruning drafts',async()=>{
   const original=globalThis.fetch,calls=[];
-  const value={...settings,background:{model:'original-background',provider:'ollama'},smartPrune:{...settings.smartPrune,explicitOverride:{...settings.smartPrune.explicitOverride,model:'original-pruner',provider:'ollama'}}};
+  const value={...settings,background:{model:'original-background',provider:'home'},smartPrune:{...settings.smartPrune,explicitOverride:{...settings.smartPrune.explicitOverride,model:'original-pruner',provider:'home'}}};
   try {
     for (const [name,label] of [['BackgroundSettings','Background model'],['PrunerSettings','Pruning model']]) {
       calls.length=0;
@@ -259,7 +259,7 @@ test('changed configuration version refreshes provider models without discarding
       assert.equal(control(tree,label).props.value,'selected-old');
       view.effects();await new Promise(setImmediate);
       tree=view.render(next);view.effects();
-      assert.deepEqual(calls,['/api/models?provider=ollama','/api/models?provider=ollama']);
+      assert.deepEqual(calls,['/api/models?provider=home','/api/models?provider=home']);
       assert.deepEqual(values(control(tree,label)),['','selected-old','new-model']);
       view.dispose();
     }
@@ -272,7 +272,7 @@ test('changed configuration version refreshes provider models without discarding
 for(const staleResult of ['success','failure'])test(`late old-version catalog ${staleResult} cannot overwrite the refreshed model list`,async()=>{
   const original=globalThis.fetch,requests=[];
   globalThis.fetch=path=>new Promise((resolve,reject)=>requests.push({path,resolve,reject}));
-  const value={...settings,background:{model:'kept-model',provider:'ollama'}};
+  const value={...settings,background:{model:'kept-model',provider:'home'}};
   const props={value,models};
   const view=fixture(MAINTENANCE,'BackgroundSettings',props);
   try {

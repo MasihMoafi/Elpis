@@ -12,11 +12,11 @@ async function fixture(run) {
   const thread = { id: 'recent', name: 'Current work', cwd: '/tmp/demo', model: 'sol', modelProvider: 'openai', status: { type: 'idle' }, desktopAccess: { writable: true, mode: 'direct' } };
   const older = { ...thread, id: 'older-book', name: 'Augustus audiobook notes' };
   const longPreview = { ...thread, id: 'late-preview', name: null, preview: 'A saved conversation whose first message keeps going. '.repeat(3) + 'Laterpassage contains the requested detail.' };
-  const providers = [{ id: 'openai', displayName: 'OpenAI' }, { id: 'lmstudio', displayName: 'gpt-oss' }, { id: 'ollama', displayName: 'gpt-oss' }];
+  const providers = [{ id: 'openai', displayName: 'OpenAI' }, { id: 'lab', displayName: 'Lab server' }, { id: 'home', displayName: 'Home server' }];
   const settings = { version: 'settings-v1', main: { model: 'sol', provider: 'openai' }, providers, managed: {}, write: { available: true },
     background: { model: null, provider: null }, memory: { generate: false, use: true, extractionModel: null, consolidationModel: null },
     smartPrune: { enabled: false, explicitOverride: { available: true, model: null, provider: null, version: 'pruner-v1' } } };
-  const apiProviders = providers.filter(item => item.id !== 'openai').map(item => ({ id: item.id, name: item.displayName, baseUrl: `http://127.0.0.1:${item.id === 'lmstudio' ? 1234 : 11434}/v1`, wireApi: 'responses', editable: true, auth: { source: 'none', keySet: false, envKey: null } }));
+  const apiProviders = providers.filter(item => item.id !== 'openai').map(item => ({ id: item.id, name: item.displayName, baseUrl: `http://127.0.0.1:${item.id === 'lab' ? 1234 : 11434}/v1`, wireApi: 'responses', editable: true, auth: { source: 'none', keySet: false, envKey: null } }));
   const server = http.createServer(async (req, res) => {
     const url = new URL(req.url, 'http://local'); let raw = '';
     for await (const chunk of req) raw += chunk;
@@ -26,7 +26,7 @@ async function fixture(run) {
     if (url.pathname === '/api/events') { res.writeHead(200, { 'content-type': 'text/event-stream' }); res.write('event: connection\ndata: {"connected":true}\n\n'); streams.add(res); req.on('close', () => streams.delete(res)); return; }
     if (url.pathname === '/api/session') return json({ authenticated: true });
     if (url.pathname === '/api/health') return json({ connected: true });
-    if (url.pathname === '/api/models') return json({ data: url.searchParams.get('provider') === 'ollama' ? [] : url.searchParams.get('provider') === 'lmstudio' ? [{ id: 'openai/gpt-oss-120b', model: 'openai/gpt-oss-120b', displayName: 'GPT-OSS 120B' }] : [{ id: 'sol', model: 'sol', displayName: 'Sol', description: 'Everyday coding', supportedReasoningEfforts: [{ reasoningEffort: 'high' }] }], nextCursor: null });
+    if (url.pathname === '/api/models') return json({ data: url.searchParams.get('provider') === 'home' ? [] : url.searchParams.get('provider') === 'lab' ? [{ id: 'openai/gpt-oss-120b', model: 'openai/gpt-oss-120b', displayName: 'GPT-OSS 120B' }] : [{ id: 'sol', model: 'sol', displayName: 'Sol', description: 'Everyday coding', supportedReasoningEfforts: [{ reasoningEffort: 'high' }] }], nextCursor: null });
     if (url.pathname === '/api/settings') return json(settings);
     if (url.pathname === '/api/providers/settings') return json({ version: 'providers-v1', write: { available: true }, managed: {}, providers: apiProviders });
     if (url.pathname === '/api/providers') return json({ openai: { auth: { state: 'signedIn', method: 'ChatGPT', email: 'demo@example.invalid' }, usage: [], usageError: null }, claude: { state: 'notConnected', models: [], usage: [] }, gemini: { state: 'notConnected', models: [], usage: [] }, openrouter: [], local: apiProviders });
@@ -62,16 +62,16 @@ test('model control identifies the selected provider and distinguishes equal loc
   assert.match(await page.getByLabel('Model', { exact: true }).innerText(), /Sol[\s\S]*OpenAI/);
   await shot('01-chat-light');
   await page.getByLabel('Model', { exact: true }).click();
-  await page.getByRole('tab', { name: 'gpt-oss · LM Studio', exact: true }).waitFor();
-  await page.getByRole('tab', { name: 'gpt-oss · Ollama', exact: true }).waitFor();
-  await page.getByRole('tab', { name: 'gpt-oss · LM Studio', exact: true }).click();
+  await page.getByRole('tab', { name: 'Lab server', exact: true }).waitFor();
+  await page.getByRole('tab', { name: 'Home server', exact: true }).waitFor();
+  await page.getByRole('tab', { name: 'Lab server', exact: true }).click();
   await page.getByRole('option').filter({ hasText: 'GPT-OSS 120B' }).waitFor();
   await shot('02a-model-list-light');
   await page.getByRole('option').filter({ hasText: 'GPT-OSS 120B' }).click();
-  assert.match(await page.getByLabel('Model', { exact: true }).innerText(), /GPT-OSS 120B[\s\S]*LM Studio/);
+  assert.match(await page.getByLabel('Model', { exact: true }).innerText(), /GPT-OSS 120B[\s\S]*Lab server/);
   await page.getByLabel('Model', { exact: true }).click();
-  await page.getByRole('tab', { name: 'gpt-oss · Ollama', exact: true }).click();
-  assert.equal(await page.getByRole('option').count(), 0, 'Ollama must not be given OpenAI’s model list');
+  await page.getByRole('tab', { name: 'Home server', exact: true }).click();
+  assert.equal(await page.getByRole('option').count(), 0, 'a server without a list must not be given OpenAI’s model list');
   await page.getByText('This connection has not reported a model list.', { exact: true }).waitFor();
   await shot('02-model-connections-light');
 }));
@@ -135,15 +135,15 @@ test('maintenance settings read the real catalog response and keep model lists w
   await page.getByRole('tab', { name: 'Configuration', exact: true }).click();
   const section = page.getByRole('region', { name: 'Models', exact: true });
   await chooseOption(section.getByLabel('Background model', { exact: true }), { label: 'Sol' });
-  await chooseOption(section.getByLabel('Background provider', { exact: true }), 'lmstudio');
+  await chooseOption(section.getByLabel('Background provider', { exact: true }), 'lab');
   await section.getByLabel('Background model', { exact: true }).click();
   await page.getByRole('option', { name: 'GPT-OSS 120B', exact: true }).waitFor();
-  assert.equal(await page.getByRole('option', { name: 'Sol', exact: true }).count(), 0, 'OpenAI models are not offered under LM Studio');
+  assert.equal(await page.getByRole('option', { name: 'Sol', exact: true }).count(), 0, 'OpenAI models are not offered under the lab server');
   await page.getByRole('option', { name: 'GPT-OSS 120B', exact: true }).click();
   await shot('07-model-settings-light');
-  await chooseOption(section.getByLabel('Background provider', { exact: true }), 'ollama');
+  await chooseOption(section.getByLabel('Background provider', { exact: true }), 'home');
   await section.getByText('Advanced: custom model', { exact: true }).click();
-  await section.getByText('No model catalog is available for gpt-oss · Ollama.', { exact: true }).waitFor();
+  await section.getByText('No model catalog is available for Home server.', { exact: true }).waitFor();
 }));
 
 test('API setup omits internal IDs and keeps unsaved values across sections and pages', () => fixture(async ({ page, shot }) => {

@@ -940,7 +940,7 @@ export default function Home() {
               {selected && <ContextUsage threadId={selected.id} />}
               <ModelPicker choices={!selected ? choices : selectedChoice?.provider ? [selectedChoice] : choices.filter(choice => !choice.provider)} models={models}
                 model={selected ? turnModel : model} choiceId={selected ? selectedChoice?.id || "" : choiceId} defaultModel={selected ? null : providerSettings?.main.model}
-                disabled={!ready || busy || projectChanging} onConfigure={manageConnections} onChange={choice => { if (selected) setOverride(selected.id, { model: choice.model }); else { setChoiceId(choice.choiceId); setModel(choice.model); setEffort(""); } }} />
+                disabled={!ready || busy || projectChanging} onConfigure={manageConnections} onKeySaved={() => void api<ProviderSettings>("/settings").then(setProviderSettings).catch(() => {})} onChange={choice => { if (selected) setOverride(selected.id, { model: choice.model }); else { setChoiceId(choice.choiceId); setModel(choice.model); setEffort(""); } }} />
               {turnEfforts.length > 0 && <OptionSelect aria-label="Reasoning effort" className="model-select" value={turnEffort} onChange={e => selected ? setOverride(selected.id, { effort: e.target.value }) : setEffort(e.target.value)} disabled={!ready || busy}>
                 <option value="">Default effort</option>
                 {turnEffort && !turnEfforts.includes(turnEffort) && <option value={turnEffort}>{turnEffort}</option>}

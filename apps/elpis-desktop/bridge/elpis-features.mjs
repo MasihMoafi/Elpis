@@ -1,3 +1,4 @@
+import { acceptsPastedKey, BUILT_IN_KEY_PROVIDERS } from './provider-settings.mjs';
 // Keep provider credentials, full config layers, audit paths and arbitrary fields server-side.
 const string = value => typeof value === 'string' ? value : null;
 const boolean = value => typeof value === 'boolean' ? value : null;
@@ -58,7 +59,10 @@ export function optionEdits(input, managed = {}) {
   });
 }
 
-export function settingsSnapshot(read, requirementsRead, prunerRead = null) {
+/** Whether a provider reads its key from a variable that is unset and has no key saved in the Elpis home. */
+const needsKey = (definition, saved, id, env) => acceptsPastedKey(id, definition) && !saved.has(id) && !(typeof env[definition.env_key] === 'string' && env[definition.env_key].trim());
+
+export function settingsSnapshot(read, requirementsRead, prunerRead = null, saved = new Set(), env = process.env) {
   const config = read?.config ?? {};
   const requirements = requirementsRead?.requirements;
   const definitions = { ...(config.model_providers ?? {}), ...(requirements?.modelProviders ?? {}) };
@@ -85,7 +89,7 @@ export function settingsSnapshot(read, requirementsRead, prunerRead = null) {
       admissionPolicy: null,
     },
     options: optionSnapshot(config),
-    providers: [...providerIds].sort().map(id => ({ id, displayName: string(definitions[id]?.name) ?? id })),
+    providers: [...providerIds].sort().map(id => ({ id, displayName: string(definitions[id]?.name) ?? id, ...(needsKey(config.model_providers?.[id] ?? BUILT_IN_KEY_PROVIDERS[id], saved, id, env) ? { needsKey: true } : {}) })),
     managed: {
       available: requirementsRead !== null,
       modelProvider: string(requirements?.modelProvider),

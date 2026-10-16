@@ -7,14 +7,18 @@ const HEADER_NAME = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/;
 const BLOCKED_HEADERS = new Set(['host', 'connection', 'content-length', 'transfer-encoding', 'proxy-authorization',
   'proxy-connection', 'proxy-authenticate', 'cookie', 'set-cookie', 'upgrade', 'te', 'trailer', 'keep-alive']);
 
+/** Each protocol's model list: its query, as the gateway asks for it (codex-rs/elpis-gateway/src/catalog.rs). */
+const LISTINGS = { responses: {}, chat: {}, anthropic_messages: { limit: '1000' }, gemini_generate_content: { pageSize: '1000' } };
+const wireOf = definition => definition.wire_api === undefined ? 'responses' : definition.wire_api;
+
 class CatalogueError extends Error {}
 const unavailable = message => new CatalogueError(message);
 const record = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 
 function endpoint(definition) {
   if (!record(definition)) throw unavailable('This connection has no valid model configuration.');
-  const wire = definition.wire_api === undefined ? 'responses' : definition.wire_api;
-  if (!['responses', 'chat'].includes(wire)) throw unavailable('Model browsing is not available for this connection protocol.');
+  const wire = wireOf(definition);
+  if (!Object.hasOwn(LISTINGS, wire)) throw unavailable('Model browsing is not available for this connection protocol.');
   if (definition.auth != null || definition.aws != null || definition.gateway_oauth != null || definition.requires_openai_auth) {
     throw unavailable('Model browsing is not available for this connection authentication method.');
   }
@@ -41,17 +45,18 @@ function endpoint(definition) {
     throw unavailable('This connection requires HTTPS; HTTP is allowed only for a loopback address.');
   }
   url.pathname = `${url.pathname.replace(/\/+$/, '')}/models`;
+  for (const [name, value] of Object.entries(LISTINGS[wire])) url.searchParams.set(name, value);
   return url.href;
 }
 
 function environmentValue(name, env) {
   if (typeof name !== 'string' || !ENV_NAME.test(name)) throw unavailable('This connection has an invalid credential environment reference.');
   const value = env[name];
-  if (typeof value !== 'string' || !value.trim()) throw unavailable(`Set ${name} for Elpis, then refresh this connection's models.`);
+  if (typeof value !== 'string' || !value.trim()) throw unavailable(`Add an API key for this connection (or set ${name} for Elpis), then refresh its models.`);
   return value;
 }
 
-function requestHeaders(definition, env) {
+function requestHeaders(definition, env, savedKey) {
   const headers = new Headers({ accept: 'application/json' });
   function set(name, value) {
     if (!HEADER_NAME.test(name) || BLOCKED_HEADERS.has(name.toLowerCase()) || name.toLowerCase().startsWith('sec-')
@@ -63,13 +68,18 @@ function requestHeaders(definition, env) {
   }
   for (const [name, value] of Object.entries(definition.http_headers || {})) set(name, value);
   for (const [name, variable] of Object.entries(definition.env_http_headers || {})) set(name, environmentValue(variable, env));
-  // Native provider auth gives its explicit environment key precedence over a stored bearer.
-  const token = definition.env_key != null ? environmentValue(definition.env_key, env) : definition.experimental_bearer_token;
+  // Native provider auth gives its explicit environment key precedence over a stored bearer; a key
+  // saved in the Elpis home stands before that variable, as in the gateway (elpis-gateway/src/keys.rs).
+  const token = definition.env_key != null ? savedKey || environmentValue(definition.env_key, env) : definition.experimental_bearer_token;
   if (token != null) {
     if (typeof token !== 'string' || !token.trim() || token.length > 8192 || /[\x00-\x1f\x7f]/.test(token)) {
       throw unavailable('This connection has an invalid API credential.');
     }
-    set('authorization', `Bearer ${token.trim()}`);
+    // Anthropic and Gemini take their keys in their own headers.
+    const wire = wireOf(definition);
+    if (wire === 'anthropic_messages') { set('x-api-key', token.trim()); set('anthropic-version', '2023-06-01'); }
+    else if (wire === 'gemini_generate_content') set('x-goog-api-key', token.trim());
+    else set('authorization', `Bearer ${token.trim()}`);
   }
   return headers;
 }
@@ -118,7 +128,15 @@ function label(value, length) {
   return typeof value === 'string' ? value.replace(/[\x00-\x1f\x7f]/g, ' ').trim().slice(0, length) : '';
 }
 
-function choices(catalogue) {
+/** Gemini lists `{models: [{name: "models/…", displayName, inputTokenLimit, supportedGenerationMethods}]}`. */
+function geminiRows(catalogue) {
+  if (!record(catalogue) || !Array.isArray(catalogue.models)) throw unavailable('This connection did not return a Gemini model list.');
+  return catalogue.models.filter(row => record(row) && Array.isArray(row.supportedGenerationMethods) && row.supportedGenerationMethods.includes('generateContent') && typeof row.name === 'string')
+    .map(row => ({ id: row.name.replace(/^models\//, ''), name: row.displayName, context_length: row.inputTokenLimit }));
+}
+
+function choices(catalogue, wire = 'responses') {
+  if (wire === 'gemini_generate_content') catalogue = { data: geminiRows(catalogue) };
   if (!record(catalogue) || !Array.isArray(catalogue.data)) throw unavailable('This connection did not return an OpenAI-compatible model list.');
   if (catalogue.data.length > MAX_ROWS) throw unavailable('This connection returned too many models (maximum 2000).');
   const seen = new Set();
@@ -126,18 +144,34 @@ function choices(catalogue) {
   for (const row of catalogue.data) {
     if (!record(row) || typeof row.id !== 'string' || !MODEL_ID.test(row.id) || /^(claude|agy|antigravity)\//i.test(row.id) || seen.has(row.id)) continue;
     seen.add(row.id);
+    // As the terminal lists them: only models that take tools, since an agent cannot work without them.
+    if (Array.isArray(row.supported_parameters) && !row.supported_parameters.includes('tools')) continue;
     const displayName = [row.name, row.display_name, row.displayName].map(value => label(value, 200)).find(Boolean) || row.id;
-    const description = label(row.description, 1000);
+    const context = [row.context_length, row.context_window, row.max_context_length, row.max_input_tokens].find(value => Number.isSafeInteger(value) && value > 0);
+    const description = context ? `≈${Math.round(context / 1000)}k context` : label(row.description, 1000);
     data.push({ id: row.id, model: row.id, displayName, ...(description ? { description } : {}) });
   }
   if (catalogue.data.length && !data.length) throw unavailable('This connection did not return any supported model IDs.');
   return { data, nextCursor: null };
 }
 
+/** OpenRouter ranks the models most used for programming (`?category=programming`); those lead the list, marked,
+ * and the rest follow newest first. Without the ranking the plain list still stands. */
+async function codingFirst(models, url, headers, fetchImpl, signal) {
+  try {
+    const ranked = new URL(url); ranked.searchParams.set('category', 'programming');
+    const response = await withAbort(fetchImpl(ranked.href, { method: 'GET', headers, redirect: 'error', signal }), signal);
+    if (!response.ok || response.redirected) { cancelBody(response); return models; }
+    const order = choices(await readCatalogue(response, signal)).data.map(row => row.id);
+    const top = order.flatMap((id, index) => { const row = models.find(model => model.id === id); return row ? [{ ...row, description: [`Top for coding #${index + 1}`, row.description].filter(Boolean).join(' · ') }] : []; });
+    return [...top, ...models.filter(model => !order.includes(model.id))];
+  } catch { return models; }
+}
+
 /** List one server-owned configured OpenAI-compatible connection; never changes configuration or resolves external auth. */
-export async function providerModels(definition, { env = process.env, fetchImpl = fetch, signal } = {}) {
+export async function providerModels(definition, { env = process.env, fetchImpl = fetch, signal, savedKey = null } = {}) {
   const url = endpoint(definition);
-  const headers = requestHeaders(definition, env);
+  const headers = requestHeaders(definition, env, savedKey);
   if (signal?.aborted) throw unavailable('Model loading was cancelled.');
   const timeout = new AbortController();
   const requestSignal = signal ? AbortSignal.any([signal, timeout.signal]) : timeout.signal;
@@ -155,7 +189,8 @@ export async function providerModels(definition, { env = process.env, fetchImpl 
       if (response.status === 429) throw unavailable('This connection is rate limiting model requests. Try again later.');
       throw unavailable(`This connection could not list models (HTTP ${Number.isInteger(response.status) ? response.status : 'error'}).`);
     }
-    return choices(await readCatalogue(response, requestSignal));
+    const listed = choices(await readCatalogue(response, requestSignal), wireOf(definition));
+    return new URL(url).hostname === 'openrouter.ai' ? { ...listed, data: await codingFirst(listed.data, url, headers, fetchImpl, requestSignal) } : listed;
   } catch (error) {
     if (signal?.aborted) throw unavailable('Model loading was cancelled.');
     if (timeout.signal.aborted) throw unavailable('The connection took too long to list models. Try again.');

@@ -390,7 +390,7 @@ test('provider settings redact stored keys and apply private versioned native co
   assert.equal(snapshot.application.scope, 'newConversations');
   assert(snapshot.application.credentialClearMessage.includes('does not revoke authentication in existing conversations'));
   const saved = snapshot.providers.find(provider => provider.id === 'saved');
-  assert.deepEqual(saved.auth, { source: 'stored', keySet: true, envKey: null });
+  assert.deepEqual(saved.auth, { source: 'stored', keySet: true, envKey: null, acceptsKey: false });
   assert(!JSON.stringify(snapshot).includes('provider-fixture-secret'));
   assert.equal((await client.providers()).openrouter.find(provider => provider.id === 'saved').keySet, true);
   const input = { version: 'user-version', id: 'saved', name: 'Updated OpenRouter', baseUrl: 'https://openrouter.ai/api/v1', credential: { action: 'replace', value: 'provider-fixture-replacement' } };
@@ -960,6 +960,24 @@ test('plan mode is sent with the chat model only when it changes, and resume rep
     await client.send(ROOT, { text: 'plain' });
     assert.equal('collaborationMode' in socket.sent.findLast(message => message.method === 'turn/start').params, false, 'an unchanged mode is left to the engine');
     await assert.rejects(client.send(ROOT, { text: 'x', mode: 'pair' }), /chat mode/);
+  } finally { client.close(); }
+});
+
+test('a pasted provider key is saved privately in the Elpis home and never sent back', async () => {
+  const { client, configRead } = fixture(); await client.initialize();
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'elpis-provider-key-'));
+  try {
+    configRead.layers[0].name.file = path.join(root, 'config.toml');
+    const before = (await client.providerSettings()).providers.find(provider => provider.id === 'openrouter');
+    assert.deepEqual([before.auth.keySet, before.auth.acceptsKey], [false, true]);
+    const after = await client.saveProviderKey({ provider: 'openrouter', key: '  sk-or-fixture-secret  ' });
+    assert.deepEqual(after.providers.find(provider => provider.id === 'openrouter').auth, { source: 'saved', keySet: true, envKey: 'APP_TEST_OPENROUTER_KEY', acceptsKey: true });
+    assert(!JSON.stringify(after).includes('sk-or-fixture-secret'), 'the key is never returned');
+    const file = path.join(root, 'provider-keys.json');
+    assert.deepEqual(JSON.parse(await fs.readFile(file, 'utf8')), { openrouter: 'sk-or-fixture-secret' });
+    assert.equal((await fs.stat(file)).mode & 0o777, 0o600, 'readable by its owner alone');
+    await assert.rejects(client.saveProviderKey({ provider: 'openrouter', key: 'two words' }), /visible ASCII/);
+    await assert.rejects(client.saveProviderKey({ provider: 'openai', key: 'sk-x' }), /does not take an API key/);
   } finally { client.close(); }
 });
 

@@ -4,7 +4,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { ragMessage } from './rag-command.mjs';
-import { providerSettingsSnapshot, providerEdits, privateConfigFile } from './provider-settings.mjs';
+import { acceptsPastedKey, BUILT_IN_KEY_PROVIDERS, configHome, providerDefinition, providerSettingsSnapshot, providerEdits, privateConfigFile } from './provider-settings.mjs';
+import { saveProviderKey, savedProviderKey, savedProviderKeyIds } from './provider-keys.mjs';
 import { settingsSnapshot, tokenUsageSnapshot, smartPruneSnapshot, providersSnapshot, mcpSnapshot, optionEdits, hooksSnapshot } from './elpis-features.mjs';
 import { replacementEligibility } from '../lib/turn-replacement.ts';
 import { providerModels } from './provider-models.mjs';
@@ -389,16 +390,16 @@ export class DesktopClient extends EventEmitter {
       text(options.provider, 'configured connection', 64);
       if (!/^[a-z][a-z0-9_-]*$/.test(options.provider)) throw new BridgeError('Choose an existing configured connection');
       const [read, policy] = await Promise.all([
-        this.#rpc('config/read', { includeLayers: false }),
+        this.#rpc('config/read', { includeLayers: true }),
         this.#rpc('configRequirements/read', {}).catch(() => null),
       ]);
       if (policy === null) throw new BridgeError('Connection policy could not be read. Try again after reconnecting.', 503);
       const managed = policy.requirements;
       if (managed?.modelProvider && managed.modelProvider !== options.provider) throw new BridgeError('This connection is restricted by your organization', 403);
       if (options.provider !== read?.config?.model_provider) {
-        const definitions = { ...(read?.config?.model_providers ?? {}), ...(managed?.modelProviders ?? {}) };
+        const definitions = { ...BUILT_IN_KEY_PROVIDERS, ...(read?.config?.model_providers ?? {}), ...(managed?.modelProviders ?? {}) };
         if (!Object.hasOwn(definitions, options.provider)) throw new BridgeError('This connection needs a saved API address before Elpis can list its models. Add a connection in Settings → Models & accounts.');
-        try { return await providerModels(definitions[options.provider]); }
+        try { return await providerModels(definitions[options.provider], { savedKey: savedProviderKey(configHome(read), options.provider) }); }
         catch (error) { throw new BridgeError(error.message || 'Could not load models from this connection.', 502); }
       }
     }
@@ -413,7 +414,7 @@ export class DesktopClient extends EventEmitter {
       this.#rpc('configRequirements/read', {}).catch(() => null),
       this.#rpc('pruner/read', {}).catch(error => { if ([-32601, -32600].includes(error.code)) return null; throw error; }),
     ]);
-    return settingsSnapshot(read, requirements, pruner);
+    return settingsSnapshot(read, requirements, pruner, savedProviderKeyIds(configHome(read)));
   }
   async saveSettings(input) {
     object(input, ['version', 'background', 'memory', 'options']);
@@ -477,7 +478,16 @@ export class DesktopClient extends EventEmitter {
       this.#rpc('config/read', { includeLayers: true }),
       this.#rpc('configRequirements/read', {}).catch(() => null),
     ]);
-    return providerSettingsSnapshot(read, requirements);
+    return providerSettingsSnapshot(read, requirements, process.env, savedProviderKeyIds(configHome(read)));
+  }
+  /** Saves a pasted API key to the Elpis home's private key file; the key is never sent back. */
+  async saveProviderKey(input) {
+    object(input, ['provider', 'key']);
+    const [read, requirements] = await Promise.all([this.#rpc('config/read', { includeLayers: true }), this.#rpc('configRequirements/read', {}).catch(() => null)]);
+    const id = typeof input.provider === 'string' ? input.provider : '';
+    if (requirements === null || requirements?.requirements?.modelProviders?.[id] || !acceptsPastedKey(id, providerDefinition(read, id))) throw new BridgeError('This connection does not take an API key here.', 403);
+    saveProviderKey(configHome(read), id, input.key);
+    return this.providerSettings();
   }
   async saveProvider(input) {
     const current = await this.providerSettings();

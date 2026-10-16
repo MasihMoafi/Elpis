@@ -41,8 +41,8 @@ const models = [
 ];
 const settings = { main: { provider: 'openai', model: 'sol' }, providers: [
   { id: 'openai', displayName: 'OpenAI' },
-  { id: 'lmstudio', displayName: 'gpt-oss' },
-  { id: 'ollama', displayName: 'gpt-oss' },
+  { id: 'lab', displayName: 'Lab server' },
+  { id: 'home', displayName: 'Home server' },
 ] };
 const runtime = { visible: true, connected: true, target: { id: 'root', model: 'sol', modelProvider: 'openai', desktopAccess: { writable: true } },
   targetIsChild: false, models, providerSettings: settings, defaultCwd: '/workspace', defaultModel: 'sol', defaultProvider: 'openai',
@@ -55,20 +55,20 @@ function renderEditor(task) {
 }
 
 test('actual workflow inspector uses the shared model picker and names the selected local connection', () => {
-  const html = renderEditor({ provider: 'lmstudio', model: 'gpt-oss' });
+  const html = renderEditor({ provider: 'lab', model: 'gpt-oss' });
   assert.match(html, /Keep the original task/);
   assert.match(html, /Task settings/);
   assert.match(html, /aria-label="Model"/);
-  assert.match(html, /gpt-oss · LM Studio/);
+  assert.match(html, /Lab server/);
   assert.doesNotMatch(html, /<input[^>]*aria-label="Task model"/);
 });
 
 test('native workflow choices separate main catalog from API connections and exclude subscriptions', () => {
   const choices = workflow.workflowProviderChoices(models, settings);
-  assert.deepEqual(choices.map(choice => [choice.id, choice.label]), [['openai', 'OpenAI'], ['lmstudio', 'gpt-oss · LM Studio'], ['ollama', 'gpt-oss · Ollama']]);
+  assert.deepEqual(choices.map(choice => [choice.id, choice.label]), [['openai', 'OpenAI'], ['home', 'Home server'], ['lab', 'Lab server']]);
   assert.deepEqual(choices[0].models.map(model => model.model), ['sol']);
   assert.equal(choices[0].provider, undefined, 'main route uses its existing native catalog');
-  for (const id of ['lmstudio', 'ollama']) {
+  for (const id of ['lab', 'home']) {
     const choice = workflow.workflowModelChoice(choices, id, settings.providers);
     assert.equal(choice.provider, id, 'shared picker fetches the explicitly selected connection');
     assert.deepEqual(choice.models, [], 'never borrow the main or subscription catalog for another connection');
@@ -91,15 +91,15 @@ test('inherited and saved unknown model values remain visible without becoming n
 
 test('shared workflow model control scopes catalog lookup and changes only the selected route model', () => {
   const choices = workflow.workflowProviderChoices(models, settings);
-  const choice = workflow.workflowModelChoice(choices, 'lmstudio', settings.providers);
+  const choice = workflow.workflowModelChoice(choices, 'lab', settings.providers);
   const changed = [];
   const control = workflow.WorkflowModelChoice({ choice, model: 'saved-native-4242', defaultLabel: 'Use conversation model', disabled: false, onChange: model => changed.push(model) });
   const [picker, reset] = control.props.children;
   assert.equal(picker.type.name, 'ModelPicker'); assert.deepEqual(picker.props.choices, [choice]);
   assert.deepEqual(picker.props.models, [], 'unrelated main metadata is not used to label API models');
   assert.equal(picker.props.model, 'saved-native-4242');
-  picker.props.onChange({ choiceId: 'lmstudio', model: 'gpt-oss' });
-  picker.props.onChange({ choiceId: 'ollama', model: 'wrong-route-model' });
+  picker.props.onChange({ choiceId: 'lab', model: 'gpt-oss' });
+  picker.props.onChange({ choiceId: 'home', model: 'wrong-route-model' });
   assert.deepEqual(changed, ['gpt-oss'], 'a stale result for another route cannot change this model');
   reset.props.onClick(); assert.deepEqual(changed, ['gpt-oss', '']);
 });
@@ -108,8 +108,8 @@ test('explicit provider still requires a model and inheritance leaves native gra
   const task = { id: 'task_1', title: 'Inspect book', instruction: 'Read', kind: 'explore', depends_on: [], write_scopes: [], acceptance_criteria: ['Report'] };
   const inherited = { name: 'Research', max_concurrency: 2, tasks: [task] };
   assert.deepEqual(workflow.validateWorkflow(inherited), []);
-  assert(workflow.validateWorkflow({ ...inherited, tasks: [{ ...task, provider: 'lmstudio' }] }).some(message => /explicit model/.test(message)));
-  assert.deepEqual(workflow.validateWorkflow({ ...inherited, tasks: [{ ...task, provider: 'lmstudio', model: 'gpt-oss' }] }), []);
+  assert(workflow.validateWorkflow({ ...inherited, tasks: [{ ...task, provider: 'lab' }] }).some(message => /explicit model/.test(message)));
+  assert.deepEqual(workflow.validateWorkflow({ ...inherited, tasks: [{ ...task, provider: 'lab', model: 'gpt-oss' }] }), []);
   assert(workflow.validateWorkflow({ ...inherited, tasks: [{ ...task, model: 'agy/gpt-oss' }] }).some(message => /native provider and model/.test(message)));
   assert.deepEqual(inherited.tasks[0], task);
 });

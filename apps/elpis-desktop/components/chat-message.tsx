@@ -1,8 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { BranchIcon, BrowserIcon, FileEditIcon, TerminalIcon, ToolIcon } from "@/components/elpis-icons";
-import { Lightbulb, Pencil, RefreshCw, Terminal } from "lucide-react";
+import { BranchIcon, BrowserIcon, FileEditIcon, PlanIcon, TerminalIcon, ToolIcon } from "@/components/elpis-icons";
+import { Pencil, RefreshCw, Terminal } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { CopyButton, MarkdownText } from "@/components/markdown-text";
@@ -101,7 +101,7 @@ export function ChatMessage({item,speaker="Elpis",threads=[],onOpenThread,onEdit
   }
   if(item.type==="webSearch")return <Activity label="Web search" icon={<BrowserIcon size={15}/>} detail={text(item.query)}><p>{text(item.query)}</p>{list(item.results).map((value,index)=>{const result=object(value);const href=text(result.url);return /^https?:\/\//i.test(href)?<p key={index}><a href={href} target="_blank" rel="noreferrer">{text(result.title)||href}</a>{text(result.snippet)&&<span>{text(result.snippet)}</span>}</p>:<TextOutput key={index} value={value}/>;})}</Activity>;
   if(item.type==="functionCallOutput")return <Activity label={text(item.name)||"Tool output"} icon={<ToolIcon size={15}/>}><TextOutput value={typeof item.output==="string"?item.output:list(item.output).map(value=>text(object(value).text)).filter(Boolean).join("\n")}/></Activity>;
-  if(item.type==="plan")return <section className="plan-card" aria-label="Proposed plan"><p className="plan-card-heading"><Lightbulb size={14} aria-hidden="true"/>Plan</p><MarkdownText text={item.text||""}/></section>;
+  if(item.type==="plan")return <section className="plan-card" aria-label="Proposed plan"><p className="plan-card-heading"><PlanIcon size={14} aria-hidden="true"/>Plan</p><MarkdownText text={item.text||""}/></section>;
   if(item.type==="contextCompaction")return <div className="context-event">Context compacted</div>;
   return <Activity label={readable(item.type)} icon={<ToolIcon size={15}/>}><details><summary>Recorded details</summary><TextOutput value={item}/></details></Activity>;
 }

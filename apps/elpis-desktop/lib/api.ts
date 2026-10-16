@@ -10,7 +10,7 @@ export type Thread = {
 export type Item = { id: string; type: string; text?: string; content?: {type: string; text?: string}[]; command?: string; aggregatedOutput?: string; [key: string]: unknown };
 export type Entry = { turnId: string; item: Item; startedAtMs?: number; completedAtMs?: number };
 export type Model = { id: string; model: string; displayName: string; description?: string; inputModalities?: string[]; supportedReasoningEfforts?: {reasoningEffort:string;description?:string}[]; defaultReasoningEffort?: string };
-export type ProviderSettings = { version?:string|null; main:{model:string|null;provider:string|null}; providers:{id:string;displayName:string}[]; managed?:{modelProvider:string|null} };
+export type ProviderSettings = { version?:string|null; main:{model:string|null;provider:string|null}; providers:{id:string;displayName:string;needsKey?:boolean}[]; managed?:{modelProvider:string|null} };
 export type Approval = { id: string; ownerThreadId: string; thread?: Thread; method: string; supported?: boolean; params: { availableDecisions?: unknown[]; threadId?: string; command?: string; reason?: string; changes?: unknown; questions?: {id:string;header:string;question:string;isSecret?:boolean;options?:{label:string;description?:string}[]}[] } };
 export async function api<T>(path: string, body?: unknown): Promise<T> {
   const response = await fetch(`/api${path}`, body === undefined ? undefined : { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
@@ -50,13 +50,13 @@ export const isAgent = (thread: Thread) => !!thread.parentThreadId || subAgentSo
 // Subscription models reach Elpis through its bridge by a model-ID prefix while the engine still
 // reports its own provider, so the model is the truthful source of the provider.
 export const SUBSCRIPTIONS = [
-  { prefix: "claude/", id: "claude", label: "Claude subscription" },
+  { prefix: "claude/", id: "claude", label: "Anthropic" },
   { prefix: "agy/", id: "gemini", label: "Antigravity" },
 ] as const;
 export const subscriptionOf = (model?: string | null) => SUBSCRIPTIONS.find(item => model?.startsWith(item.prefix)) ?? null;
 const providerNames: Record<string, string> = {
   openai: "OpenAI", lmstudio: "LM Studio", ollama: "Ollama", openrouter: "OpenRouter",
-  anthropic: "Anthropic", "anthropic-credits": "Anthropic credits", "google-gemini": "Google Gemini",
+  anthropic: "Anthropic API", "anthropic-credits": "Anthropic credits", "google-gemini": "Google Gemini",
   "amazon-bedrock": "Amazon Bedrock", "amazon-bedrock-runtime": "Amazon Bedrock Runtime",
 };
 export function providerLabel(model: string | null | undefined, provider: string | null | undefined, providers: ProviderSettings["providers"] = []) {
@@ -65,14 +65,16 @@ export function providerLabel(model: string | null | undefined, provider: string
   if (!provider) return "";
   const saved = providers.find(item => item.id === provider)?.displayName?.trim();
   const name = providerNames[provider];
-  if (name) return saved && saved !== provider && !saved.toLocaleLowerCase().includes(name.toLocaleLowerCase()) ? `${saved} · ${name}` : saved && saved !== provider ? saved : name;
+  if (name) return name;
   if (!saved) return provider;
   const sameNames = providers.filter(item => item.displayName?.trim() === saved).sort((a, b) => a.id.localeCompare(b.id));
   return sameNames.length > 1 ? `${saved} (${sameNames.findIndex(item => item.id === provider) + 1})` : saved;
 }
+/** A subscription model's name without the route its bridge appends, since the provider is shown beside it. */
+export const modelName = (name: string) => name.replace(/\s*\((Claude subscription|Antigravity)\)$/, "");
 export function modelLabel(model: string | null | undefined, models: Model[] = []) {
   if (!model) return "Model not reported";
-  return models.find(item => item.model === model)?.displayName || model;
+  return modelName(models.find(item => item.model === model)?.displayName || model);
 }
 
 export type Activity = { label: string; at: number };
@@ -99,14 +101,22 @@ export function activityOf(method: string, params: Record<string, unknown>): str
 
 /** Where a new chat can run: the engine's provider, each subscription the bridge offers, and other configured providers.
  * Choice IDs: "" for the engine, the model prefix for a subscription, the provider ID otherwise. */
-export type ProviderChoice = { id: string; label: string; provider?: string; models: Model[]; catalogVersion?: string | null };
+export type ProviderChoice = { id: string; label: string; provider?: string; models: Model[]; catalogVersion?: string | null; needsKey?: boolean };
+/** Engine providers the model list leaves out: the local gpt-oss servers and Amazon Bedrock. */
+const UNLISTED = new Set(["ollama", "lmstudio", "amazon-bedrock", "amazon-bedrock-runtime"]);
+/** Where each connection sits in the list: Anthropic's first, OpenRouter second to last, Google Gemini last. */
+const ORDER = ["claude/", "anthropic-credits", "anthropic", "agy/", "openrouter", "google-gemini"];
+const rank = (id: string) => { const index = ORDER.indexOf(id); return index < 0 ? ORDER.indexOf("agy/") - 0.5 : index; };
 export function providerChoices(models: Model[], settings: ProviderSettings | null): ProviderChoice[] {
   const main = settings?.main.provider ?? null;
+  const others: ProviderChoice[] = [
+    ...SUBSCRIPTIONS.map(item => ({ id: item.prefix, label: item.label, models: models.filter(model => model.model.startsWith(item.prefix)) })).filter(choice => choice.models.length),
+    ...(settings?.providers ?? []).filter(item => item.id !== main && !UNLISTED.has(item.id) && !(settings?.managed?.modelProvider && settings.managed.modelProvider !== item.id))
+      .map(item => ({ id: item.id, label: providerLabel(null, item.id, settings?.providers), provider: item.id, models: [], catalogVersion: settings?.version, ...(item.needsKey ? { needsKey: true } : {}) })),
+  ];
   return [
     { id: "", label: providerLabel(null, main, settings?.providers) || "Configured provider", models: models.filter(model => !subscriptionOf(model.model)) },
-    ...SUBSCRIPTIONS.map(item => ({ id: item.prefix, label: item.label, models: models.filter(model => model.model.startsWith(item.prefix)) })).filter(choice => choice.models.length),
-    ...(settings?.providers ?? []).filter(item => item.id !== main && !(settings?.managed?.modelProvider && settings.managed.modelProvider !== item.id))
-      .map(item => ({ id: item.id, label: providerLabel(null, item.id, settings?.providers), provider: item.id, models: [], catalogVersion: settings?.version })),
+    ...others.sort((a, b) => rank(a.id) - rank(b.id) || a.label.localeCompare(b.label)),
   ];
 }
 /** The choice an existing chat runs under: its subscription, its own configured provider, or the engine. */

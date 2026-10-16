@@ -24,7 +24,7 @@ export function UsageSettings({ refreshKey, threadId, active }: { refreshKey: nu
   useEffect(() => { void load(); }, [load, refreshKey]);
   const cards: [string, string, UsageStatus | null][] = data ? [
     ["openai", "OpenAI / ChatGPT", openAIUsage(data.openai)],
-    ["claude", "Claude subscription", subscriptionUsage(data.claude, "Claude", "Sign in with Claude Code")],
+    ["claude", "Anthropic", subscriptionUsage(data.claude, "Claude", "Sign in with Claude Code")],
     ["gemini", "Antigravity", subscriptionUsage(data.gemini, "Antigravity", "Sign in to Antigravity")],
   ] : [];
   return <div aria-label="Usage and limits">

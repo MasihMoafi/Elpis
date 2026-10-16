@@ -92,7 +92,7 @@ test('workflow task and target creation pass connection setup through the shared
 
 test('inherited subscription defaults retain their provider identity while exact route matches take precedence', () => {
   const choices = [{ id: '', label: 'OpenAI', models }];
-  for (const [defaultModel, provider] of [['claude/opus', 'Claude subscription'], ['agy/gpt-oss', 'Antigravity'], ['sol', 'OpenAI']]) {
+  for (const [defaultModel, provider] of [['claude/opus', 'Anthropic'], ['agy/gpt-oss', 'Antigravity'], ['sol', 'OpenAI']]) {
     const view = fixture('components/model-picker.tsx', 'ModelPicker', { ...pickerProps, choices, models, choiceId: '', model: '', defaultModel });
     const trigger = elements(view.render()).find(element => element.props['aria-label'] === 'Model');
     assert.ok(trigger.props.title.endsWith(` · ${provider}`), trigger.props.title);
