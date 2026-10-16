@@ -17,6 +17,7 @@ import { queueFollowUp, sendQueuedFollowUp } from "@/lib/follow-ups";
 import { QueuedFollowUps } from "@/components/queued-follow-ups";
 import { ContextUsage } from "@/components/context-usage";
 import { ShortcutsDialog } from "@/components/shortcuts-dialog";
+import { StartupSplash } from "@/components/startup-splash";
 import { PermissionsMenu, PlanPill, PlusMenu, type PermissionMode } from "@/components/composer-controls";
 import { CopyButton } from "@/components/markdown-text";
 import { liveEventItemKey, mergeHistoryWithLive, mergeLiveItem, runtimeErrorNotice } from "@/lib/live-events";
@@ -828,6 +829,7 @@ export default function Home() {
 
   return <div className={`app-shell${dark ? " dark" : ""}${sidebarCollapsed ? " sidebar-collapsed" : ""}`}>
     <ShortcutsDialog open={shortcutsOpen} onOpenChange={setShortcutsOpen} />
+    {desktop && <StartupSplash done={ready && connected} steps={[{ label: "Elpis engine connected", ok: connected }, { label: "models loaded", ok: models.length > 0 }, { label: "conversations loaded", ok: ready }]} />}
     <ProjectDialog projects={projects} editing={projectEdit} onClose={() => setProjectEdit(undefined)} onSave={saveProject} />
     <aside className={`sidebar${sidebar ? " open" : ""}`} aria-label="Workspace navigation">
       <div className="brand"><img src={brandMark} alt="Elpis" width={28} height={28} /><span>Elpis</span><Button className="ml-auto mobile-menu" variant="ghost" size="icon-sm" aria-label="Close sidebar" onClick={() => setSidebar(false)}><X size={16} /></Button></div>

@@ -536,6 +536,16 @@ section:hover > .section-label-row > button, .section-label-row > button:focus-v
 .provider-key-form { display:grid; gap:8px; padding:12px; margin:8px; border:1px solid color-mix(in oklch, var(--primary) 35%, var(--border)); border-radius:6px; font-size:12.5px; color:var(--muted-foreground); }
 .provider-key-form strong { color:var(--foreground); font-weight:500; }
 .provider-key-row { display:flex; gap:8px; }
+.startup-splash { position:fixed; inset:0; z-index:100; display:grid; place-items:center; background:#080b09; color:#dce1dc; font:15px/1.4 var(--mono); transition:opacity .4s ease; }
+.startup-splash.leaving { opacity:0; pointer-events:none; }
+.startup-splash > div { width:min(620px, 86vw); }
+.splash-logo { margin:0; font-family:"DejaVu Sans Mono", "Liberation Mono", monospace; letter-spacing:0; color:#7d5941; font-size:clamp(12px, 1.6vw, 19px); line-height:1.05; }
+.splash-logo .warm { color:#df8d58; }
+.splash-logo .hot { color:#f5ce7b; text-shadow:0 0 12px rgba(229,173,85,.55); }
+.startup-splash p { margin:22px 0; color:#879087; }
+.splash-log { display:grid; gap:7px; color:#aeb6af; }
+.splash-log .ok { color:#69a99d; }
+.splash-log .pending { color:#879087; }
 .plan-card { margin:10px 0; padding:12px 16px 4px; border:1px solid var(--border); border-left:2px solid var(--primary); border-radius:6px; background:var(--card); }
 .plan-card-heading { display:flex; align-items:center; gap:6px; margin:0 0 6px; font:500 10.5px/1.2 var(--mono); letter-spacing:.12em; text-transform:uppercase; color:var(--primary); }
 .plan-prompt { margin:14px 0 4px; padding:12px 14px; border:1px solid color-mix(in oklch, var(--primary) 35%, var(--border)); border-radius:6px; background:var(--card); display:flex; flex-wrap:wrap; align-items:center; gap:8px; }
