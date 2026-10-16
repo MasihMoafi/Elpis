@@ -12,7 +12,7 @@ import { existingSocket } from '../bridge/client.mjs';
 const require = createRequire(import.meta.url);
 const { chooseOption } = require('./controls.cjs');
 const { _electron } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright');
-const { Provider, message } = require('../../../editors/vscode/test/runtime-eval.js');
+const { Provider, message } = require('../../../scripts/lib/mock-provider.js');
 const binary = process.argv[2];
 assert(binary && path.isAbsolute(binary));
 const appRoot = fileURLToPath(new URL('..', import.meta.url));
@@ -146,12 +146,16 @@ try {
   await page.getByLabel('Search models', { exact: true }).waitFor();
   await shot('06-desktop-model-menu.png');
   await page.getByLabel('Search models', { exact: true }).press('Escape');
-  await page.getByLabel('Transcription settings', { exact: true }).click();
-  await page.getByLabel('Transcription engine', { exact: true }).click();
+  // The route is chosen in Settings → Voice; this chat's provider has no transcription of its own, so the fallback speaks.
+  await page.locator('aside').getByRole('button', { name: 'Settings', exact: true }).click();
+  await page.getByRole('tab', { name: 'Voice', exact: true }).click();
+  await page.getByLabel('Fallback transcription engine', { exact: true }).click();
   await page.getByRole('option', { name: 'Local WhisperType', exact: true }).waitFor();
   await shot('07-transcription-choice.png');
   await page.getByRole('option', { name: 'Local WhisperType', exact: true }).click();
   await page.getByLabel('Save transcription settings', { exact: true }).click();
+  await page.getByRole('status').filter({ hasText: 'Transcription settings saved' }).waitFor();
+  await page.getByRole('button', { name: 'Back to app', exact: true }).click();
   await page.waitForFunction(() => document.querySelector('button[aria-label="Dictate message"]').title.includes('Local WhisperType'));
   assert.match(await fs.readFile(path.join(home, 'config.toml'), 'utf8'), /WHISPERTYPE_BACKEND\s*=\s*"local"/);
   assert.equal(await page.getByLabel('Message Elpis').inputValue(), draft);
@@ -218,7 +222,6 @@ try {
   await chooseOption(page.getByLabel('Model', {exact:true}), 'gpt-6-luna');
   await chooseOption(page.getByLabel('Reasoning effort', {exact:true}), 'high');
   assert.equal(await page.getByLabel('Reasoning effort', {exact:true}).getAttribute('data-value'), 'high');
-  await page.locator('.next-turn').filter({hasText:'high'}).waitFor();
   const selectedReply = request => {
     if (JSON.stringify(request.input).includes('CONTEXT CHECKPOINT')) { provider.actions.unshift(selectedReply); return message('Previous task completed; the user requested the selected model and effort.'); }
     return message('Selected model and effort were used.');

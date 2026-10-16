@@ -28,4 +28,37 @@ function nativeBounds(value,zoom,size) {
   const width=Math.max(0,Math.min(size.width-x,Math.round(value.width*zoom))),height=Math.max(0,Math.min(size.height-y,Math.round(value.height*zoom)));
   return width&&height?{x,y,width,height}:null;
 }
-module.exports={browserUrl,trustedBrowserSender,nativeBounds};
+
+const LOCAL_HOST=/^(localhost|127(?:\.\d{1,3}){3}|\[::1\]|[^/]+\.localhost)$/i;
+const hostOf=url=>{try{return new URL(url).hostname||null;}catch{return null;}};
+
+/** The ChatGPT app's "This site can't be reached" screen, from Chromium's network error code. */
+function loadFailure(code,description,url) {
+  const host=hostOf(url),name=host??'This page',local=!!host&&LOCAL_HOST.test(host);
+  const connection='Checking the connection',network='Checking the proxy, firewall, and DNS configuration';
+  let summary=`${name} could not be loaded`,tips=[connection,network];
+  if(code===-105||code===-137)summary=`${name}'s server IP address could not be found`;
+  else if(code===-102||code===-100||code===-101){summary=`${name} refused to connect`;if(local)tips=['Checking that the development server is running on this port',connection];}
+  else if(code===-118||code===-7)summary=`${name} took too long to respond`;
+  else if(code===-106){summary=`${name} could not be loaded because the computer is offline`;tips=['Checking your Internet connection'];}
+  else if(code<=-200&&code>-300){summary=`${name}'s certificate could not be verified`;tips=['Checking that the address is correct','Checking the computer date and time'];}
+  else if(code===-130||code===-111||code===-115)tips=['Checking the proxy settings for the active network',connection];
+  return {heading:"This site can't be reached",summary,tips,code:/^ERR_[A-Z_]+$/.test(String(description))?description:`Error ${code}`};
+}
+
+/** "secure", "insecure" (plain HTTP on the network) or "local" (a development server on this computer). */
+function pageSecurity(url) {
+  let parsed;try{parsed=new URL(url);}catch{return null;}
+  if(parsed.protocol==='https:')return 'secure';
+  if(parsed.protocol!=='http:')return null;
+  return LOCAL_HOST.test(parsed.hostname)?'local':'insecure';
+}
+
+const ZOOM_STEPS=[0.25,0.33,0.5,0.67,0.75,0.8,0.9,1,1.1,1.25,1.5,1.75,2,2.5,3,4,5];
+/** Chromium's zoom ladder: "in" and "out" move to the next step from any factor; "reset" is 100%. */
+function zoomStep(factor,direction) {
+  if(direction==='reset')return 1;
+  if(direction==='in')return ZOOM_STEPS.find(step=>step>factor+0.001)??ZOOM_STEPS.at(-1);
+  return [...ZOOM_STEPS].reverse().find(step=>step<factor-0.001)??ZOOM_STEPS[0];
+}
+module.exports={browserUrl,trustedBrowserSender,nativeBounds,loadFailure,pageSecurity,zoomStep};

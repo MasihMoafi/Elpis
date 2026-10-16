@@ -13,5 +13,9 @@ function appAudio(contents, host, permission, details, origin) {
 function appNotifications(contents, host, permission, details, origin) {
   return permission === 'notifications' && details.isMainFrame !== false && fromApp(contents, host, details, origin);
 }
-const appPermission = (...args) => appAudio(...args) || appNotifications(...args);
-module.exports = { appAudio, appNotifications, appPermission };
+// Copy buttons use the web clipboard API. Grant writes only to the app, never clipboard reads.
+function appClipboard(contents, host, permission, details, origin) {
+  return permission === 'clipboard-sanitized-write' && details.isMainFrame !== false && fromApp(contents, host, details, origin);
+}
+const appPermission = (...args) => appAudio(...args) || appNotifications(...args) || appClipboard(...args);
+module.exports = { appAudio, appNotifications, appClipboard, appPermission };

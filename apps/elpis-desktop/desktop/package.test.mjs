@@ -7,16 +7,21 @@ import { createHash } from 'node:crypto';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
-import { stageDesktop } from './package.mjs';
+import { productionFiles, stageDesktop } from './package.mjs';
 
 const run = promisify(execFile);
-const production = [
-  'bridge/client.mjs', 'bridge/elpis-features.mjs', 'bridge/provider-keys.mjs', 'bridge/provider-settings.mjs', 'bridge/provider-models.mjs',
-  'bridge/rag-command.mjs', 'bridge/server.mjs', 'bridge/tools.mjs', 'bridge/transcription.mjs', 'bridge/attachments.mjs',
-  'bridge/resources/rag.md', 'desktop/browser-policy.cjs', 'desktop/browser.cjs',
-  'desktop/main.cjs', 'desktop/media-policy.cjs', 'desktop/preload.cjs', 'desktop/files.cjs',
-  'desktop/runtime.mjs', 'desktop/state.cjs', 'desktop/elpis-icon.png', 'lib/turn-replacement.ts', 'lib/thread-deletion.ts',
-];
+const production = productionFiles;
+
+// A file the app imports but the package leaves out stops the installed app at start (16 Oct: preferences.cjs, provider-keys.mjs).
+test('the package holds every local file its entry points import', async () => {
+  const root = fileURLToPath(new URL('../', import.meta.url)), seen = new Set(), pending = ['desktop/main.cjs', 'desktop/preload.cjs', 'desktop/runtime.mjs', 'bridge/server.mjs', 'bridge/client.mjs'];
+  while (pending.length) {
+    const name = pending.pop(); if (seen.has(name)) continue; seen.add(name);
+    const text = await fs.readFile(path.join(root, name), 'utf8');
+    for (const [, target] of text.matchAll(/(?:require\(|from |import\()\s*['"](\.{1,2}\/[^'"]+)['"]/g)) pending.push(path.posix.normalize(path.posix.join(path.posix.dirname(name), target)));
+  }
+  for (const name of seen) assert(production.includes(name), `${name} is imported but not packaged`);
+});
 
 async function put(file, data, mode) {
   await fs.mkdir(path.dirname(file), { recursive: true });
@@ -30,6 +35,8 @@ async function fixture() {
   const node = path.join(root, 'canonical-node', 'node');
   const wsReal = path.join(root, 'old-install', 'ws');
   const wsDirectory = path.join(source, 'node_modules', 'ws');
+  const ptyReal = path.join(root, 'terminal-deps', 'node-pty');
+  const ptyDirectory = path.join(source, 'node_modules', 'node-pty');
   for (const name of production) await put(path.join(source, name), `fixture ${name}\n`);
   await put(path.join(source, 'out', 'index.html'), '<p>Built renderer</p>');
   await put(path.join(source, 'out', '_next', 'static', 'app.js'), 'renderer();');
@@ -61,7 +68,12 @@ printf 'app=%s\\nargument=%s\\nnode-bin=%s\\nnode-mode=%s\\npath-first=%s\\nno-p
   await put(path.join(wsReal, 'LICENSE'), 'ws license');
   await fs.mkdir(path.dirname(wsDirectory), { recursive: true });
   await fs.symlink(wsReal, wsDirectory);
-  return { root, source, electronDist, wsDirectory, node, destination: path.join(root, 'staged') };
+  // The integrated terminal's native module: only its loader, licence and Linux build are shipped.
+  await put(path.join(ptyReal, 'package.json'), JSON.stringify({ name: 'node-pty', version: '1.1.0', main: './lib/index.js' }));
+  for (const name of ['LICENSE', 'lib/index.js', 'lib/unixTerminal.js', 'build/Release/pty.node']) await put(path.join(ptyReal, name), `node-pty ${name}`);
+  for (const name of ['lib/index.test.js', 'lib/index.js.map', 'prebuilds/darwin-x64/pty.node', 'src/unix/pty.cc', 'build/Release/obj.target/pty.node']) await put(path.join(ptyReal, name), 'not runtime');
+  await fs.symlink(ptyReal, ptyDirectory);
+  return { root, source, electronDist, wsDirectory, ptyDirectory, node, destination: path.join(root, 'staged') };
 }
 
 async function inventory(directory, relative = '') {
@@ -83,13 +95,15 @@ test('production package runs after its source and dependency installations move
   assert(all.includes('runtime/electron/LICENSES.chromium.html'));
   assert(all.includes('runtime/electron/locales/en-US.pak'));
   assert(all.includes('app/node_modules/ws/LICENSE'));
+  for (const name of ['package.json', 'LICENSE', 'lib/index.js', 'lib/unixTerminal.js', 'build/Release/pty.node']) assert(all.includes(`app/node_modules/node-pty/${name}`), name);
+  assert.deepEqual(all.filter(name => name.startsWith('app/node_modules/node-pty/')).length, 5, 'node-pty ships without its tests, maps, sources or other platforms');
   assert(!all.some(name => /(^|\/)(\.next|tests?|next)(\/|$)|\.test\./.test(name)));
   assert(!all.includes('app/desktop/launch.sh'));
   const identity = JSON.parse(await fs.readFile(path.join(options.destination, 'app/package.json'), 'utf8'));
   assert.equal(identity.name, 'elpis-desktop');
   assert.equal(identity.main, 'desktop/main.cjs');
   assert.equal(identity.type, 'module');
-  assert.deepEqual(identity.dependencies, { ws: '8.22.0' });
+  assert.deepEqual(identity.dependencies, { ws: '8.22.0', 'node-pty': '1.1.0' });
   assert.equal(identity.scripts, undefined);
   const manifest = JSON.parse(await fs.readFile(result.manifest, 'utf8'));
   assert(manifest.externalRequirements.some(requirement => requirement.startsWith('Node.js')));
@@ -164,7 +178,7 @@ test('command-line packaging emits its receipt without launching the desktop', a
   const options = await fixture();
   const result = await run(process.execPath, [fileURLToPath(new URL('./package.mjs', import.meta.url)),
     '--source', options.source, '--destination', options.destination,
-    '--electron-dist', options.electronDist, '--ws-directory', options.wsDirectory]);
+    '--electron-dist', options.electronDist, '--ws-directory', options.wsDirectory, '--pty-directory', options.ptyDirectory]);
   const receipt = JSON.parse(result.stdout);
   assert.equal(receipt.destination, options.destination);
   assert.equal(receipt.launcher, path.join(options.destination, 'launch'));

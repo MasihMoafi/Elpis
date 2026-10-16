@@ -1,21 +1,28 @@
 'use strict';
 
-const { app, BrowserWindow, WebContentsView, session, ipcMain, Menu, dialog, shell } = require('electron');
+const { app, BrowserWindow, WebContentsView, session, ipcMain, Menu, dialog, shell, clipboard } = require('electron');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const { createBrowser } = require('./browser.cjs');
+const { startBrowserAgentSocket } = require('./browser-agent.cjs');
 const { appPermission } = require('./media-policy.cjs');
 const { closeNeedsConfirmation } = require('./preferences.cjs');
 const { createStateStore, registerState } = require('./state.cjs');
 const { registerFiles } = require('./files.cjs');
+const { attachContextMenu } = require('./context-menu.cjs');
+const { registerTerminal } = require('./terminal.cjs');
+const { openThreadArgument, createThreadOpener } = require('./open-thread.cjs');
 
 // The renderer gets only the loopback app, never Node or filesystem access.
 let server;
+let browserAgentSocket;
 let window;
 let closing = false;
 let opening;
 let store;
 let closeConfirmed = false;
+// The chat the Elpis TUI's /app asked for (`--open-thread <id>`), at start-up or from a second launch.
+const threads = createThreadOpener(openThreadArgument(process.argv));
 // As in the ChatGPT app on Linux: no system title bar (white under a light system theme); the app draws its own
 // 36px bar in its sidebar colour and the window buttons sit over its right end. Everything is shown 10% larger.
 const ZOOM = 1.1;
@@ -44,9 +51,13 @@ async function createOrFocusWindow() {
     const { startDesktopServer } = await import(pathToFileURL(path.join(__dirname, '../bridge/server.mjs')).href);
     const { DesktopClient } = await import(pathToFileURL(path.join(__dirname, '../bridge/client.mjs')).href);
     const { ensureInstalledRuntime } = await import(pathToFileURL(path.join(__dirname, 'runtime.mjs')).href);
-    const client = await DesktopClient.connect({ beforeConnect: ensureInstalledRuntime });
-    try { server = await startDesktopServer({ client, staticDir: path.join(__dirname, '../out') }); }
-    catch (error) { client.close(); throw error; }
+    const { browserMcpConfig } = await import(pathToFileURL(path.join(__dirname, '../bridge/browser-mcp.mjs')).href);
+    browserAgentSocket = await startBrowserAgentSocket();
+    try {
+      const client = await DesktopClient.connect({ beforeConnect: ensureInstalledRuntime, browserConfig: browserMcpConfig(browserAgentSocket.path) });
+      try { server = await startDesktopServer({ client, staticDir: path.join(__dirname, '../out') }); }
+      catch (error) { client.close(); throw error; }
+    } catch (error) { await browserAgentSocket.close(); browserAgentSocket = undefined; throw error; }
   }
   const origin = new URL(server.url).origin;
   window = new BrowserWindow({
@@ -62,10 +73,13 @@ async function createOrFocusWindow() {
       preload: path.join(__dirname, 'preload.cjs'),
     },
   });
-  const browser = createBrowser({ host: window, origin, WebContentsView, session, ipcMain, openExternal: url => shell.openExternal(url) });
+  const browser = createBrowser({ host: window, origin, WebContentsView, session, ipcMain, Menu, clipboard, openExternal: url => shell.openExternal(url) });
+  browserAgentSocket.setAgent(browser.agent);
   store = createStateStore(path.join(app.getPath('userData'), 'workspace.json')); closeConfirmed = false;
   const disposeState = registerState({ host: window, origin, ipcMain, dialog, store });
   const disposeFiles = registerFiles({ host: window, origin, ipcMain, shell });
+  const disposeTerminal = registerTerminal({ host: window, origin, ipcMain, clipboard });
+  const disposeThreads = threads.attach({ host: window, origin, ipcMain });
   // The app's theme colours the window buttons; only the app's own page may set it.
   const host = window;
   const theme = (event, dark) => { if (event.sender === host.webContents && event.senderFrame === host.webContents.mainFrame && !host.isDestroyed()) host.setTitleBarOverlay(TITLE_BAR[dark === true ? 'dark' : 'light']); };
@@ -77,16 +91,15 @@ async function createOrFocusWindow() {
   window.webContents.on('will-navigate', (event, target) => {
     if (new URL(target).origin !== origin) event.preventDefault();
   });
-  window.webContents.setWindowOpenHandler(({ url }) => {
-    try { browser.open(url); } catch { /* Invalid links remain closed. */ }
-    return { action: 'deny' };
-  });
+  const openInBrowser = url => { try { browser.open(url); } catch { /* Invalid links remain closed. */ } };
+  window.webContents.setWindowOpenHandler(({ url }) => { openInBrowser(url); return { action: 'deny' }; });
+  const detachContextMenu = attachContextMenu(window.webContents, { Menu, clipboard, openLink: openInBrowser, origin, window });
   window.once('ready-to-show', () => window?.show());
   let disposed = false;
   window.on('close', event => {
     if (!mayClose()) { event.preventDefault(); return; }
     if (disposed) return; disposed = true;
-    disposeFiles(); disposeState(); browser.dispose(); ipcMain.removeListener('elpis:theme', theme);
+    detachContextMenu(); disposeFiles(); disposeTerminal(); disposeThreads(); disposeState(); browser.dispose(); ipcMain.removeListener('elpis:theme', theme);
   });
   window.on('closed', () => { window = undefined; });
   await window.loadURL(server.url);
@@ -96,10 +109,10 @@ async function createOrFocusWindow() {
 // elpis-desktop.desktop.in sets StartupWMClass=elpis-desktop to match, so docks show the Elpis icon.
 app.setName('Elpis');
 app.setPath('userData', path.join(app.getPath('appData'), 'Elpis'));
-if (!app.requestSingleInstanceLock()) {
+if (!app.requestSingleInstanceLock({ openThread: openThreadArgument(process.argv) })) {
   app.quit();
 } else {
-  app.on('second-instance', () => { void openWindow().catch(showStartupError); });
+  app.on('second-instance', (_event, argv, _cwd, data) => { threads.queue(data?.openThread ?? openThreadArgument(argv)); void openWindow().catch(showStartupError); });
   app.whenReady().then(async () => {
     // Built once: rebuilding an unchanged menu redraws the Linux menu row (Cloudroom's flicker).
     Menu.setApplicationMenu(Menu.buildFromTemplate([
@@ -118,7 +131,7 @@ if (!app.requestSingleInstanceLock()) {
     if (!mayClose()) return;
     closing = true;
     // Detach this UI only. The shared Elpis runtime owns running conversations.
-    Promise.resolve(server.close()).finally(() => app.quit());
+    Promise.all([server.close(), browserAgentSocket?.close()]).finally(() => app.quit());
   });
 }
 

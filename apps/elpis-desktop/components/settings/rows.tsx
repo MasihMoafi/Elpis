@@ -1,6 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
+import { RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { OptionSelect } from "@/components/ui/option-select";
 
@@ -15,8 +16,18 @@ export function SaveFeedback({ outcome, onReload }: { outcome: { ok: boolean; te
 
 /** ChatGPT-style settings building blocks: a page header, titled groups, and rows with a
  * title, a one-line description and a control on the right. */
-export function SettingsHeader({ title, description }: { title: string; description?: ReactNode }) {
-  return <header className="settings-page-header"><h2>{title}</h2>{description && <p>{description}</p>}</header>;
+export function SettingsHeader({ title, description, action }: { title: string; description?: ReactNode; action?: ReactNode }) {
+  return <header className="settings-page-header"><div className="settings-page-heading"><h2>{title}</h2>{description && <p>{description}</p>}</div>{action}</header>;
+}
+
+/** A page's Refresh action, placed by SettingsHeader beside the title. */
+export function RefreshButton({ onClick, disabled }: { onClick: () => void; disabled?: boolean }) {
+  return <Button variant="ghost" size="sm" disabled={disabled} onClick={onClick}><RefreshCw />Refresh</Button>;
+}
+
+/** A list with nothing to show: what is missing, then what to do about it. */
+export function SettingsEmpty({ title, children }: { title: string; children?: ReactNode }) {
+  return <div className="settings-rows settings-empty" role="status"><strong>{title}</strong>{children}</div>;
 }
 
 export function SettingsGroup({ title, description, action, children }: { title?: string; description?: ReactNode; action?: ReactNode; children: ReactNode }) {
@@ -46,11 +57,11 @@ export function SettingsNotice({ tone = "status", children }: { tone?: "status" 
   return <p className={`settings-notice${tone === "alert" ? " alert" : ""}`} role={tone}>{children}</p>;
 }
 
-type Option<T extends string> = { value: T; label: string; disabled?: boolean };
+type Option<T extends string> = { value: T; label: string; disabled?: boolean; icon?: ReactNode };
 /** A small set of mutually exclusive choices shown side by side. */
 export function Segmented<T extends string>({ label, value, options, onChange, disabled }: { label: string; value: T; options: Option<T>[]; onChange: (value: T) => void; disabled?: boolean }) {
-  return <div role="radiogroup" aria-label={label} className="settings-segmented">
-    {options.map(option => <Button key={option.value} type="button" variant="ghost" size="sm" role="radio" aria-checked={value === option.value} disabled={disabled || option.disabled} onClick={() => onChange(option.value)}>{option.label}</Button>)}
+  return <div role="radiogroup" aria-label={label} className="segmented">
+    {options.map(option => <Button key={option.value} type="button" variant="ghost" size="sm" role="radio" aria-checked={value === option.value} disabled={disabled || option.disabled} onClick={() => onChange(option.value)}>{option.icon}{option.label}</Button>)}
   </div>;
 }
 

@@ -9,7 +9,7 @@ test('stopping a navigation does not turn its rejected load promise into a page 
   const host = Object.assign(new EventEmitter(), { webContents: root, isDestroyed: () => false, getContentBounds: () => ({ width: 1320, height: 900 }), contentView: { addChildView() {}, removeChildView() {} } });
   class View {
     constructor() { page = this.webContents = Object.assign(new EventEmitter(), { navigationHistory: { canGoBack: () => false, canGoForward: () => false },
-      setWindowOpenHandler() {}, isDestroyed: () => false, close() {}, focus() {},
+      setWindowOpenHandler() {}, isDestroyed: () => false, close() {}, focus() {}, send() {}, getZoomFactor: () => 1, getURL: () => '',
       loadURL: () => new Promise((_resolve, reject) => { this.reject = reject; }),
       stop: () => { this.reject(Object.assign(Error("(-3) loading 'https://example.com/'"), { errno: -3 })); page.emit('did-stop-loading'); } }); }
     setVisible() {} setBounds() {}

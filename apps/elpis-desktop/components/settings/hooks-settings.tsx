@@ -1,11 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { api } from "@/lib/api";
-import { SaveFeedback, SettingRow, SettingsGroup, SettingsHeader, SettingsNotice } from "@/components/settings/rows";
+import { RefreshButton, SaveFeedback, SettingRow, SettingsEmpty, SettingsGroup, SettingsHeader, SettingsNotice } from "@/components/settings/rows";
 import { useSaver } from "@/components/settings/use-saver";
 
 type Hook = { key: string; event: string | null; handler: string | null; command: string | null; server: string | null; tool: string | null; matcher: string | null; timeoutSec: number | null; statusMessage: string | null; source: string | null; sourcePath: string | null; pluginId: string | null; enabled: boolean; managed: boolean; trust: string | null };
@@ -31,13 +30,10 @@ export function HooksSettings() {
     try { setData(await api<Hooks>("/hooks", { version: data?.version, key: hook.key, ...body })); } catch (e) { await load(); throw e; }
   }, done);
   return <div aria-label="Hooks">
-    <div className="flex flex-wrap items-start justify-between gap-3">
-      <SettingsHeader title="Hooks" description="Lifecycle hooks from your Elpis config, hooks.json and enabled plugins. A hook runs only when it is on and trusted." />
-      <Button variant="ghost" size="sm" onClick={() => void load()}><RefreshCw size={14} />Refresh</Button>
-    </div>
+    <SettingsHeader title="Hooks" description="Lifecycle hooks from your Elpis config, hooks.json and enabled plugins. A hook runs only when it is on and trusted." action={<RefreshButton onClick={() => void load()} />} />
     {error && <SettingsNotice tone="alert">Could not read hooks: {error}</SettingsNotice>}
     {!data && !error && <SettingsNotice>Reading hooks…</SettingsNotice>}
-    {data && !data.hooks.length && <div className="settings-rows settings-empty"><strong>No hooks found</strong>Configured hooks will appear here.</div>}
+    {data && !data.hooks.length && <SettingsEmpty title="No hooks found">Configured hooks will appear here.</SettingsEmpty>}
     {data && data.hooks.length > 0 && <SettingsGroup>
       {data.hooks.map(hook => {
         const trust = TRUST[hook.trust ?? ""] ?? { label: hook.trust ?? "Trust not reported", tone: "" };

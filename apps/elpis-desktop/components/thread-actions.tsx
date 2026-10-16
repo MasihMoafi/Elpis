@@ -1,12 +1,12 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { AgentsIcon, ArchiveIcon, PinIcon } from "@/components/elpis-icons";
-import { MoreHorizontal, Pencil, PinOff, Trash2 } from "lucide-react";
+import { useEffect, useRef, useState, type ReactElement, type ReactNode } from "react";
+import { AgentsIcon, ArchiveIcon, PinIcon, TerminalIcon } from "@/components/elpis-icons";
+import { Pencil, PinOff, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { AlertDialog, AlertDialogClose, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { AlertDialog, AlertDialogClose, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import { MoreMenu, RightClickMenu, type MenuAction } from "@/components/action-menu";
 import { readPreferences, savePreferences } from "@/lib/preferences";
 import { isAgent, title, type Thread } from "@/lib/api";
 
@@ -30,10 +30,19 @@ type Props = {
   onRenameRequestHandled?: () => void;
   /** The trigger's name; the header's copy is "Chat actions", as in the ChatGPT app. */
   label?: string;
+  /** The element the chat sits in (a row, a tab): right-click anywhere on it opens the same menu as "…". */
+  area: ReactElement;
+  /** Draws the area's contents; `menu` is the "…" button, to place where it belongs. */
+  children: (menu: ReactNode) => ReactNode;
+  /** Several chats selected in the sidebar, this one among them: the menu then acts on all of them. */
+  selection?: Thread[];
+  /** Resumes this chat in the Elpis TUI, in its integrated terminal (desktop app only). */
+  onOpenInTui?: (thread: Thread) => void;
 };
 
-/** Row menu: Rename, Pin, Archive and Delete, each through Elpis. Failures are shown as Elpis reported them. */
-export function ThreadActions({ thread, onDelete, onRequestDelete, onRename, onArchive, pinned, onPin, agents, renameRequested, onRenameRequestHandled, label }: Props) {
+/** A chat's menu: Rename, Pin, Archive and Delete, each through Elpis. One list drawn by the "…" button and by right-click.
+ * Failures are shown as Elpis reported them. */
+export function ThreadActions({ thread, onDelete, onRequestDelete, onRename, onArchive, pinned, onPin, agents, renameRequested, onRenameRequestHandled, label, area, children, selection, onOpenInTui }: Props) {
   const [renaming, setRenaming] = useState(false);
   const [deleting, setDeleting] = useState<Thread[] | null>(null);
   const [name, setName] = useState("");
@@ -53,26 +62,29 @@ export function ThreadActions({ thread, onDelete, onRequestDelete, onRename, onA
     catch (e) { setError(message(e)); }
     finally { setBusy(false); }
   }
+  const many = selection && selection.length > 1 ? selection : null, suffix = many ? ` ${many.length} chats` : "";
+  const remove: MenuAction | undefined = onRequestDelete || onDelete ? { id: "delete", label: `Delete${suffix}`, icon: <Trash2 size={14} />, hint: "D", destructive: true, run: () => onRequestDelete ? onRequestDelete(thread) : setDeleting([thread]) } : undefined;
+  const archive: MenuAction | undefined = onArchive ? { id: "archive", label: `Archive${suffix}`, icon: <ArchiveIcon size={14} />, run: () => { for (const chat of many ?? [thread]) void onArchive(chat); } } : undefined;
+  const actions = (many ? [archive, remove] : [
+    onRename ? { id: "rename", label: "Rename", icon: <Pencil size={14} />, run: rename } : undefined,
+    onPin ? { id: "pin", label: pinned ? "Unpin" : "Pin", icon: pinned ? <PinOff size={14} /> : <PinIcon size={14} />, run: () => onPin(thread) } : undefined,
+    agents ? { id: "agents", label: agents.shown ? "Hide agents" : "Show agents", icon: <AgentsIcon size={14} />, run: agents.onToggle } : undefined,
+    onOpenInTui ? { id: "tui", label: "Open in Elpis TUI", icon: <TerminalIcon size={14} />, run: () => onOpenInTui(thread) } : undefined,
+    archive, remove,
+  ]).filter((action): action is MenuAction => !!action);
   return <>
-    <DropdownMenu>
-      <DropdownMenuTrigger render={<Button variant="ghost" size="icon-xs" className="thread-actions" aria-label={label ?? `Actions for ${current}`} title="Rename, archive or delete" />}>
-        <MoreHorizontal size={14} />
-      </DropdownMenuTrigger>
-      <DropdownMenuContent>
-        {onRename && <DropdownMenuItem onClick={rename}><Pencil size={14} />Rename</DropdownMenuItem>}
-        {onPin && <DropdownMenuItem onClick={() => onPin(thread)}>{pinned ? <PinOff size={14} /> : <PinIcon size={14} />}{pinned ? "Unpin" : "Pin"}</DropdownMenuItem>}
-        {agents && <DropdownMenuItem onClick={agents.onToggle}><AgentsIcon size={14} />{agents.shown ? "Hide agents" : "Show agents"}</DropdownMenuItem>}
-        {onArchive && <DropdownMenuItem onClick={() => void onArchive(thread)}><ArchiveIcon size={14} />Archive</DropdownMenuItem>}
-        {(onRequestDelete || onDelete) && <DropdownMenuItem variant="destructive" onClick={() => onRequestDelete ? onRequestDelete(thread) : setDeleting([thread])}><Trash2 size={14} />Delete<kbd aria-hidden="true" className="ml-auto text-xs opacity-70">D</kbd></DropdownMenuItem>}
-      </DropdownMenuContent>
-    </DropdownMenu>
+    <RightClickMenu actions={actions} area={area}>
+      {children(<MoreMenu actions={actions} className="thread-actions" label={label ?? `Actions for ${current}`} title="Rename, archive or delete" />)}
+    </RightClickMenu>
     <AlertDialog open={renaming} onOpenChange={value => { if (!busy && !value) setRenaming(false); }}>
       <AlertDialogContent>
-        <form aria-label="Rename conversation" onSubmit={event => { event.preventDefault(); if (name.trim()) void save(name.trim()); }}>
+        <AlertDialogHeader>
           <AlertDialogTitle>Rename conversation</AlertDialogTitle>
           <AlertDialogDescription>The new name is saved in Elpis and shown in every client.</AlertDialogDescription>
-          <Input className="my-4" aria-label="Conversation name" maxLength={120} value={name} onChange={event => setName(event.target.value)} autoFocus />
-          {error && <p role="alert" className="mb-3 text-sm text-destructive">{error}</p>}
+        </AlertDialogHeader>
+        <form aria-label="Rename conversation" className="grid gap-4" onSubmit={event => { event.preventDefault(); if (name.trim()) void save(name.trim()); }}>
+          <Input aria-label="Conversation name" maxLength={120} value={name} onChange={event => setName(event.target.value)} autoFocus />
+          {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
           <AlertDialogFooter>
             <AlertDialogClose render={<Button type="button" variant="outline" disabled={busy} />}>Cancel</AlertDialogClose>
             <Button type="submit" disabled={busy || !name.trim()}>{busy ? "Saving…" : "Save"}</Button>
@@ -109,10 +121,12 @@ export function DeleteChatsDialog({ threads, onDelete, onClose }: { threads: Thr
   const only = threads?.length === 1 ? threads[0] : null;
   return <AlertDialog open={!!threads && (confirm || !!error)} onOpenChange={value => { if (!busy && !value) onClose(); }}>
     <AlertDialogContent>
+      <AlertDialogHeader>
       <AlertDialogTitle>{only ? `Delete “${title(only)}”?` : `Delete ${threads?.length ?? 0} chats?`}</AlertDialogTitle>
       <AlertDialogDescription>
         {only ? isAgent(only) ? "This permanently deletes this agent's chat from Elpis." : "This permanently deletes the conversation and all of its agents from Elpis." : "This permanently deletes these conversations and all of their agents from Elpis."} Chats continued from these agents are deleted too. This cannot be undone.
       </AlertDialogDescription>
+      </AlertDialogHeader>
       {confirm && <label className="flex items-center gap-2 text-sm text-muted-foreground"><input type="checkbox" className="accent-primary" checked={skip} disabled={busy} onChange={event => setSkip(event.target.checked)} />Don’t show me this again</label>}
       {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
       <AlertDialogFooter>

@@ -6,6 +6,7 @@ import { ModelPicker } from "@/components/model-picker";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { api, providerChoices, type Model, type ProviderSettings, type Thread } from "@/lib/api";
+import { SettingsHeader } from "@/components/settings/rows";
 
 type Props = { models: Model[]; settings: ProviderSettings | null; defaultCwd: string; connected: boolean;
   onCreated: (thread: Thread, turnId: string | null, unsent?: string, error?: string) => void; onConfigure?: () => void };
@@ -50,9 +51,9 @@ export function NewAgentForm({ models, settings, defaultCwd, connected, onCreate
     finally { setBusy(false); }
   }
   const ready = connected && !!name.trim() && (!needsModelId || !!model.trim()) && !busy;
-  return <form aria-label="New agent" className="settings-page grid gap-5" onSubmit={submit}>
-    <header><h2 className="text-lg font-semibold">New agent</h2><p className="text-sm text-muted-foreground">Starts a separate Elpis conversation with its own model, folder and instructions. Message it from its chat or the Agents page.</p></header>
-    <section className="settings-card grid gap-4 p-4">
+  return <form aria-label="New agent" className="settings-page" onSubmit={submit}>
+    <SettingsHeader title="New agent" description="Starts a separate Elpis conversation with its own model, folder and instructions. Message it from its chat or the Agents page." />
+    <section className="settings-card">
       <label className="field">Name<Input aria-label="Name" value={name} onChange={e => setName(e.target.value)} placeholder="What this agent is for" maxLength={120} required /></label>
       <div className="grid gap-4 sm:grid-cols-2">
         <label className="field">Model<ModelPicker choices={choices} models={models} model={model} choiceId={choiceId} defaultModel={settings?.main.model}

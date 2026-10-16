@@ -56,6 +56,7 @@ test('plan mode: "+" turns it on, a proposed plan asks to be implemented, and im
 
     await prompt.getByRole('button', { name: 'No, stay in Plan mode', exact: true }).click();
     assert.equal(await prompt.count(), 0); assert.equal(await pill.count(), 1, 'declining keeps Plan mode on');
+    assert.equal(await page.getByLabel('Message Elpis').evaluate(e => e === document.activeElement), true, 'declining returns to the composer');
     await page.getByLabel('Message Elpis').fill('Revise it.'); await page.getByRole('button', { name: 'Send message', exact: true }).click();
     await page.getByRole('region', { name: 'Proposed plan' }).filter({ hasText: 'Plan 2' }).waitFor();
     assert.equal('mode' in turns[1], false, 'an unchanged mode is not sent again');
@@ -64,6 +65,8 @@ test('plan mode: "+" turns it on, a proposed plan asks to be implemented, and im
     await page.getByText('Implemented.', { exact: true }).waitFor();
     assert.deepEqual(turns[2], { text: 'Implement the plan.', mode: 'default' });
     assert.equal(await pill.count(), 0, 'implementing leaves Plan mode'); assert.equal(await prompt.count(), 0);
+    await page.waitForTimeout(100);
+    assert.equal(await page.getByLabel('Message Elpis').evaluate(e => e === document.activeElement), true, 'implementing returns to the composer');
     assert.deepEqual(errors, []);
   } finally { await browser.close(); server.close(); }
 });

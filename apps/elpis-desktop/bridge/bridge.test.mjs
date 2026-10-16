@@ -14,7 +14,7 @@ const CHILD = '00000000-0000-0000-0000-000000000002';
 const CREATED = '00000000-0000-0000-0000-000000000003';
 const MODEL = 'test-model';
 const FORK = '00000000-0000-0000-0000-000000000007';
-function fixture({ prunerSupported = false, omitWorkflowParentInList = false, replacementPages } = {}) {
+function fixture({ prunerSupported = false, omitWorkflowParentInList = false, replacementPages, browserConfig } = {}) {
   const workflowRecords = [];
   let pruner = {model:"optimizer-original",provider:"openai",version:"pruner-v1",providers:[{id:"openai",displayName:"OpenAI"}],systemPrompt:"PRIVATE CONFIG SECRET"};
   const configRead = { config: {
@@ -37,6 +37,8 @@ function fixture({ prunerSupported = false, omitWorkflowParentInList = false, re
     [CHILD, { id: CHILD, name: null, preview: '', agentNickname: 'Sagan', model: MODEL, modelProvider: 'openai', parentThreadId: ROOT, canAcceptDirectInput: false, source: { subAgent: { thread_spawn: { parent_thread_id: ROOT, agent_path: '/root/failure_reporting' } } }, status: { type: 'active' } }],
   ]);
   const socket = new EventEmitter(); socket.sent = []; socket.closed = false;
+  // A thread's applied permissions, as the engine reports them in thread/settings/updated and thread/resume.
+  const engineSettings = new Map();
   socket.send = raw => {
     const request = JSON.parse(raw); socket.sent.push(request);
     if (request.id === undefined || !request.method) return;
@@ -53,7 +55,7 @@ function fixture({ prunerSupported = false, omitWorkflowParentInList = false, re
       // Like native stored rows, listed threads do not report forkedFromId; thread/read does.
       case 'thread/list': result = { data: [...threads.values()].filter(thread => !!thread.archived === !!request.params.archived).filter(thread => !request.params.ancestorThreadId || thread.parentThreadId === request.params.ancestorThreadId).map(thread => ({ ...thread, forkedFromId: null, ...(omitWorkflowParentInList && thread.source?.subAgent?.other?.startsWith('work_graph:') ? {parentThreadId:null} : {}) })), nextCursor: null }; break;
       case 'thread/read': result = { thread: structuredClone(threads.get(request.params.threadId)) }; break;
-      case 'thread/resume': result = { thread: structuredClone(threads.get(request.params.threadId)), model: threads.get(request.params.threadId).model ?? MODEL, collaborationMode: threads.get(request.params.threadId).collaborationMode, initialTurnsPage: { data: [] } }; break;
+      case 'thread/resume': result = { ...(engineSettings.has(request.params.threadId) ? (({ sandboxPolicy, ...rest }) => ({ ...rest, sandbox: sandboxPolicy }))(engineSettings.get(request.params.threadId)) : {}), thread: structuredClone(threads.get(request.params.threadId)), model: threads.get(request.params.threadId).model ?? MODEL, collaborationMode: threads.get(request.params.threadId).collaborationMode, initialTurnsPage: { data: [] } }; break;
       case 'thread/turns/list': result = { data: threads.get(request.params.threadId).status?.type === 'active' ? [{ id: 'running-turn', status: 'inProgress' }] : [] }; break;
       case 'thread/fork': { const thread = { id: FORK, forkedFromId: request.params.threadId, source: 'appServer', canAcceptDirectInput: true, model: request.params.model, modelProvider: request.params.modelProvider, status: { type: 'idle' } }; threads.set(FORK, thread); result = { thread }; break; }
       case 'thread/name/set': threads.get(request.params.threadId).name = request.params.name; result = {}; break;
@@ -77,6 +79,15 @@ function fixture({ prunerSupported = false, omitWorkflowParentInList = false, re
       }
       case 'turn/start': threads.get(request.params.threadId).status = { type: 'active' }; result = { turn: { id: 'new-turn', status: 'inProgress', items: [] } }; break;
       case 'turn/steer': result = { turnId: request.params.expectedTurnId }; break;
+      case 'thread/settings/update': {
+        // As the engine: the request only queues the change; the applied settings follow in
+        // thread/settings/updated, and only when they changed.
+        const p = request.params, before = JSON.stringify(engineSettings.get(p.threadId) ?? null);
+        const applied = { approvalPolicy: p.approvalPolicy, approvalsReviewer: p.approvalsReviewer, sandboxPolicy: p.permissions ? { type: 'dangerFullAccess' } : p.sandboxPolicy, activePermissionProfile: p.permissions ? { id: p.permissions } : null };
+        engineSettings.set(p.threadId, applied); result = {};
+        if (JSON.stringify(applied) !== before) setTimeout(() => socket.emit('message', JSON.stringify({ method: 'thread/settings/updated', params: { threadId: p.threadId, threadSettings: { ...applied, model: threads.get(p.threadId).model ?? MODEL } } })), 5);
+        break;
+      }
       case 'turn/interrupt': threads.get(request.params.threadId).status = { type: 'idle' }; result = {}; break;
       case 'workGraph/list': result = {data:workflowRecords.filter(graph => graph.rootThreadId === request.params.rootThreadId)}; break;
       case 'workGraph/runWithProviders':
@@ -86,9 +97,21 @@ function fixture({ prunerSupported = false, omitWorkflowParentInList = false, re
     queueMicrotask(() => socket.emit('message', JSON.stringify({ id: request.id, result })));
   };
   socket.close = () => { socket.closed = true; socket.emit('close'); };
-  const client = new DesktopClient(socket);
-  return { socket, client, threads, configRead, requirementsRead, workflowRecords, hooksList };
+  const client = new DesktopClient(socket, { browserConfig });
+  return { socket, client, threads, configRead, requirementsRead, workflowRecords, hooksList, engineSettings };
 }
+
+test('desktop browser MCP follows new, resumed and forked desktop chats without writing user config', async () => {
+  const browserConfig={'mcp_servers.elpis_browser':{command:'node',args:['browser-mcp.mjs'],env:{ELPIS_BROWSER_SOCKET:'/tmp/private-browser.sock'}}};
+  const {client,socket}=fixture({browserConfig});
+  try {
+    await client.initialize();await client.createThread({});
+    assert.deepEqual(socket.sent.find(row=>row.method==='thread/start').params.config,browserConfig);
+    await client.resume(ROOT,{});await client.forkThread(ROOT,{});
+    for(const method of ['thread/resume','thread/fork'])assert.deepEqual(socket.sent.find(row=>row.method===method).params.config,browserConfig);
+    assert.equal(socket.sent.some(row=>row.method==='config/batchWrite'),false);
+  } finally {client.close();}
+});
 
 test('configured connection models use only that endpoint and never authorize the same ID on the main route', async () => {
   const { client, socket, configRead, requirementsRead } = fixture(); await client.initialize();
@@ -809,6 +832,110 @@ test('context exposes actual scoped events without resuming and strips audit pat
   client.close();
 });
 
+test('the context ledger measures the latest request and reconciles the estimated categories to it, as the TUI ledger does', async () => {
+  const { contextLedger } = await import('./elpis-features.mjs');
+  const attribution = { userMessages: 1000, agentMessages: 3000, reasoning: 0, toolCalls: 500, toolResults: 27000, systemInstructions: 8000, developerMessages: 1500, toolDefinitions: 9000, outputSchema: 1000, unrecognizedItems: 0, estimatedTotal: 51000 };
+  const usage = (last, window, contextAttribution) => ({ total: { totalTokens: 900000 }, last, modelContextWindow: window, contextAttribution });
+  const ledger = contextLedger(usage({ inputTokens: 48000, outputTokens: 2000, totalTokens: 50000 }, 200000, attribution));
+  assert.equal(ledger.used, 50000, 'measured: the latest request\'s total tokens (tokens_in_context_window), not the cumulative total');
+  assert.equal(ledger.window, 200000);
+  assert.deepEqual(ledger.categories.map(row => [row.label, row.tokens]), [
+    ['User messages', 980], ['Agent messages', 2941], ['Tool calls', 490], ['Tool results', 26471],
+    ['System instructions', 7843], ['Developer messages', 1471], ['Tool definitions + schema', 9804],
+  ], 'TUI names and order, zero rows dropped, largest-remainder shares that sum to the measured total');
+  assert.equal(ledger.categories.reduce((sum, row) => sum + row.tokens, 0), 50000);
+  assert.deepEqual(contextLedger(usage({ totalTokens: 50000 }, 200000, null)), { used: 50000, window: 200000, categories: [] }, 'no attribution: measured total only');
+  assert.deepEqual(contextLedger(usage({ totalTokens: 7 }, 0, attribution)).window, null, 'a window of zero is capacity unknown');
+  assert.deepEqual(contextLedger(usage({ totalTokens: 0 }, 1000, attribution)).categories, [], 'nothing measured, nothing attributed');
+  assert.deepEqual(contextLedger(null), { used: null, window: null, categories: [] });
+
+  const { client, socket } = fixture(); await client.initialize();
+  assert.deepEqual((await client.context(ROOT)).ledger, { used: null, window: null, categories: [] });
+  const emit = (method, params) => socket.emit('message', JSON.stringify({ method, params }));
+  emit('thread/tokenUsage/updated', { threadId: ROOT, tokenUsage: usage({ totalTokens: 51000 }, 200000, attribution) });
+  // A replay after resume carries no shares; the last known ones stay, scaled to the new measured total.
+  emit('thread/tokenUsage/updated', { threadId: ROOT, tokenUsage: usage({ totalTokens: 50000 }, 200000) });
+  const result = await client.context(ROOT);
+  assert.equal(result.tokenUsage.contextAttribution.toolResults, 27000);
+  assert.equal(result.ledger.used, 50000);
+  assert.equal(result.ledger.categories.find(row => row.id === 'toolResults').tokens, 26471);
+  assert.deepEqual((await client.context(CHILD)).ledger, { used: null, window: null, categories: [] });
+  client.close();
+});
+
+test('an old chat shows the last usage its rollout recorded, plain or compressed, until live events replace it', async () => {
+  const { restoredTokenUsage } = await import('./elpis-features.mjs');
+  const zlib = await import('node:zlib');
+  const temp = await fs.mkdtemp(path.join(os.tmpdir(), 'elpis-rollout-usage-'));
+  const usage = total => ({ input_tokens: total - 100, cached_input_tokens: 10, cache_write_input_tokens: 0, output_tokens: 100, reasoning_output_tokens: 7, total_tokens: total });
+  const line = payload => JSON.stringify({ timestamp: '2026-10-16T00:00:00Z', type: 'event_msg', payload });
+  const lines = [JSON.stringify({ type: 'session_meta', payload: { id: ROOT } }),
+    line({ type: 'token_count', info: { total_token_usage: usage(30000), last_token_usage: usage(30000), model_context_window: 200000 } }),
+    line({ type: 'token_count', info: { total_token_usage: usage(70000), last_token_usage: usage(40000), model_context_window: 200000 }, rate_limits: null }),
+    // A large tool result after it, and a rate-limit-only count with no usage, as real rollouts have.
+    JSON.stringify({ type: 'response_item', payload: { type: 'function_call_output', output: 'x'.repeat(300000) } }),
+    line({ type: 'token_count', info: null, rate_limits: { primary: null } })];
+  const plain = path.join(temp, 'rollout-a.jsonl'), packed = path.join(temp, 'rollout-b.jsonl.zst'), empty = path.join(temp, 'rollout-c.jsonl');
+  await fs.writeFile(plain, lines.join('\n') + '\n');
+  await fs.writeFile(packed, zlib.zstdCompressSync(Buffer.from(lines.join('\n') + '\n')));
+  await fs.writeFile(empty, lines[0] + '\n');
+  const expected = { total: { inputTokens: 69900, cachedInputTokens: 10, cacheWriteInputTokens: 0, outputTokens: 100, reasoningOutputTokens: 7, totalTokens: 70000 },
+    last: { inputTokens: 39900, cachedInputTokens: 10, cacheWriteInputTokens: 0, outputTokens: 100, reasoningOutputTokens: 7, totalTokens: 40000 }, modelContextWindow: 200000, contextAttribution: null };
+  assert.deepEqual(await restoredTokenUsage(plain), expected, 'the last count that carries usage, read from the end of the file');
+  assert.deepEqual(await restoredTokenUsage(packed), expected, 'compressed rollouts are read the same way');
+  assert.equal(await restoredTokenUsage(empty), null);
+  for (const bad of [null, 'rollout.jsonl', path.join(temp, 'missing.jsonl'), path.join(temp, 'notes.txt')]) assert.equal(await restoredTokenUsage(bad), null, `${bad} is not read`);
+
+  const { client, socket, threads } = fixture(); await client.initialize();
+  threads.get(ROOT).path = plain;
+  const restored = await client.context(ROOT);
+  assert.deepEqual(restored.ledger, { used: 40000, window: 200000, categories: [] }, 'measured numbers as soon as the chat opens; shares wait for the next request, as in the TUI');
+  assert.equal(restored.availability.tokenUsage, 'restored');
+  assert.equal(socket.sent.some(message => message.method === 'thread/resume'), false, 'reading usage does not resume the chat');
+  socket.emit('message', JSON.stringify({ method: 'thread/tokenUsage/updated', params: { threadId: ROOT, tokenUsage: { last: { totalTokens: 41000 }, modelContextWindow: 200000 } } }));
+  const live = await client.context(ROOT);
+  assert.equal(live.ledger.used, 41000); assert.equal(live.availability.tokenUsage, 'live');
+  client.close();
+});
+
+test('the ledger switches write the keys the TUI ledger writes: Smart Prune and Subagents features, and the rag MCP server', async t => {
+  const { client, socket, configRead } = fixture(); await client.initialize();
+  const writes = () => socket.sent.filter(message => message.method === 'config/batchWrite').map(message => message.params);
+  assert.deepEqual(await client.contextSwitches(), { version: 'user-version', write: { available: true }, smartPrune: true, subagents: true, rag: true },
+    'Subagents is on unless features.multi_agent is false (its default); RAG is the rag server\'s enabled flag');
+  await client.saveContextSwitches({ version: 'user-version', subagents: false });
+  await client.saveContextSwitches({ version: 'user-version', smartPrune: false });
+  assert.deepEqual(writes(), [
+    { edits: [{ keyPath: 'features.multi_agent', value: false, mergeStrategy: 'replace' }], expectedVersion: 'user-version', reloadUserConfig: true },
+    { edits: [{ keyPath: 'features.automatic_context_pruning', value: false, mergeStrategy: 'replace' }], expectedVersion: 'user-version', reloadUserConfig: true },
+  ], 'one key per switch, reloaded so open chats use it from their next turn');
+  assert.equal(socket.sent.some(message => message.method === 'config/mcpServer/reload'), false);
+  await client.saveContextSwitches({ version: 'user-version', rag: false });
+  assert.deepEqual(writes().at(-1).edits, [{ keyPath: 'mcp_servers.rag.enabled', value: false, mergeStrategy: 'replace' }]);
+  assert.equal(socket.sent.some(message => message.method === 'config/mcpServer/reload'), true, 'MCP servers reload after the RAG switch');
+  configRead.config.features.multi_agent = false; configRead.config.mcp_servers.rag.enabled = false;
+  assert.deepEqual(await client.contextSwitches(), { version: 'user-version', write: { available: true }, smartPrune: true, subagents: false, rag: false });
+  await assert.rejects(client.saveContextSwitches({ version: 'old-version', rag: true }), error => error.status === 409);
+  await assert.rejects(client.saveContextSwitches({ version: 'user-version', rag: 'yes' }), /on or off/);
+  await assert.rejects(client.saveContextSwitches({ version: 'user-version', memories: true }), /Unsupported request fields/);
+  await assert.rejects(client.saveContextSwitches({ version: 'user-version' }), /No switch/);
+  delete configRead.config.mcp_servers.rag;
+  assert.equal((await client.contextSwitches()).rag, null, 'no rag server configured: no RAG switch to flip');
+  await assert.rejects(client.saveContextSwitches({ version: 'user-version', rag: true }), error => error.status === 409);
+
+  const temp = await fs.mkdtemp(path.join(os.tmpdir(), 'elpis-desktop-test-')); const out = path.join(temp, 'out'); await fs.mkdir(out); await fs.writeFile(path.join(out, 'index.html'), '<h1>Elpis</h1>');
+  const app = await startDesktopServer({ client, staticDir: out }); t.after(() => app.close());
+  const url = new URL(app.url), origin = url.origin, token = new URLSearchParams(url.hash.slice(1)).get('token');
+  const request = (method, data, headers = {}) => fetch(origin + '/api/context/switches', { method, headers: { 'Content-Type': 'application/json', Origin: origin, ...headers }, ...(data ? { body: JSON.stringify(data) } : {}) });
+  assert.equal((await request('GET')).status, 401);
+  const auth = await fetch(origin + '/api/session', { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: origin }, body: JSON.stringify({ token }) });
+  const cookie = auth.headers.get('set-cookie').split(';')[0];
+  assert.equal((await (await request('GET', null, { Cookie: cookie })).json()).subagents, false);
+  const saved = await request('POST', { version: 'user-version', subagents: true }, { Cookie: cookie });
+  assert.equal(saved.status, 200); assert.deepEqual(writes().at(-1).edits, [{ keyPath: 'features.multi_agent', value: true, mergeStrategy: 'replace' }]);
+  client.close();
+});
+
 
 test('maintenance edits are narrow, preserve unknowns, and reject stale versions before mutation', async () => {
   const {client,socket,configRead}=fixture(); await client.initialize();
@@ -874,6 +1001,10 @@ test('the default sandbox reads and writes the permission profile when the confi
   assert.deepEqual(await save(null), [{ keyPath: 'default_permissions', value: null, mergeStrategy: 'replace' }]);
   configRead.config.default_permissions = ':danger-full-access';
   assert.equal((await client.settings()).options.sandboxMode, 'danger-full-access');
+  // Bypass permissions as the default is reported as itself, but Settings cannot choose it.
+  configRead.config.default_permissions = ':bypass-permissions';
+  assert.equal((await client.settings()).options.sandboxMode, 'bypass-permissions');
+  await assert.rejects(client.saveSettings({ version: 'user-version', options: { sandboxMode: 'bypass-permissions' } }), /listed values/);
   // A named profile from the config file is not one of the built-in choices.
   configRead.config.default_permissions = user.config.default_permissions = 'dev';
   assert.equal((await client.settings()).options.sandboxMode, 'custom');
@@ -984,6 +1115,90 @@ test('permission modes become Elpis approval and sandbox settings, and resume re
   } finally { client.close(); }
 });
 
+test('bypass permissions selects the engine profile, never a sandbox, and resume reports it', async () => {
+  const { client, socket, threads } = fixture(); await client.initialize();
+  try {
+    threads.get(ROOT).status = { type: 'idle' };
+    await client.send(ROOT, { text: 'go', permissions: 'bypass' });
+    const turn = socket.sent.findLast(message => message.method === 'turn/start').params;
+    assert.deepEqual([turn.approvalPolicy, turn.approvalsReviewer, turn.permissions], ['never', 'user', ':bypass-permissions']);
+    assert.equal('sandboxPolicy' in turn, false, 'the engine rejects a profile combined with a sandbox');
+    await client.createThread({ permissions: 'bypass' });
+    const started = socket.sent.findLast(message => message.method === 'thread/start').params;
+    assert.deepEqual([started.approvalPolicy, started.approvalsReviewer, started.permissions], ['never', 'user', ':bypass-permissions']);
+    assert.equal('sandbox' in started, false);
+    // Leaving bypass for Full access sends the sandbox again, which drops the bypass profile.
+    threads.get(ROOT).status = { type: 'idle' };
+    await client.send(ROOT, { text: 'calmer', permissions: 'full' });
+    const full = socket.sent.findLast(message => message.method === 'turn/start').params;
+    assert.deepEqual([full.sandboxPolicy, 'permissions' in full], [{ type: 'dangerFullAccess' }, false]);
+
+  } finally { client.close(); }
+  // A chat reopens in the mode the engine reports; only the bypass profile reads as bypass.
+  const reopened = async reported => {
+    const { client, socket, threads } = fixture(); await client.initialize();
+    const send = socket.send;
+    socket.send = raw => {
+      const request = JSON.parse(raw);
+      if (request.method !== 'thread/resume') return send(raw);
+      socket.sent.push(request);
+      queueMicrotask(() => socket.emit('message', JSON.stringify({ id: request.id, result: { thread: structuredClone(threads.get(request.params.threadId)), model: MODEL, initialTurnsPage: { data: [] }, ...reported } })));
+    };
+    try { return (await client.resume(ROOT, {})).permissions; } finally { client.close(); }
+  };
+  const unsandboxed = { approvalPolicy: 'never', sandbox: { type: 'dangerFullAccess' } };
+  assert.equal(await reopened({ ...unsandboxed, activePermissionProfile: { id: ':bypass-permissions' } }), 'bypass');
+  assert.equal(await reopened({ ...unsandboxed, activePermissionProfile: { id: ':danger-full-access' } }), 'full');
+  assert.equal(await reopened({ ...unsandboxed, activePermissionProfile: null }), 'full');
+  assert.equal(await reopened({ ...unsandboxed, approvalPolicy: 'on-request', activePermissionProfile: { id: ':bypass-permissions' } }), 'ask', 'bypass needs approvals set to never');
+});
+
+test('changing a chat\'s permissions applies now through the engine settings and reads the mode back', async () => {
+  const { client, socket, threads, engineSettings } = fixture(); await client.initialize();
+  const events = []; client.on('event', event => events.push(event));
+  try {
+    // Native and bridged (Claude) chats alike, idle or running: the change is a settings update, not a queued turn field.
+    threads.get(ROOT).status = { type: 'active' };
+    const BRIDGED = '00000000-0000-0000-0000-000000000009';
+    threads.set(BRIDGED, { id: BRIDGED, name: 'Claude chat', source: 'cli', model: 'claude/opus', modelProvider: 'openai', status: { type: 'idle' } });
+    for (const id of [ROOT, BRIDGED]) {
+      assert.deepEqual(await client.setPermissions(id, { permissions: 'full' }), { permissions: 'full' });
+      const update = socket.sent.findLast(message => message.method === 'thread/settings/update').params;
+      assert.deepEqual(update, { threadId: id, approvalPolicy: 'never', approvalsReviewer: 'user', sandboxPolicy: { type: 'dangerFullAccess' } });
+      assert.equal(engineSettings.get(id).approvalPolicy, 'never', 'the engine holds the new mode');
+      assert.equal(socket.sent.some(message => message.method === 'turn/start'), false, 'nothing waits for the next turn');
+    }
+    assert.deepEqual(await client.setPermissions(ROOT, { permissions: 'auto' }), { permissions: 'auto' });
+    assert.deepEqual(engineSettings.get(ROOT).approvalsReviewer, 'auto_review');
+    assert.deepEqual(await client.setPermissions(ROOT, { permissions: 'bypass' }), { permissions: 'bypass' });
+    assert.deepEqual(socket.sent.findLast(message => message.method === 'thread/settings/update').params,
+      { threadId: ROOT, approvalPolicy: 'never', approvalsReviewer: 'user', permissions: ':bypass-permissions' });
+    // The app hears the applied mode from the engine's notification.
+    assert.equal(events.filter(event => event.data?.method === 'thread/settings/updated').at(-1).data.params.permissions, 'bypass');
+    // Choosing the mode a chat already has changes nothing, so no notification comes; the mode is read back instead.
+    assert.deepEqual(await client.setPermissions(ROOT, { permissions: 'bypass' }), { permissions: 'bypass' });
+    // A refusal is reported, not assumed applied.
+    await assert.rejects(client.setPermissions(ROOT, { permissions: 'root' }), /permission mode/);
+  } finally { client.close(); }
+});
+
+test('a permission change the engine refuses is shown as an error', async () => {
+  const { client, socket } = fixture(); await client.initialize();
+  try {
+    const send = socket.send;
+    socket.send = raw => {
+      const request = JSON.parse(raw);
+      if (request.method === 'thread/settings/update') {
+        socket.sent.push(request);
+        queueMicrotask(() => socket.emit('message', JSON.stringify({ id: request.id, error: { code: -32600, message: 'invalid thread settings override: Configured value for `permission_profile` is disallowed by requirements' } })));
+        return;
+      }
+      return send(raw);
+    };
+    await assert.rejects(client.setPermissions(ROOT, { permissions: 'bypass' }), /disallowed by requirements/);
+  } finally { client.close(); }
+});
+
 test('plan mode is sent with the chat model only when it changes, and resume reports it', async () => {
   const { client, socket, threads } = fixture(); await client.initialize(); await client.models();
   try {
@@ -1040,4 +1255,52 @@ test('Smart Prune is switched by its feature key, and a writable config gives no
   const writable = settingsSnapshot({ config: {}, layers: [{ name: { type: 'user', file: '/home/fixture/.elpis/config.toml' }, version: 'v1' }] }, { requirements: {} });
   assert.deepEqual(writable.write, { available: true, reason: null });
   assert.match(settingsSnapshot({ config: {}, layers: [] }, { requirements: {} }).write.reason, /no writable config\.toml/);
+});
+
+test('an operation Elpis does not support (-32601) shows its message, not only the code', async () => {
+  const { client, socket } = fixture(); await client.initialize();
+  const answer = socket.send;
+  socket.send = raw => {
+    const request = JSON.parse(raw);
+    if (request.method !== 'thread/items/list') return answer(raw);
+    socket.sent.push(request);
+    queueMicrotask(() => socket.emit('message', JSON.stringify({ id: request.id, error: { code: -32601, message: 'thread/items/list is not supported yet' } })));
+  };
+  try {
+    const error = await client.readThread(ROOT, {}).then(() => null, failure => failure);
+    assert.equal(error?.code, -32601);
+    assert.match(error.message, /thread\/items\/list is not supported yet/);
+    assert.doesNotMatch(error.message, /rejected the operation/);
+  } finally { client.close(); }
+});
+
+test('dictation reads the ChatGPT sign-in, the Elpis home and the Gemini key privately, and only trusts Google for the key', async () => {
+  const { client, configRead } = fixture(); await client.initialize();
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'elpis-dictation-'));
+  const variable = process.env.GEMINI_API_KEY; delete process.env.GEMINI_API_KEY;
+  try {
+    configRead.layers[0].name.file = path.join(root, 'config.toml');
+    assert.deepEqual(await client.transcriptionEnvironment(), { chatgpt: false, home: root, geminiKey: null }, 'signed in, but no sign-in file in the home (a keyring store): the ChatGPT route cannot work');
+    await fs.writeFile(path.join(root, 'auth.json'), '{}'); // a placeholder: only its existence is checked, never its contents
+    assert.deepEqual(await client.transcriptionEnvironment(), { chatgpt: true, home: root, geminiKey: null });
+    process.env.GEMINI_API_KEY = '  gm-env-key  ';
+    assert.equal((await client.transcriptionEnvironment()).geminiKey, 'gm-env-key');
+    await client.saveProviderKey({ provider: 'google-gemini', key: 'gm-saved-key' });
+    assert.equal((await client.transcriptionEnvironment()).geminiKey, 'gm-saved-key', 'a key saved in the Elpis home stands before the variable, as in the engine');
+    configRead.config.model_providers['google-gemini'] = { name: 'Proxy', base_url: 'https://proxy.example/v1beta', env_key: 'GEMINI_API_KEY', wire_api: 'gemini_generate_content' };
+    assert.equal((await client.transcriptionEnvironment()).geminiKey, null, 'a Google Gemini connection pointed elsewhere never receives the key');
+  } finally { if (variable === undefined) delete process.env.GEMINI_API_KEY; else process.env.GEMINI_API_KEY = variable; client.close(); }
+});
+
+test('Voice can return the fallback engine to Automatic, which is no explicit backend at all', async () => {
+  const { client, socket, configRead } = fixture(); await client.initialize();
+  try {
+    await client.saveMcp({ version: 'user-version', action: 'whispertype', name: 'whispertype', backend: null, model: null });
+    assert.deepEqual(socket.sent.findLast(row => row.method === 'config/batchWrite').params.edits, [
+      { keyPath: 'mcp_servers.whispertype.env.WHISPERTYPE_BACKEND', value: null, mergeStrategy: 'replace' },
+      { keyPath: 'mcp_servers.whispertype.env.WHISPERTYPE_CLOUD_MODEL', value: null, mergeStrategy: 'replace' }]);
+    delete configRead.config.mcp_servers.whispertype.env.WHISPERTYPE_BACKEND;
+    assert.deepEqual((await client.mcp()).servers.find(server => server.name === 'whispertype').whispertype, { backend: null, model: 'openai/gpt-4o-mini-transcribe' });
+    await assert.rejects(client.saveMcp({ version: 'user-version', action: 'whispertype', name: 'whispertype', backend: 'auto' }), /OpenRouter, Codex sign-in or local/);
+  } finally { client.close(); }
 });

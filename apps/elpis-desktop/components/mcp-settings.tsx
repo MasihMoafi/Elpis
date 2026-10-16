@@ -5,10 +5,10 @@ import { Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { AlertDialog, AlertDialogClose, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import { Switch } from "@/components/ui/switch";
+import { SettingsEmpty, SettingsHeader, SettingsNotice } from "@/components/settings/rows";
+import { AlertDialog, AlertDialogClose, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { api } from "@/lib/api";
-
-export { WhisperTypeSettings } from "@/components/settings/voice-settings";
 
 type Credential = { name: string; source: "config" | "environment"; set: boolean };
 type Server = { name: string; enabled: boolean; transport: "stdio" | "http"; command: string | null; url: string | null; credentials: Credential[]; whispertype?: { backend: "openrouter" | "codex" | "local"; model: string | null } };
@@ -52,8 +52,8 @@ function RagSettings({ version }: { version: string | null }) {
     try { setRag(await api<Rag>("/tools/rag", { stage, model })); if (stage === "generation") setAnswer(""); else setReranker(""); }
     catch (e) { setError(message(e)); } finally { setBusy(false); }
   }
-  if (error && !rag) return <p role="alert" className="text-sm text-destructive">Could not read RAG settings: {error}</p>;
-  if (!rag) return <p role="status" className="text-sm text-muted-foreground">Reading RAG settings…</p>;
+  if (error && !rag) return <SettingsNotice tone="alert">Could not read RAG settings: {error}</SettingsNotice>;
+  if (!rag) return <SettingsNotice>Reading RAG settings…</SettingsNotice>;
   const stage = (id: Stage["stage"]) => rag.stages.find(item => item.stage === id);
   const label = { embedding: "Embedding", reranking: "Reranker", generation: "Answer model" } as const;
   return <div className="grid gap-3">
@@ -66,7 +66,7 @@ function RagSettings({ version }: { version: string | null }) {
         <div className="flex gap-2"><Input aria-label="RAG reranker" placeholder="off, fastembed (local) or cohere/rerank-4-fast" value={reranker} onChange={e => setReranker(e.target.value)} /><Button type="submit" variant="outline" disabled={busy || !reranker.trim()}>Save</Button></div></form>
     </div>
     <p className="provider-note">Embeddings change with <code>rag setup</code> because documents are re-indexed. Agents search documents with the <code>rag</code> tool.</p>
-    {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
+    {error && <SettingsNotice tone="alert">{error}</SettingsNotice>}
   </div>;
 }
 
@@ -88,15 +88,13 @@ export function McpSettings({ onOpenVoice }: { onOpenVoice?: () => void }) {
     event.preventDefault();
     try { await save(draft.name.trim(), { action: "add", command: draft.command.trim(), args: draft.args.split("\n").map(arg => arg.trim()).filter(Boolean) }); setAdding(false); setDraft({ name: "", command: "", args: "" }); } catch {}
   }
-  return <div className="grid gap-4" aria-label="MCP servers">
-    <div className="flex flex-wrap items-center justify-between gap-3">
-      <p className="text-sm text-muted-foreground">Manage the tools available to your agents and their API keys.</p>
-      <Button size="sm" onClick={() => setAdding(true)} disabled={!data?.write?.available}><Plus size={14} />Add MCP server</Button>
-    </div>
-    {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
-    {notice && <p role="status" className="text-sm text-muted-foreground">{notice}</p>}
+  return <div aria-label="MCP servers">
+    <SettingsHeader title="MCP servers" description="Manage the tools available to your agents and their API keys." action={<Button variant="outline" size="sm" onClick={() => setAdding(true)} disabled={!data?.write?.available}><Plus />Add MCP server</Button>} />
+    <div className="settings-stack">
+    {error && <SettingsNotice tone="alert">{error}</SettingsNotice>}
+    {notice && <SettingsNotice>{notice}</SettingsNotice>}
     {data?.configPath && <details className="text-xs text-muted-foreground"><summary className="cursor-pointer">Configuration file</summary><p className="mt-2 break-all">{data.configPath}</p></details>}
-    {adding && <form className="settings-card grid gap-3 p-4" aria-label="Add MCP server" onSubmit={add}>
+    {adding && <form className="settings-card" aria-label="Add MCP server" onSubmit={add}>
       <div className="grid gap-3 sm:grid-cols-2">
         <label className="field">Server name<Input value={draft.name} onChange={e => setDraft({ ...draft, name: e.target.value })} placeholder="letters, numbers, - or _" /></label>
         <label className="field">Command<Input value={draft.command} onChange={e => setDraft({ ...draft, command: e.target.value })} placeholder="/path/to/server or an executable name" /></label>
@@ -104,13 +102,13 @@ export function McpSettings({ onOpenVoice }: { onOpenVoice?: () => void }) {
       <label className="field">Arguments<Textarea value={draft.args} onChange={e => setDraft({ ...draft, args: e.target.value })} placeholder="One argument per line" rows={2} /></label>
       <div className="flex justify-end gap-2"><Button type="button" variant="outline" onClick={() => setAdding(false)}>Cancel</Button><Button type="submit" disabled={!draft.name.trim() || !draft.command.trim()}>Save server</Button></div>
     </form>}
-    {!data && !error && <p role="status" className="text-sm text-muted-foreground">Reading MCP servers…</p>}
-    {data && !data.servers.length && <p className="provider-note">No MCP servers are configured.</p>}
+    {!data && !error && <SettingsNotice>Reading MCP servers…</SettingsNotice>}
+    {data && !data.servers.length && <SettingsEmpty title="No MCP servers are configured">Add one to give your agents its tools.</SettingsEmpty>}
     {data?.servers.map(server => <section key={server.name} className="mcp-server settings-card" data-name={server.name} aria-label={server.name}>
       <header className="flex flex-wrap items-center gap-x-3 gap-y-2">
         <h3 className="font-mono">{server.name}</h3>
         <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground" title={server.command ?? server.url ?? ""}>{server.transport === "http" ? server.url : server.command}</span>
-        <label className="flex items-center gap-2 text-sm"><input type="checkbox" aria-label={`Enable ${server.name}`} checked={server.enabled} disabled={!data.write?.available} onChange={e => void save(server.name, { action: "enable", enabled: e.target.checked }).catch(() => {})} />Enabled</label>
+        <Switch aria-label={`Enable ${server.name}`} checked={server.enabled} disabled={!data.write?.available} onCheckedChange={enabled => void save(server.name, { action: "enable", enabled }).catch(() => {})} />
         <Button variant="ghost" size="icon-sm" aria-label={`Remove ${server.name}`} disabled={!data.write?.available} onClick={() => setRemoving(server.name)}><Trash2 size={14} /></Button>
       </header>
       {server.credentials.length > 0 && <ul className="grid gap-1 text-sm">{server.credentials.map(item => <Key key={`${item.source}:${item.name}`} name={item.name} set={item.set} note={item.source === "environment" ? "from the environment" : "in config"} />)}</ul>}
@@ -118,10 +116,13 @@ export function McpSettings({ onOpenVoice }: { onOpenVoice?: () => void }) {
       {server.name === "rag" && <RagSettings version={data.version} />}
       {server.name === "whispertype" && <p className="provider-note">The microphone’s transcription route is set under Voice.{onOpenVoice && <> <Button variant="link" size="xs" className="h-auto p-0 align-baseline" onClick={onOpenVoice}>Open Voice settings</Button></>}</p>}
     </section>)}
+    </div>
     <AlertDialog open={!!removing} onOpenChange={open => { if (!open) setRemoving(null); }}>
       <AlertDialogContent>
-        <AlertDialogTitle>Remove “{removing}”?</AlertDialogTitle>
-        <AlertDialogDescription>Elpis agents lose this server's tools. Its entry is deleted from your Elpis config.</AlertDialogDescription>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Remove “{removing}”?</AlertDialogTitle>
+          <AlertDialogDescription>Elpis agents lose this server's tools. Its entry is deleted from your Elpis config.</AlertDialogDescription>
+        </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogClose render={<Button variant="outline" />}>Cancel</AlertDialogClose>
           <Button variant="destructive" onClick={() => { const name = removing; setRemoving(null); if (name) void save(name, { action: "remove" }).catch(() => {}); }}>Remove</Button>

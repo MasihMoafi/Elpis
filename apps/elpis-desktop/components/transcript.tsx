@@ -12,6 +12,8 @@ export function Transcript({ entries, activeTurnId, renderItem }: { entries: Ent
 }
 
 type TurnEntries = { id: string; entries: Entry[] };
+/** Elpis's answer: its message, or the review that /review ends with. */
+const isReply = (item: Item) => item.type === "agentMessage" || item.type === "exitedReviewMode";
 
 function turnsOf(entries: Entry[]): TurnEntries[] {
   const turns: TurnEntries[] = [];
@@ -27,7 +29,7 @@ function Turn({ turn, active, renderItem }: { turn: TurnEntries; active: boolean
   const users = turn.entries.filter(entry => entry.item.type === "userMessage");
   const work = turn.entries.filter(entry => entry.item.type !== "userMessage");
   // A proposed plan is the turn's answer as much as its last reply, so neither folds away.
-  const lastReply = findLastIndex(work, entry => entry.item.type === "agentMessage"), plan = work.findIndex(entry => entry.item.type === "plan");
+  const lastReply = findLastIndex(work, entry => isReply(entry.item)), plan = work.findIndex(entry => entry.item.type === "plan");
   const finalReply = active ? -1 : plan >= 0 && (lastReply < 0 || plan < lastReply) ? plan : lastReply;
   const folded = finalReply > 0 ? work.slice(0, finalReply) : [];
   const visible = finalReply > 0 ? work.slice(finalReply) : work;
@@ -51,7 +53,7 @@ function Flow({ entries, renderItem, live = false }: { entries: Entry[]; renderI
     run = [];
   };
   for (const entry of entries) {
-    if (entry.item.type === "agentMessage" || entry.item.type === "plan") {
+    if (isReply(entry.item) || entry.item.type === "plan") {
       flush();
       blocks.push(<div key={entry.item.id}>{renderItem(entry)}</div>);
     } else run.push(entry);

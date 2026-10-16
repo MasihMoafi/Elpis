@@ -2,23 +2,19 @@
 
 import { useEffect, useRef, useState } from "react";
 import { MicIcon } from "@/components/elpis-icons";
-import { ChevronDown, LoaderCircle, Square, X } from "lucide-react";
+import { LoaderCircle, Square, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { WhisperTypeSettings } from "@/components/mcp-settings";
-import { api } from "@/lib/api";
 import type { DictationSelection } from "@/lib/dictation";
 
 type Route = { available: boolean; backend?: string; label?: string; reason?: string };
-type VoiceConfig = { version: string; write: { available: boolean; reason?: string }; servers: { name: string; whispertype?: { backend: "openrouter" | "codex" | "local"; model: string | null } }[] };
-type Props = { disabled: boolean; selection: () => DictationSelection; onTranscript: (selection: DictationSelection, text: string) => void; onBusy: (busy: boolean) => void };
+/** `provider` is the chat's provider (see chatProvider): the bridge picks the transcriber that provider uses, or the Settings → Voice fallback. */
+type Props = { disabled: boolean; provider: string; selection: () => DictationSelection; onTranscript: (selection: DictationSelection, text: string) => void; onBusy: (busy: boolean) => void };
 
-export function Dictation({ disabled, selection, onTranscript, onBusy }: Props) {
+export function Dictation({ disabled, provider, selection, onTranscript, onBusy }: Props) {
   const [route, setRoute] = useState<Route | null>(null);
   const [phase, setPhase] = useState<"idle" | "preparing" | "recording" | "transcribing">("idle");
   const [seconds, setSeconds] = useState(0);
   const [error, setError] = useState("");
-  const [settingsOpen, setSettingsOpen] = useState(false), [settings, setSettings] = useState<VoiceConfig | null>(null), [settingsError, setSettingsError] = useState(""), [saving, setSaving] = useState(false);
   const generation = useRef(0);
   const recorder = useRef<MediaRecorder | null>(null);
   const stream = useRef<MediaStream | null>(null);
@@ -35,35 +31,22 @@ export function Dictation({ disabled, selection, onTranscript, onBusy }: Props) 
     if (recorder.current?.state === "recording") recorder.current.stop();
     release(); recorder.current = null; setPhase("idle");
   };
+  // The transcriber belongs to the chat's provider, so it is asked for again whenever the chat or its model's provider changes.
+  const providerQuery = `?provider=${encodeURIComponent(provider)}`;
   useEffect(() => {
-    const controller = new AbortController();
-    fetch("/api/tools/transcription", { signal: controller.signal }).then(async response => {
+    const controller = new AbortController(); setRoute(null);
+    fetch(`/api/tools/transcription${providerQuery}`, { signal: controller.signal }).then(async response => {
       if (!response.ok) throw new Error(); return await response.json() as Route;
     }).then(setRoute).catch(() => { if (!controller.signal.aborted) setRoute({ available: false, reason: "Dictation is unavailable. Check Settings → MCP." }); });
-    return () => { controller.abort(); generation.current++; request.current?.abort();
-      if (recorder.current?.state === "recording") recorder.current.stop(); release(); };
-  }, []);
+    return () => controller.abort();
+  }, [providerQuery]);
+  useEffect(() => () => { generation.current++; request.current?.abort();
+    if (recorder.current?.state === "recording") recorder.current.stop(); release(); }, []);
   useEffect(() => { onBusy(phase !== "idle"); return () => onBusy(false); }, [phase, onBusy]);
   useEffect(() => { if (disabled) cancel(); }, [disabled]);
-  async function openSettings(open: boolean) {
-    if (phase !== "idle" || saving) return;
-    setSettingsOpen(open); if (!open) return; setSettingsError(""); setSettings(null);
-    try { setSettings(await api<VoiceConfig>("/mcp")); } catch (e) { setSettingsError(e instanceof Error ? e.message : String(e)); }
-  }
-  async function saveSettings(body: Record<string, unknown>) {
-    if (!settings || saving) return; setSaving(true);
-    try {
-      const saved = await api<VoiceConfig>("/mcp", { version: settings.version, name: "whispertype", ...body });
-      setSettings(saved);
-      const response = await fetch("/api/tools/transcription");
-      if (!response.ok) throw Error("Settings saved, but the transcription route could not be refreshed. Reopen transcription settings.");
-      setRoute(await response.json()); setSettingsOpen(false);
-    } catch (e) { const fresh = await api<VoiceConfig>("/mcp").catch(() => null); if (fresh) setSettings(fresh); throw e; }
-    finally { setSaving(false); }
-  }
 
   async function start() {
-    if (disabled || settingsOpen || saving || !route?.available || phase !== "idle") return;
+    if (disabled || !route?.available || phase !== "idle") return;
     const token = ++generation.current; const insertion = callbacks.current.selection();
     setError(""); setSeconds(0); setPhase("preparing"); onBusy(true);
     try {
@@ -88,7 +71,7 @@ export function Dictation({ disabled, selection, onTranscript, onBusy }: Props) 
         try {
           const audio = new Blob(chunks, { type: mimeType });
           if (!audio.size) throw new Error("The recording is empty. Try again.");
-          const response = await fetch("/api/tools/transcription", { method: "POST", body: audio, headers: { "Content-Type": mimeType, "X-Elpis-Transcription-Backend": route?.backend || "" }, signal: controller.signal });
+          const response = await fetch(`/api/tools/transcription${providerQuery}`, { method: "POST", body: audio, headers: { "Content-Type": mimeType, "X-Elpis-Transcription-Backend": route?.backend || "" }, signal: controller.signal });
           const result = await response.json();
           if (!response.ok) throw new Error(result.error || "Transcription failed.");
           if (token !== generation.current) return;
@@ -109,22 +92,18 @@ export function Dictation({ disabled, selection, onTranscript, onBusy }: Props) 
   }
 
   const active = phase !== "idle";
+  // Without a usable transcriber the button stays focusable and hoverable so its title can say why; a click shows the same reason.
+  const unavailable = !active && !route?.available, reason = route?.reason || "Checking dictation…";
   const label = phase === "recording" ? `Recording ${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}` : phase === "transcribing" ? "Transcribing…" : "Opening microphone…";
   return <div className="dictation-control">
     <div className="dictation-buttons">
-      <Button type="button" size="icon" variant={active ? "secondary" : "ghost"} disabled={active ? phase !== "recording" : disabled || settingsOpen || !route?.available}
-        aria-label={phase === "recording" ? "Stop recording and transcribe" : "Dictate message"} title={active ? label : route?.available ? `Dictate with ${route.label}. Inserts text without sending.` : route?.reason || "Checking dictation…"}
-        onClick={() => phase === "recording" ? recorder.current?.stop() : void start()}>
+      <Button type="button" size="icon" variant={active ? "secondary" : "ghost"} disabled={active ? phase !== "recording" : disabled} aria-disabled={unavailable || undefined} className={unavailable ? "opacity-50" : undefined}
+        aria-label={phase === "recording" ? "Stop recording and transcribe" : "Dictate message"} title={active ? label : route?.available ? `Dictate with ${route.label}. Inserts text without sending.` : reason}
+        onClick={() => phase === "recording" ? recorder.current?.stop() : unavailable ? setError(reason) : void start()}>
         {phase === "recording" ? <Square size={15} className="text-red-400" /> : active ? <LoaderCircle size={17} className="animate-spin" /> : <MicIcon size={17} />}
       </Button>
       {active && <Button type="button" size="icon" variant="ghost" aria-label="Cancel dictation" onClick={cancel}><X size={15} /></Button>}
     </div>
-    <Popover open={settingsOpen} onOpenChange={open => void openSettings(open)}><PopoverTrigger render={<Button type="button" variant="ghost" size="sm" className="dictation-route" aria-label="Transcription settings" disabled={disabled || active || saving} />}><span>{route?.label || "Transcription"}</span><ChevronDown size={12} /></PopoverTrigger><PopoverContent className="transcription-popover"><h3 className="mb-3 text-sm font-semibold">Transcription</h3>
-      {settingsError && <p role="alert" className="text-sm text-destructive">{settingsError}</p>}
-      {!settings && !settingsError && <p role="status" className="text-sm text-muted-foreground">Reading transcription settings…</p>}
-      {settings?.servers.find(server => server.name === "whispertype") ? <WhisperTypeSettings server={settings.servers.find(server => server.name === "whispertype")!} disabled={!settings.write?.available || saving} save={saveSettings} /> : settings && <p className="text-sm text-muted-foreground">Configure WhisperType in Settings → MCP servers to use transcription.</p>}
-      {settings?.write?.reason && !settings.write?.available && <p className="mt-2 text-xs text-muted-foreground">{settings.write?.reason}</p>}
-    </PopoverContent></Popover>
-    <span className={`dictation-status${error ? " dictation-error" : ""}`} role="status">{error || (active ? label : route?.available ? "" : route?.reason || "Checking dictation…")}</span>
+    <span className={`dictation-status${error ? " dictation-error" : ""}`} role="status">{error || (active ? label : "")}</span>
   </div>;
 }

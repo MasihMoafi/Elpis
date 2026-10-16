@@ -6,11 +6,12 @@ import path from 'node:path';
 import { ragMessage } from './rag-command.mjs';
 import { acceptsPastedKey, BUILT_IN_KEY_PROVIDERS, configHome, providerDefinition, providerSettingsSnapshot, providerEdits, privateConfigFile } from './provider-settings.mjs';
 import { saveProviderKey, savedProviderKey, savedProviderKeyIds } from './provider-keys.mjs';
-import { settingsSnapshot, tokenUsageSnapshot, smartPruneSnapshot, providersSnapshot, mcpSnapshot, optionEdits, hooksSnapshot } from './elpis-features.mjs';
+import { settingsSnapshot, tokenUsageSnapshot, contextLedger, restoredTokenUsage, contextSwitchesSnapshot, CONTEXT_SWITCH_KEYS, smartPruneSnapshot, providersSnapshot, mcpSnapshot, optionEdits, hooksSnapshot } from './elpis-features.mjs';
 import { replacementEligibility } from '../lib/turn-replacement.ts';
 import { providerModels } from './provider-models.mjs';
 import { attachmentInput, recordedMedia } from './attachments.mjs';
 import { scanDeletionThreads } from '../lib/thread-deletion.ts';
+import { reviewChoices, workingDiff } from './git.mjs';
 const string = value => typeof value === 'string' ? value : null;
 
 export class BridgeError extends Error {
@@ -70,15 +71,19 @@ const ACCOUNT_NOTIFICATIONS = new Set(['account/updated', 'account/login/complet
 // Native refusals the person can act on (a fork still referencing a chat, a busy agent) are shown as Elpis wrote them.
 const READ_RPCS = new Set(['initialize','thread/list','thread/read','thread/items/list','thread/turns/list','model/list','account/read','account/rateLimits/read','config/read','configRequirements/read','pruner/read','workGraph/list','hooks/list']);
 const readRpc = (method, params) => READ_RPCS.has(method) || (method === 'thread/resume' && Object.keys(params || {}).every(key => ['threadId','excludeTurns','initialTurnsPage'].includes(key)));
-/** The ChatGPT app's three permission modes as Elpis approval and sandbox settings. */
+/** The ChatGPT app's three permission modes, plus Elpis's Bypass permissions, as Elpis approval and
+ * sandbox settings. Bypass is the engine's built-in `:bypass-permissions` profile: Full access plus no
+ * refusals (codex-rs/protocol/src/models.rs bypass_permissions_active); a profile id replaces the sandbox. */
+const BYPASS_PROFILE = ':bypass-permissions';
 const PERMISSIONS = {
   ask: { approvalPolicy: 'on-request', approvalsReviewer: 'user', sandbox: 'workspace-write', sandboxPolicy: { type: 'workspaceWrite' } },
   auto: { approvalPolicy: 'on-request', approvalsReviewer: 'auto_review', sandbox: 'workspace-write', sandboxPolicy: { type: 'workspaceWrite' } },
   full: { approvalPolicy: 'never', approvalsReviewer: 'user', sandbox: 'danger-full-access', sandboxPolicy: { type: 'dangerFullAccess' } },
+  bypass: { approvalPolicy: 'never', approvalsReviewer: 'user', permissions: BYPASS_PROFILE },
 };
 function permissionMode(value) {
   if (value === undefined) return;
-  if (typeof value !== 'string' || !Object.hasOwn(PERMISSIONS, value)) throw new BridgeError('Choose a permission mode: ask, auto or full');
+  if (typeof value !== 'string' || !Object.hasOwn(PERMISSIONS, value)) throw new BridgeError('Choose a permission mode: ask, auto, full or bypass');
   return value;
 }
 /** Plan mode or the default mode for a turn, as the terminal's Shift+Tab switches them; the
@@ -89,15 +94,41 @@ function collaborationMode(value, model, effort) {
   if (!model) throw new BridgeError('Choose a model before switching Plan mode', 409);
   return { collaborationMode: { mode: value, settings: { model, reasoning_effort: effort ?? null, developer_instructions: null } } };
 }
-const threadPermissions = mode => mode ? { approvalPolicy: PERMISSIONS[mode].approvalPolicy, approvalsReviewer: PERMISSIONS[mode].approvalsReviewer, sandbox: PERMISSIONS[mode].sandbox } : {};
-const turnPermissions = mode => mode ? { approvalPolicy: PERMISSIONS[mode].approvalPolicy, approvalsReviewer: PERMISSIONS[mode].approvalsReviewer, sandboxPolicy: PERMISSIONS[mode].sandboxPolicy } : {};
-/** The mode a resumed chat runs in, read back from its approval and sandbox settings. */
+/** One of the terminal's /review targets (codex-rs/app-server-protocol review.rs), checked field by field. */
+function reviewTarget(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new BridgeError('Unknown review target');
+  switch (value.type) {
+    case 'uncommittedChanges': object(value, ['type']); return { type: value.type };
+    case 'baseBranch': {
+      object(value, ['type', 'branch']);
+      const branch = text(value.branch, 'branch name', 255);
+      if (!/^[A-Za-z0-9][A-Za-z0-9._/@+-]*$/.test(branch)) throw new BridgeError('Invalid branch name');
+      return { type: value.type, branch };
+    }
+    case 'commit': {
+      object(value, ['type', 'sha', 'title']);
+      if (typeof value.sha !== 'string' || !/^[0-9a-f]{7,64}$/i.test(value.sha)) throw new BridgeError('Invalid commit');
+      return { type: value.type, sha: value.sha, ...(value.title === undefined ? {} : { title: text(value.title, 'commit title', 500) }) };
+    }
+    case 'custom': object(value, ['type', 'instructions']); return { type: value.type, instructions: text(value.instructions, 'review instructions', 32000) };
+    default: throw new BridgeError('Unknown review target');
+  }
+}
+const permissionSetting = (mode, key) => {
+  const { approvalPolicy, approvalsReviewer, permissions } = PERMISSIONS[mode];
+  return { approvalPolicy, approvalsReviewer, ...(permissions ? { permissions } : { [key]: PERMISSIONS[mode][key] }) };
+};
+const threadPermissions = mode => mode ? permissionSetting(mode, 'sandbox') : {};
+const turnPermissions = mode => mode ? permissionSetting(mode, 'sandboxPolicy') : {};
+/** The mode a chat runs in, read back from its approval, sandbox and profile settings: a resume
+ * result (`sandbox`) or the engine's thread/settings/updated (`sandboxPolicy`). */
 function modeOf(result) {
   if (!result?.approvalPolicy) return null;
-  if (result.sandbox?.type === 'dangerFullAccess' && result.approvalPolicy === 'never') return 'full';
+  if (result.activePermissionProfile?.id === BYPASS_PROFILE && result.approvalPolicy === 'never') return 'bypass';
+  if ((result.sandbox ?? result.sandboxPolicy)?.type === 'dangerFullAccess' && result.approvalPolicy === 'never') return 'full';
   return result.approvalsReviewer === 'auto_review' || result.approvalsReviewer === 'guardian_subagent' ? 'auto' : 'ask';
 }
-const EXPLAINED = new Set(['account/read', 'account/rateLimits/read', 'thread/delete', 'thread/fork', 'thread/start', 'thread/resume', 'thread/name/set', 'thread/archive', 'thread/unarchive', 'thread/revert', 'turn/start', 'turn/interrupt', 'config/batchWrite', 'account/login/start', 'account/logout', 'hooks/list', 'memory/reset']);
+const EXPLAINED = new Set(['thread/settings/update', 'account/read', 'account/rateLimits/read', 'thread/delete', 'thread/fork', 'thread/start', 'thread/resume', 'thread/name/set', 'thread/archive', 'thread/unarchive', 'thread/revert', 'thread/compact/start', 'review/start', 'turn/start', 'turn/interrupt', 'config/batchWrite', 'account/login/start', 'account/logout', 'claudeSubscription/write', 'hooks/list', 'memory/reset']);
 const DECISIONS = ['accept', 'acceptForSession', 'decline', 'cancel'];
 const EFFORT = /^[a-z]{2,16}$/;
 const MCP_NAME = /^[A-Za-z0-9_-]{1,64}$/;
@@ -105,12 +136,16 @@ const MCP_NAME = /^[A-Za-z0-9_-]{1,64}$/;
 export class DesktopClient extends EventEmitter {
   #socket; #pending = new Map(); #owned = new Set(); #known = new Set(); #models = new Set();
   #approvals = new Map(); #mutating = new Set(); #closed = false; #ready = false; #attaching = new Map();
-  #context = new Map();
+  #context = new Map(); #restored = new Map();
   #workflowTitles = new Map(); #workflowLookups = new Map();
   #checkingApprovals = new Map();
+  #settingsWaiters = new Map();
   #disposed = false; #reconnecting = false; #retryTimer; #openSocket; #retryDelay; #retryAttempt = 0;
-  constructor(socket, { timeoutMs = 30000, openSocket, reconnectDelayMs = 500 } = {}) {
-    super(); this.#socket = socket; this.timeoutMs = timeoutMs;
+  #settingsConfirmMs;
+  #browserConfig;
+  constructor(socket, { timeoutMs = 30000, openSocket, reconnectDelayMs = 500, settingsConfirmMs = 3000, browserConfig } = {}) {
+    super(); this.#socket = socket; this.timeoutMs = timeoutMs; this.#settingsConfirmMs = settingsConfirmMs;
+    this.#browserConfig = browserConfig;
     this.#openSocket = openSocket; this.#retryDelay = reconnectDelayMs;
     this.#bind(socket);
   }
@@ -141,6 +176,7 @@ export class DesktopClient extends EventEmitter {
     this.#socket.send(JSON.stringify({ method: 'initialized', params: {} })); this.#ready = true;
   }
   get connected() { return this.#ready && !this.#closed; }
+  #browserOptions() { return this.#browserConfig ? { config: this.#browserConfig } : {}; }
   get pendingApprovals() { return [...this.#approvals.values()].map(({ wireId, ...visible }) => visible); }
   #disconnect() {
     if (this.#closed) return;
@@ -199,7 +235,8 @@ export class DesktopClient extends EventEmitter {
         const conflict = message.error.data?.config_write_error_code === 'configVersionConflict' || message.error.data?.reason === 'staleVersion';
         const workflow = pending.method === 'workGraph/run' || pending.method === 'workGraph/runWithProviders';
         const unsupported = workflow && /unknown (method|variant)/i.test(message.error.message ?? '');
-        const detail = (workflow || EXPLAINED.has(pending.method)) && typeof message.error.message === 'string' ? message.error.message.slice(0,1000) : `Elpis rejected the operation (${message.error.code ?? 'unknown'}). No automatic retry was made.`;
+        // An operation Elpis does not support (-32601) says which one; the bare code would not.
+        const detail = (workflow || EXPLAINED.has(pending.method) || message.error.code === -32601) && typeof message.error.message === 'string' ? message.error.message.slice(0,1000) : `Elpis rejected the operation (${message.error.code ?? 'unknown'}). No automatic retry was made.`;
         const error = new BridgeError(conflict ? 'Settings changed in another client. Reload settings before saving again.' : unsupported ? 'Update and restart Elpis to run workflows from this app.' : detail, conflict || message.error.data?.reason === 'threadBusy' ? 409 : unsupported ? 503 : workflow ? 400 : 502);
         error.code = message.error.code;
         pending.reject(error);
@@ -232,6 +269,11 @@ export class DesktopClient extends EventEmitter {
       }
     }
     if (ACCOUNT_NOTIFICATIONS.has(message.method)) { this.emit('event', { type: 'account', data: { method: message.method } }); return; }
+    if (message.method === 'thread/settings/updated') {
+      for (const resolve of this.#settingsWaiters.get(id) ?? []) resolve(message.params.threadSettings);
+      // The app reads the applied permission mode from here rather than from what it asked for.
+      message.params = { ...message.params, permissions: modeOf(message.params?.threadSettings) };
+    }
     // Chat-level news (a chat started, renamed, or changed state) is listed anyway; item streams stay scoped.
     const tracked = this.#known.has(id) || this.#owned.has(id) || LISTED.has(message.method);
     if (message.method === 'thread/deleted' && tracked) this.#forget(id);
@@ -239,6 +281,9 @@ export class DesktopClient extends EventEmitter {
       if (message.method === 'thread/tokenUsage/updated' || message.method === 'thread/smartPrune/updated') {
         const key = message.method === 'thread/tokenUsage/updated' ? 'tokenUsage' : 'smartPrune';
         const value = key === 'tokenUsage' ? tokenUsageSnapshot(message.params?.[key]) : smartPruneSnapshot(message.params?.[key]);
+        // As in the TUI, an update without category shares (a replay after resume) keeps the last known ones.
+        const shares = this.#context.get(id)?.tokenUsage?.contextAttribution;
+        if (key === 'tokenUsage' && value && !value.contextAttribution && shares) value.contextAttribution = shares;
         this.#context.set(id, { ...this.#context.get(id), [key]: value });
         this.emit('event', { type: 'message', data: { method: message.method, params: { threadId: id, [key]: value } } });
         return;
@@ -335,13 +380,14 @@ export class DesktopClient extends EventEmitter {
     for (const thread of data) if (thread.status?.type === 'active' && !this.#owned.has(thread.id)) void this.#attach(thread.id).catch(() => {});
     return { ...result, data };
   }
-  /** Subscribes this connection to a thread exactly as a TUI rejoins it: no model, policy, history, or workspace overrides. */
+  /** Rejoins without model, policy, history or workspace changes. Desktop MCP follows cold resumes;
+   * the engine preserves the configuration of threads still loaded by another client. */
   #attach(id) {
     threadId(id);
     if (this.#owned.has(id) && !this.#attaching.has(id)) return Promise.resolve(null);
     if (this.#attaching.has(id)) return this.#attaching.get(id);
     this.#owned.add(id);
-    const attempt = this.#rpc('thread/resume', { threadId: id, excludeTurns: true, initialTurnsPage: { limit: 1, sortDirection: 'desc', itemsView: 'summary' } })
+    const attempt = this.#rpc('thread/resume', { threadId: id, excludeTurns: true, initialTurnsPage: { limit: 1, sortDirection: 'desc', itemsView: 'summary' }, ...this.#browserOptions() })
       .then(result => {
         if (result.thread?.id !== id) throw new BridgeError('Elpis resumed another conversation', 502);
         return result;
@@ -465,13 +511,15 @@ export class DesktopClient extends EventEmitter {
     return this.settings();
   }
   async providers() {
-    const [account, limits, read, models] = await Promise.all([
+    const [account, limits, read, models, anthropic] = await Promise.all([
       this.#rpc('account/read', { refreshToken: false }).catch(error => ({ error: error.message })),
       this.#rpc('account/rateLimits/read', {}).catch(error => ({ error: error.message })),
       this.#rpc('config/read', { includeLayers: false }),
       this.#rpc('model/list', { limit: 100, includeHidden: false }).catch(() => ({ data: [] })),
+      // Elpis's own Anthropic sign-out; a bridge that predates it has none.
+      this.#rpc('claudeSubscription/read', {}).catch(() => null),
     ]);
-    return providersSnapshot({ account, limits, config: read?.config, models: models.data });
+    return providersSnapshot({ account, limits, config: read?.config, models: models.data, anthropic });
   }
   async providerSettings() {
     const [read, requirements] = await Promise.all([
@@ -503,10 +551,24 @@ export class DesktopClient extends EventEmitter {
   async signIn(body) {
     object(body, ['action']);
     if (body.action === 'signOut') { await this.#rpc('account/logout', {}); return { signedOut: true }; }
-    if (body.action !== 'chatgpt') throw new BridgeError('Choose ChatGPT sign-in or sign-out');
+    if (body.action === 'anthropicSignOut' || body.action === 'anthropicSignIn') return this.#anthropicSignedOut(body.action === 'anthropicSignOut');
+    if (body.action !== 'chatgpt') throw new BridgeError('Choose a ChatGPT or Anthropic sign-in or sign-out');
     const result = await this.#rpc('account/login/start', { type: 'chatgpt' });
     if (typeof result?.authUrl !== 'string' || !/^https:\/\//.test(result.authUrl)) throw new BridgeError('Elpis did not return a sign-in page', 502);
     return { authUrl: result.authUrl, loginId: string(result.loginId) };
+  }
+  /** Elpis's own Anthropic sign-out, kept by the Elpis bridge for the terminal and every window: only Elpis stops using
+   * the Claude subscription. Claude Code's login and the ChatGPT account are not touched. Every window reloads its
+   * models and usage as it does when the ChatGPT account changes. */
+  async #anthropicSignedOut(signedOut) {
+    let answer;
+    try { answer = await this.#rpc('claudeSubscription/write', { signedOut }); }
+    catch (error) {
+      if (/unknown (method|variant)|method not found/i.test(error.message)) throw new BridgeError('Update and restart Elpis to sign out of Anthropic from this app.', 503);
+      throw error;
+    }
+    this.emit('event', { type: 'account', data: { method: 'claudeSubscription/write' } });
+    return { anthropicSignedOut: answer?.signedOut === true };
   }
   async mcp() { return mcpSnapshot(await this.#rpc('config/read', { includeLayers: true })); }
   async hooks() {
@@ -539,6 +601,16 @@ export class DesktopClient extends EventEmitter {
   async transcriptionDefinition() {
     const read = await this.#rpc('config/read', { includeLayers: false });
     return read.config?.mcp_servers?.whispertype ?? null;
+  }
+  /** What dictation needs besides that definition, read privately and never sent to the renderer: whether Elpis is signed in to
+   * ChatGPT with a sign-in file WhisperType can read (`<home>/auth.json`; only its existence is checked), the Elpis home, and the
+   * Gemini API key it holds. The key is used only for Google's own address; a Google Gemini connection pointed elsewhere gets none. */
+  async transcriptionEnvironment() {
+    const [read, account] = await Promise.all([this.#rpc('config/read', { includeLayers: true }), this.#rpc('account/read', { refreshToken: false }).catch(() => null)]);
+    const home = configHome(read), gemini = providerDefinition(read, 'google-gemini');
+    const official = gemini?.base_url === BUILT_IN_KEY_PROVIDERS['google-gemini'].base_url;
+    const key = official ? savedProviderKey(home, 'google-gemini') || (typeof gemini.env_key === 'string' ? process.env[gemini.env_key] : '') || '' : '';
+    return { chatgpt: account?.account?.type === 'chatgpt' && !!home && fs.existsSync(path.join(home, 'auth.json')), home, geminiKey: key.trim() || null };
   }
   // Internal CLI environment only; credentials never travel to the renderer.
   async ragEnvironment() {
@@ -576,7 +648,8 @@ export class DesktopClient extends EventEmitter {
         edits.push({ keyPath: `${key}.env.${name}`, value, mergeStrategy: 'replace' });
       }
     } else if (input.action === 'whispertype' && input.name === 'whispertype') {
-      if (!['openrouter', 'codex', 'local'].includes(input.backend)) throw new BridgeError('Choose OpenRouter, Codex sign-in or local transcription');
+      // null is Automatic: no explicit backend, so the bridge picks the ChatGPT sign-in or Local (see bridge/transcription.mjs).
+      if (input.backend !== null && !['openrouter', 'codex', 'local'].includes(input.backend)) throw new BridgeError('Choose OpenRouter, Codex sign-in or local transcription');
       edits = [{ keyPath: `${key}.env.WHISPERTYPE_BACKEND`, value: input.backend, mergeStrategy: 'replace' }];
       if (input.model !== undefined) {
         if (input.model !== null && !/^[a-z0-9._-]+\/[a-z0-9._:-]+$/i.test(input.model)) throw new BridgeError('Give an OpenRouter model ID such as openai/gpt-4o-mini-transcribe');
@@ -603,11 +676,47 @@ export class DesktopClient extends EventEmitter {
     if (thread?.id !== id) throw new BridgeError('Elpis returned another thread', 502);
     this.#decorate(thread);
     const snapshot = this.#context.get(id) ?? {};
+    // Before this connection has live usage, the last usage the chat's rollout recorded (what a cold resume restores).
+    const restored = snapshot.tokenUsage ? null : await this.#restoredUsage(thread.path);
+    const tokenUsage = snapshot.tokenUsage ?? restored;
     return {
-      threadId: id, tokenUsage: snapshot.tokenUsage ?? null, smartPrune: snapshot.smartPrune ?? null,
-      availability: { tokenUsage: snapshot.tokenUsage ? 'live' : 'unavailable', smartPrune: snapshot.smartPrune ? 'live' : 'unavailable' },
-      reason: 'Only events received by this app connection are available; reading a chat does not resume it or subscribe to previous context snapshots.',
+      threadId: id, tokenUsage, smartPrune: snapshot.smartPrune ?? null, ledger: contextLedger(tokenUsage),
+      availability: { tokenUsage: snapshot.tokenUsage ? 'live' : restored ? 'restored' : 'unavailable', smartPrune: snapshot.smartPrune ? 'live' : 'unavailable' },
+      reason: 'Live usage comes from events this app connection receives; before them, the last usage the chat\'s rollout recorded. Category shares come with the next request.',
     };
+  }
+  async #restoredUsage(file) {
+    const stat = typeof file === 'string' ? await fs.promises.stat(file).catch(() => null) : null;
+    if (!stat?.isFile()) return null;
+    const key = `${stat.size}:${stat.mtimeMs}`, cached = this.#restored.get(file);
+    if (cached?.key === key) return cached.value;
+    const value = await restoredTokenUsage(file);
+    this.#restored.set(file, { key, value });
+    return value;
+  }
+  /** The Context Ledger's Smart Prune, Subagents and RAG switches (elpis-features.mjs `contextSwitchesSnapshot`). */
+  async contextSwitches() { return contextSwitchesSnapshot(await this.#rpc('config/read', { includeLayers: true })); }
+  /** Writes the switches as the TUI ledger does: one config key each, reloaded so open chats use it from their next turn. */
+  async saveContextSwitches(input) {
+    object(input, ['version', ...Object.keys(CONTEXT_SWITCH_KEYS)]);
+    text(input.version, 'settings version', 200);
+    const current = await this.contextSwitches();
+    if (!current.write.available || current.version !== input.version) throw new BridgeError('Settings changed in another client. Reload settings before saving again.', 409);
+    const edits = [];
+    for (const [field, keyPath] of Object.entries(CONTEXT_SWITCH_KEYS)) {
+      if (!(field in input)) continue;
+      if (typeof input[field] !== 'boolean') throw new BridgeError('Turn each switch on or off');
+      if (field === 'rag' && current.rag === null) throw new BridgeError('No rag MCP server is configured. Add one in Settings → MCP servers.', 409);
+      edits.push({ keyPath, value: input[field], mergeStrategy: 'replace' });
+    }
+    if (!edits.length) throw new BridgeError('No switch was changed');
+    try { await this.#rpc('config/batchWrite', { edits, expectedVersion: input.version, reloadUserConfig: true }); }
+    catch (error) {
+      if (error.status === 409) throw new BridgeError('Settings changed in another client. Reload settings before saving again.', 409);
+      throw new BridgeError('The switch could not be saved. Refresh and try again.', error.status ?? 502);
+    }
+    if ('rag' in input) await this.#rpc('config/mcpServer/reload', undefined).catch(() => {});
+    return this.contextSwitches();
   }
   #model(model) {
     if (model === undefined) return;
@@ -685,7 +794,8 @@ export class DesktopClient extends EventEmitter {
     if (differentProvider) text(body.model, 'model for this provider', 200);
     const model = await this.#providerModel(body.model, body.provider);
     const result = await this.#rpc('thread/start', { ...(body.cwd ? { cwd: body.cwd } : {}), ...(model ? { model } : {}),
-      ...(body.provider ? { modelProvider: body.provider } : {}), ...(instructions ? { developerInstructions: instructions } : {}), ...threadPermissions(permissions) });
+      ...(body.provider ? { modelProvider: body.provider } : {}), ...(instructions ? { developerInstructions: instructions } : {}), ...threadPermissions(permissions),
+      ...this.#browserOptions() });
     threadId(result.thread?.id);
     this.#owned.add(result.thread.id);
     if (name) { await this.#rpc('thread/name/set', { threadId: result.thread.id, name }); result.thread.name = name; }
@@ -729,7 +839,7 @@ export class DesktopClient extends EventEmitter {
     object(body, ['lastTurnId']);
     const lastTurnId = body.lastTurnId === undefined ? undefined : text(body.lastTurnId, 'turn ID', 200);
     const thread = await this.#current(id);
-    const fork = await this.#rpc('thread/fork', { threadId: id, ...(lastTurnId ? { lastTurnId } : {}), ...(thread.model ? { model: thread.model } : {}), ...(thread.modelProvider ? { modelProvider: thread.modelProvider } : {}) });
+    const fork = await this.#rpc('thread/fork', { threadId: id, ...(lastTurnId ? { lastTurnId } : {}), ...(thread.model ? { model: thread.model } : {}), ...(thread.modelProvider ? { modelProvider: thread.modelProvider } : {}), ...this.#browserOptions() });
     threadId(fork.thread?.id); this.#owned.add(fork.thread.id);
     const name = `${(thread.name?.trim() || String(thread.preview ?? '').split('\n')[0].trim() || 'Chat').slice(0, 110)} (fork)`;
     try { await this.#rpc('thread/name/set', { threadId: fork.thread.id, name }); fork.thread.name = name; } catch { /* The fork stands; it keeps its default title. */ }
@@ -825,7 +935,7 @@ export class DesktopClient extends EventEmitter {
       if (thread.desktopAccess.mode === 'continue') {
         // The agent's own thread refuses direct turns; a fork carries its whole history and recorded model.
         const name = text(body.continueAs, 'continued conversation name', 200).trim();
-        const fork = await this.#rpc('thread/fork', { threadId: id, model: model ?? thread.model ?? undefined, modelProvider: thread.modelProvider });
+        const fork = await this.#rpc('thread/fork', { threadId: id, model: model ?? thread.model ?? undefined, modelProvider: thread.modelProvider, ...this.#browserOptions() });
         threadId(fork.thread?.id); this.#owned.add(fork.thread.id);
         const continued = { thread: this.#decorate(fork.thread), continuedFrom: id };
         try { await this.#rpc('thread/name/set', { threadId: fork.thread.id, name }); }
@@ -844,6 +954,35 @@ export class DesktopClient extends EventEmitter {
       }
       if (thread.status?.type === 'active') throw new BridgeError('This conversation is running. Use Steer with its active turn ID.', 409);
       return this.#rpc('turn/start', { threadId: id, input, ...overrides });
+    });
+  }
+  /** Changes a chat's permission mode now, as the terminal's /permissions does: the engine applies it to
+   * the running turn and later ones, and a bridged (Claude, Antigravity) chat follows the engine's
+   * thread/settings/updated. Returns the mode the engine reports, never the one asked for. */
+  async setPermissions(id, body) {
+    object(body, ['permissions']);
+    const mode = permissionMode(body.permissions);
+    if (!mode) throw new BridgeError('Choose a permission mode: ask, auto, full or bypass');
+    return this.#mutate(id, async () => {
+      const thread = await this.#current(id);
+      if (thread.desktopAccess.mode === 'continue') throw new BridgeError("Only this agent's parent can change its permissions.", 409);
+      let resolveApplied;
+      const applied = new Promise(resolve => { resolveApplied = resolve; });
+      const waiters = this.#settingsWaiters.get(id) ?? new Set();
+      waiters.add(resolveApplied); this.#settingsWaiters.set(id, waiters);
+      let timer;
+      try {
+        await this.#rpc('thread/settings/update', { threadId: id, ...permissionSetting(mode, 'sandboxPolicy') });
+        // The engine publishes settings only when they change; an unchanged mode is read back instead.
+        const settings = await Promise.race([applied, new Promise(resolve => { timer = setTimeout(resolve, this.#settingsConfirmMs, null); })])
+          ?? await this.#rpc('thread/resume', { threadId: id, excludeTurns: true });
+        const now = modeOf(settings);
+        if (now !== mode) throw new BridgeError(`Elpis did not apply ${mode} permissions to this chat; it is in ${now ?? 'an unknown'} mode.`, 409);
+        return { permissions: now };
+      } finally {
+        clearTimeout(timer); waiters.delete(resolveApplied);
+        if (!waiters.size) this.#settingsWaiters.delete(id);
+      }
     });
   }
   async steer(id, body) {
@@ -866,6 +1005,39 @@ export class DesktopClient extends EventEmitter {
       if (!turnId) throw new BridgeError('This agent is not running', 409);
       return this.#rpc('turn/interrupt', { threadId: id, turnId });
     });
+  }
+  /** The chat, once it may take a command that runs its model: idle, and writable here (agents answer only to their parent). */
+  async #idleChat(id, action, gerund) {
+    const thread = await this.#current(id);
+    if (thread.desktopAccess.mode === 'continue') throw new BridgeError(`Only this agent's parent can ${action} it.`, 409);
+    if (thread.status?.type === 'active') throw new BridgeError(`Wait for the current turn to finish before ${gerund}.`, 409);
+    return thread;
+  }
+  /** The terminal's /compact: the engine summarizes the chat's history now; `instructions` guides the summary. */
+  async compact(id, body) {
+    object(body, ['instructions']);
+    const instructions = body.instructions === undefined ? undefined : text(body.instructions, 'compaction instructions', 32000).trim();
+    return this.#mutate(id, async () => {
+      await this.#idleChat(id, 'compact', 'compacting');
+      return this.#rpc('thread/compact/start', { threadId: id, ...(instructions ? { instructions } : {}) });
+    });
+  }
+  /** The terminal's /review: an inline review turn of one of its four targets. */
+  async review(id, body) {
+    object(body, ['target']);
+    const target = reviewTarget(body.target);
+    return this.#mutate(id, async () => {
+      await this.#idleChat(id, 'review', 'starting a review');
+      return this.#rpc('review/start', { threadId: id, target, delivery: 'inline' });
+    });
+  }
+  /** Read-only Git facts about the chat's folder: `review` is the /review presets (branches, commits), `diff` the /diff text. */
+  async git(id, view) {
+    threadId(id);
+    if (view !== 'review' && view !== 'diff') throw new BridgeError('Choose a Git view: review or diff');
+    const { thread } = await this.#rpc('thread/read', { threadId: id, includeTurns: false });
+    if (thread?.id !== id) throw new BridgeError('Elpis returned another thread', 502);
+    return view === 'review' ? reviewChoices(thread.cwd) : workingDiff(thread.cwd);
   }
   async #mutate(id, run) {
     threadId(id);

@@ -1,9 +1,10 @@
 "use client";
 import { useEffect, useState } from "react";
 import { Tabs } from "@base-ui/react/tabs";
-import { ChevronDown, Search } from "lucide-react";
+import { ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { SearchField } from "@/components/ui/search-field";
 import { OptionSelect } from "@/components/ui/option-select";
 import { Combobox, ComboboxContent, ComboboxEmpty, ComboboxInput, ComboboxItem, ComboboxList, ComboboxTrigger } from "@/components/ui/combobox";
 import { api, modelLabel, modelName, subscriptionOf, type ProviderChoice, type Model } from "@/lib/api";
@@ -75,7 +76,7 @@ export function ModelPicker({ choices, models, model, choiceId, defaultModel, di
     onValueChange={item => { if (item) choose(item); }}>
     <ComboboxTrigger role="combobox" aria-label="Model" disabled={disabled} data-value={model} title={[currentLabel, currentProvider].filter(Boolean).join(" · ")} className="model-picker-trigger model-select"><span className="model-trigger-label">{currentModel ? currentLabel : "Choose model"}</span>{currentProvider && <span className="model-trigger-provider">{currentProvider}</span>}<ChevronDown size={13} /></ComboboxTrigger>
     <ComboboxContent className="model-picker-content">
-      <div className="model-search"><Search size={15} /><ComboboxInput aria-label="Search models" placeholder="Search models…" autoFocus /></div>
+      <SearchField variant="bare"><ComboboxInput aria-label="Search models" placeholder="Search models…" autoFocus /></SearchField>
       <Tabs.Root value={tab} onValueChange={setTab}>
         <Tabs.List className="model-provider-tabs" aria-label="Model providers"><Tabs.Tab value="all">All</Tabs.Tab>{groups.length > 1 && groups.map(group => <Tabs.Tab key={group.id} value={group.id}>{group.label}</Tabs.Tab>)}</Tabs.List>
         <Tabs.Panel value={tab}>

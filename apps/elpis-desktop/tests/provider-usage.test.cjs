@@ -103,12 +103,12 @@ test('usage is one shared store whose reported values stay until sign-out; gatew
     // The search text keeps clear space from its magnifier, and focus outlines the whole field, not the text alone,
     // as in the ChatGPT app's settings.
     await page.getByLabel('Search settings', { exact: true }).focus(); await page.keyboard.type('usage');
-    const search = await page.evaluate(() => { const box = document.querySelector('.settings-search'), icon = box.querySelector('svg'), input = box.querySelector('input');
+    const search = await page.evaluate(() => { const box = document.querySelector('.settings-nav .search-field'), icon = box.querySelector('svg'), input = box.querySelector('input');
       return { space: input.getBoundingClientRect().left + parseFloat(getComputedStyle(input).paddingLeft) - icon.getBoundingClientRect().right,
         input: getComputedStyle(input).outlineStyle, field: getComputedStyle(box).outlineStyle }; });
     assert.ok(search.space >= 8, `search text starts ${search.space}px after its icon`);
     assert.deepEqual([search.input, search.field], ['none', 'solid']);
-    await page.locator('.settings-search').screenshot({ path: '/tmp/elpis-settings-search.png' });
+    await page.locator('.settings-nav .search-field').screenshot({ path: '/tmp/elpis-settings-search.png' });
     assert.deepEqual(errors, []);
   } finally { await browser.close(); for (const client of clients) client.end(); server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); }
 });

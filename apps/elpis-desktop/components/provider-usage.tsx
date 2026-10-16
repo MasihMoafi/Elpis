@@ -6,7 +6,8 @@ import { api } from "@/lib/api";
 // Usage as Elpis reports it from account/rateLimits/read, one provider at a time (Cloudroom's usage card).
 export type UsageWindow = { usedPercent: number | null; windowDurationMins: number | null; resetsAt: number | null };
 export type UsageLimit = { limitId: string | null; limitName: string | null; planType: string | null; primary: UsageWindow | null; secondary: UsageWindow | null; reached: string | null };
-export type Subscription = { state: "connected" | "available" | "notConnected"; models: string[]; usage: UsageLimit[] };
+// `signedOut`: Elpis's own sign-out of the subscription (Claude only); the account on this computer stays signed in.
+export type Subscription = { state: "connected" | "available" | "notConnected"; models: string[]; usage: UsageLimit[]; signedOut?: boolean };
 export type OpenAIAccount = { auth: { state: "signedIn" | "signedOut" | "unknown"; method?: string | null; email?: string | null; plan?: string | null; error?: string | null }; usage: UsageLimit[]; usageError: string | null };
 export type UsageStatus = { kind: "ok"; limits: UsageLimit[] } | { kind: "unauthenticated"; hint: string } | { kind: "error"; message: string } | { kind: "notReported" };
 
@@ -28,6 +29,7 @@ export function openAIUsage(account: OpenAIAccount): UsageStatus {
   return { kind: "ok", limits: account.usage };
 }
 export function subscriptionUsage(subscription: Subscription, name: string, signIn: string): UsageStatus {
+  if (subscription.signedOut) return { kind: "unauthenticated", hint: `Signed out in Elpis. Sign in under Models & accounts to see ${name} usage.` };
   if (subscription.state === "notConnected") return { kind: "unauthenticated", hint: `${signIn} to see ${name} usage.` };
   return subscription.usage.length ? { kind: "ok", limits: subscription.usage } : { kind: "notReported" };
 }

@@ -162,7 +162,7 @@ test('catalogue sign-in failure leaves healthy history and live feed usable; ret
   f.emit('message', { method: 'item/completed', params: { threadId: 'a', turnId: 'live-a', item: { id: 'live-reply-a', type: 'agentMessage', text: 'Live feed still works' } } }); await eventually(async () => assert.ok((await f.page.locator('.chat-view').innerText()).includes('Live feed still works')));
   if (process.env.ELPIS_AVAILABILITY_SHOTS) {
     const inspectControls = () => f.page.evaluate(() => {
-      const context = [...document.querySelectorAll('.workspace-header button')].find(button => button.textContent.trim() === 'Context');
+      const context = document.querySelector('.workspace-header button[aria-label="Refresh conversation"]');
       const inspect = button => {
         const style = getComputedStyle(button), ancestors = []; let parent = button.parentElement;
         for (let depth = 0; parent && depth < 5; depth++, parent = parent.parentElement) { const css = getComputedStyle(parent); ancestors.push({ tag: parent.tagName, class: parent.className, color: css.color, background: css.backgroundColor }); }

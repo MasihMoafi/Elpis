@@ -82,34 +82,43 @@ test('settings pages appear in order and each control writes only its own backin
     await panel.getByLabel('Search keyboard shortcuts').fill('no such shortcut');
     await panel.getByText('No shortcuts match', { exact: false }).waitFor();
 
-    // Voice saves WhisperType's route through the MCP config writer.
+    // Voice: one OpenRouter model row and one fallback row, saved together through the MCP config writer.
     panel = await open('Voice');
     await panel.getByText('Configured', { exact: true }).waitFor();
-    await chooseOption(panel.getByLabel('Transcription engine', { exact: true }), 'local');
+    assert.deepEqual(await panel.getByRole('form', { name: 'Transcription settings' }).locator('.settings-row-title').allInnerTexts(), ['OpenRouter transcription model', 'Fallback transcription']);
+    assert.equal(await panel.getByLabel('Transcription engine', { exact: true }).count(), 0, 'the old engine row is gone');
+    await chooseOption(panel.getByLabel('Fallback transcription engine', { exact: true }), 'local');
+    await panel.getByLabel('OpenRouter transcription model', { exact: true }).fill('openai/gpt-4o-mini-transcribe');
     await panel.getByRole('button', { name: 'Save transcription settings' }).click();
     await panel.getByRole('status').filter({ hasText: 'Transcription settings saved' }).waitFor();
-    assert.deepEqual(lastPost(), { path: '/api/mcp', body: { version: 'm2', name: 'whispertype', action: 'whispertype', backend: 'local' } });
+    assert.deepEqual(lastPost(), { path: '/api/mcp', body: { version: 'm2', name: 'whispertype', action: 'whispertype', backend: 'local', model: 'openai/gpt-4o-mini-transcribe' } });
+    // Automatic is no explicit engine: it saves null, and never OpenRouter by default.
+    await chooseOption(panel.getByLabel('Fallback transcription engine', { exact: true }), 'auto');
+    await panel.getByText('Uses the ChatGPT sign-in while Elpis is signed in to ChatGPT, otherwise Local WhisperType.', { exact: false }).waitFor();
+    await panel.getByRole('button', { name: 'Save transcription settings' }).click();
+    await panel.getByRole('status').filter({ hasText: 'Transcription settings saved' }).waitFor();
+    assert.deepEqual(lastPost(), { path: '/api/mcp', body: { version: 'm3', name: 'whispertype', action: 'whispertype', backend: null, model: 'openai/gpt-4o-mini-transcribe' } });
 
     panel = await open('Personalization');
     await panel.getByLabel('Instructions for every chat', { exact: true }).fill('Answer briefly.');
     await panel.getByRole('button', { name: 'Save instructions', exact: true }).click();
     await panel.getByRole('status').filter({ hasText: 'Instructions saved' }).waitFor();
-    assert.deepEqual(lastPost(), { path: '/api/settings', body: { version: 'v3', options: { developerInstructions: 'Answer briefly.' } } });
+    assert.deepEqual(lastPost(), { path: '/api/settings', body: { version: 'v4', options: { developerInstructions: 'Answer briefly.' } } });
     await panel.getByRole('switch', { name: 'Enable memories', exact: true }).click();
     await panel.getByRole('status').filter({ hasText: /^Saved\. Applies to new conversations\.$/ }).waitFor();
-    assert.deepEqual(lastPost(), { path: '/api/settings', body: { version: 'v4', memory: { enabled: true } } });
+    assert.deepEqual(lastPost(), { path: '/api/settings', body: { version: 'v5', memory: { enabled: true } } });
 
     panel = await open('Git');
     await panel.getByLabel('Project root markers', { exact: true }).fill('.git, .hg');
     await panel.getByRole('button', { name: 'Save', exact: true }).click();
     await panel.getByRole('status').filter({ hasText: 'Project root markers saved' }).waitFor();
-    assert.deepEqual(lastPost(), { path: '/api/settings', body: { version: 'v5', options: { projectRootMarkers: ['.git', '.hg'] } } });
+    assert.deepEqual(lastPost(), { path: '/api/settings', body: { version: 'v6', options: { projectRootMarkers: ['.git', '.hg'] } } });
 
     panel = await open('Worktrees');
     await panel.getByLabel('Worktree root', { exact: true }).fill('/tmp/trees');
     await panel.getByRole('button', { name: 'Save', exact: true }).click();
     await panel.getByRole('status').filter({ hasText: 'Worktree root saved' }).waitFor();
-    assert.deepEqual(lastPost(), { path: '/api/settings', body: { version: 'v6', options: { worktreeRoot: '/tmp/trees' } } });
+    assert.deepEqual(lastPost(), { path: '/api/settings', body: { version: 'v7', options: { worktreeRoot: '/tmp/trees' } } });
 
     // Hooks: trusting and turning off write hooks.state for that hook only.
     panel = await open('Hooks');
@@ -125,7 +134,7 @@ test('settings pages appear in order and each control writes only its own backin
     panel = await open('Configuration');
     await chooseOption(panel.getByLabel('Web search', { exact: true }), 'live');
     await panel.getByRole('status').filter({ hasText: 'Web search saved' }).waitFor();
-    assert.deepEqual(lastPost(), { path: '/api/settings', body: { version: 'v7', options: { webSearch: 'live' } } });
+    assert.deepEqual(lastPost(), { path: '/api/settings', body: { version: 'v8', options: { webSearch: 'live' } } });
     await panel.getByLabel('Default sandbox', { exact: true }).click();
     const fullAccess = page.getByRole('option', { name: 'Full access', exact: true });
     assert.ok(await fullAccess.getAttribute('aria-disabled') === 'true' || await fullAccess.getAttribute('data-disabled') !== null, 'a managed restriction disables Full access');

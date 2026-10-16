@@ -392,7 +392,8 @@ try {
   await check('model and effort change is shown and reaches the next request', async () => {
     await chooseOption(page.getByLabel('Model', { exact: true }), 'gpt-5.5');
     await chooseOption(page.getByLabel('Reasoning effort', { exact: true }), 'high');
-    await page.locator('.next-turn').filter({ hasText: /GPT-5\.5/i }).filter({ hasText: 'high' }).waitFor();
+    await page.getByLabel('Model', { exact: true }).filter({ hasText: /GPT-5\.5/i }).waitFor();
+    await page.locator('[aria-label="Reasoning effort"][data-value="high"]').waitFor();
     reply('SETTINGS_4242', message('SETTINGS_REPLY_4242'));
     await send('SETTINGS_4242');
     await page.getByText('SETTINGS_REPLY_4242', { exact: true }).waitFor({ timeout: 30000 });
@@ -401,7 +402,6 @@ try {
     assert(turn, 'the turn reached inference');
     assert.equal(turn.body.model, 'gpt-5.5');
     assert.equal(turn.body.reasoning?.effort, 'high');
-    assert.equal(await page.locator('.next-turn').count(), 0, 'override is consumed by that turn');
     await page.locator('.thread-meta').filter({ hasText: /GPT-5\.5/i }).filter({ hasText: 'high' }).waitFor();
   });
 
@@ -463,7 +463,7 @@ try {
     // The transcription route moved to Settings → Voice; it still writes WhisperType's MCP env.
     await whisper.getByRole('button', { name: 'Open Voice settings', exact: true }).click();
     const voice = page.getByRole('tabpanel', { name: 'Voice', exact: true });
-    await chooseOption(voice.getByLabel('Transcription engine'), 'local');
+    await chooseOption(voice.getByLabel('Fallback transcription engine', { exact: true }), 'local');
     await voice.getByRole('button', { name: 'Save transcription settings' }).click();
     await until(async () => /WHISPERTYPE_BACKEND\s*=\s*"local"/.test(await fs.readFile(path.join(home, 'config.toml'), 'utf8')), 'whispertype provider written');
     await page.getByRole('tab', { name: 'MCP servers', exact: true }).click();

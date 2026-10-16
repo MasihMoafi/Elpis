@@ -7,13 +7,14 @@ import { readPreferences } from "@/lib/preferences";
 
 /** Settings → General → Follow-up behavior: Queue holds messages sent during a running turn
  * and sends them, one turn each, after it completes. Steer (the default) adds them to the running turn. */
-export type FollowUp = { id: string; text: string; attachments: Attachment[] };
+export type FollowUpOptions = { model?: string; effort?: string; mode?: "plan" | "default" };
+export type FollowUp = { id: string; text: string; attachments: Attachment[] } & FollowUpOptions;
 const EMPTY: FollowUp[] = [];
 let queues: Record<string, FollowUp[]> = {};
 const listeners = new Set<() => void>();
 const set = (threadId: string, items: FollowUp[]) => { queues = { ...queues, [threadId]: items }; for (const listener of listeners) listener(); };
 const sendTurn = async (threadId: string, item: FollowUp) => {
-  const body = { text: item.text, ...(item.attachments.length ? { attachments: item.attachments } : {}) };
+  const body = { text: item.text, ...(item.attachments.length ? { attachments: item.attachments } : {}), ...(item.model ? { model: item.model } : {}), ...(item.effort ? { effort: item.effort } : {}), ...(item.mode ? { mode: item.mode } : {}) };
   // The runtime can report the thread busy for a moment after the completion event.
   for (let attempt = 0; ; attempt++) {
     try { return await api(`/threads/${encodeURIComponent(threadId)}/turns`, body); }
@@ -22,9 +23,9 @@ const sendTurn = async (threadId: string, item: FollowUp) => {
 };
 
 /** Returns true when the message was queued (the person chose Queue); otherwise the caller steers. */
-export function queueFollowUp(threadId: string, text: string, attachments: Attachment[] = []) {
+export function queueFollowUp(threadId: string, text: string, attachments: Attachment[] = [], options: FollowUpOptions = {}) {
   if (readPreferences().followUp !== "queue") return false;
-  set(threadId, [...(queues[threadId] ?? []), { id: crypto.randomUUID(), text, attachments }]);
+  set(threadId, [...(queues[threadId] ?? []), { id: crypto.randomUUID(), text, attachments, ...options }]);
   return true;
 }
 export function removeFollowUp(threadId: string, id: string) { set(threadId, (queues[threadId] ?? []).filter(item => item.id !== id)); }

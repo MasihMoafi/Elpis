@@ -1,5 +1,8 @@
 /* Settings pages: ChatGPT-style rows. Colours come only from the app's CSS variables. */
-.settings-page-header { margin-bottom:20px; }
+.settings-page-header { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; margin-bottom:20px; }
+.settings-page-heading { min-width:0; }
+/* A page action (Refresh, Add) sits level with the title. */
+.settings-page-header > :not(.settings-page-heading) { flex-shrink:0; margin-top:4px; }
 .settings-page-header h2 { font:400 30px/1.2 var(--serif); letter-spacing:-.01em; }
 .settings-page-header p { margin-top:4px; font-size:13px; color:var(--muted-foreground); }
 .settings-group { margin-bottom:24px; min-width:0; }
@@ -12,7 +15,8 @@
 .settings-row-text { min-width:0; flex:1 1 auto; }
 .settings-row-title { font-size:13.5px; font-weight:500; line-height:1.4; overflow-wrap:anywhere; }
 .settings-row-description { font-size:12.5px; line-height:1.45; color:var(--muted-foreground); margin-top:2px; overflow-wrap:anywhere; }
-.settings-row-control { flex:0 1 auto; display:flex; align-items:center; justify-content:flex-end; flex-wrap:wrap; gap:8px; min-width:0; max-width:60%; }
+/* A control keeps the width its content needs (max-width still caps it); a long description wraps instead of squeezing it. */
+.settings-row-control { flex:0 0 auto; display:flex; align-items:center; justify-content:flex-end; flex-wrap:wrap; gap:8px; min-width:0; max-width:60%; }
 .settings-row.stacked { flex-direction:column; align-items:stretch; gap:10px; }
 .settings-row.stacked .settings-row-control { max-width:none; justify-content:flex-start; }
 .settings-row-control .settings-choice, .settings-row-control [data-slot="select-trigger"] { min-width:180px; max-width:100%; }
@@ -21,15 +25,11 @@
 .settings-row-control .settings-path.unset { font:inherit; font-size:13px; direction:ltr; }
 .settings-notice { margin:8px 2px 0; font-size:12.5px; color:var(--muted-foreground); }
 .settings-notice.alert { color:var(--destructive); }
-.settings-segmented { display:inline-flex; flex-wrap:wrap; gap:2px; padding:2px; border-radius:9px; background:var(--muted); }
-.settings-segmented [role="radio"] { height:26px; padding:0 10px; border-radius:7px; font-size:12.5px; font-weight:500; color:var(--muted-foreground); }
-.settings-segmented [role="radio"][aria-checked="true"] { background:var(--card); color:var(--foreground); box-shadow:var(--shadow); }
 .settings-badge { display:inline-flex; align-items:center; height:20px; padding:0 7px; border-radius:999px; border:1px solid var(--border); font-size:11.5px; font-weight:500; color:var(--muted-foreground); white-space:nowrap; }
 .settings-badge.warn { color:var(--warning); border-color:color-mix(in oklch, var(--warning), transparent 55%); }
 .settings-badge.ok { color:var(--success); border-color:color-mix(in oklch, var(--success), transparent 55%); }
 .settings-code { font:12px/1.45 var(--mono); background:var(--muted); color:var(--foreground); padding:1px 5px; border-radius:5px; overflow-wrap:anywhere; }
-.settings-kbd { display:inline-flex; align-items:center; height:22px; padding:0 7px; border:1px solid var(--border); border-bottom-width:2px; border-radius:6px; background:var(--background); font:500 11.5px/1 Inter, system-ui, sans-serif; color:var(--foreground); white-space:nowrap; }
-.settings-search { margin-bottom:16px; }
+.settings-page .search-field { margin-bottom:16px; }
 .settings-empty { padding:24px 16px; text-align:center; font-size:13px; color:var(--muted-foreground); }
 .settings-empty strong { display:block; color:var(--foreground); font-weight:500; margin-bottom:2px; }
 .settings-gap-list { margin:0; padding:12px 16px 12px 32px; font-size:12.5px; color:var(--muted-foreground); display:grid; gap:4px; }
@@ -40,5 +40,9 @@
 }
 .settings-actions { min-height:52px; }
 .settings-actions .settings-notice { margin:0; }
-.usage-card { padding:16px; display:grid; gap:10px; }
-.usage-card h3 { font-size:14px; font-weight:600; margin:0; }
+/* Cards: an account, a server or a form on a Settings page. Stacked cards keep one gap. */
+.settings-card { display:grid; gap:10px; padding:16px; border:1px solid var(--border); border-radius:12px; background:var(--card); min-width:0; }
+.settings-card h3 { font-size:14px; font-weight:600; margin:0; }
+/* A card of labelled fields (a form) spaces its fields wider than a card of lines. */
+form.settings-card, .settings-card:has(> .field) { gap:16px; }
+.settings-stack { display:grid; gap:12px; min-width:0; }

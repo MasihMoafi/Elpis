@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { OptionSelect } from "@/components/ui/option-select";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
-import { AlertDialog, AlertDialogClose, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import { AlertDialog, AlertDialogClose, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { SaveFeedback, SettingRow, SettingsActions, SettingsGroup, SettingsNotice } from "@/components/settings/rows";
 import { useSaver } from "@/components/settings/use-saver";
 import { editable, reloadSettings, saveSettings, type Background, type ElpisSettings, type Memory } from "@/lib/settings-store";
@@ -190,8 +190,10 @@ export function MemorySettings({ value, models }: { value: ElpisSettings; models
     </SettingsActions>
     <AlertDialog open={confirming} onOpenChange={setConfirming}>
       <AlertDialogContent>
-        <AlertDialogTitle>Delete all memories?</AlertDialogTitle>
-        <AlertDialogDescription>Elpis removes its saved memories and their files. This cannot be undone.</AlertDialogDescription>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Delete all memories?</AlertDialogTitle>
+          <AlertDialogDescription>Elpis removes its saved memories and their files. This cannot be undone.</AlertDialogDescription>
+        </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogClose render={<Button variant="outline" />}>Cancel</AlertDialogClose>
           <Button variant="destructive" onClick={() => { setConfirming(false); void saver.run("reset", () => api("/memories/reset", {}), "Memories deleted."); }}>Delete memories</Button>

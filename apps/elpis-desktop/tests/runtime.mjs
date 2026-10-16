@@ -11,7 +11,7 @@ import { once } from 'node:events';
 import { fileURLToPath } from 'node:url';
 import { startDesktopServer } from '../bridge/server.mjs';
 const require = createRequire(import.meta.url);
-const { Provider, message } = require('../../../editors/vscode/test/runtime-eval.js');
+const { Provider, message } = require('../../../scripts/lib/mock-provider.js');
 const { chromium } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright');
 const binary = process.argv[2];
 assert(binary && path.isAbsolute(binary), 'Provide an absolute Elpis executable');

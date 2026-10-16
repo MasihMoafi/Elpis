@@ -1,9 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ArchiveRestore, Search } from "lucide-react";
+import { ArchiveRestore } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { SearchField } from "@/components/ui/search-field";
+import { SettingsEmpty, SettingsHeader, SettingsNotice } from "@/components/settings/rows";
 import { ThreadActions } from "@/components/thread-actions";
 import { api, title, type Thread } from "@/lib/api";
 
@@ -40,24 +41,27 @@ export function ArchivedView({ onUnarchived, onDelete }: Props) {
     await onDelete(thread);
     setThreads(prev => prev?.filter(item => item.id !== thread.id) ?? prev);
   }
+  // The ChatGPT app's archived list: one card of rows, each with the chat's name and its actions on the right.
   return <div aria-label="Archived conversations">
-    <label className="settings-search relative block">
-      <Search size={14} aria-hidden="true" className="pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 text-muted-foreground" />
-      <Input aria-label="Search archived chats" className="pl-8" placeholder="Search archived chats" maxLength={200} value={search} onChange={event => setSearch(event.target.value)} />
-    </label>
-    {error && <p role="alert" className="mb-3 text-sm text-destructive">{error}</p>}
-    {threads === null && !error && <p className="text-sm text-muted-foreground" role="status">Loading archived conversations…</p>}
-    {threads?.length === 0 && <p className="text-sm text-muted-foreground">{term ? "No archived chats match your search." : "No archived conversations. Archive a chat from its ⋯ menu in the sidebar."}</p>}
-    <ul className="archived-list">
-      {threads?.map(thread => <li key={thread.id} className="archived-row" data-thread-id={thread.id}>
-        <div className="min-w-0 flex-1">
-          <p className="truncate font-medium">{title(thread)}</p>
-          {thread.agentNickname && <p className="text-xs text-muted-foreground">{thread.agentNickname}</p>}
+    <SettingsHeader title="Archived chats" />
+    <SearchField aria-label="Search archived chats" placeholder="Search archived chats" maxLength={200} value={search} onChange={event => setSearch(event.target.value)} />
+    {error && <SettingsNotice tone="alert">{error}</SettingsNotice>}
+    {threads === null && !error && <SettingsNotice>Loading archived conversations…</SettingsNotice>}
+    {threads?.length === 0 && (term
+      ? <SettingsEmpty title={`No archived chats match “${term}”`}>Try another word from the chat’s name.</SettingsEmpty>
+      : <SettingsEmpty title="No archived conversations">Archive a chat from its ⋯ menu in the sidebar.</SettingsEmpty>)}
+    {!!threads?.length && <ul className="settings-rows">
+      {threads.map(thread => <ThreadActions key={thread.id} thread={thread} onDelete={remove} area={<li className="settings-row archived-row" data-thread-id={thread.id} />}>{menu => <>
+        <div className="settings-row-text">
+          <div className="settings-row-title truncate">{title(thread)}</div>
+          {thread.agentNickname && <div className="settings-row-description">{thread.agentNickname}</div>}
         </div>
-        <Button variant="outline" size="sm" disabled={busy === thread.id} onClick={() => unarchive(thread)} aria-label={`Unarchive ${title(thread)}`}><ArchiveRestore size={14} />{busy === thread.id ? "Restoring…" : "Unarchive"}</Button>
-        <ThreadActions thread={thread} onDelete={remove} />
-      </li>)}
-    </ul>
+        <div className="settings-row-control">
+          <Button variant="outline" size="sm" disabled={busy === thread.id} onClick={() => unarchive(thread)} aria-label={`Unarchive ${title(thread)}`}><ArchiveRestore />{busy === thread.id ? "Restoring…" : "Unarchive"}</Button>
+          {menu}
+        </div>
+      </>}</ThreadActions>)}
+    </ul>}
     {cursor && <Button variant="ghost" className="mt-2 w-full" onClick={() => load(cursor)}>Load more</Button>}
   </div>;
 }

@@ -4,11 +4,14 @@ import { createHash } from 'node:crypto';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { parseArgs } from 'node:util';
 
-const productionFiles = [
-  'bridge/client.mjs', 'bridge/elpis-features.mjs', 'bridge/provider-keys.mjs', 'bridge/provider-settings.mjs', 'bridge/provider-models.mjs',
+/** Every file the packaged app loads besides the renderer; package.test.mjs checks it against their imports. */
+export const productionFiles = [
+  'bridge/browser-mcp.mjs', 'desktop/browser-agent.cjs',
+  'bridge/client.mjs', 'bridge/elpis-features.mjs', 'bridge/git.mjs', 'bridge/provider-keys.mjs', 'bridge/provider-settings.mjs', 'bridge/provider-models.mjs',
   'bridge/rag-command.mjs', 'bridge/server.mjs', 'bridge/tools.mjs', 'bridge/transcription.mjs', 'bridge/attachments.mjs',
-  'bridge/resources/rag.md', 'desktop/browser-policy.cjs', 'desktop/browser.cjs',
-  'desktop/main.cjs', 'desktop/media-policy.cjs', 'desktop/preload.cjs', 'desktop/files.cjs',
+  'bridge/resources/rag.md', 'desktop/browser-policy.cjs', 'desktop/browser.cjs', 'desktop/browser-annotations.cjs', 'desktop/browser-page-preload.cjs', 'desktop/context-menu.cjs',
+  'desktop/main.cjs', 'desktop/media-policy.cjs', 'desktop/preferences.cjs', 'desktop/preload.cjs', 'desktop/files.cjs',
+  'desktop/terminal.cjs', 'desktop/open-thread.cjs',
   'desktop/runtime.mjs', 'desktop/state.cjs', 'desktop/elpis-icon.png', 'lib/turn-replacement.ts', 'lib/thread-deletion.ts',
 ];
 
@@ -59,14 +62,15 @@ function inputFile(file, destination) {
   return { source: file, path: destination, bytes: stat.size, mode: stat.mode & 0o777, sha256: sha256(file) };
 }
 
-function inputTree(directory, destination) {
+function inputTree(directory, destination, keep = () => true) {
   const stat = fs.lstatSync(directory);
   if (stat.isSymbolicLink()) throw new Error(`Source symbolic link is not allowed: ${directory}`);
   if (!stat.isDirectory()) throw new Error(`Expected a directory: ${directory}`);
   return fs.readdirSync(directory, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name)).flatMap(entry => {
     const source = path.join(directory, entry.name);
     const target = path.posix.join(destination, entry.name);
-    return entry.isDirectory() ? inputTree(source, target) : [inputFile(source, target)];
+    if (!keep(target)) return [];
+    return entry.isDirectory() ? inputTree(source, target, keep) : [inputFile(source, target)];
   });
 }
 
@@ -80,13 +84,14 @@ function resolveDestination(file) {
 }
 
 /** Copy a built renderer and the exact desktop runtime closure. Never builds, installs pointers, or starts the app. */
-export function stageDesktop({ source = fileURLToPath(new URL('../', import.meta.url)), destination, electronDist, wsDirectory } = {}) {
+export function stageDesktop({ source = fileURLToPath(new URL('../', import.meta.url)), destination, electronDist, wsDirectory, ptyDirectory } = {}) {
   if (typeof destination !== 'string' || !path.isAbsolute(destination)) throw new Error('An absolute destination is required');
   const target = resolveDestination(path.resolve(destination));
   source = fs.realpathSync(source);
   const electron = fs.realpathSync(electronDist || path.join(source, 'node_modules/electron/dist'));
   const ws = fs.realpathSync(wsDirectory || path.join(source, 'node_modules/ws'));
-  for (const input of [source, electron, ws]) {
+  const pty = fs.realpathSync(ptyDirectory || path.join(source, 'node_modules/node-pty'));
+  for (const input of [source, electron, ws, pty]) {
     const relative = path.relative(input, target);
     if (!relative || (!relative.startsWith(`..${path.sep}`) && relative !== '..' && !path.isAbsolute(relative))) {
       throw new Error(`Destination is inside a package input: ${input}`);
@@ -101,6 +106,9 @@ export function stageDesktop({ source = fileURLToPath(new URL('../', import.meta
   requireFile(path.join(ws, 'package.json'));
   const identity = JSON.parse(fs.readFileSync(path.join(source, 'package.json'), 'utf8'));
   const wsIdentity = JSON.parse(fs.readFileSync(path.join(ws, 'package.json'), 'utf8'));
+  const ptyIdentity = JSON.parse(fs.readFileSync(path.join(pty, 'package.json'), 'utf8'));
+  if (ptyIdentity.name !== 'node-pty' || typeof ptyIdentity.version !== 'string') throw new Error('node-pty package identity is invalid');
+  for (const name of ['LICENSE', 'lib/index.js', 'build/Release/pty.node']) requireFile(path.join(pty, name));
   if (typeof identity.name !== 'string' || typeof identity.version !== 'string' || wsIdentity.name !== 'ws' || typeof wsIdentity.version !== 'string') {
     throw new Error('Desktop or ws package identity is invalid');
   }
@@ -109,9 +117,12 @@ export function stageDesktop({ source = fileURLToPath(new URL('../', import.meta
     ...inputTree(path.join(source, 'out'), 'app/out'),
     ...inputTree(electron, 'runtime/electron'),
     ...inputTree(ws, 'app/node_modules/ws'),
+    // The integrated terminal (desktop/terminal.cjs): node-pty's loader, licence and its build for this Electron.
+    ...['package.json', 'LICENSE', 'build/Release/pty.node'].map(name => inputFile(path.join(pty, name), `app/node_modules/node-pty/${name}`)),
+    ...inputTree(path.join(pty, 'lib'), 'app/node_modules/node-pty/lib', name => !/\.test\.js$|\.map$/.test(name)),
   ];
   const packageIdentity = { name: identity.name, productName: identity.productName || 'Elpis', version: identity.version,
-    private: true, type: 'module', main: 'desktop/main.cjs', dependencies: { ws: wsIdentity.version } };
+    private: true, type: 'module', main: 'desktop/main.cjs', dependencies: { ws: wsIdentity.version, 'node-pty': ptyIdentity.version } };
   const generated = [
     { path: 'app/package.json', data: `${JSON.stringify(packageIdentity, null, 2)}\n`, mode: 0o644 },
     { path: 'launch', data: launcher, mode: 0o755 },
@@ -146,9 +157,9 @@ export function stageDesktop({ source = fileURLToPath(new URL('../', import.meta
 if (process.argv[1] && pathToFileURL(path.resolve(process.argv[1])).href === import.meta.url) {
   try {
     const { values } = parseArgs({ options: { destination: { type: 'string' }, source: { type: 'string' },
-      'electron-dist': { type: 'string' }, 'ws-directory': { type: 'string' } } });
+      'electron-dist': { type: 'string' }, 'ws-directory': { type: 'string' }, 'pty-directory': { type: 'string' } } });
     const result = stageDesktop({ source: values.source, destination: values.destination,
-      electronDist: values['electron-dist'], wsDirectory: values['ws-directory'] });
+      electronDist: values['electron-dist'], wsDirectory: values['ws-directory'], ptyDirectory: values['pty-directory'] });
     process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
   } catch (error) { process.stderr.write(`${error.message}\n`); process.exitCode = 1; }
 }

@@ -54,7 +54,7 @@ export async function startDesktopServer(options = {}) {
   const session = randomBytes(32).toString('hex');
   const listeners = new Set(); let origin; let closed = false;
   const tools = options.tools ?? createTools({ environment: () => client.ragEnvironment() });
-  const transcription = createTranscription({ definition: () => client.transcriptionDefinition() });
+  const transcription = createTranscription({ definition: () => client.transcriptionDefinition(), environment: () => client.transcriptionEnvironment() });
   const event = value => {
     const bytes = `event: ${value.type}\ndata: ${JSON.stringify(value.data)}\n\n`;
     for (const response of listeners) {
@@ -109,6 +109,7 @@ export async function startDesktopServer(options = {}) {
         if (url.pathname === '/api/providers/settings') return json(response, 200, method === 'GET' ? await client.providerSettings() : await client.saveProvider(await body(request)));
         if (url.pathname === '/api/providers/key' && method === 'POST') return json(response, 200, await client.saveProviderKey(await body(request)));
         if (url.pathname === '/api/mcp') return json(response, 200, method === 'GET' ? await client.mcp() : await client.saveMcp(await body(request)));
+        if (url.pathname === '/api/context/switches') return json(response, 200, method === 'GET' ? await client.contextSwitches() : await client.saveContextSwitches(await body(request)));
         if (url.pathname === '/api/hooks') return json(response, 200, method === 'GET' ? await client.hooks() : await client.saveHook(await body(request)));
         if (url.pathname === '/api/memories/reset' && method === 'POST') return json(response, 200, await client.resetMemories(await body(request)));
         if (url.pathname === '/api/workflows' && method === 'GET') {
@@ -120,13 +121,17 @@ export async function startDesktopServer(options = {}) {
           if (method === 'GET') return json(response, 200, await client.listThreads(pageQuery(url, true)));
           return json(response, 201, await client.createThread(await body(request)));
         }
-        const thread = url.pathname.match(/^\/api\/threads\/([^/]+)(?:\/(turns|steer|interrupt|resume|context|delete|rename|archive|unarchive|revert|fork))?$/);
+        const thread = url.pathname.match(/^\/api\/threads\/([^/]+)(?:\/(turns|steer|interrupt|resume|context|delete|rename|archive|unarchive|revert|fork|compact|review|git|permissions))?$/);
         if (thread) {
           const id = decodeURIComponent(thread[1]);
           if (!thread[2] && method === 'GET') return json(response, 200, await client.readThread(id, pageQuery(url)));
           if (thread[2] === 'context' && method === 'GET') return json(response, 200, await client.context(id));
-          if (thread[2] && thread[2] !== 'context' && method === 'POST') {
-            const operation = { turns: 'send', steer: 'steer', interrupt: 'interrupt', resume: 'resume', delete: 'deleteThread', rename: 'renameThread', archive: 'archiveThread', unarchive: 'unarchiveThread', revert: 'revert', fork: 'forkThread' }[thread[2]];
+          if (thread[2] === 'git' && method === 'GET') {
+            if ([...url.searchParams.keys()].some(key => key !== 'view')) throw new BridgeError('Unsupported Git query');
+            return json(response, 200, await client.git(id, url.searchParams.get('view')));
+          }
+          if (thread[2] && !['context', 'git'].includes(thread[2]) && method === 'POST') {
+            const operation = { turns: 'send', steer: 'steer', interrupt: 'interrupt', resume: 'resume', delete: 'deleteThread', rename: 'renameThread', archive: 'archiveThread', unarchive: 'unarchiveThread', revert: 'revert', fork: 'forkThread', compact: 'compact', review: 'review', permissions: 'setPermissions' }[thread[2]];
             return json(response, 200, await client[operation](id, await body(request, ['send', 'steer'].includes(operation) ? ATTACHMENT_BODY_LIMIT : 65536)));
           }
           throw new BridgeError('Method is not allowed', 405);

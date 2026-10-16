@@ -1,11 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import { AgentsIcon, ArchiveIcon, FolderIcon, NewChatIcon, PinIcon, PlusIcon, SearchIcon, SendIcon, SettingsIcon, SplitIcon } from "@/components/elpis-icons";
-import { Archive, ChevronRight, PanelLeft, PanelRight, Pin, Moon, RefreshCw, Search, Square, Sun, X } from "lucide-react";
+import { cloneElement, useCallback, useEffect, useRef, useState } from "react";
+import { AgentsIcon, ArchiveIcon, FolderIcon, NewChatIcon, PinIcon, PlusIcon, SendIcon, SettingsIcon, SplitIcon } from "@/components/elpis-icons";
+import { Archive, ArrowLeft, ChevronRight, PanelLeft, PanelRight, Pin, Moon, RefreshCw, Search, Square, Sun, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { OptionSelect } from "@/components/ui/option-select";
 import { Input } from "@/components/ui/input";
+import { SearchField } from "@/components/ui/search-field";
 import { Textarea } from "@/components/ui/textarea";
 import { ChatMessage } from "@/components/chat-message";
 import { Transcript } from "@/components/transcript";
@@ -13,12 +14,12 @@ import { readPins, savePins } from "@/lib/pins";
 import { shortcutFor } from "@/lib/shortcuts";
 import { isSendKey, newChatFolder, useAppPreferences } from "@/lib/preferences";
 import { notifyApproval, notifyRuntimeEvent } from "@/lib/notifications";
-import { queueFollowUp, sendQueuedFollowUp } from "@/lib/follow-ups";
+import { queueFollowUp, sendQueuedFollowUp, type FollowUpOptions } from "@/lib/follow-ups";
 import { QueuedFollowUps } from "@/components/queued-follow-ups";
 import { ContextUsage } from "@/components/context-usage";
 import { ShortcutsDialog } from "@/components/shortcuts-dialog";
 import { StartupSplash } from "@/components/startup-splash";
-import { PermissionsMenu, PlanPill, PlusMenu, type PermissionMode } from "@/components/composer-controls";
+import { permissionLabel, PermissionsMenu, PlanPill, PlusMenu, type PermissionMode } from "@/components/composer-controls";
 import { CopyButton } from "@/components/markdown-text";
 import { liveEventItemKey, mergeHistoryWithLive, mergeLiveItem, runtimeErrorNotice } from "@/lib/live-events";
 import { replacementEligibility } from "@/lib/turn-replacement";
@@ -27,6 +28,11 @@ import { NewAgentForm } from "@/components/new-agent-form";
 import { SettingsView, type Tab as SettingsTab } from "@/components/settings-view";
 import { DeleteChatsDialog, ThreadActions } from "@/components/thread-actions";
 import { SlashMenu, useSlashMenu, type SlashCommand } from "@/components/slash-menu";
+import { DiffPanel, ReviewPanel, SessionPanel, type ReviewTarget } from "@/components/slash-panels";
+import { INIT_PROMPT } from "@/lib/init-prompt";
+import { conversationMarkdown, exportFileName, lastReply } from "@/lib/slash";
+import { openControl } from "@/lib/slash-focus";
+import { saveSettings } from "@/lib/settings-store";
 import { UsagePanel } from "@/components/provider-usage";
 import { Dictation } from "@/components/dictation";
 import { chooseProject, ProjectActions, ProjectDialog, ProjectMenu } from "@/components/project-picker";
@@ -35,11 +41,12 @@ import { appStorage, readProjects, saveProjects, type Project } from "@/lib/proj
 import { agentState, mergeListedThreads } from "@/lib/agents";
 import { insertTranscript } from "@/lib/dictation";
 import { BrowserPanel, TaskTabs, useBrowser } from "@/components/browser-panel";
+import { TerminalPanel } from "@/components/terminal-panel";
 import { readDraft, writeDraft } from "@/lib/drafts";
 import { ATTACHMENT_ACCEPT, attachmentFromFile, readAttachmentDraft, validateAttachments, withoutSubmittedAttachments, writeAttachmentDraft, type Attachment } from "@/lib/attachments";
 import { scanDeletionThreads } from "@/lib/thread-deletion";
 import type { ThemeChoice } from "@/components/appearance-settings";
-import { activityOf, api, choiceOf, effortsOf, isAgent, isUnlinkedAgent, modelLabel, providerChoices, providerLabel, title,
+import { activityOf, api, chatProvider, choiceOf, effortsOf, isAgent, isUnlinkedAgent, modelLabel, providerChoices, providerLabel, title,
   type Approval, type Entry, type Model, type ProviderSettings, type Thread } from "@/lib/api";
 
 const DECISION_LABELS: Record<string, string> = { accept: "Allow", acceptForSession: "Allow for this session", decline: "Decline", cancel: "Cancel" };
@@ -86,7 +93,7 @@ function ApprovalCard({ approval, answer, answers, onAnswerChange, busy }: { app
 }
 
 type View = "chat" | "agents" | "newAgent" | "settings";
-type NextTurn = { model?: string; effort?: string; permissions?: PermissionMode; plan?: boolean };
+type NextTurn = { model?: string; effort?: string; plan?: boolean };
 type Live = { thread: Thread; activeTurnId?: string | null; permissions?: PermissionMode | null; planMode?: boolean };
 /** The terminal's answer to a finished plan: Plan mode off, then this message. */
 const IMPLEMENT_PLAN = "Implement the plan.";
@@ -129,6 +136,7 @@ export default function Home() {
   // Existing conversations: overrides for their next turn only.
   const [nextTurn, setNextTurn] = useState<Record<string, NextTurn>>({});
   const [threadModes, setThreadModes] = useState<Record<string, PermissionMode>>({});
+  const [changingPermissions, setChangingPermissions] = useState(false);
   const [threadPlans, setThreadPlans] = useState<Record<string, boolean>>({});
   const [newPlan, setNewPlan] = useState(false);
   const [planAnswered, setPlanAnswered] = useState<Record<string, string>>({});
@@ -143,6 +151,9 @@ export default function Home() {
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [renameRequest, setRenameRequest] = useState(false);
+  /** What a slash command has open above the composer, and the one-line answer of a command that only reports. */
+  const [panel, setPanel] = useState<"status" | "review" | "diff" | null>(null);
+  const [slashNotice, setSlashNotice] = useState("");
   const shortcutAction = useRef<(id: string, index?: number) => void>(() => {});
   useEffect(() => { setPins(readPins()); }, []);
   const [newMode, setNewMode] = useState<PermissionMode | null>(null);
@@ -186,6 +197,9 @@ export default function Home() {
   const [fileNotice, setFileNotice] = useState("");
   const [connected, setConnected] = useState(false);
   const [ready, setReady] = useState(false);
+  useEffect(() => {
+    if (ready && connected && document.activeElement === document.body) composerRef.current?.focus();
+  }, [ready, connected]);
   useEffect(() => {
     if (!ready || !searchTerm) { setSearchResults({ query: "", data: [], nextCursor: null, loading: false, error: "" }); return; }
     let disposed = false;
@@ -236,6 +250,17 @@ export default function Home() {
       else setRuntimeNotices(previous => ({ ...previous, [owner]: message }));
     } finally { readingFiles.current = false; setAttaching(false); }
   }
+  /** The browser's annotations and screenshots join the composer's files; its Send also sends the message. */
+  async function attachFromBrowser(parts: Attachment[], submit: boolean) {
+    const owner = selectedRef.current?.id || newDraftKey.current;
+    try {
+      if (savedAttachments(owner).length + parts.length > 3) throw Error("Attach up to three files per message. Remove a file before adding the browser's comments.");
+      const next = validateAttachments([...savedAttachments(owner), ...parts]); saveAttachments(owner, next); setAttachments(next); setFileNotice("");
+    } catch (cause) { setFileNotice(cause instanceof Error ? cause.message : String(cause)); showChat(); return false; }
+    showChat();
+    if (submit) await send(); else requestAnimationFrame(() => composerRef.current?.focus());
+    return true;
+  }
   const [agentsLoading, setAgentsLoading] = useState(false);
   const [moreLoading, setMoreLoading] = useState(false);
   const [loadingChildren, setLoadingChildren] = useState<Record<string, boolean>>({});
@@ -268,6 +293,10 @@ export default function Home() {
   /** The chat tab: in full view the page steps aside; in split view both stay. */
   const showChat = () => { setBrowserView("chat"); if (!split) void browser.command("hide"); };
   useEffect(() => { setDesktop(!!window.elpisDesktop?.browser); }, []);
+  // The integrated terminal (Ctrl+`, components/terminal-panel.tsx): one shell per chat, in the chat's folder.
+  const [hasTerminal, setHasTerminal] = useState(false), [terminalOpen, setTerminalOpen] = useState(false);
+  const [tuiLaunch, setTuiLaunch] = useState<{ threadId: string; token: number } | null>(null);
+  useEffect(() => { setHasTerminal(!!window.elpisDesktop?.terminal); }, []);
   const [pendingInputOpen, setPendingInputOpen] = useState(false);
   const pendingInputButton = useRef<HTMLButtonElement>(null);
   const [sidebar, setSidebar] = useState(false);
@@ -279,6 +308,7 @@ export default function Home() {
   const brandMark = "/branding/elpis-symbol-amber-loop.svg";
   const setTheme = (next: ThemeChoice) => { setThemeChoice(next); try { appStorage().setItem("elpis-theme", next); } catch { setError("Could not save appearance on this device."); } };
   const searchInput = useRef<HTMLInputElement>(null);
+  const shortcutsReturnFocus = useRef<HTMLElement | null>(null);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [childCursors, setChildCursors] = useState<Record<string, string | null>>({});
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
@@ -455,6 +485,8 @@ export default function Home() {
             if (notice) setRuntimeNotices(prev => ({ ...prev, [threadId]: notice }));
           }
           if (method === "thread/status/changed" && params.status) patchThread(params.threadId, { status: params.status });
+          // The engine's applied permission mode, from this or any other client.
+          if (method === "thread/settings/updated" && params.permissions) setThreadModes(prev => ({ ...prev, [params.threadId]: params.permissions }));
           if (method === "thread/settings/updated" && params.threadSettings?.model) {
             const settings = { model: params.threadSettings.model, modelProvider: params.threadSettings.modelProvider, reasoningEffort: params.threadSettings.effort ?? null };
             settingsOf.current[params.threadId] = settings; patchThread(params.threadId, settings);
@@ -552,8 +584,9 @@ export default function Home() {
 
   const activeTurn = selected ? activeTurns[selected.id] : undefined;
   // A new chat runs with the configured defaults until a mode is chosen, so the button shows those.
-  const configuredMode: PermissionMode = providerSettings?.options?.approvalPolicy === "never" && providerSettings.options.sandboxMode === "danger-full-access" ? "full" : "ask";
-  const permissionMode: PermissionMode = selected ? nextTurn[selected.id]?.permissions ?? threadModes[selected.id] ?? "ask" : newMode ?? configuredMode;
+  const configuredMode: PermissionMode = providerSettings?.options?.approvalPolicy !== "never" ? "ask"
+    : providerSettings.options.sandboxMode === "bypass-permissions" ? "bypass" : providerSettings.options.sandboxMode === "danger-full-access" ? "full" : "ask";
+  const permissionMode: PermissionMode = selected ? threadModes[selected.id] ?? "ask" : newMode ?? configuredMode;
   const planMode = selected ? nextTurn[selected.id]?.plan ?? threadPlans[selected.id] ?? false : newPlan;
   // The last finished turn's proposed plan, while the chat is still in Plan mode and it is unanswered.
   const lastTurnId = entries.at(-1)?.turnId;
@@ -566,6 +599,7 @@ export default function Home() {
   const selectedChoice = selected ? choiceOf(selected, choices) : null;
   const pending = selected ? nextTurn[selected.id] : undefined;
   const turnModel = selected ? pending?.model ?? selected.model ?? "" : model;
+  const dictationProvider = chatProvider(turnModel, selected ? selected.modelProvider : newChoice?.provider, providerSettings?.main.provider);
   const turnEfforts = effortsOf(turnModel || providerSettings?.main.model, models);
   const turnEffort = selected ? pending?.effort ?? selected.reasoningEffort ?? "" : effort;
   const knownModel = (selected ? selectedChoice?.models : newChoice?.models)?.find(item => item.model === (turnModel || providerSettings?.main.model));
@@ -629,7 +663,13 @@ export default function Home() {
   const manageConnections = () => { setSettingsSection("providers"); show("settings"); };
   /** ChatGPT's "Fork chat from here": a new chat with the history through that turn, opened at once. */
   async function forkFrom(thread: Thread, lastTurnId: string) {
-    try { const result = await api<{ thread: Thread }>(`/threads/${encodeURIComponent(thread.id)}/fork`, { lastTurnId }); upsertThread(result.thread); await loadThread(result.thread); }
+    const originalFocus = document.activeElement, originalRequest = request.current;
+    try {
+      const result = await api<{ thread: Thread }>(`/threads/${encodeURIComponent(thread.id)}/fork`, { lastTurnId }); upsertThread(result.thread);
+      if (request.current !== originalRequest || selectedRef.current?.id !== thread.id) return;
+      await loadThread(result.thread);
+      if (selectedRef.current?.id === result.thread.id) restoreComposerFocus(originalFocus);
+    }
     catch (error) { setError(error instanceof Error ? error.message : String(error)); }
   }
   /** What a reopened chat reports about its approval mode and Plan mode. */
@@ -640,6 +680,7 @@ export default function Home() {
   const setPlan = (on: boolean) => selected ? setOverride(selected.id, { plan: on }) : setNewPlan(on);
   /** "Yes, implement this plan": leaves Plan mode and asks Elpis to carry the plan out. */
   async function implementPlan(thread: Thread, turnId: string) {
+    const originalFocus = document.activeElement, originalRequest = request.current;
     setPlanAnswered(prev => ({ ...prev, [thread.id]: turnId })); setError("");
     try {
       const result = await api<{ turn?: { id: string } }>(`/threads/${encodeURIComponent(thread.id)}/turns`, { text: IMPLEMENT_PLAN, mode: "default" });
@@ -647,6 +688,17 @@ export default function Home() {
       setThreadPlans(prev => ({ ...prev, [thread.id]: false })); setNextTurn(prev => { const { plan: _, ...rest } = prev[thread.id] ?? {}; return Object.keys(rest).length ? { ...prev, [thread.id]: rest } : without(prev, thread.id); });
       if (!completedTurns.current.has(result.turn.id)) setActiveTurns(prev => ({ ...prev, [thread.id]: result.turn!.id }));
     } catch (e) { setPlanAnswered(prev => without(prev, thread.id)); setError(e instanceof Error ? e.message : String(e)); }
+    finally { if (request.current === originalRequest && selectedRef.current?.id === thread.id) restoreComposerFocus(originalFocus); }
+  }
+  /** A chat's permission mode changes now, as the terminal's /permissions does: the engine applies it to the
+   * running turn too, and the composer shows the mode the engine reports. A new chat's mode goes in its thread/start. */
+  async function changePermissions(id: string, mode: PermissionMode) {
+    setChangingPermissions(true); setError("");
+    try {
+      const result = await api<{ permissions: PermissionMode }>(`/threads/${encodeURIComponent(id)}/permissions`, { permissions: mode });
+      setThreadModes(prev => ({ ...prev, [id]: result.permissions }));
+    } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+    finally { setChangingPermissions(false); }
   }
   function setOverride(id: string, patch: NextTurn) {
     const thread = selectedRef.current; if (!thread) return;
@@ -654,18 +706,20 @@ export default function Home() {
       const merged = { ...prev[id], ...patch };
       if (merged.model === (thread.model ?? undefined)) delete merged.model;
       if (merged.effort === (thread.reasoningEffort ?? undefined) || merged.effort === "") delete merged.effort;
-      if (merged.permissions === (threadModes[id] ?? "ask")) delete merged.permissions;
       if (merged.plan === (threadPlans[id] ?? false)) delete merged.plan;
       return Object.keys(merged).length ? { ...prev, [id]: merged } : without(prev, id);
     });
   }
-  async function send() {
-    if ((!textRef.current.trim() && !attachmentsRef.current.length) || busy || dictating || attaching || projectChanging || !connected) return;
-    if (imageBlocked) { setFileNotice("This model accepts text only. Choose an image-capable model or remove the images."); return; }
+  /** Sends the composer's message, or `own`: a command's message (such as /init's prompt), sent without the composer's files. */
+  async function send(own?: string) {
+    const outgoing = own ?? textRef.current, files = own === undefined ? attachmentsRef.current : [];
+    if ((!outgoing.trim() && !files.length) || busy || dictating || attaching || projectChanging || !connected) return;
+    if (imageBlocked && own === undefined) { setFileNotice("This model accepts text only. Choose an image-capable model or remove the images."); return; }
     if (needsModelId && !model.trim()) { setError("Enter a model ID for the selected provider."); return; }
     setBusy(true); setError("");
-    const sentText = textRef.current, sentAttachments = [...attachmentsRef.current];
+    const sentText = outgoing, sentAttachments = [...files];
     const originalId = selected?.id || newDraftKey.current, originalRequest = request.current;
+    const originalFocus = document.activeElement;
     const attached = sentAttachments.length ? { attachments: sentAttachments } : {};
     let errorThreadId = selected?.id;
     try {
@@ -679,10 +733,11 @@ export default function Home() {
         setThreads(prev => [thread!, ...prev]);
       }
       const used: NextTurn | undefined = selected ? pending : effort || newPlan ? { ...(effort ? { effort } : {}), ...(newPlan ? { plan: true } : {}) } : undefined;
-      if (activeTurn && !continues && queueFollowUp(thread.id, sentText, sentAttachments)) { /* queued until the running turn completes */ } else if (activeTurn && !continues) {
+      const turnOptions: FollowUpOptions = { ...(used?.model ? { model: used.model } : {}), ...(used?.effort ? { effort: used.effort } : {}), ...(used?.plan !== undefined ? { mode: used.plan ? "plan" : "default" } : {}) };
+      if (activeTurn && !continues && queueFollowUp(thread.id, sentText, sentAttachments, turnOptions)) { /* queued until the running turn completes */ } else if (activeTurn && !continues) {
         await api(`/threads/${encodeURIComponent(thread.id)}/steer`, { text: sentText, expectedTurnId: activeTurn, ...attached });
       } else {
-        const result = await api<{ turn?: { id: string }; thread?: Thread; continuedFrom?: string; sendError?: string }>(`/threads/${encodeURIComponent(thread.id)}/turns`, { text: sentText, ...attached, ...(used?.model ? { model: used.model } : {}), ...(used?.effort ? { effort: used.effort } : {}), ...(used?.permissions ? { permissions: used.permissions } : {}), ...(used?.plan !== undefined ? { mode: used.plan ? "plan" : "default" } : {}), ...(continues ? { continueAs: `${title(thread)} (continued)` } : {}) });
+        const result = await api<{ turn?: { id: string }; thread?: Thread; continuedFrom?: string; sendError?: string }>(`/threads/${encodeURIComponent(thread.id)}/turns`, { text: sentText, ...attached, ...turnOptions, ...(continues ? { continueAs: `${title(thread)} (continued)` } : {}) });
         if (result.thread && result.sendError) {
           const forkDraft = savedDraft(result.thread.id);
           const hasNewerForkDraft = !!forkDraft.trim() && forkDraft !== sentText || savedAttachments(result.thread.id).length > 0;
@@ -700,7 +755,6 @@ export default function Home() {
         if (used?.plan !== undefined) { setThreadPlans(prev => ({ ...prev, [result.thread?.id || thread!.id]: used.plan! })); if (!selected) setNewPlan(false); }
         if (selected && used) {
           setNextTurn(prev => without(prev, selected.id));
-          if (used.permissions) setThreadModes(prev => ({ ...prev, [thread!.id]: used.permissions! }));
           const effective = { ...settingsOf.current[thread.id], ...(used.model ? { model: used.model } : {}), ...(used.effort ? { reasoningEffort: used.effort } : {}) };
           settingsOf.current[thread.id] = effective; patchThread(thread.id, effective);
         }
@@ -720,11 +774,16 @@ export default function Home() {
     } catch (e) {
       if (errorThreadId) setRuntimeNotices(previous => ({ ...previous, [errorThreadId!]: e instanceof Error ? e.message : String(e) }));
       else if (originalRequest === request.current) setError(String(e instanceof Error ? e.message : e));
-    } finally { setBusy(false); }
+    } finally {
+      setBusy(false);
+      if (request.current === originalRequest && (errorThreadId ? selectedRef.current?.id === errorThreadId : !selectedRef.current)) restoreComposerFocus(originalFocus);
+    }
   }
   async function stop(thread: Thread) {
+    const originalFocus = document.activeElement, originalRequest = request.current;
     try { await api(`/threads/${encodeURIComponent(thread.id)}/interrupt`, activeTurns[thread.id] ? { turnId: activeTurns[thread.id] } : {}); }
     catch (e) { setError(String(e instanceof Error ? e.message : e)); }
+    finally { if (request.current === originalRequest && selectedRef.current?.id === thread.id) restoreComposerFocus(originalFocus); }
   }
   async function deleteThread(thread: Thread) {
     const ids = new Set([thread.id]);
@@ -747,6 +806,7 @@ export default function Home() {
   /** Edit-and-resend and regenerate: Elpis replaces the turn and every later one, then runs the new text. */
   async function replaceFrom(turnId: string, replacement: string, editKey?: string) {
     const thread = selectedRef.current; if (!thread) return;
+    const originalFocus = document.activeElement, originalRequest = request.current;
     if (savedDraft(`recovery-${thread.id}`) || savedAttachments(`recovery-${thread.id}`).length) throw new Error("Recover the saved edited message before replacing another turn.");
     const eligibility = replacementOptions.get(turnId);
     if (!eligibility?.allowed) throw new Error(eligibility && !eligibility.allowed ? eligibility.reason : "The complete input for this turn is unavailable.");
@@ -768,30 +828,125 @@ export default function Home() {
     if (overrides) setNextTurn(prev => without(prev, thread.id));
     if (selectedRef.current?.id === thread.id) { stickToBottom.current = true; setEntries(prev => prev.filter(entry => !stale.has(entry.turnId))); }
     if (!completedTurns.current.has(startedTurn.id)) setActiveTurns(prev => ({ ...prev, [thread.id]: startedTurn.id }));
+    if (request.current === originalRequest && selectedRef.current?.id === thread.id) restoreComposerFocus(originalFocus);
   }
-  async function answer(id: string, body: unknown, key: string) { await submitDraft(key, () => api(`/approvals/${encodeURIComponent(id)}`, body)); setApprovals(prev => prev.filter(a => a.id !== id)); clearApprovalDraft(id); }
+  async function answer(id: string, body: unknown, key: string) {
+    const originalFocus = document.activeElement, originalRequest = request.current;
+    await submitDraft(key, () => api(`/approvals/${encodeURIComponent(id)}`, body));
+    setApprovals(prev => prev.filter(a => a.id !== id)); clearApprovalDraft(id);
+    if (request.current === originalRequest) restoreComposerFocus(originalFocus);
+  }
   async function older() { if (!selected || !itemCursor) return; setLoading(true); const id = selected.id; try { const result = await api<{ data: Entry[]; nextCursor: string | null }>(`/threads/${encodeURIComponent(id)}?limit=100&cursor=${encodeURIComponent(itemCursor)}`); if (selectedRef.current?.id === id) { stickToBottom.current = false; if (scroll.current) restoreScroll.current = { height: scroll.current.scrollHeight, top: scroll.current.scrollTop }; setEntries(prev => [...result.data.reverse(), ...prev]); setItemCursor(result.nextCursor); } } catch (e) { setError(String(e)); } finally { setLoading(false); } }
   const openById = (id: string) => loadThread(threads.find(thread => thread.id === id) || related[id] || { id });
-  /** The terminal's slash commands this app performs (codex-rs/tui/src/slash_command.rs), in its popup order. */
+  /** "Open in Elpis TUI": the chat opens here and its terminal resumes it in the TUI (`elpis resume <id>`). */
+  const openInTui = (thread: Thread) => { if (selectedRef.current?.id !== thread.id || view !== "chat") void loadThread(thread); setTerminalOpen(true); setTuiLaunch({ threadId: thread.id, token: Date.now() }); };
+  // The TUI's /app (`elpis-app --open-thread <id>`): the running window opens that chat.
+  const openFromTui = useRef(openById); openFromTui.current = openById;
+  useEffect(() => window.elpisDesktop?.onOpenThread?.(id => void openFromTui.current(id)), []);
+  /** The terminal's slash commands this app performs (codex-rs/tui/src/slash_command.rs), in its popup order and mostly in its words.
+   * Commands that run the model or rewrite the chat wait for an idle chat; controls and views are always there. */
   const openSettings = (tab: SettingsTab) => { setSettingsSection(tab); show("settings"); };
-  const openControl = (label: string) => requestAnimationFrame(() => composerRef.current?.form?.querySelector<HTMLElement>(`[aria-label="${label}"]`)?.click());
+  const focusComposer = () => composerRef.current?.focus();
+  // Returning from a disappearing action must not override a field the person chose while it was pending.
+  const restoreComposerFocus = (origin: Element | null) => requestAnimationFrame(() => {
+    const active = document.activeElement;
+    if (!active || active === document.body || active === origin) focusComposer();
+  });
+  const focusSearch = () => { setSidebar(true); setSidebarCollapsed(false); requestAnimationFrame(() => { searchInput.current?.focus(); searchInput.current?.select(); }); };
+  /** A composer control opened for a command takes the focus; the composer gets it back when the control closes. */
+  const openComposerControl = (label: string) => { const trigger = composerRef.current?.form?.querySelector<HTMLElement>(`[aria-label="${label}"]`); if (trigger) openControl(trigger, () => composerRef.current); };
+  const closePanel = () => { setPanel(null); focusComposer(); };
   const lastTurn = entries.at(-1)?.turnId;
-  const slashCommands: SlashCommand[] = [
-    { name: "model", description: "Choose the model", available: !busy, run: () => openControl("Model") },
-    { name: "permissions", description: "Choose what Elpis is allowed to do", available: !busy, run: () => openControl("Change permissions") },
-    { name: "settings", description: "Open Settings", run: () => openSettings("general") },
-    { name: "memories", description: "Configure memory use and generation", run: () => openSettings("personalization") },
-    { name: "hooks", description: "View and manage lifecycle hooks", run: () => openSettings("hooks") },
-    { name: "rename", description: "Rename this chat", available: !!selected, run: () => setRenameRequest(true) },
-    { name: "new", description: "Start a new chat", run: newChat },
-    { name: "archive", description: "Archive this chat", available: !!selected, run: () => { if (selected) void archiveThread(selected); } },
-    { name: "fork", description: "Fork this chat into a new one", available: !!selected && !!lastTurn && !activeTurn, run: () => { if (selected && lastTurn) void forkFrom(selected, lastTurn); } },
-    { name: "plan", description: planMode ? "Turn Plan mode off" : "Turn Plan mode on", available: !busy, run: () => setPlan(!planMode) },
-    { name: "agents", description: "Open Agents", run: () => show("agents") },
-    { name: "usage", description: "Show usage and limits", run: () => openSettings("usage") },
-    { name: "mcp", description: "Manage MCP servers", run: () => openSettings("mcp") },
+  const idle = !busy && !activeTurn && selected?.status?.type !== "active";
+  const writable = !!selected && !continues;
+  const chatFolder = selected ? selected.cwd : newChatFolder(cwd);
+  const chooseEffort = (level?: string) => {
+    if (!level) { openComposerControl("Reasoning effort"); return; }
+    const match = turnEfforts.find(item => item.toLowerCase() === level.toLowerCase());
+    if (!match) { setSlashNotice(`${modelLabel(turnModel || providerSettings?.main.model, models)} does not offer the reasoning effort “${level}”. It offers: ${turnEfforts.join(", ")}.`); return; }
+    if (selected) setOverride(selected.id, { effort: match }); else setEffort(match);
+  };
+  async function startReview(thread: Thread, target: ReviewTarget) {
+    setPanel(null); setError("");
+    try {
+      const result = await api<{ turn?: { id: string } }>(`/threads/${encodeURIComponent(thread.id)}/review`, { target });
+      if (!result.turn?.id) throw new Error("Elpis did not acknowledge the review. Check the conversation before retrying.");
+      if (!completedTurns.current.has(result.turn.id)) setActiveTurns(prev => ({ ...prev, [thread.id]: result.turn!.id }));
+    } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+    focusComposer();
+  }
+  function compactChat(thread: Thread, guidance?: string) {
+    // The terminal reads a lone number as its pressure setting; this app has no such setting to save.
+    if (guidance && /^\d+(\.\d+)?%?$/.test(guidance)) { setSlashNotice("A number sets the terminal's pressure compaction, which this app does not save. Compact now, or add words to guide the summary."); return; }
+    api(`/threads/${encodeURIComponent(thread.id)}/compact`, guidance ? { instructions: guidance } : {}).catch(e => setError(e instanceof Error ? e.message : String(e)));
+  }
+  async function exportChat(thread: Thread) {
+    try {
+      const all: Entry[] = []; let cursor: string | null = null;
+      do { // Pages come newest first; each older page goes in front.
+        const result: { data: Entry[]; nextCursor: string | null } = await api(`/threads/${encodeURIComponent(thread.id)}?limit=100${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`);
+        all.unshift(...[...result.data].reverse()); cursor = result.nextCursor;
+      } while (cursor && all.length < 100000);
+      const link = document.createElement("a"), file = exportFileName(title(thread));
+      link.href = URL.createObjectURL(new Blob([conversationMarkdown(title(thread), all)], { type: "text/markdown" })); link.download = file;
+      document.body.append(link); link.click(); link.remove(); setTimeout(() => URL.revokeObjectURL(link.href), 10000);
+      setSlashNotice(`Exported the conversation as ${file}.`);
+    } catch (e) { setError(`Could not export: ${e instanceof Error ? e.message : String(e)}`); }
+  }
+  async function turnSmartPruneOn() {
+    try {
+      const current = await api<{ version?: string | null; smartPrune?: { enabled: boolean | null } }>("/settings");
+      if (current.smartPrune?.enabled) { setSlashNotice("Smart Prune is already on."); return; }
+      await saveSettings("/settings", { version: current.version, options: { automaticPruning: true } });
+      setSlashNotice("Smart Prune is on. It applies to new chats.");
+    } catch (e) { setError(`Could not turn Smart Prune on: ${e instanceof Error ? e.message : String(e)}`); }
+  }
+  const sessionRows: [string, string][] = [
+    ["Model", modelLabel(turnModel || providerSettings?.main.model, models)],
+    ["Provider", providerLabel(turnModel || providerSettings?.main.model, selected ? selected.modelProvider : newChoice?.provider ?? providerSettings?.main.provider, providerSettings?.providers)],
+    ["Reasoning effort", turnEffort || "Default"],
+    ["Permissions", permissionLabel(permissionMode)],
+    ["Folder", chatFolder || "Default folder"],
+    ["Chat", selected?.id ?? "Not started yet"],
   ];
-  const slash = useSlashMenu(text, slashCommands, () => editDraft(""));
+  const slashCommands: SlashCommand[] = [
+    { name: "model", description: "choose what model and reasoning effort to use", available: !busy, run: () => openComposerControl("Model") },
+    { name: "effort", description: "change how hard the model thinks: /effort [low|medium|high|…]", available: !busy && turnEfforts.length > 0, args: true, run: chooseEffort },
+    { name: "pruner-model", description: "view or set the model that prunes context; follows /memory-model when unset", run: () => openSettings("configuration") },
+    { name: "memory-model", description: "set Smart Prune's fallback model; memory uses the responding agent", run: () => openSettings("configuration") },
+    { name: "permissions", description: "choose what Elpis is allowed to do", available: !busy, run: () => openComposerControl("Change permissions") },
+    { name: "yolo", description: "choose Full access or Bypass permissions", available: !busy, run: () => openComposerControl("Change permissions") },
+    { name: "settings", description: "open Settings", run: () => openSettings("general") },
+    { name: "memories", description: "configure memory use and generation", run: () => openSettings("personalization") },
+    { name: "hooks", description: "view and manage lifecycle hooks", run: () => openSettings("hooks") },
+    { name: "review", description: "review my current changes and find issues", available: writable && idle, args: true, run: text => { if (!selected) return; if (text) void startReview(selected, { type: "custom", instructions: text }); else setPanel("review"); } },
+    { name: "rename", description: "rename the current thread", available: !!selected, args: true, run: text => { if (text && selected) renameThread(selected, text).catch(e => setError(e instanceof Error ? e.message : String(e))); else setRenameRequest(true); } },
+    { name: "new", description: "start a new chat during a conversation", run: newChat },
+    { name: "archive", description: "archive this session", available: !!selected, run: () => { if (selected) void archiveThread(selected); } },
+    { name: "delete", description: "permanently delete this session", available: !!selected, run: () => { if (selected) setDeleteTargets([selected]); } },
+    { name: "resume", description: "resume a saved chat", run: focusSearch },
+    { name: "fork", description: "fork the current chat", available: !!selected && !!lastTurn && !activeTurn, run: () => { if (selected && lastTurn) void forkFrom(selected, lastTurn); } },
+    { name: "init", description: "create an AGENTS.md file with instructions for Elpis", available: !continues && idle, run: () => void send(INIT_PROMPT) },
+    { name: "compact", description: "compact now, or add words to guide the summary", available: writable && idle, args: true, run: text => { if (selected) compactChat(selected, text); } },
+    { name: "prune", description: "turn Smart Prune on for new chats", available: idle, run: () => void turnSmartPruneOn() },
+    { name: "plan", description: planMode ? "turn Plan mode off" : "turn Plan mode on", available: !busy, run: () => setPlan(!planMode) },
+    { name: "agent", description: "switch the active agent thread", available: team.length > 0 && !browserOpen, run: () => { setAgentsPanel(true); requestAnimationFrame(() => document.querySelector<HTMLElement>(".team-panel .team-row.active, .team-panel .team-row")?.focus()); } },
+    { name: "agents", description: "open the task list to resume, rename or delete chats", run: () => show("agents") },
+    { name: "copy", description: "copy the last response", available: !!lastReply(entries), run: () => { const reply = lastReply(entries); if (reply) navigator.clipboard.writeText(reply).then(() => setSlashNotice("Copied the last reply."), () => setError("Could not copy: the clipboard is unavailable.")); } },
+    { name: "export", description: "export the conversation as markdown", available: !!selected && entries.length > 0 && idle, run: () => { if (selected) void exportChat(selected); } },
+    { name: "diff", description: "show git diff (including untracked files)", available: !!selected, run: () => setPanel("diff") },
+    { name: "status", description: "show current session configuration and token usage", run: () => setPanel("status") },
+    { name: "pwd", description: "show the current working directory", available: !!chatFolder, run: () => setSlashNotice(`Current working directory: ${chatFolder}`) },
+    { name: "usage", description: "inspect this session; /usage account opens usage and limits", args: true, run: text => { if (text) openSettings("usage"); else setPanel("status"); } },
+    { name: "context", description: "show context usage as a grid, by category, with checkpoints and system files", available: !!selected, run: () => window.dispatchEvent(new CustomEvent("elpis:open-context")) },
+    { name: "theme", description: "choose the theme", run: () => openSettings("appearance") },
+    { name: "mcp", description: "list and manage MCP servers", run: () => openSettings("mcp") },
+    { name: "rag", description: "use the configured RAG MCP server or manage it with /rag <request>", available: !continues && idle, run: () => void send("/rag") },
+  ];
+  const slash = useSlashMenu(text, slashCommands, () => { editDraft(""); setPanel(null); setSlashNotice(""); });
+  // A panel belongs to the chat and page it was opened on; a notice goes when the person types again.
+  useEffect(() => { setPanel(null); }, [selected?.id, view]);
+  useEffect(() => { if (text) setSlashNotice(""); }, [text]);
 
   const searchedThreads = searchTerm && searchResults.query === searchTerm ? mergeListedThreads(threads, searchResults.data, hidden.current) : threads;
   const matchedOnServer = new Set(searchTerm && searchResults.query === searchTerm ? searchResults.data.map(thread => thread.id) : []);
@@ -802,10 +957,10 @@ export default function Home() {
   shortcutAction.current = (id, index) => {
     const at = selected ? ordered.findIndex(t => t.id === selected.id) : -1;
     if (id === "new-chat") newChat();
-    else if (id === "search") { setSidebar(true); setSidebarCollapsed(false); requestAnimationFrame(() => { searchInput.current?.focus(); searchInput.current?.select(); }); }
+    else if (id === "search") focusSearch();
     else if (id === "sidebar") showSidebar(narrow() ? !sidebar : sidebarCollapsed);
     else if (id === "settings") { setSettingsSection("general"); show("settings"); }
-    else if (id === "shortcuts") setShortcutsOpen(true);
+    else if (id === "shortcuts") { shortcutsReturnFocus.current = document.activeElement as HTMLElement | null; setShortcutsOpen(true); }
     else if (id === "previous-chat" && ordered.length) void loadThread(ordered[at <= 0 ? 0 : at - 1]);
     else if (id === "next-chat" && ordered.length) void loadThread(ordered[at < 0 ? 0 : Math.min(ordered.length - 1, at + 1)]);
     else if (id === "go-to-chat" && index !== undefined && ordered[index]) void loadThread(ordered[index]);
@@ -814,6 +969,7 @@ export default function Home() {
     else if (id === "pin" && selected) togglePin(selected);
     else if (id === "copy-folder" && (selected?.cwd || cwd)) void navigator.clipboard.writeText(selected?.cwd || cwd);
     else if (id === "new-tab" && desktop) { setBrowserView("browser"); void browser.command("new"); }
+    else if (id === "terminal" && hasTerminal) { if (view !== "chat") { show("chat"); setTerminalOpen(true); } else { setTerminalOpen(!terminalOpen); if (terminalOpen) focusComposer(); } }
   };
   function togglePin(thread: Thread) {
     const next = pins.includes(thread.id) ? pins.filter(id => id !== thread.id) : [thread.id, ...pins];
@@ -826,8 +982,9 @@ export default function Home() {
   const rowLinks = () => [...threadList.current?.querySelectorAll<HTMLButtonElement>(".thread-row > .thread-link") ?? []];
   const rowOf = (element: Element | null) => element?.closest<HTMLElement>(".thread-row")?.dataset.threadId ?? null;
   /** Opens the shared delete confirmation for these chats. */
+  const chatsOf = (ids: string[]) => ids.map(id => searchedThreads.find(thread => thread.id === id) ?? find(id)).filter((thread): thread is Thread => !!thread);
   function deleteChats(ids: string[]) {
-    const targets = ids.map(id => searchedThreads.find(thread => thread.id === id) ?? find(id)).filter((thread): thread is Thread => !!thread);
+    const targets = chatsOf(ids);
     if (targets.length) setDeleteTargets(targets);
   }
   /** A click opens the chat; Ctrl+click marks or unmarks it; Shift+click marks the range from the last click, as in a file manager. */
@@ -857,17 +1014,25 @@ export default function Home() {
   function threadRow(thread: Thread, depth = 0) {
     const name = title(thread), state = agentState(thread, waitingIds), pinned = pins.includes(thread.id);
     const stateTitle = state === "waiting" ? "Needs input" : "Working";
-    return <div key={thread.id} className={`thread-row${depth ? " child" : ""}${selected?.id === thread.id && view === "chat" ? " active" : ""}${marked.includes(thread.id) ? " selected" : ""}`} data-thread-id={thread.id} style={depth ? { paddingLeft: `${Math.min(depth, 5) * 14}px` } : undefined}>
+    return <ThreadActions key={thread.id} thread={thread} onRequestDelete={() => deleteChats(marked.includes(thread.id) ? marked : [thread.id])} onRename={renameThread} onArchive={archiveThread} pinned={pinned} onPin={togglePin} onOpenInTui={hasTerminal ? openInTui : undefined}
+      selection={marked.length > 1 && marked.includes(thread.id) ? chatsOf(marked) : undefined}
+      agents={!depth && !isAgent(thread) ? { shown: !!expanded[thread.id], onToggle: () => expanded[thread.id] ? setExpanded(prev => ({ ...prev, [thread.id]: false })) : void loadChildren(thread.id) } : undefined}
+      area={<div className={`thread-row${depth ? " child" : ""}${selected?.id === thread.id && view === "chat" ? " active" : ""}${marked.includes(thread.id) ? " selected" : ""}`} data-thread-id={thread.id} style={depth ? { paddingLeft: `${Math.min(depth, 5) * 14}px` } : undefined} />}>
+      {menu => <>
       <button className="thread-link" onMouseDown={event => { if (event.shiftKey) event.preventDefault(); }} onClick={event => clickRow(thread, event)} title={name}>
         <span className="thread-title">{name}</span>
         {thread.forkedFromId && <span className="thread-nickname">Continued agent chat</span>}
       </button>
       {(state === "working" || state === "waiting") && <span className={`thread-working${state === "waiting" ? " waiting" : ""}`} title={stateTitle} aria-label={stateTitle} />}
       {!depth && <span className="row-hover-actions"><Button variant="ghost" size="icon-xs" aria-label={pinned ? `Unpin ${name}` : `Pin ${name}`} title={pinned ? "Unpin" : "Pin"} onClick={() => togglePin(thread)}><PinIcon size={13} className={pinned ? "fill-current" : undefined} /></Button><Button variant="ghost" size="icon-xs" aria-label={`Archive ${name}`} title="Archive" onClick={() => void archiveThread(thread)}><ArchiveIcon size={13} /></Button></span>}
-      <ThreadActions thread={thread} onRequestDelete={() => deleteChats(marked.includes(thread.id) ? marked : [thread.id])} onRename={renameThread} onArchive={archiveThread} pinned={pinned} onPin={togglePin}
-        agents={!depth && !isAgent(thread) ? { shown: !!expanded[thread.id], onToggle: () => expanded[thread.id] ? setExpanded(prev => ({ ...prev, [thread.id]: false })) : void loadChildren(thread.id) } : undefined} />
-    </div>;
+      {menu}
+      </>}
+    </ThreadActions>;
   }
+  /** The open chat's "Chat actions" menu around its tab or title: the "…" button and right-click on `area` share one list. */
+  const chatActions = (area: React.ReactElement, content: React.ReactNode) => view === "chat" && selected
+    ? <ThreadActions label="Chat actions" thread={selected} onDelete={deleteThread} onRename={renameThread} onArchive={archiveThread} pinned={pins.includes(selected.id)} onPin={togglePin} onOpenInTui={hasTerminal ? openInTui : undefined} renameRequested={renameRequest} onRenameRequestHandled={() => setRenameRequest(false)} area={area}>{menu => <>{content}{menu}</>}</ThreadActions>
+    : cloneElement(area, undefined, content);
   function descendants(parentId: string, depth: number, seen = new Set<string>()): React.ReactNode {
     if (seen.has(parentId)) return null; const next = new Set(seen).add(parentId);
     return filtered.filter(c => c.parentThreadId === parentId).map(child => <div key={child.id}>{threadRow(child, depth)}{descendants(child.id, depth + 1, next)}</div>);
@@ -877,7 +1042,7 @@ export default function Home() {
 
   return <div className={`app-shell${dark ? " dark" : ""}${desktop ? " has-title-bar" : ""}${sidebarCollapsed ? " sidebar-collapsed" : ""}${view === "settings" ? " settings-mode" : ""}`}>
     {desktop && <div className="title-bar"><Button variant="ghost" size="icon" aria-label={sidebarCollapsed ? "Open sidebar" : "Close sidebar"} title={`${sidebarCollapsed ? "Open" : "Close"} sidebar (Ctrl+B)`} onClick={() => showSidebar(narrow() ? !sidebar : sidebarCollapsed)}><PanelLeft /></Button></div>}
-    <ShortcutsDialog open={shortcutsOpen} onOpenChange={setShortcutsOpen} />
+    <ShortcutsDialog open={shortcutsOpen} onOpenChange={setShortcutsOpen} returnFocus={shortcutsReturnFocus} />
     {desktop && <StartupSplash done={ready && connected} steps={[{ label: "Elpis engine connected", ok: connected }, { label: "models loaded", ok: models.length > 0 }, { label: "conversations loaded", ok: ready }]} />}
     <ProjectDialog projects={projects} editing={projectEdit} onClose={() => setProjectEdit(undefined)} onSave={saveProject} />
     <DeleteChatsDialog threads={deleteTargets} onDelete={deleteThread} onClose={() => setDeleteTargets(null)} />
@@ -886,13 +1051,15 @@ export default function Home() {
       <nav className="nav-list" aria-label="Workspace">
         <Button className="new-chat" variant="ghost" aria-current={view === "chat" && !selected ? "page" : undefined} disabled={projectChanging} onClick={newChat}><NewChatIcon size={16} />New chat</Button>
         <Button variant="ghost" aria-current={view === "agents" ? "page" : undefined} onClick={() => show("agents")}><AgentsIcon size={16} />Agents{working > 0 && <span className="nav-badge" aria-hidden="true"><i />{working}</span>}</Button>      </nav>
-      <label className="sidebar-search"><SearchIcon size={14} aria-hidden="true" /><Input ref={searchInput} aria-label="Search conversations" placeholder="Search conversations" maxLength={200} value={search} onChange={e => setSearch(e.target.value)} /><kbd aria-hidden="true">Ctrl K</kbd></label>
+      <SearchField ref={searchInput} hint="Ctrl K" aria-label="Search conversations" placeholder="Search conversations" maxLength={200} value={search} onChange={e => setSearch(e.target.value)} onKeyDown={e => { if (e.key === "Escape") { e.preventDefault(); setSearch(""); focusComposer(); } }} />
       <div className="thread-list" ref={threadList} onKeyDown={listKeys}>
         {!searchTerm && <section aria-label="Projects"><div className="section-label section-label-row">Projects<Button variant="ghost" size="icon-xs" aria-label="Add new project" title="Add new project: choose a folder" onClick={() => void addProject()}><PlusIcon size={13} /></Button></div>
           {projects.map(item => { const open = !collapsedProjects[item.id], chats = threads.filter(t => !t.parentThreadId && sameFolder(t.cwd, item.cwd)).slice(0, 5);
             return <div key={item.id} className="project-group">
-              <div className={`project-row${project?.id === item.id ? " active" : ""}`}><button className="project-toggle" aria-expanded={open} title={item.cwd} onClick={() => setCollapsedProjects(prev => ({ ...prev, [item.id]: open }))}><ChevronRight size={13} className="project-chevron" /><FolderIcon size={14} /><span>{item.name}</span></button>
-                <span className="project-row-actions"><ProjectActions project={item} onEdit={setProjectEdit} onRemove={removeProject} /><Button variant="ghost" size="icon-xs" aria-label={`Start new chat in ${item.name}`} title="New chat in this project" disabled={!ready || busy} onClick={() => void selectProject(item)}><NewChatIcon size={13} /></Button></span></div>
+              <ProjectActions project={item} onEdit={setProjectEdit} onRemove={removeProject} area={<div className={`project-row${project?.id === item.id ? " active" : ""}`} />}>
+                {menu => <><button className="project-toggle" aria-expanded={open} title={item.cwd} onClick={() => setCollapsedProjects(prev => ({ ...prev, [item.id]: open }))}><ChevronRight size={13} className="project-chevron" /><FolderIcon size={14} /><span>{item.name}</span></button>
+                  <span className="project-row-actions">{menu}<Button variant="ghost" size="icon-xs" aria-label={`Start new chat in ${item.name}`} title="New chat in this project" disabled={!ready || busy} onClick={() => void selectProject(item)}><NewChatIcon size={13} /></Button></span></>}
+              </ProjectActions>
               {open && <div className="project-chats">{chats.map(t => threadRow(t))}{!chats.length && <p className="project-empty">No chats yet</p>}</div>}
             </div>; })}
         </section>}
@@ -918,18 +1085,16 @@ export default function Home() {
         <div className="header-titles min-w-0 flex-1">
           {view === "chat" && desktop
             ? <TaskTabs browser={browser} chatTitle={heading} chatActive={!browserFull && browserView === "chat" || !browserOpen} onChat={showChat} onPage={() => setBrowserView("browser")}
-                chatMenu={selected && <ThreadActions label="Chat actions" thread={selected} onDelete={deleteThread} onRename={renameThread} onArchive={archiveThread} pinned={pins.includes(selected.id)} onPin={togglePin} renameRequested={renameRequest} onRenameRequestHandled={() => setRenameRequest(false)} />} />
-            : <div className="header-title-row"><h1>{heading}</h1>{view === "chat" && selected && <ThreadActions label="Chat actions" thread={selected} onDelete={deleteThread} onRename={renameThread} onArchive={archiveThread} pinned={pins.includes(selected.id)} onPin={togglePin} renameRequested={renameRequest} onRenameRequestHandled={() => setRenameRequest(false)} />}</div>}
+                chatTab={tab => chatActions(tab.area, tab.content)} />
+            : chatActions(<div className="header-title-row" />, <h1>{heading}</h1>)}
           {view === "agents" && <p className="page-description">Your conversations and agents. Open a chat or follow a running task.</p>}
           {view === "chat" && selected && meta && <p className="thread-meta">{meta}</p>}
           {view === "chat" && selected && (selected.parentThreadId || selected.forkedFromId) && <p className="thread-links">
             {selected.parentThreadId && <Button variant="link" size="xs" aria-label={`Open parent: ${parent ? title(parent) : "parent conversation"}`} onClick={() => openById(selected.parentThreadId!)}>Agent of {parent ? title(parent) : "its parent conversation"}</Button>}
             {selected.forkedFromId && <Button variant="link" size="xs" aria-label={`Open original: ${source ? title(source) : "original chat"}`} onClick={() => openById(selected.forkedFromId!)}>Continued from {source ? title(source) : "the original chat"}</Button>}
           </p>}
-          {view === "chat" && pending && <p className="next-turn">Next turn: {[pending.model && modelLabel(pending.model, models), pending.effort && `${pending.effort} reasoning`].filter(Boolean).join(" · ")}</p>}
         </div>
         {view === "chat" && desktop && (browser.state?.tabs.length ?? 0) > 0 && <Button className="header-action" variant="ghost" size="icon-sm" aria-pressed={split} aria-label={split ? "Exit split view" : "Enter split view"} title={split ? "Exit split view" : "Split view: chat and page side by side"} onClick={() => { setSplit(value => !value); if (!split) { setBrowserView("browser"); if (!browser.state?.visible && browser.state?.activeId) void browser.command("select", { id: browser.state.activeId }); } }}><SplitIcon size={16} /></Button>}
-        {selected && view === "chat" && <Button className="header-action" variant="ghost" size="sm" onClick={() => { setSettingsSection("usage"); show("settings"); }}>Context</Button>}
         {selected && view === "chat" && team.length > 0 && !browserOpen && <Button className="header-action" variant="ghost" size="icon-sm" aria-label={agentsPanel ? "Hide agents panel" : "Show agents panel"} aria-pressed={agentsPanel} onClick={() => setAgentsPanel(value => !value)}><PanelRight size={16} /></Button>}
         {selected && view === "chat" && <Button className="header-action" variant="ghost" size="icon-sm" aria-label="Refresh conversation" disabled={loading} onClick={() => loadThread(selected)}><RefreshCw size={16} /></Button>}
       </header>
@@ -948,16 +1113,16 @@ export default function Home() {
         })}</div>
       </section>}
       <div className={`workspace-body${browserOpen && !browserFull ? " browser-open" : ""}${browserFull ? " browser-full" : ""}${view === "settings" ? " no-browser" : ""}`}><div className="workspace-content">
-      {settingsVisited && <div className="page-scroll" hidden={view !== "settings"}><SettingsView initialTab={settingsSection} navigationKey={settingsNavigation} active={view === "settings"} threadId={selected?.id} accountRefresh={accountRefresh} theme={theme} onTheme={setTheme} onUnarchived={unarchived} onDeleteThread={deleteThread} onBack={() => show("chat")} onProvidersChanged={async () => { const settings = await api<ProviderSettings>("/settings"); setProviderSettings(settings); void refreshModels(); }} /></div>}
+      {settingsVisited && <div className="page-scroll" hidden={view !== "settings"}><SettingsView initialTab={settingsSection} navigationKey={settingsNavigation} active={view === "settings"} threadId={selected?.id} accountRefresh={accountRefresh} theme={theme} onTheme={setTheme} onUnarchived={unarchived} onDeleteThread={deleteThread} onBack={() => { show("chat"); requestAnimationFrame(focusComposer); }} onProvidersChanged={async () => { const settings = await api<ProviderSettings>("/settings"); setProviderSettings(settings); void refreshModels(); }} /></div>}
       {view === "agents" && <div className="page-scroll"><AgentsView threads={threads} activity={activity} models={models} providers={providerSettings?.providers} loading={agentsLoading} pendingThreadIds={approvals.map(approval => approval.params.threadId ?? approval.ownerThreadId)} moreConversations={!!nextCursor} loadingMore={moreLoading} onMoreConversations={loadMoreConversations} childCursors={childCursors} loadingChildren={loadingChildren} onMoreAgents={id => void loadChildren(id, childCursors[id] ?? undefined, false)} onOpen={loadThread} onStop={stop} onDelete={deleteThread} onNewAgent={() => show("newAgent")} /></div>}
-      {newAgentVisited && <div className="page-scroll" hidden={view !== "newAgent"}><Button variant="ghost" size="sm" onClick={() => show("agents")}>Back to Agents</Button><NewAgentForm key={newAgentVersion} models={models} settings={providerSettings} defaultCwd={cwd} connected={connected} onConfigure={manageConnections} onCreated={(thread, turnId, unsent, failure) => { setNewAgentVersion(value => value + 1); upsertThread(thread); if (unsent) saveDraft(thread.id, unsent); if (turnId && !completedTurns.current.has(turnId)) setActiveTurns(prev => ({ ...prev, [thread.id]: turnId })); void loadThread(thread).then(() => { if (failure && selectedRef.current?.id === thread.id) setError(failure); }); }} /></div>}
+      {newAgentVisited && <div className="page-scroll" hidden={view !== "newAgent"}><button type="button" className="back-link" onClick={() => show("agents")}><ArrowLeft size={18} aria-hidden="true" />Back to Agents</button><NewAgentForm key={newAgentVersion} models={models} settings={providerSettings} defaultCwd={cwd} connected={connected} onConfigure={manageConnections} onCreated={(thread, turnId, unsent, failure) => { setNewAgentVersion(value => value + 1); upsertThread(thread); if (unsent) saveDraft(thread.id, unsent); if (turnId && !completedTurns.current.has(turnId)) setActiveTurns(prev => ({ ...prev, [thread.id]: turnId })); void loadThread(thread).then(() => { if (failure && selectedRef.current?.id === thread.id) setError(failure); }); }} /></div>}
       {view === "chat" && <div className="chat-split"><div className={`chat-view${!selected && !entries.length ? " empty-chat" : ""}`}>
         <div className="chat-scroll" ref={scroll} onScroll={event => { const element = event.currentTarget; stickToBottom.current = element.scrollHeight - element.scrollTop - element.clientHeight < 80; }}><div className="chat-content">
           {itemCursor && <Button variant="outline" disabled={loading} onClick={older}>Load earlier messages</Button>}
           {loading && <p role="status" className="text-muted-foreground">Loading conversation…</p>}
           {!loading && !entries.length && <div className="empty-state">{selected ? <><h2>This conversation has no messages yet.</h2><p>Messages and tool activity appear here.</p></> : <><img className="empty-mark" src={brandMark} alt="" aria-hidden="true" /><h2>{project ? <>What should we build in <ProjectMenu variant="heading" projects={projects} selected={project} disabled={!ready || busy} onSelect={selectProject} onAdd={() => void addProject()} />?</> : "What should we build?"}</h2></>}</div>}
           <Transcript entries={entries} activeTurnId={activeTurn ?? null} renderItem={e => { const editKey = JSON.stringify([selected?.id, e.turnId, e.item.id]); return <ChatMessage key={editKey} item={e.item} mediaBase={selected ? `/api/threads/${encodeURIComponent(selected.id)}/turns/${encodeURIComponent(e.turnId)}/items/${encodeURIComponent(e.item.id)}/media` : undefined} threads={threads} speaker={selected?.agentNickname || "Elpis"} onOpenThread={openById}
-            editDraft={messageEdits[editKey]} editPending={!!pendingDrafts[editKey]} onEditDraftChange={value => setMessageEdits(previous => value === null ? without(previous, editKey) : { ...previous, [editKey]: value })}
+            editDraft={messageEdits[editKey]} editPending={!!pendingDrafts[editKey]} onEditDraftChange={value => { setMessageEdits(previous => value === null ? without(previous, editKey) : { ...previous, [editKey]: value }); if (value === null) focusComposer(); }}
             onEdit={replaceable && e.item.type === "userMessage" && replacementOptions.get(e.turnId)?.allowed ? text => replaceFrom(e.turnId, text, editKey) : undefined}
             editBlockedReason={replaceable && e.item.type === "userMessage" && replacementOptions.get(e.turnId)?.allowed === false ? (replacementOptions.get(e.turnId) as { allowed: false; reason: string }).reason : undefined}
             time={e.item.type === "userMessage" ? e.startedAtMs : undefined}
@@ -965,11 +1130,15 @@ export default function Home() {
             onRegenerate={regenerate && e.item.id === regenerate.replyId ? () => { replaceFrom(regenerate.turnId, regenerate.prompt).catch(error => setError(String(error instanceof Error ? error.message : error))); } : undefined} />; }} />
           {selected && proposedPlan && <div className="plan-prompt" role="group" aria-label="Implement this plan?"><h3>Implement this plan?</h3>
             <Button size="sm" disabled={busy || !connected} onClick={() => void implementPlan(selected, proposedPlan)}>Yes, implement this plan</Button>
-            <Button size="sm" variant="ghost" onClick={() => setPlanAnswered(prev => ({ ...prev, [selected.id]: proposedPlan }))}>No, stay in Plan mode</Button></div>}
+            <Button size="sm" variant="ghost" onClick={() => { setPlanAnswered(prev => ({ ...prev, [selected.id]: proposedPlan })); focusComposer(); }}>No, stay in Plan mode</Button></div>}
           {approvals.filter(a => a.params.threadId === selected?.id).map(a => <ApprovalCard key={approvalDraftKey(a)} approval={a} answer={(id, body) => answer(id, body, approvalDraftKey(a))} busy={!!pendingDrafts[approvalDraftKey(a)]} answers={approvalDrafts[approvalDraftKey(a)]?.answers ?? {}} onAnswerChange={(id, value) => draftAnswer(a, id, value)} />)}
         </div></div>
         <div className="composer-wrap">
-          <QueuedFollowUps threadId={selected?.id} activeTurnId={activeTurn} onError={setError} />
+          {panel === "status" && <SessionPanel rows={sessionRows} threadId={selected?.id} onUsage={() => { setPanel(null); openSettings("usage"); }} onClose={closePanel} />}
+          {panel === "review" && selected && <ReviewPanel threadId={selected.id} onStart={target => void startReview(selected, target)} onClose={closePanel} />}
+          {panel === "diff" && selected && <DiffPanel threadId={selected.id} onClose={closePanel} />}
+          {slashNotice && <p role="status" className="mx-auto mb-2 w-full max-w-[740px] px-1 text-sm text-muted-foreground">{slashNotice}</p>}
+          <QueuedFollowUps threadId={selected?.id} activeTurnId={activeTurn} onError={setError} onComplete={restoreComposerFocus} />
           {!selected && <div className="composer-tray"><ProjectMenu variant="chip" projects={projects} selected={project} disabled={!ready || busy} onSelect={selectProject} onAdd={() => void addProject()} /></div>}
           <form className="composer" onSubmit={e => { e.preventDefault(); send(); }} onDragOver={e => { if (e.dataTransfer.types.includes("Files")) e.preventDefault(); }} onDrop={e => { if (e.dataTransfer.files.length || e.dataTransfer.types.includes("Files")) { e.preventDefault(); void addFiles(Array.from(e.dataTransfer.files)); } }}>
             <SlashMenu menu={slash} />
@@ -977,7 +1146,7 @@ export default function Home() {
             {attachments.length > 0 && <ul aria-label="Message attachments" className="flex flex-wrap gap-2 p-2">{attachments.map(part => <li key={part.id} className="flex max-w-full items-start gap-2 rounded-md border p-2 text-sm">
               {part.type === "image" ? <img src={part.dataUrl} alt={part.name} className="h-16 w-16 rounded object-contain" /> : <span aria-hidden="true">📄</span>}
               <span className="max-w-48 break-words">{part.name}<small className="block text-muted-foreground">{part.type === "image" ? "Image" : "Text snapshot"}</small></span>
-              <Button type="button" variant="ghost" size="icon-sm" aria-label={`Remove ${part.name}`} disabled={busy || attaching} onClick={() => { const next = attachmentsRef.current.filter(item => item.id !== part.id); setAttachments(next); saveAttachments(selectedRef.current?.id || newDraftKey.current, next); }}><X className="size-3" /></Button>
+              <Button type="button" variant="ghost" size="icon-sm" aria-label={`Remove ${part.name}`} disabled={busy || attaching} onClick={() => { const next = attachmentsRef.current.filter(item => item.id !== part.id); setAttachments(next); saveAttachments(selectedRef.current?.id || newDraftKey.current, next); focusComposer(); }}><X className="size-3" /></Button>
             </li>)}</ul>}
             {attaching && <p role="status" className="px-3 py-2 text-sm text-muted-foreground">Reading files…</p>}
             {imageBlocked && <p role="alert" className="m-2 text-sm text-destructive">This model accepts text only. Choose an image-capable model or remove the images.</p>}
@@ -985,9 +1154,9 @@ export default function Home() {
             {fileNotice && <div className="flex items-center gap-2 px-3 text-sm text-destructive" role="alert"><span>{fileNotice}</span><Button type="button" variant="ghost" size="icon-xs" aria-label="Dismiss file notice" onClick={() => setFileNotice("")}><X size={14} /></Button></div>}
             <div className="composer-controls"><div className="model-controls"><PlusMenu disabled={!ready || !connected || busy || projectChanging} attachDisabled={attaching || attachments.length >= 3} plan={planMode} onAttach={() => filePickerRef.current?.click()} onPlan={setPlan} />
               {planMode && <PlanPill disabled={!ready || busy} onOff={() => setPlan(false)} />}
-              <PermissionsMenu mode={permissionMode} disabled={!ready || busy || projectChanging} onChange={next => selected ? setOverride(selected.id, { permissions: next }) : setNewMode(next)} />
+              <PermissionsMenu mode={permissionMode} disabled={!ready || busy || projectChanging || changingPermissions} onChange={next => selected ? void changePermissions(selected.id, next) : setNewMode(next)} />
             </div><div className="composer-right">
-              {selected && <ContextUsage threadId={selected.id} />}
+              <ContextUsage threadId={selected?.id} />
               <ModelPicker choices={!selected ? choices : selectedChoice?.provider ? [selectedChoice] : choices.filter(choice => !choice.provider)} models={models}
                 model={selected ? turnModel : model} choiceId={selected ? selectedChoice?.id || "" : choiceId} defaultModel={selected ? null : providerSettings?.main.model}
                 disabled={!ready || busy || projectChanging} onConfigure={manageConnections} onKeySaved={() => void api<ProviderSettings>("/settings").then(setProviderSettings).catch(() => {})} onChange={choice => { if (selected) setOverride(selected.id, { model: choice.model }); else { setChoiceId(choice.choiceId); setModel(choice.model); setEffort(""); } }} />
@@ -996,7 +1165,7 @@ export default function Home() {
                 {turnEffort && !turnEfforts.includes(turnEffort) && <option value={turnEffort}>{turnEffort}</option>}
                 {turnEfforts.map(value => <option key={value} value={value}>{value}</option>)}
               </OptionSelect>}
-              {ready && <Dictation key={selected?.id || newDraftKey.current} disabled={!ready || !connected || busy || projectChanging} onBusy={setDictating}
+              {ready && <Dictation key={selected?.id || newDraftKey.current} provider={dictationProvider} disabled={!ready || !connected || busy || projectChanging} onBusy={setDictating}
                 selection={() => ({ text: textRef.current, start: composerRef.current?.selectionStart ?? textRef.current.length, end: composerRef.current?.selectionEnd ?? textRef.current.length })}
                 onTranscript={(selection, transcript) => {
                   const result = insertTranscript(textRef.current, selection, transcript); editDraft(result.text);
@@ -1021,7 +1190,8 @@ export default function Home() {
           </button>; })}
       </aside>}
       </div>}
-      </div><BrowserPanel browser={browser} full={browserFull} covered={pendingInputOpen || sidebar || view === "settings"}/></div>
+      {view === "chat" && terminalOpen && <TerminalPanel chatKey={selected?.id ?? `new:${cwd}`} cwd={selected?.cwd || cwd} dark={dark} launch={tuiLaunch} onClose={() => { setTerminalOpen(false); focusComposer(); }} />}
+      </div><BrowserPanel browser={browser} full={browserFull} covered={pendingInputOpen || sidebar || view === "settings"} onAttach={attachFromBrowser} imagesAllowed={!(knownModel?.inputModalities && !knownModel.inputModalities.includes("image"))}/></div>
     </main>
   </div>;
 }

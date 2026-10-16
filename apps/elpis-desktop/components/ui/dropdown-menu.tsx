@@ -18,7 +18,7 @@ function DropdownMenuContent({ className, align = "end", sideOffset = 4, ...prop
       <MenuPrimitive.Positioner className="z-50 outline-none" align={align} sideOffset={sideOffset}>
         <MenuPrimitive.Popup
           data-slot="dropdown-menu-content"
-          className={cn("min-w-36 rounded-lg border bg-card p-1 text-foreground shadow-md outline-none", className)}
+          className={cn("hud-menu min-w-36 outline-none", className)}
           {...props}
         />
       </MenuPrimitive.Positioner>
@@ -30,11 +30,8 @@ function DropdownMenuItem({ className, variant = "default", ...props }: MenuPrim
   return (
     <MenuPrimitive.Item
       data-slot="dropdown-menu-item"
-      className={cn(
-        "flex cursor-default items-center gap-2 rounded-md px-2 py-1.5 text-sm outline-none select-none data-highlighted:bg-muted data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:size-4 [&_svg]:shrink-0",
-        variant === "destructive" && "text-destructive data-highlighted:text-destructive",
-        className,
-      )}
+      data-variant={variant}
+      className={cn("hud-menu-item cursor-default text-sm outline-none select-none data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:size-4", className)}
       {...props}
     />
   )

@@ -25,3 +25,32 @@ test('browser bounds follow app zoom and cannot extend outside the native conten
   assert.equal(nativeBounds({x:0,y:0,width:0,height:0},1,{width:100,height:100}),null);
   for(const bounds of [{x:-1,y:0,width:10,height:10},{x:0,y:NaN,width:10,height:10},{x:0,y:0,width:10,height:10,extra:true}])assert.throws(()=>nativeBounds(bounds,1,{width:100,height:100}));
 });
+test('a page that fails to load explains the cause, as the ChatGPT app does, and names a stopped dev server',()=>{
+  const {loadFailure}=require('./browser-policy.cjs');
+  const refused=loadFailure(-102,'ERR_CONNECTION_REFUSED','http://localhost:3000/');
+  assert.equal(refused.heading,"This site can't be reached");
+  assert.equal(refused.summary,'localhost refused to connect');
+  assert.equal(refused.code,'ERR_CONNECTION_REFUSED');
+  assert.match(refused.tips.join('\n'),/development server/,'local addresses suggest starting the dev server');
+  assert.equal(loadFailure(-105,'ERR_NAME_NOT_RESOLVED','https://nowhere.invalid/x').summary,"nowhere.invalid's server IP address could not be found");
+  assert.equal(loadFailure(-118,'ERR_CONNECTION_TIMED_OUT','https://slow.example/').summary,'slow.example took too long to respond');
+  assert.equal(loadFailure(-106,'ERR_INTERNET_DISCONNECTED','https://a.example/').summary,'a.example could not be loaded because the computer is offline');
+  assert.equal(loadFailure(-202,'ERR_CERT_AUTHORITY_INVALID','https://self.example/').summary,"self.example's certificate could not be verified");
+  assert.equal(loadFailure(-130,'ERR_PROXY_CONNECTION_FAILED','https://a.example/').tips.some(tip=>/proxy/i.test(tip)),true);
+  assert.equal(loadFailure(-999,'ERR_SOMETHING','https://a.example/').summary,'a.example could not be loaded');
+  assert.equal(loadFailure(-102,'ERR_CONNECTION_REFUSED','not a url').summary,'This page refused to connect');
+});
+test('the address bar marks plain HTTP sites as not secure, but not local development servers',()=>{
+  const {pageSecurity}=require('./browser-policy.cjs');
+  assert.equal(pageSecurity('https://example.com/'),'secure');
+  assert.equal(pageSecurity('http://example.com/'),'insecure');
+  assert.equal(pageSecurity('http://192.168.1.4:8080/'),'insecure');
+  for(const local of ['http://localhost:3000/','http://127.0.0.1:5173/','http://[::1]:8000/','http://app.localhost/'])assert.equal(pageSecurity(local),'local');
+  assert.equal(pageSecurity('about:blank'),null);
+});
+test('zoom steps match Chromium: 25% to 500%, and reset returns to 100%',()=>{
+  const {zoomStep}=require('./browser-policy.cjs');
+  assert.equal(zoomStep(1,'in'),1.1);assert.equal(zoomStep(1,'out'),0.9);assert.equal(zoomStep(1.1,'in'),1.25);
+  assert.equal(zoomStep(5,'in'),5);assert.equal(zoomStep(0.25,'out'),0.25);assert.equal(zoomStep(1.75,'reset'),1);
+  assert.equal(zoomStep(1.18,'in'),1.25,'an off-step zoom moves to the next step');assert.equal(zoomStep(1.18,'out'),1.1);
+});

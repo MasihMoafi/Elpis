@@ -22,3 +22,14 @@ test('only the Elpis page may show notifications; websites and subframes may not
   assert.equal(appNotifications({ getURL: () => origin + '/' }, host, 'notifications', details, origin), false);
   assert.equal(appPermission(contents, host, 'geolocation', details, origin), false);
 });
+
+test('Elpis can copy text without granting clipboard reads or allowing websites and subframes to write', () => {
+  const { appPermission } = require('./media-policy.cjs');
+  const origin = 'http://127.0.0.1:4000', contents = { getURL: () => origin + '/' }, host = { webContents: contents };
+  const details = { requestingUrl: origin + '/', isMainFrame: true };
+  assert.equal(appPermission(contents, host, 'clipboard-sanitized-write', details, origin), true);
+  assert.equal(appPermission(contents, host, 'clipboard-sanitized-write', { requestingUrl: origin + '/' }, origin), true);
+  for (const permission of ['clipboard-read', 'deprecated-sync-clipboard-read', 'unknown']) assert.equal(appPermission(contents, host, permission, details, origin), false);
+  for (const invalid of [{ ...details, isMainFrame: false }, { ...details, requestingUrl: 'https://example.invalid/' }, { ...details, requestingUrl: undefined }]) assert.equal(appPermission(contents, host, 'clipboard-sanitized-write', invalid, origin), false);
+  assert.equal(appPermission({ getURL: () => origin + '/' }, host, 'clipboard-sanitized-write', details, origin), false);
+});

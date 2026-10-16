@@ -12,14 +12,13 @@ import { GitSettings, WorktreeSettings } from "@/components/settings/git-setting
 import { HooksSettings } from "@/components/settings/hooks-settings";
 import { NotificationSettings } from "@/components/settings/notification-settings";
 import { PersonalizationSettings } from "@/components/settings/personalization-settings";
-import { SettingsHeader } from "@/components/settings/rows";
 import { ShortcutSettings } from "@/components/settings/shortcut-settings";
 import { UsageSettings } from "@/components/settings/usage-settings";
 import { VoiceSettings } from "@/components/settings/voice-settings";
 import { ArrowLeft } from "lucide-react";
-import { AgentsIcon, ArchiveIcon, BellIcon, BranchIcon, ContextIcon, FileEditIcon, FolderIcon, KeyboardIcon, MicIcon, PersonIcon, SearchIcon, SettingsIcon, ThemeIcon, ToolIcon, WorkflowsIcon } from "@/components/elpis-icons";
+import { AgentsIcon, ArchiveIcon, BellIcon, BranchIcon, ContextIcon, FileEditIcon, FolderIcon, KeyboardIcon, MicIcon, PersonIcon, SettingsIcon, ThemeIcon, ToolIcon, WorkflowsIcon } from "@/components/elpis-icons";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { SearchField } from "@/components/ui/search-field";
 import { PageBoundary } from "@/components/settings/page-boundary";
 import type { Thread } from "@/lib/api";
 import { reloadSettings, settingsLoaded } from "@/lib/settings-store";
@@ -76,21 +75,21 @@ export function SettingsView({ initialTab = "providers", navigationKey = 0, acco
       case "shortcuts": return <ShortcutSettings />;
       case "voice": return <VoiceSettings onOpenMcp={() => selectTab("mcp")} />;
       case "personalization": return <PersonalizationSettings />;
-      case "providers": return <><SettingsHeader title="Models & accounts" /><ProvidersSettings refreshKey={accountRefresh} onChanged={onProvidersChanged} /></>;
-      case "mcp": return <><SettingsHeader title="MCP servers" /><McpSettings onOpenVoice={() => selectTab("voice")} /></>;
+      case "providers": return <ProvidersSettings refreshKey={accountRefresh} onChanged={onProvidersChanged} />;
+      case "mcp": return <McpSettings onOpenVoice={() => selectTab("voice")} />;
       case "usage": return <UsageSettings refreshKey={accountRefresh} />;
       case "git": return <GitSettings />;
       case "worktrees": return <WorktreeSettings />;
       case "hooks": return <HooksSettings />;
       case "configuration": return <ConfigurationSettings />;
-      case "archived": return <><SettingsHeader title="Archived chats" /><ArchivedView onUnarchived={onUnarchived} onDelete={onDeleteThread} /></>;
+      case "archived": return <ArchivedView onUnarchived={onUnarchived} onDelete={onDeleteThread} />;
     }
   };
   return <div className="settings-layout">
     <nav className="settings-nav" aria-label="Settings navigation">
-      {onBack && <button type="button" className="settings-back" onClick={onBack}><ArrowLeft size={15} aria-hidden="true" />Back to app</button>}
+      {onBack && <button type="button" className="back-link" onClick={onBack}><ArrowLeft size={18} aria-hidden="true" />Back to app</button>}
       <h1 className="settings-title">Settings</h1>
-      <label className="settings-search"><SearchIcon size={14} aria-hidden="true" /><Input aria-label="Search settings" placeholder="Search" value={query} maxLength={80} onChange={event => setQuery(event.target.value)} /></label>
+      <SearchField aria-label="Search settings" placeholder="Search" value={query} maxLength={80} onChange={event => setQuery(event.target.value)} />
       <div role="tablist" aria-label="Settings sections" aria-orientation="vertical">
         {GROUPS.map(group => { const items = shown.filter(item => item.group === group);
           return items.length > 0 && <div key={group} className="settings-nav-group"><div className="section-label">{group}</div>

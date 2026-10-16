@@ -35,7 +35,8 @@ export function AgentsView({ threads, activity, models, providers, loading, pend
     const working = thread.status?.type === "active", needsInput = agentState(thread, waiting) === "waiting";
     const meta = [thread.agentRole && thread.agentRole !== "default" ? thread.agentRole : null, providerLabel(thread.model, thread.modelProvider, providers), modelLabel(thread.model, models), thread.reasoningEffort].filter(Boolean).join(" · ");
     const Icon = isAgent(thread) ? Bot : MessageSquare;
-    return <div key={thread.id} className={`agent-row${!matches(thread,filter) ? " agent-context" : ""}`} data-thread-id={thread.id} style={{ marginLeft: `${Math.min(depth, 6) * 20}px` }}>
+    return <ThreadActions key={thread.id} thread={thread} onDelete={onDelete} area={<div className={`agent-row${!matches(thread,filter) ? " agent-context" : ""}`} data-thread-id={thread.id} style={{ marginLeft: `${Math.min(depth, 6) * 20}px` }} />}>
+      {menu => <>
       <span className="agent-icon" aria-hidden="true"><Icon size={16}/></span>
       <div className="agent-main min-w-0 flex-1">
         <div className="agent-title-line"><button className="agent-title" title={title(thread)} onClick={() => onOpen(thread)}>{title(thread)}</button>{thread.agentNickname && thread.agentNickname !== title(thread) && <span className="agent-nickname">{thread.agentNickname}</span>}</div>
@@ -46,9 +47,10 @@ export function AgentsView({ threads, activity, models, providers, loading, pend
       <div className="agent-actions">
         {working && <Button variant="outline" size="sm" aria-label={`Stop ${title(thread)}`} onClick={() => void onStop(thread)}><Square size={13} />Stop</Button>}
         <Button variant="ghost" size="sm" onClick={() => onOpen(thread)}>Open chat</Button>
-        <ThreadActions thread={thread} onDelete={onDelete} />
+        {menu}
       </div>
-    </div>;
+      </>}
+    </ThreadActions>;
   }
   const moreAgents = (thread: Thread) => childCursors[thread.id] && <Button className="m-3" variant="outline" size="sm" disabled={loadingChildren[thread.id]} onClick={() => onMoreAgents(thread.id)}>Load more agents for {title(thread)}</Button>;
   function tree(parentId: string, depth: number, seen: Set<string>): React.ReactNode {
@@ -57,7 +59,7 @@ export function AgentsView({ threads, activity, models, providers, loading, pend
     return threads.filter(thread => thread.parentThreadId === parentId && visible.has(thread.id)).map(child => <div key={child.id}>{row(child, depth)}{tree(child.id, depth + 1, next)}</div>);
   }
   return <section className="agents-view" aria-label="Agents">
-    <div className="agents-toolbar"><div className="agent-filters" role="group" aria-label="Filter conversations and agents">{filters.map(option => <Button key={option.id} variant={filter === option.id ? "secondary" : "ghost"} size="sm" aria-pressed={filter === option.id} onClick={() => setFilter(option.id)}>{option.label}<span className="filter-count">{threads.filter(thread => matches(thread,option.id)).length}</span></Button>)}</div><Button size="sm" variant="outline" onClick={onNewAgent}><Plus size={14} />New agent</Button></div>
+    <div className="agents-toolbar"><div className="segmented agent-filters" role="group" aria-label="Filter conversations and agents">{filters.map(option => <Button key={option.id} variant={filter === option.id ? "secondary" : "ghost"} size="sm" aria-pressed={filter === option.id} onClick={() => setFilter(option.id)}>{option.label}<span className="filter-count">{threads.filter(thread => matches(thread,option.id)).length}</span></Button>)}</div><Button size="sm" variant="outline" onClick={onNewAgent}><Plus size={14} />New agent</Button></div>
     {/* Refreshes stay silent once rows are listed: a line inserted above them on every poll made the page jump. */}
     {loading && !threads.length && <p role="status" className="agents-loading">Updating agents…</p>}
     {!visible.size && !loading && <p className="agents-empty-state">{threads.length ? "No conversations or agents match this status." : "No conversations yet. Start one, or create an agent."}</p>}

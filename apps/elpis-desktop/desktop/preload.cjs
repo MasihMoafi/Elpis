@@ -28,4 +28,26 @@ contextBridge.exposeInMainWorld('elpisDesktop',{
     layout:value=>ipcRenderer.send('elpis:browser:layout',value),
     subscribe:callback=>{const listener=(_event,state)=>callback(state);ipcRenderer.on('elpis:browser:state',listener);return()=>ipcRenderer.removeListener('elpis:browser:state',listener);},
   },
+  // One shell per chat (desktop/terminal.cjs); a chat key is the chat id.
+  terminal:{
+    open:(key,cwd,cols,rows)=>ipcRenderer.invoke('elpis:terminal:open',{key,cwd,cols,rows}).then(checked),
+    restart:(key,cwd,cols,rows)=>ipcRenderer.invoke('elpis:terminal:restart',{key,cwd,cols,rows}).then(checked),
+    tui:(key,cwd,threadId,cols,rows)=>ipcRenderer.invoke('elpis:terminal:tui',{key,cwd,threadId,cols,rows}).then(checked),
+    input:(key,data)=>ipcRenderer.send('elpis:terminal:input',key,data),
+    resize:(key,cols,rows)=>ipcRenderer.send('elpis:terminal:resize',key,cols,rows),
+    copy:text=>ipcRenderer.invoke('elpis:terminal:clipboard',String(text)).then(checked),
+    paste:()=>ipcRenderer.invoke('elpis:terminal:clipboard').then(checked).then(result=>String(result.text??'')),
+    subscribe:(onData,onExit)=>{
+      const data=(_event,key,id,end,text)=>onData(key,id,end,text),exit=(_event,key,id,code)=>onExit(key,id,code);
+      ipcRenderer.on('elpis:terminal:data',data);ipcRenderer.on('elpis:terminal:exit',exit);
+      return()=>{ipcRenderer.removeListener('elpis:terminal:data',data);ipcRenderer.removeListener('elpis:terminal:exit',exit);};
+    },
+  },
+  // A chat the Elpis TUI's /app (or a launch with --open-thread) asked this window to open.
+  onOpenThread:callback=>{
+    const take=()=>ipcRenderer.invoke('elpis:open-thread:take').then(id=>{if(typeof id==='string')callback(id);}).catch(()=>{});
+    ipcRenderer.on('elpis:open-thread',take);take();
+    return()=>ipcRenderer.removeListener('elpis:open-thread',take);
+  },
 });
+function checked(result){if(typeof result?.error==='string')throw Error(result.error);return result;}

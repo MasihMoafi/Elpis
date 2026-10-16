@@ -1,9 +1,7 @@
 "use client";
 
-import { RefreshCw } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import { openAIUsage, subscriptionUsage, useProviderUsage, UsageWindows, type UsageStatus } from "@/components/provider-usage";
-import { SettingsHeader, SettingsNotice } from "@/components/settings/rows";
+import { RefreshButton, SettingsHeader, SettingsNotice } from "@/components/settings/rows";
 
 /** Plan limits each signed-in account reports. Reloads when an account changes. */
 export function UsageSettings({ refreshKey }: { refreshKey: number }) {
@@ -14,13 +12,10 @@ export function UsageSettings({ refreshKey }: { refreshKey: number }) {
     ["gemini", "Antigravity", subscriptionUsage(data.gemini, "Antigravity", "Sign in to Antigravity")],
   ] : [];
   return <div aria-label="Usage and limits">
-    <div className="flex flex-wrap items-start justify-between gap-3">
-      <SettingsHeader title="Usage & limits" description="Limits reported by each connected account." />
-      <Button variant="ghost" size="sm" disabled={loading} onClick={() => void load()}><RefreshCw size={14} />Refresh</Button>
-    </div>
-    {error && <div className="mb-6"><SettingsNotice tone="alert">Usage unavailable: {error}</SettingsNotice></div>}
-    {!data && !error && <div className="mb-6"><SettingsNotice>Loading usage…</SettingsNotice></div>}
-    {cards.length > 0 && <div className="mb-6 grid gap-3">{cards.map(([id, name, status]) => <section key={id} className="usage-card settings-card" data-provider={id} aria-label={`${name} usage`}>
+    <SettingsHeader title="Usage & limits" description="Limits reported by each connected account." action={<RefreshButton disabled={loading} onClick={() => void load()} />} />
+    {error && <SettingsNotice tone="alert">Usage unavailable: {error}</SettingsNotice>}
+    {!data && !error && <SettingsNotice>Loading usage…</SettingsNotice>}
+    {cards.length > 0 && <div className="settings-stack">{cards.map(([id, name, status]) => <section key={id} className="usage-card settings-card" data-provider={id} aria-label={`${name} usage`}>
       <h3>{name}</h3>{status && <UsageWindows status={status} />}
     </section>)}</div>}
   </div>;

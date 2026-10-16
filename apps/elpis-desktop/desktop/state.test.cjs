@@ -37,6 +37,18 @@ test('corrupt state is reported and preserved, rather than silently overwritten'
   assert.equal(fs.readFileSync(file, 'utf8'), '{broken');
 });
 
+test('pinned chats and terminal height persist across a desktop restart, with unknown keys still rejected', async () => {
+  const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'elpis-ux-state-')), 'workspace.json');
+  const store = createStateStore(file), pins = JSON.stringify(['chat-1', 'chat-2']);
+  await store.set('elpis-pinned-chats-v1', pins);
+  await store.set('elpis-terminal-height', '360');
+  const reopened = createStateStore(file);
+  assert.equal(reopened.read()['elpis-pinned-chats-v1'], pins);
+  assert.equal(reopened.read()['elpis-terminal-height'], '360');
+  await assert.rejects(store.set('elpis-pinned-chats-v2', pins), /Unsupported/);
+  await assert.rejects(store.set('elpis-terminal-height:other', '360'), /Unsupported/);
+});
+
 test('retrying the same value after an actual write failure really persists it', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'elpis-state-retry-'));
   const file = path.join(dir, 'workspace.json');

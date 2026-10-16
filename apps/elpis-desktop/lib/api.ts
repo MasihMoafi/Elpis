@@ -13,9 +13,16 @@ export type Model = { id: string; model: string; displayName: string; descriptio
 export type ProviderSettings = { version?:string|null; main:{model:string|null;provider:string|null}; providers:{id:string;displayName:string;needsKey?:boolean}[]; options?:{approvalPolicy:string|null;sandboxMode:string|null}; managed?:{modelProvider:string|null} };
 export type Approval = { id: string; ownerThreadId: string; thread?: Thread; method: string; supported?: boolean; params: { availableDecisions?: unknown[]; threadId?: string; command?: string; reason?: string; changes?: unknown; questions?: {id:string;header:string;question:string;isSecret?:boolean;options?:{label:string;description?:string}[]}[] } };
 export async function api<T>(path: string, body?: unknown): Promise<T> {
-  const response = await fetch(`/api${path}`, body === undefined ? undefined : { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  let response: Response;
+  try { response = await fetch(`/api${path}`, body === undefined ? undefined : { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }); }
+  catch { throw new Error("Could not reach Elpis. Check the connection and try again."); }
   const result = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(result.error?.message || result.error || `Request failed (${response.status})`);
+  if (!response.ok) {
+    const detail = typeof result?.error?.message === "string" ? result.error.message : typeof result?.error === "string" ? result.error : "";
+    const unsupported = /^(?:-32601$|Elpis rejected the operation \(-32601\))/.test(detail.trim());
+    const fallback = unsupported ? "This action is unavailable in the connected Elpis runtime. Update Elpis and try again." : response.status >= 500 ? "Elpis is temporarily unavailable. Try again in a moment." : "Elpis could not complete this action. Try again.";
+    throw new Error(detail.trim() && !/^-?\d+$/.test(detail.trim()) && !/^Elpis rejected the operation \([^)]+\)/.test(detail.trim()) ? detail : fallback);
+  }
   return result;
 }
 const spawn = (thread: Thread) => {
@@ -124,4 +131,6 @@ export function choiceOf(thread: Thread, choices: ProviderChoice[]) {
   const subscription = subscriptionOf(thread.model);
   return choices.find(choice => subscription ? choice.id === subscription.prefix : !!thread.modelProvider && choice.provider === thread.modelProvider) ?? choices[0];
 }
+/** The provider a chat runs on, as the microphone needs it: a subscription by its model prefix, else the chat's own provider, else the engine's default (ChatGPT). */
+export const chatProvider = (model: string | null | undefined, provider: string | null | undefined, main: string | null | undefined) => subscriptionOf(model)?.id ?? (provider || main || "openai");
 export const effortsOf = (model: string | null | undefined, models: Model[]) => models.find(item => item.model === model)?.supportedReasoningEfforts?.map(item => item.reasoningEffort) ?? [];

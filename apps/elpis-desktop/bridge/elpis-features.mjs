@@ -1,4 +1,9 @@
 import { acceptsPastedKey, BUILT_IN_KEY_PROVIDERS } from './provider-settings.mjs';
+import fs from 'node:fs';
+import fsp from 'node:fs/promises';
+import path from 'node:path';
+import readline from 'node:readline';
+import zlib from 'node:zlib';
 // Keep provider credentials, full config layers, audit paths and arbitrary fields server-side.
 const string = value => typeof value === 'string' ? value : null;
 const boolean = value => typeof value === 'boolean' ? value : null;
@@ -21,8 +26,9 @@ export const CONFIG_OPTIONS = {
   automaticPruning: { keyPath: 'features.automatic_context_pruning', values: [true, false] },
 };
 const configValue = (config, keyPath) => keyPath.split('.').reduce((value, key) => value && typeof value === 'object' ? value[key] : undefined, config);
-/** The built-in permission profiles by the sandbox each one is (codex-rs/protocol/src/models.rs). */
-const PROFILES = { 'read-only': ':read-only', 'workspace-write': ':workspace', 'danger-full-access': ':danger-full-access' };
+/** The built-in permission profiles by the sandbox each one is (codex-rs/protocol/src/models.rs). Bypass
+ * permissions is reported so a chat is not shown as Ask; Settings cannot select it (not in CONFIG_OPTIONS). */
+const PROFILES = { 'read-only': ':read-only', 'workspace-write': ':workspace', 'danger-full-access': ':danger-full-access', 'bypass-permissions': ':bypass-permissions' };
 /** Whether the engine takes the default sandbox from `default_permissions`, as
  * codex-rs/core/src/config/mod.rs resolve_permission_config_syntax decides: the highest layer naming either key
  * wins, and within a layer `default_permissions` wins over `sandbox_mode`. */
@@ -124,6 +130,89 @@ export function tokenUsageSnapshot(value) {
     contextAttribution: numericFields(value.contextAttribution, attributionKeys) };
 }
 
+// The Context Ledger's categories, in the TUI's order and words (codex-rs/tui/src/chatwidget/context_usage.rs).
+const LEDGER_CATEGORIES = [
+  ['userMessages', 'User messages'], ['agentMessages', 'Agent messages'], ['reasoning', 'Reasoning + compaction'],
+  ['toolCalls', 'Tool calls'], ['toolResults', 'Tool results'], ['systemInstructions', 'System instructions'],
+  ['developerMessages', 'Developer messages'], ['toolDefinitions', 'Tool definitions + schema', 'outputSchema'],
+  ['unrecognizedItems', 'Unrecognized request items'],
+];
+/** What the TUI's Context Ledger shows for a chat. `used` is measured: the latest request's total tokens, as the
+ * ledger's `tokens_in_context_window`. `window` is the reported context window, or null when unknown. `categories`
+ * are the core's estimated shares of the latest built request, scaled to `used` by largest remainder so they sum to
+ * it exactly (`reconcile_context_categories`); an empty list means attribution is unavailable. */
+export function contextLedger(tokenUsage) {
+  const used = number(tokenUsage?.last?.totalTokens), window = number(tokenUsage?.modelContextWindow);
+  const ledger = { used: used !== null && used >= 0 ? used : null, window: window !== null && window > 0 ? window : null, categories: [] };
+  const attribution = tokenUsage?.contextAttribution;
+  if (!ledger.used || !attribution) return ledger;
+  const estimated = LEDGER_CATEGORIES.map(([id, label, extra]) => ({ id, label, tokens: (attribution[id] ?? 0) + (extra ? attribution[extra] ?? 0 : 0) })).filter(row => row.tokens > 0);
+  const total = estimated.reduce((sum, row) => sum + row.tokens, 0);
+  if (!total) return ledger;
+  const scaled = estimated.map((row, index) => ({ ...row, tokens: Math.floor(row.tokens * ledger.used / total), remainder: row.tokens * ledger.used % total, index }));
+  let remaining = ledger.used - scaled.reduce((sum, row) => sum + row.tokens, 0);
+  for (const row of [...scaled].sort((a, b) => b.remainder - a.remainder || a.index - b.index)) if (remaining-- > 0) row.tokens++;
+  ledger.categories = scaled.filter(row => row.tokens > 0).map(({ id, label, tokens }) => ({ id, label, tokens }));
+  return ledger;
+}
+
+// A rollout's `token_count` record carries usage in the engine's snake_case.
+const rolloutUsage = value => value && typeof value === 'object'
+  ? Object.fromEntries(usageKeys.map(key => [key, value[key.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`)]]).filter(([, count]) => typeof count === 'number')) : null;
+const countedUsage = line => {
+  if (!line.includes('"token_count"')) return null;
+  try { const payload = JSON.parse(line)?.payload; return payload?.type === 'token_count' && payload.info && typeof payload.info === 'object' ? payload.info : null; } catch { return null; }
+};
+async function lastCountFromEnd(file, chunk = 1 << 16, limit = 1 << 25) {
+  const handle = await fsp.open(file, 'r');
+  try {
+    let end = (await handle.stat()).size, carry = Buffer.alloc(0), scanned = 0;
+    while (end > 0 && scanned < limit) {
+      const start = Math.max(0, end - chunk), buffer = Buffer.alloc(end - start);
+      await handle.read(buffer, 0, buffer.length, start); scanned += buffer.length; end = start;
+      const data = Buffer.concat([buffer, carry]);
+      let stop = data.length;
+      for (let index = data.length - 1; index >= 0; index--) if (data[index] === 10) {
+        const found = countedUsage(data.toString('utf8', index + 1, stop)); if (found) return found; stop = index;
+      }
+      if (start === 0) return countedUsage(data.toString('utf8', 0, stop));
+      carry = data.subarray(0, stop);
+    }
+    return null;
+  } finally { await handle.close(); }
+}
+async function lastCountInStream(input) {
+  let found = null;
+  for await (const line of readline.createInterface({ input, crlfDelay: Infinity })) found = countedUsage(line) ?? found;
+  return found;
+}
+/** The usage a chat's rollout recorded last: the `token_count` the engine restores on a cold resume
+ * (app-server token_usage_replay.rs), so an old chat shows its numbers before it runs again. Rollouts keep no
+ * category shares; those come with the next request. Plain rollouts are read from their end, compressed ones streamed. */
+export async function restoredTokenUsage(file) {
+  if (typeof file !== 'string' || !path.isAbsolute(file) || !/\.jsonl(\.zst)?$/.test(file)) return null;
+  let info;
+  try {
+    if (!file.endsWith('.zst')) info = await lastCountFromEnd(file);
+    else if (typeof zlib.createZstdDecompress === 'function') info = await lastCountInStream(fs.createReadStream(file).pipe(zlib.createZstdDecompress()));
+  } catch { return null; }
+  if (!info) return null;
+  return { total: rolloutUsage(info.total_token_usage), last: rolloutUsage(info.last_token_usage),
+    modelContextWindow: typeof info.model_context_window === 'number' ? info.model_context_window : null, contextAttribution: null };
+}
+
+/** The Context Ledger's switches, read from the keys the TUI ledger writes: Smart Prune is
+ * `features.automatic_context_pruning` (off by default), Subagents is `features.multi_agent` (on unless false; the
+ * Claude bridge reads the same key), and RAG is the `rag` MCP server's `enabled` (null when none is configured). */
+export function contextSwitchesSnapshot(read) {
+  const config = read?.config ?? {}, userLayer = read?.layers?.find(layer => layer.name?.type === 'user' && !layer.name.profile);
+  const rag = config.mcp_servers?.rag, version = string(userLayer?.version);
+  return { version, write: version ? { available: true } : { available: false, reason: 'Elpis reported no writable config.toml, so these switches cannot be saved here.' },
+    smartPrune: config.features?.automatic_context_pruning === true, subagents: config.features?.multi_agent !== false,
+    rag: rag && typeof rag === 'object' ? rag.enabled !== false : null };
+}
+export const CONTEXT_SWITCH_KEYS = { smartPrune: 'features.automatic_context_pruning', subagents: 'features.multi_agent', rag: 'mcp_servers.rag.enabled' };
+
 export function smartPruneSnapshot(value) {
   if (!value || typeof value !== 'object') return null;
   const result = {
@@ -152,8 +241,9 @@ const usageWindow = value => value && typeof value === 'object'
 const usageLimit = value => value && typeof value === 'object'
   ? { limitId: string(value.limitId), limitName: string(value.limitName), planType: string(value.planType), primary: usageWindow(value.primary), secondary: usageWindow(value.secondary), reached: string(value.rateLimitReachedType) } : null;
 
-/** Each provider's own sign-in and usage. Subscription limits arrive keyed by limit ID from the Elpis bridge. */
-export function providersSnapshot({ account, limits, config, models, env = process.env }) {
+/** Each provider's own sign-in and usage. Subscription limits arrive keyed by limit ID from the Elpis bridge.
+ * `anthropic.signedOut`: Elpis's own sign-out of the Claude subscription, which shows no models or usage while it is on. */
+export function providersSnapshot({ account, limits, config, models, anthropic, env = process.env }) {
   const byId = { ...(limits?.rateLimitsByLimitId ?? {}) };
   if (typeof limits?.rateLimits?.limitId === 'string' && !byId[limits.rateLimits.limitId]) byId[limits.rateLimits.limitId] = limits.rateLimits;
   const usage = prefix => Object.entries(byId).filter(([id]) => id === prefix || id.startsWith(`${prefix}-`)).map(([, value]) => usageLimit(value)).filter(Boolean);
@@ -174,7 +264,7 @@ export function providersSnapshot({ account, limits, config, models, env = proce
   return {
     openai: { auth, requiresOpenaiAuth: boolean(account?.requiresOpenaiAuth), usage: codex,
       usageError: codex.length ? null : string(limits?.error) },
-    claude: subscription('claude/', 'claude'),
+    claude: anthropic?.signedOut === true ? { state: 'notConnected', models: [], usage: [], signedOut: true } : { ...subscription('claude/', 'claude'), signedOut: false },
     gemini: subscription('agy/', 'antigravity'),
     openrouter: configured.filter(([, def]) => hostOf(def.base_url).endsWith('openrouter.ai')).map(describe),
   };
@@ -219,7 +309,7 @@ export function mcpSnapshot(read, env = process.env) {
         ...(Array.isArray(def.env_vars) ? def.env_vars : []).filter(key => typeof key === 'string' && CREDENTIAL.test(key)).map(key => ({ name: key, source: 'environment', set: Boolean(env[key]) })),
         ...(typeof def.bearer_token_env_var === 'string' ? [{ name: def.bearer_token_env_var, source: 'environment', set: Boolean(env[def.bearer_token_env_var]) }] : []),
       ],
-      ...(name === 'whispertype' ? { whispertype: { backend: def.env?.WHISPERTYPE_BACKEND ?? 'openrouter', model: string(def.env?.WHISPERTYPE_CLOUD_MODEL) } } : {}),
+      ...(name === 'whispertype' ? { whispertype: { backend: def.env?.WHISPERTYPE_BACKEND ?? null, model: string(def.env?.WHISPERTYPE_CLOUD_MODEL) } } : {}),
     })),
   };
 }
