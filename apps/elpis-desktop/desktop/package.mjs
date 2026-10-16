@@ -12,7 +12,7 @@ export const productionFiles = [
   'bridge/resources/rag.md', 'desktop/browser-policy.cjs', 'desktop/browser.cjs', 'desktop/browser-annotations.cjs', 'desktop/browser-page-preload.cjs', 'desktop/context-menu.cjs',
   'desktop/main.cjs', 'desktop/media-policy.cjs', 'desktop/preferences.cjs', 'desktop/preload.cjs', 'desktop/files.cjs',
   'desktop/terminal.cjs', 'desktop/open-thread.cjs',
-  'desktop/runtime.mjs', 'desktop/state.cjs', 'desktop/elpis-icon.png', 'lib/turn-replacement.ts', 'lib/thread-deletion.ts',
+  'desktop/runtime.mjs', 'desktop/state.cjs', 'desktop/elpis-icon.png', 'lib/turn-replacement.ts', 'lib/thread-deletion.ts', 'lib/approvals.ts',
 ];
 
 const launcher = `#!/usr/bin/env bash

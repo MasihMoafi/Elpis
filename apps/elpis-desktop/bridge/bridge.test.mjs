@@ -277,7 +277,7 @@ test('approvals are only forwarded for owned roots and only accept exact offered
   client.answerApproval(visible.id, { decision: always });
   assert.deepEqual(socket.sent.at(-1), { id: 'approval-native', result: { decision: always } });
   assert.throws(() => client.answerApproval(visible.id, { decision: 'accept' }), /no longer pending/);
-  socket.emit('message', JSON.stringify({ id: 'permissions', method: 'item/permissions/requestApproval', params: { threadId: CREATED } }));
+  socket.emit('message', JSON.stringify({ id: 'future', method: 'future/requestApproval', params: { threadId: CREATED } }));
   assert.equal(socket.sent.at(-1).error.code, -32601);
   client.close();
 });

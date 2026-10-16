@@ -17,7 +17,7 @@ test('the package holds every local file its entry points import', async () => {
   const root = fileURLToPath(new URL('../', import.meta.url)), seen = new Set(), pending = ['desktop/main.cjs', 'desktop/preload.cjs', 'desktop/runtime.mjs', 'bridge/server.mjs', 'bridge/client.mjs'];
   while (pending.length) {
     const name = pending.pop(); if (seen.has(name)) continue; seen.add(name);
-    const text = await fs.readFile(path.join(root, name), 'utf8');
+    const text = (await fs.readFile(path.join(root, name), 'utf8')).replace(/^import type .*;$/gm, '');
     for (const [, target] of text.matchAll(/(?:require\(|from |import\()\s*['"](\.{1,2}\/[^'"]+)['"]/g)) pending.push(path.posix.normalize(path.posix.join(path.posix.dirname(name), target)));
   }
   for (const name of seen) assert(production.includes(name), `${name} is imported but not packaged`);

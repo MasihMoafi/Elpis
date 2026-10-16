@@ -6,6 +6,7 @@ import { Archive, ArrowLeft, ChevronRight, PanelLeft, PanelRight, Pin, Moon, Ref
 import { Button } from "@/components/ui/button";
 import { OptionSelect } from "@/components/ui/option-select";
 import { Input } from "@/components/ui/input";
+import { ApprovalCard, type QuestionAnswers } from "@/components/approval-card";
 import { SearchField } from "@/components/ui/search-field";
 import { Textarea } from "@/components/ui/textarea";
 import { ChatMessage } from "@/components/chat-message";
@@ -49,48 +50,7 @@ import type { ThemeChoice } from "@/components/appearance-settings";
 import { activityOf, api, chatProvider, choiceOf, effortsOf, isAgent, isUnlinkedAgent, modelLabel, providerChoices, providerLabel, title,
   type Approval, type Entry, type Model, type ProviderSettings, type Thread } from "@/lib/api";
 
-const DECISION_LABELS: Record<string, string> = { accept: "Allow", acceptForSession: "Allow for this session", decline: "Decline", cancel: "Cancel" };
-// Elpis offers "always allow" amendments as objects naming the command prefix or host they cover.
-function decisionLabel(decision: unknown): string | null {
-  if (typeof decision === "string") return DECISION_LABELS[decision] || null;
-  if (!decision || typeof decision !== "object") return null;
-  if ("acceptWithExecpolicyAmendment" in decision) return "Always allow this prefix";
-  if ("applyNetworkPolicyAmendment" in decision) return "Always allow this host";
-  return null;
-}
-function decisionScope(decision: unknown): string | null {
-  if (!decision || typeof decision !== "object") return null;
-  if ("acceptWithExecpolicyAmendment" in decision) {
-    const value = (decision as {acceptWithExecpolicyAmendment: {execpolicy_amendment?: unknown}}).acceptWithExecpolicyAmendment.execpolicy_amendment;
-    return Array.isArray(value) ? value.map(argument => JSON.stringify(argument)).join(" ") : JSON.stringify(value ?? decision);
-  }
-  if ("applyNetworkPolicyAmendment" in decision) return JSON.stringify((decision as {applyNetworkPolicyAmendment: unknown}).applyNetworkPolicyAmendment);
-  return null;
-}
-type QuestionAnswers = Record<string, string[]>;
 const approvalDraftKey = (approval: Approval) => JSON.stringify([approval.ownerThreadId, approval.id]);
-function ApprovalCard({ approval, answer, answers, onAnswerChange, busy }: { approval: Approval; answer: (id: string, body: unknown) => Promise<void>; answers: QuestionAnswers; onAnswerChange: (id: string, value: string) => void; busy: boolean }) {
-  const [error, setError] = useState("");
-  async function submit(body: unknown) { if (busy) return; setError(""); try { await answer(approval.id, body); } catch (e) { setError(String(e)); } }
-  const offered = (approval.params.availableDecisions ?? Object.keys(DECISION_LABELS)).filter(decision => decisionLabel(decision));
-  const questions = approval.params.questions;
-  return <section className="approval">
-    <h3>{questions ? "Elpis needs your input" : "Approval requested"}</h3>
-    {approval.params.reason && <p className="approval-reason">{approval.params.reason}</p>}
-    {approval.params.command && <pre>{approval.params.command}</pre>}
-    {offered.map((decision, index) => decisionScope(decision) && <div className="approval-scope" key={index}><p>{typeof decision === "object" && decision && "acceptWithExecpolicyAmendment" in decision ? "Command prefix scope (argv)" : "Host policy scope"}:</p><code>{decisionScope(decision)}</code></div>)}
-    {questions?.map(q => <label key={q.id}>{q.question}
-      {q.options ? <OptionSelect className="rounded-md border p-2" disabled={busy} value={answers[q.id]?.[0] || ""} onChange={e => onAnswerChange(q.id, e.target.value)}><option value="">Choose an answer</option>{q.options.map(o => <option key={o.label} value={o.label}>{o.label}{o.description ? ` — ${o.description}` : ""}</option>)}</OptionSelect> : null}
-      <Input aria-label={`Answer: ${q.header || q.id}`} placeholder={q.options ? "Or write your own answer" : "Your answer"} type={q.isSecret ? "password" : "text"} disabled={busy} value={answers[q.id]?.[0] || ""} onChange={e => onAnswerChange(q.id, e.target.value)} />
-    </label>)}
-    {error && <p role="alert">{error}</p>}
-    <div className="approval-actions">
-      {questions
-        ? <Button disabled={busy || questions.some(q => !answers[q.id]?.[0])} onClick={() => submit({ answers })}>Send answers</Button>
-        : offered.map((decision, index) => <Button key={index} variant={decision === "accept" ? "default" : "outline"} className="h-auto min-h-8 max-w-full py-1.5 text-left whitespace-normal [overflow-wrap:anywhere]" disabled={busy} onClick={() => submit({ decision })}>{decisionLabel(decision)}</Button>)}
-    </div>
-  </section>;
-}
 
 type View = "chat" | "agents" | "newAgent" | "settings";
 type NextTurn = { model?: string; effort?: string; plan?: boolean };
@@ -509,7 +469,7 @@ export default function Home() {
         });
         events.addEventListener("approval", event => { const approval = JSON.parse(event.data); notifyApproval(approval, threadsRef.current, id => void loadThread({ id } as Thread)); setApprovals(prev => [...prev.filter(a => a.id !== approval.id), approval]); });
         events.addEventListener("approvalResolved", event => { const { id } = JSON.parse(event.data); setApprovals(prev => prev.filter(a => a.id !== id)); clearApprovalDraft(id); });
-        events.addEventListener("unsupportedApproval", () => setError("Elpis requested an approval this app cannot answer. Use the original client to continue."));
+        events.addEventListener("unsupportedApproval", event => { const { method } = JSON.parse(event.data); setError(`Elpis requested an unsupported approval (${method}). Update the app to answer this request.`); });
         events.addEventListener("account", () => { setAccountRefresh(n => n + 1); void refreshModels(); });
       } catch (e) { if (!disposed) setError(String(e)); }
     }

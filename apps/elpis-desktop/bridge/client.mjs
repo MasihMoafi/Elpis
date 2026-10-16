@@ -12,6 +12,7 @@ import { providerModels } from './provider-models.mjs';
 import { attachmentInput, recordedMedia } from './attachments.mjs';
 import { scanDeletionThreads } from '../lib/thread-deletion.ts';
 import { reviewChoices, workingDiff } from './git.mjs';
+import { elicitationResponse, permissionsResponse } from '../lib/approvals.ts';
 const string = value => typeof value === 'string' ? value : null;
 
 export class BridgeError extends Error {
@@ -64,7 +65,7 @@ const NOTIFICATIONS = new Set([
   'item/agentMessage/delta', 'item/reasoning/summaryTextDelta', 'item/commandExecution/outputDelta',
   'item/fileChange/outputDelta', 'error', 'serverRequest/resolved',
 ]);
-const APPROVALS = new Set(['item/commandExecution/requestApproval', 'item/fileChange/requestApproval', 'item/tool/requestUserInput']);
+const APPROVALS = new Set(['item/commandExecution/requestApproval', 'item/fileChange/requestApproval', 'item/tool/requestUserInput', 'mcpServer/elicitation/request', 'item/permissions/requestApproval']);
 // Account changes have no thread; every app window may show them.
 const LISTED = new Set(['thread/started', 'thread/status/changed', 'thread/name/updated']);
 const ACCOUNT_NOTIFICATIONS = new Set(['account/updated', 'account/login/completed', 'account/rateLimits/updated']);
@@ -1050,7 +1051,10 @@ export class DesktopClient extends EventEmitter {
     const pending = this.#approvals.get(id);
     if (!pending) throw new BridgeError('Approval is no longer pending', 409);
     let result;
-    if (pending.method === 'item/tool/requestUserInput') {
+    if (pending.method === 'mcpServer/elicitation/request' || pending.method === 'item/permissions/requestApproval') {
+      try { result = pending.method === 'mcpServer/elicitation/request' ? elicitationResponse(pending.params, body) : permissionsResponse(pending.params.permissions, body); }
+      catch (error) { throw new BridgeError(error.message); }
+    } else if (pending.method === 'item/tool/requestUserInput') {
       object(body, ['answers']); const questions = pending.params.questions ?? [];
       object(body.answers, questions.map(q => q.id));
       result = { answers: Object.fromEntries(questions.map(q => {

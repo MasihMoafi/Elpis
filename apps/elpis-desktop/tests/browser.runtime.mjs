@@ -1,6 +1,6 @@
 // The in-app browser end to end in the real desktop app: Electron main + preload + renderer + the native page view.
-// Runs on a private Xvfb display with a throwaway profile and engine; nothing is sent to a model (the comments go to
-// the composer with "Add to message", never "Send"). Screenshots of the whole window are written to the evidence folder.
+// Runs on a private Xvfb display with a throwaway profile and engine. Inference uses
+// a local scripted provider only. Screenshots of the whole window go to the evidence folder.
 //   node tests/browser.runtime.mjs /absolute/elpis-next [--shots DIR]
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
@@ -12,14 +12,24 @@ import { execFileSync, spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { existingSocket } from '../bridge/client.mjs';
 const require = createRequire(import.meta.url);
+const { Provider, message: modelMessage, call: modelCall } = require('../../../scripts/lib/mock-provider.js');
 const { _electron } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright');
 const binary = process.argv[2];
+const approvalEval = process.argv.includes('--approvals') || process.argv.includes('--only-approvals');
 assert(binary && path.isAbsolute(binary), 'Give the absolute path of an Elpis executable');
 const appRoot = fileURLToPath(new URL('..', import.meta.url));
 const shots = process.argv.includes('--shots') ? path.resolve(process.argv[process.argv.indexOf('--shots') + 1]) : await fs.mkdtemp(path.join(os.tmpdir(), 'elpis-browser-shots-'));
 await fs.mkdir(shots, { recursive: true });
 const root = await fs.mkdtemp(path.join(os.tmpdir(), 'elpis-browser-profile-'));
 const home = path.join(root, 'home'), config = path.join(root, 'config'); for (const dir of [home, config]) await fs.mkdir(dir);
+const provider = new Provider();
+if (approvalEval) {
+await provider.start();
+const catalog = require('../../../codex-rs/models-manager/models.json');
+await fs.writeFile(path.join(home, 'models.json'), JSON.stringify({models:catalog.models.filter(model=>model.slug==='gpt-5.5')}));
+await fs.writeFile(path.join(home, 'hooks.json'), '{}');
+await fs.writeFile(path.join(home, 'config.toml'), `model="gpt-5.5"\nmodel_provider="fixture"\nmodel_catalog_json=${JSON.stringify(path.join(home,'models.json'))}\napproval_policy="on-request"\nsandbox_mode="workspace-write"\n[features]\ncode_mode=false\n[model_providers.fixture]\nname="Local browser fixture"\nbase_url=${JSON.stringify(provider.url)}\nwire_api="responses"\nrequires_openai_auth=false\n[projects.${JSON.stringify(root)}]\ntrust_level="trusted"\n`);
+}
 let display;
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
 async function until(check, label, timeout = 10000) {
@@ -48,12 +58,12 @@ const siteUrl = `http://127.0.0.1:${site.address().port}/login`;
 const xvfb = spawn('Xvfb', ['-displayfd', '3', '-screen', '0', '1440x960x24', '-nolisten', 'tcp'], { stdio: ['ignore','ignore','ignore','pipe'] });
 display=await new Promise((resolve,reject)=>{xvfb.once('error',reject);xvfb.once('exit',code=>reject(Error(`Xvfb exited (${code})`)));let value='';xvfb.stdio[3].on('data',chunk=>{value+=chunk;if(value.includes('\n'))resolve(`:${value.trim()}`);});});
 const socket = path.join(root, 'runtime.sock');
-const runtime = spawn(binary, ['app-server', '--listen', `unix://${socket}`], { cwd: root, env: { PATH: process.env.PATH, HOME: home, ELPIS_HOME: home, CODEX_HOME: home, CODEX_AUTH_HOME: home, LANG: 'C.UTF-8' }, stdio: 'ignore' });
+const runtime = spawn(binary, [...(path.basename(binary).includes('app-server') ? [] : ['app-server']), '--listen', `unix://${socket}`], { cwd: root, env: { PATH: process.env.PATH, HOME: home, ELPIS_HOME: home, CODEX_HOME: home, CODEX_AUTH_HOME: home, LANG: 'C.UTF-8' }, stdio: 'ignore' });
 let desktop, engineSocket, failed = false;
 const results = [];
 async function check(name, run) {
   try { await run(); results.push(name); console.log(`PASS ${name}`); }
-  catch (error) { failed = true; console.log(`FAIL ${name}: ${String(error.message).split('\n')[0]}`); try { grab(`failed-${results.length}`); } catch {} }
+  catch (error) { failed = true; console.log(`FAIL ${name}: ${String(error.message).split('\n')[0]}`); if(provider.error)console.log(`Mock failure: ${provider.error.stack}`);await fs.writeFile(path.join(shots,'mock-requests.json'),JSON.stringify(provider.requests,null,2));try { grab(`failed-${results.length}`); } catch {} }
 }
 try {
   await until(() => fs.stat(socket).then(() => true), 'engine socket');
@@ -80,7 +90,7 @@ try {
   engineSocket.send(JSON.stringify({method:'initialized',params:{}}));
   let toolCall,agentTab,browserFixtureThread;
   await check('engine discovers the desktop browser MCP without model calls',async()=>{
-    const created=await app.evaluate(async()=>{const response=await fetch('/api/threads',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:'Browser tool fixture'})});const value=await response.json();if(!response.ok)throw Error(JSON.stringify(value));return value;});
+    const created=await app.evaluate(async()=>{const response=await fetch('/api/threads',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:'Browser tool fixture',permissions:'ask'})});const value=await response.json();if(!response.ok)throw Error(JSON.stringify(value));return value;});
     browserFixtureThread=created.thread;
     const threadId=created.thread.id;
     const listed=await rpc('mcpServerStatus/list',{threadId,serverName:'elpis_browser'});
@@ -88,6 +98,28 @@ try {
     assert(browser,'registered browser server');assert.equal(Object.keys(browser.tools).length,11);
     toolCall=async(name,args={})=>{const value=await rpc('mcpServer/tool/call',{threadId,server:'elpis_browser',tool:name,arguments:args});if(value.isError)throw Error(value.content[0].text);return value.content[0].type==='image'?value:JSON.parse(value.content[0].text);};
   });
+  if (approvalEval) await check('Ask browser call succeeds through the card; session approval avoids repeated prompts',async()=>{
+    provider.actions.push({type:'tool_search_call',call_id:'discover_browser',execution:'client',arguments:{query:'elpis_browser browser_open',limit:1}});
+    const openTool=request=>{
+      const exposed=[...request.tools,...request.input.filter(item=>item.type==='tool_search_output').flatMap(item=>item.tools??[])];
+      const tools=exposed.flatMap(tool=>tool.type==='namespace'?tool.tools.map(child=>({...child,namespace:tool.name})):[tool]);
+      const tool=tools.find(tool=>tool.name==='mcp__elpis_browser__browser_open'||tool.name==='browser_open');assert(tool,'browser tool advertised to the mock model');
+      return {...modelCall(`browser_${provider.requests.length}`,tool.name,{url:siteUrl}),...(tool.namespace?{namespace:tool.namespace}:{})};
+    };
+    for(const marker of ['BROWSER_APPROVED_FIXTURE','BROWSER_SESSION_FIXTURE']){
+      provider.actions.push(openTool,request=>{assert.match(JSON.stringify(request.input),/tabId/,'actual browser result reaches inference');return modelMessage(marker);});
+    }
+    await app.evaluate(id=>window.elpisDesktop.storage.setItem('elpis-last-chat',id),browserFixtureThread.id);
+    await app.reload();await app.getByRole('textbox',{name:'Message Elpis',exact:true}).waitFor();
+    await app.getByRole('textbox',{name:'Message Elpis',exact:true}).fill('Open the local browser fixture.');await app.getByRole('textbox',{name:'Message Elpis',exact:true}).press('Enter');
+    const allow=app.getByRole('button',{name:'Allow for this session',exact:true});await allow.waitFor({timeout:20000});await app.screenshot({path:path.join(shots,'ask-browser-approval.png')});await allow.click();
+    await pageView(siteUrl);await app.locator('aside').getByRole('button',{name:'Browser tool fixture',exact:true}).click();await app.getByText('BROWSER_APPROVED_FIXTURE',{exact:true}).waitFor({timeout:20000});
+    let repeated=0;
+    const observer=await app.evaluateHandle(()=>{const state={count:0};const observer=new MutationObserver(()=>{if(document.querySelector('.approval'))state.count++;});observer.observe(document.body,{childList:true,subtree:true});return {state,observer};});
+    await app.getByRole('textbox',{name:'Message Elpis',exact:true}).fill('Open the fixture again in this chat.');await app.getByRole('textbox',{name:'Message Elpis',exact:true}).press('Enter');
+    await until(()=>provider.requests.length===5,'second browser result');await app.locator('aside').getByRole('button',{name:'Browser tool fixture',exact:true}).click();await app.getByText('BROWSER_SESSION_FIXTURE',{exact:true}).waitFor({timeout:20000});repeated=await observer.evaluate(value=>{value.observer.disconnect();return value.state.count;});await observer.dispose();assert.equal(repeated,0,'session grant must not ask again');assert.equal(provider.requests.length,5);assert.equal(provider.error,undefined);
+  });
+  if (!process.argv.includes('--only-approvals')) {
   await check('agent tools open, snapshot, fill and click the visible fixture; screenshot is an MCP image',async()=>{
     agentTab=(await toolCall('browser_open',{url:siteUrl})).tabId;
     await toolCall('browser_wait',{tabId:agentTab,selector:'[name=email]'});
@@ -250,10 +282,12 @@ try {
     await assert.rejects(() => app.evaluate(() => navigator.clipboard.readText()), /denied|permission|NotAllowed/i);
     grab('elpis-real-copy');
   });
+  }
 } finally {
   engineSocket?.close();
   await desktop?.close().catch(() => {});
   runtime.kill(); xvfb.kill(); site.close();
+  if (approvalEval) provider.close();
 }
 console.log(`${results.length} passed${failed ? ', some failed' : ''}; shots in ${shots}; throwaway profile in ${root}`);
 process.exit(failed ? 1 : 0);
