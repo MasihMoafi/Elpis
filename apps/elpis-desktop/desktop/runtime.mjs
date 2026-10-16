@@ -38,7 +38,11 @@ export async function ensureInstalledRuntime({ env = process.env } = {}) {
   if (!fs.existsSync(helper) || !fs.existsSync(bridge)) {
     throw new Error('The selected Elpis installation is missing its provider bridge. Reinstall Elpis, or connect to an existing runtime with ELPIS_APP_BRIDGE_SOCKET.');
   }
-  await run(env.ELPIS_NODE_BIN || 'node', [helper, bridge], {
+  // Electron leaves some descriptors inheritable, among them the DevTools listener of a
+  // --remote-debugging-port launch. The shared runtime outlives the app, so it would keep that
+  // port bound after the app quits; close every inherited descriptor above stderr first.
+  const closeInherited = 'for f in /proc/$$/fd/*; do n=${f##*/}; [ "$n" -gt 2 ] && eval "exec $n>&-" 2>/dev/null; done; exec "$@"';
+  await run('/bin/bash', ['-c', closeInherited, 'elpis-runtime', env.ELPIS_NODE_BIN || 'node', helper, bridge], {
     env: { ...childEnv(env), ELPIS_ENGINE_BIN: engine, NODE_USE_ENV_PROXY: '1' },
     timeout: 30000, maxBuffer: 65536,
   });
