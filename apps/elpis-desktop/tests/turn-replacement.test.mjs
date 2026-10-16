@@ -1,0 +1,109 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { readFileSync, existsSync } from 'node:fs';
+import { createRequire } from 'node:module';
+import { fileURLToPath } from 'node:url';
+import path from 'node:path';
+import { replacementEligibility } from '../lib/turn-replacement.ts';
+
+const text = (value, extra = {}) => ({ type: 'text', text: value, ...extra });
+const entry = (content, id = 'user', turnId = 'turn') => ({ turnId, item: { id, type: 'userMessage', content } });
+const complete = { historyComplete: true };
+
+test('replacement permits a complete single-user text turn and ignores unrelated turns', () => {
+  const result = replacementEligibility([
+    entry([text('unrelated')], 'other', 'other-turn'),
+    entry([text('First line\n\nمتن فارسی'), text('Last line', { textElements: [] })]),
+    { turnId: 'turn', item: { id: 'reply', type: 'agentMessage', text: 'Done' } },
+  ], 'turn', complete);
+  assert.deepEqual(result, { allowed: true, prompt: 'First line\n\nمتن فارسی\nLast line' });
+});
+
+test('replacement refuses another delivered instruction, attachments, mentions and text elements', () => {
+  const unsafe = [
+    [entry([text('Starting prompt')]), entry([text('Delivered follow-up')], 'follow-up')],
+    [entry([text('See image'), { type: 'localImage', path: '/tmp/book.png' }])],
+    [entry([{ type: 'image', url: 'https://example.invalid/private-image' }])],
+    [entry([{ type: 'audio', url: 'data:audio/wav;base64,private-audio' }])],
+    [entry([text('Use tool'), { type: 'mention', name: 'rag', path: 'app://rag' }])],
+    [entry([text('Use skill'), { type: 'skill', name: 'experiment', path: '/tmp/SKILL.md' }])],
+    [entry([text('Image placeholder', { textElements: [{ byteRange: { start: 0, end: 5 } }] })])],
+    [entry([text('Image placeholder', { text_elements: [{ byte_range: { start: 0, end: 5 } }] })])],
+    [entry([{ type: 'futureInput', text: 'Do not drop me' }])],
+  ];
+  for (const entries of unsafe) {
+    const result = replacementEligibility(entries, 'turn', complete);
+    assert.equal(result.allowed, false, JSON.stringify(entries));
+    assert.ok(result.reason);
+  }
+});
+
+test('replacement refuses incomplete, absent and malformed turn input', () => {
+  for (const [entries, turnId, options] of [
+    [[entry([text('Visible prompt')])], 'turn', { historyComplete: false }],
+    [[entry([text('Other turn')])], 'missing', complete],
+    [[entry([])], 'turn', complete],
+    [[entry([text('   ')])], 'turn', complete],
+    [[entry([{ type: 'text', text: 42 }])], 'turn', complete],
+    [[entry([{ type: 'text', text: 'Hello', textElements: 'unknown shape' }])], 'turn', complete],
+    [[{ turnId: 'turn', item: null }], 'turn', complete],
+  ]) {
+    const result = replacementEligibility(entries, turnId, options);
+    assert.equal(result.allowed, false); assert.ok(result.reason);
+  }
+});
+
+// Load the actual client component in memory: no Next server, browser, files written or remote images.
+const require = createRequire(import.meta.url);
+const { transpileModule, ModuleKind, JsxEmit } = require('typescript');
+const { renderToStaticMarkup } = require('react-dom/server');
+const { createElement } = require('react');
+const root = fileURLToPath(new URL('../', import.meta.url));
+const modules = new Map();
+function loadComponent(file) {
+  if (modules.has(file)) return modules.get(file).exports;
+  const module = { exports: {} }; modules.set(file, module);
+  const local = createRequire(file);
+  const load = id => {
+    if (!id.startsWith('@/')) return local(id);
+    const target = path.join(root, id.slice(2));
+    const source = ['.tsx', '.ts'].map(ext => target + ext).find(existsSync);
+    if (!source) throw Error(`Missing component source: ${id}`);
+    return loadComponent(source);
+  };
+  const { outputText } = transpileModule(readFileSync(file, 'utf8'), { compilerOptions: { module: ModuleKind.CommonJS, jsx: JsxEmit.ReactJSX } });
+  new Function('require', 'module', 'exports', outputText)(load, module, module.exports);
+  return module.exports;
+}
+const { ChatMessage } = loadComponent(path.join(root, 'components/chat-message.tsx'));
+
+test('actual user-message renderer shows attachment identity without requesting remote content', () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = () => { throw Error('Rendering must not fetch attachments'); };
+  try {
+    const html = renderToStaticMarkup(createElement(ChatMessage, { item: {
+      id: 'attachment-user', type: 'userMessage', content: [
+        { type: 'localImage', path: '/tmp/book.png' },
+        { type: 'localAudio', path: '/tmp/voice.wav' },
+        { type: 'image', fileId: 'file-book-4242' },
+        { type: 'image', url: 'https://example.invalid/private-remote-4242.png' },
+        { type: 'audio', url: 'data:audio/wav;base64,private-audio-4242' },
+        { type: 'mention', name: 'RAG tool', path: 'app://rag' },
+        { type: 'skill', name: 'Experiment', path: '/tmp/experiment/SKILL.md' },
+      ],
+    } }));
+    for (const visible of ['Image', '/tmp/book.png', 'Audio', '/tmp/voice.wav', 'Mention', 'RAG tool', 'app://rag', 'Skill', '/tmp/experiment/SKILL.md']) assert(html.includes(visible), visible);
+    assert.match(html, /href="https:\/\/example.invalid\/private-remote-4242.png"/);
+    assert.doesNotMatch(html, /<img|<audio|private-audio-4242|file-book-4242/);
+  } finally { globalThis.fetch = originalFetch; }
+});
+
+test('actual user-message renderer explains blocked edits and keeps ordinary text editable', () => {
+  const item = { id: 'text-user', type: 'userMessage', content: [text('Original prompt')] };
+  const editable = renderToStaticMarkup(createElement(ChatMessage, { item, onEdit: async () => {} }));
+  assert.match(editable, /aria-label="Edit message"/); assert.match(editable, /Original prompt/);
+  const blocked = renderToStaticMarkup(createElement(ChatMessage, { item, onEdit: async () => {}, editBlockedReason: 'Other instructions in this turn must be preserved.' }));
+  assert.doesNotMatch(blocked, /aria-label="Edit message"/);
+  assert.match(blocked, /Other instructions in this turn must be preserved\./);
+  assert.doesNotMatch(blocked, /<p[^>]*>Other instructions in this turn must be preserved\.<\/p>/, 'blocked-edit explanations must not repeat under every message');
+});

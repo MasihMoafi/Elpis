@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Elpis
+Comment=Elpis conversations and agents
+Exec="@APP_DIR@/desktop/launch.sh"
+Icon=@APP_DIR@/desktop/elpis-icon.png
+Terminal=false
+Categories=Development;
+StartupNotify=true
+StartupWMClass=elpis-desktop

@@ -1,0 +1,13 @@
+// Fail-capable race reproduction: turn completion arrives before turn/start reply.
+const {test}=require('node:test');const assert=require('node:assert/strict');const fs=require('node:fs/promises');const path=require('node:path');const http=require('node:http');
+const {chromium}=require(process.env.ELPIS_PLAYWRIGHT_PACKAGE||'playwright');
+test('a completed turn cannot become active again when its delayed start response arrives',async()=>{
+ const clients=new Set();let sent=false;const thread={id:'race',name:'Race check',desktopAccess:{writable:true,reason:null}};
+ const emit=(method,params)=>{for(const c of clients)c.write(`event: message\ndata: ${JSON.stringify({method,params})}\n\n`);};
+ const server=http.createServer(async(req,res)=>{const route=new URL(req.url,'http://local').pathname;for await(const chunk of req){}const json=data=>{res.setHeader('content-type','application/json');res.end(JSON.stringify(data));};
+ if(route==='/api/events'){res.writeHead(200,{'content-type':'text/event-stream'});res.write('event: connection\ndata: {"connected":true}\n\n');clients.add(res);return;}
+ if(route==='/api/health')return json({connected:true});if(route==='/api/models')return json({data:[]});if(route==='/api/threads'&&req.method==='GET')return json({data:[],nextCursor:null});if(route==='/api/threads'&&req.method==='POST')return json({thread});
+ if(route==='/api/threads/race/turns'){emit('turn/started',{threadId:'race',turn:{id:'done'}});emit('turn/completed',{threadId:'race',turn:{id:'done',status:'completed'}});setTimeout(()=>{sent=true;json({turn:{id:'done'}});},100);return;}
+ try{const file=path.join(__dirname,'../out',route==='/'?'index.html':route);res.setHeader('content-type',file.endsWith('.js')?'text/javascript':file.endsWith('.css')?'text/css':'text/html');res.end(await fs.readFile(file));}catch{res.statusCode=404;res.end();}});
+ await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));const browser=await chromium.launch({executablePath:process.env.ELPIS_CHROMIUM||undefined,headless:true});try{const page=await browser.newPage();page.setDefaultTimeout(5000);await page.goto(`http://127.0.0.1:${server.address().port}`);await page.getByLabel('Message Elpis').fill('Finish immediately');await page.getByRole('button',{name:'Send message',exact:true}).click();await page.waitForFunction(()=>document.querySelector('textarea').value==='');assert.equal(sent,true);assert.equal(await page.getByRole('button',{name:'Stop generation'}).count(),0,'completed turn must not display stop control');await page.getByRole('button',{name:'Send message',exact:true}).waitFor();}finally{await browser.close();for(const c of clients)c.end();await new Promise(resolve=>server.close(resolve));}
+});
