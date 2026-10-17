@@ -56,9 +56,16 @@ button:disabled { cursor:not-allowed; }
 .workspace { display:flex; flex-direction:column; min-width:0; min-height:0; position:relative; }
 .workspace-body { display:flex; flex:1; min-width:0; min-height:0; }
 .workspace-content { display:flex; flex-direction:column; flex:1; min-width:0; min-height:0; container:workspace / inline-size; }
-.browser-panel { position:relative; display:flex; flex-direction:column; flex:0 0 auto; width:50%; min-width:320px; max-width:70%; min-height:0; border-inline-start:1px solid var(--border); background:var(--background); }
-.browser-resize { position:absolute; inset:0 auto 0 -4px; width:7px; cursor:col-resize; z-index:3; touch-action:none; }
-.browser-resize:hover,.browser-resize:focus-visible { background:color-mix(in oklch,var(--primary),transparent 65%); }
+/* The side panel: terminals and browser pages as tabs (components/side-panel.tsx). */
+.side-panel { position:relative; display:flex; flex-direction:column; flex:0 0 auto; width:50%; min-width:320px; max-width:70%; min-height:0; border-inline-start:1px solid var(--border); background:var(--background); }
+.side-resize { position:absolute; inset:0 auto 0 -4px; width:7px; cursor:col-resize; z-index:3; touch-action:none; }
+.side-resize:hover,.side-resize:focus-visible { background:color-mix(in oklch,var(--primary),transparent 65%); outline:none; }
+.side-header { display:flex; align-items:center; gap:4px; flex-shrink:0; min-height:45px; padding:0 8px; border-bottom:1px solid var(--hairline); }
+.side-close { flex-shrink:0; color:var(--muted-foreground); }
+.side-body { display:flex; flex-direction:column; flex:1; min-height:0; min-width:0; }
+.side-empty { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:12px; color:var(--muted-foreground); font-size:13px; }
+.side-empty p { margin:0; } .side-empty div { display:flex; gap:8px; }
+.browser-panel { display:flex; flex-direction:column; flex:1; min-width:0; min-height:0; }
 .browser-tabs { display:flex; align-items:center; gap:2px; padding:5px 5px 0; min-height:37px; background:var(--sidebar); border-bottom:1px solid var(--hairline); }
 .browser-tabs [role="tablist"] { display:flex; flex:1; min-width:0; overflow-x:auto; gap:3px; }
 .browser-tab { display:flex; align-items:center; gap:2px; flex:1 0 95px; max-width:180px; min-width:0; border-radius:7px 7px 0 0; color:var(--muted-foreground); padding:3px 3px 3px 7px; }
@@ -72,7 +79,7 @@ button:disabled { cursor:not-allowed; }
 .browser-empty { padding:16px; margin:0; font-size:13px; color:var(--muted-foreground); }
 .browser-empty span { display:block; margin-top:4px; font-size:11px; }
 .browser-error { padding:8px 12px; font-size:12px; color:var(--destructive); overflow-wrap:anywhere; }
-@media(max-width:1000px) { .browser-open > .workspace-content { display:none; } .browser-panel { width:100%!important; max-width:none; min-width:0; } .browser-resize { display:none; } }
+@media(max-width:1000px) { .panel-open > .workspace-content { display:none; } .side-panel { width:100%!important; max-width:none; min-width:0; } .side-resize { display:none; } }
 .workspace-header { padding:0 20px; min-height:48px; border-bottom:1px solid var(--hairline); display:flex; align-items:center; gap:12px; flex-shrink:0; background:var(--background); position:relative; z-index:5; }
 .header-titles { display:flex; align-items:baseline; flex-wrap:wrap; column-gap:12px; padding:8px 0; }
 .workspace-header h1 { font-size:13.5px; line-height:1.4; font-weight:600; letter-spacing:-.01em; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:100%; }
@@ -528,7 +535,7 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .dark [data-category="toolCalls"] { --category:#ffa13a; } .dark [data-category="toolResults"] { --category:#d9db75; } .dark [data-category="systemInstructions"] { --category:#f0445d; }
 .dark [data-category="developerMessages"] { --category:#ff99c2; } .dark [data-category="toolDefinitions"] { --category:#a0a0a0; } .dark [data-category="unrecognizedItems"] { --category:#1dd1e2; }
 .message.agent p, .message.agent li { white-space:pre-line; }
-.no-browser > .browser-panel { display:none; }
+.no-browser > .side-panel { display:none; }
 .composer-hint:empty { display:none; }
 /* Elpis's features under the message box (components/elpis-features.tsx): a chip each, its dot olive when on. */
 .elpis-features { display:flex; align-items:center; gap:2px; margin-left:auto; }
@@ -595,9 +602,10 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .shortcut-row { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:5px 0; border-bottom:1px solid var(--hairline); font-size:13px; }
 .shortcut-keys { display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end; }
 .header-title-row { display:flex; align-items:center; gap:4px; min-width:0; } .header-title-row .thread-actions { opacity:.7; flex-shrink:0; }
-/* Task tabs and browser, as in the ChatGPT app */
+/* Tabs, as in the ChatGPT app and Obsidian: the top strip (chats) and the side panel's (terminals and pages) share one style. */
+.tab-strip { display:flex; align-items:center; gap:2px; min-width:0; flex:1 1 auto; }
 .task-tabs { display:flex; align-items:center; gap:2px; min-width:0; overflow-x:auto; scrollbar-width:none; padding:6px 0; }
-.task-tab { display:flex; align-items:center; gap:2px; min-width:0; max-width:240px; flex:0 1 auto; border:1px solid transparent; border-radius:4px; color:var(--muted-foreground); padding:0 2px 0 0; position:relative; }
+.task-tab { display:flex; align-items:center; gap:2px; min-width:128px; max-width:240px; flex:0 1 auto; border:1px solid transparent; border-radius:4px; color:var(--muted-foreground); padding:0 2px 0 0; position:relative; }
 .task-tab > button[role="tab"] { display:flex; align-items:center; gap:7px; min-width:0; border:0; background:none; color:inherit; font:inherit; font-size:13px; padding:5px 6px 5px 9px; }
 .task-tab > button[role="tab"] span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .task-tab > button[role="tab"] svg { flex-shrink:0; }
@@ -608,8 +616,6 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .task-tab.chat-tab.active > button svg { color:var(--primary); }
 .task-tab + .task-tab:not(.active):not(:hover)::before { content:""; position:absolute; left:-2px; top:9px; bottom:9px; width:1px; background:var(--hairline); }
 .task-tab-new { flex-shrink:0; color:var(--muted-foreground); }
-.workspace-body.browser-full > .workspace-content { display:none; }
-.browser-panel.full { width:100%; max-width:none; border-inline-start:0; }
 .browser-toolbar { gap:4px; background:var(--sidebar); }
 .browser-toolbar input { border-radius:4px; border-color:var(--hairline); background:var(--recessed); }
 .browser-toolbar input:focus-visible { border-color:color-mix(in oklch, var(--primary) 50%, var(--border)); }

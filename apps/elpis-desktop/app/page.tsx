@@ -1,8 +1,8 @@
 "use client";
 
 import { cloneElement, useCallback, useEffect, useRef, useState } from "react";
-import { AgentsIcon, ArchiveIcon, FolderIcon, NewChatIcon, PinIcon, PlusIcon, SendIcon, SettingsIcon, SplitIcon } from "@/components/elpis-icons";
-import { Archive, ArrowLeft, ChevronRight, PanelLeft, PanelRight, Pin, Moon, RefreshCw, Search, Square, Sun, X } from "lucide-react";
+import { AgentsIcon, ArchiveIcon, ChatIcon, FolderIcon, NewChatIcon, PinIcon, PlusIcon, SendIcon, SettingsIcon } from "@/components/elpis-icons";
+import { Archive, ArrowLeft, ChevronRight, PanelLeft, PanelRight, PanelRightClose, PanelRightOpen, Pin, Moon, RefreshCw, Search, Square, Sun, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { OptionSelect } from "@/components/ui/option-select";
 import { Input } from "@/components/ui/input";
@@ -43,8 +43,10 @@ import { ModelPicker } from "@/components/model-picker";
 import { appStorage, readProjects, saveProjects, type Project } from "@/lib/projects";
 import { agentState, mergeListedThreads } from "@/lib/agents";
 import { insertTranscript } from "@/lib/dictation";
-import { BrowserPanel, TaskTabs, useBrowser } from "@/components/browser-panel";
-import { TerminalPanel } from "@/components/terminal-panel";
+import { useBrowser } from "@/components/browser-panel";
+import { SidePanel, useSidePanel } from "@/components/side-panel";
+import { Tab, TabStrip } from "@/components/tab-strip";
+import { activate, activeTab, addTab, closeTab, cycle, followChat, forgetChats, makeTab, readTabs, renameTabs, startTabs, tabFor, writeTabs, type ChatTab, type ChatTabs } from "@/lib/chat-tabs";
 import { readDraft, writeDraft } from "@/lib/drafts";
 import { ATTACHMENT_ACCEPT, attachmentFromFile, readAttachmentDraft, validateAttachments, withoutSubmittedAttachments, writeAttachmentDraft, type Attachment } from "@/lib/attachments";
 import { scanDeletionThreads } from "@/lib/thread-deletion";
@@ -69,6 +71,12 @@ export default function Home() {
   const [threads, setThreads] = useState<Thread[]>([]);
   const [selected, setSelected] = useState<Thread | null>(null);
   const selectedRef = useRef<Thread | null>(null);
+  // Chat tabs (lib/chat-tabs.ts): the shown tab follows the chat on screen, so every way of opening a chat lands in it.
+  const [tabs, setTabs] = useState<ChatTabs>(startTabs);
+  const tabsRef = useRef(tabs);
+  const [tabsRestored, setTabsRestored] = useState(false);
+  const restoredTabs = useRef(false);
+  const updateTabs = useCallback((next: ChatTabs) => { tabsRef.current = next; setTabs(next); }, []);
   const [entries, setEntries] = useState<Entry[]>([]);
   const [models, setModels] = useState<Model[]>([]);
   const [catalogError, setCatalogError] = useState("");
@@ -245,20 +253,16 @@ export default function Home() {
   const [settingsSection, setSettingsSection] = useState<SettingsTab>("general");
   const [desktop, setDesktop] = useState(false);
   const browser = useBrowser();
-  const [browserView, setBrowserView] = useState<"chat" | "browser">("chat");
-  const [split, setSplit] = useState(false);
-  const browserOpen = !!browser.state?.visible && view !== "settings";
-  const browserFull = browserOpen && browserView === "browser" && !split;
-  useEffect(() => { if (browser.state?.visible) setBrowserView("browser"); }, [browser.state?.visible]);
-  // Opening a chat brings its tab forward, as in the ChatGPT app.
-  useEffect(() => { if (selected?.id) setBrowserView(current => { if (current === "browser" && !split) void browser.command("hide"); return "chat"; }); }, [selected?.id]); // eslint-disable-line react-hooks/exhaustive-deps
-  /** The chat tab: in full view the page steps aside; in split view both stay. */
-  const showChat = () => { setBrowserView("chat"); if (!split) void browser.command("hide"); };
+  const side = useSidePanel(browser);
   useEffect(() => { setDesktop(!!window.elpisDesktop?.browser); }, []);
-  // The integrated terminal (Ctrl+`, components/terminal-panel.tsx): one shell per chat, in the chat's folder.
-  const [hasTerminal, setHasTerminal] = useState(false), [terminalOpen, setTerminalOpen] = useState(false);
-  const [tuiLaunch, setTuiLaunch] = useState<{ threadId: string; token: number } | null>(null);
+  // The side panel (components/side-panel.tsx): shells and browser pages as tabs, beside the chat.
+  const [hasTerminal, setHasTerminal] = useState(false);
+  const [tuiLaunch, setTuiLaunch] = useState<{ key: string; threadId: string; token: number } | null>(null);
   useEffect(() => { setHasTerminal(!!window.elpisDesktop?.terminal); }, []);
+  const panelShown = desktop && side.open && view !== "settings";
+  /** A window too narrow for chat and panel side by side shows the panel alone; the chat comes back when it is needed. */
+  const showChat = () => { if (matchMedia("(max-width: 1000px)").matches) side.closePanel(); };
+  useEffect(() => { if (selected?.id) showChat(); }, [selected?.id]); // eslint-disable-line react-hooks/exhaustive-deps
   const [pendingInputOpen, setPendingInputOpen] = useState(false);
   const pendingInputButton = useRef<HTMLButtonElement>(null);
   const [sidebar, setSidebar] = useState(false);
@@ -303,11 +307,12 @@ export default function Home() {
       for (const id of ids) for (const key of [id, `recovery-${id}`]) { delete drafts.current[key]; writeDraft(key, ""); delete attachmentDrafts.current[key]; writeAttachmentDraft(key, []); }
       setMessageEdits(previous => Object.fromEntries(Object.entries(previous).filter(([key]) => !ids.has((JSON.parse(key) as [string, string, string])[0]))));
     }
+    updateTabs(forgetChats(tabsRef.current, ids));
     setThreads(prev => prev.filter(thread => !ids.has(thread.id)));
     setMarked(prev => prev.some(id => ids.has(id)) ? prev.filter(id => !ids.has(id)) : prev);
     setApprovals(prev => prev.filter(approval => !ids.has(approval.params.threadId ?? "")));
     if (selectedRef.current && ids.has(selectedRef.current.id)) { request.current++; select(null); setText(savedDraft(newDraftKey.current)); restoreAttachments(newDraftKey.current); setEntries([]); setItemCursor(null); }
-  }, [select, setText, savedDraft, restoreAttachments]);
+  }, [select, setText, savedDraft, restoreAttachments, updateTabs]);
   const refreshThreads = useCallback(async () => {
     const routesAtRequest = { ...settingsOf.current };
     const result = await api<{ data: Thread[]; nextCursor: string | null }>("/threads?limit=100");
@@ -343,6 +348,9 @@ export default function Home() {
   }
 
   const loadThread = useCallback(async (thread: Thread) => {
+    // A chat that is already open in another tab brings that tab forward instead of opening twice.
+    const owner = tabFor(tabsRef.current, thread.id);
+    if (owner && owner.id !== tabsRef.current.activeId) updateTabs(activate(tabsRef.current, owner.id));
     saveDraft(selectedRef.current?.id || newDraftKey.current, textRef.current); setText(savedDraft(thread.id));
     const id = ++request.current; stickToBottom.current = true; restoreScroll.current = null;
     liveVersions.current.clear(); const historyRevision = liveRevision.current;
@@ -361,7 +369,7 @@ export default function Home() {
       if (live.activeTurnId && !completedTurns.current.has(live.activeTurnId)) setActiveTurns(prev => ({ ...prev, [thread.id]: live.activeTurnId! }));
       setLiveError(prev => without(prev, thread.id));
     } catch (e) { if (request.current === id) setLiveError(prev => ({ ...prev, [thread.id]: e instanceof Error ? e.message : String(e) })); }
-  }, [select, setText, upsertThread, saveDraft, savedDraft, liveKeysAfter, restoreAttachments]);
+  }, [select, setText, upsertThread, saveDraft, savedDraft, liveKeysAfter, restoreAttachments, updateTabs]);
 
   useEffect(() => { setText(savedDraft(newDraftKey.current)); }, [savedDraft]);
 
@@ -370,6 +378,15 @@ export default function Home() {
     let saved: string | null = null;
     try { saved = appStorage().getItem("elpis-theme"); const stored = readProjects(); newDraftKey.current = stored.selectedId ? `new-${stored.selectedId}` : "new"; setText(savedDraft(newDraftKey.current)); restoreAttachments(newDraftKey.current); setProjects(stored.projects); setProjectId(stored.selectedId); setCwd(stored.projects.find(item => item.id === stored.selectedId)?.cwd ?? ""); }
     catch (e) { setError(e instanceof Error ? e.message : "Could not restore workspace preferences."); }
+    try {
+      const store = window.elpisDesktop?.storage, restored = store && readTabs(store);
+      if (restored) {
+        updateTabs(restored); restoredTabs.current = true;
+        const shown = activeTab(restored);
+        if (!shown.threadId && shown.draftKey) { newDraftKey.current = shown.draftKey; setText(savedDraft(shown.draftKey)); restoreAttachments(shown.draftKey); }
+      }
+    } catch { /* The tabs start afresh. */ }
+    setTabsRestored(true);
     if (saved === "system" || saved === "light" || saved === "dark") setThemeChoice(saved);
     const media = matchMedia("(prefers-color-scheme: dark)"); setSystemDark(media.matches);
     const follow = (event: MediaQueryListEvent) => setSystemDark(event.matches);
@@ -421,8 +438,9 @@ export default function Home() {
         await refreshThreads();
         const settings = await api<ProviderSettings>("/settings").catch(() => null); if (disposed) return;
         setProviderSettings(settings?.main && Array.isArray(settings.providers) ? settings : null); setReady(true);
-        const last = window.elpisDesktop?.storage?.getItem("elpis-last-chat");
-        if (last && !selectedRef.current && request.current === 0) await loadThread({ id: last } as Thread);
+        // The chat of the shown tab comes back; without saved tabs, the last chat does.
+        const last = restoredTabs.current ? activeTab(tabsRef.current).threadId : window.elpisDesktop?.storage?.getItem("elpis-last-chat");
+        if (last && !selectedRef.current && request.current === 0) await loadThread({ id: last, ...(restoredTabs.current && activeTab(tabsRef.current).title ? { name: activeTab(tabsRef.current).title } : {}) } as Thread);
         events = new EventSource("/api/events");
         events.addEventListener("connection", event => {
           const available = Boolean(JSON.parse(event.data).connected);
@@ -570,6 +588,10 @@ export default function Home() {
   const recoveryAttachments = selected ? attachmentDrafts.current[`recovery-${selected.id}`] ?? [] : [];
 
   const find = (id?: string | null) => id ? threads.find(thread => thread.id === id) ?? related[id] : undefined;
+  const selectedTitle = selected ? title(selected) : "";
+  useEffect(() => { if (ready) updateTabs(followChat(tabsRef.current, selected ? { id: selected.id, title: selectedTitle } : null)); }, [ready, selected?.id, selectedTitle]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { updateTabs(renameTabs(tabsRef.current, id => { const thread = find(id); return thread ? title(thread) : undefined; })); }, [threads, related]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { const store = window.elpisDesktop?.storage; if (tabsRestored && store && !writeTabs(tabs, store)) setError("Could not save the open chat tabs on this device."); }, [tabs, tabsRestored]);
   // Elpis can replace turns only in chats it lets this app write directly, and not while one is running.
   const replaceable = !!selected && !continues && !activeTurn && selected.status?.type !== "active" && connected && !busy;
   const turnEntries = new Map<string, Entry[]>();
@@ -594,7 +616,33 @@ export default function Home() {
   const folder = (path?: string | null) => path ? path.split("/").filter(Boolean).at(-1) || path : "";
 
   function openNewChat(draftKey = newDraftKey.current) { saveDraft(selectedRef.current?.id || newDraftKey.current, textRef.current); newDraftKey.current = draftKey; request.current++; stickToBottom.current = true; restoreScroll.current = null; select(null); setEntries([]); setItemCursor(null); setText(savedDraft(draftKey)); setError(""); restoreAttachments(draftKey); setLoading(false); setView("chat"); setSidebar(false); requestAnimationFrame(() => composerRef.current?.focus()); }
-  const newChat = () => openNewChat();
+  const newChat = () => openNewChat(tabDraftKey(activeTab(tabsRef.current)));
+  /** An empty tab keeps its unsent text under its own key; the first one uses the project's new-chat draft. */
+  const tabDraftKey = (tab: ChatTab) => tab.draftKey ?? (projectId ? `new-${projectId}` : "new");
+  /** Puts the tab's chat (or empty chat) on screen. */
+  function openTab(tab: ChatTab) {
+    if (tab.threadId) void loadThread(find(tab.threadId) ?? { id: tab.threadId, ...(tab.title ? { name: tab.title } : {}) } as Thread);
+    else openNewChat(tabDraftKey(tab));
+  }
+  function showTab(tab: ChatTab) {
+    if (tab.id === tabsRef.current.activeId) { showChat(); return; }
+    updateTabs(activate(tabsRef.current, tab.id)); openTab(tab);
+  }
+  /** The "+" and Ctrl+T: a new empty chat beside the others (a sibling chat, never an agent or a fork). */
+  function newChatTab() { const tab = makeTab(); updateTabs(addTab(tabsRef.current, tab)); openNewChat(tabDraftKey(tab)); }
+  function closeChatTab(id: string) {
+    const before = tabsRef.current, next = closeTab(before, id);
+    if (next === before) return;
+    updateTabs(next);
+    if (id === before.activeId) openTab(activeTab(next));
+  }
+  function cycleTabs(delta: number) { const next = cycle(tabsRef.current, delta); if (next !== tabsRef.current) { updateTabs(next); openTab(activeTab(next)); } }
+  /** Middle-click on a chat in the sidebar: its own tab (or the one it already has). */
+  function openInNewTab(thread: Thread) {
+    const owner = tabFor(tabsRef.current, thread.id);
+    if (owner) { showTab(owner); return; }
+    updateTabs(addTab(tabsRef.current, makeTab(thread.id, title(thread)))); void loadThread(thread);
+  }
   async function selectProject(next: Project | null) {
     setProjectChanging(true);
     try {
@@ -802,7 +850,10 @@ export default function Home() {
   async function older() { if (!selected || !itemCursor) return; setLoading(true); const id = selected.id; try { const result = await api<{ data: Entry[]; nextCursor: string | null }>(`/threads/${encodeURIComponent(id)}?limit=100&cursor=${encodeURIComponent(itemCursor)}`); if (selectedRef.current?.id === id) { stickToBottom.current = false; if (scroll.current) restoreScroll.current = { height: scroll.current.scrollHeight, top: scroll.current.scrollTop }; setEntries(prev => [...result.data.reverse(), ...prev]); setItemCursor(result.nextCursor); } } catch (e) { setError(String(e)); } finally { setLoading(false); } }
   const openById = (id: string) => loadThread(threads.find(thread => thread.id === id) || related[id] || { id });
   /** "Open in Elpis TUI": the chat opens here and its terminal resumes it in the TUI (`elpis resume <id>`). */
-  const openInTui = (thread: Thread) => { if (selectedRef.current?.id !== thread.id || view !== "chat") void loadThread(thread); setTerminalOpen(true); setTuiLaunch({ threadId: thread.id, token: Date.now() }); };
+  const openInTui = (thread: Thread) => {
+    if (selectedRef.current?.id !== thread.id || view !== "chat") void loadThread(thread);
+    setTuiLaunch({ key: side.openTerminal(thread.cwd || cwd, thread.id), threadId: thread.id, token: Date.now() });
+  };
   // The TUI's /app (`elpis-app --open-thread <id>`): the running window opens that chat.
   const openFromTui = useRef(openById); openFromTui.current = openById;
   useEffect(() => window.elpisDesktop?.onOpenThread?.(id => void openFromTui.current(id)), []);
@@ -893,7 +944,7 @@ export default function Home() {
     { name: "compact", description: "compact now, or add words to guide the summary", available: writable && idle, args: true, run: text => { if (selected) compactChat(selected, text); } },
     { name: "prune", description: "turn Smart Prune on for new chats", available: idle, run: () => void turnSmartPruneOn() },
     { name: "plan", description: planMode ? "turn Plan mode off" : "turn Plan mode on", available: !busy, run: () => setPlan(!planMode) },
-    { name: "agent", description: "switch the active agent thread", available: team.length > 0 && !browserOpen, run: () => { setAgentsPanel(true); requestAnimationFrame(() => document.querySelector<HTMLElement>(".team-panel .team-row.active, .team-panel .team-row")?.focus()); } },
+    { name: "agent", description: "switch the active agent thread", available: team.length > 0 && !panelShown, run: () => { setAgentsPanel(true); requestAnimationFrame(() => document.querySelector<HTMLElement>(".team-panel .team-row.active, .team-panel .team-row")?.focus()); } },
     { name: "agents", description: "open the task list to resume, rename or delete chats", run: () => show("agents") },
     { name: "copy", description: "copy the last response", available: !!lastReply(entries), run: () => { const reply = lastReply(entries); if (reply) navigator.clipboard.writeText(reply).then(() => setSlashNotice("Copied the last reply."), () => setError("Could not copy: the clipboard is unavailable.")); } },
     { name: "export", description: "export the conversation as markdown", available: !!selected && entries.length > 0 && idle, run: () => { if (selected) void exportChat(selected); } },
@@ -931,8 +982,10 @@ export default function Home() {
     else if (id === "archive" && selected) void archiveThread(selected);
     else if (id === "pin" && selected) togglePin(selected);
     else if (id === "copy-folder" && (selected?.cwd || cwd)) void navigator.clipboard.writeText(selected?.cwd || cwd);
-    else if (id === "new-tab" && desktop) { setBrowserView("browser"); void browser.command("new"); }
-    else if (id === "terminal" && hasTerminal) { if (view !== "chat") { show("chat"); setTerminalOpen(true); } else { setTerminalOpen(!terminalOpen); if (terminalOpen) focusComposer(); } }
+    else if (id === "new-tab" && desktop) { newChatTab(); }
+    else if (id === "close-tab" && desktop && view === "chat") closeChatTab(tabs.activeId);
+    else if ((id === "next-tab" || id === "previous-tab") && desktop && view === "chat") cycleTabs(id === "next-tab" ? 1 : -1);
+    else if (id === "terminal" && hasTerminal) { const away = view !== "chat"; if (away) show("chat"); if (!side.toggleTerminal(selected?.cwd || cwd, !away)) focusComposer(); }
   };
   function togglePin(thread: Thread) {
     const next = pins.includes(thread.id) ? pins.filter(id => id !== thread.id) : [thread.id, ...pins];
@@ -982,7 +1035,7 @@ export default function Home() {
       agents={!depth && !isAgent(thread) ? { shown: !!expanded[thread.id], onToggle: () => expanded[thread.id] ? setExpanded(prev => ({ ...prev, [thread.id]: false })) : void loadChildren(thread.id) } : undefined}
       area={<div className={`thread-row${depth ? " child" : ""}${selected?.id === thread.id && view === "chat" ? " active" : ""}${marked.includes(thread.id) ? " selected" : ""}`} data-thread-id={thread.id} style={depth ? { paddingLeft: `${Math.min(depth, 5) * 14}px` } : undefined} />}>
       {menu => <>
-      <button className="thread-link" onMouseDown={event => { if (event.shiftKey) event.preventDefault(); }} onClick={event => clickRow(thread, event)} title={name}>
+      <button className="thread-link" onMouseDown={event => { if (event.shiftKey || event.button === 1) event.preventDefault(); }} onAuxClick={event => { if (event.button === 1 && desktop) { event.preventDefault(); openInNewTab(thread); } }} onClick={event => clickRow(thread, event)} title={name}>
         <span className="thread-title">{name}</span>
         {thread.forkedFromId && <span className="thread-nickname">Continued agent chat</span>}
       </button>
@@ -992,10 +1045,19 @@ export default function Home() {
       </>}
     </ThreadActions>;
   }
-  /** The open chat's "Chat actions" menu around its tab or title: the "…" button and right-click on `area` share one list. */
+  /** A chat's menu around its tab or title: the "…" button and right-click on `area` share one list. The shown chat's is "Chat actions". */
+  const threadMenu = (thread: Thread, area: React.ReactElement, content: (menu: React.ReactNode) => React.ReactNode, shown: boolean) =>
+    <ThreadActions label={shown ? "Chat actions" : undefined} thread={thread} onDelete={deleteThread} onRename={renameThread} onArchive={archiveThread} pinned={pins.includes(thread.id)} onPin={togglePin} onOpenInTui={hasTerminal ? openInTui : undefined} renameRequested={shown && renameRequest} onRenameRequestHandled={() => setRenameRequest(false)} area={area}>{content}</ThreadActions>;
   const chatActions = (area: React.ReactElement, content: React.ReactNode) => view === "chat" && selected
-    ? <ThreadActions label="Chat actions" thread={selected} onDelete={deleteThread} onRename={renameThread} onArchive={archiveThread} pinned={pins.includes(selected.id)} onPin={togglePin} onOpenInTui={hasTerminal ? openInTui : undefined} renameRequested={renameRequest} onRenameRequestHandled={() => setRenameRequest(false)} area={area}>{menu => <>{content}{menu}</>}</ThreadActions>
+    ? threadMenu(selected, area, menu => <>{content}{menu}</>, true)
     : cloneElement(area, undefined, content);
+  /** One chat tab: its title and close button, the "…" on the shown one, and the chat's menu on right-click. */
+  function chatTab(tab: ChatTab) {
+    const shown = tab.id === tabs.activeId, thread = tab.threadId ? (shown && selected?.id === tab.threadId ? selected : find(tab.threadId)) : undefined;
+    const label = thread ? title(thread) : tab.threadId ? tab.title || "Chat" : "New chat";
+    return <Tab key={tab.id} chat icon={<ChatIcon size={14} />} label={label} active={shown} closeLabel={`Close ${label} tab`} trailing={shown}
+      wrap={thread ? (area, content) => threadMenu(thread, area, content, shown) : undefined} onSelect={() => showTab(tab)} onClose={() => closeChatTab(tab.id)} />;
+  }
   function descendants(parentId: string, depth: number, seen = new Set<string>()): React.ReactNode {
     if (seen.has(parentId)) return null; const next = new Set(seen).add(parentId);
     return filtered.filter(c => c.parentThreadId === parentId).map(child => <div key={child.id}>{threadRow(child, depth)}{descendants(child.id, depth + 1, next)}</div>);
@@ -1047,8 +1109,9 @@ export default function Home() {
         <img className="mobile-brand" src={brandMark} alt="" aria-hidden="true" width={49} height={24} />
         <div className="header-titles min-w-0 flex-1">
           {view === "chat" && desktop
-            ? <TaskTabs browser={browser} chatTitle={heading} chatActive={!browserFull && browserView === "chat" || !browserOpen} onChat={showChat} onPage={() => setBrowserView("browser")}
-                chatTab={tab => chatActions(tab.area, tab.content)} />
+            ? <TabStrip label="Chat tabs" activeKey={tabs.activeId} add={<Button type="button" variant="ghost" size="icon-sm" className="task-tab-new" aria-label="New chat tab" title="New chat tab (Ctrl+T)" onClick={newChatTab}><PlusIcon size={15} /></Button>}>
+                {tabs.tabs.map(chatTab)}
+              </TabStrip>
             : chatActions(<div className="header-title-row" />, <h1>{heading}</h1>)}
           {view === "agents" && <p className="page-description">Your conversations and agents. Open a chat or follow a running task.</p>}
           {view === "chat" && selected && meta && <p className="thread-meta">{meta}</p>}
@@ -1057,8 +1120,8 @@ export default function Home() {
             {selected.forkedFromId && <Button variant="link" size="xs" aria-label={`Open original: ${source ? title(source) : "original chat"}`} onClick={() => openById(selected.forkedFromId!)}>Continued from {source ? title(source) : "the original chat"}</Button>}
           </p>}
         </div>
-        {view === "chat" && desktop && (browser.state?.tabs.length ?? 0) > 0 && <Button className="header-action" variant="ghost" size="icon-sm" aria-pressed={split} aria-label={split ? "Exit split view" : "Enter split view"} title={split ? "Exit split view" : "Split view: chat and page side by side"} onClick={() => { setSplit(value => !value); if (!split) { setBrowserView("browser"); if (!browser.state?.visible && browser.state?.activeId) void browser.command("select", { id: browser.state.activeId }); } }}><SplitIcon size={16} /></Button>}
-        {selected && view === "chat" && team.length > 0 && !browserOpen && <Button className="header-action" variant="ghost" size="icon-sm" aria-label={agentsPanel ? "Hide agents panel" : "Show agents panel"} aria-pressed={agentsPanel} onClick={() => setAgentsPanel(value => !value)}><PanelRight size={16} /></Button>}
+        {view === "chat" && desktop && <Button className="header-action" variant="ghost" size="icon-sm" aria-pressed={side.open} aria-label={side.open ? "Hide side panel" : "Show side panel"} title={side.open ? "Hide side panel" : "Side panel: terminals and browser tabs"} onClick={() => side.open ? side.closePanel() : side.openPanel()}>{side.open ? <PanelRightClose size={16} /> : <PanelRightOpen size={16} />}</Button>}
+        {selected && view === "chat" && team.length > 0 && !panelShown && <Button className="header-action" variant="ghost" size="icon-sm" aria-label={agentsPanel ? "Hide agents panel" : "Show agents panel"} aria-pressed={agentsPanel} onClick={() => setAgentsPanel(value => !value)}><PanelRight size={16} /></Button>}
         {selected && view === "chat" && <Button className="header-action" variant="ghost" size="icon-sm" aria-label="Refresh conversation" disabled={loading} onClick={() => loadThread(selected)}><RefreshCw size={16} /></Button>}
       </header>
       {error && <div className="error-banner" role="alert"><span>{error}</span><Button variant="ghost" size="icon-sm" aria-label="Dismiss error" onClick={() => setError("")}><X size={15} /></Button></div>}
@@ -1075,7 +1138,7 @@ export default function Home() {
           return <div key={approvalDraftKey(approval)} className="pending-request"><div className="pending-request-heading"><p>{name}</p>{approval.params.threadId && <Button variant="ghost" size="sm" onClick={() => { setPendingInputOpen(false); openById(approval.params.threadId!); }}>Open chat</Button>}</div><ApprovalCard approval={approval} answer={(id, body) => answer(id, body, approvalDraftKey(approval))} busy={!!pendingDrafts[approvalDraftKey(approval)]} answers={approvalDrafts[approvalDraftKey(approval)]?.answers ?? {}} onAnswerChange={(id, value) => draftAnswer(approval, id, value)} /></div>;
         })}</div>
       </section>}
-      <div className={`workspace-body${browserOpen && !browserFull ? " browser-open" : ""}${browserFull ? " browser-full" : ""}${view === "settings" ? " no-browser" : ""}`}><div className="workspace-content">
+      <div className={`workspace-body${panelShown ? " panel-open" : ""}${view === "settings" ? " no-browser" : ""}`}><div className="workspace-content">
       {settingsVisited && <div className="page-scroll" hidden={view !== "settings"}><SettingsView initialTab={settingsSection} navigationKey={settingsNavigation} active={view === "settings"} threadId={selected?.id} accountRefresh={accountRefresh} theme={theme} onTheme={setTheme} onUnarchived={unarchived} onDeleteThread={deleteThread} onBack={() => { show("chat"); requestAnimationFrame(focusComposer); }} onProvidersChanged={async () => { const settings = await api<ProviderSettings>("/settings"); setProviderSettings(settings); void refreshModels(); }} /></div>}
       {view === "agents" && <div className="page-scroll"><AgentsView threads={threads} activity={activity} models={models} providers={providerSettings?.providers} loading={agentsLoading} pendingThreadIds={approvals.map(approval => approval.params.threadId ?? approval.ownerThreadId)} moreConversations={!!nextCursor} loadingMore={moreLoading} onMoreConversations={loadMoreConversations} childCursors={childCursors} loadingChildren={loadingChildren} onMoreAgents={id => void loadChildren(id, childCursors[id] ?? undefined, false)} onOpen={loadThread} onStop={stop} onDelete={deleteThread} onNewAgent={() => show("newAgent")} /></div>}
       {newAgentVisited && <div className="page-scroll" hidden={view !== "newAgent"}><button type="button" className="back-link" onClick={() => show("agents")}><ArrowLeft size={18} aria-hidden="true" />Back to Agents</button><NewAgentForm key={newAgentVersion} models={models} settings={providerSettings} defaultCwd={cwd} connected={connected} onConfigure={manageConnections} onCreated={(thread, turnId, unsent, failure) => { setNewAgentVersion(value => value + 1); upsertThread(thread); if (unsent) saveDraft(thread.id, unsent); if (turnId && !completedTurns.current.has(turnId)) setActiveTurns(prev => ({ ...prev, [thread.id]: turnId })); void loadThread(thread).then(() => { if (failure && selectedRef.current?.id === thread.id) setError(failure); }); }} /></div>}
@@ -1143,7 +1206,7 @@ export default function Home() {
           </div>
         </div>
       </div>
-      {selected && teamRoot && team.length > 0 && agentsPanel && !browserOpen && <aside className="team-panel" aria-label="Agents in this chat">
+      {selected && teamRoot && team.length > 0 && agentsPanel && !panelShown && <aside className="team-panel" aria-label="Agents in this chat">
         <div className="team-heading"><span>Agents</span><small>{team.filter(thread => agentState(thread, waitingIds) === "working").length} working · {team.length} total</small></div>
         <button className={`team-row root${selected.id === teamRoot.id ? " active" : ""}`} onClick={() => openById(teamRoot.id)}><span className="team-state"><i /></span><span className="team-title">{title(teamRoot)}</span><small>Main chat</small></button>
         {team.map(thread => { const state = agentState(thread, waitingIds);
@@ -1154,8 +1217,7 @@ export default function Home() {
           </button>; })}
       </aside>}
       </div>}
-      {view === "chat" && terminalOpen && <TerminalPanel chatKey={selected?.id ?? `new:${cwd}`} cwd={selected?.cwd || cwd} dark={dark} launch={tuiLaunch} onClose={() => { setTerminalOpen(false); focusComposer(); }} />}
-      </div><BrowserPanel browser={browser} full={browserFull} covered={pendingInputOpen || sidebar || view === "settings"} onAttach={attachFromBrowser} imagesAllowed={!(knownModel?.inputModalities && !knownModel.inputModalities.includes("image"))}/></div>
+      </div>{desktop && <SidePanel panel={side} browser={browser} hasTerminal={hasTerminal} dark={dark} cwd={selected?.cwd || cwd} launch={tuiLaunch} covered={pendingInputOpen || sidebar || view === "settings"} onAttach={attachFromBrowser} imagesAllowed={!(knownModel?.inputModalities && !knownModel.inputModalities.includes("image"))} />}</div>
     </main>
   </div>;
 }

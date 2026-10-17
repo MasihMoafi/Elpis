@@ -15,7 +15,10 @@ export const SHORTCUTS: Shortcut[] = [
   { id: "next-chat", group: "Navigation", label: "Next chat", keys: ["Ctrl+Shift+]", "Ctrl+PageDown"] },
   { id: "go-to-chat", group: "Navigation", label: "Go to chat 1–9", keys: ["Alt+1…9"] },
   { id: "list-chat", group: "Navigation", label: "Previous or next chat in the sidebar", keys: ["↑", "↓"] },
-  { id: "new-tab", group: "App", label: "Open browser tab", keys: ["Ctrl+T"] },
+  { id: "new-tab", group: "Chat", label: "New chat tab", keys: ["Ctrl+T"] },
+  { id: "close-tab", group: "Chat", label: "Close chat tab", keys: ["Ctrl+W"] },
+  { id: "next-tab", group: "Navigation", label: "Next chat tab", keys: ["Ctrl+Tab"] },
+  { id: "previous-tab", group: "Navigation", label: "Previous chat tab", keys: ["Ctrl+Shift+Tab"] },
   { id: "terminal", group: "App", label: "Toggle terminal", keys: ["Ctrl+`"] },
   { id: "sidebar", group: "App", label: "Toggle sidebar", keys: ["Ctrl+Shift+S", "Ctrl+B"] },
   { id: "copy-folder", group: "App", label: "Copy working directory", keys: ["Ctrl+Shift+C"] },
@@ -32,6 +35,8 @@ export function shortcutFor(event: KeyboardEvent, typing: boolean): { id: string
     if (key === "k") return { id: "search" };
     if (key === "b") return { id: "sidebar" };
     if (key === "t") return { id: "new-tab" };
+    if (key === "w") return { id: "close-tab" };
+    if (key === "tab") return { id: "next-tab" };
     if (event.code === "Backquote") return { id: "terminal" };
     if (key === ",") return { id: "settings" };
     if (key === "/") return { id: "shortcuts" };
@@ -40,6 +45,7 @@ export function shortcutFor(event: KeyboardEvent, typing: boolean): { id: string
   }
   if (ctrl && event.shiftKey && !event.altKey) {
     if (key === "s") return { id: "sidebar" };
+    if (key === "tab") return { id: "previous-tab" };
     if (key === "a") return { id: "archive" };
     if (key === "c" && !typing) return { id: "copy-folder" };
     if (event.code === "BracketLeft") return { id: "previous-chat" };

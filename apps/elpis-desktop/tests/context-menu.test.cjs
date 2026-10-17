@@ -144,7 +144,7 @@ test('a project opens its "…" menu on right-click', () => fixture(async ({ pag
 
 test('the chat tab opens the "Chat actions" menu on right-click', () => fixture(async ({ page, row, items, closeMenu, popup, shot }) => {
   await row('alpha').locator('.thread-link').click();
-  const tab = page.getByRole('tablist', { name: 'Task tabs' }).getByRole('tab', { name: 'Alpha' });
+  const tab = page.getByRole('tablist', { name: 'Chat tabs' }).getByRole('tab', { name: 'Alpha' });
   await tab.waitFor();
   await page.getByRole('button', { name: 'Chat actions', exact: true }).click();
   const fromButton = await items(), buttonLook = await popup();

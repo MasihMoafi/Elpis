@@ -172,8 +172,11 @@ try {
     } finally {await app.evaluate(id=>window.elpisDesktop.browser.command('close',{id}),agentTab);}
   });
 
-  await check('open a local page from the tab strip and the address bar', async () => {
-    await app.getByRole('button', { name: 'New tab', exact: true }).click();
+  await check('open a local page from the side panel’s + menu and the address bar', async () => {
+    const show = app.getByRole('button', { name: 'Show side panel', exact: true }); // the agent's earlier page may have opened it
+    if (await show.count()) await show.click();
+    await app.getByRole('button', { name: 'New side panel tab', exact: true }).click();
+    await app.getByRole('menuitem', { name: 'Browser tab', exact: true }).click();
     const address = app.getByRole('textbox', { name: 'Search or enter a URL' });
     await address.fill(siteUrl.replace('http://', '')); await address.press('Enter');
     const page = await pageView(siteUrl); await page.waitForLoadState('domcontentloaded');

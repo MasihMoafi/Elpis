@@ -1,13 +1,12 @@
 "use client";
 
-import { cloneElement, useCallback, useEffect, useRef, useState, type ReactElement, type ReactNode } from "react";
-import { BrowserIcon, ChatIcon, PlusIcon } from "@/components/elpis-icons";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ExternalLink, ArrowLeft, ArrowRight, ChevronDown, ChevronUp, Ellipsis, RefreshCw, Square, SquareDashedMousePointer, TriangleAlert, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { AnnotationDock, type AttachToChat } from "@/components/browser-annotations";
-import { RightClickMenu, type MenuAction } from "@/components/action-menu";
+import type { MenuAction } from "@/components/action-menu";
 import type { BrowserCommand, BrowserState, BrowserTab, DesktopBrowser } from "@/lib/desktop";
 
 /** The desktop's built-in browser: tabs and pages live in the Electron main process. */
@@ -31,50 +30,27 @@ export function useBrowser() {
 }
 export type Browser = ReturnType<typeof useBrowser>;
 
-/** The ChatGPT app's tab strip: the chat first, then each page, then a new-tab button. */
-export function TaskTabs({ browser, chatTitle, chatActive, chatTab, onChat, onPage }: {
-  browser: Browser; chatTitle: string; chatActive: boolean; onChat: () => void; onPage: () => void;
-  /** Wraps the chat's tab in the chat's menu (its "…" and right-click): given the tab's element and contents. */
-  chatTab?: (tab: { area: ReactElement; content: ReactNode }) => ReactNode;
-}) {
-  const tabs = browser.state?.tabs ?? [];
-  const area = <div className={`task-tab chat-tab${chatActive ? " active" : ""}`} />;
-  const content = <button type="button" role="tab" aria-selected={chatActive} onClick={onChat} title={chatTitle}><ChatIcon size={14} aria-hidden="true" /><span>{chatTitle || "New chat"}</span></button>;
-  return <div className="task-tabs" role="tablist" aria-label="Task tabs">
-    {chatTab ? chatTab({ area, content }) : cloneElement(area, undefined, content)}
-    {tabs.map(tab => {
-      const active = !chatActive && browser.state?.visible && tab.id === browser.state.activeId;
-      const page = /^https?:/.test(tab.url);
-      // The ChatGPT app's tab menu: reload, duplicate, copy the address, open it elsewhere, close.
-      const actions: MenuAction[] = [
-        ...(page ? [{ id: "reload", label: "Reload", run: () => void browser.command("reload", { id: tab.id }) },
-          { id: "duplicate", label: "Duplicate", run: () => { onPage(); void browser.command("duplicate", { id: tab.id }); } },
-          { id: "copy", label: "Copy URL", run: () => void browser.command("copyUrl", { id: tab.id }) },
-          { id: "external", label: "Open in external browser", run: () => void browser.command("external", { id: tab.id }) }] : []),
-        { id: "close", label: "Close tab", hint: "Ctrl+W", run: () => void browser.command("close", { id: tab.id }) },
-      ];
-      return <RightClickMenu key={tab.id} actions={actions} area={<div className={`task-tab${active ? " active" : ""}`} />}>
-        <button type="button" role="tab" aria-selected={!!active} title={tab.url === "about:blank" ? tab.title : `${tab.title}\n${tab.url}`} onClick={() => { onPage(); void browser.command("select", { id: tab.id }); }}>
-          {tab.loading ? <RefreshCw size={13} className="animate-spin" aria-hidden="true" /> : <BrowserIcon size={13} aria-hidden="true" />}<span>{tab.title}</span>
-        </button>
-        <Button type="button" variant="ghost" size="icon-xs" aria-label={`Close ${tab.title} tab`} onClick={() => void browser.command("close", { id: tab.id })}><X size={12} /></Button>
-      </RightClickMenu>;
-    })}
-    <Button type="button" variant="ghost" size="icon-sm" className="task-tab-new" aria-label="New tab" title="New browser tab" onClick={() => { onPage(); void browser.command("new"); }}><PlusIcon size={15} /></Button>
-  </div>;
+/** The ChatGPT app's menu for a page tab (right-click in the side panel): reload, duplicate, copy the address, open it elsewhere, close. */
+export function browserTabActions(browser: Browser, tab: BrowserTab, close: () => void): MenuAction[] {
+  const page = /^https?:/.test(tab.url);
+  return [
+    ...(page ? [{ id: "reload", label: "Reload", run: () => void browser.command("reload", { id: tab.id }) },
+      { id: "duplicate", label: "Duplicate", run: () => void browser.command("duplicate", { id: tab.id }) },
+      { id: "copy", label: "Copy URL", run: () => void browser.command("copyUrl", { id: tab.id }) },
+      { id: "external", label: "Open in external browser", run: () => void browser.command("external", { id: tab.id }) }] : []),
+    { id: "close", label: "Close tab", hint: "Ctrl+W", run: close },
+  ];
 }
 
-/** The page area: address bar and the native page view placed over the viewport. `onAttach` gives
- * annotations and screenshots to the chat's composer; `imagesAllowed` is false for text-only models. */
-export function BrowserPanel({ browser, covered, full, onAttach, imagesAllowed = true }: { browser: Browser; covered: boolean; full: boolean; onAttach?: AttachToChat; imagesAllowed?: boolean }) {
+/** The page area of the side panel: address bar and the native page view placed over the viewport. `covered` hides the
+ * page while something else is on top of it; `onAttach` gives annotations and screenshots to the chat's composer;
+ * `imagesAllowed` is false for text-only models. */
+export function BrowserPanel({ browser, covered, onAttach, imagesAllowed = true }: { browser: Browser; covered: boolean; onAttach?: AttachToChat; imagesAllowed?: boolean }) {
   const { api, state, command } = browser;
   const [notice, setNotice] = useState("");
   const [edit, setEdit] = useState<{ tab: string; value: string } | null>(null);
-  const [width, setWidth] = useState<number | null>(null);
-  const [resizing, setResizing] = useState(false);
   const [modal, setModal] = useState(false);
-  const viewport = useRef<HTMLDivElement>(null), address = useRef<HTMLInputElement>(null), panel = useRef<HTMLElement>(null);
-  const drag = useRef<{ x: number; width: number } | null>(null);
+  const viewport = useRef<HTMLDivElement>(null), address = useRef<HTMLInputElement>(null);
   const active = state?.tabs.find(tab => tab.id === state.activeId);
   useEffect(() => {
     const refresh = () => setModal([...document.querySelectorAll('[role="dialog"],[role="alertdialog"],[role="listbox"],[role="menu"],[data-slot="popover-content"],[data-slot="combobox-content"]')].some(element => element.getClientRects().length > 0));
@@ -85,23 +61,18 @@ export function BrowserPanel({ browser, covered, full, onAttach, imagesAllowed =
     const element = viewport.current; if (!api || !element) return;
     const rect = element.getBoundingClientRect();
     // A failed page shows Elpis's explanation instead of Chromium's empty error page.
-    api.layout({ bounds: { x: rect.x, y: rect.y, width: rect.width, height: rect.height }, obscured: covered || modal || resizing || !state?.visible || !!active?.failure });
-  }, [api, covered, modal, resizing, state?.visible, active?.failure]);
+    api.layout({ bounds: { x: rect.x, y: rect.y, width: rect.width, height: rect.height }, obscured: covered || modal || !state?.visible || !!active?.failure });
+  }, [api, covered, modal, state?.visible, active?.failure]);
   useEffect(() => {
     if (!state?.visible || !viewport.current) return;
     const observer = new ResizeObserver(layout); observer.observe(viewport.current); window.addEventListener("resize", layout); layout();
     return () => { observer.disconnect(); window.removeEventListener("resize", layout); api?.layout({ bounds: { x: 0, y: 0, width: 0, height: 0 }, obscured: true }); };
-  }, [api, layout, state?.visible, full]);
+  }, [api, layout, state?.visible]);
   useEffect(() => { if (state?.visible && state.focusAddress) { address.current?.focus(); address.current?.select(); } }, [state?.focusAddress, state?.visible]);
   useEffect(() => { if (!notice) return; const timer = setTimeout(() => setNotice(""), 2600); return () => clearTimeout(timer); }, [notice]);
   if (!api || !state?.visible) return null;
   const value = edit && edit.tab === active?.id ? edit.value : active?.url === "about:blank" ? "" : active?.url ?? "";
-  return <section ref={panel} className={`browser-panel${full ? " full" : ""}`} aria-label="Built-in browser" style={width && !full ? { width } : undefined}>
-    {!full && <div className="browser-resize" role="separator" aria-label="Resize browser" aria-orientation="vertical" tabIndex={0}
-      onKeyDown={e => { if (e.key === "ArrowLeft" || e.key === "ArrowRight") { e.preventDefault(); const current = panel.current?.getBoundingClientRect().width ?? 400; setWidth(Math.max(320, current + (e.key === "ArrowLeft" ? 32 : -32))); } }}
-      onPointerDown={e => { drag.current = { x: e.clientX, width: panel.current?.getBoundingClientRect().width ?? 400 }; e.currentTarget.setPointerCapture(e.pointerId); setResizing(true); }}
-      onPointerMove={e => { if (drag.current) setWidth(Math.max(320, drag.current.width + drag.current.x - e.clientX)); }}
-      onPointerUp={() => { drag.current = null; setResizing(false); }} onPointerCancel={() => { drag.current = null; setResizing(false); }} />}
+  return <section className="browser-panel" aria-label="Built-in browser">
     <form className="browser-toolbar" aria-label="Browser navigation" onSubmit={event => { event.preventDefault(); const submitted = value; if (!submitted.trim()) return; void api.command("navigate", { url: submitted }).then(() => setEdit(current => current?.value === submitted ? null : current)).catch(() => {}); }}>
       <Button type="button" variant="ghost" size="icon-sm" aria-label="Back" disabled={!active?.canGoBack} onClick={() => void command("back")}><ArrowLeft size={15} /></Button>
       <Button type="button" variant="ghost" size="icon-sm" aria-label="Forward" disabled={!active?.canGoForward} onClick={() => void command("forward")}><ArrowRight size={15} /></Button>
@@ -125,7 +96,7 @@ export function BrowserPanel({ browser, covered, full, onAttach, imagesAllowed =
     {state.find.open && active && <FindBar browser={browser} />}
     {(browser.error || active?.error && !active.failure) && <div role="alert" className="browser-error">{browser.error || active?.error}</div>}
     {notice && <div role="status" className="browser-notice">{notice}</div>}
-    {active?.url === "about:blank" && <p className="browser-empty">Search or enter a web address.<span>Ctrl+L focuses the address · Ctrl+T opens a tab</span></p>}
+    {active?.url === "about:blank" && <p className="browser-empty">Search or enter a web address.<span>Ctrl+L focuses the address</span></p>}
     <div ref={viewport} className="browser-viewport" id="browser-viewport" role="tabpanel">
       {active?.failure && <div className="browser-failure" role="alert">
         <h2>{active.failure.heading}</h2>

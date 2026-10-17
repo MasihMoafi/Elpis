@@ -1,15 +1,13 @@
-/* The integrated terminal under the chat (components/terminal-panel.tsx), as ChatGPT's bottom panel. */
-.terminal-panel { position:relative; display:flex; flex-direction:column; flex:0 0 auto; min-height:120px; border-top:1px solid var(--border); background:var(--background); }
-.terminal-resize { position:absolute; inset:-3px 0 auto; height:6px; cursor:ns-resize; z-index:2; }
-.terminal-resize:hover, .terminal-resize:focus-visible { background:color-mix(in oklch, var(--primary) 45%, transparent); outline:none; }
+/* A terminal tab in the side panel (components/terminal-view.tsx). */
+.terminal-body { display:flex; flex-direction:column; flex:1; min-height:0; min-width:0; background:var(--background); }
 .terminal-header { display:flex; align-items:center; gap:8px; height:34px; flex-shrink:0; padding:0 8px 0 12px; border-bottom:1px solid var(--hairline); font-size:12.5px; }
 .terminal-tab { display:inline-flex; align-items:center; gap:6px; color:var(--foreground); font-weight:500; }
 .terminal-folder { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--muted-foreground); }
-.terminal-actions { display:flex; align-items:center; gap:2px; margin-inline-start:auto; }
+.terminal-restart { margin-inline-start:auto; }
 /* ChatGPT's padding around the terminal: 16px start, 8px top, 12px bottom. */
 .terminal-host { flex:1; min-height:0; overflow:hidden; padding:8px 0 12px 16px; }
 .terminal-view { width:100%; height:100%; }
-.terminal-panel .xterm { height:100%; }
+.terminal-body .xterm { height:100%; }
 /* xterm.css paints the viewport black; below the last whole row it would show as a black band. */
-.terminal-panel .xterm .xterm-viewport { background-color:var(--background); scrollbar-color:var(--border) transparent; }
+.terminal-body .xterm .xterm-viewport { background-color:var(--background); scrollbar-color:var(--border) transparent; }
 .terminal-status { flex-shrink:0; padding:4px 12px 6px; font-size:12px; color:var(--muted-foreground); border-top:1px solid var(--hairline); }

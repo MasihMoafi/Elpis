@@ -37,7 +37,7 @@ async function fixture(run) {
     const page = await browser.newPage({ viewport: { width: 1320, height: 900 } }); page.setDefaultTimeout(6000);
     const errors = []; page.on('pageerror', error => errors.push(error.message));
     await page.addInitScript(() => {
-      const saved = new Map(), calls = window.__terminal = { open: [], restart: [], tui: [], input: [], resize: [], copied: [] };
+      const saved = new Map(), calls = window.__terminal = { open: [], restart: [], closed: [], tui: [], input: [], resize: [], copied: [] };
       let data = () => {}, exit = () => {}, openThread = () => {}, sessions = 0;
       const shells = {}, start = key => { shells[key] = { id: ++sessions, end: 0 }; return { id: shells[key].id, end: 0, shell: 'bash', output: '', exited: null }; };
       window.__emit = (key, text) => { const shell = shells[key]; shell.end += text.length; data(key, shell.id, shell.end, text); };
@@ -49,6 +49,7 @@ async function fixture(run) {
         terminal: {
           open: async (...args) => { calls.open.push(args); return shells[args[0]] ? { ...shells[args[0]], shell: 'bash', output: '', exited: null } : start(args[0]); },
           restart: async (...args) => { calls.restart.push(args); return start(args[0]); },
+          close: async key => { calls.closed.push(key); delete shells[key]; return {}; },
           tui: async (...args) => { calls.tui.push(args); return { started: true }; },
           input: (key, text) => calls.input.push([key, text]),
           resize: (...args) => calls.resize.push(args),
@@ -67,76 +68,87 @@ async function fixture(run) {
 }
 
 const panel = page => page.getByRole('region', { name: 'Terminal' });
-const screen = page => page.locator('.terminal-panel .xterm-rows');
+const sidePanel = page => page.getByRole('region', { name: 'Side panel' });
+const screen = page => page.locator('.terminal-body .xterm-rows');
+const keyOf = async calls => (await calls()).open.at(-1)[0];
 
-test('Ctrl+` opens the chat’s own shell in its folder; keys, output, copy, paste, resize and Ctrl+` again', () => fixture(async ({ page, calls }) => {
+test('Ctrl+` opens a shell as a side-panel tab in the chat’s folder; keys, output, copy, paste, resize and Ctrl+` again', () => fixture(async ({ page, calls }) => {
   await page.locator('.thread-row[data-thread-id="chat-one"] .thread-link').click();
   await page.getByRole('tab', { name: /Fix the parser/ }).waitFor();
+  assert.equal(await sidePanel(page).count(), 0, 'the panel is closed until it is asked for');
   await page.keyboard.press('Control+Backquote');
   await panel(page).waitFor();
-  await eventually(async () => assert.deepEqual((await calls()).open.map(([key, cwd]) => [key, cwd]), [['chat-one', '/work/parser']]));
+  await sidePanel(page).getByRole('tab', { name: 'Terminal' }).waitFor();
+  await eventually(async () => { const [[key, cwd]] = (await calls()).open; assert.match(key, /^terminal-/); assert.equal(cwd, '/work/parser'); });
+  const key = await keyOf(calls);
   const [, , cols, rows] = (await calls()).open[0];
   assert(cols > 20 && rows > 3, `the shell starts at the panel's size, not a default (${cols}x${rows})`);
-  assert.equal(await panel(page).getByText('parser', { exact: true }).count(), 1, 'the header names the chat folder');
-  await page.evaluate(() => window.__emit('chat-one', 'hello from bash\r\n$ '));
+  assert.equal(await panel(page).getByText('parser', { exact: true }).count(), 1, 'the header names the folder');
+  await page.evaluate(key => window.__emit(key, 'hello from bash\r\n$ '), key);
   await eventually(async () => assert.match(await screen(page).innerText(), /hello from bash/));
   await page.keyboard.type('ls');
   await page.keyboard.press('Enter');
   await page.keyboard.press('Control+c');
-  await eventually(async () => assert.equal((await calls()).input.filter(([key]) => key === 'chat-one').map(([, text]) => text).join(''), 'ls\r\x03'));
+  await eventually(async () => assert.equal((await calls()).input.filter(([k]) => k === key).map(([, text]) => text).join(''), 'ls\r\x03'));
   // Copy: the selection, with Ctrl+Shift+C. Paste: Ctrl+Shift+V, typed into the shell.
-  const box = await page.locator('.terminal-panel .xterm-screen').boundingBox();
+  const box = await page.locator('.terminal-body .xterm-screen').boundingBox();
   await page.mouse.move(box.x + 2, box.y + 6); await page.mouse.down(); await page.mouse.move(box.x + 160, box.y + 6, { steps: 6 }); await page.mouse.up();
   await page.keyboard.press('Control+Shift+C');
   await eventually(async () => assert.match((await calls()).copied.join(''), /^hello/));
   await page.keyboard.press('Control+Shift+V');
   await eventually(async () => assert.match((await calls()).input.map(([, text]) => text).join(''), /pasted words$/));
   if (shots) await page.screenshot({ path: path.join(shots, 'terminal-open.png') });
-  // The panel's top edge resizes it, and the shell is told its new size.
-  const before = (await panel(page).boundingBox()).height, resizes = (await calls()).resize.length;
-  const edge = await page.getByRole('separator', { name: 'Resize terminal' }).boundingBox();
-  await page.mouse.move(edge.x + edge.width / 2, edge.y + edge.height / 2); await page.mouse.down();
-  await page.mouse.move(edge.x + edge.width / 2, edge.y - 120, { steps: 5 }); await page.mouse.up();
-  await eventually(async () => assert((await panel(page).boundingBox()).height > before + 90));
+  // The panel's left edge resizes it, and the shell is told its new size.
+  const before = (await sidePanel(page).boundingBox()).width, resizes = (await calls()).resize.length;
+  const edge = await page.getByRole('separator', { name: 'Resize side panel' }).boundingBox();
+  await page.mouse.move(edge.x + edge.width / 2, edge.y + 300); await page.mouse.down();
+  await page.mouse.move(edge.x - 120, edge.y + 300, { steps: 5 }); await page.mouse.up();
+  await eventually(async () => assert((await sidePanel(page).boundingBox()).width > before + 90));
   await eventually(async () => assert((await calls()).resize.length > resizes));
-  assert.equal(await page.evaluate(() => Number(window.elpisDesktop.storage.getItem('elpis-terminal-height')) > 0), true, 'the height is kept');
   // Ctrl+` from inside the terminal hides the panel; the shell keeps running and is not started again.
   await page.keyboard.press('Control+Backquote');
-  await eventually(async () => assert.equal(await panel(page).count(), 0));
+  await eventually(async () => assert.equal(await sidePanel(page).count(), 0));
   await page.keyboard.press('Control+Backquote');
   await panel(page).waitFor();
   await eventually(async () => assert.match(await screen(page).innerText(), /hello from bash/));
   assert.equal((await calls()).open.length, 1);
-  // Another chat has its own shell; switching back shows the first one's output again.
+  // The shell belongs to its tab, not to a chat: another chat shows the same shell.
   await page.locator('.thread-row[data-thread-id="chat-two"] .thread-link').click();
-  await eventually(async () => assert.deepEqual((await calls()).open.map(([key, cwd]) => [key, cwd]).at(-1), ['chat-two', '/work/docs']));
-  await eventually(async () => assert.doesNotMatch(await screen(page).innerText(), /hello from bash/));
-  await page.locator('.thread-row[data-thread-id="chat-one"] .thread-link').click();
+  await page.getByRole('tab', { name: /Write the docs/ }).waitFor();
   await eventually(async () => assert.match(await screen(page).innerText(), /hello from bash/));
+  assert.equal((await calls()).open.length, 1);
   // An ended shell says so and restarts.
-  await page.evaluate(() => window.__exit('chat-one', 0));
+  await page.evaluate(key => window.__exit(key, 0), key);
   await panel(page).getByText('Shell exited').waitFor();
   await panel(page).getByRole('button', { name: 'Restart terminal' }).click();
-  await eventually(async () => assert.deepEqual((await calls()).restart.map(([key]) => key), ['chat-one']));
+  await eventually(async () => assert.deepEqual((await calls()).restart.map(([k]) => k), [key]));
   await eventually(async () => assert.equal(await panel(page).getByText('Shell exited').count(), 0));
-  await panel(page).getByRole('button', { name: 'Close panel' }).click();
-  await eventually(async () => assert.equal(await panel(page).count(), 0));
+  // Closing the tab ends its shell; the panel stays, empty, ready for a new tab.
+  await sidePanel(page).getByRole('button', { name: 'Close Terminal 1 tab' }).click();
+  await eventually(async () => assert.deepEqual((await calls()).closed, [key]));
+  await sidePanel(page).getByText('Nothing open here yet.').waitFor();
+  await page.getByRole('button', { name: 'Close side panel' }).click();
+  await eventually(async () => assert.equal(await sidePanel(page).count(), 0));
 }));
 
-test('Open in Elpis TUI is in the tab and sidebar menus and resumes that chat in its terminal; /app opens a chat here', () => fixture(async ({ page, calls }) => {
+test('Open in Elpis TUI is in the tab and sidebar menus and resumes that chat in a terminal tab of the side panel; /app opens a chat here', () => fixture(async ({ page, calls }) => {
   await page.locator('.thread-row[data-thread-id="chat-two"]').hover();
   await page.getByRole('button', { name: 'Actions for Write the docs' }).click();
   await page.getByRole('menuitem', { name: 'Open in Elpis TUI' }).click();
   await panel(page).waitFor();
-  await eventually(async () => assert.deepEqual((await calls()).tui.map(([key, cwd, id]) => [key, cwd, id]), [['chat-two', '/work/docs', 'chat-two']]));
+  await eventually(async () => assert.deepEqual((await calls()).tui.map(([key, cwd, id]) => [/^terminal-/.test(key), cwd, id]), [[true, '/work/docs', 'chat-two']]));
   await page.getByRole('tab', { name: /Write the docs/ }).waitFor();
   await page.getByRole('button', { name: 'Chat actions' }).click();
   await page.getByRole('menuitem', { name: 'Open in Elpis TUI' }).waitFor(); // the chat tab’s … menu has it too
   if (shots) await page.screenshot({ path: path.join(shots, 'open-in-tui-menu.png') });
-  await page.keyboard.press('Escape');
+  // Asking again for the same chat uses its terminal tab; it does not open another.
+  await page.getByRole('menuitem', { name: 'Open in Elpis TUI' }).click();
+  await eventually(async () => assert.equal((await calls()).tui.length, 2));
+  assert.equal(new Set((await calls()).tui.map(([key]) => key)).size, 1);
+  assert.equal(await sidePanel(page).getByRole('tab').count(), 1);
   // The TUI's /app: the running window opens the chat it names.
   await page.evaluate(() => window.__openThread('chat-one'));
-  await page.getByRole('tab', { name: /Fix the parser/ }).waitFor();
+  await page.getByRole('tab', { name: /Fix the parser/, selected: true }).waitFor();
   // Keys typed in the terminal go to its shell (as in ChatGPT); from the composer, Ctrl+/ lists the terminal's shortcut.
   await page.getByLabel('Message Elpis').focus();
   await page.keyboard.press('Control+/');
