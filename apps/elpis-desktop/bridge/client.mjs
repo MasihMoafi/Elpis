@@ -12,7 +12,7 @@ import { providerModels } from './provider-models.mjs';
 import { attachmentInput, recordedMedia } from './attachments.mjs';
 import { scanDeletionThreads } from '../lib/thread-deletion.ts';
 import { changedFiles, discardFile, fileDiff, reviewChoices, workingDiff } from './git.mjs';
-import { elicitationResponse, permissionsResponse } from '../lib/approvals.ts';
+import { elicitationResponse, grantedPermissions, permissionsResponse } from '../lib/approvals.ts';
 const string = value => typeof value === 'string' ? value : null;
 
 export class BridgeError extends Error {
@@ -1037,12 +1037,28 @@ export class DesktopClient extends EventEmitter {
           ?? await this.#rpc('thread/resume', { threadId: id, excludeTurns: true });
         const now = modeOf(settings);
         if (now !== mode) throw new BridgeError(`Elpis did not apply ${mode} permissions to this chat; it is in ${now ?? 'an unknown'} mode.`, 409);
+        if (now === 'full' || now === 'bypass') this.#allowWaiting(id);
         return { permissions: now };
       } finally {
         clearTimeout(timer); waiters.delete(resolveApplied);
         if (!waiters.size) this.#settingsWaiters.delete(id);
       }
     });
+  }
+  /** Full access and Bypass permissions never ask, so what this chat was already asking when the person chose one
+   * is answered as the new mode would have: allowed, once. Questions (forms, request_user_input) still wait for
+   * the person, as do other chats' requests; "Approve for me" leaves requests already put to the person to them. */
+  #allowWaiting(id) {
+    for (const [key, pending] of [...this.#approvals]) {
+      if (pending.params?.threadId !== id) continue;
+      let body;
+      if (pending.method === 'item/commandExecution/requestApproval' || pending.method === 'item/fileChange/requestApproval') body = { decision: 'accept' };
+      else if (pending.method === 'mcpServer/elicitation/request' && pending.params._meta?.codex_approval_kind === 'mcp_tool_call') body = { action: 'accept', content: null, _meta: null };
+      else if (pending.method === 'item/permissions/requestApproval') body = { permissions: grantedPermissions(pending.params.permissions ?? {}), scope: 'turn' };
+      else continue;
+      // Only a decision the request offers is sent (answerApproval checks); anything else stays on its card.
+      try { this.answerApproval(key, body); } catch {}
+    }
   }
   async steer(id, body) {
     object(body, ['text', 'expectedTurnId', 'attachments', 'mentions']);

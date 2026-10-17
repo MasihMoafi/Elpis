@@ -1235,6 +1235,35 @@ test('changing a chat\'s permissions applies now through the engine settings and
   } finally { client.close(); }
 });
 
+test('Full access and Bypass also answer what the chat was already asking; questions and Approve for me still wait', async () => {
+  const { client, socket } = fixture(); await client.initialize(); await client.createThread({});
+  const ask = (id, method, params, thread = CREATED) => socket.emit('message', JSON.stringify({ id, method, params: { threadId: thread, turnId: 'turn1', ...params } }));
+  const answered = id => socket.sent.find(message => message.id === id && 'result' in message)?.result;
+  const waiting = () => client.pendingApprovals.map(approval => approval.method).sort();
+  try {
+    ask('command', 'item/commandExecution/requestApproval', { command: 'npm test', availableDecisions: ['accept', 'decline'] });
+    ask('file', 'item/fileChange/requestApproval', {});
+    ask('tool', 'mcpServer/elicitation/request', { serverName: 'rag', mode: 'form', message: 'Run query_knowledge_base?', requestedSchema: { type: 'object', properties: {} }, _meta: { codex_approval_kind: 'mcp_tool_call' } });
+    ask('form', 'mcpServer/elicitation/request', { serverName: 'survey', mode: 'form', message: 'Details', requestedSchema: { type: 'object', properties: { name: { type: 'string' } }, required: ['name'] } });
+    ask('question', 'item/tool/requestUserInput', { questions: [{ id: 'q', header: 'Pick', question: 'Which?' }] });
+    assert.equal(client.pendingApprovals.length, 5);
+    // "Approve for me" hands later requests to the reviewer; a request already put to the person stays theirs.
+    await client.setPermissions(CREATED, { permissions: 'auto' });
+    assert.equal(client.pendingApprovals.length, 5);
+    await client.setPermissions(CREATED, { permissions: 'full' });
+    assert.deepEqual(answered('command'), { decision: 'accept' });
+    assert.deepEqual(answered('file'), { decision: 'accept' });
+    assert.deepEqual(answered('tool'), { action: 'accept', content: null, _meta: null });
+    assert.deepEqual(waiting(), ['item/tool/requestUserInput', 'mcpServer/elicitation/request'], 'a form and a question are answers, not permissions');
+    // Bypass grants a waiting permission request for its turn.
+    await client.setPermissions(CREATED, { permissions: 'ask' });
+    const network = { network: { enabled: true }, fileSystem: null };
+    ask('grant', 'item/permissions/requestApproval', { permissions: network, reason: 'fetch' });
+    await client.setPermissions(CREATED, { permissions: 'bypass' });
+    assert.deepEqual(answered('grant'), { permissions: { network: { enabled: true } }, scope: 'turn' });
+  } finally { client.close(); }
+});
+
 test('a permission change the engine refuses is shown as an error', async () => {
   const { client, socket } = fixture(); await client.initialize();
   try {
