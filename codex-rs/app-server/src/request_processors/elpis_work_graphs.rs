@@ -22,13 +22,13 @@ impl ThreadRequestProcessor {
         allow_task_routes: bool,
     ) -> Result<Option<ClientResponsePayload>, JSONRPCErrorError> {
         if !allow_task_routes
-            && params
-                .tasks
-                .iter()
-                .any(|task| task.provider.is_some() || task.model.is_some())
+            && params.tasks.iter().any(|task| {
+                task.provider.is_some() || task.model.is_some() || task.reasoning_effort.is_some()
+            })
         {
             return Err(invalid_request(
-                "per-task provider/model selection requires workGraph/runWithProviders".to_string(),
+                "per-task provider/model/reasoning-effort selection requires workGraph/runWithProviders"
+                    .to_string(),
             ));
         }
         let (thread_id, thread) = self.load_thread(&params.root_thread_id).await?;
@@ -41,6 +41,7 @@ impl ThreadRequestProcessor {
                     "id": task.id, "kind": task.kind, "title": task.title,
                     "instruction": task.instruction, "depends_on": task.depends_on,
                     "provider": task.provider, "model": task.model,
+                    "reasoning_effort": task.reasoning_effort,
                     "environment_id": task.environment_id, "write_scopes": task.write_scopes,
                     "acceptance_criteria": task.acceptance_criteria,
                 })

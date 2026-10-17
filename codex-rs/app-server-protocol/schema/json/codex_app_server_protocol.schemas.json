@@ -27482,6 +27482,17 @@
               "null"
             ]
           },
+          "reasoningEffort": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/v2/ReasoningEffort"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Reasoning effort for this task's worker. Omitted or null inherits the coordinator's effort. A task model that does not offer the effort is refused before the run starts."
+          },
           "title": {
             "type": "string"
           },

@@ -2,6 +2,7 @@ use super::*;
 use chrono::Utc;
 use codex_protocol::models::ManagedFileSystemPermissions;
 use codex_protocol::models::PermissionProfile;
+use codex_protocol::openai_models::ReasoningEffortPreset;
 use codex_protocol::permissions::FileSystemAccessMode;
 use codex_protocol::permissions::FileSystemPath;
 use codex_utils_absolute_path::AbsolutePathBuf;
@@ -109,6 +110,90 @@ async fn task_provider_routes_retain_managed_provider_requirements() {
             .to_string()
             .contains("managed policy requires model provider")
     );
+}
+
+fn model_offering(levels: &[ReasoningEffort], known: bool) -> ModelInfo {
+    let mut info = codex_models_manager::model_info::model_info_from_slug("effort-model");
+    info.used_fallback_model_metadata = !known;
+    info.supported_reasoning_levels = levels
+        .iter()
+        .map(|effort| ReasoningEffortPreset {
+            effort: effort.clone(),
+            description: effort.to_string(),
+        })
+        .collect();
+    info
+}
+
+#[test]
+fn task_args_read_an_optional_reasoning_effort() {
+    let args = |extra: Value| {
+        let mut task = serde_json::json!({
+            "id": "inspect", "kind": "explore", "title": "Inspect", "instruction": "Read",
+        });
+        task.as_object_mut()
+            .expect("task object")
+            .extend(extra.as_object().expect("extra object").clone());
+        serde_json::from_value::<WorkTaskArgs>(task)
+    };
+    assert_eq!(
+        args(serde_json::json!({"reasoning_effort": "high"}))
+            .expect("effort")
+            .reasoning_effort,
+        Some(ReasoningEffort::High)
+    );
+    for inherited in [
+        serde_json::json!({}),
+        serde_json::json!({"reasoning_effort": null}),
+    ] {
+        assert_eq!(args(inherited).expect("task").reasoning_effort, None);
+    }
+    assert!(args(serde_json::json!({"reasoning_effort": ""})).is_err());
+    assert!(args(serde_json::json!({"reasoning_effort": 3})).is_err());
+}
+
+#[tokio::test]
+async fn task_reasoning_effort_reaches_the_worker_config_when_its_model_offers_it() {
+    let (base, _home) = provider_route_fixture().await;
+    let mut config = resolve_task_spawn_config(&base, None, Some("effort-model")).expect("route");
+    let model = model_offering(&[ReasoningEffort::Low, ReasoningEffort::High], true);
+    apply_task_reasoning_effort(&mut config, Some(&ReasoningEffort::High), &model)
+        .expect("offered effort");
+    assert_eq!(config.model_reasoning_effort, Some(ReasoningEffort::High));
+}
+
+#[tokio::test]
+async fn task_reasoning_effort_the_model_lacks_is_refused_and_leaves_the_config_alone() {
+    let (base, _home) = provider_route_fixture().await;
+    let mut config = resolve_task_spawn_config(&base, None, Some("effort-model")).expect("route");
+    let before = config.model_reasoning_effort.clone();
+    let model = model_offering(&[ReasoningEffort::Low, ReasoningEffort::High], true);
+    let error = apply_task_reasoning_effort(&mut config, Some(&ReasoningEffort::XHigh), &model)
+        .expect_err("unsupported effort");
+    for expected in ["xhigh", "effort-model", "low, high"] {
+        assert!(error.contains(expected), "{expected} missing from: {error}");
+    }
+    assert_eq!(config.model_reasoning_effort, before);
+}
+
+#[tokio::test]
+async fn task_without_a_reasoning_effort_inherits_the_coordinator_effort() {
+    let (mut base, _home) = provider_route_fixture().await;
+    base.model_reasoning_effort = Some(ReasoningEffort::Medium);
+    let mut config = resolve_task_spawn_config(&base, None, Some("effort-model")).expect("route");
+    let model = model_offering(&[ReasoningEffort::Low], true);
+    apply_task_reasoning_effort(&mut config, None, &model).expect("nothing to apply");
+    assert_eq!(config.model_reasoning_effort, Some(ReasoningEffort::Medium));
+}
+
+#[tokio::test]
+async fn task_reasoning_effort_for_a_model_without_catalog_metadata_is_left_to_its_provider() {
+    let (base, _home) = provider_route_fixture().await;
+    let mut config = resolve_task_spawn_config(&base, None, Some("effort-model")).expect("route");
+    let model = model_offering(&[], false);
+    apply_task_reasoning_effort(&mut config, Some(&ReasoningEffort::High), &model)
+        .expect("unknown model metadata cannot refuse");
+    assert_eq!(config.model_reasoning_effort, Some(ReasoningEffort::High));
 }
 
 fn task(
@@ -315,6 +400,7 @@ fn writable_graph_requires_an_independent_verification_task() {
             instruction: "Change the requested behavior.".to_string(),
             provider: None,
             model: None,
+            reasoning_effort: None,
             depends_on: Vec::new(),
             write_scopes: vec!["src".to_string()],
             acceptance_criteria: vec!["focused check passes".to_string()],

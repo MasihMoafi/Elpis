@@ -98,7 +98,7 @@ async function main() {
       const taskId = source.match(/Task ID: ([^\\\s"]+)/)?.[1];
       assert(graphId && taskId, 'Inference must belong to an assigned graph task');
       assert.equal(headers.authorization,`Bearer synthetic-${providerId}`,`Independent auth for ${providerId}`);
-      inference.push({providerId,model:request.model,graphId,taskId,authorizationMatches:true});
+      inference.push({providerId,model:request.model,effort:request.reasoning?.effort,graphId,taskId,authorizationMatches:true});
       const evidence = `NATIVE_TASK_ROUTE_EVIDENCE_${taskId}`;
       if (source.includes(evidence)) return message('Worker complete');
       return call(`report_${providerId}_${taskId}`, 'report_agent_work_task',{
@@ -138,6 +138,12 @@ async function main() {
   pass('Unknown, incomplete and subscription task routes reject before graph persistence or inference');
   const legacy=await rejected('workGraph/run',{rootThreadId:rootThread,name:'Legacy explicit route',tasks:[task('legacy',[],{provider:'provider-a',model:'fixture/a-model'})]});
   assert.match(legacy.message,/runWithProviders/);pass('Legacy method rejects explicit task routes');
+  const lacking=await rejected('workGraph/runWithProviders',{rootThreadId:rootThread,name:'Unsupported effort',tasks:[task('too-deep',[],{model:'gpt-5.5',reasoningEffort:'ultra'})]});
+  assert.match(lacking.message,/ultra.*not supported.*gpt-5\.5.*low, medium, high, xhigh/s,'The refusal names the effort, the model and what it supports');
+  assert.equal((await list(rootThread)).length,0,'Unsupported effort must not persist');assert.equal(inference.length,0,'Unsupported effort must not spawn workers');
+  const effortOnly=await rejected('workGraph/run',{rootThreadId:rootThread,name:'Legacy effort',tasks:[task('legacy-effort',[],{reasoningEffort:'low'})]});
+  assert.match(effortOnly.message,/runWithProviders/);
+  pass('A task effort its model lacks, or sent on the legacy method, is refused before graph persistence or inference');
   const mixed=await runGraph(rootThread,'Independent provider tasks',[
     task('first',[],{provider:'provider-a',model:'fixture/a-model'}),
     task('second',['first'],{provider:'provider-b',model:'fixture/b-model'}),
@@ -155,6 +161,15 @@ async function main() {
   assert.equal(inherited.tasks[0].provider,'root');assert.equal(inherited.tasks[0].model,'fixture/root-model');
   const seen=inference.filter(row=>row.graphId===inherited.id);assert(seen.length);assert(seen.every(row=>row.providerId==='root' && row.model==='fixture/root-model'));
   pass('Model-only task uses the native root endpoint and its own root credential');
+  const efforts=await runGraph(rootThread,'Per-task reasoning effort',[
+    task('lean',[],{provider:'provider-a',model:'gpt-5.5',reasoningEffort:'low'}),
+    task('deep',['lean'],{provider:'provider-b',model:'gpt-5.5',reasoningEffort:'xhigh'}),
+    task('default',['deep'],{provider:'provider-a',model:'gpt-5.5'}),
+  ]);
+  const effortsSeen=id=>new Set(inference.filter(row=>row.graphId===efforts.id && row.taskId===id).map(row=>row.effort));
+  assert.deepEqual([...effortsSeen('lean')],['low']);assert.deepEqual([...effortsSeen('deep')],['xhigh']);
+  const inheritedEffort=[...effortsSeen('default')];assert.equal(inheritedEffort.length,1);assert(!['low','xhigh'].includes(inheritedEffort[0]),'A task with no effort keeps the coordinator effort');
+  pass('Each task worker infers at its own reasoning effort; a task without one keeps the inherited effort');
   const again=(await list(rootThread)).find(row=>row.id===mixed.id);
   assert.deepEqual(again.tasks.map(({provider,model})=>({provider,model})),mixed.tasks.map(({provider,model})=>({provider,model})));
   pass('Persisted effective routes survive subsequent graphs and state readback');

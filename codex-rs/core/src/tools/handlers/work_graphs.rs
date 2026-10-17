@@ -1,6 +1,7 @@
 use crate::agent::api::AgentInput;
 use crate::agent::api::SpawnRequest;
 use crate::agent::child_config::build_agent_spawn_config;
+use crate::agent::child_config::validate_spawn_agent_reasoning_effort;
 use crate::agent::control::LocalAgentControl;
 use crate::agent::status::is_final;
 use crate::agent::types::SpawnAgentOptions;
@@ -25,6 +26,8 @@ use codex_protocol::ThreadId;
 use codex_protocol::error::CodexErrorDetails;
 use codex_protocol::models::ManagedFileSystemPermissions;
 use codex_protocol::models::PermissionProfile;
+use codex_protocol::openai_models::ModelInfo;
+use codex_protocol::openai_models::ReasoningEffort;
 use codex_protocol::permissions::FileSystemAccessMode;
 use codex_protocol::permissions::FileSystemPath;
 use codex_protocol::permissions::FileSystemSandboxEntry;
@@ -78,6 +81,7 @@ struct WorkTaskArgs {
     instruction: String,
     provider: Option<String>,
     model: Option<String>,
+    reasoning_effort: Option<ReasoningEffort>,
     #[serde(default)]
     depends_on: Vec<String>,
     #[serde(default)]
@@ -677,6 +681,29 @@ fn resolve_task_spawn_config(
     Ok(config)
 }
 
+/// Elpis: gives one task's worker the reasoning effort it asked for. Refused, with the efforts the
+/// model does offer, when the task's model does not offer it. A model with no catalog entry
+/// (`used_fallback_model_metadata`) cannot be checked, so its provider decides, as for a role.
+fn apply_task_reasoning_effort(
+    config: &mut Config,
+    requested: Option<&ReasoningEffort>,
+    model_info: &ModelInfo,
+) -> Result<(), String> {
+    let Some(requested) = requested else {
+        return Ok(());
+    };
+    if !model_info.used_fallback_model_metadata {
+        let model = config.model.as_deref().unwrap_or(model_info.slug.as_str());
+        validate_spawn_agent_reasoning_effort(
+            model,
+            &model_info.supported_reasoning_levels,
+            requested,
+        )?;
+    }
+    config.model_reasoning_effort = Some(requested.clone());
+    Ok(())
+}
+
 async fn build_runner_options(
     session: &Arc<Session>,
     step_context: &StepContext,
@@ -719,21 +746,29 @@ async fn build_runner_options(
         &step_context.inherited_permissions(),
     )
     .map_err(FunctionCallError::RespondToModel)?;
-    let task_configs = args
-        .tasks
-        .iter()
-        .map(|task| {
-            resolve_task_spawn_config(
-                &spawn_config,
-                task.provider.as_deref(),
-                task.model.as_deref(),
-            )
-            .map(|config| (task.id.clone(), config))
-            .map_err(|error| {
-                FunctionCallError::RespondToModel(format!("task `{}`: {error}", task.id))
-            })
-        })
-        .collect::<Result<HashMap<_, _>, _>>()?;
+    let mut task_configs = HashMap::new();
+    for task in &args.tasks {
+        let refuse = |error: String| {
+            FunctionCallError::RespondToModel(format!("task `{}`: {error}", task.id))
+        };
+        let mut config = resolve_task_spawn_config(
+            &spawn_config,
+            task.provider.as_deref(),
+            task.model.as_deref(),
+        )
+        .map_err(|error| refuse(error.to_string()))?;
+        if task.reasoning_effort.is_some() {
+            let model = config.model.clone().unwrap_or_default();
+            let model_info = session
+                .services
+                .models_manager
+                .get_model_info(model.as_str(), &config.to_models_manager_config())
+                .await;
+            apply_task_reasoning_effort(&mut config, task.reasoning_effort.as_ref(), &model_info)
+                .map_err(refuse)?;
+        }
+        task_configs.insert(task.id.clone(), config);
+    }
 
     Ok(RunnerOptions {
         max_concurrency,

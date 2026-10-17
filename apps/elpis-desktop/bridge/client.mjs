@@ -758,7 +758,7 @@ export class DesktopClient extends EventEmitter {
     const params={rootThreadId:id,name:text(body.name,'workflow name',256),tasks:[]};
     if(!Array.isArray(body.tasks)||body.tasks.length<1||body.tasks.length>256)throw new BridgeError('A workflow must contain 1–256 tasks');
     for(const task of body.tasks){
-      object(task,['id','kind','title','instruction','dependsOn','environmentId','writeScopes','acceptanceCriteria','provider','model']);
+      object(task,['id','kind','title','instruction','dependsOn','environmentId','writeScopes','acceptanceCriteria','provider','model','reasoningEffort']);
       if(!['explore','implement','verify','fix'].includes(task.kind))throw new BridgeError('Unknown task role');
       const next={id:text(task.id,'task ID',100),kind:task.kind,title:text(task.title,'task title',256),instruction:text(task.instruction,'task instructions')};
       for(const key of ['dependsOn','writeScopes','acceptanceCriteria']){
@@ -775,6 +775,7 @@ export class DesktopClient extends EventEmitter {
         next.model=text(task.model,'task model',200);
         if(!/^[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,199}$/.test(next.model)||/^(claude|agy|antigravity)\//i.test(next.model))throw new BridgeError('Workflow tasks require a native model ID');
       }
+      if(task.reasoningEffort!==undefined)next.reasoningEffort=this.#effort(task.reasoningEffort);
       params.tasks.push(next);
     }
     for(const key of ['maxConcurrency','maxRuntimeSeconds'])if(body[key]!==undefined){
@@ -785,7 +786,7 @@ export class DesktopClient extends EventEmitter {
       const current=await this.#current(id);
       if(current.desktopAccess.mode==='continue')throw new BridgeError('Run workflows from a root conversation; this agent takes turns only from its parent',409);
       if(current.status?.type==='active')throw new BridgeError('Wait for the current turn to finish before running a workflow',409);
-      return this.#rpc(params.tasks.some(task=>task.provider!==undefined||task.model!==undefined)?'workGraph/runWithProviders':'workGraph/run',params);
+      return this.#rpc(params.tasks.some(task=>task.provider!==undefined||task.model!==undefined||task.reasoningEffort!==undefined)?'workGraph/runWithProviders':'workGraph/run',params);
     });
   }
   async createThread(body) {

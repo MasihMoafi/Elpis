@@ -362,7 +362,7 @@ fn find_spawn_agent_model_name(
         })
 }
 
-fn validate_spawn_agent_reasoning_effort(
+pub(crate) fn validate_spawn_agent_reasoning_effort(
     model: &str,
     supported_reasoning_levels: &[ReasoningEffortPreset],
     requested_reasoning_effort: &ReasoningEffort,

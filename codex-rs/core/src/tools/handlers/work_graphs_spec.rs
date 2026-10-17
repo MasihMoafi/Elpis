@@ -61,6 +61,10 @@ pub fn create_run_agent_work_graph_tool() -> ToolSpec {
             JsonSchema::string(Some("Optional native model ID. With no provider, inherits the coordinator's native provider. Omit both to inherit the route.".to_string())),
         ),
         (
+            "reasoning_effort".to_string(),
+            JsonSchema::string(Some("Optional reasoning effort for this task's worker, for example low, medium, high or xhigh. The task's model must offer it, or the run is refused. Omit to inherit the coordinator's effort.".to_string())),
+        ),
+        (
             "environment_id".to_string(),
             JsonSchema::string(Some(
                 "Optional pre-selected environment/worktree id. Omit for the primary environment."

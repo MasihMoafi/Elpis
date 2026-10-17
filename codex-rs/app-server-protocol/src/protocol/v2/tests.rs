@@ -5447,3 +5447,31 @@ fn tool_request_user_input_params_default_legacy_missing_is_blocking_to_true() {
         }
     );
 }
+
+#[test]
+fn work_graph_run_task_carries_an_optional_reasoning_effort() {
+    let task = |extra: serde_json::Value| {
+        let mut task = json!({
+            "id": "inspect", "kind": "explore", "title": "Inspect", "instruction": "Read",
+            "provider": null, "model": "gpt-5.5", "dependsOn": [],
+            "environmentId": null, "writeScopes": [], "acceptanceCriteria": ["Report"],
+        });
+        task.as_object_mut()
+            .expect("task object")
+            .extend(extra.as_object().expect("extra object").clone());
+        task
+    };
+
+    let high: WorkGraphRunTask =
+        serde_json::from_value(task(json!({"reasoningEffort": "high"}))).expect("task");
+    assert_eq!(high.reasoning_effort, Some(ReasoningEffort::High));
+    assert_eq!(
+        serde_json::to_value(&high).expect("task json")["reasoningEffort"],
+        json!("high")
+    );
+
+    for inherited in [json!({}), json!({"reasoningEffort": null})] {
+        let task: WorkGraphRunTask = serde_json::from_value(task(inherited)).expect("task");
+        assert_eq!(task.reasoning_effort, None);
+    }
+}

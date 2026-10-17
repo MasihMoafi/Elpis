@@ -1,6 +1,7 @@
 //! Elpis: deterministic work graphs (`workGraph/list`), copied from v0.3.0.
 use crate::JsonSchema;
 use crate::TS;
+use codex_protocol::openai_models::ReasoningEffort;
 use serde::Deserialize;
 use serde::Serialize;
 use serde_json::Value as JsonValue;
@@ -71,6 +72,9 @@ pub struct WorkGraphRunTask {
     pub instruction: String,
     pub provider: Option<String>,
     pub model: Option<String>,
+    /// Reasoning effort for this task's worker. Omitted or null inherits the coordinator's
+    /// effort. A task model that does not offer the effort is refused before the run starts.
+    pub reasoning_effort: Option<ReasoningEffort>,
     #[serde(default)]
     pub depends_on: Vec<String>,
     pub environment_id: Option<String>,

@@ -395,6 +395,21 @@ test('manual workflows require an idle root and forward the reviewed graph witho
   client.close();
 });
 
+test('a task reasoning effort is validated and forwarded on the routed workflow method', async () => {
+  const {client,socket}=fixture(); await client.initialize();
+  const task={id:'inspect',title:'Inspect',instruction:'Read the evidence',kind:'explore',dependsOn:[],writeScopes:[],acceptanceCriteria:['Report evidence']};
+  const draft={rootThreadId:ROOT,name:'Effort workflow',tasks:[{...task,reasoningEffort:'high'},{...task,id:'plain',dependsOn:['inspect']}]};
+  for(const bad of ['','High','x','high effort','a'.repeat(17),7,null])
+    await assert.rejects(client.runWorkflow({...draft,tasks:[{...task,reasoningEffort:bad}]}),/reasoning effort/,JSON.stringify(bad));
+  assert.equal(socket.sent.some(row=>row.method.startsWith('workGraph/run')),false);
+  assert.equal((await client.runWorkflow(draft)).graphId,'graph-1');
+  const routed=socket.sent.filter(row=>row.method==='workGraph/runWithProviders');
+  assert.equal(routed.length,1,'an effort alone needs the routed method');
+  assert.deepEqual(routed[0].params,draft);
+  assert.equal(socket.sent.some(row=>row.method==='workGraph/run'),false);
+  client.close();
+});
+
 test('browser rag command reaches actual native turn input without changing plain text', async () => {
   for (const input of ['/rag', '/rag show', '/ragged show', 'rag show']) {
     const { client, socket } = fixture(); await client.initialize();
