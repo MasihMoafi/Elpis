@@ -126,13 +126,16 @@ test('Observability: chats listed with English counts; a chat opens as a timelin
     await detail.getByText('Not measured: no request finished in this turn.', { exact: true }).waitFor();
 
     // The record opens in Files, from the Smart Prune that names it.
-    await turns.locator(':scope > li > button').first().click();
+    const firstTurn = turns.locator(':scope > li > button').first();
+    await firstTurn.click();
     await turns.locator(':scope > li').first().locator('.trace-step').nth(1).getByRole('button', { name: 'Open record', exact: true }).click();
     await contents(page).waitFor();
-    // With Files open the page is narrow; the timeline stacks above the context and its text keeps a readable width.
+    // Files opens in the chat workspace. Returning to Observability keeps the selected turn and its steps.
+    await page.getByRole('button', { name: 'Observability', exact: true }).click();
+    assert.equal(await firstTurn.getAttribute('aria-expanded'), 'true', 'opening a record preserves the turn');
     const text = await turns.locator(':scope > li').first().locator('.trace-step .trace-text').first().boundingBox();
-    assert.ok(text.width >= 150, `step text is ${text.width}px wide beside the open Files pane`);
-    await assertUiFit(page.locator('.observability'), 'chat beside the Files pane');
+    assert.ok(text.width >= 150, `step text is ${text.width}px wide after opening the record`);
+    await assertUiFit(page.locator('.observability'), 'return to the trace from Files');
     await shot(page, 'observability-record-opened');
 
     await page.getByRole('button', { name: 'All chats', exact: true }).click();
