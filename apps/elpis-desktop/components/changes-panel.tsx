@@ -1,11 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { RefreshCw, Undo2 } from "lucide-react";
+import { FileDiff, RefreshCw, Undo2 } from "lucide-react";
 import { FolderIcon } from "@/components/elpis-icons";
 import { Button } from "@/components/ui/button";
 import { AlertDialog, AlertDialogClose, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { api } from "@/lib/api";
+import { FileRefLink } from "@/components/file-ref";
 import { parseDiff } from "@/lib/diff";
 import "@/components/changes-panel.css";
 
@@ -96,15 +97,16 @@ export function ChangesPanel({ threadId, running }: { threadId: string | undefin
       : !list.files.length ? <p className="changes-note">No changes in this folder.</p>
       : <>
         <ul className="change-list" aria-label="Changed files">{list.files.map(file => <li key={file.path}>
-          <button type="button" className="change-row" aria-current={file.path === shown?.path ? "true" : undefined} title={file.path} onClick={() => open(file)}>
+          <FileRefLink target={{ path: `${list.root}/${file.path}` }} label={file.path} className="change-row" current={file.path === shown?.path}>
             <span className="change-status" data-status={file.status} title={LABEL[file.status]}>{LETTER[file.status]}</span>
-            <span className="change-path">{file.path.includes("/") && <span className="dir">{file.path.slice(0, file.path.lastIndexOf("/") + 1)}</span>}{file.path.slice(file.path.lastIndexOf("/") + 1)}</span>
+            <span className="change-path" title={file.path}>{file.path.includes("/") && <span className="dir">{file.path.slice(0, file.path.lastIndexOf("/") + 1)}</span>}{file.path.slice(file.path.lastIndexOf("/") + 1)}</span>
             {file.binary ? <span className="change-counts">binary</span> : <Counts added={file.added} removed={file.removed} />}
-          </button>
+          </FileRefLink>
+          <Button type="button" variant="ghost" size="icon-xs" aria-label={`View diff of ${file.path}`} title={`View diff of ${file.path}`} onClick={() => open(file)}><FileDiff size={14} /></Button>
         </li>)}</ul>
         {shown && <section className="diff-view" aria-label={`Diff of ${shown.path}`}>
           <div className="diff-head">
-            <span className="diff-title" title={shown.path}>{shown.path}</span>
+            <span className="diff-title" title={shown.path}><FileRefLink target={{ path: `${list.root}/${shown.path}` }}>{shown.path}</FileRefLink></span>
             {window.elpisDesktop?.openFolder && <Button type="button" variant="ghost" size="xs" onClick={() => showInFolder(shown)}><FolderIcon size={13} aria-hidden="true" />Show in folder</Button>}
             <Button type="button" variant="destructive" size="xs" disabled={running} title={running ? "Wait for the turn to finish" : `Throw away the changes to ${shown.path}`} onClick={() => { setFailure(""); setConfirming(shown); }}><Undo2 size={13} aria-hidden="true" />Discard</Button>
           </div>
@@ -117,7 +119,7 @@ export function ChangesPanel({ threadId, running }: { threadId: string | undefin
               : <><div className="diff-lines">{lines.slice(0, MAX_LINES).map((line, index) => line.kind === "hunk"
                 ? <div key={index} className="diff-line hunk"><span className="diff-hunk">{line.text}</span></div>
                 : <div key={index} className={`diff-line ${line.kind}`}>
-                  <span className="diff-no">{line.oldNo ?? ""}</span><span className="diff-no">{line.newNo ?? ""}</span>
+                  <span className="diff-no">{line.oldNo ?? ""}</span><span className="diff-no">{line.newNo ? <FileRefLink label={`Open line ${line.newNo}`} target={{ path: `${list.root}/${shown.path}`, line: line.newNo }}>{line.newNo}</FileRefLink> : ""}</span>
                   <span className="diff-sign" aria-hidden="true">{line.kind === "add" ? "+" : line.kind === "del" ? "−" : ""}</span><span className="diff-text">{line.text || " "}</span>
                 </div>)}</div>
                 {(lines.length > MAX_LINES || current?.value?.truncated) && <p className="changes-note">Showing the first part only; the diff is larger than this view keeps.</p>}</>}

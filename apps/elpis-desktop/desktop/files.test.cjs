@@ -18,12 +18,13 @@ function setup(openPath = async () => '') {
   const { registerFiles } = require('./files.cjs');
   const handlers = new Map();
   const mainFrame = { url: 'http://127.0.0.1:45001/' };
-  const webContents = { mainFrame };
+  const sent = [];
+  const webContents = { mainFrame, send: (...args) => sent.push(args) };
   const event = { sender: webContents, senderFrame: mainFrame };
   const dispose = registerFiles({ host: { webContents }, origin: 'http://127.0.0.1:45001',
     ipcMain: { handle: (name, handler) => handlers.set(name, handler), removeHandler: name => handlers.delete(name) },
     shell: { openPath } });
-  return { handlers, event, webContents, dispose, open: async (target, sender = event) => {
+  return { handlers, event, webContents, sent, dispose, open: async (target, sender = event) => {
     const result = await handlers.get('elpis:file:open')(sender, target);
     if (result.error) throw Error(result.error);
     return result;
@@ -40,7 +41,7 @@ test('the app preload offers a narrow local-file API and reports a native failur
   await assert.rejects(preload(async () => undefined).openFile('/tmp/report.md'), /Could not open/);
 });
 
-test('a clicked local file reaches OS association as an existing path with the line suffix removed', async () => {
+test('a clicked local file reaches the Files pane with its line; only the explicit external action uses OS association', async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'elpis-file-link-'));
   const file = path.join(root, 'گزارش with spaces.md');
   fs.writeFileSync(file, 'fixture');
@@ -51,6 +52,10 @@ test('a clicked local file reaches OS association as an existing path with the l
     return context.open(target);
   });
   await api.openFile(`${encodeURI(file)}:12`);
+  assert.deepEqual(opened, []);
+  assert.deepEqual(context.sent, [['elpis:file:requested', { path: fs.realpathSync(file), line: 12 }]]);
+  const external = await context.handlers.get('elpis:file:external')(context.event, file);
+  assert.equal(external.opened, true);
   assert.deepEqual(opened, [fs.realpathSync(file)]);
   context.dispose();
   assert.equal(context.handlers.size, 0);
@@ -64,7 +69,8 @@ test('missing files, folders and OS association failures reject without silently
   await assert.rejects(context.open(path.join(root, 'missing.md')), /unavailable|existing local file/i);
   await assert.rejects(context.open(root), /regular file|existing local file|unavailable/i);
   assert.equal(calls, 0);
-  await assert.rejects(context.open(file), /No application is associated/);
+  const failure = await context.handlers.get('elpis:file:external')(context.event, file);
+  assert.match(failure.error, /No application is associated/);
   assert.equal(calls, 1);
   context.dispose();
 });

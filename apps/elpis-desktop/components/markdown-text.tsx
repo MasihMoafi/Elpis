@@ -1,6 +1,6 @@
 "use client";
 
-import { createElement, useRef, useState, type HTMLAttributes, type MouseEvent } from "react";
+import { createElement, useRef, useState, type HTMLAttributes } from "react";
 import { Check, Copy } from "lucide-react";
 import Markdown, { defaultUrlTransform, type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -8,7 +8,6 @@ import rehypeHighlight from "rehype-highlight";
 import { Button } from "@/components/ui/button";
 import { FileRefLink } from "@/components/file-ref";
 import { linkFilePaths, parseHref } from "@/lib/file-refs";
-import { useHost } from "@/lib/files-pane";
 
 /** Copies text and reports the result next to the button. */
 export function CopyButton({ text, label }: { text: () => string; label: string }) {
@@ -41,25 +40,10 @@ function CodeBlock({ language, ...props }: React.ComponentProps<"pre"> & { langu
 }
 
 function MarkdownLink({ href, children, ...props }: React.ComponentProps<"a">) {
-  const [error, setError] = useState(""), { attached } = useHost();
   if (!href) return <span>{children}</span>;
-  // A file the reply names is a file ref where the Files tab can open it (components/file-ref.tsx).
   const file = parseHref(href);
-  if (file && attached) return <FileRefLink target={file}>{children}</FileRefLink>;
-  const local = href.startsWith("/") && !href.startsWith("//");
-  if (file && !local) return <span>{children}</span>;
-  async function openFile(event: MouseEvent<HTMLAnchorElement>) {
-    event.preventDefault();
-    setError("");
-    const open = window.elpisDesktop?.openFile;
-    if (!open) { setError("Local files open in the Elpis desktop app."); return; }
-    try { await open(href!); }
-    catch (cause) { setError(cause instanceof Error ? cause.message : "Could not open this file."); }
-  }
-  return <>
-    <a {...props} href={href} target={local ? undefined : "_blank"} rel="noreferrer noopener" onClick={local ? openFile : props.onClick}>{children}</a>
-    {error && <span role="alert" className="ml-2 text-sm text-destructive">{error}</span>}
-  </>;
+  if (file) return <FileRefLink target={file}>{children}</FileRefLink>;
+  return <a {...props} href={href} target="_blank" rel="noreferrer noopener">{children}</a>;
 }
 
 const directional = (tag: "p" | "ul" | "ol" | "blockquote" | "h1" | "h2" | "h3" | "h4" | "h5" | "h6" | "th" | "td") =>

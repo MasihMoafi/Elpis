@@ -19,9 +19,9 @@ export function fileActions(target: FileTarget, editors: EditorInfo[], onError: 
   const copy = (text: string) => () => { navigator.clipboard.writeText(text).then(() => onError(""), () => onError("Could not copy. Select the text to copy it.")); };
   const line = target.dir ? undefined : target.line;
   return [
-    ...(onFiles && target.inside && !target.dir ? [{ id: "files", label: "Open in Files pane", run: onFiles }] : []),
+    ...(onFiles && !target.dir ? [{ id: "files", label: "Open in Files pane", run: onFiles }] : []),
     ...(target.dir || !desktop?.openInEditor ? [] : editors.map(editor => ({ id: `editor-${editor.id}`, label: `Open in ${editor.name}`, run: () => { chooseEditor(editor.id); attempt(desktop.openInEditor?.(target.abs, editor.id, line)); } }))),
-    ...(target.dir || !desktop?.openFile ? [] : [{ id: "default", label: "Open in default app", run: () => { chooseEditor(null); attempt(desktop.openFile?.(line ? `${target.abs}:${line}` : target.abs)); } }]),
+    ...(target.dir || !desktop?.openExternalFile ? [] : [{ id: "default", label: "Open in default app", run: () => { chooseEditor(null); attempt(desktop.openExternalFile?.(line ? `${target.abs}:${line}` : target.abs)); } }]),
     ...(desktop?.openFolder ? [{ id: "folder", label: "Show in folder", run: () => attempt(desktop.openFolder?.(target.dir ? target.abs : folderOf(target.abs))) }] : []),
     { id: "copy-abs", label: "Copy absolute path", run: copy(target.abs) },
     ...(target.inside ? [{ id: "copy-rel", label: "Copy relative path", run: copy(target.rel) }] : []),

@@ -8,6 +8,7 @@ import { appStorage } from "@/lib/projects";
  * quickEntryShortcut. */
 export type Preferences = {
   defaultFolder: string;
+  softWrap: boolean;
   sendShortcut: "enter" | "modEnter";
   followUp: "steer" | "queue";
   showContextUsage: boolean;
@@ -23,7 +24,7 @@ export type Preferences = {
   notificationSound: boolean;
 };
 export const DEFAULT_PREFERENCES: Preferences = {
-  defaultFolder: "", sendShortcut: "enter", followUp: "steer", showContextUsage: true, confirmClose: false, closeToTray: false, quickEntryShortcut: "Ctrl+Alt+Space", confirmDeleteChats: true,
+  softWrap: false, defaultFolder: "", sendShortcut: "enter", followUp: "steer", showContextUsage: true, confirmClose: false, closeToTray: false, quickEntryShortcut: "Ctrl+Alt+Space", confirmDeleteChats: true,
   turnNotifications: "unfocused", inputNotifications: true, notificationSound: false,
 };
 export const PREFERENCES_KEY = "elpis-preferences-v1";

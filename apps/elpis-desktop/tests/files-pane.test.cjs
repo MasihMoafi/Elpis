@@ -48,7 +48,7 @@ const TURNS = [['t1', 'Where is the parser?', REPLY], ['t2', 'Run them.', 'All g
 /** The desktop calls the pane makes, recorded in the page: the system's app, the folder, the editors installed and one started. */
 const prepare = (page, editors) => page.evaluate(editors => {
   window.__opened = []; window.__edited = [];
-  window.elpisDesktop.openFile = async target => { window.__opened.push(target); };
+  window.elpisDesktop.openExternalFile = async target => { window.__opened.push(target); };
   window.elpisDesktop.openFolder = async target => { window.__folder = target; };
   window.elpisDesktop.editors = async () => editors;
   window.elpisDesktop.openInEditor = async (target, editor, line) => { window.__edited.push({ target, editor, line }); };
@@ -114,10 +114,11 @@ test('a path in a reply is a button that opens the Files tab on the file at its 
     await f.tabs.getByRole('tab', { name: 'parser.ts', exact: true }).click();
     assert.deepEqual(await lit(f), ['  const tree = [];', '  for (const token of tokens) tree.push(token);'], 'a tab comes back as it was');
 
-    // A file outside the project is not read by the pane: it opens as before, in the system's app.
+    // Outside references stay in Files, including unavailable-file feedback.
     await f.ref('/etc/hosts.conf:3').click();
-    assert.deepEqual(await f.page.evaluate(() => window.__opened), ['/etc/hosts.conf:3']);
-    assert.equal(await f.tabs.getByRole('tab').count(), 4);
+    await f.view.getByRole('alert').waitFor();
+    assert.deepEqual(await f.page.evaluate(() => window.__opened), []);
+    assert.equal(await f.tabs.getByRole('tab').count(), 5);
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });
@@ -329,11 +330,11 @@ test('Open in: a path\'s menu offers the Files pane, each installed editor, the 
     assert.deepEqual(await f.page.evaluate(() => window.__opened), [], 'the system app was not asked');
 
     await ref.click();
-    await f.view.getByRole('button', { name: 'Open in Zed', exact: true }).waitFor();
+    await f.view.getByRole('button', { name: 'More file actions', exact: true }).waitFor();
     await ref.click({ button: 'right' });
     await f.page.getByRole('menuitem', { name: 'Open in default app', exact: true }).click();
     assert.deepEqual(await f.page.evaluate(() => window.__opened), [`${CWD}/src/lib/parser.ts:2`]);
-    await f.view.getByRole('button', { name: 'Open in default app', exact: true }).waitFor();
+    assert.equal(await f.view.getByRole('button', { name: 'Open in default app', exact: true }).count(), 0);
     await ref.click({ button: 'right' });
     await f.page.getByRole('menuitem', { name: 'Open in Zed', exact: true }).click();
     await ref.click({ button: 'right' });
@@ -346,19 +347,15 @@ test('Open in: a path\'s menu offers the Files pane, each installed editor, the 
     await f.page.getByRole('menuitem', { name: 'Copy absolute path', exact: true }).click();
     assert.equal(await f.copied(), `${CWD}/src/lib/parser.ts`);
 
-    // The Files pane's header has the same list and uses the editor last chosen (Zed), also after the app starts again.
-    const button = f.view.getByRole('button', { name: 'Open in Zed', exact: true });
-    await button.waitFor();
-    await button.click();
-    assert.deepEqual((await f.page.evaluate(() => window.__edited)).at(-1), { target: `${CWD}/src/lib/parser.ts`, editor: 'zed', line: 2 });
+    // External editors are secondary actions in the file menu, including after a reload.
     await f.view.getByRole('button', { name: 'More file actions', exact: true }).click();
     await f.page.getByRole('menuitem', { name: 'Open in gedit', exact: true }).click();
-    await f.view.getByRole('button', { name: 'Open in gedit', exact: true }).waitFor();
+    assert.deepEqual((await f.page.evaluate(() => window.__edited)).at(-1), { target: `${CWD}/src/lib/parser.ts`, editor: 'gedit', line: 2 });
     await f.page.reload();
     await prepare(f.page, [{ id: 'zed', name: 'Zed' }, { id: 'gedit', name: 'gedit' }]);
     await f.page.locator('.thread-row[data-thread-id="chat-a"] .thread-link').click();
     await f.ref('src/lib/parser.ts:2-3').click();
-    await f.view.getByRole('button', { name: 'Open in gedit', exact: true }).waitFor();
+    assert.equal(await f.view.getByRole('button', { name: 'Open in gedit', exact: true }).count(), 0);
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });
@@ -367,16 +364,15 @@ test('with no editor chosen, or none installed, Open in uses the system\'s defau
   const f = await open();
   try {
     await f.ref('the lexer').click();
-    const button = f.view.getByRole('button', { name: 'Open in default app', exact: true });
-    await button.waitFor();
-    await button.click();
+    await f.view.getByRole('button', { name: 'More file actions', exact: true }).click();
+    await f.page.getByRole('menuitem', { name: 'Open in default app', exact: true }).click();
     assert.deepEqual(await f.page.evaluate(() => window.__opened), [`${CWD}/src/lib/lexer.ts:1`]);
     await f.row('lexer.ts').click({ button: 'right' });
     const items = await f.page.getByRole('menu').getByRole('menuitem').allInnerTexts();
     assert.deepEqual(items, ['Open in default app', 'Show in folder', 'Copy absolute path', 'Copy relative path', 'Copy filename']);
     await f.page.keyboard.press('Escape');
     await f.ref('/etc/hosts.conf:3').click({ button: 'right' });
-    assert.deepEqual(await f.page.getByRole('menu').getByRole('menuitem').allInnerTexts(), ['Open in default app', 'Show in folder', 'Copy absolute path', 'Copy filename'], 'outside the project: no Files pane, no relative path');
+    assert.deepEqual(await f.page.getByRole('menu').getByRole('menuitem').allInnerTexts(), ['Open in Files pane', 'Open in default app', 'Show in folder', 'Copy absolute path', 'Copy filename'], 'outside the project: Files is available, relative paths are not');
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });

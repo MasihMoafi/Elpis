@@ -3,9 +3,9 @@
    Changes tab's (13px), the code 13px on a 20px line. */
 
 /* A path in a reply: a button drawn as the words it is made of, underlined by dots until it is hovered. */
-.markdown .file-ref { cursor:pointer; border-radius:4px; text-decoration:underline dotted; text-decoration-color:var(--muted-foreground); text-underline-offset:3px; }
-.markdown .file-ref:hover { text-decoration-style:solid; text-decoration-color:var(--foreground); background:var(--hover); }
-.markdown .file-ref:focus-visible { outline:2px solid var(--ring); outline-offset:1px; }
+.file-ref { display:inline; padding:0; border:0; font:inherit; color:inherit; background:transparent; text-align:inherit; cursor:pointer; border-radius:4px; text-decoration:underline dotted; text-decoration-color:var(--muted-foreground); text-underline-offset:3px; }
+.file-ref:hover { text-decoration-style:solid; text-decoration-color:var(--foreground); background:var(--hover); }
+.file-ref:focus-visible { outline:2px solid var(--ring); outline-offset:1px; }
 .file-ref-error { margin-inline-start:8px; font-size:13px; color:var(--destructive); }
 
 .files-pane { display:flex; flex-direction:column; flex:1; min-height:0; min-width:0; background:var(--background); }
@@ -70,3 +70,8 @@
 .fe-find-hit.current { background:color-mix(in oklab, var(--context) 70%, transparent); outline:1px solid var(--context); }
 .fe-text { position:absolute; inset:0; width:100%; height:100%; margin:0; padding:var(--fe-pad) 12px; resize:none; border:0; border-radius:0; outline:none; background:transparent; color:var(--foreground); caret-color:var(--foreground); font:13px/var(--fe-line) var(--mono); tab-size:4; white-space:pre; overflow:auto; }
 .fe-text:focus-visible { box-shadow:none; }
+
+/* A continuation always stays in the text stage, beyond the fixed number column. */
+.fe[data-wrap] .fe-text { white-space:pre-wrap; overflow-wrap:anywhere; }
+.fe[data-wrap] .fe-layer > div { min-width:0; }
+.fe[data-wrap] .fe-line { height:auto; min-height:var(--fe-line); white-space:pre-wrap; overflow-wrap:anywhere; }

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { FolderOpen, Plus, Settings2 } from "lucide-react";
+import { FileRefLink } from "@/components/file-ref";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Segmented, SettingsEmpty, SettingsNotice } from "@/components/settings/rows";
@@ -57,12 +58,12 @@ export function CustomizeView({ cwd, onCreateSkill, onOpenSettings }: { cwd: str
       {data.skills.error && <SettingsNotice tone="alert">{data.skills.error}</SettingsNotice>}
       {!data.skills.error && !skills.length && <SettingsEmpty title="No skills yet">Create one, or add a folder with a SKILL.md to your skills folder.</SettingsEmpty>}
       <ul className="customize-list">{skills.map(skill => <li key={skill.path} className="customize-item" title={skill.path}>
-        <span className="customize-text"><span className="customize-name">{skill.name}</span>{skill.description && <span className="customize-description">{skill.description}</span>}</span>
+        <span className="customize-text"><span className="customize-name"><FileRefLink target={{ path: skill.path }}>{skill.name}</FileRefLink></span>{skill.description && <span className="customize-description">{skill.description}</span>}</span>
         <span className="customize-badge">{skill.plugin ? `From ${skill.plugin.split("@")[0]}` : SCOPE[skill.scope]}</span>
         <Switch aria-label={`Use ${skill.name}`} checked={skill.enabled} onCheckedChange={enabled => void setSkill(skill, enabled)} />
       </li>)}</ul>
       {(data.skills.errors?.length ?? 0) > 0 && <details className="customize-errors"><summary>{data.skills.errors!.length} {data.skills.errors!.length === 1 ? "skill" : "skills"} could not be read</summary>
-        <ul>{data.skills.errors!.map(item => <li key={item.path}><code>{item.path}</code> {item.message}</li>)}</ul></details>}
+        <ul>{data.skills.errors!.map(item => <li key={item.path}><FileRefLink target={{ path: item.path }}><code>{item.path}</code></FileRefLink> {item.message}</li>)}</ul></details>}
     </section>}
     {data && section === "plugins" && <section aria-label="Your plugins">
       <div className="customize-title"><h2>Your plugins</h2></div>

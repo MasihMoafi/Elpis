@@ -3,6 +3,10 @@
 import { useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { FileCode, FileImage, FileSpreadsheet, FileText, Folder, Presentation, Workflow, File } from "lucide-react";
+import { MoreMenu } from "@/components/action-menu";
+import { useFileActions } from "@/components/file-actions";
+import { openRef, useHost } from "@/lib/files-pane";
+import { resolveRef } from "@/lib/file-refs";
 import { Button } from "@/components/ui/button";
 
 /** What the agent looked at and made, as Claude's desktop app shows it (its "wiggle" file card and screenshot
@@ -37,20 +41,26 @@ export function CreatedFiles({ paths }: { paths: string[] }) {
   if (!paths.length) return null;
   return <>
     <ul className="file-cards" aria-label="Files created">
-      {paths.map(path => {
-        const { name, title, ext, kind, Icon } = fileKind(path), folder = path.slice(0, path.length - name.length - 1) || "/";
-        return <li key={path} className="file-card" title={path}>
-          <Icon size={20} strokeWidth={1.5} className="file-card-icon" aria-hidden="true" />
-          <span className="file-card-text"><span className="file-card-name">{title}</span><span className="file-card-type">{ext ? `${kind} · ${ext.toUpperCase()}` : kind}</span></span>
-          <span className="file-card-actions">
-            <Button variant="outline" size="sm" aria-label={`Open ${name}`} onClick={() => { setError(""); void run(window.elpisDesktop?.openFile, path, setError); }}>Open</Button>
-            <Button variant="ghost" size="icon-sm" aria-label={`Show ${name} in folder`} title="Show in folder" onClick={() => { setError(""); void run(window.elpisDesktop?.openFolder, folder, setError); }}><Folder size={16} /></Button>
-          </span>
-        </li>;
-      })}
+      {paths.map(path => <CreatedFile key={path} path={path} onError={setError} />)}
     </ul>
     {error && <p role="alert" className="file-cards-error">{error}</p>}
   </>;
+}
+
+function CreatedFile({ path, onError }: { path: string; onError: (message: string) => void }) {
+  const { cwd } = useHost(), found = resolveRef({ path }, cwd);
+  const { name, title, ext, kind, Icon } = fileKind(path), folder = found.abs.slice(0, found.abs.lastIndexOf("/")) || "/";
+  const open = () => onError(openRef({ path }) ? "" : "Open a project folder to view this file.");
+  const actions = useFileActions(found, onError, open);
+  return <li className="file-card" title={found.abs}>
+    <Icon size={20} strokeWidth={1.5} className="file-card-icon" aria-hidden="true" />
+    <span className="file-card-text"><span className="file-card-name">{title}</span><span className="file-card-type">{ext ? `${kind} · ${ext.toUpperCase()}` : kind}</span></span>
+    <span className="file-card-actions">
+      <Button variant="outline" size="sm" aria-label={`Open ${name}`} onClick={open}>Open</Button>
+      <Button variant="ghost" size="icon-sm" aria-label={`Show ${name} in folder`} title="Show in folder" onClick={() => { onError(""); void run(window.elpisDesktop?.openFolder, folder, onError); }}><Folder size={16} /></Button>
+      <MoreMenu actions={actions} label={`More actions for ${name}`} title="More file actions" />
+    </span>
+  </li>;
 }
 
 /** An image the agent viewed: a thumbnail (small on a folded row, larger in its step) that opens full size; Esc or a

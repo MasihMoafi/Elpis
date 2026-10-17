@@ -100,7 +100,7 @@ test('Changes tab: the working-tree file list with status and +/- counts, and th
     assert.equal(await added.locator('.diff-text').innerText(), 'A tiny parser.');
 
     // A real click on another file shows that file's diff; its colours come from the same two rules.
-    await rows.nth(2).getByRole('button').click();
+    await rows.nth(2).getByRole('button', { name: /^View diff of / }).click();
     const parser = side.getByRole('region', { name: 'Diff of src/parser.ts' }); await parser.waitFor();
     await parser.locator('.diff-line.del').first().waitFor();
     assert.equal(await parser.locator('.diff-line.add').count(), 3); assert.equal(await parser.locator('.diff-line.del').count(), 1);
@@ -117,7 +117,7 @@ test('Changes tab: the working-tree file list with status and +/- counts, and th
     assert.ok(plain.join() !== green.join() && plain.join() !== red.join(), 'unchanged lines are not tinted');
     const widths = await parser.locator('.diff-line:not(.hunk)').evaluateAll(lines => lines.map(line => Math.round(line.getBoundingClientRect().width)));
     assert.ok(widths.length > 3 && Math.max(...widths) - Math.min(...widths) <= 1, `every line is as wide as the longest, so the colours end together (${widths})`);
-    assert.equal(await rows.nth(2).getByRole('button').getAttribute('aria-current'), 'true', 'the shown file is marked in the list');
+    assert.equal(await rows.nth(2).locator('.change-row').getAttribute('aria-current'), 'true', 'the shown file is marked in the list');
     assert.deepEqual(await oranges(page), [], 'light theme, Changes tab: no orange');
     await shoot('changes-light');
   });
@@ -154,7 +154,7 @@ test('Changes tab: Discard asks first, and only the confirmed file goes; no comm
     await openChanges({ page, side });
     const rows = side.getByRole('list', { name: 'Changed files' }).getByRole('listitem');
     await eventually(async () => assert.equal(await rows.count(), 3));
-    await rows.nth(1).getByRole('button').click(); await side.getByRole('region', { name: 'Diff of old.txt' }).waitFor();
+    await rows.nth(1).getByRole('button', { name: /^View diff of / }).click(); await side.getByRole('region', { name: 'Diff of old.txt' }).waitFor();
     const dialog = page.getByRole('alertdialog');
     await side.getByRole('button', { name: 'Discard', exact: true }).click();
     await dialog.waitFor(); assert.match(await dialog.innerText(), /Discard changes to old\.txt\?/); assert.match(await dialog.innerText(), /cannot be undone/i);
@@ -178,10 +178,10 @@ test('Changes tab: Show in folder opens the changed file\'s folder; a folder tha
     await openChanges({ page, side });
     const rows = side.getByRole('list', { name: 'Changed files' }).getByRole('listitem');
     await eventually(async () => assert.equal(await rows.count(), 3));
-    await rows.nth(2).getByRole('button').click(); await side.getByRole('region', { name: 'Diff of src/parser.ts' }).waitFor();
+    await rows.nth(2).getByRole('button', { name: /^View diff of / }).click(); await side.getByRole('region', { name: 'Diff of src/parser.ts' }).waitFor();
     await side.getByRole('button', { name: 'Show in folder', exact: true }).click();
     await eventually(async () => assert.deepEqual(await page.evaluate(() => window.__opened), ['/work/parser/src']));
-    await rows.nth(0).getByRole('button').click(); await side.getByRole('region', { name: 'Diff of README.md' }).waitFor();
+    await rows.nth(0).getByRole('button', { name: /^View diff of / }).click(); await side.getByRole('region', { name: 'Diff of README.md' }).waitFor();
     await side.getByRole('button', { name: 'Show in folder', exact: true }).click();
     await eventually(async () => assert.deepEqual(await page.evaluate(() => window.__opened), ['/work/parser/src', '/work/parser']));
     state.error = "This chat's folder is not a Git repository.";

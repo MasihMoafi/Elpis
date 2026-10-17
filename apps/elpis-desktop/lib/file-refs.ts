@@ -47,7 +47,7 @@ export function parseHref(href: string): FileRef | null {
 }
 
 /** A sentence's last mark and any closing bracket it opened nothing for are not part of the path before them. */
-function withoutTail(text: string) {
+export function withoutTail(text: string) {
   if (/[.,;:!?]$/.test(text)) text = text.slice(0, -1);
   for (const [open, close] of ["()", "[]"]) {
     let opened = text.split(open).length - 1, closed = text.split(close).length - 1;

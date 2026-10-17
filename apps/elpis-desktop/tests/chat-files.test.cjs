@@ -45,7 +45,8 @@ test('a viewed image is a thumbnail on its folded row and in its step; a created
     assert.equal(await cards.locator('.file-card-name').innerText(), 'report');
     assert.equal(await cards.locator('.file-card-type').innerText(), 'Code · HTML');
     await cards.getByRole('button', { name: 'Open report.html', exact: true }).click();
-    assert.equal(await page.evaluate(() => window.__opened), `${CWD}/report.html`);
+    await page.getByRole('tab', { name: 'report.html', exact: true }).waitFor();
+    assert.equal(await page.evaluate(() => window.__opened), undefined);
     await cards.getByRole('button', { name: 'Show report.html in folder', exact: true }).click();
     assert.equal(await page.evaluate(() => window.__folder), CWD);
     if (process.env.ELPIS_SHOTS) await page.screenshot({ path: `${process.env.ELPIS_SHOTS}/chat-files.png` });

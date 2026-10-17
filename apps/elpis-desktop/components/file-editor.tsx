@@ -35,7 +35,7 @@ const NO_PIECES: (Found & { index: number })[] = [];
 
 /** A file's text, edited in place: line numbers, the lines a reply named marked, find in file (Ctrl+F) and Ctrl+S to save.
  * A textarea draws and edits the text; two layers behind it move with its scroll, the numbers and the marks. */
-export function FileEditor({ label, value, marks, onChange, onSave }: { label: string; value: string; marks?: Marks; onChange: (value: string) => void; onSave: () => void }) {
+export function FileEditor({ label, value, marks, softWrap = false, onChange, onSave }: { label: string; value: string; softWrap?: boolean; marks?: Marks; onChange: (value: string) => void; onSave: () => void }) {
   const area = useRef<HTMLTextAreaElement>(null), layer = useRef<HTMLDivElement>(null), numbers = useRef<HTMLDivElement>(null), field = useRef<HTMLInputElement>(null);
   const [find, setFind] = useState<{ query: string; at: number; focus: number } | null>(null);
   const lines = useMemo(() => value.split("\n"), [value]);
@@ -58,10 +58,27 @@ export function FileEditor({ label, value, marks, onChange, onSave }: { label: s
   const show = (line: number, middle = false) => {
     const box = area.current;
     if (!box) return;
-    const top = line * LINE, height = box.clientHeight;
+    const top = (layer.current?.children[line] as HTMLElement | undefined)?.offsetTop ?? line * LINE, height = box.clientHeight;
     if (middle || top < box.scrollTop + LINE || top + 2 * LINE > box.scrollTop + height) box.scrollTop = Math.max(0, top - height / 3);
     sync();
   };
+  // Measure the same wrapped rows used for highlights; the gutter follows their actual heights, including on resize.
+  useLayoutEffect(() => {
+    const box = area.current, content = layer.current, gutter = numbers.current;
+    if (!box || !content || !gutter) return;
+    const measure = () => {
+      content.style.width = softWrap ? `${box.clientWidth}px` : "";
+      [...content.children].forEach((row, index) => {
+        const number = gutter.children[index] as HTMLElement | undefined;
+        if (number) number.style.height = `${row.getBoundingClientRect().height}px`;
+      });
+      sync();
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(box); observer.observe(content);
+    return () => observer.disconnect();
+  }, [value, softWrap]);
   useLayoutEffect(() => { if (marks?.line) show(marks.line - 1, true); }, [marks?.focus, label]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (current >= 0) show(found[current].line); }, [current, find?.query]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (find?.focus) { field.current?.focus(); field.current?.select(); } }, [find?.focus]);
@@ -79,7 +96,7 @@ export function FileEditor({ label, value, marks, onChange, onSave }: { label: s
     else if (event.key === "Escape" && find) { event.preventDefault(); closeFind(); }
   };
   const width = `${String(lines.length).length}ch`;
-  return <div className="fe" onKeyDown={keys}>
+  return <div className="fe" data-wrap={softWrap || undefined} onKeyDown={keys}>
     {find && <div className="fe-find" role="search" aria-label="Find in file">
       <SearchField ref={undefined} className="fe-find-field">
         <input ref={field} type="text" aria-label="Find in file" placeholder="Find in file…" value={find.query} spellCheck={false} autoComplete="off"
@@ -100,7 +117,7 @@ export function FileEditor({ label, value, marks, onChange, onSave }: { label: s
           const pieces = byLine.get(index) ?? NO_PIECES;
           return <Line key={index} text={text} hit={first > 0 && index + 1 >= first && index + 1 <= last} pieces={pieces} current={pieces === NO_PIECES ? -1 : current} />;
         })}</div></div>
-        <textarea ref={area} className="fe-text" aria-label={label} value={value} wrap="off" dir="ltr" spellCheck={false} autoCapitalize="off" autoComplete="off" autoCorrect="off"
+        <textarea ref={area} className="fe-text" aria-label={label} value={value} wrap={softWrap ? "soft" : "off"} dir="ltr" spellCheck={false} autoCapitalize="off" autoComplete="off" autoCorrect="off"
           onChange={event => onChange(event.target.value)} onScroll={sync} />
       </div>
     </div>

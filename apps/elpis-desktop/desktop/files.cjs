@@ -62,7 +62,15 @@ function registerFiles({ host, origin, ipcMain, shell, env, spawn = nodeSpawn })
       return { opened: true };
     } catch (error) { return { error: error.message || `Could not open this ${kind}.` }; }
   };
-  ipcMain.handle('elpis:file:open', opener('file', localFilePath));
+  ipcMain.handle('elpis:file:open', async (event, target) => {
+    try {
+      trusted(event);
+      const file = await existing('file', localFilePath, target);
+      host.webContents.send('elpis:file:requested', { path: file, line: lineOf(target) });
+      return { opened: true };
+    } catch (error) { return { error: error.message || 'Could not open this file.' }; }
+  });
+  ipcMain.handle('elpis:file:external', opener('file', localFilePath));
   ipcMain.handle('elpis:folder:open', opener('folder', localFolderPath));
   ipcMain.handle('elpis:editors:list', async event => {
     try { trusted(event); return { editors: installedEditors(env) }; } catch (error) { return { error: error.message }; }
@@ -76,7 +84,7 @@ function registerFiles({ host, origin, ipcMain, shell, env, spawn = nodeSpawn })
       return { opened: true };
     } catch (error) { return { error: error.message || 'Could not start the editor.' }; }
   });
-  return () => { for (const name of ['elpis:file:open', 'elpis:folder:open', 'elpis:editors:list', 'elpis:file:edit']) ipcMain.removeHandler(name); };
+  return () => { for (const name of ['elpis:file:open', 'elpis:file:external', 'elpis:folder:open', 'elpis:editors:list', 'elpis:file:edit']) ipcMain.removeHandler(name); };
 }
 
 module.exports = { registerFiles };

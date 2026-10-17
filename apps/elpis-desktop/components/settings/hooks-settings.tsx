@@ -1,5 +1,6 @@
 "use client";
 
+import { FilePathText } from "@/components/file-ref";
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -40,7 +41,7 @@ export function HooksSettings() {
         const label = `${EVENTS[hook.event ?? ""] ?? hook.event ?? "Hook"}${hook.matcher ? ` · ${hook.matcher}` : ""}`;
         return <SettingRow key={hook.key} title={label} description={<>
           <code className="settings-code">{action(hook)}</code>
-          <span className="mt-1 block">{[hook.pluginId ? `Plugin ${hook.pluginId}` : hook.source, hook.sourcePath, hook.timeoutSec ? `${hook.timeoutSec}s timeout` : null].filter(Boolean).join(" · ")}</span>
+          <span className="mt-1 block"><FilePathText text={[hook.pluginId ? `Plugin ${hook.pluginId}` : hook.source, hook.sourcePath, hook.timeoutSec ? `${hook.timeoutSec}s timeout` : null].filter(Boolean).join(" · ")} /></span>
         </>}>
           <span className={`settings-badge ${trust.tone}`}>{trust.label}</span>
           {(hook.trust === "untrusted" || hook.trust === "modified") && <Button variant="outline" size="sm" disabled={!data.write?.available || saver.pending !== null} onClick={() => change(hook, { trust: true }, "Hook trusted.")}>Trust</Button>}

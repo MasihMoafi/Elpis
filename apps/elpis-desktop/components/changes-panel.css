@@ -31,3 +31,6 @@
 .diff-line.del .diff-no, .diff-line.del .diff-sign { background:color-mix(in oklch, var(--destructive) 18%, transparent); color:var(--destructive); }
 .diff-line.hunk { display:block; margin:6px 0 2px; padding:2px 12px; background:var(--recessed); color:var(--muted-foreground); }
 .diff-line.note .diff-text { color:var(--muted-foreground); font-style:italic; }
+
+.change-list > li { display:flex; align-items:center; gap:4px; }
+.change-list .change-row { display:flex; text-decoration:none; flex:1; min-width:0; }

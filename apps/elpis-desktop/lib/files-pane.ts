@@ -96,6 +96,10 @@ export function reveal(cwd: string, path: string) {
 }
 
 // Files.
+/** Outside references share the chat's tabs; reads and writes stay scoped to the file's own folder. */
+const location = (cwd: string, path: string) => path.startsWith("/")
+  ? { cwd: path.slice(0, path.lastIndexOf("/")) || "/", path: path.slice(path.lastIndexOf("/") + 1) }
+  : { cwd, path };
 const FRESH = (text: string) => text.replace(/\r\n/g, "\n");
 /** Reads the file into its tab. A file with unsaved edits is left as it is; one that has not changed keeps its text. */
 export async function loadDoc(cwd: string, path: string) {
@@ -103,7 +107,8 @@ export async function loadDoc(cwd: string, path: string) {
   if (isDirty(known)) return;
   if (!known || known.status !== "ready") set({ docs: { ...state.docs, [key]: { status: "loading" } } });
   try {
-    const result = await api<{ content?: string; binary?: boolean; tooLarge?: boolean; size: number; mtimeMs?: number }>(`/file?cwd=${enc(cwd)}&path=${enc(path)}`);
+    const source = location(cwd, path);
+    const result = await api<{ content?: string; binary?: boolean; tooLarge?: boolean; size: number; mtimeMs?: number }>(`/file?cwd=${enc(source.cwd)}&path=${enc(source.path)}`);
     if (isDirty(state.docs[key])) return;
     if (result.tooLarge) { set({ docs: { ...state.docs, [key]: { status: "large", size: result.size } } }); return; }
     if (result.binary || typeof result.content !== "string" || typeof result.mtimeMs !== "number") { set({ docs: { ...state.docs, [key]: { status: "binary", size: result.size } } }); return; }
@@ -125,14 +130,13 @@ export function openFile(cwd: string, path: string, { preview = false, line, end
   patchPane(cwd, { open, active: path, selected: path });
   if (gone.length) set({ docs: Object.fromEntries(Object.entries(state.docs).filter(([key]) => !gone.some(item => key === docKey(cwd, item.path)))) });
   void loadDoc(cwd, path);
-  if (show) reveal(cwd, path);
+  if (show && !path.startsWith("/")) reveal(cwd, path);
 }
-/** A path in a reply: opens the Files tab on it when it is inside the open chat's folder. Returns whether it did. */
+/** Opens a local reference in the chat's Files tab, including files outside its folder. */
 export function openRef(ref: FileRef): boolean {
   const { attached, cwd } = state.host;
   if (!attached || !cwd) return false;
   const found = resolveRef(ref, cwd);
-  if (!found.inside) return false;
   openFile(cwd, found.rel, { line: found.line, endLine: found.endLine, show: true });
   for (const request of requests) request();
   return true;
@@ -162,7 +166,7 @@ export async function save(cwd: string, path: string) {
   const sent = doc.text;
   patchDoc(key, current => current.status === "ready" ? { ...current, saving: true, saveError: "" } : current);
   try {
-    const result = await api<{ mtimeMs: number }>("/file", { cwd, path, content: doc.eol === "\r\n" ? sent.replace(/\n/g, "\r\n") : sent, mtimeMs: doc.mtimeMs });
+    const result = await api<{ mtimeMs: number }>("/file", { ...location(cwd, path), content: doc.eol === "\r\n" ? sent.replace(/\n/g, "\r\n") : sent, mtimeMs: doc.mtimeMs });
     patchDoc(key, current => current.status === "ready" ? { ...current, saved: sent, mtimeMs: result.mtimeMs, saving: false } : current);
   } catch (cause) { patchDoc(key, current => current.status === "ready" ? { ...current, saving: false, saveError: message(cause) } : current); }
 }

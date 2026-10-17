@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Button } from "@/components/ui/button";
+import { FileRefLink } from "@/components/file-ref";
 import { api } from "@/lib/api";
 import { editable, reloadSettings, saveOptions, type ConfigOptions, type ElpisSettings } from "@/lib/settings-store";
 import { SaveFeedback, SettingRow, SettingsGroup, SettingsHeader } from "@/components/settings/rows";
@@ -22,15 +22,12 @@ const OPTIONS: { name: keyof ConfigOptions; title: string; description: string; 
     { value: "auto", label: "Auto" }, { value: "concise", label: "Concise" }, { value: "detailed", label: "Detailed" }, { value: "none", label: "None" }] },
 ];
 
-/** The Elpis config file; the desktop app can open it in the system editor. */
+/** The Elpis config file; opened in the Files pane. */
 function ConfigFile() {
   const [path, setPath] = useState<string | null>(null);
-  const [error, setError] = useState("");
   useEffect(() => { api<{ configPath?: string | null }>("/mcp").then(value => setPath(value.configPath ?? null)).catch(() => setPath(null)); }, []);
-  const open = typeof window === "undefined" ? undefined : window.elpisDesktop?.openFile;
-  return <SettingRow title="Config file" description={error || "Settings on this page are saved here. Other options can be edited in the file."}>
-    <span className={`settings-path${path ? "" : " unset"}`} title={path ?? undefined}><bdi>{path ?? "Not reported"}</bdi></span>
-    {open && path && <Button variant="outline" size="sm" onClick={() => { setError(""); open(path).catch(cause => setError(cause instanceof Error ? cause.message : String(cause))); }}>Open</Button>}
+  return <SettingRow title="Config file" description="Settings on this page are saved here. Other options can be edited in the file.">
+    <span className={`settings-path${path ? "" : " unset"}`} title={path ?? undefined}>{path ? <FileRefLink target={{ path }}><bdi>{path}</bdi></FileRefLink> : "Not reported"}</span>
   </SettingRow>;
 }
 

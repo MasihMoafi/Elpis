@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
+import { FilePathText } from "@/components/file-ref";
 import { Input } from "@/components/ui/input";
 import { OptionSelect } from "@/components/ui/option-select";
 import type { Approval } from "@/lib/api";
@@ -55,13 +56,14 @@ export function ApprovalCard({ approval, answer, answers, onAnswerChange, busy }
     {elicitation && <>
       <p>{params.serverName}{typeof toolName === "string" && <> · <strong>{toolName}</strong></>}</p>
       {params.message && <p className="approval-reason">{params.message}</p>}
-      {toolParams !== undefined && <pre>{JSON.stringify(toolParams,null,2)}</pre>}
+      {toolParams !== undefined && <pre><FilePathText text={JSON.stringify(toolParams,null,2)}/></pre>}
       {params.url && <p><a href={params.url} target="_blank" rel="noreferrer">{params.url}</a></p>}
       {params.mode === "openai/userVerification" && <p className="approval-reason">This request needs device verification. You can deny or cancel it here.</p>}
     </>}
-    {approval.params.reason && <p className="approval-reason">{approval.params.reason}</p>}
-    {permissions && <><p>{params.cwd}</p><pre>{JSON.stringify(params.permissions,null,2)}</pre></>}
-    {approval.params.command && <pre>{approval.params.command}</pre>}
+    {approval.params.reason && <p className="approval-reason"><FilePathText text={approval.params.reason}/></p>}
+    {permissions && <><p>{params.cwd}</p><pre><FilePathText text={JSON.stringify(params.permissions,null,2)}/></pre></>}
+    {params.changes != null && <pre><FilePathText text={JSON.stringify(params.changes, null, 2)}/></pre>}
+    {approval.params.command && <pre><FilePathText text={approval.params.command}/></pre>}
     {!elicitation && !permissions && offered.map((decision, index) => decisionScope(decision) && <div className="approval-scope" key={index}><p>{typeof decision === "object" && decision && "acceptWithExecpolicyAmendment" in decision ? "Command prefix scope (argv)" : "Host policy scope"}:</p><code>{decisionScope(decision)}</code></div>)}
     {schema && Object.entries(schema.properties).map(([key, field]) => {
       if (!field) return null;

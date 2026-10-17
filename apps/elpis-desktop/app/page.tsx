@@ -58,6 +58,7 @@ import { AgentsCanvas } from "@/components/agents-canvas";
 import { agentState, mergeListedThreads, stateLabels } from "@/lib/agents";
 import { insertTranscript } from "@/lib/dictation";
 import { useBrowser } from "@/components/browser-panel";
+import { onRequest as onFileRequest } from "@/lib/files-pane";
 import { SidePanel, useSidePanel } from "@/components/side-panel";
 import { FloatChatBar, FloatChatPill } from "@/components/float-chat";
 import { Tab, TabStrip } from "@/components/tab-strip";
@@ -288,6 +289,7 @@ export default function Home() {
   const [desktop, setDesktop] = useState(false);
   const browser = useBrowser();
   const side = useSidePanel(browser);
+  useEffect(() => onFileRequest(() => { if (view === "settings") setView("chat"); }), [view]);
   useEffect(() => { setDesktop(!!window.elpisDesktop?.browser); }, []);
   // The side panel (components/side-panel.tsx): shells and browser pages as tabs, beside the chat.
   const [hasTerminal, setHasTerminal] = useState(false);

@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { ArrowLeft } from "lucide-react";
+import { FilePathText } from "@/components/file-ref";
 import { Button } from "@/components/ui/button";
 import { RefreshButton, Segmented, SettingsEmpty, SettingsNotice } from "@/components/settings/rows";
 import { api } from "@/lib/api";
@@ -60,7 +61,7 @@ function outputWhy(item: Output, run: Run) {
 
 function PruneRun({ run }: { run: Run }) {
   const label = run.status === "model_error" ? "Model error" : run.outcome === "compacted" ? "Compacted" : run.outcome === "unchanged" ? "Unchanged" : "Failed";
-  return <details className="observability-run"><summary><span className="customize-badge">{label}</span><span>{run.at ? new Date(run.at).toLocaleString() : "Time not recorded"}</span><span className="customize-description">{run.error || `${estimate(run.saved)} saved`}</span></summary>
+  return <details className="observability-run"><summary><span className="customize-badge">{label}</span><span>{run.at ? new Date(run.at).toLocaleString() : "Time not recorded"}</span><span className="customize-description"><FilePathText text={run.error || `${estimate(run.saved)} saved`} /></span></summary>
     <div className="observability-run-body"><p>{run.model || "Model not recorded"}{run.effort ? ` · ${run.effort} effort` : ""} · {run.latencyMs === null ? "Timing not recorded" : `${(run.latencyMs / 1000).toFixed(1)}s`} · {run.prunerTokens === null ? "Pruner tokens not recorded" : `${tokens(run.prunerTokens)} pruner tokens`}</p>
       {run.admission && <p>Shortened {run.shortened} of {run.candidates} outputs · {estimate(run.admission.before)} → {estimate(run.admission.after)} · {estimate(run.admission.saved)} saved</p>}
       <ul className="customize-list">{run.items.map(item => <li className="observability-output" key={item.callId}><span>{item.tool || "Unknown tool"} · {item.sourceTokens === null ? "Tokens not recorded" : `${estimate(item.sourceTokens)} tokens`}</span><span className="customize-description">{outputWhy(item, run)}</span></li>)}</ul>
@@ -93,7 +94,7 @@ export function ObservabilityView({ onOpenChat }: { onOpenChat: (id: string) => 
   const choose = (chat: Chat) => { setSelected(chat); setDetail(null); setFilter(""); void loadChat(chat, ""); };
   return <div className="customize observability" aria-label="Observability">
     {selected && <button type="button" className="back-link" onClick={() => { request.current++; setBusy(false); setError(""); setSelected(null); }}><ArrowLeft size={18} />All chats</button>}
-    {error && <SettingsNotice tone="alert">{error} <Button variant="ghost" size="sm" onClick={() => void (selected ? loadChat(selected, filter) : loadOverview())}>Retry</Button></SettingsNotice>}
+    {error && <SettingsNotice tone="alert"><FilePathText text={error} /> <Button variant="ghost" size="sm" onClick={() => void (selected ? loadChat(selected, filter) : loadOverview())}>Retry</Button></SettingsNotice>}
     {busy && <SettingsNotice>Reading records…</SettingsNotice>}
     {!selected && overview && <>
       <section aria-label="Smart Prune"><div className="customize-title"><h2>Smart Prune</h2><RefreshButton onClick={() => void loadOverview()} disabled={busy} /></div><p className="customize-note">Recorded pruning activity. Token savings are estimates; the pruner's own usage is shown separately.</p><Stats totals={overview.totals} /><p className="customize-note">Records: <code>{overview.records}</code></p>

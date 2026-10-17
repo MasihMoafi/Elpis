@@ -11,7 +11,7 @@ import { TerminalView, endTerminal } from "@/components/terminal-view";
 import { ChangesPanel } from "@/components/changes-panel";
 import { FilesPane } from "@/components/files-pane";
 import type { AttachToChat } from "@/components/browser-annotations";
-import { attach, detach, onRequest } from "@/lib/files-pane";
+import { attach, detach, onRequest, openRef } from "@/lib/files-pane";
 import { mergeOrder, neighbour } from "@/lib/panel-tabs";
 import type { BrowserTab } from "@/lib/desktop";
 
@@ -138,6 +138,7 @@ export function SidePanel({ panel, browser, hasTerminal, dark, cwd, threadId, ru
   // Tells the Files tab where this chat works and that it can open files (a path clicked in a reply is a file ref only then).
   useEffect(() => { attach(cwd); }, [cwd]);
   useEffect(() => detach, []);
+  useEffect(() => window.elpisDesktop?.onOpenFile?.(target => { openRef(target); }), []);
   const element = useRef<HTMLElement>(null), drag = useRef<{ x: number; width: number } | null>(null);
   if (!panel.open) return null;
   const kinds = kindsOf(panel, browser, hasTerminal, cwd, !!threadId), { shown } = panel;

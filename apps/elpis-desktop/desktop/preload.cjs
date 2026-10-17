@@ -19,6 +19,15 @@ contextBridge.exposeInMainWorld('elpisDesktop',{
     if(typeof result?.error==='string')throw Error(result.error);
     if(result?.opened!==true)throw Error('Could not open this file.');
   }),
+  onOpenFile:callback=>{
+    const listener=(_event,target)=>callback(target);
+    ipcRenderer.on('elpis:file:requested',listener);
+    return()=>ipcRenderer.removeListener('elpis:file:requested',listener);
+  },
+  openExternalFile:target=>ipcRenderer.invoke('elpis:file:external',target).then(result=>{
+    if(typeof result?.error==='string')throw Error(result.error);
+    if(result?.opened!==true)throw Error('Could not open this file.');
+  }),
   editors:()=>ipcRenderer.invoke('elpis:editors:list').then(result=>{
     if(typeof result?.error==='string')throw Error(result.error);
     return Array.isArray(result?.editors)?result.editors:[];

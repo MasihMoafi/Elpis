@@ -7,6 +7,7 @@ import { MoreMenu, RightClickMenu, type MenuAction } from "@/components/action-m
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { CopyButton, MarkdownText } from "@/components/markdown-text";
+import { FileRefLink, FilePathText } from "@/components/file-ref";
 import { ImageThumb, fileKind } from "@/components/file-cards";
 import { type Item, type Thread, taskFromPath, title } from "@/lib/api";
 import { inlineMediaUrl } from "@/lib/attachments";
@@ -44,7 +45,7 @@ function RecordedAttachment({part,index,mediaBase}:{part:Record<string,unknown>;
 }
 function TextOutput({value}:{value:unknown}) {
   if(value===null||value===undefined||value==="")return null;
-  return <pre className="activity-output"><code>{typeof value==="string"?value:JSON.stringify(value,null,2)}</code></pre>;
+  return <pre className="activity-output"><code><FilePathText text={typeof value==="string"?value:JSON.stringify(value,null,2)} /></code></pre>;
 }
 function Activity({label,icon,status,detail,children}:{label:string;icon:React.ReactNode;status?:unknown;detail?:string;children:React.ReactNode}) {
   return <details className="activity-card"><summary className="activity-heading"><span className="activity-icon">{icon}</span><span className="activity-title">{label}</span>{detail&&<span className="activity-preview">{detail}</span>}{statusLabel(status)&&<span className={`activity-status status-${text(status)}`}>{statusLabel(status)}</span>}</summary><div className="activity-body">{children}</div></details>;
@@ -56,9 +57,9 @@ function CommandStep({item}:{item:Item}) {
   return <div className={`command-step${failed?" failed":""}`}>
     <div className="command-head"><span className="command-title">{stepLabel(item)}</span>{typeof item.durationMs==="number"&&<span className="command-duration">{(item.durationMs/1000).toFixed(1)}s</span>}</div>
     <div className="command-card">
-      <pre className="command-block" title={text(item.cwd)||undefined}><code>{shellTokens(unwrapShell(text(item.command))).map((token,index)=>token.kind==="text"?token.text:<span key={index} className={`sh-${token.kind}`}>{token.text}</span>)}</code></pre>
+      <pre className="command-block" title={text(item.cwd)||undefined}><code>{shellTokens(unwrapShell(text(item.command))).map((token,index)=>token.kind==="text"?<FilePathText key={index} text={token.text}/>:<span key={index} className={`sh-${token.kind}`}><FilePathText text={token.text}/></span>)}</code></pre>
       {failed&&typeof item.exitCode==="number"&&<p className="command-exit">Exit code {item.exitCode}</p>}
-      {output&&<pre className="command-output"><code>{output}</code></pre>}
+      {output&&<pre className="command-output"><code><FilePathText text={output}/></code></pre>}
     </div>
   </div>;
 }
@@ -113,12 +114,12 @@ export function ChatMessage({item,speaker="Elpis",threads=[],onOpenThread,onEdit
   if(item.type==="commandExecution")return <CommandStep item={item}/>;
   if(item.type==="fileChange"){
     const changes=list(item.changes).map(object);
-    return <Activity label={`${changes.length} file ${changes.length===1?"change":"changes"}`} icon={<FileEditIcon size={15}/>} status={item.status}>{changes.map((change,index)=><details className="file-change" key={`${text(change.path)}:${index}`}><summary><span className="file-change-kind">{readable(text(object(change.kind).type))}</span>{text(change.path)}</summary><TextOutput value={change.diff}/></details>)}<TextOutput value={item.output}/></Activity>;
+    return <Activity label={`${changes.length} file ${changes.length===1?"change":"changes"}`} icon={<FileEditIcon size={15}/>} status={item.status}>{changes.map((change,index)=><details className="file-change" key={`${text(change.path)}:${index}`}><summary><span className="file-change-kind">{readable(text(object(change.kind).type))}</span><FileRefLink target={{ path: text(change.path) }}>{text(change.path)}</FileRefLink></summary><TextOutput value={change.diff}/></details>)}<TextOutput value={item.output}/></Activity>;
   }
   if(item.type==="mcpToolCall"||item.type==="dynamicToolCall"){
     const result=object(item.result);const contents=list(item.type==="mcpToolCall"?result.content:item.contentItems);
     const output=contents.map(part=>text(object(part).text)).filter(Boolean).join("\n");const error=object(item.error);
-    return <Activity label={text(item.tool)||"Tool call"} icon={<ToolIcon size={15}/>} status={item.status} detail={text(item.server)||text(item.namespace)}>{item.arguments!==undefined&&<details className="activity-input"><summary>Input</summary><TextOutput value={item.arguments}/></details>}{output?<TextOutput value={output}/>:result.structuredContent?<TextOutput value={result.structuredContent}/>:contents.length?<p>Non-text output is recorded for this tool.</p>:null}{text(error.message)&&<p role="alert">{text(error.message)}</p>}{typeof item.durationMs==="number"&&<p className="activity-footer">{(item.durationMs/1000).toFixed(1)}s</p>}</Activity>;
+    return <Activity label={text(item.tool)||"Tool call"} icon={<ToolIcon size={15}/>} status={item.status} detail={text(item.server)||text(item.namespace)}>{item.arguments!==undefined&&<details className="activity-input"><summary>Input</summary><TextOutput value={item.arguments}/></details>}{output?<TextOutput value={output}/>:result.structuredContent?<TextOutput value={result.structuredContent}/>:contents.length?<p>Non-text output is recorded for this tool.</p>:null}{text(error.message)&&<p role="alert"><FilePathText text={text(error.message)}/></p>}{typeof item.durationMs==="number"&&<p className="activity-footer">{(item.durationMs/1000).toFixed(1)}s</p>}</Activity>;
   }
   if(item.type==="subAgentActivity"){
     const id=text(item.agentThreadId),agent=threads.find(thread=>thread.id===id);
