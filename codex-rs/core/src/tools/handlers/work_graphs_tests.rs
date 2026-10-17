@@ -408,6 +408,7 @@ fn writable_graph_requires_an_independent_verification_task() {
         }],
         max_concurrency: Some(1),
         max_runtime_seconds: Some(30),
+        isolation: None,
     };
     let err = validate_runner_args(&args)
         .expect_err("a writable task without an independent verifier must be rejected");
@@ -615,4 +616,43 @@ fn write_scope_rejects_a_file_mount_target() {
         .expect_err("bubblewrap writable roots must be directories");
 
     assert!(err.to_string().contains("must be an existing directory"));
+}
+
+#[test]
+fn isolated_writers_in_one_environment_run_in_parallel() {
+    let mut tasks = vec![
+        task(
+            "left",
+            0,
+            codex_state::WorkGraphTaskStatus::Pending,
+            &[],
+            &["src"],
+            "repo",
+        ),
+        task(
+            "right",
+            1,
+            codex_state::WorkGraphTaskStatus::Pending,
+            &[],
+            &["src"],
+            "repo",
+        ),
+    ];
+    tasks[0].workspace_path = Some("/tmp/repo-elpis/graph-1/left".to_string());
+    tasks[1].workspace_path = Some("/tmp/repo-elpis/graph-1/right".to_string());
+    assert_eq!(
+        select_ready_tasks(tasks.as_slice(), 2).len(),
+        2,
+        "writers in their own worktrees cannot touch each other's files"
+    );
+}
+
+#[test]
+fn a_task_workspace_is_recorded_as_a_native_path() {
+    let cwd = AbsolutePathBuf::from_absolute_path("/tmp/work graph/repo").expect("absolute path");
+    assert_eq!(
+        native_workspace_path(&PathUri::from_abs_path(&cwd)),
+        "/tmp/work graph/repo",
+        "scope snapshots read this path from disk; a file: URI matches nothing"
+    );
 }

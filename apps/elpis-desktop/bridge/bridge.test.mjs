@@ -410,6 +410,20 @@ test('a task reasoning effort is validated and forwarded on the routed workflow 
   client.close();
 });
 
+test('worktree isolation is validated and forwarded with the workflow', async () => {
+  const {client,socket}=fixture(); await client.initialize();
+  const task={id:'inspect',title:'Inspect',instruction:'Read the evidence',kind:'explore',dependsOn:[],writeScopes:[],acceptanceCriteria:['Report evidence']};
+  const draft={rootThreadId:ROOT,name:'Isolated workflow',isolation:'worktree',tasks:[task]};
+  for(const bad of ['','Worktree','copy',true,null,{}])
+    await assert.rejects(client.runWorkflow({...draft,isolation:bad}),/isolation/,JSON.stringify(bad));
+  assert.equal(socket.sent.some(row=>row.method.startsWith('workGraph/run')),false);
+  assert.equal((await client.runWorkflow(draft)).graphId,'graph-1');
+  assert.deepEqual(socket.sent.find(row=>row.method==='workGraph/run').params,draft);
+  await client.runWorkflow({...draft,isolation:undefined});
+  assert.equal('isolation' in socket.sent.filter(row=>row.method==='workGraph/run')[1].params,false,'absent isolation stays absent');
+  client.close();
+});
+
 test('browser rag command reaches actual native turn input without changing plain text', async () => {
   for (const input of ['/rag', '/rag show', '/ragged show', 'rag show']) {
     const { client, socket } = fixture(); await client.initialize();

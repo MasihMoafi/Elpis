@@ -5475,3 +5475,34 @@ fn work_graph_run_task_carries_an_optional_reasoning_effort() {
         assert_eq!(task.reasoning_effort, None);
     }
 }
+
+#[test]
+fn work_graph_run_params_carry_an_optional_worktree_isolation() {
+    let params = |extra: serde_json::Value| {
+        let mut params = json!({
+            "rootThreadId": "thread", "name": "Isolated", "tasks": [],
+            "maxConcurrency": null, "maxRuntimeSeconds": null,
+        });
+        params
+            .as_object_mut()
+            .expect("params object")
+            .extend(extra.as_object().expect("extra object").clone());
+        serde_json::from_value::<WorkGraphRunParams>(params)
+    };
+
+    let isolated = params(json!({"isolation": "worktree"})).expect("isolated params");
+    assert_eq!(
+        serde_json::to_value(&isolated).expect("params json")["isolation"],
+        json!("worktree")
+    );
+    for shared in [json!({}), json!({"isolation": null})] {
+        let shared = params(shared).expect("shared params");
+        assert_eq!(
+            serde_json::to_value(&shared).expect("params json")["isolation"],
+            JsonValue::Null
+        );
+    }
+    for unknown in ["copy", "Worktree", ""] {
+        assert!(params(json!({"isolation": unknown})).is_err(), "{unknown}");
+    }
+}

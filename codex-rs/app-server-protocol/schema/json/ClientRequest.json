@@ -6147,6 +6147,12 @@
       ],
       "type": "object"
     },
+    "WorkGraphIsolation": {
+      "enum": [
+        "worktree"
+      ],
+      "type": "string"
+    },
     "WorkGraphListParams": {
       "properties": {
         "rootThreadId": {

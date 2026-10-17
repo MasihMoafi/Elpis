@@ -659,6 +659,7 @@ export type { WindowsSandboxSetupMode } from "./WindowsSandboxSetupMode";
 export type { WindowsSandboxSetupStartParams } from "./WindowsSandboxSetupStartParams";
 export type { WindowsSandboxSetupStartResponse } from "./WindowsSandboxSetupStartResponse";
 export type { WindowsWorldWritableWarningNotification } from "./WindowsWorldWritableWarningNotification";
+export type { WorkGraphIsolation } from "./WorkGraphIsolation";
 export type { WorkGraphListParams } from "./WorkGraphListParams";
 export type { WorkGraphListResponse } from "./WorkGraphListResponse";
 export type { WorkGraphRunTask } from "./WorkGraphRunTask";

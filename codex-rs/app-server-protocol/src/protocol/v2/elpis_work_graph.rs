@@ -31,6 +31,8 @@ pub struct WorkGraphSummary {
     pub error: Option<String>,
     pub tasks: Vec<WorkGraphTaskSummary>,
     pub event_count: u32,
+    /// For a worktree-isolated run: its worktree paths, branches, and merge outcome.
+    pub worktree_report: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
@@ -60,6 +62,17 @@ pub struct WorkGraphRunParams {
     pub tasks: Vec<WorkGraphRunTask>,
     pub max_concurrency: Option<u32>,
     pub max_runtime_seconds: Option<u64>,
+    /// `worktree` runs each implement/fix task in its own git worktree beside the repository
+    /// and merges the results into the checked-out branch once the whole graph has succeeded.
+    /// Omitted or null runs every task in its selected environment.
+    pub isolation: Option<WorkGraphIsolation>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, JsonSchema, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export_to = "v2/")]
+pub enum WorkGraphIsolation {
+    Worktree,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]

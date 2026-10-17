@@ -51,6 +51,7 @@ impl ThreadRequestProcessor {
             "name": params.name, "tasks": tasks,
             "max_concurrency": params.max_concurrency,
             "max_runtime_seconds": params.max_runtime_seconds,
+            "isolation": params.isolation,
         })
         .to_string();
         let started = thread
@@ -112,11 +113,12 @@ impl ThreadRequestProcessor {
                     failure_reason: task.failure_reason,
                 })
                 .collect();
-            let event_count = state_db
+            let events = state_db
                 .list_work_graph_events(graph.id.as_str())
                 .await
-                .map_err(|err| internal_error(format!("failed to list work graph events: {err}")))?
-                .len();
+                .map_err(|err| {
+                    internal_error(format!("failed to list work graph events: {err}"))
+                })?;
             data.push(WorkGraphSummary {
                 id: graph.id,
                 name: graph.name,
@@ -125,8 +127,9 @@ impl ThreadRequestProcessor {
                     .map_err(|_| internal_error("work graph concurrency is too large"))?,
                 error: graph.last_error,
                 tasks,
-                event_count: u32::try_from(event_count)
+                event_count: u32::try_from(events.len())
                     .map_err(|_| internal_error("work graph event count is too large"))?,
+                worktree_report: codex_state::latest_worktree_report(&events),
             });
         }
         Ok(Some(WorkGraphListResponse { data }.into()))

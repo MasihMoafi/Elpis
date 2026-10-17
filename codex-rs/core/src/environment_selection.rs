@@ -141,6 +141,15 @@ pub(crate) fn default_thread_environment_requests(
         .collect()
 }
 
+/// Elpis: moves a selection to a work-graph task's worktree, its cwd and only workspace root.
+pub(crate) fn retarget_selection(selection: &mut TurnEnvironmentSelection, cwd: &PathUri) {
+    selection.cwd = cwd.clone();
+    selection.workspace_roots = vec![cwd.clone()];
+    if let EnvironmentConfigState::Ready(config) = &mut selection.config {
+        config.workspace_roots = vec![cwd.clone()];
+    }
+}
+
 /// Checks that environment IDs are registered and unique and that working directories are not too long.
 pub fn validate_environment_ids_and_cwds<'a>(
     environment_manager: &EnvironmentManager,
@@ -1316,6 +1325,21 @@ impl TurnEnvironmentSnapshot {
             .cloned()
             .collect();
         Self { environments }
+    }
+
+    /// Elpis: the snapshot narrowed to one environment and moved to a work-graph task's own
+    /// worktree, which becomes its cwd and only workspace root.
+    pub(crate) fn narrowed_to_worktree(&self, environment_id: &str, cwd: &PathUri) -> Self {
+        let mut narrowed = self.narrowed_to(environment_id);
+        for environment in &mut narrowed.environments {
+            let selection = match environment {
+                TurnEnvironmentState::Ready(environment) => &mut environment.selection,
+                TurnEnvironmentState::Starting(environment) => &mut environment.selection,
+                TurnEnvironmentState::Failed { selection, .. } => selection,
+            };
+            retarget_selection(selection, cwd);
+        }
+        narrowed
     }
 
     /// Returns every captured selection, including those still starting or unable to connect.

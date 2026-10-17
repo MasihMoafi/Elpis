@@ -530,6 +530,28 @@ WHERE graph_id = ? AND task_id = ? AND status = ? AND assigned_thread_id = ?
         Ok(result.rows_affected() > 0)
     }
 
+    /// Elpis: appends an engine-written event, such as a worktree-isolated run's report.
+    pub async fn record_work_graph_event(
+        &self,
+        graph_id: &str,
+        task_id: Option<&str>,
+        event_type: &str,
+        payload: &Value,
+    ) -> anyhow::Result<()> {
+        let mut tx = self.work_graphs_pool().await?.begin().await?;
+        insert_work_graph_event(
+            &mut tx,
+            graph_id,
+            task_id,
+            event_type,
+            Some(payload),
+            Utc::now().timestamp_millis(),
+        )
+        .await?;
+        tx.commit().await?;
+        Ok(())
+    }
+
     pub async fn finish_work_graph(
         &self,
         graph_id: &str,

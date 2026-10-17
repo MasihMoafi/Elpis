@@ -105,10 +105,45 @@ There is no slash command. When enabled, the coordinator model receives the
 Write scopes are existing repository-relative directories; a task can create, modify,
 or delete files beneath them. Exact-file mount roots are rejected because the inherited
 Linux sandbox applies directory metadata protections to writable roots.
-`environment_id` must name an environment already selected for the turn. Elpis does not
-create, merge, rebase, delete, or push branches or worktrees. Preparing and integrating
-worktrees remains coordinator-owned because those operations change durable user state
-and need deliberate review.
+`environment_id` must name an environment already selected for the turn. Without worktree
+isolation, Elpis does not create, merge, or delete branches or worktrees. With it (below),
+Elpis creates, commits, merges, and removes only its own `elpis/<graph>/<task>` branches
+and worktrees. It never rebases or pushes.
+
+## Worktree isolation
+
+`workGraph/run` and `workGraph/runWithProviders` accept `isolation: "worktree"` (the
+desktop bridge forwards it from `runWorkflow`). Absent or null keeps the behaviour above.
+Masih approved this design on 17 October 2026.
+
+- Each `implement` or `fix` task gets its own git worktree when it becomes ready, at
+  `<parent of the repository>/<repository name>-elpis/<graph id>/<task id>`, or at the same
+  path under the desktop's `desktop.git-worktree-root` when that is set. It is checked out
+  on the branch `elpis/<graph id>/<task id>`.
+- A writer with no writer prerequisites starts from the root's HEAD when the run started.
+  A writer that builds on writers (directly or through read-only tasks) starts from the
+  first one's result and merges the others with `git merge --no-ff`. A clash there fails
+  that task, lists the clashing files, and keeps the conflicted worktree.
+- The writer's `verify` task checks the same worktree. With isolation, each `verify` task
+  must depend directly on exactly one writer. Writers in different worktrees run in
+  parallel; write scopes stay relative to the worktree and are enforced as before.
+  `explore` tasks run in the selected environment itself.
+- When all of a writer's `verify` tasks succeed, Elpis commits everything changed in its
+  worktree as `Elpis agent`, with the task title as the message. An unchanged worktree
+  adds no commit.
+- When the whole graph succeeds, the results of the writers no other writer builds on are
+  merged with `git merge --no-ff`, one by one, first in a scratch worktree and then into
+  the branch checked out at the root by fast-forward, so the branch gets the same merge
+  commits. The branch is not moved when a result clashes or when the root has uncommitted
+  changes in a file the merge would change; the graph fails, lists those files, and keeps
+  the branches and worktrees. After a merge the worktrees and `elpis/<graph id>/*`
+  branches are removed.
+- A failed or cancelled run removes the worktrees that hold no work and keeps, and names,
+  the ones that do.
+- The report (worktree paths, branches, merge outcome) is the `worktreeReport` of the graph
+  in `workGraph/list`, and is added to the graph's `error` when the run fails.
+
+Commits and merges skip the repository's commit hooks (`--no-verify`) and signing.
 
 ## Deterministic engine rules
 
@@ -129,9 +164,10 @@ At runtime:
 1. Tasks are persisted in declared order.
 2. Only pending tasks whose dependencies all succeeded are eligible.
 3. Eligible tasks are selected in declared order, then task-ID order.
-4. All writable tasks in one environment are serialized, even when their declared path
+4. All writable tasks in one workspace are serialized, even when their declared path
    prefixes do not overlap.
-5. Writable tasks may run concurrently only in different selected environments.
+5. Writable tasks may run concurrently only in different selected environments or, with
+   worktree isolation, in their own worktrees.
 6. Concurrency is bounded by the requested limit and the session agent limit.
 7. A failed, cancelled, or blocked prerequisite blocks its pending descendants.
 8. Each task has a runtime deadline; a worker that exits without an accepted report
@@ -220,7 +256,12 @@ Automated coverage proves:
 - interrupted-graph failure without requeue;
 - successful dependency handoff;
 - prerequisite failure blocks a descendant without spawning it;
-- on Linux, a real worker command cannot write outside its declared scope.
+- on Linux, a real worker command cannot write outside its declared scope;
+- with worktree isolation: two parallel writers merge into the root branch; two writers
+  editing the same line fail the graph, list the file, and leave the branch untouched; an
+  uncommitted root change in a merged file stops the merge; a writer that builds on two
+  writers starts from their merge, and a clash there lists the files; a stopped run keeps
+  only worktrees with work.
 
 The before/after negative-check data and reproduction commands are in
 [evals/accountable-work-graphs](evals/accountable-work-graphs/README.md). These checks

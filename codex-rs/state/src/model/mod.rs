@@ -70,4 +70,6 @@ pub use work_graph::WorkGraphTaskKind;
 pub use work_graph::WorkGraphTaskReport;
 pub(crate) use work_graph::WorkGraphTaskRow;
 pub use work_graph::WorkGraphTaskStatus;
+pub use work_graph::WORKTREE_REPORT_EVENT;
+pub use work_graph::latest_worktree_report;
 pub use work_graph::validate_work_graph_tasks;

@@ -336,6 +336,19 @@ impl TryFrom<WorkGraphEventRow> for WorkGraphEvent {
     }
 }
 
+/// Elpis: the event holding a worktree-isolated run's report, `{"text": ...}`.
+pub const WORKTREE_REPORT_EVENT: &str = "worktree_report";
+
+/// The newest worktree report among a graph's events.
+pub fn latest_worktree_report(events: &[WorkGraphEvent]) -> Option<String> {
+    events
+        .iter()
+        .rev()
+        .find(|event| event.event_type == WORKTREE_REPORT_EVENT)
+        .and_then(|event| event.payload.as_ref()?.get("text")?.as_str())
+        .map(str::to_string)
+}
+
 pub fn validate_work_graph_tasks(tasks: &[WorkGraphTaskCreateParams]) -> Result<()> {
     if tasks.is_empty() {
         return Err(anyhow::anyhow!("work graph must contain at least one task"));

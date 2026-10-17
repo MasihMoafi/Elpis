@@ -770,7 +770,7 @@ export class DesktopClient extends EventEmitter {
     return this.#rpc('workGraph/list', {rootThreadId:id});
   }
   async runWorkflow(body) {
-    object(body, ['rootThreadId','name','tasks','maxConcurrency','maxRuntimeSeconds']);
+    object(body, ['rootThreadId','name','tasks','maxConcurrency','maxRuntimeSeconds','isolation']);
     const id=threadId(body.rootThreadId);
     const params={rootThreadId:id,name:text(body.name,'workflow name',256),tasks:[]};
     if(!Array.isArray(body.tasks)||body.tasks.length<1||body.tasks.length>256)throw new BridgeError('A workflow must contain 1–256 tasks');
@@ -798,6 +798,11 @@ export class DesktopClient extends EventEmitter {
     for(const key of ['maxConcurrency','maxRuntimeSeconds'])if(body[key]!==undefined){
       if(!Number.isSafeInteger(body[key])||body[key]<1||(key==='maxConcurrency'&&body[key]>32))throw new BridgeError(`Invalid ${key}`);
       params[key]=body[key];
+    }
+    // 'worktree': each implement/fix task works in its own git worktree, merged after the run.
+    if(body.isolation!==undefined){
+      if(body.isolation!=='worktree')throw new BridgeError('Workflow isolation must be "worktree" or absent');
+      params.isolation=body.isolation;
     }
     return this.#mutate(id,async()=>{
       const current=await this.#current(id);
@@ -899,16 +904,19 @@ export class DesktopClient extends EventEmitter {
       return { thread: this.#decorate(result.thread) };
     });
   }
-  /** Edit-and-resend and regenerate: Elpis drops the given turn and every later one (thread/revert), then the new text starts a turn. */
+  /** Edit-and-resend and regenerate: Elpis drops the given turn and every later one (thread/revert), then the new text starts a turn.
+   * Without `text` it is Rewind to here: the turns are dropped and nothing else happens. */
   async revert(id, body) {
-    object(body, ['beforeTurnId', 'text', 'model', 'effort']);
+    const rewind = body?.text === undefined && body?.model === undefined && body?.effort === undefined;
+    object(body, rewind ? ['beforeTurnId'] : ['beforeTurnId', 'text', 'model', 'effort']);
     const beforeTurnId = text(body.beforeTurnId, 'turn ID', 200);
-    const input = [{ type: 'text', text: ragMessage(text(body.text, 'message')), text_elements: [] }];
+    const input = rewind ? [] : [{ type: 'text', text: ragMessage(text(body.text, 'message')), text_elements: [] }];
     const effort = this.#effort(body.effort);
     return this.#mutate(id, async () => {
       const thread = await this.#current(id);
       if (thread.desktopAccess.mode === 'continue') throw new BridgeError('Elpis takes turns for this agent only from its parent, so its earlier messages cannot be replaced here.', 409);
       if (thread.status?.type === 'active') throw new BridgeError('Stop the running turn before replacing an earlier message.', 409);
+      if (rewind) { await this.#rpc('thread/revert', { threadId: id, beforeTurnId }); return { rewound: true, beforeTurnId }; }
       const model = await this.#providerModel(body.model, thread.modelProvider);
       const entries = [], cursors = new Set(); let cursor, complete = false;
       for (let pageIndex = 0; pageIndex < 20; pageIndex++) {
@@ -954,8 +962,8 @@ export class DesktopClient extends EventEmitter {
     return value;
   }
   async send(id, body) {
-    object(body, ['text', 'model', 'effort', 'continueAs', 'attachments', 'permissions', 'mode']);
-    const input = attachmentInput(typeof body.text === 'string' && body.text.trim() ? ragMessage(text(body.text, 'message')) : body.text, body.attachments);
+    object(body, ['text', 'model', 'effort', 'continueAs', 'attachments', 'mentions', 'permissions', 'mode']);
+    const input = attachmentInput(typeof body.text === 'string' && body.text.trim() ? ragMessage(text(body.text, 'message')) : body.text, body.attachments, body.mentions);
     const effort = this.#effort(body.effort), permissions = permissionMode(body.permissions);
     return this.#mutate(id, async () => {
       const thread = await this.#current(id);
@@ -1015,8 +1023,8 @@ export class DesktopClient extends EventEmitter {
     });
   }
   async steer(id, body) {
-    object(body, ['text', 'expectedTurnId', 'attachments']);
-    const input = attachmentInput(typeof body.text === 'string' && body.text.trim() ? ragMessage(text(body.text, 'message')) : body.text, body.attachments);
+    object(body, ['text', 'expectedTurnId', 'attachments', 'mentions']);
+    const input = attachmentInput(typeof body.text === 'string' && body.text.trim() ? ragMessage(text(body.text, 'message')) : body.text, body.attachments, body.mentions);
     const params = { threadId: id, expectedTurnId: text(body.expectedTurnId, 'turn ID', 200), input };
     return this.#mutate(id, async () => {
       const thread = await this.#current(id);

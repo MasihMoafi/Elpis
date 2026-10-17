@@ -186,6 +186,7 @@ mod tests {
             max_concurrency: 2,
             error: Some("verification failed".to_string()),
             event_count: 6,
+            worktree_report: None,
             tasks: vec![codex_app_server_protocol::WorkGraphTaskSummary {
                 id: "implement".to_string(),
                 kind: "implement".to_string(),

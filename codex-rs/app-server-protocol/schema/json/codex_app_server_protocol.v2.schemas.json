@@ -25124,6 +25124,12 @@
       "title": "WindowsWorldWritableWarningNotification",
       "type": "object"
     },
+    "WorkGraphIsolation": {
+      "enum": [
+        "worktree"
+      ],
+      "type": "string"
+    },
     "WorkGraphListParams": {
       "$schema": "http://json-schema.org/draft-07/schema#",
       "properties": {
@@ -25267,6 +25273,13 @@
             "$ref": "#/definitions/WorkGraphTaskSummary"
           },
           "type": "array"
+        },
+        "worktreeReport": {
+          "description": "For a worktree-isolated run: its worktree paths, branches, and merge outcome.",
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
       "required": [

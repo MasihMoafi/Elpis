@@ -37,6 +37,8 @@ pub use model::RolloutMigrationState;
 pub use model::WorkGraph;
 pub use model::WorkGraphCreateParams;
 pub use model::WorkGraphEvent;
+pub use model::WORKTREE_REPORT_EVENT;
+pub use model::latest_worktree_report;
 pub use model::WorkGraphStatus;
 pub use model::WorkGraphTask;
 pub use model::WorkGraphTaskCreateParams;
