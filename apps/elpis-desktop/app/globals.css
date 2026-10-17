@@ -321,6 +321,18 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .code-block-bar { position:absolute; top:6px; right:6px; display:flex; align-items:center; gap:4px; color:var(--muted-foreground); }
 .code-block-bar .copy-status { font-size:11px; }
 .code-block-bar .copy-status:empty { display:none; }
+.code-block-language { font:12px/1 var(--mono); color:var(--muted-foreground); }
+/* Code colours (rehype-highlight's hljs classes), as Claude's chats colour code: a few hues on the block's neutral
+ * ground, none orange (the light theme has none). */
+.markdown { --code-keyword:#7c3aed; --code-string:#15803d; --code-number:#1d4ed8; --code-title:#6d28d9; --code-comment:#6b7280; }
+.dark .markdown { --code-keyword:#c4a7ff; --code-string:#8fd19e; --code-number:#8ab4ff; --code-title:#dcc8ff; --code-comment:#8b929c; }
+.markdown :is(.hljs-keyword, .hljs-selector-tag, .hljs-doctag) { color:var(--code-keyword); }
+.markdown :is(.hljs-string, .hljs-regexp, .hljs-symbol, .hljs-template-tag, .hljs-addition) { color:var(--code-string); }
+.markdown :is(.hljs-number, .hljs-literal, .hljs-built_in, .hljs-type) { color:var(--code-number); }
+.markdown :is(.hljs-title, .hljs-section, .hljs-name, .hljs-selector-class, .hljs-selector-id) { color:var(--code-title); }
+.markdown :is(.hljs-comment, .hljs-quote, .hljs-meta) { color:var(--code-comment); }
+.markdown .hljs-comment { font-style:italic; }
+.markdown .hljs-deletion { color:var(--destructive); }
 .markdown [dir="auto"] { text-align:start; }
 .markdown blockquote { border-inline-start:3px solid var(--border); margin:12px 0; padding-inline-start:14px; color:var(--muted-foreground); }
 .markdown blockquote > :last-child { margin-bottom:0; }

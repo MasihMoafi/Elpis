@@ -23,9 +23,10 @@ const TURNS = [
   ['t4', 'Run them.', 'All green.'],
 ];
 
-/** Starts the bridge and a browser page. `running` makes the first chat run a turn; `desktop` is the fake desktop. */
-async function fixture({ width = 1130, height = 660, colorScheme = 'light', running = false, desktop = true } = {}) {
-  const posts = [], turns = TURNS.map(turn => [...turn]);
+/** Starts the bridge and a browser page. `running` makes the first chat run a turn; `desktop` is the fake desktop;
+ * `chat` replaces the first chat's turns. */
+async function fixture({ width = 1130, height = 660, colorScheme = 'light', running = false, desktop = true, chat: start = TURNS } = {}) {
+  const posts = [], turns = start.map(turn => [...turn]);
   const entries = () => turns.flatMap(([id, prompt, reply], index) => {
     const at = Date.now() - (turns.length - index) * 120_000;
     return [{ turnId: id, item: { id: `u-${id}`, type: 'userMessage', content: [{ type: 'text', text: prompt }] }, startedAtMs: at, completedAtMs: at },
