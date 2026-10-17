@@ -55,7 +55,7 @@ test('the + menu has one item for files and photos, no separate Images, and its 
   const { page } = f;
   await plus(page).click(); await page.getByRole('menuitem').first().waitFor();
   const names = (await page.getByRole('menuitem').allInnerTexts()).map(item => item.split('\n')[0].trim());
-  assert.deepEqual(names, ['Add files or photos', 'Mention', 'Slash commands', 'Plan mode']);
+  assert.deepEqual(names, ['Add files or photos', 'Mention', 'Slash commands', 'Plan mode', 'Run as a shell command']);
   const [chooser] = await Promise.all([page.waitForEvent('filechooser'), page.getByRole('menuitem', { name: /^Add files or photos/ }).click()]);
   const accept = await chooser.element().getAttribute('accept');
   for (const kind of ['image/png', 'image/jpeg', 'image/webp', 'image/gif', 'application/pdf', '.md']) assert.match(accept, new RegExp(kind.replace('.', '\\.')));
