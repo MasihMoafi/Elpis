@@ -1,4 +1,4 @@
-const { guardDesktopStore, leaveSettings, sidebar } = require('./controls.cjs');
+const { guardDesktopStore, leaveSettings, sidebar, openSettings } = require('./controls.cjs');
 // Real exported renderer with synthetic HTTP/SSE; no engine or provider calls.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
@@ -101,7 +101,7 @@ async function fixture(t, { modelFailure = false, holdModels = false, descendant
   const composer = page.getByRole('textbox', { name: 'Message Elpis', exact: true });
   const ready = () => eventually(async () => assert.equal(await composer.isEnabled(), true, 'A healthy runtime must become ready independently of its model catalogue'));
   const open = async id => { await leaveSettings(page); await page.locator('.thread-link').filter({ hasText: `Availability chat ${id.toUpperCase()}` }).click(); await eventually(async () => assert.equal(await page.getByRole('button', { name: 'Refresh conversation', exact: true }).isEnabled(), true)); await eventually(async () => assert.equal(await page.locator('.user-turn, form[aria-label="Edit message"]').count(), 1)); };
-  const archivedPage = async () => { await leaveSettings(page); await page.getByRole('navigation', { name: 'Settings', exact: true }).getByRole('button', { name: 'Settings', exact: true }).click(); await page.getByRole('tab', { name: 'Archived chats', exact: true }).click(); };
+  const archivedPage = async () => { await leaveSettings(page); await openSettings(page); await page.getByRole('tab', { name: 'Archived chats', exact: true }).click(); };
   const restore = async (id, reopen = true) => { await archivedPage(); await page.getByRole('button', { name: `Unarchive Availability chat ${id.toUpperCase()}`, exact: true }).click(); if (reopen) await open(id); };
   const saved = key => page.evaluate(key => window.elpisDesktop.storage.getItem(`elpis-draft-v1:${key}`), key);
   return { page, composer, ready, open, restore, saved, external, emit, clients, requests, posts, control, held, descendantIds };

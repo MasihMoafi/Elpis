@@ -18,6 +18,18 @@ async function leaveSettings(page) {
   const back = page.getByRole('button', { name: 'Back to app', exact: true });
   if (await back.isVisible().catch(() => false)) await back.click();
 }
+/** The account menu at the sidebar's bottom (Claude's account row): Settings, Models & accounts and the theme are in it.
+ * Settings replaces the sidebar, so a test that is in Settings leaves it first. */
+async function accountMenu(page) {
+  await leaveSettings(page);
+  await page.locator('aside.sidebar .account-row').click();
+  const menu = page.getByRole('menu'); await menu.waitFor();
+  return menu;
+}
+/** Opens Settings (or another item of the account menu, such as 'Models & accounts') the way a user does. */
+async function openSettings(page, item = 'Settings') { await (await accountMenu(page)).getByRole('menuitem', { name: item, exact: true }).click(); }
+/** Switches the theme to 'dark' or 'light' with the account menu's theme item. */
+async function chooseTheme(page, theme) { await (await accountMenu(page)).getByRole('menuitem', { name: `Use ${theme} theme`, exact: true }).click(); }
 async function sidebar(page) { await leaveSettings(page); return page.locator('aside'); }
 /** Makes the page's stub of the desktop store (window.elpisDesktop.storage) refuse what the real one refuses
  * (STORE_KEYS in desktop/state.cjs): a refused key throws, uncaught, as "Unsupported workspace value", so the test's
@@ -90,4 +102,4 @@ async function optionsCut(trigger) {
   await list.waitFor({ state: 'hidden' });
   return cut;
 }
-module.exports = { chooseOption, controlValue, guardDesktopStore, leaveSettings, optionsCut, oranges, sidebar };
+module.exports = { chooseOption, chooseTheme, controlValue, guardDesktopStore, leaveSettings, openSettings, optionsCut, oranges, sidebar };

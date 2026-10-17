@@ -1,4 +1,4 @@
-const { guardDesktopStore, leaveSettings, sidebar } = require('./controls.cjs');
+const { guardDesktopStore, leaveSettings, sidebar, openSettings } = require('./controls.cjs');
 // Real exported UI with synthetic transfer events. Never reads/writes the system clipboard.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
@@ -167,7 +167,7 @@ test('attachment drafts survive settings, chat switches, reload and failed send;
   view.control.mediaDataUrl = await view.page.evaluate(() => { const canvas = document.createElement('canvas'); canvas.width = 160; canvas.height = 100; const context = canvas.getContext('2d'); context.fillStyle = '#355e91'; context.fillRect(0, 0, 160, 100); context.fillStyle = 'white'; context.font = '18px sans-serif'; context.fillText('Book page', 30, 55); return canvas.toDataURL('image/png'); });
   await openChat(view, 'Chat A');
   await view.page.getByLabel('Choose files', { exact: true }).setInputFiles({ name: 'notes-a.md', mimeType: 'text/markdown', buffer: Buffer.from('Exact first line\nمتن فارسی') });
-  await visibleFile(view, 'notes-a.md'); await view.page.getByRole('button', { name: 'Settings', exact: true }).click();
+  await visibleFile(view, 'notes-a.md'); await openSettings(view.page);
   await openChat(view, 'Chat B'); assert.equal(await attachments(view).count(), 0);
   await view.page.getByLabel('Choose files', { exact: true }).setInputFiles({ name: 'notes-b.txt', mimeType: 'text/plain', buffer: Buffer.from('B private draft') });
   await visibleFile(view, 'notes-b.txt'); await openChat(view, 'Chat A'); await visibleFile(view, 'notes-a.md');

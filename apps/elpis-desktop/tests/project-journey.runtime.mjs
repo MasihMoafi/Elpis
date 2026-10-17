@@ -10,7 +10,7 @@ import { once } from 'node:events';
 import { fileURLToPath } from 'node:url';
 import { existingSocket } from '../bridge/client.mjs';
 const require = createRequire(import.meta.url);
-const { chooseOption } = require('./controls.cjs');
+const { chooseOption, chooseTheme, openSettings } = require('./controls.cjs');
 const { _electron } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright');
 const { Provider, message } = require('../../../scripts/lib/mock-provider.js');
 const binary = process.argv[2];
@@ -139,7 +139,7 @@ try {
   await shot('03-task-result.png');
   const draft = 'Unsent follow-up\n\nمتن فارسی';
   await page.getByLabel('Message Elpis').fill(draft);
-  await page.getByRole('button', { name: 'Use dark theme', exact: true }).click();
+  await chooseTheme(page, 'dark');
   const settingsRequests = provider.requests.length;
   await page.getByLabel('Model', { exact: true }).click();
   await page.getByLabel('Search models', { exact: true }).fill('gpt-5.5');
@@ -149,7 +149,7 @@ try {
   await shot('06-desktop-model-menu.png');
   await page.getByLabel('Search models', { exact: true }).press('Escape');
   // The route is chosen in Settings → Voice; this chat's provider has no transcription of its own, so the fallback speaks.
-  await page.locator('aside').getByRole('button', { name: 'Settings', exact: true }).click();
+  await openSettings(page);
   await page.getByRole('tab', { name: 'Voice', exact: true }).click();
   await page.getByLabel('Fallback transcription engine', { exact: true }).click();
   await page.getByRole('option', { name: 'Local WhisperType', exact: true }).waitFor();

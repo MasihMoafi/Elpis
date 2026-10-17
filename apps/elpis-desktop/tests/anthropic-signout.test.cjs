@@ -1,4 +1,4 @@
-const { leaveSettings, sidebar } = require('./controls.cjs');
+const { leaveSettings, sidebar, openSettings } = require('./controls.cjs');
 // Elpis's own Anthropic sign-out on Models & accounts against a local adapter: the card offers Sign out / Sign in like the
 // ChatGPT card, and after either the sidebar's Anthropic usage, the Usage & limits page and the model picker follow.
 // No runtime or model calls.
@@ -67,7 +67,7 @@ test('Anthropic card: Sign out and Sign in change only Elpis; usage and the mode
     assert.ok(first.some(name => /Opus/.test(name)), `Claude models are in the picker: ${JSON.stringify(first)}`);
     assert.ok(first.some(name => /Luna/.test(name)), `other models are too: ${JSON.stringify(first)}`);
 
-    await (await sidebar(page)).getByRole('button', { name: 'Settings', exact: true }).click();
+    await openSettings(page);
     await page.getByRole('tab', { name: 'Models & accounts', exact: true }).click();
     const accounts = page.getByRole('tabpanel', { name: 'Models & accounts', exact: true });
     const card = accounts.locator('[data-provider="claude"]');
@@ -95,7 +95,7 @@ test('Anthropic card: Sign out and Sign in change only Elpis; usage and the mode
     assert.ok(without.length > 0 && without.every(name => !/Opus|Claude/.test(name)), `no Claude models in the picker: ${JSON.stringify(without)}`);
 
     // Sign in: Claude Code is still logged in, so everything comes back.
-    await (await sidebar(page)).getByRole('button', { name: 'Settings', exact: true }).click();
+    await openSettings(page);
     await page.getByRole('tab', { name: 'Models & accounts', exact: true }).click();
     await card.getByRole('button', { name: 'Sign in', exact: true }).click();
     await card.getByText('Connected', { exact: true }).waitFor();
@@ -107,7 +107,7 @@ test('Anthropic card: Sign out and Sign in change only Elpis; usage and the mode
     assert.ok(again.some(name => /Opus/.test(name)), `Claude models are back in the picker: ${JSON.stringify(again)}`);
 
     // Signed in again in Elpis, but Claude Code itself is logged out: the old hint, and no button to press.
-    state.claudeCodeIn = false; await (await sidebar(page)).getByRole('button', { name: 'Settings', exact: true }).click();
+    state.claudeCodeIn = false; await openSettings(page);
     await page.getByRole('tab', { name: 'Models & accounts', exact: true }).click();
     await page.getByRole('button', { name: 'Refresh', exact: true }).click();
     await card.getByText('Sign in to Claude Code on this computer to connect your subscription.').waitFor();

@@ -134,9 +134,10 @@ export async function startDesktopServer(options = {}) {
           if (!thread[2] && method === 'GET') return json(response, 200, await client.readThread(id, pageQuery(url)));
           if (thread[2] === 'context' && method === 'GET') return json(response, 200, await client.context(id));
           if (thread[2] === 'git' && method === 'GET') {
-            if ([...url.searchParams.keys()].some(key => key !== 'view')) throw new BridgeError('Unsupported Git query');
-            return json(response, 200, await client.git(id, url.searchParams.get('view')));
+            if ([...url.searchParams.keys()].some(key => key !== 'view' && key !== 'path')) throw new BridgeError('Unsupported Git query');
+            return json(response, 200, await client.git(id, url.searchParams.get('view'), url.searchParams.get('path') ?? undefined));
           }
+          if (thread[2] === 'git' && method === 'POST') return json(response, 200, await client.discardChange(id, await body(request, 65536)));
           if (thread[2] && !['context', 'git'].includes(thread[2]) && method === 'POST') {
             const operation = { turns: 'send', steer: 'steer', interrupt: 'interrupt', resume: 'resume', delete: 'deleteThread', rename: 'renameThread', archive: 'archiveThread', unarchive: 'unarchiveThread', revert: 'revert', fork: 'forkThread', compact: 'compact', review: 'review', permissions: 'setPermissions' }[thread[2]];
             return json(response, 200, await client[operation](id, await body(request, ['send', 'steer'].includes(operation) ? ATTACHMENT_BODY_LIMIT : 65536)));

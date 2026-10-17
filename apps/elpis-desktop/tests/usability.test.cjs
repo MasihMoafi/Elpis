@@ -4,7 +4,7 @@ const http = require('node:http');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { chromium } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright');
-const { chooseOption, leaveSettings, sidebar } = require('./controls.cjs');
+const { chooseOption, leaveSettings, sidebar, openSettings, chooseTheme } = require('./controls.cjs');
 
 // Exercise the exported app with synthetic accounts. No installed runtime or provider is contacted.
 async function fixture(run) {
@@ -103,7 +103,7 @@ test('new-agent drafts survive navigation and its model uses the shared choice c
   await form.getByLabel('Model', { exact: true }).click();
   await page.getByLabel('Search models', { exact: true }).waitFor();
   await page.getByLabel('Search models', { exact: true }).press('Escape');
-  await (await sidebar(page)).getByRole('button', { name: 'Settings', exact: true }).click();
+  await openSettings(page);
   await (await sidebar(page)).getByRole('button', { name: 'Agents', exact: true }).click();
   await page.getByRole('button', { name: 'New agent', exact: true }).click();
   assert.equal(await form.getByLabel('Name', { exact: true }).inputValue(), 'Check my book');
@@ -131,7 +131,7 @@ test('rendered local file links use desktop opening and explain failures without
 }));
 
 test('maintenance settings read the real catalog response and keep model lists with their provider', () => fixture(async ({ page, shot }) => {
-  await (await sidebar(page)).getByRole('button', { name: 'Settings', exact: true }).click();
+  await openSettings(page);
   await page.getByRole('tab', { name: 'Configuration', exact: true }).click();
   const section = page.getByRole('region', { name: 'Models', exact: true });
   await chooseOption(section.getByLabel('Background model', { exact: true }), { label: 'Sol' });
@@ -147,7 +147,7 @@ test('maintenance settings read the real catalog response and keep model lists w
 }));
 
 test('API setup omits internal IDs and keeps unsaved values across sections and pages', () => fixture(async ({ page, shot }) => {
-  await (await sidebar(page)).getByRole('button', { name: 'Settings', exact: true }).click();
+  await openSettings(page);
   if (await page.getByRole('tab', { name: 'Models & accounts', exact: true }).count()) await page.getByRole('tab', { name: 'Models & accounts', exact: true }).click();
   await page.getByText('Advanced API connections', { exact: true }).click();
   await page.getByRole('button', { name: 'Add API provider', exact: true }).click();
@@ -159,11 +159,11 @@ test('API setup omits internal IDs and keeps unsaved values across sections and 
   await page.getByRole('tab', { name: 'Models & accounts', exact: true }).click();
   assert.equal(await form.getByLabel('Provider display name', { exact: true }).inputValue(), 'My research server');
   await (await sidebar(page)).getByRole('button', { name: 'Agents', exact: true }).click();
-  await (await sidebar(page)).getByRole('button', { name: 'Settings', exact: true }).click();
+  await openSettings(page);
   await page.getByRole('tab', { name: 'Models & accounts', exact: true }).click();
   assert.equal(await form.getByLabel('API endpoint', { exact: true }).inputValue(), 'http://127.0.0.1:1234/v1');
   await shot('04-api-draft-light');
-  await leaveSettings(page); await page.getByRole('button', { name: 'Use dark theme', exact: true }).click();
+  await leaveSettings(page); await chooseTheme(page, 'dark');
   await shot('05-api-draft-dark');
   await page.setViewportSize({ width: 390, height: 844 });
   await shot('06-api-draft-narrow');

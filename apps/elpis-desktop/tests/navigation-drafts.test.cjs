@@ -1,4 +1,4 @@
-const { guardDesktopStore, leaveSettings } = require('./controls.cjs');
+const { guardDesktopStore, leaveSettings, openSettings } = require('./controls.cjs');
 // Exported desktop UI, synthetic history/approvals, no engine or provider calls.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
@@ -87,7 +87,7 @@ async function fixture(t) {
   await page.goto(`http://127.0.0.1:${server.address().port}/`);
   await expect(page.getByRole('textbox', { name: 'Message Elpis', exact: true })).toBeEnabled();
   const open = async id => { await leaveSettings(page); await page.locator('.thread-link').filter({ hasText: `Draft chat ${id.toUpperCase()}` }).click(); await expect(page.getByRole('button', { name: 'Refresh conversation', exact: true })).toBeEnabled(); await expect(page.locator('.chat-view .message.user')).toHaveCount(1); };
-  const settingsPage = () => page.getByRole('navigation', { name: 'Settings', exact: true }).getByRole('button', { name: 'Settings', exact: true }).click();
+  const settingsPage = () => openSettings(page);
   return { page, open, settingsPage, posts, emit, control };
 }
 

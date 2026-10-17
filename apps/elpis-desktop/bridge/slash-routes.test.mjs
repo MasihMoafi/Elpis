@@ -140,5 +140,16 @@ test('HTTP: compact, review and git are routed, POST-only or GET-only, behind th
   assert.equal((await get(`/api/threads/${CHAT}/git?view=bad`)).status, 400);
   assert.equal((await get(`/api/threads/${CHAT}/git`)).status, 400);
   assert.equal((await get(`/api/threads/${CHAT}/compact`)).status, 405, 'compaction is never a GET');
-  assert.equal((await post(`/api/threads/${CHAT}/git?view=diff`, {}, cookie)).status, 405, 'git is read-only over HTTP');
+  // The review surface: the file list and one file's diff are GETs; throwing a file away is the one POST, and takes only a listed file.
+  const changes = await (await get(`/api/threads/${CHAT}/git?view=changes`)).json();
+  assert.deepEqual(changes.files.map(file => [file.path, file.status]), [['a.txt', 'modified'], ['b.txt', 'untracked']]);
+  assert.match((await (await get(`/api/threads/${CHAT}/git?view=file&path=b.txt`)).json()).diff, /\+brand-new-untracked/);
+  assert.equal((await get(`/api/threads/${CHAT}/git?view=file&path=..%2Fx`)).status, 400);
+  assert.equal((await get(`/api/threads/${CHAT}/git?view=file&path=a.txt&other=1`)).status, 400);
+  assert.equal((await post(`/api/threads/${CHAT}/git`, { action: 'discard' }, cookie)).status, 400, 'a discard names its file');
+  assert.equal((await post(`/api/threads/${CHAT}/git`, { action: 'commit', path: 'a.txt' }, cookie)).status, 400, 'discard is the only write: no commit, push or pull request');
+  assert.equal((await post(`/api/threads/${CHAT}/git`, { action: 'discard', path: 'b.txt' })).status, 401, 'no session, no discard');
+  assert.equal((await post(`/api/threads/${CHAT}/git`, { action: 'discard', path: 'b.txt' }, cookie)).status, 200);
+  await assert.rejects(fs.access(path.join(dir, 'b.txt')), 'the new file is gone');
+  assert.deepEqual((await (await get(`/api/threads/${CHAT}/git?view=changes`)).json()).files.map(file => file.path), ['a.txt']);
 });

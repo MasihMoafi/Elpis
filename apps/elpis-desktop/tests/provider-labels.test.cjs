@@ -5,6 +5,7 @@ const assert = require('node:assert/strict');
 const http = require('node:http');
 const fs = require('node:fs/promises');
 const path = require('node:path');
+const { openSettings } = require('./controls.cjs');
 const { chromium } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright');
 
 const window = (usedPercent, windowDurationMins, resetsAt = null) => ({ usedPercent, windowDurationMins, resetsAt });
@@ -84,7 +85,7 @@ test('bridged models are labelled by their prefix; providers keep separate sign-
     assert.equal(await page.getByText('You are a bounded worker in this repository.',{exact:true}).count(),0);
     assert.equal(await row.locator('.agent-nickname').innerText(), 'Sagan');
     assert.equal(await row.locator('.agent-meta').innerText(), 'Antigravity · Gemini 3 Pro');
-    await page.locator('aside').getByRole('button', { name: 'Settings', exact: true }).click();
+    await openSettings(page);
     await page.getByRole('tab', { name: 'Models & accounts', exact: true }).click();
     const account = id => page.locator(`.provider-card[data-provider="${id}"]`);
     await account('claude').waitFor();

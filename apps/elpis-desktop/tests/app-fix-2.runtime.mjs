@@ -216,7 +216,10 @@ const api = (url, body) => page.evaluate(async ({ url, body }) => {
 const composer = () => page.getByLabel('Message Elpis', { exact: true });
 async function send(text) { await composer().fill(text); await page.getByRole('button', { name: 'Send message', exact: true }).click(); }
 const requestsOf = role => fixture.requests.filter(r => r.role === role);
-const nav = name => page.locator('aside.sidebar').getByRole('button', { name, exact: true });
+// Settings is in the account menu at the sidebar's bottom (Claude's account row), not a button of its own.
+const nav = name => name === 'Settings'
+  ? { click: async () => { await page.locator('aside.sidebar .account-row').click(); await page.getByRole('menuitem', { name: 'Settings', exact: true }).click(); } }
+  : page.locator('aside.sidebar').getByRole('button', { name, exact: true });
 const childTitleFor = approval => approval.thread ? (approval.thread.name || approval.thread.preview || humanTask(approval.thread.source?.subAgent?.thread_spawn?.agent_path)) : '';
 const humanTask = agentPath => { const task = String(agentPath || '').split('/').filter(Boolean).at(-1)?.replace(/[_-]+/g, ' ') || ''; return task ? task[0].toUpperCase() + task.slice(1) : ''; };
 

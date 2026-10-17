@@ -8,7 +8,7 @@ const http = require('node:http');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { chromium } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright');
-const { guardDesktopStore, oranges } = require('./controls.cjs');
+const { guardDesktopStore, oranges, openSettings, chooseTheme } = require('./controls.cjs');
 const { fakeDesktop } = require('./fake-desktop.cjs');
 const root = path.resolve(__dirname, '../out');
 const shots = process.env.ELPIS_FULLVIEW_SHOTS;
@@ -53,6 +53,7 @@ async function fixture(run, { width = 1320, height = 860, colorScheme = 'light' 
     await guardDesktopStore(page);
     await page.addInitScript(fakeDesktop, { tabs: [{ url: 'https://example.com/docs', title: 'Example docs', security: 'secure', canGoBack: true }] });
     await page.goto(`http://127.0.0.1:${server.address().port}/#token=fixture`);
+    await page.locator('.startup-splash').waitFor({ state: 'detached' });  // its orange logo must be gone before the no-orange checks
     await page.locator('.thread-row[data-thread-id="chat-one"] .thread-link').waitFor();
     await page.locator('.thread-row[data-thread-id="chat-one"] .thread-link').click();
     await page.getByText('Run the suite').waitFor();
@@ -109,7 +110,7 @@ test('full view: the header button and Ctrl+Shift+F fill the work area with the 
   await page.keyboard.press('Control+Shift+F'); await exit.waitFor();
   await card.waitFor();
   // Leaving the chat page (Settings) leaves full view too.
-  await page.getByRole('button', { name: 'Settings' }).first().click();
+  await openSettings(page);
   await page.getByRole('button', { name: 'Back to app', exact: true }).click();
   await enter.waitFor();
   assert.equal(await card.count(), 0);
@@ -327,7 +328,7 @@ test('sizes and styles match the split view, and the light theme has no orange',
 test('screenshots: split view, full view with the card and the collapsed pill, light and dark', () => fixture(async ({ page, side, card, pill, enter, exit, openPanel, shoot, emit }) => {
   await openPanel();
   for (const theme of ['light', 'dark']) {
-    if (theme === 'dark') await page.getByRole('button', { name: 'Use dark theme' }).click();
+    if (theme === 'dark') await chooseTheme(page, 'dark');
     await shoot(`split-view-${theme}`);
     await enter.click(); await card.waitFor();
     await shoot(`full-view-card-${theme}`);

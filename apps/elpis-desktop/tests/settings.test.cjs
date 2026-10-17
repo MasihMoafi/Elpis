@@ -4,6 +4,7 @@ const assert = require('node:assert/strict');
 const http = require('node:http');
 const fs = require('node:fs/promises');
 const path = require('node:path');
+const { openSettings } = require('./controls.cjs');
 const { chromium } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright');
 const root = path.resolve(__dirname, '../out');
 
@@ -40,7 +41,7 @@ test('settings keep unknowns honest, and Usage & limits shows no chat context', 
     const errors = []; page.on('pageerror', error => errors.push(error.message));
     await page.goto(`http://127.0.0.1:${server.address().port}/#token=fixture`);
     await page.getByRole('button', { name: 'Context conversation A', exact: true }).click();
-    await page.getByRole('button', { name: 'Settings', exact: true }).click(); await page.getByRole('tab', { name: 'Configuration', exact: true }).click();
+    await openSettings(page); await page.getByRole('tab', { name: 'Configuration', exact: true }).click();
     const configuration = page.getByRole('tabpanel', { name: 'Configuration', exact: true });
     await configuration.getByText('Read-only settings', { exact: true }).first().waitFor();
     assert.ok(await configuration.getByText('Not reported', { exact: true }).count() >= 3);

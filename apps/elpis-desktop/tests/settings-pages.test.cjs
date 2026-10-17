@@ -1,4 +1,4 @@
-const { chooseOption, controlValue, optionsCut } = require('./controls.cjs');
+const { chooseOption, controlValue, optionsCut, openSettings } = require('./controls.cjs');
 // Every Settings page against a local adapter: page order, what each control writes, and narrow layouts. No runtime or model calls.
 const test = require('node:test'), assert = require('node:assert/strict'), fs = require('node:fs/promises'), path = require('node:path'), http = require('node:http');
 const { chromium } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright');
@@ -45,7 +45,7 @@ test('settings pages appear in order and each control writes only its own backin
   const lastPost = () => posts.at(-1);
   try {
     await page.goto(`http://127.0.0.1:${server.address().port}`);
-    await page.locator('aside').getByRole('button', { name: 'Settings', exact: true }).click();
+    await openSettings(page);
     assert.deepEqual(await page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab').allInnerTexts(), PAGES);
 
     // General: device preferences persist across reloads; Speed writes service_tier.
@@ -63,7 +63,7 @@ test('settings pages appear in order and each control writes only its own backin
     assert.deepEqual(lastPost(), { path: '/api/settings', body: { version: 'v1', options: { serviceTier: 'fast' } } });
     const stored = JSON.parse(await page.evaluate(() => localStorage.getItem('elpis-preferences-v1')));
     assert.deepEqual([stored.sendShortcut, stored.followUp, stored.showContextUsage, stored.defaultFolder], ['modEnter', 'queue', false, '/tmp/work']); // the switch turned the default-on ring off
-    await page.reload(); await page.locator('aside').getByRole('button', { name: 'Settings', exact: true }).click();
+    await page.reload(); await openSettings(page);
     panel = await open('General');
     assert.equal(await controlValue(panel.getByLabel('Send shortcut', { exact: true })), 'modEnter');
     assert.equal(await panel.getByRole('radio', { name: 'Queue', exact: true }).getAttribute('aria-checked'), 'true');

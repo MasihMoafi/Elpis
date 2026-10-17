@@ -1,0 +1,33 @@
+/* The side panel's Changes tab (components/changes-panel.tsx): a header with the totals, the list of changed files, and
+   the open file's diff. Colours come from the app's own success and destructive tokens, so both themes follow. */
+.changes { display:flex; flex-direction:column; flex:1; min-height:0; min-width:0; background:var(--background); }
+.changes-head { display:flex; align-items:center; gap:8px; height:34px; flex-shrink:0; padding:0 8px 0 12px; border-bottom:1px solid var(--hairline); font-size:12.5px; }
+.changes-summary { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--foreground); font-weight:500; }
+.changes .add { color:var(--success); } .changes .del { color:var(--destructive); }
+.changes-note { margin:0; padding:12px; font-size:13px; color:var(--muted-foreground); }
+.changes-error { color:var(--destructive); }
+.change-list { list-style:none; margin:0; padding:4px; flex:0 1 auto; max-height:38%; min-height:34px; overflow:auto; border-bottom:1px solid var(--hairline); }
+.change-row { display:flex; align-items:center; gap:8px; width:100%; min-height:30px; padding:4px 8px; border:0; border-radius:var(--radius-sm); background:none; color:var(--foreground); font-size:13px; text-align:left; }
+.change-row:hover { background:var(--hover); }
+.change-row[aria-current="true"] { background:var(--selected); }
+.change-status { flex-shrink:0; display:inline-flex; align-items:center; justify-content:center; width:18px; height:18px; border-radius:4px; font:600 11px/1 var(--mono); color:var(--muted-foreground); background:var(--muted); }
+.change-status[data-status="added"], .change-status[data-status="untracked"] { color:var(--success); background:color-mix(in oklch, var(--success) 14%, transparent); }
+.change-status[data-status="deleted"], .change-status[data-status="conflicted"] { color:var(--destructive); background:color-mix(in oklch, var(--destructive) 13%, transparent); }
+.change-path { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.change-path .dir { color:var(--muted-foreground); }
+.change-counts { flex-shrink:0; font:12px/1 var(--mono); color:var(--muted-foreground); white-space:nowrap; }
+.diff-view { display:flex; flex-direction:column; flex:1 1 0; min-height:0; }
+.diff-head { display:flex; align-items:center; gap:6px; min-height:34px; flex-shrink:0; padding:0 8px 0 12px; font-size:12.5px; }
+.diff-title { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--muted-foreground); }
+.diff-body { flex:1; min-height:0; overflow:auto; padding-bottom:12px; font:12px/20px var(--mono); }
+.diff-lines { width:max-content; min-width:100%; }  /* every line as wide as the longest, so the colours end together */
+.diff-line { display:grid; grid-template-columns:44px 44px 16px 1fr; }
+.diff-no { padding:0 8px; text-align:right; color:var(--subtle-foreground); user-select:none; }
+.diff-sign { text-align:center; user-select:none; }
+.diff-text { padding-inline-end:16px; white-space:pre; }
+.diff-line.add { background:color-mix(in oklch, var(--success) 13%, transparent); }
+.diff-line.del { background:color-mix(in oklch, var(--destructive) 12%, transparent); }
+.diff-line.add .diff-no, .diff-line.add .diff-sign { background:color-mix(in oklch, var(--success) 20%, transparent); color:var(--success); }
+.diff-line.del .diff-no, .diff-line.del .diff-sign { background:color-mix(in oklch, var(--destructive) 18%, transparent); color:var(--destructive); }
+.diff-line.hunk { display:block; margin:6px 0 2px; padding:2px 12px; background:var(--recessed); color:var(--muted-foreground); }
+.diff-line.note .diff-text { color:var(--muted-foreground); font-style:italic; }

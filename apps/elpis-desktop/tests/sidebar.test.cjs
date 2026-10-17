@@ -6,7 +6,7 @@ const http = require('node:http');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { chromium } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright');
-const { leaveSettings } = require('./controls.cjs');
+const { leaveSettings, openSettings } = require('./controls.cjs');
 const root = path.resolve(__dirname, '../out');
 async function eventually(check) {
   const deadline = Date.now() + 4000;
@@ -127,7 +127,7 @@ test('sidebar: projects, toggle, D to delete, arrows, Ctrl/Shift selection, hove
     await link('echo').click(); await eventually(async () => assert.equal(await heading.innerText(), 'Echo'));
     await page.keyboard.press('d');
     await eventually(async () => assert.ok(deleted.includes('echo'))); assert.equal(await dialog.count(), 0, 'no confirmation once turned off');
-    await page.getByRole('navigation', { name: 'Settings', exact: true }).getByRole('button', { name: 'Settings', exact: true }).click();
+    await openSettings(page);
     const confirm = page.getByRole('switch', { name: 'Confirm before deleting chats', exact: true });
     assert.equal(await confirm.getAttribute('aria-checked'), 'false'); await confirm.click();
     await eventually(async () => assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('elpis-preferences-v1')).confirmDeleteChats), true));

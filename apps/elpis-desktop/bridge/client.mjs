@@ -11,7 +11,7 @@ import { replacementEligibility } from '../lib/turn-replacement.ts';
 import { providerModels } from './provider-models.mjs';
 import { attachmentInput, recordedMedia } from './attachments.mjs';
 import { scanDeletionThreads } from '../lib/thread-deletion.ts';
-import { reviewChoices, workingDiff } from './git.mjs';
+import { changedFiles, discardFile, fileDiff, reviewChoices, workingDiff } from './git.mjs';
 import { elicitationResponse, permissionsResponse } from '../lib/approvals.ts';
 const string = value => typeof value === 'string' ? value : null;
 
@@ -1060,13 +1060,24 @@ export class DesktopClient extends EventEmitter {
       return this.#rpc('review/start', { threadId: id, target, delivery: 'inline' });
     });
   }
-  /** Read-only Git facts about the chat's folder: `review` is the /review presets (branches, commits), `diff` the /diff text. */
-  async git(id, view) {
+  /** Read-only Git facts about the chat's folder: `review` is the /review presets (branches, commits), `diff` the /diff text,
+   * `changes` the review surface's file list and `file` one of those files' diff (`file` names it). */
+  async git(id, view, file) {
     threadId(id);
-    if (view !== 'review' && view !== 'diff') throw new BridgeError('Choose a Git view: review or diff');
+    if (!['review', 'diff', 'changes', 'file'].includes(view)) throw new BridgeError('Choose a Git view: review, diff, changes or file');
+    const cwd = await this.#folderOf(id);
+    return view === 'review' ? reviewChoices(cwd) : view === 'changes' ? changedFiles(cwd) : view === 'file' ? fileDiff(cwd, file) : workingDiff(cwd);
+  }
+  /** The review surface's only write: throw one changed file away (the window asks first). */
+  async discardChange(id, body) {
+    threadId(id); object(body, ['action', 'path']);
+    if (body.action !== 'discard') throw new BridgeError('Choose a Git action: discard');
+    return discardFile(await this.#folderOf(id), body.path);
+  }
+  async #folderOf(id) {
     const { thread } = await this.#rpc('thread/read', { threadId: id, includeTurns: false });
     if (thread?.id !== id) throw new BridgeError('Elpis returned another thread', 502);
-    return view === 'review' ? reviewChoices(thread.cwd) : workingDiff(thread.cwd);
+    return thread.cwd;
   }
   async #mutate(id, run) {
     threadId(id);

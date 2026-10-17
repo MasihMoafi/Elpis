@@ -1,4 +1,4 @@
-const { chooseOption, controlValue, leaveSettings, sidebar } = require('./controls.cjs');
+const { chooseOption, controlValue, leaveSettings, sidebar, openSettings } = require('./controls.cjs');
 const {test}=require('node:test');
 const assert=require('node:assert/strict');
 const http=require('node:http');
@@ -35,7 +35,7 @@ test('provider setup preserves edits on conflict, refreshes choices and never re
  const page=await browser.newPage({viewport:{width:1440,height:1000}});page.setDefaultTimeout(7000);
  try{
   await page.goto(`http://127.0.0.1:${server.address().port}`);
-  await (await sidebar(page)).getByRole('button',{name:'Settings',exact:true}).click();
+  await openSettings(page);
   // Settings opens on General, as in the ChatGPT app; connections live under Models & accounts.
   if(await page.getByRole('tab',{name:'Models & accounts',exact:true}).count())await page.getByRole('tab',{name:'Models & accounts',exact:true}).click();
   await page.getByText('Advanced API connections',{exact:true}).click();
@@ -61,7 +61,7 @@ test('provider setup preserves edits on conflict, refreshes choices and never re
   await page.getByLabel('Model ID',{exact:true}).fill('custom/native-model');
   await page.getByRole('button',{name:'Use model',exact:true}).click();
   assert.equal(await controlValue(page.getByLabel('Model',{exact:true})),'custom/native-model');
-  await (await sidebar(page)).getByRole('button',{name:'Settings',exact:true}).click();
+  await openSettings(page);
   await page.getByRole('tab',{name:'Models & accounts',exact:true}).click();
   await page.getByRole('button',{name:'Edit My API',exact:true}).click();
   assert.equal(await page.getByLabel('Provider API key',{exact:true}).count(),0);

@@ -1,3 +1,4 @@
+const { openSettings } = require('./controls.cjs');
 const { chooseOption, controlValue } = require("./controls.cjs");
 // Exercises the exported app against a local settings adapter; no provider calls.
 const test=require('node:test');const assert=require('node:assert/strict');const fs=require('node:fs/promises');const path=require('node:path');const http=require('node:http');const {chromium}=require(process.env.ELPIS_PLAYWRIGHT_PACKAGE||'playwright');
@@ -12,7 +13,7 @@ test('maintenance saves only edited fields, applies switches at once and preserv
  if(url.pathname==='/api/pruner'){calls.push({path:url.pathname,data});settings={...settings,smartPrune:{...settings.smartPrune,explicitOverride:{...settings.smartPrune.explicitOverride,...data,version:'p2'}}};return json(settings);}
  try{const file=path.join(__dirname,'../out',url.pathname==='/'?'index.html':url.pathname);res.setHeader('content-type',file.endsWith('.js')?'text/javascript':file.endsWith('.css')?'text/css':'text/html');res.end(await fs.readFile(file));}catch{res.statusCode=404;res.end();}});
  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));const browser=await chromium.launch({executablePath:process.env.ELPIS_CHROMIUM,headless:true,args:['--no-sandbox']});const page=await browser.newPage({viewport:{width:1280,height:960}});page.setDefaultTimeout(7000);
- try{await page.goto(`http://127.0.0.1:${server.address().port}`);await page.getByRole('button',{name:'Settings',exact:true}).click();await page.getByRole('tab',{name:'Configuration',exact:true}).click();
+ try{await page.goto(`http://127.0.0.1:${server.address().port}`);await openSettings(page);await page.getByRole('tab',{name:'Configuration',exact:true}).click();
  assert.equal(await page.getByRole('button',{name:'Save background model'}).isDisabled(),true);
  await chooseOption(page.getByLabel('Background model',{exact:true}), 'cheap-model');await page.getByRole('button',{name:'Save background model'}).click();await page.getByRole('status').filter({hasText:'Background model saved'}).waitFor();assert.deepEqual(calls[0],{path:'/api/settings',data:{version:'v1',background:{model:'cheap-model'}}});
  // Memory switches apply at once with the version the previous save returned; unset values show Elpis's defaults.

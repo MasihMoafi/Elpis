@@ -1,0 +1,191 @@
+// The sidebar and start screen as in Claude's desktop app: a "+" on every project header that starts a chat in that
+// project, a status dot on every chat row, a "Local" chip beside the project chip above the composer, and the account
+// row at the bottom left with its menu. The exported UI against a scripted desktop bridge (tests/fake-desktop.cjs) and a
+// synthetic bridge HTTP/SSE server: no engine, no provider. Screenshots go to $ELPIS_PARITY_SHOTS when it is set.
+const { test } = require('node:test');
+const assert = require('node:assert/strict');
+const http = require('node:http');
+const fs = require('node:fs/promises');
+const path = require('node:path');
+const { chromium } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright');
+const { guardDesktopStore, oranges } = require('./controls.cjs');
+const { fakeDesktop } = require('./fake-desktop.cjs');
+const root = path.resolve(__dirname, '../out');
+const shots = process.env.ELPIS_PARITY_SHOTS;
+async function eventually(check, ms = 5000) {
+  const deadline = Date.now() + ms;
+  for (;;) { try { return await check(); } catch (error) { if (Date.now() >= deadline) throw error; await new Promise(resolve => setTimeout(resolve, 50)); } }
+}
+
+const PROJECTS = [{ id: 'p-legal', name: 'legal', cwd: '/work/legal' }, { id: 'p-rag', name: 'rag-studio', cwd: '/work/rag' }, { id: 'p-empty', name: 'scratch', cwd: '/work/scratch' }];
+const chat = (id, name, cwd, status = 'idle') => ({ id, name, preview: name, cwd, model: 'gpt-6-luna', modelProvider: 'openai', status: { type: status } });
+const account = (auth = { state: 'signedIn', method: 'chatgpt', email: 'masih@example.com', plan: 'pro' }) => ({
+  openai: { auth, usage: [], usageError: null }, claude: { state: 'notConnected', models: [], usage: [] }, gemini: { state: 'notConnected', models: [], usage: [] }, openrouter: [],
+});
+
+async function fixture(run, { width = 1130, height = 660, colorScheme = 'light', signedIn = true } = {}) {
+  const threads = [chat('t-run', 'Doctrine filters', '/work/legal', 'active'), chat('t-idle', 'Reread the statute', '/work/legal'), chat('t-bad', 'Broken import', '/work/legal', 'systemError'), chat('t-crypto', 'Crypto', '/work/rag')];
+  const state = { providers: account(signedIn ? undefined : { state: 'signedOut' }), posts: [] };
+  const clients = new Set();
+  const emit = (method, params) => { for (const client of clients) client.write(`event: message\ndata: ${JSON.stringify({ method, params })}\n\n`); };
+  const server = http.createServer(async (req, res) => {
+    const url = new URL(req.url, 'http://localhost'); let raw = ''; for await (const chunk of req) raw += chunk;
+    const json = value => { res.setHeader('content-type', 'application/json'); res.end(JSON.stringify(value)); };
+    if (req.method === 'POST') state.posts.push({ path: url.pathname, body: raw ? JSON.parse(raw) : {} });
+    if (url.pathname === '/api/events') { res.writeHead(200, { 'content-type': 'text/event-stream' }); res.write('event: connection\ndata: {"connected":true}\n\n'); clients.add(res); req.on('close', () => clients.delete(res)); return; }
+    if (url.pathname === '/api/health') return json({ connected: true, cwd: '/work/home' });
+    if (url.pathname === '/api/models') return json({ data: [{ id: 'luna', model: 'gpt-6-luna', displayName: 'Luna 6' }], nextCursor: null });
+    if (url.pathname === '/api/providers') return json(state.providers);
+    if (url.pathname === '/api/threads') return json({ data: url.searchParams.get('ancestorThreadId') ? [] : threads, nextCursor: null });
+    const id = url.pathname.split('/')[3], thread = threads.find(item => item.id === id);
+    if (thread && url.pathname.endsWith('/resume')) return json({ thread, activeTurnId: null });
+    if (thread) return json({ thread, data: [], nextCursor: null });
+    if (url.pathname.startsWith('/api/')) return json({});
+    try { const file = path.join(root, url.pathname === '/' ? 'index.html' : url.pathname); const content = await fs.readFile(file); res.setHeader('content-type', file.endsWith('.js') ? 'text/javascript' : file.endsWith('.css') ? 'text/css' : file.endsWith('.svg') ? 'image/svg+xml' : 'text/html'); res.end(content); } catch { res.statusCode = 404; res.end(); }
+  });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  const browser = await chromium.launch({ executablePath: process.env.ELPIS_CHROMIUM || undefined, headless: true });
+  try {
+    const page = await browser.newPage({ viewport: { width, height }, colorScheme }); page.setDefaultTimeout(6000);
+    const errors = []; page.on('pageerror', error => errors.push(error.message));
+    await guardDesktopStore(page);
+    await page.addInitScript(projects => { if (!localStorage.getItem('elpis-projects-v1')) localStorage.setItem('elpis-projects-v1', JSON.stringify({ projects, selectedId: null })); }, PROJECTS);
+    await page.addInitScript(fakeDesktop, { tabs: [] });
+    await page.goto(`http://127.0.0.1:${server.address().port}/#token=fixture`);
+    const aside = page.locator('aside.sidebar');
+    await aside.locator('.thread-row[data-thread-id="t-idle"]').first().waitFor();
+    await page.locator('.startup-splash').waitFor({ state: 'detached' });
+    const shoot = async name => { if (shots) { await fs.mkdir(shots, { recursive: true }); await page.waitForTimeout(350); await page.screenshot({ path: path.join(shots, `${name}.png`) }); } };
+    await run({ page, aside, state, emit, shoot, threads });
+    assert.deepEqual(errors, []);
+  } finally { await browser.close(); for (const client of clients) client.end(); await new Promise(resolve => server.close(resolve)); }
+}
+const paint = (locator, property) => locator.evaluate((element, name) => {
+  const canvas = document.createElement('canvas'); canvas.width = canvas.height = 1; const context = canvas.getContext('2d', { willReadFrequently: true });
+  context.fillStyle = '#fbfbfa'; context.fillRect(0, 0, 1, 1); context.fillStyle = getComputedStyle(element)[name]; context.fillRect(0, 0, 1, 1);
+  return [...context.getImageData(0, 0, 1, 1).data].slice(0, 3);
+}, property);
+const same = (a, b) => a.join() === b.join();
+const BASE = [251, 251, 250]; // what `paint` lays a transparent colour over: the light theme's page
+
+test('every project header has a "+" that starts a new chat in that project', async () => {
+  await fixture(async ({ page, aside, shoot }) => {
+    const groups = aside.locator('.project-group');
+    assert.equal(await groups.count(), 3);
+    for (const name of ['legal', 'rag-studio', 'scratch']) {
+      const plus = aside.getByRole('button', { name: `Start new chat in ${name}`, exact: true });
+      assert.equal(await plus.isVisible(), true);
+      await eventually(async () => assert.equal(await plus.evaluate(element => { let shown = 1; for (let node = element; node && node !== document.body; node = node.parentElement) shown *= Number(getComputedStyle(node).opacity); return shown; }), 1, `the "+" of ${name} shows without hovering`));
+      assert.equal(await plus.evaluate(element => element.textContent.trim()), '', 'an icon, not a word');
+    }
+    // The "+" sits at the right end of its header, as in Claude, level with the project's name.
+    const header = await aside.locator('.project-row').filter({ hasText: 'legal' }).boundingBox(), plus = await aside.getByRole('button', { name: 'Start new chat in legal', exact: true }).boundingBox();
+    assert.ok(plus.x + plus.width <= header.x + header.width + 1 && plus.x + plus.width > header.x + header.width - 60, `the "+" is at the header's right end (${JSON.stringify([plus, header])})`);
+    await shoot('sidebar-projects-light');
+    // A real click on the "+" of rag-studio: a new chat, with that project chosen, and nothing else changed.
+    await page.locator('.thread-row[data-thread-id="t-crypto"] .thread-link').first().click(); await aside.locator('.thread-row.active').first().waitFor();
+    await aside.getByRole('button', { name: 'Start new chat in scratch', exact: true }).click();
+    await eventually(async () => assert.equal(await page.locator('.empty-state h2').innerText(), 'What should we build in scratch?'));
+    assert.match(await page.getByRole('button', { name: 'Choose project', exact: true }).innerText(), /scratch/);
+    assert.equal(await aside.locator('.thread-row.active').count(), 0, 'no chat is shown as open: this is a new one');
+  });
+});
+
+test('every chat row has a status dot: filled while it runs, hollow when idle, red on error', async () => {
+  await fixture(async ({ page, aside, emit, shoot }) => {
+    const dot = id => aside.locator(`.thread-row[data-thread-id="${id}"]`).first().locator('.thread-dot');
+    for (const id of ['t-run', 't-idle', 't-bad', 't-crypto']) assert.equal(await dot(id).count(), 1, `${id} has one dot`);
+    assert.deepEqual(await Promise.all(['t-run', 't-idle', 't-bad'].map(id => dot(id).getAttribute('data-state'))), ['working', 'idle', 'error']);
+    assert.deepEqual(await Promise.all(['t-run', 't-idle', 't-bad'].map(id => dot(id).getAttribute('title'))), ['Working', 'Idle', 'Error']);
+    const fill = async id => paint(dot(id), 'backgroundColor'), ring = async id => paint(dot(id), 'borderTopColor');
+    const [run, idle, bad] = [await fill('t-run'), await fill('t-idle'), await fill('t-bad')];
+    assert.ok(!same(run, BASE), `a running chat's dot is filled (${run})`);
+    assert.ok(same(idle, BASE), `an idle chat's dot is hollow (${idle})`);
+    assert.ok(!same(await ring('t-idle'), BASE), 'a hollow dot still has its ring');
+    assert.ok(bad[0] > bad[1] + 60 && bad[0] > bad[2] + 60, `an error dot is red (${bad})`);
+    // Same size and place on every row, left of the title.
+    const boxes = await Promise.all(['t-run', 't-idle', 't-bad'].map(async id => ({ dot: await dot(id).boundingBox(), link: await aside.locator(`.thread-row[data-thread-id="${id}"] .thread-link`).first().boundingBox() })));
+    assert.ok(boxes.every(box => box.dot.width === boxes[0].dot.width && Math.abs(box.dot.x - boxes[0].dot.x) < 1), 'one size and one column');
+    assert.ok(boxes.every(box => box.dot.x + box.dot.width <= box.link.x + 1), 'left of the title');
+    assert.ok(boxes.every(box => box.dot.width >= 8), 'big enough to read');
+    // The dot follows the chat live: a turn starts, the dot fills; it ends, the dot is hollow again.
+    emit('turn/started', { threadId: 't-idle', turn: { id: 'turn-9' } });
+    await eventually(async () => assert.equal(await dot('t-idle').getAttribute('data-state'), 'working'));
+    assert.ok(!same(await fill('t-idle'), BASE));
+    emit('turn/completed', { threadId: 't-idle', turn: { id: 'turn-9', status: 'completed' } });
+    await eventually(async () => assert.equal(await dot('t-idle').getAttribute('data-state'), 'idle'));
+    assert.deepEqual(await oranges(page), [], 'light theme, sidebar dots: no orange');
+    // The row's own buttons are unchanged by the dot.
+    assert.deepEqual(await aside.locator('.thread-row[data-thread-id="t-idle"]').first().getByRole('button').evaluateAll(buttons => buttons.map(button => button.getAttribute('aria-label') || button.textContent.trim())).then(names => names.slice(0, 1)), ['Reread the statute']);
+    await shoot('sidebar-dots-light');
+  });
+});
+
+test('start screen: a Local chip beside the project chip says where the chat works, and says what is not offered', async () => {
+  await fixture(async ({ page, aside, shoot }) => {
+    await aside.getByRole('button', { name: 'Start new chat in legal', exact: true }).click();
+    const tray = page.locator('.composer-tray'), local = tray.getByRole('button', { name: 'Where this chat works', exact: true }), project = tray.getByRole('button', { name: 'Choose project', exact: true });
+    await local.waitFor(); await project.waitFor();
+    assert.equal((await local.innerText()).trim(), 'Local');
+    const [a, b] = [await local.boundingBox(), await project.boundingBox()];
+    assert.ok(a.x + a.width <= b.x + 1, 'Local is left of the project chip'); assert.ok(Math.abs((a.y + a.height / 2) - (b.y + b.height / 2)) < 1.5, 'on one line'); assert.equal(a.height, b.height, 'one chip style');
+    assert.equal(await local.evaluate(element => getComputedStyle(element).fontSize), await project.evaluate(element => getComputedStyle(element).fontSize), 'one text size');
+    await local.click();
+    const menu = page.getByRole('menu');
+    await menu.waitFor();
+    assert.deepEqual(await menu.getByRole('menuitem').allInnerTexts().then(items => items.map(text => text.replace(/\s+/g, ' ').trim())), ['Local /work/legal'], 'what works: the project folder');
+    assert.match(await menu.innerText(), /worktree/i, 'and the menu says what is not offered');
+    assert.equal(await menu.getByRole('menuitem', { name: /worktree/i }).count(), 0, 'no worktree choice that would do nothing');
+    assert.equal(await menu.getByRole('menuitem').first().locator('svg[aria-label="Current"]').count(), 1, 'Local is marked as the choice');
+    await shoot('start-environment-light');
+    await page.keyboard.press('Escape');
+    // With no project the chat works in the folder Elpis started in.
+    await project.click(); await page.getByRole('menuitem', { name: /Don.t work in a project/ }).click();
+    await local.click(); await page.getByRole('menu').waitFor();
+    assert.match(await page.getByRole('menu').innerText(), /default folder/i, 'with no project, the folder Elpis starts in');
+  });
+});
+
+test('account row: bottom left, the signed-in account and plan, and a menu with Settings, Models & accounts and the theme', async () => {
+  await fixture(async ({ page, aside, shoot }) => {
+    const row = aside.getByRole('button', { name: /masih@example\.com/ });
+    await row.waitFor();
+    assert.equal(await row.locator('.account-name').innerText(), 'masih', 'the name before the @, as Claude shows a first name'); assert.equal(await row.locator('.account-plan').innerText(), 'Pro');
+    assert.equal(await row.getAttribute('aria-label'), 'Account: masih@example.com, Pro plan', 'the full email is its label');
+    assert.equal(await row.getAttribute('aria-haspopup'), 'menu');
+    const box = await row.boundingBox(), side = await aside.boundingBox();
+    assert.ok(box.x < side.x + 24 && box.y + box.height > 560, `bottom left of the sidebar (${JSON.stringify(box)})`);
+    assert.ok(box.height >= 34, 'a full-size row');
+    const labels = await row.evaluate(element => [...element.querySelectorAll('.account-name, .account-plan')].map(node => node.scrollWidth <= node.clientWidth + 1));
+    assert.deepEqual(labels, [true, true], 'the account and the plan are not cut');
+    await row.click();
+    const menu = page.getByRole('menu'); await menu.waitFor();
+    assert.deepEqual(await menu.getByRole('menuitem').allInnerTexts().then(items => items.map(text => text.trim())), ['Settings', 'Models & accounts', 'Use dark theme']);
+    assert.equal(await menu.getByRole('menuitem', { name: /sign.?out|log.?out/i }).count(), 0, 'no sign-out here');
+    await shoot('account-menu-light');
+    await menu.getByRole('menuitem', { name: 'Models & accounts', exact: true }).click();
+    await page.getByRole('heading', { name: 'Models & accounts', exact: true }).waitFor();
+    await page.getByRole('button', { name: 'Back to app', exact: true }).click();
+    await row.click(); await page.getByRole('menuitem', { name: 'Settings', exact: true }).click();
+    await page.getByRole('button', { name: 'Back to app', exact: true }).waitFor();
+    assert.equal(await page.getByRole('heading', { name: 'General', exact: true }).isVisible(), true, 'Settings opens on General');
+    await page.getByRole('button', { name: 'Back to app', exact: true }).click();
+    // The theme item switches the theme, and then offers the other one.
+    await row.click(); await page.getByRole('menuitem', { name: 'Use dark theme', exact: true }).click();
+    await page.locator('.app-shell.dark').waitFor();
+    await row.click(); await page.getByRole('menuitem', { name: 'Use light theme', exact: true }).waitFor();
+    assert.deepEqual(await page.getByRole('menu').getByRole('menuitem').allInnerTexts().then(items => items.map(text => text.trim())), ['Settings', 'Models & accounts', 'Use light theme']);
+    await shoot('account-menu-dark');
+    await page.getByRole('menuitem', { name: 'Use light theme', exact: true }).click(); await page.waitForFunction(() => !document.querySelector('.app-shell.dark'));
+    assert.deepEqual(await oranges(page), [], 'light theme, account row: no orange');
+  });
+});
+
+test('account row without a signed-in account says so, and keeps its menu', async () => {
+  await fixture(async ({ page, aside }) => {
+    const row = aside.locator('.account-row');
+    await eventually(async () => assert.equal(await row.locator('.account-name').innerText(), 'Not signed in'));
+    assert.equal(await row.locator('.account-plan').count(), 0);
+    await row.click(); await page.getByRole('menuitem', { name: 'Models & accounts', exact: true }).waitFor();
+  }, { signedIn: false });
+});

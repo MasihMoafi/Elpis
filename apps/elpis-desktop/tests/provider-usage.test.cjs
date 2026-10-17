@@ -1,4 +1,4 @@
-const { leaveSettings, sidebar } = require('./controls.cjs');
+const { leaveSettings, sidebar, openSettings } = require('./controls.cjs');
 // Account usage and Models & accounts against a local adapter: one shared usage store, reported usage that stays,
 // no internal gateway listed as a server, and the settings search spacing. No runtime or model calls.
 const { test } = require('node:test');
@@ -58,7 +58,7 @@ test('usage is one shared store whose reported values stay until sign-out; gatew
     // A chat configured for "Never ask" and "Full access" starts in Full access.
     assert.equal(await page.locator('.composer-pill.permissions-full').count(), 1);
 
-    await (await sidebar(page)).getByRole('button', { name: 'Settings', exact: true }).click();
+    await openSettings(page);
     await page.getByRole('tab', { name: 'Usage & limits', exact: true }).click();
     const usage = page.getByRole('tabpanel', { name: 'Usage & limits', exact: true });
     const card = id => usage.locator(`.usage-card[data-provider="${id}"]`);
@@ -82,7 +82,7 @@ test('usage is one shared store whose reported values stay until sign-out; gatew
     // Signing out clears that account's usage.
     claudeSignedOut = true; accountChanged(); await settled(5);
     await panel.filter({ hasNotText: 'Anthropic' }).waitFor();
-    await (await sidebar(page)).getByRole('button', { name: 'Settings', exact: true }).click();
+    await openSettings(page);
     await page.getByRole('tab', { name: 'Usage & limits', exact: true }).click();
     await card('claude').getByText('Sign in with Claude Code to see Claude usage.').waitFor();
     assert.match(await card('gemini').innerText(), /30% used/);

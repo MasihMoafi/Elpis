@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState, type ReactElement, type ReactNode } from "react";
-import { Check, X } from "lucide-react";
+import { Check, Laptop, X } from "lucide-react";
 import { FolderIcon, PlusIcon } from "@/components/elpis-icons";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -94,4 +94,17 @@ export function ProjectDialog({ projects, editing, onClose, onSave }: {
       <AlertDialogFooter><Button type="button" variant="ghost" disabled={busy} onClick={onClose}>Cancel</Button><Button type="submit" disabled={busy || !cwd.trim()}>{busy ? "Saving…" : "Save project"}</Button></AlertDialogFooter>
     </form>
   </AlertDialogContent></AlertDialog>;
+}
+
+const DEFAULT_FOLDER = "Elpis's default folder";
+/** Where a new chat works, beside the project chip: "Local" is the project's folder, or with no project the folder Elpis starts in.
+ * The desktop cannot yet give each chat its own Git worktree, so the menu offers only what works and says so. */
+export function EnvironmentMenu({ folder, disabled }: { folder: string | null; disabled: boolean }) {
+  return <DropdownMenu>
+    <DropdownMenuTrigger className="composer-chip project-chip" aria-label="Where this chat works" title={folder ?? DEFAULT_FOLDER} disabled={disabled}><Laptop size={13} aria-hidden="true" /><span>Local</span></DropdownMenuTrigger>
+    <DropdownMenuContent align="start" className="project-menu w-72">
+      <DropdownMenuItem><Laptop aria-hidden="true" /><span className="project-option"><strong>Local</strong><small>{folder ?? DEFAULT_FOLDER}</small></span><Check className="ml-auto" aria-label="Current" /></DropdownMenuItem>
+      <p className="env-note" role="note">A separate worktree for each chat is not available in the desktop app yet.</p>
+    </DropdownMenuContent>
+  </DropdownMenu>;
 }

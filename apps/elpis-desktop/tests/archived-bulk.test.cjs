@@ -6,7 +6,7 @@ const http = require('node:http');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { chromium } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright');
-const { leaveSettings } = require('./controls.cjs');
+const { leaveSettings, openSettings } = require('./controls.cjs');
 const root = path.resolve(__dirname, '../out');
 
 test('archived chats: select all across pages, delete all after one confirmation, unarchive a selection', async () => {
@@ -39,7 +39,7 @@ test('archived chats: select all across pages, delete all after one confirmation
     // Confirmation turned off by the person: bulk delete still asks once.
     await page.addInitScript(() => localStorage.setItem('elpis-preferences-v1', JSON.stringify({ confirmDeleteChats: false })));
     await page.goto(`http://127.0.0.1:${server.address().port}/#token=fixture`);
-    await page.getByRole('navigation', { name: 'Settings', exact: true }).getByRole('button', { name: 'Settings', exact: true }).click();
+    await openSettings(page);
     await page.getByRole('tab', { name: 'Archived chats', exact: true }).click();
     const list = page.getByLabel('Archived conversations'), dialog = page.getByRole('alertdialog');
     await list.getByText('Old chat 1', { exact: true }).waitFor();

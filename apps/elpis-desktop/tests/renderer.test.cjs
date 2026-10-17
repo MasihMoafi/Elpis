@@ -5,6 +5,7 @@ const assert = require('node:assert/strict');
 const http = require('node:http');
 const fs = require('node:fs/promises');
 const path = require('node:path');
+const { chooseTheme } = require('./controls.cjs');
 const { chromium } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright');
 const root = path.resolve(__dirname, '../out');
 
@@ -70,12 +71,12 @@ test('actual exported renderer: chat, steering, interrupt, existing writable his
     assert.match(await page.locator('.brand img').getAttribute('src'), /\/elpis-wordmark-amber-light-loop\.svg$/, 'light theme: the website\'s light wordmark');
     assert((await page.locator('link[rel="icon"]').evaluateAll(links=>links.map(link=>link.getAttribute("href")))).every(href=>href.endsWith("/favicon-amber.svg")));
     await page.screenshot({path:path.join(output,'elpis-app-chat-light-1440.png')});
-    await page.getByRole('button',{name:'Use dark theme'}).click();await page.waitForTimeout(250);await page.screenshot({path:path.join(output,'elpis-app-chat-dark-1440.png')});
+    await chooseTheme(page, 'dark');await page.waitForTimeout(250);await page.screenshot({path:path.join(output,'elpis-app-chat-dark-1440.png')});
     assert.match(await page.locator('.brand img').getAttribute('src'), /\/elpis-wordmark-amber-loop\.svg$/, 'dark theme: the website\'s wordmark');
     assert((await page.locator('link[rel="icon"]').evaluateAll(links=>links.map(link=>link.getAttribute("href")))).every(href=>href.endsWith("/favicon-amber.svg")));
     await page.setViewportSize({width:390,height:844});await page.screenshot({path:path.join(output,'elpis-app-chat-dark-390.png')});
     assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
-    await page.getByLabel('Open sidebar').click();await page.getByRole('button',{name:'Use light theme'}).click();await page.waitForTimeout(250);await page.getByLabel('Close sidebar').click();await page.screenshot({path:path.join(output,'elpis-app-chat-light-390.png')});
+    await page.getByLabel('Open sidebar').click();await chooseTheme(page, 'light');await page.waitForTimeout(250);await page.getByLabel('Close sidebar').click();await page.screenshot({path:path.join(output,'elpis-app-chat-light-390.png')});
     await page.getByLabel('Open sidebar').click();await page.getByRole('button',{name:'Agents',exact:true}).click();await page.getByRole('heading',{name:'Agents',exact:true}).waitFor();
     assert.deepEqual(errors,[]);
   }finally{await browser.close();for(const client of clients)client.end();await new Promise(resolve=>server.close(resolve));}

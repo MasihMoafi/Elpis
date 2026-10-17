@@ -51,6 +51,15 @@ button:disabled { cursor:not-allowed; }
 .thread-link { min-width:0; flex:1; text-align:left; background:none; border:0; padding:7px 4px 7px 8px; border-radius:7px; display:block; color:inherit; font-size:13px; line-height:20px; }
 .thread-link span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; display:block; }
 .sidebar-footer { display:flex; align-items:center; gap:4px; padding-top:6px; border-top:1px solid var(--hairline); }
+/* The account row (components/account-menu.tsx): avatar, account, plan and a chevron; its menu opens above it. */
+.account-row { display:flex; align-items:center; gap:8px; flex:1; min-width:0; min-height:40px; padding:0 8px; border:0; border-radius:var(--radius-sm); background:none; color:var(--foreground); font-size:13px; text-align:left; cursor:pointer; }
+.account-row:hover, .account-row[aria-expanded="true"] { background:var(--hover); }
+.account-avatar { flex-shrink:0; display:inline-flex; align-items:center; justify-content:center; width:24px; height:24px; border-radius:50%; background:var(--selected); font:600 12px/1 var(--serif); }
+.account-name { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:450; }
+.account-plan { flex-shrink:0; color:var(--muted-foreground); }
+.account-plan::before { content:"· "; }
+.account-chevron { flex-shrink:0; margin-inline-start:auto; color:var(--muted-foreground); }
+.env-note { margin:4px 0 0; padding:8px 10px 6px; border-top:1px solid var(--hairline); font-size:12px; line-height:1.4; color:var(--muted-foreground); }
 .sidebar > .status-line { color:var(--subtle-foreground); font-size:11px; padding:0 8px 2px; }
 .header-action { order:3; }
 .workspace { display:flex; flex-direction:column; min-width:0; min-height:0; position:relative; }
@@ -224,11 +233,9 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .thread-row.child .thread-title { font-size:12.5px; }
 .thread-title { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .thread-nickname { display:none; }
-.thread-working { width:6px; height:6px; border-radius:50%; background:var(--success); flex-shrink:0; margin:0 6px; animation:pulse 1.6s ease-in-out infinite; }
 .thread-meta { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .thread-links { display:flex; flex-wrap:wrap; gap:4px 12px; margin-top:2px !important; }
 .thread-links button { padding:0; height:auto; color:var(--primary); max-width:100%; overflow:hidden; text-overflow:ellipsis; }
-.thread-working.waiting { background:var(--primary); animation:none; }
 .settings-layout { display:grid; grid-template-columns:180px minmax(0,1fr); gap:32px; max-width:1060px; margin:0 auto; }
 /* As in the ChatGPT app, Settings takes over the window: its sections replace the sidebar and the page sits centred. */
 .app-shell.settings-mode { grid-template-columns:minmax(0,1fr); }
@@ -613,13 +620,18 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .thread-row:hover .row-hover-actions, .thread-row:focus-within .row-hover-actions { display:inline-flex; }
 .row-hover-actions button { color:var(--muted-foreground); }
 .row-hover-actions button:hover { color:var(--primary); }
-.thread-working { width:11px; height:11px; border-radius:50%; border:1.5px solid color-mix(in oklch, var(--primary) 25%, transparent); border-top-color:var(--primary); animation:spin .9s linear infinite; background:none; flex-shrink:0; margin:0 4px; }
-.thread-working.waiting { border-color:var(--warning); animation:pulse 1.4s ease-in-out infinite; }
+/* A chat's status dot, before its title: filled while it runs, hollow when idle, red on error. */
+.thread-dot { flex-shrink:0; box-sizing:border-box; width:9px; height:9px; margin:0 2px 0 8px; border:1.5px solid var(--subtle-foreground); border-radius:50%; background:transparent; }
+.thread-dot[data-state="working"] { border-color:var(--primary); background:var(--primary); animation:pulse 1.6s ease-in-out infinite; }
+.thread-dot[data-state="waiting"] { border-color:var(--warning); background:var(--warning); }
+.thread-dot[data-state="error"] { border-color:var(--destructive); background:var(--destructive); }
 @keyframes spin { to { transform:rotate(360deg); } }
 .project-group { margin-bottom:2px; }
-.project-row { display:flex; align-items:center; border-radius:var(--radius-sm); }
+.project-row { display:flex; align-items:center; padding-inline-end:8px; border-radius:var(--radius-sm); }  /* the "+" lines up with the Projects header's */
 .project-row:hover, .project-row[data-popup-open] { background:var(--hover); }
 .project-row-actions { display:flex; opacity:0; }
+.project-new-chat { flex-shrink:0; color:var(--muted-foreground); }
+.project-new-chat:hover { color:var(--foreground); }
 .project-row:hover .project-row-actions, .project-row[data-popup-open] .project-row-actions, .project-row:focus-within .project-row-actions, .project-row-actions:has([aria-expanded="true"]) { opacity:1; }
 .project-toggle { flex:1; min-width:0; display:flex; align-items:center; gap:6px; border:0; background:none; color:var(--foreground); padding:5px 6px; font-size:13px; text-align:left; }
 .project-toggle span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }

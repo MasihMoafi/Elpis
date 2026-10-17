@@ -5,7 +5,7 @@ const fs=require('node:fs/promises');
 const http=require('node:http');
 const path=require('node:path');
 const {chromium}=require(process.env.ELPIS_PLAYWRIGHT_PACKAGE||'playwright');
-const {chooseOption}=require('./controls.cjs');
+const { chooseOption, openSettings, chooseTheme } = require('./controls.cjs');
 
 async function fixture(run){
  const clients=new Set(),posts=[];
@@ -89,7 +89,7 @@ test('unreadable server errors stay human-readable and retain drafts; specific r
 }));
 
 test('queued follow-ups stay queued after Stop and send exactly once after normal completion',()=>fixture(async({page,composer,open,emit,posts})=>{
- await open();await page.getByRole('button',{name:'Settings',exact:true}).click();await page.getByRole('radio',{name:'Queue',exact:true}).click();await page.getByRole('button',{name:'Back to app',exact:true}).click();
+ await open();await openSettings(page);await page.getByRole('radio',{name:'Queue',exact:true}).click();await page.getByRole('button',{name:'Back to app',exact:true}).click();
  emit('turn/started',{threadId:'ux-chat',turn:{id:'running'}});await page.getByRole('button',{name:'Stop generation',exact:true}).waitFor();
  await composer.fill('QUEUED_UI_SENTINEL_1701');await composer.press('Enter');const queue=page.getByRole('list',{name:'Queued follow-ups'});await queue.waitFor();
  assert.equal(posts.filter(p=>p.path.endsWith('/turns')).length,0,'queuing does not steer or start a turn');
@@ -131,7 +131,7 @@ test('removing the last attachment returns to the composer without losing its te
 }));
 
 test('Back to app restores the saved draft and focuses it',()=>fixture(async({page,composer,focused})=>{
- await composer.fill('Keep my settings draft');await page.getByRole('button',{name:'Settings',exact:true}).click();await page.getByRole('tab',{name:'Appearance',exact:true}).click();await page.getByRole('button',{name:'Back to app',exact:true}).click();await page.waitForTimeout(180);assert.equal(await focused(),true);assert.equal(await composer.inputValue(),'Keep my settings draft');
+ await composer.fill('Keep my settings draft');await openSettings(page);await page.getByRole('tab',{name:'Appearance',exact:true}).click();await page.getByRole('button',{name:'Back to app',exact:true}).click();await page.waitForTimeout(180);assert.equal(await focused(),true);assert.equal(await composer.inputValue(),'Keep my settings draft');
 }));
 
 test('fork opens the new chat ready to type, and a delayed fork never overrides a newer draft',()=>fixture(async({page,composer,open,focused})=>{
@@ -145,12 +145,12 @@ test('fork opens the new chat ready to type, and a delayed fork never overrides 
 }));
 
 for(const action of ['Send now','Remove queued message'])test(`queued follow-up ${action} returns focus to the composer`,()=>fixture(async({page,composer,open,emit,focused})=>{
- await open();await page.getByRole('button',{name:'Settings',exact:true}).click();await page.getByRole('radio',{name:'Queue',exact:true}).click();await page.getByRole('button',{name:'Back to app',exact:true}).click();emit('turn/started',{threadId:'ux-chat',turn:{id:'running'}});await page.getByRole('button',{name:'Stop generation',exact:true}).waitFor();
+ await open();await openSettings(page);await page.getByRole('radio',{name:'Queue',exact:true}).click();await page.getByRole('button',{name:'Back to app',exact:true}).click();emit('turn/started',{threadId:'ux-chat',turn:{id:'running'}});await page.getByRole('button',{name:'Stop generation',exact:true}).waitFor();
  await composer.fill('Waiting instruction');await composer.press('Enter');const queue=page.getByRole('list',{name:'Queued follow-ups'});await queue.waitFor();await queue.getByRole('button',{name:action,exact:true}).click();await queue.waitFor({state:'detached'});await page.waitForTimeout(180);assert.equal(await focused(),true);
 }));
 
 test('a queued turn uses the model, effort and Plan mode selected with its message',()=>fixture(async({page,composer,open,emit,posts})=>{
- await open();await page.getByRole('button',{name:'Settings',exact:true}).click();await page.getByRole('radio',{name:'Queue',exact:true}).click();await page.getByRole('button',{name:'Back to app',exact:true}).click();emit('turn/started',{threadId:'ux-chat',turn:{id:'running'}});await page.getByRole('button',{name:'Stop generation',exact:true}).waitFor();
+ await open();await openSettings(page);await page.getByRole('radio',{name:'Queue',exact:true}).click();await page.getByRole('button',{name:'Back to app',exact:true}).click();emit('turn/started',{threadId:'ux-chat',turn:{id:'running'}});await page.getByRole('button',{name:'Stop generation',exact:true}).waitFor();
  await chooseOption(page.getByLabel('Model',{exact:true}),'sol-fast');await chooseOption(page.getByLabel('Reasoning effort',{exact:true}),'high');await page.getByRole('button',{name:'Add files and more',exact:true}).click();await page.getByRole('menuitem',{name:/Plan mode/}).click();
  await composer.fill('Use these queued choices');await composer.press('Enter');const queue=page.getByRole('list',{name:'Queued follow-ups'});await queue.waitFor();emit('turn/completed',{threadId:'ux-chat',turn:{id:'running',status:'completed'}});await queue.waitFor({state:'detached'});await page.waitForTimeout(180);
  assert.deepEqual(posts.filter(p=>p.path.endsWith('/turns')).map(p=>p.data),[{text:'Use these queued choices',model:'sol-fast',effort:'high',mode:'plan'}]);
@@ -158,7 +158,7 @@ test('a queued turn uses the model, effort and Plan mode selected with its messa
 
 test('small sidebar section labels have readable contrast in both themes',()=>fixture(async({page})=>{
  for(const dark of [false,true]){
-  if(dark)await page.getByRole('button',{name:'Use dark theme',exact:true}).click();
+  if(dark)await chooseTheme(page, 'dark');
   const colors=await page.locator('.section-label').first().evaluate(e=>({text:getComputedStyle(e).color,background:getComputedStyle(e.closest('aside')).backgroundColor}));
   const luminance=color=>{const rgb=color.match(/[\d.]+/g).slice(0,3).map(Number).map(n=>{const c=n/255;return c<=0.04045?c/12.92:((c+0.055)/1.055)**2.4;});return rgb[0]*0.2126+rgb[1]*0.7152+rgb[2]*0.0722;};
   const a=luminance(colors.text),b=luminance(colors.background),ratio=(Math.max(a,b)+0.05)/(Math.min(a,b)+0.05);

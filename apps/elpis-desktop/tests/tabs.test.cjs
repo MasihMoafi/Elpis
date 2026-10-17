@@ -7,7 +7,7 @@ const http = require('node:http');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { chromium } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright');
-const { controlValue, guardDesktopStore } = require('./controls.cjs');
+const { controlValue, guardDesktopStore, chooseTheme } = require('./controls.cjs');
 const { fakeDesktop } = require('./fake-desktop.cjs');
 const root = path.resolve(__dirname, '../out');
 const shots = process.env.ELPIS_TABS_SHOTS;
@@ -161,14 +161,14 @@ test('a tab has its chat’s menu on right-click; an archived chat leaves its ta
   await eventually(async () => assert.deepEqual(await names(), ['Write the docs']), 'an archived chat’s tab goes with it');
 }));
 
-test('the side panel: + asks Terminal or Browser tab; shells and pages are tabs there, never in the top strip', () => fixture(async ({ page, link, strip, names, terminal, commands, shoot }) => {
+test('the side panel: + asks Terminal, Browser tab or Changes; shells and pages are tabs there, never in the top strip', () => fixture(async ({ page, link, strip, names, terminal, commands, shoot }) => {
   await link('chat-one').click();
   const side = page.getByRole('region', { name: 'Side panel' });
   assert.equal(await side.count(), 0);
   await page.getByRole('button', { name: 'Show side panel' }).click();
   await side.getByText('Nothing open here yet.').waitFor();
   await side.getByRole('button', { name: 'New side panel tab' }).click();
-  assert.deepEqual(await page.getByRole('menuitem').allInnerTexts(), ['Terminal', 'Browser tab']);
+  assert.deepEqual(await page.getByRole('menuitem').allInnerTexts(), ['Terminal', 'Browser tab', 'Changes']);
   await shoot('side-panel-add-menu-light');
   await page.getByRole('menuitem', { name: 'Browser tab' }).click();
   await side.getByRole('tab', { name: 'New tab' }).waitFor();
@@ -238,7 +238,7 @@ test('screenshots: chat tabs above a side panel with a shell and a page, light a
   await eventually(async () => assert.equal((await page.evaluate(() => window.__terminal)).open.length, 1));
   await page.evaluate(key => window.__emit(key, '\x1b[32mmasih@elpis\x1b[0m:\x1b[34m~/work/release\x1b[0m$ cargo test\r\nrunning 12 tests\r\n'), (await page.evaluate(() => window.__terminal)).open[0][0]);
   await shoot('tabs-light');
-  await page.getByRole('button', { name: 'Use dark theme' }).click();
+  await chooseTheme(page, 'dark');
   await shoot('tabs-dark');
   await side.getByRole('tab', { name: 'New tab' }).click();
   await shoot('tabs-dark-browser');

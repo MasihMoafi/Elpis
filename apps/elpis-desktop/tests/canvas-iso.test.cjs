@@ -7,7 +7,7 @@ const http = require('node:http');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { chromium } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright');
-const { chooseOption, oranges } = require('./controls.cjs');
+const { chooseOption, oranges, chooseTheme } = require('./controls.cjs');
 const shots = process.env.ELPIS_SHOTS;
 
 test('agents canvas, isometric: agents as buttons to select and open, run state, inside the window, no orange in light', async () => {
@@ -174,10 +174,10 @@ test('agents canvas, isometric: agents as buttons to select and open, run state,
     await agent('Part 2').hover();
     assert.deepEqual(await oranges(page), [], 'light theme, isometric board: no orange');
     await shoot('iso-light-1130');
-    await page.getByRole('button', { name: 'Use dark theme' }).click(); await page.waitForTimeout(300);
+    await chooseTheme(page, 'dark'); await page.waitForTimeout(300);
     await agent('Part 2').hover();
     await shoot('iso-dark-1130');
-    await page.getByRole('button', { name: 'Use light theme' }).click();
+    await chooseTheme(page, 'light');
 
     // Loading an architecture redraws the board in its run order; Flat brings the editor back.
     await canvas.getByRole('button', { name: /Hierarchical/ }).click();
