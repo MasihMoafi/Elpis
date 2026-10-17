@@ -81,6 +81,15 @@ test('the main chat shows Elpis features under the message box, one click each, 
     assert.ok(strip.y >= composer.y + composer.height - 1 && strip.y - (composer.y + composer.height) < 40, `the features sit right under the message box (${JSON.stringify([composer, strip])})`);
     assert.deepEqual(await oranges(page), [], 'light theme, new chat: no orange');
 
+    // A new chat has its context ring too; hovering it shows the ledger as the TUI lays it out: title, switches, window.
+    const ring = page.getByRole('button', { name: 'Context window: not measured yet', exact: true });
+    await ring.hover();
+    const ledgerPopup = page.getByRole('dialog', { name: 'Context window usage', exact: true }); await ledgerPopup.waitFor();
+    assert.equal(await ledgerPopup.locator('.context-ledger-name').innerText(), 'CONTEXT LEDGER');
+    assert.match(await ledgerPopup.innerText(), /new chat[\s\S]*SMART PRUNE[\s\S]*SUBAGENTS[\s\S]*RAG[\s\S]*CONTEXT WINDOW[\s\S]*Measured from this chat's first message/);
+    assert.deepEqual(await oranges(page), [], 'light theme, new chat ledger: no orange');
+    await page.mouse.move(5, 5); await ledgerPopup.waitFor({ state: 'hidden' });
+
     // One click flips a switch, writes only its key, and the ledger shows the same state.
     await chip('Subagents').click();
     await page.waitForFunction(() => document.querySelector('[aria-label="Elpis features"] button[aria-pressed="false"]')?.textContent?.includes('Subagents'));

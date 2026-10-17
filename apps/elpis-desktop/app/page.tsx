@@ -1,6 +1,6 @@
 "use client";
 
-import { cloneElement, useCallback, useEffect, useRef, useState } from "react";
+import { cloneElement, useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
 import { AgentsIcon, ArchiveIcon, ChatIcon, FolderIcon, NewChatIcon, PinIcon, PlusIcon, SendIcon, SettingsIcon } from "@/components/elpis-icons";
 import { Archive, ArrowLeft, ChevronRight, PanelLeft, PanelRight, PanelRightClose, PanelRightOpen, Pin, Moon, RefreshCw, Search, Square, Sun, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -41,6 +41,7 @@ import { Dictation } from "@/components/dictation";
 import { chooseProject, ProjectActions, ProjectDialog, ProjectMenu } from "@/components/project-picker";
 import { ModelPicker } from "@/components/model-picker";
 import { appStorage, readProjects, saveProjects, type Project } from "@/lib/projects";
+import { ResizeEdge } from "@/components/resize-edge";
 import { agentState, mergeListedThreads } from "@/lib/agents";
 import { insertTranscript } from "@/lib/dictation";
 import { useBrowser } from "@/components/browser-panel";
@@ -61,6 +62,8 @@ type NextTurn = { model?: string; effort?: string; plan?: boolean };
 type Live = { thread: Thread; activeTurnId?: string | null; permissions?: PermissionMode | null; planMode?: boolean };
 /** The terminal's answer to a finished plan: Plan mode off, then this message. */
 const IMPLEMENT_PLAN = "Implement the plan.";
+/** The sidebar's width in pixels: the default, and how far its edge can be dragged. */
+const SIDEBAR = { initial: 256, min: 200, max: 480 };
 const without = <T,>(record: Record<string, T>, key: string) => { if (!(key in record)) return record; const next = { ...record }; delete next[key]; return next; };
 // Sidebar sections by last activity, as in ChatGPT and Claude; the list keeps Elpis's own order inside each.
 /** Whether a chat ran in a project's folder (trailing slashes ignored). */
@@ -275,6 +278,10 @@ export default function Home() {
   const dark = theme === "dark" || (theme === "system" && systemDark);
   // The website's animated wordmark, its dark or light version (website/assets/branding).
   const brandMark = dark ? "/branding/elpis-wordmark-amber-loop.svg" : "/branding/elpis-wordmark-amber-light-loop.svg";
+  // The sidebar's width, set by dragging its edge (components/resize-edge.tsx) and kept on this device.
+  const [sidebarWidth, setSidebarWidth] = useState(SIDEBAR.initial);
+  useEffect(() => { const saved = Number(appStorage().getItem("elpis-sidebar-width")); if (saved >= SIDEBAR.min && saved <= SIDEBAR.max) setSidebarWidth(saved); }, []);
+  const resizeSidebar = (width: number) => { setSidebarWidth(width); try { appStorage().setItem("elpis-sidebar-width", String(width)); } catch { /* the width still applies to this window */ } };
   const setTheme = (next: ThemeChoice) => { setThemeChoice(next); try { appStorage().setItem("elpis-theme", next); } catch { setError("Could not save appearance on this device."); } };
   const searchInput = useRef<HTMLInputElement>(null);
   const shortcutsReturnFocus = useRef<HTMLElement | null>(null);
@@ -1065,7 +1072,7 @@ export default function Home() {
   const heading = view === "chat" ? (selected ? title(selected) : "") : { agents: "Agents", newAgent: "New agent", settings: "Settings" }[view];
   const meta = selected ? [selected.agentNickname, selected.agentRole && selected.agentRole !== "default" ? selected.agentRole : null].filter(Boolean).join(" · ") : "";
 
-  return <div className={`app-shell${dark ? " dark" : ""}${desktop ? " has-title-bar" : ""}${sidebarCollapsed ? " sidebar-collapsed" : ""}${view === "settings" ? " settings-mode" : ""}`}>
+  return <div className={`app-shell${dark ? " dark" : ""}${desktop ? " has-title-bar" : ""}${sidebarCollapsed ? " sidebar-collapsed" : ""}${view === "settings" ? " settings-mode" : ""}`} style={{ "--sidebar-width": `${sidebarWidth}px` } as CSSProperties}>
     {desktop && <div className="title-bar"><Button variant="ghost" size="icon" aria-label={sidebarCollapsed ? "Open sidebar" : "Close sidebar"} title={`${sidebarCollapsed ? "Open" : "Close"} sidebar (Ctrl+B)`} onClick={() => showSidebar(narrow() ? !sidebar : sidebarCollapsed)}><PanelLeft /></Button></div>}
     <ShortcutsDialog open={shortcutsOpen} onOpenChange={setShortcutsOpen} returnFocus={shortcutsReturnFocus} />
     {desktop && <StartupSplash done={ready && connected} steps={[{ label: "Elpis engine connected", ok: connected }, { label: "models loaded", ok: models.length > 0 }, { label: "conversations loaded", ok: ready }]} />}
@@ -1101,6 +1108,7 @@ export default function Home() {
       <UsagePanel refreshKey={accountRefresh} onOpen={() => { setSettingsSection("usage"); show("settings"); }} />
       <div className="sidebar-footer"><nav className="nav-list flex-1" aria-label="Settings"><Button variant="ghost" aria-current={view === "settings" ? "page" : undefined} onClick={() => { setSettingsSection("general"); show("settings"); }}><SettingsIcon size={16} />Settings</Button></nav><Button size="icon-sm" variant="ghost" aria-label={dark ? "Use light theme" : "Use dark theme"} onClick={() => setTheme(dark ? "light" : "dark")}>{dark ? <Sun size={15} /> : <Moon size={15} />}</Button></div>
       <span className="status-line"><i className={`status-dot${connected ? " connected" : ""}`} />{connected ? "Local workspace" : "Disconnected"}</span>
+      <ResizeEdge label="Resize sidebar" width={sidebarWidth} min={SIDEBAR.min} max={SIDEBAR.max} initial={SIDEBAR.initial} grows="right" onResize={resizeSidebar} />
     </aside>
     <main className="workspace">
       <header className={`workspace-header${heading ? "" : " untitled"}`}>

@@ -61,7 +61,8 @@ export function ContextUsage({ threadId }: { threadId?: string }) {
     void poll();
     return () => { disposed = true; clearTimeout(timer); };
   }, [threadId, watching]);
-  if (!(threadId && showContextUsage) && opened === null) return null;
+  // In view on a new chat too: its ring is empty until the first message, and its ledger already holds the switches.
+  if (!showContextUsage && opened === null) return null;
   const current = threadId && read?.threadId === threadId ? read : null, ledger = current?.ledger ?? null;
   const used = ledger?.used ?? null, capacity = ledger?.window ?? null;
   const fill = used !== null && capacity ? Math.min(100, used / capacity * 100) : 0;
@@ -86,18 +87,25 @@ export function ContextUsage({ threadId }: { threadId?: string }) {
       </svg>
     </PopoverTrigger>
     <PopoverContent side="top" align="end" sideOffset={aboveComposer} initialFocus={false} finalFocus={false} aria-label="Context window usage" className="context-ledger">
-      <LedgerView ledger={ledger} loading={Boolean(threadId) && !ledger} />
+      <LedgerTitle ledger={ledger} started={Boolean(threadId)} />
       <LedgerSwitches prune={current?.prune ?? null} />
+      <LedgerView ledger={ledger} loading={Boolean(threadId) && !ledger} started={Boolean(threadId)} />
     </PopoverContent>
   </Popover>;
 }
 
 /** The TUI ledger's CONTEXT WINDOW section (codex-rs/tui/src/chatwidget/context_ledger.rs), on a full-window scale. */
-function LedgerView({ ledger, loading }: { ledger: Ledger | null; loading: boolean }) {
+/** The TUI ledger's title row: CONTEXT LEDGER, then what the context holds now. */
+function LedgerTitle({ ledger, started }: { ledger: Ledger | null; started: boolean }) {
+  const used = ledger?.used ?? null;
+  return <p className="context-ledger-title"><span className="context-ledger-name">Context ledger</span><span>{used === null ? (started ? "context not measured" : "new chat") : `≈${tokens(used)} tokens in context`}</span></p>;
+}
+
+function LedgerView({ ledger, loading, started }: { ledger: Ledger | null; loading: boolean; started: boolean }) {
   const { used, window: capacity, categories } = ledger ?? UNMEASURED;
-  const total = used === null ? (loading ? "reading…" : "usage unavailable") : capacity ? `${tokens(used)} of ${tokens(capacity)} used (${percent(used, capacity)}%)` : `${tokens(used)} used · capacity unknown`;
+  const total = used === null ? (loading ? "reading…" : started ? "usage unavailable" : "not measured yet") : capacity ? `${tokens(used)} of ${tokens(capacity)} used (${percent(used, capacity)}%)` : `${tokens(used)} used · capacity unknown`;
   const scale = used !== null && capacity ? Math.max(capacity, used) : 0;
-  const note = used === null ? (loading ? null : "Context measurement unavailable until the first request snapshot")
+  const note = used === null ? (loading ? null : started ? "Context measurement unavailable until the first request snapshot" : "Measured from this chat's first message")
     : !categories.length ? "Core measured total; category attribution unavailable until the next provider attempt"
     : `Measured total · estimated category ${capacity ? "shares" : "tokens"}`;
   return <>

@@ -20,8 +20,8 @@ body { margin:0; background:var(--background); color:var(--foreground); font:13.
 button, select { cursor:pointer; }
 button:disabled { cursor:not-allowed; }
 :focus-visible { outline:2px solid var(--primary); outline-offset:2px; }
-.app-shell { display:grid; grid-template-columns:256px minmax(0,1fr); height:100dvh; overflow:hidden; background:var(--background); color:var(--foreground); }
-.sidebar { background:var(--sidebar); border-right:1px solid var(--hairline); display:flex; flex-direction:column; min-height:0; padding:10px 8px 8px; gap:6px; }
+.app-shell { display:grid; grid-template-columns:var(--sidebar-width, 256px) minmax(0,1fr); height:100dvh; overflow:hidden; background:var(--background); color:var(--foreground); }
+.sidebar { position:relative; background:var(--sidebar); border-right:1px solid var(--hairline); display:flex; flex-direction:column; min-height:0; padding:10px 8px 8px; gap:6px; }
 .brand { font-size:14px; font-weight:600; letter-spacing:-.01em; padding:4px 8px 8px; display:flex; align-items:center; gap:9px; }
 .nav-list { display:grid; gap:1px; }
 /* Navigation rows: the sidebar's and Settings' (which takes the sidebar's place) are one item. */
@@ -58,8 +58,12 @@ button:disabled { cursor:not-allowed; }
 .workspace-content { display:flex; flex-direction:column; flex:1; min-width:0; min-height:0; container:workspace / inline-size; }
 /* The side panel: terminals and browser pages as tabs (components/side-panel.tsx). */
 .side-panel { position:relative; display:flex; flex-direction:column; flex:0 0 auto; width:50%; min-width:320px; max-width:70%; min-height:0; border-inline-start:1px solid var(--border); background:var(--background); }
-.side-resize { position:absolute; inset:0 auto 0 -4px; width:7px; cursor:col-resize; z-index:3; touch-action:none; }
-.side-resize:hover,.side-resize:focus-visible { background:color-mix(in oklch,var(--primary),transparent 65%); outline:none; }
+/* Draggable edges: the side panel's left edge, and the sidebar's right one (components/resize-edge.tsx). */
+.side-resize, .resize-edge { position:absolute; top:0; bottom:0; width:7px; cursor:col-resize; z-index:3; touch-action:none; }
+.side-resize { left:-4px; }
+.sidebar > .resize-edge { right:-4px; }
+@media(max-width:760px) { .sidebar > .resize-edge { display:none; } }
+.side-resize:hover, .side-resize:focus-visible, .resize-edge:hover, .resize-edge:focus-visible, .resize-edge[data-dragging] { background:color-mix(in oklch,var(--primary),transparent 65%); outline:none; }
 .side-header { display:flex; align-items:center; gap:4px; flex-shrink:0; min-height:45px; padding:0 8px; border-bottom:1px solid var(--hairline); }
 .side-close { flex-shrink:0; color:var(--muted-foreground); }
 .side-body { display:flex; flex-direction:column; flex:1; min-height:0; min-width:0; }
@@ -506,7 +510,13 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .context-ring-track { stroke:var(--border); }
 .context-ring-fill { stroke:var(--context); stroke-linecap:round; transition:stroke-dashoffset .3s; }
 /* The ring's breakdown: the TUI Context Ledger's CONTEXT WINDOW section, on one full-window scale. */
-.context-ledger { display:grid; gap:8px; font-size:12.5px; }
+.context-ledger { display:grid; gap:8px; font-size:12.5px; width:340px; }
+/* The TUI ledger's look: a shimmering CONTEXT LEDGER title, switch names in capitals, the context colour for what is on. */
+.context-ledger-title { display:flex; align-items:baseline; justify-content:space-between; gap:12px; padding-bottom:8px; border-bottom:1px solid var(--hairline); color:var(--context); font-variant-numeric:tabular-nums; }
+.context-ledger-name { font:600 11px/1.2 var(--mono); letter-spacing:.14em; text-transform:uppercase; color:var(--foreground); background:linear-gradient(100deg, var(--foreground) 40%, var(--context) 50%, var(--foreground) 60%) 0 0/300% 100% text; -webkit-text-fill-color:transparent; animation:ledger-shimmer 3.2s linear infinite; }
+@keyframes ledger-shimmer { from { background-position:100% 0; } to { background-position:0 0; } }
+@media (prefers-reduced-motion:reduce) { .context-ledger-name { animation:none; -webkit-text-fill-color:currentColor; } }
+.context-ledger .settings-row-title { font:600 11px/1.3 var(--mono); letter-spacing:.1em; text-transform:uppercase; }
 .context-ledger p { margin:0; }
 .context-ledger .hud-menu-title { padding:0; }
 .context-ledger-head { display:flex; align-items:baseline; justify-content:space-between; gap:12px; font-weight:500; font-variant-numeric:tabular-nums; }
@@ -520,9 +530,9 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .context-ledger-row[data-category="free"] { color:var(--muted-foreground); }
 .context-ledger-row[data-category="free"]::before { background:var(--muted); box-shadow:inset 0 0 0 1px var(--border); }
 /* The ledger's switches are Settings rows (components/settings/rows.tsx), compact inside the popover. */
-.context-ledger-switches { display:grid; margin-top:4px; padding-top:4px; border-top:1px solid var(--hairline); }
+.context-ledger-switches { display:grid; padding-bottom:6px; border-bottom:1px solid var(--hairline); }
 .context-ledger .settings-row { padding:6px 0; min-height:0; margin-top:0; border-top:0; gap:12px; }
-.context-ledger .settings-row-title { font-size:12.5px; }
+
 .context-ledger .settings-row-description { font-size:11.5px; margin-top:1px; }
 .context-ledger-switches .context-ledger-note { margin-top:4px; }
 /* On is the context colour, as the TUI ledger draws [━━━●] ON. */
