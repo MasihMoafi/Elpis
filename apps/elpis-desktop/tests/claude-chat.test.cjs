@@ -11,7 +11,7 @@ async function using(options, run) {
   try { await run(f); assert.deepEqual(f.errors, []); } finally { await f.close(); }
 }
 const eventually = async check => { const end = Date.now() + 4000; for (;;) { try { return await check(); } catch (error) { if (Date.now() > end) throw error; await new Promise(resolve => setTimeout(resolve, 50)); } } };
-const reverts = f => f.posts.filter(post => post.path === '/api/threads/chat-a/revert');
+const reverts = f => f.posts.filter(post => post.path === '/api/threads/chat-a/rewind' && post.body.action === 'restore');
 
 test('Back and Forward walk the chats and pages visited: the buttons, Alt+Left and Alt+Right, and the mouse side buttons', () => using({}, async f => {
   const { page } = f;
@@ -84,13 +84,13 @@ test('Rewind to here asks first, then drops that turn and every later one and pu
   const rewind = async () => { await page.locator('.message.user', { hasText: 'Add tests.' }).click({ button: 'right' }); await page.getByRole('menuitem', { name: 'Rewind to here' }).click(); };
   await rewind();
   const dialog = page.getByRole('alertdialog'); await dialog.waitFor();
-  assert.match(await dialog.innerText(), /Rewind to here\?[\s\S]*2 turns/);
+  assert.match(await dialog.innerText(), /Rewind to this message\?[\s\S]*2 turns/);
   await dialog.getByRole('button', { name: 'Cancel' }).click(); await dialog.waitFor({ state: 'hidden' });
   assert.equal(reverts(f).length, 0, 'Cancel changes nothing');
   await page.getByText('All green.', { exact: true }).waitFor();
   await rewind(); await dialog.getByRole('button', { name: 'Rewind', exact: true }).click();
   await eventually(async () => assert.equal(reverts(f).length, 1));
-  assert.deepEqual(reverts(f)[0].body, { beforeTurnId: 't3' }, 'only a rewind: no new message');
+  assert.deepEqual(reverts(f)[0].body, { action: 'restore', beforeTurnId: 't3', mode: 'conversation' }, 'only a rewind: no new message');
   await page.getByText('All green.', { exact: true }).waitFor({ state: 'hidden' });
   await page.getByText('Added three tests.').waitFor({ state: 'hidden' });
   await page.getByText('Rename the lexer.', { exact: true }).waitFor();

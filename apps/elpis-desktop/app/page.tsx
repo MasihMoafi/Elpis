@@ -43,7 +43,7 @@ import { SlashMenu, useSlashMenu, type SlashCommand } from "@/components/slash-m
 import { MentionMenu, useMentionMenu } from "@/components/mention-menu";
 import { NavButtons } from "@/components/nav-buttons";
 import { PromptRail } from "@/components/prompt-rail";
-import { RewindDialog } from "@/components/rewind-dialog";
+import { RewindDialog, type RestoreMode } from "@/components/rewind-dialog";
 import { usedMentions, type Mention } from "@/lib/mentions";
 import { canBack, canForward, startHistory, step, visit, type History } from "@/lib/nav-history";
 import { DiffPanel, ReviewPanel, SessionPanel, type ReviewTarget } from "@/components/slash-panels";
@@ -173,6 +173,9 @@ export default function Home() {
   const commandReturnFocus = useRef<HTMLElement | null>(null);
   /** The message whose "Rewind to here" is awaiting confirmation (its turn). */
   const [rewindTurn, setRewindTurn] = useState<string | null>(null);
+  const [rewindActions, setRewindActions] = useState<Record<string, "undo" | "redo" | undefined>>({});
+  const [rewindBusy, setRewindBusy] = useState(false);
+  const rewindSwitch = useRef<string | null>(null);
   /** The chats and pages visited, for Back and Forward (lib/nav-history.ts). */
   const [history, setHistory] = useState<History>(() => startHistory({ view: "chat", threadId: null }));
   const historyRef = useRef(history), historySeeded = useRef(false);
@@ -582,7 +585,7 @@ export default function Home() {
           }
           if (method === "turn/plan/updated" && Array.isArray(params.plan)) setPlans(prev => ({ ...prev, [params.threadId]: { turnId: params.turnId, explanation: params.explanation ?? null, steps: params.plan } }));
           // A new turn starts without a list; the last turn's list goes until this one makes its own.
-          if (method === "turn/started") setPlans(prev => prev[params.threadId] && prev[params.threadId].turnId !== params.turn.id ? without(prev, params.threadId) : prev);
+          if (method === "turn/started") { setPlans(prev => prev[params.threadId] && prev[params.threadId].turnId !== params.turn.id ? without(prev, params.threadId) : prev); setRewindActions(prev => without(prev, params.threadId)); }
           if (method === "turn/started" && !completedTurns.current.has(params.turn.id)) { setActiveTurns(prev => ({ ...prev, [params.threadId]: params.turn.id })); setRuntimeNotices(prev => without(prev, params.threadId)); setFailedTurns(prev => without(prev, params.threadId)); patchThread(params.threadId, { status: { type: "active" } }); }
           if (method === "turn/completed") {
             completedTurns.current.add(params.turn.id);
@@ -615,7 +618,7 @@ export default function Home() {
           })();
           if (method === "thread/started" && params.thread?.parentThreadId) upsertThread(params.thread);
           if (method === "thread/name/updated" || method === "thread/started") refreshThreads().catch(e => setError(String(e)));
-          if (method === "thread/deleted" || method === "thread/archived") removeThreads(new Set([params.threadId]), method === "thread/deleted");
+          if (method === "thread/deleted" || (method === "thread/archived" && rewindSwitch.current !== params.threadId)) removeThreads(new Set([params.threadId]), method === "thread/deleted");
           const line = threadId ? activityOf(method, params) : null;
           if (line && threadId) setActivity(prev => prev[threadId] === line ? prev : { ...prev, [threadId]: line });
           if (!threadId || threadId !== selectedRef.current?.id) return;
@@ -706,6 +709,14 @@ export default function Home() {
   }, [view]);
 
   const activeTurn = selected ? activeTurns[selected.id] : undefined;
+  useEffect(() => {
+    const id = selected?.id; if (!id || activeTurn) return;
+    let disposed = false;
+    api<{ action?: "undo" | "redo" } | null>(`/threads/${encodeURIComponent(id)}/rewind`, { action: "status" }).then(result => {
+      if (!disposed) setRewindActions(prev => ({ ...prev, [id]: result?.action }));
+    }).catch(() => {});
+    return () => { disposed = true; };
+  }, [selected?.id, activeTurn]);
   // A new chat runs with the configured defaults until a mode is chosen, so the button shows those.
   const configuredMode: PermissionMode = providerSettings?.options?.approvalPolicy !== "never" ? "ask"
     : providerSettings.options.sandboxMode === "bypass-permissions" ? "bypass" : providerSettings.options.sandboxMode === "danger-full-access" ? "full" : "ask";
@@ -1061,15 +1072,26 @@ export default function Home() {
   }
   /** "Rewind to here": Elpis drops the turn and every later one (thread/revert, as edit-and-resend does) without sending anything;
    * the turn's prompt returns to an empty message box when it can be resent as text. */
-  async function rewindFrom(turnId: string) {
+  async function rewindFrom(turnId: string, mode: RestoreMode, version?: string) {
     const thread = selectedRef.current; if (!thread) return;
-    const prompt = replacementOptions.get(turnId), index = entries.findIndex(entry => entry.turnId === turnId);
-    const stale = new Set(entries.slice(Math.max(index, 0)).map(entry => entry.turnId));
-    await api(`/threads/${encodeURIComponent(thread.id)}/revert`, { beforeTurnId: turnId });
-    if (selectedRef.current?.id !== thread.id) return;
-    stickToBottom.current = true; setEntries(prev => prev.filter(entry => !stale.has(entry.turnId)));
-    if (prompt?.allowed && !textRef.current.trim()) editDraft(prompt.prompt);
-    focusComposer();
+    const prompt = replacementOptions.get(turnId);
+    await switchRewind({ action: "restore", beforeTurnId: turnId, mode, ...(version ? { version } : {}) }, mode === "code");
+    if (mode !== "code" && prompt?.allowed && !textRef.current.trim()) editDraft(prompt.prompt);
+    if (mode !== "code") focusComposer();
+  }
+  async function switchRewind(body: { action: string; beforeTurnId?: string; mode?: RestoreMode; version?: string }, filesOnly = false) {
+    const thread = selectedRef.current; if (!thread) return;
+    const draft = textRef.current; rewindSwitch.current = thread.id; setRewindBusy(true);
+    try {
+      const result = await api<{ thread?: Thread; undo?: "undo" | "redo" }>(`/threads/${encodeURIComponent(thread.id)}/rewind`, body);
+      if (filesOnly || selectedRef.current?.id !== thread.id) return;
+      const next = result.thread ?? thread;
+      transcripts.current.delete(next.id); hidden.current.delete(next.id); upsertThread(next);
+      if (next.id !== thread.id) { hidden.current.add(thread.id); setThreads(prev => prev.filter(item => item.id !== thread.id)); }
+      setEntries([]); await loadThread(next);
+      if (draft.trim()) editDraft(draft);
+      setRewindActions(prev => ({ ...prev, [thread.id]: undefined, [next.id]: result.undo }));
+    } finally { rewindSwitch.current = null; setRewindBusy(false); }
   }
   /** Answers a request; `instead` is "Deny, and tell Elpis what to do instead" (body: { text }). */
   async function answer(id: string, body: unknown, key: string, instead = false) {
@@ -1412,7 +1434,7 @@ export default function Home() {
     {desktop && <StartupSplash done={ready && connected} steps={[{ label: "Elpis engine connected", ok: connected }, { label: "models loaded", ok: models.length > 0 }, { label: "conversations loaded", ok: ready }]} />}
     <ProjectDialog projects={projects} editing={projectEdit} onClose={() => setProjectEdit(undefined)} onSave={saveProject} />
     <DeleteChatsDialog threads={deleteTargets} trash={trashChats} onClose={() => setDeleteTargets(null)} />
-    <RewindDialog turns={rewindTurn ? Math.max(1, turnEntries.size - [...turnEntries.keys()].indexOf(rewindTurn)) : null} onConfirm={() => rewindFrom(rewindTurn!)} onClose={() => setRewindTurn(null)} />
+    <RewindDialog threadId={selected?.id} turnId={rewindTurn} prompt={rewindTurn ? entries.find(entry => entry.turnId === rewindTurn && entry.item.type === "userMessage")?.item.content?.map(part => part.text ?? "").join("\n") ?? "" : ""} turns={rewindTurn ? Math.max(1, turnEntries.size - [...turnEntries.keys()].indexOf(rewindTurn)) : null} onConfirm={(mode, version) => rewindFrom(rewindTurn!, mode, version)} onClose={() => setRewindTurn(null)} />
     <aside className={`sidebar${sidebar ? " open" : ""}`} aria-label="Workspace navigation">
       <div className="brand"><Button className="sidebar-toggle" variant="ghost" size="icon-sm" aria-label="Close sidebar" title="Close sidebar (Ctrl+B)" onClick={() => showSidebar(false)}><PanelLeft size={16} /></Button><img src={brandMark} alt="Elpis" width={73} height={36} /></div>
       <nav className="nav-list" aria-label="Workspace">
@@ -1474,6 +1496,7 @@ export default function Home() {
       </header>
       <div className="workspace-notices">
       {deletedNotice && <div className="error-banner notice" role="status"><span className="min-w-0 flex-1 truncate">{deletedNotice}</span><Button variant="outline" size="sm" title="Undo (Ctrl+Z)" onClick={() => void undoDelete()}>Undo</Button><Button variant="ghost" size="icon-sm" aria-label="Dismiss" onClick={() => setDeletedNotice(null)}><X size={15} /></Button></div>}
+      {selected && rewindActions[selected.id] && <div className="error-banner notice" role="status"><span className="min-w-0 flex-1">Your files stay as they are.</span><Button variant="outline" size="sm" disabled={rewindBusy || !!activeTurn} onClick={() => void switchRewind({ action: rewindActions[selected.id]! }).catch(cause => setError(String(cause)))}>{rewindActions[selected.id] === "undo" ? "Undo rewind" : "Redo rewind"}</Button></div>}
       {error && <div className="error-banner" role="alert"><span>{error}</span><Button variant="ghost" size="icon-sm" aria-label="Dismiss error" onClick={() => setError("")}><X size={15} /></Button></div>}
       {worktreeNotice && <div className="error-banner warning worktree-notice" role="status"><span>{worktreeNotice}</span><Button variant="ghost" size="icon-sm" aria-label="Dismiss worktree notice" onClick={() => setWorktreeNotice("")}><X size={15} /></Button></div>}
       {catalogError && <div className="error-banner" role="alert"><span className="min-w-0">Models unavailable: {catalogError} Sign in or check Models &amp; accounts, then retry.</span><Button className="shrink-0" variant="outline" size="sm" disabled={catalogLoading} onClick={() => void refreshModels()}>Retry models</Button></div>}

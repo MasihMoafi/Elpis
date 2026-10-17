@@ -8,7 +8,7 @@ import { parseArgs } from 'node:util';
 export const productionFiles = [
   'bridge/browser-mcp.mjs', 'desktop/browser-agent.cjs',
   'bridge/canvas-plan.mjs', 'bridge/client.mjs', 'bridge/customize.mjs', 'bridge/elpis-features.mjs', 'bridge/observability.mjs', 'bridge/files.mjs', 'bridge/folders.mjs', 'bridge/git.mjs', 'bridge/provider-keys.mjs', 'bridge/provider-settings.mjs', 'bridge/provider-models.mjs',
-  'bridge/rag-command.mjs', 'bridge/server.mjs', 'bridge/dev-servers.mjs', 'bridge/tools.mjs', 'bridge/transcription.mjs', 'bridge/attachments.mjs', 'bridge/trash.mjs',
+  'bridge/rag-command.mjs', 'bridge/rewind-history.mjs', 'bridge/rewind-snapshots.mjs', 'bridge/server.mjs', 'bridge/dev-servers.mjs', 'bridge/tools.mjs', 'bridge/transcription.mjs', 'bridge/attachments.mjs', 'bridge/trash.mjs',
   'bridge/resources/rag.md', 'desktop/browser-policy.cjs', 'desktop/browser.cjs', 'desktop/browser-annotations.cjs', 'desktop/browser-page-preload.cjs', 'desktop/context-menu.cjs',
   'desktop/main.cjs', 'desktop/session-windows.cjs', 'desktop/window-ipc.cjs', 'desktop/media-policy.cjs', 'desktop/preferences.cjs', 'desktop/preload.cjs', 'desktop/files.cjs', 'desktop/editors.cjs',
   'desktop/terminal.cjs', 'desktop/open-thread.cjs', 'desktop/tray.cjs', 'desktop/quick-entry.cjs', 'desktop/theme.cjs', 'desktop/quick-entry-preload.cjs', 'desktop/quick-entry.html',

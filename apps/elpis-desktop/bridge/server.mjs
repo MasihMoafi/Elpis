@@ -191,7 +191,7 @@ export async function startDesktopServer(options = {}) {
         }
         const sideChat = url.pathname.match(/^\/api\/side-chats\/([^/]+)\/(turns|close)$/);
         if (sideChat && method === 'POST') return json(response, 200, await client[sideChat[2] === 'turns' ? 'sendSideChat' : 'closeSideChat'](decodeURIComponent(sideChat[1]), await body(request)));
-        const thread = url.pathname.match(/^\/api\/threads\/([^/]+)(?:\/(turns|steer|interrupt|resume|context|delete|rename|archive|unarchive|revert|fork|compact|review|git|permissions|shell|side-chat))?$/);
+        const thread = url.pathname.match(/^\/api\/threads\/([^/]+)(?:\/(turns|steer|interrupt|resume|context|delete|rename|archive|unarchive|revert|rewind|fork|compact|review|git|permissions|shell|side-chat))?$/);
         if (thread) {
           const id = decodeURIComponent(thread[1]);
           if (thread[2] === 'shell' && method === 'POST') return json(response, 200, await client.shellCommand(id, await body(request)));
@@ -204,7 +204,7 @@ export async function startDesktopServer(options = {}) {
           }
           if (thread[2] === 'git' && method === 'POST') return json(response, 200, await client.discardChange(id, await body(request, 65536)));
           if (thread[2] && !['context', 'git'].includes(thread[2]) && method === 'POST') {
-            const operation = { turns: 'send', steer: 'steer', interrupt: 'interrupt', resume: 'resume', delete: 'deleteThread', rename: 'renameThread', archive: 'archiveThread', unarchive: 'unarchiveThread', revert: 'revert', fork: 'forkThread', compact: 'compact', review: 'review', permissions: 'setPermissions' }[thread[2]];
+            const operation = { turns: 'send', steer: 'steer', interrupt: 'interrupt', resume: 'resume', delete: 'deleteThread', rename: 'renameThread', archive: 'archiveThread', unarchive: 'unarchiveThread', revert: 'revert', rewind: 'rewind', fork: 'forkThread', compact: 'compact', review: 'review', permissions: 'setPermissions' }[thread[2]];
             return json(response, 200, await client[operation](id, await body(request, ['send', 'steer'].includes(operation) ? ATTACHMENT_BODY_LIMIT : 65536)));
           }
           throw new BridgeError('Method is not allowed', 405);

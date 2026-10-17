@@ -14,6 +14,8 @@ import { pluginsSnapshot, skillsSnapshot } from './customize.mjs';
 import { scanDeletionThreads } from '../lib/thread-deletion.ts';
 import { changedFiles, createChatWorktree, currentBranch, discardFile, fileDiff, isChatWorktreePath, releaseChatWorktree, restoreChatWorktree, reviewChoices, undoChatWorktree, workingDiff } from './git.mjs';
 import { elicitationResponse, grantedPermissions, permissionsResponse } from '../lib/approvals.ts';
+import { RewindSnapshots } from './rewind-snapshots.mjs';
+import { RewindHistory } from './rewind-history.mjs';
 const string = value => typeof value === 'string' ? value : null;
 /** Every kind of conversation the window lists, agents included. */
 const SOURCE_KINDS = ['cli', 'vscode', 'exec', 'appServer', 'subAgent', 'subAgentReview', 'subAgentCompact', 'subAgentThreadSpawn', 'subAgentOther', 'unknown'];
@@ -154,9 +156,16 @@ export class DesktopClient extends EventEmitter {
   #disposed = false; #reconnecting = false; #retryTimer; #openSocket; #retryDelay; #retryAttempt = 0;
   #settingsConfirmMs;
   #browserConfig;
-  constructor(socket, { timeoutMs = 30000, openSocket, reconnectDelayMs = 500, settingsConfirmMs = 3000, browserConfig } = {}) {
+  #rewindSnapshots; #rewindHistory;
+  constructor(socket, { timeoutMs = 30000, openSocket, reconnectDelayMs = 500, settingsConfirmMs = 3000, browserConfig, rewindHome = path.join(elpisHome(), 'desktop-rewind') } = {}) {
     super(); this.#socket = socket; this.timeoutMs = timeoutMs; this.#settingsConfirmMs = settingsConfirmMs;
     this.#browserConfig = browserConfig;
+    this.#rewindSnapshots = new RewindSnapshots(rewindHome);
+    this.#rewindHistory = new RewindHistory(rewindHome, async (method, params) => {
+      const result = await this.#rpc(method, params);
+      if (method === 'thread/archive') this.#forgetSubscription(params.threadId);
+      return result;
+    });
     this.#openSocket = openSocket; this.#retryDelay = reconnectDelayMs;
     this.#bind(socket);
   }
@@ -410,6 +419,17 @@ export class DesktopClient extends EventEmitter {
       ...(options.searchTerm ? { searchTerm: options.searchTerm.trim() } : {}),
       sourceKinds: SOURCE_KINDS,
       ...(options.ancestorThreadId ? { ancestorThreadId: threadId(options.ancestorThreadId) } : {}) });
+    // A native fork has no first_user_message of its own until another turn. Keep the current rewind checkpoint
+    // discoverable across desktop restarts without inventing a user message just to make the engine list it.
+    if (!options.cursor && !options.ancestorThreadId && !options.archived) {
+      for (const id of await this.#rewindHistory.currentIds()) {
+        if (result.data.some(thread => thread.id === id)) continue;
+        const { thread } = await this.#rpc('thread/read', { threadId: id, includeTurns: false }).catch(() => ({}));
+        if (!thread || thread.path?.includes('/archived_sessions/')) continue;
+        if (options.searchTerm && !`${thread.name ?? ''} ${thread.preview ?? ''}`.toLowerCase().includes(options.searchTerm.trim().toLowerCase())) continue;
+        result.data.unshift(thread);
+      }
+    }
     await this.#loadWorkflowTitles(result.data);
     // Auto-review's reviewer works in threads of its own; they are not the user's chats.
     const data = result.data.filter(thread => thread.source?.subAgent?.other !== 'guardian').map(thread => this.#decorate(thread));
@@ -1047,6 +1067,7 @@ export class DesktopClient extends EventEmitter {
     return this.#mutate(id, async () => {
       const cwd = await this.#folderOf(threadId(id)).catch(() => null);
       await this.#rpc('thread/archive', { threadId: id });
+      await this.#rewindHistory.hide(id, true);
       this.#forget(id);
       const worktree = await this.#releaseWorktree(cwd);
       return { archived: true, ...(worktree ? { worktree } : {}) };
@@ -1057,6 +1078,7 @@ export class DesktopClient extends EventEmitter {
     return this.#mutate(id, async () => {
       const result = await this.#rpc('thread/unarchive', { threadId: threadId(id) });
       if (result.thread?.id !== id) throw new BridgeError('Elpis restored another thread', 502);
+      await this.#rewindHistory.hide(id, false);
       const worktree = isChatWorktreePath(result.thread.cwd) ? await restoreChatWorktree(result.thread.cwd) : null;
       return { thread: this.#decorate(result.thread), ...(worktree ? { worktree } : {}) };
     });
@@ -1089,11 +1111,47 @@ export class DesktopClient extends EventEmitter {
       const eligibility = replacementEligibility(entries, beforeTurnId, { historyComplete: true });
       if (!eligibility.allowed) throw new BridgeError(eligibility.reason, 409);
       await this.#rpc('thread/revert', { threadId: id, beforeTurnId });
-      try { return await this.#rpc('turn/start', { threadId: id, input, ...(model ? { model } : {}), ...(effort ? { effort } : {}) }); }
+      try { return await this.#startTurn(thread, { threadId: id, input, ...(model ? { model } : {}), ...(effort ? { effort } : {}) }); }
       catch (error) {
         return { rewound: true, beforeTurnId, sendError: `Conversation was rewound, but its replacement message was not confirmed: ${error instanceof Error ? error.message : String(error)}` };
       }
     });
+  }
+  /** Claude's restore scopes. File checkpoints are bridge-owned; native forks keep Undo/Redo lossless. */
+  async rewind(id, body) {
+    object(body, ['action', 'beforeTurnId', 'mode', 'version']);
+    if (!['preview', 'status', 'restore', 'undo', 'redo'].includes(body.action)) throw new BridgeError('Choose a rewind action.');
+    return this.#mutate(id, async () => {
+      const thread = await this.#current(id);
+      if (thread.desktopAccess.mode === 'continue') throw new BridgeError('Only this agent’s parent can rewind its conversation.', 409);
+      if (thread.status?.type === 'active') throw new BridgeError('Rewind is unavailable while Elpis is working.', 409);
+      try {
+        if (body.action === 'status') return await this.#rewindHistory.status(id);
+        if (body.action === 'undo' || body.action === 'redo') {
+          const result = await this.#rewindHistory.toggle(id, body.action); await this.#attach(result.thread.id);
+          return { ...result, thread: this.#decorate(result.thread) };
+        }
+        const turn = text(body.beforeTurnId, 'turn ID', 200);
+        if (body.action === 'preview') return await this.#rewindSnapshots.preview(id, turn, thread.cwd);
+        if (!['both', 'conversation', 'code'].includes(body.mode)) throw new BridgeError('Choose what to restore.');
+        const files = async forkId => {
+          if (body.mode !== 'conversation') await this.#rewindSnapshots.restore(id, turn, thread.cwd, text(body.version, 'file preview version', 64));
+          if (forkId) await this.#rewindSnapshots.inherit(id, forkId);
+        };
+        if (body.mode === 'code') { await files(); return { rewound: true, mode: body.mode }; }
+        const result = await this.#rewindHistory.restore(thread, turn, files); this.#owned.add(result.thread.id);
+        return { ...result, thread: this.#decorate(result.thread), rewound: true, mode: body.mode };
+      } catch (error) { throw error instanceof BridgeError ? error : new BridgeError(error.message, 409); }
+    });
+  }
+  async #startTurn(thread, params) {
+    // Snapshot before turn/start can execute tools. Non-Git or oversized folders still support conversation rewind.
+    const pending = `pending-${randomUUID()}`; let snapshot = false;
+    try { await this.#rewindSnapshots.capture(thread.id, pending, thread.cwd); snapshot = true; } catch { /* Preview reports unavailable. */ }
+    const result = await this.#rpc('turn/start', params);
+    await this.#rewindHistory.invalidate(thread.id);
+    if (snapshot && result.turn?.id) await this.#rewindSnapshots.alias(thread.id, pending, result.turn.id).catch(() => {});
+    return result;
   }
   /** Opens a chat live in this app: subscribes it and reports the turn it is running, if any. */
   async resume(id, body) {
@@ -1139,7 +1197,7 @@ export class DesktopClient extends EventEmitter {
         }
         continued.thread.name = name;
         try {
-          const started = await this.#rpc('turn/start', { threadId: fork.thread.id, input, ...overrides });
+          const started = await this.#startTurn(fork.thread, { threadId: fork.thread.id, input, ...overrides });
           return { ...started, ...continued };
         } catch (error) {
           // The fork is acknowledged even when the first send fails or its outcome is unknown.
@@ -1148,7 +1206,7 @@ export class DesktopClient extends EventEmitter {
         }
       }
       if (thread.status?.type === 'active') throw new BridgeError('This conversation is running. Use Steer with its active turn ID.', 409);
-      return this.#rpc('turn/start', { threadId: id, input, ...overrides });
+      return this.#startTurn(thread, { threadId: id, input, ...overrides });
     });
   }
   /** Changes a chat's permission mode now, as the terminal's /permissions does: the engine applies it to

@@ -30,6 +30,7 @@ const TURNS = [
  * API paths: path → (body, url) → reply. */
 async function fixture({ width = 1130, height = 660, colorScheme = 'light', running = false, desktop = true, chat: start = TURNS, routes = {} } = {}) {
   const posts = [], turns = start.map(turn => [...turn]), streams = new Set();
+  let rewindSaved = null, rewindAction;
   const entries = () => turns.flatMap(([id, prompt, reply, work], index) => {
     const at = Date.now() - (turns.length - index) * 120_000;
     return [{ turnId: id, item: { id: `u-${id}`, type: 'userMessage', content: [{ type: 'text', text: prompt }] }, startedAtMs: at, completedAtMs: at },
@@ -49,6 +50,14 @@ async function fixture({ width = 1130, height = 660, colorScheme = 'light', runn
     if (url.pathname === '/api/files') return json({ data: FILES });
     if (url.pathname === '/api/threads') return json({ data: url.searchParams.has('ancestorThreadId') || url.searchParams.get('archived') === 'true' ? [] : THREADS.map(item => item.id === 'chat-a' && running ? { ...item, status: { type: 'active' } } : item), nextCursor: null });
     if (chat && url.pathname.endsWith('/resume')) return json({ thread: chat, activeTurnId: running && chat.id === 'chat-a' ? 't4' : null });
+    if (chat && url.pathname.endsWith('/rewind')) {
+      const body = JSON.parse(raw);
+      if (body.action === 'preview') return json({ available: false, reason: 'No file checkpoint for this message.' });
+      if (body.action === 'status') return json({ action: rewindAction });
+      if (body.action === 'restore') { rewindSaved = turns.map(turn => [...turn]); const at = turns.findIndex(turn => turn[0] === body.beforeTurnId); if (at >= 0) turns.length = at; rewindAction = 'undo'; }
+      else if (rewindSaved) { const previous = turns.map(turn => [...turn]); turns.splice(0, turns.length, ...rewindSaved); rewindSaved = previous; rewindAction = body.action === 'undo' ? 'redo' : 'undo'; }
+      return json({ rewound: true, undo: rewindAction });
+    }
     if (chat && url.pathname.endsWith('/revert')) { const body = JSON.parse(raw); const at = turns.findIndex(turn => turn[0] === body.beforeTurnId); if (at >= 0) turns.length = at; return json({ rewound: true, beforeTurnId: body.beforeTurnId }); }
     if (chat && url.pathname.endsWith('/turns')) return json({ turn: { id: 't-new' } });
     // Recorded media: every item's picture is the same small PNG.
