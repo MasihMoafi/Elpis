@@ -8,11 +8,11 @@ import { parseArgs } from 'node:util';
 export const productionFiles = [
   'bridge/browser-mcp.mjs', 'desktop/browser-agent.cjs',
   'bridge/canvas-plan.mjs', 'bridge/client.mjs', 'bridge/customize.mjs', 'bridge/elpis-features.mjs', 'bridge/observability.mjs', 'bridge/files.mjs', 'bridge/folders.mjs', 'bridge/git.mjs', 'bridge/provider-keys.mjs', 'bridge/provider-settings.mjs', 'bridge/provider-models.mjs',
-  'bridge/rag-command.mjs', 'bridge/server.mjs', 'bridge/tools.mjs', 'bridge/transcription.mjs', 'bridge/attachments.mjs',
+  'bridge/rag-command.mjs', 'bridge/server.mjs', 'bridge/tools.mjs', 'bridge/transcription.mjs', 'bridge/attachments.mjs', 'bridge/trash.mjs',
   'bridge/resources/rag.md', 'desktop/browser-policy.cjs', 'desktop/browser.cjs', 'desktop/browser-annotations.cjs', 'desktop/browser-page-preload.cjs', 'desktop/context-menu.cjs',
   'desktop/main.cjs', 'desktop/media-policy.cjs', 'desktop/preferences.cjs', 'desktop/preload.cjs', 'desktop/files.cjs', 'desktop/editors.cjs',
   'desktop/terminal.cjs', 'desktop/open-thread.cjs', 'desktop/tray.cjs', 'desktop/quick-entry.cjs', 'desktop/theme.cjs', 'desktop/quick-entry-preload.cjs', 'desktop/quick-entry.html',
-  'desktop/runtime.mjs', 'desktop/state.cjs', 'desktop/elpis-icon.png', 'lib/turn-replacement.ts', 'lib/thread-deletion.ts', 'lib/approvals.ts',
+  'desktop/runtime.mjs', 'desktop/state.cjs', 'desktop/elpis-icon.png', 'lib/chat-worktree.ts', 'lib/turn-replacement.ts', 'lib/thread-deletion.ts', 'lib/approvals.ts',
 ];
 
 const launcher = `#!/usr/bin/env bash
