@@ -139,3 +139,18 @@ for (const colorScheme of ['light', 'dark']) for (const width of [1280, 900]) te
     assert.equal(await editor(f.page, 'src/app.ts').getAttribute('wrap'), 'soft');
   } finally { await f.close(); }
 });
+
+test('a tool argument explicitly naming a bare filename opens that file in Files', async () => {
+  const work = [{ ...WORK[1], arguments: { path: 'config.toml', model: 'gpt-6.1', url: 'https://example.invalid/a.py' } }];
+  const f = await open({ chat: [['t1', 'Read the config', 'Read it.', work]] });
+  try {
+    await f.page.locator('.worked-for > summary').click();
+    await f.page.locator('.activity-group > summary').click();
+    await f.page.locator('details.step > summary').click();
+    await f.page.locator('.step-input > summary').click();
+    assert.deepEqual(await f.page.locator('.step-input').getByRole('button').allInnerTexts(), ['config.toml'], 'model names and web URLs stay text');
+    await f.page.locator('.step-input').getByRole('button', { name: 'config.toml', exact: true }).click();
+    await editor(f.page, 'config.toml').waitFor();
+    assert.deepEqual(await f.page.evaluate(() => window.__externalFiles), []);
+  } finally { await f.close(); }
+});
