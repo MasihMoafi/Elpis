@@ -11,7 +11,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { summarize, workedFor } from "@/components/transcript";
 import { api, providerChoices, type Entry, type Model, type ProviderSettings, type Thread } from "@/lib/api";
 import { useElpisSettings } from "@/lib/settings-store";
-import { KINDS, MOTHER, TEMPLATES, arrange, commandParts, makesLoop, maxAgents, newAgents, newId, parseCommand, readGraph, runTasks, saveGraph, waves, withMother, type AgentData, type AgentKind, type CanvasEdge, type CanvasGraph, type CanvasNode, type CatalogModel, type Command, type NoteData, type TaskStatus } from "@/lib/canvas";
+import { KINDS, MOTHER, TEMPLATES, arrange, commandParts, shapeOf, makesLoop, maxAgents, newAgents, newId, parseCommand, readGraph, runTasks, saveGraph, waves, withMother, type AgentData, type AgentKind, type CanvasEdge, type CanvasGraph, type CanvasNode, type CatalogModel, type Command, type MotherSettings, type NoteData, type TaskStatus } from "@/lib/canvas";
 
 type Run = { rootThreadId: string; graphId: string; status: string };
 type Listed = { data: { id: string; status: string; tasks: { id: string; status: TaskStatus; assignedThreadId: string | null }[] }[] };
@@ -221,18 +221,35 @@ function CountField({ label, value, min, max, why, onChange }: { label: string; 
 
 /** One agent's dashboard (Enter or double-click): what it is, what it waits for and feeds, and, once it runs, what it
  * has done so far from its own chat, refreshed while it works. */
-function AgentDashboard({ node, wave, status, chat, waitsFor, feeds, modelLabel, onOpenChat, onClose }: { node: Extract<CanvasNode, { type: "agent" }>; wave?: number; status: TaskStatus | "idle"; chat: string | null; waitsFor: string[]; feeds: string[]; modelLabel: string; onOpenChat: (id: string) => void; onClose: () => void }) {
+/** What a chat has done so far, read from it, and again every 2 s while it works: an agent's, or the Mother's. */
+function LiveFeed({ chat, working, idle }: { chat: string | null; working: boolean; idle: string }) {
   const [entries, setEntries] = useState<Entry[] | null>(null), [error, setError] = useState("");
   useEffect(() => {
     if (!chat) return;
     let live = true;
     const read = () => api<{ data: Entry[] }>(`/threads/${encodeURIComponent(chat)}?limit=100`).then(result => { if (live) { setEntries(result.data); setError(""); } }).catch(cause => { if (live) setError(cause instanceof Error ? cause.message : String(cause)); });
     void read();
-    const timer = status === "running" ? setInterval(() => void read(), 2000) : undefined;
+    const timer = working ? setInterval(() => void read(), 2000) : undefined;
     return () => { live = false; if (timer) clearInterval(timer); };
-  }, [chat, status]);
+  }, [chat, working]);
   const items = entries?.map(entry => entry.item) ?? [];
   const said = [...items].reverse().find(item => item.type === "agentMessage" && typeof item.text === "string")?.text;
+  return <section className="agent-dashboard-live" aria-label="Live">
+    <p className="hud-menu-title">Live</p>
+    {!chat ? <p>{idle}</p>
+      : error ? <p role="alert">{error}</p>
+      : !entries ? <p>Reading its chat…</p>
+      : <><p>{workedFor(entries)} · {summarize(items) || "nothing yet"}</p>{said && <blockquote>{said}</blockquote>}</>}
+  </section>;
+}
+
+/** A pattern's shape: the Mother, then one column of kind-coloured marks per wave, in run order. */
+function Shape({ shape }: { shape: AgentKind[][] }) {
+  return <span className="canvas-shape" aria-hidden="true"><span><i className="canvas-kind" data-kind="mother" /></span>
+    {shape.map((column, index) => <span key={index}>{column.map((kind, row) => <i key={row} className="canvas-kind" data-kind={kind} />)}</span>)}</span>;
+}
+
+function AgentDashboard({ node, wave, status, chat, waitsFor, feeds, modelLabel, onOpenChat, onClose }: { node: Extract<CanvasNode, { type: "agent" }>; wave?: number; status: TaskStatus | "idle"; chat: string | null; waitsFor: string[]; feeds: string[]; modelLabel: string; onOpenChat: (id: string) => void; onClose: () => void }) {
   const data = node.data;
   return <div className="agent-dashboard hud-menu" role="dialog" aria-label={`${data.title} dashboard`} data-kind={data.kind} data-status={status}
     onKeyDown={event => { if (event.key === "Escape") { event.stopPropagation(); onClose(); } }}>
@@ -246,13 +263,7 @@ function AgentDashboard({ node, wave, status, chat, waitsFor, feeds, modelLabel,
       <div><dt>Task</dt><dd>{data.instruction || "No task yet: write one before the run"}</dd></div>
       {data.acceptanceCriteria.length > 0 && <div><dt>Done when</dt><dd>{data.acceptanceCriteria.join("; ")}</dd></div>}
     </dl>
-    <section className="agent-dashboard-live" aria-label="Live">
-      <p className="hud-menu-title">Live</p>
-      {!chat ? <p>Not started. What it does shows here once the graph runs.</p>
-        : error ? <p role="alert">{error}</p>
-        : !entries ? <p>Reading its chat…</p>
-        : <><p>{workedFor(entries)} · {summarize(items) || "nothing yet"}</p>{said && <blockquote>{said}</blockquote>}</>}
-    </section>
+    <LiveFeed chat={chat} working={status === "running"} idle="Not started. What it does shows here once the graph runs." />
     {chat && <Button variant="outline" size="sm" onClick={() => onOpenChat(chat)}><ExternalLink size={14} />Open its chat</Button>}
   </div>;
 }
@@ -269,7 +280,7 @@ const catalogs = new Map<string, { version: string; models?: Model[]; error?: st
 
 function Canvas({ models, cwd, dark, onOpenChat }: Props) {
   const flow = useReactFlow(), board = useRef<HTMLDivElement>(null), pointer = useRef<XYPosition | null>(null), connectFrom = useRef<XYPosition | null>(null);
-  const [graph, setGraph] = useState<CanvasGraph>(() => readGraph() ?? withMother(TEMPLATES[0].build()));
+  const [graph, setGraph] = useState<CanvasGraph>(() => readGraph() ?? { ...withMother(TEMPLATES[0].build()), template: TEMPLATES[0].id });
   // What is selected is kept apart from the saved graph: a click picks one, Shift+click or Shift+drag several.
   const [selection, setSelection] = useState<string[]>([]), [dashboardId, setDashboardId] = useState<string | null>(null);
   const [wireMenu, setWireMenu] = useState<WireMenuAt | null>(null);
@@ -328,6 +339,12 @@ function Canvas({ models, cwd, dark, onOpenChat }: Props) {
 
   const agents = graph.nodes.filter((node): node is Extract<CanvasNode, { type: "agent" }> => node.type === "agent");
   const chosen = agents.filter(node => selection.includes(node.id)), selected = chosen.length === 1 ? chosen[0] : undefined;
+  const motherOpen = selection.length === 1 && selection[0] === MOTHER, mother = graph.mother ?? { brief: "", model: null, provider: null };
+  const setMother = (patch: Partial<MotherSettings>) => setGraph(current => ({ ...current, mother: { ...(current.mother ?? { brief: "", model: null, provider: null }), ...patch } }));
+  // Loading an architecture replaces the board; Undo, offered for a while, puts the old one back.
+  const [undoLoad, setUndoLoad] = useState<{ loaded: string; previous: CanvasGraph } | null>(null);
+  useEffect(() => { if (!undoLoad) return; const timer = setTimeout(() => setUndoLoad(null), 12000); return () => clearTimeout(timer); }, [undoLoad]);
+  const shapes = useMemo(() => new Map(TEMPLATES.map(template => [template.id, shapeOf(template.build())])), []);
   const limit = maxAgents(graph), room = Math.max(0, limit - agents.length), order = useMemo(() => waves(graph), [graph]);
   const done = agents.filter(node => states[node.id]?.status === "succeeded").length;
   const runState: MotherData["run"] = run ? (FINISHED.has(run.status) ? "finished" : "running") : "idle";
@@ -340,7 +357,7 @@ function Canvas({ models, cwd, dark, onOpenChat }: Props) {
   // A click on a dot (no drag) opens the command bar there; the new agents take that side of it.
   const onHandle = (id: string, end: HandleEnd, event: ReactMouseEvent) => { event.stopPropagation(); openAdder({ x: event.clientX, y: event.clientY }, { id, as: end === "source" ? "target" : "source" }); };
   const nodes = useMemo<Node[]>(() => graph.nodes.map(node => node.type === "mother"
-    ? { ...node, deletable: false, selectable: false, data: { run: runState, children: agents.length, limit, onHandle } satisfies MotherData }
+    ? { ...node, deletable: false, selected: selection.includes(MOTHER), data: { run: runState, children: agents.length, limit, onHandle } satisfies MotherData }
     : { ...node, selected: selection.includes(node.id), data: node.type === "agent" ? { ...node.data, status: states[node.id]?.status, modelLabel: modelLabel(node.data), wave: order.get(node.id), onHandle } : { ...node.data, onText: setText } }),
   [graph.nodes, selection, states, models, order, runState, limit, catalog.length]); // eslint-disable-line react-hooks/exhaustive-deps
   const edges = useMemo<Edge[]>(() => [
@@ -354,7 +371,7 @@ function Canvas({ models, cwd, dark, onOpenChat }: Props) {
 
   const onNodesChange = (changes: NodeChange[]) => {
     const removed = new Set(changes.flatMap(change => change.type === "remove" && change.id !== MOTHER ? [change.id] : []));
-    const picks = changes.flatMap(change => change.type === "select" && change.id !== MOTHER ? [change] : []);
+    const picks = changes.flatMap(change => change.type === "select" ? [change] : []);
     if (picks.length || removed.size) setSelection(current => {
       const next = new Set(current);
       for (const pick of picks) { if (pick.selected) next.add(pick.id); else next.delete(pick.id); }
@@ -394,6 +411,13 @@ function Canvas({ models, cwd, dark, onOpenChat }: Props) {
       : from && from.id !== MOTHER ? made.map(node => from.as === "target" ? wire(from.id, node.id) : wire(node.id, from.id)) : [];
     setGraph(current => ({ ...current, nodes: [...current.nodes, ...made], edges: [...current.edges.filter(edge => edge.id !== between?.id), ...wires] }));
     setSelection(made.map(node => node.id));
+    // New agents that landed outside the view are brought into it, at the same zoom.
+    setTimeout(() => {
+      const box = board.current?.querySelector(".react-flow")?.getBoundingClientRect();
+      if (!box) return;
+      const outside = made.some(node => { const start = flow.flowToScreenPosition(node.position), end = flow.flowToScreenPosition({ x: node.position.x + 190, y: node.position.y + 80 }); return start.x < box.left || start.y < box.top || end.x > box.right || end.y > box.bottom; });
+      if (outside) void flow.fitView({ nodes: made.map(node => ({ id: node.id })), padding: 0.4, maxZoom: flow.getZoom(), minZoom: Math.min(flow.getZoom(), 0.6), duration: 250 });
+    }, 60);
     setNotice(count > room ? `Added ${room}: the limit is ${limit} agents.` : "");
   };
   const addNote = (at?: XYPosition, text = "") => { const { x, y } = place(at); setGraph(current => ({ ...current, nodes: [...current.nodes, { id: newId("note"), type: "note", position: { x, y }, data: { text } }] })); };
@@ -429,7 +453,7 @@ function Canvas({ models, cwd, dark, onOpenChat }: Props) {
     window.addEventListener("keydown", keydown);
     return () => window.removeEventListener("keydown", keydown);
   });
-  const loadTemplate = (build: () => CanvasGraph) => { setGraph(current => ({ ...withMother(build()), maxAgents: current.maxAgents })); setSelection([]); setWireMenu(null); setDashboardId(null); setRun(null); setStates({}); setNotice("");
+  const loadTemplate = (template: (typeof TEMPLATES)[number]) => { setUndoLoad({ loaded: template.name, previous: graph }); setGraph(current => ({ ...withMother(template.build()), maxAgents: current.maxAgents, mother: current.mother, template: template.id })); setSelection([]); setWireMenu(null); setDashboardId(null); setRun(null); setStates({}); setNotice("");
     // Keys go to the board again (Tab opens the command bar), not to the template just clicked.
     (document.activeElement as HTMLElement | null)?.blur(); setTimeout(() => void flow.fitView({ ...FIT, duration: 250 }), 60); };
   const tidy = () => { setGraph(current => arrange(current)); setTimeout(() => void flow.fitView({ ...FIT, duration: 250 }), 60); };
@@ -442,7 +466,7 @@ function Canvas({ models, cwd, dark, onOpenChat }: Props) {
   // it (React Flow), and dragging moves the whole selection.
   const dragged = useRef(false);
   const onNodeClick = (event: ReactMouseEvent, node: Node) => {
-    if (dragged.current || event.shiftKey || event.ctrlKey || event.metaKey || node.id === MOTHER) return;
+    if (dragged.current || event.shiftKey || event.ctrlKey || event.metaKey) return;
     setSelection([node.id]);
   };
   const onEdgeClick = (event: ReactMouseEvent, edge: Edge) => {
@@ -468,7 +492,9 @@ function Canvas({ models, cwd, dark, onOpenChat }: Props) {
     if ("error" in built) { setNotice(built.error); return; }
     setStarting(true); setNotice(""); setStates({});
     try {
-      const created = await api<{ thread: Thread }>("/threads", { ...(cwd ? { cwd } : {}), name: graph.name.slice(0, 120) || "Agents canvas" });
+      // The Mother is the run's chat: her model, and the brief as her instructions.
+      const created = await api<{ thread: Thread }>("/threads", { ...(cwd ? { cwd } : {}), name: graph.name.slice(0, 120) || "Agents canvas",
+        ...(mother.model ? { model: mother.model, ...(mother.provider ? { provider: mother.provider } : {}) } : {}), ...(mother.brief.trim() ? { instructions: mother.brief.trim() } : {}) });
       const result = await api<{ graphId: string }>("/workflows/run", { rootThreadId: created.thread.id, name: graph.name || "Agents canvas", tasks: built.tasks, maxConcurrency: Math.max(1, Math.min(maxAtOnce, allowed.atOnce)) });
       setRun({ rootThreadId: created.thread.id, graphId: result.graphId, status: "running" });
     } catch (error) { setNotice(error instanceof Error ? error.message : String(error)); }
@@ -482,11 +508,8 @@ function Canvas({ models, cwd, dark, onOpenChat }: Props) {
       {run && <span className="canvas-chip" role="status"><i className="canvas-dot" data-status={FINISHED.has(run.status) ? run.status : "running"} />{FINISHED.has(run.status) ? "Finished" : "Running"} · {done} of {agents.length} done</span>}
       <span className="canvas-spacer" />
       {run && <Button variant="ghost" size="sm" onClick={() => onOpenChat(run.rootThreadId)}><ExternalLink size={14} />Open run chat</Button>}
+      <Button variant="ghost" size="sm" aria-pressed={motherOpen} onClick={() => setSelection([MOTHER])} title="The run's settings: the brief every agent gets, her model, how many agents"><i className="canvas-kind" data-kind="mother" />Mother</Button>
       <Button variant="ghost" size="sm" onClick={tidy} title="Lay the agents out in Kahn's waves: each column starts once the columns before it are done"><ListOrdered size={14} />Arrange by run order</Button>
-      <CountField label="Max agents" value={limit} min={Math.max(1, agents.length)} max={allowed.graph} onChange={count => setGraph(current => ({ ...current, maxAgents: count }))}
-        why={typed => typed > allowed.graph ? `Elpis runs at most ${allowed.graph} agents in one graph.` : typed < agents.length ? `The graph already has ${agents.length} agents; remove some first.` : "Type a whole number from 1."} />
-      <CountField label="At once" value={Math.min(maxAtOnce, allowed.atOnce)} min={1} max={allowed.atOnce} onChange={setMaxAtOnce}
-        why={typed => typed > allowed.atOnce ? `Elpis allows ${allowed.atOnce} at once here (${allowed.source}).` : "At least 1 has to run."} />
       <Button size="sm" onClick={() => void start()} disabled={starting || Boolean(run && !FINISHED.has(run.status))}><Play size={14} />{starting ? "Starting…" : "Run graph"}</Button>
     </header>
     <div className="canvas-board" ref={board} onPointerMove={event => { pointer.current = { x: event.clientX, y: event.clientY }; }}
@@ -516,6 +539,9 @@ function Canvas({ models, cwd, dark, onOpenChat }: Props) {
       {dashboard && <AgentDashboard node={dashboard} wave={order.get(dashboard.id)} status={states[dashboard.id]?.status ?? "idle"} chat={states[dashboard.id]?.chat ?? null} modelLabel={modelLabel(dashboard.data)}
         waitsFor={graph.edges.filter(edge => edge.target === dashboard.id).map(edge => titleOf(edge.source))} feeds={graph.edges.filter(edge => edge.source === dashboard.id).map(edge => titleOf(edge.target))}
         onOpenChat={onOpenChat} onClose={() => setDashboardId(null)} />}
+      {undoLoad && !notice && <p className="canvas-notice" data-tone="info" role="status">Loaded {undoLoad.loaded}.
+        <Button variant="outline" size="sm" onClick={() => { setGraph(undoLoad.previous); setUndoLoad(null); setTimeout(() => void flow.fitView({ ...FIT, duration: 250 }), 60); }}>Undo</Button>
+        <button type="button" aria-label="Dismiss" onClick={() => setUndoLoad(null)}><X size={13} /></button></p>}
       {notice && <p className="canvas-notice" role="alert">{notice}<button type="button" aria-label="Dismiss" onClick={() => setNotice("")}><X size={13} /></button></p>}
     </div>
     {selected ? <aside className="canvas-side" aria-label="Selected agent">
@@ -546,6 +572,23 @@ function Canvas({ models, cwd, dark, onOpenChat }: Props) {
         <Button variant="ghost" size="sm" className="text-destructive" onClick={() => remove(chosen.map(node => node.id))}><Trash2 size={14} />Delete {chosen.length} agents <kbd>Delete</kbd></Button>
         <Button variant="outline" size="sm" className="ml-auto" onClick={() => setSelection([])}>Done</Button>
       </div>
+    </aside> : motherOpen ? <aside className="canvas-side" aria-label="Mother">
+      <p className="hud-menu-title">Mother · the run&rsquo;s chat</p>
+      <p className="canvas-help">Every agent is her child: she starts the ones that wait for no one, and every report comes back to her. These settings apply to the whole run.</p>
+      <label>Brief for every agent<Textarea aria-label="Brief for every agent" rows={4} value={mother.brief} placeholder="What the whole run is for: the goal, the rules every agent follows" onChange={event => setMother({ brief: event.target.value })} /></label>
+      <label>Her model<OptionSelect aria-label="Her model" value={mother.model ? `${mother.provider ?? ""}|${mother.model}` : ""} onChange={event => { const patch = modelPatch(event.target.value); setMother({ model: patch.model ?? null, provider: patch.provider ?? null }); }}>{modelOptions}</OptionSelect></label>
+      <div className="canvas-mother-counts">
+        <CountField label="Max agents" value={limit} min={Math.max(1, agents.length)} max={allowed.graph} onChange={count => setGraph(current => ({ ...current, maxAgents: count }))}
+          why={typed => typed > allowed.graph ? `Elpis runs at most ${allowed.graph} agents in one graph.` : typed < agents.length ? `The graph already has ${agents.length} agents; remove some first.` : "Type a whole number from 1."} />
+        <CountField label="At once" value={Math.min(maxAtOnce, allowed.atOnce)} min={1} max={allowed.atOnce} onChange={setMaxAtOnce}
+          why={typed => typed > allowed.atOnce ? `Elpis allows ${allowed.atOnce} at once here (${allowed.source}).` : "At least 1 has to run."} />
+      </div>
+      {run && <p className="canvas-help" role="status">{(["running", "succeeded", "pending", "failed", "blocked"] as const).map(status => [status, agents.filter(node => states[node.id]?.status === status).length] as const).filter(([, count]) => count).map(([status, count]) => `${count} ${STATUS_LABEL[status]}`).join(" · ") || "Starting…"}</p>}
+      <LiveFeed chat={run?.rootThreadId ?? null} working={runState === "running"} idle="Not started. Every agent's report arrives here once the graph runs." />
+      <div className="canvas-inspector-actions">
+        {run && <Button variant="outline" size="sm" onClick={() => onOpenChat(run.rootThreadId)}><ExternalLink size={14} />Open her chat</Button>}
+        <Button variant="outline" size="sm" className="ml-auto" onClick={() => setSelection([])}>Done</Button>
+      </div>
     </aside> : <aside className="canvas-side" aria-label="Architectures">
       {columns.length > 0 && <section className="canvas-order" aria-label="Run order">
         <p className="hud-menu-title">Run order</p>
@@ -553,10 +596,13 @@ function Canvas({ models, cwd, dark, onOpenChat }: Props) {
       </section>}
       {(["Patterns", "Research", "Start"] as const).map(group => <section key={group} className="canvas-templates" aria-label={group}>
         <p className="hud-menu-title">{group === "Start" ? "Start fresh" : group}</p>
-        {TEMPLATES.filter(template => template.group === group).map(template => <button key={template.id} type="button" className="canvas-template" onClick={() => loadTemplate(template.build)}>
-          <strong>{template.name}</strong><small>{template.description}</small>{template.source && <small className="canvas-template-source">{template.source}</small>}</button>)}
+        {TEMPLATES.filter(template => template.group === group).map(template => <button key={template.id} type="button" className="canvas-template" aria-current={graph.template === template.id || undefined} onClick={() => loadTemplate(template)}>
+          <strong>{template.name}{graph.template === template.id && <span className="canvas-template-loaded">On the board</span>}</strong>
+          <Shape shape={shapes.get(template.id) ?? []} /><small>{template.description}</small>
+          {template.caution && <small className="canvas-template-caution">{template.caution}</small>}
+          {template.source && <small className="canvas-template-source">{template.source}</small>}</button>)}
       </section>)}
-      <p className="canvas-help">Tab, Ctrl+A, a double-click, or a click on an agent&rsquo;s dot opens the command bar: type <kbd>3 implement sol high: task; task</kbd> and Enter. Enter or a double-click on an agent opens its dashboard. Drag dot to dot to wire: the second waits for the first. Click a wire to insert agents on it or remove it. Shift+click or Shift+drag selects several.</p>
+      <p className="canvas-help">Tab, Ctrl+A, a double-click, or a click on an agent&rsquo;s dot opens the command bar: type <kbd>3 implement sol high: task; task</kbd> and Enter. Enter or a double-click on an agent opens its dashboard. Drag dot to dot to wire: the second waits for the first. Click a wire to insert agents on it or remove it. Shift+click or Shift+drag selects several. Click the Mother for the run&rsquo;s settings.</p>
     </aside>}
   </section>;
 }

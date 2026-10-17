@@ -14,7 +14,10 @@ export type CanvasNode = { id: string; type: "agent"; position: Position; data: 
   | { id: typeof MOTHER; type: "mother"; position: Position; data: Record<string, never> };
 export type CanvasEdge = { id: string; source: string; target: string };
 /** `maxAgents` is the most agents the graph may hold. */
-export type CanvasGraph = { name: string; nodes: CanvasNode[]; edges: CanvasEdge[]; maxAgents?: number };
+/** The Mother's settings, for the whole run: a brief every agent gets, and the model of her chat (the run's root). */
+export type MotherSettings = { brief: string; model: string | null; provider: string | null };
+/** `template` is the ready-made architecture the graph was loaded from. */
+export type CanvasGraph = { name: string; nodes: CanvasNode[]; edges: CanvasEdge[]; maxAgents?: number; template?: string; mother?: MotherSettings };
 /** A task's state as workGraph/list reports it (codex-rs state/src/model/work_graph.rs). */
 export type TaskStatus = "pending" | "running" | "succeeded" | "failed" | "blocked" | "cancelled";
 export type RunTask = { id: string; kind: EngineKind; title: string; instruction: string; dependsOn: string[]; writeScopes: string[]; acceptanceCriteria: string[]; provider?: string; model?: string };
@@ -46,20 +49,28 @@ const wire = (source: CanvasNode, target: CanvasNode): CanvasEdge => ({ id: `${s
 /** The ready-made architectures: the workflow patterns of Anthropic's "Building effective agents", its multi-agent
  * research system, LangGraph's hierarchical teams and Open Deep Research. Each is laid out in run order (`arrange`).
  * Routing is left out: the engine runs every branch of a graph, so it can't pick one. */
-type Template = { id: string; name: string; group: "Patterns" | "Research" | "Start"; source: string; description: string; build: () => CanvasGraph };
+type Template = { id: string; name: string; group: "Patterns" | "Research" | "Start"; source: string; description: string; caution?: string; build: () => CanvasGraph };
 const ANTHROPIC = "Anthropic, Building effective agents";
+/** Anthropic's caution about splitting work by role (claude.com/blog/building-multi-agent-systems-when-and-how-to-use-them). */
+const BY_ROLE = "Split by role: Anthropic finds each handoff loses context, so this often does worse than split by parts.";
 const graphOf = (name: string, nodes: CanvasNode[], edges: CanvasEdge[]) => arrange(withMother({ name, nodes, edges }));
 const chain = (...steps: CanvasNode[]) => steps.slice(1).map((step, index) => wire(steps[index], step));
 const fan = (from: CanvasNode[], to: CanvasNode[]) => from.flatMap(source => to.map(target => wire(source, target)));
 const at = 0;
 export const TEMPLATES: Template[] = [
-  { id: "plan-build-verify", name: "Plan → Build → Verify", group: "Patterns", source: ANTHROPIC, description: "A planner, two builders side by side, a verifier that must show evidence.", build: () => {
+  // The default: split by parts, as Anthropic advises (context isolation and parallelism, not roles).
+  { id: "split-parts", name: "Split by parts", group: "Patterns", source: "Anthropic, Building multi-agent systems", description: "Each agent owns one independent part end to end: plans, builds and tests it in its own context. One final check that the parts work together.", build: () => {
+    const parts = [1, 2, 3].map(index => agent("implement", `Part ${index}`, `Own part ${index} end to end: plan it, build it and run its tests, touching only its own files.`, at, at));
+    const check = agent("verify", "Check it all", "Check the parts work together: run the whole suite and show the output.", at, at, { acceptanceCriteria: ["All tests pass"] });
+    return graphOf("Split by parts", [...parts, check], fan(parts, [check]));
+  } },
+  { id: "plan-build-verify", name: "Plan → Build → Verify", group: "Patterns", source: ANTHROPIC, caution: BY_ROLE, description: "A planner, two builders side by side, a verifier that must show evidence.", build: () => {
     const plan = agent("plan", "Plan the change", "Find the code involved and list what must change.", at, at);
     const a = agent("implement", "Build part one", "Make the first change the plan calls for.", at, at), b = agent("implement", "Build part two", "Make the second change, in different files.", at, at);
     const check = agent("verify", "Run the suite", "Run the tests and show their output.", at, at, { acceptanceCriteria: ["All tests pass"] });
     return graphOf("Plan → Build → Verify", [plan, a, b, check], [...fan([plan], [a, b]), ...fan([a, b], [check])]);
   } },
-  { id: "sequential", name: "Sequential (prompt chaining)", group: "Patterns", source: ANTHROPIC, description: "Each step works on the last one's result: plan, build, check.", build: () => {
+  { id: "sequential", name: "Sequential (prompt chaining)", group: "Patterns", source: ANTHROPIC, caution: BY_ROLE, description: "Each step works on the last one's result: plan, build, check.", build: () => {
     const steps = [agent("plan", "Plan it", "Write the steps for this change.", at, at), agent("implement", "Build it", "Carry out the plan.", at, at), agent("verify", "Check it", "Run the tests and show their output.", at, at)];
     return graphOf("Sequential", steps, chain(...steps));
   } },
@@ -124,6 +135,13 @@ export function waves(graph: CanvasGraph): Map<string, number> {
 const COLUMN = 260, ROW = 120;
 /** The graph with its Mother: a graph without one (a template, or one saved before she existed) gets her a column
  * left of the first wave, level with it. */
+/** A graph's shape for a thumbnail: its agents' kinds, one column per Kahn wave. */
+export function shapeOf(graph: CanvasGraph): AgentKind[][] {
+  const order = waves(graph), columns: AgentKind[][] = [];
+  for (const node of agentsOf(graph)) (columns[(order.get(node.id) ?? 1) - 1] ??= []).push(node.data.kind);
+  return columns.filter(Boolean);
+}
+
 export function withMother(graph: CanvasGraph): CanvasGraph {
   if (graph.nodes.some(node => node.type === "mother")) return graph;
   const agents = agentsOf(graph), wave = waves(graph), first = agents.filter(node => wave.get(node.id) === 1), ys = (first.length ? first : agents).map(node => node.position.y);
@@ -220,9 +238,11 @@ export function runTasks(graph: CanvasGraph): { tasks: RunTask[] } | { error: st
     if (!node.data.instruction.trim()) return { error: `“${node.data.title}” needs an instruction.` };
     if (node.data.provider && !node.data.model) return { error: `“${node.data.title}” needs a model from its provider.` };
   }
+  // Every agent gets the Mother's brief first, then (for a Plan agent) the plan-only rule, then its own task.
+  const brief = graph.mother?.brief.trim();
   return { tasks: agents.map(node => ({
     id: node.id, kind: KINDS[node.data.kind].engine, title: node.data.title.trim(),
-    instruction: node.data.kind === "plan" ? `${PLAN_BRIEF}\n\n${node.data.instruction.trim()}` : node.data.instruction.trim(),
+    instruction: [brief && `Brief for the whole run: ${brief}`, node.data.kind === "plan" && PLAN_BRIEF, node.data.instruction.trim()].filter(Boolean).join("\n\n"),
     dependsOn: graph.edges.filter(edge => edge.target === node.id && ids.has(edge.source)).map(edge => edge.source),
     writeScopes: node.data.writeScopes, acceptanceCriteria: node.data.acceptanceCriteria,
     ...(node.data.provider ? { provider: node.data.provider } : {}), ...(node.data.model ? { model: node.data.model } : {}),

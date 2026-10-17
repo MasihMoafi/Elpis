@@ -50,13 +50,32 @@ test('agents canvas: architecture, add and wire agents, refuse loops, persist, r
     const nodes = canvas.locator('.react-flow__node-agent'), edges = canvas.locator('.react-flow__edge:not(.canvas-edge-mother)');
     const node = title => canvas.locator('.react-flow__node').filter({ hasText: title });
     const AGENTS = '.react-flow__node-agent', WIRES = '.react-flow__edge:not(.canvas-edge-mother)';
+    // New agents that land out of view move the view to them; fitting shows the whole graph again.
+    const fit = async () => { await canvas.getByRole('button', { name: /fit view/i }).click(); await page.waitForTimeout(400); };
     const saved = () => page.evaluate(() => JSON.parse(localStorage.getItem('elpis-workflow-draft-v1')));
     // Each wait names itself, so a failure says which step broke.
     const until = async (label, condition, timeout) => { try { await page.waitForFunction(condition, null, timeout ? { timeout } : undefined); } catch (error) { throw Error(`${label}: ${error.message.split('\n')[0]}`); } };
 
-    // A ready-made architecture fills the canvas: one explorer, two builders, a verifier.
+    // A fresh canvas starts split by parts, as Anthropic advises. The list marks what is on the board and draws each
+    // architecture's shape: the Mother, then a column per wave.
+    const loaded = canvas.locator('.canvas-template[aria-current="true"]');
+    assert.match(await loaded.innerText(), /^Split by parts\s*On the board/i);
+    assert.deepEqual(await nodes.locator('.agent-node-title').allInnerTexts(), ['Part 1', 'Part 2', 'Part 3', 'Check it all']);
+    const voting = canvas.locator('.canvas-template').filter({ hasText: 'Voting' });
+    assert.deepEqual(await voting.locator('.canvas-shape > span').evaluateAll(columns => columns.map(column => column.children.length)), [1, 3, 1]);
+    assert.match(await canvas.locator('.canvas-template').filter({ hasText: 'Sequential' }).innerText(), /Anthropic finds each handoff loses context/);
+
+    // A ready-made architecture fills the canvas: one planner, two builders, a verifier. Loading one replaces the board,
+    // so Undo is offered.
     await canvas.getByRole('button', { name: /Plan → Build → Verify/ }).click();
-    await until('the architecture has 4 agents', () => document.querySelectorAll('.react-flow__node-agent').length === 4);
+    await node('Plan the change').waitFor();
+    assert.match(await loaded.innerText(), /^Plan → Build → Verify\s*On the board/i);
+    await canvas.getByRole('status').filter({ hasText: 'Loaded Plan → Build → Verify.' }).getByRole('button', { name: 'Undo', exact: true }).click();
+    await node('Part 1').waitFor();
+    assert.match(await loaded.innerText(), /^Split by parts/i);
+    await canvas.getByRole('button', { name: /Plan → Build → Verify/ }).click();
+    await node('Plan the change').waitFor();
+    assert.equal(await nodes.count(), 4);
     assert.equal(await edges.count(), 4);
 
     // Nothing on the board covers anything else, down to a small window (Masih's is about 1130×660): the zoom buttons,
@@ -78,6 +97,13 @@ test('agents canvas: architecture, add and wire agents, refuse loops, persist, r
     assert.equal(await canvas.locator('.react-flow__edge.canvas-edge-mother').count(), 1);
     await mother.click(); await page.keyboard.press('Delete');
     assert.equal(await mother.count(), 1, 'the Mother survives Delete');
+    // A click on the Mother opens her panel: the run's settings, a brief every agent gets and her chat's model.
+    const motherPanel = canvas.getByRole('complementary', { name: 'Mother', exact: true });
+    await motherPanel.getByRole('textbox', { name: 'Brief for every agent', exact: true }).fill('Keep the public API unchanged.');
+    await chooseOption(motherPanel.getByRole('combobox', { name: 'Her model', exact: true }), '|gpt-6-luna');
+    assert.equal(await motherPanel.getByRole('textbox', { name: 'Max agents', exact: true }).inputValue(), '10');
+    await motherPanel.getByText('Not started. Every agent\'s report arrives here once the graph runs.').waitFor();
+    await motherPanel.getByRole('button', { name: 'Done', exact: true }).click();
 
     // Kahn's waves: each agent shows when it starts, and the run order lists them.
     const wave = async title => (await node(title).locator('.agent-node-kind').innerText()).match(/wave (\d+)/i)?.[1];
@@ -131,11 +157,13 @@ test('agents canvas: architecture, add and wire agents, refuse loops, persist, r
     assert.equal(ran.tasks.length, 5);
     const byTitle = Object.fromEntries(ran.tasks.map(task => [task.title, task]));
     assert.deepEqual(byTitle['New Fix agent'].dependsOn, [byTitle['Run the suite'].id]);
-    assert.equal(byTitle['Run the suite'].instruction, 'Run every test and show the output.');
+    assert.equal(byTitle['Run the suite'].instruction, 'Brief for the whole run: Keep the public API unchanged.\n\nRun every test and show the output.');
+    // The Mother is the run's chat: it starts with her model, and her brief as its instructions.
+    assert.deepEqual(['model', 'instructions'].map(key => posts.find(post => post.path === '/api/threads').body[key]), ['gpt-6-luna', 'Keep the public API unchanged.']);
     assert.equal(byTitle['Run the suite'].kind, 'verify');
     // A Plan agent runs as a read-only explorer, told to plan only.
     assert.equal(byTitle['Plan the change'].kind, 'explore');
-    assert.match(byTitle['Plan the change'].instruction, /^Plan only: [\s\S]*Find the code involved/);
+    assert.match(byTitle['Plan the change'].instruction, /^Brief for the whole run: Keep the public API unchanged\.\n\nPlan only: [\s\S]*Find the code involved/);
     assert.equal(await node('Plan the change').locator('[data-status]').getAttribute('data-status'), 'succeeded');
     await canvas.getByText(/2 of 5 done/).waitFor({ timeout: 8000 });
     // A live wire streams its chevrons: the finished explorer feeds running builders.
@@ -173,7 +201,10 @@ test('agents canvas: architecture, add and wire agents, refuse loops, persist, r
     await command.waitFor(); await page.keyboard.press('Escape'); await adder.waitFor({ state: 'hidden' });
 
     // Counts are typed, and only what Elpis allows is taken, with the reason when it is not.
-    const maxField = canvas.getByRole('textbox', { name: 'Max agents', exact: true }), atOnce = canvas.getByRole('textbox', { name: 'At once', exact: true });
+    // The header's Mother button opens her panel too, wherever she is on the board.
+    const motherButton = canvas.getByRole('button', { name: 'Mother', exact: true });
+    await motherButton.click();
+    const maxField = motherPanel.getByRole('textbox', { name: 'Max agents', exact: true }), atOnce = motherPanel.getByRole('textbox', { name: 'At once', exact: true });
     await maxField.fill('300');
     await canvas.getByText('Elpis runs at most 256 agents in one graph.').waitFor();
     await maxField.fill('5');
@@ -206,6 +237,8 @@ test('agents canvas: architecture, add and wire agents, refuse loops, persist, r
 
     // A click on an agent's dot opens the bar there; tasks typed after a colon skip the tasks step, and the new agent
     // waits for the agent whose dot it was. Words the bar can't place are listed, never guessed.
+    // The view moved to the new verifiers; fit it to see the whole graph again.
+    await fit();
     const suiteDot = await node('Run the suite').locator('.react-flow__handle.source').boundingBox();
     await page.mouse.click(suiteDot.x + suiteDot.width / 2, suiteDot.y + suiteDot.height / 2);
     await command.waitFor();
@@ -231,7 +264,7 @@ test('agents canvas: architecture, add and wire agents, refuse loops, persist, r
     await canvas.getByText('The graph is at its limit of 12 agents. Raise Max agents to add more.').waitFor();
 
     // An agent's dashboard (double-click, or Enter on the selected agent): its wiring and, once it runs, its live work.
-    await node('Plan the change').dblclick();
+    await fit(); await node('Plan the change').dblclick();
     const dash = canvas.getByRole('dialog', { name: 'Plan the change dashboard' });
     await dash.getByText('Plan: change lexer.rs first, then parser.rs.').waitFor();
     assert.match(await dash.innerText(), /Worked for 1m 4s · Ran a command/);
@@ -242,7 +275,7 @@ test('agents canvas: architecture, add and wire agents, refuse loops, persist, r
 
     // Shift+Enter in the command line starts the next task line; it never adds the agents early.
     await page.keyboard.press('Escape');
-    await canvas.getByRole('textbox', { name: 'Max agents', exact: true }).fill('20');
+    await motherButton.click(); await maxField.fill('20');
     await page.evaluate(() => document.activeElement?.blur());
     await page.keyboard.press('Control+a'); await command.waitFor();
     await page.keyboard.type('2 imp'); await page.keyboard.press('Shift+Enter'); await page.keyboard.type('Tidy the lexer');
@@ -251,6 +284,9 @@ test('agents canvas: architecture, add and wire agents, refuse loops, persist, r
     assert.equal(await plan.innerText(), '2 × Implement\nDefault model\n2 tasks');
     await page.keyboard.press('Enter');
     await until('the two typed agents were added', () => document.querySelectorAll('.react-flow__node-agent').length === 14);
+    // They landed beside the Mother, past the board's edge, so the view moved to show them.
+    await page.waitForTimeout(400);
+    for (const title of ['Tidy the lexer', 'Tidy the parser']) { const box = await node(title).boundingBox(), area = await canvas.locator('.react-flow').boundingBox(); assert.ok(box.x >= area.x && box.x + box.width <= area.x + area.width, `${title} is in view`); }
 
     // Shift+click adds to the selection, and the selected agents are edited together.
     await node('Tidy the lexer').click(); await node('Tidy the parser').click({ modifiers: ['Shift'] });
@@ -277,6 +313,7 @@ test('agents canvas: architecture, add and wire agents, refuse loops, persist, r
     await until('both were deleted', () => document.querySelectorAll('.react-flow__node-agent').length === 12);
 
     // A click on a wire opens its menu: insert agents on it (they take its place), or remove it.
+    await fit();
     const drawn = await saved(), titled = title => drawn.nodes.find(item => item.data?.title === title).id;
     const wireOf = (from, to) => canvas.locator(`.react-flow__edge[data-id="${drawn.edges.find(edge => edge.source === titled(from) && edge.target === titled(to)).id}"]`);
     // A wire is clicked halfway along it, where a user aims; its box's centre can be off the curve.

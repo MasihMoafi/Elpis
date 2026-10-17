@@ -765,6 +765,14 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .agent-dashboard > button { justify-self:start; }
 .canvas-templates { display:grid; gap:2px; }
 .canvas-template small.canvas-template-source { font-size:11px; opacity:.8; }
+/* Which architecture is on the board, each one's shape (the Mother, then a column per wave), and the role-split caution. */
+.canvas-template[aria-current="true"] { border-color:var(--border); background:var(--hover); }
+.canvas-template-loaded { margin-inline-start:8px; font:500 10px/1 var(--mono); letter-spacing:.08em; text-transform:uppercase; color:var(--muted-foreground); vertical-align:2px; }
+.canvas-template small.canvas-template-caution { font-style:italic; }
+.canvas-shape { display:flex; align-items:center; gap:12px; padding:3px 0 1px; }
+.canvas-shape > span { position:relative; display:grid; gap:3px; }
+.canvas-shape > span + span::before { content:""; position:absolute; right:calc(100% + 2px); top:50%; width:8px; border-top:1px solid var(--muted-foreground); opacity:.6; }
+.canvas-mother-counts { display:flex; flex-wrap:wrap; gap:8px; }
 .canvas-help kbd, .canvas-inspector-actions kbd { padding:0 4px; border:1px solid var(--hairline); border-radius:4px; font:11px/1.4 var(--mono); }
 /* Run order: Kahn's waves, each with how it is doing. */
 .canvas-order ol { display:grid; gap:4px; margin:0; padding:0; list-style:none; }
@@ -815,7 +823,8 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .canvas-note textarea { width:180px; min-height:90px; padding:10px; border:0; border-radius:4px; background:#f6e9a8; color:#2b2611; font:13px/1.4 inherit; resize:both; box-shadow:var(--shadow); }
 .dark .canvas-note textarea { background:#3a3518; color:#f1ead0; }
 .canvas-notice { position:absolute; left:50%; top:14px; transform:translateX(-50%); display:flex; align-items:center; gap:10px; margin:0; padding:8px 12px; border:1px solid var(--destructive); border-radius:8px; background:var(--card); color:var(--foreground); font-size:13px; box-shadow:var(--shadow); z-index:5; }
-.canvas-notice button { display:grid; place-items:center; border:0; background:transparent; color:var(--muted-foreground); cursor:pointer; }
+.canvas-notice[data-tone="info"] { border-color:var(--border); }
+.canvas-notice button[aria-label="Dismiss"] { display:grid; place-items:center; border:0; background:transparent; color:var(--muted-foreground); cursor:pointer; }
 .canvas-side { display:flex; flex-direction:column; gap:10px; padding:14px 14px; overflow:auto; border-left:1px solid var(--hairline); background:var(--sidebar); }
 .canvas-side .hud-menu-title { padding:2px 4px; }
 .canvas-side [data-slot="select-trigger"] { width:100%; min-width:0; }
