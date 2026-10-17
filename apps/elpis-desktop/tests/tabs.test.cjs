@@ -8,6 +8,7 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const { chromium } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright');
 const { controlValue, guardDesktopStore } = require('./controls.cjs');
+const { fakeDesktop } = require('./fake-desktop.cjs');
 const root = path.resolve(__dirname, '../out');
 const shots = process.env.ELPIS_TABS_SHOTS;
 async function eventually(check) {
@@ -43,37 +44,7 @@ async function fixture(run, { width = 1320, height = 860 } = {}) {
     const page = await browser.newPage({ viewport: { width, height } }); page.setDefaultTimeout(6000);
     const errors = []; page.on('pageerror', error => errors.push(error.message));
     await guardDesktopStore(page);
-    await page.addInitScript(() => {
-      // The storage is the window's own localStorage, so a reload keeps the tabs as the desktop store does.
-      const calls = window.__terminal = { open: [], closed: [], tui: [], input: [], resize: [] }, commands = window.__commands = [];
-      let data = () => {}, sessions = 0;
-      const shells = {};
-      window.__emit = (key, text) => { const shell = shells[key]; shell.end += text.length; data(key, shell.id, shell.end, text); };
-      // A scripted browser: new, select, hide and close change its tabs as Electron's main process does.
-      const listeners = new Set(); let pages = 0;
-      const state = window.__browser = { visible: false, activeId: null, focusAddress: 0, tabs: [], annotating: false, markersVisible: true, annotations: [], draft: null, find: { open: false, text: '', matches: 0, active: 0, focus: 0 } };
-      const push = patch => { Object.assign(state, patch); for (const listener of listeners) listener(JSON.parse(JSON.stringify(state))); };
-      const handlers = {
-        new: () => { const id = `page-${++pages}`; push({ tabs: [...state.tabs, { id, url: 'about:blank', title: 'New tab', loading: false, error: null, failure: null, security: null, zoom: 100, comments: 0, canGoBack: false, canGoForward: false }], activeId: id, visible: true }); },
-        select: data => push({ activeId: data.id, visible: true }),
-        hide: () => push({ visible: false }),
-        close: data => { const tabs = state.tabs.filter(tab => tab.id !== data.id); push({ tabs, activeId: tabs.at(-1)?.id ?? null, visible: tabs.length > 0 && state.visible }); },
-      };
-      window.elpisDesktop = {
-        storage: { getItem: key => localStorage.getItem(key), setItem: (key, value) => localStorage.setItem(key, String(value)), removeItem: key => localStorage.removeItem(key), onError: () => () => {} },
-        browser: {
-          command: async (action, args = {}) => { commands.push({ action, ...args }); handlers[action]?.(args); return JSON.parse(JSON.stringify(state)); },
-          layout: () => {}, subscribe: listener => { listeners.add(listener); return () => listeners.delete(listener); },
-        },
-        terminal: {
-          open: async (...args) => { calls.open.push(args); return shells[args[0]] ? { ...shells[args[0]], shell: 'bash', output: '', exited: null } : (shells[args[0]] = { id: ++sessions, end: 0 }, { id: sessions, end: 0, shell: 'bash', output: '', exited: null }); },
-          restart: async () => ({}), close: async key => { calls.closed.push(key); delete shells[key]; return {}; },
-          tui: async (...args) => { calls.tui.push(args); return { started: true }; },
-          input: (key, text) => calls.input.push([key, text]), resize: (...args) => calls.resize.push(args),
-          copy: async () => {}, paste: async () => '', subscribe: onData => { data = onData; return () => {}; },
-        },
-      };
-    });
+    await page.addInitScript(fakeDesktop);
     await page.goto(`http://127.0.0.1:${server.address().port}/#token=fixture`);
     await page.locator('.thread-row[data-thread-id="chat-one"] .thread-link').waitFor();
     const link = id => page.locator(`.thread-row[data-thread-id="${id}"] .thread-link`);
