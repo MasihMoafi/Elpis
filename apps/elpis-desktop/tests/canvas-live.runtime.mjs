@@ -3,7 +3,8 @@
 // driven by Playwright as a user drives the packaged app. The project is a throwaway git repository under /tmp; the
 // chats the run makes are archived at the end, by their ids. Nothing of an already running Elpis is touched.
 // Usage: [CANVAS_LIVE_PROJECT=/tmp/<new folder at a path config.toml already trusts>] ELPIS_PLAYWRIGHT_PACKAGE=...
-//   ELPIS_CHROMIUM=... node tests/canvas-live.runtime.mjs /abs/elpis-next voting|split
+//   ELPIS_CHROMIUM=... node tests/canvas-live.runtime.mjs /abs/elpis-next voting|split|father|clash
+// father/clash use explicit saved boards and require a new project at an already trusted /tmp path.
 // Screenshots, the graph, the board and the archived ids go to /tmp/canvas-live (CANVAS_LIVE_EVIDENCE).
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
@@ -22,12 +23,25 @@ const { chromium } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright
 const [engine, plan = 'voting'] = process.argv.slice(2);
 assert(engine && path.isAbsolute(engine), 'Provide the absolute path of the installed Elpis engine');
 const PLANS = {
+  father: { agents: 12, folders: Array.from({ length: 12 }, (_, i) => `writers/${String(i + 1).padStart(2, '0')}`),
+    goal: 'Twelve tiny independent files, one writer per folder. Each result.txt contains its writer number and the absolute working directory from pwd -P. Do not commit or edit any other files.' },
+  clash: { agents: 2, folders: ['shared'],
+    goal: 'Exercise a merge conflict: two independent writers replace the same line of shared/result.txt with different values. Do not resolve the conflict or commit.' },
   voting: { template: /^Voting/, agents: 4, folders: ['answer-1', 'answer-2', 'answer-3', 'tally'],
     goal: 'Question: which is larger, 2 to the power of 10 or 10 to the power of 3? Each answer is one short markdown file with the arithmetic as evidence. Keep every file under 15 lines.' },
   split: { template: /^Split by parts/, agents: null, folders: ['src', 'tests'],
     goal: 'A two-file task: write src/greet.py with greet(name) returning "Hello, <name>!", and src/shout.py with shout(text) returning the text upper-cased with "!" appended. Each part adds its own test under tests/ (plain assert, run with python3). The join runs every test.' },
 };
-const chosen = PLANS[plan]; assert(chosen, `Plan is voting or split, not ${plan}`);
+const chosen = PLANS[plan]; assert(chosen, `Unknown plan: ${plan}`);
+const custom = plan === 'father' || plan === 'clash';
+const savedBoard = custom ? { name: `Live ${plan}`, maxAgents: 12, mother: { brief: chosen.goal, model: 'gpt-6-luna', provider: null }, edges: [],
+  nodes: Array.from({ length: chosen.agents }, (_, i) => {
+    const number = String(i + 1).padStart(2, '0'), folder = plan === 'clash' ? 'shared' : `writers/${number}`;
+    const instruction = plan === 'clash' ? `Replace shared/result.txt with exactly writer-${number} followed by a newline. Leave every other file alone. Do not commit.`
+      : `Write only ${folder}/result.txt, one line containing writer-${number} followed by the absolute working directory from pwd -P. Do not commit. Check its content with cat.`;
+    return { id: `writer-${number}`, type: 'agent', position: { x: 260 + Math.floor(i / 6) * 270, y: (i % 6) * 130 },
+      data: { title: `Writer ${number}`, instruction, model: 'gpt-6-luna', writeScopes: [folder], acceptanceCriteria: [`${folder}/result.txt contains writer-${number}`] } };
+  }) } : null;
 const bridgeScript = path.join(path.dirname(realpathSync(engine)), 'tools', 'elpis-claude', 'acp-bridge.mjs');
 assert(existsSync(bridgeScript), `No provider bridge beside ${engine}`);
 const appRoot = fileURLToPath(new URL('..', import.meta.url));
@@ -41,6 +55,7 @@ for (const taken of [project, `${project}-elpis`]) assert(!existsSync(taken), `$
 const userConfig = path.join(process.env.ELPIS_HOME || path.join(process.env.HOME, '.elpis-next'), 'config.toml');
 const trusted = async () => (await fs.readFile(userConfig, 'utf8').catch(() => '')).includes(`[projects.${JSON.stringify(project)}]`);
 const trustedBefore = await trusted();
+if (custom) assert.ok(trustedBefore, 'Set CANVAS_LIVE_PROJECT to a new, already trusted /tmp path to avoid config writes');
 const evidence = process.env.CANVAS_LIVE_EVIDENCE || '/tmp/canvas-live';
 await fs.mkdir(evidence, { recursive: true }); await fs.mkdir(runtimeDir, { mode: 0o700 }); await fs.mkdir(project);
 const say = line => process.stdout.write(`${new Date().toISOString().slice(11, 19)} ${line}\n`);
@@ -49,8 +64,10 @@ const say = line => process.stdout.write(`${new Date().toISOString().slice(11, 1
 const git = (...args) => execFileSync('git', args, { cwd: project, encoding: 'utf8', env: { ...process.env, GIT_AUTHOR_NAME: 'Canvas live', GIT_AUTHOR_EMAIL: 'canvas@live.invalid', GIT_COMMITTER_NAME: 'Canvas live', GIT_COMMITTER_EMAIL: 'canvas@live.invalid' } });
 git('init', '-q', '-b', 'main');
 await fs.writeFile(path.join(project, 'README.md'), `# Canvas live check\n\n${chosen.goal}\n`);
-for (const folder of chosen.folders) { await fs.mkdir(path.join(project, folder)); await fs.writeFile(path.join(project, folder, 'README.md'), `The ${folder} part writes here.\n`); }
-git('add', '.'); git('commit', '-q', '-m', 'Throwaway project for the canvas live check');
+for (const folder of chosen.folders) { await fs.mkdir(path.join(project, folder), { recursive: true }); await fs.writeFile(path.join(project, folder, 'README.md'), `The ${folder} part writes here.\n`); }
+if (plan === 'clash') await fs.writeFile(path.join(project, 'shared/result.txt'), 'baseline\n');
+git('add', 'README.md', ...chosen.folders.map(folder => `${folder}/README.md`), ...(plan === 'clash' ? ['shared/result.txt'] : []));
+git('commit', '-q', '-m', 'Throwaway project for the canvas live check');
 
 // The provider bridge as the packaged app starts it (shared-runtime.mjs), on this run's socket, with its own store.
 const socketPath = path.join(runtimeDir, 'bridge.sock'), bridgeLog = path.join(root, 'bridge.log');
@@ -58,7 +75,7 @@ const log = await fs.open(bridgeLog, 'a');
 const bridge = spawn(process.execPath, [bridgeScript], { cwd: process.env.HOME, stdio: ['ignore', log.fd, log.fd],
   env: { ...process.env, ELPIS_SHARED_BRIDGE: '1', ELPIS_BRIDGE_SOCKET: socketPath, ELPIS_ENGINE_BIN: engine, ACP_BRIDGE_STORE: path.join(root, 'elpis-claude', 'sessions.json'), NODE_USE_ENV_PROXY: '1' } });
 const bridgeExit = once(bridge, 'exit');
-const created = [], runs = [];
+const created = [], runs = [], submitted = [], worktrees = new Set();
 let app, browser, page, failure;
 try {
   for (let attempt = 0; ; attempt++) {
@@ -76,11 +93,12 @@ try {
     const url = new URL(response.url());
     if (response.request().method() !== 'POST' || !response.ok()) return;
     if (url.pathname === '/api/threads') created.push((await response.json()).thread.id);
-    if (url.pathname === '/api/workflows/run') runs.push(await response.json());
+    if (url.pathname === '/api/workflows/run') { runs.push(await response.json()); submitted.push(JSON.parse(response.request().postData())); }
   });
-  await page.addInitScript(cwd => {
+  await page.addInitScript(({ cwd, board }) => {
     if (!localStorage.getItem('elpis-projects-v1')) localStorage.setItem('elpis-projects-v1', JSON.stringify({ projects: [{ id: 'canvas-live', name: 'canvas-live', cwd }], selectedId: 'canvas-live' }));
-  }, project);
+    if (board) localStorage.setItem('elpis-workflow-draft-v1', JSON.stringify(board));
+  }, { cwd: project, board: savedBoard });
   await page.goto(app.url);
   await page.getByRole('button', { name: 'Canvas', exact: true }).click();
   const canvas = page.getByRole('region', { name: 'Agents canvas', exact: true }); await canvas.waitFor();
@@ -98,12 +116,13 @@ try {
   };
 
   say(`engine models: ${(await api('/models')).data.map(model => model.model).join(', ')}`);
-  await canvas.getByRole('button', { name: chosen.template }).click();
+  if (!custom) await canvas.getByRole('button', { name: chosen.template }).click();
   await canvas.getByRole('button', { name: 'Mother', exact: true }).click();
   const mother = canvas.getByRole('complementary', { name: 'Mother', exact: true });
   await mother.getByRole('textbox', { name: 'Goal', exact: true }).fill(chosen.goal);
   say(`Mother on ${await luna(mother.getByRole('combobox', { name: 'Her model', exact: true }))}`);
-  const titles = await canvas.locator('.react-flow__node-agent .agent-node-title').allInnerTexts();
+  if (custom) await mother.getByRole('button', { name: 'Done', exact: true }).click();
+  const titles = custom ? [] : await canvas.locator('.react-flow__node-agent .agent-node-title').allInnerTexts();
   for (const title of titles) {
     await canvas.locator('.react-flow__node-agent').filter({ has: page.locator('.agent-node-title', { hasText: new RegExp(`^${title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`) }) }).click();
     const panel = canvas.getByRole('complementary', { name: 'Selected agent', exact: true });
@@ -116,19 +135,28 @@ try {
   // The planner fills the empty folders first; then the run starts and the header follows it.
   let last = '';
   for (;;) {
-    const chip = (await canvas.locator('.canvas-header [role=status]').innerText().catch(() => '')).trim();
+    const statusChip = canvas.locator('.canvas-header [role=status]');
+    const chip = await statusChip.count() ? (await statusChip.innerText()).trim() : '';
     // An alert is a refusal; the planner's "Elpis is on it" is a status.
-    const notice = (await canvas.locator('.canvas-notice[role=alert]').innerText().catch(() => '')).trim();
-    const listed = runs[0] ? (await api(`/workflows?threadId=${encodeURIComponent(runs[0].threadId)}`)).data.find(item => item.id === runs[0].graphId) : null;
+    const alert = canvas.locator('.canvas-notice[role=alert]');
+    const notice = await alert.count() ? (await alert.innerText()).trim() : '';
+    const listed = runs.length ? (await api(`/workflows?threadId=${encodeURIComponent(runs.at(-1).threadId)}`)).data.find(item => item.id === runs.at(-1).graphId) : null;
+    for (const row of git('worktree', 'list', '--porcelain').split('\n')) if (row.startsWith('worktree ')) worktrees.add(row.slice(9));
     const line = `${chip || 'no run yet'}${notice ? ` | notice: ${notice}` : ''}${listed ? ` | graph ${listed.status}: ${listed.tasks.map(task => `${task.id.replace(/^agent-[^-]+-/, '')}=${task.status}`).join(' ')}` : ''}`;
     if (line !== last) { say(line); last = line; }
     if (listed && ['succeeded', 'completed', 'failed', 'cancelled', 'blocked'].includes(listed.status) && /Finished/.test(chip)) break;
     if (!runs[0] && notice) throw Error(`The run did not start: ${notice}`);
     if (Date.now() - started > 40 * 60000) throw Error('The run did not finish within 40 minutes');
-    await page.waitForTimeout(5000);
+    await page.waitForTimeout(1000);
   }
   say(`Run took ${Math.round((Date.now() - started) / 1000)} s`);
-  const graph = (await api(`/workflows?threadId=${encodeURIComponent(runs[0].threadId)}`)).data.find(item => item.id === runs[0].graphId);
+  const graphs = [];
+  for (const run of runs) graphs.push((await api(`/workflows?threadId=${encodeURIComponent(run.threadId)}`)).data.find(item => item.id === run.graphId));
+  const graph = graphs.at(-1);
+  await fs.writeFile(path.join(evidence, `${plan}-graphs.json`), JSON.stringify(graphs, null, 1));
+  await fs.writeFile(path.join(evidence, `${plan}-runs.json`), JSON.stringify(runs, null, 1));
+  await fs.writeFile(path.join(evidence, `${plan}-submitted.json`), JSON.stringify(submitted, null, 1));
+  await fs.writeFile(path.join(evidence, `${plan}-worktrees.json`), JSON.stringify([...worktrees], null, 1));
   await fs.writeFile(path.join(evidence, `${plan}-graph.json`), JSON.stringify(graph, null, 1));
   const board = JSON.parse(await page.evaluate(() => localStorage.getItem('elpis-workflow-draft-v1')));
   await fs.writeFile(path.join(evidence, `${plan}-board.json`), JSON.stringify(board, null, 1));
@@ -149,6 +177,49 @@ try {
   await fs.writeFile(path.join(evidence, `${plan}-fit.json`), JSON.stringify(fits, null, 1));
   // Read before the asserts, so that a failed run still leaves its evidence.
   for (const [name, issues] of Object.entries(fits)) assert.deepEqual(issues, [], `ui-fit ${name}`);
+  if (custom) {
+    for (const item of graphs) for (const task of item.tasks) assert.equal(task.model, 'gpt-6-luna');
+    for (const part of submitted) {
+      assert.equal(part.isolation, 'worktree');
+      for (const task of part.tasks) assert.equal(task.model, 'gpt-6-luna');
+    }
+    if (plan === 'clash') {
+      assert.equal(graph.status, 'failed');
+      assert.match(await canvas.locator('.canvas-notice').innerText(), /Merge stopped:.*shared\/result.txt/);
+      assert.equal(await fs.readFile(path.join(project, 'shared/result.txt'), 'utf8'), 'baseline\n', 'conflict leaves main unchanged');
+    } else {
+      assert.equal(graphs.length, 2, 'Mother and Father each ran a graph');
+      assert.deepEqual(graphs.map(item => item.tasks.length), [20, 4]);
+      const paths = [];
+      for (const item of graphs) {
+        assert.equal(item.status, 'succeeded', item.error ?? 'graph succeeded');
+        for (const task of item.tasks) assert.equal(task.status, 'succeeded', `${task.id}: ${task.failureReason}`);
+      }
+      for (let i = 1; i <= 12; i++) {
+        const number = String(i).padStart(2, '0');
+        const content = await fs.readFile(path.join(project, `writers/${number}/result.txt`), 'utf8');
+        assert.equal(git('ls-files', `writers/${number}/result.txt`).trim(), `writers/${number}/result.txt`);
+        assert.match(content, new RegExp(`writer-${number} `));
+        const cwd = content.trim().split(/\s+/).at(-1);
+        const roots = [...worktrees].filter(root => root !== project && (cwd === root || cwd.startsWith(`${root}/`)));
+        assert.equal(roots.length, 1, `working directory ${cwd} belongs to one observed worktree`); paths.push(roots[0]);
+      }
+      assert.equal(new Set(paths).size, 12, 'a distinct worktree per writer');
+      assert.equal(git('status', '--porcelain'), '', 'the merged branch is clean');
+      let items;
+      for (const until = Date.now() + 60000; ;) {
+        items = await api(`/threads/${encodeURIComponent(runs[0].threadId)}?limit=100`);
+        if (items.thread.status.type !== 'active') break;
+        assert.ok(Date.now() < until, 'the Mother finished receiving the report'); await page.waitForTimeout(1000);
+      }
+      await fs.writeFile(path.join(evidence, `${plan}-mother-items.json`), JSON.stringify(items, null, 1));
+      assert.equal(items.thread.model, 'gpt-6-luna');
+      const asked = items.data.filter(row => row.item?.type === 'userMessage').flatMap(row => row.item.content ?? []).map(item => item.text ?? '').join('\n');
+      assert.ok(asked.includes(runs[1].threadId), 'the Father reports back to the Mother with his chat id');
+      for (const task of graphs[1].tasks) assert.ok(asked.includes(JSON.stringify(task.result)), `${task.id} accepted result reached the Mother`);
+    }
+    assert.deepEqual(errors, []); say('PASS');
+  } else {
   assert.equal(graph.status, 'succeeded', `graph ${graph.status}: ${graph.error ?? ''}`);
   for (const task of graph.tasks) assert.equal(task.status, 'succeeded', `${task.title}: ${task.status} ${task.failureReason ?? ''}`);
   if (chosen.agents) assert.equal(graph.tasks.length, chosen.agents * 2);
@@ -169,6 +240,7 @@ try {
   say(`${last_.title} received ${last_.dependencies.length} results`);
   assert.deepEqual(errors, []);
   say('PASS');
+  }
 } catch (error) { failure = error; say(`FAIL ${error.stack}`); }
 finally {
   // Archive this run's chats, by their ids: the run chats, and every agent under them (a failed task no longer names

@@ -6,7 +6,10 @@ const { openCanvas } = require('./canvas-fixture.cjs');
 const { chooseOption } = require('./controls.cjs');
 
 test('past ten agents the Father runs the rest in his own chat, after the Mother, and reports to her', async () => {
-  const { page, canvas, node, runs, posts, agentCount, fit, errors, close } = await openCanvas();
+  const { page, canvas, node, runs, posts, agentCount, fit, errors, close } = await openCanvas({
+    listed: (run, looks) => looks ? { id: run.graphId, name: run.name, status: 'succeeded',
+      tasks: run.tasks.map(task => ({ id: task.id, status: 'succeeded', assignedThreadId: null, result: { summary: `Accepted result: ${task.title}` } })) } : undefined,
+  });
   try {
     const off = () => page.evaluate(() => document.activeElement?.blur());
     const father = canvas.locator('.react-flow__node-father');
@@ -48,6 +51,11 @@ test('past ten agents the Father runs the rest in his own chat, after the Mother
     const hisIds = new Set(his.tasks.map(task => task.id));
     assert.ok(his.tasks.every(task => task.dependsOn.every(id => hisIds.has(id))), 'his tasks wait only for his own');
     assert.ok(his.tasks.some(task => task.title === 'Join the parts'), 'the joiner, in the second wave, is his');
+    const sent = posts.filter(post => post.path === `/api/threads/${hers.rootThreadId}/turns`);
+    assert.equal(sent.length, 1, 'the Father delivers one report to the Mother');
+    assert.ok(sent[0].body.text.includes(his.rootThreadId), 'the report identifies the Father chat');
+    assert.ok(sent[0].body.text.includes(his.graphId), 'the report identifies his graph');
+    for (const task of his.tasks) assert.ok(sent[0].body.text.includes(`Accepted result: ${task.title}`), `${task.title} result reaches the Mother`);
     // As on Deus Ex's board: a run clock, stopped once the run is done, and a log of what happened, newest last.
     assert.match(await canvas.getByLabel('Run clock').innerText(), /^Run done\s*\d\d:\d\d$/i);
     const lines = await canvas.getByRole('log', { name: 'Run log' }).locator('li').allInnerTexts();
@@ -55,5 +63,68 @@ test('past ten agents the Father runs the rest in his own chat, after the Mother
     assert.ok(lines.every(line => /^\+\d\d:\d\d/.test(line)), 'each line is stamped with the time since the run started');
     assert.ok(lines.some(line => /CHECK PASSED/.test(line)), lines.join(' | '));
     assert.deepEqual(errors, []);
+  } finally { await close(); }
+});
+
+const twelve = { name: 'Twelve writers', maxAgents: 12, edges: [], nodes: Array.from({ length: 12 }, (_, i) => ({
+  id: `a${i + 1}`, type: 'agent', position: { x: 240 + Math.floor(i / 6) * 260, y: (i % 6) * 100 },
+  data: { title: `Writer ${i + 1}`, instruction: 'Write the result', model: null, writeScopes: ['src'], acceptanceCriteria: [] },
+})) };
+
+test('a rejected Father report stays running, retries delivery, and retains the failed graph evidence', async () => {
+  const { page, canvas, runs, posts, errors, close } = await openCanvas({ graph: twelve,
+    listed: (run, looks) => looks ? { id: run.graphId, status: run.graphId === 'graph-1' ? 'succeeded' : 'failed',
+      error: run.graphId === 'graph-2' ? 'Father check failed' : null,
+      tasks: run.tasks.map(task => ({ id: task.id, status: 'succeeded', assignedThreadId: null, result: { summary: `Evidence ${task.id}` } })) } : undefined,
+  });
+  let attempts = 0, release;
+  const held = new Promise(resolve => { release = resolve; });
+  try {
+    await page.route('**/api/threads/chat-1/turns', async route => {
+      attempts++;
+      if (attempts === 1) return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: 'try again' }) });
+      await held; await route.continue();
+    });
+    await canvas.getByRole('button', { name: 'Run graph', exact: true }).click();
+    await canvas.getByRole('alert').filter({ hasText: 'Father report not delivered: try again' }).waitFor();
+    assert.match(await canvas.locator('.canvas-header [role=status]').innerText(), /^Running/);
+    assert.equal(runs.length, 2, 'no duplicate Father run');
+    release();
+    await page.waitForFunction(() => document.querySelector('.canvas-header [role=status]')?.textContent?.includes('Finished'));
+    assert.equal(attempts, 2);
+    const sent = posts.filter(post => post.path === '/api/threads/chat-1/turns');
+    assert.equal(sent.length, 1, 'one accepted delivery');
+    assert.match(sent[0].body.text, /Status: failed/);
+    assert.match(sent[0].body.text, /Father check failed/);
+    assert.match(sent[0].body.text, /Evidence a12/);
+    assert.equal(await canvas.getByRole('alert').count(), 0, 'successful retry clears its delivery error');
+    assert.deepEqual(errors, []);
+  } finally { release(); await close(); }
+});
+
+test('a failed Mother does not start the Father or send his report', async () => {
+  const { page, canvas, runs, posts, close } = await openCanvas({ graph: twelve,
+    listed: (run, looks) => looks ? { id: run.graphId, status: 'failed', tasks: run.tasks.map(task => ({ id: task.id, status: 'failed', assignedThreadId: null })) } : undefined,
+  });
+  try {
+    await canvas.getByRole('button', { name: 'Run graph', exact: true }).click();
+    await page.waitForFunction(() => document.querySelector('.canvas-header [role=status]')?.textContent?.includes('Finished'));
+    assert.equal(runs.length, 1);
+    assert.equal(posts.filter(post => post.path === '/api/threads').length, 1);
+    assert.equal(posts.filter(post => /\/turns$/.test(post.path)).length, 0);
+  } finally { await close(); }
+});
+
+test('an unchanged Father status waits for the next poll instead of polling continuously', async () => {
+  const fatherReads = [];
+  const { page, canvas, close } = await openCanvas({ graph: twelve, listed: (run, looks) => {
+    if (run.graphId === 'graph-2') fatherReads.push(Date.now());
+    return { id: run.graphId, status: looks < (run.graphId === 'graph-2' ? 3 : 1) ? 'running' : 'succeeded',
+      tasks: run.tasks.map(task => ({ id: task.id, status: 'succeeded', assignedThreadId: null })) };
+  } });
+  try {
+    await canvas.getByRole('button', { name: 'Run graph', exact: true }).click();
+    await page.waitForFunction(() => document.querySelector('.canvas-header [role=status]')?.textContent?.includes('Finished'), null, { timeout: 15000 });
+    assert.ok(fatherReads[1] - fatherReads[0] >= 1000, `unchanged status repolled after ${fatherReads[1] - fatherReads[0]}ms`);
   } finally { await close(); }
 });

@@ -18,9 +18,9 @@ import { CHECK_LABEL, COLUMN, DONE, FATHER, MOTHER, STATUS_LABEL, TASKS_PER_AGEN
 
 /** A run: the Mother's part, and the Father's when the graph has more agents than she runs (lib/canvas.ts `parents`):
  * his tasks wait in `father` until her part has succeeded, then run in his own chat. */
-type Run = { rootThreadId: string; graphId: string; status: string; startedAt: number; endedAt?: number; father?: { tasks: RunTask[]; threadId?: string; graphId?: string; status: string } };
+type Run = { rootThreadId: string; graphId: string; status: string; startedAt: number; endedAt?: number; father?: { tasks: RunTask[]; threadId?: string; graphId?: string; status: string; reported?: boolean } };
 /** Whether the whole run is over: her part, and his if he has one. */
-const over = (run: Run) => FINISHED.has(run.status) && (!run.father || FINISHED.has(run.father.status));
+const over = (run: Run) => FINISHED.has(run.status) && (!run.father || (FINISHED.has(run.father.status) && (!run.father.threadId || run.father.reported)));
 type Listed = { data: { id: string; status: string; error?: string | null; tasks: { id: string; status: TaskStatus; assignedThreadId: string | null; failureReason?: string | null; result?: unknown }[] }[] };
 type HandleEnd = "source" | "target";
 /** `clash` is the files of a merge clash that stopped the run on this agent (lib/canvas-isolation.ts). */
@@ -446,16 +446,33 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
         });
         if (lines.length || stopLines.length) setLog(current => [...current, ...lines, ...stopLines]);
       }
-      return found?.status;
+      return found;
     };
     const poll = async () => {
       if (polling) return;
       polling = true;
       try {
         let next = run;
-        if (!FINISHED.has(run.status)) { const status = await read(run.rootThreadId, run.graphId); if (status && status !== run.status) next = { ...next, status }; }
+        if (!FINISHED.has(run.status)) { const found = await read(run.rootThreadId, run.graphId); if (found && found.status !== run.status) next = { ...next, status: found.status }; }
         const father = next.father;
-        if (father?.threadId && father.graphId && !FINISHED.has(father.status)) { const status = await read(father.threadId, father.graphId); if (status && status !== father.status) next = { ...next, father: { ...father, status } }; }
+        if (father?.threadId && father.graphId && !father.reported) {
+          const found = await read(father.threadId, father.graphId);
+          if (found) {
+            if (found.status !== father.status) next = { ...next, father: { ...father, status: found.status } };
+            if (FINISHED.has(found.status)) {
+              // Deliver the engine's accepted results, with their origin, to the Mother's actual chat.
+              // Keep following the run if delivery fails; no second Father is started (docs/specs/canvas-father-report.md).
+              const text = [`Report from the Father · ${father.threadId}`, `Work graph: ${father.graphId}`, `Status: ${found.status}`,
+                found.error, ...found.tasks.map(task => `${titleOf(task.id.replace(/-check$/, ""))}${task.id.endsWith("-check") ? " (check)" : ""}: ${task.status}\n${JSON.stringify(task.result ?? { failure: task.failureReason ?? null })}`),
+                "This is the Father's completed run report. Acknowledge it briefly without tools, edits, or another run."].filter(Boolean).join("\n\n");
+              try { await api(`/threads/${encodeURIComponent(run.rootThreadId)}/turns`, { text }); }
+              catch (error) { if (live) setNotice(`Father report not delivered: ${error instanceof Error ? error.message : String(error)}`); return; }
+              setNotice(current => current.startsWith("Father report not delivered:") ? "" : current);
+              next = { ...next, father: { ...father, status: found.status, reported: true } };
+              setLog(current => [...current, { at: Date.now(), text: "FATHER REPORT RECEIVED · DATASTORE CAPTURED · Mother", tone: "done" }]);
+            }
+          }
+        }
         // Her part done: the Father starts his, in his own chat; if hers failed, his never starts.
         if (father && !father.threadId && FINISHED.has(next.status)) next = { ...next, father: next.status === "succeeded" || next.status === "completed" ? await startFather(father.tasks) : { ...father, status: "cancelled" } };
         if (live && next !== run) setRun(over(next) ? { ...next, endedAt: Date.now() } : next);
