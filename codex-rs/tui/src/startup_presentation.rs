@@ -73,6 +73,7 @@ pub(super) async fn load(
         .is_none_or(|items| !items.is_empty());
     let keymap = RuntimeKeymap::from_config(&settings.keymap).map_err(io::Error::other)?;
     let disable_paste_burst = settings.disable_paste_burst.unwrap_or(false);
+    let context_ledger_width = settings.context_ledger_width;
     Ok(StartupPresentation {
         bootstrap_config,
         config_cwd,
@@ -83,6 +84,7 @@ pub(super) async fn load(
             status_line_enabled,
             keymap,
             disable_paste_burst,
+            context_ledger_width,
         },
     })
 }

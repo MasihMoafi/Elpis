@@ -15,6 +15,7 @@ use crate::app_server_session::UnsupportedLegacyPermissionProfile;
 use crate::app_server_session::turn_permissions_overrides;
 use crate::config_update::format_config_error;
 use crate::external_agent_config_migration::flow::ExternalAgentConfigMigrationFlowOutcome;
+use crate::legacy_core::config::edit::ConfigEdit;
 use crate::pager_overlay::TranscriptHistoryState;
 use crate::session_resume::cwds_differ;
 use codex_app_server_client::AppServerEvent;
@@ -3338,6 +3339,24 @@ impl App {
             }
             AppEvent::TerminalTitleSetupCancelled => {
                 self.chat_widget.cancel_terminal_title_setup();
+            }
+            AppEvent::PersistContextLedgerWidth(width) => {
+                self.local_settings.tui.context_ledger_width = Some(width);
+                let edit = ConfigEdit::SetPath {
+                    segments: vec!["tui".to_string(), "context_ledger_width".to_string()],
+                    value: i64::from(width).into(),
+                };
+                if let Err(err) = ConfigEditsBuilder::for_config_path(
+                    self.local_settings.user_config_path.as_path(),
+                )
+                .with_edits([edit])
+                .apply()
+                .await
+                {
+                    self.chat_widget.add_error_message(format!(
+                        "Failed to save Context Ledger width: {err}"
+                    ));
+                }
             }
             AppEvent::PersistAgentsOverviewGrouping(grouping) => {
                 self.persist_agents_overview_grouping(grouping).await;

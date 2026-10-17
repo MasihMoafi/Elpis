@@ -101,3 +101,29 @@ async fn first_frame_respects_screen_and_status_line_overrides() -> anyhow::Resu
     }
     Ok(())
 }
+
+#[tokio::test]
+async fn first_frame_ledger_restores_saved_width_from_selected_config() -> anyhow::Result<()> {
+    let home = tempfile::tempdir()?;
+    let selected = AbsolutePathBuf::from_absolute_path(home.path().join("work.config.toml"))?;
+    std::fs::write(&selected, "[tui]\ncontext_ledger_width = 67\n")?;
+    let presentation = load(
+        &Cli::try_parse_from(["codex"])?,
+        home.path(),
+        LoaderOverrides {
+            user_config_path: Some(selected),
+            user_config_profile: Some("work".parse()?),
+            ignore_project_config: true,
+            ..LoaderOverrides::without_managed_config_for_tests()
+        },
+        Vec::new(),
+        None,
+    )
+    .await?;
+    assert_eq!(presentation.screen.context_ledger_width, Some(67));
+    assert_eq!(
+        presentation.local_settings.tui.context_ledger_width,
+        Some(67)
+    );
+    Ok(())
+}

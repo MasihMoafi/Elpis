@@ -316,7 +316,9 @@ mod context_usage;
 mod elpis_ledger_glue;
 // Elpis: /prune, /smart-prune, /pruner-model and `--pruner-model`.
 pub(crate) mod elpis_prune_commands;
+#[cfg(test)]
 pub(crate) use context_ledger::ledger_column_width;
+pub(crate) use context_ledger::ledger_column_width_for;
 pub(crate) use context_ledger::render_startup_ledger_column;
 pub(crate) use elpis_ledger_glue::elpis_memory_dir;
 mod worktree_picker;

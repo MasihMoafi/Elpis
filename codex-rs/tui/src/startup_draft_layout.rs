@@ -37,9 +37,13 @@ impl<'a> OwnedStartupLayout<'a> {
     }
 
     /// The part of `area` left of the Ledger's column, which the live screen also reserves.
-    fn main_area(area: Rect) -> Rect {
+    fn main_area(&self, area: Rect) -> Rect {
         Rect {
-            width: area.width - crate::chatwidget::ledger_column_width(area.width),
+            width: area.width
+                - crate::chatwidget::ledger_column_width_for(
+                    area.width,
+                    self.pump.context_ledger_width,
+                ),
             ..area
         }
     }
@@ -57,7 +61,7 @@ impl<'a> OwnedStartupLayout<'a> {
 impl Renderable for OwnedStartupLayout<'_> {
     fn render(&self, area: Rect, buf: &mut Buffer) {
         let full = area;
-        let area = Self::main_area(area);
+        let area = self.main_area(area);
         let bottom = self.bottom_area(area);
         let lines = self.pump.header.display_hyperlink_lines(area.width);
         let paragraph = HyperlinkParagraph::new(&lines, Style::default());
@@ -102,7 +106,7 @@ impl Renderable for OwnedStartupLayout<'_> {
     }
 
     fn desired_height(&self, width: u16) -> u16 {
-        let width = Self::main_area(Rect::new(0, 0, width, 0)).width;
+        let width = self.main_area(Rect::new(0, 0, width, 0)).width;
         let lines = self.pump.header.display_hyperlink_lines(width);
         u16::try_from(HyperlinkParagraph::new(&lines, Style::default()).line_count(width))
             .unwrap_or(u16::MAX)
@@ -111,12 +115,12 @@ impl Renderable for OwnedStartupLayout<'_> {
 
     fn cursor_pos(&self, area: Rect) -> Option<(u16, u16)> {
         self.bottom
-            .cursor_pos(self.bottom_area(Self::main_area(area)))
+            .cursor_pos(self.bottom_area(self.main_area(area)))
     }
 
     fn cursor_style(&self, area: Rect) -> SetCursorStyle {
         self.bottom
-            .cursor_style(self.bottom_area(Self::main_area(area)))
+            .cursor_style(self.bottom_area(self.main_area(area)))
     }
 }
 

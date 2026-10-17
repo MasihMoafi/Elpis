@@ -4584,6 +4584,13 @@
           "description": "Generate automatic conversation recaps when the terminal is unfocused. Defaults to `true`. Disabling this leaves `/recap` available on demand.",
           "type": "boolean"
         },
+        "context_ledger_width": {
+          "default": null,
+          "description": "Preferred Context Ledger width in terminal columns.",
+          "format": "uint16",
+          "minimum": 0.0,
+          "type": "integer"
+        },
         "copy_on_select": {
           "allOf": [
             {

@@ -953,6 +953,10 @@ pub struct Tui {
     #[serde(default)]
     pub session_picker_view: Option<SessionPickerViewMode>,
 
+    /// Preferred Context Ledger width in terminal columns.
+    #[serde(default)]
+    pub context_ledger_width: Option<u16>,
+
     /// Last selected grouping in Agent Command Center.
     #[serde(default)]
     pub agents_overview_grouping: AgentsOverviewGrouping,

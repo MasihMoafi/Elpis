@@ -95,3 +95,30 @@ fn owned_startup_has_no_ledger_column_on_a_narrow_terminal() {
         "below 80 columns the live Ledger is hidden too"
     );
 }
+
+#[tokio::test]
+async fn owned_startup_ledger_uses_the_saved_width() -> anyhow::Result<()> {
+    let home = tempfile::tempdir()?;
+    std::fs::write(
+        home.path().join("config.toml"),
+        "[tui]\ncontext_ledger_width = 65\n",
+    )?;
+    let config = crate::legacy_core::config::ConfigBuilder::default()
+        .codex_home(home.path().to_path_buf())
+        .loader_overrides(
+            crate::legacy_core::config::LoaderOverrides::without_managed_config_for_tests(),
+        )
+        .build()
+        .await?;
+    let settings = crate::local_settings::LocalSettings::from(&config);
+    let mut pump = crate::startup_draft::tests::quiet_startup_test_pump();
+    pump.apply_settings(&settings, config.cwd.as_path());
+    let layout = OwnedStartupLayout::new(&pump);
+    let area = Rect::new(0, 0, 125, 40);
+    let buffer = rendered(&layout, area);
+    let title_row = (0..area.height)
+        .find(|&y| row(&buffer, y, 60..125).contains("CONTEXT LEDGER"))
+        .expect("the startup Ledger title");
+    assert_eq!(buffer[(60, title_row)].symbol(), "│");
+    Ok(())
+}

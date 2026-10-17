@@ -33,6 +33,8 @@ const LEDGER_WIDTH: u16 = 52;
 const LEDGER_MIN_WIDTH: u16 = 28;
 /// ...and leaves the transcript and composer at least this many.
 const LEDGER_MIN_MAIN_WIDTH: u16 = 40;
+/// Drag eight columns beyond the readable minimum to preview closing the pane.
+const LEDGER_CLOSE_WIDTH: i32 = (LEDGER_MIN_WIDTH - 8) as i32;
 /// The rule and the blank column beside it are the handle for resizing the Ledger.
 const LEDGER_HANDLE_COLS: u16 = 2;
 /// The rule column and one blank column before the text.
@@ -43,6 +45,7 @@ const LEDGER_RIGHT_MARGIN: u16 = crate::ui_consts::FOOTER_INDENT_COLS as u16;
 
 /// Columns of the Ledger column on a terminal `terminal_width` wide: none below
 /// `LEDGER_MIN_TERMINAL_WIDTH`, otherwise 52 or two fifths of the terminal.
+#[cfg(test)]
 pub(crate) fn ledger_column_width(terminal_width: u16) -> u16 {
     ledger_column_width_for(terminal_width, /*preferred*/ None)
 }
@@ -163,6 +166,7 @@ pub(super) struct LedgerLines {
 /// What a plain left click on a Ledger row does: the same as Space on that row.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum LedgerClickTarget {
+    Close,
     SmartPrune,
     Subagents,
     Source(usize),
@@ -170,6 +174,7 @@ enum LedgerClickTarget {
 
 /// Where the last drawn Ledger sits on screen, so a click can be traced back to its row.
 struct LedgerClickMap {
+    close_button: Option<Rect>,
     content: Rect,
     scroll_rows: u16,
     targets: Vec<(std::ops::Range<usize>, LedgerClickTarget)>,
@@ -179,6 +184,15 @@ struct LedgerClickMap {
 pub(super) struct PendingContextAdmission {
     original: bool,
     desired: bool,
+}
+
+/// A captured divider drag survives the preview that temporarily hides its column.
+struct LedgerResize {
+    pressed_at: u16,
+    width_then: u16,
+    terminal_width: u16,
+    restore_width: Option<u16>,
+    collapsed: bool,
 }
 
 pub(super) struct ContextLedgerState {
@@ -203,8 +217,8 @@ pub(super) struct ContextLedgerState {
     pub(super) preferred_width: Option<u16>,
     /// Full screen only: the column as last drawn, for hit-testing its rule.
     pub(super) column: std::cell::Cell<Option<Rect>>,
-    /// A drag on the rule: the column it was pressed at and the Ledger's width then.
-    resize_anchor: Option<(u16, u16)>,
+    /// The captured drag, including the preference to restore if it snaps closed.
+    resize_anchor: Option<LedgerResize>,
     pub(super) pending_smart_prune_enabled: Option<bool>,
     pub(super) pending_subagents_enabled: Option<bool>,
     pub(super) projected_token_delta: i64,
@@ -258,6 +272,11 @@ impl ChatWidget {
     /// composer, and a startup warning must not make the Ledger look missing.
     pub(crate) fn context_ledger_width(&self, terminal_width: u16) -> u16 {
         if !self.context_ledger.visible
+            || self
+                .context_ledger
+                .resize_anchor
+                .as_ref()
+                .is_some_and(|drag| drag.collapsed)
             || self.bottom_pane.has_active_modal()
             || (self.context_ledger.crowded.get() && !self.context_ledger.focused)
         {
@@ -278,34 +297,69 @@ impl ChatWidget {
         use crossterm::event::MouseEventKind::Drag;
         use crossterm::event::MouseEventKind::Up;
 
-        let Some(column) = self.context_ledger.column.get() else {
-            self.context_ledger.resize_anchor = None;
-            return false;
-        };
         match mouse.kind {
             Down(Left) => {
-                let on_handle = mouse.modifiers.is_empty()
-                    && (column.x..column.x + LEDGER_HANDLE_COLS).contains(&mouse.column)
-                    && (column.top()..column.bottom()).contains(&mouse.row);
-                self.context_ledger.resize_anchor =
-                    on_handle.then_some((mouse.column, column.width));
-                on_handle
-            }
-            Drag(Left) => {
-                let Some((pressed_at, width_then)) = self.context_ledger.resize_anchor else {
+                let Some(column) = self.context_ledger.column.get() else {
                     return false;
                 };
-                // The rule follows the pointer: dragging left by n columns widens the Ledger by n.
-                let width = i32::from(width_then) + i32::from(pressed_at) - i32::from(mouse.column);
-                self.context_ledger.preferred_width = Some(ledger_column_width_for(
-                    column.right(),
-                    Some(u16::try_from(width.max(0)).unwrap_or(0)),
-                ));
+                let on_handle = self.context_ledger_width(column.right()) > 0
+                    && mouse.modifiers.is_empty()
+                    && (column.x..column.x + LEDGER_HANDLE_COLS).contains(&mouse.column)
+                    && (column.top()..column.bottom()).contains(&mouse.row);
+                self.context_ledger.resize_anchor = on_handle.then_some(LedgerResize {
+                    pressed_at: mouse.column,
+                    width_then: column.width,
+                    terminal_width: column.right(),
+                    restore_width: self.context_ledger.preferred_width,
+                    collapsed: false,
+                });
+                on_handle
+            }
+            Drag(Left) | Up(Left) => {
+                let Some(mut drag) = self.context_ledger.resize_anchor.take() else {
+                    return false;
+                };
+                self.update_context_ledger_resize(&mut drag, mouse.column);
+                if mouse.kind == Up(Left) {
+                    if drag.collapsed {
+                        self.context_ledger.preferred_width = drag.restore_width;
+                        self.close_context_ledger();
+                    } else if self.context_ledger.preferred_width != drag.restore_width
+                        && let Some(width) = self.context_ledger.preferred_width
+                    {
+                        self.local_settings.tui.context_ledger_width = Some(width);
+                        self.app_event_tx
+                            .send(AppEvent::PersistContextLedgerWidth(width));
+                    }
+                } else {
+                    self.context_ledger.resize_anchor = Some(drag);
+                }
                 self.request_redraw();
                 true
             }
-            Up(Left) => self.context_ledger.resize_anchor.take().is_some(),
             _ => false,
+        }
+    }
+
+    fn update_context_ledger_resize(&mut self, drag: &mut LedgerResize, pointer: u16) {
+        let width = i32::from(drag.width_then) + i32::from(drag.pressed_at) - i32::from(pointer);
+        if width <= LEDGER_CLOSE_WIDTH {
+            drag.collapsed = true;
+            self.context_ledger.preferred_width = drag.restore_width;
+        } else if drag.collapsed {
+            // Re-entering the open region restores the saved width immediately. Subsequent
+            // movement resizes from here, without making the pointer jump to the restored rule.
+            drag.collapsed = false;
+            self.context_ledger.preferred_width = drag.restore_width;
+            drag.pressed_at = pointer;
+            drag.width_then = ledger_column_width_for(drag.terminal_width, drag.restore_width);
+        } else if pointer == drag.pressed_at {
+            self.context_ledger.preferred_width = drag.restore_width;
+        } else {
+            self.context_ledger.preferred_width = Some(ledger_column_width_for(
+                drag.terminal_width,
+                Some(u16::try_from(width.max(0)).unwrap_or(0)),
+            ));
         }
     }
 
@@ -1284,7 +1338,16 @@ impl ChatWidget {
         Paragraph::new(rows.clone())
             .scroll((scroll_rows, 0))
             .render(content, buf);
+        // Only the owned column handles mouse input. Keep the native inline Ledger unchanged.
+        let close_button = (self.context_ledger.column.get() == Some(area))
+            .then(|| Rect::new(area.right() - 2, area.y, 1, 1));
+        if let Some(button) = close_button {
+            buf[(button.x, button.y)]
+                .set_symbol("×")
+                .set_style(Style::default());
+        }
         *self.context_ledger.click_map.borrow_mut() = Some(LedgerClickMap {
+            close_button,
             content,
             scroll_rows,
             targets: click_targets,
@@ -1350,19 +1413,24 @@ impl ChatWidget {
             let Some(map) = map.as_ref() else {
                 return false;
             };
-            if !map
-                .content
-                .contains(ratatui::layout::Position::new(mouse.column, mouse.row))
+            let position = ratatui::layout::Position::new(mouse.column, mouse.row);
+            if map
+                .close_button
+                .is_some_and(|button| button.contains(position))
             {
-                return false;
+                Some(LedgerClickTarget::Close)
+            } else if map.content.contains(position) {
+                let row = usize::from(mouse.row - map.content.y + map.scroll_rows);
+                map.targets
+                    .iter()
+                    .find(|(rows, _)| rows.contains(&row))
+                    .map(|(_, target)| *target)
+            } else {
+                None
             }
-            let row = usize::from(mouse.row - map.content.y + map.scroll_rows);
-            map.targets
-                .iter()
-                .find(|(rows, _)| rows.contains(&row))
-                .map(|(_, target)| *target)
         };
         match target {
+            Some(LedgerClickTarget::Close) => self.close_context_ledger(),
             Some(LedgerClickTarget::SmartPrune) => {
                 self.toggle_smart_prune();
             }
@@ -1697,6 +1765,9 @@ impl ChatWidget {
     }
 
     pub(super) fn close_context_ledger(&mut self) {
+        if let Some(drag) = self.context_ledger.resize_anchor.take() {
+            self.context_ledger.preferred_width = drag.restore_width;
+        }
         self.context_ledger.visible = false;
         self.context_ledger.focused = false;
         self.context_ledger.smart_prune_selected = false;

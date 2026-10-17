@@ -746,7 +746,7 @@ async fn resolved_buffered_approval_does_not_become_actionable_after_drain() -> 
     Ok(())
 }
 
-fn set_test_initial_prompt(app: &mut App, initial_prompt: String) {
+pub(super) fn set_test_initial_prompt(app: &mut App, initial_prompt: String) {
     let config = app.config.clone();
     let model = get_model_offline_for_tests(config.model.as_deref());
     app.chat_widget = ChatWidget::new_with_app_event(ChatWidgetInit {

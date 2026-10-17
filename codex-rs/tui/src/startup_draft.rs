@@ -61,6 +61,7 @@ pub(crate) struct StartupScreen {
     pub(crate) status_line_enabled: bool,
     pub(crate) keymap: RuntimeKeymap,
     pub(crate) disable_paste_burst: bool,
+    pub(crate) context_ledger_width: Option<u16>,
 }
 
 /// Identifies the first interactive surface expected for the current invocation.
@@ -110,6 +111,7 @@ pub(crate) struct StartupDraftPump {
     session_action: StartupDraftSessionAction,
     resolved_selection: Option<SessionSelection>,
     configured_cwd: Option<PathBuf>,
+    context_ledger_width: Option<u16>,
     pending_paste_newline: Option<(Instant, String)>,
     submission_pending: bool,
     key_chord_matcher: crate::keymap::KeyChordMatcher,
@@ -135,6 +137,7 @@ impl StartupDraft {
         tui.terminal_app_over_ssh = initialized_terminal.terminal_app_over_ssh;
         tui.set_alt_screen_enabled(screen.use_alt_screen);
         let mut pump = StartupDraftPump::new(&tui, initial_screen, session_action);
+        pump.context_ledger_width = screen.context_ledger_width;
         pump.bottom_pane
             .set_status_line_enabled(screen.status_line_enabled);
         pump.bottom_pane.set_keymap_bindings(&screen.keymap);
@@ -208,6 +211,7 @@ impl StartupDraftPump {
             pending_paste_newline: None,
             resolved_selection: None,
             configured_cwd: None,
+            context_ledger_width: None,
             submission_pending: false,
             key_chord_matcher: Default::default(),
             key_chords: RuntimeKeymap::defaults().chords,
@@ -237,6 +241,7 @@ impl StartupDraftPump {
 
     /// Refresh the session header and safe editor shortcuts without enabling modal editing.
     pub(crate) fn apply_settings(&mut self, local_settings: &LocalSettings, cwd: &Path) {
+        self.context_ledger_width = local_settings.tui.context_ledger_width;
         if self
             .configured_cwd
             .as_deref()

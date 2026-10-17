@@ -94,6 +94,8 @@ impl ChatWidget {
             app_event_tx.clone(),
             pet_http_client.clone(),
         );
+        let mut context_ledger = context_ledger::ContextLedgerState::default();
+        context_ledger.preferred_width = local_settings.tui.context_ledger_width;
         let mut widget = Self {
             daybreak_enabled: false,
             app_event_tx: app_event_tx.clone(),
@@ -111,7 +113,7 @@ impl ChatWidget {
                 skills: None,
             }),
             // Elpis: Context Ledger state.
-            context_ledger: context_ledger::ContextLedgerState::default(),
+            context_ledger,
             agent_ledger: Vec::new(),
             manual_memory_cache: elpis_ledger_glue::ManualMemoryCache::default(),
             transcript: TranscriptState::new(active_cell),

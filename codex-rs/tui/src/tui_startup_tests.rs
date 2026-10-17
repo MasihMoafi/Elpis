@@ -213,6 +213,7 @@ async fn startup_typeahead_pty_child() {
             status_line_enabled: true,
             keymap: crate::keymap::RuntimeKeymap::defaults(),
             disable_paste_burst: false,
+            context_ledger_width: None,
         },
     )
     .expect("initialize the real startup composer");

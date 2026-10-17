@@ -42,6 +42,7 @@ where
         session_action: StartupDraftSessionAction::New,
         resolved_selection: None,
         configured_cwd: None,
+        context_ledger_width: None,
         pending_paste_newline: None,
         submission_pending: false,
         key_chord_matcher: Default::default(),

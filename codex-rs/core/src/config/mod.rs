@@ -860,6 +860,9 @@ pub struct Config {
     /// Preferred layout for resume/fork session picker results.
     pub tui_session_picker_view: SessionPickerViewMode,
 
+    /// Preferred Context Ledger width in terminal columns.
+    pub tui_context_ledger_width: Option<u16>,
+
     /// Last selected grouping in Agent Command Center.
     pub tui_agents_overview_grouping: codex_config::types::AgentsOverviewGrouping,
 
@@ -4624,6 +4627,7 @@ impl Config {
                 .as_ref()
                 .and_then(|t| t.session_picker_view)
                 .unwrap_or_default(),
+            tui_context_ledger_width: cfg.tui.as_ref().and_then(|t| t.context_ledger_width),
             tui_agents_overview_grouping: cfg.tui.as_ref().map(|t| t.agents_overview_grouping).unwrap_or_default(),
             tui_resume_cwd: cfg.tui.as_ref().and_then(|t| t.resume_cwd),
             terminal_resize_reflow,
