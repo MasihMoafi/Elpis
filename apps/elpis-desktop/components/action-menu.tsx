@@ -15,10 +15,13 @@ function ActionItems({ actions }: { actions: MenuAction[] }) {
   </DropdownMenuItem>)}</>;
 }
 
+/** The letter key pressed, by its place on the keyboard, so D is D in a Persian layout too. */
+export const letterKey = (event: KeyboardEvent<HTMLElement>) => /^Key[A-Z]$/.test(event.code) ? event.code.slice(3).toLowerCase() : event.key.toLowerCase();
+
 /** The key shown beside an item picks it, as a click does (D for Delete, as in Claude's chat menu). */
 function hintKeys(event: KeyboardEvent<HTMLElement>) {
   if (event.ctrlKey || event.metaKey || event.altKey || event.key.length !== 1) return;
-  const item = event.currentTarget.querySelector<HTMLElement>(`[data-hint="${CSS.escape(event.key.toLowerCase())}"]`);
+  const item = event.currentTarget.querySelector<HTMLElement>(`[data-hint="${CSS.escape(letterKey(event))}"]`);
   if (!item) return;
   event.preventDefault(); item.click();
 }

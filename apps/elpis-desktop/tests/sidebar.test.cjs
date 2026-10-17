@@ -132,7 +132,9 @@ test('sidebar: projects, toggle, D to delete, arrows, Ctrl/Shift selection, hove
     assert.equal(await confirm.getAttribute('aria-checked'), 'false'); await confirm.click();
     await eventually(async () => assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('elpis-preferences-v1')).confirmDeleteChats), true));
     await leaveSettings(page);
-    await link('foxtrot').click(); await page.keyboard.press('d'); await dialog.getByText('Delete “Foxtrot”?').waitFor();
+    // The D key works in a Persian layout too, where it types ی.
+    await link('foxtrot').click(); await page.evaluate(() => document.activeElement.dispatchEvent(new KeyboardEvent('keydown', { key: 'ی', code: 'KeyD', bubbles: true })));
+    await dialog.getByText('Delete “Foxtrot”?').waitFor();
     await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
     assert.deepEqual(errors, []);
   } finally { await browser.close(); server.close(); }

@@ -28,6 +28,7 @@ import { AgentsView } from "@/components/agents-view";
 import { NewAgentForm } from "@/components/new-agent-form";
 import { SettingsView, type Tab as SettingsTab } from "@/components/settings-view";
 import { DeleteChatsDialog, ThreadActions } from "@/components/thread-actions";
+import { letterKey } from "@/components/action-menu";
 import { SlashMenu, useSlashMenu, type SlashCommand } from "@/components/slash-menu";
 import { DiffPanel, ReviewPanel, SessionPanel, type ReviewTarget } from "@/components/slash-panels";
 import { INIT_PROMPT } from "@/lib/init-prompt";
@@ -963,7 +964,7 @@ export default function Home() {
     const target = event.target as HTMLElement, id = rowOf(target);
     if (!id || !event.currentTarget.contains(target) || event.ctrlKey || event.metaKey || event.altKey) return;
     if (event.key === "Escape" && marked.length) setMarked([]);
-    else if (event.key.toLowerCase() === "d") deleteChats(marked.length ? marked : [id]);
+    else if (letterKey(event) === "d") deleteChats(marked.length ? marked : [id]);
     else if (event.key === "ArrowDown" || event.key === "ArrowUp") {
       const links = rowLinks(), next = links[links.findIndex(link => link.parentElement === target.closest(".thread-row")) + (event.key === "ArrowDown" ? 1 : -1)];
       if (!next) return;
