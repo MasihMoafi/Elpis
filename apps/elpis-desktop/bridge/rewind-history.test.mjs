@@ -5,7 +5,7 @@ import path from 'node:path';
 import { RewindHistory } from './rewind-history.mjs';
 
 async function fixture() {
-  const home = await fs.mkdtemp(path.resolve('../../.tmp/rewind/history-'));
+  const home = await fs.mkdir(path.resolve('../../.tmp/rewind'), { recursive: true }).then(() => fs.mkdtemp(path.resolve('../../.tmp/rewind/history-')));
   const chats = new Map([['original', { id: 'original', name: 'Chat', turns: ['one', 'two', 'three'], status: { type: 'idle' } }]]), calls = [];
   const rpc = async (method, body) => {
     calls.push([method, body]); const thread = chats.get(body.threadId);

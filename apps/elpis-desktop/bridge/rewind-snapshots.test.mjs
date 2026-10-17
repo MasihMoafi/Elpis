@@ -6,7 +6,7 @@ import { execFileSync } from 'node:child_process';
 import { RewindSnapshots } from './rewind-snapshots.mjs';
 
 async function fixture(t) {
-  const root = await fs.mkdtemp(path.resolve('../../.tmp/rewind/repo-'));
+  const root = await fs.mkdir(path.resolve('../../.tmp/rewind'), { recursive: true }).then(() => fs.mkdtemp(path.resolve('../../.tmp/rewind/repo-')));
   const cwd = path.join(root, 'work'), home = path.join(root, 'state'); await fs.mkdir(cwd);
   const git = (...args) => execFileSync('git', args, { cwd, encoding: 'utf8' });
   git('init', '-q'); git('config', 'user.email', 'test@example.invalid'); git('config', 'user.name', 'Test');
