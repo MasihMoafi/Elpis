@@ -715,21 +715,80 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .canvas-template:hover { background:var(--hover); border-color:var(--hairline); }
 .canvas-template:focus-visible { outline:1.5px solid var(--ring); }
 .canvas-template small { color:var(--muted-foreground); font-size:12px; line-height:1.35; }
-.canvas-toolbar { display:flex; gap:2px; padding:5px; border:1px solid var(--hairline); border-radius:11px; background:var(--card); box-shadow:var(--shadow); }
+.canvas-toolbar { display:flex; align-items:center; gap:2px; padding:5px; border:1px solid var(--hairline); border-radius:11px; background:var(--card); box-shadow:var(--shadow); }
 .canvas-kind { width:9px; height:9px; border-radius:2px; background:var(--kind); }
+.canvas-toolbar-label { padding:0 6px 0 8px; font:500 10.5px/1 var(--mono); letter-spacing:.12em; text-transform:uppercase; color:var(--muted-foreground); }
+.canvas-toolbar-more { border-inline-start:1px solid var(--hairline); border-radius:0 8px 8px 0; }
+.canvas-toolbar kbd, .quick-add kbd { padding:1px 5px; border:1px solid var(--hairline); border-radius:4px; font:11px/1.3 var(--mono); color:var(--muted-foreground); }
+/* Counts typed in the header (CountField): out of range is refused in a note under the field. */
+.canvas-count { position:relative; }
+.canvas-count input { width:46px; height:24px; padding:0 6px; border:1px solid var(--border); border-radius:6px; background:var(--background); color:var(--foreground); font:inherit; font-variant-numeric:tabular-nums; text-align:center; outline:none; }
+.canvas-count input:focus { border-color:var(--ring); }
+.canvas-count input[aria-invalid="true"] { border-color:var(--destructive); }
+.canvas-count-error { position:absolute; top:calc(100% + 6px); right:0; z-index:7; width:max-content; max-width:280px; padding:6px 9px; border:1px solid var(--destructive); border-radius:7px; background:var(--card); color:var(--foreground); font-size:12px; line-height:1.35; box-shadow:var(--shadow); }
+.quick-add-tasks { height:auto; padding:8px 10px; resize:vertical; font:inherit; font-size:13px; line-height:1.4; }
+/* Quick add (Ctrl+A, double-click, or a wire let go on the board): how many, which kind, then one model. */
+.quick-add { position:absolute; z-index:6; display:grid; gap:6px; width:340px; }
+.quick-add-title { display:flex; justify-content:space-between; gap:10px; }
+.quick-add-title span:last-child { text-transform:none; letter-spacing:0; font-family:inherit; font-size:11.5px; }
+.quick-add-field { height:34px; padding:0 10px; border:1px solid var(--border); border-radius:7px; background:var(--background); color:var(--foreground); font-size:13px; outline:none; }
+.quick-add-field:focus { border-color:var(--ring); }
+.quick-add-list { display:grid; gap:1px; max-height:300px; overflow:auto; }
+.quick-add-plan { display:flex; flex-wrap:wrap; gap:4px 6px; margin:0; padding:0 4px; font-size:12px; color:var(--muted-foreground); }
+.quick-add-plan b { color:var(--foreground); font-weight:600; }
+.quick-add-plan span:not(:first-child)::before, .quick-add-plan b + span::before { content:"· "; }
+.quick-add-plan em { flex-basis:100%; font-style:normal; color:var(--destructive); }
+.quick-add-crumb { display:flex; justify-content:space-between; margin:2px 0 0; padding:0 4px; font:500 10.5px/1.4 var(--mono); letter-spacing:.08em; text-transform:uppercase; color:var(--muted-foreground); }
+.quick-add-more { margin-inline-start:auto; flex:none; color:var(--muted-foreground); }
+.quick-add-option { display:flex; align-items:center; gap:10px; padding:7px 8px; border:0; border-radius:5px; background:transparent; color:var(--foreground); text-align:left; font-size:13px; cursor:pointer; }
+.quick-add-option[aria-selected="true"] { background:var(--hover); }
+.quick-add-option .canvas-kind { flex:none; }
+.quick-add-note, .quick-add-help { margin:0; padding:0 4px; color:var(--muted-foreground); font-size:11.5px; line-height:1.35; }
+/* An agent's dashboard (Enter or double-click): what it is, its wiring, and its live work. */
+.agent-dashboard { position:absolute; z-index:7; top:16px; right:16px; display:grid; gap:12px; width:min(420px, calc(100% - 32px)); max-height:calc(100% - 32px); overflow:auto; padding:14px; border-left:3px solid var(--kind); }
+.agent-dashboard header { display:grid; grid-template-columns:1fr auto; gap:4px 10px; align-items:start; }
+.agent-dashboard header strong { grid-column:1; font-size:15px; line-height:1.3; overflow-wrap:anywhere; }
+.agent-dashboard header button { grid-column:2; grid-row:1 / span 2; display:grid; place-items:center; width:26px; height:26px; border:0; border-radius:6px; background:transparent; color:var(--muted-foreground); cursor:pointer; }
+.agent-dashboard header button:hover { background:var(--hover); color:var(--foreground); }
+.agent-dashboard dl { display:grid; gap:7px; margin:0; }
+.agent-dashboard dl div { display:grid; grid-template-columns:84px 1fr; gap:10px; font-size:12.5px; line-height:1.4; }
+.agent-dashboard dt { color:var(--muted-foreground); }
+.agent-dashboard dd { margin:0; overflow-wrap:anywhere; white-space:pre-wrap; }
+.agent-dashboard-live { display:grid; gap:6px; padding-top:10px; border-top:1px solid var(--hairline); font-size:12.5px; }
+.agent-dashboard-live p { margin:0; }
+.agent-dashboard-live .hud-menu-title { padding:0; }
+.agent-dashboard-live blockquote { margin:0; padding:8px 10px; max-height:180px; overflow:auto; border-left:2px solid var(--context); background:var(--hover); white-space:pre-wrap; overflow-wrap:anywhere; }
+.agent-dashboard > button { justify-self:start; }
+.canvas-templates { display:grid; gap:2px; }
+.canvas-template small.canvas-template-source { font-size:11px; opacity:.8; }
+.canvas-help kbd, .canvas-inspector-actions kbd { padding:0 4px; border:1px solid var(--hairline); border-radius:4px; font:11px/1.4 var(--mono); }
+/* Run order: Kahn's waves, each with how it is doing. */
+.canvas-order ol { display:grid; gap:4px; margin:0; padding:0; list-style:none; }
+.canvas-order li { display:grid; grid-template-columns:58px 1fr; gap:8px; padding:6px 8px; border-left:2px solid var(--hairline); color:var(--foreground); font-size:12.5px; line-height:1.35; overflow-wrap:anywhere; }
+.canvas-order li span { font:500 10.5px/1.6 var(--mono); letter-spacing:.08em; text-transform:uppercase; color:var(--muted-foreground); }
+.canvas-order li[data-status="running"] { border-left-color:var(--context); }
+.canvas-order li[data-status="succeeded"] { border-left-color:var(--success); }
+.canvas-order li[data-status="failed"] { border-left-color:var(--destructive); }
 .canvas-help { margin:6px 4px 0; color:var(--muted-foreground); font-size:12px; line-height:1.4; }
-[data-kind="explore"] { --kind:#2f6fb5; } [data-kind="implement"] { --kind:#6d5bd0; } [data-kind="verify"] { --kind:var(--context); } [data-kind="fix"] { --kind:#b8435a; }
-.dark [data-kind="explore"] { --kind:#53b1ff; } .dark [data-kind="implement"] { --kind:#ab84ff; } .dark [data-kind="fix"] { --kind:#ff7a8f; }
+[data-kind="mother"] { --kind:var(--foreground); } [data-kind="plan"] { --kind:#24857a; } [data-kind="explore"] { --kind:#2f6fb5; } [data-kind="implement"] { --kind:#6d5bd0; } [data-kind="verify"] { --kind:var(--context); } [data-kind="fix"] { --kind:#b8435a; }
+.dark [data-kind="plan"] { --kind:#4fd6c4; } .dark [data-kind="explore"] { --kind:#53b1ff; } .dark [data-kind="implement"] { --kind:#ab84ff; } .dark [data-kind="fix"] { --kind:#ff7a8f; }
 .canvas-board { position:relative; min-width:0; min-height:0; background:var(--background); }
 .canvas-board .react-flow { --xy-background-color:var(--background); --xy-background-pattern-color:var(--border); --xy-edge-stroke:var(--muted-foreground); --xy-edge-stroke-selected:var(--foreground); --xy-connectionline-stroke:var(--context); --xy-controls-button-background-color:var(--card); --xy-controls-button-color:var(--foreground); --xy-controls-button-border-color:var(--hairline); --xy-minimap-background-color:var(--card); --xy-node-border-radius:10px; }
 .dark .canvas-board .react-flow { --xy-edge-stroke:color-mix(in oklch, var(--gold) 55%, transparent); }
 .canvas-board .react-flow__edge.canvas-edge-done .react-flow__edge-path { stroke:var(--success); }
 .canvas-board .react-flow__edge.canvas-edge-cut .react-flow__edge-path { stroke:var(--destructive); stroke-dasharray:3 5; }
-.canvas-board .react-flow__edge.animated .react-flow__edge-path { stroke:var(--context); }
+.canvas-board .react-flow__edge.canvas-edge-live .react-flow__edge-path { stroke:var(--context); }
+.canvas-board .react-flow__edge.canvas-edge-mother .react-flow__edge-path { stroke-dasharray:2 5; }
+/* Chevrons on every wire point the way the work flows; on a live wire they stream (FlowEdge). */
+.canvas-chevron { fill:none; stroke:var(--xy-edge-stroke); stroke-width:1.6; stroke-linecap:round; stroke-linejoin:round; pointer-events:none; }
+.canvas-chevron[data-live] { stroke:var(--context); stroke-width:2; }
+.canvas-edge-done .canvas-chevron { stroke:var(--success); }
+.canvas-edge-cut .canvas-chevron { stroke:var(--destructive); }
 .canvas-board .react-flow__edge-path { stroke-width:1.6; }
 .canvas-minimap { border:1px solid var(--hairline); border-radius:8px; overflow:hidden; }
-.agent-node { position:relative; display:grid; gap:3px; width:200px; padding:11px 34px 11px 14px; border:1px solid var(--border); border-left:3px solid var(--kind); border-radius:10px; background:var(--card); color:var(--foreground); box-shadow:var(--shadow); font-size:13px; }
+.agent-node { position:relative; display:grid; gap:3px; width:190px; padding:11px 34px 11px 14px; border:1px solid var(--border); border-left:3px solid var(--kind); border-radius:10px; background:var(--card); color:var(--foreground); box-shadow:var(--shadow); font-size:13px; }
 .react-flow__node.selected .agent-node { outline:1.5px dashed var(--context); outline-offset:4px; }
+.mother-node { border-left-width:5px; }
 .agent-node-kind { font:600 9.5px/1 var(--mono); letter-spacing:.14em; text-transform:uppercase; color:var(--muted-foreground); }
 .agent-node-title { font-weight:600; line-height:1.3; overflow-wrap:anywhere; }
 .agent-node-meta { color:var(--muted-foreground); font-size:11.5px; }

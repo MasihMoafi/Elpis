@@ -1281,6 +1281,19 @@ test('Smart Prune is switched by its feature key, and a writable config gives no
   assert.match(settingsSnapshot({ config: {}, layers: [] }, { requirements: {} }).write.reason, /no writable config\.toml/);
 });
 
+test('the agents a work graph may use follow Elpis: 256 in a graph, and at once its agent threads, never over 32', async () => {
+  const { settingsSnapshot } = await import('./elpis-features.mjs');
+  const allowed = config => settingsSnapshot({ config, layers: [] }, { requirements: {} }).agents;
+  assert.deepEqual(allowed({}), { graph: 256, atOnce: 6, source: 'Elpis default' });
+  assert.deepEqual(allowed({ agents: { max_threads: 3 } }), { graph: 256, atOnce: 3, source: 'agents.max_threads' });
+  assert.equal(allowed({ agents: { max_threads: 50 } }).atOnce, 32);
+  // Multi-agent v2 counts the chat itself among its threads per session (4 by default).
+  assert.equal(allowed({ features: { multi_agent_v2: true } }).atOnce, 3);
+  assert.equal(allowed({ features: { multi_agent_v2: { max_concurrent_threads_per_session: 9 } } }).atOnce, 8);
+  assert.equal(allowed({ features: { multi_agent_v2: true }, agents: { max_concurrent_threads_per_session: 5 } }).atOnce, 5);
+  assert.equal(allowed({ features: { multi_agent_v2: false }, agents: { max_threads: 2 } }).atOnce, 2);
+});
+
 test('an operation Elpis does not support (-32601) shows its message, not only the code', async () => {
   const { client, socket } = fixture(); await client.initialize();
   const answer = socket.send;

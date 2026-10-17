@@ -20,6 +20,8 @@ export type ElpisSettings = {
   smartPrune: { enabled: boolean | null; explicitOverride: { available?: boolean; model?: string | null; provider?: string | null; version?: string; reason?: string } };
   memory: Memory;
   options?: ConfigOptions;
+  /** How many agents a work graph may use: in all, and at once (bridge/elpis-features.mjs `agentLimits`). */
+  agents?: { graph: number; atOnce: number; source: string };
   managed?: { modelProvider?: string | null; allowedApprovalPolicies?: string[] | null; allowedSandboxModes?: string[] | null };
   write: { available?: boolean; reason: string };
 };

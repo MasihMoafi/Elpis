@@ -81,6 +81,19 @@ export function optionEdits(input, managed = {}, profiles = false) {
 /** Whether a provider reads its key from a variable that is unset and has no key saved in the Elpis home. */
 const needsKey = (definition, saved, id, env) => acceptsPastedKey(id, definition) && !saved.has(id) && !(typeof env[definition.env_key] === 'string' && env[definition.env_key].trim());
 
+/** How many agents a work graph may use (codex-rs core/src/tools/handlers/work_graphs.rs, core/src/config/mod.rs): up
+ * to 256 in one graph, and at once no more than the session's agent threads: agents.max_threads (6 by default), or
+ * with multi-agent v2 its threads per session less the chat itself (4 by default); never more than 32. */
+function agentLimits(config) {
+  const count = value => Number.isSafeInteger(value) && value >= 0 ? value : null, v2 = config.features?.multi_agent_v2;
+  if (v2 === true || (v2 && typeof v2 === 'object' && v2.enabled !== false)) {
+    const session = count(v2?.max_concurrent_threads_per_session) ?? (count(config.agents?.max_concurrent_threads_per_session) ?? 3) + 1;
+    return { graph: 256, atOnce: Math.min(32, Math.max(0, session - 1)), source: 'features.multi_agent_v2' };
+  }
+  const threads = count(config.agents?.max_threads);
+  return { graph: 256, atOnce: Math.min(32, threads ?? 6), source: threads === null ? 'Elpis default' : 'agents.max_threads' };
+}
+
 export function settingsSnapshot(read, requirementsRead, prunerRead = null, saved = new Set(), env = process.env) {
   const config = read?.config ?? {};
   const requirements = requirementsRead?.requirements;
@@ -110,6 +123,7 @@ export function settingsSnapshot(read, requirementsRead, prunerRead = null, save
     },
     options: optionSnapshot(config, permissionProfiles), permissionProfiles,
     providers: [...providerIds].sort().map(id => ({ id, displayName: string(definitions[id]?.name) ?? id, ...(needsKey(config.model_providers?.[id] ?? BUILT_IN_KEY_PROVIDERS[id], saved, id, env) ? { needsKey: true } : {}) })),
+    agents: agentLimits(config),
     managed: {
       available: requirementsRead !== null,
       modelProvider: string(requirements?.modelProvider),
