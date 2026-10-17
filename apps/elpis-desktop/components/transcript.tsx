@@ -11,7 +11,10 @@ import { CreatedFiles, ImageThumb, fileKind } from "@/components/file-cards";
  * an item's recorded pictures (lib/api.ts `mediaUrl`). */
 type Draw = { renderItem: (entry: Entry) => ReactNode; mediaOf?: (entry: Entry) => string | undefined };
 export function Transcript({ entries, activeTurnId, ...draw }: { entries: Entry[]; activeTurnId: string | null } & Draw) {
-  return <>{turnsOf(entries).map(turn => <Turn key={turn.id} turn={turn} active={turn.id === activeTurnId} {...draw} />)}</>;
+  const turns = turnsOf(entries);
+  return <>{turns.map(turn => <Turn key={turn.id} turn={turn} active={turn.id === activeTurnId} {...draw} />)}
+    {activeTurnId && !turns.some(turn => turn.id === activeTurnId) && <div className="turn-working" role="status"><LiveStep key={activeTurnId} label="Working" /></div>}
+  </>;
 }
 
 type TurnEntries = { id: string; entries: Entry[] };

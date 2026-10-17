@@ -292,21 +292,28 @@ export default function Home() {
   const [desktop, setDesktop] = useState(false);
   const browser = useBrowser();
   const side = useSidePanel(browser);
-  useEffect(() => onFileRequest(() => { if (view === "settings") setView("chat"); }), [view]);
+  useEffect(() => onFileRequest(() => { if (view !== "chat") setView("chat"); }), [view]);
   useEffect(() => { setDesktop(!!window.elpisDesktop?.browser); }, []);
   // The side panel (components/side-panel.tsx): shells and browser pages as tabs, beside the chat.
   const [hasTerminal, setHasTerminal] = useState(false);
   const [tuiLaunch, setTuiLaunch] = useState<{ key: string; threadId: string; token: number } | null>(null);
   useEffect(() => { setHasTerminal(!!window.elpisDesktop?.terminal); }, []);
-  const panelShown = desktop && side.open && view !== "settings";
+  const panelShown = desktop && side.open && view === "chat";
   /** Full view (the side panel's): the panel fills the work area and the chat floats over it, as a card or folded to a pill. */
   const fullView = panelShown && side.full;
   /** A window too narrow for chat and panel side by side shows the panel alone; the chat comes back when it is needed. */
-  const showChat = () => { if (side.full) side.setChatCollapsed(false); else if (matchMedia("(max-width: 1000px)").matches) side.closePanel(); };
+  const showChat = () => { if (side.full) side.setChatCollapsed(false); else if (matchMedia("(max-width: 760px)").matches) side.closePanel(); };
   useEffect(() => { if (selected?.id) showChat(); }, [selected?.id]); // eslint-disable-line react-hooks/exhaustive-deps
   const [pendingInputOpen, setPendingInputOpen] = useState(false);
   const pendingInputButton = useRef<HTMLButtonElement>(null);
   const [sidebar, setSidebar] = useState(false);
+  const [panelDrawer, setPanelDrawer] = useState(false);
+  useEffect(() => {
+    const media = matchMedia("(max-width: 1000px)");
+    const update = () => setPanelDrawer(media.matches);
+    update(); media.addEventListener("change", update);
+    return () => media.removeEventListener("change", update);
+  }, []);
   const [agentsPanel, setAgentsPanel] = useState(true);
   // Theme: System follows the operating system; the choice is kept on this device.
   const [theme, setThemeChoice] = useState<ThemeChoice>("system");
@@ -1164,7 +1171,7 @@ export default function Home() {
     setPins(next); savePins(next);
   }
   /** A narrow window slides the sidebar over the page; a wide one collapses it (the sidebar button and Ctrl+B), as in ChatGPT and Claude. */
-  function narrow() { return matchMedia("(max-width: 760px)").matches; }
+  function narrow() { return matchMedia("(max-width: 760px)").matches || (panelShown && panelDrawer); }
   function showSidebar(open: boolean) { if (!narrow()) { setSidebarCollapsed(!open); return; } setSidebar(open); if (open) setSidebarCollapsed(false); }
   /** The sidebar's chat buttons in screen order (a project's chats also appear under Recents). */
   const rowLinks = () => [...threadList.current?.querySelectorAll<HTMLButtonElement>(".thread-row > .thread-link") ?? []];
@@ -1265,8 +1272,8 @@ export default function Home() {
   const chatState = selected ? agentState(selected, waitingIds) : "idle", floatState = activeTurn && chatState === "idle" ? "working" : chatState;
   const meta = selected ? [selected.agentNickname, selected.agentRole && selected.agentRole !== "default" ? selected.agentRole : null].filter(Boolean).join(" · ") : "";
 
-  return <div className={`app-shell${dark ? " dark" : ""}${desktop ? " has-title-bar" : ""}${sidebarCollapsed ? " sidebar-collapsed" : ""}${view === "settings" ? " settings-mode" : ""}`} style={{ "--sidebar-width": `${sidebarWidth}px` } as CSSProperties}>
-    {desktop && <div className="title-bar"><Button variant="ghost" size="icon" aria-label={sidebarCollapsed ? "Open sidebar" : "Close sidebar"} title={`${sidebarCollapsed ? "Open" : "Close"} sidebar (Ctrl+B)`} onClick={() => showSidebar(narrow() ? !sidebar : sidebarCollapsed)}><PanelLeft /></Button><NavButtons canBack={canBack(history)} canForward={canForward(history)} onBack={() => goHistory(-1)} onForward={() => goHistory(1)} /></div>}
+  return <div className={`app-shell${dark ? " dark" : ""}${desktop ? " has-title-bar" : ""}${sidebarCollapsed ? " sidebar-collapsed" : ""}${view === "settings" ? " settings-mode" : ""}${panelShown ? " panel-active" : ""}`} style={{ "--sidebar-width": `${sidebarWidth}px` } as CSSProperties}>
+    {desktop && <div className="title-bar"><Button variant="ghost" size="icon" aria-label={sidebarCollapsed || (panelShown && panelDrawer && !sidebar) ? "Open sidebar" : "Close sidebar"} title={`${sidebarCollapsed ? "Open" : "Close"} sidebar (Ctrl+B)`} onClick={() => showSidebar(narrow() ? !sidebar : sidebarCollapsed)}><PanelLeft /></Button><NavButtons canBack={canBack(history)} canForward={canForward(history)} onBack={() => goHistory(-1)} onForward={() => goHistory(1)} /></div>}
     <ShortcutsDialog open={shortcutsOpen} onOpenChange={setShortcutsOpen} returnFocus={shortcutsReturnFocus} />
     {desktop && <StartupSplash done={ready && connected} steps={[{ label: "Elpis engine connected", ok: connected }, { label: "models loaded", ok: models.length > 0 }, { label: "conversations loaded", ok: ready }]} />}
     <ProjectDialog projects={projects} editing={projectEdit} onClose={() => setProjectEdit(undefined)} onSave={saveProject} />
@@ -1347,7 +1354,7 @@ export default function Home() {
         })}</div>
       </section>}
       </div>
-      <div className={`workspace-body${panelShown ? " panel-open" : ""}${fullView ? ` full-view${side.chatCollapsed ? " chat-collapsed" : ""}` : ""}${view === "settings" ? " no-browser" : ""}`}><div className="workspace-content" {...(fullView ? { role: "region", "aria-label": "Floating chat" } : {})}>
+      <div className={`workspace-body${panelShown ? " panel-open" : ""}${fullView ? ` full-view${side.chatCollapsed ? " chat-collapsed" : ""}` : ""}${view !== "chat" ? " no-browser" : ""}`}><div className="workspace-content" {...(fullView ? { role: "region", "aria-label": "Floating chat" } : {})}>
       {fullView && <FloatChatBar title={chatName} onCollapse={() => side.setChatCollapsed(true)} />}
       {settingsVisited && <div className="page-scroll" hidden={view !== "settings"}><ViewBoundary label="Settings" resetKey={settingsNavigation}><SettingsView initialTab={settingsSection} navigationKey={settingsNavigation} active={view === "settings"} threadId={selected?.id} accountRefresh={accountRefresh} theme={theme} onTheme={setTheme} onUnarchived={unarchived} onDeleteThread={deleteThread} onBack={() => { show("chat"); requestAnimationFrame(focusComposer); }} onProvidersChanged={async () => { await reloadSettings(); void refreshModels(); }} /></ViewBoundary></div>}
       {view === "canvas" && <ViewBoundary label="Canvas"><AgentsCanvas models={models} cwd={newChatFolder(cwd) || undefined} dark={dark} onOpenChat={id => { show("chat"); void openById(id); }}
@@ -1362,7 +1369,7 @@ export default function Home() {
         <div className="chat-scroll-wrap"><div className="chat-scroll" ref={scroll} onScroll={event => { const element = event.currentTarget; stickToBottom.current = element.scrollHeight - element.scrollTop - element.clientHeight < 80; }}><div className="chat-content">
           {itemCursor && <Button variant="outline" disabled={loading} onClick={older}>Load earlier messages</Button>}
           {loading && !entries.length && <p role="status" className="chat-loading text-muted-foreground">Loading conversation…</p>}
-          {!loading && !entries.length && <div className="empty-state">{selected ? <><h2>This conversation has no messages yet.</h2><p>Messages and tool activity appear here.</p></> : <><img className="empty-mark" src={brandMark} alt="" aria-hidden="true" /><h2>{project ? <>What should we build in <ProjectMenu variant="heading" projects={projects} selected={project} disabled={!ready || busy} onSelect={selectProject} onAdd={() => void addProject()} />?</> : "What should we build?"}</h2></>}</div>}
+          {!loading && !entries.length && !activeTurn && <div className="empty-state">{selected ? <><h2>This conversation has no messages yet.</h2><p>Messages and tool activity appear here.</p></> : <><img className="empty-mark" src={brandMark} alt="" aria-hidden="true" /><h2>{project ? <>What should we build in <ProjectMenu variant="heading" projects={projects} selected={project} disabled={!ready || busy} onSelect={selectProject} onAdd={() => void addProject()} />?</> : "What should we build?"}</h2></>}</div>}
           <ViewBoundary label="The conversation" resetKey={selected?.id}><Transcript entries={entries} activeTurnId={activeTurn ?? null} mediaOf={e => selected ? mediaUrl(selected.id, e) : undefined} renderItem={e => { const editKey = JSON.stringify([selected?.id, e.turnId, e.item.id]); return <ChatMessage key={editKey} item={e.item} mediaBase={selected ? mediaUrl(selected.id, e) : undefined} threads={threads} speaker={selected?.agentNickname || "Elpis"} onOpenThread={openById}
             editDraft={messageEdits[editKey]} editPending={!!pendingDrafts[editKey]} onEditDraftChange={value => { setMessageEdits(previous => value === null ? without(previous, editKey) : { ...previous, [editKey]: value }); if (value === null) focusComposer(); }}
             onEdit={replaceable && e.item.type === "userMessage" && replacementOptions.get(e.turnId)?.allowed ? text => replaceFrom(e.turnId, text, editKey) : undefined}
@@ -1434,7 +1441,7 @@ export default function Home() {
           </button>; })}
       </aside>}
       </div>}
-      </div>{fullView && side.chatCollapsed && <FloatChatPill title={chatName} state={floatState} onRestore={() => side.setChatCollapsed(false)} />}{desktop && <SidePanel panel={side} browser={browser} hasTerminal={hasTerminal} dark={dark} cwd={selected?.cwd || cwd} threadId={selected?.id} running={!!activeTurn} launch={tuiLaunch} covered={pendingInputOpen || sidebar || view === "settings"} onAttach={attachFromBrowser} imagesAllowed={!(knownModel?.inputModalities && !knownModel.inputModalities.includes("image"))} />}</div>
+      </div>{fullView && side.chatCollapsed && <FloatChatPill title={chatName} state={floatState} onRestore={() => side.setChatCollapsed(false)} />}{desktop && <SidePanel panel={side} browser={browser} hasTerminal={hasTerminal} dark={dark} cwd={selected?.cwd || cwd} threadId={selected?.id} running={!!activeTurn} launch={tuiLaunch} covered={pendingInputOpen || sidebar || view !== "chat"} onAttach={attachFromBrowser} imagesAllowed={!(knownModel?.inputModalities && !knownModel.inputModalities.includes("image"))} />}</div>
     </main>
   </div>;
 }

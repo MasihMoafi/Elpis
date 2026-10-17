@@ -69,7 +69,7 @@ button:disabled { cursor:not-allowed; }
 /* With the side panel beside the chat (not full view, not a narrow window) the work area is one grid: the panel runs the full
  * height at the right and its header shares a row with the chat's header, so the two line up whatever the chat's header holds.
  * The panel's width is half the area, or what its dragged edge set (`--side-w`, from app/page.tsx); 360px is MIN_WIDTH in side-panel.tsx. */
-@media(min-width:1001px) {
+@media(min-width:761px) {
   .workspace:has(> .workspace-body.panel-open:not(.full-view)) { display:grid; grid-template-columns:minmax(0,1fr) var(--side-w, minmax(360px,50%)); grid-template-rows:auto auto minmax(0,1fr); }
   .workspace:has(> .workspace-body.panel-open:not(.full-view)) > .workspace-header { grid-column:1; grid-row:1; }
   .workspace:has(> .workspace-body.panel-open:not(.full-view)) > .workspace-notices { grid-column:1; grid-row:2; }
@@ -107,7 +107,13 @@ button:disabled { cursor:not-allowed; }
 .browser-empty { padding:16px; margin:0; font-size:13px; color:var(--muted-foreground); }
 .browser-empty span { display:block; margin-top:4px; font-size:var(--text-small); }
 .browser-error { padding:8px 12px; font-size:12px; color:var(--destructive); overflow-wrap:anywhere; }
-@media(max-width:1000px) { .panel-open > .workspace-content { display:none; } .side-panel { width:100%!important; max-width:none; min-width:0; } .side-resize { display:none; } }
+@media(min-width:761px) and (max-width:1000px) {
+ .app-shell.panel-active { grid-template-columns:1fr; }
+ .app-shell.panel-active > .sidebar { display:none; }
+ .app-shell.panel-active > .sidebar.open { display:flex; position:fixed; inset:0 auto 0 0; width:280px; z-index:30; box-shadow:0 0 0 100vmax #0008; }
+ .app-shell.panel-active .mobile-menu { display:inline-flex; }
+}
+@media(max-width:760px) { .panel-open > .workspace-content { display:none; } .side-panel { width:100%!important; max-width:none; min-width:0; } .side-resize { display:none; } }
 .workspace-header { padding:0 20px; min-height:48px; border-bottom:1px solid var(--hairline); display:flex; align-items:center; gap:12px; flex-shrink:0; background:var(--background); position:relative; z-index:5; }
 .header-titles { display:flex; align-items:baseline; flex-wrap:wrap; column-gap:12px; padding:8px 0; }
 .workspace-header h1 { font-size:13.5px; line-height:1.4; font-weight:600; letter-spacing:-.01em; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:100%; }
@@ -142,7 +148,7 @@ button:disabled { cursor:not-allowed; }
 .composer textarea { border:0; box-shadow:none; background:transparent; min-height:44px; max-height:240px; resize:none; font-size:14.5px; padding:2px 0; }
 .dark .composer textarea { background:transparent; }
 .composer textarea:focus-visible { outline:none; box-shadow:none; }
-.composer-controls { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-top:4px; }
+.composer-controls { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:12px; row-gap:4px; margin-top:4px; }
 .model-select { display:inline-flex; align-items:center; justify-content:space-between; gap:6px; background:transparent; color:var(--muted-foreground); border:1px solid transparent; border-radius:8px; min-width:0; height:32px; padding:0 8px; max-width:260px; font-size:12.5px; font-weight:500; white-space:nowrap; }
 .model-select:hover { background:var(--hover); color:var(--foreground); }
 .model-select > svg { flex-shrink:0; color:var(--muted-foreground); }
@@ -170,6 +176,7 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .prompt-tick[aria-current="true"] i { background:var(--foreground); }
 .prompt-tick:focus-visible { outline:2px solid var(--ring); outline-offset:-2px; }
 @media(max-width:760px) { .prompt-rail { display:none; } }
+@container workspace (max-width:640px) { .prompt-rail { display:none; } }
 .full-view > .workspace-content .prompt-rail { display:none; }
 .empty-chat .chat-scroll { display:flex; }
 .empty-chat .chat-content { margin:auto; width:100%; }
@@ -521,6 +528,12 @@ button.trace-head:hover .trace-text { text-decoration:underline; }
 .agent-context .agent-activity { display:none; }
 @media(hover:none) { .agent-actions { opacity:1; } }
 
+@container workspace (max-width:760px) {
+ .agent-main { grid-template-columns:minmax(0,1fr); row-gap:3px; }
+ .agent-meta { text-align:left; max-width:100%; }
+ .agent-actions { min-width:0; }
+}
+
 /* Settings respond to the available pane width, including beside the browser. */
 @container workspace (max-width:760px) {
  .settings-layout { grid-template-columns:1fr; gap:14px; }
@@ -591,7 +604,7 @@ button.trace-head:hover .trace-text { text-decoration:underline; }
 .sh-operator { color:var(--muted-foreground); }
 .sh-comment { color:var(--subtle-foreground); font-style:italic; }
 .worked-for { margin:4px 0 14px; }
-.worked-for > summary { display:flex; align-items:center; gap:12px; list-style:none; cursor:pointer; color:color-mix(in oklch, var(--primary) 70%, var(--muted-foreground)); font:500 var(--text-small)/1 var(--mono); letter-spacing:.14em; text-transform:uppercase; padding:6px 0; }
+.worked-for > summary { display:flex; align-items:center; gap:12px; list-style:none; cursor:pointer; color:color-mix(in oklch, var(--primary) 70%, var(--muted-foreground)); font:500 var(--text-small)/1 var(--mono); letter-spacing:.04em; padding:6px 0; }
 .worked-for > summary::-webkit-details-marker { display:none; }
 .worked-for > summary::before, .worked-for > summary::after { content:""; height:1px; flex:1; background:linear-gradient(90deg, transparent, var(--border)); }
 .worked-for > summary::after { background:linear-gradient(90deg, var(--border), transparent); }
@@ -781,7 +794,7 @@ button.trace-head:hover .trace-text { text-decoration:underline; }
 .app-shell.has-title-bar { grid-template-rows:36px minmax(0,1fr); }
 .title-bar { grid-column:1 / -1; display:flex; align-items:center; gap:4px; height:36px; padding:0 calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw)) 0 6px; background:var(--sidebar); border-bottom:1px solid var(--hairline); app-region:drag; -webkit-app-region:drag; }
 .title-bar button { color:var(--muted-foreground); app-region:no-drag; -webkit-app-region:no-drag; }
-.has-title-bar .brand > .sidebar-toggle, .has-title-bar .workspace-header > .sidebar-open { display:none !important; }
+.has-title-bar .sidebar:not(.open) .brand > .sidebar-toggle, .has-title-bar .workspace-header > .sidebar-open { display:none !important; }
 .shortcuts-dialog { display:grid; gap:12px; max-width:520px; }
 .shortcuts-list { display:grid; gap:14px; max-height:min(60vh, 520px); overflow:auto; padding-right:4px; }
 .shortcuts-list h3 { margin:0 0 6px; color:var(--primary); }
@@ -851,9 +864,9 @@ button.trace-head:hover .trace-text { text-decoration:underline; }
 .annotation-chips button[aria-pressed="true"] { outline:2px solid color-mix(in oklab, var(--annotation) 45%, transparent); outline-offset:1px; }
 .annotation-error { font-size:12px; color:var(--destructive); }
 .workspace-body { position:relative; }
-.composer .model-controls { flex-wrap:nowrap; flex-shrink:0; }
-.composer-right { flex:1; justify-content:flex-end; }
-.composer .model-picker-trigger { min-width:88px; max-width:300px; flex:0 1 auto; }
+.composer .model-controls { flex-wrap:wrap; flex-shrink:0; }
+.composer-right { flex:1 1 auto; flex-wrap:wrap; justify-content:flex-end; }
+.composer .model-picker-trigger { min-width:88px; max-width:none; flex:0 0 auto; }
 .header-action[aria-pressed="true"], .side-action[aria-pressed="true"] { color:var(--primary); background:var(--selected); }
 @container workspace (max-width: 760px) { .composer .model-trigger-provider { display:none; } }
 /* Slash commands: the menu a leading "/" opens above the composer, as in the ChatGPT app's Codex composer. */
@@ -1171,18 +1184,13 @@ button.trace-head:hover .trace-text { text-decoration:underline; }
 .chat-collapsed > .workspace-content { visibility:hidden; }
 .full-view > .workspace-content .chat-scroll { padding:14px 16px 8px; }
 .full-view > .workspace-content .composer-wrap { padding:6px 12px 12px; }
-/* Narrow as the card is, the message box's controls wrap to a second row rather than cut their labels short. */
-@container workspace (max-width:420px) { .composer-controls { flex-wrap:wrap; row-gap:4px; } .composer-right { flex:1 1 auto; } .composer .model-select:not(.model-picker-trigger) { flex-shrink:0; } }
-/* The message box's toolbar keeps one row beside the side panel (half of a 1130px window is 437px). As room runs out the labels
- * shrink first: the permission label takes its short form and the model and effort cut theirs with an ellipsis; from 480px down
- * the context ring gives way as well. Under 420px, the floating chat card, the toolbar wraps (above). */
-.composer-pill > span { min-width:0; overflow:hidden; text-overflow:ellipsis; }
+/* Toolbar controls wrap with the pane so their labels remain readable. */
+.composer-pill, .composer .model-select { flex-shrink:0; }
 .composer .model-select [data-slot="select-value"] { display:block; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .composer .model-select { min-width:64px; }
 .composer-right :is(.dictation-control, .send-button, .context-ring) { flex-shrink:0; }
 .pill-short { display:none; }
 @media(min-width:761px) { @container workspace (max-width:640px) { .pill-long { display:none; } .pill-short { display:inline; } .chat-scroll, .composer-wrap { padding-inline:22px; } } }
-@container workspace (min-width:421px) { .composer .model-select:not(.model-picker-trigger) { flex-shrink:3; } }
 .effort-short { display:none; }
 @container workspace (min-width:421px) and (max-width:480px) {
   .composer-right .context-ring { display:none; }
