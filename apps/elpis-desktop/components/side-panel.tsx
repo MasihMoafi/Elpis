@@ -176,7 +176,7 @@ export function SidePanel({ panel, browser, hasTerminal, dark, cwd, threadId, ru
       {shown?.kind === "terminal" && <TerminalView termKey={shown.terminal.key} cwd={shown.terminal.cwd} dark={dark} launch={launch} />}
       {shown?.kind === "changes" && <ChangesPanel threadId={threadId} running={running} />}
       {shown?.kind === "files" && <FilesPane cwd={cwd} />}
-      {shown?.kind === "browser" && <BrowserPanel browser={browser} covered={covered || resizing} onAttach={onAttach} imagesAllowed={imagesAllowed} />}
+      {shown?.kind === "browser" && <BrowserPanel browser={browser} cwd={cwd} covered={covered || resizing} onAttach={onAttach} imagesAllowed={imagesAllowed} />}
       {!shown && <Empty>{kinds.map(kind => <Button key={kind.id} type="button" variant="outline" size="sm" onClick={kind.run}>{kind.icon}{kind.label}</Button>)}</Empty>}
     </ViewBoundary></div>
   </section>;

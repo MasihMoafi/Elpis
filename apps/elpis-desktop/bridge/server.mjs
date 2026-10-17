@@ -14,6 +14,7 @@ import { ATTACHMENT_BODY_LIMIT, AttachmentError, PDF_BODY_LIMIT, extractPdf } fr
 import { createTrash } from './trash.mjs';
 import { createObservability } from './observability.mjs';
 import { createLoveSpot } from './love-spot-store.cjs';
+import { createDevServers, devServerRequest } from './dev-servers.mjs';
 
 const COOKIE = 'elpis_desktop';
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.txt': 'text/plain', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon', '.woff': 'font/woff', '.woff2': 'font/woff2' };
@@ -69,6 +70,7 @@ export async function startDesktopServer(options = {}) {
   const session = randomBytes(32).toString('hex');
   const listeners = new Set(); let origin; let closed = false;
   const loveSpot = createLoveSpot(options.loveSpot);
+  const devServers = createDevServers();
   const loveStreams = new Set();
   const tools = options.tools ?? createTools({ environment: () => client.ragEnvironment() });
   // The Observability page reads the records of the Elpis home this runtime uses (`elpisHome` sets another).
@@ -104,6 +106,7 @@ export async function startDesktopServer(options = {}) {
         const cookies = (request.headers.cookie ?? '').split(';').map(value => value.trim());
         if (!cookies.some(value => same(value, `${COOKIE}=${session}`))) throw new BridgeError('Open the application using its private launch URL', 401);
         const method = request.method;
+        if (url.pathname === '/api/dev-servers' || url.pathname.startsWith('/api/dev-servers/')) return json(response, 200, await devServerRequest(devServers, method, url, method === 'POST' ? await body(request) : undefined));
         if (url.pathname === '/api/love-spot') {
           const value = method === 'GET' ? await loveSpot.read() : await loveSpot.save(await body(request, 64 * 1024 * 1024));
           // A drawing with screenshots can exceed the paginated chat response limit.
@@ -227,6 +230,7 @@ export async function startDesktopServer(options = {}) {
     url: `${origin}/#token=${capability}`,
     async close() {
       if (closed) return; closed = true; clearInterval(heartbeat);
+      await devServers.close();
       loveSpot.close(); for (const response of loveStreams) response.end(); loveStreams.clear();
       for (const response of listeners) response.end(); listeners.clear();
       // Quitting deletes the sidebar's deleted chats for good; what does not finish in time goes at the next start.

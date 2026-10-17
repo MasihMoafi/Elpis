@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { AnnotationDock, type AttachToChat } from "@/components/browser-annotations";
+import { DevServerPreview } from "@/components/dev-server-preview";
 import type { MenuAction } from "@/components/action-menu";
 import type { BrowserCommand, BrowserState, BrowserTab, DesktopBrowser } from "@/lib/desktop";
 
@@ -45,7 +46,7 @@ export function browserTabActions(browser: Browser, tab: BrowserTab, close: () =
 /** The page area of the side panel: address bar and the native page view placed over the viewport. `covered` hides the
  * page while something else is on top of it; `onAttach` gives annotations and screenshots to the chat's composer;
  * `imagesAllowed` is false for text-only models. */
-export function BrowserPanel({ browser, covered, onAttach, imagesAllowed = true }: { browser: Browser; covered: boolean; onAttach?: AttachToChat; imagesAllowed?: boolean }) {
+export function BrowserPanel({ browser, covered, onAttach, imagesAllowed = true, cwd = "" }: { browser: Browser; covered: boolean; onAttach?: AttachToChat; imagesAllowed?: boolean; cwd?: string }) {
   const { api, state, command } = browser;
   const [notice, setNotice] = useState("");
   const [edit, setEdit] = useState<{ tab: string; value: string } | null>(null);
@@ -89,6 +90,7 @@ export function BrowserPanel({ browser, covered, onAttach, imagesAllowed = true 
       <Button type="button" variant="ghost" size="icon-sm" className="browser-external" aria-label="Open in external browser" title="Open in external browser" disabled={!active || active.url === "about:blank"} onClick={() => void command("external")}><ExternalLink size={14} /></Button>
       <BrowserOptions browser={browser} tab={active} onNotice={setNotice} onAttach={onAttach} imagesAllowed={imagesAllowed} />
     </form>
+    <DevServerPreview key={cwd} cwd={cwd} browser={browser} />
     {state.agent && (!state.agent.enabled || state.agent.tabId) && <div role="status" className="alert flex shrink-0 items-center justify-between gap-3 border-b border-border bg-muted px-3 py-2 text-sm text-foreground">
       <span>{!state.agent.enabled ? "You have control. Agent browser access is paused." : state.agent.tabId === active?.id ? "Agent is using this tab" : `Agent is using ${state.tabs.find(tab => tab.id === state.agent?.tabId)?.title ?? "a browser tab"}`}</span>
       <Button type="button" variant="ghost" size="sm" className="btn btn-sm btn-ghost shrink-0" onClick={() => void command(state.agent?.enabled ? "agentStop" : "agentAllow")}>{state.agent.enabled ? "Take over" : "Allow agent control"}</Button>
