@@ -19,7 +19,7 @@ import { ArrowLeft } from "lucide-react";
 import { AgentsIcon, ArchiveIcon, BellIcon, BranchIcon, ContextIcon, FileEditIcon, FolderIcon, KeyboardIcon, MicIcon, PersonIcon, SettingsIcon, ThemeIcon, ToolIcon, WorkflowsIcon } from "@/components/elpis-icons";
 import { Button } from "@/components/ui/button";
 import { SearchField } from "@/components/ui/search-field";
-import { PageBoundary } from "@/components/settings/page-boundary";
+import { ViewBoundary } from "@/components/view-boundary";
 import type { Thread } from "@/lib/api";
 import { reloadSettings, settingsLoaded } from "@/lib/settings-store";
 
@@ -98,8 +98,8 @@ export function SettingsView({ initialTab = "providers", navigationKey = 0, acco
         {!shown.length && <p className="settings-nav-empty">No setting matches.</p>}
       </div>
     </nav>
-    <div className="settings-page">{visited.map(section => <div key={section} role="tabpanel" id={`settings-panel-${section}`} aria-labelledby={`settings-tab-${section}`} hidden={tab !== section}><PageBoundary>
+    <div className="settings-page">{visited.map(section => <div key={section} role="tabpanel" id={`settings-panel-${section}`} aria-labelledby={`settings-tab-${section}`} hidden={tab !== section}><ViewBoundary resetKey={navigationKey}>
       {page(section)}
-    </PageBoundary></div>)}</div>
+    </ViewBoundary></div>)}</div>
   </div>;
 }

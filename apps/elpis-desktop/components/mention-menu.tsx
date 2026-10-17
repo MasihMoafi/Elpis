@@ -23,7 +23,7 @@ export function useMentionMenu({ text, caret, cwd, threads, currentId, onPick }:
   useEffect(() => {
     if (!asking || !cwd || listing?.cwd === cwd) return;
     let current = true;
-    api<{ data: string[] }>(`/files?cwd=${encodeURIComponent(cwd)}`).then(result => current && setListing({ cwd, files: result.data }), () => current && setListing({ cwd, files: [] }));
+    api<{ data: string[] }>(`/files?cwd=${encodeURIComponent(cwd)}`).then(result => current && setListing({ cwd, files: Array.isArray(result.data) ? result.data : [] }), () => current && setListing({ cwd, files: [] }));
     return () => { current = false; };
   }, [asking, cwd, listing?.cwd]);
   const root = (cwd ?? "").replace(/\/+$/, "");

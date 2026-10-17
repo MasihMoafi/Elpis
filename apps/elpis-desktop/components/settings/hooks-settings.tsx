@@ -4,12 +4,17 @@ import { FilePathText } from "@/components/file-ref";
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
-import { api } from "@/lib/api";
+import { api, unreadable } from "@/lib/api";
 import { RefreshButton, SaveFeedback, SettingRow, SettingsEmpty, SettingsGroup, SettingsHeader, SettingsNotice } from "@/components/settings/rows";
 import { useSaver } from "@/components/settings/use-saver";
 
 type Hook = { key: string; event: string | null; handler: string | null; command: string | null; server: string | null; tool: string | null; matcher: string | null; timeoutSec: number | null; statusMessage: string | null; source: string | null; sourcePath: string | null; pluginId: string | null; enabled: boolean; managed: boolean; trust: string | null };
 type Hooks = { version: string | null; write: { available: boolean }; hooks: Hook[]; warnings: string[]; errors: { path: string | null; message: string }[] };
+
+function readHooks(data: Hooks): Hooks {
+  if (![data.hooks, data.warnings, data.errors].every(Array.isArray)) throw unreadable("hooks");
+  return data;
+}
 
 const EVENTS: Record<string, string> = {
   preToolUse: "Before a tool runs", postToolUse: "After a tool runs", permissionRequest: "Permission request", preCompact: "Before compaction", postCompact: "After compaction",
@@ -25,10 +30,10 @@ export function HooksSettings() {
   const [data, setData] = useState<Hooks | null>(null);
   const [error, setError] = useState("");
   const saver = useSaver();
-  const load = useCallback(async () => { try { setData(await api<Hooks>("/hooks")); setError(""); } catch (e) { setError(e instanceof Error ? e.message : String(e)); } }, []);
+  const load = useCallback(async () => { try { setData(readHooks(await api<Hooks>("/hooks"))); setError(""); } catch (e) { setError(e instanceof Error ? e.message : String(e)); } }, []);
   useEffect(() => { void load(); }, [load]);
   const change = (hook: Hook, body: { enabled: boolean } | { trust: true }, done: string) => void saver.run(hook.key, async () => {
-    try { setData(await api<Hooks>("/hooks", { version: data?.version, key: hook.key, ...body })); } catch (e) { await load(); throw e; }
+    try { setData(readHooks(await api<Hooks>("/hooks", { version: data?.version, key: hook.key, ...body }))); } catch (e) { await load(); throw e; }
   }, done);
   return <div aria-label="Hooks">
     <SettingsHeader title="Hooks" description="Lifecycle hooks from your Elpis config, hooks.json and enabled plugins. A hook runs only when it is on and trusted." action={<RefreshButton onClick={() => void load()} />} />

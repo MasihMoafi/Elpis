@@ -5,7 +5,7 @@ import { FileDiff, RefreshCw, Undo2 } from "lucide-react";
 import { FolderIcon } from "@/components/elpis-icons";
 import { Button } from "@/components/ui/button";
 import { AlertDialog, AlertDialogClose, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { api } from "@/lib/api";
+import { api, unreadable } from "@/lib/api";
 import { FileRefLink } from "@/components/file-ref";
 import { parseDiff } from "@/lib/diff";
 import "@/components/changes-panel.css";
@@ -60,6 +60,7 @@ export function ChangesPanel({ threadId, running }: { threadId: string | undefin
     try {
       const next = await api<ChangeList>(`${base}?view=changes`);
       if (run !== latest.current || chat.current !== threadId) return;
+      if (!Array.isArray(next.files)) throw unreadable("changes");
       setList(next); setError("");
       picked.current = next.files.find(file => file.path === picked.current)?.path ?? next.files[0]?.path ?? null;
       if (picked.current) await readDiff(picked.current); else setDiff(null);

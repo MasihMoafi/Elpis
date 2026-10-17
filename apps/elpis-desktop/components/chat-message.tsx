@@ -9,7 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { CopyButton, MarkdownText } from "@/components/markdown-text";
 import { FileRefLink, FilePathText } from "@/components/file-ref";
 import { ImageThumb, fileKind } from "@/components/file-cards";
-import { type Item, type Thread, taskFromPath, title } from "@/lib/api";
+import { unreadable, type Item, type Thread, taskFromPath, title } from "@/lib/api";
 import { inlineMediaUrl } from "@/lib/attachments";
 import { plainText } from "@/lib/message-copy";
 import { shellTokens, stepFailed, stepLabel, unwrapShell } from "@/lib/steps";
@@ -108,6 +108,7 @@ export function ChatMessage({item,speaker="Elpis",threads=[],onOpenThread,onEdit
     return <UserMessage body={content.filter(part=>part.type==="text"&&!fileAttachment(part)).map(part=>text(part.text)).join("\n")} copyText={content.map(part=>part.type==="text"?text(part.text):attachmentLabel(part)).join("\n")} attachments={attachments} attachmentContent={attachmentContent} onEdit={reason?undefined:onEdit} onRewind={onRewind} editBlockedReason={reason} editDraft={editDraft} onEditDraftChange={onEditDraftChange} editPending={editPending} time={time}/>;
   }
   if(item.type==="agentMessage"){
+    if(item.text!==undefined&&typeof item.text!=="string")throw unreadable("message");
     const actions:MessageAction[]=item.text?[copyTextAction(()=>item.text||""),copyAction("Copy reply",()=>item.text||""),...(onRegenerate?[{id:"regenerate",label:"Regenerate reply",title:"Regenerate",icon:<RefreshCw size={14}/>,run:onRegenerate}]:[]),...rewindAction(onRewind),...(onFork?[{id:"fork",label:"Fork chat from here",icon:<BranchIcon size={14}/>,run:onFork}]:[])]:[];
     return <RightClickMenu actions={menuActions(actions)} area={<article className="message agent"/>}>{speaker!=="Elpis"&&<div className="speaker">{speaker}</div>}<MarkdownText text={item.text||""}/>{actions.length>0&&<div className="message-actions"><MessageButtons actions={actions}/></div>}</RightClickMenu>;
   }

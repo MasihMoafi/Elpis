@@ -6,7 +6,7 @@ import { FileRefLink } from "@/components/file-ref";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Segmented, SettingsEmpty, SettingsNotice } from "@/components/settings/rows";
-import { api } from "@/lib/api";
+import { api, unreadable } from "@/lib/api";
 
 /** Claude's Customize page (its /customize: Skills, Plugins and Connectors, each with "Your …" and Add) over what
  * Elpis's engine has: the skills it finds for the project, the plugins installed, and the MCP servers as connectors
@@ -19,6 +19,13 @@ type Connector = { name: string; enabled: boolean; transport: "stdio" | "http" }
 type Customize = { skills: Part<Skill> & { errors?: { path: string; message: string }[] }; plugins: Part<Plugin>; connectors: Part<Connector> };
 type Section = "skills" | "plugins" | "connectors";
 
+function readCustomize(data: Customize): Customize {
+  for (const part of [data.skills, data.plugins, data.connectors]) {
+    if (!part || typeof part !== "object" || Array.isArray(part) || (part.data !== undefined && !Array.isArray(part.data))) throw unreadable("customize");
+  }
+  return data;
+}
+
 const SCOPE: Record<Skill["scope"], string> = { user: "Yours", repo: "This project", system: "Built in", admin: "Admin" };
 const message = (error: unknown) => error instanceof Error ? error.message : String(error);
 const folderOf = (path: string) => path.split("/").slice(0, -1).join("/") || "/";
@@ -27,12 +34,12 @@ export function CustomizeView({ cwd, onCreateSkill, onOpenSettings }: { cwd: str
   const [section, setSection] = useState<Section>("skills");
   const [data, setData] = useState<Customize | null>(null), [error, setError] = useState("");
   const load = useCallback(async () => {
-    try { setError(""); setData(await api<Customize>(`/customize${cwd ? `?cwd=${encodeURIComponent(cwd)}` : ""}`)); }
+    try { setError(""); setData(readCustomize(await api<Customize>(`/customize${cwd ? `?cwd=${encodeURIComponent(cwd)}` : ""}`))); }
     catch (cause) { setError(message(cause)); }
   }, [cwd]);
   useEffect(() => { void load(); }, [load]);
   const setSkill = async (skill: Skill, enabled: boolean) => {
-    try { setError(""); setData(await api<Customize>("/customize/skill", { path: skill.path, enabled, ...(cwd ? { cwd } : {}) })); }
+    try { setError(""); setData(readCustomize(await api<Customize>("/customize/skill", { path: skill.path, enabled, ...(cwd ? { cwd } : {}) }))); }
     catch (cause) { setError(message(cause)); }
   };
   const openFolder = async (folder: string) => {

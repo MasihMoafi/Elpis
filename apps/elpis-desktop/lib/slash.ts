@@ -14,7 +14,7 @@ const messageText = (item: Item) => item.type === "userMessage"
 export function lastReply(entries: Entry[]): string | null {
   for (let index = entries.length - 1; index >= 0; index--) {
     const item = entries[index].item;
-    if (item.type === "agentMessage" && item.text?.trim()) return item.text;
+    if (item.type === "agentMessage" && typeof item.text === "string" && item.text.trim()) return item.text;
   }
   return null;
 }

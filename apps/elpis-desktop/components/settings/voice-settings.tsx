@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { OptionSelect } from "@/components/ui/option-select";
-import { api } from "@/lib/api";
+import { api, unreadable } from "@/lib/api";
 import { SettingRow, SettingsActions, SettingsGroup, SettingsHeader, SettingsNotice } from "@/components/settings/rows";
 
 type Backend = "openrouter" | "codex" | "local";
@@ -13,6 +13,10 @@ type Fallback = Backend | "auto";
 type Route = { available: boolean; backend?: string; label?: string; reason?: string };
 type VoiceServer = { name: string; enabled?: boolean; whispertype?: { backend: Backend | null; model: string | null } };
 type VoiceConfig = { version: string | null; write: { available: boolean }; servers: VoiceServer[] };
+function readVoice(data: VoiceConfig): VoiceConfig {
+  if (!Array.isArray(data.servers)) throw unreadable("voice settings");
+  return data;
+}
 const message = (e: unknown) => e instanceof Error ? e.message : String(e);
 const FALLBACK_NOTE: Record<Fallback, string> = {
   auto: "Uses the ChatGPT sign-in while Elpis is signed in to ChatGPT, otherwise Local WhisperType.",
@@ -52,13 +56,13 @@ export function VoiceSettings({ onOpenMcp }: { onOpenMcp: () => void }) {
   const [error, setError] = useState("");
   const load = useCallback(async () => {
     setError("");
-    try { const [mcp, status] = await Promise.all([api<VoiceConfig>("/mcp"), api<Route>("/tools/transcription")]); setConfig(mcp); setRoute(status); }
+    try { const [mcp, status] = await Promise.all([api<VoiceConfig>("/mcp"), api<Route>("/tools/transcription")]); setConfig(readVoice(mcp)); setRoute(status); }
     catch (e) { setError(message(e)); }
   }, []);
   useEffect(() => { void load(); }, [load]);
   const server = config?.servers.find(item => item.name === "whispertype");
   async function save(body: Record<string, unknown>) {
-    try { setConfig(await api<VoiceConfig>("/mcp", { version: config?.version, name: "whispertype", ...body })); setRoute(await api<Route>("/tools/transcription")); }
+    try { setConfig(readVoice(await api<VoiceConfig>("/mcp", { version: config?.version, name: "whispertype", ...body }))); setRoute(await api<Route>("/tools/transcription")); }
     catch (e) { await load(); throw e; }
   }
   return <div aria-label="Voice">

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useSyncExternalStore } from "react";
-import { api } from "@/lib/api";
+import { api, unreadable } from "@/lib/api";
 
 // Usage as Elpis reports it from account/rateLimits/read, one provider at a time (Cloudroom's usage card).
 export type UsageWindow = { usedPercent: number | null; windowDurationMins: number | null; resetsAt: number | null };
@@ -78,11 +78,17 @@ let running: Promise<void> | null = null, queued = false, seenKey: number | null
 let retryTimer: ReturnType<typeof setTimeout> | undefined, interval: ReturnType<typeof setInterval> | undefined;
 const update = (next: Partial<UsageState>) => { usage = { ...usage, ...next }; for (const listener of listeners) listener(); };
 
+function readProviders(data: Providers): Providers {
+  if (!data.openai?.auth || !Array.isArray(data.openai.usage) || !Array.isArray(data.openrouter) ||
+      ![data.claude, data.gemini].every(part => part && Array.isArray(part.models) && Array.isArray(part.usage))) throw unreadable("accounts and usage");
+  return data;
+}
+
 function reload(): Promise<void> {
   if (running) { queued = true; return running; }
   clearTimeout(retryTimer); update({ loading: true });
   running = (async () => {
-    try { update({ data: keepReportedUsage(usage.data, await api<Providers>("/providers")), error: "" }); }
+    try { update({ data: keepReportedUsage(usage.data, readProviders(await api<Providers>("/providers"))), error: "" }); }
     catch (e) { update({ error: e instanceof Error ? e.message : String(e) }); }
     finally {
       running = null; update({ loading: false });

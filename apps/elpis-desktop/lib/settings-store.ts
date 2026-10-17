@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useSyncExternalStore } from "react";
-import { api } from "@/lib/api";
+import { api, unreadable } from "@/lib/api";
 
 /** The bridge's /settings snapshot. Every config-backed Settings page shares this one copy,
  * so a save on one page gives the others the new config version. */
@@ -33,14 +33,19 @@ const listeners = new Set<() => void>();
 const update = (next: Partial<State>) => { state = { ...state, ...next }; for (const listener of listeners) listener(); };
 const message = (error: unknown) => error instanceof Error ? error.message : String(error);
 
+function readSettings(data: ElpisSettings): ElpisSettings {
+  if (![data.main, data.background, data.smartPrune, data.memory, data.write].every(part => part && typeof part === "object" && !Array.isArray(part))) throw unreadable("settings");
+  return data;
+}
+
 export async function reloadSettings() {
   const id = ++request; update({ loading: true });
-  try { const data = await api<ElpisSettings>("/settings"); if (id === request) update({ data, error: "", loading: false }); return data; }
+  try { const data = readSettings(await api<ElpisSettings>("/settings")); if (id === request) update({ data, error: "", loading: false }); return data; }
   catch (error) { if (id === request) update({ error: message(error), loading: false }); throw error; }
 }
 /** Posts a change and adopts the snapshot the bridge returns. Errors are thrown to the caller's form. */
 export async function saveSettings(path: "/settings" | "/pruner", body: unknown) {
-  const data = await api<ElpisSettings>(path, body);
+  const data = readSettings(await api<ElpisSettings>(path, body));
   ++request; update({ data, error: "", loading: false });
   return data;
 }

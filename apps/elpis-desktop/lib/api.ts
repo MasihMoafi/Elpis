@@ -15,6 +15,11 @@ export const mediaUrl = (threadId: string, entry: Entry) => `/api/threads/${enco
 export type Model = { id: string; model: string; displayName: string; description?: string; inputModalities?: string[]; supportedReasoningEfforts?: {reasoningEffort:string;description?:string}[]; defaultReasoningEffort?: string };
 export type ProviderSettings = { version?:string|null; main:{model:string|null;provider:string|null}; providers:{id:string;displayName:string;needsKey?:boolean}[]; options?:{approvalPolicy:string|null;sandboxMode:string|null}; managed?:{modelProvider:string|null} };
 export type Approval = { id: string; ownerThreadId: string; thread?: Thread; method: string; supported?: boolean; params: import("./approvals").ElicitationParams & { permissions?: import("./approvals").RequestPermissionProfile; cwd?: string; availableDecisions?: unknown[]; threadId?: string; command?: string; reason?: string; changes?: unknown; questions?: {id:string;header:string;question:string;isSecret?:boolean;options?:{label:string;description?:string}[]}[] } };
+/** The error for a reply that is not what the app asked for (an older bridge, a proxy's page). A view checks the part it
+ * reads and throws this, so it shows the failure in its own place instead of drawing from missing data. */
+export const unreadable = (what: string) => new Error(`Elpis sent a reply the app could not read (${what}). Update Elpis and try again.`);
+/** Every bridge reply is a JSON object; anything else is refused before a view can read from it. */
+const isObject = (value: unknown): value is object => typeof value === "object" && value !== null && !Array.isArray(value);
 async function call<T>(path: string, body?: unknown): Promise<T> {
   let response: Response;
   try { response = await fetch(`/api${path}`, body === undefined ? undefined : { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }); }
@@ -26,7 +31,8 @@ async function call<T>(path: string, body?: unknown): Promise<T> {
     const fallback = unsupported ? "This action is unavailable in the connected Elpis runtime. Update Elpis and try again." : response.status >= 500 ? "Elpis is temporarily unavailable. Try again in a moment." : "Elpis could not complete this action. Try again.";
     throw new Error(detail.trim() && !/^-?\d+$/.test(detail.trim()) && !/^Elpis rejected the operation \([^)]+\)/.test(detail.trim()) ? detail : fallback);
   }
-  return result;
+  if (!isObject(result)) throw unreadable(path.split("?")[0]);
+  return result as T;
 }
 /** The page's #token is traded for a session cookie once, as the app loads, and every request waits for that, so a part
  * of the app that asks early is not refused and left empty (as the features under the message box once were). */

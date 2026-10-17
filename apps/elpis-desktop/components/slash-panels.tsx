@@ -5,7 +5,7 @@ import { ArrowLeft, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { SearchField } from "@/components/ui/search-field";
 import { Textarea } from "@/components/ui/textarea";
-import { api } from "@/lib/api";
+import { api, unreadable } from "@/lib/api";
 
 const message = (cause: unknown) => cause instanceof Error ? cause.message : String(cause);
 
@@ -106,7 +106,7 @@ export function DiffPanel({ threadId, onClose }: { threadId: string; onClose: ()
   const [result, setResult] = useState<{ diff: string; truncated: boolean } | null>(null), [error, setError] = useState("");
   useEffect(() => {
     let disposed = false;
-    api<{ diff: string; truncated: boolean }>(`/threads/${encodeURIComponent(threadId)}/git?view=diff`).then(value => { if (!disposed) setResult(value); }).catch(cause => { if (!disposed) setError(message(cause)); });
+    api<{ diff: string; truncated: boolean }>(`/threads/${encodeURIComponent(threadId)}/git?view=diff`).then(value => { if (typeof value.diff !== "string") throw unreadable("diff"); if (!disposed) setResult(value); }).catch(cause => { if (!disposed) setError(message(cause)); });
     return () => { disposed = true; };
   }, [threadId]);
   return <CommandPanel title="Changes" onClose={onClose}>

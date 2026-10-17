@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { SearchField } from "@/components/ui/search-field";
 import { SettingsEmpty, SettingsHeader, SettingsNotice } from "@/components/settings/rows";
 import { DeleteChatsDialog, ThreadActions } from "@/components/thread-actions";
-import { api, title, type Thread } from "@/lib/api";
+import { api, unreadable, title, type Thread } from "@/lib/api";
 
 type Props = { onUnarchived: (thread: Thread) => void; onDelete: (thread: Thread) => Promise<void> };
 
@@ -23,7 +23,7 @@ export function ArchivedView({ onUnarchived, onDelete }: Props) {
   const [deleting, setDeleting] = useState<Thread[] | null>(null);
   const [selectingAll, setSelectingAll] = useState(false);
   const term = search.trim(), latest = useRef(0);
-  const page = useCallback((after?: string | null) => api<Page>(`/threads?archived=true&limit=100${term ? `&searchTerm=${encodeURIComponent(term)}` : ""}${after ? `&cursor=${encodeURIComponent(after)}` : ""}`), [term]);
+  const page = useCallback(async (after?: string | null) => { const result = await api<Page>(`/threads?archived=true&limit=100${term ? `&searchTerm=${encodeURIComponent(term)}` : ""}${after ? `&cursor=${encodeURIComponent(after)}` : ""}`); if (!Array.isArray(result.data)) throw unreadable("archived conversations"); return result; }, [term]);
   const load = useCallback(async (after?: string) => {
     const request = ++latest.current;
     if (!after) setPicked([]);

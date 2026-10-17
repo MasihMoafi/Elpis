@@ -8,6 +8,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Tab, TabStrip } from "@/components/tab-strip";
 import { BrowserPanel, browserTabActions, type Browser } from "@/components/browser-panel";
 import { TerminalView, endTerminal } from "@/components/terminal-view";
+import { ViewBoundary } from "@/components/view-boundary";
 import { ChangesPanel } from "@/components/changes-panel";
 import { FilesPane } from "@/components/files-pane";
 import type { AttachToChat } from "@/components/browser-annotations";
@@ -171,13 +172,13 @@ export function SidePanel({ panel, browser, hasTerminal, dark, cwd, threadId, ru
       <Button type="button" variant="ghost" size="icon-sm" className="side-action" aria-pressed={full} aria-label={full ? "Exit full view" : "Enter full view"} title={full ? "Exit full view (Ctrl+Shift+F)" : "Full view (Ctrl+Shift+F)"} onClick={() => panel.toggleFull()}>{full ? <Minimize2 size={15} /> : <Maximize2 size={15} />}</Button>
       <Button type="button" variant="ghost" size="icon-sm" className="side-action" aria-label="Close side panel" title="Close side panel (Ctrl+`)" onClick={panel.closePanel}><X size={15} /></Button>
     </div>
-    <div className="side-body">
+    <div className="side-body"><ViewBoundary label="This panel" resetKey={`${shown?.key}:${threadId}`}>
       {shown?.kind === "terminal" && <TerminalView termKey={shown.terminal.key} cwd={shown.terminal.cwd} dark={dark} launch={launch} />}
       {shown?.kind === "changes" && <ChangesPanel threadId={threadId} running={running} />}
       {shown?.kind === "files" && <FilesPane cwd={cwd} />}
       {shown?.kind === "browser" && <BrowserPanel browser={browser} covered={covered || resizing} onAttach={onAttach} imagesAllowed={imagesAllowed} />}
       {!shown && <Empty>{kinds.map(kind => <Button key={kind.id} type="button" variant="outline" size="sm" onClick={kind.run}>{kind.icon}{kind.label}</Button>)}</Empty>}
-    </div>
+    </ViewBoundary></div>
   </section>;
 }
 
