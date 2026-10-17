@@ -1,15 +1,16 @@
 ---
 source: tui/src/chatwidget/tests/smart_prune_log.rs
-assertion_line: 112
+assertion_line: 107
 expression: detail
 ---
 / Smart Prune record/ / / / / / / / / / / / / / / / / / / / / / / / / / / / / /
-2026-10-17 19:20:00 +03:30 · Readable pruning log · turn
-6f1d2e3a-0000-7000-8000-000000000001 · gpt-6-luna (low)
+2026-10-17 19:20:00 +03:30 · Readable pruning log · Turn 6 · gpt-6-luna (low)
 
 shell: cargo test -p core
-1200 → 200 tokens · compacted: The replacement saved enough tokens.
-Compact output
+1200 → 200 tokens · compacted: Removed 4 source lines, including “test
+append_log ... ok”; “test keep_original ... ok”. Kept 0 source lines verbatim;
+results were reworded in the compact text.
+Compact output received by the main model
 2 tests passed: append_log, keep_original. No failures.
 Original output
 running 2 tests
@@ -18,15 +19,14 @@ test keep_original ... ok
 test result: ok. 2 passed; 0 failed
 
 read_file: src/app.rs
-800 → 800 tokens · kept: The pruner requested no change.
+800 → 800 tokens · kept: Pruner's reason: This is the exact entry point for the
+next edit. Retained the line “fn main() { run_app(); }”.
 Original kept; no compact version was used.
 Original output
 fn main() { run_app(); }
 
 Saved 1000 of 2000 tokens (50.0%)
-Attempt: attempt-1
-~
-~
+Chat: this-chat · Turn ID: turn-uuid-6 · Attempt: attempt-1
 ~
 ~
 ~

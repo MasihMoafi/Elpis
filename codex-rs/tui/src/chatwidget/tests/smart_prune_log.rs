@@ -9,21 +9,22 @@ fn record(id: &str, turn: &str) -> PruneLogRecord {
         thread_id: "this-chat".to_string(),
         timestamp: "2026-10-17 19:20:00 +03:30".to_string(),
         chat_title: "Readable pruning log".to_string(),
-        turn_id: turn.to_string(),
+        turn_id: format!("turn-uuid-{turn}"),
+        turn_number: turn.parse().ok(),
         model: "gpt-6-luna".to_string(),
         reasoning_effort: "low".to_string(),
         items: vec![PruneLogItem {
             description: "shell: cargo test -p core".to_string(),
             source_tokens: 1200,
             admitted_tokens: 200,
-            decision: "compacted: The replacement saved enough tokens.".to_string(),
+            decision: "compacted: Removed 4 source lines, including “test append_log ... ok”; “test keep_original ... ok”. Kept 0 source lines verbatim; results were reworded in the compact text.".to_string(),
             original: "running 2 tests\ntest append_log ... ok\ntest keep_original ... ok\ntest result: ok. 2 passed; 0 failed".to_string(),
             compact: Some("2 tests passed: append_log, keep_original. No failures.".to_string()),
         }, PruneLogItem {
             description: "read_file: src/app.rs".to_string(),
             source_tokens: 800,
             admitted_tokens: 800,
-            decision: "kept: The pruner requested no change.".to_string(),
+            decision: "kept: Pruner's reason: This is the exact entry point for the next edit. Retained the line “fn main() { run_app(); }”.".to_string(),
             original: "fn main() { run_app(); }".to_string(),
             compact: None,
         }],
@@ -50,8 +51,8 @@ async fn smart_prune_log_ignores_an_old_read_after_reopening() {
     assert!(render_bottom_popup(&chat, 80).contains("Loading"));
     chat.finish_smart_prune_log(new_request, Ok((vec![record("new", "9")], 0)));
     let screen = render_bottom_popup(&chat, 80);
-    assert!(screen.contains("turn 9"));
-    assert!(!screen.contains("turn 6"));
+    assert!(screen.contains("Turn 9"));
+    assert!(!screen.contains("Turn 6"));
 }
 
 #[tokio::test]
@@ -62,16 +63,10 @@ async fn smart_prune_log_list_and_open_record_snapshots() {
         chat.dispatch_command_with_args(SlashCommand::SmartPrune, "log".to_string(), Vec::new());
         finish_current(
             &mut chat,
-            Ok((
-                vec![
-                    record("attempt-1", "6f1d2e3a-0000-7000-8000-000000000001"),
-                    record("attempt-2", "7f1d2e3a-0000-7000-8000-000000000002"),
-                ],
-                0,
-            )),
+            Ok((vec![record("attempt-1", "6"), record("attempt-2", "7")], 0)),
         );
         let screen = render_bottom_popup(&chat, width);
-        assert!(screen.find("turn 6").unwrap() < screen.find("turn 7").unwrap());
+        assert!(screen.find("Turn 6").unwrap() < screen.find("Turn 7").unwrap());
         assert_chatwidget_snapshot!(format!("smart_prune_log_list_{width}"), screen);
 
         // Keyboard navigation really selects the older record; Enter opens its evidence.
@@ -122,13 +117,13 @@ async fn smart_prune_log_scrolls_to_older_attempts_with_real_keys() {
         .map(|i| record(&format!("attempt-{i}"), &format!("{i:02}")))
         .collect();
     finish_current(&mut chat, Ok((records, 0)));
-    assert!(render_bottom_popup(&chat, 80).contains("turn 19"));
+    assert!(render_bottom_popup(&chat, 80).contains("Turn 19"));
     for _ in 0..19 {
         chat.handle_key_event(KeyEvent::from(KeyCode::Up));
     }
     let screen = render_bottom_popup(&chat, 80);
-    assert!(screen.contains("turn 00"));
-    assert!(!screen.contains("turn 19"));
+    assert!(screen.contains("Turn 0"));
+    assert!(!screen.contains("Turn 19"));
     chat.handle_key_event(KeyEvent::from(KeyCode::Enter));
     let opened = std::iter::from_fn(|| rx.try_recv().ok())
         .find_map(|event| match event {
@@ -153,4 +148,24 @@ async fn smart_prune_log_empty_failed_and_late_reads() {
     chat.dispatch_command_with_args(SlashCommand::SmartPrune, "log".to_string(), Vec::new());
     finish_current(&mut chat, Err("permission denied".to_string()));
     assert!(render_bottom_popup(&chat, 80).contains("Cannot read pruning evidence"));
+}
+
+#[test]
+fn smart_prune_log_record_puts_turn_ids_last_and_explains_removed_text() {
+    let mut attempt = record("attempt-useful", "3");
+    attempt.turn_id = "6f1d2e3a-0000-7000-8000-000000000001".to_string();
+    attempt.items[0].decision =
+        "compacted: Removed 480 repeated test lines; kept 3 failures and the summary.".to_string();
+    let lines = super::super::smart_prune_log::record_lines(&attempt)
+        .iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>();
+    assert!(lines[0].contains("Turn 3"));
+    assert!(!lines[0].contains(&attempt.turn_id));
+    assert!(
+        lines
+            .iter()
+            .any(|line| line.contains("Removed 480 repeated test lines"))
+    );
+    assert!(lines.last().unwrap().contains(&attempt.turn_id));
 }

@@ -82,6 +82,7 @@ pub(super) struct AttemptAuditInput<'a> {
     pub(super) thread_id: Option<&'a str>,
     pub(super) chat_title: Option<&'a str>,
     pub(super) turn_id: &'a str,
+    pub(super) turn_number: Option<usize>,
     pub(super) status: AttemptStatus,
     pub(super) model_slug: &'a str,
     pub(super) reasoning_effort: &'a str,
@@ -171,6 +172,7 @@ struct AttemptRecord<'a> {
     thread_id: Option<&'a str>,
     chat_title: Option<&'a str>,
     turn_id: &'a str,
+    turn_number: Option<usize>,
     timestamp: String,
     status: AttemptStatus,
     model: &'a str,
@@ -227,6 +229,7 @@ pub(super) fn write_attempt(
             thread_id: input.thread_id,
             chat_title: input.chat_title,
             turn_id: input.turn_id,
+            turn_number: input.turn_number,
             timestamp: chrono::Utc::now().to_rfc3339(),
             status: input.status,
             model: input.model_slug,
@@ -732,6 +735,7 @@ mod tests {
             thread_id: Some("session-1"),
             chat_title: Some("Readable fixture"),
             turn_id: "turn-1",
+            turn_number: Some(3),
             status: AttemptStatus::TimedOut,
             model_slug: "gpt-5.6-luna",
             reasoning_effort: "low",
@@ -794,7 +798,7 @@ mod tests {
             timestamp.offset().local_minus_utc(),
             chrono::Local::now().offset().local_minus_utc()
         );
-        assert!(first.contains("Readable fixture · turn turn-1 · gpt-5.6-luna (low)"));
+        assert!(first.contains("Readable fixture · Turn 3 · gpt-5.6-luna (low)"));
         assert!(first.contains("shell: cargo test -p core"), "{first}");
         assert!(first.contains("| 1200 | 1200 |"), "{first}");
         assert!(
@@ -802,7 +806,11 @@ mod tests {
             "{first}"
         );
         assert!(first.contains("Saved 0 of 1200 tokens (0.0%)"), "{first}");
-        assert!(first.trim_end().ends_with("Attempt: readable-1"));
+        assert!(
+            first
+                .trim_end()
+                .ends_with("Turn ID: turn-1 · Attempt: readable-1</small>")
+        );
         let mut renamed = attempt_input("readable-2");
         renamed.chat_title = Some("Renamed chat");
         write_attempt(root.path(), renamed).unwrap();
@@ -896,10 +904,10 @@ mod tests {
             }
         });
         let log = std::fs::read_to_string(chat_markdown_path(root.path())).unwrap();
-        assert_eq!(log.matches("Readable fixture · turn").count(), 8);
+        assert_eq!(log.matches("Readable fixture · Turn 3").count(), 8);
         assert_eq!(log.matches("Attempt: parallel-").count(), 8);
         for index in 0..8 {
-            assert!(log.contains(&format!("Attempt: parallel-{index}\n\n")));
+            assert!(log.contains(&format!("Attempt: parallel-{index}</small>\n\n")));
         }
     }
 

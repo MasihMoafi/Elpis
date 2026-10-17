@@ -37,13 +37,15 @@ pub(crate) fn record_lines(record: &PruneLogRecord) -> Vec<Line<'static>> {
         lines.push(
             format!(
                 "{} → {} tokens · {}",
-                item.source_tokens, item.admitted_tokens, item.decision
+                item.source_tokens,
+                item.admitted_tokens,
+                safe_text(&item.decision)
             )
             .into(),
         );
         if let Some(compact) = &item.compact {
             lines.push(Line::styled(
-                "Compact output",
+                "Compact output received by the main model",
                 crate::style::section_style(),
             ));
             lines.extend(compact.split('\n').map(|line| Line::from(safe_text(line))));
@@ -62,7 +64,7 @@ pub(crate) fn record_lines(record: &PruneLogRecord) -> Vec<Line<'static>> {
         lines.push(Line::default());
     }
     lines.push(record.total_line().bold().into());
-    lines.push(format!("Attempt: {}", record.attempt_id).dim().into());
+    lines.push(safe_text(&record.identifiers()).dim().into());
     lines
 }
 
@@ -111,14 +113,8 @@ impl ChatWidget {
         let items = records
             .into_iter()
             .map(|record| {
-                let turn: String = record.turn_id.chars().take(8).collect();
-                let turn = if record.turn_id.chars().count() > 8 {
-                    format!("{turn}…")
-                } else {
-                    turn
-                };
                 SelectionItem {
-                    name: format!("{} · turn {turn}", record.timestamp),
+                    name: format!("{} · {}", record.timestamp, record.turn_label()),
                     search_value: Some(format!(
                         "{} {}",
                         record.heading(),

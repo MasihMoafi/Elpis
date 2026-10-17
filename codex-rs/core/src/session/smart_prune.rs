@@ -787,6 +787,45 @@ pub(crate) fn safe_failure_reason(
     })
 }
 
+fn turn_number_from_history(items: &[codex_rollout::RolloutItem], turn_id: &str) -> Option<usize> {
+    codex_app_server_protocol::build_turns_from_rollout_items(items)
+        .iter()
+        .position(|turn| turn.id == turn_id)
+        .map(|index| index + 1)
+}
+
+async fn chat_turn_number(sess: &Session, turn_id: &str) -> Option<usize> {
+    let thread = sess.services.live_thread.as_ref()?;
+    thread.flush().await.ok()?;
+    // Use persisted chat turns, not model context: compaction must not reset the count.
+    if let Ok(history) = thread.load_history(true).await {
+        return turn_number_from_history(&history.items, turn_id);
+    }
+    // Paginated stores deliberately disallow loading a full legacy history.
+    let mut cursor = None;
+    let mut offset = 0;
+    loop {
+        let page = sess
+            .services
+            .thread_store
+            .list_turns(codex_thread_store::ListTurnsParams {
+                thread_id: sess.thread_id(),
+                include_archived: true,
+                cursor,
+                page_size: 100,
+                sort_direction: codex_thread_store::SortDirection::Asc,
+                items_view: codex_thread_store::StoredTurnItemsView::NotLoaded,
+            })
+            .await
+            .ok()?;
+        if let Some(index) = page.turns.iter().position(|turn| turn.turn_id == turn_id) {
+            return Some(offset + index + 1);
+        }
+        offset += page.turns.len();
+        cursor = Some(page.next_cursor?);
+    }
+}
+
 async fn record_attempt(sess: &Session, outcome: AttemptOutcome<'_>) {
     let elapsed_ms = u64::try_from(outcome.latency.as_millis()).unwrap_or(u64::MAX);
     let log_dir = sess.smart_prune_log_dir().await;
@@ -809,6 +848,7 @@ async fn record_attempt(sess: &Session, outcome: AttemptOutcome<'_>) {
     }
     .or(configured_title)
     .unwrap_or_else(|| "Untitled chat".to_string());
+    let turn_number = chat_turn_number(sess, outcome.turn_id).await;
     let audit_path = match smart_prune_audit::write_attempt(
         &log_dir,
         smart_prune_audit::AttemptAuditInput {
@@ -817,6 +857,7 @@ async fn record_attempt(sess: &Session, outcome: AttemptOutcome<'_>) {
             thread_id: Some(&thread_id),
             chat_title: Some(&chat_title),
             turn_id: outcome.turn_id,
+            turn_number,
             status: outcome.status,
             model_slug: outcome.model_slug,
             reasoning_effort: SMART_PRUNE_REASONING_EFFORT.as_str(),
@@ -1842,5 +1883,46 @@ mod tests {
             },
         )];
         assert!(select_candidates(&pending, &HashSet::new()).is_empty());
+    }
+}
+
+#[cfg(test)]
+mod log_turn_number_tests {
+    use super::turn_number_from_history;
+    use codex_protocol::protocol::EventMsg;
+    use codex_protocol::protocol::ThreadRolledBackEvent;
+    use codex_rollout::RolloutItem;
+    use serde_json::json;
+
+    fn started(id: &str) -> RolloutItem {
+        RolloutItem::EventMsg(EventMsg::TurnStarted(
+            serde_json::from_value(json!({
+                "turn_id": id, "model_context_window": null
+            }))
+            .unwrap(),
+        ))
+    }
+
+    #[test]
+    fn chat_turn_number_survives_compaction_and_follows_chat_rollback() {
+        let mut history = vec![started("first"), started("second")];
+        history.push(RolloutItem::Compacted(
+            serde_json::from_value(json!({
+                "message": "compacted context", "replacement_history": []
+            }))
+            .unwrap(),
+        ));
+        history.push(started("third"));
+        assert_eq!(turn_number_from_history(&history, "third"), Some(3));
+        assert_eq!(turn_number_from_history(&history, "missing"), None);
+        history.push(RolloutItem::EventMsg(EventMsg::ThreadRolledBack(
+            ThreadRolledBackEvent { num_turns: 1 },
+        )));
+        history.push(started("replacement-third"));
+        assert_eq!(
+            turn_number_from_history(&history, "replacement-third"),
+            Some(3)
+        );
+        assert_eq!(turn_number_from_history(&history, "third"), None);
     }
 }

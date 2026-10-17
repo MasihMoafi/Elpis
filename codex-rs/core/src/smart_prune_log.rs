@@ -11,6 +11,8 @@ use serde_json::Value;
 
 use crate::session::smart_prune_audit::AttemptStatus;
 use crate::smart_prune::AdmissionDecision;
+use crate::smart_prune::MIN_SAVED_TOKENS;
+use crate::smart_prune::MIN_SAVINGS_PERCENT;
 use crate::smart_prune::parse_decision_manifest;
 use crate::smart_prune::textual_tool_output;
 
@@ -31,6 +33,7 @@ pub struct PruneLogRecord {
     pub timestamp: String,
     pub chat_title: String,
     pub turn_id: String,
+    pub turn_number: Option<usize>,
     pub model: String,
     pub reasoning_effort: String,
     pub items: Vec<PruneLogItem>,
@@ -70,12 +73,26 @@ impl PruneLogRecord {
         format!("Saved {saved} of {before} tokens ({share:.1}%)")
     }
 
+    pub fn turn_label(&self) -> String {
+        self.turn_number.map_or_else(
+            || "Turn number unavailable".to_string(),
+            |number| format!("Turn {number}"),
+        )
+    }
+
+    pub fn identifiers(&self) -> String {
+        format!(
+            "Chat: {} · Turn ID: {} · Attempt: {}",
+            self.thread_id, self.turn_id, self.attempt_id
+        )
+    }
+
     pub fn heading(&self) -> String {
         format!(
-            "{} · {} · turn {} · {} ({})",
+            "{} · {} · {} · {} ({})",
             self.timestamp,
             one_line(&self.chat_title),
-            one_line(&self.turn_id),
+            self.turn_label(),
             one_line(&self.model),
             one_line(&self.reasoning_effort)
         )
@@ -102,9 +119,125 @@ impl PruneLogRecord {
             lines.push(markdown_text(note));
         }
         lines.push(self.total_line());
-        lines.push(format!("Attempt: {}", self.attempt_id));
+        lines.push(String::new());
+        for item in &self.items {
+            lines.push(format!("### {}", markdown_text(&item.description)));
+            lines.push(String::new());
+            if let Some(compact) = &item.compact {
+                lines.push("Compact output received by the main model:".to_string());
+                lines.push(String::new());
+                lines.push(fenced_output(compact));
+            } else {
+                lines.push("The main model received the original output unchanged.".to_string());
+            }
+            lines.push(String::new());
+            lines.push("<details>".to_string());
+            lines.push("<summary>Original output (expand to compare)</summary>".to_string());
+            lines.push(String::new());
+            lines.push(fenced_output(&item.original));
+            lines.push(String::new());
+            lines.push("</details>".to_string());
+            lines.push(String::new());
+        }
+        let ids = self
+            .identifiers()
+            .replace('&', "&amp;")
+            .replace('<', "&lt;")
+            .replace('>', "&gt;");
+        lines.push(format!("<small>{ids}</small>"));
         format!("{}\n\n", lines.join("\n"))
     }
+}
+
+// A tool result can itself contain Markdown fences and HTML. Keep its exact text
+// inside a fence longer than every run of backticks in that result.
+fn fenced_output(text: &str) -> String {
+    let longest = text.split(|ch| ch != '`').map(str::len).max().unwrap_or(0);
+    let fence = "`".repeat(3.max(longest + 1));
+    format!(
+        "{fence}text\n{text}{}{fence}",
+        if text.ends_with('\n') { "" } else { "\n" }
+    )
+}
+
+fn examples(lines: &[&str]) -> String {
+    // Prefer the repeated content and the final fact over shell wrapper lines.
+    let mut counts = std::collections::HashMap::<&str, usize>::new();
+    let mut common = None;
+    let mut most = 0;
+    for &line in lines.iter().filter(|line| !line.trim().is_empty()) {
+        let count = counts.entry(line).or_default();
+        *count += 1;
+        if *count > most {
+            most = *count;
+            common = Some(line);
+        }
+    }
+    let last = lines
+        .iter()
+        .rev()
+        .copied()
+        .find(|line| !line.trim().is_empty() && Some(*line) != common);
+    [common, last]
+        .into_iter()
+        .flatten()
+        .map(|line| {
+            let brief = one_line(line).chars().take(100).collect::<String>();
+            format!(
+                "“{brief}{}”",
+                if line.chars().count() > 100 {
+                    "…"
+                } else {
+                    ""
+                }
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("; ")
+}
+
+// Describe verifiable text changes rather than trusting a model's account of
+// what it kept. Count occurrences so collapsing repeated lines is visible too.
+fn removal_description(original: &str, compact: &str) -> String {
+    let mut remaining = std::collections::HashMap::<&str, usize>::new();
+    for line in compact.lines() {
+        *remaining.entry(line).or_default() += 1;
+    }
+    let mut removed = Vec::new();
+    let mut kept = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    let mut repeats = 0;
+    for line in original.lines() {
+        let repeated = !seen.insert(line);
+        match remaining.get_mut(line) {
+            Some(count) if *count > 0 => {
+                *count -= 1;
+                kept.push(line);
+            }
+            _ => {
+                removed.push(line);
+                repeats += usize::from(repeated);
+            }
+        }
+    }
+    let repetition = if repeats > 0 {
+        format!(" ({repeats} repeated copies)")
+    } else {
+        String::new()
+    };
+    let mut description = format!(
+        "compacted: Removed {} source lines{repetition}",
+        removed.len()
+    );
+    if !removed.is_empty() {
+        description.push_str(&format!(", including {}", examples(&removed)));
+    }
+    description.push_str(&format!(". Kept {} source lines verbatim", kept.len()));
+    if !kept.is_empty() {
+        description.push_str(&format!(", including {}", examples(&kept)));
+    }
+    description.push_str(". Reworded lines count as removed; compare the compact text below.");
+    description
 }
 
 fn markdown_text(text: &str) -> String {
@@ -139,6 +272,8 @@ struct Attempt {
     #[serde(default)]
     chat_title: Option<String>,
     turn_id: String,
+    #[serde(default)]
+    turn_number: Option<usize>,
     model: String,
     reasoning_effort: String,
     status: AttemptStatus,
@@ -299,6 +434,7 @@ fn project_attempt(log_dir: &Path, attempt: Attempt) -> Result<PruneLogRecord> {
         timestamp,
         chat_title: title,
         turn_id: attempt.turn_id,
+        turn_number: attempt.turn_number.filter(|number| *number > 0),
         model: attempt.model,
         reasoning_effort: attempt.reasoning_effort,
         items: Vec::new(),
@@ -329,6 +465,10 @@ fn project_attempt(log_dir: &Path, attempt: Attempt) -> Result<PruneLogRecord> {
         .iter()
         .map(|item| item.call_id.as_str())
         .collect::<Vec<_>>();
+    let response = attempt
+        .raw_response
+        .as_deref()
+        .and_then(|raw| serde_json::from_str::<Value>(raw).ok());
     let decisions = attempt
         .raw_response
         .as_deref()
@@ -353,11 +493,25 @@ fn project_attempt(log_dir: &Path, attempt: Attempt) -> Result<PruneLogRecord> {
                 .iter()
                 .find(|item| item.call_id() == candidate.call_id)
         }) {
-            Some(AdmissionDecision::Unchanged { .. }) => "kept: The pruner requested no change.",
-            Some(AdmissionDecision::Compact { .. }) => {
-                "kept: The replacement did not save enough tokens."
-            }
-            None => "kept: No usable replacement was recorded.",
+            Some(AdmissionDecision::Unchanged { .. }) => response
+                .as_ref()
+                .and_then(|response| response.get("items").and_then(Value::as_array))
+                .and_then(|items| {
+                    items.iter().find(|item| {
+                        item.get("call_id").and_then(Value::as_str)
+                            == Some(candidate.call_id.as_str())
+                    })
+                })
+                .and_then(|item| item.get("reason").and_then(Value::as_str))
+                .filter(|reason| !reason.trim().is_empty())
+                .map(|reason| format!("kept: Pruner's reason: {}", one_line(reason.trim())))
+                .unwrap_or_else(|| {
+                    "kept: No reason was recorded; the original was retained.".to_string()
+                }),
+            Some(AdmissionDecision::Compact { .. }) => format!(
+                "kept: The replacement saved fewer than {MIN_SAVED_TOKENS} tokens or {MIN_SAVINGS_PERCENT}% after its audit header."
+            ),
+            None => "kept: No usable replacement was recorded.".to_string(),
         };
         let mut item = PruneLogItem {
             description: tool_description(candidate.invocation.as_ref()),
@@ -365,12 +519,20 @@ fn project_attempt(log_dir: &Path, attempt: Attempt) -> Result<PruneLogRecord> {
             admitted_tokens: candidate.source_tokens_estimate,
             decision: failure
                 .map(|why| format!("failed: {why} Original kept."))
-                .unwrap_or_else(|| kept_reason.to_string()),
+                .unwrap_or(kept_reason),
             original: textual_tool_output(&candidate.source_output)
                 .map(|(_, text)| text.into_owned())
                 .unwrap_or_else(|| "Non-text output".to_string()),
             compact: None,
         };
+        if failure.is_none() {
+            let lines = item.original.lines().collect::<Vec<_>>();
+            item.decision.push_str(&format!(
+                " Retained all {} source lines, including {}.",
+                lines.len(),
+                examples(&lines)
+            ));
+        }
         if let Some(admitted) = manifest
             .as_ref()
             .and_then(|m| m.items.iter().find(|i| i.call_id == candidate.call_id))
@@ -386,7 +548,8 @@ fn project_attempt(log_dir: &Path, attempt: Attempt) -> Result<PruneLogRecord> {
             item.source_tokens = admitted.source_tokens;
             item.admitted_tokens = admitted.admitted_tokens;
             item.compact = Some(text.into_owned());
-            item.decision = "compacted: The replacement saved enough tokens.".to_string();
+            item.decision =
+                removal_description(&item.original, item.compact.as_deref().unwrap_or_default());
         }
         record.items.push(item);
     }
@@ -471,6 +634,136 @@ mod tests {
     }
 
     #[test]
+    fn useful_record_names_the_chat_turn_and_shows_the_actual_comparison() {
+        let root = tempfile::tempdir().unwrap();
+        fixture(root.path(), "useful", "chat-1", "admitted");
+        let path = root.path().join("smart-prune/attempts/useful.json");
+        let mut attempt: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        attempt["turn_id"] = json!("6f1d2e3a-0000-7000-8000-000000000001");
+        attempt["turn_number"] = json!(3);
+        let mut input: Value = serde_json::from_str(attempt["input"].as_str().unwrap()).unwrap();
+        let kept = "FAIL parser\nFAIL writer\nFAIL reader\n3 failed; 480 passed";
+        input["items"][0]["source_output"]["output"] =
+            json!(format!("{}{}", "test routine ... ok\n".repeat(480), kept));
+        attempt["input"] = json!(input.to_string());
+        std::fs::write(path, attempt.to_string()).unwrap();
+        let compact_path = root
+            .path()
+            .join("smart-prune/admissions/admission-1/items/compact.json");
+        std::fs::write(
+            compact_path,
+            json!({"type":"function_call_output", "call_id":"shell-1", "output":kept}).to_string(),
+        )
+        .unwrap();
+        let record = read_attempt(root.path(), "useful").unwrap();
+        let md = record.readable();
+        let heading = md.lines().next().unwrap();
+        assert!(heading.contains("Turn 3"), "{heading}");
+        assert!(heading.contains("Prune log fixture"));
+        assert!(!heading.contains(&record.turn_id));
+        assert!(record.items[0].decision.contains("480 source lines"));
+        assert!(record.items[0].decision.contains("479 repeated"));
+        assert!(record.items[0].decision.contains("test routine ... ok"));
+        assert!(record.items[0].decision.contains("4 source lines verbatim"));
+        assert!(record.items[0].decision.contains("FAIL parser"));
+        assert!(md.contains("Compact output received by the main model"));
+        assert!(md.contains(&format!("```text\n{kept}\n```")));
+        assert!(md.contains("<details>\n<summary>Original output"));
+        assert!(md.contains("test routine ... ok\ntest routine ... ok"));
+        assert!(md.contains("</details>"));
+        assert!(
+            md.lines()
+                .rev()
+                .find(|line| !line.is_empty())
+                .unwrap()
+                .contains(&record.turn_id)
+        );
+    }
+
+    #[test]
+    fn output_cannot_close_its_code_fence_or_original_disclosure() {
+        let root = tempfile::tempdir().unwrap();
+        fixture(root.path(), "fences", "chat-1", "admitted");
+        let mut record = read_attempt(root.path(), "fences").unwrap();
+        record.items[0].original = "```\n</details>\n<script>bad()</script>".to_string();
+        record.items[0].compact = Some("```\n# output, not a heading".to_string());
+        let md = record.readable();
+        assert!(md.contains("````text\n```\n# output, not a heading\n````"));
+        assert!(md.contains("````text\n```\n</details>\n<script>bad()</script>\n````"));
+        assert_eq!(md.matches("<summary>Original output").count(), 2);
+    }
+
+    #[test]
+    fn legacy_turn_ids_are_never_presented_as_chat_numbers() {
+        let root = tempfile::tempdir().unwrap();
+        fixture(root.path(), "legacy", "chat-1", "unchanged");
+        let record = read_attempt(root.path(), "legacy").unwrap();
+        assert!(record.heading().contains("Turn number unavailable"));
+        assert!(record.identifiers().contains("Turn ID: 7"));
+    }
+
+    #[test]
+    fn comparison_counts_repetition_without_claiming_semantic_preservation() {
+        let description =
+            removal_description("repeat\nrepeat\nimportant fact", "repeat\nreworded fact");
+        assert!(description.contains("Removed 2 source lines"));
+        assert!(description.contains("important fact"));
+        assert!(description.contains("Kept 1 source lines verbatim"));
+        assert!(description.contains("Reworded lines count as removed"));
+        assert!(
+            removal_description("repeat\nrepeat\nrepeat", "repeat").contains("2 repeated copies")
+        );
+    }
+
+    #[test]
+    fn examples_show_repeated_content_and_the_final_fact_instead_of_shell_wrappers() {
+        let original = format!(
+            "Script completed\nWall time 0.1 seconds\nOutput:\n\n{}3 failed; 480 passed",
+            "test routine ... ok\n".repeat(480)
+        );
+        let description = removal_description(&original, "Three tests failed.");
+        assert!(description.contains("including “test routine ... ok”; “3 failed; 480 passed”"));
+        assert!(!description.contains("including “Script completed”"));
+    }
+
+    #[test]
+    fn kept_result_reports_the_recorded_content_specific_reason() {
+        let root = tempfile::tempdir().unwrap();
+        fixture(root.path(), "reason", "chat-1", "unchanged");
+        let path = root.path().join("smart-prune/attempts/reason.json");
+        let mut attempt: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        let reason =
+            "This is the only exact entry point; changing it would hide the call to run_app.";
+        attempt["raw_response"] = json!(json!({"items":[
+            {"call_id":"shell-1","decision":"unchanged","content":null,"reason":"The complete failure text must remain exact."},
+            {"call_id":"read-1","decision":"unchanged","content":null,"reason":reason}
+        ]}).to_string());
+        std::fs::write(path, attempt.to_string()).unwrap();
+        let record = read_attempt(root.path(), "reason").unwrap();
+        assert!(
+            record.items[1].decision.contains(reason),
+            "{}",
+            record.items[1].decision
+        );
+        assert!(record.items[1].decision.contains("Pruner's reason:"));
+        assert!(record.items[1].compact.is_none());
+        assert_eq!(record.saved_tokens(), 0);
+    }
+
+    #[test]
+    fn unchanged_response_schema_requests_a_content_specific_reason() {
+        let schema = crate::smart_prune::decision_manifest_schema();
+        let unchanged = &schema["properties"]["items"]["items"]["anyOf"][1];
+        assert!(
+            unchanged["required"]
+                .as_array()
+                .unwrap()
+                .contains(&json!("reason"))
+        );
+        assert_eq!(unchanged["properties"]["reason"]["type"], "string");
+    }
+
+    #[test]
     fn mixed_attempt_uses_admitted_numbers_and_preserves_both_outputs() {
         let root = tempfile::tempdir().unwrap();
         fixture(root.path(), "one", "chat-1", "admitted");
@@ -527,11 +820,11 @@ mod tests {
         let record = read_attempt(root.path(), "one").unwrap();
         assert_eq!(
             record.items[0].decision,
-            "kept: The replacement did not save enough tokens."
+            "kept: The replacement saved fewer than 256 tokens or 20% after its audit header. Retained all 2 source lines, including “EXACT ORIGINAL”; “with final fact”."
         );
         assert_eq!(
             record.items[1].decision,
-            "kept: The pruner requested no change."
+            "kept: No reason was recorded; the original was retained. Retained all 1 source lines, including “KEPT ORIGINAL”."
         );
         assert_eq!(record.saved_tokens(), 0);
     }
