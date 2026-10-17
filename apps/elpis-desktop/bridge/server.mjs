@@ -4,6 +4,7 @@ import path from 'node:path';
 import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { BridgeError, DesktopClient, object } from './client.mjs';
+import { listFolders } from './folders.mjs';
 import { createTools } from './tools.mjs';
 import { createTranscription } from './transcription.mjs';
 import { ATTACHMENT_BODY_LIMIT, AttachmentError, extractPdf } from './attachments.mjs';
@@ -102,6 +103,10 @@ export async function startDesktopServer(options = {}) {
           request.on('close', () => listeners.delete(response)); return;
         }
         if (url.pathname === '/api/models' && method === 'GET') return json(response, 200, await client.models(pageQuery(url, false, true)));
+        if (url.pathname === '/api/folders' && method === 'GET') {
+          if ([...url.searchParams.keys()].some(key => key !== 'cwd') || url.searchParams.getAll('cwd').length !== 1) throw new BridgeError('Provide exactly one cwd');
+          return json(response, 200, await listFolders(url.searchParams.get('cwd')));
+        }
         if (url.pathname === '/api/settings' && method === 'GET') return json(response, 200, await client.settings());
         if (url.pathname === '/api/settings' && method === 'POST') return json(response, 200, await client.saveSettings(await body(request)));
         if (url.pathname === '/api/pruner' && method === 'POST') return json(response, 200, await client.savePruner(await body(request)));
