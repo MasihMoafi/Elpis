@@ -8,7 +8,7 @@ const http = require('node:http');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { chromium } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright');
-const { oranges } = require('./controls.cjs');
+const { guardDesktopStore, oranges } = require('./controls.cjs');
 const { fakeDesktop } = require('./fake-desktop.cjs');
 const root = path.resolve(__dirname, '../out');
 const shots = process.env.ELPIS_FULLVIEW_SHOTS;
@@ -50,6 +50,7 @@ async function fixture(run, { width = 1320, height = 860, colorScheme = 'light' 
   try {
     const page = await browser.newPage({ viewport: { width, height }, colorScheme }); page.setDefaultTimeout(6000);
     const errors = []; page.on('pageerror', error => errors.push(error.message));
+    await guardDesktopStore(page);
     await page.addInitScript(fakeDesktop, { tabs: [{ url: 'https://example.com/docs', title: 'Example docs', security: 'secure', canGoBack: true }] });
     await page.goto(`http://127.0.0.1:${server.address().port}/#token=fixture`);
     await page.locator('.thread-row[data-thread-id="chat-one"] .thread-link').waitFor();
