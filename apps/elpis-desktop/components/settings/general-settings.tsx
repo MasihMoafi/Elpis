@@ -9,6 +9,7 @@ import { editable, reloadSettings, saveOptions } from "@/lib/settings-store";
 import { Choice, SaveFeedback, Segmented, SettingRow, SettingsGroup, SettingsHeader, SettingsNotice } from "@/components/settings/rows";
 import { useSaver } from "@/components/settings/use-saver";
 import { ConfigChoice, SettingsLoader } from "@/components/settings/config-choice";
+import { SystemSettings } from "@/components/settings/system-settings";
 
 const message = (error: unknown) => error instanceof Error ? error.message : String(error);
 
@@ -80,5 +81,6 @@ export function GeneralSettings() {
         <Switch aria-label="Show context window usage" checked={preferences.showContextUsage} onCheckedChange={showContextUsage => save({ showContextUsage })} />
       </SettingRow>
     </SettingsGroup>
+    <SystemSettings preferences={preferences} save={save} />
   </div>;
 }

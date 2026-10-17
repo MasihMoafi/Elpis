@@ -2,7 +2,9 @@
 // reload keeps what the desktop store would), the browser (what Electron's main process does with new, select, hide and
 // close; every layout message the page sends for the native view lands in window.__layouts) and a shell per terminal tab.
 // Use it as `page.addInitScript(fakeDesktop, { tabs })`; `tabs` are pages the browser already holds (hidden until selected).
-function fakeDesktop({ tabs: initial = [] } = {}) {
+// Quick Entry and the tray (desktop/main.cjs): window.__newChat(text) hands the page a new chat as the main process does;
+// the shortcut starts as `quickEntry` says, records each change in window.__shortcuts and refuses `quickEntry.refuse`.
+function fakeDesktop({ tabs: initial = [], quickEntry: quick = {} } = {}) {
   const calls = window.__terminal = { open: [], closed: [], tui: [], input: [], resize: [] }, commands = window.__commands = [];
   window.__layouts = [];
   let data = () => {}, sessions = 0, pages = 0;
@@ -19,7 +21,18 @@ function fakeDesktop({ tabs: initial = [] } = {}) {
     close: args => { const tabs = state.tabs.filter(tab => tab.id !== args.id); push({ tabs, activeId: tabs.at(-1)?.id ?? null, visible: tabs.length > 0 && state.visible }); },
   };
   const shellFor = key => shells[key] ? { ...shells[key], shell: 'bash', output: '', exited: null } : (shells[key] = { id: ++sessions, end: 0 }, { id: sessions, end: 0, shell: 'bash', output: '', exited: null });
+  const { refuse = [], ...status } = { supported: true, shortcut: 'Ctrl+Alt+Space', problem: null, ...quick }, changes = window.__shortcuts = [];
   window.elpisDesktop = {
+    onNewChat: callback => { window.__newChat = callback; return () => { window.__newChat = undefined; }; },
+    quickEntry: {
+      status: async () => ({ ...status }),
+      setShortcut: async accelerator => {
+        changes.push(accelerator);
+        if (refuse.includes(accelerator)) throw Error('This shortcut is already in use by another app. Try a different combination.');
+        Object.assign(status, { shortcut: accelerator, problem: null });
+        return { shortcut: accelerator };
+      },
+    },
     storage: { getItem: key => localStorage.getItem(key), setItem: (key, value) => localStorage.setItem(key, String(value)), removeItem: key => localStorage.removeItem(key), onError: () => () => {} },
     browser: {
       command: async (action, args = {}) => { commands.push({ action, ...args }); handlers[action]?.(args); return JSON.parse(JSON.stringify(state)); },

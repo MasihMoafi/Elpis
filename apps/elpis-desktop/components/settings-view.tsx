@@ -25,7 +25,7 @@ import { reloadSettings, settingsLoaded } from "@/lib/settings-store";
 
 /** The ChatGPT app's settings sidebar: grouped sections with icons, and words each section answers to in search. */
 const TABS = [
-  { id: "general", label: "General", group: "Personal", Icon: SettingsIcon, words: "default folder close window speed send shortcut follow-up queue steer context" },
+  { id: "general", label: "General", group: "Personal", Icon: SettingsIcon, words: "default folder close window speed send shortcut follow-up queue steer context system tray quick entry global hotkey" },
   { id: "notifications", label: "Notifications", group: "Personal", Icon: BellIcon, words: "alerts sound turn approval question" },
   { id: "appearance", label: "Appearance", group: "Personal", Icon: ThemeIcon, words: "theme dark light system colour color" },
   { id: "shortcuts", label: "Keyboard shortcuts", group: "Personal", Icon: KeyboardIcon, words: "keys hotkeys" },

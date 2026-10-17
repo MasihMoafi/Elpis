@@ -4,13 +4,18 @@ import { useEffect, useSyncExternalStore } from "react";
 import { appStorage } from "@/lib/projects";
 
 /** Desktop-local preferences from Settings → General and Notifications, saved on this device
- * (desktop workspace store, or localStorage in a browser). desktop/preferences.cjs reads confirmClose. */
+ * (desktop workspace store, or localStorage in a browser). desktop/preferences.cjs reads confirmClose, closeToTray and
+ * quickEntryShortcut. */
 export type Preferences = {
   defaultFolder: string;
   sendShortcut: "enter" | "modEnter";
   followUp: "steer" | "queue";
   showContextUsage: boolean;
   confirmClose: boolean;
+  /** Closing the window keeps Elpis in the system tray. Off by default: nothing runs after the window closes unless chosen. */
+  closeToTray: boolean;
+  /** The global shortcut that opens Quick Entry, as an Electron accelerator; empty when turned off. Claude's Linux default. */
+  quickEntryShortcut: string;
   /** Off after "Don’t show me this again" in the delete confirmation; Settings → General turns it back on. */
   confirmDeleteChats: boolean;
   turnNotifications: "never" | "unfocused" | "always";
@@ -18,7 +23,7 @@ export type Preferences = {
   notificationSound: boolean;
 };
 export const DEFAULT_PREFERENCES: Preferences = {
-  defaultFolder: "", sendShortcut: "enter", followUp: "steer", showContextUsage: true, confirmClose: false, confirmDeleteChats: true,
+  defaultFolder: "", sendShortcut: "enter", followUp: "steer", showContextUsage: true, confirmClose: false, closeToTray: false, quickEntryShortcut: "Ctrl+Alt+Space", confirmDeleteChats: true,
   turnNotifications: "unfocused", inputNotifications: true, notificationSound: false,
 };
 export const PREFERENCES_KEY = "elpis-preferences-v1";
