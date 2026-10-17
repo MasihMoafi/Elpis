@@ -645,6 +645,7 @@ export default function Home() {
   const turnEffort = selected ? pending?.effort ?? selected.reasoningEffort ?? "" : effort;
   const knownModel = (selected ? selectedChoice?.models : newChoice?.models)?.find(item => item.model === (turnModel || providerSettings?.main.model));
   const imageBlocked = attachments.some(part => part.type === "image") && !!knownModel?.inputModalities && !knownModel.inputModalities.includes("image");
+  const composerNotice = [fileNotice, imageBlocked ? TEXT_ONLY_NOTICE : ""].filter(Boolean).join("\n");
   const sendBlocked = (!text.trim() && !attachments.length) || busy || dictating || attaching || imageBlocked || !ready || !connected || (needsModelId && !model.trim());
   const recoveryAttachments = selected ? attachmentDrafts.current[`recovery-${selected.id}`] ?? [] : [];
 
@@ -654,7 +655,6 @@ export default function Home() {
   useEffect(() => { updateTabs(renameTabs(tabsRef.current, id => { const thread = find(id); return thread ? title(thread) : undefined; })); }, [threads, related]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { const store = window.elpisDesktop?.storage; if (tabsRestored && store && !writeTabs(tabs, store)) setError("Could not save the open chat tabs on this device."); }, [tabs, tabsRestored]);
   // Back and forward: each place reached (a chat, a new chat, a page) joins the stack; the first one only starts it.
-  const composerNotice = [fileNotice, imageBlocked ? TEXT_ONLY_NOTICE : ""].filter(Boolean).join("\n");
   useEffect(() => {
     if (!ready) return;
     const place = { view, threadId: view === "chat" ? selected?.id ?? null : null };
