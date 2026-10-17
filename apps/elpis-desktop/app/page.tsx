@@ -50,7 +50,7 @@ import { ATTACHMENT_ACCEPT, attachmentFromFile, readAttachmentDraft, validateAtt
 import { scanDeletionThreads } from "@/lib/thread-deletion";
 import type { ThemeChoice } from "@/components/appearance-settings";
 import { activityOf, api, chatProvider, choiceOf, effortsOf, isAgent, isUnlinkedAgent, modelLabel, providerChoices, providerLabel, title,
-  type Approval, type Entry, type Model, type ProviderSettings, type Thread } from "@/lib/api";
+  openSession, type Approval, type Entry, type Model, type ProviderSettings, type Thread } from "@/lib/api";
 
 const approvalDraftKey = (approval: Approval) => JSON.stringify([approval.ownerThreadId, approval.id]);
 
@@ -415,7 +415,7 @@ export default function Home() {
     async function initialize() {
       try {
         const token = new URLSearchParams(location.hash.slice(1)).get("token");
-        if (token) { await api("/session", { token }); history.replaceState(null, "", location.pathname + location.search); }
+        try { if (token) { await api("/session", { token }); history.replaceState(null, "", location.pathname + location.search); } } finally { openSession(); }
         const health = await api<{ connected: boolean }>("/health"); if (disposed) return; wasConnected = health.connected; setConnected(health.connected);
         void refreshModels();
         await refreshThreads();

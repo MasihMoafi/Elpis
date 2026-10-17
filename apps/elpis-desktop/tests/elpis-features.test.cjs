@@ -41,10 +41,14 @@ const oranges = page => page.evaluate(() => {
 test('the main chat shows Elpis features under the message box, one click each, and light mode has no orange', async () => {
   const thread = { id: 'ledger', name: 'Ledger chat', cwd: '/tmp/demo', model: 'sol', modelProvider: 'openai', status: { type: 'idle' }, desktopAccess: { writable: true, mode: 'direct' } };
   const switches = { version: 'v1', write: { available: true }, smartPrune: true, subagents: true, rag: false }, saved = [];
+  // As the bridge does: every /api request is refused until the page trades its #token for a session.
+  let session = false; const refused = [];
   const ledger = { used: 50000, window: 200000, categories: [['userMessages', 980], ['toolCalls', 490], ['toolResults', 26471], ['systemInstructions', 7843]].map(([id, tokens]) => ({ id, label: id, tokens })) };
   const server = http.createServer(async (req, res) => {
     const url = new URL(req.url, 'http://local'); let raw = ''; for await (const chunk of req) raw += chunk;
     const json = value => { res.setHeader('content-type', 'application/json'); res.end(JSON.stringify(value)); };
+    if (url.pathname === '/api/session' && req.method === 'POST') { session = JSON.parse(raw).token === 'fixture'; return json({ authenticated: session }); }
+    if (url.pathname.startsWith('/api/') && !session) { refused.push(url.pathname); res.statusCode = 401; return json({ error: 'Not signed in' }); }
     if (url.pathname === '/api/events') { res.writeHead(200, { 'content-type': 'text/event-stream' }); res.write('event: connection\ndata: {"connected":true}\n\n'); return; }
     if (url.pathname === '/api/session') return json({ authenticated: true });
     if (url.pathname === '/api/health') return json({ connected: true });
@@ -66,7 +70,7 @@ test('the main chat shows Elpis features under the message box, one click each, 
   try {
     const page = await browser.newPage({ viewport: { width: 1320, height: 900 }, colorScheme: 'light' }); page.setDefaultTimeout(6000);
     const errors = []; page.on('pageerror', error => errors.push(error.message));
-    await page.goto(`http://127.0.0.1:${server.address().port}`);
+    await page.goto(`http://127.0.0.1:${server.address().port}/#token=fixture`);
     const features = page.getByRole('group', { name: 'Elpis features', exact: true });
     const chip = label => features.getByRole('button', { name: label, exact: true });
 
@@ -100,6 +104,7 @@ test('the main chat shows Elpis features under the message box, one click each, 
     assert.ok((await hueOf()) >= 55 && (await hueOf()) <= 80, `light: olive context colour (hue ${await hueOf()})`);
     await page.emulateMedia({ colorScheme: 'dark' }); await page.waitForTimeout(200);
     assert.ok((await hueOf()) >= 55 && (await hueOf()) <= 80, `dark: olive context colour (hue ${await hueOf()})`);
+    assert.deepEqual(refused, [], 'nothing asks the bridge before the session exists');
     assert.deepEqual(errors, []);
   } finally { await browser.close(); server.close(); }
 });
