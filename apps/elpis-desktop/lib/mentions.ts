@@ -26,6 +26,17 @@ function score(item: MentionItem, query: string): number | null {
   return name.includes(query) ? 3 : null;
 }
 
+/** The Files pane's find: the files whose path holds the query, ranked as the picker ranks them, then those holding its
+ * letters in that order (`lpar` finds `src/lib/parser.ts`); with nothing typed, all of them as given. */
+export function rankFiles(files: string[], typed: string): string[] {
+  const query = typed.trim().toLowerCase();
+  if (!query) return files;
+  const inOrder = (name: string) => { let at = 0; for (const letter of query) { at = name.indexOf(letter, at) + 1; if (!at) return false; } return true; };
+  return files.map((name, order) => ({ name, order, rank: score({ kind: "file", name, detail: "", path: name }, query) ?? (inOrder(name.toLowerCase()) ? 4 : null) }))
+    .filter((entry): entry is { name: string; order: number; rank: number } => entry.rank !== null)
+    .sort((a, b) => a.rank - b.rank || a.name.length - b.name.length || a.order - b.order).map(entry => entry.name);
+}
+
 /** The picker's lines: with nothing typed the first files then up to three chats; otherwise the best matches. */
 export function rankMentions(items: MentionItem[], typed: string): MentionItem[] {
   const query = typed.toLowerCase();
