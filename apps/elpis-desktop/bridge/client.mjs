@@ -36,13 +36,15 @@ export function threadId(value) {
   return value;
 }
 
+/** The Elpis home the runtime uses: its config, sessions and logs. */
+export const elpisHome = (env = process.env) => path.resolve(env.ELPIS_HOME || path.join(os.homedir(), '.elpis-next'));
 // Mirrors shared-runtime.mjs's path derivation, but never creates directories or starts a runtime.
 export function existingSocket(explicit, env = process.env) {
   const provided = explicit || env.ELPIS_APP_BRIDGE_SOCKET || env.ELPIS_BRIDGE_SOCKET;
   let candidates;
   if (provided) candidates = [provided.replace(/^unix:\/\//, '')];
   else {
-    let home = path.resolve(env.ELPIS_HOME || path.join(os.homedir(), '.elpis-next'));
+    let home = elpisHome(env);
     try { home = fs.realpathSync(home); } catch {}
     const key = createHash('sha256').update(home).digest('hex').slice(0, 16);
     candidates = [env.XDG_RUNTIME_DIR && path.join(env.XDG_RUNTIME_DIR, 'elpis-bridge', key, 'bridge.sock'),
@@ -743,6 +745,14 @@ export class DesktopClient extends EventEmitter {
     let reloadRequested = true;
     await this.#rpc('config/mcpServer/reload', undefined).catch(() => { reloadRequested = false; });
     return { ...await this.mcp(), reloadRequested };
+  }
+  /** A chat as the Observability page names it, with its rollout; null when Elpis no longer has it. */
+  async chatSummary(id) {
+    threadId(id);
+    let thread;
+    try { ({ thread } = await this.#rpc('thread/read', { threadId: id, includeTurns: false })); }
+    catch (error) { if (/^thread not (loaded|found)\b/.test(error.engineMessage ?? '')) return null; throw error; }
+    return thread?.id === id ? { thread: this.#decorate(thread), path: typeof thread.path === 'string' ? thread.path : null } : null;
   }
   async context(id) {
     threadId(id);

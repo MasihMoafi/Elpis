@@ -11,6 +11,7 @@ import { isRepository } from './git.mjs';
 import { createTools } from './tools.mjs';
 import { createTranscription } from './transcription.mjs';
 import { ATTACHMENT_BODY_LIMIT, AttachmentError, extractPdf } from './attachments.mjs';
+import { createObservability } from './observability.mjs';
 
 const COOKIE = 'elpis_desktop';
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.txt': 'text/plain', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon', '.woff': 'font/woff', '.woff2': 'font/woff2' };
@@ -63,6 +64,8 @@ export async function startDesktopServer(options = {}) {
   const session = randomBytes(32).toString('hex');
   const listeners = new Set(); let origin; let closed = false;
   const tools = options.tools ?? createTools({ environment: () => client.ragEnvironment() });
+  // The Observability page reads the records of the Elpis home this runtime uses (`elpisHome` sets another).
+  const observability = createObservability({ home: options.elpisHome, chatOf: id => client.chatSummary(id) });
   const transcription = createTranscription({ definition: () => client.transcriptionDefinition(), environment: () => client.transcriptionEnvironment() });
   const event = value => {
     const bytes = `event: ${value.type}\ndata: ${JSON.stringify(value.data)}\n\n`;
@@ -131,6 +134,9 @@ export async function startDesktopServer(options = {}) {
         if (url.pathname === '/api/providers/settings') return json(response, 200, method === 'GET' ? await client.providerSettings() : await client.saveProvider(await body(request)));
         if (url.pathname === '/api/providers/key' && method === 'POST') return json(response, 200, await client.saveProviderKey(await body(request)));
         if (url.pathname === '/api/mcp') return json(response, 200, method === 'GET' ? await client.mcp() : await client.saveMcp(await body(request)));
+        if (url.pathname === '/api/observability' && method === 'GET') return json(response, 200, await observability.overview(url.searchParams));
+        const observed = url.pathname.match(/^\/api\/observability\/chats\/([^/]+)$/);
+        if (observed && method === 'GET') return json(response, 200, await observability.chat(decodeURIComponent(observed[1]), url.searchParams));
         if (url.pathname === '/api/customize' && method === 'GET') return json(response, 200, await client.customize(url.searchParams.get('cwd') || undefined));
         if (url.pathname === '/api/customize/skill' && method === 'POST') return json(response, 200, await client.setSkill(await body(request)));
         if (url.pathname === '/api/context/switches') return json(response, 200, method === 'GET' ? await client.contextSwitches() : await client.saveContextSwitches(await body(request)));
