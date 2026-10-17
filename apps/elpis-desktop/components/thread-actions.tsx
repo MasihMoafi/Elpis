@@ -109,11 +109,14 @@ export function DeleteChatsDialog({ threads, onDelete, onClose, alwaysConfirm }:
     setBusy(true); setError("");
     try {
       if (skip) savePreferences({ confirmDeleteChats: false });
-      for (const thread of threads) {
-        if (deleted.current.has(thread.id)) continue;
-        try { await onDelete(thread); } catch (e) { throw Error(threads.length > 1 ? `Could not delete “${title(thread)}”: ${message(e)}` : message(e)); }
-        deleted.current.add(thread.id);
-      }
+      // Four at a time, so Select all in Archived chats finishes in seconds; the first failure stops the rest.
+      const queue = threads.filter(thread => !deleted.current.has(thread.id));
+      await Promise.all(Array.from({ length: Math.min(4, queue.length) }, async () => {
+        for (let thread = queue.shift(); thread; thread = queue.shift()) {
+          try { await onDelete(thread); } catch (e) { queue.length = 0; throw Error(threads.length > 1 ? `Could not delete “${title(thread)}”: ${message(e)}` : message(e)); }
+          deleted.current.add(thread.id);
+        }
+      }));
       onClose();
     } catch (e) { setError(message(e)); }
     finally { setBusy(false); }

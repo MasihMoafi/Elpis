@@ -266,7 +266,8 @@ export default function Home() {
   const [theme, setThemeChoice] = useState<ThemeChoice>("system");
   const [systemDark, setSystemDark] = useState(false);
   const dark = theme === "dark" || (theme === "system" && systemDark);
-  const brandMark = "/branding/elpis-symbol-amber-loop.svg";
+  // The website's animated wordmark, its dark or light version (website/assets/branding).
+  const brandMark = dark ? "/branding/elpis-wordmark-amber-loop.svg" : "/branding/elpis-wordmark-amber-light-loop.svg";
   const setTheme = (next: ThemeChoice) => { setThemeChoice(next); try { appStorage().setItem("elpis-theme", next); } catch { setError("Could not save appearance on this device."); } };
   const searchInput = useRef<HTMLInputElement>(null);
   const shortcutsReturnFocus = useRef<HTMLElement | null>(null);
@@ -1008,7 +1009,7 @@ export default function Home() {
     <ProjectDialog projects={projects} editing={projectEdit} onClose={() => setProjectEdit(undefined)} onSave={saveProject} />
     <DeleteChatsDialog threads={deleteTargets} onDelete={deleteThread} onClose={() => setDeleteTargets(null)} />
     <aside className={`sidebar${sidebar ? " open" : ""}`} aria-label="Workspace navigation">
-      <div className="brand"><Button className="sidebar-toggle" variant="ghost" size="icon-sm" aria-label="Close sidebar" title="Close sidebar (Ctrl+B)" onClick={() => showSidebar(false)}><PanelLeft size={16} /></Button><img src={brandMark} alt="Elpis" width={28} height={28} /><span>Elpis</span></div>
+      <div className="brand"><Button className="sidebar-toggle" variant="ghost" size="icon-sm" aria-label="Close sidebar" title="Close sidebar (Ctrl+B)" onClick={() => showSidebar(false)}><PanelLeft size={16} /></Button><img src={brandMark} alt="Elpis" width={73} height={36} /></div>
       <nav className="nav-list" aria-label="Workspace">
         <Button className="new-chat" variant="ghost" aria-current={view === "chat" && !selected ? "page" : undefined} disabled={projectChanging} onClick={newChat}><NewChatIcon size={16} />New chat</Button>
         <Button variant="ghost" aria-current={view === "agents" ? "page" : undefined} onClick={() => show("agents")}><AgentsIcon size={16} />Agents{working > 0 && <span className="nav-badge" aria-hidden="true"><i />{working}</span>}</Button>      </nav>
@@ -1042,7 +1043,7 @@ export default function Home() {
       <header className={`workspace-header${heading ? "" : " untitled"}`}>
         {outsideChatApprovals.length > 0 && <div className="pending-input-anchor"><Button ref={pendingInputButton} className="pending-input-trigger" variant="secondary" size="sm" aria-label={`Needs input (${outsideChatApprovals.length})`} aria-expanded={pendingInputOpen} aria-controls="pending-input-panel" onKeyDown={event => { if (event.key === "Escape") setPendingInputOpen(false); }} onClick={() => setPendingInputOpen(value => !value)}><span className="pending-count">{outsideChatApprovals.length}</span>Needs input<span className="pending-task-name">{title(threads.find(thread => thread.id === outsideChatApprovals[0].params.threadId) || outsideChatApprovals[0].thread || {id:outsideChatApprovals[0].params.threadId || "unreported"})}</span></Button></div>}
         <Button className="mobile-menu sidebar-open" variant="ghost" size="icon-sm" aria-label="Open sidebar" title="Open sidebar (Ctrl+B)" onClick={() => showSidebar(true)}><PanelLeft size={16} /></Button>
-        <img className="mobile-brand" src={brandMark} alt="" aria-hidden="true" width={24} height={24} />
+        <img className="mobile-brand" src={brandMark} alt="" aria-hidden="true" width={49} height={24} />
         <div className="header-titles min-w-0 flex-1">
           {view === "chat" && desktop
             ? <TaskTabs browser={browser} chatTitle={heading} chatActive={!browserFull && browserView === "chat" || !browserOpen} onChat={showChat} onPage={() => setBrowserView("browser")}

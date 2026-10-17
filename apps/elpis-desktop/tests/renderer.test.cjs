@@ -67,11 +67,11 @@ test('actual exported renderer: chat, steering, interrupt, existing writable his
     await page.locator('.thread-link[title="New chat"]').first().click();await page.getByRole('heading',{name:'New chat',exact:true}).waitFor();await page.getByLabel('Message Elpis').waitFor();assert.equal(await controlValue(page.getByLabel('Message Elpis')),'Keep my draft');
     const output=process.env.ELPIS_APP_SCREENSHOTS||'/tmp';
     await page.waitForFunction(()=>document.querySelector('.brand img')?.naturalWidth>0);
-    assert.match(await page.locator('.brand img').getAttribute('src'), /amber-loop\.svg$/);
+    assert.match(await page.locator('.brand img').getAttribute('src'), /\/elpis-wordmark-amber-light-loop\.svg$/, 'light theme: the website\'s light wordmark');
     assert((await page.locator('link[rel="icon"]').evaluateAll(links=>links.map(link=>link.getAttribute("href")))).every(href=>href.endsWith("/favicon-amber.svg")));
     await page.screenshot({path:path.join(output,'elpis-app-chat-light-1440.png')});
     await page.getByRole('button',{name:'Use dark theme'}).click();await page.waitForTimeout(250);await page.screenshot({path:path.join(output,'elpis-app-chat-dark-1440.png')});
-    assert.match(await page.locator('.brand img').getAttribute('src'), /amber-loop\.svg$/);
+    assert.match(await page.locator('.brand img').getAttribute('src'), /\/elpis-wordmark-amber-loop\.svg$/, 'dark theme: the website\'s wordmark');
     assert((await page.locator('link[rel="icon"]').evaluateAll(links=>links.map(link=>link.getAttribute("href")))).every(href=>href.endsWith("/favicon-amber.svg")));
     await page.setViewportSize({width:390,height:844});await page.screenshot({path:path.join(output,'elpis-app-chat-dark-390.png')});
     assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
