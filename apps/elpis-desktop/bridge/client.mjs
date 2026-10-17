@@ -10,6 +10,7 @@ import { settingsSnapshot, tokenUsageSnapshot, contextLedger, restoredTokenUsage
 import { replacementEligibility } from '../lib/turn-replacement.ts';
 import { providerModels } from './provider-models.mjs';
 import { attachmentInput, recordedMedia } from './attachments.mjs';
+import { pluginsSnapshot, skillsSnapshot } from './customize.mjs';
 import { scanDeletionThreads } from '../lib/thread-deletion.ts';
 import { changedFiles, discardFile, fileDiff, reviewChoices, workingDiff } from './git.mjs';
 import { elicitationResponse, grantedPermissions, permissionsResponse } from '../lib/approvals.ts';
@@ -622,6 +623,26 @@ export class DesktopClient extends EventEmitter {
     return { anthropicSignedOut: answer?.signedOut === true };
   }
   async mcp() { return mcpSnapshot(await this.#rpc('config/read', { includeLayers: true })); }
+  /** Claude's Customize page: the skills found for a project, the installed plugins and the connectors (MCP servers).
+   * A part the engine can't give says why, and the others still show. */
+  async customize(cwd) {
+    if (cwd != null) { text(cwd, 'project folder', 4096); if (!path.isAbsolute(cwd)) throw new BridgeError('Choose a project folder'); }
+    const cwds = cwd ? [cwd] : [], why = error => ({ error: error instanceof Error ? error.message : 'Unavailable' });
+    const [skills, plugins, connectors] = await Promise.all([
+      this.#rpc('skills/list', { cwds }).then(skillsSnapshot, why),
+      this.#rpc('plugin/installed', cwd ? { cwds } : {}).then(pluginsSnapshot, why),
+      this.mcp().then(snapshot => ({ data: snapshot.servers.map(({ name, enabled, transport }) => ({ name, enabled, transport })) }), why),
+    ]);
+    return { skills, plugins, connectors };
+  }
+  /** Turns one listed skill on or off (native skills/config/write), then lists again. */
+  async setSkill(input) {
+    object(input, ['path', 'enabled', 'cwd']); text(input.path, 'skill', 4096);
+    if (typeof input.enabled !== 'boolean') throw new BridgeError('Choose on or off');
+    if (!(await this.customize(input.cwd)).skills.data?.some(skill => skill.path === input.path)) throw new BridgeError('That skill is not listed', 404);
+    await this.#rpc('skills/config/write', { path: input.path, enabled: input.enabled });
+    return this.customize(input.cwd);
+  }
   async hooks() {
     const [list, read] = await Promise.all([this.#rpc('hooks/list', {}), this.#rpc('config/read', { includeLayers: true })]);
     return hooksSnapshot(list, read);

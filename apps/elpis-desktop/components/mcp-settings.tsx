@@ -17,6 +17,8 @@ type Stage = { stage: "embedding" | "reranking" | "generation"; provider: string
 type Rag = { stages: Stage[]; keys: { openrouter: boolean } };
 
 const message = (e: unknown) => e instanceof Error ? e.message : String(e);
+/** A reply without its server list (an older or failing bridge) reads as no servers, never as a broken page. */
+const readMcp = (value: Mcp): Mcp => ({ ...value, servers: Array.isArray(value?.servers) ? value.servers : [], write: value?.write ?? { available: false } });
 const providerName = (stage: Stage) => stage.location === "local" ? "Local" : stage.provider === "openrouter" ? "OpenRouter" : stage.provider === "openai_compatible" ? "OpenAI-compatible API" : stage.provider ?? "Not set";
 const Key = ({ name, set, note, plain }: { name: string; set: boolean; note?: string; plain?: boolean }) => <li className={`key-state ${set ? "set" : "unset"}`}>{plain ? name : <code>{name}</code>} · {set ? "set" : "not set"}{note && <span className="text-muted-foreground"> ({note})</span>}</li>;
 
@@ -77,11 +79,11 @@ export function McpSettings({ onOpenVoice }: { onOpenVoice?: () => void }) {
   const [adding, setAdding] = useState(false);
   const [draft, setDraft] = useState({ name: "", command: "", args: "" });
   const [removing, setRemoving] = useState<string | null>(null);
-  const load = useCallback(async () => { try { setData(await api<Mcp>("/mcp")); } catch (e) { setError(message(e)); } }, []);
+  const load = useCallback(async () => { try { setData(readMcp(await api<Mcp>("/mcp"))); } catch (e) { setError(message(e)); } }, []);
   useEffect(() => { void load(); }, [load]);
   async function save(name: string, body: Record<string, unknown>) {
     setError("");
-    try { setNotice(""); const saved = await api<Mcp>("/mcp", { version: data?.version, name, ...body }); setData(saved); if (saved.reloadRequested === false) setNotice("Settings saved. Elpis could not refresh the active tools; reconnect Elpis to apply them."); }
+    try { setNotice(""); const saved = readMcp(await api<Mcp>("/mcp", { version: data?.version, name, ...body })); setData(saved); if (saved.reloadRequested === false) setNotice("Settings saved. Elpis could not refresh the active tools; reconnect Elpis to apply them."); }
     catch (e) { setError(message(e)); await load(); throw e; }
   }
   async function add(event: React.FormEvent) {

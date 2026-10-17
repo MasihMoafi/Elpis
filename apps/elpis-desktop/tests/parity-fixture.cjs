@@ -26,8 +26,9 @@ const TURNS = [
 ];
 
 /** Starts the bridge and a browser page. `running` makes the first chat run a turn; `desktop` is the fake desktop;
- * `chat` replaces the first chat's turns: [turn id, prompt, reply, work items between them]. */
-async function fixture({ width = 1130, height = 660, colorScheme = 'light', running = false, desktop = true, chat: start = TURNS } = {}) {
+ * `chat` replaces the first chat's turns: [turn id, prompt, reply, work items between them]; `routes` answers more
+ * API paths: path → (body, url) → reply. */
+async function fixture({ width = 1130, height = 660, colorScheme = 'light', running = false, desktop = true, chat: start = TURNS, routes = {} } = {}) {
   const posts = [], turns = start.map(turn => [...turn]);
   const entries = () => turns.flatMap(([id, prompt, reply, work], index) => {
     const at = Date.now() - (turns.length - index) * 120_000;
@@ -43,6 +44,7 @@ async function fixture({ width = 1130, height = 660, colorScheme = 'light', runn
     if (url.pathname === '/api/events') { res.writeHead(200, { 'content-type': 'text/event-stream' }); res.write('event: connection\ndata: {"connected":true}\n\n'); return; }
     if (url.pathname === '/api/health') return json({ connected: true });
     if (url.pathname === '/api/models') return json({ data: [{ id: 'sol', model: 'sol', displayName: 'GPT-6.1-Sol', inputModalities: ['text', 'image'], supportedReasoningEfforts: ['low', 'medium', 'high'].map(reasoningEffort => ({ reasoningEffort })) }], nextCursor: null });
+    if (routes[url.pathname]) return json(await routes[url.pathname](raw ? JSON.parse(raw) : null, url));
     if (url.pathname === '/api/files') return json({ data: FILES });
     if (url.pathname === '/api/threads') return json({ data: url.searchParams.has('ancestorThreadId') || url.searchParams.get('archived') === 'true' ? [] : THREADS.map(item => item.id === 'chat-a' && running ? { ...item, status: { type: 'active' } } : item), nextCursor: null });
     if (chat && url.pathname.endsWith('/resume')) return json({ thread: chat, activeTurnId: running && chat.id === 'chat-a' ? 't4' : null });
