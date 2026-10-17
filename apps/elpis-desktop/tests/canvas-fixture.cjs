@@ -18,7 +18,7 @@ function planFor(body) {
 /** `repository` is whether the project folder is a git repository (GET /api/repository); `graph` is a board saved on the
  * device before the page opens; `listed(run, looks)` answers a look at the run (workGraph/list) instead of the default,
  * which runs for one look and then succeeds. */
-async function openCanvas({ width = 1440, height = 900, repository = false, graph = null, listed = null } = {}) {
+async function openCanvas({ width = 1440, height = 900, repository = false, graph = null, listed = null, settings = {}, providerModels = {} } = {}) {
   const posts = [], plans = [], runs = [];
   const server = http.createServer(async (req, res) => {
     const url = new URL(req.url, 'http://local'); let raw = ''; for await (const chunk of req) raw += chunk;
@@ -26,8 +26,9 @@ async function openCanvas({ width = 1440, height = 900, repository = false, grap
     if (req.method === 'POST' && url.pathname !== '/api/session') posts.push({ path: url.pathname, body: raw ? JSON.parse(raw) : null });
     if (url.pathname === '/api/events') { res.writeHead(200, { 'content-type': 'text/event-stream' }); res.write('event: connection\ndata: {"connected":true}\n\n'); return; }
     if (url.pathname === '/api/health') return json({ connected: true });
+    if (url.pathname === '/api/models' && providerModels[url.searchParams.get('provider')]) return json({ data: providerModels[url.searchParams.get('provider')], nextCursor: null });
     if (url.pathname === '/api/models') return json({ data: [{ id: 'luna', model: 'gpt-6-luna', displayName: 'Luna 6' }, { id: 'sol', model: 'gpt-6.1-sol', displayName: 'Sol 6.1', supportedReasoningEfforts: [{ reasoningEffort: 'low' }, { reasoningEffort: 'high' }], defaultReasoningEffort: 'low' }], nextCursor: null });
-    if (url.pathname === '/api/settings') return json({ main: { model: 'gpt-6.1-sol', provider: 'openai' }, background: {}, smartPrune: { enabled: false, explicitOverride: {} }, memory: {}, write: { available: false, reason: '' }, agents: { graph: 256, atOnce: 4, source: 'agents.max_threads' } });
+    if (url.pathname === '/api/settings') return json({ main: { model: 'gpt-6.1-sol', provider: 'openai' }, background: {}, smartPrune: { enabled: false, explicitOverride: {} }, memory: {}, write: { available: false, reason: '' }, agents: { graph: 256, atOnce: 4, source: 'agents.max_threads' }, ...settings });
     if (url.pathname === '/api/folders') return json({ data: ['docs', 'src', 'src/lib', 'tests'] });
     if (url.pathname === '/api/repository') return json({ repository });
     if (url.pathname === '/api/canvas/plan') { const body = JSON.parse(raw); plans.push(body); return json(planFor(body)); }

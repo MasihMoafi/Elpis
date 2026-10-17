@@ -337,7 +337,7 @@ function AgentDashboard({ node, wave, status, check, clash, chat, waitsFor, feed
     <header><span className="agent-node-kind">Agent{wave ? ` · wave ${wave}` : ""} · {STATUS_LABEL[status]}</span><strong>{data.title || "Untitled"}</strong>
       <button type="button" aria-label="Close dashboard" autoFocus onClick={onClose}><X size={14} /></button></header>
     <dl>
-      <div><dt>Model</dt><dd>{modelLabel}{data.effort ? ` · ${data.effort} thinking (not applied yet)` : ""}</dd></div>
+      <div><dt>Model</dt><dd>{modelLabel}{data.effort ? ` · ${data.effort} thinking` : ""}</dd></div>
       <div><dt>Waits for</dt><dd>{waitsFor.length ? waitsFor.join(", ") : "Nobody: the Mother starts it"}</dd></div>
       <div><dt>Feeds</dt><dd>{feeds.length ? feeds.join(", ") : "The Mother's report"}</dd></div>
       <div><dt>May write</dt><dd>{data.writeScopes.length ? data.writeScopes.join(", ") : "No folder yet: choose one before the run"}</dd></div>
@@ -399,7 +399,6 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
   const choices = useMemo(() => providerChoices(models, (settings ?? null) as ProviderSettings | null).filter(choice => !choice.id.endsWith("/")), [models, settings]);
   const version = settings?.version ?? "";
   useEffect(() => {
-    if (!adding) return;
     for (const choice of choices) {
       if (!choice.provider || choice.needsKey || catalogs.get(choice.provider)?.version === version) continue;
       const provider = choice.provider;
@@ -409,7 +408,7 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
         .catch(cause => catalogs.set(provider, { version, error: cause instanceof Error ? cause.message : String(cause) }))
         .finally(() => setFetched(count => count + 1));
     }
-  }, [adding, choices, version]);
+  }, [choices, version]);
   const listed = (choice: (typeof choices)[number]) => choice.provider ? catalogs.get(choice.provider)?.models ?? [] : choice.models;
   const catalog: CatalogModel[] = choices.flatMap(choice => listed(choice).map(model => ({ provider: choice.provider ?? null, providerLabel: choice.label, model: model.model, label: model.displayName || model.model,
     efforts: model.supportedReasoningEfforts?.map(item => item.reasoningEffort) ?? [], defaultEffort: model.defaultReasoningEffort ?? null })));
@@ -943,10 +942,14 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
       <p className="hud-menu-title">Agent{order.get(selected.id) ? ` · wave ${order.get(selected.id)}` : ""}{states[selected.id] ? ` · ${STATUS_LABEL[states[selected.id].status]}` : ""} · {CHECK_LABEL[states[checkOf(selected.id)]?.status ?? "idle"]}</p>
       <label>Name<Input ref={nameField} aria-label="Name" value={selected.data.title} maxLength={256} onChange={event => edit({ title: event.target.value })} /></label>
       <label>Prompt<Textarea ref={promptField} aria-label="Prompt" rows={5} value={selected.data.instruction} placeholder="What this agent should do; left empty, Elpis fills it from the goal" onChange={event => edit({ instruction: event.target.value, ...(/^New agent( \d+)?$|^$/.test(selected.data.title) || selected.data.title === nameFrom(selected.data.instruction) ? { title: nameFrom(event.target.value) || "New agent" } : {}) })} /></label>
+      <label>Provider<OptionSelect aria-label="Provider" value={selected.data.provider ?? ""} onChange={event => {
+        const provider = event.target.value || null, first = catalog.find(item => item.provider === provider);
+        edit({ provider, model: first?.model ?? null, effort: null });
+      }}>{choices.map(choice => <option key={choice.id} value={choice.provider ?? ""}>{choice.label}</option>)}</OptionSelect></label>
       <label>Model<OptionSelect aria-label="Model" value={choiceKey(selected.data)} onChange={event => edit(modelPatch(event.target.value))}>
         {modelOptions}
         {selected.data.model && !selectedModel && <option value={choiceKey(selected.data)}>{selected.data.model}</option>}</OptionSelect></label>
-      {selectedModel && selectedModel.efforts.length > 0 && <label>Thinking (kept; Elpis applies it per agent in a later engine build)<OptionSelect aria-label="Thinking" value={selected.data.effort ?? ""} onChange={event => edit({ effort: event.target.value || null })}>
+      {selectedModel && selectedModel.efforts.length > 0 && <label>Thinking<OptionSelect aria-label="Thinking" value={selected.data.effort ?? ""} onChange={event => edit({ effort: event.target.value || null })}>
         <option value="">Model default{selectedModel.defaultEffort ? ` (${selectedModel.defaultEffort})` : ""}</option>{selectedModel.efforts.map(effort => <option key={effort} value={effort}>{effort}</option>)}</OptionSelect></label>}
       <FolderPicker cwd={cwd} {...project} value={selected.data.writeScopes} onChange={writeScopes => edit({ writeScopes })} />
       <label>Done when (one per line; its check holds it to these)<Textarea aria-label="Done when" rows={3} value={selected.data.acceptanceCriteria.join("\n")} placeholder={DONE} onChange={event => edit({ acceptanceCriteria: lines(event.target.value) })} /></label>
