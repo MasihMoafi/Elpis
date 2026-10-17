@@ -44,6 +44,7 @@ test('past ten agents the Father runs the rest in his own chat, after the Mother
     assert.notEqual(his.rootThreadId, hers.rootThreadId, 'he has his own chat');
     assert.match(chats[1].body.name, /^Father · /);
     assert.match(chats[1].body.instructions, /You are the Father/);
+    assert.deepEqual(chats.map(chat => chat.body.agents), [true, true], 'both run chats ask for the multi-agent runtime');
     const hisIds = new Set(his.tasks.map(task => task.id));
     assert.ok(his.tasks.every(task => task.dependsOn.every(id => hisIds.has(id))), 'his tasks wait only for his own');
     assert.ok(his.tasks.some(task => task.title === 'Join the parts'), 'the joiner, in the second wave, is his');

@@ -113,6 +113,22 @@ test('desktop browser MCP follows new, resumed and forked desktop chats without 
   } finally {client.close();}
 });
 
+test('a chat that runs the canvas\'s agents turns the multi-agent runtime on for itself only, beside the browser config', async () => {
+  // The Ledger's SUBAGENTS switch (features.multi_agent = false) stops a model delegating in ordinary chats; with it the
+  // engine refused every canvas run: "multi-agent runtime is disabled; this session cannot run a work graph".
+  const browserConfig={'mcp_servers.elpis_browser':{command:'node',args:['browser-mcp.mjs']}};
+  const {client,socket}=fixture({browserConfig});
+  try {
+    await client.initialize();
+    await client.createThread({cwd:'/tmp/project',agents:true});
+    assert.deepEqual(socket.sent.findLast(row=>row.method==='thread/start').params.config,{...browserConfig,'features.multi_agent':true});
+    await client.createThread({cwd:'/tmp/project'});
+    assert.deepEqual(socket.sent.findLast(row=>row.method==='thread/start').params.config,browserConfig,'an ordinary chat keeps the user\'s switch');
+    await assert.rejects(client.createThread({agents:'yes'}),/agents must be true or false/);
+    assert.equal(socket.sent.some(row=>row.method==='config/batchWrite'||row.method==='config/value/write'),false,'the user config is never written');
+  } finally {client.close();}
+});
+
 test('configured connection models use only that endpoint and never authorize the same ID on the main route', async () => {
   const { client, socket, configRead, requirementsRead } = fixture(); await client.initialize();
   configRead.config.model_providers.local = { name: 'gpt-oss', base_url: 'http://127.0.0.1:1234/v1', experimental_bearer_token: 'LOCAL CATALOG KEY' };

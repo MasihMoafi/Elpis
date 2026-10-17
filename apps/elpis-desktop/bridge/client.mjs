@@ -882,9 +882,12 @@ export class DesktopClient extends EventEmitter {
       return this.#rpc(params.tasks.some(task=>task.provider!==undefined||task.model!==undefined||task.reasoningEffort!==undefined)?'workGraph/runWithProviders':'workGraph/run',params);
     });
   }
+  /** `agents`: the chat runs the agents canvas's graph, so the multi-agent runtime is on for it alone; the Ledger's
+   * SUBAGENTS switch (features.multi_agent) keeps deciding whether a model may delegate in every other chat. */
   async createThread(body) {
-    object(body, ['cwd', 'model', 'provider', 'name', 'instructions', 'permissions', 'worktree']);
+    object(body, ['cwd', 'model', 'provider', 'name', 'instructions', 'permissions', 'worktree', 'agents']);
     if (body.worktree !== undefined && typeof body.worktree !== 'boolean') throw new BridgeError('worktree must be true or false');
+    if (body.agents !== undefined && typeof body.agents !== 'boolean') throw new BridgeError('agents must be true or false');
     if (body.worktree && body.cwd === undefined) throw new BridgeError('A worktree needs the project\'s folder');
     const permissions = permissionMode(body.permissions);
     const name = body.name === undefined ? undefined : text(body.name, 'agent name', 120).trim();
@@ -903,11 +906,12 @@ export class DesktopClient extends EventEmitter {
     // Claude's "Start with worktree": the chat works in its own worktree on a new branch; if it does not start, the
     // worktree goes again.
     const made = body.worktree ? await createChatWorktree(body.cwd) : null, cwd = made?.cwd ?? body.cwd;
+    const config = { ...this.#browserOptions().config, ...(body.agents ? { 'features.multi_agent': true } : {}) };
     let result;
     try {
       result = await this.#rpc('thread/start', { ...(cwd ? { cwd } : {}), ...(model ? { model } : {}),
         ...(body.provider ? { modelProvider: body.provider } : {}), ...(instructions ? { developerInstructions: instructions } : {}), ...threadPermissions(permissions),
-        ...this.#browserOptions() });
+        ...(Object.keys(config).length ? { config } : {}) });
       threadId(result.thread?.id);
     } catch (error) { if (made) await undoChatWorktree(made); throw error; }
     this.#owned.add(result.thread.id);

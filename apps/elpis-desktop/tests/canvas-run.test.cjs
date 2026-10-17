@@ -28,6 +28,9 @@ test('Voting finishes every agent; Tally receives all answers after their checks
     await canvas.getByRole('button', { name: /^Voting/ }).click();
     await canvas.getByRole('button', { name: 'Run graph', exact: true }).click();
     await page.waitForFunction(() => document.querySelectorAll('.agent-node-mark[data-check="succeeded"]').length === 4, null, { timeout: 20000 });
+    // The run's chat asks for the multi-agent runtime: with the Ledger's SUBAGENTS switch off, Elpis refused every run.
+    const chats = fixture.posts.filter(post => post.path === '/api/threads');
+    assert.equal(chats.length, 1); assert.equal(chats[0].body.agents, true);
     for (const task of runs[0].tasks.filter(task => task.kind === 'implement')) assert.match(task.instruction, /Save your result as files inside your allowed folders/);
     assert.deepEqual(runs[0].tallyInput.filter(answer => /original answer/.test(answer)), [1, 2, 3].map(n => `Answer ${n}: original answer`));
     const tallyStart = events.indexOf('start:Tally the answers');

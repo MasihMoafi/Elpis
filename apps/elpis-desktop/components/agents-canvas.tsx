@@ -845,7 +845,7 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
   // The Father's part: his own chat, on her model, told who he is; it starts once hers has succeeded.
   async function startFather(tasks: RunTask[]): Promise<NonNullable<Run["father"]>> {
     const goal = mother.brief.trim();
-    const created = await api<{ thread: Thread }>("/threads", { ...(cwd ? { cwd } : {}), name: `Father · ${graph.name || "Agents canvas"}`.slice(0, 120),
+    const created = await api<{ thread: Thread }>("/threads", { ...(cwd ? { cwd } : {}), agents: true, name: `Father · ${graph.name || "Agents canvas"}`.slice(0, 120),
       ...(mother.model ? { model: mother.model, ...(mother.provider ? { provider: mother.provider } : {}) } : {}),
       instructions: [goal && `Goal of the whole run: ${goal}`, "You are the Father: you run the agents past the Mother's ten, after her part has succeeded, and you report to her."].filter(Boolean).join("\n\n") });
     const result = await runPart(created.thread.id, `Father · ${graph.name || "Agents canvas"}`, tasks);
@@ -871,8 +871,9 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
     if ("error" in built) { setNotice(built.error); return; }
     setStarting(true); setNotice(""); setStates({}); setClashes({}); setLog([]); said.current = {};
     try {
-      // The Mother is the run's chat: her model, and the goal as her instructions.
-      const created = await api<{ thread: Thread }>("/threads", { ...(cwd ? { cwd } : {}), name: ready.name.slice(0, 120) || "Agents canvas",
+      // The Mother is the run's chat: her model, and the goal as her instructions. `agents` turns the multi-agent runtime
+      // on for this chat alone; the Ledger's SUBAGENTS switch still governs every other chat.
+      const created = await api<{ thread: Thread }>("/threads", { ...(cwd ? { cwd } : {}), agents: true, name: ready.name.slice(0, 120) || "Agents canvas",
         ...(mother.model ? { model: mother.model, ...(mother.provider ? { provider: mother.provider } : {}) } : {}), ...(mother.brief.trim() ? { instructions: mother.brief.trim() } : {}) });
       const result = await runPart(created.thread.id, ready.name || "Agents canvas", built.mother);
       setRun({ rootThreadId: created.thread.id, graphId: result.graphId, status: "running", startedAt: Date.now(), ...(built.father.length ? { father: { tasks: built.father, status: "pending" } } : {}) });
