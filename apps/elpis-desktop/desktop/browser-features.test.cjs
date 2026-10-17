@@ -193,3 +193,20 @@ test('tab menu commands: duplicate opens beside the tab, Copy URL writes the add
   await f.command('copyUrl', { id: first.id });
   assert.equal(f.clipboard.text, 'https://a.example/');
 });
+
+test('Ctrl+T, Ctrl+W and Ctrl+Tab in Elpis’s own window are left to the chat tabs; on a page they act on the side panel’s page tabs', () => {
+  const f = fixture(); f.browser.open('https://a.test'); f.browser.open('https://b.test');
+  assert.equal(f.state().visible, true);
+  let prevented = 0; const event = { preventDefault() { prevented++; } };
+  const key = (name, extra = {}) => ({ type: 'keyDown', key: name, control: true, meta: false, alt: false, shift: false, ...extra });
+  for (const name of ['t', 'w', 'Tab']) f.root.emit('before-input-event', event, key(name));
+  assert.equal(prevented, 0, 'the renderer gets these keys');
+  assert.equal(f.state().tabs.length, 2);
+  const focused = f.state().focusAddress;
+  f.root.emit('before-input-event', event, key('l'));
+  assert.equal(f.state().focusAddress, focused + 1, 'Ctrl+L still focuses the address bar');
+  f.pages[1].emit('before-input-event', event, key('w'));
+  assert.equal(f.state().tabs.length, 1, 'Ctrl+W on a page closes that page tab');
+  f.pages[0].emit('before-input-event', event, key('t'));
+  assert.equal(f.state().tabs.length, 2, 'Ctrl+T on a page opens a page tab');
+});

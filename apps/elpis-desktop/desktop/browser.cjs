@@ -186,10 +186,11 @@ function createBrowser({host,origin,WebContentsView,session,ipcMain,openExternal
     if(page&&key==='f5')return act(()=>input.shift?page.view.webContents.reloadIgnoringCache():page.view.webContents.reload());
     if(!primary)return;
     if(key==='l')act(focusInput);
+    // In Elpis's own window Ctrl+T, Ctrl+W and Ctrl+Tab belong to the chat tabs (the renderer); a page that has the focus keeps them for the side panel's page tabs.
+    else if(!page)return;
     else if(key==='t')act(()=>{try{open();}catch{}});
     else if(key==='w')act(()=>close(activeId));
     else if(key==='tab'&&tabs.size)act(()=>{const ids=[...tabs.keys()],index=ids.indexOf(activeId);select(ids[(index+(input.shift?ids.length-1:1))%ids.length]);});
-    else if(!page)return;
     else if(key==='r')act(()=>input.shift?page.view.webContents.reloadIgnoringCache():page.view.webContents.reload());
     else if(key==='f')act(()=>openFind(page));
     else if(key==='='||key==='+')act(()=>zoom(page,'in'));
