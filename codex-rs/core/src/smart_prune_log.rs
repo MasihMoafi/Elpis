@@ -38,6 +38,16 @@ pub struct PruneLogRecord {
 }
 
 impl PruneLogRecord {
+    fn add_note(&mut self, note: String) {
+        match &mut self.note {
+            Some(existing) => {
+                existing.push(' ');
+                existing.push_str(&note);
+            }
+            None => self.note = Some(note),
+        }
+    }
+
     pub fn source_tokens(&self) -> usize {
         self.items.iter().map(|item| item.source_tokens).sum()
     }
@@ -295,18 +305,23 @@ fn project_attempt(log_dir: &Path, attempt: Attempt) -> Result<PruneLogRecord> {
         note: legacy_identity
             .then(|| "Older audit: may include activity from this chat's agents.".to_string()),
     };
+    let failure =
+        crate::session::smart_prune::safe_failure_reason(attempt.status, attempt.error.as_deref());
     let input = match input {
         Ok(input) => input,
         Err(_) => {
-            record.note = Some("Tool details unavailable in this attempt's evidence.".to_string());
+            record.add_note(match failure {
+                Some(why) => format!(
+                    "Tool details unavailable in this attempt's evidence. failed: {why} Original kept."
+                ),
+                None => "Tool details unavailable in this attempt's evidence.".to_string(),
+            });
             return Ok(record);
         }
     };
-    let failure =
-        crate::session::smart_prune::safe_failure_reason(attempt.status, attempt.error.as_deref());
     if input.items.is_empty() {
         if let Some(why) = failure {
-            record.note = Some(format!("failed: {why} Original kept."));
+            record.add_note(format!("failed: {why} Original kept."));
         }
     }
     let expected_ids = input
@@ -479,6 +494,23 @@ mod tests {
         escaped.items[0].description = "shell: x | cat".to_string();
         assert!(escaped.readable().contains(r"Prune \| \<script\>"));
         assert!(escaped.readable().contains(r"| shell: x \| cat |"));
+    }
+
+    #[test]
+    fn unreadable_input_keeps_the_failure_and_legacy_attribution() {
+        let root = tempfile::tempdir().unwrap();
+        fixture(root.path(), "one", "chat-1", "timed_out");
+        let path = root.path().join("smart-prune/attempts/one.json");
+        let mut attempt: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        attempt["input"] = json!("unreadable input");
+        std::fs::write(path, attempt.to_string()).unwrap();
+        let record = read_attempt(root.path(), "one").unwrap();
+        let note = record.note.as_deref().unwrap();
+        assert!(note.contains("Tool details unavailable"));
+        assert!(note.contains("failed: The pruning model stopped responding"));
+        assert!(note.contains("may include activity from this chat's agents"));
+        assert!(record.items.is_empty());
+        assert_eq!(record.saved_tokens(), 0);
     }
 
     #[test]

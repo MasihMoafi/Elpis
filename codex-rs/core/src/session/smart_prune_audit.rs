@@ -809,6 +809,12 @@ mod tests {
         let both = std::fs::read_to_string(&path).unwrap();
         assert!(both.starts_with(&first));
         assert!(both.contains("Renamed chat"));
+        assert_eq!(
+            both.matches("failed: The pruning model stopped responding")
+                .count(),
+            2,
+            "an unreadable input must retain the failure reason too"
+        );
         let mut other = attempt_input("other-chat");
         other.thread_id = Some("session-2");
         other.chat_title = Some("داده / parser | notes");
