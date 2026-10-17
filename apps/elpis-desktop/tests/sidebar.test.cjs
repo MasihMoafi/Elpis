@@ -1,5 +1,7 @@
 // The sidebar as in the ChatGPT and Claude apps: add a project folder, close and reopen the sidebar, D to delete,
-// arrow keys, Ctrl/Shift selection and the row's hover actions. Synthetic HTTP/SSE; no engine or provider calls.
+// arrow keys, Ctrl/Shift selection and the row's hover actions. It runs as the desktop app does (title bar, chat tabs) and
+// presses the keys a person does: Ctrl and Shift are held on the keyboard while the mouse clicks. Synthetic HTTP/SSE;
+// no engine or provider calls.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const http = require('node:http');
@@ -7,6 +9,7 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const { chromium } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright');
 const { leaveSettings, openSettings } = require('./controls.cjs');
+const { fakeDesktop } = require('./fake-desktop.cjs');
 const root = path.resolve(__dirname, '../out');
 async function eventually(check) {
   const deadline = Date.now() + 4000;
@@ -36,15 +39,18 @@ test('sidebar: projects, toggle, D to delete, arrows, Ctrl/Shift selection, hove
   try {
     const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } }); page.setDefaultTimeout(6000);
     const errors = []; page.on('pageerror', error => errors.push(error.message));
-    // The desktop bridge's native folder chooser; each call returns the next queued folder (null = cancelled).
-    await page.addInitScript(() => { window.__folders = []; window.elpisDesktop = { chooseFolder: async () => window.__folders.shift() ?? null }; });
+    // The desktop bridge, with its native folder chooser: each call returns the next queued folder (null = cancelled).
+    await page.addInitScript(fakeDesktop);
+    await page.addInitScript(() => { window.__folders = []; window.elpisDesktop.chooseFolder = async () => window.__folders.shift() ?? null; });
     await page.goto(`http://127.0.0.1:${server.address().port}/#token=fixture`);
     const aside = page.locator('aside.sidebar');
     const row = id => page.locator(`.thread-list .thread-row[data-thread-id="${id}"]`).first();
     const link = id => row(id).locator('.thread-link');
     const focusedRow = () => page.evaluate(() => document.activeElement?.closest('.thread-row')?.getAttribute('data-thread-id') ?? null);
     const selectedRows = async () => [...new Set(await page.locator('.thread-list .thread-row.selected').evaluateAll(rows => rows.map(item => item.getAttribute('data-thread-id'))))];
-    const heading = page.locator('.workspace-header h1');
+    // The chat shown: its tab, and its sidebar row marked active.
+    const shown = async () => { const ids = await page.locator('.thread-list .thread-row.active').evaluateAll(rows => [...new Set(rows.map(item => item.getAttribute('data-thread-id')))]); return ids.length === 1 ? names.find(name => name.toLowerCase() === ids[0]) : ids.join(','); };
+    const withKey = async (key, click) => { await page.keyboard.down(key); try { await click(); } finally { await page.keyboard.up(key); } };
     const dialog = page.getByRole('alertdialog');
     await link('alpha').waitFor();
 
@@ -82,13 +88,14 @@ test('sidebar: projects, toggle, D to delete, arrows, Ctrl/Shift selection, hove
     // D in a chat's menu, opened by "…" or by right-click, picks Delete (Claude's shortcut); Cancel deletes nothing.
     for (const open of [() => row('alpha').getByRole('button', { name: 'Actions for Alpha', exact: true }).click(), () => link('alpha').click({ button: 'right' })]) {
       await open(); await page.getByRole('menuitem', { name: /^Delete/ }).waitFor();
+      await page.waitForFunction(() => document.activeElement?.closest('[role="menu"]')); // the open menu has the keyboard, as for a person
       await page.keyboard.press('d'); await dialog.getByText('Delete “Alpha”?').waitFor();
       assert.equal(await page.getByRole('menu').count(), 0, 'the menu closes');
       await dialog.getByRole('button', { name: 'Cancel', exact: true }).click(); await dialog.waitFor({ state: 'hidden' });
     }
 
     // 4. D right after clicking a row asks to delete it, exactly like the menu's Delete; typing D in the composer does not.
-    await link('bravo').click(); await eventually(async () => assert.equal(await heading.innerText(), 'Bravo'));
+    await link('bravo').click(); await eventually(async () => assert.equal(await shown(), 'Bravo'));
     assert.equal(await focusedRow(), 'bravo', 'clicking a row focuses it');
     await page.keyboard.press('d');
     await dialog.getByText('Delete “Bravo”?').waitFor();
@@ -98,18 +105,19 @@ test('sidebar: projects, toggle, D to delete, arrows, Ctrl/Shift selection, hove
     await page.getByLabel('Message Elpis').fill('add a d'); assert.equal(await dialog.count(), 0, 'D in the composer types');
 
     // 5. Arrow keys move between chats and open them.
-    await link('alpha').click(); await eventually(async () => assert.equal(await heading.innerText(), 'Alpha'));
-    await page.keyboard.press('ArrowDown'); await eventually(async () => assert.equal(await heading.innerText(), 'Charlie')); assert.equal(await focusedRow(), 'charlie');
-    await page.keyboard.press('ArrowDown'); await eventually(async () => assert.equal(await heading.innerText(), 'Delta'));
-    await page.keyboard.press('ArrowUp'); await eventually(async () => assert.equal(await heading.innerText(), 'Charlie')); assert.equal(await focusedRow(), 'charlie');
+    await link('alpha').click(); await eventually(async () => assert.equal(await shown(), 'Alpha'));
+    await page.keyboard.press('ArrowDown'); await eventually(async () => assert.equal(await shown(), 'Charlie')); assert.equal(await focusedRow(), 'charlie');
+    await page.keyboard.press('ArrowDown'); await eventually(async () => assert.equal(await shown(), 'Delta'));
+    await page.keyboard.press('ArrowUp'); await eventually(async () => assert.equal(await shown(), 'Charlie')); assert.equal(await focusedRow(), 'charlie');
 
     // 6. Ctrl+click adds to the selection, Escape clears it, Shift+click selects a range; D deletes them all after one confirmation.
     await link('alpha').click();
-    await link('delta').click({ modifiers: ['Control'] });
+    await withKey('Control', () => link('delta').click());
     assert.deepEqual(await selectedRows(), ['alpha', 'delta']);
     await page.keyboard.press('Escape'); assert.deepEqual(await selectedRows(), []);
-    await link('alpha').click(); await link('delta').click({ modifiers: ['Shift'] });
+    await link('alpha').click(); await withKey('Shift', () => link('delta').click());
     assert.deepEqual(await selectedRows(), ['alpha', 'charlie', 'delta']);
+    assert.equal(await page.evaluate(() => String(getSelection())), '', 'Shift+click selects chats, not the text between them');
     await page.keyboard.press('d');
     await dialog.getByText('Delete 3 chats?').waitFor();
     await dialog.getByRole('button', { name: 'Cancel', exact: true }).click(); await dialog.waitFor({ state: 'hidden' });
@@ -124,7 +132,7 @@ test('sidebar: projects, toggle, D to delete, arrows, Ctrl/Shift selection, hove
     assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('elpis-preferences-v1')).confirmDeleteChats), false);
 
     // 7. With confirmation off, D deletes at once; Settings → General turns it back on.
-    await link('echo').click(); await eventually(async () => assert.equal(await heading.innerText(), 'Echo'));
+    await link('echo').click(); await eventually(async () => assert.equal(await shown(), 'Echo'));
     await page.keyboard.press('d');
     await eventually(async () => assert.ok(deleted.includes('echo'))); assert.equal(await dialog.count(), 0, 'no confirmation once turned off');
     await openSettings(page);
