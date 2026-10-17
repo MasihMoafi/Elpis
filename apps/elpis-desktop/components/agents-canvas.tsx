@@ -3,7 +3,7 @@
 import "@xyflow/react/dist/style.css";
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent } from "react";
 import { Background, BackgroundVariant, BaseEdge, Controls, Handle, MiniMap, Position, ReactFlow, ReactFlowProvider, applyEdgeChanges, applyNodeChanges, getBezierPath, useReactFlow, type Connection, type Edge, type EdgeChange, type EdgeProps, type FinalConnectionState, type Node, type NodeChange, type NodeProps, type XYPosition } from "@xyflow/react";
-import { Check, ChevronRight, ExternalLink, ListOrdered, Play, StickyNote, Trash2, X } from "lucide-react";
+import { Check, ChevronRight, ExternalLink, ListOrdered, PanelRight, PanelRightClose, Play, StickyNote, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { OptionSelect } from "@/components/ui/option-select";
@@ -12,6 +12,7 @@ import { summarize, workedFor } from "@/components/transcript";
 import { IsoBoard, ViewToggle } from "@/components/agents-iso";
 import { api, providerChoices, type Entry, type Model, type ProviderSettings, type Thread } from "@/lib/api";
 import { useElpisSettings } from "@/lib/settings-store";
+import { appStorage } from "@/lib/projects";
 import { DONE, MOTHER, TASKS_PER_AGENT, TEMPLATES, applyPlan, arrange, boardForPlan, checkOf, commandParts, shapeOf, makesLoop, maxAgents, newAgents, newId, parseCommand, readGraph, runTasks, saveGraph, waves, withMother, type AgentData, type CanvasEdge, type CanvasGraph, type CanvasNode, type CatalogModel, type Command, type MotherSettings, type NoteData, type Plan, type TaskStatus } from "@/lib/canvas";
 
 type Run = { rootThreadId: string; graphId: string; status: string };
@@ -323,6 +324,11 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
   // What is selected is kept apart from the saved graph: a click picks one, Shift+click or Shift+drag several.
   const [selection, setSelection] = useState<string[]>([]), [dashboardId, setDashboardId] = useState<string | null>(null);
   const [menu, setMenu] = useState<BoardMenu | null>(null), wireMenu = menu?.kind === "wire" ? menu : null;
+  // The side panel folds away to give the board the whole width, remembered on this device; choosing an agent or the
+  // Mother brings it back.
+  const [panelOpen, setPanelOpen] = useState(() => { try { return appStorage().getItem("elpis-canvas-panel") !== "closed"; } catch { return true; } });
+  const showPanel = (open: boolean) => { setPanelOpen(open); try { appStorage().setItem("elpis-canvas-panel", open ? "open" : "closed"); } catch { /* kept for this session only */ } setTimeout(() => void flow.fitView({ ...FIT, duration: 250 }), 60); };
+  useEffect(() => { if (selection.length && !panelOpen) showPanel(true); }, [selection]); // eslint-disable-line react-hooks/exhaustive-deps
   const project = useProjectFolders(cwd);
   const [notice, setNotice] = useState("");
   const [maxAtOnce, setMaxAtOnce] = useState(3);
@@ -703,7 +709,7 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
   const chat = selected ? states[selected.id]?.chat : null;
   // The isometric view (components/agents-iso.tsx) takes the board's place for watching a run; editing stays flat.
   const [iso, setIso] = useState(false);
-  return <section className="agents-canvas" aria-label="Agents canvas">
+  return <section className="agents-canvas" aria-label="Agents canvas" data-panel={panelOpen ? "open" : "closed"}>
     <header className="canvas-header">
       <Input aria-label="Graph name" className="canvas-name" value={graph.name} maxLength={120} onChange={event => setGraph(current => ({ ...current, name: event.target.value }))} />
       {projectMenu}
@@ -713,10 +719,12 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
       {run && <Button variant="ghost" size="sm" onClick={() => onOpenChat(run.rootThreadId)}><ExternalLink size={14} />Open run chat</Button>}
       <Button variant="ghost" size="sm" aria-pressed={motherOpen} onClick={() => setSelection([MOTHER])} title="The run's settings: the brief every agent gets, her model, how many agents"><i className="canvas-kind" data-kind="mother" />Mother</Button>
       <Button variant="ghost" size="sm" onClick={tidy} title="Arrange by run order: Kahn's waves, each column starting once the columns before it are done"><ListOrdered size={14} />Arrange</Button>
+      <Button variant="ghost" size="sm" aria-label="Side panel" aria-pressed={panelOpen} title={panelOpen ? "Hide the side panel: the board takes the whole width" : "Show the side panel: patterns, run order, the selected agent"} onClick={() => showPanel(!panelOpen)}>{panelOpen ? <PanelRightClose size={15} /> : <PanelRight size={15} />}</Button>
       <Button size="sm" onClick={() => void start()} disabled={starting || Boolean(run && !FINISHED.has(run.status))}><Play size={14} />{starting ? "Starting…" : "Run graph"}</Button>
     </header>
     <div className="canvas-board" ref={board} onPointerMove={event => { pointer.current = { x: event.clientX, y: event.clientY }; }}
-      onDoubleClick={event => { if ((event.target as Element).classList.contains("react-flow__pane")) openAdder({ x: event.clientX, y: event.clientY }); }}>
+      // A double-click on empty board, whichever layer React Flow put under the pointer, opens the command line there.
+      onDoubleClick={event => { const target = event.target as Element; if (target.closest(".react-flow") && !target.closest(".react-flow__node, .react-flow__edge, .react-flow__panel, .react-flow__controls, .react-flow__minimap")) openAdder({ x: event.clientX, y: event.clientY }); }}>
       {iso ? <IsoBoard graph={graph} states={states} selected={selection} onSelect={setSelection} onOpen={setDashboardId} dark={dark} /> : <ReactFlow nodes={nodes} edges={edges} nodeTypes={NODE_TYPES} edgeTypes={EDGE_TYPES} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onConnect={onConnect} onConnectEnd={onConnectEnd}
         onConnectStart={event => { const spot = "touches" in event ? event.touches[0] : event; connectFrom.current = { x: spot.clientX, y: spot.clientY }; }} connectOnClick={false}
         onNodeDoubleClick={(_, node) => { if (node.type === "agent") setDashboardId(node.id); }}
@@ -749,7 +757,7 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
         <button type="button" aria-label="Dismiss" onClick={() => setUndoLoad(null)}><X size={13} /></button></p>}
       {notice && <p className="canvas-notice" role="alert">{notice}<button type="button" aria-label="Dismiss" onClick={() => setNotice("")}><X size={13} /></button></p>}
     </div>
-    {selected ? <aside className="canvas-side" aria-label="Selected agent">
+    {!panelOpen ? null : selected ? <aside className="canvas-side" aria-label="Selected agent">
       <p className="hud-menu-title">Agent{order.get(selected.id) ? ` · wave ${order.get(selected.id)}` : ""}{states[selected.id] ? ` · ${STATUS_LABEL[states[selected.id].status]}` : ""} · {CHECK_LABEL[states[checkOf(selected.id)]?.status ?? "idle"]}</p>
       <label>Name<Input ref={nameField} aria-label="Name" value={selected.data.title} maxLength={256} onChange={event => edit({ title: event.target.value })} /></label>
       <label>Prompt<Textarea aria-label="Prompt" rows={5} value={selected.data.instruction} placeholder="What this agent should do; left empty, Elpis fills it from the goal" onChange={event => edit({ instruction: event.target.value })} /></label>

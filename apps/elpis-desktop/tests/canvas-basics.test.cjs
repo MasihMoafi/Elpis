@@ -73,6 +73,18 @@ test('canvas basics: undo and redo, copy and paste, duplicate, delete keeping th
     for (const [dx, dy] of [[12, 0], [0, 12], [-9, -9], [9, 9]])
       assert.ok(await page.evaluate(([x, y]) => Boolean(document.elementFromPoint(x, y)?.closest('.react-flow__handle')), [centre.x + dx, centre.y + dy]), `a press ${dx}, ${dy} px from the dot lands on it`);
 
+    // The side panel folds away to give the board the whole width (remembered); choosing an agent brings it back.
+    const boardWidth = async () => (await canvas.locator('.react-flow').boundingBox()).width;
+    const wide = await boardWidth();
+    await canvas.getByRole('button', { name: 'Side panel', exact: true }).click();
+    await canvas.getByRole('complementary').waitFor({ state: 'detached' });
+    assert.ok(await boardWidth() > wide + 200, 'the board took the panel\'s width');
+    await page.reload(); await page.getByRole('button', { name: 'Canvas', exact: true }).click(); await canvas.waitFor();
+    assert.equal(await canvas.getByRole('complementary').count(), 0, 'the folded panel stays folded');
+    await fit(); await node('Part 1').click();
+    await canvas.getByRole('complementary', { name: 'Selected agent', exact: true }).waitFor();
+    await canvas.getByRole('complementary', { name: 'Selected agent', exact: true }).getByRole('button', { name: 'Done', exact: true }).click();
+
     // The header fits a small window: nothing runs past its edge or is cut off.
     for (const width of [1130, 960]) {
       await page.setViewportSize({ width, height: 660 }); await page.waitForTimeout(150);

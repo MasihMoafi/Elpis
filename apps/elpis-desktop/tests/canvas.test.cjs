@@ -160,9 +160,10 @@ test('agents canvas: writers with automatic checks, architectures, wiring, persi
     await fit();
     const board = await canvas.locator('.react-flow__pane').boundingBox();
     const box = async () => {
+      const area = await canvas.locator('.react-flow__pane').boundingBox();
       await page.keyboard.down('Shift');
-      await page.mouse.move(board.x + 4, board.y + 4); await page.mouse.down();
-      await page.mouse.move(board.x + board.width - 4, board.y + board.height - 4, { steps: 8 }); await page.mouse.up();
+      await page.mouse.move(area.x + 4, area.y + 4); await page.mouse.down();
+      await page.mouse.move(area.x + area.width - 4, area.y + area.height - 4, { steps: 8 }); await page.mouse.up();
       await page.keyboard.up('Shift');
     };
     await box();
@@ -242,7 +243,9 @@ test('agents canvas: writers with automatic checks, architectures, wiring, persi
     await page.keyboard.press('Control+a');
     assert.equal(await adder.count(), 0);
     assert.equal(await page.evaluate(() => document.activeElement.value.slice(document.activeElement.selectionStart, document.activeElement.selectionEnd)), 'Fix the lexer');
-    await page.mouse.dblclick(board.x + 30, board.y + 30);
+    // The header wraps to two rows while a run shows its status, so the board is measured again.
+    const now = await canvas.locator('.react-flow__pane').boundingBox();
+    await page.mouse.dblclick(now.x + 30, now.y + 30);
     await command.waitFor(); await page.keyboard.press('Escape'); await adder.waitFor({ state: 'hidden' });
 
     // Counts are typed in the Mother's panel, and only what Elpis allows is taken, with the reason when it is not. The

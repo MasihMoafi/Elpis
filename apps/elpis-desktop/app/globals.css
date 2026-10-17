@@ -729,6 +729,7 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 /* The agents canvas (components/agents-canvas.tsx): architectures on the left, agents as linked nodes in the middle,
  * the selected agent on the right. Running is the context olive, done is success, failed is destructive. */
 .agents-canvas { flex:1; min-height:0; display:grid; grid-template-columns:minmax(0,1fr) 290px; grid-template-rows:auto minmax(0,1fr); border-top:1px solid var(--hairline); }
+.agents-canvas[data-panel="closed"] { grid-template-columns:minmax(0,1fr); }
 /* The header fits any window: the name gives way first, then the controls wrap to a second row; nothing is cut off. */
 .canvas-header { grid-column:1 / -1; display:flex; flex-wrap:wrap; align-items:center; gap:8px 10px; padding:10px 16px; border-bottom:1px solid var(--hairline); background:var(--background); }
 .canvas-header > * { flex-shrink:0; }
