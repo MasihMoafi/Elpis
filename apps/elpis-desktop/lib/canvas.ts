@@ -158,11 +158,17 @@ export type CatalogModel = { provider: string | null; providerLabel: string; mod
 export const EFFORTS = ["minimal", "low", "medium", "high", "xhigh"];
 /** A typed command, AutoCAD-style: `3 implement sol high: fix the parser; fix the lexer`. A number is how many, a word
  * the kind, the model (any words of its name, `@provider` to pick the provider) and the thinking level, in any order;
- * after a colon, the tasks, separated by `;`. Words it can't place are listed, never guessed. */
+ * after a colon or on the next lines (Shift+Enter), the tasks, separated by `;` or new lines. Words it can't place are
+ * listed, never guessed. */
 export type Command = { count: number | null; kind: AgentKind | "note" | null; model: CatalogModel | null; effort: string | null; tasks: string[]; unknown: string[] };
+/** A command's first part (count, kind, model, thinking) and the rest, which starts at the first colon or new line. */
+export function commandParts(text: string) {
+  const cut = text.search(/[:\n]/);
+  return cut < 0 ? { head: text, rest: "" } : { head: text.slice(0, cut), rest: text.slice(cut) };
+}
 export function parseCommand(text: string, catalog: CatalogModel[]): Command {
-  const colon = text.indexOf(":"), head = colon < 0 ? text : text.slice(0, colon);
-  const tasks = colon < 0 ? [] : text.slice(colon + 1).split(/[;\n]/).map(task => task.trim()).filter(Boolean);
+  const { head, rest } = commandParts(text);
+  const tasks = rest.slice(1).split(/[;\n]/).map(task => task.trim()).filter(Boolean);
   const command: Command = { count: null, kind: null, model: null, effort: null, tasks, unknown: [] };
   const words: string[] = [];
   let provider: string | null = null;

@@ -6,7 +6,7 @@ const http = require('node:http');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { chromium } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright');
-const { optionsCut } = require('./controls.cjs');
+const { chooseOption, optionsCut } = require('./controls.cjs');
 
 test('agents canvas: architecture, add and wire agents, refuse loops, persist, run and follow it live', async () => {
   const root = { id: 'root', name: 'Canvas run', cwd: '/tmp/demo', model: 'sol', modelProvider: 'openai', status: { type: 'idle' }, desktopAccess: { writable: true, mode: 'direct' } };
@@ -58,6 +58,17 @@ test('agents canvas: architecture, add and wire agents, refuse loops, persist, r
     await canvas.getByRole('button', { name: /Plan → Build → Verify/ }).click();
     await until('the architecture has 4 agents', () => document.querySelectorAll('.react-flow__node-agent').length === 4);
     assert.equal(await edges.count(), 4);
+
+    // Nothing on the board covers anything else, down to a small window (Masih's is about 1130×660): the zoom buttons,
+    // the minimap and the Add bar, whose buttons all stay in the window.
+    for (const [width, height] of [[1130, 660], [960, 600], [1440, 900]]) {
+      await page.setViewportSize({ width, height }); await page.waitForTimeout(200);
+      const boxes = await page.evaluate(() => Object.fromEntries(['.react-flow__controls', '.canvas-minimap', '.canvas-toolbar'].map(selector => {
+        const box = document.querySelector(selector).getBoundingClientRect(); return [selector, { left: box.left, top: box.top, right: box.right, bottom: box.bottom }]; })));
+      const meet = (a, b) => a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
+      for (const [a, b] of [['.react-flow__controls', '.canvas-minimap'], ['.react-flow__controls', '.canvas-toolbar'], ['.canvas-minimap', '.canvas-toolbar']]) assert.ok(!meet(boxes[a], boxes[b]), `${a} and ${b} overlap at ${width}×${height}`);
+      assert.deepEqual(await page.evaluate(() => [...document.querySelectorAll('.canvas-toolbar button')].filter(button => { const box = button.getBoundingClientRect(); return box.left < 0 || box.right > innerWidth || box.bottom > innerHeight; }).map(button => button.textContent)), [], `toolbar buttons outside the window at ${width}×${height}`);
+    }
     assert.deepEqual(await nodes.evaluateAll(list => list.map(item => item.querySelector('[data-kind]')?.dataset.kind).sort()), ['implement', 'implement', 'plan', 'verify']);
 
     // The Mother leads every graph: one node, wired to the first wave only, and she can't be deleted.
@@ -228,6 +239,77 @@ test('agents canvas: architecture, add and wire agents, refuse loops, persist, r
     await page.keyboard.press('Escape'); await dash.waitFor({ state: 'hidden' });
     await node('Run the suite').click(); await page.keyboard.press('Enter');
     await canvas.getByRole('dialog', { name: 'Run the suite dashboard' }).getByText('Not started. What it does shows here once the graph runs.').waitFor();
+
+    // Shift+Enter in the command line starts the next task line; it never adds the agents early.
+    await page.keyboard.press('Escape');
+    await canvas.getByRole('textbox', { name: 'Max agents', exact: true }).fill('20');
+    await page.evaluate(() => document.activeElement?.blur());
+    await page.keyboard.press('Control+a'); await command.waitFor();
+    await page.keyboard.type('2 imp'); await page.keyboard.press('Shift+Enter'); await page.keyboard.type('Tidy the lexer');
+    await page.keyboard.press('Shift+Enter'); await page.keyboard.type('Tidy the parser');
+    assert.equal(await nodes.count(), 12, 'Shift+Enter added nothing');
+    assert.equal(await plan.innerText(), '2 × Implement\nDefault model\n2 tasks');
+    await page.keyboard.press('Enter');
+    await until('the two typed agents were added', () => document.querySelectorAll('.react-flow__node-agent').length === 14);
+
+    // Shift+click adds to the selection, and the selected agents are edited together.
+    await node('Tidy the lexer').click(); await node('Tidy the parser').click({ modifiers: ['Shift'] });
+    const group = canvas.getByRole('complementary', { name: 'Selected agents', exact: true });
+    await group.getByText(/^2 agents selected$/i).waitFor();
+    await chooseOption(group.getByRole('combobox', { name: 'Role', exact: true }), 'verify');
+    await chooseOption(group.getByRole('combobox', { name: 'Model', exact: true }), '|gpt-6-luna');
+    await page.waitForTimeout(400);
+    const tidy = async () => (await saved()).nodes.filter(item => item.data?.title?.startsWith('Tidy'));
+    assert.deepEqual((await tidy()).map(item => [item.data.kind, item.data.model]), [['verify', 'gpt-6-luna'], ['verify', 'gpt-6-luna']]);
+    // Shift+drag draws a box, and everything inside it is selected.
+    await group.getByRole('button', { name: 'Done', exact: true }).click();
+    await page.keyboard.down('Shift');
+    await page.mouse.move(board.x + 4, board.y + 4); await page.mouse.down();
+    await page.mouse.move(board.x + board.width - 4, board.y + board.height - 4, { steps: 8 }); await page.mouse.up();
+    await page.keyboard.up('Shift');
+    const boxed = await canvas.locator('.react-flow__node-agent.selected').count();
+    assert.ok(boxed > 2, `the box selected ${boxed} agents`);
+    await group.getByText(new RegExp(`^${boxed} agents selected$`, 'i')).waitFor();
+    // Delete removes the whole selection.
+    await group.getByRole('button', { name: 'Done', exact: true }).click();
+    await node('Tidy the lexer').click(); await node('Tidy the parser').click({ modifiers: ['Shift'] });
+    await page.keyboard.press('Delete');
+    await until('both were deleted', () => document.querySelectorAll('.react-flow__node-agent').length === 12);
+
+    // A click on a wire opens its menu: insert agents on it (they take its place), or remove it.
+    const drawn = await saved(), titled = title => drawn.nodes.find(item => item.data?.title === title).id;
+    const wireOf = (from, to) => canvas.locator(`.react-flow__edge[data-id="${drawn.edges.find(edge => edge.source === titled(from) && edge.target === titled(to)).id}"]`);
+    // A wire is clicked halfway along it, where a user aims; its box's centre can be off the curve.
+    const clickWire = async wire => {
+      const point = await wire.locator('.react-flow__edge-path').evaluate(path => { const at = path.getPointAtLength(path.getTotalLength() / 2), m = path.getScreenCTM(); return { x: at.x * m.a + at.y * m.c + m.e, y: at.x * m.b + at.y * m.d + m.f }; });
+      await page.mouse.click(point.x, point.y);
+    };
+    await clickWire(wireOf('Plan the change', 'Build part one'));
+    const wireMenu = canvas.getByRole('menu', { name: 'Wire', exact: true });
+    assert.deepEqual(await wireMenu.getByRole('menuitem').allInnerTexts().then(list => list.map(item => item.split('\n')[0])), ['Insert agents here', 'Remove wire']);
+    await page.keyboard.press('Enter');
+    await command.waitFor();
+    await page.keyboard.type('verify: Check the plan'); await page.keyboard.press('Enter');
+    await until('the inserted agent was added', () => document.querySelectorAll('.react-flow__node-agent').length === 13);
+    await page.waitForTimeout(400);
+    const inserted = await saved(), id = title => inserted.nodes.find(item => item.data?.title === title).id;
+    const wired = (from, to) => inserted.edges.some(edge => edge.source === id(from) && edge.target === id(to));
+    assert.deepEqual([wired('Plan the change', 'Check the plan'), wired('Check the plan', 'Build part one'), wired('Plan the change', 'Build part one')], [true, true, false]);
+    const wires = await edges.count();
+    await clickWire(wireOf('Build part two', 'Run the suite'));
+    await wireMenu.getByRole('menuitem', { name: /Remove wire/ }).click();
+    await wireMenu.waitFor({ state: 'hidden' }); await page.waitForTimeout(100);
+    assert.equal(await edges.count(), wires - 1, 'the wire was removed');
+    // The Mother's dotted wires take a click too: agents inserted there start first, and her agent waits for them.
+    await clickWire(canvas.locator(`.react-flow__edge[data-id="mother->${id('Plan the change')}"]`));
+    assert.deepEqual(await wireMenu.getByRole('menuitem').allInnerTexts(), ['Insert agents here\nBefore Plan the change, started by the Mother']);
+    await page.keyboard.press('Enter'); await command.waitFor();
+    await page.keyboard.type('explore: Read the issue'); await page.keyboard.press('Enter');
+    await until('the agent before the plan was added', () => document.querySelectorAll('.react-flow__node-agent').length === 14);
+    await page.waitForTimeout(400);
+    const first = await saved(), firstId = title => first.nodes.find(item => item.data?.title === title).id;
+    assert.ok(first.edges.some(edge => edge.source === firstId('Read the issue') && edge.target === firstId('Plan the change')), 'the plan waits for the new agent');
+    assert.match(await node('Plan the change').innerText(), /wave 2/i);
     assert.deepEqual(errors, []);
   } finally { await browser.close(); server.close(); }
 });
