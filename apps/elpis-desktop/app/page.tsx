@@ -409,7 +409,9 @@ export default function Home() {
 
   useEffect(() => { setText(savedDraft(newDraftKey.current)); }, [savedDraft]);
 
-  useEffect(() => { document.documentElement.classList.toggle("dark", dark); window.elpisDesktop?.setTheme?.(dark); }, [dark]);
+  // The desktop gets the theme as dark or not, the choice (System keeps the operating system in charge of pages in the browser)
+  // and the page's own --background, resolved: main paints the browser's blank pages with it.
+  useEffect(() => { document.documentElement.classList.toggle("dark", dark); window.elpisDesktop?.setTheme?.(dark, { source: theme, background: getComputedStyle(document.body).backgroundColor }); }, [dark, theme]);
   useEffect(() => {
     let saved: string | null = null;
     try { saved = appStorage().getItem("elpis-theme"); const stored = readProjects(); newDraftKey.current = stored.selectedId ? `new-${stored.selectedId}` : "new"; setText(savedDraft(newDraftKey.current)); restoreAttachments(newDraftKey.current); setProjects(stored.projects); setProjectId(stored.selectedId); setCwd(stored.projects.find(item => item.id === stored.selectedId)?.cwd ?? ""); }

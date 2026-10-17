@@ -11,7 +11,7 @@ export const productionFiles = [
   'bridge/rag-command.mjs', 'bridge/server.mjs', 'bridge/tools.mjs', 'bridge/transcription.mjs', 'bridge/attachments.mjs',
   'bridge/resources/rag.md', 'desktop/browser-policy.cjs', 'desktop/browser.cjs', 'desktop/browser-annotations.cjs', 'desktop/browser-page-preload.cjs', 'desktop/context-menu.cjs',
   'desktop/main.cjs', 'desktop/media-policy.cjs', 'desktop/preferences.cjs', 'desktop/preload.cjs', 'desktop/files.cjs',
-  'desktop/terminal.cjs', 'desktop/open-thread.cjs', 'desktop/tray.cjs', 'desktop/quick-entry.cjs', 'desktop/quick-entry-preload.cjs', 'desktop/quick-entry.html',
+  'desktop/terminal.cjs', 'desktop/open-thread.cjs', 'desktop/tray.cjs', 'desktop/quick-entry.cjs', 'desktop/theme.cjs', 'desktop/quick-entry-preload.cjs', 'desktop/quick-entry.html',
   'desktop/runtime.mjs', 'desktop/state.cjs', 'desktop/elpis-icon.png', 'lib/turn-replacement.ts', 'lib/thread-deletion.ts', 'lib/approvals.ts',
 ];
 

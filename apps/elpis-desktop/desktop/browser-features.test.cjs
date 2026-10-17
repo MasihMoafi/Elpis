@@ -13,11 +13,11 @@ function fixture() {
   const image = { getSize: () => ({ width: 2560, height: 1440 }), isEmpty: () => false, resize(options) { image.resized = options; return image; }, toJPEG: quality => Buffer.from(`jpeg-${quality}`) };
   class View {
     constructor(options) {
-      this.options = options; views.push(this);
+      this.options = options; views.push(this); const view = this;
       const wc = this.webContents = Object.assign(new EventEmitter(), { url: 'about:blank', zoom: 1, sent: [], finds: [], mainFrame: {},
         navigationHistory: { canGoBack: () => true, canGoForward: () => false, goBack() { wc.back = true; }, goForward() {} },
         setWindowOpenHandler() {}, isDestroyed: () => false, close() {}, focus() {}, getURL: () => wc.url,
-        loadURL(url) { wc.url = url; return Promise.resolve(); }, send: (channel, message) => wc.sent.push({ channel, message }),
+        loadURL(url) { wc.url = url; wc.backgroundAtLoad = view.background; return Promise.resolve(); }, send: (channel, message) => wc.sent.push({ channel, message }),
         capturePage: async () => image, getZoomFactor: () => wc.zoom, setZoomFactor(value) { wc.zoom = value; },
         findInPage(text, options) { wc.finds.push([text, options]); return wc.finds.length; }, stopFindInPage(action) { wc.stopped = action; },
         reload() { wc.reloaded = true; }, reloadIgnoringCache() { wc.hard = true; }, stop() {}, print() { wc.printed = true; },
@@ -25,7 +25,7 @@ function fixture() {
         copy() {}, cut() {}, paste() {}, selectAll() {}, copyImageAt() {}, downloadURL() {}, replaceMisspelling() {}, session: {} });
       pages.push(wc);
     }
-    setVisible() {} setBounds() {}
+    setVisible() {} setBounds() {} setBackgroundColor(color) { this.background = color; }
   }
   const clipboard = { writeText(text) { clipboard.text = text; }, writeImage(value) { clipboard.image = value; } };
   const Menu = { buildFromTemplate: template => ({ popup() { menus.push(template); } }) };
@@ -55,6 +55,23 @@ test('each tab page gets the annotation preload in a sandbox with context isolat
   const preferences = f.views[0].options.webPreferences;
   assert.equal(preferences.preload, path.join(__dirname, 'browser-page-preload.cjs'));
   assert.equal(preferences.sandbox, true); assert.equal(preferences.contextIsolation, true); assert.equal(preferences.nodeIntegration, false);
+});
+
+test('theme: every tab page takes the app background when it opens and again on each theme change, so a blank tab is never white', () => {
+  const dark = 'rgb(10, 11, 13)', light = 'rgb(251, 251, 250)';
+  const f = fixture(); f.browser.open('https://example.com');
+  assert.equal(f.views[0].background, undefined, 'no colour is invented before the app reports its own');
+  f.browser.setBackground(dark);
+  assert.equal(f.views[0].background, dark, 'a tab that is open follows the dark theme');
+  f.browser.open();
+  assert.equal(f.views[1].background, dark, 'a new blank tab opens in the app background');
+  assert.equal(f.pages[1].backgroundAtLoad, dark, 'and has it before its first page loads');
+  f.browser.setBackground(light);
+  assert.deepEqual(f.views.map(view => view.background), [light, light], 'every tab follows the switch to light');
+  f.views[0].background = 'stale'; f.pages[0].isDestroyed = () => true;
+  f.browser.setBackground(dark);
+  assert.equal(f.views[0].background, 'stale', 'a destroyed page is left alone');
+  assert.equal(f.views[1].background, dark);
 });
 
 test('annotate: a click on the page becomes a numbered draft with a screenshot, then a comment the agent reads', async () => {

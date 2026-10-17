@@ -33,6 +33,6 @@ export type DesktopTerminal = {
 /** Quick Entry's global shortcut (desktop/quick-entry.cjs): whether this session allows one, and why the saved one does not work. */
 export type QuickEntryStatus = { supported:boolean; reason?:string; shortcut:string; problem:string|null };
 export type DesktopQuickEntry = { status:()=>Promise<QuickEntryStatus>; setShortcut:(accelerator:string)=>Promise<{shortcut:string}> };
-declare global { interface Window { elpisDesktop?:{browser:DesktopBrowser;storage?:DesktopStorage;chooseFolder?:()=>Promise<string|null>;setTheme?:(dark:boolean)=>void;resolveFolder?:(folder:string)=>Promise<string>;openFile?:(target:string)=>Promise<void>;openFolder?:(folder:string)=>Promise<void>;terminal?:DesktopTerminal;onOpenThread?:(callback:(threadId:string)=>void)=>()=>void;
+declare global { interface Window { elpisDesktop?:{browser:DesktopBrowser;storage?:DesktopStorage;chooseFolder?:()=>Promise<string|null>;setTheme?:(dark:boolean,details?:{source:"system"|"light"|"dark";background:string})=>void;resolveFolder?:(folder:string)=>Promise<string>;openFile?:(target:string)=>Promise<void>;openFolder?:(folder:string)=>Promise<void>;terminal?:DesktopTerminal;onOpenThread?:(callback:(threadId:string)=>void)=>()=>void;
   /** A new chat from Quick Entry (sent with its text) or the tray's New chat (empty). */
   onNewChat?:(callback:(text:string)=>void)=>()=>void; quickEntry?:DesktopQuickEntry} } }

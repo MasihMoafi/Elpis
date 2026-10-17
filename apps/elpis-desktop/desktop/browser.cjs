@@ -19,6 +19,10 @@ function createBrowser({host,origin,WebContentsView,session,ipcMain,openExternal
   browserSession.setPermissionRequestHandler((_contents,_permission,callback)=>callback(false));
   browserSession.setPermissionCheckHandler(()=>false);
   const active=()=>tabs.get(activeId);
+  // The app's page background (its theme token): a tab's page is painted with it, so a blank tab matches the app, not white.
+  let background=null;
+  const tint=tab=>{if(background&&!tab.view.webContents.isDestroyed())tab.view.setBackgroundColor(background);};
+  const setBackground=color=>{background=color;for(const tab of tabs.values())tint(tab);};
   const commentView=(tab,item)=>({id:item.id,number:item.number,kind:item.kind,label:commentLabel(item),body:item.body});
   const snapshot=()=>{
     const tab=active();
@@ -74,7 +78,7 @@ function createBrowser({host,origin,WebContentsView,session,ipcMain,openExternal
     view.setVisible(false);host.contentView.addChildView(view);
     const tab={id:randomUUID(),url:'about:blank',title:'New tab',loading:false,error:null,failure:null,view,comments:[],draft:null,find:{open:false,text:'',matches:0,active:0,focus:0}};tabs.set(tab.id,tab);
     if(after&&tabs.has(after)){const order=[...tabs.entries()].filter(([id])=>id!==tab.id),at=order.findIndex(([id])=>id===after)+1;order.splice(at,0,[tab.id,tab]);tabs.clear();for(const [id,item] of order)tabs.set(id,item);}
-    const wc=view.webContents;
+    const wc=view.webContents;tint(tab);
     agent.observe(tab);
     wc.on('will-attach-webview',event=>event.preventDefault());
     const guard=(event,url)=>{try{browserUrl(url,origin);}catch{event.preventDefault();tab.error='This address cannot be opened in the browser.';emit();}};
@@ -286,7 +290,7 @@ function createBrowser({host,origin,WebContentsView,session,ipcMain,openExternal
   };
   ipcMain.on('elpis:browser:layout',layout);
   ipcMain.on('elpis:browser:page',pageMessage);
-  return {open,agent,dispose(){
+  return {open,agent,setBackground,dispose(){
     agent.dispose();
     disposed=true;ipcMain.removeHandler('elpis:browser');ipcMain.removeListener('elpis:browser:layout',layout);ipcMain.removeListener('elpis:browser:page',pageMessage);
     host.webContents.removeListener('before-input-event',rootKeyboard);host.webContents.removeListener('did-start-navigation',resetLayout);host.removeListener('resize',place);

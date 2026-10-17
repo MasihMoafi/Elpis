@@ -1,6 +1,6 @@
 'use strict';
 
-const { app, BrowserWindow, WebContentsView, session, ipcMain, Menu, Tray, nativeImage, globalShortcut, screen, dialog, shell, clipboard } = require('electron');
+const { app, BrowserWindow, WebContentsView, session, ipcMain, Menu, Tray, nativeImage, globalShortcut, screen, dialog, shell, clipboard, nativeTheme } = require('electron');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const { createBrowser } = require('./browser.cjs');
@@ -14,6 +14,7 @@ const { registerTerminal } = require('./terminal.cjs');
 const { openThreadArgument, createThreadOpener, createNewChatOpener } = require('./open-thread.cjs');
 const { createTray, createCloseToTray } = require('./tray.cjs');
 const { startQuickEntry } = require('./quick-entry.cjs');
+const { registerTheme } = require('./theme.cjs');
 
 // The renderer gets only the loopback app, never Node or filesystem access.
 let server;
@@ -92,13 +93,9 @@ async function createOrFocusWindow() {
   const disposeThreads = threads.attach({ host: window, origin, ipcMain });
   const disposeNewChats = newChats.attach({ host: window, origin, ipcMain });
   const disposeQuickEntry = quickEntry?.attach({ host: window, origin }) ?? (() => {});
-  // The app's theme colours the window buttons; only the app's own page may set it.
+  // The app's theme colours the window buttons, Quick Entry, the browser's pages and nativeTheme; only the app's own page may report it.
   const host = window;
-  const theme = (event, dark) => {
-    if (event.sender !== host.webContents || event.senderFrame !== host.webContents.mainFrame || host.isDestroyed()) return;
-    darkTheme = dark === true; host.setTitleBarOverlay(TITLE_BAR[darkTheme ? 'dark' : 'light']);
-  };
-  ipcMain.on('elpis:theme', theme);
+  const disposeTheme = registerTheme({ host, ipcMain, nativeTheme, titleBar: TITLE_BAR, browser, onDark: dark => { darkTheme = dark; } });
   // Website permissions are handled by the browser's separate session.
   window.webContents.session.setPermissionRequestHandler((contents, permission, callback, details) => callback(appPermission(contents, window, permission, details, origin)));
   window.webContents.session.setPermissionCheckHandler((contents, permission, _requestingOrigin, details) => appPermission(contents, window, permission, details, origin));
@@ -115,7 +112,7 @@ async function createOrFocusWindow() {
     if (closeToTray.hides(event, host)) return;
     if (!mayClose()) { event.preventDefault(); return; }
     if (disposed) return; disposed = true;
-    detachContextMenu(); disposeFiles(); disposeTerminal(); disposeThreads(); disposeNewChats(); disposeQuickEntry(); disposeState(); browser.dispose(); ipcMain.removeListener('elpis:theme', theme);
+    detachContextMenu(); disposeFiles(); disposeTerminal(); disposeThreads(); disposeNewChats(); disposeQuickEntry(); disposeState(); browser.dispose(); disposeTheme();
   });
   window.on('closed', () => { window = undefined; closeToTray.closed(); });
   await window.loadURL(server.url);
