@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
 import "@/components/settings/settings.css";
 import { SettingRow } from "@/components/settings/rows";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -118,34 +118,50 @@ function LedgerView({ ledger, loading }: { ledger: Ledger | null; loading: boole
   </>;
 }
 
-/** The TUI ledger's SMART PRUNE and SUBAGENTS switches, with its detail lines, and a RAG switch for the rag MCP server
- * (the TUI has /rag but no switch). All three are config keys, so they apply to every chat from its next turn. */
-function LedgerSwitches({ prune }: { prune: Prune }) {
-  const [state, setState] = useState<Switches | null>(null);
-  const [saving, setSaving] = useState<"smartPrune" | "subagents" | "rag" | null>(null);
-  const [error, setError] = useState("");
-  useEffect(() => {
-    let live = true;
-    api<unknown>("/context/switches").then(value => { if (live) setState(switchesOf(value)); }, reason => { if (live) setError(reason instanceof Error ? reason.message : String(reason)); });
-    return () => { live = false; };
-  }, []);
-  if (!state) return error ? <p role="alert" className="context-ledger-note">{error}</p> : null;
-  const save = async (field: "smartPrune" | "subagents" | "rag", value: boolean) => {
-    setSaving(field); setError("");
-    try { setState(switchesOf(await api<unknown>("/context/switches", { version: state.version, [field]: value }))); }
-    catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); api<unknown>("/context/switches").then(value => setState(switchesOf(value)), () => {}); }
-    finally { setSaving(null); }
-  };
+type SwitchField = "smartPrune" | "subagents" | "rag";
+/** One copy of the switches for every view of them (the ledger and the features under the message box), so a flip in
+ * one shows in the other. Each view refreshes it when it appears, so a change made in the TUI shows too. */
+let switchesNow: { state: Switches | null; saving: SwitchField | null; error: string } = { state: null, saving: null, error: "" };
+const switchListeners = new Set<() => void>();
+const publishSwitches = (next: Partial<typeof switchesNow>) => { switchesNow = { ...switchesNow, ...next }; for (const listener of switchListeners) listener(); };
+const reason = (value: unknown) => value instanceof Error ? value.message : String(value);
+const refreshSwitches = () => api<unknown>("/context/switches").then(value => publishSwitches({ state: switchesOf(value), error: "" }), value => publishSwitches({ error: reason(value) }));
+async function saveSwitch(field: SwitchField, value: boolean) {
+  const { state } = switchesNow; if (!state || switchesNow.saving) return;
+  publishSwitches({ saving: field, error: "" });
+  try { publishSwitches({ state: switchesOf(await api<unknown>("/context/switches", { version: state.version, [field]: value })) }); }
+  catch (value) { publishSwitches({ error: reason(value) }); void refreshSwitches(); }
+  finally { publishSwitches({ saving: null }); }
+}
+/** The Smart Prune, Subagents and RAG switches (config keys: every chat, from its next turn) and a way to flip each. */
+export function useContextSwitches() {
+  const now = useSyncExternalStore(listener => { switchListeners.add(listener); return () => { switchListeners.delete(listener); }; }, () => switchesNow, () => switchesNow);
+  useEffect(() => { void refreshSwitches(); }, []);
+  return { ...now, save: saveSwitch };
+}
+
+/** The three switches as both the ledger and the features under the message box show them. */
+export function switchRows(state: Switches, prune: Prune = null) {
   const examined = prune?.examinedOutputs ?? 0;
-  const rows = [
+  return [
     { field: "smartPrune", label: "Smart Prune", on: state.smartPrune, detail: examined > 0 ? `${prune?.admittedOutputs ?? 0} of ${examined} eligible outputs shortened · ≈${tokens(prune?.approxSavedTokens ?? 0)} tokens saved`
       : state.smartPrune ? "Before first main-model send · sent history stays stable" : "Tool results pass through unchanged", saving: "Saving setting · the active turn keeps its current policy" },
     { field: "subagents", label: "Subagents", on: state.subagents, detail: state.subagents ? "May delegate to other agents" : "All work stays in this thread", saving: "Saving… · applies next turn" },
     { field: "rag", label: "RAG", on: state.rag === true, detail: state.rag === null ? "No rag MCP server is configured" : state.rag ? "The rag MCP server's tools are available" : "The rag MCP server is off", saving: "Saving… · applies next turn" },
   ] as const;
+}
+/** A switch can't be flipped while another is saving, when the config can't be written, or for RAG without its server. */
+export const switchLocked = (state: Switches, saving: SwitchField | null, field: SwitchField) => !state.write.available || saving !== null || (field === "rag" && state.rag === null);
+
+/** The TUI ledger's SMART PRUNE and SUBAGENTS switches, with its detail lines, and a RAG switch for the rag MCP server
+ * (the TUI has /rag but no switch). All three are config keys, so they apply to every chat from its next turn. */
+function LedgerSwitches({ prune }: { prune: Prune }) {
+  const { state, saving, error, save } = useContextSwitches();
+  if (!state) return error ? <p role="alert" className="context-ledger-note">{error}</p> : null;
+  const rows = switchRows(state, prune);
   return <div className="context-ledger-switches">
     {rows.map(row => <SettingRow key={row.field} title={row.label} description={saving === row.field ? row.saving : row.detail}>
-      <Switch size="sm" aria-label={row.label} checked={saving === row.field ? !row.on : row.on} disabled={!state.write.available || saving !== null || (row.field === "rag" && state.rag === null)} onCheckedChange={checked => void save(row.field, checked)} />
+      <Switch size="sm" aria-label={row.label} checked={saving === row.field ? !row.on : row.on} disabled={switchLocked(state, saving, row.field)} onCheckedChange={checked => void save(row.field, checked)} />
     </SettingRow>)}
     <p className={error ? "context-ledger-note text-destructive" : "context-ledger-note"} role={error ? "alert" : undefined}>{error || (state.write.available ? "For every chat, from its next turn; a running turn is unchanged" : state.write.reason)}</p>
   </div>;

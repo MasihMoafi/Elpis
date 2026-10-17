@@ -11,8 +11,8 @@
   --color-border: var(--border); --color-input: var(--border); --color-ring: var(--primary);
   --color-destructive: var(--destructive);
 }
-:root { --radius:0.625rem; --radius-sm:0.375rem; --radius-md:0.5rem; --radius-lg:0.625rem; --ring:var(--primary); --canvas:#fbfbfa; --ink:#2f2f2e; --background:var(--canvas); --foreground:#252524; --card:#fff; --composer:#fff; --muted:color-mix(in oklch, var(--ink) 7%, var(--canvas)); --secondary:var(--muted); --recessed:color-mix(in oklch, var(--ink) 4.5%, var(--canvas)); --hover:color-mix(in oklab, var(--ink) 6%, transparent); --selected:color-mix(in oklab, var(--ink) 9.5%, transparent); --muted-foreground:#6b6b69; --subtle-foreground:#6c6c68; --border:color-mix(in oklch, var(--ink) 13%, var(--canvas)); --hairline:color-mix(in oklch, var(--ink) 9%, var(--canvas)); --primary:#252524; --primary-foreground:#fff; --accent-mark:#6b6b69; --glow:0 0 #0000; --sidebar:#f2f2f1; --destructive:#c2341f; --success:#1f8a52; --warning:#a35d00; --shadow:0 1px 2px #0000000a, 0 4px 16px #0000000d; color-scheme:light; }
-.dark { --canvas:#0a0b0d; --ink:#d8d2c4; --gold:#f2a93b; --gold-deep:#b9761c; --background:var(--canvas); --foreground:#e6e0d3; --card:#111317; --composer:#101215; --sidebar:#0d0e11; --muted:color-mix(in oklch, var(--ink) 9%, var(--canvas)); --secondary:var(--muted); --recessed:#0e1013; --hover:color-mix(in oklab, var(--gold) 7%, transparent); --selected:color-mix(in oklab, var(--gold) 13%, transparent); --muted-foreground:#9c9587; --subtle-foreground:#8b8579; --border:color-mix(in oklch, var(--gold) 20%, #191b20); --hairline:color-mix(in oklch, var(--gold) 11%, #15171b); --primary:var(--gold); --primary-foreground:#160d02; --accent-mark:var(--gold); --destructive:#ff7a66; --success:#5fd3a0; --warning:#f2c26b; --glow:0 0 0 1px color-mix(in oklch, var(--gold) 30%, transparent), 0 0 28px -8px color-mix(in oklch, var(--gold) 55%, transparent); --shadow:0 1px 2px #000a, 0 10px 30px #0008; color-scheme:dark; }
+:root { --radius:0.625rem; --radius-sm:0.375rem; --radius-md:0.5rem; --radius-lg:0.625rem; --ring:var(--primary); --canvas:#fbfbfa; --ink:#2f2f2e; --background:var(--canvas); --foreground:#252524; --card:#fff; --composer:#fff; --muted:color-mix(in oklch, var(--ink) 7%, var(--canvas)); --secondary:var(--muted); --recessed:color-mix(in oklch, var(--ink) 4.5%, var(--canvas)); --hover:color-mix(in oklab, var(--ink) 6%, transparent); --selected:color-mix(in oklab, var(--ink) 9.5%, transparent); --muted-foreground:#6b6b69; --subtle-foreground:#6c6c68; --border:color-mix(in oklch, var(--ink) 13%, var(--canvas)); --hairline:color-mix(in oklch, var(--ink) 9%, var(--canvas)); --primary:#252524; --primary-foreground:#fff; --accent-mark:#6b6b69; --glow:0 0 #0000; --sidebar:#f2f2f1; --destructive:#c2341f; --success:#1f8a52; --warning:#76680a; --context:#66760f; --shadow:0 1px 2px #0000000a, 0 4px 16px #0000000d; color-scheme:light; }
+.dark { --canvas:#0a0b0d; --ink:#d8d2c4; --gold:#f2a93b; --gold-deep:#b9761c; --background:var(--canvas); --foreground:#e6e0d3; --card:#111317; --composer:#101215; --sidebar:#0d0e11; --muted:color-mix(in oklch, var(--ink) 9%, var(--canvas)); --secondary:var(--muted); --recessed:#0e1013; --hover:color-mix(in oklab, var(--gold) 7%, transparent); --selected:color-mix(in oklab, var(--gold) 13%, transparent); --muted-foreground:#9c9587; --subtle-foreground:#8b8579; --border:color-mix(in oklch, var(--gold) 20%, #191b20); --hairline:color-mix(in oklch, var(--gold) 11%, #15171b); --primary:var(--gold); --primary-foreground:#160d02; --accent-mark:var(--gold); --destructive:#ff7a66; --success:#5fd3a0; --warning:#f2c26b; --context:#cfd46e; --glow:0 0 0 1px color-mix(in oklch, var(--gold) 30%, transparent), 0 0 28px -8px color-mix(in oklch, var(--gold) 55%, transparent); --shadow:0 1px 2px #000a, 0 10px 30px #0008; color-scheme:dark; }
 @layer base { * { box-sizing:border-box; border-color:var(--border); } [hidden] { display:none!important; } }
 * { scrollbar-width:thin; scrollbar-color:color-mix(in oklch, var(--foreground) 16%, transparent) transparent; }
 body { margin:0; background:var(--background); color:var(--foreground); font:13.5px/1.5 Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; font-feature-settings:"cv11","ss01"; -webkit-font-smoothing:antialiased; }
@@ -497,7 +497,7 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .context-ring:focus-visible { outline:1.5px solid var(--ring); outline-offset:1px; }
 .context-ring circle { fill:none; stroke-width:2.2; }
 .context-ring-track { stroke:var(--border); }
-.context-ring-fill { stroke:var(--primary); stroke-linecap:round; transition:stroke-dashoffset .3s; }
+.context-ring-fill { stroke:var(--context); stroke-linecap:round; transition:stroke-dashoffset .3s; }
 /* The ring's breakdown: the TUI Context Ledger's CONTEXT WINDOW section, on one full-window scale. */
 .context-ledger { display:grid; gap:8px; font-size:12.5px; }
 .context-ledger p { margin:0; }
@@ -505,10 +505,10 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .context-ledger-head { display:flex; align-items:baseline; justify-content:space-between; gap:12px; font-weight:500; font-variant-numeric:tabular-nums; }
 .context-ledger-note { font-size:11.5px; line-height:1.35; color:var(--muted-foreground); }
 .context-bar { display:flex; height:8px; border-radius:2px; overflow:hidden; background:var(--muted); }
-.context-bar-segment { flex:none; height:100%; background:var(--category, var(--primary)); }
+.context-bar-segment { flex:none; height:100%; background:var(--category, var(--context)); }
 .context-ledger-rows { display:grid; gap:5px; margin:2px 0 0; padding:0; list-style:none; }
 .context-ledger-row { display:flex; align-items:center; gap:8px; }
-.context-ledger-row::before { content:""; flex:none; width:8px; height:8px; border-radius:50%; background:var(--category, var(--primary)); }
+.context-ledger-row::before { content:""; flex:none; width:8px; height:8px; border-radius:50%; background:var(--category, var(--context)); }
 .context-ledger-row-value { margin-left:auto; color:var(--muted-foreground); font-variant-numeric:tabular-nums; white-space:nowrap; }
 .context-ledger-row[data-category="free"] { color:var(--muted-foreground); }
 .context-ledger-row[data-category="free"]::before { background:var(--muted); box-shadow:inset 0 0 0 1px var(--border); }
@@ -518,9 +518,11 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .context-ledger .settings-row-title { font-size:12.5px; }
 .context-ledger .settings-row-description { font-size:11.5px; margin-top:1px; }
 .context-ledger-switches .context-ledger-note { margin-top:4px; }
+/* On is the context colour, as the TUI ledger draws [━━━●] ON. */
+.context-ledger-switches [data-slot="switch"][data-checked] { background:var(--context); }
 /* Category colours are the TUI's (context_usage.rs): its paper palette in light, its charcoal palette in dark. */
 [data-category="userMessages"] { --category:#006cce; } [data-category="agentMessages"] { --category:#00875c; } [data-category="reasoning"] { --category:#7143d6; }
-[data-category="toolCalls"] { --category:#cd6700; } [data-category="toolResults"] { --category:#74841b; } [data-category="systemInstructions"] { --category:#8c2d3c; }
+[data-category="toolCalls"] { --category:#7d5b3a; } [data-category="toolResults"] { --category:#74841b; } [data-category="systemInstructions"] { --category:#8c2d3c; }
 [data-category="developerMessages"] { --category:#ce478f; } [data-category="toolDefinitions"] { --category:#646464; } [data-category="unrecognizedItems"] { --category:#008395; }
 .dark [data-category="userMessages"] { --category:#53b1ff; } .dark [data-category="agentMessages"] { --category:#3fd394; } .dark [data-category="reasoning"] { --category:#ab84ff; }
 .dark [data-category="toolCalls"] { --category:#ffa13a; } .dark [data-category="toolResults"] { --category:#d9db75; } .dark [data-category="systemInstructions"] { --category:#f0445d; }
@@ -528,6 +530,15 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .message.agent p, .message.agent li { white-space:pre-line; }
 .no-browser > .browser-panel { display:none; }
 .composer-hint:empty { display:none; }
+/* Elpis's features under the message box (components/elpis-features.tsx): a chip each, its dot olive when on. */
+.elpis-features { display:flex; align-items:center; gap:2px; margin-left:auto; }
+.feature-chip { display:inline-flex; align-items:center; gap:7px; height:28px; padding:0 8px; border:1px solid transparent; border-radius:7px; background:transparent; color:var(--muted-foreground); font-size:12.5px; white-space:nowrap; cursor:pointer; }
+.feature-chip:hover:not(:disabled) { background:var(--hover); color:var(--foreground); }
+.feature-chip:focus-visible { outline:1.5px solid var(--ring); outline-offset:1px; }
+.feature-chip:disabled { cursor:default; opacity:.55; }
+.feature-chip[aria-pressed="true"] { color:var(--foreground); }
+.feature-dot { width:7px; height:7px; border-radius:50%; box-shadow:inset 0 0 0 1.5px var(--muted-foreground); }
+.feature-chip[aria-pressed="true"] .feature-dot { background:var(--context); box-shadow:0 0 0 3px color-mix(in oklab, var(--context) 24%, transparent); }
 .composer .model-picker-trigger { border-color:transparent; background:transparent; }
 /* The composer's toolbar controls (permissions, model, effort) are one pill: height, corner, text size and hover. */
 .composer-pill, .composer .model-select { height:28px; border-radius:4px; font-size:12px; }

@@ -56,6 +56,8 @@ async function fixture(t, { modelFailure = false, holdModels = false, descendant
       return control.modelFailure ? json({ error: 'Fixture sign-in required for models' }, 503) : json({ data: [sol, latest], nextCursor: null });
     }
     if (pathname === '/api/settings') return json(settings);
+    // Elpis's switches under the message box (components/elpis-features.tsx), read on every screen.
+    if (pathname === '/api/context/switches') return json({ version: 'fixture-v1', write: { available: false, reason: 'Fixture' }, smartPrune: true, subagents: true, rag: null });
     if (pathname === '/api/providers') return json({ openai: { auth: { state: 'signedIn', method: 'chatgpt' }, usage: [], usageError: null }, claude: { state: 'notConnected', models: [], usage: [] }, gemini: { state: 'notConnected', models: [], usage: [] }, openrouter: [], local: [] });
     if (pathname === '/api/providers/settings') return json({ version: 'fixture-v1', write: { available: false }, managed: {}, providers: [] });
     if (pathname === '/api/mcp') return json({ version: 'fixture-v1', write: { available: false }, servers: [] });

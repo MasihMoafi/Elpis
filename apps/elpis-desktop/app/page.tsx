@@ -18,6 +18,7 @@ import { notifyApproval, notifyRuntimeEvent } from "@/lib/notifications";
 import { queueFollowUp, sendQueuedFollowUp, type FollowUpOptions } from "@/lib/follow-ups";
 import { QueuedFollowUps } from "@/components/queued-follow-ups";
 import { ContextUsage } from "@/components/context-usage";
+import { ElpisFeatures } from "@/components/elpis-features";
 import { ShortcutsDialog } from "@/components/shortcuts-dialog";
 import { StartupSplash } from "@/components/startup-splash";
 import { permissionLabel, PermissionsMenu, PlanPill, PlusMenu, type PermissionMode } from "@/components/composer-controls";
@@ -1138,6 +1139,7 @@ export default function Home() {
           <div className="composer-meta">
             {selected?.cwd && <span className="composer-chip" title={selected.cwd}><FolderIcon size={13} />{folder(selected.cwd)}</span>}
             <span className="composer-hint">{continues ? "Elpis takes direct messages for this agent only from its parent; sending continues its history in a new chat with the same model." : selectedLiveError ? `Not following live (${selectedLiveError}); the chat refreshes every few seconds.` : ""}</span>
+            <ElpisFeatures threadId={selected?.id} />
           </div>
         </div>
       </div>
