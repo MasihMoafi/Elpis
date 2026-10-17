@@ -75,7 +75,7 @@ function Flow({ entries, renderItem, mediaOf, live = false }: { entries: Entry[]
     run = [];
   };
   for (const entry of entries) {
-    if (isReply(entry.item) || entry.item.type === "plan") {
+    if (isReply(entry.item) || entry.item.type === "plan" || (entry.item.type === "commandExecution" && entry.item.source === "userShell")) {
       flush();
       blocks.push(<div key={entry.item.id}>{renderItem(entry)}</div>);
     } else run.push(entry);

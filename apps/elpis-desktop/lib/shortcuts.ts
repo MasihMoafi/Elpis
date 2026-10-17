@@ -4,6 +4,7 @@ export type Shortcut = { id: string; group: "Chat" | "Navigation" | "App"; label
 
 export const SHORTCUTS: Shortcut[] = [
   { id: "new-chat", group: "Chat", label: "New chat", keys: ["Ctrl+N"] },
+  { id: "side-chat", group: "Chat", label: "Toggle side chat", keys: ["Ctrl+;"] },
   // Native File menu and the split surface own these handlers.
   { id: "new-window", group: "Chat", label: "New Session in New Window", keys: ["Ctrl+Shift+N"] },
   { id: "next-pane", group: "Navigation", label: "Focus next split view", keys: ["Ctrl+]"] },
@@ -51,6 +52,7 @@ export function shortcutFor(event: KeyboardEvent, typing: boolean): { id: string
   const ctrl = event.ctrlKey || event.metaKey, key = event.key.toLowerCase();
   if (ctrl && !event.altKey && !event.shiftKey) {
     if (key === "n") return { id: "new-chat" };
+    if (key === ";") return { id: "side-chat" };
     // In a text field Ctrl+Z stays the field's own undo.
     if (key === "z" && !typing) return { id: "undo-delete" };
     if (key === "k") return { id: "command-menu" };

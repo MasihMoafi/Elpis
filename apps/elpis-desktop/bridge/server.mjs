@@ -189,9 +189,13 @@ export async function startDesktopServer(options = {}) {
           }
           return json(response, 201, await client.createThread(await body(request)));
         }
-        const thread = url.pathname.match(/^\/api\/threads\/([^/]+)(?:\/(turns|steer|interrupt|resume|context|delete|rename|archive|unarchive|revert|fork|compact|review|git|permissions))?$/);
+        const sideChat = url.pathname.match(/^\/api\/side-chats\/([^/]+)\/(turns|close)$/);
+        if (sideChat && method === 'POST') return json(response, 200, await client[sideChat[2] === 'turns' ? 'sendSideChat' : 'closeSideChat'](decodeURIComponent(sideChat[1]), await body(request)));
+        const thread = url.pathname.match(/^\/api\/threads\/([^/]+)(?:\/(turns|steer|interrupt|resume|context|delete|rename|archive|unarchive|revert|fork|compact|review|git|permissions|shell|side-chat))?$/);
         if (thread) {
           const id = decodeURIComponent(thread[1]);
+          if (thread[2] === 'shell' && method === 'POST') return json(response, 200, await client.shellCommand(id, await body(request)));
+          if (thread[2] === 'side-chat' && method === 'POST') return json(response, 200, await client.createSideChat(id, await body(request)));
           if (!thread[2] && method === 'GET') return json(response, 200, await client.readThread(id, pageQuery(url)));
           if (thread[2] === 'context' && method === 'GET') return json(response, 200, await client.context(id));
           if (thread[2] === 'git' && method === 'GET') {

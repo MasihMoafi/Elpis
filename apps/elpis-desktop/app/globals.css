@@ -1,4 +1,16 @@
 @import "tailwindcss";
+
+.bash-mode-notice { display:flex; flex-wrap:wrap; align-items:center; gap:8px; padding:8px 12px 0; font-size:12px; color:var(--muted-foreground); }
+.side-chat { position:absolute; z-index:25; right:16px; bottom:calc(100% + 12px); display:flex; flex-direction:column; width:min(400px, calc(100% - 32px)); height:min(460px, 55dvh); min-height:220px; border:1px solid var(--border); border-radius:12px; background:var(--background); color:var(--foreground); box-shadow:0 8px 30px #0002; overflow:hidden; }
+.side-chat[hidden] { display:none; }
+.side-chat-heading { display:flex; align-items:flex-start; gap:8px; padding:12px; border-bottom:1px solid var(--border); }
+.side-chat-heading > div { flex:1; min-width:0; }
+.side-chat-heading h2 { font-size:14px; font-weight:600; }
+.side-chat-heading p { margin-top:4px; font-size:12px; line-height:1.5; color:var(--muted-foreground); }
+.side-chat-content { flex:1; min-height:0; overflow:auto; padding:12px; overflow-wrap:anywhere; }
+.side-chat-content .message { max-width:100%; }
+.side-chat-form { display:flex; align-items:flex-end; gap:8px; padding:12px; border-top:1px solid var(--border); }
+.side-chat-form textarea { min-width:0; max-height:120px; overflow:auto; }
 @custom-variant dark (&:is(.dark *));
 @theme inline {
   --color-background: var(--background); --color-foreground: var(--foreground);
@@ -141,7 +153,7 @@ button:disabled { cursor:not-allowed; }
 .message.agent .speaker { font-size:12px; font-weight:600; color:var(--muted-foreground); margin-bottom:6px; }
 .markdown p { margin:0 0 12px; } .markdown pre { background:var(--recessed); border:1px solid var(--hairline); padding:12px 14px; border-radius:10px; overflow:auto; line-height:1.55; } .markdown code { font-size:12.5px; font-family:var(--mono); } .markdown :not(pre) > code { color:var(--code-ink); background:var(--muted); border:1px solid var(--hairline); padding:1px 5px; border-radius:5px; font-size:13px; } .markdown ul,.markdown ol { padding-inline-start:22px; margin:8px 0 12px; } .markdown li { margin:3px 0; } .markdown ul { list-style:disc; } .markdown ol { list-style:decimal; } .markdown a { color:var(--primary); text-decoration:underline; text-underline-offset:2px; } .markdown-table { max-width:100%; overflow:auto; margin:0 0 14px; } .markdown table { border-collapse:collapse; font-size:13px; width:max-content; } .markdown td,.markdown th { border:1px solid var(--border); padding:6px 10px; min-width:6rem; overflow-wrap:normal; word-break:normal; } .markdown h1,.markdown h2,.markdown h3,.markdown h4,.markdown h5,.markdown h6 { font-weight:600; margin:18px 0 8px; letter-spacing:-.01em; } .markdown h1 { font-size:18px; } .markdown h2 { font-size:16px; } .markdown h3 { font-size:14.5px; }
 .tool-item { border:1px solid var(--border); border-radius:10px; margin:12px 0; font-size:12px; } .tool-item summary { padding:10px 14px; cursor:pointer; } .tool-item pre { margin:0; padding:12px; overflow:auto; max-height:340px; white-space:pre-wrap; }
-.composer-wrap { padding:6px 32px 14px; }
+.composer-wrap { position:relative; padding:6px 32px 14px; }
 .composer { max-width:740px; margin:auto; border:1px solid var(--border); border-radius:16px; background:var(--composer); padding:10px 10px 8px 14px; box-shadow:var(--shadow); transition:border-color .15s; }
 .composer:focus-within { border-color:color-mix(in oklch, var(--ink), var(--border) 70%); }
 .dictation-control { display:flex; align-items:center; gap:6px; margin-top:3px; min-width:0; }

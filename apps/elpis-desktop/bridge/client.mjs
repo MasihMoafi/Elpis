@@ -147,6 +147,7 @@ export class DesktopClient extends EventEmitter {
   #socket; #pending = new Map(); #owned = new Set(); #known = new Set(); #models = new Set();
   #approvals = new Map(); #mutating = new Set(); #closed = false; #ready = false; #attaching = new Map();
   #context = new Map(); #restored = new Map(); #shares = new Map(); #side = new Set();
+  #sideChats = new Map();
   #workflowTitles = new Map(); #workflowLookups = new Map();
   #checkingApprovals = new Map();
   #settingsWaiters = new Map();
@@ -195,6 +196,8 @@ export class DesktopClient extends EventEmitter {
     for (const pending of this.#pending.values()) { clearTimeout(pending.timer); pending.reject(new BridgeError(pending.reading ? 'Elpis connection closed while reading. Reload the view after reconnecting.' : 'Elpis connection closed; the request outcome is unknown. Check the conversation before retrying.', 503)); }
     this.#pending.clear(); this.#approvals.clear(); this.#checkingApprovals.clear();
     this.#owned.clear(); this.#attaching.clear(); this.#context.clear(); this.#models.clear();
+    for (const id of this.#sideChats.keys()) this.emit('event', { type: 'sideChat', data: { method: 'thread/closed', params: { threadId: id } } });
+    this.#sideChats.clear(); this.#side.clear();
     this.emit('event', { type: 'connection', data: { connected: false } });
     this.#scheduleReconnect();
   }
@@ -281,9 +284,17 @@ export class DesktopClient extends EventEmitter {
       }
       return;
     }
+    // The engine can announce an ephemeral fork before its RPC acknowledgement reaches us.
+    if (message.method === 'thread/started' && message.params?.thread?.ephemeral === true) this.#side.add(id);
     if (this.#side.has(id)) {
+      const chat = this.#sideChats.get(id);
+      if (chat) {
+        if (message.method === 'turn/started') chat.turnId = message.params?.turn?.id;
+        if (message.method === 'turn/completed') { chat.turnId = null; chat.starting = false; }
+        this.emit('event', { type: 'sideChat', data: message });
+      }
       this.emit('side', message);
-      if (message.method === 'thread/closed' || message.method === 'thread/deleted') this.#side.delete(id);
+      if (message.method === 'thread/closed' || message.method === 'thread/deleted') { this.#side.delete(id); this.#sideChats.delete(id); }
       return;
     }
     if (message.method === 'serverRequest/resolved') {
@@ -957,6 +968,58 @@ export class DesktopClient extends EventEmitter {
       const worktree = await this.#releaseWorktree(cwd);
       return { deleted: true, alsoDeleted: removed, ...(worktree ? { worktree } : {}) };
     });
+  }
+  /** The composer's `!` deliberately uses the engine's user shell command, not a model turn. */
+  async shellCommand(id, body) {
+    object(body, ['command']);
+    const command = text(body.command, 'shell command');
+    return this.#mutate(id, async () => {
+      const thread = await this.#current(id);
+      if (thread.desktopAccess.mode === 'continue') throw new BridgeError('This agent accepts direct input only from its parent.', 409);
+      return this.#rpc('thread/shellCommand', { threadId: id, command });
+    });
+  }
+  /** A side question inherits the current history but is never materialized as a saved session. */
+  async createSideChat(id, body) {
+    object(body, []);
+    const thread = await this.#current(id);
+    const result = await this.#rpc('thread/fork', { threadId: id, ephemeral: true, excludeTurns: true,
+      ...(thread.model ? { model: thread.model } : {}), ...(thread.modelProvider ? { modelProvider: thread.modelProvider } : {}),
+      approvalPolicy: 'never', sandbox: 'read-only' });
+    const sideId = threadId(result.thread?.id);
+    this.#side.add(sideId);
+    if (result.thread.ephemeral !== true) {
+      try { await this.sideRpc('thread/delete', { threadId: sideId }); }
+      finally { await this.sideRpc('thread/unsubscribe', { threadId: sideId }).catch(() => {}); }
+      throw new BridgeError('The runtime did not create an ephemeral side chat. Update Elpis and try again.', 502);
+    }
+    this.#sideChats.set(sideId, { turnId: null, starting: false, pending: null, closing: false });
+    return { threadId: sideId };
+  }
+  async sendSideChat(id, body) {
+    object(body, ['text']);
+    const prompt = text(body.text, 'side question'), chat = this.#sideChats.get(threadId(id));
+    if (!chat) throw new BridgeError('Side chat is no longer available.', 404);
+    if (chat.starting || chat.pending || chat.turnId || chat.closing) throw new BridgeError('A side reply is already running or closing.', 409);
+    chat.starting = true;
+    try {
+      chat.pending = this.sideRpc('turn/start', { threadId: id, input: [{ type: 'text', text: prompt, text_elements: [] }] });
+      const result = await chat.pending;
+      // Completion can arrive before the acknowledgement; do not revive an already completed turn.
+      if (chat.starting) chat.turnId = result.turn?.id;
+      return result;
+    } finally { chat.starting = false; chat.pending = null; }
+  }
+  async closeSideChat(id, body) {
+    object(body, []);
+    const chat = this.#sideChats.get(threadId(id));
+    if (!chat) throw new BridgeError('Side chat is no longer available.', 404);
+    chat.closing = true;
+    if (chat.pending) await chat.pending.catch(() => {});
+    try { if (chat.turnId) await this.sideRpc('turn/interrupt', { threadId: id, turnId: chat.turnId }); }
+    finally { await this.sideRpc('thread/unsubscribe', { threadId: id }); }
+    this.#sideChats.delete(id);
+    return { closed: true };
   }
   /** Renames a chat in Elpis; every client shows the stored name. */
   /** ChatGPT's "Fork chat from here": a new chat with this one's history through `lastTurnId`. */

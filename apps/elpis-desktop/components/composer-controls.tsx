@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState, type ElementType, type RefObject } from "react";
-import { AtSign, Check, ChevronDown, SquareSlash, X } from "lucide-react";
+import { AtSign, Check, ChevronDown, SquareSlash, Terminal, X } from "lucide-react";
 import { AskIcon, AttachIcon, AutoApproveIcon, BypassIcon, FullAccessIcon, PlanIcon, PlusIcon } from "@/components/elpis-icons";
 import { AlertDialog, AlertDialogClose, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
@@ -59,11 +59,11 @@ export function PermissionsMenu({ mode, disabled, onChange }: { mode: Permission
 }
 
 /** What the "+" menu does, one function each; the message box owns them. */
-type PlusActions = { onAttach: () => void; onMention: () => void; onSlash: () => void; onPlan: (on: boolean) => void };
+type PlusActions = { onAttach: () => void; onMention: () => void; onSlash: () => void; onPlan: (on: boolean) => void; onShell: () => void };
 
 /** The "+" menu, as in the ChatGPT and Claude apps, limited to what Elpis runs: files (a picture is a file), an @ mention,
  * the slash commands and Plan mode. Closing it returns the focus to the message box (`returnFocus`). */
-export function PlusMenu({ disabled, attachDisabled, slashDisabled, plan, returnFocus, onAttach, onMention, onSlash, onPlan }: PlusActions & {
+export function PlusMenu({ disabled, attachDisabled, slashDisabled, plan, returnFocus, onAttach, onMention, onSlash, onPlan, onShell }: PlusActions & {
   disabled?: boolean; attachDisabled?: boolean;
   slashDisabled?: boolean; plan: boolean; returnFocus: RefObject<HTMLElement | null>;
 }) {
@@ -79,6 +79,7 @@ export function PlusMenu({ disabled, attachDisabled, slashDisabled, plan, return
       {item(AtSign, "Mention", "A file in this project or another chat", { onClick: () => { afterClose.current = onMention; } })}
       {item(SquareSlash, "Slash commands", slashDisabled ? "Clear the message box first" : "Run a command such as /model or /review", { disabled: slashDisabled, onClick: () => { afterClose.current = onSlash; } })}
       {item(PlanIcon, "Plan mode", plan ? "Turn plan mode off" : "Turn plan mode on", { onClick: () => onPlan(!plan) }, plan)}
+      {item(Terminal, "Run as a shell command", "Run a command directly in this project's shell", { onClick: () => { afterClose.current = onShell; } })}
     </DropdownMenuContent>
   </DropdownMenu>;
 }
