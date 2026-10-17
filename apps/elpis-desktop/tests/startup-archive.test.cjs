@@ -22,7 +22,7 @@ async function fixture(t, { modelFailure = false, holdModels = false, descendant
   const descendantIds = [...Array.from({ length: descendantCount }, (_, index) => `unloaded-${index + 1}`), ...archivedDescendantIds];
   for (const id of archivedDescendantIds) archived.add(id);
   threads.push(...descendantIds.map(id => ({ ...threads[2], id, name: `Unloaded child ${id.slice(9)}` })));
-  const settings = { version: 'fixture-v1', main: { model: 'sol', provider: 'openai' }, providers: [{ id: 'openai', displayName: 'OpenAI' }, { id: 'alternate-local', displayName: 'Alternate local' }], write: { available: true } };
+  const settings = { background: {}, smartPrune: { explicitOverride: {} }, memory: {}, version: 'fixture-v1', main: { model: 'sol', provider: 'openai' }, providers: [{ id: 'openai', displayName: 'OpenAI' }, { id: 'alternate-local', displayName: 'Alternate local' }], write: { available: true } };
   const control = { modelFailure, holdModels, modelReads: 0, descendantReads: [] };
   const emit = (type, data) => { for (const client of clients) client.write(`event: ${type}\ndata: ${JSON.stringify(data)}\n\n`); };
   function external(method, id) {
@@ -39,9 +39,10 @@ async function fixture(t, { modelFailure = false, holdModels = false, descendant
     if (pathname === '/api/events') { res.writeHead(200, { 'Content-Type': 'text/event-stream' }); res.write(': connected\n\n'); clients.add(res); req.on('close', () => clients.delete(res)); return; }
     if (req.method === 'POST') {
       let raw = ''; for await (const chunk of req) raw += chunk;
-      const body = raw ? JSON.parse(raw) : {}; posts.push({ path: pathname, body });
+      const body = raw ? JSON.parse(raw) : {}; if (!(pathname.endsWith('/rewind') && body.action === 'status')) posts.push({ path: pathname, body });
       const id = pathname.split('/')[3], thread = threads.find(item => item.id === id);
       if (pathname.endsWith('/resume')) return json({ thread, activeTurnId: null });
+      if (pathname.endsWith('/rewind') && body.action === 'status') return json({});
       if (pathname.endsWith('/archive')) { archived.add(id); for (const child of threads.filter(thread => thread.parentThreadId === id)) archived.add(child.id); return json({ archived: true }); }
       if (pathname.endsWith('/unarchive')) { archived.delete(id); return json({ thread }); }
       if (pathname.endsWith('/delete')) { deleted.add(id); const children = threads.filter(item => item.parentThreadId === id).map(item => item.id); for (const child of children) deleted.add(child); return json({ deleted: true, alsoDeleted: [] }); }
@@ -103,8 +104,17 @@ async function fixture(t, { modelFailure = false, holdModels = false, descendant
   const open = async id => { await leaveSettings(page); await page.locator('.thread-link').filter({ hasText: `Availability chat ${id.toUpperCase()}` }).click(); await eventually(async () => assert.equal(await page.getByRole('button', { name: 'Refresh conversation', exact: true }).isEnabled(), true)); await eventually(async () => assert.equal(await page.locator('.user-turn, form[aria-label="Edit message"]').count(), 1)); };
   const archivedPage = async () => { await leaveSettings(page); await openSettings(page); await page.getByRole('tab', { name: 'Archived chats', exact: true }).click(); };
   const restore = async (id, reopen = true) => { await archivedPage(); await page.getByRole('button', { name: `Unarchive Availability chat ${id.toUpperCase()}`, exact: true }).click(); if (reopen) await open(id); };
+  const permanent = async id => {
+    // Keep the descendants' archive states mixed so both preflight scans are exercised.
+    archived.add(id); emit('message', { method: 'thread/archived', params: { threadId: id } });
+    await archivedPage(); await page.getByRole('textbox', { name: 'Search archived chats', exact: true }).fill(`Availability chat ${id.toUpperCase()}`);
+    await page.locator(`.archived-row[data-thread-id="${id}"]`).getByRole('button', { name: `Actions for Availability chat ${id.toUpperCase()}`, exact: true }).click();
+    await page.getByRole('menuitem', { name: 'Delete', exact: true }).click();
+    const dialog = page.getByRole('alertdialog'); await dialog.getByRole('button', { name: 'Delete', exact: true }).click();
+    await eventually(async () => assert.ok(!await dialog.isVisible() || await dialog.getByRole('alert').count(), 'Deletion must finish or explain its preflight failure'));
+  };
   const saved = key => page.evaluate(key => window.elpisDesktop.storage.getItem(`elpis-draft-v1:${key}`), key);
-  return { page, composer, ready, open, restore, saved, external, emit, clients, requests, posts, control, held, descendantIds };
+  return { page, composer, ready, open, restore, permanent, saved, external, emit, clients, requests, posts, control, held, descendantIds };
 }
 
 test('archive HTTP success preserves composer, message edit and recovery; permanent deletion disposes only its subtree', async t => {
@@ -117,7 +127,7 @@ test('archive HTTP success preserves composer, message edit and recovery; perman
   assert.equal(await f.composer.inputValue(), 'Unsent A', 'Archive/unarchive must retain the unsent composer draft');
   assert.equal(await f.page.getByRole('textbox', { name: 'Edited message', exact: true }).inputValue(), 'Edited A'); assert.equal(await f.saved('recovery-a'), 'Recovered edit A');
   assert.equal(await f.saved('c'), 'Unsent child C'); assert.equal(await f.saved('recovery-c'), 'Recovered child C'); await f.restore('c', false); await f.open('a');
-  await f.page.getByRole('button', { name: 'Actions for Availability chat A', exact: true }).click(); await f.page.getByRole('menuitem', { name: 'Delete', exact: true }).click(); await f.page.getByRole('alertdialog').getByRole('button', { name: 'Delete', exact: true }).click();
+  await f.permanent('a');
   await eventually(async () => assert.equal(await f.saved('a'), null)); assert.equal(await f.saved('recovery-a'), null); assert.equal(await f.saved('c'), null); assert.equal(await f.saved('recovery-c'), null);
   await f.open('b'); assert.equal(await f.composer.inputValue(), 'Unsent B'); assert.equal(await f.page.getByRole('textbox', { name: 'Edited message', exact: true }).inputValue(), 'Edited B'); assert.equal(await f.saved('recovery-b'), 'Recovered edit B');
   assert.equal(f.posts.filter(post => post.path.endsWith('/turns') || post.path.endsWith('/revert')).length, 0);
@@ -134,27 +144,27 @@ test('deletion disposes later-page active and archived descendant drafts and pre
   const f = await fixture(t, { descendantCount: 125, archivedDescendantCount: 125 }); await f.ready(); await f.open('b');
   await f.composer.fill('Unrelated B remains'); await f.page.getByRole('button', { name: 'Edit message', exact: true }).click(); await f.page.getByRole('textbox', { name: 'Edited message', exact: true }).fill('Unrelated edited B');
   assert.equal(f.control.descendantReads.length, 0, 'The 125 descendants must not already be loaded'); assert.equal(await f.saved('unloaded-125'), 'Unsent unloaded-125');
-  await f.page.getByRole('button', { name: 'Actions for Availability chat A', exact: true }).click(); await f.page.getByRole('menuitem', { name: 'Delete', exact: true }).click(); await f.page.getByRole('alertdialog').getByRole('button', { name: 'Delete', exact: true }).click();
+  await f.permanent('a');
   await eventually(async () => assert.equal(await f.page.locator('.thread-link').filter({ hasText: 'Availability chat A' }).count(), 0));
   const remaining = await f.page.evaluate(ids => ids.flatMap(id => [window.elpisDesktop.storage.getItem(`elpis-draft-v1:${id}`), window.elpisDesktop.storage.getItem(`elpis-draft-v1:recovery-${id}`)]), f.descendantIds);
   assert.deepEqual(remaining, Array(f.descendantIds.length * 2).fill(null), 'Deleting a conversation must clear all descendant drafts, including later pages');
   assert.deepEqual(f.control.descendantReads, [{ archived: 'false', cursor: null }, { archived: 'false', cursor: '100' }, { archived: 'true', cursor: null }, { archived: 'true', cursor: '100' }]); assert.equal(f.posts.filter(post => post.path === '/api/threads/a/delete').length, 1);
   assert.equal(await f.saved('a'), null); assert.equal(await f.saved('recovery-a'), null); assert.equal(await f.saved('c'), null); assert.equal(await f.saved('recovery-c'), null);
-  assert.equal(await f.composer.inputValue(), 'Unrelated B remains'); assert.equal(await f.page.getByRole('textbox', { name: 'Edited message', exact: true }).inputValue(), 'Unrelated edited B'); assert.equal(await f.saved('recovery-b'), 'Recovered edit B');
+  await leaveSettings(f.page); assert.equal(await f.composer.inputValue(), 'Unrelated B remains'); assert.equal(await f.page.getByRole('textbox', { name: 'Edited message', exact: true }).inputValue(), 'Unrelated edited B'); assert.equal(await f.saved('recovery-b'), 'Recovered edit B');
 });
 
 for (const [name, options, reads] of [['a later descendant page fails', { descendantFailure: true }, 2], ['the descendant cursor repeats', { descendantCursor: 'cycle' }, 2], ['the descendant cursor is malformed', { descendantCursor: 'malformed' }, 1]]) {
   test(`deletion refuses to mutate or lose drafts when ${name}`, async t => {
     const f = await fixture(t, { descendantCount: 125, ...options }); await f.ready(); await f.open('b'); await f.composer.fill('Unrelated B remains');
     assert.equal(f.control.descendantReads.length, 0);
-    await f.page.getByRole('button', { name: 'Actions for Availability chat A', exact: true }).click(); await f.page.getByRole('menuitem', { name: 'Delete', exact: true }).click(); await f.page.getByRole('alertdialog').getByRole('button', { name: 'Delete', exact: true }).click();
+    await f.permanent('a');
     await eventually(async () => assert.ok(f.posts.some(post => post.path === '/api/threads/a/delete') || /could not read|failed|invalid|incomplete/i.test(await f.page.getByRole('alertdialog').innerText())));
     assert.equal(f.posts.filter(post => post.path === '/api/threads/a/delete').length, 0, 'Incomplete descendant discovery must not send a deletion');
     assert.equal(f.control.descendantReads.length, reads); assert.equal(await f.saved('a'), 'Unsent A'); assert.equal(await f.saved('recovery-a'), 'Recovered edit A'); assert.equal(await f.saved('c'), 'Unsent child C'); assert.equal(await f.saved('recovery-c'), 'Recovered child C');
     const retained = await f.page.evaluate(ids => ids.flatMap(id => [window.elpisDesktop.storage.getItem(`elpis-draft-v1:${id}`), window.elpisDesktop.storage.getItem(`elpis-draft-v1:recovery-${id}`)]), f.descendantIds);
     assert.deepEqual(retained, f.descendantIds.flatMap(id => [`Unsent ${id}`, `Recovered ${id}`]), 'Every descendant draft must survive an incomplete preflight');
-    await f.page.getByRole('alertdialog').getByRole('button', { name: 'Cancel', exact: true }).click(); assert.equal(await f.composer.inputValue(), 'Unrelated B remains'); assert.equal(await f.saved('recovery-b'), 'Recovered edit B');
-    assert.equal(await f.page.locator('.thread-link').filter({ hasText: 'Availability chat A' }).count(), 1);
+    await f.page.getByRole('alertdialog').getByRole('button', { name: 'Cancel', exact: true }).click(); await leaveSettings(f.page); assert.equal(await f.composer.inputValue(), 'Unrelated B remains'); assert.equal(await f.saved('recovery-b'), 'Recovered edit B');
+    await f.restore('a', false); await eventually(async () => assert.equal(await f.page.locator('.thread-link').filter({ hasText: 'Availability chat A' }).count(), 1, 'A failed permanent deletion must leave the archived chat restorable'));
   });
 }
 
