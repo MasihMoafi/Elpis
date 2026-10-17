@@ -566,11 +566,11 @@ export class DesktopClient extends EventEmitter {
       this.#rpc('account/read', { refreshToken: false }).catch(error => ({ error: error.message })),
       this.#rpc('account/rateLimits/read', {}).catch(error => ({ error: error.message })),
       this.#rpc('config/read', { includeLayers: false }),
-      this.#rpc('model/list', { limit: 100, includeHidden: false }).catch(() => ({ data: [] })),
+      this.#rpc('model/list', { limit: 100, includeHidden: false }).catch(() => null),
       // Elpis's own Anthropic sign-out; a bridge that predates it has none.
       this.#rpc('claudeSubscription/read', {}).catch(() => null),
     ]);
-    return providersSnapshot({ account, limits, config: read?.config, models: models.data, anthropic });
+    return providersSnapshot({ account, limits, config: read?.config, models: Array.isArray(models?.data) ? models.data : null, anthropic });
   }
   async providerSettings() {
     const [read, requirements] = await Promise.all([

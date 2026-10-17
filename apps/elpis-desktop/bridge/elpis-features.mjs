@@ -256,7 +256,8 @@ const usageLimit = value => value && typeof value === 'object'
   ? { limitId: string(value.limitId), limitName: string(value.limitName), planType: string(value.planType), primary: usageWindow(value.primary), secondary: usageWindow(value.secondary), reached: string(value.rateLimitReachedType) } : null;
 
 /** Each provider's own sign-in and usage. Subscription limits arrive keyed by limit ID from the Elpis bridge.
- * `anthropic.signedOut`: Elpis's own sign-out of the Claude subscription, which shows no models or usage while it is on. */
+ * `anthropic.signedOut`: Elpis's own sign-out of the Claude subscription, which shows no models or usage while it is on.
+ * `models`: the engine's model list, or null when it could not be read. */
 export function providersSnapshot({ account, limits, config, models, anthropic, env = process.env }) {
   const byId = { ...(limits?.rateLimitsByLimitId ?? {}) };
   if (typeof limits?.rateLimits?.limitId === 'string' && !byId[limits.rateLimits.limitId]) byId[limits.rateLimits.limitId] = limits.rateLimits;
@@ -264,7 +265,8 @@ export function providersSnapshot({ account, limits, config, models, anthropic, 
   const offered = prefix => (models ?? []).filter(model => typeof model?.model === 'string' && model.model.startsWith(prefix)).map(model => string(model.displayName) ?? model.model);
   const subscription = (prefix, limitPrefix) => {
     const names = offered(prefix), found = usage(limitPrefix);
-    return { state: found.length ? 'connected' : names.length ? 'available' : 'notConnected', models: names, usage: found };
+    // `models` is null when the model list could not be read: then a subscription without usage is unknown, not signed out.
+    return { state: found.length ? 'connected' : names.length ? 'available' : models ? 'notConnected' : 'unknown', models: names, usage: found };
   };
   const signedIn = account?.account;
   const auth = account?.error ? { state: 'unknown', error: string(account.error) }

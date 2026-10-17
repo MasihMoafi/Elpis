@@ -11,12 +11,14 @@ const { chromium } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright
 const limit = (limitId, limitName, usedPercent) => ({ limitId, limitName, planType: null, primary: { usedPercent, windowDurationMins: 300, resetsAt: null }, secondary: null, reached: null });
 
 test('usage is one shared store whose reported values stay until sign-out; gateways are not listed as servers', async () => {
-  const clients = new Set(); let requests = 0, active = 0, busiest = 0, claudeSignedOut = false;
+  const clients = new Set(); let requests = 0, active = 0, busiest = 0, claudeSignedOut = false, modelListUnread = false;
   // The first answer reports Antigravity's usage; later ones omit it, as the subscription bridge does while it rereads.
   const providers = () => ({
     openai: { auth: { state: 'signedOut' }, usage: [], usageError: null },
     claude: claudeSignedOut ? { state: 'notConnected', models: [], usage: [] } : { state: 'connected', models: ['Opus'], usage: [limit('claude', 'Claude', 40)] },
-    gemini: requests === 1 ? { state: 'connected', models: ['Gemini 3 Pro'], usage: [limit('antigravity-pro', 'Gemini Pro', 30)] } : { state: 'available', models: ['Gemini 3 Pro'], usage: [] },
+    gemini: requests === 1 ? { state: 'connected', models: ['Gemini 3 Pro'], usage: [limit('antigravity-pro', 'Gemini Pro', 30)] }
+      // The bridge's answer when it could not read the model list: unknown, which is not a sign-out.
+      : modelListUnread ? { state: 'unknown', models: [], usage: [] } : { state: 'available', models: ['Gemini 3 Pro'], usage: [] },
     openrouter: [],
   });
   const providerSettings = { version: 'p', configPath: '/tmp/config.toml', write: { available: true }, managed: { modelProvider: null }, providers: [
@@ -86,6 +88,10 @@ test('usage is one shared store whose reported values stay until sign-out; gatew
     await page.getByRole('tab', { name: 'Usage & limits', exact: true }).click();
     await card('claude').getByText('Sign in with Claude Code to see Claude usage.').waitFor();
     assert.match(await card('gemini').innerText(), /30% used/);
+    // A refresh that could not read the model list leaves Antigravity's usage in place.
+    modelListUnread = true; accountChanged(); await settled(6);
+    assert.match(await card('gemini').innerText(), /30% used/);
+    assert.doesNotMatch(await card('gemini').innerText(), /Usage not reported|Sign in/);
 
     // Models & accounts: no "Local servers"; the internal credits gateway is not a custom provider either.
     await page.getByRole('tab', { name: 'Models & accounts', exact: true }).click();

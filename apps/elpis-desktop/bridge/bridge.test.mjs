@@ -1064,6 +1064,31 @@ test('the default sandbox reads and writes the permission profile when the confi
   client.close();
 });
 
+// Antigravity's usage vanished ("Usage not reported") after being shown: a model list that timed out read as "no
+// subscription models", so the app took the subscriptions for signed out and dropped their usage. Unknown is not signed out.
+test('a model list that cannot be read leaves the subscriptions unknown, not signed out', async () => {
+  const { client, socket } = fixture(); await client.initialize();
+  const send = socket.send;
+  socket.send = raw => {
+    const request = JSON.parse(raw);
+    const fail = message => { socket.sent.push(request); queueMicrotask(() => socket.emit('message', JSON.stringify({ id: request.id, error: { code: -32000, message } }))); };
+    if (request.method === 'model/list') return fail('model/list timed out');
+    // The subscriptions' limits were slower than the bridge waits, so only ChatGPT's came back.
+    if (request.method === 'account/rateLimits/read') { socket.sent.push(request); queueMicrotask(() => socket.emit('message', JSON.stringify({ id: request.id, result: { rateLimits: { limitId: 'codex', primary: null }, rateLimitsByLimitId: {} } }))); return; }
+    return send(raw);
+  };
+  const providers = await client.providers();
+  assert.deepEqual([providers.claude.state, providers.gemini.state], ['unknown', 'unknown']);
+  assert.deepEqual([providers.claude.usage, providers.gemini.usage], [[], []]);
+  socket.send = send;
+  // A list that was read and offers no Antigravity model does mean it is not connected.
+  const { providersSnapshot } = await import('./elpis-features.mjs');
+  assert.equal(providersSnapshot({ account: null, limits: {}, config: {}, models: [], anthropic: null }).gemini.state, 'notConnected');
+  // Elpis's own Anthropic sign-out stays a sign-out whatever the list says.
+  assert.equal(providersSnapshot({ account: null, limits: {}, config: {}, models: null, anthropic: { signedOut: true } }).claude.state, 'notConnected');
+  client.close();
+});
+
 test('internal gateway routes are neither local servers nor editable custom providers', async () => {
   const { client, socket, configRead } = fixture(); await client.initialize();
   // How config/read reports a provider the engine routes through its own gateway (here, the Anthropic credits).

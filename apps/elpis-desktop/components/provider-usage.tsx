@@ -7,7 +7,8 @@ import { api } from "@/lib/api";
 export type UsageWindow = { usedPercent: number | null; windowDurationMins: number | null; resetsAt: number | null };
 export type UsageLimit = { limitId: string | null; limitName: string | null; planType: string | null; primary: UsageWindow | null; secondary: UsageWindow | null; reached: string | null };
 // `signedOut`: Elpis's own sign-out of the subscription (Claude only); the account on this computer stays signed in.
-export type Subscription = { state: "connected" | "available" | "notConnected"; models: string[]; usage: UsageLimit[]; signedOut?: boolean };
+// `unknown`: Elpis could not read its model list this time; that is not a sign-out, so reported usage stays.
+export type Subscription = { state: "connected" | "available" | "notConnected" | "unknown"; models: string[]; usage: UsageLimit[]; signedOut?: boolean };
 export type OpenAIAccount = { auth: { state: "signedIn" | "signedOut" | "unknown"; method?: string | null; email?: string | null; plan?: string | null; error?: string | null }; usage: UsageLimit[]; usageError: string | null };
 export type UsageStatus = { kind: "ok"; limits: UsageLimit[] } | { kind: "unauthenticated"; hint: string } | { kind: "error"; message: string } | { kind: "notReported" };
 
