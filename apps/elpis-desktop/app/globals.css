@@ -726,7 +726,9 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .thread-row { position:relative; }
 .thread-row.active { background:var(--selected); }
 .thread-row.active::before { content:""; position:absolute; left:0; top:6px; bottom:6px; width:2px; background:var(--primary); box-shadow:0 0 8px var(--primary); }
-.thread-row:focus-within { outline:1px solid color-mix(in oklch, var(--primary) 40%, transparent); outline-offset:-1px; }
+/* One focus ring, round the whole row, and only for the keyboard (a click only highlights the row, as in Claude). */
+.thread-link:focus-visible { outline:none; }
+.thread-row:has(.thread-link:focus-visible) { outline:1px solid color-mix(in oklch, var(--primary) 40%, transparent); outline-offset:-1px; }
 .thread-row.selected { background:var(--selected); }
 .row-hover-actions { display:none; align-items:center; }
 .thread-row:hover .row-hover-actions, .thread-row:focus-within .row-hover-actions { display:inline-flex; }
