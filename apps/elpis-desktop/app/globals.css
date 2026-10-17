@@ -617,37 +617,41 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .context-ring { display:inline-flex; align-items:center; justify-content:center; width:28px; height:28px; padding:0; border:1px solid transparent; border-radius:4px; background:transparent; cursor:pointer; }
 .context-ring:hover, .context-ring[data-popup-open] { background:var(--hover); border-color:var(--hairline); }
 .context-ring:focus-visible { outline:1.5px solid var(--ring); outline-offset:1px; }
-.context-ring circle { fill:none; stroke-width:2.2; }
-.context-ring-track { stroke:var(--border); }
-.context-ring-fill { stroke:var(--context); stroke-linecap:round; transition:stroke-dashoffset .3s; }
-/* The ring's breakdown: the TUI Context Ledger's CONTEXT WINDOW section, on one full-window scale. */
-.context-ledger { display:grid; gap:8px; font-size:12.5px; width:340px; }
-/* The TUI ledger's look: a shimmering CONTEXT LEDGER title, switch names in capitals, the context colour for what is on. */
-.context-ledger-title { display:flex; align-items:baseline; justify-content:space-between; gap:12px; padding-bottom:8px; border-bottom:1px solid var(--hairline); color:var(--context); font-variant-numeric:tabular-nums; }
-.context-ledger-name { font:600 var(--text-small)/1.2 var(--mono); letter-spacing:.14em; text-transform:uppercase; color:var(--foreground); background:linear-gradient(100deg, var(--foreground) 40%, var(--context) 50%, var(--foreground) 60%) 0 0/300% 100% text; -webkit-text-fill-color:transparent; animation:ledger-shimmer 3.2s linear infinite; }
-@keyframes ledger-shimmer { from { background-position:100% 0; } to { background-position:0 0; } }
-@media (prefers-reduced-motion:reduce) { .context-ledger-name { animation:none; -webkit-text-fill-color:currentColor; } }
-.context-ledger .settings-row-title { font:600 var(--text-small)/1.3 var(--mono); letter-spacing:.1em; text-transform:uppercase; }
+/* Claude's context ring: a thin ring filling clockwise, olive (the context colour), amber from 75% and red from 90%. */
+.context-ring-icon circle { fill:none; stroke-width:2; }
+.context-ring-icon .context-ring-track { stroke:var(--border); }
+.context-ring-icon .context-ring-fill { stroke:var(--context); stroke-linecap:round; transition:stroke-dashoffset .3s; }
+.context-ring-icon[data-level="warning"] .context-ring-fill { stroke:var(--warning); }
+.context-ring-icon[data-level="critical"] .context-ring-fill { stroke:var(--destructive); }
+/* Claude's tooltip on its icon buttons: the text, and a quieter line under it. */
+.hud-tooltip { display:grid; gap:2px; max-width:260px; padding:6px 10px; border:1px solid var(--border); border-radius:var(--radius-sm); background:var(--card); color:var(--foreground); font-size:var(--text-small); line-height:1.35; box-shadow:var(--shadow); pointer-events:none; }
+.hud-tooltip small { color:var(--muted-foreground); font-size:var(--text-small); }
+/* The ring's popover, laid out as Claude's: a 360px card; rows inset 16px; the context section is a muted header row, a thin
+ * bar and the categories below it. It shows the TUI Context Ledger's CONTEXT WINDOW section on one full-window scale. */
+.context-ledger { display:flex; flex-direction:column; gap:4px; width:360px; max-width:calc(100vw - 2rem); max-height:min(var(--available-height, 640px), 640px); overflow-y:auto; padding:8px 0; font-size:var(--text-small); line-height:1.4; }
 .context-ledger p { margin:0; }
-.context-ledger .hud-menu-title { padding:0; }
-.context-ledger-head { display:flex; align-items:baseline; justify-content:space-between; gap:12px; font-weight:500; font-variant-numeric:tabular-nums; }
-.context-ledger-note { font-size:var(--text-small); line-height:1.35; color:var(--muted-foreground); }
-.context-bar { display:flex; height:8px; border-radius:2px; overflow:hidden; background:var(--muted); }
+.context-ledger-head { display:flex; align-items:center; gap:8px; min-height:20px; padding:4px 16px; border:0; background:transparent; color:var(--muted-foreground); font:inherit; text-align:left; cursor:pointer; }
+.context-ledger-head:disabled { cursor:default; }
+.context-ledger-head:focus-visible { outline:1.5px solid var(--ring); outline-offset:-2px; border-radius:4px; }
+.context-ledger-summary { margin-left:auto; font-variant-numeric:tabular-nums; }
+.context-ledger-caret { flex:none; transition:transform .15s; }
+.context-ledger-caret[data-expanded] { transform:rotate(90deg); }
+.context-ledger-head:hover:not(:disabled) .context-ledger-caret { color:var(--foreground); }
+.context-ledger-note { padding:0 16px; line-height:1.35; color:var(--muted-foreground); }
+.context-bar { display:flex; height:4px; margin:2px 16px; border-radius:999px; overflow:hidden; background:var(--muted); }
 .context-bar-segment { flex:none; height:100%; background:var(--category, var(--context)); }
-.context-ledger-rows { display:grid; gap:5px; margin:2px 0 0; padding:0; list-style:none; }
+.context-bar-segment:not(:first-child) { box-shadow:-1px 0 0 var(--card); }
+.context-bar-segment:only-child:not([data-category]) { min-width:4px; }
+.context-ledger-rows { display:grid; gap:4px; margin:2px 0 0; padding:0 16px; list-style:none; }
 .context-ledger-row { display:flex; align-items:center; gap:8px; }
-.context-ledger-row::before { content:""; flex:none; width:8px; height:8px; border-radius:50%; background:var(--category, var(--context)); }
-.context-ledger-row-value { margin-left:auto; color:var(--muted-foreground); font-variant-numeric:tabular-nums; white-space:nowrap; }
+.context-ledger-row::before { content:""; flex:none; width:10px; height:10px; border-radius:2px; background:var(--category, var(--context)); }
+.context-ledger-row-label { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.context-ledger-row-value { color:var(--muted-foreground); font-variant-numeric:tabular-nums; white-space:nowrap; }
+.context-ledger-row-share { width:44px; text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap; }
 .context-ledger-row[data-category="free"] { color:var(--muted-foreground); }
+.context-ledger-row[data-category="free"] .context-ledger-row-share { color:inherit; }
 .context-ledger-row[data-category="free"]::before { background:var(--muted); box-shadow:inset 0 0 0 1px var(--border); }
-/* The ledger's switches are Settings rows (components/settings/rows.tsx), compact inside the popover. */
-.context-ledger-switches { display:grid; padding-bottom:6px; border-bottom:1px solid var(--hairline); }
-.context-ledger .settings-row { padding:6px 0; min-height:0; margin-top:0; border-top:0; gap:12px; }
-
-.context-ledger .settings-row-description { font-size:var(--text-small); margin-top:1px; }
-.context-ledger-switches .context-ledger-note { margin-top:4px; }
-/* On is the context colour, as the TUI ledger draws [━━━●] ON. */
-.context-ledger-switches [data-slot="switch"][data-checked] { background:var(--context); }
+.context-ledger-compact { display:flex; justify-content:flex-end; padding:4px 16px 0; }
 /* Category colours are the TUI's (context_usage.rs): its paper palette in light, its charcoal palette in dark. */
 [data-category="userMessages"] { --category:#006cce; } [data-category="agentMessages"] { --category:#00875c; } [data-category="reasoning"] { --category:#7143d6; }
 [data-category="toolCalls"] { --category:#7d5b3a; } [data-category="toolResults"] { --category:#74841b; } [data-category="systemInstructions"] { --category:#8c2d3c; }

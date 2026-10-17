@@ -11,16 +11,31 @@ const { chromium } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright
 const categories = [['userMessages', 'User messages', 980], ['agentMessages', 'Agent messages', 2941], ['toolCalls', 'Tool calls', 490], ['toolResults', 'Tool results', 26471],
   ['systemInstructions', 'System instructions', 7843], ['developerMessages', 'Developer messages', 1471], ['toolDefinitions', 'Tool definitions + schema', 9804]];
 const ledgers = {
-  measured: { used: 50000, window: 200000, categories: categories.map(([id, label, tokens]) => ({ id, label, tokens })) },
+  measured: { used: 50000, window: 200000, categories: categories.map(([id, label, tokens]) => ({ id, label, tokens })), basis: 'engine' },
   fresh: { used: null, window: null, categories: [] },
-  // An old chat: the bridge restored its last recorded usage from the rollout; category shares come with the next request.
-  older: { used: 12000, window: 200000, categories: [] },
+  // An old chat: the bridge restored its last recorded usage from the rollout and estimated the shares from its saved transcript.
+  older: { used: 12000, window: 200000, categories: [['userMessages', 'User messages', 300], ['toolResults', 'Tool results', 9000], ['systemInstructions', 'System instructions', 1700], ['toolDefinitions', 'Tool definitions + schema', 1000]].map(([id, label, tokens]) => ({ id, label, tokens })), basis: 'transcript' },
+  // A chat whose transcript cannot be attributed (its history was shortened): only the measured total.
+  bare: { used: 9000, window: 200000, categories: [] },
+  // Past 75% the ring turns amber and past 90% red; from half full the popover offers Compact session.
+  heavy: { used: 160000, window: 200000, categories: [['toolResults', 'Tool results', 140000], ['systemInstructions', 'System instructions', 20000]].map(([id, label, tokens]) => ({ id, label, tokens })), basis: 'engine' },
+  full: { used: 190000, window: 200000, categories: [['toolResults', 'Tool results', 170000], ['systemInstructions', 'System instructions', 20000]].map(([id, label, tokens]) => ({ id, label, tokens })), basis: 'engine' },
 };
+// Whether Compact session can run: a chat in the middle of a turn cannot.
+const compactions = { full: { available: false, reason: 'Available when Elpis finishes this turn' } };
+// The TUI's palettes (codex-rs/tui/src/chatwidget/context_usage.rs): charcoal in dark, paper in light. Tool calls are brown in light
+// where the TUI's is orange, because the light theme has no orange (tests/elpis-features.test.cjs).
+const palette = {
+  dark: { userMessages: '#53b1ff', agentMessages: '#3fd394', reasoning: '#ab84ff', toolCalls: '#ffa13a', toolResults: '#d9db75', systemInstructions: '#f0445d', developerMessages: '#ff99c2', toolDefinitions: '#a0a0a0' },
+  light: { userMessages: '#006cce', agentMessages: '#00875c', reasoning: '#7143d6', toolCalls: '#7d5b3a', toolResults: '#74841b', systemInstructions: '#8c2d3c', developerMessages: '#ce478f', toolDefinitions: '#646464' },
+};
+const rgb = hex => `rgb(${[1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16)).join(', ')})`;
 
-test('the context ring shows the ledger breakdown on hover, pins on click or Enter, closes on Escape, and opens for /context', async () => {
+/** A local fixture of the bridge for the four chats above; the page it serves is the built app (out/). */
+async function startFixture() {
   const thread = (id, name) => ({ id, name, cwd: '/tmp/demo', model: 'sol', modelProvider: 'openai', status: { type: 'idle' }, desktopAccess: { writable: true, mode: 'direct' } });
-  const threads = [thread('measured', 'Ledger chat'), thread('fresh', 'Fresh chat'), thread('older', 'Older chat')];
-  const streams = new Set(), saved = [];
+  const threads = [thread('measured', 'Ledger chat'), thread('fresh', 'Fresh chat'), thread('older', 'Older chat'), thread('bare', 'Bare chat'), thread('heavy', 'Heavy chat'), thread('full', 'Full chat')];
+  const streams = new Set(), saved = [], compacted = [];
   // The ledger switches, as GET/POST /api/context/switches report and write them (bridge/client.mjs).
   const switches = { version: 'v1', write: { available: true }, smartPrune: false, subagents: true, rag: true };
   const server = http.createServer(async (req, res) => {
@@ -33,26 +48,34 @@ test('the context ring shows the ledger breakdown on hover, pins on click or Ent
     if (url.pathname === '/api/settings') return json({ version: 'v1', main: { model: 'sol', provider: 'openai' }, background: { model: null, provider: null }, providers: [{ id: 'openai', displayName: 'OpenAI' }], managed: {}, write: { available: true },
       memory: { generate: null, use: null, extractionModel: null, consolidationModel: null }, smartPrune: { enabled: null, explicitOverride: { reason: 'Fixture' } } });
     if (url.pathname === '/api/threads') return json({ data: url.searchParams.has('ancestorThreadId') || url.searchParams.get('archived') === 'true' ? [] : threads, nextCursor: null });
+    const compact = url.pathname.match(/^\/api\/threads\/([^/]+)\/compact$/);
+    if (compact && req.method === 'POST') { compacted.push(compact[1]); return json({}); }
     if (url.pathname === '/api/context/switches') {
       if (req.method === 'POST') { const body = JSON.parse(raw); saved.push(body); const { version, ...changes } = body; Object.assign(switches, changes, { version: `v${saved.length + 1}` }); }
       return json(switches);
     }
     const context = url.pathname.match(/^\/api\/threads\/([^/]+)\/context$/);
-    if (context) return json({ threadId: context[1], tokenUsage: null, smartPrune: null, ledger: ledgers[context[1]] });
+    if (context) return json({ threadId: context[1], tokenUsage: null, smartPrune: null, ledger: ledgers[context[1]], compact: compactions[context[1]] ?? { available: true } });
     const read = url.pathname.match(/^\/api\/threads\/([^/]+)$/);
     if (read) return json({ thread: threads.find(item => item.id === read[1]), data: [], nextCursor: null });
     if (url.pathname.startsWith('/api/')) return json({});
     const relative = url.pathname === '/' ? 'index.html' : url.pathname.slice(1);
-    try { const content = await fs.readFile(path.join(__dirname, '../out', relative)); res.setHeader('content-type', relative.endsWith('.js') ? 'text/javascript' : relative.endsWith('.css') ? 'text/css' : relative.endsWith('.svg') ? 'image/svg+xml' : 'text/html'); res.end(content); }
+    try { const content = await fs.readFile(path.join(process.env.ELPIS_OUT_DIR || path.join(__dirname, '../out'), relative)); res.setHeader('content-type', relative.endsWith('.js') ? 'text/javascript' : relative.endsWith('.css') ? 'text/css' : relative.endsWith('.svg') ? 'image/svg+xml' : 'text/html'); res.end(content); }
     catch { res.statusCode = 404; res.end(); }
   });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  return { server, streams, saved, compacted, switches, url: `http://127.0.0.1:${server.address().port}` };
+}
+const stop = async ({ server, streams }) => { for (const stream of streams) stream.end(); server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); };
+
+test('the context ring is Claude\'s: a tooltip on hover, the breakdown on click, closed by a second click, Escape or a click elsewhere, and opened by /context', async () => {
+  const fixture = await startFixture();
   const browser = await chromium.launch({ executablePath: process.env.ELPIS_CHROMIUM || undefined, headless: true });
   try {
     const page = await browser.newPage({ viewport: { width: 1320, height: 900 } }); page.setDefaultTimeout(6000);
     const errors = []; page.on('pageerror', error => errors.push(error.message));
     const shots = process.env.ELPIS_CONTEXT_SHOTS, shot = async (name, locator) => { if (shots) { await fs.mkdir(shots, { recursive: true }); await (locator ?? page).screenshot({ path: path.join(shots, `${name}.png`) }); } };
-    await page.goto(`http://127.0.0.1:${server.address().port}`);
+    await page.goto(fixture.url);
     await page.getByRole('button', { name: 'Ledger chat', exact: true }).click();
     const ring = page.getByRole('button', { name: 'Context window: 25% used', exact: true });
     const popup = page.getByRole('dialog', { name: 'Context window usage', exact: true });
@@ -62,11 +85,25 @@ test('the context ring shows the ledger breakdown on hover, pins on click or Ent
     assert.ok(Math.abs(ringBox.y + ringBox.height / 2 - (modelBox.y + modelBox.height / 2)) <= 0.5 && ringBox.height === modelBox.height, `the ring shares the composer controls' height and centre line (${JSON.stringify([ringBox, modelBox])})`);
     assert.equal(await page.getByRole('button', { name: 'Context', exact: true }).count(), 0, 'the header Context button is gone; the ring and /context open the breakdown');
 
-    // Hover shows the breakdown; leaving hides it.
-    await ring.hover(); await popup.waitFor();
-    assert.equal(await popup.locator('.context-ledger-head > span').nth(1).textContent(), '50k of 200k used (25%)', 'the measured total carries no ≈');
+    // Hovering shows Claude's tooltip with the numbers, not the breakdown; a click opens the breakdown, and the tooltip steps aside.
+    const tooltip = page.locator('.hud-tooltip');
+    await ring.hover(); await tooltip.waitFor();
+    assert.equal((await tooltip.innerText()).trim(), 'Context 50k / 200k (25%)');
+    await page.waitForTimeout(500);
+    assert.equal(await popup.isVisible(), false, 'hovering the ring does not open the breakdown');
+    assert.equal(await ring.locator('svg.context-ring-icon').getAttribute('width'), '16', 'a 16px ring');
+    await ring.click(); await popup.waitFor(); await tooltip.waitFor({ state: 'hidden' });
+    // The popover is Claude's: a 360px card that starts at the context window. The title and total, the switches and their note
+    // are already in the chat below.
+    assert.equal((await popup.boundingBox()).width, 360);
+    assert.equal(await popup.locator('.context-ledger-name, .context-ledger-title, .context-ledger-switches').count(), 0, 'no title row, no switches');
+    assert.equal(await popup.getByRole('switch').count(), 0, 'Smart Prune, Subagents and RAG are the chips under the message box, not here');
+    assert.doesNotMatch(await popup.innerText(), /context ledger|tokens in context|smart prune|subagents|\bRAG\b|for every chat/i, 'nothing the chat below already says');
+    assert.equal(await popup.locator(':scope > *').first().innerText().then(text => text.replace(/\s+/g, ' ').trim()), 'Context window 50k / 200k (25%)', 'it starts at the context window, and the total appears once');
+    assert.equal(await popup.locator('.context-ledger-summary').textContent(), '50k / 200k (25%)', 'the measured total carries no ≈');
+    assert.equal((await popup.locator('.context-bar').boundingBox()).height, 4, 'a thin bar, as Claude\'s meter');
     assert.deepEqual(await popup.locator('.context-ledger-row-label').allInnerTexts(), [...categories.map(([, label]) => label), 'Free capacity'], 'the TUI ledger\'s category names, in its order');
-    assert.equal((await popup.locator('.context-ledger-row').filter({ hasText: 'Tool results' }).innerText()).replace(/\s+/g, ' ').trim(), 'Tool results ≈26.5k · 13.2%');
+    assert.equal((await popup.locator('.context-ledger-row').filter({ hasText: 'Tool results' }).innerText()).replace(/\s+/g, ' ').trim(), 'Tool results ≈26.5k 13.2%');
     assert.match(await popup.innerText(), /Measured total · estimated category shares/i, 'estimates are labelled as estimates');
     // Segments are proportional to the real numbers, on a full-window scale.
     const bar = await popup.locator('.context-bar').boundingBox();
@@ -74,41 +111,48 @@ test('the context ring shows the ledger breakdown on hover, pins on click or Ent
       const segment = await popup.locator(`.context-bar-segment[data-category="${id}"]`).boundingBox();
       assert.ok(Math.abs(segment.width - bar.width * tokens / 200000) < 1, `${id} is ${tokens} of 200000 wide (got ${segment.width} of ${bar.width})`);
     }
-    await shot('ring-hover-light');
-    await away(); await popup.waitFor({ state: 'hidden' });
+    // Each segment is its legend dot's colour, one colour per category, in the TUI's palette for the theme.
+    const colours = () => page.evaluate(() => Object.fromEntries([...document.querySelectorAll('.context-ledger [data-category]')].filter(node => node.classList.contains('context-bar-segment')).map(segment => {
+      const id = segment.getAttribute('data-category'), row = document.querySelector(`.context-ledger-row[data-category="${id}"]`);
+      return [id, [getComputedStyle(segment).backgroundColor, getComputedStyle(row, '::before').backgroundColor]];
+    })));
+    const light = await colours();
+    for (const [id, [segment, dot]] of Object.entries(light)) { assert.equal(segment, dot, `${id}: bar segment and legend dot share a colour`); assert.equal(segment, rgb(palette.light[id]), `${id} in light`); }
+    assert.equal(new Set(Object.values(light).map(([segment]) => segment)).size, categories.length, 'one colour per category');
+    await shot('ring-open-light');
+    await page.emulateMedia({ colorScheme: 'dark' }); await page.waitForTimeout(200);
+    const dark = await colours();
+    for (const [id, [segment, dot]] of Object.entries(dark)) { assert.equal(segment, dot, `${id}: bar segment and legend dot share a colour (dark)`); assert.equal(segment, rgb(palette.dark[id]), `${id} in dark`); }
+    await shot('ring-open-dark');
+    await page.emulateMedia({ colorScheme: 'light' }); await page.waitForTimeout(200);
 
-    // Click pins it: it stays after the pointer leaves, above the message box and level with the ring's right edge.
-    await ring.click(); await popup.waitFor(); await away(); await page.waitForTimeout(500);
-    assert.equal(await popup.isVisible(), true, 'a click pins the breakdown open');
+    // It stays open when the pointer leaves, sits above the message box and is level with the ring's right edge.
+    await away(); await page.waitForTimeout(500);
+    assert.equal(await popup.isVisible(), true, 'the breakdown stays open when the pointer leaves');
     const [pinned, composer, anchor] = [await popup.boundingBox(), await page.locator('form.composer').boundingBox(), await ring.boundingBox()];
     assert.ok(pinned.y + pinned.height <= composer.y, `the pinned breakdown sits above the message box (${pinned.y + pinned.height} vs ${composer.y})`);
     assert.ok(Math.abs(pinned.x + pinned.width - (anchor.x + anchor.width)) <= 1, 'its right edge is the ring\'s right edge');
-    // The ledger's switches, named as in the TUI, read and written through the bridge's switch keys.
-    const smartPrune = popup.getByRole('switch', { name: 'Smart Prune', exact: true }), subagents = popup.getByRole('switch', { name: 'Subagents', exact: true }), rag = popup.getByRole('switch', { name: 'RAG', exact: true });
-    await smartPrune.waitFor();
-    assert.deepEqual([await smartPrune.isChecked(), await subagents.isChecked(), await rag.isChecked()], [false, true, true]);
-    assert.match(await popup.innerText(), /Tool results pass through unchanged/); assert.match(await popup.innerText(), /May delegate to other agents/);
-    await smartPrune.click(); await popup.getByText('Before first main-model send · sent history stays stable', { exact: true }).waitFor();
-    await subagents.click(); await popup.getByText('All work stays in this thread', { exact: true }).waitFor();
-    assert.deepEqual(saved, [{ version: 'v1', smartPrune: true }, { version: 'v2', subagents: false }], 'each switch writes only its own key, against the latest version');
-    assert.deepEqual([await smartPrune.isChecked(), await subagents.isChecked()], [true, false]);
-    await shot('ring-pinned-light');
+    // The header row folds the categories away and back, as Claude's does; the bar stays.
+    const head = popup.getByRole('button', { name: /^Context window/ });
+    assert.equal(await head.getAttribute('aria-expanded'), 'true');
+    await head.click(); await popup.locator('.context-ledger-rows').waitFor({ state: 'detached' });
+    assert.equal(await popup.locator('.context-bar-segment').count(), categories.length, 'the bar stays when the categories are folded');
+    await head.click(); await popup.locator('.context-ledger-rows').waitFor();
     await page.keyboard.press('Escape'); await popup.waitFor({ state: 'hidden' });
-    // A second click on a pinned ring closes it.
+    // A second click on the ring closes it; so does a click elsewhere.
     await ring.click(); await popup.waitFor(); await ring.click(); await popup.waitFor({ state: 'hidden' });
+    await ring.click(); await popup.waitFor(); await page.getByRole('textbox', { name: 'Message Elpis', exact: true }).click(); await popup.waitFor({ state: 'hidden' });
 
-    // Keyboard: the ring is focusable, Enter pins it, and Tab reaches its switches.
+    // Keyboard: the ring is focusable and Enter opens it.
     await ring.focus(); await page.keyboard.press('Enter'); await popup.waitFor(); await away(); await page.waitForTimeout(400);
-    assert.equal(await popup.isVisible(), true, 'Enter pins the breakdown open');
-    await page.keyboard.press('Tab');
-    assert.equal(await page.evaluate(() => document.activeElement?.getAttribute('aria-label')), 'Smart Prune', 'Tab moves from the ring into the breakdown');
+    assert.equal(await popup.isVisible(), true, 'Enter opens the breakdown');
     await page.keyboard.press('Escape'); await popup.waitFor({ state: 'hidden' });
 
     // /context opens the same view, pinned, for the current chat, and leaves the focus in the composer.
     const input = page.getByRole('textbox', { name: 'Message Elpis', exact: true });
     await input.fill('/context'); await page.locator('.slash-name').filter({ hasText: /^\/context$/ }).waitFor(); await input.press('Enter');
     await popup.waitFor(); await away(); await page.waitForTimeout(400);
-    assert.equal(await popup.isVisible(), true, '/context pins the breakdown open');
+    assert.equal(await popup.isVisible(), true, '/context opens the breakdown');
     await page.emulateMedia({ colorScheme: 'dark' }); await page.waitForTimeout(200);
     await shot('ring-pinned-dark');
     await shot('composer-dark', page.locator('form.composer'));
@@ -116,31 +160,57 @@ test('the context ring shows the ledger breakdown on hover, pins on click or Ent
     await page.emulateMedia({ colorScheme: 'light' });
     await shot('composer-light', page.locator('form.composer'));
 
-    // An old chat shows its last recorded numbers at once; shares wait for its next request, as in the TUI.
+    // An old chat shows its last recorded numbers at once, with shares the bridge estimated from its saved transcript.
+    const open = async name => { await ring_(name).click(); await popup.waitFor(); };
+    const ring_ = name => page.getByRole('button', { name, exact: true });
+    const close = async () => { await page.keyboard.press('Escape'); await popup.waitFor({ state: 'hidden' }); };
+    const strokeOf = locator => locator.locator('.context-ring-fill').evaluate(node => getComputedStyle(node).stroke);
     await page.getByRole('button', { name: 'Older chat', exact: true }).click();
-    const older = page.getByRole('button', { name: 'Context window: 6% used', exact: true });
-    await older.hover(); await popup.waitFor();
-    assert.match(await popup.innerText(), /12k of 200k used \(6%\)/);
+    const olive = await strokeOf(ring_('Context window: 6% used'));
+    await open('Context window: 6% used');
+    assert.match(await popup.innerText(), /12k \/ 200k \(6%\)/);
+    assert.match(await popup.innerText(), /Measured total · category shares estimated from the saved chat; exact after the next request/);
+    assert.deepEqual(await popup.locator('.context-ledger-row-label').allInnerTexts(), ['User messages', 'Tool results', 'System instructions', 'Tool definitions + schema', 'Free capacity'], 'the bar is split here too');
+    assert.equal(await popup.locator('.context-bar-segment').count(), 4);
+    assert.doesNotMatch(await popup.innerText(), /unavailable/);
+    assert.equal(await popup.getByRole('button', { name: 'Compact session' }).count(), 0, 'Compact session is offered from half full');
+    await shot('ring-estimated-light');
+    await close();
+    // A chat whose transcript cannot be attributed has the measured total only, in one colour, and says why.
+    await page.getByRole('button', { name: 'Bare chat', exact: true }).click();
+    await open('Context window: 5% used');
+    assert.match(await popup.innerText(), /9k \/ 200k \(5%\)/);
     assert.match(await popup.innerText(), /category attribution unavailable until the next provider attempt/);
-    // No rag MCP server configured: the RAG switch cannot be turned on, and says why.
-    await away(); await popup.waitFor({ state: 'hidden' }); switches.rag = null;
-    await older.hover(); await popup.waitFor(); await rag.waitFor();
-    assert.equal(await rag.isDisabled(), true); assert.match(await popup.innerText(), /No rag MCP server is configured/);
-    await away(); await popup.waitFor({ state: 'hidden' });
-    // A bridge without the switches route (or an odd answer) leaves the breakdown working, without switches.
-    const kept = { ...switches }; for (const key of Object.keys(switches)) delete switches[key];
-    await older.hover(); await popup.waitFor(); await popup.getByText('12k of 200k used (6%)', { exact: true }).waitFor(); await page.waitForTimeout(300);
-    assert.equal(await popup.getByRole('switch').count(), 0);
-    await away(); await popup.waitFor({ state: 'hidden' }); Object.assign(switches, kept);
+    assert.equal(await popup.locator('.context-bar-segment').count(), 1);
+    await close();
 
-    // A chat Elpis has not measured yet keeps its ring, empty, and says so.
+    // The ring is amber from 75% and red from 90%; from half full the popover offers Compact session, which compacts this chat.
+    await page.getByRole('button', { name: 'Heavy chat', exact: true }).click();
+    await ring_('Context window: 80% used').waitFor();
+    assert.equal(await ring_('Context window: 80% used').locator('svg.context-ring-icon').getAttribute('data-level'), 'warning');
+    const amber = await strokeOf(ring_('Context window: 80% used'));
+    assert.notEqual(amber, olive, 'amber differs from the olive of a ring under 75%');
+    await open('Context window: 80% used');
+    const compact = popup.getByRole('button', { name: 'Compact session', exact: true });
+    assert.equal(await compact.isEnabled(), true);
+    await shot('ring-compact-light');
+    await compact.click(); await popup.waitFor({ state: 'hidden' });
+    assert.deepEqual(fixture.compacted, ['heavy'], 'Compact session compacts this chat');
+    await page.getByRole('button', { name: 'Full chat', exact: true }).click();
+    await ring_('Context window: 95% used').waitFor();
+    assert.equal(await ring_('Context window: 95% used').locator('svg.context-ring-icon').getAttribute('data-level'), 'critical');
+    await open('Context window: 95% used');
+    assert.equal(await popup.getByRole('button', { name: 'Compact session', exact: true }).isDisabled(), true, 'not while the chat is in the middle of a turn');
+    assert.equal(await popup.getByRole('button', { name: 'Compact session', exact: true }).locator('xpath=..').getAttribute('title'), 'Available when Elpis finishes this turn');
+    await close();
+
+    // A chat Elpis has not measured yet keeps its ring, empty, and says so as Claude's does.
     await page.getByRole('button', { name: 'Fresh chat', exact: true }).click();
-    const empty = page.getByRole('button', { name: 'Context window: not measured yet', exact: true });
-    await empty.hover(); await popup.waitFor();
-    assert.match(await popup.innerText(), /Context measurement unavailable until the first request snapshot/);
+    await open('Context window: not measured yet');
+    assert.match(await popup.innerText(), /Send a message to see context usage\./);
     assert.equal(await popup.locator('.context-bar').count(), 0);
     await shot('ring-unmeasured-light');
-    await away(); await popup.waitFor({ state: 'hidden' });
+    await close();
 
     // With the ring switched off in Settings, /context still opens the breakdown.
     await page.evaluate(() => localStorage.setItem('elpis-preferences-v1', JSON.stringify({ showContextUsage: false })));
@@ -149,11 +219,48 @@ test('the context ring shows the ledger breakdown on hover, pins on click or Ent
     assert.equal(await page.locator('.context-ring').count(), 0, 'the preference hides the ring');
     await page.evaluate(() => window.dispatchEvent(new CustomEvent('elpis:open-context')));
     await popup.waitFor();
-    assert.match(await popup.innerText(), /50k of 200k used/);
+    assert.match(await popup.innerText(), /50k \/ 200k \(25%\)/);
     await page.keyboard.press('Escape'); await popup.waitFor({ state: 'hidden' });
     assert.equal(await page.locator('.context-ring').count(), 0, 'closing it hides the ring again');
     assert.deepEqual(errors, []);
   } finally {
-    await browser.close(); for (const stream of streams) stream.end(); server.closeAllConnections(); await new Promise(resolve => server.close(resolve));
+    await browser.close(); await stop(fixture);
   }
+});
+
+test('the Ledger button under the message box toggles the breakdown like any popover trigger; Escape and a click outside close it too', async () => {
+  const fixture = await startFixture();
+  const browser = await chromium.launch({ executablePath: process.env.ELPIS_CHROMIUM || undefined, headless: true });
+  try {
+    const page = await browser.newPage({ viewport: { width: 1320, height: 900 } }); page.setDefaultTimeout(6000);
+    const errors = []; page.on('pageerror', error => errors.push(error.message));
+    await page.goto(fixture.url);
+    await page.getByRole('button', { name: 'Ledger chat', exact: true }).click();
+    const chip = page.getByRole('group', { name: 'Elpis features', exact: true }).getByRole('button', { name: 'Ledger', exact: true });
+    const popup = page.getByRole('dialog', { name: 'Context window usage', exact: true });
+    const settled = () => page.waitForTimeout(450);
+    await chip.waitFor();
+    // It carries the same ring as the composer's, and the same tooltip.
+    assert.equal(await chip.locator('svg.context-ring-icon .context-ring-fill').count(), 1, 'the Ledger button shows the context ring');
+    await chip.hover(); await page.locator('.hud-tooltip').waitFor();
+    assert.match(await page.locator('.hud-tooltip').innerText(), /^Context 50k \/ 200k \(25%\)/);
+    await page.mouse.move(5, 5);
+
+    // Real clicks: the first opens it and it stays open when the pointer moves on; the second closes it, and it stays closed.
+    await chip.click(); await popup.waitFor(); await page.mouse.move(5, 5); await settled();
+    assert.equal(await popup.isVisible(), true, 'a click on Ledger pins the breakdown');
+    await chip.click(); await popup.waitFor({ state: 'hidden' }); await settled();
+    assert.equal(await popup.isVisible(), false, 'a second click on Ledger closes it, and it does not open again');
+    await chip.click(); await popup.waitFor();
+
+    // Escape closes it; a click outside (on the message box) closes it; the context ring toggles it too.
+    await page.keyboard.press('Escape'); await popup.waitFor({ state: 'hidden' });
+    await chip.click(); await popup.waitFor(); await page.getByRole('textbox', { name: 'Message Elpis', exact: true }).click(); await popup.waitFor({ state: 'hidden' });
+    await chip.click(); await popup.waitFor(); await page.getByRole('button', { name: 'Context window: 25% used', exact: true }).click(); await popup.waitFor({ state: 'hidden' });
+
+    // From the keyboard: Enter on Ledger opens it, Enter again closes it.
+    await chip.focus(); await page.keyboard.press('Enter'); await popup.waitFor();
+    await page.keyboard.press('Enter'); await popup.waitFor({ state: 'hidden' });
+    assert.deepEqual(errors, []);
+  } finally { await browser.close(); await stop(fixture); }
 });

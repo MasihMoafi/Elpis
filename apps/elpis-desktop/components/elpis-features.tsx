@@ -1,18 +1,21 @@
 "use client";
 
-import { ScrollText } from "lucide-react";
-import { OPEN_CONTEXT_EVENT, switchLocked, switchRows, useContextSwitches } from "@/components/context-usage";
+import { CONTEXT_TOGGLE_ATTRIBUTE, ContextRingIcon, TOGGLE_CONTEXT_EVENT, switchLocked, switchRows, useContextSwitches, useSharedLedger } from "@/components/context-usage";
+import { Tooltip } from "@/components/ui/tooltip";
 
 /** Elpis's own features under the message box, always in view, as the TUI's ledger sits beside its composer: the
  * chat's Context Ledger, and the Smart Prune, Subagents and RAG switches, one click each (olive when on). */
 export function ElpisFeatures({ threadId }: { threadId?: string }) {
-  const { state, saving, save } = useContextSwitches();
+  const { state, saving, error, save } = useContextSwitches();
+  const ledger = useSharedLedger(threadId);
   if (!state && !threadId) return null;
   return <div role="group" aria-label="Elpis features" className="elpis-features">
-    {threadId && <button type="button" className="feature-chip" title="Context Ledger: what this chat's context holds (/context)" onClick={() => window.dispatchEvent(new Event(OPEN_CONTEXT_EVENT))}><ScrollText size={14} aria-hidden="true" />Ledger</button>}
+    {threadId && <Tooltip content={ledger.tooltip} detail="Open what this chat's context holds (/context)">
+      <button type="button" className="feature-chip" {...{ [CONTEXT_TOGGLE_ATTRIBUTE]: "" }} onClick={() => window.dispatchEvent(new Event(TOGGLE_CONTEXT_EVENT))}><ContextRingIcon pct={ledger.pct} size={14} />Ledger</button>
+    </Tooltip>}
     {state && switchRows(state).map(row => {
       const on = saving === row.field ? !row.on : row.on;
-      return <button key={row.field} type="button" className="feature-chip" aria-pressed={on} disabled={switchLocked(state, saving, row.field)} title={`${row.label}: ${saving === row.field ? row.saving : row.detail}`} onClick={() => void save(row.field, !row.on)}>
+      return <button key={row.field} type="button" className="feature-chip" aria-pressed={on} disabled={switchLocked(state, saving, row.field)} title={`${row.label}: ${error || (!state.write.available && state.write.reason) || (saving === row.field ? row.saving : row.detail)}`} onClick={() => void save(row.field, !row.on)}>
         <i className="feature-dot" aria-hidden="true" />{row.label}
       </button>;
     })}

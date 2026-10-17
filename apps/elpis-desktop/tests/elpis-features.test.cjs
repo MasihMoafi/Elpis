@@ -32,7 +32,7 @@ test('the main chat shows Elpis features under the message box, one click each, 
     if (url.pathname === '/api/threads/ledger') return json({ thread, data: [], nextCursor: null });
     if (url.pathname.startsWith('/api/')) return json({});
     const relative = url.pathname === '/' ? 'index.html' : url.pathname.slice(1);
-    try { const content = await fs.readFile(path.join(__dirname, '../out', relative)); res.setHeader('content-type', relative.endsWith('.js') ? 'text/javascript' : relative.endsWith('.css') ? 'text/css' : relative.endsWith('.svg') ? 'image/svg+xml' : 'text/html'); res.end(content); }
+    try { const content = await fs.readFile(path.join(process.env.ELPIS_OUT_DIR || path.join(__dirname, '../out'), relative)); res.setHeader('content-type', relative.endsWith('.js') ? 'text/javascript' : relative.endsWith('.css') ? 'text/css' : relative.endsWith('.svg') ? 'image/svg+xml' : 'text/html'); res.end(content); }
     catch { res.statusCode = 404; res.end(); }
   });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
@@ -51,14 +51,14 @@ test('the main chat shows Elpis features under the message box, one click each, 
     assert.ok(strip.y >= composer.y + composer.height - 1 && strip.y - (composer.y + composer.height) < 40, `the features sit right under the message box (${JSON.stringify([composer, strip])})`);
     assert.deepEqual(await oranges(page), [], 'light theme, new chat: no orange');
 
-    // A new chat has its context ring too; hovering it shows the ledger as the TUI lays it out: title, switches, window.
+    // A new chat has its context ring too; clicking it (as in Claude) shows the context window alone: the switches are the chips above.
     const ring = page.getByRole('button', { name: 'Context window: not measured yet', exact: true });
-    await ring.hover();
+    await ring.click();
     const ledgerPopup = page.getByRole('dialog', { name: 'Context window usage', exact: true }); await ledgerPopup.waitFor();
-    assert.equal(await ledgerPopup.locator('.context-ledger-name').innerText(), 'CONTEXT LEDGER');
-    assert.match(await ledgerPopup.innerText(), /new chat[\s\S]*SMART PRUNE[\s\S]*SUBAGENTS[\s\S]*RAG[\s\S]*CONTEXT WINDOW[\s\S]*Measured from this chat's first message/);
+    assert.equal(await ledgerPopup.getByRole('switch').count(), 0);
+    assert.equal((await ledgerPopup.innerText()).replace(/\s+/g, ' ').trim(), 'Context window Send a message to see context usage.');
     assert.deepEqual(await oranges(page), [], 'light theme, new chat ledger: no orange');
-    await page.mouse.move(5, 5); await ledgerPopup.waitFor({ state: 'hidden' });
+    await page.keyboard.press('Escape'); await ledgerPopup.waitFor({ state: 'hidden' });
 
     // One click flips a switch, writes only its key, and the ledger shows the same state.
     await chip('Subagents').click();
@@ -67,15 +67,14 @@ test('the main chat shows Elpis features under the message box, one click each, 
     await chip('RAG').click(); await page.waitForFunction(() => [...document.querySelectorAll('[aria-label="Elpis features"] button')].find(b => b.textContent.includes('RAG'))?.getAttribute('aria-pressed') === 'true');
     assert.deepEqual(saved.at(-1), { version: 'v2', rag: true });
 
-    // In a chat, Ledger opens the Context Ledger, whose switches agree with the chips.
+    // In a chat, Ledger opens the breakdown, which does not repeat the switches the chips carry.
     await page.getByRole('button', { name: 'Ledger chat', exact: true }).click();
     await chip('Ledger').click();
     const popup = page.getByRole('dialog', { name: 'Context window usage', exact: true });
     await popup.waitFor();
-    assert.equal(await popup.getByRole('switch', { name: 'Subagents', exact: true }).getAttribute('aria-checked'), 'false');
-    assert.equal(await popup.getByRole('switch', { name: 'RAG', exact: true }).getAttribute('aria-checked'), 'true');
+    assert.equal(await popup.getByRole('switch').count(), 0);
     assert.deepEqual(await oranges(page), [], 'light theme, open chat with its Context Ledger: no orange');
-    await popup.getByRole('switch', { name: 'Smart Prune', exact: true }).click();
+    await chip('Smart Prune').click();
     await page.waitForFunction(() => [...document.querySelectorAll('[aria-label="Elpis features"] button')].find(b => b.textContent.includes('Smart Prune'))?.getAttribute('aria-pressed') === 'false');
 
     // The ledger's context colour is olive (a yellowish green), in both themes.
