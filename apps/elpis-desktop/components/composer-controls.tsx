@@ -28,7 +28,7 @@ export function PermissionsMenu({ mode, disabled, onChange }: { mode: Permission
   return <>
     <DropdownMenu>
       <DropdownMenuTrigger className={`composer-pill permissions-${mode} ${dangerous(mode)}`} disabled={disabled} aria-label="Change permissions" title="Change permissions (Shift+Tab in the message box cycles Ask, Approve for me and Plan)">
-        <current.Icon size={14} aria-hidden="true" /><span className="pill-long">{current.label}</span><span className="pill-short">{current.short}</span><ChevronDown size={13} aria-hidden="true" />
+        <current.Icon size={14} aria-hidden="true" /><span className="pill-long">{current.label}</span><span className="pill-short">{current.short}</span><ChevronDown size={14} aria-hidden="true" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="hud-menu w-80">
         <p className="hud-menu-title">How should Elpis's actions be approved?</p>

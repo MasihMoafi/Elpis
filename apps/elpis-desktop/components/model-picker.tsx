@@ -74,7 +74,7 @@ export function ModelPicker({ choices, models, model, choiceId, defaultModel, di
     onOpenChange={next => { setOpen(next); if (next) { setQuery(""); setTab(choices.length === 1 ? choices[0].id : "all"); } }}
     itemToStringLabel={(item: Choice) => `${item.label} ${item.providerLabel} ${item.model}`} itemToStringValue={(item: Choice) => item.key}
     onValueChange={item => { if (item) choose(item); }}>
-    <ComboboxTrigger role="combobox" aria-label="Model" disabled={disabled} data-value={model} title={[currentLabel, currentProvider].filter(Boolean).join(" · ")} className="model-picker-trigger model-select"><span className="model-trigger-label">{currentModel ? currentLabel : "Choose model"}</span>{currentProvider && <span className="model-trigger-provider">{currentProvider}</span>}<ChevronDown size={13} /></ComboboxTrigger>
+    <ComboboxTrigger role="combobox" aria-label="Model" disabled={disabled} data-value={model} title={[currentLabel, currentProvider].filter(Boolean).join(" · ")} className="model-picker-trigger model-select"><span className="model-trigger-label">{currentModel ? currentLabel : "Choose model"}</span>{currentProvider && <span className="model-trigger-provider">{currentProvider}</span>}<ChevronDown size={14} /></ComboboxTrigger>
     <ComboboxContent className="model-picker-content">
       <SearchField variant="bare"><ComboboxInput aria-label="Search models" placeholder="Search models…" autoFocus /></SearchField>
       <Tabs.Root value={tab} onValueChange={setTab}>

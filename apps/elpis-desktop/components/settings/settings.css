@@ -25,7 +25,7 @@
 .settings-row-control .settings-path.unset { font:inherit; font-size:13px; direction:ltr; }
 .settings-notice { margin:8px 2px 0; font-size:12.5px; color:var(--muted-foreground); }
 .settings-notice.alert { color:var(--destructive); }
-.settings-badge { display:inline-flex; align-items:center; height:20px; padding:0 7px; border-radius:999px; border:1px solid var(--border); font-size:11.5px; font-weight:500; color:var(--muted-foreground); white-space:nowrap; }
+.settings-badge { display:inline-flex; align-items:center; height:20px; padding:0 7px; border-radius:999px; border:1px solid var(--border); font-size:var(--text-small); font-weight:500; color:var(--muted-foreground); white-space:nowrap; }
 .settings-badge.warn { color:var(--warning); border-color:color-mix(in oklch, var(--warning), transparent 55%); }
 .settings-badge.ok { color:var(--success); border-color:color-mix(in oklch, var(--success), transparent 55%); }
 .settings-code { font:12px/1.45 var(--mono); background:var(--muted); color:var(--foreground); padding:1px 5px; border-radius:5px; overflow-wrap:anywhere; }
@@ -46,8 +46,8 @@
 /* A card of labelled fields (a form) spaces its fields wider than a card of lines. */
 form.settings-card, .settings-card:has(> .field) { gap:16px; }
 .settings-stack { display:grid; gap:12px; min-width:0; }
-/* Archived chats: Select all and the selection's actions above the list; a checkbox before each row. */
-.archived-bulk { display:flex; align-items:center; gap:8px; min-height:36px; margin:12px 0 8px; }
-.archived-check { display:flex; align-items:center; gap:8px; margin-right:auto; font-size:14px; color:var(--muted-foreground); cursor:pointer; }
+/* Archived chats: Select all and the selection's actions above the list, in the rows' column (row padding plus its
+ * card's border); a checkbox before each row, 16px from its words like every row gap. */
+.archived-bulk { display:flex; align-items:center; gap:8px; min-height:36px; margin:12px 0 8px; padding-inline:17px; }
+.archived-check { display:flex; align-items:center; gap:16px; margin-right:auto; font-size:14px; color:var(--muted-foreground); cursor:pointer; }
 .archived-check input, .archived-row-check { width:16px; height:16px; flex:0 0 auto; cursor:pointer; }
-.archived-row-check { margin-right:12px; }

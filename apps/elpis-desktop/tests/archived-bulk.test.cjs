@@ -44,6 +44,13 @@ test('archived chats: select all across pages, delete all after one confirmation
     const list = page.getByLabel('Archived conversations'), dialog = page.getByRole('alertdialog');
     await list.getByText('Old chat 1', { exact: true }).waitFor();
 
+    // Right-click on an archived chat opens the same menu as its "…" (Masih: right-click everywhere, with the "…" items).
+    const row = list.locator('.archived-row').filter({ hasText: 'Old chat 3' });
+    const items = async () => { const menu = page.getByRole('menu'); await menu.waitFor(); const names = await menu.getByRole('menuitem').allInnerTexts(); await page.keyboard.press('Escape'); await menu.waitFor({ state: 'detached' }); return names; };
+    await row.getByRole('button', { name: 'Actions for Old chat 3', exact: true }).click(); const dots = await items();
+    await row.getByText('Old chat 3', { exact: true }).click({ button: 'right' }); const rightClick = await items();
+    assert.ok(dots.length > 0); assert.deepEqual(rightClick, dots);
+
     // Unarchive two picked chats.
     await list.getByRole('checkbox', { name: 'Select Old chat 1', exact: true }).check();
     await list.getByRole('checkbox', { name: 'Select Old chat 2', exact: true }).check();
