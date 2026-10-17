@@ -223,6 +223,17 @@ test('the native page never sits under the floating chat: the bounds sent for it
   near(after.x, split.x, 'back to split view: page left', 2); near(after.width, split.width, 'page width', 2); near(after.height, split.height, 'page height', 2);
 }));
 
+test('Ctrl+Shift+F works from inside a shell: the terminal passes the key to the window instead of typing it', () => fixture(async ({ page, side, enter, exit, openPanel }) => {
+  await openPanel();
+  await side.getByRole('button', { name: 'New side panel tab' }).click();
+  await page.getByRole('menuitem', { name: 'Terminal' }).click();
+  const input = page.locator('.xterm-helper-textarea'); await input.waitFor({ state: 'attached' }); await input.focus();
+  await page.keyboard.press('Control+Shift+F'); await exit.waitFor();
+  assert.equal(await input.evaluate(element => element === document.activeElement), true, 'the shell keeps the focus');
+  await page.keyboard.press('Control+Shift+F'); await enter.waitFor();
+  assert.deepEqual((await page.evaluate(() => window.__terminal.input)).filter(([, text]) => /\x06/.test(text)), [], 'the shell never received Ctrl+F');
+}));
+
 test('the toolbar keeps an address field of 180px at every panel width, and the panel cannot be dragged narrower than that needs', () => fixture(async ({ page, side, openPanel }) => {
   await openPanel();
   const address = side.getByRole('textbox', { name: 'Search or enter a URL' }), toolbar = side.getByRole('form', { name: 'Browser navigation' });
