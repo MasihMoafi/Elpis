@@ -14,24 +14,31 @@ function openThreadArgument(argv) {
   return null;
 }
 
-/** Holds the chat to open until the page takes it: the page asks at start, and again on each ping. */
-function createThreadOpener(initial = null) {
-  let pending = threadId(initial), window = null;
+/** Holds what the page should open until it takes it: the page asks at start, and again on each ping on `channel`.
+ * `accept` returns the value to keep, or null to ignore it. */
+function createOpener(channel, accept, initial = null) {
+  let pending = accept(initial), window = null;
   return {
-    queue(id) {
-      if (!threadId(id)) return;
-      pending = id;
-      if (window && !window.isDestroyed()) window.webContents.send('elpis:open-thread');
+    queue(value) {
+      const next = accept(value);
+      if (next === null) return;
+      pending = next;
+      if (window && !window.isDestroyed()) window.webContents.send(channel);
     },
     attach({ host, origin, ipcMain }) {
       window = host;
-      ipcMain.handle('elpis:open-thread:take', event => {
+      ipcMain.handle(`${channel}:take`, event => {
         if (!trustedBrowserSender(event, host.webContents, origin)) return null;
-        const id = pending; pending = null; return id;
+        const value = pending; pending = null; return value;
       });
-      return () => { if (window === host) window = null; ipcMain.removeHandler('elpis:open-thread:take'); };
+      return () => { if (window === host) window = null; ipcMain.removeHandler(`${channel}:take`); };
     },
   };
 }
 
-module.exports = { openThreadArgument, createThreadOpener, threadId };
+/** The chat the TUI asked for. */
+const createThreadOpener = (initial = null) => createOpener('elpis:open-thread', threadId, initial);
+/** A new chat from Quick Entry (sent with its text) or the tray (empty), at most what the composer holds. */
+const createNewChatOpener = () => createOpener('elpis:new-chat', text => typeof text === 'string' && text.length <= 16384 ? text : null);
+
+module.exports = { openThreadArgument, createThreadOpener, createNewChatOpener, threadId };

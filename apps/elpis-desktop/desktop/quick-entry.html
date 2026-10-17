@@ -1,0 +1,54 @@
+<!doctype html>
+<!-- Quick Entry (desktop/quick-entry.cjs): Claude's floating prompt bar, in Elpis's colours. Enter sends, Shift+Enter
+     adds a line, Esc or a click outside the bar closes it. The window is transparent; only the bar is drawn. -->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'">
+  <title>Elpis Quick Entry</title>
+  <style>
+    /* Elpis's card, text and border colours (app/globals.css). */
+    :root { --card:#fff; --foreground:#252524; --placeholder:#6b6b69; --border:color-mix(in oklch, #2f2f2e 13%, #fbfbfa); color-scheme:light; }
+    :root.dark { --card:#111317; --foreground:#e6e0d3; --placeholder:#9c9587; --border:color-mix(in oklch, #f2a93b 20%, #191b20); color-scheme:dark; }
+    html, body { margin:0; padding:0; height:100%; background:transparent; overflow:hidden; }
+    body { font-family:Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; -webkit-font-smoothing:antialiased; }
+    /* Claude's bar: the window's width, a 56px row, 16px corners, an 18px logo in a 56px cell, then the message box;
+       dragged by its frame. Like Claude's, it has no shadow. */
+    .bar { display:flex; align-items:flex-start; box-sizing:border-box; background:var(--card); color:var(--foreground); border:1px solid var(--border); border-radius:16px; -webkit-app-region:drag; }
+    .logo { display:flex; align-items:center; justify-content:center; flex:none; width:56px; height:56px; }
+    .logo svg { width:18px; height:18px; }
+    .input { display:flex; flex:1; align-items:center; min-height:56px; }
+    textarea { -webkit-app-region:no-drag; display:block; box-sizing:border-box; flex:auto; width:100%; min-height:24px; max-height:calc(100vh - 100px);
+      margin:0 22px 0 -8px; padding:8px; border:none; outline:none; resize:none; background:transparent; color:var(--foreground);
+      font:inherit; font-size:16px; line-height:150%; field-sizing:content; overflow-y:auto; }
+    textarea::placeholder { color:var(--placeholder); }
+  </style>
+</head>
+<body>
+  <div class="bar">
+    <div class="logo" aria-hidden="true">
+      <svg viewBox="0 0 256 256"><defs><linearGradient id="ember" gradientUnits="userSpaceOnUse" x1="54" y1="20" x2="212" y2="236"><stop offset="0" stop-color="#D97913"/><stop offset="0.34" stop-color="#F2A626"/><stop offset="0.65" stop-color="#FFD45A"/><stop offset="1" stop-color="#FFE786"/></linearGradient></defs>
+        <path fill="url(#ember)" d="M108 20H228C225 45 206 62 178 62H103C67 62 38 78 29 104C26 78 32 62 47 46C63 29 85 20 108 20Z"/>
+        <path fill="url(#ember)" d="M72 82C52 91 36 104 35 114C34 126 51 140 75 150C90 157 105 160 124 160H155C181 160 200 142 204 115H133C94 115 70 105 72 82Z"/>
+        <path fill="url(#ember)" d="M42 137C53 148 65 156 79 162C69 172 70 184 81 192C91 200 110 202 133 202H180C205 202 225 216 228 236H108C86 236 67 229 52 216C36 202 28 184 28 168C28 157 33 146 42 137Z"/></svg>
+    </div>
+    <div class="input"><textarea id="prompt" aria-label="Message Elpis" placeholder="What can I help you with today?" maxlength="16384" rows="1"></textarea></div>
+  </div>
+  <script>
+    'use strict';
+    const quick = window.elpisQuickEntry, prompt = document.getElementById('prompt'), bar = document.querySelector('.bar');
+    const theme = dark => document.documentElement.classList.toggle('dark', dark);
+    theme(new URLSearchParams(location.search).get('theme') !== 'light');
+    // As in Claude: Enter sends and clears; Shift+Enter or Alt+Enter adds a line; Esc closes, keeping the text for next time.
+    document.addEventListener('keydown', event => {
+      if (event.key !== 'Enter' || event.shiftKey || event.altKey || event.isComposing) return;
+      event.preventDefault(); quick?.submit(prompt.value); prompt.value = '';
+    });
+    document.addEventListener('keyup', event => { if (event.key === 'Escape') quick?.dismiss(); });
+    document.body.addEventListener('click', event => { if (!bar.contains(event.target)) { prompt.focus(); quick?.dismiss(); } });
+    for (const name of ['dragenter', 'dragover', 'dragleave', 'drop']) prompt.addEventListener(name, event => { event.preventDefault(); event.stopPropagation(); });
+    quick?.onShow(state => { theme(state.dark); setTimeout(() => prompt.focus(), 0); });
+    setTimeout(() => prompt.focus(), 0);
+  </script>
+</body>
+</html>

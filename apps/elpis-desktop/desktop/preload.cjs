@@ -45,10 +45,19 @@ contextBridge.exposeInMainWorld('elpisDesktop',{
     },
   },
   // A chat the Elpis TUI's /app (or a launch with --open-thread) asked this window to open.
-  onOpenThread:callback=>{
-    const take=()=>ipcRenderer.invoke('elpis:open-thread:take').then(id=>{if(typeof id==='string')callback(id);}).catch(()=>{});
-    ipcRenderer.on('elpis:open-thread',take);take();
-    return()=>ipcRenderer.removeListener('elpis:open-thread',take);
+  onOpenThread:callback=>handoff('elpis:open-thread',callback),
+  // A new chat from Quick Entry, with the text to send, or from the tray's New chat, with none.
+  onNewChat:callback=>handoff('elpis:new-chat',callback),
+  // Settings → General → Quick Entry keyboard shortcut (desktop/quick-entry.cjs).
+  quickEntry:{
+    status:()=>ipcRenderer.invoke('elpis:quick-entry:status'),
+    setShortcut:accelerator=>ipcRenderer.invoke('elpis:quick-entry:shortcut',String(accelerator)).then(checked),
   },
 });
 function checked(result){if(typeof result?.error==='string')throw Error(result.error);return result;}
+/** Takes what the main process holds for this page (desktop/open-thread.cjs) at once and on each ping. */
+function handoff(channel,callback){
+  const take=()=>ipcRenderer.invoke(`${channel}:take`).then(value=>{if(typeof value==='string')callback(value);}).catch(()=>{});
+  ipcRenderer.on(channel,take);take();
+  return()=>ipcRenderer.removeListener(channel,take);
+}

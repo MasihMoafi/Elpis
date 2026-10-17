@@ -1,17 +1,19 @@
 'use strict';
 
-const { app, BrowserWindow, WebContentsView, session, ipcMain, Menu, dialog, shell, clipboard } = require('electron');
+const { app, BrowserWindow, WebContentsView, session, ipcMain, Menu, Tray, nativeImage, globalShortcut, screen, dialog, shell, clipboard } = require('electron');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const { createBrowser } = require('./browser.cjs');
 const { startBrowserAgentSocket } = require('./browser-agent.cjs');
 const { appPermission } = require('./media-policy.cjs');
-const { closeNeedsConfirmation } = require('./preferences.cjs');
+const { closeNeedsConfirmation, closesToTray, quickEntryShortcut } = require('./preferences.cjs');
 const { createStateStore, registerState } = require('./state.cjs');
 const { registerFiles } = require('./files.cjs');
 const { attachContextMenu } = require('./context-menu.cjs');
 const { registerTerminal } = require('./terminal.cjs');
-const { openThreadArgument, createThreadOpener } = require('./open-thread.cjs');
+const { openThreadArgument, createThreadOpener, createNewChatOpener } = require('./open-thread.cjs');
+const { createTray, createCloseToTray } = require('./tray.cjs');
+const { startQuickEntry } = require('./quick-entry.cjs');
 
 // The renderer gets only the loopback app, never Node or filesystem access.
 let server;
@@ -23,6 +25,13 @@ let store;
 let closeConfirmed = false;
 // The chat the Elpis TUI's /app asked for (`--open-thread <id>`), at start-up or from a second launch.
 const threads = createThreadOpener(openThreadArgument(process.argv));
+// A new chat from Quick Entry (with its text) or the tray's New chat; the tray and Quick Entry start once the window is up.
+const newChats = createNewChatOpener();
+let tray, quickEntry, darkTheme = true; // `tray` stays referenced so it is not collected.
+// The Elpis website's mark: the window, the .desktop launcher and the tray.
+const ICON = path.join(__dirname, 'elpis-icon.png');
+// Settings → General → Close to tray, off by default: closing the window quits. On, it hides and the tray keeps Elpis.
+const closeToTray = createCloseToTray({ app, enabled: () => !!store && closesToTray(store), quitting: () => closing });
 // As in the ChatGPT app on Linux: no system title bar (white under a light system theme); the app draws its own
 // 36px bar in its sidebar colour and the window buttons sit over its right end. Everything is shown 10% larger.
 const ZOOM = 1.1;
@@ -31,6 +40,7 @@ const TITLE_BAR = { dark: { color: '#0d0e11', symbolColor: '#e6e0d3' }, light: {
 // Settings → General → Confirm before closing. Returns false when the person keeps the window.
 function mayClose() {
   if (closeConfirmed || !window || window.isDestroyed() || !store || !closeNeedsConfirmation(store)) return true;
+  if (!window.isVisible()) window.show(); // Quit from the tray asks over the window, not a hidden one.
   const choice = dialog.showMessageBoxSync(window, { type: 'question', buttons: ['Close', 'Cancel'], defaultId: 0, cancelId: 1, title: 'Close Elpis?', message: 'Close Elpis?', detail: 'Running conversations continue in Elpis and stay available when you reopen it.' });
   closeConfirmed = choice === 0;
   return closeConfirmed;
@@ -44,6 +54,7 @@ function openWindow() {
 async function createOrFocusWindow() {
   if (window && !window.isDestroyed()) {
     if (window.isMinimized()) window.restore();
+    if (!window.isVisible()) window.show();
     window.focus();
     return;
   }
@@ -62,8 +73,7 @@ async function createOrFocusWindow() {
   const origin = new URL(server.url).origin;
   window = new BrowserWindow({
     title: 'Elpis', width: 1320, height: 900, minWidth: 600, minHeight: 480,
-    // The Elpis website's mark, also used by the .desktop launcher.
-    icon: path.join(__dirname, 'elpis-icon.png'),
+    icon: ICON,
     backgroundColor: '#151515', show: false,
     titleBarStyle: 'hidden', titleBarOverlay: { ...TITLE_BAR.dark, height: Math.round(36 * ZOOM) },
     webPreferences: {
@@ -80,9 +90,14 @@ async function createOrFocusWindow() {
   const disposeFiles = registerFiles({ host: window, origin, ipcMain, shell });
   const disposeTerminal = registerTerminal({ host: window, origin, ipcMain, clipboard });
   const disposeThreads = threads.attach({ host: window, origin, ipcMain });
+  const disposeNewChats = newChats.attach({ host: window, origin, ipcMain });
+  const disposeQuickEntry = quickEntry?.attach({ host: window, origin }) ?? (() => {});
   // The app's theme colours the window buttons; only the app's own page may set it.
   const host = window;
-  const theme = (event, dark) => { if (event.sender === host.webContents && event.senderFrame === host.webContents.mainFrame && !host.isDestroyed()) host.setTitleBarOverlay(TITLE_BAR[dark === true ? 'dark' : 'light']); };
+  const theme = (event, dark) => {
+    if (event.sender !== host.webContents || event.senderFrame !== host.webContents.mainFrame || host.isDestroyed()) return;
+    darkTheme = dark === true; host.setTitleBarOverlay(TITLE_BAR[darkTheme ? 'dark' : 'light']);
+  };
   ipcMain.on('elpis:theme', theme);
   // Website permissions are handled by the browser's separate session.
   window.webContents.session.setPermissionRequestHandler((contents, permission, callback, details) => callback(appPermission(contents, window, permission, details, origin)));
@@ -97,11 +112,12 @@ async function createOrFocusWindow() {
   window.once('ready-to-show', () => window?.show());
   let disposed = false;
   window.on('close', event => {
+    if (closeToTray.hides(event, host)) return;
     if (!mayClose()) { event.preventDefault(); return; }
     if (disposed) return; disposed = true;
-    detachContextMenu(); disposeFiles(); disposeTerminal(); disposeThreads(); disposeState(); browser.dispose(); ipcMain.removeListener('elpis:theme', theme);
+    detachContextMenu(); disposeFiles(); disposeTerminal(); disposeThreads(); disposeNewChats(); disposeQuickEntry(); disposeState(); browser.dispose(); ipcMain.removeListener('elpis:theme', theme);
   });
-  window.on('closed', () => { window = undefined; });
+  window.on('closed', () => { window = undefined; closeToTray.closed(); });
   await window.loadURL(server.url);
 }
 
@@ -109,6 +125,8 @@ async function createOrFocusWindow() {
 // elpis-desktop.desktop.in sets StartupWMClass=elpis-desktop to match, so docks show the Elpis icon.
 app.setName('Elpis');
 app.setPath('userData', path.join(app.getPath('appData'), 'Elpis'));
+// Wayland gives apps global shortcuts only through the desktop portal; Claude's app turns on Chromium's portal support the same way.
+app.commandLine.appendSwitch('enable-features', [app.commandLine.getSwitchValue('enable-features'), 'GlobalShortcutsPortal'].filter(Boolean).join(','));
 if (!app.requestSingleInstanceLock({ openThread: openThreadArgument(process.argv) })) {
   app.quit();
 } else {
@@ -121,7 +139,14 @@ if (!app.requestSingleInstanceLock({ openThread: openThreadArgument(process.argv
       { role: 'editMenu' },
       { label: 'View', submenu: [{ role: 'reload' }, { role: 'resetZoom' }, { role: 'zoomIn' }, { role: 'zoomOut' }, { role: 'togglefullscreen' }] },
     ]));
+    const showWindow = () => void openWindow().catch(showStartupError);
+    quickEntry = startQuickEntry({ app, globalShortcut, BrowserWindow, screen, ipcMain, dark: () => darkTheme,
+      onSubmit: text => { newChats.queue(text); showWindow(); } });
     await openWindow();
+    await quickEntry.start(quickEntryShortcut(store));
+    tray = createTray({ Tray, Menu, nativeImage, icon: ICON, actions: {
+      open: showWindow, newChat: () => { newChats.queue(''); showWindow(); }, quickEntry: () => void quickEntry.toggle(), quit: () => app.quit(),
+    } });
   }).catch(showStartupError);
   app.on('activate', () => { void openWindow().catch(showStartupError); });
   app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
