@@ -308,6 +308,9 @@ impl App {
                 frame.set_cursor_style(foreground.cursor_style(foreground_area));
                 frame.set_cursor_position(position);
             }
+            if chat_widget.is_agent_turn_running() && frame.redraw_if_empty() {
+                frame_requester.schedule_frame_in(Duration::from_millis(100));
+            }
         })?;
         if let Some((surface, tip)) = &turn_tip
             && tip.rendered.get()

@@ -1206,6 +1206,7 @@ impl App {
             self.schedule_immediate_resize_reflow(tui);
             self.maybe_run_resize_reflow(tui, screen_size)?;
         }
+        let frame_requester = tui.frame_requester();
         self.with_chat_widget_frame(screen_size.width, |desired_height, chat_widget| {
             let desired_height = if dashboard_visible {
                 screen_size.height
@@ -1221,6 +1222,9 @@ impl App {
                 if let Some((x, y)) = chat_widget.cursor_pos(area) {
                     frame.set_cursor_style(chat_widget.cursor_style(area));
                     frame.set_cursor_position((x, y));
+                }
+                if self.chat_widget.is_agent_turn_running() && frame.redraw_if_empty() {
+                    frame_requester.schedule_frame_in(Duration::from_millis(100));
                 }
             })?;
             Ok(rendered_area)
