@@ -33,6 +33,8 @@ import { CopyButton } from "@/components/markdown-text";
 import { liveEventItemKey, mergeHistoryWithLive, mergeLiveItem, runtimeErrorNotice } from "@/lib/live-events";
 import { replacementEligibility } from "@/lib/turn-replacement";
 import { AgentsView } from "@/components/agents-view";
+import { AgentsGuide, AgentsGuideLink } from "@/components/agents-guide";
+import { CanvasGuideHelp } from "@/components/canvas-guide-help";
 import { CustomizeView } from "@/components/customize-view";
 import type { TerminalLaunch } from "@/components/terminal-view";
 import { ObservabilityView } from "@/components/observability-view";
@@ -85,7 +87,7 @@ import { activityOf, api, unreadable, chatProvider, choiceOf, effortsOf, isAgent
 const approvalDraftKey = (approval: Approval) => JSON.stringify([approval.ownerThreadId, approval.id]);
 
 const LoveSpot = dynamic(() => import("@/components/love-spot"), { ssr: false, loading: () => <p role="status">Opening Love Spot…</p> });
-type View = "chat" | "agents" | "canvas" | "loveSpot" | "customize" | "observability" | "newAgent" | "settings";
+type View = "chat" | "agents" | "agentsGuide" | "canvas" | "loveSpot" | "customize" | "observability" | "newAgent" | "settings";
 type NextTurn = { model?: string; effort?: string; plan?: boolean };
 type Live = { thread: Thread; activeTurnId?: string | null; permissions?: PermissionMode | null; planMode?: boolean };
 /** The terminal's answer to a finished plan: Plan mode off, then this message. */
@@ -326,6 +328,7 @@ export default function Home() {
   const [related, setRelated] = useState<Record<string, Thread>>({});
   const [accountRefresh, setAccountRefresh] = useState(0);
   const [view, setView] = useState<View>("chat");
+  const [guideBack, setGuideBack] = useState<"Agents" | "Canvas">("Agents");
   const viewRef = useRef(view); viewRef.current = view;
   useEffect(() => { if (view === "chat" && selected) markRead(selected.id); }, [view, selected?.id, markRead]);
   const [settingsSection, setSettingsSection] = useState<SettingsTab>("general");
@@ -1418,7 +1421,7 @@ export default function Home() {
     if (seen.has(parentId)) return null; const next = new Set(seen).add(parentId);
     return filtered.filter(c => c.parentThreadId === parentId).map(child => <div key={child.id}>{threadRow(child, depth)}{descendants(child.id, depth + 1, next)}</div>);
   }
-  const heading = view === "chat" ? (selected ? title(selected) : "") : { agents: "Agents", canvas: "Canvas", loveSpot: "Love Spot", customize: "Customize", observability: "Observability", newAgent: "New agent", settings: "Settings" }[view];
+  const heading = view === "chat" ? (selected ? title(selected) : "") : { agents: "Agents", agentsGuide: "Guide to managing agents", canvas: "Canvas", loveSpot: "Love Spot", customize: "Customize", observability: "Observability", newAgent: "New agent", settings: "Settings" }[view];
   const chatName = selected ? title(selected) : "New chat";
   const chatState = selected ? agentState(selected, waitingIds) : "idle", floatState = activeTurn && chatState === "idle" ? "working" : chatState;
   const meta = selected ? [selected.agentNickname, selected.agentRole && selected.agentRole !== "default" ? selected.agentRole : null].filter(Boolean).join(" · ") : "";
@@ -1426,7 +1429,7 @@ export default function Home() {
     const shortcut = SHORTCUTS.find(item => item.id === id)!;
     return { id, name: id === "pin" ? `${pins.includes(selected!.id) ? "Unpin" : "Pin"} chat` : id === "shortcuts" ? "Keyboard shortcuts" : shortcut.label, keys: shortcut.keys, run: () => { if (id === "shortcuts") { shortcutsReturnFocus.current = commandReturnFocus.current; setShortcutsOpen(true); } else shortcutAction.current(id); } };
   });
-  for (const [target, name] of [["agents", "Agents"], ["canvas", "Canvas"], ["loveSpot", "Love Spot"], ["observability", "Observability"], ["customize", "Customize"]] as const) commandActions.push({ id: target, name, run: () => show(target) });
+  for (const [target, name] of [["agents", "Agents"], ["agentsGuide", "Guide to managing agents"], ["canvas", "Canvas"], ["loveSpot", "Love Spot"], ["observability", "Observability"], ["customize", "Customize"]] as const) commandActions.push({ id: target, name, run: () => { if (target === "agentsGuide") setGuideBack(view === "canvas" ? "Canvas" : "Agents"); show(target); } });
 
   return <div className={`app-shell${split.pane ? " session-pane" : ""}${split.thread && view === "chat" ? " session-split" : ""}${dark ? " dark" : ""}${desktop ? " has-title-bar" : ""}${sidebarCollapsed ? " sidebar-collapsed" : ""}${view === "settings" ? " settings-mode" : ""}${panelShown ? " panel-active" : ""}`} style={{ "--sidebar-width": `${sidebarWidth}px` } as CSSProperties}>
     {desktop && <div className="title-bar"><Button variant="ghost" size="icon" aria-label={sidebarCollapsed || (panelShown && panelDrawer && !sidebar) ? "Open sidebar" : "Close sidebar"} title={`${sidebarCollapsed ? "Open" : "Close"} sidebar (Ctrl+B)`} onClick={() => showSidebar(narrow() ? !sidebar : sidebarCollapsed)}><PanelLeft /></Button><NavButtons canBack={canBack(history)} canForward={canForward(history)} onBack={() => goHistory(-1)} onForward={() => goHistory(1)} /></div>}
@@ -1517,14 +1520,15 @@ export default function Home() {
       <div className={`workspace-body${panelShown ? " panel-open" : ""}${fullView ? ` full-view${side.chatCollapsed ? " chat-collapsed" : ""}` : ""}${view !== "chat" ? " no-browser" : ""}`}><div className="workspace-content" {...(fullView ? { role: "region", "aria-label": "Floating chat" } : {})}>
       {fullView && <FloatChatBar title={chatName} onCollapse={() => side.setChatCollapsed(true)} />}
       {settingsVisited && <div className="page-scroll" hidden={view !== "settings"}><ViewBoundary label="Settings" resetKey={settingsNavigation}><SettingsView initialTab={settingsSection} navigationKey={settingsNavigation} active={view === "settings"} threadId={selected?.id} accountRefresh={accountRefresh} theme={theme} onTheme={setTheme} onUnarchived={unarchived} onDeleteThread={deleteThread} onBack={() => { show("chat"); requestAnimationFrame(focusComposer); }} onProvidersChanged={async () => { await reloadSettings(); void refreshModels(); }} /></ViewBoundary></div>}
-      {view === "canvas" && <ViewBoundary label="Canvas"><AgentsCanvas models={models} cwd={newChatFolder(cwd) || undefined} dark={dark} onOpenChat={id => { show("chat"); void openById(id); }}
-        projectMenu={<ProjectMenu variant="chip" projects={projects} selected={project} disabled={!ready || busy} onSelect={selectProject} onAdd={() => void addProject()} />} /></ViewBoundary>}
+      {view === "agentsGuide" && <div className="page-scroll"><AgentsGuide back={guideBack} onBack={() => show(guideBack === "Canvas" ? "canvas" : "agents")} /></div>}
+      {view === "canvas" && <ViewBoundary label="Canvas"><CanvasGuideHelp onOpen={() => { setGuideBack("Canvas"); show("agentsGuide"); }}><AgentsCanvas models={models} cwd={newChatFolder(cwd) || undefined} dark={dark} onOpenChat={id => { show("chat"); void openById(id); }}
+        projectMenu={<ProjectMenu variant="chip" projects={projects} selected={project} disabled={!ready || busy} onSelect={selectProject} onAdd={() => void addProject()} />} /></CanvasGuideHelp></ViewBoundary>}
       {view === "loveSpot" && <LoveSpot dark={dark} />}
       {view === "customize" && <div className="page-scroll"><ViewBoundary label="Customize"><CustomizeView cwd={cwd} onOpenSettings={() => openSettings("mcp")}
         onConnectGithub={hasTerminal ? () => { show("chat"); setTuiLaunch({ key: side.openTerminal(cwd), command: "github-login", token: Date.now() }); } : undefined}
         onCreateSkill={() => { newChat(); requestAnimationFrame(() => editDraft("Use $skill-creator to create a new skill that ")); }} /></ViewBoundary></div>}
       {observabilityVisited && <div className="page-scroll" hidden={view !== "observability"}><ObservabilityView onOpenChat={id => void openById(id)} /></div>}
-      {view === "agents" && <div className="page-scroll"><ViewBoundary label="Agents"><AgentsView threads={threads} activity={activity} models={models} providers={providerSettings?.providers} loading={agentsLoading} pendingThreadIds={approvals.map(approval => approval.params.threadId ?? approval.ownerThreadId)} moreConversations={!!nextCursor} loadingMore={moreLoading} onMoreConversations={loadMoreConversations} childCursors={childCursors} loadingChildren={loadingChildren} onMoreAgents={id => void loadChildren(id, childCursors[id] ?? undefined, false)} onOpen={loadThread} onStop={stop} onDelete={deleteThread} onNewAgent={() => show("newAgent")} /></ViewBoundary></div>}
+      {view === "agents" && <div className="page-scroll"><ViewBoundary label="Agents"><div className="mx-auto mb-3 max-w-[1080px]"><AgentsGuideLink onOpen={() => { setGuideBack("Agents"); show("agentsGuide"); }} /></div><AgentsView threads={threads} activity={activity} models={models} providers={providerSettings?.providers} loading={agentsLoading} pendingThreadIds={approvals.map(approval => approval.params.threadId ?? approval.ownerThreadId)} moreConversations={!!nextCursor} loadingMore={moreLoading} onMoreConversations={loadMoreConversations} childCursors={childCursors} loadingChildren={loadingChildren} onMoreAgents={id => void loadChildren(id, childCursors[id] ?? undefined, false)} onOpen={loadThread} onStop={stop} onDelete={deleteThread} onNewAgent={() => show("newAgent")} /></ViewBoundary></div>}
       {newAgentVisited && <div className="page-scroll" hidden={view !== "newAgent"}><button type="button" className="back-link" onClick={() => show("agents")}><ArrowLeft size={18} aria-hidden="true" />Back to Agents</button><ViewBoundary label="New agent" resetKey={newAgentVersion}><NewAgentForm key={newAgentVersion} models={models} settings={providerSettings} defaultCwd={cwd} connected={connected} onConfigure={manageConnections} onCreated={(thread, turnId, unsent, failure) => { setNewAgentVersion(value => value + 1); upsertThread(thread); if (unsent) saveDraft(thread.id, unsent); if (turnId && !completedTurns.current.has(turnId)) setActiveTurns(prev => ({ ...prev, [thread.id]: turnId })); void loadThread(thread).then(() => { if (failure && selectedRef.current?.id === thread.id) setError(failure); }); }} /></ViewBoundary></div>}
       {view === "chat" && <div className="chat-split"><div className={`chat-view${!selected && !entries.length ? " empty-chat" : ""}`}>
         <div className="chat-scroll-wrap"><div className="chat-scroll" ref={scroll} onScroll={event => { const element = event.currentTarget; stickToBottom.current = element.scrollHeight - element.scrollTop - element.clientHeight < 80; }}><div className="chat-content">
