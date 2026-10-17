@@ -2,7 +2,7 @@
 //! `model_popups.rs`.
 //!
 //! `/prune` turns Smart Prune on for subsequent turns; `/smart-prune` toggles it and
-//! `/smart-prune on|off` sets it (`elpis_ledger_glue.rs` owns the switch). `/pruner-model`
+//! `/smart-prune on|off` sets it and `log` browses its evidence. `/pruner-model`
 //! chooses the model Smart Prune's optimizer uses, saved in `pruner.json`
 //! (`core/src/pruner_settings.rs`); the chat model is never changed. Typed choices parse as
 //! `/memory-model`'s do (`crate::elpis_background_model`): `default`, `<provider>:<id>`, or an
@@ -20,7 +20,7 @@ use crate::history_cell;
 use crate::legacy_core::pruner_settings::PrunerSettings;
 use crate::slash_command::SlashCommand;
 
-const SMART_PRUNE_USAGE: &str = "Usage: /smart-prune [on|off]";
+const SMART_PRUNE_USAGE: &str = "Usage: /smart-prune [on|off|log]";
 const PRUNER_MODEL_SELECTION_VIEW_ID: &str = "pruner-model-selection";
 
 /// Saves a `/pruner-model` choice to `pruner.json` and returns how the choice reads. The
@@ -80,10 +80,11 @@ impl ChatWidget {
         }
     }
 
-    /// `/smart-prune on|off` and `/pruner-model <id|provider:id|default>`.
+    /// `/smart-prune on|off|log` and `/pruner-model <id|provider:id|default>`.
     pub(super) fn dispatch_prune_command_with_args(&mut self, cmd: SlashCommand, args: &str) {
         match cmd {
             SlashCommand::SmartPrune => match args.to_ascii_lowercase().as_str() {
+                "log" => self.open_smart_prune_log(),
                 "on" => {
                     self.request_smart_prune_enabled(/*enabled*/ true);
                 }

@@ -101,6 +101,10 @@ pub mod legacy_core {
     pub mod pruner_settings {
         pub use codex_core::pruner_settings::*;
     }
+
+    pub mod smart_prune_log {
+        pub use codex_core::smart_prune_log::*;
+    }
 }
 
 const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(5);

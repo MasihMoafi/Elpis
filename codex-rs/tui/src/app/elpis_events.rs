@@ -38,6 +38,52 @@ impl App {
             ElpisAppEvent::OpenUsage(card) => {
                 self.open_escape_closable_pager(tui, card, "Usage")?
             }
+            ElpisAppEvent::LoadSmartPruneLog(thread_id, request_id) => {
+                if self.current_displayed_thread_id() != Some(thread_id) {
+                    return Ok(());
+                }
+                let log_dir = self
+                    .chat_widget
+                    .config_ref()
+                    .codex_home
+                    .as_path()
+                    .join("logs");
+                let tx = self.app_event_tx.clone();
+                tokio::spawn(async move {
+                    let records = tokio::task::spawn_blocking(move || {
+                        crate::legacy_core::smart_prune_log::load_chat(
+                            &log_dir,
+                            &thread_id.to_string(),
+                        )
+                        .map_err(|error| error.to_string())
+                    })
+                    .await
+                    .unwrap_or_else(|error| Err(error.to_string()));
+                    tx.send(AppEvent::Elpis(ElpisAppEvent::SmartPruneLogLoaded(
+                        thread_id, request_id, records,
+                    )));
+                });
+            }
+            ElpisAppEvent::SmartPruneLogLoaded(thread_id, request_id, records) => {
+                if self.current_displayed_thread_id() == Some(thread_id) {
+                    self.chat_widget.finish_smart_prune_log(request_id, records);
+                    tui.frame_requester().schedule_frame();
+                }
+            }
+            ElpisAppEvent::OpenSmartPruneRecord(record) => {
+                if self
+                    .current_displayed_thread_id()
+                    .is_some_and(|id| id.to_string() == record.thread_id)
+                {
+                    tui.enter_alt_screen()?;
+                    self.reset_backtrack_state();
+                    self.overlay = Some(crate::chatwidget::smart_prune_log::record_overlay(
+                        &record,
+                        &self.keymap.pager,
+                    ));
+                    tui.frame_requester().schedule_frame();
+                }
+            }
             ledger_event => self.handle_elpis_ledger_event(tui, ledger_event)?,
         }
         Ok(())

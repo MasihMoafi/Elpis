@@ -41,6 +41,15 @@ use ratatui::widgets::Widget;
 use ratatui::widgets::Wrap;
 use scrolling::render_offset_content;
 
+/// Put Escape first among close bindings so local reports do not trigger backtrack or interruption.
+pub(crate) fn escape_first_pager_keymap(pager: &PagerKeymap) -> PagerKeymap {
+    let mut keymap = pager.clone();
+    let escape = crate::key_hint::plain(KeyCode::Esc);
+    keymap.close.retain(|binding| binding != &escape);
+    keymap.close.insert(0, escape);
+    keymap
+}
+
 pub(crate) enum Overlay {
     Transcript(TranscriptOverlay),
     Static(StaticOverlay),

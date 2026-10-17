@@ -738,7 +738,7 @@ async fn record_optimizer_finished(sess: &Session, elapsed: Duration, usage: Opt
 
 /// Public snapshots carry only fixed explanations. Provider errors can contain request
 /// URLs, credentials, or tool text and belong exclusively in the local attempt audit.
-fn safe_failure_reason(
+pub(crate) fn safe_failure_reason(
     status: smart_prune_audit::AttemptStatus,
     error: Option<&str>,
 ) -> Option<&'static str> {
@@ -791,11 +791,31 @@ async fn record_attempt(sess: &Session, outcome: AttemptOutcome<'_>) {
     let elapsed_ms = u64::try_from(outcome.latency.as_millis()).unwrap_or(u64::MAX);
     let log_dir = sess.smart_prune_log_dir().await;
     let session_id = sess.session_id().to_string();
+    let thread_id = sess.thread_id().to_string();
+    let configured_title = sess
+        .state
+        .lock()
+        .await
+        .session_configuration
+        .thread_name
+        .clone();
+    let chat_title = match sess.services.live_thread.as_ref() {
+        Some(thread) => thread
+            .read_thread(true, false)
+            .await
+            .ok()
+            .and_then(|thread| thread.name),
+        None => None,
+    }
+    .or(configured_title)
+    .unwrap_or_else(|| "Untitled chat".to_string());
     let audit_path = match smart_prune_audit::write_attempt(
         &log_dir,
         smart_prune_audit::AttemptAuditInput {
             attempt_id: outcome.attempt_id,
             session_id: &session_id,
+            thread_id: Some(&thread_id),
+            chat_title: Some(&chat_title),
             turn_id: outcome.turn_id,
             status: outcome.status,
             model_slug: outcome.model_slug,

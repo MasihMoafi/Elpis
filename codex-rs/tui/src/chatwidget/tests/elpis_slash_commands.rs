@@ -63,7 +63,7 @@ fn elpis_commands_are_listed_in_their_v030_order_with_v030_descriptions() {
         ("prune", Some("turn Smart Prune on for subsequent turns")),
         (
             "smart-prune",
-            Some("optimize fresh tool results before their first model request"),
+            Some("toggle Smart Prune, set on/off, or open log"),
         ),
         (
             "force-prune",

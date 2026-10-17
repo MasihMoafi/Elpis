@@ -17,6 +17,7 @@ use crate::elpis_ledger_events::ManualMemoryStatusCompletion;
 use crate::elpis_ledger_events::ManualMemoryStorageTarget;
 use crate::elpis_ledger_events::ManualMemoryUnavailableReason;
 use crate::elpis_ledger_events::ManualMemoryViewKey;
+use crate::pager_overlay::escape_first_pager_keymap;
 
 #[derive(Debug, Default)]
 pub(crate) struct ManualMemoryStatusCoordinator {
@@ -55,18 +56,6 @@ pub(super) enum ManualMemoryCompletionDisposition {
     Ignored,
     Detached,
     Refresh(ManualMemoryRequestTarget),
-}
-
-/// A pager keymap whose close binding starts with Escape.
-///
-/// The configured default closes on `q`/`Ctrl+C` only, so a report shown without
-/// this would leave Escape to prime backtrack when idle or interrupt a running turn.
-fn escape_first_pager_keymap(pager: &crate::keymap::PagerKeymap) -> crate::keymap::PagerKeymap {
-    let mut keymap = pager.clone();
-    let escape = crate::key_hint::plain(KeyCode::Esc);
-    keymap.close.retain(|binding| binding != &escape);
-    keymap.close.insert(0, escape);
-    keymap
 }
 
 fn manual_memory_same_view_ignoring_epoch(
@@ -712,6 +701,9 @@ impl App {
             | ElpisAppEvent::WorkGraphLoaded(_)
             | ElpisAppEvent::RefreshDashboard
             | ElpisAppEvent::RefreshDashboardAgents
+            | ElpisAppEvent::LoadSmartPruneLog(_, _)
+            | ElpisAppEvent::SmartPruneLogLoaded(_, _, _)
+            | ElpisAppEvent::OpenSmartPruneRecord(_)
             | ElpisAppEvent::OpenUsage(_) => {
                 unreachable!("handled in app/elpis_events.rs")
             }

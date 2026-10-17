@@ -93,6 +93,7 @@ pub mod pressure_compaction;
 // Elpis: Smart Prune. The pure admission logic, the pruner model and provider, and the
 // `/pruner-model` settings the TUI saves through app-server-client.
 pub(crate) mod smart_prune;
+pub mod smart_prune_log;
 mod jev_prune;
 #[cfg(test)]
 mod smart_prune_tests;

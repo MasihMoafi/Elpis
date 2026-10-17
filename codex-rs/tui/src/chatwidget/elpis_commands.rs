@@ -72,7 +72,7 @@ pub(crate) fn description(cmd: SlashCommand) -> &'static str {
         }
         SlashCommand::Yolo => "save Full Access as the default for future chats",
         SlashCommand::Prune => "turn Smart Prune on for subsequent turns",
-        SlashCommand::SmartPrune => "optimize fresh tool results before their first model request",
+        SlashCommand::SmartPrune => "toggle Smart Prune, set on/off, or open log",
         SlashCommand::ForcePrune => {
             "force a prune down to a target of remaining context: /force-prune <1-100>"
         }

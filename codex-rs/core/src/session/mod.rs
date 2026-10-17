@@ -272,7 +272,7 @@ mod rollout_reconstruction;
 pub(crate) mod session;
 // Elpis: Smart Prune optimizes fresh tool output before its first model request.
 pub(crate) mod smart_prune;
-mod smart_prune_audit;
+pub(crate) mod smart_prune_audit;
 pub(crate) mod startup_prewarm;
 mod step_activation;
 pub(crate) mod step_context;

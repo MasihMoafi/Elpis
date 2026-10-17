@@ -15,6 +15,7 @@ use anyhow::Context;
 use anyhow::Result;
 use codex_protocol::models::ResponseItem;
 use codex_protocol::protocol::TokenUsage;
+use serde::Deserialize;
 use serde::Serialize;
 use sha2::Digest;
 use sha2::Sha256;
@@ -47,9 +48,9 @@ pub(super) struct AdmissionAuditInput<'a> {
     pub(super) items: &'a [AdmissionAuditItem],
 }
 
-#[derive(Debug, Clone, Copy, Serialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub(super) enum AttemptStatus {
+pub(crate) enum AttemptStatus {
     Admitted,
     Unchanged,
     TimedOut,
@@ -78,6 +79,8 @@ impl AttemptStatus {
 pub(super) struct AttemptAuditInput<'a> {
     pub(super) attempt_id: &'a str,
     pub(super) session_id: &'a str,
+    pub(super) thread_id: Option<&'a str>,
+    pub(super) chat_title: Option<&'a str>,
     pub(super) turn_id: &'a str,
     pub(super) status: AttemptStatus,
     pub(super) model_slug: &'a str,
@@ -165,6 +168,8 @@ struct AttemptRecord<'a> {
     schema_version: u32,
     attempt_id: &'a str,
     session_id: &'a str,
+    thread_id: Option<&'a str>,
+    chat_title: Option<&'a str>,
     turn_id: &'a str,
     timestamp: String,
     status: AttemptStatus,
@@ -219,6 +224,8 @@ pub(super) fn write_attempt(
             schema_version: AUDIT_SCHEMA_VERSION,
             attempt_id: input.attempt_id,
             session_id: input.session_id,
+            thread_id: input.thread_id,
+            chat_title: input.chat_title,
             turn_id: input.turn_id,
             timestamp: chrono::Utc::now().to_rfc3339(),
             status: input.status,
@@ -236,9 +243,98 @@ pub(super) fn write_attempt(
             admission_id: input.admission_id,
         },
     )?;
+    // The machine audit remains authoritative even if its readable projection cannot
+    // be appended (for example, a pre-existing log path is not writable).
+    if let Err(error) = append_readable_attempt(log_dir, input.attempt_id) {
+        tracing::warn!(
+            attempt_id = input.attempt_id,
+            "Smart Prune readable log could not be appended: {error:#}"
+        );
+    }
     Ok(AttemptAuditReceipt {
         audit_path: relative_path,
     })
+}
+
+fn append_readable_attempt(log_dir: &Path, attempt_id: &str) -> Result<()> {
+    let record = crate::smart_prune_log::read_attempt(log_dir, attempt_id)?;
+    let directory = log_dir.join("smart-prune");
+    // Serialize filename selection too: chat renames and concurrent first attempts
+    // must continue appending to a single Markdown record for this thread.
+    let lock = open_private_append(&directory.join(".readable.lock"))?;
+    lock.lock()?;
+    let path = readable_chat_path(&directory, &record)?;
+    let mut file = open_private_append(&path)?;
+    file.write_all(record.readable().as_bytes())?;
+    file.sync_all()?;
+    sync_directory(&directory)?;
+    Ok(())
+}
+
+fn readable_chat_path(
+    directory: &Path,
+    record: &crate::smart_prune_log::PruneLogRecord,
+) -> Result<PathBuf> {
+    anyhow::ensure!(
+        !record.thread_id.is_empty()
+            && record
+                .thread_id
+                .chars()
+                .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_')),
+        "invalid readable log thread id"
+    );
+    let suffix = format!(" {}.md", record.thread_id);
+    for entry in std::fs::read_dir(directory)? {
+        let entry = entry?;
+        if entry.file_name().to_string_lossy().ends_with(&suffix) {
+            return Ok(entry.path());
+        }
+    }
+    let title: String = record
+        .chat_title
+        .chars()
+        .take(40)
+        .map(|ch| {
+            if ch.is_control() || matches!(ch, '/' | '\\' | '<' | '>' | ':' | '"' | '|' | '?' | '*')
+            {
+                '_'
+            } else {
+                ch
+            }
+        })
+        .collect();
+    Ok(directory.join(format!(
+        "{} {}{suffix}",
+        &record.timestamp[..10],
+        title.trim()
+    )))
+}
+
+fn open_private_append(path: &Path) -> Result<File> {
+    let mut options = std::fs::OpenOptions::new();
+    options.create(true).append(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options
+            .mode(0o600)
+            .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK);
+    }
+    let file = options.open(path)?;
+    anyhow::ensure!(
+        file.metadata()?.is_file(),
+        "readable log is not a regular file"
+    );
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        anyhow::ensure!(
+            file.metadata()?.nlink() == 1,
+            "readable log has multiple links"
+        );
+    }
+    set_private_file_permissions(&file)?;
+    Ok(file)
 }
 
 pub(super) fn write_admission(
@@ -633,6 +729,8 @@ mod tests {
         AttemptAuditInput {
             attempt_id,
             session_id: "session-1",
+            thread_id: Some("session-1"),
+            chat_title: Some("Readable fixture"),
             turn_id: "turn-1",
             status: AttemptStatus::TimedOut,
             model_slug: "gpt-5.6-luna",
@@ -648,6 +746,176 @@ mod tests {
             usage: None,
             admission_id: None,
         }
+    }
+
+    fn readable_path(root: &Path) -> PathBuf {
+        let record = crate::smart_prune_log::read_attempt(root, "readable-1").unwrap();
+        readable_chat_path(&root.join("smart-prune"), &record).unwrap()
+    }
+
+    fn chat_markdown_path(root: &Path) -> PathBuf {
+        std::fs::read_dir(root.join("smart-prune"))
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .find(|path| path.extension().is_some_and(|ext| ext == "md"))
+            .expect("per-chat Markdown record")
+    }
+
+    #[test]
+    fn readable_prune_log_appends_attempts_with_token_totals() {
+        let root = tempfile::tempdir().expect("audit root");
+        let input = serde_json::json!({"items": [{
+            "call_id": "call-1", "source_tokens_estimate": 1200,
+            "invocation": {"name": "shell", "arguments": "{\"command\":\"cargo test -p core\"}"},
+            "source_output": {"type": "function_call_output", "call_id": "call-1", "output": "original output"}
+        }]}).to_string();
+        let mut attempt = attempt_input("readable-1");
+        attempt.input = &input;
+        write_attempt(root.path(), attempt).unwrap();
+        let path = readable_path(root.path());
+        assert!(
+            path.file_name()
+                .unwrap()
+                .to_string_lossy()
+                .ends_with(" Readable fixture session-1.md")
+        );
+        let first = std::fs::read_to_string(&path).expect("readable log beside audit");
+        let timestamp = chrono::DateTime::parse_from_str(
+            first
+                .strip_prefix("## ")
+                .unwrap()
+                .split(" · ")
+                .next()
+                .unwrap(),
+            "%Y-%m-%d %H:%M:%S %:z",
+        )
+        .unwrap();
+        assert_eq!(
+            timestamp.offset().local_minus_utc(),
+            chrono::Local::now().offset().local_minus_utc()
+        );
+        assert!(first.contains("Readable fixture · turn turn-1 · gpt-5.6-luna (low)"));
+        assert!(first.contains("shell: cargo test -p core"), "{first}");
+        assert!(first.contains("| 1200 | 1200 |"), "{first}");
+        assert!(
+            first.contains("failed: The pruning model stopped responding"),
+            "{first}"
+        );
+        assert!(first.contains("Saved 0 of 1200 tokens (0.0%)"), "{first}");
+        assert!(first.trim_end().ends_with("Attempt: readable-1"));
+        let mut renamed = attempt_input("readable-2");
+        renamed.chat_title = Some("Renamed chat");
+        write_attempt(root.path(), renamed).unwrap();
+        let both = std::fs::read_to_string(&path).unwrap();
+        assert!(both.starts_with(&first));
+        assert!(both.contains("Renamed chat"));
+        let mut other = attempt_input("other-chat");
+        other.thread_id = Some("session-2");
+        other.chat_title = Some("داده / parser | notes");
+        write_attempt(root.path(), other).unwrap();
+        assert_eq!(
+            std::fs::read_dir(root.path().join("smart-prune"))
+                .unwrap()
+                .filter(|e| e
+                    .as_ref()
+                    .unwrap()
+                    .path()
+                    .extension()
+                    .is_some_and(|ext| ext == "md"))
+                .count(),
+            2
+        );
+        assert!(
+            root.path()
+                .join("smart-prune")
+                .read_dir()
+                .unwrap()
+                .any(|entry| entry
+                    .unwrap()
+                    .file_name()
+                    .to_string_lossy()
+                    .contains("داده _ parser _ notes session-2.md"))
+        );
+        assert_eq!(both.matches("Attempt: readable-").count(), 2);
+        assert!(write_attempt(root.path(), attempt_input("readable-1")).is_err());
+        assert_eq!(std::fs::read_to_string(path).unwrap(), both);
+    }
+
+    #[test]
+    fn readable_prune_log_reports_mixed_admitted_and_kept_numbers() {
+        let root = tempfile::tempdir().unwrap();
+        let item = audit_item("call-1");
+        write_admission(root.path(), audit_input("admission-1", &item)).unwrap();
+        let input = serde_json::json!({"items":[
+            {"call_id":"call-1", "source_tokens_estimate":3000,
+             "invocation":{"name":"shell","arguments":"{\"command\":\"cargo test -p core\"}"},
+             "source_output":item.source},
+            {"call_id":"call-2", "source_tokens_estimate":1200,
+             "invocation":{"name":"read_file","arguments":"{\"path\":\"src/app.rs\"}"},
+             "source_output":output("call-2", "kept original")}
+        ]})
+        .to_string();
+        let mut attempt = attempt_input("mixed");
+        attempt.input = &input;
+        attempt.status = AttemptStatus::Admitted;
+        attempt.error = None;
+        attempt.admission_id = Some("admission-1");
+        attempt.admitted_outputs = 1;
+        attempt.saved_tokens = 2990;
+        write_attempt(root.path(), attempt).unwrap();
+        let log = std::fs::read_to_string(chat_markdown_path(root.path())).unwrap();
+        assert!(log.contains("| 3000 | 10 | compacted:"), "{log}");
+        assert!(
+            log.contains("read\\_file: src/app.rs | 1200 | 1200 | kept:"),
+            "{log}"
+        );
+        assert!(log.contains("Saved 2990 of 4200 tokens (71.2%)"), "{log}");
+        let record = crate::smart_prune_log::read_attempt(root.path(), "mixed").unwrap();
+        assert_eq!(
+            record.items[0].compact.as_deref(),
+            Some("kept fact\n[ELPIS SMART PRUNE]")
+        );
+        assert!(record.items[1].compact.is_none());
+    }
+
+    #[test]
+    fn readable_prune_log_serializes_concurrent_appends() {
+        let root = tempfile::tempdir().unwrap();
+        std::thread::scope(|scope| {
+            for index in 0..8 {
+                let directory = root.path();
+                scope.spawn(move || {
+                    write_attempt(directory, attempt_input(&format!("parallel-{index}"))).unwrap();
+                });
+            }
+        });
+        let log = std::fs::read_to_string(chat_markdown_path(root.path())).unwrap();
+        assert_eq!(log.matches("Readable fixture · turn").count(), 8);
+        assert_eq!(log.matches("Attempt: parallel-").count(), 8);
+        for index in 0..8 {
+            assert!(log.contains(&format!("Attempt: parallel-{index}\n\n")));
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn readable_prune_log_rejects_symlinks_without_losing_the_machine_audit() {
+        let root = tempfile::tempdir().unwrap();
+        let outside = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(outside.path(), "untouched").unwrap();
+        let directory = root.path().join("smart-prune");
+        std::fs::create_dir(&directory).unwrap();
+        std::os::unix::fs::symlink(
+            outside.path(),
+            directory.join("2026-10-17 Readable fixture session-1.md"),
+        )
+        .unwrap();
+        let receipt = write_attempt(root.path(), attempt_input("linked-log")).unwrap();
+        assert!(root.path().join(receipt.audit_path).is_file());
+        assert_eq!(
+            std::fs::read_to_string(outside.path()).unwrap(),
+            "untouched"
+        );
     }
 
     #[test]
@@ -704,6 +972,14 @@ mod tests {
                 .mode()
                 & 0o777,
             0o600,
+        );
+        assert_eq!(
+            std::fs::metadata(chat_markdown_path(root.path()))
+                .unwrap()
+                .permissions()
+                .mode()
+                & 0o777,
+            0o600
         );
     }
 

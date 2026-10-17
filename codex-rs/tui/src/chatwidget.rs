@@ -316,6 +316,7 @@ mod context_usage;
 mod elpis_ledger_glue;
 // Elpis: /prune, /smart-prune, /pruner-model and `--pruner-model`.
 pub(crate) mod elpis_prune_commands;
+pub(crate) mod smart_prune_log;
 #[cfg(test)]
 pub(crate) use context_ledger::ledger_column_width;
 pub(crate) use context_ledger::ledger_column_width_for;
@@ -592,6 +593,7 @@ pub(crate) struct ChatWidget {
     context_attribution: Option<codex_app_server_protocol::ThreadContextAttribution>,
     smart_prune: codex_app_server_protocol::ThreadSmartPruneSnapshot,
     smart_prune_synced: bool,
+    smart_prune_log_request: Option<uuid::Uuid>,
     last_prune_saved_tokens: Option<u64>,
     // Elpis: the dashboard's Activity tab and whether `/dashboard` has been opened.
     dashboard: elpis_dashboard::DashboardWidgetState,
