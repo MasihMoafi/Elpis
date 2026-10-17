@@ -5,9 +5,10 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const { chromium } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright');
 const { chooseOption, leaveSettings, sidebar, openSettings, chooseTheme } = require('./controls.cjs');
+const { fakeDesktop } = require('./fake-desktop.cjs');
 
 // Exercise the exported app with synthetic accounts. No installed runtime or provider is contacted.
-async function fixture(run) {
+async function fixture(run, { desktop = false } = {}) {
   const calls = [], streams = new Set();
   const thread = { id: 'recent', name: 'Current work', cwd: '/tmp/demo', model: 'sol', modelProvider: 'openai', status: { type: 'idle' }, desktopAccess: { writable: true, mode: 'direct' } };
   const older = { ...thread, id: 'older-book', name: 'Augustus audiobook notes' };
@@ -32,6 +33,9 @@ async function fixture(run) {
     if (url.pathname === '/api/providers') return json({ openai: { auth: { state: 'signedIn', method: 'ChatGPT', email: 'demo@example.invalid' }, usage: [], usageError: null }, claude: { state: 'notConnected', models: [], usage: [] }, gemini: { state: 'notConnected', models: [], usage: [] }, openrouter: [], local: apiProviders });
     if (url.pathname === '/api/mcp') return json({ version: 'mcp-v1', write: { available: true }, servers: [] });
     if (url.pathname === '/api/tools/transcription') return json({ available: false, reason: 'Not configured in this fixture' });
+    if (url.pathname === '/api/file') { if (url.searchParams.get('path').includes('missing')) { res.statusCode = 404; return json({ error: 'This file is unavailable.' }); } return json({ content: 'Fixture notes\n', size: 14, mtimeMs: 1 }); }
+    if (url.pathname === '/api/files/dir') return json({ data: [] });
+    if (url.pathname.endsWith('/rewind') && data?.action === 'status') return json({});
     if (url.pathname === '/api/threads') return json({ data: url.searchParams.get('archived') === 'true' || url.searchParams.has('ancestorThreadId') ? [] : url.searchParams.get('searchTerm') === 'Laterpassage' ? [longPreview] : url.searchParams.get('searchTerm') === 'Augustus' ? [older] : url.searchParams.get('searchTerm') ? [] : [thread], nextCursor: url.searchParams.get('searchTerm') ? null : 'older-page' });
     if (url.pathname.endsWith('/context')) return json({ threadId: 'recent', tokenUsage: null, smartPrune: null });
     if (url.pathname.endsWith('/resume')) return json({ thread, activeTurnId: null });
@@ -47,6 +51,7 @@ async function fixture(run) {
   try {
     browser = await chromium.launch({ executablePath: process.env.ELPIS_CHROMIUM, headless: true });
     const page = await browser.newPage({ viewport: { width: 1320, height: 900 } }); page.setDefaultTimeout(6000);
+    if (desktop) await page.addInitScript(fakeDesktop);
     page.on('pageerror', error => errors.push(error.message));
     await page.goto(`http://127.0.0.1:${server.address().port}`);
     await page.getByRole('button', { name: 'Send message', exact: true }).waitFor();
@@ -54,7 +59,7 @@ async function fixture(run) {
     const shot = async name => { if (process.env.ELPIS_USABILITY_SHOTS) { await fs.mkdir(process.env.ELPIS_USABILITY_SHOTS, { recursive: true }); await page.screenshot({ path: path.join(process.env.ELPIS_USABILITY_SHOTS, `${name}.png`) }); } };
     await run({ page, calls, shot });
     assert.deepEqual(errors, [], 'the actual screen must have no uncaught renderer errors');
-    assert.equal(calls.filter(call => call.method === 'POST' && call.path !== '/api/session' && !call.path.endsWith('/resume')).length, 0, 'inspecting choices and navigating must not send messages or save account settings');
+    assert.equal(calls.filter(call => call.method === 'POST' && call.path !== '/api/session' && !call.path.endsWith('/resume') && !(call.path.endsWith('/rewind') && call.data?.action === 'status')).length, 0, 'inspecting choices and navigating must not send messages or save account settings');
   } finally { await browser?.close(); for (const response of streams) response.end(); server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); }
 }
 
@@ -111,24 +116,27 @@ test('new-agent drafts survive navigation and its model uses the shared choice c
   await shot('03-agent-draft-light');
 }));
 
-test('rendered local file links use desktop opening and explain failures without leaving the chat', () => fixture(async ({ page }) => {
+test('rendered local file links open inside Files and explain failures without leaving the chat', () => fixture(async ({ page, calls }) => {
   await page.evaluate(() => {
     window.testOpenedFiles = [];
-    window.elpisDesktop = { openFile: async file => {
+    window.elpisDesktop.openFile = async file => {
       if (file.includes('missing')) throw new Error('This file is unavailable.');
       window.testOpenedFiles.push(file);
-    } };
+    };
   });
   await page.getByRole('button', { name: 'Current work', exact: true }).first().click();
   const before = page.url();
-  await page.getByRole('link', { name: 'Read notes', exact: true }).click();
-  assert.deepEqual(await page.evaluate(() => window.testOpenedFiles), ['/tmp/demo/notes.md:12']);
+  await page.getByRole('button', { name: 'Read notes', exact: true }).click();
+  const editor = page.getByRole('textbox', { name: 'Contents of notes.md', exact: true });
+  await editor.waitFor(); assert.equal(await editor.inputValue(), 'Fixture notes\n');
+  assert.ok(calls.some(call => call.path === '/api/file' && call.query.path === 'notes.md'));
+  assert.deepEqual(await page.evaluate(() => window.testOpenedFiles), [], 'the default file link stays in Elpis');
   assert.equal(page.url(), before);
-  await page.getByRole('link', { name: 'Missing notes', exact: true }).click();
+  await page.getByRole('button', { name: 'Missing notes', exact: true }).click();
   await page.getByRole('alert').filter({ hasText: 'This file is unavailable.' }).waitFor();
   assert.equal(page.url(), before);
   assert.equal(await page.getByRole('link', { name: 'Website', exact: true }).getAttribute('target'), '_blank');
-}));
+}, { desktop: true }));
 
 test('maintenance settings read the real catalog response and keep model lists with their provider', () => fixture(async ({ page, shot }) => {
   await openSettings(page);
