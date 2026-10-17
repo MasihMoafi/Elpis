@@ -32,9 +32,10 @@ async fn inline_mode_leaves_room_above_a_crowded_ledger() -> Result<()> {
     Ok(())
 }
 
-/// Full screen: the Ledger is a column at the right edge that starts level with the first
-/// transcript row below the session header (Masih: "it should come lower"), and the composer
-/// keeps its own height to the Ledger's left instead of growing to the Ledger's height.
+/// Full screen: the Ledger is a column at the right edge that starts level with the first line of
+/// the transcript, past the gap under the session header (Masih: "it should come lower", and again
+/// "starts too high"), and the composer keeps its own height to the Ledger's left instead of
+/// growing to the Ledger's height.
 #[tokio::test]
 async fn full_screen_ledger_starts_below_the_session_header_beside_the_composer() -> Result<()> {
     let screen = Size::new(/*width*/ 120, /*height*/ 20);
@@ -45,7 +46,11 @@ async fn full_screen_ledger_starts_below_the_session_header_beside_the_composer(
     tui.set_owned_screen(/*owned*/ true)?;
     // The session header the full screen draws first: a blank row, the title and the cwd.
     app.queue_clear_ui_header(&mut tui);
-    app.transcript_cells.push(user_cell("first prompt"));
+    // The first thing after the header, as the tips are on a new session.
+    app.transcript_cells
+        .push(Arc::new(PlainHistoryCell::new(vec![
+            "first line of the transcript".into(),
+        ])));
     let bottom_area = app.render_chat_widget_frame(&mut tui, screen)?;
     let ledger_width = app.chat_widget.context_ledger_width(screen.width);
     assert!(
@@ -79,18 +84,16 @@ async fn full_screen_ledger_starts_below_the_session_header_beside_the_composer(
         row(title_row + 1, 0..rule_x).contains(&cwd),
         "the cwd row must follow the title\n{screen_text}"
     );
-    let below_header = title_row + 2;
     let ledger_top = (0..screen.height)
         .find(|&y| row(y, rule_x + 1..screen.width).contains("CONTEXT LEDGER"))
         .unwrap_or_else(|| panic!("the Ledger title is missing\n{screen_text}"));
+    let first_line = (title_row + 2..screen.height)
+        .find(|&y| row(y, 0..rule_x).contains("first line of the transcript"))
+        .unwrap_or_else(|| panic!("the transcript must stay beside the Ledger\n{screen_text}"));
     assert_eq!(
-        ledger_top, below_header,
-        "the Ledger must start on the first transcript row below the session header\n\
+        ledger_top, first_line,
+        "the Ledger must start level with the first transcript line, below the header's gap\n\
          {screen_text}"
-    );
-    assert!(
-        (below_header..screen.height).any(|y| row(y, 0..rule_x).contains("› first prompt")),
-        "the transcript must stay beside the Ledger\n{screen_text}"
     );
     for y in 0..ledger_top {
         assert_eq!(buffer[(rule_x, y)].symbol(), " ", "row {y}\n{screen_text}");

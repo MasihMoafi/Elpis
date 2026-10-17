@@ -1,6 +1,7 @@
 ---
 source: tui/src/app/tests/background_task_defaults_tests.rs
-expression: "snapshots.join(\"\\n\\n\")"
+assertion_line: 130
+expression: "crate::chatwidget::tests::helpers::normalize_snapshot_paths(snapshots.join(\"\\n\\n\"))"
 ---
 owned=false
 startup:
@@ -18,13 +19,14 @@ attached:
 
 owned=true
 startup:
-
-› draft during startup
-
-
-
+                                                │
+› draft during startup                          │
+                                                │
+                                                │
+                                                │
 attached:
-
-› draft during startup
-
-  GPT-6.1-Sol default · /tmp/project
+                                                │ unavailable
+› draft during startup                          │ Context measurement
+                                                │ unavailable until the first
+  GPT-6.1-Sol default · /tmp/project            │ request snapshot
+                                                │

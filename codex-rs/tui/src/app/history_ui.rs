@@ -37,12 +37,6 @@ impl App {
         {
             return;
         }
-        if !crate::empty_state_animation::is_startup_cell(cell.as_ref()) {
-            self.chat_widget
-                .empty_state_animation
-                .borrow_mut()
-                .dismiss();
-        }
         if let Some(warnings) = cell
             .as_any()
             .downcast_ref::<history_cell::StartupWarningsCell>()

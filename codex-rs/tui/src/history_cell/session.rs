@@ -3,6 +3,7 @@
 use super::*;
 use crate::line_truncation::line_width;
 use crate::line_truncation::truncate_line_with_ellipsis_if_overflow;
+use crate::style::BYPASS_PERMISSIONS_LABEL;
 use crate::style::accent_color;
 use crate::width::display_width;
 
@@ -286,8 +287,6 @@ pub(crate) fn is_yolo_mode(config: &Config) -> bool {
         &config.permissions.effective_permission_profile(),
     )
 }
-
-const BYPASS_PERMISSIONS_LABEL: &str = "Bypass permissions";
 
 /// Elpis: "Permissions updated to …", in red when the new mode is Bypass permissions.
 pub(crate) fn new_permissions_updated_event(label: &str, bypass: bool) -> PlainHistoryCell {

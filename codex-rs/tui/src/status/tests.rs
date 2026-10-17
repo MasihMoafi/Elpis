@@ -2387,3 +2387,63 @@ fn reset_timestamps_follow_clock_preference() {
     00:00 on 22 Sep
     ");
 }
+
+/// Elpis: Bypass permissions is root access, so /status shows it in red like the header and the
+/// permission picker do.
+#[tokio::test]
+async fn status_shows_bypass_permissions_in_red() {
+    let temp_home = TempDir::new().expect("temp home");
+    let mut config = test_config(&temp_home).await;
+    config
+        .permissions
+        .approval_policy
+        .set(AskForApproval::Never.to_core())
+        .expect("set approval policy");
+    config
+        .permissions
+        .set_permission_profile_from_session_snapshot(PermissionProfileSnapshot::active(
+            PermissionProfile::Disabled,
+            ActivePermissionProfile::new(
+                codex_protocol::models::BUILT_IN_PERMISSION_PROFILE_BYPASS_PERMISSIONS,
+            ),
+        ))
+        .expect("set permission profile");
+    let usage = TokenUsage::default();
+    let captured_at = chrono::Local
+        .with_ymd_and_hms(2024, 1, 2, 3, 4, 5)
+        .single()
+        .expect("timestamp");
+    let model_slug = get_model_offline_for_tests(config.model.as_deref());
+
+    let lines = crate::terminal_palette::with_test_default_colors(
+        crate::terminal_probe::DefaultColors {
+            fg: (220, 220, 220),
+            bg: (20, 20, 20),
+        },
+        || {
+            new_status_output(
+                &config,
+                test_status_account_display().as_ref(),
+                /*token_info*/ None,
+                &usage,
+                &None,
+                /*thread_name*/ None,
+                /*forked_from*/ None,
+                /*rate_limits*/ None,
+                None,
+                captured_at,
+                &model_slug,
+                /*collaboration_mode*/ None,
+                /*reasoning_effort_override*/ None,
+            )
+            .display_lines(/*width*/ 80)
+        },
+    );
+
+    let label = lines
+        .iter()
+        .flat_map(|line| line.spans.iter())
+        .find(|span| span.content.contains("Bypass permissions"))
+        .expect("/status names Bypass permissions");
+    assert_eq!(label.style.fg, Some(ratatui::style::Color::Red));
+}

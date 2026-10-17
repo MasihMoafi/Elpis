@@ -261,7 +261,6 @@ mod connector_mentions;
 mod connectors;
 mod constructor;
 mod dynamic_activity;
-mod empty_state_policy;
 pub(crate) use self::connectors::ConnectorScopeGeneration;
 use self::connectors::ConnectorsState;
 mod exec_state;
@@ -317,6 +316,8 @@ mod context_usage;
 mod elpis_ledger_glue;
 // Elpis: /prune, /smart-prune, /pruner-model and `--pruner-model`.
 pub(crate) mod elpis_prune_commands;
+pub(crate) use context_ledger::ledger_column_width;
+pub(crate) use context_ledger::render_startup_ledger_column;
 pub(crate) use elpis_ledger_glue::elpis_memory_dir;
 mod worktree_picker;
 use self::skills::collect_tool_mentions;
@@ -540,8 +541,6 @@ pub(crate) enum ExternalEditorState {
 /// (which view gets Ctrl+C), while `ChatWidget` owns process-level decisions such as interrupting
 /// active work, arming the double-press quit shortcut, and requesting shutdown-first exit.
 pub(crate) struct ChatWidget {
-    pub(crate) empty_state_animation:
-        std::cell::RefCell<crate::empty_state_animation::EmptyStateAnimation>,
     pub(crate) daybreak_enabled: bool,
     app_event_tx: AppEventSender,
     codex_op_target: CodexOpTarget,

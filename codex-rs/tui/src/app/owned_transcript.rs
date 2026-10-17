@@ -92,7 +92,6 @@ impl App {
         let motion = MotionMode::from_animations_enabled(
             self.local_settings.tui.animations && self.local_settings.tui.effects.shimmer,
         );
-        let composer = self.first_screen_composer();
         let latest_navigation = if self.enter_returns_to_latest() {
             "enter/esc latest"
         } else {
@@ -107,11 +106,12 @@ impl App {
         let scrollbar_width =
             u16::from(self.transcript_view.reserves_scrollbar()).min(transcript_width);
         let body_width = transcript_width.saturating_sub(scrollbar_width);
-        // Elpis: the Ledger's title is on the first transcript row below the session header card,
-        // so the header, not the Ledger, opens the screen. The offset stays fixed when the
-        // transcript scrolls.
+        // Elpis: the Ledger's title is level with the first transcript line: one row below the
+        // session header card, past the gap that follows it, so the header, not the Ledger, opens
+        // the screen. The offset stays fixed when the transcript scrolls.
         let ledger_top = self
             .session_header_height(body_width)
+            .saturating_add(1)
             .min(screen_size.height);
         let frame_requester = tui.frame_requester();
         // Elpis: the hint row shares the composer's column, left of the Context Ledger.
@@ -186,7 +186,6 @@ impl App {
         let mut rendered_cursor = None;
         let mut footer_height_changed = false;
         let mut feedback_tick = None;
-        let mut blossom_tick = None;
         let mut transcript_bottom = available.saturating_sub(u16::from(composer_gap.is_none()));
         tui.draw(screen_size.height, |frame| {
             ratatui::widgets::Clear.render(
@@ -267,18 +266,6 @@ impl App {
                 );
                 footer_height_changed = false;
             }
-            blossom_tick = chat_widget
-                .empty_state_animation
-                .borrow_mut()
-                .render_first_screen(
-                    Rect {
-                        width: main_width,
-                        ..view.remaining_area()
-                    },
-                    frame.buffer,
-                    composer,
-                    MotionMode::from_animations_enabled(self.local_settings.tui.animations),
-                );
             bottom.render(bottom_area, frame.buffer);
             chat_widget.render_context_ledger_column(ledger_area, frame.buffer);
             if let (Some(tip), Some(area)) = (completion_tip, completion_tip_area) {
@@ -333,9 +320,6 @@ impl App {
         if let Some(delay) = feedback_tick {
             tui.frame_requester().schedule_frame_in(delay);
         }
-        if let Some(delay) = blossom_tick {
-            tui.frame_requester().schedule_frame_in(delay);
-        }
         let animating =
             view.is_following() && active_key.is_some_and(|key| key.animation_tick.is_some());
         let loading = view.is_loading_history() && motion == MotionMode::Animated;
@@ -387,14 +371,6 @@ impl App {
         if !tui.is_owned_screen() || self.overlay.is_some() {
             return Ok(false);
         }
-        if matches!(event, TuiEvent::FocusLost) {
-            self.chat_widget
-                .empty_state_animation
-                .borrow_mut()
-                .cancel_replay();
-            // Show the static, faded decoration immediately when the terminal loses focus.
-            tui.frame_requester().schedule_frame();
-        }
         if self.transcript_view.history == TranscriptHistoryState::Idle {
             self.transcript_view.history = if self.scrollback_has_older_history {
                 TranscriptHistoryState::Partial
@@ -416,11 +392,7 @@ impl App {
                 self.render_owned_transcript(tui, size)?;
             }
             if self.chat_widget.no_modal_or_popup_active()
-                && self
-                    .chat_widget
-                    .empty_state_animation
-                    .borrow_mut()
-                    .handle_mouse(*mouse)
+                && self.chat_widget.handle_context_ledger_divider_mouse(*mouse)
             {
                 tui.frame_requester().schedule_frame();
                 return Ok(true);
@@ -684,8 +656,12 @@ impl App {
 pub(super) mod tests;
 
 #[cfg(test)]
-#[path = "empty_state_animation_tests.rs"]
-mod empty_state_animation_tests;
+#[path = "first_turn_screen_tests.rs"]
+mod first_turn_screen_tests;
+
+#[cfg(test)]
+#[path = "ledger_divider_tests.rs"]
+mod ledger_divider_tests;
 
 #[cfg(test)]
 #[path = "owned_transcript_input_tests.rs"]

@@ -18,10 +18,7 @@ pub(super) fn permission_preset_description(preset: &ApprovalPreset) -> &'static
     }
 }
 
-/// Elpis: Bypass permissions reads as root access: red wherever it is offered or shown.
-pub(crate) fn bypass_permissions_style() -> Style {
-    crate::style::status_style(crate::style::StatusTone::Failure)
-}
+pub(crate) use crate::style::bypass_permissions_style;
 
 pub(crate) fn auto_review_available(config: &Config) -> bool {
     cyber_model_approval_reviewer(config) == Some(ApprovalsReviewer::AutoReview)

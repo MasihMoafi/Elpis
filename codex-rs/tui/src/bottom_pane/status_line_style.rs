@@ -151,6 +151,14 @@ where
         } else {
             style
         };
+        // Elpis: Bypass permissions is root access, so it is red whatever the theme says.
+        let style = if item == StatusLineItem::Permissions
+            && text == crate::style::BYPASS_PERMISSIONS_LABEL
+        {
+            crate::style::bypass_permissions_style()
+        } else {
+            style
+        };
         spans.push(Span::styled(text, style));
     }
 
@@ -338,6 +346,51 @@ mod tests {
         .expect("status line");
 
         assert_eq!(line.spans[0].style, secondary_text_style().underlined());
+    }
+
+    /// Elpis: Bypass permissions is root access; the footer shows it in red, with or without theme
+    /// colors, and shows no other permission in red.
+    #[test]
+    fn bypass_permissions_is_red_in_the_status_line() {
+        let colors = crate::terminal_probe::DefaultColors {
+            fg: (220, 220, 220),
+            bg: (20, 20, 20),
+        };
+        crate::terminal_palette::with_test_default_colors(colors, || {
+            for use_theme_colors in [true, false] {
+                let line = status_line_from_segments_with_resolver(
+                    [
+                        (
+                            StatusLineItem::Permissions,
+                            "Bypass permissions".to_string(),
+                        ),
+                        (StatusLineItem::Permissions, "Full Access".to_string()),
+                    ],
+                    use_theme_colors,
+                    /*thread_id*/ None,
+                    |_| None,
+                )
+                .expect("status line");
+                let color_of = |text: &str| {
+                    line.spans
+                        .iter()
+                        .find(|span| span.content == text)
+                        .unwrap_or_else(|| panic!("{text:?} is in the status line"))
+                        .style
+                        .fg
+                };
+                assert_eq!(
+                    color_of("Bypass permissions"),
+                    Some(Color::Red),
+                    "theme colors: {use_theme_colors}"
+                );
+                assert_ne!(
+                    color_of("Full Access"),
+                    Some(Color::Red),
+                    "theme colors: {use_theme_colors}"
+                );
+            }
+        });
     }
 
     #[test]

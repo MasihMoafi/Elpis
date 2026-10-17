@@ -63,7 +63,6 @@ impl ChatWidget {
             settings: fallback_default,
         };
 
-        let empty_state_animation = crate::empty_state_animation::EmptyStateAnimation::default();
         let header = Self::placeholder_session_header_cell(&config);
         let active_cell = Some(header);
 
@@ -96,7 +95,6 @@ impl ChatWidget {
             pet_http_client.clone(),
         );
         let mut widget = Self {
-            empty_state_animation: std::cell::RefCell::new(empty_state_animation),
             daybreak_enabled: false,
             app_event_tx: app_event_tx.clone(),
             frame_requester: frame_requester.clone(),

@@ -39,7 +39,6 @@ use crate::config_update::RemoteProjectTrust;
 use crate::config_update::format_config_error;
 use crate::config_update::replace_config_value;
 use crate::config_update::write_trusted_project;
-use crate::empty_state_animation::Presentation;
 use crate::key_hint::KeyBindingListExt;
 use crate::legacy_core::config::Config;
 use crate::onboarding::auth::AuthModeWidget;
@@ -139,11 +138,10 @@ impl OnboardingScreen {
             .map(|project| project.trust_target.to_string_lossy().into_owned());
         let auth_config = config.auth_config();
         let mut steps: Vec<Step> = Vec::new();
-        steps.push(Step::Welcome(WelcomeWidget::new(
-            !matches!(login_status, LoginStatus::NotAuthenticated),
-            tui.frame_requester(),
-            local_settings.tui.animations && local_settings.tui.effects.welcome,
-        )));
+        steps.push(Step::Welcome(WelcomeWidget::new(!matches!(
+            login_status,
+            LoginStatus::NotAuthenticated
+        ))));
         #[cfg(target_os = "windows")]
         let show_windows_create_sandbox_hint = if show_trust_screen
             && remote_project_trust.is_none()
@@ -413,16 +411,9 @@ fn suppress_quit_while_typing(key_event: KeyEvent, text_entry_context: TextEntry
 impl WidgetRef for &OnboardingScreen {
     fn render_ref(&self, area: Rect, buf: &mut Buffer) {
         let suppress_animations = self.should_suppress_animations();
-        let logo_presentation = if suppress_animations {
-            Presentation::Hidden
-        } else if self.text_entry_context().active {
-            Presentation::Faded
-        } else {
-            Presentation::Animated
-        };
         for step in self.current_steps() {
             match step {
-                Step::Welcome(widget) => widget.set_presentation(logo_presentation),
+                Step::Welcome(_) => {}
                 Step::Auth(widget) => widget.set_animations_suppressed(suppress_animations),
                 Step::TrustDirectory(_) => {}
             }
@@ -471,9 +462,6 @@ impl WidgetRef for &OnboardingScreen {
             }
             let scratch_area = Rect::new(0, 0, width, max_h);
             let mut scratch = Buffer::empty(scratch_area);
-            if let Step::Welcome(widget) = step {
-                widget.update_layout_area(scratch_area);
-            }
             step.render_ref(scratch_area, &mut scratch);
             let h = used_rows(&scratch, width, max_h).min(max_h);
             if h > 0 {
@@ -662,14 +650,6 @@ async fn run_onboarding_screen_inner(
                                     *widget.error.write().unwrap_or_else(std::sync::PoisonError::into_inner) = Some(message);
                                 }
                                 pending_copy = None;
-                            }
-                            for step in &onboarding_screen.steps {
-                                if let Step::Welcome(widget) = step {
-                                    if matches!(&event, TuiEvent::Resume) {
-                                        widget.set_presentation(crate::empty_state_animation::Presentation::Hidden);
-                                    }
-                                    widget.set_focused(tui.is_terminal_focused());
-                                }
                             }
                             if !did_full_clear_after_success
                                 && onboarding_screen.steps.iter().any(|step| {

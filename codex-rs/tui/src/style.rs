@@ -45,6 +45,14 @@ pub(crate) enum StatusTone {
     Failure,
 }
 
+/// Elpis: the name of the mode that runs commands with no sandbox and no approval.
+pub(crate) const BYPASS_PERMISSIONS_LABEL: &str = "Bypass permissions";
+
+/// Elpis: Bypass permissions reads as root access: red wherever it is offered or shown.
+pub(crate) fn bypass_permissions_style() -> Style {
+    status_style(StatusTone::Failure)
+}
+
 /// Semantic status colors that preserve the terminal's configured palette.
 pub(crate) fn status_style(tone: StatusTone) -> Style {
     status_style_for(tone, default_bg(), effective_stdout_color_level())

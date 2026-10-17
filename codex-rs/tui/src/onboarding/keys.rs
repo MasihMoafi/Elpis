@@ -1,7 +1,6 @@
 //! Fixed shortcuts used before users have had a chance to configure Codex.
 
 use crossterm::event::KeyCode;
-use crossterm::event::KeyModifiers;
 
 use crate::key_hint;
 use crate::key_hint::KeyBinding;
@@ -31,11 +30,4 @@ pub(crate) const QUIT: [KeyBinding; 3] = [
     key_hint::plain(KeyCode::Char('q')),
     key_hint::ctrl(KeyCode::Char('c')),
     key_hint::ctrl(KeyCode::Char('d')),
-];
-pub(crate) const TOGGLE_ANIMATION: [KeyBinding; 2] = [
-    key_hint::ctrl(KeyCode::Char('.')),
-    KeyBinding::new(
-        KeyCode::Char('.'),
-        KeyModifiers::CONTROL.union(KeyModifiers::SHIFT),
-    ),
 ];

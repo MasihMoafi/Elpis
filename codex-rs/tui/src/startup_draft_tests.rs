@@ -28,13 +28,9 @@ where
     I: Iterator<Item = TuiEvent> + Send + 'static,
 {
     let (tx, rx) = unbounded_channel();
-    let mut blossom = crate::empty_state_animation::EmptyStateAnimation::default();
-    blossom.start_fresh();
     let header = startup_session_header(/*cwd*/ None);
     StartupDraftPump {
         header,
-        blossom: std::cell::RefCell::new(blossom),
-        motion: crate::motion::MotionMode::Animated,
         bottom_pane: startup_draft_bottom_pane(
             AppEventSender::new(tx),
             FrameRequester::test_dummy(),
@@ -260,7 +256,6 @@ async fn startup_draft_clears_loading_status_when_starting_fresh() {
         let mut pump = startup_test_pump(std::iter::empty());
         pump.initial_screen = initial_screen;
         pump.session_action = session_action;
-        pump.blossom.borrow_mut().dismiss();
         if initial_screen == StartupDraftInitialScreen::Composer {
             pump.bottom_pane.insert_str("draft while loading");
         }
@@ -275,7 +270,6 @@ async fn startup_draft_clears_loading_status_when_starting_fresh() {
 
         pump.update_session_selection(&mut tui, &SessionSelection::StartFresh)
             .expect("clear the loading status after a fresh-session selection");
-        assert!(pump.blossom.borrow().is_eligible());
         if initial_screen == StartupDraftInitialScreen::SessionPicker {
             assert!(tui.terminal.viewport_area.is_empty());
             pump.show(&mut tui)

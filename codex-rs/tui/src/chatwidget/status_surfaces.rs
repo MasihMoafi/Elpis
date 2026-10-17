@@ -1242,7 +1242,7 @@ fn permissions_display(config: &Config) -> String {
             &permission_profile,
             active_permission_profile.as_ref(),
         ) {
-            return "Bypass permissions".to_string();
+            return crate::style::BYPASS_PERMISSIONS_LABEL.to_string();
         }
         return "Full Access".to_string();
     }

@@ -29,11 +29,78 @@ use crate::terminal_palette::effective_stdout_color_level;
 const CONTEXT_LEDGER_TITLE: &str = "CONTEXT LEDGER";
 const LEDGER_MIN_TERMINAL_WIDTH: u16 = 80;
 const LEDGER_WIDTH: u16 = 52;
+/// A dragged Ledger keeps at least this many columns, so its rows stay readable...
+const LEDGER_MIN_WIDTH: u16 = 28;
+/// ...and leaves the transcript and composer at least this many.
+const LEDGER_MIN_MAIN_WIDTH: u16 = 40;
+/// The rule and the blank column beside it are the handle for resizing the Ledger.
+const LEDGER_HANDLE_COLS: u16 = 2;
 /// The rule column and one blank column before the text.
 const LEDGER_LEFT_COLS: u16 = 2;
 /// Codex keeps its last columns free: its footer hints stop `FOOTER_INDENT_COLS` before the
 /// edge. The Ledger keeps the same margin.
 const LEDGER_RIGHT_MARGIN: u16 = crate::ui_consts::FOOTER_INDENT_COLS as u16;
+
+/// Columns of the Ledger column on a terminal `terminal_width` wide: none below
+/// `LEDGER_MIN_TERMINAL_WIDTH`, otherwise 52 or two fifths of the terminal.
+pub(crate) fn ledger_column_width(terminal_width: u16) -> u16 {
+    ledger_column_width_for(terminal_width, /*preferred*/ None)
+}
+
+/// The same, for a Ledger the user has resized to `preferred` columns. The width is clamped so
+/// both the Ledger and the transcript stay usable on this terminal.
+pub(crate) fn ledger_column_width_for(terminal_width: u16, preferred: Option<u16>) -> u16 {
+    if terminal_width < LEDGER_MIN_TERMINAL_WIDTH {
+        return 0;
+    }
+    match preferred {
+        Some(width) => width.clamp(
+            LEDGER_MIN_WIDTH,
+            terminal_width
+                .saturating_sub(LEDGER_MIN_MAIN_WIDTH)
+                .max(LEDGER_MIN_WIDTH),
+        ),
+        None => LEDGER_WIDTH.min(terminal_width * 2 / 5),
+    }
+}
+
+/// The Ledger column as the startup screen draws it, before a session exists: the rule and the
+/// title, where the live Ledger will be. `column` is the whole column and `title_row` the row the
+/// live Ledger starts on.
+pub(crate) fn render_startup_ledger_column(column: Rect, title_row: u16, buf: &mut Buffer) {
+    let top = title_row.clamp(column.top(), column.bottom());
+    let area = Rect {
+        y: top,
+        height: column.bottom() - top,
+        ..column
+    };
+    render_ledger_rule(area, &[], buf);
+    let content_width =
+        ledger_content_width(area.width).min(area.width.saturating_sub(LEDGER_LEFT_COLS));
+    if content_width == 0 || area.height == 0 {
+        return;
+    }
+    let muted = Style::default().fg(crate::style::adaptive_palette_color(
+        default_bg(),
+        (80, 81, 75),
+        (133, 134, 128),
+    ));
+    let mut title = crate::status_indicator_widget::ledger_title_shimmer(
+        CONTEXT_LEDGER_TITLE,
+        std::time::Duration::ZERO,
+        crate::motion::MotionMode::Reduced,
+    );
+    title.extend([Span::raw("  "), Span::styled("loading", muted)]);
+    Paragraph::new(Line::from(title)).render(
+        Rect::new(
+            area.x + LEDGER_LEFT_COLS,
+            area.y,
+            content_width,
+            /*height*/ 1,
+        ),
+        buf,
+    );
+}
 
 /// The columns for the Ledger's text in a Ledger `ledger_width` columns wide.
 fn ledger_content_width(ledger_width: u16) -> u16 {
@@ -132,6 +199,12 @@ pub(super) struct ContextLedgerState {
     crowded: std::cell::Cell<bool>,
     /// Full screen only, where Elpis owns the mouse: written by each draw, read by a click.
     click_map: std::cell::RefCell<Option<LedgerClickMap>>,
+    /// The width the user dragged the Ledger to; `None` keeps the default for the terminal.
+    pub(super) preferred_width: Option<u16>,
+    /// Full screen only: the column as last drawn, for hit-testing its rule.
+    pub(super) column: std::cell::Cell<Option<Rect>>,
+    /// A drag on the rule: the column it was pressed at and the Ledger's width then.
+    resize_anchor: Option<(u16, u16)>,
     pub(super) pending_smart_prune_enabled: Option<bool>,
     pub(super) pending_subagents_enabled: Option<bool>,
     pub(super) projected_token_delta: i64,
@@ -154,6 +227,9 @@ impl Default for ContextLedgerState {
             why_visible: false,
             crowded: std::cell::Cell::new(false),
             click_map: std::cell::RefCell::new(None),
+            preferred_width: None,
+            column: std::cell::Cell::new(None),
+            resize_anchor: None,
             pending_smart_prune_enabled: None,
             pending_subagents_enabled: None,
             projected_token_delta: 0,
@@ -177,15 +253,60 @@ impl ChatWidget {
     /// Alt+C focuses the sidebar, then closes it. Tab closes only a focused sidebar.
     /// On narrower terminals it takes a proportional slice instead of a fixed
     /// 52 columns so the composer keeps room.
+    ///
+    /// A modal view (a menu, a prompt) hides it. The warnings panel does not: it sits above the
+    /// composer, and a startup warning must not make the Ledger look missing.
     pub(crate) fn context_ledger_width(&self, terminal_width: u16) -> u16 {
         if !self.context_ledger.visible
-            || self.bottom_pane.has_active_view()
-            || terminal_width < LEDGER_MIN_TERMINAL_WIDTH
+            || self.bottom_pane.has_active_modal()
             || (self.context_ledger.crowded.get() && !self.context_ledger.focused)
         {
             return 0;
         }
-        LEDGER_WIDTH.min(terminal_width * 2 / 5)
+        ledger_column_width_for(terminal_width, self.context_ledger.preferred_width)
+    }
+
+    /// Resizing the Ledger by its rule (full screen, where Elpis owns the mouse). A press on the
+    /// rule starts a drag, moving it left or right sets the width, and releasing ends it. Returns
+    /// whether the event was part of that drag; a press anywhere else is not.
+    pub(crate) fn handle_context_ledger_divider_mouse(
+        &mut self,
+        mouse: crossterm::event::MouseEvent,
+    ) -> bool {
+        use crossterm::event::MouseButton::Left;
+        use crossterm::event::MouseEventKind::Down;
+        use crossterm::event::MouseEventKind::Drag;
+        use crossterm::event::MouseEventKind::Up;
+
+        let Some(column) = self.context_ledger.column.get() else {
+            self.context_ledger.resize_anchor = None;
+            return false;
+        };
+        match mouse.kind {
+            Down(Left) => {
+                let on_handle = mouse.modifiers.is_empty()
+                    && (column.x..column.x + LEDGER_HANDLE_COLS).contains(&mouse.column)
+                    && (column.top()..column.bottom()).contains(&mouse.row);
+                self.context_ledger.resize_anchor =
+                    on_handle.then_some((mouse.column, column.width));
+                on_handle
+            }
+            Drag(Left) => {
+                let Some((pressed_at, width_then)) = self.context_ledger.resize_anchor else {
+                    return false;
+                };
+                // The rule follows the pointer: dragging left by n columns widens the Ledger by n.
+                let width = i32::from(width_then) + i32::from(pressed_at) - i32::from(mouse.column);
+                self.context_ledger.preferred_width = Some(ledger_column_width_for(
+                    column.right(),
+                    Some(u16::try_from(width.max(0)).unwrap_or(0)),
+                ));
+                self.request_redraw();
+                true
+            }
+            Up(Left) => self.context_ledger.resize_anchor.take().is_some(),
+            _ => false,
+        }
     }
 
     /// Keep at least this many transcript rows above the Ledger in either terminal mode.

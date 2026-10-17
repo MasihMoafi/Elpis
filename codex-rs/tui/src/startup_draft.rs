@@ -59,7 +59,6 @@ pub(crate) struct StartupScreen {
     pub(crate) use_alt_screen: bool,
     pub(crate) transcript_mode: crate::transcript_mode::TranscriptMode,
     pub(crate) status_line_enabled: bool,
-    pub(crate) welcome_motion: crate::motion::MotionMode,
     pub(crate) keymap: RuntimeKeymap,
     pub(crate) disable_paste_burst: bool,
 }
@@ -104,8 +103,6 @@ pub(crate) struct StartupDraft {
 /// Keeps terminal input responsive and carries one submission intent into the live session.
 pub(crate) struct StartupDraftPump {
     header: Box<dyn HistoryCell>,
-    pub(crate) blossom: std::cell::RefCell<crate::empty_state_animation::EmptyStateAnimation>,
-    motion: crate::motion::MotionMode,
     bottom_pane: BottomPane,
     events: Pin<Box<dyn Stream<Item = TuiEvent> + Send>>,
     app_event_rx: UnboundedReceiver<AppEvent>,
@@ -138,7 +135,6 @@ impl StartupDraft {
         tui.terminal_app_over_ssh = initialized_terminal.terminal_app_over_ssh;
         tui.set_alt_screen_enabled(screen.use_alt_screen);
         let mut pump = StartupDraftPump::new(&tui, initial_screen, session_action);
-        pump.motion = screen.welcome_motion;
         pump.bottom_pane
             .set_status_line_enabled(screen.status_line_enabled);
         pump.bottom_pane.set_keymap_bindings(&screen.keymap);
@@ -197,18 +193,9 @@ impl StartupDraftPump {
         session_action: StartupDraftSessionAction,
     ) -> Self {
         let (app_event_tx, app_event_rx) = unbounded_channel();
-        let mut blossom = crate::empty_state_animation::EmptyStateAnimation::default();
-        if matches!(
-            session_action,
-            StartupDraftSessionAction::New | StartupDraftSessionAction::NewFromCommandCenter
-        ) {
-            blossom.start_fresh();
-        }
         let header = startup_session_header(/*cwd*/ None);
         Self {
             header,
-            blossom: std::cell::RefCell::new(blossom),
-            motion: crate::system_motion::mode(),
             bottom_pane: startup_draft_bottom_pane(
                 AppEventSender::new(app_event_tx),
                 tui.frame_requester(),
@@ -258,9 +245,6 @@ impl StartupDraftPump {
             self.cancel_submission();
         }
         self.configured_cwd = Some(cwd.to_path_buf());
-        self.motion = crate::motion::MotionMode::from_animations_enabled(
-            local_settings.tui.animations && local_settings.tui.effects.welcome,
-        );
         self.header = startup_session_header(Some(cwd));
         self.bottom_pane.set_status_line_enabled(
             local_settings
@@ -323,11 +307,6 @@ impl StartupDraftPump {
         }
         self.resolved_selection = Some(session_selection.clone());
         self.session_action = session_action;
-        if matches!(session_selection, SessionSelection::StartFresh)
-            && !self.blossom.borrow().is_eligible()
-        {
-            self.blossom.borrow_mut().start_fresh();
-        }
         if self.initial_screen == StartupDraftInitialScreen::Composer {
             self.draw(tui, tui.terminal.last_known_screen_size)?;
         }
@@ -457,9 +436,6 @@ impl StartupDraftPump {
                 frame.set_cursor_position((x, y));
             }
         })?;
-        if let Some(delay) = owned_layout.next_frame.get() {
-            tui.frame_requester().schedule_frame_in(delay);
-        }
         Ok(())
     }
 }

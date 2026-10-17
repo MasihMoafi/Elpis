@@ -231,11 +231,15 @@ impl ChatWidget {
         area: ratatui::layout::Rect,
         buf: &mut ratatui::buffer::Buffer,
     ) {
+        self.context_ledger.column.set(Some(area));
         match self.context_ledger_lines_with_height(area.width) {
             Some((_, ledger_lines)) => {
                 self.render_context_ledger_lines(area, buf, ledger_lines, &[]);
             }
-            None => self.forget_context_ledger_clicks(),
+            None => {
+                self.context_ledger.column.set(None);
+                self.forget_context_ledger_clicks();
+            }
         }
     }
 }

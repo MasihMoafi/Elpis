@@ -219,29 +219,6 @@ impl super::ChatComposer {
             .map(|items| if items.is_empty() { 0 } else { 1 })
     }
 
-    pub(crate) fn empty_state_composer(
-        &self,
-    ) -> Option<crate::empty_state_animation::ComposerState> {
-        use crate::empty_state_animation::ComposerState;
-
-        let composer = match self.footer_mode() {
-            FooterMode::ComposerEmpty if self.is_in_paste_burst() => Some(ComposerState::Draft),
-            FooterMode::ComposerEmpty => Some(ComposerState::Empty),
-            FooterMode::ComposerHasDraft => Some(ComposerState::Draft),
-            FooterMode::HistorySearch
-            | FooterMode::QuitShortcutReminder
-            | FooterMode::ShortcutOverlay
-            | FooterMode::EscHint => None,
-        };
-        match &self.popups.active {
-            ActivePopup::None => composer,
-            ActivePopup::Command(_)
-            | ActivePopup::File(_)
-            | ActivePopup::Skill(_)
-            | ActivePopup::MentionV2(_) => None,
-        }
-    }
-
     pub(crate) fn resolve_render_options<'a>(
         &self,
         mut options: ComposerRenderOptions<'a>,

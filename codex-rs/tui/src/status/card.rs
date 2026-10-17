@@ -4,7 +4,9 @@ use crate::history_cell::PlainHistoryCell;
 use crate::history_cell::plain_lines;
 use crate::legacy_core::config::Config;
 use crate::line_truncation::line_width;
+use crate::style::BYPASS_PERMISSIONS_LABEL;
 use crate::style::accent_color;
+use crate::style::bypass_permissions_style;
 use crate::token_usage::TokenUsage;
 use crate::token_usage::TokenUsageInfo;
 use crate::version::CODEX_CLI_VERSION;
@@ -680,7 +682,7 @@ fn status_permissions_label(
             if permission_profile == &PermissionProfile::Disabled =>
         {
             return if approval_policy == AskForApproval::Never {
-                "Bypass permissions".to_string()
+                BYPASS_PERMISSIONS_LABEL.to_string()
             } else {
                 format!("No Sandbox ({approval})")
             };
@@ -846,7 +848,13 @@ impl StatusHistoryCell {
             lines.push(formatter.line("Model provider", vec![Span::from(model_provider.clone())]));
         }
         lines.push(formatter.line("Directory", vec![Span::from(directory_value)]));
-        lines.push(formatter.line("Permissions", vec![Span::from(self.permissions.clone())]));
+        let permissions = Span::from(self.permissions.clone());
+        let permissions = if self.permissions == BYPASS_PERMISSIONS_LABEL {
+            permissions.style(bypass_permissions_style())
+        } else {
+            permissions
+        };
+        lines.push(formatter.line("Permissions", vec![permissions]));
         lines.push(formatter.line("Agents.md", vec![Span::from(agents_summary)]));
 
         if let Some(account_value) = account_value {

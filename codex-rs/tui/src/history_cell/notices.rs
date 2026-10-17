@@ -96,7 +96,6 @@ impl HistoryCell for UpdateAvailableHistoryCell {
 pub(crate) fn new_warning_event(message: String) -> WarningHistoryCell {
     let style = crate::style::status_style(crate::style::StatusTone::Attention);
     WarningHistoryCell {
-        server_version_notice: false,
         visible_in_transcript: false,
         key: message.clone(),
         diagnostic: message.clone(),
@@ -130,7 +129,6 @@ pub(crate) fn new_server_version_warning(
         ));
     }
     WarningHistoryCell {
-        server_version_notice: true,
         visible_in_transcript: false,
         key,
         diagnostic: lines

@@ -169,19 +169,6 @@ impl Default for TranscriptView {
 }
 
 impl TranscriptView {
-    /// Rows left after the last render, including all startup notices and live entries.
-    /// Callers can paint temporary UI here without changing selection or saved history.
-    pub(crate) fn remaining_area(&self) -> Rect {
-        let used = u16::try_from(self.visible.len())
-            .unwrap_or(u16::MAX)
-            .min(self.area.height);
-        Rect {
-            y: self.area.y + used,
-            height: self.area.height - used,
-            ..self.area
-        }
-    }
-
     pub(crate) fn has_visible_animation(&self, cells: &[Arc<dyn HistoryCell>]) -> bool {
         self.visible.iter().any(|row| cells.get(row.index)
             .is_some_and(|cell| cell.transcript_animation_tick().is_some()))
