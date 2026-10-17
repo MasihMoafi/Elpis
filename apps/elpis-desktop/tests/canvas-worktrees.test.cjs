@@ -84,13 +84,14 @@ test('a clash between the work an agent builds on marks that agent and lists the
   } finally { await close(); }
 });
 
-test('a run that failed for another reason shows no merge notice and no merge clash', async () => {
+test('an ordinary task failure shows its reason without a merge notice or merge clash', async () => {
   const { canvas, node, errors, close } = await openCanvas({ graph: TEAM, repository: true,
     listed: ended('failed', 'one or more work graph tasks failed or were blocked. No worktree was created.', { a2: { status: 'failed', failureReason: 'the model stopped' } }) });
   try {
     await run(canvas);
     await canvas.getByText(/Finished/).first().waitFor({ timeout: 8000 });
-    assert.equal(await canvas.locator('.canvas-notice').count(), 0);
+    assert.equal(await canvas.locator('.canvas-notice').innerText(), 'Part 2: the model stopped');
+    assert.doesNotMatch(await canvas.locator('.canvas-notice').innerText(), /Merge stopped/);
     assert.equal(await status(node('Part 2')), 'failed');
     assert.doesNotMatch(await node('Part 2').locator('.agent-node-meta').innerText(), /clash/);
     assert.deepEqual(errors, []);

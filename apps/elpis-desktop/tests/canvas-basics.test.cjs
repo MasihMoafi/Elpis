@@ -53,13 +53,13 @@ test('canvas basics: undo and redo, copy and paste, duplicate, delete keeping th
     assert.notEqual(await view(), before, 'middle-drag pans');
     await fit();
 
-    // As AutoCAD's command line: Space opens it, and typing on the board starts a command with that key.
+    // Tab opens Add, and typing on the board starts a command with that key.
     const adder = canvas.getByRole('dialog', { name: 'Add agents', exact: true }), command = adder.getByRole('textbox', { name: 'Command', exact: true });
     await off(); await page.keyboard.press('Tab');
     await command.waitFor(); await page.keyboard.press('Escape'); await adder.waitFor({ state: 'hidden' });
-    await off(); await page.keyboard.type('fix');
+    await off(); await page.keyboard.type('build');
     await command.waitFor();
-    assert.equal(await command.inputValue(), 'fix');
+    assert.equal(await command.inputValue(), 'build');
     await page.keyboard.press('Escape');
 
     // A note is for the user, never sent; it moves by its strip.

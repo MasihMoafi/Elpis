@@ -1037,6 +1037,7 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .canvas-notice button[aria-label="Dismiss"] { display:grid; place-items:center; border:0; background:transparent; color:var(--muted-foreground); cursor:pointer; }
 .canvas-side { display:flex; flex-direction:column; gap:10px; padding:14px 14px; overflow:auto; border-left:1px solid var(--hairline); background:var(--sidebar); }
 .canvas-side .hud-menu-title { padding:2px 4px; }
+.canvas-side input { text-overflow:ellipsis; }
 .canvas-side [data-slot="select-trigger"] { width:100%; min-width:0; }
 .canvas-side [data-slot="select-trigger"] > span { min-width:0; overflow:hidden; text-overflow:ellipsis; }
 .canvas-side label, .canvas-folders { display:grid; gap:5px; color:var(--muted-foreground); font-size:12px; }
@@ -1064,7 +1065,7 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .iso-glow[data-status="succeeded"] { fill:var(--success); opacity:.35; }
 .iso-glow:is([data-status="failed"], [data-status="blocked"]) { fill:var(--destructive); opacity:.4; }
 @keyframes iso-pulse { 50% { opacity:.15; } }
-.iso-link { pointer-events:none; }
+.iso-link { cursor:pointer; }
 .iso-link[data-state="done"] { --iso-wire:var(--success); }
 .iso-link[data-state="live"] { --iso-wire:var(--context); }
 .iso-link[data-state="cut"] { --iso-wire:var(--destructive); }
@@ -1107,8 +1108,11 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .iso-node[data-status="succeeded"] .iso-core .iso-face-top { stroke:var(--success); stroke-width:2; }
 .iso-node:is([data-status="failed"], [data-status="blocked"]) .iso-core .iso-face-top { stroke:var(--destructive); stroke-width:2; }
 .iso-inlay { fill:none; stroke:color-mix(in oklch, var(--kind) 40%, #fff); stroke-width:1; opacity:.75; pointer-events:none; }
+.iso-port { position:absolute; z-index:1; width:16px; height:16px; padding:0; transform:translate(-50%, -50%); border:2px solid var(--card); border-radius:50%; background:var(--kind, var(--context)); box-shadow:0 0 0 1px var(--border); cursor:crosshair; touch-action:none; }
+.iso-port:hover, .iso-port:focus-visible { outline:2px solid var(--ring); outline-offset:2px; }
+.iso-connection { fill:none; stroke:var(--context); stroke-width:2; stroke-dasharray:4 4; pointer-events:none; }
 .iso-labels { position:absolute; inset:0; pointer-events:none; }
-.iso-label { position:absolute; display:flex; align-items:center; gap:6px; max-width:176px; padding:2px 8px 2px 3px; transform:translate(-50%, -100%); border:1px solid var(--hairline); border-radius:4px; background:color-mix(in oklab, var(--card) 88%, transparent); color:var(--foreground); font-size:13px; font-weight:600; line-height:18px; white-space:nowrap; }
+.iso-label { pointer-events:auto; cursor:pointer; position:absolute; display:flex; align-items:center; gap:6px; max-width:176px; padding:2px 8px 2px 3px; transform:translate(-50%, -100%); border:1px solid var(--hairline); border-radius:4px; background:color-mix(in oklab, var(--card) 88%, transparent); color:var(--foreground); font-size:13px; font-weight:600; line-height:18px; white-space:nowrap; }
 .iso-label > span { min-width:0; overflow:hidden; text-overflow:ellipsis; }
 .iso-label:is([data-kind="mother"], [data-kind="father"]) { padding-inline-start:8px; }
 .iso-label[data-short] { padding:2px; }

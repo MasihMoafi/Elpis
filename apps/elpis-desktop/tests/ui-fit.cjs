@@ -34,6 +34,13 @@ async function uiFit(container) {
       }
     }
     for (let i = 0; i < boxes.length; i++) for (let j = i + 1; j < boxes.length; j++) if (boxes[i].el !== boxes[j].el && meet(boxes[i].box, boxes[j].box)) issues.push(`text overlap: ${boxes[i].name} / ${boxes[j].name}`);
+    for (const el of root.querySelectorAll('button,input,textarea,[role="combobox"]')) {
+      if (hidden(el)) continue;
+      const clip = clips(el), raw = rect(el.getBoundingClientRect());
+      if (raw.right <= raw.left || raw.bottom <= raw.top || clip.some(c => c.scroll && !meet(raw, c.box))) continue;
+      const visible = clip.filter(c => c.scroll).reduce((b, c) => ({ left: Math.max(b.left, c.box.left), top: Math.max(b.top, c.box.top), right: Math.min(b.right, c.box.right), bottom: Math.min(b.bottom, c.box.bottom) }), raw);
+      if (!inside(visible, viewport)) issues.push(`outside control: ${el.getAttribute('aria-label') || name(el)}`);
+    }
     for (const el of root.querySelectorAll('textarea')) if (!hidden(el) && el.scrollHeight > el.clientHeight + 2) issues.push(`clipped field: ${el.getAttribute('aria-label')}`);
     return [...new Set(issues)];
   });

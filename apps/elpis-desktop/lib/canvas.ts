@@ -264,7 +264,7 @@ export function makesLoop(edges: CanvasEdge[], source: string, target: string) {
 
 /** The graph as the tasks Elpis runs, or what is missing first. Notes are not sent. Each agent is a writer followed by
  * its own check (a read-only verify task, which Elpis requires after every writer); an agent wired after it waits
- * for that check, so it builds on checked work. */
+ * for that check and the original result, so it receives both the answer and its verification. */
 /** The run in its parts: the Mother's tasks, and the Father's (empty within PER_PARENT agents). The Father's part
  * starts after hers has succeeded, so waiting on her agents is dropped from his tasks. */
 export function runParts(graph: CanvasGraph): { mother: RunTask[]; father: RunTask[] } | { error: string } {
