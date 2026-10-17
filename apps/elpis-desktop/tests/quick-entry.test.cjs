@@ -103,7 +103,7 @@ test("the main window opens Quick Entry's text as a new chat and sends it; the t
     assert.deepEqual(sends(server.posts), [], 'the tray sends nothing');
     await page.evaluate(() => window.__newChat('Summarise the README'));
     await eventually(() => assert.deepEqual(sends(server.posts), ['/api/threads', '/api/threads/chat-new/turns']));
-    assert.equal(server.posts.at(-1).body.text, 'Summarise the README');
+    assert.equal(server.posts.find(post => post.path === '/api/threads/chat-new/turns').body.text, 'Summarise the README');
     await page.locator('.thread-row.active[data-thread-id="chat-new"]').waitFor();
     await row.locator('.thread-link').click();
     await eventually(async () => assert.equal(await composer.inputValue(), 'unsent words for the parser', "the open chat's draft is kept"));
