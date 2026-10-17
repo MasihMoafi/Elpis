@@ -11,31 +11,33 @@ import { Textarea } from "@/components/ui/textarea";
 import { summarize, workedFor } from "@/components/transcript";
 import { api, providerChoices, type Entry, type Model, type ProviderSettings, type Thread } from "@/lib/api";
 import { useElpisSettings } from "@/lib/settings-store";
-import { KINDS, MOTHER, TEMPLATES, arrange, commandParts, shapeOf, makesLoop, maxAgents, newAgents, newId, parseCommand, readGraph, runTasks, saveGraph, waves, withMother, type AgentData, type AgentKind, type CanvasEdge, type CanvasGraph, type CanvasNode, type CatalogModel, type Command, type MotherSettings, type NoteData, type TaskStatus } from "@/lib/canvas";
+import { DONE, MOTHER, TASKS_PER_AGENT, TEMPLATES, arrange, checkOf, commandParts, shapeOf, makesLoop, maxAgents, newAgents, newId, parseCommand, readGraph, runTasks, saveGraph, waves, withMother, type AgentData, type CanvasEdge, type CanvasGraph, type CanvasNode, type CatalogModel, type Command, type MotherSettings, type NoteData, type TaskStatus } from "@/lib/canvas";
 
 type Run = { rootThreadId: string; graphId: string; status: string };
 type Listed = { data: { id: string; status: string; tasks: { id: string; status: TaskStatus; assignedThreadId: string | null }[] }[] };
 type HandleEnd = "source" | "target";
-type AgentNodeData = AgentData & { status?: TaskStatus; modelLabel?: string; wave?: number; onHandle?: (id: string, end: HandleEnd, event: ReactMouseEvent) => void };
+type AgentNodeData = AgentData & { status?: TaskStatus; check?: TaskStatus; modelLabel?: string; wave?: number; onHandle?: (id: string, end: HandleEnd, event: ReactMouseEvent) => void };
 type MotherData = { run: "idle" | "running" | "finished"; children: number; limit: number; onHandle?: AgentNodeData["onHandle"] };
 const STATUS_LABEL: Record<TaskStatus | "idle", string> = { idle: "not run", pending: "waiting", running: "running", succeeded: "done", failed: "failed", blocked: "blocked", cancelled: "cancelled" };
+/** An agent's check: the read-only verify task Elpis runs after every agent that writes (lib/canvas.ts `runTasks`). */
+const CHECK_LABEL: Record<TaskStatus | "idle", string> = { idle: "Checked after it runs", pending: "Check waits for it", running: "Being checked", succeeded: "Check passed", failed: "Check failed", blocked: "Check blocked", cancelled: "Check cancelled" };
 const FINISHED = new Set(["succeeded", "failed", "cancelled", "completed"]);
 const lines = (text: string) => text.split("\n").map(line => line.trim()).filter(Boolean);
-const AGENT_KINDS = Object.keys(KINDS) as AgentKind[];
 /** Fitting shows the whole graph, at most at full size. */
 const FIT = { padding: 0.12, maxZoom: 1 };
 
-/** An agent on the canvas: its role, run-order wave, name and state, with an input on the left (what it waits for) and
- * an output on the right (what waits for it), as Deus Ex's hacking screen links its nodes. Clicking a dot opens the
- * command bar to add agents on that side. */
+/** An agent on the canvas: it writes. Its run-order wave, name, model and state, with an input on the left (what it
+ * waits for) and an output on the right (what waits for it), as Deus Ex's hacking screen links its nodes. The ring at
+ * its corner is its check: empty until it runs, turning while it runs, then a tick or a cross. Clicking a dot opens
+ * the command bar to add agents on that side. */
 function AgentNode({ id, data }: NodeProps<Node<AgentNodeData>>) {
-  const status = data.status ?? "idle";
-  return <div className="agent-node" data-kind={data.kind} data-status={status}>
+  const status = data.status ?? "idle", check = data.check ?? "idle";
+  return <div className="agent-node" data-kind="agent" data-status={status}>
     <Handle type="target" position={Position.Left} title="Add agents this one waits for" onClick={event => data.onHandle?.(id, "target", event)} />
-    <span className="agent-node-kind">{KINDS[data.kind].label}{data.wave ? ` · wave ${data.wave}` : ""}</span>
+    <span className="agent-node-kind">Agent{data.wave ? ` · wave ${data.wave}` : ""}</span>
     <strong className="agent-node-title">{data.title || "Untitled"}</strong>
     <small className="agent-node-meta">{data.modelLabel ?? "Default model"} · {STATUS_LABEL[status]}</small>
-    <span className="agent-node-mark" aria-hidden="true">{status === "succeeded" ? <Check size={12} /> : status === "failed" || status === "blocked" ? <X size={12} /> : null}</span>
+    <span className="agent-node-mark" role="img" data-check={check} aria-label={CHECK_LABEL[check]} title={CHECK_LABEL[check]}>{check === "succeeded" ? <Check size={12} /> : check === "failed" || check === "blocked" ? <X size={12} /> : null}</span>
     <Handle type="source" position={Position.Right} title="Add agents that wait for this one" onClick={event => data.onHandle?.(id, "source", event)} />
   </div>;
 }
@@ -78,101 +80,99 @@ const EDGE_TYPES = { flow: FlowEdge };
 type Adding = { at: XYPosition; left: number; top: number; height: number; from?: { id: string; as: HandleEnd }; between?: CanvasEdge };
 type WireMenuAt = { edge: CanvasEdge; client: XYPosition; left: number; top: number };
 type Provider = { id: string | null; label: string; state: "ready" | "loading" | "key" | "error"; error?: string };
-type Level = { name: "kinds" } | { name: "providers" } | { name: "models"; provider: string | null } | { name: "efforts"; model: CatalogModel };
-type Row = { key: string; label: string; hint?: string; kind?: AgentKind | "note"; more?: boolean; take: () => void; open?: () => void };
+type Level = { name: "providers" } | { name: "models"; provider: string | null } | { name: "efforts"; model: CatalogModel };
+type Row = { key: string; label: string; hint?: string; more?: boolean; take: () => void; open?: () => void };
 const providerToken = (model: CatalogModel) => `${model.provider ? `@${model.provider} ` : ""}${model.model}`;
 
 /** The command bar, AutoCAD-style and keyboard first, as Houdini's and Nuke's Tab menu, Blender's Shift+A and
- * ComfyUI's search box. Type `3 implement sol high: fix the parser; fix the lexer` and Enter, or browse: the list offers
- * what the command still lacks (kind, then provider → model, then thinking level); ↑↓ choose, → opens a provider or a
- * model's thinking levels, ← goes back, Tab or Enter takes the choice. Without typed tasks, Enter asks for them. */
-function CommandBar({ adding, room, limit, catalog, providers, onAgents, onNote, onClose }: { adding: Adding; room: number; limit: number; catalog: CatalogModel[]; providers: Provider[]; onAgents: (command: Command & { kind: AgentKind }) => void; onNote: (text: string) => void; onClose: () => void }) {
+ * ComfyUI's search box. Type a prompt and Enter to add an agent with it (Shift+Enter starts the next agent's prompt),
+ * or `3 sol high: prompt; prompt`. The list offers a model: ↑↓ choose, → opens a provider or a model's thinking
+ * levels, ← goes back, Tab or Enter takes the choice. Without a prompt, Enter asks for one per agent. */
+function CommandBar({ adding, room, limit, catalog, providers, onAgents, onNote, onClose }: { adding: Adding; room: number; limit: number; catalog: CatalogModel[]; providers: Provider[]; onAgents: (command: Command) => void; onNote: (text: string) => void; onClose: () => void }) {
   const [text, setText] = useState(""), [active, setActive] = useState(0), [level, setLevel] = useState<Level | null>(null);
-  const [asking, setAsking] = useState<(Command & { kind: AgentKind }) | null>(null), [tasks, setTasks] = useState("");
+  const [asking, setAsking] = useState<Command | null>(null), [tasks, setTasks] = useState("");
   const field = useRef<HTMLTextAreaElement>(null);
   const command = parseCommand(text, catalog), { head, rest } = commandParts(text);
   const lastWord = head.split(/\s+/).at(-1) ?? "";
-  // A choice goes into the command's first part, replacing a half-typed word it couldn't place; typed tasks stay.
+  // A choice goes into the command's first part, replacing a half-typed word it couldn't place; prompts stay.
   const put = (token: string) => {
-    const words = head.trimEnd().split(/\s+/).filter(Boolean);
-    if (words.length && command.unknown.includes(words.at(-1)!.toLowerCase())) words.pop();
-    const next = [...words, token].join(" ");
-    setText(rest ? `${next}${rest}` : `${next} `); setLevel(null); setActive(0); field.current?.focus();
+    if (command.prompted) setText(`${token}: ${text}`);
+    else {
+      const words = head.trimEnd().split(/\s+/).filter(Boolean);
+      if (words.length && command.unknown.includes(words.at(-1)!.toLowerCase())) words.pop();
+      const next = [...words, token].join(" ");
+      setText(rest ? `${next}${rest}` : `${next} `);
+    }
+    setLevel(null); setActive(0); field.current?.focus();
   };
   const submit = (current: Command) => {
-    if (current.kind === "note") { onNote(current.tasks.join("\n")); return; }
-    const kind = current.kind;
-    if (!kind) return;
-    // As in the tasks step, more tasks than agents adds agents.
-    if (current.tasks.length) onAgents({ ...current, kind, count: Math.max(current.count ?? 1, current.tasks.length) }); else { setAsking({ ...current, kind }); setTasks(""); }
+    if (current.note) { onNote(current.tasks.join("\n")); return; }
+    // As in the prompts step, more prompts than agents adds agents.
+    if (current.tasks.length) onAgents({ ...current, count: Math.max(current.count ?? 1, current.tasks.length) }); else { setAsking(current); setTasks(""); }
   };
-  const shown: Level = level ?? (!command.kind ? { name: "kinds" } : !command.model ? (providers.length === 1 ? { name: "models", provider: providers[0].id } : { name: "providers" }) : { name: "efforts", model: command.model });
+  const shown: Level = level ?? (command.model?.efforts.length && !command.effort ? { name: "efforts", model: command.model } : providers.length === 1 ? { name: "models", provider: providers[0].id } : { name: "providers" });
+  const defaultRow: Row = { key: "default", label: "Default model", hint: "Whatever the run's chat uses", take: () => submit(command) };
   const modelRow = (model: CatalogModel): Row => ({ key: `${model.provider}:${model.model}`, label: model.label, hint: model.efforts.length ? `${model.model} · → thinking` : model.model, more: model.efforts.length > 0,
     take: () => put(providerToken(model)), open: model.efforts.length ? () => { put(providerToken(model)); setLevel({ name: "efforts", model }); } : undefined });
-  const rows: Row[] = shown.name === "kinds"
-    ? [...(room ? AGENT_KINDS : []).map(kind => ({ key: kind, label: KINDS[kind].label, hint: KINDS[kind].hint, kind, take: () => put(kind) })), { key: "note", label: "Note", hint: "A sticky note, never sent to Elpis", kind: "note" as const, take: () => put("note") }]
-    : shown.name === "providers"
-      ? [{ key: "default", label: "Default model", hint: "Whatever the run's chat uses", take: () => submit(command) },
-        ...providers.map(provider => ({ key: provider.id ?? "main", label: provider.label, more: true, hint: provider.state === "key" ? "Needs an API key: add it in Settings" : provider.state === "loading" ? "Loading models…" : provider.state === "error" ? provider.error : `${catalog.filter(model => model.provider === provider.id).length} models · →`,
-          take: () => setLevel({ name: "models", provider: provider.id }), open: () => setLevel({ name: "models", provider: provider.id }) }))]
-      : shown.name === "models"
-        ? [...(providers.length === 1 ? [{ key: "default", label: "Default model", hint: "Whatever the run's chat uses", take: () => submit(command) }] : []), ...catalog.filter(model => model.provider === shown.provider).map(modelRow)]
-        : shown.model.efforts.map(effort => ({ key: effort, label: `${effort[0].toUpperCase()}${effort.slice(1)} thinking`, hint: effort === shown.model.defaultEffort ? "The model's default" : undefined, take: () => put(effort) }));
+  const rows: Row[] = shown.name === "providers"
+    ? [defaultRow, ...providers.map(provider => ({ key: provider.id ?? "main", label: provider.label, more: true, hint: provider.state === "key" ? "Needs an API key: add it in Settings" : provider.state === "loading" ? "Loading models…" : provider.state === "error" ? provider.error : `${catalog.filter(model => model.provider === provider.id).length} models · →`,
+        take: () => setLevel({ name: "models", provider: provider.id }), open: () => setLevel({ name: "models", provider: provider.id }) }))]
+    : shown.name === "models"
+      ? [...(providers.length === 1 ? [defaultRow] : []), ...catalog.filter(model => model.provider === shown.provider).map(modelRow)]
+      : shown.model.efforts.map(effort => ({ key: effort, label: `${effort[0].toUpperCase()}${effort.slice(1)} thinking`, hint: effort === shown.model.defaultEffort ? "The model's default" : undefined, take: () => put(effort) }));
   const current = rows[Math.min(active, rows.length - 1)];
-  const ready = Boolean(command.kind) && (!command.model || !command.model.efforts.length || Boolean(command.effort)) && !level;
   const back = () => { if (shown.name === "efforts") setLevel({ name: "models", provider: shown.model.provider }); else if (shown.name === "models" && providers.length > 1) setLevel({ name: "providers" }); else setLevel(null); setActive(0); };
   const keys = (event: ReactKeyboardEvent<HTMLTextAreaElement>) => {
     const atEnd = event.currentTarget.selectionStart === text.length;
-    // Shift+Enter starts the next task line, as in the tasks step.
+    // Shift+Enter starts the next agent's prompt, as in the prompts step.
     if (event.key === "Enter" && event.shiftKey) return;
     if (event.key === "ArrowDown" || event.key === "ArrowUp") { event.preventDefault(); if (!level) setLevel(shown); setActive(index => (Math.min(index, rows.length - 1) + (event.key === "ArrowDown" ? 1 : -1) + rows.length) % Math.max(1, rows.length)); }
     else if (event.key === "ArrowRight" && atEnd && current?.open) { event.preventDefault(); setActive(0); current.open(); }
     else if (event.key === "ArrowLeft" && atEnd && level) { event.preventDefault(); back(); }
     else if (event.key === "Tab") { event.preventDefault(); current?.take(); }
-    else if (event.key === "Enter") { event.preventDefault(); if (level || !ready) current?.take(); else submit(command); }
+    else if (event.key === "Enter") { event.preventDefault(); if (level) current?.take(); else submit(command); }
     else if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); onClose(); }
   };
   const close = (event: React.FocusEvent) => { if (!event.currentTarget.contains(event.relatedTarget as globalThis.Node | null)) onClose(); };
   const count = Math.max(1, command.count ?? 1, command.tasks.length);
 
   if (asking) {
-    // The tasks: line n is agent n's; lines past the count add agents, up to the limit.
+    // The prompts: line n is agent n's; lines past the count add agents, up to the limit.
     const typed = lines(tasks), total = Math.min(room, Math.max(asking.count ?? 1, typed.length)), given = Math.min(typed.length, total);
     return <div className="quick-add hud-menu nodrag nowheel" role="dialog" aria-label="Add agents" style={{ left: adding.left, top: adding.top, maxHeight: adding.height }} onBlur={close}>
-      <p className="hud-menu-title quick-add-title"><span>Tasks for {total === 1 ? "the new agent" : `the ${total} new ${KINDS[asking.kind].label} agents`}</span><span>{asking.model?.label ?? "Default model"}</span></p>
-      <textarea autoFocus className="quick-add-field quick-add-tasks" aria-label="Tasks, one per line" rows={Math.min(8, Math.max(3, total))} value={tasks}
-        placeholder={Array.from({ length: Math.min(3, total) }, (_, index) => `Task for agent ${index + 1}`).join("\n")} onChange={event => setTasks(event.target.value)}
+      <p className="hud-menu-title quick-add-title"><span>{total === 1 ? "Prompt for the new agent" : `Prompts for the ${total} new agents`}</span><span>{asking.model?.label ?? "Default model"}</span></p>
+      <textarea autoFocus className="quick-add-field quick-add-tasks" aria-label="Prompts, one per line" rows={Math.min(8, Math.max(3, total))} value={tasks}
+        placeholder={Array.from({ length: Math.min(3, total) }, (_, index) => `Prompt for agent ${index + 1}`).join("\n")} onChange={event => setTasks(event.target.value)}
         onKeyDown={event => {
           if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); onAgents({ ...asking, count: total, tasks: typed.slice(0, total) }); }
           else if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); onClose(); }
           else if (event.key === "Backspace" && !tasks) { event.preventDefault(); setAsking(null); }
         }} />
-      <p className="quick-add-note" role="status">{total} {total === 1 ? "agent" : "agents"}: {given === total ? "each with its task" : given ? `${given} with a task, ${total - given} still to write` : "tasks can be written later, before the run"}{typed.length > room ? `. Only ${room} fit under the limit of ${limit}.` : ""}</p>
-      <p className="quick-add-help">One task per line · Shift+Enter new line · Enter add · Esc close · Backspace back</p>
+      <p className="quick-add-note" role="status">{total} {total === 1 ? "agent" : "agents"}: {given === total ? "each with its prompt" : given ? `${given} with a prompt, ${total - given} still to write` : "prompts can be written later, before the run"}{typed.length > room ? `. Only ${room} fit under the limit of ${limit}.` : ""}</p>
+      <p className="quick-add-help">One prompt per line · Shift+Enter new line · Enter add · Esc close · Backspace back</p>
     </div>;
   }
   return <div className="quick-add hud-menu nodrag nowheel" role="dialog" aria-label="Add agents" style={{ left: adding.left, top: adding.top, maxHeight: adding.height }} onBlur={close}>
     <p className="hud-menu-title quick-add-title"><span>{room ? "Add agents" : "No room for more agents"}</span><span>{room} of {limit} left</span></p>
-    <textarea ref={field} autoFocus className="quick-add-field quick-add-command" aria-label="Command" value={text} spellCheck={false} placeholder="3 implement sol high: task; task"
+    <textarea ref={field} autoFocus className="quick-add-field quick-add-command" aria-label="Command" value={text} spellCheck={false} placeholder="Type a prompt, or 3 sol high: prompt; prompt"
       rows={Math.min(6, text.split("\n").length)} onChange={event => { setText(event.target.value); setActive(0); setLevel(null); }} onKeyDown={keys} />
     <p className="quick-add-plan" aria-label="Will add">
-      {command.kind ? <><b>{command.kind === "note" ? "Note" : `${Math.min(count, room) || count} × ${KINDS[command.kind].label}`}</b>
-        {command.kind !== "note" && <span>{command.model ? `${command.model.label} · ${command.model.providerLabel}` : "Default model"}</span>}
+      {command.note ? <b>Note</b> : text.trim() ? <><b>{`${Math.min(count, room) || count} × Agent`}</b>
+        <span>{command.model ? `${command.model.label} · ${command.model.providerLabel}` : "Default model"}</span>
         {command.effort && <span>{command.effort} thinking</span>}
-        {command.tasks.length > 0 && <span>{command.tasks.length} {command.tasks.length === 1 ? "task" : "tasks"}</span>}</> : <span>Type how many and the kind, or choose below</span>}
+        {command.tasks.length > 0 && <span>{command.tasks.length} {command.tasks.length === 1 ? "prompt" : "prompts"}</span>}</> : <span>Type a prompt, or choose a model below</span>}
       {command.unknown.length > 0 && <em>Not understood: {command.unknown.join(", ")}</em>}
       {count > room && room > 0 && <em>Only {room} fit under the limit of {limit}</em>}
     </p>
-    {shown.name !== "kinds" && <p className="quick-add-crumb">{shown.name === "providers" ? "Providers" : shown.name === "models" ? `Models · ${providers.find(provider => provider.id === shown.provider)?.label ?? ""}` : `Thinking · ${shown.model.label}`}{level && <span>← back</span>}</p>}
-    <div role="listbox" aria-label={shown.name === "kinds" ? "Kinds" : shown.name === "providers" ? "Providers" : shown.name === "models" ? "Models" : "Thinking levels"} className="quick-add-list">
-      {rows.map((row, index) => <button key={row.key} type="button" role="option" aria-selected={row === current} className="quick-add-option" data-kind={row.kind}
+    <p className="quick-add-crumb">{shown.name === "providers" ? "Providers" : shown.name === "models" ? `Models · ${providers.find(provider => provider.id === shown.provider)?.label ?? ""}` : `Thinking · ${shown.model.label}`}{level && <span>← back</span>}</p>
+    <div role="listbox" aria-label={shown.name === "providers" ? "Providers" : shown.name === "models" ? "Models" : "Thinking levels"} className="quick-add-list">
+      {rows.map((row, index) => <button key={row.key} type="button" role="option" aria-selected={row === current} className="quick-add-option"
         onMouseEnter={() => setActive(index)} onClick={() => { setActive(index); (row.open ?? row.take)(); }}>
-        {row.kind === "note" ? <StickyNote size={13} /> : row.kind ? <i className="canvas-kind" /> : null}
         <span className="select-option">{row.label}{row.hint && <small>{row.hint}</small>}</span>{row.more && <ChevronRight size={14} className="quick-add-more" />}
       </button>)}
       {!rows.length && <p className="quick-add-note">Nothing to choose here.</p>}
     </div>
-    <p className="quick-add-help">{lastWord && command.unknown.includes(lastWord.toLowerCase()) ? "Tab takes the highlighted choice · " : ""}↑↓ · → open · ← back · Tab take · Shift+Enter task line · Enter {ready ? "add" : "take"} · Esc</p>
+    <p className="quick-add-help">{lastWord && command.unknown.includes(lastWord.toLowerCase()) ? "Tab takes the highlighted choice · " : ""}↑↓ · → open · ← back · Tab take · Shift+Enter next prompt · Enter {level ? "take" : "add"} · Esc</p>
   </div>;
 }
 
@@ -243,25 +243,48 @@ function LiveFeed({ chat, working, idle }: { chat: string | null; working: boole
   </section>;
 }
 
-/** A pattern's shape: the Mother, then one column of kind-coloured marks per wave, in run order. */
-function Shape({ shape }: { shape: AgentKind[][] }) {
+/** A pattern's shape: the Mother, then a column of agents per wave, in run order. */
+function Shape({ shape }: { shape: number[] }) {
   return <span className="canvas-shape" aria-hidden="true"><span><i className="canvas-kind" data-kind="mother" /></span>
-    {shape.map((column, index) => <span key={index}>{column.map((kind, row) => <i key={row} className="canvas-kind" data-kind={kind} />)}</span>)}</span>;
+    {shape.map((count, index) => <span key={index}>{Array.from({ length: count }, (_, row) => <i key={row} className="canvas-kind" data-kind="agent" />)}</span>)}</span>;
 }
 
-function AgentDashboard({ node, wave, status, chat, waitsFor, feeds, modelLabel, onOpenChat, onClose }: { node: Extract<CanvasNode, { type: "agent" }>; wave?: number; status: TaskStatus | "idle"; chat: string | null; waitsFor: string[]; feeds: string[]; modelLabel: string; onOpenChat: (id: string) => void; onClose: () => void }) {
+/** The folders an agent may write, chosen from the project's own (GET /api/folders): Elpis takes only existing
+ * folders inside the project, never the whole project (codex-rs state/src/model/work_graph.rs `validate_write_scopes`). */
+function FolderPicker({ cwd, value, onChange }: { cwd?: string; value: string[]; onChange: (folders: string[]) => void }) {
+  const [folders, setFolders] = useState<string[] | null>(null), [error, setError] = useState("");
+  useEffect(() => {
+    if (!cwd) return;
+    let live = true;
+    api<{ data: string[] }>(`/folders?cwd=${encodeURIComponent(cwd)}`).then(result => { if (live) { setFolders(result.data); setError(""); } }).catch(cause => { if (live) setError(cause instanceof Error ? cause.message : String(cause)); });
+    return () => { live = false; };
+  }, [cwd]);
+  const left = (folders ?? []).filter(folder => !value.includes(folder));
+  return <div className="canvas-folders" role="group" aria-label="May write">
+    <span>May write</span>
+    {value.length > 0 && <span className="canvas-folders-chosen">{value.map(folder => <span key={folder} className="canvas-chip">{folder}<button type="button" aria-label={`Remove ${folder}`} onClick={() => onChange(value.filter(item => item !== folder))}><X size={12} /></button></span>)}</span>}
+    {!cwd ? <small>Open a project first: agents write inside it.</small>
+      : error ? <small role="alert">{error}</small>
+      : <OptionSelect aria-label="Add a folder" value="" onChange={event => { if (event.target.value) onChange([...value, event.target.value]); }}>
+        <option value="" disabled>{folders === null ? "Loading the project's folders…" : left.length ? "Add a folder it may write…" : "No more folders"}</option>
+        {left.map(folder => <option key={folder} value={folder}>{folder}</option>)}</OptionSelect>}
+  </div>;
+}
+
+function AgentDashboard({ node, wave, status, check, chat, waitsFor, feeds, modelLabel, onOpenChat, onClose }: { node: Extract<CanvasNode, { type: "agent" }>; wave?: number; status: TaskStatus | "idle"; check: TaskStatus | "idle"; chat: string | null; waitsFor: string[]; feeds: string[]; modelLabel: string; onOpenChat: (id: string) => void; onClose: () => void }) {
   const data = node.data;
-  return <div className="agent-dashboard hud-menu" role="dialog" aria-label={`${data.title} dashboard`} data-kind={data.kind} data-status={status}
+  return <div className="agent-dashboard hud-menu" role="dialog" aria-label={`${data.title} dashboard`} data-kind="agent" data-status={status}
     onKeyDown={event => { if (event.key === "Escape") { event.stopPropagation(); onClose(); } }}>
-    <header><span className="agent-node-kind">{KINDS[data.kind].label}{wave ? ` · wave ${wave}` : ""} · {STATUS_LABEL[status]}</span><strong>{data.title || "Untitled"}</strong>
+    <header><span className="agent-node-kind">Agent{wave ? ` · wave ${wave}` : ""} · {STATUS_LABEL[status]}</span><strong>{data.title || "Untitled"}</strong>
       <button type="button" aria-label="Close dashboard" autoFocus onClick={onClose}><X size={14} /></button></header>
     <dl>
       <div><dt>Model</dt><dd>{modelLabel}{data.effort ? ` · ${data.effort} thinking (not applied yet)` : ""}</dd></div>
       <div><dt>Waits for</dt><dd>{waitsFor.length ? waitsFor.join(", ") : "Nobody: the Mother starts it"}</dd></div>
       <div><dt>Feeds</dt><dd>{feeds.length ? feeds.join(", ") : "The Mother's report"}</dd></div>
-      <div><dt>May write</dt><dd>{data.writeScopes.length ? data.writeScopes.join(", ") : "Nothing: read-only"}</dd></div>
-      <div><dt>Task</dt><dd>{data.instruction || "No task yet: write one before the run"}</dd></div>
-      {data.acceptanceCriteria.length > 0 && <div><dt>Done when</dt><dd>{data.acceptanceCriteria.join("; ")}</dd></div>}
+      <div><dt>May write</dt><dd>{data.writeScopes.length ? data.writeScopes.join(", ") : "No folder yet: choose one before the run"}</dd></div>
+      <div><dt>Prompt</dt><dd>{data.instruction || "No prompt yet: write one before the run"}</dd></div>
+      <div><dt>Done when</dt><dd>{(data.acceptanceCriteria.length ? data.acceptanceCriteria : [DONE]).join("; ")}</dd></div>
+      <div><dt>Its check</dt><dd>{CHECK_LABEL[check]}</dd></div>
     </dl>
     <LiveFeed chat={chat} working={status === "running"} idle="Not started. What it does shows here once the graph runs." />
     {chat && <Button variant="outline" size="sm" onClick={() => onOpenChat(chat)}><ExternalLink size={14} />Open its chat</Button>}
@@ -346,7 +369,8 @@ function Canvas({ models, cwd, dark, onOpenChat }: Props) {
   useEffect(() => { if (!undoLoad) return; const timer = setTimeout(() => setUndoLoad(null), 12000); return () => clearTimeout(timer); }, [undoLoad]);
   const shapes = useMemo(() => new Map(TEMPLATES.map(template => [template.id, shapeOf(template.build())])), []);
   const limit = maxAgents(graph), room = Math.max(0, limit - agents.length), order = useMemo(() => waves(graph), [graph]);
-  const done = agents.filter(node => states[node.id]?.status === "succeeded").length;
+  // An agent is done once its check passes.
+  const done = agents.filter(node => states[checkOf(node.id)]?.status === "succeeded").length;
   const runState: MotherData["run"] = run ? (FINISHED.has(run.status) ? "finished" : "running") : "idle";
   const modelLabel = (data: AgentData) => {
     if (!data.model) return "Default model";
@@ -358,13 +382,14 @@ function Canvas({ models, cwd, dark, onOpenChat }: Props) {
   const onHandle = (id: string, end: HandleEnd, event: ReactMouseEvent) => { event.stopPropagation(); openAdder({ x: event.clientX, y: event.clientY }, { id, as: end === "source" ? "target" : "source" }); };
   const nodes = useMemo<Node[]>(() => graph.nodes.map(node => node.type === "mother"
     ? { ...node, deletable: false, selected: selection.includes(MOTHER), data: { run: runState, children: agents.length, limit, onHandle } satisfies MotherData }
-    : { ...node, selected: selection.includes(node.id), data: node.type === "agent" ? { ...node.data, status: states[node.id]?.status, modelLabel: modelLabel(node.data), wave: order.get(node.id), onHandle } : { ...node.data, onText: setText } }),
+    : { ...node, selected: selection.includes(node.id), data: node.type === "agent" ? { ...node.data, status: states[node.id]?.status, check: states[checkOf(node.id)]?.status, modelLabel: modelLabel(node.data), wave: order.get(node.id), onHandle } : { ...node.data, onText: setText } }),
   [graph.nodes, selection, states, models, order, runState, limit, catalog.length]); // eslint-disable-line react-hooks/exhaustive-deps
   const edges = useMemo<Edge[]>(() => [
     // The Mother's wires: she starts every agent of the first wave.
     ...agents.filter(node => order.get(node.id) === 1).map(node => ({ id: `${MOTHER}->${node.id}`, source: MOTHER, target: node.id, type: "flow", className: "canvas-edge-mother", selectable: false, deletable: false, focusable: false, selected: wireMenu?.edge.id === `${MOTHER}->${node.id}`, data: { live: states[node.id]?.status === "running" } })),
     ...graph.edges.map(edge => {
-      const from = states[edge.source]?.status, to = states[edge.target]?.status, live = from === "succeeded" && to === "running";
+      // A wire goes live once its first agent's check passed and the second agent is running.
+      const from = states[checkOf(edge.source)]?.status, to = states[edge.target]?.status, live = from === "succeeded" && to === "running";
       return { ...edge, type: "flow", selected: wireMenu?.edge.id === edge.id, data: { live }, className: from === "failed" || to === "blocked" ? "canvas-edge-cut" : live ? "canvas-edge-live" : from === "succeeded" ? "canvas-edge-done" : undefined };
     }),
   ], [graph.edges, states, order, wireMenu]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -401,9 +426,9 @@ function Canvas({ models, cwd, dark, onOpenChat }: Props) {
     }
     return { x: middle.x, y: middle.y + 400 };
   };
-  const addAgents = (kind: AgentKind, count: number, choice: { model: string | null; provider?: string | null; effort?: string | null }, where: Partial<Pick<Adding, "at" | "from" | "between">> = {}, tasks: string[] = []) => {
+  const addAgents = (count: number, choice: { model: string | null; provider?: string | null; effort?: string | null }, where: Partial<Pick<Adding, "at" | "from" | "between">> = {}, tasks: string[] = []) => {
     if (!room) { setNotice(`The graph is at its limit of ${limit} agents. Raise Max agents to add more.`); return; }
-    const { from, between } = where, made = newAgents(kind, Math.min(count, room), choice, place(where.at), tasks);
+    const { from, between } = where, made = newAgents(Math.min(count, room), choice, place(where.at), tasks);
     const wire = (source: string, target: string) => ({ id: `${source}->${target}`, source, target });
     // On a wire, the new agents take its place: each waits for its first agent and feeds its second. From a dot or a
     // dropped wire, they join that agent. The Mother's wires are implied, never drawn.
@@ -459,7 +484,11 @@ function Canvas({ models, cwd, dark, onOpenChat }: Props) {
   const tidy = () => { setGraph(current => arrange(current)); setTimeout(() => void flow.fitView({ ...FIT, duration: 250 }), 60); };
   const dashboard = agents.find(node => node.id === dashboardId);
   // Edits apply to every selected agent: one in the inspector, several together.
-  const edit = (patch: Partial<AgentData>) => setGraph(current => ({ ...current, nodes: current.nodes.map(node => node.type === "agent" && chosen.some(item => item.id === node.id) ? { ...node, data: { ...node.data, ...patch } } : node) }));
+  const editEach = (change: (data: AgentData) => Partial<AgentData>) => setGraph(current => ({ ...current, nodes: current.nodes.map(node => node.type === "agent" && chosen.some(item => item.id === node.id) ? { ...node, data: { ...node.data, ...change(node.data) } } : node) }));
+  const edit = (patch: Partial<AgentData>) => editEach(() => patch);
+  // Several agents share the folders they all may write; adding or removing one changes it for each.
+  const commonFolders = chosen.reduce<string[]>((common, node, index) => index ? common.filter(folder => node.data.writeScopes.includes(folder)) : node.data.writeScopes, []);
+  const setCommonFolders = (next: string[]) => editEach(data => ({ writeScopes: [...data.writeScopes.filter(folder => !commonFolders.includes(folder) || next.includes(folder)), ...next.filter(folder => !data.writeScopes.includes(folder))] }));
   const remove = (ids: string[]) => { setGraph(current => ({ ...current, nodes: current.nodes.filter(node => !ids.includes(node.id)), edges: current.edges.filter(edge => !ids.includes(edge.source) && !ids.includes(edge.target)) })); setSelection([]); };
   const removeWire = (id: string) => { setGraph(current => ({ ...current, edges: current.edges.filter(edge => edge.id !== id) })); setWireMenu(null); };
   // A plain click picks that one node even inside a selection, as in Figma and Blender; Shift or Ctrl adds or removes
@@ -479,7 +508,8 @@ function Canvas({ models, cwd, dark, onOpenChat }: Props) {
   const titleOf = (id: string) => agents.find(node => node.id === id)?.data.title || "Untitled";
   // Kahn's waves, for the run-order list: what starts together, and how each wave is doing.
   const columns = [...new Set(order.values())].sort((a, b) => a - b).map(level => ({ level, members: agents.filter(node => order.get(node.id) === level) }));
-  const waveState = (members: typeof agents) => members.some(node => states[node.id]?.status === "running") ? "running" : members.length && members.every(node => states[node.id]?.status === "succeeded") ? "succeeded" : members.some(node => ["failed", "blocked"].includes(states[node.id]?.status ?? "")) ? "failed" : undefined;
+  const waveState = (members: typeof agents) => { const of = (node: (typeof agents)[number]) => [states[node.id]?.status, states[checkOf(node.id)]?.status];
+    return members.some(node => of(node).includes("running")) ? "running" : members.length && members.every(node => of(node)[1] === "succeeded") ? "succeeded" : members.some(node => of(node).some(status => status === "failed" || status === "blocked")) ? "failed" : undefined; };
   const choiceKey = (data: AgentData) => data.model ? `${data.provider ?? ""}|${data.model}` : "";
   const shared = (key: (data: AgentData) => string) => new Set(chosen.map(node => key(node.data))).size === 1 ? key(chosen[0].data) : "mixed";
   const modelPatch = (value: string): Partial<AgentData> => { const [provider, ...rest] = value.split("|"); return value ? { provider: provider || null, model: rest.join("|"), effort: null } : { provider: null, model: null, effort: null }; };
@@ -527,16 +557,18 @@ function Canvas({ models, cwd, dark, onOpenChat }: Props) {
       {/* Under the board, not floating on it, so it never covers the zoom buttons or the minimap. */}
       <div className="canvas-toolbar" role="toolbar" aria-label="Add to the canvas">
         <span className="canvas-toolbar-label">Add</span>
-        {AGENT_KINDS.map(kind => <Button key={kind} variant="ghost" size="sm" aria-label={`Add ${KINDS[kind].label} agent`} title={KINDS[kind].hint} onClick={() => addAgents(kind, 1, { model: null })}><i className="canvas-kind" data-kind={kind} />{KINDS[kind].label}</Button>)}
+        <Button variant="ghost" size="sm" aria-label="Add agent" title="An agent that writes: give it a prompt and the folders it may write; Elpis checks its work after it" onClick={() => addAgents(1, { model: null })}><i className="canvas-kind" data-kind="agent" />Agent</Button>
         <Button variant="ghost" size="sm" onClick={() => addNote()}><StickyNote size={14} />Note</Button>
-        <Button variant="ghost" size="sm" className="canvas-toolbar-more" onClick={() => openAdder()} title="Type a command: how many, the kind, the model and thinking, the tasks">Command <kbd>Tab</kbd></Button>
+        <Button variant="ghost" size="sm" className="canvas-toolbar-more" onClick={() => openAdder()} title="Type a prompt, or how many, the model and thinking, then the prompts; Ctrl+A, a double-click or an agent's dot opens it too">Command <kbd>Tab</kbd></Button>
+        {/* The keys, as Deus Ex's control strip shows them: a few, short; the rest are in each control's tooltip. */}
+        <span className="canvas-toolbar-keys"><span><kbd>Enter</kbd>Dashboard</span><span><kbd>Shift</kbd>Select several</span></span>
       </div>
       {adding && <CommandBar adding={adding} room={room} limit={limit} catalog={catalog} providers={providers} onClose={() => setAdding(null)}
-        onAgents={command => { addAgents(command.kind, Math.max(1, command.count ?? 1), { model: command.model?.model ?? null, provider: command.model?.provider ?? null, effort: command.effort }, adding, command.tasks); setAdding(null); }}
+        onAgents={command => { addAgents(Math.max(1, command.count ?? 1), { model: command.model?.model ?? null, provider: command.model?.provider ?? null, effort: command.effort }, adding, command.tasks); setAdding(null); }}
         onNote={text => { addNote(adding.at, text); setAdding(null); }} />}
       {wireMenu && <WireMenu menu={wireMenu} from={wireMenu.edge.source === MOTHER ? null : titleOf(wireMenu.edge.source)} to={titleOf(wireMenu.edge.target)} onClose={() => setWireMenu(null)}
         onInsert={() => openAdder(wireMenu.client, undefined, wireMenu.edge)} onRemove={wireMenu.edge.source === MOTHER ? undefined : () => removeWire(wireMenu.edge.id)} />}
-      {dashboard && <AgentDashboard node={dashboard} wave={order.get(dashboard.id)} status={states[dashboard.id]?.status ?? "idle"} chat={states[dashboard.id]?.chat ?? null} modelLabel={modelLabel(dashboard.data)}
+      {dashboard && <AgentDashboard node={dashboard} wave={order.get(dashboard.id)} status={states[dashboard.id]?.status ?? "idle"} check={states[checkOf(dashboard.id)]?.status ?? "idle"} chat={states[dashboard.id]?.chat ?? null} modelLabel={modelLabel(dashboard.data)}
         waitsFor={graph.edges.filter(edge => edge.target === dashboard.id).map(edge => titleOf(edge.source))} feeds={graph.edges.filter(edge => edge.source === dashboard.id).map(edge => titleOf(edge.target))}
         onOpenChat={onOpenChat} onClose={() => setDashboardId(null)} />}
       {undoLoad && !notice && <p className="canvas-notice" data-tone="info" role="status">Loaded {undoLoad.loaded}.
@@ -545,17 +577,16 @@ function Canvas({ models, cwd, dark, onOpenChat }: Props) {
       {notice && <p className="canvas-notice" role="alert">{notice}<button type="button" aria-label="Dismiss" onClick={() => setNotice("")}><X size={13} /></button></p>}
     </div>
     {selected ? <aside className="canvas-side" aria-label="Selected agent">
-      <p className="hud-menu-title">{KINDS[selected.data.kind].label} agent{order.get(selected.id) ? ` · wave ${order.get(selected.id)}` : ""}{states[selected.id] ? ` · ${STATUS_LABEL[states[selected.id].status]}` : ""}</p>
+      <p className="hud-menu-title">Agent{order.get(selected.id) ? ` · wave ${order.get(selected.id)}` : ""}{states[selected.id] ? ` · ${STATUS_LABEL[states[selected.id].status]}` : ""} · {CHECK_LABEL[states[checkOf(selected.id)]?.status ?? "idle"]}</p>
       <label>Name<Input aria-label="Name" value={selected.data.title} maxLength={256} onChange={event => edit({ title: event.target.value })} /></label>
-      <label>Role<OptionSelect aria-label="Role" value={selected.data.kind} onChange={event => edit({ kind: event.target.value as AgentKind })}>{AGENT_KINDS.map(kind => <option key={kind} value={kind} data-hint={KINDS[kind].hint}>{KINDS[kind].label}</option>)}</OptionSelect></label>
-      <label>Instruction<Textarea aria-label="Instruction" rows={5} value={selected.data.instruction} placeholder="What this agent should do" onChange={event => edit({ instruction: event.target.value })} /></label>
+      <label>Prompt<Textarea aria-label="Prompt" rows={5} value={selected.data.instruction} placeholder="What this agent should do" onChange={event => edit({ instruction: event.target.value })} /></label>
       <label>Model<OptionSelect aria-label="Model" value={choiceKey(selected.data)} onChange={event => edit(modelPatch(event.target.value))}>
         {modelOptions}
         {selected.data.model && !selectedModel && <option value={choiceKey(selected.data)}>{selected.data.model}</option>}</OptionSelect></label>
       {selectedModel && selectedModel.efforts.length > 0 && <label>Thinking (kept; Elpis applies it per agent in a later engine build)<OptionSelect aria-label="Thinking" value={selected.data.effort ?? ""} onChange={event => edit({ effort: event.target.value || null })}>
         <option value="">Model default{selectedModel.defaultEffort ? ` (${selectedModel.defaultEffort})` : ""}</option>{selectedModel.efforts.map(effort => <option key={effort} value={effort}>{effort}</option>)}</OptionSelect></label>}
-      <label>May write (one folder or file per line)<Textarea aria-label="May write" rows={2} value={selected.data.writeScopes.join("\n")} onChange={event => edit({ writeScopes: lines(event.target.value) })} /></label>
-      <label>Done when (one check per line)<Textarea aria-label="Done when" rows={3} value={selected.data.acceptanceCriteria.join("\n")} onChange={event => edit({ acceptanceCriteria: lines(event.target.value) })} /></label>
+      <FolderPicker cwd={cwd} value={selected.data.writeScopes} onChange={writeScopes => edit({ writeScopes })} />
+      <label>Done when (one per line; its check holds it to these)<Textarea aria-label="Done when" rows={3} value={selected.data.acceptanceCriteria.join("\n")} placeholder={DONE} onChange={event => edit({ acceptanceCriteria: lines(event.target.value) })} /></label>
       <div className="canvas-inspector-actions">
         <Button variant="outline" size="sm" onClick={() => setDashboardId(selected.id)}>Dashboard <kbd>Enter</kbd></Button>
         {chat && <Button variant="outline" size="sm" onClick={() => onOpenChat(chat)}><ExternalLink size={14} />Open its chat</Button>}
@@ -565,9 +596,8 @@ function Canvas({ models, cwd, dark, onOpenChat }: Props) {
     </aside> : chosen.length > 1 ? <aside className="canvas-side" aria-label="Selected agents">
       <p className="hud-menu-title">{chosen.length} agents selected</p>
       <p className="canvas-help">{chosen.map(node => node.data.title || "Untitled").join(", ")}</p>
-      <label>Role<OptionSelect aria-label="Role" value={shared(data => data.kind)} onChange={event => edit({ kind: event.target.value as AgentKind })}>
-        {mixed}{AGENT_KINDS.map(kind => <option key={kind} value={kind} data-hint={KINDS[kind].hint}>{KINDS[kind].label}</option>)}</OptionSelect></label>
       <label>Model<OptionSelect aria-label="Model" value={shared(choiceKey)} onChange={event => edit(modelPatch(event.target.value))}>{mixed}{modelOptions}</OptionSelect></label>
+      <FolderPicker cwd={cwd} value={commonFolders} onChange={setCommonFolders} />
       <div className="canvas-inspector-actions">
         <Button variant="ghost" size="sm" className="text-destructive" onClick={() => remove(chosen.map(node => node.id))}><Trash2 size={14} />Delete {chosen.length} agents <kbd>Delete</kbd></Button>
         <Button variant="outline" size="sm" className="ml-auto" onClick={() => setSelection([])}>Done</Button>
@@ -578,8 +608,8 @@ function Canvas({ models, cwd, dark, onOpenChat }: Props) {
       <label>Brief for every agent<Textarea aria-label="Brief for every agent" rows={4} value={mother.brief} placeholder="What the whole run is for: the goal, the rules every agent follows" onChange={event => setMother({ brief: event.target.value })} /></label>
       <label>Her model<OptionSelect aria-label="Her model" value={mother.model ? `${mother.provider ?? ""}|${mother.model}` : ""} onChange={event => { const patch = modelPatch(event.target.value); setMother({ model: patch.model ?? null, provider: patch.provider ?? null }); }}>{modelOptions}</OptionSelect></label>
       <div className="canvas-mother-counts">
-        <CountField label="Max agents" value={limit} min={Math.max(1, agents.length)} max={allowed.graph} onChange={count => setGraph(current => ({ ...current, maxAgents: count }))}
-          why={typed => typed > allowed.graph ? `Elpis runs at most ${allowed.graph} agents in one graph.` : typed < agents.length ? `The graph already has ${agents.length} agents; remove some first.` : "Type a whole number from 1."} />
+        <CountField label="Max agents" value={limit} min={Math.max(1, agents.length)} max={Math.floor(allowed.graph / TASKS_PER_AGENT)} onChange={count => setGraph(current => ({ ...current, maxAgents: count }))}
+          why={typed => typed > allowed.graph / TASKS_PER_AGENT ? `Elpis runs at most ${allowed.graph} tasks in a graph: ${Math.floor(allowed.graph / TASKS_PER_AGENT)} agents, each with its check.` : typed < agents.length ? `The graph already has ${agents.length} agents; remove some first.` : "Type a whole number from 1."} />
         <CountField label="At once" value={Math.min(maxAtOnce, allowed.atOnce)} min={1} max={allowed.atOnce} onChange={setMaxAtOnce}
           why={typed => typed > allowed.atOnce ? `Elpis allows ${allowed.atOnce} at once here (${allowed.source}).` : "At least 1 has to run."} />
       </div>
@@ -602,7 +632,6 @@ function Canvas({ models, cwd, dark, onOpenChat }: Props) {
           {template.caution && <small className="canvas-template-caution">{template.caution}</small>}
           {template.source && <small className="canvas-template-source">{template.source}</small>}</button>)}
       </section>)}
-      <p className="canvas-help">Tab, Ctrl+A, a double-click, or a click on an agent&rsquo;s dot opens the command bar: type <kbd>3 implement sol high: task; task</kbd> and Enter. Enter or a double-click on an agent opens its dashboard. Drag dot to dot to wire: the second waits for the first. Click a wire to insert agents on it or remove it. Shift+click or Shift+drag selects several. Click the Mother for the run&rsquo;s settings.</p>
     </aside>}
   </section>;
 }

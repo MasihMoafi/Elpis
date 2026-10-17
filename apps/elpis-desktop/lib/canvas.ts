@@ -1,36 +1,24 @@
 import { appStorage } from "@/lib/projects";
 
 /** The agents canvas (components/agents-canvas.tsx): agents are nodes, a wire A → B means B waits for A, and a run
- * sends the graph to Elpis's work-graph engine (POST /api/workflows/run, bridge/client.mjs `runWorkflow`). */
-export type AgentKind = "plan" | "explore" | "implement" | "verify" | "fix";
-/** The roles Elpis's work graph knows (codex-rs state/src/model/work_graph.rs `WorkGraphTaskKind`); Plan runs as Explore. */
-type EngineKind = "explore" | "implement" | "verify" | "fix";
-/** `provider` is null for the engine's own provider; `effort` (thinking level) is kept and shown, but Elpis's work graph
- * has no per-agent thinking level yet, so a run does not send it (lat.md/tasks.md). */
-export type AgentData = { kind: AgentKind; title: string; instruction: string; model: string | null; provider?: string | null; effort?: string | null; writeScopes: string[]; acceptanceCriteria: string[] };
+ * sends the graph to Elpis's work-graph engine (POST /api/workflows/run, bridge/client.mjs `runWorkflow`).
+ * Every agent on the board writes: Elpis checks each writer with a read-only verify task, which the run adds itself
+ * (`runTasks`), and reading or planning happens inside the writers (lat.md/tasks.md, 17 October 2026). */
+/** `provider` is null for the engine's own provider; `effort` is the thinking level; `writeScopes` are the project's
+ * folders the agent may write, which Elpis requires to exist (codex-rs work_graphs.rs `validate_scope_resolution`). */
+export type AgentData = { title: string; instruction: string; model: string | null; provider?: string | null; effort?: string | null; writeScopes: string[]; acceptanceCriteria: string[] };
 export type NoteData = { text: string };
 type Position = { x: number; y: number };
 export type CanvasNode = { id: string; type: "agent"; position: Position; data: AgentData } | { id: string; type: "note"; position: Position; data: NoteData }
   | { id: typeof MOTHER; type: "mother"; position: Position; data: Record<string, never> };
 export type CanvasEdge = { id: string; source: string; target: string };
-/** `maxAgents` is the most agents the graph may hold. */
 /** The Mother's settings, for the whole run: a brief every agent gets, and the model of her chat (the run's root). */
 export type MotherSettings = { brief: string; model: string | null; provider: string | null };
-/** `template` is the ready-made architecture the graph was loaded from. */
+/** `maxAgents` is the most agents the graph may hold; `template` is the architecture it was loaded from. */
 export type CanvasGraph = { name: string; nodes: CanvasNode[]; edges: CanvasEdge[]; maxAgents?: number; template?: string; mother?: MotherSettings };
 /** A task's state as workGraph/list reports it (codex-rs state/src/model/work_graph.rs). */
 export type TaskStatus = "pending" | "running" | "succeeded" | "failed" | "blocked" | "cancelled";
-export type RunTask = { id: string; kind: EngineKind; title: string; instruction: string; dependsOn: string[]; writeScopes: string[]; acceptanceCriteria: string[]; provider?: string; model?: string };
-
-export const KINDS: Record<AgentKind, { label: string; hint: string; engine: EngineKind }> = {
-  plan: { label: "Plan", hint: "Writes the plan the next agents follow; changes nothing", engine: "explore" },
-  explore: { label: "Explore", hint: "Reads and maps; changes nothing", engine: "explore" },
-  implement: { label: "Implement", hint: "Changes files within what it may write", engine: "implement" },
-  verify: { label: "Verify", hint: "Checks the work and must show evidence", engine: "verify" },
-  fix: { label: "Fix", hint: "Repairs what a verifier found", engine: "fix" },
-};
-/** What a Plan agent is told before its own instruction, since the engine runs it as an explorer. */
-const PLAN_BRIEF = "Plan only: write a numbered plan the agents after you will follow, naming the files to change and the checks that prove it works. Change nothing.";
+export type RunTask = { id: string; kind: "implement" | "verify"; title: string; instruction: string; dependsOn: string[]; writeScopes: string[]; acceptanceCriteria: string[]; provider?: string; model?: string };
 
 /** The Mother node: the chat a run starts in. Every agent is her child; she starts the agents that wait for no one and
  * receives every report. She is drawn, never sent: Elpis's work graph takes her chat as its root thread. */
@@ -38,77 +26,81 @@ export const MOTHER = "mother";
 /** The default most agents a graph holds; past 10 a Father agent is to share the work (lat.md/tasks.md). */
 export const MAX_AGENTS = 10;
 export const maxAgents = (graph: CanvasGraph) => graph.maxAgents ?? MAX_AGENTS;
+/** Each agent's check is its own engine task, so a graph of n agents is 2n tasks. */
+export const TASKS_PER_AGENT = 2;
+/** The id of an agent's check task; Elpis task ids take letters, digits, `-` and `_`. */
+export const checkOf = (id: string) => `${id}-check`;
+/** What an agent is held to when its "Done when" is left empty. */
+export const DONE = "The change builds and its tests pass.";
 const agentsOf = (graph: CanvasGraph) => graph.nodes.filter((node): node is Extract<CanvasNode, { type: "agent" }> => node.type === "agent");
 
 let counter = 0;
 export const newId = (prefix: string) => `${prefix}-${Date.now().toString(36)}-${(counter++).toString(36)}`;
-export const agent = (kind: AgentKind, title: string, instruction: string, x: number, y: number, extra: Partial<AgentData> = {}): CanvasNode =>
-  ({ id: newId(kind), type: "agent", position: { x, y }, data: { kind, title, instruction, model: null, writeScopes: [], acceptanceCriteria: [], ...extra } });
+export const agent = (title: string, instruction: string, extra: Partial<AgentData> = {}): CanvasNode =>
+  ({ id: newId("agent"), type: "agent", position: { x: 0, y: 0 }, data: { title, instruction, model: null, writeScopes: [], acceptanceCriteria: [], ...extra } });
 const wire = (source: CanvasNode, target: CanvasNode): CanvasEdge => ({ id: `${source.id}->${target.id}`, source: source.id, target: target.id });
 
 /** The ready-made architectures: the workflow patterns of Anthropic's "Building effective agents", its multi-agent
- * research system, LangGraph's hierarchical teams and Open Deep Research. Each is laid out in run order (`arrange`).
- * Routing is left out: the engine runs every branch of a graph, so it can't pick one. */
+ * research system, LangGraph's hierarchical teams and Open Deep Research, all as writing agents. Where a pattern has
+ * no code to write (voting, debate, research), each agent writes its findings as a file in its folder and the last
+ * one writes the result from them. Each is laid out in run order (`arrange`). Routing is left out: the engine runs
+ * every branch of a graph, so it can't pick one. */
 type Template = { id: string; name: string; group: "Patterns" | "Research" | "Start"; source: string; description: string; caution?: string; build: () => CanvasGraph };
 const ANTHROPIC = "Anthropic, Building effective agents";
 /** Anthropic's caution about splitting work by role (claude.com/blog/building-multi-agent-systems-when-and-how-to-use-them). */
 const BY_ROLE = "Split by role: Anthropic finds each handoff loses context, so this often does worse than split by parts.";
+const NOTE = "as a markdown file in your folder";
 const graphOf = (name: string, nodes: CanvasNode[], edges: CanvasEdge[]) => arrange(withMother({ name, nodes, edges }));
 const chain = (...steps: CanvasNode[]) => steps.slice(1).map((step, index) => wire(steps[index], step));
 const fan = (from: CanvasNode[], to: CanvasNode[]) => from.flatMap(source => to.map(target => wire(source, target)));
-const at = 0;
 export const TEMPLATES: Template[] = [
   // The default: split by parts, as Anthropic advises (context isolation and parallelism, not roles).
-  { id: "split-parts", name: "Split by parts", group: "Patterns", source: "Anthropic, Building multi-agent systems", description: "Each agent owns one independent part end to end: plans, builds and tests it in its own context. One final check that the parts work together.", build: () => {
-    const parts = [1, 2, 3].map(index => agent("implement", `Part ${index}`, `Own part ${index} end to end: plan it, build it and run its tests, touching only its own files.`, at, at));
-    const check = agent("verify", "Check it all", "Check the parts work together: run the whole suite and show the output.", at, at, { acceptanceCriteria: ["All tests pass"] });
-    return graphOf("Split by parts", [...parts, check], fan(parts, [check]));
+  { id: "split-parts", name: "Split by parts", group: "Patterns", source: "Anthropic, Building multi-agent systems", description: "Each agent owns one independent part end to end: plans, builds and tests it in its own context. A last agent joins the parts.", build: () => {
+    const parts = [1, 2, 3].map(index => agent(`Part ${index}`, `Own part ${index} end to end: plan it, build it and run its tests.`));
+    const join = agent("Join the parts", "Make the parts work together: run the whole suite and fix what fails.", { acceptanceCriteria: ["The whole suite passes"] });
+    return graphOf("Split by parts", [...parts, join], fan(parts, [join]));
   } },
-  { id: "plan-build-verify", name: "Plan → Build → Verify", group: "Patterns", source: ANTHROPIC, caution: BY_ROLE, description: "A planner, two builders side by side, a verifier that must show evidence.", build: () => {
-    const plan = agent("plan", "Plan the change", "Find the code involved and list what must change.", at, at);
-    const a = agent("implement", "Build part one", "Make the first change the plan calls for.", at, at), b = agent("implement", "Build part two", "Make the second change, in different files.", at, at);
-    const check = agent("verify", "Run the suite", "Run the tests and show their output.", at, at, { acceptanceCriteria: ["All tests pass"] });
-    return graphOf("Plan → Build → Verify", [plan, a, b, check], [...fan([plan], [a, b]), ...fan([a, b], [check])]);
-  } },
-  { id: "sequential", name: "Sequential (prompt chaining)", group: "Patterns", source: ANTHROPIC, caution: BY_ROLE, description: "Each step works on the last one's result: plan, build, check.", build: () => {
-    const steps = [agent("plan", "Plan it", "Write the steps for this change.", at, at), agent("implement", "Build it", "Carry out the plan.", at, at), agent("verify", "Check it", "Run the tests and show their output.", at, at)];
+  { id: "sequential", name: "Sequential (prompt chaining)", group: "Patterns", source: ANTHROPIC, description: "Each agent builds on the last one's work: the base, then the next layer, then the finish.", build: () => {
+    const steps = [agent("Step 1: the base", "Build the base the next steps stand on."), agent("Step 2: build on it", "Build the next layer on step 1's work."), agent("Step 3: finish", "Finish and polish: edge cases, errors, docs.")];
     return graphOf("Sequential", steps, chain(...steps));
   } },
-  { id: "parallel", name: "Parallel (sectioning)", group: "Patterns", source: ANTHROPIC, description: "A plan splits the work into independent parts built at once, then one check.", build: () => {
-    const plan = agent("plan", "Split the work", "Split the change into three parts that touch different files.", at, at);
-    const parts = ["one", "two", "three"].map(part => agent("implement", `Build part ${part}`, `Build part ${part} of the plan.`, at, at)), check = agent("verify", "Check it all", "Run the tests and show their output.", at, at);
-    return graphOf("Parallel", [plan, ...parts, check], [...fan([plan], parts), ...fan(parts, [check])]);
+  { id: "plan-build", name: "Plan → Build", group: "Patterns", source: ANTHROPIC, caution: BY_ROLE, description: "One agent writes the plan as a file; two agents build its two halves side by side.", build: () => {
+    const plan = agent("Write the plan", `Find the code involved and write a numbered plan ${NOTE}: the files to change and the checks that prove it works.`, { acceptanceCriteria: ["The plan names the files and the checks"] });
+    const builders = ["first", "second"].map(half => agent(`Build the ${half} half`, `Build the ${half} half of the plan.`));
+    return graphOf("Plan → Build", [plan, ...builders], fan([plan], builders));
   } },
-  { id: "voting", name: "Voting", group: "Patterns", source: ANTHROPIC, description: "Three agents answer the same question on their own; a judge takes the majority.", build: () => {
-    const voters = [1, 2, 3].map(index => agent("explore", `Answer ${index}`, "Answer the question on your own, with evidence.", at, at)), judge = agent("verify", "Tally the answers", "Compare the three answers and give the majority, with reasons.", at, at);
-    return graphOf("Voting", [...voters, judge], fan(voters, [judge]));
-  } },
-  { id: "hierarchical", name: "Hierarchical (orchestrator and teams)", group: "Patterns", source: "Anthropic's orchestrator-workers; LangGraph's hierarchical teams", description: "A lead splits the work between two team leads, each with two workers; one integration check.", build: () => {
-    const lead = agent("plan", "Lead: split the work", "Split the work into two areas and brief a team lead on each.", at, at);
-    const teams = ["A", "B"].map(team => ({ lead: agent("plan", `Team ${team} lead`, `Plan area ${team} for your two workers.`, at, at), workers: [1, 2].map(index => agent("implement", `Team ${team} worker ${index}`, `Do your part of area ${team}.`, at, at)) }));
-    const check = agent("verify", "Integrate and check", "Check the two areas work together; show the test output.", at, at);
-    return graphOf("Hierarchical", [lead, ...teams.flatMap(team => [team.lead, ...team.workers]), check], [...teams.flatMap(team => [wire(lead, team.lead), ...fan([team.lead], team.workers), ...fan(team.workers, [check])])]);
-  } },
-  { id: "evaluator-optimizer", name: "Evaluator–optimizer", group: "Patterns", source: ANTHROPIC, description: "Draft, review against the criteria, improve, review again.", build: () => {
-    const steps = [agent("implement", "Draft it", "Make the change.", at, at), agent("verify", "Review it", "Review the change against the criteria and list what falls short.", at, at), agent("fix", "Improve it", "Fix what the review found.", at, at), agent("verify", "Review again", "Review again and show the evidence.", at, at)];
+  { id: "evaluator-optimizer", name: "Evaluator–optimizer", group: "Patterns", source: ANTHROPIC, description: "Draft it; its check evaluates the draft; a second agent improves it where the check found it short.", build: () => {
+    const steps = [agent("Draft it", "Make the change."), agent("Improve it", "Improve the draft wherever its check found it short.")];
     return graphOf("Evaluator–optimizer", steps, chain(...steps));
   } },
-  { id: "debate", name: "Debate + judge", group: "Patterns", source: "Multi-agent debate", description: "Two agents argue opposite designs; a judge picks one, with reasons.", build: () => {
-    const pro = agent("explore", "Argue for A", "Make the strongest case for design A.", at, at), con = agent("explore", "Argue for B", "Make the strongest case for design B.", at, at);
-    const judge = agent("verify", "Judge", "Weigh both cases and pick one, with reasons.", at, at);
-    return graphOf("Debate + judge", [pro, con, judge], fan([pro, con], [judge]));
+  { id: "voting", name: "Voting", group: "Patterns", source: ANTHROPIC, description: "Three agents answer the same question on their own, each in a file; a fourth writes the majority answer.", build: () => {
+    const voters = [1, 2, 3].map(index => agent(`Answer ${index}`, `Answer the question on your own, with evidence, ${NOTE}.`, { acceptanceCriteria: ["The answer file exists, with evidence"] }));
+    const tally = agent("Tally the answers", `Compare the three answers and write the majority answer, with reasons, ${NOTE}.`, { acceptanceCriteria: ["The result names the majority and why"] });
+    return graphOf("Voting", [...voters, tally], fan(voters, [tally]));
   } },
-  { id: "research", name: "Multi-agent research", group: "Research", source: "Anthropic, How we built our multi-agent research system", description: "A lead researcher plans; four subagents search in parallel; a writer synthesizes; a citation check.", build: () => {
-    const lead = agent("plan", "Lead researcher", "Plan the research: split the question into four parts, one per subagent.", at, at);
-    const subagents = [1, 2, 3, 4].map(index => agent("explore", `Research part ${index}`, `Research part ${index} of the lead's plan. Cite every source.`, at, at));
-    const write = agent("implement", "Write the report", "Synthesize the four findings into one report.", at, at), cite = agent("verify", "Check the citations", "Check every claim in the report against its cited source.", at, at);
-    return graphOf("Multi-agent research", [lead, ...subagents, write, cite], [...fan([lead], subagents), ...fan(subagents, [write]), wire(write, cite)]);
+  { id: "hierarchical", name: "Hierarchical (orchestrator and teams)", group: "Patterns", source: "Anthropic's orchestrator-workers; LangGraph's hierarchical teams", description: "A lead writes the split; two team leads write their area's plan; two workers each build; a last agent joins the areas.", build: () => {
+    const lead = agent("Lead: split the work", `Split the work into areas A and B ${NOTE}, with a brief for each team lead.`, { acceptanceCriteria: ["Each area has a brief"] });
+    const teams = ["A", "B"].map(team => ({ lead: agent(`Team ${team} lead`, `Plan area ${team} for your two workers ${NOTE}.`, { acceptanceCriteria: ["The plan gives each worker a part"] }), workers: [1, 2].map(index => agent(`Team ${team} worker ${index}`, `Build your part of area ${team}.`)) }));
+    const join = agent("Join the areas", "Make the two areas work together: run the whole suite and fix what fails.", { acceptanceCriteria: ["The whole suite passes"] });
+    return graphOf("Hierarchical", [lead, ...teams.flatMap(team => [team.lead, ...team.workers]), join], [...teams.flatMap(team => [wire(lead, team.lead), ...fan([team.lead], team.workers), ...fan(team.workers, [join])])]);
   } },
-  { id: "deep-research", name: "Deep research", group: "Research", source: "LangGraph, Open Deep Research", description: "Scope a brief, a supervisor splits it, researchers work in parallel, one final report.", build: () => {
-    const scope = agent("plan", "Scope the brief", "Write the research brief: the question, what is in and out of scope.", at, at);
-    const supervisor = agent("plan", "Supervisor", "Split the brief into three research topics.", at, at);
-    const researchers = [1, 2, 3].map(index => agent("explore", `Researcher ${index}`, `Research topic ${index}; return compressed findings with sources.`, at, at));
-    const report = agent("implement", "Final report", "Write the final report from the findings, with sources.", at, at);
+  { id: "debate", name: "Debate + judge", group: "Patterns", source: "Multi-agent debate", description: "Two agents each write the strongest case for one design; a judge writes the decision, with reasons.", build: () => {
+    const sides = ["A", "B"].map(side => agent(`Case for ${side}`, `Write the strongest case for design ${side} ${NOTE}.`, { acceptanceCriteria: ["The case file exists, with evidence"] }));
+    const judge = agent("Judge", `Weigh both cases and write the decision, with reasons, ${NOTE}.`, { acceptanceCriteria: ["The decision picks one design and says why"] });
+    return graphOf("Debate + judge", [...sides, judge], fan(sides, [judge]));
+  } },
+  { id: "research", name: "Multi-agent research", group: "Research", source: "Anthropic, How we built our multi-agent research system", description: "A lead writes the research plan; four agents research in parallel, each writing findings; one writes the report; one checks its citations.", build: () => {
+    const lead = agent("Lead researcher", `Split the question into four parts, one per researcher, ${NOTE}.`, { acceptanceCriteria: ["Four parts, each with its question"] });
+    const parts = [1, 2, 3, 4].map(index => agent(`Research part ${index}`, `Research part ${index} of the lead's plan and write the findings, citing every source, ${NOTE}.`, { acceptanceCriteria: ["Every finding cites its source"] }));
+    const report = agent("Write the report", `Synthesize the four findings into one report ${NOTE}.`, { acceptanceCriteria: ["The report covers all four parts"] });
+    const cite = agent("Check the citations", "Check every claim in the report against its cited source and correct the report where they differ.", { acceptanceCriteria: ["Every claim matches its source"] });
+    return graphOf("Multi-agent research", [lead, ...parts, report, cite], [...fan([lead], parts), ...fan(parts, [report]), wire(report, cite)]);
+  } },
+  { id: "deep-research", name: "Deep research", group: "Research", source: "LangGraph, Open Deep Research", description: "Scope a brief, a supervisor splits it, three researchers write findings in parallel, one writes the final report.", build: () => {
+    const scope = agent("Scope the brief", `Write the research brief: the question, what is in and out of scope, ${NOTE}.`, { acceptanceCriteria: ["The brief states the question and the scope"] });
+    const supervisor = agent("Supervisor", `Split the brief into three research topics ${NOTE}.`, { acceptanceCriteria: ["Three topics, each with its question"] });
+    const researchers = [1, 2, 3].map(index => agent(`Researcher ${index}`, `Research topic ${index} and write compressed findings with sources ${NOTE}.`, { acceptanceCriteria: ["Every finding cites its source"] }));
+    const report = agent("Final report", `Write the final report from the findings, with sources, ${NOTE}.`, { acceptanceCriteria: ["The report answers the brief, with sources"] });
     return graphOf("Deep research", [scope, supervisor, ...researchers, report], [wire(scope, supervisor), ...fan([supervisor], researchers), ...fan(researchers, [report])]);
   } },
   { id: "blank", name: "Blank playground", group: "Start", source: "", description: "Start empty: add agents with Tab or Ctrl+A and wire them yourself.", build: () => withMother({ name: "Untitled graph", nodes: [], edges: [] }) },
@@ -132,16 +124,16 @@ export function waves(graph: CanvasGraph): Map<string, number> {
   return wave;
 }
 
-const COLUMN = 260, ROW = 120;
-/** The graph with its Mother: a graph without one (a template, or one saved before she existed) gets her a column
- * left of the first wave, level with it. */
-/** A graph's shape for a thumbnail: its agents' kinds, one column per Kahn wave. */
-export function shapeOf(graph: CanvasGraph): AgentKind[][] {
-  const order = waves(graph), columns: AgentKind[][] = [];
-  for (const node of agentsOf(graph)) (columns[(order.get(node.id) ?? 1) - 1] ??= []).push(node.data.kind);
+/** A graph's shape for a thumbnail: how many agents start in each Kahn wave. */
+export function shapeOf(graph: CanvasGraph): number[] {
+  const order = waves(graph), columns: number[] = [];
+  for (const node of agentsOf(graph)) { const level = (order.get(node.id) ?? 1) - 1; columns[level] = (columns[level] ?? 0) + 1; }
   return columns.filter(Boolean);
 }
 
+const COLUMN = 260, ROW = 120;
+/** The graph with its Mother: a graph without one (a template, or one saved before she existed) gets her a column
+ * left of the first wave, level with it. */
 export function withMother(graph: CanvasGraph): CanvasGraph {
   if (graph.nodes.some(node => node.type === "mother")) return graph;
   const agents = agentsOf(graph), wave = waves(graph), first = agents.filter(node => wave.get(node.id) === 1), ys = (first.length ? first : agents).map(node => node.position.y);
@@ -160,42 +152,43 @@ export function arrange(graph: CanvasGraph): CanvasGraph {
   return { ...graph, nodes: graph.nodes.map(node => position.has(node.id) ? { ...node, position: position.get(node.id)! } : node) };
 }
 
-/** An agent's name from its task: the task's start, cut at a word. */
+/** An agent's name from its prompt: the prompt's start, cut at a word. */
 export const nameFrom = (task: string) => task.length <= 48 ? task : `${task.slice(0, 48).replace(/\s+\S*$/, "")}…`;
-/** `count` new agents of one kind and one model, stacked from `at`. Agent n takes task n as its instruction and named
- * after it; one without a task is numbered when there are several, and must get one before the graph runs. */
-export function newAgents(kind: AgentKind, count: number, choice: { model: string | null; provider?: string | null; effort?: string | null }, at: Position, tasks: string[] = []): CanvasNode[] {
+/** `count` new agents on one model, stacked from `at`. Agent n takes prompt n and is named after it; one without a
+ * prompt is numbered when there are several, and must get one before the graph runs. */
+export function newAgents(count: number, choice: { model: string | null; provider?: string | null; effort?: string | null }, at: Position, prompts: string[] = []): CanvasNode[] {
   return Array.from({ length: count }, (_, index) => {
-    const task = tasks[index]?.trim() ?? "";
-    return agent(kind, task ? nameFrom(task) : `New ${KINDS[kind].label} agent${count > 1 ? ` ${index + 1}` : ""}`, task, at.x, at.y + index * ROW, { model: choice.model, provider: choice.provider ?? null, effort: choice.effort ?? null });
+    const prompt = prompts[index]?.trim() ?? "";
+    const made = agent(prompt ? nameFrom(prompt) : `New agent${count > 1 ? ` ${index + 1}` : ""}`, prompt, { model: choice.model, provider: choice.provider ?? null, effort: choice.effort ?? null });
+    return { ...made, position: { x: at.x, y: at.y + index * ROW } };
   });
 }
 
 /** A model an agent can run on: Elpis's work graph takes native providers only (bridge/client.mjs `runWorkflow`). */
 export type CatalogModel = { provider: string | null; providerLabel: string; model: string; label: string; efforts: string[]; defaultEffort: string | null };
 export const EFFORTS = ["minimal", "low", "medium", "high", "xhigh"];
-/** A typed command, AutoCAD-style: `3 implement sol high: fix the parser; fix the lexer`. A number is how many, a word
- * the kind, the model (any words of its name, `@provider` to pick the provider) and the thinking level, in any order;
- * after a colon or on the next lines (Shift+Enter), the tasks, separated by `;` or new lines. Words it can't place are
- * listed, never guessed. */
-export type Command = { count: number | null; kind: AgentKind | "note" | null; model: CatalogModel | null; effort: string | null; tasks: string[]; unknown: string[] };
-/** A command's first part (count, kind, model, thinking) and the rest, which starts at the first colon or new line. */
+/** A typed command, AutoCAD-style. A prompt alone adds one agent with it; more lines (Shift+Enter) or `;` add one
+ * agent per prompt. Before a colon come how many, the model (any words of its name, `@provider` to pick the provider)
+ * and the thinking level: `3 sol high: fix the parser; fix the lexer`. `note: text` adds a sticky note. A first line
+ * that isn't all count, model and thinking level is itself a prompt; after an explicit colon, words the command can't
+ * place are listed, never guessed. `prompted` says the whole text was read as prompts. */
+export type Command = { count: number | null; note: boolean; model: CatalogModel | null; effort: string | null; tasks: string[]; unknown: string[]; prompted: boolean };
+/** A command's first part (count, model, thinking) and the rest, which starts at the first colon or new line. */
 export function commandParts(text: string) {
   const cut = text.search(/[:\n]/);
   return cut < 0 ? { head: text, rest: "" } : { head: text.slice(0, cut), rest: text.slice(cut) };
 }
+const prompts = (text: string) => text.split(/[;\n]/).map(task => task.trim()).filter(Boolean);
 export function parseCommand(text: string, catalog: CatalogModel[]): Command {
   const { head, rest } = commandParts(text);
-  const tasks = rest.slice(1).split(/[;\n]/).map(task => task.trim()).filter(Boolean);
-  const command: Command = { count: null, kind: null, model: null, effort: null, tasks, unknown: [] };
+  const command: Command = { count: null, note: false, model: null, effort: null, tasks: prompts(rest.slice(1)), unknown: [], prompted: false };
   const words: string[] = [];
   let provider: string | null = null;
   for (const raw of head.toLowerCase().split(/\s+/).filter(Boolean)) for (const word of raw.match(/^(\d+)([a-z].*)$/)?.slice(1) ?? [raw]) {
-    const kind = word.length >= 2 ? (["note", ...Object.keys(KINDS)] as (AgentKind | "note")[]).find(item => item.startsWith(word)) : undefined;
     const effort = word.length >= 3 ? EFFORTS.find(item => item.startsWith(word)) : undefined;
     if (/^\d+$/.test(word) && command.count === null) command.count = Number(word);
     else if (word.startsWith("@") && word.length > 1) provider = word.slice(1);
-    else if (kind && !command.kind) command.kind = kind;
+    else if (word === "note" && !command.note) command.note = true;
     else if (effort && !command.effort) command.effort = effort;
     else words.push(word);
   }
@@ -211,6 +204,8 @@ export function parseCommand(text: string, catalog: CatalogModel[]): Command {
     command.model = named_ ? matches[0] : null;
     if (provider && !pool.length) command.unknown.push(`@${provider}`);
   }
+  // Without a colon, a first line that isn't all command words is a prompt: the whole text is prompts.
+  if (!rest.startsWith(":") && command.unknown.length) return { count: null, note: false, model: null, effort: null, tasks: prompts(text), unknown: [], prompted: true };
   return command;
 }
 
@@ -227,7 +222,9 @@ export function makesLoop(edges: CanvasEdge[], source: string, target: string) {
   return false;
 }
 
-/** The graph as the tasks Elpis runs, or what is missing first. Notes are not sent. */
+/** The graph as the tasks Elpis runs, or what is missing first. Notes are not sent. Each agent is a writer followed by
+ * its own check (a read-only verify task, which Elpis requires after every writer); an agent wired after it waits
+ * for that check, so it builds on checked work. */
 export function runTasks(graph: CanvasGraph): { tasks: RunTask[] } | { error: string } {
   const agents = agentsOf(graph);
   if (!agents.length) return { error: "Add an agent before running the graph." };
@@ -235,26 +232,36 @@ export function runTasks(graph: CanvasGraph): { tasks: RunTask[] } | { error: st
   const ids = new Set(agents.map(node => node.id));
   for (const node of agents) {
     if (!node.data.title.trim()) return { error: "Every agent needs a name." };
-    if (!node.data.instruction.trim()) return { error: `“${node.data.title}” needs an instruction.` };
+    if (!node.data.instruction.trim()) return { error: `“${node.data.title}” needs a prompt.` };
+    if (!node.data.writeScopes.length) return { error: `“${node.data.title}” needs a folder it may write: choose one under May write.` };
     if (node.data.provider && !node.data.model) return { error: `“${node.data.title}” needs a model from its provider.` };
   }
-  // Every agent gets the Mother's brief first, then (for a Plan agent) the plan-only rule, then its own task.
   const brief = graph.mother?.brief.trim();
-  return { tasks: agents.map(node => ({
-    id: node.id, kind: KINDS[node.data.kind].engine, title: node.data.title.trim(),
-    instruction: [brief && `Brief for the whole run: ${brief}`, node.data.kind === "plan" && PLAN_BRIEF, node.data.instruction.trim()].filter(Boolean).join("\n\n"),
-    dependsOn: graph.edges.filter(edge => edge.target === node.id && ids.has(edge.source)).map(edge => edge.source),
-    writeScopes: node.data.writeScopes, acceptanceCriteria: node.data.acceptanceCriteria,
-    ...(node.data.provider ? { provider: node.data.provider } : {}), ...(node.data.model ? { model: node.data.model } : {}),
-  })) };
+  return { tasks: agents.flatMap(node => {
+    const title = node.data.title.trim(), prompt = node.data.instruction.trim();
+    const criteria = node.data.acceptanceCriteria.length ? node.data.acceptanceCriteria : [DONE];
+    const model = { ...(node.data.provider ? { provider: node.data.provider } : {}), ...(node.data.model ? { model: node.data.model } : {}) };
+    return [
+      // Every agent gets the Mother's brief first, then its own prompt.
+      { id: node.id, kind: "implement" as const, title, instruction: [brief && `Brief for the whole run: ${brief}`, prompt].filter(Boolean).join("\n\n"),
+        dependsOn: graph.edges.filter(edge => edge.target === node.id && ids.has(edge.source)).map(edge => checkOf(edge.source)),
+        writeScopes: node.data.writeScopes, acceptanceCriteria: criteria, ...model },
+      { id: checkOf(node.id), kind: "verify" as const, title: `Check: ${title}`.slice(0, 256),
+        instruction: `Check the work of “${title}”. Its prompt was:\n${prompt}\n\nRun what proves it (the build, the tests, or reading what it wrote) and show the output. Say plainly whether each of these holds: ${criteria.join("; ")}`,
+        dependsOn: [node.id], writeScopes: [], acceptanceCriteria: [`Each of “${title}”'s criteria is shown to hold or not, with evidence`], ...model },
+    ];
+  }) };
 }
 
 const KEY = "elpis-workflow-draft-v1";
-/** The graph on this device, or null when none was saved (or it can't be read). */
+/** The graph on this device, or null when none was saved (or it can't be read). Agents saved with a role from before
+ * every agent wrote come back as writers. */
 export function readGraph(): CanvasGraph | null {
   try {
     const value = JSON.parse(appStorage().getItem(KEY) ?? "null");
-    return value && Array.isArray(value.nodes) && Array.isArray(value.edges) && typeof value.name === "string" ? withMother(value) : null;
+    if (!value || !Array.isArray(value.nodes) || !Array.isArray(value.edges) || typeof value.name !== "string") return null;
+    const nodes = value.nodes.map((node: CanvasNode) => node.type === "agent" ? { ...node, data: (({ kind: _kind, ...data }: AgentData & { kind?: string }) => data)(node.data) } : node);
+    return withMother({ ...value, nodes });
   } catch { return null; }
 }
 export function saveGraph(graph: CanvasGraph) {
