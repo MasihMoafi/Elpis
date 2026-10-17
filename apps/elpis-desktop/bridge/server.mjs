@@ -95,6 +95,11 @@ export async function startDesktopServer(options = {}) {
       if (!['GET', 'POST'].includes(request.method)) throw new BridgeError('Method is not allowed', 405);
       const url = new URL(request.url, origin);
       if (url.origin !== origin) throw new BridgeError('Local application origin required', 403);
+      // Only the split document permits embedding by the app itself.
+      if (url.pathname === '/' && url.searchParams.get('pane') === '1') {
+        response.setHeader('X-Frame-Options', 'SAMEORIGIN');
+        response.setHeader('Content-Security-Policy', response.getHeader('Content-Security-Policy').replace("frame-ancestors 'none'", "frame-ancestors 'self'"));
+      }
       if (request.method === 'POST' && request.headers.origin !== origin) throw new BridgeError('Same-origin request required', 403);
       if (url.pathname === '/api/session' && request.method === 'POST') {
         const submitted = object(await body(request), ['token']);

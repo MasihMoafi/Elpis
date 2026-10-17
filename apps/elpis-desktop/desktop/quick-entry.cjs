@@ -138,11 +138,11 @@ function startQuickEntry({ app, globalShortcut, BrowserWindow, screen, ipcMain, 
     toggle: quick.toggle, status, change,
     async start(saved) { const result = await change(saved); problem = result.error ?? null; },
     /** Settings → General's calls; only the app's own page may make them. */
-    attach({ host, origin }) {
+    attach({ host, origin, ipcMain: windowIpc = ipcMain }) {
       const trusted = event => trustedBrowserSender(event, host.webContents, origin);
-      ipcMain.handle('elpis:quick-entry:status', event => trusted(event) ? status() : { error: 'Elpis application frame required' });
-      ipcMain.handle('elpis:quick-entry:shortcut', (event, accelerator) => trusted(event) ? change(accelerator) : { error: 'Elpis application frame required' });
-      return () => { ipcMain.removeHandler('elpis:quick-entry:status'); ipcMain.removeHandler('elpis:quick-entry:shortcut'); };
+      windowIpc.handle('elpis:quick-entry:status', event => trusted(event) ? status() : { error: 'Elpis application frame required' });
+      windowIpc.handle('elpis:quick-entry:shortcut', (event, accelerator) => trusted(event) ? change(accelerator) : { error: 'Elpis application frame required' });
+      return () => { windowIpc.removeHandler('elpis:quick-entry:status'); windowIpc.removeHandler('elpis:quick-entry:shortcut'); };
     },
     dispose() { shortcut.dispose(); quick.dispose(); },
   };

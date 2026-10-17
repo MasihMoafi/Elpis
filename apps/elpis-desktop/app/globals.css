@@ -1197,3 +1197,24 @@ button.trace-head:hover .trace-text { text-decoration:underline; }
 .float-chat-pill-title { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .side-panel[data-float="card"] :is(.browser-viewport, .annotation-dock, .terminal-body) { margin-inline-end:var(--float-reserve); }
 .side-panel[data-float="pill"] .side-body { padding-bottom:var(--pill-reserve); }
+
+/* Split sessions reuse the same chat surface and responsive composer in each document. */
+.session-split .workspace > .workspace-header,
+.session-split .workspace > .workspace-notices,
+.session-split .workspace > .workspace-body { width:50%; }
+.split-session { position:absolute; inset:0 0 0 auto; width:50%; height:100%; border:0; border-left:1px solid var(--hairline); background:var(--background); }
+.session-pane.app-shell { grid-template-columns:minmax(0,1fr); }
+.session-pane > .sidebar, .session-pane > .title-bar,
+.session-pane .workspace-header > .mobile-menu, .session-pane .mobile-brand { display:none; }
+.session-pane.has-title-bar { grid-template-rows:minmax(0,1fr); }
+.session-pane .workspace-header { min-height:48px; gap:12px; }
+.session-pane .workspace-header h1 { font-size:13.5px; }
+@container workspace (max-width:640px) { .session-pane .pill-long { display:none; } .session-pane .pill-short { display:inline; } }
+.session-split .composer-wrap { padding-inline:12px; }
+.session-split .chat-scroll { padding-inline:20px; }
+.session-split .team-panel { display:none; }
+@media(max-width:1100px) {
+  .session-split.app-shell { grid-template-columns:minmax(0,1fr); }
+  .session-split > .sidebar:not(.open) { display:none; }
+  .session-split .workspace-header > .mobile-menu { display:inline-flex; }
+}

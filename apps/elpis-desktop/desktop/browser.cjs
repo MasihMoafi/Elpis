@@ -293,7 +293,7 @@ function createBrowser({host,origin,WebContentsView,session,ipcMain,openExternal
   return {open,agent,setBackground,dispose(){
     agent.dispose();
     disposed=true;ipcMain.removeHandler('elpis:browser');ipcMain.removeListener('elpis:browser:layout',layout);ipcMain.removeListener('elpis:browser:page',pageMessage);
-    host.webContents.removeListener('before-input-event',rootKeyboard);host.webContents.removeListener('did-start-navigation',resetLayout);host.removeListener('resize',place);
+    if(!host.isDestroyed()){host.webContents.removeListener('before-input-event',rootKeyboard);host.webContents.removeListener('did-start-navigation',resetLayout);}host.removeListener('resize',place);
     for(const tab of tabs.values())tab.view.webContents.close({waitForBeforeUnload:false});tabs.clear();
   }};
 }

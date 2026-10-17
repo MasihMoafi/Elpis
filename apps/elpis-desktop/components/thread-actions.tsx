@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, type ReactElement, type ReactNode } from "react";
 import { AgentsIcon, ArchiveIcon, PinIcon, TerminalIcon } from "@/components/elpis-icons";
-import { CircleCheck, Eye, EyeOff, Pencil, PinOff, Trash2 } from "lucide-react";
+import { CircleCheck, Columns2, Eye, EyeOff, Pencil, PinOff, Plus, SquareArrowOutUpRight, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { AlertDialog, AlertDialogClose, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
@@ -39,12 +39,15 @@ type Props = {
   /** Resumes this chat in the Elpis TUI, in its integrated terminal (desktop app only). */
   onOpenInTui?: (thread: Thread) => void;
   /** Mark as read or unread (U), as in Claude's sidebar; a plan waiting for review is marked completed instead. */
+  onOpenSplit?: (thread: Thread) => void;
+  onOpenWindow?: (thread: Thread) => void;
+  onNewWindow?: () => void;
   attention?: { unread: boolean; planReady: boolean; onToggleRead: () => void; onComplete: () => void };
 };
 
 /** A chat's menu: Rename, Pin, Archive and Delete, each through Elpis. One list drawn by the "…" button and by right-click.
  * Failures are shown as Elpis reported them. */
-export function ThreadActions({ thread, onDelete, onRequestDelete, onRename, onArchive, pinned, onPin, agents, renameRequested, onRenameRequestHandled, label, area, children, selection, onOpenInTui, attention }: Props) {
+export function ThreadActions({ thread, onDelete, onRequestDelete, onRename, onArchive, pinned, onPin, agents, renameRequested, onRenameRequestHandled, label, area, children, selection, onOpenInTui, onOpenSplit, onOpenWindow, onNewWindow, attention }: Props) {
   const [renaming, setRenaming] = useState(false);
   const [deleting, setDeleting] = useState<Thread[] | null>(null);
   const [name, setName] = useState("");
@@ -74,6 +77,9 @@ export function ThreadActions({ thread, onDelete, onRequestDelete, onRename, onA
       : { id: "read", label: attention.unread ? "Mark as read" : "Mark as unread", icon: attention.unread ? <Eye size={14} /> : <EyeOff size={14} />, hint: "U", run: attention.onToggleRead } : undefined,
     agents ? { id: "agents", label: agents.shown ? "Hide agents" : "Show agents", icon: <AgentsIcon size={14} />, run: agents.onToggle } : undefined,
     onOpenInTui ? { id: "tui", label: "Open in Elpis TUI", icon: <TerminalIcon size={14} />, run: () => onOpenInTui(thread) } : undefined,
+    onOpenSplit ? { id: "split", label: "Open session in split view", icon: <Columns2 size={14} />, hint: "Alt+click", run: () => onOpenSplit(thread) } : undefined,
+    onOpenWindow ? { id: "window", label: "Open session in new window", icon: <SquareArrowOutUpRight size={14} />, run: () => onOpenWindow(thread) } : undefined,
+    onNewWindow ? { id: "new-window", label: "New Session in New Window", icon: <Plus size={14} />, run: onNewWindow } : undefined,
     archive, remove,
   ]).filter((action): action is MenuAction => !!action);
   return <>

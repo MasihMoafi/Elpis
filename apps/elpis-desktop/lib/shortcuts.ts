@@ -4,6 +4,11 @@ export type Shortcut = { id: string; group: "Chat" | "Navigation" | "App"; label
 
 export const SHORTCUTS: Shortcut[] = [
   { id: "new-chat", group: "Chat", label: "New chat", keys: ["Ctrl+N"] },
+  // Native File menu and the split surface own these handlers.
+  { id: "new-window", group: "Chat", label: "New Session in New Window", keys: ["Ctrl+Shift+N"] },
+  { id: "next-pane", group: "Navigation", label: "Focus next split view", keys: ["Ctrl+]"] },
+  { id: "previous-pane", group: "Navigation", label: "Focus previous split view", keys: ["Ctrl+["] },
+  { id: "open-split", group: "Navigation", label: "Open session in split view", keys: ["Alt+click"] },
   { id: "rename", group: "Chat", label: "Rename chat", keys: ["Ctrl+Alt+R"] },
   { id: "archive", group: "Chat", label: "Archive chat", keys: ["Ctrl+Shift+A"] },
   { id: "pin", group: "Chat", label: "Toggle pin", keys: ["Ctrl+Alt+P"] },

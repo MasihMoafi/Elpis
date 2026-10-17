@@ -12,6 +12,7 @@ contextBridge.exposeInMainWorld('elpisDesktop',{
     saveItem:async(key,value)=>{ await ipcRenderer.invoke('elpis:state:write',key,String(value)); values[key]=String(value); },
     onError:callback=>{ errors.add(callback); if(saved.error)callback(saved.error); return()=>errors.delete(callback); },
   },
+  openSessionWindow:threadId=>ipcRenderer.invoke('elpis:session-window',threadId).then(checked),
   chooseFolder:()=>ipcRenderer.invoke('elpis:folder'),
   setTheme:(dark,details)=>ipcRenderer.send('elpis:theme',dark===true,{source:details?.source,background:details?.background}),
   resolveFolder:folder=>ipcRenderer.invoke('elpis:folder:resolve',folder),
