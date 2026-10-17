@@ -121,7 +121,7 @@ export function stageDesktop({ source = fileURLToPath(new URL('../', import.meta
     ...['package.json', 'LICENSE', 'build/Release/pty.node'].map(name => inputFile(path.join(pty, name), `app/node_modules/node-pty/${name}`)),
     ...inputTree(path.join(pty, 'lib'), 'app/node_modules/node-pty/lib', name => !/\.test\.js$|\.map$/.test(name)),
   ];
-  const packageIdentity = { name: identity.name, productName: identity.productName || 'Elpis', version: identity.version,
+  const packageIdentity = { name: identity.name, productName: identity.productName || 'Elpis', desktopName: identity.desktopName, version: identity.version,
     private: true, type: 'module', main: 'desktop/main.cjs', dependencies: { ws: wsIdentity.version, 'node-pty': ptyIdentity.version } };
   const generated = [
     { path: 'app/package.json', data: `${JSON.stringify(packageIdentity, null, 2)}\n`, mode: 0o644 },

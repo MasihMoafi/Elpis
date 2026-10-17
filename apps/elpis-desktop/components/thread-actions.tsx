@@ -98,11 +98,11 @@ export function ThreadActions({ thread, onDelete, onRequestDelete, onRename, onA
 
 /** Confirms deleting chats as one decision: one chat by name, several by count. Once confirmation is off
  * ("Don’t show me this again", Settings → General) it deletes at once and opens only to show a failure. */
-export function DeleteChatsDialog({ threads, onDelete, onClose }: { threads: Thread[] | null; onDelete: (thread: Thread) => Promise<void>; onClose: () => void }) {
+export function DeleteChatsDialog({ threads, onDelete, onClose, alwaysConfirm }: { threads: Thread[] | null; onDelete: (thread: Thread) => Promise<void>; onClose: () => void; /** Bulk deletes ask even when confirmation is off. */ alwaysConfirm?: boolean }) {
   const [opened, setOpened] = useState<Thread[] | null>(null), [confirm, setConfirm] = useState(true), [skip, setSkip] = useState(false), [busy, setBusy] = useState(false), [error, setError] = useState("");
   const deleted = useRef(new Set<string>());
   // A new request is decided before it renders, so a turned-off confirmation never flashes open.
-  if (opened !== threads) { setOpened(threads); setConfirm(threads ? readPreferences().confirmDeleteChats : true); setSkip(false); setError(""); }
+  if (opened !== threads) { setOpened(threads); setConfirm(threads ? alwaysConfirm || readPreferences().confirmDeleteChats : true); setSkip(false); setError(""); }
   useEffect(() => { deleted.current.clear(); if (threads && !confirm) void remove(); }, [threads]); // eslint-disable-line react-hooks/exhaustive-deps
   async function remove() {
     if (!threads) return;
@@ -127,7 +127,7 @@ export function DeleteChatsDialog({ threads, onDelete, onClose }: { threads: Thr
         {only ? isAgent(only) ? "This permanently deletes this agent's chat from Elpis." : "This permanently deletes the conversation and all of its agents from Elpis." : "This permanently deletes these conversations and all of their agents from Elpis."} Chats continued from these agents are deleted too. This cannot be undone.
       </AlertDialogDescription>
       </AlertDialogHeader>
-      {confirm && <label className="flex items-center gap-2 text-sm text-muted-foreground"><input type="checkbox" className="accent-primary" checked={skip} disabled={busy} onChange={event => setSkip(event.target.checked)} />Don’t show me this again</label>}
+      {confirm && !alwaysConfirm && <label className="flex items-center gap-2 text-sm text-muted-foreground"><input type="checkbox" className="accent-primary" checked={skip} disabled={busy} onChange={event => setSkip(event.target.checked)} />Don’t show me this again</label>}
       {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
       <AlertDialogFooter>
         <AlertDialogClose render={<Button variant="outline" disabled={busy} />}>Cancel</AlertDialogClose>

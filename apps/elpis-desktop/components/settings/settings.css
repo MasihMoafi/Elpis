@@ -46,3 +46,8 @@
 /* A card of labelled fields (a form) spaces its fields wider than a card of lines. */
 form.settings-card, .settings-card:has(> .field) { gap:16px; }
 .settings-stack { display:grid; gap:12px; min-width:0; }
+/* Archived chats: Select all and the selection's actions above the list; a checkbox before each row. */
+.archived-bulk { display:flex; align-items:center; gap:8px; min-height:36px; margin:12px 0 8px; }
+.archived-check { display:flex; align-items:center; gap:8px; margin-right:auto; font-size:14px; color:var(--muted-foreground); cursor:pointer; }
+.archived-check input, .archived-row-check { width:16px; height:16px; flex:0 0 auto; cursor:pointer; }
+.archived-row-check { margin-right:12px; }

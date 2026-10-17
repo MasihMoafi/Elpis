@@ -1,32 +1,39 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ArchiveRestore } from "lucide-react";
+import { ArchiveRestore, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { SearchField } from "@/components/ui/search-field";
 import { SettingsEmpty, SettingsHeader, SettingsNotice } from "@/components/settings/rows";
-import { ThreadActions } from "@/components/thread-actions";
+import { DeleteChatsDialog, ThreadActions } from "@/components/thread-actions";
 import { api, title, type Thread } from "@/lib/api";
 
 type Props = { onUnarchived: (thread: Thread) => void; onDelete: (thread: Thread) => Promise<void> };
 
-/** Chats archived in Elpis: restore them to the sidebar, or delete them. */
+type Page = { data: Thread[]; nextCursor: string | null };
+
+/** Chats archived in Elpis: restore them to the sidebar, or delete them, one by one or selected together. */
 export function ArchivedView({ onUnarchived, onDelete }: Props) {
   const [threads, setThreads] = useState<Thread[] | null>(null);
   const [cursor, setCursor] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const [search, setSearch] = useState("");
+  const [picked, setPicked] = useState<string[]>([]);
+  const [deleting, setDeleting] = useState<Thread[] | null>(null);
+  const [selectingAll, setSelectingAll] = useState(false);
   const term = search.trim(), latest = useRef(0);
+  const page = useCallback((after?: string | null) => api<Page>(`/threads?archived=true&limit=100${term ? `&searchTerm=${encodeURIComponent(term)}` : ""}${after ? `&cursor=${encodeURIComponent(after)}` : ""}`), [term]);
   const load = useCallback(async (after?: string) => {
     const request = ++latest.current;
+    if (!after) setPicked([]);
     try {
-      const result = await api<{ data: Thread[]; nextCursor: string | null }>(`/threads?archived=true&limit=100${term ? `&searchTerm=${encodeURIComponent(term)}` : ""}${after ? `&cursor=${encodeURIComponent(after)}` : ""}`);
+      const result = await page(after);
       if (request !== latest.current) return;
       setThreads(prev => after && prev ? [...prev, ...result.data.filter(item => !prev.some(p => p.id === item.id))] : result.data);
       setCursor(result.nextCursor); setError("");
     } catch (e) { if (request === latest.current) setError(e instanceof Error ? e.message : String(e)); }
-  }, [term]);
+  }, [page]);
   useEffect(() => { const timer = setTimeout(() => void load(), term ? 250 : 0); return () => clearTimeout(timer); }, [load, term]);
   async function unarchive(thread: Thread) {
     setBusy(thread.id); setError("");
@@ -40,6 +47,25 @@ export function ArchivedView({ onUnarchived, onDelete }: Props) {
   async function remove(thread: Thread) {
     await onDelete(thread);
     setThreads(prev => prev?.filter(item => item.id !== thread.id) ?? prev);
+    setPicked(prev => prev.filter(id => id !== thread.id));
+  }
+  /** Select all covers every archived chat (matching the search), loading the pages not shown yet. */
+  async function selectAll(on: boolean) {
+    if (!on) { setPicked([]); return; }
+    const request = ++latest.current;
+    setSelectingAll(true);
+    try {
+      let all = threads ?? [], next = cursor;
+      while (next) { const result = await page(next); all = [...all, ...result.data.filter(item => !all.some(p => p.id === item.id))]; next = result.nextCursor; }
+      if (request !== latest.current) return;
+      setThreads(all); setCursor(null); setPicked(all.map(item => item.id));
+    } catch (e) { if (request === latest.current) setError(e instanceof Error ? e.message : String(e)); }
+    finally { setSelectingAll(false); }
+  }
+  const pickedThreads = (threads ?? []).filter(item => picked.includes(item.id));
+  async function unarchivePicked() {
+    for (const thread of pickedThreads) await unarchive(thread);
+    setPicked([]);
   }
   // The ChatGPT app's archived list: one card of rows, each with the chat's name and its actions on the right.
   return <div aria-label="Archived conversations">
@@ -50,8 +76,17 @@ export function ArchivedView({ onUnarchived, onDelete }: Props) {
     {threads?.length === 0 && (term
       ? <SettingsEmpty title={`No archived chats match “${term}”`}>Try another word from the chat’s name.</SettingsEmpty>
       : <SettingsEmpty title="No archived conversations">Archive a chat from its ⋯ menu in the sidebar.</SettingsEmpty>)}
+    {!!threads?.length && <div className="archived-bulk">
+      <label className="archived-check"><input type="checkbox" className="accent-primary" aria-label="Select all" checked={selectingAll || (!cursor && picked.length === threads.length)} onChange={event => void selectAll(event.target.checked)} />Select all</label>
+      {picked.length > 0 && <>
+        <Button variant="outline" size="sm" disabled={!!busy} onClick={() => void unarchivePicked()}><ArchiveRestore />Unarchive {picked.length}</Button>
+        <Button variant="destructive" size="sm" disabled={!!busy} onClick={() => setDeleting(pickedThreads)}><Trash2 />Delete {picked.length}</Button>
+      </>}
+    </div>}
+    <DeleteChatsDialog threads={deleting} onDelete={remove} onClose={() => setDeleting(null)} alwaysConfirm />
     {!!threads?.length && <ul className="settings-rows">
       {threads.map(thread => <ThreadActions key={thread.id} thread={thread} onDelete={remove} area={<li className="settings-row archived-row" data-thread-id={thread.id} />}>{menu => <>
+        <input type="checkbox" className="accent-primary archived-row-check" aria-label={`Select ${title(thread)}`} checked={picked.includes(thread.id)} onChange={event => setPicked(prev => event.target.checked ? [...prev, thread.id] : prev.filter(id => id !== thread.id))} />
         <div className="settings-row-text">
           <div className="settings-row-title truncate">{title(thread)}</div>
           {thread.agentNickname && <div className="settings-row-description">{thread.agentNickname}</div>}

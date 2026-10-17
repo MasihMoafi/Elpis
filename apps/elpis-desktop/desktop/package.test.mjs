@@ -40,7 +40,7 @@ async function fixture() {
   for (const name of production) await put(path.join(source, name), `fixture ${name}\n`);
   await put(path.join(source, 'out', 'index.html'), '<p>Built renderer</p>');
   await put(path.join(source, 'out', '_next', 'static', 'app.js'), 'renderer();');
-  await put(path.join(source, 'package.json'), JSON.stringify({ name: 'elpis-desktop',
+  await put(path.join(source, 'package.json'), JSON.stringify({ name: 'elpis-desktop', desktopName: 'elpis-desktop.desktop',
     productName: 'Elpis', version: '0.1.0', main: 'desktop/main.cjs',
     scripts: { build: 'next build' }, dependencies: { next: '16.2.6', ws: '8.18.3' } }));
   await put(path.join(source, '.next', 'cache', 'junk'), 'not runtime');
@@ -101,6 +101,7 @@ test('production package runs after its source and dependency installations move
   assert(!all.includes('app/desktop/launch.sh'));
   const identity = JSON.parse(await fs.readFile(path.join(options.destination, 'app/package.json'), 'utf8'));
   assert.equal(identity.name, 'elpis-desktop');
+  assert.equal(identity.desktopName, 'elpis-desktop.desktop', 'the window is matched to its launcher entry and icon');
   assert.equal(identity.main, 'desktop/main.cjs');
   assert.equal(identity.type, 'module');
   assert.deepEqual(identity.dependencies, { ws: '8.22.0', 'node-pty': '1.1.0' });
