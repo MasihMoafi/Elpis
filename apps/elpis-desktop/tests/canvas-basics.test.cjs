@@ -55,7 +55,7 @@ test('canvas basics: undo and redo, copy and paste, duplicate, delete keeping th
 
     // As AutoCAD's command line: Space opens it, and typing on the board starts a command with that key.
     const adder = canvas.getByRole('dialog', { name: 'Add agents', exact: true }), command = adder.getByRole('textbox', { name: 'Command', exact: true });
-    await off(); await page.keyboard.press('Space');
+    await off(); await page.keyboard.press('Tab');
     await command.waitFor(); await page.keyboard.press('Escape'); await adder.waitFor({ state: 'hidden' });
     await off(); await page.keyboard.type('fix');
     await command.waitFor();
@@ -196,7 +196,7 @@ test('canvas basics: undo and redo, copy and paste, duplicate, delete keeping th
     await off(); await page.keyboard.press('Control+z');
     await agentCount(3, 'the design undone');
     // Free text in the command line that is no command goes to Elpis, which acts on the board.
-    await off(); await page.keyboard.press('Space'); await command.waitFor();
+    await off(); await page.keyboard.press('Tab'); await command.waitFor();
     await page.keyboard.type('Fix the login bug');
     assert.match(await adder.getByLabel('Will add').innerText(), /^Elpis/);
     await page.keyboard.press('Enter');

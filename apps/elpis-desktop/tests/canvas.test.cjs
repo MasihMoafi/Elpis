@@ -125,8 +125,8 @@ test('agents canvas: writers with automatic checks, architectures, wiring, persi
     await critical.hover();
     assert.equal(await canvas.locator('.react-flow__edge.selected').count(), 1, 'its one wire is lit');
     await page.mouse.move(0, 0);
-    assert.equal(await canvas.locator('.canvas-chevron').count(), 3 * 6);
-    assert.equal(await canvas.locator('.canvas-chevron[data-live]').count(), 0);
+    assert.equal(await canvas.locator('.react-flow__edge-path[marker-end]').count(), 6);
+    assert.equal(await canvas.locator('.canvas-edge-live').count(), 0);
 
     // Selecting an agent opens it: its prompt, model, the project folders it may write, and what its check holds it to.
     await node('Join the parts').click();
@@ -212,7 +212,7 @@ test('agents canvas: writers with automatic checks, architectures, wiring, persi
     await canvas.getByText(/1 of 5 done/).waitFor({ timeout: 8000 });
     assert.equal(await node('Part 1').locator('.agent-node-mark').getAttribute('aria-label'), 'Check passed');
     // A live wire streams its chevrons: Part 1's checked work feeds the running joiner.
-    assert.ok(await canvas.locator('.canvas-chevron[data-live]').count() > 0, 'live wires stream');
+    assert.ok(await canvas.locator('.canvas-edge-live').count() > 0, 'live wires show running state');
     assert.equal(ran.maxConcurrency, 3);
 
     // The command bar, typed AutoCAD-style: Tab over the board, then what you want done.

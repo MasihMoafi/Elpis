@@ -2,7 +2,7 @@
 
 import "@xyflow/react/dist/style.css";
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent } from "react";
-import { Background, BackgroundVariant, BaseEdge, ConnectionMode, Controls, Handle, MiniMap, Panel, Position, ReactFlow, ReactFlowProvider, applyEdgeChanges, applyNodeChanges, getSmoothStepPath, useReactFlow, type Edge, type EdgeChange, type EdgeProps, type FinalConnectionState, type Node, type NodeChange, type NodeProps, type XYPosition } from "@xyflow/react";
+import { Background, BackgroundVariant, Controls, Handle, MarkerType, MiniMap, Panel, Position, ReactFlow, ReactFlowProvider, applyEdgeChanges, applyNodeChanges, useReactFlow, type Edge, type EdgeChange, type FinalConnectionState, type Node, type NodeChange, type NodeProps, type XYPosition } from "@xyflow/react";
 import { Check, ChevronRight, ExternalLink, ListOrdered, PanelRight, PanelRightClose, Play, Plus, StickyNote, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -93,25 +93,6 @@ function FatherNode({ data }: NodeProps<Node<MotherData>>) {
   </div>;
 }
 const NODE_TYPES = { agent: AgentNode, mother: MotherNode, father: FatherNode, note: NoteNode };
-
-/** A wire with three chevrons pointing the way the work flows, as on Deus Ex: Mankind Divided's hacking screen. They
- * sit still until the agent at the end is running, then stream along the wire. Re-keyed on the path so they follow a
- * dragged node. */
-function FlowEdge({ id, sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, data }: EdgeProps<Edge<{ live?: boolean; alongside?: boolean }>>) {
-  // Elbow wires with rounded corners, as FigJam's connectors: tidy in run-order columns, never a tangle of curves.
-  const [path] = getSmoothStepPath({ sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition, borderRadius: 14, offset: 22 });
-  // A wire that orders nothing (two agents working alongside) points nowhere: no chevrons.
-  if (data?.alongside) return <BaseEdge id={id} path={path} />;
-  return <>
-    <BaseEdge id={id} path={path} />
-    {[0.25, 0.5, 0.75].map((at, index) => <path key={`${at}${path}${data?.live}`} className="canvas-chevron" data-live={data?.live || undefined} d="M -3 -4.5 L 2 0 L -3 4.5">
-      {data?.live
-        ? <animateMotion path={path} rotate="auto" dur="1.8s" begin={`${-index * 0.6}s`} repeatCount="indefinite" />
-        : <animateMotion path={path} rotate="auto" dur="0.001s" fill="freeze" keyPoints={`${at};${at}`} keyTimes="0;1" calcMode="linear" />}
-    </path>)}
-  </>;
-}
-const EDGE_TYPES = { flow: FlowEdge };
 
 /** Where the command bar drops its agents, and the agent it was opened from (`as` is the end the new agents take) or
  * the wire they are inserted on. */
@@ -518,15 +499,15 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
   ), [graph.nodes, selection, states, clashes, models, order, runState, fatherState, limit, catalog.length]); // eslint-disable-line react-hooks/exhaustive-deps
   const edges = useMemo<Edge[]>(() => [
     // The Mother's wires: she starts every agent of the first wave.
-    ...agents.filter(node => order.get(node.id) === 1 && !his.has(node.id)).map(node => ({ id: `${MOTHER}->${node.id}`, source: MOTHER, target: node.id, type: "flow", className: "canvas-edge-mother", selectable: false, deletable: false, focusable: false, selected: wireMenu?.edge.id === `${MOTHER}->${node.id}`, data: { live: states[node.id]?.status === "running" } })),
+    ...agents.filter(node => order.get(node.id) === 1 && !his.has(node.id)).map(node => ({ id: `${MOTHER}->${node.id}`, source: MOTHER, target: node.id, type: "default", markerEnd: { type: MarkerType.ArrowClosed }, className: "canvas-edge-mother", selectable: false, deletable: false, focusable: false, selected: wireMenu?.edge.id === `${MOTHER}->${node.id}`, data: { live: states[node.id]?.status === "running" } })),
     // The Father's wires: he starts his agents that wait for none of his others.
-    ...fatherRoots.map(node => ({ id: `${FATHER}->${node.id}`, source: FATHER, target: node.id, type: "flow", className: "canvas-edge-mother", selectable: false, deletable: false, focusable: false, interactionWidth: 0, data: { live: states[node.id]?.status === "running" } })),
+    ...fatherRoots.map(node => ({ id: `${FATHER}->${node.id}`, source: FATHER, target: node.id, type: "default", markerEnd: { type: MarkerType.ArrowClosed }, className: "canvas-edge-mother", selectable: false, deletable: false, focusable: false, interactionWidth: 0, data: { live: states[node.id]?.status === "running" } })),
     ...graph.edges.map(edge => {
       // A wire goes live once its first agent's check passed and the second agent is running.
       const from = states[checkOf(edge.source)]?.status, to = states[edge.target]?.status, live = waits(edge) && from === "succeeded" && to === "running";
       const onPath = showCritical && critical.includes(edge.source) && critical[critical.indexOf(edge.source) + 1] === edge.target;
-      if (!waits(edge)) return { ...edge, type: "flow", selected: wireMenu?.edge.id === edge.id, data: { alongside: true }, className: "canvas-edge-alongside" };
-      return { ...edge, type: "flow", selected: wireMenu?.edge.id === edge.id || onPath, data: { live }, className: from === "failed" || to === "blocked" ? "canvas-edge-cut" : live ? "canvas-edge-live" : from === "succeeded" ? "canvas-edge-done" : undefined };
+      if (!waits(edge)) return { ...edge, type: "default", selected: wireMenu?.edge.id === edge.id, data: { alongside: true }, className: "canvas-edge-alongside" };
+      return { ...edge, type: "default", markerEnd: { type: MarkerType.ArrowClosed }, selected: wireMenu?.edge.id === edge.id || onPath, data: { live }, className: from === "failed" || to === "blocked" ? "canvas-edge-cut" : live ? "canvas-edge-live" : from === "succeeded" ? "canvas-edge-done" : undefined };
     }),
   ], [graph.edges, graph.nodes, states, order, wireMenu, showCritical]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -543,7 +524,7 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
     setGraph(current => ({ ...current, nodes: applyNodeChanges(changes.filter(change => change.type !== "select" && !(change.type === "remove" && change.id === MOTHER)), current.nodes as Node[]) as CanvasNode[],
       edges: removed.size ? current.edges.filter(edge => !removed.has(edge.source) && !removed.has(edge.target)) : current.edges }));
   };
-  const onEdgesChange = (changes: EdgeChange[]) => setGraph(current => ({ ...current, edges: applyEdgeChanges(changes, current.edges as Edge[]).map(({ id, source, target }) => ({ id, source, target })) }));
+  const onEdgesChange = (changes: EdgeChange[]) => setGraph(current => ({ ...current, edges: applyEdgeChanges(changes, current.edges as Edge[]).map(({ id, source, target }) => ({ ...current.edges.find(edge => edge.id === id), id, source, target })) }));
   // Wiring: a wire orders its agents (the target waits for the source), or, `alongside`, joins two agents working at the
   // same time. The Mother and Father start their agents themselves, so they take no wires.
   const connect = (source: string, target: string, kind?: CanvasEdge["kind"]) => {
@@ -611,6 +592,7 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
   // for this one, from a left dot this one waits for the other; with Alt held the two work alongside. Let go on empty
   // board, it opens the command bar there (Blender, Unreal); a click without a drag is the dot's own click (onHandle).
   const onConnectEnd = (event: MouseEvent | TouchEvent, state: FinalConnectionState) => {
+    if (state.isValid) return;
     const spot = "changedTouches" in event ? event.changedTouches[0] : event, start = connectFrom.current;
     if (!state.fromNode || !state.fromHandle || !start) return;
     const from = state.fromNode.id, over = state.toNode?.id ?? (document.elementFromPoint(spot.clientX, spot.clientY)?.closest(".react-flow__node") as HTMLElement | null)?.dataset.id;
@@ -620,27 +602,30 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
   };
   useEffect(() => {
     const keydown = (event: KeyboardEvent) => {
+      const take = () => { event.preventDefault(); event.stopPropagation(); };
       const target = event.target as HTMLElement | null, typing = target?.closest?.("input, textarea, select, [contenteditable='true'], [role='dialog'], [role='menu'], [role='listbox']");
       const onBoard = !target || target === document.body || Boolean(target.closest?.(".react-flow")), ctrl = event.ctrlKey || event.metaKey;
+      if (target && target !== document.body && !target.closest(".agents-canvas")) return;
       // event.code, so it works in any keyboard layout; never inside a field, where Ctrl+A selects the text. On the board
       // Ctrl+A selects every agent and note, as in every editor.
-      if ((event.ctrlKey || event.metaKey) && !event.shiftKey && !event.altKey && event.code === "KeyA" && !typing) { event.preventDefault(); setSelection(graph.nodes.filter(node => node.type !== "mother").map(node => node.id)); }
-      else if (event.key === "Tab" && !event.ctrlKey && !event.altKey && !event.shiftKey && onBoard && !typing) { event.preventDefault(); openAdder(); }
-      // As AutoCAD's command line: Space opens it, and typing on the board starts a command with that key.
-      else if (event.key === " " && !ctrl && !event.altKey && onBoard && !typing) { event.preventDefault(); openAdder(); }
-      else if (event.key.length === 1 && !ctrl && !event.altKey && onBoard && !typing && !adding) { event.preventDefault(); openAdder(undefined, undefined, undefined, event.key); }
-      else if (event.key === "Enter" && selected && onBoard && !typing && !adding) { event.preventDefault(); setDashboardId(selected.id); }
+      if ((event.ctrlKey || event.metaKey) && !event.shiftKey && !event.altKey && event.code === "KeyA" && !typing) { take(); setSelection(graph.nodes.filter(node => node.type !== "mother").map(node => node.id)); }
+      else if (event.key === "Tab" && !event.ctrlKey && !event.altKey && !event.shiftKey && onBoard && !typing) { take(); openAdder(); }
+      // React Flow owns Space+drag panning; F frames the selected nodes.
+      else if (!ctrl && event.code === "KeyF" && onBoard && !typing) { take(); if (selection.length) void flow.fitView({ nodes: selection.map(id => ({ id })), padding: 0.3, maxZoom: 1.5, duration: 250 }); }
+      else if (event.code === "Space" && onBoard && !typing) return;
+      else if (event.key.length === 1 && !ctrl && !event.altKey && onBoard && !typing && !adding) { take(); openAdder(undefined, undefined, undefined, event.key); }
+      else if (event.key === "Enter" && selected && onBoard && !typing && !adding) { take(); setDashboardId(selected.id); }
       else if (typing || event.altKey) return;
       // The board's own keys, by event.code so any keyboard layout works; in a field they stay the field's.
-      else if (ctrl && event.code === "KeyZ") { event.preventDefault(); if (event.shiftKey) redo(); else undo(); }
-      else if (ctrl && !event.shiftKey && event.code === "KeyY") { event.preventDefault(); redo(); }
-      else if (ctrl && !event.shiftKey && event.code === "KeyC" && selection.length) { event.preventDefault(); copy(); }
-      else if (ctrl && !event.shiftKey && event.code === "KeyV" && clipboard.current) { event.preventDefault(); paste(); }
-      else if (ctrl && !event.shiftKey && event.code === "KeyD" && selection.length) { event.preventDefault(); duplicate(); }
+      else if (ctrl && event.code === "KeyZ") { take(); if (event.shiftKey) redo(); else undo(); }
+      else if (ctrl && !event.shiftKey && event.code === "KeyY") { take(); redo(); }
+      else if (ctrl && !event.shiftKey && event.code === "KeyC" && selection.length) { take(); copy(); }
+      else if (ctrl && !event.shiftKey && event.code === "KeyV" && clipboard.current) { take(); paste(); }
+      else if (ctrl && !event.shiftKey && event.code === "KeyD" && selection.length) { take(); duplicate(); }
       // Before React Flow's own Delete, which would drop the wires.
-      else if (ctrl && event.key === "Delete" && selection.length) { event.preventDefault(); event.stopPropagation(); removeKeepingFlow(selection); }
-      else if (!ctrl && event.key === "Home") { event.preventDefault(); fitAll(); }
-      else if (!ctrl && event.key === "F2" && selected) { event.preventDefault(); rename(); }
+      else if (ctrl && event.key === "Delete" && selection.length) { take(); event.stopPropagation(); removeKeepingFlow(selection); }
+      else if (!ctrl && event.key === "Home") { take(); fitAll(); }
+      else if (!ctrl && event.key === "F2" && selected) { take(); rename(); }
     };
     window.addEventListener("keydown", keydown, true);
     return () => window.removeEventListener("keydown", keydown, true);
@@ -904,10 +889,10 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
     <div className="canvas-board" ref={board} onPointerMove={event => { pointer.current = { x: event.clientX, y: event.clientY }; }}
       // A double-click on empty board, whichever layer React Flow put under the pointer, opens the command line there.
       onDoubleClick={event => { const target = event.target as Element; if (target.closest(".react-flow") && !target.closest(".react-flow__node, .react-flow__edge, .react-flow__panel, .react-flow__controls, .react-flow__minimap")) openAdder({ x: event.clientX, y: event.clientY }); }}>
-      {iso ? <IsoBoard graph={graph} father={split.father} states={states} selected={selection} onSelect={setSelection} onOpen={setDashboardId} dark={dark} /> : <ReactFlow nodes={nodes} edges={edges} nodeTypes={NODE_TYPES} edgeTypes={EDGE_TYPES} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onConnectEnd={onConnectEnd} connectionMode={ConnectionMode.Loose}
+      {iso ? <IsoBoard graph={graph} father={split.father} states={states} selected={selection} onSelect={setSelection} onOpen={setDashboardId} dark={dark} /> : <ReactFlow nodes={nodes} edges={edges} nodeTypes={NODE_TYPES} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onConnect={({ source, target }) => connect(source, target)} onConnectEnd={onConnectEnd}
         onConnectStart={event => { const spot = "touches" in event ? event.touches[0] : event; connectFrom.current = { x: spot.clientX, y: spot.clientY }; }} connectOnClick={false}
         onNodeDoubleClick={(_, node) => { if (node.type === "agent") setDashboardId(node.id); }}
-        onEdgeClick={onEdgeClick} onEdgeContextMenu={(event, edge) => { event.preventDefault(); onEdgeClick(event, edge); }} onNodeContextMenu={onNodeContextMenu} onPaneContextMenu={onPaneContextMenu} multiSelectionKeyCode={["Shift", "Control", "Meta"]} nodeDragThreshold={5} nodeClickDistance={5} paneClickDistance={5} selectionKeyCode={null} selectionOnDrag panOnDrag={[1]} panActivationKeyCode={null} snapToGrid snapGrid={[20, 20]} connectionRadius={32} onNodeClick={onNodeClick}
+        onEdgeClick={onEdgeClick} onEdgeContextMenu={(event, edge) => { event.preventDefault(); onEdgeClick(event, edge); }} onNodeContextMenu={onNodeContextMenu} onPaneContextMenu={onPaneContextMenu} multiSelectionKeyCode={["Shift", "Control", "Meta"]} nodeDragThreshold={5} nodeClickDistance={5} paneClickDistance={5} selectionKeyCode={null} selectionOnDrag panOnDrag={[1]} panActivationKeyCode="Space" snapToGrid snapGrid={[20, 20]} connectionRadius={32} onNodeClick={onNodeClick}
         onNodeDragStart={() => { dragged.current = true; }} onNodeDragStop={() => setTimeout(() => { dragged.current = false; })}
         onPaneClick={() => { setSelection([]); setMenu(null); }} deleteKeyCode={["Backspace", "Delete"]} zoomOnDoubleClick={false} colorMode={dark ? "dark" : "light"} fitView fitViewOptions={FIT} minZoom={0.3} proOptions={{ hideAttribution: true }}>
         <Background variant={BackgroundVariant.Dots} gap={22} size={1.2} />
