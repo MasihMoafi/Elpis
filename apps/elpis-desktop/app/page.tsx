@@ -11,6 +11,7 @@ import { ApprovalCard, type QuestionAnswers } from "@/components/approval-card";
 import { SearchField } from "@/components/ui/search-field";
 import { Textarea } from "@/components/ui/textarea";
 import { ChatMessage } from "@/components/chat-message";
+import { FailedTurnCard, type FailedTurn } from "@/components/failed-turn-card";
 import { ViewBoundary } from "@/components/view-boundary";
 import { Transcript } from "@/components/transcript";
 import { readPins, savePins } from "@/lib/pins";
@@ -285,6 +286,7 @@ export default function Home() {
   const [activity, setActivity] = useState<Record<string, string>>({});
   const [liveError, setLiveError] = useState<Record<string, string>>({});
   const [runtimeNotices, setRuntimeNotices] = useState<Record<string, string>>({});
+  const [failedTurns, setFailedTurns] = useState<Record<string, FailedTurn>>({});
   const [related, setRelated] = useState<Record<string, Thread>>({});
   const [accountRefresh, setAccountRefresh] = useState(0);
   const [view, setView] = useState<View>("chat");
@@ -523,13 +525,18 @@ export default function Home() {
           if (method === "turn/plan/updated" && Array.isArray(params.plan)) setPlans(prev => ({ ...prev, [params.threadId]: { turnId: params.turnId, explanation: params.explanation ?? null, steps: params.plan } }));
           // A new turn starts without a list; the last turn's list goes until this one makes its own.
           if (method === "turn/started") setPlans(prev => prev[params.threadId] && prev[params.threadId].turnId !== params.turn.id ? without(prev, params.threadId) : prev);
-          if (method === "turn/started" && !completedTurns.current.has(params.turn.id)) { setActiveTurns(prev => ({ ...prev, [params.threadId]: params.turn.id })); setRuntimeNotices(prev => without(prev, params.threadId)); patchThread(params.threadId, { status: { type: "active" } }); }
+          if (method === "turn/started" && !completedTurns.current.has(params.turn.id)) { setActiveTurns(prev => ({ ...prev, [params.threadId]: params.turn.id })); setRuntimeNotices(prev => without(prev, params.threadId)); setFailedTurns(prev => without(prev, params.threadId)); patchThread(params.threadId, { status: { type: "active" } }); }
           if (method === "turn/completed") {
             completedTurns.current.add(params.turn.id);
             setActiveTurns(prev => prev[params.threadId] !== params.turn.id ? prev : without(prev, params.threadId));
             refreshThreads().catch(e => setError(String(e)));
-            if (params.turn?.error) setRuntimeNotices(prev => ({ ...prev, [params.threadId]: params.turn.error.message || "The turn failed." }));
-            else setRuntimeNotices(prev => without(prev, params.threadId));
+            if (params.turn?.error) {
+              setFailedTurns(prev => ({ ...prev, [params.threadId]: { turnId: params.turn.id, error: params.turn.error } }));
+              setRuntimeNotices(prev => without(prev, params.threadId));
+            } else {
+              setFailedTurns(prev => without(prev, params.threadId));
+              setRuntimeNotices(prev => without(prev, params.threadId));
+            }
           }
           if (method === "error" && threadId) {
             const notice = runtimeErrorNotice(params);
@@ -684,6 +691,8 @@ export default function Home() {
   const turnEntries = new Map<string, Entry[]>();
   for (const entry of entries) { const group = turnEntries.get(entry.turnId) ?? []; group.push(entry); turnEntries.set(entry.turnId, group); }
   const replacementOptions = new Map([...turnEntries].map(([id, group]) => [id, replacementEligibility(group, id, { historyComplete: !loading && itemCursor === null })]));
+  const failedTurn = selected ? failedTurns[selected.id] : undefined;
+  const failedInput = failedTurn ? replacementOptions.get(failedTurn.turnId) : undefined;
   const recoveredEdit = selected ? savedDraft(`recovery-${selected.id}`) : "";
   // The message box's history keys (lib/prompt-history.ts): ↑/↓ and Ctrl+R through what you sent, Esc Esc to edit the last.
   const promptKeys = usePromptKeys(selected?.id ?? newDraftKey.current, { entries, box: () => composerRef.current, read: () => textRef.current, write: writePrompt, editLast: editLastMessage });
@@ -929,7 +938,7 @@ export default function Home() {
   }
   function unarchived(thread: Thread) { hidden.current.delete(thread.id); upsertThread(thread); refreshThreads().catch(e => setError(String(e))); }
   /** Edit-and-resend and regenerate: Elpis replaces the turn and every later one, then runs the new text. */
-  async function replaceFrom(turnId: string, replacement: string, editKey?: string) {
+  async function replaceFrom(turnId: string, replacement: string, editKey?: string, retryModel?: string) {
     const thread = selectedRef.current; if (!thread) return;
     const originalFocus = document.activeElement, originalRequest = request.current;
     if (savedDraft(`recovery-${thread.id}`) || savedAttachments(`recovery-${thread.id}`).length) throw new Error("Recover the saved edited message before replacing another turn.");
@@ -937,7 +946,7 @@ export default function Home() {
     if (!eligibility?.allowed) throw new Error(eligibility && !eligibility.allowed ? eligibility.reason : "The complete input for this turn is unavailable.");
     const index = entries.findIndex(entry => entry.turnId === turnId);
     const stale = new Set(entries.slice(Math.max(index, 0)).map(entry => entry.turnId));
-    const overrides = nextTurn[thread.id];
+    const overrides = retryModel ? { ...nextTurn[thread.id], model: retryModel } : nextTurn[thread.id];
     const sendReplacement = () => api<{ turn?: { id: string }; rewound?: boolean; sendError?: string }>(`/threads/${encodeURIComponent(thread.id)}/revert`, { beforeTurnId: turnId, text: replacement,
       ...(overrides?.model ? { model: overrides.model } : {}), ...(overrides?.effort ? { effort: overrides.effort } : {}) });
     const result = editKey ? await submitDraft(editKey, sendReplacement) : await sendReplacement();
@@ -1377,6 +1386,9 @@ export default function Home() {
             time={e.item.type === "userMessage" ? e.startedAtMs : undefined}
             onFork={selected && e.item.type === "agentMessage" && e.turnId !== activeTurn ? () => void forkFrom(selected, e.turnId) : undefined} onRewind={replaceable ? () => setRewindTurn(e.turnId) : undefined}
             onRegenerate={regenerate && e.item.id === regenerate.replyId ? () => { replaceFrom(regenerate.turnId, regenerate.prompt).catch(error => setError(String(error instanceof Error ? error.message : error))); } : undefined} />; }} /></ViewBoundary>
+          {failedTurn && <FailedTurnCard key={`${selected?.id}:${failedTurn.turnId}`} failure={failedTurn} models={selectedChoice?.models ?? models} currentModel={selected?.model} disabled={!replaceable}
+            blockedReason={continues ? "Continue this conversation here before trying again." : failedInput?.allowed ? undefined : failedInput?.reason ?? "The original complete input is unavailable, so this turn cannot be safely resent."}
+            onRetry={!continues && failedInput?.allowed ? retryModel => replaceFrom(failedTurn.turnId, failedInput.prompt, undefined, retryModel) : undefined} />}
           {selected && proposedPlan && <div className="plan-prompt" role="group" aria-label="Implement this plan?"><h3>Implement this plan?</h3>
             <Button size="sm" disabled={busy || !connected} onClick={() => void implementPlan(selected, proposedPlan)}>Yes, implement this plan</Button>
             <Button size="sm" variant="ghost" onClick={() => { setPlanAnswered(prev => ({ ...prev, [selected.id]: proposedPlan })); focusComposer(); }}>No, stay in Plan mode</Button></div>}
