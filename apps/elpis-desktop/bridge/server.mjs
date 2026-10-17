@@ -161,8 +161,8 @@ export async function startDesktopServer(options = {}) {
           }
           throw new BridgeError('Method is not allowed', 405);
         }
-        const approval = url.pathname.match(/^\/api\/approvals\/([a-f0-9-]+)$/);
-        if (approval && method === 'POST') return json(response, 200, client.answerApproval(approval[1], await body(request)));
+        const approval = url.pathname.match(/^\/api\/approvals\/([a-f0-9-]+)(\/instead)?$/);
+        if (approval && method === 'POST') return json(response, 200, approval[2] ? await client.denyInstead(approval[1], await body(request)) : client.answerApproval(approval[1], await body(request)));
         throw new BridgeError('Unknown application operation', 404);
       }
       if (request.method !== 'GET') throw new BridgeError('Method is not allowed', 405);

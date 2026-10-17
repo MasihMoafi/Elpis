@@ -151,90 +151,23 @@ const LEDGER_CATEGORIES = [
   ['developerMessages', 'Developer messages'], ['toolDefinitions', 'Tool definitions + schema', 'outputSchema'],
   ['unrecognizedItems', 'Unrecognized request items'],
 ];
-/** The categories of one attribution, in the TUI's order and words, scaled to `used` by largest remainder so they sum to
- * it exactly (`reconcile_context_categories`); empty when nothing is attributed. */
-function reconciledCategories(attribution, used) {
-  const estimated = LEDGER_CATEGORIES.map(([id, label, extra]) => ({ id, label, tokens: (attribution?.[id] ?? 0) + (extra ? attribution?.[extra] ?? 0 : 0) })).filter(row => row.tokens > 0);
-  const total = estimated.reduce((sum, row) => sum + row.tokens, 0);
-  if (!total) return [];
-  const scaled = estimated.map((row, index) => ({ ...row, tokens: Math.floor(row.tokens * used / total), remainder: row.tokens * used % total, index }));
-  let remaining = used - scaled.reduce((sum, row) => sum + row.tokens, 0);
-  for (const row of [...scaled].sort((a, b) => b.remainder - a.remainder || a.index - b.index)) if (remaining-- > 0) row.tokens++;
-  return scaled.filter(row => row.tokens > 0).map(({ id, label, tokens }) => ({ id, label, tokens }));
-}
-// A saved transcript is an estimate of the next request, never exactly it; this much over the measured total still counts.
-const TRANSCRIPT_SLACK = 1.15;
 /** What the TUI's Context Ledger shows for a chat. `used` is measured: the latest request's total tokens, as the
  * ledger's `tokens_in_context_window`. `window` is the reported context window, or null when unknown. `categories`
- * are the core's estimated shares of the latest built request, scaled to `used` (`basis: 'engine'`); an empty list means
- * attribution is unavailable. The TUI has the shares only once its own process has seen a request, so a chat the engine
- * has not run since this app connected would have none: `transcript` (`rolloutShares`) then stands in for them
- * (`basis: 'transcript'`), with the rest of the measured total, which no transcript holds, as the tool definitions. */
-export function contextLedger(tokenUsage, transcript = null) {
+ * are the core's estimated shares of the latest built request, scaled to `used` by largest remainder so they sum to
+ * it exactly (`reconcile_context_categories`); an empty list means attribution is unavailable. */
+export function contextLedger(tokenUsage) {
   const used = number(tokenUsage?.last?.totalTokens), window = number(tokenUsage?.modelContextWindow);
   const ledger = { used: used !== null && used >= 0 ? used : null, window: window !== null && window > 0 ? window : null, categories: [] };
-  if (!ledger.used) return ledger;
-  const engine = reconciledCategories(tokenUsage?.contextAttribution, ledger.used);
-  if (engine.length) return { ...ledger, categories: engine, basis: 'engine' };
-  const known = transcript ? Object.values(transcript).reduce((sum, tokens) => sum + tokens, 0) : 0;
-  if (!known || known > ledger.used * TRANSCRIPT_SLACK) return ledger;
-  const categories = reconciledCategories({ ...transcript, toolDefinitions: transcript.toolDefinitions + Math.max(0, ledger.used - known) }, ledger.used);
-  return categories.length ? { ...ledger, categories, basis: 'transcript' } : ledger;
-}
-
-// ---- The shares of a chat the engine has not run yet, estimated from its saved transcript (rollout).
-const SHARE_KEYS = ['systemInstructions', 'developerMessages', 'userMessages', 'agentMessages', 'reasoning', 'toolCalls', 'toolResults', 'toolDefinitions', 'outputSchema', 'unrecognizedItems'];
-const IMAGE_BYTES = 7373;
-const textBytes = value => typeof value === 'string' ? Buffer.byteLength(value) : 0;
-const jsonBytes = value => value === undefined || value === null ? 0 : Buffer.byteLength(JSON.stringify(value) ?? '');
-const partBytes = part => part?.type === 'input_image' ? IMAGE_BYTES : part?.type === 'encrypted_content' ? Math.ceil(textBytes(part.encrypted_content) * 9 / 16) : textBytes(part?.text);
-const partsBytes = parts => Array.isArray(parts) ? parts.reduce((sum, part) => sum + partBytes(part), 0) : 0;
-/** One saved item as core classifies and sizes it (core elpis_context_attribution.rs `classify`, context_manager
- * `estimate_item_token_count`): its share and its model-visible bytes. Items it does not know weigh nothing. */
-function sizedItem(item) {
-  const call = () => textBytes(item.name) + textBytes(item.namespace ?? 'functions') + textBytes(item.arguments ?? item.input);
-  switch (item.type) {
-    case 'message': return [{ system: 'systemInstructions', developer: 'developerMessages', user: 'userMessages', assistant: 'agentMessages' }[item.role] ?? 'unrecognizedItems', partsBytes(item.content)];
-    case 'agent_message': return ['agentMessages', textBytes(item.author) + textBytes(item.recipient) + partsBytes(item.content)];
-    case 'reasoning': case 'compaction': case 'context_compaction': return ['reasoning', typeof item.encrypted_content === 'string' ? Math.max(0, Math.floor(item.encrypted_content.length * 3 / 4) - 650) : 0];
-    case 'function_call': case 'custom_tool_call': return ['toolCalls', call()];
-    case 'local_shell_call': case 'web_search_call': return ['toolCalls', jsonBytes(item.action)];
-    case 'tool_search_call': return ['toolCalls', jsonBytes(item.arguments)];
-    case 'image_generation_call': return ['toolCalls', textBytes(item.revised_prompt) + (item.result ? IMAGE_BYTES : 0)];
-    case 'function_call_output': case 'custom_tool_call_output': { const body = item.output?.body ?? item.output; return ['toolResults', (typeof body === 'string' ? textBytes(body) : partsBytes(body)) + textBytes(item.call_id) + textBytes(item.name) + textBytes(item.namespace)]; }
-    case 'tool_search_output': return ['toolResults', jsonBytes(item.tools)];
-    case 'additional_tools': return ['toolDefinitions', jsonBytes(item.tools)];
-    default: return ['unrecognizedItems', 0];
-  }
-}
-const rolloutPath = file => typeof file === 'string' && path.isAbsolute(file) && /\.jsonl(\.zst)?$/.test(file);
-/** The estimated tokens per category of a chat's saved transcript, as the engine would attribute its history, or null when
- * the transcript cannot say what the model last saw: no readable rollout, a compaction saved without its replacement
- * history, or a rolled-back turn. Plain rollouts are read whole, compressed ones streamed. The tool definitions and the
- * output schema are not in a rollout; `contextLedger` takes them from the measured total. */
-export async function rolloutShares(file, limit = 1 << 28) {
-  if (!rolloutPath(file)) return null;
-  const tokens = Object.fromEntries(SHARE_KEYS.map(key => [key, 0]));
-  try {
-    if ((await fsp.stat(file)).size > limit) return null;
-    const input = file.endsWith('.zst') ? (typeof zlib.createZstdDecompress === 'function' ? fs.createReadStream(file).pipe(zlib.createZstdDecompress()) : null) : fs.createReadStream(file);
-    if (!input) return null;
-    const add = item => { const [key, size] = sizedItem(item); tokens[key] += Math.ceil(size / 4); };
-    for await (const line of readline.createInterface({ input, crlfDelay: Infinity })) {
-      if (!/"(session_meta|response_item|compacted|thread_rolled_back)"/.test(line)) continue;
-      let row; try { row = JSON.parse(line); } catch { continue; }
-      const payload = row?.payload;
-      if (row?.type === 'session_meta') tokens.systemInstructions = Math.ceil(textBytes(payload?.base_instructions?.text) / 4);
-      else if (row?.type === 'response_item' && payload) add(payload);
-      else if (row?.type === 'event_msg' && payload?.type === 'thread_rolled_back') return null;
-      else if (row?.type === 'compacted') {
-        if (!Array.isArray(payload?.replacement_history)) return null;
-        for (const key of SHARE_KEYS) if (key !== 'systemInstructions') tokens[key] = 0;
-        for (const item of payload.replacement_history) add(item);
-      }
-    }
-  } catch { return null; }
-  return Object.values(tokens).some(count => count > 0) ? tokens : null;
+  const attribution = tokenUsage?.contextAttribution;
+  if (!ledger.used || !attribution) return ledger;
+  const estimated = LEDGER_CATEGORIES.map(([id, label, extra]) => ({ id, label, tokens: (attribution[id] ?? 0) + (extra ? attribution[extra] ?? 0 : 0) })).filter(row => row.tokens > 0);
+  const total = estimated.reduce((sum, row) => sum + row.tokens, 0);
+  if (!total) return ledger;
+  const scaled = estimated.map((row, index) => ({ ...row, tokens: Math.floor(row.tokens * ledger.used / total), remainder: row.tokens * ledger.used % total, index }));
+  let remaining = ledger.used - scaled.reduce((sum, row) => sum + row.tokens, 0);
+  for (const row of [...scaled].sort((a, b) => b.remainder - a.remainder || a.index - b.index)) if (remaining-- > 0) row.tokens++;
+  ledger.categories = scaled.filter(row => row.tokens > 0).map(({ id, label, tokens }) => ({ id, label, tokens }));
+  return ledger;
 }
 
 // A rollout's `token_count` record carries usage in the engine's snake_case.
@@ -271,7 +204,7 @@ async function lastCountInStream(input) {
  * (app-server token_usage_replay.rs), so an old chat shows its numbers before it runs again. Rollouts keep no
  * category shares; those come with the next request. Plain rollouts are read from their end, compressed ones streamed. */
 export async function restoredTokenUsage(file) {
-  if (!rolloutPath(file)) return null;
+  if (typeof file !== 'string' || !path.isAbsolute(file) || !/\.jsonl(\.zst)?$/.test(file)) return null;
   let info;
   try {
     if (!file.endsWith('.zst')) info = await lastCountFromEnd(file);

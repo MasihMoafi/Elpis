@@ -46,3 +46,38 @@ test('browser config gates opening once per chat and approves interactions in th
   const config=browserMcpConfig('/tmp/fixture.sock')['mcp_servers.elpis_browser'];
   assert.equal(config.default_tools_approval_mode,'approve');assert.deepEqual(config.tools,{browser_open:{approval_mode:'auto'}});
 });
+test('"Deny, and tell Elpis what to do instead" steers the waiting turn, then declines; nothing is sent when it cannot',async t=>{
+  const f=await fixture(t);const text='Keep build/; clean only dist/.';
+  const p=f.request('item/commandExecution/requestApproval',{turnId:'turn-1',itemId:'cmd-1',command:'rm -rf build',availableDecisions:['accept','decline','cancel']});
+  assert.deepEqual(await f.client.denyInstead(p.id,{text}),{resolved:true});
+  const steer=f.socket.sent.findIndex(message=>message.method==='turn/steer'),decline=f.socket.sent.findIndex(message=>message.id===p.wireId);
+  assert.ok(steer>=0&&steer<decline,'the instruction reaches the turn before the denial lets it go on');
+  assert.equal(f.socket.sent[steer].params.threadId,threadId);assert.equal(f.socket.sent[steer].params.expectedTurnId,'turn-1');assert.equal(f.socket.sent[steer].params.input[0].text,text);
+  assert.deepEqual(f.socket.sent[decline],{id:p.wireId,result:{decision:'decline'}});assert.equal(f.client.pendingApprovals.length,0);
+  const patch=f.request('item/fileChange/requestApproval',{turnId:'turn-1',itemId:'patch-1'});await f.client.denyInstead(patch.id,{text:'Rename it in place.'});
+  assert.deepEqual(f.socket.sent.at(-1),{id:patch.wireId,result:{decision:'decline'}});
+  const before=f.socket.sent.length;
+  const noDecline=f.request('item/commandExecution/requestApproval',{turnId:'turn-1',availableDecisions:['accept','cancel']});
+  await assert.rejects(f.client.denyInstead(noDecline.id,{text}),/not offered/);
+  await assert.rejects(f.client.denyInstead(noDecline.id,{text:'  '}),/instead/);
+  const question=f.request('item/tool/requestUserInput',{turnId:'turn-1',questions:[{id:'q',header:'Q',question:'Which?',isOther:true,isSecret:false,options:[{label:'A',description:''}]}]});
+  await assert.rejects(f.client.denyInstead(question.id,{text}),/approval/);
+  assert.equal(f.socket.sent.length,before,'a refused instruction sends nothing');
+  const failing=f.request('item/commandExecution/requestApproval',{turnId:'turn-2'});
+  const send=f.socket.send;f.socket.send=raw=>{const request=JSON.parse(raw);if(request.method==='turn/steer'){f.socket.sent.push(request);queueMicrotask(()=>f.socket.emit('message',JSON.stringify({id:request.id,error:{code:-32600,message:'no active turn to steer'}})));return;}send(raw);};
+  await assert.rejects(f.client.denyInstead(failing.id,{text}),/rejected the operation/);
+  assert.ok(f.client.pendingApprovals.some(item=>item.id===failing.id),'the card stays when the instruction cannot be delivered');
+  assert.equal(f.socket.sent.some(message=>message.id===failing.wireId),false);
+});
+test('POST /api/approvals/<id>/instead reaches denyInstead',async t=>{
+  const fs=await import('node:fs/promises'),os=await import('node:os'),path=await import('node:path');const {startDesktopServer}=await import('./server.mjs');
+  const f=await fixture(t);const p=f.request('item/commandExecution/requestApproval',{turnId:'turn-1',itemId:'cmd-1',command:'make'});
+  const dir=await fs.mkdtemp(path.join(os.tmpdir(),'elpis-approvals-test-'));const app=await startDesktopServer({client:f.client,trashFile:path.join(dir,'deleted-chats.json')});t.after(()=>app.close());
+  const url=new URL(app.url),origin=url.origin,token=new URLSearchParams(url.hash.slice(1)).get('token');
+  const post=(pathname,data,cookie)=>fetch(origin+pathname,{method:'POST',headers:{'Content-Type':'application/json',Origin:origin,...(cookie?{Cookie:cookie}:{})},body:JSON.stringify(data)});
+  const cookie=(await post('/api/session',{token})).headers.get('set-cookie').split(';')[0];
+  const response=await post(`/api/approvals/${p.id}/instead`,{text:'Run make test instead.'},cookie);
+  assert.equal(response.status,200);assert.deepEqual(await response.json(),{resolved:true});
+  assert.equal(f.socket.sent.find(message=>message.method==='turn/steer').params.input[0].text,'Run make test instead.');
+  assert.deepEqual(f.socket.sent.at(-1),{id:p.wireId,result:{decision:'decline'}});
+});
