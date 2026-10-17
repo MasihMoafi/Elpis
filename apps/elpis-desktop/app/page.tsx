@@ -42,6 +42,7 @@ import { chooseProject, ProjectActions, ProjectDialog, ProjectMenu } from "@/com
 import { ModelPicker } from "@/components/model-picker";
 import { appStorage, readProjects, saveProjects, type Project } from "@/lib/projects";
 import { ResizeEdge } from "@/components/resize-edge";
+import { TaskList, type TaskPlan } from "@/components/task-list";
 import { agentState, mergeListedThreads } from "@/lib/agents";
 import { insertTranscript } from "@/lib/dictation";
 import { useBrowser } from "@/components/browser-panel";
@@ -246,6 +247,8 @@ export default function Home() {
   const [newAgentVersion, setNewAgentVersion] = useState(0);
   const [settingsNavigation, setSettingsNavigation] = useState(0);
   const [activeTurns, setActiveTurns] = useState<Record<string, string>>({});
+  // Each chat's latest task list (turn/plan/updated), shown above the message box (components/task-list.tsx).
+  const [plans, setPlans] = useState<Record<string, TaskPlan>>({});
   // A fast turn can finish over SSE before its HTTP start response arrives.
   const completedTurns = useRef(new Set<string>());
   const [approvals, setApprovals] = useState<Approval[]>([]);
@@ -460,6 +463,9 @@ export default function Home() {
           const { method, params } = JSON.parse(event.data);
           notifyRuntimeEvent(method, params, threadsRef.current, id => void loadThread({ id } as Thread)); void sendQueuedFollowUp(method, params).catch(e => setError(String(e)));
           const threadId: string | undefined = params.threadId ?? params.thread?.id;
+          if (method === "turn/plan/updated" && Array.isArray(params.plan)) setPlans(prev => ({ ...prev, [params.threadId]: { turnId: params.turnId, explanation: params.explanation ?? null, steps: params.plan } }));
+          // A new turn starts without a list; the last turn's list goes until this one makes its own.
+          if (method === "turn/started") setPlans(prev => prev[params.threadId] && prev[params.threadId].turnId !== params.turn.id ? without(prev, params.threadId) : prev);
           if (method === "turn/started" && !completedTurns.current.has(params.turn.id)) { setActiveTurns(prev => ({ ...prev, [params.threadId]: params.turn.id })); setRuntimeNotices(prev => without(prev, params.threadId)); patchThread(params.threadId, { status: { type: "active" } }); }
           if (method === "turn/completed") {
             completedTurns.current.add(params.turn.id);
@@ -710,6 +716,16 @@ export default function Home() {
   }
   /** A chat's permission mode changes now, as the terminal's /permissions does: the engine applies it to the
    * running turn too, and the composer shows the mode the engine reports. A new chat's mode goes in its thread/start. */
+  const permissionsLocked = !ready || busy || projectChanging || changingPermissions;
+  const choosePermissions = (next: PermissionMode) => selected ? void changePermissions(selected.id, next) : setNewMode(next);
+  /** Shift+Tab in the message box, as in Claude Code: Ask for approval, then Approve for me, then Plan mode, then back.
+   * Full access and Bypass are chosen from the menu only; Shift+Tab from them returns to Ask for approval. */
+  function cycleMode() {
+    if (permissionsLocked) return;
+    if (planMode) setPlan(false);
+    else if (permissionMode === "auto") { choosePermissions("ask"); setPlan(true); }
+    else choosePermissions(permissionMode === "ask" ? "auto" : "ask");
+  }
   async function changePermissions(id: string, mode: PermissionMode) {
     setChangingPermissions(true); setError("");
     try {
@@ -1172,6 +1188,7 @@ export default function Home() {
           {panel === "review" && selected && <ReviewPanel threadId={selected.id} onStart={target => void startReview(selected, target)} onClose={closePanel} />}
           {panel === "diff" && selected && <DiffPanel threadId={selected.id} onClose={closePanel} />}
           {slashNotice && <p role="status" className="mx-auto mb-2 w-full max-w-[740px] px-1 text-sm text-muted-foreground">{slashNotice}</p>}
+          {selected && plans[selected.id] && <TaskList plan={plans[selected.id]} running={activeTurns[selected.id] === plans[selected.id].turnId} />}
           <QueuedFollowUps threadId={selected?.id} activeTurnId={activeTurn} onError={setError} onComplete={restoreComposerFocus} />
           {!selected && <div className="composer-tray"><ProjectMenu variant="chip" projects={projects} selected={project} disabled={!ready || busy} onSelect={selectProject} onAdd={() => void addProject()} /></div>}
           <form className="composer" onSubmit={e => { e.preventDefault(); send(); }} onDragOver={e => { if (e.dataTransfer.types.includes("Files")) e.preventDefault(); }} onDrop={e => { if (e.dataTransfer.files.length || e.dataTransfer.types.includes("Files")) { e.preventDefault(); void addFiles(Array.from(e.dataTransfer.files)); } }}>
@@ -1184,11 +1201,11 @@ export default function Home() {
             </li>)}</ul>}
             {attaching && <p role="status" className="px-3 py-2 text-sm text-muted-foreground">Reading files…</p>}
             {imageBlocked && <p role="alert" className="m-2 text-sm text-destructive">This model accepts text only. Choose an image-capable model or remove the images.</p>}
-            <Textarea ref={composerRef} aria-label="Message Elpis" {...slash.inputProps} onBlur={slash.close} placeholder={continues ? `Message ${title(selected!)}…` : selected ? "Ask for a follow-up" : "Ask Elpis to build, fix or explain something"} value={text} onChange={e => editDraft(e.target.value)} onPaste={e => { const files = Array.from(e.clipboardData.files); if (files.length) { if (!e.clipboardData.getData("text/plain")) e.preventDefault(); void addFiles(files); } }} disabled={!ready || !connected || projectChanging} onKeyDown={e => { if (slash.onKeyDown(e)) return; if (isSendKey(e)) { e.preventDefault(); send(); } }} />
+            <Textarea ref={composerRef} aria-label="Message Elpis" {...slash.inputProps} onBlur={slash.close} placeholder={continues ? `Message ${title(selected!)}…` : selected ? "Ask for a follow-up" : "Ask Elpis to build, fix or explain something"} value={text} onChange={e => editDraft(e.target.value)} onPaste={e => { const files = Array.from(e.clipboardData.files); if (files.length) { if (!e.clipboardData.getData("text/plain")) e.preventDefault(); void addFiles(files); } }} disabled={!ready || !connected || projectChanging} onKeyDown={e => { if (slash.onKeyDown(e)) return; if (e.key === "Tab" && e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey) { e.preventDefault(); cycleMode(); return; } if (isSendKey(e)) { e.preventDefault(); send(); } }} />
             {fileNotice && <div className="flex items-center gap-2 px-3 text-sm text-destructive" role="alert"><span>{fileNotice}</span><Button type="button" variant="ghost" size="icon-xs" aria-label="Dismiss file notice" onClick={() => setFileNotice("")}><X size={14} /></Button></div>}
             <div className="composer-controls"><div className="model-controls"><PlusMenu disabled={!ready || !connected || busy || projectChanging} attachDisabled={attaching || attachments.length >= 3} plan={planMode} onAttach={() => filePickerRef.current?.click()} onPlan={setPlan} />
               {planMode && <PlanPill disabled={!ready || busy} onOff={() => setPlan(false)} />}
-              <PermissionsMenu mode={permissionMode} disabled={!ready || busy || projectChanging || changingPermissions} onChange={next => selected ? void changePermissions(selected.id, next) : setNewMode(next)} />
+              <PermissionsMenu mode={permissionMode} disabled={permissionsLocked} onChange={choosePermissions} />
             </div><div className="composer-right">
               <ContextUsage threadId={selected?.id} />
               <ModelPicker choices={!selected ? choices : selectedChoice?.provider ? [selectedChoice] : choices.filter(choice => !choice.provider)} models={models}
