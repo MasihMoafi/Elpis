@@ -1,5 +1,8 @@
 import type { Thread } from './api';
 
+/** What each state is called wherever a chat's state is shown. */
+export const stateLabels = { working: 'Working', idle: 'Idle', error: 'Error', waiting: 'Needs input', unknown: 'Status unavailable' } as const;
+
 export function agentState(thread: Thread, pending: ReadonlySet<string> = new Set()): 'working' | 'waiting' | 'idle' | 'error' | 'unknown' {
   if (pending.has(thread.id) || thread.status?.activeFlags?.some(flag => flag === 'waitingOnApproval' || flag === 'waitingOnUserInput')) return 'waiting';
   if (thread.status?.type === 'active') return 'working';

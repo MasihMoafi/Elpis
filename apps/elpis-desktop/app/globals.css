@@ -57,7 +57,7 @@ button:disabled { cursor:not-allowed; }
 .workspace-body { display:flex; flex:1; min-width:0; min-height:0; }
 .workspace-content { display:flex; flex-direction:column; flex:1; min-width:0; min-height:0; container:workspace / inline-size; }
 /* The side panel: terminals and browser pages as tabs (components/side-panel.tsx). */
-.side-panel { position:relative; display:flex; flex-direction:column; flex:0 0 auto; width:50%; min-width:320px; max-width:70%; min-height:0; border-inline-start:1px solid var(--border); background:var(--background); }
+.side-panel { position:relative; display:flex; flex-direction:column; flex:0 0 auto; width:50%; min-width:var(--side-min,360px); max-width:70%; min-height:0; border-inline-start:1px solid var(--border); background:var(--background); }
 /* Draggable edges: the side panel's left edge, and the sidebar's right one (components/resize-edge.tsx). */
 .side-resize, .resize-edge { position:absolute; top:0; bottom:0; width:7px; cursor:col-resize; z-index:3; touch-action:none; }
 .side-resize { left:-4px; }
@@ -65,7 +65,7 @@ button:disabled { cursor:not-allowed; }
 @media(max-width:760px) { .sidebar > .resize-edge { display:none; } }
 .side-resize:hover, .side-resize:focus-visible, .resize-edge:hover, .resize-edge:focus-visible, .resize-edge[data-dragging] { background:color-mix(in oklch,var(--primary),transparent 65%); outline:none; }
 .side-header { display:flex; align-items:center; gap:4px; flex-shrink:0; min-height:45px; padding:0 8px; border-bottom:1px solid var(--hairline); }
-.side-close { flex-shrink:0; color:var(--muted-foreground); }
+.side-action { flex-shrink:0; color:var(--muted-foreground); }
 .side-body { display:flex; flex-direction:column; flex:1; min-height:0; min-width:0; }
 .side-empty { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:12px; color:var(--muted-foreground); font-size:13px; }
 .side-empty p { margin:0; } .side-empty div { display:flex; gap:8px; }
@@ -645,7 +645,7 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 /* Browser parity (16 Oct 2026): address states, Annotate, find bar, failure screen, options menu, annotation dock.
  * Page markers and comment numbers share one blue (--annotation) so a number in Elpis matches the one on the page. */
 .browser-panel { --annotation:#2f6fed; }
-.browser-address { position:relative; display:flex; align-items:center; flex:1; min-width:0; }
+.browser-address { position:relative; display:flex; align-items:center; flex:1; min-width:180px; }
 .browser-address input { flex:1; }
 .browser-security { position:absolute; inset-inline-start:7px; z-index:1; display:flex; align-items:center; gap:4px; font-size:11.5px; color:var(--warning); pointer-events:none; }
 .browser-address:has(.browser-security) input { padding-inline-start:90px; }
@@ -691,7 +691,7 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .composer .model-controls { flex-wrap:nowrap; flex-shrink:0; }
 .composer-right { flex:1; justify-content:flex-end; }
 .composer .model-picker-trigger { min-width:0; max-width:300px; flex:0 1 auto; }
-.header-action[aria-pressed="true"] { color:var(--primary); background:var(--selected); }
+.header-action[aria-pressed="true"], .side-action[aria-pressed="true"] { color:var(--primary); background:var(--selected); }
 @container workspace (max-width: 760px) { .composer .model-trigger-provider { display:none; } .composer-pill span { display:none; } }
 /* Slash commands: the menu a leading "/" opens above the composer, as in the ChatGPT app's Codex composer. */
 .slash-menu { position:absolute; left:0; right:0; bottom:calc(100% + 6px); z-index:20; max-height:min(320px, 50vh); overflow-y:auto; }
@@ -753,3 +753,34 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .canvas-side [data-slot="select-trigger"] > span { min-width:0; overflow:hidden; text-overflow:ellipsis; }
 .canvas-side label { display:grid; gap:5px; color:var(--muted-foreground); font-size:12px; }
 .canvas-inspector-actions { display:flex; flex-wrap:wrap; gap:8px; margin-top:4px; }
+
+/* The browser toolbar never squeezes the address field (180px, above): as the panel narrows, Annotate becomes its icon
+ * and open-externally moves into the … menu. The panel's own floor (components/side-panel.tsx) keeps what is left enough. */
+.browser-panel { container:browser-panel / inline-size; }
+@container browser-panel (max-width:459px) {
+  .browser-annotate-label, .browser-security-text { display:none; }
+  .browser-annotate { position:relative; width:28px; padding:0; justify-content:center; }
+  .browser-badge { position:absolute; top:-3px; inset-inline-end:-3px; }
+  .browser-address:has(.browser-security) input { padding-inline-start:28px; }
+}
+@container browser-panel (max-width:394px) { .browser-external { display:none; } }
+
+/* Full view (components/side-panel.tsx): the panel fills the work area and the chat floats over it as a card, folded
+ * to a pill on request. The native page paints over any HTML, so the page, the shell and the annotation bar give up
+ * the card's column (the pill's row) rather than sit under it. */
+.workspace-body { --float-w:400px; --float-h:520px; --float-gap:16px; --float-reserve:calc(var(--float-w) + 2 * var(--float-gap)); --pill-reserve:52px; }
+.side-panel.full { flex:1 1 0; width:auto; max-width:none; }
+.side-panel.full .side-resize { display:none; }
+.full-view > .workspace-content { position:absolute; z-index:6; right:var(--float-gap); bottom:var(--float-gap); display:flex; flex:none; width:var(--float-w); max-width:calc(100% - 2 * var(--float-gap)); height:var(--float-h); max-height:calc(100% - 120px); border:1px solid var(--border); border-radius:12px; background:var(--background); box-shadow:var(--shadow); overflow:hidden; }
+.chat-collapsed > .workspace-content { visibility:hidden; }
+.full-view > .workspace-content .chat-scroll { padding:14px 16px 8px; }
+.full-view > .workspace-content .composer-wrap { padding:6px 12px 12px; }
+/* Narrow as the card is, the message box's controls wrap to a second row rather than cut their labels short. */
+@container workspace (max-width:480px) { .composer-controls { flex-wrap:wrap; row-gap:4px; } .composer-right { flex:1 1 auto; } .composer .model-select:not(.model-picker-trigger) { flex-shrink:0; } }
+.float-chat-bar { display:flex; align-items:center; gap:8px; flex-shrink:0; height:40px; padding:0 6px 0 14px; border-bottom:1px solid var(--hairline); }
+.float-chat-title { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:13px; font-weight:600; }
+.float-chat-pill { position:absolute; z-index:6; right:var(--float-gap); bottom:12px; max-width:min(360px, calc(100% - 2 * var(--float-gap))); gap:10px; border-radius:999px; box-shadow:var(--shadow); }
+.float-chat-pill .agent-state { min-width:0; }
+.float-chat-pill-title { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.side-panel[data-float="card"] :is(.browser-viewport, .annotation-dock, .terminal-body) { margin-inline-end:var(--float-reserve); }
+.side-panel[data-float="pill"] .side-body { padding-bottom:var(--pill-reserve); }

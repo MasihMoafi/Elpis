@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { X } from "lucide-react";
+import { useCallback, useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { Maximize2, Minimize2, X } from "lucide-react";
 import { BrowserIcon, PlusIcon, TerminalIcon } from "@/components/elpis-icons";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -16,15 +16,18 @@ import type { BrowserTab } from "@/lib/desktop";
 export type TerminalTab = { key: string; n: number; cwd: string; threadId?: string };
 type Item = { key: string; kind: "terminal"; terminal: TerminalTab } | { key: string; kind: "browser"; page: BrowserTab };
 
-const MIN_WIDTH = 320;
+/** Narrower than this the browser toolbar could not keep its address field (components/browser-panel.tsx). */
+const MIN_WIDTH = 360;
 
 /** What the side panel holds: terminals (kept here) and browser pages (kept by Electron, shown through `browser`).
  * The panel follows the browser: a page that opens or comes forward opens the panel on it, and the page stays
- * hidden whenever the panel is closed or shows a terminal. */
+ * hidden whenever the panel is closed or shows a terminal. Full view makes it fill the work area; the chat then floats
+ * over it as a card (`chatCollapsed`: a pill instead). */
 export function useSidePanel(browser: Browser) {
   const [open, setOpen] = useState(false);
   const [terminals, setTerminals] = useState<TerminalTab[]>([]);
   const [active, setActive] = useState<string | null>(null);
+  const [full, setFull] = useState(false), [chatCollapsed, setChatCollapsed] = useState(false);
   const order = useRef<string[]>([]);
   const pages = browser.state?.tabs ?? [];
   order.current = mergeOrder(order.current, [...terminals.map(tab => `t:${tab.key}`), ...pages.map(page => `b:${page.id}`)]);
@@ -42,8 +45,13 @@ export function useSidePanel(browser: Browser) {
     setOpen(true); setActive(key);
     if (key.startsWith("b:")) void command("select", { id: key.slice(2) }); else if (visible) void command("hide");
   }, [command, visible]);
-  const closePanel = useCallback(() => { setOpen(false); if (visible) void command("hide"); }, [command, visible]);
+  const closePanel = useCallback(() => { setOpen(false); setFull(false); if (visible) void command("hide"); }, [command, visible]);
   const openPanel = useCallback(() => { setOpen(true); if (shown?.kind === "browser" && !visible) void command("select", { id: shown.page.id }); }, [command, visible, shown]);
+  /** Enters (or, given `false`, leaves) full view; with no argument it flips. Entering opens a closed panel and shows the chat as a card. */
+  const toggleFull = useCallback((next = !full || !open) => {
+    if (next) { setChatCollapsed(false); if (!open) openPanel(); }
+    setFull(next);
+  }, [full, open, openPanel]);
   /** Opens a shell in `cwd`; the tab already opened for this chat is reused. Returns the shell's key. */
   const openTerminal = useCallback((cwd: string, threadId?: string) => {
     const same = threadId ? terminals.find(tab => tab.threadId === threadId) : undefined;
@@ -65,7 +73,14 @@ export function useSidePanel(browser: Browser) {
     if (last) select(last.key); else openTerminal(cwd);
     return true;
   }, [open, shown, items, select, openTerminal, closePanel]);
-  return { open, items, shown, openPanel, closePanel, select, close, openTerminal, openPage, toggleTerminal };
+  // Ctrl+Shift+F on a page reaches the window as a count in the browser's state; each step is one press.
+  const presses = browser.state?.fullView, seen = useRef<number | null>(null);
+  useEffect(() => {
+    if (presses === undefined) return;
+    if (seen.current !== null && presses !== seen.current) toggleFull();
+    seen.current = presses;
+  }, [presses, toggleFull]);
+  return { open, full, chatCollapsed, setChatCollapsed, toggleFull, items, shown, openPanel, closePanel, select, close, openTerminal, openPage, toggleTerminal };
 }
 export type SidePanelState = ReturnType<typeof useSidePanel>;
 
@@ -88,14 +103,17 @@ type Props = {
 };
 
 /** The right-hand panel: its own row of tabs (terminals and browser pages), a "+" that asks which kind, and the
- * shown tab. Resizable from its left edge; closing it keeps the shells running. */
+ * shown tab. Resizable from its left edge; closing it keeps the shells running. In full view it fills the work area
+ * and `data-float` tells the CSS what floats over it (the chat's card or its pill), so the page and the shell leave
+ * that corner free. */
 export function SidePanel({ panel, browser, hasTerminal, dark, cwd, launch, covered, onAttach, imagesAllowed }: Props) {
   const [width, setWidth] = useState<number | null>(null), [resizing, setResizing] = useState(false);
   const element = useRef<HTMLElement>(null), drag = useRef<{ x: number; width: number } | null>(null);
   if (!panel.open) return null;
   const kinds = kindsOf(panel, browser, hasTerminal, cwd), { shown } = panel;
   const resizeTo = (next: number) => setWidth(Math.max(MIN_WIDTH, Math.round(next)));
-  return <section ref={element} className="side-panel" aria-label="Side panel" style={width ? { width } : undefined}>
+  const full = panel.full, floating = full ? panel.chatCollapsed ? "pill" : "card" : undefined;
+  return <section ref={element} className={`side-panel${full ? " full" : ""}`} data-float={floating} aria-label="Side panel" style={{ "--side-min": `${MIN_WIDTH}px`, ...(width && !full ? { width } : {}) } as CSSProperties}>
     <div className="side-resize" role="separator" aria-label="Resize side panel" aria-orientation="vertical" tabIndex={0}
       onKeyDown={event => { if (event.key === "ArrowLeft" || event.key === "ArrowRight") { event.preventDefault(); resizeTo((element.current?.getBoundingClientRect().width ?? 400) + (event.key === "ArrowLeft" ? 32 : -32)); } }}
       onPointerDown={event => { drag.current = { x: event.clientX, width: element.current?.getBoundingClientRect().width ?? 400 }; event.currentTarget.setPointerCapture(event.pointerId); setResizing(true); }}
@@ -115,7 +133,8 @@ export function SidePanel({ panel, browser, hasTerminal, dark, cwd, launch, cove
             closeLabel={`Close ${page.title} tab`} actions={browserTabActions(browser, page, close)} onSelect={select} onClose={close} />;
         })}
       </TabStrip>
-      <Button type="button" variant="ghost" size="icon-sm" className="side-close" aria-label="Close side panel" title="Close side panel (Ctrl+`)" onClick={panel.closePanel}><X size={15} /></Button>
+      <Button type="button" variant="ghost" size="icon-sm" className="side-action" aria-pressed={full} aria-label={full ? "Exit full view" : "Enter full view"} title={full ? "Exit full view (Ctrl+Shift+F)" : "Full view (Ctrl+Shift+F)"} onClick={() => panel.toggleFull()}>{full ? <Minimize2 size={15} /> : <Maximize2 size={15} />}</Button>
+      <Button type="button" variant="ghost" size="icon-sm" className="side-action" aria-label="Close side panel" title="Close side panel (Ctrl+`)" onClick={panel.closePanel}><X size={15} /></Button>
     </div>
     <div className="side-body">
       {shown?.kind === "terminal" && <TerminalView termKey={shown.terminal.key} cwd={shown.terminal.cwd} dark={dark} launch={launch} />}

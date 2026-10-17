@@ -22,6 +22,7 @@ export const SHORTCUTS: Shortcut[] = [
   { id: "next-tab", group: "Navigation", label: "Next chat tab", keys: ["Ctrl+Tab"] },
   { id: "previous-tab", group: "Navigation", label: "Previous chat tab", keys: ["Ctrl+Shift+Tab"] },
   { id: "terminal", group: "App", label: "Toggle terminal", keys: ["Ctrl+`"] },
+  { id: "full-view", group: "App", label: "Toggle full view", keys: ["Ctrl+Shift+F"] },
   { id: "sidebar", group: "App", label: "Toggle sidebar", keys: ["Ctrl+Shift+S", "Ctrl+B"] },
   { id: "copy-folder", group: "App", label: "Copy working directory", keys: ["Ctrl+Shift+C"] },
   { id: "settings", group: "App", label: "Settings", keys: ["Ctrl+,"] },
@@ -50,6 +51,7 @@ export function shortcutFor(event: KeyboardEvent, typing: boolean): { id: string
     if (key === "tab") return { id: "previous-tab" };
     if (key === "a") return { id: "archive" };
     if (key === "c" && !typing) return { id: "copy-folder" };
+    if (key === "f") return { id: "full-view" };
     if (event.code === "BracketLeft") return { id: "previous-chat" };
     if (event.code === "BracketRight") return { id: "next-chat" };
   }

@@ -78,15 +78,15 @@ export function BrowserPanel({ browser, covered, onAttach, imagesAllowed = true 
       <Button type="button" variant="ghost" size="icon-sm" aria-label="Forward" disabled={!active?.canGoForward} onClick={() => void command("forward")}><ArrowRight size={15} /></Button>
       <Button type="button" variant="ghost" size="icon-sm" aria-label={active?.loading ? "Stop loading page" : "Reload page"} onClick={() => void command(active?.loading ? "stop" : "reload")}>{active?.loading ? <Square size={13} /> : <RefreshCw size={14} />}</Button>
       <div className="browser-address">
-        {active?.security === "insecure" && <span className="browser-security" title="This site does not use a secure connection"><TriangleAlert size={12} aria-hidden="true" />Not secure</span>}
+        {active?.security === "insecure" && <span className="browser-security" title="This site does not use a secure connection"><TriangleAlert size={12} aria-hidden="true" /><span className="browser-security-text">Not secure</span></span>}
         <Input ref={address} aria-label="Search or enter a URL" placeholder="Search or enter a URL" value={value} onChange={e => active && setEdit({ tab: active.id, value: e.target.value })} onKeyDown={e => { if (e.key === "Escape") { setEdit(null); address.current?.blur(); } }} spellCheck={false} autoComplete="off" />
         {active && active.zoom !== 100 && <button type="button" className="browser-zoom" title="Reset zoom to 100%" onClick={() => void command("zoom", { value: "reset" })}>{active.zoom}%</button>}
       </div>
       <Button type="button" variant="ghost" size="sm" className="browser-annotate" aria-pressed={state.annotating} aria-label="Annotate this page" title="Annotate: point at items to ask about or change"
         disabled={!active || !/^https?:/.test(active.url)} onClick={() => void command("annotate")}>
-        <SquareDashedMousePointer size={15} aria-hidden="true" />Annotate{!state.annotating && !!active?.comments && <span className="browser-badge" aria-label={`${active.comments} pending`}>{active.comments}</span>}
+        <SquareDashedMousePointer size={15} aria-hidden="true" /><span className="browser-annotate-label">Annotate</span>{!state.annotating && !!active?.comments && <span className="browser-badge" aria-label={`${active.comments} pending`}>{active.comments}</span>}
       </Button>
-      <Button type="button" variant="ghost" size="icon-sm" aria-label="Open in external browser" title="Open in external browser" disabled={!active || active.url === "about:blank"} onClick={() => void command("external")}><ExternalLink size={14} /></Button>
+      <Button type="button" variant="ghost" size="icon-sm" className="browser-external" aria-label="Open in external browser" title="Open in external browser" disabled={!active || active.url === "about:blank"} onClick={() => void command("external")}><ExternalLink size={14} /></Button>
       <BrowserOptions browser={browser} tab={active} onNotice={setNotice} onAttach={onAttach} imagesAllowed={imagesAllowed} />
     </form>
     {state.agent && (!state.agent.enabled || state.agent.tabId) && <div role="status" className="alert flex shrink-0 items-center justify-between gap-3 border-b border-border bg-muted px-3 py-2 text-sm text-foreground">
@@ -145,6 +145,7 @@ function BrowserOptions({ browser, tab, onNotice, onAttach, imagesAllowed }: { b
     <DropdownMenuContent className="browser-options">
       <DropdownMenuItem disabled={!page} onClick={() => void command("findOpen")}>Find in page<kbd className="kbd-hint" aria-hidden="true">Ctrl+F</kbd></DropdownMenuItem>
       <DropdownMenuItem disabled={!page} onClick={() => void command("print")}>Print<kbd className="kbd-hint" aria-hidden="true">Ctrl+P</kbd></DropdownMenuItem>
+      <DropdownMenuItem disabled={!page} onClick={() => void command("external")}>Open in external browser</DropdownMenuItem>
       <div role="separator" className="browser-options-separator" />
       <div className="browser-zoom-row" role="group" aria-label="Zoom">
         <span>Zoom</span>

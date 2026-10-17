@@ -44,10 +44,11 @@ import { appStorage, readProjects, saveProjects, type Project } from "@/lib/proj
 import { ResizeEdge } from "@/components/resize-edge";
 import { TaskList, type TaskPlan } from "@/components/task-list";
 import { AgentsCanvas } from "@/components/agents-canvas";
-import { agentState, mergeListedThreads } from "@/lib/agents";
+import { agentState, mergeListedThreads, stateLabels } from "@/lib/agents";
 import { insertTranscript } from "@/lib/dictation";
 import { useBrowser } from "@/components/browser-panel";
 import { SidePanel, useSidePanel } from "@/components/side-panel";
+import { FloatChatBar, FloatChatPill } from "@/components/float-chat";
 import { Tab, TabStrip } from "@/components/tab-strip";
 import { activate, activeTab, addTab, closeTab, cycle, followChat, forgetChats, makeTab, readTabs, renameTabs, startTabs, tabFor, writeTabs, type ChatTab, type ChatTabs } from "@/lib/chat-tabs";
 import { readDraft, writeDraft } from "@/lib/drafts";
@@ -269,8 +270,10 @@ export default function Home() {
   const [tuiLaunch, setTuiLaunch] = useState<{ key: string; threadId: string; token: number } | null>(null);
   useEffect(() => { setHasTerminal(!!window.elpisDesktop?.terminal); }, []);
   const panelShown = desktop && side.open && view !== "settings";
+  /** Full view (the side panel's): the panel fills the work area and the chat floats over it, as a card or folded to a pill. */
+  const fullView = panelShown && side.full;
   /** A window too narrow for chat and panel side by side shows the panel alone; the chat comes back when it is needed. */
-  const showChat = () => { if (matchMedia("(max-width: 1000px)").matches) side.closePanel(); };
+  const showChat = () => { if (side.full) side.setChatCollapsed(false); else if (matchMedia("(max-width: 1000px)").matches) side.closePanel(); };
   useEffect(() => { if (selected?.id) showChat(); }, [selected?.id]); // eslint-disable-line react-hooks/exhaustive-deps
   const [pendingInputOpen, setPendingInputOpen] = useState(false);
   const pendingInputButton = useRef<HTMLButtonElement>(null);
@@ -577,6 +580,13 @@ export default function Home() {
   }, [relatedIds.join(",")]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { const element = scroll.current; if (!element) return; if (restoreScroll.current) { const previous = restoreScroll.current; restoreScroll.current = null; element.scrollTop = previous.top + element.scrollHeight - previous.height; } else if (stickToBottom.current) element.scrollTo({ top: element.scrollHeight }); }, [entries, selected?.id]);
 
+  // A chat that was at its end stays there when its box changes size (full view turns the column into a card).
+  useEffect(() => {
+    const element = scroll.current, content = element?.firstElementChild; if (!element || !content) return;
+    const observer = new ResizeObserver(() => { if (stickToBottom.current) element.scrollTo({ top: element.scrollHeight }); });
+    observer.observe(element); observer.observe(content); return () => observer.disconnect();
+  }, [view]);
+
   const activeTurn = selected ? activeTurns[selected.id] : undefined;
   // A new chat runs with the configured defaults until a mode is chosen, so the button shows those.
   const configuredMode: PermissionMode = providerSettings?.options?.approvalPolicy !== "never" ? "ask"
@@ -684,7 +694,7 @@ export default function Home() {
     try { await saveProjects(updated, current); setProjects(updated); if (!current) { setProjectId(null); setCwd(""); } }
     catch (e) { setError(e instanceof Error ? e.message : String(e)); }
   }
-  const show = (next: View) => { if (next === "settings") { setSettingsVisited(true); setSettingsNavigation(value => value + 1); } if (next === "newAgent") setNewAgentVisited(true); setView(next); setSidebar(false); };
+  const show = (next: View) => { if (next !== "chat") side.toggleFull(false); if (next === "settings") { setSettingsVisited(true); setSettingsNavigation(value => value + 1); } if (next === "newAgent") setNewAgentVisited(true); setView(next); setSidebar(false); };
   const manageConnections = () => { setSettingsSection("providers"); show("settings"); };
   /** ChatGPT's "Fork chat from here": a new chat with the history through that turn, opened at once. */
   async function forkFrom(thread: Thread, lastTurnId: string) {
@@ -1009,6 +1019,7 @@ export default function Home() {
     else if (id === "new-tab" && desktop) { newChatTab(); }
     else if (id === "close-tab" && desktop && view === "chat") closeChatTab(tabs.activeId);
     else if ((id === "next-tab" || id === "previous-tab") && desktop && view === "chat") cycleTabs(id === "next-tab" ? 1 : -1);
+    else if (id === "full-view" && desktop) { if (view !== "chat") show("chat"); side.toggleFull(view === "chat" ? undefined : true); }
     else if (id === "terminal" && hasTerminal) { const away = view !== "chat"; if (away) show("chat"); if (!side.toggleTerminal(selected?.cwd || cwd, !away)) focusComposer(); }
   };
   function togglePin(thread: Thread) {
@@ -1087,6 +1098,8 @@ export default function Home() {
     return filtered.filter(c => c.parentThreadId === parentId).map(child => <div key={child.id}>{threadRow(child, depth)}{descendants(child.id, depth + 1, next)}</div>);
   }
   const heading = view === "chat" ? (selected ? title(selected) : "") : { agents: "Agents", canvas: "Canvas", newAgent: "New agent", settings: "Settings" }[view];
+  const chatName = selected ? title(selected) : "New chat";
+  const chatState = selected ? agentState(selected, waitingIds) : "idle", floatState = activeTurn && chatState === "idle" ? "working" : chatState;
   const meta = selected ? [selected.agentNickname, selected.agentRole && selected.agentRole !== "default" ? selected.agentRole : null].filter(Boolean).join(" · ") : "";
 
   return <div className={`app-shell${dark ? " dark" : ""}${desktop ? " has-title-bar" : ""}${sidebarCollapsed ? " sidebar-collapsed" : ""}${view === "settings" ? " settings-mode" : ""}`} style={{ "--sidebar-width": `${sidebarWidth}px` } as CSSProperties}>
@@ -1164,7 +1177,8 @@ export default function Home() {
           return <div key={approvalDraftKey(approval)} className="pending-request"><div className="pending-request-heading"><p>{name}</p>{approval.params.threadId && <Button variant="ghost" size="sm" onClick={() => { setPendingInputOpen(false); openById(approval.params.threadId!); }}>Open chat</Button>}</div><ApprovalCard approval={approval} answer={(id, body) => answer(id, body, approvalDraftKey(approval))} busy={!!pendingDrafts[approvalDraftKey(approval)]} answers={approvalDrafts[approvalDraftKey(approval)]?.answers ?? {}} onAnswerChange={(id, value) => draftAnswer(approval, id, value)} /></div>;
         })}</div>
       </section>}
-      <div className={`workspace-body${panelShown ? " panel-open" : ""}${view === "settings" ? " no-browser" : ""}`}><div className="workspace-content">
+      <div className={`workspace-body${panelShown ? " panel-open" : ""}${fullView ? ` full-view${side.chatCollapsed ? " chat-collapsed" : ""}` : ""}${view === "settings" ? " no-browser" : ""}`}><div className="workspace-content" {...(fullView ? { role: "region", "aria-label": "Floating chat" } : {})}>
+      {fullView && <FloatChatBar title={chatName} onCollapse={() => side.setChatCollapsed(true)} />}
       {settingsVisited && <div className="page-scroll" hidden={view !== "settings"}><SettingsView initialTab={settingsSection} navigationKey={settingsNavigation} active={view === "settings"} threadId={selected?.id} accountRefresh={accountRefresh} theme={theme} onTheme={setTheme} onUnarchived={unarchived} onDeleteThread={deleteThread} onBack={() => { show("chat"); requestAnimationFrame(focusComposer); }} onProvidersChanged={async () => { await reloadSettings(); void refreshModels(); }} /></div>}
       {view === "canvas" && <AgentsCanvas models={models} cwd={newChatFolder(cwd) || undefined} dark={dark} onOpenChat={id => { show("chat"); void openById(id); }} />}
       {view === "agents" && <div className="page-scroll"><AgentsView threads={threads} activity={activity} models={models} providers={providerSettings?.providers} loading={agentsLoading} pendingThreadIds={approvals.map(approval => approval.params.threadId ?? approval.ownerThreadId)} moreConversations={!!nextCursor} loadingMore={moreLoading} onMoreConversations={loadMoreConversations} childCursors={childCursors} loadingChildren={loadingChildren} onMoreAgents={id => void loadChildren(id, childCursors[id] ?? undefined, false)} onOpen={loadThread} onStop={stop} onDelete={deleteThread} onNewAgent={() => show("newAgent")} /></div>}
@@ -1239,13 +1253,13 @@ export default function Home() {
         <button className={`team-row root${selected.id === teamRoot.id ? " active" : ""}`} onClick={() => openById(teamRoot.id)}><span className="team-state"><i /></span><span className="team-title">{title(teamRoot)}</span><small>Main chat</small></button>
         {team.map(thread => { const state = agentState(thread, waitingIds);
           return <button key={thread.id} className={`team-row ${state}${selected.id === thread.id ? " active" : ""}`} onClick={() => loadThread(thread)} title={activity[thread.id] || title(thread)}>
-            <span className="team-state" aria-label={{ waiting: "Needs input", working: "Working", error: "Error", idle: "Idle", unknown: "Status unavailable" }[state]}><i /></span>
+            <span className="team-state" aria-label={stateLabels[state]}><i /></span>
             <span className="team-title">{title(thread)}{thread.agentNickname && thread.agentNickname !== title(thread) && <em>{thread.agentNickname}</em>}</span>
             <small>{state === "working" && activity[thread.id] ? activity[thread.id] : [modelLabel(thread.model, models), thread.reasoningEffort].filter(Boolean).join(" · ")}</small>
           </button>; })}
       </aside>}
       </div>}
-      </div>{desktop && <SidePanel panel={side} browser={browser} hasTerminal={hasTerminal} dark={dark} cwd={selected?.cwd || cwd} launch={tuiLaunch} covered={pendingInputOpen || sidebar || view === "settings"} onAttach={attachFromBrowser} imagesAllowed={!(knownModel?.inputModalities && !knownModel.inputModalities.includes("image"))} />}</div>
+      </div>{fullView && side.chatCollapsed && <FloatChatPill title={chatName} state={floatState} onRestore={() => side.setChatCollapsed(false)} />}{desktop && <SidePanel panel={side} browser={browser} hasTerminal={hasTerminal} dark={dark} cwd={selected?.cwd || cwd} launch={tuiLaunch} covered={pendingInputOpen || sidebar || view === "settings"} onAttach={attachFromBrowser} imagesAllowed={!(knownModel?.inputModalities && !knownModel.inputModalities.includes("image"))} />}</div>
     </main>
   </div>;
 }

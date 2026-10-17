@@ -4,10 +4,10 @@ import { useState } from "react";
 import { Bot, MessageSquare, Plus, Square } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ThreadActions } from "@/components/thread-actions";
-import { agentState } from "@/lib/agents";
+import { agentState, stateLabels } from "@/lib/agents";
 import { isAgent, isUnlinkedAgent, modelLabel, providerLabel, title, type Model, type ProviderSettings, type Thread } from "@/lib/api";
 
-const stateLabel = (thread: Thread) => ({ working: "Working", idle: "Idle", error: "Error", waiting: "Needs input", unknown: "Status unavailable" })[agentState(thread)];
+const stateLabel = (thread: Thread) => stateLabels[agentState(thread)];
 type Filter = "all" | "working" | "waiting" | "idle" | "error";
 type Props = {
   threads: Thread[]; activity: Record<string, string>; models: Model[]; providers?: ProviderSettings["providers"]; loading: boolean;
