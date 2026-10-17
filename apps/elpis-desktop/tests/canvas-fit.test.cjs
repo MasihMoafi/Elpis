@@ -30,6 +30,22 @@ for (const [width, height] of [[1280, 800], [900, 700]]) for (const theme of ['l
   } finally { await f.close(); }
 });
 
+// The live run (tests/canvas-live.runtime.mjs) found the finished board's run clock taller than its line box.
+for (const theme of ['light', 'dark']) test(`a finished run's board fits in both views: clock, log and statuses, ${theme}`, async () => {
+  const f = await openCanvas({ width: 1440, height: 900 }); const { page, canvas } = f;
+  try {
+    if (await page.locator('html').evaluate(el => el.classList.contains('dark')) !== (theme === 'dark')) await chooseTheme(page, theme);
+    await canvas.getByRole('button', { name: /^Voting/ }).click();
+    await canvas.getByRole('button', { name: 'Run graph', exact: true }).click();
+    await page.waitForFunction(() => /Finished/.test(document.querySelector('.canvas-header')?.textContent ?? ''), null, { timeout: 20000 });
+    await canvas.getByRole('region', { name: 'Run clock' }).or(canvas.getByLabel('Run clock')).first().waitFor();
+    for (const iso of [false, true]) {
+      await canvas.getByRole('button', { name: iso ? 'Isometric' : 'Flat', exact: true }).click(); await f.fit();
+      await assertUiFit(canvas, `finished ${iso ? '3D' : '2D'} board`);
+    }
+  } finally { await f.close(); }
+});
+
 test('ui-fit rejects clipped text, overlapping text and content outside the viewport; accepts titled ellipsis', async () => {
   const f = await openCanvas();
   try {

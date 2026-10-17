@@ -932,7 +932,7 @@ button.trace-head:hover .trace-text { text-decoration:underline; }
 /* During a run, as on Deus Ex's hacking screen: the clock top right, the event log bottom left beside the zoom buttons. */
 .canvas-hud { display:grid; justify-items:end; gap:0; padding:6px 12px 8px; border:1px solid var(--hairline); border-left:3px solid var(--context); border-radius:8px; background:var(--card); box-shadow:var(--shadow); pointer-events:none; }
 .canvas-hud span { font:500 10.5px/1.4 var(--mono); letter-spacing:.12em; text-transform:uppercase; color:var(--muted-foreground); }
-.canvas-hud strong { font:600 26px/1.05 var(--mono); font-variant-numeric:tabular-nums; color:var(--foreground); }
+.canvas-hud strong { font:600 26px/normal var(--mono); font-variant-numeric:tabular-nums; color:var(--foreground); }
 .canvas-board .react-flow__panel.canvas-hud, .canvas-board .react-flow__panel.canvas-log-panel { pointer-events:none; }
 .canvas-board .react-flow__panel.canvas-log-panel { margin-left:56px; }
 .canvas-log { display:grid; gap:4px; width:min(340px, 40vw); margin:0; padding:0; list-style:none; }
