@@ -27,7 +27,7 @@ export function Tab({ icon, label, title, active, chat, preview, closeLabel, act
 }) {
   const area = <div className={`task-tab${chat ? " chat-tab" : ""}${preview ? " preview" : ""}${active ? " active" : ""}`} />;
   const content = (menu: ReactNode) => <>
-    <button type="button" role="tab" aria-selected={active} title={title ?? label} onClick={onSelect}>{icon}<span>{label}</span></button>
+    <button type="button" role="tab" aria-selected={active} title={title ?? label} onClick={onSelect}>{icon}<span title={label}>{label}</span></button>
     {trailing && menu}
     <Button type="button" variant="ghost" size="icon-xs" aria-label={closeLabel} onClick={onClose}><X size={12} /></Button>
   </>;
