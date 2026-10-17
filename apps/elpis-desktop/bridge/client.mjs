@@ -6,7 +6,7 @@ import path from 'node:path';
 import { ragMessage } from './rag-command.mjs';
 import { acceptsPastedKey, BUILT_IN_KEY_PROVIDERS, configHome, providerDefinition, providerSettingsSnapshot, providerEdits, privateConfigFile } from './provider-settings.mjs';
 import { saveProviderKey, savedProviderKey, savedProviderKeyIds } from './provider-keys.mjs';
-import { settingsSnapshot, tokenUsageSnapshot, contextLedger, restoredTokenUsage, contextSwitchesSnapshot, CONTEXT_SWITCH_KEYS, smartPruneSnapshot, providersSnapshot, mcpSnapshot, optionEdits, hooksSnapshot } from './elpis-features.mjs';
+import { settingsSnapshot, tokenUsageSnapshot, contextLedger, restoredTokenUsage, rolloutShares, contextSwitchesSnapshot, CONTEXT_SWITCH_KEYS, smartPruneSnapshot, providersSnapshot, mcpSnapshot, optionEdits, hooksSnapshot } from './elpis-features.mjs';
 import { replacementEligibility } from '../lib/turn-replacement.ts';
 import { providerModels } from './provider-models.mjs';
 import { attachmentInput, recordedMedia } from './attachments.mjs';
@@ -142,7 +142,7 @@ const MCP_NAME = /^[A-Za-z0-9_-]{1,64}$/;
 export class DesktopClient extends EventEmitter {
   #socket; #pending = new Map(); #owned = new Set(); #known = new Set(); #models = new Set();
   #approvals = new Map(); #mutating = new Set(); #closed = false; #ready = false; #attaching = new Map();
-  #context = new Map(); #restored = new Map(); #side = new Set();
+  #context = new Map(); #restored = new Map(); #shares = new Map(); #side = new Set();
   #workflowTitles = new Map(); #workflowLookups = new Map();
   #checkingApprovals = new Map();
   #settingsWaiters = new Map();
@@ -746,15 +746,18 @@ export class DesktopClient extends EventEmitter {
     threadId(id);
     const { thread } = await this.#rpc('thread/read', { threadId: id, includeTurns: false });
     if (thread?.id !== id) throw new BridgeError('Elpis returned another thread', 502);
-    this.#decorate(thread);
+    const { desktopAccess } = this.#decorate(thread);
     const snapshot = this.#context.get(id) ?? {};
     // Before this connection has live usage, the last usage the chat's rollout recorded (what a cold resume restores).
     const restored = snapshot.tokenUsage ? null : await this.#restoredUsage(thread.path);
     const tokenUsage = snapshot.tokenUsage ?? restored;
     return {
-      threadId: id, tokenUsage, smartPrune: snapshot.smartPrune ?? null, ledger: contextLedger(tokenUsage),
+      threadId: id, tokenUsage, smartPrune: snapshot.smartPrune ?? null, ledger: contextLedger(tokenUsage, saved),
+      // The ledger's Compact session, as the terminal's /compact: only a chat that is idle and takes turns here.
+      compact: thread.status?.type === 'active' ? { available: false, reason: 'Available when Elpis finishes this turn' }
+        : desktopAccess.mode === 'continue' ? { available: false, reason: 'Only this agent\'s parent can compact it' } : { available: true },
       availability: { tokenUsage: snapshot.tokenUsage ? 'live' : restored ? 'restored' : 'unavailable', smartPrune: snapshot.smartPrune ? 'live' : 'unavailable' },
-      reason: 'Live usage comes from events this app connection receives; before them, the last usage the chat\'s rollout recorded. Category shares come with the next request.',
+      reason: 'Live usage comes from events this app connection receives; before them, the last usage the chat\'s rollout recorded. Until the engine reports its category shares for a request, they are estimated from the chat\'s saved transcript.',
     };
   }
   async #restoredUsage(file) {
@@ -763,12 +766,23 @@ export class DesktopClient extends EventEmitter {
     const key = `${stat.size}:${stat.mtimeMs}`, cached = this.#restored.get(file);
     if (cached?.key === key) return cached.value;
     const value = await restoredTokenUsage(file);
+    // The TUI has the shares only once its own process has seen a request; for a chat this app has not seen run, the saved transcript stands in.
+    const saved = tokenUsage && !tokenUsage.contextAttribution ? await this.#savedShares(thread.path) : null;
     this.#restored.set(file, { key, value });
     return value;
   }
   /** The Context Ledger's Smart Prune, Subagents and RAG switches (elpis-features.mjs `contextSwitchesSnapshot`). */
   async contextSwitches() { return contextSwitchesSnapshot(await this.#rpc('config/read', { includeLayers: true })); }
   /** Writes the switches as the TUI ledger does: one config key each, reloaded so open chats use it from their next turn. */
+  async #savedShares(file) {
+    const stat = typeof file === 'string' ? await fs.promises.stat(file).catch(() => null) : null;
+    if (!stat?.isFile()) return null;
+    const key = `${stat.size}:${stat.mtimeMs}`, cached = this.#shares.get(file);
+    if (cached?.key === key) return cached.value;
+    const value = await rolloutShares(file);
+    this.#shares.set(file, { key, value });
+    return value;
+  }
   async saveContextSwitches(input) {
     object(input, ['version', ...Object.keys(CONTEXT_SWITCH_KEYS)]);
     text(input.version, 'settings version', 200);

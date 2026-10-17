@@ -935,6 +935,63 @@ test('an old chat shows the last usage its rollout recorded, plain or compressed
   client.close();
 });
 
+
+test('an old chat shows category shares estimated from its saved transcript, until the engine sends its own', async () => {
+  const { rolloutShares, contextLedger } = await import('./elpis-features.mjs');
+  const temp = await fs.mkdtemp(path.join(os.tmpdir(), 'elpis-rollout-shares-'));
+  const record = (type, payload) => JSON.stringify({ timestamp: '2026-10-17T00:00:00Z', type, payload });
+  const item = payload => record('response_item', payload);
+  const text = (role, kind, body) => item({ type: 'message', role, content: [{ type: kind, text: body }] });
+  const count = (total, window = 20000) => record('event_msg', { type: 'token_count', info: { total_token_usage: { total_tokens: total }, last_token_usage: { total_tokens: total }, model_context_window: window } });
+  // The engine's classifier (core elpis_context_attribution.rs) on bytes ÷ 4, rounded up, per item.
+  const lines = [record('session_meta', { id: ROOT, base_instructions: { text: 'S'.repeat(400) } }),
+    text('developer', 'input_text', 'D'.repeat(800)), text('user', 'input_text', 'U'.repeat(40)), text('assistant', 'output_text', 'A'.repeat(100)),
+    item({ type: 'reasoning', summary: [], encrypted_content: 'E'.repeat(2000) }),
+    item({ type: 'function_call', name: 'exec', arguments: 'a'.repeat(87), call_id: 'c1' }),
+    item({ type: 'function_call_output', call_id: 'c1', output: 'R'.repeat(3998) }),
+    count(2000)];
+  const write = async (name, rows) => { const file = path.join(temp, name); await fs.writeFile(file, rows.join('\n') + '\n'); return file; };
+  const plain = await write('rollout-a.jsonl', lines);
+  const shares = await rolloutShares(plain);
+  assert.deepEqual(shares, { systemInstructions: 100, developerMessages: 200, userMessages: 10, agentMessages: 25, reasoning: 213, toolCalls: 25, toolResults: 1000, toolDefinitions: 0, outputSchema: 0, unrecognizedItems: 0 },
+    'each item counted as the engine counts it: text bytes ÷ 4, a reasoning blob by its decoded size, a call by name, namespace and arguments');
+  const usage = total => ({ last: { totalTokens: total }, modelContextWindow: 20000 });
+  const ledger = contextLedger(usage(2000), shares);
+  assert.deepEqual(ledger.categories.map(row => [row.label, row.tokens]), [
+    ['User messages', 10], ['Agent messages', 25], ['Reasoning + compaction', 213], ['Tool calls', 25], ['Tool results', 1000],
+    ['System instructions', 100], ['Developer messages', 200], ['Tool definitions + schema', 427]], 'what the transcript cannot hold (the tool definitions) is the rest of the measured total');
+  assert.equal(ledger.basis, 'transcript'); assert.equal(ledger.categories.reduce((sum, row) => sum + row.tokens, 0), 2000);
+  const engine = contextLedger({ ...usage(2000), contextAttribution: { userMessages: 5, toolDefinitions: 5, estimatedTotal: 10 } }, shares);
+  assert.equal(engine.basis, 'engine', 'the engine\'s own shares win over the transcript'); assert.deepEqual(engine.categories.map(row => row.tokens), [1000, 1000]);
+  assert.deepEqual(contextLedger(usage(2000), null), { used: 2000, window: 20000, categories: [] });
+
+  // A transcript that cannot be what the model last saw is not attributed: far more than was measured, a compaction without its
+  // replacement history, a rolled-back turn. With the replacement history, only what follows it counts.
+  assert.equal(contextLedger(usage(1000), shares).categories.length, 0, 'the transcript is bigger than the measured context (history was shortened): unavailable');
+  assert.equal(await rolloutShares(await write('rollout-b.jsonl', [...lines, record('compacted', { message: 'summary' })])), null);
+  assert.equal(await rolloutShares(await write('rollout-c.jsonl', [...lines, record('event_msg', { type: 'thread_rolled_back', num_turns: 1 })])), null);
+  const compacted = await rolloutShares(await write('rollout-d.jsonl', [...lines, record('compacted', { message: 'summary', replacement_history: [{ type: 'message', role: 'user', content: [{ type: 'input_text', text: 'U'.repeat(80) }] }], window_number: 2 }), text('assistant', 'output_text', 'A'.repeat(40))]));
+  assert.deepEqual([compacted.userMessages, compacted.agentMessages, compacted.toolResults, compacted.systemInstructions], [20, 10, 0, 100]);
+  for (const bad of [null, 'rollout.jsonl', path.join(temp, 'missing.jsonl'), path.join(temp, 'notes.txt')]) assert.equal(await rolloutShares(bad), null, `${bad} is not read`);
+
+  // Through the bridge: a chat opened from its rollout has its shares at once, marked as estimated; the engine's replace them.
+  const { client, socket, threads } = fixture(); await client.initialize();
+  threads.get(ROOT).path = plain;
+  const opened = await client.context(ROOT);
+  assert.equal(opened.ledger.basis, 'transcript'); assert.equal(opened.ledger.used, 2000);
+  assert.equal(opened.ledger.categories.find(row => row.id === 'toolResults').tokens, 1000);
+  assert.equal(opened.tokenUsage.contextAttribution, null, 'the usage itself still says no shares were reported');
+  // The ledger's Compact session, as the terminal's /compact: not while the chat is in the middle of a turn.
+  assert.deepEqual(opened.compact, { available: true });
+  threads.get(ROOT).status = { type: 'active' };
+  assert.deepEqual((await client.context(ROOT)).compact, { available: false, reason: 'Available when Elpis finishes this turn' });
+  threads.get(ROOT).status = { type: 'idle' };
+  socket.emit('message', JSON.stringify({ method: 'thread/tokenUsage/updated', params: { threadId: ROOT, tokenUsage: { last: { totalTokens: 2000 }, modelContextWindow: 20000, contextAttribution: { userMessages: 1, toolResults: 3, estimatedTotal: 4 } } } }));
+  const live = await client.context(ROOT);
+  assert.equal(live.ledger.basis, 'engine'); assert.deepEqual(live.ledger.categories.map(row => [row.id, row.tokens]), [['userMessages', 500], ['toolResults', 1500]]);
+  client.close();
+});
+
 test('the ledger switches write the keys the TUI ledger writes: Smart Prune and Subagents features, and the rag MCP server', async t => {
   const { client, socket, configRead } = fixture(); await client.initialize();
   const writes = () => socket.sent.filter(message => message.method === 'config/batchWrite').map(message => message.params);
