@@ -12,7 +12,8 @@ type Position = { x: number; y: number };
 export type CanvasNode = { id: string; type: "agent"; position: Position; data: AgentData } | { id: string; type: "note"; position: Position; data: NoteData }
   | { id: typeof MOTHER; type: "mother"; position: Position; data: Record<string, never> };
 export type CanvasEdge = { id: string; source: string; target: string };
-/** The Mother's settings, for the whole run: a brief every agent gets, and the model of her chat (the run's root). */
+/** The Mother's settings, for the whole run: its goal (`brief`), which every agent gets and from which Elpis fills in
+ * what the user left empty, and the model of her chat (the run's root). */
 export type MotherSettings = { brief: string; model: string | null; provider: string | null };
 /** `maxAgents` is the most agents the graph may hold; `template` is the architecture it was loaded from. */
 export type CanvasGraph = { name: string; nodes: CanvasNode[]; edges: CanvasEdge[]; maxAgents?: number; template?: string; mother?: MotherSettings };
@@ -233,8 +234,8 @@ export function runTasks(graph: CanvasGraph): { tasks: RunTask[] } | { error: st
   const ids = new Set(agents.map(node => node.id));
   for (const node of agents) {
     if (!node.data.title.trim()) return { error: "Every agent needs a name." };
-    if (!node.data.instruction.trim()) return { error: `“${node.data.title}” needs a prompt.` };
-    if (!node.data.writeScopes.length) return { error: `“${node.data.title}” needs a folder it may write: choose one under May write.` };
+    if (!node.data.instruction.trim()) return { error: `“${node.data.title}” has no prompt: write one, or give the run a goal (Mother) and Elpis fills it in.` };
+    if (!node.data.writeScopes.length) return { error: `“${node.data.title}” has no folder it may write: choose one, or give the run a goal (Mother) and Elpis fills it in.` };
     if (node.data.provider && !node.data.model) return { error: `“${node.data.title}” needs a model from its provider.` };
   }
   const brief = graph.mother?.brief.trim();
@@ -244,7 +245,7 @@ export function runTasks(graph: CanvasGraph): { tasks: RunTask[] } | { error: st
     const model = { ...(node.data.provider ? { provider: node.data.provider } : {}), ...(node.data.model ? { model: node.data.model } : {}) };
     return [
       // Every agent gets the Mother's brief first, then its own prompt.
-      { id: node.id, kind: "implement" as const, title, instruction: [brief && `Brief for the whole run: ${brief}`, prompt].filter(Boolean).join("\n\n"),
+      { id: node.id, kind: "implement" as const, title, instruction: [brief && `Goal of the whole run: ${brief}`, prompt].filter(Boolean).join("\n\n"),
         dependsOn: graph.edges.filter(edge => edge.target === node.id && ids.has(edge.source)).map(edge => checkOf(edge.source)),
         writeScopes: node.data.writeScopes, acceptanceCriteria: criteria, ...model, ...(node.data.effort ? { reasoningEffort: node.data.effort } : {}) },
       { id: checkOf(node.id), kind: "verify" as const, title: `Check: ${title}`.slice(0, 256),
@@ -252,6 +253,42 @@ export function runTasks(graph: CanvasGraph): { tasks: RunTask[] } | { error: st
         dependsOn: [node.id], writeScopes: [], acceptanceCriteria: [`Each of “${title}”'s criteria is shown to hold or not, with evidence`], ...model },
     ];
   }) };
+}
+
+/** What Elpis designs from a goal (POST /api/canvas/plan, bridge/canvas-plan.mjs): the whole team, each agent keyed
+ * (an existing agent keeps its id as its key) and wired by `waitsFor`. */
+export type Plan = { name: string; agents: { key: string; title: string; prompt: string; folders: string[]; doneWhen: string[]; waitsFor: string[] }[] };
+/** The board as the planner reads it. */
+export const boardForPlan = (graph: CanvasGraph) => agentsOf(graph).map(node => ({ key: node.id, title: node.data.title, prompt: node.data.instruction, folders: node.data.writeScopes, doneWhen: node.data.acceptanceCriteria,
+  waitsFor: graph.edges.filter(edge => edge.target === node.id).map(edge => edge.source) }));
+/** The board after a plan: agents the plan keeps are updated in place, new ones are added, ones it leaves out are
+ * removed, and the wires are the plan's. Models and thinking levels stay; notes stay. New agents are laid out in run
+ * order. */
+export function applyPlan(graph: CanvasGraph, plan: Plan): CanvasGraph {
+  const kept = new Map(agentsOf(graph).map(node => [node.id, node])), ids = new Map<string, string>();
+  const agents = plan.agents.map(item => {
+    const old = kept.get(item.key), made = old ?? agent(item.title, item.prompt);
+    ids.set(item.key, made.id);
+    // What the plan leaves empty keeps what the agent had.
+    const data = made.data as AgentData;
+    return { ...made, data: { ...data, title: item.title || data.title, instruction: item.prompt || data.instruction, writeScopes: item.folders.length ? item.folders : data.writeScopes, acceptanceCriteria: item.doneWhen.length ? item.doneWhen : data.acceptanceCriteria } } as CanvasNode;
+  });
+  const edges = plan.agents.flatMap(item => item.waitsFor.filter(source => ids.has(source)).map(source => ({ id: `${ids.get(source)}->${ids.get(item.key)}`, source: ids.get(source)!, target: ids.get(item.key)! })));
+  // A fresh team is laid out in run order; on a board the user laid out, only new agents are placed: right of what
+  // they wait for, else below the rest.
+  const reused = agents.filter(node => kept.has(node.id));
+  if (!reused.length) return arrange({ ...graph, name: plan.name || graph.name, nodes: [...graph.nodes.filter(node => node.type !== "agent"), ...agents], edges });
+  const placed = new Map(reused.map(node => [node.id, node.position]));
+  const left = Math.min(...reused.map(node => node.position.x));
+  let below = Math.max(...reused.map(node => node.position.y));
+  const positioned = agents.map((node, index) => {
+    if (placed.has(node.id)) return node;
+    const from = plan.agents[index].waitsFor.flatMap(key => { const at = placed.get(ids.get(key) ?? ""); return at ? [at] : []; });
+    const position = from.length ? { x: Math.max(...from.map(at => at.x)) + COLUMN, y: from[0].y + ROW / 2 } : { x: left, y: (below += ROW) };
+    placed.set(node.id, position);
+    return { ...node, position };
+  });
+  return { ...graph, name: plan.name || graph.name, nodes: [...graph.nodes.filter(node => node.type !== "agent"), ...positioned], edges };
 }
 
 const KEY = "elpis-workflow-draft-v1";

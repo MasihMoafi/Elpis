@@ -6,7 +6,7 @@ const assert = require('node:assert/strict');
 const { openCanvas } = require('./canvas-fixture.cjs');
 
 test('canvas basics: undo and redo, copy and paste, duplicate, delete keeping the flow, menus, rename, fit', async () => {
-  const { page, canvas, node, wires, saved, titles, agentCount, fit, errors, close } = await openCanvas();
+  const { page, canvas, node, wires, saved, titles, agentCount, fit, errors, plans, close } = await openCanvas();
   try {
     const off = () => page.evaluate(() => document.activeElement?.blur());
     const wired = (graph, from, to) => graph.edges.some(edge => graph.nodes.find(item => item.id === edge.source)?.data?.title === from && graph.nodes.find(item => item.id === edge.target)?.data?.title === to);
@@ -67,6 +67,11 @@ test('canvas basics: undo and redo, copy and paste, duplicate, delete keeping th
     await page.keyboard.press('Delete');
     await off(); await page.keyboard.press('Control+z');
     await page.waitForTimeout(450);
+
+    // An agent's dots are easy to hit: a press up to 12 px from a dot's centre still lands on the dot.
+    const dot = await node('Part 1').locator('.react-flow__handle.source').boundingBox(), centre = { x: dot.x + dot.width / 2, y: dot.y + dot.height / 2 };
+    for (const [dx, dy] of [[12, 0], [0, 12], [-9, -9], [9, 9]])
+      assert.ok(await page.evaluate(([x, y]) => Boolean(document.elementFromPoint(x, y)?.closest('.react-flow__handle')), [centre.x + dx, centre.y + dy]), `a press ${dx}, ${dy} px from the dot lands on it`);
 
     // The header fits a small window: nothing runs past its edge or is cut off.
     for (const width of [1130, 960]) {
@@ -151,6 +156,29 @@ test('canvas basics: undo and redo, copy and paste, duplicate, delete keeping th
     const area = await canvas.locator('.react-flow').boundingBox();
     for (const box of await canvas.locator('.react-flow__node-agent').evaluateAll(list => list.map(item => { const at = item.getBoundingClientRect(); return { x: at.x, y: at.y, right: at.right, bottom: at.bottom }; })))
       assert.ok(box.x >= area.x && box.right <= area.x + area.width && box.y >= area.y && box.bottom <= area.y + area.height, 'every agent is in view');
+
+    // Without a goal, Run graph names what is missing and sends nothing.
+    await canvas.getByRole('button', { name: 'Run graph', exact: true }).click();
+    await canvas.getByText('“Step 1: the base” has no folder it may write: choose one, or give the run a goal (Mother) and Elpis fills it in.').waitFor();
+    // "Let Elpis handle it": from a goal, Elpis designs the team; one Ctrl+Z puts the old board back.
+    await canvas.getByRole('button', { name: 'Mother', exact: true }).click();
+    const motherPanel = canvas.getByRole('complementary', { name: 'Mother', exact: true });
+    await motherPanel.getByRole('textbox', { name: 'Goal', exact: true }).fill('Build a dark theme from scratch');
+    await page.waitForTimeout(400);
+    await motherPanel.getByRole('button', { name: 'Let Elpis design the team', exact: true }).click();
+    await node('Use the theme').waitFor();
+    assert.deepEqual(await titles(), ['Build the theme', 'Use the theme']);
+    assert.ok(wired(await saved(), 'Build the theme', 'Use the theme'), 'the team is wired as designed');
+    assert.equal(plans.at(-1).goal, 'Build a dark theme from scratch');
+    await off(); await page.keyboard.press('Control+z');
+    await agentCount(3, 'the design undone');
+    // Free text in the command line that is no command goes to Elpis, which acts on the board.
+    await off(); await page.keyboard.press('Space'); await command.waitFor();
+    await page.keyboard.type('Fix the login bug');
+    assert.match(await adder.getByLabel('Will add').innerText(), /^Elpis/);
+    await page.keyboard.press('Enter');
+    await agentCount(4, 'Elpis added the agent asked for');
+    assert.ok((await titles()).includes('Fix the login bug'));
 
     // Colour means state, as on Deus Ex's board: in the dark theme too, an idle wire and the selection outline are a
     // neutral grey, never the theme's gold.

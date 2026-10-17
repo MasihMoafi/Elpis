@@ -854,7 +854,11 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .agent-node[data-status="pending"], .agent-node[data-status="cancelled"] { opacity:.75; }
 @keyframes canvas-spin { to { transform:rotate(360deg); } }
 @media (prefers-reduced-motion:reduce) { .agent-node-mark[data-check="running"] { animation:none; } }
-.agent-node .react-flow__handle { width:10px; height:10px; border:1.5px solid var(--card); background:var(--kind); }
+/* An agent's dots: 12 px to see, 28 px to hit (an invisible ring around each), and they grow under the pointer. */
+.agent-node .react-flow__handle { width:12px; height:12px; border:2px solid var(--card); background:var(--kind); transition:transform .12s ease; }
+.agent-node .react-flow__handle::after { content:""; position:absolute; inset:-9px; border-radius:50%; }
+.agent-node .react-flow__handle:hover { transform:scale(1.35); }
+@media (prefers-reduced-motion:reduce) { .agent-node .react-flow__handle { transition:none; } }
 /* A note for the user, never sent: dragged by its strip, written in below. */
 .canvas-note { display:grid; border-radius:4px; background:#f6e9a8; box-shadow:var(--shadow); }
 .canvas-note-grip { padding:6px 10px 0; font:500 10px/1.4 var(--mono); letter-spacing:.08em; text-transform:uppercase; color:#6b5f2a; cursor:grab; user-select:none; }

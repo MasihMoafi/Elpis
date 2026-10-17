@@ -8,10 +8,11 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const { chromium } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright');
 const { chooseOption, optionsCut } = require('./controls.cjs');
+const { planFor } = require('./canvas-fixture.cjs');
 
 test('agents canvas: writers with automatic checks, architectures, wiring, persistence, a live run, the command bar', async () => {
   const root = { id: 'root', name: 'Canvas run', cwd: '/tmp/demo', model: 'sol', modelProvider: 'openai', status: { type: 'idle' }, desktopAccess: { writable: true, mode: 'direct' } };
-  const posts = []; let polls = 0, ran = null;
+  const posts = [], plans = []; let polls = 0, ran = null;
   const server = http.createServer(async (req, res) => {
     const url = new URL(req.url, 'http://local'); let raw = ''; for await (const chunk of req) raw += chunk;
     const json = value => { res.setHeader('content-type', 'application/json'); res.end(JSON.stringify(value)); };
@@ -21,6 +22,7 @@ test('agents canvas: writers with automatic checks, architectures, wiring, persi
     if (url.pathname === '/api/models') return json({ data: [{ id: 'luna', model: 'gpt-6-luna', displayName: 'Luna 6' }, { id: 'sol', model: 'gpt-6.1-sol', displayName: 'Sol 6.1', supportedReasoningEfforts: [{ reasoningEffort: 'low' }, { reasoningEffort: 'medium' }, { reasoningEffort: 'high' }], defaultReasoningEffort: 'medium' }], nextCursor: null });
     if (url.pathname === '/api/settings') return json({ main: { model: 'gpt-6.1-sol', provider: 'openai' }, background: {}, smartPrune: { enabled: false, explicitOverride: {} }, memory: {}, write: { available: false, reason: '' }, agents: { graph: 256, atOnce: 4, source: 'agents.max_threads' } });
     // The project's folders, which the canvas offers as what an agent may write.
+    if (url.pathname === '/api/canvas/plan') { const body = JSON.parse(raw); plans.push(body); return json(planFor(body)); }
     if (url.pathname === '/api/folders') return url.searchParams.get('cwd') === '/tmp/demo' ? json({ data: ['docs', 'src', 'src/lib', 'tests'] }) : (res.statusCode = 400, json({ error: 'cwd must be an existing directory' }));
     if (url.pathname === '/api/threads' && req.method === 'POST') return json({ thread: root });
     if (url.pathname === '/api/threads') return json({ data: [], nextCursor: null });
@@ -106,7 +108,7 @@ test('agents canvas: writers with automatic checks, architectures, wiring, persi
     await mother.click(); await page.keyboard.press('Delete');
     assert.equal(await mother.count(), 1, 'the Mother survives Delete');
     const motherPanel = canvas.getByRole('complementary', { name: 'Mother', exact: true });
-    await motherPanel.getByRole('textbox', { name: 'Brief for every agent', exact: true }).fill('Keep the public API unchanged.');
+    await motherPanel.getByRole('textbox', { name: 'Goal', exact: true }).fill('Keep the public API unchanged.');
     await chooseOption(motherPanel.getByRole('combobox', { name: 'Her model', exact: true }), '|gpt-6-luna');
     assert.equal(await motherPanel.getByRole('textbox', { name: 'Max agents', exact: true }).inputValue(), '10');
     await motherPanel.getByText('Not started. Every agent\'s report arrives here once the graph runs.').waitFor();
@@ -154,10 +156,6 @@ test('agents canvas: writers with automatic checks, architectures, wiring, persi
     await page.getByRole('button', { name: 'Canvas', exact: true }).click(); await canvas.waitFor();
     await until('the graph came back after a restart', () => document.querySelectorAll('.react-flow__node-agent').length === 5 && document.querySelectorAll('.react-flow__edge:not(.canvas-edge-mother)').length === 4 && document.querySelectorAll('.react-flow__node-mother').length === 1);
 
-    // What Elpis would refuse stops the run before anything is sent, and says which agent and why: a writer without a
-    // folder it may write, then one without a prompt.
-    await canvas.getByRole('button', { name: 'Run graph', exact: true }).click();
-    await canvas.getByText('“Part 1” needs a folder it may write: choose one under May write.').waitFor();
     // Several agents share a folder in one step: Shift+drag selects them all, and the group panel adds it to each.
     await fit();
     const board = await canvas.locator('.react-flow__pane').boundingBox();
@@ -174,11 +172,6 @@ test('agents canvas: writers with automatic checks, architectures, wiring, persi
     await page.waitForTimeout(400);
     assert.deepEqual((await saved()).nodes.filter(item => item.type === 'agent').map(item => item.data.writeScopes), [['src/lib'], ['src/lib'], ['src/lib'], ['src', 'src/lib'], ['src/lib']]);
     await group.getByRole('button', { name: 'Done', exact: true }).click();
-    await canvas.getByRole('button', { name: 'Run graph', exact: true }).click();
-    await canvas.getByText('“New agent” needs a prompt.').waitFor();
-    assert.equal(ran, null);
-    await node('New agent').click();
-    await inspector.getByRole('textbox', { name: 'Prompt', exact: true }).fill('Write the changelog entry.');
     // The joiner thinks harder: Sol at high thinking.
     await node('Join the parts').click();
     await chooseOption(inspector.getByRole('combobox', { name: 'Model', exact: true }), '|gpt-6.1-sol');
@@ -198,7 +191,9 @@ test('agents canvas: writers with automatic checks, architectures, wiring, persi
     assert.deepEqual([joinCheck.kind, joinCheck.dependsOn, joinCheck.writeScopes], ['verify', [join.id], []]);
     assert.match(joinCheck.instruction, /^Check the work of “Join the parts”[\s\S]*The whole suite passes/);
     assert.deepEqual(byTitle['New agent'].dependsOn, [joinCheck.id]);
-    assert.equal(byTitle['New agent'].instruction, 'Brief for the whole run: Keep the public API unchanged.\n\nWrite the changelog entry.');
+    // The new agent had no prompt: Elpis filled it from the run's goal before the run, and nothing else changed.
+    assert.deepEqual([plans.length, plans[0].goal, plans[0].agents.find(item => item.title === 'New agent').prompt], [1, 'Keep the public API unchanged.', '']);
+    assert.equal(byTitle['New agent'].instruction, 'Goal of the whole run: Keep the public API unchanged.\n\nDo New agent');
     assert.deepEqual(byTitle['New agent'].acceptanceCriteria, ['The change builds and its tests pass.']);
     // An agent's thinking level goes with it; one left at the model's default is not sent.
     assert.deepEqual([join.model, join.reasoningEffort, byTitle['New agent'].reasoningEffort], ['gpt-6.1-sol', 'high', undefined]);
@@ -212,14 +207,15 @@ test('agents canvas: writers with automatic checks, architectures, wiring, persi
     assert.ok(await canvas.locator('.canvas-chevron[data-live]').count() > 0, 'live wires stream');
     assert.equal(ran.maxConcurrency, 3);
 
-    // The command bar, typed AutoCAD-style: Tab over the board, then just a prompt adds an agent with it.
+    // The command bar, typed AutoCAD-style: Tab over the board, then what you want done.
     const adder = canvas.getByRole('dialog', { name: 'Add agents', exact: true }), command = adder.getByRole('textbox', { name: 'Command', exact: true });
     const plan = adder.getByLabel('Will add');
     await page.mouse.click(board.x + 60, board.y + board.height - 140);
     await page.keyboard.press('Tab');
     await command.waitFor();
     await page.keyboard.type('Fix the parser');
-    assert.equal(await plan.innerText(), '1 × Agent\nDefault model\n1 prompt');
+    // Free text that is no command goes to Elpis, which acts on the board: here it adds the agent asked for.
+    assert.equal(await plan.innerText(), 'Elpis\nwill do it: design or change the team from what you wrote');
     await page.keyboard.press('Enter');
     await adder.waitFor({ state: 'hidden' });
     await until('the prompted agent was added', () => document.querySelectorAll('.react-flow__node-agent').length === 6);

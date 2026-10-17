@@ -143,8 +143,10 @@ export function stageDesktop({ source = fileURLToPath(new URL('../', import.meta
     files.push({ path: file.path, generated: true, bytes: Buffer.byteLength(file.data), mode: file.mode, sha256: sha256(output) });
   }
   files.sort((a, b) => a.path.localeCompare(b.path));
-  const manifest = { schemaVersion: 1, createdAt: new Date().toISOString(), source, entryPoint: 'launch',
-    fileCount: files.length, payloadBytes: files.reduce((sum, file) => sum + file.bytes, 0), files,
+  // The manifest names files by their place in the installation only: where they were built from on this machine
+  // (the user's folders) never travels with a copy of the app.
+  const manifest = { schemaVersion: 1, createdAt: new Date().toISOString(), entryPoint: 'launch',
+    fileCount: files.length, payloadBytes: files.reduce((sum, file) => sum + file.bytes, 0), files: files.map(({ source: _source, ...file }) => file),
     externalRequirements: ['Node.js selected by ELPIS_NODE_BIN, PATH or /usr/local/node/bin/node',
       'Installed Elpis engine and provider bridge', 'Optional configured command-line tools'] };
   const manifestPath = path.join(target, 'manifest.json');

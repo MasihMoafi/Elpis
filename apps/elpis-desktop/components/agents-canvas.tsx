@@ -12,7 +12,7 @@ import { summarize, workedFor } from "@/components/transcript";
 import { IsoBoard, ViewToggle } from "@/components/agents-iso";
 import { api, providerChoices, type Entry, type Model, type ProviderSettings, type Thread } from "@/lib/api";
 import { useElpisSettings } from "@/lib/settings-store";
-import { DONE, MOTHER, TASKS_PER_AGENT, TEMPLATES, arrange, checkOf, commandParts, shapeOf, makesLoop, maxAgents, newAgents, newId, parseCommand, readGraph, runTasks, saveGraph, waves, withMother, type AgentData, type CanvasEdge, type CanvasGraph, type CanvasNode, type CatalogModel, type Command, type MotherSettings, type NoteData, type TaskStatus } from "@/lib/canvas";
+import { DONE, MOTHER, TASKS_PER_AGENT, TEMPLATES, applyPlan, arrange, boardForPlan, checkOf, commandParts, shapeOf, makesLoop, maxAgents, newAgents, newId, parseCommand, readGraph, runTasks, saveGraph, waves, withMother, type AgentData, type CanvasEdge, type CanvasGraph, type CanvasNode, type CatalogModel, type Command, type MotherSettings, type NoteData, type Plan, type TaskStatus } from "@/lib/canvas";
 
 type Run = { rootThreadId: string; graphId: string; status: string };
 type Listed = { data: { id: string; status: string; tasks: { id: string; status: TaskStatus; assignedThreadId: string | null }[] }[] };
@@ -93,7 +93,7 @@ const providerToken = (model: CatalogModel) => `${model.provider ? `@${model.pro
  * ComfyUI's search box. Type a prompt and Enter to add an agent with it (Shift+Enter starts the next agent's prompt),
  * or `3 sol high: prompt; prompt`. The list offers a model: ↑↓ choose, → opens a provider or a model's thinking
  * levels, ← goes back, Tab or Enter takes the choice. Without a prompt, Enter asks for one per agent. */
-function CommandBar({ adding, room, limit, catalog, providers, onAgents, onNote, onClose }: { adding: Adding; room: number; limit: number; catalog: CatalogModel[]; providers: Provider[]; onAgents: (command: Command) => void; onNote: (text: string) => void; onClose: () => void }) {
+function CommandBar({ adding, room, limit, catalog, providers, onAgents, onNote, onAsk, onClose }: { adding: Adding; room: number; limit: number; catalog: CatalogModel[]; providers: Provider[]; onAgents: (command: Command) => void; onNote: (text: string) => void; onAsk: (text: string) => void; onClose: () => void }) {
   // A command line opened by typing on the board starts with what was typed (`seed`), the caret after it.
   const [text, setText] = useState(adding.seed ?? ""), [active, setActive] = useState(0), [level, setLevel] = useState<Level | null>(null);
   const [asking, setAsking] = useState<Command | null>(null), [tasks, setTasks] = useState("");
@@ -112,8 +112,12 @@ function CommandBar({ adding, room, limit, catalog, providers, onAgents, onNote,
     }
     setLevel(null); setActive(0); field.current?.focus();
   };
+  // Free text that is no command goes to Elpis, which acts on the board ("let Elpis handle it"); opened from a dot or a
+  // wire, it is the new agent's prompt instead.
+  const asks = command.prompted && !adding.from && !adding.between;
   const submit = (current: Command) => {
     if (current.note) { onNote(current.tasks.join("\n")); return; }
+    if (current === command && asks) { onAsk(text.trim()); return; }
     // As in the prompts step, more prompts than agents adds agents.
     if (current.tasks.length) onAgents({ ...current, count: Math.max(current.count ?? 1, current.tasks.length) }); else { setAsking(current); setTasks(""); }
   };
@@ -161,10 +165,10 @@ function CommandBar({ adding, room, limit, catalog, providers, onAgents, onNote,
   }
   return <div className="quick-add hud-menu nodrag nowheel" role="dialog" aria-label="Add agents" style={{ left: adding.left, top: adding.top, maxHeight: adding.height }} onBlur={close}>
     <p className="hud-menu-title quick-add-title"><span>{room ? "Add agents" : "No room for more agents"}</span><span>{room} of {limit} left</span></p>
-    <textarea ref={field} autoFocus className="quick-add-field quick-add-command" aria-label="Command" value={text} spellCheck={false} placeholder="Type a prompt, or 3 sol high: prompt; prompt"
+    <textarea ref={field} autoFocus className="quick-add-field quick-add-command" aria-label="Command" value={text} spellCheck={false} placeholder="Tell Elpis what to do, or 3 sol high: prompt; prompt"
       rows={Math.min(6, text.split("\n").length)} onChange={event => { setText(event.target.value); setActive(0); setLevel(null); }} onKeyDown={keys} />
     <p className="quick-add-plan" aria-label="Will add">
-      {command.note ? <b>Note</b> : text.trim() ? <><b>{`${Math.min(count, room) || count} × Agent`}</b>
+      {command.note ? <b>Note</b> : asks ? <><b>Elpis</b><span>will do it: design or change the team from what you wrote</span></> : text.trim() ? <><b>{`${Math.min(count, room) || count} × Agent`}</b>
         <span>{command.model ? `${command.model.label} · ${command.model.providerLabel}` : "Default model"}</span>
         {command.effort && <span>{command.effort} thinking</span>}
         {command.tasks.length > 0 && <span>{command.tasks.length} {command.tasks.length === 1 ? "prompt" : "prompts"}</span>}</> : <span>Type a prompt, or choose a model below</span>}
@@ -179,7 +183,7 @@ function CommandBar({ adding, room, limit, catalog, providers, onAgents, onNote,
       </button>)}
       {!rows.length && <p className="quick-add-note">Nothing to choose here.</p>}
     </div>
-    <p className="quick-add-help">{lastWord && command.unknown.includes(lastWord.toLowerCase()) ? "Tab takes the highlighted choice · " : ""}↑↓ · → open · ← back · Tab take · Shift+Enter next prompt · Enter {level ? "take" : "add"} · Esc</p>
+    <p className="quick-add-help">{lastWord && command.unknown.includes(lastWord.toLowerCase()) ? "Tab takes the highlighted choice · " : ""}↑↓ · → open · ← back · Tab take · Shift+Enter next prompt · Enter {level ? "take" : asks ? "ask Elpis" : "add"} · Esc</p>
   </div>;
 }
 
@@ -256,7 +260,9 @@ function Shape({ shape }: { shape: number[] }) {
 
 /** The folders an agent may write, chosen from the project's own (GET /api/folders): Elpis takes only existing
  * folders inside the project, never the whole project (codex-rs state/src/model/work_graph.rs `validate_write_scopes`). */
-function FolderPicker({ cwd, value, onChange }: { cwd?: string; value: string[]; onChange: (folders: string[]) => void }) {
+/** The project's folders (GET /api/folders), which agents may write: read once per project, shared by the pickers
+ * and by Elpis when it fills in the team. */
+function useProjectFolders(cwd?: string) {
   const [folders, setFolders] = useState<string[] | null>(null), [error, setError] = useState("");
   useEffect(() => {
     if (!cwd) return;
@@ -264,6 +270,10 @@ function FolderPicker({ cwd, value, onChange }: { cwd?: string; value: string[];
     api<{ data: string[] }>(`/folders?cwd=${encodeURIComponent(cwd)}`).then(result => { if (live) { setFolders(result.data); setError(""); } }).catch(cause => { if (live) setError(cause instanceof Error ? cause.message : String(cause)); });
     return () => { live = false; };
   }, [cwd]);
+  return { folders, error };
+}
+
+function FolderPicker({ cwd, folders, error, value, onChange }: { cwd?: string; folders: string[] | null; error: string; value: string[]; onChange: (folders: string[]) => void }) {
   const left = (folders ?? []).filter(folder => !value.includes(folder));
   return <div className="canvas-folders" role="group" aria-label="May write">
     <span>May write</span>
@@ -271,7 +281,7 @@ function FolderPicker({ cwd, value, onChange }: { cwd?: string; value: string[];
     {!cwd ? <small>Agents write inside a project: choose one at the top.</small>
       : error ? <small role="alert">{error}</small>
       : <OptionSelect aria-label="Add a folder" value="" onChange={event => { if (event.target.value) onChange([...value, event.target.value]); }}>
-        <option value="" disabled>{folders === null ? "Loading the project's folders…" : left.length ? "Add a folder it may write…" : "No more folders"}</option>
+        <option value="" disabled>{folders === null ? "Loading the project's folders…" : !value.length ? "Elpis decides, or add a folder…" : left.length ? "Add a folder it may write…" : "No more folders"}</option>
         {left.map(folder => <option key={folder} value={folder}>{folder}</option>)}</OptionSelect>}
   </div>;
 }
@@ -313,6 +323,7 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
   // What is selected is kept apart from the saved graph: a click picks one, Shift+click or Shift+drag several.
   const [selection, setSelection] = useState<string[]>([]), [dashboardId, setDashboardId] = useState<string | null>(null);
   const [menu, setMenu] = useState<BoardMenu | null>(null), wireMenu = menu?.kind === "wire" ? menu : null;
+  const project = useProjectFolders(cwd);
   const [notice, setNotice] = useState("");
   const [maxAtOnce, setMaxAtOnce] = useState(3);
   const [adding, setAdding] = useState<Adding | null>(null);
@@ -323,6 +334,9 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
   // What Elpis allows: agents in one graph, and at once (bridge/elpis-features.mjs `agentLimits`).
   const allowed = settings?.agents ?? { graph: 256, atOnce: 6, source: "Elpis default" };
   useEffect(() => { const timer = setTimeout(() => { if (!saveGraph(graph)) setNotice("Could not keep the graph on this device."); }, 300); return () => clearTimeout(timer); }, [graph]);
+  // A change made just before the window closes or reloads is kept too: the page saves the latest board on its way out.
+  const latest = useRef(graph); latest.current = graph;
+  useEffect(() => { const flush = () => saveGraph(latest.current); window.addEventListener("pagehide", flush); window.addEventListener("beforeunload", flush); return () => { flush(); window.removeEventListener("pagehide", flush); window.removeEventListener("beforeunload", flush); }; }, []);
 
   // Where agents can run: the engine's provider and every other configured native one (work graphs refuse the
   // Anthropic and Antigravity subscriptions), each with its models; other providers' lists load when the bar opens.
@@ -652,15 +666,35 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
   const mixed = <option value="mixed" disabled>Mixed</option>;
   const selectedModel = selected ? catalog.find(item => item.model === selected.data.model && item.provider === (selected.data.provider ?? null)) : undefined;
 
+  // "Let Elpis handle it": a fast model designs the team from a goal, or does what was typed (POST /api/canvas/plan,
+  // bridge/canvas-plan.mjs). The board it returns replaces this one in one step, so Ctrl+Z undoes it.
+  const [planning, setPlanning] = useState("");
+  async function letElpis(goal: string): Promise<CanvasGraph | null> {
+    if (!cwd) { setNotice("Choose a project at the top first: Elpis picks the folders agents write from it."); return null; }
+    setPlanning(goal); setNotice(""); setMenu(null);
+    try {
+      const plan = await api<Plan>("/canvas/plan", { goal, cwd, folders: project.folders ?? [], agents: boardForPlan(graph), maxAgents: limit });
+      const next = applyPlan(graph, plan);
+      setGraph(next); setSelection([]);
+      setTimeout(() => void flow.fitView({ ...FIT, duration: 250 }), 60);
+      return next;
+    } catch (error) { setNotice(`Elpis could not do it: ${error instanceof Error ? error.message : String(error)}`); return null; }
+    finally { setPlanning(""); }
+  }
+
   async function start() {
-    const built = runTasks(graph);
+    // Prompts and folders left empty are Elpis's to fill, from the run's goal.
+    const empty = agents.some(node => !node.data.instruction.trim() || !node.data.writeScopes.length);
+    const ready = empty && mother.brief.trim() ? await letElpis(mother.brief) : graph;
+    if (!ready) return;
+    const built = runTasks(ready);
     if ("error" in built) { setNotice(built.error); return; }
     setStarting(true); setNotice(""); setStates({});
     try {
-      // The Mother is the run's chat: her model, and the brief as her instructions.
-      const created = await api<{ thread: Thread }>("/threads", { ...(cwd ? { cwd } : {}), name: graph.name.slice(0, 120) || "Agents canvas",
+      // The Mother is the run's chat: her model, and the goal as her instructions.
+      const created = await api<{ thread: Thread }>("/threads", { ...(cwd ? { cwd } : {}), name: ready.name.slice(0, 120) || "Agents canvas",
         ...(mother.model ? { model: mother.model, ...(mother.provider ? { provider: mother.provider } : {}) } : {}), ...(mother.brief.trim() ? { instructions: mother.brief.trim() } : {}) });
-      const result = await api<{ graphId: string }>("/workflows/run", { rootThreadId: created.thread.id, name: graph.name || "Agents canvas", tasks: built.tasks, maxConcurrency: Math.max(1, Math.min(maxAtOnce, allowed.atOnce)) });
+      const result = await api<{ graphId: string }>("/workflows/run", { rootThreadId: created.thread.id, name: ready.name || "Agents canvas", tasks: built.tasks, maxConcurrency: Math.max(1, Math.min(maxAtOnce, allowed.atOnce)) });
       setRun({ rootThreadId: created.thread.id, graphId: result.graphId, status: "running" });
     } catch (error) { setNotice(error instanceof Error ? error.message : String(error)); }
     finally { setStarting(false); }
@@ -704,12 +738,13 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
       </div>
       {adding && <CommandBar adding={adding} room={room} limit={limit} catalog={catalog} providers={providers} onClose={() => setAdding(null)}
         onAgents={command => { addAgents(Math.max(1, command.count ?? 1), { model: command.model?.model ?? null, provider: command.model?.provider ?? null, effort: command.effort }, adding, command.tasks); setAdding(null); }}
-        onNote={text => { addNote(adding.at, text); setAdding(null); }} />}
+        onNote={text => { addNote(adding.at, text); setAdding(null); }} onAsk={text => { setAdding(null); void letElpis(text); }} />}
       {menu && (view => <CanvasMenu at={menu} {...view} onClose={() => setMenu(null)} />)(menuView(menu))}
       {dashboard && <AgentDashboard node={dashboard} wave={order.get(dashboard.id)} status={states[dashboard.id]?.status ?? "idle"} check={states[checkOf(dashboard.id)]?.status ?? "idle"} chat={states[dashboard.id]?.chat ?? null} modelLabel={modelLabel(dashboard.data)}
         waitsFor={graph.edges.filter(edge => edge.target === dashboard.id).map(edge => titleOf(edge.source))} feeds={graph.edges.filter(edge => edge.source === dashboard.id).map(edge => titleOf(edge.target))}
         onOpenChat={onOpenChat} onClose={() => setDashboardId(null)} />}
-      {undoLoad && !notice && <p className="canvas-notice" data-tone="info" role="status">Loaded {undoLoad.loaded}.
+      {planning && <p className="canvas-notice" data-tone="info" role="status">Elpis is on it: {planning.length > 60 ? `${planning.slice(0, 60)}…` : planning}</p>}
+      {undoLoad && !notice && !planning && <p className="canvas-notice" data-tone="info" role="status">Loaded {undoLoad.loaded}.
         <Button variant="outline" size="sm" onClick={() => { setGraph(undoLoad.previous); setUndoLoad(null); setTimeout(() => void flow.fitView({ ...FIT, duration: 250 }), 60); }}>Undo</Button>
         <button type="button" aria-label="Dismiss" onClick={() => setUndoLoad(null)}><X size={13} /></button></p>}
       {notice && <p className="canvas-notice" role="alert">{notice}<button type="button" aria-label="Dismiss" onClick={() => setNotice("")}><X size={13} /></button></p>}
@@ -717,13 +752,13 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
     {selected ? <aside className="canvas-side" aria-label="Selected agent">
       <p className="hud-menu-title">Agent{order.get(selected.id) ? ` · wave ${order.get(selected.id)}` : ""}{states[selected.id] ? ` · ${STATUS_LABEL[states[selected.id].status]}` : ""} · {CHECK_LABEL[states[checkOf(selected.id)]?.status ?? "idle"]}</p>
       <label>Name<Input ref={nameField} aria-label="Name" value={selected.data.title} maxLength={256} onChange={event => edit({ title: event.target.value })} /></label>
-      <label>Prompt<Textarea aria-label="Prompt" rows={5} value={selected.data.instruction} placeholder="What this agent should do" onChange={event => edit({ instruction: event.target.value })} /></label>
+      <label>Prompt<Textarea aria-label="Prompt" rows={5} value={selected.data.instruction} placeholder="What this agent should do; left empty, Elpis fills it from the goal" onChange={event => edit({ instruction: event.target.value })} /></label>
       <label>Model<OptionSelect aria-label="Model" value={choiceKey(selected.data)} onChange={event => edit(modelPatch(event.target.value))}>
         {modelOptions}
         {selected.data.model && !selectedModel && <option value={choiceKey(selected.data)}>{selected.data.model}</option>}</OptionSelect></label>
       {selectedModel && selectedModel.efforts.length > 0 && <label>Thinking (kept; Elpis applies it per agent in a later engine build)<OptionSelect aria-label="Thinking" value={selected.data.effort ?? ""} onChange={event => edit({ effort: event.target.value || null })}>
         <option value="">Model default{selectedModel.defaultEffort ? ` (${selectedModel.defaultEffort})` : ""}</option>{selectedModel.efforts.map(effort => <option key={effort} value={effort}>{effort}</option>)}</OptionSelect></label>}
-      <FolderPicker cwd={cwd} value={selected.data.writeScopes} onChange={writeScopes => edit({ writeScopes })} />
+      <FolderPicker cwd={cwd} {...project} value={selected.data.writeScopes} onChange={writeScopes => edit({ writeScopes })} />
       <label>Done when (one per line; its check holds it to these)<Textarea aria-label="Done when" rows={3} value={selected.data.acceptanceCriteria.join("\n")} placeholder={DONE} onChange={event => edit({ acceptanceCriteria: lines(event.target.value) })} /></label>
       <div className="canvas-inspector-actions">
         <Button variant="outline" size="sm" onClick={() => setDashboardId(selected.id)}>Dashboard <kbd>Enter</kbd></Button>
@@ -735,7 +770,7 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
       <p className="hud-menu-title">{chosen.length} agents selected</p>
       <p className="canvas-help">{chosen.map(node => node.data.title || "Untitled").join(", ")}</p>
       <label>Model<OptionSelect aria-label="Model" value={shared(choiceKey)} onChange={event => edit(modelPatch(event.target.value))}>{mixed}{modelOptions}</OptionSelect></label>
-      <FolderPicker cwd={cwd} value={commonFolders} onChange={setCommonFolders} />
+      <FolderPicker cwd={cwd} {...project} value={commonFolders} onChange={setCommonFolders} />
       <div className="canvas-inspector-actions">
         <Button variant="ghost" size="sm" className="text-destructive" onClick={() => remove(chosen.map(node => node.id))}><Trash2 size={14} />Delete {chosen.length} agents <kbd>Delete</kbd></Button>
         <Button variant="outline" size="sm" className="ml-auto" onClick={() => setSelection([])}>Done</Button>
@@ -743,7 +778,8 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
     </aside> : motherOpen ? <aside className="canvas-side" aria-label="Mother">
       <p className="hud-menu-title">Mother · the run&rsquo;s chat</p>
       <p className="canvas-help">Every agent is her child: she starts the ones that wait for no one, and every report comes back to her. These settings apply to the whole run.</p>
-      <label>Brief for every agent<Textarea aria-label="Brief for every agent" rows={4} value={mother.brief} placeholder="What the whole run is for: the goal, the rules every agent follows" onChange={event => setMother({ brief: event.target.value })} /></label>
+      <label>Goal (every agent gets it)<Textarea aria-label="Goal" rows={4} value={mother.brief} placeholder="What should this run achieve? Elpis can design the team from it." onChange={event => setMother({ brief: event.target.value })} /></label>
+      <Button size="sm" onClick={() => void letElpis(mother.brief)} disabled={!mother.brief.trim() || Boolean(planning)} title="Elpis designs the team from the goal: how many agents, their prompts, folders and wiring; Ctrl+Z undoes it">{planning ? "Elpis is designing…" : "Let Elpis design the team"}</Button>
       <label>Her model<OptionSelect aria-label="Her model" value={mother.model ? `${mother.provider ?? ""}|${mother.model}` : ""} onChange={event => { const patch = modelPatch(event.target.value); setMother({ model: patch.model ?? null, provider: patch.provider ?? null }); }}>{modelOptions}</OptionSelect></label>
       <div className="canvas-mother-counts">
         <CountField label="Max agents" value={limit} min={Math.max(1, agents.length)} max={Math.floor(allowed.graph / TASKS_PER_AGENT)} onChange={count => setGraph(current => ({ ...current, maxAgents: count }))}

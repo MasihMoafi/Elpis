@@ -8,4 +8,4 @@ Installed: `continuity-7aeef7edb4f6`, Elpis 0.4.1 on Codex 0.162.0. [Final CI](h
 
 Review, worktree and resume screens were visually inspected. Provider tests used deterministic local fixtures; they do not measure live-model coding quality. Daily-use acceptance remains Masih’s decision.
 
-Close existing Elpis windows, then reopen to load the new version. [Tested rollback](/home/masih/.local/lib/elpis-next/versions/before-continuity-20261010T053542Z/rollback.sh) preserves chats and settings. [Approved cleanup](../.tmp/build-cleanup-receipt.json) recovered **28 GiB** from exactly two inactive caches.
+Close existing Elpis windows, then reopen to load the new version. [Tested rollback](~/.local/lib/elpis-next/versions/before-continuity-20261010T053542Z/rollback.sh) preserves chats and settings. [Approved cleanup](../.tmp/build-cleanup-receipt.json) recovered **28 GiB** from exactly two inactive caches.

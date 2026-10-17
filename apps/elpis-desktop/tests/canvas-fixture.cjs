@@ -5,8 +5,18 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const { chromium } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright');
 
+/** A stand-in for Elpis's planner (POST /api/canvas/plan): a goal "from scratch" designs a two-agent team; one starting
+ * with "Fix" adds an agent doing it; otherwise it fills each agent's empty prompt and folders. */
+function planFor(body) {
+  if (/from scratch/i.test(body.goal)) return { name: 'Dark theme', agents: [
+    { key: 'a', title: 'Build the theme', prompt: 'Add the dark theme tokens.', folders: ['src'], doneWhen: ['The tokens exist'], waitsFor: [] },
+    { key: 'b', title: 'Use the theme', prompt: 'Use the tokens on every page.', folders: ['src/lib'], doneWhen: ['Every page uses them'], waitsFor: ['a'] }] };
+  const kept = body.agents.map(item => ({ ...item, prompt: item.prompt || `Do ${item.title}`, folders: item.folders.length ? item.folders : ['src'] }));
+  return { name: '', agents: /^fix/i.test(body.goal) ? [...kept, { key: 'new', title: body.goal, prompt: body.goal, folders: ['src'], doneWhen: ['It works'], waitsFor: [] }] : kept };
+}
+
 async function openCanvas({ width = 1440, height = 900 } = {}) {
-  const posts = [];
+  const posts = [], plans = [];
   const server = http.createServer(async (req, res) => {
     const url = new URL(req.url, 'http://local'); let raw = ''; for await (const chunk of req) raw += chunk;
     const json = value => { res.setHeader('content-type', 'application/json'); res.end(JSON.stringify(value)); };
@@ -16,6 +26,7 @@ async function openCanvas({ width = 1440, height = 900 } = {}) {
     if (url.pathname === '/api/models') return json({ data: [{ id: 'luna', model: 'gpt-6-luna', displayName: 'Luna 6' }, { id: 'sol', model: 'gpt-6.1-sol', displayName: 'Sol 6.1', supportedReasoningEfforts: [{ reasoningEffort: 'low' }, { reasoningEffort: 'high' }], defaultReasoningEffort: 'low' }], nextCursor: null });
     if (url.pathname === '/api/settings') return json({ main: { model: 'gpt-6.1-sol', provider: 'openai' }, background: {}, smartPrune: { enabled: false, explicitOverride: {} }, memory: {}, write: { available: false, reason: '' }, agents: { graph: 256, atOnce: 4, source: 'agents.max_threads' } });
     if (url.pathname === '/api/folders') return json({ data: ['docs', 'src', 'src/lib', 'tests'] });
+    if (url.pathname === '/api/canvas/plan') { const body = JSON.parse(raw); plans.push(body); return json(planFor(body)); }
     if (url.pathname === '/api/threads') return json({ data: [], nextCursor: null });
     if (url.pathname === '/api/workflows') return json({ data: [] });
     if (url.pathname.startsWith('/api/')) return json({});
@@ -33,7 +44,7 @@ async function openCanvas({ width = 1440, height = 900 } = {}) {
   const canvas = page.getByRole('region', { name: 'Agents canvas', exact: true }); await canvas.waitFor();
   const node = title => canvas.locator('.react-flow__node').filter({ hasText: title });
   return {
-    page, canvas, posts, errors, node,
+    page, canvas, posts, plans, errors, node,
     agents: canvas.locator('.react-flow__node-agent'),
     wires: canvas.locator('.react-flow__edge:not(.canvas-edge-mother)'),
     /** The graph as saved on this device, after the save's short wait. */
@@ -46,4 +57,4 @@ async function openCanvas({ width = 1440, height = 900 } = {}) {
   };
 }
 
-module.exports = { openCanvas };
+module.exports = { openCanvas, planFor };

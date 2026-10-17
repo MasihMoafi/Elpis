@@ -117,6 +117,9 @@ test('production package runs after its source and dependency installations move
     bytes += contents.length;
   }
   assert.equal(bytes, manifest.payloadBytes);
+  // A copy of the app carries no path from the machine that built it.
+  assert.ok(!JSON.stringify(manifest).includes(options.source), 'the manifest names no source folder');
+  assert.ok(!JSON.stringify(manifest).includes(os.homedir()), 'the manifest names no home folder');
   assert.equal(result.totalBytes, bytes + (await fs.stat(result.manifest)).size);
   await fs.rename(options.source, `${options.source}-moved`);
   await fs.rename(path.join(options.root, 'old-install'), path.join(options.root, 'old-install-moved'));
