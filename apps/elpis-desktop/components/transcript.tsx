@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useState, type ReactNode } from "react";
 import type { Entry, Item } from "@/lib/api";
-import { elapsed, exploration, fileList, readNames, stepFailed, stepLabel } from "@/lib/steps";
+import { elapsed, stepLabel, summarize, summaryParts } from "@/lib/steps";
 import { CreatedFiles, ImageThumb, fileKind } from "@/components/file-cards";
 
 /** The conversation as the ChatGPT app shows it: each user message, then the turn's work
@@ -84,19 +84,20 @@ function ActivityGroup({ entries, renderItem, mediaOf, live }: { entries: Entry[
   const [open, setOpen] = useState(false);
   const items = entries.map(entry => entry.item);
   const running = live ? entries.find(entry => entry.item.status === "inProgress") : undefined;
-  const failed = items.filter(stepFailed).length;
   const views = entries.filter(entry => entry.item.type === "imageView" && typeof entry.item.path === "string" && mediaOf?.(entry)).slice(0, 3);
   return <details className="activity-group" onToggle={event => setOpen(event.currentTarget.open)}>
     <summary aria-expanded={open}>
       {running
         ? <LiveStep key={running.item.id} label={stepLabel(running.item, true)} since={running.startedAtMs} />
-        : <span className="activity-group-label">{summarize(items)}{failed > 0 && <> <span className="activity-group-failed">({failed} failed)</span></>}</span>}
+        : <span className="activity-group-label">{summaryParts(items).map((part, index) => <Fragment key={index}>{index > 0 && ", "}{part.text}{part.failed > 0 && <> <span className="activity-group-failed">({part.failed} failed)</span></>}</Fragment>)}</span>}
       {views.map(entry => <ImageThumb key={entry.item.id} src={`${mediaOf!(entry)}/0`} name={fileKind(String(entry.item.path)).name} />)}
     </summary>
     <div className="activity-group-body">{entries.map(entry => <div key={entry.item.id}>{renderItem(entry)}</div>)}</div>
   </details>;
 }
 
+/** The timer is not drawn for a step's first seconds, as in Claude's rows. */
+const TIMER_FROM_MS = 2000;
 /** Something in progress, as a sentence with animated dots and a timer counting from `since` (else from now). */
 function LiveStep({ label, since }: { label: string; since?: number }) {
   const [start] = useState(() => since ?? Date.now());
@@ -104,42 +105,12 @@ function LiveStep({ label, since }: { label: string; since?: number }) {
   useEffect(() => { const timer = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(timer); }, []);
   return <>
     <span className="live-dots" aria-hidden="true"><i /><i /><i /></span>
-    <span className="live-label">{label}</span>{" "}
-    <span className="live-timer">{elapsed(now - start)}</span>
+    <span className="live-label">{label}</span>
+    {now - start >= TIMER_FROM_MS && <>{" "}<span className="live-timer">{elapsed(now - start)}</span></>}
   </>;
 }
 
-const count = (n: number, one: string, many: string) => (n === 1 ? one : many.replace("#", String(n)));
-
-/** "Ran 3 commands, edited 2 files, used rag", in the order the work happened; reads name their files. */
-export function summarize(items: Item[]): string {
-  const phrases = new Map<string, string>();
-  const commands = items.filter(item => item.type === "commandExecution");
-  const kinds = new Map(commands.map(item => [item, exploration(item)]));
-  const ofKind = (kind: ReturnType<typeof exploration>) => commands.filter(item => kinds.get(item) === kind);
-  const files = items.filter(item => item.type === "fileChange").reduce((sum, item) => sum + (Array.isArray(item.changes) ? item.changes.length : 1), 0);
-  const servers = [...new Set(items.filter(item => item.type === "mcpToolCall").map(item => String(item.server || "a tool")))];
-  const tools = items.filter(item => item.type === "dynamicToolCall" || item.type === "functionCallOutput").length;
-  const searches = items.filter(item => item.type === "webSearch").length;
-  const agents = items.filter(item => item.type === "collabAgentToolCall" || item.type === "subAgentActivity").length;
-  const images = items.filter(item => item.type === "imageView").length;
-  for (const item of items) {
-    const kind = kinds.get(item);
-    if (kind === "read") phrases.set("read", `read ${fileList([...new Set(ofKind("read").flatMap(readNames))])}`);
-    else if (kind === "search") phrases.set("grep", count(ofKind("search").length, "searched the files", "searched the files # times"));
-    else if (kind === "listFiles") phrases.set("list", count(ofKind("listFiles").length, "listed files", "listed files # times"));
-    else if (item.type === "commandExecution") phrases.set("commands", count(ofKind(null).length, "ran a command", "ran # commands"));
-    else if (item.type === "fileChange") phrases.set("files", count(files, "edited a file", "edited # files"));
-    else if (item.type === "mcpToolCall") phrases.set("mcp", `used ${servers.join(" and ")}`);
-    else if (item.type === "dynamicToolCall" || item.type === "functionCallOutput") phrases.set("tools", count(tools, "used a tool", "used # tools"));
-    else if (item.type === "webSearch") phrases.set("search", count(searches, "searched the web", "searched the web # times"));
-    else if (item.type === "collabAgentToolCall" || item.type === "subAgentActivity") phrases.set("agents", count(agents, "worked with an agent", "worked with agents"));
-    else if (item.type === "contextCompaction") phrases.set("compaction", "compacted the context");
-    else if (item.type === "imageView") phrases.set("images", count(images, "viewed an image", "viewed # images"));
-  }
-  const text = [...phrases.values()].join(", ") || (items.some(item => item.type === "reasoning") ? "thought" : `${items.length} steps`);
-  return text[0].toUpperCase() + text.slice(1);
-}
+export { summarize };
 
 /** "Worked for 14m 42s": from the user's message to the last recorded item. */
 export function workedFor(entries: Entry[]): string {

@@ -80,7 +80,7 @@ function hue(value) {
 const luminance = value => { const [r, g, b] = rgb(value).map(c => { c /= 255; return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; }); return 0.2126 * r + 0.7152 * g + 0.0722 * b; };
 const contrast = (a, b) => { const [x, y] = [luminance(a), luminance(b)].sort((p, q) => q - p); return (x + 0.05) / (y + 0.05); };
 const isRed = value => { const [r, g, b] = rgb(value); return (hue(value) < 12 || hue(value) > 345) && r > g + 60 && r > b + 60; };
-const seconds = text => { const m = text.match(/^(?:(\d+):(\d\d)|(\d+)s)$/); assert.ok(m, `a timer reads seconds or m:ss, not "${text}"`); return m[3] ? Number(m[3]) : Number(m[1]) * 60 + Number(m[2]); };
+const seconds = text => { const m = text.match(/^(?:(\d+)m )?(\d+)s$/); assert.ok(m, `a timer reads "39s" or "1m 2s", not "${text}"`); return Number(m[1] ?? 0) * 60 + Number(m[2]); };
 
 test('finished work folds into one row per group, opens by click or keyboard, and shows commands as Claude does', async () => {
   const app = await fixture();
@@ -89,9 +89,9 @@ test('finished work folds into one row per group, opens by click or keyboard, an
     await page.locator('.worked-for > summary').click();
     const groups = page.locator('.activity-group');
     const failedGroup = groups.filter({ hasText: /^Ran 2 commands/ });
-    const mixed = groups.filter({ hasText: /^Edited a file/ });
+    const mixed = groups.filter({ hasText: /^Edited and read app\.ts/ });
     assert.equal((await failedGroup.locator('> summary').innerText()).trim(), 'Ran 2 commands (1 failed)');
-    assert.equal((await mixed.locator('> summary').innerText()).trim(), 'Edited a file, used rag, read app.ts, ran a command', 'mixed work is listed in the order it happened, reads by file name');
+    assert.equal((await mixed.locator('> summary').innerText()).trim(), 'Edited and read app.ts, used rag, ran a command', 'mixed work is listed in the order it began; the one file read and edited is named once');
 
     // Collapsed when finished; Enter, Space and a click each toggle it, and aria-expanded says which.
     const summary = failedGroup.locator('> summary');
@@ -161,7 +161,7 @@ test('a running step reads as a sentence with a live timer and animated dots', a
     const label = live.locator('> summary');
     // The turn is known to be running once the chat's live state arrives (after its history).
     await live.locator('.live-timer').waitFor();
-    assert.match((await label.innerText()).trim(), /^Running npm run dev -- --port 8088\s+1:0\d$/);
+    assert.match((await label.innerText()).trim(), /^Running npm run dev -- --port 8088\s+1m \d+s$/);
     const timer = live.locator('.live-timer');
     const first = seconds((await timer.innerText()).trim());
     assert.ok(first >= 62 && first <= 66, `the timer counts from the step's start (${first}s)`);

@@ -109,7 +109,9 @@ function toolItem(id, t, cwd) {
     : t.name === "Grep" || t.name === "Glob" ? [{ type: "search", command, query: r.pattern ?? null, path: r.path ?? null }]
       : t.name === "LS" ? [{ type: "listFiles", command, path: r.path ?? null }] : [];
   const output = t.name === "Bash" && typeof resp.stdout === "string" ? [resp.stdout, resp.stderr].filter(Boolean).join("\n") : t.text ? unfence(t.text) : null;
-  return { type: "commandExecution", id, pluginId: null, scriptPath: null, command, cwd, processId: null, source: "agent", status, commandActions, aggregatedOutput: output, exitCode: status === "completed" ? 0 : status === "inProgress" ? null : 1, durationMs: t.end ? t.end - t.start : null };
+  // Bash's own one-line description of the command: the desktop app titles the step by it, as Claude's does.
+  const description = t.name === "Bash" && typeof r.description === "string" && r.description.trim() ? { description: r.description.trim() } : {};
+  return { type: "commandExecution", id, pluginId: null, scriptPath: null, command, cwd, processId: null, source: "agent", status, commandActions, aggregatedOutput: output, exitCode: status === "completed" ? 0 : status === "inProgress" ? null : 1, durationMs: t.end ? t.end - t.start : null, ...description };
 }
 // A finished turn as the store keeps it: long outputs and diffs cut.
 const cut = (s) => (s.length > 4000 ? s.slice(0, 4000) + "\n…" : s);
