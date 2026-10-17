@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { OptionSelect } from "@/components/ui/option-select";
 import { Input } from "@/components/ui/input";
 import { ApprovalCard, type QuestionAnswers } from "@/components/approval-card";
+import { PlanCard } from "@/components/plan-card";
 import { SearchField } from "@/components/ui/search-field";
 import { Textarea } from "@/components/ui/textarea";
 import { ChatMessage } from "@/components/chat-message";
@@ -215,9 +216,9 @@ export default function Home() {
     if (!keys.length) return previous;
     const next = { ...previous }; for (const key of keys) delete next[key]; return next;
   }), []);
-  const draftAnswer = (approval: Approval, id: string, value: string) => {
+  const draftAnswer = (approval: Approval, id: string, value: string[]) => {
     const key = approvalDraftKey(approval);
-    setApprovalDrafts(previous => ({ ...previous, [key]: { id: approval.id, answers: { ...previous[key]?.answers, [id]: [value] } } }));
+    setApprovalDrafts(previous => ({ ...previous, [key]: { id: approval.id, answers: { ...previous[key]?.answers, [id]: value } } }));
   };
   const newDraftKey = useRef("new");
   const [error, setError] = useState("");
@@ -835,14 +836,22 @@ export default function Home() {
     if (typeof live.planMode === "boolean") setThreadPlans(prev => ({ ...prev, [id]: live.planMode! }));
   }
   const setPlan = (on: boolean) => selected ? setOverride(selected.id, { plan: on }) : setNewPlan(on);
-  /** "Yes, implement this plan": leaves Plan mode and asks Elpis to carry the plan out. */
-  async function implementPlan(thread: Thread, turnId: string) {
+  /** The plan card's answers (components/plan-card.tsx). Accept leaves Plan mode and asks Elpis to carry the plan out,
+   * after switching the chat to `permissions` when one is chosen; Keep planning sends what should change, in Plan mode,
+   * or with nothing to say just stays there. */
+  async function answerPlan(thread: Thread, turnId: string, answer: { implement: true; permissions?: PermissionMode } | { feedback: string }) {
     const originalFocus = document.activeElement, originalRequest = request.current;
     setPlanAnswered(prev => ({ ...prev, [thread.id]: turnId })); setError("");
+    const implement = "implement" in answer, feedback = implement ? "" : answer.feedback.trim();
+    if (!implement && !feedback) { focusComposer(); return; }
     try {
-      const result = await api<{ turn?: { id: string } }>(`/threads/${encodeURIComponent(thread.id)}/turns`, { text: IMPLEMENT_PLAN, mode: "default" });
+      if (implement && answer.permissions) {
+        const changed = await api<{ permissions: PermissionMode }>(`/threads/${encodeURIComponent(thread.id)}/permissions`, { permissions: answer.permissions });
+        setThreadModes(prev => ({ ...prev, [thread.id]: changed.permissions }));
+      }
+      const result = await api<{ turn?: { id: string } }>(`/threads/${encodeURIComponent(thread.id)}/turns`, implement ? { text: IMPLEMENT_PLAN, mode: "default" } : { text: feedback });
       if (!result.turn?.id) throw new Error("Elpis did not acknowledge the new turn. Check the conversation before retrying.");
-      setThreadPlans(prev => ({ ...prev, [thread.id]: false })); setNextTurn(prev => { const { plan: _, ...rest } = prev[thread.id] ?? {}; return Object.keys(rest).length ? { ...prev, [thread.id]: rest } : without(prev, thread.id); });
+      if (implement) { setThreadPlans(prev => ({ ...prev, [thread.id]: false })); setNextTurn(prev => { const { plan: _, ...rest } = prev[thread.id] ?? {}; return Object.keys(rest).length ? { ...prev, [thread.id]: rest } : without(prev, thread.id); }); }
       if (!completedTurns.current.has(result.turn.id)) setActiveTurns(prev => ({ ...prev, [thread.id]: result.turn!.id }));
     } catch (e) { setPlanAnswered(prev => without(prev, thread.id)); setError(e instanceof Error ? e.message : String(e)); }
     finally { if (request.current === originalRequest && selectedRef.current?.id === thread.id) restoreComposerFocus(originalFocus); }
@@ -1013,9 +1022,10 @@ export default function Home() {
     if (prompt?.allowed && !textRef.current.trim()) editDraft(prompt.prompt);
     focusComposer();
   }
-  async function answer(id: string, body: unknown, key: string) {
+  /** Answers a request; `instead` is "Deny, and tell Elpis what to do instead" (body: { text }). */
+  async function answer(id: string, body: unknown, key: string, instead = false) {
     const originalFocus = document.activeElement, originalRequest = request.current;
-    await submitDraft(key, () => api(`/approvals/${encodeURIComponent(id)}`, body));
+    await submitDraft(key, () => api(`/approvals/${encodeURIComponent(id)}${instead ? "/instead" : ""}`, body));
     setApprovals(prev => prev.filter(a => a.id !== id)); clearApprovalDraft(id);
     if (request.current === originalRequest) restoreComposerFocus(originalFocus);
   }
@@ -1411,7 +1421,7 @@ export default function Home() {
         <div className="pending-request-list">{outsideChatApprovals.map(approval => {
           const thread = threads.find(item => item.id === approval.params.threadId);
           const requester = thread ?? approval.thread; const name = requester ? title(requester) : approval.params.threadId || "Conversation not reported";
-          return <div key={approvalDraftKey(approval)} className="pending-request"><div className="pending-request-heading"><p>{name}</p>{approval.params.threadId && <Button variant="ghost" size="sm" onClick={() => { setPendingInputOpen(false); openById(approval.params.threadId!); }}>Open chat</Button>}</div><ApprovalCard approval={approval} answer={(id, body) => answer(id, body, approvalDraftKey(approval))} busy={!!pendingDrafts[approvalDraftKey(approval)]} answers={approvalDrafts[approvalDraftKey(approval)]?.answers ?? {}} onAnswerChange={(id, value) => draftAnswer(approval, id, value)} /></div>;
+          return <div key={approvalDraftKey(approval)} className="pending-request"><div className="pending-request-heading"><p>{name}</p>{approval.params.threadId && <Button variant="ghost" size="sm" onClick={() => { setPendingInputOpen(false); openById(approval.params.threadId!); }}>Open chat</Button>}</div><ApprovalCard approval={approval} globalKeys={false} answer={(id, body) => answer(id, body, approvalDraftKey(approval))} deny={(id, text) => answer(id, { text }, approvalDraftKey(approval), true)} busy={!!pendingDrafts[approvalDraftKey(approval)]} answers={approvalDrafts[approvalDraftKey(approval)]?.answers ?? {}} onAnswerChange={(id, value) => draftAnswer(approval, id, value)} /></div>;
         })}</div>
       </section>}
       </div>
@@ -1441,10 +1451,8 @@ export default function Home() {
           {failedTurn && <FailedTurnCard key={`${selected?.id}:${failedTurn.turnId}`} failure={failedTurn} models={selectedChoice?.models ?? models} currentModel={selected?.model} disabled={!replaceable}
             blockedReason={continues ? "Continue this conversation here before trying again." : failedInput?.allowed ? undefined : failedInput?.reason ?? "The original complete input is unavailable, so this turn cannot be safely resent."}
             onRetry={!continues && failedInput?.allowed ? retryModel => replaceFrom(failedTurn.turnId, failedInput.prompt, undefined, retryModel) : undefined} />}
-          {selected && proposedPlan && <div className="plan-prompt" role="group" aria-label="Implement this plan?"><h3>Implement this plan?</h3>
-            <Button size="sm" disabled={busy || !connected} onClick={() => void implementPlan(selected, proposedPlan)}>Yes, implement this plan</Button>
-            <Button size="sm" variant="ghost" onClick={() => { setPlanAnswered(prev => ({ ...prev, [selected.id]: proposedPlan })); focusComposer(); }}>No, stay in Plan mode</Button></div>}
-          {approvals.filter(a => a.params.threadId === selected?.id).map(a => <ApprovalCard key={approvalDraftKey(a)} approval={a} answer={(id, body) => answer(id, body, approvalDraftKey(a))} busy={!!pendingDrafts[approvalDraftKey(a)]} answers={approvalDrafts[approvalDraftKey(a)]?.answers ?? {}} onAnswerChange={(id, value) => draftAnswer(a, id, value)} />)}
+          {selected && proposedPlan && <PlanCard mode={permissionMode} busy={busy || !connected} onImplement={permissions => answerPlan(selected, proposedPlan, { implement: true, permissions })} onKeepPlanning={feedback => answerPlan(selected, proposedPlan, { feedback })} />}
+          {approvals.filter(a => a.params.threadId === selected?.id).map(a => <ApprovalCard key={approvalDraftKey(a)} approval={a} answer={(id, body) => answer(id, body, approvalDraftKey(a))} deny={(id, text) => answer(id, { text }, approvalDraftKey(a), true)} busy={!!pendingDrafts[approvalDraftKey(a)]} answers={approvalDrafts[approvalDraftKey(a)]?.answers ?? {}} onAnswerChange={(id, value) => draftAnswer(a, id, value)} />)}
         </div><PromptRail scroller={scroll} version={entries} /></div></div>
         <div className="composer-wrap">
           <ViewBoundary label="This panel" resetKey={panel}>

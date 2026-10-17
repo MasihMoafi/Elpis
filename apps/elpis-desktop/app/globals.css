@@ -162,7 +162,6 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .composer-chip > svg:first-child, .model-select > svg:first-child { width:16px; height:16px; }
 .composer-hint { margin-left:auto; color:var(--subtle-foreground); font-size:var(--text-small); text-align:right; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .page-scroll { flex:1; min-height:0; overflow:auto; padding:24px 28px 40px; }
-.approval { border:1px solid var(--border); padding:14px 16px; border-radius:12px; margin-bottom:16px; background:var(--card); } .approval h3 { font-size:13px; font-weight:600; margin-bottom:8px; } .approval pre { white-space:pre-wrap; overflow-wrap:anywhere; font-size:12px; font-family:var(--mono); } .approval-actions { display:flex; gap:8px; margin-top:12px; } .approval label { display:grid; gap:6px; margin:10px 0; }
 .status-line { display:flex; gap:7px; align-items:center; } .status-dot { width:6px; height:6px; border-radius:50%; background:var(--muted-foreground); } .status-dot.connected { background:var(--success); }
 @media(max-width:760px) { .app-shell { grid-template-columns:1fr; } .sidebar { display:none; } .sidebar.open { display:flex; position:fixed; inset:0 auto 0 0; width:280px; z-index:30; box-shadow:0 0 0 100vmax #0008; } .mobile-menu { display:inline-flex; } .workspace-header { padding:0 12px; } .chat-scroll { padding:20px 16px; } .composer-wrap { padding:6px 12px 12px; } .page-scroll { padding:18px; } .empty-state h2 { font-size:24px; } .composer-hint { display:none; } }
 
@@ -319,7 +318,6 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .field .model-picker-trigger { width:100%; height:36px; max-width:none; }
 .feature-form [data-slot="select-trigger"] { width:100%; min-height:36px; }
 .field select { width:100%; height:36px; border:1px solid var(--border); border-radius:8px; padding:0 10px; background:var(--background); color:var(--foreground); font-size:14px; font-weight:400; }
-.approval-actions { display:flex; flex-wrap:wrap; gap:8px; }
 @media(max-width:760px) { .mobile-brand { display:block; } }
 /* Chat parity: your messages can be copied and edited; code blocks carry their own copy button. */
 .user-turn { position:relative; display:flex; flex-direction:column; align-items:flex-end; margin-bottom:28px; min-width:0; }
@@ -379,12 +377,6 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .pending-request-list { padding:8px 16px 16px; }
 .pending-request-heading { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:10px 0; }
 .pending-request-heading p { font-size:13px; font-weight:550; overflow-wrap:anywhere; }
-.pending-request .approval { margin-bottom:8px; }
-.approval-reason { font-size:12px; line-height:1.6; color:var(--muted-foreground); margin-bottom:8px; }
-.approval pre { border-radius:8px; padding:10px; background:var(--muted); margin:8px 0; }
-.approval-scope { margin-top:12px; padding-top:12px; border-top:1px solid var(--border); }
-.approval-scope p { font-size:var(--text-small); font-weight:500; color:var(--muted-foreground); margin-bottom:5px; }
-.approval-scope code { display:block; font-size:var(--text-small); line-height:1.6; overflow-wrap:anywhere; white-space:pre-wrap; }
 @media(hover:none) { .thread-actions { opacity:1; } }
 @media(max-width:760px) {
  .workspace-header { min-height:68px; gap:8px; }
@@ -631,8 +623,6 @@ button.trace-head:hover .trace-text { text-decoration:underline; }
 .splash-log .pending { color:#879087; }
 .plan-card { margin:10px 0; padding:12px 16px 4px; border:1px solid var(--border); border-left:2px solid var(--primary); border-radius:6px; background:var(--card); }
 .plan-card-heading { display:flex; align-items:center; gap:6px; margin:0 0 6px; font:500 var(--text-small)/1.2 var(--mono); letter-spacing:.12em; text-transform:uppercase; color:var(--primary); }
-.plan-prompt { margin:14px 0 4px; padding:12px 14px; border:1px solid color-mix(in oklch, var(--primary) 35%, var(--border)); border-radius:6px; background:var(--card); display:flex; flex-wrap:wrap; align-items:center; gap:8px; }
-.plan-prompt h3 { margin:0 auto 0 0; font-size:13.5px; font-weight:500; }
 .permissions-auto svg:first-child { color:var(--primary); }
 .permissions-full { color:var(--warning); }
 /* Floating surfaces: menus, list pop-ups (selects, the model picker, slash commands), popovers and dialogs share one
