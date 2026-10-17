@@ -79,6 +79,13 @@ test('sidebar: projects, toggle, D to delete, arrows, Ctrl/Shift selection, hove
     assert.deepEqual(await row('alpha').getByRole('button').evaluateAll(buttons => buttons.map(button => button.getAttribute('aria-label') || button.textContent.trim())), ['Alpha', 'Pin Alpha', 'Archive Alpha', 'Actions for Alpha']);
     await row('alpha').getByRole('button', { name: 'Actions for Alpha', exact: true }).click();
     await page.getByRole('menuitem', { name: 'Show agents', exact: true }).waitFor(); await page.keyboard.press('Escape');
+    // D in a chat's menu, opened by "…" or by right-click, picks Delete (Claude's shortcut); Cancel deletes nothing.
+    for (const open of [() => row('alpha').getByRole('button', { name: 'Actions for Alpha', exact: true }).click(), () => link('alpha').click({ button: 'right' })]) {
+      await open(); await page.getByRole('menuitem', { name: /^Delete/ }).waitFor();
+      await page.keyboard.press('d'); await dialog.getByText('Delete “Alpha”?').waitFor();
+      assert.equal(await page.getByRole('menu').count(), 0, 'the menu closes');
+      await dialog.getByRole('button', { name: 'Cancel', exact: true }).click(); await dialog.waitFor({ state: 'hidden' });
+    }
 
     // 4. D right after clicking a row asks to delete it, exactly like the menu's Delete; typing D in the composer does not.
     await link('bravo').click(); await eventually(async () => assert.equal(await heading.innerText(), 'Bravo'));
