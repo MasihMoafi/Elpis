@@ -32,7 +32,7 @@ test('bridged models are labelled by their prefix; providers keep separate sign-
     const json = value => { res.setHeader('content-type', 'application/json'); res.end(JSON.stringify(value)); };
     if (url.pathname === '/api/events') { res.writeHead(200, { 'content-type': 'text/event-stream' }); res.write('event: connection\ndata: {"connected":true}\n\n'); streams.push(res); return; }
     if (url.pathname === '/api/health') return json({ connected: true });
-    if (url.pathname === '/api/settings') return json({ main: { provider: 'openai', model: 'gpt-6.1-sol' }, providers: [{ id: 'openai', displayName: 'OpenAI' }], managed: { modelProvider: null } });
+    if (url.pathname === '/api/settings') return json({ background: {}, smartPrune: { explicitOverride: {} }, memory: {}, write: { available: false }, main: { provider: 'openai', model: 'gpt-6.1-sol' }, providers: [{ id: 'openai', displayName: 'OpenAI' }], managed: { modelProvider: null } });
     if (url.pathname === '/api/models') return json({ data: [
       { id: 'sol', model: 'gpt-6.1-sol', displayName: 'GPT-6.1 Sol', supportedReasoningEfforts: [{ reasoningEffort: 'medium' }] },
       { id: 'claude/opus', model: 'claude/opus', displayName: 'Opus (Claude subscription)', supportedReasoningEfforts: [{ reasoningEffort: 'high' }, { reasoningEffort: 'max' }] },

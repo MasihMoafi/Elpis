@@ -15,7 +15,7 @@ test('a provider that needs a key asks for it in the picker, saves it without sh
     if (url.pathname === '/api/events') { res.writeHead(200, { 'content-type': 'text/event-stream' }); res.write('event: connection\ndata: {"connected":true}\n\n'); return; }
     if (url.pathname === '/api/session') return json({ authenticated: true });
     if (url.pathname === '/api/health') return json({ connected: true });
-    if (url.pathname === '/api/settings') return json({ version: 'v1', main: { model: 'gpt-6-luna', provider: 'openai' }, providers: [{ id: 'openai', displayName: 'OpenAI' }, { id: 'openrouter', displayName: 'OpenRouter', ...(keySet ? {} : { needsKey: true }) }] });
+    if (url.pathname === '/api/settings') return json({ version: 'v1', background: {}, smartPrune: { explicitOverride: {} }, memory: {}, write: { available: false }, main: { model: 'gpt-6-luna', provider: 'openai' }, providers: [{ id: 'openai', displayName: 'OpenAI' }, { id: 'openrouter', displayName: 'OpenRouter', ...(keySet ? {} : { needsKey: true }) }] });
     if (url.pathname === '/api/models' && url.searchParams.get('provider') === 'openrouter') return keySet ? json({ data: [{ id: 'deepseek/deepseek-v4.1-flash', model: 'deepseek/deepseek-v4.1-flash', displayName: 'DeepSeek V4.1 Flash', description: '≈164k context' }], nextCursor: null }) : json({ error: 'Add an API key for this connection.' }, 502);
     if (url.pathname === '/api/models') return json({ data: [{ id: 'luna', model: 'gpt-6-luna', displayName: 'Luna 6' }], nextCursor: null });
     if (url.pathname === '/api/providers/key' && req.method === 'POST') { saved.push(JSON.parse(body)); keySet = true; return json({ providers: [] }); }

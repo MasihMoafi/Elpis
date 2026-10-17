@@ -17,7 +17,7 @@ test('provider setup preserves edits on conflict, refreshes choices and never re
   const json=(body,status=200)=>{res.writeHead(status,{'content-type':'application/json'});res.end(JSON.stringify(body));};
   if(route==='/api/events'){res.writeHead(200,{'content-type':'text/event-stream'});res.write('event: connection\ndata: {"connected":true}\n\n');clients.add(res);req.on('close',()=>clients.delete(res));return;}
   if(route==='/api/health')return json({connected:true});
-  if(route==='/api/settings')return json({main:{model:'native-model',provider:'openai'},providers:[{id:'openai',displayName:'OpenAI'},...config.providers.map(p=>({id:p.id,displayName:p.name}))]});
+  if(route==='/api/settings')return json({background:{},smartPrune:{explicitOverride:{}},memory:{},write:{available:false},main:{model:'native-model',provider:'openai'},providers:[{id:'openai',displayName:'OpenAI'},...config.providers.map(p=>({id:p.id,displayName:p.name}))]});
   if(route==='/api/models')return json({data:[{id:'native-model',model:'native-model',displayName:'Native model'}]});
   if(route==='/api/threads')return json({data:[],nextCursor:null});
   if(route==='/api/providers')return json(accounts);
