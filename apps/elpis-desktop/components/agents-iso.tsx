@@ -273,7 +273,7 @@ export function IsoBoard({ graph, father, states, selected, onSelect, onOpen, da
       {places.map(place => {
         const at = anchor(place);
         return <span key={place.id} className="iso-label" data-for={place.id} data-kind={place.kind} data-hot={hot === place.id || undefined} data-selected={selected.includes(place.id) || undefined} data-short={!full.has(place.id) || undefined} style={{ left: at.x, top: at.y - LABEL.gap }}>
-          {place.kind === "agent" && <b className="iso-badge">{wave.get(place.id) ?? "–"}</b>}{full.has(place.id) && <span>{titleOf(place.id)}</span>}
+          {place.kind === "agent" && <b className="iso-badge">{wave.get(place.id) ?? "–"}</b>}{full.has(place.id) && <span title={titleOf(place.id)}>{titleOf(place.id)}</span>}
         </span>;
       })}
     </div>
@@ -285,9 +285,9 @@ export function IsoBoard({ graph, father, states, selected, onSelect, onOpen, da
     </div>
     {/* The status panel, as Deus Ex's: what the pointer, the keys or the selection is on. */}
     <section className="iso-hud iso-status iso-chamfer" aria-label="Agent status" data-kind={subjectPlace?.kind}>
-      {subjectPlace ? <><strong>{titleOf(subjectPlace.id)}</strong>
-        <small>{subjectPlace.kind !== "agent" ? parentLine(subjectPlace.id).join(" · ") : `Wave ${wave.get(subjectPlace.id) ?? "–"} · ${STATUS[statusOf(subjectPlace.id)]} · ${CHECK[statusOf(checkOf(subjectPlace.id))]}`}</small></>
-        : <><strong>{agents.length} {agents.length === 1 ? "agent" : "agents"} in {new Set(wave.values()).size} {new Set(wave.values()).size === 1 ? "wave" : "waves"}</strong><small>Click an agent to select it · Enter opens it</small></>}
+      {subjectPlace ? <><strong title={titleOf(subjectPlace.id)}>{titleOf(subjectPlace.id)}</strong>
+        <small title={subjectPlace.kind !== "agent" ? parentLine(subjectPlace.id).join(" · ") : `Wave ${wave.get(subjectPlace.id) ?? "–"} · ${STATUS[statusOf(subjectPlace.id)]} · ${CHECK[statusOf(checkOf(subjectPlace.id))]}`}>{subjectPlace.kind !== "agent" ? parentLine(subjectPlace.id).join(" · ") : `Wave ${wave.get(subjectPlace.id) ?? "–"} · ${STATUS[statusOf(subjectPlace.id)]} · ${CHECK[statusOf(checkOf(subjectPlace.id))]}`}</small></>
+        : <><strong>{agents.length} {agents.length === 1 ? "agent" : "agents"} in {new Set(wave.values()).size} {new Set(wave.values()).size === 1 ? "wave" : "waves"}</strong><small title="Click an agent to select it · Enter opens it">Click an agent to select it · Enter opens it</small></>}
     </section>
   </div>;
 }

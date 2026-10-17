@@ -42,7 +42,7 @@ const GUIDE = [
 ];
 /** The board stays readable, as FigJam keeps objects at full size: fitting by itself (on opening, after a pattern or a
  * plan) never zooms below 80% (names stay at 12 px), panning instead; Home and the fit button show the whole graph, however small. */
-const FIT = { padding: 0.06, maxZoom: 1, minZoom: 0.8 };
+const FIT = { padding: 0.06, maxZoom: 1, minZoom: 0.3 };
 const OVERVIEW = { padding: 0.08, maxZoom: 1 };
 
 /** An agent on the canvas: it writes. Its run-order wave, name, model and state, with an input on the left (what it
@@ -54,8 +54,8 @@ function AgentNode({ id, data }: NodeProps<Node<AgentNodeData>>) {
   return <div className="agent-node" data-kind="agent" data-status={status}>
     <Handle type="target" position={Position.Left} title="Add agents this one waits for" onClick={event => data.onHandle?.(id, "target", event)} />
     <span className="agent-node-kind">Agent{data.wave ? ` · wave ${data.wave}` : ""}</span>
-    <strong className="agent-node-title">{data.title || "Untitled"}</strong>
-    <small className="agent-node-meta">{data.modelLabel ?? "Default model"} · {data.clash ? "clash" : STATUS_LABEL[status]}</small>
+    <strong className="agent-node-title" title={data.title || "Untitled"}>{data.title || "Untitled"}</strong>
+    <small className="agent-node-meta" title={`${data.modelLabel ?? "Default model"} · ${data.clash ? "clash" : STATUS_LABEL[status]}`}>{data.modelLabel ?? "Default model"} · {data.clash ? "clash" : STATUS_LABEL[status]}</small>
     <span className="agent-node-mark" role="img" data-check={check} aria-label={CHECK_LABEL[check]} title={CHECK_LABEL[check]}>{check === "succeeded" ? <Check size={12} /> : check === "failed" || check === "blocked" ? <X size={12} /> : null}</span>
     <Handle type="source" position={Position.Right} title="Add agents that wait for this one" onClick={event => data.onHandle?.(id, "source", event)} />
     {/* FigJam's quick create: a + beside the agent makes the next one, already wired; below it, a parallel one. */}
@@ -925,13 +925,13 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
     </div>
     {!panelOpen ? null : selected ? <aside className="canvas-side" aria-label="Selected agent">
       <p className="hud-menu-title">Agent{order.get(selected.id) ? ` · wave ${order.get(selected.id)}` : ""}{states[selected.id] ? ` · ${STATUS_LABEL[states[selected.id].status]}` : ""} · {CHECK_LABEL[states[checkOf(selected.id)]?.status ?? "idle"]}</p>
-      <label>Name<Input ref={nameField} aria-label="Name" value={selected.data.title} maxLength={256} onChange={event => edit({ title: event.target.value })} /></label>
+      <label>Name<Input ref={nameField} aria-label="Name" title={selected.data.title} value={selected.data.title} maxLength={256} onChange={event => edit({ title: event.target.value })} /></label>
       <label>Prompt<Textarea ref={promptField} aria-label="Prompt" rows={5} value={selected.data.instruction} placeholder="What this agent should do; left empty, Elpis fills it from the goal" onChange={event => edit({ instruction: event.target.value, ...(/^New agent( \d+)?$|^$/.test(selected.data.title) || selected.data.title === nameFrom(selected.data.instruction) ? { title: nameFrom(event.target.value) || "New agent" } : {}) })} /></label>
       <label>Provider<OptionSelect aria-label="Provider" value={selected.data.provider ?? ""} onChange={event => {
         const provider = event.target.value || null, first = catalog.find(item => item.provider === provider);
         edit({ provider, model: first?.model ?? null, effort: null });
       }}>{choices.map(choice => <option key={choice.id} value={choice.provider ?? ""}>{choice.label}</option>)}</OptionSelect></label>
-      <label>Model<OptionSelect aria-label="Model" value={choiceKey(selected.data)} onChange={event => edit(modelPatch(event.target.value))}>
+      <label>Model<OptionSelect aria-label="Model" title={modelLabel(selected.data)} value={choiceKey(selected.data)} onChange={event => edit(modelPatch(event.target.value))}>
         {modelOptions}
         {selected.data.model && !selectedModel && <option value={choiceKey(selected.data)}>{selected.data.model}</option>}</OptionSelect></label>
       {selectedModel && selectedModel.efforts.length > 0 && <label>Thinking<OptionSelect aria-label="Thinking" value={selected.data.effort ?? ""} onChange={event => edit({ effort: event.target.value || null })}>
