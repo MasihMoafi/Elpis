@@ -503,6 +503,7 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .hud-menu-item:has(small) > svg { align-self:flex-start; margin-top:2px; }
 /* Selects and the model picker mark the chosen item with a check at the right edge. */
 .hud-menu-item[data-slot="select-item"], .hud-menu-item[data-slot="combobox-item"] { padding-inline-end:32px; }
+.select-option { display:grid; gap:2px; }
 .context-ring { display:inline-flex; align-items:center; justify-content:center; width:28px; height:28px; padding:0; border:1px solid transparent; border-radius:4px; background:transparent; cursor:pointer; }
 .context-ring:hover, .context-ring[data-popup-open] { background:var(--hover); border-color:var(--hairline); }
 .context-ring:focus-visible { outline:1.5px solid var(--ring); outline-offset:1px; }

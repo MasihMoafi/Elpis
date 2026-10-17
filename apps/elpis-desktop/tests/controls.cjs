@@ -64,4 +64,30 @@ const oranges = page => page.evaluate(() => {
   }
   return [...hits];
 });
-module.exports = { chooseOption, controlValue, guardDesktopStore, leaveSettings, oranges, sidebar };
+/** Opens a select and lists every option whose text is cut off: clipped by the menu or the option, or running under
+ * the check mark. Measures the glyphs themselves (a Range), so ellipsis and overflow:hidden both count as cut. */
+async function optionsCut(trigger) {
+  const page = trigger.page();
+  await trigger.click();
+  const list = page.getByRole('listbox');
+  await list.waitFor();
+  const cut = await list.evaluate(listbox => {
+    const box = element => element.getBoundingClientRect();
+    const clips = element => { const out = []; for (let node = element; node && node !== document.body; node = node.parentElement) if (getComputedStyle(node).overflowX !== 'visible') out.push(box(node)); return out; };
+    return [...listbox.querySelectorAll('[role="option"]')].flatMap(option => {
+      const text = option.firstElementChild ?? option, range = document.createRange();
+      range.selectNodeContents(text);
+      const glyphs = [...range.getClientRects()].filter(rect => rect.width > 0), name = option.textContent.trim();
+      const problems = [];
+      if (text.scrollWidth > text.clientWidth + 1 && getComputedStyle(text).overflowX !== 'visible') problems.push(`${name}: text is ${text.scrollWidth}px in ${text.clientWidth}px`);
+      for (const clip of clips(text)) if (glyphs.some(rect => rect.right > clip.right + 1 || rect.left < clip.left - 1)) { problems.push(`${name}: runs past the menu`); break; }
+      const check = [...option.children].find(child => child !== text && child.querySelector('svg'));
+      if (check && check.getClientRects().length) { const mark = box(check); if (glyphs.some(rect => rect.right > mark.left && rect.left < mark.right && rect.bottom > mark.top && rect.top < mark.bottom)) problems.push(`${name}: runs under the check mark`); }
+      return problems;
+    });
+  });
+  await page.keyboard.press('Escape');
+  await list.waitFor({ state: 'hidden' });
+  return cut;
+}
+module.exports = { chooseOption, controlValue, guardDesktopStore, leaveSettings, optionsCut, oranges, sidebar };

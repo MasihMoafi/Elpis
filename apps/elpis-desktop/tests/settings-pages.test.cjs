@@ -1,4 +1,4 @@
-const { chooseOption, controlValue } = require('./controls.cjs');
+const { chooseOption, controlValue, optionsCut } = require('./controls.cjs');
 // Every Settings page against a local adapter: page order, what each control writes, and narrow layouts. No runtime or model calls.
 const test = require('node:test'), assert = require('node:assert/strict'), fs = require('node:fs/promises'), path = require('node:path'), http = require('node:http');
 const { chromium } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright');
@@ -147,10 +147,21 @@ test('settings pages appear in order and each control writes only its own backin
     assert.equal(await page.getByRole('tab', { name: 'Voice', exact: true }).getAttribute('aria-selected'), 'true');
 
     assert.equal(posts.filter(post => post.path === '/api/memories/reset').length, 0);
+    const checked = new Set();
     for (const width of [1280, 390]) {
       await page.setViewportSize({ width, height: 900 });
-      for (const name of PAGES) { await open(name); assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, `${name} fits at ${width}px`); }
+      for (const name of PAGES) {
+        const panel = await open(name);
+        assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, `${name} fits at ${width}px`);
+        // Every menu on the page reads in full: no choice cut off or under the check mark.
+        const menus = panel.locator('[data-slot="select-trigger"]:visible:not([data-disabled])');
+        for (let index = 0; index < await menus.count(); index++) {
+          const menu = menus.nth(index); checked.add(`${name}: ${await menu.getAttribute('aria-label') ?? await menu.textContent()}`);
+          assert.deepEqual(await optionsCut(menu), [], `${name} at ${width}px: ${await menu.getAttribute('aria-label') ?? await menu.textContent()} menu`);
+        }
+      }
     }
+    assert.ok(checked.size >= 16, `the menu check reached every page's menus, not ${checked.size}: ${[...checked].join(', ')}`);
     assert.deepEqual(errors, []);
   } finally { await browser.close(); for (const client of clients) client.end(); server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); }
 });

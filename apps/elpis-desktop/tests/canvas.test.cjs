@@ -6,6 +6,7 @@ const http = require('node:http');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { chromium } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright');
+const { optionsCut } = require('./controls.cjs');
 
 test('agents canvas: architecture, add and wire agents, refuse loops, persist, run and follow it live', async () => {
   const root = { id: 'root', name: 'Canvas run', cwd: '/tmp/demo', model: 'sol', modelProvider: 'openai', status: { type: 'idle' }, desktopAccess: { writable: true, mode: 'direct' } };
@@ -54,6 +55,9 @@ test('agents canvas: architecture, add and wire agents, refuse loops, persist, r
     // Selecting an agent opens it for editing.
     await node('Run the suite').click();
     const inspector = canvas.getByRole('complementary', { name: 'Selected agent', exact: true });
+    // Every choice in every menu reads in full: none is cut off by the panel or hidden under the check mark.
+    for (const name of ['Role', 'Model']) assert.deepEqual(await optionsCut(inspector.getByRole('combobox', { name, exact: true })), [], `${name} menu`);
+    assert.deepEqual(await optionsCut(canvas.getByRole('combobox', { name: 'Agents at once', exact: true })), [], 'Agents at once menu');
     await inspector.getByRole('textbox', { name: 'Instruction', exact: true }).fill('Run every test and show the output.');
 
     // Add a Fix agent and wire the verifier to it by dragging between their handles.
