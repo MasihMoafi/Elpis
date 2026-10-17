@@ -179,6 +179,10 @@ test('agents canvas: writers with automatic checks, architectures, wiring, persi
     assert.equal(ran, null);
     await node('New agent').click();
     await inspector.getByRole('textbox', { name: 'Prompt', exact: true }).fill('Write the changelog entry.');
+    // The joiner thinks harder: Sol at high thinking.
+    await node('Join the parts').click();
+    await chooseOption(inspector.getByRole('combobox', { name: 'Model', exact: true }), '|gpt-6.1-sol');
+    await chooseOption(inspector.getByRole('combobox', { name: 'Thinking', exact: true }), 'high');
 
     // Run: a new chat holds the run. Elpis gets each agent as a writer followed by its own read-only check, and an agent
     // wired after another waits for that one's check, so it builds on checked work.
@@ -196,6 +200,8 @@ test('agents canvas: writers with automatic checks, architectures, wiring, persi
     assert.deepEqual(byTitle['New agent'].dependsOn, [joinCheck.id]);
     assert.equal(byTitle['New agent'].instruction, 'Brief for the whole run: Keep the public API unchanged.\n\nWrite the changelog entry.');
     assert.deepEqual(byTitle['New agent'].acceptanceCriteria, ['The change builds and its tests pass.']);
+    // An agent's thinking level goes with it; one left at the model's default is not sent.
+    assert.deepEqual([join.model, join.reasoningEffort, byTitle['New agent'].reasoningEffort], ['gpt-6.1-sol', 'high', undefined]);
     // The Mother is the run's chat: it starts with her model, and her brief as its instructions.
     assert.deepEqual(['model', 'instructions'].map(key => posts.find(post => post.path === '/api/threads').body[key]), ['gpt-6-luna', 'Keep the public API unchanged.']);
     // The ring on an agent's corner is its check: Part 1 is done, then its check passes and the joiner runs.
@@ -206,11 +212,11 @@ test('agents canvas: writers with automatic checks, architectures, wiring, persi
     assert.ok(await canvas.locator('.canvas-chevron[data-live]').count() > 0, 'live wires stream');
     assert.equal(ran.maxConcurrency, 3);
 
-    // The command bar, typed AutoCAD-style: Ctrl+A over the board, then just a prompt adds an agent with it.
+    // The command bar, typed AutoCAD-style: Tab over the board, then just a prompt adds an agent with it.
     const adder = canvas.getByRole('dialog', { name: 'Add agents', exact: true }), command = adder.getByRole('textbox', { name: 'Command', exact: true });
     const plan = adder.getByLabel('Will add');
     await page.mouse.click(board.x + 60, board.y + board.height - 140);
-    await page.keyboard.press('Control+a');
+    await page.keyboard.press('Tab');
     await command.waitFor();
     await page.keyboard.type('Fix the parser');
     assert.equal(await plan.innerText(), '1 × Agent\nDefault model\n1 prompt');
@@ -219,7 +225,7 @@ test('agents canvas: writers with automatic checks, architectures, wiring, persi
     await until('the prompted agent was added', () => document.querySelectorAll('.react-flow__node-agent').length === 6);
     assert.deepEqual((await agentsNamed()).filter(item => item.data.title === 'Fix the parser').map(item => item.data.instruction), ['Fix the parser']);
     // A count and a model, and Enter asks for the prompts, one per line; a missing one can be written later.
-    await page.keyboard.press('Control+a'); await command.waitFor();
+    await page.keyboard.press('Tab'); await command.waitFor();
     await page.keyboard.type('3 luna');
     assert.equal(await plan.innerText(), '3 × Agent\nLuna 6 · OpenAI');
     await page.keyboard.press('Enter');
@@ -232,7 +238,8 @@ test('agents canvas: writers with automatic checks, architectures, wiring, persi
     const added = (await agentsNamed()).filter(item => item.data.model === 'gpt-6-luna');
     assert.deepEqual(added.map(item => [item.data.title, item.data.instruction]), [['Fix the lexer', 'Fix the lexer'], ['Fix the docs', 'Fix the docs'], ['New agent 3', '']]);
 
-    // Ctrl+A in a text field selects its text and opens nothing; Escape closes the bar; a double-click opens it.
+    // Ctrl+A in a text field selects its text and opens nothing (on the board it selects every agent: canvas-basics).
+    // Escape closes the bar; a double-click opens it.
     await fit();
     await node('Fix the lexer').click();
     await inspector.getByRole('textbox', { name: 'Prompt', exact: true }).focus();
@@ -274,7 +281,7 @@ test('agents canvas: writers with automatic checks, architectures, wiring, persi
     await adder.getByRole('textbox', { name: 'Prompts, one per line' }).waitFor();
     await page.keyboard.press('Enter');
     await until('two agents on Sol were added', () => document.querySelectorAll('.react-flow__node-agent').length === 11);
-    const onSol = (await agentsNamed()).filter(item => item.data.model === 'gpt-6.1-sol');
+    const onSol = (await agentsNamed()).filter(item => item.data.model === 'gpt-6.1-sol' && item.data.title !== 'Join the parts');
     assert.deepEqual(onSol.map(item => [item.data.effort, item.data.instruction]), [['high', ''], ['high', '']]);
 
     // A click on an agent's dot opens the bar there; prompts after a colon add the agents at once, and they wait for
@@ -320,7 +327,7 @@ test('agents canvas: writers with automatic checks, architectures, wiring, persi
     await page.keyboard.press('Escape');
     await motherButton.click(); await maxField.fill('20');
     await page.evaluate(() => document.activeElement?.blur());
-    await page.keyboard.press('Control+a'); await command.waitFor();
+    await page.keyboard.press('Tab'); await command.waitFor();
     await page.keyboard.type('2 luna'); await page.keyboard.press('Shift+Enter'); await page.keyboard.type('Tidy the lexer');
     await page.keyboard.press('Shift+Enter'); await page.keyboard.type('Tidy the parser');
     assert.equal(await nodes.count(), 13, 'Shift+Enter added nothing');
@@ -358,8 +365,9 @@ test('agents canvas: writers with automatic checks, architectures, wiring, persi
     const drawn = await saved(), titled = title => drawn.nodes.find(item => item.data?.title === title).id;
     const wireOf = (from, to) => canvas.locator(`.react-flow__edge[data-id="${drawn.edges.find(edge => edge.source === titled(from) && edge.target === titled(to)).id}"]`);
     // A wire is clicked halfway along it, where a user aims; its box's centre can be off the curve.
-    const clickWire = async wire => {
-      const point = await wire.locator('.react-flow__edge-path').evaluate(path => { const at = path.getPointAtLength(path.getTotalLength() / 2), m = path.getScreenCTM(); return { x: at.x * m.a + at.y * m.c + m.e, y: at.x * m.b + at.y * m.d + m.f }; });
+    // The Mother's wires fan out from one dot and overlap near her, so hers are clicked near their agent.
+    const clickWire = async (wire, along = 0.5) => {
+      const point = await wire.locator('.react-flow__edge-path').evaluate((path, along) => { const at = path.getPointAtLength(path.getTotalLength() * along), m = path.getScreenCTM(); return { x: at.x * m.a + at.y * m.c + m.e, y: at.x * m.b + at.y * m.d + m.f }; }, along);
       await page.mouse.click(point.x, point.y);
     };
     await clickWire(wireOf('Part 1', 'Join the parts'));
@@ -380,7 +388,7 @@ test('agents canvas: writers with automatic checks, architectures, wiring, persi
     await wireMenu.waitFor({ state: 'hidden' }); await page.waitForTimeout(100);
     assert.equal(await edges.count(), wires - 1, 'the wire was removed');
     // The Mother's dotted wires take a click too: agents inserted there start first, and her agent waits for them.
-    await clickWire(canvas.locator(`.react-flow__edge[data-id="mother->${id('Part 3')}"]`));
+    await clickWire(canvas.locator(`.react-flow__edge[data-id="mother->${id('Part 3')}"]`), 0.85);
     assert.deepEqual(await wireMenu.getByRole('menuitem').allInnerTexts(), ['Insert agents here\nBefore Part 3, started by the Mother']);
     await page.keyboard.press('Enter'); await command.waitFor();
     await page.keyboard.type('Read the issue'); await page.keyboard.press('Enter');

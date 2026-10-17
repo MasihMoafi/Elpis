@@ -4,7 +4,7 @@ import { appStorage } from "@/lib/projects";
  * sends the graph to Elpis's work-graph engine (POST /api/workflows/run, bridge/client.mjs `runWorkflow`).
  * Every agent on the board writes: Elpis checks each writer with a read-only verify task, which the run adds itself
  * (`runTasks`), and reading or planning happens inside the writers (lat.md/tasks.md, 17 October 2026). */
-/** `provider` is null for the engine's own provider; `effort` is the thinking level; `writeScopes` are the project's
+/** `provider` is null for the engine's own provider; `effort` is the thinking level (sent per task); `writeScopes` are the project's
  * folders the agent may write, which Elpis requires to exist (codex-rs work_graphs.rs `validate_scope_resolution`). */
 export type AgentData = { title: string; instruction: string; model: string | null; provider?: string | null; effort?: string | null; writeScopes: string[]; acceptanceCriteria: string[] };
 export type NoteData = { text: string };
@@ -18,7 +18,8 @@ export type MotherSettings = { brief: string; model: string | null; provider: st
 export type CanvasGraph = { name: string; nodes: CanvasNode[]; edges: CanvasEdge[]; maxAgents?: number; template?: string; mother?: MotherSettings };
 /** A task's state as workGraph/list reports it (codex-rs state/src/model/work_graph.rs). */
 export type TaskStatus = "pending" | "running" | "succeeded" | "failed" | "blocked" | "cancelled";
-export type RunTask = { id: string; kind: "implement" | "verify"; title: string; instruction: string; dependsOn: string[]; writeScopes: string[]; acceptanceCriteria: string[]; provider?: string; model?: string };
+/** `reasoningEffort` is the agent's thinking level; Elpis refuses one its model lacks before any agent starts. */
+export type RunTask = { id: string; kind: "implement" | "verify"; title: string; instruction: string; dependsOn: string[]; writeScopes: string[]; acceptanceCriteria: string[]; provider?: string; model?: string; reasoningEffort?: string };
 
 /** The Mother node: the chat a run starts in. Every agent is her child; she starts the agents that wait for no one and
  * receives every report. She is drawn, never sent: Elpis's work graph takes her chat as its root thread. */
@@ -245,7 +246,7 @@ export function runTasks(graph: CanvasGraph): { tasks: RunTask[] } | { error: st
       // Every agent gets the Mother's brief first, then its own prompt.
       { id: node.id, kind: "implement" as const, title, instruction: [brief && `Brief for the whole run: ${brief}`, prompt].filter(Boolean).join("\n\n"),
         dependsOn: graph.edges.filter(edge => edge.target === node.id && ids.has(edge.source)).map(edge => checkOf(edge.source)),
-        writeScopes: node.data.writeScopes, acceptanceCriteria: criteria, ...model },
+        writeScopes: node.data.writeScopes, acceptanceCriteria: criteria, ...model, ...(node.data.effort ? { reasoningEffort: node.data.effort } : {}) },
       { id: checkOf(node.id), kind: "verify" as const, title: `Check: ${title}`.slice(0, 256),
         instruction: `Check the work of “${title}”. Its prompt was:\n${prompt}\n\nRun what proves it (the build, the tests, or reading what it wrote) and show the output. Say plainly whether each of these holds: ${criteria.join("; ")}`,
         dependsOn: [node.id], writeScopes: [], acceptanceCriteria: [`Each of “${title}”'s criteria is shown to hold or not, with evidence`], ...model },

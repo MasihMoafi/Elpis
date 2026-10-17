@@ -703,8 +703,10 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 /* The agents canvas (components/agents-canvas.tsx): architectures on the left, agents as linked nodes in the middle,
  * the selected agent on the right. Running is the context olive, done is success, failed is destructive. */
 .agents-canvas { flex:1; min-height:0; display:grid; grid-template-columns:minmax(0,1fr) 290px; grid-template-rows:auto minmax(0,1fr); border-top:1px solid var(--hairline); }
-.canvas-header { grid-column:1 / -1; display:flex; align-items:center; gap:10px; padding:10px 16px; border-bottom:1px solid var(--hairline); background:var(--background); }
-.canvas-name { width:280px; font-weight:600; }
+/* The header fits any window: the name gives way first, then the controls wrap to a second row; nothing is cut off. */
+.canvas-header { grid-column:1 / -1; display:flex; flex-wrap:wrap; align-items:center; gap:8px 10px; padding:10px 16px; border-bottom:1px solid var(--hairline); background:var(--background); }
+.canvas-header > * { flex-shrink:0; }
+.canvas-header > .canvas-name { flex:0 1 280px; min-width:140px; font-weight:600; }
 .canvas-spacer { flex:1; }
 .canvas-chip { display:inline-flex; align-items:center; gap:8px; height:32px; padding:0 10px; border:1px solid var(--hairline); border-radius:8px; color:var(--muted-foreground); font-size:12.5px; font-variant-numeric:tabular-nums; }
 .canvas-chip select { height:26px; }
@@ -733,7 +735,7 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .quick-add > * { flex:none; }
 .quick-add > .quick-add-list { flex:0 1 auto; min-height:60px; }
 .quick-add-title { display:flex; justify-content:space-between; gap:10px; }
-.quick-add-title span:last-child { text-transform:none; letter-spacing:0; font-family:inherit; font-size:11.5px; }
+.quick-add-title span:last-child:not(:first-child) { text-transform:none; letter-spacing:0; font-family:inherit; font-size:11.5px; }
 .quick-add-field { height:34px; padding:0 10px; border:1px solid var(--border); border-radius:7px; background:var(--background); color:var(--foreground); font-size:13px; outline:none; }
 .quick-add-field:focus { border-color:var(--ring); }
 /* The command line and the prompts step grow with their lines (after .quick-add-field, whose one-line height they replace). */
@@ -790,7 +792,8 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .canvas-board { position:relative; display:flex; flex-direction:column; min-width:0; min-height:0; background:var(--background); }
 .canvas-board > .react-flow { flex:1 1 0; height:auto; min-height:0; }
 .canvas-board .react-flow { --xy-background-color:var(--background); --xy-background-pattern-color:var(--border); --xy-edge-stroke:var(--muted-foreground); --xy-edge-stroke-selected:var(--foreground); --xy-connectionline-stroke:var(--context); --xy-controls-button-background-color:var(--card); --xy-controls-button-color:var(--foreground); --xy-controls-button-border-color:var(--hairline); --xy-minimap-background-color:var(--card); --xy-node-border-radius:10px; }
-.dark .canvas-board .react-flow { --xy-edge-stroke:color-mix(in oklch, var(--gold) 55%, transparent); }
+/* Colour means state, as on Deus Ex's board: idle wires are a neutral grey in both themes, never the theme's gold. */
+.dark .canvas-board .react-flow { --xy-edge-stroke:color-mix(in oklch, var(--foreground) 45%, transparent); }
 .canvas-board .react-flow__edge.canvas-edge-done .react-flow__edge-path { stroke:var(--success); }
 .canvas-board .react-flow__edge.canvas-edge-cut .react-flow__edge-path { stroke:var(--destructive); stroke-dasharray:3 5; }
 .canvas-board .react-flow__edge.canvas-edge-live .react-flow__edge-path { stroke:var(--context); }
@@ -801,13 +804,16 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .canvas-edge-done .canvas-chevron { stroke:var(--success); }
 .canvas-edge-cut .canvas-chevron { stroke:var(--destructive); }
 .canvas-board .react-flow__edge-path { stroke-width:1.6; }
+/* No group rectangle after a box selection (Fusion and Slate have none): it sat over the agents, took the next click and
+   dragged the whole group. Dragging any selected agent still moves them all. */
+.canvas-board .react-flow__nodesselection { display:none; }
 /* A wire is clickable (its menu inserts agents or removes it): it thickens under the pointer and while its menu is open. */
 .canvas-board .react-flow__edge { cursor:pointer; }
 .canvas-board .react-flow__edge:hover .react-flow__edge-path, .canvas-board .react-flow__edge.selected .react-flow__edge-path { stroke-width:2.6; }
 .canvas-board .react-flow__edge.selected .canvas-chevron { stroke:var(--xy-edge-stroke-selected); }
 .canvas-minimap { border:1px solid var(--hairline); border-radius:8px; overflow:hidden; }
 .agent-node { position:relative; display:grid; gap:3px; width:190px; padding:11px 34px 11px 14px; border:1px solid var(--border); border-left:3px solid var(--kind); border-radius:10px; background:var(--card); color:var(--foreground); box-shadow:var(--shadow); font-size:13px; }
-.react-flow__node.selected .agent-node { outline:1.5px dashed var(--context); outline-offset:4px; }
+.react-flow__node.selected .agent-node { outline:1.5px dashed color-mix(in oklch, var(--foreground) 70%, transparent); outline-offset:4px; }
 .mother-node { border-left-width:5px; padding-right:14px; }
 .agent-node-kind { font:600 10.5px/1 var(--mono); letter-spacing:.14em; text-transform:uppercase; color:var(--muted-foreground); }
 .agent-node-title { font-size:15px; font-weight:600; line-height:1.3; overflow-wrap:anywhere; }
@@ -823,7 +829,10 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 @keyframes canvas-spin { to { transform:rotate(360deg); } }
 @media (prefers-reduced-motion:reduce) { .agent-node-mark[data-check="running"] { animation:none; } }
 .agent-node .react-flow__handle { width:10px; height:10px; border:1.5px solid var(--card); background:var(--kind); }
-.canvas-note textarea { width:180px; min-height:90px; padding:10px; border:0; border-radius:4px; background:#f6e9a8; color:#2b2611; font:13px/1.4 inherit; resize:both; box-shadow:var(--shadow); }
+/* A note for the user, never sent: dragged by its strip, written in below. */
+.canvas-note { display:grid; border-radius:4px; background:#f6e9a8; box-shadow:var(--shadow); }
+.canvas-note-grip { padding:6px 10px 0; font:500 10px/1.4 var(--mono); letter-spacing:.08em; text-transform:uppercase; color:#6b5f2a; cursor:grab; user-select:none; }
+.canvas-note textarea { width:180px; min-height:80px; padding:4px 10px 10px; border:0; background:transparent; color:#2b2611; font:13px/1.4 inherit; resize:both; outline:none; }
 .dark .canvas-note textarea { background:#3a3518; color:#f1ead0; }
 .canvas-notice { position:absolute; left:50%; top:14px; transform:translateX(-50%); display:flex; align-items:center; gap:10px; margin:0; padding:8px 12px; border:1px solid var(--destructive); border-radius:8px; background:var(--card); color:var(--foreground); font-size:13px; box-shadow:var(--shadow); z-index:5; }
 .canvas-notice[data-tone="info"] { border-color:var(--border); }
@@ -839,6 +848,93 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .canvas-folders .canvas-chip button { display:grid; place-items:center; width:18px; height:18px; border:0; border-radius:4px; background:transparent; color:var(--muted-foreground); cursor:pointer; }
 .canvas-folders .canvas-chip button:hover { background:var(--hover); color:var(--foreground); }
 .canvas-inspector-actions { display:flex; flex-wrap:wrap; gap:8px; margin-top:4px; }
+/* The isometric view (components/agents-iso.tsx), as Deus Ex's hacking screen: pedestals on a ground grid in one SVG,
+ * upright titles and chamfered controls in HTML over it. Colours come from the theme's tokens and the agent's --kind;
+ * state colours match the flat board's (done --success, live --context, cut --destructive). */
+.canvas-view { flex:none; }
+.iso-board { container:iso-board / inline-size; position:relative; flex:1 1 0; min-height:0; overflow:clip; outline:none; cursor:grab; touch-action:none; user-select:none; --iso-wire:var(--muted-foreground); }
+.dark .iso-board { --iso-wire:color-mix(in oklch, var(--foreground) 45%, transparent); background:radial-gradient(ellipse at 45% 40%, color-mix(in oklch, var(--gold) 7%, var(--canvas)), var(--canvas) 70%); }
+.iso-board[data-panning] { cursor:grabbing; }
+.iso-board > svg { position:absolute; inset:0; width:100%; height:100%; }
+.iso-board :is(.iso-floor, .iso-grid, .iso-wire, .iso-wire-bed, .iso-chevron, .iso-ring, .iso-plate, .iso-focus, .iso-inlay, .iso-face-top) { vector-effect:non-scaling-stroke; }
+.iso-floor { fill:var(--recessed); stroke:var(--hairline); }
+.iso-grid { stroke:var(--hairline); stroke-width:1; pointer-events:none; }
+.dark .iso-floor { fill:color-mix(in oklch, var(--gold) 4%, var(--card)); stroke:color-mix(in oklch, var(--gold) 24%, transparent); }
+.dark .iso-grid { stroke:color-mix(in oklch, var(--gold) 11%, transparent); }
+.iso-glow { opacity:0; pointer-events:none; }
+.iso-glow[data-status="running"] { fill:var(--context); opacity:.5; animation:iso-pulse 1.6s ease-in-out infinite; }
+.iso-glow[data-status="succeeded"] { fill:var(--success); opacity:.35; }
+.iso-glow:is([data-status="failed"], [data-status="blocked"]) { fill:var(--destructive); opacity:.4; }
+@keyframes iso-pulse { 50% { opacity:.15; } }
+.iso-link { pointer-events:none; }
+.iso-link[data-state="done"] { --iso-wire:var(--success); }
+.iso-link[data-state="live"] { --iso-wire:var(--context); }
+.iso-link[data-state="cut"] { --iso-wire:var(--destructive); }
+.iso-link[data-hot]:not([data-state]) { --iso-wire:var(--foreground); }
+.iso-wire { fill:none; stroke:var(--iso-wire); stroke-width:1.8; stroke-dasharray:7 5; stroke-linejoin:round; }
+.iso-wire-bed { fill:none; stroke:var(--iso-wire); stroke-width:6; stroke-linejoin:round; opacity:.13; }
+.iso-link[data-mother] .iso-wire { stroke-dasharray:2 5; }
+.iso-link[data-state="cut"] .iso-wire { stroke-dasharray:3 5; }
+.iso-link[data-hot] .iso-wire { stroke-width:2.6; }
+.iso-link[data-hot] .iso-wire-bed { opacity:.24; }
+.iso-chevron { fill:none; stroke:var(--iso-wire); stroke-width:2.2; stroke-linecap:round; stroke-linejoin:round; transform:translate(var(--x), var(--y)); }
+.iso-chevron[data-live] { stroke-width:2.6; animation:iso-stream 1.8s linear infinite; }
+@keyframes iso-stream { from { transform:translate(var(--sx), var(--sy)); opacity:0; } 20%, 80% { opacity:1; } to { transform:translate(var(--ex), var(--ey)); opacity:0; } }
+.iso-node { cursor:pointer; outline:none; }
+.iso-node:is([data-status="pending"], [data-status="cancelled"]) { opacity:.75; }
+.iso-hit { fill:transparent; }
+.iso-plate, .iso-focus { fill:none; pointer-events:none; }
+.iso-node[aria-pressed="true"] .iso-plate { fill:color-mix(in oklab, var(--context) 14%, transparent); stroke:var(--context); stroke-width:1.5; stroke-dasharray:5 4; }
+.iso-node:focus-visible .iso-focus { stroke:var(--ring); stroke-width:2; }
+.iso-ring { fill:none; stroke:var(--border); stroke-width:1.5; stroke-dasharray:2 5; pointer-events:none; }
+.iso-ring[data-check="pending"] { stroke:var(--muted-foreground); }
+.iso-ring[data-check="running"] { stroke:var(--context); stroke-width:2; stroke-dasharray:10 6; animation:iso-turn 1.2s linear infinite; }
+.iso-ring[data-check="succeeded"] { stroke:var(--success); stroke-width:2.5; stroke-dasharray:none; }
+.iso-ring:is([data-check="failed"], [data-check="blocked"]) { stroke:var(--destructive); stroke-width:2.5; stroke-dasharray:none; }
+@keyframes iso-turn { to { stroke-dashoffset:-32; } }
+.iso-lift { transition:transform .15s ease; }
+.iso-node:is(:hover, [data-hot]) .iso-lift { transform:translateY(-4px); }
+.iso-core .iso-face-top { fill:color-mix(in oklch, var(--kind) 82%, var(--card)); }
+.iso-core .iso-face-left { fill:color-mix(in oklch, var(--kind) 76%, #000); }
+.iso-core .iso-face-right { fill:color-mix(in oklch, var(--kind) 56%, #000); }
+.iso-base .iso-face-top { fill:var(--card); stroke:var(--border); }
+.iso-base .iso-face-left { fill:color-mix(in oklch, var(--ink) 12%, var(--canvas)); }
+.iso-base .iso-face-right { fill:color-mix(in oklch, var(--ink) 22%, var(--canvas)); }
+.dark .iso-base .iso-face-top { stroke:color-mix(in oklch, var(--gold) 35%, transparent); }
+.dark .iso-base .iso-face-left { fill:color-mix(in oklch, var(--gold) 12%, #15171b); }
+.dark .iso-base .iso-face-right { fill:color-mix(in oklch, var(--gold) 6%, #0f1114); }
+.iso-node[data-status="running"] .iso-core .iso-face-top { stroke:var(--context); stroke-width:2; }
+.iso-node[data-status="succeeded"] .iso-core .iso-face-top { stroke:var(--success); stroke-width:2; }
+.iso-node:is([data-status="failed"], [data-status="blocked"]) .iso-core .iso-face-top { stroke:var(--destructive); stroke-width:2; }
+.iso-inlay { fill:none; stroke:color-mix(in oklch, var(--kind) 40%, #fff); stroke-width:1; opacity:.75; pointer-events:none; }
+.iso-labels { position:absolute; inset:0; pointer-events:none; }
+.iso-label { position:absolute; display:flex; align-items:center; gap:6px; max-width:176px; padding:2px 8px 2px 3px; transform:translate(-50%, -100%); border:1px solid var(--hairline); border-radius:4px; background:color-mix(in oklab, var(--card) 88%, transparent); color:var(--foreground); font-size:13px; font-weight:600; line-height:18px; white-space:nowrap; }
+.iso-label > span { min-width:0; overflow:hidden; text-overflow:ellipsis; }
+.iso-label[data-kind="mother"] { padding-inline-start:8px; }
+.iso-label[data-short] { padding:2px; }
+.iso-label:is([data-hot], [data-selected]) { z-index:1; }
+.iso-label[data-hot] { border-color:var(--foreground); }
+.iso-label[data-selected] { border-color:var(--context); box-shadow:0 0 0 1px var(--context); }
+.iso-badge { flex:none; display:grid; place-items:center; min-width:18px; height:18px; padding:0 4px; border-radius:3px; background:var(--kind); color:var(--card); font:600 12px/1 var(--mono); }
+/* Chamfered, as Deus Ex's buttons: the edge is the element, its face a layer 1px inside, so the cut corners keep it. */
+.iso-chamfer { --cut:7px; position:relative; isolation:isolate; background:var(--border); clip-path:polygon(var(--cut) 0, 100% 0, 100% calc(100% - var(--cut)), calc(100% - var(--cut)) 100%, 0 100%, 0 var(--cut)); }
+.iso-chamfer::before { content:""; position:absolute; inset:1px; z-index:-1; background:var(--card); clip-path:inherit; }
+.dark .iso-chamfer { background:color-mix(in oklch, var(--gold) 60%, transparent); }
+.dark .iso-chamfer::before { background:color-mix(in oklch, var(--gold) 8%, var(--card)); }
+.iso-hud { position:absolute; z-index:2; bottom:12px; }
+.iso-controls { left:12px; display:flex; align-items:center; gap:6px; }
+.iso-key { display:inline-flex; align-items:center; justify-content:center; gap:6px; min-width:32px; height:30px; padding:0 10px; border:0; color:var(--foreground); font-size:12.5px; font-weight:500; cursor:pointer; }
+.iso-key:hover::before { background:color-mix(in oklab, var(--card), var(--foreground) 8%); }
+.iso-key:focus-visible { outline:none; background:var(--ring); }
+.dark .iso-key { color:var(--gold); }
+.dark .iso-key:hover::before { background:color-mix(in oklch, var(--gold) 22%, var(--card)); }
+.iso-keys b { color:var(--foreground); font-weight:500; }
+.iso-status { right:12px; --cut:10px; display:grid; gap:2px; max-width:min(320px, 46%); padding:7px 14px 7px 15px; }
+.iso-status::before { box-shadow:inset 3px 0 var(--kind, var(--border)); }
+.iso-status strong { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:13.5px; font-weight:600; color:var(--foreground); }
+.iso-status small { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:12px; color:var(--muted-foreground); }
+@container iso-board (max-width:760px) { .iso-keys { display:none; } }
+@media (prefers-reduced-motion:reduce) { .iso-glow, .iso-ring, .iso-chevron { animation:none; } .iso-lift { transition:none; } }
 
 /* The browser toolbar never squeezes the address field (180px, above): as the panel narrows, Annotate becomes its icon
  * and open-externally moves into the … menu. The panel's own floor (components/side-panel.tsx) keeps what is left enough. */
