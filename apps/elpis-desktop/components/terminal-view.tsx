@@ -66,11 +66,12 @@ export function endTerminal(key: string) {
   void window.elpisDesktop?.terminal?.close(key).catch(() => {});
 }
 
+export type TerminalLaunch = { key: string; token: number } & ({ threadId: string } | { command: "github-login" });
 type Props = {
   /** The terminal tab whose shell this is (its key), and the folder that shell starts in. */
   termKey: string; cwd: string; dark: boolean;
   /** "Open in Elpis TUI": resume this chat in the shell of the tab named by `key` once that shell is attached. */
-  launch: { key: string; threadId: string; token: number } | null;
+  launch: TerminalLaunch | null;
 };
 
 /** A terminal tab's shell in the side panel, as in the ChatGPT app's Codex mode (Ctrl+`). */
@@ -124,13 +125,14 @@ export function TerminalView({ termKey, cwd, dark, launch }: Props) {
   }, []);
   useEffect(() => { const frame = requestAnimationFrame(() => { if (panel.current) for (const view of views.values()) view.term.options.theme = theme(panel.current); }); return () => cancelAnimationFrame(frame); }, [dark]);
 
-  // "Open in Elpis TUI": once this chat's shell is attached, type `elpis resume <id>` at its prompt.
+  // Once the shell is attached, run the requested TUI resume or gh's own interactive web sign-in.
   useEffect(() => {
     if (!api || !launch || launch.key !== termKey || launched.has(launch.token)) return;
     launched.add(launch.token);
     const run = () => {
       const view = views.get(termKey);
       if (!view || view.session === null) { requestAnimationFrame(run); return; }
+      if ("command" in launch) { api.input(termKey, "\x05\x15gh auth login --web\r"); view.term.focus(); return; }
       void api.tui(termKey, cwd, launch.threadId, view.term.cols, view.term.rows).then(() => { setError(""); view.term.focus(); })
         .catch(cause => setError(cause instanceof Error ? cause.message : String(cause)));
     };

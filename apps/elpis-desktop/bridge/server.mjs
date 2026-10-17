@@ -170,6 +170,7 @@ export async function startDesktopServer(options = {}) {
         if (observed && method === 'GET') return json(response, 200, await observability.chat(decodeURIComponent(observed[1]), url.searchParams));
         if (url.pathname === '/api/customize' && method === 'GET') return json(response, 200, await client.customize(url.searchParams.get('cwd') || undefined));
         if (url.pathname === '/api/customize/skill' && method === 'POST') return json(response, 200, await client.setSkill(await body(request)));
+        if (url.pathname === '/api/customize/github' && method === 'POST') return json(response, 200, await client.setGithubConnector(await body(request)));
         if (url.pathname === '/api/context/switches') return json(response, 200, method === 'GET' ? await client.contextSwitches() : await client.saveContextSwitches(await body(request)));
         if (url.pathname === '/api/hooks') return json(response, 200, method === 'GET' ? await client.hooks() : await client.saveHook(await body(request)));
         if (url.pathname === '/api/memories/reset' && method === 'POST') return json(response, 200, await client.resetMemories(await body(request)));

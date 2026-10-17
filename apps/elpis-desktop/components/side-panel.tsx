@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Tab, TabStrip } from "@/components/tab-strip";
 import { BrowserPanel, browserTabActions, type Browser } from "@/components/browser-panel";
-import { TerminalView, endTerminal } from "@/components/terminal-view";
+import { TerminalView, endTerminal, type TerminalLaunch } from "@/components/terminal-view";
 import { ViewBoundary } from "@/components/view-boundary";
 import { ChangesPanel } from "@/components/changes-panel";
 import { FilesPane } from "@/components/files-pane";
@@ -124,7 +124,7 @@ type Props = {
   cwd: string;
   /** The open chat, whose changes the Changes tab shows, and whether a turn is running in it. */
   threadId?: string; running?: boolean;
-  launch: { key: string; threadId: string; token: number } | null;
+  launch: TerminalLaunch | null;
   /** The page is hidden while something else is on top of it. */
   covered: boolean;
   onAttach?: AttachToChat; imagesAllowed?: boolean;

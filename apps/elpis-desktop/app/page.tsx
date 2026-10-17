@@ -34,6 +34,7 @@ import { liveEventItemKey, mergeHistoryWithLive, mergeLiveItem, runtimeErrorNoti
 import { replacementEligibility } from "@/lib/turn-replacement";
 import { AgentsView } from "@/components/agents-view";
 import { CustomizeView } from "@/components/customize-view";
+import type { TerminalLaunch } from "@/components/terminal-view";
 import { ObservabilityView } from "@/components/observability-view";
 import { NewAgentForm } from "@/components/new-agent-form";
 import { SettingsView, type Tab as SettingsTab } from "@/components/settings-view";
@@ -338,7 +339,7 @@ export default function Home() {
   useEffect(() => { setDesktop(!!window.elpisDesktop?.browser); }, []);
   // The side panel (components/side-panel.tsx): shells and browser pages as tabs, beside the chat.
   const [hasTerminal, setHasTerminal] = useState(false);
-  const [tuiLaunch, setTuiLaunch] = useState<{ key: string; threadId: string; token: number } | null>(null);
+  const [tuiLaunch, setTuiLaunch] = useState<TerminalLaunch | null>(null);
   useEffect(() => { setHasTerminal(!!window.elpisDesktop?.terminal); }, []);
   const panelShown = desktop && side.open && view === "chat";
   /** Full view (the side panel's): the panel fills the work area and the chat floats over it, as a card or folded to a pill. */
@@ -1520,6 +1521,7 @@ export default function Home() {
         projectMenu={<ProjectMenu variant="chip" projects={projects} selected={project} disabled={!ready || busy} onSelect={selectProject} onAdd={() => void addProject()} />} /></ViewBoundary>}
       {view === "loveSpot" && <LoveSpot dark={dark} />}
       {view === "customize" && <div className="page-scroll"><ViewBoundary label="Customize"><CustomizeView cwd={cwd} onOpenSettings={() => openSettings("mcp")}
+        onConnectGithub={hasTerminal ? () => { show("chat"); setTuiLaunch({ key: side.openTerminal(cwd), command: "github-login", token: Date.now() }); } : undefined}
         onCreateSkill={() => { newChat(); requestAnimationFrame(() => editDraft("Use $skill-creator to create a new skill that ")); }} /></ViewBoundary></div>}
       {observabilityVisited && <div className="page-scroll" hidden={view !== "observability"}><ObservabilityView onOpenChat={id => void openById(id)} /></div>}
       {view === "agents" && <div className="page-scroll"><ViewBoundary label="Agents"><AgentsView threads={threads} activity={activity} models={models} providers={providerSettings?.providers} loading={agentsLoading} pendingThreadIds={approvals.map(approval => approval.params.threadId ?? approval.ownerThreadId)} moreConversations={!!nextCursor} loadingMore={moreLoading} onMoreConversations={loadMoreConversations} childCursors={childCursors} loadingChildren={loadingChildren} onMoreAgents={id => void loadChildren(id, childCursors[id] ?? undefined, false)} onOpen={loadThread} onStop={stop} onDelete={deleteThread} onNewAgent={() => show("newAgent")} /></ViewBoundary></div>}

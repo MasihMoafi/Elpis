@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { FolderOpen, Plus, Settings2 } from "lucide-react";
+import { FolderOpen, Plus, RefreshCw, Settings2 } from "lucide-react";
 import { FileRefLink } from "@/components/file-ref";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -9,13 +9,13 @@ import { Segmented, SettingsEmpty, SettingsNotice } from "@/components/settings/
 import { api, unreadable } from "@/lib/api";
 
 /** Claude's Customize page (its /customize: Skills, Plugins and Connectors, each with "Your …" and Add) over what
- * Elpis's engine has: the skills it finds for the project, the plugins installed, and the MCP servers as connectors
+ * Elpis has: the skills it finds for the project, the plugins installed, and gh and MCP servers as connectors
  * (bridge/customize.mjs). */
 
 type Part<T> = { data?: T[]; error?: string };
 type Skill = { id: string; name: string; description: string; path: string; scope: "user" | "repo" | "system" | "admin"; enabled: boolean; plugin: string | null };
 type Plugin = { id: string; name: string; description: string; marketplace: string; enabled: boolean };
-type Connector = { name: string; enabled: boolean; transport: "stdio" | "http" };
+type Connector = { name: string; enabled: boolean; transport: "stdio" | "http" | "gh"; login?: string | null };
 type Customize = { skills: Part<Skill> & { errors?: { path: string; message: string }[] }; plugins: Part<Plugin>; connectors: Part<Connector> };
 type Section = "skills" | "plugins" | "connectors";
 
@@ -30,14 +30,30 @@ const SCOPE: Record<Skill["scope"], string> = { user: "Yours", repo: "This proje
 const message = (error: unknown) => error instanceof Error ? error.message : String(error);
 const folderOf = (path: string) => path.split("/").slice(0, -1).join("/") || "/";
 
-export function CustomizeView({ cwd, onCreateSkill, onOpenSettings }: { cwd: string | null; onCreateSkill: () => void; onOpenSettings: () => void }) {
+export function CustomizeView({ cwd, onCreateSkill, onOpenSettings, onConnectGithub }: { cwd: string | null; onCreateSkill: () => void; onOpenSettings: () => void; onConnectGithub?: () => void }) {
   const [section, setSection] = useState<Section>("skills");
   const [data, setData] = useState<Customize | null>(null), [error, setError] = useState("");
+  const [savingGithub, setSavingGithub] = useState(false);
   const load = useCallback(async () => {
     try { setError(""); setData(readCustomize(await api<Customize>(`/customize${cwd ? `?cwd=${encodeURIComponent(cwd)}` : ""}`))); }
     catch (cause) { setError(message(cause)); }
   }, [cwd]);
   useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    if (section !== "connectors") return;
+    const refresh = () => { void load(); };
+    window.addEventListener("focus", refresh);
+    return () => window.removeEventListener("focus", refresh);
+  }, [section, load]);
+  const setGithub = async (enabled: boolean, connect = false) => {
+    if (connect && !onConnectGithub) { setError("Connect GitHub in the Elpis desktop app."); return; }
+    try {
+      setSavingGithub(true); setError("");
+      setData(readCustomize(await api<Customize>("/customize/github", { enabled, ...(cwd ? { cwd } : {}) })));
+      if (connect) onConnectGithub?.();
+    } catch (cause) { setError(message(cause)); }
+    finally { setSavingGithub(false); }
+  };
   const setSkill = async (skill: Skill, enabled: boolean) => {
     try { setError(""); setData(readCustomize(await api<Customize>("/customize/skill", { path: skill.path, enabled, ...(cwd ? { cwd } : {}) }))); }
     catch (cause) { setError(message(cause)); }
@@ -84,13 +100,16 @@ export function CustomizeView({ cwd, onCreateSkill, onOpenSettings }: { cwd: str
       </li>)}</ul>
     </section>}
     {data && section === "connectors" && <section aria-label="Your connectors">
-      <div className="customize-title"><h2>Your connectors</h2><span className="customize-actions"><Button size="sm" variant="outline" onClick={onOpenSettings}><Settings2 />Manage connectors</Button></span></div>
-      <p className="customize-note">Connectors give Elpis tools from other apps and services, through MCP servers.</p>
+      <div className="customize-title"><h2>Your connectors</h2><span className="customize-actions"><Button size="icon-sm" variant="ghost" aria-label="Refresh connectors" onClick={() => void load()}><RefreshCw /></Button><Button size="sm" variant="outline" onClick={onOpenSettings}><Settings2 />Manage connectors</Button></span></div>
+      <p className="customize-note">Connectors give Elpis access to other apps and services.</p>
       {data.connectors.error && <SettingsNotice tone="alert">{data.connectors.error}</SettingsNotice>}
       {!data.connectors.error && !connectors.length && <SettingsEmpty title="No connectors yet">Add an MCP server under Manage connectors.</SettingsEmpty>}
-      <ul className="customize-list">{connectors.map(connector => <li key={connector.name} className="customize-item">
-        <span className="customize-text"><span className="customize-name">{connector.name}</span><span className="customize-description">{connector.transport === "http" ? "Remote server" : "Local server"}</span></span>
-        <span className="customize-state" data-on={connector.enabled || undefined}>{connector.enabled ? "On" : "Off"}</span>
+      <ul className="customize-list">{connectors.map(connector => <li key={`${connector.transport}:${connector.name}`} className="customize-item">
+        <span className="customize-text"><span className="customize-name">{connector.name}</span><span className="customize-description">{connector.transport === "gh" ? (connector.login ? `Connected as ${connector.login}` : "Not connected") : connector.transport === "http" ? "Remote server" : "Local server"}</span></span>
+        {connector.transport === "gh" ? <>
+          {!connector.login && <Button size="sm" disabled={savingGithub} onClick={() => void setGithub(true, true)}>Connect</Button>}
+          <Switch aria-label="Use GitHub" checked={connector.enabled} disabled={savingGithub} onCheckedChange={enabled => void setGithub(enabled)} />
+        </> : <span className="customize-state" data-on={connector.enabled || undefined}>{connector.enabled ? "On" : "Off"}</span>}
       </li>)}</ul>
     </section>}
   </div>;

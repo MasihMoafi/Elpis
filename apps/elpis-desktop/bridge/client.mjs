@@ -11,6 +11,7 @@ import { replacementEligibility } from '../lib/turn-replacement.ts';
 import { providerModels } from './provider-models.mjs';
 import { attachmentInput, recordedMedia } from './attachments.mjs';
 import { pluginsSnapshot, skillsSnapshot } from './customize.mjs';
+import { createGithubConnector } from './github-connector.mjs';
 import { scanDeletionThreads } from '../lib/thread-deletion.ts';
 import { changedFiles, createChatWorktree, currentBranch, discardFile, fileDiff, isChatWorktreePath, releaseChatWorktree, restoreChatWorktree, reviewChoices, undoChatWorktree, workingDiff } from './git.mjs';
 import { elicitationResponse, grantedPermissions, permissionsResponse } from '../lib/approvals.ts';
@@ -156,10 +157,11 @@ export class DesktopClient extends EventEmitter {
   #disposed = false; #reconnecting = false; #retryTimer; #openSocket; #retryDelay; #retryAttempt = 0;
   #settingsConfirmMs;
   #browserConfig;
-  #rewindSnapshots; #rewindHistory;
-  constructor(socket, { timeoutMs = 30000, openSocket, reconnectDelayMs = 500, settingsConfirmMs = 3000, browserConfig, rewindHome = path.join(elpisHome(), 'desktop-rewind') } = {}) {
+  #rewindSnapshots; #rewindHistory; #githubConnector;
+  constructor(socket, { timeoutMs = 30000, openSocket, reconnectDelayMs = 500, settingsConfirmMs = 3000, browserConfig, rewindHome = path.join(elpisHome(), 'desktop-rewind'), githubConnector = createGithubConnector({ home: elpisHome() }) } = {}) {
     super(); this.#socket = socket; this.timeoutMs = timeoutMs; this.#settingsConfirmMs = settingsConfirmMs;
     this.#browserConfig = browserConfig;
+    this.#githubConnector = githubConnector;
     this.#rewindSnapshots = new RewindSnapshots(rewindHome);
     this.#rewindHistory = new RewindHistory(rewindHome, async (method, params) => {
       const result = await this.#rpc(method, params);
@@ -658,17 +660,26 @@ export class DesktopClient extends EventEmitter {
     return { anthropicSignedOut: answer?.signedOut === true };
   }
   async mcp() { return mcpSnapshot(await this.#rpc('config/read', { includeLayers: true })); }
-  /** Claude's Customize page: the skills found for a project, the installed plugins and the connectors (MCP servers).
+  /** Claude's Customize page: the skills found for a project, the installed plugins and the connectors (gh and MCP).
    * A part the engine can't give says why, and the others still show. */
   async customize(cwd) {
     if (cwd != null) { text(cwd, 'project folder', 4096); if (!path.isAbsolute(cwd)) throw new BridgeError('Choose a project folder'); }
     const cwds = cwd ? [cwd] : [], why = error => ({ error: error instanceof Error ? error.message : 'Unavailable' });
-    const [skills, plugins, connectors] = await Promise.all([
+    const [skills, plugins, connectors, github] = await Promise.all([
       this.#rpc('skills/list', { cwds }).then(skillsSnapshot, why),
       this.#rpc('plugin/installed', cwd ? { cwds } : {}).then(pluginsSnapshot, why),
       this.mcp().then(snapshot => ({ data: snapshot.servers.map(({ name, enabled, transport }) => ({ name, enabled, transport })) }), why),
+      this.#githubConnector.snapshot().then(data => ({ data }), why),
     ]);
-    return { skills, plugins, connectors };
+    return { skills, plugins, connectors: { data: [...(github.data ? [github.data] : []), ...(connectors.data ?? [])],
+      ...((connectors.error || github.error) ? { error: [github.error, connectors.error].filter(Boolean).join(' ') } : {}) } };
+  }
+  async setGithubConnector(input) {
+    object(input, ['enabled', 'cwd']);
+    if (typeof input.enabled !== 'boolean') throw new BridgeError('Choose on or off');
+    if (input.cwd != null) { text(input.cwd, 'project folder', 4096); if (!path.isAbsolute(input.cwd)) throw new BridgeError('Choose a project folder'); }
+    await this.#githubConnector.setEnabled(input.enabled);
+    return this.customize(input.cwd);
   }
   /** Turns one listed skill on or off (native skills/config/write), then lists again. */
   async setSkill(input) {
@@ -922,7 +933,7 @@ export class DesktopClient extends EventEmitter {
     if (body.worktree && body.cwd === undefined) throw new BridgeError('A worktree needs the project\'s folder');
     const permissions = permissionMode(body.permissions);
     const name = body.name === undefined ? undefined : text(body.name, 'agent name', 120).trim();
-    const instructions = body.instructions === undefined ? undefined : text(body.instructions, 'agent instructions', 32000);
+    const ownInstructions = body.instructions === undefined ? undefined : text(body.instructions, 'agent instructions', 32000);
     if (body.cwd !== undefined && !path.isAbsolute(text(body.cwd, 'working directory', 4096))) throw new BridgeError('Working directory must be absolute');
     let differentProvider = false;
     if (body.provider !== undefined) {
@@ -934,6 +945,7 @@ export class DesktopClient extends EventEmitter {
     }
     if (differentProvider) text(body.model, 'model for this provider', 200);
     const model = await this.#providerModel(body.model, body.provider);
+    const instructions = [ownInstructions, await this.#githubConnector.instructions()].filter(Boolean).join('\n\n');
     // Claude's "Start with worktree": the chat works in its own worktree on a new branch; if it does not start, the
     // worktree goes again.
     const made = body.worktree ? await createChatWorktree(body.cwd) : null, cwd = made?.cwd ?? body.cwd;
