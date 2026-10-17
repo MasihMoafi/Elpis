@@ -879,7 +879,7 @@ button.trace-head:hover .trace-text { text-decoration:underline; }
 
 /* The agents canvas (components/agents-canvas.tsx): architectures on the left, agents as linked nodes in the middle,
  * the selected agent on the right. Running is the context olive, done is success, failed is destructive. */
-.agents-canvas { flex:1; min-height:0; display:grid; grid-template-columns:minmax(0,1fr) 290px; grid-template-rows:auto minmax(0,1fr); border-top:1px solid var(--hairline); }
+.agents-canvas { container:agents-canvas / inline-size; flex:1; min-height:0; display:grid; grid-template-columns:minmax(0,1fr) 290px; grid-template-rows:auto minmax(0,1fr); border-top:1px solid var(--hairline); }
 .agents-canvas[data-panel="closed"] { grid-template-columns:minmax(0,1fr); }
 /* Dragging on the board never selects the page's text; fields keep their own selection. */
 .canvas-board { user-select:none; }
@@ -888,6 +888,11 @@ button.trace-head:hover .trace-text { text-decoration:underline; }
 .canvas-header { grid-column:1 / -1; display:flex; flex-wrap:wrap; align-items:center; gap:8px 10px; padding:10px 16px; border-bottom:1px solid var(--hairline); background:var(--background); }
 .canvas-header > * { flex-shrink:0; }
 .canvas-header > .canvas-name { flex:0 1 280px; min-width:140px; font-weight:600; }
+@container agents-canvas (max-width:760px) {
+  .canvas-header > .canvas-name { flex-basis:140px; }
+  .canvas-toolbar .canvas-toolbar-keys { display:none; }
+  .canvas-board .canvas-minimap { display:none; }
+}
 .canvas-spacer { flex:1; }
 .canvas-chip { display:inline-flex; align-items:center; gap:8px; height:32px; padding:0 10px; border:1px solid var(--hairline); border-radius:8px; color:var(--muted-foreground); font-size:12.5px; font-variant-numeric:tabular-nums; }
 .canvas-chip select { height:26px; }
@@ -952,18 +957,24 @@ button.trace-head:hover .trace-text { text-decoration:underline; }
 .canvas-templates { display:grid; gap:2px; }
 .canvas-template small.canvas-template-source { font-size:11px; opacity:.8; }
 /* The guide: Anthropic's and LangGraph's own advice on teams of agents. */
-/* During a run, as on Deus Ex's hacking screen: the clock top right, the event log bottom left beside the zoom buttons. */
-.canvas-hud { display:grid; justify-items:end; gap:0; padding:6px 12px 8px; border:1px solid var(--hairline); border-left:3px solid var(--context); border-radius:8px; background:var(--card); box-shadow:var(--shadow); pointer-events:none; }
+/* Shared run instruments sit outside either board so they never cover nodes or editor controls. */
+.canvas-telemetry { flex:none; display:flex; flex-wrap:wrap; align-items:center; gap:8px 14px; padding:8px 12px; border-bottom:1px solid var(--hairline); background:var(--card); }
+.canvas-hud { flex:none; display:grid; gap:0; padding-right:14px; border-right:1px solid var(--border); }
 .canvas-hud span { font:500 10.5px/1.4 var(--mono); letter-spacing:.12em; text-transform:uppercase; color:var(--muted-foreground); }
-.canvas-hud strong { font:600 26px/normal var(--mono); font-variant-numeric:tabular-nums; color:var(--foreground); }
-.canvas-board .react-flow__panel.canvas-hud, .canvas-board .react-flow__panel.canvas-log-panel { pointer-events:none; }
-.canvas-board .react-flow__panel.canvas-log-panel { margin-left:56px; }
-.canvas-log { display:grid; gap:4px; width:min(340px, 40vw); margin:0; padding:0; list-style:none; }
-.canvas-log li { display:flex; gap:8px; align-items:baseline; padding:4px 10px; border:1px solid var(--hairline); border-left:3px solid var(--muted-foreground); border-radius:6px; background:var(--card); color:var(--foreground); font-size:12.5px; line-height:1.35; box-shadow:var(--shadow); }
+.canvas-hud strong { font:600 36px/1.25 var(--mono); font-variant-numeric:tabular-nums; color:var(--primary); }
+.canvas-inputs { flex-basis:100%; min-width:0; margin:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--muted-foreground); font-size:12px; line-height:1.5; }
+.canvas-inputs b { color:var(--foreground); font-weight:600; }
+.canvas-log-panel { flex:none; min-width:0; padding:6px 12px; border-top:1px solid var(--hairline); background:var(--card); }
+.canvas-log-panel .hud-menu-title { margin:0 0 4px; }
+.canvas-log { display:grid; align-content:start; gap:2px; height:76px; overflow:auto; margin:0; padding:0; list-style:none; }
+.canvas-log li { min-width:0; border-left:3px solid var(--muted-foreground); }
+.canvas-log button { display:flex; align-items:baseline; gap:8px; width:100%; min-width:0; padding:3px 7px; border:0; background:transparent; color:var(--foreground); text-align:left; font-size:12px; line-height:1.5; }
+.canvas-log button:hover { background:var(--hover); }
+.canvas-log button > span { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .canvas-log li[data-tone="start"] { border-left-color:var(--context); }
 .canvas-log li[data-tone="done"] { border-left-color:var(--success); }
 .canvas-log li[data-tone="fail"] { border-left-color:var(--destructive); }
-.canvas-log time { flex:none; font:11px/1.35 var(--mono); color:var(--muted-foreground); }
+.canvas-log time { flex:none; font:11px/1.5 var(--mono); color:var(--muted-foreground); }
 .canvas-guide ul { display:grid; gap:8px; margin:0; padding:0 10px; list-style:none; }
 .canvas-guide a { color:var(--foreground); font-size:13px; font-weight:600; text-decoration:underline; text-decoration-color:var(--hairline); text-underline-offset:3px; }
 .canvas-guide a:hover { text-decoration-color:currentColor; }
@@ -979,10 +990,13 @@ button.trace-head:hover .trace-text { text-decoration:underline; }
 .canvas-side .canvas-count { display:flex; flex-wrap:wrap; height:auto; min-height:32px; padding-block:4px; }
 .canvas-help kbd, .canvas-inspector-actions kbd { padding:0 4px; border:1px solid var(--hairline); border-radius:4px; font:11px/1.4 var(--mono); }
 /* Run order: Kahn's waves, each with how it is doing. */
-.canvas-order ol { display:grid; gap:4px; margin:0; padding:0; list-style:none; }
-.canvas-order li { display:grid; grid-template-columns:58px 1fr; gap:8px; padding:6px 8px; border-left:2px solid var(--hairline); color:var(--foreground); font-size:12.5px; line-height:1.35; overflow-wrap:anywhere; }
+.canvas-order { flex:1; min-width:130px; }
+.canvas-order .hud-menu-title { margin:0 0 4px; }
+.canvas-order ol { display:flex; gap:6px; overflow:auto; margin:0; padding:0; list-style:none; }
+.canvas-order li { flex:1 0 100px; min-width:0; max-width:240px; display:grid; gap:2px; padding:4px 8px; border-left:3px solid var(--hairline); color:var(--foreground); font-size:12px; line-height:1.5; }
+.canvas-order li strong { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:500; }
 .canvas-order li span { font:500 10.5px/1.6 var(--mono); letter-spacing:.08em; text-transform:uppercase; color:var(--muted-foreground); }
-.canvas-order li[data-status="running"] { border-left-color:var(--context); }
+.canvas-order li[data-status="running"] { border-left-color:var(--context); background:color-mix(in oklab, var(--context) 14%, var(--card)); }
 .canvas-order li[data-status="succeeded"] { border-left-color:var(--success); }
 .canvas-order li[data-status="failed"] { border-left-color:var(--destructive); }
 .canvas-critical { display:grid; gap:2px; margin:6px 0 0; padding:6px 8px; border-left:2px solid var(--foreground); color:var(--foreground); font-size:12.5px; line-height:1.35; overflow-wrap:anywhere; cursor:default; }
@@ -1057,7 +1071,7 @@ button.trace-head:hover .trace-text { text-decoration:underline; }
 .canvas-note-grip { padding:6px 10px 0; font:500 10px/1.4 var(--mono); letter-spacing:.08em; text-transform:uppercase; color:#6b5f2a; cursor:grab; user-select:none; }
 .canvas-note textarea { width:180px; min-height:80px; padding:4px 10px 10px; border:0; background:transparent; color:#2b2611; font:13px/1.4 inherit; resize:both; outline:none; }
 .dark .canvas-note textarea { background:#3a3518; color:#f1ead0; }
-.canvas-notice { position:absolute; left:50%; top:14px; transform:translateX(-50%); display:flex; align-items:center; gap:10px; margin:0; padding:8px 12px; border:1px solid var(--destructive); border-radius:8px; background:var(--card); color:var(--foreground); font-size:13px; box-shadow:var(--shadow); z-index:5; }
+.canvas-notice { flex:none; display:flex; align-items:center; gap:10px; margin:6px 12px; padding:8px 12px; border:1px solid var(--destructive); border-radius:8px; background:var(--card); color:var(--foreground); font-size:13px; box-shadow:var(--shadow); }
 .canvas-notice[data-tone="info"] { border-color:var(--border); }
 .canvas-notice button[aria-label="Dismiss"] { display:grid; place-items:center; border:0; background:transparent; color:var(--muted-foreground); cursor:pointer; }
 .canvas-side { display:flex; flex-direction:column; gap:10px; padding:14px 14px; overflow:auto; border-left:1px solid var(--hairline); background:var(--sidebar); }

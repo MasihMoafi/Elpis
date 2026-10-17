@@ -56,7 +56,7 @@ test('a clash at the end of the run stops it: the files are listed and the agent
     assert.match(await node('Part 2').locator('.agent-node-meta').innerText(), /clash$/);
     for (const title of ['Part 1', 'Join']) { assert.equal(await status(node(title)), 'succeeded', title); assert.match(await node(title).locator('.agent-node-meta').innerText(), /done$/, title); }
     // The run log says it too, and the run is over.
-    assert.match(await canvas.getByRole('list', { name: 'Run log' }).innerText(), /Part 2: merge clash in src\/app\.ts, README\.md/);
+    assert.match(await canvas.getByRole('log', { name: 'Run log' }).innerText(), /Part 2: merge clash in src\/app\.ts, README\.md/);
     // The run is over, and the agent whose work clashed is not counted as done.
     await canvas.getByRole('status').filter({ hasText: /Finished · 2 of 3 done/ }).waitFor();
     // The agent's dashboard lists every clashing file.

@@ -243,12 +243,22 @@ export function IsoBoard({ graph, father, states, selected, onSelect, onOpen, da
     const usedWidth = full.has(place.id) ? width : LABEL.badge;
     // A dense graph keeps wave badges; if even those meet, move a label to the nearest free row.
     const original = at;
-    const collides = () => taken.some(other => meet(other, box)) || (full.has(place.id) && places.some(other => other !== place && meet(block(other), box)));
+    const collides = () => taken.some(other => meet(other, box)) || places.some(other => meet(block(other), box));
     for (let step = 0; collides() && step < 60; step++) {
       const offset = (Math.floor(step / 2) + 1) * (LABEL.height + 4) * (step % 2 ? 1 : -1);
       const y = original.y + offset;
       if (y < LABEL.height + 6 || y > (size?.height ?? Infinity) - INSET.bottom) continue;
       at = { ...original, y }; box = labelBox(at, usedWidth);
+    }
+    // A short board may have no free row above this pedestal. Use the nearest free slot to either side instead of
+    // leaving a badge on its own block, where it would intercept the block's mouse and keyboard interactions.
+    if (collides() && size) {
+      const xs = [original.x], ys = [original.y];
+      for (let x = usedWidth / 2 + 6; x <= size.width - usedWidth / 2 - 6; x += usedWidth + 8) xs.push(x);
+      for (let y = LABEL.height + 6; y <= size.height - INSET.bottom; y += LABEL.height + 4) ys.push(y);
+      const slots = ys.flatMap(y => xs.map(x => ({ x, y }))).sort((a, b) => Math.hypot(a.x - original.x, a.y - original.y) - Math.hypot(b.x - original.x, b.y - original.y));
+      const free = slots.find(slot => { const box = labelBox(slot, usedWidth); return !taken.some(other => meet(other, box)) && !places.some(other => meet(block(other), box)); });
+      if (free) { at = free; box = labelBox(at, usedWidth); }
     }
     taken.push(box); labelPositions.set(place.id, at);
   }
