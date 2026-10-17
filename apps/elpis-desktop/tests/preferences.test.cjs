@@ -20,6 +20,8 @@ function loader() {
       return load(['.ts', '.tsx'].map(extension => base + extension).find(fs.existsSync));
     };
     new Function('require', 'exports', 'module', code)(local, module.exports, module);
+    // The page opens its session before any request goes out (lib/api.ts); here nothing else would.
+    if (file.endsWith(path.join('lib', 'api.ts'))) module.exports.openSession?.();
     return module.exports;
   };
   return name => load(path.join(root, name));
