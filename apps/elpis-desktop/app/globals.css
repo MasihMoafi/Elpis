@@ -483,6 +483,22 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .activity-group > summary:hover { color:var(--foreground); background:var(--hover); }
 .activity-group > summary:focus-visible { outline:2px solid var(--ring); outline-offset:1px; }
 .activity-group-label, .live-label { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+/* What the agent viewed and made, as Claude's chats show it (components/file-cards.tsx): thumbnails on a row, a larger
+ * picture in its step, the full view over the page, and a card per created file after the reply. */
+.activity-thumb { flex:none; width:28px; height:28px; object-fit:cover; border:1px solid var(--border); border-radius:5px; background:var(--card); cursor:zoom-in; transition:transform .15s ease, box-shadow .15s ease; }
+.activity-thumb:hover { transform:rotate(-2deg); box-shadow:var(--shadow); }
+.activity-image { display:block; max-width:min(100%, 420px); max-height:260px; margin:6px 0; object-fit:contain; border:1px solid var(--border); border-radius:8px; background:var(--card); cursor:zoom-in; }
+.image-view { max-width:min(92vw, 1400px); max-height:92vh; padding:0; border:0; border-radius:10px; background:transparent; cursor:zoom-out; }
+.image-view::backdrop { background:color-mix(in oklch, #000 72%, transparent); }
+.image-view img { display:block; max-width:min(92vw, 1400px); max-height:92vh; object-fit:contain; border-radius:10px; }
+.file-cards { display:grid; gap:8px; margin:4px 0 14px; padding:0; list-style:none; max-width:520px; }
+.file-card { display:flex; align-items:center; gap:12px; min-width:0; padding:10px 10px 10px 14px; border:1px solid var(--border); border-radius:10px; background:var(--card); }
+.file-card-icon { flex:none; color:var(--muted-foreground); }
+.file-card-text { display:grid; gap:2px; flex:1; min-width:0; }
+.file-card-name { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:14px; font-weight:500; color:var(--foreground); }
+.file-card-type { font-size:12.5px; color:var(--muted-foreground); }
+.file-card-actions { display:flex; align-items:center; gap:4px; flex:none; }
+.file-cards-error { margin:-8px 0 12px; font-size:12.5px; color:var(--destructive); }
 .activity-group-failed { color:var(--destructive); }
 .activity-group-body { margin:6px 0 4px 10px; padding-left:12px; border-left:1px solid var(--border); }
 .live-label { color:var(--foreground); }

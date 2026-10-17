@@ -462,6 +462,8 @@ export class DesktopClient extends EventEmitter {
       if (!Array.isArray(page?.data) || page.data.some(entry => entry?.turnId !== turn)) throw new BridgeError('Could not verify recorded media', 502);
       const entry = page.data.find(entry => entry.item?.id === itemId);
       if (entry) {
+        // An image the agent viewed is its one picture.
+        if (entry.item.type === 'imageView' && inputIndex === 0 && typeof entry.item.path === 'string') return recordedMedia({ type: 'localImage', path: entry.item.path });
         if (entry.item.type !== 'userMessage' || !Array.isArray(entry.item.content)) throw new BridgeError('No recorded media here', 404);
         return recordedMedia(entry.item.content[inputIndex]);
       }

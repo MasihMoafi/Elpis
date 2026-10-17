@@ -7,6 +7,7 @@ import { MoreMenu, RightClickMenu, type MenuAction } from "@/components/action-m
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { CopyButton, MarkdownText } from "@/components/markdown-text";
+import { ImageThumb, fileKind } from "@/components/file-cards";
 import { type Item, type Thread, taskFromPath, title } from "@/lib/api";
 import { inlineMediaUrl } from "@/lib/attachments";
 import { plainText } from "@/lib/message-copy";
@@ -137,6 +138,11 @@ export function ChatMessage({item,speaker="Elpis",threads=[],onOpenThread,onEdit
   if(item.type==="webSearch")return <Activity label="Web search" icon={<BrowserIcon size={15}/>} detail={text(item.query)}><p>{text(item.query)}</p>{list(item.results).map((value,index)=>{const result=object(value);const href=text(result.url);return /^https?:\/\//i.test(href)?<p key={index}><a href={href} target="_blank" rel="noreferrer">{text(result.title)||href}</a>{text(result.snippet)&&<span>{text(result.snippet)}</span>}</p>:<TextOutput key={index} value={value}/>;})}</Activity>;
   if(item.type==="functionCallOutput")return <Activity label={text(item.name)||"Tool output"} icon={<ToolIcon size={15}/>}><TextOutput value={typeof item.output==="string"?item.output:list(item.output).map(value=>text(object(value).text)).filter(Boolean).join("\n")}/></Activity>;
   if(item.type==="plan")return <section className="plan-card" aria-label="Proposed plan"><p className="plan-card-heading"><PlanIcon size={14} aria-hidden="true"/>Plan</p><MarkdownText text={item.text||""}/></section>;
+  if(item.type==="imageView"){
+    const name=fileKind(text(item.path)).name,safeBase=mediaBase?.startsWith("/api/threads/")&&!/[?#\\]/.test(mediaBase)?mediaBase:null;
+    // Nothing to fold: the step is its picture.
+    return <div className="activity-card"><div className="activity-heading"><span className="activity-icon"><BrowserIcon size={15}/></span><span className="activity-title">Viewed an image</span><span className="activity-preview" title={text(item.path)}>{name}</span></div>{safeBase&&<div className="px-3 pb-2"><ImageThumb src={`${safeBase}/0`} name={name} large/></div>}</div>;
+  }
   if(item.type==="contextCompaction")return <div className="context-event">Context compacted</div>;
   if(item.type==="enteredReviewMode")return <div className="context-event">{`Review started${typeof item.review==="string"&&item.review?`: ${item.review}`:""}`}</div>;
   if(item.type==="exitedReviewMode")return <article className="message agent"><MarkdownText text={typeof item.review==="string"?item.review:""}/></article>;

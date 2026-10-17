@@ -12,14 +12,14 @@ const { startDesktopServer } = await import(root ? pathToFileURL(path.join(root,
 const ID = '00000000-0000-0000-0000-000000000001';
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=', 'base64');
 const image = () => ({ id: 'image_1', name: 'image.png', type: 'image', mimeType: 'image/png', dataUrl: `data:image/png;base64,${PNG.toString('base64')}` });
-function fixture({ content, continueAs = false } = {}) {
+function fixture({ content, item, continueAs = false } = {}) {
   const socket = new EventEmitter(); socket.sent = [];
   socket.close = () => socket.emit('close');
   socket.send = raw => {
     const row = JSON.parse(raw); socket.sent.push(row); if (!row.id) return;
     const thread = { id: ID, source: 'cli', modelProvider: 'openai', status: { type: 'idle' }, canAcceptDirectInput: !continueAs };
     const result = row.method === 'initialize' ? {} : row.method === 'thread/read' || row.method === 'thread/resume' ? { thread }
-      : row.method === 'thread/items/list' ? { data: [{ turnId: 'turn', item: { id: 'user', type: 'userMessage', content } }], nextCursor: null }
+      : row.method === 'thread/items/list' ? { data: [{ turnId: 'turn', item: item ?? { id: 'user', type: 'userMessage', content } }], nextCursor: null }
       : row.method === 'turn/start' || row.method === 'turn/steer' ? { turn: { id: 'turn', status: 'inProgress' } } : {};
     queueMicrotask(() => socket.emit('message', JSON.stringify({ id: row.id, result })));
   };
@@ -55,6 +55,12 @@ test('owned recorded media preview validates exact thread/turn/item/input and re
   assert.deepEqual((await client.media(ID,'turn','user',0)).bytes, PNG);
   await assert.rejects(client.media(ID,'turn','user',1)); await assert.rejects(client.media(ID,'turn','other',0));
   const link=path.join(dir,'link.png');await fs.symlink(file,link);await assert.rejects(recordedMedia({type:'localImage',path:link}));
+});
+test('an image the agent viewed is served as its item\'s one picture, and only that', async t => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'elpis-media-test-')); const file = path.join(dir,'seen.png'); await fs.writeFile(file, PNG);
+  const {client} = fixture({item:{id:'user',type:'imageView',path:file}}); t.after(()=>client.close()); await client.initialize();
+  assert.deepEqual((await client.media(ID,'turn','user',0)).bytes, PNG);
+  await assert.rejects(client.media(ID,'turn','user',1));
 });
 test('HTTP attachment body limit is separate from ordinary settings and media requires application session', async t => {
   const { client, socket }=fixture();await client.initialize();const app=await startDesktopServer({client});t.after(()=>app.close());

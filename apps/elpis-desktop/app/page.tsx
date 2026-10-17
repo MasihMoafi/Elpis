@@ -63,7 +63,7 @@ import { ATTACHMENT_ACCEPT, IMAGE_ACCEPT, attachmentFromFile, readAttachmentDraf
 import { scanDeletionThreads } from "@/lib/thread-deletion";
 import type { ThemeChoice } from "@/components/appearance-settings";
 import { activityOf, api, chatProvider, choiceOf, effortsOf, isAgent, isUnlinkedAgent, modelLabel, providerChoices, providerLabel, title,
-  sessionReady, type Approval, type Entry, type Model, type ProviderSettings, type Thread } from "@/lib/api";
+  mediaUrl, sessionReady, type Approval, type Entry, type Model, type ProviderSettings, type Thread } from "@/lib/api";
 
 const approvalDraftKey = (approval: Approval) => JSON.stringify([approval.ownerThreadId, approval.id]);
 
@@ -1265,7 +1265,7 @@ export default function Home() {
           {itemCursor && <Button variant="outline" disabled={loading} onClick={older}>Load earlier messages</Button>}
           {loading && <p role="status" className="text-muted-foreground">Loading conversation…</p>}
           {!loading && !entries.length && <div className="empty-state">{selected ? <><h2>This conversation has no messages yet.</h2><p>Messages and tool activity appear here.</p></> : <><img className="empty-mark" src={brandMark} alt="" aria-hidden="true" /><h2>{project ? <>What should we build in <ProjectMenu variant="heading" projects={projects} selected={project} disabled={!ready || busy} onSelect={selectProject} onAdd={() => void addProject()} />?</> : "What should we build?"}</h2></>}</div>}
-          <Transcript entries={entries} activeTurnId={activeTurn ?? null} renderItem={e => { const editKey = JSON.stringify([selected?.id, e.turnId, e.item.id]); return <ChatMessage key={editKey} item={e.item} mediaBase={selected ? `/api/threads/${encodeURIComponent(selected.id)}/turns/${encodeURIComponent(e.turnId)}/items/${encodeURIComponent(e.item.id)}/media` : undefined} threads={threads} speaker={selected?.agentNickname || "Elpis"} onOpenThread={openById}
+          <Transcript entries={entries} activeTurnId={activeTurn ?? null} mediaOf={e => selected ? mediaUrl(selected.id, e) : undefined} renderItem={e => { const editKey = JSON.stringify([selected?.id, e.turnId, e.item.id]); return <ChatMessage key={editKey} item={e.item} mediaBase={selected ? mediaUrl(selected.id, e) : undefined} threads={threads} speaker={selected?.agentNickname || "Elpis"} onOpenThread={openById}
             editDraft={messageEdits[editKey]} editPending={!!pendingDrafts[editKey]} onEditDraftChange={value => { setMessageEdits(previous => value === null ? without(previous, editKey) : { ...previous, [editKey]: value }); if (value === null) focusComposer(); }}
             onEdit={replaceable && e.item.type === "userMessage" && replacementOptions.get(e.turnId)?.allowed ? text => replaceFrom(e.turnId, text, editKey) : undefined}
             editBlockedReason={replaceable && e.item.type === "userMessage" && replacementOptions.get(e.turnId)?.allowed === false ? (replacementOptions.get(e.turnId) as { allowed: false; reason: string }).reason : undefined}

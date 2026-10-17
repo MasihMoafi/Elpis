@@ -3,12 +3,15 @@
 import { useEffect, useState, type ReactNode } from "react";
 import type { Entry, Item } from "@/lib/api";
 import { elapsed, exploration, fileList, readNames, stepFailed, stepLabel } from "@/lib/steps";
+import { CreatedFiles, ImageThumb, fileKind } from "@/components/file-cards";
 
 /** The conversation as the ChatGPT app shows it: each user message, then the turn's work
  * collapsed into short activity lines, and once a turn ends everything before its final reply
- * folds into "Worked for …". `renderItem` draws one message or activity in full. */
-export function Transcript({ entries, activeTurnId, renderItem }: { entries: Entry[]; activeTurnId: string | null; renderItem: (entry: Entry) => ReactNode }) {
-  return <>{turnsOf(entries).map(turn => <Turn key={turn.id} turn={turn} active={turn.id === activeTurnId} renderItem={renderItem} />)}</>;
+ * folds into "Worked for …". `renderItem` draws one message or activity in full; `mediaOf` is where the bridge serves
+ * an item's recorded pictures (lib/api.ts `mediaUrl`). */
+type Draw = { renderItem: (entry: Entry) => ReactNode; mediaOf?: (entry: Entry) => string | undefined };
+export function Transcript({ entries, activeTurnId, ...draw }: { entries: Entry[]; activeTurnId: string | null } & Draw) {
+  return <>{turnsOf(entries).map(turn => <Turn key={turn.id} turn={turn} active={turn.id === activeTurnId} {...draw} />)}</>;
 }
 
 type TurnEntries = { id: string; entries: Entry[] };
@@ -25,7 +28,17 @@ function turnsOf(entries: Entry[]): TurnEntries[] {
   return turns;
 }
 
-function Turn({ turn, active, renderItem }: { turn: TurnEntries; active: boolean; renderItem: (entry: Entry) => ReactNode }) {
+/** The files a turn created and did not delete again, in the order it made them. */
+function createdFiles(entries: Entry[]): string[] {
+  const made = new Set<string>();
+  for (const { item } of entries) if (item.type === "fileChange" && Array.isArray(item.changes)) for (const change of item.changes as { path?: unknown; kind?: { type?: unknown } }[]) {
+    if (typeof change.path !== "string") continue;
+    if (change.kind?.type === "add") made.add(change.path); else if (change.kind?.type === "delete") made.delete(change.path);
+  }
+  return [...made];
+}
+
+function Turn({ turn, active, renderItem, mediaOf }: { turn: TurnEntries; active: boolean } & Draw) {
   const users = turn.entries.filter(entry => entry.item.type === "userMessage");
   const work = turn.entries.filter(entry => entry.item.type !== "userMessage");
   // A proposed plan is the turn's answer as much as its last reply, so neither folds away.
@@ -37,20 +50,21 @@ function Turn({ turn, active, renderItem }: { turn: TurnEntries; active: boolean
     {users.map(renderItem)}
     {folded.length > 0 && <details className="worked-for">
       <summary><span>{workedFor(turn.entries)}</span></summary>
-      <div className="worked-for-body"><Flow entries={folded} renderItem={renderItem} /></div>
+      <div className="worked-for-body"><Flow entries={folded} renderItem={renderItem} mediaOf={mediaOf} /></div>
     </details>}
-    <Flow entries={visible} renderItem={renderItem} live={active} />
+    <Flow entries={visible} renderItem={renderItem} mediaOf={mediaOf} live={active} />
+    {!active && <CreatedFiles paths={createdFiles(work)} />}
     {/* One live line at a time: a running step shows its own; otherwise the turn says it is working. */}
     {active && !work.some(entry => entry.item.status === "inProgress") && <div className="turn-working" role="status"><LiveStep label="Working" since={earliest(turn.entries)} /></div>}
   </section>;
 }
 
 /** Replies stay as they are; each run of tool activity between them becomes one line. */
-function Flow({ entries, renderItem, live = false }: { entries: Entry[]; renderItem: (entry: Entry) => ReactNode; live?: boolean }) {
+function Flow({ entries, renderItem, mediaOf, live = false }: { entries: Entry[]; live?: boolean } & Draw) {
   const blocks: ReactNode[] = [];
   let run: Entry[] = [];
   const flush = () => {
-    if (run.length) blocks.push(<ActivityGroup key={`group-${run[0].item.id}`} entries={run} renderItem={renderItem} live={live} />);
+    if (run.length) blocks.push(<ActivityGroup key={`group-${run[0].item.id}`} entries={run} renderItem={renderItem} mediaOf={mediaOf} live={live} />);
     run = [];
   };
   for (const entry of entries) {
@@ -64,17 +78,20 @@ function Flow({ entries, renderItem, live = false }: { entries: Entry[]; renderI
 }
 
 /** A run of tool activity as one muted row: what is running now, with its timer, or once finished what was done
- * ("Ran 2 commands (1 failed)"). Collapsed until opened by click, Enter or Space. */
-function ActivityGroup({ entries, renderItem, live }: { entries: Entry[]; renderItem: (entry: Entry) => ReactNode; live: boolean }) {
+ * ("Ran 2 commands (1 failed)"), with the images it viewed as thumbnails, as Claude's rows have them. Collapsed until
+ * opened by click, Enter or Space. */
+function ActivityGroup({ entries, renderItem, mediaOf, live }: { entries: Entry[]; live: boolean } & Draw) {
   const [open, setOpen] = useState(false);
   const items = entries.map(entry => entry.item);
   const running = live ? entries.find(entry => entry.item.status === "inProgress") : undefined;
   const failed = items.filter(stepFailed).length;
+  const views = entries.filter(entry => entry.item.type === "imageView" && typeof entry.item.path === "string" && mediaOf?.(entry)).slice(0, 3);
   return <details className="activity-group" onToggle={event => setOpen(event.currentTarget.open)}>
     <summary aria-expanded={open}>
       {running
         ? <LiveStep key={running.item.id} label={stepLabel(running.item, true)} since={running.startedAtMs} />
         : <span className="activity-group-label">{summarize(items)}{failed > 0 && <> <span className="activity-group-failed">({failed} failed)</span></>}</span>}
+      {views.map(entry => <ImageThumb key={entry.item.id} src={`${mediaOf!(entry)}/0`} name={fileKind(String(entry.item.path)).name} />)}
     </summary>
     <div className="activity-group-body">{entries.map(entry => <div key={entry.item.id}>{renderItem(entry)}</div>)}</div>
   </details>;
@@ -105,6 +122,7 @@ export function summarize(items: Item[]): string {
   const tools = items.filter(item => item.type === "dynamicToolCall" || item.type === "functionCallOutput").length;
   const searches = items.filter(item => item.type === "webSearch").length;
   const agents = items.filter(item => item.type === "collabAgentToolCall" || item.type === "subAgentActivity").length;
+  const images = items.filter(item => item.type === "imageView").length;
   for (const item of items) {
     const kind = kinds.get(item);
     if (kind === "read") phrases.set("read", `read ${fileList([...new Set(ofKind("read").flatMap(readNames))])}`);
@@ -117,6 +135,7 @@ export function summarize(items: Item[]): string {
     else if (item.type === "webSearch") phrases.set("search", count(searches, "searched the web", "searched the web # times"));
     else if (item.type === "collabAgentToolCall" || item.type === "subAgentActivity") phrases.set("agents", count(agents, "worked with an agent", "worked with agents"));
     else if (item.type === "contextCompaction") phrases.set("compaction", "compacted the context");
+    else if (item.type === "imageView") phrases.set("images", count(images, "viewed an image", "viewed # images"));
   }
   const text = [...phrases.values()].join(", ") || (items.some(item => item.type === "reasoning") ? "thought" : `${items.length} steps`);
   return text[0].toUpperCase() + text.slice(1);

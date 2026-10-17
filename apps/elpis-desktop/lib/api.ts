@@ -9,6 +9,9 @@ export type Thread = {
 };
 export type Item = { id: string; type: string; text?: string; content?: {type: string; text?: string}[]; command?: string; aggregatedOutput?: string; [key: string]: unknown };
 export type Entry = { turnId: string; item: Item; startedAtMs?: number; completedAtMs?: number };
+/** Where the bridge serves an entry's recorded pictures and sounds (`/<index>` after it); it serves only what the
+ * chat's record holds. */
+export const mediaUrl = (threadId: string, entry: Entry) => `/api/threads/${encodeURIComponent(threadId)}/turns/${encodeURIComponent(entry.turnId)}/items/${encodeURIComponent(entry.item.id)}/media`;
 export type Model = { id: string; model: string; displayName: string; description?: string; inputModalities?: string[]; supportedReasoningEfforts?: {reasoningEffort:string;description?:string}[]; defaultReasoningEffort?: string };
 export type ProviderSettings = { version?:string|null; main:{model:string|null;provider:string|null}; providers:{id:string;displayName:string;needsKey?:boolean}[]; options?:{approvalPolicy:string|null;sandboxMode:string|null}; managed?:{modelProvider:string|null} };
 export type Approval = { id: string; ownerThreadId: string; thread?: Thread; method: string; supported?: boolean; params: import("./approvals").ElicitationParams & { permissions?: import("./approvals").RequestPermissionProfile; cwd?: string; availableDecisions?: unknown[]; threadId?: string; command?: string; reason?: string; changes?: unknown; questions?: {id:string;header:string;question:string;isSecret?:boolean;options?:{label:string;description?:string}[]}[] } };
