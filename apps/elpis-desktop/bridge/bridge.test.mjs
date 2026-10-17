@@ -1328,15 +1328,79 @@ test('an operation Elpis does not support (-32601) shows its message, not only t
   const answer = socket.send;
   socket.send = raw => {
     const request = JSON.parse(raw);
-    if (request.method !== 'thread/items/list') return answer(raw);
+    if (request.method !== 'thread/read') return answer(raw);
     socket.sent.push(request);
-    queueMicrotask(() => socket.emit('message', JSON.stringify({ id: request.id, error: { code: -32601, message: 'thread/items/list is not supported yet' } })));
+    queueMicrotask(() => socket.emit('message', JSON.stringify({ id: request.id, error: { code: -32601, message: 'thread/read is not supported yet' } })));
   };
   try {
     const error = await client.readThread(ROOT, {}).then(() => null, failure => failure);
     assert.equal(error?.code, -32601);
-    assert.match(error.message, /thread\/items\/list is not supported yet/);
+    assert.match(error.message, /thread\/read is not supported yet/);
     assert.doesNotMatch(error.message, /rejected the operation/);
+  } finally { client.close(); }
+});
+
+/** As the engine answers for a chat it keeps only as whole turns (older history, or a new chat before its first
+ * message is recorded): no item pages (-32601), as the TUI's LegacyOnly history expects; thread/read has the turns. */
+function wholeTurnHistory(socket, turns) {
+  const answer = socket.send;
+  socket.send = raw => {
+    const request = JSON.parse(raw);
+    const reply = body => { socket.sent.push(request); queueMicrotask(() => socket.emit('message', JSON.stringify({ id: request.id, ...body }))); };
+    if (request.method === 'thread/items/list') return reply({ error: { code: -32601, message: 'thread/items/list is not supported yet' } });
+    if (request.method === 'thread/read' && request.params.includeTurns) return reply(turns
+      ? { result: { thread: { id: request.params.threadId, name: 'Existing root', status: { type: 'idle' }, turns } } }
+      : { error: { code: -32600, message: `thread ${request.params.threadId} is not materialized yet; includeTurns is unavailable before first user message` } });
+    return answer(raw);
+  };
+}
+
+test('-32601 mid-conversation: a chat without item pages opens from its turns, a page at a time', async () => {
+  const { client, socket } = fixture(); await client.initialize();
+  const user = (id, text) => ({ type: 'userMessage', id, content: [{ type: 'text', text, text_elements: [] }] });
+  const agent = (id, text) => ({ type: 'agentMessage', id, text });
+  wholeTurnHistory(socket, [{ id: 't1', status: 'completed', items: [user('u1', 'first'), agent('a1', 'one')] },
+    { id: 't2', status: 'completed', items: [user('u2', 'second'), agent('a2', 'two')] }]);
+  try {
+    const first = await client.readThread(ROOT, { limit: 3 });
+    assert.equal(first.thread.id, ROOT);
+    // Newest first, as thread/items/list's descending pages are.
+    assert.deepEqual(first.data.map(entry => [entry.turnId, entry.item.id]), [['t2', 'a2'], ['t2', 'u2'], ['t1', 'a1']]);
+    assert.equal(typeof first.nextCursor, 'string');
+    const asked = socket.sent.filter(message => message.method === 'thread/items/list').length;
+    const rest = await client.readThread(ROOT, { cursor: first.nextCursor, limit: 3 });
+    assert.deepEqual(rest.data.map(entry => entry.item.id), ['u1']);
+    assert.equal(rest.nextCursor, null);
+    assert.equal(socket.sent.filter(message => message.method === 'thread/items/list').length, asked, 'its own cursor goes straight to the turns');
+    // A recorded message of such a chat is found the same way.
+    await assert.rejects(client.media(ROOT, 't1', 'u1', 0), /No local media recorded here/);
+    await assert.rejects(client.readThread(ROOT, { cursor: 'whole-turns:-1' }), /cursor/i);
+  } finally { client.close(); }
+});
+
+test('-32601 mid-conversation: a new chat before its first message is recorded opens empty', async () => {
+  const { client, socket } = fixture(); await client.initialize();
+  wholeTurnHistory(socket, null);
+  try {
+    const opened = await client.readThread(ROOT, {});
+    assert.equal(opened.thread.id, ROOT);
+    assert.deepEqual(opened.data, []);
+    assert.equal(opened.nextCursor, null);
+  } finally { client.close(); }
+});
+
+test('other failures to read a chat are still reported', async () => {
+  const { client, socket } = fixture(); await client.initialize();
+  const answer = socket.send;
+  socket.send = raw => {
+    const request = JSON.parse(raw);
+    if (request.method !== 'thread/items/list') return answer(raw);
+    socket.sent.push(request);
+    queueMicrotask(() => socket.emit('message', JSON.stringify({ id: request.id, error: { code: -32603, message: 'failed to list thread items: disk' } })));
+  };
+  try {
+    await assert.rejects(client.readThread(ROOT, {}), error => error.code === -32603);
+    assert.equal(socket.sent.some(message => message.method === 'thread/read' && message.params.includeTurns), false);
   } finally { client.close(); }
 });
 

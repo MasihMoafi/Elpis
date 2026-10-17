@@ -129,6 +129,8 @@ function modeOf(result) {
   if ((result.sandbox ?? result.sandboxPolicy)?.type === 'dangerFullAccess' && result.approvalPolicy === 'never') return 'full';
   return result.approvalsReviewer === 'auto_review' || result.approvalsReviewer === 'guardian_subagent' ? 'auto' : 'ask';
 }
+/** The cursor of a page cut from whole turns (see #itemsPage); the engine's own cursors never start with it. */
+const WHOLE_TURNS = 'whole-turns:';
 const EXPLAINED = new Set(['thread/settings/update', 'account/read', 'account/rateLimits/read', 'thread/delete', 'thread/fork', 'thread/start', 'thread/resume', 'thread/name/set', 'thread/archive', 'thread/unarchive', 'thread/revert', 'thread/compact/start', 'review/start', 'turn/start', 'turn/interrupt', 'config/batchWrite', 'account/login/start', 'account/logout', 'claudeSubscription/write', 'hooks/list', 'memory/reset']);
 /** What a module with a conversation of its own (the canvas planner, bridge/canvas-plan.mjs) may ask of the engine; see `sideRpc`. */
 const SIDE_RPCS = new Set(['thread/start', 'turn/start', 'turn/interrupt', 'thread/unsubscribe', 'thread/delete']);
@@ -251,7 +253,7 @@ export class DesktopClient extends EventEmitter {
         // An operation Elpis does not support (-32601) says which one; the bare code would not.
         const detail = (workflow || EXPLAINED.has(pending.method) || message.error.code === -32601) && typeof message.error.message === 'string' ? message.error.message.slice(0,1000) : `Elpis rejected the operation (${message.error.code ?? 'unknown'}). No automatic retry was made.`;
         const error = new BridgeError(conflict ? 'Settings changed in another client. Reload settings before saving again.' : unsupported ? 'Update and restart Elpis to run workflows from this app.' : detail, conflict || message.error.data?.reason === 'threadBusy' ? 409 : unsupported ? 503 : workflow ? 400 : 502);
-        error.code = message.error.code;
+        error.code = message.error.code; error.engineMessage = typeof message.error.message === 'string' ? message.error.message : '';
         pending.reject(error);
       }
       else pending.resolve(message.result);
@@ -428,15 +430,35 @@ export class DesktopClient extends EventEmitter {
     const { thread } = await this.#rpc('thread/read', { threadId: id, includeTurns: false });
     if (thread.id !== id) throw new BridgeError('Elpis returned another thread', 502);
     await this.#loadWorkflowTitles([thread]);
-    const items = await this.#rpc('thread/items/list', { threadId: id, cursor: options.cursor, limit: options.limit ?? 30, sortDirection: 'desc' });
+    const items = await this.#itemsPage({ threadId: id, cursor: options.cursor, limit: options.limit ?? 30, sortDirection: 'desc' });
     return { thread: this.#decorate(thread), ...items };
+  }
+  /** One page of a chat's items. A chat Elpis keeps only as whole turns (older history, or a new chat before its
+   * first message is recorded) has no item pages: the engine answers -32601, and the TUI then reads whole turns
+   * (its LegacyOnly history). So does this: the page is cut from thread/read's turns, behind a cursor of its own. */
+  async #itemsPage(params) {
+    const own = typeof params.cursor === 'string' && params.cursor.startsWith(WHOLE_TURNS);
+    if (!own) {
+      try { return await this.#rpc('thread/items/list', params); }
+      catch (error) { if (error.code !== -32601) throw error; }
+    }
+    const start = own ? Number(params.cursor.slice(WHOLE_TURNS.length)) : 0;
+    if (!Number.isSafeInteger(start) || start < 0) throw new BridgeError('Invalid cursor');
+    let turns;
+    try { turns = (await this.#rpc('thread/read', { threadId: params.threadId, includeTurns: true })).thread?.turns ?? []; }
+    catch (error) { if (/is not materialized yet/.test(error.engineMessage ?? '')) turns = []; else throw error; }
+    const entries = turns.filter(turn => !params.turnId || turn.id === params.turnId)
+      .flatMap(turn => (Array.isArray(turn.items) ? turn.items : []).map(item => ({ turnId: turn.id, item })));
+    if (params.sortDirection === 'desc') entries.reverse();
+    const end = start + (params.limit ?? 30);
+    return { data: entries.slice(start, end), nextCursor: end < entries.length ? `${WHOLE_TURNS}${end}` : null, backwardsCursor: null };
   }
   async media(id, turn, itemId, inputIndex) {
     threadId(id); text(turn, 'turn ID', 200); text(itemId, 'item ID', 200);
     if (!Number.isInteger(inputIndex) || inputIndex < 0 || inputIndex > 100) throw new BridgeError('Invalid media index');
     const cursors = new Set(); let cursor;
     for (let pageIndex = 0; pageIndex < 20; pageIndex++) {
-      const page = await this.#rpc('thread/items/list', { threadId: id, turnId: turn, limit: 100, sortDirection: 'asc', ...(cursor ? { cursor } : {}) });
+      const page = await this.#itemsPage({ threadId: id, turnId: turn, limit: 100, sortDirection: 'asc', ...(cursor ? { cursor } : {}) });
       if (!Array.isArray(page?.data) || page.data.some(entry => entry?.turnId !== turn)) throw new BridgeError('Could not verify recorded media', 502);
       const entry = page.data.find(entry => entry.item?.id === itemId);
       if (entry) {
@@ -920,7 +942,7 @@ export class DesktopClient extends EventEmitter {
       const model = await this.#providerModel(body.model, thread.modelProvider);
       const entries = [], cursors = new Set(); let cursor, complete = false;
       for (let pageIndex = 0; pageIndex < 20; pageIndex++) {
-        const page = await this.#rpc('thread/items/list', { threadId: id, turnId: beforeTurnId, limit: 100, sortDirection: 'asc', ...(cursor ? { cursor } : {}) });
+        const page = await this.#itemsPage({ threadId: id, turnId: beforeTurnId, limit: 100, sortDirection: 'asc', ...(cursor ? { cursor } : {}) });
         if (!Array.isArray(page?.data) || page.data.some(entry => entry?.turnId !== beforeTurnId)) throw new BridgeError('Elpis could not verify the original input for this turn. Nothing was replaced.', 409);
         entries.push(...page.data);
         if (page.nextCursor === null) { complete = true; break; }
