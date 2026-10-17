@@ -91,22 +91,23 @@ test('finished work folds into one row per group, opens by click or keyboard, an
     const failedGroup = groups.filter({ hasText: /^Ran 2 commands/ });
     const mixed = groups.filter({ hasText: /^Edited and read app\.ts/ });
     assert.equal((await failedGroup.locator('> summary').innerText()).trim(), 'Ran 2 commands (1 failed)');
-    assert.equal((await mixed.locator('> summary').innerText()).trim(), 'Edited and read app.ts, used rag, ran a command', 'mixed work is listed in the order it began; the one file read and edited is named once');
+    assert.equal((await mixed.locator('> summary .activity-group-label').innerText()).trim(), 'Edited and read app.ts, used rag, ran a command', 'mixed work is listed in the order it began; the one file read and edited is named once');
+    assert.equal((await mixed.locator('> summary .change-counts').innerText()).replace(/\s+/g, ' ').trim(), '+1 −1');
 
     // Collapsed when finished; Enter, Space and a click each toggle it, and aria-expanded says which.
     const summary = failedGroup.locator('> summary');
     assert.equal(await summary.getAttribute('aria-expanded'), 'false');
-    assert.equal(await failedGroup.locator('.command-block').first().isVisible(), false);
+    assert.equal(await failedGroup.locator('.step-script').first().isVisible(), false);
     const expanded = value => failedGroup.locator(`> summary[aria-expanded="${value}"]`).waitFor();
     await summary.focus(); await page.keyboard.press('Enter'); await expanded(true);
     await page.keyboard.press(' '); await expanded(false);
     await summary.click(); await expanded(true);
 
     // Each command: a short title, the command in a bordered, coloured shell block, then its output.
-    const steps = failedGroup.locator('.command-step');
+    const steps = failedGroup.locator('.step');
     assert.equal(await steps.count(), 2);
-    assert.equal((await steps.nth(0).locator('.command-title').innerText()).trim(), 'Ran rg -n "TODO" src && echo $HOME | wc -l', 'the title is the command without its bash -lc wrapper');
-    const block = steps.nth(0).locator('.command-block');
+    assert.equal((await steps.nth(0).locator('.step-title').innerText()).trim(), 'Ran rg -n "TODO" src && echo $HOME | wc -l', 'the title is the command without its bash -lc wrapper');
+    const block = steps.nth(0).locator('.step-script');
     assert.ok(parseFloat(await block.evaluate(node => getComputedStyle(node).borderTopWidth)) >= 1, 'the command sits in a bordered block');
     const colours = await block.evaluate(node => {
       const span = text => [...node.querySelectorAll('span')].find(element => element.textContent === text);
@@ -119,19 +120,19 @@ test('finished work folds into one row per group, opens by click or keyboard, an
     assert.equal(colours.next, colours.command, 'every command in a pipeline is coloured as a command');
     assert.equal(new Set([colours.base, colours.command, colours.string, colours.operator, colours.variable]).size, 5, `command, string, variable and operator each have their own colour (${JSON.stringify(colours)})`);
     assert.equal(colours.pipe, colours.operator);
-    assert.match(await steps.nth(0).locator('.command-output').innerText(), /^3\s*$/);
+    assert.match(await steps.nth(0).locator('.step-output').innerText(), /^3\s*$/);
 
     // A failed command: "Exit code 1" and its output in red monospace.
     const exit = steps.nth(1).getByText('Exit code 1', { exact: true });
     const exitStyle = await exit.evaluate(node => ({ color: window.__rgb(getComputedStyle(node).color), font: getComputedStyle(node).fontFamily }));
     assert.ok(isRed(exitStyle.color), `the exit code line is red (${exitStyle.color})`);
     assert.match(exitStyle.font, /mono/i);
-    assert.ok(isRed(await steps.nth(1).locator('.command-output').evaluate(node => window.__rgb(getComputedStyle(node).color))), 'a failed command\'s output is red');
+    assert.ok(isRed(await steps.nth(1).locator('.step-output').evaluate(node => window.__rgb(getComputedStyle(node).color))), 'a failed command\'s output is red');
     assert.equal(await steps.nth(0).getByText(/^Exit code/).count(), 0, 'a successful command shows no exit code');
 
     // Mixed work opens to each step; a read reads as one.
     await mixed.locator('> summary').click();
-    assert.equal((await mixed.locator('.command-title').first().innerText()).trim(), 'Read app.ts');
+    assert.equal((await mixed.locator('.step:has(.step-script) > .step-head > .step-title').first().innerText()).trim(), 'Read app.ts');
 
     // Inline code: red text on a soft tint, readable.
     const chip = page.locator('.markdown :not(pre) > code').filter({ hasText: 'legal/evals/test-files/' });

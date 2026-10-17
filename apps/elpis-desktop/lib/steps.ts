@@ -185,6 +185,13 @@ export function elapsed(ms: number): string {
   return hours ? `${hours}h ${minutes}m ${seconds}s` : total >= 60 ? `${minutes}m ${seconds}s` : `${seconds}s`;
 }
 
+/** How long a finished step took, as its row says it: nothing under a tenth of a second (a 30 ms command is not "0.0s"),
+ * then "0.8s" and "9.0s", then "12s" and "1m 2s" like the running timer. */
+export function stepDuration(ms: unknown): string {
+  if (typeof ms !== "number" || ms < 100) return "";
+  return ms < 10_000 ? `${(ms / 1000).toFixed(1)}s` : elapsed(ms);
+}
+
 /** One phrase of a group's summary ("ran 2 commands") and how many of its steps failed. */
 export type SummaryPart = { text: string; failed: number };
 const countWord = (n: number, one: string, many: string) => (n === 1 ? one : many.replace("#", String(n)));

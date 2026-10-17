@@ -222,13 +222,11 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .provider-advanced > * + * { margin-top:10px; }
 .activity-card { font-size:12.5px; margin:2px 0; border-radius:8px; color:var(--muted-foreground); }
 .activity-card + :not(.activity-card) { margin-top:14px; }
-.activity-card[open] { background:var(--recessed); border:1px solid var(--hairline); margin:6px 0; }
 .activity-heading { display:flex; align-items:center; gap:8px; padding:4px 8px; cursor:pointer; min-width:0; border-radius:8px; list-style:none; }
 .activity-heading::-webkit-details-marker { display:none; }
 .activity-heading:hover { background:var(--hover); color:var(--foreground); }
 .activity-heading svg { flex-shrink:0; color:var(--muted-foreground); }
 .activity-heading > span { min-width:0; overflow:hidden; text-overflow:ellipsis; }
-.activity-output { padding:10px 12px; margin:0; border-top:1px solid var(--hairline); max-height:320px; overflow:auto; white-space:pre-wrap; overflow-wrap:anywhere; font:12px/1.55 var(--mono); color:var(--foreground); }
 /* The hover buttons sit in the gap under their message, so a message that is not hovered holds no room for them. */
 .message-actions { display:flex; align-items:center; gap:2px; position:absolute; top:100%; left:0; color:var(--subtle-foreground); }
 .feature-section { border:1px solid var(--border); border-radius:12px; background:var(--card); padding:20px; }
@@ -250,11 +248,6 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 
 .activity-title { flex-shrink:0; font-weight:500; color:var(--foreground); }
 .activity-preview { flex:1; color:var(--muted-foreground); white-space:nowrap; font:12px var(--mono); }
-.activity-status { margin-left:auto; flex-shrink:0; font-size:12px; color:var(--muted-foreground); }
-.activity-body { border-top:1px solid var(--hairline); }
-.activity-footer { display:flex; flex-wrap:wrap; gap:14px; padding:8px 14px; font-size:12px; color:var(--muted-foreground); }
-.file-change { padding:10px 14px; overflow-wrap:anywhere; }
-.activity-agents { padding:10px 14px; display:flex; flex-wrap:wrap; gap:8px; }
 
 .model-controls { display:flex; align-items:center; flex-wrap:wrap; gap:8px; min-width:0; }
 .provider-model-input { border:1px solid var(--border); }
@@ -589,16 +582,6 @@ button.trace-head:hover .trace-text { text-decoration:underline; }
 @keyframes live-dot { 0%, 80%, 100% { opacity:.25; transform:translateY(0); } 40% { opacity:1; transform:translateY(-2px); } }
 @media (prefers-reduced-motion:reduce) { .live-dots i { animation:none; opacity:.7; } }
 .turn-working { display:flex; align-items:center; gap:8px; width:fit-content; max-width:100%; margin-top:6px; padding:3px 0; font-size:14px; color:var(--muted-foreground); }
-.command-step { margin:6px 0 12px; }
-.command-head { display:flex; align-items:baseline; gap:12px; margin-bottom:6px; font-size:13.5px; color:var(--muted-foreground); }
-.command-title { min-width:0; overflow-wrap:anywhere; }
-.command-duration { margin-left:auto; flex-shrink:0; font-size:12px; color:var(--subtle-foreground); font-variant-numeric:tabular-nums; }
-.command-card { border:1px solid var(--border); border-radius:10px; background:var(--card); overflow:hidden; }
-.command-block { margin:10px; padding:8px 12px; border:1px solid var(--hairline); border-radius:8px; background:var(--recessed); max-height:240px; overflow:auto; white-space:pre-wrap; overflow-wrap:anywhere; font:12.5px/1.6 var(--mono); color:var(--foreground); }
-.command-exit, .command-output { margin:0; padding:0 12px; white-space:pre-wrap; overflow-wrap:anywhere; font:12.5px/1.6 var(--mono); }
-.command-output { padding-bottom:10px; max-height:320px; overflow:auto; color:var(--foreground); }
-.command-exit:last-child { padding-bottom:10px; }
-.command-exit, .command-step.failed .command-output { color:var(--destructive); }
 .sh-command { color:var(--sh-command); }
 .sh-flag { color:color-mix(in oklch, var(--sh-command) 70%, var(--muted-foreground)); }
 .sh-string { color:var(--sh-string); }

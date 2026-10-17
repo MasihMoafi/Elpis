@@ -3,7 +3,7 @@
 // is "verb + what" phrases in the order the work began ("Edited and read app.ts, used rag, ran 2 commands (1 failed)").
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { elapsed, stepLabel, summarize } from '../lib/steps.ts';
+import { elapsed, stepDuration, stepLabel, summarize } from '../lib/steps.ts';
 
 const command = (id, extra = {}) => ({ id, type: 'commandExecution', command: `run ${id}`, status: 'completed', exitCode: 0, commandActions: [{ type: 'unknown', command: `run ${id}` }], ...extra });
 const read = (id, path) => command(id, { commandActions: [{ type: 'read', command: `sed ${path}`, name: path.split('/').at(-1), path }] });
@@ -65,4 +65,16 @@ test('a group of one step with a description reads as that sentence', () => {
   assert.equal(summarize([command('1', { description: 'Listed everything created outside the legal folder' })]), 'Listed everything created outside the legal folder');
   assert.equal(summarize([command('1', { description: 'Moving the build aside' }), command('2')]), 'Ran 2 commands', 'two steps are counted');
   assert.equal(summarize([failed(command('1', { description: 'Running the tests' }))]), 'Running the tests (1 failed)');
+});
+
+test('a finished step\'s duration is drawn from a tenth of a second: 0.8s, 9.0s, then 12s and 1m 2s; a 30 ms step has none', () => {
+  assert.equal(stepDuration(30), '', 'not "0.0s"');
+  assert.equal(stepDuration(99), '');
+  assert.equal(stepDuration(100), '0.1s');
+  assert.equal(stepDuration(800), '0.8s');
+  assert.equal(stepDuration(9000), '9.0s');
+  assert.equal(stepDuration(12400), '12s');
+  assert.equal(stepDuration(62000), '1m 2s');
+  assert.equal(stepDuration(undefined), '', 'a step that never reported its time');
+  assert.equal(stepDuration(null), '');
 });

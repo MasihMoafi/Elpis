@@ -31,7 +31,7 @@ async function using(run) {
 
 test('finished groups read as Claude words them, and a described step reads as its sentence', () => using(async ({ page }) => {
   for (const fold of await page.locator('.worked-for > summary').all()) await fold.click();
-  const rows = (await page.locator('.activity-group:not(:has(.live-timer)) > summary').allInnerTexts()).map(text => text.trim());
+  const rows = (await page.locator('.activity-group:not(:has(.live-timer)) > summary .activity-group-label').allInnerTexts()).map(text => text.trim());
   assert.deepEqual(rows, [
     'Listed everything created outside the legal folder',
     'Edited and read app.ts, used rag, ran 2 commands (1 failed)',
@@ -45,8 +45,8 @@ test('finished groups read as Claude words them, and a described step reads as i
   // Opened, the described command is titled by its sentence and still shows its script.
   const single = page.locator('.activity-group').filter({ hasText: /^Listed everything created/ });
   await single.locator('> summary').click();
-  assert.equal((await single.locator('.command-title').innerText()).trim(), 'Listed everything created outside the legal folder');
-  assert.match(await single.locator('.command-block').innerText(), /ls -la \/tmp\/build/);
+  assert.equal((await single.locator('.step-title').innerText()).trim(), 'Listed everything created outside the legal folder');
+  assert.match(await single.locator('.step-script').innerText(), /ls -la \/tmp\/build/);
 }));
 
 test('a running step is the model\'s sentence with a ticking timer and moving dots, in both themes and under reduced motion', () => using(async ({ page }) => {

@@ -6,8 +6,9 @@ import { FolderIcon } from "@/components/elpis-icons";
 import { Button } from "@/components/ui/button";
 import { AlertDialog, AlertDialogClose, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { api, unreadable } from "@/lib/api";
-import { FileRefLink } from "@/components/file-ref";
 import { parseDiff } from "@/lib/diff";
+import { FileRefLink } from "@/components/file-ref";
+import { Counts, DIFF_LINE_LIMIT, DiffLines } from "@/components/diff-view";
 import "@/components/changes-panel.css";
 
 type Status = "modified" | "added" | "deleted" | "untracked" | "conflicted";
@@ -17,8 +18,6 @@ type FileDiff = { diff: string; truncated: boolean; binary: boolean };
 
 /** While a turn runs the agent keeps editing, so the list is read again this often. */
 const POLL_MS = 1500;
-/** More lines than this stay out of the page; the file's own diff is still whole in Git. */
-const MAX_LINES = 4000;
 const LABEL: Record<Status, string> = { modified: "Modified", added: "Added", deleted: "Deleted", untracked: "Untracked", conflicted: "Conflicted" };
 const LETTER: Record<Status, string> = { modified: "M", added: "A", deleted: "D", untracked: "U", conflicted: "C" };
 const WARNING: Record<Status, string> = {
@@ -30,11 +29,6 @@ const WARNING: Record<Status, string> = {
 };
 const message = (cause: unknown) => cause instanceof Error ? cause.message : String(cause);
 const folderOf = (root: string, file: string) => file.includes("/") ? `${root.replace(/\/+$/, "")}/${file.slice(0, file.lastIndexOf("/"))}` : root;
-
-/** One +/- pair: the lines a file adds and removes, in the colours of the diff. */
-function Counts({ added, removed }: { added: number; removed: number }) {
-  return <span className="change-counts"><span className="add">+{added}</span> <span className="del">−{removed}</span></span>;
-}
 
 /** The side panel's Changes tab, the review surface: the chat's working-tree changes against the last commit, a list of
  * files and the open file's diff. It reads while a turn runs and once when it ends. Discard is the only write, one file at
@@ -117,13 +111,8 @@ export function ChangesPanel({ threadId, running }: { threadId: string | undefin
               : !lines ? <p role="status" className="changes-note">Reading the diff…</p>
               : current?.value?.binary ? <p className="changes-note">A binary file; Git shows no lines.</p>
               : !lines.length ? <p className="changes-note">No lines to show.</p>
-              : <><div className="diff-lines">{lines.slice(0, MAX_LINES).map((line, index) => line.kind === "hunk"
-                ? <div key={index} className="diff-line hunk"><span className="diff-hunk">{line.text}</span></div>
-                : <div key={index} className={`diff-line ${line.kind}`}>
-                  <span className="diff-no">{line.oldNo ?? ""}</span><span className="diff-no">{line.newNo ? <FileRefLink label={`Open line ${line.newNo}`} target={{ path: `${list.root}/${shown.path}`, line: line.newNo }}>{line.newNo}</FileRefLink> : ""}</span>
-                  <span className="diff-sign" aria-hidden="true">{line.kind === "add" ? "+" : line.kind === "del" ? "−" : ""}</span><span className="diff-text">{line.text || " "}</span>
-                </div>)}</div>
-                {(lines.length > MAX_LINES || current?.value?.truncated) && <p className="changes-note">Showing the first part only; the diff is larger than this view keeps.</p>}</>}
+              : <><DiffLines lines={lines} path={`${list.root}/${shown.path}`} />
+                {(lines.length > DIFF_LINE_LIMIT || current?.value?.truncated) && <p className="changes-note">Showing the first part only; the diff is larger than this view keeps.</p>}</>}
           </div>
         </section>}
       </>}

@@ -1,24 +1,27 @@
 "use client";
 
 import { useState } from "react";
-import { BranchIcon, BrowserIcon, FileEditIcon, PlanIcon, ToolIcon } from "@/components/elpis-icons";
+import { BranchIcon, BrowserIcon, PlanIcon } from "@/components/elpis-icons";
 import { Copy, FileText, Pencil, RefreshCw, Terminal, Undo2 } from "lucide-react";
 import { MoreMenu, RightClickMenu, type MenuAction } from "@/components/action-menu";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { CopyButton, MarkdownText } from "@/components/markdown-text";
-import { FileRefLink, FilePathText } from "@/components/file-ref";
 import { ImageThumb, fileKind } from "@/components/file-cards";
+import { FilePathText } from "@/components/file-ref";
+import { ItemEdits } from "@/components/edit-rows";
+import { Step } from "@/components/step";
 import { unreadable, type Item, type Thread, taskFromPath, title } from "@/lib/api";
 import { inlineMediaUrl } from "@/lib/attachments";
 import { plainText } from "@/lib/message-copy";
-import { shellTokens, stepFailed, stepLabel, unwrapShell } from "@/lib/steps";
+import { shellTokens, stepDuration, stepFailed, stepLabel, unwrapShell } from "@/lib/steps";
 
 const object = (value: unknown): Record<string,unknown> => value && typeof value === "object" && !Array.isArray(value) ? value as Record<string,unknown> : {};
 const text = (value: unknown) => typeof value === "string" ? value : "";
 const list = (value: unknown): unknown[] => Array.isArray(value) ? value : [];
 const readable = (value: string) => value.replace(/([a-z])([A-Z])/g,"$1 $2").replace(/_/g," ");
-const statusLabel = (value: unknown) => ({inProgress:"Running",completed:"Completed",failed:"Failed",declined:"Declined",cancelled:"Cancelled"}[text(value)] || readable(text(value)));
+/** A status worth a word on a row: a step that went well says nothing. */
+const statusLabel = (value: unknown) => { const status = text(value); return !status || status === "completed" ? "" : ({inProgress:"Running",failed:"Failed",declined:"Declined",cancelled:"Cancelled"} as Record<string,string>)[status] || readable(status); };
 function attachmentLabel(part: Record<string, unknown>) {
   const type = text(part.type);
   const label = ({ image: "Image", localImage: "Image", audio: "Audio", localAudio: "Audio", skill: "Skill", mention: "Mention" } as Record<string, string>)[type] || readable(type) || "Attachment";
@@ -45,23 +48,22 @@ function RecordedAttachment({part,index,mediaBase}:{part:Record<string,unknown>;
 }
 function TextOutput({value}:{value:unknown}) {
   if(value===null||value===undefined||value==="")return null;
-  return <pre className="activity-output"><code><FilePathText text={typeof value==="string"?value:JSON.stringify(value,null,2)} /></code></pre>;
+  return <pre className="step-output"><code><FilePathText text={typeof value==="string"?value:JSON.stringify(value,null,2)} /></code></pre>;
 }
-function Activity({label,icon,status,detail,children}:{label:string;icon:React.ReactNode;status?:unknown;detail?:string;children:React.ReactNode}) {
-  return <details className="activity-card"><summary className="activity-heading"><span className="activity-icon">{icon}</span><span className="activity-title">{label}</span>{detail&&<span className="activity-preview">{detail}</span>}{statusLabel(status)&&<span className={`activity-status status-${text(status)}`}>{statusLabel(status)}</span>}</summary><div className="activity-body">{children}</div></details>;
+/** A tool's step: a sentence, its time (or what went wrong) at the right, and its details in the card that opens under it. */
+function Activity({label,status,time,failed,children}:{label:string;status?:unknown;time?:number;failed?:boolean;children?:React.ReactNode}) {
+  const word=statusLabel(status),duration=stepDuration(time);
+  return <Step title={<FilePathText text={label}/>} failed={failed??text(status)==="failed"} body={children} meta={(word||duration)?<>{word&&<span className={`step-status ${text(status)}`}>{word}</span>}{duration&&<span>{duration}</span>}</>:undefined}/>;
 }
 /** A command as Claude's desktop app shows it in an opened group: a short title, the script in a bordered block
  * coloured as shell, then its output; a failed command's exit code and output in red. */
 function CommandStep({item}:{item:Item}) {
   const failed=stepFailed(item),output=text(item.aggregatedOutput).replace(/\n+$/,"");
-  return <div className={`command-step${failed?" failed":""}`}>
-    <div className="command-head"><span className="command-title">{stepLabel(item)}</span>{typeof item.durationMs==="number"&&<span className="command-duration">{(item.durationMs/1000).toFixed(1)}s</span>}</div>
-    <div className="command-card">
-      <pre className="command-block" title={text(item.cwd)||undefined}><code>{shellTokens(unwrapShell(text(item.command))).map((token,index)=>token.kind==="text"?<FilePathText key={index} text={token.text}/>:<span key={index} className={`sh-${token.kind}`}><FilePathText text={token.text}/></span>)}</code></pre>
-      {failed&&typeof item.exitCode==="number"&&<p className="command-exit">Exit code {item.exitCode}</p>}
-      {output&&<pre className="command-output"><code><FilePathText text={output}/></code></pre>}
-    </div>
-  </div>;
+  return <Step open failed={failed} title={<FilePathText text={stepLabel(item)}/>} meta={stepDuration(item.durationMs)||undefined} body={<>
+    <pre className="step-script" title={text(item.cwd)||undefined}><code>{shellTokens(unwrapShell(text(item.command))).map((token,index)=>token.kind==="text"?<FilePathText key={index} text={token.text}/>:<span key={index} className={`sh-${token.kind}`}><FilePathText text={token.text}/></span>)}</code></pre>
+    {failed&&typeof item.exitCode==="number"&&<p className="step-exit">Exit code {item.exitCode}</p>}
+    {output&&<pre className="step-output"><code><FilePathText text={output}/></code></pre>}
+  </>}/>;
 }
 /** What a person can do with a message: the hover buttons, the "…" and the right-click menu all draw this one list.
  * `menuLabel` is the item's words in the menus (the hover button keeps its short name); `menuOnly` items have no hover button. */
@@ -113,14 +115,12 @@ export function ChatMessage({item,speaker="Elpis",threads=[],onOpenThread,onEdit
     return <RightClickMenu actions={menuActions(actions)} area={<article className="message agent"/>}>{speaker!=="Elpis"&&<div className="speaker">{speaker}</div>}<MarkdownText text={item.text||""}/>{actions.length>0&&<div className="message-actions"><MessageButtons actions={actions}/></div>}</RightClickMenu>;
   }
   if(item.type==="commandExecution")return <CommandStep item={item}/>;
-  if(item.type==="fileChange"){
-    const changes=list(item.changes).map(object);
-    return <Activity label={`${changes.length} file ${changes.length===1?"change":"changes"}`} icon={<FileEditIcon size={15}/>} status={item.status}>{changes.map((change,index)=><details className="file-change" key={`${text(change.path)}:${index}`}><summary><span className="file-change-kind">{readable(text(object(change.kind).type))}</span><FileRefLink target={{ path: text(change.path) }}>{text(change.path)}</FileRefLink></summary><TextOutput value={change.diff}/></details>)}<TextOutput value={item.output}/></Activity>;
-  }
+  if(item.type==="fileChange")return <ItemEdits item={item}/>;
   if(item.type==="mcpToolCall"||item.type==="dynamicToolCall"){
     const result=object(item.result);const contents=list(item.type==="mcpToolCall"?result.content:item.contentItems);
     const output=contents.map(part=>text(object(part).text)).filter(Boolean).join("\n");const error=object(item.error);
-    return <Activity label={text(item.tool)||"Tool call"} icon={<ToolIcon size={15}/>} status={item.status} detail={text(item.server)||text(item.namespace)}>{item.arguments!==undefined&&<details className="activity-input"><summary>Input</summary><TextOutput value={item.arguments}/></details>}{output?<TextOutput value={output}/>:result.structuredContent?<TextOutput value={result.structuredContent}/>:contents.length?<p>Non-text output is recorded for this tool.</p>:null}{text(error.message)&&<p role="alert"><FilePathText text={text(error.message)}/></p>}{typeof item.durationMs==="number"&&<p className="activity-footer">{(item.durationMs/1000).toFixed(1)}s</p>}</Activity>;
+    const label=item.type==="mcpToolCall"?stepLabel(item):`Used ${text(item.tool)||"a tool"}`;
+    return <Activity label={label} status={item.status} time={typeof item.durationMs==="number"?item.durationMs:undefined}>{item.arguments!==undefined&&<details className="step-input"><summary>Input</summary><TextOutput value={item.arguments}/></details>}{output?<TextOutput value={output}/>:result.structuredContent?<TextOutput value={result.structuredContent}/>:contents.length?<p className="step-note">Non-text output is recorded for this tool.</p>:null}{text(error.message)&&<p role="alert" className="step-note step-error"><FilePathText text={text(error.message)}/></p>}</Activity>;
   }
   if(item.type==="subAgentActivity"){
     const id=text(item.agentThreadId),agent=threads.find(thread=>thread.id===id);
@@ -131,14 +131,18 @@ export function ChatMessage({item,speaker="Elpis",threads=[],onOpenThread,onEdit
   if(item.type==="collabAgentToolCall"){
     const ids=list(item.receiverThreadIds).filter((id):id is string=>typeof id==="string");
     const agentTool=({spawn_agent:"Started an agent",spawnAgent:"Started an agent",wait:"Waited for agents",wait_agent:"Waited for agents",close_agent:"Closed an agent",closeAgent:"Closed an agent",send_input:"Messaged an agent",sendInput:"Messaged an agent",resume_agent:"Resumed an agent",interrupt_agent:"Interrupted an agent"} as Record<string,string>)[text(item.tool)];
-    return <Activity label={agentTool||readable(text(item.tool))||"Agent activity"} icon={<BranchIcon size={15}/>} status={item.status}>{text(item.prompt)&&<p className="activity-prompt">{text(item.prompt)}</p>}{text(item.model)&&<p className="activity-location">{text(item.model)}</p>}<div className="activity-agents">{ids.filter(Boolean).map(id=><Button key={id} variant="outline" size="sm" onClick={()=>onOpenThread?.(id)} disabled={!onOpenThread}>{threads.some(t=>t.id===id)?title(threads.find(t=>t.id===id)!):"Open agent conversation"}</Button>)}</div></Activity>;
+    return <Activity label={agentTool||readable(text(item.tool))||"Agent activity"} status={item.status}>{text(item.prompt)&&<p className="step-note">{text(item.prompt)}</p>}{text(item.model)&&<p className="step-note">{text(item.model)}</p>}<div className="step-agents">{ids.filter(Boolean).map(id=><Button key={id} variant="outline" size="sm" onClick={()=>onOpenThread?.(id)} disabled={!onOpenThread}>{threads.some(t=>t.id===id)?title(threads.find(t=>t.id===id)!):"Open agent conversation"}</Button>)}</div></Activity>;
   }
   if(item.type==="reasoning"){
     const reasoning=[...list(item.summary),...list(item.content)].filter((v):v is string=>typeof v==="string"&&Boolean(v.trim())).join("\n\n");
-    return reasoning?<Activity label="Reasoning" icon={<ToolIcon size={15}/>}><MarkdownText text={reasoning}/></Activity>:null;
+    return reasoning?<Activity label="Reasoning"><MarkdownText text={reasoning}/></Activity>:null;
   }
-  if(item.type==="webSearch")return <Activity label="Web search" icon={<BrowserIcon size={15}/>} detail={text(item.query)}><p>{text(item.query)}</p>{list(item.results).map((value,index)=>{const result=object(value);const href=text(result.url);return /^https?:\/\//i.test(href)?<p key={index}><a href={href} target="_blank" rel="noreferrer">{text(result.title)||href}</a>{text(result.snippet)&&<span>{text(result.snippet)}</span>}</p>:<TextOutput key={index} value={value}/>;})}</Activity>;
-  if(item.type==="functionCallOutput")return <Activity label={text(item.name)||"Tool output"} icon={<ToolIcon size={15}/>}><TextOutput value={typeof item.output==="string"?item.output:list(item.output).map(value=>text(object(value).text)).filter(Boolean).join("\n")}/></Activity>;
+  if(item.type==="webSearch"){
+    const results=list(item.results);
+    // Nothing to open when the search recorded no results: the row alone says what was searched.
+    return <Activity label={stepLabel(item)} status={item.status}>{results.length>0&&<div className="step-results">{results.map((value,index)=>{const result=object(value);const href=text(result.url);return /^https?:\/\//i.test(href)?<p key={index}><a href={href} target="_blank" rel="noreferrer">{text(result.title)||href}</a>{text(result.snippet)&&<span>{text(result.snippet)}</span>}</p>:<TextOutput key={index} value={value}/>;})}</div>}</Activity>;
+  }
+  if(item.type==="functionCallOutput")return <Activity label={text(item.name)||"Tool output"}><TextOutput value={typeof item.output==="string"?item.output:list(item.output).map(value=>text(object(value).text)).filter(Boolean).join("\n")}/></Activity>;
   if(item.type==="plan")return <section className="plan-card" aria-label="Proposed plan"><p className="plan-card-heading"><PlanIcon size={14} aria-hidden="true"/>Plan</p><MarkdownText text={item.text||""}/></section>;
   if(item.type==="imageView"){
     const name=fileKind(text(item.path)).name,safeBase=mediaBase?.startsWith("/api/threads/")&&!/[?#\\]/.test(mediaBase)?mediaBase:null;
@@ -148,5 +152,5 @@ export function ChatMessage({item,speaker="Elpis",threads=[],onOpenThread,onEdit
   if(item.type==="contextCompaction")return <div className="context-event">Context compacted</div>;
   if(item.type==="enteredReviewMode")return <div className="context-event">{`Review started${typeof item.review==="string"&&item.review?`: ${item.review}`:""}`}</div>;
   if(item.type==="exitedReviewMode")return <article className="message agent"><MarkdownText text={typeof item.review==="string"?item.review:""}/></article>;
-  return <Activity label={readable(item.type)} icon={<ToolIcon size={15}/>}><details><summary>Recorded details</summary><TextOutput value={item}/></details></Activity>;
+  return <Activity label={readable(item.type)}><details className="step-input"><summary>Recorded details</summary><TextOutput value={item}/></details></Activity>;
 }

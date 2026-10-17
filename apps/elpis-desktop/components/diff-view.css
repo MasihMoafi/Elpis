@@ -1,0 +1,16 @@
+/* A diff's lines and its +N −M (components/diff-view.tsx): the Changes tab and the edit rows in the chat share them. Colours
+   come from the app's own success and destructive tokens, so both themes follow. */
+.change-counts .add { color:var(--success); } .change-counts .del { color:var(--destructive); }
+.change-counts { flex-shrink:0; font:12px/1 var(--mono); color:var(--muted-foreground); white-space:nowrap; }
+.diff-body { flex:1; min-height:0; overflow:auto; padding-bottom:12px; font:12px/20px var(--mono); }
+.diff-lines { width:max-content; min-width:100%; }  /* every line as wide as the longest, so the colours end together */
+.diff-line { display:grid; grid-template-columns:44px 44px 16px 1fr; }
+.diff-no { padding:0 8px; text-align:right; color:var(--subtle-foreground); user-select:none; }
+.diff-sign { text-align:center; user-select:none; }
+.diff-text { padding-inline-end:16px; white-space:pre; }
+.diff-line.add { background:color-mix(in oklch, var(--success) 13%, transparent); }
+.diff-line.del { background:color-mix(in oklch, var(--destructive) 12%, transparent); }
+.diff-line.add .diff-no, .diff-line.add .diff-sign { background:color-mix(in oklch, var(--success) 20%, transparent); color:var(--success); }
+.diff-line.del .diff-no, .diff-line.del .diff-sign { background:color-mix(in oklch, var(--destructive) 18%, transparent); color:var(--destructive); }
+.diff-line.hunk { display:block; margin:6px 0 2px; padding:2px 12px; background:var(--recessed); color:var(--muted-foreground); }
+.diff-line.note .diff-text { color:var(--muted-foreground); font-style:italic; }
