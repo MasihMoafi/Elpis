@@ -31,7 +31,13 @@ test('Voting finishes every agent; Tally receives all answers after their checks
     // The run's chat asks for the multi-agent runtime: with the Ledger's SUBAGENTS switch off, Elpis refused every run.
     const chats = fixture.posts.filter(post => post.path === '/api/threads');
     assert.equal(chats.length, 1); assert.equal(chats[0].body.agents, true);
-    for (const task of runs[0].tasks.filter(task => task.kind === 'implement')) assert.match(task.instruction, /Save your result as files inside your allowed folders/);
+    for (const task of runs[0].tasks.filter(task => task.kind === 'implement')) {
+      assert.match(task.instruction, /Save your result as files inside your allowed folders/);
+      // The live split run stopped at Part 2: running its test wrote src/__pycache__, the engine rejected the report
+      // for not listing it, and the worker, told to report exactly once, stopped without reporting again.
+      assert.match(task.instruction, /build output.*__pycache__/);
+      assert.match(task.instruction, /A rejected report does not count as your one report: fix what its reason names and report again/);
+    }
     assert.deepEqual(runs[0].tallyInput.filter(answer => /original answer/.test(answer)), [1, 2, 3].map(n => `Answer ${n}: original answer`));
     const tallyStart = events.indexOf('start:Tally the answers');
     for (let n = 1; n <= 3; n++) assert.ok(events.indexOf(`done:Check: Answer ${n}`) < tallyStart);

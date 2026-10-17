@@ -53,6 +53,8 @@ export const TASKS_PER_AGENT = 2;
 export const checkOf = (id: string) => `${id}-check`;
 /** What an agent is held to when its "Done when" is left empty. */
 export const DONE = "The change builds and its tests pass.";
+/** How a writing agent reports, so that the engine accepts it. */
+const REPORT = "Your report's changed_files must name every file that changed in your folders, build output included (such as __pycache__ from running Python; python3 -B writes none). A rejected report does not count as your one report: fix what its reason names and report again.";
 const agentsOf = (graph: CanvasGraph) => graph.nodes.filter((node): node is Extract<CanvasNode, { type: "agent" }> => node.type === "agent");
 
 let counter = 0;
@@ -299,8 +301,10 @@ export function runTasks(graph: CanvasGraph): { tasks: RunTask[] } | { error: st
     const criteria = node.data.acceptanceCriteria.length ? node.data.acceptanceCriteria : [DONE];
     const model = { ...(node.data.provider ? { provider: node.data.provider } : {}), ...(node.data.model ? { model: node.data.model } : {}) };
     return [
-      // Every agent gets the Mother's brief first, then its own prompt.
-      { id: node.id, kind: "implement" as const, title, instruction: [brief && `Goal of the whole run: ${brief}`, prompt, `Save your result as files inside your allowed folders, including a markdown answer for research or decisions. Include the answer and file paths in your terminal report summary so the next agent can use them.`, alongside].filter(Boolean).join("\n\n"),
+      // Every agent gets the Mother's brief first, then its own prompt. The engine accepts a report only when its
+      // changed_files are every file that changed in the folders, build output included; a worker told to report
+      // "exactly once" otherwise stops after the first rejection, and the run ends there (found in a live run).
+      { id: node.id, kind: "implement" as const, title, instruction: [brief && `Goal of the whole run: ${brief}`, prompt, `Save your result as files inside your allowed folders, including a markdown answer for research or decisions. Include the answer and file paths in your terminal report summary so the next agent can use them.`, REPORT, alongside].filter(Boolean).join("\n\n"),
         dependsOn: graph.edges.filter(edge => waits(edge) && edge.target === node.id && ids.has(edge.source)).flatMap(edge => [edge.source, checkOf(edge.source)]),
         writeScopes: node.data.writeScopes, acceptanceCriteria: criteria, ...model, ...(node.data.effort ? { reasoningEffort: node.data.effort } : {}) },
       { id: checkOf(node.id), kind: "verify" as const, title: `Check: ${title}`.slice(0, 256),
