@@ -30,6 +30,8 @@ export const SHORTCUTS: Shortcut[] = [
   { id: "forward", group: "Navigation", label: "Forward again", keys: ["Alt+→"] },
   { id: "terminal", group: "App", label: "Toggle terminal", keys: ["Ctrl+`"] },
   { id: "full-view", group: "App", label: "Toggle full view", keys: ["Ctrl+Shift+F"] },
+  // Claude opens its Files pane with Ctrl+Shift+F, which here is the full view; Files takes the next free letter (VS Code's Explorer key).
+  { id: "files", group: "App", label: "Toggle Files", keys: ["Ctrl+Shift+E"] },
   { id: "sidebar", group: "App", label: "Toggle sidebar", keys: ["Ctrl+Shift+S", "Ctrl+B"] },
   { id: "copy-folder", group: "App", label: "Copy working directory", keys: ["Ctrl+Shift+C"] },
   { id: "settings", group: "App", label: "Settings", keys: ["Ctrl+,"] },
@@ -59,6 +61,7 @@ export function shortcutFor(event: KeyboardEvent, typing: boolean): { id: string
     if (key === "a") return { id: "archive" };
     if (key === "c" && !typing) return { id: "copy-folder" };
     if (key === "f") return { id: "full-view" };
+    if (key === "e") return { id: "files" };
     if (event.code === "BracketLeft") return { id: "previous-chat" };
     if (event.code === "BracketRight") return { id: "next-chat" };
   }

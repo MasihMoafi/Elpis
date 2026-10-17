@@ -2,22 +2,26 @@
 
 import { useCallback, useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { Maximize2, Minimize2, X } from "lucide-react";
-import { BrowserIcon, FileEditIcon, PlusIcon, TerminalIcon } from "@/components/elpis-icons";
+import { BrowserIcon, FileEditIcon, FolderIcon, PlusIcon, TerminalIcon } from "@/components/elpis-icons";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Tab, TabStrip } from "@/components/tab-strip";
 import { BrowserPanel, browserTabActions, type Browser } from "@/components/browser-panel";
 import { TerminalView, endTerminal } from "@/components/terminal-view";
 import { ChangesPanel } from "@/components/changes-panel";
+import { FilesPane } from "@/components/files-pane";
 import type { AttachToChat } from "@/components/browser-annotations";
+import { attach, detach, onRequest } from "@/lib/files-pane";
 import { mergeOrder, neighbour } from "@/lib/panel-tabs";
 import type { BrowserTab } from "@/lib/desktop";
 
 /** A shell in the side panel. Its key names the shell in Electron; `threadId` is the chat "Open in Elpis TUI" resumed in it. */
 export type TerminalTab = { key: string; n: number; cwd: string; threadId?: string };
-type Item = { key: string; kind: "terminal"; terminal: TerminalTab } | { key: string; kind: "browser"; page: BrowserTab } | { key: string; kind: "changes" };
+type Item = { key: string; kind: "terminal"; terminal: TerminalTab } | { key: string; kind: "browser"; page: BrowserTab } | { key: string; kind: "changes" } | { key: string; kind: "files" };
 /** The Changes tab (components/changes-panel.tsx) is one tab for the open chat's folder, so it has one key. */
 const CHANGES = "c:changes";
+/** The Files tab (components/files-pane.tsx) is one tab too: the open chat's folder. */
+const FILES = "f:files";
 
 /** Narrower than this the browser toolbar could not keep its address field (components/browser-panel.tsx). */
 const MIN_WIDTH = 360;
@@ -28,16 +32,17 @@ const MIN_WIDTH = 360;
  * over it as a card (`chatCollapsed`: a pill instead). */
 export function useSidePanel(browser: Browser) {
   const [open, setOpen] = useState(false);
-  const [terminals, setTerminals] = useState<TerminalTab[]>([]), [changes, setChanges] = useState(false);
+  const [terminals, setTerminals] = useState<TerminalTab[]>([]), [changes, setChanges] = useState(false), [filesTab, setFilesTab] = useState(false);
   const [active, setActive] = useState<string | null>(null);
   const [full, setFull] = useState(false), [chatCollapsed, setChatCollapsed] = useState(false);
   /** The panel's width in pixels once its edge has been dragged; until then it takes half the work area (app/globals.css). */
   const [width, setWidth] = useState<number | null>(null);
   const order = useRef<string[]>([]);
   const pages = browser.state?.tabs ?? [];
-  order.current = mergeOrder(order.current, [...terminals.map(tab => `t:${tab.key}`), ...pages.map(page => `b:${page.id}`), ...(changes ? [CHANGES] : [])]);
+  order.current = mergeOrder(order.current, [...terminals.map(tab => `t:${tab.key}`), ...pages.map(page => `b:${page.id}`), ...(changes ? [CHANGES] : []), ...(filesTab ? [FILES] : [])]);
   const items = order.current.flatMap((key): Item[] => {
     if (key === CHANGES) return [{ key, kind: "changes" }];
+    if (key === FILES) return [{ key, kind: "files" }];
     const terminal = key.startsWith("t:") && terminals.find(tab => `t:${tab.key}` === key), page = key.startsWith("b:") && pages.find(tab => `b:${tab.id}` === key);
     return terminal ? [{ key, kind: "terminal", terminal }] : page ? [{ key, kind: "browser", page }] : [];
   });
@@ -68,10 +73,14 @@ export function useSidePanel(browser: Browser) {
   const openPage = useCallback(() => { setOpen(true); void command("new"); }, [command]);
   /** Shows the Changes tab, opening it first when it is not there. */
   const openChanges = useCallback(() => { setChanges(true); select(CHANGES); }, [select]);
+  /** Shows the Files tab, opening it first when it is not there. A path clicked in a reply asks for it (lib/files-pane.ts). */
+  const openFiles = useCallback(() => { setFilesTab(true); select(FILES); }, [select]);
+  useEffect(() => onRequest(openFiles), [openFiles]);
   const close = useCallback((key: string) => {
     const next = neighbour(order.current, key);
     if (shown?.key === key) { if (next) select(next); else setActive(null); }
     if (key === CHANGES) setChanges(false);
+    else if (key === FILES) setFilesTab(false);
     else if (key.startsWith("t:")) { setTerminals(previous => previous.filter(tab => `t:${tab.key}` !== key)); endTerminal(key.slice(2)); }
     else void command("close", { id: key.slice(2) });
   }, [shown?.key, command, select]);
@@ -82,6 +91,11 @@ export function useSidePanel(browser: Browser) {
     if (last) select(last.key); else openTerminal(cwd);
     return true;
   }, [open, shown, items, select, openTerminal, closePanel]);
+  /** Ctrl+Shift+E: the Files tab, shown; pressed again on it, the panel closes (unless `canClose` is false). Returns whether it is shown. */
+  const toggleFiles = useCallback((canClose = true) => {
+    if (canClose && open && shown?.kind === "files") { closePanel(); return false; }
+    openFiles(); return true;
+  }, [open, shown, openFiles, closePanel]);
   // Ctrl+Shift+F on a page reaches the window as a count in the browser's state; each step is one press.
   const presses = browser.state?.fullView, seen = useRef<number | null>(null);
   useEffect(() => {
@@ -89,7 +103,7 @@ export function useSidePanel(browser: Browser) {
     if (seen.current !== null && presses !== seen.current) toggleFull();
     seen.current = presses;
   }, [presses, toggleFull]);
-  return { open, full, width, setWidth, chatCollapsed, setChatCollapsed, toggleFull, items, shown, openPanel, closePanel, select, close, openTerminal, openPage, openChanges, toggleTerminal };
+  return { open, full, width, setWidth, chatCollapsed, setChatCollapsed, toggleFull, items, shown, openPanel, closePanel, select, close, openTerminal, openPage, openChanges, openFiles, toggleFiles, toggleTerminal };
 }
 export type SidePanelState = ReturnType<typeof useSidePanel>;
 
@@ -99,6 +113,7 @@ function kindsOf(panel: SidePanelState, browser: Browser, hasTerminal: boolean, 
     ...(hasTerminal ? [{ id: "terminal", label: "Terminal", icon: <TerminalIcon size={14} />, run: () => panel.openTerminal(cwd) }] : []),
     ...(browser.api ? [{ id: "browser", label: "Browser tab", icon: <BrowserIcon size={14} />, run: panel.openPage }] : []),
     ...(hasChat ? [{ id: "changes", label: "Changes", icon: <FileEditIcon size={14} />, run: panel.openChanges }] : []),
+    ...(cwd ? [{ id: "files", label: "Files", icon: <FolderIcon size={14} />, run: panel.openFiles }] : []),
   ];
 }
 
@@ -120,6 +135,9 @@ type Props = {
  * that corner free. */
 export function SidePanel({ panel, browser, hasTerminal, dark, cwd, threadId, running = false, launch, covered, onAttach, imagesAllowed }: Props) {
   const { setWidth } = panel, [resizing, setResizing] = useState(false);
+  // Tells the Files tab where this chat works and that it can open files (a path clicked in a reply is a file ref only then).
+  useEffect(() => { attach(cwd); }, [cwd]);
+  useEffect(() => detach, []);
   const element = useRef<HTMLElement>(null), drag = useRef<{ x: number; width: number } | null>(null);
   if (!panel.open) return null;
   const kinds = kindsOf(panel, browser, hasTerminal, cwd, !!threadId), { shown } = panel;
@@ -133,12 +151,14 @@ export function SidePanel({ panel, browser, hasTerminal, dark, cwd, threadId, ru
       onPointerUp={() => { drag.current = null; setResizing(false); }} onPointerCancel={() => { drag.current = null; setResizing(false); }} />
     <div className="side-header">
       <TabStrip label="Side panel tabs" activeKey={shown?.key ?? null} add={kinds.length > 0 && <DropdownMenu>
-        <DropdownMenuTrigger render={<Button type="button" variant="ghost" size="icon-sm" className="task-tab-new" aria-label="New side panel tab" title="New tab: terminal, browser or changes" />}><PlusIcon size={15} /></DropdownMenuTrigger>
+        <DropdownMenuTrigger render={<Button type="button" variant="ghost" size="icon-sm" className="task-tab-new" aria-label="New side panel tab" title="New tab: terminal, browser, changes or files" />}><PlusIcon size={15} /></DropdownMenuTrigger>
         <DropdownMenuContent align="start">{kinds.map(kind => <DropdownMenuItem key={kind.id} onClick={kind.run}>{kind.icon}{kind.label}</DropdownMenuItem>)}</DropdownMenuContent>
       </DropdownMenu>}>
         {panel.items.map(item => {
           const active = item.key === shown?.key, close = () => panel.close(item.key), select = () => panel.select(item.key);
           if (item.kind === "changes") return <Tab key={item.key} icon={<FileEditIcon size={14} />} label="Changes" title="Changes in this chat's folder" active={active} closeLabel="Close Changes tab"
+            actions={[{ id: "close", label: "Close tab", run: close }]} onSelect={select} onClose={close} />;
+          if (item.kind === "files") return <Tab key={item.key} icon={<FolderIcon size={14} />} label="Files" title="The files in this chat's folder" active={active} closeLabel="Close Files tab"
             actions={[{ id: "close", label: "Close tab", run: close }]} onSelect={select} onClose={close} />;
           if (item.kind === "terminal") return <Tab key={item.key} icon={<TerminalIcon size={14} />} label={item.terminal.n > 1 ? `Terminal ${item.terminal.n}` : "Terminal"} title={item.terminal.cwd} active={active}
             closeLabel={`Close Terminal ${item.terminal.n} tab`} actions={[{ id: "close", label: "Close tab", run: close }]} onSelect={select} onClose={close} />;
@@ -153,6 +173,7 @@ export function SidePanel({ panel, browser, hasTerminal, dark, cwd, threadId, ru
     <div className="side-body">
       {shown?.kind === "terminal" && <TerminalView termKey={shown.terminal.key} cwd={shown.terminal.cwd} dark={dark} launch={launch} />}
       {shown?.kind === "changes" && <ChangesPanel threadId={threadId} running={running} />}
+      {shown?.kind === "files" && <FilesPane cwd={cwd} />}
       {shown?.kind === "browser" && <BrowserPanel browser={browser} covered={covered || resizing} onAttach={onAttach} imagesAllowed={imagesAllowed} />}
       {!shown && <Empty>{kinds.map(kind => <Button key={kind.id} type="button" variant="outline" size="sm" onClick={kind.run}>{kind.icon}{kind.label}</Button>)}</Empty>}
     </div>

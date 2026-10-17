@@ -2,10 +2,13 @@
 
 import { createElement, useRef, useState, type HTMLAttributes, type MouseEvent } from "react";
 import { Check, Copy } from "lucide-react";
-import Markdown, { type Components } from "react-markdown";
+import Markdown, { defaultUrlTransform, type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
 import { Button } from "@/components/ui/button";
+import { FileRefLink } from "@/components/file-ref";
+import { linkFilePaths, parseHref } from "@/lib/file-refs";
+import { useHost } from "@/lib/files-pane";
 
 /** Copies text and reports the result next to the button. */
 export function CopyButton({ text, label }: { text: () => string; label: string }) {
@@ -38,9 +41,13 @@ function CodeBlock({ language, ...props }: React.ComponentProps<"pre"> & { langu
 }
 
 function MarkdownLink({ href, children, ...props }: React.ComponentProps<"a">) {
-  const [error, setError] = useState("");
+  const [error, setError] = useState(""), { attached } = useHost();
   if (!href) return <span>{children}</span>;
+  // A file the reply names is a file ref where the Files tab can open it (components/file-ref.tsx).
+  const file = parseHref(href);
+  if (file && attached) return <FileRefLink target={file}>{children}</FileRefLink>;
   const local = href.startsWith("/") && !href.startsWith("//");
+  if (file && !local) return <span>{children}</span>;
   async function openFile(event: MouseEvent<HTMLAnchorElement>) {
     event.preventDefault();
     setError("");
@@ -67,6 +74,10 @@ const components: Components = {
 /** Only blocks that name their language are coloured: guessing one paints plain text and logs in wrong colours. */
 const HIGHLIGHT: NonNullable<React.ComponentProps<typeof Markdown>["rehypePlugins"]> = [[rehypeHighlight, { detect: false }]];
 
+/** file:/// links are kept (they are file refs); everything else is Markdown's own check. */
+const urlTransform = (url: string) => url.startsWith("file:///") ? url : defaultUrlTransform(url);
+const PLUGINS = [remarkGfm, linkFilePaths];
+
 export function MarkdownText({ text }: { text: string }) {
-  return <div className="markdown"><Markdown remarkPlugins={[remarkGfm]} rehypePlugins={HIGHLIGHT} components={components}>{text}</Markdown></div>;
+  return <div className="markdown"><Markdown remarkPlugins={PLUGINS} rehypePlugins={HIGHLIGHT} components={components} urlTransform={urlTransform}>{text}</Markdown></div>;
 }

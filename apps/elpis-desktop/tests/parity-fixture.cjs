@@ -44,7 +44,8 @@ async function fixture({ width = 1130, height = 660, colorScheme = 'light', runn
     if (url.pathname === '/api/events') { res.writeHead(200, { 'content-type': 'text/event-stream' }); res.write('event: connection\ndata: {"connected":true}\n\n'); return; }
     if (url.pathname === '/api/health') return json({ connected: true });
     if (url.pathname === '/api/models') return json({ data: [{ id: 'sol', model: 'sol', displayName: 'GPT-6.1-Sol', inputModalities: ['text', 'image'], supportedReasoningEfforts: ['low', 'medium', 'high'].map(reasoningEffort => ({ reasoningEffort })) }], nextCursor: null });
-    if (routes[url.pathname]) return json(await routes[url.pathname](raw ? JSON.parse(raw) : null, url));
+    // A route answers with its value, or with { __http: status, error } for a refusal.
+    if (routes[url.pathname]) { const reply = await routes[url.pathname](raw ? JSON.parse(raw) : null, url); if (reply?.__http) { res.statusCode = reply.__http; return json({ error: reply.error }); } return json(reply); }
     if (url.pathname === '/api/files') return json({ data: FILES });
     if (url.pathname === '/api/threads') return json({ data: url.searchParams.has('ancestorThreadId') || url.searchParams.get('archived') === 'true' ? [] : THREADS.map(item => item.id === 'chat-a' && running ? { ...item, status: { type: 'active' } } : item), nextCursor: null });
     if (chat && url.pathname.endsWith('/resume')) return json({ thread: chat, activeTurnId: running && chat.id === 'chat-a' ? 't4' : null });

@@ -168,7 +168,7 @@ test('the side panel: + asks Terminal, Browser tab or Changes; shells and pages 
   await page.getByRole('button', { name: 'Show side panel' }).click();
   await side.getByText('Nothing open here yet.').waitFor();
   await side.getByRole('button', { name: 'New side panel tab' }).click();
-  assert.deepEqual(await page.getByRole('menuitem').allInnerTexts(), ['Terminal', 'Browser tab', 'Changes']);
+  assert.deepEqual(await page.getByRole('menuitem').allInnerTexts(), ['Terminal', 'Browser tab', 'Changes', 'Files']);
   await shoot('side-panel-add-menu-light');
   await page.getByRole('menuitem', { name: 'Browser tab' }).click();
   await side.getByRole('tab', { name: 'New tab' }).waitFor();

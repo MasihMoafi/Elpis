@@ -18,14 +18,14 @@ export function TabStrip({ label, add, activeKey, children }: { label: string; a
 
 /** One tab: an icon and a title that select it, an optional "…" (`trailing`), and a close button.
  * Right-click opens `actions`, or `wrap` draws the menu around the tab (a chat's `ThreadActions`). */
-export function Tab({ icon, label, title, active, chat, closeLabel, actions, wrap, trailing, onSelect, onClose }: {
-  icon: ReactNode; label: string; title?: string; active: boolean; chat?: boolean; closeLabel: string;
+export function Tab({ icon, label, title, active, chat, preview, closeLabel, actions, wrap, trailing, onSelect, onClose }: {
+  icon: ReactNode; label: string; title?: string; active: boolean; chat?: boolean; /** A tab the next one replaces (a file previewed from the tree): drawn in italics. */ preview?: boolean; closeLabel: string;
   actions?: MenuAction[];
   wrap?: (area: ReactElement, content: (menu: ReactNode) => ReactNode) => ReactNode;
   trailing?: boolean;
   onSelect: () => void; onClose: () => void;
 }) {
-  const area = <div className={`task-tab${chat ? " chat-tab" : ""}${active ? " active" : ""}`} />;
+  const area = <div className={`task-tab${chat ? " chat-tab" : ""}${preview ? " preview" : ""}${active ? " active" : ""}`} />;
   const content = (menu: ReactNode) => <>
     <button type="button" role="tab" aria-selected={active} title={title ?? label} onClick={onSelect}>{icon}<span>{label}</span></button>
     {trailing && menu}
