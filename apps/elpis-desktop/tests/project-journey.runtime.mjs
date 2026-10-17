@@ -132,7 +132,9 @@ try {
   assert.equal(created, 1, 'retry uses the first created conversation');
   assert.equal(provider.requests[0].body.model, 'gpt-5.5');
   checks.push('First-send failure preserves draft; retry uses the same chat', 'Actual native command waits for approval and reads the selected folder', 'Approved result matches the unique file input');
-  await page.locator('.activity-card').filter({ hasText: 'Terminal' }).locator('summary').click();
+  // The command sits in its group's row (inside "Worked for" once the turn ends); opening them shows its output.
+  for (const summary of await page.locator('.worked-for:not([open]) > summary').all()) await summary.click();
+  for (const summary of await page.locator('.activity-group:not([open]) > summary').all()) await summary.click();
   await page.getByText(secret, { exact: true }).waitFor();
   await shot('03-task-result.png');
   const draft = 'Unsent follow-up\n\nمتن فارسی';

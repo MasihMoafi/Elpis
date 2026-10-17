@@ -99,7 +99,7 @@ button:disabled { cursor:not-allowed; }
 .message { margin-bottom:22px; min-width:0; overflow-wrap:anywhere; }
 .message.user { background:var(--muted); border-radius:16px; padding:8px 14px; margin-left:auto; width:fit-content; max-width:80%; white-space:pre-wrap; line-height:1.55; }
 .message.agent .speaker { font-size:12px; font-weight:600; color:var(--muted-foreground); margin-bottom:6px; }
-.markdown p { margin:0 0 12px; } .markdown pre { background:var(--recessed); border:1px solid var(--hairline); padding:12px 14px; border-radius:10px; overflow:auto; line-height:1.55; } .markdown code { font-size:12.5px; font-family:var(--mono); } .markdown :not(pre) > code { background:var(--muted); padding:1px 5px; border-radius:5px; font-size:12.5px; } .markdown ul,.markdown ol { padding-inline-start:22px; margin:8px 0 12px; } .markdown li { margin:3px 0; } .markdown ul { list-style:disc; } .markdown ol { list-style:decimal; } .markdown a { color:var(--primary); text-decoration:underline; text-underline-offset:2px; } .markdown-table { max-width:100%; overflow:auto; margin:0 0 14px; } .markdown table { border-collapse:collapse; font-size:13px; width:max-content; } .markdown td,.markdown th { border:1px solid var(--border); padding:6px 10px; min-width:6rem; overflow-wrap:normal; word-break:normal; } .markdown h1,.markdown h2,.markdown h3,.markdown h4,.markdown h5,.markdown h6 { font-weight:600; margin:18px 0 8px; letter-spacing:-.01em; } .markdown h1 { font-size:18px; } .markdown h2 { font-size:16px; } .markdown h3 { font-size:14.5px; }
+.markdown p { margin:0 0 12px; } .markdown pre { background:var(--recessed); border:1px solid var(--hairline); padding:12px 14px; border-radius:10px; overflow:auto; line-height:1.55; } .markdown code { font-size:12.5px; font-family:var(--mono); } .markdown :not(pre) > code { color:var(--code-ink); background:var(--muted); border:1px solid var(--hairline); padding:1px 5px; border-radius:5px; font-size:13px; } .markdown ul,.markdown ol { padding-inline-start:22px; margin:8px 0 12px; } .markdown li { margin:3px 0; } .markdown ul { list-style:disc; } .markdown ol { list-style:decimal; } .markdown a { color:var(--primary); text-decoration:underline; text-underline-offset:2px; } .markdown-table { max-width:100%; overflow:auto; margin:0 0 14px; } .markdown table { border-collapse:collapse; font-size:13px; width:max-content; } .markdown td,.markdown th { border:1px solid var(--border); padding:6px 10px; min-width:6rem; overflow-wrap:normal; word-break:normal; } .markdown h1,.markdown h2,.markdown h3,.markdown h4,.markdown h5,.markdown h6 { font-weight:600; margin:18px 0 8px; letter-spacing:-.01em; } .markdown h1 { font-size:18px; } .markdown h2 { font-size:16px; } .markdown h3 { font-size:14.5px; }
 .tool-item { border:1px solid var(--border); border-radius:10px; margin:12px 0; font-size:12px; } .tool-item summary { padding:10px 14px; cursor:pointer; } .tool-item pre { margin:0; padding:12px; overflow:auto; max-height:340px; white-space:pre-wrap; }
 .composer-wrap { padding:6px 32px 14px; }
 .composer { max-width:740px; margin:auto; border:1px solid var(--border); border-radius:16px; background:var(--composer); padding:10px 10px 8px 14px; box-shadow:var(--shadow); transition:border-color .15s; }
@@ -424,17 +424,45 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .message.user { background:var(--card); border:1px solid var(--hairline); border-right:2px solid color-mix(in oklch, var(--gold, var(--primary)) 70%, transparent); border-radius:3px; padding:9px 14px; clip-path:polygon(9px 0, 100% 0, 100% 100%, 0 100%, 0 9px); }
 .message.agent { margin-bottom:14px; }
 .message.agent a { color:var(--primary); text-decoration-color:color-mix(in oklch, var(--primary) 45%, transparent); }
+/* Agent work, as Claude's desktop app shows it (components/transcript.tsx, chat-message.tsx CommandStep): a finished
+ * run of tools is one muted row with a chevron; a running step is a sentence with dots and a timer; an opened command
+ * is a title, its script in a bordered block coloured as shell, then its output, in red when it failed. */
+:root { --code-ink:#b3261e; --sh-command:#1f5fbf; --sh-string:#1a7f37; --sh-variable:#8241c8; }
+.dark { --code-ink:#ff8b7d; --sh-command:#7cb7ff; --sh-string:#8bd49c; --sh-variable:#c9a2ff; }
 .activity-group { margin:2px 0 12px; }
-.activity-group > summary { display:flex; align-items:center; gap:9px; width:fit-content; max-width:100%; padding:3px 8px 3px 4px; margin-left:-4px; border-radius:4px; list-style:none; cursor:pointer; font-size:13px; color:var(--muted-foreground); transition:color .12s, background .12s; }
+.activity-group > summary { display:flex; align-items:center; gap:8px; width:fit-content; max-width:100%; padding:3px 8px 3px 4px; margin-left:-4px; border-radius:6px; list-style:none; cursor:pointer; font-size:14px; color:var(--muted-foreground); transition:color .12s, background .12s; }
 .activity-group > summary::-webkit-details-marker { display:none; }
-.activity-group > summary::after { content:"›"; font-size:14px; line-height:1; color:var(--subtle-foreground); transition:transform .15s; }
+.activity-group > summary::after { content:"›"; flex-shrink:0; font-size:15px; line-height:1; color:var(--subtle-foreground); transition:transform .15s; }
 .activity-group[open] > summary::after { transform:rotate(90deg); }
 .activity-group > summary:hover { color:var(--foreground); background:var(--hover); }
-.activity-group > summary svg { flex-shrink:0; color:color-mix(in oklch, var(--primary) 75%, var(--muted-foreground)); }
-.activity-group > summary > span { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.activity-group-live { color:var(--foreground); }
-.activity-group-failed { color:var(--destructive); font-size:12px; flex-shrink:0; }
+.activity-group > summary:focus-visible { outline:2px solid var(--ring); outline-offset:1px; }
+.activity-group-label, .live-label { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.activity-group-failed { color:var(--destructive); }
 .activity-group-body { margin:6px 0 4px 10px; padding-left:12px; border-left:1px solid var(--border); }
+.live-label { color:var(--foreground); }
+.live-timer { flex-shrink:0; color:var(--muted-foreground); font-variant-numeric:tabular-nums; }
+.live-dots { display:inline-flex; gap:3px; flex-shrink:0; color:color-mix(in oklch, var(--primary) 70%, var(--muted-foreground)); }
+.live-dots i { width:5px; height:5px; border-radius:50%; background:currentColor; animation:live-dot 1.2s ease-in-out infinite; }
+.live-dots i:nth-child(2) { animation-delay:.2s; } .live-dots i:nth-child(3) { animation-delay:.4s; }
+@keyframes live-dot { 0%, 80%, 100% { opacity:.25; transform:translateY(0); } 40% { opacity:1; transform:translateY(-2px); } }
+@media (prefers-reduced-motion:reduce) { .live-dots i { animation:none; opacity:.7; } }
+.turn-working { display:flex; align-items:center; gap:8px; width:fit-content; max-width:100%; margin-top:6px; padding:3px 0; font-size:14px; color:var(--muted-foreground); }
+.command-step { margin:6px 0 12px; }
+.command-head { display:flex; align-items:baseline; gap:12px; margin-bottom:6px; font-size:13.5px; color:var(--muted-foreground); }
+.command-title { min-width:0; overflow-wrap:anywhere; }
+.command-duration { margin-left:auto; flex-shrink:0; font-size:12px; color:var(--subtle-foreground); font-variant-numeric:tabular-nums; }
+.command-card { border:1px solid var(--border); border-radius:10px; background:var(--card); overflow:hidden; }
+.command-block { margin:10px; padding:8px 12px; border:1px solid var(--hairline); border-radius:8px; background:var(--recessed); max-height:240px; overflow:auto; white-space:pre-wrap; overflow-wrap:anywhere; font:12.5px/1.6 var(--mono); color:var(--foreground); }
+.command-exit, .command-output { margin:0; padding:0 12px; white-space:pre-wrap; overflow-wrap:anywhere; font:12.5px/1.6 var(--mono); }
+.command-output { padding-bottom:10px; max-height:320px; overflow:auto; color:var(--foreground); }
+.command-exit:last-child { padding-bottom:10px; }
+.command-exit, .command-step.failed .command-output { color:var(--destructive); }
+.sh-command { color:var(--sh-command); }
+.sh-flag { color:color-mix(in oklch, var(--sh-command) 70%, var(--muted-foreground)); }
+.sh-string { color:var(--sh-string); }
+.sh-variable { color:var(--sh-variable); }
+.sh-operator { color:var(--muted-foreground); }
+.sh-comment { color:var(--subtle-foreground); font-style:italic; }
 .worked-for { margin:4px 0 14px; }
 .worked-for > summary { display:flex; align-items:center; gap:12px; list-style:none; cursor:pointer; color:color-mix(in oklch, var(--primary) 70%, var(--muted-foreground)); font:500 10.5px/1 var(--mono); letter-spacing:.14em; text-transform:uppercase; padding:6px 0; }
 .worked-for > summary::-webkit-details-marker { display:none; }
@@ -443,8 +471,6 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .worked-for > summary:hover { color:var(--primary); }
 .worked-for[open] > summary { margin-bottom:10px; }
 .worked-for-body { padding:2px 0 6px; }
-.turn-working { display:flex; align-items:center; gap:9px; margin-top:6px; color:var(--primary); font:500 10.5px/1 var(--mono); letter-spacing:.14em; text-transform:uppercase; }
-.turn-working i { width:9px; height:9px; background:var(--primary); clip-path:polygon(50% 0, 100% 25%, 100% 75%, 50% 100%, 0 75%, 0 25%); animation:pulse 1.4s ease-in-out infinite; }
 
 .composer { position:relative; border-radius:6px; background:var(--composer); border-color:var(--border); box-shadow:var(--shadow); }
 .composer::before, .composer::after { content:""; position:absolute; width:14px; height:14px; pointer-events:none; border-color:var(--primary); border-style:solid; opacity:.85; }

@@ -22,9 +22,10 @@ const sendTurn = async (threadId: string, item: FollowUp) => {
   }
 };
 
-/** Returns true when the message was queued (the person chose Queue); otherwise the caller steers. */
-export function queueFollowUp(threadId: string, text: string, attachments: Attachment[] = [], options: FollowUpOptions = {}) {
-  if (readPreferences().followUp !== "queue") return false;
+/** Returns true when the message was queued (the person chose Queue, in Settings or by `choice` for this one message);
+ * otherwise the caller steers. */
+export function queueFollowUp(threadId: string, text: string, attachments: Attachment[] = [], options: FollowUpOptions = {}, choice = readPreferences().followUp) {
+  if (choice !== "queue") return false;
   set(threadId, [...(queues[threadId] ?? []), { id: crypto.randomUUID(), text, attachments, ...options }]);
   return true;
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { BranchIcon, BrowserIcon, FileEditIcon, PlanIcon, TerminalIcon, ToolIcon } from "@/components/elpis-icons";
+import { BranchIcon, BrowserIcon, FileEditIcon, PlanIcon, ToolIcon } from "@/components/elpis-icons";
 import { Copy, Pencil, RefreshCw, Terminal } from "lucide-react";
 import { RightClickMenu, type MenuAction } from "@/components/action-menu";
 import { Button } from "@/components/ui/button";
@@ -9,6 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { CopyButton, MarkdownText } from "@/components/markdown-text";
 import { type Item, type Thread, taskFromPath, title } from "@/lib/api";
 import { inlineMediaUrl } from "@/lib/attachments";
+import { shellTokens, stepFailed, stepLabel, unwrapShell } from "@/lib/steps";
 
 const object = (value: unknown): Record<string,unknown> => value && typeof value === "object" && !Array.isArray(value) ? value as Record<string,unknown> : {};
 const text = (value: unknown) => typeof value === "string" ? value : "";
@@ -45,6 +46,19 @@ function TextOutput({value}:{value:unknown}) {
 }
 function Activity({label,icon,status,detail,children}:{label:string;icon:React.ReactNode;status?:unknown;detail?:string;children:React.ReactNode}) {
   return <details className="activity-card"><summary className="activity-heading"><span className="activity-icon">{icon}</span><span className="activity-title">{label}</span>{detail&&<span className="activity-preview">{detail}</span>}{statusLabel(status)&&<span className={`activity-status status-${text(status)}`}>{statusLabel(status)}</span>}</summary><div className="activity-body">{children}</div></details>;
+}
+/** A command as Claude's desktop app shows it in an opened group: a short title, the script in a bordered block
+ * coloured as shell, then its output; a failed command's exit code and output in red. */
+function CommandStep({item}:{item:Item}) {
+  const failed=stepFailed(item),output=text(item.aggregatedOutput).replace(/\n+$/,"");
+  return <div className={`command-step${failed?" failed":""}`}>
+    <div className="command-head"><span className="command-title">{stepLabel(item)}</span>{typeof item.durationMs==="number"&&<span className="command-duration">{(item.durationMs/1000).toFixed(1)}s</span>}</div>
+    <div className="command-card">
+      <pre className="command-block" title={text(item.cwd)||undefined}><code>{shellTokens(unwrapShell(text(item.command))).map((token,index)=>token.kind==="text"?token.text:<span key={index} className={`sh-${token.kind}`}>{token.text}</span>)}</code></pre>
+      {failed&&typeof item.exitCode==="number"&&<p className="command-exit">Exit code {item.exitCode}</p>}
+      {output&&<pre className="command-output"><code>{output}</code></pre>}
+    </div>
+  </div>;
 }
 /** What a person can do with a message: the hover buttons and the right-click menu both draw this one list. */
 type MessageAction = MenuAction & { title?: string; copy?: () => string };
@@ -84,7 +98,7 @@ export function ChatMessage({item,speaker="Elpis",threads=[],onOpenThread,onEdit
     const actions:MessageAction[]=item.text?[copyAction("Copy reply",()=>item.text||""),...(onRegenerate?[{id:"regenerate",label:"Regenerate reply",title:"Regenerate",icon:<RefreshCw size={14}/>,run:onRegenerate}]:[]),...(onFork?[{id:"fork",label:"Fork chat from here",icon:<BranchIcon size={14}/>,run:onFork}]:[])]:[];
     return <RightClickMenu actions={actions} area={<article className="message agent"/>}>{speaker!=="Elpis"&&<div className="speaker">{speaker}</div>}<MarkdownText text={item.text||""}/>{actions.length>0&&<div className="message-actions"><MessageButtons actions={actions}/></div>}</RightClickMenu>;
   }
-  if(item.type==="commandExecution")return <Activity label="Terminal" icon={<TerminalIcon size={15}/>} status={item.status} detail={item.command?.split("\n")[0]}><TextOutput value={item.command}/>{text(item.cwd)&&<p className="activity-location">{text(item.cwd)}</p>}<TextOutput value={item.aggregatedOutput}/><div className="activity-footer">{typeof item.exitCode==="number"&&<span>Exit {item.exitCode}</span>}{typeof item.durationMs==="number"&&<span>{(item.durationMs/1000).toFixed(1)}s</span>}</div></Activity>;
+  if(item.type==="commandExecution")return <CommandStep item={item}/>;
   if(item.type==="fileChange"){
     const changes=list(item.changes).map(object);
     return <Activity label={`${changes.length} file ${changes.length===1?"change":"changes"}`} icon={<FileEditIcon size={15}/>} status={item.status}>{changes.map((change,index)=><details className="file-change" key={`${text(change.path)}:${index}`}><summary><span className="file-change-kind">{readable(text(object(change.kind).type))}</span>{text(change.path)}</summary><TextOutput value={change.diff}/></details>)}<TextOutput value={item.output}/></Activity>;

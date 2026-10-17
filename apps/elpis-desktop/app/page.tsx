@@ -13,7 +13,7 @@ import { ChatMessage } from "@/components/chat-message";
 import { Transcript } from "@/components/transcript";
 import { readPins, savePins } from "@/lib/pins";
 import { shortcutFor } from "@/lib/shortcuts";
-import { isSendKey, newChatFolder, useAppPreferences } from "@/lib/preferences";
+import { followUpHint, followUpKey, isSendKey, newChatFolder, useAppPreferences, type Preferences } from "@/lib/preferences";
 import { notifyApproval, notifyRuntimeEvent } from "@/lib/notifications";
 import { queueFollowUp, sendQueuedFollowUp, type FollowUpOptions } from "@/lib/follow-ups";
 import { QueuedFollowUps } from "@/components/queued-follow-ups";
@@ -73,7 +73,7 @@ const without = <T,>(record: Record<string, T>, key: string) => { if (!(key in r
 const sameFolder = (a: string | undefined, b: string) => !!a && a.replace(/\/+$/, "") === b.replace(/\/+$/, "");
 
 export default function Home() {
-  useAppPreferences();
+  const preferences = useAppPreferences();
   const [threads, setThreads] = useState<Thread[]>([]);
   const [selected, setSelected] = useState<Thread | null>(null);
   const selectedRef = useRef<Thread | null>(null);
@@ -755,8 +755,9 @@ export default function Home() {
       return Object.keys(merged).length ? { ...prev, [id]: merged } : without(prev, id);
     });
   }
-  /** Sends the composer's message, or `own`: a command's message (such as /init's prompt), sent without the composer's files. */
-  async function send(own?: string) {
+  /** Sends the composer's message, or `own`: a command's message (such as /init's prompt), sent without the composer's files.
+   * While a turn runs, `followUp` steers or queues this one message instead of following Settings (Ctrl+Enter). */
+  async function send(own?: string, followUp?: Preferences["followUp"]) {
     const outgoing = own ?? textRef.current, files = own === undefined ? attachmentsRef.current : [];
     if ((!outgoing.trim() && !files.length) || busy || dictating || attaching || projectChanging || !connected) return;
     if (imageBlocked && own === undefined) { setFileNotice("This model accepts text only. Choose an image-capable model or remove the images."); return; }
@@ -779,7 +780,7 @@ export default function Home() {
       }
       const used: NextTurn | undefined = selected ? pending : effort || newPlan ? { ...(effort ? { effort } : {}), ...(newPlan ? { plan: true } : {}) } : undefined;
       const turnOptions: FollowUpOptions = { ...(used?.model ? { model: used.model } : {}), ...(used?.effort ? { effort: used.effort } : {}), ...(used?.plan !== undefined ? { mode: used.plan ? "plan" : "default" } : {}) };
-      if (activeTurn && !continues && queueFollowUp(thread.id, sentText, sentAttachments, turnOptions)) { /* queued until the running turn completes */ } else if (activeTurn && !continues) {
+      if (activeTurn && !continues && queueFollowUp(thread.id, sentText, sentAttachments, turnOptions, followUp)) { /* queued until the running turn completes */ } else if (activeTurn && !continues) {
         await api(`/threads/${encodeURIComponent(thread.id)}/steer`, { text: sentText, expectedTurnId: activeTurn, ...attached });
       } else {
         const result = await api<{ turn?: { id: string }; thread?: Thread; continuedFrom?: string; sendError?: string }>(`/threads/${encodeURIComponent(thread.id)}/turns`, { text: sentText, ...attached, ...turnOptions, ...(continues ? { continueAs: `${title(thread)} (continued)` } : {}) });
@@ -1219,7 +1220,7 @@ export default function Home() {
             </li>)}</ul>}
             {attaching && <p role="status" className="px-3 py-2 text-sm text-muted-foreground">Reading files…</p>}
             {imageBlocked && <p role="alert" className="m-2 text-sm text-destructive">This model accepts text only. Choose an image-capable model or remove the images.</p>}
-            <Textarea ref={composerRef} aria-label="Message Elpis" {...slash.inputProps} onBlur={slash.close} placeholder={continues ? `Message ${title(selected!)}…` : selected ? "Ask for a follow-up" : "Ask Elpis to build, fix or explain something"} value={text} onChange={e => editDraft(e.target.value)} onPaste={e => { const files = Array.from(e.clipboardData.files); if (files.length) { if (!e.clipboardData.getData("text/plain")) e.preventDefault(); void addFiles(files); } }} disabled={!ready || !connected || projectChanging} onKeyDown={e => { if (slash.onKeyDown(e)) return; if (e.key === "Tab" && e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey) { e.preventDefault(); cycleMode(); return; } if (isSendKey(e)) { e.preventDefault(); send(); } }} />
+            <Textarea ref={composerRef} aria-label="Message Elpis" {...slash.inputProps} onBlur={slash.close} placeholder={continues ? `Message ${title(selected!)}…` : selected && activeTurn ? followUpHint(preferences) : selected ? "Ask for a follow-up" : "Ask Elpis to build, fix or explain something"} value={text} onChange={e => editDraft(e.target.value)} onPaste={e => { const files = Array.from(e.clipboardData.files); if (files.length) { if (!e.clipboardData.getData("text/plain")) e.preventDefault(); void addFiles(files); } }} disabled={!ready || !connected || projectChanging} onKeyDown={e => { if (slash.onKeyDown(e)) return; if (e.key === "Tab" && e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey) { e.preventDefault(); cycleMode(); return; } if (activeTurn && !continues) { const followUp = followUpKey(e, preferences); if (followUp) { e.preventDefault(); send(undefined, followUp); } } else if (isSendKey(e, preferences)) { e.preventDefault(); send(); } }} />
             {fileNotice && <div className="flex items-center gap-2 px-3 text-sm text-destructive" role="alert"><span>{fileNotice}</span><Button type="button" variant="ghost" size="icon-xs" aria-label="Dismiss file notice" onClick={() => setFileNotice("")}><X size={14} /></Button></div>}
             <div className="composer-controls"><div className="model-controls"><PlusMenu disabled={!ready || !connected || busy || projectChanging} attachDisabled={attaching || attachments.length >= 3} plan={planMode} onAttach={() => filePickerRef.current?.click()} onPlan={setPlan} />
               {planMode && <PlanPill disabled={!ready || busy} onOff={() => setPlan(false)} />}

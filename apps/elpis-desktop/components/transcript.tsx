@@ -1,8 +1,8 @@
 "use client";
 
-import type { ReactNode } from "react";
-import { BranchIcon, BrowserIcon, ContextIcon, FileEditIcon, TerminalIcon, ToolIcon } from "@/components/elpis-icons";
+import { useEffect, useState, type ReactNode } from "react";
 import type { Entry, Item } from "@/lib/api";
+import { elapsed, exploration, fileList, readNames, stepFailed, stepLabel } from "@/lib/steps";
 
 /** The conversation as the ChatGPT app shows it: each user message, then the turn's work
  * collapsed into short activity lines, and once a turn ends everything before its final reply
@@ -40,7 +40,8 @@ function Turn({ turn, active, renderItem }: { turn: TurnEntries; active: boolean
       <div className="worked-for-body"><Flow entries={folded} renderItem={renderItem} /></div>
     </details>}
     <Flow entries={visible} renderItem={renderItem} live={active} />
-    {active && <div className="turn-working" role="status"><i aria-hidden="true" />Working</div>}
+    {/* One live line at a time: a running step shows its own; otherwise the turn says it is working. */}
+    {active && !work.some(entry => entry.item.status === "inProgress") && <div className="turn-working" role="status"><LiveStep label="Working" since={earliest(turn.entries)} /></div>}
   </section>;
 }
 
@@ -62,34 +63,54 @@ function Flow({ entries, renderItem, live = false }: { entries: Entry[]; renderI
   return <>{blocks}</>;
 }
 
+/** A run of tool activity as one muted row: what is running now, with its timer, or once finished what was done
+ * ("Ran 2 commands (1 failed)"). Collapsed until opened by click, Enter or Space. */
 function ActivityGroup({ entries, renderItem, live }: { entries: Entry[]; renderItem: (entry: Entry) => ReactNode; live: boolean }) {
+  const [open, setOpen] = useState(false);
   const items = entries.map(entry => entry.item);
-  const running = live ? items.find(item => item.status === "inProgress") : undefined;
-  const failed = items.filter(item => item.status === "failed").length;
-  const Icon = iconFor(items);
-  return <details className="activity-group">
-    <summary>
-      <Icon size={14} aria-hidden="true" />
-      <span className={running ? "activity-group-live" : undefined}>{running ? runningLabel(running) : summarize(items)}</span>
-      {failed > 0 && <span className="activity-group-failed">{failed} failed</span>}
+  const running = live ? entries.find(entry => entry.item.status === "inProgress") : undefined;
+  const failed = items.filter(stepFailed).length;
+  return <details className="activity-group" onToggle={event => setOpen(event.currentTarget.open)}>
+    <summary aria-expanded={open}>
+      {running
+        ? <LiveStep key={running.item.id} label={stepLabel(running.item, true)} since={running.startedAtMs} />
+        : <span className="activity-group-label">{summarize(items)}{failed > 0 && <> <span className="activity-group-failed">({failed} failed)</span></>}</span>}
     </summary>
     <div className="activity-group-body">{entries.map(entry => <div key={entry.item.id}>{renderItem(entry)}</div>)}</div>
   </details>;
 }
 
+/** Something in progress, as a sentence with animated dots and a timer counting from `since` (else from now). */
+function LiveStep({ label, since }: { label: string; since?: number }) {
+  const [start] = useState(() => since ?? Date.now());
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => { const timer = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(timer); }, []);
+  return <>
+    <span className="live-dots" aria-hidden="true"><i /><i /><i /></span>
+    <span className="live-label">{label}</span>{" "}
+    <span className="live-timer">{elapsed(now - start)}</span>
+  </>;
+}
+
 const count = (n: number, one: string, many: string) => (n === 1 ? one : many.replace("#", String(n)));
 
-/** "Ran 3 commands, edited 2 files, used rag", in the order the work happened. */
+/** "Ran 3 commands, edited 2 files, used rag", in the order the work happened; reads name their files. */
 export function summarize(items: Item[]): string {
   const phrases = new Map<string, string>();
-  const commands = items.filter(item => item.type === "commandExecution").length;
+  const commands = items.filter(item => item.type === "commandExecution");
+  const kinds = new Map(commands.map(item => [item, exploration(item)]));
+  const ofKind = (kind: ReturnType<typeof exploration>) => commands.filter(item => kinds.get(item) === kind);
   const files = items.filter(item => item.type === "fileChange").reduce((sum, item) => sum + (Array.isArray(item.changes) ? item.changes.length : 1), 0);
   const servers = [...new Set(items.filter(item => item.type === "mcpToolCall").map(item => String(item.server || "a tool")))];
   const tools = items.filter(item => item.type === "dynamicToolCall" || item.type === "functionCallOutput").length;
   const searches = items.filter(item => item.type === "webSearch").length;
   const agents = items.filter(item => item.type === "collabAgentToolCall" || item.type === "subAgentActivity").length;
   for (const item of items) {
-    if (item.type === "commandExecution") phrases.set("commands", count(commands, "ran a command", "ran # commands"));
+    const kind = kinds.get(item);
+    if (kind === "read") phrases.set("read", `read ${fileList([...new Set(ofKind("read").flatMap(readNames))])}`);
+    else if (kind === "search") phrases.set("grep", count(ofKind("search").length, "searched the files", "searched the files # times"));
+    else if (kind === "listFiles") phrases.set("list", count(ofKind("listFiles").length, "listed files", "listed files # times"));
+    else if (item.type === "commandExecution") phrases.set("commands", count(ofKind(null).length, "ran a command", "ran # commands"));
     else if (item.type === "fileChange") phrases.set("files", count(files, "edited a file", "edited # files"));
     else if (item.type === "mcpToolCall") phrases.set("mcp", `used ${servers.join(" and ")}`);
     else if (item.type === "dynamicToolCall" || item.type === "functionCallOutput") phrases.set("tools", count(tools, "used a tool", "used # tools"));
@@ -101,24 +122,6 @@ export function summarize(items: Item[]): string {
   return text[0].toUpperCase() + text.slice(1);
 }
 
-function runningLabel(item: Item): string {
-  if (item.type === "commandExecution") return `Running ${String(item.command ?? "").split("\n")[0]}`;
-  if (item.type === "mcpToolCall") return `Using ${String(item.server ?? "")} ${String(item.tool ?? "")}`.trim();
-  if (item.type === "fileChange") return "Editing files";
-  if (item.type === "webSearch") return `Searching ${String(item.query ?? "the web")}`;
-  return "Working";
-}
-
-function iconFor(items: Item[]) {
-  const types = new Set(items.map(item => item.type));
-  if (types.has("commandExecution")) return TerminalIcon;
-  if (types.has("fileChange")) return FileEditIcon;
-  if (types.has("webSearch")) return BrowserIcon;
-  if (types.has("collabAgentToolCall") || types.has("subAgentActivity")) return BranchIcon;
-  if (types.has("mcpToolCall") || types.has("dynamicToolCall")) return ToolIcon;
-  return ContextIcon;
-}
-
 /** "Worked for 14m 42s": from the user's message to the last recorded item. */
 export function workedFor(entries: Entry[]): string {
   const starts = entries.map(entry => entry.startedAtMs).filter((value): value is number => typeof value === "number");
@@ -128,6 +131,11 @@ export function workedFor(entries: Entry[]): string {
   const minutes = Math.floor(seconds / 60), hours = Math.floor(minutes / 60);
   const label = hours ? `${hours}h ${minutes % 60}m` : minutes ? `${minutes}m ${seconds % 60}s` : `${seconds}s`;
   return `Worked for ${label}`;
+}
+
+function earliest(entries: Entry[]): number | undefined {
+  const starts = entries.map(entry => entry.startedAtMs).filter((value): value is number => typeof value === "number");
+  return starts.length ? Math.min(...starts) : undefined;
 }
 
 function findLastIndex<T>(values: T[], test: (value: T) => boolean): number {

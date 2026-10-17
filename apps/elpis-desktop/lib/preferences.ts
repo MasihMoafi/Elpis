@@ -84,6 +84,21 @@ export function isSendKey(event: Key, preferences = readPreferences()) {
 export function sendHint(preferences = readPreferences()) {
   return preferences.sendShortcut === "enter" ? "Enter to send · Shift+Enter for a new line" : "Ctrl+Enter to send · Enter for a new line";
 }
+/** While a turn runs, as in Claude's desktop app: the send key follows Settings → General → Follow-up behavior, and
+ * the same key with Ctrl (with Ctrl+Shift under the Ctrl+Enter shortcut) does the other, for that one message.
+ * Returns what this key press does, or null when it does not send. */
+export function followUpKey(event: Key, preferences = readPreferences()): Preferences["followUp"] | null {
+  if (event.key !== "Enter" || event.nativeEvent?.isComposing) return null;
+  const mod = event.ctrlKey || event.metaKey;
+  const other = preferences.sendShortcut === "enter" ? mod && !event.shiftKey : mod && event.shiftKey;
+  if (other) return preferences.followUp === "queue" ? "steer" : "queue";
+  return isSendKey(event, preferences) ? preferences.followUp : null;
+}
+/** The composer's hint while a turn runs: "Enter to send, Ctrl+Enter to queue for later", worded for the settings. */
+export function followUpHint(preferences = readPreferences()) {
+  const [key, otherKey] = preferences.sendShortcut === "enter" ? ["Enter", "Ctrl+Enter"] : ["Ctrl+Enter", "Ctrl+Shift+Enter"];
+  return preferences.followUp === "queue" ? `${key} to queue for later, ${otherKey} to send now` : `${key} to send, ${otherKey} to queue for later`;
+}
 /** The folder a new chat runs in: the selected project's, else Settings → General → Default folder, else Elpis's own. */
 export function newChatFolder(projectFolder: string, preferences = readPreferences()) {
   return projectFolder.trim() || preferences.defaultFolder;
