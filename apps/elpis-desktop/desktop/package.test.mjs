@@ -38,8 +38,9 @@ test('the package holds every file the desktop code loads by path', async () => 
 
 // A file git does not hold is missing from a package built from a clean copy: on 17 Oct the welcome logo showed as a broken
 // picture, because the root .gitignore drops every *.svg and *.png. Generated files (bridge/resources) are built by prebuild.
-test('git holds every picture the renderer loads and every file the package ships', async () => {
+test('git holds every picture the renderer loads and every file the package ships', async t => {
   const root = fileURLToPath(new URL('../', import.meta.url));
+  if (await run('git', ['rev-parse', '--is-inside-work-tree'], { cwd: root }).then(() => false, () => true)) return t.skip('not a git checkout (a copy made with git archive)');
   const tracked = new Set((await run('git', ['ls-files', '-z'], { cwd: root })).stdout.split('\0'));
   const missing = production.filter(file => !file.startsWith('bridge/resources/') && !tracked.has(file));
   const sources = (await run('git', ['ls-files', '-z', 'app', 'components', 'lib'], { cwd: root })).stdout.split('\0').filter(file => /\.tsx?$/.test(file));
