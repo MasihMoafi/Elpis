@@ -208,9 +208,13 @@ test('known text-only model blocks images without discarding them; unsupported f
   const view = await fixture(t, { textOnly: true }); await transfer(view, 'paste', { file: 'image' }); await visibleFile(view, 'pasted-image.png');
   assert.equal(await view.page.getByRole('button', { name: 'Send message', exact: true }).isDisabled(), true);
   assert.match(await view.page.locator('.composer [role="alert"]').innerText(), /text only/i); await noSend(view);
+  // Every notice about files is one element in one style: this one, a file that is not supported, a failed PDF.
+  const alertLook = () => view.page.locator('.composer [role="alert"]').evaluate(node => ({ tag: node.tagName, cls: node.className, margin: getComputedStyle(node).margin, padding: getComputedStyle(node).padding, color: getComputedStyle(node).color, size: getComputedStyle(node).fontSize }));
+  const textOnlyLook = await alertLook();
   await attachments(view).getByRole('button', { name: 'Remove pasted-image.png' }).click();
   await view.input.fill('Keep draft'); await view.page.getByLabel('Choose files', { exact: true }).setInputFiles({ name: 'archive.zip', mimeType: 'application/zip', buffer: Buffer.from('binary') });
   await eventually(async () => assert.match(await view.page.locator('.composer [role="alert"]').innerText(), /choose.*text file/i));
+  assert.deepEqual(await alertLook(), textOnlyLook, 'a text-only model\'s notice looks like a file notice');
   view.control.pdfFail = true; await transfer(view, 'drop', { file: 'document' });
   await eventually(async () => assert.match(await view.page.locator('.composer [role="alert"]').innerText(), /no extractable text/i));
   assert.equal(await view.input.inputValue(), 'Keep draft'); assert.equal(await attachments(view).count(), 0); await noSend(view);

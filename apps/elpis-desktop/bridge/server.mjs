@@ -10,7 +10,7 @@ import { listFolders, projectDirectory } from './folders.mjs';
 import { isRepository } from './git.mjs';
 import { createTools } from './tools.mjs';
 import { createTranscription } from './transcription.mjs';
-import { ATTACHMENT_BODY_LIMIT, AttachmentError, extractPdf } from './attachments.mjs';
+import { ATTACHMENT_BODY_LIMIT, AttachmentError, PDF_BODY_LIMIT, extractPdf } from './attachments.mjs';
 import { createObservability } from './observability.mjs';
 
 const COOKIE = 'elpis_desktop';
@@ -100,7 +100,7 @@ export async function startDesktopServer(options = {}) {
         if (url.pathname === '/api/tools/transcription') return await transcription(request, response, json);
         if (url.pathname.startsWith('/api/tools/')) return await tools(request, response, url, json);
         if (url.pathname === '/api/health' && method === 'GET') return json(response, 200, { connected: client.connected });
-        if (url.pathname === '/api/attachments/extract' && method === 'POST') return json(response, 200, await extractPdf(await body(request, ATTACHMENT_BODY_LIMIT)));
+        if (url.pathname === '/api/attachments/extract' && method === 'POST') return json(response, 200, await extractPdf(await body(request, PDF_BODY_LIMIT)));
         const media = url.pathname.match(/^\/api\/threads\/([^/]+)\/turns\/([^/]+)\/items\/([^/]+)\/media\/(\d{1,3})$/);
         if (media && method === 'GET') {
           const asset = await client.media(...media.slice(1, 4).map(decodeURIComponent), Number(media[4]));

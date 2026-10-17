@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState, type ElementType, type RefObject } from "react";
-import { AtSign, Check, ChevronDown, Image as ImageIcon, SquareSlash, X } from "lucide-react";
+import { AtSign, Check, ChevronDown, SquareSlash, X } from "lucide-react";
 import { AskIcon, AttachIcon, AutoApproveIcon, BypassIcon, FullAccessIcon, PlanIcon, PlusIcon } from "@/components/elpis-icons";
 import { AlertDialog, AlertDialogClose, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
@@ -59,12 +59,12 @@ export function PermissionsMenu({ mode, disabled, onChange }: { mode: Permission
 }
 
 /** What the "+" menu does, one function each; the message box owns them. */
-type PlusActions = { onAttach: () => void; onImages: () => void; onMention: () => void; onSlash: () => void; onPlan: (on: boolean) => void };
+type PlusActions = { onAttach: () => void; onMention: () => void; onSlash: () => void; onPlan: (on: boolean) => void };
 
-/** The "+" menu, as in the ChatGPT and Claude apps, limited to what Elpis runs: files, pictures, an @ mention, the
- * slash commands and Plan mode. Closing it returns the focus to the message box (`returnFocus`). */
-export function PlusMenu({ disabled, attachDisabled, imagesDisabled, slashDisabled, plan, returnFocus, onAttach, onImages, onMention, onSlash, onPlan }: PlusActions & {
-  disabled?: boolean; attachDisabled?: boolean; /** Why pictures cannot be added now, in a few words (a text-only model). */ imagesDisabled?: string | false;
+/** The "+" menu, as in the ChatGPT and Claude apps, limited to what Elpis runs: files (a picture is a file), an @ mention,
+ * the slash commands and Plan mode. Closing it returns the focus to the message box (`returnFocus`). */
+export function PlusMenu({ disabled, attachDisabled, slashDisabled, plan, returnFocus, onAttach, onMention, onSlash, onPlan }: PlusActions & {
+  disabled?: boolean; attachDisabled?: boolean;
   slashDisabled?: boolean; plan: boolean; returnFocus: RefObject<HTMLElement | null>;
 }) {
   // An item that changes the message box (Mention, Slash commands) acts once the menu has closed and given the focus back.
@@ -75,8 +75,7 @@ export function PlusMenu({ disabled, attachDisabled, imagesDisabled, slashDisabl
     <DropdownMenuTrigger render={<Button type="button" variant="ghost" size="icon-sm" className="composer-plus" aria-label="Add files and more" title="Add files and more" disabled={disabled} />}><PlusIcon className="size-4" /></DropdownMenuTrigger>
     <DropdownMenuContent align="start" className="hud-menu w-80" finalFocus={returnFocus}>
       <p className="hud-menu-title">Add</p>
-      {item(AttachIcon, "Files", "Images, PDF or text, up to 3", { disabled: attachDisabled, onClick: onAttach })}
-      {item(ImageIcon, "Images", imagesDisabled || "PNG, JPEG, WebP or GIF", { disabled: attachDisabled || !!imagesDisabled, onClick: onImages })}
+      {item(AttachIcon, "Add files or photos", "Pictures, PDFs and text", { disabled: attachDisabled, onClick: onAttach })}
       {item(AtSign, "Mention", "A file in this project or another chat", { onClick: () => { afterClose.current = onMention; } })}
       {item(SquareSlash, "Slash commands", slashDisabled ? "Clear the message box first" : "Run a command such as /model or /review", { disabled: slashDisabled, onClick: () => { afterClose.current = onSlash; } })}
       {item(PlanIcon, "Plan mode", plan ? "Turn plan mode off" : "Turn plan mode on", { onClick: () => onPlan(!plan) }, plan)}

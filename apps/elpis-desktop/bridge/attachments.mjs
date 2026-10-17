@@ -3,9 +3,20 @@ import fs from 'node:fs/promises';
 import { constants } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 
-export const ATTACHMENT_BODY_LIMIT = 6 * 1024 * 1024;
-const IMAGE_LIMIT = 4 * 1024 * 1024;
-const TEXT_LIMIT = 128 * 1024;
+const MiB = 1024 * 1024;
+/** What one message carries, the same numbers as lib/attachments.ts (a test compares them; see the reasons there).
+ * fileBytes bounds a PDF taken for text; imageBytes, all the pictures of a message; textChars, what the engine takes
+ * of text in a turn (MAX_USER_INPUT_TEXT_CHARS), the message's own words included. */
+export const ATTACHMENT_LIMITS = { count: 20, fileBytes: 30 * MiB, imageBytes: 4 * MiB, textChars: 1 << 20 };
+const IMAGE_LIMIT = ATTACHMENT_LIMITS.imageBytes;
+/** A send holds the most a message can: its pictures as base64 and its text at up to four bytes a character. */
+export const ATTACHMENT_BODY_LIMIT = 16 * MiB;
+/** A PDF to extract travels as base64 with its name. */
+export const PDF_BODY_LIMIT = Math.ceil(ATTACHMENT_LIMITS.fileBytes / 3) * 4 + 4096;
+const mebibytes = bytes => `${Number((bytes / MiB).toFixed(1))} MiB`;
+const quoted = value => `\u201c${value}\u201d`;
+/** Characters as the engine counts them (Unicode scalar values), not UTF-16 units or bytes. */
+function characters(value) { let count = 0; for (const _ of value) count++; return count; }
 export class AttachmentError extends Error {
   constructor(message, status = 400) { super(message); this.status = status; }
 }
@@ -16,13 +27,16 @@ function name(value) {
   if (typeof value !== 'string' || !value.trim() || value.length > 200 || /[\x00-\x1f\x7f]/.test(value)) throw new AttachmentError('Invalid attachment name');
   return value;
 }
-function dataBytes(value, mime, limit) {
+function dataBytes(value, mime, limit, label) {
   const prefix = `data:${mime};base64,`;
   if (typeof value !== 'string' || !value.startsWith(prefix)) throw new AttachmentError('Attachment encoding does not match its type');
   const encoded = value.slice(prefix.length);
-  if (!encoded || encoded.length > Math.ceil(limit / 3) * 4 || encoded.length % 4 || /[^A-Za-z0-9+/=]/.test(encoded)) throw new AttachmentError('Attachment is invalid or too large');
+  const large = new AttachmentError(`${quoted(label)} is larger than ${mebibytes(limit)}`, 413);
+  if (encoded.length > Math.ceil(limit / 3) * 4) throw large;
+  if (!encoded || encoded.length % 4 || /[^A-Za-z0-9+/=]/.test(encoded)) throw new AttachmentError(`${quoted(label)} is not valid attachment data`);
   const bytes = Buffer.from(encoded, 'base64');
-  if (bytes.length > limit || bytes.toString('base64') !== encoded) throw new AttachmentError('Attachment is invalid or too large');
+  if (bytes.length > limit) throw large;
+  if (bytes.toString('base64') !== encoded) throw new AttachmentError(`${quoted(label)} is not valid attachment data`);
   return bytes;
 }
 export function imageMime(bytes) {
@@ -48,27 +62,27 @@ function mentionInput(mentions) {
 export function attachmentInput(message, attachments = [], mentions) {
   if (message === undefined) message = '';
   if (typeof message !== 'string' || message.length > 32000) throw new AttachmentError('Invalid message');
-  if (!Array.isArray(attachments) || attachments.length > 3) throw new AttachmentError('Attach at most three files');
+  if (!Array.isArray(attachments) || attachments.length > ATTACHMENT_LIMITS.count) throw new AttachmentError(`Attach at most ${ATTACHMENT_LIMITS.count} files per message`);
   const input = message.trim() ? [{ type: 'text', text: message, text_elements: [] }] : [];
   const referenced = mentionInput(mentions);
   input.push(...referenced);
-  const ids = new Set(); let imageSize = 0, textSize = 0;
+  const ids = new Set(); let imageSize = 0, textSize = characters(message);
   for (const file of attachments) {
     fields(file, ['id', 'name', 'type', 'mimeType', ...(file?.type === 'image' ? ['dataUrl'] : ['text'])]);
     if (typeof file.id !== 'string' || !/^[A-Za-z0-9_-]{1,100}$/.test(file.id) || ids.has(file.id)) throw new AttachmentError('Invalid or duplicate attachment ID');
     ids.add(file.id); name(file.name);
     if (file.type === 'image') {
-      if (!['image/png', 'image/jpeg', 'image/webp', 'image/gif'].includes(file.mimeType)) throw new AttachmentError('Use a PNG, JPEG, WebP or GIF image');
-      const bytes = dataBytes(file.dataUrl, file.mimeType, IMAGE_LIMIT);
+      if (!['image/png', 'image/jpeg', 'image/webp', 'image/gif'].includes(file.mimeType)) throw new AttachmentError(`${quoted(file.name)} is not a PNG, JPEG, WebP or GIF image`);
+      const bytes = dataBytes(file.dataUrl, file.mimeType, IMAGE_LIMIT, file.name);
       imageSize += bytes.length;
-      if (imageSize > IMAGE_LIMIT) throw new AttachmentError('Images must total at most 4 MiB');
-      if (imageMime(bytes) !== file.mimeType) throw new AttachmentError('Image contents do not match its file type');
+      if (imageSize > IMAGE_LIMIT) throw new AttachmentError(`${quoted(file.name)} would take the images past ${mebibytes(IMAGE_LIMIT)} for one message`, 413);
+      if (imageMime(bytes) !== file.mimeType) throw new AttachmentError(`${quoted(file.name)}: image contents do not match its file type`);
       input.push({ type: 'image', url: file.dataUrl });
     } else if (file.type === 'text') {
-      if (file.mimeType !== 'text/plain' || typeof file.text !== 'string' || !file.text.trim() || file.text.includes('\0')) throw new AttachmentError('Text attachment is empty or invalid');
-      textSize += Buffer.byteLength(file.text);
-      if (textSize > TEXT_LIMIT) throw new AttachmentError('Attached text must total at most 128 KiB');
+      if (file.mimeType !== 'text/plain' || typeof file.text !== 'string' || !file.text.trim() || file.text.includes('\0')) throw new AttachmentError(`${quoted(file.name)}: text attachment is empty or invalid`);
       const contents = `File: ${file.name}\n${file.text}`;
+      textSize += characters(contents);
+      if (textSize > ATTACHMENT_LIMITS.textChars) throw new AttachmentError(`${quoted(file.name)} would take the text past ${ATTACHMENT_LIMITS.textChars.toLocaleString('en-US')} characters for one message`, 413);
       input.push({ type: 'text', text: contents, text_elements: [{ byteRange: { start: 0, end: Buffer.byteLength(contents) }, placeholder: `Attachment: ${file.name}` }] });
     } else throw new AttachmentError('Unsupported attachment type');
   }
@@ -80,8 +94,8 @@ export function attachmentInput(message, attachments = [], mentions) {
 export async function extractPdf(request, { command = '/usr/bin/pdftotext', timeoutMs = 5000 } = {}) {
   fields(request, ['name', 'mimeType', 'dataUrl']); name(request.name);
   if (request.mimeType !== 'application/pdf') throw new AttachmentError('Only PDF extraction is supported');
-  const bytes = dataBytes(request.dataUrl, 'application/pdf', IMAGE_LIMIT);
-  if (bytes.subarray(0, 5).toString('ascii') !== '%PDF-') throw new AttachmentError('File contents are not a PDF');
+  const bytes = dataBytes(request.dataUrl, 'application/pdf', ATTACHMENT_LIMITS.fileBytes, request.name);
+  if (bytes.subarray(0, 5).toString('ascii') !== '%PDF-') throw new AttachmentError(`${quoted(request.name)}: file contents are not a PDF`);
   const text = await new Promise((resolve, reject) => {
     const child = spawn(command, ['-layout', '-', '-'], { stdio: ['pipe', 'pipe', 'ignore'] });
     const chunks = []; let size = 0, settled = false;
@@ -89,7 +103,7 @@ export async function extractPdf(request, { command = '/usr/bin/pdftotext', time
     const timer = setTimeout(() => { child.kill(); finish(new AttachmentError('PDF extraction timed out', 422)); }, timeoutMs);
     child.stdout.on('data', chunk => {
       size += chunk.length;
-      if (size > TEXT_LIMIT) { child.kill(); finish(new AttachmentError('Extracted PDF exceeds 128 KiB; attach a smaller document', 413)); }
+      if (size > ATTACHMENT_LIMITS.textChars) { child.kill(); finish(new AttachmentError(`${quoted(request.name)} has more text than a message takes (about 1 MiB); attach a smaller document`, 413)); }
       else chunks.push(chunk);
     });
     child.on('error', () => finish(new AttachmentError('PDF text extraction is unavailable', 503)));

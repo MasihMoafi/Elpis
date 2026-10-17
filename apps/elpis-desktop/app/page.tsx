@@ -62,7 +62,8 @@ import { FloatChatBar, FloatChatPill } from "@/components/float-chat";
 import { Tab, TabStrip } from "@/components/tab-strip";
 import { activate, activeTab, addTab, closeTab, cycle, followChat, forgetChats, makeTab, readTabs, renameTabs, startTabs, tabFor, writeTabs, type ChatTab, type ChatTabs } from "@/lib/chat-tabs";
 import { readDraft, writeDraft } from "@/lib/drafts";
-import { ATTACHMENT_ACCEPT, IMAGE_ACCEPT, attachmentFromFile, readAttachmentDraft, validateAttachments, withoutSubmittedAttachments, writeAttachmentDraft, type Attachment } from "@/lib/attachments";
+import { AttachmentChips } from "@/components/attachment-chips";
+import { ATTACHMENT_ACCEPT, ATTACHMENT_LIMITS, TEXT_ONLY_NOTICE, attachFiles, fitAttachments, readAttachmentDraft, transferFiles, withoutSubmittedAttachments, writeAttachmentDraft, type Attachment } from "@/lib/attachments";
 import { scanDeletionThreads } from "@/lib/thread-deletion";
 import type { ThemeChoice } from "@/components/appearance-settings";
 import { activityOf, api, chatProvider, choiceOf, effortsOf, isAgent, isUnlinkedAgent, modelLabel, providerChoices, providerLabel, title,
@@ -235,11 +236,10 @@ export default function Home() {
     const owner = selectedRef.current?.id || newDraftKey.current;
     readingFiles.current = true; setAttaching(true); setFileNotice("");
     try {
-      if (savedAttachments(owner).length + files.length > 3) throw Error("Attach up to three files per message. Remove a file before adding more.");
-      const added: Attachment[] = [];
-      for (const file of files) added.push(await attachmentFromFile(file, body => api("/attachments/extract", body)));
-      const next = validateAttachments([...savedAttachments(owner), ...added]); saveAttachments(owner, next);
-      if ((selectedRef.current?.id || newDraftKey.current) === owner) setAttachments(next);
+      const read = await attachFiles(savedAttachments(owner), files, body => api("/attachments/extract", body));
+      const fit = fitAttachments(savedAttachments(owner), read.added); // the list may have changed while the files were read
+      if (read.added.length) { saveAttachments(owner, fit.kept); if ((selectedRef.current?.id || newDraftKey.current) === owner) setAttachments(fit.kept); }
+      if (read.problems.length || fit.problems.length) throw Error([...read.problems, ...fit.problems].join("\n"));
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : String(cause);
       if ((selectedRef.current?.id || newDraftKey.current) === owner) setFileNotice(message);
@@ -250,8 +250,9 @@ export default function Home() {
   async function attachFromBrowser(parts: Attachment[], submit: boolean) {
     const owner = selectedRef.current?.id || newDraftKey.current;
     try {
-      if (savedAttachments(owner).length + parts.length > 3) throw Error("Attach up to three files per message. Remove a file before adding the browser's comments.");
-      const next = validateAttachments([...savedAttachments(owner), ...parts]); saveAttachments(owner, next); setAttachments(next); setFileNotice("");
+      const fit = fitAttachments(savedAttachments(owner), parts);
+      if (fit.problems.length) throw Error(fit.problems.join("\n"));
+      saveAttachments(owner, fit.kept); setAttachments(fit.kept); setFileNotice("");
     } catch (cause) { setFileNotice(cause instanceof Error ? cause.message : String(cause)); showChat(); return false; }
     showChat();
     if (submit) await send(); else requestAnimationFrame(() => composerRef.current?.focus());
@@ -653,6 +654,7 @@ export default function Home() {
   useEffect(() => { updateTabs(renameTabs(tabsRef.current, id => { const thread = find(id); return thread ? title(thread) : undefined; })); }, [threads, related]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { const store = window.elpisDesktop?.storage; if (tabsRestored && store && !writeTabs(tabs, store)) setError("Could not save the open chat tabs on this device."); }, [tabs, tabsRestored]);
   // Back and forward: each place reached (a chat, a new chat, a page) joins the stack; the first one only starts it.
+  const composerNotice = [fileNotice, imageBlocked ? TEXT_ONLY_NOTICE : ""].filter(Boolean).join("\n");
   useEffect(() => {
     if (!ready) return;
     const place = { view, threadId: view === "chat" ? selected?.id ?? null : null };
@@ -817,7 +819,7 @@ export default function Home() {
   async function send(own?: string, followUp?: Preferences["followUp"]) {
     const outgoing = own ?? textRef.current, files = own === undefined ? attachmentsRef.current : [];
     if ((!outgoing.trim() && !files.length) || busy || dictating || attaching || projectChanging || !connected) return;
-    if (imageBlocked && own === undefined) { setFileNotice("This model accepts text only. Choose an image-capable model or remove the images."); return; }
+    if (imageBlocked && own === undefined) return; // the box already says why
     if (needsModelId && !model.trim()) { setError("Enter a model ID for the selected provider."); return; }
     setBusy(true); setError("");
     const sentText = outgoing, sentAttachments = [...files];
@@ -982,9 +984,9 @@ export default function Home() {
     editDraft([item.text, textRef.current].filter(part => part.trim()).join("\n\n"));
     for (const mention of item.mentions ?? []) pickedMentions.current.set(mention.path, mention);
     if (item.attachments.length) {
-      const all = [...attachmentsRef.current, ...item.attachments], kept = all.slice(0, 3);
+      const all = [...attachmentsRef.current, ...item.attachments], kept = all.slice(0, ATTACHMENT_LIMITS.count);
       setAttachments(kept); saveAttachments(selectedRef.current?.id || newDraftKey.current, kept);
-      if (kept.length < all.length) setFileNotice("A message holds up to 3 files; the extra files of the queued message were left out.");
+      if (kept.length < all.length) setFileNotice(`A message holds up to ${ATTACHMENT_LIMITS.count} files; the extra files of the queued message were left out.`);
     }
     focusComposer();
   }
@@ -1001,8 +1003,8 @@ export default function Home() {
     if (!option?.allowed) { if (option) setSlashNotice(option.reason); return; }
     setMessageEdits(previous => ({ ...previous, [JSON.stringify([selected.id, last.turnId, last.item.id])]: option.prompt }));
   }
-  /** The "+" menu's Files and Images: the same chooser, showing what `accept` names. */
-  const pickFiles = (accept: string) => { const input = filePickerRef.current; if (input) { input.accept = accept; input.click(); } };
+  /** The "+" menu's Add files or photos: the one chooser, for pictures and documents alike. */
+  const pickFiles = () => filePickerRef.current?.click();
   /** The "+" menu's Mention: an "@" at the caret (after a space when words come before it), which opens the picker. */
   function startMention() {
     const box = composerRef.current, at = box?.selectionStart ?? textRef.current.length, before = textRef.current.slice(0, at);
@@ -1338,21 +1340,17 @@ export default function Home() {
           {selected && plans[selected.id] && <TaskList plan={plans[selected.id]} running={activeTurns[selected.id] === plans[selected.id].turnId} />}
           <QueuedFollowUps threadId={selected?.id} activeTurnId={activeTurn} onError={setError} onComplete={restoreComposerFocus} onEdit={editQueued} />
           {!selected && <div className="composer-tray"><EnvironmentMenu folder={project?.cwd ?? null} disabled={!ready || busy} /><ProjectMenu variant="chip" projects={projects} selected={project} disabled={!ready || busy} onSelect={selectProject} onAdd={() => void addProject()} /></div>}
-          <form className="composer" onSubmit={e => { e.preventDefault(); send(); }} onDragOver={e => { if (e.dataTransfer.types.includes("Files")) e.preventDefault(); }} onDrop={e => { if (e.dataTransfer.files.length || e.dataTransfer.types.includes("Files")) { e.preventDefault(); void addFiles(Array.from(e.dataTransfer.files)); } }}>
+          <form className="composer" onSubmit={e => { e.preventDefault(); send(); }} onDragOver={e => { if (e.dataTransfer.types.includes("Files")) e.preventDefault(); }} onDrop={e => { const files = transferFiles(e.dataTransfer); if (files.length || e.dataTransfer.types.includes("Files")) { e.preventDefault(); void addFiles(files); } }}>
             <SlashMenu menu={slash} /><MentionMenu menu={mention} />
             <input ref={filePickerRef} type="file" multiple accept={ATTACHMENT_ACCEPT} className="hidden" aria-label="Choose files" onChange={e => { const files = Array.from(e.target.files ?? []); e.target.value = ""; void addFiles(files); }} />
-            {attachments.length > 0 && <ul aria-label="Message attachments" className="flex flex-wrap gap-2 p-2">{attachments.map(part => <li key={part.id} className="flex max-w-full items-start gap-2 rounded-md border p-2 text-sm">
-              {part.type === "image" ? <img src={part.dataUrl} alt={part.name} className="h-16 w-16 rounded object-contain" /> : <span aria-hidden="true">📄</span>}
-              <span className="max-w-48 break-words">{part.name}<small className="block text-muted-foreground">{part.type === "image" ? "Image" : "Text snapshot"}</small></span>
-              <Button type="button" variant="ghost" size="icon-sm" aria-label={`Remove ${part.name}`} disabled={busy || attaching} onClick={() => { const next = attachmentsRef.current.filter(item => item.id !== part.id); setAttachments(next); saveAttachments(selectedRef.current?.id || newDraftKey.current, next); focusComposer(); }}><X className="size-3" /></Button>
-            </li>)}</ul>}
+            <AttachmentChips attachments={attachments} disabled={busy || attaching} onRemove={id => { const next = attachmentsRef.current.filter(item => item.id !== id); setAttachments(next); saveAttachments(selectedRef.current?.id || newDraftKey.current, next); focusComposer(); }} />
             {attaching && <p role="status" className="px-3 py-2 text-sm text-muted-foreground">Reading files…</p>}
             {imageBlocked && <p role="alert" className="m-2 text-sm text-destructive">This model accepts text only. Choose an image-capable model or remove the images.</p>}
             {promptKeys.status && <PromptStatusLine status={promptKeys.status} />}
-            <Textarea ref={composerRef} aria-label="Message Elpis" {...(mention.open ? mention.inputProps : slash.inputProps)} onBlur={() => { slash.close(); mention.close(); promptKeys.cancel(); }} onSelect={e => setCaret(e.currentTarget.selectionStart)} placeholder={continues ? `Message ${title(selected!)}…` : selected && activeTurn ? followUpHint(preferences) : selected ? "Ask for a follow-up" : "Ask Elpis to build, fix or explain something"} value={text} onChange={e => { editDraft(e.target.value); setCaret(e.target.selectionStart); }} onPaste={e => { const files = Array.from(e.clipboardData.files); if (files.length) { if (!e.clipboardData.getData("text/plain")) e.preventDefault(); void addFiles(files); } }} disabled={!ready || !connected || projectChanging} onKeyDown={e => { if (mention.onKeyDown(e) || slash.onKeyDown(e) || promptKeys.onKeyDown(e)) return; if (e.key === "Tab" && e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey) { e.preventDefault(); cycleMode(); return; } if (activeTurn && !continues) { const followUp = followUpKey(e, preferences); if (followUp) { e.preventDefault(); send(undefined, followUp); } } else if (isSendKey(e, preferences)) { e.preventDefault(); send(); } }} />
-            {fileNotice && <div className="flex items-center gap-2 px-3 text-sm text-destructive" role="alert"><span>{fileNotice}</span><Button type="button" variant="ghost" size="icon-xs" aria-label="Dismiss file notice" onClick={() => setFileNotice("")}><X size={14} /></Button></div>}
-            <div className="composer-controls"><div className="model-controls"><PlusMenu disabled={!ready || !connected || busy || projectChanging} attachDisabled={attaching || attachments.length >= 3} imagesDisabled={knownModel?.inputModalities && !knownModel.inputModalities.includes("image") && "This model accepts text only"} slashDisabled={!!text} plan={planMode} returnFocus={composerRef}
-                onAttach={() => pickFiles(ATTACHMENT_ACCEPT)} onImages={() => pickFiles(IMAGE_ACCEPT)} onMention={startMention} onSlash={startSlash} onPlan={setPlan} />
+            <Textarea ref={composerRef} aria-label="Message Elpis" {...(mention.open ? mention.inputProps : slash.inputProps)} onBlur={() => { slash.close(); mention.close(); promptKeys.cancel(); }} onSelect={e => setCaret(e.currentTarget.selectionStart)} placeholder={continues ? `Message ${title(selected!)}…` : selected && activeTurn ? followUpHint(preferences) : selected ? "Ask for a follow-up" : "Ask Elpis to build, fix or explain something"} value={text} onChange={e => { editDraft(e.target.value); setCaret(e.target.selectionStart); }} onPaste={e => { const files = transferFiles(e.clipboardData); if (files.length) { if (!e.clipboardData.getData("text/plain")) e.preventDefault(); void addFiles(files); } }} disabled={!ready || !connected || projectChanging} onKeyDown={e => { if (mention.onKeyDown(e) || slash.onKeyDown(e) || promptKeys.onKeyDown(e)) return; if (e.key === "Tab" && e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey) { e.preventDefault(); cycleMode(); return; } if (activeTurn && !continues) { const followUp = followUpKey(e, preferences); if (followUp) { e.preventDefault(); send(undefined, followUp); } } else if (isSendKey(e, preferences)) { e.preventDefault(); send(); } }} />
+            {composerNotice && <div className="flex items-center gap-2 px-3 text-sm text-destructive" role="alert"><span className="whitespace-pre-line">{composerNotice}</span>{fileNotice && <Button type="button" variant="ghost" size="icon-xs" aria-label="Dismiss file notice" onClick={() => setFileNotice("")}><X size={14} /></Button>}</div>}
+            <div className="composer-controls"><div className="model-controls"><PlusMenu disabled={!ready || !connected || busy || projectChanging} attachDisabled={attaching || attachments.length >= ATTACHMENT_LIMITS.count} slashDisabled={!!text} plan={planMode} returnFocus={composerRef}
+                onAttach={pickFiles} onMention={startMention} onSlash={startSlash} onPlan={setPlan} />
               {planMode && <PlanPill disabled={!ready || busy} onOff={() => setPlan(false)} />}
               <PermissionsMenu mode={permissionMode} disabled={permissionsLocked} onChange={choosePermissions} />
             </div><div className="composer-right">

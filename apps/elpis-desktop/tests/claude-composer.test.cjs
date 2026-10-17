@@ -88,13 +88,13 @@ test('while a turn runs the mention rides the steer, and a queued follow-up keep
   assert.deepEqual(posts[1].body.mentions, [{ name: 'src/lib/lexer.ts', path: `${CWD}/src/lib/lexer.ts` }]);
 }));
 
-test('the + menu offers Files, Images, Mention, Slash commands and Plan mode, each doing its thing, and no folder item', () => using({}, async f => {
+test('the + menu offers Add files or photos, Mention, Slash commands and Plan mode, each doing its thing, and no folder item', () => using({}, async f => {
   const { page, composer } = f;
   await f.open('chat-a');
   const plus = page.getByRole('button', { name: 'Add files and more', exact: true });
   const items = async () => (await page.getByRole('menuitem').allInnerTexts()).map(text => text.split('\n')[0].trim());
   await plus.click(); await page.getByRole('menuitem').first().waitFor();
-  assert.deepEqual(await items(), ['Files', 'Images', 'Mention', 'Slash commands', 'Plan mode']);
+  assert.deepEqual(await items(), ['Add files or photos', 'Mention', 'Slash commands', 'Plan mode']);
   await page.keyboard.press('Escape');
   await plus.click(); await page.getByRole('menuitem', { name: /^Mention/ }).click();
   await picker(page).waitFor();
@@ -110,16 +110,15 @@ test('the + menu offers Files, Images, Mention, Slash commands and Plan mode, ea
   await page.keyboard.press('Escape');
 }));
 
-test('Images opens a chooser for pictures only and Files one for every kind; a picture lands in the message', () => using({}, async f => {
+test('Add files or photos opens one chooser for pictures and documents alike; a picture lands in the message', () => using({}, async f => {
   const { page } = f;
   await f.open('chat-a');
   const plus = page.getByRole('button', { name: 'Add files and more', exact: true });
-  const choose = async name => { await plus.click(); const [chooser] = await Promise.all([page.waitForEvent('filechooser'), page.getByRole('menuitem', { name: new RegExp(`^${name}`) }).click()]); return chooser; };
-  const files = await choose('Files');
-  assert.match(await files.element().getAttribute('accept'), /application\/pdf/);
-  const images = await choose('Images');
-  assert.equal(await images.element().getAttribute('accept'), 'image/png,image/jpeg,image/webp,image/gif');
-  await images.setFiles({ name: 'pic.png', mimeType: 'image/png', buffer: PNG });
+  await plus.click();
+  const [chooser] = await Promise.all([page.waitForEvent('filechooser'), page.getByRole('menuitem', { name: /^Add files or photos/ }).click()]);
+  const accept = await chooser.element().getAttribute('accept');
+  assert.match(accept, /application\/pdf/); assert.match(accept, /image\/png,image\/jpeg,image\/webp,image\/gif/);
+  await chooser.setFiles({ name: 'pic.png', mimeType: 'image/png', buffer: PNG });
   await page.getByRole('list', { name: 'Message attachments' }).getByText('pic.png').waitFor();
 }));
 

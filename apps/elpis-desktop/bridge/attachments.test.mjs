@@ -34,7 +34,7 @@ test('attachments retain ordinary text, UTF8 file ranges and image-only native i
   assert.deepEqual(attachmentInput('', [image()]), [{ type: 'image', url: image().dataUrl }]);
 });
 test('bad batches cannot produce partial native input', () => {
-  for (const files of [[image(), image()], [{ ...image(), dataUrl: 'https://evil.example/image.png' }], [{ ...image(), mimeType: 'image/svg+xml' }], [{ ...image(), dataUrl: 'data:image/png;base64,aGVsbG8=' }], Array.from({length:4}, (_,i)=>({...image(),id:String(i)})), [{id:'text',name:'x',type:'text',mimeType:'text/plain',text:'x'.repeat(128*1024+1)}]]) {
+  for (const files of [[image(), image()], [{ ...image(), dataUrl: 'https://evil.example/image.png' }], [{ ...image(), mimeType: 'image/svg+xml' }], [{ ...image(), dataUrl: 'data:image/png;base64,aGVsbG8=' }], Array.from({length:21}, (_,i)=>({...image(),id:String(i)})), [{id:'text',name:'x',type:'text',mimeType:'text/plain',text:'x'.repeat((1<<20)+1)}]]) {
     assert.throws(() => attachmentInput('keep draft', files));
   }
   assert.throws(() => attachmentInput(''));
@@ -115,4 +115,57 @@ test('send and steer carry mentions to the native input', async t => {
   socket.sent.length = 0;
   await assert.rejects(client.send(ID, { text: 'draft', mentions: [{ name: 'a' }] }), /mention/i);
   assert.equal(socket.sent.length, 0);
+});
+
+const text = (id, body, name = `${id}.txt`) => ({ id, name, type: 'text', mimeType: 'text/plain', text: body });
+const pngOf = (size, id, name) => { const bytes = Buffer.alloc(size); PNG.copy(bytes); return { id, name, type: 'image', mimeType: 'image/png', dataUrl: `data:image/png;base64,${bytes.toString('base64')}` }; };
+const MiB = 1024 * 1024;
+
+test('a message takes five files, two of them images, in the order given, as one kind of thing', () => {
+  const files = [image(), text('b', 'second'), { ...image(), id: 'image_2', name: 'two.png' }, text('d', 'fourth'), text('e', 'fifth')];
+  const input = attachmentInput('five', files);
+  assert.deepEqual(input.map(part => part.type), ['text', 'image', 'text', 'image', 'text', 'text']);
+  assert.match(input[2].text, /^File: b\.txt\nsecond$/); assert.match(input[5].text, /fifth$/);
+});
+test('twenty files fit in one message and the twenty-first is refused with the limit named', () => {
+  const files = n => Array.from({ length: n }, (_, i) => i % 2 ? text(`t${i}`, `file ${i}`) : { ...image(), id: `i${i}`, name: `pic-${i}.png` });
+  assert.equal(attachmentInput('', files(20)).length, 20);
+  assert.throws(() => attachmentInput('', files(21)), /at most 20 files/);
+});
+test('text files and the message share the engine\'s character limit, counted in characters, and the error names the file', () => {
+  const engineLimit = 1 << 20;
+  const big = text('big', 'a'.repeat(1_000_000), 'big.txt');
+  assert.equal(attachmentInput('hi', [big]).length, 2);
+  const second = text('second', 'b'.repeat(60_000), 'second.txt');
+  assert.throws(() => attachmentInput('hi', [big, second]), error => /second\.txt/.test(error.message) && /1,048,576/.test(error.message));
+  // 600,000 astral characters are 1,200,000 UTF-16 units but only 600,000 characters, which the engine takes.
+  assert.equal(attachmentInput('', [text('emoji', '\u{1F600}'.repeat(600_000), 'faces.txt')]).length, 1);
+  assert.equal(attachmentInput('', [text('persian', 'ب'.repeat(engineLimit - 20), 'persian.txt')]).length, 1);
+  assert.throws(() => attachmentInput('x'.repeat(100), [text('persian', 'ب'.repeat(engineLimit - 20), 'persian.txt')]), /persian\.txt/);
+});
+test('images keep their 4 MiB total, and the error names the image that passes it', () => {
+  assert.equal(attachmentInput('', [pngOf(2 * MiB, 'one', 'one.png'), pngOf(2 * MiB, 'two', 'two.png')]).length, 2);
+  assert.throws(() => attachmentInput('', [pngOf(2.5 * MiB, 'one', 'one.png'), pngOf(2.5 * MiB, 'two', 'two.png')]), error => /two\.png/.test(error.message) && /4 MiB/.test(error.message) && !/one\.png/.test(error.message));
+});
+test('a PDF up to 30 MiB is taken for text extraction, a larger one is refused by name, and too much text is refused by name', async t => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'elpis-pdf-test-')); t.after(() => fs.rm(dir, { recursive: true, force: true }));
+  const script = (name, body) => fs.writeFile(path.join(dir, name), `#!/bin/sh\ncat >/dev/null\n${body}\n`, { mode: 0o755 }).then(() => path.join(dir, name));
+  const pdf = (size, name) => ({ name, mimeType: 'application/pdf', dataUrl: `data:application/pdf;base64,${Buffer.concat([Buffer.from('%PDF-1.4\n'), Buffer.alloc(size)]).toString('base64')}` });
+  const small = await script('small', 'echo extracted text');
+  assert.match((await extractPdf(pdf(10 * MiB, 'paper.pdf'), { command: small })).attachment.text, /extracted text/);
+  await assert.rejects(extractPdf(pdf(31 * MiB, 'huge.pdf'), { command: small }), error => /huge\.pdf/.test(error.message) && /30 MiB/.test(error.message));
+  const wordy = await script('wordy', 'head -c 1200000 /dev/zero | tr "\\0" a');
+  await assert.rejects(extractPdf(pdf(1024, 'wordy.pdf'), { command: wordy }), error => /wordy\.pdf/.test(error.message) && /1 MiB/.test(error.message) && error.status === 413);
+});
+test('the HTTP body of a send holds the most a message can carry, and a 10 MiB PDF reaches extraction', async t => {
+  const { client, socket } = fixture(); await client.initialize(); const app = await startDesktopServer({ client }); t.after(() => app.close());
+  const url = new URL(app.url), origin = url.origin, token = new URLSearchParams(url.hash.slice(1)).get('token');
+  const post = (route, body, cookie) => fetch(origin + route, { method: 'POST', headers: { Origin: origin, 'Content-Type': 'application/json', ...(cookie ? { Cookie: cookie } : {}) }, body: JSON.stringify(body) });
+  const cookie = (await post('/api/session', { token })).headers.get('set-cookie').split(';')[0];
+  const most = [pngOf(4 * MiB, 'big', 'big.png'), text('words', 'w'.repeat(1_000_000), 'words.txt')];
+  assert.equal((await post(`/api/threads/${ID}/turns`, { text: 'all of it', attachments: most }, cookie)).status, 200);
+  assert.equal(socket.sent.findLast(row => row.method === 'turn/start').params.input.length, 3);
+  const pdf = `data:application/pdf;base64,${Buffer.concat([Buffer.from('%PDF-1.4\n'), Buffer.alloc(10 * MiB)]).toString('base64')}`;
+  const extracted = await post('/api/attachments/extract', { name: 'paper.pdf', mimeType: 'application/pdf', dataUrl: pdf }, cookie);
+  assert.notEqual(extracted.status, 413);
 });
