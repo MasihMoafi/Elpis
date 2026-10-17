@@ -112,7 +112,7 @@ test('streaming follows the latest text until the person scrolls up, then preser
 
 test('approving or declining a card returns focus to the composer',()=>fixture(async({page,open,approve,focused,posts})=>{
  await open();
- for(const [id,label,decision] of [['allow-card','Allow','accept'],['deny-card','Decline','decline']]){
+ for(const [id,label,decision] of [['allow-card','Allow once','accept'],['deny-card','Deny','decline']]){
   approve(id);const action=page.locator('.approval').getByRole('button',{name:label,exact:true});await action.click();await action.waitFor({state:'detached'});await page.waitForTimeout(180);
   assert.equal(await focused(),true,`${label} returns to the draft`);assert.deepEqual(posts.find(p=>p.path===`/api/approvals/${id}`).data,{decision});
  }

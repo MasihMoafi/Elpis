@@ -267,7 +267,7 @@ try {
     assert.equal(await panel.getByRole('button', { name: /^Always allow|Allow for this session/ }).count(), offered.filter(d => d === 'acceptForSession' || typeof d === 'object').length);
     assert.equal(await page.locator('.pending-input-panel').getByText(childTitleFor(pending), { exact: true }).count() > 0, true, 'requester named by its task');
     await shoot('approval');
-    await panel.getByRole('button', { name: 'Allow', exact: true }).click();
+    await panel.getByRole('button', { name: 'Allow once', exact: true }).click();
     await until(async () => (await fs.readFile(marker, 'utf8').catch(() => '')) === 'approved', 'approved command ran');
   });
 

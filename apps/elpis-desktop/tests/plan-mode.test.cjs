@@ -44,7 +44,7 @@ test('plan mode: "+" turns it on, a proposed plan asks to be implemented, and im
     const errors = []; page.on('pageerror', error => errors.push(error.message));
     await page.goto(`http://127.0.0.1:${server.address().port}/#token=fixture`);
     const pill = page.getByRole('button', { name: 'Turn plan mode off', exact: true });
-    const prompt = page.getByRole('group', { name: 'Implement this plan?' });
+    const prompt = page.getByRole('group', { name: 'Elpis proposed a plan' });
     await page.getByRole('button', { name: 'Add files and more', exact: true }).click();
     await page.getByRole('menuitem', { name: /Plan mode/ }).click();
     await pill.waitFor();
@@ -54,14 +54,15 @@ test('plan mode: "+" turns it on, a proposed plan asks to be implemented, and im
     await prompt.waitFor();
     assert.equal(turns[0].mode, 'plan', 'the first turn runs in Plan mode');
 
-    await prompt.getByRole('button', { name: 'No, stay in Plan mode', exact: true }).click();
+    await prompt.getByRole('button', { name: 'Keep planning', exact: true }).click();
+    await prompt.getByRole('textbox', { name: 'What should change?', exact: true }).press('Enter');
     assert.equal(await prompt.count(), 0); assert.equal(await pill.count(), 1, 'declining keeps Plan mode on');
     assert.equal(await page.getByLabel('Message Elpis').evaluate(e => e === document.activeElement), true, 'declining returns to the composer');
     await page.getByLabel('Message Elpis').fill('Revise it.'); await page.getByRole('button', { name: 'Send message', exact: true }).click();
     await page.getByRole('region', { name: 'Proposed plan' }).filter({ hasText: 'Plan 2' }).waitFor();
     assert.equal('mode' in turns[1], false, 'an unchanged mode is not sent again');
 
-    await prompt.getByRole('button', { name: 'Yes, implement this plan', exact: true }).click();
+    await prompt.getByRole('button', { name: 'Accept', exact: true }).click();
     await page.getByText('Implemented.', { exact: true }).waitFor();
     assert.deepEqual(turns[2], { text: 'Implement the plan.', mode: 'default' });
     assert.equal(await pill.count(), 0, 'implementing leaves Plan mode'); assert.equal(await prompt.count(), 0);

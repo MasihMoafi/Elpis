@@ -125,14 +125,14 @@ test('question answers survive chat and Needs-input navigation, retain failures 
   await page.getByRole('button', { name: 'Close pending input', exact: true }).click(); await open('b'); emit('approval', approval('approval-b', 'b'));
   await expect(inputs.nth(0)).toHaveValue(''); await expect(inputs.nth(1)).toHaveValue(''); await inputs.nth(0).fill('Answer B'); await inputs.nth(1).fill('synthetic-secret-b');
   await page.getByRole('button', { name: 'Agents', exact: true }).click(); await open('a'); await expect(inputs.nth(0)).toHaveValue('Answer A'); await expect(inputs.nth(1)).toHaveValue('synthetic-secret-a');
-  await card.getByRole('button', { name: 'Send answers', exact: true }).click(); await expect(card.getByRole('alert')).toContainText('Fixture answer failed');
+  await card.getByRole('button', { name: 'Submit', exact: true }).click(); await expect(card.getByRole('alert')).toContainText('Fixture answer failed');
   await settingsPage(); await open('a'); await expect(inputs.nth(0)).toHaveValue('Answer A'); await expect(inputs.nth(1)).toHaveValue('synthetic-secret-a');
-  control.failAnswers = false; control.holdAnswer = true; await card.getByRole('button', { name: 'Send answers', exact: true }).click();
+  control.failAnswers = false; control.holdAnswer = true; await card.getByRole('button', { name: 'Submit', exact: true }).click();
   await expect.poll(() => posts.filter(post => post.path === '/api/approvals/approval-a').length).toBe(2);
   await open('b'); await expect(inputs.nth(0)).toHaveValue('Answer B'); await expect(inputs.nth(0)).toBeEnabled();
   await open('a'); await expect(inputs.nth(0)).toHaveValue('Answer A'); await expect(inputs.nth(0)).toBeDisabled(); await expect(inputs.nth(1)).toBeDisabled();
-  await expect(card.getByRole('button', { name: 'Send answers', exact: true })).toBeDisabled();
-  await card.getByRole('button', { name: 'Send answers', exact: true }).evaluate(button => button.click());
+  await expect(card.getByRole('button', { name: 'Submit', exact: true })).toBeDisabled();
+  await card.getByRole('button', { name: 'Submit', exact: true }).evaluate(button => button.click());
   assert.equal(posts.filter(post => post.path === '/api/approvals/approval-a').length, 2);
   await open('b'); await inputs.nth(0).fill('Newer answer B');
   const answerResponse = page.waitForResponse(response => response.url().endsWith('/api/approvals/approval-a') && response.status() === 200);

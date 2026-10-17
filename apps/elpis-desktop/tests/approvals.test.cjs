@@ -40,10 +40,10 @@ for(const theme of ['light','dark']){
   test(`MCP form validates fields and sends typed values, retaining failed drafts (${theme})`,async t=>{
     const f=await fixture(t,theme),{page}=f;
     f.emit('mcpServer/elicitation/request',{serverName:'survey',mode:'form',message:'Choose fixture settings',requestedSchema:{type:'object',properties:{email:{type:'string',title:'Email',format:'email'},count:{type:'integer',title:'Count',minimum:1,maximum:4},enabled:{type:'boolean',title:'Enabled',default:false},color:{type:'string',title:'Color',oneOf:[{const:'blue',title:'Blue'},{const:'red',title:'Red'}]},tags:{type:'array',title:'Tags',items:{type:'string',enum:['a','b']},minItems:1}},required:['email','count','enabled','color','tags']}});
-    await page.getByLabel('Email', {exact:true}).fill('bad');await page.getByRole('button',{name:'Send answers',exact:true}).click();assert.equal(f.posts.length,0);
+    await page.getByLabel('Email', {exact:true}).fill('bad');await page.getByRole('button',{name:'Submit',exact:true}).click();assert.equal(f.posts.length,0);
     await page.getByLabel('Email',{exact:true}).fill('fixture@example.test');await page.getByLabel('Count',{exact:true}).fill('2');await chooseOption(page.getByRole('combobox',{name:'Color',exact:true}),'blue');await page.getByRole('checkbox',{name:'a',exact:true}).check();await page.locator('.approval').getByRole('alert').waitFor({state:'hidden'});await f.shot('mcp-form');
-    f.fail(true);await page.getByRole('button',{name:'Send answers',exact:true}).click();await page.getByRole('alert').getByText(/Fixture engine unavailable/).waitFor();assert.equal(await page.getByLabel('Email',{exact:true}).inputValue(),'fixture@example.test');
-    f.fail(false);await page.getByRole('button',{name:'Send answers',exact:true}).click();await f.answered(2);assert.deepEqual(f.posts[1],{action:'accept',content:{email:'fixture@example.test',count:2,enabled:false,color:'blue',tags:['a']},_meta:null});
+    f.fail(true);await page.getByRole('button',{name:'Submit',exact:true}).click();await page.getByRole('alert').getByText(/Fixture engine unavailable/).waitFor();assert.equal(await page.getByLabel('Email',{exact:true}).inputValue(),'fixture@example.test');
+    f.fail(false);await page.getByRole('button',{name:'Submit',exact:true}).click();await f.answered(2);assert.deepEqual(f.posts[1],{action:'accept',content:{email:'fixture@example.test',count:2,enabled:false,color:'blue',tags:['a']},_meta:null});
   });
   test(`permission card grants exact requested scope or denies (${theme})`,async t=>{
     const f=await fixture(t,theme),{page}=f,permissions={network:{enabled:true},fileSystem:{read:['/fixture'],write:['/fixture/output']}};

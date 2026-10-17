@@ -123,10 +123,10 @@ try {
       arguments: JSON.stringify({ [tool.name === 'exec_command' ? 'cmd' : 'command']: cmd, sandbox_permissions: 'require_escalated', justification: 'Write only the isolated test result after approval.' }) };
   }, message('Completed the local task.\n\n| Step | Result |\n| --- | --- |\n| Read input | Complete |\n| Write result | Complete |'));
   await page.getByRole('button', { name: 'Send message', exact: true }).click();
-  await page.getByRole('heading', { name: 'Approval requested', exact: true }).waitFor({ timeout: 30000 });
+  await page.getByRole('heading', { name: 'Allow Elpis to run this command?', exact: true }).waitFor({ timeout: 30000 });
   await assert.rejects(fs.readFile(protectedFile));
   await shot('02-task-approval.png');
-  await page.getByRole('button', { name: 'Allow', exact: true }).click();
+  await page.getByRole('button', { name: 'Allow once', exact: true }).click();
   await page.getByText('Completed the local task.', { exact: true }).waitFor({ timeout: 30000 });
   assert.equal(await fs.readFile(protectedFile, 'utf8'), secret);
   assert.equal(created, 1, 'retry uses the first created conversation');
