@@ -336,6 +336,23 @@ pub struct TurnSteerResponse {
     pub turn_id: String,
 }
 
+/// Retract identified user inputs only while they are still waiting for model delivery.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub struct TurnSteerCancelParams {
+    pub thread_id: String,
+    pub client_user_message_ids: Vec<String>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub struct TurnSteerCancelResponse {
+    /// Delivered and unknown IDs are omitted; callers must not restore them to the composer.
+    pub cancelled_client_user_message_ids: Vec<String>,
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "v2/")]

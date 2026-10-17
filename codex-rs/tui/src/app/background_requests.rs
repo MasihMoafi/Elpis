@@ -40,6 +40,54 @@ const WORKSPACE_HEADLINE_FETCH_TIMEOUT: std::time::Duration =
     std::time::Duration::from_millis(/*millis*/ 2000);
 
 impl App {
+    pub(super) fn recall_pending_steers(
+        &self,
+        app_server: &mut AppServerSession,
+        thread_id: ThreadId,
+        client_user_message_ids: Vec<String>,
+    ) {
+        let request_handle = app_server.request_handle();
+        let request_id = app_server.next_request_id();
+        let app_event_tx = self.app_event_tx.clone();
+        tokio::spawn(async move {
+            let result = request_handle
+                .request_typed(ClientRequest::TurnSteerCancel {
+                    request_id,
+                    params: codex_app_server_protocol::TurnSteerCancelParams {
+                        thread_id: thread_id.to_string(),
+                        client_user_message_ids,
+                    },
+                })
+                .await
+                .map(
+                    |response: codex_app_server_protocol::TurnSteerCancelResponse| {
+                        response.cancelled_client_user_message_ids
+                    },
+                )
+                .map_err(|error| error.to_string());
+            app_event_tx.send(AppEvent::PendingSteersRecalled { thread_id, result });
+        });
+    }
+
+    pub(super) async fn enqueue_pending_steer_recall(
+        &mut self,
+        thread_id: ThreadId,
+        result: Result<Vec<String>, String>,
+    ) {
+        if self.chat_widget.thread_id() == Some(thread_id) {
+            self.chat_widget.finish_pending_steer_recall(result);
+            return;
+        }
+        let Some(channel) = self.thread_event_channels.get(&thread_id) else {
+            return;
+        };
+        channel
+            .store
+            .lock()
+            .await
+            .push_buffered_event(ThreadBufferedEvent::PendingSteersRecalled(result));
+    }
+
     pub(super) fn start_mcp_login(
         &self,
         app_server: &AppServerSession,

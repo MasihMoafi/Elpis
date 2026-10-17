@@ -232,6 +232,7 @@ impl CommandPopup {
                 .to_string();
                 let unavailable = self.is_unavailable(&item);
                 GenericDisplayRow {
+                    name_style: None,
                     category_tag: None,
                     name,
                     name_prefix_spans: vec![if self.state.selected_idx == Some(index)

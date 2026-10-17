@@ -63,8 +63,6 @@ function approvalSocket(s) {
   return { path, close: () => server.close() };
 }
 
-const contextSize = (model) => (/^gemini/.test(model) ? 1_048_576 : /^claude/.test(model) ? 200_000 : 131_072);
-
 let modelList = null;
 function models() {
   // `agy models` prints "id<TAB>name" lines (and a progress line without a tab).
@@ -167,7 +165,7 @@ async function onEvent(s, m) {
     const u = m.step_update ?? {};
     if (u.step_type === "agent_response") {
       if (u.text_delta) notify(s.id, { sessionUpdate: "agent_message_chunk", content: { type: "text", text: u.text_delta } });
-      if (u.usage) { turn.used = (u.usage.input_tokens ?? 0) + (u.usage.output_tokens ?? 0); notify(s.id, { sessionUpdate: "usage_update", used: turn.used, size: contextSize(s.model) }); }
+      if (u.usage) { turn.used = (u.usage.input_tokens ?? 0) + (u.usage.output_tokens ?? 0); notify(s.id, { sessionUpdate: "usage_update", used: turn.used }); } // agy reports no window, so none is claimed
     } else if (u.step_type === "tool") {
       const id = `agy-${s.conversationId}-${u.step_index}`;
       const d = describe(u.tool_info ?? { name: u.tool_name });

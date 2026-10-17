@@ -227,8 +227,8 @@ mod elpis_continuity;
 // Elpis: the App side of the Context Ledger.
 mod elpis_ledger;
 // Elpis: the work graph under /agent.
-mod elpis_work_graph;
 mod daybreak;
+mod elpis_work_graph;
 mod empty_state_policy;
 mod event_dispatch;
 mod exit_summary;
@@ -1058,6 +1058,11 @@ impl App {
             }
             TuiEvent::FocusGained => {
                 self.recap.note_focus_gained();
+                if tui.refresh_terminal_palette() {
+                    self.transcript_view.invalidate_rendered_styles();
+                    self.chat_widget.refresh_status_line();
+                    self.backtrack_render_pending = !tui.is_owned_screen();
+                }
             }
             _ => {}
         }

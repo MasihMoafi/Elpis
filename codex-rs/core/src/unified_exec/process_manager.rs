@@ -1496,6 +1496,14 @@ impl UnifiedExecProcessManager {
                     },
                     prefix_rule: request.prefix_rule.clone(),
                     allow_prefix_rules: context.step_context.turn.allow_prefix_rules(),
+                    bypass_permissions_active: codex_protocol::models::bypass_permissions_active(
+                        context.step_context.settings.approval_policy(),
+                        request.turn_environment.permission_profile(),
+                        request
+                            .turn_environment
+                            .active_permission_profile()
+                            .as_ref(),
+                    ),
                 },
                 configured_shell,
                 &request.shell_mode,

@@ -54,6 +54,7 @@ let paused = false;
 let lastValidState = null;
 let lastValidHeartbeat = null;
 let lastEvidenceKey = null;
+let lastPollFailed = false;
 
 function byId(id) {
   return document.getElementById(id);
@@ -153,6 +154,10 @@ function setBadge(node, status, metadata) {
 }
 
 function setTransport(label, state) {
+  if (state === 'unavailable') lastPollFailed = true;
+  if (state === 'available') lastPollFailed = false;
+  byId('connection-warning').hidden = !lastPollFailed;
+  updateFreshness();
   setText('transport-status', label);
   const tone = state === 'available' ? 'status-success' : state === 'paused' ? 'status-warning' : state === 'unavailable' ? 'status-error' : 'status-neutral';
   byId('transport-signal').className = 'status ' + tone;
@@ -166,6 +171,11 @@ function updateFreshness() {
     return;
   }
   const age = Math.max(0, Date.now() - lastValidHeartbeat);
+  if (lastPollFailed) {
+    node.textContent = 'Last contact ' + formatElapsed(age) + ' ago';
+    node.classList.add('is-stale');
+    return;
+  }
   node.textContent = (age <= FRESHNESS_LIMIT_MS ? 'Checked ' : 'No answer for ') + formatElapsed(age) + (age <= FRESHNESS_LIMIT_MS ? ' ago' : '');
   node.classList.add(age <= FRESHNESS_LIMIT_MS ? 'is-fresh' : 'is-stale');
 }
@@ -413,6 +423,7 @@ function renderAttempt(attempt) {
   setText('attempt-latency', formatMilliseconds(safeAttempt.latency_ms));
   setText('attempt-usage', isObject(safeAttempt.usage) ? formatNumber(safeAttempt.usage.total) + ' tokens reported' : 'Unreported');
   byId('attempt-warning').hidden = safeAttempt.status === 'admitted' || safeAttempt.status === 'unchanged';
+  setText('attempt-failure-reason', typeof safeAttempt.failure_reason === 'string' && safeAttempt.failure_reason.trim() ? safeAttempt.failure_reason : 'This attempt did not produce an admitted result. The runtime did not report a reason.');
 }
 
 function renderSmartPrune(smart) {
@@ -705,7 +716,14 @@ function roleProvider(role) {
 }
 
 function renderModels(models) {
-  if (!isObject(models)) return;
+  if (!isObject(models)) {
+    currentModels = null;
+    MODEL_ROLES.forEach(role => setText('model-current-' + role, 'Unavailable'));
+    setText('smart-configured-model', 'Unavailable');
+    return;
+  }
+  const inherited = describeChoice(models.background, 'Built-in background default');
+  setText('smart-configured-model', describeChoice(models.pruner, inherited + ' · inherited from Background'));
   currentModels = models;
   MODEL_ROLES.forEach(role => {
     setText('model-current-' + role, describeChoice(models[role], roleDefaultLabel(role) || 'Unavailable'));
@@ -842,201 +860,226 @@ async function loadModelProviders() {
   }
 }
 
-let lastClaudeFetch = 0;
-
-async function refreshClaude() {
-  const now = Date.now();
-  if (now - lastClaudeFetch < 10_000) return;
-  lastClaudeFetch = now;
-  try {
-    const response = await fetch('/claude.json', { cache: 'no-store' });
-    if (response.ok) renderClaude(await response.json());
-  } catch (_error) {
-    // The Claude Code section keeps its last values.
-  }
-}
-
-function renderClaude(summary) {
-  if (!isObject(summary) || !isFiniteNumber(summary.results)) return;
-  setText('claude-state-pill', summary.results > 0 ? 'Recorded' : 'No records');
-  setText('claude-results', formatNumber(summary.results));
-  setText('claude-source', compactNumber(summary.source_tokens));
-  setText('claude-sent', compactNumber(summary.sent_tokens));
-  setText('claude-saved', compactNumber(summary.saved_tokens));
-  setText('claude-saved-share', (formatPercent(summary.saved_tokens, summary.source_tokens) || '0%') + ' of source');
-  const recent = Array.isArray(summary.recent) ? summary.recent.filter(isObject) : [];
-  const list = byId('claude-recent');
-  list.replaceChildren(...recent.map(row => {
-    const line = makeNode('div');
-    const at = isFiniteNumber(row.at) ? new Date(row.at * 1000).toLocaleString() : 'Time unavailable';
-    line.append(
-      makeNode('span', null, at + ' · ' + (typeof row.model === 'string' ? row.model : 'Model unavailable')),
-      makeNode('strong', null, compactNumber(row.source_tokens) + ' → ' + compactNumber(row.sent_tokens)),
-    );
-    return line;
-  }));
-  list.hidden = recent.length === 0;
-  byId('claude-empty').hidden = recent.length > 0;
-}
-
-const AGENT_NODE_W = 270;
-const AGENT_YOU_W = 140;
-const AGENT_NODE_H = 88;
-const AGENT_GAP_X = 96;
-const AGENT_TITLE_CHARS = 31;
-const AGENT_TRUNK = 26;
-const AGENT_GAP_Y = 20;
-const AGENT_PAD = 12;
-const AGENT_NEUTRAL = '#8a8590';
-// Only the statuses that ask for attention get a colour; the rest stay neutral.
-const AGENT_STATUS_TONES = Object.freeze({ needs_you: '#f0a35a', working: '#e0b048' });
 let lastAgentsFetch = 0;
+let agentsSnapshot = [];
 let lastAgentsKey = null;
-
+let agentsConversation = null;
+let selectedAgentId = null;
 async function refreshAgents() {
-  const now = Date.now();
-  if (now - lastAgentsFetch < 3_000) return;
-  lastAgentsFetch = now;
+  if (Date.now() - lastAgentsFetch < 3_000) return;
+  lastAgentsFetch = Date.now();
   try {
     const response = await fetch('/agents.json', { cache: 'no-store' });
-    if (response.ok) renderAgents(await response.json());
+    if (!response.ok) throw new Error('Unavailable');
+    const summary = await response.json();
+    if (!Array.isArray(summary.agents)) throw new Error('Invalid data');
+    renderAgents(summary);
+    setText('agents-feedback', 'Recorded agent relationships · refreshed just now');
   } catch (_error) {
-    // The map keeps its last drawing.
+    setText('agents-feedback', agentsSnapshot.length ? 'Refresh failed. Showing the last received relationships.' : 'Agent list unavailable. Refresh to reconnect.');
   }
 }
-
-function agentColor(value) {
-  return typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value) ? value : AGENT_NEUTRAL;
-}
-
-// The agent colour lightened toward white, so its text stays readable on the dark page.
-function agentTextColor(hex) {
-  const value = parseInt(hex.slice(1), 16);
-  const mix = channel => Math.round(channel + (255 - channel) * 0.45);
-  return 'rgb(' + [value >> 16, (value >> 8) & 255, value & 255].map(mix).join(',') + ')';
-}
-
 function svgNode(tag, attributes, text) {
-  const node = document.createElementNS(byId('agent-map').namespaceURI, tag);
+  const node = document.createElementNS('http://www.w3.org/2000/svg', tag);
   Object.entries(attributes).forEach(([name, value]) => node.setAttribute(name, String(value)));
   if (text !== undefined) node.textContent = text;
   return node;
 }
-
-function clip(value, limit) {
-  return value.length > limit ? value.slice(0, limit - 1) + '…' : value;
-}
-
-// The title on at most two lines, broken between words; the second line ends in … when cut.
-function titleLines(title) {
-  if (title.length <= AGENT_TITLE_CHARS) return [title];
-  const cut = title.lastIndexOf(' ', AGENT_TITLE_CHARS);
-  const at = cut > AGENT_TITLE_CHARS / 2 ? cut : AGENT_TITLE_CHARS;
-  return [title.slice(0, at), clip(title.slice(at).trim(), AGENT_TITLE_CHARS)];
-}
-
-// You on the left, each chat next, then the helpers each one started, one column per level.
-function layoutAgents(agents) {
+function agentTitle(agent) { return String(agent.title || '').trim() || 'Untitled conversation'; }
+function agentRoots(agents) {
   const ids = new Set(agents.map(agent => agent.id));
-  const children = new Map();
-  agents.forEach(agent => {
-    const parent = ids.has(agent.parent_id) && agent.parent_id !== agent.id ? agent.parent_id : null;
-    if (!children.has(parent)) children.set(parent, []);
-    children.get(parent).push(agent);
-  });
-  const placed = [];
-  const seen = new Set();
-  let row = 0;
-  const place = (agent, depth, parent) => {
+  const roots = agents.filter(agent => !agent.parent_id || !ids.has(agent.parent_id) || agent.parent_id === agent.id);
+  const reached = new Set();
+  function visit(id) {
+    if (reached.has(id)) return;
+    reached.add(id);
+    agents.filter(agent => agent.parent_id === id).forEach(agent => visit(agent.id));
+  }
+  roots.forEach(root => visit(root.id));
+  agents.forEach(agent => { if (!reached.has(agent.id)) { roots.push(agent); visit(agent.id); } });
+  return roots;
+}
+function layoutAgents(agents, rootId) {
+  const seen = new Set(), nodes = [];
+  let nextRow = 0;
+  function place(agent, depth, parent) {
+    if (seen.has(agent.id)) return;
     seen.add(agent.id);
-    const rows = (children.get(agent.id) || []).filter(child => !seen.has(child.id))
-      .map(child => place(child, depth + 1, agent.id));
-    const y = rows.length ? (rows[0] + rows[rows.length - 1]) / 2 : row++;
-    placed.push({ agent, depth, y, parent });
-    return y;
-  };
-  const roots = (children.get(null) || []).map(agent => place(agent, 1, 'you'));
-  const you = { agent: { id: 'you', title: 'You', model: null }, depth: 0, y: roots.length ? (roots[0] + roots[roots.length - 1]) / 2 : 0, parent: null };
-  return { nodes: [you, ...placed], rows: Math.max(row, 1) };
-}
-
-function agentX(depth) {
-  return AGENT_PAD + (depth === 0 ? 0 : AGENT_YOU_W + AGENT_GAP_X + (depth - 1) * (AGENT_NODE_W + AGENT_GAP_X));
-}
-
-function agentBox(node, x, y) {
-  const { agent } = node;
-  const color = node.depth === 0 ? AGENT_NEUTRAL : agentColor(agent.color);
-  const status = typeof agent.status_label === 'string' && agent.status_label
-    ? { label: agent.status_label, tone: AGENT_STATUS_TONES[agent.status] || null }
-    : null;
-  const group = svgNode('g', {});
-  const model = typeof agent.model === 'string' ? agent.model : '';
-  group.append(svgNode('title', {}, [agent.title, model, status ? status.label : ''].filter(Boolean).join(' · ')));
-  group.append(svgNode('rect', { x, y, width: node.depth === 0 ? AGENT_YOU_W : AGENT_NODE_W, height: AGENT_NODE_H, rx: 10, fill: '#151318', stroke: color, 'stroke-width': 1.5 }));
-  group.append(svgNode('rect', { x: x + 1, y: y + 10, width: 4, height: AGENT_NODE_H - 20, rx: 2, fill: color }));
-  if (node.depth === 0) {
-    group.append(svgNode('text', { x: x + 18, y: y + 39, fill: '#eee9e7', 'font-size': 15, 'font-weight': 600 }, 'You'));
-    group.append(svgNode('text', { x: x + 18, y: y + 58, fill: '#a8a1a6', 'font-size': 12 }, 'start the chats'));
-    return group;
+    const childRows = agents.filter(child => child.parent_id === agent.id && !seen.has(child.id)).map(child => place(child, depth + 1, agent.id)).filter(row => row !== undefined);
+    const row = childRows.length ? (childRows[0] + childRows[childRows.length - 1]) / 2 : nextRow++;
+    nodes.push({ agent, depth, parent, row });
+    return row;
   }
-  const title = typeof agent.title === 'string' && agent.title ? agent.title : 'Untitled task';
-  titleLines(title).forEach((line, index) => group.append(
-    svgNode('text', { x: x + 18, y: y + 23 + index * 18, fill: '#eee9e7', 'font-size': 14, 'font-weight': 600 }, line)));
-  group.append(svgNode('text', { x: x + 18, y: y + 62, fill: agentTextColor(color), 'font-size': 12.5 }, clip(model || 'Model not reported', 36)));
-  if (status) {
-    group.append(svgNode('circle', { cx: x + 22, cy: y + 75, r: 3.5, fill: status.tone || '#8a8590' }));
-    group.append(svgNode('text', { x: x + 31, y: y + 79, fill: status.tone || '#a8a1a6', 'font-size': 12 }, status.label));
+  const root = agents.find(agent => agent.id === rootId);
+  if (root) place(root, 0, null);
+  return nodes;
+}
+function showAgentDetails(agent) {
+  selectedAgentId = agent.id;
+  const details = byId('agent-details');
+  details.hidden = false;
+  byId('agent-map').querySelectorAll('g[data-agent-id]').forEach(node => {
+    const selected = node.dataset.agentId === agent.id;
+    node.setAttribute('aria-pressed', String(selected));
+    node.querySelector('rect')?.setAttribute('stroke', selected ? 'var(--color-primary)' : 'var(--color-base-300)');
+  });
+  const facts = makeNode('dl', 'evidence-list');
+  const parent = agentsSnapshot.find(item => item.id === agent.parent_id);
+  for (const [label, value] of [
+    ['Model', agent.model || 'Not reported'], ['Status', agent.status_label || 'Unknown'], ['Conversation ID', agent.id],
+    ['Recorded parent', agent.parent_id ? `${parent ? agentTitle(parent) : 'Not loaded'} · ${agent.parent_id}` : 'None — independent conversation'],
+  ]) {
+    const row = makeNode('div'); row.append(makeNode('dt', '', label), makeNode('dd', '', value)); facts.append(row);
   }
-  return group;
+  details.replaceChildren(makeNode('h3', 'text-base font-semibold', agentTitle(agent)), facts);
 }
-
-// A right-angle connector: out of the parent, along a shared trunk, then straight into the
-// child, where its label sits above the straight part.
-function agentEdge(from, fromWidth, to, color, label) {
-  const group = svgNode('g', {});
-  const x1 = from.x + fromWidth;
-  const y1 = from.y + AGENT_NODE_H / 2;
-  const trunk = x1 + AGENT_TRUNK;
-  const x2 = to.x - 7;
-  const y2 = to.y + AGENT_NODE_H / 2;
-  const turn = Math.min(8, Math.abs(y2 - y1) / 2) * Math.sign(y2 - y1);
-  const d = turn === 0
-    ? `M${x1},${y1} H${x2}`
-    : `M${x1},${y1} H${trunk - Math.abs(turn)} Q${trunk},${y1} ${trunk},${y1 + turn} V${y2 - turn} Q${trunk},${y2} ${trunk + Math.abs(turn)},${y2} H${x2}`;
-  group.append(svgNode('path', { d, fill: 'none', stroke: color, 'stroke-width': 1.5, 'stroke-opacity': 0.85 }));
-  group.append(svgNode('path', { d: `M${x2},${y2 - 5} L${x2 + 7},${y2} L${x2},${y2 + 5} Z`, fill: color }));
-  group.append(svgNode('text', { x: (trunk + x2) / 2, y: y2 - 7, fill: '#a8a1a6', 'font-size': 11, 'text-anchor': 'middle' }, label));
-  return group;
-}
-
 function renderAgents(summary) {
-  const agents = isObject(summary) && Array.isArray(summary.agents)
-    ? summary.agents.filter(agent => isObject(agent) && typeof agent.id === 'string' && agent.id !== 'you')
-    : [];
-  const key = JSON.stringify(agents);
+  const unique = new Map();
+  for (const agent of Array.isArray(summary.agents) ? summary.agents : []) {
+    if (isObject(agent) && typeof agent.id === 'string' && agent.id) unique.set(agent.id, agent);
+  }
+  const nextAgents = [...unique.values()];
+  const key = JSON.stringify(nextAgents);
   if (key === lastAgentsKey) return;
   lastAgentsKey = key;
-  byId('agents-empty').hidden = agents.length > 0;
-  byId('agent-map-scroll').hidden = agents.length === 0;
-  const map = byId('agent-map');
-  if (agents.length === 0) { map.replaceChildren(); return; }
-  const { nodes, rows } = layoutAgents(agents);
-  const at = new Map(nodes.map(node => [node.agent.id, {
-    x: agentX(node.depth),
-    y: AGENT_PAD + node.y * (AGENT_NODE_H + AGENT_GAP_Y),
-  }]));
-  const depth = Math.max(...nodes.map(node => node.depth));
-  const width = agentX(depth) + (depth === 0 ? AGENT_YOU_W : AGENT_NODE_W) + AGENT_PAD;
-  const height = AGENT_PAD * 2 + rows * AGENT_NODE_H + (rows - 1) * AGENT_GAP_Y;
-  map.setAttribute('width', width);
-  map.setAttribute('height', height);
-  map.setAttribute('viewBox', `0 0 ${width} ${height}`);
-  const edges = nodes.filter(node => node.parent).map(node => agentEdge(
-    at.get(node.parent), node.depth === 1 ? AGENT_YOU_W : AGENT_NODE_W, at.get(node.agent.id),
-    agentColor(node.agent.color), node.depth === 1 ? 'asks' : 'delegates'));
-  map.replaceChildren(...edges, ...nodes.map(node => agentBox(node, at.get(node.agent.id).x, at.get(node.agent.id).y)));
+  agentsSnapshot = nextAgents;
+  const roots = agentRoots(agentsSnapshot);
+  const previousConversation = agentsConversation;
+  if (!roots.some(agent => agent.id === agentsConversation)) agentsConversation = roots[0]?.id || null;
+  if (previousConversation !== agentsConversation || (selectedAgentId && !layoutAgents(agentsSnapshot, agentsConversation).some(node => node.agent.id === selectedAgentId))) resetAgentChat();
+  const selector = byId('agents-conversation');
+  selector.replaceChildren(...roots.map(agent => { const option = makeNode('option', '', agentTitle(agent)); option.value = agent.id; return option; }));
+  selector.disabled = !roots.length;
+  if (agentsConversation) selector.value = agentsConversation;
+  selector.onchange = () => { agentsConversation = selector.value; resetAgentChat(); drawAgents(); };
+  drawAgents();
 }
+function drawAgents() {
+  const svg = byId('agent-map');
+  byId('agents-empty').hidden = agentsSnapshot.length > 0;
+  byId('agent-map-scroll').hidden = agentsSnapshot.length === 0;
+  svg.replaceChildren();
+  const selected = agentsSnapshot.find(agent => agent.id === selectedAgentId);
+  if (selected) showAgentDetails(selected); else byId('agent-details').hidden = true;
+  if (!agentsSnapshot.length) return;
+  const nodes = layoutAgents(agentsSnapshot, agentsConversation);
+  const W = 280, H = 112, X_GAP = 56, Y_GAP = 24, PAD = 16;
+  const positions = new Map(nodes.map(n => [n.agent.id, { ...n, x: PAD + n.depth * (W + X_GAP), y: PAD + n.row * (H + Y_GAP) }]));
+  const width = PAD * 2 + (Math.max(0, ...nodes.map(n => n.depth)) + 1) * (W + X_GAP) - X_GAP;
+  const height = PAD * 2 + (Math.max(0, ...nodes.map(node => node.row)) + 1) * (H + Y_GAP) - Y_GAP;
+  svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
+  svg.setAttribute('width', width); svg.setAttribute('height', height);
+  for (const n of positions.values()) {
+    const p = positions.get(n.parent);
+    if (!p) continue;
+    const start = p.x + W, end = n.x, sy = p.y + H / 2, ey = n.y + H / 2, mid = start + X_GAP / 2;
+    svg.append(svgNode('path', { d: `M${start},${sy} H${mid} V${ey} H${end}`, fill: 'none', stroke: 'var(--color-base-content)', 'stroke-opacity': '.25', 'stroke-width': 1.5, 'data-parent-id': p.agent.id, 'data-child-id': n.agent.id }));
+  }
+  for (const { agent, x, y } of positions.values()) {
+    const group = svgNode('g', { transform: `translate(${x},${y})`, 'data-agent-id': agent.id, role: 'button', tabindex: '0', 'aria-label': `${agentTitle(agent)}. Show recorded details.` });
+    group.style.cursor = 'pointer';
+    group.append(svgNode('rect', { width: W, height: H, rx: 10, fill: 'var(--color-base-100)', stroke: 'var(--color-base-300)' }));
+    const tone = agent.status === 'working' ? 'var(--color-primary)' : agent.status === 'needs_you' ? 'var(--color-error)' : 'var(--color-base-content)';
+    group.append(svgNode('circle', { cx: 18, cy: 24, r: 3.5, fill: tone }));
+    group.append(svgNode('text', { x: 29, y: 28, fill: 'var(--color-base-content)', 'font-size': 11 }, agent.status_label || 'Unknown'));
+    const title = agentTitle(agent), model = agent.model || 'Model not reported';
+    group.append(svgNode('title', {}, `${title}\n${model}\nID: ${agent.id}`));
+    group.append(svgNode('text', { x: 16, y: 54, fill: 'var(--color-base-content)', 'font-size': 13, 'font-weight': 600 }, title.length > 34 ? title.slice(0, 33) + '…' : title));
+    group.append(svgNode('text', { x: 16, y: 78, fill: 'var(--color-base-content)', opacity: '.7', 'font-size': 11 }, model.length > 37 ? model.slice(0, 36) + '…' : model));
+    group.append(svgNode('text', { x: 16, y: 98, fill: 'var(--color-base-content)', opacity: '.7', 'font-size': 10 }, agent.parent_id ? 'Spawned by parent agent' : 'Conversation'));
+    group.addEventListener('click', () => { showAgentDetails(agent); void openAgentChat(agent); });
+    group.addEventListener('keydown', event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); showAgentDetails(agent); void openAgentChat(agent); } });
+    svg.append(group);
+  }
+}
+
+let chatThreadId = null;
+let chatNextCursor = null;
+let chatRequest = 0;
+
+function resetAgentChat() {
+  selectedAgentId = null;
+  chatRequest++;
+  chatThreadId = null;
+  chatNextCursor = null;
+  byId('agent-chat').hidden = true;
+  byId('agent-chat-items').replaceChildren();
+  byId('agent-chat-refresh').disabled = false;
+}
+
+function transcriptItem(entry) {
+  const item = entry.item || {};
+  const article = makeNode('article', 'border-b border-base-content/10 pb-5');
+  let label = 'Activity', text = '';
+  switch (item.type) {
+    case 'userMessage':
+      label = 'You';
+      text = (item.content || []).map(part => part.text || (part.type === 'image' || part.type === 'localImage' ? '[Image attachment]' : `[${part.type || 'Attachment'}]`)).join('\n');
+      break;
+    case 'agentMessage': label = 'Elpis'; text = item.text || ''; break;
+    case 'plan': label = 'Plan'; text = item.text || ''; break;
+    case 'reasoning': label = 'Reasoning summary'; text = (item.summary || []).join('\n'); break;
+    case 'commandExecution': label = 'Command · ' + (item.status || ''); text = [item.command, item.aggregatedOutput].filter(Boolean).join('\n\n'); break;
+    case 'functionCallOutput':
+      label = item.name || 'Tool result';
+      text = typeof item.output === 'string' ? item.output : JSON.stringify(item.output, null, 2);
+      break;
+    case 'fileChange': label = 'File changes · ' + (item.status || ''); text = (item.changes || []).map(change => [change.path, change.diff].filter(Boolean).join('\n')).join('\n\n'); break;
+    case 'mcpToolCall': label = [item.server, item.tool, item.status].filter(Boolean).join(' · '); text = JSON.stringify(item.result || item.error || item.arguments || {}, null, 2); break;
+    default:
+      label = String(item.type || 'Activity').replace(/([a-z])([A-Z])/g, '$1 $2');
+      text = item.text || item.command || item.prompt || item.message || '';
+  }
+  const heading = makeNode('div', 'flex items-center justify-between gap-3 mb-2');
+  heading.append(makeNode('strong', 'text-sm', label));
+  if (entry.startedAtMs) heading.append(makeNode('time', 'text-xs opacity-70', new Date(entry.startedAtMs).toLocaleString()));
+  article.append(heading);
+  if (text) {
+    const content = makeNode('div', 'whitespace-pre-wrap break-words text-sm leading-7', text);
+    if (['userMessage', 'agentMessage', 'plan'].includes(item.type)) article.append(content);
+    else {
+      const details = makeNode('details', 'text-sm'); details.append(makeNode('summary', 'cursor-pointer', 'Show details'), content); article.append(details);
+    }
+  }
+  return article;
+}
+
+async function openAgentChat(agent, earlier = false) {
+  const token = sessionToken();
+  const pane = byId('agent-chat'); pane.hidden = false;
+  const changed = chatThreadId !== agent.id;
+  chatThreadId = agent.id;
+  if (changed) { chatNextCursor = null; byId('agent-chat-items').replaceChildren(); }
+  setText('agent-chat-title', agentTitle(agent));
+  byId('agent-chat-older').hidden = true;
+  if (!token) { setText('agent-chat-status', 'Open /dashboard from Elpis to read this conversation. This preview has no transcript access.'); return; }
+  const request = ++chatRequest;
+  setText('agent-chat-status', 'Loading recorded messages…');
+  byId('agent-chat-refresh').disabled = true;
+  try {
+    const query = new URLSearchParams({ limit: '20' });
+    if (earlier && chatNextCursor) query.set('cursor', chatNextCursor);
+    const response = await fetch(`/threads/${token}/${encodeURIComponent(agent.id)}?${query}`, { cache: 'no-store' });
+    if (!response.ok) throw new Error(await response.text());
+    const result = await response.json();
+    if (request !== chatRequest) return;
+    if (result.thread?.id !== agent.id || !Array.isArray(result.data)) throw new Error('The server returned a different conversation.');
+    const items = result.data.slice().reverse().map(transcriptItem);
+    if (earlier) byId('agent-chat-items').prepend(...items); else byId('agent-chat-items').replaceChildren(...items);
+    chatNextCursor = result.nextCursor || null;
+    byId('agent-chat-older').hidden = !chatNextCursor;
+    setText('agent-chat-status', result.data.length ? 'Recorded transcript · read only · use Refresh chat for new messages' : 'No recorded messages yet.');
+  } catch (error) {
+    if (request === chatRequest) setText('agent-chat-status', 'Could not load messages: ' + error.message);
+  } finally { if (request === chatRequest) byId('agent-chat-refresh').disabled = false; }
+}
+byId('agent-chat-refresh').addEventListener('click', () => {
+  const agent = agentsSnapshot.find(item => item.id === chatThreadId); if (agent) void openAgentChat(agent);
+});
+byId('agent-chat-older').addEventListener('click', () => {
+  const agent = agentsSnapshot.find(item => item.id === chatThreadId); if (agent) void openAgentChat(agent, true);
+});
+byId('agent-chat-close').addEventListener('click', () => { chatRequest++; chatThreadId = null; byId('agent-chat').hidden = true; });
 
 async function poll(force = false) {
   if (inFlight || (paused && !force)) return;
@@ -1058,9 +1101,10 @@ async function poll(force = false) {
       setTransport('Elpis sent something this page cannot read', 'unavailable');
       return;
     }
+    lastPollFailed = false;
+    byId('connection-warning').hidden = true;
     lastValidHeartbeat = nextHeartbeat;
     await refreshEvidence();
-    await refreshClaude();
     await refreshAgents();
     if (lastValidState === null || nextState.revision !== lastValidState.revision) renderState(nextState);
     updateFreshness();
@@ -1105,8 +1149,8 @@ tabs.forEach(tab => {
   tab.addEventListener('keydown', event => {
     const currentIndex = tabs.indexOf(tab);
     let nextIndex = null;
-    if (event.key === 'ArrowRight') nextIndex = (currentIndex + 1) % tabs.length;
-    if (event.key === 'ArrowLeft') nextIndex = (currentIndex - 1 + tabs.length) % tabs.length;
+    if (event.key === 'ArrowRight' || event.key === 'ArrowDown') nextIndex = (currentIndex + 1) % tabs.length;
+    if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') nextIndex = (currentIndex - 1 + tabs.length) % tabs.length;
     if (event.key === 'Home') nextIndex = 0;
     if (event.key === 'End') nextIndex = tabs.length - 1;
     if (nextIndex === null) return;
@@ -1140,6 +1184,25 @@ byId('provider-key-save').addEventListener('click', () => {
 byId('provider-key-clear').addEventListener('click', () => void submitProviderKey(null));
 byId('provider-key-reload').addEventListener('click', () => void loadProviderKeys());
 void loadProviderKeys();
+byId('pruner-change-model').addEventListener('click', () => {
+  activateTab(byId('tab-models'), false);
+  byId('model-provider-pruner').focus();
+  byId('model-fields-pruner').scrollIntoView({ block: 'center' });
+});
+function setTheme(theme) {
+  document.documentElement.dataset.theme = theme;
+  const light = theme === 'light';
+  setText('theme-toggle', light ? 'Dark' : 'Light');
+  byId('theme-toggle').setAttribute('aria-label', light ? 'Switch to dark theme' : 'Switch to light theme');
+}
+let preferredTheme;
+try { preferredTheme = localStorage.getItem('elpis-dashboard-theme'); } catch (_error) {}
+setTheme(['light', 'elpis-dashboard'].includes(preferredTheme) ? preferredTheme : matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'elpis-dashboard');
+byId('theme-toggle').addEventListener('click', () => {
+  const theme = document.documentElement.dataset.theme === 'light' ? 'elpis-dashboard' : 'light';
+  setTheme(theme);
+  try { localStorage.setItem('elpis-dashboard-theme', theme); } catch (_error) {}
+});
 byId('poll-toggle').addEventListener('click', () => setPaused(!paused));
 byId('refresh-now').addEventListener('click', () => { void poll(true); });
 setInterval(tickClocks, 1_000);

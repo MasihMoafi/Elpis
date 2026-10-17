@@ -25,6 +25,8 @@ const responseIds = [];
 let mode = 'compact', mainCalls = 0, rpc, rejectCase, fixtureFailure;
 const compact = 'The command produced 12000 copies of Z.';
 const malformed = '{"items":[]} trailing data';
+const authReason = "Provider authentication failed. Check the selected provider's sign-in or API key.";
+const privateMarker = 'fixture-private-provider-detail';
 const command = "awk 'BEGIN { for (i=0; i<12000; i++) printf \"Z\" }'";
 
 function filesUnder(directory, suffix) {
@@ -70,6 +72,13 @@ const server = http.createServer((req, res) => { void (async () => {
   responseIds.push(responseId);
   const optimizer = body.input?.some(item => item.content?.some(part =>
     typeof part.text === 'string' && part.text.includes('"source_tokens_estimate"')));
+  if (optimizer && mode === 'auth_error') {
+    res.writeHead(403, {'content-type':'application/json'});
+    res.end(JSON.stringify({error:{message:
+      "provider 'fixture' returned 401 Unauthorized: " + privateMarker +
+      ', url: https://private.invalid/token?secret=' + privateMarker}}));
+    return;
+  }
   let item;
   if (!optimizer && mainCalls++ === 0) {
     const selected = advertisedCommand(body);
@@ -109,9 +118,12 @@ async function runCase(nextMode) {
   const {thread} = await rpc.request('thread/start', {model:'gpt-5.5',cwd,
     approvalPolicy:'never',sandbox:'danger-full-access',config});
   await rpc.request('thread/name/set',{threadId:thread.id,name:'Smart Prune fixture '+mode});
-  let timer, listener;
+  let timer, listener, latestSnapshot;
   const done = new Promise((resolve,reject) => {
     listener = event => {
+      if(event.method === 'thread/smartPrune/updated' && event.params.threadId === thread.id) {
+        latestSnapshot = event.params.smartPrune;
+      }
       if(event.method === 'turn/completed' && event.params.threadId === thread.id) resolve(event.params);
     };
     rpc.on('notification', listener);
@@ -205,8 +217,20 @@ async function runCase(nextMode) {
   }
   const latestAttempt = mode === 'disabled' ? null
     : JSON.parse(fs.readFileSync(attempts.at(-1),'utf8'));
-  const expectedStatus = {compact:'admitted',unchanged:'unchanged',malformed:'malformed_response'}[mode];
+  const expectedStatus = {compact:'admitted',unchanged:'unchanged',malformed:'malformed_response',auth_error:'model_error'}[mode];
   if(expectedStatus) assert.equal(latestAttempt.status,expectedStatus,'wrong attempt audit status: '+mode);
+  if(mode === 'auth_error') {
+    assert.equal(latestSnapshot?.latestAttempt?.modelSlug,'gpt-5.5', 'failure omitted attempted model');
+    assert.equal(latestSnapshot?.latestAttempt?.failureReason,authReason,
+      'failure omitted safe actionable reason');
+    assert(!JSON.stringify(latestSnapshot).includes(privateMarker),'private error leaked into public snapshot');
+  } else if(mode === 'malformed') {
+    assert.equal(latestSnapshot?.latestAttempt?.failureReason,
+      'The pruning model returned an invalid decision. Try again or choose another model.',
+      'malformed response omitted safe actionable reason');
+  } else if(latestSnapshot?.latestAttempt) {
+    assert.equal(latestSnapshot.latestAttempt.failureReason,undefined,'successful attempt retained an error');
+  }
   if(admittedId) assert.equal(latestAttempt.admission_id,admittedId,'attempt/admission linkage mismatch');
   return {mode,requests:calls.length,optimizerCalls:mode==='disabled'?0:1,
     turnStatus:completed.turn.status,turnError:completed.turn.error,
@@ -235,7 +259,7 @@ async function runCase(nextMode) {
   await rpc.request('initialize',{clientInfo:{name:'prune_fixture',version:'1'},capabilities:{experimentalApi:true}});
   rpc.send({method:'initialized'});
   const results = [];
-  for(const selected of ['compact','unchanged','malformed','disabled']) {
+  for(const selected of ['compact','unchanged','malformed','disabled','auth_error']) {
     const result = await runCase(selected);
     results.push(result);
     console.log(JSON.stringify(result));

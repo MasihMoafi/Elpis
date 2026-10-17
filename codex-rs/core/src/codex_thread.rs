@@ -259,6 +259,37 @@ impl CodexThread {
         self.io.submit(op).await
     }
 
+    /// Start an explicitly requested graph through the serialized session dispatcher.
+    pub async fn run_work_graph(
+        &self,
+        arguments: String,
+    ) -> Result<
+        codex_protocol::protocol::WorkGraphStart,
+        codex_protocol::protocol::WorkGraphStartError,
+    > {
+        use codex_protocol::protocol::WorkGraphStartError;
+        if self.session_source.is_non_root_agent() {
+            return Err(WorkGraphStartError::Rejected(
+                "work graphs require an owning root thread".to_string(),
+            ));
+        }
+        let (reply, receive) = tokio::sync::oneshot::channel();
+        self.submit(Op::RunWorkGraph { arguments, reply })
+            .await
+            .map_err(|err| WorkGraphStartError::Rejected(err.to_string()))?;
+        receive.await.map_err(|_| {
+            WorkGraphStartError::Rejected("session closed before starting work graph".to_string())
+        })?
+    }
+
+    /// Atomically retract queued user inputs; already delivered IDs are never returned.
+    pub async fn cancel_pending_user_inputs(&self, client_ids: &[String]) -> Vec<String> {
+        self.session
+            .input_queue
+            .cancel_pending_user_inputs(&self.session.active_turn, client_ids)
+            .await
+    }
+
     /// Returns the session telemetry handle for thread-scoped production instrumentation.
     pub fn session_telemetry(&self) -> SessionTelemetry {
         self.session.services.session_telemetry.clone()
@@ -945,6 +976,16 @@ impl CodexThread {
 
     pub fn state_db(&self) -> Option<StateDbHandle> {
         self.session.state_db()
+    }
+
+    /// Reviews a bridged runtime action without executing it or starting a user turn.
+    pub async fn review_bridged_command(
+        &self,
+        command: String,
+        cwd: AbsolutePathBuf,
+        reason: String,
+    ) -> anyhow::Result<(bool, String)> {
+        crate::guardian::review_bridged_command(Arc::clone(&self.session), command, cwd, reason).await
     }
 
     pub async fn config_snapshot(&self) -> ThreadConfigSnapshot {

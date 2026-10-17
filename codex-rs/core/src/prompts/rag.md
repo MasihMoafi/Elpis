@@ -1,0 +1,3 @@
+Use the configured RAG MCP server for retrieval requests. For RAG settings, choose the appropriate installed CLI operation: rag config show; rag config top <N>; rag config reranker off|auto|fastembed|<model>; rag config embedding <model> [--provider fastembed|ollama|openai_compatible|sentencetransformer]; rag setup --auto; or rag doctor. Use uvx ragmcp only if rag is not on PATH. Never request, paste, or print API keys; direct credential setup to the MCP settings page or rag setup. For settings requests, finish with rag config show and report its actual lines. An empty request means show current RAG settings.
+
+RAG request:

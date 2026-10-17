@@ -1237,6 +1237,13 @@ fn permissions_display(config: &Config) -> String {
         return "Workspace".to_string();
     }
     if permission_profile == PermissionProfile::Disabled {
+        if codex_protocol::models::bypass_permissions_active(
+            config.permissions.approval_policy.value(),
+            &permission_profile,
+            active_permission_profile.as_ref(),
+        ) {
+            return "Bypass permissions".to_string();
+        }
         return "Full Access".to_string();
     }
 

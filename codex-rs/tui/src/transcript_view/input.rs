@@ -26,6 +26,18 @@ pub(crate) enum ViewAction {
     OpenLink(String),
 }
 
+/// Wheel momentum halves every this many milliseconds between events, like Claude Code's
+/// mouse-wheel curve: back-to-back notches add a step each, slow notches stay near 1x.
+const WHEEL_MOMENTUM_HALF_LIFE_MS: f64 = 300.0;
+const WHEEL_MAX_MULTIPLIER: f64 = 10.0;
+
+#[derive(Clone, Copy)]
+pub(super) struct WheelStreak {
+    at: std::time::Instant,
+    direction: f64,
+    multiplier: f64,
+}
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum MouseMode {
     Interactive,
@@ -218,12 +230,35 @@ impl TranscriptView {
         self.handle_mouse_with_mode(event, cells, MouseMode::Selection)
     }
 
+    /// Fast same-direction wheel events build momentum that decays with the gap between them.
+    pub(super) fn wheel_multiplier(&mut self, direction: f64, now: std::time::Instant) -> f64 {
+        let multiplier = match self.wheel_streak {
+            Some(streak) if streak.direction == direction => {
+                let gap = now.saturating_duration_since(streak.at).as_secs_f64() * 1000.0;
+                let decay = 0.5_f64.powf(gap / WHEEL_MOMENTUM_HALF_LIFE_MS);
+                (1.0 + (streak.multiplier - 1.0) * decay + decay)
+                    .min(streak.multiplier + 1.0)
+                    .min(WHEEL_MAX_MULTIPLIER)
+            }
+            _ => 1.0,
+        };
+        self.wheel_streak = Some(WheelStreak {
+            at: now,
+            direction,
+            multiplier,
+        });
+        multiplier
+    }
+
     fn handle_mouse_with_mode(
         &mut self,
         event: MouseEvent,
         cells: &[Arc<dyn HistoryCell>],
         mode: MouseMode,
     ) -> Option<ViewAction> {
+        if mode == MouseMode::Interactive && self.handle_scrollbar_mouse(event, cells) {
+            return Some(ViewAction::Changed);
+        }
         if mode == MouseMode::Interactive
             && let Some(action) = self.handle_follow_control_mouse(event)
         {
@@ -273,7 +308,12 @@ impl TranscriptView {
                 if self.pending_mouse_scroll.signum() != direction {
                     self.pending_mouse_scroll = 0.0;
                 }
-                self.pending_mouse_scroll += direction * self.mouse_scroll_speed;
+                let multiplier = if self.mouse_wheel_acceleration {
+                    self.wheel_multiplier(direction, std::time::Instant::now())
+                } else {
+                    1.0
+                };
+                self.pending_mouse_scroll += direction * self.mouse_scroll_speed * multiplier;
                 // Decimal speeds can land just short of a whole row after repeated addition.
                 let rounded = self.pending_mouse_scroll.round();
                 if rounded != 0.0 && (self.pending_mouse_scroll - rounded).abs() < 1e-9 {

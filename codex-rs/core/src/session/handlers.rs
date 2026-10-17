@@ -252,7 +252,8 @@ pub async fn compact(sess: &Arc<Session>, sub_id: String, instructions: Option<S
         .new_turn_with_default_settings(sub_id, Default::default())
         .await;
 
-    sess.spawn_task(turn_context, Vec::new(), CompactTask::new(instructions)).await;
+    sess.spawn_task(turn_context, Vec::new(), CompactTask::new(instructions))
+        .await;
 }
 
 pub(super) async fn persist_thread_memory_mode_update(
@@ -490,6 +491,11 @@ pub(super) async fn submission_loop(
         let dispatch_span = submission_dispatch_span(&sub);
         let should_exit = async {
             match sub.op {
+                Op::RunWorkGraph { arguments, reply } => {
+                    let result = sess.start_manual_work_graph(sub.id, arguments).await;
+                    let _ = reply.send(result);
+                    false
+                }
                 Op::Interrupt => {
                     interrupt(&sess).await;
                     false

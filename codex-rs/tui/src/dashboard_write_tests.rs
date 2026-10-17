@@ -53,6 +53,7 @@ fn harness() -> Harness {
         catalog: crate::test_support::TEST_MODEL_PRESETS.clone(),
         pruner_role_provider: "openai".to_string(),
         runtime: Some(runtime.handle().clone()),
+        app_server: None,
         refresh_pending: Default::default(),
     };
     Harness {
@@ -177,6 +178,7 @@ fn the_models_tab_lists_providers_and_their_catalogue() {
         .collect();
     assert!(ids.contains(&"openai".to_string()), "{ids:?}");
     assert!(ids.contains(&"openrouter".to_string()), "{ids:?}");
+    assert!(ids.contains(&"anthropic".to_string()), "{ids:?}");
     assert!(!ids.contains(&"amazon-bedrock".to_string()), "{ids:?}");
 
     let (status, body) = send(&harness.link, get(&format!("/models/{token}/openai")));
@@ -690,6 +692,7 @@ fn the_prompt_page_keeps_the_chosen_model() {
     let harness = harness();
     let path = format!("/pruner-settings/{}", token());
     let chosen = PrunerSettings {
+        backend: Default::default(),
         model: Some("chosen-model".to_string()),
         provider: Some("openrouter".to_string()),
         system_prompt: None,

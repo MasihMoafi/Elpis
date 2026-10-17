@@ -359,6 +359,7 @@ impl ChatWidget {
             latest_attempt: prune.latest_attempt.as_ref().map(|attempt| {
                 DashboardSmartPruneAttempt {
                     status: attempt.status.clone(),
+                    failure_reason: attempt.failure_reason.clone(),
                     model: attempt.model_slug.clone(),
                     reasoning_effort: attempt.reasoning_effort.clone(),
                     candidate_outputs: attempt.candidate_outputs,

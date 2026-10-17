@@ -99,6 +99,7 @@ fn smart_prune(
         }),
         latest_attempt: Some(DashboardSmartPruneAttempt {
             status: "admitted".to_string(),
+            failure_reason: None,
             model: "gpt-5.6-luna".to_string(),
             reasoning_effort: "low".to_string(),
             candidate_outputs: 3,
@@ -687,7 +688,7 @@ fn dashboard_asset_exposes_live_activity_and_accessible_polling_controls() {
         "How full the context window is",
         "Gray cells are free space",
         "Tokens used",
-        "Approx. saved",
+        "Approx. removed",
         "What fills the window",
     ] {
         assert!(
@@ -793,15 +794,27 @@ fn dashboard_asset_exposes_live_activity_and_accessible_polling_controls() {
     }
 }
 
-/// Positive: Models is the first tab and offers a list for each role, never a typed model id.
-/// Negative: the Smart Prune details start collapsed and no model text box remains.
+/// Positive: Agents opens first; Models offers a list for each role, never a typed model id.
+/// Negative: only supporting details start collapsed; the latest attempt stays visible.
 #[test]
-fn dashboard_asset_puts_model_lists_first_and_tucks_the_details_away() {
-    let first_tab = INDEX_HTML.find("role=\"tab\"").expect("the page has tabs");
+fn dashboard_asset_opens_agents_keeps_model_lists_and_tucks_the_details_away() {
+    let agent_tab = INDEX_HTML
+        .lines()
+        .find(|line| line.contains("id=\"tab-agents\""))
+        .expect("Agents tab");
     assert!(
-        INDEX_HTML[first_tab..]
-            .starts_with("role=\"tab\" aria-selected=\"true\" aria-controls=\"panel-models\""),
-        "Models must be the first, selected tab"
+        agent_tab.contains("data-tab=\"agents\"")
+            && agent_tab.contains("role=\"tab\"")
+            && agent_tab.contains("aria-selected=\"true\""),
+        "Conversations and agents must open first"
+    );
+    let models_tab = INDEX_HTML
+        .lines()
+        .find(|line| line.contains("id=\"tab-models\""))
+        .expect("Models tab");
+    assert!(
+        models_tab.contains("data-tab=\"models\"") && models_tab.contains("role=\"tab\""),
+        "Models must remain directly reachable"
     );
     for role in ["chat", "background", "pruner"] {
         for id in ["model-provider", "model-list"] {
@@ -824,6 +837,23 @@ fn dashboard_asset_puts_model_lists_first_and_tucks_the_details_away() {
         )
     );
     assert!(!INDEX_HTML.contains("id=\"prune-details\" open"));
+    let attempt = INDEX_HTML
+        .find("id=\"attempt-model\"")
+        .expect("attempt model");
+    let details = INDEX_HTML
+        .find("id=\"prune-details\"")
+        .expect("supporting details");
+    assert!(
+        attempt < details,
+        "the latest attempt must remain outside collapsed supporting details"
+    );
+    assert!(!INDEX_HTML.contains("Latest Claude Code results"));
+    assert!(
+        !DASHBOARD_JS.contains("/claude.json"),
+        "current-thread dashboard must not fetch global historical records"
+    );
+    assert!(DASHBOARD_JS.contains(".failure_reason"));
+
     for required in [
         "function renderModels(models)",
         "role, provider: model ? provider : null, model: model || null",
@@ -844,7 +874,7 @@ fn dashboard_asset_uses_local_daisyui_and_explains_the_latest_optimizer_attempt(
         "href=\"/dashboard.css\"",
         "src=\"/dashboard.js\"",
         "class=\"navbar",
-        "class=\"tabs tabs-box",
+        "class=\"menu dashboard-tabs\"",
         "class=\"card",
         "class=\"stats",
         "class=\"stat",
@@ -852,13 +882,17 @@ fn dashboard_asset_uses_local_daisyui_and_explains_the_latest_optimizer_attempt(
         "id=\"smart-failed\"",
         "id=\"attempt-status\"",
         "id=\"attempt-model\"",
+        "id=\"attempt-failure-reason\"",
+        "id=\"smart-configured-model\"",
+        "id=\"pruner-change-model\"",
+        "id=\"theme-toggle\"",
         "id=\"attempt-effort\"",
         "id=\"attempt-candidates\"",
         "id=\"attempt-admitted\"",
         "id=\"attempt-saved\"",
         "id=\"attempt-latency\"",
         "id=\"attempt-usage\"",
-        "Last optimizer attempt",
+        "Model used for this attempt",
         "No optimizer attempt observed",
     ] {
         assert!(
@@ -901,9 +935,7 @@ fn dashboard_asset_keeps_untrusted_data_out_of_html_and_legacy_evidence_fields()
         "style.background = category.color",
         "setInterval(refresh",
         "setInterval(poll",
-        "http://",
         "https://",
-        "color-scheme: light",
         "--bg: #f7f4ee",
         "'unsafe-inline'",
     ] {
@@ -912,6 +944,13 @@ fn dashboard_asset_keeps_untrusted_data_out_of_html_and_legacy_evidence_fields()
             "unsafe dashboard source: {forbidden}"
         );
     }
+    assert!(
+        !DASHBOARD_JS
+            .replace("http://www.w3.org/2000/svg", "")
+            .contains("http://"),
+        "dashboard scripts must not contact external HTTP endpoints"
+    );
+    assert!(!INDEX_HTML.contains("http://"));
     assert!(!CSP.contains("'unsafe-inline'"));
 }
 
@@ -1194,7 +1233,8 @@ fn the_running_server_listens_on_loopback_only_and_serves_the_page() {
 
     let page = get(&format!("127.0.0.1:{port}"), "/");
     assert!(page.starts_with("HTTP/1.1 200"), "{page}");
-    assert!(page.contains("Elpis · Session dashboard"));
+    assert!(page.contains("<title>Elpis</title>"));
+    assert!(page.contains("Conversations &amp; agents"));
     let foreign = get("evil.example", "/");
     assert!(foreign.starts_with("HTTP/1.1 403"), "{foreign}");
 }
@@ -1363,16 +1403,44 @@ fn agents_route_serves_the_published_tree() {
 #[test]
 fn dashboard_asset_draws_the_agent_map() {
     // The page's contracts: the route it reads, the field Elpis sends, the words it shows.
-    assert!(INDEX_HTML.contains(">Agents</button>"), "the Agents tab");
+    assert!(
+        INDEX_HTML.contains("Conversations &amp; agents"),
+        "the conversations and agents tab"
+    );
     for required in [
         "fetch('/agents.json'",
         "agent.status_label",
-        "'delegates'",
-        "'asks'",
+        "child.parent_id === agent.id",
+        "positions.get(n.parent)",
+        "'data-parent-id': p.agent.id",
+        "'data-child-id': n.agent.id",
     ] {
         assert!(
             DASHBOARD_JS.contains(required),
             "missing agent map JS: {required}"
         );
     }
+}
+
+#[test]
+fn failed_prune_attempt_includes_safe_reason_and_model() {
+    let mut prune = smart_prune(true, Some(true));
+    let attempt = prune.latest_attempt.as_mut().expect("attempt");
+    attempt.status = "model_error".to_string();
+    attempt.model = "configured-pruner".to_string();
+    attempt.failure_reason = Some(
+        "Provider authentication failed. Check the selected provider's sign-in or API key."
+            .to_string(),
+    );
+    let value = serde_json::to_value(attempt).expect("serialize attempt");
+    assert_eq!(value["model"], "configured-pruner");
+    assert_eq!(
+        value["failure_reason"],
+        "Provider authentication failed. Check the selected provider's sign-in or API key."
+    );
+
+    // Successful attempts do not retain a stale failure explanation.
+    let admitted = serde_json::to_value(smart_prune(true, Some(true)).latest_attempt)
+        .expect("serialize admitted");
+    assert!(admitted.get("failure_reason").is_none());
 }

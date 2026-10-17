@@ -89,6 +89,17 @@ impl App {
         });
     }
 
+    /// A switch landed on the new provider: carry the unsent input over, then offer the new
+    /// model's effort levels, as Codex does after a model is picked.
+    async fn finish_provider_switch(
+        &mut self,
+        source: Option<ThreadId>,
+        input: Option<ThreadInputState>,
+    ) {
+        self.carry_input_after_provider_switch(source, input).await;
+        self.chat_widget.offer_effort_levels();
+    }
+
     /// Move only unsent input to the replacement chat. The source keeps its questions and
     /// running work, and the destination keeps its selected model and current turn state.
     async fn carry_input_after_provider_switch(
@@ -190,7 +201,7 @@ impl App {
                 /*initial_user_message*/ None, /*new_thread_name*/ None,
             )
             .await;
-            self.carry_input_after_provider_switch(/*source*/ None, input)
+            self.finish_provider_switch(/*source*/ None, input)
                 .await;
             return;
         };
@@ -230,7 +241,7 @@ impl App {
                     .await
                 {
                     Ok(()) => {
-                        self.carry_input_after_provider_switch(Some(thread_id), input)
+                        self.finish_provider_switch(Some(thread_id), input)
                             .await;
                         self.chat_widget.add_info_message(
                             format!("Now on {name} · {model}."),
@@ -258,7 +269,7 @@ impl App {
                     /*initial_user_message*/ None, /*new_thread_name*/ None,
                 )
                 .await;
-                self.carry_input_after_provider_switch(Some(thread_id), input)
+                self.finish_provider_switch(Some(thread_id), input)
                     .await;
                 self.chat_widget
                     .add_info_message(format!("Now on {name} · {model}."), /*hint*/ None);

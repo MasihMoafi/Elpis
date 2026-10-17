@@ -568,16 +568,12 @@ impl App {
     ) {
         match completion {
             ManualMemoryMutationCompletion::Succeeded => {
-                let message = match mutation {
-                    ManualMemoryMutation::Create => "Manual Memory created.",
-                    ManualMemoryMutation::Admission { admitted: true } => {
-                        "Manual Memory will be included on the next turn."
-                    }
-                    ManualMemoryMutation::Admission { admitted: false } => {
-                        "Manual Memory will be excluded on the next turn."
-                    }
-                };
-                self.chat_widget.add_info_message(message.to_string(), None);
+                // The Ledger already reflects successful admission changes. Keep clicks
+                // out of the conversation while preserving creation and failure notices.
+                if matches!(mutation, ManualMemoryMutation::Create) {
+                    self.chat_widget
+                        .add_info_message("Manual Memory created.".to_string(), None);
+                }
             }
             ManualMemoryMutationCompletion::Failed(reason) => {
                 let message = match reason {
@@ -715,10 +711,59 @@ impl App {
             | ElpisAppEvent::OpenDashboard
             | ElpisAppEvent::WorkGraphLoaded(_)
             | ElpisAppEvent::RefreshDashboard
+            | ElpisAppEvent::RefreshDashboardAgents
             | ElpisAppEvent::OpenUsage(_) => {
                 unreachable!("handled in app/elpis_events.rs")
             }
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod quiet_memory_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn memory_admission_success_is_quiet_but_creation_and_errors_are_visible() {
+        let (mut app, mut events, _) = super::super::tests::make_test_app_with_channels().await;
+        while events.try_recv().is_ok() {}
+        for admitted in [true, false, true, false, true, false] {
+            app.present_manual_memory_mutation_completion(
+                ManualMemoryMutation::Admission { admitted },
+                ManualMemoryMutationCompletion::Succeeded,
+            );
+        }
+        assert!(
+            !std::iter::from_fn(|| events.try_recv().ok())
+                .any(|event| matches!(event, AppEvent::InsertHistoryCell(_)))
+        );
+        for (mutation, completion, expected) in [
+            (
+                ManualMemoryMutation::Create,
+                ManualMemoryMutationCompletion::Succeeded,
+                "created",
+            ),
+            (
+                ManualMemoryMutation::Admission { admitted: true },
+                ManualMemoryMutationCompletion::Failed(
+                    ManualMemoryMutationFailure::PersistenceFailed,
+                ),
+                "could not be saved",
+            ),
+        ] {
+            app.present_manual_memory_mutation_completion(mutation, completion);
+            let cells = std::iter::from_fn(|| events.try_recv().ok())
+                .filter_map(|event| match event {
+                    AppEvent::InsertHistoryCell(cell) => Some(cell),
+                    _ => None,
+                })
+                .collect::<Vec<_>>();
+            assert!(cells.iter().any(|cell| {
+                cell.display_lines(120)
+                    .iter()
+                    .any(|line| line.to_string().contains(expected))
+            }));
+        }
     }
 }

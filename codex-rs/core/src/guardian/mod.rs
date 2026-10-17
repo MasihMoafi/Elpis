@@ -3,6 +3,8 @@
 //! review requirements. Each approval retains its issuing context and cancellation.
 
 mod approval_request;
+mod bridged_review;
+pub(crate) use bridged_review::review as review_bridged_command;
 mod coverage;
 mod decision;
 mod feedback;

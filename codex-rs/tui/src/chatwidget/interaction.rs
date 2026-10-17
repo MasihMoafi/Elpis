@@ -190,6 +190,21 @@ impl ChatWidget {
             _ => {}
         }
 
+        if self.recall_queued_follow_ups_on_up(key_event) {
+            return KeyEventAction::None;
+        }
+
+        if self.input_queue.pending_steer_recall_ids.is_some()
+            && self.bottom_pane.no_modal_or_popup_active()
+            && self.bottom_pane.is_composer_submission_key(key_event)
+        {
+            self.bottom_pane.show_footer_flash(
+                Line::from("Recalling waiting messages… Submit after they return to the editor."),
+                Duration::from_secs(3),
+            );
+            return KeyEventAction::None;
+        }
+
         if key_event.kind == KeyEventKind::Press
             && self.chat_keymap.edit_queued_message.is_pressed(key_event)
             && (self.has_queued_follow_up_messages() || self.pending_image_submission.is_some())
@@ -207,25 +222,30 @@ impl ChatWidget {
         }
 
         const REVIEW_STEER_UNAVAILABLE_MESSAGE: &str = "Steer messages aren't supported during /review. Press Ctrl+C now to cancel the review.";
+        let empty_submit = self.bottom_pane.is_empty_composer_submit_key(key_event);
+        let interrupt_pending_steers = empty_submit
+            || (self.chat_keymap.interrupt_turn.is_pressed(key_event)
+                && !self.should_handle_vim_insert_escape(key_event));
 
-        if self.chat_keymap.interrupt_turn.is_pressed(key_event)
+        if interrupt_pending_steers
             && self.review.is_review_mode
             && (!self.input_queue.pending_steers.is_empty()
                 || !self.input_queue.rejected_steers_queue.is_empty())
             && self.bottom_pane.is_task_running()
             && self.bottom_pane.no_modal_or_popup_active()
-            && !self.should_handle_vim_insert_escape(key_event)
         {
             self.add_warning_message(REVIEW_STEER_UNAVAILABLE_MESSAGE.to_string());
             return KeyEventAction::None;
         }
 
-        if self.chat_keymap.interrupt_turn.is_pressed(key_event)
+        if interrupt_pending_steers
             && !self.input_queue.pending_steers.is_empty()
             && self.bottom_pane.is_task_running()
             && self.bottom_pane.no_modal_or_popup_active()
-            && !self.should_handle_vim_insert_escape(key_event)
         {
+            if self.input_queue.submit_pending_steers_after_interrupt {
+                return KeyEventAction::None;
+            }
             self.input_queue.submit_pending_steers_after_interrupt = true;
             if self.submit_op(AppCommand::interrupt()) {
                 self.pause_active_goal_for_interrupt();

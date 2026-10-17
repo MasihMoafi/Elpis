@@ -505,28 +505,44 @@ impl ChatWidget {
     }
 }
 
-/// Leave one eighth of a cell unpainted at category boundaries. Replacing the
-/// last block instead of adding spaces preserves allocation and tiny segments.
-pub(super) fn category_bar_spans(
-    segments: impl IntoIterator<Item = (usize, Color)>,
-) -> Vec<Span<'static>> {
-    let mut segments = segments
-        .into_iter()
-        .filter(|(cells, _)| *cells > 0)
-        .peekable();
-    let mut spans = Vec::new();
-    while let Some((cells, color)) = segments.next() {
-        let blocks = if segments.peek().is_some() {
-            format!("{}▉", "█".repeat(cells - 1))
-        } else {
-            "█".repeat(cells)
-        };
-        spans.push(Span::styled(
-            blocks,
-            Style::default().fg(color).bg(Color::Reset),
-        ));
-    }
-    spans
+/// Left-aligned blocks of 0–7 eighths of a cell.
+const LEFT_EIGHTHS: [&str; 8] = ["", "▏", "▎", "▍", "▌", "▋", "▊", "▉"];
+
+/// The used part of a context bar, `used_cells` wide, split between `(tokens, color)` segments
+/// in proportion to their tokens at one-eighth-cell resolution. Whole cells could not show a
+/// 27k category wider than a 1k one when a low-usage bar has about one cell per category. A
+/// cell holding a boundary paints the segment that ends there in front and the one that
+/// continues behind it, so the boundary sits where the next segment starts. A segment under
+/// an eighth of a cell is not drawn; the legend still lists it.
+pub(super) fn category_bar_spans(segments: &[(u64, Color)], used_cells: usize) -> Vec<Span<'static>> {
+    let tokens = segments.iter().map(|(tokens, _)| *tokens).collect::<Vec<_>>();
+    let eighths = weighted_cell_counts(&tokens, used_cells * 8);
+    let colors = segments
+        .iter()
+        .zip(eighths)
+        .flat_map(|((_, color), count)| std::iter::repeat_n(*color, count))
+        .collect::<Vec<_>>();
+    colors
+        .chunks(8)
+        .map(|cell| {
+            let back = cell[cell.len() - 1];
+            let back_eighths = cell.iter().rev().take_while(|color| **color == back).count();
+            if back_eighths == cell.len() {
+                return Span::styled("█", Style::default().fg(back));
+            }
+            // The front part can hold slivers of several segments; the largest one shows.
+            let front = &cell[..cell.len() - back_eighths];
+            let front_color = front
+                .iter()
+                .copied()
+                .max_by_key(|color| front.iter().filter(|other| *other == color).count())
+                .unwrap_or(back);
+            Span::styled(
+                LEFT_EIGHTHS[front.len()],
+                Style::default().fg(front_color).bg(back),
+            )
+        })
+        .collect()
 }
 
 fn build_category_bar_chart(
@@ -552,7 +568,6 @@ fn build_category_bar_chart(
     let used_cells = ((u128::from(used.min(window)) * bar_width as u128
         + u128::from(window.max(1)) / 2)
         / u128::from(window.max(1))) as usize;
-    let counts = category_grid_cell_counts(&categories, used_cells);
     let mut bar = vec![Span::from(if narrow {
         "   Context ["
     } else {
@@ -564,9 +579,13 @@ fn build_category_bar_chart(
             crate::style::context_style(),
         ));
     } else {
-        bar.extend(category_bar_spans(categories.iter().zip(counts).map(
-            |(category, cells)| (cells, context_display_color(category.color)),
-        )));
+        bar.extend(category_bar_spans(
+            &categories
+                .iter()
+                .map(|category| (category.tokens, context_display_color(category.color)))
+                .collect::<Vec<_>>(),
+            used_cells,
+        ));
     }
     if used_cells < bar_width {
         bar.push(Span::styled(
@@ -646,17 +665,7 @@ fn build_category_bar_chart(
     lines
 }
 
-fn category_grid_cell_counts(categories: &[CategoryUsage], used_cells: usize) -> Vec<usize> {
-    weighted_cell_counts(
-        &categories
-            .iter()
-            .map(|category| category.tokens)
-            .collect::<Vec<_>>(),
-        used_cells,
-    )
-}
-
-pub(super) fn weighted_cell_counts(weights: &[u64], used_cells: usize) -> Vec<usize> {
+fn weighted_cell_counts(weights: &[u64], used_cells: usize) -> Vec<usize> {
     let total = weights
         .iter()
         .map(|tokens| u128::from(*tokens))
@@ -679,30 +688,9 @@ pub(super) fn weighted_cell_counts(weights: &[u64], used_cells: usize) -> Vec<us
     remainders.sort_by(|(left_index, left), (right_index, right)| {
         right.cmp(left).then_with(|| left_index.cmp(right_index))
     });
+    // Strictly proportional: a minimum share for tiny categories made unequal ones look equal.
     for (index, _) in remainders.into_iter().take(remaining) {
         counts[index] += 1;
-    }
-
-    let positive_count = weights.iter().filter(|tokens| **tokens > 0).count();
-    if used_cells >= positive_count {
-        for recipient in weights
-            .iter()
-            .enumerate()
-            .filter_map(|(index, tokens)| (*tokens > 0 && counts[index] == 0).then_some(index))
-            .collect::<Vec<_>>()
-        {
-            let Some(donor) = counts
-                .iter()
-                .enumerate()
-                .filter(|(_, cells)| **cells > 1)
-                .max_by_key(|(index, cells)| (**cells, weights[*index]))
-                .map(|(index, _)| index)
-            else {
-                break;
-            };
-            counts[donor] -= 1;
-            counts[recipient] = 1;
-        }
     }
     debug_assert_eq!(counts.iter().sum::<usize>(), used_cells);
     counts
@@ -822,30 +810,56 @@ mod tests {
         assert!(text.contains("210k/200k · 105.0% used"), "{text}");
         assert!(text.contains("100k · 50.0% of context window"), "{text}");
         assert!(text.contains("110k · 55.0% of context window"), "{text}");
-        assert_eq!(text.matches(['█', '▉']).count(), 80);
-        assert_eq!(text.matches('▉').count(), 1);
+        // The bar is capped at the window's 80 cells. Without a known terminal background
+        // both categories share one display colour, so cells are counted, not boundaries.
+        let cells = text.matches(['█', '▏', '▎', '▍', '▌', '▋', '▊', '▉']).count();
+        assert_eq!(cells, 80, "{text}");
         assert_eq!(text.matches('░').count(), 0);
     }
 
-    #[test]
-    fn category_bar_gaps_preserve_tiny_segments_and_the_final_usage_edge() {
-        let spans = category_bar_spans([
-            (1, Color::Blue),
-            (0, Color::Green),
-            (3, Color::Red),
-            (1, Color::Yellow),
-        ]);
-        assert_eq!(spans.len(), 3);
-        assert_eq!(spans[0].content, "▉");
-        assert_eq!(spans[1].content, "██▉");
-        assert_eq!(spans[2].content, "█");
-        assert_eq!(Line::from(spans.clone()).width(), 5);
-        for (span, color) in spans.iter().zip([Color::Blue, Color::Red, Color::Yellow]) {
-            assert_eq!(span.style.fg, Some(color));
-            assert_eq!(span.style.bg, Some(Color::Reset));
+    /// Eighths of each color the bar paints: a full cell gives its color 8, and a shared cell
+    /// gives the front color its block and the back color the rest.
+    fn painted_eighths(spans: &[Span<'static>]) -> std::collections::HashMap<Color, usize> {
+        let mut painted = std::collections::HashMap::new();
+        for span in spans {
+            let front = LEFT_EIGHTHS
+                .iter()
+                .position(|block| *block == span.content)
+                .unwrap_or(8);
+            *painted.entry(span.style.fg.expect("front color")).or_default() += front;
+            if let Some(back) = span.style.bg {
+                *painted.entry(back).or_default() += 8 - front;
+            }
         }
-        assert!(category_bar_spans([(0, Color::Blue)]).is_empty());
-        assert_eq!(category_bar_spans([(1, Color::Blue)])[0].content, "█");
+        painted
+    }
+
+    #[test]
+    fn category_widths_follow_their_tokens_when_cells_are_scarce() {
+        // Masih's Ledger on 16 October 2026: 83.6k of a 475k window in a nine-cell bar drew all
+        // eight categories one cell wide.
+        let segments = [
+            (643, Color::Blue),
+            (1_700, Color::Green),
+            (26_200, Color::Magenta),
+            (10_300, Color::Yellow),
+            (27_200, Color::Red),
+            (4_400, Color::Cyan),
+            (5_600, Color::LightRed),
+            (7_600, Color::Gray),
+        ];
+        let spans = category_bar_spans(&segments, 9);
+        let painted = painted_eighths(&spans);
+
+        assert_eq!(Line::from(spans).width(), 9);
+        assert_eq!(painted.values().sum::<usize>(), 72);
+        // 27.2k and 26.2k of 83.6k of 72 eighths: about 23 each, against 1 for 643 tokens.
+        assert!(painted[&Color::Red] >= 22, "{painted:?}");
+        assert!(painted[&Color::Magenta] >= 21, "{painted:?}");
+        assert!(painted[&Color::Yellow] >= 8, "{painted:?}");
+        assert!(painted[&Color::Red] > 10 * painted.get(&Color::Blue).copied().unwrap_or(0));
+        assert!(category_bar_spans(&[(0, Color::Blue)], 3).is_empty());
+        assert_eq!(category_bar_spans(&[(1, Color::Blue)], 1)[0].content, "█");
     }
 
     #[test]
@@ -860,11 +874,42 @@ mod tests {
     }
 
     #[test]
-    fn occupied_bar_keeps_nonzero_categories_visible_when_resolution_allows() {
-        let counts = weighted_cell_counts(&[1, 1, 1, 97], 10);
+    fn tiny_categories_do_not_take_width_from_large_ones() {
+        assert_eq!(weighted_cell_counts(&[1, 1, 1, 97], 10), vec![0, 0, 0, 10]);
 
-        assert_eq!(counts.iter().sum::<usize>(), 10);
-        assert!(counts.into_iter().all(|count| count >= 1));
+        // A four-cell Ledger bar on 16 October 2026: five categories under 300 tokens drew
+        // 3.8k of system instructions wider than 5.4k of developer messages.
+        let segments = [
+            (209, Color::Blue),
+            (16, Color::Green),
+            (288, Color::Magenta),
+            (54, Color::Yellow),
+            (76, Color::LightYellow),
+            (3_800, Color::Red),
+            (5_400, Color::LightRed),
+            (6_500, Color::Gray),
+        ];
+        let painted = painted_eighths(&category_bar_spans(&segments, 4));
+        assert_eq!(painted.values().sum::<usize>(), 32);
+        assert!(painted[&Color::Red] < painted[&Color::LightRed], "{painted:?}");
+        assert!(painted[&Color::LightRed] < painted[&Color::Gray], "{painted:?}");
+        assert!(painted[&Color::Red] <= 8, "{painted:?}");
+
+        // Three cells: 435 tokens of reasoning opened the first cell and painted all of 4.0k
+        // of system instructions in its colour.
+        let segments = [
+            (233, Color::Blue),
+            (30, Color::Green),
+            (435, Color::Magenta),
+            (91, Color::Yellow),
+            (916, Color::LightYellow),
+            (4_000, Color::Red),
+            (5_600, Color::LightRed),
+            (6_800, Color::Gray),
+        ];
+        let painted = painted_eighths(&category_bar_spans(&segments, 3));
+        assert!(painted.get(&Color::Red).copied().unwrap_or(0) >= 5, "{painted:?}");
+        assert!(painted.get(&Color::Magenta).copied().unwrap_or(0) <= 1, "{painted:?}");
     }
 
     #[tokio::test]

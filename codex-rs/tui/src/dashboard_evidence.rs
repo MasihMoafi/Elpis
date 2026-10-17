@@ -250,9 +250,100 @@ fn read_report(entry: &mut Entry) -> Result<String, String> {
         report.push_str(text);
     } else {
         let value: Value = serde_json::from_str(text).map_err(|e| e.to_string())?;
+        if let Some(summary) = prune_attempt_summary(&value) {
+            report.push_str(&summary);
+        }
         render_value(&value, 2, &mut report);
     }
     Ok(report)
+}
+
+/// Plain answer first for a Smart Prune attempt record: what was sent, what the pruner
+/// decided, what the main model received and what it cost. The full record follows.
+fn prune_attempt_summary(record: &Value) -> Option<String> {
+    let status = record.get("status")?.as_str()?;
+    let number = |key: &str| record.get(key).and_then(Value::as_u64).unwrap_or(0);
+    let candidates = number("candidate_outputs");
+    let admitted = number("admitted_outputs");
+    let plural = |n: u64| if n == 1 { "" } else { "s" };
+    let error = record.get("error").and_then(Value::as_str).unwrap_or("no detail");
+    let outcome = match status {
+        "admitted" => format!(
+            "Smart Prune shortened {admitted} of {candidates} tool output{} and saved about {} tokens. The main model got the shortened text.",
+            plural(candidates),
+            number("saved_tokens")
+        ),
+        "unchanged" => "The pruner kept every output as it was, so nothing was shortened and 0 tokens were saved. The main model got the original output. The pruner does not say why.".to_string(),
+        "timed_out" => "The pruner did not answer in time. Nothing was shortened; the main model got the original output.".to_string(),
+        "model_error" => format!("The pruner model call failed ({error}). Nothing was shortened; the main model got the original output."),
+        "malformed_response" => "The pruner's answer was not in the required form, so it was ignored. Nothing was shortened; the main model got the original output.".to_string(),
+        "cancelled" => "The attempt was cancelled before it finished. Nothing was shortened; the main model got the original output.".to_string(),
+        other => format!("The attempt stopped with `{other}` ({error}). Nothing was shortened; the main model got the original output."),
+    };
+    let parsed = |key: &str| {
+        record
+            .get(key)
+            .and_then(Value::as_str)
+            .and_then(|text| serde_json::from_str::<Value>(text).ok())
+    };
+    let input = parsed("input");
+    let decisions = parsed("raw_response");
+    let items = input
+        .as_ref()
+        .and_then(|input| input.get("items"))
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    let source_tokens = items
+        .iter()
+        .filter_map(|item| item.get("source_tokens_estimate").and_then(Value::as_u64))
+        .sum::<u64>();
+    let model = record.get("model").and_then(Value::as_str).unwrap_or("an unknown model");
+    let effort = record
+        .get("reasoning_effort")
+        .and_then(Value::as_str)
+        .map(|effort| format!(" ({effort} effort)"))
+        .unwrap_or_default();
+    let usage = record.get("usage");
+    let tokens = |key: &str| usage.and_then(|usage| usage.get(key)).and_then(Value::as_u64);
+    let cost = match (tokens("total_tokens"), tokens("input_tokens"), tokens("output_tokens")) {
+        (Some(total), Some(input), Some(output)) => {
+            format!("{total} tokens ({input} in, {output} out)")
+        }
+        _ => "token use not reported".to_string(),
+    };
+    let mut summary = format!(
+        "## What happened\n\n{outcome}\n\n- Sent: {candidates} tool output{} of about {source_tokens} tokens to {model}{effort}.\n- Cost: {:.1} s of waiting and {cost}.\n",
+        plural(candidates),
+        number("latency_ms") as f64 / 1000.0,
+    );
+    for item in &items {
+        let call_id = item.get("call_id").and_then(Value::as_str).unwrap_or("?");
+        let tool = item
+            .pointer("/invocation/name")
+            .and_then(Value::as_str)
+            .unwrap_or("tool");
+        let decision = decisions
+            .as_ref()
+            .and_then(|decisions| decisions.get("items"))
+            .and_then(Value::as_array)
+            .and_then(|decisions| {
+                decisions
+                    .iter()
+                    .find(|decision| decision.get("call_id").and_then(Value::as_str) == Some(call_id))
+            })
+            .and_then(|decision| decision.get("decision"))
+            .and_then(Value::as_str)
+            .unwrap_or("no decision");
+        let size = item
+            .get("source_tokens_estimate")
+            .and_then(Value::as_u64)
+            .map(|tokens| format!(", about {tokens} tokens"))
+            .unwrap_or_default();
+        summary.push_str(&format!("- `{tool}` output{size}: {decision}.\n"));
+    }
+    summary.push_str("\n## Full record\n\n");
+    Some(summary)
 }
 
 fn render_value(value: &Value, depth: usize, out: &mut String) {
@@ -469,5 +560,31 @@ mod tests {
             &mut unrelated,
         );
         assert!(!unrelated.contains("Pruner conversation"));
+    }
+
+    #[test]
+    fn prune_attempt_opens_with_what_happened() {
+        // Masih's attempt 01a14401 on 16 October 2026: "it's not at all telling".
+        let record = serde_json::json!({
+            "status": "unchanged",
+            "model": "gpt-6-luna",
+            "reasoning_effort": "low",
+            "candidate_outputs": 1,
+            "admitted_outputs": 0,
+            "saved_tokens": 0,
+            "latency_ms": 3751,
+            "usage": {"input_tokens": 3747, "output_tokens": 70, "total_tokens": 3817},
+            "instructions": "Compress.",
+            "input": "{\"items\":[{\"call_id\":\"c1\",\"source_tokens_estimate\":2554,\"invocation\":{\"name\":\"exec_command\"}}]}",
+            "raw_response": "{\"items\":[{\"call_id\":\"c1\",\"decision\":\"unchanged\",\"content\":null}]}",
+        });
+        let summary = prune_attempt_summary(&record).expect("an attempt record");
+
+        assert!(summary.starts_with("## What happened\n\nThe pruner kept every output as it was"));
+        assert!(summary.contains("0 tokens were saved. The main model got the original output."));
+        assert!(summary.contains("- Sent: 1 tool output of about 2554 tokens to gpt-6-luna (low effort)."));
+        assert!(summary.contains("- Cost: 3.8 s of waiting and 3817 tokens (3747 in, 70 out)."));
+        assert!(summary.contains("- `exec_command` output, about 2554 tokens: unchanged."));
+        assert!(prune_attempt_summary(&serde_json::json!({"input": "x"})).is_none());
     }
 }

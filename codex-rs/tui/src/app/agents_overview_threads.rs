@@ -80,6 +80,21 @@ impl App {
     }
 
     pub(super) fn track_agents_overview_notification(&mut self, notification: &ServerNotification) {
+        if let Some(activity) = super::sub_agent_activity_item(notification)
+            .and_then(crate::multi_agents::sub_agent_activity_display)
+        {
+            self.agents_overview
+                .refresh_thread_ids
+                .insert(activity.thread_id);
+        }
+        if let Some(receivers) = super::collab_receiver_thread_ids(notification) {
+            self.agents_overview.refresh_thread_ids.extend(
+                receivers
+                    .iter()
+                    .filter(|id| !super::collab_receiver_is_not_found(notification, id))
+                    .filter_map(|id| ThreadId::from_string(id).ok()),
+            );
+        }
         let ServerNotificationThreadTarget::Thread(thread_id) =
             server_notification_thread_target(notification)
         else {
@@ -238,10 +253,11 @@ impl App {
         &mut self,
         app_server: &AppServerSession,
     ) {
-        if self
+        if (self
             .chat_widget
             .selected_index_for_present_view(AGENTS_OVERVIEW_VIEW_ID)
             .is_none()
+            && !crate::dashboard_server::is_running())
             || (!self.agents_overview.initialized && self.agents_overview.request_id.is_none())
         {
             return;
@@ -255,6 +271,7 @@ impl App {
             .selected_index_for_present_view(AGENTS_OVERVIEW_VIEW_ID)
             .is_some();
         if !visible
+            && !crate::dashboard_server::is_running()
             && (self.agents_overview.initialized
                 || matches!(self.app_server_target, AppServerTarget::Embedded))
         {

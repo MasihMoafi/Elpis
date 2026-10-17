@@ -46,6 +46,9 @@ pub struct SmartPruneAttemptSnapshot {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub audit_path: Option<String>,
     pub status: String,
+    /// Safe explanation for display; raw provider errors remain in the local audit.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub failure_reason: Option<String>,
     pub model_slug: String,
     pub reasoning_effort: String,
     pub candidate_outputs: u64,

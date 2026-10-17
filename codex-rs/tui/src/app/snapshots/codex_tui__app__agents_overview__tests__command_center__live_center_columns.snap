@@ -1,26 +1,27 @@
 ---
 source: tui/src/app/agent_center_tests.rs
+assertion_line: 80
 expression: "screen(&view, 160, 22)"
 ---
   Agent command center  Group: Project  g
-   All 6   Needs you 2   Working 1   Ready 2   Inactive 1                                                                                      tab/⇧tab filter
+   All 1   Needs you 1   Working 0   Ready 0   Inactive 0                                                                                      tab/⇧tab filter
   ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
       Tasks                                                               Model               Status         Updated  │ Task details
-  Pinned  2                                                                                                           │
-  › ○ Current task                                                        Unknown             Ready              now  │ Current task
-    ● Needs an answer                                                     Unknown             Needs input     2h ago  │ ○ Ready
+  Pinned  1                                                                                                           │
+  › ● Current task                                                        Unknown             Needs input        now  │ Current task
+    ○ ↳ A longer task title that uses the available column                Unknown             Ready           5m ago  │ ● Needs input
+    ○   ↳ Child                                                   voice   Unknown             Ready           2m ago  │
+    ● ↳ Needs an answer                                                   Unknown             Needs input     2h ago  │ Model: Unknown
+    ○ ↳ Unloaded task                                                     Unknown             Inactive        2d ago  │ Reasoning: Unknown
+    ● ↳ Working task                                                      Unknown             Working         1d ago  │
+    ! ↳ Failed task                                                       Unknown             Error           1h ago  │ Project
+                                                                                                                      │ /tmp/project
                                                                                                                       │
-  /tmp/project  4                                                                                                     │ Model: Unknown
-    ○ A longer task title that uses the available column          voice   Unknown             Ready           5m ago  │ Reasoning: Unknown
-    ! Failed task                                                         Unknown             Error           1h ago  │
-    ● Working task                                                        Unknown             Working         1d ago  │ Project
-    ○ Unloaded task                                                       Unknown             Inactive        2d ago  │ /tmp/project
+                                                                                                                      │ Agent: Needs an answer
+                                                                                                                      │ Open task to review.
+                                                                                                                      │ Waiting for your response.
                                                                                                                       │
                                                                                                                       │ Prompt
                                                                                                                       │ Current task
-                                                                                                                      │
-                                                                                                                      │
-                                                                                                                      │
-                                                                                                                      │
                                                                                                                       │
   ? help  esc back  ↑/↓ move  enter open  n new

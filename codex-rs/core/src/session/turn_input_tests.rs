@@ -969,6 +969,7 @@ async fn rejects_non_regular_turns() {
     for (task_kind, turn_kind) in [
         (TaskKind::Review, NonSteerableTurnKind::Review),
         (TaskKind::Compact, NonSteerableTurnKind::Compact),
+        (TaskKind::WorkGraph, NonSteerableTurnKind::WorkGraph),
     ] {
         let (session, incoming_turn_context, _rx) = make_session_and_context_with_rx().await;
         incoming_turn_context

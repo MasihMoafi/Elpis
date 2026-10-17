@@ -1,5 +1,6 @@
 ---
 source: tui/src/app/agents_overview_tests.rs
+assertion_line: 1462
 expression: "render_bottom_popup(&app.chat_widget,\n96).replace(&format!(\"{project}  3\"),\n&normalized_project_group).replace(&project, \"/tmp/project\")"
 ---
   Agent command center  Group: Project  g
@@ -8,9 +9,9 @@ expression: "render_bottom_popup(&app.chat_widget,\n96).replace(&format!(\"{proj
       Tasks                       Model               │ Task details
   /tmp/project  3                                     │
   › ● Build the dashboard         GPT-6.1-Sol         │ Build the dashboard
-    ● Repair authentication       Unknown             │ ● Needs input
-    ○ Review yesterday's changes  Unknown             │
-                                                      │ Model: GPT-6.1-Sol
+    ● ↳ Inspect keyboard shortc…  Unknown             │ ● Needs input
+    ● Repair authentication       Unknown             │
+    ○ Review yesterday's changes  Unknown             │ Model: GPT-6.1-Sol
                                                       │ Reasoning: Unknown
                                                       │
                                                       │ Project

@@ -187,11 +187,16 @@ impl AgentsOverviewView {
                 let count = indices
                     .iter()
                     .filter(|&&candidate| {
-                        candidate != usize::MAX && self.same_group(state.grouping, candidate, index)
+                        candidate != usize::MAX
+                            && self.parent_index(candidate).is_none()
+                            && self.same_group(state.grouping, candidate, index)
                     })
                     .count();
                 let total = (0..self.rows.len())
-                    .filter(|&candidate| self.same_group(state.grouping, candidate, index))
+                    .filter(|&candidate| {
+                        self.parent_index(candidate).is_none()
+                            && self.same_group(state.grouping, candidate, index)
+                    })
                     .count();
                 let count = if count == total {
                     count.to_string()
@@ -265,11 +270,17 @@ impl AgentsOverviewView {
             } else {
                 self.title_style(task.thread_id)
             };
-            line(
-                Line::from(display_title(&task.thread).to_owned()).style(title_style),
-                title,
-                buf,
-            );
+            let depth = self.row_depth(index);
+            let title_text = if depth == 0 {
+                display_title(&task.thread).to_owned()
+            } else {
+                format!(
+                    "{}↳ {}",
+                    "  ".repeat(depth.saturating_sub(1)),
+                    display_title(&task.thread)
+                )
+            };
+            line(Line::from(title_text).style(title_style), title, buf);
             line(
                 Line::from(task.model_display_name().to_owned()).style(style),
                 model,

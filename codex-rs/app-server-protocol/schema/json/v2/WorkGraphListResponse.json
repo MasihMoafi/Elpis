@@ -77,6 +77,18 @@
         "kind": {
           "type": "string"
         },
+        "model": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "provider": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "result": true,
         "status": {
           "type": "string"

@@ -104,6 +104,9 @@ pub struct ThreadSmartPruneAttemptSnapshot {
     #[ts(optional)]
     pub audit_path: Option<String>,
     pub status: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub failure_reason: Option<String>,
     pub model_slug: String,
     pub reasoning_effort: String,
     #[ts(type = "number")]
@@ -212,6 +215,7 @@ impl From<CoreSmartPruneAttemptSnapshot> for ThreadSmartPruneAttemptSnapshot {
             attempt_id: value.attempt_id,
             audit_path: value.audit_path,
             status: value.status,
+            failure_reason: value.failure_reason,
             model_slug: value.model_slug,
             reasoning_effort: value.reasoning_effort,
             candidate_outputs: value.candidate_outputs,
@@ -264,4 +268,36 @@ pub struct ThreadElpisInstructionsReadResponse {
     /// The admitted continuity section: MEMORY.md, development rules, GOAL.md, ES.md and
     /// files added with `/add`.
     pub continuity: Option<String>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn prune_failure_reason_survives_conversion_and_old_snapshots_still_load() {
+        let mut core: serde_json::Value = serde_json::json!({
+            "attempt_id": "attempt",
+            "status": "model_error",
+            "model_slug": "fixture-pruner",
+            "reasoning_effort": "low",
+            "candidate_outputs": 1,
+            "admitted_outputs": 0,
+            "approx_saved_tokens": 0,
+            "latency_ms": 10
+        });
+        let old: CoreSmartPruneAttemptSnapshot =
+            serde_json::from_value(core.clone()).expect("old snapshot");
+        let old_wire = serde_json::to_value(ThreadSmartPruneAttemptSnapshot::from(old))
+            .expect("wire snapshot");
+        assert!(old_wire.get("failureReason").is_none());
+
+        core["failure_reason"] = serde_json::json!("Provider authentication failed.");
+        let current: CoreSmartPruneAttemptSnapshot =
+            serde_json::from_value(core).expect("new snapshot");
+        let wire = serde_json::to_value(ThreadSmartPruneAttemptSnapshot::from(current))
+            .expect("wire snapshot");
+        assert_eq!(wire["failureReason"], "Provider authentication failed.");
+        assert_eq!(wire["modelSlug"], "fixture-pruner");
+    }
 }

@@ -264,12 +264,15 @@ async fn profile_permissions_selection_popup_with_disallowed_full_access_snapsho
     });
 
     let mut discovery = Discovery::local(&chat.config);
-    discovery
-        .profiles
-        .iter_mut()
-        .find(|profile| profile.id == ":danger-full-access")
-        .unwrap()
-        .allowed = false;
+    // As the server's catalog reports both unsandboxed profiles under these requirements.
+    for profile in discovery.profiles.iter_mut().filter(|profile| {
+        matches!(
+            profile.id.as_str(),
+            ":danger-full-access" | ":bypass-permissions"
+        )
+    }) {
+        profile.allowed = false;
+    }
     chat.open_permission_profiles_popup(discovery);
 
     assert_chatwidget_snapshot!(
@@ -416,8 +419,8 @@ async fn profile_permissions_full_access_always_opens_confirmation() {
     chat.local_settings.notices.hide_full_access_warning = Some(true);
 
     chat.open_permission_profiles_popup(Discovery::local(&chat.config));
-    chat.handle_key_event(KeyEvent::from(KeyCode::Up));
-    chat.handle_key_event(KeyEvent::from(KeyCode::Enter));
+    // Elpis: Full Access is the second row, followed by Bypass permissions.
+    chat.handle_key_event(KeyEvent::from(KeyCode::Char('2')));
 
     let events = std::iter::from_fn(|| rx.try_recv().ok()).collect::<Vec<_>>();
     assert_eq!(events.len(), 1);

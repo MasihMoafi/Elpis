@@ -25,11 +25,12 @@ pub(crate) const CLAUDE_SUBSCRIPTION_PROVIDER_ID: &str = "claude-subscription";
 pub(super) const ANTIGRAVITY_PROVIDER_ID: &str = "antigravity";
 
 /// The providers the pickers and the dashboard offer, in this order. The others Elpis knows
-/// (Anthropic and Gemini API keys, Ollama, LM Studio, Bedrock, configured vendors) do not answer
-/// for the owner; one of them is listed only while a chat runs on it.
-const LISTED_PROVIDERS: [&str; 4] = [
+/// (Gemini API key, Ollama, LM Studio, Bedrock, configured vendors) do not answer for the owner;
+/// one of them is listed only while a chat runs on it.
+const LISTED_PROVIDERS: [&str; 5] = [
     codex_model_provider_info::OPENAI_PROVIDER_ID,
     CLAUDE_SUBSCRIPTION_PROVIDER_ID,
+    codex_model_provider_info::ANTHROPIC_PROVIDER_ID,
     ANTIGRAVITY_PROVIDER_ID,
     codex_model_provider_info::OPENROUTER_PROVIDER_ID,
 ];
@@ -597,6 +598,12 @@ impl ChatWidget {
             (Err(error), _) => (Vec::new(), format!("Could not list its models: {error}")),
         };
         for preset in presets {
+            // Codex parity: on the conversation's own provider a row is Codex's model row, so
+            // picking a model opens its effort levels, as `/model` does in Codex.
+            if is_active {
+                items.push(self.catalog_model_item(preset));
+                continue;
+            }
             let model = preset.model.clone();
             let provider_for_action = provider_id.clone();
             let model_for_action = model.clone();

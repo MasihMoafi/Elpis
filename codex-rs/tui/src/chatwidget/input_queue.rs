@@ -45,6 +45,8 @@ pub(super) struct InputQueueState {
     pub(super) rejected_steer_history_records: VecDeque<UserMessageHistoryRecord>,
     /// Steers already submitted to core but not yet committed into history.
     pub(super) pending_steers: VecDeque<PendingSteer>,
+    /// Acknowledgement is required before returning submitted steers to the composer.
+    pub(super) pending_steer_recall_ids: Option<Vec<String>>,
     /// When set, the next interrupt should resubmit all pending steers as one
     /// fresh user turn instead of restoring them into the composer.
     pub(super) submit_pending_steers_after_interrupt: bool,
@@ -82,6 +84,7 @@ impl InputQueueState {
         self.rejected_steer_sources.clear();
         self.rejected_steer_history_records.clear();
         self.pending_steers.clear();
+        self.pending_steer_recall_ids = None;
         self.submit_pending_steers_after_interrupt = false;
         self.rate_limit_recovery_pending = false;
     }

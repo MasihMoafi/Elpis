@@ -1,18 +1,28 @@
 ---
 source: tui/src/chatwidget/tests/permissions.rs
+assertion_line: 278
 expression: "render_bottom_popup(&chat, 80)"
 ---
   Update Model Permissions
 
 
-  1. Ask for approval        Read and edit workspace files and run commands,
-                             with approval required for internet access or edits
-                             outside the workspace
-  2. Approve for me          Only ask for actions detected as potentially unsafe
-     Full Access (disabled)  Use with caution: Elpis can edit files outside this
-                             workspace and access the internet without approval
-                             (disabled: Disabled by requirements)
-› 3. Read Only (current)     Read workspace files, with approval required for
-                             edits or internet access
+  1. Ask for approval               Read and edit workspace files and run
+                                    commands, with approval required for
+                                    internet access or edits outside the
+                                    workspace
+  2. Approve for me                 Only ask for actions detected as potentially
+                                    unsafe
+     Full Access (disabled)         Use with caution: Elpis can edit files
+                                    outside this workspace and access the
+                                    internet without approval (disabled:
+                                    Disabled by requirements)
+     Bypass permissions (disabled)  Elpis will run anything without asking: any
+                                    command, any file, the internet, even
+                                    commands it would otherwise refuse (such as
+                                    rm -rf). Only your own rules, hooks and
+                                    managed policy can still stop it. (disabled:
+                                    Disabled by requirements)
+› 3. Read Only (current)            Read workspace files, with approval required
+                                    for edits or internet access
 
   enter select · esc back

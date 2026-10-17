@@ -2,6 +2,7 @@
 //                         \-stdio-> claude-agent-acp (chat turns -> Claude)
 import { splitContext, splitTokens, transcriptTokens } from "./context-split.mjs";
 import { createBridgeServer, bridgeUrl, createEngine, stopBridgeListener, shutdownRuntime } from "./shared-runtime.mjs";
+import { isSignedOut, setSignedOut, SIGNED_OUT_MESSAGE } from "./anthropic-signout.mjs";
 import { execFile, spawn } from "node:child_process";
 import { appendFileSync, existsSync, readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
@@ -131,17 +132,26 @@ function updateStore(fn) {
   }).catch((e) => { log(`store: ${e.message}`); return false; });
   return storeChain;
 }
-const CATALOG = `${STORE.slice(0, STORE.lastIndexOf("/"))}/catalog.json`;
+const STATE_DIR = STORE.slice(0, STORE.lastIndexOf("/"));
+const CATALOG = `${STATE_DIR}/catalog.json`;
+// Elpis's own sign-out of the Claude subscription (anthropic-signout.mjs), read whenever it matters, so
+// the terminal and the desktop follow it at once. While it is on, Claude's models, usage and turns are
+// gone from Elpis; Claude Code's own login (~/.claude) is never touched.
+const claudeSignedOut = () => isSignedOut(STATE_DIR);
 // The subscriptions Elpis reaches through ACP, each by a model-id prefix. Antigravity (Gemini on
 // the Google sign-in) runs through agy-acp.mjs and is offered only when `agy` is installed.
 const AGY_BIN = process.env.AGY_BIN ?? `${HOME}/.local/bin/agy`;
 const AGENTS = [
-  { key: "claude", speaker: "Claude", prefix: "claude/", label: "Claude subscription", description: "Claude Code on your Pro/Max plan", adapter: ADAPTER, env: { CLAUDE_CODE_EXECUTABLE: CLAUDE }, catalogFile: CATALOG, limits: () => claudeLimitsCached().then((one) => [one]) },
+  { key: "claude", speaker: "Claude", prefix: "claude/", label: "Claude subscription", description: "Claude Code on your Pro/Max plan", adapter: ADAPTER, env: { CLAUDE_CODE_EXECUTABLE: CLAUDE }, catalogFile: CATALOG, signedOut: claudeSignedOut, limits: () => (claudeSignedOut() ? Promise.resolve([]) : claudeLimitsCached().then((one) => [one])) },
   ...(!process.env.ELPIS_NO_AGY && existsSync(AGY_BIN)
     ? [{ key: "agy", speaker: "Gemini", prefix: "agy/", label: "Antigravity", description: "Antigravity, your Google sign-in", adapter: new URL("./agy-acp.mjs", import.meta.url).pathname, env: { AGY_BIN }, catalogFile: CATALOG.replace(/catalog\.json$/, "catalog-agy.json"), limits: () => agyLimitsCached() }]
     : []),
 ];
 const agentOf = (model) => (typeof model === "string" ? AGENTS.find((a) => model.startsWith(a.prefix)) : undefined);
+// Whether a model (or agent) is one Elpis has signed out of, and the error that refuses its turn.
+const signedOutModel = (model) => agentOf(model)?.signedOut?.() === true;
+const refuseSignedOut = (agent) => { if (agent?.signedOut?.()) throw Object.assign(new Error(SIGNED_OUT_MESSAGE), { signedOut: true }); };
+const acpErrorMessage = (e) => (e?.signedOut ? e.message : `Claude (ACP) error: ${e?.message ?? JSON.stringify(e)}`);
 async function readJson(path) { try { const { readFile } = await import("node:fs/promises"); return JSON.parse(await readFile(path, "utf8")); } catch { return null; } }
 async function writeJson(path, value) {
   const { mkdir, writeFile, rename } = await import("node:fs/promises");
@@ -191,6 +201,38 @@ function everyMinute(fetchLimits, what) {
 const claudeLimitsCached = everyMinute(claudeLimits, "Claude usage");
 const agyLimitsCached = everyMinute(agyLimits, "Antigravity usage");
 
+// The TUI applies a resumed or started thread's collaboration mode after its model, so a bridged
+// chat must name its own model there too, or the engine's default replaces it on screen.
+function nameModel(result, model, effort) {
+  Object.assign(result, { model, reasoningEffort: effort ?? null });
+  Object.assign(result.thread, { model, reasoningEffort: effort ?? null });
+  const settings = result.collaborationMode?.settings;
+  if (settings) Object.assign(settings, { model, reasoning_effort: effort ?? null });
+}
+
+// A subscription's limits as account/rateLimits/updated notifications, so /usage has them as soon
+// as its chat opens or a turn ends.
+function announceLimits(agent, send) {
+  agent?.limits().then((all) => {
+    for (const rateLimits of all) {
+      log(`${rateLimits.limitName} limits: 5h ${rateLimits.primary?.usedPercent}% week ${rateLimits.secondary?.usedPercent}%`);
+      send("account/rateLimits/updated", { rateLimits });
+    }
+  }).catch((e) => log(`${agent.key} limits: ${e.message}`));
+}
+
+// /usage reads every account's limits at once, but the engine only knows OpenAI's, so a Claude
+// chat showed the GPT plan. Each subscription answers within 5 s or is left out; without a
+// ChatGPT sign-in the engine refuses, and the subscriptions' limits answer instead.
+async function addSubscriptionLimits(answer) {
+  const within = (limits) => Promise.race([limits, new Promise((resolve) => setTimeout(resolve, 5000, []))]).catch(() => []);
+  const limits = (await Promise.all(AGENTS.map((agent) => within(agent.limits())))).flat();
+  if (!limits.length) return;
+  const byId = Object.fromEntries(limits.map((one) => [one.limitId, one]));
+  if (answer.result) answer.result.rateLimitsByLimitId = { ...answer.result.rateLimitsByLimitId, ...byId };
+  else { delete answer.error; answer.result = { rateLimits: limits[0], rateLimitsByLimitId: byId }; }
+}
+
 // Smart Prune for Claude chats: the proxy `elpis claude` runs (`elpis claude --serve`), started
 // once and shared. It shrinks large tool results before Anthropic sees them; a Claude chat's
 // requests go through it while that chat's Smart Prune switch is on.
@@ -212,14 +254,14 @@ function smartPruneProxy() {
 }
 
 // The account each subscription is signed in with; Elpis's /status reads this file.
-const ACCOUNTS = `${STORE.slice(0, STORE.lastIndexOf("/"))}/accounts.json`;
+const ACCOUNTS = `${STATE_DIR}/accounts.json`;
 async function recordAccounts() {
   const { readFile } = await import("node:fs/promises");
   const json = (path) => readFile(path, "utf8").then(JSON.parse).catch(() => null);
   const out = {};
   const claude = (await json(`${HOME}/.claude.json`))?.oauthAccount;
   const plan = (await json(`${HOME}/.claude/.credentials.json`))?.claudeAiOauth?.subscriptionType;
-  if (claude?.emailAddress) out.claude = { email: claude.emailAddress, plan: plan ? plan[0].toUpperCase() + plan.slice(1) : null };
+  if (claude?.emailAddress && !claudeSignedOut()) out.claude = { email: claude.emailAddress, plan: plan ? plan[0].toUpperCase() + plan.slice(1) : null };
   const agyLog = await readFile(`${HOME}/.gemini/antigravity-cli/cli.log`, "utf8").catch(() => "");
   const agyEmail = [...agyLog.matchAll(/authenticated successfully as (\S+)/g)].at(-1)?.[1];
   if (agyEmail) out.agy = { email: agyEmail };
@@ -319,7 +361,10 @@ const pendingHelpers = new Set(); // { parentThreadId, requested, ceiling }
 const AUTHORITY = { plan: 0, default: 0, acceptEdits: 1, auto: 2, bypassPermissions: 3 };
 // Only the built-in Workspace and Full Access profiles let a chat's helpers write; a custom or
 // unknown profile does not.
-const WRITABLE = [":workspace", ":danger-full-access"];
+// Elpis's built-in profiles with no sandbox: Full Access and Bypass permissions (the engine's
+// `:bypass-permissions`, which also lifts its own refusals).
+const UNSANDBOXED = [":danger-full-access", ":bypass-permissions"];
+const WRITABLE = [":workspace", ...UNSANDBOXED];
 const writableFor = (threadId) => WRITABLE.includes(chatAccess.get(threadId)?.profile) && helperScope.get(threadId)?.ceiling !== "read-only";
 // A reopened helper's ceiling: the lower of the stored one and this bridge's, lowered to what
 // its chat allows now. A record from before ceilings were kept is read-only.
@@ -500,6 +545,7 @@ wss.on("connection", (ws) => {
   const sessions = new Map();
   const acps = new Map();
   const claudeModel = new Map();
+  const pendingSteers = new Map();       // threadId → client message id → undelivered steer
   const claudeEffort = new Map();
   const resumeResults = new Map();
   const context = {
@@ -510,7 +556,7 @@ wss.on("connection", (ws) => {
       cancelRelays(ws, tid);
       for (const cache of [threadCwd, threadSeen, childThreads, childIds, threadPolicy, smartPrune,
         threadSandbox, sessions, claudeModel, claudeEffort, resumeResults, sessionModel,
-        threadCollab, threadAccess, lastTurnUsage, forkParent, queues, goals, ownHelpers]) cache.delete(tid);
+        threadCollab, threadAccess, lastTurnUsage, forkParent, queues, goals, ownHelpers, pendingSteers]) cache.delete(tid);
     },
     busy: () => activeTurns.size > 0 || engineTurns.size > 0 || structured.size > 0 || pendingStart.size > 0 || pendingResume.size > 0 || engineReqs.size > 0
       || [...forwarded.values()].some((r) => r.owner === ws),
@@ -601,7 +647,7 @@ wss.on("connection", (ws) => {
     const readOnly = threadSandbox.get(threadId) === "read-only" || !!profile?.includes("read-only");
     // Never asking is an approval policy, not permission to leave a restricted profile.
     // Unknown/custom profiles stay restricted unless the engine explicitly names Full Access.
-    if (!ask) return readOnly ? "plan" : profile === ":danger-full-access" ? "bypassPermissions" : "default";
+    if (!ask) return readOnly ? "plan" : UNSANDBOXED.includes(profile) ? "bypassPermissions" : "default";
     if (agentKey !== "claude" || readOnly) return "default";
     return reviewer === "auto_review" ? "auto" : "acceptEdits";
   };
@@ -711,6 +757,8 @@ wss.on("connection", (ws) => {
   }
   const pendingModelList = new Set();
   const pendingResume = new Map();
+  const resumeOptions = new Map();
+  const pendingNativeRoutes = new Map();
   // A Claude model picked as the default ("enter default") lives in the bridge's store, not in
   // config.toml, which plain Elpis also reads. New chats, rewinds and the next start follow it.
   const pendingConfigRead = new Set();
@@ -725,6 +773,7 @@ wss.on("connection", (ws) => {
   const pendingChildList = new Map(); // thread/loaded/list (null) or thread/list of a chat's descendants (its id)
   const pendingArchive = new Map(); // thread/archive id -> thread id
   const pendingHelperMark = new Set(); // thread/list and thread/read answers: helpers get their chat, bridged chats their model
+  const pendingLimitsRead = new Set(); // account/rateLimits/read answers gain the subscriptions' limits
   // A helper started with the delegate tool is an engine thread the engine does not know as a
   // child; the bridge's record (_delegations) gives it its parent wherever the TUI reads threads.
   // The engine knows only the model it started a bridged chat with; this connection (from the
@@ -847,13 +896,155 @@ wss.on("connection", (ws) => {
     const have = new Set(own.map((t) => t.id));
     return [...kept.filter((t) => !have.has(t.id)), ...own];
   }
+  const unrecorded = (error, method) => typeof error?.message === "string" && error.message.includes("is not materialized yet;") && error.message.includes(`${method} is unavailable before first user message`);
+  async function nativeProviderHistory(method, params) {
+    try { return await engineCall(method, params); }
+    catch (error) {
+      // A subscription turn can be active before its native carrier has any turns.
+      // This known empty-carrier state is distinct from load/permission failures.
+      if (unrecorded(error, method)) return { data: [], nextCursor: null, backwardsCursor: null };
+      // Until a chat's first turn is recorded the engine has no state row for it and refuses item
+      // pages as unsupported (-32601); its turn list names that state, so ask it before reading empty.
+      if (method === "thread/items/list" && error?.code === -32601) {
+        const probe = await engineCall("thread/turns/list", { threadId: params.threadId, limit: 1, sortDirection: "desc", itemsView: "notLoaded" }).then(() => null, (e) => e);
+        if (unrecorded(probe, "thread/turns/list")) return { data: [], nextCursor: null, backwardsCursor: null };
+      }
+      throw error;
+    }
+  }
   async function providerHistory(threadId, store) {
-    const page = await engineCall("thread/turns/list", { threadId, limit: 200, sortDirection: "desc", itemsView: "full" }).catch(() => null);
+    const page = await nativeProviderHistory("thread/turns/list", { threadId, limit: 100, sortDirection: "desc", itemsView: "full" });
     const native = page?.data ?? resumeResults.get(threadId)?.thread?.turns ?? [];
     const running = activeTurns.get(threadId);
     const merged = new Map(native.map((t) => [t.id, t]));
     for (const t of [...claudeTurnsOf(store, threadId), ...(running ? [running.snapshot()] : [])]) merged.set(t.id, t);
     return { turns: [...merged.values()].sort((a, b) => (a.startedAt ?? 0) - (b.startedAt ?? 0)), cursor: page?.nextCursor ?? null };
+  }
+  function turnProjection(turn, view) {
+    if (view === "full") return turn;
+    const items = turn.items ?? [];
+    const first = items.find(item => item.type === "userMessage");
+    const last = items.findLast(item => item.type === "agentMessage");
+    return { ...turn, itemsView: view, items: view === "notLoaded" ? [] : [first, last].filter(Boolean) };
+  }
+  // Provider records and native records have independent continuations. Never forward
+  // these cursors to the engine, or truncate a merged page behind its native cursor.
+  async function providerPage(threadId, store, kind, params = {}) {
+    const direction = params.sortDirection ?? "desc";
+    const view = params.itemsView ?? "summary";
+    const max = kind === "turns" ? 100 : 1000;
+    const limit = params.limit ?? (kind === "turns" ? 25 : 50);
+    if (!["asc", "desc"].includes(direction) || !["summary", "full", "notLoaded"].includes(view) || !Number.isInteger(limit) || limit < 1 || limit > max) throw new Error("Invalid provider history page options");
+    const binding = { threadId, kind, direction, view, turnId: params.turnId ?? null };
+    const encode = state => "acp-page:" + Buffer.from(JSON.stringify({ ...binding, ...state })).toString("base64url");
+    let state = { nativeCursor: null, nativeSeen: [], nativeLimit: limit, storedAfter: null, boundary: null };
+    let legacy = false;
+    if (params.cursor) {
+      if (typeof params.cursor !== "string" || params.cursor.length > 100000) throw new Error("Invalid provider history cursor");
+      if (params.cursor.startsWith("acp-page:")) {
+        try {
+          const decoded = JSON.parse(Buffer.from(params.cursor.slice(9), "base64url").toString());
+          for (const [key, value] of Object.entries(binding)) if (decoded[key] !== value) throw new Error();
+          if (!Array.isArray(decoded.nativeSeen) || decoded.nativeSeen.length > max || decoded.nativeSeen.some(id => typeof id !== "string") || !(decoded.nativeCursor === null || typeof decoded.nativeCursor === "string")) throw new Error();
+          if (!Number.isInteger(decoded.nativeLimit) || decoded.nativeLimit < 1 || decoded.nativeLimit > max || !(decoded.boundary === null || typeof decoded.boundary === "string")) throw new Error();
+          for (const key of ["storedAfter"]) if (!(decoded[key] === null || (Array.isArray(decoded[key]) && decoded[key].length === 2 && Number.isFinite(decoded[key][0]) && typeof decoded[key][1] === "string"))) throw new Error();
+          state = decoded;
+        } catch { throw new Error("Invalid or mismatched provider history cursor"); }
+      } else { state.nativeCursor = params.cursor; legacy = true; }
+    }
+    const running = activeTurns.get(threadId);
+    const child = childIds.has(threadId) ? (await storedChildren(null)).get(threadId) : null;
+    const turns = new Map((child ? child.turns : claudeTurnsOf(store, threadId)).map(turn => [turn.id, turn]));
+    if (running) turns.set(running.turnId, running.snapshot(kind === "turns" ? view : "full"));
+    const records = kind === "turns" ? [...turns.values()] : [...turns.values()].filter(turn => !params.turnId || turn.id === params.turnId).flatMap(turn => (turn.items ?? []).map((item, index) => ({ turnId: turn.id, item, startedAtMs: (turn.startedAt ?? 0) * 1000 + index, completedAtMs: turn.completedAt == null ? null : turn.completedAt * 1000 })));
+    const idOf = row => kind === "turns" ? row.id : row.item?.id;
+    const keyOf = row => [kind === "turns" ? (row.startedAt ?? 0) : (row.startedAtMs ?? 0), String(idOf(row) ?? "")];
+    const compareKey = (a, b) => ((a[0] - b[0]) || a[1].localeCompare(b[1])) * (direction === "desc" ? -1 : 1);
+    const compare = (a, b) => compareKey(keyOf(a), keyOf(b));
+    const providerIds = new Set(records.map(idOf));
+    const stored = legacy ? [] : records.filter(row => (!state.storedAfter || compareKey(keyOf(row), state.storedAfter) > 0)).sort(compare);
+    let storedIndex = 0;
+    let nativePage = null;
+    let nativeRows = [];
+    let nativeDone = !!child;
+    let seen = new Set(state.nativeSeen);
+    const nativeParams = { threadId, limit: state.nativeLimit, sortDirection: direction, ...(kind === "turns" ? { itemsView: view } : params.turnId ? { turnId: params.turnId } : {}) };
+    const ensureNative = async () => {
+      while (!nativeRows.length && !nativeDone) {
+        if (nativePage) {
+          if (!nativePage.nextCursor) { nativeDone = true; break; }
+          if (nativePage.nextCursor === state.nativeCursor) throw new Error("Native history cursor did not advance");
+          state.nativeCursor = nativePage.nextCursor;
+          seen = new Set();
+        }
+        nativePage = await nativeProviderHistory(`thread/${kind}/list`, { ...nativeParams, ...(state.nativeCursor ? { cursor: state.nativeCursor } : {}) });
+        nativeRows = (nativePage.data ?? []).filter(row => !providerIds.has(idOf(row)) && !seen.has(idOf(row)));
+      }
+    };
+    const data = [];
+    let pageBytes = 2;
+    const pageByteLimit = 6 * 1024 * 1024;
+    while (data.length < limit) {
+      await ensureNative();
+      const a = stored[storedIndex], b = nativeRows[0];
+      if (!a && !b) break;
+      // Keep the native rollout order intact, including ties across native pages.
+      const storedFirst = a && (!b || ((keyOf(a)[0] - keyOf(b)[0]) * (direction === "desc" ? -1 : 1) < 0) || (keyOf(a)[0] === keyOf(b)[0] && direction === "desc"));
+      const row = storedFirst ? (kind === "turns" ? turnProjection(a, view) : a) : b;
+      const skipping = state.boundary && idOf(row) !== state.boundary;
+      if (!skipping) {
+        const bytes = Buffer.byteLength(JSON.stringify(row)) + 1;
+        if (bytes > pageByteLimit) throw new Error(`History ${kind === "items" ? "item" : "turn"} ${idOf(row)} exceeds the supported page size; its saved content was not truncated.`);
+        if (data.length && pageBytes + bytes > pageByteLimit) break;
+        pageBytes += bytes;
+      }
+      if (storedFirst) {
+        storedIndex++;
+        state.storedAfter = keyOf(a);
+      } else {
+        nativeRows.shift();
+        seen.add(idOf(b));
+      }
+      if (skipping) continue;
+      state.boundary = null;
+      data.push(row);
+    }
+    // Determine continuation without hydrating another native page.
+    const moreNative = nativeRows.length || (!nativeDone && nativePage?.nextCursor);
+    state.nativeSeen = [...seen];
+    const nextCursor = storedIndex < stored.length || moreNative ? encode(state) : null;
+    let backwardsCursor = null;
+    if (data.length) {
+      backwardsCursor = "acp-page:" + Buffer.from(JSON.stringify({ ...binding, direction: direction === "desc" ? "asc" : "desc", nativeCursor: null, nativeSeen: [], nativeLimit: limit, storedAfter: null, boundary: idOf(data[0]) })).toString("base64url");
+    }
+    return { data, nextCursor, backwardsCursor };
+  }
+  async function resumeHistory(result, threadId, store, params) {
+    result = { ...result, thread: { ...result.thread, ...threadSeen.get(threadId) } };
+    const owner = providerOwners.get(threadId);
+    if (owner) result.thread.status = owner.status();
+    if (params.excludeTurns) {
+      result.thread.turns = [];
+      result.turnsBackwardsCursor = null;
+    } else {
+      const history = await providerHistory(threadId, store);
+      result.thread.turns = history.turns;
+      result.turnsBackwardsCursor = history.cursor;
+    }
+    result.initialTurnsPage = params.initialTurnsPage ? await providerPage(threadId, store, "turns", params.initialTurnsPage) : null;
+    return result;
+  }
+  async function listProviderHistory(msg, store) {
+    const tid = msg.params?.threadId;
+    const existing = providerOwners.get(tid);
+    if (existing && existing.ws !== ws) {
+      const target = forwarded.get(msg.id);
+      forwarded.delete(msg.id);
+      existing.dispatch(msg, target?.client ?? ws);
+      return;
+    }
+    const result = await providerPage(tid, store, msg.method === "thread/turns/list" ? "turns" : "items", msg.params);
+    toTui({ id: msg.id, result });
   }
   async function priorTranscript(threadId) {
     try {
@@ -960,7 +1151,7 @@ wss.on("connection", (ws) => {
   // A request for a helper's thread asks for no more than its ceiling: a read-only helper is
   // asked to be read-only, and none is given Full Access. `field` is the request's sandbox field.
   const boundAccess = (p, ceiling, field) => {
-    const wide = p.permissions === ":danger-full-access" || p[field] === "danger-full-access" || ["dangerFullAccess", "externalSandbox"].includes(p[field]?.type);
+    const wide = UNSANDBOXED.includes(p.permissions) || p[field] === "danger-full-access" || ["dangerFullAccess", "externalSandbox"].includes(p[field]?.type);
     if (ceiling === "workspace-write" && !wide) return;
     delete p.permissions; delete p[field];
     if (field === "sandbox") p.sandbox = ceiling;
@@ -972,7 +1163,7 @@ wss.on("connection", (ws) => {
     const h = openHelper(tid, r, r.ceiling);
     if (h.ceiling !== r.stored) updateStore((st) => { if (st._delegations?.[tid]) st._delegations[tid].ceiling = h.ceiling; });
     const profile = threadAccess.get(tid)?.profile;
-    const want = h.ceiling === "read-only" ? ":read-only" : profile === ":danger-full-access" ? ":workspace" : null;
+    const want = h.ceiling === "read-only" ? ":read-only" : UNSANDBOXED.includes(profile) ? ":workspace" : null;
     if (!want || profile === want) return true;
     if (bridged) { applyProfile(tid, want); return true; }
     const ok = await applyProfile(tid, want);
@@ -990,7 +1181,7 @@ wss.on("connection", (ws) => {
     const d = tid && savedStore._delegations?.[tid];
     const existing = providerOwners.get(tid);
     if (existing && existing.ws !== ws) {
-      const route = forwarded.get(msg.id); forwarded.delete(msg.id); pendingResume.delete(msg.id); openingReplies.delete(msg.id);
+      const route = forwarded.get(msg.id); forwarded.delete(msg.id); pendingResume.delete(msg.id); resumeOptions.delete(msg.id); openingReplies.delete(msg.id);
       existing.dispatch({ ...msg, id: route?.id ?? msg.id }, route?.client ?? ws); return;
     }
     if (claudeModel.has(tid) && resumeResults.has(tid)) {
@@ -1003,15 +1194,13 @@ wss.on("connection", (ws) => {
           if (isBridged(params.model)) { claudeModel.set(tid, params.model); delete params.model; }
           await engineCall("thread/settings/update", params);
         }
-        const result = { ...resumeResults.get(tid), model: claudeModel.get(tid), reasoningEffort: claudeEffort.get(tid) ?? null };
-        const history = await providerHistory(tid, savedStore);
-        result.thread = { ...result.thread, ...threadSeen.get(tid), turns: history.turns };
-        result.turnsBackwardsCursor = history.cursor;
+        let result = { ...resumeResults.get(tid), model: claudeModel.get(tid), reasoningEffort: claudeEffort.get(tid) ?? null };
+        result = await resumeHistory(result, tid, savedStore, msg.params ?? {});
         await markHelpers(result);
-        pendingResume.delete(msg.id);
+        pendingResume.delete(msg.id); resumeOptions.delete(msg.id);
         toTui({ id: msg.id, result });
         replayPlan(tid);
-      } catch (e) { pendingResume.delete(msg.id); toTui({ id: msg.id, error: { code: -32603, message: e.message ?? String(e) } }); }
+      } catch (e) { pendingResume.delete(msg.id); resumeOptions.delete(msg.id); toTui({ id: msg.id, error: Number.isInteger(e.code) ? e : { code: -32603, message: e.message ?? String(e) } }); }
       return;
     }
     if (!existing && savedStore[tid]?.model) {
@@ -1062,6 +1251,21 @@ wss.on("connection", (ws) => {
     if (parsed?.method === "thread/smartPrune/updated" && parsed.params?.threadId) smartPrune.set(parsed.params.threadId, !!parsed.params.smartPrune?.enabled);
     if (parsed?.method && parsed.id !== undefined && ((helperConns.has(ws) && helperThreads.has(parsed.params?.threadId)) || providerOwners.get(parsed.params?.threadId)?.ws === ws)
       && relayToTui(parsed, (reply) => engine.stdin.write(JSON.stringify({ id: parsed.id, ...(reply.error ? { error: reply.error } : { result: reply.result }) }) + "\n"), ws)) return;
+    if (parsed && pendingNativeRoutes.has(parsed.id)) {
+      const route = pendingNativeRoutes.get(parsed.id);
+      pendingNativeRoutes.delete(parsed.id);
+      if (!parsed.error) {
+        claudeModel.delete(route.threadId); claudeEffort.delete(route.threadId);
+        providerOwners.delete(route.threadId); resumeResults.delete(route.threadId);
+        sessions.delete(route.threadId);
+        await updateStore(store => {
+          const record = store[route.threadId];
+          if (record) { record.providerHistory = true; record.model = null; delete record.effort; record.nativeModel = route.model; }
+        });
+        const seen = threadSeen.get(route.threadId);
+        if (seen) { seen.model = route.model; seen.reasoningEffort = route.effort ?? null; }
+      }
+    }
     if (parsed && engineReqs.has(parsed.id) && !parsed.method) {
       const p = engineReqs.get(parsed.id); engineReqs.delete(parsed.id);
       parsed.error ? p.reject(parsed.error) : p.resolve(parsed.result);
@@ -1101,49 +1305,14 @@ wss.on("connection", (ws) => {
       if (pick && t.model !== pick.model) { t.model = pick.model; t.reasoningEffort = pick.effort ?? null; helpersMarked = true; } // shown only; routing waits for the answer
       else helpersMarked = ownModel(t, await loadStore());
     }
+    if (parsed && pendingLimitsRead.delete(parsed.id)) { await addSubscriptionLimits(parsed); helpersMarked = true; }
     if (parsed && pendingHelperMark.has(parsed.id)) {
       pendingHelperMark.delete(parsed.id);
       helpersMarked = await markHelpers(parsed.result, pendingChildList.get(parsed.id)).catch((e) => { log(`helpers: ${e.message ?? e}`); return false; });
     }
-    if (parsed && pendingTurnsList.has(parsed.id)) {
-      const req = pendingTurnsList.get(parsed.id); pendingTurnsList.delete(parsed.id);
-      await storeChain;
-      const running = activeTurns.get(req.threadId);
-      const stored = [...((await loadStore())[req.threadId]?.turns ?? []), ...(running ? [running.snapshot()] : [])];
-      if (stored.length && !req.cursor) {
-        const data = parsed.result?.data ?? [];
-        const have = new Set(data.map((t) => t.id));
-        const merged = [...data, ...stored.filter((t) => !have.has(t.id))]
-          .map((t) => (req.itemsView === "notLoaded" ? { ...t, items: [], itemsView: "notLoaded" } : t));
-        merged.sort((a, b) => (a.startedAt ?? 0) - (b.startedAt ?? 0));
-        if (req.sortDirection === "desc") merged.reverse();
-        parsed.result = { ...(parsed.result ?? {}), data: merged, nextCursor: parsed.result?.nextCursor ?? null, backwardsCursor: parsed.result?.backwardsCursor ?? null };
-        delete parsed.error;
-        log(`turns/list ${req.threadId}: +${merged.length - data.length} Claude turns`);
-        ws.send(JSON.stringify(parsed));
-        return;
-      }
-    }
-    if (parsed && pendingItemsList.has(parsed.id)) {
-      const req = pendingItemsList.get(parsed.id); pendingItemsList.delete(parsed.id);
-      await storeChain;
-      const stored = ((await loadStore())[req.threadId]?.turns ?? []).filter((t) => !req.turnId || t.id === req.turnId);
-      if (stored.length && !req.cursor) {
-        const data = parsed.result?.data ?? [];
-        const have = new Set(data.map((e) => e.item?.id));
-        const extra = stored.flatMap((t) => t.items.map((item, i) => ({ turnId: t.id, item, startedAtMs: (t.startedAt ?? 0) * 1000 + i, completedAtMs: (t.completedAt ?? t.startedAt ?? 0) * 1000 })))
-          .filter((e) => !have.has(e.item.id));
-        const merged = [...data, ...extra].sort((a, b) => (a.startedAtMs ?? 0) - (b.startedAtMs ?? 0));
-        if (req.sortDirection === "desc") merged.reverse();
-        parsed.result = { ...(parsed.result ?? {}), data: merged, nextCursor: parsed.result?.nextCursor ?? null, backwardsCursor: parsed.result?.backwardsCursor ?? null };
-        delete parsed.error;
-        log(`items/list ${req.threadId}: +${extra.length} Claude items`);
-        ws.send(JSON.stringify(parsed));
-        return;
-      }
-    }
-    // A chat's Claude subagents join the engine's loaded threads (the TUI's backfill after a
-    // resume) and its descendants list (/subagents), so the TUI lists them as its own.
+        if (parsed.id != null && pendingTurnsList.has(parsed.id)) pendingTurnsList.delete(parsed.id);
+        if (parsed.id != null && pendingItemsList.has(parsed.id)) pendingItemsList.delete(parsed.id);
+
     if (parsed && pendingChildList.has(parsed.id)) {
       const ancestor = pendingChildList.get(parsed.id); pendingChildList.delete(parsed.id);
       const data = parsed.result?.data;
@@ -1166,7 +1335,7 @@ wss.on("connection", (ws) => {
         try { added = await unlistedClaudeThreads(req, parsed.result); }
         catch (e) {
           log(`thread/list: ${e.message ?? JSON.stringify(e)}`);
-          ws.send(JSON.stringify({ id: parsed.id, error: { code: -32603, message: e.message ?? String(e) } }));
+          ws.send(JSON.stringify({ id: parsed.id, error: Number.isInteger(e.code) ? e : { code: -32603, message: e.message ?? String(e) } }));
           return;
         }
         if (added.length) {
@@ -1186,7 +1355,7 @@ wss.on("connection", (ws) => {
     if (parsed && pendingConfigRead.has(parsed.id)) {
       pendingConfigRead.delete(parsed.id);
       const def = (await loadStore())._default;
-      if (def?.model && parsed.result?.config) {
+      if (def?.model && !signedOutModel(def.model) && parsed.result?.config) {
         parsed.result.config = { ...parsed.result.config, model: def.model, model_reasoning_effort: def.effort ?? null };
         ws.send(JSON.stringify(parsed));
         return;
@@ -1219,10 +1388,9 @@ wss.on("connection", (ws) => {
           forkParent.set(tid, pick.forkOf);
           if (!parsed.result.thread?.ephemeral) updateStore((st) => { st[tid] = { ...st[tid], forkOf: pick.forkOf }; });
         }
-        parsed.result.model = pick.model;
-        parsed.result.reasoningEffort = pick.effort ?? null;
-        Object.assign(parsed.result.thread, { model: pick.model, reasoningEffort: pick.effort ?? null });
+        nameModel(parsed.result, pick.model, pick.effort);
         claimProvider(tid, parsed.result);
+        announceLimits(agentOf(pick.model), (method, params) => ws.send(JSON.stringify({ method, params })));
         if (!parsed.result.thread.ephemeral) await updateStore((st) => { st[tid] = { ...st[tid], model: pick.model, effort: pick.effort ?? null }; });
         starting?.resolve();
         log(`new thread ${tid} -> ${pick.model}`);
@@ -1233,11 +1401,13 @@ wss.on("connection", (ws) => {
     }
     let reopened = null;
     if (parsed?.error && pendingResume.has(parsed.id)) {
-      const tid = pendingResume.get(parsed.id); pendingResume.delete(parsed.id);
+      const tid = pendingResume.get(parsed.id); pendingResume.delete(parsed.id); resumeOptions.delete(parsed.id);
       if (providerOwners.get(tid)?.ws === ws && !resumeResults.has(tid)) providerOwners.delete(tid);
     }
     if (parsed && pendingAdopt.has(parsed.id) && !parsed.result?.thread?.id) { pendingHelpers.delete(pendingAdopt.get(parsed.id)); pendingAdopt.delete(parsed.id); }
     if (parsed && pendingResume.has(parsed.id) && parsed.result?.thread?.id) {
+      const requestedResume = resumeOptions.get(parsed.id) ?? {};
+      resumeOptions.delete(parsed.id);
       pendingResume.delete(parsed.id);
       reopened = parsed.result.thread.id;
       await storeChain;
@@ -1249,20 +1419,20 @@ wss.on("connection", (ws) => {
         if (helperConns.has(ws)) failHelper(reopened, "its chat's restricted permissions could not be applied");
         return;
       }
-      if (saved?.model) {
-        claudeModel.set(parsed.result.thread.id, saved.model);
+      if (saved?.model || saved?.providerHistory) {
+        if (saved.model) claudeModel.set(parsed.result.thread.id, saved.model);
         if (saved.effort) claudeEffort.set(parsed.result.thread.id, saved.effort);
-        parsed.result.model = saved.model;
-        if (saved.effort) parsed.result.reasoningEffort = saved.effort;
-        Object.assign(parsed.result.thread, { model: saved.model, reasoningEffort: saved.effort ?? null });
-        claimProvider(parsed.result.thread.id, parsed.result);
+        if (saved.model) { nameModel(parsed.result, saved.model, saved.effort); claimProvider(parsed.result.thread.id, parsed.result); }
+        try { parsed.result = await resumeHistory(parsed.result, parsed.result.thread.id, await loadStore(), requestedResume); }
+        catch (error) { toTui({ id: parsed.id, error: Number.isInteger(error.code) ? error : { code: -32603, message: error.message } }); return; }
         log(`resume ${parsed.result.thread.id} -> ${saved.model}`);
         ws.send(JSON.stringify(parsed));
+        if (saved.model) announceLimits(agentOf(saved.model), (method, params) => ws.send(JSON.stringify({ method, params })));
         replayPlan(parsed.result.thread.id);
         return;
       }
     }
-    if (parsed?.method === "thread/settings/updated" && claudeModel.has(parsed.params?.threadId)) {
+    if (parsed?.method === "thread/settings/updated" && claudeModel.has(parsed.params?.threadId) && ![...pendingNativeRoutes.values()].some(route => route.threadId === parsed.params.threadId)) {
       const tid = parsed.params.threadId;
       parsed.params.threadSettings = { ...parsed.params.threadSettings, model: claudeModel.get(tid), effort: claudeEffort.get(tid) ?? parsed.params.threadSettings?.effort ?? null };
       ws.send(JSON.stringify(parsed));
@@ -1270,7 +1440,9 @@ wss.on("connection", (ws) => {
     }
     if (parsed && pendingModelList.has(parsed.id) && Array.isArray(parsed.result?.data)) {
       pendingModelList.delete(parsed.id);
-      const lists = await Promise.all(AGENTS.map((agent) => Promise.race([catalogFor(agent), new Promise((r) => setTimeout(() => r({ models: [], efforts: {}, fallback: null }), 30000))])));
+      // A subscription Elpis is signed out of offers no models (and is not even started).
+      const noModels = { models: [], efforts: {}, fallback: null };
+      const lists = await Promise.all(AGENTS.map((agent) => agent.signedOut?.() ? noModels : Promise.race([catalogFor(agent), new Promise((r) => setTimeout(() => r(noModels), 30000))])));
       const tpl = parsed.result.data[0] ?? {};
       const added = [];
       AGENTS.forEach((agent, i) => {
@@ -1336,7 +1508,11 @@ wss.on("connection", (ws) => {
         chars("reasoning", u.content.text.length);
       } else if (u.sessionUpdate === "usage_update" && typeof u.used === "number") {
         if (!root) return;
-        lastContext.set(threadId, { used: u.used, size: u.size ?? null });
+        // The adapter reports a guessed 200k window until a turn's result gives the model's real
+        // one, and only a result's update carries a cost. Until then the window is unknown.
+        const known = lastContext.get(threadId)?.size ?? null;
+        const size = u.cost && typeof u.size === "number" ? u.size : known;
+        lastContext.set(threadId, { used: u.used, size });
         sendUsage(threadId, turnId, null);
       } else if (u.sessionUpdate === "plan" && Array.isArray(u.entries)) {
         const step = { pending: "pending", in_progress: "inProgress", completed: "completed" };
@@ -1403,7 +1579,7 @@ wss.on("connection", (ws) => {
     let firstTokenAt = null;
     const userItem = req.kind === "review"
       ? { type: "enteredReviewMode", id: randomUUID(), review: req.reviewHint }
-      : { type: "userMessage", id: randomUUID(), clientId: null, content: input };
+      : { type: "userMessage", id: randomUUID(), clientId: req.params.clientUserMessageId ?? null, content: input };
     notify("item/started", { item: userItem, threadId, turnId, startedAtMs: now() });
     notify("item/completed", { item: userItem, threadId, turnId, completedAtMs: now() });
 
@@ -1421,12 +1597,13 @@ wss.on("connection", (ws) => {
     // so a steer waits for the running tools, as Claude Code's own queue does.
     turnState.whenToolsIdle = () => (!busy() ? Promise.resolve() : new Promise((r) => turnState.toolsIdle.push(r)));
     lane.onIdle = () => { if (!busy()) turnState.toolsIdle.splice(0).forEach((r) => r()); };
-    turnState.snapshot = () => ({ ...turn, startedAt, itemsView: "full", items: [userItem, ...items, ...(lane.message ? [lane.message] : [])] });
+    turnState.snapshot = (view = "full") => ({ ...turn, startedAt, itemsView: view, items: view === "notLoaded" ? [] : view === "summary" ? [userItem, ...(lane.message ? [lane.message] : items.filter(item => item.type === "agentMessage").slice(-1))] : [userItem, ...items, ...(lane.message ? [lane.message] : [])] });
     activeTurns.set(threadId, turnState);
     let status = "completed";
     let error = null;
     const agent = agentOf(claudeModel.get(threadId)) ?? AGENTS[0];
     try {
+      refuseSignedOut(agent);
       const acp = await ensureAcp(agent);
       turnState.acp = acp;
       // The engine's confirmed policy only: the TUI puts its own choice on every turn/start,
@@ -1575,9 +1752,28 @@ wss.on("connection", (ws) => {
           if (t) t.declined = true;
           return pick("reject_once") ?? pick("reject_always") ?? null;
         }
+        let reason = `${agent.speaker} wants to run: ${what}`;
+        if (threadAccess.get(threadId)?.reviewer === "auto_review" && !planIds.length) {
+          const reviewAccess = threadAccess.get(threadId);
+          try {
+            const review = await engineCall("thread/approval/review", { threadId, command: what, cwd, reason });
+            if (turnState.cancelled) return undefined;
+            if (reviewAccess !== threadAccess.get(threadId)) throw new Error("Permissions changed during automatic review; review the action again.");
+            if (!["approved", "denied"].includes(review?.decision) || typeof review.rationale !== "string") throw new Error("Invalid automatic approval review response");
+            log(`approval ${what} -> ${review.decision} (auto-review): ${review.rationale}`);
+            if (review.decision === "approved") return pick("allow_once");
+            if (t) t.declined = true;
+            lane.update({ sessionUpdate: "agent_message_chunk", content: { type: "text", text: `Automatic approval review denied the action: ${review.rationale}\n` } });
+            lane.closeMessage();
+            return pick("reject_once") ?? null;
+          } catch (error) {
+            if (turnState.cancelled) return undefined;
+            reason += `\nAutomatic approval review failed: ${error.message ?? JSON.stringify(error)}`;
+          }
+        }
         const decision = await askTui("item/commandExecution/requestApproval", {
           kind: "command", threadId, turnId, itemId: p.toolCall?.toolCallId ?? randomUUID(), startedAtMs: now(),
-          environmentId: null, reason: `${agent.speaker} wants to run: ${what}`, command: what, cwd,
+          environmentId: null, reason, command: what, cwd,
           // No "don't ask again": Claude Code would save that rule to the project for good,
           // while Elpis's label promises only this session.
           availableDecisions: ["accept", "decline", "cancel"],
@@ -1661,7 +1857,7 @@ wss.on("connection", (ws) => {
         .catch((e) => log(`record failed for ${threadId}: ${e.message ?? JSON.stringify(e)}`));
     } catch (e) {
       status = "failed";
-      error = { message: `Claude (ACP) error: ${e?.message ?? JSON.stringify(e)}`, codexErrorInfo: null, additionalDetails: null };
+      error = { message: acpErrorMessage(e), codexErrorInfo: null, additionalDetails: null };
       log(`turn error ${JSON.stringify(e)}`);
     }
     sessionReady(null);
@@ -1689,8 +1885,7 @@ wss.on("connection", (ws) => {
     notify("turn/completed", { threadId, turn: { id: turnId, items, itemsView: "summary", status, error, startedAt, completedAt, durationMs: (completedAt - startedAt) * 1000 } });
     notify("turn/activityUpdated", { threadId, turnId, status: status === "inProgress" ? "completed" : status, durationMs: now() - t0, timeToFirstTokenMs: firstTokenAt ? firstTokenAt - t0 : null });
     notify("thread/status/changed", { threadId, status: { type: "idle" } });
-    agent.limits().then((all) => { for (const rateLimits of all) { log(`${rateLimits.limitName} limits: 5h ${rateLimits.primary?.usedPercent}% week ${rateLimits.secondary?.usedPercent}%`); notify("account/rateLimits/updated", { rateLimits }); } })
-      .catch((e) => log(`${agent.key} limits: ${e.message}`));
+    announceLimits(agent, notify);
     if (agent.key === "agy") recordAccounts().catch((e) => log(`accounts: ${e.message}`));
     setImmediate(() => runNext(threadId));
     const used = lastTurnUsage.get(threadId) ?? {};
@@ -1708,7 +1903,12 @@ wss.on("connection", (ws) => {
     const next = queueOf(threadId).shift();
     if (!next) return;
     if (!next.goal) notify("thread/queue/changed", { threadId });
-    claudeTurn({ kind: next.goal ? "goal" : "queued", params: { threadId, input: next.input } }).then((r) => next.after?.(r));
+    if (next.steer) {
+      if (next.steer.cancelled) { runNext(threadId); return; }
+      next.steer.phase = "dispatching";
+      pendingSteers.get(threadId)?.delete(next.clientUserMessageId);
+    }
+    claudeTurn({ kind: next.goal ? "goal" : "queued", params: { threadId, input: next.input, clientUserMessageId: next.clientUserMessageId } }).then((r) => next.after?.(r));
   }
   function queueRequest(msg) {
     const { threadId } = msg.params;
@@ -1820,7 +2020,8 @@ wss.on("connection", (ws) => {
       await storeChain;
       const def = (await loadStore())._default;
       engineDefault ??= engineCall("config/read", { includeLayers: false }).then((r) => r?.config?.model ?? null, () => null);
-      if (def?.model && (p.model == null || p.model === await engineDefault)) pick = def;
+      // A saved Claude default waits while Elpis is signed out of it: the new chat gets the engine's own model.
+      if (def?.model && !signedOutModel(def.model) && (p.model == null || p.model === await engineDefault)) pick = def;
     }
     if (pick) {
       rememberStart(msg.id, pick);
@@ -1894,6 +2095,7 @@ wss.on("connection", (ws) => {
     let status = "completed", error = null, sessionId = null, a = null;
     try {
       // Hidden requests always go to Claude (Haiku), whichever subscription the chat uses.
+      refuseSignedOut(AGENTS[0]);
       a = await ensureAcp(AGENTS[0]);
       sessionId = (await a.call("session/new", { cwd: threadCwd.get(threadId) ?? process.cwd(), mcpServers: [], _meta: { systemPrompt: STRUCTURED_SYSTEM, claudeCode: { options: { tools: [], settingSources: [] } } } })).sessionId;
       let text = "";
@@ -1914,7 +2116,7 @@ wss.on("connection", (ws) => {
       log(`structured request on Claude ${STRUCTURED_MODEL} for hidden thread ${threadId}: ${status}`);
     } catch (e) {
       status = "failed";
-      error = { message: `Claude (ACP) error: ${e?.message ?? JSON.stringify(e)}`, codexErrorInfo: null, additionalDetails: null };
+      error = { message: acpErrorMessage(e), codexErrorInfo: null, additionalDetails: null };
       log(`structured request error ${JSON.stringify(e?.message ?? e)}`);
     }
     structured.delete(threadId);
@@ -1929,14 +2131,38 @@ wss.on("connection", (ws) => {
     const { threadId, input = [], clientUserMessageId = null } = msg.params;
     const refuse = () => toTui({ id: msg.id, error: { code: -32600, message: "no active turn to steer" } });
     const turn = activeTurns.get(threadId);
-    if (!turn) return refuse();
+    if (!turn || turn.cancelled) return refuse();
+    let waiting = pendingSteers.get(threadId);
+    if (!waiting) pendingSteers.set(threadId, waiting = new Map());
+    const prior = clientUserMessageId && waiting.get(clientUserMessageId);
+    if (prior) { toTui({ id: msg.id, result: { turnId: prior.turnId } }); return; }
+    const steer = { cancelled: false, phase: "waiting", turnId: turn.turnId };
+    if (clientUserMessageId) waiting.set(clientUserMessageId, steer);
+    // Acceptance leaves the message editable until actual ACP dispatch. Waiting for
+    // tool completion before replying would block the TUI's cancellation request.
+    toTui({ id: msg.id, result: { turnId: turn.turnId } });
+    const queueForNextTurn = () => {
+      if (steer.cancelled || deletedThreads.has(threadId) || deletingThreads.has(threadId)) return;
+      steer.phase = "queued";
+      queueOf(threadId).push({ id: randomUUID(), input, clientUserMessageId, steer });
+      notify("thread/queue/changed", { threadId });
+      runNext(threadId);
+    };
     const sessionId = await turn.ready;
     await turn.whenToolsIdle();
-    if (!sessionId || activeTurns.get(threadId) !== turn || turn.cancelled) return refuse();
+    if (steer.cancelled) return;
+    if (!sessionId || activeTurns.get(threadId) !== turn || turn.cancelled) {
+      queueForNextTurn();
+      return;
+    }
     try {
-      const r = await turn.acp.call("_session/steering", { sessionId, prompt: await toAcpPrompt(input), _meta: { steering: { idleBehavior: "promptRequired" } } });
-      if (r?.outcome === "promptRequired") return refuse();
-      toTui({ id: msg.id, result: { turnId: turn.turnId } });
+      const prompt = await toAcpPrompt(input);
+      if (steer.cancelled) return;
+      if (activeTurns.get(threadId) !== turn || turn.cancelled) { queueForNextTurn(); return; }
+      steer.phase = "dispatching";
+      const r = await turn.acp.call("_session/steering", { sessionId, prompt, _meta: { steering: { idleBehavior: "promptRequired" } } });
+      if (r?.outcome === "promptRequired") { queueForNextTurn(); return; }
+      waiting.delete(clientUserMessageId);
       if (r?._meta?.delivery === "nextTurn") {
         notify("warning", { threadId, message: "Gemini will read this message after its current reply finishes." });
       }
@@ -1948,14 +2174,49 @@ wss.on("connection", (ws) => {
       addChars(threadId, "user", inputSummary(input).length);
       log(`steered Claude turn ${turn.turnId} (${r?.outcome ?? "ok"})`);
     } catch (e) {
-      toTui({ id: msg.id, error: { code: -32603, message: `Claude could not take the message: ${e?.message ?? JSON.stringify(e)}` } });
+      if (steer.phase === "dispatching") {
+        steer.phase = "unconfirmed";
+        notify("warning", { threadId, message: `Waiting message delivery is unconfirmed: ${e?.message ?? JSON.stringify(e)}. Reconnect before retrying it.` });
+      } else {
+        notify("warning", { threadId, message: `Could not prepare the waiting message: ${e?.message ?? JSON.stringify(e)}. Press Up to revise it.` });
+      }
     }
+  }
+
+  function cancelClaudeSteers(msg) {
+    const { threadId, clientUserMessageIds = [] } = msg.params || {};
+    if (!Array.isArray(clientUserMessageIds) || clientUserMessageIds.length > 100
+      || clientUserMessageIds.some(id => typeof id !== "string" || id.length > 256)) {
+      toTui({ id: msg.id, error: { code: -32600, message: "invalid clientUserMessageIds" } });
+      return;
+    }
+    const cancelledClientUserMessageIds = cancelWaitingClaudeSteers(threadId, clientUserMessageIds);
+    toTui({ id: msg.id, result: { cancelledClientUserMessageIds } });
+  }
+
+  function cancelWaitingClaudeSteers(threadId, clientUserMessageIds) {
+    const cancelledClientUserMessageIds = [];
+    const waiting = pendingSteers.get(threadId);
+    for (const id of new Set(clientUserMessageIds)) {
+      const steer = waiting?.get(id);
+      if (!steer || !["waiting", "queued"].includes(steer.phase)) continue;
+      steer.cancelled = true;
+      waiting.delete(id);
+      cancelledClientUserMessageIds.push(id);
+    }
+    const queue = queues.get(threadId);
+    if (queue?.some(entry => entry.steer?.cancelled)) {
+      queues.set(threadId, queue.filter(entry => !entry.steer?.cancelled));
+      notify("thread/queue/changed", { threadId });
+    }
+    return cancelledClientUserMessageIds;
   }
 
   async function stopProvider(tid, action) {
     const running = activeTurns.get(tid);
     if (!running) return;
     running.cancelled = true;
+    cancelWaitingClaudeSteers(tid, [...(pendingSteers.get(tid)?.keys() ?? [])]);
     let timer;
     try {
       const stopped = (async () => {
@@ -2033,10 +2294,32 @@ wss.on("connection", (ws) => {
     } catch (e) {
       // Persist cleanup even if native deletion stopped partway through a subtree.
       if ([...ids].some(id => deletedThreads.has(id))) await updateStore(() => {});
-      toTui({ id: msg.id, error: { code: -32603, message: e.message ?? String(e) } });
+      toTui({ id: msg.id, error: Number.isInteger(e.code) ? e : { code: -32603, message: e.message ?? String(e) } });
     } finally { for (const id of acquired) deletingThreads.delete(id); }
   }
   const openingReplies = new Set();
+  async function runWorkGraph(msg) {
+    await storeChain;
+    const tid = msg.params?.rootThreadId;
+    const model = providerOwners.get(tid)?.model() ?? claudeModel.get(tid) ?? (await loadStore())[tid]?.model;
+    if (typeof model === "string" && /^(claude|agy)\//.test(model)) {
+      toTui({ id: msg.id, error: { code: -32600, message: "Workflows cannot run in Claude or Gemini subscription chats yet. Choose a conversation on a native provider; the subscription model must not be replaced by the engine's model." } });
+      return;
+    }
+    engine.stdin.write(JSON.stringify(msg) + "\n");
+  }
+  // Elpis's own sign-out of the Claude subscription, for the desktop's Settings (the terminal reads the
+  // same file). `claudeSubscription/write` {signedOut} flips the switch; both answer {signedOut}.
+  function claudeSubscriptionRequest(msg) {
+    try {
+      if (msg.method === "claudeSubscription/write") {
+        setSignedOut(STATE_DIR, msg.params?.signedOut);
+        log(`Claude subscription: Elpis is ${msg.params.signedOut ? "signed out" : "signed in"}`);
+        recordAccounts().catch((e) => log(`accounts: ${e.message}`));
+      }
+      toTui({ id: msg.id, result: { signedOut: claudeSignedOut() } });
+    } catch (e) { toTui({ id: msg.id, error: { code: Number.isInteger(e.code) ? e.code : -32603, message: e.message ?? String(e) } }); }
+  }
   function handleMessage(data) {
     const line = data.toString();
     let msg;
@@ -2056,6 +2339,11 @@ wss.on("connection", (ws) => {
     if (msg.method && (deletingThreads.has(target) || (deletedThreads.has(target) && msg.method !== "thread/delete"))) {
       toTui({ id: msg.id, error: { code: -32600, message: deletedThreads.has(target) ? `thread not found: ${target}` : "The chat is being deleted; wait for deletion to finish." } }); return;
     }
+    if (msg.method === "workGraph/run" || msg.method === "workGraph/runWithProviders") {
+      runWorkGraph(msg).catch(e => toTui({ id: msg.id, error: Number.isInteger(e.code) ? e : { code: -32603, message: e.message ?? String(e) } }));
+      return;
+    }
+    if (msg.method === "claudeSubscription/read" || msg.method === "claudeSubscription/write") { claudeSubscriptionRequest(msg); return; }
     const owner = providerOwners.get(msg.params?.threadId);
     if (msg.method === "thread/unsubscribe" && owner) {
       const tid = msg.params.threadId;
@@ -2082,11 +2370,26 @@ wss.on("connection", (ws) => {
       return;
     }
     if ((msg.method === "thread/read" || msg.method === "thread/resume") && childIds.has(msg.params?.threadId)) { answerChild(msg); return; }
+    if (msg.method === "thread/read" && msg.params?.includeTurns) {
+      (async () => {
+        await storeChain;
+        const historyStore = await loadStore();
+        const tid = msg.params.threadId;
+        if (historyStore[tid]?.providerHistory) {
+          const result = await engineCall("thread/read", msg.params);
+          const history = await providerHistory(tid, historyStore);
+          result.thread.turns = history.turns;
+          toTui({ id: msg.id, result });
+        } else engine.stdin.write(JSON.stringify(msg) + "\n");
+      })().catch(error => toTui({ id: msg.id, error: Number.isInteger(error.code) ? error : { code: -32603, message: error.message } }));
+      return;
+    }
+
     if (msg.method === "thread/loaded/list") pendingChildList.set(msg.id, null);
     if (msg.method === "thread/list" && msg.params?.ancestorThreadId && !msg.params.cursor) pendingChildList.set(msg.id, msg.params.ancestorThreadId);
     if (msg.method === "thread/list" || msg.method === "thread/read") pendingHelperMark.add(msg.id);
     if (msg.method === "model/list") pendingModelList.add(msg.id);
-    if (msg.method === "thread/resume") { pendingResume.set(msg.id, msg.params?.threadId); resumeThread(msg); return; }
+    if (msg.method === "thread/resume") { pendingResume.set(msg.id, msg.params?.threadId); resumeOptions.set(msg.id, msg.params ?? {}); resumeThread(msg); return; }
     if (msg.method === "thread/archive") {
       pendingArchive.set(msg.id, msg.params?.threadId);
       if (claudeModel.has(msg.params?.threadId)) { archiveProvider(msg); return; }
@@ -2100,7 +2403,18 @@ wss.on("connection", (ws) => {
     if (msg.method === "thread/start") { startThread(msg); return; }
     if (msg.method === "thread/revert") { revertThread(msg); return; }
     if (msg.method === "review/start" && claudeModel.has(msg.params?.threadId) && !activeTurns.has(msg.params.threadId)) { reviewClaude(msg); return; }
+    if (msg.method === "thread/turns/list" || msg.method === "thread/items/list") {
+      (async () => {
+        await storeChain;
+        const historyStore = await loadStore();
+        const tid = msg.params?.threadId;
+        if (claudeModel.has(tid) || (historyStore[tid]?.model || historyStore[tid]?.providerHistory) || providerOwners.has(tid) || childIds.has(tid)) await listProviderHistory(msg, historyStore);
+        else engine.stdin.write(JSON.stringify(msg) + "\n");
+      })().catch(error => toTui({ id: msg.id, error: Number.isInteger(error.code) ? error : { code: -32603, message: error.message } }));
+      return;
+    }
     if (msg.method === "thread/turns/list" && msg.params?.threadId) pendingTurnsList.set(msg.id, msg.params);
+    if (msg.method === "account/rateLimits/read") pendingLimitsRead.add(msg.id);
     if (msg.method === "thread/items/list" && msg.params?.threadId) pendingItemsList.set(msg.id, msg.params);
     const lp = msg.params ?? {};
     if (msg.method === "thread/list" && !lp.archived && lp.sortKey !== "section_position" && lp.sortDirection !== "asc"
@@ -2109,14 +2423,17 @@ wss.on("connection", (ws) => {
       const p = msg.params ?? {};
       if (ownHelpers.has(p.threadId)) boundAccess(p, helperScope.get(p.threadId).ceiling, "sandboxPolicy");
       if (isBridged(p.model)) { claudeModel.set(p.threadId, p.model); claimProvider(p.threadId); p.model = null; log(`thread ${p.threadId} -> ${claudeModel.get(p.threadId)}`); }
-      else if (typeof p.model === "string") claudeModel.delete(p.threadId);
+      else if (typeof p.model === "string") {
+        if (activeTurns.has(p.threadId)) { toTui({ id: msg.id, error: { code: -32600, message: "Wait for the active provider turn to finish before switching this conversation to a native model." } }); return; }
+        pendingNativeRoutes.set(msg.id, { threadId: p.threadId, model: p.model, effort: p.effort });
+      }
       // Permissions become authoritative only on thread/settings/updated. A rejected or queued
       // request must never grant the bridge permission ahead of the engine.
       if (p.collaborationMode?.mode) {
         threadCollab.set(p.threadId, p.collaborationMode.mode);
-        if (claudeModel.has(p.threadId) && p.collaborationMode.settings && !isBridged(p.collaborationMode.settings.model)) p.collaborationMode.settings.model = null;
+        if (!pendingNativeRoutes.has(msg.id) && claudeModel.has(p.threadId) && p.collaborationMode.settings && !isBridged(p.collaborationMode.settings.model)) p.collaborationMode.settings.model = null;
       }
-      if (p.effort && claudeModel.has(p.threadId)) { claudeEffort.set(p.threadId, p.effort); p.effort = null; }
+      if (!pendingNativeRoutes.has(msg.id) && p.effort && claudeModel.has(p.threadId)) { claudeEffort.set(p.threadId, p.effort); p.effort = null; }
       engine.stdin.write(JSON.stringify(msg) + "\n");
       return;
     }
@@ -2139,6 +2456,30 @@ wss.on("connection", (ws) => {
       // Its permission fields are the TUI's unconfirmed choice: a Claude turn ignores them (see
       // claudeTurn), and the engine reports what it accepts for its own turn in
       // thread/settings/updated.
+      const requestedNative = typeof msg.params?.model === "string" && !isBridged(msg.params.model);
+      if (requestedNative && activeTurns.has(tid)) { toTui({ id: msg.id, error: { code: -32600, message: "Wait for the active provider turn to finish before switching this conversation to a native model." } }); return; }
+      if (requestedNative) {
+        const go = () => {
+          pendingNativeRoutes.set(msg.id, { threadId: tid, model: msg.params.model, effort: msg.params.effort });
+          engine.stdin.write(JSON.stringify(msg) + "\n");
+        };
+        const own = ownHelpers.get(tid);
+        if (own && (own.applying || own.failed)) {
+          own.waiting ??= new Set(); own.waiting.add(msg.id);
+          enforceHelper(tid).then(ok => {
+            const pending = own.waiting.delete(msg.id);
+            if (!pending) return;
+            if (ok && !context.failed) go();
+            else toTui({ id: msg.id, error: { code: -32600, message: "The next turn was not started: its chat's restricted permissions could not be applied." } });
+          });
+        } else go();
+        return;
+      }
+      // A turn on a subscription Elpis is signed out of is refused before anything changes (hidden title
+      // and recap requests are refused in structuredClaude, and queued, goal, compact and review turns in claudeTurn).
+      if (!String(msg.id).startsWith("temporary-structured-turn") && signedOutModel(isBridged(msg.params?.model) ? msg.params.model : claudeModel.get(tid))) {
+        toTui({ id: msg.id, error: { code: -32600, message: SIGNED_OUT_MESSAGE } }); return;
+      }
       if (isBridged(msg.params?.model)) {
         claudeModel.set(tid, msg.params.model);
         claimProvider(tid);
@@ -2182,12 +2523,17 @@ wss.on("connection", (ws) => {
     if (msg.method === "turn/interrupt" && activeTurns.has(msg.params?.threadId)) {
       const running = activeTurns.get(msg.params.threadId);
       running.cancelled = true;
+      cancelWaitingClaudeSteers(msg.params.threadId, [...(pendingSteers.get(msg.params.threadId)?.keys() ?? [])]);
       if (running.sessionId) running.acp?.send({ method: "session/cancel", params: { sessionId: running.sessionId } });
       toTui({ id: msg.id, result: {} });
       return;
     }
     if (msg.method === "turn/steer" && claudeModel.has(msg.params?.threadId)) {
       steerClaude(msg);
+      return;
+    }
+    if (msg.method === "turn/steer/cancel" && claudeModel.has(msg.params?.threadId)) {
+      cancelClaudeSteers(msg);
       return;
     }
     engine.stdin.write(line + "\n");
@@ -2200,7 +2546,7 @@ wss.on("connection", (ws) => {
     engineReqs.clear(); engineTurns.clear();
     for (const [key, start] of startingProviders) if (key.startsWith(`${connectionId}:`)) { start.resolve(); startingProviders.delete(key); }
     for (const id of new Set([...pendingStart.keys(), ...pendingResume.keys(), ...openingReplies])) toTui({ id, error });
-    pendingStart.clear(); pendingResume.clear(); openingReplies.clear();
+    pendingStart.clear(); pendingResume.clear(); resumeOptions.clear(); pendingNativeRoutes.clear(); openingReplies.clear();
     for (const [id, route] of forwarded) if (route.owner === ws) { forwarded.delete(id); sendClient(route.client, { id: route.id, error }); }
     for (const [tid, owner] of providerOwners) if (owner.ws === ws) for (const client of viewers(tid)) client.close(1011, "Session backend disconnected");
     context.close(); ws.close(1011, "Session backend disconnected"); checkIdle();

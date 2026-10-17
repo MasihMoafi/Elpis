@@ -7,6 +7,110 @@ use codex_protocol::permissions::FileSystemPath;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use pretty_assertions::assert_eq;
 
+async fn provider_route_fixture() -> (Config, tempfile::TempDir) {
+    let home = tempfile::tempdir().expect("temporary config home");
+    let mut config = Config::load_default_with_cli_overrides_for_codex_home(
+        home.path().to_path_buf(),
+        Vec::new(),
+    )
+    .await
+    .expect("default native config");
+    config.model = Some("root-model".to_string());
+    config.developer_instructions = Some("Preserve graph instructions".to_string());
+    for id in ["root", "provider-a", "provider-b"] {
+        config.model_providers.insert(
+            id.to_string(),
+            serde_json::from_value(serde_json::json!({
+                "name": id,
+                "base_url": format!("http://127.0.0.1:8123/{id}"),
+                "wire_api": "responses",
+                "requires_openai_auth": false,
+                "experimental_bearer_token": format!("synthetic-{id}"),
+            }))
+            .expect("fixture provider"),
+        );
+    }
+    config.model_provider_id = "root".to_string();
+    config.model_provider = config.model_providers["root"].clone();
+    (config, home)
+}
+
+#[tokio::test]
+async fn task_provider_routes_preserve_independent_auth_and_inherited_config() {
+    let (base, _home) = provider_route_fixture().await;
+    let inherited = resolve_task_spawn_config(&base, None, None).expect("inherited route");
+    assert_eq!(inherited.model.as_deref(), Some("root-model"));
+    assert_eq!(inherited.model_provider, base.model_provider);
+    let model_only =
+        resolve_task_spawn_config(&base, None, Some("root/custom")).expect("model-only route");
+    assert_eq!(model_only.model_provider_id, "root");
+    assert_eq!(model_only.model_provider, base.model_provider);
+    for id in ["provider-a", "provider-b"] {
+        let selected = resolve_task_spawn_config(&base, Some(id), Some("custom/model"))
+            .expect("configured native route");
+        assert_eq!(selected.model_provider_id, id);
+        assert_eq!(selected.model.as_deref(), Some("custom/model"));
+        assert_eq!(selected.model_provider, base.model_providers[id]);
+        assert_ne!(selected.model_provider, base.model_provider);
+        assert_eq!(selected.developer_instructions, base.developer_instructions);
+        assert_eq!(
+            selected.permissions.permission_profile(),
+            base.permissions.permission_profile()
+        );
+        assert_eq!(
+            selected.config_layer_stack.requirements(),
+            base.config_layer_stack.requirements()
+        );
+    }
+}
+
+#[tokio::test]
+async fn task_provider_routes_reject_unknown_incomplete_and_subscription_routes() {
+    let (base, _home) = provider_route_fixture().await;
+    for (provider, model) in [
+        (Some("provider-a"), None),
+        (Some("unknown"), Some("custom/model")),
+        (Some("claude"), Some("custom/model")),
+        (Some("agy"), Some("custom/model")),
+        (Some("antigravity"), Some("custom/model")),
+        (Some("provider-a"), Some("Claude/opus")),
+        (None, Some("agy/model")),
+        (None, Some("antigravity/model")),
+        (Some("provider-a"), Some("")),
+        (Some("provider-a"), Some("bad model")),
+        (Some(" provider-a"), Some("custom/model")),
+    ] {
+        assert!(resolve_task_spawn_config(&base, provider, model).is_err());
+    }
+}
+
+#[tokio::test]
+async fn task_provider_routes_retain_managed_provider_requirements() {
+    let (mut base, _home) = provider_route_fixture().await;
+    let mut requirements = base.config_layer_stack.requirements().clone();
+    requirements.model_provider = Some(codex_config::Sourced::new(
+        "root".to_string(),
+        codex_config::RequirementSource::Unknown,
+    ));
+    base.config_layer_stack = codex_config::ConfigLayerStack::new(
+        base.config_layer_stack
+            .layers_low_to_high()
+            .cloned()
+            .collect(),
+        requirements,
+        base.config_layer_stack.requirements_toml().clone(),
+    )
+    .expect("managed config stack");
+    assert!(resolve_task_spawn_config(&base, None, Some("another-root-model")).is_ok());
+    let error = resolve_task_spawn_config(&base, Some("provider-a"), Some("custom/model"))
+        .expect_err("managed provider cannot be overridden");
+    assert!(
+        error
+            .to_string()
+            .contains("managed policy requires model provider")
+    );
+}
+
 fn task(
     id: &str,
     ordinal: i64,
@@ -22,6 +126,8 @@ fn task(
         ordinal,
         title: id.to_string(),
         instruction: format!("Implement {id}"),
+        provider: Some("fixture-provider".to_string()),
+        model: Some("fixture-model".to_string()),
         kind: if scopes.is_empty() {
             codex_state::WorkGraphTaskKind::Explore
         } else {
@@ -207,6 +313,8 @@ fn writable_graph_requires_an_independent_verification_task() {
             kind: codex_state::WorkGraphTaskKind::Implement,
             title: "Implement".to_string(),
             instruction: "Change the requested behavior.".to_string(),
+            provider: None,
+            model: None,
             depends_on: Vec::new(),
             write_scopes: vec!["src".to_string()],
             acceptance_criteria: vec!["focused check passes".to_string()],

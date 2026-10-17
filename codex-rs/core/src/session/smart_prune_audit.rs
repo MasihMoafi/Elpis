@@ -309,9 +309,11 @@ pub(super) fn write_admission(
             response_item_sha256(&item.source)? == item.source_sha256,
             "Smart Prune source hash changed before audit publication"
         );
-        let safe_call_id = safe_filename_component(&item.call_id);
-        let source_name = format!("{index:03}-{safe_call_id}-source.json");
-        let admitted_name = format!("{index:03}-{safe_call_id}-admitted.json");
+        let source_name = source_artifact_name(index, &item.call_id);
+        let admitted_name = format!(
+            "{index:03}-{}-admitted.json",
+            safe_filename_component(&item.call_id)
+        );
         write_json_new(&items_dir.join(&source_name), &item.source)?;
         write_json_new(&items_dir.join(&admitted_name), &item.admitted)?;
         manifest_items.push(ManifestItem {
@@ -400,6 +402,26 @@ fn resolve_admission_directory(
         "Smart Prune admission directory escapes the log root"
     );
     Ok(canonical_admission_dir)
+}
+
+fn source_artifact_name(index: usize, call_id: &str) -> String {
+    format!(
+        "{index:03}-{}-source.json",
+        safe_filename_component(call_id)
+    )
+}
+
+/// Where `write_admission` stores the exact source of its `index`th item.
+pub(super) fn source_artifact_path(
+    log_dir: &Path,
+    admission_id: &str,
+    index: usize,
+    call_id: &str,
+) -> Result<PathBuf> {
+    Ok(log_dir
+        .join(validated_admission_path(admission_id)?)
+        .join("items")
+        .join(source_artifact_name(index, call_id)))
 }
 
 fn validated_admission_path(admission_id: &str) -> Result<PathBuf> {

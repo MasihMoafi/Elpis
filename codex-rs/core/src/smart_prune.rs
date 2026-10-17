@@ -37,6 +37,8 @@ pub(crate) const MIN_SAVINGS_PERCENT: usize = 20;
 pub(crate) struct AdmissionEvidence<'a> {
     pub(crate) admission_id: &'a str,
     pub(crate) source_sha256: &'a str,
+    /// Where the audit keeps the exact source, so the main model can reread it.
+    pub(crate) source_file: Option<&'a str>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -181,7 +183,7 @@ pub fn parse_decision_manifest(
             (RawDecisionKind::Compact, Some(content)) if !content.trim().is_empty() => {
                 AdmissionDecision::Compact {
                     call_id: item.call_id.clone(),
-                    content: content.trim().to_string(),
+                    content,
                 }
             }
             (RawDecisionKind::Unchanged, None) => AdmissionDecision::Unchanged {
@@ -216,20 +218,25 @@ pub fn admit_compact_text(
     call_id: &str,
     admission_id: &str,
     source_sha256: &str,
+    source_file: Option<&str>,
 ) -> Option<AdmittedText> {
-    let compact_text = compact_text.trim();
-    if compact_text.is_empty() {
+    if compact_text.trim().is_empty() {
         return None;
     }
     let source_tokens = approx_token_count(source_text);
     if source_tokens < MIN_SOURCE_TOKENS {
         return None;
     }
-    let text = format!(
+    let mut text = format!(
         "{compact_text}\n[ELPIS SMART PRUNE]\n\
          exact_source=smart-prune://{admission_id}/{call_id}\n\
          source_sha256={source_sha256}"
     );
+    if let Some(source_file) = source_file {
+        text.push_str(&format!(
+            "\nexact_source_file={source_file} (JSON; its output field is the full text)"
+        ));
+    }
     let admitted_tokens = approx_token_count(&text);
     let saved_tokens = source_tokens.saturating_sub(admitted_tokens);
     if saved_tokens < MIN_SAVED_TOKENS
@@ -265,6 +272,7 @@ pub(crate) fn transform_tool_output(
         call_id,
         evidence.admission_id,
         evidence.source_sha256,
+        evidence.source_file,
     )?;
 
     let mut admitted = source.clone();

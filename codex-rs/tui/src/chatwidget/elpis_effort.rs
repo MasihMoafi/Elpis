@@ -17,6 +17,17 @@ struct EffortChoice {
 }
 
 impl ChatWidget {
+    /// After a switch to another provider: the new model's effort levels, as Codex offers them
+    /// after a model is picked. A model with one level or none offers nothing.
+    pub(crate) fn offer_effort_levels(&mut self) {
+        if let Some(preset) = self
+            .current_preset()
+            .filter(|preset| preset.supported_reasoning_efforts.len() > 1)
+        {
+            self.open_reasoning_popup(preset);
+        }
+    }
+
     /// Bare `/effort`: the current model's levels, the current one highlighted.
     pub(super) fn open_effort_popup(&mut self) {
         if !self.is_session_configured() {

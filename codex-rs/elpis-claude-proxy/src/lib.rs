@@ -250,6 +250,7 @@ async fn decide(state: &ProxyState, body: &Value, pending: &[Candidate]) -> Deci
                 &candidate.tool_use_id,
                 &admission_id,
                 &source_sha256,
+                None,
             ),
             Some(AdmissionDecision::Unchanged { .. }) | None => None,
         };

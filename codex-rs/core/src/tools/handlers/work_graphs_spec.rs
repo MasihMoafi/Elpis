@@ -53,6 +53,14 @@ pub fn create_run_agent_work_graph_tool() -> ToolSpec {
             ),
         ),
         (
+            "provider".to_string(),
+            JsonSchema::string(Some("Optional configured native provider ID. Requires an explicit model. Subscription providers are unsupported.".to_string())),
+        ),
+        (
+            "model".to_string(),
+            JsonSchema::string(Some("Optional native model ID. With no provider, inherits the coordinator's native provider. Omit both to inherit the route.".to_string())),
+        ),
+        (
             "environment_id".to_string(),
             JsonSchema::string(Some(
                 "Optional pre-selected environment/worktree id. Omit for the primary environment."

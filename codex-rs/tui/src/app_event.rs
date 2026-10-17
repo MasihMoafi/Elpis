@@ -648,9 +648,19 @@ pub(crate) enum AppEvent {
         selected_cell: Arc<dyn HistoryCell>,
         prompt: UserMessage,
     },
+    /// Explicitly confirmed whole-turn prompt edit; the snapshot guards against stale choices.
+    ConfirmWholeTurnPromptEdit {
+        thread_id: ThreadId,
+        selected_cell: Arc<dyn HistoryCell>,
+        prompt: UserMessage,
+        turn_id: String,
+        turn_fingerprint: [u8; 32],
+        latest_turn_id: Option<String>,
+    },
     FinishPromptRevert {
         thread_id: ThreadId,
         nth_user_message: usize,
+        clipped_turn_prefix: bool,
     },
 
     /// Request to exit the application.
@@ -677,6 +687,14 @@ pub(crate) enum AppEvent {
     /// Forward a command to the Agent. Using an `AppEvent` for this avoids
     /// bubbling channels through layers of widgets.
     CodexOp(AppCommand),
+    RecallPendingSteers {
+        thread_id: ThreadId,
+        client_user_message_ids: Vec<String>,
+    },
+    PendingSteersRecalled {
+        thread_id: ThreadId,
+        result: Result<Vec<String>, String>,
+    },
 
     /// A blocking image-preparation worker has finished; payload stays with its widget.
     ImagesPrepared(Uuid),

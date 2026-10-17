@@ -2,6 +2,7 @@
 
 use super::*;
 use crate::permission_discovery::PermissionDiscovery;
+use codex_protocol::models::BUILT_IN_PERMISSION_PROFILE_BYPASS_PERMISSIONS;
 use codex_protocol::models::BUILT_IN_PERMISSION_PROFILE_DANGER_FULL_ACCESS;
 
 pub(super) fn permission_preset_description(preset: &ApprovalPreset) -> &'static str {
@@ -15,6 +16,11 @@ pub(super) fn permission_preset_description(preset: &ApprovalPreset) -> &'static
         }
         _ => preset.description,
     }
+}
+
+/// Elpis: Bypass permissions reads as root access: red wherever it is offered or shown.
+pub(crate) fn bypass_permissions_style() -> Style {
+    crate::style::status_style(crate::style::StatusTone::Failure)
 }
 
 pub(crate) fn auto_review_available(config: &Config) -> bool {
@@ -74,6 +80,15 @@ impl ChatWidget {
             );
             return;
         };
+        let Some(bypass) = presets
+            .iter()
+            .find(|preset| preset.id == "bypass-permissions")
+        else {
+            self.add_error_message(
+                "Internal error: missing the 'bypass-permissions' approval preset.".to_string(),
+            );
+            return;
+        };
         let mut items = vec![self.builtin_permission_mode_selection_item(
             &discovery,
             default,
@@ -100,6 +115,17 @@ impl ChatWidget {
             AskForApproval::from(full_access.approval),
             ApprovalsReviewer::User,
         ));
+        items.push(SelectionItem {
+            name_style: Some(bypass_permissions_style()),
+            ..self.builtin_permission_mode_selection_item(
+                &discovery,
+                bypass,
+                BUILT_IN_PERMISSION_PROFILE_BYPASS_PERMISSIONS,
+                permission_preset_description(bypass).to_string(),
+                AskForApproval::from(bypass.approval),
+                ApprovalsReviewer::User,
+            )
+        });
         items.push(self.builtin_permission_mode_selection_item(
             &discovery,
             read_only,

@@ -368,6 +368,11 @@ async fn switching_provider_sends_the_queued_follow_up_once_on_the_selected_mode
     fixture.follow_switch = true;
     fixture.key(KeyCode::Enter);
     fixture.pump().await?;
+    // The new model's effort levels open, as in Codex, and the follow-up waits for them.
+    assert!(fixture.sent_turns().is_empty(), "{:?}", fixture.sent_turns());
+    assert!(!fixture.app.chat_widget.no_modal_or_popup_active(), "{}", fixture.popup());
+    fixture.key(KeyCode::Enter);
+    fixture.pump().await?;
 
     assert_ne!(
         fixture.app.chat_widget.thread_id(),

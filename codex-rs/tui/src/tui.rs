@@ -870,6 +870,38 @@ impl Tui {
         self.event_broker.resume_events();
     }
 
+    /// Refresh terminal-owned colors after focus returns, without losing interleaved input.
+    /// Keep the previous palette when a terminal does not answer the bounded probe.
+    pub(crate) fn refresh_terminal_palette(&mut self) -> bool {
+        #[cfg(any(unix, windows))]
+        {
+            self.pause_events();
+            #[cfg(unix)]
+            let colors = crate::terminal_probe::startup(
+                crate::terminal_probe::DEFAULT_TIMEOUT,
+                crate::terminal_probe::StartupKeyboardEnhancementProbe::Skip,
+            )
+            .ok()
+            .and_then(|probe| probe.default_colors);
+            #[cfg(windows)]
+            let colors =
+                crate::terminal_probe::default_colors(crate::terminal_probe::DEFAULT_TIMEOUT)
+                    .ok()
+                    .flatten();
+            self.resume_events();
+            if let Some(colors) = colors {
+                let changed = crate::terminal_palette::default_fg() != Some(colors.fg)
+                    || crate::terminal_palette::default_bg() != Some(colors.bg);
+                crate::terminal_palette::set_default_colors_from_startup_probe(Some(colors));
+                if changed {
+                    self.frame_requester.schedule_frame();
+                }
+                return changed;
+            }
+        }
+        false
+    }
+
     /// Discover the visible Windows theme only after protected startup decisions have completed.
     #[cfg(windows)]
     pub(crate) fn probe_default_colors_after_protected_startup(&mut self) {

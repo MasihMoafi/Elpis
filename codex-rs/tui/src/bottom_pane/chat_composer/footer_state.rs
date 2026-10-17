@@ -79,6 +79,9 @@ pub(crate) struct ComposerRenderOptions<'a> {
     pub(crate) separate_status_line: bool,
     pub(crate) command_popup_placement: CommandPopupPlacement,
     pub(crate) footer: Option<&'a TranscriptFooter>,
+    /// Full screen draws the Context Ledger as its own full-height column, so the bottom
+    /// pane leaves it out and keeps its own height.
+    pub(crate) context_ledger_column: bool,
 }
 
 impl super::ChatComposer {

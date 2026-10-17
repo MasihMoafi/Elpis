@@ -159,7 +159,10 @@ impl Renderable for AgentsOverviewView {
                 let count = self
                     .rows
                     .iter()
-                    .filter(|row| group.is_none_or(|group| group == row.group))
+                    .filter(|row| {
+                        row.thread.parent_thread_id.is_none()
+                            && group.is_none_or(|group| group == row.group)
+                    })
                     .count();
                 format!("{label} {count}")
             })

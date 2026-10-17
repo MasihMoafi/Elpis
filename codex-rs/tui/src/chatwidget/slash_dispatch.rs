@@ -808,7 +808,7 @@ impl ChatWidget {
         }
         let PreparedSlashCommandArgs {
             args,
-            text_elements,
+            mut text_elements,
             pending_pastes,
             local_images,
             remote_image_urls,
@@ -817,6 +817,20 @@ impl ChatWidget {
         } = prepared;
         let trimmed = args.trim();
         match cmd {
+            SlashCommand::Rag => {
+                let prefix_len = elpis_commands::rag_command_message("").len();
+                for element in &mut text_elements {
+                    element.byte_range.start += prefix_len;
+                    element.byte_range.end += prefix_len;
+                }
+                self.submit_user_message(UserMessage {
+                    text: elpis_commands::rag_command_message(&args),
+                    local_images,
+                    remote_image_urls,
+                    text_elements,
+                    mention_bindings,
+                });
+            }
             SlashCommand::Export if trimmed.is_empty() => self.show_transcript_export_popup(),
             SlashCommand::Export => {
                 self.set_queue_autosend_suppressed(/*suppressed*/ true);

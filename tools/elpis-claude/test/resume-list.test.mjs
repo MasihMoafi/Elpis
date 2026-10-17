@@ -21,7 +21,29 @@ if (process.argv.includes("app-server")) {
   let active = 0, maxActive = 0;
   const handle = async (msg, send) => {
     if (msg.id === undefined) return;
+    record({ method: msg.method, params: msg.params });
     let result = {};
+    if (msg.method === "thread/resume") {
+      const row = fixture().threads[msg.params.threadId];
+      result = { thread: { ...row.thread, turns: msg.params.excludeTurns ? [] : (fixture().turns ?? []) }, approvalPolicy: "on-request", model: "gpt-5.5" };
+    }
+    if (["thread/turns/list", "thread/items/list"].includes(msg.method)) {
+      // As the engine answers before a thread's first recorded message (no state row yet).
+      const methodError = fixture()[msg.method === "thread/turns/list" ? "turnsError" : "itemsError"];
+      if (methodError) return send({ id: msg.id, error: methodError });
+      if (fixture().historyError && (!fixture().errorCursor || msg.params?.cursor === fixture().errorCursor)) return send({ id: msg.id, error: { code: -32600, message: fixture().historyError, data: { native: true } } });
+      let data = fixture()[msg.method === "thread/turns/list" ? "turns" : "items"] ?? [];
+      const field = msg.method === "thread/turns/list" ? "startedAt" : "startedAtMs";
+      data = [...data].sort((a,b)=>(a[field]??0)-(b[field]??0));
+      if ((msg.params.sortDirection ?? "desc") === "desc") data.reverse();
+      const offset = Number(msg.params.cursor?.split(":")[1] ?? 0);
+      const limit = msg.params.limit ?? 25;
+      const page = data.slice(offset,offset+limit).map(row=>{
+        if (msg.method === "thread/items/list" || msg.params.itemsView === "full") return row;
+        return {...row,itemsView:msg.params.itemsView ?? "summary",items:msg.params.itemsView === "notLoaded" ? [] : (row.items??[]).filter(item=>["userMessage","agentMessage"].includes(item.type))};
+      });
+      result = {data:page,nextCursor:offset+limit<data.length ? `native:${offset+limit}` : null,backwardsCursor:null};
+    }
     if (msg.method === "thread/list") result = fixture().pages[msg.params?.cursor ?? "first"];
     if (msg.method === "thread/read") {
       assert.equal(msg.params.includeTurns, false);
@@ -60,7 +82,7 @@ if (process.argv.includes("app-server")) {
     });
   }
 } else {
-  async function setup(t, fixture, store, shared = false) {
+  async function setup(t, fixture, store, shared = false, maxPayload = 8 * 1024 * 1024) {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "elpis-resume-list-"));
     const config = path.join(root, "fixture.json"), trace = path.join(root, "trace.jsonl");
     fs.writeFileSync(config, JSON.stringify(fixture)); fs.writeFileSync(trace, "");
@@ -68,7 +90,7 @@ if (process.argv.includes("app-server")) {
     const engine = path.join(root, "engine");
     fs.writeFileSync(engine, `#!${process.execPath}\nimport ${JSON.stringify(self)};\n`, { mode: 0o755 });
     const log = path.join(root, "bridge.log");
-    const child = spawn(process.execPath, [fileURLToPath(new URL("../acp-bridge.mjs", import.meta.url))], {
+    const child = spawn(process.execPath, [process.env.ELPIS_RESUME_TEST_ADAPTER ?? fileURLToPath(new URL("../acp-bridge.mjs", import.meta.url))], {
       cwd: root, stdio: ["ignore", "ignore", "pipe"],
       env: { PATH: process.env.PATH, HOME: root, ELPIS_HOME: root, CODEX_HOME: root, CODEX_AUTH_HOME: root,
         XDG_RUNTIME_DIR: root, TMPDIR: root, ELPIS_ENGINE_BIN: engine, ACP_BRIDGE_STORE: path.join(root, "sessions.json"),
@@ -95,7 +117,7 @@ if (process.argv.includes("app-server")) {
     await until(() => fs.existsSync(log) && /LISTENING/.test(fs.readFileSync(log, "utf8")), "bridge startup");
     const endpoint = shared ? `ws+unix://${path.join(root, "bridge.sock") }:/`
       : `ws://127.0.0.1:${fs.readFileSync(log, "utf8").match(/LISTENING (\d+)/)[1]}`;
-    socket = new WebSocket(endpoint);
+    socket = new WebSocket(endpoint, { maxPayload });
     await once(socket, "open");
     const pending = new Map(), stray = []; let seq = 0;
     socket.on("message", data => {
@@ -118,6 +140,135 @@ if (process.argv.includes("app-server")) {
     cwd: "/fixture/work", source: "cli", modelProvider: "openai", preview: "", ...extra });
   const saved = (text, extra = {}) => ({ model: "claude/haiku", turns: [{ items: [{ type: "userMessage", content: [{ type: "text", text }] }] }], ...extra });
   const list = { sortKey: "updated_at", sourceKinds: ["cli", "vscode"], limit: 25 };
+
+  test("lightweight provider resume excludes history and independently pages summary turns", async t => {
+    const turns = Array.from({length:12},(_,i)=>({id:`stored-${i}`,startedAt:i+2,status:"completed",items:[{id:`u-${i}`,type:"userMessage",content:[{type:"text",text:`User ${i}`}]},{id:`tool-${i}`,type:"commandExecution",aggregatedOutput:"x".repeat(700000)},{id:`a-${i}`,type:"agentMessage",text:`Answer ${i}`}]}));
+    const native={id:"native",startedAt:1,status:"completed",items:[{id:"native-answer",type:"agentMessage",text:"Native answer"}]};
+    const fixture=await setup(t,{threads:{chat:{thread:thread("chat",20)}},turns:[native],pages:{}},{chat:{model:"claude/haiku",turns}});
+    await fixture.call("thread/resume",{threadId:"chat",excludeTurns:true});
+    const response=await fixture.call("thread/resume",{threadId:"chat",excludeTurns:true,initialTurnsPage:{limit:1,sortDirection:"desc",itemsView:"summary"}});
+    assert.equal(response.result.thread.turns.length,0);
+    assert.equal(response.result.initialTurnsPage.data.length,1);
+    assert.equal(response.result.initialTurnsPage.data[0].id,"stored-11");
+    assert.deepEqual(response.result.initialTurnsPage.data[0].items.map(row=>row.type),["userMessage","agentMessage"]);
+    const summaryBytes = Buffer.byteLength(JSON.stringify(response));
+    assert.ok(summaryBytes < 10000);
+    let cursor, total = 0, maxPageBytes = 0;
+    const allItems = [];
+    do {
+      const page = await fixture.call("thread/items/list", { threadId: "chat", limit: 30, sortDirection: "desc", ...(cursor ? { cursor } : {}) });
+      assert.ifError(page.error);
+      const bytes = Buffer.byteLength(JSON.stringify(page));
+      assert.ok(bytes < 8 * 1024 * 1024);
+      maxPageBytes = Math.max(maxPageBytes, bytes);
+      allItems.push(...page.result.data);
+      total += page.result.data.length;
+      cursor = page.result.nextCursor;
+    } while(cursor);
+    assert.equal(total, 36);
+    assert.equal(new Set(allItems.map(row => row.item.id)).size, 36);
+    assert.equal(allItems.filter(row => row.item.type === "commandExecution").reduce((sum,row)=>sum+row.item.aggregatedOutput.length,0),8400000);
+    t.diagnostic(`stored tool bytes=8400000; summary resume bytes=${summaryBytes}; max full-items limit30 page bytes=${maxPageBytes}`);
+    const reads=fixture.records().filter(row=>row.method==="thread/turns/list");
+    assert(reads.every(row=>row.params.itemsView!=="full"));
+    const noPage=await fixture.call("thread/resume",{threadId:"chat",excludeTurns:true});
+    assert.deepEqual(noPage.result.thread.turns,[]);
+    assert.equal(noPage.result.initialTurnsPage,null);
+  });
+
+  test("provider turn and item pages honor bounds and continue stored/native records without duplicates",async t=>{
+    const stored=Array.from({length:7},(_,i)=>({id:`stored-${i}`,startedAt:i*2+2,status:"completed",items:[{id:`item-${i}`,type:"agentMessage",text:`Answer ${i}`}]}));
+    const native=Array.from({length:6},(_,i)=>({id:`native-${i}`,startedAt:i*2+1,status:"completed",items:[{id:`native-item-${i}`,type:"agentMessage",text:`Native ${i}`}]}));
+    const items=native.map(row=>({turnId:row.id,item:row.items[0],startedAtMs:row.startedAt*1000,completedAtMs:row.startedAt*1000}));
+    const fixture=await setup(t,{threads:{chat:{thread:thread("chat",20)}},turns:native,items,pages:{}},{chat:{model:"agy/gemini",turns:stored}});
+    await fixture.call("thread/resume",{threadId:"chat",excludeTurns:true});
+    for(const [method,view] of [["thread/turns/list",{itemsView:"summary"}],["thread/items/list",{}]]){
+      const rows=[];let cursor=null;
+      do {
+        const reply=await fixture.call(method,{threadId:"chat",limit:2,sortDirection:"desc",cursor,...view});
+        assert.equal(reply.error,undefined);
+        assert(reply.result.data.length<=2,"Stored history must honor page size");
+        rows.push(...reply.result.data);cursor=reply.result.nextCursor;
+      } while(cursor);
+      const ids=rows.map(row=>row.item?.id??row.id);
+      assert.equal(rows.length,13);assert.equal(new Set(ids).size,13);
+      const times=rows.map(row=>row.startedAtMs??row.startedAt);
+      assert.deepEqual(times,[...times].sort((a,b)=>b-a));
+    }
+  });
+
+  test("provider history preserves full TUI resume, cursor bindings and native failures", async t => {
+    const tid = "options-root";
+    const turns = Array.from({ length: 4 }, (_, i) => ({ id: `same-${i}`, status: "completed", startedAt: 10, items: [{ id: `tool-${i}`, type: "commandExecution", aggregatedOutput: "kept for full TUI" }] }));
+    const state = { threads: { [tid]: { thread: thread(tid, 1) } }, turns: [{ id: "native", startedAt: 3, status: "completed", items: [] }] };
+    const fixture = await setup(t, state, { [tid]: { model: "claude/haiku", turns }, other: { model: "claude/haiku", turns: [] } }, false, 100 * 1024 * 1024);
+    const full = await fixture.call("thread/resume", { threadId: tid });
+    assert.equal(full.result.thread.turns.length, 5);
+    assert.equal(full.result.thread.turns.find(turn => turn.id === "same-0").items[0].aggregatedOutput, "kept for full TUI");
+    const p = { threadId: tid, limit: 2, sortDirection: "desc", itemsView: "summary" };
+    const first = (await fixture.call("thread/turns/list", p)).result;
+    assert.deepEqual(first.data.map(turn => turn.id), ["same-3", "same-2"]);
+    const second = (await fixture.call("thread/turns/list", { ...p, cursor: first.nextCursor })).result;
+    assert.deepEqual(second.data.map(turn => turn.id), ["same-1", "same-0"]);
+    const backwards = (await fixture.call("thread/turns/list", { ...p, sortDirection: "asc", cursor: second.backwardsCursor })).result;
+    assert.deepEqual(backwards.data.map(turn => turn.id), ["same-1", "same-2"]);
+    for (const changes of [{ threadId: "other" }, { itemsView: "full" }, { sortDirection: "asc" }]) {
+      const invalid = await fixture.call("thread/turns/list", { ...p, ...changes, cursor: first.nextCursor });
+      assert.match(invalid.error.message, /mismatched/);
+    }
+    assert.match((await fixture.call("thread/items/list", { threadId: tid, cursor: first.nextCursor })).error.message, /mismatched/);
+    assert.match((await fixture.call("thread/turns/list", { ...p, cursor: "acp-page:broken" })).error.message, /mismatched/);
+    fixture.write({ ...state, historyError: "permission denied reading native history" });
+    for (const [method, params] of [["thread/turns/list", p], ["thread/items/list", { threadId: tid }], ["thread/resume", { threadId: tid, excludeTurns: true, initialTurnsPage: { limit: 1 } }]]) {
+      const failed = await fixture.call(method, params);
+      assert.equal(failed.error.code, -32600);
+      assert.deepEqual(failed.error.data, { native: true });
+      assert.match(failed.error.message, /permission denied/);
+    }
+    const metadata = await fixture.call("thread/resume", { threadId: tid, excludeTurns: true });
+    assert.equal(metadata.result.thread.turns.length, 0);
+    assert.equal(metadata.result.initialTurnsPage, null);
+  });
+
+  test("provider pages retain native wire ties, changed page sizes and continuation errors", async t => {
+    const tid = "many-native";
+    const ids = ["z", "a", "y", "b", "x", "c", "w"];
+    const turns = ids.map(id => ({ id, startedAt: 5, status: "completed", items: [] }));
+    const state = { threads: { [tid]: { thread: thread(tid, 1) } }, turns };
+    const fixture = await setup(t, state, { [tid]: { model: "agy/gemini", turns: [{ id: "stored", startedAt: 5, status: "completed", items: [] }] } });
+    const p = { threadId: tid, limit: 3, sortDirection: "desc", itemsView: "notLoaded" };
+    let cursor, all = [], pages = [];
+    do {
+      const reply = await fixture.call("thread/turns/list", { ...p, limit: cursor ? 1 : 3, ...(cursor ? { cursor } : {}) });
+      assert.ifError(reply.error); assert.ok(reply.result.data.length <= (cursor ? 1 : 3));
+      pages.push(reply.result); all.push(...reply.result.data); cursor = reply.result.nextCursor;
+    } while(cursor);
+    assert.deepEqual(all.map(turn => turn.id), ["stored", ...ids.toReversed()]);
+    assert.equal(new Set(all.map(turn => turn.id)).size, 8);
+    const back = await fixture.call("thread/turns/list", { ...p, sortDirection: "asc", cursor: pages[2].backwardsCursor });
+    assert.deepEqual(back.result.data.map(turn => turn.id), ["b", "x", "c"]);
+    assert.ok(fixture.records().filter(row=>row.method==="thread/turns/list").every(row=>row.params.limit<=3));
+    const first = await fixture.call("thread/turns/list", p);
+    fixture.write({ ...state, historyError: "native continuation failed", errorCursor: "native:3" });
+    const continuation = await fixture.call("thread/turns/list", { ...p, cursor: first.result.nextCursor });
+    assert.equal(continuation.error.code, -32600); assert.match(continuation.error.message, /native continuation failed/);
+  });
+
+  test("oversized individual items fail explicitly and bridge-only children page without native hydration", async t => {
+    const childId = "stored-child";
+    const childTurns = Array.from({ length: 3 }, (_, i) => ({ id: `child-turn-${i}`, startedAt: i, status: "completed", items: [{ id: `child-item-${i}`, type: "agentMessage", text: `Child answer ${i}` }] }));
+    const fixture = await setup(t, { threads: {}, historyError: "native history must not be read for bridge-only child" }, { [childId]: { parentThreadId: "parent", rootThreadId: "parent", thread: thread(childId, 1, { parentThreadId: "parent" }), turns: childTurns }, huge: { model: "claude/haiku", turns: [{ id: "huge-turn", startedAt: 1, items: [{ id: "huge-item", type: "commandExecution", aggregatedOutput: "x".repeat(9 * 1024 * 1024) }] }] } });
+    const first = await fixture.call("thread/turns/list", { threadId: childId, limit: 1, itemsView: "summary" });
+    assert.equal(first.result.data[0].id, "child-turn-2");
+    const second = await fixture.call("thread/turns/list", { threadId: childId, limit: 1, itemsView: "summary", cursor: first.result.nextCursor });
+    assert.equal(second.result.data[0].id, "child-turn-1");
+    assert.equal((await fixture.call("thread/items/list", { threadId: childId, limit: 2 })).result.data.length, 2);
+    assert.equal(fixture.records().filter(row => ["thread/turns/list", "thread/items/list"].includes(row.method)).length, 0);
+    fixture.write({ threads: {}, turns: [], items: [] });
+    const oversized = await fixture.call("thread/items/list", { threadId: "huge", limit: 30 });
+    assert.match(oversized.error.message, /huge-item exceeds.*not truncated/);
+    assert.equal((await fixture.call("thread/turns/list", { threadId: "huge", limit: 1, itemsView: "notLoaded" })).result.data.length, 1);
+  });
 
   test("81 saved roots are discovered concurrently with a bounded read window", async t => {
     const store = {}, threads = {};
@@ -189,5 +340,25 @@ if (process.argv.includes("app-server")) {
     assert.deepEqual(retried.result.data.map(row => row.id), ["healthy", "late", "stalled"]);
     fixture.close();
     await fixture.until(() => fixture.records().some(row => row.connection === "close"), "stalled request leaked the shared engine connection");
+  });
+
+  test("a provider chat reads its items before the engine has recorded its first message", async t => {
+    // The engine's answers for a thread with no state row yet: items are "not supported", turns "not materialized".
+    const unrecorded = { itemsError: { code: -32601, message: "thread/items/list is not supported yet" },
+      turnsError: { code: -32600, message: "thread fresh is not materialized yet; thread/turns/list is unavailable before first user message" } };
+    const stored = [{ id: "first", startedAt: 5, status: "interrupted", items: [{ id: "ask", type: "userMessage", content: [{ type: "text", text: "Hi" }] }, { id: "reply", type: "agentMessage", text: "Working" }] }];
+    const state = { threads: { fresh: { thread: thread("fresh", 5) }, empty: { thread: thread("empty", 5) } }, pages: {}, ...unrecorded };
+    const fixture = await setup(t, state, { fresh: { model: "agy/gemini", turns: stored }, empty: { model: "agy/gemini" } });
+    const items = await fixture.call("thread/items/list", { threadId: "fresh", limit: 30, sortDirection: "desc" });
+    assert.equal(items.error, undefined, JSON.stringify(items.error));
+    assert.deepEqual(items.result.data.map(row => row.item.id), ["reply", "ask"]);
+    const none = await fixture.call("thread/items/list", { threadId: "empty", limit: 30, sortDirection: "desc" });
+    assert.equal(none.error, undefined, JSON.stringify(none.error));
+    assert.deepEqual(none.result.data, []);
+    // A recorded thread whose items the engine truly cannot list keeps the engine's own answer.
+    fixture.write({ ...state, turnsError: undefined, turns: [] });
+    const refused = await fixture.call("thread/items/list", { threadId: "fresh", limit: 30, sortDirection: "desc" });
+    assert.equal(refused.error?.code, -32601);
+    assert.match(refused.error.message, /thread\/items\/list is not supported yet/);
   });
 }

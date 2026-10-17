@@ -41,9 +41,18 @@ impl App {
 
     fn sync_owned_transcript(&mut self, width: u16) -> bool {
         let chat_widget = &self.chat_widget;
-        let transcript_width = chat_widget.history_wrap_width(width);
+        let scrollbar_width = u16::from(self.transcript_view.reserves_scrollbar());
+        let transcript_width = chat_widget
+            .history_wrap_width(width)
+            .saturating_sub(scrollbar_width)
+            .max(1);
         let view = &mut self.transcript_view;
-        view.mouse_scroll_speed = self.local_settings.tui.mouse_scroll_speed.unwrap_or(1.0);
+        view.mouse_scroll_speed = self
+            .local_settings
+            .tui
+            .mouse_scroll_speed
+            .unwrap_or(crate::transcript_view::DEFAULT_MOUSE_SCROLL_SPEED);
+        view.mouse_wheel_acceleration = true;
         view.primary_selection = self.right_click_paste_environment.primary;
         view.copy_on_select = self
             .local_settings
@@ -76,8 +85,10 @@ impl App {
         screen_size: Size,
     ) -> Result<Rect> {
         self.chat_widget.sync_warnings(&self.transcript_cells);
-        // Elpis: full screen hides a Ledger that leaves the transcript too few rows.
-        self.chat_widget.fit_context_ledger_to_screen(screen_size);
+        // The full-screen Ledger owns a column at the right edge; replies and composer stay left.
+        self.chat_widget.fit_context_ledger_column();
+        let ledger_width = self.chat_widget.context_ledger_width(screen_size.width);
+        let main_width = screen_size.width.saturating_sub(ledger_width);
         let motion = MotionMode::from_animations_enabled(
             self.local_settings.tui.animations && self.local_settings.tui.effects.shimmer,
         );
@@ -87,13 +98,26 @@ impl App {
         } else {
             "esc latest"
         };
-        self.sync_owned_transcript(screen_size.width);
-        let transcript_width = self.chat_widget.history_wrap_width(screen_size.width);
+        self.sync_owned_transcript(main_width);
+        let transcript_width = self
+            .chat_widget
+            .history_wrap_width(main_width)
+            .min(main_width);
+        // Elpis: once the conversation overflows the screen, its last column holds the scrollbar.
+        let scrollbar_width =
+            u16::from(self.transcript_view.reserves_scrollbar()).min(transcript_width);
+        let body_width = transcript_width.saturating_sub(scrollbar_width);
+        // Elpis: the Ledger's title is on the first transcript row below the session header card,
+        // so the header, not the Ledger, opens the screen. The offset stays fixed when the
+        // transcript scrolls.
+        let ledger_top = self
+            .session_header_height(body_width)
+            .min(screen_size.height);
+        let frame_requester = tui.frame_requester();
         // Elpis: the hint row shares the composer's column, left of the Context Ledger.
-        let composer_hint =
-            self.composer_hint(self.chat_widget.width_beside_context_ledger(transcript_width));
+        let composer_hint = self.composer_hint(transcript_width);
         let now = Instant::now();
-        let turn_tip = self.turn_tip(transcript_width, now, &tui.frame_requester());
+        let turn_tip = self.turn_tip(body_width, now, &tui.frame_requester());
         let working_tip = turn_tip
             .as_ref()
             .filter(|(surface, _)| *surface == TipSurface::Working)
@@ -105,21 +129,17 @@ impl App {
         let mut composer_gap = (!self.chat_widget.has_active_view()
             && !self.chat_widget.is_external_writer_view())
         .then(crate::bottom_pane::ComposerGap::default);
-        let mut prompt_footer =
-            self.prompt_navigation_footer(screen_size.width.saturating_sub(/*rhs*/ 2));
+        let mut prompt_footer = self.prompt_navigation_footer(main_width.saturating_sub(/*rhs*/ 2));
         let chat_widget = &self.chat_widget;
         let view = &mut self.transcript_view;
         let active_key = chat_widget.active_cell_transcript_key();
         view.sync_history_tail(&self.transcript_cells);
-        view.prepare_width(transcript_width);
+        view.prepare_width(body_width);
         if view.advance_search(&self.transcript_cells) {
             tui.frame_requester().schedule_frame();
         }
         let footer_area = crate::bottom_pane::inset_footer_hint_area(Rect::new(
-            /*x*/ 0,
-            /*y*/ 0,
-            screen_size.width,
-            /*height*/ 1,
+            /*x*/ 0, /*y*/ 0, main_width, /*height*/ 1,
         ));
         let footer = view.footer_with_navigation(footer_area.width, motion, latest_navigation);
         // Cap the whole composer (including padding and hints) at two-thirds of the screen,
@@ -138,6 +158,7 @@ impl App {
                 },
                 composer_gap: composer_gap.as_ref(),
                 working_tip,
+                context_ledger_column: true,
                 ..Default::default()
             });
         let dashboard_visible = chat_widget
@@ -146,18 +167,22 @@ impl App {
         let bottom_height = if dashboard_visible {
             screen_size.height
         } else {
-            bottom
-                .desired_height(screen_size.width)
-                .min(screen_size.height)
+            bottom.desired_height(main_width).min(screen_size.height)
         };
         drop(bottom);
         let available = screen_size.height.saturating_sub(bottom_height);
         let mut bottom_area = Rect::new(
             /*x*/ 0,
             screen_size.height.saturating_sub(bottom_height),
-            screen_size.width,
+            main_width,
             bottom_height,
         );
+        let ledger_column = Rect::new(main_width, /*y*/ 0, ledger_width, screen_size.height);
+        let ledger_area = Rect {
+            y: ledger_top,
+            height: screen_size.height - ledger_top,
+            ..ledger_column
+        };
         let mut rendered_cursor = None;
         let mut footer_height_changed = false;
         let mut feedback_tick = None;
@@ -165,20 +190,26 @@ impl App {
         let mut transcript_bottom = available.saturating_sub(u16::from(composer_gap.is_none()));
         tui.draw(screen_size.height, |frame| {
             ratatui::widgets::Clear.render(
-                Rect::new(/*x*/ 0, /*y*/ 0, screen_size.width, available),
+                Rect::new(/*x*/ 0, /*y*/ 0, main_width, available),
                 frame.buffer,
             );
+            ratatui::widgets::Clear.render(ledger_column, frame.buffer);
             let mut completion_tip_area = view.render_with_turn_tip_space(
-                Rect::new(
-                    /*x*/ 0,
-                    /*y*/ 0,
-                    transcript_width,
-                    transcript_bottom,
-                ),
+                Rect::new(/*x*/ 0, /*y*/ 0, body_width, transcript_bottom),
                 frame.buffer,
                 &self.transcript_cells,
                 completion_tip,
             );
+            let scrollbar_track = |bottom| {
+                Rect::new(body_width, /*y*/ 0, scrollbar_width, bottom)
+            };
+            if view.render_scrollbar(
+                scrollbar_track(transcript_bottom),
+                frame.buffer,
+                &self.transcript_cells,
+            ) {
+                frame_requester.schedule_frame();
+            }
             if let Some(gap) = composer_gap.as_mut() {
                 gap.needs_separator = available > 1
                     && chat_widget.no_modal_or_popup_active()
@@ -210,33 +241,29 @@ impl App {
                     },
                     composer_gap: composer_gap.as_ref(),
                     working_tip,
+                    context_ledger_column: true,
                     ..Default::default()
                 });
             footer_height_changed = !dashboard_visible
-                && bottom
-                    .desired_height(screen_size.width)
-                    .min(screen_size.height)
-                    != bottom_height;
+                && bottom.desired_height(main_width).min(screen_size.height) != bottom_height;
             if footer_height_changed && composer_gap.as_ref().is_some_and(|gap| gap.needs_separator)
             {
-                bottom_area.height = bottom
-                    .desired_height(screen_size.width)
-                    .min(screen_size.height);
+                bottom_area.height = bottom.desired_height(main_width).min(screen_size.height);
                 bottom_area.y = screen_size.height.saturating_sub(bottom_area.height);
                 // Resolve controls with the compact viewport first, then make room for
                 // their separator. Resizing must not preserve a stale return control.
                 ratatui::widgets::Clear.render(bottom_area, frame.buffer);
                 transcript_bottom = bottom_area.y;
                 completion_tip_area = view.render_with_turn_tip_space(
-                    Rect::new(
-                        /*x*/ 0,
-                        /*y*/ 0,
-                        transcript_width,
-                        transcript_bottom,
-                    ),
+                    Rect::new(/*x*/ 0, /*y*/ 0, body_width, transcript_bottom),
                     frame.buffer,
                     &self.transcript_cells,
                     completion_tip,
+                );
+                view.render_scrollbar(
+                    scrollbar_track(transcript_bottom),
+                    frame.buffer,
+                    &self.transcript_cells,
                 );
                 footer_height_changed = false;
             }
@@ -245,7 +272,7 @@ impl App {
                 .borrow_mut()
                 .render_first_screen(
                     Rect {
-                        width: screen_size.width,
+                        width: main_width,
                         ..view.remaining_area()
                     },
                     frame.buffer,
@@ -253,11 +280,12 @@ impl App {
                     MotionMode::from_animations_enabled(self.local_settings.tui.animations),
                 );
             bottom.render(bottom_area, frame.buffer);
+            chat_widget.render_context_ledger_column(ledger_area, frame.buffer);
             if let (Some(tip), Some(area)) = (completion_tip, completion_tip_area) {
                 tip.render(area, frame.buffer);
             }
             // Elpis: the row above the composer stops at the Context Ledger, which starts there.
-            let gap_width = chat_widget.width_beside_context_ledger(transcript_width);
+            let gap_width = transcript_width;
             let follow_area = if let Some(gap) = composer_gap.as_ref() {
                 Some(Rect {
                     width: gap_width,
@@ -265,12 +293,7 @@ impl App {
                 })
             } else {
                 (available > 0).then(|| {
-                    Rect::new(
-                        /*x*/ 0,
-                        available - 1,
-                        gap_width,
-                        /*height*/ 1,
-                    )
+                    Rect::new(/*x*/ 0, available - 1, gap_width, /*height*/ 1)
                 })
             }
             .filter(|_| chat_widget.no_modal_or_popup_active());
@@ -291,7 +314,9 @@ impl App {
                 } else {
                     (&bottom, bottom_area)
                 };
-            rendered_cursor = foreground.cursor_pos(foreground_area);
+            rendered_cursor = foreground.cursor_pos(foreground_area).filter(|_| {
+                dialog.is_some() || ledger_width == 0 || !chat_widget.context_ledger_has_focus()
+            });
             if let Some(position) = rendered_cursor {
                 frame.set_cursor_style(foreground.cursor_style(foreground_area));
                 frame.set_cursor_position(position);
@@ -314,7 +339,9 @@ impl App {
         let animating =
             view.is_following() && active_key.is_some_and(|key| key.animation_tick.is_some());
         let loading = view.is_loading_history() && motion == MotionMode::Animated;
-        if animating || loading {
+        let header_animating =
+            motion == MotionMode::Animated && view.has_visible_animation(&self.transcript_cells);
+        if animating || loading || header_animating {
             tui.frame_requester()
                 .schedule_frame_in(Duration::from_millis(/*millis*/ 50));
         }
@@ -398,6 +425,12 @@ impl App {
                 tui.frame_requester().schedule_frame();
                 return Ok(true);
             }
+            if self.chat_widget.no_modal_or_popup_active()
+                && self.chat_widget.handle_context_ledger_mouse(*mouse)
+            {
+                tui.frame_requester().schedule_frame();
+                return Ok(true);
+            }
             if composer_ready
                 && self.handle_composer_copy_event(tui, event, |tui, text| {
                     tui.copy_transcript_selection(
@@ -414,6 +447,7 @@ impl App {
                     crossterm::event::MouseEventKind::ScrollUp
                         | crossterm::event::MouseEventKind::ScrollDown
                 ) {
+                    self.chat_widget.unfocus_context_ledger();
                     self.transcript_view.end_selection(&self.transcript_cells);
                     self.transcript_view.cancel_search();
                     self.transcript_view.clear_activity_focus();

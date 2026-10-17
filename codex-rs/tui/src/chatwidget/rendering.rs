@@ -256,7 +256,11 @@ impl ChatWidget {
             options.textarea_right_reserve = right_reserve;
             options.separate_status_line = options.command_popup_placement
                 != crate::bottom_pane::CommandPopupPlacement::AboveComposer;
+            let context_ledger_column = options.context_ledger_column;
             let bottom_pane = self.bottom_pane.backdrop_with_options(options);
+            if context_ledger_column {
+                return bottom_pane;
+            }
             RenderableItem::Owned(Box::new(super::elpis_ledger_glue::BesideContextLedger {
                 chat_widget: self,
                 bottom_pane,

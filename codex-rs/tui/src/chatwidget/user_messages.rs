@@ -148,6 +148,7 @@ pub(crate) struct ThreadInputState {
     pub(super) safety_buffering_prompt: Option<UserMessage>,
     pub(super) safety_buffering_source: UserMessageSource,
     pub(crate) pending_steers: VecDeque<PendingSteer>,
+    pub(crate) pending_steer_recall_ids: Option<Vec<String>>,
     pub(super) rejected_steers_queue: VecDeque<UserMessage>,
     pub(super) rejected_steer_sources: VecDeque<UserMessageSource>,
     pub(super) rejected_steer_history_records: VecDeque<UserMessageHistoryRecord>,
@@ -439,7 +440,7 @@ fn remap_user_messages_with_history_records(
         .collect()
 }
 
-pub(super) fn merge_user_messages(messages: Vec<UserMessage>) -> UserMessage {
+pub(crate) fn merge_user_messages(messages: Vec<UserMessage>) -> UserMessage {
     let messages = remap_user_messages_with_history_records(
         messages
             .into_iter()

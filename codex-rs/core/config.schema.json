@@ -4819,7 +4819,7 @@
         },
         "mouse_scroll_speed": {
           "default": null,
-          "description": "Mouse wheel speed multiplier for transcript scrolling, based on one row per event. Defaults to `1.0`. Positive fractional values slow scrolling; values above `1.0` speed it up.",
+          "description": "Mouse wheel speed multiplier for transcript scrolling, based on one row per event. Defaults to `3.0`, like Claude Code; fast consecutive events then build up to five times that speed. Positive fractional values slow scrolling.",
           "exclusiveMinimum": 0.0,
           "format": "double",
           "type": "number"

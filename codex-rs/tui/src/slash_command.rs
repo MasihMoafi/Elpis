@@ -84,6 +84,7 @@ pub enum SlashCommand {
     #[strum(to_string = "pets", serialize = "pet")]
     Pets,
     Mcp,
+    Rag,
     Apps,
     Plugins,
     Logout,
@@ -123,7 +124,8 @@ impl SlashCommand {
             SlashCommand::Clear => "clear the terminal and start a new chat",
             SlashCommand::Fork => "fork the current chat",
             SlashCommand::Worktree => "start or continue a conversation in a new worktree",
-            SlashCommand::App => "continue this session in the Desktop app",
+            // Elpis: the Elpis desktop app (app/history_ui.rs).
+            SlashCommand::App => "open this chat in the Elpis desktop app",
             SlashCommand::Quit | SlashCommand::Exit => "exit Elpis",
             SlashCommand::Copy => "copy the last response or part of it",
             SlashCommand::Export => "export the conversation as markdown",
@@ -333,7 +335,8 @@ impl SlashCommand {
             SlashCommand::Rollout => true,
             SlashCommand::TestApproval => true,
             SlashCommand::Agents | SlashCommand::MultiAgents => true,
-            SlashCommand::Theme | SlashCommand::Pets => false,
+            SlashCommand::Theme => true,
+            SlashCommand::Pets => false,
             // Elpis: Elpis commands decide their own availability during a task.
             elpis::elpis_slash_commands!() => elpis::available_during_task(self),
         }
@@ -346,7 +349,12 @@ impl SlashCommand {
         }
         match self {
             SlashCommand::Copy => !cfg!(target_os = "android"),
-            SlashCommand::App => cfg!(any(target_os = "macos", target_os = "windows")),
+            // Elpis: Linux opens the Elpis desktop app.
+            SlashCommand::App => cfg!(any(
+                target_os = "macos",
+                target_os = "windows",
+                target_os = "linux"
+            )),
             SlashCommand::Voice => true,
             SlashCommand::Rollout | SlashCommand::TestApproval => cfg!(debug_assertions),
             _ => true,
@@ -389,6 +397,7 @@ mod tests {
         assert!(SlashCommand::Raw.available_in_side_conversation());
         assert!(SlashCommand::Raw.supports_inline_args());
         assert!(SlashCommand::App.available_during_task());
+        assert!(SlashCommand::Theme.available_during_task());
     }
 
     #[test]

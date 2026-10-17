@@ -248,6 +248,8 @@ async fn plan_menu_allows_transcript_wheel_scrolling_and_keeps_keyboard_ownershi
                 app.handle_event(&mut tui, &mut server, event).await?;
             }
         }
+        // The first frame that overflows reserves the scrollbar column; the next one draws it.
+        app.render_owned_transcript(&mut tui, size)?;
         let bottom = app.render_owned_transcript(&mut tui, size)?;
         let latest = screen(&tui);
         let menu = render_bottom_popup(&app.chat_widget, /*width*/ 80);
@@ -340,6 +342,8 @@ async fn plan_menu_allows_transcript_selection_and_copy_but_respects_popup_bound
             app.handle_event(&mut tui, &mut server, event).await?;
         }
     }
+    // The first frame that overflows reserves the scrollbar column; the next one draws it.
+    app.render_owned_transcript(&mut tui, size)?;
     let bottom = app.render_owned_transcript(&mut tui, size)?;
     let before = screen(&tui);
     for (kind, column, row) in [

@@ -223,6 +223,21 @@ impl ChatWidget {
     pub(crate) fn width_beside_context_ledger(&self, width: u16) -> u16 {
         width.saturating_sub(self.context_ledger_width(width))
     }
+
+    /// Full screen: the Ledger as a column at the right edge of the screen, from the top of
+    /// `area` down. Its rule runs the area's full height; taller content scrolls with the selection.
+    pub(crate) fn render_context_ledger_column(
+        &self,
+        area: ratatui::layout::Rect,
+        buf: &mut ratatui::buffer::Buffer,
+    ) {
+        match self.context_ledger_lines_with_height(area.width) {
+            Some((_, ledger_lines)) => {
+                self.render_context_ledger_lines(area, buf, ledger_lines, &[]);
+            }
+            None => self.forget_context_ledger_clicks(),
+        }
+    }
 }
 
 /// The bottom pane with the Context Ledger to its right.
@@ -254,6 +269,7 @@ impl crate::render::renderable::Renderable for BesideContextLedger<'_> {
             .chat_widget
             .context_ledger_lines_with_height(ledger_width)
         else {
+            self.chat_widget.forget_context_ledger_clicks();
             self.bottom_pane.render(pane, buf);
             return;
         };

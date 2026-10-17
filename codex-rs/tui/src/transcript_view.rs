@@ -16,6 +16,7 @@ mod input;
 mod layout;
 mod mutations;
 mod prompt_header;
+mod scrollbar;
 mod search;
 mod selection;
 mod snapshot;
@@ -84,10 +85,16 @@ struct VisibleRow {
     activity_ids: Arc<[String]>,
 }
 
+/// Rows per wheel event when `tui.mouse_scroll_speed` is unset, matching Claude Code.
+pub(crate) const DEFAULT_MOUSE_SCROLL_SPEED: f64 = 3.0;
+
 /// Shared scrolling and interaction state for compact and detailed transcript presentations.
 pub(crate) struct TranscriptView {
     pub(crate) mouse_scroll_speed: f64,
+    /// Continuous wheel scrolling speeds up; off by default so speed tests stay exact.
+    pub(crate) mouse_wheel_acceleration: bool,
     pending_mouse_scroll: f64,
+    wheel_streak: Option<input::WheelStreak>,
     pub(crate) copy_on_select: bool,
     pub(crate) primary_selection: bool,
     position: Position,
@@ -116,6 +123,7 @@ pub(crate) struct TranscriptView {
     tail_visible: bool,
     last_tail: Option<EntryKey>,
     last_click: Option<(std::time::Instant, u16, u16, u8)>,
+    scrollbar: scrollbar::Scrollbar,
     disclosure: disclosure::Disclosure,
 }
 
@@ -123,7 +131,9 @@ impl Default for TranscriptView {
     fn default() -> Self {
         Self {
             mouse_scroll_speed: 1.0,
+            mouse_wheel_acceleration: false,
             pending_mouse_scroll: 0.0,
+            wheel_streak: None,
             copy_on_select: false,
             primary_selection: false,
             position: Position::Latest,
@@ -152,6 +162,7 @@ impl Default for TranscriptView {
             tail_visible: true,
             last_tail: None,
             last_click: None,
+            scrollbar: scrollbar::Scrollbar::default(),
             disclosure: disclosure::Disclosure::default(),
         }
     }
@@ -169,6 +180,11 @@ impl TranscriptView {
             height: self.area.height - used,
             ..self.area
         }
+    }
+
+    pub(crate) fn has_visible_animation(&self, cells: &[Arc<dyn HistoryCell>]) -> bool {
+        self.visible.iter().any(|row| cells.get(row.index)
+            .is_some_and(|cell| cell.transcript_animation_tick().is_some()))
     }
 
     pub(crate) fn render(&mut self, area: Rect, buf: &mut Buffer, cells: &[Arc<dyn HistoryCell>]) {
@@ -346,6 +362,13 @@ impl TranscriptView {
         let changed = self.live.is_some() || live.is_some();
         self.live = live;
         changed
+    }
+
+    /// Repaint terminal-derived styles without changing the reading position or selection.
+    pub(crate) fn invalidate_rendered_styles(&mut self) {
+        self.cache.clear();
+        self.live_key = None;
+        self.live_separated = None;
     }
 
     pub(crate) fn set_presentation(&mut self, detailed: bool, mode: HistoryRenderMode) {
@@ -654,3 +677,7 @@ mod markdown_copy_tests;
 #[cfg(test)]
 #[path = "transcript_view/copy_on_select_tests.rs"]
 mod copy_on_select_tests;
+
+#[cfg(test)]
+#[path = "transcript_view/scrollbar_tests.rs"]
+mod scrollbar_tests;

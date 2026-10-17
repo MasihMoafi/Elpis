@@ -63,3 +63,62 @@ async fn owned_clear_resets_navigation_and_retains_one_fresh_header() -> Result<
     tui.set_owned_screen(/*owned*/ false)?;
     Ok(())
 }
+
+// Elpis: `/app` on Linux asks the Elpis desktop app (`elpis-app`) to open the chat; a running app keeps its
+// one window (Electron's single-instance lock) and opens the chat there.
+#[cfg(target_os = "linux")]
+#[test]
+fn linux_app_handoff_names_the_thread_for_the_elpis_desktop_app() {
+    let id = "019a3b2c-1111-7222-8333-444455556666";
+    let link = format!("codex://threads/{id}");
+    assert_eq!(
+        elpis_desktop_command(&link, /*app*/ None),
+        Ok((
+            std::ffi::OsString::from("elpis-app"),
+            vec!["--open-thread".to_string(), id.to_string()]
+        ))
+    );
+    assert_eq!(
+        elpis_desktop_command(&link, Some("/opt/Elpis/launch".into())).map(|(app, _)| app),
+        Ok(std::ffi::OsString::from("/opt/Elpis/launch"))
+    );
+    assert!(elpis_desktop_command("https://example.test/threads/x", /*app*/ None).is_err());
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn linux_app_handoff_starts_the_app_without_waiting_for_it() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = tempfile::tempdir().expect("temporary directory");
+    let record = dir.path().join("arguments");
+    let app = dir.path().join("elpis-app");
+    let path = record.display();
+    std::fs::write(
+        &app,
+        format!("#!/bin/sh\nprintf '%s ' \"$@\" > '{path}.part' && mv '{path}.part' '{path}'\nsleep 3\n"),
+    )
+    .expect("write the fake app");
+    std::fs::set_permissions(&app, std::fs::Permissions::from_mode(0o755)).expect("make it runnable");
+    let started = std::time::Instant::now();
+    launch_elpis_desktop(
+        app.as_os_str(),
+        &["--open-thread".to_string(), "chat-1".to_string()],
+    )
+    .expect("the app starts");
+    assert!(
+        started.elapsed() < std::time::Duration::from_secs(2),
+        "the TUI must not wait for the app"
+    );
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    while !record.exists() && std::time::Instant::now() < deadline {
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    assert_eq!(
+        std::fs::read_to_string(&record).expect("the app ran").trim(),
+        "--open-thread chat-1"
+    );
+    assert!(
+        launch_elpis_desktop(dir.path().join("missing").as_os_str(), &[]).is_err(),
+        "a missing app is reported"
+    );
+}

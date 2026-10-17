@@ -12,6 +12,7 @@ use codex_app_server_protocol::ThreadStartedNotification;
 use codex_app_server_protocol::TurnInterruptParams;
 use codex_app_server_protocol::TurnInterruptResponse;
 use codex_app_server_protocol::WarningNotification;
+use codex_protocol::models::BUILT_IN_PERMISSION_PROFILE_BYPASS_PERMISSIONS;
 use codex_protocol::models::BUILT_IN_PERMISSION_PROFILE_DANGER_FULL_ACCESS;
 
 // Leave time for side-thread cleanup and unsubscribe inside the two-second exit budget.
@@ -1232,7 +1233,9 @@ impl App {
                 ServerNotification::ItemStarted(_) | ServerNotification::ItemCompleted(_)
             );
         if matches!(&notification, ServerNotification::Error(error) if !error.will_retry) {
-            self.agents_overview.pending_yolo_defaults.remove(&thread_id);
+            self.agents_overview
+                .pending_yolo_defaults
+                .remove(&thread_id);
         }
         let mut confirmed_profile = None;
         if let ServerNotification::ThreadSettingsUpdated(notification) = &notification {
@@ -1356,7 +1359,10 @@ impl App {
             notification = None;
         }
         if let Some(profile) = confirmed_profile {
-            if let Some(config) = self.agents_overview.pending_yolo_defaults.remove(&thread_id)
+            if let Some(config) = self
+                .agents_overview
+                .pending_yolo_defaults
+                .remove(&thread_id)
                 && profile.profile_id == BUILT_IN_PERMISSION_PROFILE_DANGER_FULL_ACCESS
                 && profile.approval_policy == Some(AskForApproval::Never)
             {
@@ -1364,10 +1370,12 @@ impl App {
             }
             if self.chat_widget.thread_id() == Some(thread_id) {
                 self.adopt_server_permissions();
-                self.chat_widget.add_info_message(
-                    format!("Permissions updated to {}", profile.display_label),
-                    /*hint*/ None,
-                );
+                let bypass = profile.profile_id == BUILT_IN_PERMISSION_PROFILE_BYPASS_PERMISSIONS;
+                self.chat_widget
+                    .add_to_history(history_cell::new_permissions_updated_event(
+                        &profile.display_label,
+                        bypass,
+                    ));
             }
             self.app_event_tx.send(AppEvent::SettingsSelectionSettled);
         }
@@ -1684,6 +1692,9 @@ impl App {
                 }
                 ThreadBufferedEvent::FeedbackSubmission(event) => {
                     self.enqueue_thread_feedback_event(thread_id, event).await;
+                }
+                ThreadBufferedEvent::PendingSteersRecalled(result) => {
+                    self.enqueue_pending_steer_recall(thread_id, result).await;
                 }
             }
         }
@@ -2142,6 +2153,9 @@ impl App {
             ThreadBufferedEvent::FeedbackSubmission(event) => {
                 self.handle_feedback_thread_event(event);
             }
+            ThreadBufferedEvent::PendingSteersRecalled(result) => {
+                self.chat_widget.finish_pending_steer_recall(result);
+            }
         }
         if needs_refresh {
             self.refresh_status_line();
@@ -2171,6 +2185,9 @@ impl App {
             }
             ThreadBufferedEvent::FeedbackSubmission(event) => {
                 self.handle_feedback_thread_event(event);
+            }
+            ThreadBufferedEvent::PendingSteersRecalled(result) => {
+                self.chat_widget.finish_pending_steer_recall(result);
             }
         }
     }

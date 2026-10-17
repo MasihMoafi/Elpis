@@ -60,6 +60,20 @@ async function main() {
     const f = hold();
     const { turn } = await a.req('turn/start', { threadId: thread.id, input: [{ type: 'text', text: 'held task', text_elements: [] }] });
     await wait(() => fs.existsSync(f.ready), 'provider running');
+    const lightweight = { threadId: thread.id, excludeTurns: true, initialTurnsPage: { limit: 1, sortDirection: 'desc', itemsView: 'summary' } };
+    const ownerView = await a.req('thread/resume', lightweight);
+    assert.equal(ownerView.thread.turns.length, 0);
+    assert.equal(ownerView.thread.status.type, 'active');
+    assert.equal(ownerView.initialTurnsPage.data.length, 1);
+    assert.equal(ownerView.initialTurnsPage.data[0].id, turn.id);
+    assert.equal(ownerView.initialTurnsPage.data[0].status, 'inProgress');
+    assert.equal(ownerView.initialTurnsPage.data[0].itemsView, 'summary');
+    assert.ok(Buffer.byteLength(JSON.stringify(ownerView)) < 10000);
+    await assert.rejects(a.req('thread/settings/update', { threadId: thread.id, model: 'gpt-5.5' }), /active provider turn/);
+    await assert.rejects(a.req('turn/start', { threadId: thread.id, model: 'gpt-5.5', input: [{ type: 'text', text: 'must not start native work', text_elements: [] }] }), /active provider turn/);
+    assert.equal((await a.req('thread/read', { threadId: thread.id, includeTurns: false })).thread.model, model);
+
+
     const b = await connect();
     const loaded = await b.req('thread/loaded/list'); assert(loaded.data.includes(thread.id));
     const read = await b.req('thread/read', { threadId: thread.id, includeTurns: true });
@@ -68,6 +82,16 @@ async function main() {
     const resumed = await b.req('thread/resume', { threadId: thread.id });
     assert.equal(resumed.thread.status.type, 'active'); assert.equal(resumed.thread.model, model);
     assert.equal(resumed.activePermissionProfile.id, ':danger-full-access');
+    const viewerView = await b.req('thread/resume', lightweight);
+    assert.equal(viewerView.thread.turns.length, 0);
+    assert.equal(viewerView.model, model);
+    assert.equal(viewerView.thread.status.type, 'active');
+    assert.equal(viewerView.initialTurnsPage.data[0].id, turn.id);
+    assert.equal(viewerView.initialTurnsPage.data[0].status, 'inProgress');
+    const metadataOnly = await b.req('thread/resume', { threadId: thread.id, excludeTurns: true });
+    assert.equal(metadataOnly.thread.turns.length, 0);
+    assert.equal(metadataOnly.initialTurnsPage, null);
+
     pass('a later terminal opens the running provider turn with its correct permissions');
     await assert.rejects(b.req('turn/start', { threadId: thread.id, input: [{ type: 'text', text: 'duplicate', text_elements: [] }] }), /already has an active/);
     assert.equal(history().filter(m => m.method === (gemini ? 'agy/prompt' : 'session/prompt')).length, 1);
@@ -211,6 +235,21 @@ async function main() {
     assert(userMessages.includes('native history sentinel')); assert(userMessages.includes('provider history sentinel'));
     pass('another terminal resumes both native and provider history after a model switch');
     await later.req('thread/settings/update', { threadId: mixed.id, model: 'gpt-5.5' });
+    const switchedRead = await subscriber.req('thread/read', { threadId: mixed.id, includeTurns: true });
+    assert.equal(switchedRead.thread.model, 'gpt-5.5');
+    assert.ok(JSON.stringify(switchedRead.thread.turns).includes('provider history sentinel'));
+    const switchedResume = await subscriber.req('thread/resume', { threadId: mixed.id, excludeTurns: true, initialTurnsPage: { limit: 1, itemsView: 'summary' } });
+    assert.equal(switchedResume.model, 'gpt-5.5');
+    assert.equal(switchedResume.thread.turns.length, 0);
+    assert.ok(JSON.stringify(switchedResume.initialTurnsPage).includes('provider history sentinel'));
+    const switchedList = await subscriber.req('thread/list', { limit: 100 });
+    const listedMixed = switchedList.data.find(item => item.id === mixed.id);
+    assert.ok(listedMixed);
+    assert.notEqual(listedMixed.model, model);
+    const savedMixed = JSON.parse(fs.readFileSync(path.join(home, 'elpis-claude', 'sessions.json')))[mixed.id];
+    assert.equal(savedMixed.model, null);
+    assert.equal(savedMixed.providerHistory, true);
+
     await unrelated.req('thread/delete', { threadId: mixed.id });
     assert(!JSON.parse(fs.readFileSync(path.join(home, 'elpis-claude/sessions.json'), 'utf8'))[mixed.id]);
     await assert.rejects(subscriber.req('thread/resume', { threadId: mixed.id }), /not found/i);

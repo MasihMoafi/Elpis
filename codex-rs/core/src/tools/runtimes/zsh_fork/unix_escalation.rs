@@ -161,6 +161,11 @@ pub(crate) async fn prepare_unified_exec_zsh_fork(
         ),
         prompt_permissions: req.additional_permissions.clone(),
         stopwatch: Stopwatch::unlimited(),
+        bypass_permissions_active: codex_protocol::models::bypass_permissions_active(
+            ctx.step_context.settings.approval_policy(),
+            &exec_request.permission_profile,
+            req.turn_environment.active_permission_profile().as_ref(),
+        ),
     };
 
     let escalate_server = EscalateServer::new(
@@ -193,6 +198,8 @@ struct CoreShellActionProvider {
     approval_sandbox_permissions: SandboxPermissions,
     prompt_permissions: Option<AdditionalPermissionProfile>,
     stopwatch: Stopwatch,
+    /// Elpis: `codex_protocol::models::bypass_permissions_active` for this command.
+    bypass_permissions_active: bool,
 }
 
 #[allow(clippy::large_enum_variant)]
@@ -435,6 +442,7 @@ impl CoreShellActionProvider {
                     sandbox_permissions: self.approval_sandbox_permissions,
                     enable_shell_wrapper_parsing:
                         ENABLE_INTERCEPTED_EXEC_POLICY_SHELL_WRAPPER_PARSING,
+                    bypass_permissions_active: self.bypass_permissions_active,
                 },
             )
         };
@@ -503,6 +511,7 @@ fn evaluate_intercepted_exec_policy(
         windows_sandbox_level,
         sandbox_permissions,
         enable_shell_wrapper_parsing,
+        bypass_permissions_active,
     } = context;
     let commands = if enable_shell_wrapper_parsing {
         // In this codepath, the first argument in `commands` could be a bare
@@ -524,6 +533,7 @@ fn evaluate_intercepted_exec_policy(
                 windows_sandbox_level,
                 sandbox_permissions,
                 command_origin: crate::exec_policy::ExecPolicyCommandOrigin::Generic,
+                bypass_permissions_active,
             },
         )
     };
@@ -546,6 +556,7 @@ struct InterceptedExecPolicyContext {
     windows_sandbox_level: WindowsSandboxLevel,
     sandbox_permissions: SandboxPermissions,
     enable_shell_wrapper_parsing: bool,
+    bypass_permissions_active: bool,
 }
 
 fn commands_for_intercepted_exec_policy(

@@ -20,8 +20,21 @@ impl App {
             }
             ElpisAppEvent::SaveBackgroundModel(choice) => self.save_background_model(choice).await,
             ElpisAppEvent::WorkGraphLoaded(result) => self.add_loaded_work_graph(result),
-            ElpisAppEvent::OpenDashboard => self.open_dashboard(tui),
-            ElpisAppEvent::RefreshDashboard => self.publish_dashboard_snapshot(),
+            ElpisAppEvent::OpenDashboard => {
+                self.open_dashboard(tui, app_server);
+                self.refresh_agents_overview_threads(app_server);
+                if let Some(root) = self.primary_thread_id {
+                    self.refresh_agent_picker_threads(app_server, root);
+                }
+            }
+            ElpisAppEvent::RefreshDashboard => self.publish_dashboard_snapshot(app_server),
+            ElpisAppEvent::RefreshDashboardAgents => {
+                if crate::dashboard_server::is_running()
+                    && let Some(root) = self.primary_thread_id
+                {
+                    self.refresh_agent_picker_threads(app_server, root);
+                }
+            }
             ElpisAppEvent::OpenUsage(card) => {
                 self.open_escape_closable_pager(tui, card, "Usage")?
             }
@@ -32,8 +45,8 @@ impl App {
 
     /// `/dashboard`: publish the current state, start the loopback server once and open the
     /// page in a browser, as v0.3.0 did.
-    fn open_dashboard(&mut self, tui: &mut tui::Tui) {
-        self.publish_dashboard_snapshot();
+    fn open_dashboard(&mut self, tui: &mut tui::Tui, app_server: &AppServerSession) {
+        self.publish_dashboard_snapshot(app_server);
         match crate::dashboard_server::ensure_running() {
             Some(url) => match webbrowser::open(&url) {
                 Ok(()) => self
@@ -55,7 +68,7 @@ impl App {
 
     /// Publishes the page's state and tells the dashboard server how to reach this App, so the
     /// Models, keys and Smart Prune pages act on the current session.
-    fn publish_dashboard_snapshot(&self) {
+    fn publish_dashboard_snapshot(&self, app_server: &AppServerSession) {
         let totals = crate::elpis_ledger_events::context_usage_totals(&self.transcript_cells);
         self.chat_widget.publish_dashboard_snapshot(&totals);
         let config = self.chat_widget.config_ref();
@@ -67,6 +80,7 @@ impl App {
             catalog: self.model_catalog.try_list_models().unwrap_or_default(),
             pruner_role_provider: self.chat_widget.pruner_role_provider().to_string(),
             runtime: tokio::runtime::Handle::try_current().ok(),
+            app_server: Some(app_server.request_handle()),
             refresh_pending: Default::default(),
         });
     }
@@ -140,7 +154,7 @@ impl App {
                 self.chat_widget.apply_background_model(&choice);
                 self.chat_widget.add_info_message(
                     format!(
-                        "Background model saved: {}. Session naming uses it; memory uses the responding agent; the chat model is unchanged.",
+                        "Background model saved: {}. Smart Prune uses it when no pruning model is selected; memory uses the responding agent.",
                         crate::elpis_background_model::describe(self.chat_widget.config_ref())
                     ),
                     /*hint*/ None,

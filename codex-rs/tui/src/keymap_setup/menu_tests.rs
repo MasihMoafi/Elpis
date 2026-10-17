@@ -12,9 +12,10 @@ use tokio::sync::mpsc::unbounded_channel;
 
 fn child_menus(runtime: &RuntimeKeymap) -> [(&'static str, SelectionViewParams); 3] {
     let config = TuiKeymap::default();
-    let conflicting = keymap_with_replacement(&config, "composer", "submit", "tab")
+    let conflicting = keymap_with_replacement(&config, "composer", "submit", "ctrl-t")
         .expect("valid key specification");
-    let error = RuntimeKeymap::from_config(&conflicting).expect_err("tab already queues a message");
+    let error =
+        RuntimeKeymap::from_config(&conflicting).expect_err("ctrl-t already opens the transcript");
     [
         (
             "action",

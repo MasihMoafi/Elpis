@@ -1893,6 +1893,39 @@ fn session_header_indicates_yolo_mode() {
     insta::assert_snapshot!(rendered);
 }
 
+/// Elpis: while Bypass permissions is on, the header says so in red instead of YOLO.
+#[test]
+fn session_header_shows_bypass_permissions_in_red_instead_of_yolo() {
+    let cell = SessionHeaderHistoryCell::new(
+        "gpt-5".to_string(),
+        /*reasoning_effort*/ None,
+        PathBuf::from("project"),
+        "test",
+    )
+    .with_yolo_mode(/*yolo_mode*/ true)
+    .with_bypass_mode(/*bypass_mode*/ true);
+
+    let lines = crate::terminal_palette::with_test_default_colors(
+        crate::terminal_probe::DefaultColors {
+            fg: (220, 220, 220),
+            bg: (20, 20, 20),
+        },
+        || cell.display_lines(/*width*/ 80),
+    );
+    let label = lines
+        .iter()
+        .flat_map(|line| line.spans.iter())
+        .find(|span| span.content == "Bypass permissions")
+        .expect("the header names Bypass permissions");
+    assert_eq!(label.style.fg, Some(ratatui::style::Color::Red));
+    assert!(!render_lines(&lines).join("\n").contains("YOLO"));
+    assert!(
+        render_lines(&cell.raw_lines())
+            .iter()
+            .any(|line| line == "permissions: Bypass permissions")
+    );
+}
+
 #[test]
 fn session_header_truncates_halfwidth_directory() {
     let cell: Box<dyn HistoryCell> = Box::new(SessionHeaderHistoryCell::new(

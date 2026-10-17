@@ -255,7 +255,9 @@ impl App {
                 | ServerNotification::ThreadArchived(_)
                 | ServerNotification::ThreadDeleted(_)
                 | ServerNotification::ThreadClosed(_)
-        ) {
+        ) || super::sub_agent_activity_item(&notification).is_some()
+            || super::collab_receiver_thread_ids(&notification).is_some()
+        {
             self.repaint_agents_overview();
             self.refresh_changed_agents_overview_threads(app_server_client);
         }

@@ -363,7 +363,7 @@ fn left_side_line(
     };
 
     if let Some(collaboration_mode_indicator) = collaboration_mode_indicator {
-        if !matches!(state.hint, SummaryHintKind::None) {
+        if line.width() > 0 {
             line.push_span(" · ".set_style(secondary_text_style()));
         }
         line.extend(
@@ -393,6 +393,8 @@ pub(crate) fn single_line_footer_layout(
     show_queue_hint: bool,
     key_hints: FooterKeyHints,
 ) -> (SummaryLeft, bool) {
+    // Elpis leaves queueing unbound by default; without a key there is no queue hint to show.
+    let show_queue_hint = show_queue_hint && key_hints.queue.is_some();
     let hint_kind = if show_queue_hint {
         SummaryHintKind::QueueMessage
     } else if show_shortcuts_hint {

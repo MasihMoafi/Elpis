@@ -37,6 +37,8 @@ mod models;
 mod provider_keys;
 #[path = "dashboard_pruner.rs"]
 mod pruner;
+#[path = "dashboard_threads.rs"]
+mod threads;
 
 pub(crate) use evidence::publish as publish_evidence;
 pub(crate) use evidence::register as evidence_url;
@@ -48,6 +50,7 @@ pub(crate) use models::register_link;
 const INDEX_HTML: &str = include_str!("dashboard_assets/index.html");
 const DASHBOARD_CSS: &str = include_str!("dashboard_assets/dashboard.css");
 const DASHBOARD_JS: &str = include_str!("dashboard_assets/dashboard.js");
+const DASHBOARD_WORKFLOWS_JS: &str = include_str!("dashboard_assets/dashboard_workflows.js");
 const SCHEMA_VERSION: u64 = 1;
 const CSP: &str = "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src data:; font-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
 const UNAVAILABLE_JSON: &[u8] = br#"{"state":null,"heartbeat_at":null}"#;
@@ -237,6 +240,8 @@ pub(crate) struct DashboardSmartPruneLatest {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub(crate) struct DashboardSmartPruneAttempt {
     pub(crate) status: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) failure_reason: Option<String>,
     pub(crate) model: String,
     pub(crate) reasoning_effort: String,
     pub(crate) candidate_outputs: u64,
@@ -402,10 +407,10 @@ fn dashboard_bind_addr() -> SocketAddr {
 
 fn serve(listener: tiny_http::Server, port: u16) {
     for mut request in listener.incoming_requests() {
-        // Listing a provider's models can wait on the vendor; the page keeps polling meanwhile.
-        if request.url().starts_with("/models/") {
+        // Model discovery and transcript reads must not block dashboard polling.
+        if request.url().starts_with("/models/") || request.url().starts_with("/threads/") {
             let _ = std::thread::Builder::new()
-                .name("elpis-dashboard-models".to_string())
+                .name("elpis-dashboard-read".to_string())
                 .spawn(move || {
                     let link = models::current_link();
                     let response = route(&mut request, port, link.as_deref(), None, 0);
@@ -438,6 +443,9 @@ fn route(
         return response(403, "text/plain; charset=utf-8", b"forbidden".to_vec());
     }
     let url = request.url();
+    if url.starts_with("/threads/") {
+        return threads::route(request, port, link);
+    }
     if url.starts_with("/models/") {
         return models::route(link, request, port);
     }
@@ -454,6 +462,12 @@ fn route(
         && let Some(link) = link
     {
         link.request_refresh();
+    }
+    if url == "/agents.json"
+        && request.method() == &tiny_http::Method::Get
+        && let Some(link) = link
+    {
+        link.request_agents_refresh();
     }
     response_for_at(request, port, state, heartbeat_at)
 }
@@ -567,6 +581,11 @@ fn response_for_at(
             "text/javascript; charset=utf-8",
             DASHBOARD_JS.as_bytes().to_vec(),
         ),
+        "/dashboard_workflows.js" => response(
+            200,
+            "text/javascript; charset=utf-8",
+            DASHBOARD_WORKFLOWS_JS.as_bytes().to_vec(),
+        ),
         "/claude.json" => response(
             200,
             "application/json; charset=utf-8",
@@ -575,7 +594,12 @@ fn response_for_at(
         "/agents.json" => response(
             200,
             "application/json; charset=utf-8",
-            agents_body(&DASHBOARD_AGENTS.lock().map(|agents| agents.clone()).unwrap_or_default()),
+            agents_body(
+                &DASHBOARD_AGENTS
+                    .lock()
+                    .map(|agents| agents.clone())
+                    .unwrap_or_default(),
+            ),
         ),
         "/data.json" => match state {
             Some(state) => data_response_with(state, heartbeat_at, serde_json::to_vec),

@@ -69,11 +69,11 @@ INSERT INTO work_graphs (
             sqlx::query(
                 r#"
 INSERT INTO work_graph_tasks (
-    graph_id, task_id, ordinal, title, instruction, task_kind, status,
+    graph_id, task_id, ordinal, title, instruction, provider, model, task_kind, status,
     write_scopes_json, acceptance_criteria_json, environment_id, workspace_path,
     assigned_thread_id, attempt_count, baseline_json, result_json, evidence_json,
     failure_reason, created_at_ms, updated_at_ms, started_at_ms, completed_at_ms
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, 0, NULL, NULL, NULL, NULL, ?, ?, NULL, NULL)
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, 0, NULL, NULL, NULL, NULL, ?, ?, NULL, NULL)
                 "#,
             )
             .bind(params.id.as_str())
@@ -81,6 +81,8 @@ INSERT INTO work_graph_tasks (
             .bind(task.ordinal)
             .bind(task.title.as_str())
             .bind(task.instruction.as_str())
+            .bind(task.provider.as_deref())
+            .bind(task.model.as_deref())
             .bind(task.kind.as_str())
             .bind(WorkGraphTaskStatus::Pending.as_str())
             .bind(write_scopes_json)
@@ -193,7 +195,7 @@ ORDER BY task_id ASC, depends_on_task_id ASC
         let rows = sqlx::query_as::<_, WorkGraphTaskRow>(
             r#"
 SELECT
-    graph_id, task_id, ordinal, title, instruction, task_kind, status,
+    graph_id, task_id, ordinal, title, instruction, provider, model, task_kind, status,
     write_scopes_json, acceptance_criteria_json, environment_id, workspace_path,
     assigned_thread_id, attempt_count, baseline_json, result_json, evidence_json,
     failure_reason, created_at_ms, updated_at_ms, started_at_ms, completed_at_ms
@@ -633,6 +635,8 @@ mod tests {
             ordinal,
             title: task_id.to_string(),
             instruction: format!("Implement {task_id}"),
+            provider: Some(format!("provider-{task_id}")),
+            model: Some(format!("model-{task_id}")),
             kind: WorkGraphTaskKind::Implement,
             dependencies: dependencies
                 .iter()
@@ -681,6 +685,8 @@ mod tests {
         assert_eq!(tasks.len(), 3);
         assert_eq!(tasks[1].dependencies, vec!["foundation"]);
         assert_eq!(tasks[0].write_scopes, vec!["src/core"]);
+        assert_eq!(tasks[0].provider.as_deref(), Some("provider-foundation"));
+        assert_eq!(tasks[0].model.as_deref(), Some("model-foundation"));
         assert_eq!(
             runtime
                 .list_work_graphs_for_root("root-thread")
@@ -786,6 +792,8 @@ mod tests {
         assert_eq!(tasks[0].status, WorkGraphTaskStatus::Failed);
         assert_eq!(tasks[1].status, WorkGraphTaskStatus::Failed);
         assert_eq!(tasks[0].attempt_count, 1);
+        assert_eq!(tasks[0].provider.as_deref(), Some("provider-foundation"));
+        assert_eq!(tasks[0].model.as_deref(), Some("model-foundation"));
         let graph = runtime
             .get_work_graph(graph.id.as_str())
             .await

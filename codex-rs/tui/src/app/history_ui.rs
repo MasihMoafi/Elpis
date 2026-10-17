@@ -318,7 +318,16 @@ impl App {
             self.config.cwd.to_path_buf(),
             version,
         )
+        .with_animations(self.local_settings.tui.animations && self.local_settings.tui.effects.shimmer)
         .with_yolo_mode(history_cell::is_yolo_mode(&self.config))
+        .with_bypass_mode(history_cell::is_bypass_mode(&self.config))
+    }
+
+    /// Rows the session header card takes at the top of the full screen in the current render
+    /// mode: the same header a new session or `/clear` puts first in the transcript.
+    pub(super) fn session_header_height(&self, width: u16) -> u16 {
+        self.clear_ui_header_cell(CODEX_CLI_VERSION)
+            .desired_height_for_mode(width, self.chat_widget.history_render_mode())
     }
 
     pub(super) fn clear_ui_header_lines(&self, width: u16) -> Vec<Line<'static>> {
@@ -509,9 +518,50 @@ fn powershell_single_quoted_string(value: &str) -> String {
     format!("'{}'", value.replace('\'', "''"))
 }
 
-#[cfg(not(any(target_os = "macos", target_os = "windows")))]
+// Elpis: on Linux `/app` starts `elpis-app --open-thread <id>` (or ELPIS_DESKTOP_APP). A running app keeps its one
+// window (Electron's single-instance lock, apps/elpis-desktop/desktop/open-thread.cjs) and opens the chat there.
+#[cfg(target_os = "linux")]
+fn open_desktop_thread_url(url: &str) -> Result<(), String> {
+    let (app, args) = elpis_desktop_command(url, std::env::var_os("ELPIS_DESKTOP_APP"))?;
+    launch_elpis_desktop(&app, &args)
+}
+
+#[cfg(target_os = "linux")]
+fn elpis_desktop_command(
+    url: &str,
+    app: Option<std::ffi::OsString>,
+) -> Result<(std::ffi::OsString, Vec<String>), String> {
+    let thread_id = url
+        .strip_prefix("codex://threads/")
+        .ok_or_else(|| format!("unexpected desktop link {url}"))?;
+    Ok((
+        app.unwrap_or_else(|| "elpis-app".into()),
+        vec!["--open-thread".to_string(), thread_id.to_string()],
+    ))
+}
+
+/// Starts the app in its own process group with no terminal I/O, so it neither draws over the TUI nor
+/// receives its Ctrl+C; a thread reaps it when it exits.
+#[cfg(target_os = "linux")]
+fn launch_elpis_desktop(app: &std::ffi::OsStr, args: &[String]) -> Result<(), String> {
+    use std::os::unix::process::CommandExt;
+    let mut child = std::process::Command::new(app)
+        .args(args)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .process_group(0)
+        .spawn()
+        .map_err(|err| format!("failed to start {}: {err}", app.to_string_lossy()))?;
+    std::thread::spawn(move || {
+        let _ = child.wait();
+    });
+    Ok(())
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
 fn open_desktop_thread_url(_url: &str) -> Result<(), String> {
-    Err("The Desktop app is only available on macOS and Windows".to_string())
+    Err("The Desktop app is only available on macOS, Windows and Linux".to_string())
 }
 
 #[cfg(test)]

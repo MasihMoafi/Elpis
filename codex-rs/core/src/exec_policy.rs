@@ -172,6 +172,8 @@ pub(crate) struct UnmatchedCommandContext<'a> {
     pub(crate) windows_sandbox_level: WindowsSandboxLevel,
     pub(crate) sandbox_permissions: SandboxPermissions,
     pub(crate) command_origin: ExecPolicyCommandOrigin,
+    /// Elpis: `codex_protocol::models::bypass_permissions_active` for this command.
+    pub(crate) bypass_permissions_active: bool,
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -289,6 +291,9 @@ pub(crate) struct ExecApprovalRequest<'a> {
     pub(crate) sandbox_permissions: SandboxPermissions,
     pub(crate) prefix_rule: Option<Vec<String>>,
     pub(crate) allow_prefix_rules: AllowPrefixRules,
+    /// Elpis: `codex_protocol::models::bypass_permissions_active` for this command. It lifts
+    /// only the built-in dangerous-command refusal; explicit and managed rules still decide.
+    pub(crate) bypass_permissions_active: bool,
 }
 
 impl ExecPolicyManager {
@@ -352,6 +357,7 @@ impl ExecPolicyManager {
             sandbox_permissions,
             prefix_rule,
             allow_prefix_rules,
+            bypass_permissions_active,
         } = req;
         let exec_policy = self.current_for_environment(environment_policy, allow_prefix_rules);
         // Avoid reusable approvals when this model does not honor prefix rules.
@@ -365,6 +371,7 @@ impl ExecPolicyManager {
                     windows_sandbox_level,
                     sandbox_permissions,
                     command_origin,
+                    bypass_permissions_active,
                 },
                 command_platform,
             )
@@ -772,14 +779,20 @@ fn render_decision_for_unmatched_command_for_platform(
     context: UnmatchedCommandContext<'_>,
     command_platform: DangerousCommandPlatform,
 ) -> Decision {
-    let dangerous_command_match =
-        dangerous_command_match_for_origin(command, context.command_origin, command_platform);
+    // Elpis: "Bypass permissions" asked for no refusals of this kind. It applies only to
+    // commands no rule matched, so explicit and managed rules still decide.
+    let dangerous_command_match = (!context.bypass_permissions_active)
+        .then(|| {
+            dangerous_command_match_for_origin(command, context.command_origin, command_platform)
+        })
+        .flatten();
     let UnmatchedCommandContext {
         approval_policy,
         permission_profile,
         windows_sandbox_level,
         sandbox_permissions,
         command_origin: _,
+        bypass_permissions_active: _,
     } = context;
     let file_system_sandbox_policy = permission_profile.file_system_sandbox_policy();
     // When the Windows sandbox backend is disabled, managed filesystem

@@ -386,6 +386,41 @@ impl InputQueue {
         turn_state.lock().await.pending_input.items.extend(input);
     }
 
+    /// Cancel only inputs still owned by the active turn's queue, under the same locks
+    /// as draining. Delivered inputs can never be acknowledged as cancelled.
+    #[expect(
+        clippy::await_holding_invalid_type,
+        reason = "active turn lookup and pending input removal must remain atomic"
+    )]
+    pub(crate) async fn cancel_pending_user_inputs(
+        &self,
+        active_turn: &Mutex<Option<ActiveTurn>>,
+        client_ids: &[String],
+    ) -> Vec<String> {
+        let active = active_turn.lock().await;
+        let Some(active) = active.as_ref() else {
+            return Vec::new();
+        };
+        let mut state = active.turn_state.lock().await;
+        let mut cancelled = Vec::new();
+        state.pending_input.items.retain(|input| {
+            if let TurnInput::UserInput {
+                client_id: Some(id),
+                ..
+            } = input
+                && client_ids.contains(id)
+            {
+                if !cancelled.contains(id) {
+                    cancelled.push(id.clone());
+                }
+                false
+            } else {
+                true
+            }
+        });
+        cancelled
+    }
+
     pub(crate) async fn take_pending_input_for_turn_state(
         &self,
         turn_state: &Mutex<TurnState>,
@@ -497,6 +532,92 @@ mod tests {
     use codex_protocol::AgentPath;
     use codex_protocol::user_input::UserInput;
     use pretty_assertions::assert_eq;
+
+    fn queued_user_input(client_id: Option<&str>) -> TurnInput {
+        TurnInput::UserInput {
+            content: Vec::new(),
+            client_id: client_id.map(str::to_owned),
+            metadata: UserInputMetadata::default(),
+        }
+    }
+
+    #[tokio::test]
+    async fn cancel_pending_user_inputs_preserves_other_inputs_and_threads() {
+        let queue = InputQueue::new();
+        let turn = ActiveTurn::default();
+        let retained = vec![
+            queued_user_input(Some("keep")),
+            queued_user_input(None),
+            TurnInput::ResponseItem(ResponseItem::Other.into()),
+        ];
+        turn.turn_state.lock().await.pending_input.items = [
+            vec![
+                queued_user_input(Some("one")),
+                queued_user_input(Some("two")),
+            ],
+            retained.clone(),
+        ]
+        .concat();
+        let active = Mutex::new(Some(turn));
+        let other_turn = ActiveTurn::default();
+        other_turn.turn_state.lock().await.pending_input.items =
+            vec![queued_user_input(Some("one"))];
+        let other_active = Mutex::new(Some(other_turn));
+
+        let cancelled = queue
+            .cancel_pending_user_inputs(
+                &active,
+                &["two".into(), "one".into(), "missing".into(), "one".into()],
+            )
+            .await;
+
+        assert_eq!(cancelled, vec!["one".to_owned(), "two".to_owned()]);
+        assert_eq!(queue.get_pending_input(&active).await.0, retained);
+        assert_eq!(
+            queue.get_pending_input(&other_active).await.0,
+            vec![queued_user_input(Some("one"))]
+        );
+    }
+
+    #[tokio::test]
+    async fn cancel_pending_user_inputs_never_acknowledges_delivered_or_idle_inputs() {
+        let queue = InputQueue::new();
+        let turn = ActiveTurn::default();
+        let input = queued_user_input(Some("delivered"));
+        turn.turn_state.lock().await.pending_input.items = vec![input.clone()];
+        let active = Mutex::new(Some(turn));
+        assert_eq!(queue.get_pending_input(&active).await.0, vec![input]);
+
+        assert!(
+            queue
+                .cancel_pending_user_inputs(&active, &["delivered".into()])
+                .await
+                .is_empty()
+        );
+        assert!(
+            queue
+                .cancel_pending_user_inputs(&Mutex::new(None), &["delivered".into()])
+                .await
+                .is_empty()
+        );
+    }
+
+    #[tokio::test]
+    async fn cancelling_and_draining_cannot_both_take_the_same_input() {
+        let queue = InputQueue::new();
+        let turn = ActiveTurn::default();
+        turn.turn_state.lock().await.pending_input.items = vec![queued_user_input(Some("racing"))];
+        let active = Mutex::new(Some(turn));
+        let ids = vec!["racing".to_owned()];
+
+        let (cancelled, (delivered, _)) = tokio::join!(
+            queue.cancel_pending_user_inputs(&active, &ids),
+            queue.get_pending_input(&active),
+        );
+
+        assert_eq!(cancelled.len() + delivered.len(), 1);
+        assert!(queue.get_pending_input(&active).await.0.is_empty());
+    }
 
     #[test_case::test_case("ResponseItem", TurnInput::ResponseItem)]
     #[test_case::test_case("FunctionCallOutput", TurnInput::FunctionCallOutput)]

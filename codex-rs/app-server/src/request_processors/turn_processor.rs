@@ -4,6 +4,8 @@ use codex_agent_extension::AgentInvocation;
 use codex_agent_extension::AgentRun;
 use codex_agent_extension::AgentRunner;
 use codex_app_server_protocol::ImageReference as V2ImageReference;
+use codex_app_server_protocol::TurnSteerCancelParams;
+use codex_app_server_protocol::TurnSteerCancelResponse;
 use codex_protocol::error::CodexErrorDetails;
 use codex_protocol::models::ContentItem;
 use codex_protocol::models::FunctionCallOutputBody;
@@ -262,6 +264,36 @@ impl TurnRequestProcessor {
         self.turn_steer_inner(request_id, params)
             .await
             .map(|response| Some(response.into()))
+    }
+
+    pub(crate) async fn turn_steer_cancel(
+        &self,
+        request_id: &ConnectionRequestId,
+        params: TurnSteerCancelParams,
+    ) -> Result<Option<ClientResponsePayload>, JSONRPCErrorError> {
+        if params.client_user_message_ids.len() > 100
+            || params
+                .client_user_message_ids
+                .iter()
+                .any(|id| id.is_empty() || id.len() > 256)
+        {
+            return Err(invalid_request(
+                "Provide at most 100 nonempty client message IDs, each at most 256 bytes"
+                    .to_string(),
+            ));
+        }
+        let (_, thread) = self.load_thread(&params.thread_id).await?;
+        self.ensure_direct_input_allowed(request_id, thread.as_ref())
+            .await?;
+        let cancelled_client_user_message_ids = thread
+            .cancel_pending_user_inputs(&params.client_user_message_ids)
+            .await;
+        Ok(Some(
+            TurnSteerCancelResponse {
+                cancelled_client_user_message_ids,
+            }
+            .into(),
+        ))
     }
 
     pub(crate) async fn turn_interrupt(
@@ -1118,6 +1150,10 @@ impl TurnRequestProcessor {
                             codex_protocol::protocol::NonSteerableTurnKind::Compact => (
                                 "cannot steer a compact turn".to_string(),
                                 TurnSteerRequestError::NonSteerableCompact,
+                            ),
+                            codex_protocol::protocol::NonSteerableTurnKind::WorkGraph => (
+                                "cannot steer a work graph turn; interrupt the workflow before sending a message".to_string(),
+                                TurnSteerRequestError::NonSteerableWorkGraph,
                             ),
                         };
                         let error = TurnError {

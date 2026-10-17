@@ -1,5 +1,6 @@
 ---
 source: tui/src/bottom_pane/chat_composer.rs
+assertion_line: 5212
 expression: terminal.backend()
 ---
 "                                                                                                                        "
@@ -10,4 +11,4 @@ expression: terminal.backend()
 "                                                                                                                        "
 "                                                                                                                        "
 "                                                                                                                        "
-"  tab to queue message · Plan mode                                                                    98% context left  "
+"  Plan mode                                                                                           98% context left  "

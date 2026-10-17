@@ -127,8 +127,10 @@ pub fn model_info_from_slug(slug: &str) -> ModelInfo {
         web_search_tool_type: WebSearchToolType::Text,
         truncation_policy: TruncationPolicyConfig::bytes(/*limit*/ 10_000),
         supports_image_detail_original: false,
-        context_window: Some(272_000),
-        max_context_window: Some(272_000),
+        // Elpis: an unknown model's window is unknown. No guessed limit, and nothing caps the
+        // user's `model_context_window`.
+        context_window: None,
+        max_context_window: None,
         auto_compact_token_limit: None,
         comp_hash: None,
         effective_context_window_percent: 95,

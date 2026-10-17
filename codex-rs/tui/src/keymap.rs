@@ -1681,7 +1681,8 @@ impl RuntimeKeymap {
             },
             composer: ComposerKeymap {
                 submit: default_bindings![plain(KeyCode::Enter)],
-                queue: default_bindings![plain(KeyCode::Tab)],
+                // Elpis: Tab belongs to the Context Ledger; Enter already sends during a turn.
+                queue: default_bindings![],
                 toggle_shortcuts: default_bindings![
                     plain(KeyCode::Char('?')),
                     shift(KeyCode::Char('?'))

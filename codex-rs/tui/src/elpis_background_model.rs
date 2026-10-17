@@ -1,8 +1,8 @@
-//! Elpis: `/memory-model` chooses the model for background work such as naming sessions.
+//! Elpis: `/memory-model` chooses the fallback model/provider for Smart Prune.
 //!
 //! The choice is `background_model` / `background_provider` in config.toml, as in v0.3.0.
-//! Unset, background work keeps upstream's default model and the session's provider. The
-//! model answering the user is unaffected, and saving memory uses the responding agent.
+//! An explicit `/pruner-model` choice takes precedence. Session naming follows upstream's
+//! model/provider selection, and saving memory uses the responding agent.
 
 use crate::legacy_core::config::Config;
 use crate::legacy_core::config::edit::ConfigEdit;
@@ -76,22 +76,6 @@ fn setting_edit(key: &str, value: Option<&str>) -> ConfigEdit {
     }
 }
 
-/// The model and provider that name sessions. With no background model configured this is
-/// upstream's choice (`default_model` on the session's provider); `background_provider`
-/// applies only together with `background_model`.
-pub(crate) fn session_naming_model(config: &Config, default_model: String) -> (String, String) {
-    match &config.background_model {
-        Some(model) => (
-            model.clone(),
-            config
-                .background_provider
-                .clone()
-                .unwrap_or_else(|| config.model_provider_id.clone()),
-        ),
-        None => (default_model, config.model_provider_id.clone()),
-    }
-}
-
 /// How the configured background model reads in messages.
 pub(crate) fn describe(config: &Config) -> String {
     match (&config.background_model, &config.background_provider) {
@@ -143,38 +127,5 @@ mod tests {
             })
         );
         assert!(BackgroundModelChoice::parse("  ", &config).is_err());
-    }
-
-    /// Positive: a background model names sessions, on its own provider when one is set.
-    /// Negative: unset, naming keeps upstream's model and the session's provider.
-    #[tokio::test]
-    async fn session_naming_follows_the_background_model_only_when_set() {
-        let mut config = config().await;
-        let session_provider = config.model_provider_id.clone();
-        assert_eq!(
-            session_naming_model(&config, "upstream-default".to_string()),
-            ("upstream-default".to_string(), session_provider.clone())
-        );
-        // A provider alone does not move naming off the session's provider.
-        config.background_provider = Some("other".to_string());
-        assert_eq!(
-            session_naming_model(&config, "upstream-default".to_string()),
-            ("upstream-default".to_string(), session_provider.clone())
-        );
-
-        BackgroundModelChoice::parse("ELPIS_BACKGROUND_MODEL_7e21", &config)
-            .expect("bare id")
-            .apply_to(&mut config);
-        assert_eq!(
-            session_naming_model(&config, "upstream-default".to_string()),
-            ("ELPIS_BACKGROUND_MODEL_7e21".to_string(), "other".to_string())
-        );
-        BackgroundModelChoice::parse("default", &config)
-            .expect("default")
-            .apply_to(&mut config);
-        assert_eq!(
-            session_naming_model(&config, "upstream-default".to_string()),
-            ("upstream-default".to_string(), session_provider)
-        );
     }
 }

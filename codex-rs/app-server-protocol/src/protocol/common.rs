@@ -612,6 +612,11 @@ client_request_definitions! {
         serialization: thread_id(params.thread_id),
         response: v2::ThreadPredictionRequestResponse,
     },
+    ThreadApprovalReview => "thread/approval/review" {
+        params: v2::ThreadApprovalReviewParams,
+        serialization: thread_id(params.thread_id),
+        response: v2::ThreadApprovalReviewResponse,
+    },
     ThreadGoalSet => "thread/goal/set" {
         params: v2::ThreadGoalSetParams,
         serialization: thread_id(params.thread_id),
@@ -866,6 +871,19 @@ client_request_definitions! {
         serialization: thread_id(params.root_thread_id),
         response: v2::WorkGraphListResponse,
     },
+    #[experimental("workGraph/run")]
+    WorkGraphRun => "workGraph/run" {
+        params: v2::WorkGraphRunParams,
+        serialization: thread_id(params.root_thread_id),
+        response: v2::WorkGraphRunResponse,
+    },
+    #[experimental("workGraph/runWithProviders")]
+    WorkGraphRunWithProviders => "workGraph/runWithProviders" {
+        params: v2::WorkGraphRunParams,
+        serialization: thread_id(params.root_thread_id),
+        manual_payload_conversion: manual,
+        response: v2::WorkGraphRunResponse,
+    },
     ThreadTurnsList => "thread/turns/list" {
         params: v2::ThreadTurnsListParams,
         // Explicitly concurrent: this primarily reads append-only rollout storage.
@@ -1071,6 +1089,12 @@ client_request_definitions! {
         inspect_params: true,
         serialization: thread_id(params.thread_id),
         response: v2::TurnSteerResponse,
+    },
+    #[experimental("turn/steer/cancel")]
+    TurnSteerCancel => "turn/steer/cancel" {
+        params: v2::TurnSteerCancelParams,
+        serialization: thread_id(params.thread_id),
+        response: v2::TurnSteerCancelResponse,
     },
     TurnInterrupt => "turn/interrupt" {
         params: v2::TurnInterruptParams,
@@ -1432,6 +1456,19 @@ client_request_definitions! {
         params: v2::ConfigReadParams,
         serialization: global_shared_read("config"),
         response: v2::ConfigReadResponse,
+    },
+    #[experimental("pruner/read")]
+    PrunerRead => "pruner/read" {
+        params: v2::PrunerReadParams,
+        serialization: global_shared_read("config"),
+        response: v2::PrunerReadResponse,
+    },
+    #[experimental("pruner/write")]
+    PrunerWrite => "pruner/write" {
+        params: v2::PrunerWriteParams,
+        serialization: global("config"),
+        manual_payload_conversion: manual,
+        response: v2::PrunerReadResponse,
     },
     ExternalAgentConfigDetect => "externalAgentConfig/detect" {
         params: v2::ExternalAgentConfigDetectParams,

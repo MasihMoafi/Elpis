@@ -568,12 +568,32 @@ pub struct AdditionalContextEntry {
     pub kind: AdditionalContextKind,
 }
 
+/// Result of an explicitly requested deterministic work graph turn.
+#[derive(Debug)]
+pub struct WorkGraphStart {
+    pub graph_id: String,
+    pub turn_id: String,
+}
+
+#[derive(Debug)]
+pub enum WorkGraphStartError {
+    ThreadBusy,
+    Rejected(String),
+}
+
 /// Submission operation
 // Keep diagnostic fields explicit so new payload fields do not enter logs by default.
 #[derive(derive_more::Debug)]
 #[allow(clippy::large_enum_variant)]
 #[non_exhaustive]
 pub enum Op {
+    /// Run the native scheduler on an idle root without a coordinator model call.
+    RunWorkGraph {
+        #[debug(skip)]
+        arguments: String,
+        #[debug(skip)]
+        reply: oneshot::Sender<Result<WorkGraphStart, WorkGraphStartError>>,
+    },
     /// Abort current task without terminating background terminal processes.
     /// This server sends [`EventMsg::TurnAborted`] in response.
     Interrupt,
@@ -951,6 +971,7 @@ impl InterAgentCommunication {
 impl Op {
     pub fn kind(&self) -> &'static str {
         match self {
+            Self::RunWorkGraph { .. } => "run_work_graph",
             Self::Interrupt => "interrupt",
             Self::InterruptIfNoPendingInput { .. } => "interrupt_if_no_pending_input",
             Self::CleanBackgroundTerminals => "clean_background_terminals",
@@ -1865,6 +1886,7 @@ pub enum AgentStatus {
 pub enum NonSteerableTurnKind {
     Review,
     Compact,
+    WorkGraph,
 }
 
 /// Codex errors that we expose to clients.

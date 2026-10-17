@@ -547,6 +547,8 @@ impl BottomPane {
         let interrupt_binding = keymap.primary_hint(KeymapContext::Chat, "interrupt_turn");
         self.pending_input_preview
             .set_interrupt_binding(interrupt_binding);
+        self.pending_input_preview
+            .set_submit_binding(keymap.primary_hint(KeymapContext::Composer, "submit"));
         if let Some(status) = self.status.as_mut() {
             status.set_interrupt_binding(interrupt_binding);
         }
@@ -1702,6 +1704,21 @@ impl BottomPane {
 
     pub(crate) fn is_task_running(&self) -> bool {
         self.is_task_running
+    }
+
+    pub(crate) fn is_composer_submission_key(&self, key_event: KeyEvent) -> bool {
+        self.keymap.composer.submit.is_pressed(key_event)
+            || self.keymap.composer.queue.is_pressed(key_event)
+    }
+
+    pub(crate) fn is_composer_queue_key(&self, key_event: KeyEvent) -> bool {
+        self.keymap.composer.queue.is_pressed(key_event)
+    }
+
+    pub(crate) fn is_empty_composer_submit_key(&self, key_event: KeyEvent) -> bool {
+        self.keymap.composer.submit.is_pressed(key_event)
+            && self.composer.is_empty()
+            && !self.composer.is_in_paste_burst()
     }
 
     pub(crate) fn should_interrupt_running_task(&self, key_event: KeyEvent) -> bool {

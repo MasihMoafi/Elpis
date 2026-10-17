@@ -1142,6 +1142,16 @@ impl MessageProcessor {
                 .read(params)
                 .await
                 .map(|response| Some(response.into())),
+            ClientRequest::PrunerRead { .. } => self
+                .config_processor
+                .pruner_read()
+                .await
+                .map(|response| Some(response.into())),
+            ClientRequest::PrunerWrite { params, .. } => self
+                .config_processor
+                .pruner_write(params)
+                .await
+                .map(|response| Some(ClientResponsePayload::PrunerWrite(response))),
             ClientRequest::WindowsSandboxReadiness { .. } => {
                 self.windows_sandbox_processor
                     .windows_sandbox_readiness(&request_id)
@@ -1352,6 +1362,9 @@ impl MessageProcessor {
                     .thread_set_name(request_id.clone(), params)
                     .await
             }
+            ClientRequest::ThreadApprovalReview { params, .. } => {
+                self.thread_processor.thread_approval_review(params).await
+            }
             ClientRequest::ThreadGoalSet { params, .. } => {
                 self.thread_goal_processor
                     .thread_goal_set(request_id.clone(), params)
@@ -1521,8 +1534,18 @@ impl MessageProcessor {
                 self.thread_processor.thread_read(&request_id, params).await
             }
             // Elpis: the work graphs a root thread ran.
+            ClientRequest::WorkGraphRunWithProviders { params, .. } => {
+                self.thread_processor
+                    .work_graph_run(&request_id, params, true)
+                    .await
+            }
             ClientRequest::WorkGraphList { params, .. } => {
                 self.thread_processor.work_graph_list(params).await
+            }
+            ClientRequest::WorkGraphRun { params, .. } => {
+                self.thread_processor
+                    .work_graph_run(&request_id, params, false)
+                    .await
             }
             ClientRequest::ThreadTurnsList { params, .. } => {
                 self.thread_processor.thread_turns_list(params).await
@@ -1662,6 +1685,11 @@ impl MessageProcessor {
             }
             ClientRequest::TurnSteer { params, .. } => {
                 self.turn_processor.turn_steer(&request_id, params).await
+            }
+            ClientRequest::TurnSteerCancel { params, .. } => {
+                self.turn_processor
+                    .turn_steer_cancel(&request_id, params)
+                    .await
             }
             ClientRequest::TurnSettingsUpdate { params, .. } => {
                 self.turn_processor

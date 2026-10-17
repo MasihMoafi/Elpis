@@ -1,5 +1,6 @@
 ---
 source: tui/src/app/owned_transcript_tests.rs
+assertion_line: 320
 expression: "normalize_snapshot_paths(snapshots.join(\"\\n\\n\"))"
 ---
 80x10, Recap at tail
@@ -15,10 +16,10 @@ History 20
   ? for shortcuts
 
 80x10, Message after recap
-
-  ↳ Recap: The draft is ready.
-
-• Follow-up response.
+                                                                               ┃
+  ↳ Recap: The draft is ready.                                                 ┃
+                                                                               ┃
+• Follow-up response.                                                          ┃
 
 
 › Ask Elpis to do anything
@@ -27,10 +28,10 @@ History 20
   ? for shortcuts
 
 80x10, Live message after recap
-
-  ↳ Recap: The draft is ready.
-
-• Streaming response.
+                                                                               ┃
+  ↳ Recap: The draft is ready.                                                 ┃
+                                                                               ┃
+• Streaming response.                                                          ┃
 
 
 › Ask Elpis to do anything
@@ -53,12 +54,12 @@ History 20
   ? for shortcuts
 
 80x12, Message after recap
-History 20
-
-  ↳ Recap: The draft is ready.
-           Next: Review the changes.
-
-• Follow-up response.
+History 20                                                                     │
+                                                                               │
+  ↳ Recap: The draft is ready.                                                 │
+           Next: Review the changes.                                           │
+                                                                               ┃
+• Follow-up response.                                                          ┃
 
 
 › Ask Elpis to do anything
@@ -67,12 +68,12 @@ History 20
   ? for shortcuts
 
 80x12, Live message after recap
-History 20
-
-  ↳ Recap: The draft is ready.
-           Next: Review the changes.
-
-• Streaming response.
+History 20                                                                     │
+                                                                               │
+  ↳ Recap: The draft is ready.                                                 │
+           Next: Review the changes.                                           │
+                                                                               ┃
+• Streaming response.                                                          ┃
 
 
 › Ask Elpis to do anything
@@ -95,12 +96,12 @@ History 20
   ? for shortcuts
 
 32x12, Message after recap
-
-  ↳ Recap: The draft is ready.
-           Next: Review the
-           changes.
-
-• Follow-up response.
+  ↳ Recap: The draft is        │
+           ready.              ┃
+           Next: Review the    ┃
+           changes.            ┃
+                               ┃
+• Follow-up response.          ┃
 
 
 › Ask Elpis to do anything
@@ -109,12 +110,12 @@ History 20
   ? for shortcuts
 
 32x12, Live message after recap
-
-  ↳ Recap: The draft is ready.
-           Next: Review the
-           changes.
-
-• Streaming response.
+  ↳ Recap: The draft is        │
+           ready.              ┃
+           Next: Review the    ┃
+           changes.            ┃
+                               ┃
+• Streaming response.          ┃
 
 
 › Ask Elpis to do anything
@@ -132,7 +133,7 @@ History 20
   ? for shortcuts
 
 80x7, Message after recap
-• Follow-up response.
+• Follow-up response.                                                          ┃
 
 
 › Ask Elpis to do anything
@@ -141,7 +142,7 @@ History 20
   ? for shortcuts
 
 80x7, Live message after recap
-• Streaming response.
+• Streaming response.                                                          ┃
 
 
 › Ask Elpis to do anything

@@ -322,6 +322,7 @@ pub enum TurnSteerRejectionReason {
     ExpectedTurnMismatch,
     NonSteerableReview,
     NonSteerableCompact,
+    NonSteerableWorkGraph,
     EmptyInput,
     InputTooLarge,
 }
@@ -348,6 +349,7 @@ pub enum TurnSteerRequestError {
     ExpectedTurnMismatch,
     NonSteerableReview,
     NonSteerableCompact,
+    NonSteerableWorkGraph,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -363,6 +365,7 @@ impl From<TurnSteerRequestError> for TurnSteerRejectionReason {
             TurnSteerRequestError::ExpectedTurnMismatch => Self::ExpectedTurnMismatch,
             TurnSteerRequestError::NonSteerableReview => Self::NonSteerableReview,
             TurnSteerRequestError::NonSteerableCompact => Self::NonSteerableCompact,
+            TurnSteerRequestError::NonSteerableWorkGraph => Self::NonSteerableWorkGraph,
         }
     }
 }

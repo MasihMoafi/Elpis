@@ -28,6 +28,9 @@ pub(crate) enum ElpisAppEvent {
     /// Republish the dashboard's state. The checkpoint count needs the App-owned transcript.
     RefreshDashboard,
 
+    /// Refresh descendants for the dashboard's live Agents map.
+    RefreshDashboardAgents,
+
     /// Bare `/usage`: show the session card as an overlay Escape closes.
     OpenUsage(Box<dyn crate::history_cell::HistoryCell>),
 

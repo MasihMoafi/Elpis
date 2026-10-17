@@ -4232,6 +4232,29 @@
       ],
       "type": "object"
     },
+    "ThreadApprovalReviewParams": {
+      "properties": {
+        "command": {
+          "type": "string"
+        },
+        "cwd": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "threadId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "command",
+        "cwd",
+        "reason",
+        "threadId"
+      ],
+      "type": "object"
+    },
     "ThreadApproveGuardianDeniedActionParams": {
       "properties": {
         "event": {
@@ -6134,6 +6157,77 @@
         "rootThreadId"
       ],
       "type": "object"
+    },
+    "WorkGraphRunTask": {
+      "properties": {
+        "acceptanceCriteria": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "dependsOn": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "environmentId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "instruction": {
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/definitions/WorkGraphRunTaskKind"
+        },
+        "model": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "provider": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "title": {
+          "type": "string"
+        },
+        "writeScopes": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "instruction",
+        "kind",
+        "title"
+      ],
+      "type": "object"
+    },
+    "WorkGraphRunTaskKind": {
+      "enum": [
+        "explore",
+        "implement",
+        "verify",
+        "fix"
+      ],
+      "type": "string"
     }
   },
   "description": "Request from the client to the server.",
@@ -6329,6 +6423,30 @@
         "params"
       ],
       "title": "Thread/name/setRequest",
+      "type": "object"
+    },
+    {
+      "properties": {
+        "id": {
+          "$ref": "#/definitions/RequestId"
+        },
+        "method": {
+          "enum": [
+            "thread/approval/review"
+          ],
+          "title": "Thread/approval/reviewRequestMethod",
+          "type": "string"
+        },
+        "params": {
+          "$ref": "#/definitions/ThreadApprovalReviewParams"
+        }
+      },
+      "required": [
+        "id",
+        "method",
+        "params"
+      ],
+      "title": "Thread/approval/reviewRequest",
       "type": "object"
     },
     {

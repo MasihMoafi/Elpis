@@ -62,6 +62,7 @@ async fn usage_notice_preserves_composer_geometry_on_recovery() -> Result<()> {
             assert!(app.chat_widget.is_user_turn_pending_or_running());
             if queued {
                 app.keymap.chat.edit_queued_message = vec![crate::key_hint::shift(KeyCode::Left)];
+                app.keymap.composer.queue = vec![crate::key_hint::plain(KeyCode::Tab)];
                 app.chat_widget
                     .apply_keymap_update(Default::default(), &app.keymap);
                 app.chat_widget

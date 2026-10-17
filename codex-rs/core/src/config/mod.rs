@@ -993,6 +993,7 @@ pub struct Config {
     /// Whether enabled hooks should run without requiring persisted hook trust for this session.
     ///
     /// This is a runtime-only knob populated from invocation overrides, not from config files.
+    /// Elpis: it is also on while the session starts in "Bypass permissions".
     pub bypass_hook_trust: bool,
 
     /// Optional URI-based file opener. If set, citations to files in the model
@@ -4319,6 +4320,14 @@ impl Config {
                 .map_err(std::io::Error::from)?;
         }
 
+        // Elpis: "Bypass permissions" also runs enabled hooks without the trust review, as
+        // `--dangerously-bypass-hook-trust` does. Only the requirement-checked values count.
+        let bypass_hook_trust = bypass_hook_trust
+            || codex_protocol::models::bypass_permissions_active(
+                constrained_approval_policy.value(),
+                constrained_permission_profile.value.get(),
+                active_permission_profile.as_ref(),
+            );
         let permission_profile_state = PermissionProfileState::from_constrained_active_profile(
             constrained_permission_profile.value,
             active_permission_profile,

@@ -8,6 +8,7 @@ use pretty_assertions::assert_eq;
 fn plain_text_composer_keeps_command_prefixes_literal() {
     let (mut composer, _rx) = new_test_composer();
     composer.config = ChatComposerConfig::plain_text();
+    composer.queue_keys = vec![crate::key_hint::plain(KeyCode::Tab)];
     composer.set_disable_paste_burst(/*disabled*/ true);
     composer.set_footer_hint_override(Some(Vec::new()));
     for (prefix, modifiers) in [

@@ -1,6 +1,6 @@
 ---
 source: tui/src/app/owned_transcript_tests.rs
-assertion_line: 1600
+assertion_line: 1695
 expression: "normalize_snapshot_paths(frames.join(\"\\n\\n\"))"
 ---
 Following caret
@@ -30,13 +30,13 @@ History 40
 
 
 Wheel up
-History 34
-History 35
-History 36
-History 37
-History 38
-History 39
-History 40
+History 34                                                 │
+History 35                                                 │
+History 36                                                 │
+History 37                                                 │
+History 38                                                 │
+History 39                                                 ┃
+History 40                                                 ┃
 
 
 › Prompt 15 界                                              ↑
@@ -56,13 +56,13 @@ History 40
 
 
 Edit at caret
-History 34
-History 35
-History 36
-History 37
-History 38
-History 39
-History 40
+History 34                                                 │
+History 35                                                 │
+History 36                                                 │
+History 37                                                 │
+History 38                                                 │
+History 39                                                 ┃
+History 40                                                 ┃
 
 
 › Prompt 24 界                                              ↑
@@ -82,13 +82,13 @@ History 40
 
 
 Paste at caret
-History 34
-History 35
-History 36
-History 37
-History 38
-History 39
-History 40
+History 34                                                 │
+History 35                                                 │
+History 36                                                 │
+History 37                                                 │
+History 38                                                 │
+History 39                                                 ┃
+History 40                                                 ┃
 
 
 › Edited 24 界                                              ↑
@@ -108,7 +108,7 @@ History 40
 
 
 Short screen
-History 40
+History 40                             ┃
 
 
 › Edited 32 界                          ↑

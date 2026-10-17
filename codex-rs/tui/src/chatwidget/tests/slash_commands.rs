@@ -471,6 +471,7 @@ async fn queued_settings_selection_applies_before_next_input() {
     let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(Some("gpt-5.2")).await;
     chat.thread_id = Some(ThreadId::new());
     let preset = get_available_model(&chat, "gpt-5.6-terra");
+    let terra_default_effort = preset.default_reasoning_effort.clone();
     chat.model_catalog = std::sync::Arc::new(ModelCatalog::new(vec![preset]));
     handle_turn_started(&mut chat, "turn-1");
 
@@ -498,6 +499,11 @@ async fn queued_settings_selection_applies_before_next_input() {
                         chat.set_model(&model);
                         chat.set_reasoning_effort(/*effort*/ None);
                     }
+                    // Codex parity: picking a model opens its effort levels.
+                    AppEvent::OpenReasoningPopup { model } => chat.open_reasoning_popup(model),
+                    AppEvent::UpdateModel(model)
+                    | AppEvent::AstraSelectedFromModelPicker { model, .. } => chat.set_model(&model),
+                    AppEvent::UpdateReasoningEffort(effort) => chat.set_reasoning_effort(effort),
                     AppEvent::SettingsSelectionClosed => {
                         chat.app_event_tx.send(AppEvent::SettingsSelectionSettled);
                     }
@@ -531,9 +537,18 @@ async fn queued_settings_selection_applies_before_next_input() {
     assert_matches!(op_rx.try_recv(), Err(TryRecvError::Empty));
     apply_app_events(&mut chat, &mut rx);
 
+    // The model's effort levels open, as in Codex; the queued input waits for them too.
+    assert_matches!(op_rx.try_recv(), Err(TryRecvError::Empty));
+    assert_eq!(chat.input_queue.queued_user_messages.len(), 1);
+    chat.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+    apply_app_events(&mut chat, &mut rx);
+
     match next_submit_op(&mut op_rx) {
         Op::UserTurn { model, effort, .. } => {
-            assert_eq!((model, effort), ("gpt-5.6-terra".to_string(), None));
+            assert_eq!(
+                (model, effort),
+                ("gpt-5.6-terra".to_string(), Some(terra_default_effort))
+            );
         }
         other => panic!("expected queued message with updated model, got {other:?}"),
     }
@@ -757,6 +772,13 @@ async fn slash_init_does_not_depend_on_loaded_instruction_sources() {
 
     assert_eq!(chat.input_queue.queued_user_messages.len(), 1);
     assert!(drain_insert_history(&mut rx).is_empty());
+    assert_eq!(
+        chat.input_queue.queued_user_messages.front().unwrap().text,
+        include_str!("../../../assets/prompt_for_init_command.md")
+    );
+    // Pending-input recall now takes precedence over local command history. Once
+    // the queued prompt is delivered, local history still recalls the typed command.
+    chat.input_queue.queued_user_messages.clear();
     assert_eq!(recall_latest_after_clearing(&mut chat), "/init");
 }
 

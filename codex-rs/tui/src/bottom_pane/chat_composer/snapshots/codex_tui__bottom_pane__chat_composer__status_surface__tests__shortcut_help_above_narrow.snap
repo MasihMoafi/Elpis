@@ -24,7 +24,6 @@ expression: text
   esc esc  Edit last message
 
   Session
-  tab   Send message
   ⇧tab  Permissions
   ⌥,    Less reasoning
   ⌥.    More reasoning

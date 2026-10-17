@@ -17,8 +17,8 @@ fn anthropic_models_are_read_from_the_listing() {
     let models = read(
         GatewayWire::AnthropicMessages,
         json!({"data": [
-            {"type": "model", "id": "claude-sonnet-4-6", "display_name": "Claude Sonnet 4.6"},
-            {"type": "model", "id": "claude-haiku-4-5"},
+            {"type": "model", "id": "claude-sonnet-4-6", "display_name": "Claude Sonnet 4.6", "max_input_tokens": 1_000_000},
+            {"type": "model", "id": "claude-haiku-4-5", "max_input_tokens": 200_000},
         ]}),
     );
 
@@ -27,8 +27,41 @@ fn anthropic_models_are_read_from_the_listing() {
     assert_eq!(models[0].display_name, "Claude Sonnet 4.6");
     // A missing display name falls back to the id rather than an invented one.
     assert_eq!(models[1].display_name, "claude-haiku-4-5");
-    assert_eq!(models[0].context_window, Some(200_000));
+    assert_eq!(models[0].context_window, Some(1_000_000));
+    assert_eq!(models[0].max_context_window, Some(1_000_000));
+    assert_eq!(models[0].description.as_deref(), Some("≈1000k context"));
+    assert_eq!(models[1].context_window, Some(200_000));
+    assert_eq!(models[1].max_context_window, Some(200_000));
     assert!(models[0].supported_reasoning_levels.is_empty());
+}
+
+#[test]
+fn anthropic_model_without_valid_context_window_stays_unknown() {
+    for max_input_tokens in [
+        Value::Null,
+        json!(0),
+        json!(-1),
+        json!(i64::MAX as u64 + 1),
+        json!("1000000"),
+    ] {
+        let models = read(
+            GatewayWire::AnthropicMessages,
+            json!({"data": [{"id": "claude-unknown", "max_input_tokens": max_input_tokens}]}),
+        );
+        assert_eq!(models[0].context_window, None);
+        assert_eq!(models[0].max_context_window, None);
+        assert_eq!(
+            models[0].description.as_deref(),
+            Some("context window not reported")
+        );
+    }
+
+    let models = read(
+        GatewayWire::AnthropicMessages,
+        json!({"data": [{"id": "claude-unknown"}]}),
+    );
+    assert_eq!(models[0].context_window, None);
+    assert_eq!(models[0].max_context_window, None);
 }
 
 #[test]

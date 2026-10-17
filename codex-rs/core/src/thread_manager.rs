@@ -421,6 +421,10 @@ pub(crate) struct ThreadManagerState {
     agent_control_factory: Option<AgentControlFactory>,
     auth_manager: Arc<AuthManager>,
     models_manager: SharedModelsManager,
+    /// Elpis: the provider `models_manager` lists models for; `None` uses it for every thread.
+    models_manager_provider_id: Option<String>,
+    /// Elpis: model lists for threads on other providers, one per provider id.
+    provider_models_managers: std::sync::Mutex<HashMap<String, SharedModelsManager>>,
     git_root_discovery: Arc<GitRootDiscovery>,
     environment_manager: Arc<EnvironmentManager>,
     starting_mcp_runtimes: std::sync::Mutex<Vec<std::sync::Weak<AtomicBool>>>,
@@ -583,6 +587,8 @@ impl ThreadManager {
                 thread_id_generator: default_thread_id_generator(),
                 agent_control_factory: None,
                 models_manager,
+                models_manager_provider_id: Some(config.model_provider_id.clone()),
+                provider_models_managers: Default::default(),
                 git_root_discovery: Arc::default(),
                 environment_manager,
                 starting_mcp_runtimes: std::sync::Mutex::new(Vec::new()),
@@ -756,6 +762,8 @@ impl ThreadManager {
                 agent_control_factory: None,
                 models_manager: create_model_provider(provider, Some(auth_manager.clone()))
                     .models_manager(codex_home, /*config_model_catalog*/ None),
+                models_manager_provider_id: None,
+                provider_models_managers: Default::default(),
                 git_root_discovery: Arc::default(),
                 environment_manager,
                 starting_mcp_runtimes: std::sync::Mutex::new(Vec::new()),
@@ -1618,6 +1626,28 @@ impl ThreadManager {
 }
 
 impl ThreadManagerState {
+    /// Elpis: the shared Claude bridge starts one engine without `--provider`, so its model list
+    /// belongs to the default provider. A thread on another provider (`anthropic-credits`) gets
+    /// that provider's list, or its model metadata, context window and subagent models are unknown.
+    fn models_manager_for(&self, config: &Config) -> SharedModelsManager {
+        if self
+            .models_manager_provider_id
+            .as_deref()
+            .is_none_or(|provider_id| provider_id == config.model_provider_id)
+        {
+            return Arc::clone(&self.models_manager);
+        }
+        let mut managers = self
+            .provider_models_managers
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        Arc::clone(
+            managers
+                .entry(config.model_provider_id.clone())
+                .or_insert_with(|| build_models_manager(config, Arc::clone(&self.auth_manager))),
+        )
+    }
+
     pub(crate) fn shared_thread_instructions_provider(
         &self,
         root_thread_id: ThreadId,
@@ -2317,6 +2347,7 @@ impl ThreadManagerState {
         };
         let attachment_source =
             forked_from_thread_id.filter(|_| matches!(&initial_history, InitialHistory::Forked(_)));
+        let models_manager = self.models_manager_for(&config);
         let spawn_result = Session::spawn(SessionSpawnArgs {
             startup,
             config,
@@ -2324,7 +2355,7 @@ impl ThreadManagerState {
             instructions,
             installation_id: self.installation_id.clone(),
             auth_manager,
-            models_manager: Arc::clone(&self.models_manager),
+            models_manager,
             git_root_discovery: Arc::clone(&self.git_root_discovery),
             environment_manager: Arc::clone(&self.environment_manager),
             skills_service: Arc::clone(&self.skills_service),

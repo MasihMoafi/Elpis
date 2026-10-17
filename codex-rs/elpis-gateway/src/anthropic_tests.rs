@@ -45,10 +45,89 @@ fn the_request_hoists_system_text_and_pairs_tool_use_with_results() {
     );
     assert_eq!(body["max_tokens"], 8192);
     assert_eq!(body["stream"], true);
+    assert_eq!(body["cache_control"], json!({"type":"ephemeral"}));
     assert_eq!(body["tools"][0]["name"], "exec_command");
     assert_eq!(body["tools"][0]["input_schema"]["required"], json!(["cmd"]));
     assert_eq!(body["tools"][1]["name"], "apply_patch");
     assert_eq!(body["tools"][1]["input_schema"]["required"], json!(["input"]));
+}
+
+#[test]
+fn a_request_never_ends_with_an_assistant_message() {
+    // Masih on 16 October 2026: "This model does not support assistant message prefill. The
+    // conversation must end with a user message."
+    let history = json!([
+        {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "Go on."}]},
+        {"type": "message", "role": "assistant", "content": [{"type": "output_text", "text": "Done so far."}]},
+        {"type": "message", "role": "developer", "content": [{"type": "input_text", "text": "Admitted context changed."}]},
+    ]);
+    let body = request(&conversation(&responses_request(history, core_tools())))
+        .expect("the request translates");
+    let messages = body["messages"].as_array().expect("messages");
+    assert_eq!(
+        messages.last(),
+        Some(&json!({"role": "user", "content": [{"type": "text", "text": "Admitted context changed."}]}))
+    );
+    assert!(!body["system"].to_string().contains("Admitted context changed."));
+
+    let history = json!([
+        {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "Go on."}]},
+        {"type": "message", "role": "assistant", "content": [{"type": "output_text", "text": "Done so far."}]},
+    ]);
+    let body = request(&conversation(&responses_request(history, core_tools())))
+        .expect("the request translates");
+    assert_eq!(
+        body["messages"].as_array().and_then(|messages| messages.last()),
+        Some(&json!({"role": "user", "content": [{"type": "text", "text": "Continue."}]}))
+    );
+}
+
+#[test]
+fn top_level_schema_rules_move_into_the_description() {
+    // The rag MCP server's `query_knowledge_base` schema, which Anthropic refused with
+    // "input_schema does not support oneOf, allOf, or anyOf at the top level".
+    let rule = json!([
+        {"type": "object", "properties": {}, "required": ["doc_path"]},
+        {"type": "object", "properties": {}, "required": ["workspace_id"]},
+    ]);
+    let parameters = json!({
+        "type": "object",
+        "properties": {"query": {"type": "string"}},
+        "required": ["query"],
+        "additionalProperties": false,
+        "oneOf": rule,
+    });
+    let (description, schema) = anthropic_input_schema("Search.", &parameters);
+
+    assert_eq!(
+        schema,
+        json!({
+            "type": "object",
+            "properties": {"query": {"type": "string"}},
+            "required": ["query"],
+            "additionalProperties": false,
+        })
+    );
+    assert_eq!(
+        description,
+        format!("Search.\n\nThe input must also match exactly one of these JSON schemas: {rule}")
+    );
+
+    let (_, merged) = anthropic_input_schema(
+        "",
+        &json!({"allOf": [
+            {"type": "object", "properties": {"a": {"type": "string"}}, "required": ["a"]},
+            {"properties": {"b": {"type": "integer"}}},
+        ]}),
+    );
+    assert_eq!(
+        merged,
+        json!({
+            "type": "object",
+            "properties": {"a": {"type": "string"}, "b": {"type": "integer"}},
+            "required": ["a"],
+        })
+    );
 }
 
 #[test]
@@ -176,6 +255,29 @@ fn an_end_turn_answer_ends_the_turn() {
 
     assert_eq!(streamed_text(&out), "DONE");
     assert_eq!(completed(&out).expect("completed")["end_turn"], true);
+}
+
+#[test]
+fn uncached_usage_does_not_create_cache_hits() {
+    let events = vec![
+        event(
+            "message_start",
+            json!({"type":"message_start","message":{"usage":{"input_tokens":10,"output_tokens":1}}}),
+        ),
+        event(
+            "message_delta",
+            json!({"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":12}}),
+        ),
+        event("message_stop", json!({"type":"message_stop"})),
+    ];
+    let out = run(&events, true);
+    let response = completed(&out).expect("completed");
+    assert_eq!(response["usage"]["input_tokens"], 10);
+    assert_eq!(
+        response["usage"]["input_tokens_details"]["cached_tokens"],
+        0
+    );
+    assert_eq!(response["usage"]["output_tokens"], 12);
 }
 
 #[test]

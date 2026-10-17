@@ -541,6 +541,7 @@ mod bedrock_auth;
 mod catalog_processor;
 mod command_exec_processor;
 mod config_processor;
+mod elpis_pruner;
 #[cfg(test)]
 #[path = "request_processors/config_reload_tests.rs"]
 mod config_reload_tests;
@@ -565,6 +566,7 @@ mod remote_control_processor;
 mod rollout;
 mod search;
 mod thread_attachments;
+mod thread_approval;
 mod thread_enrichment;
 mod thread_fork_goal;
 mod thread_input;

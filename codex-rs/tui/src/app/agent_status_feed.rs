@@ -93,7 +93,8 @@ impl AgentStatusThreadPreview {
                 },
                 ThreadBufferedEvent::Request(_)
                 | ThreadBufferedEvent::HistoryEntryResponse(_)
-                | ThreadBufferedEvent::FeedbackSubmission(_) => continue,
+                | ThreadBufferedEvent::FeedbackSubmission(_)
+                | ThreadBufferedEvent::PendingSteersRecalled(_) => continue,
             };
             if !seen_item_ids.insert(item.id().to_string()) {
                 continue;

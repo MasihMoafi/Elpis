@@ -647,6 +647,85 @@ async fn steer(
 }
 
 impl Session {
+    pub(crate) async fn start_manual_work_graph(
+        self: &Arc<Self>,
+        turn_id: String,
+        arguments: String,
+    ) -> Result<
+        codex_protocol::protocol::WorkGraphStart,
+        codex_protocol::protocol::WorkGraphStartError,
+    > {
+        use codex_protocol::protocol::{WorkGraphStart, WorkGraphStartError};
+        if self
+            .state
+            .lock()
+            .await
+            .session_configuration
+            .session_source
+            .is_non_root_agent()
+        {
+            return Err(WorkGraphStartError::Rejected(
+                "work graphs require an owning root thread".to_string(),
+            ));
+        }
+        let _admission = self
+            .services
+            .extensions
+            .admit_turn_start()
+            .ok_or_else(|| WorkGraphStartError::Rejected("server is draining".to_string()))?;
+        let reservation = {
+            let mut active = self.active_turn.lock().await;
+            if active.is_some() || self.input_queue.has_pending_mailbox_items().await {
+                return Err(WorkGraphStartError::ThreadBusy);
+            }
+            let turn = active.insert(ActiveTurn::default());
+            Arc::clone(&turn.turn_state)
+        };
+        let prepared = async {
+            let context = self
+                .new_turn_with_default_settings(turn_id.clone(), Default::default())
+                .await;
+            let step = self
+                .capture_step_context(
+                    Arc::clone(&context),
+                    &tokio_util::sync::CancellationToken::new(),
+                )
+                .await
+                .map_err(|err| WorkGraphStartError::Rejected(err.to_string()))?;
+            let graph =
+                crate::tools::handlers::work_graphs::prepare_work_graph(self, &step, &arguments)
+                    .await
+                    .map_err(|err| WorkGraphStartError::Rejected(err.to_string()))?;
+            Ok::<_, WorkGraphStartError>((context, step, graph))
+        }
+        .await;
+        let (context, step, graph) = match prepared {
+            Ok(value) => value,
+            Err(err) => {
+                self.clear_reserved_idle_turn(&reservation).await;
+                return Err(err);
+            }
+        };
+        let result = WorkGraphStart {
+            graph_id: graph.graph_id.clone(),
+            turn_id,
+        };
+        if !self
+            .start_task_with_reservation(
+                context,
+                Vec::new(),
+                crate::tasks::WorkGraphTask::new(step, graph),
+                Some(reservation),
+            )
+            .await
+        {
+            return Err(WorkGraphStartError::Rejected(
+                "work graph reservation was cancelled".to_string(),
+            ));
+        }
+        Ok(result)
+    }
+
     /// Called under the active-turn lock before running any task or lifecycle callback.
     pub(crate) async fn record_started_turn(
         &self,
@@ -785,6 +864,11 @@ impl Session {
 
         match active_task.kind {
             crate::state::TaskKind::Regular => {}
+            crate::state::TaskKind::WorkGraph => {
+                return Err(NotSubmittedReason::ActiveTurnNotSteerable {
+                    turn_kind: NonSteerableTurnKind::WorkGraph,
+                });
+            }
             crate::state::TaskKind::Review => {
                 return Err(NotSubmittedReason::ActiveTurnNotSteerable {
                     turn_kind: NonSteerableTurnKind::Review,

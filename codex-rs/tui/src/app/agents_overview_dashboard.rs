@@ -59,17 +59,29 @@ fn model_label(name: &str, effort: Option<&ReasoningEffort>) -> String {
 
 /// The task that started `thread`, whether the server reports it or the session source does.
 fn parent_id(thread: &Thread) -> Option<String> {
-    thread.parent_thread_id.clone().or_else(|| match &thread.source {
-        SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
-            parent_thread_id, ..
-        }) => Some(parent_thread_id.to_string()),
-        _ => None,
-    })
+    thread
+        .parent_thread_id
+        .clone()
+        .or_else(|| match &thread.source {
+            SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
+                parent_thread_id, ..
+            }) => Some(parent_thread_id.to_string()),
+            _ => None,
+        })
 }
 
 fn title(thread: &Thread) -> &str {
-    let title = thread.name.as_deref().unwrap_or(&thread.preview);
-    title.trim().lines().next().unwrap_or("Untitled task")
+    [
+        thread.name.as_deref(),
+        thread.agent_nickname.as_deref(),
+        Some(thread.preview.as_str()),
+    ]
+    .into_iter()
+    .flatten()
+    .map(str::trim)
+    .find(|title| !title.is_empty())
+    .and_then(|title| title.lines().next())
+    .unwrap_or("Untitled conversation")
 }
 
 impl App {

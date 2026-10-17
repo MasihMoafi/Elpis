@@ -5,7 +5,6 @@ use super::context_usage::category_bar_spans;
 use super::context_usage::context_used_percent;
 use super::context_usage::reconcile_context_categories;
 use super::context_usage::run_built_context_categories;
-use super::context_usage::weighted_cell_counts;
 use super::elpis_ledger_glue::ManualMemoryCache;
 use super::elpis_ledger_glue::ManualMemoryPhase;
 use super::elpis_ledger_glue::elpis_memory_dir;
@@ -91,6 +90,22 @@ pub(super) struct LedgerLines {
     title_rows: std::ops::Range<usize>,
     source_row_ranges: Vec<std::ops::Range<usize>>,
     source_links: Vec<(usize, String)>,
+    click_targets: Vec<(std::ops::Range<usize>, LedgerClickTarget)>,
+}
+
+/// What a plain left click on a Ledger row does: the same as Space on that row.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum LedgerClickTarget {
+    SmartPrune,
+    Subagents,
+    Source(usize),
+}
+
+/// Where the last drawn Ledger sits on screen, so a click can be traced back to its row.
+struct LedgerClickMap {
+    content: Rect,
+    scroll_rows: u16,
+    targets: Vec<(std::ops::Range<usize>, LedgerClickTarget)>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -115,6 +130,8 @@ pub(super) struct ContextLedgerState {
     /// Full screen only: the Ledger would leave the transcript too few rows, so it hides
     /// until Alt+C focuses it.
     crowded: std::cell::Cell<bool>,
+    /// Full screen only, where Elpis owns the mouse: written by each draw, read by a click.
+    click_map: std::cell::RefCell<Option<LedgerClickMap>>,
     pub(super) pending_smart_prune_enabled: Option<bool>,
     pub(super) pending_subagents_enabled: Option<bool>,
     pub(super) projected_token_delta: i64,
@@ -136,6 +153,7 @@ impl Default for ContextLedgerState {
             pending_g: false,
             why_visible: false,
             crowded: std::cell::Cell::new(false),
+            click_map: std::cell::RefCell::new(None),
             pending_smart_prune_enabled: None,
             pending_subagents_enabled: None,
             projected_token_delta: 0,
@@ -150,11 +168,16 @@ impl ChatWidget {
         self.context_ledger.visible && self.context_ledger.focused
     }
 
+    pub(crate) fn unfocus_context_ledger(&mut self) {
+        self.context_ledger.focused = false;
+        self.context_ledger.pending_g = false;
+    }
+
     /// The ledger is a sidebar shown by default and controlled with `Alt+C`:
     /// Alt+C focuses the sidebar, then closes it. Tab closes only a focused sidebar.
     /// On narrower terminals it takes a proportional slice instead of a fixed
     /// 52 columns so the composer keeps room.
-    pub(super) fn context_ledger_width(&self, terminal_width: u16) -> u16 {
+    pub(crate) fn context_ledger_width(&self, terminal_width: u16) -> u16 {
         if !self.context_ledger.visible
             || self.bottom_pane.has_active_view()
             || terminal_width < LEDGER_MIN_TERMINAL_WIDTH
@@ -180,6 +203,12 @@ impl ChatWidget {
         self.context_ledger
             .crowded
             .set(height + Self::MIN_TRANSCRIPT_ROWS > screen.height);
+    }
+
+    /// Full screen gives the Ledger its own full-height column, so its height never takes
+    /// rows from the transcript and it is never crowded out.
+    pub(crate) fn fit_context_ledger_column(&self) {
+        self.context_ledger.crowded.set(false);
     }
 
     pub(super) fn context_ledger_desired_height(&self, ledger_width: u16) -> u16 {
@@ -219,9 +248,15 @@ impl ChatWidget {
                 &self.local_settings.tui.keymap,
                 "ctrl-x",
             );
-        let is_toggle_key = (is_tab && self.context_ledger.focused)
-            || key_hint::alt(KeyCode::Char('c')).is_press(key_event)
-            || is_ctrl_x;
+        // Elpis: Tab moves between the composer and the Ledger unless a menu, popup or pasted
+        // text owns it, or the user explicitly bound Tab to queueing.
+        let tab_toggles = is_tab
+            && (self.context_ledger.focused
+                || (self.bottom_pane.no_modal_or_popup_active()
+                    && !self.bottom_pane.is_in_paste_burst()
+                    && !self.bottom_pane.is_composer_queue_key(key_event)));
+        let is_toggle_key =
+            tab_toggles || key_hint::alt(KeyCode::Char('c')).is_press(key_event) || is_ctrl_x;
         if is_toggle_key {
             let crowded_out = self.context_ledger.crowded.get() && !self.context_ledger.focused;
             if !self.context_ledger.visible || crowded_out || !self.context_ledger.focused {
@@ -588,6 +623,7 @@ impl ChatWidget {
         smart_prune_spans.push(Span::styled(smart_prune_label, section.bold()));
         smart_prune_spans.push(Span::raw(" ".repeat(smart_prune_pad)));
         smart_prune_spans.extend(switch_spans);
+        let smart_prune_line = lines.len();
         lines.push(Line::from(smart_prune_spans));
         // Elpis: a Claude chat's requests go through the Claude bridge's Smart Prune proxy while
         // the switch is on (`tools/elpis-claude`); an Antigravity chat's go to Google unseen.
@@ -775,6 +811,7 @@ impl ChatWidget {
         subagents_spans.push(Span::styled(subagents_label, section.bold()));
         subagents_spans.push(Span::raw(" ".repeat(subagents_pad)));
         subagents_spans.extend(subagents_switch_spans);
+        let subagents_line = lines.len();
         lines.push(Line::from(subagents_spans));
         // One line, not a block: the ledger's own height is what the owner sees
         // of their sources, and this setting has nothing to report beyond its
@@ -1029,6 +1066,28 @@ impl ChatWidget {
 
         let (rows, row_starts) = wrap_ledger_rows(&lines, content_width);
         let row_of = |line: usize| row_starts[line.min(lines.len())];
+        let mut click_targets = vec![
+            (
+                row_of(smart_prune_line)..row_of(smart_prune_line + 1),
+                LedgerClickTarget::SmartPrune,
+            ),
+            (
+                row_of(subagents_line)..row_of(subagents_line + 1),
+                LedgerClickTarget::Subagents,
+            ),
+        ];
+        click_targets.extend(
+            source_line_ranges
+                .iter()
+                .enumerate()
+                .filter(|(index, _)| sources[*index].selectable)
+                .map(|(index, range)| {
+                    (
+                        row_of(range.start)..row_of(range.end),
+                        LedgerClickTarget::Source(index),
+                    )
+                }),
+        );
         let source_row_ranges = source_line_ranges
             .into_iter()
             .map(|range| row_of(range.start)..row_of(range.end))
@@ -1048,6 +1107,7 @@ impl ChatWidget {
             rows,
             source_row_ranges,
             source_links,
+            click_targets,
         }
     }
 
@@ -1072,7 +1132,9 @@ impl ChatWidget {
             title_rows,
             source_row_ranges,
             source_links,
+            click_targets,
         } = ledger_lines;
+        self.forget_context_ledger_clicks();
         render_ledger_rule(area, box_rules, buf);
         let content_width =
             ledger_content_width(area.width).min(area.width.saturating_sub(LEDGER_LEFT_COLS));
@@ -1101,6 +1163,11 @@ impl ChatWidget {
         Paragraph::new(rows.clone())
             .scroll((scroll_rows, 0))
             .render(content, buf);
+        *self.context_ledger.click_map.borrow_mut() = Some(LedgerClickMap {
+            content,
+            scroll_rows,
+            targets: click_targets,
+        });
 
         // Attach OSC 8 destinations to the cells just drawn. Each row fits the content width,
         // so one row of text is one row on screen.
@@ -1135,6 +1202,64 @@ impl ChatWidget {
                 usize::from(scroll_rows),
             );
         }
+    }
+
+    pub(super) fn forget_context_ledger_clicks(&self) {
+        self.context_ledger.click_map.borrow_mut().take();
+    }
+
+    /// Full screen only, where Elpis owns the mouse: a plain left click on a switch or a
+    /// source row does what Space does on that row. Ctrl+click stays with the row's file
+    /// link, and every other click falls through to the composer and the transcript.
+    pub(crate) fn handle_context_ledger_mouse(
+        &mut self,
+        mouse: crossterm::event::MouseEvent,
+    ) -> bool {
+        if mouse.kind != crossterm::event::MouseEventKind::Down(crossterm::event::MouseButton::Left)
+            || !mouse.modifiers.is_empty()
+            || !self
+                .last_rendered_width
+                .get()
+                .is_some_and(|width| self.context_ledger_width(width) > 0)
+        {
+            return false;
+        }
+        let target = {
+            let map = self.context_ledger.click_map.borrow();
+            let Some(map) = map.as_ref() else {
+                return false;
+            };
+            if !map
+                .content
+                .contains(ratatui::layout::Position::new(mouse.column, mouse.row))
+            {
+                return false;
+            }
+            let row = usize::from(mouse.row - map.content.y + map.scroll_rows);
+            map.targets
+                .iter()
+                .find(|(rows, _)| rows.contains(&row))
+                .map(|(_, target)| *target)
+        };
+        match target {
+            Some(LedgerClickTarget::SmartPrune) => {
+                self.toggle_smart_prune();
+            }
+            Some(LedgerClickTarget::Subagents) => {
+                self.toggle_subagents();
+            }
+            Some(LedgerClickTarget::Source(index)) => {
+                let sources = self.continuity_sources();
+                let Some(source) = sources.get(index).filter(|source| source.selectable) else {
+                    return false;
+                };
+                self.context_ledger.selected = index;
+                self.set_context_source_admitted(source, !source.admitted);
+            }
+            None => return false,
+        }
+        self.request_redraw();
+        true
     }
 
     fn ledger_title_animation_delay(
@@ -1827,19 +1952,7 @@ fn usage_bar_line(
     let cells_used = ((total_tokens as u128 * bar_width as u128
         + u128::from(context_window.max(1)) / 2)
         / u128::from(context_window.max(1))) as usize;
-    let counts = weighted_cell_counts(
-        &segments
-            .iter()
-            .map(|(tokens, _)| *tokens)
-            .collect::<Vec<_>>(),
-        cells_used,
-    );
-    let mut spans = category_bar_spans(
-        segments
-            .iter()
-            .zip(counts)
-            .map(|((_, color), cells)| (cells, *color)),
-    );
+    let mut spans = category_bar_spans(segments, cells_used);
     if cells_used < bar_width {
         spans.push(Span::styled(
             "░".repeat(bar_width - cells_used),
@@ -2062,8 +2175,8 @@ mod tests {
         let filled = line
             .spans
             .iter()
-            .map(|span| span.content.matches('█').count())
-            .sum::<usize>();
+            .filter(|span| !span.content.contains('░'))
+            .count();
         assert_eq!(filled, 1, "100/1000 of a ten-cell bar is one cell");
     }
 
@@ -2082,7 +2195,7 @@ mod tests {
     }
 
     #[test]
-    fn usage_bar_gaps_keep_allocated_width_at_low_full_and_excess_usage() {
+    fn usage_bar_keeps_allocated_width_at_low_full_and_excess_usage() {
         for width in [1, 2, 10, 32, 48] {
             for tokens in [0, 1, 25, 50, 100] {
                 let line =
@@ -2094,11 +2207,11 @@ mod tests {
                     .collect();
                 let used = (((tokens * 2).min(100) as usize * width + 50) / 100).min(width);
                 assert_eq!(line.width(), width);
-                assert_eq!(text.matches(['█', '▉']).count(), used);
+                assert_eq!(text.chars().filter(|c| *c != '░').count(), used);
                 assert_eq!(text.matches('░').count(), width - used);
-                assert_eq!(text.matches('▉').count(), usize::from(used >= 2));
-                if used > 0 {
-                    assert_eq!(text.chars().nth(used - 1), Some('█'));
+                // One cell holds both halves; from two cells on, the last cell is all red.
+                if used >= 2 {
+                    assert_eq!(text.chars().nth(used - 1), Some('█'), "{text}");
                 }
             }
         }

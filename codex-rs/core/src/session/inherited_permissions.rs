@@ -53,6 +53,18 @@ impl Authority {
         self.policy == AskForApproval::Never && matches!(self.profile, PermissionProfile::Disabled)
     }
 
+    /// Bypass permissions: Full Access without Elpis's own refusals, so it holds more.
+    fn is_bypass(&self) -> bool {
+        codex_protocol::models::bypass_permissions_active(
+            self.policy,
+            &self.profile,
+            self.profile_id
+                .as_deref()
+                .map(codex_protocol::models::ActivePermissionProfile::new)
+                .as_ref(),
+        )
+    }
+
     /// Built-in profiles in order of what they allow. Other profiles are not compared.
     fn profile_rank(&self) -> Option<u8> {
         if matches!(self.profile, PermissionProfile::Disabled) {
@@ -68,6 +80,9 @@ impl Authority {
     /// Whether moving to `to` removes authority this has and adds none. Pairs this cannot
     /// order count as possible grants.
     fn can_lose_to(&self, to: &Self) -> bool {
+        if self.is_bypass() {
+            return !to.is_bypass();
+        }
         if self.is_full_access() {
             return !to.is_full_access();
         }

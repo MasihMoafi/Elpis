@@ -414,6 +414,27 @@ pub const BUILT_IN_PERMISSION_PROFILE_WORKSPACE: &str = ":workspace";
 /// Reserved identifier for the built-in full-access permission profile.
 pub const BUILT_IN_PERMISSION_PROFILE_DANGER_FULL_ACCESS: &str = ":danger-full-access";
 
+/// Elpis: reserved identifier for the built-in "Bypass permissions" profile. It
+/// compiles to the same unsandboxed [`PermissionProfile::Disabled`] as full access;
+/// see [`bypass_permissions_active`] for what it changes on top.
+pub const BUILT_IN_PERMISSION_PROFILE_BYPASS_PERMISSIONS: &str = ":bypass-permissions";
+
+/// Elpis: whether "Bypass permissions" is in effect. It needs all three: approvals set
+/// to never, no sandbox, and the bypass profile itself selected (not a profile that
+/// extends it). Then Elpis also skips its own command-safety refusals and hook-trust
+/// review. Explicit rules, hook decisions and managed requirements still apply.
+pub fn bypass_permissions_active(
+    approval_policy: crate::protocol::AskForApproval,
+    permission_profile: &PermissionProfile,
+    active_permission_profile: Option<&ActivePermissionProfile>,
+) -> bool {
+    approval_policy == crate::protocol::AskForApproval::Never
+        && matches!(permission_profile, PermissionProfile::Disabled)
+        && active_permission_profile.is_some_and(|active| {
+            active.id == BUILT_IN_PERMISSION_PROFILE_BYPASS_PERMISSIONS && active.extends.is_none()
+        })
+}
+
 /// Canonical active runtime permissions for a conversation, turn, or command.
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, JsonSchema, TS)]
 #[serde(tag = "type", rename_all = "snake_case")]

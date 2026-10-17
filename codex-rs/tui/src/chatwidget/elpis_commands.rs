@@ -11,7 +11,7 @@
 //! Elpis build. It sends nothing to the model or the app server.
 //!
 //! `/memory-model` saves `background_model` / `background_provider`
-//! (`crate::elpis_background_model`), which choose the model that names sessions.
+//! (`crate::elpis_background_model`), which provide Smart Prune's fallback model.
 //!
 //! `/compact` stays upstream's command; Elpis adds its v0.3.0 arguments here. `/compact N` saves
 //! the pressure-compaction threshold (core/src/pressure_compaction.rs) and `/compact <text>`
@@ -55,6 +55,7 @@ macro_rules! elpis_slash_commands {
             | $crate::slash_command::SlashCommand::Dashboard
             | $crate::slash_command::SlashCommand::Add
             | $crate::slash_command::SlashCommand::Context
+            | $crate::slash_command::SlashCommand::Rag
     };
 }
 pub(crate) use elpis_slash_commands;
@@ -67,7 +68,7 @@ pub(crate) fn description(cmd: SlashCommand) -> &'static str {
             "view or set the model that prunes context; follows /memory-model when unset: /pruner-model <id|default>"
         }
         SlashCommand::MemoryModel => {
-            "set background tasks (pruning and session naming); memory uses the responding agent: /memory-model <id|provider:id|default>"
+            "set Smart Prune's fallback model; memory uses the responding agent: /memory-model <id|provider:id|default>"
         }
         SlashCommand::Yolo => "save Full Access as the default for future chats",
         SlashCommand::Prune => "turn Smart Prune on for subsequent turns",
@@ -83,6 +84,7 @@ pub(crate) fn description(cmd: SlashCommand) -> &'static str {
         SlashCommand::Context => {
             "show context usage as a grid, by category, with checkpoints and system files"
         }
+        SlashCommand::Rag => "use the configured RAG MCP server or manage it with /rag <request>",
         _ => unreachable!("not an Elpis slash command: /{}", cmd.command()),
     }
 }
@@ -145,8 +147,8 @@ pub(crate) fn unlisted(cmd: SlashCommand) -> bool {
 pub(crate) fn hidden(cmd: SlashCommand) -> bool {
     matches!(
         cmd,
+        // `/app` is not here: on Linux it opens the chat in the Elpis desktop app (app/history_ui.rs).
         SlashCommand::Daybreak
-            | SlashCommand::App
             | SlashCommand::Apps
             | SlashCommand::ElevateSandbox
             | SlashCommand::Exit
@@ -172,11 +174,17 @@ pub(crate) fn supports_inline_args(cmd: SlashCommand) -> bool {
             | SlashCommand::ForcePrune
             | SlashCommand::Add
             | SlashCommand::Compact
+            | SlashCommand::Rag
     )
 }
 
 pub(crate) fn available_in_side_conversation(cmd: SlashCommand) -> bool {
     matches!(cmd, SlashCommand::Dashboard | SlashCommand::Context)
+}
+
+pub(super) fn rag_command_message(args: &str) -> String {
+    let prompt = include_str!("../../../core/src/prompts/rag.md").trim_end();
+    format!("{prompt} {args}")
 }
 
 pub(crate) fn available_during_task(cmd: SlashCommand) -> bool {
@@ -266,6 +274,7 @@ impl ChatWidget {
     /// Run an Elpis slash command, bare or with inline arguments.
     pub(super) fn dispatch_elpis_command(&mut self, cmd: SlashCommand) {
         match cmd {
+            SlashCommand::Rag => self.submit_user_message(rag_command_message("").into()),
             SlashCommand::Yolo => {
                 self.app_event_tx
                     .send(AppEvent::Elpis(ElpisAppEvent::EnableYolo));

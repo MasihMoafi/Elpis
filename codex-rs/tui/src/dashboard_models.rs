@@ -73,11 +73,18 @@ pub(crate) struct DashboardLink {
     pub(crate) pruner_role_provider: String,
     /// Runs the vendor model lists.
     pub(crate) runtime: Option<tokio::runtime::Handle>,
+    /// Reads reuse the active client's connection without attaching to another thread.
+    pub(crate) app_server: Option<codex_app_server_client::AppServerRequestHandle>,
     /// Set once a refresh is asked for; a new link (a new publication) starts clear.
     pub(crate) refresh_pending: AtomicBool,
 }
 
 impl DashboardLink {
+    pub(super) fn request_agents_refresh(&self) {
+        self.tx
+            .send(AppEvent::Elpis(ElpisAppEvent::RefreshDashboardAgents));
+    }
+
     /// Asks the App to republish the page's state, once per publication.
     pub(super) fn request_refresh(&self) {
         if !self.refresh_pending.swap(true, Ordering::AcqRel) {

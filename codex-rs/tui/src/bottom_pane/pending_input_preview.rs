@@ -28,6 +28,7 @@ pub(crate) struct PendingInputPreview {
     pub(super) edit_binding: Option<key_hint::ShortcutHint>,
     /// Key combination rendered for immediately interrupting and sending steers.
     interrupt_binding: Option<key_hint::ShortcutHint>,
+    submit_binding: Option<key_hint::ShortcutHint>,
 }
 
 enum QuestionPresence {
@@ -45,6 +46,7 @@ impl PendingInputPreview {
             queued_messages: Vec::new(),
             edit_binding: Some(key_hint::shift(KeyCode::Left).into()),
             interrupt_binding: Some(key_hint::plain(KeyCode::Esc).into()),
+            submit_binding: Some(key_hint::plain(KeyCode::Enter).into()),
         }
     }
 
@@ -57,6 +59,10 @@ impl PendingInputPreview {
 
     pub(crate) fn set_interrupt_binding(&mut self, binding: Option<key_hint::ShortcutHint>) {
         self.interrupt_binding = binding;
+    }
+
+    pub(crate) fn set_submit_binding(&mut self, binding: Option<key_hint::ShortcutHint>) {
+        self.submit_binding = binding;
     }
 
     fn push_truncated_preview_lines(
@@ -98,9 +104,14 @@ impl PendingInputPreview {
         if !self.pending_steers.is_empty() {
             let mut header = vec!["Messages to be submitted after next tool call".into()];
             if let Some(interrupt_binding) = self.interrupt_binding {
-                header.push(" (press ".dim());
+                header.push(" (".dim());
+                if let Some(submit_binding) = self.submit_binding {
+                    header.push("empty ".dim());
+                    header.extend(submit_binding.spans());
+                    header.push(" / ".dim());
+                }
                 header.extend(interrupt_binding.spans());
-                header.push(" to interrupt and send immediately)".dim());
+                header.push(": interrupt and send immediately)".dim());
             }
             Self::push_section_header(&mut lines, width, Line::from(header));
 

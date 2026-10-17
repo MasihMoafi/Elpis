@@ -17,22 +17,187 @@ use std::time::Duration;
 const SCREEN: Size = Size::new(/*width*/ 120, /*height*/ 40);
 
 #[tokio::test]
-async fn both_transcript_modes_leave_room_above_a_crowded_ledger() -> Result<()> {
+async fn inline_mode_leaves_room_above_a_crowded_ledger() -> Result<()> {
     let screen = Size::new(/*width*/ 120, /*height*/ 20);
-    for owned in [false, true] {
+    let (mut app, _events, _operations) = make_test_app_with_channels().await;
+    crate::chatwidget::tests::helpers::show_context_ledger(&mut app.chat_widget);
+    attach_thread(&mut app, ThreadId::new());
+    let mut tui = crate::tui::test_support::make_test_tui_with_size(screen)?;
+    app.render_chat_widget_frame(&mut tui, screen)?;
+    assert_eq!(
+        app.chat_widget.width_beside_context_ledger(screen.width),
+        screen.width,
+        "the Ledger must leave room for replies"
+    );
+    Ok(())
+}
+
+/// Full screen: the Ledger is a column at the right edge that starts level with the first
+/// transcript row below the session header (Masih: "it should come lower"), and the composer
+/// keeps its own height to the Ledger's left instead of growing to the Ledger's height.
+#[tokio::test]
+async fn full_screen_ledger_starts_below_the_session_header_beside_the_composer() -> Result<()> {
+    let screen = Size::new(/*width*/ 120, /*height*/ 20);
+    let (mut app, _events, _operations) = make_test_app_with_channels().await;
+    crate::chatwidget::tests::helpers::show_context_ledger(&mut app.chat_widget);
+    attach_thread(&mut app, ThreadId::new());
+    let mut tui = crate::tui::test_support::make_test_tui_with_size(screen)?;
+    tui.set_owned_screen(/*owned*/ true)?;
+    // The session header the full screen draws first: a blank row, the title and the cwd.
+    app.queue_clear_ui_header(&mut tui);
+    app.transcript_cells.push(user_cell("first prompt"));
+    let bottom_area = app.render_chat_widget_frame(&mut tui, screen)?;
+    let ledger_width = app.chat_widget.context_ledger_width(screen.width);
+    assert!(
+        ledger_width > 0,
+        "a crowded Ledger must not hide on the full screen"
+    );
+    let rule_x = screen.width - ledger_width;
+    assert_eq!(
+        bottom_area.width, rule_x,
+        "the composer must stop at the Ledger"
+    );
+    assert!(
+        bottom_area.height < screen.height / 2,
+        "the composer grew to the Ledger's height: {bottom_area:?}"
+    );
+    let buffer = crate::custom_terminal::test_support::last_rendered_buffer(&tui.terminal);
+    let screen_text = buffer_text(buffer);
+    let row = |y: u16, columns: std::ops::Range<u16>| {
+        columns.map(|x| buffer[(x, y)].symbol()).collect::<String>()
+    };
+    let title_row = (0..screen.height)
+        .find(|&y| row(y, 0..rule_x).contains(">_ Elpis"))
+        .unwrap_or_else(|| panic!("the session header is missing\n{screen_text}"));
+    let cwd = app
+        .config
+        .cwd
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    assert!(
+        row(title_row + 1, 0..rule_x).contains(&cwd),
+        "the cwd row must follow the title\n{screen_text}"
+    );
+    let below_header = title_row + 2;
+    let ledger_top = (0..screen.height)
+        .find(|&y| row(y, rule_x + 1..screen.width).contains("CONTEXT LEDGER"))
+        .unwrap_or_else(|| panic!("the Ledger title is missing\n{screen_text}"));
+    assert_eq!(
+        ledger_top, below_header,
+        "the Ledger must start on the first transcript row below the session header\n\
+         {screen_text}"
+    );
+    assert!(
+        (below_header..screen.height).any(|y| row(y, 0..rule_x).contains("› first prompt")),
+        "the transcript must stay beside the Ledger\n{screen_text}"
+    );
+    for y in 0..ledger_top {
+        assert_eq!(buffer[(rule_x, y)].symbol(), " ", "row {y}\n{screen_text}");
+    }
+    for y in ledger_top..screen.height {
+        assert_eq!(buffer[(rule_x, y)].symbol(), "│", "row {y}\n{screen_text}");
+    }
+    tui.set_owned_screen(/*owned*/ false)?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn full_screen_ledger_keeps_mouse_selection_in_the_transcript_column() -> Result<()> {
+    use crossterm::event::MouseButton;
+    use crossterm::event::MouseEvent;
+    use crossterm::event::MouseEventKind;
+
+    let screen = Size::new(120, 20);
+    let (mut app, _events, _operations) = make_test_app_with_channels().await;
+    crate::chatwidget::tests::helpers::show_context_ledger(&mut app.chat_widget);
+    attach_thread(&mut app, ThreadId::new());
+    app.transcript_cells = vec![Arc::new(PlainHistoryCell::new(vec![
+        Line::from(
+            "transcript row"
+        );
+        40
+    ]))];
+    let mut tui = crate::tui::test_support::make_test_tui_with_size(screen)?;
+    tui.set_owned_screen(/*owned*/ true)?;
+    app.render_chat_widget_frame(&mut tui, screen)?;
+    let bottom = app.render_chat_widget_frame(&mut tui, screen)?;
+    let mut click = MouseEvent {
+        kind: MouseEventKind::Down(MouseButton::Left),
+        column: bottom.width + 2,
+        row: 0,
+        modifiers: KeyModifiers::NONE,
+    };
+
+    app.transcript_view
+        .handle_selection_mouse(click, &app.transcript_cells);
+    assert!(!app.transcript_view.has_active_interaction());
+    click.column = 0;
+    app.transcript_view
+        .handle_selection_mouse(click, &app.transcript_cells);
+    assert!(app.transcript_view.has_active_interaction());
+    tui.set_owned_screen(/*owned*/ false)?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn full_screen_ledger_fits_zero_and_narrow_frames() -> Result<()> {
+    for screen in [
+        Size::new(0, 0),
+        Size::new(0, 4),
+        Size::new(1, 4),
+        Size::new(79, 8),
+    ] {
         let (mut app, _events, _operations) = make_test_app_with_channels().await;
         crate::chatwidget::tests::helpers::show_context_ledger(&mut app.chat_widget);
         attach_thread(&mut app, ThreadId::new());
+        app.transcript_cells = long_chat(1);
         let mut tui = crate::tui::test_support::make_test_tui_with_size(screen)?;
-        tui.set_owned_screen(owned)?;
+        tui.set_owned_screen(/*owned*/ true)?;
         app.render_chat_widget_frame(&mut tui, screen)?;
-        assert_eq!(
-            app.chat_widget.width_beside_context_ledger(screen.width),
-            screen.width,
-            "the Ledger must leave room for replies (owned screen: {owned})"
-        );
-        tui.set_owned_screen(false)?;
+        let bottom = app.render_chat_widget_frame(&mut tui, screen)?;
+        assert!(bottom.right() <= screen.width);
+        assert!(bottom.bottom() <= screen.height);
+        assert_eq!(bottom.width, screen.width);
+        tui.set_owned_screen(/*owned*/ false)?;
     }
+    Ok(())
+}
+
+#[tokio::test]
+async fn full_screen_composer_click_returns_focus_from_the_ledger() -> Result<()> {
+    use crossterm::event::MouseButton;
+    use crossterm::event::MouseEvent;
+    use crossterm::event::MouseEventKind;
+
+    let mut chat = Chat::new(0).await?;
+    let cursor = chat.tui.terminal.last_known_cursor_pos;
+    // Alt+C, not Tab: the test fixtures bind Tab to queueing.
+    chat.app
+        .handle_tui_event(
+            &mut chat.tui,
+            &mut chat.server,
+            TuiEvent::Key(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::ALT)),
+        )
+        .await?;
+    assert!(chat.app.chat_widget.context_ledger_has_focus());
+    let mut click = MouseEvent {
+        kind: MouseEventKind::ScrollDown,
+        column: cursor.x,
+        row: cursor.y,
+        modifiers: KeyModifiers::NONE,
+    };
+    chat.app
+        .handle_tui_event(&mut chat.tui, &mut chat.server, TuiEvent::Mouse(click))
+        .await?;
+    assert!(chat.app.chat_widget.context_ledger_has_focus());
+    click.kind = MouseEventKind::Down(MouseButton::Left);
+    chat.app
+        .handle_tui_event(&mut chat.tui, &mut chat.server, TuiEvent::Mouse(click))
+        .await?;
+    assert!(!chat.app.chat_widget.context_ledger_has_focus());
+    assert!(chat.app.chat_widget.context_ledger_width(SCREEN.width) > 0);
+    chat.tui.set_owned_screen(/*owned*/ false)?;
     Ok(())
 }
 

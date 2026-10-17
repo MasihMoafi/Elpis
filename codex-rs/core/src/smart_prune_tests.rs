@@ -28,6 +28,7 @@ fn compact_admission_changes_only_the_text_body() {
     let evidence = AdmissionEvidence {
         admission_id: "019a-test-admission",
         source_sha256: "0123456789abcdef",
+        source_file: None,
     };
 
     let transformed = transform_tool_output(
@@ -132,6 +133,7 @@ fn admission_enforces_eligibility_boundary_for_text_and_non_text_output() {
     let evidence = AdmissionEvidence {
         admission_id: "boundary-admission",
         source_sha256: "source-hash",
+        source_file: None,
     };
 
     assert!(
@@ -202,6 +204,7 @@ fn admission_rejects_compaction_below_either_savings_floor() {
     let evidence = AdmissionEvidence {
         admission_id: "savings-admission",
         source_sha256: "source-hash",
+        source_file: None,
     };
 
     assert!(
@@ -236,6 +239,7 @@ fn compact_admission_preserves_custom_tool_envelope() {
         AdmissionEvidence {
             admission_id: "019a-custom",
             source_sha256: "fedcba9876543210",
+            source_file: None,
         },
     )
     .expect("large custom-tool text should be compactable");
@@ -267,6 +271,7 @@ fn outputs_without_a_call_id_or_with_audio_are_not_eligible() {
     let evidence = AdmissionEvidence {
         admission_id: "0159-admission",
         source_sha256: "source-hash",
+        source_file: None,
     };
     let without_call_id = ResponseItem::FunctionCallOutput {
         id: None,

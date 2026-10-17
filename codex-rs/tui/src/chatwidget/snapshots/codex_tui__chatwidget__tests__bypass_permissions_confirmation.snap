@@ -1,0 +1,21 @@
+---
+source: tui/src/chatwidget/tests/permission_picker_tests.rs
+assertion_line: 232
+expression: "rows.join(\"\\n\")"
+---
+
+      Enable Bypass permissions?
+      Elpis will run anything without asking: any command, any file on
+      this computer, the internet. It also runs commands it would
+      otherwise refuse, such as rm -rf, and in new sessions it runs
+      enabled hooks you have not reviewed.
+
+      Only your own rules, hooks and managed policy can still stop it. Use
+      it only where you would give Elpis root access.
+
+
+    › 1. Cancel                   Go back without bypassing permissions
+      2. Yes, bypass permissions  Run anything without asking in this
+                                  session
+
+      enter select · esc back

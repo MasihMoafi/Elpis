@@ -167,6 +167,9 @@ impl App {
             });
         } else {
             self.refresh_agents_overview_threads(app_server);
+            if let Some(root) = self.primary_thread_id {
+                self.refresh_agent_picker_threads(app_server, root);
+            }
         }
     }
 
@@ -384,26 +387,47 @@ impl App {
                 .then_with(|| left.id.cmp(&right.id))
         });
         let mut rows = Vec::new();
-        for (root, group) in roots {
-            let Ok(thread_id) = ThreadId::from_string(&root.id) else {
+        for (root, _) in roots {
+            let Ok(root_id) = ThreadId::from_string(&root.id) else {
                 continue;
             };
-            if self.agents_overview.hidden_threads.contains(&thread_id) {
+            if self.agents_overview.hidden_threads.contains(&root_id) {
                 continue;
             }
-            rows.push(AgentsOverviewRow {
-                details: self.agents_overview_details(root, &children),
-                thread: root.clone(),
-                thread_id,
-                group,
-                model_name: root
-                    .model
-                    .as_deref()
-                    .filter(|model| !model.is_empty())
-                    .map(|model| self.model_catalog.display_name(model).to_string()),
-                is_current: self.primary_thread_id == Some(thread_id),
-                has_voice: voice_session == Some(&root.session_id),
-            });
+            let mut pending = vec![root];
+            while let Some(thread) = pending.pop() {
+                let Ok(thread_id) = ThreadId::from_string(&thread.id) else {
+                    continue;
+                };
+                if self.agents_overview.hidden_threads.contains(&thread_id) {
+                    continue;
+                }
+                rows.push(AgentsOverviewRow {
+                    details: self.agents_overview_details(thread, &children),
+                    thread: thread.clone(),
+                    thread_id,
+                    group: agents_overview_group(thread, &children),
+                    model_name: thread
+                        .model
+                        .as_deref()
+                        .filter(|model| !model.is_empty())
+                        .map(|model| self.model_catalog.display_name(model).to_string()),
+                    is_current: self
+                        .current_displayed_thread_id()
+                        .or(self.primary_thread_id)
+                        == Some(thread_id),
+                    has_voice: voice_session == Some(&thread.session_id),
+                });
+                if let Some(descendants) = children.get(&thread.id) {
+                    let mut descendants = descendants.clone();
+                    descendants.sort_by(|left, right| {
+                        left.created_at
+                            .cmp(&right.created_at)
+                            .then_with(|| left.id.cmp(&right.id))
+                    });
+                    pending.extend(descendants.into_iter().rev());
+                }
+            }
         }
         self.publish_dashboard_agents(&threads);
 
@@ -442,10 +466,69 @@ impl App {
         app_server: &mut AppServerSession,
         thread_id: ThreadId,
     ) -> Result<AppRunControl> {
-        Box::pin(self.attach_agents_overview_thread(
-            tui, app_server, thread_id, /*started*/ None, /*startup_draft*/ None,
-        ))
-        .await
+        // Child selection uses the normal agent navigator under its actual root. Resuming
+        // a child as a standalone task would lose the parent-owned input/navigation state.
+        let mut root_thread_id = thread_id;
+        let mut seen = HashSet::new();
+        loop {
+            if !seen.insert(root_thread_id) {
+                self.add_agents_overview_error("Agent ancestry contains a cycle.".to_string());
+                return Ok(AppRunControl::Continue);
+            }
+            let thread = match self.agents_overview.threads.get(&root_thread_id) {
+                Some(Some(thread)) => thread.clone(),
+                _ => {
+                    loading::draw(tui)?;
+                    match app_server.thread_read(root_thread_id, false).await {
+                        Ok(thread) => thread,
+                        Err(error) => {
+                            self.add_agents_overview_error(format!(
+                                "Agent session {root_thread_id} is unavailable: {error}"
+                            ));
+                            return Ok(AppRunControl::Continue);
+                        }
+                    }
+                }
+            };
+            let parent = thread.parent_thread_id.or_else(|| match thread.source {
+                SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
+                    parent_thread_id, ..
+                }) => Some(parent_thread_id.to_string()),
+                _ => None,
+            });
+            let Some(parent) = parent else { break };
+            let Ok(parent) = ThreadId::from_string(&parent) else {
+                self.add_agents_overview_error("Agent parent ID is invalid.".to_string());
+                return Ok(AppRunControl::Continue);
+            };
+            root_thread_id = parent;
+        }
+        if thread_id == root_thread_id || self.primary_thread_id != Some(root_thread_id) {
+            let control = Box::pin(self.attach_agents_overview_thread(
+                tui,
+                app_server,
+                root_thread_id,
+                /*started*/ None,
+                /*startup_draft*/ None,
+            ))
+            .await?;
+            if !matches!(control, AppRunControl::Continue)
+                || self.primary_thread_id != Some(root_thread_id)
+            {
+                return Ok(control);
+            }
+        }
+        if thread_id != root_thread_id {
+            self.select_agent_thread_and_discard_side(tui, app_server, thread_id)
+                .await?;
+            if self.current_displayed_thread_id() == Some(thread_id) {
+                if let Ok(mut state) = self.agents_overview.view_state.lock() {
+                    state.completion = Some(crate::bottom_pane::ViewCompletion::Accepted);
+                }
+                self.chat_widget.pre_draw_tick();
+            }
+        }
+        Ok(AppRunControl::Continue)
     }
 
     async fn attach_agents_overview_thread(

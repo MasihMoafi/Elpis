@@ -24,6 +24,11 @@ pub(super) async fn test_config() -> (tempfile::TempDir, Config) {
     config.cwd = PathBuf::from(test_path_display("/tmp/project")).abs();
     config.config_layer_stack = ConfigLayerStack::default();
     config.startup_warnings.clear();
+    // Elpis leaves composer.queue unbound because Tab belongs to the Context Ledger. These
+    // fixtures bind Tab explicitly so queueing stays covered.
+    config.tui_keymap.composer.queue = Some(codex_config::types::KeybindingsSpec::One(
+        codex_config::types::KeybindingSpec("tab".to_string()),
+    ));
     (codex_home, config)
 }
 
@@ -1840,9 +1845,10 @@ pub(crate) fn normalize_completion_timestamps(
     if !cell.as_any().is::<history_cell::FinalMessageSeparator>() {
         return value.to_string();
     }
+    // The padding may end in the full-screen transcript's scrollbar column.
     static COMPLETION_FOOTER: std::sync::LazyLock<regex_lite::Regex> = std::sync::LazyLock::new(
         || {
-            regex_lite::Regex::new(r"(?m)^(?P<indent>[ \t]*)(?P<duration>Worked for (?:<1s|(?:[0-9]+h )?(?:[0-9]+m )?[0-9]+s) • )?(?:[A-Z][a-z]{2} [0-9]{1,2}(?:, [0-9]{4})? at )?[0-9]{1,2}:[0-9]{2}(?: (?:AM|PM))?(?P<padding>[ \t]*)$")
+            regex_lite::Regex::new(r"(?m)^(?P<indent>[ \t]*)(?P<duration>Worked for (?:<1s|(?:[0-9]+h )?(?:[0-9]+m )?[0-9]+s) • )?(?:[A-Z][a-z]{2} [0-9]{1,2}(?:, [0-9]{4})? at )?[0-9]{1,2}:[0-9]{2}(?: (?:AM|PM))?(?P<padding>[ \t]*[│┃]?)$")
                 .expect("valid completion footer pattern")
         },
     );

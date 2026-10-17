@@ -445,3 +445,53 @@ fn modified_clicks_still_open_immediately() {
         assert!(view.selection.is_none());
     }
 }
+
+#[test]
+fn continuous_wheel_runs_accelerate_and_reset_on_pause_or_reversal() {
+    let mut view = TranscriptView::default();
+    let start = std::time::Instant::now();
+    let at = |millis| start + std::time::Duration::from_millis(millis);
+    let rapid: Vec<f64> = (0..12)
+        .map(|event| view.wheel_multiplier(-1.0, at(event)))
+        .collect();
+    assert!(rapid.windows(2).all(|pair| pair[1] > pair[0] || pair[1] == 10.0));
+    assert!(rapid[1] > 1.9 && rapid[1] <= 2.0, "{rapid:?}");
+    assert_eq!(rapid[11], 10.0);
+    // A three-second pause leaves almost no momentum; reversing drops it entirely.
+    assert!(view.wheel_multiplier(-1.0, at(3_011)) < 1.05);
+    assert_eq!(view.wheel_multiplier(1.0, at(3_012)), 1.0);
+}
+
+#[test]
+fn wheel_acceleration_moves_further_only_when_enabled() {
+    use crate::history_cell::PlainHistoryCell;
+
+    let cells: Vec<Arc<dyn HistoryCell>> = vec![Arc::new(PlainHistoryCell::new(
+        (1..=120)
+            .map(|row| format!("row {row:03}").into())
+            .collect(),
+    ))];
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 12, /*height*/ 4,
+    );
+    let mut moved = Vec::new();
+    for acceleration in [false, true] {
+        let mut view = TranscriptView {
+            mouse_wheel_acceleration: acceleration,
+            ..TranscriptView::default()
+        };
+        view.render(area, &mut Buffer::empty(area), &cells);
+        view.scroll(&cells, /*rows*/ -60);
+        let (_, before) = view.start(&cells);
+        for _ in 0..6 {
+            view.handle_mouse(
+                mouse(MouseEventKind::ScrollUp, /*column*/ 1, /*row*/ 1),
+                &cells,
+            );
+        }
+        moved.push(before - view.start(&cells).1);
+    }
+    // Six back-to-back events build to about 1 + 2 + 3 + 4 + 5 + 5 rows with acceleration.
+    assert_eq!(moved[0], 6);
+    assert!(moved[1] >= 18, "{moved:?}");
+}

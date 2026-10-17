@@ -1,5 +1,6 @@
 ---
 source: tui/src/chatwidget/tests/permissions.rs
+assertion_line: 310
 expression: "render_bottom_popup(&chat, 80)"
 ---
   Update Model Permissions
@@ -11,9 +12,14 @@ expression: "render_bottom_popup(&chat, 80)"
   2. Approve for me          Only ask for actions detected as potentially unsafe
   3. Full Access             Use with caution: Elpis can edit files outside this
                              workspace and access the internet without approval
-  4. Read Only               Read workspace files, with approval required for
+  4. Bypass permissions      Elpis will run anything without asking: any
+                             command, any file, the internet, even commands it
+                             would otherwise refuse (such as rm -rf). Only your
+                             own rules, hooks and managed policy can still stop
+                             it.
+  5. Read Only               Read workspace files, with approval required for
                              edits or internet access
-› 5. locked-down (current)   Inspect and patch only approved workspace files.
+› 6. locked-down (current)   Inspect and patch only approved workspace files.
      web-enabled (disabled)  Workspace profile with network access. (disabled:
                              Disabled by requirements)
 

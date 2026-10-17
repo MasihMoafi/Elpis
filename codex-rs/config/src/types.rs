@@ -882,7 +882,8 @@ pub struct Tui {
     pub fullscreen_transcript: bool,
 
     /// Mouse wheel speed multiplier for transcript scrolling, based on one row per event.
-    /// Defaults to `1.0`. Positive fractional values slow scrolling; values above `1.0` speed it up.
+    /// Defaults to `3.0`, like Claude Code; fast consecutive events then build up to five times
+    /// that speed. Positive fractional values slow scrolling.
     #[serde(default, deserialize_with = "crate::tui_mouse_scroll::deserialize")]
     #[schemars(schema_with = "crate::tui_mouse_scroll::schema")]
     pub mouse_scroll_speed: Option<f64>,

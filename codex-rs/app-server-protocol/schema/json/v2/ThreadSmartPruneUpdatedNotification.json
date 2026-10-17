@@ -110,6 +110,12 @@
           "minimum": 0.0,
           "type": "integer"
         },
+        "failureReason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "latencyMs": {
           "format": "uint64",
           "minimum": 0.0,

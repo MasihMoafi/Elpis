@@ -888,7 +888,8 @@ impl App {
                         server_request_thread_id(request) == Some(thread_id)
                     }
                     ThreadBufferedEvent::HistoryEntryResponse(_)
-                    | ThreadBufferedEvent::FeedbackSubmission(_) => true,
+                    | ThreadBufferedEvent::FeedbackSubmission(_)
+                    | ThreadBufferedEvent::PendingSteersRecalled(_) => true,
                 });
                 self.pending_app_server_requests.clear();
                 let mut unsupported_requests = Vec::new();

@@ -38,6 +38,9 @@ pub(crate) struct GenericDisplayRow {
     pub name: String,
     /// Optional full-width selection treatment; other rows use the shared text accent.
     pub selection_style: Option<Style>,
+    /// Elpis: optional colour for the name, kept when the row is selected (e.g. red for a
+    /// dangerous choice).
+    pub name_style: Option<Style>,
     pub name_prefix_spans: Vec<Span<'static>>,
     pub display_shortcut: Option<ShortcutHint>,
     pub match_indices: Option<Vec<usize>>, // indices to bold (char positions)
@@ -209,6 +212,7 @@ fn should_wrap_name_in_column(row: &GenericDisplayRow) -> bool {
         && row.display_shortcut.is_none()
         && row.category_tag.is_none()
         && row.name_prefix_spans.is_empty()
+        && row.name_style.is_none()
 }
 
 fn apply_row_state_style(

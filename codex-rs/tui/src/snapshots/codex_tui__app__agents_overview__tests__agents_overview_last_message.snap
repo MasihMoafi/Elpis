@@ -1,5 +1,6 @@
 ---
 source: tui/src/app/agents_overview_tests.rs
+assertion_line: 872
 expression: "render_bottom_popup(&app.chat_widget,\n96).replace(&format!(\"{project}  2\"),\n&normalized_group).replace(&project, \"/tmp/project\")"
 ---
   Agent command center  Group: Project  g
@@ -8,8 +9,8 @@ expression: "render_bottom_popup(&app.chat_widget,\n96).replace(&format!(\"{proj
       Tasks                       Model               │ Task details
   /tmp/project  2                                     │
     ● Repair authentication       Unknown             │ Investigate parser
-  › ○ Investigate parser          provider/provider…  │ ○ Inactive
-                                                      │
+    ● ↳ Check dependencies        Unknown             │ ○ Inactive
+  › ○ Investigate parser          provider/provider…  │
                                                       │ Model: provider/provider/provider/pro…
                                                       │ Reasoning: deliberatedeliberatedelibe…
                                                       │

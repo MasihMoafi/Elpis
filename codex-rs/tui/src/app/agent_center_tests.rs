@@ -59,7 +59,7 @@ async fn live_center_columns() {
         .map(|(index, (title, status, age))| {
             let mut thread = overview_thread(
                 ThreadId::from_u128(index as u128 + 42),
-                /*parent_thread_id*/ None,
+                (index > 0).then_some(current),
                 title,
                 status.clone(),
             );
@@ -718,4 +718,65 @@ async fn live_center_rows_show_each_model_at_wide_and_narrow_widths() {
                 .all(|line| line.chars().count() <= usize::from(width))
         );
     }
+}
+
+#[tokio::test]
+async fn child_rows_stay_with_root_across_groupings_and_open_their_own_chat() {
+    let mut app = make_test_app().await;
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+    app.app_event_tx = AppEventSender::new(tx);
+    let root = ThreadId::from_u128(101);
+    let child = ThreadId::from_u128(102);
+    let grandchild = ThreadId::from_u128(103);
+    let other = ThreadId::from_u128(104);
+    let mut parent = overview_thread(root, None, "Parent task", ThreadStatus::Idle);
+    parent.model = Some("aaa-parent".into());
+    let mut worker = overview_thread(child, Some(root), "Worker chat", ThreadStatus::Idle);
+    worker.model = Some("zzz-worker".into());
+    worker.cwd = test_path_buf("/tmp/other-project").abs();
+    let nested = overview_thread(
+        grandchild,
+        Some(child),
+        "Nested worker",
+        ThreadStatus::NotLoaded,
+    );
+    let mut second = overview_thread(other, None, "Separate task", ThreadStatus::Idle);
+    second.model = Some("middle-model".into());
+    let threads = vec![second, nested, worker, parent];
+    for grouping in [
+        AgentsOverviewGrouping::Project,
+        AgentsOverviewGrouping::Status,
+        AgentsOverviewGrouping::Model,
+    ] {
+        app.agents_overview.view_state.lock().unwrap().grouping = grouping;
+        let mut view = app.agents_overview_view(threads.clone(), Some(child));
+        let rendered = screen(&view, 160, 24);
+        let lines = rendered.lines().collect::<Vec<_>>();
+        let parent_line = lines
+            .iter()
+            .position(|line| line.contains("Parent task"))
+            .unwrap();
+        assert!(
+            lines[parent_line + 1].contains("↳ Worker chat"),
+            "{rendered}"
+        );
+        assert!(
+            lines[parent_line + 2].contains("  ↳ Nested worker"),
+            "{rendered}"
+        );
+        assert!(rendered.contains("All 2"), "{rendered}");
+        view.handle_key_event(KeyCode::Enter.into());
+        assert!(
+            matches!(rx.try_recv(), Ok(AppEvent::SelectAgentsOverviewThread { thread_id }) if thread_id == child)
+        );
+    }
+    app.agents_overview.view_state.lock().unwrap().search = "Nested worker".into();
+    let view = app.agents_overview_view(threads.clone(), Some(child));
+    let rendered = screen(&view, 160, 24);
+    assert!(rendered.contains("Parent task"));
+    assert!(rendered.contains("↳ Worker chat"));
+    assert!(!rendered.contains("Separate task"));
+    app.agents_overview.hidden_threads.insert(root);
+    let view = app.agents_overview_view(threads, None);
+    assert_eq!(view.thread_ids(), vec![other]);
 }

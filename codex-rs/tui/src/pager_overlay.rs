@@ -57,6 +57,7 @@ impl Overlay {
         let mut overlay = TranscriptOverlay::new(cells, keymap);
         overlay.view.copy_on_select = copy_on_select;
         overlay.view.mouse_scroll_speed = mouse_scroll_speed;
+        overlay.view.mouse_wheel_acceleration = true;
         overlay.view.primary_selection = crate::clipboard_copy::primary::available();
         Self::Transcript(overlay)
     }

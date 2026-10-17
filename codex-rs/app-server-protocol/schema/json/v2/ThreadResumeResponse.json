@@ -1034,7 +1034,8 @@
     "NonSteerableTurnKind": {
       "enum": [
         "review",
-        "compact"
+        "compact",
+        "workGraph"
       ],
       "type": "string"
     },

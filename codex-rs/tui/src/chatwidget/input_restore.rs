@@ -250,6 +250,88 @@ impl ChatWidget {
         }
     }
 
+    /// Move waiting follow-ups and the draft into the composer. Submitted steers
+    /// require backend cancellation acknowledgement before they become editable.
+    pub(super) fn recall_queued_follow_ups_on_up(&mut self, key_event: KeyEvent) -> bool {
+        if key_event.kind != KeyEventKind::Press
+            || !key_hint::plain(KeyCode::Up).is_press(key_event)
+            || (!self.has_queued_follow_up_messages() && self.input_queue.pending_steers.is_empty())
+            || !self.bottom_pane.no_modal_or_popup_active()
+        {
+            return false;
+        }
+        if self.input_queue.has_unconfirmed_messages() {
+            self.add_warning_message(
+                "Queued message delivery is unconfirmed. Reconnect to check whether these messages were sent before editing them.".to_string(),
+            );
+            return true;
+        }
+        if self.input_queue.pending_steer_recall_ids.is_some() {
+            return true;
+        }
+        if !self.input_queue.pending_steers.is_empty() {
+            if let Some(thread_id) = self.thread_id() {
+                let client_user_message_ids = self
+                    .input_queue
+                    .pending_steers
+                    .iter()
+                    .map(|steer| steer.client_id.clone())
+                    .collect::<Vec<_>>();
+                self.input_queue.pending_steer_recall_ids = Some(client_user_message_ids.clone());
+                self.app_event_tx.send(AppEvent::RecallPendingSteers {
+                    thread_id,
+                    client_user_message_ids,
+                });
+            }
+            return true;
+        }
+        self.restore_recalled_pending_inputs(Vec::new());
+        true
+    }
+
+    pub(crate) fn finish_pending_steer_recall(&mut self, result: Result<Vec<String>, String>) {
+        let Some(requested_ids) = self.input_queue.pending_steer_recall_ids.take() else {
+            return;
+        };
+        self.bottom_pane
+            .show_footer_flash(Line::default(), Duration::ZERO);
+        match result {
+            Ok(cancelled_ids) => {
+                let cancelled_ids = cancelled_ids
+                    .into_iter()
+                    .filter(|id| requested_ids.contains(id))
+                    .collect::<Vec<_>>();
+                if cancelled_ids.len() < requested_ids.len() {
+                    self.add_warning_message(
+                        "Some waiting messages could not be recalled; they may already have been delivered."
+                            .to_string(),
+                    );
+                }
+                self.restore_recalled_pending_inputs(cancelled_ids);
+            }
+            Err(error) => {
+                self.add_warning_message(format!("Could not recall waiting messages: {error}"))
+            }
+        }
+    }
+
+    fn restore_recalled_pending_inputs(&mut self, cancelled_ids: Vec<String>) {
+        let (cancelled_steers, in_flight_steers) =
+            std::mem::take(&mut self.input_queue.pending_steers)
+                .into_iter()
+                .partition(|steer| cancelled_ids.contains(&steer.client_id));
+        self.input_queue.pending_steers = cancelled_steers;
+        let restored = self.drain_pending_messages_for_restore();
+        self.input_queue.pending_steers = in_flight_steers;
+        self.input_queue.recovered_queue &= !self.input_queue.pending_steers.is_empty();
+        if let Some(composer) = restored {
+            self.restore_composer_state(composer);
+            self.refresh_startup_recovery();
+            self.refresh_pending_input_preview();
+            self.request_redraw();
+        }
+    }
+
     pub(super) fn pop_latest_queued_composer_state(&mut self) -> Option<ThreadComposerState> {
         if let Some(user_message) = self.input_queue.queued_user_messages.pop_back() {
             self.input_queue.recovered_queue &= self.input_queue.has_queued_follow_up_messages()
@@ -576,6 +658,7 @@ impl ChatWidget {
             safety_buffering_prompt: self.safety_buffering_prompt.clone(),
             safety_buffering_source: self.safety_buffering_source,
             pending_steers: self.input_queue.pending_steers.clone(),
+            pending_steer_recall_ids: self.input_queue.pending_steer_recall_ids.clone(),
             rejected_steers_queue: self.input_queue.rejected_steers_queue.clone(),
             rejected_steer_sources: self.input_queue.rejected_steer_sources.clone(),
             rejected_steer_history_records: self.input_queue.rejected_steer_history_records.clone(),
@@ -629,6 +712,11 @@ impl ChatWidget {
             self.refresh_model_dependent_surfaces();
             self.restore_composer_state(input_state.composer.unwrap_or_default());
             let pending_steers = input_state.pending_steers;
+            self.input_queue.pending_steer_recall_ids = if preserve_in_flight_turn {
+                input_state.pending_steer_recall_ids
+            } else {
+                None
+            };
             let mut queued_user_messages = input_state.queued_user_messages;
             let mut queued_user_message_history_records =
                 input_state.queued_user_message_history_records;

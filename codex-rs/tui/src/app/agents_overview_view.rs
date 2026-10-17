@@ -116,8 +116,17 @@ impl AgentsOverviewRow {
 }
 
 fn display_title(thread: &Thread) -> &str {
-    let title = thread.name.as_deref().unwrap_or(&thread.preview);
-    title.trim().lines().next().unwrap_or("Untitled task")
+    [
+        thread.name.as_deref(),
+        Some(thread.preview.as_str()),
+        thread.agent_nickname.as_deref(),
+    ]
+    .into_iter()
+    .flatten()
+    .map(str::trim)
+    .find(|title| !title.is_empty())
+    .and_then(|title| title.lines().next())
+    .unwrap_or("Untitled task")
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -163,7 +172,7 @@ pub(super) struct AgentsOverviewViewState {
     show_more_selected: bool,
     pub(super) connection_notice: Option<&'static str>,
     pub(super) server_version_notice: Option<String>,
-    search: String,
+    pub(super) search: String,
     searching: bool,
     pub(super) grouping: AgentsOverviewGrouping,
     pub(super) rename_target: Option<ThreadId>,
@@ -279,6 +288,33 @@ impl AgentsOverviewView {
         view.state().completion = None;
         view.reconcile_command_center_selection();
         view
+    }
+
+    fn parent_index(&self, index: usize) -> Option<usize> {
+        let parent = self.rows[index].thread.parent_thread_id.as_deref()?;
+        self.rows.iter().position(|row| row.thread.id == parent)
+    }
+
+    fn root_index(&self, mut index: usize) -> usize {
+        for _ in 0..self.rows.len() {
+            let Some(parent) = self.parent_index(index) else {
+                break;
+            };
+            index = parent;
+        }
+        index
+    }
+
+    fn row_depth(&self, mut index: usize) -> usize {
+        let mut depth = 0;
+        while depth < self.rows.len() {
+            let Some(parent) = self.parent_index(index) else {
+                break;
+            };
+            index = parent;
+            depth += 1;
+        }
+        depth
     }
 
     pub(super) fn thread_ids(&self) -> Vec<ThreadId> {

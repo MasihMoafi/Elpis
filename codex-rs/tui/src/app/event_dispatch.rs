@@ -31,6 +31,24 @@ impl App {
         app_server: &mut AppServerSession,
         event: AppEvent,
     ) -> Result<AppRunControl> {
+        let (event, confirmed_whole_turn) = match event {
+            AppEvent::ConfirmWholeTurnPromptEdit {
+                thread_id,
+                selected_cell,
+                prompt,
+                turn_id,
+                turn_fingerprint,
+                latest_turn_id,
+            } => (
+                AppEvent::RevertSessionForPromptEdit {
+                    thread_id,
+                    selected_cell,
+                    prompt,
+                },
+                Some((turn_id, turn_fingerprint, latest_turn_id)),
+            ),
+            event => (event, None),
+        };
         let from_agents_overview = matches!(event, AppEvent::ForkAgentsOverviewThreadReady { .. });
         let event = if let AppEvent::ForkAgentsOverviewThreadReady { thread_id } = event {
             if self.current_displayed_thread_id() != Some(thread_id)
@@ -659,6 +677,7 @@ impl App {
                 }
                 tui.frame_requester().schedule_frame();
             }
+            AppEvent::ConfirmWholeTurnPromptEdit { .. } => unreachable!("whole-turn confirmation was normalized before dispatch"),
             AppEvent::RevertSessionForPromptEdit {
                 thread_id,
                 selected_cell,
@@ -691,7 +710,8 @@ impl App {
                     return Ok(AppRunControl::Continue);
                 };
                 let nth_user_message = crate::app_backtrack::user_count(&self.transcript_cells[..index]);
-                let selection: Result<(String, Vec<Turn>)> = async {
+                let selected_prompt = prompt.clone();
+                let selection: Result<(String, Vec<Turn>, crate::app_backtrack::BacktrackPromptEdit, Option<String>)> = async {
                     let channel = self.thread_event_channels.get(&thread_id)
                         .ok_or_else(|| color_eyre::eyre::eyre!("the selected thread is no longer available"))?;
                     let (start_item, loaded_tail, latest_turn_id) = {
@@ -725,12 +745,20 @@ impl App {
                                 .map(|item| (turn.id.clone(), item.id().to_string())))
                         })
                     }));
-                    let before_turn_id = crate::app_backtrack::backtrack_revert_before_turn_id(
+                    let candidate = crate::app_backtrack::backtrack_prompt_edit_candidate(
                         &thread.turns,
                         start_item.as_ref(),
                         nth_user_message,
                         &mut prompt,
+                        true,
                     )?;
+                    if let Some((turn_id, fingerprint, expected_latest)) = &confirmed_whole_turn {
+                        if !candidate.whole_turn || &candidate.turn_id != turn_id
+                            || &candidate.turn_fingerprint != fingerprint || &latest_turn_id != expected_latest {
+                            color_eyre::eyre::bail!("thread history changed; select the steer again before rewinding its whole turn");
+                        }
+                    }
+                    let before_turn_id = candidate.turn_id.clone();
                     // Keep the store aligned with the displayed prefix, including retained live turns.
                     let cut = thread.turns.iter().position(|turn| turn.id == before_turn_id)
                         .ok_or_else(|| color_eyre::eyre::eyre!("selected turn disappeared"))?;
@@ -746,9 +774,9 @@ impl App {
                             turn.items.clear();
                         }
                     }
-                    Ok((before_turn_id, thread.turns))
+                    Ok((before_turn_id, thread.turns, candidate, latest_turn_id))
                 }.await;
-                let (before_turn_id, retained_turns) = match selection {
+                let (before_turn_id, retained_turns, candidate, latest_turn_id) = match selection {
                     Ok(selection) => selection,
                     Err(err) => {
                         self.restore_backtrack_prompt_after_revert_error(prompt, err);
@@ -756,6 +784,46 @@ impl App {
                         return Ok(AppRunControl::Continue);
                     }
                 };
+                if self.app_server_target.uses_remote_workspace()
+                    && (candidate.remote_edit_unsupported || crate::app_backtrack::backtrack_remote_prompt_unsupported(&prompt)) {
+                    self.chat_widget.add_error_message("This turn contains local image paths or command syntax that cannot be restored safely for a remote workspace. Its conversation history was not changed.".to_string());
+                    tui.frame_requester().schedule_frame();
+                    return Ok(AppRunControl::Continue);
+                }
+                if candidate.whole_turn && confirmed_whole_turn.is_none() {
+                    let confirm_cell = selected_cell.clone();
+                    let confirm_turn = candidate.turn_id.clone();
+                    let fingerprint = candidate.turn_fingerprint;
+                    let count = candidate.message_count;
+                    self.chat_widget.show_selection_view(crate::bottom_pane::SelectionViewParams {
+                        title: Some("Rewind this entire turn?".to_string()),
+                        subtitle: Some("The entire selected turn and all later conversation will be removed. Saved files will not change.".to_string()),
+                        items: vec![
+                            crate::bottom_pane::SelectionItem { name: "Cancel".to_string(), dismiss_on_select: true, ..Default::default() },
+                            crate::bottom_pane::SelectionItem {
+                                name: "Rewind turn and edit all its user messages".to_string(),
+                                description: Some(format!("Combine all {count} user messages from this turn into one editable draft. Nothing is sent automatically.")),
+                                actions: vec![Box::new(move |tx| tx.send(AppEvent::ConfirmWholeTurnPromptEdit {
+                                    thread_id,
+                                    selected_cell: confirm_cell.clone(),
+                                    prompt: selected_prompt.clone(),
+                                    turn_id: confirm_turn.clone(),
+                                    turn_fingerprint: fingerprint,
+                                    latest_turn_id: latest_turn_id.clone(),
+                                }))],
+                                dismiss_on_select: true,
+                                require_explicit_confirmation: true,
+                                ..Default::default()
+                            },
+                        ],
+                        initial_selected_idx: Some(0),
+                        footer_hint: Some(crate::bottom_pane::popup_consts::standard_popup_hint_line()),
+                        ..Default::default()
+                    });
+                    tui.frame_requester().schedule_frame();
+                    return Ok(AppRunControl::Continue);
+                }
+                let nth_user_message = candidate.nth_user_message;
                 let reverted = match app_server.revert_thread(thread_id, before_turn_id, &retained_turns).await {
                     Ok(reverted) => reverted,
                     Err(err) => {
@@ -827,13 +895,13 @@ impl App {
                 // The existing reset barrier keeps terminal input blocked until then.
                 self.pending_thread_switch_resets += 1;
                 self.app_event_tx.send(AppEvent::FinishPromptRevert {
-                    thread_id, nth_user_message,
+                    thread_id, nth_user_message, clipped_turn_prefix: candidate.clipped_turn_prefix,
                 });
             }
-            AppEvent::FinishPromptRevert { thread_id, nth_user_message } => {
+            AppEvent::FinishPromptRevert { thread_id, nth_user_message, clipped_turn_prefix } => {
                 self.pending_thread_switch_resets -= 1;
                 if self.chat_widget.thread_id() == Some(thread_id) {
-                    if let Some(index) = crate::app_backtrack::nth_user_position(&self.transcript_cells, nth_user_message) {
+                    if let Some(index) = crate::app_backtrack::backtrack_prompt_revert_position(&self.transcript_cells, nth_user_message, clipped_turn_prefix) {
                         self.transcript_cells.truncate(index);
                 self.native_history.retain(&self.transcript_cells);
                     }
@@ -1038,6 +1106,12 @@ impl App {
             }
             AppEvent::ImagesPrepared(id) => {
                 self.chat_widget.on_images_prepared(id);
+            }
+            AppEvent::RecallPendingSteers { thread_id, client_user_message_ids } => {
+                self.recall_pending_steers(app_server, thread_id, client_user_message_ids);
+            }
+            AppEvent::PendingSteersRecalled { thread_id, result } => {
+                self.enqueue_pending_steer_recall(thread_id, result).await;
             }
             AppEvent::CodexOp(mut op) => {
                 if let AppCommand::OverrideTurnContext {
@@ -3269,6 +3343,10 @@ impl App {
                 self.persist_agents_overview_grouping(grouping).await;
             }
             AppEvent::SyntaxThemeSelected { name } => {
+                if tui.refresh_terminal_palette() {
+                    self.transcript_view.invalidate_rendered_styles();
+                    self.backtrack_render_pending = !tui.is_owned_screen();
+                }
                 let edit = crate::legacy_core::config::edit::syntax_theme_edit(&name);
                 let apply_result = ConfigEditsBuilder::for_config_path(self.local_settings.user_config_path.as_path())
                     .with_edits([edit])

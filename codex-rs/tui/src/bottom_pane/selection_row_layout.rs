@@ -72,10 +72,14 @@ fn build_name_spans(row: &GenericDisplayRow, name_limit: usize) -> Vec<Span<'sta
         }
 
         let grapheme = grapheme.to_string();
-        name_spans.push(if matched {
+        let span: Span<'static> = if matched {
             grapheme.bold()
         } else {
             grapheme.into()
+        };
+        name_spans.push(match row.name_style {
+            Some(style) => span.patch_style(style),
+            None => span,
         });
     }
 

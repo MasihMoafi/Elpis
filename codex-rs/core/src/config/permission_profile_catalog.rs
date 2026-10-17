@@ -11,6 +11,7 @@ use super::ConstraintError;
 use super::ConstraintResult;
 use super::is_permission_allowed;
 use super::merge_managed_permission_profiles;
+use super::permissions::BUILT_IN_BYPASS_PERMISSIONS_PROFILE;
 use super::permissions::BUILT_IN_DANGER_FULL_ACCESS_PROFILE;
 use super::permissions::BUILT_IN_READ_ONLY_PROFILE;
 use super::permissions::BUILT_IN_WORKSPACE_PROFILE;
@@ -57,6 +58,7 @@ pub(super) fn permission_profile_catalog_from_permissions(
         BUILT_IN_READ_ONLY_PROFILE,
         BUILT_IN_WORKSPACE_PROFILE,
         BUILT_IN_DANGER_FULL_ACCESS_PROFILE,
+        BUILT_IN_BYPASS_PERMISSIONS_PROFILE,
     ]
     .into_iter()
     .map(|id| (id, None))

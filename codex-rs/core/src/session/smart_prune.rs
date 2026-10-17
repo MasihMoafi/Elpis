@@ -11,7 +11,8 @@
 //!   it for later turns, never for a turn already running.
 //! - The source offered to the optimizer and audited is the item without its harness
 //!   metadata; an admitted output keeps its envelope and metadata and only its body changes.
-//! - There is no OpenRouter fallback: this build has no OpenRouter provider.
+//! - Jev uses a separately selected OpenRouter decisions backend, never an LLM
+//!   fallback or the conversation's inference route.
 
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -71,6 +72,7 @@ struct ModelAdmission {
     instructions: String,
     attempt_id: String,
     raw_response: String,
+    audit_response: Option<String>,
     usage: Option<TokenUsage>,
     model_slug: String,
     input: String,
@@ -282,7 +284,12 @@ pub(crate) async fn optimize_pending_outputs(
                 model_slug: &admission.model_slug,
                 input: &input,
                 status: smart_prune_audit::AttemptStatus::MalformedResponse,
-                raw_response: Some(&admission.raw_response),
+                raw_response: Some(
+                    admission
+                        .audit_response
+                        .as_deref()
+                        .unwrap_or(&admission.raw_response),
+                ),
                 error: Some("optimizer response did not match the decision manifest schema"),
                 candidate_outputs: candidates.len(),
                 admitted_outputs: 0,
@@ -298,6 +305,7 @@ pub(crate) async fn optimize_pending_outputs(
     };
 
     let admission_id = uuid::Uuid::now_v7().to_string();
+    let log_dir = sess.smart_prune_log_dir().await;
     let mut applied = Vec::new();
     for (candidate, decision) in candidates.iter().zip(decisions) {
         debug_assert_eq!(candidate.call_id, decision.call_id());
@@ -318,7 +326,12 @@ pub(crate) async fn optimize_pending_outputs(
                         model_slug: &admission.model_slug,
                         input: &input,
                         status: smart_prune_audit::AttemptStatus::SourceError,
-                        raw_response: Some(&admission.raw_response),
+                        raw_response: Some(
+                            admission
+                                .audit_response
+                                .as_deref()
+                                .unwrap_or(&admission.raw_response),
+                        ),
                         error: Some(&error),
                         candidate_outputs: candidates.len(),
                         admitted_outputs: 0,
@@ -333,12 +346,22 @@ pub(crate) async fn optimize_pending_outputs(
                 return pending;
             }
         };
+        // `write_admission` stores the items in `applied` order.
+        let source_file = smart_prune_audit::source_artifact_path(
+            &log_dir,
+            &admission_id,
+            applied.len(),
+            &candidate.call_id,
+        )
+        .ok()
+        .map(|path| path.display().to_string());
         let Some(transformed) = transform_tool_output(
             &candidate.source,
             &content,
             AdmissionEvidence {
                 admission_id: &admission_id,
                 source_sha256: &source_sha256,
+                source_file: source_file.as_deref(),
             },
         ) else {
             continue;
@@ -355,7 +378,12 @@ pub(crate) async fn optimize_pending_outputs(
                 model_slug: &admission.model_slug,
                 input: &input,
                 status: smart_prune_audit::AttemptStatus::Unchanged,
-                raw_response: Some(&admission.raw_response),
+                raw_response: Some(
+                    admission
+                        .audit_response
+                        .as_deref()
+                        .unwrap_or(&admission.raw_response),
+                ),
                 error: None,
                 candidate_outputs: candidates.len(),
                 admitted_outputs: 0,
@@ -385,7 +413,6 @@ pub(crate) async fn optimize_pending_outputs(
             },
         )
         .collect::<Vec<_>>();
-    let log_dir = sess.smart_prune_log_dir().await;
     let session_id = sess.session_id().to_string();
     if let Err(err) = smart_prune_audit::write_admission(
         &log_dir,
@@ -396,7 +423,10 @@ pub(crate) async fn optimize_pending_outputs(
             model_slug: &admission.model_slug,
             ace_instructions: &admission.instructions,
             ace_input: &admission.input,
-            raw_response: &admission.raw_response,
+            raw_response: admission
+                .audit_response
+                .as_deref()
+                .unwrap_or(&admission.raw_response),
             usage: admission.usage.as_ref(),
             items: &audit_items,
         },
@@ -412,7 +442,12 @@ pub(crate) async fn optimize_pending_outputs(
                 model_slug: &admission.model_slug,
                 input: &input,
                 status: smart_prune_audit::AttemptStatus::AuditError,
-                raw_response: Some(&admission.raw_response),
+                raw_response: Some(
+                    admission
+                        .audit_response
+                        .as_deref()
+                        .unwrap_or(&admission.raw_response),
+                ),
                 error: Some(&error),
                 candidate_outputs: candidates.len(),
                 admitted_outputs: 0,
@@ -427,10 +462,25 @@ pub(crate) async fn optimize_pending_outputs(
         return pending;
     }
 
-    let saved_tokens = audit_items
-        .iter()
-        .map(|item| item.saved_tokens)
-        .sum::<usize>();
+    // Commit the bodies without another await after the cancellation check.
+    // Publishing attempt/snapshot state first allowed cancellation during those
+    // awaits to compact a batch that should have stayed original.
+    let cancelled = !admit_pending_bodies(
+        &mut pending,
+        applied
+            .into_iter()
+            .map(|(candidate, _, transformed)| (candidate.pending_index, transformed.admitted))
+            .collect(),
+        cancellation_token,
+    );
+    let saved_tokens = if cancelled {
+        0
+    } else {
+        audit_items
+            .iter()
+            .map(|item| item.saved_tokens)
+            .sum::<usize>()
+    };
     record_attempt(
         sess,
         AttemptOutcome {
@@ -439,30 +489,32 @@ pub(crate) async fn optimize_pending_outputs(
             turn_id: &turn_context.sub_id,
             model_slug: &admission.model_slug,
             input: &input,
-            status: smart_prune_audit::AttemptStatus::Admitted,
-            raw_response: Some(&admission.raw_response),
-            error: None,
+            status: if cancelled {
+                smart_prune_audit::AttemptStatus::Cancelled
+            } else {
+                smart_prune_audit::AttemptStatus::Admitted
+            },
+            raw_response: Some(
+                admission
+                    .audit_response
+                    .as_deref()
+                    .unwrap_or(&admission.raw_response),
+            ),
+            error: cancelled.then_some("turn cancelled before admission commit"),
             candidate_outputs: candidates.len(),
-            admitted_outputs: audit_items.len(),
+            admitted_outputs: if cancelled { 0 } else { audit_items.len() },
             saved_tokens,
             latency: optimizer_elapsed,
             usage: admission.usage.as_ref(),
-            admission_id: Some(&admission_id),
+            admission_id: if cancelled { None } else { Some(&admission_id) },
         },
     )
     .await;
+    if cancelled {
+        return pending;
+    }
     record_applied_admission(sess, &admission_id, candidates.len(), &audit_items).await;
 
-    for (candidate, _, transformed) in applied {
-        if !admit_body(
-            &mut pending[candidate.pending_index].item,
-            transformed.admitted,
-        ) {
-            tracing::error!(
-                "Smart Prune produced an unsupported admitted envelope; preserving item"
-            );
-        }
-    }
     tracing::info!(
         admission_id,
         admitted_items = audit_items.len(),
@@ -510,31 +562,60 @@ async fn run_optimizer_attempt(
                 return Err(OptimizerAttemptFailure::Failed);
             }
         };
-    let instructions = settings
-        .system_prompt
-        .as_deref()
-        .unwrap_or(SMART_PRUNE_INSTRUCTIONS);
-    let model_slug = settings
-        .model
-        .as_deref()
-        .unwrap_or_else(|| selected_model_slug(step_context));
+    let is_jev = settings.backend == crate::pruner_settings::PrunerBackend::Jev;
+    let instructions = if is_jev {
+        crate::jev_prune::INSTRUCTIONS
+    } else {
+        settings
+            .system_prompt
+            .as_deref()
+            .unwrap_or(SMART_PRUNE_INSTRUCTIONS)
+    };
+    let model_slug = if is_jev {
+        crate::jev_prune::MODEL
+    } else {
+        settings
+            .model
+            .as_deref()
+            .unwrap_or_else(|| selected_model_slug(step_context))
+    };
     record_optimizer_started(sess).await;
     let started = Instant::now();
     let mut progress = OptimizerProgress::default();
+    let mut jev_evidence = crate::jev_prune::JevEvidence::default();
     let result = tokio::select! {
         biased;
         _ = cancellation_token.cancelled() => None,
-        result = run_model_admission(
-            sess,
-            step_context,
-            input.to_string(),
-            model_slug,
-            settings.provider.as_deref(),
-            instructions,
-            inactivity_timeout,
-            &mut progress,
-        ) => Some(result),
+        result = async {
+            if is_jev {
+                let reply = crate::jev_prune::decide(
+                    &turn_context.config, input, cancellation_token, &mut jev_evidence,
+                ).await?;
+                progress.usage = reply.usage.clone();
+                progress.deltas = reply.audit_response.clone();
+                Ok(ModelAdmission {
+                    instructions: instructions.to_string(),
+                    attempt_id: String::new(),
+                    raw_response: reply.manifest,
+                    audit_response: Some(reply.audit_response),
+                    usage: reply.usage,
+                    model_slug: model_slug.to_string(),
+                    input: reply.request,
+                    latency: Duration::ZERO,
+                })
+            } else {
+                run_model_admission(
+                    sess, step_context, input.to_string(), model_slug,
+                    settings.provider.as_deref(), instructions, inactivity_timeout, &mut progress,
+                ).await
+            }
+        } => Some(result),
     };
+    if let Some(response) = &jev_evidence.audit_response {
+        progress.deltas = response.clone();
+        progress.usage = jev_evidence.usage.clone();
+    }
+    let input = jev_evidence.request.as_deref().unwrap_or(input);
     let elapsed = started.elapsed();
     let usage = progress.usage.as_ref();
     record_optimizer_finished(sess, elapsed, usage).await;
@@ -655,6 +736,57 @@ async fn record_optimizer_finished(sess: &Session, elapsed: Duration, usage: Opt
     }
 }
 
+/// Public snapshots carry only fixed explanations. Provider errors can contain request
+/// URLs, credentials, or tool text and belong exclusively in the local attempt audit.
+fn safe_failure_reason(
+    status: smart_prune_audit::AttemptStatus,
+    error: Option<&str>,
+) -> Option<&'static str> {
+    use smart_prune_audit::AttemptStatus;
+
+    Some(match status {
+        AttemptStatus::Admitted | AttemptStatus::Unchanged => return None,
+        AttemptStatus::TimedOut => {
+            "The pruning model stopped responding before the timeout. Try again or choose another model."
+        }
+        AttemptStatus::MalformedResponse => {
+            "The pruning model returned an invalid decision. Try again or choose another model."
+        }
+        AttemptStatus::SourceError => {
+            "Elpis could not prepare the tool result for pruning. Check the local attempt evidence."
+        }
+        AttemptStatus::AuditError => {
+            "Elpis could not save the pruning evidence. Check the local log directory is writable."
+        }
+        AttemptStatus::Cancelled => "Pruning was cancelled before a replacement was admitted.",
+        AttemptStatus::ModelError => {
+            let error = error.unwrap_or_default().to_ascii_lowercase();
+            // A bridge may wrap an upstream 401 in a 403; identify authentication first.
+            if error.contains("401 unauthorized")
+                || error.contains("authentication")
+                || error.contains("invalid api key")
+                || error.contains("invalid_api_key")
+            {
+                "Provider authentication failed. Check the selected provider's sign-in or API key."
+            } else if error.contains("429")
+                || error.contains("rate limit")
+                || error.contains("rate_limit")
+            {
+                "The pruning provider rate-limited the request. Wait and try again or choose another provider."
+            } else if error.contains("403 forbidden")
+                || error.contains("permission denied")
+                || error.contains("access denied")
+            {
+                "The provider denied access to the pruning model. Check model access or choose another model."
+            } else if error.contains("model_not_found") || error.contains("model not found") {
+                "The provider could not find the pruning model. Choose an available model."
+            } else {
+                "The pruning model request failed. Check the local attempt evidence or choose another provider or model."
+            }
+        }
+    })
+}
+
 async fn record_attempt(sess: &Session, outcome: AttemptOutcome<'_>) {
     let elapsed_ms = u64::try_from(outcome.latency.as_millis()).unwrap_or(u64::MAX);
     let log_dir = sess.smart_prune_log_dir().await;
@@ -695,6 +827,7 @@ async fn record_attempt(sess: &Session, outcome: AttemptOutcome<'_>) {
         attempt_id: outcome.attempt_id.to_string(),
         audit_path,
         status: outcome.status.as_str().to_string(),
+        failure_reason: safe_failure_reason(outcome.status, outcome.error).map(str::to_string),
         model_slug: outcome.model_slug.to_string(),
         reasoning_effort: SMART_PRUNE_REASONING_EFFORT.as_str().to_string(),
         candidate_outputs: outcome.candidate_outputs as u64,
@@ -975,7 +1108,10 @@ async fn run_model_admission(
     let model_info = sess
         .services
         .models_manager
-        .get_model_info(primary_model, &turn_context.config.to_models_manager_config())
+        .get_model_info(
+            primary_model,
+            &turn_context.config.to_models_manager_config(),
+        )
         .await;
     let model_slug = model_info.slug.clone();
     let prompt = optimizer_prompt(input.clone(), instructions);
@@ -1019,6 +1155,7 @@ async fn run_model_admission(
         instructions: instructions.to_string(),
         attempt_id: String::new(),
         raw_response,
+        audit_response: None,
         usage: progress.usage.clone(),
         model_slug,
         input,
@@ -1080,6 +1217,16 @@ impl StandaloneOptimizer {
     pub async fn decide(&self, input: String) -> anyhow::Result<OptimizerReply> {
         let config = self.config.as_ref();
         let settings = crate::pruner_settings::PrunerSettings::load(&config.codex_home)?;
+        if settings.backend == crate::pruner_settings::PrunerBackend::Jev {
+            let mut evidence = crate::jev_prune::JevEvidence::default();
+            let reply =
+                crate::jev_prune::decide(config, &input, &CancellationToken::new(), &mut evidence)
+                    .await?;
+            return Ok(OptimizerReply {
+                raw_response: reply.manifest,
+                model_slug: crate::jev_prune::MODEL.to_string(),
+            });
+        }
         let instructions = settings
             .system_prompt
             .as_deref()
@@ -1208,6 +1355,26 @@ fn response_item_output_call_id(item: &ResponseItem) -> Option<&str> {
     }
 }
 
+/// This is the admission commit: no asynchronous publication may separate the
+/// cancellation check from replacing the bodies already backed by a durable audit.
+fn admit_pending_bodies(
+    pending: &mut [ResponseItemEnvelope],
+    admitted: Vec<(usize, ResponseItem)>,
+    cancel: &CancellationToken,
+) -> bool {
+    if cancel.is_cancelled() {
+        return false;
+    }
+    for (index, item) in admitted {
+        if !admit_body(&mut pending[index].item, item) {
+            tracing::error!(
+                "Smart Prune produced an unsupported admitted envelope; preserving item"
+            );
+        }
+    }
+    true
+}
+
 /// Puts the admitted body into the pending output, keeping its envelope and metadata.
 fn admit_body(item: &mut ResponseItem, admitted: ResponseItem) -> bool {
     let body = match admitted {
@@ -1246,6 +1413,58 @@ mod tests {
     }
 
     #[test]
+    fn failure_reason_explains_nested_auth_without_exposing_provider_text() {
+        let raw = "unexpected status 403 Forbidden: provider returned 401 Unauthorized: User not found., url: http://private-host/v1?key=SECRET_MARKER";
+        assert_eq!(
+            safe_failure_reason(smart_prune_audit::AttemptStatus::ModelError, Some(raw)),
+            Some(
+                "Provider authentication failed. Check the selected provider's sign-in or API key."
+            )
+        );
+        let unknown = safe_failure_reason(
+            smart_prune_audit::AttemptStatus::ModelError,
+            Some("SECRET_MARKER: private tool output"),
+        )
+        .expect("generic explanation");
+        assert!(!unknown.contains("SECRET_MARKER"));
+        for status in [
+            smart_prune_audit::AttemptStatus::Admitted,
+            smart_prune_audit::AttemptStatus::Unchanged,
+        ] {
+            assert_eq!(safe_failure_reason(status, Some(raw)), None);
+        }
+    }
+
+    #[test]
+    fn failure_reason_distinguishes_provider_and_local_failures() {
+        use smart_prune_audit::AttemptStatus;
+        for (status, error, expected) in [
+            (
+                AttemptStatus::ModelError,
+                "429 Too Many Requests",
+                "rate-limited",
+            ),
+            (AttemptStatus::ModelError, "403 Forbidden", "denied access"),
+            (
+                AttemptStatus::ModelError,
+                "model_not_found",
+                "could not find",
+            ),
+            (AttemptStatus::TimedOut, "", "timeout"),
+            (AttemptStatus::MalformedResponse, "", "invalid decision"),
+            (AttemptStatus::SourceError, "", "prepare the tool result"),
+            (AttemptStatus::AuditError, "", "save the pruning evidence"),
+            (AttemptStatus::Cancelled, "", "cancelled"),
+        ] {
+            assert!(
+                safe_failure_reason(status, Some(error))
+                    .expect("reason")
+                    .contains(expected)
+            );
+        }
+    }
+
+    #[test]
     fn selection_is_large_text_only_bounded_and_preserves_hook_opt_out() {
         let large = "evidence line\n".repeat(2_000);
         let pending = vec![
@@ -1258,6 +1477,34 @@ mod tests {
         assert_eq!(selected.len(), 1);
         assert_eq!(selected[0].call_id, "large");
         assert_eq!(selected[0].pending_index, 1);
+    }
+
+    #[tokio::test]
+    async fn cancellation_during_publication_keeps_pending_originals() {
+        let original = function_output("call-1", "exact original\n".repeat(400));
+        let compact = function_output("call-1", "kept fact".to_string()).item;
+        let mut pending = vec![original.clone()];
+        let cancel = CancellationToken::new();
+        // Simulate cancellation while the durable admission is being published.
+        let publication = async {
+            cancel.cancel();
+            tokio::task::yield_now().await
+        };
+        publication.await;
+        assert!(!admit_pending_bodies(
+            &mut pending,
+            vec![(0, compact.clone())],
+            &cancel
+        ));
+        assert_eq!(pending[0].item, original.item);
+
+        let active = CancellationToken::new();
+        assert!(admit_pending_bodies(
+            &mut pending,
+            vec![(0, compact.clone())],
+            &active
+        ));
+        assert_eq!(pending[0].item, compact);
     }
 
     #[test]
@@ -1287,6 +1534,53 @@ mod tests {
                 internal_chat_message_metadata_passthrough: None,
             }
         );
+    }
+
+    #[tokio::test]
+    async fn recorded_failure_exposes_safe_reason_and_clears_it_on_success() {
+        let (session, _) = crate::session::tests::make_session_and_context().await;
+        for (status, expected_reason) in [
+            (
+                smart_prune_audit::AttemptStatus::ModelError,
+                Some(
+                    "Provider authentication failed. Check the selected provider's sign-in or API key.",
+                ),
+            ),
+            (smart_prune_audit::AttemptStatus::Unchanged, None),
+        ] {
+            record_attempt(
+                &session,
+                AttemptOutcome {
+                    instructions: "fixture instructions",
+                    attempt_id: "safe-error-regression",
+                    turn_id: "turn-1",
+                    model_slug: "fixture-pruner",
+                    input: "PRIVATE_TOOL_TEXT",
+                    status,
+                    raw_response: None,
+                    error: Some("403 Forbidden: upstream 401 Unauthorized: SECRET_MARKER"),
+                    candidate_outputs: 1,
+                    admitted_outputs: 0,
+                    saved_tokens: 0,
+                    latency: Duration::from_millis(10),
+                    usage: None,
+                    admission_id: None,
+                },
+            )
+            .await;
+            let attempt = session
+                .smart_prune_snapshot()
+                .await
+                .latest_attempt
+                .expect("attempt");
+            assert_eq!(attempt.model_slug, "fixture-pruner");
+            assert_eq!(attempt.failure_reason.as_deref(), expected_reason);
+            assert_eq!(attempt.admitted_outputs, 0);
+            assert_eq!(attempt.approx_saved_tokens, 0);
+            let public_json = serde_json::to_string(&attempt).expect("snapshot");
+            assert!(!public_json.contains("PRIVATE_TOOL_TEXT"));
+            assert!(!public_json.contains("SECRET_MARKER"));
+        }
     }
 
     #[tokio::test]
@@ -1371,12 +1665,7 @@ mod tests {
 
         assert_eq!(taken, HashSet::from(["hook".to_string()]));
         assert_eq!(
-            session
-                .state
-                .lock()
-                .await
-                .smart_prune
-                .ineligible_call_ids,
+            session.state.lock().await.smart_prune.ineligible_call_ids,
             HashSet::from(["other-batch".to_string()])
         );
     }
@@ -1509,27 +1798,29 @@ mod tests {
 
     #[test]
     fn multimodal_output_is_not_a_candidate() {
-        let pending = vec![ResponseItemEnvelope::new(ResponseItem::FunctionCallOutput {
-            id: None,
-            call_id: Some("mixed-image".to_string()),
-            name: None,
-            namespace: None,
-            output: FunctionCallOutputPayload {
-                body: FunctionCallOutputBody::ContentItems(vec![
-                    FunctionCallOutputContentItem::InputText {
-                        text: "evidence line\n".repeat(2_000),
-                    },
-                    FunctionCallOutputContentItem::InputImage {
-                        image: ImageReference::Inline {
-                            image_url: "data:image/png;base64,AA==".to_string(),
+        let pending = vec![ResponseItemEnvelope::new(
+            ResponseItem::FunctionCallOutput {
+                id: None,
+                call_id: Some("mixed-image".to_string()),
+                name: None,
+                namespace: None,
+                output: FunctionCallOutputPayload {
+                    body: FunctionCallOutputBody::ContentItems(vec![
+                        FunctionCallOutputContentItem::InputText {
+                            text: "evidence line\n".repeat(2_000),
                         },
-                        detail: None,
-                    },
-                ]),
-                success: Some(true),
+                        FunctionCallOutputContentItem::InputImage {
+                            image: ImageReference::Inline {
+                                image_url: "data:image/png;base64,AA==".to_string(),
+                            },
+                            detail: None,
+                        },
+                    ]),
+                    success: Some(true),
+                },
+                internal_chat_message_metadata_passthrough: None,
             },
-            internal_chat_message_metadata_passthrough: None,
-        })];
+        )];
         assert!(select_candidates(&pending, &HashSet::new()).is_empty());
     }
 }

@@ -1,0 +1,26 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "definitions": {
+    "ThreadApprovalReviewDecision": {
+      "enum": [
+        "approved",
+        "denied"
+      ],
+      "type": "string"
+    }
+  },
+  "properties": {
+    "decision": {
+      "$ref": "#/definitions/ThreadApprovalReviewDecision"
+    },
+    "rationale": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "decision",
+    "rationale"
+  ],
+  "title": "ThreadApprovalReviewResponse",
+  "type": "object"
+}

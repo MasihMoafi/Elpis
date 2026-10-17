@@ -192,11 +192,11 @@ fn provider_rows(popup: &str) -> Vec<String> {
         .collect()
 }
 
-/// Positive: the provider list is OpenAI, the Claude subscription, Antigravity and OpenRouter,
-/// in that order. Negative: the providers that do not answer here (Anthropic and Gemini API keys,
-/// Ollama, LM Studio, Bedrock, a configured vendor) are not listed.
+/// Positive: the provider list is OpenAI, the Claude subscription, the Anthropic API key,
+/// Antigravity and OpenRouter, in that order. Negative: the providers that do not answer here
+/// (Gemini API key, Ollama, LM Studio, Bedrock, a configured vendor) are not listed.
 #[tokio::test]
-async fn the_provider_list_is_openai_claude_antigravity_openrouter() {
+async fn the_provider_list_is_openai_claude_anthropic_antigravity_openrouter() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.5")).await;
     let home = tempfile::tempdir().expect("tempdir");
     add_keyless_vendor(&mut chat, home.path());
@@ -208,13 +208,19 @@ async fn the_provider_list_is_openai_claude_antigravity_openrouter() {
 
     assert_eq!(
         provider_rows(&popup),
-        vec!["OpenAI", "Claude subscription", "Antigravity", "OpenRouter"],
+        vec![
+            "OpenAI",
+            "Claude subscription",
+            "Anthropic Claude",
+            "Antigravity",
+            "OpenRouter",
+        ],
         "{popup}"
     );
 }
 
 /// Positive: a chat running on a provider the list leaves out still finds it there, selected.
-/// Negative: without such a chat, it is not listed (`the_provider_list_is_openai_claude_antigravity_openrouter`).
+/// Negative: without such a chat, it is not listed (`the_provider_list_is_openai_claude_anthropic_antigravity_openrouter`).
 #[tokio::test]
 async fn a_left_out_provider_is_listed_while_the_chat_runs_on_it() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.5")).await;
@@ -225,7 +231,7 @@ async fn a_left_out_provider_is_listed_while_the_chat_runs_on_it() {
 
     assert_eq!(
         provider_rows(&popup),
-        vec!["OpenAI", "OpenRouter", "Ollama (local)"],
+        vec!["OpenAI", "Anthropic Claude", "OpenRouter", "Ollama (local)"],
         "{popup}"
     );
     let selected = popup
@@ -584,4 +590,57 @@ async fn picking_an_antigravity_model_selects_it_with_provider_antigravity() {
         .find(|line| line.trim_start().starts_with('›'))
         .unwrap_or_default();
     assert!(selected.contains("Antigravity"), "{providers}");
+}
+
+/// Codex parity: on the conversation's own provider, picking a model with several effort levels
+/// opens Codex's effort list instead of switching at the default effort.
+#[tokio::test]
+async fn picking_a_model_on_the_current_provider_opens_its_effort_levels() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    let current = get_available_model(&chat, chat.current_model());
+    assert!(current.supported_reasoning_efforts.len() > 1, "fixture needs effort levels");
+    let listed = chat.model_catalog.try_list_models().expect("models");
+    chat.open_elpis_provider_models("openai".to_string(), Ok(listed));
+    while rx.try_recv().is_ok() {}
+
+    for ch in current.model.chars() {
+        chat.handle_key_event(KeyEvent::from(KeyCode::Char(ch)));
+    }
+    chat.handle_key_event(KeyEvent::from(KeyCode::Enter));
+
+    let events: Vec<AppEvent> = std::iter::from_fn(|| rx.try_recv().ok()).collect();
+    assert!(
+        events.iter().any(|event| matches!(event,
+            AppEvent::OpenReasoningPopup { model } if model.model == current.model)),
+        "picking the model did not open its effort levels: {events:?}"
+    );
+    assert!(
+        !events.iter().any(|event| matches!(event,
+            AppEvent::Elpis(ElpisAppEvent::Provider(ElpisProviderEvent::Switch { .. })))),
+        "the model was switched at its default effort: {events:?}"
+    );
+}
+
+/// After a switch to another provider, a model with several effort levels offers them.
+#[tokio::test]
+async fn a_switched_model_with_effort_levels_offers_them() {
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    let current = get_available_model(&chat, chat.current_model());
+    assert!(current.supported_reasoning_efforts.len() > 1, "fixture needs effort levels");
+
+    chat.offer_effort_levels();
+
+    let popup = render_bottom_popup(&chat, /*width*/ 120);
+    assert!(popup.contains(&current.display_name), "{popup}");
+    assert!(popup.to_lowercase().contains("medium"), "{popup}");
+}
+
+/// Negative: a model with no effort levels opens nothing and says nothing.
+#[tokio::test]
+async fn a_switched_model_without_effort_levels_offers_nothing() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(Some("fixture-model")).await;
+    chat.offer_effort_levels();
+
+    assert!(!chat.bottom_pane.has_active_view());
+    assert!(rx.try_recv().is_err());
 }

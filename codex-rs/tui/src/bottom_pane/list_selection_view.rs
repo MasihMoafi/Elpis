@@ -158,6 +158,8 @@ pub(crate) type OnCancelCallback = Option<Box<dyn Fn(&AppEventSender) + Send + S
 #[derive(Default)]
 pub(crate) struct SelectionItem {
     pub name: String,
+    /// Elpis: optional colour for the name, kept when the row is selected.
+    pub name_style: Option<ratatui::style::Style>,
     /// Indent beneath the preceding parent, using this letter instead of a numeric shortcut.
     pub child_label: Option<char>,
     pub name_prefix_spans: Vec<Span<'static>>,
@@ -704,6 +706,7 @@ impl ListSelectionView {
                     GenericDisplayRow {
                         category_tag: None,
                         selection_style: row_selection_style,
+                        name_style: item.name_style,
                         name: name_with_marker,
                         name_prefix_spans,
                         display_shortcut: item.display_shortcut,

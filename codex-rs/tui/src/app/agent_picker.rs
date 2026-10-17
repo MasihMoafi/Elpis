@@ -132,6 +132,14 @@ impl App {
             let Ok(thread_id) = ThreadId::from_string(&thread.id) else {
                 continue;
             };
+            if !thread.ephemeral
+                && !completion.visibility_changed_threads.contains(&thread_id)
+                && !self.agents_overview.removed_threads.contains(&thread_id)
+            {
+                self.agents_overview
+                    .threads
+                    .insert(thread_id, Some(thread.clone()));
+            }
             if !completion.visibility_changed_threads.contains(&thread_id) {
                 self.update_agent_picker_thread_visibility(
                     thread_id,
@@ -167,6 +175,7 @@ impl App {
         }
         for thread_id in refresh.archived_thread_ids {
             if !completion.visibility_changed_threads.contains(&thread_id) {
+                self.remove_agents_overview_thread(thread_id);
                 self.update_agent_picker_thread_visibility(
                     thread_id,
                     AgentPickerThreadVisibility::Hidden,
@@ -175,6 +184,7 @@ impl App {
         }
         self.agent_navigation.prune_untracked_picker_exclusions();
 
+        self.repaint_agents_overview();
         self.replace_agent_picker_view(selected_thread_id);
         if completion.follow_up_requested {
             self.refresh_agent_picker_threads(app_server, root);

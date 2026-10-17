@@ -811,7 +811,7 @@ impl ChatComposer {
             history_search: None,
             vim_history: VimHistory::default(),
             submit_keys: vec![key_hint::plain(KeyCode::Enter)],
-            queue_keys: vec![key_hint::plain(KeyCode::Tab)],
+            queue_keys: Vec::new(),
             toggle_shortcuts_keys: vec![
                 key_hint::plain(KeyCode::Char('?')),
                 key_hint::shift(KeyCode::Char('?')),
@@ -9621,6 +9621,8 @@ mod tests {
                 "Ask Elpis to do anything".to_string(),
                 /*disable_paste_burst*/ false,
             );
+            // Elpis leaves the queue unbound by default; this test exercises an explicit Tab binding.
+            composer.queue_keys = vec![key_hint::plain(KeyCode::Tab)];
             composer.set_task_running(/*running*/ true);
             composer.draft.textarea.set_text_clearing_elements(input);
 
@@ -9765,6 +9767,8 @@ mod tests {
             "Ask Elpis to do anything".to_string(),
             /*disable_paste_burst*/ false,
         );
+        // Elpis leaves the queue unbound by default; this test exercises an explicit Tab binding.
+        composer.queue_keys = vec![key_hint::plain(KeyCode::Tab)];
         composer.set_task_running(/*running*/ true);
         composer
             .draft
@@ -9799,6 +9803,8 @@ mod tests {
                 "Ask Elpis to do anything".to_string(),
                 /*disable_paste_burst*/ false,
             );
+            // Elpis leaves the queue unbound by default; this test exercises an explicit Tab binding.
+            composer.queue_keys = vec![key_hint::plain(KeyCode::Tab)];
             composer.set_task_running(/*running*/ true);
             composer.draft.textarea.set_text_clearing_elements(input);
 
@@ -10047,6 +10053,10 @@ mod tests {
             "Ask Elpis to do anything".to_string(),
             /*disable_paste_burst*/ false,
         );
+
+        // Elpis leaves the queue unbound by default; this test exercises an explicit Tab binding.
+
+        composer.queue_keys = vec![key_hint::plain(KeyCode::Tab)];
 
         type_chars_humanlike(&mut composer, &['h', 'i']);
 

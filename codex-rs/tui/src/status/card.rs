@@ -16,6 +16,7 @@ use codex_protocol::ThreadId;
 use codex_protocol::account::PlanType;
 use codex_protocol::config_types::ApprovalsReviewer;
 use codex_protocol::models::ActivePermissionProfile;
+use codex_protocol::models::BUILT_IN_PERMISSION_PROFILE_BYPASS_PERMISSIONS;
 use codex_protocol::models::BUILT_IN_PERMISSION_PROFILE_DANGER_FULL_ACCESS;
 use codex_protocol::models::BUILT_IN_PERMISSION_PROFILE_READ_ONLY;
 use codex_protocol::models::BUILT_IN_PERMISSION_PROFILE_WORKSPACE;
@@ -675,6 +676,15 @@ fn status_permissions_label(
             }
             _ => {}
         },
+        Some(BUILT_IN_PERMISSION_PROFILE_BYPASS_PERMISSIONS)
+            if permission_profile == &PermissionProfile::Disabled =>
+        {
+            return if approval_policy == AskForApproval::Never {
+                "Bypass permissions".to_string()
+            } else {
+                format!("No Sandbox ({approval})")
+            };
+        }
         Some(BUILT_IN_PERMISSION_PROFILE_DANGER_FULL_ACCESS)
             if permission_profile == &PermissionProfile::Disabled =>
         {

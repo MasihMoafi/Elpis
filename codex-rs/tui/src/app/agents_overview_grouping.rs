@@ -28,21 +28,34 @@ impl AgentsOverviewView {
         let state = self.state();
         let search = state.search.to_lowercase();
         let (_, status_group) = super::command_center::TASK_FILTERS[state.status_filter];
+        let roots = (0..self.rows.len())
+            .map(|index| self.root_index(index))
+            .collect::<Vec<_>>();
         let (mut pinned, mut visible): (Vec<_>, Vec<_>) = self
             .rows
             .iter()
             .enumerate()
             .filter_map(|(index, row)| {
-                let searchable = format!(
-                    "{} {} {}",
-                    row.thread.name.as_deref().unwrap_or_default(),
-                    row.thread.preview,
-                    row.thread.cwd.display(),
-                )
-                .to_lowercase();
-                ((search.is_empty() || searchable.contains(&search))
-                    && (state.rename_target == Some(row.thread_id)
-                        || status_group.is_none_or(|group| group == row.group)))
+                if roots[index] != index {
+                    return None;
+                }
+                let family_matches = self.rows.iter().enumerate().any(|(member, row)| {
+                    roots[member] == index
+                        && (search.is_empty()
+                            || format!(
+                                "{} {} {}",
+                                super::display_title(&row.thread),
+                                row.thread.preview,
+                                row.thread.cwd.display(),
+                            )
+                            .to_lowercase()
+                            .contains(&search))
+                });
+                let renaming_family = self.rows.iter().enumerate().any(|(member, row)| {
+                    roots[member] == index && state.rename_target == Some(row.thread_id)
+                });
+                (family_matches
+                    && (renaming_family || status_group.is_none_or(|group| group == row.group)))
                 .then_some(index)
             })
             .partition(|index| self.is_pinned(*index));
@@ -66,6 +79,14 @@ impl AgentsOverviewView {
         }
         pinned.extend(visible);
         pinned
+            .into_iter()
+            .flat_map(|root| {
+                roots
+                    .iter()
+                    .enumerate()
+                    .filter_map(move |(index, &parent)| (parent == root).then_some(index))
+            })
+            .collect()
     }
 
     pub(super) fn same_group(
@@ -74,6 +95,8 @@ impl AgentsOverviewView {
         left: usize,
         right: usize,
     ) -> bool {
+        let left = self.root_index(left);
+        let right = self.root_index(right);
         if self.is_pinned(left) || self.is_pinned(right) {
             return self.is_pinned(left) && self.is_pinned(right);
         }

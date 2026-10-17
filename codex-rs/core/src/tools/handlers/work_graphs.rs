@@ -19,6 +19,8 @@ use crate::tools::handlers::work_graphs_spec::create_report_agent_work_task_tool
 use crate::tools::handlers::work_graphs_spec::create_run_agent_work_graph_tool;
 use crate::tools::registry::CoreToolRuntime;
 use crate::tools::registry::ToolExecutor;
+use anyhow::anyhow;
+use anyhow::bail;
 use codex_protocol::ThreadId;
 use codex_protocol::error::CodexErrorDetails;
 use codex_protocol::models::ManagedFileSystemPermissions;
@@ -74,6 +76,8 @@ struct WorkTaskArgs {
     kind: codex_state::WorkGraphTaskKind,
     title: String,
     instruction: String,
+    provider: Option<String>,
+    model: Option<String>,
     #[serde(default)]
     depends_on: Vec<String>,
     #[serde(default)]
@@ -137,7 +141,7 @@ struct ReportToolResult {
 struct RunnerOptions {
     max_concurrency: usize,
     max_runtime: Duration,
-    spawn_config: Config,
+    task_configs: HashMap<String, Config>,
     environments: Vec<TurnEnvironmentSelection>,
     environment_snapshot: TurnEnvironmentSnapshot,
 }
@@ -277,7 +281,23 @@ async fn run_work_graph(
     cancellation_token: CancellationToken,
     arguments: String,
 ) -> Result<FunctionToolOutput, FunctionCallError> {
-    let args: RunAgentWorkGraphArgs = parse_arguments(arguments.as_str())?;
+    let prepared = prepare_work_graph(&session, &step_context, &arguments).await?;
+    run_prepared_work_graph(session, step_context, cancellation_token, prepared).await
+}
+
+pub(crate) struct PreparedWorkGraph {
+    pub(crate) graph_id: String,
+    options: RunnerOptions,
+    db: Arc<codex_state::StateRuntime>,
+    cleanup: AbortedGraphCleanup,
+}
+
+pub(crate) async fn prepare_work_graph(
+    session: &Arc<Session>,
+    step_context: &Arc<StepContext>,
+    arguments: &str,
+) -> Result<PreparedWorkGraph, FunctionCallError> {
+    let args: RunAgentWorkGraphArgs = parse_arguments(arguments)?;
     validate_runner_args(&args)?;
     let db = required_state_db(&session)?;
     let options = build_runner_options(&session, &step_context, &args).await?;
@@ -287,13 +307,6 @@ async fn run_work_graph(
             "run_agent_work_graph requires at least one selected environment".to_string(),
         )
     })?;
-
-    db.fail_unfinished_work_graphs_for_root(
-        session.thread_id.to_string().as_str(),
-        "superseded by a new work graph run after coordinator interruption",
-    )
-    .await
-    .map_err(storage_error)?;
 
     let graph_id = Uuid::new_v4().to_string();
     let tasks = args
@@ -313,6 +326,8 @@ async fn run_work_graph(
                 })?,
                 title: task.title.clone(),
                 instruction: task.instruction.clone(),
+                provider: Some(options.task_configs[&task.id].model_provider_id.clone()),
+                model: options.task_configs[&task.id].model.clone(),
                 kind: task.kind,
                 dependencies: task.depends_on.clone(),
                 write_scopes: normalize_scopes(task.write_scopes.as_slice())?,
@@ -322,6 +337,17 @@ async fn run_work_graph(
             })
         })
         .collect::<Result<Vec<_>, FunctionCallError>>()?;
+
+    // Invalid requests must not supersede a previously persisted graph.
+    codex_state::validate_work_graph_tasks(&tasks)
+        .map_err(|err| FunctionCallError::RespondToModel(format!("invalid work graph: {err}")))?;
+
+    db.fail_unfinished_work_graphs_for_root(
+        session.thread_id.to_string().as_str(),
+        "superseded by a new work graph run after coordinator interruption",
+    )
+    .await
+    .map_err(storage_error)?;
 
     db.create_work_graph(
         &codex_state::WorkGraphCreateParams {
@@ -334,17 +360,35 @@ async fn run_work_graph(
     )
     .await
     .map_err(|err| FunctionCallError::RespondToModel(format!("invalid work graph: {err}")))?;
-    db.mark_work_graph_running(graph_id.as_str())
-        .await
-        .map_err(storage_error)?;
-
-    // Elpis: Codex aborts a running tool on Esc, so the scheduler cannot clean up after itself.
-    let mut abort_guard = AbortedGraphCleanup {
-        session: Arc::clone(&session),
+    let cleanup = AbortedGraphCleanup {
+        session: Arc::clone(session),
         db: Arc::clone(&db),
         graph_id: graph_id.clone(),
         armed: true,
     };
+    db.mark_work_graph_running(graph_id.as_str())
+        .await
+        .map_err(storage_error)?;
+    Ok(PreparedWorkGraph {
+        graph_id,
+        options,
+        db,
+        cleanup,
+    })
+}
+
+pub(crate) async fn run_prepared_work_graph(
+    session: Arc<Session>,
+    step_context: Arc<StepContext>,
+    cancellation_token: CancellationToken,
+    prepared: PreparedWorkGraph,
+) -> Result<FunctionToolOutput, FunctionCallError> {
+    let PreparedWorkGraph {
+        graph_id,
+        options,
+        db,
+        cleanup: mut abort_guard,
+    } = prepared;
     let scheduled = run_scheduler(
         Arc::clone(&session),
         Arc::clone(&step_context),
@@ -571,12 +615,85 @@ fn validate_runner_args(args: &RunAgentWorkGraphArgs) -> Result<(), FunctionCall
     Ok(())
 }
 
+fn resolve_task_spawn_config(
+    base: &Config,
+    provider: Option<&str>,
+    model: Option<&str>,
+) -> anyhow::Result<Config> {
+    if provider.is_some() && model.is_none() {
+        bail!("an explicit provider requires an explicit model");
+    }
+    let provider_id = provider.unwrap_or(base.model_provider_id.as_str());
+    if provider_id.is_empty()
+        || provider_id.len() > 128
+        || !provider_id
+            .bytes()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, b'_' | b'-' | b'.'))
+        || matches!(
+            provider_id.to_ascii_lowercase().as_str(),
+            "claude" | "agy" | "antigravity"
+        )
+    {
+        bail!("unsupported native work graph provider `{provider_id}`");
+    }
+    if let Some(required) = base
+        .config_layer_stack
+        .requirements()
+        .model_provider
+        .as_ref()
+        && required.value != provider_id
+    {
+        bail!(
+            "managed policy requires model provider `{}`",
+            required.value
+        );
+    }
+    let model = model
+        .or(base.model.as_deref())
+        .ok_or_else(|| anyhow!("work graph task has no effective model"))?;
+    if model.is_empty()
+        || model.len() > 256
+        || model.chars().any(|c| c.is_whitespace() || c.is_control())
+    {
+        bail!("work graph model must be a nonempty model ID without whitespace");
+    }
+    let lower_model = model.to_ascii_lowercase();
+    if ["claude/", "agy/", "antigravity/"]
+        .iter()
+        .any(|prefix| lower_model.starts_with(prefix))
+    {
+        bail!("subscription models cannot run as native work graph workers");
+    }
+    let mut config = base.clone();
+    if provider.is_some() {
+        config.model_provider = base
+            .model_providers
+            .get(provider_id)
+            .ok_or_else(|| anyhow!("unknown native work graph provider `{provider_id}`"))?
+            .clone();
+    }
+    config.model_provider_id = provider_id.to_string();
+    config.model = Some(model.to_string());
+    Ok(config)
+}
+
 async fn build_runner_options(
     session: &Arc<Session>,
     step_context: &StepContext,
     args: &RunAgentWorkGraphArgs,
 ) -> Result<RunnerOptions, FunctionCallError> {
     let turn = &step_context.turn;
+    if !turn
+        .config
+        .features
+        .get()
+        .enabled(codex_features::Feature::SpawnCsv)
+    {
+        return Err(FunctionCallError::RespondToModel(
+            "work graphs are disabled; enable the enable_fanout feature before running a workflow"
+                .to_string(),
+        ));
+    }
     if turn.multi_agent_version == MultiAgentVersion::Disabled {
         return Err(FunctionCallError::RespondToModel(
             "multi-agent runtime is disabled; this session cannot run a work graph".to_string(),
@@ -602,13 +719,29 @@ async fn build_runner_options(
         &step_context.inherited_permissions(),
     )
     .map_err(FunctionCallError::RespondToModel)?;
+    let task_configs = args
+        .tasks
+        .iter()
+        .map(|task| {
+            resolve_task_spawn_config(
+                &spawn_config,
+                task.provider.as_deref(),
+                task.model.as_deref(),
+            )
+            .map(|config| (task.id.clone(), config))
+            .map_err(|error| {
+                FunctionCallError::RespondToModel(format!("task `{}`: {error}", task.id))
+            })
+        })
+        .collect::<Result<HashMap<_, _>, _>>()?;
+
     Ok(RunnerOptions {
         max_concurrency,
         max_runtime: args
             .max_runtime_seconds
             .map(Duration::from_secs)
             .unwrap_or(DEFAULT_TASK_RUNTIME),
-        spawn_config,
+        task_configs,
         environments: step_context.environments.to_selections(),
         environment_snapshot: step_context.environments.clone(),
     })
@@ -681,7 +814,19 @@ async fn run_scheduler(
                     options.environments.as_slice(),
                     task.environment_id.as_deref(),
                 )?;
-                let mut base_config = options.spawn_config.clone();
+                let task_config = options
+                    .task_configs
+                    .get(&task.task_id)
+                    .ok_or_else(|| anyhow!("task has no validated provider configuration"))?;
+                if task.provider.as_deref() != Some(task_config.model_provider_id.as_str())
+                    || task.model != task_config.model
+                {
+                    bail!(
+                        "persisted task provider/model does not match its validated configuration"
+                    );
+                }
+                let mut base_config =
+                    resolve_task_spawn_config(task_config, None, task.model.as_deref())?;
                 permissions
                     .map_err(|err| anyhow::anyhow!("permissions are invalid: {err}"))?
                     .apply_to(&mut base_config)

@@ -1,12 +1,15 @@
 use super::*;
 use crate::session::tests::make_session_and_context;
 use codex_protocol::models::ActivePermissionProfile;
+use codex_protocol::models::BUILT_IN_PERMISSION_PROFILE_BYPASS_PERMISSIONS;
 use codex_protocol::models::BUILT_IN_PERMISSION_PROFILE_DANGER_FULL_ACCESS;
 use pretty_assertions::assert_eq;
 use test_case::test_case;
 
 #[derive(Clone, Copy, Debug)]
 enum Preset {
+    /// Elpis: Full Access without Elpis's own refusals.
+    Bypass,
     FullAccess,
     Default,
     ReadOnly,
@@ -17,13 +20,14 @@ enum Preset {
 impl Preset {
     fn policy(self) -> AskForApproval {
         match self {
-            Self::FullAccess | Self::WorkspaceNeverAsk => AskForApproval::Never,
+            Self::Bypass | Self::FullAccess | Self::WorkspaceNeverAsk => AskForApproval::Never,
             Self::Default | Self::ReadOnly => AskForApproval::OnRequest,
         }
     }
 
     fn profile_id(self) -> &'static str {
         match self {
+            Self::Bypass => BUILT_IN_PERMISSION_PROFILE_BYPASS_PERMISSIONS,
             Self::FullAccess => BUILT_IN_PERMISSION_PROFILE_DANGER_FULL_ACCESS,
             Self::Default | Self::WorkspaceNeverAsk => BUILT_IN_PERMISSION_PROFILE_WORKSPACE,
             Self::ReadOnly => BUILT_IN_PERMISSION_PROFILE_READ_ONLY,
@@ -32,7 +36,7 @@ impl Preset {
 
     fn update(self) -> SessionSettingsUpdate {
         let profile = match self {
-            Self::FullAccess => PermissionProfile::Disabled,
+            Self::Bypass | Self::FullAccess => PermissionProfile::Disabled,
             Self::Default | Self::WorkspaceNeverAsk => PermissionProfile::workspace_write(),
             Self::ReadOnly => PermissionProfile::read_only(),
         };
@@ -62,6 +66,10 @@ async fn configuration(session: &Session, preset: Preset) -> SessionConfiguratio
 #[test_case(Preset::ReadOnly, Preset::Default, false; "widening to the workspace")]
 #[test_case(Preset::Default, Preset::Default, false; "no change")]
 #[test_case(Preset::WorkspaceNeverAsk, Preset::ReadOnly, false; "a policy change is not ordered")]
+#[test_case(Preset::Bypass, Preset::FullAccess, true; "leaving bypass for full access")]
+#[test_case(Preset::Bypass, Preset::Default, true; "leaving bypass")]
+#[test_case(Preset::FullAccess, Preset::Bypass, false; "granting bypass")]
+#[test_case(Preset::Bypass, Preset::Bypass, false; "bypass unchanged")]
 #[tokio::test]
 async fn only_a_provable_removal_reaches_children(from: Preset, to: Preset, removes: bool) {
     let (session, _) = make_session_and_context().await;
@@ -104,6 +112,62 @@ async fn a_child_follows_only_a_reduction(child: Preset, lowered: bool) {
             Some(expected.profile_id().to_string()),
         )
     );
+}
+
+/// Elpis: a child in Bypass permissions whose parent drops to Full Access drops with it.
+/// Fails if Full Access and Bypass compare as equal: the child would keep bypassing.
+#[tokio::test]
+async fn a_bypass_child_follows_its_parent_to_full_access() {
+    let (session, _) = make_session_and_context().await;
+    session
+        .update_settings(Preset::Bypass.update())
+        .await
+        .expect("child permissions");
+    let parent = configuration(&session, Preset::FullAccess).await;
+
+    assert!(
+        session
+            .follow_parent_permission_reduction(permission_update(&parent))
+            .await
+            .expect("valid update")
+    );
+    assert_eq!(
+        profile_id(&session).await,
+        Some(BUILT_IN_PERMISSION_PROFILE_DANGER_FULL_ACCESS.to_string())
+    );
+}
+
+/// Elpis: commands are decided per turn environment; the bypass selection must reach it.
+#[tokio::test]
+async fn bypass_reaches_the_environments_that_decide_commands() {
+    let (session, _) = make_session_and_context().await;
+    for (preset, bypass) in [
+        (Preset::Bypass, true),
+        (Preset::FullAccess, false),
+        (Preset::Default, false),
+    ] {
+        session
+            .update_settings(preset.update())
+            .await
+            .expect("preset is valid");
+        let turn = session.new_default_turn().await;
+        let environments = turn
+            .initial_environments
+            .turn_environments()
+            .collect::<Vec<_>>();
+        assert!(!environments.is_empty(), "{preset:?}");
+        for environment in environments {
+            assert_eq!(
+                codex_protocol::models::bypass_permissions_active(
+                    turn.approval_policy(),
+                    environment.permission_profile(),
+                    environment.active_permission_profile().as_ref(),
+                ),
+                bypass,
+                "{preset:?}"
+            );
+        }
+    }
 }
 
 async fn profile_id(session: &Session) -> Option<String> {

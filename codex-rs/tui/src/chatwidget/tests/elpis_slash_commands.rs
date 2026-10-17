@@ -47,7 +47,7 @@ fn elpis_commands_are_listed_in_their_v030_order_with_v030_descriptions() {
         (
             "memory-model",
             Some(
-                "set background tasks (pruning and session naming); memory uses the responding agent: /memory-model <id|provider:id|default>",
+                "set Smart Prune's fallback model; memory uses the responding agent: /memory-model <id|provider:id|default>",
             ),
         ),
         ("permissions", None),
@@ -104,8 +104,9 @@ fn hand_selected_slash_command_set_adds_approved_review_and_worktree() {
     let mut expected = vec![
         "model", "effort", "pruner-model", "memory-model", "ide", "permissions", "yolo",
         "hotkeys", "settings", "add", "skills", "hooks", "review", "rename", "new", "resume", "fork", "worktree",
-        "init", "compact", "prune", "smart-prune", "force-prune", "plan", "voice", "goal",
-        "agent", "copy", "diff", "usage", "context", "dashboard", "theme", "mcp", "quit",
+        // Masih, 16 Oct 2026: open the TUI's chat in the desktop app.
+        "app", "init", "compact", "prune", "smart-prune", "force-prune", "plan", "voice", "goal",
+        "agent", "copy", "diff", "usage", "context", "dashboard", "theme", "mcp", "rag", "quit",
         "clear", "subagents",
     ];
     if cfg!(target_os = "android") {
@@ -116,6 +117,17 @@ fn hand_selected_slash_command_set_adds_approved_review_and_worktree() {
         expected,
         "Changing Masih's selected command set requires his explicit agreement",
     );
+}
+
+#[test]
+fn app_command_opens_this_chat_in_the_elpis_desktop_app() {
+    let (name, command) = built_in_slash_commands()
+        .into_iter()
+        .find(|(name, _)| *name == "app")
+        .expect("/app is listed");
+    assert_eq!(name, "app");
+    assert_eq!(command.description(), "open this chat in the Elpis desktop app");
+    assert!(command.available_during_task());
 }
 
 #[test]
@@ -133,6 +145,7 @@ fn typed_elpis_names_reach_elpis_commands_and_upstream_names_stay_upstream() {
         ("dashboard", SlashCommand::Dashboard),
         ("add", SlashCommand::Add),
         ("context", SlashCommand::Context),
+        ("rag", SlashCommand::Rag),
     ] {
         assert_eq!(SlashCommand::from_str(name), Ok(cmd));
         assert_eq!(find_builtin_command(name, flags), Some(cmd), "/{name}");
@@ -309,6 +322,38 @@ async fn queued_plain_text_is_sent_to_the_model() {
     chat.submit_queued_slash_prompt(UserMessage::from("memory-model gpt-x").into());
 
     assert_matches!(next_submit_op(&mut ops), Op::UserTurn { .. });
+}
+
+#[tokio::test]
+async fn rag_dispatches_the_real_tool_instructions_for_any_provider() {
+    for provider in ["openai", "claude", "openrouter", "local"] {
+        let (mut chat, _app_events, mut ops) = make_chatwidget_manual(None).await;
+        chat.config.model_provider_id = provider.to_string();
+        chat.thread_id = Some(ThreadId::new());
+        chat.dispatch_command_with_args(SlashCommand::Rag, "show".to_string(), Vec::new());
+        let Op::UserTurn { items, .. } = ops.try_recv().expect("/rag must submit a provider-neutral turn") else {
+            panic!("/rag did not reach the provider turn");
+        };
+        let UserInput::Text { text, .. } = &items[0] else { panic!("missing RAG instructions") };
+        assert!(text.contains("rag config show"));
+        assert!(text.ends_with("RAG request: show"));
+        assert!(text.contains("Never request, paste, or print API keys"));
+    }
+}
+
+#[tokio::test]
+async fn bare_rag_and_plain_rag_text_take_distinct_paths() {
+    let (mut chat, _app_events, mut ops) = make_chatwidget_manual(None).await;
+    chat.thread_id = Some(ThreadId::new());
+    chat.dispatch_command(SlashCommand::Rag);
+    let Op::UserTurn { items, .. } = ops.try_recv().unwrap() else { panic!("bare /rag was dropped") };
+    assert!(matches!(&items[0], UserInput::Text { text, .. } if text.contains("An empty request means show current RAG settings")));
+    // A plain message stays literal; only the selected slash command adds instructions.
+    let (mut chat, _app_events, mut ops) = make_chatwidget_manual(None).await;
+    chat.thread_id = Some(ThreadId::new());
+    chat.submit_user_message("rag show".into());
+    let Op::UserTurn { items, .. } = ops.try_recv().unwrap() else { panic!("literal message was dropped") };
+    assert!(matches!(&items[0], UserInput::Text { text, .. } if text == "rag show"));
 }
 
 #[tokio::test]

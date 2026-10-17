@@ -3,6 +3,7 @@ mod lifecycle;
 mod regular;
 mod review;
 mod user_shell;
+mod work_graph;
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -67,6 +68,7 @@ pub(crate) use review::ReviewTask;
 pub(crate) use user_shell::UserShellCommandMode;
 pub(crate) use user_shell::UserShellCommandTask;
 pub(crate) use user_shell::execute_user_shell_command;
+pub(crate) use work_graph::WorkGraphTask;
 
 pub(crate) const GRACEFULL_INTERRUPTION_TIMEOUT_MS: u64 = 100;
 const TASK_COMPACT_METRIC: &str = "codex.task.compact";
@@ -290,6 +292,17 @@ impl Session {
         input: Vec<TurnInput>,
         task: T,
     ) {
+        self.start_task_with_reservation(turn_context, input, task, None)
+            .await;
+    }
+
+    pub(crate) async fn start_task_with_reservation<T: SessionTask>(
+        self: &Arc<Self>,
+        turn_context: Arc<TurnContext>,
+        input: Vec<TurnInput>,
+        task: T,
+        reservation: Option<Arc<Mutex<TurnState>>>,
+    ) -> bool {
         self.activate_plugin_selection(&turn_context).await;
         // Inherited or recovered roots are applied before task start. Otherwise this
         // task owns its turn, including background work. Later mail cannot change it.
@@ -312,9 +325,22 @@ impl Session {
         let cancellation_token = CancellationToken::new();
         let done = Arc::new(Notify::new());
 
-        let (pending_items, _) = self.input_queue.drain_mailbox_input_items().await;
+        // The scheduler never consumes conversational input. Leave arriving mail
+        // available for its normal turn instead of silently draining it here.
+        let pending_items = if task_kind == TaskKind::WorkGraph {
+            Vec::new()
+        } else {
+            self.input_queue.drain_mailbox_input_items().await.0
+        };
         let turn_state = {
             let mut active = self.active_turn.lock().await;
+            if reservation.as_ref().is_some_and(|expected| {
+                active.as_ref().is_none_or(|turn| {
+                    turn.task.is_some() || !Arc::ptr_eq(&turn.turn_state, expected)
+                })
+            }) {
+                return false;
+            }
             self.record_started_turn(
                 &turn_context.sub_id,
                 (task_kind == TaskKind::Regular).then(|| turn_context.attribution()),
@@ -336,6 +362,13 @@ impl Session {
         .await;
 
         let mut active = self.active_turn.lock().await;
+        if reservation.as_ref().is_some_and(|expected| {
+            active
+                .as_ref()
+                .is_none_or(|turn| turn.task.is_some() || !Arc::ptr_eq(&turn.turn_state, expected))
+        }) {
+            return false;
+        }
         let turn = active.get_or_insert_with(ActiveTurn::default);
         debug_assert!(turn.task.is_none());
         let agent_execution_guard = self.services.agent_control.admit_turn(
@@ -422,6 +455,7 @@ impl Session {
             _timer: timer,
         };
         turn.task = Some(running_task);
+        true
     }
 
     /// Returns whether an extension has marked this thread as durably asleep.

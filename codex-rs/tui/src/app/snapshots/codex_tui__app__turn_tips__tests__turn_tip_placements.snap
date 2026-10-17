@@ -1,5 +1,6 @@
 ---
 source: tui/src/app/turn_tips_tests.rs
+assertion_line: 213
 expression: "crate::chatwidget::tests::helpers::normalize_snapshot_paths(screens.join(\"\\n\\n\"))"
 ---
 working=true, response rows=1, 80x12
@@ -39,12 +40,12 @@ working=false, response rows=1, 80x12
   ? for shortcuts
 
 working=false, response rows=30, 80x12
-› Show a response.
-
-• Done.
-  └ Tip: Try /help.
-
-  Worked for [duration] • [completion time]
+› Show a response.                                                             │
+                                                                               ┃
+• Done.                                                                        ┃
+  └ Tip: Try /help.                                                            ┃
+                                                                               ┃
+  Worked for [duration] • [completion time]                                                        ┃
 
 
 › Ask Elpis to do anything
@@ -53,9 +54,9 @@ working=false, response rows=30, 80x12
   ? for shortcuts
 
 working=false, response rows=1, 80x9
-• Done.
-
-  Worked for [duration] • [completion time]
+• Done.                                                                        │
+                                                                               ┃
+  Worked for [duration] • [completion time]                                                        ┃
 
 
 › Ask Elpis to do anything
@@ -64,10 +65,10 @@ working=false, response rows=1, 80x9
   ? for shortcuts
 
 working=false, response rows=1, 80x10
-› Show a response.
-• Done.
-
-  Worked for [duration] • [completion time]
+› Show a response.                                                             │
+• Done.                                                                        │
+                                                                               ┃
+  Worked for [duration] • [completion time]                                                        ┃
 
 
 › Ask Elpis to do anything
@@ -89,12 +90,12 @@ working=false, response rows=1, 80x11
   ? for shortcuts
 
 working=false, response rows=1, 12x12
-
-• Done.
-
-  Worked
-  for <1s •
-  [completion time]
+           │
+• Done.    ┃
+           ┃
+  Worked   ┃
+  for 1s • ┃
+  [completion time]    ┃
 
 
 › Ask Elpis

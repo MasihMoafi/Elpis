@@ -1306,7 +1306,10 @@ async fn overview_names_models_from_the_catalog() {
     }
     app.chat_widget.show_bottom_pane_view(Box::new(view));
     let rendered = render_bottom_popup(&app.chat_widget, /*width*/ 100);
-    assert!(rendered.contains("Opus 5.5 (Claude subscription)"), "{rendered}");
+    assert!(
+        rendered.contains("Opus 5.5 (Claude subscription)"),
+        "{rendered}"
+    );
     assert!(!rendered.contains("claude/opus"), "{rendered}");
 }
 
@@ -2488,6 +2491,9 @@ async fn resume_picker_round_trip_preserves_each_threads_input() -> Result<()> {
                 /*replay_kind*/ None,
             );
             let follow_up = format!("Follow-up for {}", target.thread_id);
+            app.keymap.composer.queue = vec![crate::key_hint::plain(KeyCode::Tab)];
+            app.chat_widget
+                .apply_keymap_update(Default::default(), &app.keymap);
             app.chat_widget.apply_external_edit(follow_up.clone());
             app.chat_widget
                 .handle_key_event(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
@@ -2898,7 +2904,7 @@ async fn command_center_action_failures_remain_visible() -> Result<()> {
     .await?;
     let rendered = render_bottom_popup(&app.chat_widget, /*width*/ 96);
     assert!(rendered.contains("Unable to complete action"), "{rendered}");
-    assert!(rendered.contains("is no longer available"), "{rendered}");
+    assert!(rendered.contains("is unavailable"), "{rendered}");
     server.shutdown().await?;
     Ok(())
 }
