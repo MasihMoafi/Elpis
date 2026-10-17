@@ -873,7 +873,7 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .canvas-critical { display:grid; gap:2px; margin:6px 0 0; padding:6px 8px; border-left:2px solid var(--foreground); color:var(--foreground); font-size:12.5px; line-height:1.35; overflow-wrap:anywhere; cursor:default; }
 .canvas-critical span { font:500 10.5px/1.6 var(--mono); letter-spacing:.08em; text-transform:uppercase; color:var(--muted-foreground); }
 .canvas-help { margin:6px 4px 0; color:var(--muted-foreground); font-size:12px; line-height:1.4; }
-[data-kind="mother"] { --kind:var(--foreground); } [data-kind="agent"] { --kind:#6d5bd0; }
+[data-kind="mother"], [data-kind="father"] { --kind:var(--foreground); } [data-kind="agent"] { --kind:#6d5bd0; }
 .dark [data-kind="agent"] { --kind:#ab84ff; }
 .canvas-board { position:relative; display:flex; flex-direction:column; min-width:0; min-height:0; background:var(--background); }
 .canvas-board > .react-flow { flex:1 1 0; height:auto; min-height:0; }
@@ -981,7 +981,9 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .iso-link[data-hot]:not([data-state]) { --iso-wire:var(--foreground); }
 .iso-wire { fill:none; stroke:var(--iso-wire); stroke-width:1.8; stroke-dasharray:7 5; stroke-linejoin:round; }
 .iso-wire-bed { fill:none; stroke:var(--iso-wire); stroke-width:6; stroke-linejoin:round; opacity:.13; }
-.iso-link[data-mother] .iso-wire { stroke-dasharray:2 5; }
+.iso-link:is([data-mother], [data-father]) .iso-wire { stroke-dasharray:2 5; }
+/* A two-way wire sets no order: a plain line, with no chevrons. */
+.iso-link[data-kind="alongside"] .iso-wire { stroke-dasharray:none; }
 .iso-link[data-state="cut"] .iso-wire { stroke-dasharray:3 5; }
 .iso-link[data-hot] .iso-wire { stroke-width:2.6; }
 .iso-link[data-hot] .iso-wire-bed { opacity:.24; }
@@ -1018,7 +1020,7 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .iso-labels { position:absolute; inset:0; pointer-events:none; }
 .iso-label { position:absolute; display:flex; align-items:center; gap:6px; max-width:176px; padding:2px 8px 2px 3px; transform:translate(-50%, -100%); border:1px solid var(--hairline); border-radius:4px; background:color-mix(in oklab, var(--card) 88%, transparent); color:var(--foreground); font-size:13px; font-weight:600; line-height:18px; white-space:nowrap; }
 .iso-label > span { min-width:0; overflow:hidden; text-overflow:ellipsis; }
-.iso-label[data-kind="mother"] { padding-inline-start:8px; }
+.iso-label:is([data-kind="mother"], [data-kind="father"]) { padding-inline-start:8px; }
 .iso-label[data-short] { padding:2px; }
 .iso-label:is([data-hot], [data-selected]) { z-index:1; }
 .iso-label[data-hot] { border-color:var(--foreground); }

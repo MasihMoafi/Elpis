@@ -34,6 +34,13 @@ test('the layout: the Mother in column 0, each agent in its wave column, a wave 
   assert.equal(new Set(places.map(place => `${place.at.x},${place.at.y}`)).size, places.length);
 });
 
+test('past the Mother\'s ten, the Father stands in her column one row under her; without him nothing moves', () => {
+  const places = isoLayout(graph, waves, 'father');
+  assert.deepEqual(places.slice(0, 2).map(place => [place.id, place.kind, place.column, place.row]), [['mother', 'mother', 0, 0], ['father', 'father', 0, 1]]);
+  assert.deepEqual(places.find(place => place.id === 'father').at, project(0, ISO_STEP.row));
+  assert.deepEqual(places.filter(place => place.kind === 'agent'), isoLayout(graph, waves).filter(place => place.kind === 'agent'));
+});
+
 test('an agent on a loop (no wave) stands in a column after the last wave, never on the Mother', () => {
   const places = isoLayout({ nodes: [...graph.nodes, node('stray', 'agent')] }, waves);
   assert.deepEqual(places.filter(place => place.id === 'stray').map(place => [place.column, place.row]), [[3, 0]]);

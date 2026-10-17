@@ -3,7 +3,7 @@
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { Maximize2, Minus, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { MOTHER, checkOf, waves, type CanvasGraph, type TaskStatus } from "@/lib/canvas";
+import { CHECK_LABEL as CHECK, FATHER, MOTHER, STATUS_LABEL as STATUS, checkOf, waits, waves, type CanvasEdge, type CanvasGraph, type TaskStatus } from "@/lib/canvas";
 import { ISO_STEP, isoFit, isoLayout, isoRoute, project, type Box, type Ground, type IsoPlace, type Point } from "@/lib/iso";
 
 /** The agents canvas's second view (components/agents-canvas.tsx): the graph as Deus Ex's hacking screen, for
@@ -12,16 +12,13 @@ import { ISO_STEP, isoFit, isoLayout, isoRoute, project, type Box, type Ground, 
  * text stays upright and legible at any zoom. */
 
 type State = TaskStatus | "idle";
-/** The flat board's words for a state (agents-canvas.tsx STATUS_LABEL and CHECK_LABEL), so both views say the same. */
-const STATUS: Record<State, string> = { idle: "not run", pending: "waiting", running: "running", succeeded: "done", failed: "failed", blocked: "blocked", cancelled: "cancelled" };
-const CHECK: Record<State, string> = { idle: "Checked after it runs", pending: "Check waits for it", running: "Being checked", succeeded: "Check passed", failed: "Check failed", blocked: "Check blocked", cancelled: "Check cancelled" };
 
 /** A pedestal in ground units: the slab, the block standing on it, the ring of its check and the plate a selection
- * or focus lights around it. The Mother is a taller pillar. */
+ * or focus lights around it. The Mother and the Father are taller pillars. */
 type Shape = { base: number; baseHeight: number; core: number; coreHeight: number; ring: number; plate: number };
 const AGENT: Shape = { base: 64, baseHeight: 10, core: 36, coreHeight: 30, ring: 50, plate: 84 };
 const PILLAR: Shape = { base: 72, baseHeight: 12, core: 40, coreHeight: 86, ring: 56, plate: 94 };
-const shapeOf = (place: IsoPlace) => place.kind === "mother" ? PILLAR : AGENT;
+const shapeOf = (place: IsoPlace) => place.kind === "agent" ? AGENT : PILLAR;
 const height = (shape: Shape) => shape.baseHeight + shape.coreHeight;
 /** A ground circle of radius r is this ellipse on screen. */
 const ellipse = (r: number) => ({ rx: r * Math.sqrt(1.5), ry: r * Math.SQRT1_2 });
@@ -75,10 +72,12 @@ function Prism({ ground, side, bottom, top, className }: { ground: Ground; side:
 
 type States = Record<string, { status: TaskStatus }>;
 /** A wire's state, as the flat board colours it: live once its first agent's check passed and the second runs (a
- * Mother's wire once its agent runs), done once that check passed, cut when it failed or the second is blocked. */
-function wireState(source: string, target: string, states: States) {
+ * Mother's or the Father's wire once its agent runs), done once that check passed, cut when it failed or the second
+ * is blocked. A two-way wire sets no order, so it carries none. */
+function wireState({ source, target, kind }: CanvasEdge, states: States) {
   const to = states[target]?.status;
-  if (source === MOTHER) return to === "running" ? "live" : undefined;
+  if (kind === "alongside") return undefined;
+  if (source === MOTHER || source === FATHER) return to === "running" ? "live" : undefined;
   const from = states[checkOf(source)]?.status;
   return from === "failed" || to === "blocked" ? "cut" : from === "succeeded" && to === "running" ? "live" : from === "succeeded" ? "done" : undefined;
 }
@@ -108,15 +107,17 @@ export function ViewToggle({ iso, onChange }: { iso: boolean; onChange: (iso: bo
   </div>;
 }
 
-type Props = { graph: CanvasGraph; states: States; selected: string[]; onSelect: (ids: string[]) => void; onOpen: (id: string) => void; dark: boolean };
-/** The isometric board: the Mother and each agent on a pedestal in run order, wires on the ground. A click selects
+/** `father`: the agents past the Mother's ten, which the Father runs (lib/canvas.ts `parents`). */
+type Props = { graph: CanvasGraph; father: string[]; states: States; selected: string[]; onSelect: (ids: string[]) => void; onOpen: (id: string) => void; dark: boolean };
+/** The isometric board: the Mother (and the Father) and each agent on a pedestal in run order, wires on the ground. A click selects
  * (Shift adds), a double-click or Enter opens an agent's dashboard, the arrows move between agents in run order, the
  * wheel zooms and a drag pans. */
-export function IsoBoard({ graph, states, selected, onSelect, onOpen, dark }: Props) {
+export function IsoBoard({ graph, father, states, selected, onSelect, onOpen, dark }: Props) {
   const root = useRef<HTMLDivElement>(null), buttons = useRef(new Map<string, SVGGElement>());
   const blur = `iso-blur-${useId().replace(/[^\w-]/g, "")}`;
   const wave = useMemo(() => waves(graph), [graph]);
-  const places = useMemo(() => isoLayout(graph, wave), [graph, wave]);
+  const fathered = father.length > 0, his = new Set(father);
+  const places = useMemo(() => isoLayout(graph, wave, fathered ? FATHER : undefined), [graph, wave, fathered]);
   const content = useMemo(() => bounds(places), [places]);
   const byId = new Map(places.map(place => [place.id, place])), nodes = new Map(graph.nodes.map(node => [node.id, node]));
   const order = places.map(place => place.id), agents = places.filter(place => place.kind === "agent");
@@ -153,17 +154,24 @@ export function IsoBoard({ graph, states, selected, onSelect, onOpen, dark }: Pr
     return () => element.removeEventListener("wheel", wheel);
   });
 
-  const statusOf = (id: string): State => states[id]?.status ?? "idle";
-  const tasks = Object.values(states).map(task => task.status);
-  // The Mother runs while any of her agents does.
-  const motherState: State = !tasks.length ? "idle" : tasks.some(status => status === "running" || status === "pending") ? "running" : tasks.some(status => status === "failed" || status === "blocked") ? "failed" : "succeeded";
-  const titleOf = (id: string) => { const node = nodes.get(id); return id === MOTHER ? "Mother" : node?.type === "agent" ? node.data.title || "Untitled" : id; };
-  const describe = (id: string) => id === MOTHER
-    ? `this run's chat, ${agents.length} ${agents.length === 1 ? "agent" : "agents"}, ${STATUS[motherState]}`
+  // Each parent runs while any of her (his) agents or their checks does.
+  const hisTasks = new Set(father.flatMap(id => [id, checkOf(id)]));
+  const partState = (mine: boolean): State => {
+    const tasks = Object.entries(states).filter(([id]) => hisTasks.has(id) === !mine).map(([, task]) => task.status);
+    return !tasks.length ? "idle" : tasks.some(status => status === "running" || status === "pending") ? "running" : tasks.some(status => status === "failed" || status === "blocked") ? "failed" : "succeeded";
+  };
+  const motherState = partState(true), fatherState = partState(false);
+  const statusOf = (id: string): State => id === MOTHER ? motherState : id === FATHER ? fatherState : states[id]?.status ?? "idle";
+  const titleOf = (id: string) => { const node = nodes.get(id); return id === MOTHER ? "Mother" : id === FATHER ? "Father" : node?.type === "agent" ? node.data.title || "Untitled" : id; };
+  const count = (n: number) => `${n} ${n === 1 ? "agent" : "agents"}`;
+  const parentLine = (id: string) => id === MOTHER ? ["This run's chat", count(agents.length), STATUS[motherState]] : ["His own chat", count(father.length), fatherState === "idle" ? "after her part" : STATUS[fatherState]];
+  const describe = (id: string) => id === MOTHER || id === FATHER ? parentLine(id).join(", ").replace(/^./, letter => letter.toLowerCase())
     : `${wave.has(id) ? `wave ${wave.get(id)}` : "no wave"}, ${STATUS[statusOf(id)]}, ${CHECK[statusOf(checkOf(id))].toLowerCase()}`;
-  const wires = [
-    // The Mother's wires: she starts every agent of the first wave.
-    ...agents.filter(place => wave.get(place.id) === 1).map(place => ({ id: `${MOTHER}->${place.id}`, source: MOTHER, target: place.id })),
+  const wires: CanvasEdge[] = [
+    // The parents' wires, as on the flat board: the Mother starts her agents of the first wave; the Father starts his
+    // agents that wait for none of his others.
+    ...agents.filter(place => wave.get(place.id) === 1 && !his.has(place.id)).map(place => ({ id: `${MOTHER}->${place.id}`, source: MOTHER, target: place.id })),
+    ...agents.filter(place => his.has(place.id) && !graph.edges.some(edge => waits(edge) && edge.target === place.id && his.has(edge.source))).map(place => ({ id: `${FATHER}->${place.id}`, source: FATHER, target: place.id })),
     ...graph.edges.filter(edge => byId.has(edge.source) && byId.has(edge.target)),
   ];
 
@@ -171,8 +179,8 @@ export function IsoBoard({ graph, states, selected, onSelect, onOpen, dark }: Pr
   const tabbable = focusId && byId.has(focusId) ? focusId : selected.find(id => byId.has(id)) ?? order[0];
   const hot = hovered ?? focused;
   const subject = hot ?? (selected.length === 1 && byId.has(selected[0]) ? selected[0] : null);
-  const pick = (id: string, add: boolean) => { setFocusId(id); onSelect(add ? (selected.includes(id) ? selected.filter(item => item !== id) : [...selected, id]) : [id]); };
-  const open = (id: string) => { pick(id, false); if (id !== MOTHER) onOpen(id); };
+  const pick = (id: string, add: boolean) => { setFocusId(id); onSelect(add && id !== FATHER ? (selected.includes(id) ? selected.filter(item => item !== id) : [...selected, id]) : [id]); };
+  const open = (id: string) => { pick(id, false); if (byId.get(id)?.kind === "agent") onOpen(id); };
   const screen = (point: Point) => ({ x: view.x + view.zoom * point.x, y: view.y + view.zoom * point.y });
   // An agent reached by the keys is brought into view.
   const reveal = (id: string) => {
@@ -204,7 +212,7 @@ export function IsoBoard({ graph, states, selected, onSelect, onOpen, dark }: Pr
   // the Mother's and those always show in full.
   const anchor = (place: IsoPlace) => { const shape = shapeOf(place); return screen({ x: place.at.x, y: place.at.y - shape.core / 2 - height(shape) }); };
   const block = (place: IsoPlace): Box => { const shape = shapeOf(place), top = anchor(place), half = shape.core * Math.cos(Math.PI / 6) * view.zoom; return { left: top.x - half, top: top.y, right: top.x + half, bottom: top.y + (shape.core / 2 + shape.coreHeight) * view.zoom }; };
-  const kept = (place: IsoPlace) => place.kind === "mother" || place.id === hot || selected.includes(place.id);
+  const kept = (place: IsoPlace) => place.kind !== "agent" || place.id === hot || selected.includes(place.id);
   const full = new Set<string>(), taken: Box[] = [];
   for (const place of [...places].sort((a, b) => Number(kept(b)) - Number(kept(a)))) {
     const at = anchor(place), width = Math.min(LABEL.max, textWidth(titleOf(place.id), family) + LABEL.chrome + (place.kind === "agent" ? LABEL.badge : 0));
@@ -233,17 +241,17 @@ export function IsoBoard({ graph, states, selected, onSelect, onOpen, dark }: Pr
       <g className="iso-world" transform={`translate(${view.x.toFixed(1)},${view.y.toFixed(1)}) scale(${view.zoom.toFixed(4)})`}>
         <polygon className="iso-floor" points={points([project(u0, v0), project(u1, v0), project(u1, v1), project(u0, v1)])} />
         <g className="iso-grid">{grid.map(([a, b], index) => <line key={index} x1={a.x} y1={a.y} x2={b.x} y2={b.y} />)}</g>
-        {places.map(place => { const glow = ellipse(shapeOf(place).ring * 1.15); return <ellipse key={place.id} className="iso-glow" data-status={place.id === MOTHER ? motherState : statusOf(place.id)} filter={`url(#${blur})`} cx={place.at.x} cy={place.at.y} rx={glow.rx} ry={glow.ry} />; })}
+        {places.map(place => { const glow = ellipse(shapeOf(place).ring * 1.15); return <ellipse key={place.id} className="iso-glow" data-status={statusOf(place.id)} filter={`url(#${blur})`} cx={place.at.x} cy={place.at.y} rx={glow.rx} ry={glow.ry} />; })}
         {wires.map(wire => {
-          const route = isoRoute(byId.get(wire.source)!.ground, byId.get(wire.target)!.ground), path = `M ${route.map(point => xy(project(point.u, point.v))).join(" L ")}`, state = wireState(wire.source, wire.target, states);
-          return <g key={wire.id} className="iso-link" data-state={state} data-mother={wire.source === MOTHER || undefined} data-hot={(hot && (wire.source === hot || wire.target === hot)) || undefined}>
-            <path className="iso-wire-bed" d={path} /><path className="iso-wire" d={path} /><Chevrons route={route} live={state === "live"} />
+          const route = isoRoute(byId.get(wire.source)!.ground, byId.get(wire.target)!.ground), path = `M ${route.map(point => xy(project(point.u, point.v))).join(" L ")}`, state = wireState(wire, states);
+          return <g key={wire.id} className="iso-link" data-state={state} data-kind={wire.kind} data-mother={wire.source === MOTHER || undefined} data-father={wire.source === FATHER || undefined} data-hot={(hot && (wire.source === hot || wire.target === hot)) || undefined}>
+            <path className="iso-wire-bed" d={path} /><path className="iso-wire" d={path} />{waits(wire) && <Chevrons route={route} live={state === "live"} />}
           </g>;
         })}
         {painted.map(place => {
-          const shape = shapeOf(place), ring = ellipse(shape.ring), mother = place.kind === "mother";
+          const shape = shapeOf(place), ring = ellipse(shape.ring), pillar = place.kind !== "agent";
           return <g key={place.id} ref={element => { if (element) buttons.current.set(place.id, element); else buttons.current.delete(place.id); }}
-            className="iso-node" data-id={place.id} data-kind={place.kind} data-status={mother ? motherState : statusOf(place.id)} data-hot={hot === place.id || undefined}
+            className="iso-node" data-id={place.id} data-kind={place.kind} data-status={statusOf(place.id)} data-hot={hot === place.id || undefined}
             role="button" tabIndex={tabbable === place.id ? 0 : -1} aria-pressed={selected.includes(place.id)} aria-label={`${titleOf(place.id)}: ${describe(place.id)}`}
             onClick={event => pick(place.id, event.shiftKey || event.ctrlKey || event.metaKey)} onDoubleClick={() => open(place.id)} onKeyDown={event => keys(event, place.id)}
             onPointerEnter={() => setHovered(place.id)} onPointerLeave={() => setHovered(current => current === place.id ? null : current)}
@@ -251,7 +259,7 @@ export function IsoBoard({ graph, states, selected, onSelect, onOpen, dark }: Pr
             <ellipse className="iso-hit" cx={place.at.x} cy={place.at.y} rx={ring.rx} ry={ring.ry} />
             <polygon className="iso-plate" points={points(square(place.ground, shape.plate * 0.9))} />
             <polygon className="iso-focus" points={points(square(place.ground, shape.plate))} />
-            {!mother && <ellipse className="iso-ring" data-check={statusOf(checkOf(place.id))} cx={place.at.x} cy={place.at.y} rx={ring.rx} ry={ring.ry} />}
+            {!pillar && <ellipse className="iso-ring" data-check={statusOf(checkOf(place.id))} cx={place.at.x} cy={place.at.y} rx={ring.rx} ry={ring.ry} />}
             <g className="iso-lift">
               <Prism className="iso-base" ground={place.ground} side={shape.base} bottom={0} top={shape.baseHeight} />
               <Prism className="iso-core" ground={place.ground} side={shape.core} bottom={shape.baseHeight} top={height(shape)} />
@@ -278,7 +286,7 @@ export function IsoBoard({ graph, states, selected, onSelect, onOpen, dark }: Pr
     {/* The status panel, as Deus Ex's: what the pointer, the keys or the selection is on. */}
     <section className="iso-hud iso-status iso-chamfer" aria-label="Agent status" data-kind={subjectPlace?.kind}>
       {subjectPlace ? <><strong>{titleOf(subjectPlace.id)}</strong>
-        <small>{subjectPlace.kind === "mother" ? `This run's chat · ${agents.length} ${agents.length === 1 ? "agent" : "agents"} · ${STATUS[motherState]}` : `Wave ${wave.get(subjectPlace.id) ?? "–"} · ${STATUS[statusOf(subjectPlace.id)]} · ${CHECK[statusOf(checkOf(subjectPlace.id))]}`}</small></>
+        <small>{subjectPlace.kind !== "agent" ? parentLine(subjectPlace.id).join(" · ") : `Wave ${wave.get(subjectPlace.id) ?? "–"} · ${STATUS[statusOf(subjectPlace.id)]} · ${CHECK[statusOf(checkOf(subjectPlace.id))]}`}</small></>
         : <><strong>{agents.length} {agents.length === 1 ? "agent" : "agents"} in {new Set(wave.values()).size} {new Set(wave.values()).size === 1 ? "wave" : "waves"}</strong><small>Click an agent to select it · Enter opens it</small></>}
     </section>
   </div>;

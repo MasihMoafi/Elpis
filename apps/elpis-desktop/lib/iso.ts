@@ -14,23 +14,27 @@ export type Box = { left: number; top: number; right: number; bottom: number };
  * right and down, a wave's rows left and down. `height` lifts the point straight up. */
 export const project = (u: number, v: number, height = 0): Point => ({ x: (u - v) * COS, y: (u + v) * SIN - height });
 
-export type IsoPlace = { id: string; kind: "mother" | "agent"; column: number; row: number; ground: Ground; at: Point };
+export type IsoPlace = { id: string; kind: "mother" | "father" | "agent"; column: number; row: number; ground: Ground; at: Point };
 /** The Mother and the agents in run order: the Mother in column 0, each agent in its wave's column (`waves` from
  * lib/canvas.ts), a wave's agents top to bottom as the flat board has them and centred on row 0. An agent on a loop
- * has no wave and stands in a column after the last one. Notes are not drawn. */
-export function isoLayout(graph: Pick<CanvasGraph, "nodes">, waves: ReadonlyMap<string, number>): IsoPlace[] {
+ * has no wave and stands in a column after the last one. Notes are not drawn. With agents past the Mother's ten
+ * (lib/canvas.ts `parents`), the Father (`father`, his id) stands one row under her, as on the flat board. */
+export function isoLayout(graph: Pick<CanvasGraph, "nodes">, waves: ReadonlyMap<string, number>, father?: string): IsoPlace[] {
   const last = Math.max(0, ...waves.values()), columns = new Map<number, CanvasGraph["nodes"]>();
   for (const node of graph.nodes) {
     if (node.type === "note") continue;
     const column = node.type === "mother" ? 0 : waves.get(node.id) ?? last + 1;
     columns.set(column, [...(columns.get(column) ?? []), node]);
   }
-  return [...columns].sort(([a], [b]) => a - b).flatMap(([column, nodes]) => nodes
+  const places = [...columns].sort(([a], [b]) => a - b).flatMap(([column, nodes]) => nodes
     .sort((a, b) => a.position.y - b.position.y || a.position.x - b.position.x)
     .map((node, index) => {
       const row = index - (nodes.length - 1) / 2, ground = { u: column * ISO_STEP.column, v: row * ISO_STEP.row };
       return { id: node.id, kind: node.type === "mother" ? "mother" as const : "agent" as const, column, row, ground, at: project(ground.u, ground.v) };
     }));
+  if (!father) return places;
+  const ground = { u: 0, v: ISO_STEP.row }, after = places.filter(place => place.column === 0).length;
+  return [...places.slice(0, after), { id: father, kind: "father", column: 0, row: 1, ground, at: project(ground.u, ground.v) }, ...places.slice(after)];
 }
 
 /** A wire's way on the ground, as Deus Ex's grid lines run: along the waves, across them halfway to the next column,

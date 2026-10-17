@@ -23,6 +23,10 @@ export type MotherSettings = { brief: string; model: string | null; provider: st
 export type CanvasGraph = { name: string; nodes: CanvasNode[]; edges: CanvasEdge[]; maxAgents?: number; template?: string; mother?: MotherSettings };
 /** A task's state as workGraph/list reports it (codex-rs state/src/model/work_graph.rs). */
 export type TaskStatus = "pending" | "running" | "succeeded" | "failed" | "blocked" | "cancelled";
+/** The words both views of the board (flat and isometric) use for an agent's state, and for its check: the read-only
+ * verify task Elpis runs after every agent that writes (`runTasks`). */
+export const STATUS_LABEL: Record<TaskStatus | "idle", string> = { idle: "not run", pending: "waiting", running: "running", succeeded: "done", failed: "failed", blocked: "blocked", cancelled: "cancelled" };
+export const CHECK_LABEL: Record<TaskStatus | "idle", string> = { idle: "Checked after it runs", pending: "Check waits for it", running: "Being checked", succeeded: "Check passed", failed: "Check failed", blocked: "Check blocked", cancelled: "Check cancelled" };
 /** `reasoningEffort` is the agent's thinking level; Elpis refuses one its model lacks before any agent starts. */
 export type RunTask = { id: string; kind: "implement" | "verify"; title: string; instruction: string; dependsOn: string[]; writeScopes: string[]; acceptanceCriteria: string[]; provider?: string; model?: string; reasoningEffort?: string };
 

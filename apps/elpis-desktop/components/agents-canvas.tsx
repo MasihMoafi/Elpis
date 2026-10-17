@@ -13,7 +13,7 @@ import { IsoBoard, ViewToggle } from "@/components/agents-iso";
 import { api, providerChoices, type Entry, type Model, type ProviderSettings, type Thread } from "@/lib/api";
 import { useElpisSettings } from "@/lib/settings-store";
 import { appStorage } from "@/lib/projects";
-import { COLUMN, DONE, FATHER, MOTHER, TASKS_PER_AGENT, waits, TEMPLATES, applyPlan, arrange, boardForPlan, checkOf, criticalPath, nameFrom, commandParts, shapeOf, makesLoop, maxAgents, newAgents, newId, parseCommand, parents, readGraph, runParts, saveGraph, waves, withMother, type AgentData, type CanvasEdge, type CanvasGraph, type CanvasNode, type CatalogModel, type Command, type MotherSettings, type NoteData, type Plan, type RunTask, type TaskStatus } from "@/lib/canvas";
+import { CHECK_LABEL, COLUMN, DONE, FATHER, MOTHER, STATUS_LABEL, TASKS_PER_AGENT, waits, TEMPLATES, applyPlan, arrange, boardForPlan, checkOf, criticalPath, nameFrom, commandParts, shapeOf, makesLoop, maxAgents, newAgents, newId, parseCommand, parents, readGraph, runParts, saveGraph, waves, withMother, type AgentData, type CanvasEdge, type CanvasGraph, type CanvasNode, type CatalogModel, type Command, type MotherSettings, type NoteData, type Plan, type RunTask, type TaskStatus } from "@/lib/canvas";
 
 /** A run: the Mother's part, and the Father's when the graph has more agents than she runs (lib/canvas.ts `parents`):
  * his tasks wait in `father` until her part has succeeded, then run in his own chat. */
@@ -24,9 +24,6 @@ type Listed = { data: { id: string; status: string; tasks: { id: string; status:
 type HandleEnd = "source" | "target";
 type AgentNodeData = AgentData & { status?: TaskStatus; check?: TaskStatus; modelLabel?: string; wave?: number; onHandle?: (id: string, end: HandleEnd, event: ReactMouseEvent) => void; onQuick?: (id: string, how: "next" | "parallel") => void };
 type MotherData = { run: "idle" | "running" | "finished"; children: number; limit: number; onHandle?: AgentNodeData["onHandle"] };
-const STATUS_LABEL: Record<TaskStatus | "idle", string> = { idle: "not run", pending: "waiting", running: "running", succeeded: "done", failed: "failed", blocked: "blocked", cancelled: "cancelled" };
-/** An agent's check: the read-only verify task Elpis runs after every agent that writes (lib/canvas.ts `runTasks`). */
-const CHECK_LABEL: Record<TaskStatus | "idle", string> = { idle: "Checked after it runs", pending: "Check waits for it", running: "Being checked", succeeded: "Check passed", failed: "Check failed", blocked: "Check blocked", cancelled: "Check cancelled" };
 const FINISHED = new Set(["succeeded", "failed", "cancelled", "completed"]);
 const lines = (text: string) => text.split("\n").map(line => line.trim()).filter(Boolean);
 /** What Elpis is asked when the user ran a team without writing a goal: keep what is drawn and set, and fill the rest. */
@@ -453,7 +450,8 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
 
   const agents = graph.nodes.filter((node): node is Extract<CanvasNode, { type: "agent" }> => node.type === "agent");
   const chosen = agents.filter(node => selection.includes(node.id)), selected = chosen.length === 1 ? chosen[0] : undefined;
-  const motherOpen = selection.length === 1 && selection[0] === MOTHER, mother = graph.mother ?? { brief: "", model: null, provider: null };
+  // The Father is her twin: a click on him opens her panel, which tells his part.
+  const motherOpen = selection.length === 1 && (selection[0] === MOTHER || selection[0] === FATHER), mother = graph.mother ?? { brief: "", model: null, provider: null };
   const setMother = (patch: Partial<MotherSettings>) => setGraph(current => ({ ...current, mother: { ...(current.mother ?? { brief: "", model: null, provider: null }), ...patch } }));
   // Loading an architecture replaces the board; Undo, offered for a while, puts the old one back.
   const [undoLoad, setUndoLoad] = useState<{ loaded: string; previous: CanvasGraph } | null>(null);
@@ -884,7 +882,7 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
     <div className="canvas-board" ref={board} onPointerMove={event => { pointer.current = { x: event.clientX, y: event.clientY }; }}
       // A double-click on empty board, whichever layer React Flow put under the pointer, opens the command line there.
       onDoubleClick={event => { const target = event.target as Element; if (target.closest(".react-flow") && !target.closest(".react-flow__node, .react-flow__edge, .react-flow__panel, .react-flow__controls, .react-flow__minimap")) openAdder({ x: event.clientX, y: event.clientY }); }}>
-      {iso ? <IsoBoard graph={graph} states={states} selected={selection} onSelect={setSelection} onOpen={setDashboardId} dark={dark} /> : <ReactFlow nodes={nodes} edges={edges} nodeTypes={NODE_TYPES} edgeTypes={EDGE_TYPES} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onConnectEnd={onConnectEnd} connectionMode={ConnectionMode.Loose}
+      {iso ? <IsoBoard graph={graph} father={split.father} states={states} selected={selection} onSelect={setSelection} onOpen={setDashboardId} dark={dark} /> : <ReactFlow nodes={nodes} edges={edges} nodeTypes={NODE_TYPES} edgeTypes={EDGE_TYPES} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onConnectEnd={onConnectEnd} connectionMode={ConnectionMode.Loose}
         onConnectStart={event => { const spot = "touches" in event ? event.touches[0] : event; connectFrom.current = { x: spot.clientX, y: spot.clientY }; }} connectOnClick={false}
         onNodeDoubleClick={(_, node) => { if (node.type === "agent") setDashboardId(node.id); }}
         onEdgeClick={onEdgeClick} onEdgeContextMenu={(event, edge) => { event.preventDefault(); onEdgeClick(event, edge); }} onNodeContextMenu={onNodeContextMenu} onPaneContextMenu={onPaneContextMenu} multiSelectionKeyCode={["Shift", "Control", "Meta"]} nodeDragThreshold={5} nodeClickDistance={5} paneClickDistance={5} selectionKeyCode={null} selectionOnDrag panOnDrag={[1]} panActivationKeyCode={null} snapToGrid snapGrid={[20, 20]} connectionRadius={32} onNodeClick={onNodeClick}
