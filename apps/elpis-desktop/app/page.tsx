@@ -52,6 +52,8 @@ import { reloadSettings, saveSettings, useElpisSettings } from "@/lib/settings-s
 import { UsagePanel } from "@/components/provider-usage";
 import { Dictation } from "@/components/dictation";
 import { chooseProject, EnvironmentMenu, ProjectActions, ProjectDialog, ProjectMenu } from "@/components/project-picker";
+import { BranchChip } from "@/components/branch-chip";
+import { keptNotice, projectFolderOf, type WorktreeOutcome } from "@/lib/chat-worktree";
 import { AccountMenu } from "@/components/account-menu";
 import { ModelPicker } from "@/components/model-picker";
 import { appStorage, readProjects, saveProjects, type Project } from "@/lib/projects";
@@ -173,6 +175,9 @@ export default function Home() {
   /** What a slash command has open above the composer, and the one-line answer of a command that only reports. */
   const [panel, setPanel] = useState<"status" | "review" | "diff" | null>(null);
   const [slashNotice, setSlashNotice] = useState("");
+  // A new chat in its own worktree (the Local/Worktree menu), and where an archived or deleted chat's worktree was kept.
+  const [newWorktree, setNewWorktree] = useState(false), [worktreeNotice, setWorktreeNotice] = useState("");
+  const noteKept = (text: string) => { if (text) setWorktreeNotice(previous => previous ? `${previous} ${text}` : text); };
   const shortcutAction = useRef<(id: string, index?: number) => void>(() => {});
   useEffect(() => { setPins(readPins()); }, []);
   const [newMode, setNewMode] = useState<PermissionMode | null>(null);
@@ -890,7 +895,7 @@ export default function Home() {
     try {
       let thread = selected;
       if (!thread) {
-        const result = await api<{ thread: Thread }>("/threads", { ...(newMode ? { permissions: newMode } : {}), ...(model.trim() ? { model: model.trim() } : {}), ...(newChoice?.provider ? { provider: newChoice.provider } : {}), ...(newChatFolder(cwd) ? { cwd: newChatFolder(cwd) } : {}) });
+        const result = await api<{ thread: Thread }>("/threads", { ...(newMode ? { permissions: newMode } : {}), ...(model.trim() ? { model: model.trim() } : {}), ...(newChoice?.provider ? { provider: newChoice.provider } : {}), ...(newChatFolder(cwd) ? { cwd: newChatFolder(cwd) } : {}), ...(newWorktree ? { worktree: true } : {}) });
         thread = result.thread; errorThreadId = thread.id; if (newMode) setThreadModes(prev => ({ ...prev, [result.thread.id]: newMode }));
         saveDraft(thread.id, originalRequest === request.current ? textRef.current : sentText);
         saveAttachments(thread.id, originalRequest === request.current ? attachmentsRef.current : sentAttachments);
@@ -955,9 +960,9 @@ export default function Home() {
     const ids = new Set([thread.id]);
     const descendants = await scanDeletionThreads<Thread>(({ archived, limit, cursor }) => api(`/threads?ancestorThreadId=${encodeURIComponent(thread.id)}&archived=${archived}&limit=${limit}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`));
     for (const child of descendants) ids.add(child.id);
-    const result = await api<{ alsoDeleted: string[] }>(`/threads/${encodeURIComponent(thread.id)}/delete`, {});
+    const result = await api<{ alsoDeleted: string[]; worktree?: WorktreeOutcome }>(`/threads/${encodeURIComponent(thread.id)}/delete`, {});
     for (const id of result.alsoDeleted) ids.add(id);
-    removeThreads(ids, true);
+    removeThreads(ids, true); noteKept(keptNotice(title(thread), "deleted", result.worktree));
   }
   async function renameThread(thread: Thread, name: string) {
     const result = await api<{ thread: Thread }>(`/threads/${encodeURIComponent(thread.id)}/rename`, { name });
@@ -965,7 +970,7 @@ export default function Home() {
   }
   // Elpis archives the chat with the agents it spawned; hide every loaded one.
   async function archiveThread(thread: Thread) {
-    try { await api(`/threads/${encodeURIComponent(thread.id)}/archive`, {}); removeThreads(new Set([thread.id]), false); }
+    try { const result = await api<{ worktree?: WorktreeOutcome }>(`/threads/${encodeURIComponent(thread.id)}/archive`, {}); removeThreads(new Set([thread.id]), false); noteKept(keptNotice(title(thread), "archived", result.worktree)); }
     catch (e) { setError(`Could not archive “${title(thread)}”: ${e instanceof Error ? e.message : String(e)}`); }
   }
   function unarchived(thread: Thread) { hidden.current.delete(thread.id); upsertThread(thread); refreshThreads().catch(e => setError(String(e))); }
@@ -1231,7 +1236,8 @@ export default function Home() {
   async function trashChats(targets: Thread[]) {
     const ids = targets.map(thread => thread.id);
     if (selectedRef.current && ids.includes(selectedRef.current.id)) shownWhenDeleted.current.add(selectedRef.current.id);
-    const { trashed } = await api<{ trashed: string[] }>("/trash", { threadIds: ids });
+    const { trashed, worktrees } = await api<{ trashed: string[]; worktrees?: { threadId: string; worktree: WorktreeOutcome }[] }>("/trash", { threadIds: ids });
+    for (const { threadId, worktree } of worktrees ?? []) { const thread = targets.find(item => item.id === threadId); if (thread) noteKept(keptNotice(title(thread), "deleted", worktree)); }
     removeThreads(new Set(trashed), false);
     setDeletedNotice(targets.length === 1 ? `Deleted “${title(targets[0])}”` : `Deleted ${targets.length} chats`);
   }
@@ -1345,7 +1351,7 @@ export default function Home() {
       <SearchField ref={searchInput} hint="Ctrl K" aria-label="Search conversations" placeholder="Search conversations" maxLength={200} value={search} onChange={e => setSearch(e.target.value)} onKeyDown={e => { if (e.key === "Escape") { e.preventDefault(); setSearch(""); focusComposer(); } }} />
       <div className="thread-list" ref={threadList} onKeyDown={listKeys}>
         {!searchTerm && <section aria-label="Projects"><div className="section-label section-label-row">Projects<Button variant="ghost" size="icon-xs" aria-label="Add new project" title="Add new project: choose a folder" onClick={() => void addProject()}><PlusIcon size={13} /></Button></div>
-          {projects.map(item => { const open = !collapsedProjects[item.id], chats = threads.filter(t => !t.parentThreadId && sameFolder(t.cwd, item.cwd)).slice(0, 5);
+          {projects.map(item => { const open = !collapsedProjects[item.id], chats = threads.filter(t => !t.parentThreadId && sameFolder(t.cwd && projectFolderOf(t.cwd), item.cwd)).slice(0, 5);
             return <div key={item.id} className="project-group">
               <ProjectActions project={item} onEdit={setProjectEdit} onRemove={removeProject} area={<div className={`project-row${project?.id === item.id ? " active" : ""}`} />}>
                 {menu => <><button className="project-toggle" aria-expanded={open} title={item.cwd} onClick={() => setCollapsedProjects(prev => ({ ...prev, [item.id]: open }))}><ChevronRight size={13} className="project-chevron" /><FolderIcon size={14} /><span>{item.name}</span></button>
@@ -1394,6 +1400,7 @@ export default function Home() {
       <div className="workspace-notices">
       {deletedNotice && <div className="error-banner notice" role="status"><span className="min-w-0 flex-1 truncate">{deletedNotice}</span><Button variant="outline" size="sm" title="Undo (Ctrl+Z)" onClick={() => void undoDelete()}>Undo</Button><Button variant="ghost" size="icon-sm" aria-label="Dismiss" onClick={() => setDeletedNotice(null)}><X size={15} /></Button></div>}
       {error && <div className="error-banner" role="alert"><span>{error}</span><Button variant="ghost" size="icon-sm" aria-label="Dismiss error" onClick={() => setError("")}><X size={15} /></Button></div>}
+      {worktreeNotice && <div className="error-banner warning worktree-notice" role="status"><span>{worktreeNotice}</span><Button variant="ghost" size="icon-sm" aria-label="Dismiss worktree notice" onClick={() => setWorktreeNotice("")}><X size={15} /></Button></div>}
       {catalogError && <div className="error-banner" role="alert"><span className="min-w-0">Models unavailable: {catalogError} Sign in or check Models &amp; accounts, then retry.</span><Button className="shrink-0" variant="outline" size="sm" disabled={catalogLoading} onClick={() => void refreshModels()}>Retry models</Button></div>}
       {catalogLoading && !catalogError && <p className="px-4 py-2 text-sm text-muted-foreground" role="status">Loading models…</p>}
       {selected && runtimeNotices[selected.id] && <div className="error-banner" role="alert"><span>{runtimeNotices[selected.id]}</span><Button variant="ghost" size="icon-sm" aria-label="Dismiss conversation error" onClick={() => setRuntimeNotices(prev => without(prev, selected.id))}><X size={15} /></Button></div>}
@@ -1448,7 +1455,7 @@ export default function Home() {
           {slashNotice && <p role="status" className="mx-auto mb-2 w-full max-w-[740px] px-1 text-sm text-muted-foreground">{slashNotice}</p>}
           {selected && plans[selected.id] && <TaskList plan={plans[selected.id]} running={activeTurns[selected.id] === plans[selected.id].turnId} />}
           <QueuedFollowUps threadId={selected?.id} activeTurnId={activeTurn} onError={setError} onComplete={restoreComposerFocus} onEdit={editQueued} />
-          {!selected && <div className="composer-tray"><EnvironmentMenu folder={project?.cwd ?? null} disabled={!ready || busy} /><ProjectMenu variant="chip" projects={projects} selected={project} disabled={!ready || busy} onSelect={selectProject} onAdd={() => void addProject()} /></div>}
+          {!selected && <div className="composer-tray"><EnvironmentMenu folder={chatFolder || null} disabled={!ready || busy} worktree={newWorktree} onWorktree={setNewWorktree} /><ProjectMenu variant="chip" projects={projects} selected={project} disabled={!ready || busy} onSelect={selectProject} onAdd={() => void addProject()} /></div>}
           <form className="composer" onSubmit={e => { e.preventDefault(); send(); }} onDragOver={e => { if (e.dataTransfer.types.includes("Files")) e.preventDefault(); }} onDrop={e => { const files = transferFiles(e.dataTransfer); if (files.length || e.dataTransfer.types.includes("Files")) { e.preventDefault(); void addFiles(files); } }}>
             <SlashMenu menu={slash} /><MentionMenu menu={mention} />
             <input ref={filePickerRef} type="file" multiple accept={ATTACHMENT_ACCEPT} className="hidden" aria-label="Choose files" onChange={e => { const files = Array.from(e.target.files ?? []); e.target.value = ""; void addFiles(files); }} />
@@ -1482,6 +1489,7 @@ export default function Home() {
           </form>
           <div className="composer-meta">
             {selected?.cwd && <span className="composer-chip" title={selected.cwd}><FolderIcon size={13} />{folder(selected.cwd)}</span>}
+            {selected?.cwd && <BranchChip key={selected.id} threadId={selected.id} running={!!activeTurn} onNotice={setSlashNotice} />}
             <span className="composer-hint">{continues ? "Elpis takes direct messages for this agent only from its parent; sending continues its history in a new chat with the same model." : selectedLiveError ? `Not following live (${selectedLiveError}); the chat refreshes every few seconds.` : ""}</span>
             <ElpisFeatures threadId={selected?.id} />
           </div>

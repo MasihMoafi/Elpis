@@ -84,3 +84,13 @@ test('the server deletes the earlier session’s chats before it serves, hides w
   assert.deepEqual(client.calls.filter(call => call[0] === 'delete').map(call => call[1]), ['other', 'root']);
   assert.deepEqual(JSON.parse(await fs.readFile(file, 'utf8')).entries, []);
 });
+
+// Sidebar deletion archives before purging; preserve the same dirty-worktree outcome as direct archive/delete.
+test('trash reports kept worktrees per chat and omits clean worktrees', async () => {
+  const client = fakeClient(), archive = client.archiveThread;
+  const kept = { kept: true, path: '/tmp/repo-elpis/chats/chat-123abc', branch: 'elpis/chat-123abc', changes: 2 };
+  client.archiveThread = async id => ({ ...await archive(id), worktree: id === 'root' ? kept : { removed: true, path: '/tmp/clean', branch: 'elpis/chat-456abc' } });
+  const trash = await createTrash({ client });
+  assert.deepEqual(await trash.trash(['root', 'other']), { trashed: ['root', 'other'], worktrees: [{ threadId: 'root', worktree: kept }] });
+  assert.deepEqual((await trash.undo()).threads.map(thread => thread.id), ['root', 'other']);
+});

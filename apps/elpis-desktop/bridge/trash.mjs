@@ -41,15 +41,16 @@ export async function createTrash({ client, file }) {
     has: id => entries.some(entry => entry.archived.includes(id)),
     async trash(threadIds) {
       if (!Array.isArray(threadIds) || !threadIds.length || threadIds.length > 100 || threadIds.some(id => typeof id !== 'string' || !id || id.length > 200)) throw new BridgeError('Choose 1 through 100 chats to delete');
-      const entry = { ids: [], archived: [] };
+      const entry = { ids: [], archived: [] }, worktrees = [];
       try {
         for (const id of threadIds) {
           const agents = await liveDescendants(id);
-          await client.archiveThread(id, {});
+          const result = await client.archiveThread(id, {});
+          if (result.worktree?.kept) worktrees.push({ threadId: id, worktree: result.worktree });
           entry.ids.push(id); entry.archived.push(id, ...agents.filter(agent => !entry.archived.includes(agent)));
         }
       } finally { if (entry.ids.length) { entries.push(entry); await save(); } }
-      return { trashed: entry.ids };
+      return { trashed: entry.ids, ...(worktrees.length ? { worktrees } : {}) };
     },
     /** Brings back this session's newest deletion: `threads` are the chats asked for, `restored` every chat unarchived
      * (with their agents). An earlier session's deletions only wait to be deleted. */

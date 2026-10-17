@@ -60,7 +60,6 @@ button:disabled { cursor:not-allowed; }
 .account-plan { flex-shrink:0; color:var(--muted-foreground); }
 .account-plan::before { content:"· "; }
 .account-chevron { flex-shrink:0; margin-inline-start:auto; color:var(--muted-foreground); }
-.env-note { margin:4px 0 0; padding:8px 10px 6px; border-top:1px solid var(--hairline); font-size:12px; line-height:1.4; color:var(--muted-foreground); }
 .sidebar > .status-line { color:var(--subtle-foreground); font-size:var(--text-small); padding:0 8px 2px; }
 .header-action { order:3; }
 .workspace { display:flex; flex-direction:column; min-width:0; min-height:0; position:relative; }
@@ -124,6 +123,8 @@ button:disabled { cursor:not-allowed; }
 .failed-turn-card { margin:16px 0; background:var(--card); border-color:var(--border); }
 .failed-turn-card p { margin:0; overflow-wrap:anywhere; }
 .error-banner { background:color-mix(in oklch, var(--destructive), var(--background) 90%); border-bottom:1px solid color-mix(in oklch, var(--destructive), transparent 60%); color:var(--foreground); padding:8px 20px; font-size:13px; display:flex; justify-content:space-between; align-items:center; gap:12px; }
+/* A warning, not an error: something stayed as it was and the person should know where (a kept worktree). */
+.error-banner.warning { background:color-mix(in oklch, var(--warning), var(--background) 88%); border-bottom-color:color-mix(in oklch, var(--warning), transparent 60%); }
 /* A notice that is not an error, such as "Deleted …" with its Undo. */
 .error-banner.notice { background:var(--muted); border-bottom-color:var(--border); }
 .chat-scroll { flex:1; min-height:0; overflow:auto; padding:28px 32px 12px; }

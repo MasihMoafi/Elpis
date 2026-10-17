@@ -1,12 +1,13 @@
 "use client";
 import { useEffect, useState, type ReactElement, type ReactNode } from "react";
-import { Check, Laptop, X } from "lucide-react";
+import { Check, GitBranch, Laptop, X } from "lucide-react";
 import { FolderIcon, PlusIcon } from "@/components/elpis-icons";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { MoreMenu, RightClickMenu, type MenuAction } from "@/components/action-menu";
 import { AlertDialog, AlertDialogContent, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader } from "@/components/ui/alert-dialog";
+import { api } from "@/lib/api";
 import type { Project } from "@/lib/projects";
 
 const message = (e: unknown) => e instanceof Error ? e.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, "") : String(e);
@@ -97,14 +98,24 @@ export function ProjectDialog({ projects, editing, onClose, onSave }: {
 }
 
 const DEFAULT_FOLDER = "Elpis's default folder";
-/** Where a new chat works, beside the project chip: "Local" is the project's folder, or with no project the folder Elpis starts in.
- * The desktop cannot yet give each chat its own Git worktree, so the menu offers only what works and says so. */
-export function EnvironmentMenu({ folder, disabled }: { folder: string | null; disabled: boolean }) {
+/** Where a new chat works, beside the project chip: "Local" is the folder itself (the project's, or with none the folder
+ * Elpis starts in); "Worktree" is Claude's "Start with worktree", a worktree of its own on a new branch, which needs a
+ * Git repository with a commit (GET /api/repository). */
+export function EnvironmentMenu({ folder, disabled, worktree, onWorktree }: { folder: string | null; disabled: boolean; worktree: boolean; onWorktree: (on: boolean) => void }) {
+  const [repository, setRepository] = useState<boolean | null>(null);
+  useEffect(() => {
+    if (!folder) { setRepository(false); return; }
+    let live = true; setRepository(null);
+    api<{ repository?: boolean }>(`/repository?cwd=${encodeURIComponent(folder)}`).then(result => { if (live) setRepository(result.repository === true); }, () => { if (live) setRepository(false); });
+    return () => { live = false; };
+  }, [folder]);
+  useEffect(() => { if (repository === false && worktree) onWorktree(false); }, [repository, worktree, onWorktree]);
+  const Icon = worktree ? GitBranch : Laptop;
   return <DropdownMenu>
-    <DropdownMenuTrigger className="composer-chip project-chip" aria-label="Where this chat works" title={folder ?? DEFAULT_FOLDER} disabled={disabled}><Laptop size={13} aria-hidden="true" /><span>Local</span></DropdownMenuTrigger>
+    <DropdownMenuTrigger className="composer-chip project-chip" aria-label="Where this chat works" title={worktree ? `A new worktree of ${folder}` : folder ?? DEFAULT_FOLDER} disabled={disabled}><Icon size={13} aria-hidden="true" /><span>{worktree ? "Worktree" : "Local"}</span></DropdownMenuTrigger>
     <DropdownMenuContent align="start" className="project-menu w-72">
-      <DropdownMenuItem><Laptop aria-hidden="true" /><span className="project-option"><strong>Local</strong><small>{folder ?? DEFAULT_FOLDER}</small></span><Check className="ml-auto" aria-label="Current" /></DropdownMenuItem>
-      <p className="env-note" role="note">A separate worktree for each chat is not available in the desktop app yet.</p>
+      <DropdownMenuItem onClick={() => onWorktree(false)}><Laptop aria-hidden="true" /><span className="project-option"><strong>Local</strong><small>{folder ?? DEFAULT_FOLDER}</small></span>{!worktree && <Check className="ml-auto" aria-label="Current" />}</DropdownMenuItem>
+      <DropdownMenuItem disabled={repository !== true} onClick={() => onWorktree(true)}><GitBranch aria-hidden="true" /><span className="project-option"><strong>Worktree</strong><small>{repository === false ? "Needs a Git repository with a commit" : "Own worktree, new branch"}</small></span>{worktree && <Check className="ml-auto" aria-label="Current" />}</DropdownMenuItem>
     </DropdownMenuContent>
   </DropdownMenu>;
 }
