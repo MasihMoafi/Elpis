@@ -64,6 +64,20 @@ button:disabled { cursor:not-allowed; }
 .header-action { order:3; }
 .workspace { display:flex; flex-direction:column; min-width:0; min-height:0; position:relative; }
 .workspace-body { display:flex; flex:1; min-width:0; min-height:0; }
+.workspace-notices { display:flex; flex-direction:column; flex-shrink:0; }
+/* With the side panel beside the chat (not full view, not a narrow window) the work area is one grid: the panel runs the full
+ * height at the right and its header shares a row with the chat's header, so the two line up whatever the chat's header holds.
+ * The panel's width is half the area, or what its dragged edge set (`--side-w`, from app/page.tsx); 360px is MIN_WIDTH in side-panel.tsx. */
+@media(min-width:1001px) {
+  .workspace:has(> .workspace-body.panel-open:not(.full-view)) { display:grid; grid-template-columns:minmax(0,1fr) var(--side-w, minmax(360px,50%)); grid-template-rows:auto auto minmax(0,1fr); }
+  .workspace:has(> .workspace-body.panel-open:not(.full-view)) > .workspace-header { grid-column:1; grid-row:1; }
+  .workspace:has(> .workspace-body.panel-open:not(.full-view)) > .workspace-notices { grid-column:1; grid-row:2; }
+  .workspace-body.panel-open:not(.full-view) { display:contents; }
+  .workspace-body.panel-open:not(.full-view) > .workspace-content { grid-column:1; grid-row:3; }
+  .workspace-body.panel-open:not(.full-view) > .side-panel { grid-column:2; grid-row:1 / -1; display:grid; grid-template-rows:subgrid; width:auto; min-width:0; max-width:none; }
+  .workspace-body.panel-open:not(.full-view) > .side-panel > .side-header { grid-row:1; }
+  .workspace-body.panel-open:not(.full-view) > .side-panel > .side-body { grid-row:2 / -1; }
+}
 .workspace-content { display:flex; flex-direction:column; flex:1; min-width:0; min-height:0; container:workspace / inline-size; }
 /* The side panel: terminals and browser pages as tabs (components/side-panel.tsx). */
 .side-panel { position:relative; display:flex; flex-direction:column; flex:0 0 auto; width:50%; min-width:var(--side-min,360px); max-width:70%; min-height:0; border-inline-start:1px solid var(--border); background:var(--background); }
@@ -137,6 +151,18 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 
 /* Conversation and activity surfaces share the same quiet hierarchy. */
 .chat-view { display:flex; flex-direction:column; flex:1; min-height:0; }
+.chat-scroll-wrap { position:relative; display:flex; flex-direction:column; flex:1; min-height:0; }
+/* The prompt rail (components/prompt-rail.tsx): one tick per prompt at the transcript's left edge; the prompt being read is dark. */
+.prompt-rail { position:absolute; left:6px; top:12px; bottom:12px; z-index:2; width:16px; display:flex; flex-direction:column; align-items:center; overflow-y:auto; scrollbar-width:none; }
+.prompt-tick { flex:none; display:flex; align-items:center; justify-content:center; width:16px; height:14px; padding:0; border:0; border-radius:3px; background:none; cursor:pointer; }
+.prompt-tick:first-child { margin-top:auto; } .prompt-tick:last-child { margin-bottom:auto; }
+.prompt-tick i { display:block; width:10px; height:2px; border-radius:1px; background:color-mix(in oklch, var(--muted-foreground) 55%, transparent); transition:width .12s, background .12s; }
+.prompt-tick:hover i, .prompt-tick[aria-current="true"] i { width:14px; }
+.prompt-tick:hover i { background:var(--muted-foreground); }
+.prompt-tick[aria-current="true"] i { background:var(--foreground); }
+.prompt-tick:focus-visible { outline:2px solid var(--ring); outline-offset:-2px; }
+@media(max-width:760px) { .prompt-rail { display:none; } }
+.full-view > .workspace-content .prompt-rail { display:none; }
 .empty-chat .chat-scroll { display:flex; }
 .empty-chat .chat-content { margin:auto; width:100%; }
 .empty-chat .empty-state { min-height:0; padding:0 0 8vh; }
@@ -186,7 +212,8 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .activity-heading svg { flex-shrink:0; color:var(--muted-foreground); }
 .activity-heading > span { min-width:0; overflow:hidden; text-overflow:ellipsis; }
 .activity-output { padding:10px 12px; margin:0; border-top:1px solid var(--hairline); max-height:320px; overflow:auto; white-space:pre-wrap; overflow-wrap:anywhere; font:12px/1.55 var(--mono); color:var(--foreground); }
-.message-actions { display:flex; align-items:center; gap:2px; margin-top:4px; color:var(--subtle-foreground); }
+/* The hover buttons sit in the gap under their message, so a message that is not hovered holds no room for them. */
+.message-actions { display:flex; align-items:center; gap:2px; position:absolute; top:100%; left:0; color:var(--subtle-foreground); }
 .feature-section { border:1px solid var(--border); border-radius:12px; background:var(--card); padding:20px; }
 .feature-section h2 { font-size:15px; font-weight:600; margin-bottom:14px; }
 .feature-section > .muted { color:var(--muted-foreground); font-size:13px; line-height:1.6; margin-bottom:18px; }
@@ -284,9 +311,9 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .approval-actions { display:flex; flex-wrap:wrap; gap:8px; }
 @media(max-width:760px) { .mobile-brand { display:block; } }
 /* Chat parity: your messages can be copied and edited; code blocks carry their own copy button. */
-.user-turn { display:flex; flex-direction:column; align-items:flex-end; margin-bottom:28px; min-width:0; }
+.user-turn { position:relative; display:flex; flex-direction:column; align-items:flex-end; margin-bottom:28px; min-width:0; }
 .user-turn .message.user { margin-bottom:0; }
-.user-turn .message-actions { margin-top:4px; }
+.user-turn .message-actions { left:auto; right:0; }
 .message-actions .copy-status { font-size:12px; }
 .message.user.editing { width:min(100%, 680px); max-width:100%; display:flex; flex-direction:column; gap:8px; white-space:normal; }
 .code-block { position:relative; margin:0 0 14px; }
@@ -426,10 +453,10 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 
 /* ── Elpis HUD: transcript and composer (16 Oct 2026) ─────────────────────────────── */
 .hud-label { font:500 10.5px/1 var(--mono); letter-spacing:.14em; text-transform:uppercase; }
-.turn { margin-bottom:26px; }
-.turn .user-turn { margin-bottom:18px; }
+.turn { margin-bottom:14px; }
+.turn .user-turn { margin-bottom:24px; }
 .message.user { background:var(--card); border:1px solid var(--hairline); border-right:2px solid color-mix(in oklch, var(--gold, var(--primary)) 70%, transparent); border-radius:3px; padding:9px 14px; clip-path:polygon(9px 0, 100% 0, 100% 100%, 0 100%, 0 9px); }
-.message.agent { margin-bottom:14px; }
+.message.agent { position:relative; margin-bottom:18px; }
 .message.agent a { color:var(--primary); text-decoration-color:color-mix(in oklch, var(--primary) 45%, transparent); }
 /* Agent work, as Claude's desktop app shows it (components/transcript.tsx, chat-message.tsx CommandStep): a finished
  * run of tools is one muted row with a chevron; a running step is a sentence with dots and a timer; an opened command
@@ -484,8 +511,6 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .composer::before { top:-1px; left:-1px; border-width:1.5px 0 0 1.5px; border-top-left-radius:6px; }
 .composer::after { bottom:-1px; right:-1px; border-width:0 1.5px 1.5px 0; border-bottom-right-radius:6px; }
 .composer:focus-within { border-color:color-mix(in oklch, var(--primary) 45%, var(--border)); box-shadow:var(--shadow), var(--glow, none); }
-.composer button[type="submit"] { background:var(--primary); color:var(--primary-foreground); border-radius:0; clip-path:polygon(25% 0, 75% 0, 100% 50%, 75% 100%, 25% 100%, 0 50%); }
-.composer button[type="submit"]:disabled { background:var(--muted); color:var(--subtle-foreground); }
 .empty-state h2 { font-family:var(--serif); font-weight:300; letter-spacing:.01em; }
 .dark .empty-state .empty-mark { filter:drop-shadow(0 0 18px rgba(229,173,85,.35)); }
 .composer-controls { margin-top:6px; }
@@ -729,9 +754,9 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .workspace-body { position:relative; }
 .composer .model-controls { flex-wrap:nowrap; flex-shrink:0; }
 .composer-right { flex:1; justify-content:flex-end; }
-.composer .model-picker-trigger { min-width:0; max-width:300px; flex:0 1 auto; }
+.composer .model-picker-trigger { min-width:88px; max-width:300px; flex:0 1 auto; }
 .header-action[aria-pressed="true"], .side-action[aria-pressed="true"] { color:var(--primary); background:var(--selected); }
-@container workspace (max-width: 760px) { .composer .model-trigger-provider { display:none; } .composer-pill span { display:none; } }
+@container workspace (max-width: 760px) { .composer .model-trigger-provider { display:none; } }
 /* Slash commands: the menu a leading "/" opens above the composer, as in the ChatGPT app's Codex composer. */
 .slash-menu { position:absolute; left:0; right:0; bottom:calc(100% + 6px); z-index:20; max-height:min(320px, 50vh); overflow-y:auto; }
 .slash-option { align-items:baseline; gap:12px; min-width:0; cursor:pointer; font-size:13px; }
@@ -1020,7 +1045,26 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .full-view > .workspace-content .chat-scroll { padding:14px 16px 8px; }
 .full-view > .workspace-content .composer-wrap { padding:6px 12px 12px; }
 /* Narrow as the card is, the message box's controls wrap to a second row rather than cut their labels short. */
-@container workspace (max-width:480px) { .composer-controls { flex-wrap:wrap; row-gap:4px; } .composer-right { flex:1 1 auto; } .composer .model-select:not(.model-picker-trigger) { flex-shrink:0; } }
+@container workspace (max-width:420px) { .composer-controls { flex-wrap:wrap; row-gap:4px; } .composer-right { flex:1 1 auto; } .composer .model-select:not(.model-picker-trigger) { flex-shrink:0; } }
+/* The message box's toolbar keeps one row beside the side panel (half of a 1130px window is 437px). As room runs out the labels
+ * shrink first: the permission label takes its short form and the model and effort cut theirs with an ellipsis; from 480px down
+ * the context ring gives way as well. Under 420px, the floating chat card, the toolbar wraps (above). */
+.composer-pill > span { min-width:0; overflow:hidden; text-overflow:ellipsis; }
+.composer .model-select [data-slot="select-value"] { display:block; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.composer .model-select { min-width:64px; }
+.composer-right :is(.dictation-control, .send-button, .context-ring) { flex-shrink:0; }
+.pill-short { display:none; }
+@media(min-width:761px) { @container workspace (max-width:640px) { .pill-long { display:none; } .pill-short { display:inline; } .chat-scroll, .composer-wrap { padding-inline:22px; } } }
+@container workspace (min-width:421px) { .composer .model-select:not(.model-picker-trigger) { flex-shrink:3; } }
+.effort-short { display:none; }
+@container workspace (min-width:421px) and (max-width:480px) {
+  .composer-right .context-ring { display:none; }
+  .composer .effort-long { display:none; } .composer .effort-short { display:inline; }
+  .composer-controls { gap:8px; } .composer .model-controls { gap:4px; } .composer-right { gap:2px; }
+  .composer-pill, .composer .model-select { padding-inline:6px; gap:4px; }
+}
+/* The @ picker names the file or chat, and says which it is at the right edge. */
+.option-list-kind .slash-description { margin-left:auto; flex-shrink:0; }
 .float-chat-bar { display:flex; align-items:center; gap:8px; flex-shrink:0; height:40px; padding:0 6px 0 14px; border-bottom:1px solid var(--hairline); }
 .float-chat-title { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:13px; font-weight:600; }
 .float-chat-pill { position:absolute; z-index:6; right:var(--float-gap); bottom:12px; max-width:min(360px, calc(100% - 2 * var(--float-gap))); gap:10px; border-radius:999px; box-shadow:var(--shadow); }

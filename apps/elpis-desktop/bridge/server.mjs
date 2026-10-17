@@ -5,6 +5,7 @@ import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { BridgeError, DesktopClient, object } from './client.mjs';
 import { planCanvas } from './canvas-plan.mjs';
+import { listFiles } from './files.mjs';
 import { listFolders } from './folders.mjs';
 import { createTools } from './tools.mjs';
 import { createTranscription } from './transcription.mjs';
@@ -107,6 +108,10 @@ export async function startDesktopServer(options = {}) {
         if (url.pathname === '/api/folders' && method === 'GET') {
           if ([...url.searchParams.keys()].some(key => key !== 'cwd') || url.searchParams.getAll('cwd').length !== 1) throw new BridgeError('Provide exactly one cwd');
           return json(response, 200, await listFolders(url.searchParams.get('cwd')));
+        }
+        if (url.pathname === '/api/files' && method === 'GET') {
+          if ([...url.searchParams.keys()].some(key => key !== 'cwd') || url.searchParams.getAll('cwd').length !== 1) throw new BridgeError('Provide exactly one cwd');
+          return json(response, 200, await listFiles(url.searchParams.get('cwd')));
         }
         if (url.pathname === '/api/canvas/plan' && method === 'POST') return json(response, 200, await planCanvas(client, await body(request)));
         if (url.pathname === '/api/settings' && method === 'GET') return json(response, 200, await client.settings());

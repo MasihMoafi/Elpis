@@ -3,18 +3,19 @@
 import { useSyncExternalStore } from "react";
 import { api } from "@/lib/api";
 import type { Attachment } from "@/lib/attachments";
+import type { Mention } from "@/lib/mentions";
 import { readPreferences } from "@/lib/preferences";
 
 /** Settings → General → Follow-up behavior: Queue holds messages sent during a running turn
  * and sends them, one turn each, after it completes. Steer (the default) adds them to the running turn. */
-export type FollowUpOptions = { model?: string; effort?: string; mode?: "plan" | "default" };
+export type FollowUpOptions = { model?: string; effort?: string; mode?: "plan" | "default"; mentions?: Mention[] };
 export type FollowUp = { id: string; text: string; attachments: Attachment[] } & FollowUpOptions;
 const EMPTY: FollowUp[] = [];
 let queues: Record<string, FollowUp[]> = {};
 const listeners = new Set<() => void>();
 const set = (threadId: string, items: FollowUp[]) => { queues = { ...queues, [threadId]: items }; for (const listener of listeners) listener(); };
 const sendTurn = async (threadId: string, item: FollowUp) => {
-  const body = { text: item.text, ...(item.attachments.length ? { attachments: item.attachments } : {}), ...(item.model ? { model: item.model } : {}), ...(item.effort ? { effort: item.effort } : {}), ...(item.mode ? { mode: item.mode } : {}) };
+  const body = { text: item.text, ...(item.attachments.length ? { attachments: item.attachments } : {}), ...(item.mentions?.length ? { mentions: item.mentions } : {}), ...(item.model ? { model: item.model } : {}), ...(item.effort ? { effort: item.effort } : {}), ...(item.mode ? { mode: item.mode } : {}) };
   // The runtime can report the thread busy for a moment after the completion event.
   for (let attempt = 0; ; attempt++) {
     try { return await api(`/threads/${encodeURIComponent(threadId)}/turns`, body); }
@@ -47,7 +48,7 @@ export async function sendFollowUpNow(threadId: string, id: string, activeTurnId
   if (!item) return;
   removeFollowUp(threadId, id);
   try {
-    if (activeTurnId) await api(`/threads/${encodeURIComponent(threadId)}/steer`, { text: item.text, expectedTurnId: activeTurnId, ...(item.attachments.length ? { attachments: item.attachments } : {}) });
+    if (activeTurnId) await api(`/threads/${encodeURIComponent(threadId)}/steer`, { text: item.text, expectedTurnId: activeTurnId, ...(item.attachments.length ? { attachments: item.attachments } : {}), ...(item.mentions?.length ? { mentions: item.mentions } : {}) });
     else await sendTurn(threadId, item);
   } catch (error) { set(threadId, [item, ...(queues[threadId] ?? [])]); throw error; }
 }

@@ -21,6 +21,8 @@ export const SHORTCUTS: Shortcut[] = [
   { id: "close-tab", group: "Chat", label: "Close chat tab", keys: ["Ctrl+W"] },
   { id: "next-tab", group: "Navigation", label: "Next chat tab", keys: ["Ctrl+Tab"] },
   { id: "previous-tab", group: "Navigation", label: "Previous chat tab", keys: ["Ctrl+Shift+Tab"] },
+  { id: "back", group: "Navigation", label: "Back to the previous chat or page", keys: ["Alt+←"] },
+  { id: "forward", group: "Navigation", label: "Forward again", keys: ["Alt+→"] },
   { id: "terminal", group: "App", label: "Toggle terminal", keys: ["Ctrl+`"] },
   { id: "full-view", group: "App", label: "Toggle full view", keys: ["Ctrl+Shift+F"] },
   { id: "sidebar", group: "App", label: "Toggle sidebar", keys: ["Ctrl+Shift+S", "Ctrl+B"] },
@@ -59,6 +61,7 @@ export function shortcutFor(event: KeyboardEvent, typing: boolean): { id: string
     if (key === "r") return { id: "rename" };
     if (key === "p") return { id: "pin" };
   }
+  if (event.altKey && !ctrl && !event.shiftKey && (event.key === "ArrowLeft" || event.key === "ArrowRight")) return { id: event.key === "ArrowLeft" ? "back" : "forward" };
   if (event.altKey && !ctrl && !event.shiftKey && /^Digit[1-9]$/.test(event.code)) return { id: "go-to-chat", index: Number(event.code.slice(5)) - 1 };
   return null;
 }

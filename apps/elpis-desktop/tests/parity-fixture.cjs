@@ -1,0 +1,74 @@
+// The shared fixture of the Claude-parity UI tests (claude-composer, claude-chat): the exported UI against a local
+// bridge with three chats (the first has four turns of Markdown replies), a files route, a revert route that really
+// drops turns, a fake desktop (browser, terminal, storage) and a clipboard that records what is written. Every POST is
+// recorded. No engine, no model, no shell.
+const http = require('node:http');
+const fs = require('node:fs/promises');
+const path = require('node:path');
+const { chromium } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright');
+const { guardDesktopStore } = require('./controls.cjs');
+const { fakeDesktop } = require('./fake-desktop.cjs');
+
+const out = path.resolve(__dirname, '../out');
+const CWD = '/tmp/parity-fixture';
+const FILES = ['README.md', 'package.json', 'docs/guide.md', 'src/app.ts', 'src/lib/parser.ts', 'src/lib/lexer.ts'];
+const thread = (id, name) => ({ id, name, preview: name, cwd: CWD, model: 'sol', modelProvider: 'openai', status: { type: 'idle' }, desktopAccess: { writable: true, mode: 'direct' } });
+const THREADS = [thread('chat-a', 'Fix the parser'), thread('chat-b', 'Write the docs'), thread('chat-c', 'Plan the release')];
+const filler = count => Array.from({ length: count }, (_, i) => `Detail ${i + 1} of the explanation, in a sentence of its own.`).join('\n\n');
+/** The first chat: four turns, [turn id, prompt, reply]. The first reply is the Markdown the copy tests read. */
+const TURNS = [
+  ['t1', 'Explain the parser.', 'The parser has **two passes**.\n\n- lexing\n- parsing\n\nSee [the guide](https://example.invalid/guide).'],
+  ['t2', 'Rename the lexer.', `Done: \`lexer.ts\` is now \`scan.ts\`.\n\n${filler(8)}`],
+  ['t3', 'Add tests.', `Added three tests.\n\n${filler(8)}`],
+  ['t4', 'Run them.', 'All green.'],
+];
+
+/** Starts the bridge and a browser page. `running` makes the first chat run a turn; `desktop` is the fake desktop. */
+async function fixture({ width = 1130, height = 660, colorScheme = 'light', running = false, desktop = true } = {}) {
+  const posts = [], turns = TURNS.map(turn => [...turn]);
+  const entries = () => turns.flatMap(([id, prompt, reply], index) => {
+    const at = Date.now() - (turns.length - index) * 120_000;
+    return [{ turnId: id, item: { id: `u-${id}`, type: 'userMessage', content: [{ type: 'text', text: prompt }] }, startedAtMs: at, completedAtMs: at },
+      { turnId: id, item: { id: `a-${id}`, type: 'agentMessage', text: reply }, startedAtMs: at + 5000, completedAtMs: at + 5000 }];
+  });
+  const server = http.createServer(async (req, res) => {
+    const url = new URL(req.url, 'http://local'); let raw = ''; for await (const chunk of req) raw += chunk;
+    const json = value => { res.setHeader('content-type', 'application/json'); res.end(JSON.stringify(value)); };
+    const chat = THREADS.find(item => item.id === url.pathname.split('/')[3]);
+    if (req.method === 'POST') posts.push({ path: url.pathname, body: raw ? JSON.parse(raw) : {} });
+    if (url.pathname === '/api/events') { res.writeHead(200, { 'content-type': 'text/event-stream' }); res.write('event: connection\ndata: {"connected":true}\n\n'); return; }
+    if (url.pathname === '/api/health') return json({ connected: true });
+    if (url.pathname === '/api/models') return json({ data: [{ id: 'sol', model: 'sol', displayName: 'GPT-6.1-Sol', inputModalities: ['text', 'image'], supportedReasoningEfforts: ['low', 'medium', 'high'].map(reasoningEffort => ({ reasoningEffort })) }], nextCursor: null });
+    if (url.pathname === '/api/files') return json({ data: FILES });
+    if (url.pathname === '/api/threads') return json({ data: url.searchParams.has('ancestorThreadId') || url.searchParams.get('archived') === 'true' ? [] : THREADS.map(item => item.id === 'chat-a' && running ? { ...item, status: { type: 'active' } } : item), nextCursor: null });
+    if (chat && url.pathname.endsWith('/resume')) return json({ thread: chat, activeTurnId: running && chat.id === 'chat-a' ? 't4' : null });
+    if (chat && url.pathname.endsWith('/revert')) { const body = JSON.parse(raw); const at = turns.findIndex(turn => turn[0] === body.beforeTurnId); if (at >= 0) turns.length = at; return json({ rewound: true, beforeTurnId: body.beforeTurnId }); }
+    if (chat && url.pathname.endsWith('/turns')) return json({ turn: { id: 't-new' } });
+    if (chat && req.method === 'GET') return json({ thread: chat, data: chat.id === 'chat-a' ? entries().reverse() : [], nextCursor: null });
+    if (url.pathname.startsWith('/api/')) return json({});
+    try {
+      const file = path.join(out, url.pathname === '/' ? 'index.html' : url.pathname), content = await fs.readFile(file);
+      res.setHeader('content-type', file.endsWith('.js') ? 'text/javascript' : file.endsWith('.css') ? 'text/css' : file.endsWith('.svg') ? 'image/svg+xml' : 'text/html'); res.end(content);
+    } catch { res.statusCode = 404; res.end(); }
+  });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  const browser = await chromium.launch({ executablePath: process.env.ELPIS_CHROMIUM || undefined, headless: true });
+  const page = await browser.newPage({ viewport: { width, height }, colorScheme }); page.setDefaultTimeout(6000);
+  const errors = []; page.on('pageerror', error => errors.push(error.message));
+  await guardDesktopStore(page);
+  if (desktop) await page.addInitScript(fakeDesktop);
+  await page.addInitScript(() => { Object.defineProperty(navigator, 'clipboard', { value: { writeText: async text => { window.__copied = text; } } }); });
+  await page.goto(`http://127.0.0.1:${server.address().port}/#token=fixture`);
+  const composer = page.getByRole('textbox', { name: 'Message Elpis', exact: true });
+  await page.locator('.thread-row[data-thread-id="chat-a"] .thread-link').waitFor();
+  const open = async id => {
+    await page.locator(`.thread-row[data-thread-id="${id}"] .thread-link`).click();
+    await page.locator(`.thread-row.active[data-thread-id="${id}"]`).waitFor();
+    if (id === 'chat-a') await page.getByText(turns.at(-1)[2], { exact: true }).waitFor();
+  };
+  const shown = () => page.locator('.thread-row.active').first().getAttribute('data-thread-id', { timeout: 400 }).catch(() => null);
+  const copied = () => page.evaluate(() => window.__copied);
+  const close = async () => { await browser.close(); await new Promise(resolve => server.close(resolve)); };
+  return { page, composer, errors, posts, open, shown, copied, close, turns };
+}
+module.exports = { fixture, CWD, FILES, TURNS };

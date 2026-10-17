@@ -31,6 +31,12 @@ import { SettingsView, type Tab as SettingsTab } from "@/components/settings-vie
 import { DeleteChatsDialog, ThreadActions } from "@/components/thread-actions";
 import { letterKey } from "@/components/action-menu";
 import { SlashMenu, useSlashMenu, type SlashCommand } from "@/components/slash-menu";
+import { MentionMenu, useMentionMenu } from "@/components/mention-menu";
+import { NavButtons } from "@/components/nav-buttons";
+import { PromptRail } from "@/components/prompt-rail";
+import { RewindDialog } from "@/components/rewind-dialog";
+import { usedMentions, type Mention } from "@/lib/mentions";
+import { canBack, canForward, startHistory, step, visit, type History } from "@/lib/nav-history";
 import { DiffPanel, ReviewPanel, SessionPanel, type ReviewTarget } from "@/components/slash-panels";
 import { INIT_PROMPT } from "@/lib/init-prompt";
 import { conversationMarkdown, exportFileName, lastReply } from "@/lib/slash";
@@ -53,7 +59,7 @@ import { FloatChatBar, FloatChatPill } from "@/components/float-chat";
 import { Tab, TabStrip } from "@/components/tab-strip";
 import { activate, activeTab, addTab, closeTab, cycle, followChat, forgetChats, makeTab, readTabs, renameTabs, startTabs, tabFor, writeTabs, type ChatTab, type ChatTabs } from "@/lib/chat-tabs";
 import { readDraft, writeDraft } from "@/lib/drafts";
-import { ATTACHMENT_ACCEPT, attachmentFromFile, readAttachmentDraft, validateAttachments, withoutSubmittedAttachments, writeAttachmentDraft, type Attachment } from "@/lib/attachments";
+import { ATTACHMENT_ACCEPT, IMAGE_ACCEPT, attachmentFromFile, readAttachmentDraft, validateAttachments, withoutSubmittedAttachments, writeAttachmentDraft, type Attachment } from "@/lib/attachments";
 import { scanDeletionThreads } from "@/lib/thread-deletion";
 import type { ThemeChoice } from "@/components/appearance-settings";
 import { activityOf, api, chatProvider, choiceOf, effortsOf, isAgent, isUnlinkedAgent, modelLabel, providerChoices, providerLabel, title,
@@ -128,6 +134,11 @@ export default function Home() {
   const threadList = useRef<HTMLDivElement>(null);
   const [collapsedProjects, setCollapsedProjects] = useState<Record<string, boolean>>({});
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  /** The message whose "Rewind to here" is awaiting confirmation (its turn). */
+  const [rewindTurn, setRewindTurn] = useState<string | null>(null);
+  /** The chats and pages visited, for Back and Forward (lib/nav-history.ts). */
+  const [history, setHistory] = useState<History>(() => startHistory({ view: "chat", threadId: null }));
+  const historyRef = useRef(history), historySeeded = useRef(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [renameRequest, setRenameRequest] = useState(false);
   /** What a slash command has open above the composer, and the one-line answer of a command that only reports. */
@@ -139,6 +150,9 @@ export default function Home() {
   const [text, setTextState] = useState("");
   const textRef = useRef("");
   const composerRef = useRef<HTMLTextAreaElement>(null);
+  const [caret, setCaret] = useState(0);
+  /** The mentions picked in the message box; a message carries those whose @name is still in its text. */
+  const pickedMentions = useRef(new Map<string, Mention>());
   const filePickerRef = useRef<HTMLInputElement>(null);
   const [attachments, setAttachmentsState] = useState<Attachment[]>([]);
   const attachmentsRef = useRef<Attachment[]>([]);
@@ -410,6 +424,17 @@ export default function Home() {
     media.addEventListener("change", follow); return () => media.removeEventListener("change", follow);
   }, []);
   useEffect(() => window.elpisDesktop?.storage?.onError(setError), []);
+  // The mouse's side buttons go back and forward, as in a browser.
+  useEffect(() => {
+    const onMouse = (event: MouseEvent) => {
+      if (event.button !== 3 && event.button !== 4) return;
+      event.preventDefault();
+      if (event.type === "mouseup") shortcutAction.current(event.button === 3 ? "back" : "forward");
+    };
+    const types = ["mousedown", "mouseup", "auxclick"] as const;
+    for (const type of types) window.addEventListener(type, onMouse);
+    return () => { for (const type of types) window.removeEventListener(type, onMouse); };
+  }, []);
   // The ChatGPT app's shortcuts (lib/shortcuts.ts); the action reads this render's state.
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -617,6 +642,14 @@ export default function Home() {
   useEffect(() => { if (ready) updateTabs(followChat(tabsRef.current, selected ? { id: selected.id, title: selectedTitle } : null)); }, [ready, selected?.id, selectedTitle]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { updateTabs(renameTabs(tabsRef.current, id => { const thread = find(id); return thread ? title(thread) : undefined; })); }, [threads, related]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { const store = window.elpisDesktop?.storage; if (tabsRestored && store && !writeTabs(tabs, store)) setError("Could not save the open chat tabs on this device."); }, [tabs, tabsRestored]);
+  // Back and forward: each place reached (a chat, a new chat, a page) joins the stack; the first one only starts it.
+  useEffect(() => {
+    if (!ready) return;
+    const place = { view, threadId: view === "chat" ? selected?.id ?? null : null };
+    const next = historySeeded.current ? visit(historyRef.current, place) : startHistory(place);
+    historySeeded.current = true;
+    if (next !== historyRef.current) { historyRef.current = next; setHistory(next); }
+  }, [ready, view, selected?.id]);
   // Elpis can replace turns only in chats it lets this app write directly, and not while one is running.
   const replaceable = !!selected && !continues && !activeTurn && selected.status?.type !== "active" && connected && !busy;
   const turnEntries = new Map<string, Entry[]>();
@@ -662,6 +695,17 @@ export default function Home() {
     if (id === before.activeId) openTab(activeTab(next));
   }
   function cycleTabs(delta: number) { const next = cycle(tabsRef.current, delta); if (next !== tabsRef.current) { updateTabs(next); openTab(activeTab(next)); } }
+  /** Back (-1) or Forward (1): to the previous or next place visited, skipping chats that are gone. */
+  function goHistory(delta: -1 | 1) {
+    const found = step(historyRef.current, delta, place => !place.threadId || !hidden.current.has(place.threadId));
+    if (!found) return;
+    historyRef.current = found.history; setHistory(found.history);
+    const { view: target, threadId } = found.place;
+    if (target !== "chat") show(target as View);
+    else if (threadId === (selectedRef.current?.id ?? null)) show("chat");
+    else if (threadId) void loadThread(find(threadId) ?? { id: threadId } as Thread);
+    else openNewChat();
+  }
   /** Middle-click on a chat in the sidebar: its own tab (or the one it already has). */
   function openInNewTab(thread: Thread) {
     const owner = tabFor(tabsRef.current, thread.id);
@@ -765,9 +809,11 @@ export default function Home() {
     if (needsModelId && !model.trim()) { setError("Enter a model ID for the selected provider."); return; }
     setBusy(true); setError("");
     const sentText = outgoing, sentAttachments = [...files];
+    const sentMentions = own === undefined ? usedMentions(outgoing, [...pickedMentions.current.values()]) : [];
+    pickedMentions.current = new Map();
     const originalId = selected?.id || newDraftKey.current, originalRequest = request.current;
     const originalFocus = document.activeElement;
-    const attached = sentAttachments.length ? { attachments: sentAttachments } : {};
+    const attached = { ...(sentAttachments.length ? { attachments: sentAttachments } : {}), ...(sentMentions.length ? { mentions: sentMentions } : {}) };
     let errorThreadId = selected?.id;
     try {
       let thread = selected;
@@ -781,7 +827,7 @@ export default function Home() {
       }
       const used: NextTurn | undefined = selected ? pending : effort || newPlan ? { ...(effort ? { effort } : {}), ...(newPlan ? { plan: true } : {}) } : undefined;
       const turnOptions: FollowUpOptions = { ...(used?.model ? { model: used.model } : {}), ...(used?.effort ? { effort: used.effort } : {}), ...(used?.plan !== undefined ? { mode: used.plan ? "plan" : "default" } : {}) };
-      if (activeTurn && !continues && queueFollowUp(thread.id, sentText, sentAttachments, turnOptions, followUp)) { /* queued until the running turn completes */ } else if (activeTurn && !continues) {
+      if (activeTurn && !continues && queueFollowUp(thread.id, sentText, sentAttachments, { ...turnOptions, ...(sentMentions.length ? { mentions: sentMentions } : {}) }, followUp)) { /* queued until the running turn completes */ } else if (activeTurn && !continues) {
         await api(`/threads/${encodeURIComponent(thread.id)}/steer`, { text: sentText, expectedTurnId: activeTurn, ...attached });
       } else {
         const result = await api<{ turn?: { id: string }; thread?: Thread; continuedFrom?: string; sendError?: string }>(`/threads/${encodeURIComponent(thread.id)}/turns`, { text: sentText, ...attached, ...turnOptions, ...(continues ? { continueAs: `${title(thread)} (continued)` } : {}) });
@@ -819,6 +865,7 @@ export default function Home() {
       clearSubmittedAttachments(originalId, sentAttachments); clearSubmittedAttachments(thread.id, sentAttachments);
       if (selectedRef.current?.id === thread.id && textRef.current === sentText && originalRequest === request.current) setText("");
     } catch (e) {
+      for (const mention of sentMentions) pickedMentions.current.set(mention.path, mention);
       if (errorThreadId) setRuntimeNotices(previous => ({ ...previous, [errorThreadId!]: e instanceof Error ? e.message : String(e) }));
       else if (originalRequest === request.current) setError(String(e instanceof Error ? e.message : e));
     } finally {
@@ -877,6 +924,18 @@ export default function Home() {
     if (!completedTurns.current.has(startedTurn.id)) setActiveTurns(prev => ({ ...prev, [thread.id]: startedTurn.id }));
     if (request.current === originalRequest && selectedRef.current?.id === thread.id) restoreComposerFocus(originalFocus);
   }
+  /** "Rewind to here": Elpis drops the turn and every later one (thread/revert, as edit-and-resend does) without sending anything;
+   * the turn's prompt returns to an empty message box when it can be resent as text. */
+  async function rewindFrom(turnId: string) {
+    const thread = selectedRef.current; if (!thread) return;
+    const prompt = replacementOptions.get(turnId), index = entries.findIndex(entry => entry.turnId === turnId);
+    const stale = new Set(entries.slice(Math.max(index, 0)).map(entry => entry.turnId));
+    await api(`/threads/${encodeURIComponent(thread.id)}/revert`, { beforeTurnId: turnId });
+    if (selectedRef.current?.id !== thread.id) return;
+    stickToBottom.current = true; setEntries(prev => prev.filter(entry => !stale.has(entry.turnId)));
+    if (prompt?.allowed && !textRef.current.trim()) editDraft(prompt.prompt);
+    focusComposer();
+  }
   async function answer(id: string, body: unknown, key: string) {
     const originalFocus = document.activeElement, originalRequest = request.current;
     await submitDraft(key, () => api(`/approvals/${encodeURIComponent(id)}`, body));
@@ -897,6 +956,16 @@ export default function Home() {
    * Commands that run the model or rewrite the chat wait for an idle chat; controls and views are always there. */
   const openSettings = (tab: SettingsTab) => { setSettingsSection(tab); show("settings"); };
   const focusComposer = () => composerRef.current?.focus();
+  /** The "+" menu's Files and Images: the same chooser, showing what `accept` names. */
+  const pickFiles = (accept: string) => { const input = filePickerRef.current; if (input) { input.accept = accept; input.click(); } };
+  /** The "+" menu's Mention: an "@" at the caret (after a space when words come before it), which opens the picker. */
+  function startMention() {
+    const box = composerRef.current, at = box?.selectionStart ?? textRef.current.length, before = textRef.current.slice(0, at);
+    const glue = before && !/\s$/.test(before) ? " " : "", next = before + glue + "@" + textRef.current.slice(at), position = before.length + glue.length + 1;
+    editDraft(next); setCaret(position); box?.focus(); requestAnimationFrame(() => box?.setSelectionRange(position, position));
+  }
+  /** The "+" menu's Slash commands: a "/" in an empty box, which opens the command list. */
+  function startSlash() { editDraft("/"); setCaret(1); focusComposer(); }
   // Returning from a disappearing action must not override a field the person chose while it was pending.
   const restoreComposerFocus = (origin: Element | null) => requestAnimationFrame(() => {
     const active = document.activeElement;
@@ -994,6 +1063,8 @@ export default function Home() {
     { name: "rag", description: "use the configured RAG MCP server or manage it with /rag <request>", available: !continues && idle, run: () => void send("/rag") },
   ];
   const slash = useSlashMenu(text, slashCommands, () => { editDraft(""); setPanel(null); setSlashNotice(""); });
+  const mention = useMentionMenu({ text, caret, cwd: chatFolder || undefined, threads, currentId: selected?.id,
+    onPick: result => { pickedMentions.current.set(result.mention.path, result.mention); editDraft(result.text); setCaret(result.caret); requestAnimationFrame(() => composerRef.current?.setSelectionRange(result.caret, result.caret)); } });
   // A panel belongs to the chat and page it was opened on; a notice goes when the person types again.
   useEffect(() => { setPanel(null); }, [selected?.id, view]);
   useEffect(() => { if (text) setSlashNotice(""); }, [text]);
@@ -1010,6 +1081,7 @@ export default function Home() {
     else if (id === "search") focusSearch();
     else if (id === "sidebar") showSidebar(narrow() ? !sidebar : sidebarCollapsed);
     else if (id === "settings") { setSettingsSection("general"); show("settings"); }
+    else if (id === "back" || id === "forward") goHistory(id === "back" ? -1 : 1);
     else if (id === "shortcuts") { shortcutsReturnFocus.current = document.activeElement as HTMLElement | null; setShortcutsOpen(true); }
     else if (id === "previous-chat" && ordered.length) void loadThread(ordered[at <= 0 ? 0 : at - 1]);
     else if (id === "next-chat" && ordered.length) void loadThread(ordered[at < 0 ? 0 : Math.min(ordered.length - 1, at + 1)]);
@@ -1104,11 +1176,12 @@ export default function Home() {
   const meta = selected ? [selected.agentNickname, selected.agentRole && selected.agentRole !== "default" ? selected.agentRole : null].filter(Boolean).join(" · ") : "";
 
   return <div className={`app-shell${dark ? " dark" : ""}${desktop ? " has-title-bar" : ""}${sidebarCollapsed ? " sidebar-collapsed" : ""}${view === "settings" ? " settings-mode" : ""}`} style={{ "--sidebar-width": `${sidebarWidth}px` } as CSSProperties}>
-    {desktop && <div className="title-bar"><Button variant="ghost" size="icon" aria-label={sidebarCollapsed ? "Open sidebar" : "Close sidebar"} title={`${sidebarCollapsed ? "Open" : "Close"} sidebar (Ctrl+B)`} onClick={() => showSidebar(narrow() ? !sidebar : sidebarCollapsed)}><PanelLeft /></Button></div>}
+    {desktop && <div className="title-bar"><Button variant="ghost" size="icon" aria-label={sidebarCollapsed ? "Open sidebar" : "Close sidebar"} title={`${sidebarCollapsed ? "Open" : "Close"} sidebar (Ctrl+B)`} onClick={() => showSidebar(narrow() ? !sidebar : sidebarCollapsed)}><PanelLeft /></Button><NavButtons canBack={canBack(history)} canForward={canForward(history)} onBack={() => goHistory(-1)} onForward={() => goHistory(1)} /></div>}
     <ShortcutsDialog open={shortcutsOpen} onOpenChange={setShortcutsOpen} returnFocus={shortcutsReturnFocus} />
     {desktop && <StartupSplash done={ready && connected} steps={[{ label: "Elpis engine connected", ok: connected }, { label: "models loaded", ok: models.length > 0 }, { label: "conversations loaded", ok: ready }]} />}
     <ProjectDialog projects={projects} editing={projectEdit} onClose={() => setProjectEdit(undefined)} onSave={saveProject} />
     <DeleteChatsDialog threads={deleteTargets} onDelete={deleteThread} onClose={() => setDeleteTargets(null)} />
+    <RewindDialog turns={rewindTurn ? Math.max(1, turnEntries.size - [...turnEntries.keys()].indexOf(rewindTurn)) : null} onConfirm={() => rewindFrom(rewindTurn!)} onClose={() => setRewindTurn(null)} />
     <aside className={`sidebar${sidebar ? " open" : ""}`} aria-label="Workspace navigation">
       <div className="brand"><Button className="sidebar-toggle" variant="ghost" size="icon-sm" aria-label="Close sidebar" title="Close sidebar (Ctrl+B)" onClick={() => showSidebar(false)}><PanelLeft size={16} /></Button><img src={brandMark} alt="Elpis" width={73} height={36} /></div>
       <nav className="nav-list" aria-label="Workspace">
@@ -1142,7 +1215,7 @@ export default function Home() {
       <span className="status-line"><i className={`status-dot${connected ? " connected" : ""}`} />{connected ? "Local workspace" : "Disconnected"}</span>
       <ResizeEdge label="Resize sidebar" width={sidebarWidth} min={SIDEBAR.min} max={SIDEBAR.max} initial={SIDEBAR.initial} grows="right" onResize={resizeSidebar} />
     </aside>
-    <main className="workspace">
+    <main className="workspace" style={panelShown && !fullView && side.width ? { "--side-w": `clamp(360px, ${side.width}px, 70%)` } as CSSProperties : undefined}>
       <header className={`workspace-header${heading ? "" : " untitled"}`}>
         {outsideChatApprovals.length > 0 && <div className="pending-input-anchor"><Button ref={pendingInputButton} className="pending-input-trigger" variant="secondary" size="sm" aria-label={`Needs input (${outsideChatApprovals.length})`} aria-expanded={pendingInputOpen} aria-controls="pending-input-panel" onKeyDown={event => { if (event.key === "Escape") setPendingInputOpen(false); }} onClick={() => setPendingInputOpen(value => !value)}><span className="pending-count">{outsideChatApprovals.length}</span>Needs input<span className="pending-task-name">{title(threads.find(thread => thread.id === outsideChatApprovals[0].params.threadId) || outsideChatApprovals[0].thread || {id:outsideChatApprovals[0].params.threadId || "unreported"})}</span></Button></div>}
         <Button className="mobile-menu sidebar-open" variant="ghost" size="icon-sm" aria-label="Open sidebar" title="Open sidebar (Ctrl+B)" onClick={() => showSidebar(true)}><PanelLeft size={16} /></Button>
@@ -1164,6 +1237,7 @@ export default function Home() {
         {selected && view === "chat" && team.length > 0 && !panelShown && <Button className="header-action" variant="ghost" size="icon-sm" aria-label={agentsPanel ? "Hide agents panel" : "Show agents panel"} aria-pressed={agentsPanel} onClick={() => setAgentsPanel(value => !value)}><PanelRight size={16} /></Button>}
         {selected && view === "chat" && <Button className="header-action" variant="ghost" size="icon-sm" aria-label="Refresh conversation" disabled={loading} onClick={() => loadThread(selected)}><RefreshCw size={16} /></Button>}
       </header>
+      <div className="workspace-notices">
       {error && <div className="error-banner" role="alert"><span>{error}</span><Button variant="ghost" size="icon-sm" aria-label="Dismiss error" onClick={() => setError("")}><X size={15} /></Button></div>}
       {catalogError && <div className="error-banner" role="alert"><span className="min-w-0">Models unavailable: {catalogError} Sign in or check Models &amp; accounts, then retry.</span><Button className="shrink-0" variant="outline" size="sm" disabled={catalogLoading} onClick={() => void refreshModels()}>Retry models</Button></div>}
       {catalogLoading && !catalogError && <p className="px-4 py-2 text-sm text-muted-foreground" role="status">Loading models…</p>}
@@ -1178,6 +1252,7 @@ export default function Home() {
           return <div key={approvalDraftKey(approval)} className="pending-request"><div className="pending-request-heading"><p>{name}</p>{approval.params.threadId && <Button variant="ghost" size="sm" onClick={() => { setPendingInputOpen(false); openById(approval.params.threadId!); }}>Open chat</Button>}</div><ApprovalCard approval={approval} answer={(id, body) => answer(id, body, approvalDraftKey(approval))} busy={!!pendingDrafts[approvalDraftKey(approval)]} answers={approvalDrafts[approvalDraftKey(approval)]?.answers ?? {}} onAnswerChange={(id, value) => draftAnswer(approval, id, value)} /></div>;
         })}</div>
       </section>}
+      </div>
       <div className={`workspace-body${panelShown ? " panel-open" : ""}${fullView ? ` full-view${side.chatCollapsed ? " chat-collapsed" : ""}` : ""}${view === "settings" ? " no-browser" : ""}`}><div className="workspace-content" {...(fullView ? { role: "region", "aria-label": "Floating chat" } : {})}>
       {fullView && <FloatChatBar title={chatName} onCollapse={() => side.setChatCollapsed(true)} />}
       {settingsVisited && <div className="page-scroll" hidden={view !== "settings"}><SettingsView initialTab={settingsSection} navigationKey={settingsNavigation} active={view === "settings"} threadId={selected?.id} accountRefresh={accountRefresh} theme={theme} onTheme={setTheme} onUnarchived={unarchived} onDeleteThread={deleteThread} onBack={() => { show("chat"); requestAnimationFrame(focusComposer); }} onProvidersChanged={async () => { await reloadSettings(); void refreshModels(); }} /></div>}
@@ -1186,7 +1261,7 @@ export default function Home() {
       {view === "agents" && <div className="page-scroll"><AgentsView threads={threads} activity={activity} models={models} providers={providerSettings?.providers} loading={agentsLoading} pendingThreadIds={approvals.map(approval => approval.params.threadId ?? approval.ownerThreadId)} moreConversations={!!nextCursor} loadingMore={moreLoading} onMoreConversations={loadMoreConversations} childCursors={childCursors} loadingChildren={loadingChildren} onMoreAgents={id => void loadChildren(id, childCursors[id] ?? undefined, false)} onOpen={loadThread} onStop={stop} onDelete={deleteThread} onNewAgent={() => show("newAgent")} /></div>}
       {newAgentVisited && <div className="page-scroll" hidden={view !== "newAgent"}><button type="button" className="back-link" onClick={() => show("agents")}><ArrowLeft size={18} aria-hidden="true" />Back to Agents</button><NewAgentForm key={newAgentVersion} models={models} settings={providerSettings} defaultCwd={cwd} connected={connected} onConfigure={manageConnections} onCreated={(thread, turnId, unsent, failure) => { setNewAgentVersion(value => value + 1); upsertThread(thread); if (unsent) saveDraft(thread.id, unsent); if (turnId && !completedTurns.current.has(turnId)) setActiveTurns(prev => ({ ...prev, [thread.id]: turnId })); void loadThread(thread).then(() => { if (failure && selectedRef.current?.id === thread.id) setError(failure); }); }} /></div>}
       {view === "chat" && <div className="chat-split"><div className={`chat-view${!selected && !entries.length ? " empty-chat" : ""}`}>
-        <div className="chat-scroll" ref={scroll} onScroll={event => { const element = event.currentTarget; stickToBottom.current = element.scrollHeight - element.scrollTop - element.clientHeight < 80; }}><div className="chat-content">
+        <div className="chat-scroll-wrap"><div className="chat-scroll" ref={scroll} onScroll={event => { const element = event.currentTarget; stickToBottom.current = element.scrollHeight - element.scrollTop - element.clientHeight < 80; }}><div className="chat-content">
           {itemCursor && <Button variant="outline" disabled={loading} onClick={older}>Load earlier messages</Button>}
           {loading && <p role="status" className="text-muted-foreground">Loading conversation…</p>}
           {!loading && !entries.length && <div className="empty-state">{selected ? <><h2>This conversation has no messages yet.</h2><p>Messages and tool activity appear here.</p></> : <><img className="empty-mark" src={brandMark} alt="" aria-hidden="true" /><h2>{project ? <>What should we build in <ProjectMenu variant="heading" projects={projects} selected={project} disabled={!ready || busy} onSelect={selectProject} onAdd={() => void addProject()} />?</> : "What should we build?"}</h2></>}</div>}
@@ -1195,13 +1270,13 @@ export default function Home() {
             onEdit={replaceable && e.item.type === "userMessage" && replacementOptions.get(e.turnId)?.allowed ? text => replaceFrom(e.turnId, text, editKey) : undefined}
             editBlockedReason={replaceable && e.item.type === "userMessage" && replacementOptions.get(e.turnId)?.allowed === false ? (replacementOptions.get(e.turnId) as { allowed: false; reason: string }).reason : undefined}
             time={e.item.type === "userMessage" ? e.startedAtMs : undefined}
-            onFork={selected && e.item.type === "agentMessage" && e.turnId !== activeTurn ? () => void forkFrom(selected, e.turnId) : undefined}
+            onFork={selected && e.item.type === "agentMessage" && e.turnId !== activeTurn ? () => void forkFrom(selected, e.turnId) : undefined} onRewind={replaceable ? () => setRewindTurn(e.turnId) : undefined}
             onRegenerate={regenerate && e.item.id === regenerate.replyId ? () => { replaceFrom(regenerate.turnId, regenerate.prompt).catch(error => setError(String(error instanceof Error ? error.message : error))); } : undefined} />; }} />
           {selected && proposedPlan && <div className="plan-prompt" role="group" aria-label="Implement this plan?"><h3>Implement this plan?</h3>
             <Button size="sm" disabled={busy || !connected} onClick={() => void implementPlan(selected, proposedPlan)}>Yes, implement this plan</Button>
             <Button size="sm" variant="ghost" onClick={() => { setPlanAnswered(prev => ({ ...prev, [selected.id]: proposedPlan })); focusComposer(); }}>No, stay in Plan mode</Button></div>}
           {approvals.filter(a => a.params.threadId === selected?.id).map(a => <ApprovalCard key={approvalDraftKey(a)} approval={a} answer={(id, body) => answer(id, body, approvalDraftKey(a))} busy={!!pendingDrafts[approvalDraftKey(a)]} answers={approvalDrafts[approvalDraftKey(a)]?.answers ?? {}} onAnswerChange={(id, value) => draftAnswer(a, id, value)} />)}
-        </div></div>
+        </div><PromptRail scroller={scroll} version={entries} /></div></div>
         <div className="composer-wrap">
           {panel === "status" && <SessionPanel rows={sessionRows} threadId={selected?.id} onUsage={() => { setPanel(null); openSettings("usage"); }} onClose={closePanel} />}
           {panel === "review" && selected && <ReviewPanel threadId={selected.id} onStart={target => void startReview(selected, target)} onClose={closePanel} />}
@@ -1211,7 +1286,7 @@ export default function Home() {
           <QueuedFollowUps threadId={selected?.id} activeTurnId={activeTurn} onError={setError} onComplete={restoreComposerFocus} />
           {!selected && <div className="composer-tray"><EnvironmentMenu folder={project?.cwd ?? null} disabled={!ready || busy} /><ProjectMenu variant="chip" projects={projects} selected={project} disabled={!ready || busy} onSelect={selectProject} onAdd={() => void addProject()} /></div>}
           <form className="composer" onSubmit={e => { e.preventDefault(); send(); }} onDragOver={e => { if (e.dataTransfer.types.includes("Files")) e.preventDefault(); }} onDrop={e => { if (e.dataTransfer.files.length || e.dataTransfer.types.includes("Files")) { e.preventDefault(); void addFiles(Array.from(e.dataTransfer.files)); } }}>
-            <SlashMenu menu={slash} />
+            <SlashMenu menu={slash} /><MentionMenu menu={mention} />
             <input ref={filePickerRef} type="file" multiple accept={ATTACHMENT_ACCEPT} className="hidden" aria-label="Choose files" onChange={e => { const files = Array.from(e.target.files ?? []); e.target.value = ""; void addFiles(files); }} />
             {attachments.length > 0 && <ul aria-label="Message attachments" className="flex flex-wrap gap-2 p-2">{attachments.map(part => <li key={part.id} className="flex max-w-full items-start gap-2 rounded-md border p-2 text-sm">
               {part.type === "image" ? <img src={part.dataUrl} alt={part.name} className="h-16 w-16 rounded object-contain" /> : <span aria-hidden="true">📄</span>}
@@ -1220,9 +1295,10 @@ export default function Home() {
             </li>)}</ul>}
             {attaching && <p role="status" className="px-3 py-2 text-sm text-muted-foreground">Reading files…</p>}
             {imageBlocked && <p role="alert" className="m-2 text-sm text-destructive">This model accepts text only. Choose an image-capable model or remove the images.</p>}
-            <Textarea ref={composerRef} aria-label="Message Elpis" {...slash.inputProps} onBlur={slash.close} placeholder={continues ? `Message ${title(selected!)}…` : selected && activeTurn ? followUpHint(preferences) : selected ? "Ask for a follow-up" : "Ask Elpis to build, fix or explain something"} value={text} onChange={e => editDraft(e.target.value)} onPaste={e => { const files = Array.from(e.clipboardData.files); if (files.length) { if (!e.clipboardData.getData("text/plain")) e.preventDefault(); void addFiles(files); } }} disabled={!ready || !connected || projectChanging} onKeyDown={e => { if (slash.onKeyDown(e)) return; if (e.key === "Tab" && e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey) { e.preventDefault(); cycleMode(); return; } if (activeTurn && !continues) { const followUp = followUpKey(e, preferences); if (followUp) { e.preventDefault(); send(undefined, followUp); } } else if (isSendKey(e, preferences)) { e.preventDefault(); send(); } }} />
+            <Textarea ref={composerRef} aria-label="Message Elpis" {...(mention.open ? mention.inputProps : slash.inputProps)} onBlur={() => { slash.close(); mention.close(); }} onSelect={e => setCaret(e.currentTarget.selectionStart)} placeholder={continues ? `Message ${title(selected!)}…` : selected && activeTurn ? followUpHint(preferences) : selected ? "Ask for a follow-up" : "Ask Elpis to build, fix or explain something"} value={text} onChange={e => { editDraft(e.target.value); setCaret(e.target.selectionStart); }} onPaste={e => { const files = Array.from(e.clipboardData.files); if (files.length) { if (!e.clipboardData.getData("text/plain")) e.preventDefault(); void addFiles(files); } }} disabled={!ready || !connected || projectChanging} onKeyDown={e => { if (mention.onKeyDown(e) || slash.onKeyDown(e)) return; if (e.key === "Tab" && e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey) { e.preventDefault(); cycleMode(); return; } if (activeTurn && !continues) { const followUp = followUpKey(e, preferences); if (followUp) { e.preventDefault(); send(undefined, followUp); } } else if (isSendKey(e, preferences)) { e.preventDefault(); send(); } }} />
             {fileNotice && <div className="flex items-center gap-2 px-3 text-sm text-destructive" role="alert"><span>{fileNotice}</span><Button type="button" variant="ghost" size="icon-xs" aria-label="Dismiss file notice" onClick={() => setFileNotice("")}><X size={14} /></Button></div>}
-            <div className="composer-controls"><div className="model-controls"><PlusMenu disabled={!ready || !connected || busy || projectChanging} attachDisabled={attaching || attachments.length >= 3} plan={planMode} onAttach={() => filePickerRef.current?.click()} onPlan={setPlan} />
+            <div className="composer-controls"><div className="model-controls"><PlusMenu disabled={!ready || !connected || busy || projectChanging} attachDisabled={attaching || attachments.length >= 3} imagesDisabled={knownModel?.inputModalities && !knownModel.inputModalities.includes("image") && "This model accepts text only"} slashDisabled={!!text} plan={planMode} returnFocus={composerRef}
+                onAttach={() => pickFiles(ATTACHMENT_ACCEPT)} onImages={() => pickFiles(IMAGE_ACCEPT)} onMention={startMention} onSlash={startSlash} onPlan={setPlan} />
               {planMode && <PlanPill disabled={!ready || busy} onOff={() => setPlan(false)} />}
               <PermissionsMenu mode={permissionMode} disabled={permissionsLocked} onChange={choosePermissions} />
             </div><div className="composer-right">
@@ -1231,7 +1307,7 @@ export default function Home() {
                 model={selected ? turnModel : model} choiceId={selected ? selectedChoice?.id || "" : choiceId} defaultModel={selected ? null : providerSettings?.main.model}
                 disabled={!ready || busy || projectChanging} onConfigure={manageConnections} onKeySaved={() => void reloadSettings().catch(() => {})} onChange={choice => { if (selected) setOverride(selected.id, { model: choice.model }); else { setChoiceId(choice.choiceId); setModel(choice.model); setEffort(""); } }} />
               {turnEfforts.length > 0 && <OptionSelect aria-label="Reasoning effort" className="model-select" value={turnEffort} onChange={e => selected ? setOverride(selected.id, { effort: e.target.value }) : setEffort(e.target.value)} disabled={!ready || busy}>
-                <option value="">Default effort</option>
+                <option value=""><span className="effort-long">Default effort</span><span className="effort-short">Default</span></option>
                 {turnEffort && !turnEfforts.includes(turnEffort) && <option value={turnEffort}>{turnEffort}</option>}
                 {turnEfforts.map(value => <option key={value} value={value}>{value}</option>)}
               </OptionSelect>}

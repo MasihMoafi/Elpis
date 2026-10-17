@@ -88,3 +88,25 @@ test('maximum-size base64 images validate without overflowing and oversized imag
   const over = {...large,dataUrl:`data:image/png;base64,${Buffer.concat([bytes,Buffer.from([0])]).toString('base64')}`};
   assert.throws(()=>attachmentInput('',[over]),/large/);
 });
+test('mentions become native mention items after the text, never count as content or files, and are validated', () => {
+  const mentions = [{ name: 'src/app.ts', path: '/work/src/app.ts' }, { name: 'Other chat', path: 'thread://abc' }];
+  const input = attachmentInput('look at @src/app.ts', [image()], mentions);
+  assert.deepEqual(input.map(part => part.type), ['text', 'mention', 'mention', 'image']);
+  assert.deepEqual(input[1], { type: 'mention', name: 'src/app.ts', path: '/work/src/app.ts' });
+  assert.deepEqual(attachmentInput('hi', [], undefined), [{ type: 'text', text: 'hi', text_elements: [] }]);
+  assert.throws(() => attachmentInput('', [], mentions), /Write a message/);
+  for (const bad of ['x', [{ name: '', path: '/a' }], [{ name: 'a' }], [{ name: 'a', path: '/a', extra: 1 }], [{ name: 'a\n', path: '/a' }], [{ name: 'a', path: 'x'.repeat(4097) }], Array.from({ length: 11 }, () => mentions[0])]) {
+    assert.throws(() => attachmentInput('hi', [], bad), /mention/i);
+  }
+});
+test('send and steer carry mentions to the native input', async t => {
+  const { socket, client } = fixture(); t.after(() => client.close()); await client.initialize();
+  const mentions = [{ name: 'src/app.ts', path: '/work/src/app.ts' }];
+  await client.send(ID, { text: 'see @src/app.ts', mentions });
+  assert.deepEqual(socket.sent.findLast(r => r.method === 'turn/start').params.input.map(part => part.type), ['text', 'mention']);
+  await client.steer(ID, { text: 'and this', expectedTurnId: 'turn', mentions });
+  assert.deepEqual(socket.sent.findLast(r => r.method === 'turn/steer').params.input.at(-1), { type: 'mention', name: 'src/app.ts', path: '/work/src/app.ts' });
+  socket.sent.length = 0;
+  await assert.rejects(client.send(ID, { text: 'draft', mentions: [{ name: 'a' }] }), /mention/i);
+  assert.equal(socket.sent.length, 0);
+});

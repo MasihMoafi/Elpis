@@ -33,7 +33,7 @@ function Turn({ turn, active, renderItem }: { turn: TurnEntries; active: boolean
   const finalReply = active ? -1 : plan >= 0 && (lastReply < 0 || plan < lastReply) ? plan : lastReply;
   const folded = finalReply > 0 ? work.slice(0, finalReply) : [];
   const visible = finalReply > 0 ? work.slice(finalReply) : work;
-  return <section className="turn" aria-label="Turn">
+  return <section className="turn" aria-label="Turn" data-prompt={users.length > 0 ? "" : undefined}>
     {users.map(renderItem)}
     {folded.length > 0 && <details className="worked-for">
       <summary><span>{workedFor(turn.entries)}</span></summary>

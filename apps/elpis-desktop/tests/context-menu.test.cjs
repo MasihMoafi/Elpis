@@ -166,26 +166,27 @@ test('without the desktop tab strip, the chat title right-clicks into the same m
   assert.deepEqual(await items(), fromButton);
 }, { desktop: false }));
 
-test('a message right-click offers the hover buttons as one list; selected text, links and fields keep the native menu', () => fixture(async ({ page, row, items, closeMenu, lastPrevented, popup, shot }) => {
+test('a message right-click opens the message menu, the same list as the hover …; selected text, links and fields keep the native menu', () => fixture(async ({ page, row, items, closeMenu, lastPrevented, popup, shot }) => {
   await row('alpha').locator('.thread-link').click();
   const user = page.locator('.user-turn'), reply = page.locator('article.message.agent');
   await reply.waitFor();
-  const hovered = async scope => { await scope.hover(); return scope.locator('.message-actions button').evaluateAll(buttons => buttons.map(button => button.getAttribute('aria-label'))); };
+  // The hover … opens the same list as a right-click (the message menu's own contents are in claude-chat.test.cjs).
+  const hovered = async scope => { await scope.hover(); await scope.getByRole('button', { name: 'More message actions', exact: true }).click(); const list = await items(); await closeMenu(); return list; };
   // Right-click on a message that has no selection.
-  const userButtons = await hovered(user);
+  const userMenu = await hovered(user);
   await user.locator('.message.user').click({ button: 'right' });
-  assert.deepEqual(await items(), userButtons, 'a user message: the menu is the hover buttons');
-  assert.ok((await items()).includes('Copy message'));
+  assert.deepEqual(await items(), userMenu, 'a user message: the menu is the hover …');
+  assert.ok((await items()).includes('Copy as Markdown'));
   assert.equal(await lastPrevented(), true);
   await shot('message-user-right-click');
-  await page.getByRole('menuitem', { name: 'Copy message', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'Copy as Markdown', exact: true }).click();
   assert.equal(await page.evaluate(() => navigator.clipboard.readText()), 'Please summarize the cache design.');
-  const replyButtons = await hovered(reply);
+  const replyMenu = await hovered(reply);
   await reply.locator('p').first().click({ button: 'right' });
-  assert.deepEqual(await items(), replyButtons, 'a reply: the menu is the hover buttons');
-  assert.ok((await items()).includes('Copy reply'));
+  assert.deepEqual(await items(), replyMenu, 'a reply: the menu is the hover …');
+  assert.ok((await items()).includes('Copy as Markdown'));
   await shot('message-reply-right-click');
-  await page.getByRole('menuitem', { name: 'Copy reply', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'Copy as Markdown', exact: true }).click();
   assert.match(await page.evaluate(() => navigator.clipboard.readText()), /^The cache keeps one prefix per chat\./);
   // Selected text: the page leaves the right-click to the native Copy.
   const paragraph = reply.locator('p').first();

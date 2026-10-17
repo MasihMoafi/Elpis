@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { Check, ChevronDown, X } from "lucide-react";
+import { useRef, useState, type ElementType, type RefObject } from "react";
+import { AtSign, Check, ChevronDown, Image as ImageIcon, SquareSlash, X } from "lucide-react";
 import { AskIcon, AttachIcon, AutoApproveIcon, BypassIcon, FullAccessIcon, PlanIcon, PlusIcon } from "@/components/elpis-icons";
 import { AlertDialog, AlertDialogClose, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
@@ -11,11 +11,11 @@ export type PermissionMode = "ask" | "auto" | "full" | "bypass";
 
 /** ChatGPT's three approval modes plus Elpis's Bypass permissions; the bridge maps each to Elpis
  * approval and sandbox settings. */
-const MODES: { id: PermissionMode; label: string; description: string; Icon: typeof AskIcon }[] = [
-  { id: "ask", label: "Ask for approval", description: "Always ask to edit files outside the workspace and to use the internet", Icon: AskIcon },
-  { id: "auto", label: "Approve for me", description: "Only ask for actions a reviewer judges potentially unsafe", Icon: AutoApproveIcon },
-  { id: "full", label: "Full access", description: "Unrestricted access to the internet and any file on this computer", Icon: FullAccessIcon },
-  { id: "bypass", label: "Bypass permissions", description: "Run anything without asking, even commands Elpis would otherwise refuse", Icon: BypassIcon },
+const MODES: { id: PermissionMode; label: string; /** What the button says when room is short. */ short: string; description: string; Icon: typeof AskIcon }[] = [
+  { id: "ask", label: "Ask for approval", short: "Ask", description: "Always ask to edit files outside the workspace and to use the internet", Icon: AskIcon },
+  { id: "auto", label: "Approve for me", short: "Auto", description: "Only ask for actions a reviewer judges potentially unsafe", Icon: AutoApproveIcon },
+  { id: "full", label: "Full access", short: "Full", description: "Unrestricted access to the internet and any file on this computer", Icon: FullAccessIcon },
+  { id: "bypass", label: "Bypass permissions", short: "Bypass", description: "Run anything without asking, even commands Elpis would otherwise refuse", Icon: BypassIcon },
 ];
 /** A mode's name, as the permissions menu words it. */
 export const permissionLabel = (mode: PermissionMode) => (MODES.find(item => item.id === mode) ?? MODES[0]).label;
@@ -28,7 +28,7 @@ export function PermissionsMenu({ mode, disabled, onChange }: { mode: Permission
   return <>
     <DropdownMenu>
       <DropdownMenuTrigger className={`composer-pill permissions-${mode} ${dangerous(mode)}`} disabled={disabled} aria-label="Change permissions" title="Change permissions (Shift+Tab in the message box cycles Ask, Approve for me and Plan)">
-        <current.Icon size={14} aria-hidden="true" /><span>{current.label}</span><ChevronDown size={13} aria-hidden="true" />
+        <current.Icon size={14} aria-hidden="true" /><span className="pill-long">{current.label}</span><span className="pill-short">{current.short}</span><ChevronDown size={13} aria-hidden="true" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="hud-menu w-80">
         <p className="hud-menu-title">How should Elpis's actions be approved?</p>
@@ -57,14 +57,28 @@ export function PermissionsMenu({ mode, disabled, onChange }: { mode: Permission
   </>;
 }
 
-/** The ChatGPT app's "+" menu, limited to what Elpis runs: files and Plan mode. */
-export function PlusMenu({ disabled, attachDisabled, plan, onAttach, onPlan }: { disabled?: boolean; attachDisabled?: boolean; plan: boolean; onAttach: () => void; onPlan: (on: boolean) => void }) {
-  return <DropdownMenu>
+/** What the "+" menu does, one function each; the message box owns them. */
+type PlusActions = { onAttach: () => void; onImages: () => void; onMention: () => void; onSlash: () => void; onPlan: (on: boolean) => void };
+
+/** The "+" menu, as in the ChatGPT and Claude apps, limited to what Elpis runs: files, pictures, an @ mention, the
+ * slash commands and Plan mode. Closing it returns the focus to the message box (`returnFocus`). */
+export function PlusMenu({ disabled, attachDisabled, imagesDisabled, slashDisabled, plan, returnFocus, onAttach, onImages, onMention, onSlash, onPlan }: PlusActions & {
+  disabled?: boolean; attachDisabled?: boolean; /** Why pictures cannot be added now, in a few words (a text-only model). */ imagesDisabled?: string | false;
+  slashDisabled?: boolean; plan: boolean; returnFocus: RefObject<HTMLElement | null>;
+}) {
+  // An item that changes the message box (Mention, Slash commands) acts once the menu has closed and given the focus back.
+  const afterClose = useRef<(() => void) | null>(null);
+  const item = (Icon: ElementType, name: string, hint: string, props: { disabled?: boolean; onClick: () => void }, on?: boolean) =>
+    <DropdownMenuItem className="hud-menu-item" {...props}><Icon aria-hidden="true" /><span className="grid gap-0.5"><span>{name}</span><small>{hint}</small></span>{on && <Check className="ml-auto" aria-label="On" />}</DropdownMenuItem>;
+  return <DropdownMenu onOpenChangeComplete={open => { if (!open) { const run = afterClose.current; afterClose.current = null; run?.(); } }}>
     <DropdownMenuTrigger render={<Button type="button" variant="ghost" size="icon-sm" className="composer-plus" aria-label="Add files and more" title="Add files and more" disabled={disabled} />}><PlusIcon className="size-4" /></DropdownMenuTrigger>
-    <DropdownMenuContent align="start" className="hud-menu w-80">
+    <DropdownMenuContent align="start" className="hud-menu w-80" finalFocus={returnFocus}>
       <p className="hud-menu-title">Add</p>
-      <DropdownMenuItem className="hud-menu-item" disabled={attachDisabled} onClick={onAttach}><AttachIcon aria-hidden="true" /><span className="grid gap-0.5"><span>Files</span><small>Images, PDF or text, up to 3</small></span></DropdownMenuItem>
-      <DropdownMenuItem className="hud-menu-item" onClick={() => onPlan(!plan)}><PlanIcon aria-hidden="true" /><span className="grid gap-0.5"><span>Plan mode</span><small>{plan ? "Turn plan mode off" : "Turn plan mode on"}</small></span>{plan && <Check className="ml-auto" aria-label="On" />}</DropdownMenuItem>
+      {item(AttachIcon, "Files", "Images, PDF or text, up to 3", { disabled: attachDisabled, onClick: onAttach })}
+      {item(ImageIcon, "Images", imagesDisabled || "PNG, JPEG, WebP or GIF", { disabled: attachDisabled || !!imagesDisabled, onClick: onImages })}
+      {item(AtSign, "Mention", "A file in this project or another chat", { onClick: () => { afterClose.current = onMention; } })}
+      {item(SquareSlash, "Slash commands", slashDisabled ? "Clear the message box first" : "Run a command such as /model or /review", { disabled: slashDisabled, onClick: () => { afterClose.current = onSlash; } })}
+      {item(PlanIcon, "Plan mode", plan ? "Turn plan mode off" : "Turn plan mode on", { onClick: () => onPlan(!plan) }, plan)}
     </DropdownMenuContent>
   </DropdownMenu>;
 }

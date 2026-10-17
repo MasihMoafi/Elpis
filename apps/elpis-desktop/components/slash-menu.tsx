@@ -42,13 +42,23 @@ export function useSlashMenu(text: string, commands: SlashCommand[], clear: () =
     inputProps: { "aria-autocomplete": "list" as const, "aria-controls": open ? MENU_ID : undefined, "aria-activedescendant": open ? `${MENU_ID}-${matches[active].name}` : undefined } };
 }
 
-export function SlashMenu({ menu }: { menu: ReturnType<typeof useSlashMenu> }) {
-  if (!menu.open) return null;
-  return <div className="slash-menu hud-menu" role="listbox" id={MENU_ID} aria-label="Slash commands">
-    {menu.matches.map((command, index) => <div key={command.name} id={`${MENU_ID}-${command.name}`} role="option" aria-selected={index === menu.active} className="slash-option hud-menu-item"
-      ref={index === menu.active ? element => element?.scrollIntoView({ block: "nearest" }) : undefined}
-      onMouseDown={event => event.preventDefault()} onMouseMove={() => { if (index !== menu.active) menu.select(index); }} onClick={() => menu.run(command)}>
-      <span className="slash-name">/{command.name}</span><span className="slash-description">{command.description}</span>
+/** One line of an option list above the message box: a name and what it is. */
+export type ListOption = { key: string; name: string; description: string };
+
+/** The list the slash commands and the @ picker both draw above the message box: one look, mouse and scroll behaviour.
+ * The message box keeps the focus; the keys are the owner's (`aria-activedescendant` names `${id}-${key}`). */
+export function OptionList({ id, label, options, active, onHover, onPick, kind }: { id: string; label: string; options: ListOption[]; active: number; onHover: (index: number) => void; onPick: (index: number) => void; /** The description is a kind (File, Chat), set at the right edge. */ kind?: boolean }) {
+  return <div className={`slash-menu hud-menu${kind ? " option-list-kind" : ""}`} role="listbox" id={id} aria-label={label}>
+    {options.map((option, index) => <div key={option.key} id={`${id}-${option.key}`} role="option" aria-selected={index === active} className="slash-option hud-menu-item"
+      ref={index === active ? element => element?.scrollIntoView({ block: "nearest" }) : undefined}
+      onMouseDown={event => event.preventDefault()} onMouseMove={() => { if (index !== active) onHover(index); }} onClick={() => onPick(index)}>
+      <span className="slash-name">{option.name}</span><span className="slash-description">{option.description}</span>
     </div>)}
   </div>;
+}
+
+export function SlashMenu({ menu }: { menu: ReturnType<typeof useSlashMenu> }) {
+  if (!menu.open) return null;
+  return <OptionList id={MENU_ID} label="Slash commands" options={menu.matches.map(command => ({ key: command.name, name: `/${command.name}`, description: command.description }))}
+    active={menu.active} onHover={menu.select} onPick={index => menu.run(menu.matches[index])} />;
 }

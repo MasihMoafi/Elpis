@@ -1,5 +1,7 @@
 export type Attachment = { id: string; name: string; type: "image"; mimeType: string; dataUrl: string } | { id: string; name: string; type: "text"; mimeType: "text/plain"; text: string };
 type DraftStorage = Pick<Storage, "getItem" | "setItem" | "removeItem">;
+/** What the "+" menu's Images item lets the file chooser show. */
+export const IMAGE_ACCEPT = "image/png,image/jpeg,image/webp,image/gif";
 export const ATTACHMENT_ACCEPT = "image/png,image/jpeg,image/webp,image/gif,application/pdf,text/*,.txt,.md,.csv,.json,.yaml,.yml,.toml,.log,.xml,.html,.css,.js,.jsx,.ts,.tsx,.py,.rs,.sh,.sql";
 const PREFIX = "elpis-attachments-v1:";
 const IMAGE_LIMIT = 4 * 1024 * 1024, TEXT_LIMIT = 128 * 1024;

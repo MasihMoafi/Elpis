@@ -2,13 +2,14 @@
 
 import { useState } from "react";
 import { BranchIcon, BrowserIcon, FileEditIcon, PlanIcon, ToolIcon } from "@/components/elpis-icons";
-import { Copy, Pencil, RefreshCw, Terminal } from "lucide-react";
-import { RightClickMenu, type MenuAction } from "@/components/action-menu";
+import { Copy, FileText, Pencil, RefreshCw, Terminal, Undo2 } from "lucide-react";
+import { MoreMenu, RightClickMenu, type MenuAction } from "@/components/action-menu";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { CopyButton, MarkdownText } from "@/components/markdown-text";
 import { type Item, type Thread, taskFromPath, title } from "@/lib/api";
 import { inlineMediaUrl } from "@/lib/attachments";
+import { plainText } from "@/lib/message-copy";
 import { shellTokens, stepFailed, stepLabel, unwrapShell } from "@/lib/steps";
 
 const object = (value: unknown): Record<string,unknown> => value && typeof value === "object" && !Array.isArray(value) ? value as Record<string,unknown> : {};
@@ -60,14 +61,23 @@ function CommandStep({item}:{item:Item}) {
     </div>
   </div>;
 }
-/** What a person can do with a message: the hover buttons and the right-click menu both draw this one list. */
-type MessageAction = MenuAction & { title?: string; copy?: () => string };
-const copyAction = (label: string, text: () => string): MessageAction => ({ id: "copy", label, icon: <Copy size={14}/>, copy: text, run: () => void navigator.clipboard.writeText(text()).catch(() => {}) });
+/** What a person can do with a message: the hover buttons, the "…" and the right-click menu all draw this one list.
+ * `menuLabel` is the item's words in the menus (the hover button keeps its short name); `menuOnly` items have no hover button. */
+type MessageAction = MenuAction & { title?: string; copy?: () => string; menuLabel?: string; menuOnly?: boolean };
+const write = (value: string) => void navigator.clipboard.writeText(value).catch(() => {});
+/** "Copy as Markdown": the message as written; the hover button copies the same. */
+const copyAction = (label: string, text: () => string): MessageAction => ({ id: "copy", label, menuLabel: "Copy as Markdown", icon: <Copy size={14}/>, copy: text, run: () => write(text()) });
+/** "Copy text": the message as a reader sees it, without the Markdown marks. */
+const copyTextAction = (markdown: () => string, markup = true): MessageAction => ({ id: "copy-text", label: "Copy text", icon: <FileText size={14}/>, menuOnly: true, run: () => write(markup ? plainText(markdown()) : markdown()) });
+const rewindAction = (rewind?: () => void): MessageAction[] => rewind ? [{ id: "rewind", label: "Rewind to here", icon: <Undo2 size={14}/>, menuOnly: true, run: rewind }] : [];
+const menuActions = (actions: MessageAction[]): MenuAction[] => actions.map(action => ({ ...action, label: action.menuLabel ?? action.label }));
 function MessageButtons({actions}:{actions:MessageAction[]}) {
-  return <>{actions.map(action=>action.copy?<CopyButton key={action.id} label={action.label} text={action.copy}/>:<Button key={action.id} variant="ghost" size="icon-xs" aria-label={action.label} title={action.title??action.label} onClick={action.run}>{action.icon}</Button>)}</>;
+  return <>{actions.filter(action=>!action.menuOnly).map(action=>action.copy?<CopyButton key={action.id} label={action.label} text={action.copy}/>:<Button key={action.id} variant="ghost" size="icon-xs" aria-label={action.label} title={action.title??action.label} onClick={action.run}>{action.icon}</Button>)}
+    <MoreMenu actions={menuActions(actions)} label="More message actions" title="More actions" />
+  </>;
 }
 /** Sending an edit replaces this message and every later turn through Elpis (thread/revert), then starts the edited turn. */
-function UserMessage({body,attachments,attachmentContent,copyText,onEdit,editBlockedReason,editDraft,onEditDraftChange,editPending,time}:{body:string;attachments:string[];attachmentContent?:React.ReactNode;copyText?:string;onEdit?:(text:string)=>Promise<void>;editBlockedReason?:string;editDraft?:string;onEditDraftChange?:(value:string|null)=>void;editPending?:boolean;time?:number}) {
+function UserMessage({body,attachments,attachmentContent,copyText,onEdit,onRewind,editBlockedReason,editDraft,onEditDraftChange,editPending,time}:{body:string;attachments:string[];attachmentContent?:React.ReactNode;copyText?:string;onEdit?:(text:string)=>Promise<void>;onRewind?:()=>void;editBlockedReason?:string;editDraft?:string;onEditDraftChange?:(value:string|null)=>void;editPending?:boolean;time?:number}) {
   const [localEditing,setEditing]=useState(false);const [localDraft,setLocalDraft]=useState(body);const [localBusy,setBusy]=useState(false);const [error,setError]=useState("");
   const busy=localBusy||!!editPending;
   const editing=onEditDraftChange?editDraft!==undefined:localEditing,draft=onEditDraftChange?editDraft??body:localDraft;
@@ -80,23 +90,24 @@ function UserMessage({body,attachments,attachmentContent,copyText,onEdit,editBlo
     {error&&<p role="alert" className="text-sm text-destructive">{error}</p>}
     <div className="flex justify-end gap-2"><Button type="button" variant="outline" size="sm" disabled={busy} onClick={cancel}>Cancel</Button><Button type="submit" size="sm" disabled={busy||!onEdit||!draft.trim()}>{busy?"Sending…":"Send"}</Button></div>
   </form>;
-  const actions:MessageAction[]=[copyAction("Copy message",()=>copyText ?? [body,...attachments].filter(Boolean).join("\n")),...(onEdit?[{id:"edit",label:"Edit message",title:"Edit and resend",icon:<Pencil size={14}/>,run:()=>{setDraft(body);setError("");setEditing(true);}}]:[])];
-  return <RightClickMenu actions={actions} area={<div className="user-turn"/>}><div className="message user">{body}{attachmentContent || (attachments.length>0&&<ul className="mt-2 space-y-1 text-sm" aria-label="Message attachments">{attachments.map((label,index)=><li key={index}>{label}</li>)}</ul>)}{!body&&!attachments.length&&<span>Message content unavailable.</span>}</div><div className="message-actions">
+  const whole=()=>copyText ?? [body,...attachments].filter(Boolean).join("\n");
+  const actions:MessageAction[]=[copyTextAction(whole,false),copyAction("Copy message",whole),...(onEdit?[{id:"edit",label:"Edit message",menuLabel:"Edit and retry",title:"Edit and resend",icon:<Pencil size={14}/>,run:()=>{setDraft(body);setError("");setEditing(true);}}]:[]),...rewindAction(onRewind)];
+  return <RightClickMenu actions={menuActions(actions)} area={<div className="user-turn"/>}><div className="message user">{body}{attachmentContent || (attachments.length>0&&<ul className="mt-2 space-y-1 text-sm" aria-label="Message attachments">{attachments.map((label,index)=><li key={index}>{label}</li>)}</ul>)}{!body&&!attachments.length&&<span>Message content unavailable.</span>}</div><div className="message-actions">
     {time&&<time className="message-time" dateTime={new Date(time).toISOString()} title={new Date(time).toLocaleString()}>{new Date(time).toLocaleTimeString([],{hour:"numeric",minute:"2-digit"})}</time>}
     <MessageButtons actions={actions}/>
     {!onEdit&&editBlockedReason&&<Button variant="ghost" size="icon-xs" aria-label="Why editing is unavailable" title={editBlockedReason} onClick={()=>setError(previous=>previous?"":editBlockedReason)}><Pencil size={14}/></Button>}
   </div>{error&&<p role="status" className="mb-3 text-xs text-muted-foreground">{error}</p>}</RightClickMenu>;
 }
-export function ChatMessage({item,speaker="Elpis",threads=[],onOpenThread,onEdit,onRegenerate,onFork,time,editBlockedReason,editDraft,onEditDraftChange,editPending,mediaBase}:{item:Item;speaker?:string;threads?:Thread[];onOpenThread?:(id:string)=>void;onEdit?:(text:string)=>Promise<void>;onRegenerate?:()=>void;onFork?:()=>void;time?:number;editBlockedReason?:string;editDraft?:string;onEditDraftChange?:(value:string|null)=>void;editPending?:boolean;mediaBase?:string}) {
+export function ChatMessage({item,speaker="Elpis",threads=[],onOpenThread,onEdit,onRegenerate,onFork,onRewind,time,editBlockedReason,editDraft,onEditDraftChange,editPending,mediaBase}:{item:Item;speaker?:string;threads?:Thread[];onOpenThread?:(id:string)=>void;onEdit?:(text:string)=>Promise<void>;onRegenerate?:()=>void;onFork?:()=>void;onRewind?:()=>void;time?:number;editBlockedReason?:string;editDraft?:string;onEditDraftChange?:(value:string|null)=>void;editPending?:boolean;mediaBase?:string}) {
   if(item.type==="userMessage"){
     const content=list(item.content).map(object),attached=content.map((part,index)=>({part,index,file:fileAttachment(part)})).filter(({part,file})=>part.type!=="text" || file),attachments=attached.map(({part,file})=>file || attachmentLabel(part));
     const reason=editBlockedReason||(attachments.length?"This message contains attachments that this app cannot safely resend.":undefined);
     const attachmentContent=attached.length ? <ul className="mt-2 space-y-3 text-sm" aria-label="Message attachments">{attached.map(({part,index,file})=><li key={index}>{file ? <details className="max-w-full rounded-md border border-border p-2"><summary className="cursor-pointer break-all">{file}</summary><pre className="mt-2 max-h-80 max-w-full overflow-auto whitespace-pre-wrap break-words text-left">{text(part.text).slice(`File: ${file}\n`.length)}</pre></details> : <RecordedAttachment part={part} index={index} mediaBase={mediaBase}/>}</li>)}</ul> : undefined;
-    return <UserMessage body={content.filter(part=>part.type==="text"&&!fileAttachment(part)).map(part=>text(part.text)).join("\n")} copyText={content.map(part=>part.type==="text"?text(part.text):attachmentLabel(part)).join("\n")} attachments={attachments} attachmentContent={attachmentContent} onEdit={reason?undefined:onEdit} editBlockedReason={reason} editDraft={editDraft} onEditDraftChange={onEditDraftChange} editPending={editPending} time={time}/>;
+    return <UserMessage body={content.filter(part=>part.type==="text"&&!fileAttachment(part)).map(part=>text(part.text)).join("\n")} copyText={content.map(part=>part.type==="text"?text(part.text):attachmentLabel(part)).join("\n")} attachments={attachments} attachmentContent={attachmentContent} onEdit={reason?undefined:onEdit} onRewind={onRewind} editBlockedReason={reason} editDraft={editDraft} onEditDraftChange={onEditDraftChange} editPending={editPending} time={time}/>;
   }
   if(item.type==="agentMessage"){
-    const actions:MessageAction[]=item.text?[copyAction("Copy reply",()=>item.text||""),...(onRegenerate?[{id:"regenerate",label:"Regenerate reply",title:"Regenerate",icon:<RefreshCw size={14}/>,run:onRegenerate}]:[]),...(onFork?[{id:"fork",label:"Fork chat from here",icon:<BranchIcon size={14}/>,run:onFork}]:[])]:[];
-    return <RightClickMenu actions={actions} area={<article className="message agent"/>}>{speaker!=="Elpis"&&<div className="speaker">{speaker}</div>}<MarkdownText text={item.text||""}/>{actions.length>0&&<div className="message-actions"><MessageButtons actions={actions}/></div>}</RightClickMenu>;
+    const actions:MessageAction[]=item.text?[copyTextAction(()=>item.text||""),copyAction("Copy reply",()=>item.text||""),...(onRegenerate?[{id:"regenerate",label:"Regenerate reply",title:"Regenerate",icon:<RefreshCw size={14}/>,run:onRegenerate}]:[]),...rewindAction(onRewind),...(onFork?[{id:"fork",label:"Fork chat from here",icon:<BranchIcon size={14}/>,run:onFork}]:[])]:[];
+    return <RightClickMenu actions={menuActions(actions)} area={<article className="message agent"/>}>{speaker!=="Elpis"&&<div className="speaker">{speaker}</div>}<MarkdownText text={item.text||""}/>{actions.length>0&&<div className="message-actions"><MessageButtons actions={actions}/></div>}</RightClickMenu>;
   }
   if(item.type==="commandExecution")return <CommandStep item={item}/>;
   if(item.type==="fileChange"){

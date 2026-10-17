@@ -32,12 +32,26 @@ export function imageMime(bytes) {
   if (bytes.subarray(0, 4).toString('ascii') === 'RIFF' && bytes.subarray(8, 12).toString('ascii') === 'WEBP') return 'image/webp';
   return null;
 }
+/** The @-mentions of a message as native `mention` input items (name and path), validated as a batch. They are
+ * references recorded with the message, never content: a message of mentions alone is empty. */
+function mentionInput(mentions) {
+  if (mentions === undefined) return [];
+  if (!Array.isArray(mentions) || mentions.length > 10) throw new AttachmentError('Invalid mentions: at most ten per message');
+  return mentions.map(mention => {
+    if (!mention || typeof mention !== 'object' || Array.isArray(mention) || Object.keys(mention).some(key => !['name', 'path'].includes(key))) throw new AttachmentError('Invalid mention fields');
+    if (typeof mention.name !== 'string' || !mention.name.trim() || mention.name.length > 200 || /[\x00-\x1f\x7f]/.test(mention.name)) throw new AttachmentError('Invalid mention name');
+    if (typeof mention.path !== 'string' || !mention.path.trim() || mention.path.length > 4096 || /[\x00-\x1f\x7f]/.test(mention.path)) throw new AttachmentError('Invalid mention path');
+    return { type: 'mention', name: mention.name, path: mention.path };
+  });
+}
 /** Construct native input only after validating the entire attachment batch. */
-export function attachmentInput(message, attachments = []) {
+export function attachmentInput(message, attachments = [], mentions) {
   if (message === undefined) message = '';
   if (typeof message !== 'string' || message.length > 32000) throw new AttachmentError('Invalid message');
   if (!Array.isArray(attachments) || attachments.length > 3) throw new AttachmentError('Attach at most three files');
   const input = message.trim() ? [{ type: 'text', text: message, text_elements: [] }] : [];
+  const referenced = mentionInput(mentions);
+  input.push(...referenced);
   const ids = new Set(); let imageSize = 0, textSize = 0;
   for (const file of attachments) {
     fields(file, ['id', 'name', 'type', 'mimeType', ...(file?.type === 'image' ? ['dataUrl'] : ['text'])]);
@@ -58,7 +72,7 @@ export function attachmentInput(message, attachments = []) {
       input.push({ type: 'text', text: contents, text_elements: [{ byteRange: { start: 0, end: Buffer.byteLength(contents) }, placeholder: `Attachment: ${file.name}` }] });
     } else throw new AttachmentError('Unsupported attachment type');
   }
-  if (!input.length) throw new AttachmentError('Write a message or attach a file');
+  if (input.length === referenced.length) throw new AttachmentError('Write a message or attach a file');
   return input;
 }
 

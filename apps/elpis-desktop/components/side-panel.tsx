@@ -31,6 +31,8 @@ export function useSidePanel(browser: Browser) {
   const [terminals, setTerminals] = useState<TerminalTab[]>([]), [changes, setChanges] = useState(false);
   const [active, setActive] = useState<string | null>(null);
   const [full, setFull] = useState(false), [chatCollapsed, setChatCollapsed] = useState(false);
+  /** The panel's width in pixels once its edge has been dragged; until then it takes half the work area (app/globals.css). */
+  const [width, setWidth] = useState<number | null>(null);
   const order = useRef<string[]>([]);
   const pages = browser.state?.tabs ?? [];
   order.current = mergeOrder(order.current, [...terminals.map(tab => `t:${tab.key}`), ...pages.map(page => `b:${page.id}`), ...(changes ? [CHANGES] : [])]);
@@ -87,7 +89,7 @@ export function useSidePanel(browser: Browser) {
     if (seen.current !== null && presses !== seen.current) toggleFull();
     seen.current = presses;
   }, [presses, toggleFull]);
-  return { open, full, chatCollapsed, setChatCollapsed, toggleFull, items, shown, openPanel, closePanel, select, close, openTerminal, openPage, openChanges, toggleTerminal };
+  return { open, full, width, setWidth, chatCollapsed, setChatCollapsed, toggleFull, items, shown, openPanel, closePanel, select, close, openTerminal, openPage, openChanges, toggleTerminal };
 }
 export type SidePanelState = ReturnType<typeof useSidePanel>;
 
@@ -117,13 +119,13 @@ type Props = {
  * and `data-float` tells the CSS what floats over it (the chat's card or its pill), so the page and the shell leave
  * that corner free. */
 export function SidePanel({ panel, browser, hasTerminal, dark, cwd, threadId, running = false, launch, covered, onAttach, imagesAllowed }: Props) {
-  const [width, setWidth] = useState<number | null>(null), [resizing, setResizing] = useState(false);
+  const { setWidth } = panel, [resizing, setResizing] = useState(false);
   const element = useRef<HTMLElement>(null), drag = useRef<{ x: number; width: number } | null>(null);
   if (!panel.open) return null;
   const kinds = kindsOf(panel, browser, hasTerminal, cwd, !!threadId), { shown } = panel;
   const resizeTo = (next: number) => setWidth(Math.max(MIN_WIDTH, Math.round(next)));
   const full = panel.full, floating = full ? panel.chatCollapsed ? "pill" : "card" : undefined;
-  return <section ref={element} className={`side-panel${full ? " full" : ""}`} data-float={floating} aria-label="Side panel" style={{ "--side-min": `${MIN_WIDTH}px`, ...(width && !full ? { width } : {}) } as CSSProperties}>
+  return <section ref={element} className={`side-panel${full ? " full" : ""}`} data-float={floating} aria-label="Side panel" style={{ "--side-min": `${MIN_WIDTH}px` } as CSSProperties}>
     <div className="side-resize" role="separator" aria-label="Resize side panel" aria-orientation="vertical" tabIndex={0}
       onKeyDown={event => { if (event.key === "ArrowLeft" || event.key === "ArrowRight") { event.preventDefault(); resizeTo((element.current?.getBoundingClientRect().width ?? 400) + (event.key === "ArrowLeft" ? 32 : -32)); } }}
       onPointerDown={event => { drag.current = { x: event.clientX, width: element.current?.getBoundingClientRect().width ?? 400 }; event.currentTarget.setPointerCapture(event.pointerId); setResizing(true); }}

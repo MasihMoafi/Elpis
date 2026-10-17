@@ -17,7 +17,7 @@
     "desktop": "desktop/launch.sh",
     "test:renderer": "node --test tests/renderer.test.cjs",
     "test:drafts": "node --test tests/drafts.test.mjs",
-    "test:desktop": "node --test desktop/*.test.cjs desktop/*.test.mjs tests/dictation.test.mjs tests/agents.test.mjs tests/slash-helpers.test.mjs tests/chat-tabs.test.mjs tests/panel-tabs.test.mjs tests/diff.test.mjs",
+    "test:desktop": "node --test desktop/*.test.cjs desktop/*.test.mjs tests/dictation.test.mjs tests/agents.test.mjs tests/slash-helpers.test.mjs tests/chat-tabs.test.mjs tests/panel-tabs.test.mjs tests/mentions.test.mjs tests/nav-history.test.mjs tests/message-copy.test.mjs tests/diff.test.mjs",
     "test:ui": "node --test tests/*.test.cjs",
     "test:bridge": "node --test bridge/*.test.mjs"
   },
