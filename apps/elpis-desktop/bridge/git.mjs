@@ -1,7 +1,9 @@
 import { execFile } from 'node:child_process';
+import { randomBytes } from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { BridgeError } from './client.mjs';
+import { CHAT_WORKTREE } from '../lib/chat-worktree.ts';
 
 const DIFF_LIMIT = 400_000;
 const NOT_A_REPOSITORY = 'This chat\'s folder is not a Git repository.';
@@ -151,4 +153,100 @@ export async function discardFile(chatFolder, file) {
   else if ((await run(cwd, ['ls-tree', '--name-only', '-z', 'HEAD', '--', file]).catch(() => '')).split('\0').includes(file)) await run(cwd, ['checkout', 'HEAD', '--', file]);
   else await run(cwd, ['rm', '-f', '-q', '--', file]);
   return { discarded: file };
+}
+
+/** The branch checked out in a folder, for the chat's branch chip; null outside a repository, on a detached HEAD, or
+ * when the folder is gone. */
+export async function currentBranch(cwd) {
+  folder(cwd);
+  return { branch: await run(cwd, ['branch', '--show-current']).then(text => text.trim() || null, () => null) };
+}
+
+// A chat's own worktree, as in Claude's desktop app ("Start with worktree"). It sits where the agents canvas puts its
+// worktrees, beside the repository in `<repo>-elpis/` (codex-rs core/src/tools/handlers/work_graph_worktrees.rs), as
+// `chats/chat-<6 hex>`, on the new branch `elpis/chat-<6 hex>` from what is checked out. The path alone says which
+// repository and branch it belongs to, so a removed one can be put back.
+const NO_COMMIT = 'A worktree needs a Git repository with a commit.';
+/** Where a chat worktree's folder says it belongs: { root, source, branch }, or null for any other folder. */
+function chatPlace(cwd) {
+  const match = typeof cwd === 'string' && path.isAbsolute(cwd) ? path.normalize(cwd).replace(/\/+$/, '').match(CHAT_WORKTREE) : null;
+  if (!match) return null;
+  const [, parent, repository, name] = match;
+  return { root: path.join(parent, `${repository}-elpis`, 'chats', name), source: path.join(parent, repository), branch: `elpis/${name}` };
+}
+/** Whether a chat's folder is named like a chat worktree; a cheap check before any Git runs. */
+export const isChatWorktreePath = cwd => chatPlace(cwd) !== null;
+const isFolder = file => fs.stat(file).then(info => info.isDirectory(), () => false);
+const branchExists = (cwd, branch) => run(cwd, ['show-ref', '--verify', '--quiet', `refs/heads/${branch}`]).then(() => true, () => false);
+const absoluteGitPath = (cwd, which) => run(cwd, ['rev-parse', '--path-format=absolute', which]).then(text => text.trim(), () => null);
+/** The empty `chats/` and `<repo>-elpis/` folders a removed worktree leaves; rmdir refuses any other. */
+async function removeEmptyParents(root) {
+  for (const dir of [path.dirname(root), path.dirname(path.dirname(root))]) await fs.rmdir(dir).catch(() => {});
+}
+/** The chat worktree a folder lies in, only when Git agrees: a linked worktree of the repository its name points to. */
+async function chatWorktreeOf(cwd) {
+  const place = chatPlace(cwd);
+  if (!place || await fs.realpath(place.root).catch(() => null) !== place.root) return null;
+  const [top, common, own, sourceCommon] = await Promise.all([
+    run(place.root, ['rev-parse', '--show-toplevel']).then(text => text.trim(), () => null),
+    absoluteGitPath(place.root, '--git-common-dir'), absoluteGitPath(place.root, '--git-dir'), absoluteGitPath(place.source, '--git-common-dir'),
+  ]);
+  return top === place.root && common && common === sourceCommon && own !== common ? place : null;
+}
+
+/** Makes a new chat's worktree for the project in `projectFolder`. The chat's folder keeps the project's place inside
+ * the repository. The main checkout, its branch and its uncommitted work are not touched. */
+export async function createChatWorktree(projectFolder) {
+  folder(projectFolder);
+  const source = await repoRoot(projectFolder).then(root => fs.realpath(root), error => { throw error.status === 501 ? error : new BridgeError(NO_COMMIT, 409); });
+  if (!await hasHead(source)) throw new BridgeError(NO_COMMIT, 409);
+  const relative = path.relative(source, await fs.realpath(projectFolder)), home = path.join(path.dirname(source), `${path.basename(source)}-elpis`, 'chats');
+  for (let attempt = 0; attempt < 8; attempt++) {
+    const name = `chat-${randomBytes(3).toString('hex')}`, root = path.join(home, name), branch = `elpis/${name}`;
+    if (await fs.lstat(root).then(() => true, () => false) || await branchExists(source, branch)) continue;
+    try {
+      await fs.mkdir(home, { recursive: true });
+      await run(source, ['worktree', 'add', '-q', '--no-track', '-b', branch, root, 'HEAD']);
+    } catch (error) { await removeEmptyParents(root); throw new BridgeError(`Could not create the worktree: ${error.message.replace(/^Git could not read this folder: /, '')}`, 409); }
+    const made = { root, cwd: path.join(root, relative), branch, source };
+    if (!await isFolder(made.cwd)) { await undoChatWorktree(made); throw new BridgeError('The project\'s folder is not in the repository\'s last commit, so a worktree cannot hold it.', 409); }
+    return made;
+  }
+  throw new BridgeError('Could not find a free name for the worktree. Try again.', 409);
+}
+
+/** Takes back a worktree made a moment ago for a chat that did not start: nothing in it is anyone's work yet. */
+export async function undoChatWorktree({ root, branch, source }) {
+  await run(source, ['worktree', 'remove', '--force', root]).catch(() => {});
+  await run(source, ['branch', '-q', '-D', branch]).catch(() => {});
+  await removeEmptyParents(root);
+}
+
+/** After its chat is archived or deleted: a chat worktree with nothing uncommitted is removed and its branch kept, so
+ * committed work stays on it (Claude: "Committed work stays on its branch."). One with uncommitted changes is kept, and
+ * the answer says where. Null, and nothing touched, for any folder that is not a chat worktree. */
+export async function releaseChatWorktree(cwd) {
+  const place = await chatWorktreeOf(cwd);
+  if (!place) return null;
+  const { root, source } = place, branch = (await run(root, ['branch', '--show-current']).catch(() => '')).trim() || place.branch;
+  const changes = await statusEntries(root).then(entries => entries.length, () => null);
+  if (changes !== 0) return { kept: true, path: root, branch, changes: changes ?? 0 };
+  // Without --force: Git itself refuses a worktree that is not clean.
+  if (!await run(source, ['worktree', 'remove', root]).then(() => true, () => false)) return { kept: true, path: root, branch, changes: 0 };
+  await removeEmptyParents(root);
+  return { removed: true, path: root, branch };
+}
+
+/** When an archived chat comes back: its removed worktree is put back on its branch. Null when the folder is still there,
+ * the branch is gone, or the folder is not a chat worktree's. */
+export async function restoreChatWorktree(cwd) {
+  const place = chatPlace(cwd);
+  if (!place || await fs.lstat(place.root).then(() => true, () => false)) return null;
+  if (await fs.realpath(place.source).catch(() => null) !== place.source || (await run(place.source, ['rev-parse', '--show-toplevel']).catch(() => '')).trim() !== place.source) return null;
+  if (!await branchExists(place.source, place.branch)) return null;
+  try {
+    await fs.mkdir(path.dirname(place.root), { recursive: true });
+    await run(place.source, ['worktree', 'add', '-q', place.root, place.branch]);
+  } catch { await removeEmptyParents(place.root); return null; }
+  return { restored: true, path: place.root, branch: place.branch };
 }

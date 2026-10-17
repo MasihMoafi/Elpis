@@ -12,9 +12,11 @@ import { providerModels } from './provider-models.mjs';
 import { attachmentInput, recordedMedia } from './attachments.mjs';
 import { pluginsSnapshot, skillsSnapshot } from './customize.mjs';
 import { scanDeletionThreads } from '../lib/thread-deletion.ts';
-import { changedFiles, discardFile, fileDiff, reviewChoices, workingDiff } from './git.mjs';
+import { changedFiles, createChatWorktree, currentBranch, discardFile, fileDiff, isChatWorktreePath, releaseChatWorktree, restoreChatWorktree, reviewChoices, undoChatWorktree, workingDiff } from './git.mjs';
 import { elicitationResponse, grantedPermissions, permissionsResponse } from '../lib/approvals.ts';
 const string = value => typeof value === 'string' ? value : null;
+/** Every kind of conversation the window lists, agents included. */
+const SOURCE_KINDS = ['cli', 'vscode', 'exec', 'appServer', 'subAgent', 'subAgentReview', 'subAgentCompact', 'subAgentThreadSpawn', 'subAgentOther', 'unknown'];
 
 export class BridgeError extends Error {
   constructor(message, status = 400) { super(message); this.status = status; }
@@ -393,7 +395,7 @@ export class DesktopClient extends EventEmitter {
     const result = await this.#rpc('thread/list', { limit: options.limit ?? 50, cursor: options.cursor, modelProviders: [],
       ...(options.archived === true ? { archived: true } : {}),
       ...(options.searchTerm ? { searchTerm: options.searchTerm.trim() } : {}),
-      sourceKinds: ['cli', 'vscode', 'exec', 'appServer', 'subAgent', 'subAgentReview', 'subAgentCompact', 'subAgentThreadSpawn', 'subAgentOther', 'unknown'],
+      sourceKinds: SOURCE_KINDS,
       ...(options.ancestorThreadId ? { ancestorThreadId: threadId(options.ancestorThreadId) } : {}) });
     await this.#loadWorkflowTitles(result.data);
     // Auto-review's reviewer works in threads of its own; they are not the user's chats.
@@ -857,7 +859,9 @@ export class DesktopClient extends EventEmitter {
     });
   }
   async createThread(body) {
-    object(body, ['cwd', 'model', 'provider', 'name', 'instructions', 'permissions']);
+    object(body, ['cwd', 'model', 'provider', 'name', 'instructions', 'permissions', 'worktree']);
+    if (body.worktree !== undefined && typeof body.worktree !== 'boolean') throw new BridgeError('worktree must be true or false');
+    if (body.worktree && body.cwd === undefined) throw new BridgeError('A worktree needs the project\'s folder');
     const permissions = permissionMode(body.permissions);
     const name = body.name === undefined ? undefined : text(body.name, 'agent name', 120).trim();
     const instructions = body.instructions === undefined ? undefined : text(body.instructions, 'agent instructions', 32000);
@@ -872,19 +876,32 @@ export class DesktopClient extends EventEmitter {
     }
     if (differentProvider) text(body.model, 'model for this provider', 200);
     const model = await this.#providerModel(body.model, body.provider);
-    const result = await this.#rpc('thread/start', { ...(body.cwd ? { cwd: body.cwd } : {}), ...(model ? { model } : {}),
-      ...(body.provider ? { modelProvider: body.provider } : {}), ...(instructions ? { developerInstructions: instructions } : {}), ...threadPermissions(permissions),
-      ...this.#browserOptions() });
-    threadId(result.thread?.id);
+    // Claude's "Start with worktree": the chat works in its own worktree on a new branch; if it does not start, the
+    // worktree goes again.
+    const made = body.worktree ? await createChatWorktree(body.cwd) : null, cwd = made?.cwd ?? body.cwd;
+    let result;
+    try {
+      result = await this.#rpc('thread/start', { ...(cwd ? { cwd } : {}), ...(model ? { model } : {}),
+        ...(body.provider ? { modelProvider: body.provider } : {}), ...(instructions ? { developerInstructions: instructions } : {}), ...threadPermissions(permissions),
+        ...this.#browserOptions() });
+      threadId(result.thread?.id);
+    } catch (error) { if (made) await undoChatWorktree(made); throw error; }
     this.#owned.add(result.thread.id);
     if (name) { await this.#rpc('thread/name/set', { threadId: result.thread.id, name }); result.thread.name = name; }
-    return { ...result, thread: this.#decorate(result.thread) };
+    return { ...result, thread: this.#decorate(result.thread), ...(made ? { worktree: { path: made.root, branch: made.branch } } : {}) };
+  }
+  /** After a chat is archived or deleted: its worktree, when it has one that no open chat still works in, is removed if
+   * nothing in it is uncommitted, and kept otherwise (bridge/git.mjs releaseChatWorktree). */
+  async #releaseWorktree(cwd) {
+    if (!isChatWorktreePath(cwd)) return null;
+    const inUse = await this.#rpc('thread/list', { cwd, limit: 1, modelProviders: [], sourceKinds: SOURCE_KINDS }).then(result => result.data?.length > 0, () => true);
+    return inUse ? null : releaseChatWorktree(cwd);
   }
   /** Deletes a chat and its agents; chats forked from that subtree (continued agents) go first, since Elpis keeps history a fork uses. */
   async deleteThread(id, body) {
     object(body, []);
     return this.#mutate(id, async () => {
-      const removed = [];
+      const removed = [], cwd = await this.#folderOf(id).catch(() => null);
       try { await this.#rpc('thread/delete', { threadId: id }); }
       catch (error) {
         if (!/forked history still references it/.test(error.message)) throw error;
@@ -909,7 +926,8 @@ export class DesktopClient extends EventEmitter {
         await this.#rpc('thread/delete', { threadId: id });
       }
       this.#forget(id);
-      return { deleted: true, alsoDeleted: removed };
+      const worktree = await this.#releaseWorktree(cwd);
+      return { deleted: true, alsoDeleted: removed, ...(worktree ? { worktree } : {}) };
     });
   }
   /** Renames a chat in Elpis; every client shows the stored name. */
@@ -936,9 +954,11 @@ export class DesktopClient extends EventEmitter {
   async archiveThread(id, body) {
     object(body, []);
     return this.#mutate(id, async () => {
-      await this.#rpc('thread/archive', { threadId: threadId(id) });
+      const cwd = await this.#folderOf(threadId(id)).catch(() => null);
+      await this.#rpc('thread/archive', { threadId: id });
       this.#forget(id);
-      return { archived: true };
+      const worktree = await this.#releaseWorktree(cwd);
+      return { archived: true, ...(worktree ? { worktree } : {}) };
     });
   }
   async unarchiveThread(id, body) {
@@ -946,7 +966,8 @@ export class DesktopClient extends EventEmitter {
     return this.#mutate(id, async () => {
       const result = await this.#rpc('thread/unarchive', { threadId: threadId(id) });
       if (result.thread?.id !== id) throw new BridgeError('Elpis restored another thread', 502);
-      return { thread: this.#decorate(result.thread) };
+      const worktree = isChatWorktreePath(result.thread.cwd) ? await restoreChatWorktree(result.thread.cwd) : null;
+      return { thread: this.#decorate(result.thread), ...(worktree ? { worktree } : {}) };
     });
   }
   /** Edit-and-resend and regenerate: Elpis drops the given turn and every later one (thread/revert), then the new text starts a turn.
@@ -965,6 +986,7 @@ export class DesktopClient extends EventEmitter {
       const model = await this.#providerModel(body.model, thread.modelProvider);
       const entries = [], cursors = new Set(); let cursor, complete = false;
       for (let pageIndex = 0; pageIndex < 20; pageIndex++) {
+  /** Brings a chat back; a worktree removed when it was archived is put back on its branch. */
         const page = await this.#itemsPage({ threadId: id, turnId: beforeTurnId, limit: 100, sortDirection: 'asc', ...(cursor ? { cursor } : {}) });
         if (!Array.isArray(page?.data) || page.data.some(entry => entry?.turnId !== beforeTurnId)) throw new BridgeError('Elpis could not verify the original input for this turn. Nothing was replaced.', 409);
         entries.push(...page.data);
@@ -1130,12 +1152,13 @@ export class DesktopClient extends EventEmitter {
     });
   }
   /** Read-only Git facts about the chat's folder: `review` is the /review presets (branches, commits), `diff` the /diff text,
-   * `changes` the review surface's file list and `file` one of those files' diff (`file` names it). */
+   * `changes` the review surface's file list, `file` one of those files' diff (`file` names it) and `branch` the branch
+   * checked out, for the chat's branch chip. */
   async git(id, view, file) {
     threadId(id);
-    if (!['review', 'diff', 'changes', 'file'].includes(view)) throw new BridgeError('Choose a Git view: review, diff, changes or file');
+    if (!['review', 'diff', 'changes', 'file', 'branch'].includes(view)) throw new BridgeError('Choose a Git view: review, diff, changes, file or branch');
     const cwd = await this.#folderOf(id);
-    return view === 'review' ? reviewChoices(cwd) : view === 'changes' ? changedFiles(cwd) : view === 'file' ? fileDiff(cwd, file) : workingDiff(cwd);
+    return view === 'review' ? reviewChoices(cwd) : view === 'changes' ? changedFiles(cwd) : view === 'file' ? fileDiff(cwd, file) : view === 'branch' ? currentBranch(cwd) : workingDiff(cwd);
   }
   /** The review surface's only write: throw one changed file away (the window asks first). */
   async discardChange(id, body) {
