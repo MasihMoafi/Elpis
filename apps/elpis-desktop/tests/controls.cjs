@@ -34,4 +34,34 @@ async function guardDesktopStore(target) {
     } });
   }, STORE_KEYS.source);
 }
-module.exports = { chooseOption, controlValue, guardDesktopStore, leaveSettings, sidebar };
+/** Every orange the light theme paints (hue 15–50°, saturated, mid lightness), as `selector: property value`. The
+ * colours are read back from a canvas pixel, so color-mix(), oklch() and gradients count as what is drawn. */
+const oranges = page => page.evaluate(() => {
+  const canvas = document.createElement('canvas'); canvas.width = canvas.height = 1;
+  const context = canvas.getContext('2d', { willReadFrequently: true });
+  const rgba = value => { context.clearRect(0, 0, 1, 1); context.fillStyle = '#000'; context.fillStyle = value; context.fillRect(0, 0, 1, 1); return context.getImageData(0, 0, 1, 1).data; };
+  const orange = value => {
+    const [r, g, b, a] = rgba(value); if (a < 40) return false;
+    const [R, G, B] = [r / 255, g / 255, b / 255], max = Math.max(R, G, B), min = Math.min(R, G, B), light = (max + min) / 2, delta = max - min;
+    if (!delta) return false;
+    const saturation = delta / (1 - Math.abs(2 * light - 1));
+    const hue = max === R ? 60 * (((G - B) / delta) % 6) : max === G ? 60 * ((B - R) / delta + 2) : 60 * ((R - G) / delta + 4);
+    return hue >= 15 && hue <= 50 && saturation >= 0.5 && light >= 0.25 && light <= 0.85;
+  };
+  const colours = text => text.match(/(?:rgba?|color|oklab|oklch|lab|lch|hsla?)\([^()]*\)|#[0-9a-f]{3,8}\b/gi) ?? [];
+  const name = element => `${element.tagName.toLowerCase()}${element.id ? `#${element.id}` : ''}${[...element.classList].slice(0, 2).map(c => `.${c}`).join('')}`;
+  const hits = new Set();
+  for (const element of document.querySelectorAll('body *')) {
+    if (!element.getClientRects().length) continue;
+    const style = getComputedStyle(element);
+    if (style.visibility === 'hidden' || Number(style.opacity) === 0) continue;
+    const checks = [['background-color', style.backgroundColor], ['box-shadow', style.boxShadow], ['background-image', style.backgroundImage]];
+    if ([...element.childNodes].some(node => node.nodeType === 3 && node.textContent.trim())) checks.push(['color', style.color]);
+    for (const side of ['top', 'right', 'bottom', 'left']) if (parseFloat(style[`border-${side}-width`]) > 0) checks.push([`border-${side}-color`, style[`border-${side}-color`]]);
+    if (style.outlineStyle !== 'none' && parseFloat(style.outlineWidth) > 0) checks.push(['outline-color', style.outlineColor]);
+    if (element instanceof SVGElement) checks.push(['fill', style.fill], ['stroke', style.stroke]);
+    for (const [property, value] of checks) for (const colour of colours(value ?? '')) if (orange(colour)) hits.add(`${name(element)}: ${property} ${colour}`);
+  }
+  return [...hits];
+});
+module.exports = { chooseOption, controlValue, guardDesktopStore, leaveSettings, oranges, sidebar };
