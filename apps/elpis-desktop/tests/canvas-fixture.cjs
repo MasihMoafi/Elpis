@@ -16,7 +16,7 @@ function planFor(body) {
 }
 
 async function openCanvas({ width = 1440, height = 900 } = {}) {
-  const posts = [], plans = [];
+  const posts = [], plans = [], runs = [];
   const server = http.createServer(async (req, res) => {
     const url = new URL(req.url, 'http://local'); let raw = ''; for await (const chunk of req) raw += chunk;
     const json = value => { res.setHeader('content-type', 'application/json'); res.end(JSON.stringify(value)); };
@@ -27,8 +27,14 @@ async function openCanvas({ width = 1440, height = 900 } = {}) {
     if (url.pathname === '/api/settings') return json({ main: { model: 'gpt-6.1-sol', provider: 'openai' }, background: {}, smartPrune: { enabled: false, explicitOverride: {} }, memory: {}, write: { available: false, reason: '' }, agents: { graph: 256, atOnce: 4, source: 'agents.max_threads' } });
     if (url.pathname === '/api/folders') return json({ data: ['docs', 'src', 'src/lib', 'tests'] });
     if (url.pathname === '/api/canvas/plan') { const body = JSON.parse(raw); plans.push(body); return json(planFor(body)); }
+    // Runs: each chat started gets an id; a graph run on it finishes after its first look.
+    if (url.pathname === '/api/threads' && req.method === 'POST') { const id = `chat-${posts.filter(post => post.path === '/api/threads').length}`; return json({ thread: { id, name: JSON.parse(raw).name, cwd: '/tmp/demo', status: { type: 'idle' }, desktopAccess: { writable: true, mode: 'direct' } } }); }
     if (url.pathname === '/api/threads') return json({ data: [], nextCursor: null });
-    if (url.pathname === '/api/workflows') return json({ data: [] });
+    if (url.pathname === '/api/workflows/run') { const body = JSON.parse(raw); runs.push({ ...body, graphId: `graph-${runs.length + 1}`, looks: 0 }); return json({ graphId: `graph-${runs.length}`, threadId: body.rootThreadId, turnId: 't' }); }
+    if (url.pathname === '/api/workflows') {
+      const mine = runs.filter(item => item.rootThreadId === url.searchParams.get('threadId'));
+      return json({ data: mine.map(item => { const status = item.looks++ ? 'succeeded' : 'running'; return { id: item.graphId, name: item.name, status, tasks: item.tasks.map(task => ({ id: task.id, status, assignedThreadId: null })) }; }) });
+    }
     if (url.pathname.startsWith('/api/')) return json({});
     const relative = url.pathname === '/' ? 'index.html' : url.pathname.slice(1);
     try { const content = await fs.readFile(path.join(__dirname, '../out', relative)); res.setHeader('content-type', relative.endsWith('.js') ? 'text/javascript' : relative.endsWith('.css') ? 'text/css' : relative.endsWith('.svg') ? 'image/svg+xml' : 'text/html'); res.end(content); }
@@ -44,7 +50,7 @@ async function openCanvas({ width = 1440, height = 900 } = {}) {
   const canvas = page.getByRole('region', { name: 'Agents canvas', exact: true }); await canvas.waitFor();
   const node = title => canvas.locator('.react-flow__node').filter({ hasText: title });
   return {
-    page, canvas, posts, plans, errors, node,
+    page, canvas, posts, plans, runs, errors, node,
     agents: canvas.locator('.react-flow__node-agent'),
     wires: canvas.locator('.react-flow__edge:not(.canvas-edge-mother)'),
     /** The graph as saved on this device, after the save's short wait. */

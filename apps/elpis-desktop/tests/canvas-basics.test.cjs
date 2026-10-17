@@ -85,6 +85,9 @@ test('canvas basics: undo and redo, copy and paste, duplicate, delete keeping th
     await canvas.getByRole('complementary', { name: 'Selected agent', exact: true }).waitFor();
     await canvas.getByRole('complementary', { name: 'Selected agent', exact: true }).getByRole('button', { name: 'Done', exact: true }).click();
 
+    // A guide links Anthropic's and LangGraph's own advice on teams of agents.
+    assert.deepEqual(await canvas.getByRole('region', { name: 'Guide' }).getByRole('link').evaluateAll(links => links.map(link => new URL(link.href).hostname)), ['www.anthropic.com', 'claude.com', 'www.anthropic.com', 'code.claude.com', 'blog.langchain.com']);
+
     // The header fits a small window: nothing runs past its edge or is cut off.
     for (const width of [1130, 960]) {
       await page.setViewportSize({ width, height: 660 }); await page.waitForTimeout(150);

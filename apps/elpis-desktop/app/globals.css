@@ -797,6 +797,11 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .agent-dashboard > button { justify-self:start; }
 .canvas-templates { display:grid; gap:2px; }
 .canvas-template small.canvas-template-source { font-size:11px; opacity:.8; }
+/* The guide: Anthropic's and LangGraph's own advice on teams of agents. */
+.canvas-guide ul { display:grid; gap:8px; margin:0; padding:0 10px; list-style:none; }
+.canvas-guide a { color:var(--foreground); font-size:13px; font-weight:600; text-decoration:underline; text-decoration-color:var(--hairline); text-underline-offset:3px; }
+.canvas-guide a:hover { text-decoration-color:currentColor; }
+.canvas-guide small { display:block; margin-top:2px; color:var(--muted-foreground); font-size:12px; line-height:1.35; }
 /* Which architecture is on the board, each one's shape (the Mother, then a column per wave), and the role-split caution. */
 .canvas-template[aria-current="true"] { border-color:var(--border); background:var(--hover); }
 .canvas-template-loaded { margin-inline-start:8px; font:500 10px/1 var(--mono); letter-spacing:.08em; text-transform:uppercase; color:var(--muted-foreground); vertical-align:2px; }

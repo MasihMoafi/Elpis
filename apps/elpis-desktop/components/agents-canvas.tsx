@@ -13,9 +13,13 @@ import { IsoBoard, ViewToggle } from "@/components/agents-iso";
 import { api, providerChoices, type Entry, type Model, type ProviderSettings, type Thread } from "@/lib/api";
 import { useElpisSettings } from "@/lib/settings-store";
 import { appStorage } from "@/lib/projects";
-import { DONE, MOTHER, TASKS_PER_AGENT, TEMPLATES, applyPlan, arrange, boardForPlan, checkOf, commandParts, shapeOf, makesLoop, maxAgents, newAgents, newId, parseCommand, readGraph, runTasks, saveGraph, waves, withMother, type AgentData, type CanvasEdge, type CanvasGraph, type CanvasNode, type CatalogModel, type Command, type MotherSettings, type NoteData, type Plan, type TaskStatus } from "@/lib/canvas";
+import { DONE, FATHER, MOTHER, TASKS_PER_AGENT, TEMPLATES, applyPlan, arrange, boardForPlan, checkOf, commandParts, shapeOf, makesLoop, maxAgents, newAgents, newId, parseCommand, parents, readGraph, runParts, saveGraph, waves, withMother, type AgentData, type CanvasEdge, type CanvasGraph, type CanvasNode, type CatalogModel, type Command, type MotherSettings, type NoteData, type Plan, type RunTask, type TaskStatus } from "@/lib/canvas";
 
-type Run = { rootThreadId: string; graphId: string; status: string };
+/** A run: the Mother's part, and the Father's when the graph has more agents than she runs (lib/canvas.ts `parents`):
+ * his tasks wait in `father` until her part has succeeded, then run in his own chat. */
+type Run = { rootThreadId: string; graphId: string; status: string; father?: { tasks: RunTask[]; threadId?: string; graphId?: string; status: string } };
+/** Whether the whole run is over: her part, and his if he has one. */
+const over = (run: Run) => FINISHED.has(run.status) && (!run.father || FINISHED.has(run.father.status));
 type Listed = { data: { id: string; status: string; tasks: { id: string; status: TaskStatus; assignedThreadId: string | null }[] }[] };
 type HandleEnd = "source" | "target";
 type AgentNodeData = AgentData & { status?: TaskStatus; check?: TaskStatus; modelLabel?: string; wave?: number; onHandle?: (id: string, end: HandleEnd, event: ReactMouseEvent) => void };
@@ -25,6 +29,14 @@ const STATUS_LABEL: Record<TaskStatus | "idle", string> = { idle: "not run", pen
 const CHECK_LABEL: Record<TaskStatus | "idle", string> = { idle: "Checked after it runs", pending: "Check waits for it", running: "Being checked", succeeded: "Check passed", failed: "Check failed", blocked: "Check blocked", cancelled: "Check cancelled" };
 const FINISHED = new Set(["succeeded", "failed", "cancelled", "completed"]);
 const lines = (text: string) => text.split("\n").map(line => line.trim()).filter(Boolean);
+/** How to manage agents, from the people who build them: read before designing a team. */
+const GUIDE = [
+  { title: "Building effective agents", note: "Anthropic: the patterns, and when a simple workflow beats an agent", href: "https://www.anthropic.com/engineering/building-effective-agents" },
+  { title: "When to use several agents", note: "Anthropic: split by context, not by role; they cost 3–10× the tokens", href: "https://claude.com/blog/building-multi-agent-systems-when-and-how-to-use-them" },
+  { title: "How Anthropic's research agents work", note: "A lead plans; subagents research in parallel and report back", href: "https://www.anthropic.com/engineering/multi-agent-research-system" },
+  { title: "Subagents in Claude Code", note: "Read-only helpers and writers, and how to brief them", href: "https://code.claude.com/docs/en/sub-agents" },
+  { title: "Open Deep Research", note: "LangGraph: scope the question, research in parallel, write once", href: "https://blog.langchain.com/open-deep-research/" },
+];
 /** Fitting shows the whole graph, at most at full size. */
 const FIT = { padding: 0.08, maxZoom: 1 };
 
@@ -61,7 +73,18 @@ function NoteNode({ id, data }: NodeProps<Node<NoteData & { onText?: (id: string
   return <div className="canvas-note"><span className="canvas-note-grip" title="A note for you, never sent to an agent; drag here to move it">Note · for you</span>
     <textarea aria-label="Note" className="nodrag" value={data.text} placeholder="Write a note" onChange={event => data.onText?.(id, event.target.value)} /></div>;
 }
-const NODE_TYPES = { agent: AgentNode, mother: MotherNode, note: NoteNode };
+/** The Father: he runs the agents past the Mother's ten, in his own chat, once her part has succeeded, and reports to
+ * her. Drawn only when the graph needs him. */
+function FatherNode({ data }: NodeProps<Node<MotherData>>) {
+  return <div className="agent-node mother-node" data-kind="mother" data-status={data.run === "running" ? "running" : undefined}
+    title="The Father runs the agents past the Mother's ten, in his own chat, after her part has succeeded, and reports to her.">
+    <span className="agent-node-kind">Father</span>
+    <strong className="agent-node-title">Reports to the Mother</strong>
+    <small className="agent-node-meta">{data.children} agents · {data.run === "idle" ? "after her part" : data.run}</small>
+    <Handle type="source" position={Position.Right} isConnectable={false} />
+  </div>;
+}
+const NODE_TYPES = { agent: AgentNode, mother: MotherNode, father: FatherNode, note: NoteNode };
 
 /** A wire with three chevrons pointing the way the work flows, as on Deus Ex: Mankind Divided's hacking screen. They
  * sit still until the agent at the end is running, then stream along the wire. Re-keyed on the path so they follow a
@@ -370,15 +393,22 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
 
   // Follow a run: Elpis reports each task's state; stop once the graph has finished.
   useEffect(() => {
-    if (!run || FINISHED.has(run.status)) return;
+    if (!run || over(run)) return;
     let live = true;
+    const read = async (threadId: string, graphId: string) => {
+      const listed = await api<Listed>(`/workflows?threadId=${encodeURIComponent(threadId)}`), found = listed.data.find(item => item.id === graphId);
+      if (found && live) setStates(current => ({ ...current, ...Object.fromEntries(found.tasks.map(task => [task.id, { status: task.status, chat: task.assignedThreadId }])) }));
+      return found?.status;
+    };
     const poll = async () => {
       try {
-        const listed = await api<Listed>(`/workflows?threadId=${encodeURIComponent(run.rootThreadId)}`);
-        const found = listed.data.find(item => item.id === run.graphId);
-        if (!live || !found) return;
-        setStates(Object.fromEntries(found.tasks.map(task => [task.id, { status: task.status, chat: task.assignedThreadId }])));
-        if (found.status !== run.status) setRun({ ...run, status: found.status });
+        let next = run;
+        if (!FINISHED.has(run.status)) { const status = await read(run.rootThreadId, run.graphId); if (status && status !== run.status) next = { ...next, status }; }
+        const father = next.father;
+        if (father?.threadId && father.graphId && !FINISHED.has(father.status)) { const status = await read(father.threadId, father.graphId); if (status && status !== father.status) next = { ...next, father: { ...father, status } }; }
+        // Her part done: the Father starts his, in his own chat; if hers failed, his never starts.
+        if (father && !father.threadId && FINISHED.has(next.status)) next = { ...next, father: next.status === "succeeded" || next.status === "completed" ? await startFather(father.tasks) : { ...father, status: "cancelled" } };
+        if (live && next !== run) setRun(next);
       } catch (error) { if (live) setNotice(error instanceof Error ? error.message : String(error)); }
     };
     void poll();
@@ -398,6 +428,7 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
   // An agent is done once its check passes.
   const done = agents.filter(node => states[checkOf(node.id)]?.status === "succeeded").length;
   const runState: MotherData["run"] = run ? (FINISHED.has(run.status) ? "finished" : "running") : "idle";
+  const fatherState: MotherData["run"] = run?.father?.threadId ? (FINISHED.has(run.father.status) ? "finished" : "running") : "idle";
   const modelLabel = (data: AgentData) => {
     if (!data.model) return "Default model";
     const found = catalog.find(item => item.model === data.model && item.provider === (data.provider ?? null)) ?? (data.provider ? undefined : models.map(model => ({ label: model.displayName || model.model, model: model.model })).find(item => item.model === data.model));
@@ -406,22 +437,34 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
   const setText = (id: string, text: string) => setGraph(current => ({ ...current, nodes: current.nodes.map(node => node.id === id && node.type === "note" ? { ...node, data: { text } } : node) }));
   // A click on a dot (no drag) opens the command bar there; the new agents take that side of it.
   const onHandle = (id: string, end: HandleEnd, event: ReactMouseEvent) => { event.stopPropagation(); openAdder({ x: event.clientX, y: event.clientY }, { id, as: end === "source" ? "target" : "source" }); };
-  const nodes = useMemo<Node[]>(() => graph.nodes.map(node => node.type === "mother"
+  // The Father, when the graph has more agents than the Mother runs: drawn left of the first agents he starts.
+  const split = useMemo(() => parents(graph), [graph]), his = new Set(split.father);
+  // React Flow shows a node once its size is known; the Father is not in the saved board, so his size is kept here.
+  const [fatherSize, setFatherSize] = useState<{ width: number; height: number } | null>(null);
+  const fatherRoots = agents.filter(node => his.has(node.id) && !graph.edges.some(edge => edge.target === node.id && his.has(edge.source)));
+  const fatherNode: Node | null = fatherRoots.length ? { id: FATHER, type: "father", deletable: false, selectable: false, draggable: false,
+    position: { x: Math.min(...fatherRoots.map(node => node.position.x)) - 260, y: Math.round(fatherRoots.reduce((sum, node) => sum + node.position.y, 0) / fatherRoots.length) },
+    ...(fatherSize ? { measured: fatherSize } : {}), data: { run: fatherState, children: split.father.length, limit } satisfies MotherData } : null;
+  const nodesWithFather = (list: Node[]) => fatherNode ? [...list, fatherNode] : list;
+  const nodes = useMemo<Node[]>(() => nodesWithFather(graph.nodes.map(node => node.type === "mother"
     ? { ...node, deletable: false, selected: selection.includes(MOTHER), data: { run: runState, children: agents.length, limit, onHandle } satisfies MotherData }
     : { ...node, selected: selection.includes(node.id), data: node.type === "agent" ? { ...node.data, status: states[node.id]?.status, check: states[checkOf(node.id)]?.status, modelLabel: modelLabel(node.data), wave: order.get(node.id), onHandle } : { ...node.data, onText: setText } }),
-  [graph.nodes, selection, states, models, order, runState, limit, catalog.length]); // eslint-disable-line react-hooks/exhaustive-deps
+  ), [graph.nodes, selection, states, models, order, runState, fatherState, limit, catalog.length]); // eslint-disable-line react-hooks/exhaustive-deps
   const edges = useMemo<Edge[]>(() => [
     // The Mother's wires: she starts every agent of the first wave.
-    ...agents.filter(node => order.get(node.id) === 1).map(node => ({ id: `${MOTHER}->${node.id}`, source: MOTHER, target: node.id, type: "flow", className: "canvas-edge-mother", selectable: false, deletable: false, focusable: false, selected: wireMenu?.edge.id === `${MOTHER}->${node.id}`, data: { live: states[node.id]?.status === "running" } })),
+    ...agents.filter(node => order.get(node.id) === 1 && !his.has(node.id)).map(node => ({ id: `${MOTHER}->${node.id}`, source: MOTHER, target: node.id, type: "flow", className: "canvas-edge-mother", selectable: false, deletable: false, focusable: false, selected: wireMenu?.edge.id === `${MOTHER}->${node.id}`, data: { live: states[node.id]?.status === "running" } })),
+    // The Father's wires: he starts his agents that wait for none of his others.
+    ...fatherRoots.map(node => ({ id: `${FATHER}->${node.id}`, source: FATHER, target: node.id, type: "flow", className: "canvas-edge-mother", selectable: false, deletable: false, focusable: false, interactionWidth: 0, data: { live: states[node.id]?.status === "running" } })),
     ...graph.edges.map(edge => {
       // A wire goes live once its first agent's check passed and the second agent is running.
       const from = states[checkOf(edge.source)]?.status, to = states[edge.target]?.status, live = from === "succeeded" && to === "running";
       return { ...edge, type: "flow", selected: wireMenu?.edge.id === edge.id, data: { live }, className: from === "failed" || to === "blocked" ? "canvas-edge-cut" : live ? "canvas-edge-live" : from === "succeeded" ? "canvas-edge-done" : undefined };
     }),
-  ], [graph.edges, states, order, wireMenu]); // eslint-disable-line react-hooks/exhaustive-deps
+  ], [graph.edges, graph.nodes, states, order, wireMenu]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const onNodesChange = (changes: NodeChange[]) => {
     const removed = new Set(changes.flatMap(change => change.type === "remove" && change.id !== MOTHER ? [change.id] : []));
+    for (const change of changes) if (change.type === "dimensions" && change.id === FATHER && change.dimensions) setFatherSize(change.dimensions);
     const picks = changes.flatMap(change => change.type === "select" ? [change] : []);
     if (picks.length || removed.size) setSelection(current => {
       const next = new Set(current);
@@ -548,10 +591,11 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
     setAdding(null);
     return { client: { x: event.clientX, y: event.clientY }, left: Math.max(8, Math.min(event.clientX - box.left, box.width - 348)), top: Math.max(8, Math.min(event.clientY - box.top + 10, box.height - 60 - rows * 46)) };
   };
-  const onEdgeClick = (event: ReactMouseEvent, edge: Edge) => { const at = menuAt(event, 2); if (at) setMenu({ ...at, kind: "wire", edge: { id: edge.id, source: edge.source, target: edge.target } }); };
+  const onEdgeClick = (event: ReactMouseEvent, edge: Edge) => { if (edge.source === FATHER) return; const at = menuAt(event, 2); if (at) setMenu({ ...at, kind: "wire", edge: { id: edge.id, source: edge.source, target: edge.target } }); };
   // A right-click on a node acts on the selection it belongs to, else on that node alone.
   const onNodeContextMenu = (event: ReactMouseEvent, node: Node) => {
     event.preventDefault();
+    if (node.id === FATHER) return;
     if (node.id === MOTHER) { const at = menuAt(event, 2); if (at) setMenu({ ...at, kind: "mother" }); return; }
     const ids = selection.includes(node.id) ? selection.filter(id => id !== MOTHER) : [node.id];
     if (!selection.includes(node.id)) setSelection([node.id]);
@@ -688,20 +732,30 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
     finally { setPlanning(""); }
   }
 
+  // The Father's part: his own chat, on her model, told who he is; it starts once hers has succeeded.
+  async function startFather(tasks: RunTask[]): Promise<NonNullable<Run["father"]>> {
+    const goal = mother.brief.trim();
+    const created = await api<{ thread: Thread }>("/threads", { ...(cwd ? { cwd } : {}), name: `Father · ${graph.name || "Agents canvas"}`.slice(0, 120),
+      ...(mother.model ? { model: mother.model, ...(mother.provider ? { provider: mother.provider } : {}) } : {}),
+      instructions: [goal && `Goal of the whole run: ${goal}`, "You are the Father: you run the agents past the Mother's ten, after her part has succeeded, and you report to her."].filter(Boolean).join("\n\n") });
+    const result = await api<{ graphId: string }>("/workflows/run", { rootThreadId: created.thread.id, name: `Father · ${graph.name || "Agents canvas"}`, tasks, maxConcurrency: Math.max(1, Math.min(maxAtOnce, allowed.atOnce)) });
+    return { tasks, threadId: created.thread.id, graphId: result.graphId, status: "running" };
+  }
+
   async function start() {
     // Prompts and folders left empty are Elpis's to fill, from the run's goal.
     const empty = agents.some(node => !node.data.instruction.trim() || !node.data.writeScopes.length);
     const ready = empty && mother.brief.trim() ? await letElpis(mother.brief) : graph;
     if (!ready) return;
-    const built = runTasks(ready);
+    const built = runParts(ready);
     if ("error" in built) { setNotice(built.error); return; }
     setStarting(true); setNotice(""); setStates({});
     try {
       // The Mother is the run's chat: her model, and the goal as her instructions.
       const created = await api<{ thread: Thread }>("/threads", { ...(cwd ? { cwd } : {}), name: ready.name.slice(0, 120) || "Agents canvas",
         ...(mother.model ? { model: mother.model, ...(mother.provider ? { provider: mother.provider } : {}) } : {}), ...(mother.brief.trim() ? { instructions: mother.brief.trim() } : {}) });
-      const result = await api<{ graphId: string }>("/workflows/run", { rootThreadId: created.thread.id, name: ready.name || "Agents canvas", tasks: built.tasks, maxConcurrency: Math.max(1, Math.min(maxAtOnce, allowed.atOnce)) });
-      setRun({ rootThreadId: created.thread.id, graphId: result.graphId, status: "running" });
+      const result = await api<{ graphId: string }>("/workflows/run", { rootThreadId: created.thread.id, name: ready.name || "Agents canvas", tasks: built.mother, maxConcurrency: Math.max(1, Math.min(maxAtOnce, allowed.atOnce)) });
+      setRun({ rootThreadId: created.thread.id, graphId: result.graphId, status: "running", ...(built.father.length ? { father: { tasks: built.father, status: "pending" } } : {}) });
     } catch (error) { setNotice(error instanceof Error ? error.message : String(error)); }
     finally { setStarting(false); }
   }
@@ -713,14 +767,14 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
     <header className="canvas-header">
       <Input aria-label="Graph name" className="canvas-name" value={graph.name} maxLength={120} onChange={event => setGraph(current => ({ ...current, name: event.target.value }))} />
       {projectMenu}
-      {run && <span className="canvas-chip" role="status"><i className="canvas-dot" data-status={FINISHED.has(run.status) ? run.status : "running"} />{FINISHED.has(run.status) ? "Finished" : "Running"} · {done} of {agents.length} done</span>}
+      {run && <span className="canvas-chip" role="status"><i className="canvas-dot" data-status={over(run) ? run.father?.status ?? run.status : "running"} />{over(run) ? "Finished" : run.father?.threadId ? "Running · the Father's part" : "Running"} · {done} of {agents.length} done</span>}
       <span className="canvas-spacer" />
       <ViewToggle iso={iso} onChange={setIso} />
       {run && <Button variant="ghost" size="sm" onClick={() => onOpenChat(run.rootThreadId)}><ExternalLink size={14} />Open run chat</Button>}
       <Button variant="ghost" size="sm" aria-pressed={motherOpen} onClick={() => setSelection([MOTHER])} title="The run's settings: the brief every agent gets, her model, how many agents"><i className="canvas-kind" data-kind="mother" />Mother</Button>
       <Button variant="ghost" size="sm" onClick={tidy} title="Arrange by run order: Kahn's waves, each column starting once the columns before it are done"><ListOrdered size={14} />Arrange</Button>
       <Button variant="ghost" size="sm" aria-label="Side panel" aria-pressed={panelOpen} title={panelOpen ? "Hide the side panel: the board takes the whole width" : "Show the side panel: patterns, run order, the selected agent"} onClick={() => showPanel(!panelOpen)}>{panelOpen ? <PanelRightClose size={15} /> : <PanelRight size={15} />}</Button>
-      <Button size="sm" onClick={() => void start()} disabled={starting || Boolean(run && !FINISHED.has(run.status))}><Play size={14} />{starting ? "Starting…" : "Run graph"}</Button>
+      <Button size="sm" onClick={() => void start()} disabled={starting || Boolean(run && !over(run))}><Play size={14} />{starting ? "Starting…" : "Run graph"}</Button>
     </header>
     <div className="canvas-board" ref={board} onPointerMove={event => { pointer.current = { x: event.clientX, y: event.clientY }; }}
       // A double-click on empty board, whichever layer React Flow put under the pointer, opens the command line there.
@@ -796,9 +850,11 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
           why={typed => typed > allowed.atOnce ? `Elpis allows ${allowed.atOnce} at once here (${allowed.source}).` : "At least 1 has to run."} />
       </div>
       {run && <p className="canvas-help" role="status">{(["running", "succeeded", "pending", "failed", "blocked"] as const).map(status => [status, agents.filter(node => states[node.id]?.status === status).length] as const).filter(([, count]) => count).map(([status, count]) => `${count} ${STATUS_LABEL[status]}`).join(" · ") || "Starting…"}</p>}
+      {split.father.length > 0 && <p className="canvas-help" role="note">The Father runs {split.father.length} more {split.father.length === 1 ? "agent" : "agents"} in his own chat once her part has succeeded, and reports to her{run?.father ? `: ${run.father.threadId ? STATUS_LABEL[(run.father.status as TaskStatus)] ?? run.father.status : run.father.status === "cancelled" ? "not started, her part failed" : "waiting for her part"}` : "."}</p>}
       <LiveFeed chat={run?.rootThreadId ?? null} working={runState === "running"} idle="Not started. Every agent's report arrives here once the graph runs." />
       <div className="canvas-inspector-actions">
         {run && <Button variant="outline" size="sm" onClick={() => onOpenChat(run.rootThreadId)}><ExternalLink size={14} />Open her chat</Button>}
+        {run?.father?.threadId && <Button variant="outline" size="sm" onClick={() => onOpenChat(run.father!.threadId!)}><ExternalLink size={14} />Open the Father&rsquo;s chat</Button>}
         <Button variant="outline" size="sm" className="ml-auto" onClick={() => setSelection([])}>Done</Button>
       </div>
     </aside> : <aside className="canvas-side" aria-label="Architectures">
@@ -814,6 +870,10 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
           {template.caution && <small className="canvas-template-caution">{template.caution}</small>}
           {template.source && <small className="canvas-template-source">{template.source}</small>}</button>)}
       </section>)}
+      <section className="canvas-guide" aria-label="Guide">
+        <p className="hud-menu-title">Guide</p>
+        <ul>{GUIDE.map(item => <li key={item.href}><a href={item.href} target="_blank" rel="noreferrer">{item.title}</a><small>{item.note}</small></li>)}</ul>
+      </section>
     </aside>}
   </section>;
 }

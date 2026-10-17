@@ -28,6 +28,17 @@ export const MOTHER = "mother";
 /** The default most agents a graph holds; past 10 a Father agent is to share the work (lat.md/tasks.md). */
 export const MAX_AGENTS = 10;
 export const maxAgents = (graph: CanvasGraph) => graph.maxAgents ?? MAX_AGENTS;
+/** The Father: past this many agents, the rest run under him, in his own chat, after the Mother's part has finished,
+ * and he reports to her (lat.md/tasks.md, 17 October 2026). Elpis runs one graph per chat, so he needs his own. */
+export const FATHER = "father";
+export const PER_PARENT = 10;
+/** Which agents the Mother runs and which the Father runs: the first PER_PARENT in run order (Kahn's waves, then
+ * board order) are hers. Everything an agent waits for comes earlier in run order, so hers never wait for his. */
+export function parents(graph: CanvasGraph): { mother: string[]; father: string[] } {
+  const order = waves(graph), agents = agentsOf(graph).map((node, index) => ({ id: node.id, wave: order.get(node.id) ?? Infinity, index }));
+  const ranked = agents.sort((a, b) => a.wave - b.wave || a.index - b.index).map(item => item.id);
+  return { mother: ranked.slice(0, PER_PARENT), father: ranked.slice(PER_PARENT) };
+}
 /** Each agent's check is its own engine task, so a graph of n agents is 2n tasks. */
 export const TASKS_PER_AGENT = 2;
 /** The id of an agent's check task; Elpis task ids take letters, digits, `-` and `_`. */
@@ -227,6 +238,15 @@ export function makesLoop(edges: CanvasEdge[], source: string, target: string) {
 /** The graph as the tasks Elpis runs, or what is missing first. Notes are not sent. Each agent is a writer followed by
  * its own check (a read-only verify task, which Elpis requires after every writer); an agent wired after it waits
  * for that check, so it builds on checked work. */
+/** The run in its parts: the Mother's tasks, and the Father's (empty within PER_PARENT agents). The Father's part
+ * starts after hers has succeeded, so waiting on her agents is dropped from his tasks. */
+export function runParts(graph: CanvasGraph): { mother: RunTask[]; father: RunTask[] } | { error: string } {
+  const built = runTasks(graph);
+  if ("error" in built) return built;
+  const split = parents(graph), his = new Set(split.father.flatMap(id => [id, checkOf(id)]));
+  return { mother: built.tasks.filter(task => !his.has(task.id)), father: built.tasks.filter(task => his.has(task.id)).map(task => ({ ...task, dependsOn: task.dependsOn.filter(id => his.has(id)) })) };
+}
+
 export function runTasks(graph: CanvasGraph): { tasks: RunTask[] } | { error: string } {
   const agents = agentsOf(graph);
   if (!agents.length) return { error: "Add an agent before running the graph." };
