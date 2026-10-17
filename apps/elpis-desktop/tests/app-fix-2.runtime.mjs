@@ -610,12 +610,12 @@ try {
     assert.doesNotMatch(history, /PARITY_B_4242/, 'native history no longer has the later turn');
   });
 
-  await check('Ctrl+K focuses chat search and filters the sidebar', async () => {
+  await check('Ctrl+Shift+K focuses chat search and filters the sidebar', async () => {
     const name = (await row(parity.id).locator('.thread-title').innerText()).trim();
     const listed = await page.locator('.thread-row').count();
     assert(listed > 1, 'several chats are listed');
     await page.locator('.chat-scroll').click({ position: { x: 5, y: 5 } }).catch(() => {});
-    await page.keyboard.press('Control+k');
+    await page.keyboard.press('Control+Shift+K');
     const search = page.getByLabel('Search conversations');
     assert.equal(await search.evaluate(element => element === document.activeElement), true, 'search is focused');
     try {

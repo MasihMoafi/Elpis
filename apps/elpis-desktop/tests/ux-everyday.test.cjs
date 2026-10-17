@@ -64,7 +64,7 @@ test('Stop restores focus without stealing it from another field during a slow s
 }));
 
 test('Escape clears conversation search and returns to the draft',()=>fixture(async({page,composer,focused,shot})=>{
- await composer.fill('Unsent draft');await page.keyboard.press('Control+k');const search=page.getByLabel('Search conversations');await search.fill('no-match-1701');
+ await composer.fill('Unsent draft');await page.keyboard.press('Control+Shift+K');const search=page.getByLabel('Search conversations');await search.fill('no-match-1701');
  await page.getByText('No matching conversations.',{exact:true}).waitFor();await shot('search-empty');await search.press('Escape');await page.waitForTimeout(180);
  assert.equal(await search.inputValue(),'');assert.equal(await composer.inputValue(),'Unsent draft');assert.equal(await focused(),true);
 }));

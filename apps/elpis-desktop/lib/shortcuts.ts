@@ -11,7 +11,8 @@ export const SHORTCUTS: Shortcut[] = [
   { id: "delete", group: "Chat", label: "Delete the selected chats in the sidebar", keys: ["D"] },
   { id: "select-chats", group: "Chat", label: "Select several chats in the sidebar (Esc clears)", keys: ["Ctrl+click", "Shift+click"] },
   { id: "undo-delete", group: "Chat", label: "Bring back the last deleted chat (outside text fields)", keys: ["Ctrl+Z"] },
-  { id: "search", group: "Navigation", label: "Search chats", keys: ["Ctrl+K"] },
+  { id: "command-menu", group: "Navigation", label: "Command menu", keys: ["Ctrl+K"] },
+  { id: "search", group: "Navigation", label: "Search chats", keys: ["Ctrl+Shift+K"] },
   { id: "previous-chat", group: "Navigation", label: "Previous chat", keys: ["Ctrl+Shift+[", "Ctrl+PageUp"] },
   { id: "next-chat", group: "Navigation", label: "Next chat", keys: ["Ctrl+Shift+]", "Ctrl+PageDown"] },
   { id: "go-to-chat", group: "Navigation", label: "Go to chat 1–9", keys: ["Alt+1…9"] },
@@ -47,7 +48,7 @@ export function shortcutFor(event: KeyboardEvent, typing: boolean): { id: string
     if (key === "n") return { id: "new-chat" };
     // In a text field Ctrl+Z stays the field's own undo.
     if (key === "z" && !typing) return { id: "undo-delete" };
-    if (key === "k") return { id: "search" };
+    if (key === "k") return { id: "command-menu" };
     if (key === "b") return { id: "sidebar" };
     if (key === "t") return { id: "new-tab" };
     if (key === "w") return { id: "close-tab" };
@@ -59,6 +60,7 @@ export function shortcutFor(event: KeyboardEvent, typing: boolean): { id: string
     if (key === "pagedown") return { id: "next-chat" };
   }
   if (ctrl && event.shiftKey && !event.altKey) {
+    if (key === "k") return { id: "search" };
     if (key === "s") return { id: "sidebar" };
     if (key === "tab") return { id: "previous-tab" };
     if (key === "a") return { id: "archive" };
