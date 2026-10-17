@@ -3801,8 +3801,12 @@ impl ThreadRequestProcessor {
 
         // Parent-owned V2 children must resume through their owner, not caller configuration.
         if let InitialHistory::Resumed(resumed_history) = &thread_history
-            && let Some((source, _)) = thread_history.get_resumed_session_sources()
-            && !can_accept_direct_input(thread_history.get_multi_agent_version(), &source)
+            && let Some((source, thread_source)) = thread_history.get_resumed_session_sources()
+            && !can_accept_direct_input(
+                thread_history.get_multi_agent_version(),
+                &source,
+                thread_source.as_ref(),
+            )
         {
             let ThreadResumeTarget::Client(request_id) = target else {
                 return Ok(ControlFlow::Break(()));
@@ -4375,6 +4379,7 @@ impl ThreadRequestProcessor {
                 if can_accept_direct_input(
                     existing_thread.multi_agent_version(),
                     &config_snapshot.session_source,
+                    config_snapshot.thread_source.as_ref(),
                 ) && !has_subscribers
                     && matches!(loaded_status, ThreadStatus::Idle)
                     && !is_running
@@ -4478,6 +4483,7 @@ impl ThreadRequestProcessor {
             thread_summary.can_accept_direct_input = Some(can_accept_direct_input(
                 existing_thread.multi_agent_version(),
                 &config_snapshot.session_source,
+                config_snapshot.thread_source.as_ref(),
             ));
             let instruction_sources = existing_thread.legacy_instruction_sources().await;
 
@@ -4764,6 +4770,7 @@ impl ThreadRequestProcessor {
         let can_accept_direct_input = can_accept_direct_input(
             thread.multi_agent_version(),
             &config_snapshot.session_source,
+            config_snapshot.thread_source.as_ref(),
         );
         let thread = match thread_history {
             InitialHistory::Resumed(resumed) => {
@@ -5364,6 +5371,7 @@ impl ThreadRequestProcessor {
         thread.can_accept_direct_input = Some(can_accept_direct_input(
             forked_thread.multi_agent_version(),
             &config_snapshot.session_source,
+            config_snapshot.thread_source.as_ref(),
         ));
         thread.session_id = session_configured.session_id.to_string();
         thread.thread_source = config_snapshot.thread_source.clone().map(Into::into);
@@ -6327,6 +6335,7 @@ fn build_thread_from_snapshot(
         can_accept_direct_input: Some(can_accept_direct_input(
             multi_agent_version,
             &config_snapshot.session_source,
+            config_snapshot.thread_source.as_ref(),
         )),
         thread_source: config_snapshot.thread_source.clone().map(Into::into),
         git_info: None,

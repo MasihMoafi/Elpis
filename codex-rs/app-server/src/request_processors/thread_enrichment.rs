@@ -86,5 +86,6 @@ async fn enrich_loaded_thread(
     thread.can_accept_direct_input = Some(can_accept_direct_input(
         loaded_thread.multi_agent_version(),
         &config_snapshot.session_source,
+        config_snapshot.thread_source.as_ref(),
     ));
 }

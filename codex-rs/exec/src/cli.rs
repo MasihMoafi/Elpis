@@ -28,6 +28,10 @@ pub struct Cli {
     #[arg(long = "thread-source", value_name = "SOURCE", global = true)]
     pub thread_source: Option<ThreadSource>,
 
+    /// Start a worker chat nested under this existing, unarchived parent thread.
+    #[arg(long, value_name = "THREAD_ID", value_parser = codex_protocol::ThreadId::from_string, conflicts_with = "ephemeral")]
+    pub parent: Option<codex_protocol::ThreadId>,
+
     /// Request an experimental Cyber access program for this turn (OpenAI provider only).
     /// Omit to use server defaults. Not supported with review; fork requires a prompt.
     #[arg(long, value_enum, value_name = "PROGRAM", global = true)]

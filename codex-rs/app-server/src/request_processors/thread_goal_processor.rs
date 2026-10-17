@@ -373,6 +373,7 @@ impl ThreadGoalRequestProcessor {
                     if !can_accept_direct_input(
                         history.get_multi_agent_version(),
                         &session_meta.meta.source,
+                        session_meta.meta.thread_source.as_ref(),
                     ) {
                         return Err(invalid_request(
                             DIRECT_INPUT_TO_MULTI_AGENT_V2_SUBAGENT_ERROR,

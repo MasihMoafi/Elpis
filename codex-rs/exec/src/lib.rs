@@ -103,6 +103,7 @@ use codex_protocol::protocol::ReviewRequest;
 use codex_protocol::protocol::ReviewTarget;
 use codex_protocol::protocol::SessionConfiguredEvent;
 use codex_protocol::protocol::SessionSource;
+use codex_protocol::protocol::SubAgentSource;
 use codex_protocol::user_input::UserInput;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use codex_utils_absolute_path::canonicalize_existing_preserving_symlinks;
@@ -269,6 +270,7 @@ pub async fn run_main(cli: Cli, arg0_paths: Arg0DispatchPaths) -> anyhow::Result
         strict_config,
         shared,
         thread_source,
+        parent,
         cyber_access_program,
         skip_git_repo_check,
         ephemeral,
@@ -281,6 +283,9 @@ pub async fn run_main(cli: Cli, arg0_paths: Arg0DispatchPaths) -> anyhow::Result
         output_schema: output_schema_path,
         mut config_overrides,
     } = cli;
+    if parent.is_some() && command.is_some() {
+        anyhow::bail!("--parent is only supported when starting a new `elpis exec` chat");
+    }
     if cyber_access_program.is_some() {
         match command.as_ref() {
             Some(ExecCommand::Review(_)) => {
@@ -630,6 +635,49 @@ pub async fn run_main(cli: Cli, arg0_paths: Arg0DispatchPaths) -> anyhow::Result
     )
     .await?;
     embedded_network_policy.activate(&mut config);
+    let state_db = codex_core::init_state_db(&config).await;
+    let session_source = if let Some(parent_thread_id) = parent {
+        let parent_id = parent_thread_id.to_string();
+        let parent_path = codex_core::find_thread_path_by_id_str(
+            &config.codex_home,
+            &parent_id,
+            state_db.as_deref(),
+        )
+        .await?;
+        let Some(parent_path) = parent_path else {
+            if codex_core::find_archived_thread_path_by_id_str(
+                &config.codex_home,
+                &parent_id,
+                state_db.as_deref(),
+            )
+            .await?
+            .is_some()
+            {
+                anyhow::bail!("Parent thread {parent_id} is archived; unarchive it first");
+            }
+            anyhow::bail!("Parent thread {parent_id} was not found");
+        };
+        let parent_meta = read_session_meta_line(&parent_path).await?;
+        anyhow::ensure!(
+            parent_meta.meta.id == parent_thread_id,
+            "Parent thread {parent_id} metadata does not match its id"
+        );
+        let parent_depth = match parent_meta.meta.source {
+            SessionSource::SubAgent(SubAgentSource::ThreadSpawn { depth, .. }) => depth,
+            _ => 0,
+        };
+        SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
+            parent_thread_id,
+            depth: parent_depth
+                .checked_add(1)
+                .ok_or_else(|| anyhow::anyhow!("Parent thread {parent_id} has an invalid depth"))?,
+            agent_path: None,
+            agent_nickname: None,
+            agent_role: None,
+        })
+    } else {
+        SessionSource::Exec
+    };
     let daybreak_override = cli_kv_overrides
         .iter()
         .any(|(key, _)| key == "daybreak")
@@ -713,7 +761,6 @@ pub async fn run_main(cli: Cli, arg0_paths: Arg0DispatchPaths) -> anyhow::Result
     let local_runtime_paths = local_runtime_paths.with_allowed_symlinked_codex_home(
         codex_config::allowed_symlinked_codex_home(&config.config_layer_stack, &config.codex_home),
     );
-    let state_db = codex_core::init_state_db(&config).await;
     let environment_manager = if run_loader_overrides.ignore_user_config {
         EnvironmentManager::from_env(
             Some(local_runtime_paths),
@@ -741,7 +788,7 @@ pub async fn run_main(cli: Cli, arg0_paths: Arg0DispatchPaths) -> anyhow::Result
         state_db: state_db.clone(),
         environment_manager: std::sync::Arc::new(environment_manager),
         config_warnings,
-        session_source: SessionSource::Exec,
+        session_source,
         enable_codex_api_key_env: true,
         client_name: "codex_exec".to_string(),
         client_version: env!("CARGO_PKG_VERSION").to_string(),
