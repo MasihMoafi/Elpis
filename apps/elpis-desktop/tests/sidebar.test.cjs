@@ -21,13 +21,14 @@ test('sidebar: projects, toggle, D to delete, arrows, Ctrl/Shift selection, hove
   const threads = names.map(name => ({ id: name.toLowerCase(), name, preview: name, cwd: '/tmp/elpis-sidebar-fixture', model: 'gpt-6-luna', modelProvider: 'openai', status: { type: 'idle' } }));
   const deleted = [];
   const server = http.createServer(async (req, res) => {
-    const url = new URL(req.url, 'http://localhost'); for await (const _ of req) { /* drain */ }
+    const url = new URL(req.url, 'http://localhost'); let raw = ''; for await (const chunk of req) raw += chunk;
     const json = value => { res.setHeader('content-type', 'application/json'); res.end(JSON.stringify(value)); };
     const id = url.pathname.split('/')[3], thread = threads.find(item => item.id === id);
     if (url.pathname === '/api/events') { res.writeHead(200, { 'content-type': 'text/event-stream' }); res.write('event: connection\ndata: {"connected":true}\n\n'); return; }
     if (url.pathname === '/api/health') return json({ connected: true });
     if (url.pathname === '/api/models') return json({ data: [{ id: 'luna', model: 'gpt-6-luna', displayName: 'Luna 6' }], nextCursor: null });
     if (url.pathname === '/api/threads') return json({ data: url.searchParams.get('ancestorThreadId') ? [] : threads.filter(item => !deleted.includes(item.id)), nextCursor: null });
+    if (url.pathname === '/api/trash') { const { threadIds } = JSON.parse(raw); deleted.push(...threadIds); return json({ trashed: threadIds }); }
     if (url.pathname.endsWith('/delete')) { deleted.push(id); return json({ deleted: true, alsoDeleted: [] }); }
     if (url.pathname.endsWith('/resume')) return json({ thread, activeTurnId: null });
     if (thread) return json({ thread, data: [], nextCursor: null });

@@ -108,11 +108,13 @@ test('every chat row has a status dot: filled while it runs, hollow when idle, r
     assert.ok(boxes.every(box => box.dot.width === boxes[0].dot.width && Math.abs(box.dot.x - boxes[0].dot.x) < 1), 'one size and one column');
     assert.ok(boxes.every(box => box.dot.x + box.dot.width <= box.link.x + 1), 'left of the title');
     assert.ok(boxes.every(box => box.dot.width >= 8), 'big enough to read');
-    // The dot follows the chat live: a turn starts, the dot fills; it ends, the dot is hollow again.
+    // A completed reply stays marked unread until that chat is opened.
     emit('turn/started', { threadId: 't-idle', turn: { id: 'turn-9' } });
     await eventually(async () => assert.equal(await dot('t-idle').getAttribute('data-state'), 'working'));
     assert.ok(!same(await fill('t-idle'), BASE));
     emit('turn/completed', { threadId: 't-idle', turn: { id: 'turn-9', status: 'completed' } });
+    await eventually(async () => assert.equal(await dot('t-idle').getAttribute('data-state'), 'unread'));
+    await aside.locator('.thread-row[data-thread-id="t-idle"] .thread-link').first().click();
     await eventually(async () => assert.equal(await dot('t-idle').getAttribute('data-state'), 'idle'));
     assert.deepEqual(await oranges(page), [], 'light theme, sidebar dots: no orange');
     // The row's own buttons are unchanged by the dot.
@@ -133,9 +135,9 @@ test('start screen: a Local chip beside the project chip says where the chat wor
     await local.click();
     const menu = page.getByRole('menu');
     await menu.waitFor();
-    assert.deepEqual(await menu.getByRole('menuitem').allInnerTexts().then(items => items.map(text => text.replace(/\s+/g, ' ').trim())), ['Local /work/legal'], 'what works: the project folder');
+    assert.deepEqual(await menu.getByRole('menuitem').allInnerTexts().then(items => items.map(text => text.replace(/\s+/g, ' ').trim())), ['Local /work/legal', 'Worktree Needs a Git repository with a commit'], 'the local folder and the unavailable worktree choice');
     assert.match(await menu.innerText(), /worktree/i, 'and the menu says what is not offered');
-    assert.equal(await menu.getByRole('menuitem', { name: /worktree/i }).count(), 0, 'no worktree choice that would do nothing');
+    assert.equal(await menu.getByRole('menuitem', { name: /worktree/i }).getAttribute('aria-disabled'), 'true', 'worktrees require a committed Git repository');
     assert.equal(await menu.getByRole('menuitem').first().locator('svg[aria-label="Current"]').count(), 1, 'Local is marked as the choice');
     await shoot('start-environment-light');
     await page.keyboard.press('Escape');
