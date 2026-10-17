@@ -8,6 +8,7 @@ const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
 const { chromium } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright');
+const { guardDesktopStore } = require('./controls.cjs');
 const staticOut = path.join(__dirname, '../out');
 const shots = process.env.ELPIS_SHOTS;
 
@@ -80,6 +81,7 @@ async function fixture(t) {
   t.after(async () => { await browser.close(); for (const stream of streams) stream.end(); await new Promise(resolve => server.close(resolve)); });
   const page = await browser.newPage({ viewport: { width: 1320, height: 860 } });
   page.setDefaultTimeout(4000); page.on('pageerror', error => errors.push(error.message));
+  await guardDesktopStore(page);
   await page.addInitScript(fakeDesktop);
   await page.goto(`http://127.0.0.1:${server.address().port}/`);
   await page.getByRole('button', { name: 'Annotate this page' }).waitFor();

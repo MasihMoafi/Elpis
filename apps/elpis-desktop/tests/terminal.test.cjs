@@ -6,6 +6,7 @@ const http = require('node:http');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { chromium } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright');
+const { guardDesktopStore } = require('./controls.cjs');
 const root = path.resolve(__dirname, '../out');
 const shots = process.env.ELPIS_TERMINAL_SHOTS;
 async function eventually(check) {
@@ -36,6 +37,7 @@ async function fixture(run) {
   try {
     const page = await browser.newPage({ viewport: { width: 1320, height: 900 } }); page.setDefaultTimeout(6000);
     const errors = []; page.on('pageerror', error => errors.push(error.message));
+    await guardDesktopStore(page);
     await page.addInitScript(() => {
       const saved = new Map(), calls = window.__terminal = { open: [], restart: [], closed: [], tui: [], input: [], resize: [], copied: [] };
       let data = () => {}, exit = () => {}, openThread = () => {}, sessions = 0;

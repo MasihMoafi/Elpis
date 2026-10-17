@@ -1,4 +1,4 @@
-const { leaveSettings, sidebar } = require('./controls.cjs');
+const { guardDesktopStore, leaveSettings, sidebar } = require('./controls.cjs');
 // Real exported UI with synthetic transfer events. Never reads/writes the system clipboard.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
@@ -69,6 +69,7 @@ async function fixture(t, options = {}) {
   browser = await chromium.launch({ headless: true, executablePath: process.env.ELPIS_CHROMIUM || undefined });
   const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
   page.setDefaultTimeout(4000); page.on('pageerror', error => errors.push(error.message));
+  await guardDesktopStore(page);
   await page.addInitScript(() => { window.elpisDesktop = { storage: { getItem: key => localStorage.getItem(key), setItem: (key, value) => localStorage.setItem(key, value), removeItem: key => localStorage.removeItem(key), onError: () => () => {} } }; });
   await page.goto(`http://127.0.0.1:${server.address().port}/`);
   const input = page.getByRole('textbox', { name: 'Message Elpis', exact: true });

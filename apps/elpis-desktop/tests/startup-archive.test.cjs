@@ -1,4 +1,4 @@
-const { leaveSettings, sidebar } = require('./controls.cjs');
+const { guardDesktopStore, leaveSettings, sidebar } = require('./controls.cjs');
 // Real exported renderer with synthetic HTTP/SSE; no engine or provider calls.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
@@ -90,6 +90,7 @@ async function fixture(t, { modelFailure = false, holdModels = false, descendant
   const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
   const network = await page.context().newCDPSession(page); await network.send('Network.enable'); await network.send('Network.setCacheDisabled', { cacheDisabled: true });
   page.on('pageerror', error => errors.push(error.message)); page.on('console', message => { if (message.type() === 'error') t.diagnostic(message.text()); }); page.setDefaultTimeout(4000);
+  await guardDesktopStore(page);
   await page.addInitScript(descendantIds => {
     const saved = new Map([['elpis-draft-v1:recovery-a', 'Recovered edit A'], ['elpis-draft-v1:c', 'Unsent child C'], ['elpis-draft-v1:recovery-c', 'Recovered child C'], ['elpis-draft-v1:b', 'Unsent B'], ['elpis-draft-v1:recovery-b', 'Recovered edit B']]);
     if (descendantIds.length) saved.set('elpis-draft-v1:a', 'Unsent A');

@@ -3,7 +3,9 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { randomUUID } = require('node:crypto');
 
-const allowed = key => typeof key === 'string' && /^(elpis-theme|elpis-preferences-v1|elpis-projects-v1|elpis-pinned-chats-v1|elpis-terminal-height|elpis-last-chat|elpis-workflow-draft-v1|(?:elpis-draft-v1|elpis-attachments-v1):[A-Za-z0-9_-]{1,200})$/.test(key);
+/** The keys the renderer may keep in the desktop store; anything else is refused (tests/controls.cjs guards stubs with it). */
+const STORE_KEYS = /^(elpis-theme|elpis-chat-tabs-v1|elpis-sidebar-width|elpis-preferences-v1|elpis-projects-v1|elpis-pinned-chats-v1|elpis-terminal-height|elpis-last-chat|elpis-workflow-draft-v1|(?:elpis-draft-v1|elpis-attachments-v1):[A-Za-z0-9_-]{1,200})$/;
+const allowed = key => typeof key === 'string' && STORE_KEYS.test(key);
 
 // App-owned preferences live outside the changing loopback origin. No runtime
 // configuration or conversation history is written through this interface.
@@ -80,4 +82,4 @@ function registerState({ host, origin, ipcMain, dialog, store }) {
     for (const channel of ['elpis:state:write', 'elpis:folder', 'elpis:folder:resolve']) ipcMain.removeHandler(channel);
   };
 }
-module.exports = { createStateStore, registerState };
+module.exports = { STORE_KEYS, createStateStore, registerState };

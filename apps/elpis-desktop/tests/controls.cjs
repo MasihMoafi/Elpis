@@ -19,4 +19,19 @@ async function leaveSettings(page) {
   if (await back.isVisible().catch(() => false)) await back.click();
 }
 async function sidebar(page) { await leaveSettings(page); return page.locator('aside'); }
-module.exports = { chooseOption, controlValue, leaveSettings, sidebar };
+/** Makes the page's stub of the desktop store (window.elpisDesktop.storage) refuse what the real one refuses
+ * (STORE_KEYS in desktop/state.cjs): a refused key throws, uncaught, as "Unsupported workspace value", so the test's
+ * pageerror check fails. Add it before the stub's own init script. */
+async function guardDesktopStore(target) {
+  const { STORE_KEYS } = require('../desktop/state.cjs');
+  await target.addInitScript(source => {
+    const allowed = new RegExp(source); let current;
+    const guard = (inner, key, rest) => { if (allowed.test(key)) return inner(key, ...rest); setTimeout(() => { throw Error(`Unsupported workspace value: ${key}`); }); };
+    Object.defineProperty(window, 'elpisDesktop', { configurable: true, get: () => current, set: value => {
+      const storage = value?.storage;
+      if (storage) for (const name of ['setItem', 'removeItem', 'saveItem']) if (typeof storage[name] === 'function') { const inner = storage[name]; storage[name] = (key, ...rest) => guard(inner, key, rest); }
+      current = value;
+    } });
+  }, STORE_KEYS.source);
+}
+module.exports = { chooseOption, controlValue, guardDesktopStore, leaveSettings, sidebar };

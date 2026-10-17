@@ -1,4 +1,4 @@
-const { leaveSettings } = require('./controls.cjs');
+const { guardDesktopStore, leaveSettings } = require('./controls.cjs');
 // Exported desktop UI, synthetic history/approvals, no engine or provider calls.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
@@ -71,6 +71,7 @@ async function fixture(t) {
   const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
   page.on('pageerror', error => t.diagnostic(error.stack));
   page.setDefaultTimeout(4000);
+  await guardDesktopStore(page);
   await page.addInitScript(() => {
     window.__draftStorageWrites = [];
     const write = Storage.prototype.setItem;

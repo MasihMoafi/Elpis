@@ -7,7 +7,7 @@ const http = require('node:http');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { chromium } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright');
-const { controlValue } = require('./controls.cjs');
+const { controlValue, guardDesktopStore } = require('./controls.cjs');
 const root = path.resolve(__dirname, '../out');
 const shots = process.env.ELPIS_TABS_SHOTS;
 async function eventually(check) {
@@ -42,6 +42,7 @@ async function fixture(run, { width = 1320, height = 860 } = {}) {
   try {
     const page = await browser.newPage({ viewport: { width, height } }); page.setDefaultTimeout(6000);
     const errors = []; page.on('pageerror', error => errors.push(error.message));
+    await guardDesktopStore(page);
     await page.addInitScript(() => {
       // The storage is the window's own localStorage, so a reload keeps the tabs as the desktop store does.
       const calls = window.__terminal = { open: [], closed: [], tui: [], input: [], resize: [] }, commands = window.__commands = [];
