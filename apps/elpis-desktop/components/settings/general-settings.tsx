@@ -4,7 +4,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
-import { savePreferences, usePreferences, type Preferences } from "@/lib/preferences";
+import { followUpSummary, savePreferences, usePreferences, type Preferences } from "@/lib/preferences";
 import { editable, reloadSettings, saveOptions } from "@/lib/settings-store";
 import { Choice, SaveFeedback, Segmented, SettingRow, SettingsGroup, SettingsHeader, SettingsNotice } from "@/components/settings/rows";
 import { useSaver } from "@/components/settings/use-saver";
@@ -74,7 +74,7 @@ export function GeneralSettings() {
       <SettingRow title="Send shortcut" description="Choose whether Enter sends a message or inserts a new line.">
         <Choice label="Send shortcut" value={preferences.sendShortcut} options={[{ value: "enter", label: "Enter" }, { value: "modEnter", label: "Ctrl+Enter" }]} onChange={sendShortcut => save({ sendShortcut })} />
       </SettingRow>
-      <SettingRow title="Follow-up behavior" description="While Elpis runs, queue follow-ups until it finishes, or steer the current run.">
+      <SettingRow title="Follow-up behavior" description={followUpSummary(preferences)}>
         <Segmented label="Follow-up behavior" value={preferences.followUp} options={[{ value: "queue", label: "Queue" }, { value: "steer", label: "Steer" }]} onChange={followUp => save({ followUp })} />
       </SettingRow>
       <SettingRow title="Show context window usage" description="Show how much of the context window the chat’s latest request used, under the composer.">

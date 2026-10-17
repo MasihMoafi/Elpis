@@ -31,6 +31,13 @@ export function queueFollowUp(threadId: string, text: string, attachments: Attac
   return true;
 }
 export function removeFollowUp(threadId: string, id: string) { set(threadId, (queues[threadId] ?? []).filter(item => item.id !== id)); }
+/** Takes one message out of the queue and returns it, for Edit in composer. */
+export function takeFollowUp(threadId: string, id: string) {
+  const item = (queues[threadId] ?? []).find(entry => entry.id === id);
+  if (item) removeFollowUp(threadId, id);
+  return item;
+}
+export function clearFollowUps(threadId: string) { set(threadId, []); }
 
 /** Call with each runtime event: a normally completed turn sends the next queued message.
  * Stopped or failed turns keep the queue so nothing is sent unexpectedly. */

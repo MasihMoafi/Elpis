@@ -99,10 +99,29 @@ export function followUpKey(event: Key, preferences = readPreferences()): Prefer
   if (other) return preferences.followUp === "queue" ? "steer" : "queue";
   return isSendKey(event, preferences) ? preferences.followUp : null;
 }
+export type FollowUpChoice = { follow: Preferences["followUp"]; /** Claude's wording for it. */ label: string; keys: string };
+/** What the two send keys do while a turn runs, send key first. Claude: Enter sends into the run, Ctrl+Enter queues for
+ * later. Settings → General → Follow-up behavior swaps them, so it is only the default; the other key does the other
+ * thing for that one message. The send button's tooltip and menu, the composer's hint and Settings all read this. */
+export function followUpChoices(preferences = readPreferences()): [FollowUpChoice, FollowUpChoice] {
+  const [key, otherKey] = preferences.sendShortcut === "enter" ? ["Enter", "Ctrl+Enter"] : ["Ctrl+Enter", "Ctrl+Shift+Enter"];
+  const [first, second]: Preferences["followUp"][] = preferences.followUp === "queue" ? ["queue", "steer"] : ["steer", "queue"];
+  const label = (follow: Preferences["followUp"], sendKey: boolean) => follow === "queue" ? "Queue for later" : sendKey ? "Send" : "Send now";
+  return [{ follow: first, label: label(first, true), keys: key }, { follow: second, label: label(second, false), keys: otherKey }];
+}
 /** The composer's hint while a turn runs: "Enter to send, Ctrl+Enter to queue for later", worded for the settings. */
 export function followUpHint(preferences = readPreferences()) {
-  const [key, otherKey] = preferences.sendShortcut === "enter" ? ["Enter", "Ctrl+Enter"] : ["Ctrl+Enter", "Ctrl+Shift+Enter"];
-  return preferences.followUp === "queue" ? `${key} to queue for later, ${otherKey} to send now` : `${key} to send, ${otherKey} to queue for later`;
+  return followUpChoices(preferences).map(choice => `${choice.keys} to ${choice.label.toLowerCase()}`).join(", ");
+}
+/** The send button's tooltip while a turn runs: one row per key, as Claude's. */
+export function followUpTooltip(preferences = readPreferences()) {
+  return followUpChoices(preferences).map(choice => `${choice.label} (${choice.keys})`).join("\n");
+}
+/** Settings → General → Follow-up behavior says what each key does, so the setting and the per-message key read as one rule. */
+export function followUpSummary(preferences = readPreferences()) {
+  const [first, second] = followUpChoices(preferences);
+  const effect = (choice: FollowUpChoice, it: string) => choice.follow === "queue" ? `queues ${it} for later` : `sends ${it} into the current run`;
+  return `While Elpis runs, ${first.keys} ${effect(first, "the message")} and ${second.keys} ${effect(second, "it")}.`;
 }
 /** The folder a new chat runs in: the selected project's, else Settings → General → Default folder, else Elpis's own. */
 export function newChatFolder(projectFolder: string, preferences = readPreferences()) {

@@ -68,6 +68,22 @@ test('send shortcut, hint and new-chat folder follow the saved preferences', () 
   assert.equal(newChatFolder('', { defaultFolder: '' }), '');
 });
 
+test('the follow-up hint, tooltip and summary name the keys that followUpKey really acts on, under every setting', () => {
+  browser();
+  const { followUpChoices, followUpHint, followUpTooltip, followUpSummary, followUpKey } = loader()('lib/preferences.ts');
+  const press = { 'Enter': {}, 'Ctrl+Enter': { ctrlKey: true }, 'Ctrl+Shift+Enter': { ctrlKey: true, shiftKey: true } };
+  const key = (extra = {}) => ({ key: 'Enter', shiftKey: false, ctrlKey: false, metaKey: false, altKey: false, nativeEvent: { isComposing: false }, ...extra });
+  const texts = {};
+  for (const sendShortcut of ['enter', 'modEnter']) for (const followUp of ['steer', 'queue']) {
+    const settings = { sendShortcut, followUp };
+    for (const choice of followUpChoices(settings)) assert.equal(followUpKey(key(press[choice.keys]), settings), choice.follow, `${sendShortcut}/${followUp}: ${choice.keys} is ${choice.label}`);
+    texts[`${sendShortcut}/${followUp}`] = [followUpHint(settings), followUpTooltip(settings), followUpSummary(settings)];
+  }
+  assert.deepEqual(texts['enter/steer'], ['Enter to send, Ctrl+Enter to queue for later', 'Send (Enter)\nQueue for later (Ctrl+Enter)', 'While Elpis runs, Enter sends the message into the current run and Ctrl+Enter queues it for later.']);
+  assert.deepEqual(texts['enter/queue'], ['Enter to queue for later, Ctrl+Enter to send now', 'Queue for later (Enter)\nSend now (Ctrl+Enter)', 'While Elpis runs, Enter queues the message for later and Ctrl+Enter sends it into the current run.']);
+  assert.deepEqual(texts['modEnter/steer'], ['Ctrl+Enter to send, Ctrl+Shift+Enter to queue for later', 'Send (Ctrl+Enter)\nQueue for later (Ctrl+Shift+Enter)', 'While Elpis runs, Ctrl+Enter sends the message into the current run and Ctrl+Shift+Enter queues it for later.']);
+});
+
 test('queued follow-ups wait for a completed turn, survive stops and failures, and steer only when chosen', async () => {
   const env = browser(), use = loader();
   const { savePreferences } = use('lib/preferences.ts');

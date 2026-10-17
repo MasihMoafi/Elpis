@@ -144,7 +144,7 @@ test('fork opens the new chat ready to type, and a delayed fork never overrides 
  await page.getByRole('button',{name:'New chat',exact:true}).click();await composer.fill('A newer draft');release();await page.waitForTimeout(200);assert.equal(await page.getByRole('heading',{name:'What should we build?',exact:true}).count(),1);assert.equal(await composer.inputValue(),'A newer draft');
 }));
 
-for(const action of ['Send now','Remove queued message'])test(`queued follow-up ${action} returns focus to the composer`,()=>fixture(async({page,composer,open,emit,focused})=>{
+for(const action of ['Send now','Remove from queue'])test(`queued follow-up ${action} returns focus to the composer`,()=>fixture(async({page,composer,open,emit,focused})=>{
  await open();await openSettings(page);await page.getByRole('radio',{name:'Queue',exact:true}).click();await page.getByRole('button',{name:'Back to app',exact:true}).click();emit('turn/started',{threadId:'ux-chat',turn:{id:'running'}});await page.getByRole('button',{name:'Stop generation',exact:true}).waitFor();
  await composer.fill('Waiting instruction');await composer.press('Enter');const queue=page.getByRole('list',{name:'Queued follow-ups'});await queue.waitFor();await queue.getByRole('button',{name:action,exact:true}).click();await queue.waitFor({state:'detached'});await page.waitForTimeout(180);assert.equal(await focused(),true);
 }));

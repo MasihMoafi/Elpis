@@ -13,15 +13,15 @@ import { ChatMessage } from "@/components/chat-message";
 import { Transcript } from "@/components/transcript";
 import { readPins, savePins } from "@/lib/pins";
 import { shortcutFor } from "@/lib/shortcuts";
-import { followUpHint, followUpKey, isSendKey, newChatFolder, useAppPreferences, type Preferences } from "@/lib/preferences";
+import { followUpChoices, followUpHint, followUpKey, followUpTooltip, isSendKey, newChatFolder, useAppPreferences, type Preferences } from "@/lib/preferences";
 import { notifyApproval, notifyRuntimeEvent } from "@/lib/notifications";
-import { queueFollowUp, sendQueuedFollowUp, type FollowUpOptions } from "@/lib/follow-ups";
+import { queueFollowUp, sendQueuedFollowUp, type FollowUp, type FollowUpOptions } from "@/lib/follow-ups";
 import { QueuedFollowUps } from "@/components/queued-follow-ups";
 import { ContextUsage } from "@/components/context-usage";
 import { ElpisFeatures } from "@/components/elpis-features";
 import { ShortcutsDialog } from "@/components/shortcuts-dialog";
 import { StartupSplash } from "@/components/startup-splash";
-import { permissionLabel, PermissionsMenu, PlanPill, PlusMenu, type PermissionMode } from "@/components/composer-controls";
+import { permissionLabel, PermissionsMenu, PlanPill, PlusMenu, SendOptionsMenu, type PermissionMode } from "@/components/composer-controls";
 import { CopyButton } from "@/components/markdown-text";
 import { liveEventItemKey, mergeHistoryWithLive, mergeLiveItem, runtimeErrorNotice } from "@/lib/live-events";
 import { replacementEligibility } from "@/lib/turn-replacement";
@@ -640,6 +640,7 @@ export default function Home() {
   const turnEffort = selected ? pending?.effort ?? selected.reasoningEffort ?? "" : effort;
   const knownModel = (selected ? selectedChoice?.models : newChoice?.models)?.find(item => item.model === (turnModel || providerSettings?.main.model));
   const imageBlocked = attachments.some(part => part.type === "image") && !!knownModel?.inputModalities && !knownModel.inputModalities.includes("image");
+  const sendBlocked = (!text.trim() && !attachments.length) || busy || dictating || attaching || imageBlocked || !ready || !connected || (needsModelId && !model.trim());
   const recoveryAttachments = selected ? attachmentDrafts.current[`recovery-${selected.id}`] ?? [] : [];
 
   const find = (id?: string | null) => id ? threads.find(thread => thread.id === id) ?? related[id] : undefined;
@@ -970,6 +971,17 @@ export default function Home() {
    * Commands that run the model or rewrite the chat wait for an idle chat; controls and views are always there. */
   const openSettings = (tab: SettingsTab) => { setSettingsSection(tab); show("settings"); };
   const focusComposer = () => composerRef.current?.focus();
+  /** A queued message's Edit in composer, as in Claude: it returns to the box above whatever is typed, with its files and @-mentions. */
+  function editQueued(item: FollowUp) {
+    editDraft([item.text, textRef.current].filter(part => part.trim()).join("\n\n"));
+    for (const mention of item.mentions ?? []) pickedMentions.current.set(mention.path, mention);
+    if (item.attachments.length) {
+      const all = [...attachmentsRef.current, ...item.attachments], kept = all.slice(0, 3);
+      setAttachments(kept); saveAttachments(selectedRef.current?.id || newDraftKey.current, kept);
+      if (kept.length < all.length) setFileNotice("A message holds up to 3 files; the extra files of the queued message were left out.");
+    }
+    focusComposer();
+  }
   /** The "+" menu's Files and Images: the same chooser, showing what `accept` names. */
   const pickFiles = (accept: string) => { const input = filePickerRef.current; if (input) { input.accept = accept; input.click(); } };
   /** The "+" menu's Mention: an "@" at the caret (after a space when words come before it), which opens the picker. */
@@ -1300,7 +1312,7 @@ export default function Home() {
           {panel === "diff" && selected && <DiffPanel threadId={selected.id} onClose={closePanel} />}
           {slashNotice && <p role="status" className="mx-auto mb-2 w-full max-w-[740px] px-1 text-sm text-muted-foreground">{slashNotice}</p>}
           {selected && plans[selected.id] && <TaskList plan={plans[selected.id]} running={activeTurns[selected.id] === plans[selected.id].turnId} />}
-          <QueuedFollowUps threadId={selected?.id} activeTurnId={activeTurn} onError={setError} onComplete={restoreComposerFocus} />
+          <QueuedFollowUps threadId={selected?.id} activeTurnId={activeTurn} onError={setError} onComplete={restoreComposerFocus} onEdit={editQueued} />
           {!selected && <div className="composer-tray"><EnvironmentMenu folder={project?.cwd ?? null} disabled={!ready || busy} /><ProjectMenu variant="chip" projects={projects} selected={project} disabled={!ready || busy} onSelect={selectProject} onAdd={() => void addProject()} /></div>}
           <form className="composer" onSubmit={e => { e.preventDefault(); send(); }} onDragOver={e => { if (e.dataTransfer.types.includes("Files")) e.preventDefault(); }} onDrop={e => { if (e.dataTransfer.files.length || e.dataTransfer.types.includes("Files")) { e.preventDefault(); void addFiles(Array.from(e.dataTransfer.files)); } }}>
             <SlashMenu menu={slash} /><MentionMenu menu={mention} />
@@ -1334,7 +1346,7 @@ export default function Home() {
                   const result = insertTranscript(textRef.current, selection, transcript); editDraft(result.text);
                   requestAnimationFrame(() => { composerRef.current?.focus(); composerRef.current?.setSelectionRange(result.caret, result.caret); });
                 }} />}
-              {activeTurn && <Button type="button" size="icon" variant="secondary" aria-label="Stop generation" onClick={() => selected && stop(selected)}><Square size={16} /></Button>}<Button type="submit" className="send-button" size={activeTurn && !continues ? "sm" : "icon"} aria-label={activeTurn && !continues ? "Send follow-up" : "Send message"} disabled={(!text.trim() && !attachments.length) || busy || dictating || attaching || imageBlocked || !ready || !connected || (needsModelId && !model.trim())}>{activeTurn && !continues ? "Send follow-up" : <SendIcon size={18} />}</Button></div></div>
+              {activeTurn && <Button type="button" size="icon" variant="secondary" aria-label="Stop generation" onClick={() => selected && stop(selected)}><Square size={16} /></Button>}<Button type="submit" className="send-button" size={activeTurn && !continues ? "sm" : "icon"} aria-label={activeTurn && !continues ? "Send follow-up" : "Send message"} title={activeTurn && !continues ? followUpTooltip(preferences) : undefined} disabled={sendBlocked}>{activeTurn && !continues ? "Send follow-up" : <SendIcon size={18} />}</Button>{activeTurn && !continues && <SendOptionsMenu choice={followUpChoices(preferences)[1]} disabled={sendBlocked} returnFocus={composerRef} onChoose={follow => void send(undefined, follow)} />}</div></div>
           </form>
           <div className="composer-meta">
             {selected?.cwd && <span className="composer-chip" title={selected.cwd}><FolderIcon size={13} />{folder(selected.cwd)}</span>}
