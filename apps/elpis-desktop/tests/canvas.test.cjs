@@ -195,10 +195,10 @@ test('agents canvas: writers with automatic checks, architectures, wiring, persi
     const byTitle = Object.fromEntries(ran.tasks.map(task => [task.title, task]));
     const join = byTitle['Join the parts'], joinCheck = byTitle['Check: Join the parts'];
     assert.deepEqual([join.kind, join.writeScopes, join.acceptanceCriteria], ['implement', ['src', 'src/lib'], ['The whole suite passes']]);
-    assert.deepEqual(join.dependsOn, ['Part 1', 'Part 2', 'Part 3'].map(title => byTitle[`Check: ${title}`].id));
+    assert.deepEqual(join.dependsOn, ['Part 1', 'Part 2', 'Part 3'].flatMap(title => [byTitle[title].id, byTitle[`Check: ${title}`].id]));
     assert.deepEqual([joinCheck.kind, joinCheck.dependsOn, joinCheck.writeScopes], ['verify', [join.id], []]);
     assert.match(joinCheck.instruction, /^Check the work of “Join the parts”[\s\S]*The whole suite passes/);
-    assert.deepEqual(byTitle['New agent'].dependsOn, [joinCheck.id]);
+    assert.deepEqual(byTitle['New agent'].dependsOn, [join.id, joinCheck.id]);
     // The new agent had no prompt: Elpis filled it from the run's goal before the run, and nothing else changed.
     assert.deepEqual([plans.length, plans[0].goal, plans[0].agents.find(item => item.title === 'New agent').prompt], [1, 'Keep the public API unchanged.', '']);
     assert.equal(byTitle['New agent'].instruction, 'Goal of the whole run: Keep the public API unchanged.\n\nDo New agent');

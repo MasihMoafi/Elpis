@@ -300,8 +300,8 @@ export function runTasks(graph: CanvasGraph): { tasks: RunTask[] } | { error: st
     const model = { ...(node.data.provider ? { provider: node.data.provider } : {}), ...(node.data.model ? { model: node.data.model } : {}) };
     return [
       // Every agent gets the Mother's brief first, then its own prompt.
-      { id: node.id, kind: "implement" as const, title, instruction: [brief && `Goal of the whole run: ${brief}`, prompt, alongside].filter(Boolean).join("\n\n"),
-        dependsOn: graph.edges.filter(edge => waits(edge) && edge.target === node.id && ids.has(edge.source)).map(edge => checkOf(edge.source)),
+      { id: node.id, kind: "implement" as const, title, instruction: [brief && `Goal of the whole run: ${brief}`, prompt, `Save your result as files inside your allowed folders, including a markdown answer for research or decisions. Include the answer and file paths in your terminal report summary so the next agent can use them.`, alongside].filter(Boolean).join("\n\n"),
+        dependsOn: graph.edges.filter(edge => waits(edge) && edge.target === node.id && ids.has(edge.source)).flatMap(edge => [edge.source, checkOf(edge.source)]),
         writeScopes: node.data.writeScopes, acceptanceCriteria: criteria, ...model, ...(node.data.effort ? { reasoningEffort: node.data.effort } : {}) },
       { id: checkOf(node.id), kind: "verify" as const, title: `Check: ${title}`.slice(0, 256),
         instruction: `Check the work of “${title}”. Its prompt was:\n${prompt}\n\nRun what proves it (the build, the tests, or reading what it wrote) and show the output. Say plainly whether each of these holds: ${criteria.join("; ")}`,

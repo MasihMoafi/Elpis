@@ -434,6 +434,8 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
         const fresh: typeof stops = [];
         for (const stop of stops) { const key = `merge ${stop.agent ?? "project"}`; if (!said.current[key]) { said.current[key] = "failed"; fresh.push(stop); } }
         if (fresh.length) setNotice(fresh.map(stop => stopText(stop, stop.agent ? titleOf(stop.agent) : "")).join(" "));
+        const failed = found.tasks.find(task => task.status === "failed" && task.failureReason);
+        if (!fresh.length && failed) setNotice(`${titleOf(failed.id.replace(/-check$/, ""))}: ${failed.failureReason}`);
         const stopLines = fresh.map(stop => ({ at: Date.now(), text: stop.agent ? `${titleOf(stop.agent)}: merge clash in ${filesText(stop.files, 3)}` : `Merge blocked: uncommitted changes in ${filesText(stop.files, 3)}`, tone: "fail" as const }));
         const lines = found.tasks.flatMap(task => {
           if (said.current[task.id] === task.status) return [];
