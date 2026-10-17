@@ -311,6 +311,9 @@ export default function Home() {
   const [childCursors, setChildCursors] = useState<Record<string, string | null>>({});
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [itemCursor, setItemCursor] = useState<string | null>(null);
+  /** Each chat's last read transcript: reopening a chat draws it at once while it rereads, as in the ChatGPT app. */
+  const transcripts = useRef(new Map<string, { entries: Entry[]; cursor: string | null }>());
+  useEffect(() => { if (selected && !loading) transcripts.current.set(selected.id, { entries, cursor: itemCursor }); }, [selected, loading, entries, itemCursor]);
   const scroll = useRef<HTMLDivElement>(null);
   const stickToBottom = useRef(true);
   const restoreScroll = useRef<{ height: number; top: number } | null>(null);
@@ -333,7 +336,7 @@ export default function Home() {
   const upsertThread = useCallback((thread: Thread) => setThreads(prev => prev.some(item => item.id === thread.id) ? prev.map(item => item.id === thread.id ? { ...item, ...thread } : item) : [thread, ...prev]), []);
   const removeThreads = useCallback((ids: Set<string>, permanent: boolean) => {
     for (let grew = true; grew;) { grew = false; for (const thread of threadsRef.current) if (thread.parentThreadId && ids.has(thread.parentThreadId) && !ids.has(thread.id)) { ids.add(thread.id); grew = true; } }
-    for (const id of ids) hidden.current.add(id);
+    for (const id of ids) { hidden.current.add(id); transcripts.current.delete(id); }
     if (permanent) {
       for (const id of ids) for (const key of [id, `recovery-${id}`]) { delete drafts.current[key]; writeDraft(key, ""); delete attachmentDrafts.current[key]; writeAttachmentDraft(key, []); }
       setMessageEdits(previous => Object.fromEntries(Object.entries(previous).filter(([key]) => !ids.has((JSON.parse(key) as [string, string, string])[0]))));
@@ -385,7 +388,8 @@ export default function Home() {
     saveDraft(selectedRef.current?.id || newDraftKey.current, textRef.current); setText(savedDraft(thread.id));
     const id = ++request.current; stickToBottom.current = true; restoreScroll.current = null;
     liveVersions.current.clear(); const historyRevision = liveRevision.current;
-    select(thread); setView("chat"); setSidebar(false); setEntries([]); setItemCursor(null); setLoading(true); setError(""); restoreAttachments(thread.id);
+    const shown = transcripts.current.get(thread.id);
+    select(thread); setView("chat"); setSidebar(false); setEntries(shown?.entries ?? []); setItemCursor(shown?.cursor ?? null); setLoading(true); setError(""); restoreAttachments(thread.id);
     try {
       const result = await api<{ thread: Thread; data: Entry[]; nextCursor: string | null }>(`/threads/${encodeURIComponent(thread.id)}?limit=100`);
       if (request.current !== id) return;
@@ -1263,7 +1267,7 @@ export default function Home() {
       {view === "chat" && <div className="chat-split"><div className={`chat-view${!selected && !entries.length ? " empty-chat" : ""}`}>
         <div className="chat-scroll-wrap"><div className="chat-scroll" ref={scroll} onScroll={event => { const element = event.currentTarget; stickToBottom.current = element.scrollHeight - element.scrollTop - element.clientHeight < 80; }}><div className="chat-content">
           {itemCursor && <Button variant="outline" disabled={loading} onClick={older}>Load earlier messages</Button>}
-          {loading && <p role="status" className="text-muted-foreground">Loading conversation…</p>}
+          {loading && !entries.length && <p role="status" className="chat-loading text-muted-foreground">Loading conversation…</p>}
           {!loading && !entries.length && <div className="empty-state">{selected ? <><h2>This conversation has no messages yet.</h2><p>Messages and tool activity appear here.</p></> : <><img className="empty-mark" src={brandMark} alt="" aria-hidden="true" /><h2>{project ? <>What should we build in <ProjectMenu variant="heading" projects={projects} selected={project} disabled={!ready || busy} onSelect={selectProject} onAdd={() => void addProject()} />?</> : "What should we build?"}</h2></>}</div>}
           <Transcript entries={entries} activeTurnId={activeTurn ?? null} mediaOf={e => selected ? mediaUrl(selected.id, e) : undefined} renderItem={e => { const editKey = JSON.stringify([selected?.id, e.turnId, e.item.id]); return <ChatMessage key={editKey} item={e.item} mediaBase={selected ? mediaUrl(selected.id, e) : undefined} threads={threads} speaker={selected?.agentNickname || "Elpis"} onOpenThread={openById}
             editDraft={messageEdits[editKey]} editPending={!!pendingDrafts[editKey]} onEditDraftChange={value => { setMessageEdits(previous => value === null ? without(previous, editKey) : { ...previous, [editKey]: value }); if (value === null) focusComposer(); }}

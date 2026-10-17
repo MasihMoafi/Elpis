@@ -115,6 +115,9 @@ button:disabled { cursor:not-allowed; }
 .error-banner { background:color-mix(in oklch, var(--destructive), var(--background) 90%); border-bottom:1px solid color-mix(in oklch, var(--destructive), transparent 60%); color:var(--foreground); padding:8px 20px; font-size:13px; display:flex; justify-content:space-between; align-items:center; gap:12px; }
 .chat-scroll { flex:1; min-height:0; overflow:auto; padding:28px 32px 12px; }
 .chat-content { max-width:740px; margin:auto; line-height:1.65; font-size:14.5px; }
+/* A quick read shows nothing; the notice fades in only when reading a chat takes longer. */
+.chat-loading { animation:appear .2s ease .6s both; }
+@keyframes appear { from { opacity:0; } }
 .empty-state { min-height:45vh; display:flex; flex-direction:column; justify-content:center; align-items:center; text-align:center; gap:6px; }
 .empty-state h2 { font-family:var(--serif); font-size:28px; line-height:1.2; letter-spacing:-.02em; font-weight:500; margin:0; }
 .empty-state .empty-mark { width:147px; height:72px; margin-bottom:12px; }
