@@ -2,3 +2,4 @@ node_modules/
 .next/
 out/
 *.tsbuildinfo
+public/love-spot-assets/

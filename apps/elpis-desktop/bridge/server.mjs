@@ -13,6 +13,7 @@ import { createTranscription } from './transcription.mjs';
 import { ATTACHMENT_BODY_LIMIT, AttachmentError, PDF_BODY_LIMIT, extractPdf } from './attachments.mjs';
 import { createTrash } from './trash.mjs';
 import { createObservability } from './observability.mjs';
+import { createLoveSpot } from './love-spot-store.cjs';
 
 const COOKIE = 'elpis_desktop';
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.txt': 'text/plain', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon', '.woff': 'font/woff', '.woff2': 'font/woff2' };
@@ -67,6 +68,8 @@ export async function startDesktopServer(options = {}) {
   const capability = randomBytes(32).toString('hex');
   const session = randomBytes(32).toString('hex');
   const listeners = new Set(); let origin; let closed = false;
+  const loveSpot = createLoveSpot(options.loveSpot);
+  const loveStreams = new Set();
   const tools = options.tools ?? createTools({ environment: () => client.ragEnvironment() });
   // The Observability page reads the records of the Elpis home this runtime uses (`elpisHome` sets another).
   const observability = createObservability({ home: options.elpisHome, chatOf: id => client.chatSummary(id) });
@@ -101,6 +104,22 @@ export async function startDesktopServer(options = {}) {
         const cookies = (request.headers.cookie ?? '').split(';').map(value => value.trim());
         if (!cookies.some(value => same(value, `${COOKIE}=${session}`))) throw new BridgeError('Open the application using its private launch URL', 401);
         const method = request.method;
+        if (url.pathname === '/api/love-spot') {
+          const value = method === 'GET' ? await loveSpot.read() : await loveSpot.save(await body(request, 64 * 1024 * 1024));
+          // A drawing with screenshots can exceed the paginated chat response limit.
+          response.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+          return response.end(JSON.stringify(value));
+        }
+        if (url.pathname === '/api/love-spot/picture' && method === 'POST') return json(response, 200, await loveSpot.picture(await body(request, 32 * 1024 * 1024)));
+        if (url.pathname === '/api/love-spot/events' && method === 'GET') {
+          response.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-store', Connection: 'keep-alive' });
+          loveStreams.add(response);
+          const stop = await loveSpot.watch(value => {
+            if (response.writableLength > 64 * 1024 * 1024) response.destroy();
+            else response.write(`data: ${JSON.stringify(value)}\n\n`);
+          });
+          response.on('close', () => { stop(); loveStreams.delete(response); }); return;
+        }
         if (url.pathname === '/api/tools/transcription') return await transcription(request, response, json);
         if (url.pathname.startsWith('/api/tools/')) return await tools(request, response, url, json);
         if (url.pathname === '/api/health' && method === 'GET') return json(response, 200, { connected: client.connected });
@@ -193,7 +212,7 @@ export async function startDesktopServer(options = {}) {
       const file = await fs.readFile(real);
       response.writeHead(200, { 'Content-Type': `${type}; charset=utf-8`, 'Cache-Control': 'no-store' }); response.end(file);
     } catch (error) {
-      if (!response.headersSent) json(response, error.status ?? (error.code === 'ENOENT' ? 404 : 500), { error: error instanceof BridgeError || error instanceof AttachmentError ? error.message : 'Application request failed' });
+      if (!response.headersSent) json(response, error.status ?? (error.code === 'ENOENT' ? 404 : 500), { error: error instanceof BridgeError || error instanceof AttachmentError || error.loveSpot ? error.message : 'Application request failed' });
       else response.destroy();
     }
   });
@@ -208,6 +227,7 @@ export async function startDesktopServer(options = {}) {
     url: `${origin}/#token=${capability}`,
     async close() {
       if (closed) return; closed = true; clearInterval(heartbeat);
+      loveSpot.close(); for (const response of loveStreams) response.end(); loveStreams.clear();
       for (const response of listeners) response.end(); listeners.clear();
       // Quitting deletes the sidebar's deleted chats for good; what does not finish in time goes at the next start.
       await Promise.race([trash.purge().catch(() => {}), new Promise(resolve => setTimeout(resolve, 5000).unref())]);
