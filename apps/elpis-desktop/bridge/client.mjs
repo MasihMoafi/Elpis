@@ -130,6 +130,8 @@ function modeOf(result) {
   return result.approvalsReviewer === 'auto_review' || result.approvalsReviewer === 'guardian_subagent' ? 'auto' : 'ask';
 }
 const EXPLAINED = new Set(['thread/settings/update', 'account/read', 'account/rateLimits/read', 'thread/delete', 'thread/fork', 'thread/start', 'thread/resume', 'thread/name/set', 'thread/archive', 'thread/unarchive', 'thread/revert', 'thread/compact/start', 'review/start', 'turn/start', 'turn/interrupt', 'config/batchWrite', 'account/login/start', 'account/logout', 'claudeSubscription/write', 'hooks/list', 'memory/reset']);
+/** What a module with a conversation of its own (the canvas planner, bridge/canvas-plan.mjs) may ask of the engine; see `sideRpc`. */
+const SIDE_RPCS = new Set(['thread/start', 'turn/start', 'turn/interrupt', 'thread/unsubscribe', 'thread/delete']);
 const DECISIONS = ['accept', 'acceptForSession', 'decline', 'cancel'];
 const EFFORT = /^[a-z]{2,16}$/;
 const MCP_NAME = /^[A-Za-z0-9_-]{1,64}$/;
@@ -137,7 +139,7 @@ const MCP_NAME = /^[A-Za-z0-9_-]{1,64}$/;
 export class DesktopClient extends EventEmitter {
   #socket; #pending = new Map(); #owned = new Set(); #known = new Set(); #models = new Set();
   #approvals = new Map(); #mutating = new Set(); #closed = false; #ready = false; #attaching = new Map();
-  #context = new Map(); #restored = new Map();
+  #context = new Map(); #restored = new Map(); #side = new Set();
   #workflowTitles = new Map(); #workflowLookups = new Map();
   #checkingApprovals = new Map();
   #settingsWaiters = new Map();
@@ -213,6 +215,16 @@ export class DesktopClient extends EventEmitter {
     }
   }
   close() { this.#disposed = true; clearTimeout(this.#retryTimer); this.#disconnect(); this.#socket.close(); }
+  /** For a module that runs a short conversation of its own: only the requests in SIDE_RPCS, only on conversations it started
+   * here, which are always ephemeral. Their notifications go to 'side' listeners and never to the app, so no chat appears;
+   * the conversation is forgotten once the engine closes it. */
+  async sideRpc(method, params = {}) {
+    if (!SIDE_RPCS.has(method)) throw new BridgeError('Unsupported request');
+    if (method !== 'thread/start' && !this.#side.has(params.threadId)) throw new BridgeError('Not a conversation of this module');
+    const result = await this.#rpc(method, method === 'thread/start' ? { ...params, ephemeral: true } : params);
+    if (method === 'thread/start' && typeof result?.thread?.id === 'string') this.#side.add(result.thread.id);
+    return result;
+  }
   #rpc(method, params) {
     if (this.#closed) return Promise.reject(new BridgeError('Elpis is disconnected', 503));
     const id = `desktop-${randomUUID()}`, reading = readRpc(method, params);
@@ -260,6 +272,11 @@ export class DesktopClient extends EventEmitter {
           // Without verified ancestry this may belong to another client's work.
         });
       }
+      return;
+    }
+    if (this.#side.has(id)) {
+      this.emit('side', message);
+      if (message.method === 'thread/closed' || message.method === 'thread/deleted') this.#side.delete(id);
       return;
     }
     if (message.method === 'serverRequest/resolved') {
