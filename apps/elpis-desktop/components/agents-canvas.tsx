@@ -13,6 +13,7 @@ import { IsoBoard, ViewToggle } from "@/components/agents-iso";
 import { api, providerChoices, type Entry, type Model, type ProviderSettings, type Thread } from "@/lib/api";
 import { useElpisSettings } from "@/lib/settings-store";
 import { appStorage } from "@/lib/projects";
+import { filesText, mergeStops, runPayload, stopText, wantsIsolation } from "@/lib/canvas-isolation";
 import { CHECK_LABEL, COLUMN, DONE, FATHER, MOTHER, STATUS_LABEL, TASKS_PER_AGENT, waits, TEMPLATES, applyPlan, arrange, boardForPlan, checkOf, criticalPath, nameFrom, commandParts, shapeOf, makesLoop, maxAgents, newAgents, newId, parseCommand, parents, readGraph, runParts, saveGraph, waves, withMother, type AgentData, type CanvasEdge, type CanvasGraph, type CanvasNode, type CatalogModel, type Command, type MotherSettings, type NoteData, type Plan, type RunTask, type TaskStatus } from "@/lib/canvas";
 
 /** A run: the Mother's part, and the Father's when the graph has more agents than she runs (lib/canvas.ts `parents`):
@@ -20,9 +21,10 @@ import { CHECK_LABEL, COLUMN, DONE, FATHER, MOTHER, STATUS_LABEL, TASKS_PER_AGEN
 type Run = { rootThreadId: string; graphId: string; status: string; startedAt: number; endedAt?: number; father?: { tasks: RunTask[]; threadId?: string; graphId?: string; status: string } };
 /** Whether the whole run is over: her part, and his if he has one. */
 const over = (run: Run) => FINISHED.has(run.status) && (!run.father || FINISHED.has(run.father.status));
-type Listed = { data: { id: string; status: string; tasks: { id: string; status: TaskStatus; assignedThreadId: string | null }[] }[] };
+type Listed = { data: { id: string; status: string; error?: string | null; tasks: { id: string; status: TaskStatus; assignedThreadId: string | null; failureReason?: string | null }[] }[] };
 type HandleEnd = "source" | "target";
-type AgentNodeData = AgentData & { status?: TaskStatus; check?: TaskStatus; modelLabel?: string; wave?: number; onHandle?: (id: string, end: HandleEnd, event: ReactMouseEvent) => void; onQuick?: (id: string, how: "next" | "parallel") => void };
+/** `clash` is the files of a merge clash that stopped the run on this agent (lib/canvas-isolation.ts). */
+type AgentNodeData = AgentData & { status?: TaskStatus; check?: TaskStatus; clash?: string[]; modelLabel?: string; wave?: number; onHandle?: (id: string, end: HandleEnd, event: ReactMouseEvent) => void; onQuick?: (id: string, how: "next" | "parallel") => void };
 type MotherData = { run: "idle" | "running" | "finished"; children: number; limit: number; onHandle?: AgentNodeData["onHandle"] };
 const FINISHED = new Set(["succeeded", "failed", "cancelled", "completed"]);
 const lines = (text: string) => text.split("\n").map(line => line.trim()).filter(Boolean);
@@ -53,7 +55,7 @@ function AgentNode({ id, data }: NodeProps<Node<AgentNodeData>>) {
     <Handle type="target" position={Position.Left} title="Add agents this one waits for" onClick={event => data.onHandle?.(id, "target", event)} />
     <span className="agent-node-kind">Agent{data.wave ? ` · wave ${data.wave}` : ""}</span>
     <strong className="agent-node-title">{data.title || "Untitled"}</strong>
-    <small className="agent-node-meta">{data.modelLabel ?? "Default model"} · {STATUS_LABEL[status]}</small>
+    <small className="agent-node-meta">{data.modelLabel ?? "Default model"} · {data.clash ? "clash" : STATUS_LABEL[status]}</small>
     <span className="agent-node-mark" role="img" data-check={check} aria-label={CHECK_LABEL[check]} title={CHECK_LABEL[check]}>{check === "succeeded" ? <Check size={12} /> : check === "failed" || check === "blocked" ? <X size={12} /> : null}</span>
     <Handle type="source" position={Position.Right} title="Add agents that wait for this one" onClick={event => data.onHandle?.(id, "source", event)} />
     {/* FigJam's quick create: a + beside the agent makes the next one, already wired; below it, a parallel one. */}
@@ -328,7 +330,7 @@ function RunClock({ since, until }: { since: number; until?: number }) {
 /** A span of time as mm:ss. */
 const clock = (ms: number) => { const seconds = Math.max(0, Math.floor(ms / 1000)); return `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`; };
 
-function AgentDashboard({ node, wave, status, check, chat, waitsFor, feeds, modelLabel, onOpenChat, onClose }: { node: Extract<CanvasNode, { type: "agent" }>; wave?: number; status: TaskStatus | "idle"; check: TaskStatus | "idle"; chat: string | null; waitsFor: string[]; feeds: string[]; modelLabel: string; onOpenChat: (id: string) => void; onClose: () => void }) {
+function AgentDashboard({ node, wave, status, check, clash, chat, waitsFor, feeds, modelLabel, onOpenChat, onClose }: { node: Extract<CanvasNode, { type: "agent" }>; wave?: number; status: TaskStatus | "idle"; check: TaskStatus | "idle"; clash?: string[]; chat: string | null; waitsFor: string[]; feeds: string[]; modelLabel: string; onOpenChat: (id: string) => void; onClose: () => void }) {
   const data = node.data;
   return <div className="agent-dashboard hud-menu" role="dialog" aria-label={`${data.title} dashboard`} data-kind="agent" data-status={status}
     onKeyDown={event => { if (event.key === "Escape") { event.stopPropagation(); onClose(); } }}>
@@ -342,6 +344,7 @@ function AgentDashboard({ node, wave, status, check, chat, waitsFor, feeds, mode
       <div><dt>Prompt</dt><dd>{data.instruction || "No prompt yet: write one before the run"}</dd></div>
       <div><dt>Done when</dt><dd>{(data.acceptanceCriteria.length ? data.acceptanceCriteria : [DONE]).join("; ")}</dd></div>
       <div><dt>Its check</dt><dd>{CHECK_LABEL[check]}</dd></div>
+      {clash && <div><dt>Merge clash</dt><dd>{clash.join("\n")}</dd></div>}
     </dl>
     <LiveFeed chat={chat} working={status === "running"} idle="Not started. What it does shows here once the graph runs." />
     {chat && <Button variant="outline" size="sm" onClick={() => onOpenChat(chat)}><ExternalLink size={14} />Open its chat</Button>}
@@ -376,6 +379,8 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
   const [adding, setAdding] = useState<Adding | null>(null);
   const [run, setRun] = useState<Run | null>(null), [starting, setStarting] = useState(false);
   const [states, setStates] = useState<Record<string, { status: TaskStatus; chat: string | null }>>({});
+  // Where the engine's merge clash stopped the run: the clashing files, by the agent whose work clashed.
+  const [clashes, setClashes] = useState<Record<string, string[]>>({});
   // The run log, as Deus Ex's event cards: what started, finished, passed its check or failed, newest last.
   type LogLine = { at: number; text: string; tone: "start" | "done" | "fail" };
   const [log, setLog] = useState<LogLine[]>([]);
@@ -420,7 +425,16 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
     const read = async (threadId: string, graphId: string) => {
       const listed = await api<Listed>(`/workflows?threadId=${encodeURIComponent(threadId)}`), found = listed.data.find(item => item.id === graphId);
       if (found && live) {
-        setStates(current => ({ ...current, ...Object.fromEntries(found.tasks.map(task => [task.id, { status: task.status, chat: task.assignedThreadId }])) }));
+        // A merge clash (lib/canvas-isolation.ts) stops the run on an agent: it shows as failed, though its own task may have succeeded.
+        const stops = mergeStops(found), listedStates = Object.fromEntries(found.tasks.map(task => [task.id, { status: task.status, chat: task.assignedThreadId }]));
+        for (const stop of stops) if (stop.agent && listedStates[stop.agent]) listedStates[stop.agent] = { ...listedStates[stop.agent], status: "failed" };
+        setStates(current => ({ ...current, ...listedStates }));
+        if (stops.some(stop => stop.agent)) setClashes(current => ({ ...current, ...Object.fromEntries(stops.flatMap(stop => stop.agent ? [[stop.agent, stop.files]] : [])) }));
+        // Each stop is told once, in the log and in a notice that stays until dismissed.
+        const fresh: typeof stops = [];
+        for (const stop of stops) { const key = `merge ${stop.agent ?? "project"}`; if (!said.current[key]) { said.current[key] = "failed"; fresh.push(stop); } }
+        if (fresh.length) setNotice(fresh.map(stop => stopText(stop, stop.agent ? titleOf(stop.agent) : "")).join(" "));
+        const stopLines = fresh.map(stop => ({ at: Date.now(), text: stop.agent ? `${titleOf(stop.agent)}: merge clash in ${filesText(stop.files, 3)}` : `Merge blocked: uncommitted changes in ${filesText(stop.files, 3)}`, tone: "fail" as const }));
         const lines = found.tasks.flatMap(task => {
           if (said.current[task.id] === task.status) return [];
           said.current[task.id] = task.status;
@@ -428,7 +442,7 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
           const text = task.status === "running" ? (check ? `Checking ${who}` : `${who} started`) : task.status === "succeeded" ? (check ? `${who}: check passed` : `${who} finished`) : task.status === "failed" || task.status === "blocked" ? (check ? `${who}: check failed` : `${who} failed`) : "";
           return text ? [{ at: Date.now(), text, tone: task.status === "running" ? "start" as const : task.status === "succeeded" ? "done" as const : "fail" as const }] : [];
         });
-        if (lines.length) setLog(current => [...current, ...lines].slice(-3));
+        if (lines.length || stopLines.length) setLog(current => [...current, ...lines, ...stopLines].slice(-3));
       }
       return found?.status;
     };
@@ -458,8 +472,8 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
   useEffect(() => { if (!undoLoad) return; const timer = setTimeout(() => setUndoLoad(null), 12000); return () => clearTimeout(timer); }, [undoLoad]);
   const shapes = useMemo(() => new Map(TEMPLATES.map(template => [template.id, shapeOf(template.build())])), []);
   const limit = maxAgents(graph), room = Math.max(0, limit - agents.length), order = useMemo(() => waves(graph), [graph]);
-  // An agent is done once its check passes.
-  const done = agents.filter(node => states[checkOf(node.id)]?.status === "succeeded").length;
+  // An agent is done once its check passes, unless its work clashed in the merge.
+  const done = agents.filter(node => states[checkOf(node.id)]?.status === "succeeded" && !clashes[node.id]).length;
   const runState: MotherData["run"] = run ? (FINISHED.has(run.status) ? "finished" : "running") : "idle";
   const fatherState: MotherData["run"] = run?.father?.threadId ? (FINISHED.has(run.father.status) ? "finished" : "running") : "idle";
   const modelLabel = (data: AgentData) => {
@@ -499,8 +513,8 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
   const nodesWithFather = (list: Node[]) => fatherNode ? [...list, fatherNode] : list;
   const nodes = useMemo<Node[]>(() => nodesWithFather(graph.nodes.map(node => node.type === "mother"
     ? { ...node, deletable: false, selected: selection.includes(MOTHER), data: { run: runState, children: agents.length, limit, onHandle } satisfies MotherData }
-    : { ...node, selected: selection.includes(node.id), data: node.type === "agent" ? { ...node.data, status: states[node.id]?.status, check: states[checkOf(node.id)]?.status, modelLabel: modelLabel(node.data), wave: order.get(node.id), onHandle, onQuick } : { ...node.data, onText: setText } }),
-  ), [graph.nodes, selection, states, models, order, runState, fatherState, limit, catalog.length]); // eslint-disable-line react-hooks/exhaustive-deps
+    : { ...node, selected: selection.includes(node.id), data: node.type === "agent" ? { ...node.data, status: states[node.id]?.status, check: states[checkOf(node.id)]?.status, clash: clashes[node.id], modelLabel: modelLabel(node.data), wave: order.get(node.id), onHandle, onQuick } : { ...node.data, onText: setText } }),
+  ), [graph.nodes, selection, states, clashes, models, order, runState, fatherState, limit, catalog.length]); // eslint-disable-line react-hooks/exhaustive-deps
   const edges = useMemo<Edge[]>(() => [
     // The Mother's wires: she starts every agent of the first wave.
     ...agents.filter(node => order.get(node.id) === 1 && !his.has(node.id)).map(node => ({ id: `${MOTHER}->${node.id}`, source: MOTHER, target: node.id, type: "flow", className: "canvas-edge-mother", selectable: false, deletable: false, focusable: false, selected: wireMenu?.edge.id === `${MOTHER}->${node.id}`, data: { live: states[node.id]?.status === "running" } })),
@@ -838,8 +852,15 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
     const created = await api<{ thread: Thread }>("/threads", { ...(cwd ? { cwd } : {}), name: `Father · ${graph.name || "Agents canvas"}`.slice(0, 120),
       ...(mother.model ? { model: mother.model, ...(mother.provider ? { provider: mother.provider } : {}) } : {}),
       instructions: [goal && `Goal of the whole run: ${goal}`, "You are the Father: you run the agents past the Mother's ten, after her part has succeeded, and you report to her."].filter(Boolean).join("\n\n") });
-    const result = await api<{ graphId: string }>("/workflows/run", { rootThreadId: created.thread.id, name: `Father · ${graph.name || "Agents canvas"}`, tasks, maxConcurrency: Math.max(1, Math.min(maxAtOnce, allowed.atOnce)) });
+    const result = await runPart(created.thread.id, `Father · ${graph.name || "Agents canvas"}`, tasks);
     return { tasks, threadId: created.thread.id, graphId: result.graphId, status: "running" };
+  }
+
+  // Sends one part of the run. With several writing agents in a git repository, each works in its own worktree and
+  // Elpis merges them into the project's branch after the run; without a repository Elpis refuses that, so it isn't asked.
+  async function runPart(rootThreadId: string, name: string, tasks: RunTask[]) {
+    const repository = Boolean(cwd) && wantsIsolation(tasks) && await api<{ repository?: boolean }>(`/repository?cwd=${encodeURIComponent(cwd!)}`).then(result => result.repository === true, () => false);
+    return api<{ graphId: string }>("/workflows/run", runPayload(rootThreadId, name, tasks, Math.max(1, Math.min(maxAtOnce, allowed.atOnce)), repository));
   }
 
   async function start() {
@@ -852,12 +873,12 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
     if (!ready) return;
     const built = runParts(ready);
     if ("error" in built) { setNotice(built.error); return; }
-    setStarting(true); setNotice(""); setStates({}); setLog([]); said.current = {};
+    setStarting(true); setNotice(""); setStates({}); setClashes({}); setLog([]); said.current = {};
     try {
       // The Mother is the run's chat: her model, and the goal as her instructions.
       const created = await api<{ thread: Thread }>("/threads", { ...(cwd ? { cwd } : {}), name: ready.name.slice(0, 120) || "Agents canvas",
         ...(mother.model ? { model: mother.model, ...(mother.provider ? { provider: mother.provider } : {}) } : {}), ...(mother.brief.trim() ? { instructions: mother.brief.trim() } : {}) });
-      const result = await api<{ graphId: string }>("/workflows/run", { rootThreadId: created.thread.id, name: ready.name || "Agents canvas", tasks: built.mother, maxConcurrency: Math.max(1, Math.min(maxAtOnce, allowed.atOnce)) });
+      const result = await runPart(created.thread.id, ready.name || "Agents canvas", built.mother);
       setRun({ rootThreadId: created.thread.id, graphId: result.graphId, status: "running", startedAt: Date.now(), ...(built.father.length ? { father: { tasks: built.father, status: "pending" } } : {}) });
     } catch (error) { setNotice(error instanceof Error ? error.message : String(error)); }
     finally { setStarting(false); }
@@ -907,7 +928,7 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
         onAgents={command => { addAgents(Math.max(1, command.count ?? 1), { model: command.model?.model ?? null, provider: command.model?.provider ?? null, effort: command.effort }, adding, command.tasks); setAdding(null); }}
         onNote={text => { addNote(adding.at, text); setAdding(null); }} onAsk={text => { setAdding(null); void letElpis(text); }} />}
       {menu && (view => <CanvasMenu at={menu} {...view} onClose={() => setMenu(null)} />)(menuView(menu))}
-      {dashboard && <AgentDashboard node={dashboard} wave={order.get(dashboard.id)} status={states[dashboard.id]?.status ?? "idle"} check={states[checkOf(dashboard.id)]?.status ?? "idle"} chat={states[dashboard.id]?.chat ?? null} modelLabel={modelLabel(dashboard.data)}
+      {dashboard && <AgentDashboard node={dashboard} wave={order.get(dashboard.id)} status={states[dashboard.id]?.status ?? "idle"} check={states[checkOf(dashboard.id)]?.status ?? "idle"} clash={clashes[dashboard.id]} chat={states[dashboard.id]?.chat ?? null} modelLabel={modelLabel(dashboard.data)}
         waitsFor={graph.edges.filter(edge => waits(edge) && edge.target === dashboard.id).map(edge => titleOf(edge.source))} feeds={graph.edges.filter(edge => waits(edge) && edge.source === dashboard.id).map(edge => titleOf(edge.target))}
         onOpenChat={onOpenChat} onClose={() => setDashboardId(null)} />}
       {planning && <p className="canvas-notice" data-tone="info" role="status">Elpis is on it: {planning.length > 60 ? `${planning.slice(0, 60)}…` : planning}</p>}

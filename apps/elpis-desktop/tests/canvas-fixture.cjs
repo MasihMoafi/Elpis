@@ -15,7 +15,10 @@ function planFor(body) {
   return { name: '', agents: /^fix/i.test(body.goal) ? [...kept, { key: 'new', title: body.goal, prompt: body.goal, folders: ['src'], doneWhen: ['It works'], waitsFor: [] }] : kept };
 }
 
-async function openCanvas({ width = 1440, height = 900 } = {}) {
+/** `repository` is whether the project folder is a git repository (GET /api/repository); `graph` is a board saved on the
+ * device before the page opens; `listed(run, looks)` answers a look at the run (workGraph/list) instead of the default,
+ * which runs for one look and then succeeds. */
+async function openCanvas({ width = 1440, height = 900, repository = false, graph = null, listed = null } = {}) {
   const posts = [], plans = [], runs = [];
   const server = http.createServer(async (req, res) => {
     const url = new URL(req.url, 'http://local'); let raw = ''; for await (const chunk of req) raw += chunk;
@@ -26,6 +29,7 @@ async function openCanvas({ width = 1440, height = 900 } = {}) {
     if (url.pathname === '/api/models') return json({ data: [{ id: 'luna', model: 'gpt-6-luna', displayName: 'Luna 6' }, { id: 'sol', model: 'gpt-6.1-sol', displayName: 'Sol 6.1', supportedReasoningEfforts: [{ reasoningEffort: 'low' }, { reasoningEffort: 'high' }], defaultReasoningEffort: 'low' }], nextCursor: null });
     if (url.pathname === '/api/settings') return json({ main: { model: 'gpt-6.1-sol', provider: 'openai' }, background: {}, smartPrune: { enabled: false, explicitOverride: {} }, memory: {}, write: { available: false, reason: '' }, agents: { graph: 256, atOnce: 4, source: 'agents.max_threads' } });
     if (url.pathname === '/api/folders') return json({ data: ['docs', 'src', 'src/lib', 'tests'] });
+    if (url.pathname === '/api/repository') return json({ repository });
     if (url.pathname === '/api/canvas/plan') { const body = JSON.parse(raw); plans.push(body); return json(planFor(body)); }
     // Runs: each chat started gets an id; a graph run on it finishes after its first look.
     if (url.pathname === '/api/threads' && req.method === 'POST') { const id = `chat-${posts.filter(post => post.path === '/api/threads').length}`; return json({ thread: { id, name: JSON.parse(raw).name, cwd: '/tmp/demo', status: { type: 'idle' }, desktopAccess: { writable: true, mode: 'direct' } } }); }
@@ -33,7 +37,7 @@ async function openCanvas({ width = 1440, height = 900 } = {}) {
     if (url.pathname === '/api/workflows/run') { const body = JSON.parse(raw); runs.push({ ...body, graphId: `graph-${runs.length + 1}`, looks: 0 }); return json({ graphId: `graph-${runs.length}`, threadId: body.rootThreadId, turnId: 't' }); }
     if (url.pathname === '/api/workflows') {
       const mine = runs.filter(item => item.rootThreadId === url.searchParams.get('threadId'));
-      return json({ data: mine.map(item => { const status = item.looks++ ? 'succeeded' : 'running'; return { id: item.graphId, name: item.name, status, tasks: item.tasks.map(task => ({ id: task.id, status, assignedThreadId: null })) }; }) });
+      return json({ data: mine.map(item => { const looks = item.looks++, status = looks ? 'succeeded' : 'running'; return listed?.(item, looks) ?? { id: item.graphId, name: item.name, status, tasks: item.tasks.map(task => ({ id: task.id, status, assignedThreadId: null })) }; }) });
     }
     if (url.pathname.startsWith('/api/')) return json({});
     const relative = url.pathname === '/' ? 'index.html' : url.pathname.slice(1);
@@ -44,7 +48,10 @@ async function openCanvas({ width = 1440, height = 900 } = {}) {
   const browser = await chromium.launch({ executablePath: process.env.ELPIS_CHROMIUM || undefined, headless: true });
   const page = await browser.newPage({ viewport: { width, height } }); page.setDefaultTimeout(6000);
   const errors = []; page.on('pageerror', error => errors.push(error.message));
-  await page.addInitScript(() => { if (!localStorage.getItem('elpis-projects-v1')) localStorage.setItem('elpis-projects-v1', JSON.stringify({ projects: [{ id: 'p1', name: 'demo', cwd: '/tmp/demo' }], selectedId: 'p1' })); });
+  await page.addInitScript(saved => {
+    if (!localStorage.getItem('elpis-projects-v1')) localStorage.setItem('elpis-projects-v1', JSON.stringify({ projects: [{ id: 'p1', name: 'demo', cwd: '/tmp/demo' }], selectedId: 'p1' }));
+    if (saved && !localStorage.getItem('elpis-workflow-draft-v1')) localStorage.setItem('elpis-workflow-draft-v1', JSON.stringify(saved));
+  }, graph);
   await page.goto(`http://127.0.0.1:${server.address().port}`);
   await page.getByRole('button', { name: 'Canvas', exact: true }).click();
   const canvas = page.getByRole('region', { name: 'Agents canvas', exact: true }); await canvas.waitFor();

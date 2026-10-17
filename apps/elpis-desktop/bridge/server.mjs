@@ -6,7 +6,8 @@ import { fileURLToPath } from 'node:url';
 import { BridgeError, DesktopClient, object } from './client.mjs';
 import { planCanvas } from './canvas-plan.mjs';
 import { listFiles } from './files.mjs';
-import { listFolders } from './folders.mjs';
+import { listFolders, projectDirectory } from './folders.mjs';
+import { isRepository } from './git.mjs';
 import { createTools } from './tools.mjs';
 import { createTranscription } from './transcription.mjs';
 import { ATTACHMENT_BODY_LIMIT, AttachmentError, extractPdf } from './attachments.mjs';
@@ -14,6 +15,11 @@ import { ATTACHMENT_BODY_LIMIT, AttachmentError, extractPdf } from './attachment
 const COOKIE = 'elpis_desktop';
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.txt': 'text/plain', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon', '.woff': 'font/woff', '.woff2': 'font/woff2' };
 const same = (a, b) => typeof a === 'string' && Buffer.byteLength(a) === Buffer.byteLength(b) && timingSafeEqual(Buffer.from(a), Buffer.from(b));
+/** The one `cwd` a project-folder request names. */
+function cwdOf(url) {
+  if ([...url.searchParams.keys()].some(key => key !== 'cwd') || url.searchParams.getAll('cwd').length !== 1) throw new BridgeError('Provide exactly one cwd');
+  return url.searchParams.get('cwd');
+}
 function pageQuery(url, ancestor = false, models = false) {
   const result = {};
   for (const [key, value] of url.searchParams) {
@@ -105,14 +111,10 @@ export async function startDesktopServer(options = {}) {
           request.on('close', () => listeners.delete(response)); return;
         }
         if (url.pathname === '/api/models' && method === 'GET') return json(response, 200, await client.models(pageQuery(url, false, true)));
-        if (url.pathname === '/api/folders' && method === 'GET') {
-          if ([...url.searchParams.keys()].some(key => key !== 'cwd') || url.searchParams.getAll('cwd').length !== 1) throw new BridgeError('Provide exactly one cwd');
-          return json(response, 200, await listFolders(url.searchParams.get('cwd')));
-        }
-        if (url.pathname === '/api/files' && method === 'GET') {
-          if ([...url.searchParams.keys()].some(key => key !== 'cwd') || url.searchParams.getAll('cwd').length !== 1) throw new BridgeError('Provide exactly one cwd');
-          return json(response, 200, await listFiles(url.searchParams.get('cwd')));
-        }
+        if (url.pathname === '/api/folders' && method === 'GET') return json(response, 200, await listFolders(cwdOf(url)));
+        if (url.pathname === '/api/files' && method === 'GET') return json(response, 200, await listFiles(cwdOf(url)));
+        // Whether the project is a Git repository with a commit: the canvas asks for worktree isolation only then.
+        if (url.pathname === '/api/repository' && method === 'GET') return json(response, 200, { repository: await isRepository(await projectDirectory(cwdOf(url))) });
         if (url.pathname === '/api/canvas/plan' && method === 'POST') return json(response, 200, await planCanvas(client, await body(request)));
         if (url.pathname === '/api/settings' && method === 'GET') return json(response, 200, await client.settings());
         if (url.pathname === '/api/settings' && method === 'POST') return json(response, 200, await client.saveSettings(await body(request)));

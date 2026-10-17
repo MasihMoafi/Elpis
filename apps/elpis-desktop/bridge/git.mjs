@@ -23,6 +23,12 @@ const folder = cwd => {
   return cwd;
 };
 
+/** Whether `cwd` is inside a Git repository that has a commit: what Elpis's worktree isolation needs, since each agent's worktree branches from HEAD. */
+export async function isRepository(cwd) {
+  folder(cwd);
+  return repoRoot(cwd).then(hasHead, () => false);
+}
+
 /** The terminal's /review presets that need Git: local branches, the current one, and recent commits. */
 export async function reviewChoices(cwd) {
   folder(cwd);

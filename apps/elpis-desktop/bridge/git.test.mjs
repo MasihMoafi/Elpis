@@ -5,7 +5,8 @@ import { execFileSync } from 'node:child_process';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { changedFiles, discardFile, fileDiff } from './git.mjs';
+import { changedFiles, discardFile, fileDiff, isRepository } from './git.mjs';
+import { startDesktopServer } from './server.mjs';
 
 const git = (cwd, ...args) => execFileSync('git', ['-c', 'user.name=Test', '-c', 'user.email=test@example.com', '-c', 'commit.gpgsign=false', ...args], { cwd, encoding: 'utf8', env: { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_SYSTEM: '/dev/null' } });
 const write = (dir, name, text) => fs.mkdir(path.dirname(path.join(dir, name)), { recursive: true }).then(() => fs.writeFile(path.join(dir, name), text));
@@ -123,4 +124,30 @@ test('untracked files count their lines like Git: a last line without a newline 
     const gitCount = name => { try { return git(dir, 'diff', '--no-index', '--numstat', '--', '/dev/null', name); } catch (error) { return String(error.stdout); } };  // exit 1: the files differ
     for (const name of Object.keys(found)) assert.equal(gitCount(name).split('\t')[0] || '0', String(found[name][0]), `${name}: the same count as Git's`);
   } finally { await fs.rm(dir, { recursive: true, force: true }); }
+});
+
+test('isRepository says whether worktree isolation can run in a folder: inside a repository that has a commit', async () => {
+  const dir = await repository(), unborn = await fs.mkdtemp(path.join(os.tmpdir(), 'elpis-git-unborn-')), plain = await fs.mkdtemp(path.join(os.tmpdir(), 'elpis-git-plain-'));
+  try {
+    git(unborn, 'init', '-q', '-b', 'main');
+    assert.equal(await isRepository(dir), true);
+    assert.equal(await isRepository(path.join(dir, 'src')), true, 'a sub-folder of the repository');
+    assert.equal(await isRepository(unborn), false, 'no commit yet: the engine needs one to branch from');
+    assert.equal(await isRepository(plain), false);
+    await assert.rejects(isRepository('relative/folder'), /folder/);
+  } finally { for (const folder of [dir, unborn, plain]) await fs.rm(folder, { recursive: true, force: true }); }
+});
+
+test('GET /api/repository answers { repository } for a project folder, and a 400 for anything else', async t => {
+  const dir = await repository(), plain = await fs.mkdtemp(path.join(os.tmpdir(), 'elpis-git-plain-'));
+  t.after(async () => { for (const folder of [dir, plain]) await fs.rm(folder, { recursive: true, force: true }); });
+  const client = { on() {}, off() {}, close() {}, connected: true, pendingApprovals: [], ragEnvironment: async () => ({}) };
+  const app = await startDesktopServer({ client, staticDir: plain }); t.after(() => app.close());
+  const url = new URL(app.url), origin = url.origin, token = new URLSearchParams(url.hash.slice(1)).get('token');
+  const query = cwd => `/api/repository?cwd=${encodeURIComponent(cwd)}`;
+  assert.equal((await fetch(origin + query(dir))).status, 401);
+  const auth = await fetch(origin + '/api/session', { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: origin }, body: JSON.stringify({ token }) });
+  const cookie = auth.headers.get('set-cookie').split(';')[0], get = pathname => fetch(origin + pathname, { headers: { Cookie: cookie } });
+  for (const [folder, repository] of [[dir, true], [plain, false]]) { const answer = await get(query(folder)); assert.equal(answer.status, 200); assert.deepEqual(await answer.json(), { repository }); }
+  for (const pathname of ['/api/repository', '/api/repository?cwd=', query('relative'), query(path.join(plain, 'nope')), `${query(dir)}&cwd=${encodeURIComponent(dir)}`, `${query(dir)}&extra=1`]) assert.equal((await get(pathname)).status, 400, pathname);
 });
