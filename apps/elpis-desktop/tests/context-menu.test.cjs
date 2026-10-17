@@ -9,6 +9,7 @@ const path = require('node:path');
 const { chromium } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright');
 const root = path.resolve(__dirname, '../out');
 const CWD = '/tmp/elpis-rclick-fixture';
+const CHAT_ACTIONS = ['Rename', 'Pin', 'Mark as unread', 'Show agents', 'Open session in split view', 'Archive', 'Delete'];
 async function eventually(check) {
   const deadline = Date.now() + 4000;
   for (;;) { try { return await check(); } catch (error) { if (Date.now() >= deadline) throw error; await new Promise(resolve => setTimeout(resolve, 40)); } }
@@ -56,7 +57,7 @@ async function fixture(run, { desktop = true } = {}) {
     await row('alpha').waitFor();
     const shot = async name => { if (process.env.ELPIS_SHOTS) { await fs.mkdir(process.env.ELPIS_SHOTS, { recursive: true }); await page.screenshot({ path: path.join(process.env.ELPIS_SHOTS, `${name}.png`) }); } };
     const menu = () => page.getByRole('menu');
-    const items = async () => { await menu().waitFor(); return menu().getByRole('menuitem').evaluateAll(list => list.map(item => item.textContent.replace(/\s*D$/, '').trim())); };
+    const items = async () => { await menu().waitFor(); return menu().getByRole('menuitem').evaluateAll(list => list.map(item => { const copy = item.cloneNode(true); copy.querySelectorAll('kbd').forEach(key => key.remove()); return copy.textContent.trim(); })); };
     const closeMenu = async () => { await page.keyboard.press('Escape'); await menu().waitFor({ state: 'detached' }); };
     const lastPrevented = async () => { await page.waitForTimeout(60); return page.evaluate(() => window.__contextmenu.at(-1)); };
     // The "…" and right-click menus are one list: same items, same size, drawn by the same menu style.
@@ -70,7 +71,7 @@ test('a chat row opens its "…" menu on right-click, at the pointer, without th
   const dots = row('alpha').getByRole('button', { name: 'Actions for Alpha', exact: true });
   await row('alpha').hover(); await dots.click();
   const fromButton = await items(), buttonLook = await popup();
-  assert.deepEqual(fromButton, ['Rename', 'Pin', 'Show agents', 'Archive', 'Delete']);
+  assert.deepEqual(fromButton, CHAT_ACTIONS);
   await shot('chat-row-dots-menu');
   await closeMenu();
   const box = await row('alpha').boundingBox();
@@ -122,7 +123,7 @@ test('right-click on a chat inside a Ctrl/Shift selection acts on the whole sele
   await eventually(async () => assert.deepEqual(calls.filter(call => call.path.endsWith('/archive')).map(call => call.path).sort(), ['/api/threads/alpha/archive', '/api/threads/charlie/archive', '/api/threads/delta/archive']));
   // A chat outside the selection is acted on alone.
   await row('bravo').click({ button: 'right' });
-  assert.deepEqual(await items(), ['Rename', 'Pin', 'Show agents', 'Archive', 'Delete']);
+  assert.deepEqual(await items(), CHAT_ACTIONS);
 }));
 
 test('a project opens its "…" menu on right-click', () => fixture(async ({ page, items, closeMenu, popup, shot }) => {
@@ -148,7 +149,7 @@ test('the chat tab opens the "Chat actions" menu on right-click', () => fixture(
   await tab.waitFor();
   await page.getByRole('button', { name: 'Chat actions', exact: true }).click();
   const fromButton = await items(), buttonLook = await popup();
-  assert.deepEqual(fromButton, ['Rename', 'Pin', 'Archive', 'Delete']);
+  assert.deepEqual(fromButton, CHAT_ACTIONS.filter(label => label !== 'Show agents'));
   await shot('chat-tab-dots-menu');
   await closeMenu();
   await tab.click({ button: 'right' });
