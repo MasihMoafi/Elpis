@@ -6,8 +6,9 @@ test('a chat the app cannot follow live is refreshed by reading: messages, child
  const root={id:'root',name:'Root conversation',desktopAccess:{writable:false,reason:'Terminal owned'},status:{type:'active'}};
  const child={...root,id:'child',name:'Evidence agent',parentThreadId:'root'};
  const item=(id,text)=>({turnId:'turn',item:{id,type:'agentMessage',text}});
- const server=http.createServer(async(req,res)=>{const url=new URL(req.url,'http://local');calls.push({method:req.method,path:url.pathname});for await(const chunk of req){}const json=data=>{res.setHeader('content-type','application/json');res.end(JSON.stringify(data));};
+ const server=http.createServer(async(req,res)=>{const url=new URL(req.url,'http://local');let raw='';for await(const chunk of req)raw+=chunk;const body=raw?JSON.parse(raw):null;calls.push({method:req.method,path:url.pathname,body});const json=data=>{res.setHeader('content-type','application/json');res.end(JSON.stringify(data));};
   if(url.pathname==='/api/events'){res.writeHead(200,{'content-type':'text/event-stream'});res.write('event: connection\ndata: {"connected":true}\n\n');clients.add(res);return;}
+  if(url.pathname.endsWith('/rewind')&&body?.action==='status')return json({});
   if(url.pathname==='/api/health')return json({connected:true});if(url.pathname==='/api/models')return json({data:[]});
   if(url.pathname==='/api/threads'){if(url.searchParams.has('ancestorThreadId')){lineageReads++;return json({data:[{...child,status:{type:lineageReads>1?'idle':'active'}},...(lineageReads>1?[{...child,id:'new-child',name:'Newly spawned reviewer'}]:[])],nextCursor:null});}return json({data:[root],nextCursor:null});}
   if(url.pathname==='/api/threads/root')return json({thread:root,data:[item('root-text','Root transcript')],nextCursor:null});
@@ -19,7 +20,7 @@ test('a chat the app cannot follow live is refreshed by reading: messages, child
   await page.locator('.chat-scroll').evaluate(element=>{element.scrollTop=100;element.dispatchEvent(new Event('scroll',{bubbles:true}));});const position=await page.locator('.chat-scroll').evaluate(element=>element.scrollTop);
   await page.getByText('A new observation arrived',{exact:true}).waitFor({state:'attached'});assert.equal(await page.getByText('Earlier retained history',{exact:true}).count(),1);assert.equal(await page.locator('.chat-scroll').evaluate(element=>element.scrollTop),position);
   await page.locator('.thread-row[data-thread-id="new-child"] .thread-title').filter({hasText:'Newly spawned reviewer'}).waitFor();await page.getByRole('button',{name:'Agents',exact:true}).click();assert.match(await page.locator('.agent-row[data-thread-id="child"] .agent-state').innerText(),/idle/i);
-  assert.deepEqual([...new Set(calls.filter(c=>c.method==='POST').map(c=>c.path))].sort(),['/api/threads/child/resume','/api/threads/root/resume'],'opening only asks to follow live; nothing is written');
+  assert.deepEqual([...new Set(calls.filter(c=>c.method==='POST'&&!(c.path.endsWith('/rewind')&&c.body?.action==='status')).map(c=>c.path))].sort(),['/api/threads/child/resume','/api/threads/root/resume'],'opening only asks to follow live; nothing is written');
   await page.screenshot({path:'/tmp/elpis-observer-agents.png'});
  }finally{await browser.close();for(const c of clients)c.end();await new Promise(resolve=>server.close(resolve));}
 });
