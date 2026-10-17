@@ -183,7 +183,7 @@ export function contextLedger(tokenUsage, transcript = null) {
 }
 
 // ---- The shares of a chat the engine has not run yet, estimated from its saved transcript (rollout).
-const SHARE_KEYS = ['systemInstructions', 'developerMessages', 'userMessages', 'agentMessages', 'reasoning', 'toolCalls', 'toolResults', 'toolDefinitions', 'outputSchema', 'unrecognizedItems'];
+export const SHARE_KEYS = ['systemInstructions', 'developerMessages', 'userMessages', 'agentMessages', 'reasoning', 'toolCalls', 'toolResults', 'toolDefinitions', 'outputSchema', 'unrecognizedItems'];
 const IMAGE_BYTES = 7373;
 const textBytes = value => typeof value === 'string' ? Buffer.byteLength(value) : 0;
 const jsonBytes = value => value === undefined || value === null ? 0 : Buffer.byteLength(JSON.stringify(value) ?? '');
@@ -191,7 +191,7 @@ const partBytes = part => part?.type === 'input_image' ? IMAGE_BYTES : part?.typ
 const partsBytes = parts => Array.isArray(parts) ? parts.reduce((sum, part) => sum + partBytes(part), 0) : 0;
 /** One saved item as core classifies and sizes it (core elpis_context_attribution.rs `classify`, context_manager
  * `estimate_item_token_count`): its share and its model-visible bytes. Items it does not know weigh nothing. */
-function sizedItem(item) {
+export function sizedItem(item) {
   const call = () => textBytes(item.name) + textBytes(item.namespace ?? 'functions') + textBytes(item.arguments ?? item.input);
   switch (item.type) {
     case 'message': return [{ system: 'systemInstructions', developer: 'developerMessages', user: 'userMessages', assistant: 'agentMessages' }[item.role] ?? 'unrecognizedItems', partsBytes(item.content)];

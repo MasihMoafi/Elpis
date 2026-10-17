@@ -443,36 +443,44 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .customize-errors { margin-top:10px; font-size:13px; color:var(--muted-foreground); }
 .customize-errors summary { cursor:pointer; }
 /* Observability: recorded context and pruning, within the shared Customize frame. */
+.observability { container:observability / inline-size; }
 .observability > section, .observability section > section { margin-bottom:24px; }
-.observability-stats { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; margin:16px 0 12px; }
-.observability .stat-card { min-width:0; padding:16px; border:1px solid var(--border); border-radius:10px; background:var(--card); }
-.observability .stat-title, .observability .stat-desc { font-size:12px; color:var(--muted-foreground); white-space:normal; }
-.observability .stat-value { margin:8px 0; font-size:26px; font-weight:600; font-variant-numeric:tabular-nums; }
-.observability .stat-desc { line-height:1.6; }
 .observability-chat { text-align:start; border-radius:5px; cursor:pointer; }
 .observability-chat:hover .customize-name { text-decoration:underline; }
 .observability :is(button,li[tabindex]):focus-visible { outline:2px solid var(--ring); outline-offset:3px; }
 .observability .customize-list + button { margin-top:12px; }
-.context-turns { margin:12px 0; }
-.context-turns ol { display:flex; align-items:stretch; gap:8px; height:160px; margin:0 0 30px; padding:0 12px; list-style:none; border-bottom:1px solid var(--border); }
-.context-turns li { position:relative; display:flex; align-items:flex-end; justify-content:center; flex:1; min-width:12px; }
-.context-turns li > i { display:block; width:100%; max-width:60px; min-height:2px; background:var(--context); border-radius:4px 4px 0 0; }
-.context-turn-number { position:absolute; top:100%; padding-top:5px; font-size:11px; color:var(--muted-foreground); }
-.context-turn-tip { display:none; position:absolute; bottom:100%; left:50%; transform:translateX(-50%); z-index:2; min-width:150px; padding:8px 12px; border:1px solid var(--border); border-radius:8px; background:var(--card); color:var(--foreground); box-shadow:var(--shadow); font-size:12px; pointer-events:none; }
-.context-turns li:is(:hover,:focus) .context-turn-tip { display:block; }
-.context-turns figcaption { font-size:12px; color:var(--muted-foreground); }
-.observability-table { overflow-x:auto; margin:12px 0 24px; font-size:12px; }
-.observability-table table { width:100%; margin-top:10px; text-align:start; border-collapse:collapse; }
-.observability-table :is(th,td) { padding:8px; border-bottom:1px solid var(--border); text-align:start; }
-.observability :is(summary) { cursor:pointer; }
-.observability-run { margin-top:10px; border:1px solid var(--border); border-radius:10px; background:var(--card); font-size:12px; }
-.observability-run > summary { padding:12px; overflow-wrap:anywhere; }
-.observability-run > summary > span { margin-inline-end:10px; }
-.observability-run-body { padding:0 14px 12px; color:var(--muted-foreground); }
-.observability-run-body p { margin:10px 0; }
-.observability-output { display:flex; flex-direction:column; gap:4px; padding:10px 12px; color:var(--foreground); }
-.observability-output + .observability-output { border-top:1px solid var(--border); }
-@media (max-width:760px) { .observability-stats { grid-template-columns:1fr; } }
+/* A chat's trace, as Langfuse lays one out: the turns as a timeline, each opening to its steps; the selected turn's context beside it. */
+.trace-layout { display:grid; grid-template-columns:minmax(0,1fr) minmax(240px,320px); gap:24px; align-items:start; }
+.trace-turns, .trace-steps, .trace-outputs { margin:0; padding:0; list-style:none; }
+.trace-turns > li { border:1px solid var(--border); border-radius:10px; background:var(--card); }
+.trace-turns > li + li { margin-top:8px; }
+.trace-turns > li[data-selected] { border-color:var(--context); }
+.trace-turn { display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 12px; width:100%; padding:12px; border:0; border-radius:10px; background:transparent; color:inherit; font:inherit; text-align:start; cursor:pointer; }
+.trace-turn:hover { background:var(--hover); }
+.trace-turn-name { font-weight:600; }
+.trace-turn time, .trace-step time { font-size:12px; font-variant-numeric:tabular-nums; color:var(--muted-foreground); }
+.trace-turn-meta { font-size:12px; color:var(--muted-foreground); }
+.trace-fill { flex-basis:100%; height:4px; border-radius:999px; background:var(--muted); overflow:hidden; }
+.trace-fill i { display:block; height:100%; background:var(--context); }
+.trace-steps { margin:0 12px 12px 18px; padding-left:12px; border-left:2px solid var(--border); font-size:12px; }
+.trace-step { display:grid; grid-template-columns:64px minmax(0,1fr); gap:4px 8px; align-items:baseline; padding:6px 0; }
+.trace-step + .trace-step { border-top:1px solid var(--hairline); }
+.trace-head { display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 8px; min-width:0; padding:0; border:0; background:transparent; color:inherit; font:inherit; text-align:start; }
+button.trace-head { cursor:pointer; }
+button.trace-head:hover .trace-text { text-decoration:underline; }
+.trace-text { min-width:0; overflow-wrap:anywhere; }
+.trace-step[data-kind="prune"] .customize-badge { background:color-mix(in oklab, var(--context) 22%, transparent); color:var(--foreground); }
+.trace-body { grid-column:2; color:var(--muted-foreground); }
+.trace-body p { margin:6px 0; }
+.trace-output { display:flex; flex-wrap:wrap; gap:2px 12px; padding:6px 0; color:var(--foreground); }
+.trace-output + .trace-output { border-top:1px solid var(--hairline); }
+.trace-none { margin:0 12px 12px 18px; font-size:12px; color:var(--muted-foreground); }
+.trace-context { position:sticky; top:0; margin:0; padding:12px 0; }
+.trace-context h3 { margin:0 0 8px; font-size:14px; }
+.trace-context .context-bar { margin:8px 0; }
+.trace-context .context-ledger-rows { padding:0; margin:8px 0; font-size:12px; }
+.trace-context .customize-note { margin:4px 0; }
+@container observability (max-width:760px) { .trace-layout { grid-template-columns:minmax(0,1fr); } .trace-context { position:static; } }
 .agents-toolbar { display:flex; align-items:center; justify-content:space-between; gap:16px; margin-bottom:14px; }
 /* Segmented choices: the Agents status filters and Settings' side-by-side options. */
 .segmented { display:inline-flex; flex-wrap:wrap; align-items:center; gap:2px; padding:2px; border-radius:9px; background:var(--muted); }

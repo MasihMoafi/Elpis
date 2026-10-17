@@ -15,6 +15,7 @@ import path from 'node:path';
 import readline from 'node:readline';
 import zlib from 'node:zlib';
 import { BridgeError, elpisHome, threadId } from './client.mjs';
+import { contextLedger, sizedItem, SHARE_KEYS } from './elpis-features.mjs';
 
 const RECORD_ID = /^[A-Za-z0-9][A-Za-z0-9-]{0,127}$/;
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
@@ -78,26 +79,49 @@ function detail(attempt, admissions) {
     admission: manifest ? { id: admissionId, before: manifest.before, after: manifest.after, saved: manifest.saved, requestSequence: admission.requestSequence } : null };
 }
 
-/** Each turn of a rollout in order: when it started and its last measured request (the context it ended with). */
+const MAX_STEPS = 400;
+const CALLS = new Set(['function_call', 'custom_tool_call', 'local_shell_call', 'web_search_call', 'tool_search_call']);
+const clip = value => typeof value === 'string' ? value.replace(/\s+/g, ' ').trim().slice(0, 120) : null;
+/** What a tool call was, in a few words: its name and, when its arguments say so, the command, path or query. */
+function callOf(payload) {
+  const name = string(payload.name) ?? { local_shell_call: 'shell', web_search_call: 'web search', tool_search_call: 'tool search' }[payload.type] ?? payload.type;
+  const args = json(payload.arguments);
+  return { name, detail: clip(args?.cmd ?? args?.command ?? args?.path ?? args?.file_path ?? args?.query ?? args?.url) };
+}
+
+/** Each turn of a rollout in order: when it started, its steps (every model request with its tokens, every tool call),
+ * its last measured request (the context it ended with) and the Ledger's categories for that context, estimated from the
+ * saved items as `rolloutShares` does; `ledger` is null once a compaction or rollback makes the saved items unreliable. */
 async function rolloutTurns(file) {
   let input = fs.createReadStream(file);
   if (file.endsWith('.zst')) {
     if (typeof zlib.createZstdDecompress !== 'function') { input.destroy(); throw new Error('zstd unsupported'); }
     input = input.pipe(zlib.createZstdDecompress());
   }
-  const turns = [], byId = new Map(); let current = null;
+  const turns = [], byId = new Map(), shares = Object.fromEntries(SHARE_KEYS.map(key => [key, 0]));
+  let current = null, reliable = true;
+  const add = item => { const [key, size] = sizedItem(item); shares[key] += Math.ceil(size / 4); };
+  const step = (at, value) => { if (!current) return; if (current.steps.length < MAX_STEPS) current.steps.push({ at, ...value }); else current.stepsMore++; };
   for await (const text of readline.createInterface({ input, crlfDelay: Infinity })) {
-    if (!text.includes('"task_started"') && !text.includes('"turn_context"') && !text.includes('"token_count"')) continue;
-    const line = json(text), payload = line?.payload;
+    if (!/"(task_started|turn_context|token_count|response_item|session_meta|compacted|thread_rolled_back)"/.test(text)) continue;
+    const line = json(text), payload = line?.payload, at = string(line?.timestamp);
+    if (line?.type === 'session_meta') { shares.systemInstructions = Math.ceil((typeof payload?.base_instructions?.text === 'string' ? Buffer.byteLength(payload.base_instructions.text) : 0) / 4); continue; }
+    if (line?.type === 'compacted') { reliable = false; continue; }
+    if (line?.type === 'event_msg' && payload?.type === 'thread_rolled_back') { reliable = false; continue; }
     const started = line?.type === 'turn_context' || (line?.type === 'event_msg' && payload?.type === 'task_started') ? string(payload?.turn_id) : null;
     if (started) {
       current = byId.get(started);
-      if (!current) { current = { turnId: started, at: string(line.timestamp), contextTokens: null, window: null, requests: 0 }; byId.set(started, current); turns.push(current); }
+      if (!current) { current = { turnId: started, at, contextTokens: null, window: null, requests: 0, steps: [], stepsMore: 0, ledger: null }; byId.set(started, current); turns.push(current); }
+    } else if (line?.type === 'response_item' && payload) {
+      add(payload);
+      if (CALLS.has(payload.type)) step(at, { kind: 'tool', ...callOf(payload) });
     } else if (current && line?.type === 'event_msg' && payload?.type === 'token_count' && payload.info) {
-      const used = number(payload.info.last_token_usage?.total_tokens);
+      const last = payload.info.last_token_usage, used = number(last?.total_tokens);
       if (used === null) continue;
       const window = number(payload.info.model_context_window);
       current.contextTokens = used; current.window = window || current.window; current.requests++;
+      step(at, { kind: 'model', input: number(last.input_tokens), cached: number(last.cached_input_tokens), output: number(last.output_tokens), context: used });
+      current.ledger = reliable ? contextLedger({ last: { totalTokens: used }, modelContextWindow: current.window }, { ...shares }) : null;
     }
   }
   return turns;
@@ -158,6 +182,15 @@ export function createObservability({ home = elpisHome(), chatOf }) {
       return { found: true, chat: Object.fromEntries(CHAT_FIELDS.filter(key => summary.thread[key] !== undefined).map(key => [key, summary.thread[key]])), path: summary.path ?? null };
     } catch { return { found: null, chat: null, path: null }; }
   }
+  /** The chat's readable Markdown record, which the engine writes beside the audit (one file per chat, named by date and chat
+   * title; core smart_prune_log.rs). Found by the chat's id or title in a `.md` file's name; the newest if several. */
+  async function recordOf(found, id) {
+    const flat = value => String(value ?? '').toLowerCase().replace(/[^a-z0-9]+/g, '');
+    const title = flat(found.chat?.name || found.chat?.preview), key = flat(id);
+    const names = (await fsp.readdir(dir).catch(() => [])).filter(name => name.endsWith('.md') && (flat(name).includes(key) || (title.length >= 3 && flat(name).includes(title))));
+    const dated = await Promise.all(names.map(async name => ({ file: path.join(dir, name), at: (await fsp.stat(path.join(dir, name)).catch(() => null))?.mtimeMs ?? 0 })));
+    return dated.filter(entry => entry.at).sort((a, b) => b.at - a.at)[0]?.file ?? null;
+  }
   async function turns(found, file, list) {
     if (found.found !== true) return { available: false, reason: found.found === false ? 'chat-missing' : 'unknown' };
     if (typeof file !== 'string' || !path.isAbsolute(file) || !/\.jsonl(\.zst)?$/.test(file)) return { available: false, reason: 'no-rollout' };
@@ -199,7 +232,7 @@ export function createObservability({ home = elpisHome(), chatOf }) {
       const found = await chat(id);
       const matching = own.filter(attempt => (!status || attempt.outcome === status) && (!cursor || attempt.id < cursor));
       const page = matching.slice(0, limit);
-      return { id, found: found.found, chat: found.chat, totals: totals(own, admissions), turns: await turns(found, found.path, own),
+      return { id, found: found.found, chat: found.chat, record: await recordOf(found, id), totals: totals(own, admissions), turns: await turns(found, found.path, own),
         attempts: { data: page.map(attempt => detail(attempt, admissions)), nextCursor: matching.length > limit ? page.at(-1).id : null } };
     },
   };

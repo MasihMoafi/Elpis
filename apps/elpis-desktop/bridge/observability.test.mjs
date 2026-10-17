@@ -55,9 +55,14 @@ async function records(t) {
   await fs.mkdir(path.join(dir, 'admissions', 'orphan', 'items'), { recursive: true });
   const rollout = path.join(home, 'sessions', '2026', '10', '16', `rollout-2026-10-16T09-00-00-${S1}.jsonl`);
   await fs.mkdir(path.dirname(rollout), { recursive: true });
+  await write('2026-10-16 Fix the parser.md', '# Fix the parser\n');
+  await write('2026-10-16 Another chat.md', '# Another chat\n');
   await fs.writeFile(rollout, [
     line('2026-10-16T09:00:00Z', { id: S1 }, 'session_meta'),
     line('2026-10-16T09:00:01Z', { type: 'task_started', turn_id: T1 }),
+    line('2026-10-16T09:00:02Z', { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'u'.repeat(4000) }] }, 'response_item'),
+    line('2026-10-16T09:00:04Z', { type: 'function_call', name: 'exec_command', arguments: JSON.stringify({ cmd: 'cargo test -p core' }), call_id: 'c1' }, 'response_item'),
+    line('2026-10-16T09:00:06Z', { type: 'function_call_output', call_id: 'c1', output: 'o'.repeat(8000) }, 'response_item'),
     line('2026-10-16T09:00:09Z', count(10000)),
     line('2026-10-16T09:09:00Z', { type: 'task_started', turn_id: T2 }),
     line('2026-10-16T09:09:30Z', count(12000)),
@@ -137,10 +142,18 @@ test('a chat: its totals, every output with what the pruner decided and what was
   assert.deepEqual(unchanged.items, [{ callId: 'c3', tool: 'exec_command', sourceTokens: 1100, decision: 'compact', admitted: false, admittedTokens: null, saved: null }], 'the pruner shortened it, but the text was not admitted');
   assert.equal(unchanged.admission, null);
   assert.deepEqual([failed.error, failed.prunerTokens, failed.items[0].decision], ['stream disconnected before completion', null, null]);
-  assert.deepEqual(body.turns, { available: true, data: [
-    { turnId: T1, at: '2026-10-16T09:00:01Z', contextTokens: 10000, window: 100000, requests: 1, saved: 1500 },
-    { turnId: T2, at: '2026-10-16T09:09:00Z', contextTokens: 15000, window: 100000, requests: 2, saved: 0 },
-    { turnId: T3, at: '2026-10-16T09:20:00Z', contextTokens: null, window: null, requests: 0, saved: 0 }] });
+  assert.equal(body.record, path.join(home, 'logs', 'smart-prune', '2026-10-16 Fix the parser.md'), 'the readable record is found by the chat title');
+  assert.deepEqual(body.turns.data.map(turn => [turn.turnId, turn.at, turn.contextTokens, turn.window, turn.requests, turn.saved]),
+    [[T1, '2026-10-16T09:00:01Z', 10000, 100000, 1, 1500], [T2, '2026-10-16T09:09:00Z', 15000, 100000, 2, 0], [T3, '2026-10-16T09:20:00Z', null, null, 0, 0]]);
+  assert.deepEqual(body.turns.data[0].steps, [
+    { at: '2026-10-16T09:00:04Z', kind: 'tool', name: 'exec_command', detail: 'cargo test -p core' },
+    { at: '2026-10-16T09:00:09Z', kind: 'model', input: 9900, cached: 0, output: 100, context: 10000 }], 'tool calls and model requests, in order');
+  const ledger = body.turns.data[0].ledger;
+  assert.deepEqual([ledger.used, ledger.window, ledger.basis], [10000, 100000, 'transcript']);
+  assert.deepEqual(ledger.categories.map(row => [row.id, row.label]), [['userMessages', 'User messages'], ['toolCalls', 'Tool calls'], ['toolResults', 'Tool results'], ['toolDefinitions', 'Tool definitions + schema']], 'the Ledger\'s words and order');
+  assert.equal(ledger.categories.reduce((sum, row) => sum + row.tokens, 0), 10000, 'the categories add up to the measured context');
+  assert.equal(ledger.categories[0].tokens, 1000);
+  assert.deepEqual(body.turns.data[2].steps, []);
 
   const failedOnly = (await get(`/api/observability/chats/${S1}?status=failed`)).body.attempts;
   assert.deepEqual(failedOnly.data.map(row => row.id), [A[2]]);

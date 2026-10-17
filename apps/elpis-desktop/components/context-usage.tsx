@@ -11,7 +11,7 @@ import { usePreferences } from "@/lib/preferences";
 /** The bridge's Context Ledger for a chat (bridge/elpis-features.mjs `contextLedger`): `used` and `window` are
  * measured, `categories` are estimated shares that sum to `used`; empty when attribution is unavailable. `basis` says whose
  * estimate they are: the engine's for its latest request, or the bridge's from the chat's saved transcript. */
-type Ledger = { used: number | null; window: number | null; categories: { id: string; label: string; tokens: number }[]; basis?: "engine" | "transcript" };
+export type Ledger = { used: number | null; window: number | null; categories: { id: string; label: string; tokens: number }[]; basis?: "engine" | "transcript" };
 const UNMEASURED: Ledger = { used: null, window: null, categories: [] };
 /** Whether the chat can be compacted now (bridge/client.mjs `context`), and why not. */
 type Compact = { available: boolean; reason?: string };
@@ -128,13 +128,36 @@ export function ContextUsage({ threadId }: { threadId?: string }) {
   </Popover>;
 }
 
+/** The Ledger's bar on a full-window scale, one coloured segment per category (`data-category` carries the TUI's colours). */
+export function LedgerBar({ ledger }: { ledger: Ledger | null }) {
+  const { used, window: capacity, categories } = ledger ?? UNMEASURED;
+  const scale = used !== null && capacity ? Math.max(capacity, used) : 0;
+  if (used === null || !scale) return null;
+  return <div className="context-bar" aria-hidden="true">
+    {categories.length ? categories.map(row => <span key={row.id} className="context-bar-segment" data-category={row.id} title={`${row.label}: ≈${tokens(row.tokens)}${capacity ? `, ${share(row.tokens, capacity)}` : ""}`} style={{ width: `${row.tokens / scale * 100}%` }} />)
+      : <span className="context-bar-segment" style={{ width: `${used / scale * 100}%` }} />}
+  </div>;
+}
+
+/** The Ledger's category rows (label, estimated tokens, share of the window) and the free capacity. */
+export function LedgerRows({ ledger }: { ledger: Ledger | null }) {
+  const { used, window: capacity, categories } = ledger ?? UNMEASURED;
+  return <ul className="context-ledger-rows">
+    {categories.map(row => <li key={row.id} className="context-ledger-row" data-category={row.id}>
+      <span className="context-ledger-row-label">{row.label}</span><span className="context-ledger-row-value">≈{tokens(row.tokens)}</span><span className="context-ledger-row-share">{capacity ? share(row.tokens, capacity) : ""}</span>
+    </li>)}
+    {capacity && used !== null && <li className="context-ledger-row" data-category="free">
+      <span className="context-ledger-row-label">Free capacity</span><span className="context-ledger-row-value">{tokens(Math.max(0, capacity - used))}</span><span className="context-ledger-row-share">{share(Math.max(0, capacity - used), capacity)}</span>
+    </li>}
+  </ul>;
+}
+
 /** Claude's context section (its popover's "Context window" block) over the TUI ledger's CONTEXT WINDOW section
  * (codex-rs/tui/src/chatwidget/context_ledger.rs): the measured total, the bar on a full-window scale, and the categories
  * below it. The title and the switches the TUI's ledger also has are in the chat below this popover, so they are not repeated. */
 function LedgerView({ ledger, loading, expanded, onToggle, compact }: { ledger: Ledger | null; loading: boolean; expanded: boolean; onToggle: () => void; compact: (Compact & { run: () => void }) | null }) {
   const { used, window: capacity, categories, basis } = ledger ?? UNMEASURED;
   const { summary } = describe(ledger);
-  const scale = used !== null && capacity ? Math.max(capacity, used) : 0;
   const note = used === null ? null
     : !categories.length ? "Core measured total; category attribution unavailable until the next provider attempt"
     : basis === "transcript" ? `Measured total · category ${capacity ? "shares" : "tokens"} estimated from the saved chat; exact after the next request`
@@ -145,20 +168,10 @@ function LedgerView({ ledger, loading, expanded, onToggle, compact }: { ledger: 
       <span>Context window</span>{summary && <span className="context-ledger-summary">{summary}</span>}
       {categories.length > 0 && <ChevronRight size={12} aria-hidden="true" className="context-ledger-caret" data-expanded={expanded || undefined} />}
     </button>
-    {measured && scale > 0 && <div className="context-bar" aria-hidden="true">
-      {categories.length ? categories.map(row => <span key={row.id} className="context-bar-segment" data-category={row.id} title={`${row.label}: ≈${tokens(row.tokens)}${capacity ? `, ${share(row.tokens, capacity)}` : ""}`} style={{ width: `${row.tokens / scale * 100}%` }} />)
-        : <span className="context-bar-segment" style={{ width: `${used / scale * 100}%` }} />}
-    </div>}
+    {measured && <LedgerBar ledger={ledger} />}
     {!measured && !loading && <p className="context-ledger-note">Send a message to see context usage.</p>}
     {note && <p className="context-ledger-note">{note}</p>}
-    {categories.length > 0 && expanded && <ul className="context-ledger-rows">
-      {categories.map(row => <li key={row.id} className="context-ledger-row" data-category={row.id}>
-        <span className="context-ledger-row-label">{row.label}</span><span className="context-ledger-row-value">≈{tokens(row.tokens)}</span><span className="context-ledger-row-share">{capacity ? share(row.tokens, capacity) : ""}</span>
-      </li>)}
-      {capacity && used !== null && <li className="context-ledger-row" data-category="free">
-        <span className="context-ledger-row-label">Free capacity</span><span className="context-ledger-row-value">{tokens(Math.max(0, capacity - used))}</span><span className="context-ledger-row-share">{share(Math.max(0, capacity - used), capacity)}</span>
-      </li>}
-    </ul>}
+    {categories.length > 0 && expanded && <LedgerRows ledger={ledger} />}
     {compact && <div className="context-ledger-compact">
       <span title={compact.available ? undefined : compact.reason}><Button type="button" size="sm" variant="secondary" disabled={!compact.available} onClick={compact.run}>Compact session</Button></span>
     </div>}
