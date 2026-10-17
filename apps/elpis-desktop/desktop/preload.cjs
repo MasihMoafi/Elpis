@@ -19,6 +19,14 @@ contextBridge.exposeInMainWorld('elpisDesktop',{
     if(typeof result?.error==='string')throw Error(result.error);
     if(result?.opened!==true)throw Error('Could not open this file.');
   }),
+  editors:()=>ipcRenderer.invoke('elpis:editors:list').then(result=>{
+    if(typeof result?.error==='string')throw Error(result.error);
+    return Array.isArray(result?.editors)?result.editors:[];
+  }),
+  openInEditor:(target,editor,line)=>ipcRenderer.invoke('elpis:file:edit',{target,editor,line}).then(result=>{
+    if(typeof result?.error==='string')throw Error(result.error);
+    if(result?.opened!==true)throw Error('Could not start the editor.');
+  }),
   openFolder:target=>ipcRenderer.invoke('elpis:folder:open',target).then(result=>{
     if(typeof result?.error==='string')throw Error(result.error);
     if(result?.opened!==true)throw Error('Could not open this folder.');
