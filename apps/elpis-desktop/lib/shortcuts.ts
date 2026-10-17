@@ -17,6 +17,11 @@ export const SHORTCUTS: Shortcut[] = [
   { id: "list-chat", group: "Navigation", label: "Previous or next chat in the sidebar", keys: ["↑", "↓"] },
   // Handled by the message box (app/page.tsx), as in Claude Code.
   { id: "cycle-mode", group: "Chat", label: "Cycle Ask for approval, Approve for me and Plan mode (in the message box)", keys: ["Shift+Tab"] },
+  // Handled by the message box and the chat (app/page.tsx, lib/prompt-history.ts), as in Claude.
+  { id: "stop", group: "Chat", label: "Stop the response", keys: ["Esc"] },
+  { id: "edit-last", group: "Chat", label: "Edit your last message (in an empty message box)", keys: ["Esc Esc"] },
+  { id: "prompt-history", group: "Chat", label: "Step through the messages you sent (in the message box)", keys: ["↑", "↓"] },
+  { id: "search-history", group: "Chat", label: "Search the messages you sent (in the message box)", keys: ["Ctrl+R"] },
   { id: "new-tab", group: "Chat", label: "New chat tab", keys: ["Ctrl+T"] },
   { id: "close-tab", group: "Chat", label: "Close chat tab", keys: ["Ctrl+W"] },
   { id: "next-tab", group: "Navigation", label: "Next chat tab", keys: ["Ctrl+Tab"] },

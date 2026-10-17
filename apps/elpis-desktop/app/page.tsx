@@ -17,6 +17,8 @@ import { followUpChoices, followUpHint, followUpKey, followUpTooltip, isSendKey,
 import { notifyApproval, notifyRuntimeEvent } from "@/lib/notifications";
 import { queueFollowUp, sendQueuedFollowUp, type FollowUp, type FollowUpOptions } from "@/lib/follow-ups";
 import { QueuedFollowUps } from "@/components/queued-follow-ups";
+import { stopsOnEscape, usePromptKeys } from "@/lib/prompt-history";
+import { PromptStatusLine } from "@/components/prompt-status";
 import { ContextUsage } from "@/components/context-usage";
 import { ElpisFeatures } from "@/components/elpis-features";
 import { ShortcutsDialog } from "@/components/shortcuts-dialog";
@@ -664,6 +666,8 @@ export default function Home() {
   for (const entry of entries) { const group = turnEntries.get(entry.turnId) ?? []; group.push(entry); turnEntries.set(entry.turnId, group); }
   const replacementOptions = new Map([...turnEntries].map(([id, group]) => [id, replacementEligibility(group, id, { historyComplete: !loading && itemCursor === null })]));
   const recoveredEdit = selected ? savedDraft(`recovery-${selected.id}`) : "";
+  // The message box's history keys (lib/prompt-history.ts): ↑/↓ and Ctrl+R through what you sent, Esc Esc to edit the last.
+  const promptKeys = usePromptKeys(selected?.id ?? newDraftKey.current, { entries, box: () => composerRef.current, read: () => textRef.current, write: writePrompt, editLast: editLastMessage });
   const regenerate = (() => {
     if (!replaceable) return null;
     const last = entries.at(-1); if (!last) return null;
@@ -984,6 +988,19 @@ export default function Home() {
     }
     focusComposer();
   }
+  /** Puts an earlier message (or the draft) in the box with the caret at its start or end, as the history keys do. */
+  function writePrompt(value: string, caret: "start" | "end") {
+    editDraft(value);
+    requestAnimationFrame(() => { const at = caret === "end" ? value.length : 0; composerRef.current?.setSelectionRange(at, at); });
+  }
+  /** Esc Esc in an empty box opens the newest message you sent for editing, as in Claude; one that cannot be replaced says why. */
+  function editLastMessage() {
+    if (!replaceable || !selected) return;
+    const last = entries.filter(entry => entry.item.type === "userMessage").at(-1); if (!last) return;
+    const option = replacementOptions.get(last.turnId);
+    if (!option?.allowed) { if (option) setSlashNotice(option.reason); return; }
+    setMessageEdits(previous => ({ ...previous, [JSON.stringify([selected.id, last.turnId, last.item.id])]: option.prompt }));
+  }
   /** The "+" menu's Files and Images: the same chooser, showing what `accept` names. */
   const pickFiles = (accept: string) => { const input = filePickerRef.current; if (input) { input.accept = accept; input.click(); } };
   /** The "+" menu's Mention: an "@" at the caret (after a space when words come before it), which opens the picker. */
@@ -1103,6 +1120,10 @@ export default function Home() {
   const roots = filtered.filter(t => !isUnlinkedAgent(t, searchedThreads) && (!t.parentThreadId || !filtered.some(p => p.id === t.parentThreadId)));
   const unlinked = filtered.filter(t => isUnlinkedAgent(t, searchedThreads));
   const ordered = [...roots.filter(t => pins.includes(t.id)), ...roots.filter(t => !pins.includes(t.id))];
+  // Esc stops the running reply, as in Claude, wherever in the chat the focus is, unless a menu, dialog or field owns the key.
+  const escapeStops = useRef<(event: KeyboardEvent) => void>(() => {});
+  escapeStops.current = event => { if (selected && activeTurn && view === "chat" && stopsOnEscape(event)) { event.preventDefault(); void stop(selected); } };
+  useEffect(() => { const onKey = (event: KeyboardEvent) => escapeStops.current(event); window.addEventListener("keydown", onKey); return () => window.removeEventListener("keydown", onKey); }, []);
   shortcutAction.current = (id, index) => {
     const at = selected ? ordered.findIndex(t => t.id === selected.id) : -1;
     if (id === "new-chat") newChat();
@@ -1326,7 +1347,8 @@ export default function Home() {
             </li>)}</ul>}
             {attaching && <p role="status" className="px-3 py-2 text-sm text-muted-foreground">Reading files…</p>}
             {imageBlocked && <p role="alert" className="m-2 text-sm text-destructive">This model accepts text only. Choose an image-capable model or remove the images.</p>}
-            <Textarea ref={composerRef} aria-label="Message Elpis" {...(mention.open ? mention.inputProps : slash.inputProps)} onBlur={() => { slash.close(); mention.close(); }} onSelect={e => setCaret(e.currentTarget.selectionStart)} placeholder={continues ? `Message ${title(selected!)}…` : selected && activeTurn ? followUpHint(preferences) : selected ? "Ask for a follow-up" : "Ask Elpis to build, fix or explain something"} value={text} onChange={e => { editDraft(e.target.value); setCaret(e.target.selectionStart); }} onPaste={e => { const files = Array.from(e.clipboardData.files); if (files.length) { if (!e.clipboardData.getData("text/plain")) e.preventDefault(); void addFiles(files); } }} disabled={!ready || !connected || projectChanging} onKeyDown={e => { if (mention.onKeyDown(e) || slash.onKeyDown(e)) return; if (e.key === "Tab" && e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey) { e.preventDefault(); cycleMode(); return; } if (activeTurn && !continues) { const followUp = followUpKey(e, preferences); if (followUp) { e.preventDefault(); send(undefined, followUp); } } else if (isSendKey(e, preferences)) { e.preventDefault(); send(); } }} />
+            {promptKeys.status && <PromptStatusLine status={promptKeys.status} />}
+            <Textarea ref={composerRef} aria-label="Message Elpis" {...(mention.open ? mention.inputProps : slash.inputProps)} onBlur={() => { slash.close(); mention.close(); promptKeys.cancel(); }} onSelect={e => setCaret(e.currentTarget.selectionStart)} placeholder={continues ? `Message ${title(selected!)}…` : selected && activeTurn ? followUpHint(preferences) : selected ? "Ask for a follow-up" : "Ask Elpis to build, fix or explain something"} value={text} onChange={e => { editDraft(e.target.value); setCaret(e.target.selectionStart); }} onPaste={e => { const files = Array.from(e.clipboardData.files); if (files.length) { if (!e.clipboardData.getData("text/plain")) e.preventDefault(); void addFiles(files); } }} disabled={!ready || !connected || projectChanging} onKeyDown={e => { if (mention.onKeyDown(e) || slash.onKeyDown(e) || promptKeys.onKeyDown(e)) return; if (e.key === "Tab" && e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey) { e.preventDefault(); cycleMode(); return; } if (activeTurn && !continues) { const followUp = followUpKey(e, preferences); if (followUp) { e.preventDefault(); send(undefined, followUp); } } else if (isSendKey(e, preferences)) { e.preventDefault(); send(); } }} />
             {fileNotice && <div className="flex items-center gap-2 px-3 text-sm text-destructive" role="alert"><span>{fileNotice}</span><Button type="button" variant="ghost" size="icon-xs" aria-label="Dismiss file notice" onClick={() => setFileNotice("")}><X size={14} /></Button></div>}
             <div className="composer-controls"><div className="model-controls"><PlusMenu disabled={!ready || !connected || busy || projectChanging} attachDisabled={attaching || attachments.length >= 3} imagesDisabled={knownModel?.inputModalities && !knownModel.inputModalities.includes("image") && "This model accepts text only"} slashDisabled={!!text} plan={planMode} returnFocus={composerRef}
                 onAttach={() => pickFiles(ATTACHMENT_ACCEPT)} onImages={() => pickFiles(IMAGE_ACCEPT)} onMention={startMention} onSlash={startSlash} onPlan={setPlan} />
