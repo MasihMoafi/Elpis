@@ -47,6 +47,12 @@ test('past ten agents the Father runs the rest in his own chat, after the Mother
     const hisIds = new Set(his.tasks.map(task => task.id));
     assert.ok(his.tasks.every(task => task.dependsOn.every(id => hisIds.has(id))), 'his tasks wait only for his own');
     assert.ok(his.tasks.some(task => task.title === 'Join the parts'), 'the joiner, in the second wave, is his');
+    // As on Deus Ex's board: a run clock, stopped once the run is done, and a log of what happened, newest last.
+    assert.match(await canvas.getByLabel('Run clock').innerText(), /^Run done\s*\d\d:\d\d$/i);
+    const lines = await canvas.getByRole('list', { name: 'Run log' }).locator('li').allInnerTexts();
+    assert.ok(lines.length > 0 && lines.length <= 3, `${lines.length} log lines`);
+    assert.ok(lines.every(line => /^\+\d\d:\d\d/.test(line)), 'each line is stamped with the time since the run started');
+    assert.ok(lines.some(line => /: check passed$/.test(line)), lines.join(' | '));
     assert.deepEqual(errors, []);
   } finally { await close(); }
 });

@@ -2,7 +2,7 @@
 
 import "@xyflow/react/dist/style.css";
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent } from "react";
-import { Background, BackgroundVariant, BaseEdge, Controls, Handle, MiniMap, Position, ReactFlow, ReactFlowProvider, applyEdgeChanges, applyNodeChanges, getBezierPath, useReactFlow, type Connection, type Edge, type EdgeChange, type EdgeProps, type FinalConnectionState, type Node, type NodeChange, type NodeProps, type XYPosition } from "@xyflow/react";
+import { Background, BackgroundVariant, BaseEdge, Controls, Handle, MiniMap, Panel, Position, ReactFlow, ReactFlowProvider, applyEdgeChanges, applyNodeChanges, getBezierPath, useReactFlow, type Connection, type Edge, type EdgeChange, type EdgeProps, type FinalConnectionState, type Node, type NodeChange, type NodeProps, type XYPosition } from "@xyflow/react";
 import { Check, ChevronRight, ExternalLink, ListOrdered, PanelRight, PanelRightClose, Play, StickyNote, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -17,7 +17,7 @@ import { DONE, FATHER, MOTHER, TASKS_PER_AGENT, TEMPLATES, applyPlan, arrange, b
 
 /** A run: the Mother's part, and the Father's when the graph has more agents than she runs (lib/canvas.ts `parents`):
  * his tasks wait in `father` until her part has succeeded, then run in his own chat. */
-type Run = { rootThreadId: string; graphId: string; status: string; father?: { tasks: RunTask[]; threadId?: string; graphId?: string; status: string } };
+type Run = { rootThreadId: string; graphId: string; status: string; startedAt: number; endedAt?: number; father?: { tasks: RunTask[]; threadId?: string; graphId?: string; status: string } };
 /** Whether the whole run is over: her part, and his if he has one. */
 const over = (run: Run) => FINISHED.has(run.status) && (!run.father || FINISHED.has(run.father.status));
 type Listed = { data: { id: string; status: string; tasks: { id: string; status: TaskStatus; assignedThreadId: string | null }[] }[] };
@@ -310,6 +310,15 @@ function FolderPicker({ cwd, folders, error, value, onChange }: { cwd?: string; 
   </div>;
 }
 
+/** The run's clock, as Deus Ex's tracing timer: minutes and seconds since the run started, stopping when it ends. */
+function RunClock({ since, until }: { since: number; until?: number }) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => { if (until) return; const timer = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(timer); }, [until]);
+  return <strong>{clock((until ?? now) - since)}</strong>;
+}
+/** A span of time as mm:ss. */
+const clock = (ms: number) => { const seconds = Math.max(0, Math.floor(ms / 1000)); return `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`; };
+
 function AgentDashboard({ node, wave, status, check, chat, waitsFor, feeds, modelLabel, onOpenChat, onClose }: { node: Extract<CanvasNode, { type: "agent" }>; wave?: number; status: TaskStatus | "idle"; check: TaskStatus | "idle"; chat: string | null; waitsFor: string[]; feeds: string[]; modelLabel: string; onOpenChat: (id: string) => void; onClose: () => void }) {
   const data = node.data;
   return <div className="agent-dashboard hud-menu" role="dialog" aria-label={`${data.title} dashboard`} data-kind="agent" data-status={status}
@@ -358,6 +367,10 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
   const [adding, setAdding] = useState<Adding | null>(null);
   const [run, setRun] = useState<Run | null>(null), [starting, setStarting] = useState(false);
   const [states, setStates] = useState<Record<string, { status: TaskStatus; chat: string | null }>>({});
+  // The run log, as Deus Ex's event cards: what started, finished, passed its check or failed, newest last.
+  type LogLine = { at: number; text: string; tone: "start" | "done" | "fail" };
+  const [log, setLog] = useState<LogLine[]>([]);
+  const said = useRef<Record<string, TaskStatus>>({});
   const [, setFetched] = useState(0);
   const settings = useElpisSettings().data;
   // What Elpis allows: agents in one graph, and at once (bridge/elpis-features.mjs `agentLimits`).
@@ -397,7 +410,17 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
     let live = true;
     const read = async (threadId: string, graphId: string) => {
       const listed = await api<Listed>(`/workflows?threadId=${encodeURIComponent(threadId)}`), found = listed.data.find(item => item.id === graphId);
-      if (found && live) setStates(current => ({ ...current, ...Object.fromEntries(found.tasks.map(task => [task.id, { status: task.status, chat: task.assignedThreadId }])) }));
+      if (found && live) {
+        setStates(current => ({ ...current, ...Object.fromEntries(found.tasks.map(task => [task.id, { status: task.status, chat: task.assignedThreadId }])) }));
+        const lines = found.tasks.flatMap(task => {
+          if (said.current[task.id] === task.status) return [];
+          said.current[task.id] = task.status;
+          const check = task.id.endsWith("-check"), who = titleOf(check ? task.id.slice(0, -"-check".length) : task.id);
+          const text = task.status === "running" ? (check ? `Checking ${who}` : `${who} started`) : task.status === "succeeded" ? (check ? `${who}: check passed` : `${who} finished`) : task.status === "failed" || task.status === "blocked" ? (check ? `${who}: check failed` : `${who} failed`) : "";
+          return text ? [{ at: Date.now(), text, tone: task.status === "running" ? "start" as const : task.status === "succeeded" ? "done" as const : "fail" as const }] : [];
+        });
+        if (lines.length) setLog(current => [...current, ...lines].slice(-3));
+      }
       return found?.status;
     };
     const poll = async () => {
@@ -408,7 +431,7 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
         if (father?.threadId && father.graphId && !FINISHED.has(father.status)) { const status = await read(father.threadId, father.graphId); if (status && status !== father.status) next = { ...next, father: { ...father, status } }; }
         // Her part done: the Father starts his, in his own chat; if hers failed, his never starts.
         if (father && !father.threadId && FINISHED.has(next.status)) next = { ...next, father: next.status === "succeeded" || next.status === "completed" ? await startFather(father.tasks) : { ...father, status: "cancelled" } };
-        if (live && next !== run) setRun(next);
+        if (live && next !== run) setRun(over(next) ? { ...next, endedAt: Date.now() } : next);
       } catch (error) { if (live) setNotice(error instanceof Error ? error.message : String(error)); }
     };
     void poll();
@@ -749,13 +772,13 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
     if (!ready) return;
     const built = runParts(ready);
     if ("error" in built) { setNotice(built.error); return; }
-    setStarting(true); setNotice(""); setStates({});
+    setStarting(true); setNotice(""); setStates({}); setLog([]); said.current = {};
     try {
       // The Mother is the run's chat: her model, and the goal as her instructions.
       const created = await api<{ thread: Thread }>("/threads", { ...(cwd ? { cwd } : {}), name: ready.name.slice(0, 120) || "Agents canvas",
         ...(mother.model ? { model: mother.model, ...(mother.provider ? { provider: mother.provider } : {}) } : {}), ...(mother.brief.trim() ? { instructions: mother.brief.trim() } : {}) });
       const result = await api<{ graphId: string }>("/workflows/run", { rootThreadId: created.thread.id, name: ready.name || "Agents canvas", tasks: built.mother, maxConcurrency: Math.max(1, Math.min(maxAtOnce, allowed.atOnce)) });
-      setRun({ rootThreadId: created.thread.id, graphId: result.graphId, status: "running", ...(built.father.length ? { father: { tasks: built.father, status: "pending" } } : {}) });
+      setRun({ rootThreadId: created.thread.id, graphId: result.graphId, status: "running", startedAt: Date.now(), ...(built.father.length ? { father: { tasks: built.father, status: "pending" } } : {}) });
     } catch (error) { setNotice(error instanceof Error ? error.message : String(error)); }
     finally { setStarting(false); }
   }
@@ -788,6 +811,8 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
         <Background variant={BackgroundVariant.Dots} gap={22} size={1.2} />
         <Controls showInteractive={false} />
         <MiniMap pannable zoomable className="canvas-minimap" style={{ width: 150, height: 100 }} />
+        {run && <Panel position="top-right" className="canvas-hud" aria-label="Run clock"><span>{over(run) ? (run.status === "succeeded" || run.status === "completed" ? "Run done" : "Run ended") : "Running"}</span><RunClock since={run.startedAt} until={run.endedAt} /></Panel>}
+        {run && log.length > 0 && <Panel position="bottom-left" className="canvas-log-panel"><ol className="canvas-log" aria-label="Run log">{log.map((line, index) => <li key={`${line.at}-${index}`} data-tone={line.tone}><time>+{clock(line.at - run.startedAt)}</time>{line.text}</li>)}</ol></Panel>}
       </ReactFlow>}
       {/* Under the board, not floating on it, so it never covers the zoom buttons or the minimap. */}
       <div className="canvas-toolbar" role="toolbar" aria-label="Add to the canvas">
