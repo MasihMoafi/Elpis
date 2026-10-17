@@ -12,7 +12,7 @@ const COMMANDS=['action','id','url','body','text','value'];
 const MAX_COMMENTS=12;
 
 function createBrowser({host,origin,WebContentsView,session,ipcMain,openExternal,Menu,clipboard}) {
-  const tabs=new Map();let activeId=null,visible=false,bounds=null,obscured=false,focusAddress=0,disposed=false,popups=[];
+  const tabs=new Map();let activeId=null,visible=false,bounds=null,obscured=false,focusAddress=0,fullView=0,disposed=false,popups=[];
   // Annotation mode (the ChatGPT app's "Annotate") follows the active tab; comments belong to their tab.
   let annotating=false,markersVisible=true;const painted=new Map();
   const browserSession=session.fromPartition('persist:elpis-browser');
@@ -22,7 +22,7 @@ function createBrowser({host,origin,WebContentsView,session,ipcMain,openExternal
   const commentView=(tab,item)=>({id:item.id,number:item.number,kind:item.kind,label:commentLabel(item),body:item.body});
   const snapshot=()=>{
     const tab=active();
-    return {visible,activeId,focusAddress,annotating,markersVisible,agent:agent.state(),
+    return {visible,activeId,focusAddress,fullView,annotating,markersVisible,agent:agent.state(),
       annotations:tab?tab.comments.map(item=>commentView(tab,item)):[],
       draft:tab?.draft?{...commentView(tab,tab.draft),editing:!!tab.draft.editing}:null,
       find:tab?{open:tab.find.open,text:tab.find.text,matches:tab.find.matches,active:tab.find.active,focus:tab.find.focus}:{open:false,text:'',matches:0,active:0,focus:0},
@@ -192,6 +192,8 @@ function createBrowser({host,origin,WebContentsView,session,ipcMain,openExternal
     else if(key==='w')act(()=>close(activeId));
     else if(key==='tab'&&tabs.size)act(()=>{const ids=[...tabs.keys()],index=ids.indexOf(activeId);select(ids[(index+(input.shift?ids.length-1:1))%ids.length]);});
     else if(key==='r')act(()=>input.shift?page.view.webContents.reloadIgnoringCache():page.view.webContents.reload());
+    // Ctrl+Shift+F is full view (the window toggles it when the count changes), not find.
+    else if(key==='f'&&input.shift)act(()=>{fullView++;emit();});
     else if(key==='f')act(()=>openFind(page));
     else if(key==='='||key==='+')act(()=>zoom(page,'in'));
     else if(key==='-')act(()=>zoom(page,'out'));

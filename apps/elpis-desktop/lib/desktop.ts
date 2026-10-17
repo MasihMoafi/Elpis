@@ -5,6 +5,8 @@ export type BrowserTab = { id:string; url:string; title:string; loading:boolean;
 export type BrowserComment = { id:string; number:number; kind:"element"|"region"|"text"; label:string; body:string };
 export type BrowserState = { visible:boolean; activeId:string|null; focusAddress:number; tabs:BrowserTab[]; annotating:boolean; markersVisible:boolean; annotations:BrowserComment[]; draft:(BrowserComment&{editing:boolean})|null;
   agent?:{enabled:boolean;tabId:string|null};
+  /** Counts Ctrl+Shift+F pressed on a page (the page has the key, not the window): each step asks the window to toggle full view. */
+  fullView?:number;
   find:{ open:boolean; text:string; matches:number; active:number; focus:number } };
 /** Commands that return more than the state: annotationsCollect and screenshot. */
 export type BrowserResult = { count?:number; text?:string; images?:{number:number;dataUrl:string}[]; image?:string|null; copied?:boolean };

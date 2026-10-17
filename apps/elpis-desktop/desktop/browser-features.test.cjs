@@ -210,3 +210,17 @@ test('Ctrl+T, Ctrl+W and Ctrl+Tab in Elpis’s own window are left to the chat t
   f.pages[0].emit('before-input-event', event, key('t'));
   assert.equal(f.state().tabs.length, 2, 'Ctrl+T on a page opens a page tab');
 });
+
+test('Ctrl+Shift+F on a page asks the window for full view instead of opening find; in Elpis’s own window the renderer takes the key', () => {
+  const f = fixture(); f.browser.open('https://a.test');
+  assert.equal(f.state().fullView, 0);
+  let prevented = 0; const event = { preventDefault() { prevented++; } };
+  const key = (name, extra = {}) => ({ type: 'keyDown', key: name, control: true, meta: false, alt: false, shift: false, ...extra });
+  f.root.emit('before-input-event', event, key('F', { shift: true }));
+  assert.equal(prevented, 0, 'the renderer gets the key from its own window'); assert.equal(f.state().fullView, 0);
+  f.pages[0].emit('before-input-event', event, key('F', { shift: true }));
+  assert.equal(f.state().fullView, 1, 'a request the window answers by toggling full view'); assert.equal(prevented, 1, 'the page does not get the key');
+  assert.equal(f.state().find.open, false, 'Ctrl+Shift+F is not Ctrl+F');
+  f.pages[0].emit('before-input-event', event, key('f'));
+  assert.equal(f.state().find.open, true, 'Ctrl+F still opens find'); assert.equal(f.state().fullView, 1);
+});
