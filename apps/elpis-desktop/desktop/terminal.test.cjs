@@ -129,6 +129,21 @@ test('an exited shell is reported once and restarts fresh; closing the window en
   assert.equal(t.handlers.size + t.listeners.size, 0);
 });
 
+test('closing a terminal tab ends its shell and forgets it; the next open starts fresh', async () => {
+  const t = setup();
+  await t.call('elpis:terminal:open', { key: 'terminal-1', cwd: '/', cols: 80, rows: 24 });
+  await t.call('elpis:terminal:open', { key: 'terminal-2', cwd: '/', cols: 80, rows: 24 });
+  const [first, second] = t.spawned.map(item => item.pty);
+  assert.deepEqual(await t.call('elpis:terminal:close', { key: 'terminal-1' }), {});
+  assert.equal(first.killed, true);
+  assert.equal(second.killed, false, 'other terminals keep running');
+  assert.equal(t.sent.filter(([name]) => name === 'elpis:terminal:exit').length, 0, 'a closed tab is not reported as a shell that exited');
+  await t.call('elpis:terminal:open', { key: 'terminal-1', cwd: '/', cols: 80, rows: 24 });
+  assert.equal(t.spawned.length, 3, 'reusing the key starts a new shell');
+  assert.match((await t.call('elpis:terminal:close', { key: '' })).error, /not valid/);
+  t.dispose();
+});
+
 test('the preload gives the page a narrow terminal API', async () => {
   const calls = [], sends = [], events = new Map();
   let api;
@@ -137,6 +152,8 @@ test('the preload gives the page a narrow terminal API', async () => {
       send: (...args) => sends.push(args), on: (name, listener) => events.set(name, listener), removeListener: name => events.delete(name) } };
   vm.runInNewContext(fs.readFileSync(path.join(__dirname, 'preload.cjs'), 'utf8'), { require: () => electron });
   await api.terminal.open('k', '/tmp', 80, 24);
+  await api.terminal.close('k');
+  assert.deepEqual(JSON.parse(JSON.stringify(calls[1])), ['elpis:terminal:close', { key: 'k' }]);
   api.terminal.input('k', 'a');
   api.terminal.resize('k', 100, 30);
   assert.equal(await api.terminal.paste(), 'x');

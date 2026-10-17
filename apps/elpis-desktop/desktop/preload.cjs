@@ -28,10 +28,11 @@ contextBridge.exposeInMainWorld('elpisDesktop',{
     layout:value=>ipcRenderer.send('elpis:browser:layout',value),
     subscribe:callback=>{const listener=(_event,state)=>callback(state);ipcRenderer.on('elpis:browser:state',listener);return()=>ipcRenderer.removeListener('elpis:browser:state',listener);},
   },
-  // One shell per chat (desktop/terminal.cjs); a chat key is the chat id.
+  // One shell per terminal tab (desktop/terminal.cjs); the key names the tab.
   terminal:{
     open:(key,cwd,cols,rows)=>ipcRenderer.invoke('elpis:terminal:open',{key,cwd,cols,rows}).then(checked),
     restart:(key,cwd,cols,rows)=>ipcRenderer.invoke('elpis:terminal:restart',{key,cwd,cols,rows}).then(checked),
+    close:key=>ipcRenderer.invoke('elpis:terminal:close',{key}).then(checked),
     tui:(key,cwd,threadId,cols,rows)=>ipcRenderer.invoke('elpis:terminal:tui',{key,cwd,threadId,cols,rows}).then(checked),
     input:(key,data)=>ipcRenderer.send('elpis:terminal:input',key,data),
     resize:(key,cols,rows)=>ipcRenderer.send('elpis:terminal:resize',key,cols,rows),

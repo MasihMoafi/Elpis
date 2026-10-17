@@ -15,11 +15,12 @@ export type DesktopBrowser = {
   subscribe:(callback:(state:BrowserState)=>void)=>()=>void;
 };
 export type DesktopStorage = Pick<Storage, "getItem" | "setItem" | "removeItem"> & { saveItem?:(key:string,value:string)=>Promise<void>;onError:(callback:(message:string)=>void)=>()=>void };
-/** A chat's shell (desktop/terminal.cjs): what it printed so far (the last part of `end` characters), and its exit code once it ends. */
+/** A terminal tab's shell (desktop/terminal.cjs): what it printed so far (the last part of `end` characters), and its exit code once it ends. */
 export type TerminalSession = { id:number; end:number; shell:string; output:string; exited:number|null };
 export type DesktopTerminal = {
   open:(key:string,cwd:string,cols:number,rows:number)=>Promise<TerminalSession>;
   restart:(key:string,cwd:string,cols:number,rows:number)=>Promise<TerminalSession>;
+  close:(key:string)=>Promise<unknown>;
   tui:(key:string,cwd:string,threadId:string,cols:number,rows:number)=>Promise<{started?:boolean;running?:boolean}>;
   input:(key:string,data:string)=>void;
   resize:(key:string,cols:number,rows:number)=>void;

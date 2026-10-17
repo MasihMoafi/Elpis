@@ -1,6 +1,6 @@
 'use strict';
-// The integrated terminal, as in the ChatGPT app's Codex mode: one shell per chat, started in the chat's
-// folder, kept while the panel is hidden and ended when the window closes. The page sees only this IPC.
+// The integrated terminal, as in the ChatGPT app's Codex mode: one shell per terminal tab, started in the folder
+// the tab was opened for, kept while the panel is hidden and ended when its tab or the window closes. The page sees only this IPC.
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
@@ -84,6 +84,12 @@ function registerTerminal({ host, origin, ipcMain, clipboard, env = process.env,
 
   ipcMain.handle('elpis:terminal:open', guarded(async request => view(sessions.get(request.key) ?? await start(request.key, request))));
   ipcMain.handle('elpis:terminal:restart', guarded(async request => view(await start(request.key, request))));
+  // A closed terminal tab ends its shell; the key is forgotten, so a later open starts fresh.
+  ipcMain.handle('elpis:terminal:close', guarded(async request => {
+    const session = sessions.get(request.key);
+    if (session) { sessions.delete(request.key); if (session.timer) clearTimeout(session.timer); session.pty.kill(); }
+    return {};
+  }));
   // Types `elpis resume <id>` at the chat's shell prompt; a busy shell is left alone.
   ipcMain.handle('elpis:terminal:tui', guarded(async request => {
     const id = threadId(request.threadId);
@@ -114,7 +120,7 @@ function registerTerminal({ host, origin, ipcMain, clipboard, env = process.env,
   ipcMain.on('elpis:terminal:input', input);
   ipcMain.on('elpis:terminal:resize', resize);
   return () => {
-    for (const name of ['open', 'restart', 'tui', 'clipboard']) ipcMain.removeHandler(`elpis:terminal:${name}`);
+    for (const name of ['open', 'restart', 'close', 'tui', 'clipboard']) ipcMain.removeHandler(`elpis:terminal:${name}`);
     ipcMain.removeListener('elpis:terminal:input', input);
     ipcMain.removeListener('elpis:terminal:resize', resize);
     const all = [...sessions.values()]; sessions.clear();
