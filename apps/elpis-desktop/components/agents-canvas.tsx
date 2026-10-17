@@ -22,8 +22,8 @@ const STATUS_LABEL: Record<TaskStatus | "idle", string> = { idle: "not run", pen
 const FINISHED = new Set(["succeeded", "failed", "cancelled", "completed"]);
 const lines = (text: string) => text.split("\n").map(line => line.trim()).filter(Boolean);
 const AGENT_KINDS = Object.keys(KINDS) as AgentKind[];
-/** Fitting the graph never shrinks it below readable: a wide graph runs off the sides instead. */
-const FIT = { padding: 0.15, maxZoom: 1, minZoom: 0.85 };
+/** Fitting shows the whole graph, at most at full size. */
+const FIT = { padding: 0.12, maxZoom: 1 };
 
 /** An agent on the canvas: its role, run-order wave, name and state, with an input on the left (what it waits for) and
  * an output on the right (what waits for it), as Deus Ex's hacking screen links its nodes. Clicking a dot opens the
@@ -74,7 +74,7 @@ function FlowEdge({ id, sourceX, sourceY, targetX, targetY, sourcePosition, targ
 const EDGE_TYPES = { flow: FlowEdge };
 
 /** Where the command bar drops its agents, and the agent it was opened from: `as` is the end the new agents take. */
-type Adding = { at: XYPosition; left: number; top: number; from?: { id: string; as: HandleEnd } };
+type Adding = { at: XYPosition; left: number; top: number; height: number; from?: { id: string; as: HandleEnd } };
 type Provider = { id: string | null; label: string; state: "ready" | "loading" | "key" | "error"; error?: string };
 type Level = { name: "kinds" } | { name: "providers" } | { name: "models"; provider: string | null } | { name: "efforts"; model: CatalogModel };
 type Row = { key: string; label: string; hint?: string; kind?: AgentKind | "note"; more?: boolean; take: () => void; open?: () => void };
@@ -133,7 +133,7 @@ function CommandBar({ adding, room, limit, catalog, providers, onAgents, onNote,
   if (asking) {
     // The tasks: line n is agent n's; lines past the count add agents, up to the limit.
     const typed = lines(tasks), total = Math.min(room, Math.max(asking.count ?? 1, typed.length)), given = Math.min(typed.length, total);
-    return <div className="quick-add hud-menu nodrag nowheel" role="dialog" aria-label="Add agents" style={{ left: adding.left, top: adding.top }} onBlur={close}>
+    return <div className="quick-add hud-menu nodrag nowheel" role="dialog" aria-label="Add agents" style={{ left: adding.left, top: adding.top, maxHeight: adding.height }} onBlur={close}>
       <p className="hud-menu-title quick-add-title"><span>Tasks for {total === 1 ? "the new agent" : `the ${total} new ${KINDS[asking.kind].label} agents`}</span><span>{asking.model?.label ?? "Default model"}</span></p>
       <textarea autoFocus className="quick-add-field quick-add-tasks" aria-label="Tasks, one per line" rows={Math.min(8, Math.max(3, total))} value={tasks}
         placeholder={Array.from({ length: Math.min(3, total) }, (_, index) => `Task for agent ${index + 1}`).join("\n")} onChange={event => setTasks(event.target.value)}
@@ -146,7 +146,7 @@ function CommandBar({ adding, room, limit, catalog, providers, onAgents, onNote,
       <p className="quick-add-help">One task per line · Shift+Enter new line · Enter add · Esc close · Backspace back</p>
     </div>;
   }
-  return <div className="quick-add hud-menu nodrag nowheel" role="dialog" aria-label="Add agents" style={{ left: adding.left, top: adding.top }} onBlur={close}>
+  return <div className="quick-add hud-menu nodrag nowheel" role="dialog" aria-label="Add agents" style={{ left: adding.left, top: adding.top, maxHeight: adding.height }} onBlur={close}>
     <p className="hud-menu-title quick-add-title"><span>{room ? "Add agents" : "No room for more agents"}</span><span>{room} of {limit} left</span></p>
     <input ref={field} autoFocus className="quick-add-field" aria-label="Command" value={text} spellCheck={false} placeholder="3 implement sol high: task; task"
       onChange={event => { setText(event.target.value); setActive(0); setLevel(null); }} onKeyDown={keys} />
@@ -366,7 +366,9 @@ function Canvas({ models, cwd, dark, onOpenChat }: Props) {
     const point = wanted.x >= box.left && wanted.x <= box.right && wanted.y >= box.top && wanted.y <= box.bottom ? wanted : middle;
     // From a dot, the agents go beside it, on the side they connect to.
     const spot = flow.screenToFlowPosition(point), at = from ? { x: spot.x + (from.as === "target" ? 80 : -300), y: spot.y - 40 } : { x: spot.x, y: spot.y - 40 };
-    setAdding({ at, left: Math.max(8, Math.min(point.x - box.left, box.width - 348)), top: Math.max(8, Math.min(point.y - box.top, box.height - 440)), ...(from ? { from } : {}) });
+    // Kept inside the board: as low as the pointer allows, never past the bottom edge (the list scrolls instead).
+    const top = Math.max(8, Math.min(point.y - box.top, box.height - 440));
+    setAdding({ at, left: Math.max(8, Math.min(point.x - box.left, box.width - 348)), top, height: box.height - top - 8, ...(from ? { from } : {}) });
   };
   // A wire let go over empty board opens the command bar there, as Blender and Unreal do; a click without a drag is
   // the dot's own click (onHandle).

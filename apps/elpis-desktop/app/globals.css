@@ -728,7 +728,9 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .canvas-count-error { position:absolute; top:calc(100% + 6px); right:0; z-index:7; width:max-content; max-width:280px; padding:6px 9px; border:1px solid var(--destructive); border-radius:7px; background:var(--card); color:var(--foreground); font-size:12px; line-height:1.35; box-shadow:var(--shadow); }
 .quick-add-tasks { height:auto; padding:8px 10px; resize:vertical; font:inherit; font-size:13px; line-height:1.4; }
 /* Quick add (Ctrl+A, double-click, or a wire let go on the board): how many, which kind, then one model. */
-.quick-add { position:absolute; z-index:6; display:grid; gap:6px; width:340px; }
+.quick-add { position:absolute; z-index:6; display:flex; flex-direction:column; gap:6px; width:340px; }
+.quick-add > * { flex:none; }
+.quick-add > .quick-add-list { flex:0 1 auto; min-height:60px; }
 .quick-add-title { display:flex; justify-content:space-between; gap:10px; }
 .quick-add-title span:last-child { text-transform:none; letter-spacing:0; font-family:inherit; font-size:11.5px; }
 .quick-add-field { height:34px; padding:0 10px; border:1px solid var(--border); border-radius:7px; background:var(--background); color:var(--foreground); font-size:13px; outline:none; }
