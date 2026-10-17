@@ -945,6 +945,17 @@ test('the ledger switches write the keys the TUI ledger writes: Smart Prune and 
 });
 
 
+test('the main model is saved where the TUI reads it: model and model_provider in config.toml', async () => {
+  const {client,socket}=fixture(); await client.initialize();
+  await client.saveSettings({version:'user-version',main:{model:'gpt-6-luna',provider:'openai'}});
+  assert.deepEqual(socket.sent.find(row=>row.method==='config/batchWrite').params.edits, [
+    {keyPath:'model',value:'gpt-6-luna',mergeStrategy:'replace'},
+    {keyPath:'model_provider',value:'openai',mergeStrategy:'replace'},
+  ]);
+  await assert.rejects(client.saveSettings({version:'user-version',main:{model:null}}),/Choose a main model/);
+  client.close();
+});
+
 test('maintenance edits are narrow, preserve unknowns, and reject stale versions before mutation', async () => {
   const {client,socket,configRead}=fixture(); await client.initialize();
   await client.saveSettings({version:'user-version',background:{model:'gpt-6-luna',provider:'openai'},memory:{use:false}});
@@ -957,7 +968,8 @@ test('maintenance edits are narrow, preserve unknowns, and reject stale versions
   await assert.rejects(client.saveSettings({version:'outdated',memory:{use:true}}),/Reload settings/);
   await assert.rejects(client.saveSettings({version:'user-version',memory:{generate:null}}),/enabled or disabled/);
   await assert.rejects(client.saveSettings({version:'user-version',background:{provider:'unknown'}}),/configured provider/);
-  await assert.rejects(client.saveSettings({version:'user-version',main:{model:'changed'}}),/Unsupported/);
+  await assert.rejects(client.saveSettings({version:'user-version',main:{provider:'unknown'}}),/configured provider/);
+  await assert.rejects(client.saveSettings({version:'user-version',main:{effort:'high'}}),/Unsupported/);
   await assert.rejects(client.saveSettings({version:'user-version',memory:{admissionPolicy:'all'}}),/Unsupported/);
   assert.equal(writes(),1);
   await assert.rejects(client.savePruner({version:'v1',model:'cheap',provider:'openai'}),/running Elpis version/);

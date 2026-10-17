@@ -7,7 +7,7 @@ import { editable, reloadSettings, saveOptions, type ConfigOptions, type ElpisSe
 import { SaveFeedback, SettingRow, SettingsGroup, SettingsHeader } from "@/components/settings/rows";
 import { useSaver } from "@/components/settings/use-saver";
 import { ConfigChoice, SettingsLoader } from "@/components/settings/config-choice";
-import { BackgroundSettings, CatalogNotice, PrunerSettings, useModelCatalog } from "@/components/settings/maintenance";
+import { ModelSettings, CatalogNotice, PrunerSettings, useModelCatalog } from "@/components/settings/maintenance";
 
 const OPTIONS: { name: keyof ConfigOptions; title: string; description: string; values: { value: string; label: string }[] }[] = [
   { name: "approvalPolicy", title: "Default approval policy", description: "When new chats ask for approval before running commands. The composer’s permissions menu changes it per chat.", values: [
@@ -53,7 +53,7 @@ export function ConfigurationSettings() {
       <SettingsGroup title="Elpis"><ConfigFile /></SettingsGroup>
       <ConfigOptionsGroup settings={settings} />
       <CatalogNotice error={error} />
-      <BackgroundSettings value={settings} models={models} />
+      <ModelSettings value={settings} models={models} />
       <PrunerSettings value={settings} models={models} />
     </>}</SettingsLoader>
   </div>;

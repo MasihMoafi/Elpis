@@ -35,7 +35,7 @@ import { DiffPanel, ReviewPanel, SessionPanel, type ReviewTarget } from "@/compo
 import { INIT_PROMPT } from "@/lib/init-prompt";
 import { conversationMarkdown, exportFileName, lastReply } from "@/lib/slash";
 import { openControl } from "@/lib/slash-focus";
-import { saveSettings } from "@/lib/settings-store";
+import { reloadSettings, saveSettings, useElpisSettings } from "@/lib/settings-store";
 import { UsagePanel } from "@/components/provider-usage";
 import { Dictation } from "@/components/dictation";
 import { chooseProject, ProjectActions, ProjectDialog, ProjectMenu } from "@/components/project-picker";
@@ -52,7 +52,7 @@ import { ATTACHMENT_ACCEPT, attachmentFromFile, readAttachmentDraft, validateAtt
 import { scanDeletionThreads } from "@/lib/thread-deletion";
 import type { ThemeChoice } from "@/components/appearance-settings";
 import { activityOf, api, chatProvider, choiceOf, effortsOf, isAgent, isUnlinkedAgent, modelLabel, providerChoices, providerLabel, title,
-  openSession, type Approval, type Entry, type Model, type ProviderSettings, type Thread } from "@/lib/api";
+  sessionReady, type Approval, type Entry, type Model, type ProviderSettings, type Thread } from "@/lib/api";
 
 const approvalDraftKey = (approval: Approval) => JSON.stringify([approval.ownerThreadId, approval.id]);
 
@@ -92,7 +92,9 @@ export default function Home() {
       if (catalogRequest.current === id) setCatalogError(cause instanceof Error ? cause.message : String(cause));
     } finally { if (catalogRequest.current === id) setCatalogLoading(false); }
   }, []);
-  const [providerSettings, setProviderSettings] = useState<ProviderSettings | null>(null);
+  // One settings snapshot for the whole app, so a main model saved in Settings is what the next new chat starts with.
+  const settingsSnapshot = useElpisSettings().data as unknown as ProviderSettings | null;
+  const providerSettings = settingsSnapshot?.main && Array.isArray(settingsSnapshot.providers) ? settingsSnapshot : null;
   // New conversations: where to run and with what.
   const [choiceId, setChoiceId] = useState("");
   const [model, setModel] = useState("");
@@ -412,9 +414,8 @@ export default function Home() {
       void refreshModels();
       try {
         await refreshThreads();
-        const settings = await api<ProviderSettings>("/settings").catch(() => null);
+        await reloadSettings().catch(() => null);
         if (disposed || attempt !== recovery) return;
-        setProviderSettings(settings?.main && Array.isArray(settings.providers) ? settings : null);
         if (!thread) return;
         const historyRevision = liveRevision.current;
         const history = await api<{ thread: Thread; data: Entry[]; nextCursor: string | null }>(`/threads/${encodeURIComponent(thread.id)}?limit=100`);
@@ -431,13 +432,12 @@ export default function Home() {
     }
     async function initialize() {
       try {
-        const token = new URLSearchParams(location.hash.slice(1)).get("token");
-        try { if (token) { await api("/session", { token }); history.replaceState(null, "", location.pathname + location.search); } } finally { openSession(); }
+        await sessionReady();
         const health = await api<{ connected: boolean }>("/health"); if (disposed) return; wasConnected = health.connected; setConnected(health.connected);
         void refreshModels();
         await refreshThreads();
-        const settings = await api<ProviderSettings>("/settings").catch(() => null); if (disposed) return;
-        setProviderSettings(settings?.main && Array.isArray(settings.providers) ? settings : null); setReady(true);
+        await reloadSettings().catch(() => null); if (disposed) return;
+        setReady(true);
         // The chat of the shown tab comes back; without saved tabs, the last chat does.
         const last = restoredTabs.current ? activeTab(tabsRef.current).threadId : window.elpisDesktop?.storage?.getItem("elpis-last-chat");
         if (last && !selectedRef.current && request.current === 0) await loadThread({ id: last, ...(restoredTabs.current && activeTab(tabsRef.current).title ? { name: activeTab(tabsRef.current).title } : {}) } as Thread);
@@ -1139,7 +1139,7 @@ export default function Home() {
         })}</div>
       </section>}
       <div className={`workspace-body${panelShown ? " panel-open" : ""}${view === "settings" ? " no-browser" : ""}`}><div className="workspace-content">
-      {settingsVisited && <div className="page-scroll" hidden={view !== "settings"}><SettingsView initialTab={settingsSection} navigationKey={settingsNavigation} active={view === "settings"} threadId={selected?.id} accountRefresh={accountRefresh} theme={theme} onTheme={setTheme} onUnarchived={unarchived} onDeleteThread={deleteThread} onBack={() => { show("chat"); requestAnimationFrame(focusComposer); }} onProvidersChanged={async () => { const settings = await api<ProviderSettings>("/settings"); setProviderSettings(settings); void refreshModels(); }} /></div>}
+      {settingsVisited && <div className="page-scroll" hidden={view !== "settings"}><SettingsView initialTab={settingsSection} navigationKey={settingsNavigation} active={view === "settings"} threadId={selected?.id} accountRefresh={accountRefresh} theme={theme} onTheme={setTheme} onUnarchived={unarchived} onDeleteThread={deleteThread} onBack={() => { show("chat"); requestAnimationFrame(focusComposer); }} onProvidersChanged={async () => { await reloadSettings(); void refreshModels(); }} /></div>}
       {view === "agents" && <div className="page-scroll"><AgentsView threads={threads} activity={activity} models={models} providers={providerSettings?.providers} loading={agentsLoading} pendingThreadIds={approvals.map(approval => approval.params.threadId ?? approval.ownerThreadId)} moreConversations={!!nextCursor} loadingMore={moreLoading} onMoreConversations={loadMoreConversations} childCursors={childCursors} loadingChildren={loadingChildren} onMoreAgents={id => void loadChildren(id, childCursors[id] ?? undefined, false)} onOpen={loadThread} onStop={stop} onDelete={deleteThread} onNewAgent={() => show("newAgent")} /></div>}
       {newAgentVisited && <div className="page-scroll" hidden={view !== "newAgent"}><button type="button" className="back-link" onClick={() => show("agents")}><ArrowLeft size={18} aria-hidden="true" />Back to Agents</button><NewAgentForm key={newAgentVersion} models={models} settings={providerSettings} defaultCwd={cwd} connected={connected} onConfigure={manageConnections} onCreated={(thread, turnId, unsent, failure) => { setNewAgentVersion(value => value + 1); upsertThread(thread); if (unsent) saveDraft(thread.id, unsent); if (turnId && !completedTurns.current.has(turnId)) setActiveTurns(prev => ({ ...prev, [thread.id]: turnId })); void loadThread(thread).then(() => { if (failure && selectedRef.current?.id === thread.id) setError(failure); }); }} /></div>}
       {view === "chat" && <div className="chat-split"><div className={`chat-view${!selected && !entries.length ? " empty-chat" : ""}`}>
@@ -1185,7 +1185,7 @@ export default function Home() {
               <ContextUsage threadId={selected?.id} />
               <ModelPicker choices={!selected ? choices : selectedChoice?.provider ? [selectedChoice] : choices.filter(choice => !choice.provider)} models={models}
                 model={selected ? turnModel : model} choiceId={selected ? selectedChoice?.id || "" : choiceId} defaultModel={selected ? null : providerSettings?.main.model}
-                disabled={!ready || busy || projectChanging} onConfigure={manageConnections} onKeySaved={() => void api<ProviderSettings>("/settings").then(setProviderSettings).catch(() => {})} onChange={choice => { if (selected) setOverride(selected.id, { model: choice.model }); else { setChoiceId(choice.choiceId); setModel(choice.model); setEffort(""); } }} />
+                disabled={!ready || busy || projectChanging} onConfigure={manageConnections} onKeySaved={() => void reloadSettings().catch(() => {})} onChange={choice => { if (selected) setOverride(selected.id, { model: choice.model }); else { setChoiceId(choice.choiceId); setModel(choice.model); setEffort(""); } }} />
               {turnEfforts.length > 0 && <OptionSelect aria-label="Reasoning effort" className="model-select" value={turnEffort} onChange={e => selected ? setOverride(selected.id, { effort: e.target.value }) : setEffort(e.target.value)} disabled={!ready || busy}>
                 <option value="">Default effort</option>
                 {turnEffort && !turnEfforts.includes(turnEffort) && <option value={turnEffort}>{turnEffort}</option>}

@@ -58,15 +58,15 @@ function useProviderCatalogs(value: ElpisSettings, models: Model[], selected: (s
 }
 
 function ModelChoice({ label, value, models, provider, catalogStatus, disabled, inheritLabel, onChange }: {
-  label: string; value: string | null; models: Model[]; provider: string; catalogStatus?: string; disabled: boolean; inheritLabel: string; onChange: (value: string | null) => void;
+  label: string; value: string | null; models: Model[]; provider: string; catalogStatus?: string; disabled: boolean; inheritLabel?: string; onChange: (value: string | null) => void;
 }) {
   if (models.length) return <OptionSelect aria-label={label} className="settings-choice" value={value ?? ""} onChange={event => onChange(event.target.value || null)} disabled={disabled}>
-    <option value="">{inheritLabel}</option>
+    {inheritLabel ? <option value="">{inheritLabel}</option> : !value && <option value="" disabled>Choose a model</option>}
     {value && !models.some(model => model.model === value) && <option value={value}>Current configured model</option>}
     {models.map(model => <option key={model.model} value={model.model}>{model.displayName || model.model}</option>)}
   </OptionSelect>;
   return <div className="grid min-w-0 gap-1 text-sm">
-    <span className="text-muted-foreground">{value ? "Current configured model" : inheritLabel}</span>
+    <span className="text-muted-foreground">{value ? "Current configured model" : inheritLabel ?? "No model chosen"}</span>
     {catalogStatus && <span role="status" className="text-xs text-muted-foreground">{catalogStatus}</span>}
     <details><summary className="cursor-pointer">Advanced: custom model</summary><p className="text-xs text-muted-foreground">No model catalog is available for {provider}.</p>
       <Input aria-label={label} value={value ?? ""} onChange={event => onChange(event.target.value.trim() || null)} placeholder="Model name supplied by this connection" maxLength={200} disabled={disabled} />
@@ -78,37 +78,45 @@ function providerOptions(current: string, providers: ElpisSettings["providers"] 
   return <>{current && !providers.some(item => item.id === current) && <option value={current}>{current}</option>}{providers.map(item => <option key={item.id} value={item.id}>{providerLabel(null, item.id, providers)}</option>)}</>;
 }
 
-/** Main model (read-only here) and the background model Smart Prune falls back to. */
-export function BackgroundSettings({ value, models }: { value: ElpisSettings; models: Model[] }) {
+/** The main model (what new chats start with, here and in the TUI) and the background model Smart Prune falls back to. */
+export function ModelSettings({ value, models }: { value: ElpisSettings; models: Model[] }) {
+  return <SettingsGroup title="Models" description="Saved in Elpis's config.toml, shared with the TUI; they apply to new conversations.">
+    <ModelPair which="main" value={value} models={models} />
+    <ModelPair which="background" value={value} models={models} />
+  </SettingsGroup>;
+}
+
+const PAIRS = {
+  main: { name: "Main", model: "New chats start with this model, here and in the TUI. Change it per chat in the composer.", provider: "The connection the main model runs on." },
+  background: { name: "Background", model: "Smart Prune falls back to this model.", provider: "The connection the background model runs on." },
+};
+/** One model and the provider it runs on, saved together. The main model can't be cleared; the background one can. */
+function ModelPair({ which, value, models }: { which: keyof typeof PAIRS; value: ElpisSettings; models: Model[] }) {
   const [draft, setDraft] = useState<Partial<Background>>({});
   const saver = useSaver();
-  const current = { ...value.background, ...draft };
+  const saved = value[which], current = { ...saved, ...draft }, { name } = PAIRS[which];
   const catalogs = useProviderCatalogs(value, models, [current.provider]);
-  const changed = Object.keys(draft).length > 0;
+  const pinned = which === "main" && value.managed?.modelProvider ? value.managed.modelProvider : null;
   const update = (key: keyof Background, text: string | null) => {
     const next = text?.trim() || null; saver.clear();
-    setDraft(old => { const patch = { ...old }; if (next === value.background[key]) delete patch[key]; else patch[key] = next; return patch; });
+    setDraft(old => { const patch = { ...old }; if (next === saved[key]) delete patch[key]; else patch[key] = next; return patch; });
   };
   const reload = () => void saver.run("reload", async () => { await reloadSettings(); setDraft({}); }, reloaded.text);
-  return <SettingsGroup title="Models" description="Background settings apply to new conversations.">
-    <SettingRow title="Main model" description="New chats start with this model. Change it per chat in the composer.">
-      <span className="text-sm">{value.main.model ? modelLabel(value.main.model, models) : "Not reported"}<span className="text-muted-foreground"> · {providerLabel(value.main.model, value.main.provider, value.providers) || "Not reported"}</span></span>
+  if (!editable(value)) return <>
+    <SettingRow title={`${name} model`}><span className="text-sm">{which === "main" && saved.model ? modelLabel(saved.model, models) : shown(saved.model)}</span></SettingRow>
+    <SettingRow title={`${name} provider`} description={value.write.reason}><span className="text-sm">{shown(saved.provider)}</span></SettingRow>
+  </>;
+  return <>
+    <SettingRow title={`${name} model`} description={PAIRS[which].model}>
+      <ModelChoice label={`${name} model`} value={current.model} models={catalogs.forProvider(current.provider)} provider={catalogs.connectionLabel(current.provider)} catalogStatus={catalogs.catalogStatus(current.provider)} disabled={saver.pending !== null} inheritLabel={which === "main" ? undefined : "Default background model"} onChange={model => update("model", model)} />
     </SettingRow>
-    {editable(value) ? <>
-      <SettingRow title="Background model" description="Smart Prune falls back to this model.">
-        <ModelChoice label="Background model" value={current.model} models={catalogs.forProvider(current.provider)} provider={catalogs.connectionLabel(current.provider)} catalogStatus={catalogs.catalogStatus(current.provider)} disabled={saver.pending !== null} inheritLabel="Default background model" onChange={model => update("model", model)} />
-      </SettingRow>
-      <SettingRow title="Background provider" description="The connection the background model runs on.">
-        <OptionSelect aria-label="Background provider" className="settings-choice" value={current.provider ?? ""} onChange={event => update("provider", event.target.value)} disabled={saver.pending !== null}><option value="">Use default</option>{providerOptions(draft.provider ?? value.background.provider ?? "", value.providers)}</OptionSelect>
-      </SettingRow>
-      <SettingsActions feedback={<SaveFeedback outcome={saver.outcome} onReload={reload} />}>
-        <Button size="sm" disabled={saver.pending !== null || !changed} onClick={() => void saver.run("save", async () => { await saveSettings("/settings", { version: value.version, background: draft }); setDraft({}); }, "Background model saved. Applies to new conversations.")}>{saver.pending === "save" ? "Saving…" : "Save background model"}</Button>
-      </SettingsActions>
-    </> : <>
-      <SettingRow title="Background model"><span className="text-sm">{shown(value.background.model)}</span></SettingRow>
-      <SettingRow title="Background provider" description={value.write.reason}><span className="text-sm">{shown(value.background.provider)}</span></SettingRow>
-    </>}
-  </SettingsGroup>;
+    <SettingRow title={`${name} provider`} description={pinned ? "Pinned by your requirements." : PAIRS[which].provider}>
+      <OptionSelect aria-label={`${name} provider`} className="settings-choice" value={current.provider ?? ""} onChange={event => update("provider", event.target.value)} disabled={saver.pending !== null || Boolean(pinned)}><option value="">Use default</option>{providerOptions(draft.provider ?? saved.provider ?? "", value.providers)}</OptionSelect>
+    </SettingRow>
+    <SettingsActions feedback={<SaveFeedback outcome={saver.outcome} onReload={reload} />}>
+      <Button size="sm" disabled={saver.pending !== null || !Object.keys(draft).length || (which === "main" && !current.model)} onClick={() => void saver.run("save", async () => { await saveSettings("/settings", { version: value.version, [which]: draft }); setDraft({}); }, `${name} model saved. Applies to new conversations.`)}>{saver.pending === "save" ? "Saving…" : `Save ${name.toLowerCase()} model`}</Button>
+    </SettingsActions>
+  </>;
 }
 
 /** Smart Prune: whether it is on, and which model prunes. */

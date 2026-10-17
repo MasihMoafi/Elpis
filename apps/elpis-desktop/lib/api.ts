@@ -12,13 +12,7 @@ export type Entry = { turnId: string; item: Item; startedAtMs?: number; complete
 export type Model = { id: string; model: string; displayName: string; description?: string; inputModalities?: string[]; supportedReasoningEfforts?: {reasoningEffort:string;description?:string}[]; defaultReasoningEffort?: string };
 export type ProviderSettings = { version?:string|null; main:{model:string|null;provider:string|null}; providers:{id:string;displayName:string;needsKey?:boolean}[]; options?:{approvalPolicy:string|null;sandboxMode:string|null}; managed?:{modelProvider:string|null} };
 export type Approval = { id: string; ownerThreadId: string; thread?: Thread; method: string; supported?: boolean; params: import("./approvals").ElicitationParams & { permissions?: import("./approvals").RequestPermissionProfile; cwd?: string; availableDecisions?: unknown[]; threadId?: string; command?: string; reason?: string; changes?: unknown; questions?: {id:string;header:string;question:string;isSecret?:boolean;options?:{label:string;description?:string}[]}[] } };
-/** Requests wait for the page's session (app/page.tsx trades the #token for a cookie first), so a part of the app that
- * loads early is not refused and left empty, as the features under the message box once were. */
-let sessionOpened: () => void = () => {};
-const session = new Promise<void>(resolve => { sessionOpened = resolve; });
-export const openSession = () => sessionOpened();
-export async function api<T>(path: string, body?: unknown): Promise<T> {
-  if (path !== "/session") await session;
+async function call<T>(path: string, body?: unknown): Promise<T> {
   let response: Response;
   try { response = await fetch(`/api${path}`, body === undefined ? undefined : { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }); }
   catch { throw new Error("Could not reach Elpis. Check the connection and try again."); }
@@ -30,6 +24,18 @@ export async function api<T>(path: string, body?: unknown): Promise<T> {
     throw new Error(detail.trim() && !/^-?\d+$/.test(detail.trim()) && !/^Elpis rejected the operation \([^)]+\)/.test(detail.trim()) ? detail : fallback);
   }
   return result;
+}
+/** The page's #token is traded for a session cookie once, as the app loads, and every request waits for that, so a part
+ * of the app that asks early is not refused and left empty (as the features under the message box once were). */
+const token = typeof location === "undefined" ? null : new URLSearchParams(location.hash.slice(1)).get("token");
+const session: Promise<void> = token
+  ? call("/session", { token }).then(() => history.replaceState(null, "", location.pathname + location.search))
+  : Promise.resolve();
+session.catch(() => {}); // The page reports a failed exchange (sessionReady); requests then show their own errors.
+export const sessionReady = () => session;
+export async function api<T>(path: string, body?: unknown): Promise<T> {
+  await session.catch(() => {});
+  return call<T>(path, body);
 }
 const spawn = (thread: Thread) => {
   const source = thread.source;

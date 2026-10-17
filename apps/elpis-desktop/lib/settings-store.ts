@@ -20,7 +20,7 @@ export type ElpisSettings = {
   smartPrune: { enabled: boolean | null; explicitOverride: { available?: boolean; model?: string | null; provider?: string | null; version?: string; reason?: string } };
   memory: Memory;
   options?: ConfigOptions;
-  managed?: { allowedApprovalPolicies?: string[] | null; allowedSandboxModes?: string[] | null };
+  managed?: { modelProvider?: string | null; allowedApprovalPolicies?: string[] | null; allowedSandboxModes?: string[] | null };
   write: { available?: boolean; reason: string };
 };
 type State = { data: ElpisSettings | null; error: string; loading: boolean };

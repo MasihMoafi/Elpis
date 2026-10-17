@@ -465,21 +465,29 @@ export class DesktopClient extends EventEmitter {
     return settingsSnapshot(read, requirements, pruner, savedProviderKeyIds(configHome(read)));
   }
   async saveSettings(input) {
-    object(input, ['version', 'background', 'memory', 'options']);
+    object(input, ['version', 'main', 'background', 'memory', 'options']);
     text(input.version, 'settings version', 200);
     const current = await this.settings();
     if (!current.write.available || current.version !== input.version) throw new BridgeError('Settings changed in another client. Reload settings before saving again.', 409);
     const edits = [];
     const nullableModel = value => value === null ? null : text(value, 'model ID', 200).trim();
-    if (input.background !== undefined) {
-      object(input.background, ['model', 'provider']);
-      if ('model' in input.background) edits.push({ keyPath: 'background_model', value: nullableModel(input.background.model), mergeStrategy: 'replace' });
-      if ('provider' in input.background) {
-        const provider = input.background.provider;
-        if (provider !== null && !current.providers.some(item => item.id === provider)) throw new BridgeError('Choose a configured provider');
-        edits.push({ keyPath: 'background_provider', value: provider, mergeStrategy: 'replace' });
+    // The main model (what new chats start with, in this app and the TUI) and the background model, each a model and
+    // the provider it runs on; the main model can't be cleared, and a provider pinned by requirements can't change.
+    const modelChoice = (choice, modelKey, providerKey, main) => {
+      object(choice, ['model', 'provider']);
+      if ('model' in choice) {
+        if (main && choice.model === null) throw new BridgeError('Choose a main model');
+        edits.push({ keyPath: modelKey, value: nullableModel(choice.model), mergeStrategy: 'replace' });
       }
-    }
+      if ('provider' in choice) {
+        const provider = choice.provider;
+        if (provider !== null && !current.providers.some(item => item.id === provider)) throw new BridgeError('Choose a configured provider');
+        if (main && current.managed.modelProvider && provider !== current.managed.modelProvider) throw new BridgeError('Your requirements pin the main provider', 403);
+        edits.push({ keyPath: providerKey, value: provider, mergeStrategy: 'replace' });
+      }
+    };
+    if (input.main !== undefined) modelChoice(input.main, 'model', 'model_provider', true);
+    if (input.background !== undefined) modelChoice(input.background, 'background_model', 'background_provider', false);
     if (input.memory !== undefined) {
       object(input.memory, ['enabled', 'generate', 'use', 'skipExternalContext', 'extractionModel', 'consolidationModel']);
       const switches = ['enabled', 'generate', 'use', 'skipExternalContext'];
