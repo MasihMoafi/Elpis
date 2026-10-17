@@ -153,6 +153,7 @@ test('agents canvas: writers with automatic checks, architectures, wiring, persi
     assert.equal(await wave('New agent'), '3');
 
     // A wire that would make a loop is refused, and says why.
+    await fit();
     await drag('New agent', 'Part 1');
     await canvas.getByText('That wire would make a loop', { exact: false }).waitFor();
     assert.equal(await edges.count(), 4);
@@ -310,8 +311,10 @@ test('agents canvas: writers with automatic checks, architectures, wiring, persi
     // A wire let go on empty board opens the bar too; the graph is now at its limit, so the bar says so.
     await fit();
     const handle = await node('Join the parts').locator('.react-flow__handle.source').boundingBox();
+    // Let go on empty board: the first point right of the dot, then below it, where nothing but the board is.
+    const empty = await page.evaluate(({ x, y }) => { const bare = (px, py) => document.elementFromPoint(px, py)?.classList.contains('react-flow__pane'); for (let dy = 0; dy < 400; dy += 30) for (let dx = 80; dx < 500; dx += 30) { const px = x + dx, py = y + dy; if ([[0, 0], [70, 0], [-70, 0], [0, 70], [0, -70]].every(([ox, oy]) => bare(px + ox, py + oy))) return { x: px, y: py }; } return null; }, { x: handle.x, y: handle.y });
     await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2); await page.mouse.down();
-    await page.mouse.move(handle.x + 120, handle.y + 160, { steps: 6 }); await page.mouse.up();
+    await page.mouse.move(empty.x, empty.y, { steps: 6 }); await page.mouse.up();
     await adder.getByText('No room for more agents').waitFor();
     await page.keyboard.press('Escape');
     await canvas.getByRole('button', { name: 'Add agent', exact: true }).click();
@@ -371,13 +374,14 @@ test('agents canvas: writers with automatic checks, architectures, wiring, persi
     const wireOf = (from, to) => canvas.locator(`.react-flow__edge[data-id="${drawn.edges.find(edge => edge.source === titled(from) && edge.target === titled(to)).id}"]`);
     // A wire is clicked halfway along it, where a user aims; its box's centre can be off the curve.
     // The Mother's wires fan out from one dot and overlap near her, so hers are clicked near their agent.
+    // Elbow wires into one agent share their last stretch, so a wire is clicked where it alone shows, from `along` on.
     const clickWire = async (wire, along = 0.5) => {
-      const point = await wire.locator('.react-flow__edge-path').evaluate((path, along) => { const at = path.getPointAtLength(path.getTotalLength() * along), m = path.getScreenCTM(); return { x: at.x * m.a + at.y * m.c + m.e, y: at.x * m.b + at.y * m.d + m.f }; }, along);
+      const point = await wire.locator('.react-flow__edge-path').evaluate((path, along) => { const m = path.getScreenCTM(), own = path.closest('.react-flow__edge'); for (let step = 0; step < 40; step++) { const at = path.getPointAtLength(path.getTotalLength() * ((along + step / 40) % 1)), x = at.x * m.a + at.y * m.c + m.e, y = at.x * m.b + at.y * m.d + m.f; if (document.elementFromPoint(x, y)?.closest('.react-flow__edge') === own) return { x, y }; } return null; }, along);
       await page.mouse.click(point.x, point.y);
     };
     await clickWire(wireOf('Part 1', 'Join the parts'));
     const wireMenu = canvas.getByRole('menu', { name: 'Wire', exact: true });
-    assert.deepEqual(await wireMenu.getByRole('menuitem').allInnerTexts().then(list => list.map(item => item.split('\n')[0])), ['Insert agents here', 'Remove wire']);
+    assert.deepEqual(await wireMenu.getByRole('menuitem').allInnerTexts().then(list => list.map(item => item.split('\n')[0])), ['Insert agents here', 'Make it two-way', 'Remove wire']);
     await page.keyboard.press('Enter');
     await command.waitFor();
     await page.keyboard.type('Review part 1'); await page.keyboard.press('Enter');

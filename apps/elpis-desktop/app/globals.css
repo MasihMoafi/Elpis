@@ -767,6 +767,9 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
  * the selected agent on the right. Running is the context olive, done is success, failed is destructive. */
 .agents-canvas { flex:1; min-height:0; display:grid; grid-template-columns:minmax(0,1fr) 290px; grid-template-rows:auto minmax(0,1fr); border-top:1px solid var(--hairline); }
 .agents-canvas[data-panel="closed"] { grid-template-columns:minmax(0,1fr); }
+/* Dragging on the board never selects the page's text; fields keep their own selection. */
+.canvas-board { user-select:none; }
+.canvas-board :is(input, textarea, [contenteditable="true"]) { user-select:text; }
 /* The header fits any window: the name gives way first, then the controls wrap to a second row; nothing is cut off. */
 .canvas-header { grid-column:1 / -1; display:flex; flex-wrap:wrap; align-items:center; gap:8px 10px; padding:10px 16px; border-bottom:1px solid var(--hairline); background:var(--background); }
 .canvas-header > * { flex-shrink:0; }
@@ -881,6 +884,8 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .canvas-board .react-flow__edge.canvas-edge-cut .react-flow__edge-path { stroke:var(--destructive); stroke-dasharray:3 5; }
 .canvas-board .react-flow__edge.canvas-edge-live .react-flow__edge-path { stroke:var(--context); }
 .canvas-board .react-flow__edge.canvas-edge-mother .react-flow__edge-path { stroke-dasharray:2 5; }
+/* Two agents working alongside: a plain dashed line, no direction. */
+.canvas-board .react-flow__edge.canvas-edge-alongside .react-flow__edge-path { stroke-dasharray:7 5; }
 /* Chevrons on every wire point the way the work flows; on a live wire they stream (FlowEdge). */
 .canvas-chevron { fill:none; stroke:var(--xy-edge-stroke); stroke-width:1.6; stroke-linecap:round; stroke-linejoin:round; pointer-events:none; }
 .canvas-chevron[data-live] { stroke:var(--context); stroke-width:2; }
@@ -911,6 +916,22 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .agent-node[data-status="pending"], .agent-node[data-status="cancelled"] { opacity:.75; }
 @keyframes canvas-spin { to { transform:rotate(360deg); } }
 @media (prefers-reduced-motion:reduce) { .agent-node-mark[data-check="running"] { animation:none; } }
+/* FigJam's quick create: a + beside an agent (the next one) and below it (a parallel one), shown on hover or focus. */
+.agent-node-plus { position:absolute; display:grid; place-items:center; width:24px; height:24px; padding:0; border:1.5px solid var(--kind); border-radius:50%; background:var(--card); color:var(--kind); cursor:pointer; opacity:0; transition:opacity .12s ease, transform .12s ease; }
+.agent-node-plus[data-side="right"] { top:50%; right:-46px; transform:translateY(-50%); }
+.agent-node-plus[data-side="bottom"] { left:50%; bottom:-27px; transform:translateX(-50%); }
+.agent-node-plus { z-index:2; pointer-events:none; }
+/* The hovered agent rises above its neighbours, so its + buttons never sit behind the agent below. React Flow sets each
+   node's z-index inline, so only !important can lift it (an external library's inline style). */
+.canvas-board .react-flow__node:hover { z-index:2000 !important; }
+.react-flow__node:hover .agent-node-plus, .react-flow__node.selected .agent-node-plus, .agent-node-plus:focus-visible { opacity:1; pointer-events:auto; }
+/* While an agent is hovered, an invisible bridge to its + buttons keeps the hover as the pointer crosses the gap; it
+   exists only then, so it never blocks a wire or the board. */
+.react-flow__node:hover .agent-node::before, .react-flow__node:hover .agent-node::after { content:""; position:absolute; }
+.react-flow__node:hover .agent-node::before { top:20%; bottom:20%; left:100%; width:48px; }
+.react-flow__node:hover .agent-node::after { left:30%; right:30%; top:100%; height:28px; }
+.agent-node-plus:hover { background:var(--kind); color:var(--card); }
+@media (prefers-reduced-motion:reduce) { .agent-node-plus { transition:none; } }
 /* An agent's dots: 12 px to see, 28 px to hit (an invisible ring around each), and they grow under the pointer. */
 .agent-node .react-flow__handle { width:12px; height:12px; border:2px solid var(--card); background:var(--kind); transition:transform .12s ease; }
 .agent-node .react-flow__handle::after { content:""; position:absolute; inset:-9px; border-radius:50%; }

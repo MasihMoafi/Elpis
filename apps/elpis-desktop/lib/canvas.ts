@@ -11,7 +11,11 @@ export type NoteData = { text: string };
 type Position = { x: number; y: number };
 export type CanvasNode = { id: string; type: "agent"; position: Position; data: AgentData } | { id: string; type: "note"; position: Position; data: NoteData }
   | { id: typeof MOTHER; type: "mother"; position: Position; data: Record<string, never> };
-export type CanvasEdge = { id: string; source: string; target: string };
+/** A wire: by default the target waits for the source (directional); `alongside` (undirectional) means the two work
+ * at the same time, each told about the other and kept out of its folders, with no order between them. */
+export type CanvasEdge = { id: string; source: string; target: string; kind?: "alongside" };
+/** Whether a wire orders its agents (the target waits for the source). */
+export const waits = (edge: CanvasEdge) => edge.kind !== "alongside";
 /** The Mother's settings, for the whole run: its goal (`brief`), which every agent gets and from which Elpis fills in
  * what the user left empty, and the model of her chat (the run's root). */
 export type MotherSettings = { brief: string; model: string | null; provider: string | null };
@@ -123,7 +127,7 @@ export const TEMPLATES: Template[] = [
  * order the engine can start them in (codex-rs state/src/model/work_graph.rs checks the graph the same way). Agents
  * on a loop get no wave; loops are refused when wired. */
 export function waves(graph: CanvasGraph): Map<string, number> {
-  const ids = new Set(agentsOf(graph).map(node => node.id)), edges = graph.edges.filter(edge => ids.has(edge.source) && ids.has(edge.target));
+  const ids = new Set(agentsOf(graph).map(node => node.id)), edges = graph.edges.filter(edge => waits(edge) && ids.has(edge.source) && ids.has(edge.target));
   const waiting = new Map([...ids].map(id => [id, edges.filter(edge => edge.target === id).length]));
   const wave = new Map<string, number>();
   for (let frontier = [...ids].filter(id => !waiting.get(id)), level = 1; frontier.length; level++) {
@@ -142,7 +146,7 @@ export function waves(graph: CanvasGraph): Map<string, number> {
 export function criticalPath(graph: CanvasGraph): string[] {
   const order = waves(graph), ids = new Set(order.keys()), longest = new Map<string, string[]>();
   for (const id of [...ids].sort((a, b) => order.get(a)! - order.get(b)!)) {
-    const before = graph.edges.filter(edge => edge.target === id && ids.has(edge.source)).map(edge => longest.get(edge.source) ?? []);
+    const before = graph.edges.filter(edge => waits(edge) && edge.target === id && ids.has(edge.source)).map(edge => longest.get(edge.source) ?? []);
     longest.set(id, [...before.reduce((best, chain) => chain.length > best.length ? chain : best, [] as string[]), id]);
   }
   return [...longest.values()].reduce((best, chain) => chain.length > best.length ? chain : best, [] as string[]);
@@ -155,7 +159,7 @@ export function shapeOf(graph: CanvasGraph): number[] {
   return columns.filter(Boolean);
 }
 
-const COLUMN = 260, ROW = 120;
+export const COLUMN = 240, ROW = 120;
 /** The graph with its Mother: a graph without one (a template, or one saved before she existed) gets her a column
  * left of the first wave, level with it. */
 export function withMother(graph: CanvasGraph): CanvasGraph {
@@ -171,7 +175,15 @@ export function arrange(graph: CanvasGraph): CanvasGraph {
   const wave = waves(graph), columns = new Map<number, Extract<CanvasNode, { type: "agent" }>[]>();
   for (const node of agentsOf(graph)) { const level = wave.get(node.id) ?? 0; columns.set(level, [...(columns.get(level) ?? []), node]); }
   const position = new Map<string, Position>();
-  for (const [level, column] of columns) column.sort((a, b) => a.position.y - b.position.y).forEach((node, index) => position.set(node.id, { x: level * COLUMN, y: Math.round((index - (column.length - 1) / 2) * ROW) }));
+  // Columns left to right; the first keeps the user's top-to-bottom order, and each later one is ordered by the mean
+  // height of what its agents wait for (the barycentre step of layered graph drawing), which uncrosses most wires.
+  const ordered = [...columns.keys()].sort((a, b) => a - b), rank = new Map<string, number>();
+  for (const level of ordered) {
+    const column = columns.get(level)!;
+    const mean = (node: (typeof column)[number]) => { const before = graph.edges.filter(edge => waits(edge) && edge.target === node.id && rank.has(edge.source)).map(edge => rank.get(edge.source)!); return before.length ? before.reduce((sum, at) => sum + at, 0) / before.length : node.position.y / ROW; };
+    column.sort((a, b) => level <= 1 ? a.position.y - b.position.y : mean(a) - mean(b) || a.position.y - b.position.y);
+    column.forEach((node, index) => { const y = Math.round((index - (column.length - 1) / 2) * ROW); position.set(node.id, { x: level * COLUMN, y }); rank.set(node.id, y / ROW); });
+  }
   position.set(MOTHER, { x: 0, y: 0 });
   return { ...graph, nodes: graph.nodes.map(node => position.has(node.id) ? { ...node, position: position.get(node.id)! } : node) };
 }
@@ -241,7 +253,7 @@ export function makesLoop(edges: CanvasEdge[], source: string, target: string) {
     if (current === source) return true;
     if (seen.has(current)) continue;
     seen.add(current);
-    for (const edge of edges) if (edge.source === current) queue.push(edge.target);
+    for (const edge of edges) if (waits(edge) && edge.source === current) queue.push(edge.target);
   }
   return false;
 }
@@ -269,15 +281,23 @@ export function runTasks(graph: CanvasGraph): { tasks: RunTask[] } | { error: st
     if (!node.data.writeScopes.length) return { error: `“${node.data.title}” has no folder it may write: choose one, or give the run a goal (Mother) and Elpis fills it in.` };
     if (node.data.provider && !node.data.model) return { error: `“${node.data.title}” needs a model from its provider.` };
   }
+  // Agents working alongside each other must not share a folder: they run at the same time.
+  const byId = new Map(agents.map(node => [node.id, node])), beside = (id: string) => graph.edges.filter(edge => !waits(edge) && (edge.source === id || edge.target === id)).map(edge => byId.get(edge.source === id ? edge.target : edge.source)).filter((item): item is (typeof agents)[number] => Boolean(item));
+  for (const edge of graph.edges.filter(edge => !waits(edge))) {
+    const a = byId.get(edge.source), b = byId.get(edge.target), shared = a && b ? a.data.writeScopes.find(folder => b.data.writeScopes.includes(folder)) : undefined;
+    if (a && b && shared) return { error: `“${a.data.title}” and “${b.data.title}” work alongside but both may write ${shared}: give each its own folder.` };
+  }
   const brief = graph.mother?.brief.trim();
   return { tasks: agents.flatMap(node => {
     const title = node.data.title.trim(), prompt = node.data.instruction.trim();
+    const partners = beside(node.id).map(other => `“${other.data.title}” (writes ${other.data.writeScopes.join(", ")}): ${other.data.instruction.trim().split("\n")[0]}`);
+    const alongside = partners.length ? `Working alongside you, at the same time:\n${partners.map(line => `- ${line}`).join("\n")}\nDo not write in their folders; leave them what they need as files in yours.` : "";
     const criteria = node.data.acceptanceCriteria.length ? node.data.acceptanceCriteria : [DONE];
     const model = { ...(node.data.provider ? { provider: node.data.provider } : {}), ...(node.data.model ? { model: node.data.model } : {}) };
     return [
       // Every agent gets the Mother's brief first, then its own prompt.
-      { id: node.id, kind: "implement" as const, title, instruction: [brief && `Goal of the whole run: ${brief}`, prompt].filter(Boolean).join("\n\n"),
-        dependsOn: graph.edges.filter(edge => edge.target === node.id && ids.has(edge.source)).map(edge => checkOf(edge.source)),
+      { id: node.id, kind: "implement" as const, title, instruction: [brief && `Goal of the whole run: ${brief}`, prompt, alongside].filter(Boolean).join("\n\n"),
+        dependsOn: graph.edges.filter(edge => waits(edge) && edge.target === node.id && ids.has(edge.source)).map(edge => checkOf(edge.source)),
         writeScopes: node.data.writeScopes, acceptanceCriteria: criteria, ...model, ...(node.data.effort ? { reasoningEffort: node.data.effort } : {}) },
       { id: checkOf(node.id), kind: "verify" as const, title: `Check: ${title}`.slice(0, 256),
         instruction: `Check the work of “${title}”. Its prompt was:\n${prompt}\n\nRun what proves it (the build, the tests, or reading what it wrote) and show the output. Say plainly whether each of these holds: ${criteria.join("; ")}`,
@@ -291,7 +311,7 @@ export function runTasks(graph: CanvasGraph): { tasks: RunTask[] } | { error: st
 export type Plan = { name: string; agents: { key: string; title: string; prompt: string; folders: string[]; doneWhen: string[]; waitsFor: string[] }[] };
 /** The board as the planner reads it. */
 export const boardForPlan = (graph: CanvasGraph) => agentsOf(graph).map(node => ({ key: node.id, title: node.data.title, prompt: node.data.instruction, folders: node.data.writeScopes, doneWhen: node.data.acceptanceCriteria,
-  waitsFor: graph.edges.filter(edge => edge.target === node.id).map(edge => edge.source) }));
+  waitsFor: graph.edges.filter(edge => waits(edge) && edge.target === node.id).map(edge => edge.source) }));
 /** The board after a plan: agents the plan keeps are updated in place, new ones are added, ones it leaves out are
  * removed, and the wires are the plan's. Models and thinking levels stay; notes stay. New agents are laid out in run
  * order. */
@@ -305,6 +325,9 @@ export function applyPlan(graph: CanvasGraph, plan: Plan): CanvasGraph {
     return { ...made, data: { ...data, title: item.title || data.title, instruction: item.prompt || data.instruction, writeScopes: item.folders.length ? item.folders : data.writeScopes, acceptanceCriteria: item.doneWhen.length ? item.doneWhen : data.acceptanceCriteria } } as CanvasNode;
   });
   const edges = plan.agents.flatMap(item => item.waitsFor.filter(source => ids.has(source)).map(source => ({ id: `${ids.get(source)}->${ids.get(item.key)}`, source: ids.get(source)!, target: ids.get(item.key)! })));
+  // Wires that order nothing (alongside) are the user's: they stay between agents the plan keeps.
+  const keptIds = new Set(ids.values());
+  edges.push(...graph.edges.filter(edge => !waits(edge) && keptIds.has(edge.source) && keptIds.has(edge.target)));
   // A fresh team is laid out in run order; on a board the user laid out, only new agents are placed: right of what
   // they wait for, else below the rest.
   const reused = agents.filter(node => kept.has(node.id));

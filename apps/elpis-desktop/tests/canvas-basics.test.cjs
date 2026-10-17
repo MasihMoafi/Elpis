@@ -12,6 +12,10 @@ test('canvas basics: undo and redo, copy and paste, duplicate, delete keeping th
     const wired = (graph, from, to) => graph.edges.some(edge => graph.nodes.find(item => item.id === edge.source)?.data?.title === from && graph.nodes.find(item => item.id === edge.target)?.data?.title === to);
 
     await agentCount(4, 'the default board');
+    // Readable on opening, as FigJam keeps its objects: the board never zooms below 85% by itself, so an agent's name
+    // reads at 12 px or more.
+    const named = await node('Part 1').locator('.agent-node-title').evaluate(title => parseFloat(getComputedStyle(title).fontSize) * title.getBoundingClientRect().height / title.offsetHeight);
+    assert.ok(named >= 12, `an agent's name reads at ${named.toFixed(1)} px`);
     // Shift+click as a hand does it (Shift held, the mouse wobbling a pixel or two) adds to the selection and moves
     // nothing; Ctrl+A selects every agent.
     await fit();
@@ -198,6 +202,67 @@ test('canvas basics: undo and redo, copy and paste, duplicate, delete keeping th
     await page.keyboard.press('Enter');
     await agentCount(4, 'Elpis added the agent asked for');
     assert.ok((await titles()).includes('Fix the login bug'));
+
+    // Wiring, every way a hand tries it. From a right dot onto any part of another agent: it waits for this one. From a
+    // left dot: this one waits for the other. With Alt held: the two work alongside (no order), a dashed line with no
+    // arrows. From the Mother's dot: she takes no wires, and says so.
+    await fit();
+    const dragTo = async (from, end, onto, alt = false) => {
+      const dot = await from.locator(`.react-flow__handle.${end}`).boundingBox(), body = await onto.boundingBox();
+      if (alt) await page.keyboard.down('Alt');
+      await page.mouse.move(dot.x + dot.width / 2, dot.y + dot.height / 2); await page.mouse.down();
+      await page.mouse.move(body.x + body.width / 2, body.y + body.height / 2, { steps: 10 }); await page.mouse.up();
+      if (alt) await page.keyboard.up('Alt');
+      await page.waitForTimeout(450);
+    };
+    const edgesNow = async () => { const graph = await saved(), title = id => graph.nodes.find(item => item.id === id)?.data?.title ?? id; return graph.edges.map(edge => [title(edge.source), title(edge.target), edge.kind ?? 'waits']); };
+    const fixer = node('Fix the login bug'), finisher = node('Finish it'), copy = node('Step 1: the base').nth(1), base = node('Step 1: the base').first();
+    await dragTo(fixer, 'source', finisher);
+    assert.ok((await edgesNow()).some(([a, b, kind]) => a === 'Fix the login bug' && b === 'Finish it' && kind === 'waits'), 'right dot onto a body: it waits for this one');
+    await dragTo(copy, 'target', fixer);
+    assert.equal((await edgesNow()).filter(([a, b]) => a === 'Fix the login bug' && b === 'Step 1: the base').length, 1, 'left dot onto a body: this one waits for the other');
+    await dragTo(base, 'source', node('Fix the login bug'), true);
+    const alongside = (await edgesNow()).filter(([, , kind]) => kind === 'alongside');
+    assert.deepEqual(alongside, [['Step 1: the base', 'Fix the login bug', 'alongside']], 'Alt: the two work alongside');
+    assert.equal(await canvas.locator('.react-flow__edge.canvas-edge-alongside .canvas-chevron').count(), 0, 'no arrows on a two-way wire');
+    await dragTo(canvas.locator('.react-flow__node-mother'), 'source', finisher);
+    await canvas.getByText(/The Mother starts every agent that waits for no one/).waitFor();
+    // The wire's menu turns a two-way wire one-way, and back.
+    const twoWay = canvas.locator('.react-flow__edge.canvas-edge-alongside .react-flow__edge-path');
+    // Clicked where the wire shows, as a hand would: the first point along it that no agent covers.
+    const mid = await twoWay.evaluate(path => { const m = path.getScreenCTM(); for (let step = 1; step < 20; step++) { const at = path.getPointAtLength(path.getTotalLength() * step / 20), x = at.x * m.a + at.y * m.c + m.e, y = at.x * m.b + at.y * m.d + m.f; if (document.elementFromPoint(x, y)?.closest('.react-flow__edge') === path.closest('.react-flow__edge')) return { x, y }; } return null; });
+    assert.ok(mid, 'part of the two-way wire shows');
+    await page.mouse.click(mid.x, mid.y);
+    await canvas.getByRole('menu', { name: 'Wire', exact: true }).getByRole('menuitem', { name: /^Make it one-way/ }).click();
+    await page.waitForTimeout(450);
+    assert.equal((await edgesNow()).filter(([, , kind]) => kind === 'alongside').length, 0, 'now one-way');
+
+    // FigJam's quick create: the + beside an agent makes the next one, wired after it, its prompt taking the keys, its
+    // name following the prompt; the + below makes a parallel one waiting for the same agents. Nothing lands on anything.
+    await fit();
+    await node('Finish it').hover();
+    await node('Finish it').getByRole('button', { name: 'Add the next agent after Finish it' }).click();
+    await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === 'Prompt');
+    await page.keyboard.type('Write the release notes');
+    await node('Write the release notes').waitFor();
+    assert.ok((await edgesNow()).some(([a, b]) => a === 'Finish it' && b === 'Write the release notes'), 'the next agent waits for it');
+    await node('Write the release notes').hover();
+    await node('Write the release notes').getByRole('button', { name: 'Add an agent beside Write the release notes' }).click();
+    await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === 'Prompt' && !document.activeElement.value);
+    await page.keyboard.type('Update the changelog');
+    await node('Update the changelog').waitFor();
+    assert.ok((await edgesNow()).some(([a, b]) => a === 'Finish it' && b === 'Update the changelog'), 'the parallel agent waits for the same agent');
+    // And beside an agent that feeds others, the parallel one feeds them too.
+    await fit(); await node('Step 1: the base').first().hover();
+    await node('Step 1: the base').first().getByRole('button', { name: 'Add an agent beside Step 1: the base' }).click();
+    await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === 'Prompt' && !document.activeElement.value);
+    await page.keyboard.type('Second base');
+    await node('Second base').waitFor();
+    assert.ok((await edgesNow()).some(([a, b]) => a === 'Second base' && b === 'Finish it'), 'it feeds what its sibling feeds');
+    await canvas.getByRole('button', { name: 'Add agent', exact: true }).click();
+    await page.waitForTimeout(450);
+    const overlaps = await canvas.locator('.react-flow__node-agent, .react-flow__node-note, .react-flow__node-mother').evaluateAll(list => { const boxes = list.map(item => item.getBoundingClientRect()); let count = 0; boxes.forEach((a, i) => boxes.slice(i + 1).forEach(b => { if (a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom) count++; })); return count; });
+    assert.equal(overlaps, 0, 'no agent or note lies on another');
 
     // Colour means state, as on Deus Ex's board: in the dark theme too, an idle wire and the selection outline are a
     // neutral grey, never the theme's gold.
