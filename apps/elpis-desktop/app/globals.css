@@ -746,6 +746,9 @@ button.trace-head:hover .trace-text { text-decoration:underline; }
 .thread-dot { flex-shrink:0; box-sizing:border-box; width:9px; height:9px; margin:0 2px 0 8px; border:1.5px solid var(--subtle-foreground); border-radius:50%; background:transparent; }
 .thread-dot[data-state="working"] { border-color:var(--primary); background:var(--primary); animation:pulse 1.6s ease-in-out infinite; }
 .thread-dot[data-state="waiting"] { border-color:var(--warning); background:var(--warning); }
+.thread-dot[data-state="unread"] { border-color:var(--primary); background:var(--primary); padding:0; cursor:pointer; }
+.thread-row:has(.thread-dot[data-state="unread"]) .thread-title { font-weight:600; }
+.thread-subtitle { font-size:12px; color:var(--warning); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .thread-dot[data-state="error"] { border-color:var(--destructive); background:var(--destructive); }
 @keyframes spin { to { transform:rotate(360deg); } }
 .project-group { margin-bottom:2px; }

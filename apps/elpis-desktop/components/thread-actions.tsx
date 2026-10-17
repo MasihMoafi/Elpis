@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, type ReactElement, type ReactNode } from "react";
 import { AgentsIcon, ArchiveIcon, PinIcon, TerminalIcon } from "@/components/elpis-icons";
-import { Pencil, PinOff, Trash2 } from "lucide-react";
+import { CircleCheck, Eye, EyeOff, Pencil, PinOff, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { AlertDialog, AlertDialogClose, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
@@ -38,11 +38,13 @@ type Props = {
   selection?: Thread[];
   /** Resumes this chat in the Elpis TUI, in its integrated terminal (desktop app only). */
   onOpenInTui?: (thread: Thread) => void;
+  /** Mark as read or unread (U), as in Claude's sidebar; a plan waiting for review is marked completed instead. */
+  attention?: { unread: boolean; planReady: boolean; onToggleRead: () => void; onComplete: () => void };
 };
 
 /** A chat's menu: Rename, Pin, Archive and Delete, each through Elpis. One list drawn by the "…" button and by right-click.
  * Failures are shown as Elpis reported them. */
-export function ThreadActions({ thread, onDelete, onRequestDelete, onRename, onArchive, pinned, onPin, agents, renameRequested, onRenameRequestHandled, label, area, children, selection, onOpenInTui }: Props) {
+export function ThreadActions({ thread, onDelete, onRequestDelete, onRename, onArchive, pinned, onPin, agents, renameRequested, onRenameRequestHandled, label, area, children, selection, onOpenInTui, attention }: Props) {
   const [renaming, setRenaming] = useState(false);
   const [deleting, setDeleting] = useState<Thread[] | null>(null);
   const [name, setName] = useState("");
@@ -68,6 +70,8 @@ export function ThreadActions({ thread, onDelete, onRequestDelete, onRename, onA
   const actions = (many ? [archive, remove] : [
     onRename ? { id: "rename", label: "Rename", icon: <Pencil size={14} />, run: rename } : undefined,
     onPin ? { id: "pin", label: pinned ? "Unpin" : "Pin", icon: pinned ? <PinOff size={14} /> : <PinIcon size={14} />, run: () => onPin(thread) } : undefined,
+    attention ? attention.planReady ? { id: "completed", label: "Mark as completed", icon: <CircleCheck size={14} />, hint: "U", run: attention.onComplete }
+      : { id: "read", label: attention.unread ? "Mark as read" : "Mark as unread", icon: attention.unread ? <Eye size={14} /> : <EyeOff size={14} />, hint: "U", run: attention.onToggleRead } : undefined,
     agents ? { id: "agents", label: agents.shown ? "Hide agents" : "Show agents", icon: <AgentsIcon size={14} />, run: agents.onToggle } : undefined,
     onOpenInTui ? { id: "tui", label: "Open in Elpis TUI", icon: <TerminalIcon size={14} />, run: () => onOpenInTui(thread) } : undefined,
     archive, remove,

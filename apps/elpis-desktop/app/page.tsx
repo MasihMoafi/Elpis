@@ -58,7 +58,8 @@ import { appStorage, readProjects, saveProjects, type Project } from "@/lib/proj
 import { ResizeEdge } from "@/components/resize-edge";
 import { TaskList, type TaskPlan } from "@/components/task-list";
 import { AgentsCanvas } from "@/components/agents-canvas";
-import { agentState, mergeListedThreads, stateLabels } from "@/lib/agents";
+import { agentState, attentionLine, mergeListedThreads, stateLabels } from "@/lib/agents";
+import { readAttention, saveAttention, type Attention } from "@/lib/attention";
 import { insertTranscript } from "@/lib/dictation";
 import { useBrowser } from "@/components/browser-panel";
 import { onRequest as onFileRequest } from "@/lib/files-pane";
@@ -72,7 +73,7 @@ import { ATTACHMENT_ACCEPT, ATTACHMENT_LIMITS, TEXT_ONLY_NOTICE, attachFiles, fi
 import { scanDeletionThreads } from "@/lib/thread-deletion";
 import type { ThemeChoice } from "@/components/appearance-settings";
 import { activityOf, api, unreadable, chatProvider, choiceOf, effortsOf, isAgent, isUnlinkedAgent, modelLabel, providerChoices, providerLabel, title,
-  mediaUrl, sessionReady, type Approval, type Entry, type Model, type ProviderSettings, type Thread } from "@/lib/api";
+  mediaUrl, sessionReady, type Approval, type Entry, type Item, type Model, type ProviderSettings, type Thread } from "@/lib/api";
 
 const approvalDraftKey = (approval: Approval) => JSON.stringify([approval.ownerThreadId, approval.id]);
 
@@ -136,6 +137,21 @@ export default function Home() {
   const [newPlan, setNewPlan] = useState(false);
   const [planAnswered, setPlanAnswered] = useState<Record<string, string>>({});
   const [pins, setPins] = useState<string[]>([]);
+  const [attention, setAttention] = useState<Attention>({ unread: [], plans: {} });
+  const [attentionLoaded, setAttentionLoaded] = useState(false);
+  const planTurns = useRef(new Map<string, string>());
+  useEffect(() => { setAttention(readAttention()); setAttentionLoaded(true); }, []);
+  useEffect(() => {
+    if (attentionLoaded) try { saveAttention(attention); } catch { setError("Could not save chat attention on this device."); }
+  }, [attention, attentionLoaded]);
+  const markRead = useCallback((id: string) => setAttention(previous => previous.unread.includes(id) ? { ...previous, unread: previous.unread.filter(value => value !== id) } : previous), []);
+  useEffect(() => {
+    setAttention(previous => {
+      const answered = Object.keys(previous.plans).filter(id => previous.plans[id] === planAnswered[id]);
+      if (!answered.length) return previous;
+      return { ...previous, plans: Object.fromEntries(Object.entries(previous.plans).filter(([id]) => !answered.includes(id))) };
+    });
+  }, [planAnswered]);
   /** Chats awaiting the shared delete confirmation (a row's menu, D, or the header's Chat actions). */
   const [deleteTargets, setDeleteTargets] = useState<Thread[] | null>(null);
   /** "Deleted …" with its Undo, after the sidebar deletes chats; Ctrl+Z does the same. `shownWhenDeleted` reopens the chat that was open. */
@@ -290,6 +306,8 @@ export default function Home() {
   const [related, setRelated] = useState<Record<string, Thread>>({});
   const [accountRefresh, setAccountRefresh] = useState(0);
   const [view, setView] = useState<View>("chat");
+  const viewRef = useRef(view); viewRef.current = view;
+  useEffect(() => { if (view === "chat" && selected) markRead(selected.id); }, [view, selected?.id, markRead]);
   const [settingsSection, setSettingsSection] = useState<SettingsTab>("general");
   const [desktop, setDesktop] = useState(false);
   const browser = useBrowser();
@@ -405,6 +423,7 @@ export default function Home() {
   }
 
   const loadThread = useCallback(async (thread: Thread) => {
+    markRead(thread.id);
     // A chat that is already open in another tab brings that tab forward instead of opening twice.
     const owner = tabFor(tabsRef.current, thread.id);
     if (owner && owner.id !== tabsRef.current.activeId) updateTabs(activate(tabsRef.current, owner.id));
@@ -427,7 +446,7 @@ export default function Home() {
       if (live.activeTurnId && !completedTurns.current.has(live.activeTurnId)) setActiveTurns(prev => ({ ...prev, [thread.id]: live.activeTurnId! }));
       setLiveError(prev => without(prev, thread.id));
     } catch (e) { if (request.current === id) setLiveError(prev => ({ ...prev, [thread.id]: e instanceof Error ? e.message : String(e) })); }
-  }, [select, setText, upsertThread, saveDraft, savedDraft, liveKeysAfter, restoreAttachments, updateTabs]);
+  }, [select, setText, upsertThread, saveDraft, savedDraft, liveKeysAfter, restoreAttachments, updateTabs, markRead]);
 
   useEffect(() => { setText(savedDraft(newDraftKey.current)); }, [savedDraft]);
 
@@ -522,6 +541,19 @@ export default function Home() {
           const { method, params } = JSON.parse(event.data);
           notifyRuntimeEvent(method, params, threadsRef.current, id => void loadThread({ id } as Thread)); void sendQueuedFollowUp(method, params).catch(e => setError(String(e)));
           const threadId: string | undefined = params.threadId ?? params.thread?.id;
+          if (threadId && method === "turn/started" && !completedTurns.current.has(params.turn.id)) {
+            planTurns.current.delete(threadId);
+            setAttention(previous => ({ unread: previous.unread.filter(id => id !== threadId), plans: without(previous.plans, threadId) }));
+          }
+          if (threadId && method === "item/completed" && params.item?.type === "plan") planTurns.current.set(threadId, params.turnId);
+          if (threadId && method === "turn/completed" && !completedTurns.current.has(params.turn.id) && params.turn.status === "completed" && !params.turn.error) {
+            const unread = selectedRef.current?.id !== threadId || viewRef.current !== "chat";
+            const planReady = planTurns.current.get(threadId) === params.turn.id || params.turn.items?.some((item: Item) => item.type === "plan");
+            setAttention(previous => ({
+              unread: unread ? [...new Set([...previous.unread, threadId])] : previous.unread.filter(id => id !== threadId),
+              plans: planReady ? { ...previous.plans, [threadId]: params.turn.id } : previous.plans,
+            }));
+          }
           if (method === "turn/plan/updated" && Array.isArray(params.plan)) setPlans(prev => ({ ...prev, [params.threadId]: { turnId: params.turnId, explanation: params.explanation ?? null, steps: params.plan } }));
           // A new turn starts without a list; the last turn's list goes until this one makes its own.
           if (method === "turn/started") setPlans(prev => prev[params.threadId] && prev[params.threadId].turnId !== params.turn.id ? without(prev, params.threadId) : prev);
@@ -1234,6 +1266,7 @@ export default function Home() {
     const target = event.target as HTMLElement, id = rowOf(target);
     if (!id || !event.currentTarget.contains(target) || event.ctrlKey || event.metaKey || event.altKey) return;
     if (event.key === "Escape" && marked.length) setMarked([]);
+    else if (letterKey(event) === "u") attentionFor(id).planReady ? attentionFor(id).onComplete() : attentionFor(id).onToggleRead();
     else if (letterKey(event) === "d") deleteChats(marked.length ? marked : [id], rowLinks().findIndex(link => link.parentElement === target.closest(".thread-row")));
     else if (event.key === "ArrowDown" || event.key === "ArrowUp") {
       const links = rowLinks(), next = links[links.findIndex(link => link.parentElement === target.closest(".thread-row")) + (event.key === "ArrowDown" ? 1 : -1)];
@@ -1242,16 +1275,28 @@ export default function Home() {
     } else return;
     event.preventDefault();
   }
+  function attentionFor(id: string) {
+    return { unread: attention.unread.includes(id), planReady: !!attention.plans[id],
+      onToggleRead: () => setAttention(previous => ({ ...previous, unread: previous.unread.includes(id) ? previous.unread.filter(value => value !== id) : [...previous.unread, id] })),
+      onComplete: () => {
+        setPlanAnswered(previous => ({ ...previous, [id]: attention.plans[id] }));
+        setAttention(previous => ({ unread: previous.unread.filter(value => value !== id), plans: without(previous.plans, id) }));
+      },
+    };
+  }
   function threadRow(thread: Thread, depth = 0) {
-    const name = title(thread), state = agentState(thread, waitingIds), pinned = pins.includes(thread.id);
+    const name = title(thread), state = agentState(thread, waitingIds, new Set(attention.unread)), pinned = pins.includes(thread.id);
+    const subtitle = attentionLine(approvals.find(approval => (approval.params.threadId ?? approval.ownerThreadId) === thread.id), !!attention.plans[thread.id]);
     return <ThreadActions key={thread.id} thread={thread} onRequestDelete={() => deleteChats(marked.includes(thread.id) ? marked : [thread.id])} onRename={renameThread} onArchive={archiveThread} pinned={pinned} onPin={togglePin} onOpenInTui={hasTerminal ? openInTui : undefined}
+      attention={attentionFor(thread.id)}
       selection={marked.length > 1 && marked.includes(thread.id) ? chatsOf(marked) : undefined}
       agents={!depth && !isAgent(thread) ? { shown: !!expanded[thread.id], onToggle: () => expanded[thread.id] ? setExpanded(prev => ({ ...prev, [thread.id]: false })) : void loadChildren(thread.id) } : undefined}
       area={<div className={`thread-row${depth ? " child" : ""}${selected?.id === thread.id && view === "chat" ? " active" : ""}${marked.includes(thread.id) ? " selected" : ""}`} data-thread-id={thread.id} style={depth ? { paddingLeft: `${Math.min(depth, 5) * 14}px` } : undefined} />}>
       {menu => <>
-      <span className="thread-dot" role="img" data-state={state} aria-label={stateLabels[state]} title={stateLabels[state]} />
+      {state === "unread" ? <button className="thread-dot" data-state={state} aria-label="Unread response. Mark as read" title="Unread response. Mark as read" onClick={() => markRead(thread.id)} /> : <span className="thread-dot" role="img" data-state={state} aria-label={stateLabels[state]} title={stateLabels[state]} />}
       <button className="thread-link" onMouseDown={event => { if (event.shiftKey || event.button === 1) event.preventDefault(); }} onAuxClick={event => { if (event.button === 1 && desktop) { event.preventDefault(); openInNewTab(thread); } }} onClick={event => clickRow(thread, event)} title={name}>
         <span className="thread-title">{name}</span>
+        {subtitle && <span className="thread-subtitle" title={subtitle}>{subtitle}</span>}
         {thread.forkedFromId && <span className="thread-nickname">Continued agent chat</span>}
       </button>
       {!depth && <span className="row-hover-actions"><Button variant="ghost" size="icon-xs" aria-label={pinned ? `Unpin ${name}` : `Pin ${name}`} title={pinned ? "Unpin" : "Pin"} onClick={() => togglePin(thread)}><PinIcon size={13} className={pinned ? "fill-current" : undefined} /></Button><Button variant="ghost" size="icon-xs" aria-label={`Archive ${name}`} title="Archive" onClick={() => void archiveThread(thread)}><ArchiveIcon size={13} /></Button></span>}
@@ -1261,7 +1306,7 @@ export default function Home() {
   }
   /** A chat's menu around its tab or title: the "…" button and right-click on `area` share one list. The shown chat's is "Chat actions". */
   const threadMenu = (thread: Thread, area: React.ReactElement, content: (menu: React.ReactNode) => React.ReactNode, shown: boolean) =>
-    <ThreadActions label={shown ? "Chat actions" : undefined} thread={thread} onRequestDelete={() => deleteChats([thread.id])} onRename={renameThread} onArchive={archiveThread} pinned={pins.includes(thread.id)} onPin={togglePin} onOpenInTui={hasTerminal ? openInTui : undefined} renameRequested={shown && renameRequest} onRenameRequestHandled={() => setRenameRequest(false)} area={area}>{content}</ThreadActions>;
+    <ThreadActions label={shown ? "Chat actions" : undefined} thread={thread} attention={attentionFor(thread.id)} onRequestDelete={() => deleteChats([thread.id])} onRename={renameThread} onArchive={archiveThread} pinned={pins.includes(thread.id)} onPin={togglePin} onOpenInTui={hasTerminal ? openInTui : undefined} renameRequested={shown && renameRequest} onRenameRequestHandled={() => setRenameRequest(false)} area={area}>{content}</ThreadActions>;
   const chatActions = (area: React.ReactElement, content: React.ReactNode) => view === "chat" && selected
     ? threadMenu(selected, area, menu => <>{content}{menu}</>, true)
     : cloneElement(area, undefined, content);
@@ -1309,7 +1354,7 @@ export default function Home() {
               {open && <div className="project-chats">{chats.map(t => threadRow(t))}{!chats.length && <p className="project-empty">No chats yet</p>}</div>}
             </div>; })}
         </section>}
-        {[{ label: "Pinned", list: roots.filter(t => pins.includes(t.id)) }, { label: searchTerm ? "Results" : "Recents", list: roots.filter(t => !pins.includes(t.id)) }].filter(group => group.list.length).map(group => <section key={group.label} aria-label={group.label}><div className="section-label">{group.label}</div>
+        {[{ label: "Pinned", list: roots.filter(t => pins.includes(t.id)) }, { label: searchTerm ? "Results" : "Recents", list: roots.filter(t => !pins.includes(t.id)) }].filter(group => group.list.length).map(group => <section key={group.label} aria-label={group.label}><div className="section-label-row"><div className="section-label">{group.label}</div>{group.label === "Recents" && attention.unread.length > 0 && <Button variant="ghost" size="xs" onClick={() => setAttention(previous => ({ ...previous, unread: [] }))}>Mark all as read</Button>}</div>
           {group.list.map(t => <div key={t.id}>{threadRow(t)}{expanded[t.id] && descendants(t.id, 1)}{expanded[t.id] && childCursors[t.id] && <Button variant="ghost" size="xs" onClick={() => loadChildren(t.id, childCursors[t.id]!)}>More agents</Button>}</div>)}
         </section>)}
         {unlinked.length > 0 && <div className="unlinked-thread-list" aria-label="Agents whose parent is not listed"><div className="section-label mt-4" title="Their parent conversation is not in the current list.">Other agents</div>{unlinked.map(thread => threadRow(thread))}</div>}
