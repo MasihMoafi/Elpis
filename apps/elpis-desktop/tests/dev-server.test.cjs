@@ -104,6 +104,8 @@ for (const scheme of ['light', 'dark']) test(`real Electron opens the started pr
     await page.getByRole('log').getByText(/native preview ready/).waitFor();
     await assertUiFit(page.getByRole('region', { name: 'Dev server preview' }), 'native controls fit');
     await web.getByRole('button', { name: 'Clicked in preview' }).click();
+    await web.waitForFunction(() => innerWidth > 300 && innerHeight > 200);
+    await web.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
     if (process.env.ELPIS_PARITY_SHOTS) {
       await web.screenshot({ path: path.join(process.env.ELPIS_PARITY_SHOTS, `dev-page-${scheme}.png`) });
       // Wait for the native page's completed frame before capturing Xvfb after a resize.
