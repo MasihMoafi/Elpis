@@ -698,3 +698,58 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .slash-option { align-items:baseline; gap:12px; min-width:0; cursor:pointer; font-size:13px; }
 .slash-name { flex-shrink:0; min-width:110px; font:500 12.5px/1.4 var(--mono); color:var(--foreground); }
 .slash-description { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--muted-foreground); }
+
+/* The agents canvas (components/agents-canvas.tsx): architectures on the left, agents as linked nodes in the middle,
+ * the selected agent on the right. Running is the context olive, done is success, failed is destructive. */
+.agents-canvas { flex:1; min-height:0; display:grid; grid-template-columns:minmax(0,1fr) 290px; grid-template-rows:auto minmax(0,1fr); border-top:1px solid var(--hairline); }
+.canvas-header { grid-column:1 / -1; display:flex; align-items:center; gap:10px; padding:10px 16px; border-bottom:1px solid var(--hairline); background:var(--background); }
+.canvas-name { width:280px; font-weight:600; }
+.canvas-spacer { flex:1; }
+.canvas-chip { display:inline-flex; align-items:center; gap:8px; height:32px; padding:0 10px; border:1px solid var(--hairline); border-radius:8px; color:var(--muted-foreground); font-size:12.5px; font-variant-numeric:tabular-nums; }
+.canvas-chip select { height:26px; }
+.canvas-dot { width:8px; height:8px; border-radius:50%; background:var(--context); box-shadow:0 0 0 3px color-mix(in oklab, var(--context) 25%, transparent); }
+.canvas-dot[data-status="failed"], .canvas-dot[data-status="cancelled"] { background:var(--destructive); box-shadow:none; }
+.canvas-dot[data-status="succeeded"], .canvas-dot[data-status="completed"] { background:var(--success); box-shadow:none; }
+.canvas-template { display:grid; gap:3px; padding:9px 10px; border:1px solid transparent; border-radius:9px; background:transparent; color:var(--foreground); text-align:left; font-size:13px; cursor:pointer; }
+.canvas-template:hover { background:var(--hover); border-color:var(--hairline); }
+.canvas-template:focus-visible { outline:1.5px solid var(--ring); }
+.canvas-template small { color:var(--muted-foreground); font-size:12px; line-height:1.35; }
+.canvas-toolbar { display:flex; gap:2px; padding:5px; border:1px solid var(--hairline); border-radius:11px; background:var(--card); box-shadow:var(--shadow); }
+.canvas-kind { width:9px; height:9px; border-radius:2px; background:var(--kind); }
+.canvas-help { margin:6px 4px 0; color:var(--muted-foreground); font-size:12px; line-height:1.4; }
+[data-kind="explore"] { --kind:#2f6fb5; } [data-kind="implement"] { --kind:#6d5bd0; } [data-kind="verify"] { --kind:var(--context); } [data-kind="fix"] { --kind:#b8435a; }
+.dark [data-kind="explore"] { --kind:#53b1ff; } .dark [data-kind="implement"] { --kind:#ab84ff; } .dark [data-kind="fix"] { --kind:#ff7a8f; }
+.canvas-board { position:relative; min-width:0; min-height:0; background:var(--background); }
+.canvas-board .react-flow { --xy-background-color:var(--background); --xy-background-pattern-color:var(--border); --xy-edge-stroke:var(--muted-foreground); --xy-edge-stroke-selected:var(--foreground); --xy-connectionline-stroke:var(--context); --xy-controls-button-background-color:var(--card); --xy-controls-button-color:var(--foreground); --xy-controls-button-border-color:var(--hairline); --xy-minimap-background-color:var(--card); --xy-node-border-radius:10px; }
+.dark .canvas-board .react-flow { --xy-edge-stroke:color-mix(in oklch, var(--gold) 55%, transparent); }
+.canvas-board .react-flow__edge.canvas-edge-done .react-flow__edge-path { stroke:var(--success); }
+.canvas-board .react-flow__edge.canvas-edge-cut .react-flow__edge-path { stroke:var(--destructive); stroke-dasharray:3 5; }
+.canvas-board .react-flow__edge.animated .react-flow__edge-path { stroke:var(--context); }
+.canvas-board .react-flow__edge-path { stroke-width:1.6; }
+.canvas-minimap { border:1px solid var(--hairline); border-radius:8px; overflow:hidden; }
+.agent-node { position:relative; display:grid; gap:3px; width:200px; padding:11px 34px 11px 14px; border:1px solid var(--border); border-left:3px solid var(--kind); border-radius:10px; background:var(--card); color:var(--foreground); box-shadow:var(--shadow); font-size:13px; }
+.react-flow__node.selected .agent-node { outline:1.5px dashed var(--context); outline-offset:4px; }
+.agent-node-kind { font:600 9.5px/1 var(--mono); letter-spacing:.14em; text-transform:uppercase; color:var(--muted-foreground); }
+.agent-node-title { font-weight:600; line-height:1.3; overflow-wrap:anywhere; }
+.agent-node-meta { color:var(--muted-foreground); font-size:11.5px; }
+.agent-node-mark { position:absolute; top:10px; right:10px; display:grid; place-items:center; width:18px; height:18px; border-radius:50%; box-shadow:inset 0 0 0 1.5px var(--border); }
+.agent-node[data-status="running"] { border-color:var(--context); box-shadow:0 0 0 3px color-mix(in oklab, var(--context) 22%, transparent), var(--shadow); }
+.agent-node[data-status="running"] .agent-node-mark { box-shadow:inset 0 0 0 2px var(--context); border-top-color:transparent; animation:canvas-spin 1s linear infinite; background:conic-gradient(var(--context) 0 25%, transparent 25%); -webkit-mask:radial-gradient(circle, transparent 5px, #000 5.5px); }
+.agent-node[data-status="succeeded"] { border-color:color-mix(in oklch, var(--success) 60%, var(--border)); }
+.agent-node[data-status="succeeded"] .agent-node-mark { background:var(--success); color:var(--background); box-shadow:none; }
+.agent-node[data-status="failed"], .agent-node[data-status="blocked"] { border-color:var(--destructive); }
+.agent-node[data-status="failed"] .agent-node-mark, .agent-node[data-status="blocked"] .agent-node-mark { background:var(--destructive); color:var(--background); box-shadow:none; }
+.agent-node[data-status="pending"], .agent-node[data-status="cancelled"] { opacity:.75; }
+@keyframes canvas-spin { to { transform:rotate(360deg); } }
+@media (prefers-reduced-motion:reduce) { .agent-node[data-status="running"] .agent-node-mark { animation:none; } }
+.agent-node .react-flow__handle { width:10px; height:10px; border:1.5px solid var(--card); background:var(--kind); }
+.canvas-note textarea { width:180px; min-height:90px; padding:10px; border:0; border-radius:4px; background:#f6e9a8; color:#2b2611; font:13px/1.4 inherit; resize:both; box-shadow:var(--shadow); }
+.dark .canvas-note textarea { background:#3a3518; color:#f1ead0; }
+.canvas-notice { position:absolute; left:50%; top:14px; transform:translateX(-50%); display:flex; align-items:center; gap:10px; margin:0; padding:8px 12px; border:1px solid var(--destructive); border-radius:8px; background:var(--card); color:var(--foreground); font-size:13px; box-shadow:var(--shadow); z-index:5; }
+.canvas-notice button { display:grid; place-items:center; border:0; background:transparent; color:var(--muted-foreground); cursor:pointer; }
+.canvas-side { display:flex; flex-direction:column; gap:10px; padding:14px 14px; overflow:auto; border-left:1px solid var(--hairline); background:var(--sidebar); }
+.canvas-side .hud-menu-title { padding:2px 4px; }
+.canvas-side [data-slot="select-trigger"] { width:100%; min-width:0; }
+.canvas-side [data-slot="select-trigger"] > span { min-width:0; overflow:hidden; text-overflow:ellipsis; }
+.canvas-side label { display:grid; gap:5px; color:var(--muted-foreground); font-size:12px; }
+.canvas-inspector-actions { display:flex; flex-wrap:wrap; gap:8px; margin-top:4px; }

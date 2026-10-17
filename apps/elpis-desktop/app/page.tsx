@@ -2,7 +2,7 @@
 
 import { cloneElement, useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
 import { AgentsIcon, ArchiveIcon, ChatIcon, FolderIcon, NewChatIcon, PinIcon, PlusIcon, SendIcon, SettingsIcon } from "@/components/elpis-icons";
-import { Archive, ArrowLeft, ChevronRight, PanelLeft, PanelRight, PanelRightClose, PanelRightOpen, Pin, Moon, RefreshCw, Search, Square, Sun, X } from "lucide-react";
+import { Archive, ArrowLeft, ChevronRight, PanelLeft, PanelRight, PanelRightClose, PanelRightOpen, Pin, Moon, RefreshCw, Search, Square, Sun, Workflow, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { OptionSelect } from "@/components/ui/option-select";
 import { Input } from "@/components/ui/input";
@@ -43,6 +43,7 @@ import { ModelPicker } from "@/components/model-picker";
 import { appStorage, readProjects, saveProjects, type Project } from "@/lib/projects";
 import { ResizeEdge } from "@/components/resize-edge";
 import { TaskList, type TaskPlan } from "@/components/task-list";
+import { AgentsCanvas } from "@/components/agents-canvas";
 import { agentState, mergeListedThreads } from "@/lib/agents";
 import { insertTranscript } from "@/lib/dictation";
 import { useBrowser } from "@/components/browser-panel";
@@ -58,7 +59,7 @@ import { activityOf, api, chatProvider, choiceOf, effortsOf, isAgent, isUnlinked
 
 const approvalDraftKey = (approval: Approval) => JSON.stringify([approval.ownerThreadId, approval.id]);
 
-type View = "chat" | "agents" | "newAgent" | "settings";
+type View = "chat" | "agents" | "canvas" | "newAgent" | "settings";
 type NextTurn = { model?: string; effort?: string; plan?: boolean };
 type Live = { thread: Thread; activeTurnId?: string | null; permissions?: PermissionMode | null; planMode?: boolean };
 /** The terminal's answer to a finished plan: Plan mode off, then this message. */
@@ -1085,7 +1086,7 @@ export default function Home() {
     if (seen.has(parentId)) return null; const next = new Set(seen).add(parentId);
     return filtered.filter(c => c.parentThreadId === parentId).map(child => <div key={child.id}>{threadRow(child, depth)}{descendants(child.id, depth + 1, next)}</div>);
   }
-  const heading = view === "chat" ? (selected ? title(selected) : "") : { agents: "Agents", newAgent: "New agent", settings: "Settings" }[view];
+  const heading = view === "chat" ? (selected ? title(selected) : "") : { agents: "Agents", canvas: "Canvas", newAgent: "New agent", settings: "Settings" }[view];
   const meta = selected ? [selected.agentNickname, selected.agentRole && selected.agentRole !== "default" ? selected.agentRole : null].filter(Boolean).join(" · ") : "";
 
   return <div className={`app-shell${dark ? " dark" : ""}${desktop ? " has-title-bar" : ""}${sidebarCollapsed ? " sidebar-collapsed" : ""}${view === "settings" ? " settings-mode" : ""}`} style={{ "--sidebar-width": `${sidebarWidth}px` } as CSSProperties}>
@@ -1098,7 +1099,8 @@ export default function Home() {
       <div className="brand"><Button className="sidebar-toggle" variant="ghost" size="icon-sm" aria-label="Close sidebar" title="Close sidebar (Ctrl+B)" onClick={() => showSidebar(false)}><PanelLeft size={16} /></Button><img src={brandMark} alt="Elpis" width={73} height={36} /></div>
       <nav className="nav-list" aria-label="Workspace">
         <Button className="new-chat" variant="ghost" aria-current={view === "chat" && !selected ? "page" : undefined} disabled={projectChanging} onClick={newChat}><NewChatIcon size={16} />New chat</Button>
-        <Button variant="ghost" aria-current={view === "agents" ? "page" : undefined} onClick={() => show("agents")}><AgentsIcon size={16} />Agents{working > 0 && <span className="nav-badge" aria-hidden="true"><i />{working}</span>}</Button>      </nav>
+        <Button variant="ghost" aria-current={view === "agents" ? "page" : undefined} onClick={() => show("agents")}><AgentsIcon size={16} />Agents{working > 0 && <span className="nav-badge" aria-hidden="true"><i />{working}</span>}</Button>
+        <Button variant="ghost" aria-current={view === "canvas" ? "page" : undefined} onClick={() => show("canvas")}><Workflow size={16} />Canvas</Button>      </nav>
       <SearchField ref={searchInput} hint="Ctrl K" aria-label="Search conversations" placeholder="Search conversations" maxLength={200} value={search} onChange={e => setSearch(e.target.value)} onKeyDown={e => { if (e.key === "Escape") { e.preventDefault(); setSearch(""); focusComposer(); } }} />
       <div className="thread-list" ref={threadList} onKeyDown={listKeys}>
         {!searchTerm && <section aria-label="Projects"><div className="section-label section-label-row">Projects<Button variant="ghost" size="icon-xs" aria-label="Add new project" title="Add new project: choose a folder" onClick={() => void addProject()}><PlusIcon size={13} /></Button></div>
@@ -1164,6 +1166,7 @@ export default function Home() {
       </section>}
       <div className={`workspace-body${panelShown ? " panel-open" : ""}${view === "settings" ? " no-browser" : ""}`}><div className="workspace-content">
       {settingsVisited && <div className="page-scroll" hidden={view !== "settings"}><SettingsView initialTab={settingsSection} navigationKey={settingsNavigation} active={view === "settings"} threadId={selected?.id} accountRefresh={accountRefresh} theme={theme} onTheme={setTheme} onUnarchived={unarchived} onDeleteThread={deleteThread} onBack={() => { show("chat"); requestAnimationFrame(focusComposer); }} onProvidersChanged={async () => { await reloadSettings(); void refreshModels(); }} /></div>}
+      {view === "canvas" && <AgentsCanvas models={models} cwd={newChatFolder(cwd) || undefined} dark={dark} onOpenChat={id => { show("chat"); void openById(id); }} />}
       {view === "agents" && <div className="page-scroll"><AgentsView threads={threads} activity={activity} models={models} providers={providerSettings?.providers} loading={agentsLoading} pendingThreadIds={approvals.map(approval => approval.params.threadId ?? approval.ownerThreadId)} moreConversations={!!nextCursor} loadingMore={moreLoading} onMoreConversations={loadMoreConversations} childCursors={childCursors} loadingChildren={loadingChildren} onMoreAgents={id => void loadChildren(id, childCursors[id] ?? undefined, false)} onOpen={loadThread} onStop={stop} onDelete={deleteThread} onNewAgent={() => show("newAgent")} /></div>}
       {newAgentVisited && <div className="page-scroll" hidden={view !== "newAgent"}><button type="button" className="back-link" onClick={() => show("agents")}><ArrowLeft size={18} aria-hidden="true" />Back to Agents</button><NewAgentForm key={newAgentVersion} models={models} settings={providerSettings} defaultCwd={cwd} connected={connected} onConfigure={manageConnections} onCreated={(thread, turnId, unsent, failure) => { setNewAgentVersion(value => value + 1); upsertThread(thread); if (unsent) saveDraft(thread.id, unsent); if (turnId && !completedTurns.current.has(turnId)) setActiveTurns(prev => ({ ...prev, [thread.id]: turnId })); void loadThread(thread).then(() => { if (failure && selectedRef.current?.id === thread.id) setError(failure); }); }} /></div>}
       {view === "chat" && <div className="chat-split"><div className={`chat-view${!selected && !entries.length ? " empty-chat" : ""}`}>
