@@ -1269,7 +1269,8 @@ async fn background_turn_program(
         request::<GetAccountResponse>(handle, |request_id| ClientRequest::GetAccount {
             request_id,
             params: GetAccountParams {
-                refresh_token: false
+                refresh_token: false,
+                skip_workspace_routing: false,
             },
         }),
         request::<ModelListResponse>(handle, |request_id| ClientRequest::ModelList {

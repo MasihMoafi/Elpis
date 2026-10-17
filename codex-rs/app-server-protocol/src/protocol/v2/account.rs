@@ -549,6 +549,12 @@ pub struct GetAccountParams {
     /// themselves and call `account/login/start` with `chatgptAuthTokens`.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub refresh_token: bool,
+    /// When `true`, returns the account as the server already knows it, without waiting for
+    /// workspace routing discovery, which needs the network and can take many seconds.
+    /// `workspaceRouting` is then `null`. The server keeps discovering in the background
+    /// and sends `account/updated` once routing is known.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub skip_workspace_routing: bool,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS, ExperimentalApi)]

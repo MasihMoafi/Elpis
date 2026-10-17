@@ -821,6 +821,10 @@ impl AppServerSession {
     ///
     /// Used by both `bootstrap` (to populate the initial UI) and `get_login_status`
     /// (to check auth mode without the overhead of a full bootstrap).
+    ///
+    /// This never waits for workspace routing discovery: the TUI does not use the routing in the
+    /// response, and a slow network must not stop it from starting. The server keeps discovering
+    /// in the background and says so with `account/updated`.
     pub(crate) async fn read_account(&mut self) -> Result<GetAccountResponse> {
         let account_request_id = self.next_request_id();
         self.client
@@ -828,6 +832,7 @@ impl AppServerSession {
                 request_id: account_request_id,
                 params: GetAccountParams {
                     refresh_token: false,
+                    skip_workspace_routing: true,
                 },
             })
             .await
@@ -2613,6 +2618,10 @@ mod workspace_roots_tests;
 #[cfg(test)]
 #[path = "app_server_session/prompt_history_tests.rs"]
 mod prompt_history_tests;
+
+#[cfg(test)]
+#[path = "app_server_session/workspace_routing_tests.rs"]
+mod workspace_routing_tests;
 
 #[cfg(test)]
 mod tests {

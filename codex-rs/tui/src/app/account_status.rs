@@ -25,6 +25,7 @@ impl App {
                     request_id: RequestId::String(format!("account-status-{request_id}")),
                     params: GetAccountParams {
                         refresh_token: false,
+                        skip_workspace_routing: false,
                     },
                 }),
             )

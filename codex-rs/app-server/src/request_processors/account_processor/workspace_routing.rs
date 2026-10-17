@@ -5,6 +5,8 @@
 
 use super::*;
 use codex_app_server_protocol::AccountRoutingOverride;
+use codex_app_server_protocol::ServerNotification;
+use codex_app_server_protocol::WarningNotification;
 use codex_backend_client::AccountEntry;
 use codex_login::WorkspaceRouting;
 use codex_login::WorkspaceRoutingRequest;
@@ -103,6 +105,56 @@ pub(super) enum WorkspaceRoutingError {
     InvalidBackendOrigin,
 }
 
+/// Pauses before each retry of the discovery a new connection starts. A slow or briefly
+/// unreachable network is the common cause of a failure, and it passes.
+const BACKGROUND_DISCOVERY_RETRY_DELAYS: [Duration; 3] = [
+    Duration::from_secs(/*secs*/ 3),
+    Duration::from_secs(/*secs*/ 10),
+    Duration::from_secs(/*secs*/ 30),
+];
+
+/// Longest wait for the latest configuration when an account read skips discovery. The
+/// startup configuration answers when a cloud bundle fetch is slower than this.
+const SKIPPED_DISCOVERY_CONFIG_WAIT: Duration = Duration::from_secs(/*secs*/ 2);
+
+const WORKSPACE_ROUTING_UNAVAILABLE_WARNING: &str = "Could not confirm your ChatGPT workspace: the network is slow or unreachable. Requests that need it will try again.";
+
+/// How the discovery a connection starts in the background ended.
+#[derive(Debug, PartialEq, Eq)]
+enum BackgroundDiscovery {
+    /// Routing is known; the connection hears it as `account/updated`.
+    Ready,
+    /// There was no workspace to discover, or the account changed under the attempt.
+    Done,
+    /// Every attempt failed.
+    GaveUp,
+}
+
+/// Runs `attempt` until it succeeds, retrying after each of `retry_delays`.
+async fn discover_in_background<Attempt, Pending>(
+    retry_delays: &[Duration],
+    mut attempt: Attempt,
+) -> BackgroundDiscovery
+where
+    Attempt: FnMut() -> Pending,
+    Pending: Future<Output = Result<Option<WorkspaceRouting>, AccountReadError>>,
+{
+    let mut delays = retry_delays.iter();
+    loop {
+        match attempt().await {
+            Ok(Some(_)) => return BackgroundDiscovery::Ready,
+            Ok(None) => return BackgroundDiscovery::Done,
+            Err(AccountReadError::Routing(
+                WorkspaceRoutingError::AccountChanged | WorkspaceRoutingError::Shutdown,
+            )) => return BackgroundDiscovery::Done,
+            Err(_) => match delays.next() {
+                Some(delay) => tokio::time::sleep(*delay).await,
+                None => return BackgroundDiscovery::GaveUp,
+            },
+        }
+    }
+}
+
 impl WorkspaceRoutingResolver for AccountRequestProcessor {
     fn resolve(
         &self,
@@ -133,23 +185,51 @@ impl AccountRequestProcessor {
         let auth_changes = self.auth_manager.auth_change_state_receiver();
         let owner_generation = auth_changes.borrow().owner_generation;
         tokio::spawn(async move {
+            let attempt = || {
+                let processor = &processor;
+                let auth_changes = &auth_changes;
+                async move {
+                    if auth_changes.borrow().owner_generation != owner_generation {
+                        return Err(AccountReadError::Routing(
+                            WorkspaceRoutingError::AccountChanged,
+                        ));
+                    }
+                    processor
+                        .read_account(/*request*/ None)
+                        .await
+                        .map(|read| read.workspace_routing)
+                }
+            };
+            let outcome = discover_in_background(&BACKGROUND_DISCOVERY_RETRY_DELAYS, attempt).await;
             if auth_changes.borrow().owner_generation != owner_generation {
                 return;
             }
-            if let Ok(response) = processor.read_account(/*request*/ None).await
-                && response.workspace_routing.is_some()
-                && auth_changes.borrow().owner_generation == owner_generation
-            {
-                let notification = processor.current_account_updated_notification();
-                processor
-                    .outgoing
-                    .send_account_notification(
-                        Some(connection_id),
-                        &auth_changes,
-                        owner_generation,
-                        AccountNotification::Updated(notification),
-                    )
-                    .await;
+            match outcome {
+                BackgroundDiscovery::Ready => {
+                    let notification = processor.current_account_updated_notification();
+                    processor
+                        .outgoing
+                        .send_account_notification(
+                            Some(connection_id),
+                            &auth_changes,
+                            owner_generation,
+                            AccountNotification::Updated(notification),
+                        )
+                        .await;
+                }
+                BackgroundDiscovery::GaveUp => {
+                    processor
+                        .outgoing
+                        .send_server_notification_to_connections(
+                            &[connection_id],
+                            ServerNotification::Warning(WarningNotification {
+                                thread_id: None,
+                                message: WORKSPACE_ROUTING_UNAVAILABLE_WARNING.to_string(),
+                            }),
+                        )
+                        .await;
+                }
+                BackgroundDiscovery::Done => {}
             }
         });
     }
@@ -159,13 +239,15 @@ impl AccountRequestProcessor {
         params: GetAccountParams,
     ) -> Result<Option<ClientResponsePayload>, JSONRPCErrorError> {
         self.refresh_token_if_requested(params.refresh_token).await;
-        let read = self
-            .read_account(/*request*/ None)
-            .await
-            .map_err(|error| match error {
-                AccountReadError::InvalidAccount(error) => invalid_request(error.to_string()),
-                AccountReadError::Routing(error) => internal_error(error.to_string()),
-            })?;
+        let read = if params.skip_workspace_routing {
+            self.read_account_without_discovery().await
+        } else {
+            self.read_account(/*request*/ None).await
+        }
+        .map_err(|error| match error {
+            AccountReadError::InvalidAccount(error) => invalid_request(error.to_string()),
+            AccountReadError::Routing(error) => internal_error(error.to_string()),
+        })?;
         Ok(Some(
             GetAccountResponse {
                 account: read.account_state.account.map(Account::from),
@@ -185,6 +267,32 @@ impl AccountRequestProcessor {
             }
             .into(),
         ))
+    }
+
+    /// The account as the server already knows it. It never waits for workspace discovery, so
+    /// a slow network cannot hold up a client that only needs to know who is signed in.
+    async fn read_account_without_discovery(&self) -> Result<AccountRead, AccountReadError> {
+        let config = match tokio::time::timeout(
+            SKIPPED_DISCOVERY_CONFIG_WAIT,
+            self.config_manager
+                .load_latest_config(/*fallback_cwd*/ None),
+        )
+        .await
+        {
+            Ok(Ok(config)) => config,
+            Ok(Err(_)) | Err(_) => self.config.as_ref().clone(),
+        };
+        let provider = create_model_provider(
+            config.model_provider.clone(),
+            Some(self.auth_manager.clone()),
+        );
+        let account_state = provider
+            .account_state()
+            .map_err(AccountReadError::InvalidAccount)?;
+        Ok(AccountRead {
+            account_state,
+            workspace_routing: None,
+        })
     }
 
     pub(super) async fn read_account(

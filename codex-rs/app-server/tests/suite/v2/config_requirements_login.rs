@@ -160,6 +160,7 @@ command = "print-token"
     let id = server
         .send_get_account_request(GetAccountParams {
             refresh_token: false,
+            skip_workspace_routing: false,
         })
         .await?;
     let account: GetAccountResponse = timeout(READ_TIMEOUT, server.read_response(id)).await??;

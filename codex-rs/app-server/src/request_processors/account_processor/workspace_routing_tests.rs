@@ -82,3 +82,75 @@ fn unrestricted_discovery_uses_effective_custom_backend() {
         }
     );
 }
+
+fn known_routing() -> WorkspaceRouting {
+    WorkspaceRouting {
+        chatgpt_account_id: "workspace".into(),
+        backend_origin: "https://chatgpt.com".into(),
+        account_routing_override: "NO_CONSTRAINT".into(),
+    }
+}
+
+fn timed_out() -> AccountReadError {
+    AccountReadError::Routing(WorkspaceRoutingError::DiscoveryTimeout)
+}
+
+/// Runs the background discovery against scripted results; returns how it ended, how many
+/// attempts it made, and how long the retries paused.
+async fn scripted_discovery(
+    mut results: Vec<Result<Option<WorkspaceRouting>, AccountReadError>>,
+) -> (BackgroundDiscovery, usize, Duration) {
+    results.reverse();
+    let mut attempts = 0;
+    let started = tokio::time::Instant::now();
+    let outcome = discover_in_background(&BACKGROUND_DISCOVERY_RETRY_DELAYS, || {
+        attempts += 1;
+        let result = results.pop().unwrap_or_else(|| Err(timed_out()));
+        async move { result }
+    })
+    .await;
+    (outcome, attempts, started.elapsed())
+}
+
+#[tokio::test(start_paused = true)]
+async fn background_discovery_retries_until_routing_is_known() {
+    let results = vec![
+        Err(timed_out()),
+        Err(timed_out()),
+        Ok(Some(known_routing())),
+    ];
+
+    assert_eq!(
+        scripted_discovery(results).await,
+        (
+            BackgroundDiscovery::Ready,
+            3,
+            BACKGROUND_DISCOVERY_RETRY_DELAYS[0] + BACKGROUND_DISCOVERY_RETRY_DELAYS[1],
+        )
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn background_discovery_gives_up_after_the_last_retry() {
+    assert_eq!(
+        scripted_discovery(Vec::new()).await,
+        (
+            BackgroundDiscovery::GaveUp,
+            BACKGROUND_DISCOVERY_RETRY_DELAYS.len() + 1,
+            BACKGROUND_DISCOVERY_RETRY_DELAYS.iter().sum(),
+        )
+    );
+}
+
+#[test_case(Ok(None); "no_workspace_to_discover")]
+#[test_case(Err(AccountReadError::Routing(WorkspaceRoutingError::AccountChanged)); "account_changed")]
+#[test_case(Err(AccountReadError::Routing(WorkspaceRoutingError::Shutdown)); "shutdown")]
+#[tokio::test(start_paused = true)]
+async fn background_discovery_stops_without_retrying(
+    result: Result<Option<WorkspaceRouting>, AccountReadError>,
+) {
+    assert_eq!(
+        scripted_discovery(vec![result]).await,
+        (BackgroundDiscovery::Done, 1, Duration::ZERO)
+    );
+}
