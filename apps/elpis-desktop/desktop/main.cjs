@@ -67,7 +67,8 @@ async function createOrFocusWindow() {
     browserAgentSocket = await startBrowserAgentSocket();
     try {
       const client = await DesktopClient.connect({ beforeConnect: ensureInstalledRuntime, browserConfig: browserMcpConfig(browserAgentSocket.path) });
-      try { server = await startDesktopServer({ client, staticDir: path.join(__dirname, '../out') }); }
+      // Chats deleted from the sidebar wait in this file until the app quits (Ctrl+Z brings them back until then).
+      try { server = await startDesktopServer({ client, staticDir: path.join(__dirname, '../out'), trashFile: path.join(app.getPath('userData'), 'deleted-chats.json') }); }
       catch (error) { client.close(); throw error; }
     } catch (error) { await browserAgentSocket.close(); browserAgentSocket = undefined; throw error; }
   }

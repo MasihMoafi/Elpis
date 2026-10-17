@@ -10,6 +10,7 @@ export const SHORTCUTS: Shortcut[] = [
   // Handled by the sidebar's chat list (app/page.tsx), where the row has focus.
   { id: "delete", group: "Chat", label: "Delete the selected chats in the sidebar", keys: ["D"] },
   { id: "select-chats", group: "Chat", label: "Select several chats in the sidebar (Esc clears)", keys: ["Ctrl+click", "Shift+click"] },
+  { id: "undo-delete", group: "Chat", label: "Bring back the last deleted chat (outside text fields)", keys: ["Ctrl+Z"] },
   { id: "search", group: "Navigation", label: "Search chats", keys: ["Ctrl+K"] },
   { id: "previous-chat", group: "Navigation", label: "Previous chat", keys: ["Ctrl+Shift+[", "Ctrl+PageUp"] },
   { id: "next-chat", group: "Navigation", label: "Next chat", keys: ["Ctrl+Shift+]", "Ctrl+PageDown"] },
@@ -44,6 +45,8 @@ export function shortcutFor(event: KeyboardEvent, typing: boolean): { id: string
   const ctrl = event.ctrlKey || event.metaKey, key = event.key.toLowerCase();
   if (ctrl && !event.altKey && !event.shiftKey) {
     if (key === "n") return { id: "new-chat" };
+    // In a text field Ctrl+Z stays the field's own undo.
+    if (key === "z" && !typing) return { id: "undo-delete" };
     if (key === "k") return { id: "search" };
     if (key === "b") return { id: "sidebar" };
     if (key === "t") return { id: "new-tab" };

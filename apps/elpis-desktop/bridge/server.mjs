@@ -11,6 +11,7 @@ import { isRepository } from './git.mjs';
 import { createTools } from './tools.mjs';
 import { createTranscription } from './transcription.mjs';
 import { ATTACHMENT_BODY_LIMIT, AttachmentError, PDF_BODY_LIMIT, extractPdf } from './attachments.mjs';
+import { createTrash } from './trash.mjs';
 import { createObservability } from './observability.mjs';
 
 const COOKIE = 'elpis_desktop';
@@ -56,9 +57,12 @@ function json(response, status, value) {
   response.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'Content-Length': bytes.length }); response.end(bytes);
 }
 
-/** Starts only this UI server; connects to an existing Elpis runtime and never starts/stops it. */
+/** Starts only this UI server; connects to an existing Elpis runtime and never starts/stops it. `trashFile` keeps the
+ * chats deleted from the sidebar until they are deleted for good (bridge/trash.mjs): what a crash left is deleted now. */
 export async function startDesktopServer(options = {}) {
   const client = options.client ?? await DesktopClient.connect({ socketPath: options.socketPath });
+  const trash = await createTrash({ client, file: options.trashFile });
+  await trash.purge().catch(() => {});
   const staticDir = path.resolve(options.staticDir ?? fileURLToPath(new URL('../out', import.meta.url)));
   const capability = randomBytes(32).toString('hex');
   const session = randomBytes(32).toString('hex');
@@ -147,8 +151,15 @@ export async function startDesktopServer(options = {}) {
           return json(response,200,await client.workflows(url.searchParams.get('threadId')));
         }
         if (url.pathname === '/api/workflows/run' && method === 'POST') return json(response,200,await client.runWorkflow(await body(request)));
+        // Sidebar deletion: archived now, Ctrl+Z brings back the newest, quitting deletes for good.
+        if (url.pathname === '/api/trash' && method === 'POST') return json(response, 200, await trash.trash(object(await body(request), ['threadIds']).threadIds));
+        if (url.pathname === '/api/trash/undo' && method === 'POST') { object(await body(request), []); return json(response, 200, await trash.undo()); }
         if (url.pathname === '/api/threads') {
-          if (method === 'GET') return json(response, 200, await client.listThreads(pageQuery(url, true)));
+          if (method === 'GET') {
+            const query = pageQuery(url, true), listed = await client.listThreads(query);
+            // A chat waiting to be deleted is archived, but it is not an archived chat.
+            return json(response, 200, query.archived ? { ...listed, data: listed.data.filter(thread => !trash.has(thread.id)) } : listed);
+          }
           return json(response, 201, await client.createThread(await body(request)));
         }
         const thread = url.pathname.match(/^\/api\/threads\/([^/]+)(?:\/(turns|steer|interrupt|resume|context|delete|rename|archive|unarchive|revert|fork|compact|review|git|permissions))?$/);
@@ -198,6 +209,8 @@ export async function startDesktopServer(options = {}) {
     async close() {
       if (closed) return; closed = true; clearInterval(heartbeat);
       for (const response of listeners) response.end(); listeners.clear();
+      // Quitting deletes the sidebar's deleted chats for good; what does not finish in time goes at the next start.
+      await Promise.race([trash.purge().catch(() => {}), new Promise(resolve => setTimeout(resolve, 5000).unref())]);
       client.off('event', event); client.close();
       await new Promise(resolve => { server.close(resolve); server.closeAllConnections(); });
     },

@@ -114,6 +114,8 @@ button:disabled { cursor:not-allowed; }
 .workspace-header p { font-size:12px; margin:0; color:var(--muted-foreground); }
 .mobile-menu { display:none; }
 .error-banner { background:color-mix(in oklch, var(--destructive), var(--background) 90%); border-bottom:1px solid color-mix(in oklch, var(--destructive), transparent 60%); color:var(--foreground); padding:8px 20px; font-size:13px; display:flex; justify-content:space-between; align-items:center; gap:12px; }
+/* A notice that is not an error, such as "Deleted …" with its Undo. */
+.error-banner.notice { background:var(--muted); border-bottom-color:var(--border); }
 .chat-scroll { flex:1; min-height:0; overflow:auto; padding:28px 32px 12px; }
 .chat-content { max-width:740px; margin:auto; line-height:1.65; font-size:14.5px; }
 /* A quick read shows nothing; the notice fades in only when reading a chat takes longer. */

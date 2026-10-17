@@ -132,6 +132,9 @@ export default function Home() {
   const [pins, setPins] = useState<string[]>([]);
   /** Chats awaiting the shared delete confirmation (a row's menu, D, or the header's Chat actions). */
   const [deleteTargets, setDeleteTargets] = useState<Thread[] | null>(null);
+  /** "Deleted …" with its Undo, after the sidebar deletes chats; Ctrl+Z does the same. `shownWhenDeleted` reopens the chat that was open. */
+  const [deletedNotice, setDeletedNotice] = useState<string | null>(null);
+  const shownWhenDeleted = useRef(new Set<string>());
   /** Chats marked with Ctrl+click or Shift+click in the sidebar; `markAnchor` is where a Shift range starts. */
   const [marked, setMarked] = useState<string[]>([]);
   const markAnchor = useRef<string | null>(null);
@@ -1130,6 +1133,7 @@ export default function Home() {
     const at = selected ? ordered.findIndex(t => t.id === selected.id) : -1;
     if (id === "new-chat") newChat();
     else if (id === "search") focusSearch();
+    else if (id === "undo-delete") void undoDelete();
     else if (id === "sidebar") showSidebar(narrow() ? !sidebar : sidebarCollapsed);
     else if (id === "settings") { setSettingsSection("general"); show("settings"); }
     else if (id === "back" || id === "forward") goHistory(id === "back" ? -1 : 1);
@@ -1160,10 +1164,37 @@ export default function Home() {
   const rowOf = (element: Element | null) => element?.closest<HTMLElement>(".thread-row")?.dataset.threadId ?? null;
   /** Opens the shared delete confirmation for these chats. */
   const chatsOf = (ids: string[]) => ids.map(id => searchedThreads.find(thread => thread.id === id) ?? find(id)).filter((thread): thread is Thread => !!thread);
-  function deleteChats(ids: string[]) {
+  /** Deletes these chats as one step Ctrl+Z undoes: after the shared confirmation, or at once when it is turned off.
+   * `focusAt` is the sidebar row to focus afterwards, so Ctrl+Z reaches the app and not a text field. */
+  function deleteChats(ids: string[], focusAt?: number) {
     const targets = chatsOf(ids);
-    if (targets.length) setDeleteTargets(targets);
+    if (!targets.length) return;
+    if (preferences.confirmDeleteChats) { setDeleteTargets(targets); return; }
+    void trashChats(targets).then(() => { if (focusAt !== undefined) requestAnimationFrame(() => { const links = rowLinks(); (links[focusAt] ?? links.at(-1))?.focus(); }); }, e => setError(String(e instanceof Error ? e.message : e)));
   }
+  /** The bridge archives them now and deletes them for good when Elpis quits (bridge/trash.mjs). */
+  async function trashChats(targets: Thread[]) {
+    const ids = targets.map(thread => thread.id);
+    if (selectedRef.current && ids.includes(selectedRef.current.id)) shownWhenDeleted.current.add(selectedRef.current.id);
+    const { trashed } = await api<{ trashed: string[] }>("/trash", { threadIds: ids });
+    removeThreads(new Set(trashed), false);
+    setDeletedNotice(targets.length === 1 ? `Deleted “${title(targets[0])}”` : `Deleted ${targets.length} chats`);
+  }
+  /** Ctrl+Z and the notice's Undo: the newest deletion comes back, with the chat that was open opened again. */
+  async function undoDelete() {
+    try {
+      const { threads: back, restored } = await api<{ threads: Thread[]; restored?: string[] }>("/trash/undo", {});
+      if (!back.length) return;
+      setDeletedNotice(null);
+      for (const id of restored ?? back.map(thread => thread.id)) hidden.current.delete(id);
+      for (const thread of back) upsertThread(remember(thread));
+      await refreshThreads();
+      const reopen = back.find(thread => shownWhenDeleted.current.has(thread.id));
+      for (const thread of back) shownWhenDeleted.current.delete(thread.id);
+      if (reopen) await loadThread(reopen);
+    } catch (e) { setError(`Could not bring back the deleted chat: ${e instanceof Error ? e.message : String(e)}`); }
+  }
+  useEffect(() => { if (!deletedNotice) return; const timer = setTimeout(() => setDeletedNotice(null), 8000); return () => clearTimeout(timer); }, [deletedNotice]);
   /** A click opens the chat; Ctrl+click marks or unmarks it; Shift+click marks the range from the last click, as in a file manager. */
   function clickRow(thread: Thread, event: React.MouseEvent<HTMLButtonElement>) {
     const ids = [...new Set(rowLinks().map(rowOf).filter((id): id is string => !!id))];
@@ -1180,7 +1211,7 @@ export default function Home() {
     const target = event.target as HTMLElement, id = rowOf(target);
     if (!id || !event.currentTarget.contains(target) || event.ctrlKey || event.metaKey || event.altKey) return;
     if (event.key === "Escape" && marked.length) setMarked([]);
-    else if (letterKey(event) === "d") deleteChats(marked.length ? marked : [id]);
+    else if (letterKey(event) === "d") deleteChats(marked.length ? marked : [id], rowLinks().findIndex(link => link.parentElement === target.closest(".thread-row")));
     else if (event.key === "ArrowDown" || event.key === "ArrowUp") {
       const links = rowLinks(), next = links[links.findIndex(link => link.parentElement === target.closest(".thread-row")) + (event.key === "ArrowDown" ? 1 : -1)];
       if (!next) return;
@@ -1207,7 +1238,7 @@ export default function Home() {
   }
   /** A chat's menu around its tab or title: the "…" button and right-click on `area` share one list. The shown chat's is "Chat actions". */
   const threadMenu = (thread: Thread, area: React.ReactElement, content: (menu: React.ReactNode) => React.ReactNode, shown: boolean) =>
-    <ThreadActions label={shown ? "Chat actions" : undefined} thread={thread} onDelete={deleteThread} onRename={renameThread} onArchive={archiveThread} pinned={pins.includes(thread.id)} onPin={togglePin} onOpenInTui={hasTerminal ? openInTui : undefined} renameRequested={shown && renameRequest} onRenameRequestHandled={() => setRenameRequest(false)} area={area}>{content}</ThreadActions>;
+    <ThreadActions label={shown ? "Chat actions" : undefined} thread={thread} onRequestDelete={() => deleteChats([thread.id])} onRename={renameThread} onArchive={archiveThread} pinned={pins.includes(thread.id)} onPin={togglePin} onOpenInTui={hasTerminal ? openInTui : undefined} renameRequested={shown && renameRequest} onRenameRequestHandled={() => setRenameRequest(false)} area={area}>{content}</ThreadActions>;
   const chatActions = (area: React.ReactElement, content: React.ReactNode) => view === "chat" && selected
     ? threadMenu(selected, area, menu => <>{content}{menu}</>, true)
     : cloneElement(area, undefined, content);
@@ -1232,7 +1263,7 @@ export default function Home() {
     <ShortcutsDialog open={shortcutsOpen} onOpenChange={setShortcutsOpen} returnFocus={shortcutsReturnFocus} />
     {desktop && <StartupSplash done={ready && connected} steps={[{ label: "Elpis engine connected", ok: connected }, { label: "models loaded", ok: models.length > 0 }, { label: "conversations loaded", ok: ready }]} />}
     <ProjectDialog projects={projects} editing={projectEdit} onClose={() => setProjectEdit(undefined)} onSave={saveProject} />
-    <DeleteChatsDialog threads={deleteTargets} onDelete={deleteThread} onClose={() => setDeleteTargets(null)} />
+    <DeleteChatsDialog threads={deleteTargets} trash={trashChats} onClose={() => setDeleteTargets(null)} />
     <RewindDialog turns={rewindTurn ? Math.max(1, turnEntries.size - [...turnEntries.keys()].indexOf(rewindTurn)) : null} onConfirm={() => rewindFrom(rewindTurn!)} onClose={() => setRewindTurn(null)} />
     <aside className={`sidebar${sidebar ? " open" : ""}`} aria-label="Workspace navigation">
       <div className="brand"><Button className="sidebar-toggle" variant="ghost" size="icon-sm" aria-label="Close sidebar" title="Close sidebar (Ctrl+B)" onClick={() => showSidebar(false)}><PanelLeft size={16} /></Button><img src={brandMark} alt="Elpis" width={73} height={36} /></div>
@@ -1291,6 +1322,7 @@ export default function Home() {
         {selected && view === "chat" && <Button className="header-action" variant="ghost" size="icon-sm" aria-label="Refresh conversation" disabled={loading} onClick={() => loadThread(selected)}><RefreshCw size={16} /></Button>}
       </header>
       <div className="workspace-notices">
+      {deletedNotice && <div className="error-banner notice" role="status"><span className="min-w-0 flex-1 truncate">{deletedNotice}</span><Button variant="outline" size="sm" title="Undo (Ctrl+Z)" onClick={() => void undoDelete()}>Undo</Button><Button variant="ghost" size="icon-sm" aria-label="Dismiss" onClick={() => setDeletedNotice(null)}><X size={15} /></Button></div>}
       {error && <div className="error-banner" role="alert"><span>{error}</span><Button variant="ghost" size="icon-sm" aria-label="Dismiss error" onClick={() => setError("")}><X size={15} /></Button></div>}
       {catalogError && <div className="error-banner" role="alert"><span className="min-w-0">Models unavailable: {catalogError} Sign in or check Models &amp; accounts, then retry.</span><Button className="shrink-0" variant="outline" size="sm" disabled={catalogLoading} onClick={() => void refreshModels()}>Retry models</Button></div>}
       {catalogLoading && !catalogError && <p className="px-4 py-2 text-sm text-muted-foreground" role="status">Loading models…</p>}
