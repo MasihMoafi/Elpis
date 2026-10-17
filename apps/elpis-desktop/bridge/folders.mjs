@@ -5,8 +5,9 @@ import { BridgeError } from './client.mjs';
 const MAX_DEPTH = 2;
 const MAX_ENTRIES = 400;
 const SKIPPED = new Set(['node_modules', 'target', 'dist', 'build', 'out', '.next', '__pycache__', 'venv']);
-/** The project directories this bridge lists (folders.mjs, files.mjs) skip: dot entries, tools and generated output. */
-export const skipped = name => name.startsWith('.') || SKIPPED.has(name);
+/** The project directories this bridge lists (folders.mjs, files.mjs) skip: dot entries (unless `hidden` asks for them,
+ * and never `.git`), tools and generated output. */
+export const skipped = (name, hidden = false) => (!hidden && name.startsWith('.')) || name === '.git' || SKIPPED.has(name);
 
 /** A project's folder as the renderer names it: an absolute path to an existing directory, else a 400. */
 export async function projectDirectory(cwd) {

@@ -5,7 +5,7 @@ import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { BridgeError, DesktopClient, object } from './client.mjs';
 import { planCanvas } from './canvas-plan.mjs';
-import { listFiles } from './files.mjs';
+import { listDirectory, listFiles, readFile, searchFiles, writeFile } from './files.mjs';
 import { listFolders, projectDirectory } from './folders.mjs';
 import { isRepository } from './git.mjs';
 import { createTools } from './tools.mjs';
@@ -15,9 +15,9 @@ import { ATTACHMENT_BODY_LIMIT, AttachmentError, extractPdf } from './attachment
 const COOKIE = 'elpis_desktop';
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.txt': 'text/plain', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon', '.woff': 'font/woff', '.woff2': 'font/woff2' };
 const same = (a, b) => typeof a === 'string' && Buffer.byteLength(a) === Buffer.byteLength(b) && timingSafeEqual(Buffer.from(a), Buffer.from(b));
-/** The one `cwd` a project-folder request names. */
-function cwdOf(url) {
-  if ([...url.searchParams.keys()].some(key => key !== 'cwd') || url.searchParams.getAll('cwd').length !== 1) throw new BridgeError('Provide exactly one cwd');
+/** The one `cwd` a project-folder request names (and, for the Files pane, the other fields it may carry). */
+function cwdOf(url, ...others) {
+  if ([...url.searchParams.keys()].some(key => key !== 'cwd' && !others.includes(key)) || url.searchParams.getAll('cwd').length !== 1 || others.some(key => url.searchParams.getAll(key).length > 1)) throw new BridgeError('Provide exactly one cwd');
   return url.searchParams.get('cwd');
 }
 function pageQuery(url, ancestor = false, models = false) {
@@ -113,6 +113,14 @@ export async function startDesktopServer(options = {}) {
         if (url.pathname === '/api/models' && method === 'GET') return json(response, 200, await client.models(pageQuery(url, false, true)));
         if (url.pathname === '/api/folders' && method === 'GET') return json(response, 200, await listFolders(cwdOf(url)));
         if (url.pathname === '/api/files' && method === 'GET') return json(response, 200, await listFiles(cwdOf(url)));
+        // The Files pane: a folder's entries, a file's text and saving it, a search of the contents.
+        if (url.pathname === '/api/files/dir' && method === 'GET') return json(response, 200, await listDirectory(cwdOf(url, 'dir', 'hidden'), url.searchParams.get('dir') ?? '', url.searchParams.get('hidden') === '1'));
+        if (url.pathname === '/api/files/search' && method === 'GET') return json(response, 200, await searchFiles(cwdOf(url, 'q'), url.searchParams.get('q') ?? ''));
+        if (url.pathname === '/api/file' && method === 'GET') return json(response, 200, await readFile(cwdOf(url, 'path'), url.searchParams.get('path') ?? ''));
+        if (url.pathname === '/api/file' && method === 'POST') {
+          const edit = object(await body(request, 3 * 1024 * 1024), ['cwd', 'path', 'content', 'mtimeMs']);
+          return json(response, 200, await writeFile(edit.cwd, edit.path, edit.content, edit.mtimeMs));
+        }
         // Whether the project is a Git repository with a commit: the canvas asks for worktree isolation only then.
         if (url.pathname === '/api/repository' && method === 'GET') return json(response, 200, { repository: await isRepository(await projectDirectory(cwdOf(url))) });
         if (url.pathname === '/api/canvas/plan' && method === 'POST') return json(response, 200, await planCanvas(client, await body(request)));
