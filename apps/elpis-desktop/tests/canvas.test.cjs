@@ -94,6 +94,9 @@ test('agents canvas: writers with automatic checks, architectures, wiring, persi
       assert.deepEqual(await page.evaluate(() => [...document.querySelectorAll('.canvas-toolbar button')].filter(button => { const box = button.getBoundingClientRect(); return box.left < 0 || box.right > innerWidth || box.bottom > innerHeight; }).map(button => button.textContent)), [], `toolbar buttons outside the window at ${width}×${height}`);
     }
 
+    // The project the agents write in is chosen in the header, with the app's own project menu.
+    assert.match(await canvas.locator('.canvas-header').innerText(), /demo/);
+
     // The Mother leads every graph: one node, wired to the first wave, and she can't be deleted. A click on her opens
     // her panel: the run's settings, a brief every agent gets and her chat's model.
     const mother = canvas.locator('.react-flow__node-mother');

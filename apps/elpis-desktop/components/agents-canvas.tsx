@@ -24,7 +24,7 @@ const CHECK_LABEL: Record<TaskStatus | "idle", string> = { idle: "Checked after 
 const FINISHED = new Set(["succeeded", "failed", "cancelled", "completed"]);
 const lines = (text: string) => text.split("\n").map(line => line.trim()).filter(Boolean);
 /** Fitting shows the whole graph, at most at full size. */
-const FIT = { padding: 0.12, maxZoom: 1 };
+const FIT = { padding: 0.08, maxZoom: 1 };
 
 /** An agent on the canvas: it writes. Its run-order wave, name, model and state, with an input on the left (what it
  * waits for) and an output on the right (what waits for it), as Deus Ex's hacking screen links its nodes. The ring at
@@ -263,7 +263,7 @@ function FolderPicker({ cwd, value, onChange }: { cwd?: string; value: string[];
   return <div className="canvas-folders" role="group" aria-label="May write">
     <span>May write</span>
     {value.length > 0 && <span className="canvas-folders-chosen">{value.map(folder => <span key={folder} className="canvas-chip">{folder}<button type="button" aria-label={`Remove ${folder}`} onClick={() => onChange(value.filter(item => item !== folder))}><X size={12} /></button></span>)}</span>}
-    {!cwd ? <small>Open a project first: agents write inside it.</small>
+    {!cwd ? <small>Agents write inside a project: choose one at the top.</small>
       : error ? <small role="alert">{error}</small>
       : <OptionSelect aria-label="Add a folder" value="" onChange={event => { if (event.target.value) onChange([...value, event.target.value]); }}>
         <option value="" disabled>{folders === null ? "Loading the project's folders…" : left.length ? "Add a folder it may write…" : "No more folders"}</option>
@@ -293,7 +293,8 @@ function AgentDashboard({ node, wave, status, check, chat, waitsFor, feeds, mode
 
 /** The agents canvas: the Mother, ready-made architectures, agents wired by what they wait for and laid out in Kahn's
  * waves, and a run that follows each agent live. The graph is kept on this device (lib/canvas.ts). */
-type Props = { models: Model[]; cwd?: string; dark: boolean; onOpenChat: (id: string) => void };
+/** `projectMenu` is the app's project chooser (components/project-picker.tsx), shown in the header: agents write inside the project. */
+type Props = { models: Model[]; cwd?: string; dark: boolean; onOpenChat: (id: string) => void; projectMenu?: React.ReactNode };
 export function AgentsCanvas(props: Props) {
   return <ReactFlowProvider><Canvas {...props} /></ReactFlowProvider>;
 }
@@ -301,7 +302,7 @@ export function AgentsCanvas(props: Props) {
 /** Models listed by a provider other than the engine's own, fetched once per provider and settings version. */
 const catalogs = new Map<string, { version: string; models?: Model[]; error?: string }>();
 
-function Canvas({ models, cwd, dark, onOpenChat }: Props) {
+function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
   const flow = useReactFlow(), board = useRef<HTMLDivElement>(null), pointer = useRef<XYPosition | null>(null), connectFrom = useRef<XYPosition | null>(null);
   const [graph, setGraph] = useState<CanvasGraph>(() => readGraph() ?? { ...withMother(TEMPLATES[0].build()), template: TEMPLATES[0].id });
   // What is selected is kept apart from the saved graph: a click picks one, Shift+click or Shift+drag several.
@@ -535,6 +536,7 @@ function Canvas({ models, cwd, dark, onOpenChat }: Props) {
   return <section className="agents-canvas" aria-label="Agents canvas">
     <header className="canvas-header">
       <Input aria-label="Graph name" className="canvas-name" value={graph.name} maxLength={120} onChange={event => setGraph(current => ({ ...current, name: event.target.value }))} />
+      {projectMenu}
       {run && <span className="canvas-chip" role="status"><i className="canvas-dot" data-status={FINISHED.has(run.status) ? run.status : "running"} />{FINISHED.has(run.status) ? "Finished" : "Running"} · {done} of {agents.length} done</span>}
       <span className="canvas-spacer" />
       {run && <Button variant="ghost" size="sm" onClick={() => onOpenChat(run.rootThreadId)}><ExternalLink size={14} />Open run chat</Button>}
@@ -552,7 +554,7 @@ function Canvas({ models, cwd, dark, onOpenChat }: Props) {
         onPaneClick={() => { setSelection([]); setWireMenu(null); }} deleteKeyCode={["Backspace", "Delete"]} zoomOnDoubleClick={false} colorMode={dark ? "dark" : "light"} fitView fitViewOptions={FIT} minZoom={0.3} proOptions={{ hideAttribution: true }}>
         <Background variant={BackgroundVariant.Dots} gap={22} size={1.2} />
         <Controls showInteractive={false} />
-        <MiniMap pannable zoomable className="canvas-minimap" />
+        <MiniMap pannable zoomable className="canvas-minimap" style={{ width: 150, height: 100 }} />
       </ReactFlow>
       {/* Under the board, not floating on it, so it never covers the zoom buttons or the minimap. */}
       <div className="canvas-toolbar" role="toolbar" aria-label="Add to the canvas">
