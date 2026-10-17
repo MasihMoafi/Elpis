@@ -119,6 +119,12 @@ test('agents canvas: writers with automatic checks, architectures, wiring, persi
     const wave = async title => (await node(title).locator('.agent-node-kind').innerText()).match(/wave (\d+)/i)?.[1];
     assert.deepEqual([await wave('Part 1'), await wave('Part 3'), await wave('Join the parts')], ['1', '1', '2']);
     assert.deepEqual(await canvas.getByRole('region', { name: 'Run order' }).locator('li').allInnerTexts(), ['WAVE 1\nPart 1, Part 2, Part 3', 'WAVE 2\nJoin the parts']);
+    // The critical path: the longest chain, which sets how many rounds the run takes; hovering it lights its wires.
+    const critical = canvas.locator('.canvas-critical');
+    assert.equal(await critical.innerText(), 'CRITICAL PATH · 2 ROUNDS\nPart 1 → Join the parts');
+    await critical.hover();
+    assert.equal(await canvas.locator('.react-flow__edge.selected').count(), 1, 'its one wire is lit');
+    await page.mouse.move(0, 0);
     assert.equal(await canvas.locator('.canvas-chevron').count(), 3 * 6);
     assert.equal(await canvas.locator('.canvas-chevron[data-live]').count(), 0);
 

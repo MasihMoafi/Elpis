@@ -13,7 +13,7 @@ import { IsoBoard, ViewToggle } from "@/components/agents-iso";
 import { api, providerChoices, type Entry, type Model, type ProviderSettings, type Thread } from "@/lib/api";
 import { useElpisSettings } from "@/lib/settings-store";
 import { appStorage } from "@/lib/projects";
-import { DONE, FATHER, MOTHER, TASKS_PER_AGENT, TEMPLATES, applyPlan, arrange, boardForPlan, checkOf, commandParts, shapeOf, makesLoop, maxAgents, newAgents, newId, parseCommand, parents, readGraph, runParts, saveGraph, waves, withMother, type AgentData, type CanvasEdge, type CanvasGraph, type CanvasNode, type CatalogModel, type Command, type MotherSettings, type NoteData, type Plan, type RunTask, type TaskStatus } from "@/lib/canvas";
+import { DONE, FATHER, MOTHER, TASKS_PER_AGENT, TEMPLATES, applyPlan, arrange, boardForPlan, checkOf, criticalPath, commandParts, shapeOf, makesLoop, maxAgents, newAgents, newId, parseCommand, parents, readGraph, runParts, saveGraph, waves, withMother, type AgentData, type CanvasEdge, type CanvasGraph, type CanvasNode, type CatalogModel, type Command, type MotherSettings, type NoteData, type Plan, type RunTask, type TaskStatus } from "@/lib/canvas";
 
 /** A run: the Mother's part, and the Father's when the graph has more agents than she runs (lib/canvas.ts `parents`):
  * his tasks wait in `father` until her part has succeeded, then run in his own chat. */
@@ -29,6 +29,8 @@ const STATUS_LABEL: Record<TaskStatus | "idle", string> = { idle: "not run", pen
 const CHECK_LABEL: Record<TaskStatus | "idle", string> = { idle: "Checked after it runs", pending: "Check waits for it", running: "Being checked", succeeded: "Check passed", failed: "Check failed", blocked: "Check blocked", cancelled: "Check cancelled" };
 const FINISHED = new Set(["succeeded", "failed", "cancelled", "completed"]);
 const lines = (text: string) => text.split("\n").map(line => line.trim()).filter(Boolean);
+/** What Elpis is asked when the user ran a team without writing a goal: keep what is drawn and set, and fill the rest. */
+const DRAWN = "Run this team as drawn: keep every agent, its wiring and whatever is already set; give each agent the prompt and folders it lacks, from its name and its place in the team.";
 /** How to manage agents, from the people who build them: read before designing a team. */
 const GUIDE = [
   { title: "Building effective agents", note: "Anthropic: the patterns, and when a simple workflow beats an agent", href: "https://www.anthropic.com/engineering/building-effective-agents" },
@@ -461,6 +463,8 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
   // A click on a dot (no drag) opens the command bar there; the new agents take that side of it.
   const onHandle = (id: string, end: HandleEnd, event: ReactMouseEvent) => { event.stopPropagation(); openAdder({ x: event.clientX, y: event.clientY }, { id, as: end === "source" ? "target" : "source" }); };
   // The Father, when the graph has more agents than the Mother runs: drawn left of the first agents he starts.
+  // The critical path, highlighted on the board while the pointer is on it in the run order.
+  const critical = useMemo(() => criticalPath(graph), [graph]), [showCritical, setShowCritical] = useState(false);
   const split = useMemo(() => parents(graph), [graph]), his = new Set(split.father);
   // React Flow shows a node once its size is known; the Father is not in the saved board, so his size is kept here.
   const [fatherSize, setFatherSize] = useState<{ width: number; height: number } | null>(null);
@@ -481,9 +485,10 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
     ...graph.edges.map(edge => {
       // A wire goes live once its first agent's check passed and the second agent is running.
       const from = states[checkOf(edge.source)]?.status, to = states[edge.target]?.status, live = from === "succeeded" && to === "running";
-      return { ...edge, type: "flow", selected: wireMenu?.edge.id === edge.id, data: { live }, className: from === "failed" || to === "blocked" ? "canvas-edge-cut" : live ? "canvas-edge-live" : from === "succeeded" ? "canvas-edge-done" : undefined };
+      const onPath = showCritical && critical.includes(edge.source) && critical[critical.indexOf(edge.source) + 1] === edge.target;
+      return { ...edge, type: "flow", selected: wireMenu?.edge.id === edge.id || onPath, data: { live }, className: from === "failed" || to === "blocked" ? "canvas-edge-cut" : live ? "canvas-edge-live" : from === "succeeded" ? "canvas-edge-done" : undefined };
     }),
-  ], [graph.edges, graph.nodes, states, order, wireMenu]); // eslint-disable-line react-hooks/exhaustive-deps
+  ], [graph.edges, graph.nodes, states, order, wireMenu, showCritical]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const onNodesChange = (changes: NodeChange[]) => {
     const removed = new Set(changes.flatMap(change => change.type === "remove" && change.id !== MOTHER ? [change.id] : []));
@@ -742,8 +747,10 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
   // "Let Elpis handle it": a fast model designs the team from a goal, or does what was typed (POST /api/canvas/plan,
   // bridge/canvas-plan.mjs). The board it returns replaces this one in one step, so Ctrl+Z undoes it.
   const [planning, setPlanning] = useState("");
+  const [needProject, setNeedProject] = useState(false);
+  useEffect(() => { if (cwd) setNeedProject(false); }, [cwd]);
   async function letElpis(goal: string): Promise<CanvasGraph | null> {
-    if (!cwd) { setNotice("Choose a project at the top first: Elpis picks the folders agents write from it."); return null; }
+    if (!cwd) { setNeedProject(true); setNotice("Choose the project the agents work in, then try again."); return null; }
     setPlanning(goal); setNotice(""); setMenu(null);
     try {
       const plan = await api<Plan>("/canvas/plan", { goal, cwd, folders: project.folders ?? [], agents: boardForPlan(graph), maxAgents: limit });
@@ -751,7 +758,7 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
       setGraph(next); setSelection([]);
       setTimeout(() => void flow.fitView({ ...FIT, duration: 250 }), 60);
       return next;
-    } catch (error) { setNotice(`Elpis could not do it: ${error instanceof Error ? error.message : String(error)}`); return null; }
+    } catch (error) { setNotice(`Elpis could not fill in the team: ${error instanceof Error ? error.message : String(error)}`); return null; }
     finally { setPlanning(""); }
   }
 
@@ -766,9 +773,12 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
   }
 
   async function start() {
-    // Prompts and folders left empty are Elpis's to fill, from the run's goal.
+    // Agents work inside a project: without one, the notice offers the project menu right there.
+    if (!cwd) { setNeedProject(true); setNotice("Choose the project the agents work in, then run again."); return; }
+    // Prompts and folders left empty are Elpis's to fill: from the run's goal, or, with none written, from the team as
+    // drawn. A run never stops for a missing goal.
     const empty = agents.some(node => !node.data.instruction.trim() || !node.data.writeScopes.length);
-    const ready = empty && mother.brief.trim() ? await letElpis(mother.brief) : graph;
+    const ready = empty ? await letElpis(mother.brief.trim() || DRAWN) : graph;
     if (!ready) return;
     const built = runParts(ready);
     if ("error" in built) { setNotice(built.error); return; }
@@ -834,7 +844,7 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
       {undoLoad && !notice && !planning && <p className="canvas-notice" data-tone="info" role="status">Loaded {undoLoad.loaded}.
         <Button variant="outline" size="sm" onClick={() => { setGraph(undoLoad.previous); setUndoLoad(null); setTimeout(() => void flow.fitView({ ...FIT, duration: 250 }), 60); }}>Undo</Button>
         <button type="button" aria-label="Dismiss" onClick={() => setUndoLoad(null)}><X size={13} /></button></p>}
-      {notice && <p className="canvas-notice" role="alert">{notice}<button type="button" aria-label="Dismiss" onClick={() => setNotice("")}><X size={13} /></button></p>}
+      {notice && <p className="canvas-notice" role="alert">{notice}{needProject && !cwd && projectMenu}<button type="button" aria-label="Dismiss" onClick={() => setNotice("")}><X size={13} /></button></p>}
     </div>
     {!panelOpen ? null : selected ? <aside className="canvas-side" aria-label="Selected agent">
       <p className="hud-menu-title">Agent{order.get(selected.id) ? ` · wave ${order.get(selected.id)}` : ""}{states[selected.id] ? ` · ${STATUS_LABEL[states[selected.id].status]}` : ""} · {CHECK_LABEL[states[checkOf(selected.id)]?.status ?? "idle"]}</p>
@@ -886,6 +896,8 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
       {columns.length > 0 && <section className="canvas-order" aria-label="Run order">
         <p className="hud-menu-title">Run order</p>
         <ol>{columns.map(({ level, members }) => <li key={level} data-status={waveState(members)}><span>Wave {level}</span>{members.map(node => node.data.title || "Untitled").join(", ")}</li>)}</ol>
+        {critical.length > 1 && <p className="canvas-critical" onMouseEnter={() => setShowCritical(true)} onMouseLeave={() => setShowCritical(false)} title="The longest chain: the run takes at least this many rounds, however many agents run at once">
+          <span>Critical path · {critical.length} rounds</span>{critical.map(titleOf).join(" → ")}</p>}
       </section>}
       {(["Patterns", "Research", "Start"] as const).map(group => <section key={group} className="canvas-templates" aria-label={group}>
         <p className="hud-menu-title">{group === "Start" ? "Start fresh" : group}</p>

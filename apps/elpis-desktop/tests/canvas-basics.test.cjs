@@ -6,7 +6,7 @@ const assert = require('node:assert/strict');
 const { openCanvas } = require('./canvas-fixture.cjs');
 
 test('canvas basics: undo and redo, copy and paste, duplicate, delete keeping the flow, menus, rename, fit', async () => {
-  const { page, canvas, node, wires, saved, titles, agentCount, fit, errors, plans, close } = await openCanvas();
+  const { page, canvas, node, wires, saved, titles, agentCount, fit, errors, plans, runs, close } = await openCanvas();
   try {
     const off = () => page.evaluate(() => document.activeElement?.blur());
     const wired = (graph, from, to) => graph.edges.some(edge => graph.nodes.find(item => item.id === edge.source)?.data?.title === from && graph.nodes.find(item => item.id === edge.target)?.data?.title === to);
@@ -172,9 +172,13 @@ test('canvas basics: undo and redo, copy and paste, duplicate, delete keeping th
     for (const box of await canvas.locator('.react-flow__node-agent').evaluateAll(list => list.map(item => { const at = item.getBoundingClientRect(); return { x: at.x, y: at.y, right: at.right, bottom: at.bottom }; })))
       assert.ok(box.x >= area.x && box.right <= area.x + area.width && box.y >= area.y && box.bottom <= area.y + area.height, 'every agent is in view');
 
-    // Without a goal, Run graph names what is missing and sends nothing.
+    // Run graph never stops for a missing goal: Elpis gives each agent what it lacks, from the team as drawn, and the
+    // run starts.
     await canvas.getByRole('button', { name: 'Run graph', exact: true }).click();
-    await canvas.getByText('“Step 1: the base” has no folder it may write: choose one, or give the run a goal (Mother) and Elpis fills it in.').waitFor();
+    await page.waitForFunction(() => document.querySelector('[role="status"]')?.textContent?.includes('done'), null, { timeout: 10000 });
+    assert.match(plans.at(-1).goal, /^Run this team as drawn/);
+    assert.equal(runs.length, 1);
+    assert.ok(runs[0].tasks.filter(task => task.kind === 'implement').every(task => task.writeScopes.length), 'every agent got a folder');
     // "Let Elpis handle it": from a goal, Elpis designs the team; one Ctrl+Z puts the old board back.
     await canvas.getByRole('button', { name: 'Mother', exact: true }).click();
     const motherPanel = canvas.getByRole('complementary', { name: 'Mother', exact: true });
@@ -206,6 +210,15 @@ test('canvas basics: undo and redo, copy and paste, duplicate, delete keeping th
     const outline = await canvas.locator('.react-flow__node.selected .agent-node').first().evaluate(item => getComputedStyle(item).outlineColor);
     assert.ok(saturation(idleWire) < 0.2, `an idle wire is ${idleWire}`);
     assert.ok(saturation(outline) < 0.2, `the selection outline is ${outline}`);
+
+    // With no project chosen, Run graph says so and offers the project menu right in its message.
+    await page.evaluate(() => localStorage.setItem('elpis-projects-v1', JSON.stringify({ projects: [], selectedId: null }))); await page.reload();
+    await page.getByRole('button', { name: 'Canvas', exact: true }).click(); await canvas.waitFor();
+    await canvas.getByRole('button', { name: 'Run graph', exact: true }).click();
+    const alert = canvas.getByRole('alert').filter({ hasText: 'Choose the project the agents work in, then run again.' });
+    await alert.waitFor();
+    assert.match(await alert.innerText(), /project/i);
+    assert.ok(await alert.locator('button').count() >= 1, 'the project menu sits in the message');
     assert.deepEqual(errors, []);
   } finally { await close(); }
 });

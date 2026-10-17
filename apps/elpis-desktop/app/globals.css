@@ -830,6 +830,8 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .canvas-order li[data-status="running"] { border-left-color:var(--context); }
 .canvas-order li[data-status="succeeded"] { border-left-color:var(--success); }
 .canvas-order li[data-status="failed"] { border-left-color:var(--destructive); }
+.canvas-critical { display:grid; gap:2px; margin:6px 0 0; padding:6px 8px; border-left:2px solid var(--foreground); color:var(--foreground); font-size:12.5px; line-height:1.35; overflow-wrap:anywhere; cursor:default; }
+.canvas-critical span { font:500 10.5px/1.6 var(--mono); letter-spacing:.08em; text-transform:uppercase; color:var(--muted-foreground); }
 .canvas-help { margin:6px 4px 0; color:var(--muted-foreground); font-size:12px; line-height:1.4; }
 [data-kind="mother"] { --kind:var(--foreground); } [data-kind="agent"] { --kind:#6d5bd0; }
 .dark [data-kind="agent"] { --kind:#ab84ff; }
