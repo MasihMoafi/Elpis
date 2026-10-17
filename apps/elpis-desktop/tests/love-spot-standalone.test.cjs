@@ -22,21 +22,22 @@ test('Love Spot standalone Electron and Elpis exchange mouse strokes in under a 
     xvfb = spawn('Xvfb', ['-displayfd', '3', '-screen', '0', '1440x960x24', '-nolisten', 'tcp'], { stdio: ['ignore', 'ignore', 'ignore', 'pipe'] });
     const display = await new Promise((resolve, reject) => { xvfb.stdio[3].once('data', data => resolve(`:${data.toString().trim()}`)); xvfb.once('error', reject); xvfb.once('exit', code => reject(new Error(`Xvfb exited ${code}`))); });
     await f.open(f.page);
-    electron = await _electron.launch({ executablePath: require('electron'), args: ['--no-sandbox', bootstrap], env: { ...process.env, DISPLAY: display, EXCALIDRAW_LOCAL_DIR: f.directory } });
+    electron = await _electron.launch({ executablePath: require('electron'), args: ['--no-sandbox', '--ozone-platform=x11', bootstrap], env: { ...process.env, XDG_SESSION_TYPE: 'x11', WAYLAND_DISPLAY: '', DISPLAY: display, EXCALIDRAW_LOCAL_DIR: f.directory } });
     const standalone = await electron.firstWindow(); standalone.setDefaultTimeout(10000);
     await standalone.locator('.excalidraw canvas').first().waitFor();
     await Promise.all([f.draw(f.page), f.draw(standalone, 140)]);
-    const fromStandalone = Date.now();
     await f.waitFor(s => s.elements.filter(e => !e.isDeleted).length === 2, 'concurrent windows lost an element');
+    const fromStandalone = Date.now(); // Measure propagation after the stroke is published.
     await f.page.bringToFront();
     await f.page.waitForTimeout(200);
     await f.page.keyboard.press('ControlOrMeta+a'); await f.page.keyboard.press('Delete');
     await f.waitFor(s => s.elements.filter(e => !e.isDeleted).length === 0, 'standalone stroke did not reach Elpis', 700);
     assert.ok(Date.now() - fromStandalone < 1000);
     await f.draw(f.page, 60);
-    const fromElpis = Date.now();
     await f.waitFor(s => s.elements.filter(e => !e.isDeleted).length === 1, 'Elpis stroke was not saved');
-    await standalone.bringToFront(); await standalone.locator('.excalidraw').focus();
+    const fromElpis = Date.now();
+    await standalone.bringToFront();
+    await standalone.locator('.excalidraw').click({ position: { x: 1000, y: 700 } });
     await standalone.waitForTimeout(200);
     await standalone.keyboard.press('ControlOrMeta+a'); await standalone.keyboard.press('Delete');
     await f.waitFor(s => s.elements.filter(e => !e.isDeleted).length === 0, 'Elpis stroke did not reach standalone', 700).catch(async e => { await standalone.screenshot({ path: '/tmp/love-spot-standalone-failure.png' }); throw new Error(`${e.message}; scene: ${JSON.stringify((await f.scene()).elements.map(e => [e.type, e.version, e.isDeleted]))}`); });

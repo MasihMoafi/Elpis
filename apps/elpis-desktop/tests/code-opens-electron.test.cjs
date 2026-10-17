@@ -17,7 +17,7 @@ test('real Electron clicks and Enter open inside Files; default native openFile 
   } });
   let electron;
   try {
-    electron = await _electron.launch({ executablePath: require('electron'), args: ['--no-sandbox', path.resolve(__dirname, 'code-open-electron.cjs')], env: { ...process.env, HOME: root, ELPIS_HOME: root, CODEX_HOME: root, CODE_OPEN_PROFILE: path.join(root, 'profile'), CODE_OPEN_URL: f.page.url() } });
+    electron = await _electron.launch({ executablePath: require('electron'), args: ['--no-sandbox', '--ozone-platform=x11', path.resolve(__dirname, 'code-open-electron.cjs')], env: { ...process.env, XDG_SESSION_TYPE: 'x11', WAYLAND_DISPLAY: '', HOME: root, ELPIS_HOME: root, CODEX_HOME: root, CODE_OPEN_PROFILE: path.join(root, 'profile'), CODE_OPEN_URL: f.page.url() } });
     const page = await electron.firstWindow(); page.setDefaultTimeout(8000);
     await page.locator('.thread-row[data-thread-id="chat-a"] .thread-link').click();
     await page.getByRole('button', { name: 'outside', exact: true }).focus(); await page.keyboard.press('Enter');
