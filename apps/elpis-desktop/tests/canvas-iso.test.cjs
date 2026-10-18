@@ -59,14 +59,14 @@ test('agents canvas, isometric: agents as buttons to select and open, run state,
     assert.equal(await canvas.locator('.react-flow').count(), 0, 'the isometric view takes the flat board\'s place');
 
     // Every agent, and the Mother, is a button named for it and its state, with its title upright above it.
-    const titles = ['Part 1', 'Part 2', 'Part 3', 'Join the parts'];
+    const titles = ['Quillon · Part 1', 'Veyra · Part 2', 'Orilo · Part 3', 'Nuvani · Join the parts'];
     const agent = title => board.getByRole('button', { name: new RegExp(`^${title}:`) });
     for (const title of titles) assert.equal(await agent(title).count(), 1, `${title} is a button`);
-    assert.equal(await agent('Part 1').getAttribute('aria-label'), 'Part 1: wave 1, not run, checked after it runs');
-    assert.equal(await agent('Join the parts').getAttribute('aria-label'), 'Join the parts: wave 2, not run, checked after it runs');
+    assert.equal(await agent('Quillon · Part 1').getAttribute('aria-label'), 'Quillon · Part 1: wave 1, not run, checked after it runs');
+    assert.equal(await agent('Nuvani · Join the parts').getAttribute('aria-label'), 'Nuvani · Join the parts: wave 2, not run, checked after it runs');
     assert.equal(await board.getByRole('button', { name: /^Mother:/ }).count(), 1);
     const labels = await board.locator('.iso-label').evaluateAll(list => list.map(item => ({ text: item.textContent, size: parseFloat(getComputedStyle(item).fontSize), transform: getComputedStyle(item).transform })));
-    assert.deepEqual(labels.map(item => item.text).sort(), ['1Part 1', '1Part 2', '1Part 3', '2Join the parts', 'Mother'], 'each title, with its wave as a badge');
+    assert.deepEqual(labels.map(item => item.text).sort(), ['1Quillon · Part 1', '1Veyra · Part 2', '1Orilo · Part 3', '2Nuvani · Join the parts', 'Mother'].sort(), 'each title, with its wave as a badge');
     for (const label of labels) {
       assert.ok(label.size >= 12, `${label.text} is at least 12px (${label.size})`);
       // Centred with a translate only: no rotation, skew or scale.
@@ -74,11 +74,11 @@ test('agents canvas, isometric: agents as buttons to select and open, run state,
     }
 
     // A click selects (the side panel shows the agent), Shift+click adds, a click on the empty board clears.
-    await agent('Part 2').click();
+    await agent('Veyra · Part 2').click();
     const inspector = canvas.getByRole('complementary', { name: 'Selected agent', exact: true });
-    assert.equal(await inspector.getByRole('textbox', { name: 'Name', exact: true }).inputValue(), 'Part 2');
-    assert.equal(await agent('Part 2').getAttribute('aria-pressed'), 'true');
-    await agent('Part 3').click({ modifiers: ['Shift'] });
+    assert.equal(await inspector.getByRole('textbox', { name: 'Name', exact: true }).inputValue(), 'Veyra · Part 2');
+    assert.equal(await agent('Veyra · Part 2').getAttribute('aria-pressed'), 'true');
+    await agent('Orilo · Part 3').click({ modifiers: ['Shift'] });
     await canvas.getByRole('complementary', { name: 'Selected agents', exact: true }).getByText(/^2 agents selected$/i).waitFor();
     const empty = await board.boundingBox();
     await page.mouse.click(empty.x + 8, empty.y + 8);
@@ -87,31 +87,33 @@ test('agents canvas, isometric: agents as buttons to select and open, run state,
     await board.getByRole('button', { name: /^Mother:/ }).click();
     await canvas.getByRole('complementary', { name: 'Mother', exact: true }).waitFor();
 
-    // Enter opens the agent's dashboard, as does a double-click.
-    await agent('Part 1').click(); await page.keyboard.press('Enter');
-    const dashboard = canvas.getByRole('dialog', { name: 'Part 1 dashboard', exact: true }); await dashboard.waitFor();
+    // Enter opens the dashboard; double-click now opens the inline name editor.
+    await agent('Quillon · Part 1').click(); await page.keyboard.press('Enter');
+    const dashboard = canvas.getByRole('dialog', { name: 'Quillon · Part 1 dashboard', exact: true }); await dashboard.waitFor();
     await page.keyboard.press('Escape'); await dashboard.waitFor({ state: 'detached' });
-    await agent('Join the parts').dblclick();
-    await canvas.getByRole('dialog', { name: 'Join the parts dashboard', exact: true }).getByRole('button', { name: 'Close dashboard' }).click();
+    await agent('Nuvani · Join the parts').dblclick();
+    await canvas.getByRole('textbox', { name: 'Rename agent', exact: true }).waitFor();
+    await page.keyboard.press('Escape'); await agent('Nuvani · Join the parts').click(); await page.keyboard.press('Enter');
+    await canvas.getByRole('dialog', { name: 'Nuvani · Join the parts dashboard', exact: true }).getByRole('button', { name: 'Close dashboard' }).click();
 
     // Keys: Tab reaches the board; the arrows move between agents in run order.
     const focused = () => page.evaluate(() => document.activeElement?.getAttribute('aria-label')?.split(':')[0] ?? document.activeElement?.tagName);
     await canvas.getByRole('button', { name: 'Run graph', exact: true }).focus();
     await page.keyboard.press('Tab');
     assert.ok(await board.evaluate(element => element.contains(document.activeElement) && document.activeElement.getAttribute('role') === 'button'), 'Tab reaches an agent on the board');
-    await agent('Part 1').focus();
+    await agent('Quillon · Part 1').focus();
     const walked = [];
     for (const key of ['ArrowRight', 'ArrowRight', 'ArrowDown', 'ArrowLeft', 'ArrowUp', 'ArrowUp', 'ArrowUp']) { await page.keyboard.press(key); walked.push(await focused()); }
-    assert.deepEqual(walked, ['Part 2', 'Part 3', 'Join the parts', 'Part 3', 'Part 2', 'Part 1', 'Mother']);
+    assert.deepEqual(walked, ['Veyra · Part 2', 'Orilo · Part 3', 'Nuvani · Join the parts', 'Orilo · Part 3', 'Veyra · Part 2', 'Quillon · Part 1', 'Mother']);
     // Space selects the focused agent.
     await page.keyboard.press('ArrowRight'); await page.keyboard.press(' ');
-    assert.equal(await inspector.getByRole('textbox', { name: 'Name', exact: true }).inputValue(), 'Part 1');
+    assert.equal(await inspector.getByRole('textbox', { name: 'Name', exact: true }).inputValue(), 'Quillon · Part 1');
 
     // Hovering an agent lights it and its wires, and the status panel names it.
-    await agent('Join the parts').hover();
+    await agent('Nuvani · Join the parts').hover();
     const status = board.getByRole('region', { name: 'Agent status', exact: true });
-    assert.match(await status.innerText(), /Join the parts[\s\S]*Wave 2/);
-    assert.equal(await board.locator('.iso-link[data-hot]').count(), 3, 'the three wires into Join the parts light up');
+    assert.match(await status.innerText(), /Nuvani · Join the parts[\s\S]*Wave 2/);
+    assert.equal(await board.locator('.iso-link[data-hot]').count(), 3, 'the three wires into Nuvani · Join the parts light up');
 
     // The wheel zooms, a drag pans, Fit shows the whole graph again.
     const world = board.locator('.iso-world');
@@ -160,22 +162,22 @@ test('agents canvas, isometric: agents as buttons to select and open, run state,
     await chooseOption(group.getByRole('combobox', { name: 'Add a folder', exact: true }), 'src/lib');
     await group.getByRole('button', { name: 'Done', exact: true }).click();
     await canvas.getByRole('button', { name: 'Run graph', exact: true }).click();
-    await until('Part 1 is done and its check passed', () => document.querySelector('.iso-node[aria-label^="Part 1:"]')?.getAttribute('aria-label') === 'Part 1: wave 1, done, check passed', 8000);
-    assert.equal(await agent('Join the parts').getAttribute('aria-label'), 'Join the parts: wave 2, running, being checked');
-    assert.equal(await agent('Part 1').getAttribute('data-status'), 'succeeded');
+    await until('Quillon · Part 1 is done and its check passed', () => document.querySelector('.iso-node[aria-label^="Quillon · Part 1:"]')?.getAttribute('aria-label') === 'Quillon · Part 1: wave 1, done, check passed', 8000);
+    assert.equal(await agent('Nuvani · Join the parts').getAttribute('aria-label'), 'Nuvani · Join the parts: wave 2, running, being checked');
+    assert.equal(await agent('Quillon · Part 1').getAttribute('data-status'), 'succeeded');
     assert.equal(await board.locator('.iso-ring[data-check="succeeded"]').count(), 1);
     assert.match(await board.getByRole('button', { name: /^Mother:/ }).getAttribute('aria-label'), /running$/);
-    // Part 1's checked work feeds the running joiner: that wire is live and its chevrons stream.
+    // Quillon · Part 1's checked work feeds the running joiner: that wire is live and its chevrons stream.
     assert.equal(await board.locator('.iso-link[data-state="live"]:not([data-mother])').count(), 1);
     assert.ok(await board.locator('.iso-link[data-state="live"] .iso-chevron[data-live]').count() >= 3, 'live wires stream their chevrons');
 
     // The light theme paints no orange, idle or running; then both themes are shot in Masih's window.
     await page.setViewportSize({ width: 1130, height: 660 }); await page.waitForTimeout(300);
-    await agent('Part 2').hover();
+    await agent('Veyra · Part 2').hover();
     assert.deepEqual(await oranges(page), [], 'light theme, isometric board: no orange');
     await shoot('iso-light-1130');
     await chooseTheme(page, 'dark'); await page.waitForTimeout(300);
-    await agent('Part 2').hover();
+    await agent('Veyra · Part 2').hover();
     await shoot('iso-dark-1130');
     await chooseTheme(page, 'light');
 
@@ -183,7 +185,7 @@ test('agents canvas, isometric: agents as buttons to select and open, run state,
     await canvas.getByRole('button', { name: /Hierarchical/ }).click();
     await agent('Team B worker 2').waitFor();
     assert.equal(await board.locator('.iso-node[data-kind="agent"]').count(), 8);
-    assert.equal(await agent('Join the areas').getAttribute('aria-label'), 'Join the areas: wave 4, not run, checked after it runs');
+    assert.equal(await agent('Eshvi · Join the areas').getAttribute('aria-label'), 'Eshvi · Join the areas: wave 4, not run, checked after it runs');
     // Dense in Masih's window: no title covers another; a title without room shows its wave badge until pointed at.
     const overlapping = () => board.locator('.iso-label').evaluateAll(list => { const box = item => item.getBoundingClientRect(), meet = (a, b) => a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
       return list.flatMap((a, index) => list.slice(index + 1).filter(b => meet(box(a), box(b))).map(b => `${a.textContent} / ${b.textContent}`)); });

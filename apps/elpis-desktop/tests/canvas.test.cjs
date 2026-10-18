@@ -37,7 +37,7 @@ test('agents canvas: writers with automatic checks, architectures, wiring, persi
     // The first agent's own chat, as its dashboard reads it.
     if (url.pathname === '/api/threads/child-first') return json({ thread: { ...root, id: 'child-first' }, data: [
       { turnId: 't', item: { id: 'i1', type: 'commandExecution', command: 'rg lexer' }, startedAtMs: 1000, completedAtMs: 4000 },
-      { turnId: 't', item: { id: 'i2', type: 'agentMessage', text: 'Part 1 is built: the lexer now reads numbers.' }, startedAtMs: 4000, completedAtMs: 65000 }], nextCursor: null });
+      { turnId: 't', item: { id: 'i2', type: 'agentMessage', text: 'Quillon · Part 1 is built: the lexer now reads numbers.' }, startedAtMs: 4000, completedAtMs: 65000 }], nextCursor: null });
     if (url.pathname.startsWith('/api/threads/root')) return json({ thread: root, data: [], nextCursor: null });
     if (url.pathname.startsWith('/api/')) return json({});
     const relative = url.pathname === '/' ? 'index.html' : url.pathname.slice(1);
@@ -68,7 +68,7 @@ test('agents canvas: writers with automatic checks, architectures, wiring, persi
     // architecture's shape: the Mother, then a column per wave. Every agent writes.
     const loaded = canvas.locator('.canvas-template[aria-current="true"]');
     assert.match(await loaded.innerText(), /^Split by parts\s*On the board/i);
-    assert.deepEqual(await nodes.locator('.agent-node-title').allInnerTexts(), ['Part 1', 'Part 2', 'Part 3', 'Join the parts']);
+    assert.deepEqual(await nodes.locator('.agent-node-title').allInnerTexts(), ['Quillon · Part 1', 'Veyra · Part 2', 'Orilo · Part 3', 'Nuvani · Join the parts']);
     const voting = canvas.locator('.canvas-template').filter({ hasText: 'Voting' });
     assert.deepEqual(await voting.locator('.canvas-shape > span').evaluateAll(columns => columns.map(column => column.children.length)), [1, 3, 1]);
     assert.match(await canvas.locator('.canvas-template').filter({ hasText: 'Plan → Build' }).innerText(), /Anthropic finds each handoff loses context/);
@@ -79,7 +79,7 @@ test('agents canvas: writers with automatic checks, architectures, wiring, persi
     await node('Write the plan').waitFor();
     assert.match(await loaded.innerText(), /^Plan → Build\s*On the board/i);
     await canvas.getByRole('status').filter({ hasText: 'Loaded Plan → Build.' }).getByRole('button', { name: 'Undo', exact: true }).click();
-    await node('Part 1').waitFor();
+    await node('Quillon · Part 1').waitFor();
     assert.match(await loaded.innerText(), /^Split by parts/i);
     assert.equal(await nodes.count(), 4);
     assert.equal(await edges.count(), 3);
@@ -117,11 +117,11 @@ test('agents canvas: writers with automatic checks, architectures, wiring, persi
     // Kahn's waves: each agent shows when it starts, and the run order lists them. Every wire carries chevrons
     // pointing its way; none stream before a run.
     const wave = async title => (await node(title).locator('.agent-node-kind').innerText()).match(/wave (\d+)/i)?.[1];
-    assert.deepEqual([await wave('Part 1'), await wave('Part 3'), await wave('Join the parts')], ['1', '1', '2']);
-    assert.deepEqual(await canvas.getByRole('region', { name: 'Run order' }).locator('li').allInnerTexts(), ['WAVE 1\nPart 1, Part 2, Part 3', 'WAVE 2\nJoin the parts']);
+    assert.deepEqual([await wave('Quillon · Part 1'), await wave('Orilo · Part 3'), await wave('Nuvani · Join the parts')], ['1', '1', '2']);
+    assert.deepEqual(await canvas.getByRole('region', { name: 'Run order' }).locator('li').allInnerTexts(), ['WAVE 1\nQuillon · Part 1, Veyra · Part 2, Orilo · Part 3', 'WAVE 2\nNuvani · Join the parts']);
     // The critical path: the longest chain, which sets how many rounds the run takes; hovering it lights its wires.
     const critical = canvas.locator('.canvas-critical');
-    assert.equal(await critical.innerText(), 'CRITICAL PATH · 2 ROUNDS\nPart 1 → Join the parts');
+    assert.equal(await critical.innerText(), 'CRITICAL PATH · 2 ROUNDS\nQuillon · Part 1 → Nuvani · Join the parts');
     await critical.hover();
     assert.equal(await canvas.locator('.react-flow__edge.selected').count(), 1, 'its one wire is lit');
     await page.mouse.move(0, 0);
@@ -129,17 +129,17 @@ test('agents canvas: writers with automatic checks, architectures, wiring, persi
     assert.equal(await canvas.locator('.canvas-edge-live').count(), 0);
 
     // Selecting an agent opens it: its prompt, model, the project folders it may write, and what its check holds it to.
-    await node('Join the parts').click();
+    await node('Nuvani · Join the parts').click();
     const inspector = canvas.getByRole('complementary', { name: 'Selected agent', exact: true });
     assert.match(await inspector.locator('.hud-menu-title').innerText(), /Checked after it runs/i);
-    assert.equal(await node('Join the parts').locator('.agent-node-mark').getAttribute('aria-label'), 'Checked after it runs');
+    assert.equal(await node('Nuvani · Join the parts').locator('.agent-node-mark').getAttribute('aria-label'), 'Checked after it runs');
     // Every choice in every menu reads in full: none is cut off by the panel or hidden under the check mark.
     for (const name of ['Model', 'Add a folder']) assert.deepEqual(await optionsCut(inspector.getByRole('combobox', { name, exact: true })), [], `${name} menu`);
     await chooseOption(inspector.getByRole('combobox', { name: 'Add a folder', exact: true }), 'src');
     await inspector.getByRole('group', { name: 'May write' }).getByText('src', { exact: true }).waitFor();
     assert.equal(await inspector.getByRole('textbox', { name: 'Done when', exact: true }).getAttribute('placeholder'), 'The change builds and its tests pass.');
 
-    // Add an agent from the Add bar and wire Join the parts to it by dragging between their dots.
+    // Add an agent from the Add bar and wire Nuvani · Join the parts to it by dragging between their dots.
     await canvas.getByRole('button', { name: 'Add agent', exact: true }).click();
     await until('the agent is added', () => document.querySelectorAll('.react-flow__node-agent').length === 5);
     await fit();
@@ -148,13 +148,13 @@ test('agents canvas: writers with automatic checks, architectures, wiring, persi
       await page.mouse.move(a.x + a.width / 2, a.y + a.height / 2); await page.mouse.down();
       await page.mouse.move((a.x + b.x) / 2, (a.y + b.y) / 2, { steps: 5 }); await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2, { steps: 5 }); await page.mouse.up();
     };
-    await drag('Join the parts', 'New agent');
+    await drag('Nuvani · Join the parts', 'Zelko');
     await until('the drag made a wire', () => document.querySelectorAll('.react-flow__edge:not(.canvas-edge-mother)').length === 4);
-    assert.equal(await wave('New agent'), '3');
+    assert.equal(await wave('Zelko'), '3');
 
     // A wire that would make a loop is refused, and says why.
     await fit();
-    await drag('New agent', 'Part 1');
+    await drag('Zelko', 'Quillon · Part 1');
     await canvas.getByText('That wire would make a loop', { exact: false }).waitFor();
     assert.equal(await edges.count(), 4);
 
@@ -181,7 +181,7 @@ test('agents canvas: writers with automatic checks, architectures, wiring, persi
     assert.deepEqual((await saved()).nodes.filter(item => item.type === 'agent').map(item => item.data.writeScopes), [['src/lib'], ['src/lib'], ['src/lib'], ['src', 'src/lib'], ['src/lib']]);
     await group.getByRole('button', { name: 'Done', exact: true }).click();
     // The joiner thinks harder: Sol at high thinking.
-    await node('Join the parts').click();
+    await node('Nuvani · Join the parts').click();
     await chooseOption(inspector.getByRole('combobox', { name: 'Model', exact: true }), '|gpt-6.1-sol');
     await chooseOption(inspector.getByRole('combobox', { name: 'Thinking', exact: true }), 'high');
 
@@ -193,25 +193,25 @@ test('agents canvas: writers with automatic checks, architectures, wiring, persi
     assert.equal(ran.rootThreadId, 'root');
     assert.equal(ran.tasks.length, 10);
     const byTitle = Object.fromEntries(ran.tasks.map(task => [task.title, task]));
-    const join = byTitle['Join the parts'], joinCheck = byTitle['Check: Join the parts'];
+    const join = byTitle['Nuvani · Join the parts'], joinCheck = byTitle['Check: Nuvani · Join the parts'];
     assert.deepEqual([join.kind, join.writeScopes, join.acceptanceCriteria], ['implement', ['src', 'src/lib'], ['The whole suite passes']]);
-    assert.deepEqual(join.dependsOn, ['Part 1', 'Part 2', 'Part 3'].flatMap(title => [byTitle[title].id, byTitle[`Check: ${title}`].id]));
+    assert.deepEqual(join.dependsOn, ['Quillon · Part 1', 'Veyra · Part 2', 'Orilo · Part 3'].flatMap(title => [byTitle[title].id, byTitle[`Check: ${title}`].id]));
     assert.deepEqual([joinCheck.kind, joinCheck.dependsOn, joinCheck.writeScopes], ['verify', [join.id], []]);
-    assert.match(joinCheck.instruction, /^Check the work of “Join the parts”[\s\S]*The whole suite passes/);
-    assert.deepEqual(byTitle['New agent'].dependsOn, [join.id, joinCheck.id]);
+    assert.match(joinCheck.instruction, /^Check the work of “Nuvani · Join the parts”[\s\S]*The whole suite passes/);
+    assert.deepEqual(byTitle['Zelko'].dependsOn, [join.id, joinCheck.id]);
     // The new agent had no prompt: Elpis filled it from the run's goal before the run, and nothing else changed.
-    assert.deepEqual([plans.length, plans[0].goal, plans[0].agents.find(item => item.title === 'New agent').prompt], [1, 'Keep the public API unchanged.', '']);
-    assert.equal(byTitle['New agent'].instruction, 'Goal of the whole run: Keep the public API unchanged.\n\nDo New agent\n\nSave your result as files inside your allowed folders, including a markdown answer for research or decisions. Include the answer and file paths in your terminal report summary so the next agent can use them.\n\nYour report\'s changed_files must name every file that changed in your folders, build output included (such as __pycache__ from running Python; python3 -B writes none). A rejected report does not count as your one report: fix what its reason names and report again.');
-    assert.deepEqual(byTitle['New agent'].acceptanceCriteria, ['The change builds and its tests pass.']);
+    assert.deepEqual([plans.length, plans[0].goal, plans[0].agents.find(item => item.title === 'Zelko').prompt], [1, 'Keep the public API unchanged.', '']);
+    assert.equal(byTitle['Zelko'].instruction, 'Goal of the whole run: Keep the public API unchanged.\n\nDo Zelko\n\nSave your result as files inside your allowed folders, including a markdown answer for research or decisions. Include the answer and file paths in your terminal report summary so the next agent can use them.\n\nYour report\'s changed_files must name every file that changed in your folders, build output included (such as __pycache__ from running Python; python3 -B writes none). A rejected report does not count as your one report: fix what its reason names and report again.');
+    assert.deepEqual(byTitle['Zelko'].acceptanceCriteria, ['The change builds and its tests pass.']);
     // An agent's thinking level goes with it; one left at the model's default is not sent.
-    assert.deepEqual([join.model, join.reasoningEffort, byTitle['New agent'].reasoningEffort], ['gpt-6.1-sol', 'high', undefined]);
+    assert.deepEqual([join.model, join.reasoningEffort, byTitle['Zelko'].reasoningEffort], ['gpt-6.1-sol', 'high', undefined]);
     // The Mother is the run's chat: it starts with her model, and her brief as its instructions.
     assert.deepEqual(['model', 'instructions'].map(key => posts.find(post => post.path === '/api/threads').body[key]), ['gpt-6-luna', 'Keep the public API unchanged.']);
-    // The ring on an agent's corner is its check: Part 1 is done, then its check passes and the joiner runs.
-    assert.equal(await node('Part 1').locator('[data-status]').first().getAttribute('data-status'), 'succeeded');
+    // The ring on an agent's corner is its check: Quillon · Part 1 is done, then its check passes and the joiner runs.
+    assert.equal(await node('Quillon · Part 1').locator('[data-status]').first().getAttribute('data-status'), 'succeeded');
     await canvas.getByText(/1 of 5 done/).waitFor({ timeout: 8000 });
-    assert.equal(await node('Part 1').locator('.agent-node-mark').getAttribute('aria-label'), 'Check passed');
-    // A live wire streams its chevrons: Part 1's checked work feeds the running joiner.
+    assert.equal(await node('Quillon · Part 1').locator('.agent-node-mark').getAttribute('aria-label'), 'Check passed');
+    // A live wire streams its chevrons: Quillon · Part 1's checked work feeds the running joiner.
     assert.ok(await canvas.locator('.canvas-edge-live').count() > 0, 'live wires show running state');
     assert.equal(ran.maxConcurrency, 3);
 
@@ -240,7 +240,7 @@ test('agents canvas: writers with automatic checks, architectures, wiring, persi
     await adder.waitFor({ state: 'hidden' });
     await until('three agents were added', () => document.querySelectorAll('.react-flow__node-agent').length === 9);
     const added = (await agentsNamed()).filter(item => item.data.model === 'gpt-6-luna');
-    assert.deepEqual(added.map(item => [item.data.title, item.data.instruction]), [['Fix the lexer', 'Fix the lexer'], ['Fix the docs', 'Fix the docs'], ['New agent 3', '']]);
+    assert.deepEqual(added.map(item => [item.data.title, item.data.instruction]), [['Tavri · Fix the lexer', 'Fix the lexer'], ['Lumaro · Fix the docs', 'Fix the docs'], ['Eshvi', '']]);
 
     // Ctrl+A in a text field selects its text and opens nothing (on the board it selects every agent: canvas-basics).
     // Escape closes the bar; a double-click opens it.
@@ -287,13 +287,13 @@ test('agents canvas: writers with automatic checks, architectures, wiring, persi
     await adder.getByRole('textbox', { name: 'Prompts, one per line' }).waitFor();
     await page.keyboard.press('Enter');
     await until('two agents on Sol were added', () => document.querySelectorAll('.react-flow__node-agent').length === 11);
-    const onSol = (await agentsNamed()).filter(item => item.data.model === 'gpt-6.1-sol' && item.data.title !== 'Join the parts');
+    const onSol = (await agentsNamed()).filter(item => item.data.model === 'gpt-6.1-sol' && item.data.title !== 'Nuvani · Join the parts');
     assert.deepEqual(onSol.map(item => [item.data.effort, item.data.instruction]), [['high', ''], ['high', '']]);
 
     // A click on an agent's dot opens the bar there; prompts after a colon add the agents at once, and they wait for
     // the agent whose dot it was. After a colon, words the bar can't place are listed, never guessed.
     await fit();
-    const joinDot = await node('Join the parts').locator('.react-flow__handle.source').boundingBox();
+    const joinDot = await node('Nuvani · Join the parts').locator('.react-flow__handle.source').boundingBox();
     await page.mouse.click(joinDot.x + joinDot.width / 2, joinDot.y + joinDot.height / 2);
     await command.waitFor();
     await page.keyboard.type('luna zzz:');
@@ -303,14 +303,14 @@ test('agents canvas: writers with automatic checks, architectures, wiring, persi
     await page.keyboard.press('Enter');
     await until('the dot added two agents', () => document.querySelectorAll('.react-flow__node-agent').length === 13);
     await page.waitForTimeout(400);
-    const graph = await saved(), joiner = graph.nodes.find(item => item.data?.title === 'Join the parts');
+    const graph = await saved(), joiner = graph.nodes.find(item => item.data?.title === 'Nuvani · Join the parts');
     const patches = graph.nodes.filter(item => item.data?.title?.startsWith('Patch'));
     assert.deepEqual(patches.map(item => [item.data.title, item.data.model]), [['Patch what the suite found', 'gpt-6-luna'], ['Patch the docs', 'gpt-6-luna']]);
-    assert.ok(patches.every(patch => graph.edges.some(edge => edge.source === joiner.id && edge.target === patch.id)), 'both wait for Join the parts');
+    assert.ok(patches.every(patch => graph.edges.some(edge => edge.source === joiner.id && edge.target === patch.id)), 'both wait for Nuvani · Join the parts');
 
     // A wire let go on empty board opens the bar too; the graph is now at its limit, so the bar says so.
     await fit();
-    const handle = await node('Join the parts').locator('.react-flow__handle.source').boundingBox();
+    const handle = await node('Nuvani · Join the parts').locator('.react-flow__handle.source').boundingBox();
     // Let go on empty board: the first point right of the dot, then below it, where nothing but the board is.
     const empty = await page.evaluate(({ x, y }) => { const bare = (px, py) => document.elementFromPoint(px, py)?.classList.contains('react-flow__pane'); for (let dy = 0; dy < 400; dy += 30) for (let dx = 80; dx < 500; dx += 30) { const px = x + dx, py = y + dy; if ([[0, 0], [70, 0], [-70, 0], [0, 70], [0, -70]].every(([ox, oy]) => bare(px + ox, py + oy))) return { x: px, y: py }; } return null; }, { x: handle.x, y: handle.y });
     await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2); await page.mouse.down();
@@ -321,11 +321,11 @@ test('agents canvas: writers with automatic checks, architectures, wiring, persi
     await canvas.getByText('The graph is at its limit of 13 agents. Raise Max agents to add more.').waitFor();
 
     // An agent's dashboard (double-click, or Enter on the selected agent): its wiring, its check and its live work.
-    await fit(); await node('Part 1').dblclick();
-    const dash = canvas.getByRole('dialog', { name: 'Part 1 dashboard' });
-    await dash.getByText('Part 1 is built: the lexer now reads numbers.').waitFor();
+    await fit(); await node('Quillon · Part 1').dblclick();
+    const dash = canvas.getByRole('dialog', { name: 'Quillon · Part 1 dashboard' });
+    await dash.getByText('Quillon · Part 1 is built: the lexer now reads numbers.').waitFor();
     assert.match(await dash.innerText(), /Worked for 1m 4s · Ran a command/);
-    assert.match(await dash.innerText(), /Feeds\s+Join the parts/);
+    assert.match(await dash.innerText(), /Feeds\s+Nuvani · Join the parts/);
     assert.match(await dash.innerText(), /Its check\s+Check passed/);
     await page.keyboard.press('Escape'); await dash.waitFor({ state: 'hidden' });
     await node('Fix the docs').click(); await page.keyboard.press('Enter');
@@ -370,42 +370,42 @@ test('agents canvas: writers with automatic checks, architectures, wiring, persi
 
     // A click on a wire opens its menu: insert agents on it (they take its place), or remove it.
     await fit();
-    const drawn = await saved(), titled = title => drawn.nodes.find(item => item.data?.title === title).id;
+    const drawn = await saved(), titled = title => drawn.nodes.find(item => (item.data?.title === title || item.data?.title?.endsWith(` · ${title}`))).id;
     const wireOf = (from, to) => canvas.locator(`.react-flow__edge[data-id="${drawn.edges.find(edge => edge.source === titled(from) && edge.target === titled(to)).id}"]`);
     // A wire is clicked halfway along it, where a user aims; its box's centre can be off the curve.
     // The Mother's wires fan out from one dot and overlap near her, so hers are clicked near their agent.
     // Elbow wires into one agent share their last stretch, so a wire is clicked where it alone shows, from `along` on.
     const clickWire = async (wire, along = 0.5) => {
       const point = await wire.locator('.react-flow__edge-path').evaluate((path, along) => { const m = path.getScreenCTM(), own = path.closest('.react-flow__edge'); for (let step = 0; step < 40; step++) { const at = path.getPointAtLength(path.getTotalLength() * ((along + step / 40) % 1)), x = at.x * m.a + at.y * m.c + m.e, y = at.x * m.b + at.y * m.d + m.f; if (document.elementFromPoint(x, y)?.closest('.react-flow__edge') === own) return { x, y }; } return null; }, along);
-      await page.mouse.click(point.x, point.y);
+      await page.mouse.click(point.x, point.y, { button: 'right' });
     };
-    await clickWire(wireOf('Part 1', 'Join the parts'));
+    await clickWire(wireOf('Quillon · Part 1', 'Nuvani · Join the parts'));
     const wireMenu = canvas.getByRole('menu', { name: 'Wire', exact: true });
-    assert.deepEqual(await wireMenu.getByRole('menuitem').allInnerTexts().then(list => list.map(item => item.split('\n')[0])), ['Insert agents here', 'Make it two-way', 'Remove wire']);
-    await page.keyboard.press('Enter');
+    assert.deepEqual(await wireMenu.getByRole('menuitem').allInnerTexts().then(list => list.map(item => item.split('\n')[0])), ['Describe the flow', 'Insert agents here', 'Make it two-way', 'Remove wire']);
+    await wireMenu.getByRole('menuitem', { name: /^Insert agents here/ }).click();
     await command.waitFor();
     await page.keyboard.type('Review part 1'); await page.keyboard.press('Enter');
     await until('the inserted agent was added', () => document.querySelectorAll('.react-flow__node-agent').length === 14);
     await page.waitForTimeout(400);
-    const inserted = await saved(), id = title => inserted.nodes.find(item => item.data?.title === title).id;
+    const inserted = await saved(), id = title => inserted.nodes.find(item => (item.data?.title === title || item.data?.title?.endsWith(` · ${title}`))).id;
     const wired = (from, to) => inserted.edges.some(edge => edge.source === id(from) && edge.target === id(to));
-    assert.deepEqual([wired('Part 1', 'Review part 1'), wired('Review part 1', 'Join the parts'), wired('Part 1', 'Join the parts')], [true, true, false]);
+    assert.deepEqual([wired('Quillon · Part 1', 'Review part 1'), wired('Review part 1', 'Nuvani · Join the parts'), wired('Quillon · Part 1', 'Nuvani · Join the parts')], [true, true, false]);
     await fit();
     const wires = await edges.count();
-    await clickWire(wireOf('Part 2', 'Join the parts'));
+    await clickWire(wireOf('Veyra · Part 2', 'Nuvani · Join the parts'));
     await wireMenu.getByRole('menuitem', { name: /Remove wire/ }).click();
     await wireMenu.waitFor({ state: 'hidden' }); await page.waitForTimeout(100);
     assert.equal(await edges.count(), wires - 1, 'the wire was removed');
     // The Mother's dotted wires take a click too: agents inserted there start first, and her agent waits for them.
-    await clickWire(canvas.locator(`.react-flow__edge[data-id="mother->${id('Part 3')}"]`), 0.85);
-    assert.deepEqual(await wireMenu.getByRole('menuitem').allInnerTexts(), ['Insert agents here\nBefore Part 3, started by the Mother']);
-    await page.keyboard.press('Enter'); await command.waitFor();
+    await clickWire(canvas.locator(`.react-flow__edge[data-id="mother->${id('Orilo · Part 3')}"]`), 0.85);
+    assert.deepEqual(await wireMenu.getByRole('menuitem').allInnerTexts(), ['Describe the flow\nName what the receiving agent gets', 'Insert agents here\nBefore Orilo · Part 3, started by the Mother']);
+    await wireMenu.getByRole('menuitem', { name: /^Insert agents here/ }).click(); await command.waitFor();
     await page.keyboard.type('Read the issue'); await page.keyboard.press('Enter');
-    await until('the agent before Part 3 was added', () => document.querySelectorAll('.react-flow__node-agent').length === 15);
+    await until('the agent before Orilo · Part 3 was added', () => document.querySelectorAll('.react-flow__node-agent').length === 15);
     await page.waitForTimeout(400);
-    const first = await saved(), firstId = title => first.nodes.find(item => item.data?.title === title).id;
-    assert.ok(first.edges.some(edge => edge.source === firstId('Read the issue') && edge.target === firstId('Part 3')), 'Part 3 waits for the new agent');
-    assert.match(await node('Part 3').innerText(), /wave 2/i);
+    const first = await saved(), firstId = title => first.nodes.find(item => (item.data?.title === title || item.data?.title?.endsWith(` · ${title}`))).id;
+    assert.ok(first.edges.some(edge => edge.source === firstId('Read the issue') && edge.target === firstId('Orilo · Part 3')), 'Orilo · Part 3 waits for the new agent');
+    assert.match(await node('Orilo · Part 3').innerText(), /wave 2/i);
     assert.deepEqual(errors, []);
   } finally { await browser.close(); server.close(); }
 });

@@ -10,11 +10,11 @@ test('3D selection, dashboard, shared settings and delete/undo work together', a
   const f = await openCanvas(); const { page, canvas } = f;
   try {
     await canvas.getByRole('button', { name: 'Isometric', exact: true }).click();
-    const agent = canvas.locator('.iso-node[aria-label^="Part 1:"]');
-    await agent.click(); await canvas.locator('.iso-node[aria-label^="Part 2:"]').click({ modifiers: ['Shift'] });
+    const agent = canvas.locator('.iso-node[aria-label^="Quillon · Part 1:"]');
+    await agent.click(); await canvas.locator('.iso-node[aria-label^="Veyra · Part 2:"]').click({ modifiers: ['Shift'] });
     assert.equal(await canvas.locator('.iso-node[aria-pressed="true"]').count(), 2);
-    await agent.dblclick();
-    const dashboard = canvas.getByRole('dialog', { name: 'Part 1 dashboard', exact: true }); await dashboard.waitFor();
+    await agent.click(); await page.keyboard.press('Enter');
+    const dashboard = canvas.getByRole('dialog', { name: 'Quillon · Part 1 dashboard', exact: true }); await dashboard.waitFor();
     await dashboard.getByRole('button', { name: 'Settings', exact: true }).click();
     const panel = canvas.getByRole('complementary', { name: 'Selected agent', exact: true });
     await panel.getByRole('textbox', { name: 'Prompt', exact: true }).fill('A shared prompt');
@@ -22,7 +22,7 @@ test('3D selection, dashboard, shared settings and delete/undo work together', a
     assert.equal(await canvas.locator('.iso-node[data-kind="agent"]').count(), 3);
     await page.keyboard.press('Control+z');
     assert.equal(await canvas.locator('.iso-node[data-kind="agent"]').count(), 4);
-    assert.equal((await f.saved()).nodes.find(n => n.data.title === 'Part 1').data.instruction, 'A shared prompt');
+    assert.equal((await f.saved()).nodes.find(n => n.data.title === 'Quillon · Part 1').data.instruction, 'A shared prompt');
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });
@@ -31,14 +31,14 @@ test('3D ports connect and drop to Add; changes persist on the flat board', asyn
   const f = await openCanvas(); const { page, canvas } = f;
   try {
     await canvas.getByRole('button', { name: 'Isometric', exact: true }).click();
-    await drag(page, await middle(canvas.getByRole('button', { name: 'Output of Part 1', exact: true })), await middle(canvas.getByRole('button', { name: 'Input of Part 2', exact: true })));
-    let saved = await f.saved(), from = saved.nodes.find(n => n.data.title === 'Part 1').id, to = saved.nodes.find(n => n.data.title === 'Part 2').id;
+    await drag(page, await middle(canvas.getByRole('button', { name: 'Output of Quillon · Part 1', exact: true })), await middle(canvas.getByRole('button', { name: 'Input of Veyra · Part 2', exact: true })));
+    let saved = await f.saved(), from = saved.nodes.find(n => n.data.title === 'Quillon · Part 1').id, to = saved.nodes.find(n => n.data.title === 'Veyra · Part 2').id;
     assert.ok(saved.edges.some(e => e.source === from && e.target === to));
     const board = await canvas.locator('.iso-board').boundingBox();
-    await drag(page, await middle(canvas.getByRole('button', { name: 'Output of Part 2', exact: true })), { x: board.x + board.width - 40, y: board.y + 40 });
+    await drag(page, await middle(canvas.getByRole('button', { name: 'Output of Veyra · Part 2', exact: true })), { x: board.x + board.width - 40, y: board.y + 40 });
     const add = canvas.getByRole('dialog', { name: 'Add agents', exact: true });
     await add.getByRole('textbox', { name: 'Command', exact: true }).fill(': Follow in 3D'); await page.keyboard.press('Enter');
-    saved = await f.saved(); const added = saved.nodes.find(n => n.data.title === 'Follow in 3D').id;
+    saved = await f.saved(); const added = saved.nodes.find(n => n.data.title.endsWith(' · Follow in 3D')).id;
     assert.ok(saved.edges.some(e => e.source === to && e.target === added));
     await canvas.getByRole('button', { name: 'Flat', exact: true }).click(); await f.agentCount(5, '3D edits appear in 2D');
     assert.equal(await f.wires.count(), 5);
@@ -58,7 +58,7 @@ test('3D middle and Space pan; Home fits; F frames; labels do not overlap after 
     await page.keyboard.down('Space'); await drag(page, start, { x: start.x + 45, y: start.y + 30 }); await page.keyboard.up('Space');
     assert.notEqual(await world.getAttribute('transform'), fitted, 'Space pans');
     await board.focus(); await page.keyboard.press('Home');
-    await canvas.locator('.iso-node[aria-label^="Part 1:"]').click();
+    await canvas.locator('.iso-node[aria-label^="Quillon · Part 1:"]').click();
     await page.keyboard.press('f'); assert.notEqual(await world.getAttribute('transform'), fitted, 'F frames selected pedestal');
     await page.keyboard.press('Home'); await page.keyboard.press('Control+a');
     for (const theme of ['light', 'dark']) {
@@ -86,10 +86,12 @@ test('3D labels select and open the matching agent', async () => {
   const f = await openCanvas();
   try {
     await f.canvas.getByRole('button', { name: 'Isometric', exact: true }).click();
-    const label = f.canvas.locator('.iso-label').filter({ hasText: 'Part 2' });
+    const label = f.canvas.locator('.iso-label').filter({ hasText: 'Veyra · Part 2' });
     await label.click();
-    assert.equal(await f.canvas.getByRole('textbox', { name: 'Name', exact: true }).inputValue(), 'Part 2');
+    assert.equal(await f.canvas.getByRole('textbox', { name: 'Name', exact: true }).inputValue(), 'Veyra · Part 2');
     await label.dblclick();
-    await f.canvas.getByRole('dialog', { name: 'Part 2 dashboard', exact: true }).waitFor();
+    await f.canvas.getByRole('textbox', { name: 'Rename agent', exact: true }).waitFor();
+    await f.page.keyboard.press('Escape'); await label.click(); await f.page.keyboard.press('Enter');
+    await f.canvas.getByRole('dialog', { name: 'Veyra · Part 2 dashboard', exact: true }).waitFor();
   } finally { await f.close(); }
 });

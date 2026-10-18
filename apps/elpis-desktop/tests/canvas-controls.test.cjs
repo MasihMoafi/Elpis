@@ -33,16 +33,16 @@ test('wheel at pointer, middle/Space pan, box select, delete, undo/redo, duplica
     await page.keyboard.down('Space'); previous = await transform(); await drag(page, origin, { x: origin.x + 70, y: origin.y + 35 }); await page.keyboard.up('Space');
     assert.notEqual(await transform(), previous, 'Space drag pans');
     assert.equal(await canvas.getByRole('dialog', { name: 'Add agents', exact: true }).count(), 0, 'Space does not open Add');
-    await f.fit(); await f.node('Part 1').click();
+    await f.fit(); await f.node('Quillon · Part 1').click();
     await page.keyboard.press('Control+d'); await f.agentCount(5, 'duplicate'); await page.waitForTimeout(450);
     await page.keyboard.press('Delete'); await f.agentCount(4, 'delete'); await page.keyboard.press('Control+z'); await f.agentCount(5, 'undo');
     await page.keyboard.press('Control+Shift+z'); await f.agentCount(4, 'redo');
-    await f.fit(); await f.node('Part 1').click();
+    await f.fit(); await f.node('Quillon · Part 1').click();
     previous = await transform(); await page.keyboard.press('f'); await page.waitForTimeout(400);
     assert.notEqual(await transform(), previous, 'F frames selection');
     assert.equal(await canvas.getByRole('dialog', { name: 'Add agents', exact: true }).count(), 0);
     await page.keyboard.press('Home'); await page.waitForTimeout(350);
-    await f.node('Part 1').click({ button: 'right' }); await canvas.getByRole('menu', { name: 'Agent Part 1', exact: true }).waitFor(); await page.keyboard.press('Escape');
+    await f.node('Quillon · Part 1').click({ button: 'right' }); await canvas.getByRole('menu', { name: 'Agent Quillon · Part 1', exact: true }).waitFor(); await page.keyboard.press('Escape');
     const edge = canvas.locator('.react-flow__edge:not(.canvas-edge-mother)').first(); await edge.locator('.react-flow__edge-interaction').click({ button: 'right' }); await canvas.getByRole('menu', { name: 'Wire', exact: true }).waitFor(); await page.keyboard.press('Escape');
     const currentArea = await pane.boundingBox();
     await page.mouse.click(currentArea.x + 24, currentArea.y + 24, { button: 'right' }); await canvas.getByRole('menu', { name: 'Board', exact: true }).waitFor(); await page.keyboard.press('Escape');
@@ -68,14 +68,14 @@ test('dragging handles connects; a dropped output opens Add and wires the new ag
     await f.fit();
     await f.wires.first().locator('.react-flow__edge-interaction').click({ button: 'right' });
     await canvas.getByRole('menuitem', { name: /^Remove wire/ }).click();
-    await drag(page, await center(f.node('Part 1').locator('.react-flow__handle.source')), await center(f.node('Join the parts').locator('.react-flow__handle.target')));
+    await drag(page, await center(f.node('Quillon · Part 1').locator('.react-flow__handle.source')), await center(f.node('Nuvani · Join the parts').locator('.react-flow__handle.target')));
     assert.equal(await f.wires.count(), 3);
     const area = await canvas.locator('.react-flow__pane').boundingBox();
-    await drag(page, await center(f.node('Part 2').locator('.react-flow__handle.source')), { x: area.x + area.width - 50, y: area.y + 65 });
+    await drag(page, await center(f.node('Veyra · Part 2').locator('.react-flow__handle.source')), { x: area.x + area.width - 50, y: area.y + 65 });
     const add = canvas.getByRole('dialog', { name: 'Add agents', exact: true });
     await add.getByRole('textbox', { name: 'Command', exact: true }).fill(': Follow the second answer'); await page.keyboard.press('Enter');
     await f.agentCount(5, 'drop creates a connected agent');
-    const saved = await f.saved(), made = saved.nodes.find(n => n.data.title === 'Follow the second answer'), source = saved.nodes.find(n => n.data.title === 'Part 2');
+    const saved = await f.saved(), made = saved.nodes.find(n => n.data.title.endsWith(' · Follow the second answer')), source = saved.nodes.find(n => n.data.title === 'Veyra · Part 2');
     assert.ok(saved.edges.some(e => e.source === source.id && e.target === made.id));
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }

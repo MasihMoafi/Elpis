@@ -14,7 +14,7 @@ test('canvas basics: undo and redo, copy and paste, duplicate, delete keeping th
     await agentCount(4, 'the default board');
     // Readable on opening, as FigJam keeps its objects: the board never zooms below 85% by itself, so an agent's name
     // reads at 12 px or more.
-    const named = await node('Part 1').locator('.agent-node-title').evaluate(title => parseFloat(getComputedStyle(title).fontSize) * title.getBoundingClientRect().height / title.offsetHeight);
+    const named = await node('Quillon · Part 1').locator('.agent-node-title').evaluate(title => parseFloat(getComputedStyle(title).fontSize) * title.getBoundingClientRect().height / title.offsetHeight);
     assert.ok(named >= 12, `an agent's name reads at ${named.toFixed(1)} px`);
     // Shift+click as a hand does it (Shift held, the mouse wobbling a pixel or two) adds to the selection and moves
     // nothing; Ctrl+A selects every agent.
@@ -28,24 +28,24 @@ test('canvas basics: undo and redo, copy and paste, duplicate, delete keeping th
     };
     const selected = () => canvas.locator('.react-flow__node.selected .agent-node-title').allInnerTexts();
     const placed = await where();
-    await node('Part 1').click(); await shiftClick('Part 2'); await shiftClick('Part 3');
-    assert.deepEqual(await selected(), ['Part 1', 'Part 2', 'Part 3']);
+    await node('Quillon · Part 1').click(); await shiftClick('Veyra · Part 2'); await shiftClick('Orilo · Part 3');
+    assert.deepEqual(await selected(), ['Quillon · Part 1', 'Veyra · Part 2', 'Orilo · Part 3']);
     assert.equal(await where(), placed, 'Shift+click moved nothing');
-    await shiftClick('Part 2');
-    assert.deepEqual(await selected(), ['Part 1', 'Part 3'], 'Shift+click on a selected agent takes it out');
+    await shiftClick('Veyra · Part 2');
+    assert.deepEqual(await selected(), ['Quillon · Part 1', 'Orilo · Part 3'], 'Shift+click on a selected agent takes it out');
     await off(); await page.keyboard.press('Control+a');
-    assert.deepEqual(await selected(), ['Part 1', 'Part 2', 'Part 3', 'Join the parts']);
+    assert.deepEqual(await selected(), ['Quillon · Part 1', 'Veyra · Part 2', 'Orilo · Part 3', 'Nuvani · Join the parts']);
     assert.equal(await canvas.getByRole('dialog', { name: 'Add agents', exact: true }).count(), 0, 'Ctrl+A selects; it opens nothing');
     await canvas.getByRole('complementary', { name: 'Selected agents', exact: true }).getByRole('button', { name: 'Done', exact: true }).click();
 
     // The mouse as in Fusion and Slate: left-drag on empty board draws a selection box; middle-drag pans; nothing moves.
-    const pane = await canvas.locator('.react-flow__pane').boundingBox(), p1 = await node('Part 1').boundingBox(), p3 = await node('Part 3').boundingBox();
+    const pane = await canvas.locator('.react-flow__pane').boundingBox(), p1 = await node('Quillon · Part 1').boundingBox(), p3 = await node('Orilo · Part 3').boundingBox();
     await page.mouse.move(p1.x - 20, p1.y - 20); await page.mouse.down(); await page.mouse.move(p3.x + p3.width + 20, p3.y + p3.height + 20, { steps: 8 }); await page.mouse.up();
-    assert.deepEqual(await selected(), ['Part 1', 'Part 2', 'Part 3'], 'the box selects what it covers');
+    assert.deepEqual(await selected(), ['Quillon · Part 1', 'Veyra · Part 2', 'Orilo · Part 3'], 'the box selects what it covers');
     assert.equal(await where(), placed, 'drawing a box moved nothing');
     // A click inside the boxed group picks that agent, never the whole group.
-    await shiftClick('Part 2');
-    assert.deepEqual(await selected(), ['Part 1', 'Part 3'], 'Shift+click inside a box takes that agent out');
+    await shiftClick('Veyra · Part 2');
+    assert.deepEqual(await selected(), ['Quillon · Part 1', 'Orilo · Part 3'], 'Shift+click inside a box takes that agent out');
     assert.equal(await where(), placed, 'and moves nothing');
     const view = () => canvas.locator('.react-flow__viewport').evaluate(item => item.style.transform);
     const before = await view();
@@ -73,7 +73,7 @@ test('canvas basics: undo and redo, copy and paste, duplicate, delete keeping th
     await page.waitForTimeout(450);
 
     // An agent's dots are easy to hit: a press up to 12 px from a dot's centre still lands on the dot.
-    const dot = await node('Part 1').locator('.react-flow__handle.source').boundingBox(), centre = { x: dot.x + dot.width / 2, y: dot.y + dot.height / 2 };
+    const dot = await node('Quillon · Part 1').locator('.react-flow__handle.source').boundingBox(), centre = { x: dot.x + dot.width / 2, y: dot.y + dot.height / 2 };
     for (const [dx, dy] of [[12, 0], [0, 12], [-9, -9], [9, 9]])
       assert.ok(await page.evaluate(([x, y]) => Boolean(document.elementFromPoint(x, y)?.closest('.react-flow__handle')), [centre.x + dx, centre.y + dy]), `a press ${dx}, ${dy} px from the dot lands on it`);
 
@@ -85,7 +85,7 @@ test('canvas basics: undo and redo, copy and paste, duplicate, delete keeping th
     assert.ok(await boardWidth() > wide + 200, 'the board took the panel\'s width');
     await page.reload(); await page.getByRole('button', { name: 'Canvas', exact: true }).click(); await canvas.waitFor();
     assert.equal(await canvas.getByRole('complementary').count(), 0, 'the folded panel stays folded');
-    await fit(); await node('Part 1').click();
+    await fit(); await node('Quillon · Part 1').click();
     await canvas.getByRole('complementary', { name: 'Selected agent', exact: true }).waitFor();
     await canvas.getByRole('complementary', { name: 'Selected agent', exact: true }).getByRole('button', { name: 'Done', exact: true }).click();
 
@@ -112,14 +112,14 @@ test('canvas basics: undo and redo, copy and paste, duplicate, delete keeping th
 
     // Copy and paste keep the wires among the copied agents, never to the originals; the copies are selected.
     await fit();
-    await node('Part 1').click(); await node('Join the parts').click({ modifiers: ['Shift'] });
+    await node('Quillon · Part 1').click(); await node('Nuvani · Join the parts').click({ modifiers: ['Shift'] });
     await page.keyboard.press('Control+c');
     const board = await canvas.locator('.react-flow__pane').boundingBox();
     await page.mouse.move(board.x + board.width * 0.5, board.y + board.height * 0.85);
     await page.keyboard.press('Control+v');
     await agentCount(6, 'pasted');
     let graph = await saved();
-    const copies = graph.nodes.filter(item => ['Part 1', 'Join the parts'].includes(item.data?.title));
+    const copies = graph.nodes.filter(item => ['Quillon · Part 1', 'Nuvani · Join the parts'].includes(item.data?.title));
     assert.equal(copies.length, 4);
     const copyIds = new Set(await canvas.locator('.react-flow__node-agent.selected').evaluateAll(list => list.map(item => item.dataset.id)));
     assert.equal(copyIds.size, 2, 'the two copies are selected');
@@ -133,16 +133,16 @@ test('canvas basics: undo and redo, copy and paste, duplicate, delete keeping th
 
     // Delete keeping the flow (Ctrl+Delete): what waited for the agent now waits for what it waited for.
     await canvas.getByRole('button', { name: /^Sequential/ }).click();
-    await node('Step 2: build on it').waitFor();
-    await node('Step 2: build on it').click();
+    await node('Veyra · Step 2: build on it').waitFor();
+    await node('Veyra · Step 2: build on it').click();
     await page.keyboard.press('Control+Delete');
     await agentCount(2, 'deleted keeping the flow');
     graph = await saved();
-    assert.ok(wired(graph, 'Step 1: the base', 'Step 3: finish'), 'step 3 now waits for step 1');
+    assert.ok(wired(graph, 'Quillon · Step 1: the base', 'Orilo · Step 3: finish'), 'step 3 now waits for step 1');
 
     // Right-click menus: on an agent, its actions with their keys; Duplicate adds a copy.
-    await node('Step 1: the base').click({ button: 'right' });
-    const agentMenu = canvas.getByRole('menu', { name: 'Agent Step 1: the base', exact: true });
+    await node('Quillon · Step 1: the base').click({ button: 'right' });
+    const agentMenu = canvas.getByRole('menu', { name: 'Agent Quillon · Step 1: the base', exact: true });
     assert.deepEqual(await agentMenu.getByRole('menuitem').allInnerTexts().then(list => list.map(item => item.split('\n')[0])), ['Dashboard', 'Rename', 'Add agents after it', 'Duplicate', 'Copy', 'Delete, keep the flow', 'Delete']);
     await agentMenu.getByRole('menuitem', { name: /^Duplicate/ }).click();
     await agentCount(3, 'duplicated from the menu');
@@ -161,12 +161,12 @@ test('canvas basics: undo and redo, copy and paste, duplicate, delete keeping th
     await page.keyboard.press('Escape');
 
     // F2 renames the selected agent: its name field takes the keys, with the name selected.
-    await node('Step 3: finish').click();
+    await node('Orilo · Step 3: finish').click();
     await page.keyboard.press('F2');
     await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === 'Name');
-    assert.deepEqual(await page.evaluate(() => [document.activeElement.getAttribute('aria-label'), document.activeElement.value.slice(document.activeElement.selectionStart, document.activeElement.selectionEnd)]), ['Name', 'Step 3: finish']);
+    assert.deepEqual(await page.evaluate(() => [document.activeElement.getAttribute('aria-label'), document.activeElement.value.slice(document.activeElement.selectionStart, document.activeElement.selectionEnd)]), ['Name', 'Orilo · Step 3: finish']);
     await page.keyboard.type('Finish it');
-    assert.deepEqual(await titles(), ['Step 1: the base', 'Finish it', 'Step 1: the base']);
+    assert.deepEqual(await titles(), ['Quillon · Step 1: the base', 'Finish it', 'Veyra · Step 1: the base']);
 
     // Home fits the whole graph back into view, however far it was zoomed.
     await off();
@@ -216,14 +216,14 @@ test('canvas basics: undo and redo, copy and paste, duplicate, delete keeping th
       await page.waitForTimeout(450);
     };
     const edgesNow = async () => { const graph = await saved(), title = id => graph.nodes.find(item => item.id === id)?.data?.title ?? id; return graph.edges.map(edge => [title(edge.source), title(edge.target), edge.kind ?? 'waits']); };
-    const fixer = node('Fix the login bug'), finisher = node('Finish it'), copy = node('Step 1: the base').nth(1), base = node('Step 1: the base').first();
+    const fixer = node('Fix the login bug'), finisher = node('Finish it'), copy = node('Veyra · Step 1: the base'), base = node('Quillon · Step 1: the base').first();
     await dragTo(fixer, 'source', finisher);
     assert.ok((await edgesNow()).some(([a, b, kind]) => a === 'Fix the login bug' && b === 'Finish it' && kind === 'waits'), 'right dot onto a body: it waits for this one');
     await dragTo(copy, 'target', fixer);
-    assert.equal((await edgesNow()).filter(([a, b]) => a === 'Fix the login bug' && b === 'Step 1: the base').length, 1, 'left dot onto a body: this one waits for the other');
+    assert.equal((await edgesNow()).filter(([a, b]) => a === 'Fix the login bug' && b === 'Veyra · Step 1: the base').length, 1, 'left dot onto a body: this one waits for the other');
     await dragTo(base, 'source', node('Fix the login bug'), true);
     const alongside = (await edgesNow()).filter(([, , kind]) => kind === 'alongside');
-    assert.deepEqual(alongside, [['Step 1: the base', 'Fix the login bug', 'alongside']], 'Alt: the two work alongside');
+    assert.deepEqual(alongside, [['Quillon · Step 1: the base', 'Fix the login bug', 'alongside']], 'Alt: the two work alongside');
     assert.equal(await canvas.locator('.react-flow__edge.canvas-edge-alongside .canvas-chevron').count(), 0, 'no arrows on a two-way wire');
     await dragTo(canvas.locator('.react-flow__node-mother'), 'source', finisher);
     await canvas.getByText(/The Mother starts every agent that waits for no one/).waitFor();
@@ -232,7 +232,7 @@ test('canvas basics: undo and redo, copy and paste, duplicate, delete keeping th
     // Clicked where the wire shows, as a hand would: the first point along it that no agent covers.
     const mid = await twoWay.evaluate(path => { const m = path.getScreenCTM(); for (let step = 1; step < 20; step++) { const at = path.getPointAtLength(path.getTotalLength() * step / 20), x = at.x * m.a + at.y * m.c + m.e, y = at.x * m.b + at.y * m.d + m.f; if (document.elementFromPoint(x, y)?.closest('.react-flow__edge') === path.closest('.react-flow__edge')) return { x, y }; } return null; });
     assert.ok(mid, 'part of the two-way wire shows');
-    await page.mouse.click(mid.x, mid.y);
+    await page.mouse.click(mid.x, mid.y, { button: 'right' });
     await canvas.getByRole('menu', { name: 'Wire', exact: true }).getByRole('menuitem', { name: /^Make it one-way/ }).click();
     await page.waitForTimeout(450);
     assert.equal((await edgesNow()).filter(([, , kind]) => kind === 'alongside').length, 0, 'now one-way');
@@ -245,20 +245,20 @@ test('canvas basics: undo and redo, copy and paste, duplicate, delete keeping th
     await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === 'Prompt');
     await page.keyboard.type('Write the release notes');
     await node('Write the release notes').waitFor();
-    assert.ok((await edgesNow()).some(([a, b]) => a === 'Finish it' && b === 'Write the release notes'), 'the next agent waits for it');
+    assert.ok((await edgesNow()).some(([a, b]) => a === 'Finish it' && b.endsWith(' · Write the release notes')), 'the next agent waits for it');
     await node('Write the release notes').hover();
-    await node('Write the release notes').getByRole('button', { name: 'Add an agent beside Write the release notes' }).click();
+    await node('Write the release notes').getByRole('button', { name: /^Add an agent beside .* · Write the release notes$/ }).click();
     await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === 'Prompt' && !document.activeElement.value);
     await page.keyboard.type('Update the changelog');
     await node('Update the changelog').waitFor();
-    assert.ok((await edgesNow()).some(([a, b]) => a === 'Finish it' && b === 'Update the changelog'), 'the parallel agent waits for the same agent');
+    assert.ok((await edgesNow()).some(([a, b]) => a === 'Finish it' && b.endsWith(' · Update the changelog')), 'the parallel agent waits for the same agent');
     // And beside an agent that feeds others, the parallel one feeds them too.
-    await fit(); await node('Step 1: the base').first().hover();
-    await node('Step 1: the base').first().getByRole('button', { name: 'Add an agent beside Step 1: the base' }).click();
+    await fit(); await node('Quillon · Step 1: the base').first().hover();
+    await node('Quillon · Step 1: the base').first().getByRole('button', { name: 'Add an agent beside Quillon · Step 1: the base' }).click();
     await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === 'Prompt' && !document.activeElement.value);
     await page.keyboard.type('Second base');
     await node('Second base').waitFor();
-    assert.ok((await edgesNow()).some(([a, b]) => a === 'Second base' && b === 'Finish it'), 'it feeds what its sibling feeds');
+    assert.ok((await edgesNow()).some(([a, b]) => a.endsWith(' · Second base') && b === 'Finish it'), 'it feeds what its sibling feeds');
     await canvas.getByRole('button', { name: 'Add agent', exact: true }).click();
     await page.waitForTimeout(450);
     const overlaps = await canvas.locator('.react-flow__node-agent, .react-flow__node-note, .react-flow__node-mother').evaluateAll(list => { const boxes = list.map(item => item.getBoundingClientRect()); let count = 0; boxes.forEach((a, i) => boxes.slice(i + 1).forEach(b => { if (a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom) count++; })); return count; });
@@ -268,7 +268,7 @@ test('canvas basics: undo and redo, copy and paste, duplicate, delete keeping th
     // neutral grey, never the theme's gold.
     await page.evaluate(() => localStorage.setItem('elpis-theme', 'dark')); await page.reload();
     await page.getByRole('button', { name: 'Canvas', exact: true }).click(); await canvas.waitFor();
-    await node('Step 1: the base').first().click();
+    await node('Quillon · Step 1: the base').first().click();
     // How colourful a computed colour is, 0 to 1: oklch's chroma (×5) or rgb's saturation.
     const saturation = color => { const values = color.match(/[\d.]+/g).map(Number); if (color.startsWith('oklch')) return values[1] * 5; const [r, g, b] = values.slice(0, 3).map(value => value / 255), max = Math.max(r, g, b), min = Math.min(r, g, b), light = (max + min) / 2; return max === min ? 0 : (max - min) / (1 - Math.abs(2 * light - 1)); };
     const idleWire = await wires.first().locator('.react-flow__edge-path').evaluate(path => getComputedStyle(path).stroke);

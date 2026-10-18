@@ -18,7 +18,7 @@ test('Voting finishes every agent; Tally receives all answers after their checks
     const ready = run.tasks.filter(task => run.statuses.get(task.id) === 'pending' && task.dependsOn.every(id => run.statuses.get(id) === 'succeeded'));
     for (const task of ready) {
       run.statuses.set(task.id, 'running'); events.push(`start:${task.title}`);
-      if (task.title === 'Tally the answers') run.tallyInput = task.dependsOn.map(id => results.get(id));
+      if (task.title === 'Nuvani · Tally the answers') run.tallyInput = task.dependsOn.map(id => results.get(id));
     }
     const status = [...run.statuses.values()].every(status => status === 'succeeded') ? 'succeeded' : 'running';
     return { id: run.graphId, status, tasks: run.tasks.map(task => ({ id: task.id, status: run.statuses.get(task.id), assignedThreadId: null })) };
@@ -33,13 +33,13 @@ test('Voting finishes every agent; Tally receives all answers after their checks
     assert.equal(chats.length, 1); assert.equal(chats[0].body.agents, true);
     for (const task of runs[0].tasks.filter(task => task.kind === 'implement')) {
       assert.match(task.instruction, /Save your result as files inside your allowed folders/);
-      // The live split run stopped at Part 2: running its test wrote src/__pycache__, the engine rejected the report
+      // The live split run stopped at Veyra · Part 2: running its test wrote src/__pycache__, the engine rejected the report
       // for not listing it, and the worker, told to report exactly once, stopped without reporting again.
       assert.match(task.instruction, /build output.*__pycache__/);
       assert.match(task.instruction, /A rejected report does not count as your one report: fix what its reason names and report again/);
     }
     assert.deepEqual(runs[0].tallyInput.filter(answer => /original answer/.test(answer)), [1, 2, 3].map(n => `Answer ${n}: original answer`));
-    const tallyStart = events.indexOf('start:Tally the answers');
+    const tallyStart = events.indexOf('start:Nuvani · Tally the answers');
     for (let n = 1; n <= 3; n++) assert.ok(events.indexOf(`done:Check: Answer ${n}`) < tallyStart);
     assert.match(await canvas.locator('.canvas-header').innerText(), /Finished.*4 of 4 done/);
     for (const theme of ['light', 'dark']) {

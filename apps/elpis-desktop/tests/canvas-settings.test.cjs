@@ -11,7 +11,7 @@ for (const iso of [false, true]) test(`${iso ? '3D' : '2D'} settings load every 
   const { page, canvas } = fixture;
   try {
     if (iso) await canvas.getByRole('button', { name: 'Isometric', exact: true }).click();
-    if (iso) await canvas.locator('.iso-node[aria-label^="Part 1:"]').click(); else await fixture.node('Part 1').click();
+    if (iso) await canvas.locator('.iso-node[aria-label^="Quillon · Part 1:"]').click(); else await fixture.node('Quillon · Part 1').click();
     const panel = canvas.getByRole('complementary', { name: 'Selected agent', exact: true });
     await chooseOption(panel.getByRole('combobox', { name: 'Provider', exact: true }), 'anthropic-credits');
     const model = panel.getByRole('combobox', { name: 'Model', exact: true });
@@ -19,7 +19,7 @@ for (const iso of [false, true]) test(`${iso ? '3D' : '2D'} settings load every 
     await page.waitForFunction(() => Boolean(document.activeElement?.closest('[role=listbox]')));
     await page.keyboard.press('End'); await page.keyboard.press('Enter');
     assert.equal(await model.getAttribute('data-value'), 'anthropic-credits|claude-sonnet-5');
-    if (iso) await canvas.locator('.iso-status').getByText('Sonnet 5', { exact: false }).waitFor(); else await fixture.node('Part 1').getByText('Sonnet 5', { exact: false }).waitFor();
+    if (iso) await canvas.locator('.iso-status').getByText('Sonnet 5', { exact: false }).waitFor(); else await fixture.node('Quillon · Part 1').getByText('Sonnet 5', { exact: false }).waitFor();
     await chooseOption(model, 'anthropic-credits|claude-opus-5-5');
     await panel.getByRole('combobox', { name: 'Thinking', exact: true }).focus();
     await page.keyboard.press('Enter');

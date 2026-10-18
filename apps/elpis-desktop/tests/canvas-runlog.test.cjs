@@ -24,23 +24,23 @@ test('the complete chronological log retains starts, tasks, checks and actual re
     await canvas.getByRole('button', { name: /^Voting/ }).click();
     await canvas.getByRole('button', { name: 'Run graph', exact: true }).click();
     const log = canvas.getByRole('log', { name: 'Run log', exact: true });
-    await log.getByRole('button', { name: /AGENT STARTED.*Answer 1/ }).waitFor();
+    await log.getByRole('button', { name: /AGENT STARTED.*Quillon · Answer 1/ }).waitFor();
     assert.equal(await log.getByRole('button', { name: /REPORT RECEIVED/ }).count(), 0);
     for (let phase = 1; phase <= 4; phase++) {
       f.advance(phase);
-      await log.getByRole('button', { name: phase === 1 ? /CHECK STARTED.*Answer 1/ : phase === 2 ? /AGENT STARTED.*Tally/ : phase === 3 ? /CHECK STARTED.*Tally/ : /CHECK PASSED.*Tally/ }).waitFor();
+      await log.getByRole('button', { name: phase === 1 ? /CHECK STARTED.*Quillon · Answer 1/ : phase === 2 ? /AGENT STARTED.*Tally/ : phase === 3 ? /CHECK STARTED.*Tally/ : /CHECK PASSED.*Tally/ }).waitFor();
     }
     const texts = await log.locator('li').allTextContents();
     assert.equal(texts.length, 20, 'all observed events survive, with no polling duplicates');
     assert.equal(texts.filter(text => /DATASTORE CAPTURED/.test(text)).length, 4);
-    assert.ok(texts.findIndex(text => /AGENT STARTED.*Tally/.test(text)) > texts.findIndex(text => /CHECK PASSED.*Answer 3/.test(text)));
+    assert.ok(texts.findIndex(text => /AGENT STARTED.*Tally/.test(text)) > texts.findIndex(text => /CHECK PASSED.*Orilo · Answer 3/.test(text)));
     const times = await log.locator('time').allTextContents(); assert.deepEqual(times, [...times].sort());
-    await log.getByRole('button', { name: /AGENT STARTED.*Answer 1/ }).click();
-    const dashboard = canvas.getByRole('dialog', { name: 'Answer 1 dashboard' }); await dashboard.waitFor();
+    await log.getByRole('button', { name: /AGENT STARTED.*Quillon · Answer 1/ }).click();
+    const dashboard = canvas.getByRole('dialog', { name: 'Quillon · Answer 1 dashboard' }); await dashboard.waitFor();
     await dashboard.getByRole('button', { name: 'Close dashboard' }).click();
     await canvas.getByRole('button', { name: 'Isometric', exact: true }).click();
     await log.getByRole('button', { name: /CHECK PASSED.*Tally/ }).focus(); await page.keyboard.press('Enter');
-    await canvas.getByRole('dialog', { name: 'Tally the answers dashboard' }).waitFor();
+    await canvas.getByRole('dialog', { name: 'Nuvani · Tally the answers dashboard' }).waitFor();
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });
@@ -76,16 +76,16 @@ test('Kahn waves stay visible with the sidebar closed; waiting inputs clear only
     assert.equal(await order.locator('li').count(), 2);
     for (const iso of [false, true]) {
       await canvas.getByRole('button', { name: iso ? 'Isometric' : 'Flat', exact: true }).click(); await f.fit();
-      if (iso) await canvas.locator('.iso-label').filter({ hasText: 'Tally the answers' }).click(); else await f.node('Tally the answers').click();
-      assert.match(await canvas.getByLabel('Inputs needed', { exact: true }).innerText(), /Answer 1.*Answer 2.*Answer 3/);
+      if (iso) await canvas.locator('.iso-label').filter({ hasText: 'Nuvani · Tally the answers' }).click(); else await f.node('Nuvani · Tally the answers').click();
+      assert.match(await canvas.getByLabel('Inputs needed', { exact: true }).innerText(), /Quillon · Answer 1.*Veyra · Answer 2.*Orilo · Answer 3/);
     }
     await canvas.getByRole('button', { name: 'Run graph', exact: true }).click();
     await order.locator('li[data-status="running"]').first().waitFor();
     assert.match(await order.locator('li[data-status="running"]').innerText(), /Wave 1/i);
     // Filling the template's missing prompts replaces the selection when the run starts.
-    await f.fit(); await canvas.locator('.iso-label').filter({ hasText: 'Tally the answers' }).click();
-    f.advance(1); await canvas.getByRole('log').getByRole('button', { name: /CHECK STARTED.*Answer 1/ }).waitFor();
-    assert.match(await canvas.getByLabel('Inputs needed', { exact: true }).innerText(), /Answer 1.*check/);
+    await f.fit(); await canvas.locator('.iso-label').filter({ hasText: 'Nuvani · Tally the answers' }).click();
+    f.advance(1); await canvas.getByRole('log').getByRole('button', { name: /CHECK STARTED.*Quillon · Answer 1/ }).waitFor();
+    assert.match(await canvas.getByLabel('Inputs needed', { exact: true }).innerText(), /Quillon · Answer 1.*check/);
     f.advance(2); await order.locator('li[data-status="running"]').filter({ hasText: /Wave 2/i }).waitFor();
     assert.match(await canvas.getByLabel('Inputs needed', { exact: true }).innerText(), /All inputs captured/);
     await canvas.getByRole('button', { name: 'Flat', exact: true }).click();
@@ -102,8 +102,8 @@ test('failed checks stay in the log, explain blocked inputs, and stop the clock 
     await log.getByRole('button', { name: /CHECK FAILED/ }).first().click();
     const dashboard = f.canvas.getByRole('dialog', { name: /dashboard/ }); await dashboard.waitFor();
     await dashboard.getByRole('button', { name: 'Close dashboard' }).click();
-    await log.getByRole('button', { name: /INPUT BLOCKED.*Join the parts/ }).first().click();
-    assert.match(await f.canvas.getByLabel('Inputs needed', { exact: true }).innerText(), /Part 1 \(Check failed\)/);
+    await log.getByRole('button', { name: /INPUT BLOCKED.*Nuvani · Join the parts/ }).first().click();
+    assert.match(await f.canvas.getByLabel('Inputs needed', { exact: true }).innerText(), /Quillon · Part 1 \(Check failed\)/);
     const clock = f.canvas.getByRole('region', { name: 'Run clock' }); const ended = await clock.locator('strong').innerText();
     await f.page.waitForTimeout(1600); assert.equal(await clock.locator('strong').innerText(), ended);
   } finally { await f.close(); }

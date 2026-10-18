@@ -13,13 +13,13 @@ for (const [width, height] of [[1280, 800], [900, 700]]) for (const theme of ['l
     for (const iso of [false, true]) {
       await canvas.getByRole('button', { name: iso ? 'Isometric' : 'Flat', exact: true }).click(); await f.fit();
       await assertUiFit(canvas, `${iso ? '3D' : '2D'} canvas`);
-      if (iso) await canvas.locator('.iso-node[aria-label^="Part 1:"]').click(); else await f.node('Part 1').click();
+      if (iso) await canvas.locator('.iso-node[aria-label^="Quillon · Part 1:"]').click(); else await f.node('Quillon · Part 1').click();
       const panel = canvas.getByRole('complementary', { name: 'Selected agent', exact: true });
       await panel.getByRole('textbox', { name: 'Name', exact: true }).fill('A long agent name that needs a complete tooltip when the label is shortened');
       await f.fit(); await assertUiFit(panel, 'agent settings');
       await assertUiFit(canvas, `${iso ? '3D' : '2D'} long labels`);
       await fs.mkdir('/tmp/canvas-rebuild', { recursive: true }); await page.screenshot({ path: `/tmp/canvas-rebuild/fit-${width}-${theme}-${iso ? 'iso' : 'flat'}.png` });
-      await panel.getByRole('textbox', { name: 'Name', exact: true }).fill('Part 1');
+      await panel.getByRole('textbox', { name: 'Name', exact: true }).fill('Quillon · Part 1');
       await panel.getByRole('button', { name: 'Done', exact: true }).click();
     }
     await canvas.getByRole('button', { name: /^Command/ }).click();

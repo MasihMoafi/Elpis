@@ -4,7 +4,7 @@ import type { CanvasGraph } from "@/lib/canvas";
  * the run-order layout on a ground plane, projected. Pure, so tests/agents-iso.test.mjs runs it under node. */
 
 /** Ground units between waves (columns) and between the agents of one wave (rows). */
-export const ISO_STEP = { column: 200, row: 130 };
+export const ISO_STEP = { column: 260, row: 180 };
 const COS = Math.cos(Math.PI / 6), SIN = Math.sin(Math.PI / 6);
 export type Point = { x: number; y: number };
 export type Ground = { u: number; v: number };

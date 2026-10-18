@@ -13,14 +13,14 @@ export type CanvasNode = { id: string; type: "agent"; position: Position; data: 
   | { id: typeof MOTHER; type: "mother"; position: Position; data: Record<string, never> };
 /** A wire: by default the target waits for the source (directional); `alongside` (undirectional) means the two work
  * at the same time, each told about the other and kept out of its folders, with no order between them. */
-export type CanvasEdge = { id: string; source: string; target: string; kind?: "alongside" };
+export type CanvasEdge = { id: string; source: string; target: string; kind?: "alongside"; label?: string };
 /** Whether a wire orders its agents (the target waits for the source). */
 export const waits = (edge: CanvasEdge) => edge.kind !== "alongside";
 /** The Mother's settings, for the whole run: its goal (`brief`), which every agent gets and from which Elpis fills in
  * what the user left empty, and the model of her chat (the run's root). */
 export type MotherSettings = { brief: string; model: string | null; provider: string | null };
 /** `maxAgents` is the most agents the graph may hold; `template` is the architecture it was loaded from. */
-export type CanvasGraph = { name: string; nodes: CanvasNode[]; edges: CanvasEdge[]; maxAgents?: number; template?: string; mother?: MotherSettings };
+export type CanvasGraph = { name: string; nodes: CanvasNode[]; edges: CanvasEdge[]; maxAgents?: number; template?: string; mother?: MotherSettings; motherFlow?: string };
 /** A task's state as workGraph/list reports it (codex-rs state/src/model/work_graph.rs). */
 export type TaskStatus = "pending" | "running" | "succeeded" | "failed" | "blocked" | "cancelled";
 /** The words both views of the board (flat and isometric) use for an agent's state, and for its check: the read-only
@@ -73,7 +73,22 @@ const ANTHROPIC = "Anthropic, Building effective agents";
 /** Anthropic's caution about splitting work by role (claude.com/blog/building-multi-agent-systems-when-and-how-to-use-them). */
 const BY_ROLE = "Split by role: Anthropic finds each handoff loses context, so this often does worse than split by parts.";
 const NOTE = "as a markdown file in your folder";
-const graphOf = (name: string, nodes: CanvasNode[], edges: CanvasEdge[]) => arrange(withMother({ name, nodes, edges }));
+/** Invented names, shared by starters and quick creation. Reserve the first word as well as the full title. */
+export const AGENT_NAMES = ["Quillon", "Veyra", "Orilo", "Nuvani", "Zelko", "Tavri", "Lumaro", "Eshvi", "Pellun", "Arovi", "Veluno", "Ishara"];
+export function agentName(taken: string[], role = "") {
+  const used = new Set(taken.map(title => title.split(" · ")[0]));
+  let index = 0, name: string;
+  do { name = `${AGENT_NAMES[index % AGENT_NAMES.length]}${index >= AGENT_NAMES.length ? ` ${Math.floor(index / AGENT_NAMES.length) + 1}` : ""}`; index++; } while (used.has(name));
+  return role ? `${name} · ${role}` : name;
+}
+const graphOf = (name: string, nodes: CanvasNode[], edges: CanvasEdge[]) => {
+  const taken: string[] = [];
+  return arrange(withMother({ name, nodes: nodes.map(node => {
+    if (node.type !== "agent") return node;
+    const title = agentName(taken, node.data.title); taken.push(title);
+    return { ...node, data: { ...node.data, title } };
+  }), edges }));
+};
 const chain = (...steps: CanvasNode[]) => steps.slice(1).map((step, index) => wire(steps[index], step));
 const fan = (from: CanvasNode[], to: CanvasNode[]) => from.flatMap(source => to.map(target => wire(source, target)));
 export const TEMPLATES: Template[] = [
@@ -165,7 +180,7 @@ export function shapeOf(graph: CanvasGraph): number[] {
   return columns.filter(Boolean);
 }
 
-export const COLUMN = 240, ROW = 120;
+export const COLUMN = 260, ROW = 140;
 /** The graph with its Mother: a graph without one (a template, or one saved before she existed) gets her a column
  * left of the first wave, level with it. */
 export function withMother(graph: CanvasGraph): CanvasGraph {
@@ -196,12 +211,20 @@ export function arrange(graph: CanvasGraph): CanvasGraph {
 
 /** An agent's name from its prompt: the prompt's start, cut at a word. */
 export const nameFrom = (task: string) => task.length <= 48 ? task : `${task.slice(0, 48).replace(/\s+\S*$/, "")}…`;
-/** `count` new agents on one model, stacked from `at`. Agent n takes prompt n and is named after it; one without a
- * prompt is numbered when there are several, and must get one before the graph runs. */
-export function newAgents(count: number, choice: { model: string | null; provider?: string | null; effort?: string | null }, at: Position, prompts: string[] = []): CanvasNode[] {
+/** A new agent keeps its invented name when its prompt supplies the descriptive part. Manual names stay manual. */
+export function promptName(data: AgentData, instruction: string) {
+  const [name, role] = data.title.split(" · ");
+  return AGENT_NAMES.includes(name.replace(/ \d+$/, "")) && (!role || role === nameFrom(data.instruction))
+    ? `${name}${instruction.trim() ? ` · ${nameFrom(instruction)}` : ""}` : data.title;
+}
+/** `count` new agents on one model, stacked from `at`. Agent n takes prompt n, keeping an invented name
+ * with the prompt as its descriptive part; one without a prompt must get one before the graph runs. */
+export function newAgents(count: number, choice: { model: string | null; provider?: string | null; effort?: string | null }, at: Position, prompts: string[] = [], titles: string[] = []): CanvasNode[] {
+  const taken = [...titles];
   return Array.from({ length: count }, (_, index) => {
     const prompt = prompts[index]?.trim() ?? "";
-    const made = agent(prompt ? nameFrom(prompt) : `New agent${count > 1 ? ` ${index + 1}` : ""}`, prompt, { model: choice.model, provider: choice.provider ?? null, effort: choice.effort ?? null });
+    const title = agentName(taken, prompt ? nameFrom(prompt) : ""); taken.push(title);
+    const made = agent(title, prompt, { model: choice.model, provider: choice.provider ?? null, effort: choice.effort ?? null });
     return { ...made, position: { x: at.x, y: at.y + index * ROW } };
   });
 }
@@ -298,13 +321,16 @@ export function runTasks(graph: CanvasGraph): { tasks: RunTask[] } | { error: st
     const title = node.data.title.trim(), prompt = node.data.instruction.trim();
     const partners = beside(node.id).map(other => `“${other.data.title}” (writes ${other.data.writeScopes.join(", ")}): ${other.data.instruction.trim().split("\n")[0]}`);
     const alongside = partners.length ? `Working alongside you, at the same time:\n${partners.map(line => `- ${line}`).join("\n")}\nDo not write in their folders; leave them what they need as files in yours.` : "";
+    const incoming = graph.edges.filter(edge => edge.target === node.id && byId.has(edge.source));
+    const receives = incoming.filter(edge => edge.label?.trim()).map(edge => `Receives “${edge.label!.trim()}” from ${byId.get(edge.source)!.data.title}.`);
+    if (!incoming.some(waits) && graph.motherFlow?.trim()) receives.unshift(`Receives “${graph.motherFlow.trim()}” from Mother.`);
     const criteria = node.data.acceptanceCriteria.length ? node.data.acceptanceCriteria : [DONE];
     const model = { ...(node.data.provider ? { provider: node.data.provider } : {}), ...(node.data.model ? { model: node.data.model } : {}) };
     return [
       // Every agent gets the Mother's brief first, then its own prompt. The engine accepts a report only when its
       // changed_files are every file that changed in the folders, build output included; a worker told to report
       // "exactly once" otherwise stops after the first rejection, and the run ends there (found in a live run).
-      { id: node.id, kind: "implement" as const, title, instruction: [brief && `Goal of the whole run: ${brief}`, prompt, `Save your result as files inside your allowed folders, including a markdown answer for research or decisions. Include the answer and file paths in your terminal report summary so the next agent can use them.`, REPORT, alongside].filter(Boolean).join("\n\n"),
+      { id: node.id, kind: "implement" as const, title, instruction: [brief && `Goal of the whole run: ${brief}`, receives.join("\n"), prompt, `Save your result as files inside your allowed folders, including a markdown answer for research or decisions. Include the answer and file paths in your terminal report summary so the next agent can use them.`, REPORT, alongside].filter(Boolean).join("\n\n"),
         dependsOn: graph.edges.filter(edge => waits(edge) && edge.target === node.id && ids.has(edge.source)).flatMap(edge => [edge.source, checkOf(edge.source)]),
         writeScopes: node.data.writeScopes, acceptanceCriteria: criteria, ...model, ...(node.data.effort ? { reasoningEffort: node.data.effort } : {}) },
       { id: checkOf(node.id), kind: "verify" as const, title: `Check: ${title}`.slice(0, 256),
@@ -332,7 +358,11 @@ export function applyPlan(graph: CanvasGraph, plan: Plan): CanvasGraph {
     const data = made.data as AgentData;
     return { ...made, data: { ...data, title: item.title || data.title, instruction: item.prompt || data.instruction, writeScopes: item.folders.length ? item.folders : data.writeScopes, acceptanceCriteria: item.doneWhen.length ? item.doneWhen : data.acceptanceCriteria } } as CanvasNode;
   });
-  const edges = plan.agents.flatMap(item => item.waitsFor.filter(source => ids.has(source)).map(source => ({ id: `${ids.get(source)}->${ids.get(item.key)}`, source: ids.get(source)!, target: ids.get(item.key)! })));
+  const edges: CanvasEdge[] = plan.agents.flatMap(item => item.waitsFor.filter(source => ids.has(source)).map(source => {
+    const from = ids.get(source)!, to = ids.get(item.key)!;
+    const old = graph.edges.find(edge => waits(edge) && edge.source === from && edge.target === to);
+    return { ...old, id: `${from}->${to}`, source: from, target: to };
+  }));
   // Wires that order nothing (alongside) are the user's: they stay between agents the plan keeps.
   const keptIds = new Set(ids.values());
   edges.push(...graph.edges.filter(edge => !waits(edge) && keptIds.has(edge.source) && keptIds.has(edge.target)));

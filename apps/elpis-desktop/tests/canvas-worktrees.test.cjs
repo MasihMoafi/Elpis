@@ -7,9 +7,9 @@ const { openCanvas } = require('./canvas-fixture.cjs');
 
 const writer = (id, title, x, y, folder) => ({ id, type: 'agent', position: { x, y }, data: { title, instruction: `Do ${title}`, model: null, writeScopes: [folder], acceptanceCriteria: [] } });
 /** Two parts side by side and a join that waits for both. */
-const TEAM = { name: 'Two parts', nodes: [writer('a1', 'Part 1', 240, -60, 'src'), writer('a2', 'Part 2', 240, 60, 'docs'), writer('a3', 'Join', 480, 0, 'tests')],
+const TEAM = { name: 'Two parts', nodes: [writer('a1', 'Quillon · Part 1', 240, -60, 'src'), writer('a2', 'Veyra · Part 2', 240, 60, 'docs'), writer('a3', 'Join', 480, 0, 'tests')],
   edges: [{ id: 'a1->a3', source: 'a1', target: 'a3' }, { id: 'a2->a3', source: 'a2', target: 'a3' }] };
-const ALONE = { name: 'One part', nodes: [writer('a1', 'Part 1', 240, 0, 'src')], edges: [] };
+const ALONE = { name: 'One part', nodes: [writer('a1', 'Quillon · Part 1', 240, 0, 'src')], edges: [] };
 const KEPT = 'Kept for inspection: /tmp/demo-elpis/graph-1/a1 (branch elpis/graph-1/a1), /tmp/demo-elpis/graph-1/a2 (branch elpis/graph-1/a2).';
 
 /** Waits until `read()` is truthy, naming the step on failure. */
@@ -49,19 +49,19 @@ test('a clash at the end of the run stops it: the files are listed and the agent
     await run(canvas);
     const notice = canvas.locator('.canvas-notice');
     await notice.waitFor({ timeout: 8000 });
-    assert.equal(await notice.innerText(), `Merge stopped: “Part 2” clashes with main in src/app.ts, README.md. main is untouched. ${KEPT}`);
+    assert.equal(await notice.innerText(), `Merge stopped: “Veyra · Part 2” clashes with main in src/app.ts, README.md. main is untouched. ${KEPT}`);
     assert.equal(await notice.getAttribute('role'), 'alert');
     // The agent whose result clashed is marked failed, in words as well as colour; the others are done.
-    assert.equal(await status(node('Part 2')), 'failed');
-    assert.match(await node('Part 2').locator('.agent-node-meta').innerText(), /clash$/);
-    for (const title of ['Part 1', 'Join']) { assert.equal(await status(node(title)), 'succeeded', title); assert.match(await node(title).locator('.agent-node-meta').innerText(), /done$/, title); }
+    assert.equal(await status(node('Veyra · Part 2')), 'failed');
+    assert.match(await node('Veyra · Part 2').locator('.agent-node-meta').innerText(), /clash$/);
+    for (const title of ['Quillon · Part 1', 'Join']) { assert.equal(await status(node(title)), 'succeeded', title); assert.match(await node(title).locator('.agent-node-meta').innerText(), /done$/, title); }
     // The run log says it too, and the run is over.
-    assert.match(await canvas.getByRole('log', { name: 'Run log' }).innerText(), /Part 2: merge clash in src\/app\.ts, README\.md/);
+    assert.match(await canvas.getByRole('log', { name: 'Run log' }).innerText(), /Veyra · Part 2: merge clash in src\/app\.ts, README\.md/);
     // The run is over, and the agent whose work clashed is not counted as done.
     await canvas.getByRole('status').filter({ hasText: /Finished · 2 of 3 done/ }).waitFor();
     // The agent's dashboard lists every clashing file.
-    await node('Part 2').dblclick();
-    const dashboard = canvas.getByRole('dialog', { name: 'Part 2 dashboard' });
+    await node('Veyra · Part 2').dblclick();
+    const dashboard = canvas.getByRole('dialog', { name: 'Veyra · Part 2 dashboard' });
     assert.equal(await dashboard.locator('dt', { hasText: 'Merge clash' }).locator('xpath=following-sibling::dd').innerText(), 'src/app.ts\nREADME.md');
     assert.deepEqual(errors, []);
   } finally { await close(); }
@@ -79,7 +79,7 @@ test('a clash between the work an agent builds on marks that agent and lists the
     assert.equal(await notice.innerText(), 'Merge stopped: the work “Join” builds on clashes in src/shared.ts, src/util.ts. Your branch is untouched. Kept worktrees with work: /tmp/demo-elpis/graph-1/a1 (branch elpis/graph-1/a1).');
     assert.equal(await status(node('Join')), 'failed');
     assert.match(await node('Join').locator('.agent-node-meta').innerText(), /clash$/);
-    assert.equal(await status(node('Part 1')), 'succeeded');
+    assert.equal(await status(node('Quillon · Part 1')), 'succeeded');
     assert.deepEqual(errors, []);
   } finally { await close(); }
 });
@@ -90,10 +90,10 @@ test('an ordinary task failure shows its reason without a merge notice or merge 
   try {
     await run(canvas);
     await canvas.getByText(/Finished/).first().waitFor({ timeout: 8000 });
-    assert.equal(await canvas.locator('.canvas-notice').innerText(), 'Part 2: the model stopped');
+    assert.equal(await canvas.locator('.canvas-notice').innerText(), 'Veyra · Part 2: the model stopped');
     assert.doesNotMatch(await canvas.locator('.canvas-notice').innerText(), /Merge stopped/);
-    assert.equal(await status(node('Part 2')), 'failed');
-    assert.doesNotMatch(await node('Part 2').locator('.agent-node-meta').innerText(), /clash/);
+    assert.equal(await status(node('Veyra · Part 2')), 'failed');
+    assert.doesNotMatch(await node('Veyra · Part 2').locator('.agent-node-meta').innerText(), /clash/);
     assert.deepEqual(errors, []);
   } finally { await close(); }
 });

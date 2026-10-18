@@ -3,6 +3,7 @@
 import { useEffect, useId, useLayoutEffect, useImperativeHandle, useMemo, useRef, useState, type CSSProperties, type Ref, type MouseEvent as ReactMouseEvent, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { Maximize2, Minus, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { CanvasTextEdit } from "@/components/canvas-text-edit";
 import { CHECK_LABEL as CHECK, FATHER, MOTHER, STATUS_LABEL as STATUS, checkOf, waits, waves, type AgentData, type CanvasEdge, type CanvasGraph, type TaskStatus } from "@/lib/canvas";
 import { ISO_STEP, isoFit, isoLayout, isoRoute, project, type Box, type Ground, type IsoPlace, type Point } from "@/lib/iso";
 
@@ -99,7 +100,7 @@ function Chevrons({ route, live }: { route: Ground[]; live: boolean }) {
   </g>;
 }
 
-/** The header's switch between the flat board (editing) and this view (watching and clicking). */
+/** The header's switch between the flat board and this isometric view. */
 export function ViewToggle({ iso, onChange }: { iso: boolean; onChange: (iso: boolean) => void }) {
   return <div className="segmented canvas-view" role="group" aria-label="Canvas view">
     {([["Flat", false, "Edit the graph: drag, wire and add agents"], ["Isometric", true, "Select and connect agents on the isometric board; Enter opens the selected agent"]] as const).map(([label, value, hint]) =>
@@ -109,11 +110,11 @@ export function ViewToggle({ iso, onChange }: { iso: boolean; onChange: (iso: bo
 
 /** `father`: the agents past the Mother's ten, which the Father runs (lib/canvas.ts `parents`). */
 export type IsoController = { fit: () => void; frame: () => void };
-type Props = { modelLabel: (data: AgentData) => string; controller: Ref<IsoController>; onConnect: (source: string, target: string) => void; onAdd: (at: Point, id: string, end: "source" | "target") => void; onNodeMenu: (event: ReactMouseEvent, id: string) => void; onBoardMenu: (event: ReactMouseEvent) => void; onWireMenu: (event: ReactMouseEvent, edge: CanvasEdge) => void; graph: CanvasGraph; father: string[]; states: States; selected: string[]; onSelect: (ids: string[]) => void; onOpen: (id: string) => void; dark: boolean };
+type Props = { modelLabel: (data: AgentData) => string; controller: Ref<IsoController>; onConnect: (source: string, target: string) => void; onAdd: (at: Point, id: string, end: "source" | "target") => void; onNodeMenu: (event: ReactMouseEvent, id: string) => void; onBoardMenu: (event: ReactMouseEvent) => void; onWireMenu: (event: ReactMouseEvent, edge: CanvasEdge) => void; onWireClick: (event: ReactMouseEvent, edge: CanvasEdge) => void; onRename: (id: string, title: string) => void; graph: CanvasGraph; father: string[]; states: States; selected: string[]; onSelect: (ids: string[]) => void; onOpen: (id: string) => void; dark: boolean };
 /** The isometric board: the Mother (and the Father) and each agent on a pedestal in run order, wires on the ground. A click selects
- * (Shift adds), a double-click or Enter opens an agent's dashboard, the arrows move between agents in run order, the
+ * (Shift adds), a double-click renames an agent and Enter opens its dashboard, the arrows move between agents in run order, the
  * wheel zooms and a drag pans. */
-export function IsoBoard({ graph, father, states, selected, onSelect, onOpen, dark, modelLabel, controller, onConnect, onAdd, onNodeMenu, onBoardMenu, onWireMenu }: Props) {
+export function IsoBoard({ graph, father, states, selected, onSelect, onOpen, dark, modelLabel, controller, onConnect, onAdd, onNodeMenu, onBoardMenu, onWireMenu, onWireClick, onRename }: Props) {
   const root = useRef<HTMLDivElement>(null), buttons = useRef(new Map<string, SVGGElement>());
   const blur = `iso-blur-${useId().replace(/[^\w-]/g, "")}`;
   const wave = useMemo(() => waves(graph), [graph]);
@@ -129,10 +130,12 @@ export function IsoBoard({ graph, father, states, selected, onSelect, onOpen, da
   const [moved, setMoved] = useState<{ layout: string; view: View } | null>(null);
   const [hovered, setHovered] = useState<string | null>(null), [focused, setFocused] = useState<string | null>(null), [focusId, setFocusId] = useState<string | null>(null);
   const [panning, setPanning] = useState(false);
+  const [renaming, setRenaming] = useState<string | null>(null);
+  const rename = (id: string) => { if (nodes.get(id)?.type === "agent") { onSelect([id]); setRenaming(id); } };
   const [wireDrag, setWireDrag] = useState<{ id: string; end: "source" | "target"; from: Point; to: Point } | null>(null);
   const space = useRef(false);
   useEffect(() => {
-    const down = (event: KeyboardEvent) => { if (event.code === "Space" && root.current?.contains(event.target as globalThis.Node)) { space.current = true; event.preventDefault(); } };
+    const down = (event: KeyboardEvent) => { if (event.code === "Space" && root.current?.contains(event.target as globalThis.Node) && !(event.target as Element).closest("input, textarea")) { space.current = true; event.preventDefault(); } };
     const up = (event: KeyboardEvent) => { if (event.code === "Space") space.current = false; };
     const blur = () => { space.current = false; };
     window.addEventListener("keydown", down); window.addEventListener("keyup", up); window.addEventListener("blur", blur);
@@ -188,6 +191,12 @@ export function IsoBoard({ graph, father, states, selected, onSelect, onOpen, da
     ...agents.filter(place => his.has(place.id) && !graph.edges.some(edge => waits(edge) && edge.target === place.id && his.has(edge.source))).map(place => ({ id: `${FATHER}->${place.id}`, source: FATHER, target: place.id })),
     ...graph.edges.filter(edge => byId.has(edge.source) && byId.has(edge.target)),
   ];
+  const motherWires = wires.filter(wire => wire.source === MOTHER), motherPlace = byId.get(MOTHER);
+  const junction = motherPlace ? { u: motherPlace.ground.u + ISO_STEP.column / 2, v: motherPlace.ground.v } : null;
+  const routeOf = (wire: CanvasEdge) => {
+    const to = byId.get(wire.target)!.ground;
+    return wire.source === MOTHER && junction ? [junction, { u: junction.u, v: to.v }, to] : isoRoute(byId.get(wire.source)!.ground, to);
+  };
 
   // One agent is in the tab order (the last focused, else the selected, else the Mother); the arrows walk the rest.
   const tabbable = focusId && byId.has(focusId) ? focusId : selected.find(id => byId.has(id)) ?? order[0];
@@ -267,9 +276,9 @@ export function IsoBoard({ graph, father, states, selected, onSelect, onOpen, da
   const subjectModel = subjectNode?.type === "agent" ? `${modelLabel(subjectNode.data)}${subjectNode.data.effort ? ` · ${subjectNode.data.effort} thinking` : ""}` : null;
 
   return <div ref={root} className="iso-board" role="region" aria-label="Isometric board" tabIndex={-1} data-panning={panning || undefined}
-    onContextMenu={event => { if (!(event.target as Element).closest(".iso-node, .iso-port, .iso-label, .iso-link, .iso-hud")) onBoardMenu(event); }}
+    onContextMenu={event => { if (!(event.target as Element).closest(".iso-node, .iso-port, .iso-label, .iso-link, .iso-hud, .iso-flow-label")) onBoardMenu(event); }}
     onPointerDown={event => {
-      if (![0, 1].includes(event.button) || (event.target as Element).closest(".iso-hud, .iso-port, .iso-label") || (event.button === 0 && !space.current && (event.target as Element).closest(".iso-node"))) return;
+      if (![0, 1].includes(event.button) || (event.target as Element).closest(".iso-hud, .iso-port, .iso-label, .iso-link, .iso-flow-label") || (event.button === 0 && !space.current && (event.target as Element).closest(".iso-node"))) return;
       event.preventDefault(); event.currentTarget.focus({ preventScroll: true });
       drag.current = { x: event.clientX, y: event.clientY, from: view, moved: false };
       event.currentTarget.setPointerCapture(event.pointerId);
@@ -300,10 +309,15 @@ export function IsoBoard({ graph, father, states, selected, onSelect, onOpen, da
         <polygon className="iso-floor" points={points([project(u0, v0), project(u1, v0), project(u1, v1), project(u0, v1)])} />
         <g className="iso-grid">{grid.map(([a, b], index) => <line key={index} x1={a.x} y1={a.y} x2={b.x} y2={b.y} />)}</g>
         {places.map(place => { const glow = ellipse(shapeOf(place).ring * 1.15); return <ellipse key={place.id} className="iso-glow" data-status={statusOf(place.id)} filter={`url(#${blur})`} cx={place.at.x} cy={place.at.y} rx={glow.rx} ry={glow.ry} />; })}
+        {motherPlace && junction && motherWires[0] && <g className="iso-link iso-mother-trunk" data-mother="true" onClick={event => onWireClick(event, motherWires[0])} onContextMenu={event => { event.preventDefault(); event.stopPropagation(); onWireMenu(event, motherWires[0]); }}>
+          <path className="iso-wire-hit" d={`M ${xy(motherPlace.at)} L ${xy(project(junction.u, junction.v))}`} />
+          <path className="iso-wire" d={`M ${xy(motherPlace.at)} L ${xy(project(junction.u, junction.v))}`} />
+          <Chevrons route={[motherPlace.ground, junction]} live={motherWires.some(wire => wireState(wire, states) === "live")} />
+        </g>}
         {wires.map(wire => {
-          const route = isoRoute(byId.get(wire.source)!.ground, byId.get(wire.target)!.ground), path = `M ${route.map(point => xy(project(point.u, point.v))).join(" L ")}`, state = wireState(wire, states);
-          return <g key={wire.id} className="iso-link" onContextMenu={event => { event.preventDefault(); event.stopPropagation(); onWireMenu(event, wire); }} data-state={state} data-kind={wire.kind} data-mother={wire.source === MOTHER || undefined} data-father={wire.source === FATHER || undefined} data-hot={(hot && (wire.source === hot || wire.target === hot)) || undefined}>
-            <path className="iso-wire-bed" d={path} /><path className="iso-wire" d={path} />{waits(wire) && <Chevrons route={route} live={state === "live"} />}
+          const route = routeOf(wire), path = `M ${route.map(point => xy(project(point.u, point.v))).join(" L ")}`, state = wireState(wire, states);
+          return <g key={wire.id} className="iso-link" onClick={event => onWireClick(event, wire)} onContextMenu={event => { event.preventDefault(); event.stopPropagation(); onWireMenu(event, wire); }} data-state={state} data-kind={wire.kind} data-mother={wire.source === MOTHER || undefined} data-father={wire.source === FATHER || undefined} data-hot={(hot && (wire.source === hot || wire.target === hot)) || undefined}>
+            <path className="iso-wire-hit" d={path} /><path className="iso-wire-bed" d={path} /><path className="iso-wire" d={path} />{waits(wire) && wire.source !== MOTHER && <Chevrons route={route} live={state === "live"} />}
           </g>;
         })}
         {painted.map(place => {
@@ -311,7 +325,7 @@ export function IsoBoard({ graph, father, states, selected, onSelect, onOpen, da
           return <g key={place.id} ref={element => { if (element) buttons.current.set(place.id, element); else buttons.current.delete(place.id); }}
             className="iso-node" data-id={place.id} data-kind={place.kind} data-status={statusOf(place.id)} data-hot={hot === place.id || undefined}
             role="button" tabIndex={tabbable === place.id ? 0 : -1} aria-pressed={selected.includes(place.id)} aria-label={`${titleOf(place.id)}: ${describe(place.id)}`}
-            onContextMenu={event => { event.preventDefault(); event.stopPropagation(); onNodeMenu(event, place.id); }} onClick={event => pick(place.id, event.shiftKey || event.ctrlKey || event.metaKey)} onDoubleClick={() => open(place.id)} onKeyDown={event => keys(event, place.id)}
+            onContextMenu={event => { event.preventDefault(); event.stopPropagation(); onNodeMenu(event, place.id); }} onClick={event => pick(place.id, event.shiftKey || event.ctrlKey || event.metaKey)} onDoubleClick={() => rename(place.id)} onKeyDown={event => keys(event, place.id)}
             onPointerEnter={() => setHovered(place.id)} onPointerLeave={() => setHovered(current => current === place.id ? null : current)}
             onFocus={() => { setFocused(place.id); setFocusId(place.id); }} onBlur={() => setFocused(current => current === place.id ? null : current)}>
             <ellipse className="iso-hit" cx={place.at.x} cy={place.at.y} rx={ring.rx} ry={ring.ry} />
@@ -336,14 +350,40 @@ export function IsoBoard({ graph, father, states, selected, onSelect, onOpen, da
         onPointerDown={event => { if (event.button !== 0) return; event.preventDefault(); event.stopPropagation(); root.current?.focus({ preventScroll: true }); root.current?.setPointerCapture(event.pointerId); setWireDrag({ id: place.id, end, from: at, to: at }); }}
         onClick={event => { event.stopPropagation(); if (event.detail === 0) { const box = event.currentTarget.getBoundingClientRect(); onAdd({ x: box.left, y: box.bottom }, place.id, end); } }} />;
     }))}
-    <div className="iso-labels" aria-hidden="true">
+    <div className="iso-labels">
       {places.map(place => {
         const at = labelPositions.get(place.id)!;
-        return <span key={place.id} className="iso-label" data-for={place.id} data-kind={place.kind} data-hot={hot === place.id || undefined} data-selected={selected.includes(place.id) || undefined} data-short={!full.has(place.id) || undefined} title={titleOf(place.id)} style={{ left: at.x, top: at.y }}
-          onClick={event => { pick(place.id, event.shiftKey || event.ctrlKey || event.metaKey); buttons.current.get(place.id)?.focus({ preventScroll: true }); }} onDoubleClick={() => open(place.id)}
+        return <span key={place.id} className="iso-label" data-for={place.id} data-kind={place.kind} data-hot={hot === place.id || undefined} data-selected={selected.includes(place.id) || undefined} data-short={!full.has(place.id) || undefined} title={place.kind === "agent" ? titleOf(place.id) : `${titleOf(place.id)} is the run's chat and cannot be renamed`} style={{ left: at.x, top: at.y }}
+          onClick={event => { pick(place.id, event.shiftKey || event.ctrlKey || event.metaKey); buttons.current.get(place.id)?.focus({ preventScroll: true }); }} onDoubleClick={() => rename(place.id)}
           onContextMenu={event => { event.preventDefault(); event.stopPropagation(); onNodeMenu(event, place.id); }}
           onPointerEnter={() => setHovered(place.id)} onPointerLeave={() => setHovered(current => current === place.id ? null : current)}>
-          {place.kind === "agent" && <b className="iso-badge">{wave.get(place.id) ?? "–"}</b>}{full.has(place.id) && <span title={titleOf(place.id)}>{titleOf(place.id)}</span>}
+          {renaming === place.id ? <CanvasTextEdit value={titleOf(place.id)} label="Rename agent" maxLength={256} onSave={title => { onRename(place.id, title); setRenaming(null); root.current?.focus(); }} onCancel={() => { setRenaming(null); root.current?.focus(); }} /> : <>{place.kind === "agent" && <b className="iso-badge">{wave.get(place.id) ?? "–"}</b>}{full.has(place.id) && <span title={titleOf(place.id)}>{titleOf(place.id)}</span>}</>}
+        </span>;
+      })}
+      {[
+        ...graph.edges.filter(wire => wire.label && byId.has(wire.source) && byId.has(wire.target)),
+        ...(graph.motherFlow && motherWires[0] ? [{ ...motherWires[0], label: graph.motherFlow }] : []),
+      ].map(wire => {
+        const route = wire.source === MOTHER && motherPlace && junction ? [motherPlace.ground, junction] : routeOf(wire);
+        let longest = 1;
+        const length = (i: number) => Math.hypot(route[i].u - route[i - 1].u, route[i].v - route[i - 1].v);
+        for (let i = 2; i < route.length; i++) if (length(i) > length(longest)) longest = i;
+        const from = route[longest - 1], to = route[longest], at = screen(project((from.u + to.u) / 2, (from.v + to.v) / 2));
+        const width = Math.min(LABEL.max, textWidth(wire.label!, family) + 18);
+        const preferred = { x: Math.max(width / 2 + 6, Math.min((size?.width ?? Infinity) - width / 2 - 6, at.x)), y: Math.max(LABEL.height + 6, Math.min((size?.height ?? Infinity) - INSET.bottom, at.y - 10)) };
+        const xs = [preferred.x], ys = [preferred.y];
+        for (let x = width / 2 + 6; x <= (size?.width ?? 0) - width / 2 - 6; x += width + 8) xs.push(x);
+        for (let y = LABEL.height + 6; y <= (size?.height ?? 0) - INSET.bottom; y += LABEL.height + 4) ys.push(y);
+        const slots = ys.flatMap(y => xs.map(x => ({ x, y }))).sort((a, b) => Math.hypot(a.x - preferred.x, a.y - preferred.y) - Math.hypot(b.x - preferred.x, b.y - preferred.y));
+        const occupied = places.map(place => {
+          const box = bounds([place]), first = screen({ x: box.left, y: box.top }), last = screen({ x: box.right, y: box.bottom });
+          return { left: first.x - 9, top: first.y - 4, right: last.x + 9, bottom: last.y + 9 };
+        });
+        const position = slots.find(slot => { const box = labelBox(slot, width); return !taken.some(other => meet(other, box)) && !occupied.some(other => meet(other, box)); }) ?? preferred;
+        taken.push(labelBox(position, width));
+        return <span key={wire.id}>
+          <svg className="iso-flow-leader" aria-hidden="true"><line x1={at.x} y1={at.y} x2={position.x} y2={position.y} /></svg>
+          <button className="iso-flow-label" title={wire.label} style={{ left: position.x, top: position.y }} onClick={event => onWireClick(event, wire)}>{wire.label}</button>
         </span>;
       })}
     </div>

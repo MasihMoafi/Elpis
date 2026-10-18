@@ -2,7 +2,7 @@
 
 import "@xyflow/react/dist/style.css";
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent } from "react";
-import { Background, BackgroundVariant, Controls, Handle, MarkerType, MiniMap, Position, ReactFlow, ReactFlowProvider, applyEdgeChanges, applyNodeChanges, useReactFlow, type Edge, type EdgeChange, type FinalConnectionState, type Node, type NodeChange, type NodeProps, type XYPosition } from "@xyflow/react";
+import { Background, BackgroundVariant, BaseEdge, Controls, Handle, MarkerType, MiniMap, Position, ReactFlow, ReactFlowProvider, applyEdgeChanges, applyNodeChanges, useReactFlow, type Edge, type EdgeProps, type EdgeChange, type FinalConnectionState, type Node, type NodeChange, type NodeProps, type XYPosition } from "@xyflow/react";
 import { Check, ChevronRight, ExternalLink, ListOrdered, PanelRight, PanelRightClose, Play, Plus, StickyNote, Trash2, X } from "lucide-react";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,11 +12,12 @@ import { WorkflowSources } from "@/components/workflow-sources";
 import { ExperimentLab } from "@/components/experiment-lab";
 import { summarize, workedFor } from "@/components/transcript";
 import { IsoBoard, ViewToggle, type IsoController } from "@/components/agents-iso";
+import { CanvasTextEdit } from "@/components/canvas-text-edit";
 import { api, providerChoices, type Entry, type Model, type ProviderSettings, type Thread } from "@/lib/api";
 import { useElpisSettings } from "@/lib/settings-store";
 import { appStorage } from "@/lib/projects";
 import { filesText, mergeStops, runPayload, stopText, wantsIsolation } from "@/lib/canvas-isolation";
-import { CHECK_LABEL, COLUMN, DONE, FATHER, MOTHER, STATUS_LABEL, TASKS_PER_AGENT, waits, TEMPLATES, applyPlan, arrange, boardForPlan, checkOf, criticalPath, nameFrom, commandParts, shapeOf, makesLoop, maxAgents, newAgents, newId, parseCommand, parents, readGraph, runParts, saveGraph, waves, withMother, type AgentData, type CanvasEdge, type CanvasGraph, type CanvasNode, type CatalogModel, type Command, type MotherSettings, type NoteData, type Plan, type RunTask, type TaskStatus } from "@/lib/canvas";
+import { CHECK_LABEL, COLUMN, DONE, FATHER, MOTHER, STATUS_LABEL, TASKS_PER_AGENT, waits, TEMPLATES, agentName, promptName, applyPlan, arrange, boardForPlan, checkOf, criticalPath, commandParts, shapeOf, makesLoop, maxAgents, newAgents, newId, parseCommand, parents, readGraph, runParts, saveGraph, waves, withMother, type AgentData, type CanvasEdge, type CanvasGraph, type CanvasNode, type CatalogModel, type Command, type MotherSettings, type NoteData, type Plan, type RunTask, type TaskStatus } from "@/lib/canvas";
 
 /** A run: the Mother's part, and the Father's when the graph has more agents than she runs (lib/canvas.ts `parents`):
  * his tasks wait in `father` until her part has succeeded, then run in his own chat. */
@@ -94,6 +95,16 @@ function FatherNode({ data }: NodeProps<Node<MotherData>>) {
   </div>;
 }
 const NODE_TYPES = { agent: AgentNode, mother: MotherNode, father: FatherNode, note: NoteNode };
+
+/** The Mother's first segment is shared; one label names what every first-wave agent receives. */
+function MotherEdge({ id, sourceX, sourceY, targetX, targetY, markerEnd, data }: EdgeProps) {
+  const split = sourceX + 65;
+  return <>
+    {data?.trunk === true && <g className="canvas-mother-trunk"><BaseEdge id={`${id}-trunk`} path={`M ${sourceX},${sourceY} H ${split}`} label={typeof data.label === "string" ? data.label : undefined} labelX={split} labelY={sourceY - 18} /></g>}
+    <BaseEdge id={id} path={`M ${split},${sourceY} V ${targetY} H ${targetX}`} markerEnd={markerEnd} />
+  </>;
+}
+const EDGE_TYPES = { mother: MotherEdge };
 
 /** Where the command bar drops its agents, and the agent it was opened from (`as` is the end the new agents take) or
  * the wire they are inserted on. */
@@ -361,6 +372,9 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
   useEffect(() => { if (selection.length && !panelOpen) showPanel(true); }, [selection]); // eslint-disable-line react-hooks/exhaustive-deps
   const project = useProjectFolders(cwd);
   const [notice, setNotice] = useState("");
+  const [deleted, setDeleted] = useState<string | null>(null);
+  useEffect(() => { if (!deleted) return; const timer = setTimeout(() => setDeleted(null), 4000); return () => clearTimeout(timer); }, [deleted]);
+  const [flowEdit, setFlowEdit] = useState<{ edge: CanvasEdge; left: number; top: number } | null>(null);
   const [maxAtOnce, setMaxAtOnce] = useState(3);
   const [adding, setAdding] = useState<Adding | null>(null);
   const [run, setRun] = useState<Run | null>(null), [starting, setStarting] = useState(false);
@@ -515,7 +529,7 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
     const source = graph.nodes.find(node => node.id === id);
     if (!source) return;
     if (!room) { setNotice(`The graph is at its limit of ${limit} agents. Raise Max agents to add more.`); return; }
-    const [made] = newAgents(1, { model: null }, { x: 0, y: 0 });
+    const [made] = newAgents(1, { model: null }, { x: 0, y: 0 }, [], agents.map(node => node.data.title));
     const at = place(how === "next" ? { x: source.position.x + COLUMN, y: source.position.y } : { x: source.position.x, y: source.position.y + 120 });
     const wires = how === "next" ? [{ id: `${id}->${made.id}`, source: id, target: made.id }]
       : graph.edges.filter(edge => waits(edge) && (edge.target === id || edge.source === id)).map(edge => edge.target === id ? { id: `${edge.source}->${made.id}`, source: edge.source, target: made.id } : { id: `${made.id}->${edge.target}`, source: made.id, target: edge.target });
@@ -543,7 +557,7 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
   ), [graph.nodes, selection, states, clashes, models, order, runState, fatherState, limit, catalog.length]); // eslint-disable-line react-hooks/exhaustive-deps
   const edges = useMemo<Edge[]>(() => [
     // The Mother's wires: she starts every agent of the first wave.
-    ...agents.filter(node => order.get(node.id) === 1 && !his.has(node.id)).map(node => ({ id: `${MOTHER}->${node.id}`, source: MOTHER, target: node.id, type: "default", markerEnd: { type: MarkerType.ArrowClosed }, className: "canvas-edge-mother", selectable: false, deletable: false, focusable: false, selected: wireMenu?.edge.id === `${MOTHER}->${node.id}`, data: { live: states[node.id]?.status === "running" } })),
+    ...agents.filter(node => order.get(node.id) === 1 && !his.has(node.id)).map((node, index) => ({ id: `${MOTHER}->${node.id}`, source: MOTHER, target: node.id, type: "mother", markerEnd: { type: MarkerType.ArrowClosed }, className: "canvas-edge-mother", selectable: false, deletable: false, focusable: false, selected: wireMenu?.edge.id === `${MOTHER}->${node.id}`, data: { trunk: index === 0, label: graph.motherFlow, live: states[node.id]?.status === "running" } })),
     // The Father's wires: he starts his agents that wait for none of his others.
     ...fatherRoots.map(node => ({ id: `${FATHER}->${node.id}`, source: FATHER, target: node.id, type: "default", markerEnd: { type: MarkerType.ArrowClosed }, className: "canvas-edge-mother", selectable: false, deletable: false, focusable: false, interactionWidth: 0, data: { live: states[node.id]?.status === "running" } })),
     ...graph.edges.map(edge => {
@@ -553,7 +567,7 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
       if (!waits(edge)) return { ...edge, type: "default", selected: wireMenu?.edge.id === edge.id, data: { alongside: true }, className: "canvas-edge-alongside" };
       return { ...edge, type: "default", markerEnd: { type: MarkerType.ArrowClosed }, selected: wireMenu?.edge.id === edge.id || onPath, data: { live }, className: from === "failed" || to === "blocked" ? "canvas-edge-cut" : live ? "canvas-edge-live" : from === "succeeded" ? "canvas-edge-done" : undefined };
     }),
-  ], [graph.edges, graph.nodes, states, order, wireMenu, showCritical]); // eslint-disable-line react-hooks/exhaustive-deps
+  ], [graph.edges, graph.nodes, graph.motherFlow, states, order, wireMenu, showCritical]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const onNodesChange = (changes: NodeChange[]) => {
     const removed = new Set(changes.flatMap(change => change.type === "remove" && change.id !== MOTHER ? [change.id] : []));
@@ -605,7 +619,7 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
     const { from, between } = where, source = from && graph.nodes.find(node => node.id === from.id);
     const spot = source ? { x: source.position.x + (from!.as === "target" ? COLUMN : -COLUMN), y: source.position.y } : where.at;
     const taken = boxes();
-    const made = newAgents(Math.min(count, room), choice, { x: 0, y: 0 }, tasks).map(node => { const at = place(spot, taken); taken.push({ ...at, w: NODE_W, h: NODE_H }); return { ...node, position: at }; });
+    const made = newAgents(Math.min(count, room), choice, { x: 0, y: 0 }, tasks, agents.map(node => node.data.title)).map(node => { const at = place(spot, taken); taken.push({ ...at, w: NODE_W, h: NODE_H }); return { ...node, position: at }; });
     const wire = (source: string, target: string) => ({ id: `${source}->${target}`, source, target });
     // On a wire, the new agents take its place: each waits for its first agent and feeds its second. From a dot or a
     // dropped wire, they join that agent. The Mother's wires are implied, never drawn.
@@ -670,7 +684,7 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
       else if (ctrl && !event.shiftKey && event.code === "KeyD" && selection.length) { take(); duplicate(); }
       // Before React Flow's own Delete, which would drop the wires.
       else if (ctrl && event.key === "Delete" && selection.length) { take(); event.stopPropagation(); removeKeepingFlow(selection); }
-      else if (iso && !ctrl && ["Delete", "Backspace"].includes(event.key) && selection.length) { take(); remove(selection.filter(id => id !== MOTHER && id !== FATHER)); }
+      else if (!ctrl && ["Delete", "Backspace"].includes(event.key) && selection.length) { take(); remove(selection.filter(id => id !== MOTHER && id !== FATHER)); }
       else if (!ctrl && event.key === "Home") { take(); fitAll(); }
       else if (!ctrl && event.key === "F2" && selected) { take(); rename(); }
     };
@@ -680,7 +694,7 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
   const loadTemplate = (template: (typeof TEMPLATES)[number]) => { setUndoLoad({ loaded: template.name, previous: graph }); setGraph(current => ({ ...withMother(template.build()), maxAgents: current.maxAgents, mother: current.mother, template: template.id })); setSelection([]); setMenu(null); setDashboardId(null); setRun(null); setStates({}); setNotice("");
     // Keys go to the board again (Tab opens the command bar), not to the template just clicked.
     (document.activeElement as HTMLElement | null)?.blur(); setTimeout(() => void flow.fitView({ ...FIT, duration: 250 }), 60); };
-  const tidy = () => { setGraph(current => arrange(current)); setTimeout(() => void flow.fitView({ ...FIT, duration: 250 }), 60); };
+  const tidy = () => { checkpoint(); setGraph(current => arrange(current)); setTimeout(() => { if (iso) isoController.current?.fit(); else void flow.fitView({ ...FIT, duration: 250 }); }, 60); };
   // Agents just made are brought into view if they landed outside it (after auto-arrange has placed them), at the same zoom.
   const reveal = (ids: string[]) => setTimeout(() => {
     const box = board.current?.querySelector(".react-flow")?.getBoundingClientRect(), made = ids.flatMap(id => { const node = flow.getNode(id); return node ? [node] : []; });
@@ -708,11 +722,20 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
   // Several agents share the folders they all may write; adding or removing one changes it for each.
   const commonFolders = chosen.reduce<string[]>((common, node, index) => index ? common.filter(folder => node.data.writeScopes.includes(folder)) : node.data.writeScopes, []);
   const setCommonFolders = (next: string[]) => editEach(data => ({ writeScopes: [...data.writeScopes.filter(folder => !commonFolders.includes(folder) || next.includes(folder)), ...next.filter(folder => !data.writeScopes.includes(folder))] }));
-  const remove = (ids: string[]) => { checkpoint(); setGraph(current => ({ ...current, nodes: current.nodes.filter(node => !ids.includes(node.id)), edges: current.edges.filter(edge => !ids.includes(edge.source) && !ids.includes(edge.target)) })); setSelection([]); };
+  const remove = (ids: string[]) => {
+    const gone = graph.nodes.filter(node => node.type !== "mother" && ids.includes(node.id));
+    if (!gone.length) return;
+    checkpoint(); setDeleted(gone.map(node => node.type === "agent" ? node.data.title : "note").join(", "));
+    setGraph(current => ({ ...current, nodes: current.nodes.filter(node => !gone.some(item => item.id === node.id)), edges: current.edges.filter(edge => !ids.includes(edge.source) && !ids.includes(edge.target)) })); setSelection([]);
+  };
+  const renameAgent = (id: string, title: string) => {
+    if (!title) return;
+    checkpoint(); setGraph(current => ({ ...current, nodes: current.nodes.map(node => node.id === id && node.type === "agent" ? { ...node, data: { ...node.data, title } } : node) }));
+  };
   // Turning a wire one-way or two-way: one-way must not close a loop.
   const setKind = (edge: CanvasEdge, kind: CanvasEdge["kind"]) => {
     if (!kind && makesLoop(graph.edges.filter(item => item.id !== edge.id), edge.source, edge.target)) { setNotice("One-way, that wire would make a loop: an agent can't wait for itself."); return; }
-    setGraph(current => ({ ...current, edges: current.edges.map(item => item.id === edge.id ? { id: `${item.source}${kind ? "~" : "->"}${item.target}`, source: item.source, target: item.target, ...(kind ? { kind } : {}) } : item) }));
+    setGraph(current => ({ ...current, edges: current.edges.map(item => item.id === edge.id ? { ...item, id: `${item.source}${kind ? "~" : "->"}${item.target}`, kind } : item) }));
   };
   const removeWire = (id: string) => { checkpoint(); setGraph(current => ({ ...current, edges: current.edges.filter(edge => edge.id !== id) })); setMenu(null); };
   // The mouse as in DaVinci's Fusion and 3ds Max's Slate: left-drag on empty board draws a selection box, middle-drag
@@ -732,6 +755,17 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
     return { client: { x: event.clientX, y: event.clientY }, left: Math.max(8, Math.min(event.clientX - box.left, box.width - 348)), top: Math.max(8, Math.min(event.clientY - box.top + 10, box.height - 60 - rows * 46)) };
   };
   const onEdgeClick = (event: ReactMouseEvent, edge: Edge) => { if (edge.source === FATHER) return; const at = menuAt(event, 2); if (at) setMenu({ ...at, kind: "wire", edge: { id: edge.id, source: edge.source, target: edge.target, ...((edge as CanvasEdge).kind ? { kind: (edge as CanvasEdge).kind } : {}) } }); };
+  const editFlow = (event: ReactMouseEvent, edge: CanvasEdge) => {
+    if (edge.source === FATHER) return;
+    event.stopPropagation(); const at = menuAt(event, 1); if (!at) return;
+    setMenu(null); setFlowEdit({ edge, left: at.left, top: at.top });
+  };
+  const saveFlow = (label: string) => {
+    if (!flowEdit) return;
+    checkpoint(); const { edge } = flowEdit;
+    setGraph(current => edge.source === MOTHER ? { ...current, motherFlow: label } : { ...current, edges: current.edges.map(item => item.id === edge.id ? { ...item, label } : item) });
+    setFlowEdit(null); board.current?.querySelector<HTMLElement>(".iso-board, .react-flow")?.focus();
+  };
   // A right-click on a node acts on the selection it belongs to, else on that node alone.
   const onNodeContextMenu = (event: ReactMouseEvent, node: Node) => {
     event.preventDefault();
@@ -761,6 +795,7 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
   const restored = useRef(false);
   const restore = (next: CanvasGraph) => { history.current.restoring = true; restored.current = shapeKey(next) !== shapeKey(graph); setGraph(next); setSelection(current => current.filter(id => next.nodes.some(node => node.id === id))); setMenu(null); };
   const undo = () => {
+    setDeleted(null);
     const steps = history.current;
     // Changes not yet settled are the step undone.
     if (graph !== steps.settled) { steps.future = [graph]; restore(steps.settled); return; }
@@ -784,8 +819,13 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
     if (count > room) { setNotice(`Only ${room} more ${room === 1 ? "agent fits" : "agents fit"} under the limit of ${limit}. Raise Max agents to add more.`); return; }
     const left = Math.min(...clip.nodes.map(node => node.position.x)), top = Math.min(...clip.nodes.map(node => node.position.y)), origin = at ?? place({ x: left, y: top + 100 });
     const ids = new Map(clip.nodes.map(node => [node.id, newId(node.type)]));
-    const nodes = clip.nodes.map(node => ({ ...node, id: ids.get(node.id)!, position: { x: Math.round(node.position.x - left + origin.x), y: Math.round(node.position.y - top + origin.y) } }) as CanvasNode);
-    const edges = clip.edges.map(edge => ({ id: `${ids.get(edge.source)}->${ids.get(edge.target)}`, source: ids.get(edge.source)!, target: ids.get(edge.target)! }));
+    const taken = agents.map(node => node.data.title);
+    const nodes = clip.nodes.map(node => {
+      const title = node.type === "agent" ? agentName(taken, node.data.title.split(" · ").slice(1).join(" · ") || node.data.title) : "";
+      if (title) taken.push(title);
+      return { ...node, id: ids.get(node.id)!, ...(node.type === "agent" ? { data: { ...node.data, title } } : {}), position: { x: Math.round(node.position.x - left + origin.x), y: Math.round(node.position.y - top + origin.y) } } as CanvasNode;
+    });
+    const edges = clip.edges.map(edge => ({ ...edge, id: `${ids.get(edge.source)}->${ids.get(edge.target)}`, source: ids.get(edge.source)!, target: ids.get(edge.target)! }));
     checkpoint();
     setGraph(current => ({ ...current, nodes: [...current.nodes, ...nodes], edges: [...current.edges, ...edges] }));
     setSelection(nodes.map(node => node.id));
@@ -818,6 +858,7 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
       const removeIt = from ? () => removeWire(current.edge.id) : undefined;
       const sideBySide = current.edge.kind === "alongside";
       return { name: "Wire", title: "Wire", detail: `${from ?? "Mother"} ${sideBySide ? "↔" : "→"} ${to}`, onDelete: removeIt, items: [
+        { label: "Describe the flow", hint: "Name what the receiving agent gets", take: () => { const at = menuAt({ clientX: current.client.x, clientY: current.client.y }, 1); if (at) setFlowEdit({ edge: current.edge, left: at.left, top: at.top }); } },
         ...(sideBySide ? [] : [{ label: "Insert agents here", hint: from ? `Between ${from} and ${to}` : `Before ${to}, started by the Mother`, take: () => openAdder(current.client, undefined, current.edge) }]),
         ...(from ? [sideBySide
           ? { label: "Make it one-way", hint: `${to} waits for ${from}`, take: () => setKind(current.edge, undefined) }
@@ -962,15 +1003,15 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
         </section>}
         <p className="canvas-inputs" aria-label="Inputs needed" title={selected ? `${selected.data.title}: ${selectedInputText}` : "Select an agent to inspect its inputs"}>{selected ? <><b>{selected.data.title}: </b>{selectedInputText}</> : "Select an agent to inspect its inputs"}</p>
       </div>
-      {iso ? <IsoBoard graph={graph} father={split.father} states={states} selected={selection} onSelect={setSelection} onOpen={setDashboardId} dark={dark} controller={isoController} modelLabel={modelLabel}
+      {iso ? <IsoBoard graph={graph} father={split.father} states={states} selected={selection} onSelect={setSelection} onOpen={setDashboardId} onRename={renameAgent} onWireClick={editFlow} dark={dark} controller={isoController} modelLabel={modelLabel}
         onConnect={connect} onAdd={(at, id, end) => openAdder(at, { id, as: end === "source" ? "target" : "source" })}
         onNodeMenu={(event, id) => { const node = nodes.find(node => node.id === id); if (node) onNodeContextMenu(event, node); }}
-        onBoardMenu={onPaneContextMenu} onWireMenu={onEdgeClick} /> : <ReactFlow nodes={nodes} edges={edges} nodeTypes={NODE_TYPES} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onConnect={({ source, target }) => connect(source, target)} onConnectEnd={onConnectEnd}
+        onBoardMenu={onPaneContextMenu} onWireMenu={onEdgeClick} /> : <ReactFlow nodes={nodes} edges={edges} nodeTypes={NODE_TYPES} edgeTypes={EDGE_TYPES} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onConnect={({ source, target }) => connect(source, target)} onConnectEnd={onConnectEnd}
         onConnectStart={event => { const spot = "touches" in event ? event.touches[0] : event; connectFrom.current = { x: spot.clientX, y: spot.clientY }; }} connectOnClick={false}
         onNodeDoubleClick={(_, node) => { if (node.type === "agent") setDashboardId(node.id); }}
-        onEdgeClick={onEdgeClick} onEdgeContextMenu={(event, edge) => { event.preventDefault(); onEdgeClick(event, edge); }} onNodeContextMenu={onNodeContextMenu} onPaneContextMenu={onPaneContextMenu} multiSelectionKeyCode={["Shift", "Control", "Meta"]} nodeDragThreshold={5} nodeClickDistance={5} paneClickDistance={5} selectionKeyCode={null} selectionOnDrag panOnDrag={[1]} panActivationKeyCode="Space" snapToGrid snapGrid={[20, 20]} connectionRadius={32} onNodeClick={onNodeClick}
+        onEdgeClick={(event, edge) => editFlow(event, { id: edge.id, source: edge.source, target: edge.target })} onEdgeContextMenu={(event, edge) => { event.preventDefault(); onEdgeClick(event, edge); }} onNodeContextMenu={onNodeContextMenu} onPaneContextMenu={onPaneContextMenu} multiSelectionKeyCode={["Shift", "Control", "Meta"]} nodeDragThreshold={5} nodeClickDistance={5} paneClickDistance={5} selectionKeyCode={null} selectionOnDrag panOnDrag={[1]} panActivationKeyCode="Space" snapToGrid snapGrid={[20, 20]} connectionRadius={32} onNodeClick={onNodeClick}
         onNodeDragStart={() => { dragged.current = true; }} onNodeDragStop={() => setTimeout(() => { dragged.current = false; })}
-        onPaneClick={() => { setSelection([]); setMenu(null); }} deleteKeyCode={["Backspace", "Delete"]} zoomOnDoubleClick={false} colorMode={dark ? "dark" : "light"} fitView fitViewOptions={FIT} minZoom={0.3} proOptions={{ hideAttribution: true }}>
+        onPaneClick={() => { setSelection([]); setMenu(null); }} deleteKeyCode={null} zoomOnDoubleClick={false} colorMode={dark ? "dark" : "light"} fitView fitViewOptions={FIT} minZoom={0.3} proOptions={{ hideAttribution: true }}>
         <Background variant={BackgroundVariant.Dots} gap={22} size={1.2} />
         <Controls showInteractive={false} fitViewOptions={OVERVIEW} />
         <MiniMap pannable zoomable className="canvas-minimap" style={{ width: 150, height: 100 }} />
@@ -987,6 +1028,7 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
         <Button variant="ghost" size="sm" aria-label="Add agent" title="An agent that writes: give it a prompt and the folders it may write; Elpis checks its work after it" onClick={() => addAgents(1, { model: null })}><i className="canvas-kind" data-kind="agent" />Agent</Button>
         <Button variant="ghost" size="sm" onClick={() => addNote()}><StickyNote size={14} />Note</Button>
         <Button variant="ghost" size="sm" className="canvas-toolbar-more" onClick={() => openAdder()} title="Type a prompt, or how many, the model and thinking, then the prompts; a double-click or an agent's dot opens it too">Command <kbd>Tab</kbd></Button>
+        <Button variant="ghost" size="sm" aria-label="Arrange by run order" title="Arrange by run order and fit the view" onClick={tidy}><ListOrdered size={14} />Arrange</Button>
         {/* The keys, as Deus Ex's control strip shows them: a few, short; the rest are in each control's tooltip. */}
         <span className="canvas-toolbar-keys"><span><kbd>Enter</kbd>Dashboard</span><span><kbd>Shift</kbd>Select several</span><span><kbd>Ctrl+A</kbd>All</span></span>
       </div>
@@ -997,8 +1039,10 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
       {dashboard && <AgentDashboard node={dashboard} wave={order.get(dashboard.id)} status={states[dashboard.id]?.status ?? "idle"} check={states[checkOf(dashboard.id)]?.status ?? "idle"} clash={clashes[dashboard.id]} chat={states[dashboard.id]?.chat ?? null} modelLabel={modelLabel(dashboard.data)}
         waitsFor={inputsNeeded(dashboard.id)} feeds={graph.edges.filter(edge => waits(edge) && edge.source === dashboard.id).map(edge => titleOf(edge.target))}
         onOpenChat={onOpenChat} onSettings={() => { setSelection([dashboard.id]); showPanel(true); setDashboardId(null); }} onClose={() => setDashboardId(null)} />}
-      {planning && <p className="canvas-notice" data-tone="info" role="status">Elpis is on it: {planning.length > 60 ? `${planning.slice(0, 60)}…` : planning}</p>}
-      {undoLoad && !notice && !planning && <p className="canvas-notice" data-tone="info" role="status">Loaded {undoLoad.loaded}.
+      {flowEdit && <div className="canvas-flow-edit" style={{ left: flowEdit.left, top: flowEdit.top }}><CanvasTextEdit key={flowEdit.edge.id} label="Flow label" maxLength={60} value={flowEdit.edge.source === MOTHER ? graph.motherFlow ?? "" : graph.edges.find(edge => edge.id === flowEdit.edge.id)?.label ?? ""} onSave={saveFlow} onCancel={() => setFlowEdit(null)} /></div>}
+      {deleted && <p className="canvas-notice" data-tone="info" role="status"><span title={`Deleted ${deleted}`}>Deleted {deleted} ·</span><Button variant="outline" size="sm" onClick={() => { undo(); board.current?.querySelector<HTMLElement>(".iso-board, .react-flow")?.focus(); }}>Undo</Button></p>}
+      {planning && !deleted && <p className="canvas-notice" data-tone="info" role="status">Elpis is on it: {planning.length > 60 ? `${planning.slice(0, 60)}…` : planning}</p>}
+      {undoLoad && !notice && !planning && !deleted && <p className="canvas-notice" data-tone="info" role="status">Loaded {undoLoad.loaded}.
         <Button variant="outline" size="sm" onClick={() => { setGraph(undoLoad.previous); setUndoLoad(null); setTimeout(() => void flow.fitView({ ...FIT, duration: 250 }), 60); }}>Undo</Button>
         <button type="button" aria-label="Dismiss" onClick={() => setUndoLoad(null)}><X size={13} /></button></p>}
       {notice && <p className="canvas-notice" role="alert">{notice}{needProject && !cwd && projectMenu}<button type="button" aria-label="Dismiss" onClick={() => setNotice("")}><X size={13} /></button></p>}
@@ -1006,7 +1050,7 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
     {!panelOpen ? null : sourceId ? <WorkflowSources id={sourceId} onBack={() => setSourceId(null)} /> : selected ? <aside className="canvas-side" aria-label="Selected agent">
       <p className="hud-menu-title">Agent{order.get(selected.id) ? ` · wave ${order.get(selected.id)}` : ""}{states[selected.id] ? ` · ${STATUS_LABEL[states[selected.id].status]}` : ""} · {CHECK_LABEL[states[checkOf(selected.id)]?.status ?? "idle"]}</p>
       <label>Name<Input ref={nameField} aria-label="Name" title={selected.data.title} value={selected.data.title} maxLength={256} onChange={event => edit({ title: event.target.value })} /></label>
-      <label>Prompt<Textarea ref={promptField} aria-label="Prompt" rows={5} value={selected.data.instruction} placeholder="What this agent should do; left empty, Elpis fills it from the goal" onChange={event => edit({ instruction: event.target.value, ...(/^New agent( \d+)?$|^$/.test(selected.data.title) || selected.data.title === nameFrom(selected.data.instruction) ? { title: nameFrom(event.target.value) || "New agent" } : {}) })} /></label>
+      <label>Prompt<Textarea ref={promptField} aria-label="Prompt" rows={5} value={selected.data.instruction} placeholder="What this agent should do; left empty, Elpis fills it from the goal" onChange={event => edit({ instruction: event.target.value, title: promptName(selected.data, event.target.value) })} /></label>
       <label>Provider<OptionSelect aria-label="Provider" value={selected.data.provider ?? ""} onChange={event => {
         const provider = event.target.value || null, first = catalog.find(item => item.provider === provider);
         edit({ provider, model: first?.model ?? null, effort: null });
