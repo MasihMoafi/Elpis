@@ -30,17 +30,28 @@ fn press(kind: MouseEventKind, row: u16) -> MouseEvent {
 
 /// Draw the body beside a one-column track the way the full-screen transcript does.
 fn draw(view: &mut TranscriptView, cells: &[Arc<dyn HistoryCell>]) -> (Buffer, bool) {
+    draw_at_height(view, cells, 5)
+}
+
+fn draw_at_height(
+    view: &mut TranscriptView,
+    cells: &[Arc<dyn HistoryCell>],
+    height: u16,
+) -> (Buffer, bool) {
     let mut buffer = Buffer::empty(Rect::new(
-        /*x*/ 0, /*y*/ 0, /*width*/ 12, /*height*/ 5,
+        /*x*/ 0, /*y*/ 0, /*width*/ 12, height,
     ));
     let width = u16::from(view.reserves_scrollbar());
     view.render(
-        Rect::new(/*x*/ 0, /*y*/ 0, 12 - width, 5),
+        Rect::new(/*x*/ 0, /*y*/ 0, 12 - width, height),
         &mut buffer,
         cells,
     );
-    let reserved =
-        view.render_scrollbar(Rect::new(/*x*/ 11, /*y*/ 0, width, 5), &mut buffer, cells);
+    let reserved = view.render_scrollbar(
+        Rect::new(/*x*/ 11, /*y*/ 0, width, height),
+        &mut buffer,
+        cells,
+    );
     (buffer, reserved)
 }
 
@@ -110,6 +121,69 @@ fn dragging_the_thumb_jumps_to_that_message_and_the_last_row_returns_to_latest()
     assert!(
         !view.handle_scrollbar_mouse(press(MouseEventKind::Drag(MouseButton::Left), 1), &cells)
     );
+}
+
+#[test]
+fn dragging_near_to_and_past_the_bottom_matches_the_wheel_after_long_history() {
+    let mut cells: Vec<Arc<dyn HistoryCell>> = (0..20)
+        .map(|_| {
+            Arc::new(PlainHistoryCell::new(
+                (0..100).map(|row| format!("row {row:02}").into()).collect(),
+            )) as Arc<dyn HistoryCell>
+        })
+        .collect();
+    cells.push(Arc::new(PlainHistoryCell::new(vec![
+        "last one".into(),
+        "last two".into(),
+        "last three".into(),
+    ])));
+    let height = 40;
+    let mut wheel = TranscriptView::default();
+    draw_at_height(&mut wheel, &cells, height);
+    draw_at_height(&mut wheel, &cells, height);
+    wheel.handle_mouse(press(MouseEventKind::Down(MouseButton::Left), 10), &cells);
+    draw_at_height(&mut wheel, &cells, height);
+    wheel.handle_mouse(press(MouseEventKind::Up(MouseButton::Left), 10), &cells);
+    wheel.mouse_scroll_speed = 10_000.0;
+    assert!(matches!(
+        wheel.handle_mouse(
+            MouseEvent {
+                column: 1,
+                ..press(MouseEventKind::ScrollDown, 1)
+            },
+            &cells,
+        ),
+        Some(ViewAction::Changed)
+    ));
+    let expected = draw_at_height(&mut wheel, &cells, height).0;
+    let bottom = wheel.start(&cells);
+    assert!(wheel.is_following());
+    assert_eq!(wheel.visible.len(), usize::from(height));
+
+    for target in [height - 2, height - 1, height + 20] {
+        let mut dragged = TranscriptView::default();
+        draw_at_height(&mut dragged, &cells, height);
+        draw_at_height(&mut dragged, &cells, height);
+        dragged.handle_mouse(press(MouseEventKind::Down(MouseButton::Left), 10), &cells);
+        draw_at_height(&mut dragged, &cells, height);
+        assert!(
+            !dragged.is_following(),
+            "the upper track still reaches history"
+        );
+        assert!(matches!(
+            dragged.handle_mouse(
+                press(MouseEventKind::Drag(MouseButton::Left), target),
+                &cells
+            ),
+            Some(ViewAction::Changed)
+        ));
+        let actual = draw_at_height(&mut dragged, &cells, height).0;
+        assert_eq!(dragged.start(&cells), bottom, "drag to track row {target}");
+        assert_eq!(actual, expected, "drag to track row {target}");
+        assert!(dragged.is_following());
+        dragged.handle_mouse(press(MouseEventKind::Up(MouseButton::Left), target), &cells);
+        assert_eq!(draw_at_height(&mut dragged, &cells, height).0, expected);
+    }
 }
 
 #[test]

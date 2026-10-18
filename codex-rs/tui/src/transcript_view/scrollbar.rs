@@ -171,9 +171,14 @@ impl TranscriptView {
             let index =
                 index.min((cells.len() + usize::from(self.live.is_some())).saturating_sub(1));
             self.jump_to_entry(cells, index);
-            // Only lay out the selected entry; unseen history remains unrendered.
+            // Layout work stays bounded to the selected entry and the latest viewport.
             if let Some(layout) = self.layout(cells, index) {
                 let row = target_row.min(layout.row_count().saturating_sub(1));
+                // Use the same lower limit as wheel scrolling, including near-bottom targets.
+                if (index, row) >= self.bottom_start(cells) {
+                    self.jump_to_latest();
+                    return true;
+                }
                 let offset = layout.position_at(row, 0);
                 self.position = Position::Reading(Anchor {
                     key: self.entry_key(cells, index),
