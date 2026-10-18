@@ -27,18 +27,22 @@ test('3D selection, dashboard, shared settings and delete/undo work together', a
   } finally { await f.close(); }
 });
 
-test('3D ports connect and drop to Add; changes persist on the flat board', async () => {
+test('3D ports connect and drop to create; changes persist on the flat board', async () => {
   const f = await openCanvas(); const { page, canvas } = f;
   try {
     await canvas.getByRole('button', { name: 'Isometric', exact: true }).click();
+    await canvas.getByRole('button', { name: 'Output of Quillon · Part 1', exact: true }).click();
+    await canvas.getByRole('dialog', { name: 'Add agents', exact: true }).waitFor();
+    await page.keyboard.press('Escape');
+    assert.equal((await f.saved()).nodes.filter(n => n.type === 'agent').length, 4, 'clicking a dot keeps its existing command menu');
     await drag(page, await middle(canvas.getByRole('button', { name: 'Output of Quillon · Part 1', exact: true })), await middle(canvas.getByRole('button', { name: 'Input of Veyra · Part 2', exact: true })));
     let saved = await f.saved(), from = saved.nodes.find(n => n.data.title === 'Quillon · Part 1').id, to = saved.nodes.find(n => n.data.title === 'Veyra · Part 2').id;
     assert.ok(saved.edges.some(e => e.source === from && e.target === to));
     const board = await canvas.locator('.iso-board').boundingBox();
     await drag(page, await middle(canvas.getByRole('button', { name: 'Output of Veyra · Part 2', exact: true })), { x: board.x + board.width - 40, y: board.y + 40 });
-    const add = canvas.getByRole('dialog', { name: 'Add agents', exact: true });
-    await add.getByRole('textbox', { name: 'Command', exact: true }).fill(': Follow in 3D'); await page.keyboard.press('Enter');
-    saved = await f.saved(); const added = saved.nodes.find(n => n.data.title?.endsWith(' · Follow in 3D')).id;
+    await canvas.getByRole('textbox', { name: 'Name', exact: true }).fill('Follow in 3D'); await page.keyboard.press('Enter');
+    await page.keyboard.type('Follow in 3D');
+    saved = await f.saved(); const added = saved.nodes.find(n => n.data.title === 'Follow in 3D').id;
     assert.ok(saved.edges.some(e => e.source === to && e.target === added));
     await canvas.getByRole('button', { name: 'Flat', exact: true }).click(); await f.agentCount(5, '3D edits appear in 2D');
     assert.equal(await f.wires.count(), 5);

@@ -83,7 +83,7 @@ test('canvas basics: undo and redo, copy and paste, duplicate, delete keeping th
     await canvas.getByRole('button', { name: 'Side panel', exact: true }).click();
     await canvas.getByRole('complementary').waitFor({ state: 'detached' });
     assert.ok(await boardWidth() > wide + 200, 'the board took the panel\'s width');
-    await page.reload(); await page.getByRole('button', { name: 'Canvas', exact: true }).click(); await canvas.waitFor();
+    await page.reload(); await page.getByRole('button', { name: 'Workflows', exact: true }).click(); await canvas.waitFor();
     assert.equal(await canvas.getByRole('complementary').count(), 0, 'the folded panel stays folded');
     await fit(); await node('Quillon · Part 1').click();
     await canvas.getByRole('complementary', { name: 'Selected agent', exact: true }).waitFor();
@@ -268,7 +268,7 @@ test('canvas basics: undo and redo, copy and paste, duplicate, delete keeping th
     // Colour means state, as on Deus Ex's board: in the dark theme too, an idle wire and the selection outline are a
     // neutral grey, never the theme's gold.
     await page.evaluate(() => localStorage.setItem('elpis-theme', 'dark')); await page.reload();
-    await page.getByRole('button', { name: 'Canvas', exact: true }).click(); await canvas.waitFor();
+    await page.getByRole('button', { name: 'Workflows', exact: true }).click(); await canvas.waitFor();
     await node('Quillon · Step 1: the base').first().click();
     // How colourful a computed colour is, 0 to 1: oklch's chroma (×5) or rgb's saturation.
     const saturation = color => { const values = color.match(/[\d.]+/g).map(Number); if (color.startsWith('oklch')) return values[1] * 5; const [r, g, b] = values.slice(0, 3).map(value => value / 255), max = Math.max(r, g, b), min = Math.min(r, g, b), light = (max + min) / 2; return max === min ? 0 : (max - min) / (1 - Math.abs(2 * light - 1)); };
@@ -279,7 +279,7 @@ test('canvas basics: undo and redo, copy and paste, duplicate, delete keeping th
 
     // With no project chosen, Run graph says so and offers the project menu right in its message.
     await page.evaluate(() => localStorage.setItem('elpis-projects-v1', JSON.stringify({ projects: [], selectedId: null }))); await page.reload();
-    await page.getByRole('button', { name: 'Canvas', exact: true }).click(); await canvas.waitFor();
+    await page.getByRole('button', { name: 'Workflows', exact: true }).click(); await canvas.waitFor();
     await canvas.getByRole('button', { name: 'Run graph', exact: true }).click();
     const alert = canvas.getByRole('alert').filter({ hasText: 'Choose the project the agents work in, then run again.' });
     await alert.waitFor();

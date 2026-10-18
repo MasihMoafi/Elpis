@@ -6,11 +6,11 @@ import { Button } from "@/components/ui/button";
 
 const effective = { title: "Building effective agents", href: "https://www.anthropic.com/engineering/building-effective-agents" };
 const research = { title: "How we built our multi-agent research system", href: "https://www.anthropic.com/engineering/multi-agent-research-system" };
-// Claim-by-claim source map: docs/evals/agents-guide.md. These describe the Canvas implementation, not a live-run guarantee.
+// Claim-by-claim source map: docs/evals/agents-guide.md. These describe the Workflows implementation, not a live-run guarantee.
 const topics = [
   { title: "One agent or many", intro: "Start with one chat for a small change, a question, or work that needs the same context throughout.", points: [
     "Use several agents when each can own an independent part with a clear result and a way to check it. Give each part its own files; agree on shared interfaces first.",
-    "In Canvas, Split by parts is the default: each writer plans, builds and tests its part; a final writer joins the parts. Keep tightly connected work together.",
+    "In Workflows, Split by parts is the default: each writer plans, builds and tests its part; a final writer joins the parts. Keep tightly connected work together.",
     "Choose a project before running. In the Mother’s settings, Max agents limits the team; At once limits how many tasks can run together.",
   ], links: [effective, research] },
   { title: "Mother and Father", intro: "The Mother is the run’s chat. Click her to set the shared brief and her model, and to read the run’s feed.", points: [
@@ -21,8 +21,8 @@ const topics = [
   { title: "Writers and checks", intro: "Every board agent writes files; reading and planning happen inside that writer.", points: [
     "Give each writer a prompt, folders it may change, and a “Done when” check. Elpis fills missing prompts or folders from the brief or drawn team.",
     "Elpis adds a read-only check after every writer. Downstream writers wait for both. A failed prerequisite blocks the writers that depend on it.",
-    "With several writers in Git, Canvas requests one worktree per writer, shared with its check. Successful results merge; conflicts stop the merge and keep the work.",
-    "Without Git, Canvas skips worktrees. Keep concurrent writers in separate folders.",
+    "With several writers in Git, Workflows requests one worktree per writer, shared with its check. Successful results merge; conflicts stop the merge and keep the work.",
+    "Without Git, Workflows skips worktrees. Keep concurrent writers in separate folders.",
   ], links: [effective] },
   { title: "Choose a pattern", intro: "Choose by how the work divides. Edit each template’s prompts and folders for your task.", patterns: [
     ["Split by parts", "Independent parts: each writer owns one; a final writer joins them."],
@@ -30,7 +30,7 @@ const topics = [
     ["Debate + judge", "A design choice: two opposing cases, then a judge’s decision."],
     ["Hierarchical", "Several areas: a lead splits, teams plan and build, one joins."],
     ["Research", "Broad question: four research parts, a report, then a citation check."],
-  ], points: ["Every wired branch runs. Canvas cannot choose just one branch."], links: [effective, research] },
+  ], points: ["Every wired branch runs. Workflows cannot choose just one branch."], links: [effective, research] },
   { title: "Read a run", intro: "Read the work and its check together. “Task done” means the writer finished; “Check passed” means its separate check succeeded.", points: [
     "Waves show run order: the first wave has no prerequisites; later waves wait for earlier work and its checks. At once can limit how many tasks actually run together.",
     "Click a writer for its inputs, status, check and chat. The Mother’s panel shows the feed. States include waiting, running, done, failed, blocked and cancelled.",
@@ -43,7 +43,7 @@ export function AgentsGuideLink({ onOpen }: { onOpen: () => void }) {
   return <Button variant="ghost" size="sm" onClick={onOpen}><BookOpen size={14} />Guide to managing agents</Button>;
 }
 
-export function AgentsGuide({ back, onBack }: { back: "Agents" | "Canvas"; onBack: () => void }) {
+export function AgentsGuide({ back, onBack }: { back: "Agents" | "Workflows"; onBack: () => void }) {
   const [index, setIndex] = useState(0);
   const topic = topics[index];
   return <section aria-label="Guide to managing agents" className="mx-auto max-w-3xl space-y-5">

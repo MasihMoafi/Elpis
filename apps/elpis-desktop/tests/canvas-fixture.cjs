@@ -58,8 +58,8 @@ async function openCanvas({ width = 1440, height = 900, repository = false, grap
     if (saved && !localStorage.getItem('elpis-workflow-draft-v1')) localStorage.setItem('elpis-workflow-draft-v1', JSON.stringify(saved));
   }, graph);
   await page.goto(`http://127.0.0.1:${server.address().port}`);
-  await page.getByRole('button', { name: 'Canvas', exact: true }).click();
-  const canvas = page.getByRole('region', { name: 'Agents canvas', exact: true }); await canvas.waitFor();
+  await page.getByRole('button', { name: 'Workflows', exact: true }).click();
+  const canvas = page.getByRole('region', { name: 'Workflows', exact: true }); await canvas.waitFor();
   const node = title => canvas.locator('.react-flow__node').filter({ hasText: title });
   return {
     page, canvas, posts, plans, runs, errors, node,

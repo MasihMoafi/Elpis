@@ -52,8 +52,8 @@ test('agents canvas: writers with automatic checks, architectures, wiring, persi
     // A project is open: agents write inside it.
     await page.addInitScript(() => { if (!localStorage.getItem('elpis-projects-v1')) localStorage.setItem('elpis-projects-v1', JSON.stringify({ projects: [{ id: 'p1', name: 'demo', cwd: '/tmp/demo' }], selectedId: 'p1' })); });
     await page.goto(`http://127.0.0.1:${server.address().port}`);
-    await page.getByRole('button', { name: 'Canvas', exact: true }).click();
-    const canvas = page.getByRole('region', { name: 'Agents canvas', exact: true }); await canvas.waitFor();
+    await page.getByRole('button', { name: 'Workflows', exact: true }).click();
+    const canvas = page.getByRole('region', { name: 'Workflows', exact: true }); await canvas.waitFor();
     // Agents and the wires between them; the Mother and her wires are counted on their own.
     const nodes = canvas.locator('.react-flow__node-agent'), edges = canvas.locator('.react-flow__edge:not(.canvas-edge-mother)');
     const node = title => canvas.locator('.react-flow__node').filter({ hasText: title });
@@ -160,7 +160,7 @@ test('agents canvas: writers with automatic checks, architectures, wiring, persi
 
     // The graph is kept on this device.
     await page.waitForTimeout(600); await page.reload();
-    await page.getByRole('button', { name: 'Canvas', exact: true }).click(); await canvas.waitFor();
+    await page.getByRole('button', { name: 'Workflows', exact: true }).click(); await canvas.waitFor();
     await until('the graph came back after a restart', () => document.querySelectorAll('.react-flow__node-agent').length === 5 && document.querySelectorAll('.react-flow__edge:not(.canvas-edge-mother)').length === 4 && document.querySelectorAll('.react-flow__node-mother').length === 1);
 
     // Several agents share a folder in one step: Shift+drag selects them all, and the group panel adds it to each.
@@ -243,7 +243,7 @@ test('agents canvas: writers with automatic checks, architectures, wiring, persi
     assert.deepEqual(added.map(item => [item.data.title, item.data.instruction]), [['Tavri · Fix the lexer', 'Fix the lexer'], ['Lumaro · Fix the docs', 'Fix the docs'], ['Eshvi', '']]);
 
     // Ctrl+A in a text field selects its text and opens nothing (on the board it selects every agent: canvas-basics).
-    // Escape closes the bar; a double-click opens it.
+    // Escape closes the bar; a double-click creates directly.
     await fit();
     await node('Fix the lexer').click();
     await inspector.getByRole('textbox', { name: 'Prompt', exact: true }).focus();
@@ -253,7 +253,10 @@ test('agents canvas: writers with automatic checks, architectures, wiring, persi
     // The header wraps to two rows while a run shows its status, so the board is measured again.
     const now = await canvas.locator('.react-flow__pane').boundingBox();
     await page.mouse.dblclick(now.x + 30, now.y + 30);
-    await command.waitFor(); await page.keyboard.press('Escape'); await adder.waitFor({ state: 'hidden' });
+    const newName = canvas.getByRole('textbox', { name: 'Name', exact: true }); await newName.waitFor();
+    const madeTitle = await newName.inputValue();
+    assert.equal(await adder.count(), 0);
+    await fit(); await node(madeTitle).click(); await page.keyboard.press('Delete');
 
     // Counts are typed in the Mother's panel, and only what Elpis allows is taken, with the reason when it is not. The
     // header's Mother button opens her panel wherever she is on the board.
@@ -308,15 +311,15 @@ test('agents canvas: writers with automatic checks, architectures, wiring, persi
     assert.deepEqual(patches.map(item => [item.data.title.split(' · ').slice(1).join(' · '), item.data.model]), [['Patch what the suite found', 'gpt-6-luna'], ['Patch the docs', 'gpt-6-luna']]);
     assert.ok(patches.every(patch => graph.edges.some(edge => edge.source === joiner.id && edge.target === patch.id)), 'both wait for Nuvani · Join the parts');
 
-    // A wire let go on empty board opens the bar too; the graph is now at its limit, so the bar says so.
+    // At the limit a dropped wire shows the limit notice without a dialog or adding an agent.
     await fit();
     const handle = await node('Nuvani · Join the parts').locator('.react-flow__handle.source').boundingBox();
     // Let go on empty board: the first point right of the dot, then below it, where nothing but the board is.
     const empty = await page.evaluate(({ x, y }) => { const bare = (px, py) => document.elementFromPoint(px, py)?.classList.contains('react-flow__pane'); for (let dy = 0; dy < 400; dy += 30) for (let dx = 80; dx < 500; dx += 30) { const px = x + dx, py = y + dy; if ([[0, 0], [70, 0], [-70, 0], [0, 70], [0, -70]].every(([ox, oy]) => bare(px + ox, py + oy))) return { x: px, y: py }; } return null; }, { x: handle.x, y: handle.y });
     await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2); await page.mouse.down();
     await page.mouse.move(empty.x, empty.y, { steps: 6 }); await page.mouse.up();
-    await adder.getByText('No room for more agents').waitFor();
-    await page.keyboard.press('Escape');
+    await canvas.getByText('The graph is at its limit of 13 agents. Raise Max agents to add more.').waitFor();
+    assert.equal(await adder.count(), 0); assert.equal(await nodes.count(), 13);
     await canvas.getByRole('button', { name: 'Add agent', exact: true }).click();
     await canvas.getByText('The graph is at its limit of 13 agents. Raise Max agents to add more.').waitFor();
 

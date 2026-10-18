@@ -9,8 +9,9 @@ import { appStorage } from "@/lib/projects";
 export type AgentData = { title: string; instruction: string; model: string | null; provider?: string | null; effort?: string | null; writeScopes: string[]; acceptanceCriteria: string[] };
 export type NoteData = { text: string };
 type Position = { x: number; y: number };
-export type CanvasNode = { id: string; type: "agent"; position: Position; data: AgentData } | { id: string; type: "note"; position: Position; data: NoteData }
-  | { id: typeof MOTHER; type: "mother"; position: Position; data: Record<string, never> };
+/** `isoPosition` pins a manually placed pedestal in projected ground units until Arrange is used. */
+export type CanvasNode = ({ id: string; type: "agent"; position: Position; data: AgentData } | { id: string; type: "note"; position: Position; data: NoteData }
+  | { id: typeof MOTHER; type: "mother"; position: Position; data: Record<string, never> }) & { isoPosition?: Position };
 /** A wire: by default the target waits for the source (directional); `alongside` (undirectional) means the two work
  * at the same time, each told about the other and kept out of its folders, with no order between them. */
 export type CanvasEdge = { id: string; source: string; target: string; kind?: "alongside"; label?: string };
@@ -207,7 +208,7 @@ export function arrange(graph: CanvasGraph): CanvasGraph {
   }
   // Room for her shared trunk and an exposed branch into each first-wave agent.
   position.set(MOTHER, { x: -80, y: 0 });
-  return { ...graph, nodes: graph.nodes.map(node => position.has(node.id) ? { ...node, position: position.get(node.id)! } : node) };
+  return { ...graph, nodes: graph.nodes.map(node => position.has(node.id) ? { ...node, position: position.get(node.id)!, isoPosition: undefined } : node) };
 }
 
 /** An agent's name from its prompt: the prompt's start, cut at a word. */

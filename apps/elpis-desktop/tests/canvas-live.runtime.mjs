@@ -100,8 +100,8 @@ try {
     if (board) localStorage.setItem('elpis-workflow-draft-v1', JSON.stringify(board));
   }, { cwd: project, board: savedBoard });
   await page.goto(app.url);
-  await page.getByRole('button', { name: 'Canvas', exact: true }).click();
-  const canvas = page.getByRole('region', { name: 'Agents canvas', exact: true }); await canvas.waitFor();
+  await page.getByRole('button', { name: 'Workflows', exact: true }).click();
+  const canvas = page.getByRole('region', { name: 'Workflows', exact: true }); await canvas.waitFor();
   const api = (pathname, body) => page.evaluate(async ([pathname, body]) => {
     const response = await fetch(`/api${pathname}`, body === undefined ? {} : { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
     const value = await response.json(); if (!response.ok) throw Error(value.error || response.status); return value;

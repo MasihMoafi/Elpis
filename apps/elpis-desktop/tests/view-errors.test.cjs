@@ -52,8 +52,8 @@ for (const [name, reply] of Object.entries(REPLIES)) {
     await stands(f, 'Agents');
     await page.getByRole('button', { name: 'New agent', exact: true }).first().click();
     await stands(f, 'New agent');
-    await page.getByRole('button', { name: 'Canvas', exact: true }).click();
-    await stands(f, 'Canvas');
+    await page.getByRole('button', { name: 'Workflows', exact: true }).click();
+    await stands(f, 'Workflows');
     for (const tab of SETTINGS_PAGES) {
       await openSettings(page);
       await page.getByRole('tab', { name: tab, exact: true }).click();

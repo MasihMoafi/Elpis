@@ -139,11 +139,11 @@ for (const colorScheme of ['light', 'dark']) for (const [width, height] of [[128
       await check('New agent', () => page.getByRole('button', { name: 'New agent', exact: true }).click());
       await check('guide', () => command(page, 'Guide'));
       for (const name of TOPICS) await check(`Guide ${name}`, () => page.getByRole('region', { name: 'Guide to managing agents' }).getByRole('button', { name, exact: true }).click());
-      await check('Canvas 2D', () => command(page, 'Canvas'));
+      await check('Canvas 2D', () => command(page, 'Workflows'));
       await check('Canvas Voting', () => page.getByRole('button', { name: /^Voting/ }).click());
       await check('Canvas selected agent', () => page.locator('.react-flow__node-agent').first().click());
       await page.getByRole('button', { name: 'Done', exact: true }).click();
-      await check('Canvas add agents', () => page.getByRole('region', { name: 'Agents canvas', exact: true }).getByRole('button', { name: /^Command/ }).click());
+      await check('Canvas add agents', () => page.getByRole('region', { name: 'Workflows', exact: true }).getByRole('button', { name: /^Command/ }).click());
       await page.keyboard.press('Escape');
       await check('Canvas 3D', () => page.getByRole('button', { name: 'Isometric', exact: true }).click());
       await check('Love Spot', async () => { await page.getByRole('button', { name: 'Love Spot', exact: true }).click(); await page.locator('.excalidraw canvas').first().waitFor(); });

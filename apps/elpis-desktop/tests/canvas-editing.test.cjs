@@ -76,7 +76,7 @@ for (const iso of [true, false]) test(`wire noun labels persist and reach receiv
     await wireClick(f, iso ? '.iso-mother-trunk .iso-wire' : '.canvas-mother-trunk .react-flow__edge-path');
     await field.fill('the instructions'); await f.page.keyboard.press('Enter');
     const saved = await f.saved(); assert.equal(saved.motherFlow, 'the instructions'); assert.equal(saved.edges[0].label, 'three answers');
-    await f.page.reload(); await f.page.getByRole('button', { name: 'Canvas', exact: true }).click(); await mode(f, iso);
+    await f.page.reload(); await f.page.getByRole('button', { name: 'Workflows', exact: true }).click(); await mode(f, iso);
     assert.equal(await f.canvas.locator(iso ? '.iso-flow-label' : '.react-flow__edge-text').filter({ hasText: 'the instructions' }).count(), 1);
     await f.canvas.getByRole('button', { name: 'Run graph', exact: true }).click();
     await f.page.waitForFunction(() => /Running|Finished/.test(document.querySelector('.canvas-header')?.textContent ?? ''));
@@ -128,3 +128,111 @@ test('starter and + names are distinctive and unique; eight additions never over
     await captures(f, 'placement'); assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });
+
+// Direct creation and the Workflows page name.
+{
+
+const graph = { name: 'My workflow', nodes: [{ id: 'a', type: 'agent', position: { x: 260, y: 0 }, data: { title: 'Quillon', instruction: 'Write the result', model: null, writeScopes: ['src'], acceptanceCriteria: [] } }], edges: [] };
+const board = (f, iso) => f.canvas.locator(iso ? '.iso-board' : '.react-flow');
+const select = (f, iso, id = 'a') => f.canvas.locator(iso ? `.iso-label[data-for="${id}"]` : `.react-flow__node[data-id="${id}"]`).click();
+async function setup(iso) {
+  const f = await openCanvas({ graph, width: 1280 });
+  await f.canvas.getByRole('button', { name: iso ? 'Isometric' : 'Flat', exact: true }).click();
+  await f.fit();
+  return f;
+}
+async function empty(f, iso) {
+  const box = await board(f, iso).boundingBox();
+  return { x: box.x + box.width - 140, y: box.y + 120 };
+}
+async function worldPoint(f, iso, at) {
+  if (iso) return f.canvas.locator('.iso-world').evaluate((el, p) => { const q = new DOMPoint(p.x, p.y).matrixTransform(el.getScreenCTM().inverse()); return { x: q.x, y: q.y }; }, at);
+  return f.canvas.locator('.react-flow__viewport').evaluate((el, p) => { const b = el.closest('.react-flow').getBoundingClientRect(), m = new DOMMatrix(getComputedStyle(el).transform); return { x: (p.x - b.left - m.e) / m.a, y: (p.y - b.top - m.f) / m.d }; }, at);
+}
+async function added(f, iso, count, source, wanted) {
+  await f.page.waitForFunction(n => JSON.parse(localStorage.getItem('elpis-workflow-draft-v1')).nodes.filter(node => node.type === 'agent').length === n, count);
+  assert.equal(await f.canvas.getByRole('dialog', { name: 'Add agents', exact: true }).count(), 0, 'the gesture creates directly');
+  const name = f.canvas.getByRole('textbox', { name: 'Name', exact: true });
+  assert.equal(await name.evaluate(el => el === document.activeElement), true, 'new name takes the keys');
+  const saved = await f.saved(), made = saved.nodes.filter(node => node.type === 'agent').at(-1);
+  assert.equal(await name.inputValue(), made.data.title);
+  if (wanted) {
+    const at = iso ? made.isoPosition : { x: made.position.x + 105, y: made.position.y + 48 };
+    assert.ok(Math.abs(at.x - wanted.x) < 15 && Math.abs(at.y - wanted.y) < 15, 'free-space creation preserves the pointer position with auto-arrange on');
+  }
+  if (source) assert.ok(saved.edges.some(edge => edge.source === source && edge.target === made.id), 'already wired');
+  else assert.equal(saved.edges.length, 0, 'empty-board add has no explicit dependency');
+  const boxes = await f.canvas.locator(iso ? '.iso-node, .iso-label' : '.react-flow__node').evaluateAll(els => els.map(el => { const b = el.getBoundingClientRect(); return { x: b.x, y: b.y, right: b.right, bottom: b.bottom }; }));
+  for (let i = 0; i < boxes.length; i++) for (let j = i + 1; j < boxes.length; j++) {
+    const a = boxes[i], b = boxes[j];
+    assert.ok(a.right <= b.x || b.right <= a.x || a.bottom <= b.y || b.bottom <= a.y, `overlap ${i}/${j}`);
+  }
+  await f.page.keyboard.type(`Agent ${count}`);
+  await f.page.keyboard.press('Enter');
+  const prompt = f.canvas.getByRole('textbox', { name: 'Prompt', exact: true });
+  assert.equal(await prompt.evaluate(el => el === document.activeElement), true, 'Enter advances to the task');
+  await f.page.keyboard.type('A task with a letter A');
+  assert.equal((await f.saved()).nodes.filter(node => node.type === 'agent').length, count, 'typing A in a field never adds');
+  assert.deepEqual(f.errors, []);
+  return made;
+}
+
+for (const iso of [false, true]) {
+  test(`Workflows double-click empty board adds at the pointer with no dialog: ${iso ? '3D' : '2D'}`, async () => {
+    const f = await setup(iso);
+    try {
+      const at = await empty(f, iso), wanted = await worldPoint(f, iso, at);
+      await f.page.mouse.dblclick(at.x, at.y);
+      const made = await added(f, iso, 2, undefined, wanted);
+      const saved = await f.saved();
+      await f.page.reload();
+      await f.page.getByRole('button', { name: 'Workflows', exact: true }).click();
+      const reloaded = (await f.saved()).nodes.find(node => node.id === made.id), previous = saved.nodes.find(node => node.id === made.id);
+      assert.deepEqual(reloaded.position, previous.position); assert.deepEqual(reloaded.isoPosition, previous.isoPosition);
+    } finally { await f.close(); }
+  });
+  test(`Workflows output dragged to empty space adds there already wired: ${iso ? '3D' : '2D'}`, async () => {
+    const f = await setup(iso);
+    try {
+      const dot = f.canvas.locator(iso ? '.iso-port[data-node="a"][data-end="source"]' : '.react-flow__node[data-id="a"] .react-flow__handle.source');
+      const box = await dot.boundingBox(), at = await empty(f, iso), wanted = await worldPoint(f, iso, at);
+      await f.page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+      await f.page.mouse.down(); await f.page.mouse.move(at.x, at.y, { steps: 12 }); await f.page.mouse.up();
+      await added(f, iso, 2, 'a', wanted);
+    } finally { await f.close(); }
+  });
+  test(`Workflows A adds beside selection already wired, including a folded inspector: ${iso ? '3D' : '2D'}`, async () => {
+    const f = await setup(iso);
+    try {
+      await f.canvas.getByRole('button', { name: 'Side panel', exact: true }).click();
+      await select(f, iso); await f.page.keyboard.press('a');
+      const first = await added(f, iso, 2, 'a');
+      await select(f, iso, first.id); await f.page.keyboard.press('a');
+      await added(f, iso, 3, first.id);
+      for (const theme of ['light', 'dark']) {
+        if ((await f.page.locator('html').evaluate(el => el.classList.contains('dark'))) !== (theme === 'dark')) await chooseTheme(f.page, theme);
+        await f.fit(); await assertUiFit(f.canvas, `Workflows ${iso ? '3D' : '2D'} ${theme}`);
+        if (process.env.ELPIS_SHOTS) { await fs.mkdir(process.env.ELPIS_SHOTS, { recursive: true }); await f.page.screenshot({ path: `${process.env.ELPIS_SHOTS}/workflows-${iso ? '3d' : '2d'}-${theme}.png` }); }
+      }
+    } finally { await f.close(); }
+  });
+}
+
+test('Workflows names the sidebar, heading, command menu, window and guide; saved boards remain accessible', async () => {
+  const f = await openCanvas({ graph });
+  try {
+    assert.equal(await f.page.getByRole('button', { name: 'Workflows', exact: true }).count(), 1);
+    assert.equal(await f.page.getByRole('heading', { name: 'Workflows', exact: true }).count(), 1);
+    assert.match(await f.page.title(), /Workflows/);
+    await f.page.keyboard.press('Control+k');
+    await f.page.keyboard.type('Workflows');
+    await f.page.getByRole('option', { name: 'Workflows', exact: true }).click();
+    assert.equal((await f.saved()).name, 'My workflow');
+    await f.canvas.getByRole('button', { name: 'Guide to managing agents', exact: true }).click();
+    await f.page.getByRole('button', { name: 'Back to Workflows', exact: true }).click();
+    await f.canvas.waitFor();
+    assert.equal(await f.page.getByRole('button', { name: 'Canvas', exact: true }).count(), 0);
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});
+}

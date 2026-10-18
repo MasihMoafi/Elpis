@@ -66,7 +66,7 @@ test('wheel at pointer, middle/Space pan, box select, delete, undo/redo, duplica
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });
-test('dragging handles connects; a dropped output opens Add and wires the new agent', async () => {
+test('dragging handles connects; a dropped output creates and wires the new agent', async () => {
   const f = await openCanvas(); const { page, canvas } = f;
   const center = async locator => { const b = await locator.boundingBox(); return { x: b.x + b.width / 2, y: b.y + b.height / 2 }; };
   try {
@@ -77,10 +77,10 @@ test('dragging handles connects; a dropped output opens Add and wires the new ag
     assert.equal(await f.wires.count(), 3);
     const area = await canvas.locator('.react-flow__pane').boundingBox();
     await drag(page, await center(f.node('Veyra · Part 2').locator('.react-flow__handle.source')), { x: area.x + area.width - 50, y: area.y + 65 });
-    const add = canvas.getByRole('dialog', { name: 'Add agents', exact: true });
-    await add.getByRole('textbox', { name: 'Command', exact: true }).fill(': Follow the second answer'); await page.keyboard.press('Enter');
+    await canvas.getByRole('textbox', { name: 'Name', exact: true }).fill('Follow the second answer'); await page.keyboard.press('Enter');
+    await page.keyboard.type('Follow the second answer');
     await f.agentCount(5, 'drop creates a connected agent');
-    const saved = await f.saved(), made = saved.nodes.find(n => n.data.title?.endsWith(' · Follow the second answer')), source = saved.nodes.find(n => n.data.title === 'Veyra · Part 2');
+    const saved = await f.saved(), made = saved.nodes.find(n => n.data.title === 'Follow the second answer'), source = saved.nodes.find(n => n.data.title === 'Veyra · Part 2');
     assert.ok(saved.edges.some(e => e.source === source.id && e.target === made.id));
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }

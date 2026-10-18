@@ -55,7 +55,7 @@ test('non-chat views get the whole workspace while the panel stays hidden', () =
   await page.getByRole('button', { name: 'Agents', exact: true }).click();
   await page.locator('.agent-title').first().waitFor();
   assert.equal(await page.locator('.side-panel').isVisible(), false);
-  await page.getByRole('button', { name: 'Canvas', exact: true }).click();
+  await page.getByRole('button', { name: 'Workflows', exact: true }).click();
   assert.equal(await page.locator('.side-panel').isVisible(), false);
 }));
 

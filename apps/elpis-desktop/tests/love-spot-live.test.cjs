@@ -28,7 +28,7 @@ test('Love Spot real bridge: mouse strokes sync, stale windows retain both, dele
     const bounds = await page.locator('.excalidraw').boundingBox();
     await page.keyboard.press('t'); await page.mouse.click(bounds.x + 500, bounds.y + 260);
     await page.keyboard.type('Our love spot'); await page.keyboard.press('Escape');
-    await page.getByRole('button', { name: 'Canvas', exact: true }).click();
+    await page.getByRole('button', { name: 'Workflows', exact: true }).click();
     await f.waitFor(s => s.elements.some(e => e.text === 'Our love spot' && !e.isDeleted), 'typing was lost when leaving the page');
     await f.open(page);
     await page.keyboard.press('ControlOrMeta+a');

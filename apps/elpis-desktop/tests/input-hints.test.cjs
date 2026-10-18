@@ -21,7 +21,7 @@ for (const colorScheme of ['light', 'dark']) test(`long input hints show an elli
     }
     // A field with an explicit title (the selected agent's name) retains it.
     await page.getByRole('button', { name: 'Back to app', exact: true }).click();
-    await page.getByRole('button', { name: 'Canvas', exact: true }).click();
+    await page.getByRole('button', { name: 'Workflows', exact: true }).click();
     await page.getByRole('button', { name: /^Voting/ }).click();
     await page.locator('.react-flow__node-agent').first().click();
     const name = page.getByRole('textbox', { name: 'Name', exact: true });

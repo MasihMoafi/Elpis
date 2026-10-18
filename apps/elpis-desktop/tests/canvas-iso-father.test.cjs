@@ -27,7 +27,7 @@ test('isometric: the Father and his wires past ten agents, and two-way wires wit
     const flatFatherWires = await canvas.locator('.react-flow__edge[data-id^="father->"]').count();
     assert.ok(flatFatherWires > 0, 'the flat board has the Father starting his agents');
 
-    await canvas.getByRole('group', { name: 'Canvas view', exact: true }).getByRole('button', { name: 'Isometric', exact: true }).click();
+    await canvas.getByRole('group', { name: 'Workflows view', exact: true }).getByRole('button', { name: 'Isometric', exact: true }).click();
     const board = canvas.getByRole('region', { name: 'Isometric board', exact: true }); await board.waitFor();
     // The Father stands on his own pillar, under the Mother, and starts the same agents as on the flat board.
     const father = board.getByRole('button', { name: /^Father:/ });

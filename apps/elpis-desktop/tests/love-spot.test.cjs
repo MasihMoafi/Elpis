@@ -17,7 +17,7 @@ test('Love Spot is beside Canvas and loads its editor only after a real click', 
     assert.equal(f.requests.some(url => heavy.some(name => url.endsWith(name))), false, 'opening chat must not load Excalidraw');
     const love = page.getByRole('button', { name: 'Love Spot', exact: true });
     await love.click();
-    assert.equal(await page.locator('.nav-list button').evaluateAll(nodes => { const i = nodes.findIndex(n => n.textContent === 'Love Spot'); return nodes[i - 1]?.textContent; }), 'Canvas');
+    assert.equal(await page.locator('.nav-list button').evaluateAll(nodes => { const i = nodes.findIndex(n => n.textContent === 'Love Spot'); return nodes[i - 1]?.textContent; }), 'Workflows');
     assert.equal(await love.getAttribute('aria-current'), 'page');
     const icon = love.locator('svg');
     assert.equal(await icon.getAttribute('width'), '16');

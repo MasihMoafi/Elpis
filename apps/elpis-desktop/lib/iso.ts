@@ -14,6 +14,8 @@ export type Box = { left: number; top: number; right: number; bottom: number };
  * right and down, a wave's rows left and down. `height` lifts the point straight up. */
 export const project = (u: number, v: number, height = 0): Point => ({ x: (u - v) * COS, y: (u + v) * SIN - height });
 
+export const unproject = ({ x, y }: Point): Ground => ({ u: (x / COS + y / SIN) / 2, v: (y / SIN - x / COS) / 2 });
+
 export type IsoPlace = { id: string; kind: "mother" | "father" | "agent"; column: number; row: number; ground: Ground; at: Point };
 /** The Mother and the agents in run order: the Mother in column 0, each agent in its wave's column (`waves` from
  * lib/canvas.ts), a wave's agents top to bottom as the flat board has them and centred on row 0. An agent on a loop
@@ -29,7 +31,7 @@ export function isoLayout(graph: Pick<CanvasGraph, "nodes">, waves: ReadonlyMap<
   const places = [...columns].sort(([a], [b]) => a - b).flatMap(([column, nodes]) => nodes
     .sort((a, b) => a.position.y - b.position.y || a.position.x - b.position.x)
     .map((node, index) => {
-      const row = index - (nodes.length - 1) / 2, ground = { u: column * ISO_STEP.column, v: row * ISO_STEP.row };
+      const row = index - (nodes.length - 1) / 2, ground = node.isoPosition ? unproject(node.isoPosition) : { u: column * ISO_STEP.column, v: row * ISO_STEP.row };
       return { id: node.id, kind: node.type === "mother" ? "mother" as const : "agent" as const, column, row, ground, at: project(ground.u, ground.v) };
     }));
   if (!father) return places;
