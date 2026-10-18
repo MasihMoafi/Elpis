@@ -76,7 +76,8 @@ export async function startDesktopServer(options = {}) {
   const loveStreams = new Set();
   const tools = options.tools ?? createTools({ environment: () => client.ragEnvironment() });
   // The Observability page reads the records of the Elpis home this runtime uses (`elpisHome` sets another).
-  const observability = createObservability({ home: options.elpisHome, chatOf: id => client.chatSummary(id) });
+  const observability = createObservability({ home: options.elpisHome, chatOf: id => client.chatSummary(id),
+    listChats: params => client.observabilityChats(params), turnsOf: (id, params) => client.observabilityTurns(id, params), graphsOf: id => client.workflows(id) });
   const transcription = createTranscription({ definition: () => client.transcriptionDefinition(), environment: () => client.transcriptionEnvironment() });
   const event = value => {
     const bytes = `event: ${value.type}\ndata: ${JSON.stringify(value.data)}\n\n`;

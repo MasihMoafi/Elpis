@@ -807,6 +807,27 @@ export class DesktopClient extends EventEmitter {
     await this.#rpc('config/mcpServer/reload', undefined).catch(() => { reloadRequested = false; });
     return { ...await this.mcp(), reloadRequested };
   }
+  /** Observability never resumes agents or repairs their metadata while listing them. */
+  async observabilityChats({ cursor, limit = 100 } = {}) {
+    const result = await this.#rpc('thread/list', { cursor, limit, archived: false, useStateDbOnly: true, modelProviders: [], sourceKinds: SOURCE_KINDS });
+    for (let start = 0; start < result.data.length; start += 16) await this.#loadWorkflowTitles(result.data.slice(start, start + 16));
+    return { ...result, data: result.data.map(thread => this.#decorate(thread)) };
+  }
+  /** Full chat items in turn order, one page at a time. Older engines expose whole-turn history only. */
+  async observabilityTurns(id, { cursor, limit = 20 } = {}) {
+    threadId(id);
+    const legacy = typeof cursor === 'string' && cursor.startsWith(WHOLE_TURNS);
+    if (!legacy) {
+      try { return await this.#rpc('thread/turns/list', { threadId: id, cursor, limit, sortDirection: 'asc', itemsView: 'full' }); }
+      catch (error) { if (error.code !== -32601) throw error; }
+    }
+    const start = legacy ? Number(cursor.slice(WHOLE_TURNS.length)) : 0;
+    if (!Number.isSafeInteger(start) || start < 0) throw new BridgeError('Invalid cursor');
+    const { thread } = await this.#rpc('thread/read', { threadId: id, includeTurns: true });
+    if (thread?.id !== id) throw new BridgeError('Elpis returned another thread', 502);
+    const turns = thread.turns ?? [], end = start + limit;
+    return { data: turns.slice(start, end), nextCursor: end < turns.length ? `${WHOLE_TURNS}${end}` : null };
+  }
   /** A chat as the Observability page names it, with its rollout; null when Elpis no longer has it. */
   async chatSummary(id) {
     threadId(id);

@@ -19,7 +19,6 @@ import { contextLedger, sizedItem, SHARE_KEYS } from './elpis-features.mjs';
 
 const RECORD_ID = /^[A-Za-z0-9][A-Za-z0-9-]{0,127}$/;
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
-const OUTCOMES = ['compacted', 'unchanged', 'failed'];
 const MAX_ROLLOUT_BYTES = 256 * 1024 * 1024;
 // Only what a chat's title needs (lib/api.ts `title`); never its folder or record paths.
 const CHAT_FIELDS = ['id', 'name', 'preview', 'workflowTaskTitle', 'source', 'parentThreadId', 'agentNickname', 'agentRole'];
@@ -79,73 +78,60 @@ function detail(attempt, admissions) {
     admission: manifest ? { id: admissionId, before: manifest.before, after: manifest.after, saved: manifest.saved, requestSequence: admission.requestSequence } : null };
 }
 
-const MAX_STEPS = 400;
-const CALLS = new Set(['function_call', 'custom_tool_call', 'local_shell_call', 'web_search_call', 'tool_search_call']);
-const clip = value => typeof value === 'string' ? value.replace(/\s+/g, ' ').trim().slice(0, 120) : null;
-/** What a tool call was, in a few words: its name and, when its arguments say so, the command, path or query. */
-function callOf(payload) {
-  const name = string(payload.name) ?? { local_shell_call: 'shell', web_search_call: 'web search', tool_search_call: 'tool search' }[payload.type] ?? payload.type;
-  const args = json(payload.arguments);
-  return { name, detail: clip(args?.cmd ?? args?.command ?? args?.path ?? args?.file_path ?? args?.query ?? args?.url) };
-}
-
-/** Each turn of a rollout in order: when it started, its steps (every model request with its tokens, every tool call),
- * its last measured request (the context it ended with) and the Ledger's categories for that context, estimated from the
- * saved items as `rolloutShares` does; `ledger` is null once a compaction or rollback makes the saved items unreliable. */
-async function rolloutTurns(file) {
+/** Only metrics are read from the rollout. Human content comes from the same normalised turns as chat.
+ * Stop after the last requested turn, so opening a long chat never reads its later transcript. */
+async function rolloutMetrics(file, lastId) {
   let input = fs.createReadStream(file);
   if (file.endsWith('.zst')) {
     if (typeof zlib.createZstdDecompress !== 'function') { input.destroy(); throw new Error('zstd unsupported'); }
     input = input.pipe(zlib.createZstdDecompress());
   }
-  const turns = [], byId = new Map(), shares = Object.fromEntries(SHARE_KEYS.map(key => [key, 0]));
+  const turns = new Map(), shares = Object.fromEntries(SHARE_KEYS.map(key => [key, 0]));
   let current = null, reliable = true;
-  const add = item => { const [key, size] = sizedItem(item); shares[key] += Math.ceil(size / 4); };
-  const step = (at, value) => { if (!current) return; if (current.steps.length < MAX_STEPS) current.steps.push({ at, ...value }); else current.stepsMore++; };
-  for await (const text of readline.createInterface({ input, crlfDelay: Infinity })) {
-    if (!/"(task_started|turn_context|token_count|response_item|session_meta|compacted|thread_rolled_back)"/.test(text)) continue;
-    const line = json(text), payload = line?.payload, at = string(line?.timestamp);
-    if (line?.type === 'session_meta') { shares.systemInstructions = Math.ceil((typeof payload?.base_instructions?.text === 'string' ? Buffer.byteLength(payload.base_instructions.text) : 0) / 4); continue; }
-    if (line?.type === 'compacted') { reliable = false; continue; }
-    if (line?.type === 'event_msg' && payload?.type === 'thread_rolled_back') { reliable = false; continue; }
-    const started = line?.type === 'turn_context' || (line?.type === 'event_msg' && payload?.type === 'task_started') ? string(payload?.turn_id) : null;
-    if (started) {
-      current = byId.get(started);
-      if (!current) { current = { turnId: started, at, contextTokens: null, window: null, requests: 0, steps: [], stepsMore: 0, ledger: null }; byId.set(started, current); turns.push(current); }
-    } else if (line?.type === 'response_item' && payload) {
-      add(payload);
-      if (CALLS.has(payload.type)) step(at, { kind: 'tool', ...callOf(payload) });
-    } else if (current && line?.type === 'event_msg' && payload?.type === 'token_count' && payload.info) {
-      const last = payload.info.last_token_usage, used = number(last?.total_tokens);
-      if (used === null) continue;
-      const window = number(payload.info.model_context_window);
-      current.contextTokens = used; current.window = window || current.window; current.requests++;
-      step(at, { kind: 'model', input: number(last.input_tokens), cached: number(last.cached_input_tokens), output: number(last.output_tokens), context: used });
-      current.ledger = reliable ? contextLedger({ last: { totalTokens: used }, modelContextWindow: current.window }, { ...shares }) : null;
+  try {
+    for await (const text of readline.createInterface({ input, crlfDelay: Infinity })) {
+      if (!/"(task_started|turn_context|token_count|response_item|session_meta|compacted|thread_rolled_back)"/.test(text)) continue;
+      const line = json(text), payload = line?.payload, at = string(line?.timestamp);
+      if (line?.type === 'session_meta') { shares.systemInstructions = Math.ceil((typeof payload?.base_instructions?.text === 'string' ? Buffer.byteLength(payload.base_instructions.text) : 0) / 4); continue; }
+      if (line?.type === 'compacted' || (line?.type === 'event_msg' && payload?.type === 'thread_rolled_back')) { reliable = false; continue; }
+      const started = line?.type === 'turn_context' || (line?.type === 'event_msg' && payload?.type === 'task_started') ? string(payload?.turn_id) : null;
+      if (started) {
+        if (current?.turnId === lastId && started !== lastId) break;
+        current = turns.get(started);
+        if (!current) { current = { turnId: started, at, contextTokens: null, window: null, outputTokens: null, requests: 0, ledger: null, model: null }; turns.set(started, current); }
+        if (line.type === 'turn_context') current.model = string(payload.model) ?? current.model;
+      } else if (line?.type === 'response_item' && payload) {
+        const [key, size] = sizedItem(payload); shares[key] += Math.ceil(size / 4);
+      } else if (current && line?.type === 'event_msg' && payload?.type === 'token_count' && payload.info) {
+        const last = payload.info.last_token_usage, used = number(last?.total_tokens);
+        if (used === null) continue;
+        current.contextTokens = used; current.window = number(payload.info.model_context_window) || current.window; current.requests++;
+        current.outputTokens = (current.outputTokens ?? 0) + (number(last.output_tokens) ?? 0);
+        current.ledger = reliable ? contextLedger({ last: { totalTokens: used }, modelContextWindow: current.window }, { ...shares }) : null;
+      }
     }
-  }
-  return turns;
+    return turns;
+  } finally { input.destroy(); }
 }
 
-/** Strict query parameters: each at most once, `limit` 1 through 100, a cursor of the given form. */
-function query(params, { limit, cursor, status = false }) {
+/** Accept only one value per supported parameter; native cursors remain opaque. */
+function query(params, overview = false) {
   const values = {};
   for (const [key, value] of params) {
-    if (!['limit', 'cursor', ...(status ? ['status'] : [])].includes(key) || key in values) throw new BridgeError('Unsupported query parameter');
+    if (!(overview ? ['limit', 'cursor'] : ['limit', 'cursor', 'agent']).includes(key) || key in values) throw new BridgeError('Unsupported query parameter');
     values[key] = value;
   }
   if (values.limit !== undefined && !(/^\d{1,3}$/.test(values.limit) && +values.limit >= 1 && +values.limit <= 100)) throw new BridgeError('Limit must be 1 through 100');
-  if (values.cursor !== undefined && !cursor.test(values.cursor)) throw new BridgeError('Invalid cursor');
-  if (values.status !== undefined && !OUTCOMES.includes(values.status)) throw new BridgeError('Status must be compacted, unchanged or failed');
-  return { limit: values.limit ? +values.limit : limit, cursor: values.cursor ?? null, status: values.status ?? null };
+  if (values.cursor !== undefined && !(overview ? /^\d{1,9}$/ : /^[A-Za-z0-9_:=+.-]{1,2048}$/).test(values.cursor)) throw new BridgeError('Invalid cursor');
+  if (values.agent !== undefined) threadId(values.agent);
+  return { limit: values.limit ? +values.limit : 20, cursor: values.cursor ?? null, agent: values.agent ?? null };
 }
 
-/** The Observability routes over `home` (the Elpis home the bridge's runtime uses). `chatOf(id)` asks Elpis for a chat:
- * `{ thread, path }`, or null when Elpis no longer has it; when it cannot be asked, the chat's name is unknown. */
-export function createObservability({ home = elpisHome(), chatOf }) {
+/** Active chat identities come from the engine, never from old Prune records. All routes are read-only. */
+export function createObservability({ home = elpisHome(), chatOf, listChats, turnsOf, graphsOf }) {
   const dir = path.join(home, 'logs', 'smart-prune'), attemptsDir = path.join(dir, 'attempts'), admissionsDir = path.join(dir, 'admissions');
   const attempts = new Map(), admissions = new Map(), rollouts = new Map();
-  let scanning = null;
+  let scanning = null, listing = null;
 
   async function readAdmission(id) {
     const known = admissions.get(id);
@@ -174,14 +160,26 @@ export function createObservability({ home = elpisHome(), chatOf }) {
   // Requests that arrive together share one scan.
   const records = () => scanning ??= scan().finally(() => { scanning = null; });
 
-  async function chat(id) {
-    if (!UUID.test(id)) return { found: null, chat: null, path: null };
-    try {
-      const summary = await chatOf(id);
-      if (!summary?.thread) return { found: false, chat: null, path: null };
-      return { found: true, chat: Object.fromEntries(CHAT_FIELDS.filter(key => summary.thread[key] !== undefined).map(key => [key, summary.thread[key]])), path: summary.path ?? null };
-    } catch { return { found: null, chat: null, path: null }; }
+  async function listActive() {
+    const active = new Map(), cursors = new Set(); let cursor;
+    do {
+      const page = await listChats({ limit: 100, ...(cursor ? { cursor } : {}) });
+      if (!Array.isArray(page?.data)) throw new BridgeError('Active chats could not be read. Try again.', 502);
+      for (const thread of page.data) if (UUID.test(thread?.id ?? '') && !thread.archived && !thread.path?.split(path.sep).includes('archived_sessions')) active.set(thread.id, thread);
+      cursor = page.nextCursor;
+      if (cursor && (typeof cursor !== 'string' || cursors.has(cursor))) throw new BridgeError('Active chat pages could not be read. Try again.', 502);
+      if (cursor) cursors.add(cursor);
+    } while (cursor);
+    return active;
   }
+  const activeChats = () => listing ??= listActive().finally(() => { listing = null; });
+  const shownChat = thread => Object.fromEntries(CHAT_FIELDS.filter(key => thread[key] !== undefined).map(key => [key, thread[key]]));
+  const rootOf = (id, active) => {
+    const seen = new Set([id]); let current = active.get(id);
+    while (active.has(current?.parentThreadId) && !seen.has(current.parentThreadId)) { seen.add(current.parentThreadId); current = active.get(current.parentThreadId); }
+    return current?.id ?? id;
+  };
+  const familyOf = (id, active) => [active.get(id), ...[...active.values()].filter(thread => thread.id !== id && rootOf(thread.id, active) === id)].filter(Boolean);
   /** The chat's readable Markdown record, which the engine writes beside the audit (one file per chat, named by date and chat
    * title; core smart_prune_log.rs). Found by the chat's id or title in a `.md` file's name; the newest if several. */
   async function recordOf(found, id) {
@@ -191,49 +189,59 @@ export function createObservability({ home = elpisHome(), chatOf }) {
     const dated = await Promise.all(names.map(async name => ({ file: path.join(dir, name), at: (await fsp.stat(path.join(dir, name)).catch(() => null))?.mtimeMs ?? 0 })));
     return dated.filter(entry => entry.at).sort((a, b) => b.at - a.at)[0]?.file ?? null;
   }
-  async function turns(found, file, list) {
-    if (found.found !== true) return { available: false, reason: found.found === false ? 'chat-missing' : 'unknown' };
-    if (typeof file !== 'string' || !path.isAbsolute(file) || !/\.jsonl(\.zst)?$/.test(file)) return { available: false, reason: 'no-rollout' };
+  async function metrics(file, lastId) {
+    if (typeof file !== 'string' || !path.isAbsolute(file) || !/\.jsonl(\.zst)?$/.test(file)) return new Map();
     const stat = await fsp.stat(file).catch(() => null);
-    if (!stat?.isFile()) return { available: false, reason: 'no-rollout' };
-    if (stat.size > MAX_ROLLOUT_BYTES) return { available: false, reason: 'too-large' };
-    const key = `${stat.size}:${stat.mtimeMs}`;
-    let read = rollouts.get(file);
-    if (read?.key !== key) {
-      try { read = { key, turns: await rolloutTurns(file) }; } catch { return { available: false, reason: 'unreadable' }; }
-      rollouts.set(file, read);
-    }
-    const saved = new Map();
-    for (const attempt of list) if (attempt.turnId) saved.set(attempt.turnId, (saved.get(attempt.turnId) ?? 0) + attempt.saved);
-    return { available: true, data: read.turns.map(turn => ({ ...turn, saved: saved.get(turn.turnId) ?? 0 })) };
+    if (!stat?.isFile() || stat.size > MAX_ROLLOUT_BYTES) return new Map();
+    const key = `${stat.size}:${stat.mtimeMs}`, cached = rollouts.get(file);
+    if (cached?.key === key && cached.turns.has(lastId)) return cached.turns;
+    try {
+      const read = await rolloutMetrics(file, lastId);
+      if (rollouts.size >= 32) rollouts.delete(rollouts.keys().next().value);
+      rollouts.set(file, { key, turns: read }); return read;
+    } catch { return new Map(); }
   }
 
   return {
-    /** Every record's totals, and one page of chats with records, the most recently pruned first. */
     async overview(params) {
-      const { limit, cursor } = query(params, { limit: 20, cursor: /^\d{1,6}$/ });
-      const { available, list, unreadable, unlinkedAdmissions } = await records();
-      const sessions = new Map();
-      for (const attempt of list) { if (!sessions.has(attempt.session)) sessions.set(attempt.session, []); sessions.get(attempt.session).push(attempt); }
-      const rows = [...sessions].map(([id, own]) => ({ id, own, lastAt: own.reduce((last, attempt) => time(attempt.at) > time(last) ? attempt.at : last, own[0].at) }))
-        .sort((a, b) => time(b.lastAt) - time(a.lastAt) || (a.id < b.id ? -1 : 1));
-      const start = cursor ? Number(cursor) : 0, page = rows.slice(start, start + limit);
-      const data = await Promise.all(page.map(async ({ id, own, lastAt }) => { const { found, chat: shown } = await chat(id); return { id, found, chat: shown, lastAt, totals: totals(own, admissions) }; }));
+      const { limit, cursor } = query(params, true);
+      const [{ available, list, unreadable }, active] = await Promise.all([records(), activeChats()]);
+      const visible = list.filter(attempt => active.has(attempt.session));
+      const groups = [...active.values()].filter(thread => rootOf(thread.id, active) === thread.id).map(thread => {
+        const own = visible.filter(attempt => rootOf(attempt.session, active) === thread.id);
+        const lastAt = own.reduce((last, attempt) => time(attempt.at) > time(last) ? attempt.at : last, null);
+        return { id: thread.id, found: true, chat: shownChat(thread), lastAt, totals: totals(own, admissions) };
+      }).sort((a, b) => time(b.lastAt) - time(a.lastAt) || a.id.localeCompare(b.id));
+      const start = Number(cursor ?? 0);
       const shownDir = dir.startsWith(`${os.homedir()}${path.sep}`) ? `~${dir.slice(os.homedir().length)}` : dir;
-      return { available, records: shownDir, totals: totals(list, admissions), skipped: { unreadable, unlinkedAdmissions },
-        chats: { data, nextCursor: start + limit < rows.length ? String(start + limit) : null } };
+      return { available, records: shownDir, totals: totals(visible, admissions), skipped: { unreadable },
+        chats: { data: groups.slice(start, start + limit), nextCursor: start + limit < groups.length ? String(start + limit) : null } };
     },
-    /** One chat: its totals, its context over the turns, and a page of its runs, newest first (ids are UUIDv7). */
     async chat(id, params) {
       threadId(id);
-      const { limit, cursor, status } = query(params, { limit: 25, cursor: RECORD_ID, status: true });
-      const { list } = await records();
-      const own = list.filter(attempt => attempt.session === id).sort((a, b) => a.id < b.id ? 1 : a.id > b.id ? -1 : 0);
-      const found = await chat(id);
-      const matching = own.filter(attempt => (!status || attempt.outcome === status) && (!cursor || attempt.id < cursor));
-      const page = matching.slice(0, limit);
-      return { id, found: found.found, chat: found.chat, record: await recordOf(found, id), totals: totals(own, admissions), turns: await turns(found, found.path, own),
-        attempts: { data: page.map(attempt => detail(attempt, admissions)), nextCursor: matching.length > limit ? page.at(-1).id : null } };
+      const { limit, cursor, agent } = query(params);
+      const active = await activeChats();
+      if (!active.has(id)) throw new BridgeError('This chat is no longer active.', 404);
+      const family = familyOf(id, active), agentId = agent ?? id;
+      if (!family.some(thread => thread.id === agentId)) throw new BridgeError('This agent is no longer in this chat.', 404);
+      const [audit, found, page, graphs] = await Promise.all([records(), chatOf(agentId), turnsOf(agentId, { limit, ...(cursor ? { cursor } : {}) }), graphsOf(id).catch(() => ({ data: [] }))]);
+      if (!found?.thread || found.thread.archived || found.path?.split(path.sep).includes('archived_sessions')) throw new BridgeError('This chat is no longer active.', 404);
+      if (!Array.isArray(page?.data) || page.data.some(turn => typeof turn?.id !== 'string' || !Array.isArray(turn.items))) throw new BridgeError('Chat turns could not be read. Try again.', 502);
+      const own = audit.list.filter(attempt => attempt.session === agentId), measured = page.data.length ? await metrics(found.path, page.data.at(-1).id) : new Map();
+      const record = await recordOf({ chat: found.thread }, agentId);
+      const tasks = (graphs?.data ?? []).flatMap(graph => graph.tasks ?? []);
+      const agents = family.map(thread => ({ id: thread.id, name: thread.id === id ? 'Mother' : thread.agentNickname || thread.workflowTaskTitle || thread.name || `Agent · ${thread.id.slice(-8)}`,
+        model: thread.model ?? null, role: tasks.find(task => task.assignedThreadId === thread.id)?.kind ?? thread.agentRole ?? null }));
+      // Older thread/list replies omit model; a turn context or thread/read can still report it.
+      const selected = agents.find(row => row.id === agentId);
+      selected.model ??= found.thread.model ?? [...measured.values()].findLast(turn => turn.model)?.model ?? null;
+      const data = page.data.map(turn => {
+        const prunes = own.filter(attempt => attempt.turnId === turn.id);
+        return { turnId: turn.id, status: turn.status, error: turn.error ?? null, items: turn.items, at: number(turn.startedAt) !== null ? new Date(turn.startedAt * 1000).toISOString() : null,
+          contextTokens: null, window: null, outputTokens: null, requests: 0, ledger: null, ...measured.get(turn.id),
+          saved: prunes.reduce((sum, attempt) => sum + attempt.saved, 0), prunes: prunes.map(attempt => detail(attempt, admissions)) };
+      });
+      return { id, found: true, chat: shownChat(active.get(id)), agentId, agents, record, totals: totals(own, admissions), turns: { available: true, data, nextCursor: page.nextCursor ?? null } };
     },
   };
 }

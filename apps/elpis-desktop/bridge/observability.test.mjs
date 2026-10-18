@@ -6,11 +6,14 @@ import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { createHash } from 'node:crypto';
 import fs from 'node:fs/promises';
+import { execFileSync } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
 import { DesktopClient } from './client.mjs';
 import { startDesktopServer } from './server.mjs';
 
+async function temp(prefix) { const base = path.join(os.homedir(), '.cache/elpis-tests'); await fs.mkdir(base, { recursive: true }); return fs.mkdtemp(path.join(base, prefix)); }
+const trash = file => execFileSync('gio', ['trash', file]);
 const S1 = '01a14400-0000-7000-8000-0000000000a1', S2 = '01a14400-0000-7000-8000-0000000000a2';
 const T1 = 'turn-0001', T2 = 'turn-0002', T3 = 'turn-0003', T9 = 'turn-0009';
 const id = n => `01a14401-0000-7000-8000-${String(n).padStart(12, '0')}`;
@@ -35,8 +38,8 @@ const line = (at, payload, type = 'event_msg') => JSON.stringify({ timestamp: at
 const count = (total, window = 100000) => ({ type: 'token_count', info: { total_token_usage: usage(total, 0), last_token_usage: usage(total - 100, 100), model_context_window: window } });
 
 async function records(t) {
-  const home = await fs.mkdtemp(path.join(os.tmpdir(), 'elpis-observability-'));
-  t.after(() => fs.rm(home, { recursive: true, force: true }));
+  const home = await temp('observability-');
+  t.after(() => trash(home));
   const dir = path.join(home, 'logs', 'smart-prune'), write = async (relative, value) => {
     await fs.mkdir(path.dirname(path.join(dir, relative)), { recursive: true });
     await fs.writeFile(path.join(dir, relative), typeof value === 'string' ? value : JSON.stringify(value));
@@ -87,8 +90,11 @@ async function tree(dir) {
 async function serve(t, home, rollout) {
   const asked = [];
   const client = Object.assign(new EventEmitter(), { connected: true, pendingApprovals: [], close() {},
+    async observabilityChats() { return { data: [{ id: S1, name: 'Fix the parser' }], nextCursor: null }; },
+    async observabilityTurns(id, { limit, cursor }) { const turns = [T1, T2, T3].map(id => ({ id, items: [], status: 'completed', error: null })); const start = Number(cursor ?? 0); return { data: turns.slice(start, start + limit), nextCursor: start + limit < turns.length ? String(start + limit) : null }; },
+    async workflows() { return { data: [] }; },
     async chatSummary(chatId) { asked.push(chatId); return chatId === S1 ? { thread: { id: S1, name: 'Fix the parser', preview: 'Fix the parser', path: rollout, cwd: '/work' }, path: rollout } : null; } });
-  const out = await fs.mkdtemp(path.join(os.tmpdir(), 'elpis-observability-out-')); t.after(() => fs.rm(out, { recursive: true, force: true }));
+  const out = await temp('observability-out-'); t.after(() => trash(out));
   await fs.writeFile(path.join(out, 'index.html'), '<h1>Elpis</h1>');
   const app = await startDesktopServer({ client, staticDir: out, elpisHome: home }); t.after(() => app.close());
   const url = new URL(app.url), origin = url.origin, token = new URLSearchParams(url.hash.slice(1)).get('token');
@@ -98,95 +104,60 @@ async function serve(t, home, rollout) {
   return { get, asked };
 }
 
-test('overview: Smart Prune totals over every record, and its chats by last run, one page at a time', async t => {
-  const { home, rollout } = await records(t), before = await tree(home);
-  const { get, asked } = await serve(t, home, rollout);
+test('HTTP overview excludes missing chats and their totals; reading the audit never changes it', async t => {
+  const { home, rollout } = await records(t), before = await tree(home), { get } = await serve(t, home, rollout);
   const { status, body } = await get('/api/observability');
   assert.equal(status, 200);
-  assert.equal(body.available, true);
-  assert.match(body.records, /logs\/smart-prune$/);
-  assert.deepEqual(body.totals, { attempts: 5, compacted: 2, unchanged: 1, failed: 2, examined: 6, shortened: 2, before: 6000, after: 1500, saved: 4500, unlinked: 0, prunerTokens: 4500, prunerRuns: 3 });
-  assert.deepEqual(body.skipped, { unreadable: 2, unlinkedAdmissions: 1 }, 'a half-written and a newer-schema record are counted, not read; the orphan admission folder too');
-  assert.deepEqual(body.chats.data.map(row => [row.id, row.found, row.chat?.name ?? null, row.lastAt, row.totals.attempts, row.totals.saved]), [
-    [S2, false, null, '2026-10-16T10:05:00Z', 2, 3000],
-    [S1, true, 'Fix the parser', '2026-10-16T09:11:00Z', 3, 1500]]);
-  assert.equal(body.chats.data[1].chat.path, undefined, 'a chat reaches the page without its file paths');
-  assert.equal(body.chats.data[1].chat.cwd, undefined);
+  assert.deepEqual(body.totals, { attempts: 3, compacted: 1, unchanged: 1, failed: 1, examined: 4, shortened: 1, before: 2000, after: 500, saved: 1500, unlinked: 0, prunerTokens: 4000, prunerRuns: 2 });
+  assert.deepEqual(body.chats.data.map(row => row.id), [S1]);
   assert.equal(body.chats.nextCursor, null);
-  assert.ok(!JSON.stringify(body).includes('SOURCE TEXT') && !JSON.stringify(body).includes('PRUNER INSTRUCTIONS'), 'no record text leaves the bridge');
-
-  const first = (await get('/api/observability?limit=1')).body.chats;
-  assert.deepEqual([first.data.map(row => row.id), first.nextCursor], [[S2], '1']);
-  const second = (await get(`/api/observability?limit=1&cursor=${first.nextCursor}`)).body.chats;
-  assert.deepEqual([second.data.map(row => row.id), second.nextCursor], [[S1], null]);
-  assert.ok(asked.length <= 4, 'chat names are asked for only on the page shown');
-
+  assert.equal(body.chats.data[0].chat.path, undefined);
+  assert.equal(body.skipped.unreadable, 2);
+  assert.ok(!JSON.stringify(body).includes('SOURCE TEXT') && !JSON.stringify(body).includes('PRUNER INSTRUCTIONS'));
+  assert.deepEqual(await tree(home), before);
   for (const bad of ['?limit=0', '?limit=101', '?cursor=x', '?status=failed', '?foo=1', '?limit=1&limit=2']) assert.equal((await get(`/api/observability${bad}`)).status, 400, bad);
-  assert.deepEqual(await tree(home), before, 'reading changes no file');
 });
 
-test('a chat: its totals, every output with what the pruner decided and what was admitted, and context over the turns', async t => {
-  const { home, rollout } = await records(t), before = await tree(home);
-  const { get } = await serve(t, home, rollout);
+test('HTTP chat carries Ledger metrics and exact Prune decisions with the readable record', async t => {
+  const { home, rollout } = await records(t), before = await tree(home), { get } = await serve(t, home, rollout);
   const { status, body } = await get(`/api/observability/chats/${S1}`);
   assert.equal(status, 200);
-  assert.deepEqual([body.id, body.found, body.chat.name], [S1, true, 'Fix the parser']);
-  assert.deepEqual(body.totals, { attempts: 3, compacted: 1, unchanged: 1, failed: 1, examined: 4, shortened: 1, before: 2000, after: 500, saved: 1500, unlinked: 0, prunerTokens: 4000, prunerRuns: 2 });
-  assert.deepEqual(body.attempts.data.map(row => [row.id, row.outcome, row.status]), [[A[2], 'failed', 'model_error'], [A[1], 'unchanged', 'unchanged'], [A[0], 'compacted', 'admitted']]);
-  const [failed, unchanged, compacted] = body.attempts.data;
-  assert.deepEqual(compacted, { id: A[0], turnId: T1, at: '2026-10-16T09:00:05Z', status: 'admitted', outcome: 'compacted', model: 'gpt-6-luna', effort: 'low',
-    candidates: 2, shortened: 1, saved: 1500, latencyMs: 1200, prunerTokens: 3000, error: null,
-    items: [{ callId: 'c1', tool: 'exec_command', sourceTokens: 2000, decision: 'compact', admitted: true, admittedTokens: 500, saved: 1500 },
-      { callId: 'c2', tool: 'read_file', sourceTokens: 1500, decision: 'unchanged', admitted: false, admittedTokens: null, saved: null }],
-    admission: { id: AD1, before: 2000, after: 500, saved: 1500, requestSequence: 7 } });
-  assert.deepEqual(unchanged.items, [{ callId: 'c3', tool: 'exec_command', sourceTokens: 1100, decision: 'compact', admitted: false, admittedTokens: null, saved: null }], 'the pruner shortened it, but the text was not admitted');
-  assert.equal(unchanged.admission, null);
-  assert.deepEqual([failed.error, failed.prunerTokens, failed.items[0].decision], ['stream disconnected before completion', null, null]);
-  assert.equal(body.record, path.join(home, 'logs', 'smart-prune', '2026-10-16 Fix the parser.md'), 'the readable record is found by the chat title');
-  assert.deepEqual(body.turns.data.map(turn => [turn.turnId, turn.at, turn.contextTokens, turn.window, turn.requests, turn.saved]),
-    [[T1, '2026-10-16T09:00:01Z', 10000, 100000, 1, 1500], [T2, '2026-10-16T09:09:00Z', 15000, 100000, 2, 0], [T3, '2026-10-16T09:20:00Z', null, null, 0, 0]]);
-  assert.deepEqual(body.turns.data[0].steps, [
-    { at: '2026-10-16T09:00:04Z', kind: 'tool', name: 'exec_command', detail: 'cargo test -p core' },
-    { at: '2026-10-16T09:00:09Z', kind: 'model', input: 9900, cached: 0, output: 100, context: 10000 }], 'tool calls and model requests, in order');
+  assert.equal(body.record, path.join(home, 'logs', 'smart-prune', '2026-10-16 Fix the parser.md'));
+  assert.deepEqual(body.turns.data.map(turn => [turn.turnId, turn.contextTokens, turn.window, turn.requests, turn.saved]),
+    [[T1, 10000, 100000, 1, 1500], [T2, 15000, 100000, 2, 0], [T3, null, null, 0, 0]]);
+  const compacted = body.turns.data[0].prunes[0];
+  assert.deepEqual(compacted.items, [
+    { callId: 'c1', tool: 'exec_command', sourceTokens: 2000, decision: 'compact', admitted: true, admittedTokens: 500, saved: 1500 },
+    { callId: 'c2', tool: 'read_file', sourceTokens: 1500, decision: 'unchanged', admitted: false, admittedTokens: null, saved: null }]);
+  assert.deepEqual(compacted.admission, { id: AD1, before: 2000, after: 500, saved: 1500, requestSequence: 7 });
+  const [unchanged, failed] = body.turns.data[1].prunes;
+  assert.equal(unchanged.items[0].admitted, false);
+  assert.equal(unchanged.items[0].decision, 'compact');
+  assert.equal(failed.error, 'stream disconnected before completion');
+  assert.equal(failed.prunerTokens, null);
   const ledger = body.turns.data[0].ledger;
   assert.deepEqual([ledger.used, ledger.window, ledger.basis], [10000, 100000, 'transcript']);
-  assert.deepEqual(ledger.categories.map(row => [row.id, row.label]), [['userMessages', 'User messages'], ['toolCalls', 'Tool calls'], ['toolResults', 'Tool results'], ['toolDefinitions', 'Tool definitions + schema']], 'the Ledger\'s words and order');
-  assert.equal(ledger.categories.reduce((sum, row) => sum + row.tokens, 0), 10000, 'the categories add up to the measured context');
+  assert.deepEqual(ledger.categories.map(row => [row.id, row.label]), [['userMessages', 'User messages'], ['toolCalls', 'Tool calls'], ['toolResults', 'Tool results'], ['toolDefinitions', 'Tool definitions + schema']]);
+  assert.equal(ledger.categories.reduce((sum, row) => sum + row.tokens, 0), 10000);
   assert.equal(ledger.categories[0].tokens, 1000);
-  assert.deepEqual(body.turns.data[2].steps, []);
-
-  const failedOnly = (await get(`/api/observability/chats/${S1}?status=failed`)).body.attempts;
-  assert.deepEqual(failedOnly.data.map(row => row.id), [A[2]]);
-  const page = (await get(`/api/observability/chats/${S1}?limit=2`)).body.attempts;
-  assert.deepEqual([page.data.map(row => row.id), page.nextCursor], [[A[2], A[1]], A[1]]);
-  const rest = (await get(`/api/observability/chats/${S1}?limit=2&cursor=${page.nextCursor}`)).body.attempts;
-  assert.deepEqual([rest.data.map(row => row.id), rest.nextCursor], [[A[0]], null]);
-
-  const gone = (await get(`/api/observability/chats/${S2}`)).body;
-  assert.deepEqual([gone.found, gone.chat, gone.turns], [false, null, { available: false, reason: 'chat-missing' }]);
-  assert.deepEqual(gone.attempts.data.map(row => [row.outcome, row.status, row.error]), [['failed', 'cancelled', 'turn cancelled while optimizer request was in flight'], ['compacted', 'admitted', null]]);
-  assert.deepEqual(gone.attempts.data[1].admission, { id: AD2, before: 4000, after: 1000, saved: 3000, requestSequence: null }, 'no request linkage recorded yet');
-
-  for (const bad of ['/api/observability/chats/not-a-chat', `/api/observability/chats/${S1}?status=bogus`, `/api/observability/chats/${S1}?cursor=../x`, `/api/observability/chats/${S1}?limit=0`])
-    assert.equal((await get(bad)).status, 400, bad);
-  assert.deepEqual(await tree(home), before, 'reading changes no file');
+  assert.equal((await get(`/api/observability/chats/${S2}`)).status, 404);
+  for (const bad of ['/api/observability/chats/not-a-chat', `/api/observability/chats/${S1}?cursor=../x`, `/api/observability/chats/${S1}?agent=bogus`]) assert.equal((await get(bad)).status, 400, bad);
+  assert.deepEqual(await tree(home), before);
 });
 
-test('new records show on the next read; a missing rollout or records folder is reported, not invented', async t => {
-  const { home, rollout, write } = await records(t);
-  const { get } = await serve(t, home, rollout);
-  assert.equal((await get('/api/observability')).body.totals.attempts, 5);
-  await write(`attempts/${A[5]}.json`, attempt(A[5], S1, T3, 'unchanged', { at: '2026-10-16T11:00:00Z', candidates: [['c7', 'exec_command', 1500]], decisions: [['c7', 'unchanged']], use: usage(100, 10) }));
-  const next = (await get('/api/observability')).body;
-  assert.deepEqual([next.totals.attempts, next.totals.unchanged, next.chats.data[0].id], [6, 2, S1]);
-
-  await fs.rm(rollout);
-  assert.deepEqual((await get(`/api/observability/chats/${S1}`)).body.turns, { available: false, reason: 'no-rollout' });
-
-  const empty = await fs.mkdtemp(path.join(os.tmpdir(), 'elpis-observability-empty-')); t.after(() => fs.rm(empty, { recursive: true, force: true }));
+test('new records show on next read; missing metrics do not hide native turns', async t => {
+  const { home, rollout, write } = await records(t), { get } = await serve(t, home, rollout);
+  assert.equal((await get('/api/observability')).body.totals.attempts, 3);
+  await write(`attempts/${A[5]}.json`, attempt(A[5], S1, T3, 'unchanged', { candidates: [['c7', 'exec_command', 1500]], use: usage(100, 10) }));
+  assert.equal((await get('/api/observability')).body.totals.attempts, 4);
+  trash(rollout);
+  const chat = (await get(`/api/observability/chats/${S1}`)).body;
+  assert.equal(chat.turns.data.length, 3);
+  assert.equal(chat.turns.data[0].contextTokens, null);
+  const empty = await temp('observability-empty-'); t.after(() => trash(empty));
   const none = await serve(t, empty, rollout), overview = (await none.get('/api/observability')).body;
-  assert.deepEqual([overview.available, overview.totals.attempts, overview.chats.data], [false, 0, []]);
-  assert.deepEqual(await fs.readdir(empty), [], 'no records folder is created');
+  assert.deepEqual([overview.available, overview.totals.attempts, overview.chats.data.length], [false, 0, 1]);
+  assert.deepEqual(await fs.readdir(empty), []);
 });
 
 test('chatSummary: a chat Elpis has, by name and rollout; one it no longer has is null', async () => {

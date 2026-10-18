@@ -57,9 +57,10 @@ function Activity({label,status,time,failed,children}:{label:string;status?:unkn
 }
 /** A command as Claude's desktop app shows it in an opened group: a short title, the script in a bordered block
  * coloured as shell, then its output; a failed command's exit code and output in red. */
-function CommandStep({item}:{item:Item}) {
-  const failed=stepFailed(item),output=text(item.aggregatedOutput).replace(/\n+$/,"");
-  return <Step open failed={failed} title={<FilePathText text={stepLabel(item)}/>} meta={stepDuration(item.durationMs)||undefined} body={<>
+export function CommandStep({item,open=true}:{item:Item;open?:boolean}) {
+  const failed=stepFailed(item),output=text(item.aggregatedOutput).replace(/\n+$/,""),duration=stepDuration(item.durationMs);
+  const outcome=failed ? typeof item.exitCode==="number" ? `failed · exit ${item.exitCode}` : "Failed" : typeof item.exitCode==="number" ? "passed" : statusLabel(item.status)||"Result not recorded";
+  return <Step open={open} failed={failed} title={<FilePathText text={stepLabel(item)}/>} meta={open ? duration||undefined : <><span>{outcome}</span>{duration&&<span>{duration}</span>}</>} body={<>
     <pre className="step-script" title={text(item.cwd)||undefined}><code>{shellTokens(unwrapShell(text(item.command))).map((token,index)=>token.kind==="text"?<FilePathText key={index} text={token.text}/>:<span key={index} className={`sh-${token.kind}`}><FilePathText text={token.text}/></span>)}</code></pre>
     {failed&&typeof item.exitCode==="number"&&<p className="step-exit">Exit code {item.exitCode}</p>}
     {output&&<pre className="step-output"><code><FilePathText text={output}/></code></pre>}
