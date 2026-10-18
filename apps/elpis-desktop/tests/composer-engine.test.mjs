@@ -9,6 +9,7 @@ import { DesktopClient } from '../bridge/client.mjs';
 
 // Explicit opt-in: an isolated real engine, no installed app, auth, model turn, or user's profile.
 test('real engine records a shell command and keeps an ephemeral side fork out of the saved session list', { skip: !process.env.ELPIS_TEST_ENGINE, timeout: 45000 }, async t => {
+  await fs.mkdir(path.resolve('.tmp'), { recursive: true });
   const root = await fs.mkdtemp(path.resolve('.tmp/composer-engine-'));
   const home = path.join(root, 'home'), cwd = path.join(root, 'project');
   await fs.mkdir(home); await fs.mkdir(cwd);

@@ -14,7 +14,8 @@ function load(relative, react = React) {
     const absolute = path.resolve(root, filename);
     if (cache.has(absolute)) return cache.get(absolute).exports;
     const module = { exports: {} }; cache.set(absolute, module);
-    const source = readFileSync(absolute, 'utf8');
+    // ModelPair is private to ModelSettings; exercise the actual background pair without adding a production export.
+    const source = readFileSync(absolute, 'utf8') + (absolute === path.join(root, 'components/settings/maintenance.tsx') ? '\nexport { ModelPair };' : '');
     const code = transpileModule(source, { compilerOptions: { module: ModuleKind.CommonJS, jsx: JsxEmit.ReactJSX, target: ScriptTarget.ES2022 } }).outputText;
     const localRequire = id => {
       // Hooks of the rendered component and its shared save hook use the fixture's hook slots.
@@ -27,7 +28,8 @@ function load(relative, react = React) {
     new Function('require', 'exports', 'module', code)(localRequire, module.exports, module);
     return module.exports;
   }
-  return compiled(relative);
+  const exports = compiled(relative);
+  return relative === 'components/settings/maintenance.tsx' ? { ...exports, BackgroundSettings: props => exports.ModelPair({ ...props, which: 'background' }) } : exports;
 }
 
 const models = [{ id: 'sol', model: 'gpt-6-sol', displayName: 'Sol 6' }, { id: 'claude', model: 'claude/opus', displayName: 'Opus' }];
@@ -180,7 +182,7 @@ test('failed external catalog keeps current model and does not retry on every re
     await new Promise(setImmediate);
     const tree=view.render();view.effects();
     assert.equal(control(tree,'Background model').props.value,'private-model');
-    assert.match(renderToStaticMarkup(tree),/Connection unavailable/);
+    assert.match(renderToStaticMarkup(tree),/Could not reach Elpis/);
     assert.deepEqual(calls,['/api/models?provider=lab']);
   } finally {view.dispose();globalThis.fetch=original;}
 });
@@ -265,8 +267,10 @@ for(const staleResult of ['success','failure'])test(`late old-version catalog ${
   const view=fixture(MAINTENANCE,'BackgroundSettings',props);
   try {
     view.render();view.effects();
+    await new Promise(setImmediate);
     const next={...props,value:{...value,version:'v2'}};
     view.render(next);view.effects();
+    await new Promise(setImmediate);
     assert.equal(requests.length,2);
     requests[1].resolve({ok:true,json:async()=>({data:[{id:'new-model',model:'new-model',displayName:'New endpoint model'}]})});
     await new Promise(setImmediate);

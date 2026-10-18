@@ -1,9 +1,9 @@
 import http from 'node:http';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { randomBytes, timingSafeEqual } from 'node:crypto';
+import { randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
-import { BridgeError, DesktopClient, object } from './client.mjs';
+import { BridgeError, DesktopClient, elpisHome, object } from './client.mjs';
 import { planCanvas } from './canvas-plan.mjs';
 import { createExperimentLab } from './experiment-lab.mjs';
 import { listDirectory, listFiles, readFile, searchFiles, writeFile } from './files.mjs';
@@ -21,6 +21,26 @@ import { createDevServers, devServerRequest } from './dev-servers.mjs';
 const COOKIE = 'elpis_desktop';
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.txt': 'text/plain', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon', '.woff': 'font/woff', '.woff2': 'font/woff2' };
 const same = (a, b) => typeof a === 'string' && Buffer.byteLength(a) === Buffer.byteLength(b) && timingSafeEqual(Buffer.from(a), Buffer.from(b));
+const ERROR_CAUSES = new Set(['Error', 'TypeError', 'RangeError', 'SyntaxError', 'ReferenceError']);
+const ERROR_AREAS = new Set(['session', 'health', 'models', 'threads', 'settings', 'providers', 'approvals', 'workflows', 'files', 'file', 'folders', 'repository', 'tools', 'context', 'observability', 'customize', 'mcp', 'hooks', 'events', 'dev-servers', 'love-spot']);
+/** Only fixed categories and numeric runtime codes enter this bounded log. Never serialize an error or request. */
+function requestDiagnostics(home) {
+  const directory = path.join(home, 'logs'), file = path.join(directory, 'desktop-requests.jsonl');
+  let writing = Promise.resolve();
+  return record => {
+    writing = writing.catch(() => {}).then(async () => {
+      await fs.mkdir(directory, { recursive: true, mode: 0o700 });
+      const handle = await fs.open(file, 'a', 0o600);
+      try {
+        await handle.chmod(0o600);
+        if ((await handle.stat()).size >= 1024 * 1024) await handle.truncate(0);
+        await handle.writeFile(JSON.stringify(record) + '\n');
+      } finally { await handle.close(); }
+    });
+    // An unwritable diagnostics directory must not replace the original response.
+    return writing.catch(() => { process.stderr.write(JSON.stringify({ ...record, diagnostics: 'unavailable' }) + '\n'); });
+  };
+}
 /** The one `cwd` a project-folder request names (and, for the Files pane, the other fields it may carry). */
 function cwdOf(url, ...others) {
   if ([...url.searchParams.keys()].some(key => key !== 'cwd' && !others.includes(key)) || url.searchParams.getAll('cwd').length !== 1 || others.some(key => url.searchParams.getAll(key).length > 1)) throw new BridgeError('Provide exactly one cwd');
@@ -80,6 +100,7 @@ export async function startDesktopServer(options = {}) {
   // The Observability page reads the records of the Elpis home this runtime uses (`elpisHome` sets another).
   const observability = createObservability({ home: options.elpisHome, chatOf: id => client.chatSummary(id),
     listChats: params => client.observabilityChats(params), turnsOf: (id, params) => client.observabilityTurns(id, params), graphsOf: id => client.workflows(id) });
+  const diagnose = requestDiagnostics(options.elpisHome ?? elpisHome());
   const transcription = createTranscription({ definition: () => client.transcriptionDefinition(), environment: () => client.transcriptionEnvironment() });
   const event = value => {
     const bytes = `event: ${value.type}\ndata: ${JSON.stringify(value.data)}\n\n`;
@@ -90,6 +111,9 @@ export async function startDesktopServer(options = {}) {
   };
   client.on('event', event);
   const server = http.createServer(async (request, response) => {
+    const requestId = randomUUID();
+    let area = 'other';
+    response.setHeader('X-Request-Id', requestId);
     response.setHeader('X-Content-Type-Options', 'nosniff');
     response.setHeader('Referrer-Policy', 'no-referrer');
     response.setHeader('X-Frame-Options', 'DENY');
@@ -99,6 +123,8 @@ export async function startDesktopServer(options = {}) {
         || request.headers['sec-fetch-site'] === 'cross-site') throw new BridgeError('Local application origin required', 403);
       if (!['GET', 'POST'].includes(request.method)) throw new BridgeError('Method is not allowed', 405);
       const url = new URL(request.url, origin);
+      const requestedArea = url.pathname.split('/')[2];
+      if (ERROR_AREAS.has(requestedArea)) area = requestedArea;
       if (url.origin !== origin) throw new BridgeError('Local application origin required', 403);
       // Only the split document permits embedding by the app itself.
       if (url.pathname === '/' && url.searchParams.get('pane') === '1') {
@@ -256,7 +282,17 @@ export async function startDesktopServer(options = {}) {
       const file = await fs.readFile(real);
       response.writeHead(200, { 'Content-Type': `${type}; charset=utf-8`, 'Cache-Control': 'no-store' }); response.end(file);
     } catch (error) {
-      if (!response.headersSent) json(response, error.status ?? (error.code === 'ENOENT' ? 404 : 500), { error: error instanceof BridgeError || error instanceof AttachmentError || error.loveSpot ? error.message : 'Application request failed' });
+      const known = error instanceof BridgeError || error instanceof AttachmentError || error?.loveSpot === true;
+      const status = known && Number.isInteger(error.status) && error.status >= 400 && error.status <= 599 ? error.status : error?.code === 'ENOENT' ? 404 : 500;
+      const runtimeCode = error instanceof BridgeError && Number.isSafeInteger(error.code) ? error.code : undefined;
+      const code = runtimeCode === -32601 ? 'ELPIS_RUNTIME_UNSUPPORTED' : runtimeCode !== undefined ? 'ELPIS_RUNTIME_ERROR'
+        : status === 503 ? 'ELPIS_RUNTIME_UNAVAILABLE' : status >= 500 ? 'ELPIS_REQUEST_FAILED' : 'ELPIS_REQUEST_REJECTED';
+      if (status >= 500) {
+        await diagnose({ at: new Date().toISOString(), requestId, method: ['GET', 'POST'].includes(request.method) ? request.method : 'OTHER',
+          area, status, code, ...(runtimeCode !== undefined ? { runtimeCode } : {}),
+          cause: error instanceof BridgeError ? 'BridgeError' : ERROR_CAUSES.has(error?.name) ? error.name : 'Error' });
+      }
+      if (!response.headersSent) json(response, status, { error: known ? error.message : 'Application request failed', code, requestId, ...(runtimeCode !== undefined ? { runtimeCode } : {}) });
       else response.destroy();
     }
   });

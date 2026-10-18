@@ -7,11 +7,22 @@ import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 const require=createRequire(import.meta.url), root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 const ts=require('typescript'),React=require('react'),{renderToStaticMarkup}=require('react-dom/server');
+const modules = new Map();
 function load(file) {
+ if (modules.has(file)) return modules.get(file).exports;
  const source=fs.readFileSync(file,'utf8'),module={exports:{}};
+ modules.set(file, module);
  const result=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.ReactJSX,target:ts.ScriptTarget.ES2022}}).outputText;
  const stub=tag=>({children,...props})=>React.createElement(tag,props,children);
- const icon=()=>null,imports=id=>id==='@/components/elpis-icons'?new Proxy({},{get:()=>icon}):id==='@/components/ui/button'?{Button:stub('button')}:id==='@/components/ui/textarea'?{Textarea:stub('textarea')}:id==='@/components/markdown-text'?{CopyButton:()=>null,MarkdownText:({text})=>React.createElement('span',null,text)}:id==='@/lib/attachments'?load(path.join(root,'lib/attachments.ts')):id==='@/lib/api'?{taskFromPath:()=>'',title:()=>''}:require(id);
+ const icon=()=>null,imports=id=>id==='@/components/elpis-icons'?new Proxy({},{get:()=>icon}):id==='@/components/ui/button'?{Button:stub('button')}:id==='@/components/ui/textarea'?{Textarea:stub('textarea')}:id==='@/components/markdown-text'?{CopyButton:()=>null,MarkdownText:({text})=>React.createElement('span',null,text)}:id==='@/lib/attachments'?load(path.join(root,'lib/attachments.ts')):id==='@/lib/api'?{taskFromPath:()=>'',title:()=>''}:local(id);
+ function local(id) {
+  if (id.endsWith('.css')) return {};
+  if (!id.startsWith('@/') && !id.startsWith('.')) return require(id);
+  const base=id.startsWith('@/')?path.join(root,id.slice(2)):path.resolve(path.dirname(file),id);
+  const target=['','.ts','.tsx','.js','.cjs'].map(ext=>base+ext).find(candidate=>fs.existsSync(candidate)&&fs.statSync(candidate).isFile());
+  if (!target) throw new Error(`Missing local source: ${id}`);
+  return load(target);
+ }
  vm.runInNewContext(result,{require:imports,module,exports:module.exports,TextEncoder,TextDecoder,URL,console});return module.exports;
 }
 const {ChatMessage}=load(path.join(root,'components/chat-message.tsx'));

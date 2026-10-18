@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync, statSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
@@ -65,9 +65,10 @@ function loadComponent(file) {
   const module = { exports: {} }; modules.set(file, module);
   const local = createRequire(file);
   const load = id => {
-    if (!id.startsWith('@/')) return local(id);
-    const target = path.join(root, id.slice(2));
-    const source = ['.tsx', '.ts'].map(ext => target + ext).find(existsSync);
+    if (id.endsWith('.css')) return {};
+    if (!id.startsWith('@/') && !id.startsWith('.')) return local(id);
+    const target = id.startsWith('@/') ? path.join(root, id.slice(2)) : path.resolve(path.dirname(file), id);
+    const source = ['', '.tsx', '.ts', '.js', '.cjs'].map(ext => target + ext).find(candidate => existsSync(candidate) && statSync(candidate).isFile());
     if (!source) throw Error(`Missing component source: ${id}`);
     return loadComponent(source);
   };

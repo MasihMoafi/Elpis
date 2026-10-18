@@ -29,7 +29,10 @@ async function call<T>(path: string, body?: unknown): Promise<T> {
     const detail = typeof result?.error?.message === "string" ? result.error.message : typeof result?.error === "string" ? result.error : "";
     const unsupported = /^(?:-32601$|Elpis rejected the operation \(-32601\))/.test(detail.trim());
     const fallback = unsupported ? "This action is unavailable in the connected Elpis runtime. Update Elpis and try again." : response.status >= 500 ? "Elpis is temporarily unavailable. Try again in a moment." : "Elpis could not complete this action. Try again.";
-    throw new Error(detail.trim() && !/^-?\d+$/.test(detail.trim()) && !/^Elpis rejected the operation \([^)]+\)/.test(detail.trim()) ? detail : fallback);
+    const message = detail.trim() && !/^-?\d+$/.test(detail.trim()) && !/^Elpis rejected the operation \([^)]+\)/.test(detail.trim()) ? detail : fallback;
+    const code = typeof result?.code === "string" && /^ELPIS_[A-Z_]{1,64}$/.test(result.code) ? result.code : "";
+    const requestId = typeof result?.requestId === "string" && /^[a-f0-9-]{36}$/.test(result.requestId) ? result.requestId : "";
+    throw new Error(`${message}${code ? ` (${code}${requestId ? `; request ${requestId}` : ""})` : ""}`);
   }
   if (!isObject(result)) throw unreadable(path.split("?")[0]);
   return result as T;

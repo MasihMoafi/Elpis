@@ -8,7 +8,6 @@
   "scripts": {
     "prebuild": "node bridge/build-resources.mjs",
     "predev": "node bridge/build-resources.mjs",
-    "pretest:bridge": "node bridge/build-resources.mjs",
     "dev": "next dev --webpack --hostname 127.0.0.1",
     "build": "next build --webpack",
     "typecheck": "tsc --noEmit",
@@ -17,9 +16,12 @@
     "desktop": "desktop/launch.sh",
     "test:renderer": "node --test tests/renderer.test.cjs",
     "test:drafts": "node --test tests/drafts.test.mjs",
-    "test:desktop": "node --test desktop/*.test.cjs desktop/*.test.mjs tests/dictation.test.mjs tests/agents.test.mjs tests/slash-helpers.test.mjs tests/chat-tabs.test.mjs tests/panel-tabs.test.mjs tests/mentions.test.mjs tests/nav-history.test.mjs tests/message-copy.test.mjs tests/steps.test.mjs tests/diff.test.mjs",
-    "test:ui": "node --test tests/*.test.cjs",
-    "test:bridge": "node --test bridge/*.test.mjs"
+    "test:desktop": "node scripts/test-gate.mjs desktop",
+    "test:ui": "node scripts/test-gate.mjs ui",
+    "test:bridge": "node scripts/test-gate.mjs bridge",
+    "test": "node scripts/test-gate.mjs",
+    "test:inventory": "node scripts/test-gate.mjs --check",
+    "test:fast": "node scripts/test-gate.mjs fast"
   },
   "dependencies": {
     "@excalidraw/excalidraw": "0.18.1",
