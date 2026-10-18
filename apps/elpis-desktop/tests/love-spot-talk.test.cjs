@@ -52,7 +52,9 @@ test('an agent run waits for Talk to finish capturing the board', async () => {
     release();
     await talk.getByText('I am here with you.', { exact: true }).waitFor();
     await f.waitFor(s => s.elements.some(e => e.customData?.loveAgent?.status === 'completed'), 'the queued run must still complete');
-    assert.equal(f.chats.length, 2);
+    // Talk is the only app-server chat; agent runs go to their ACP agent process.
+    assert.equal(f.chats.length, 1);
+    assert.ok((await f.acp()).some(message => message.method === 'session/prompt'), 'the queued run reached its ACP agent');
     assert.deepEqual(await talk.getByRole('alert').allTextContents(), []);
     assert.deepEqual(f.errors, []);
   } finally { release?.(); await f.close(); }

@@ -206,8 +206,9 @@ for (const shared of [true, "bridge"]) test(`desktop lists and follows an ACP tu
   await desktop.listThreads();
   await until(() => a.engine().some(m => m.method === "thread/resume"), "desktop subscription");
   assert.equal(finished, false);
-  const active = await desktop.observabilityTurns(sessionId);
-  const id = active.data.find(turn => turn.status === "inProgress").id;
+  // The running turn's id, as the desktop's composer learns it: from the live turn/started event.
+  const id = events.find(e => e.data?.method === "turn/started" && e.data.params?.threadId === sessionId)?.data.params.turn.id;
+  assert.ok(id, "the desktop saw the running turn start");
   await desktop.steer(sessionId, { text: "DESKTOP planted steer", expectedTurnId: id });
   assert.equal((await running).stopReason, "end_turn");
   assert.ok(a.text().includes("DESKTOP planted steer"));
