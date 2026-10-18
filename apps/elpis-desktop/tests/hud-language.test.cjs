@@ -110,5 +110,5 @@ for (const colorScheme of ['dark', 'light']) test(`one HUD language on the chat,
     for (const [where, report] of reports) labels(report, where, seen);
     for (const label of ['div.section-label', 'p.hud-menu-title', 'span.agent-node-kind', 'span.canvas-toolbar-label']) assert.ok([...seen.labels].some(name => name.startsWith(label)), `${label} measured (${[...seen.labels]})`);
   });
-  await t.test('every text meets WCAG AA against its own background', { todo: 'the contrast commit' }, () => assert.deepEqual(low, []));
+  await t.test('every text meets WCAG AA against its own background', () => assert.deepEqual(low, []));
 });

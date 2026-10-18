@@ -22,7 +22,8 @@ function contrastFailures() {
     const box = element.getBoundingClientRect(), style = getComputedStyle(element);
     if (box.width < 2 || box.height < 2 || box.bottom < 0 || box.top > innerHeight || style.visibility === 'hidden') continue;
     if (element.closest(':disabled, [aria-disabled="true"], [data-disabled], [aria-hidden="true"], svg')) continue;
-    const behind = background(element), colour = rgba(style.color), shown = over({ ...colour, a: colour.a * opacity(element) }, behind);
+    const seen = opacity(element); if (seen < 0.05) continue; // hidden until hovered: not shown, so not read
+    const behind = background(element), colour = rgba(style.color), shown = over({ ...colour, a: colour.a * seen }, behind);
     const size = parseFloat(style.fontSize), large = size >= 24 || (Number(style.fontWeight) >= 700 && size >= 18.66);
     const [hi, lo] = [luminance(shown), luminance(behind)].sort((a, b) => b - a), ratio = (hi + 0.05) / (lo + 0.05);
     if (ratio < (large ? 3 : 4.5)) failures.push(`${element.tagName.toLowerCase()}.${[...element.classList].slice(0, 2).join('.')} "${element.textContent.trim().slice(0, 30)}" ${ratio.toFixed(2)}:1`);
