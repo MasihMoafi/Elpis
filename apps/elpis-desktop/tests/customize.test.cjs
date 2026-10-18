@@ -1,4 +1,4 @@
-// Customize, as Claude's desktop app has it: Skills, Plugins and Connectors, each a list of yours. A skill turns on and
+// Ledger, based on Claude's Customize page: Skills, Plugins and Connectors, each a list of yours. A skill turns on and
 // off; Create skill starts a chat that makes one; Manage connectors opens the MCP servers settings. Local bridge
 // fixture (tests/parity-fixture.cjs); no engine.
 const { test } = require('node:test');
@@ -16,7 +16,7 @@ function state() {
   };
 }
 
-test('Customize lists skills, plugins and connectors; a skill switches off; Create skill and Manage connectors go where they say', async () => {
+test('Ledger lists skills, plugins and connectors; a skill switches off; Create skill and Manage connectors go where they say', async () => {
   const s = state();
   const f = await fixture({ routes: {
     '/api/customize': () => s.reply(),
@@ -24,9 +24,9 @@ test('Customize lists skills, plugins and connectors; a skill switches off; Crea
   } });
   try {
     const { page } = f;
-    await page.getByRole('button', { name: 'Customize', exact: true }).click();
-    const view = page.getByLabel('Customize', { exact: true }).first();
-    const sections = page.getByRole('radiogroup', { name: 'Customize', exact: true });
+    await page.locator('.nav-list').getByRole('button', { name: 'Ledger', exact: true }).click();
+    const view = page.getByLabel('Ledger', { exact: true }).first();
+    const sections = page.getByRole('radiogroup', { name: 'Ledger', exact: true });
     assert.equal(await sections.getByRole('radio', { name: 'Skills', exact: true }).getAttribute('aria-checked'), 'true');
     const skills = page.getByRole('region', { name: 'Your skills', exact: true });
     await skills.getByText('web-dev', { exact: true }).waitFor();
@@ -52,14 +52,14 @@ test('Customize lists skills, plugins and connectors; a skill switches off; Crea
     assert.equal(await page.getByText('This page could not be shown', { exact: false }).count(), 0, 'the MCP page reads a reply without servers as none');
     // Create skill: a new chat asks Elpis's skill creator for one.
     await page.getByRole('button', { name: 'Back to app', exact: true }).click();
-    await page.getByRole('button', { name: 'Customize', exact: true }).click();
+    await page.locator('.nav-list').getByRole('button', { name: 'Ledger', exact: true }).click();
     await page.getByRole('region', { name: 'Your skills', exact: true }).getByRole('button', { name: 'Create skill', exact: true }).click();
     await page.waitForFunction(() => document.querySelector('[aria-label="Message Elpis"]')?.value?.startsWith('Use $skill-creator to create a new skill that '));
-    await page.getByRole('button', { name: 'Customize', exact: true }).click();
+    await page.locator('.nav-list').getByRole('button', { name: 'Ledger', exact: true }).click();
     await page.getByRole('region', { name: 'Your skills', exact: true }).waitFor();
-    assert.deepEqual(await page.locator('.nav-list button[aria-current="page"]').allInnerTexts(), ['Customize'], 'only Customize is the current page');
+    assert.deepEqual(await page.locator('.nav-list button[aria-current="page"]').allInnerTexts(), ['Ledger'], 'only Ledger is the current page');
     await page.waitForFunction(() => getComputedStyle(document.querySelector('.new-chat')).backgroundColor === 'rgba(0, 0, 0, 0)', null, { timeout: 2000 });
-    if (process.env.ELPIS_SHOTS) { await page.getByRole('button', { name: 'Customize', exact: true }).click(); await page.getByRole('region', { name: 'Your skills' }).waitFor(); await page.screenshot({ path: `${process.env.ELPIS_SHOTS}/customize.png` }); }
+    if (process.env.ELPIS_SHOTS) { await page.locator('.nav-list').getByRole('button', { name: 'Ledger', exact: true }).click(); await page.getByRole('region', { name: 'Your skills' }).waitFor(); await page.screenshot({ path: `${process.env.ELPIS_SHOTS}/customize.png` }); }
     assert.ok(view);
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }

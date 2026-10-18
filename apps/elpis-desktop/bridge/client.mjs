@@ -11,6 +11,7 @@ import { replacementEligibility } from '../lib/turn-replacement.ts';
 import { providerModels } from './provider-models.mjs';
 import { attachmentInput, recordedMedia } from './attachments.mjs';
 import { pluginsSnapshot, skillsSnapshot } from './customize.mjs';
+import { SkillTrash } from './skill-trash.mjs';
 import { createGithubConnector } from './github-connector.mjs';
 import { scanDeletionThreads } from '../lib/thread-deletion.ts';
 import { changedFiles, createChatWorktree, currentBranch, discardFile, fileDiff, isChatWorktreePath, releaseChatWorktree, restoreChatWorktree, reviewChoices, undoChatWorktree, workingDiff } from './git.mjs';
@@ -157,11 +158,12 @@ export class DesktopClient extends EventEmitter {
   #disposed = false; #reconnecting = false; #retryTimer; #openSocket; #retryDelay; #retryAttempt = 0;
   #settingsConfirmMs;
   #browserConfig;
-  #rewindSnapshots; #rewindHistory; #githubConnector;
-  constructor(socket, { timeoutMs = 30000, openSocket, reconnectDelayMs = 500, settingsConfirmMs = 3000, browserConfig, rewindHome = path.join(elpisHome(), 'desktop-rewind'), githubConnector = createGithubConnector({ home: elpisHome() }) } = {}) {
+  #rewindSnapshots; #rewindHistory; #githubConnector; #skillTrash;
+  constructor(socket, { timeoutMs = 30000, openSocket, reconnectDelayMs = 500, settingsConfirmMs = 3000, browserConfig, rewindHome = path.join(elpisHome(), 'desktop-rewind'), githubConnector = createGithubConnector({ home: elpisHome() }), skillTrashOptions } = {}) {
     super(); this.#socket = socket; this.timeoutMs = timeoutMs; this.#settingsConfirmMs = settingsConfirmMs;
     this.#browserConfig = browserConfig;
     this.#githubConnector = githubConnector;
+    this.#skillTrash = new SkillTrash(skillTrashOptions);
     this.#rewindSnapshots = new RewindSnapshots(rewindHome);
     this.#rewindHistory = new RewindHistory(rewindHome, async (method, params) => {
       const result = await this.#rpc(method, params);
@@ -667,7 +669,7 @@ export class DesktopClient extends EventEmitter {
     if (cwd != null) { text(cwd, 'project folder', 4096); if (!path.isAbsolute(cwd)) throw new BridgeError('Choose a project folder'); }
     const cwds = cwd ? [cwd] : [], why = error => ({ error: error instanceof Error ? error.message : 'Unavailable' });
     const [skills, plugins, connectors, github] = await Promise.all([
-      this.#rpc('skills/list', { cwds }).then(skillsSnapshot, why),
+      this.#rpc('skills/list', { cwds, forceReload: true }).then(skillsSnapshot, why),
       this.#rpc('plugin/installed', cwd ? { cwds } : {}).then(pluginsSnapshot, why),
       this.mcp().then(snapshot => ({ data: snapshot.servers.map(({ name, enabled, transport }) => ({ name, enabled, transport })) }), why),
       this.#githubConnector.snapshot().then(data => ({ data }), why),
@@ -688,6 +690,22 @@ export class DesktopClient extends EventEmitter {
     if (typeof input.enabled !== 'boolean') throw new BridgeError('Choose on or off');
     if (!(await this.customize(input.cwd)).skills.data?.some(skill => skill.path === input.path)) throw new BridgeError('That skill is not listed', 404);
     await this.#rpc('skills/config/write', { path: input.path, enabled: input.enabled });
+    return this.customize(input.cwd);
+  }
+  async deleteSkill(input) {
+    object(input, ['path', 'cwd']); text(input.path, 'skill', 4096);
+    const snapshot = await this.customize(input.cwd);
+    if (!snapshot.skills.data) throw new BridgeError(snapshot.skills.error || 'Skills could not be listed');
+    let deleted;
+    try { deleted = await this.#skillTrash.delete(input.path, snapshot.skills.data); }
+    catch (error) { throw new BridgeError(error.message); }
+    return { ...await this.customize(input.cwd), deleted };
+  }
+  async undoSkillDelete(input) {
+    object(input, ['token', 'cwd']); text(input.token, 'Undo token', 128);
+    if (input.cwd != null) { text(input.cwd, 'project folder', 4096); if (!path.isAbsolute(input.cwd)) throw new BridgeError('Choose a project folder'); }
+    try { await this.#skillTrash.undo(input.token); }
+    catch (error) { throw new BridgeError(error.message); }
     return this.customize(input.cwd);
   }
   async hooks() {

@@ -5,7 +5,7 @@ const { fixture } = require('./parity-fixture.cjs');
 const { files, contextRoutes } = require('./context-files-fixture.cjs');
 const { assertUiFit } = require('./ui-fit.cjs');
 const popupOf = page => page.getByRole('dialog', { name: 'Context window usage', exact: true });
-async function open(f) { await f.open('chat-a'); await f.page.getByRole('button', { name: /^Ledger/ }).click(); await popupOf(f.page).getByRole('switch', { name: 'Include ES.md', exact: true }).waitFor(); }
+async function open(f) { await f.open('chat-a'); await f.page.getByRole('group', { name: 'Elpis features', exact: true }).getByRole('button', { name: 'Ledger', exact: true }).click(); await popupOf(f.page).getByRole('switch', { name: 'Include ES.md', exact: true }).waitFor(); }
 for (const colorScheme of ['light', 'dark']) for (const [width, height] of [[1280, 800], [900, 700]]) test(
   `Ledger files: ${colorScheme} ${width}×${height}, mouse and keyboard, Files pane and fit`, async () => {
     const f = await fixture({ width, height, colorScheme, routes: { ...contextRoutes(), '/api/file': () => ({ content: '# Checkpoint\nLedger source contents.', size: 36, mtimeMs: 1 }), '/api/files/dir': () => ({ data: [] }) } });
@@ -44,9 +44,9 @@ test('Ledger reports unavailable context files with retry, and a new chat never 
   let failed = true;
   const f = await fixture({ routes: { ...contextRoutes(), '/api/threads/chat-a/context-files': () => failed ? { __http: 502, error: 'Context files unavailable' } : { files: files() }, '/api/threads/chat-b/context-files': () => ({ files: [] }) } });
   try {
-    await f.open('chat-a'); await f.page.getByRole('button', { name: /^Ledger/ }).click(); const popup = popupOf(f.page);
+    await f.open('chat-a'); await f.page.getByRole('group', { name: 'Elpis features', exact: true }).getByRole('button', { name: 'Ledger', exact: true }).click(); const popup = popupOf(f.page);
     await popup.getByRole('alert').waitFor(); failed = false; await popup.getByRole('button', { name: 'Retry context files' }).click(); await popup.getByRole('switch', { name: 'Include ES.md', exact: true }).waitFor();
-    await f.page.keyboard.press('Escape'); await f.open('chat-b'); await f.page.getByRole('button', { name: /^Ledger/ }).click(); await popup.getByText('No portable context is available.', { exact: true }).waitFor(); assert.equal(await popup.getByRole('switch').count(), 0);
+    await f.page.keyboard.press('Escape'); await f.open('chat-b'); await f.page.getByRole('group', { name: 'Elpis features', exact: true }).getByRole('button', { name: 'Ledger', exact: true }).click(); await popup.getByText('No portable context is available.', { exact: true }).waitFor(); assert.equal(await popup.getByRole('switch').count(), 0);
   } finally { await f.close(); }
 });
 
@@ -54,7 +54,7 @@ test('Ledger rejects a malformed source response and recovers without losing the
   let malformed = true;
   const f = await fixture({ routes: { ...contextRoutes(), '/api/threads/chat-a/context-files': () => malformed ? { files: [{ name: 'ES.md' }] } : { files: files() } } });
   try {
-    await f.open('chat-a'); await f.page.getByRole('button', { name: /^Ledger/ }).click(); const popup = popupOf(f.page);
+    await f.open('chat-a'); await f.page.getByRole('group', { name: 'Elpis features', exact: true }).getByRole('button', { name: 'Ledger', exact: true }).click(); const popup = popupOf(f.page);
     await popup.getByRole('alert').waitFor(); assert.match(await popup.getByRole('alert').innerText(), /Context files unavailable/);
     assert.match(await popup.innerText(), /50k \/ 200k/); assert.equal(f.errors.length, 0);
     malformed = false; await popup.getByRole('button', { name: 'Retry context files' }).click(); await popup.getByRole('switch', { name: 'Include ES.md', exact: true }).waitFor();

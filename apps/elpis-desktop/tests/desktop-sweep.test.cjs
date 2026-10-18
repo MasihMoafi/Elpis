@@ -68,7 +68,7 @@ for (const colorScheme of ['light', 'dark']) for (const [width, height] of [[128
       await page.keyboard.press('Escape');
       await check('chat', () => f.open('chat-a'));
       const ledger = page.getByRole('dialog', { name: 'Context window usage', exact: true });
-      await check('Ledger context files included', async () => { await page.getByRole('button', { name: /^Ledger/ }).click(); await ledger.getByRole('switch', { name: 'Include ES.md', exact: true }).waitFor(); }, () => ledger);
+      await check('Ledger context files included', async () => { await page.getByRole('group', { name: 'Elpis features', exact: true }).getByRole('button', { name: 'Ledger', exact: true }).click(); await ledger.getByRole('switch', { name: 'Include ES.md', exact: true }).waitFor(); }, () => ledger);
       await check('Ledger context file excluded', async () => { await ledger.getByRole('switch', { name: 'Include ES.md', exact: true }).click(); await page.waitForFunction(() => document.querySelector('[aria-label="Include ES.md"]').getAttribute('aria-checked') === 'false'); }, () => ledger);
       await check('Ledger categories collapsed', async () => { await ledger.getByRole('button', { name: /^Context window/ }).click(); }, () => ledger);
       await page.keyboard.press('Escape');
@@ -127,8 +127,8 @@ for (const colorScheme of ['light', 'dark']) for (const [width, height] of [[128
         }
       }
       await page.getByRole('button', { name: 'Back to app', exact: true }).click();
-      await check('Customize Skills', () => page.getByRole('button', { name: 'Customize', exact: true }).click());
-      for (const name of ['Plugins', 'Connectors']) await check(`Customize ${name}`, () => page.getByRole('radiogroup', { name: 'Customize', exact: true }).getByRole('radio', { name, exact: true }).click());
+      await check('Ledger Skills', () => page.locator('.nav-list').getByRole('button', { name: 'Ledger', exact: true }).click());
+      for (const name of ['Plugins', 'Connectors']) await check(`Ledger ${name}`, () => page.getByRole('radiogroup', { name: 'Ledger', exact: true }).getByRole('radio', { name, exact: true }).click());
       await check('Agents', () => command(page, 'Agents'));
       const filters = page.locator('.agent-filters button');
       for (let index = 0; index < await filters.count(); index++) await check(`Agents filter ${index}`, () => filters.nth(index).click());

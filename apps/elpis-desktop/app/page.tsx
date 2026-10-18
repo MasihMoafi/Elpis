@@ -1421,7 +1421,7 @@ export default function Home() {
     if (seen.has(parentId)) return null; const next = new Set(seen).add(parentId);
     return filtered.filter(c => c.parentThreadId === parentId).map(child => <div key={child.id}>{threadRow(child, depth)}{descendants(child.id, depth + 1, next)}</div>);
   }
-  const heading = view === "chat" ? (selected ? title(selected) : "") : { agents: "Agents", agentsGuide: "Guide to managing agents", canvas: "Canvas", loveSpot: "Love Spot", customize: "Customize", observability: "Observability", newAgent: "New agent", settings: "Settings" }[view];
+  const heading = view === "chat" ? (selected ? title(selected) : "") : { agents: "Agents", agentsGuide: "Guide to managing agents", canvas: "Canvas", loveSpot: "Love Spot", customize: "Ledger", observability: "Observability", newAgent: "New agent", settings: "Settings" }[view];
   const chatName = selected ? title(selected) : "New chat";
   const chatState = selected ? agentState(selected, waitingIds) : "idle", floatState = activeTurn && chatState === "idle" ? "working" : chatState;
   const meta = selected ? [selected.agentNickname, selected.agentRole && selected.agentRole !== "default" ? selected.agentRole : null].filter(Boolean).join(" · ") : "";
@@ -1429,7 +1429,7 @@ export default function Home() {
     const shortcut = SHORTCUTS.find(item => item.id === id)!;
     return { id, name: id === "pin" ? `${pins.includes(selected!.id) ? "Unpin" : "Pin"} chat` : id === "shortcuts" ? "Keyboard shortcuts" : shortcut.label, keys: shortcut.keys, run: () => { if (id === "shortcuts") { shortcutsReturnFocus.current = commandReturnFocus.current; setShortcutsOpen(true); } else shortcutAction.current(id); } };
   });
-  for (const [target, name] of [["agents", "Agents"], ["agentsGuide", "Guide to managing agents"], ["canvas", "Canvas"], ["loveSpot", "Love Spot"], ["observability", "Observability"], ["customize", "Customize"]] as const) commandActions.push({ id: target, name, run: () => { if (target === "agentsGuide") setGuideBack(view === "canvas" ? "Canvas" : "Agents"); show(target); } });
+  for (const [target, name] of [["agents", "Agents"], ["agentsGuide", "Guide to managing agents"], ["canvas", "Canvas"], ["loveSpot", "Love Spot"], ["observability", "Observability"], ["customize", "Ledger"]] as const) commandActions.push({ id: target, name, run: () => { if (target === "agentsGuide") setGuideBack(view === "canvas" ? "Canvas" : "Agents"); show(target); } });
 
   return <div className={`app-shell${split.pane ? " session-pane" : ""}${split.thread && view === "chat" ? " session-split" : ""}${dark ? " dark" : ""}${desktop ? " has-title-bar" : ""}${sidebarCollapsed ? " sidebar-collapsed" : ""}${view === "settings" ? " settings-mode" : ""}${panelShown ? " panel-active" : ""}`} style={{ "--sidebar-width": `${sidebarWidth}px` } as CSSProperties}>
     {desktop && <div className="title-bar"><Button variant="ghost" size="icon" aria-label={sidebarCollapsed || (panelShown && panelDrawer && !sidebar) ? "Open sidebar" : "Close sidebar"} title={`${sidebarCollapsed ? "Open" : "Close"} sidebar (Ctrl+B)`} onClick={() => showSidebar(narrow() ? !sidebar : sidebarCollapsed)}><PanelLeft /></Button><NavButtons canBack={canBack(history)} canForward={canForward(history)} onBack={() => goHistory(-1)} onForward={() => goHistory(1)} /></div>}
@@ -1446,7 +1446,7 @@ export default function Home() {
         <Button variant="ghost" aria-current={view === "agents" ? "page" : undefined} onClick={() => show("agents")}><AgentsIcon size={16} />Agents{working > 0 && <span className="nav-badge" aria-hidden="true"><i />{working}</span>}</Button>
         <Button variant="ghost" aria-current={view === "canvas" ? "page" : undefined} onClick={() => show("canvas")}><Workflow size={16} />Canvas</Button>
         <Button variant="ghost" aria-current={view === "loveSpot" ? "page" : undefined} onClick={() => show("loveSpot")}><LoveSpotIcon size={16} />Love Spot</Button>
-        <Button variant="ghost" aria-current={view === "customize" ? "page" : undefined} onClick={() => show("customize")}><Blocks size={16} />Customize</Button>
+        <Button variant="ghost" aria-current={view === "customize" ? "page" : undefined} onClick={() => show("customize")}><Blocks size={16} />Ledger</Button>
         <Button variant="ghost" aria-current={view === "observability" ? "page" : undefined} onClick={() => show("observability")}><Activity size={16} />Observability</Button>      </nav>
       <SearchField ref={searchInput} hint="Ctrl Shift K" aria-label="Search conversations" placeholder="Search chats" maxLength={200} value={search} onChange={e => setSearch(e.target.value)} onKeyDown={e => { if (e.key === "Escape") { e.preventDefault(); setSearch(""); focusComposer(); } }} />
       <div className="thread-list" ref={threadList} onKeyDown={listKeys}>
@@ -1524,7 +1524,7 @@ export default function Home() {
       {view === "canvas" && <ViewBoundary label="Canvas"><CanvasGuideHelp onOpen={() => { setGuideBack("Canvas"); show("agentsGuide"); }}><AgentsCanvas models={models} cwd={newChatFolder(cwd) || undefined} dark={dark} onOpenChat={id => { show("chat"); void openById(id); }}
         projectMenu={<ProjectMenu variant="chip" projects={projects} selected={project} disabled={!ready || busy} onSelect={selectProject} onAdd={() => void addProject()} />} /></CanvasGuideHelp></ViewBoundary>}
       {view === "loveSpot" && <LoveSpot dark={dark} />}
-      {view === "customize" && <div className="page-scroll"><ViewBoundary label="Customize"><CustomizeView cwd={cwd} onOpenSettings={() => openSettings("mcp")}
+      {view === "customize" && <div className="page-scroll"><ViewBoundary label="Ledger"><CustomizeView cwd={cwd} onOpenSettings={() => openSettings("mcp")}
         onConnectGithub={hasTerminal ? () => { show("chat"); setTuiLaunch({ key: side.openTerminal(cwd), command: "github-login", token: Date.now() }); } : undefined}
         onCreateSkill={() => { newChat(); requestAnimationFrame(() => editDraft("Use $skill-creator to create a new skill that ")); }} /></ViewBoundary></div>}
       {observabilityVisited && <div className="page-scroll" hidden={view !== "observability"}><ObservabilityView onOpenChat={id => void openById(id)} /></div>}

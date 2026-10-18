@@ -17,8 +17,8 @@ function state(login = 'octocat') {
 }
 async function connectors(page) {
   await page.locator('.startup-splash').waitFor({ state: 'detached' });
-  await page.getByRole('button', { name: 'Customize', exact: true }).click();
-  await page.getByRole('radiogroup', { name: 'Customize', exact: true }).getByRole('radio', { name: 'Connectors', exact: true }).click();
+  await page.locator('.nav-list').getByRole('button', { name: 'Ledger', exact: true }).click();
+  await page.getByRole('radiogroup', { name: 'Ledger', exact: true }).getByRole('radio', { name: 'Connectors', exact: true }).click();
   return page.getByRole('region', { name: 'Your connectors', exact: true });
 }
 

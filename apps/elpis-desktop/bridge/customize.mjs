@@ -1,6 +1,7 @@
 // Claude's Customize page in Elpis (components/customize-view.tsx): the skills the engine finds for a project
 // (skills/list), the plugins installed (plugin/installed) and the connectors (the MCP servers Settings lists), shaped
 // for the page. Pure, so bridge/customize.test.mjs runs it without an engine.
+import { ownedSkill } from './skill-trash.mjs';
 const SCOPES = new Set(['user', 'repo', 'system', 'admin']);
 const list = value => Array.isArray(value) ? value : [];
 const words = value => typeof value === 'string' ? value : '';
@@ -15,7 +16,8 @@ export function skillsSnapshot(response) {
       data.push({
         id: skill.name, name: words(skill.interface?.displayName) || skill.name, path: skill.path,
         description: words(skill.interface?.shortDescription) || words(skill.shortDescription) || words(skill.description),
-        scope: SCOPES.has(skill.scope) ? skill.scope : 'user', enabled: skill.enabled !== false, plugin: words(skill.pluginId) || null,
+        scope: SCOPES.has(skill.scope) ? skill.scope : 'admin', enabled: skill.enabled !== false, plugin: words(skill.pluginId) || null,
+        deletable: ownedSkill({ scope: skill.scope, plugin: words(skill.pluginId) }),
       });
     }
     for (const error of list(entry?.errors)) if (typeof error?.message === 'string') errors.push({ path: words(error.path), message: error.message });
