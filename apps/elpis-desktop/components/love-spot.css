@@ -3,7 +3,11 @@
 .love-spot-status { position: absolute; bottom: 58px; left: 50%; transform: translateX(-50%); z-index: 5; display: flex; align-items: center; gap: 12px; max-width: calc(100% - 32px); padding: 8px 12px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--background); color: var(--foreground); }
 .love-spot-content { display: flex; flex: 1; min-width: 0; min-height: 0; }
 .love-spot-editor { flex: 1; min-width: 0; height: 100%; min-height: 0; }
-.love-spot-tools { display: flex; justify-content: flex-end; align-items: center; gap: 8px; flex-shrink: 0; min-height: 44px; padding: 4px 16px; border-bottom: 1px solid var(--border); background: var(--background); color: var(--foreground); }
+.love-spot-tools { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 8px; flex-shrink: 0; min-height: 44px; padding: 4px 16px; border-bottom: 1px solid var(--border); background: var(--background); color: var(--foreground); }
+.workspace-header:has(> .love-spot-toolbar-host) { gap: 8px; padding-inline: 12px; }
+.workspace-header:has(> .love-spot-toolbar-host) > .header-titles { flex: 0 1 auto; }
+.love-spot-toolbar-host { flex: 1; min-width: 0; order: 2; }
+.love-spot-toolbar-host .love-spot-tools { padding-inline: 0; border: 0; }
 .love-spot-tools .dictation-control { margin: 0; }
 .love-spot-pages { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-right: auto; min-width: 0; }
 .love-spot-screenshots { flex-shrink: 0; min-width: 0; padding: 8px 16px; border-bottom: 1px solid var(--border); background: var(--background); color: var(--foreground); }
@@ -31,13 +35,13 @@
 .love-spot-talk-controls .dictation-status:not(:empty) { order: 1; flex-basis: 100%; }
 .love-spot-talk-error { padding: 8px 12px; color: var(--destructive); font-size: var(--text-small); overflow-wrap: anywhere; }
 .love-spot-menu-anchor { position: fixed; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
-.love-agent-toolbar { position: relative; margin-right: auto; z-index: 6; display: flex; align-items: center; gap: 8px; color: var(--muted-foreground); font-size: 12px; }
+.love-agent-toolbar { position: relative; z-index: 6; display: flex; align-items: center; gap: 8px; color: var(--muted-foreground); font-size: 12px; }
 .love-agent-picker { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; width: 360px; max-width: calc(100vw - 32px); max-height: var(--available-height); overflow-y: auto; padding: 8px; }
 .love-agent-picker > [role="menuitem"] { justify-content: flex-start; min-height: 66px; gap: 8px; text-align: left; }
 .love-agent-draft { display: block; }
 .love-agent-picker strong, .love-agent-picker small, .love-agent-heading small { display: block; }
 .love-agent-picker small, .love-agent-heading small { color: var(--muted-foreground); font-size: 11px; font-weight: 400; }
-.love-agent-list { display: flex; flex-shrink: 0; gap: 4px; padding: 4px 16px; border-bottom: 1px solid var(--border); overflow-x: auto; }
+.love-agent-list { display: flex; flex: 1 1 120px; min-width: 0; gap: 4px; overflow-x: auto; }
 .love-agent-panel { display: flex; flex: 1; min-height: 0; flex-direction: column; gap: 12px; padding: 16px; overflow-y: auto; background: var(--background); color: var(--foreground); font-size: 13px; }
 .love-agent-panel > * { flex-shrink: 0; }
 .love-agent-panel:has(+ .love-spot-talk:not([hidden])) { border-bottom: 1px solid var(--border); }

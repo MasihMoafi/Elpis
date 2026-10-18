@@ -2,6 +2,7 @@
 
 import "@/lib/love-spot-assets";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Check, ChevronDown, X } from "lucide-react";
 import { CaptureUpdateAction, Excalidraw, newElementWith, convertToExcalidrawElements, exportToBlob, restoreElements, serializeAsJSON, viewportCoordsToSceneCoords } from "@excalidraw/excalidraw";
 import type { ExcalidrawElement } from "@excalidraw/excalidraw/element/types";
@@ -41,7 +42,7 @@ async function savePicture(data: Saved) {
   await api("/love-spot/picture", { revision: data.revision, png: dataURL.split(",")[1] });
 }
 
-export default function LoveSpot({ dark, cwd, onOpenChat }: { dark: boolean; cwd?: string; onOpenChat?: (id: string) => void }) {
+export default function LoveSpot({ dark, cwd, onOpenChat, toolbarHost }: { dark: boolean; cwd?: string; onOpenChat?: (id: string) => void; toolbarHost?: HTMLElement | null }) {
   const [initial, setInitial] = useState<ExcalidrawInitialDataState>();
   const [error, setError] = useState("");
   const [runError, setRunError] = useState("");
@@ -349,8 +350,7 @@ export default function LoveSpot({ dark, cwd, onOpenChat }: { dark: boolean; cwd
     save(true);
   }
 
-  return <section className="love-spot" aria-label="Love Spot">
-    <div className="love-spot-tools">
+  const tools = <div className="navbar love-spot-tools">
       <div className="love-spot-pages">
         <DropdownMenu onOpenChange={open => { if (open) loadPages(); }}>
           <DropdownMenuTrigger render={<Button variant="outline" size="sm" aria-label="Pages" disabled={!editor || pageBusy} />}>
@@ -372,6 +372,7 @@ export default function LoveSpot({ dark, cwd, onOpenChat }: { dark: boolean; cwd
           <Button variant="ghost" size="sm" type="button" onClick={() => setRenaming(false)}>Cancel</Button>
         </form>}
       </div>
+      {!!agents.length && <div className="love-agent-list" aria-label="Board agents">{agents.map(e => <Button key={e.id} variant="outline" size="sm" aria-label={`Inspect ${agentOf(e)!.name}`} onClick={() => setSelected(e.id)}>{agentOf(e)!.name}{agentOf(e)!.status === "running" ? " · running" : agentOf(e)!.status === "waiting" ? " · waiting for you" : ""}</Button>)}</div>}
       {editor && <div className="love-agent-toolbar">
         <DropdownMenu open={picker} onOpenChange={setPicker}>
           <DropdownMenuTrigger render={<Button variant="outline" size="sm" title="Choose an agent, or type @agent in a text note" />}>Agents</DropdownMenuTrigger>
@@ -380,7 +381,9 @@ export default function LoveSpot({ dark, cwd, onOpenChat }: { dark: boolean; cwd
       </div>}
       <div role="group" aria-label="Voice note"><Dictation provider={provider} disabled={!editor || !settings || talkDictating} onBusy={setBoardBusy} selection={insertion} onTranscript={addVoiceNote} purpose="Adds a note to the board." /></div>
       <Button variant="outline" size="sm" aria-expanded={talk} onClick={() => setTalk(value => !value)}>Talk</Button>
-    </div>
+    </div>;
+  return <section className="love-spot" aria-label="Love Spot">
+    {toolbarHost ? createPortal(tools, toolbarHost) : tools}
     {screenshots.length > 0 && <section className="love-spot-screenshots" aria-label="New screenshots">
       <div className="love-spot-screenshots-heading"><strong>New screenshots</strong><span>Only shared when you add them. Click or drag onto the drawing.</span></div>
       <ul className="love-spot-screenshots-list">{screenshots.map(shot => <li key={shot.id}>
@@ -395,7 +398,6 @@ export default function LoveSpot({ dark, cwd, onOpenChat }: { dark: boolean; cwd
       </li>)}</ul>
     </section>}
     {(error || runError) && <div className="love-spot-status" role="alert">{runError || error}<Button variant="ghost" size="sm" onClick={() => { if (runError) setRunError(""); else if (editor) save(); else setAttempt(a => a + 1); }}>{runError ? "Dismiss" : "Retry"}</Button></div>}
-    {!!agents.length && <div className="love-agent-list" aria-label="Board agents">{agents.map(e => <Button key={e.id} variant="outline" size="sm" aria-label={`Inspect ${agentOf(e)!.name}`} onClick={() => setSelected(e.id)}>{agentOf(e)!.name}{agentOf(e)!.status === "running" ? " · running" : agentOf(e)!.status === "waiting" ? " · waiting for you" : ""}</Button>)}</div>}
     <div className="love-spot-content"><div className="love-spot-editor" ref={boardArea} onDragOverCapture={event => {
       if (event.dataTransfer.types.includes(screenshotDrag)) { event.preventDefault(); event.stopPropagation(); event.dataTransfer.dropEffect = "copy"; }
     }} onDropCapture={event => {

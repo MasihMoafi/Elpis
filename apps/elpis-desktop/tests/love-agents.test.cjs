@@ -159,7 +159,7 @@ for (const colorScheme of ['light', 'dark']) test(`Talk, agents and private scre
       await page.setViewportSize({ width, height: 960 });
       await page.waitForTimeout(300);
       await details.evaluate(el => { el.scrollTop = 0; });
-      const regions = [page.locator('.love-spot-tools'), tray, page.locator('.love-agent-list'), page.locator('.love-spot-editor'), details, talk];
+      const regions = [page.locator('.love-spot-tools'), tray, page.locator('.love-spot-editor'), details, talk];
       const boxes = await Promise.all(regions.map(region => region.boundingBox()));
       for (const [i, box] of boxes.entries()) {
         assert.ok(box && box.width > 0 && box.height > 0 && box.x >= 0 && box.y >= 0 && box.x + box.width <= width + 1 && box.y + box.height <= 961, `region ${i} must fit`);
