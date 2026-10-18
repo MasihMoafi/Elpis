@@ -90,6 +90,8 @@ async function fixture({ staticDir = out, width = 1130, height = 660, colorSchem
   /** Sends a bridge event (approval, approvalResolved, message …) to the page, as the bridge's /api/events does. */
   const emit = (event, data) => { for (const stream of streams) stream.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`); };
   const close = async () => { await browser.close(); await new Promise(resolve => server.close(resolve)); };
-  return { page, composer, errors, posts, open, shown, copied, close, turns, emit };
+  /** How many pages are listening to /api/events: an event emitted before a pane subscribes never reaches it. */
+  const listening = () => streams.size;
+  return { page, composer, errors, posts, open, shown, copied, close, turns, emit, listening };
 }
 module.exports = { fixture, CWD, FILES, TURNS };

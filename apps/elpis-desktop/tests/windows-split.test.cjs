@@ -38,6 +38,9 @@ test('Alt+click opens a split; one chat receives the same live reply in both pan
     await page.locator('.thread-row[data-thread-id="chat-a"] .thread-link').click({ modifiers: ['Alt'] });
     await secondary(page).getByRole('textbox', { name: 'Message Elpis', exact: true }).waitFor();
     await secondary(page).getByText('All green.', { exact: true }).waitFor();
+    // Both panes must be listening before the reply is sent; under load the second pane subscribes after it renders.
+    for (let tries = 0; f.listening() < 2 && tries < 200; tries++) await page.waitForTimeout(50);
+    assert.ok(f.listening() >= 2, 'the split pane never subscribed to live events');
     f.emit('message', { method: 'item/completed', params: { threadId: 'chat-a', turnId: 'shared', item: { id: 'shared-reply', type: 'agentMessage', text: 'Both panes receive this reply.' } } });
     await page.getByText('Both panes receive this reply.', { exact: true }).waitFor();
     await secondary(page).getByText('Both panes receive this reply.', { exact: true }).waitFor();
