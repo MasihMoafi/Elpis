@@ -119,3 +119,13 @@ test('a Canvas agent shows its board title as its role, not the engine task kind
   assert.equal(page.agents.find(agent => agent.id === judge).role, 'Judge');
   assert.equal(page.agents.find(agent => agent.id === ROOT).role, null);
 });
+
+test('chats without Smart Prune records list newest activity first', async t => {
+  const { home } = await fixture(t);
+  const ids = [8, 9, 10].map(n => `01a14400-0000-7000-8000-0000000000${String(n).padStart(2, '0')}`);
+  const chats = ids.map((id, i) => ({ id, name: `Chat ${i}`, updatedAt: 1_800_000_000 + i * 60 }));
+  const observe = createObservability({ home, listChats: async () => ({ data: [...chats].reverse(), nextCursor: null }), chatOf: async () => null,
+    turnsOf: async () => ({ data: [], nextCursor: null }), graphsOf: async () => ({ data: [] }) });
+  const page = await observe.overview(query('limit=2'));
+  assert.deepEqual(page.chats.data.map(row => row.chat.name), ['Chat 2', 'Chat 1']);
+});

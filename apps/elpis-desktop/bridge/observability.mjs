@@ -210,8 +210,10 @@ export function createObservability({ home = elpisHome(), chatOf, listChats, tur
       const groups = [...active.values()].filter(thread => rootOf(thread.id, active) === thread.id).map(thread => {
         const own = visible.filter(attempt => rootOf(attempt.session, active) === thread.id);
         const lastAt = own.reduce((last, attempt) => time(attempt.at) > time(last) ? attempt.at : last, null);
-        return { id: thread.id, found: true, chat: shownChat(thread), lastAt, totals: totals(own, admissions) };
-      }).sort((a, b) => time(b.lastAt) - time(a.lastAt) || a.id.localeCompare(b.id));
+        // Most recent activity first: a chat's last turn or its last Smart Prune run, whichever is later.
+        const recent = Math.max(time(lastAt), (number(thread.updatedAt) ?? 0) * 1000);
+        return { id: thread.id, found: true, chat: shownChat(thread), lastAt, totals: totals(own, admissions), recent };
+      }).sort((a, b) => b.recent - a.recent || b.id.localeCompare(a.id)).map(({ recent: _recent, ...row }) => row);
       const start = Number(cursor ?? 0);
       const shownDir = dir.startsWith(`${os.homedir()}${path.sep}`) ? `~${dir.slice(os.homedir().length)}` : dir;
       return { available, records: shownDir, totals: totals(visible, admissions), skipped: { unreadable },
