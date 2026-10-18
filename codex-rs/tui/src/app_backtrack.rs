@@ -402,6 +402,7 @@ impl App {
             }
             result?;
             let close_overlay = t.is_done();
+            let prune_link = t.pending_prune_link.take();
             if !close_overlay
                 && active_key.is_some_and(|key| key.animation_tick.is_some())
                 && t.is_scrolled_to_bottom()
@@ -412,6 +413,9 @@ impl App {
             if close_overlay {
                 self.close_transcript_overlay(tui);
                 tui.frame_requester().schedule_frame();
+            }
+            if let Some(url) = prune_link {
+                self.open_url_in_browser(url);
             }
             return Ok(());
         }

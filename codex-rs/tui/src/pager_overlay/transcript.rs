@@ -25,12 +25,20 @@ pub(crate) struct TranscriptOverlay {
     content_area: Rect,
     cursor: Option<(u16, u16)>,
     notice: Option<String>,
+    pub(crate) pending_prune_link: Option<String>,
     pub(crate) key_chord_hint: Option<Vec<(String, String)>>,
     pub(crate) browsing_footer: Option<Line<'static>>,
     is_done: bool,
 }
 
 impl TranscriptOverlay {
+    pub(crate) fn attach_smart_prune(
+        &mut self,
+        prune: &codex_protocol::elpis_smart_prune::SmartPruneEvent,
+    ) {
+        crate::chatwidget::smart_prune_log::attach_to_tool(&mut self.cells, prune);
+    }
+
     pub(crate) fn bookmark(&mut self) -> TranscriptBookmark {
         self.view.bookmark(&self.cells)
     }
@@ -62,6 +70,7 @@ impl TranscriptOverlay {
             content_area: Rect::default(),
             cursor: None,
             notice: None,
+            pending_prune_link: None,
             key_chord_hint: None,
             browsing_footer: None,
             is_done: false,
@@ -474,6 +483,10 @@ impl TranscriptOverlay {
                 });
             }
             ViewAction::OpenLink(url) => {
+                if url.starts_with(crate::chatwidget::smart_prune_log::INLINE_LINK_PREFIX) {
+                    self.pending_prune_link = Some(url);
+                    return;
+                }
                 if let Err(error) = webbrowser::open(&url) {
                     self.notice = Some(format!("Could not open link: {error}"));
                 }

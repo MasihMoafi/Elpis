@@ -23,6 +23,21 @@ pub(super) struct ThreadUsageStatusHistory {
 
 impl App {
     pub(super) fn insert_history_cell(&mut self, tui: &mut tui::Tui, cell: Box<dyn HistoryCell>) {
+        if let Some(prune) = cell
+            .as_any()
+            .downcast_ref::<crate::chatwidget::smart_prune_log::SmartPruneCell>()
+            && tui.is_owned_screen()
+            && crate::chatwidget::smart_prune_log::attach_to_tool(
+                &mut self.transcript_cells,
+                &prune.0,
+            )
+        {
+            if let Some(Overlay::Transcript(view)) = &mut self.overlay {
+                view.attach_smart_prune(&prune.0);
+            }
+            tui.frame_requester().schedule_frame();
+            return;
+        }
         // Global deprecations can be delivered again by hidden threads. Scope deduplication to
         // retained history so clearing or rebuilding a transcript can show the notice again.
         if let Some(notice) = cell
@@ -272,6 +287,40 @@ impl App {
     }
 
     pub(super) fn open_url_in_browser(&mut self, url: String) {
+        if let Some(target) =
+            url.strip_prefix(crate::chatwidget::smart_prune_log::INLINE_LINK_PREFIX)
+        {
+            if let Some((attempt_id, call_id)) = target.split_once('/')
+                && let (Ok(attempt_id), Ok(call_id)) = (
+                    urlencoding::decode(attempt_id),
+                    urlencoding::decode(call_id),
+                )
+            {
+                let log_dir = self.chat_widget.config_ref().codex_home.join("logs");
+                match crate::legacy_core::smart_prune_log::read_attempt(&log_dir, &attempt_id) {
+                    Ok(mut record)
+                        if self
+                            .chat_widget
+                            .thread_id()
+                            .is_some_and(|id| id.to_string() == record.thread_id) =>
+                    {
+                        record.items.retain(|item| item.call_id == call_id);
+                        self.app_event_tx.send(AppEvent::Elpis(
+                            crate::elpis_app_event::ElpisAppEvent::OpenSmartPruneRecord(Box::new(
+                                record,
+                            )),
+                        ));
+                    }
+                    Ok(_) => self
+                        .chat_widget
+                        .add_error_message("Smart Prune record belongs to another chat.".into()),
+                    Err(error) => self
+                        .chat_widget
+                        .add_error_message(format!("Cannot read Smart Prune evidence: {error}")),
+                }
+            }
+            return;
+        }
         if let Err(err) = webbrowser::open(&url) {
             self.chat_widget
                 .add_error_message(format!("Failed to open browser for {url}: {err}"));

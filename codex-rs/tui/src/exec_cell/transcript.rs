@@ -19,6 +19,15 @@ impl ExecCell {
         width: u16,
         mode: HistoryRenderMode,
     ) -> Vec<HyperlinkLine> {
+        self.detailed_lines_with_prunes(width, mode, &[])
+    }
+
+    pub(crate) fn detailed_lines_with_prunes(
+        &self,
+        width: u16,
+        mode: HistoryRenderMode,
+        prunes: &[(String, Vec<HyperlinkLine>)],
+    ) -> Vec<HyperlinkLine> {
         let mut lines: Vec<HyperlinkLine> = vec![];
         for (i, call) in self.iter_calls().enumerate() {
             if i > 0 {
@@ -63,6 +72,9 @@ impl ExecCell {
                     }
                     lines.push(result.into());
                 }
+            }
+            for (_, prune) in prunes.iter().filter(|(id, _)| id == &call.call_id) {
+                lines.extend(prune.clone());
             }
             lines.extend(self.group.details.lines_after(i + 1, width, mode));
         }

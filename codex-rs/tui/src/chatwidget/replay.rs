@@ -451,6 +451,7 @@ impl ChatWidget {
                     ));
                 }
             }
+            ThreadItem::SmartPrune { prune, .. } => self.on_smart_prune(prune),
             ThreadItem::HookPrompt { .. } => {}
             ThreadItem::CollabAgentToolCall {
                 id,

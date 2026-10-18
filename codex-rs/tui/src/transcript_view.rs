@@ -19,6 +19,7 @@ mod prompt_header;
 mod scrollbar;
 mod search;
 mod selection;
+mod smart_prune_links;
 mod snapshot;
 mod text;
 mod turn_tip;
@@ -112,6 +113,7 @@ pub(crate) struct TranscriptView {
     visible: Vec<VisibleRow>,
     selection: Option<Selection>,
     copy_mode: Option<copy_mode::CopyMode>,
+    prune_focus: Option<String>,
     held_reading: Option<ViewSnapshot>,
     search: Search,
     detailed: bool,
@@ -151,6 +153,7 @@ impl Default for TranscriptView {
             visible: Vec::new(),
             selection: None,
             copy_mode: None,
+            prune_focus: None,
             held_reading: None,
             search: Search::default(),
             detailed: false,
@@ -263,6 +266,7 @@ impl TranscriptView {
             let row_area = Rect::new(area.x, y, area.width, /*height*/ 1);
             layout.render(row_area, buf, row);
             self.render_disclosure(&activity_ids, &layout, row, row_area, buf);
+            self.render_prune_focus(&layout, row, row_area, buf);
             if self.highlight == Some(index) && self.selection.is_none() && !self.search.is_active()
             {
                 layout.highlight(0..layout.text().len(), row_area, buf, row);
@@ -364,6 +368,7 @@ impl TranscriptView {
         }
         self.selection = None;
         self.copy_mode = None;
+        self.prune_focus = None;
         self.release_live_reading();
         self.cache.clear();
         self.suppressed_prompt_header = None;
@@ -380,7 +385,10 @@ impl TranscriptView {
     }
 
     pub(crate) fn has_active_interaction(&self) -> bool {
-        self.selection.is_some() || self.search.is_active() || self.is_activity_focused()
+        self.prune_focus.is_some()
+            || self.selection.is_some()
+            || self.search.is_active()
+            || self.is_activity_focused()
     }
 
     pub(crate) fn is_detailed(&self) -> bool {

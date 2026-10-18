@@ -153,6 +153,14 @@ impl TranscriptView {
         {
             return true;
         }
+        if self.prune_focus.is_some()
+            && matches!(
+                code,
+                KeyCode::Tab | KeyCode::BackTab | KeyCode::Enter | KeyCode::Esc
+            )
+        {
+            return true;
+        }
         if self.copy_mode.is_some() {
             return true;
         }
@@ -186,6 +194,9 @@ impl TranscriptView {
         if key.kind == KeyEventKind::Release {
             return None;
         }
+        if let Some(action) = self.handle_prune_key(key) {
+            return Some(action);
+        }
         if let Some(action) = self.handle_copy_mode_key(key, cells) {
             return Some(action);
         }
@@ -218,6 +229,7 @@ impl TranscriptView {
         event: MouseEvent,
         cells: &[Arc<dyn HistoryCell>],
     ) -> Option<ViewAction> {
+        self.prune_focus = None;
         self.handle_mouse_with_mode(event, cells, MouseMode::Interactive)
     }
 
@@ -227,6 +239,7 @@ impl TranscriptView {
         event: MouseEvent,
         cells: &[Arc<dyn HistoryCell>],
     ) -> Option<ViewAction> {
+        self.prune_focus = None;
         self.handle_mouse_with_mode(event, cells, MouseMode::Selection)
     }
 
