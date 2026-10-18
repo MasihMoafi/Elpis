@@ -34,7 +34,8 @@ test('isometric: the Father and his wires past ten agents, and two-way wires wit
     assert.equal(await father.count(), 1, 'the Father is on the isometric board');
     assert.match(await father.getAttribute('aria-label'), /his own chat, 3 agents/);
     assert.equal(await board.locator('.iso-link[data-father]').count(), flatFatherWires, 'his wires, as on the flat board');
-    assert.equal(await board.locator('.iso-link[data-mother]').count(), 10, 'the Mother starts only her ten');
+    assert.equal(await board.locator('.iso-link[data-mother]:not(.iso-mother-trunk)').count(), 10, 'the Mother starts only her ten');
+    assert.equal(await board.locator('.iso-mother-trunk').count(), 1, 'all ten share one trunk');
     assert.equal(await board.locator('.iso-label[data-for="father"]').innerText(), 'Father');
     // The two-way wire shows, with no chevrons.
     const twoWay = board.locator('.iso-link[data-kind="alongside"]');

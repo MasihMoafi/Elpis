@@ -237,37 +237,38 @@ export function IsoBoard({ graph, father, states, selected, onSelect, onOpen, da
   const block = (place: IsoPlace): Box => { const shape = shapeOf(place), top = anchor(place), half = shape.core * Math.cos(Math.PI / 6) * view.zoom; return { left: top.x - half, top: top.y, right: top.x + half, bottom: top.y + (shape.core / 2 + shape.coreHeight) * view.zoom }; };
   const kept = (place: IsoPlace) => place.kind !== "agent" || place.id === hot || selected.includes(place.id);
   const full = new Set<string>(), taken: Box[] = [], labelPositions = new Map<string, Point>();
-  const labelBox = (at: Point, width: number): Box => ({ left: at.x - width / 2, top: at.y - LABEL.height, right: at.x + width / 2, bottom: at.y });
-  const labelAt = (place: IsoPlace, width: number) => {
+  const labelBox = (at: Point, width: number, labelHeight = LABEL.height): Box => ({ left: at.x - width / 2, top: at.y - labelHeight, right: at.x + width / 2, bottom: at.y });
+  const labelAt = (place: IsoPlace, width: number, labelHeight = LABEL.height) => {
     const at = anchor(place);
-    return { x: Math.max(width / 2 + 6, Math.min((size?.width ?? Infinity) - width / 2 - 6, at.x)), y: Math.max(LABEL.height + 6, Math.min((size?.height ?? Infinity) - INSET.bottom, at.y - LABEL.gap)) };
+    return { x: Math.max(width / 2 + 6, Math.min((size?.width ?? Infinity) - width / 2 - 6, at.x)), y: Math.max(labelHeight + 6, Math.min((size?.height ?? Infinity) - INSET.bottom, at.y - LABEL.gap)) };
   };
   for (const place of [...places].sort((a, b) => Number(kept(b)) - Number(kept(a)))) {
-    const width = Math.min(LABEL.max, textWidth(titleOf(place.id), family) + LABEL.chrome + (place.kind === "agent" ? LABEL.badge : 5));
-    let at = labelAt(place, width), box = labelBox(at, width);
+    const width = renaming === place.id ? LABEL.max : Math.min(LABEL.max, textWidth(titleOf(place.id), family) + LABEL.chrome + (place.kind === "agent" ? LABEL.badge : 5));
+    const labelHeight = renaming === place.id ? 36 : LABEL.height;
+    let at = labelAt(place, width, labelHeight), box = labelBox(at, width, labelHeight);
     if (place.id === hot || (selected.length === 1 && selected.includes(place.id)) || (!taken.some(other => meet(other, box)) && !places.some(other => other !== place && meet(block(other), box)))) full.add(place.id);
     else if (place.kind === "agent") {
-      at = labelAt(place, LABEL.badge); box = labelBox(at, LABEL.badge);
+      at = labelAt(place, LABEL.badge, labelHeight); box = labelBox(at, LABEL.badge, labelHeight);
     } else full.add(place.id);
     const usedWidth = full.has(place.id) ? width : LABEL.badge;
     // A dense graph keeps wave badges; if even those meet, move a label to the nearest free row.
     const original = at;
     const collides = () => taken.some(other => meet(other, box)) || places.some(other => meet(block(other), box));
     for (let step = 0; collides() && step < 60; step++) {
-      const offset = (Math.floor(step / 2) + 1) * (LABEL.height + 4) * (step % 2 ? 1 : -1);
+      const offset = (Math.floor(step / 2) + 1) * (labelHeight + 4) * (step % 2 ? 1 : -1);
       const y = original.y + offset;
-      if (y < LABEL.height + 6 || y > (size?.height ?? Infinity) - INSET.bottom) continue;
-      at = { ...original, y }; box = labelBox(at, usedWidth);
+      if (y < labelHeight + 6 || y > (size?.height ?? Infinity) - INSET.bottom) continue;
+      at = { ...original, y }; box = labelBox(at, usedWidth, labelHeight);
     }
     // A short board may have no free row above this pedestal. Use the nearest free slot to either side instead of
     // leaving a badge on its own block, where it would intercept the block's mouse and keyboard interactions.
     if (collides() && size) {
       const xs = [original.x], ys = [original.y];
       for (let x = usedWidth / 2 + 6; x <= size.width - usedWidth / 2 - 6; x += usedWidth + 8) xs.push(x);
-      for (let y = LABEL.height + 6; y <= size.height - INSET.bottom; y += LABEL.height + 4) ys.push(y);
+      for (let y = labelHeight + 6; y <= size.height - INSET.bottom; y += labelHeight + 4) ys.push(y);
       const slots = ys.flatMap(y => xs.map(x => ({ x, y }))).sort((a, b) => Math.hypot(a.x - original.x, a.y - original.y) - Math.hypot(b.x - original.x, b.y - original.y));
-      const free = slots.find(slot => { const box = labelBox(slot, usedWidth); return !taken.some(other => meet(other, box)) && !places.some(other => meet(block(other), box)); });
-      if (free) { at = free; box = labelBox(at, usedWidth); }
+      const free = slots.find(slot => { const box = labelBox(slot, usedWidth, labelHeight); return !taken.some(other => meet(other, box)) && !places.some(other => meet(block(other), box)); });
+      if (free) { at = free; box = labelBox(at, usedWidth, labelHeight); }
     }
     taken.push(box); labelPositions.set(place.id, at);
   }

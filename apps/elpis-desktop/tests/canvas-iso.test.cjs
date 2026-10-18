@@ -183,7 +183,7 @@ test('agents canvas, isometric: agents as buttons to select and open, run state,
 
     // Loading an architecture redraws the board in its run order; Flat brings the editor back.
     await canvas.getByRole('button', { name: /Hierarchical/ }).click();
-    await agent('Team B worker 2').waitFor();
+    await agent('Lumaro · Team B worker 2').waitFor();
     assert.equal(await board.locator('.iso-node[data-kind="agent"]').count(), 8);
     assert.equal(await agent('Eshvi · Join the areas').getAttribute('aria-label'), 'Eshvi · Join the areas: wave 4, not run, checked after it runs');
     // Dense in Masih's window: no title covers another; a title without room shows its wave badge until pointed at.

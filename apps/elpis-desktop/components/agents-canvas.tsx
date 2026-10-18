@@ -2,7 +2,7 @@
 
 import "@xyflow/react/dist/style.css";
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent } from "react";
-import { Background, BackgroundVariant, BaseEdge, Controls, Handle, MarkerType, MiniMap, Position, ReactFlow, ReactFlowProvider, applyEdgeChanges, applyNodeChanges, useReactFlow, type Edge, type EdgeProps, type EdgeChange, type FinalConnectionState, type Node, type NodeChange, type NodeProps, type XYPosition } from "@xyflow/react";
+import { Background, BackgroundVariant, BaseEdge, Controls, Handle, MarkerType, MiniMap, Position, ReactFlow, ReactFlowProvider, applyEdgeChanges, applyNodeChanges, getBezierPath, useReactFlow, type Edge, type EdgeProps, type EdgeChange, type FinalConnectionState, type Node, type NodeChange, type NodeProps, type XYPosition } from "@xyflow/react";
 import { Check, ChevronRight, ExternalLink, ListOrdered, PanelRight, PanelRightClose, Play, Plus, StickyNote, Trash2, X } from "lucide-react";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -98,13 +98,45 @@ const NODE_TYPES = { agent: AgentNode, mother: MotherNode, father: FatherNode, n
 
 /** The Mother's first segment is shared; one label names what every first-wave agent receives. */
 function MotherEdge({ id, sourceX, sourceY, targetX, targetY, markerEnd, data }: EdgeProps) {
-  const split = sourceX + 65;
+  const split = sourceX + 32;
   return <>
-    {data?.trunk === true && <g className="canvas-mother-trunk"><BaseEdge id={`${id}-trunk`} path={`M ${sourceX},${sourceY} H ${split}`} label={typeof data.label === "string" ? data.label : undefined} labelX={split} labelY={sourceY - 18} /></g>}
+    {data?.trunk === true && <g className="canvas-mother-trunk">
+      {typeof data.label === "string" && data.label && <path className="canvas-flow-leader" d={`M ${sourceX + 16},${sourceY} L ${sourceX - 95},${sourceY - 60}`} />}
+      <BaseEdge id={`${id}-trunk`} path={`M ${sourceX},${sourceY} H ${split}`} label={typeof data.label === "string" ? data.label : undefined} labelX={sourceX - 95} labelY={sourceY - 60} />
+    </g>}
     <BaseEdge id={id} path={`M ${split},${sourceY} V ${targetY} H ${targetX}`} markerEnd={markerEnd} />
   </>;
 }
-const EDGE_TYPES = { mother: MotherEdge };
+function FlowEdge({ id, label, data, markerEnd, ...ends }: EdgeProps) {
+  const [path, x, y] = getBezierPath(ends);
+  const labelX = typeof data?.labelX === "number" ? data.labelX : x, labelY = typeof data?.labelY === "number" ? data.labelY : y;
+  return <>
+    {label && Math.hypot(labelX - x, labelY - y) > 12 && <path className="canvas-flow-leader" d={`M ${x},${y} L ${labelX},${labelY}`} />}
+    <BaseEdge id={id} path={path} markerEnd={markerEnd} label={label} labelX={labelX} labelY={labelY} labelStyle={{ fontSize: 12 }} />
+  </>;
+}
+const EDGE_TYPES = { mother: MotherEdge, default: FlowEdge };
+
+/** Keep flat flow labels off cards and each other, nearest their wire. Positions use graph units, like the edges. */
+function flowLabelPositions(nodes: Node[], edges: CanvasEdge[]) {
+  const result = new Map<string, { labelX: number; labelY: number }>();
+  if (!nodes.length) return result;
+  const boxes = nodes.map(node => ({ id: node.id, x: node.position.x, y: node.position.y, w: node.measured?.width ?? 195, h: node.measured?.height ?? 96 }));
+  const left = Math.min(...boxes.map(box => box.x)), right = Math.max(...boxes.map(box => box.x + box.w));
+  const top = Math.min(...boxes.map(box => box.y)) - 32, bottom = Math.max(...boxes.map(box => box.y + box.h)) + 32;
+  const taken = boxes.map(box => ({ x: box.x - 8, y: box.y - 8, w: box.w + 16, h: box.h + 16 }));
+  for (const edge of edges) {
+    const from = boxes.find(box => box.id === edge.source), to = boxes.find(box => box.id === edge.target);
+    if (!edge.label || !from || !to) continue;
+    const [, x, y] = getBezierPath({ sourceX: from.x + from.w, sourceY: from.y + from.h / 2, targetX: to.x, targetY: to.y + to.h / 2, sourcePosition: Position.Right, targetPosition: Position.Left });
+    const w = edge.label.length * 7 + 16, h = 24, slots = [{ x, y }];
+    for (let sy = top + h / 2; sy <= bottom - h / 2; sy += 24) for (let sx = left + w / 2; sx <= right - w / 2; sx += 24) slots.push({ x: sx, y: sy });
+    slots.sort((a, b) => Math.hypot(a.x - x, a.y - y) - Math.hypot(b.x - x, b.y - y));
+    const at = slots.find(slot => slot.x - w / 2 >= left && slot.x + w / 2 <= right && !taken.some(box => slot.x - w / 2 < box.x + box.w && box.x < slot.x + w / 2 && slot.y - h / 2 < box.y + box.h && box.y < slot.y + h / 2)) ?? { x, y };
+    taken.push({ x: at.x - w / 2, y: at.y - h / 2, w, h }); result.set(edge.id, { labelX: at.x, labelY: at.y });
+  }
+  return result;
+}
 
 /** Where the command bar drops its agents, and the agent it was opened from (`as` is the end the new agents take) or
  * the wire they are inserted on. */
@@ -555,6 +587,7 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
     ? { ...node, deletable: false, selected: selection.includes(MOTHER), data: { run: runState, children: agents.length, limit, onHandle } satisfies MotherData }
     : { ...node, selected: selection.includes(node.id), data: node.type === "agent" ? { ...node.data, status: states[node.id]?.status, check: states[checkOf(node.id)]?.status, clash: clashes[node.id], modelLabel: modelLabel(node.data), wave: order.get(node.id), onHandle, onQuick } : { ...node.data, onText: setText } }),
   ), [graph.nodes, selection, states, clashes, models, order, runState, fatherState, limit, catalog.length]); // eslint-disable-line react-hooks/exhaustive-deps
+  const flowLabels = useMemo(() => flowLabelPositions(nodes, graph.edges), [nodes, graph.edges]);
   const edges = useMemo<Edge[]>(() => [
     // The Mother's wires: she starts every agent of the first wave.
     ...agents.filter(node => order.get(node.id) === 1 && !his.has(node.id)).map((node, index) => ({ id: `${MOTHER}->${node.id}`, source: MOTHER, target: node.id, type: "mother", markerEnd: { type: MarkerType.ArrowClosed }, className: "canvas-edge-mother", selectable: false, deletable: false, focusable: false, selected: wireMenu?.edge.id === `${MOTHER}->${node.id}`, data: { trunk: index === 0, label: graph.motherFlow, live: states[node.id]?.status === "running" } })),
@@ -564,10 +597,10 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
       // A wire goes live once its first agent's check passed and the second agent is running.
       const from = states[checkOf(edge.source)]?.status, to = states[edge.target]?.status, live = waits(edge) && from === "succeeded" && to === "running";
       const onPath = showCritical && critical.includes(edge.source) && critical[critical.indexOf(edge.source) + 1] === edge.target;
-      if (!waits(edge)) return { ...edge, type: "default", selected: wireMenu?.edge.id === edge.id, data: { alongside: true }, className: "canvas-edge-alongside" };
-      return { ...edge, type: "default", markerEnd: { type: MarkerType.ArrowClosed }, selected: wireMenu?.edge.id === edge.id || onPath, data: { live }, className: from === "failed" || to === "blocked" ? "canvas-edge-cut" : live ? "canvas-edge-live" : from === "succeeded" ? "canvas-edge-done" : undefined };
+      if (!waits(edge)) return { ...edge, type: "default", selected: wireMenu?.edge.id === edge.id, data: { alongside: true, ...flowLabels.get(edge.id) }, className: "canvas-edge-alongside" };
+      return { ...edge, type: "default", markerEnd: { type: MarkerType.ArrowClosed }, selected: wireMenu?.edge.id === edge.id || onPath, data: { live, ...flowLabels.get(edge.id) }, className: from === "failed" || to === "blocked" ? "canvas-edge-cut" : live ? "canvas-edge-live" : from === "succeeded" ? "canvas-edge-done" : undefined };
     }),
-  ], [graph.edges, graph.nodes, graph.motherFlow, states, order, wireMenu, showCritical]); // eslint-disable-line react-hooks/exhaustive-deps
+  ], [graph.edges, graph.nodes, graph.motherFlow, states, order, wireMenu, showCritical, flowLabels]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const onNodesChange = (changes: NodeChange[]) => {
     const removed = new Set(changes.flatMap(change => change.type === "remove" && change.id !== MOTHER ? [change.id] : []));
@@ -725,7 +758,7 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
   const remove = (ids: string[]) => {
     const gone = graph.nodes.filter(node => node.type !== "mother" && ids.includes(node.id));
     if (!gone.length) return;
-    checkpoint(); setDeleted(gone.map(node => node.type === "agent" ? node.data.title : "note").join(", "));
+    checkpoint(); setNotice(""); setDeleted(gone.map(node => node.type === "agent" ? node.data.title : "note").join(", "));
     setGraph(current => ({ ...current, nodes: current.nodes.filter(node => !gone.some(item => item.id === node.id)), edges: current.edges.filter(edge => !ids.includes(edge.source) && !ids.includes(edge.target)) })); setSelection([]);
   };
   const renameAgent = (id: string, title: string) => {

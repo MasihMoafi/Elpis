@@ -1096,6 +1096,7 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .iso-label:has(.canvas-text-edit) { width:176px; padding:3px; z-index:5; }
 .iso-flow-label { position:absolute; pointer-events:auto; max-width:176px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; transform:translate(-50%, -100%); padding:2px 7px; border:1px solid var(--hairline); border-radius:4px; color:var(--foreground); background:var(--card); font-size:12px; line-height:18px; cursor:text; }
 .iso-flow-leader { position:absolute; inset:0; width:100%; height:100%; pointer-events:none; stroke:var(--muted-foreground); stroke-width:1; stroke-dasharray:2 3; }
+.canvas-flow-leader { fill:none; pointer-events:none; stroke:var(--xy-edge-stroke); stroke-width:1; stroke-dasharray:2 3; }
 .canvas-notice > span { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 @media (prefers-reduced-motion: reduce) { .iso-world { transition:none; } }
 .iso-link[data-state="done"] { --iso-wire:var(--success); }

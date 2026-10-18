@@ -205,7 +205,8 @@ export function arrange(graph: CanvasGraph): CanvasGraph {
     column.sort((a, b) => level <= 1 ? a.position.y - b.position.y : mean(a) - mean(b) || a.position.y - b.position.y);
     column.forEach((node, index) => { const y = Math.round((index - (column.length - 1) / 2) * ROW); position.set(node.id, { x: level * COLUMN, y }); rank.set(node.id, y / ROW); });
   }
-  position.set(MOTHER, { x: 0, y: 0 });
+  // Room for her shared trunk and an exposed branch into each first-wave agent.
+  position.set(MOTHER, { x: -80, y: 0 });
   return { ...graph, nodes: graph.nodes.map(node => position.has(node.id) ? { ...node, position: position.get(node.id)! } : node) };
 }
 

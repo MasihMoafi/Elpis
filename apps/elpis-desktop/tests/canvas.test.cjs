@@ -304,8 +304,8 @@ test('agents canvas: writers with automatic checks, architectures, wiring, persi
     await until('the dot added two agents', () => document.querySelectorAll('.react-flow__node-agent').length === 13);
     await page.waitForTimeout(400);
     const graph = await saved(), joiner = graph.nodes.find(item => item.data?.title === 'Nuvani · Join the parts');
-    const patches = graph.nodes.filter(item => item.data?.title?.startsWith('Patch'));
-    assert.deepEqual(patches.map(item => [item.data.title, item.data.model]), [['Patch what the suite found', 'gpt-6-luna'], ['Patch the docs', 'gpt-6-luna']]);
+    const patches = graph.nodes.filter(item => item.data?.title?.includes(' · Patch'));
+    assert.deepEqual(patches.map(item => [item.data.title.split(' · ').slice(1).join(' · '), item.data.model]), [['Patch what the suite found', 'gpt-6-luna'], ['Patch the docs', 'gpt-6-luna']]);
     assert.ok(patches.every(patch => graph.edges.some(edge => edge.source === joiner.id && edge.target === patch.id)), 'both wait for Nuvani · Join the parts');
 
     // A wire let go on empty board opens the bar too; the graph is now at its limit, so the bar says so.
@@ -354,7 +354,7 @@ test('agents canvas: writers with automatic checks, architectures, wiring, persi
     await chooseOption(group.getByRole('combobox', { name: 'Model', exact: true }), '|gpt-6.1-sol');
     await chooseOption(group.getByRole('combobox', { name: 'Add a folder', exact: true }), 'docs');
     await page.waitForTimeout(400);
-    const tidy = async () => (await saved()).nodes.filter(item => item.data?.title?.startsWith('Tidy'));
+    const tidy = async () => (await saved()).nodes.filter(item => item.data?.title?.includes(' · Tidy'));
     assert.deepEqual((await tidy()).map(item => [item.data.model, item.data.writeScopes]), [['gpt-6.1-sol', ['docs']], ['gpt-6.1-sol', ['docs']]]);
     // Shift+drag draws a box, and everything inside it is selected.
     await group.getByRole('button', { name: 'Done', exact: true }).click();
@@ -376,7 +376,8 @@ test('agents canvas: writers with automatic checks, architectures, wiring, persi
     // The Mother's wires fan out from one dot and overlap near her, so hers are clicked near their agent.
     // Elbow wires into one agent share their last stretch, so a wire is clicked where it alone shows, from `along` on.
     const clickWire = async (wire, along = 0.5) => {
-      const point = await wire.locator('.react-flow__edge-path').evaluate((path, along) => { const m = path.getScreenCTM(), own = path.closest('.react-flow__edge'); for (let step = 0; step < 40; step++) { const at = path.getPointAtLength(path.getTotalLength() * ((along + step / 40) % 1)), x = at.x * m.a + at.y * m.c + m.e, y = at.x * m.b + at.y * m.d + m.f; if (document.elementFromPoint(x, y)?.closest('.react-flow__edge') === own) return { x, y }; } return null; }, along);
+      const point = await wire.locator('.react-flow__edge-path').evaluate((path, along) => { const m = path.getScreenCTM(), own = path.closest('.react-flow__edge'); for (let step = 0; step < 200; step++) { const at = path.getPointAtLength(path.getTotalLength() * ((along + step / 200) % 1)), x = Math.round(at.x * m.a + at.y * m.c + m.e), y = Math.round(at.x * m.b + at.y * m.d + m.f); if ([[0, 0], [-2, 0], [2, 0], [0, -2], [0, 2]].every(([dx, dy]) => document.elementFromPoint(x + dx, y + dy)?.closest('.react-flow__edge') === own)) return { x, y }; } return null; }, along);
+      assert.ok(point, 'the wire has a visible, clickable stretch');
       await page.mouse.click(point.x, point.y, { button: 'right' });
     };
     await clickWire(wireOf('Quillon · Part 1', 'Nuvani · Join the parts'));

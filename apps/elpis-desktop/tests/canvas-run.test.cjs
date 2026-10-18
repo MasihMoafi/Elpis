@@ -38,9 +38,10 @@ test('Voting finishes every agent; Tally receives all answers after their checks
       assert.match(task.instruction, /build output.*__pycache__/);
       assert.match(task.instruction, /A rejected report does not count as your one report: fix what its reason names and report again/);
     }
-    assert.deepEqual(runs[0].tallyInput.filter(answer => /original answer/.test(answer)), [1, 2, 3].map(n => `Answer ${n}: original answer`));
+    const names = ['Quillon · Answer 1', 'Veyra · Answer 2', 'Orilo · Answer 3'];
+    assert.deepEqual(runs[0].tallyInput.filter(answer => /original answer/.test(answer)), names.map(name => `${name}: original answer`));
     const tallyStart = events.indexOf('start:Nuvani · Tally the answers');
-    for (let n = 1; n <= 3; n++) assert.ok(events.indexOf(`done:Check: Answer ${n}`) < tallyStart);
+    for (const name of names) { const checked = events.indexOf(`done:Check: ${name}`); assert.ok(checked >= 0 && checked < tallyStart); }
     assert.match(await canvas.locator('.canvas-header').innerText(), /Finished.*4 of 4 done/);
     for (const theme of ['light', 'dark']) {
       if (await page.locator('html').evaluate(el => el.classList.contains('dark')) !== (theme === 'dark')) await chooseTheme(page, theme); await fixture.fit();

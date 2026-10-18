@@ -11,16 +11,17 @@ async function wireClick(f, selector) {
   const p = await f.canvas.locator(selector).first().evaluate(el => { const p = el.getPointAtLength(el.getTotalLength() * .55); const q = new DOMPoint(p.x, p.y).matrixTransform(el.getScreenCTM()); return { x: q.x, y: q.y }; });
   await f.page.mouse.click(p.x, p.y);
 }
-async function captures(f, stage) {
+async function captures(f, stage, iso = true) {
   if (process.env.ELPIS_SHOTS) await fs.mkdir(process.env.ELPIS_SHOTS, { recursive: true });
-  await mode(f, true);
+  await mode(f, iso);
   for (const width of [1280, 1440]) for (const theme of ['light', 'dark']) {
     await f.page.setViewportSize({ width, height: 900 });
     if (await f.page.locator('html').evaluate(el => el.classList.contains('dark')) !== (theme === 'dark')) await chooseTheme(f.page, theme);
     await f.fit(); await assertUiFit(f.canvas, `${stage} ${width} ${theme}`);
-    const area = await f.canvas.locator('.iso-board').boundingBox();
+    const area = await f.canvas.locator(iso ? '.iso-board' : '.react-flow').boundingBox();
     for (const box of await f.canvas.locator('.iso-flow-label').evaluateAll(els => els.map(el => { const r = el.getBoundingClientRect(); return { x: r.x, y: r.y, right: r.right, bottom: r.bottom }; }))) assert.ok(box.x >= area.x && box.y >= area.y && box.right <= area.x + area.width && box.bottom <= area.y + area.height, 'wire labels remain inside the board');
-    assert.equal(await f.canvas.locator('.iso-board').evaluate(root => [...root.querySelectorAll('.iso-flow-label')].some(label => { const a = label.getBoundingClientRect(); return [...root.querySelectorAll('.iso-node, .iso-port')].some(node => { const b = node.getBoundingClientRect(); return a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom; }); })), false, 'wire labels avoid pedestals and connection dots');
+    if (iso) assert.equal(await f.canvas.locator('.iso-board').evaluate(root => [...root.querySelectorAll('.iso-flow-label')].some(label => { const a = label.getBoundingClientRect(); return [...root.querySelectorAll('.iso-node, .iso-port')].some(node => { const b = node.getBoundingClientRect(); return a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom; }); })), false, 'wire labels avoid pedestals and connection dots');
+    else assert.equal(await f.canvas.locator('.react-flow').evaluate(root => [...root.querySelectorAll('.react-flow__edge-text')].some(label => { const a = label.getBoundingClientRect(); return [...root.querySelectorAll('.react-flow__node')].some(node => { const b = node.getBoundingClientRect(); return a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom; }); })), false, 'wire labels avoid agent cards');
     if (process.env.ELPIS_SHOTS) await f.page.screenshot({ path: `${process.env.ELPIS_SHOTS}/${stage}-${width}-${theme}.png` });
   }
 }
@@ -44,13 +45,15 @@ test('inline rename: Enter/blur save, Escape cancels, Mother is fixed, both view
 });
 
 for (const iso of [true, false]) test(`delete with four-second toast, Undo button, Ctrl+Z and wires: ${iso ? '3D' : 'flat'}`, async () => {
-  const f = await openCanvas({ graph });
+  const f = await openCanvas({ graph: { ...graph, maxAgents: 3 } });
   try {
     await mode(f, iso);
     const node = () => iso ? f.canvas.locator('.iso-label[data-for="a"]') : f.node('Kivo');
     for (const key of ['Delete', 'Backspace']) {
+      await f.canvas.getByRole('button', { name: 'Add agent', exact: true }).click(); await f.canvas.getByRole('alert').waitFor();
       await node().click(); await f.page.keyboard.press(key);
       const toast = f.canvas.getByRole('status').filter({ hasText: 'Deleted Kivo' }); await toast.waitFor();
+      assert.equal(await f.canvas.getByRole('alert').count(), 0, 'deletion replaces the old limit warning so Undo is exposed');
       assert.ok(!(await f.saved()).nodes.some(n => n.id === 'a'));
       if (key === 'Delete') await toast.getByRole('button', { name: 'Undo', exact: true }).click();
       else { await f.page.waitForTimeout(3200); assert.equal(await toast.isVisible(), true); await f.page.waitForTimeout(1000); assert.equal(await toast.count(), 0); await f.page.keyboard.press('Control+z'); }
@@ -79,6 +82,7 @@ for (const iso of [true, false]) test(`wire noun labels persist and reach receiv
     await f.page.waitForFunction(() => /Running|Finished/.test(document.querySelector('.canvas-header')?.textContent ?? ''));
     for (const id of ['a', 'b']) assert.match(f.runs[0].tasks.find(t => t.id === id).instruction, /Receives “the instructions” from Mother/);
     assert.match(f.runs[0].tasks.find(t => t.id === 'c').instruction, /Receives “three answers” from Kivo/);
+    if (!iso) await captures(f, 'wires-flat-view', false);
     await captures(f, `wires-${iso ? 'iso' : 'flat'}`); assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });
@@ -93,11 +97,33 @@ test('starter and + names are distinctive and unique; eight additions never over
     const titles = await f.titles(); assert.equal(new Set(titles).size, 8);
     for (const iso of [false, true]) {
       await mode(f, iso);
-      await f.canvas.getByRole('button', { name: 'Arrange by run order', exact: true }).click(); await f.fit();
+      const world = f.canvas.locator('.iso-world'); let fitted;
+      if (iso) {
+        fitted = await world.evaluate(el => getComputedStyle(el).transform);
+        const area = await f.canvas.locator('.iso-board').boundingBox();
+        await f.page.mouse.move(area.x + 8, area.y + 8); await f.page.mouse.down({ button: 'middle' });
+        await f.page.mouse.move(area.x + 88, area.y + 48, { steps: 8 }); await f.page.mouse.up({ button: 'middle' });
+        await f.page.waitForTimeout(30); assert.notEqual(await world.evaluate(el => getComputedStyle(el).transform), fitted, 'the camera was panned');
+      }
+      await f.canvas.getByRole('button', { name: 'Arrange by run order', exact: true }).click();
+      if (iso) {
+        await f.page.waitForTimeout(140); const during = await world.evaluate(el => getComputedStyle(el).transform);
+        await f.page.waitForTimeout(280); const after = await world.evaluate(el => getComputedStyle(el).transform);
+        assert.notEqual(during, after, 'Arrange animates the camera'); assert.equal(after, fitted, 'Arrange restores the fitted camera');
+      }
+      await f.fit();
       const boxes = await f.canvas.locator(iso ? '.iso-node, .iso-label' : '.react-flow__node-agent').evaluateAll(els => els.map(el => { const r = el.getBoundingClientRect(); return { id: el.getAttribute('data-id') || el.getAttribute('data-for'), x: r.x, y: r.y, right: r.right, bottom: r.bottom }; }));
       for (let i = 0; i < boxes.length; i++) for (let j = i + 1; j < boxes.length; j++) { const a = boxes[i], b = boxes[j]; assert.ok(a.right <= b.x || b.right <= a.x || a.bottom <= b.y || b.bottom <= a.y, `overlap ${a.id} ${b.id}`); }
       const board = await f.canvas.locator(iso ? '.iso-board' : '.react-flow').boundingBox(); await f.page.mouse.click(board.x + 8, board.y + 8, { button: 'right' });
       await f.canvas.getByRole('menuitem', { name: 'Arrange by run order', exact: true }).click();
+      if (iso) {
+        await f.page.setViewportSize({ width: 900, height: 700 }); await f.fit();
+        await f.canvas.locator('.iso-label[data-kind="agent"]').last().dblclick();
+        const editor = f.canvas.getByRole('textbox', { name: 'Rename agent', exact: true }); await editor.waitFor();
+        const box = await editor.boundingBox(), area = await f.canvas.locator('.iso-board').boundingBox();
+        assert.ok(box.x >= area.x && box.x + box.width <= area.x + area.width, 'inline rename stays inside the board at its left edge');
+        await f.page.keyboard.press('Escape');
+      }
     }
     await captures(f, 'placement'); assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
