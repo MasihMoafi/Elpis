@@ -492,6 +492,26 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .customize-state[data-on] { color:var(--foreground); }
 .customize-errors { margin-top:10px; font-size:13px; color:var(--muted-foreground); }
 .customize-errors summary { cursor:pointer; }
+.observability { container:observability / inline-size; }
+.observability > section, .observability section > section { margin-bottom:24px; }
+.observability-chat { text-align:start; border-radius:5px; cursor:pointer; }
+.observability-chat:hover .customize-name { text-decoration:underline; }
+.observability :is(button,li[tabindex]):focus-visible { outline:2px solid var(--ring); outline-offset:3px; }
+.observability .customize-list + button { margin-top:12px; }
+.observed-chat-row { display:flex; align-items:center; gap:12px; }
+.observed-agent { min-width:0; padding-top:12px; }
+.observed-agent + .observed-agent { border-top:1px solid var(--border); padding-top:24px; }
+.observed-agent > .customize-title { margin-bottom:4px; }
+.observed-agent > .customize-title > h3 { font-size:15px; font-weight:600; }
+.observed-turn { min-width:0; padding:20px 0; border-bottom:1px solid var(--hairline); }
+.observed-turn-number { margin:0 0 12px; font-size:12px; color:var(--muted-foreground); }
+.observed-item { min-width:0; }
+.observed-metrics { margin:20px 0 8px; font-size:12px; color:var(--muted-foreground); }
+.observed-metrics > summary { cursor:pointer; overflow-wrap:anywhere; }
+.observed-metrics .context-bar { margin:12px 0; }
+.observed-metrics .context-ledger-rows { padding:0; margin:12px 0; }
+.observed-failure { color:var(--destructive); font-size:13px; overflow-wrap:anywhere; }
+.observed-agent > button { margin-top:16px; }
 /* Segmented choices: Settings' side-by-side options. */
 .segmented { display:inline-flex; flex-wrap:wrap; align-items:center; gap:2px; padding:2px; border-radius:calc(var(--cut) + 1px) 0; corner-shape:bevel; background:var(--muted); }
 .segmented > button { height:26px; padding:0 10px; font-size:12.5px; font-weight:500; color:var(--muted-foreground); }

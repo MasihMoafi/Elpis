@@ -96,11 +96,13 @@ import type { ThemeChoice } from "@/components/appearance-settings";
 import { activityOf, api, unreadable, chatProvider, choiceById, choiceOf, effortsOf, isAgent, isAgentRun, AGENT_RUN_NOTICE, isUnlinkedAgent, modelLabel, providerChoices, providerLabel, title, agentName,
   mediaUrl, sessionReady, type Approval, type Entry, type Item, type Model, type ProviderSettings, type Thread } from "@/lib/api";
 
+import { ObservabilityView } from "@/components/observability-view";
+
 const approvalDraftKey = (approval: Approval) => JSON.stringify([approval.ownerThreadId, approval.id]);
 const SESSION_MANAGER_ID_KEY = "elpis-session-manager-v1";
 
 const LoveSpot = dynamic(() => import("@/components/love-spot"), { ssr: false, loading: () => <p role="status">Opening Love Spot…</p> });
-function ObservabilityView() { return <div className="page-scroll" data-view="observability" />; }
+
 type View = "chat" | "agentsGuide" | "canvas" | "experimentLab" | "loveSpot" | "customize" | "observability" | "settings";
 type NextTurn = { model?: string; effort?: string; plan?: boolean };
 type Live = { thread: Thread; activeTurnId?: string | null; permissions?: PermissionMode | null; planMode?: boolean };
@@ -835,6 +837,13 @@ export default function Home() {
 
   function openNewChat(draftKey = newDraftKey.current) { saveDraft(selectedRef.current?.id || newDraftKey.current, textRef.current); newDraftKey.current = draftKey; request.current++; stickToBottom.current = true; restoreScroll.current = null; select(null); setEntries([]); setItemCursor(null); setText(savedDraft(draftKey)); setError(""); restoreAttachments(draftKey); setLoading(false); setView("chat"); setSidebar(false); requestAnimationFrame(() => composerRef.current?.focus()); }
   const newChat = () => openNewChat(tabDraftKey(activeTab(tabsRef.current)));
+  async function openObservedChat(id: string) {
+    try {
+      const result = await api<{ thread: Thread }>(`/threads/${encodeURIComponent(id)}?limit=1`);
+      upsertThread(result.thread);
+      await loadThread(result.thread);
+    } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
+  }
   async function openSessionManager() {
     if (openingSessionManagerRef.current) return;
     openingSessionManagerRef.current = true; setOpeningSessionManager(true);
@@ -1853,7 +1862,7 @@ export default function Home() {
       {view === "customize" && <div className="page-scroll"><ViewBoundary label="Ledger"><CustomizeView cwd={cwd} onOpenSettings={() => openSettings("mcp")}
         onConnectGithub={hasTerminal ? () => { show("chat"); setTuiLaunch({ key: side.openTerminal(cwd), command: "github-login", token: Date.now() }); } : undefined}
         onCreateSkill={() => { newChat(); requestAnimationFrame(() => editDraft("Use $skill-creator to create a new skill that ")); }} /></ViewBoundary></div>}
-      {view === "observability" && <ViewBoundary label="Observability"><ObservabilityView /></ViewBoundary>}
+      {view === "observability" && <ViewBoundary label="Observability"><ObservabilityView onOpenChat={id => void openObservedChat(id)} hiddenChats={hidden.current} /></ViewBoundary>}
       {view === "chat" && <ViewBoundary label="Chat" resetKey={selected?.id}><div className="chat-split"><div className={`chat-view${!selected && !shownEntries.length ? " empty-chat" : ""}`}>
         <div className="chat-scroll-wrap"><div className="chat-scroll" ref={scroll} onScroll={event => { const element = event.currentTarget; stickToBottom.current = element.scrollHeight - element.scrollTop - element.clientHeight < 80; }}><div className="chat-content">
           {itemCursor && <Button variant="outline" className="load-earlier-messages" disabled={loading} onClick={() => void older()}>Load earlier messages</Button>}
