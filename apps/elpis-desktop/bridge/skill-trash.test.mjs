@@ -110,8 +110,8 @@ test('a folder containing another listed skill cannot be deleted along with it',
   assert.equal(await fs.readFile(nested, 'utf8'), 'protected');
 });
 
-test('Trash collisions, spaces, percent signs and non-ASCII folder names restore the exact skill', async t => {
-  const f = await fixture(t), name = 'مهارت 100% $(echo shell)';
+test('Trash collisions, dotted names, spaces, percent signs and non-ASCII folders restore the exact skill', async t => {
+  const f = await fixture(t), name = 'مهارت 100% $(echo shell).skill';
   const paths = ['user', 'project'].map(scope => path.join(f.home, scope, 'skills', name, 'SKILL.md'));
   for (const [index, file] of paths.entries()) {
     await fs.mkdir(path.dirname(file), { recursive: true }); await fs.writeFile(file, `Skill ${index}`);

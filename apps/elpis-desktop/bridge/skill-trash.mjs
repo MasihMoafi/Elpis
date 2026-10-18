@@ -49,8 +49,7 @@ export class SkillTrash {
     const entries = [];
     for (const location of locations) {
       for (const name of (await fs.readdir(path.join(location, 'info')).catch(missing)) ?? []) {
-        const base = path.basename(folder);
-        if (!name.endsWith('.trashinfo') || (name !== `${base}.trashinfo` && !name.startsWith(`${base}.`))) continue;
+        if (!name.endsWith('.trashinfo')) continue;
         const info = path.join(location, 'info', name), raw = await fs.readFile(info, 'utf8').catch(missing);
         const encoded = raw?.match(/^Path=(.*)$/m)?.[1];
         if (!encoded) continue;
