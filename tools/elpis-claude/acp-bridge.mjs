@@ -402,7 +402,13 @@ async function persistReduction(threadId) {
 // their requests and replies keep their own ids, including when both clients use id 1.
 const providerOwners = new Map();
 const subscriptions = new Map(); // physical client -> threads it opened
-const forwarded = new Map(); // bridge id -> original client and request id
+// A completed callback may be the last thing keeping a detached context alive. Defer the
+// check until its current cleanup (including any new queued work) has finished.
+class BusyMap extends Map {
+  delete(key) { const changed = super.delete(key); if (changed) queueMicrotask(checkIdle); return changed; }
+  clear() { const changed = this.size; super.clear(); if (changed) queueMicrotask(checkIdle); }
+}
+const forwarded = new BusyMap(); // bridge id -> original client and request id
 const startingProviders = new Map(); // start response must name the model before its notification
 const contexts = new Set();
 const sendClient = (client, msg) => { if (client.readyState === 1) client.sendWire(JSON.stringify(msg)); };
@@ -560,11 +566,16 @@ wss.on("connection", (ws) => {
         threadSandbox, sessions, claudeModel, claudeEffort, resumeResults, sessionModel,
         threadCollab, threadAccess, lastTurnUsage, forkParent, queues, goals, ownHelpers, pendingSteers]) cache.delete(tid);
     },
-    busy: () => activeTurns.size > 0 || engineTurns.size > 0 || structured.size > 0 || pendingStart.size > 0 || pendingResume.size > 0 || engineReqs.size > 0
+    // An abandoned request is bookkeeping, not running work. Turns (including native
+    // background agents) and structured tool calls still outlive their terminal.
+    busy: () => activeTurns.size > 0 || engineTurns.size > 0 || structured.size > 0
+      || (ws.readyState === 1 && (pendingStart.size > 0 || pendingResume.size > 0 || engineReqs.size > 0))
       || [...forwarded.values()].some((r) => r.owner === ws),
     close: () => { cancelRelays(ws); engine.kill(); for (const a of acps.values()) a.kill(); },
     releaseIfUnused: () => {
       if (ws.readyState === 1 || context.busy() || [...relayed.values()].some((r) => r.origin === ws)
+        // Let detached requests finish during the idle grace, without extending it forever.
+        || pendingStart.size || pendingResume.size || engineReqs.size
         || [...providerOwners].some(([tid, owner]) => owner.ws === ws && viewers(tid).length)) return;
       context.close(); contexts.delete(context);
       for (const [tid, owner] of providerOwners) if (owner.ws === ws) providerOwners.delete(tid);
@@ -758,13 +769,13 @@ wss.on("connection", (ws) => {
     } catch (e) { log(`${agent.key} catalog: ${e.message}`); return { models: [], efforts: {}, fallback: { levels: [], current: null }, modes: null }; }
   }
   const pendingModelList = new Set();
-  const pendingResume = new Map();
+  const pendingResume = new BusyMap();
   const resumeOptions = new Map();
   const pendingNativeRoutes = new Map();
   // A Claude model picked as the default ("enter default") lives in the bridge's store, not in
   // config.toml, which plain Elpis also reads. New chats, rewinds and the next start follow it.
   const pendingConfigRead = new Set();
-  const pendingStart = new Map();
+  const pendingStart = new BusyMap();
   let engineDefault = null; // asked once, after the TUI has initialized the engine
   const pendingTurnsList = new Map();
   const pendingItemsList = new Map();
@@ -855,7 +866,7 @@ wss.on("connection", (ws) => {
     if (failure) throw failure;
     return out.filter(Boolean);
   }
-  const engineReqs = new Map();
+  const engineReqs = new BusyMap();
   let engineSeq = 0;
   const engineCall = (method, params, timeoutMs = 0) => new Promise((resolve, reject) => {
     const id = `acp-bridge-engine-${++engineSeq}`;
@@ -1071,8 +1082,8 @@ wss.on("connection", (ws) => {
   // /experimental and hand edits alike, as GPT turns do.
   const subagentsAllowed = (cwd) => engineCall("config/read", { includeLayers: false, cwd })
     .then((r) => r?.config?.features?.multi_agent !== false, (e) => { log(`subagents switch unread: ${e.message ?? JSON.stringify(e)}`); return true; });
-  const activeTurns = new Map(); // thread id -> its running Claude or Antigravity turn
-  const engineTurns = new Map(); // thread id -> its running engine turn
+  const activeTurns = new BusyMap(); // thread id -> its running Claude or Antigravity turn
+  const engineTurns = new BusyMap(); // thread id -> its running engine turn
   // Providers may edit without callbacks in Accept edits, Auto, or Bypass. Stop a running turn
   // whose authority a restriction reduces; its next prompt applies the confirmed restricted mode.
   const stopIfReduced = (tid, previousAccess) => {
@@ -1235,6 +1246,10 @@ wss.on("connection", (ws) => {
     }
     if (parsed?.method === "turn/started" && parsed.params?.turn?.id) engineTurns.set(parsed.params.threadId, parsed.params.turn.id);
     if (parsed?.method === "turn/completed") { engineTurns.delete(parsed.params?.threadId); checkIdle(); }
+    // An unsubscribed native thread no longer sends its turn/completed here. The engine
+    // broadcasts thread/closed after its work stops and its unsubscribed runtime unloads.
+    if (parsed?.method === "thread/closed") engineTurns.delete(parsed.params?.threadId);
+    if (parsed?.method === "thread/status/changed" && ["idle", "notLoaded"].includes(parsed.params?.status?.type)) engineTurns.delete(parsed.params.threadId);
     if (parsed?.method === "thread/settings/updated") {
       const tid = parsed.params?.threadId;
       const previousAccess = accessModeOf(tid, "claude", threadPolicy.get(tid) !== "never");
@@ -2085,7 +2100,7 @@ wss.on("connection", (ws) => {
   // Chat titles and /recap on a Claude chat: the TUI starts a hidden ephemeral thread on the
   // chat's model and asks for JSON. A one-off Claude session with no tools, no MCP servers and
   // no user settings answers it; nothing is recorded in the store or the engine.
-  const structured = new Map(); // hidden thread -> its Claude session
+  const structured = new BusyMap(); // hidden thread -> its Claude session
   async function structuredClaude(msg) {
     const { threadId, input = [], outputSchema = null } = msg.params;
     const turnId = randomUUID();

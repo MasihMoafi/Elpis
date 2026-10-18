@@ -482,6 +482,26 @@ function tailOf(file, from) {
   try { return fs.readFileSync(file, "utf8").slice(from).trim().split("\n").slice(-20).join("\n"); } catch { return ""; }
 }
 
+// Older bundles have no control RPC. Linux's socket table can still tell whether their
+// listener has accepted connections, without attaching a new terminal to that bridge.
+// The launch lock prevents another launcher from joining between this check and SIGTERM.
+async function retireUnattachedBridge(rt, state) {
+  if (process.platform !== "linux") return false;
+  await pause(100); // let the reachability probe's accepted socket close
+  const sockets = spawnSync("ss", ["-xHn", "state", "connected", "src", rt.sock], { encoding: "utf8", timeout: 2000 });
+  if (sockets.status !== 0 || sockets.stdout.trim()) return false;
+  const recorded = readJson(rt.state);
+  if (recorded?.pid !== state.pid || recorded?.token !== state.token) return false;
+  if (alive(state.pid, state.token)) {
+    note(`stopping unattached bridge ${state.pid} gracefully before switching installations`);
+    try { process.kill(state.pid, "SIGTERM"); } catch (e) { if (e.code !== "ESRCH") throw e; }
+  }
+  // Never force-kill a bridge or start its replacement before its save/shutdown completes.
+  for (let i = 0; i < 100 && alive(state.pid, state.token); i++) await pause(100);
+  if (alive(state.pid, state.token)) throw new Error(`the unattached Elpis bridge (pid ${state.pid}) has not finished saving and stopping; try again in a few seconds; see ${rt.log}`);
+  return true;
+}
+
 async function ensureBridge(rt, bridgeScript, identity) {
   const state = readJson(rt.state);
   const reachable = await probe(rt.sock);
@@ -489,6 +509,7 @@ async function ensureBridge(rt, bridgeScript, identity) {
     if (reachable.ok) {
       const config = differingNames(state, process.env);
       if (state.identity === identity.hash && !config.length) return;
+      if (state.identity !== identity.hash && await retireUnattachedBridge(rt, state)) return ensureBridge(rt, bridgeScript, identity);
       const lines = [];
       if (state.identity !== identity.hash) {
         lines.push(`an Elpis bridge for ${rt.home} is already running from a different installation, so this terminal was not started.`,
