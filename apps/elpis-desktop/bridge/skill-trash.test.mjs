@@ -25,7 +25,11 @@ async function fixture(t) {
   socket.send = raw => {
     const request = JSON.parse(raw); calls.push(request);
     const result = request.method === 'skills/list' ? { data: [{ cwd: home, skills: skills.filter(skill => existsSync(skill.path)), errors: [] }] }
-      : request.method === 'plugin/installed' ? { marketplaces: [] } : { config: {} };
+      : request.method === 'plugin/installed' ? { marketplaces: [] }
+      // The roots config/read implies: <user config folder>/skills, a project's config folder skills and extra_roots.
+      : request.method === 'config/read' ? { config: { skills: { extra_roots: [path.join(home, 'user/skills')] } },
+        layers: [{ name: { type: 'user', file: path.join(home, 'config.toml'), profile: null }, config: {} }, { name: { type: 'project', dotCodexFolder: path.join(home, 'project') }, config: {} }] }
+      : { config: {} };
     queueMicrotask(() => socket.emit('message', JSON.stringify({ id: request.id, result })));
   };
   const client = new DesktopClient(socket, { rewindHome: path.join(home, 'rewind'),
@@ -97,7 +101,7 @@ test('expired Undo leaves the entire skill folder safely in Trash', async t => {
   const f = await fixture(t), skill = f.skills[0];
   let now = 0;
   const trash = new SkillTrash({ env: { ...process.env, XDG_DATA_HOME: path.join(f.home, 'data') }, now: () => now });
-  const deleted = await trash.delete(skill.path, [{ ...skill, plugin: null }]);
+  const deleted = await trash.delete(skill.path, [{ ...skill, plugin: null }], [f.root]);
   now = 60001;
   await assert.rejects(trash.undo(deleted.token), /expired/);
   await assert.rejects(fs.stat(skill.path), { code: 'ENOENT' });
@@ -150,4 +154,25 @@ test('skill Trash HTTP routes require an app session and reject extra fields', a
   const deleted = await post('/api/customize/skill/delete', { path: f.skills[0].path }, cookie);
   assert.equal(deleted.status, 200);
   assert.equal((await post('/api/customize/skill/undo', { token: (await deleted.json()).deleted.token }, cookie)).status, 200);
+});
+
+test('a skill folder linked into a skill root is refused at the canonical path the engine reports', async t => {
+  const f = await fixture(t);
+  // e.g. ~/.agents/skills/my-tool -> ~/projects/my-tool/skill: the source lives outside every skill root.
+  const source = path.join(f.home, 'projects/my-tool/skill');
+  await fs.mkdir(source, { recursive: true }); await fs.writeFile(path.join(source, 'SKILL.md'), 'source of a linked skill');
+  await fs.symlink(source, path.join(f.root, 'my-tool'));
+  // User and repo roots follow directory symlinks and report canonical SKILL.md paths (codex-rs ext/skills loader/host.rs).
+  f.skills.push({ name: 'my-tool', scope: 'user', path: path.join(source, 'SKILL.md'), enabled: true });
+  await assert.rejects(f.client.deleteSkill({ path: path.join(source, 'SKILL.md') }), /link|root/i);
+  assert.equal(await fs.readFile(path.join(source, 'SKILL.md'), 'utf8'), 'source of a linked skill');
+  // A root that is itself a link (dotfiles) still holds deletable skills: extra root <home>/user/skills -> <home>/dotfiles/skills.
+  const kept = path.join(f.home, 'dotfiles/skills/kept/SKILL.md');
+  await fs.mkdir(path.dirname(kept), { recursive: true }); await fs.writeFile(kept, 'in a linked root');
+  await fs.symlink(path.join(f.home, 'dotfiles'), path.join(f.home, 'user'));
+  f.skills.push({ name: 'kept', scope: 'user', path: kept, enabled: true });
+  const result = await f.client.deleteSkill({ path: kept });
+  await assert.rejects(fs.stat(kept), { code: 'ENOENT' });
+  await f.client.undoSkillDelete({ token: result.deleted.token });
+  assert.equal(await fs.readFile(kept, 'utf8'), 'in a linked root');
 });

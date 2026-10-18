@@ -12,7 +12,7 @@ import { replacementEligibility } from '../lib/turn-replacement.ts';
 import { providerModels } from './provider-models.mjs';
 import { attachmentInput, recordedMedia } from './attachments.mjs';
 import { pluginsSnapshot, skillsSnapshot } from './customize.mjs';
-import { SkillTrash } from './skill-trash.mjs';
+import { SkillTrash, skillRoots } from './skill-trash.mjs';
 import { createGithubConnector } from './github-connector.mjs';
 import { scanDeletionThreads } from '../lib/thread-deletion.ts';
 import { changedFiles, createChatWorktree, currentBranch, discardFile, fileDiff, isChatWorktreePath, releaseChatWorktree, restoreChatWorktree, reviewChoices, undoChatWorktree, workingDiff } from './git.mjs';
@@ -698,8 +698,9 @@ export class DesktopClient extends EventEmitter {
     object(input, ['path', 'cwd']); text(input.path, 'skill', 4096);
     const snapshot = await this.customize(input.cwd);
     if (!snapshot.skills.data) throw new BridgeError(snapshot.skills.error || 'Skills could not be listed');
+    const read = await this.#rpc('config/read', { includeLayers: true, ...(input.cwd ? { cwd: input.cwd } : {}) });
     let deleted;
-    try { deleted = await this.#skillTrash.delete(input.path, snapshot.skills.data); }
+    try { deleted = await this.#skillTrash.delete(input.path, snapshot.skills.data, skillRoots(read, input.cwd)); }
     catch (error) { throw new BridgeError(error.message); }
     return { ...await this.customize(input.cwd), deleted };
   }

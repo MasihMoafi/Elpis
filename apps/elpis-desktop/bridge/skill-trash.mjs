@@ -10,9 +10,27 @@ export const ownedSkill = skill => ['user', 'repo'].includes(skill.scope) && !sk
 const inside = (root, target) => { const rel = path.relative(root, target); return rel !== '' && !rel.startsWith(`..${path.sep}`) && rel !== '..' && !path.isAbsolute(rel); };
 const missing = error => { if (error.code !== 'ENOENT') throw error; return null; };
 
-/** The engine lists SKILL.md files, not roots: the parent of each listed skill folder is its known root.
- * Only exact listed files can be removed; resolving both ends prevents symlinks escaping that root. */
-async function skillFolder(file, skills) {
+/** The engine's skill roots (codex-rs ext/skills host_roots.rs): the user config folder's `skills`, `~/.agents/skills`,
+ * `[skills] extra_roots`, each project config folder's `skills` and `.agents/skills` from the project folder upwards.
+ * skills/list reports only canonical SKILL.md paths, so a folder linked into a root shows at its target, outside it. */
+export function skillRoots(read, cwd) {
+  const roots = [path.join(os.homedir(), '.agents', 'skills')];
+  for (const { name } of Array.isArray(read?.layers) ? read.layers : []) {
+    if (name?.type === 'user' && typeof name.file === 'string') roots.push(path.join(path.dirname(name.file), 'skills'));
+    if (name?.type === 'project' && typeof name.dotCodexFolder === 'string') roots.push(path.join(name.dotCodexFolder, 'skills'));
+  }
+  const extra = read?.config?.skills?.extra_roots;
+  if (Array.isArray(extra)) roots.push(...extra.filter(root => typeof root === 'string'));
+  for (let dir = cwd; typeof dir === 'string' && path.isAbsolute(dir); dir = path.dirname(dir)) {
+    roots.push(path.join(dir, '.agents', 'skills'));
+    if (path.dirname(dir) === dir) break;
+  }
+  return roots.filter(root => path.isAbsolute(root));
+}
+
+/** Only exact listed files can be removed, and only from inside one of the engine's roots (`skillRoots`);
+ * resolving both ends prevents symlinks escaping that root. */
+async function skillFolder(file, skills, roots) {
   if (typeof file !== 'string' || !path.isAbsolute(file) || file.includes('\0') || file.split(path.sep).includes('..') || path.basename(file) !== 'SKILL.md') throw Error('Invalid skill path');
   const skill = skills.find(skill => skill.path === file);
   if (!skill) throw Error('That skill is not listed');
@@ -25,6 +43,8 @@ async function skillFolder(file, skills) {
       || !inside(realRoot, realFolder) || path.dirname(realFile) !== realFolder
       || (process.getuid && folderStat.uid !== process.getuid())) throw Error('Skill folder must be owned and inside its known root, without symbolic links');
   if (skills.some(other => other.path !== file && inside(folder, other.path) && !ownedSkill(other))) throw Error('Skill folder contains other listed skills that are protected');
+  const realRoots = await Promise.all((roots ?? []).map(known => fs.realpath(known).catch(() => null)));
+  if (!realRoots.some(known => known && inside(known, realFolder))) throw Error('This skill is linked into your skills from another folder; remove its link instead');
   return { skill, folder, realRoot, realFolder, folderStat };
 }
 
@@ -61,12 +81,12 @@ export class SkillTrash {
     }
     return entries;
   }
-  async delete(file, skills) {
+  async delete(file, skills, roots) {
     for (const [token, entry] of this.#pending) if (entry.until <= this.now()) this.#pending.delete(token);
-    const target = await skillFolder(file, skills), locations = await this.#locations(target.folder);
+    const target = await skillFolder(file, skills, roots), locations = await this.#locations(target.folder);
     const previous = new Set((await this.#entries(locations, target.folder)).map(entry => entry.info));
     // Check again immediately before invoking gio; the renderer cannot substitute a different folder.
-    const checked = await skillFolder(file, skills);
+    const checked = await skillFolder(file, skills, roots);
     if (checked.realFolder !== target.realFolder || checked.folderStat.ino !== target.folderStat.ino) throw Error('Skill folder changed; refresh Ledger');
     try { await run('gio', ['trash', '--', target.folder], { env: this.env, timeout: 10000 }); }
     catch { throw Error('Could not move skill to Trash'); }
