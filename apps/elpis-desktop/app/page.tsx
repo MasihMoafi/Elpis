@@ -2,7 +2,7 @@
 
 import dynamic from "next/dynamic";
 import { cloneElement, useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
-import { AgentsIcon, ArchiveIcon, ChatIcon, FolderIcon, NewChatIcon, PinIcon, PlusIcon, SendIcon } from "@/components/elpis-icons";
+import { AgentsIcon, ArchiveIcon, ChatIcon, FolderIcon, LoveSpotIcon, NewChatIcon, PinIcon, PlusIcon, SendIcon } from "@/components/elpis-icons";
 import { Activity, Archive, ArrowLeft, Blocks, ChevronRight, PanelLeft, PanelRight, PanelRightClose, PanelRightOpen, Pin, RefreshCw, Search, Square, Workflow, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { OptionSelect } from "@/components/ui/option-select";
@@ -1445,7 +1445,7 @@ export default function Home() {
         <Button className="new-chat" variant="ghost" aria-current={view === "chat" && !selected ? "page" : undefined} disabled={projectChanging} onClick={newChat}><NewChatIcon size={16} />New chat</Button>
         <Button variant="ghost" aria-current={view === "agents" ? "page" : undefined} onClick={() => show("agents")}><AgentsIcon size={16} />Agents{working > 0 && <span className="nav-badge" aria-hidden="true"><i />{working}</span>}</Button>
         <Button variant="ghost" aria-current={view === "canvas" ? "page" : undefined} onClick={() => show("canvas")}><Workflow size={16} />Canvas</Button>
-        <Button variant="ghost" aria-current={view === "loveSpot" ? "page" : undefined} onClick={() => show("loveSpot")}><img src="/love-spot.png" alt="" width={16} height={16} />Love Spot</Button>
+        <Button variant="ghost" aria-current={view === "loveSpot" ? "page" : undefined} onClick={() => show("loveSpot")}><LoveSpotIcon size={16} />Love Spot</Button>
         <Button variant="ghost" aria-current={view === "customize" ? "page" : undefined} onClick={() => show("customize")}><Blocks size={16} />Customize</Button>
         <Button variant="ghost" aria-current={view === "observability" ? "page" : undefined} onClick={() => show("observability")}><Activity size={16} />Observability</Button>      </nav>
       <SearchField ref={searchInput} hint="Ctrl Shift K" aria-label="Search conversations" placeholder="Search chats" maxLength={200} value={search} onChange={e => setSearch(e.target.value)} onKeyDown={e => { if (e.key === "Escape") { e.preventDefault(); setSearch(""); focusComposer(); } }} />
