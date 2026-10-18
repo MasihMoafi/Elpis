@@ -190,6 +190,15 @@ test('chat groups, their chats and the sidebar order persist across a desktop re
   await assert.rejects(store.set('elpis-chat-groups-v2', groups), /Unsupported/);
 });
 
+test('reading options patch the preferences as the renderer saves them; wrong values are refused', async () => {
+  const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'elpis-reading-state-')), 'workspace.json');
+  const store = createStateStore(file), key = 'elpis-preferences-v1';
+  const reading = { transcriptSize: 'l', transcriptWidth: 'm', interfaceFont: 'serif', codeFont: 'DejaVu Sans Mono' };
+  await store.patch({ key, baseRevision: 0, changes: reading });
+  assert.deepEqual(JSON.parse(createStateStore(file).read()[key]), reading);
+  for (const changes of [{ transcriptSize: 'xl' }, { transcriptWidth: 'full' }, { interfaceFont: 'comic' }, { codeFont: 12 }]) await assert.rejects(store.patch({ key, baseRevision: 1, changes }), /Unsupported/, JSON.stringify(changes));
+});
+
 test('retrying the same value after an actual write failure really persists it', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'elpis-state-retry-'));
   const file = path.join(dir, 'workspace.json');

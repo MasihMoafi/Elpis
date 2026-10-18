@@ -19,7 +19,7 @@ export function CommandPanel({ title, onClose, onBack, children }: { title: stri
     const onKey = (event: KeyboardEvent) => { if (event.key === "Escape" && !event.defaultPrevented) { event.preventDefault(); close.current(); } };
     document.addEventListener("keydown", onKey); return () => document.removeEventListener("keydown", onKey);
   }, []);
-  return <section ref={panel} tabIndex={-1} role="dialog" aria-label={title} className="hud-popover mx-auto mb-2 w-full max-w-[740px] text-sm outline-none">
+  return <section ref={panel} tabIndex={-1} role="dialog" aria-label={title} className="hud-popover mx-auto mb-2 w-full max-w-[var(--transcript-width,740px)] text-sm outline-none">
     <header className="mb-2 flex items-center gap-2">
       {onBack && <Button type="button" variant="ghost" size="icon-xs" aria-label="Back" onClick={onBack}><ArrowLeft size={14} /></Button>}
       <h2 className="hud-label min-w-0 flex-1 truncate">{title}</h2>

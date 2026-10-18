@@ -67,7 +67,7 @@
   .hud-menu, .hud-popover, .hud-dialog, .side-chat, .pending-input-panel, .full-view > .workspace-content, .composer) { border-radius:var(--cut-lg) 0; corner-shape:bevel; }
 @layer base { * { box-sizing:border-box; border-color:var(--border); } [hidden] { display:none!important; } }
 * { scrollbar-width:thin; scrollbar-color:color-mix(in oklch, var(--foreground) 16%, transparent) transparent; }
-body { margin:0; background:var(--background); color:var(--foreground); font:13.5px/1.5 Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; font-feature-settings:"cv11","ss01"; -webkit-font-smoothing:antialiased; }
+body { margin:0; background:var(--background); color:var(--foreground); font:13.5px/1.5 var(--ui-font, Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif); font-feature-settings:"cv11","ss01"; -webkit-font-smoothing:antialiased; }
 /* --text-small: the smallest text in the app (Masih: icons and text larger, never smaller). */
 :root { --serif:"Inter Display", Inter, system-ui, sans-serif; --mono:"JetBrains Mono", "DejaVu Sans Mono", ui-monospace, monospace; --text-small:12px; }
 button, select { cursor:pointer; }
@@ -97,8 +97,8 @@ button:disabled { cursor:not-allowed; }
 .search-field.bare:focus-within { outline:none; }
 .sidebar > .search-field { margin:4px 0 2px; }
 /* Keys: a keycap in shortcut lists, a quiet hint beside a field or menu item. */
-.kbd { display:inline-flex; align-items:center; height:22px; padding:0 7px; border:1px solid var(--border); border-bottom-width:2px; background:var(--background); font:500 var(--text-small)/1 Inter, system-ui, sans-serif; color:var(--foreground); white-space:nowrap; }
-.kbd-hint { flex-shrink:0; margin-left:auto; padding-left:12px; font:500 var(--text-small)/1 Inter, system-ui, sans-serif; color:var(--subtle-foreground); white-space:nowrap; }
+.kbd { display:inline-flex; align-items:center; height:22px; padding:0 7px; border:1px solid var(--border); border-bottom-width:2px; background:var(--background); font:500 var(--text-small)/1 var(--ui-font, Inter, system-ui, sans-serif); color:var(--foreground); white-space:nowrap; }
+.kbd-hint { flex-shrink:0; margin-left:auto; padding-left:12px; font:500 var(--text-small)/1 var(--ui-font, Inter, system-ui, sans-serif); color:var(--subtle-foreground); white-space:nowrap; }
 .thread-list { overflow:auto; flex:1; min-height:0; margin:0 -4px; padding:0 4px; }
 .thread-list > section:first-child .section-label { padding-top:8px; }
 .thread-link { min-width:0; flex:1; text-align:left; background:none; border:0; padding:7px 4px 7px 8px; border-radius:7px; display:block; color:inherit; font-size:13px; line-height:20px; }
@@ -180,7 +180,8 @@ button:disabled { cursor:not-allowed; }
 /* A notice that is not an error, such as "Deleted …" with its Undo. */
 .error-banner.notice { background:var(--muted); border-bottom-color:var(--border); }
 .chat-scroll { flex:1; min-height:0; overflow:auto; padding:28px 32px 12px; }
-.chat-content { max-width:740px; margin:auto; line-height:1.65; font-size:14.5px; }
+/* Settings → Appearance sets the transcript text size and the columns' width (lib/reading.ts); these are the defaults. */
+.chat-content { max-width:var(--transcript-width, 740px); margin:auto; line-height:1.65; font-size:var(--transcript-size, 14.5px); }
 /* A quick read shows nothing; the notice fades in only when reading a chat takes longer. */
 .chat-loading { animation:appear .2s ease .6s both; }
 @keyframes appear { from { opacity:0; } }
@@ -194,7 +195,7 @@ button:disabled { cursor:not-allowed; }
 .markdown p { margin:0 0 12px; } .markdown pre { background:var(--recessed); border:1px solid var(--hairline); padding:12px 14px; overflow:auto; line-height:1.55; } .markdown code { font-size:12.5px; font-family:var(--mono); } .markdown :not(pre) > code { color:var(--code-ink); background:var(--muted); border:1px solid var(--hairline); padding:1px 5px; border-radius:5px; font-size:13px; } .markdown ul,.markdown ol { padding-inline-start:22px; margin:8px 0 12px; } .markdown li { margin:3px 0; } .markdown ul { list-style:disc; } .markdown ol { list-style:decimal; } .markdown a { color:var(--primary); text-decoration:underline; text-underline-offset:2px; } .markdown-table { max-width:100%; overflow:auto; margin:0 0 14px; } .markdown table { border-collapse:collapse; font-size:13px; width:max-content; } .markdown td,.markdown th { border:1px solid var(--border); padding:6px 10px; min-width:6rem; overflow-wrap:normal; word-break:normal; } .markdown h1,.markdown h2,.markdown h3,.markdown h4,.markdown h5,.markdown h6 { font-weight:600; margin:18px 0 8px; letter-spacing:-.01em; } .markdown h1 { font-size:18px; } .markdown h2 { font-size:16px; } .markdown h3 { font-size:14.5px; }
 .tool-item { border:1px solid var(--border); margin:12px 0; font-size:12px; } .tool-item summary { padding:10px 14px; cursor:pointer; } .tool-item pre { margin:0; padding:12px; overflow:auto; max-height:340px; white-space:pre-wrap; }
 .composer-wrap { position:relative; padding:6px 32px 14px; }
-.composer { max-width:740px; margin:auto; border:1px solid var(--border); background:var(--composer); padding:10px 10px 8px 14px; box-shadow:var(--shadow); }
+.composer { max-width:var(--transcript-width, 740px); margin:auto; border:1px solid var(--border); background:var(--composer); padding:10px 10px 8px 14px; box-shadow:var(--shadow); }
 .composer:focus-within { border-color:color-mix(in oklch, var(--ink), var(--border) 70%); }
 .dictation-control { display:flex; align-items:center; gap:6px; margin-top:3px; min-width:0; }
 .dictation-buttons { display:flex; flex-shrink:0; align-items:center; }
@@ -209,7 +210,7 @@ button:disabled { cursor:not-allowed; }
 .model-select > svg { flex-shrink:0; color:var(--muted-foreground); }
 span.model-select { display:inline-flex; align-items:center; background-image:none; padding-right:8px; }
 .model-select option { background:var(--card); color:var(--foreground); }
-.composer-meta { max-width:740px; margin:6px auto 0; display:flex; flex-wrap:wrap; align-items:center; gap:4px; min-width:0; padding:0 6px; }
+.composer-meta { max-width:var(--transcript-width, 740px); margin:6px auto 0; display:flex; flex-wrap:wrap; align-items:center; gap:4px; min-width:0; padding:0 6px; }
 .composer-chip { display:inline-flex; align-items:center; gap:6px; height:28px; padding:0 7px; font-size:12.5px; color:var(--muted-foreground); white-space:nowrap; max-width:220px; overflow:hidden; text-overflow:ellipsis; }
 .composer-chip > svg:first-child, .model-select > svg:first-child { width:16px; height:16px; }
 .composer-hint { margin-left:auto; color:var(--subtle-foreground); font-size:var(--text-small); text-align:right; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
@@ -237,7 +238,7 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .empty-chat .empty-state { min-height:0; padding:0 0 8vh; }
 .project-heading-trigger { font:inherit; color:var(--primary); background:none; border:0; padding:0; cursor:pointer; text-decoration:underline dotted 1px; text-underline-offset:6px; }
 .project-heading-trigger:hover, .project-heading-trigger[aria-expanded="true"] { text-decoration-style:solid; }
-.composer-tray { max-width:740px; margin:0 auto -1px; display:flex; align-items:center; gap:4px; padding:5px 10px 4px; border:1px solid var(--hairline); border-bottom:0; border-radius:var(--cut-lg) 0 0 0; corner-shape:bevel; background:color-mix(in oklch, var(--composer) 60%, transparent); }
+.composer-tray { max-width:var(--transcript-width, 740px); margin:0 auto -1px; display:flex; align-items:center; gap:4px; padding:5px 10px 4px; border:1px solid var(--hairline); border-bottom:0; border-radius:var(--cut-lg) 0 0 0; corner-shape:bevel; background:color-mix(in oklch, var(--composer) 60%, transparent); }
 .composer-tray + .composer { border-top-left-radius:0; border-top-right-radius:0; }
 .project-chip { border:0; background:none; cursor:pointer; }
 .project-chip:hover, .project-chip[aria-expanded="true"] { color:var(--foreground); background:var(--hover); }
@@ -731,7 +732,7 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .no-browser > .side-panel { display:none; }
 .composer-hint:empty { display:none; }
 /* The agent's task list above the message box (components/task-list.tsx), as Claude Code shows its todo list. */
-.task-list { max-width:740px; margin:0 auto 8px; padding:8px 12px; border:1px solid var(--border); background:var(--card); font-size:13px; }
+.task-list { max-width:var(--transcript-width, 740px); margin:0 auto 8px; padding:8px 12px; border:1px solid var(--border); background:var(--card); font-size:13px; }
 .task-list-head { display:flex; align-items:center; gap:10px; }
 .task-list-head .hud-menu-title { padding:0; }
 .task-list-count { margin-left:auto; color:var(--muted-foreground); font-variant-numeric:tabular-nums; }

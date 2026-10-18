@@ -10,7 +10,7 @@ import { clearFollowUps, removeFollowUp, sendFollowUpNow, takeFollowUp, useFollo
  * composer can take it back when that element goes away with the message. */
 type Act = { id: string; label: string; icon: ReactNode; destructive?: boolean; run: (origin: Element | null) => void };
 
-const TRAY = "mx-auto mb-2 w-full max-w-[740px] overflow-hidden rounded-sm border bg-card text-sm";
+const TRAY = "mx-auto mb-2 w-full max-w-[var(--transcript-width,740px)] overflow-hidden rounded-sm border bg-card text-sm";
 const ROW = "flex min-h-10 items-center gap-2 px-3";
 const count = (n: number) => `${n} message${n === 1 ? "" : "s"} queued`;
 const preview = (item: FollowUp) => item.text || `${item.attachments.length} attached file${item.attachments.length === 1 ? "" : "s"}`;

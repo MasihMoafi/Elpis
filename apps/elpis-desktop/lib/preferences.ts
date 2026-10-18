@@ -2,6 +2,9 @@
 
 import { useEffect, useSyncExternalStore } from "react";
 import { appStorage } from "@/lib/projects";
+// Types only: desktop/state.test.cjs runs this file with nothing but appStorage to require. readingStyle (lib/reading.ts)
+// never applies a code font name it refuses, and Appearance refuses it before saving.
+import type { InterfaceFont, ReadingStep } from "@/lib/reading";
 
 /** Desktop-local preferences from Settings → General and Notifications, saved on this device
  * (desktop workspace store, or localStorage in a browser). desktop/preferences.cjs reads confirmClose, closeToTray and
@@ -22,14 +25,21 @@ export type Preferences = {
   turnNotifications: "never" | "unfocused" | "always";
   inputNotifications: boolean;
   notificationSound: boolean;
+  /** Settings → Appearance (lib/reading.ts): transcript text size and width, interface font, code font ("" default). */
+  transcriptSize: ReadingStep;
+  transcriptWidth: ReadingStep;
+  interfaceFont: InterfaceFont;
+  codeFont: string;
 };
 export const DEFAULT_PREFERENCES: Preferences = {
   softWrap: false, defaultFolder: "", sendShortcut: "enter", followUp: "steer", showContextUsage: true, confirmClose: false, closeToTray: false, quickEntryShortcut: "Ctrl+Alt+Space", confirmDeleteChats: true,
   turnNotifications: "unfocused", inputNotifications: true, notificationSound: false,
+  transcriptSize: "m", transcriptWidth: "s", interfaceFont: "sans", codeFont: "",
 };
 export const PREFERENCES_KEY = "elpis-preferences-v1";
 const choices: { [K in keyof Preferences]?: readonly Preferences[K][] } = {
   sendShortcut: ["enter", "modEnter"], followUp: ["steer", "queue"], turnNotifications: ["never", "unfocused", "always"],
+  transcriptSize: ["s", "m", "l"], transcriptWidth: ["s", "m", "l"], interfaceFont: ["sans", "serif"],
 };
 
 function parse(raw: string | null): Preferences {

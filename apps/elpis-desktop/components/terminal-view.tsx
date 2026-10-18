@@ -9,6 +9,7 @@ import { RotateCcw } from "lucide-react";
 import { TerminalIcon } from "@/components/elpis-icons";
 import { Button } from "@/components/ui/button";
 import type { DesktopTerminal, TerminalSession } from "@/lib/desktop";
+import { usePreferences } from "@/lib/preferences";
 
 const folderName = (cwd: string) => cwd.split("/").filter(Boolean).at(-1) || cwd || "~";
 
@@ -124,6 +125,16 @@ export function TerminalView({ termKey, cwd, dark, launch }: Props) {
     observer.observe(host.current); return () => observer.disconnect();
   }, []);
   useEffect(() => { const frame = requestAnimationFrame(() => { if (panel.current) for (const view of views.values()) view.term.options.theme = theme(panel.current); }); return () => cancelAnimationFrame(frame); }, [dark]);
+  // Settings → Appearance → Code font: open shells take it too, once the page has set --mono (a frame later).
+  const { codeFont } = usePreferences();
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => {
+      if (!panel.current) return;
+      const font = getComputedStyle(panel.current).getPropertyValue("--mono").trim() || "monospace";
+      for (const view of views.values()) if (view.term.options.fontFamily !== font) { view.term.options.fontFamily = font; view.fit.fit(); }
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [codeFont]);
 
   // Once the shell is attached, run the requested TUI resume or gh's own interactive web sign-in.
   useEffect(() => {

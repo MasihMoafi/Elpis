@@ -16,6 +16,7 @@ import { FailedTurnCard, type FailedTurn } from "@/components/failed-turn-card";
 import { ViewBoundary } from "@/components/view-boundary";
 import { Transcript } from "@/components/transcript";
 import { readPins, savePins } from "@/lib/pins";
+import { readingStyle } from "@/lib/reading";
 import { addGroup, deleteGroup, emptyGroups, groupSections, moveChats, readGroups, renameGroup, sortChats, toggleCollapsed, writeGroups, type ChatGroup, type ChatGroups } from "@/lib/chat-groups";
 import { SHORTCUTS, shortcutFor } from "@/lib/shortcuts";
 import { CommandMenu, type CommandAction } from "@/components/command-menu";
@@ -500,6 +501,11 @@ export default function Home() {
   // The desktop gets the theme as dark or not, the choice (System keeps the operating system in charge of pages in the browser)
   // and the page's own --background, resolved: main paints the browser's blank pages with it.
   useEffect(() => { document.documentElement.classList.toggle("dark", dark); window.elpisDesktop?.setTheme?.(dark, { source: theme, background: getComputedStyle(document.body).backgroundColor }); }, [dark, theme]);
+  // Settings → Appearance's reading options, as CSS variables on the document, so menus and dialogs take them too.
+  useEffect(() => {
+    const root = document.documentElement.style;
+    for (const [name, value] of Object.entries(readingStyle(preferences))) root.setProperty(name, value);
+  }, [preferences.transcriptSize, preferences.transcriptWidth, preferences.interfaceFont, preferences.codeFont]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     let saved: string | null = null;
     try { saved = appStorage().getItem("elpis-theme"); const stored = readProjects(); newDraftKey.current = stored.selectedId ? `new-${stored.selectedId}` : "new"; setText(savedDraft(newDraftKey.current)); restoreAttachments(newDraftKey.current); setProjects(stored.projects); setProjectId(stored.selectedId); setCwd(stored.projects.find(item => item.id === stored.selectedId)?.cwd ?? ""); }
@@ -1634,11 +1640,11 @@ export default function Home() {
           {panel === "review" && selected && <ReviewPanel threadId={selected.id} onStart={target => void startReview(selected, target)} onClose={closePanel} />}
           {panel === "diff" && selected && <DiffPanel threadId={selected.id} onClose={closePanel} />}
           </ViewBoundary>
-          {slashNotice && <p role="status" className="mx-auto mb-2 w-full max-w-[740px] px-1 text-sm text-muted-foreground">{slashNotice}</p>}
+          {slashNotice && <p role="status" className="mx-auto mb-2 w-full max-w-[var(--transcript-width,740px)] px-1 text-sm text-muted-foreground">{slashNotice}</p>}
           {selected && plans[selected.id] && <TaskList plan={plans[selected.id]} running={activeTurns[selected.id] === plans[selected.id].turnId} />}
           <QueuedFollowUps threadId={selected?.id} activeTurnId={activeTurn} onError={setError} onComplete={restoreComposerFocus} onEdit={editQueued} />
           {!selected && <div className="composer-tray"><EnvironmentMenu folder={chatFolder || null} disabled={!ready || busy} worktree={newWorktree} onWorktree={setNewWorktree} /><ProjectMenu variant="chip" projects={projects} selected={project} disabled={!ready || busy} onSelect={selectProject} onAdd={() => void addProject()} /></div>}
-          {readOnlyRun ? <div className="mx-auto flex w-full max-w-[740px] flex-col gap-3 rounded-lg border p-4 text-sm text-muted-foreground" role="status">
+          {readOnlyRun ? <div className="mx-auto flex w-full max-w-[var(--transcript-width,740px)] flex-col gap-3 rounded-lg border p-4 text-sm text-muted-foreground" role="status">
             <p>{AGENT_RUN_NOTICE}</p>
             {selected?.desktopAccess?.canContinue && !activeTurn && selected.status?.type !== "active" && <Button variant="outline" size="sm" className="self-start" disabled={busy || !connected || loading} onClick={() => void continueHere(selected)}>Continue here</Button>}
           </div> : <form className="composer" onSubmit={e => { e.preventDefault(); send(); }} onDragOver={e => { if (e.dataTransfer.types.includes("Files")) e.preventDefault(); }} onDrop={e => { const files = transferFiles(e.dataTransfer); if (files.length || e.dataTransfer.types.includes("Files")) { e.preventDefault(); void addFiles(files); } }}>
