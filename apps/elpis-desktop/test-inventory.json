@@ -11,6 +11,7 @@
     "tests/drafts.test.mjs",
     "tests/edits.test.mjs",
     "tests/file-refs.test.mjs",
+    "tests/gate-guards.test.mjs",
     "tests/live-events.test.mjs",
     "tests/media-renderer.test.mjs",
     "tests/mentions.test.mjs",

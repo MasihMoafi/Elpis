@@ -3,6 +3,8 @@ import path from 'node:path';
 import os from 'node:os';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { execFileSync } from 'node:child_process';
+import { heldByAncestor, missingPlaywright, passRecord, records } from './gate-guards.mjs';
 
 export const root = fileURLToPath(new URL('../', import.meta.url));
 export const tiers = ['fast', 'bridge', 'desktop', 'ui', 'opt-in'];
@@ -45,6 +47,12 @@ async function main(args) {
   }
   const selected = args.length ? args : tiers.filter(tier => tier !== 'opt-in');
   if (selected.some(tier => !tiers.includes(tier) || tier === 'opt-in')) throw new Error('Choose fast, bridge, desktop or ui. Run individual opt-in tests explicitly (see TESTING.md).');
+  if (selected.includes('ui')) {
+    const holder = heldByAncestor('/tmp/elpis-desktop-ui.lock');
+    if (holder) throw new Error(`Run the gate without an outer flock: it takes /tmp/elpis-desktop-ui.lock itself for each browser file, and process ${holder} above it already holds that lock.`);
+    const missing = missingPlaywright();
+    if (missing) throw new Error(missing);
+  }
   const evidence = await fs.mkdtemp(path.join(os.tmpdir(), 'elpis-test-gate-'));
   const home = path.join(evidence, 'home');
   await fs.mkdir(home);
@@ -84,6 +92,14 @@ async function main(args) {
     }
   }
   console.log(`Gate: ${(summary.wallMs / 1000).toFixed(2)}s wall; ${(summary.testMs / 1000).toFixed(2)}s in test runners. ${evidence}/summary.json`);
+  // A full, clean, all-green run is recorded for its commit; the desktop install refuses any commit without one.
+  const git = args => execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim();
+  const record = passRecord({ commit: git(['rev-parse', 'HEAD']), clean: git(['status', '--porcelain', '--untracked-files=no']) === '', selected, tiers, files: summary.files });
+  if (record) {
+    await fs.mkdir(records, { recursive: true });
+    await fs.writeFile(path.join(records, `${record.commit}.json`), JSON.stringify({ ...record, evidence }, null, 2) + '\n');
+    console.log(`Recorded a full pass for ${record.commit}.`);
+  }
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
