@@ -292,6 +292,12 @@ export default function LoveSpot({ dark, cwd, onOpenChat }: { dark: boolean; cwd
     } catch (e) { if (mounted.current) setRunError(e instanceof Error ? e.message : "The agents could not run."); }
     finally { if (mounted.current) setBusy(false); }
   };
+  // The card's ACP agent waits for this answer to its permission request (POST /api/love-spot/agents/permission).
+  const answerPermission = async (optionId: string) => {
+    if (!selected) return;
+    try { await api("/love-spot/agents/permission", { id: selected, optionId }); }
+    catch (e) { if (mounted.current) setRunError(e instanceof Error ? e.message : "The answer could not be sent."); }
+  };
   const inspected = agents.find(e => e.id === selected);
   const agent = inspected && agentOf(inspected);
 
@@ -355,7 +361,7 @@ export default function LoveSpot({ dark, cwd, onOpenChat }: { dark: boolean; cwd
       </li>)}</ul>
     </section>}
     {(error || runError) && <div className="love-spot-status" role="alert">{runError || error}<Button variant="ghost" size="sm" onClick={() => { if (runError) setRunError(""); else if (editor) save(); else setAttempt(a => a + 1); }}>{runError ? "Dismiss" : "Retry"}</Button></div>}
-    {!!agents.length && <div className="love-agent-list" aria-label="Board agents">{agents.map(e => <Button key={e.id} variant="outline" size="sm" aria-label={`Inspect ${agentOf(e)!.name}`} onClick={() => setSelected(e.id)}>{agentOf(e)!.name}{agentOf(e)!.status === "running" ? " · running" : ""}</Button>)}</div>}
+    {!!agents.length && <div className="love-agent-list" aria-label="Board agents">{agents.map(e => <Button key={e.id} variant="outline" size="sm" aria-label={`Inspect ${agentOf(e)!.name}`} onClick={() => setSelected(e.id)}>{agentOf(e)!.name}{agentOf(e)!.status === "running" ? " · running" : agentOf(e)!.status === "waiting" ? " · waiting for you" : ""}</Button>)}</div>}
     <div className="love-spot-content"><div className="love-spot-editor" ref={boardArea} onDragOverCapture={event => {
       if (event.dataTransfer.types.includes(screenshotDrag)) { event.preventDefault(); event.stopPropagation(); event.dataTransfer.dropEffect = "copy"; }
     }} onDropCapture={event => {
@@ -376,7 +382,7 @@ export default function LoveSpot({ dark, cwd, onOpenChat }: { dark: boolean; cwd
       }} onPointerDown={(_tool: AppState["activeTool"], state: PointerDownState) => { lastPoint.current = state.origin; }} theme={dark ? "dark" : "light"} /> : !error && <p role="status">Opening Love Spot…</p>}
     </div>
     <div className="love-spot-panels" hidden={!talk && !agent}>
-      {agent && <LoveAgentPanel agent={agent} cwd={cwd} busy={busy} onChange={updateAgent} onRun={() => void run()} onClose={() => setSelected(undefined)} onOpenChat={onOpenChat} />}
+      {agent && <LoveAgentPanel agent={agent} cwd={cwd} busy={busy} onChange={updateAgent} onRun={() => void run()} onClose={() => setSelected(undefined)} onOpenChat={onOpenChat} onAnswer={optionId => void answerPermission(optionId)} />}
       <LoveSpotTalk open={talk} onClose={() => setTalk(false)} quote={quote} model={model} choiceId={choiceId} choices={choices} models={models}
         onModel={value => { setModel(value.model); setChoiceId(value.choiceId); }} provider={provider} disabled={!editor || !settings || !model || boardBusy} onDictating={setTalkDictating} beforeSend={flush} />
     </div>

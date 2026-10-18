@@ -24,14 +24,14 @@ for (const colorScheme of ['light', 'dark']) test(`Talk, agents and private scre
     await details.getByRole('button', { name: 'Run connected agents', exact: true }).click();
     await talk.getByText('I am here with you.', { exact: true }).waitFor();
     const scene = await f.waitFor(s => agents(s)[0]?.customData.loveAgent.status === 'completed' && s.elements.some(e => e.text === 'I am here with you.' && e.strokeColor === '#1971c2'), 'Talk reply or agent result was lost');
-    assert.equal(f.chats.length, 2);
-    assert.equal(new Set(f.chats.map(chat => chat.id)).size, 2);
-    assert.deepEqual(f.chats.map(chat => chat.name).sort(), ['Love Spot', 'Love Spot · Researcher']);
+    // The agent ran as its own ACP agent process; only Talk is an Elpis chat of this connection.
+    assert.deepEqual(f.chats.map(chat => chat.name), ['Love Spot']);
     assert.equal(scene.elements.filter(e => e.id.startsWith('shot-')).length, 0, 'private screenshots must stay outside both conversation paths');
     assert.equal(scene.elements.filter(e => e.text === 'I am here with you.').length, 1, 'only Talk adds a reply note');
-    assert.equal(agents(scene)[0].customData.loveAgent.output, 'I am here with you.');
-    assert.equal(f.turns.length, 2);
+    assert.equal(agents(scene)[0].customData.loveAgent.output, 'Researcher(default) answered: Review our shared idea');
+    assert.equal(f.turns.length, 1);
     assert.equal(f.turns.some(turn => JSON.stringify(turn).includes('private-port.png')), false);
+    assert.equal(JSON.stringify(await f.acp()).includes('private-port.png'), false, 'private screenshots never reach an agent');
     await fs.mkdir('/tmp/agents-port-shots', { recursive: true });
     for (const width of [1280, 1440]) {
       await page.setViewportSize({ width, height: 960 });
@@ -53,7 +53,7 @@ for (const colorScheme of ['light', 'dark']) test(`Talk, agents and private scre
     await talk.getByRole('textbox', { name: 'Message Elpis' }).fill('Continue our chat');
     await talk.getByRole('button', { name: 'Send', exact: true }).click();
     await f.waitFor(s => s.elements.filter(e => e.text === 'I am here with you.' && e.strokeColor === '#1971c2').length === 2, 'Talk did not reuse its chat after an agent run');
-    assert.equal(f.chats.length, 2);
+    assert.equal(f.chats.length, 1);
     assert.deepEqual(f.errors, []);
   } catch (error) {
     await f.page.screenshot({ path: `/tmp/agents-port-failure-${colorScheme}.png` });
@@ -62,16 +62,8 @@ for (const colorScheme of ['light', 'dark']) test(`Talk, agents and private scre
   } finally { await f.close(); }
 });
 
-for (const colorScheme of ['light', 'dark']) test(`characters, native arrows, real chat handoff and inspection · ${colorScheme}`, async () => {
-  const calls = [];
-  const f = await loveSpotFixture({ colorScheme, configureClient(client) {
-    client.createThread = async body => { calls.push(body); return { thread: { id: `chat-${calls.length}` } }; };
-    client.send = async (id, body) => {
-      calls.push({ id, ...body });
-      client.emit('event', { type: 'message', data: { method: 'turn/completed', params: { threadId: id, turn: { id: 'turn', status: 'completed', items: [{ type: 'agentMessage', phase: 'final_answer', text: `Unique reply ${id}: ${body.text}` }] } } } });
-      return { turn: { id: 'turn' } };
-    };
-  } });
+for (const colorScheme of ['light', 'dark']) test(`characters, native arrows, ACP handoff and inspection · ${colorScheme}`, async () => {
+  const f = await loveSpotFixture({ colorScheme });
   try {
     const { page } = f;
     await f.open(page);
@@ -84,7 +76,7 @@ for (const colorScheme of ['light', 'dark']) test(`characters, native arrows, re
     await page.getByRole('button', { name: 'Agent', exact: true }).click();
     await page.getByRole('button', { name: 'Run connected agents', exact: true }).click();
     await page.getByRole('alert').filter({ hasText: 'Give Researcher a task' }).waitFor();
-    assert.equal(calls.length, 0, 'invalid graph must not start chats');
+    assert.deepEqual(await f.acp(), [], 'invalid graph must not start agents');
     await page.getByRole('textbox', { name: 'Task', exact: true }).fill('Trace this unique board seed');
     await page.getByRole('button', { name: 'Done', exact: true }).click();
     await page.getByRole('button', { name: 'Characters', exact: true }).click();
@@ -109,11 +101,13 @@ for (const colorScheme of ['light', 'dark']) test(`characters, native arrows, re
     await page.mouse.click(board.x + 370, board.y + 280);
     await page.getByRole('button', { name: 'Run connected agents', exact: true }).click();
     await f.waitFor(s => agents(s).every(e => e.customData.loveAgent.status === 'completed'), 'both agents should finish');
-    assert.match(calls[3].text, /Unique reply chat-1: Trace this unique board seed/);
+    const prompts = (await f.acp()).filter(message => message.method === 'session/prompt').map(message => message.params.prompt[0].text);
+    assert.equal(prompts.length, 2);
+    assert.match(prompts[1], /Researcher\(default\) answered: Trace this unique board seed/, 'the first answer reaches the second agent over ACP');
     await page.getByRole('button', { name: 'Inspect Reviewer', exact: true }).click();
     assert.equal(await page.getByLabel('Agent details', { exact: true }).locator('.love-agent-heading strong').innerText(), 'Reviewer');
     await page.getByRole('region', { name: 'Answer', exact: true }).waitFor();
-    assert.match(await page.getByRole('region', { name: 'Answer', exact: true }).innerText(), /Unique reply chat-3/);
+    assert.match(await page.getByRole('region', { name: 'Answer', exact: true }).innerText(), /Reviewer\(default\) answered:/);
     await fs.mkdir('/tmp/love-agents-shots', { recursive: true });
     await page.screenshot({ path: `/tmp/love-agents-shots/${colorScheme}.png` });
     await page.reload(); await f.open(page);
@@ -123,6 +117,32 @@ for (const colorScheme of ['light', 'dark']) test(`characters, native arrows, re
   } catch (error) {
     await f.page.screenshot({ path: `/tmp/love-agents-failure-${colorScheme}.png` });
     await fs.writeFile(`/tmp/love-agents-failure-${colorScheme}.json`, JSON.stringify(await f.scene(), null, 2));
+    throw error;
+  } finally { await f.close(); }
+});
+
+for (const colorScheme of ['light', 'dark']) test(`an agent's permission request is answered from its panel · ${colorScheme}`, async () => {
+  const f = await loveSpotFixture({ colorScheme });
+  try {
+    const { page } = f;
+    await f.open(page);
+    await page.getByRole('button', { name: 'Agent', exact: true }).click();
+    const details = page.getByLabel('Agent details', { exact: true });
+    await details.getByRole('textbox', { name: 'Task', exact: true }).fill('[permission] Save the plan');
+    await details.getByRole('button', { name: 'Run connected agents', exact: true }).click();
+    const request = details.getByRole('group', { name: 'Permission request', exact: true });
+    await request.getByText('Write notes.txt', { exact: true }).waitFor();
+    await details.getByText('Waiting for your answer', { exact: true }).waitFor();
+    await fs.mkdir('/tmp/love-agents-shots', { recursive: true });
+    await page.screenshot({ path: `/tmp/love-agents-shots/permission-${colorScheme}.png` });
+    await request.getByRole('button', { name: 'Allow once', exact: true }).click();
+    const scene = await f.waitFor(s => agents(s)[0]?.customData.loveAgent.status === 'completed', 'the agent should finish once answered');
+    assert.match(agents(scene)[0].customData.loveAgent.output, /permission: allow_once\. \[permission\] Save the plan/);
+    assert.deepEqual((await f.acp()).find(message => message.permission).permission, { outcome: 'selected', optionId: 'allow_once' });
+    await request.waitFor({ state: 'detached' });
+    assert.deepEqual(f.errors, []);
+  } catch (error) {
+    await f.page.screenshot({ path: `/tmp/love-agents-failure-permission-${colorScheme}.png` });
     throw error;
   } finally { await f.close(); }
 });

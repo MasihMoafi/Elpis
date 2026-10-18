@@ -6,19 +6,22 @@ import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { EventEmitter } from 'node:events';
+import { fileURLToPath } from 'node:url';
 import { startDesktopServer } from './server.mjs';
 import { createLoveSpot } from './love-spot-store.cjs';
+
+const FAKE_ACP_AGENT = fileURLToPath(new URL('../../../tools/elpis-claude/test/fake-acp-agent.mjs', import.meta.url));
 
 const exec = promisify(execFile);
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAEUlEQVR4nGM4o6SEFTEMLQkAvM5EAT6yk8sAAAAASUVORK5CYII=', 'base64');
 const element = (id, version = 1, extra = {}) => ({ id, type: 'rectangle', version, versionNonce: 100, x: 0, y: 0, width: 100, height: 80, ...extra });
-async function fixture(t) {
+async function fixture(t, { loveAgents } = {}) {
   const base = path.join(os.homedir(), '.cache/elpis-tests'); await fs.mkdir(base, { recursive: true });
   const root = await fs.mkdtemp(path.join(base, 'love-spot-'));
   const directory = path.join(root, 'drawing'), screenshots = path.join(root, 'Screenshots');
   await fs.mkdir(screenshots);
   const client = new EventEmitter(); Object.assign(client, { connected: true, pendingApprovals: [], close() {} });
-  const app = await startDesktopServer({ client, loveSpot: { directory, screenshots }, trashFile: path.join(root, 'trash.json') });
+  const app = await startDesktopServer({ client, loveSpot: { directory, screenshots }, trashFile: path.join(root, 'trash.json'), ...(loveAgents ? { loveAgents } : {}) });
   t.after(async () => { await app.close(); await exec('gio', ['trash', root]); });
   const url = new URL(app.url), origin = url.origin;
   const auth = await fetch(`${origin}/api/session`, { method: 'POST', headers: { origin, 'content-type': 'application/json' }, body: JSON.stringify({ token: url.hash.slice(7) }) });
@@ -29,25 +32,29 @@ async function fixture(t) {
   return { directory, screenshots, request, load, save, origin, client };
 }
 
-test('Love Spot agent route authenticates, reads the saved drawing, and persists chat results', async t => {
-  const f = await fixture(t), calls = [];
-  Object.assign(f.client, {
-    models: async () => ({ data: [{ model: 'gpt-6-luna' }] }),
-    createThread: async body => { calls.push(body); return { thread: { id: 'real-route-chat' } }; },
-    send: async id => {
-      f.client.emit('event', { type: 'message', data: { method: 'turn/completed', params: { threadId: id, turn: { status: 'completed', items: [{ type: 'agentMessage', text: 'Only the real route knows this answer' }] } } } });
-      return { turn: { id: 'route-turn' } };
-    },
-  });
-  assert.equal((await fetch(`${f.origin}/api/love-spot/agents/run`, { method: 'POST', headers: { origin: f.origin, 'content-type': 'application/json' }, body: JSON.stringify({ id: 'agent' }) })).status, 401);
-  await f.save({ elements: [element('agent', 1, { customData: { loveAgent: { name: 'Writer', preset: 'writer', model: 'gpt-6-luna', provider: 'openai', prompt: 'Be precise', task: 'Route seed' } } })], files: {} });
+test('Love Spot agent routes authenticate, run the saved drawing over ACP and answer its permission request', async t => {
+  // The card runs as an ACP agent process: the scripted SDK agent, which logs what reaches it.
+  const log = path.join(await fs.mkdtemp(path.join(os.tmpdir(), 'love-route-')), 'agent.jsonl');
+  const nodeSpec = node => ({ name: node.name, command: process.execPath, args: [FAKE_ACP_AGENT], env: { FAKE_ACP_LOG: log, FAKE_ACP_NAME: 'route' }, instructions: node.prompt });
+  const f = await fixture(t, { loveAgents: { nodeSpec } });
+  for (const route of ['run', 'permission']) assert.equal((await fetch(`${f.origin}/api/love-spot/agents/${route}`, { method: 'POST', headers: { origin: f.origin, 'content-type': 'application/json' }, body: JSON.stringify({ id: 'agent' }) })).status, 401);
+  await f.save({ elements: [element('agent', 1, { customData: { loveAgent: { name: 'Writer', preset: 'writer', model: 'gpt-6-luna', provider: 'openai', prompt: 'Be precise', task: '[permission] Route seed' } } })], files: {} });
   assert.equal((await f.request('/agents/run', { id: 'agent', unknown: true })).status, 400);
   assert.equal((await f.request('/agents/run', { id: 'agent', cwd: 'relative' })).status, 400);
-  assert.equal(calls.length, 0);
-  const reply = await f.request('/agents/run', { id: 'agent' });
+  assert.equal((await f.request('/agents/permission', { id: 'agent', optionId: 'allow_once' })).status, 409, 'nothing is waiting yet');
+  await assert.rejects(fs.access(log), 'no agent started for a refused request');
+  const running = f.request('/agents/run', { id: 'agent' });
+  const card = async () => (await f.load()).scene.elements[0].customData.loveAgent;
+  while ((await card()).status !== 'waiting') await new Promise(resolve => setTimeout(resolve, 20));
+  assert.equal((await card()).permission.title, 'Write notes.txt');
+  assert.equal((await f.request('/agents/permission', { id: 'agent', optionId: 'made-up' })).status, 400);
+  assert.equal((await f.request('/agents/permission', { id: 'agent', optionId: 'allow_once' })).status, 200);
+  const reply = await running;
   assert.equal(reply.status, 200);
-  assert.equal((await reply.json()).results[0].output, 'Only the real route knows this answer');
-  assert.equal((await f.load()).scene.elements[0].customData.loveAgent.threadId, 'real-route-chat');
+  assert.equal((await reply.json()).results[0].output, 'route(default) answered: permission: allow_once. [permission] Route seed');
+  const saved = await card();
+  assert.deepEqual([saved.status, saved.sessionId, saved.permission], ['completed', 'route-session-1', null]);
+  assert.deepEqual(JSON.parse((await fs.readFile(log, 'utf8')).split('\n').find(line => line.includes('"session/new"'))).params._meta, { systemPrompt: { append: 'Be precise' } });
 });
 
 test('Love Spot load/save unions stale windows, keeps newest versions and deletion tombstones', async t => {

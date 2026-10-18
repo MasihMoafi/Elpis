@@ -12,7 +12,9 @@ export const characters = [
   { id: "critic", name: "Critic", color: "#e1e4be", detail: "Challenge assumptions", prompt: "You are an independent critic. Challenge the assumptions and strongest claims in the task and upstream material. Find counterexamples, overlooked costs and simpler alternatives. Use evidence where possible and end with the most consequential improvement. Be constructive and concise." },
 ] as const;
 export type Character = typeof characters[number];
-export type LoveAgent = { preset: string; name: string; prompt: string; task: string; model: string; provider: string; status?: string; output?: string; error?: string; threadId?: string };
+/** A question the card's ACP agent asks before acting (session/request_permission), answered from the panel. */
+export type LovePermission = { title: string; options: { optionId: string; name: string; kind: string }[] };
+export type LoveAgent = { preset: string; name: string; prompt: string; task: string; model: string; provider: string; status?: string; output?: string; error?: string; threadId?: string; sessionId?: string; permission?: LovePermission | null };
 export function agentOf(e: ExcalidrawElement): LoveAgent | undefined {
   const a: unknown = e.customData?.loveAgent;
   if (e.isDeleted || e.type !== "rectangle" || !a || typeof a !== "object") return;

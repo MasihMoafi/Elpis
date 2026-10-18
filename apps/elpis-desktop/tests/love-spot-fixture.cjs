@@ -9,6 +9,9 @@ const { fakeDesktop } = require('./fake-desktop.cjs');
 const { guardDesktopStore } = require('./controls.cjs');
 const exec = promisify(execFile);
 
+// Love Spot cards run as ACP agent processes; here each is the scripted SDK agent, which logs what reaches it.
+const FAKE_ACP_AGENT = path.resolve(__dirname, '../../../tools/elpis-claude/test/fake-acp-agent.mjs');
+
 async function loveSpotFixture({ colorScheme = 'light', reply = 'I am here with you.', replyDelay = 80, configureClient } = {}) {
   const base = path.join(os.homedir(), '.cache/elpis-tests'); await fs.mkdir(base, { recursive: true });
   const root = await fs.mkdtemp(path.join(base, 'love-spot-ui-'));
@@ -46,7 +49,10 @@ async function loveSpotFixture({ colorScheme = 'light', reply = 'I am here with 
     } });
   configureClient?.(emitter);
   const client = new Proxy(emitter, { get(target, key) { return key in target ? Reflect.get(target, key) : async () => ({}); } });
-  const server = await startDesktopServer({ client, staticDir: process.env.LOVE_SPOT_TEST_STATIC_DIR, loveSpot: { directory, screenshots }, trashFile: path.join(root, 'trash.json') });
+  const acpLog = path.join(root, 'acp.jsonl');
+  const nodeSpec = node => ({ name: node.name, command: process.execPath, args: [FAKE_ACP_AGENT], env: { FAKE_ACP_LOG: acpLog, FAKE_ACP_NAME: node.name }, instructions: node.prompt });
+  const acp = async () => { try { return (await fs.readFile(acpLog, 'utf8')).trim().split('\n').filter(Boolean).map(line => JSON.parse(line)); } catch (e) { if (e.code === 'ENOENT') return []; throw e; } };
+  const server = await startDesktopServer({ client, staticDir: process.env.LOVE_SPOT_TEST_STATIC_DIR, loveSpot: { directory, screenshots }, trashFile: path.join(root, 'trash.json'), loveAgents: { nodeSpec } });
   const browser = await chromium.launch({ executablePath: process.env.ELPIS_CHROMIUM || undefined, headless: true });
   const context = await browser.newContext({ viewport: { width: 1440, height: 960 }, colorScheme });
   const errors = [], requests = [], responses = [];
@@ -81,7 +87,7 @@ async function loveSpotFixture({ colorScheme = 'light', reply = 'I am here with 
     await target.mouse.down(); await target.mouse.move(bounds.x + 550 + offset, bounds.y + 300 + offset, { steps: 8 }); await target.mouse.up();
     await target.keyboard.press('Escape');
   };
-  return { page, url: server.url, newPage, open, draw, root, directory, screenshots, scene, waitFor, errors, requests, responses, chats, turns, emitter,
+  return { page, url: server.url, newPage, open, draw, root, directory, screenshots, scene, waitFor, errors, requests, responses, chats, turns, emitter, acp,
     async close() { await browser.close(); await server.close(); await exec('gio', ['trash', root]); } };
 }
 module.exports = { loveSpotFixture };

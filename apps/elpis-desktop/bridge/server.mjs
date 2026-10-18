@@ -96,7 +96,8 @@ export async function startDesktopServer(options = {}) {
   const listeners = new Set(); let origin; let closed = false;
   const loveSpot = createLoveSpot(options.loveSpot);
   const loveTalk = createLoveSpotTalk({ client, store: loveSpot });
-  const loveAgents = createLoveAgents(client, loveSpot);
+  // Love Spot's agents run as ACP agent processes (bridge/acp-nodes.mjs), not through this Elpis connection.
+  const loveAgents = createLoveAgents(loveSpot, { ...(options.elpisHome ? { env: { ...process.env, ELPIS_HOME: options.elpisHome } } : {}), ...options.loveAgents });
   const devServers = createDevServers();
   const experimentLab = createExperimentLab({ client, ...(options.elpisHome ? { file: path.join(options.elpisHome, 'experiment-lab', 'latest.json') } : {}) });
   const loveStreams = new Set();
@@ -176,6 +177,7 @@ export async function startDesktopServer(options = {}) {
           response.on('close', () => { stop(); loveStreams.delete(response); }); return;
         }
         if (url.pathname === '/api/love-spot/agents/run' && method === 'POST') return json(response, 200, await loveAgents.run(await body(request)));
+        if (url.pathname === '/api/love-spot/agents/permission' && method === 'POST') return json(response, 200, loveAgents.answer(await body(request)));
         if (url.pathname === '/api/love-spot/events' && method === 'GET') {
           response.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-store', Connection: 'keep-alive' });
           loveStreams.add(response);
