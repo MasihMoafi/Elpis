@@ -119,8 +119,9 @@ test('canvas basics: undo and redo, copy and paste, duplicate, delete keeping th
     await page.keyboard.press('Control+v');
     await agentCount(6, 'pasted');
     let graph = await saved();
-    const copies = graph.nodes.filter(item => ['Quillon · Part 1', 'Nuvani · Join the parts'].includes(item.data?.title));
+    const copies = graph.nodes.filter(item => item.data?.title?.endsWith(' · Part 1') || item.data?.title?.endsWith(' · Join the parts'));
     assert.equal(copies.length, 4);
+    assert.equal(new Set(graph.nodes.filter(item => item.type === 'agent').map(item => item.data.title)).size, 6, 'copies receive unique names');
     const copyIds = new Set(await canvas.locator('.react-flow__node-agent.selected').evaluateAll(list => list.map(item => item.dataset.id)));
     assert.equal(copyIds.size, 2, 'the two copies are selected');
     assert.ok(graph.edges.some(edge => copyIds.has(edge.source) && copyIds.has(edge.target)), 'the copies keep their wire');

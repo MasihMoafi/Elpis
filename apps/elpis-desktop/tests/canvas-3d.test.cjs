@@ -38,7 +38,7 @@ test('3D ports connect and drop to Add; changes persist on the flat board', asyn
     await drag(page, await middle(canvas.getByRole('button', { name: 'Output of Veyra · Part 2', exact: true })), { x: board.x + board.width - 40, y: board.y + 40 });
     const add = canvas.getByRole('dialog', { name: 'Add agents', exact: true });
     await add.getByRole('textbox', { name: 'Command', exact: true }).fill(': Follow in 3D'); await page.keyboard.press('Enter');
-    saved = await f.saved(); const added = saved.nodes.find(n => n.data.title.endsWith(' · Follow in 3D')).id;
+    saved = await f.saved(); const added = saved.nodes.find(n => n.data.title?.endsWith(' · Follow in 3D')).id;
     assert.ok(saved.edges.some(e => e.source === to && e.target === added));
     await canvas.getByRole('button', { name: 'Flat', exact: true }).click(); await f.agentCount(5, '3D edits appear in 2D');
     assert.equal(await f.wires.count(), 5);

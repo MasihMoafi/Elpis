@@ -5,13 +5,18 @@ const { openCanvas } = require('./canvas-fixture.cjs');
 const { chooseTheme } = require('./controls.cjs');
 const drag = async (page, a, b, button = 'left') => { await page.mouse.move(a.x, a.y); await page.mouse.down({ button }); await page.mouse.move(b.x, b.y, { steps: 12 }); await page.mouse.up({ button }); };
 
-test('React Flow owns bezier wires with one target arrow', async () => {
+test('agent wires keep bezier target arrows; Mother has one shared trunk and arrowed branches', async () => {
   const f = await openCanvas();
   try {
     assert.equal(await f.canvas.locator('.canvas-chevron').count(), 0);
-    for (const path of await f.canvas.locator('.react-flow__edge-path').all()) {
+    for (const path of await f.canvas.locator('.react-flow__edge:not(.canvas-edge-mother) .react-flow__edge-path').all()) {
       assert.match(await path.getAttribute('d'), /C/); assert.ok(await path.getAttribute('marker-end'));
     }
+    const trunk = f.canvas.locator('.canvas-mother-trunk .react-flow__edge-path');
+    assert.equal(await trunk.count(), 1); assert.match(await trunk.getAttribute('d'), /H/); assert.equal(await trunk.getAttribute('marker-end'), null);
+    const branches = f.canvas.locator('.react-flow__edge.canvas-edge-mother > .react-flow__edge-path');
+    assert.equal(await branches.count(), 3);
+    for (const path of await branches.all()) assert.ok(await path.getAttribute('marker-end'));
   } finally { await f.close(); }
 });
 
@@ -75,7 +80,7 @@ test('dragging handles connects; a dropped output opens Add and wires the new ag
     const add = canvas.getByRole('dialog', { name: 'Add agents', exact: true });
     await add.getByRole('textbox', { name: 'Command', exact: true }).fill(': Follow the second answer'); await page.keyboard.press('Enter');
     await f.agentCount(5, 'drop creates a connected agent');
-    const saved = await f.saved(), made = saved.nodes.find(n => n.data.title.endsWith(' · Follow the second answer')), source = saved.nodes.find(n => n.data.title === 'Veyra · Part 2');
+    const saved = await f.saved(), made = saved.nodes.find(n => n.data.title?.endsWith(' · Follow the second answer')), source = saved.nodes.find(n => n.data.title === 'Veyra · Part 2');
     assert.ok(saved.edges.some(e => e.source === source.id && e.target === made.id));
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
