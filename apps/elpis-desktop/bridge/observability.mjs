@@ -231,7 +231,7 @@ export function createObservability({ home = elpisHome(), chatOf, listChats, tur
       const record = await recordOf({ chat: found.thread }, agentId);
       const tasks = (graphs?.data ?? []).flatMap(graph => graph.tasks ?? []);
       const agents = family.map(thread => ({ id: thread.id, name: thread.id === id ? 'Mother' : thread.agentNickname || thread.workflowTaskTitle || thread.name || `Agent · ${thread.id.slice(-8)}`,
-        model: thread.model ?? null, role: tasks.find(task => task.assignedThreadId === thread.id)?.kind ?? thread.agentRole ?? null }));
+        model: thread.model ?? null, role: tasks.find(task => task.assignedThreadId === thread.id)?.title ?? thread.agentRole ?? null }));
       // Older thread/list replies omit model; a turn context or thread/read can still report it.
       const selected = agents.find(row => row.id === agentId);
       selected.model ??= found.thread.model ?? [...measured.values()].findLast(turn => turn.model)?.model ?? null;

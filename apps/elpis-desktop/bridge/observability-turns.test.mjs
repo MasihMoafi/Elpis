@@ -49,7 +49,7 @@ test('readable items, failures, Ledger and Smart Prune data; Mother and every ag
   const grandchild = '01a14400-0000-7000-8000-000000000005';
   active.push({ id: grandchild, parentThreadId: CHILD, agentNickname: 'Nova', model: 'gpt-6.1-sol' });
   const page = await observe.chat(ROOT, query('limit=2'));
-  assert.deepEqual(page.agents.map(row => [row.id, row.name, row.model, row.role]), [[ROOT, 'Mother', 'gpt-6.1-sol', null], [CHILD, 'Iris', 'gpt-6-luna', 'verify'], [grandchild, 'Nova', 'gpt-6.1-sol', null]]);
+  assert.deepEqual(page.agents.map(row => [row.id, row.name, row.model, row.role]), [[ROOT, 'Mother', 'gpt-6.1-sol', null], [CHILD, 'Iris', 'gpt-6-luna', 'Check parser'], [grandchild, 'Nova', 'gpt-6.1-sol', null]]);
   assert.deepEqual(page.turns.data[0].items, turn(0).items);
   assert.equal(page.turns.data[0].steps, undefined);
   assert.equal(page.turns.data[0].contextTokens, 10000);
@@ -107,4 +107,15 @@ test('every active child is observable, including the automatic reviewer', async
   active.push({ id: reviewer, parentThreadId: ROOT, agentNickname: 'Reviewer', model: 'gpt-6-luna', source: { subAgent: { other: 'guardian' } } });
   const page = await observe.chat(ROOT, query(''));
   assert.ok(page.agents.some(agent => agent.id === reviewer));
+});
+
+test('a Canvas agent shows its board title as its role, not the engine task kind', async t => {
+  const { home, active } = await fixture(t), judge = '01a14400-0000-7000-8000-000000000007';
+  active.push({ id: judge, parentThreadId: ROOT, agentNickname: 'Wren', model: 'gpt-6-luna' });
+  const graphs = { data: [{ tasks: [{ assignedThreadId: judge, kind: 'implement', title: 'Judge' }] }] };
+  const shown = createObservability({ home, listChats: async () => ({ data: active, nextCursor: null }), chatOf: async id => ({ thread: active.find(row => row.id === id), path: null }),
+    turnsOf: async () => ({ data: [], nextCursor: null }), graphsOf: async () => graphs });
+  const page = await shown.chat(ROOT, query(''));
+  assert.equal(page.agents.find(agent => agent.id === judge).role, 'Judge');
+  assert.equal(page.agents.find(agent => agent.id === ROOT).role, null);
 });
