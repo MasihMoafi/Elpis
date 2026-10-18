@@ -2,7 +2,7 @@ export { isAgentRun, AGENT_RUN_NOTICE } from "./agent-runs.mjs";
 export type Thread = {
   id: string; cwd?: string; name?: string | null; workflowTaskTitle?: string; preview?: string; model?: string | null; modelProvider?: string;
   reasoningEffort?: string | null; parentThreadId?: string | null; forkedFromId?: string | null;
-  updatedAt?: number; recencyAt?: number;
+  updatedAt?: number; recencyAt?: number; createdAt?: number;
   agentNickname?: string | null; agentRole?: string | null;
   source?: string | {subAgent?:unknown;custom?:string};
   status?: { type: string; activeFlags?: string[] };

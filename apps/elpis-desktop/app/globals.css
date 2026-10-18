@@ -56,7 +56,7 @@
 :where(.search-field, .model-select, .composer-chip, .feature-form select, .provider-model-input, .field select, .composer-pill, .context-ring, .feature-chip, .task-tab,
   .browser-toolbar input, .browser-find input, .annotation-editor textarea, .canvas-chip, .canvas-count input, .quick-add-field, .agent-dashboard header button,
   .thread-row, .account-row, .back-link, .usage-summary, .team-row, .observability-chat, .activity-card, .activity-heading, .activity-group > summary, .hud-menu-item,
-  .project-row, .command-row, .canvas-template, .quick-add-option, .step-head, .turn-changes-toggle, .choice, .change-row,
+  .sidebar-group-row, .command-row, .canvas-template, .quick-add-option, .step-head, .turn-changes-toggle, .choice, .change-row,
   .markdown pre, .step-script, .decision-body pre, .hud-tooltip, .canvas-count-error) { border-radius:var(--cut) 0; corner-shape:bevel; }
 /* Badges and keycaps: --cut-sm. */
 :where(.kbd, .model-provider-tabs button, .model-option-provider, .pending-count, .customize-badge, .plan-pill button, .canvas-toolbar kbd, .quick-add kbd, .canvas-help kbd,
@@ -243,6 +243,10 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .project-chip:hover, .project-chip[aria-expanded="true"] { color:var(--foreground); background:var(--hover); }
 .project-chip span { overflow:hidden; text-overflow:ellipsis; }
 .section-label-row { display:flex; align-items:center; justify-content:space-between; }
+/* A heading row around a padded heading (Pinned, Recents): its buttons sit level with the letters, which the heading's
+   6px bottom padding lifts by as much as half a 24px button. */
+.section-label-row:not(.section-label) { align-items:flex-end; }
+.section-label-row > .section-label { margin-right:auto; }
 .section-label-row > button { color:var(--muted-foreground); }
 .section-label-row > button:hover { color:var(--primary); }
 .workspace-picker { display:flex; align-items:center; gap:6px; color:var(--muted-foreground); font-size:12px; min-width:0; }
@@ -673,6 +677,10 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .hud-menu-item:has(small) > svg { align-self:flex-start; margin-top:2px; }
 /* Selects and the model picker mark the chosen item with a check at the right edge. */
 .hud-menu-item[data-slot="select-item"], .hud-menu-item[data-slot="combobox-item"] { padding-inline-end:32px; }
+/* A menu's dividing line, a submenu's arrow and a chosen choice's check (components/ui/dropdown-menu.tsx). */
+.hud-menu-separator { height:1px; margin:6px -6px; background:var(--hairline); }
+.hud-menu-chevron { margin-left:auto; color:var(--muted-foreground); }
+.hud-menu-check { display:inline-flex; margin-left:auto; color:var(--primary); }
 .select-option { display:grid; gap:2px; }
 .context-ring { display:inline-flex; align-items:center; justify-content:center; width:28px; height:28px; padding:0; border:1px solid transparent; background:transparent; cursor:pointer; }
 .context-ring:hover, .context-ring[data-popup-open] { background:var(--hover); border-color:var(--hairline); }
@@ -772,21 +780,26 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .thread-subtitle { font-size:12px; color:var(--warning); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .thread-dot[data-state="error"] { border-color:var(--destructive); background:var(--destructive); }
 @keyframes spin { to { transform:rotate(360deg); } }
-.project-group { margin-bottom:2px; }
-.project-row { display:flex; align-items:center; padding-inline-end:8px; }  /* the "+" lines up with the Projects header's */
-.project-row:hover, .project-row[data-popup-open] { background:var(--hover); }
-.project-row-actions { display:flex; opacity:0; }
+/* A collapsible group of chats (components/sidebar-group.tsx): a project, or a group the person made. */
+.sidebar-group { margin-bottom:2px; }
+.sidebar-group-row { display:flex; align-items:center; padding-inline-end:8px; }  /* the "+" lines up with the Projects header's */
+.sidebar-group-row:hover, .sidebar-group-row[data-popup-open] { background:var(--hover); }
+.sidebar-group-actions { display:flex; opacity:0; }
 .project-new-chat { flex-shrink:0; color:var(--muted-foreground); }
 .project-new-chat:hover { color:var(--foreground); }
-.project-row:hover .project-row-actions, .project-row[data-popup-open] .project-row-actions, .project-row:focus-within .project-row-actions, .project-row-actions:has([aria-expanded="true"]) { opacity:1; }
-.project-toggle { flex:1; min-width:0; display:flex; align-items:center; gap:6px; border:0; background:none; color:var(--foreground); padding:5px 6px; font-size:13px; text-align:left; }
-.project-toggle span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.project-toggle svg { flex-shrink:0; color:var(--muted-foreground); }
-.project-chevron { transition:transform .15s; }
-.project-toggle[aria-expanded="true"] .project-chevron { transform:rotate(90deg); }
-.project-row.active .project-toggle svg:not(.project-chevron) { color:var(--primary); }
-.project-chats { padding-left:18px; }
-.project-empty { margin:0; padding:3px 8px 6px; font-size:12px; color:var(--subtle-foreground); }
+.sidebar-group-row:hover .sidebar-group-actions, .sidebar-group-row[data-popup-open] .sidebar-group-actions, .sidebar-group-row:focus-within .sidebar-group-actions, .sidebar-group-actions:has([aria-expanded="true"]) { opacity:1; }
+.sidebar-group-toggle { flex:1; min-width:0; display:flex; align-items:center; gap:6px; border:0; background:none; color:var(--foreground); padding:5px 6px; font-size:13px; text-align:left; }
+.sidebar-group-name { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.sidebar-group-toggle svg { flex-shrink:0; color:var(--muted-foreground); }
+.sidebar-group-chevron { transition:transform .15s; }
+.sidebar-group-toggle[aria-expanded="true"] .sidebar-group-chevron { transform:rotate(90deg); }
+.sidebar-group-row.active .sidebar-group-toggle svg:not(.sidebar-group-chevron) { color:var(--primary); }
+.sidebar-group-items { padding-left:18px; }
+.sidebar-group-empty { margin:0; padding:3px 8px 6px; font-size:12px; color:var(--subtle-foreground); }
+/* A closed group holding a chat that needs you: the chat's waiting dot, after the group's name. */
+.sidebar-group-toggle .thread-dot { margin:0 0 0 2px; }
+/* The "Group and sort" button is marked while the list is grouped or sorted away from the defaults. */
+.section-label-row > .group-sort[data-active] { color:var(--primary); }
 .workspace-header h1 { display:flex; align-items:center; gap:4px; }
 .workspace-header h1 .thread-actions { opacity:.7; }
 .message-time { font-size:var(--text-small); color:var(--subtle-foreground); margin-right:4px; opacity:0; transition:opacity .12s; font-variant-numeric:tabular-nums; }

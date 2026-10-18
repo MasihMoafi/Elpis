@@ -182,6 +182,14 @@ test('pinned chats and terminal height persist across a desktop restart, with un
   await assert.rejects(store.set('elpis-terminal-height:other', '360'), /Unsupported/);
 });
 
+test('chat groups, their chats and the sidebar order persist across a desktop restart; other versions are rejected', async () => {
+  const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'elpis-groups-state-')), 'workspace.json');
+  const store = createStateStore(file), groups = JSON.stringify({ groups: [{ id: 'g1', name: 'Work' }], members: { 'chat-1': 'g1' }, groupBy: 'custom', sortBy: 'name', collapsed: [] });
+  await store.set('elpis-chat-groups-v1', groups);
+  assert.equal(createStateStore(file).read()['elpis-chat-groups-v1'], groups);
+  await assert.rejects(store.set('elpis-chat-groups-v2', groups), /Unsupported/);
+});
+
 test('retrying the same value after an actual write failure really persists it', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'elpis-state-retry-'));
   const file = path.join(dir, 'workspace.json');

@@ -47,7 +47,8 @@ export function ImproveElpis({ threadId, onChat }: { threadId?: string; onChat: 
     };
     const findMenu = () => {
       if (!contextActive.current) return;
-      const found = [...document.querySelectorAll<HTMLElement>('[role="menu"]:not([data-improve-menu]), .hud-menu:not([data-improve-menu])')].filter(node => node.getClientRects().length).at(-1) ?? null;
+      // A submenu (Base UI marks it data-nested) is not the menu that was right-clicked open.
+      const found = [...document.querySelectorAll<HTMLElement>('[role="menu"]:not([data-improve-menu]):not([data-nested]), .hud-menu:not([data-improve-menu]):not([data-nested])')].filter(node => node.getClientRects().length).at(-1) ?? null;
       setMenu(found); if (found) setFallback(null);
     };
     const command = () => { void begin(null); };

@@ -3,7 +3,7 @@
 import dynamic from "next/dynamic";
 import { cloneElement, useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
 import { AgentsIcon, ArchiveIcon, ChatIcon, FolderIcon, LoveSpotIcon, NewChatIcon, PinIcon, PlusIcon, SendIcon, WorkflowsIcon } from "@/components/elpis-icons";
-import { Activity, Archive, ArrowLeft, Blocks, ChevronRight, PanelLeft, PanelRight, PanelRightClose, PanelRightOpen, Pin, RefreshCw, Search, Square, X } from "lucide-react";
+import { Activity, Archive, ArrowLeft, Blocks, ChevronRight, Layers, PanelLeft, PanelRight, PanelRightClose, PanelRightOpen, Pin, RefreshCw, Search, Square, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { OptionSelect } from "@/components/ui/option-select";
 import { Input } from "@/components/ui/input";
@@ -16,6 +16,7 @@ import { FailedTurnCard, type FailedTurn } from "@/components/failed-turn-card";
 import { ViewBoundary } from "@/components/view-boundary";
 import { Transcript } from "@/components/transcript";
 import { readPins, savePins } from "@/lib/pins";
+import { addGroup, deleteGroup, emptyGroups, groupSections, moveChats, readGroups, renameGroup, sortChats, toggleCollapsed, writeGroups, type ChatGroup, type ChatGroups } from "@/lib/chat-groups";
 import { SHORTCUTS, shortcutFor } from "@/lib/shortcuts";
 import { CommandMenu, type CommandAction } from "@/components/command-menu";
 import { ImproveElpis } from "@/components/improve-elpis";
@@ -42,6 +43,8 @@ import { ObservabilityView } from "@/components/observability-view";
 import { NewAgentForm } from "@/components/new-agent-form";
 import { SettingsView, type Tab as SettingsTab } from "@/components/settings-view";
 import { DeleteChatsDialog, ThreadActions } from "@/components/thread-actions";
+import { GroupActions, GroupAndSortMenu, GroupNameDialog } from "@/components/chat-groups";
+import { SidebarGroup } from "@/components/sidebar-group";
 import { letterKey } from "@/components/action-menu";
 import { SlashMenu, useSlashMenu, type SlashCommand } from "@/components/slash-menu";
 import { MentionMenu, useMentionMenu } from "@/components/mention-menu";
@@ -148,6 +151,16 @@ export default function Home() {
   const [newPlan, setNewPlan] = useState(false);
   const [planAnswered, setPlanAnswered] = useState<Record<string, string>>({});
   const [pins, setPins] = useState<string[]>([]);
+  // Groups the person made, and how the sidebar lists chats (lib/chat-groups.ts); kept on this computer, read once.
+  const [chatGroups, setChatGroups] = useState<ChatGroups>(emptyGroups);
+  const chatGroupsRef = useRef(chatGroups); chatGroupsRef.current = chatGroups;
+  const [newGroupFor, setNewGroupFor] = useState<string[] | null>(null);
+  useEffect(() => { setChatGroups(readGroups(appStorage())); }, []);
+  function updateGroups(change: (state: ChatGroups) => ChatGroups) {
+    const next = change(chatGroupsRef.current);
+    chatGroupsRef.current = next; setChatGroups(next);
+    if (!writeGroups(next, appStorage())) setError("Could not save chat groups on this device.");
+  }
   const [attention, setAttention] = useState<Attention>({ unread: [], plans: {} });
   const [attentionLoaded, setAttentionLoaded] = useState(false);
   const planTurns = useRef(new Map<string, string>());
@@ -1297,7 +1310,13 @@ export default function Home() {
   const filtered = searchedThreads.filter(t => !isAgentRun(t) && (matchedOnServer.has(t.id) || `${title(t)} ${t.agentNickname || ""} ${t.model || ""} ${t.id}`.toLowerCase().includes(searchTerm.toLowerCase())));
   const roots = filtered.filter(t => !isUnlinkedAgent(t, searchedThreads) && (!t.parentThreadId || !filtered.some(p => p.id === t.parentThreadId)));
   const unlinked = filtered.filter(t => isUnlinkedAgent(t, searchedThreads));
-  const ordered = [...roots.filter(t => pins.includes(t.id)), ...roots.filter(t => !pins.includes(t.id))];
+  // The chat list in screen order: Pinned, the groups (when the list is drawn by them), then Recents; sorted as chosen.
+  // Search results keep the search's order.
+  const listedRoots = searchTerm ? roots : sortChats(roots, chatGroups.sortBy, title);
+  const pinnedChats = listedRoots.filter(t => pins.includes(t.id)), unpinnedChats = listedRoots.filter(t => !pins.includes(t.id));
+  const grouped = !searchTerm && chatGroups.groupBy === "custom" ? groupSections(unpinnedChats, chatGroups) : null;
+  const recentChats = grouped ? grouped.ungrouped : unpinnedChats;
+  const ordered = [...pinnedChats, ...(grouped?.groups.flatMap(section => chatGroups.collapsed.includes(section.group.id) ? [] : section.chats) ?? []), ...recentChats];
   // Esc stops the running reply, as in Claude, wherever in the chat the focus is, unless a menu, dialog or field owns the key.
   const escapeStops = useRef<(event: KeyboardEvent) => void>(() => {});
   escapeStops.current = event => { if (selected && !readOnlyRun && activeTurn && view === "chat" && stopsOnEscape(event)) { event.preventDefault(); void stop(selected); } };
@@ -1406,6 +1425,16 @@ export default function Home() {
       },
     };
   }
+  /** "Move to group" for these chats (the row's chat, or the selection it belongs to), as Claude's session menu has it.
+   * Only top-level chats are grouped; an agent's chat stays under its parent. */
+  function groupMenu(thread: Thread, ids: string[]) {
+    if (thread.parentThreadId || isAgentRun(thread)) return undefined;
+    const known = (id: string) => chatGroups.groups.some(group => group.id === chatGroups.members[id]) ? chatGroups.members[id] : null;
+    const currents = new Set(ids.map(known));
+    return { groups: chatGroups.groups, current: currents.size === 1 ? [...currents][0] : undefined,
+      onMove: (groupId: string | null) => { updateGroups(state => moveChats(state, ids, groupId)); setMarked([]); },
+      onNew: () => setNewGroupFor(ids) };
+  }
   function threadRow(thread: Thread, depth = 0) {
     const name = title(thread), state = agentState(thread, waitingIds, isAgentRun(thread) ? new Set() : new Set(attention.unread)), pinned = pins.includes(thread.id);
     const runParent = find(thread.parentThreadId);
@@ -1413,6 +1442,7 @@ export default function Home() {
     return <ThreadActions key={thread.id} thread={thread} onRequestDelete={() => deleteChats(marked.includes(thread.id) ? marked : [thread.id])} onRename={renameThread} onArchive={archiveThread} pinned={pinned} onPin={togglePin} onOpenInTui={hasTerminal ? openInTui : undefined} onOpenSplit={!split.pane ? openSplit : undefined} onOpenWindow={windowAvailable ? openSessionWindow : undefined} onNewWindow={windowAvailable ? () => openSessionWindow() : undefined}
       attention={attentionFor(thread.id)}
       selection={marked.length > 1 && marked.includes(thread.id) ? chatsOf(marked) : undefined}
+      group={depth ? undefined : groupMenu(thread, marked.length > 1 && marked.includes(thread.id) ? marked : [thread.id])}
       agents={!depth && !isAgent(thread) ? { shown: agentRunsOpen, onToggle: () => { setAgentRunsOpen(open => !open); if (!agentRunsOpen) void loadChildren(thread.id, undefined, false); } } : undefined}
       area={<div className={`thread-row${depth ? " child" : ""}${selected?.id === thread.id && view === "chat" ? " active" : ""}${marked.includes(thread.id) ? " selected" : ""}`} data-thread-id={thread.id} style={depth ? { paddingLeft: `${Math.min(depth, 5) * 14}px` } : undefined} />}>
       {menu => <>
@@ -1430,7 +1460,7 @@ export default function Home() {
   }
   /** A chat's menu around its tab or title: the "…" button and right-click on `area` share one list. The shown chat's is "Chat actions". */
   const threadMenu = (thread: Thread, area: React.ReactElement, content: (menu: React.ReactNode) => React.ReactNode, shown: boolean) =>
-    <ThreadActions label={shown ? "Chat actions" : undefined} thread={thread} attention={attentionFor(thread.id)} onRequestDelete={() => deleteChats([thread.id])} onRename={renameThread} onArchive={archiveThread} pinned={pins.includes(thread.id)} onPin={togglePin} onOpenInTui={hasTerminal ? openInTui : undefined} onOpenSplit={!split.pane ? openSplit : undefined} onOpenWindow={windowAvailable ? openSessionWindow : undefined} onNewWindow={windowAvailable ? () => openSessionWindow() : undefined} renameRequested={shown && renameRequest} onRenameRequestHandled={() => setRenameRequest(false)} area={area}>{content}</ThreadActions>;
+    <ThreadActions label={shown ? "Chat actions" : undefined} thread={thread} attention={attentionFor(thread.id)} group={groupMenu(thread, [thread.id])} onRequestDelete={() => deleteChats([thread.id])} onRename={renameThread} onArchive={archiveThread} pinned={pins.includes(thread.id)} onPin={togglePin} onOpenInTui={hasTerminal ? openInTui : undefined} onOpenSplit={!split.pane ? openSplit : undefined} onOpenWindow={windowAvailable ? openSessionWindow : undefined} onNewWindow={windowAvailable ? () => openSessionWindow() : undefined} renameRequested={shown && renameRequest} onRenameRequestHandled={() => setRenameRequest(false)} area={area}>{content}</ThreadActions>;
   const chatActions = (area: React.ReactElement, content: React.ReactNode) => view === "chat" && selected
     ? threadMenu(selected, area, menu => <>{content}{menu}</>, true)
     : cloneElement(area, undefined, content);
@@ -1446,6 +1476,19 @@ export default function Home() {
     return filtered.filter(c => c.parentThreadId === parentId).map(child => <div key={child.id}>{threadRow(child, depth)}{descendants(child.id, depth + 1, next)}</div>);
   }
   useEffect(() => { document.title = view === "canvas" ? "Workflows · Elpis" : view === "customize" ? "Ledger — Elpis" : "Elpis"; }, [view]);
+  /** A listed chat and, when shown, its agents under it. */
+  const chatRows = (thread: Thread) => <div key={thread.id}>{threadRow(thread)}{expanded[thread.id] && descendants(thread.id, 1)}</div>;
+  const needsYou = (thread: Thread) => agentState(thread, waitingIds) === "waiting" || !!attention.plans[thread.id];
+  /** A group the person made, drawn as a project is: open or closed, its menu (Rename group, Delete group), its chats. A
+   * closed group holding a chat that needs you says so, as Claude's does. */
+  function chatGroupSection({ group, chats }: { group: ChatGroup; chats: Thread[] }) {
+    const open = !chatGroups.collapsed.includes(group.id), waiting = !open && chats.some(needsYou), note = "A chat in this group is waiting on you";
+    return <SidebarGroup key={group.id} kind="chat" name={group.name} icon={<Layers size={14} aria-hidden="true" />} open={open} onToggle={() => updateGroups(state => toggleCollapsed(state, group.id))}
+      note={waiting ? <span className="thread-dot" data-state="waiting" role="img" aria-label={note} title={note} /> : undefined}
+      wrap={(area, content) => <GroupActions group={group} state={chatGroups} count={ordinaryThreads.filter(thread => chatGroups.members[thread.id] === group.id).length} area={area}
+        onRename={name => updateGroups(state => renameGroup(state, group.id, name))} onDelete={() => updateGroups(state => deleteGroup(state, group.id))}>{content}</GroupActions>}
+      empty={!chats.length}>{chats.map(chatRows)}</SidebarGroup>;
+  }
   const heading = view === "chat" ? (selected ? title(selected) : "") : { agents: "Agents", agentsGuide: "Guide to managing agents", canvas: "Workflows", loveSpot: "Love Spot", customize: "Ledger", observability: "Observability", newAgent: "New agent", settings: "Settings" }[view];
   const chatName = selected ? title(selected) : "New chat";
   const chatState = selected ? agentState(selected, waitingIds) : "idle", floatState = activeTurn && chatState === "idle" ? "working" : chatState;
@@ -1463,6 +1506,8 @@ export default function Home() {
     {commandMenuOpen && <CommandMenu threads={ordinaryThreads} projects={busy || projectChanging ? [] : projects} actions={commandActions} returnFocus={commandReturnFocus} onClose={() => setCommandMenuOpen(false)} onThread={thread => { void loadThread(thread); }} onProject={item => { void selectProject(item).catch(cause => setError(cause instanceof Error ? cause.message : String(cause))); }} onNewChat={prompt => { newChat(); setDesktopPrompt(prompt); }} />}
     {desktop && <StartupSplash done={ready && connected} steps={[{ label: "Elpis engine connected", ok: connected }, { label: "models loaded", ok: models.length > 0 }, { label: "conversations loaded", ok: ready }]} />}
     <ProjectDialog projects={projects} editing={projectEdit} onClose={() => setProjectEdit(undefined)} onSave={saveProject} />
+    <GroupNameDialog open={!!newGroupFor} state={chatGroups} group={null} switches={chatGroups.groupBy !== "custom"} onClose={() => setNewGroupFor(null)}
+      onSave={name => { const ids = newGroupFor ?? [], id = crypto.randomUUID(); updateGroups(state => moveChats(addGroup(state, name, id), ids, id)); setNewGroupFor(null); setMarked([]); }} />
     <DeleteChatsDialog threads={deleteTargets} trash={trashChats} onClose={() => setDeleteTargets(null)} />
     <RewindDialog threadId={selected?.id} turnId={rewindTurn} prompt={rewindTurn ? entries.find(entry => entry.turnId === rewindTurn && entry.item.type === "userMessage")?.item.content?.map(part => part.text ?? "").join("\n") ?? "" : ""} turns={rewindTurn ? Math.max(1, turnEntries.size - [...turnEntries.keys()].indexOf(rewindTurn)) : null} onConfirm={(mode, version) => rewindFrom(rewindTurn!, mode, version)} onClose={() => setRewindTurn(null)} />
     <aside className={`sidebar${sidebar ? " open" : ""}`} aria-label="Workspace navigation">
@@ -1478,17 +1523,18 @@ export default function Home() {
       <div className="thread-list" ref={threadList} onKeyDown={listKeys}>
         {!searchTerm && <section aria-label="Projects"><div className="section-label section-label-row">Projects<Button variant="ghost" size="icon-xs" aria-label="Add new project" title="Add new project: choose a folder" onClick={() => void addProject()}><PlusIcon size={13} /></Button></div>
           {projects.map(item => { const open = !collapsedProjects[item.id], chats = ordinaryThreads.filter(t => !t.parentThreadId && sameFolder(t.cwd && projectFolderOf(t.cwd), item.cwd)).slice(0, 5);
-            return <div key={item.id} className="project-group">
-              <ProjectActions project={item} onEdit={setProjectEdit} onRemove={removeProject} area={<div className={`project-row${project?.id === item.id ? " active" : ""}`} />}>
-                {menu => <><button className="project-toggle" aria-expanded={open} title={item.cwd} onClick={() => setCollapsedProjects(prev => ({ ...prev, [item.id]: open }))}><ChevronRight size={13} className="project-chevron" /><FolderIcon size={14} /><span>{item.name}</span></button>
-                  <span className="project-row-actions">{menu}</span><Button className="project-new-chat" variant="ghost" size="icon-xs" aria-label={`Start new chat in ${item.name}`} title="New chat in this project" disabled={!ready || busy} onClick={() => void selectProject(item)}><PlusIcon size={13} /></Button></>}
-              </ProjectActions>
-              {open && <div className="project-chats">{chats.map(t => threadRow(t))}{!chats.length && <p className="project-empty">No chats yet</p>}</div>}
-            </div>; })}
+            return <SidebarGroup key={item.id} kind="project" name={item.name} title={item.cwd} icon={<FolderIcon size={14} />} open={open} active={project?.id === item.id} onToggle={() => setCollapsedProjects(prev => ({ ...prev, [item.id]: open }))}
+              wrap={(area, content) => <ProjectActions project={item} onEdit={setProjectEdit} onRemove={removeProject} area={area}>{content}</ProjectActions>}
+              trailing={<Button className="project-new-chat" variant="ghost" size="icon-xs" aria-label={`Start new chat in ${item.name}`} title="New chat in this project" disabled={!ready || busy} onClick={() => void selectProject(item)}><PlusIcon size={13} /></Button>}
+              empty={!chats.length}>{chats.map(t => threadRow(t))}</SidebarGroup>; })}
         </section>}
-        {[{ label: "Pinned", list: roots.filter(t => pins.includes(t.id)) }, { label: searchTerm ? "Results" : "Recents", list: roots.filter(t => !pins.includes(t.id)) }].filter(group => group.list.length).map(group => <section key={group.label} aria-label={group.label}><div className="section-label-row"><div className="section-label">{group.label}</div>{group.label === "Recents" && ordinaryUnread.length > 0 && <Button variant="ghost" size="xs" onClick={() => setAttention(previous => ({ ...previous, unread: [] }))}>Mark all as read</Button>}</div>
-          {group.list.map(t => <div key={t.id}>{threadRow(t)}{expanded[t.id] && descendants(t.id, 1)}</div>)}
-        </section>)}
+        {pinnedChats.length > 0 && <section aria-label="Pinned"><div className="section-label-row"><div className="section-label">Pinned</div></div>{pinnedChats.map(chatRows)}</section>}
+        {grouped && grouped.groups.length > 0 && <section aria-label="Groups"><div className="section-label">Groups</div>{grouped.groups.map(chatGroupSection)}</section>}
+        {(searchTerm ? recentChats.length > 0 : roots.length > 0) && <section aria-label={searchTerm ? "Results" : "Recents"}><div className="section-label-row"><div className="section-label">{searchTerm ? "Results" : "Recents"}</div>
+          {!searchTerm && ordinaryUnread.length > 0 && <Button variant="ghost" size="xs" onClick={() => setAttention(previous => ({ ...previous, unread: [] }))}>Mark all as read</Button>}
+          {!searchTerm && <GroupAndSortMenu state={chatGroups} onChange={change => updateGroups(state => ({ ...state, ...change }))} />}</div>
+          {recentChats.map(chatRows)}
+        </section>}
         {unlinked.length > 0 && <div className="unlinked-thread-list" aria-label="Agents whose parent is not listed"><div className="section-label mt-4" title="Their parent conversation is not in the current list.">Other agents</div>{unlinked.map(thread => threadRow(thread))}</div>}
         {ready && !threads.length && <p className="px-2 text-xs text-muted-foreground">Your conversations will appear here.</p>}
         {searchTerm && searchResults.query === searchTerm && searchResults.loading && <p role="status" className="px-2 py-3 text-xs text-muted-foreground">Searching saved conversations…</p>}
