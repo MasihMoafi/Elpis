@@ -65,7 +65,7 @@ async function createOrFocusWindow() {
   }
   if (!sessionWindows) {
     store = createStateStore(path.join(app.getPath('userData'), 'workspace.json'));
-    sessionWindows = createSessionWindows({ electron: require('electron'), url: server.url, store, browserAgentSocket, quickEntry, closeToTray,
+    sessionWindows = createSessionWindows({ electron: require('electron'), url: server.url, store, browserAgentSocket, quickEntry, closeToTray, improvements: server.improvements,
       mayClose, onDark: dark => { darkTheme = dark; }, onClosed: host => { if (window === host) { window = [...sessionWindows.windows][0]; primaryOpeners = sessionWindows.openersFor(window); } },
       onFocused: (host, openers) => { window = host; primaryOpeners = openers; } });
   }
@@ -76,7 +76,7 @@ async function createOrFocusWindow() {
 // WM_CLASS comes from package.json "name" (elpis-desktop) when launched as the app directory;
 // elpis-desktop.desktop.in sets StartupWMClass=elpis-desktop to match, so docks show the Elpis icon.
 app.setName('Elpis');
-app.setPath('userData', path.join(app.getPath('appData'), 'Elpis'));
+app.setPath('userData', process.env.ELPIS_DESKTOP_PROFILE || path.join(app.getPath('appData'), 'Elpis'));
 enableWaylandIme(app.commandLine, process.env);
 // Wayland gives apps global shortcuts only through the desktop portal; Claude's app turns on Chromium's portal support the same way.
 app.commandLine.appendSwitch('enable-features', [app.commandLine.getSwitchValue('enable-features'), 'GlobalShortcutsPortal'].filter(Boolean).join(','));

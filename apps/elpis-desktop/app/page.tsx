@@ -18,6 +18,7 @@ import { Transcript } from "@/components/transcript";
 import { readPins, savePins } from "@/lib/pins";
 import { SHORTCUTS, shortcutFor } from "@/lib/shortcuts";
 import { CommandMenu, type CommandAction } from "@/components/command-menu";
+import { ImproveElpis } from "@/components/improve-elpis";
 import { followUpChoices, followUpHint, followUpKey, followUpTooltip, isSendKey, newChatFolder, useAppPreferences, type Preferences } from "@/lib/preferences";
 import { notifyApproval, notifyRuntimeEvent } from "@/lib/notifications";
 import { queueFollowUp, sendQueuedFollowUp, type FollowUp, type FollowUpOptions } from "@/lib/follow-ups";
@@ -1429,6 +1430,7 @@ export default function Home() {
     const shortcut = SHORTCUTS.find(item => item.id === id)!;
     return { id, name: id === "pin" ? `${pins.includes(selected!.id) ? "Unpin" : "Pin"} chat` : id === "shortcuts" ? "Keyboard shortcuts" : shortcut.label, keys: shortcut.keys, run: () => { if (id === "shortcuts") { shortcutsReturnFocus.current = commandReturnFocus.current; setShortcutsOpen(true); } else shortcutAction.current(id); } };
   });
+  commandActions.push({ id: "improve-elpis", name: "Improve Elpis…", run: () => window.dispatchEvent(new CustomEvent("elpis:improve")) });
   for (const [target, name] of [["agents", "Agents"], ["agentsGuide", "Guide to managing agents"], ["canvas", "Canvas"], ["loveSpot", "Love Spot"], ["observability", "Observability"], ["customize", "Ledger"]] as const) commandActions.push({ id: target, name, run: () => { if (target === "agentsGuide") setGuideBack(view === "canvas" ? "Canvas" : "Agents"); show(target); } });
 
   return <div className={`app-shell${split.pane ? " session-pane" : ""}${split.thread && view === "chat" ? " session-split" : ""}${dark ? " dark" : ""}${desktop ? " has-title-bar" : ""}${sidebarCollapsed ? " sidebar-collapsed" : ""}${view === "settings" ? " settings-mode" : ""}${panelShown ? " panel-active" : ""}`} style={{ "--sidebar-width": `${sidebarWidth}px` } as CSSProperties}>
@@ -1477,6 +1479,7 @@ export default function Home() {
     </aside>
     <main className="workspace" style={panelShown && !fullView && side.width ? { "--side-w": `clamp(360px, ${side.width}px, 70%)` } as CSSProperties : undefined}>
       <header className={`workspace-header${heading ? "" : " untitled"}`}>
+        <ImproveElpis threadId={view === "chat" ? selected?.id : undefined} onChat={loadThread} />
         {outsideChatApprovals.length > 0 && <div className="pending-input-anchor"><Button ref={pendingInputButton} className="pending-input-trigger" variant="secondary" size="sm" aria-label={`Needs input (${outsideChatApprovals.length})`} aria-expanded={pendingInputOpen} aria-controls="pending-input-panel" onKeyDown={event => { if (event.key === "Escape") setPendingInputOpen(false); }} onClick={() => setPendingInputOpen(value => !value)}><span className="pending-count">{outsideChatApprovals.length}</span>Needs input<span className="pending-task-name">{title(threads.find(thread => thread.id === outsideChatApprovals[0].params.threadId) || outsideChatApprovals[0].thread || {id:outsideChatApprovals[0].params.threadId || "unreported"})}</span></Button></div>}
         <Button className="mobile-menu sidebar-open" variant="ghost" size="icon-sm" aria-label="Open sidebar" title="Open sidebar (Ctrl+B)" onClick={() => showSidebar(true)}><PanelLeft size={16} /></Button>
         <img className="mobile-brand" src={brandMark} alt="" aria-hidden="true" width={49} height={24} />

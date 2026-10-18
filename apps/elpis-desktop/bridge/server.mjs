@@ -17,6 +17,7 @@ import { createObservability } from './observability.mjs';
 import { createLoveSpot } from './love-spot-store.cjs';
 import { createLoveSpotTalk } from './love-spot-talk.mjs';
 import { createDevServers, devServerRequest } from './dev-servers.mjs';
+import { createImprovements } from './improve.mjs';
 
 const COOKIE = 'elpis_desktop';
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.txt': 'text/plain', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon', '.woff': 'font/woff', '.woff2': 'font/woff2' };
@@ -96,6 +97,8 @@ export async function startDesktopServer(options = {}) {
   const devServers = createDevServers();
   const experimentLab = createExperimentLab({ client, ...(options.elpisHome ? { file: path.join(options.elpisHome, 'experiment-lab', 'latest.json') } : {}) });
   const loveStreams = new Set();
+  let improvementStore;
+  const improvements = () => improvementStore ??= createImprovements({ client, ...options.improvements });
   const tools = options.tools ?? createTools({ environment: () => client.ragEnvironment() });
   // The Observability page reads the records of the Elpis home this runtime uses (`elpisHome` sets another).
   const observability = createObservability({ home: options.elpisHome, chatOf: id => client.chatSummary(id),
@@ -174,6 +177,17 @@ export async function startDesktopServer(options = {}) {
         if (url.pathname === '/api/tools/transcription') return await transcription(request, response, json);
         if (url.pathname.startsWith('/api/tools/')) return await tools(request, response, url, json);
         if (url.pathname === '/api/health' && method === 'GET') return json(response, 200, { connected: client.connected });
+        if (url.pathname === '/api/improvements') {
+          const store = await improvements();
+          return json(response, method === 'POST' ? 201 : 200, method === 'POST' ? await store.start(await body(request, ATTACHMENT_BODY_LIMIT)) : { data: store.list() });
+        }
+        const improvement = url.pathname.match(/^\/api\/improvements\/([a-f0-9-]+)(?:\/(check|keep))?$/);
+        if (improvement) {
+          const store = await improvements();
+          if (method === 'GET' && !improvement[2]) return json(response, 200, await store.get(improvement[1]));
+          if (method === 'POST' && improvement[2]) { object(await body(request), []); return json(response, 200, await store[improvement[2]](improvement[1])); }
+          throw new BridgeError('Method is not allowed', 405);
+        }
         if (url.pathname === '/api/attachments/extract' && method === 'POST') return json(response, 200, await extractPdf(await body(request, PDF_BODY_LIMIT)));
         const media = url.pathname.match(/^\/api\/threads\/([^/]+)\/turns\/([^/]+)\/items\/([^/]+)\/media\/(\d{1,3})$/);
         if (media && method === 'GET') {
@@ -305,9 +319,11 @@ export async function startDesktopServer(options = {}) {
   heartbeat.unref();
   return {
     url: `${origin}/#token=${capability}`,
+    improvements,
     async close() {
       if (closed) return; closed = true; clearInterval(heartbeat);
       await experimentLab.close();
+      if (improvementStore) (await improvementStore).close();
       await devServers.close();
       loveTalk.close(); await loveTalk.idle(); loveSpot.close(); for (const response of loveStreams) response.end(); loveStreams.clear();
       for (const response of listeners) response.end(); listeners.clear();

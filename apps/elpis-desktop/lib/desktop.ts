@@ -33,7 +33,7 @@ export type DesktopTerminal = {
 /** Quick Entry's global shortcut (desktop/quick-entry.cjs): whether this session allows one, and why the saved one does not work. */
 export type QuickEntryStatus = { supported:boolean; reason?:string; shortcut:string; problem:string|null };
 export type DesktopQuickEntry = { status:()=>Promise<QuickEntryStatus>; setShortcut:(accelerator:string)=>Promise<{shortcut:string}> };
-declare global { interface Window { elpisDesktop?:{browser:DesktopBrowser;storage?:DesktopStorage;chooseFolder?:()=>Promise<string|null>;setTheme?:(dark:boolean,details?:{source:"system"|"light"|"dark";background:string})=>void;resolveFolder?:(folder:string)=>Promise<string>;openFile?:(target:string)=>Promise<void>;
+declare global { interface Window { elpisDesktop?:{improve?:{capture:(bounds:{x:number;y:number;width:number;height:number})=>Promise<{image:string}>;try:(id:string)=>Promise<{opened:boolean}>;onPoint?:(callback:(point:{x:number;y:number})=>void)=>()=>void};browser:DesktopBrowser;storage?:DesktopStorage;chooseFolder?:()=>Promise<string|null>;setTheme?:(dark:boolean,details?:{source:"system"|"light"|"dark";background:string})=>void;resolveFolder?:(folder:string)=>Promise<string>;openFile?:(target:string)=>Promise<void>;
   openExternalFile?:(target:string)=>Promise<void>;onOpenFile?:(callback:(target:{path:string;line?:number})=>void)=>()=>void;
   /** The editors "Open in" offers (desktop/editors.cjs; never VS Code) and a file opened in one, at a line. */
   editors?:()=>Promise<{id:string;name:string}[]>;openInEditor?:(target:string,editor:string,line?:number)=>Promise<void>;openFolder?:(folder:string)=>Promise<void>;terminal?:DesktopTerminal;onOpenThread?:(callback:(threadId:string)=>void)=>()=>void;

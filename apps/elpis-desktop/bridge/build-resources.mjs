@@ -1,4 +1,15 @@
 import fs from 'node:fs/promises';
+import { createRequire } from 'node:module';
+const { instrument } = createRequire(import.meta.url)('./source-map.cjs');
+const sourceMap = {};
+for (const dir of ['app', 'components']) {
+  const root = new URL(`../${dir}/`, import.meta.url);
+  for (const name of await fs.readdir(root, { recursive: true })) {
+    if (name.endsWith('.tsx')) Object.assign(sourceMap, instrument(await fs.readFile(new URL(name, root), 'utf8'), `${dir}/${name}`).entries);
+  }
+}
+await fs.mkdir(new URL('../public/', import.meta.url), { recursive: true });
+await fs.writeFile(new URL('../public/elpis-source-map.json', import.meta.url), JSON.stringify(sourceMap));
 const resources = new URL('./resources/', import.meta.url);
 await fs.mkdir(resources, { recursive: true });
 await fs.copyFile(new URL('../../../codex-rs/core/src/prompts/rag.md', import.meta.url), new URL('./rag.md', resources));

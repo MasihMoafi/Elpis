@@ -10,12 +10,13 @@ const { appPermission } = require('./media-policy.cjs');
 const { trustedBrowserSender } = require('./browser-policy.cjs');
 const { createThreadOpener, createNewChatOpener, threadId: validThreadId } = require('./open-thread.cjs');
 const { createWindowIpc } = require('./window-ipc.cjs');
+const { registerImprove } = require('./improve.cjs');
 const ICON = path.join(__dirname, 'elpis-icon.png');
 const ZOOM = 1.1;
 const TITLE_BAR = { dark: { color: '#0d0e11', symbolColor: '#e6e0d3' }, light: { color: '#f2f2f1', symbolColor: '#252524' } };
 
 /** All session windows use one bridge URL and one workspace store. No window owns the engine. */
-function createSessionWindows({ electron, url, store, browserAgentSocket, quickEntry, closeToTray, mayClose, onDark, onClosed, onFocused }) {
+function createSessionWindows({ electron, url, store, browserAgentSocket, quickEntry, closeToTray, improvements, mayClose, onDark, onClosed, onFocused }) {
   const { BrowserWindow, WebContentsView, session, ipcMain: globalIpc, Menu, clipboard, shell, dialog, nativeTheme } = electron;
   const windows = new Set();
   const openers = new Map();
@@ -47,6 +48,7 @@ function createSessionWindows({ electron, url, store, browserAgentSocket, quickE
     const disposeState = registerState({ host: window, origin, ipcMain, dialog, store });
     const disposeFiles = registerFiles({ host: window, origin, ipcMain, shell });
     const disposeTerminal = registerTerminal({ host: window, origin, ipcMain, clipboard });
+    const disposeImprove = registerImprove({ host: window, origin, ipcMain, improvements });
     const disposeThreads = threads.attach({ host: window, origin, ipcMain });
     const disposeNewChats = newChats.attach({ host: window, origin, ipcMain });
     const disposeQuickEntry = quickEntry?.attach({ host: window, origin, ipcMain }) ?? (() => {});
@@ -66,7 +68,7 @@ function createSessionWindows({ electron, url, store, browserAgentSocket, quickE
     });
     const openInBrowser = url => { try { browser.open(url); } catch { /* Invalid links remain closed. */ } };
     window.webContents.setWindowOpenHandler(({ url }) => { openInBrowser(url); return { action: 'deny' }; });
-    const detachContextMenu = attachContextMenu(window.webContents, { Menu, clipboard, openLink: openInBrowser, origin, window });
+    const detachContextMenu = attachContextMenu(window.webContents, { Menu, clipboard, openLink: openInBrowser, origin, window, changeThis: point => window.webContents.send('elpis:improve:point', point) });
     window.once('ready-to-show', () => window.show());
     ipcMain.handle('elpis:session-window', async (event, id) => {
       if (!trustedBrowserSender(event, window.webContents, origin)) throw Error('Elpis application frame required');
@@ -78,7 +80,7 @@ function createSessionWindows({ electron, url, store, browserAgentSocket, quickE
     const dispose = () => {
       if (disposed) return; disposed = true;
       ipcMain.removeHandler('elpis:session-window');
-      detachContextMenu(); disposeFiles(); disposeTerminal(); disposeThreads(); disposeNewChats(); disposeQuickEntry(); disposeState(); browser.dispose(); disposeTheme();
+      detachContextMenu(); disposeImprove(); disposeFiles(); disposeTerminal(); disposeThreads(); disposeNewChats(); disposeQuickEntry(); disposeState(); browser.dispose(); disposeTheme();
     };
     window.on('close', event => {
       if (windows.size === 1 && closeToTray.hides(event, host)) return;
