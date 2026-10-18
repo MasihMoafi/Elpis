@@ -5,13 +5,146 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { createStateStore, registerState } = require('./state.cjs');
+const { createWindowIpc } = require('./window-ipc.cjs');
+const { EventEmitter } = require('node:events');
+const vm = require('node:vm');
+const { spawn } = require('node:child_process');
+
+// The review's reproduction: two actual preloads and preference modules, routed
+// through production window IPC to one real store. Broadcasts can be delayed.
+function windows(t) {
+  const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'elpis-state-windows-')), 'workspace.json');
+  const store = createStateStore(file), ipc = new EventEmitter(), handlers = new Map(), pending = [], broadcasts = [];
+  ipc.handle = (key, handler) => handlers.set(key, handler);
+  ipc.removeHandler = key => handlers.delete(key);
+  const scope = createWindowIpc(ipc);
+  let delay = false;
+  const open = id => {
+    const renderer = new EventEmitter(), mainFrame = { url: 'http://127.0.0.1:45001/' };
+    const webContents = { id, mainFrame, isDestroyed: () => false, send: (channel, value) => {
+      const deliver = () => renderer.emit(channel, {}, value);
+      if (delay) broadcasts.push(deliver); else deliver();
+    } };
+    const event = () => ({ sender: webContents, senderFrame: mainFrame });
+    renderer.sendSync = channel => { const e = event(); ipc.emit(channel, e); return e.returnValue; };
+    renderer.invoke = (channel, ...args) => {
+      const result = Promise.resolve().then(() => handlers.get(channel)(event(), ...args));
+      pending.push(result); return result;
+    };
+    const dispose = registerState({ host: { webContents }, origin: 'http://127.0.0.1:45001', ipcMain: scope({ webContents }), dialog: {}, store });
+    t.after(dispose);
+    const context = vm.createContext({ window: {}, require: name => {
+      assert.equal(name, 'electron');
+      return { ipcRenderer: renderer, contextBridge: { exposeInMainWorld: (key, value) => { context.window[key] = value; } } };
+    } });
+    vm.runInContext(fs.readFileSync(path.join(__dirname, 'preload.cjs'), 'utf8'), context);
+    const storage = context.window.elpisDesktop.storage, errors = [], changes = [];
+    storage.onError(message => errors.push(message));
+    storage.onChange?.(key => changes.push(key));
+    const code = require('typescript').transpileModule(fs.readFileSync(path.join(__dirname, '../lib/preferences.ts'), 'utf8'), { compilerOptions: { module: 1 } }).outputText;
+    const exports = {};
+    vm.runInContext('(function(require,exports){' + code + '\n})', context)(name => name === 'react' ? {} : { appStorage: () => storage }, exports);
+    exports.readPreferences(); // Both windows cache defaults before either edits.
+    return { storage, preferences: exports, errors, changes };
+  };
+  return { store, file, open, delay: value => { delay = value; }, deliver: () => { for (const send of broadcasts.splice(0)) send(); }, settle: async () => { await Promise.allSettled(pending.splice(0)); await new Promise(resolve => setImmediate(resolve)); } };
+}
+
+test('two actual preloads preserve wrap when another window changes notifications and refresh both preference caches', async t => {
+  const f = windows(t), a = f.open(1), b = f.open(2);
+  a.preferences.savePreferences({ softWrap: true }); await f.settle();
+  b.preferences.savePreferences({ turnNotifications: 'always' }); await f.settle();
+  const saved = JSON.parse(createStateStore(f.file).read()['elpis-preferences-v1']);
+  assert.equal(saved.softWrap, true); assert.equal(saved.turnNotifications, 'always');
+  for (const window of [a, b]) {
+    assert.equal(window.preferences.readPreferences().softWrap, true);
+    assert.equal(window.preferences.readPreferences().turnNotifications, 'always');
+    assert.ok(window.changes.includes('elpis-preferences-v1'));
+    assert.deepEqual(window.errors, []);
+  }
+});
+
+test('rejected writes clear optimistic cache values and report failures without disturbing another key', async t => {
+  const f = windows(t), a = f.open(1), b = f.open(2);
+  await a.storage.saveItem('elpis-theme', 'dark'); await f.settle();
+  fs.renameSync(f.file, f.file + '.fixture'); fs.mkdirSync(f.file);
+  a.storage.setItem('elpis-sidebar-width', '240'); await f.settle();
+  assert.match(a.errors.at(-1), /Could not save/);
+  for (const window of [a, b]) { assert.equal(window.storage.getItem('elpis-sidebar-width'), null); assert.equal(window.storage.getItem('elpis-theme'), 'dark'); }
+  a.storage.setItem('../config.toml', 'unsupported'); await f.settle();
+  assert.equal(a.storage.getItem('../config.toml'), null); assert.match(a.errors.at(-1), /Unsupported/);
+});
+
+test('stale preference fields rebase; overlapping fields conflict and restore the committed cache', async t => {
+  const f = windows(t), a = f.open(1), b = f.open(2);
+  f.delay(true);
+  a.preferences.savePreferences({ softWrap: true }); await f.settle();
+  b.preferences.savePreferences({ turnNotifications: 'always' }); await f.settle();
+  assert.equal(JSON.parse(f.store.read()['elpis-preferences-v1']).softWrap, true);
+  a.preferences.savePreferences({ softWrap: false }); await f.settle();
+  b.preferences.savePreferences({ softWrap: true, turnNotifications: 'never' }); await f.settle();
+  assert.match(b.errors.at(-1), /another window/i);
+  assert.equal(b.preferences.readPreferences().softWrap, false);
+  assert.equal(b.preferences.readPreferences().turnNotifications, 'always', 'a conflict rejects the entire patch');
+  f.deliver();
+  assert.equal(a.preferences.readPreferences().turnNotifications, 'always');
+});
+
+test('rapid own edits remain ordered; stale shared drafts conflict rather than silently replacing another window', async t => {
+  const f = windows(t), a = f.open(1), b = f.open(2), key = 'elpis-draft-v1:chat-1';
+  a.storage.setItem(key, 'first'); a.storage.setItem(key, 'second'); await f.settle();
+  assert.equal(f.store.read()[key], 'second'); assert.deepEqual(a.errors, []);
+  f.delay(true);
+  a.storage.setItem(key, 'third'); await f.settle();
+  await assert.rejects(b.storage.saveItem(key, 'competing draft'), /another window/i);
+  assert.equal(b.storage.getItem(key), 'third');
+  f.deliver();
+  b.storage.removeItem(key); await f.settle(); f.deliver();
+  assert.equal(a.storage.getItem(key), null);
+});
+
+test('main revisions rebase other keys, reject overlapping and invalid patches, and do not publish failed saves', async () => {
+  const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'elpis-state-revisions-')), 'workspace.json');
+  const store = createStateStore(file), changes = [];
+  store.subscribe(change => changes.push(change));
+  await store.patch({ key: 'elpis-theme', baseRevision: 0, value: 'dark' });
+  const result = await store.patch({ key: 'elpis-sidebar-width', baseRevision: 0, value: '240' });
+  assert.equal(result.rebased, true); assert.equal(result.revision, 2);
+  await assert.rejects(store.patch({ key: 'elpis-theme', baseRevision: 0, value: 'light' }), /another window/i);
+  for (const patch of [{ key: 'elpis-theme', value: 'light' }, { key: 'elpis-theme', baseRevision: 99, value: 'light' }, { key: '../config', baseRevision: 2, value: 'x' }, { key: 'elpis-preferences-v1', baseRevision: 2, changes: { softWrap: 'yes' } }]) await assert.rejects(store.patch(patch), /Unsupported/);
+  assert.equal(changes.length, 2);
+  fs.renameSync(file, file + '.fixture'); fs.mkdirSync(file);
+  await assert.rejects(store.patch({ key: 'elpis-theme', baseRevision: 2, value: 'light' }), /Could not save/);
+  assert.equal(store.read()['elpis-theme'], 'dark'); assert.equal(changes.length, 2);
+  fs.renameSync(file, file + '.unavailable');
+  await store.patch({ key: 'elpis-theme', baseRevision: 2, value: 'light' });
+  assert.equal(store.snapshot().revision, 3);
+});
+
+test('persistence does not use synchronous filesystem writes', async () => {
+  const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'elpis-state-async-')), 'workspace.json');
+  const store = createStateStore(file), originals = {};
+  for (const name of ['mkdirSync', 'writeFileSync', 'renameSync', 'fsyncSync']) { originals[name] = fs[name]; fs[name] = () => { throw Error('synchronous persistence'); }; }
+  try { await store.set('elpis-theme', 'dark'); }
+  finally { Object.assign(fs, originals); }
+  assert.equal(createStateStore(file).read()['elpis-theme'], 'dark');
+});
+
+test('SIGKILL immediately after acknowledgement preserves the last acknowledged write', { timeout: 10000 }, async t => {
+  const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'elpis-state-crash-')), 'workspace.json');
+  const child = spawn(process.execPath, ['-e', `const {createStateStore}=require(${JSON.stringify(path.join(__dirname, 'state.cjs'))});const store=createStateStore(process.argv[1]);store.set('elpis-draft-v1:chat-1','Durable متن فارسی').then(()=>{process.send('ack');setInterval(()=>{},1000);});`, file], { stdio: ['ignore', 'ignore', 'pipe', 'ipc'] });
+  t.after(() => { if (child.exitCode === null) child.kill('SIGKILL'); });
+  await new Promise((resolve, reject) => { child.once('message', resolve); child.once('error', reject); child.once('exit', code => reject(Error(`child exited ${code} before acknowledgement`))); });
+  const exited = new Promise(resolve => child.once('exit', resolve)); child.kill('SIGKILL'); await exited;
+  assert.equal(createStateStore(file).read()['elpis-draft-v1:chat-1'], 'Durable متن فارسی');
+});
 
 test('desktop state survives a new process store, preserves exact drafts and uses private files', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'elpis-state-'));
   const file = path.join(dir, 'profile', 'workspace.json');
   const store = createStateStore(file);
   const draft = 'Review this\n\nمتن فارسی';
-  await Promise.all([store.set('elpis-draft-v1:chat-1', draft), store.set('elpis-draft-v1:recovery-chat-1', 'Unsent edited message'), store.set('elpis-theme', 'dark'), store.set('elpis-workflow-draft-v1', '{"workflow":"exact draft"}')]);
+  await Promise.all([store.set('elpis-draft-v1:chat-1', draft), store.set('elpis-draft-v1:recovery-chat-1', 'Unsent edited message'), store.set('elpis-theme', 'light'), store.set('elpis-theme', 'dark'), store.set('elpis-workflow-draft-v1', '{"workflow":"exact draft"}')]);
   const reopened = createStateStore(file);
   assert.equal(reopened.read()['elpis-draft-v1:chat-1'], draft);
   assert.equal(reopened.read()['elpis-draft-v1:recovery-chat-1'], 'Unsent edited message', 'a failed replacement is saved separately from the current composer draft');
@@ -72,7 +205,9 @@ test('only the app main frame can read state or choose a folder; cancel has no s
   const dispose = registerState({ host, origin: 'http://127.0.0.1:45001', ipcMain, dialog, store: createStateStore(file) });
   const foreign = { sender: {}, senderFrame: { url: 'https://example.com' } };
   await assert.rejects(() => handlers.get('elpis:folder')(foreign), /application/);
+  await assert.rejects(() => handlers.get('elpis:state:write')(foreign, { key: 'elpis-theme', value: 'dark', baseRevision: 0 }), /application/);
   const own = { sender: webContents, senderFrame: mainFrame };
+  for (const senderFrame of [{ url: mainFrame.url }, { url: 'https://example.com' }]) await assert.rejects(() => handlers.get('elpis:state:write')({ ...own, senderFrame }, { key: 'elpis-theme', value: 'dark', baseRevision: 0 }), /application/);
   assert.equal(await handlers.get('elpis:folder')(own), null);
   assert.equal(dialogs, 1);
   const dir = path.dirname(file);

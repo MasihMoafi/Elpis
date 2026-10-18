@@ -109,7 +109,7 @@ if (!app.requestSingleInstanceLock({ openThread: openThreadArgument(process.argv
     if (sessionWindows && ![...sessionWindows.windows].every(host => mayClose(host))) return;
     closing = true;
     // Detach this UI only. The shared Elpis runtime owns running conversations.
-    Promise.all([server.close(), browserAgentSocket?.close()]).finally(() => app.quit());
+    Promise.all([store?.flush(), server.close(), browserAgentSocket?.close()]).finally(() => app.quit());
   });
 }
 

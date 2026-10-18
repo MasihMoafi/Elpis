@@ -16,7 +16,13 @@ export type DesktopBrowser = {
   layout:(value:{bounds:{x:number;y:number;width:number;height:number};obscured:boolean})=>void;
   subscribe:(callback:(state:BrowserState)=>void)=>()=>void;
 };
-export type DesktopStorage = Pick<Storage, "getItem" | "setItem" | "removeItem"> & { saveItem?:(key:string,value:string)=>Promise<void>;onError:(callback:(message:string)=>void)=>()=>void };
+export type DesktopStorage = Pick<Storage, "getItem" | "setItem" | "removeItem"> & {
+  saveItem?:(key:string,value:string)=>Promise<void>;
+  /** Atomically merges preference fields; conflicts go to onError. */
+  patchItem?:(key:string,changes:Record<string,string|boolean>)=>void;
+  onChange?:(callback:(key:string)=>void)=>()=>void;
+  onError:(callback:(message:string)=>void)=>()=>void;
+};
 /** A terminal tab's shell (desktop/terminal.cjs): what it printed so far (the last part of `end` characters), and its exit code once it ends. */
 export type TerminalSession = { id:number; end:number; shell:string; output:string; exited:number|null };
 export type DesktopTerminal = {

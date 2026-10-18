@@ -6,11 +6,20 @@ const { randomUUID } = require('node:crypto');
 /** The keys the renderer may keep in the desktop store; anything else is refused (tests/controls.cjs guards stubs with it). */
 const STORE_KEYS = /^(elpis-theme|elpis-chat-tabs-v1|elpis-sidebar-width|elpis-preferences-v1|elpis-projects-v1|elpis-pinned-chats-v1|elpis-terminal-height|elpis-last-chat|elpis-workflow-draft-v1|elpis-editor-v1|elpis-chat-attention-v1|elpis-canvas-panel|elpis-canvas-auto|(?:elpis-draft-v1|elpis-attachments-v1):[A-Za-z0-9_-]{1,200})$/;
 const allowed = key => typeof key === 'string' && STORE_KEYS.test(key);
+const PREFERENCES_KEY = 'elpis-preferences-v1';
+const preferenceTypes = { defaultFolder: 'string', softWrap: 'boolean', sendShortcut: ['enter', 'modEnter'], followUp: ['steer', 'queue'], showContextUsage: 'boolean', confirmClose: 'boolean', closeToTray: 'boolean', quickEntryShortcut: 'string', confirmDeleteChats: 'boolean', turnNotifications: ['never', 'unfocused', 'always'], inputNotifications: 'boolean', notificationSound: 'boolean' };
+function preferencePatch(value) {
+  return value && typeof value === 'object' && !Array.isArray(value) && Object.entries(value).every(([key, item]) => {
+    const type = Object.hasOwn(preferenceTypes, key) ? preferenceTypes[key] : null;
+    return (Array.isArray(type) ? type.includes(item) : type && typeof item === type) && (key !== 'defaultFolder' || !item || item.startsWith('/'));
+  });
+}
 
 // App-owned preferences live outside the changing loopback origin. No runtime
 // configuration or conversation history is written through this interface.
 function createStateStore(file) {
-  let values = {}, error, timer, dirty = false, waiting = [];
+  let values = {}, error, revision = 0, queue = Promise.resolve();
+  const listeners = new Set(), versions = new Map(), replacements = new Map(), fields = new Map();
   try {
     const raw = fs.readFileSync(file, 'utf8');
     if (Buffer.byteLength(raw) > 8 * 1024 * 1024) throw Error('too large');
@@ -19,42 +28,71 @@ function createStateStore(file) {
   } catch (cause) {
     if (cause.code !== 'ENOENT') error = 'Could not read saved Elpis workspace. The original file has been preserved.';
   }
-  let committed = { ...values };
-  function flush() {
-    clearTimeout(timer); timer = undefined;
-    if (!waiting.length && !dirty) return;
-    const pending = waiting; waiting = [];
+  const snapshot = () => error ? { error } : { values: { ...values }, revision };
+  async function persist(next) {
+    const temp = `${file}.${randomUUID()}.pending`;
+    let handle;
     try {
-      fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
-      const temp = `${file}.${randomUUID()}.pending`;
-      fs.writeFileSync(temp, JSON.stringify(values), { flag: 'wx', mode: 0o600 });
-      fs.renameSync(temp, file);
-      committed = { ...values };
-      dirty = false;
-      pending.forEach(({ resolve }) => resolve());
+      await fs.promises.mkdir(path.dirname(file), { recursive: true, mode: 0o700 });
+      handle = await fs.promises.open(temp, 'wx', 0o600);
+      await handle.writeFile(JSON.stringify(next));
+      await handle.sync(); await handle.close(); handle = undefined;
+      await fs.promises.rename(temp, file);
+      // Acknowledgement includes the rename's directory entry, not just file data.
+      handle = await fs.promises.open(path.dirname(file), 'r');
+      await handle.sync();
     } catch {
-      values = { ...committed }; dirty = false;
-      pending.forEach(({ reject }) => reject(Error('Could not save Elpis workspace. Keep this window open or copy your unsent text.')));
+      throw Error('Could not save Elpis workspace. Keep this window open or copy your unsent text.');
+    } finally {
+      if (handle) await handle.close().catch(() => {});
+      await fs.promises.unlink(temp).catch(() => {});
     }
   }
-  return {
-    read: () => error ? { error } : { ...values },
-    async set(key, value) {
+  function patch(input, writer) {
+    const run = async () => {
       if (error) throw Error(error);
-      if (!allowed(key) || (value !== null && typeof value !== 'string')) throw Error('Unsupported workspace value');
-      if (!dirty && (values[key] === value || (value === null && values[key] === undefined))) return;
+      const { key, baseRevision, changes } = input ?? {};
+      let value = input?.value;
+      if (!allowed(key) || !Number.isSafeInteger(baseRevision) || baseRevision < 0 || baseRevision > revision ||
+        (changes !== undefined ? key !== PREFERENCES_KEY || value !== undefined || !preferencePatch(changes) : value !== null && typeof value !== 'string')) throw Error('Unsupported workspace patch');
+      // Ordered in-flight edits from one renderer may share a base revision.
+      // Edits from another renderer always require an observed revision.
+      const stale = version => version && version.revision > baseRevision && (writer === undefined || version.writer !== writer);
+      const conflict = changes !== undefined
+        ? stale(replacements.get(key)) || Object.keys(changes).some(field => stale(fields.get(field)))
+        : stale(versions.get(key));
+      if (conflict) throw Object.assign(Error('This setting or draft changed in another window. Your change was not saved. Check the current value and try again; copy unsent text before closing.'), { code: 'STATE_CONFLICT' });
+      if (changes !== undefined) {
+        let current = {};
+        try { const parsed = JSON.parse(values[key] || '{}'); if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) current = parsed; } catch { /* Same defaults recovery as lib/preferences.ts. */ }
+        value = JSON.stringify({ ...current, ...changes });
+      }
+      const rebased = baseRevision < revision;
+      if (values[key] === value || (value === null && values[key] === undefined)) return { key, value, revision, rebased };
       if (typeof value === 'string' && Buffer.byteLength(value) > (key.startsWith('elpis-attachments-v1:') ? 6 * 1024 * 1024 : 1_000_000)) throw Error('Workspace value is too large');
       const next = { ...values };
       if (value === null) delete next[key]; else next[key] = value;
       if (Buffer.byteLength(JSON.stringify(next)) > 8 * 1024 * 1024) throw Error('Saved drafts are too large. Copy or clear an older unsent draft.');
-      values = next;
-      dirty = true;
-      clearTimeout(timer);
-      const saved = new Promise((resolve, reject) => waiting.push({ resolve, reject }));
-      timer = setTimeout(flush, 60);
-      return saved;
-    },
-    flush,
+      await persist(next);
+      values = next; ++revision;
+      const version = { revision, writer };
+      versions.set(key, version);
+      if (changes !== undefined) for (const field of Object.keys(changes)) fields.set(field, version);
+      else replacements.set(key, version);
+      const change = { key, value, revision, rebased };
+      for (const listener of listeners) { try { listener(change); } catch { /* A closed window cannot invalidate a durable save. */ } }
+      return change;
+    };
+    const saved = queue.then(run);
+    queue = saved.catch(() => {});
+    return saved;
+  }
+  return {
+    read: () => error ? { error } : { ...values },
+    snapshot, patch,
+    set: (key, value) => patch({ key, value, baseRevision: revision }, null),
+    subscribe: listener => { listeners.add(listener); return () => listeners.delete(listener); },
+    flush: () => queue,
   };
 }
 
@@ -62,9 +100,16 @@ function registerState({ host, origin, ipcMain, dialog, store }) {
   function authorize(event) {
     if (event.sender !== host.webContents || event.senderFrame !== host.webContents.mainFrame || new URL(event.senderFrame.url).origin !== origin) throw Error('Elpis application frame required');
   }
-  const read = event => { try { authorize(event); event.returnValue = store.read(); } catch { event.returnValue = { error: 'Elpis application frame required' }; } };
+  const read = event => { try { authorize(event); event.returnValue = store.snapshot(); } catch { event.returnValue = { error: 'Elpis application frame required' }; } };
   ipcMain.on('elpis:state:read', read);
-  ipcMain.handle('elpis:state:write', async (event, key, value) => { authorize(event); await store.set(key, value); });
+  ipcMain.handle('elpis:state:write', async (event, patch) => {
+    authorize(event);
+    try { return await store.patch(patch, host.webContents.id); }
+    catch (error) { return { error: error.message, code: error.code ?? 'STATE_SAVE_FAILED', snapshot: store.snapshot() }; }
+  });
+  const unsubscribe = store.subscribe(change => {
+    if (!host.webContents.isDestroyed() && new URL(host.webContents.mainFrame.url).origin === origin) host.webContents.send('elpis:state:changed', change);
+  });
   ipcMain.handle('elpis:folder', async event => {
     authorize(event);
     const result = await dialog.showOpenDialog(host, { title: 'Choose project folder', properties: ['openDirectory'] });
@@ -77,7 +122,7 @@ function registerState({ host, origin, ipcMain, dialog, store }) {
     catch { throw Error('This folder is unavailable. Choose an existing local folder.'); }
   });
   return () => {
-    store.flush();
+    unsubscribe();
     ipcMain.removeListener('elpis:state:read', read);
     for (const channel of ['elpis:state:write', 'elpis:folder', 'elpis:folder:resolve']) ipcMain.removeHandler(channel);
   };

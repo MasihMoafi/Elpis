@@ -45,24 +45,34 @@ function parse(raw: string | null): Preferences {
 }
 
 let snapshot: Preferences | null = null;
+let snapshotRaw: string | null = null;
 const listeners = new Set<() => void>();
 const notify = () => { for (const listener of listeners) listener(); };
 /** The current preferences; cheap to call from event handlers. */
 export function readPreferences(): Preferences {
   if (typeof window === "undefined") return DEFAULT_PREFERENCES;
-  if (!snapshot) { try { snapshot = parse(appStorage().getItem(PREFERENCES_KEY)); } catch { snapshot = { ...DEFAULT_PREFERENCES }; } }
+  try {
+    const raw = appStorage().getItem(PREFERENCES_KEY);
+    if (!snapshot || raw !== snapshotRaw) { snapshot = parse(raw); snapshotRaw = raw; }
+  } catch { snapshot = { ...DEFAULT_PREFERENCES }; }
   return snapshot;
 }
 export function savePreferences(patch: Partial<Preferences>) {
   const next = parse(JSON.stringify({ ...readPreferences(), ...patch }));
-  appStorage().setItem(PREFERENCES_KEY, JSON.stringify(next));
-  snapshot = next; notify();
+  const storage = window.elpisDesktop?.storage;
+  if (storage?.patchItem) {
+    const changes: Record<string, string | boolean> = {};
+    for (const key of Object.keys(patch) as (keyof Preferences)[]) if (Object.hasOwn(DEFAULT_PREFERENCES, key)) changes[key] = next[key];
+    storage.patchItem(PREFERENCES_KEY, changes);
+  } else appStorage().setItem(PREFERENCES_KEY, JSON.stringify(next));
+  snapshot = null; notify();
 }
 function subscribe(listener: () => void) {
   listeners.add(listener);
   const other = (event: StorageEvent) => { if (event.key === PREFERENCES_KEY) { snapshot = null; notify(); } };
   window.addEventListener("storage", other);
-  return () => { listeners.delete(listener); window.removeEventListener("storage", other); };
+  const off = window.elpisDesktop?.storage?.onChange?.(key => { if (key === PREFERENCES_KEY) { snapshot = null; notify(); } });
+  return () => { listeners.delete(listener); window.removeEventListener("storage", other); off?.(); };
 }
 export function usePreferences(): Preferences {
   return useSyncExternalStore(subscribe, readPreferences, () => DEFAULT_PREFERENCES);

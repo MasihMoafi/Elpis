@@ -7,6 +7,47 @@ const { execFileSync } = require('node:child_process');
 const { _electron } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright');
 const { fixture } = require('./parity-fixture.cjs');
 const { assertUiFit } = require('./ui-fit.cjs');
+const { openSettings, chooseOption, controlValue, leaveSettings } = require('./controls.cjs');
+
+test('native settings changes update both windows without reverting another preference', { skip: !process.env.ELPIS_PRIVATE_DISPLAY && 'Use ELPIS_PRIVATE_DISPLAY=1 xvfb-run -a for native windows' }, async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'session-settings-'));
+  const f = await fixture({ desktop: false, routes: { '/api/settings': () => ({
+    version: 'fixture', main: { model: 'sol', provider: 'openai' }, background: { model: null, provider: null },
+    smartPrune: { enabled: false, explicitOverride: {} }, memory: {}, options: { serviceTier: 'default' }, write: { available: false, reason: 'Fixture' },
+  }) } }); let electron;
+  try {
+    electron = await _electron.launch({ executablePath: require('electron'), args: ['--no-sandbox', '--ozone-platform=x11', path.resolve(__dirname, 'session-windows-electron.cjs')], env: { ...process.env, XDG_SESSION_TYPE: 'x11', WAYLAND_DISPLAY: '', HOME: root, ELPIS_HOME: root, SESSION_WINDOW_PROFILE: path.join(root, 'profile'), SESSION_WINDOW_URL: f.page.url() } });
+    const first = await electron.firstWindow(); first.setDefaultTimeout(10000);
+    await first.locator('.thread-row[data-thread-id="chat-a"]').waitFor();
+    await first.locator('.thread-row[data-thread-id="chat-a"] .thread-link').click();
+    await first.getByRole('button', { name: 'Chat actions', exact: true }).click();
+    const opened = electron.waitForEvent('window');
+    await first.getByRole('menuitem', { name: 'Open session in new window', exact: true }).click();
+    const second = await opened; second.setDefaultTimeout(10000);
+    await second.locator('.thread-row[data-thread-id="chat-a"]').waitFor();
+    for (const page of [first, second]) { await openSettings(page); await page.getByRole('tab', { name: 'General', exact: true }).click(); }
+    const usage = page => page.getByRole('switch', { name: 'Show context window usage', exact: true });
+    await usage(first).click();
+    await second.waitForFunction(() => document.querySelector('[aria-label="Show context window usage"]').getAttribute('aria-checked') === 'false');
+    await second.getByRole('tab', { name: 'Notifications', exact: true }).click();
+    await chooseOption(second.getByLabel('Turn completion notifications', { exact: true }), 'always');
+    await first.getByRole('tab', { name: 'Notifications', exact: true }).click();
+    await first.waitForFunction(() => document.querySelector('[aria-label="Turn completion notifications"]').getAttribute('data-value') === 'always');
+    assert.equal(await controlValue(first.getByLabel('Turn completion notifications', { exact: true })), 'always');
+    for (const page of [first, second]) { await page.getByRole('tab', { name: 'General', exact: true }).click(); assert.equal(await usage(page).getAttribute('aria-checked'), 'false'); }
+    const saved = JSON.parse(JSON.parse(await fs.readFile(path.join(root, 'profile/workspace.json'), 'utf8'))['elpis-preferences-v1']);
+    assert.equal(saved.showContextUsage, false); assert.equal(saved.turnNotifications, 'always');
+    if (process.env.ELPIS_PARITY_SHOTS) for (const colorScheme of ['light', 'dark']) {
+      await second.emulateMedia({ colorScheme });
+      await second.waitForFunction(dark => document.querySelector('.app-shell').classList.contains('dark') === dark, colorScheme === 'dark');
+      await second.screenshot({ path: path.join(process.env.ELPIS_PARITY_SHOTS, `settings-${colorScheme}.png`), fullPage: true });
+    }
+    await leaveSettings(second); await first.close(); await second.reload();
+    await second.locator('.thread-row[data-thread-id="chat-a"]').waitFor();
+    await openSettings(second); await second.getByRole('tab', { name: 'General', exact: true }).click();
+    assert.equal(await usage(second).getAttribute('aria-checked'), 'false');
+  } finally { if (electron) await electron.close(); await f.close(); }
+});
 
 test('production Electron windows share chats and live replies; native menu, chat menu, independent close and IPC survive', { skip: !process.env.ELPIS_PRIVATE_DISPLAY && 'Use ELPIS_PRIVATE_DISPLAY=1 xvfb-run -a for native keys' }, async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'session-windows-'));

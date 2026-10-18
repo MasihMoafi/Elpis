@@ -56,7 +56,7 @@ test('the preload hands the page each chat to open, including one queued before 
   await new Promise(resolve => setTimeout(resolve, 10));
   stop();
   assert.deepEqual(opened, [id, 'second-chat']);
-  assert.equal(listeners.size, 0);
+  assert.deepEqual([...listeners.keys()], ['elpis:state:changed'], 'only the shared store subscription remains');
 });
 
 test('Quick Entry and the tray hand the page a new chat to open, with its text or none', async () => {
@@ -74,7 +74,7 @@ test('Quick Entry and the tray hand the page a new chat to open, with its text o
   await new Promise(resolve => setTimeout(resolve, 10));
   stop();
   assert.deepEqual(opened, ['Summarise the README', ''], "the tray's New chat opens one without text");
-  assert.equal(listeners.size, 0);
+  assert.deepEqual([...listeners.keys()], ['elpis:state:changed'], 'only the shared store subscription remains');
 });
 
 test('a new chat waits in the main process until the page takes it; only text the composer could hold is kept', async () => {
