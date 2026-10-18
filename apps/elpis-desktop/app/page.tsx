@@ -1445,7 +1445,7 @@ export default function Home() {
     if (seen.has(parentId)) return null; const next = new Set(seen).add(parentId);
     return filtered.filter(c => c.parentThreadId === parentId).map(child => <div key={child.id}>{threadRow(child, depth)}{descendants(child.id, depth + 1, next)}</div>);
   }
-  useEffect(() => { document.title = view === "canvas" ? "Workflows · Elpis" : "Elpis"; }, [view]);
+  useEffect(() => { document.title = view === "canvas" ? "Workflows · Elpis" : view === "customize" ? "Ledger — Elpis" : "Elpis"; }, [view]);
   const heading = view === "chat" ? (selected ? title(selected) : "") : { agents: "Agents", agentsGuide: "Guide to managing agents", canvas: "Workflows", loveSpot: "Love Spot", customize: "Ledger", observability: "Observability", newAgent: "New agent", settings: "Settings" }[view];
   const chatName = selected ? title(selected) : "New chat";
   const chatState = selected ? agentState(selected, waitingIds) : "idle", floatState = activeTurn && chatState === "idle" ? "working" : chatState;

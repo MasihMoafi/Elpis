@@ -47,10 +47,6 @@ export function CustomizeView({ cwd, onCreateSkill, onOpenSettings, onConnectGit
   const [deleted, setDeleted] = useState<{ name: string; token: string } | null>(null), [savingSkill, setSavingSkill] = useState(false);
   const skillList = useRef<HTMLUListElement>(null), returnFocus = useRef<HTMLElement | null>(null);
   useEffect(() => {
-    const previous = document.title; document.title = "Ledger — Elpis";
-    return () => { document.title = previous; };
-  }, []);
-  useEffect(() => {
     if (!deleted) return;
     const timer = window.setTimeout(() => setDeleted(null), 4000);
     return () => window.clearTimeout(timer);

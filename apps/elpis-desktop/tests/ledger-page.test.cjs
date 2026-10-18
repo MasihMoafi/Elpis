@@ -28,6 +28,7 @@ async function setup(options = {}) {
 }
 const row = (page, name) => page.locator('.customize-item').filter({ has: page.getByText(name, { exact: true }) });
 const open = async page => { await page.locator('.nav-list').getByRole('button', { name: 'Ledger', exact: true }).click(); await page.getByRole('heading', { name: 'Your skills', exact: true }).waitFor(); };
+const windowTitle = async (page, title) => { await page.waitForFunction(expected => document.title === expected, title); assert.equal(await page.title(), title); };
 
 test('Ledger names the sidebar, heading, command action and window; customize view identity is retained', async () => {
   const f = await setup();
@@ -35,7 +36,7 @@ test('Ledger names the sidebar, heading, command action and window; customize vi
     const { page } = f;
     await open(page);
     await page.getByRole('heading', { name: 'Ledger', exact: true }).waitFor();
-    assert.match(await page.title(), /Ledger/);
+    await windowTitle(page, 'Ledger — Elpis');
     assert.equal(await page.getByRole('button', { name: 'Customize', exact: true }).count(), 0);
     await page.keyboard.press('Control+k');
     await page.getByRole('combobox', { name: 'Search or start a chat' }).fill('Ledger');
@@ -45,10 +46,16 @@ test('Ledger names the sidebar, heading, command action and window; customize vi
     await f.open('chat-a');
     assert.equal(await page.getByRole('group', { name: 'Elpis features', exact: true }).getByRole('button', { name: 'Ledger', exact: true }).count(), 1);
     assert.equal(await page.locator('.nav-list').getByRole('button', { name: 'Ledger', exact: true }).count(), 1);
-    assert.doesNotMatch(await page.title(), /Ledger/);
+    await windowTitle(page, 'Elpis');
     await page.getByRole('button', { name: 'Back', exact: true }).click();
     await page.getByRole('heading', { name: 'Ledger', exact: true }).waitFor();
-    assert.match(await page.title(), /Ledger/, 'history restores the original customize view identity');
+    await windowTitle(page, 'Ledger — Elpis');
+    await page.locator('.nav-list').getByRole('button', { name: 'Workflows', exact: true }).click();
+    await page.getByRole('region', { name: 'Workflows', exact: true }).waitFor();
+    await windowTitle(page, 'Workflows · Elpis');
+    await page.getByRole('button', { name: 'Back', exact: true }).click();
+    await page.getByRole('heading', { name: 'Ledger', exact: true }).waitFor();
+    await windowTitle(page, 'Ledger — Elpis');
     assert.equal(f.posts.some(post => post.path.includes('/delete')), false);
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
