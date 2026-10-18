@@ -30,6 +30,7 @@ use codex_core::AdmissionDecision;
 use codex_core::OptimizerReply;
 use codex_core::StandaloneOptimizer;
 use codex_core::admit_compact_text;
+use codex_core::log_redaction::redact_secrets;
 use codex_core::parse_decision_manifest;
 use futures::FutureExt;
 use futures::future::BoxFuture;
@@ -277,7 +278,7 @@ async fn decide(state: &ProxyState, body: &Value, pending: &[Candidate]) -> Deci
         );
     }
     if let Some(error) = &error {
-        tracing::warn!("Smart Prune kept the source: {error}");
+        tracing::warn!("Smart Prune kept the source: {}", redact_secrets(error));
     }
     let record = serde_json::json!({
         "admission_id": admission_id,
@@ -303,7 +304,10 @@ async fn decide(state: &ProxyState, body: &Value, pending: &[Candidate]) -> Deci
         }
     }
     if let Err(error) = written {
-        tracing::warn!("Smart Prune record failed; sending the source: {error}");
+        tracing::warn!(
+            "Smart Prune record failed; sending the source: {}",
+            redact_secrets(&error.to_string())
+        );
         return pending
             .iter()
             .map(|candidate| (candidate.tool_use_id.clone(), None))
@@ -318,7 +322,7 @@ fn write_record(log_dir: &Path, admission_id: &str, record: &Value) -> io::Resul
     let temp = log_dir.join(format!(".{admission_id}.json.tmp"));
     std::fs::write(
         &temp,
-        serde_json::to_vec_pretty(record).map_err(io::Error::other)?,
+        redact_secrets(&serde_json::to_string_pretty(record).map_err(io::Error::other)?),
     )?;
     std::fs::rename(temp, path)
 }
@@ -354,6 +358,14 @@ fn load_decisions(log_dir: &Path) -> Decisions {
                 .get("admitted")
                 .and_then(Value::as_str)
                 .map(str::to_string);
+            // A redacted audit cannot reconstruct a model-visible secret. Reconsider
+            // this result from its real source on the next request after a restart.
+            if admitted
+                .as_ref()
+                .is_some_and(|text| text.contains("[redacted:"))
+            {
+                continue;
+            }
             decisions.insert(id.to_string(), admitted);
         }
     }

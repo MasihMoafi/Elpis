@@ -94,6 +94,7 @@ pub mod pressure_compaction;
 // `/pruner-model` settings the TUI saves through app-server-client.
 pub(crate) mod smart_prune;
 pub mod smart_prune_log;
+pub mod log_redaction;
 mod jev_prune;
 #[cfg(test)]
 mod smart_prune_tests;

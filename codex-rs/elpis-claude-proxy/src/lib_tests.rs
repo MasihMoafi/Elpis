@@ -296,6 +296,67 @@ async fn the_login_reaches_the_upstream_and_no_record() {
     }
 }
 
+#[tokio::test]
+async fn real_proxy_records_redact_secrets_but_optimizer_and_upstream_keep_them() {
+    let fixtures: Value = serde_json::from_str(include_str!(
+        "../../../tools/elpis-claude/test/fixtures/log-secrets.json"
+    ))
+    .unwrap();
+    for (index, fixture) in fixtures.as_array().unwrap().iter().enumerate() {
+        let original = fixture["input"].as_str().unwrap().to_string();
+        let wanted = original.clone();
+        let optimizer = Arc::new(FakeOptimizer {
+            reply: Box::new(move |input| {
+                let input: Value = serde_json::from_str(input)?;
+                let source = input["items"][0]["source_output"].as_str().unwrap();
+                assert!(
+                    source.starts_with(&wanted),
+                    "optimizer sees real fixture {index}"
+                );
+                Ok(json!({"items": [{"call_id": "toolu_1", "decision": "compact", "content": wanted}]}).to_string())
+            }),
+            calls: AtomicUsize::new(0),
+        });
+        let harness = harness(true, optimizer.clone()).await;
+        let mut body = first_turn();
+        body["messages"][2]["content"][0]["content"] =
+            json!(format!("{original}\n{}", tool_output()));
+        harness.send(body.to_string().as_bytes()).await;
+        harness.send(body.to_string().as_bytes()).await;
+        let requests = harness.received().await;
+        let forwarded = tool_result(&requests[0]);
+        assert!(
+            forwarded["content"]
+                .as_str()
+                .unwrap()
+                .starts_with(&original),
+            "upstream sees real fixture {index}"
+        );
+        assert_eq!(tool_result(&requests[1]), forwarded);
+        assert_eq!(optimizer.calls.load(Ordering::SeqCst), 1);
+        let records = harness.records();
+        assert_eq!(records.len(), 1);
+        let raw: Value =
+            serde_json::from_str(records[0]["raw_response"].as_str().unwrap()).unwrap();
+        assert!(
+            raw["items"][0]["content"] == fixture["expected"],
+            "stored response fixture {index}"
+        );
+        let admitted = records[0]["items"][0]["admitted"].as_str().unwrap();
+        assert!(
+            admitted.starts_with(fixture["expected"].as_str().unwrap()),
+            "stored compact fixture {index}"
+        );
+        let restored = load_decisions(harness.log_dir.path());
+        if admitted.contains("[redacted:") {
+            assert!(
+                restored.is_empty(),
+                "redacted decisions must be reconsidered {index}"
+            );
+        }
+    }
+}
+
 impl Harness {
     async fn session(&self) -> Value {
         reqwest::get(format!("{}/elpis/session.json", self.proxy.origin()))

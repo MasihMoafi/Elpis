@@ -27,6 +27,11 @@ if (process.argv.includes("--elpis-local-bridge")) {
   });
   ws.on("close", () => process.exit(0));
 } else if (process.argv.includes("app-server")) {
+  if (process.env.IDLE_STDERR) {
+    const text = process.env.IDLE_STDERR;
+    process.stderr.write(text.slice(0, 12));
+    setTimeout(() => process.stderr.write(text.slice(12) + "\n"), 20);
+  }
   const trace = msg => fs.appendFileSync(process.env.IDLE_TRACE, JSON.stringify(msg) + "\n");
   const server = http.createServer();
   const wss = new WebSocketServer({ server });
@@ -129,6 +134,28 @@ if (process.argv.includes("--elpis-local-bridge")) {
     };
     return { root, env, saved, first, bundle, run, launch, connect, records, start };
   }
+
+  test("bridge request and daemon logs redact secrets while the engine sees real requests", async t => {
+    const fixtures = JSON.parse(fs.readFileSync(new URL("./fixtures/log-secrets.json", import.meta.url), "utf8"));
+    const f = await setup(t, { IDLE_STDERR: fixtures.map(f => f.input).join("\n"), ACP_BRIDGE_DEBUG: "all" });
+    assert.equal((await f.launch(f.first)).exitCode, 0);
+    const c = await f.connect();
+    for (const [index, fixture] of fixtures.entries()) {
+      await c.call("fixture/secret", { text: fixture.input });
+      const forwarded = f.records().filter(record => record.method === "fixture/secret").at(-1);
+      assert.ok(forwarded.params.text === fixture.input, `engine gets real fixture ${index}`);
+      const lines = fs.readFileSync(f.env.ACP_BRIDGE_LOG, "utf8").split("\n");
+      const request = lines.filter(line => line.includes('"method":"fixture/secret"')).at(-1);
+      assert.ok(JSON.parse(request.slice(request.indexOf("{"))).params.text === fixture.expected, `bridge stores safe fixture ${index}`);
+    }
+    const daemonFile = fs.readdirSync(path.join(f.root, "elpis-bridge"), { recursive: true }).find(file => file.endsWith("daemon.log"));
+    const daemon = fs.readFileSync(path.join(f.root, "elpis-bridge", daemonFile), "utf8");
+    for (const [index, fixture] of fixtures.entries()) {
+      if (fixture.input !== fixture.expected) assert.ok(!daemon.includes(fixture.input), `daemon removes fixture ${index}`);
+    }
+    assert.ok(daemon.includes("[redacted:anthropic]"), "split stderr credential is redacted");
+    assert.ok(daemon.includes("[redacted:env]"), "opaque stderr credentials are redacted before log prefixes");
+  });
 
   for (const method of ["thread/start", "thread/resume", "thread/read"]) test(`detached unanswered ${method} bookkeeping cannot hold the bridge forever`, async t => {
     const f = await setup(t, { IDLE_HOLD: method }); const child = await f.start(); const c = await f.connect();

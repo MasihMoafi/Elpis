@@ -4,14 +4,15 @@ import { splitContext, splitTokens, transcriptTokens } from "./context-split.mjs
 import { createBridgeServer, bridgeUrl, createEngine, stopBridgeListener, shutdownRuntime } from "./shared-runtime.mjs";
 import { isSignedOut, setSignedOut, SIGNED_OUT_MESSAGE } from "./anthropic-signout.mjs";
 import { execFile, spawn } from "node:child_process";
-import { appendFileSync, existsSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
+import { appendLog, redactSecrets, redactedLines } from "./log-redaction.mjs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 
 const HOME = process.env.HOME;
 const LOG = process.env.ACP_BRIDGE_LOG ?? "/tmp/acp-bridge/bridge.log";
-const log = (s) => { try { appendFileSync(LOG, `${new Date().toISOString().slice(11, 23)} ${s}\n`); } catch {} };
+const log = (s) => { try { appendLog(LOG, s); } catch {} };
 const ADAPTER = process.env.ACP_ADAPTER ?? new URL("./node_modules/@agentclientprotocol/claude-agent-acp/dist/index.js", import.meta.url).pathname;
 const CLAUDE = process.env.ELPIS_CLAUDE_PRUNE
   ? new URL("./claude-via-elpis", import.meta.url).pathname
@@ -287,7 +288,7 @@ function lineReader(stream, onLine) {
 class Acp {
   constructor(agent) {
     this.proc = spawn("node", [agent.adapter], { env: { ...process.env, ...agent.env }, stdio: ["pipe", "pipe", "pipe"] });
-    this.proc.stderr.on("data", (d) => log(`${agent.key} acp stderr: ${String(d).trim().slice(0, 300)}`));
+    redactedLines(this.proc.stderr, clean => log(`${agent.key} acp stderr: ${clean.trim().slice(0, 300)}`));
     this.nextId = 1;
     this.pending = new Map();
     // Each session's own handlers: a chat's running turn (also under its Claude subagents'
@@ -2375,7 +2376,7 @@ wss.on("connection", (ws) => {
     if (msg.method && owner && owner.ws !== ws) { owner.dispatch(msg, ws); return; }
     if (msg.method === "thread/delete") { deleteThread(msg); return; }
     if (["thread/start", "thread/fork", "thread/resume"].includes(msg.method)) openingReplies.add(msg.id);
-    if (process.env.ACP_BRIDGE_DEBUG && msg.method && (process.env.ACP_BRIDGE_DEBUG === "all" || !/^thread\/(read|turns\/list|list|loaded)/.test(msg.method))) log(`tui-> ${line.slice(0, 600)}`);
+    if (process.env.ACP_BRIDGE_DEBUG && msg.method && (process.env.ACP_BRIDGE_DEBUG === "all" || !/^thread\/(read|turns\/list|list|loaded)/.test(msg.method))) log(`tui-> ${redactSecrets(line).slice(0, 600)}`);
     if (msg.method === "thread/read" && claudeModel.has(msg.params?.threadId) && resumeResults.has(msg.params.threadId)) {
       const tid = msg.params.threadId;
       storeChain.then(loadStore).then(async (store) => {

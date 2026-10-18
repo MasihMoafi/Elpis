@@ -40,6 +40,7 @@ use crate::client_common::Prompt;
 use crate::client_common::ResponseEvent;
 use crate::context_pruner::MAX_PRUNE_BATCH_TOKENS;
 use crate::context_pruner::PRUNE_MODEL_SLUG;
+use crate::log_redaction::redact_secrets;
 use crate::responses_metadata::CodexResponsesRequestKind;
 use crate::smart_prune::AdmissionDecision;
 use crate::smart_prune::AdmissionEvidence;
@@ -240,7 +241,8 @@ pub(crate) async fn optimize_pending_outputs(
         Ok(input) => input,
         Err(err) => {
             tracing::warn!(
-                "Smart Prune input construction failed; preserving tool output: {err:#}"
+                "Smart Prune input construction failed; preserving tool output: {}",
+                redact_secrets(&format!("{err:#}"))
             );
             record_batch_failure(sess, &turn_context.sub_id, candidates.len()).await;
             return pending;
@@ -316,7 +318,10 @@ pub(crate) async fn optimize_pending_outputs(
             Ok(hash) => hash,
             Err(err) => {
                 let error = format!("{err:#}");
-                tracing::warn!("Smart Prune source hashing failed; preserving batch: {error}");
+                tracing::warn!(
+                    "Smart Prune source hashing failed; preserving batch: {}",
+                    redact_secrets(&error)
+                );
                 record_attempt(
                     sess,
                     AttemptOutcome {
@@ -432,7 +437,10 @@ pub(crate) async fn optimize_pending_outputs(
         },
     ) {
         let error = format!("{err:#}");
-        tracing::warn!("Smart Prune audit failed; preserving tool output: {error}");
+        tracing::warn!(
+            "Smart Prune audit failed; preserving tool output: {}",
+            redact_secrets(&error)
+        );
         record_attempt(
             sess,
             AttemptOutcome {
@@ -681,7 +689,8 @@ async fn run_optimizer_attempt(
             let error = format!("{err:#}");
             tracing::warn!(
                 model = model_slug,
-                "Smart Prune optimizer attempt failed: {error}"
+                "Smart Prune optimizer attempt failed: {}",
+                redact_secrets(&error)
             );
             record_attempt(
                 sess,
@@ -877,7 +886,8 @@ async fn record_attempt(sess: &Session, outcome: AttemptOutcome<'_>) {
         Err(err) => {
             tracing::warn!(
                 attempt_id = outcome.attempt_id,
-                "Smart Prune attempt evidence could not be published: {err:#}"
+                "Smart Prune attempt evidence could not be published: {}",
+                redact_secrets(&format!("{err:#}"))
             );
             None
         }
@@ -895,7 +905,10 @@ async fn record_attempt(sess: &Session, outcome: AttemptOutcome<'_>) {
             outcome.admission_id,
         )
         .unwrap_or_else(|error| {
-            tracing::warn!("Smart Prune inline audit unavailable: {error:#}");
+            tracing::warn!(
+                "Smart Prune inline audit unavailable: {}",
+                redact_secrets(&format!("{error:#}"))
+            );
             Vec::new()
         });
         for item in items {
@@ -1067,7 +1080,10 @@ impl Session {
         let hash = match serde_json::to_vec(input) {
             Ok(bytes) => Some(format!("{:x}", Sha256::digest(bytes))),
             Err(err) => {
-                tracing::warn!("Smart Prune request hashing failed: {err}");
+                tracing::warn!(
+                    "Smart Prune request hashing failed: {}",
+                    redact_secrets(&err.to_string())
+                );
                 None
             }
         };

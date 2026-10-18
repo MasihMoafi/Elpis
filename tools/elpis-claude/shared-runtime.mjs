@@ -19,12 +19,13 @@ import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { redactSecrets, redactedLines } from "./log-redaction.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const shared = () => Boolean(process.env.ELPIS_SHARED_BRIDGE);
 const homeDir = () => process.env.ELPIS_HOME || `${process.env.HOME}/.elpis-next`;
 const engineBin = () => process.env.ELPIS_ENGINE_BIN ?? `${process.env.HOME}/.local/bin/elpis`;
-const note = (s) => process.stderr.write(`[shared-runtime] ${s}\n`);
+const note = (s) => process.stderr.write(`[shared-runtime] ${redactSecrets(s)}\n`);
 const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 // A unix socket path must fit sockaddr_un (108 bytes, with the terminator).
 const SOCKET_PATH_MAX = 100;
@@ -204,7 +205,7 @@ function startSharedEngine() {
     entry.sock = path.join(entry.dir, "e.sock");
     let tail = "";
     const child = entry.child = spawn(engineBin(), ["app-server", "--listen", `unix://${entry.sock}`], { stdio: ["ignore", "ignore", "pipe"] });
-    child.stderr.on("data", (chunk) => { tail = (tail + chunk).slice(-4000); note(`engine: ${String(chunk).trimEnd()}`); });
+    redactedLines(child.stderr, clean => { tail = (tail + clean + "\n").slice(-4000); note(`engine: ${clean}`); });
     const exited = new Promise((resolve) => child.once("exit", (code, signal) => resolve(`exited (${signal ?? code})`)));
     child.once("exit", () => {
       note(`native engine ${child.pid} exited`);
@@ -575,5 +576,5 @@ async function launcherMain(bridgeScript) {
 
 const runAsLauncher = (() => { try { return fs.realpathSync(process.argv[1]) === fs.realpathSync(fileURLToPath(import.meta.url)); } catch { return false; } })();
 if (runAsLauncher) {
-  launcherMain(process.argv[2]).then(() => process.exit(0), (e) => { process.stderr.write(`elpis-claude: ${e.message}\n`); process.exit(1); });
+  launcherMain(process.argv[2]).then(() => process.exit(0), (e) => { process.stderr.write(`elpis-claude: ${redactSecrets(e.message)}\n`); process.exit(1); });
 }

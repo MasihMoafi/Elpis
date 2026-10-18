@@ -1,7 +1,7 @@
 //! Elpis: durable, admission-time evidence for Smart Prune. Copied from v0.3.0.
 //!
-//! A compact body is not allowed into conversation history until the exact
-//! post-hook source and the proposed admitted envelope have been published
+//! A compact body is not allowed into conversation history until redacted copies of
+//! the post-hook source and the proposed admitted envelope have been published
 //! together through one atomic directory rename.
 
 use std::fs::File;
@@ -20,6 +20,8 @@ use serde::Serialize;
 use sha2::Digest;
 use sha2::Sha256;
 use tempfile::Builder;
+
+use crate::log_redaction::redact_secrets;
 
 const AUDIT_SCHEMA_VERSION: u32 = 1;
 const REQUEST_INPUT_REPRESENTATION: &str = "logical_response_items_before_transport";
@@ -251,7 +253,8 @@ pub(super) fn write_attempt(
     if let Err(error) = append_readable_attempt(log_dir, input.attempt_id) {
         tracing::warn!(
             attempt_id = input.attempt_id,
-            "Smart Prune readable log could not be appended: {error:#}"
+            "Smart Prune readable log could not be appended: {}",
+            redact_secrets(&format!("{error:#}"))
         );
     }
     Ok(AttemptAuditReceipt {
@@ -268,7 +271,7 @@ fn append_readable_attempt(log_dir: &Path, attempt_id: &str) -> Result<()> {
     lock.lock()?;
     let path = readable_chat_path(&directory, &record)?;
     let mut file = open_private_append(&path)?;
-    file.write_all(record.readable().as_bytes())?;
+    file.write_all(redact_secrets(&record.readable()).as_bytes())?;
     file.sync_all()?;
     sync_directory(&directory)?;
     Ok(())
@@ -577,6 +580,9 @@ pub(super) fn write_response_linkage(
 }
 
 fn write_json_new(path: &Path, value: &impl Serialize) -> Result<()> {
+    // Sanitize in memory before any bytes reach even the unpublished staging file.
+    // Hashes and the model's source/admitted items retain their original values.
+    let serialized = redact_secrets(&serde_json::to_string_pretty(value)?);
     let parent = path
         .parent()
         .context("immutable Smart Prune audit file has no parent directory")?;
@@ -587,7 +593,7 @@ fn write_json_new(path: &Path, value: &impl Serialize) -> Result<()> {
     set_private_file_permissions(staged.as_file())?;
     {
         let mut writer = BufWriter::new(staged.as_file_mut());
-        serde_json::to_writer_pretty(&mut writer, value)?;
+        writer.write_all(serialized.as_bytes())?;
         writer.write_all(b"\n")?;
         writer.flush()?;
     }
@@ -763,6 +769,88 @@ mod tests {
             .map(|entry| entry.unwrap().path())
             .find(|path| path.extension().is_some_and(|ext| ext == "md"))
             .expect("per-chat Markdown record")
+    }
+
+    #[test]
+    fn real_audit_writers_redact_secrets_without_mutating_model_items() {
+        let fixtures: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../tools/elpis-claude/test/fixtures/log-secrets.json"
+        ))
+        .unwrap();
+        for (index, fixture) in fixtures.as_array().unwrap().iter().enumerate() {
+            let root = tempfile::tempdir().unwrap();
+            let body = fixture["input"].as_str().unwrap();
+            let expected = fixture["expected"].as_str().unwrap();
+            let source = output("call-1", body);
+            let before = serde_json::to_string(&source).unwrap();
+            let item = AdmissionAuditItem {
+                call_id: "call-1".to_string(),
+                decision: "compact",
+                source_sha256: response_item_sha256(&source).unwrap(),
+                source: source.clone(),
+                admitted: source,
+                source_tokens: 100,
+                admitted_tokens: 10,
+                saved_tokens: 90,
+            };
+            let mut admission = audit_input("redaction", &item);
+            admission.ace_instructions = body;
+            admission.ace_input = body;
+            admission.raw_response = body;
+            let receipt = write_admission(root.path(), admission).unwrap();
+            let read = |path: &Path| -> serde_json::Value {
+                serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap()
+            };
+            let ace = read(&receipt.admission_dir.join("ace.json"));
+            for field in ["instructions", "input", "raw_response"] {
+                assert!(ace[field] == expected, "ace fixture {index}, {field}");
+            }
+            for name in [
+                source_artifact_name(0, "call-1"),
+                "000-call-1-admitted.json".into(),
+            ] {
+                let stored = read(&receipt.admission_dir.join("items").join(name));
+                assert!(
+                    stored == serde_json::to_value(output("call-1", expected)).unwrap(),
+                    "item fixture {index}"
+                );
+            }
+            let optimizer_input = serde_json::json!({"items": [{
+                "call_id": "call-1", "source_tokens_estimate": 100,
+                "source_output": item.source
+            }]})
+            .to_string();
+            let mut attempt = attempt_input("redaction");
+            attempt.instructions = body;
+            attempt.input = &optimizer_input;
+            attempt.raw_response = Some(body);
+            attempt.error = Some(body);
+            let attempt = write_attempt(root.path(), attempt).unwrap();
+            let stored = read(&root.path().join(attempt.audit_path));
+            for field in ["instructions", "raw_response", "error"] {
+                assert!(
+                    stored[field] == expected,
+                    "attempt fixture {index}, {field}"
+                );
+            }
+            let readable = std::fs::read_to_string(chat_markdown_path(root.path())).unwrap();
+            assert!(
+                redact_secrets(&readable) == readable,
+                "readable fixture {index}"
+            );
+            assert!(
+                serde_json::to_string(&item.source).unwrap() == before,
+                "source unchanged {index}"
+            );
+            assert!(
+                serde_json::to_string(&item.admitted).unwrap() == before,
+                "admitted unchanged {index}"
+            );
+            assert_eq!(
+                response_item_sha256(&item.source).unwrap(),
+                item.source_sha256
+            );
+        }
     }
 
     #[test]

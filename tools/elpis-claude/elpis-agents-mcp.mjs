@@ -3,14 +3,14 @@
 // it up, steer it mid-turn or stop it. list_models says what each model is for. Each helper is a
 // normal Elpis thread, so it appears in Elpis history (`elpis resume <thread id>` opens it).
 import { spawn } from "node:child_process";
-import { appendFileSync } from "node:fs";
+import { appendLog } from "./log-redaction.mjs";
 import WebSocket from "ws";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 
 const LOG = process.env.ELPIS_AGENTS_LOG ?? "/tmp/acp-bridge/elpis-agents.log";
-const log = (s) => { try { appendFileSync(LOG, `${new Date().toISOString().slice(11, 23)} ${s}\n`); } catch {} };
+const log = (s) => { try { appendLog(LOG, s); } catch {} };
 const ENGINE = process.env.ELPIS_ENGINE_BIN ?? `${process.env.HOME}/.local/bin/elpis`;
 
 // Set by the bridge: helpers start through it, so any model it serves can be one, and each
