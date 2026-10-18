@@ -4,6 +4,8 @@ const http = require('node:http');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { chromium } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright');
+const { guardDesktopStore } = require('./controls.cjs');
+const { fakeDesktop } = require('./fake-desktop.cjs');
 
 /** A stand-in for Elpis's planner (POST /api/canvas/plan): a goal "from scratch" designs a two-agent team; one starting
  * with "Fix" adds an agent doing it; otherwise it fills each agent's empty prompt and folders. */
@@ -18,7 +20,7 @@ function planFor(body) {
 /** `repository` is whether the project folder is a git repository (GET /api/repository); `graph` is a board saved on the
  * device before the page opens; `listed(run, looks)` answers a look at the run (workGraph/list) instead of the default,
  * which runs for one look and then succeeds. */
-async function openCanvas({ width = 1440, height = 900, repository = false, graph = null, listed = null, settings = {}, providerModels = {} } = {}) {
+async function openCanvas({ width = 1440, height = 900, repository = false, graph = null, listed = null, settings = {}, providerModels = {}, desktop = false } = {}) {
   const posts = [], plans = [], runs = [];
   const server = http.createServer(async (req, res) => {
     const url = new URL(req.url, 'http://local'); let raw = ''; for await (const chunk of req) raw += chunk;
@@ -48,6 +50,8 @@ async function openCanvas({ width = 1440, height = 900, repository = false, grap
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   const browser = await chromium.launch({ executablePath: process.env.ELPIS_CHROMIUM || undefined, headless: true });
   const page = await browser.newPage({ viewport: { width, height } }); page.setDefaultTimeout(6000);
+  // `desktop`: the page runs inside the app, whose store refuses keys it does not know (desktop/state.cjs).
+  if (desktop) { await guardDesktopStore(page); await page.addInitScript(fakeDesktop); }
   const errors = []; page.on('pageerror', error => errors.push(error.message));
   await page.addInitScript(saved => {
     if (!localStorage.getItem('elpis-projects-v1')) localStorage.setItem('elpis-projects-v1', JSON.stringify({ projects: [{ id: 'p1', name: 'demo', cwd: '/tmp/demo' }], selectedId: 'p1' }));
