@@ -38,6 +38,8 @@ struct UnattributedChangeResponder {
     seen_main: AtomicBool,
     assignment: Arc<Mutex<Option<(String, String)>>>,
     planted_path: std::path::PathBuf,
+    extra_paths: Vec<std::path::PathBuf>,
+    declared_files: Vec<String>,
 }
 
 impl Respond for UnattributedChangeResponder {
@@ -52,14 +54,21 @@ impl Respond for UnattributedChangeResponder {
         if let Some((graph_id, task_id)) = extract_assignment(&body) {
             *self.assignment.lock().expect("assignment mutex") =
                 Some((graph_id.clone(), task_id.clone()));
-            std::fs::write(&self.planted_path, "planted-evidence")
-                .expect("test fixture should plant the post-baseline change");
+            let is_writer = task_id == "plant";
+            if is_writer {
+                for path in std::iter::once(&self.planted_path).chain(&self.extra_paths) {
+                    std::fs::create_dir_all(path.parent().expect("fixture parent"))
+                        .expect("fixture directory");
+                    std::fs::write(path, "planted-evidence")
+                        .expect("test fixture should plant the post-baseline change");
+                }
+            }
             let args = json!({
                 "graph_id": graph_id,
                 "task_id": task_id,
                 "outcome": "succeeded",
-                "summary": "claimed success without declaring the planted change",
-                "changed_files": [],
+                "summary": "checked the planted change",
+                "changed_files": if is_writer { self.declared_files.clone() } else { Vec::new() },
                 "checks": ["claimed check passed"],
                 "evidence": ["claimed evidence exists"],
                 "risks": [],
@@ -411,7 +420,7 @@ async fn work_graph_failure_blocks_dependent_without_spawning_it() -> Result<()>
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn work_graph_rejects_a_real_change_omitted_from_the_worker_report() -> Result<()> {
+async fn work_graph_rejects_writable_success_without_declared_changes() -> Result<()> {
     let server = start_mock_server().await;
     let assignment = Arc::new(Mutex::new(None));
     let args = json!({
@@ -454,6 +463,8 @@ async fn work_graph_rejects_a_real_change_omitted_from_the_worker_report() -> Re
         seen_main: AtomicBool::new(false),
         assignment: Arc::clone(&assignment),
         planted_path: test.cwd_path().join("evidence/planted.txt"),
+        extra_paths: Vec::new(),
+        declared_files: Vec::new(),
     };
     Mock::given(method("POST"))
         .and(path_regex(".*/responses$"))
@@ -482,9 +493,151 @@ async fn work_graph_rejects_a_real_change_omitted_from_the_worker_report() -> Re
     assert_eq!(
         graph.status,
         codex_state::WorkGraphStatus::Failed,
-        "a graph must not succeed when the worker omits a real change"
+        "a writable success must attribute at least one changed file"
     );
     assert_eq!(tasks[0].status, codex_state::WorkGraphTaskStatus::Failed);
+    Ok(())
+}
+
+async fn run_report_artifact_graph(
+    extra_path: &str,
+    ignored: bool,
+    declared_files: Vec<String>,
+) -> Result<(core_test_support::test_codex::TestCodex, String)> {
+    let server = start_mock_server().await;
+    let assignment = Arc::new(Mutex::new(None));
+    let mut args = graph_args();
+    args["tasks"][0]["id"] = json!("plant");
+    args["tasks"][0]["kind"] = json!("fix");
+    args["tasks"][0]["write_scopes"] = json!(["evidence"]);
+    args["tasks"][1]["kind"] = json!("verify");
+    args["tasks"][1]["depends_on"] = json!(["plant"]);
+    let mut builder = test_codex().with_config(|config| {
+        config.features.enable(Feature::SpawnCsv).expect("fanout");
+        config.features.enable(Feature::Sqlite).expect("sqlite");
+    });
+    let test = builder.build(&server).await?;
+    git(test.cwd_path(), &["init", "-q"]);
+    std::fs::create_dir(test.cwd_path().join("evidence"))?;
+    std::fs::write(test.cwd_path().join("evidence/planted.txt"), "before")?;
+    // Include a tracked file so Git's index cannot hide edits to tracked source.
+    git(test.cwd_path(), &["add", "evidence/planted.txt"]);
+    if ignored {
+        std::fs::write(
+            test.cwd_path().join(".gitignore"),
+            format!("{extra_path}\n"),
+        )?;
+    }
+    Mock::given(method("POST"))
+        .and(path_regex(".*/responses$"))
+        .respond_with(UnattributedChangeResponder {
+            graph_args_json: serde_json::to_string(&args)?,
+            seen_main: AtomicBool::new(false),
+            assignment: Arc::clone(&assignment),
+            planted_path: test.cwd_path().join("evidence/planted.txt"),
+            extra_paths: vec![test.cwd_path().join(extra_path)],
+            declared_files,
+        })
+        .mount(&server)
+        .await;
+    test.submit_turn("run the report artifact graph").await?;
+    let graph_id = assignment
+        .lock()
+        .expect("assignment mutex")
+        .as_ref()
+        .expect("worker assignment")
+        .0
+        .clone();
+    assert!(test.cwd_path().join(extra_path).is_file());
+    Ok((test, graph_id))
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn work_graph_accepts_and_logs_undeclared_in_scope_artifact() -> Result<()> {
+    let artifact = "evidence/__pycache__/calc.cpython-313.pyc";
+    let (test, graph_id) =
+        run_report_artifact_graph(artifact, false, vec!["evidence/planted.txt".to_string()])
+            .await?;
+    let db = test.codex.state_db().expect("state db");
+    let tasks = db.list_work_graph_tasks(&graph_id).await?;
+    assert!(
+        tasks
+            .iter()
+            .all(|task| task.status == codex_state::WorkGraphTaskStatus::Succeeded)
+    );
+    let result = tasks[0].result.as_ref().expect("accepted report");
+    assert_eq!(result["changed_files"], json!(["evidence/planted.txt"]));
+    assert_eq!(result["undeclared_changed_files"], json!([artifact]));
+    let events = db.list_work_graph_events(&graph_id).await?;
+    let event = events
+        .iter()
+        .find(|event| {
+            event.event_type == "task_succeeded" && event.task_id.as_deref() == Some("plant")
+        })
+        .expect("writer success in run log");
+    assert_eq!(
+        event.payload.as_ref().expect("run log payload")["undeclared_changed_files"],
+        json!([artifact])
+    );
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn work_graph_rejects_undeclared_out_of_scope_change() -> Result<()> {
+    let (test, graph_id) = run_report_artifact_graph(
+        "outside.txt",
+        false,
+        vec!["evidence/planted.txt".to_string()],
+    )
+    .await?;
+    let db = test.codex.state_db().expect("state db");
+    let tasks = db.list_work_graph_tasks(&graph_id).await?;
+    assert_eq!(tasks[0].status, codex_state::WorkGraphTaskStatus::Failed);
+    assert_eq!(tasks[1].status, codex_state::WorkGraphTaskStatus::Blocked);
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn work_graph_does_not_count_ignored_artifact() -> Result<()> {
+    for artifact in ["evidence/__pycache__/ignored.pyc", "cache/generated.pyc"] {
+        let (test, graph_id) =
+            run_report_artifact_graph(artifact, true, vec!["evidence/planted.txt".to_string()])
+                .await?;
+        let db = test.codex.state_db().expect("state db");
+        let tasks = db.list_work_graph_tasks(&graph_id).await?;
+        assert!(
+            tasks
+                .iter()
+                .all(|task| task.status == codex_state::WorkGraphTaskStatus::Succeeded),
+            "ignored path {artifact} must not cause rejection"
+        );
+        assert_eq!(
+            tasks[0].result.as_ref().expect("report")["undeclared_changed_files"],
+            json!([])
+        );
+    }
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn work_graph_rejects_declared_file_without_actual_change() -> Result<()> {
+    let (test, graph_id) = run_report_artifact_graph(
+        "evidence/cache.pyc",
+        false,
+        vec![
+            "evidence/planted.txt".to_string(),
+            "evidence/unchanged.txt".to_string(),
+        ],
+    )
+    .await?;
+    let tasks = test
+        .codex
+        .state_db()
+        .expect("state db")
+        .list_work_graph_tasks(&graph_id)
+        .await?;
+    assert_eq!(tasks[0].status, codex_state::WorkGraphTaskStatus::Failed);
+    assert_eq!(tasks[1].status, codex_state::WorkGraphTaskStatus::Blocked);
     Ok(())
 }
 

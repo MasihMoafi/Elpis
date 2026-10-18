@@ -448,6 +448,17 @@ fn engine_snapshot_identifies_modified_created_and_deleted_files() {
     std::fs::create_dir(workspace.path().join("src")).expect("scope");
     std::fs::write(workspace.path().join("src/modified.rs"), "before").expect("seed modified");
     std::fs::write(workspace.path().join("src/deleted.rs"), "delete me").expect("seed deleted");
+    for args in [
+        vec!["init", "-q"],
+        vec!["add", "src/modified.rs", "src/deleted.rs"],
+    ] {
+        let output = std::process::Command::new("git")
+            .args(args)
+            .current_dir(workspace.path())
+            .output()
+            .expect("git fixture");
+        assert!(output.status.success());
+    }
     let mut task = task(
         "measure",
         0,
@@ -471,6 +482,114 @@ fn engine_snapshot_identifies_modified_created_and_deleted_files() {
             "src/deleted.rs".to_string(),
             "src/modified.rs".to_string(),
         ])
+    );
+}
+
+#[test]
+fn engine_snapshot_measures_changes_outside_write_scopes() {
+    let workspace = tempfile::tempdir().expect("workspace");
+    std::fs::create_dir(workspace.path().join("src")).expect("scope");
+    let mut task = task(
+        "measure",
+        0,
+        codex_state::WorkGraphTaskStatus::Running,
+        &[],
+        &["src"],
+        "repo",
+    );
+    task.workspace_path = Some(workspace.path().display().to_string());
+    let baseline = snapshot_task_scopes(&task).expect("baseline");
+    std::fs::write(workspace.path().join("outside.txt"), "outside").expect("outside change");
+    let current = snapshot_task_scopes(&task).expect("current");
+    assert_eq!(
+        changed_paths(&baseline, &current).expect("changes"),
+        BTreeSet::from(["outside.txt".to_string()])
+    );
+}
+
+#[test]
+fn engine_snapshot_does_not_count_git_ignored_files() {
+    let workspace = tempfile::tempdir().expect("workspace");
+    let output = std::process::Command::new("git")
+        .args(["init", "-q"])
+        .current_dir(workspace.path())
+        .output()
+        .expect("git init");
+    assert!(output.status.success());
+    std::fs::create_dir_all(workspace.path().join("src/__pycache__")).expect("scope");
+    std::fs::write(workspace.path().join(".gitignore"), "__pycache__/\n").expect("ignore rules");
+    std::fs::write(workspace.path().join("src/__pycache__/old.pyc"), "before").expect("old cache");
+    let mut task = task(
+        "measure",
+        0,
+        codex_state::WorkGraphTaskStatus::Running,
+        &[],
+        &["src"],
+        "repo",
+    );
+    task.workspace_path = Some(workspace.path().display().to_string());
+    let baseline = snapshot_task_scopes(&task).expect("baseline");
+    assert!(baseline.get("src/__pycache__/old.pyc").is_none());
+    assert!(
+        baseline
+            .as_object()
+            .expect("snapshot")
+            .keys()
+            .all(|path| !path.starts_with(".git/"))
+    );
+    std::fs::write(workspace.path().join("src/__pycache__/old.pyc"), "after")
+        .expect("modify cache");
+    std::fs::write(workspace.path().join("src/__pycache__/new.pyc"), "new").expect("create cache");
+    std::fs::write(workspace.path().join("src/calc.py"), "source").expect("source change");
+    let current = snapshot_task_scopes(&task).expect("current");
+    assert_eq!(
+        changed_paths(&baseline, &current).expect("changes"),
+        BTreeSet::from(["src/calc.py".to_string()])
+    );
+}
+
+#[test]
+fn engine_snapshot_uses_paths_relative_to_selected_workspace() {
+    let repo = tempfile::tempdir().expect("repo");
+    let workspace = repo.path().join("app");
+    std::fs::create_dir_all(workspace.join("src")).expect("scope");
+    std::fs::write(workspace.join("src/calc.py"), "before").expect("source");
+    std::fs::write(repo.path().join("sibling.txt"), "outside workspace").expect("sibling");
+    for args in [
+        vec!["init", "-q"],
+        vec!["add", "app/src/calc.py", "sibling.txt"],
+    ] {
+        let output = std::process::Command::new("git")
+            .args(args)
+            .current_dir(repo.path())
+            .output()
+            .expect("git fixture");
+        assert!(output.status.success());
+    }
+    let mut task = task(
+        "measure",
+        0,
+        codex_state::WorkGraphTaskStatus::Running,
+        &[],
+        &["src"],
+        "repo",
+    );
+    task.workspace_path = Some(workspace.display().to_string());
+    let baseline = snapshot_task_scopes(&task).expect("baseline");
+    assert_eq!(
+        baseline
+            .as_object()
+            .expect("snapshot")
+            .keys()
+            .cloned()
+            .collect::<Vec<_>>(),
+        vec!["src/calc.py"]
+    );
+    std::fs::write(workspace.join("src/calc.py"), "after").expect("modify source");
+    let current = snapshot_task_scopes(&task).expect("current");
+    assert_eq!(
+        changed_paths(&baseline, &current).expect("changes"),
+        BTreeSet::from(["src/calc.py".to_string()])
     );
 }
 
