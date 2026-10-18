@@ -108,7 +108,7 @@ test('Love Spot private tray is shared across windows; dismiss persists and mous
     await fs.writeFile(path.join(f.screenshots, 'chosen.png'), PNG);
     const add = tray(f.page).getByRole('button', { name: 'Add chosen.png to drawing', exact: true });
     await add.waitFor(); await tray(other).getByRole('button', { name: 'Add chosen.png to drawing', exact: true }).waitFor();
-    await add.dragTo(f.page.locator('.excalidraw canvas').first(), { targetPosition: { x: 500, y: 300 } });
+    await add.dragTo(f.page.locator('.excalidraw canvas.interactive'), { targetPosition: { x: 500, y: 300 } });
     await f.waitFor(s => s.elements.filter(e => e.type === 'image').length === 1, 'drag did not place the screenshot');
     await tray(f.page).waitFor({ state: 'detached' }); await tray(other).waitFor({ state: 'detached' });
     await f.page.waitForTimeout(400);
