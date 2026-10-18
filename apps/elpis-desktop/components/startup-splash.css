@@ -1,62 +1,36 @@
-/* Start-up (components/startup-splash.tsx), in the isometric lab's HUD style (.iso-* in app/globals.css): the lab's
- * ground and floor grid, the old send button's hexagon as a HUD plate (--hud-face, an accent edge), the HUD label type
- * for the boot lines, and the accent — gold in dark, ink in light, which has no orange — for the moving parts. The amber
- * logo is the brand file itself. One cycle is 4 s: the E rests, turns a quarter turn clockwise into an M with the plate,
- * rests, and turns back while the plate turns on. */
-.startup-splash { --splash-line:color-mix(in oklch, var(--primary) 55%, transparent);
-  position:fixed; inset:0; z-index:100; display:grid; place-items:center; overflow:hidden; background-color:var(--background); color:var(--foreground); transition:opacity ease; }
-.dark .startup-splash { background-image:radial-gradient(ellipse at 50% 40%, color-mix(in oklch, var(--gold) 8%, var(--canvas)), var(--canvas) 62%); }
-/* The lab's floor: an isometric grid that fades out from under the emblem. */
-.startup-splash::before { content:""; position:absolute; inset:0; pointer-events:none;
-  background-image:repeating-linear-gradient(30deg, var(--hairline) 0 1px, transparent 1px 36px), repeating-linear-gradient(-30deg, var(--hairline) 0 1px, transparent 1px 36px);
-  -webkit-mask-image:radial-gradient(ellipse 34% 30% at 50% 62%, #000 20%, transparent 100%); mask-image:radial-gradient(ellipse 34% 30% at 50% 62%, #000 20%, transparent 100%); }
+/* Motion from the website's ribbon.css and home-proposal.css: reverse its 580 ms
+ * signature turn for M → E, then draw its flowing ribbon. Fixed brand colours keep
+ * this opening dark in either app theme. Custom motion has no UI-library equivalent. */
+.startup-splash {
+  position:fixed; inset:0; z-index:100; display:grid; place-items:center; overflow:hidden;
+  background-color:#0a0b0d; color:#e6e0d3; color-scheme:dark;
+  background-image:radial-gradient(ellipse at 50% 45%, #f2a6260d, transparent 60%);
+  transition:opacity ease;
+}
 .startup-splash.leaving { opacity:0; pointer-events:none; }
-.splash-stage { position:relative; display:grid; justify-items:center; gap:18px; animation:splash-arrive .22s var(--ease) both; }
-@keyframes splash-arrive { from { opacity:0; transform:translateY(6px); } }
-.splash-emblem { position:relative; width:184px; height:184px; }
-.splash-dial { position:absolute; inset:0; width:100%; height:100%; overflow:visible; }
-.splash-ticks line { stroke:color-mix(in oklch, var(--primary) 24%, transparent); stroke-width:1; }
-.splash-ticks line[data-major] { stroke:var(--splash-line); stroke-width:1.5; }
-.splash-arcs { transform-box:view-box; transform-origin:center; animation:splash-arcs 16s linear infinite; }
-.splash-arcs path { fill:none; stroke:var(--primary); stroke-width:1.5; stroke-linecap:square; opacity:.85; }
-@keyframes splash-arcs { to { transform:rotate(-360deg); } }
-/* Keyframe easing is written out: var() is ignored in a keyframe's animation-timing-function. */
-/* The plate: the old send button's hexagon, turning a quarter turn at each of the E's turns (180° a cycle, so it loops). */
-.splash-hex { transform-box:view-box; transform-origin:center; animation:splash-hex 4s infinite; }
-.splash-hex-plate { fill:var(--hud-face); stroke:var(--splash-line); stroke-width:1.5; stroke-linejoin:miter; }
-.splash-hex-inner { fill:none; stroke:var(--hairline); stroke-width:1; }
-@keyframes splash-hex {
-  0%, 22.5% { transform:rotate(0deg); animation-timing-function:cubic-bezier(.65,0,.35,1); }
-  42.5%, 65% { transform:rotate(90deg); animation-timing-function:cubic-bezier(.65,0,.35,1); }
-  85%, 100% { transform:rotate(180deg); }
+.splash-stage { position:relative; display:grid; justify-items:center; gap:24px; }
+.splash-logo { display:block; width:clamp(112px, 18vmin, 160px); height:auto; transform-origin:center; user-select:none; }
+.splash-name { margin:0 -.32em 0 0; font:300 26px/1 var(--serif, system-ui, sans-serif); letter-spacing:.32em; text-transform:uppercase; }
+.splash-ribbon { position:absolute; inset:0; width:100%; height:100%; pointer-events:none; }
+.splash-ribbon path { stroke-width:28; opacity:.3; }
+@media (prefers-reduced-motion:no-preference) {
+  .splash-logo { animation:splash-m-to-e 580ms cubic-bezier(.22,.7,.2,1) both; }
+  .splash-name { animation:splash-colour 650ms ease 320ms both; }
+  .splash-ribbon path { stroke-dasharray:1; animation:splash-flow 1000ms cubic-bezier(.2,.6,.25,1) 850ms both; }
 }
-/* The E, upright at rest; a quarter turn clockwise about its centre (rotate(90 128 128) on its ribbons) makes the M. */
-.splash-logo { position:absolute; left:50%; top:50%; width:60px; height:60px; margin:-30px 0 0 -30px; transform-origin:center; user-select:none; animation:splash-e-to-m 4s infinite; }
-@keyframes splash-e-to-m {
-  0%, 22.5% { transform:rotate(0deg); animation-timing-function:cubic-bezier(.65,0,.35,1); }
-  42.5%, 65% { transform:rotate(90deg); animation-timing-function:cubic-bezier(.65,0,.35,1); }
-  85%, 100% { transform:rotate(0deg); }
+@keyframes splash-m-to-e {
+  0%, 18% { transform:rotate(90deg); }
+  100% { transform:rotate(0); }
 }
-/* The sweep: a line with a short trail crosses the plate once at each rest (the E's, then the M's). */
-.splash-scope { position:absolute; left:50%; top:50%; width:92px; height:92px; margin:-46px 0 0 -46px; border-radius:50%; overflow:hidden; pointer-events:none; }
-.splash-sweep { height:45%; transform:translateY(-100%); opacity:0;
-  background:linear-gradient(to bottom, transparent, color-mix(in oklch, var(--primary) 16%, transparent) 80%, color-mix(in oklch, var(--primary) 85%, transparent) 97%, transparent);
-  animation:splash-sweep 2s linear infinite; }
-@keyframes splash-sweep { 0% { transform:translateY(-100%); opacity:1; } 30% { transform:translateY(225%); opacity:1; } 30.1%, 100% { transform:translateY(225%); opacity:0; } }
-.splash-name { margin:0 -.32em 0 0; font:300 26px/1 var(--serif); letter-spacing:.32em; text-transform:uppercase; }
-/* Boot lines, as 576df34a9: an accented HUD panel (the lab's status panel: chamfered, an accent bar at its left). */
-.splash-boot-panel { display:grid; gap:10px; width:296px; padding:12px 16px 14px 18px; border:1px solid var(--hud-edge); border-radius:var(--cut-lg) 0; corner-shape:bevel; background:var(--hud-face); box-shadow:inset 2px 0 var(--primary); }
-.splash-boot { display:grid; gap:6px; margin:0; padding:0; list-style:none; }
-.splash-boot li { display:flex; align-items:center; gap:10px; line-height:1.3; color:var(--muted-foreground); transition:color var(--motion) var(--ease); }
-.splash-boot li[data-ok="true"] { color:var(--foreground); }
-.splash-glyph { flex:none; width:12px; text-align:center; color:var(--subtle-foreground); }
-.splash-boot li[data-ok="false"] .splash-glyph { animation:splash-wait 1.2s ease-in-out infinite; }
-.splash-boot li[data-ok="true"] .splash-glyph { color:var(--success); }
-@keyframes splash-wait { 50% { opacity:.3; } }
-.splash-meter { display:grid; grid-template-columns:repeat(12, 1fr); gap:3px; }
-.splash-meter i { height:4px; background:var(--border); transform:skewX(-30deg); transition:background var(--motion) var(--ease); }
-.splash-meter i[data-on] { background:var(--primary); }
+@keyframes splash-colour {
+  0%, 18% { opacity:0; }
+  100% { opacity:1; }
+}
+@keyframes splash-flow {
+  from { stroke-dashoffset:1; opacity:0; }
+  to { stroke-dashoffset:0; opacity:.3; }
+}
 @media (prefers-reduced-motion:reduce) {
-  .startup-splash, .splash-stage, .splash-arcs, .splash-hex, .splash-logo, .splash-sweep, .splash-boot li, .splash-glyph, .splash-boot li[data-ok="false"] .splash-glyph, .splash-meter i { animation:none; transition:none; }
-  .splash-scope { display:none; }
+  .startup-splash { transition:none; }
+  .splash-ribbon { display:none; }
 }
