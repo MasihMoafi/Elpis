@@ -137,6 +137,28 @@ test('a reply reaches the board after navigating away; text-only models receive 
   } finally { await f.close(); }
 });
 
+test('a long non-Latin reply avoids obstacles after the editor restores its actual font dimensions', async () => {
+  const f = await loveSpotFixture({ reply: '天地玄黄宇宙洪荒'.repeat(32) });
+  try {
+    await f.open(f.page); await note(f, 'A thought near an obstacle');
+    const box = await f.page.locator('.excalidraw').boundingBox();
+    await f.page.keyboard.press('r'); await f.page.mouse.move(box.x + 450, box.y + 624);
+    await f.page.mouse.down(); await f.page.mouse.move(box.x + 550, box.y + 674, { steps: 5 }); await f.page.mouse.up(); await f.page.keyboard.press('Escape');
+    await f.waitFor(s => s.elements.some(e => e.type === 'rectangle'), 'obstacle was not saved');
+    await f.page.getByRole('button', { name: 'Talk', exact: true }).click();
+    await f.page.getByRole('textbox', { name: 'Message Elpis' }).fill('What do you think?'); await f.page.getByRole('button', { name: 'Send', exact: true }).click();
+    await f.waitFor(s => s.elements.some(e => e.id.startsWith('love-reply-')), 'long reply missing');
+    await f.page.evaluate(() => document.fonts.ready.then(() => document.fonts.load('20px Cascadia')));
+    // A real nudge records the restored dimensions, rather than trusting the bridge's estimated bounds.
+    const canvas = await f.page.locator('.excalidraw').boundingBox();
+    await f.page.mouse.click(canvas.x + 80, canvas.y + 350); await f.page.keyboard.press('ControlOrMeta+a'); await f.page.keyboard.press('ArrowRight');
+    const saved = await f.waitFor(s => s.elements.some(e => e.id.startsWith('love-reply-') && e.version > 1), 'restored reply dimensions were not recorded');
+    const answer = saved.elements.find(e => e.id.startsWith('love-reply-'));
+    for (const e of saved.elements.filter(e => !e.isDeleted && e.id !== answer.id)) assert.ok(answer.x + answer.width <= e.x || e.x + e.width <= answer.x || answer.y + answer.height <= e.y || e.y + e.height <= answer.y, 'restored non-Latin reply overlaps another element');
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});
+
 test('Talk fits in light and dark at 1280 and 1440', async () => {
   const f = await loveSpotFixture();
   try {

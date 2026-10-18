@@ -119,8 +119,16 @@ function createLoveSpot({ directory = process.env.EXCALIDRAW_LOCAL_DIR || path.j
       // Monospaced text and generous bounds keep restored font metrics inside the reserved area.
       const lines = text.trim().split('\n').flatMap(line => {
         const chars = Array.from(line), wrapped = [];
-        while (chars.length > 32) { let at = chars.slice(0, 33).lastIndexOf(' '); if (at < 8) at = 32; wrapped.push(chars.splice(0, at).join('')); if (chars[0] === ' ') chars.shift(); }
-        return [...wrapped, chars.join('')];
+        // Wide glyphs and expanded tabs need more room than Latin letters when Excalidraw restores the font.
+        const columns = char => char === '\t' ? 8 : char.codePointAt(0) > 127 ? 2 : 1;
+        while (chars.length) {
+          let at = 0, used = 0;
+          while (at < chars.length && used + columns(chars[at]) <= 32) used += columns(chars[at++]);
+          if (at === chars.length) { wrapped.push(chars.join('')); break; }
+          const space = chars.slice(0, at + 1).lastIndexOf(' '); if (space >= 8) at = space;
+          wrapped.push(chars.splice(0, at).join('')); if (chars[0] === ' ') chars.shift();
+        }
+        return wrapped.length ? wrapped : [''];
       });
       const width = 480, height = Math.max(1, lines.length) * 28;
       const bounds = e => {
