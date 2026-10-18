@@ -26,7 +26,7 @@ function fixture({unsupported=false}={}) {
 }
 test('workflow titles require exact graph, task and assigned thread; explicit names are preserved',async()=>{
   const {client,calls}=fixture();try{
-    await client.initialize();const rows=(await client.listThreads()).data;
+    await client.initialize();const rows=(await client.listThreads({includeAgentRuns:true})).data;
     assert.equal(rows[0].workflowTaskTitle,'Inspect endpoint A');
     assert.equal(rows[1].workflowTaskTitle,'Review endpoint B');assert.equal(rows[1].name,'Chosen conversation name');
     for(const row of rows.slice(2))assert.equal(row.workflowTaskTitle,undefined,'An unrelated graph, task or thread must not receive a recorded title');
@@ -35,5 +35,5 @@ test('workflow titles require exact graph, task and assigned thread; explicit na
   }finally{client.close();}
 });
 test('unavailable authoritative graph records preserve safe thread fallbacks',async()=>{
-  const {client}=fixture({unsupported:true});try{await client.initialize();const rows=(await client.listThreads()).data;assert.ok(rows.length);assert.ok(rows.every(thread=>thread.workflowTaskTitle===undefined));}finally{client.close();}
+  const {client}=fixture({unsupported:true});try{await client.initialize();const rows=(await client.listThreads({includeAgentRuns:true})).data;assert.ok(rows.length);assert.ok(rows.every(thread=>thread.workflowTaskTitle===undefined));}finally{client.close();}
 });

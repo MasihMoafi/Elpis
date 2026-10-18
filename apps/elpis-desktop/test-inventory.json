@@ -24,7 +24,8 @@
     "tests/slash-helpers.test.mjs",
     "tests/steps.test.mjs",
     "tests/test-inventory.test.mjs",
-    "tests/turn-replacement.test.mjs"
+    "tests/turn-replacement.test.mjs",
+    "tests/workflow-sources.test.cjs"
   ],
   "bridge": [
     "tests/workflow-routing.mjs",
@@ -58,7 +59,13 @@
     "bridge/thread-deletion.test.mjs",
     "bridge/tools.test.mjs",
     "bridge/transcription.test.mjs",
-    "bridge/trash.test.mjs"
+    "bridge/trash.test.mjs",
+    "bridge/experiment-lab.test.mjs",
+    "bridge/improve.test.mjs",
+    "bridge/love-spot-talk.test.mjs",
+    "bridge/observability-turns.test.mjs",
+    "bridge/skill-trash.test.mjs",
+    "bridge/source-map.test.mjs"
   ],
   "desktop": [
     "desktop/browser-agent.test.cjs",
@@ -79,7 +86,9 @@
     "desktop/state.test.cjs",
     "desktop/terminal.test.cjs",
     "desktop/theme.test.cjs",
-    "desktop/tray.test.cjs"
+    "desktop/tray.test.cjs",
+    "desktop/improve.test.cjs",
+    "desktop/wayland-ime.test.cjs"
   ],
   "ui": [
     "tests/agents-guide.test.cjs",
@@ -182,7 +191,13 @@
     "tests/workflow-observer.test.cjs",
     "tests/workflow-polish.test.cjs",
     "tests/workflow-provider.test.cjs",
-    "tests/workflow.test.cjs"
+    "tests/workflow.test.cjs",
+    "tests/agent-runs.test.cjs",
+    "tests/improve.test.cjs",
+    "tests/ledger-page.test.cjs",
+    "tests/love-spot-talk.test.cjs",
+    "tests/startup-splash.test.cjs",
+    "tests/workflow-provenance.test.cjs"
   ],
   "opt-in": [
     "tests/app-fix-2.runtime.mjs",
@@ -195,6 +210,10 @@
     "tests/rewind.runtime.mjs",
     "tests/runtime.mjs",
     "tests/session-windows-electron.test.cjs",
-    "bridge/mcp.runtime.mjs"
+    "bridge/mcp.runtime.mjs",
+    "tests/experiment-lab.runtime.mjs",
+    "tests/improve-capture.runtime.mjs",
+    "tests/improve-live.runtime.mjs",
+    "tests/love-spot-talk.runtime.mjs"
   ]
 }
