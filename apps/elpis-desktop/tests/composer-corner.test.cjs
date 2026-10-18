@@ -7,7 +7,9 @@ const { fixture } = require('./parity-fixture.cjs');
 // its top corners, so the bar's own cut carries the accent.
 const corner = (page, selector) => page.locator(selector).first().evaluate(element => {
   const box = getComputedStyle(element), mark = getComputedStyle(element, '::before');
-  return { display: mark.display, markSize: mark.width, cut: box.borderTopLeftRadius, shape: box.getPropertyValue('corner-shape'), top: mark.top, left: mark.left };
+  const probe = document.createElement('i'); probe.style.color = 'var(--primary)'; element.append(probe);
+  const primary = getComputedStyle(probe).color; probe.remove();
+  return { display: mark.display, markSize: mark.width, cut: box.borderTopLeftRadius, shape: box.getPropertyValue('corner-shape'), top: mark.top, left: mark.left, line: mark.backgroundImage, primary };
 });
 
 for (const colorScheme of ['light', 'dark']) test(`the composer's corner accent marks the outer cut corner (${colorScheme})`, async t => {
@@ -22,6 +24,9 @@ for (const colorScheme of ['light', 'dark']) test(`the composer's corner accent 
   assert.equal(tray.markSize, tray.cut, 'The accent spans the bar\'s cut corner');
   assert.notEqual(tray.cut, '0px', 'The bar\'s top-left corner is cut');
   assert.deepEqual([tray.top, tray.left], ['-1px', '-1px'], 'The accent lies on the border, not inside it');
+  // Masih (18 Oct): the gold accent "is not fit here"; the line is the composer's neutral grey, not the accent colour.
+  for (const mark of [tray, await corner(page, '.composer').then(() => page.locator('.composer').first().evaluate(element => getComputedStyle(element, '::after').backgroundImage))])
+    assert.ok(!String(mark.line ?? mark).includes(tray.primary), `The corner line is not the accent colour ${tray.primary}`);
 
   await page.locator('.thread-row .thread-link').first().click();
   await page.locator('.composer-tray').waitFor({ state: 'detached' });

@@ -631,10 +631,10 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 
 .composer { position:relative; background:var(--composer); border-color:var(--hud-edge); box-shadow:var(--shadow); }
 /* No colour transition: the dark edge is gold, and a theme switch must not fade gold into the light theme. */
-/* Each cut corner carries an accent line along its bevel (the square's anti-diagonal is the cut). On a new chat the
+/* Each cut corner carries a neutral line along its bevel (gold did not fit, Masih 18 Oct) (the square's anti-diagonal is the cut). On a new chat the
    environment bar sits on top and squares the composer's top corners, so the bar's own cut carries the top accent. */
 .composer::before, .composer::after, .composer-tray::before { content:""; position:absolute; width:var(--cut-lg); height:var(--cut-lg); pointer-events:none;
-  background:linear-gradient(to bottom right, transparent calc(50% - 1px), var(--primary) calc(50% - 1px) calc(50% + 1px), transparent calc(50% + 1px)); }
+  background:linear-gradient(to bottom right, transparent calc(50% - 1px), var(--muted-foreground) calc(50% - 1px) calc(50% + 1px), transparent calc(50% + 1px)); }
 .composer::before, .composer-tray::before { top:-1px; left:-1px; }
 .composer::after { bottom:-1px; right:-1px; }
 .composer-tray { position:relative; }
