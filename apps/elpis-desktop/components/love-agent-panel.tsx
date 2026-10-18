@@ -2,16 +2,17 @@
 
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { characters, avatar, type Character, type LoveAgent } from "@/lib/love-agents";
 
 export function CharacterPicker({ onAdd }: { onAdd: (character: Character) => void }) {
-  return <div className="love-agent-picker" aria-label="Choose an agent">
-    {characters.map(c => <Button key={c.id} variant="ghost" aria-label={`Add ${c.name}`} onClick={() => onAdd(c)}>
+  return <DropdownMenuContent align="start" className="love-agent-picker" aria-label="Choose an agent">
+    {characters.map(c => <DropdownMenuItem key={c.id} aria-label={`Add ${c.name}`} onClick={() => onAdd(c)}>
       {/* Portraits are generated locally; no account, image service or download. */}
       {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src={avatar(c)} alt="" width={40} height={40} /><span><strong>{c.name}</strong><small>{c.detail}</small></span>
-    </Button>)}
-  </div>;
+      <img className="shrink-0" src={avatar(c)} alt="" width={40} height={40} /><span className="min-w-0 whitespace-normal wrap-break-word"><strong>{c.name}</strong><small>{c.detail}</small></span>
+    </DropdownMenuItem>)}
+  </DropdownMenuContent>;
 }
 
 export function LoveAgentPanel({ agent, busy, cwd, onChange, onRun, onClose, onOpenChat, onAnswer }: { agent: LoveAgent; busy: boolean; cwd?: string; onChange: (change: Partial<LoveAgent>) => void; onRun: () => void; onClose: () => void; onOpenChat?: (id: string) => void; onAnswer?: (optionId: string) => void }) {

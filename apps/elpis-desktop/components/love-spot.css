@@ -32,8 +32,8 @@
 .love-spot-talk-error { padding: 8px 12px; color: var(--destructive); font-size: var(--text-small); overflow-wrap: anywhere; }
 .love-spot-menu-anchor { position: fixed; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
 .love-agent-toolbar { position: relative; margin-right: auto; z-index: 6; display: flex; align-items: center; gap: 8px; color: var(--muted-foreground); font-size: 12px; }
-.love-agent-picker { position: absolute; top: 38px; left: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; width: 340px; max-width: calc(100vw - 48px); padding: 8px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--background); box-shadow: 0 8px 28px #0002; }
-.love-agent-picker > button { justify-content: flex-start; height: 66px; gap: 8px; text-align: left; }
+.love-agent-picker { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; width: 360px; max-width: calc(100vw - 32px); max-height: var(--available-height); overflow-y: auto; padding: 8px; }
+.love-agent-picker > [role="menuitem"] { justify-content: flex-start; min-height: 66px; gap: 8px; text-align: left; }
 .love-agent-picker strong, .love-agent-picker small, .love-agent-heading small { display: block; }
 .love-agent-picker small, .love-agent-heading small { color: var(--muted-foreground); font-size: 11px; font-weight: 400; }
 .love-agent-list { display: flex; flex-shrink: 0; gap: 4px; padding: 4px 16px; border-bottom: 1px solid var(--border); overflow-x: auto; }

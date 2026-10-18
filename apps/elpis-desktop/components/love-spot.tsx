@@ -90,6 +90,18 @@ export default function LoveSpot({ dark, cwd, onOpenChat }: { dark: boolean; cwd
   const provider = chatProvider(model, choices.find(c => c.id === choiceId)?.provider, settings?.main.provider);
 
   useEffect(() => {
+    if (!picker) return;
+    const dismiss = (event: PointerEvent) => {
+      if (!(event.target instanceof Element) || event.target.closest(".love-agent-picker, .love-agent-toolbar")) return;
+      // The dismissing gesture belongs to the menu, including the rest of a drag.
+      // Letting its pointer-down reach Excalidraw starts an unwanted shape.
+      event.preventDefault(); event.stopImmediatePropagation(); setPicker(false);
+    };
+    document.addEventListener("pointerdown", dismiss, true);
+    return () => document.removeEventListener("pointerdown", dismiss, true);
+  }, [picker]);
+
+  useEffect(() => {
     if (!editor || !boardArea.current) return;
     if (talk) editor.updateScene({ appState: { selectedElementIds: {} } });
     let frame = 0;
@@ -273,7 +285,7 @@ export default function LoveSpot({ dark, cwd, onOpenChat }: { dark: boolean; cwd
     const made = makeAgent(character, 260 / zoom - state.scrollX + (agents.length % 2) * 280, 200 / zoom - state.scrollY + Math.floor(agents.length / 2) * 220);
     editor.updateScene({ elements: [...editor.getSceneElementsIncludingDeleted(), ...made.elements], captureUpdate: CaptureUpdateAction.IMMEDIATELY });
     editor.addFiles([made.file]);
-    setSelected(made.id); setPicker(false);
+    setSelected(made.id);
     editor.setActiveTool({ type: "selection" });
   };
   const updateAgent = (change: Partial<LoveAgent>) => {
@@ -340,9 +352,10 @@ export default function LoveSpot({ dark, cwd, onOpenChat }: { dark: boolean; cwd
         </form>}
       </div>
       {editor && <div className="love-agent-toolbar">
-        <Button variant="outline" size="sm" title="Add an agent, or type @agent in a text note" onClick={() => add(characters[0])}>Agent</Button>
-        <Button variant="outline" size="sm" aria-expanded={picker} onClick={() => setPicker(p => !p)}>Characters</Button>
-        {picker && <CharacterPicker onAdd={add} />}
+        <DropdownMenu open={picker} onOpenChange={setPicker}>
+          <DropdownMenuTrigger render={<Button variant="outline" size="sm" title="Choose an agent, or type @agent in a text note" />}>Agents</DropdownMenuTrigger>
+          <CharacterPicker onAdd={add} />
+        </DropdownMenu>
       </div>}
       <div role="group" aria-label="Voice note"><Dictation provider={provider} disabled={!editor || !settings || talkDictating} onBusy={setBoardBusy} selection={insertion} onTranscript={addVoiceNote} purpose="Adds a note to the board." /></div>
       <Button variant="outline" size="sm" aria-expanded={talk} onClick={() => setTalk(value => !value)}>Talk</Button>

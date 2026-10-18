@@ -5,12 +5,80 @@ const path = require('node:path');
 const { loveSpotFixture } = require('./love-spot-fixture.cjs');
 const agents = scene => scene.elements.filter(e => !e.isDeleted && e.customData?.loveAgent);
 
+test('one Agents entry chooses a preset, adds its card and edits its task', async () => {
+  const f = await loveSpotFixture();
+  try {
+    await f.open(f.page);
+    assert.equal(await f.page.getByRole('button', { name: /^(Agent|Characters)$/ }).count(), 0);
+    await f.page.locator('.love-agent-toolbar').getByRole('button', { name: 'Agents', exact: true }).click();
+    await f.page.getByRole('menuitem', { name: 'Add Critic', exact: true }).click();
+    await f.page.getByRole('textbox', { name: 'Task', exact: true }).fill('Find the weakest assumption');
+    await f.page.getByRole('button', { name: 'Done', exact: true }).click();
+    await f.waitFor(s => agents(s)[0]?.customData.loveAgent.task === 'Find the weakest assumption', 'chosen task did not persist');
+    assert.equal(agents(await f.scene())[0].customData.loveAgent.name, 'Critic');
+    assert.equal(await f.page.getByRole('menu', { name: 'Agents', exact: true }).count(), 0);
+  } finally { await f.close(); }
+});
+
+for (const colorScheme of ['light', 'dark']) test(`agent menu contains every name and description at minimum window width · ${colorScheme}`, async () => {
+  const f = await loveSpotFixture({ colorScheme });
+  try {
+    const { page } = f;
+    await page.goto(new URL('love-spot.html', f.url).href);
+    await page.locator('.excalidraw canvas').first().waitFor();
+    await page.setViewportSize({ width: 545, height: 436 });
+    await page.waitForTimeout(250);
+    const trigger = page.locator('.love-agent-toolbar').getByRole('button', { name: 'Agents', exact: true });
+    await trigger.click();
+    const picker = page.getByRole('menu', { name: 'Agents', exact: true });
+    const overflow = await picker.evaluate(panel => {
+      const bounds = panel.getBoundingClientRect();
+      return [...panel.querySelectorAll('strong,small')].filter(el => {
+        const r = el.getBoundingClientRect();
+        return el.scrollWidth > el.clientWidth + 1 || r.left < bounds.left || r.right > bounds.right;
+      }).map(el => el.textContent);
+    });
+    assert.deepEqual(overflow, [], 'every character name and description must fit');
+    await fs.mkdir(path.join(process.env.HOME, '.cache/elpis-tests/love-polish'), { recursive: true });
+    for (const width of [545, 760, 1280]) {
+      await page.setViewportSize({ width, height: width === 545 ? 436 : 900 });
+      await page.screenshot({ path: path.join(process.env.HOME, `.cache/elpis-tests/love-polish/menu-${colorScheme}-${width}.png`) });
+    }
+    await page.keyboard.press('Escape');
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});
+
+for (const dismissal of ['Escape', 'outside drag']) test(`${dismissal} closes the agent menu without drawing`, async () => {
+  const f = await loveSpotFixture();
+  try {
+    const { page } = f; await f.open(page);
+    const board = await page.locator('.excalidraw').boundingBox();
+    await page.mouse.click(board.x + 800, board.y + 600);
+    await page.keyboard.press('r');
+    await page.locator('.love-agent-toolbar').getByRole('button', { name: 'Agents', exact: true }).click();
+    const picker = page.getByRole('menu', { name: 'Agents', exact: true });
+    await picker.waitFor();
+    if (dismissal === 'Escape') await page.keyboard.press('Escape');
+    else {
+      await page.mouse.move(board.x + 600, board.y + 400);
+      await page.mouse.down(); await page.mouse.move(board.x + 700, board.y + 500, { steps: 8 }); await page.mouse.up();
+    }
+    await picker.waitFor({ state: 'detached', timeout: 1500 });
+    await page.waitForTimeout(400);
+    assert.equal((await f.scene()).elements.length, 0);
+    await f.draw(page);
+    await f.waitFor(s => s.elements.some(e => e.type === 'rectangle' && !e.isDeleted), 'the board must still draw after dismissal');
+  } finally { await f.close(); }
+});
+
 for (const colorScheme of ['light', 'dark']) test(`Talk, agents and private screenshots work together without overlap · ${colorScheme}`, async () => {
   const f = await loveSpotFixture({ colorScheme, replyDelay: 300 });
   try {
     const { page } = f;
     await f.open(page);
-    await page.getByRole('button', { name: 'Agent', exact: true }).click();
+    await page.locator('.love-agent-toolbar').getByRole('button', { name: 'Agents', exact: true }).click();
+    await page.getByRole('menuitem', { name: 'Add Researcher', exact: true }).click();
     const details = page.getByLabel('Agent details', { exact: true });
     await details.getByRole('textbox', { name: 'Task', exact: true }).fill('Review our shared idea');
     await page.getByRole('button', { name: 'Talk', exact: true }).click();
@@ -67,20 +135,21 @@ for (const colorScheme of ['light', 'dark']) test(`characters, native arrows, AC
   try {
     const { page } = f;
     await f.open(page);
-    await page.getByRole('button', { name: 'Characters', exact: true }).click();
-    for (const name of ['Researcher','Reviewer','Builder','Tester','Writer','Critic']) assert.equal(await page.getByRole('button', { name: `Add ${name}`, exact: true }).count(), 1);
-    const portraits = await page.getByLabel('Choose an agent', { exact: true }).locator('img').evaluateAll(images => images.map(image => image.src));
+    await page.locator('.love-agent-toolbar').getByRole('button', { name: 'Agents', exact: true }).click();
+    await page.getByRole('menu', { name: 'Agents', exact: true }).waitFor();
+    for (const name of ['Researcher','Reviewer','Builder','Tester','Writer','Critic']) assert.equal(await page.getByRole('menuitem', { name: `Add ${name}`, exact: true }).count(), 1);
+    const portraits = await page.getByRole('menu', { name: 'Agents', exact: true }).locator('img').evaluateAll(images => images.map(image => image.src));
     assert.equal(new Set(portraits).size, 6, 'all characters have different generated portraits');
     // The characters Masih accepted (18 Oct), made by image generation and traced, not the old drawn faces.
     assert.ok(portraits.every(src => src.startsWith('data:image/png;base64,')), 'the portraits are the new character art');
-    await page.getByRole('button', { name: 'Agent', exact: true }).click();
+    await page.getByRole('menuitem', { name: 'Add Researcher', exact: true }).click();
     await page.getByRole('button', { name: 'Run connected agents', exact: true }).click();
     await page.getByRole('alert').filter({ hasText: 'Give Researcher a task' }).waitFor();
     assert.deepEqual(await f.acp(), [], 'invalid graph must not start agents');
     await page.getByRole('textbox', { name: 'Task', exact: true }).fill('Trace this unique board seed');
     await page.getByRole('button', { name: 'Done', exact: true }).click();
-    await page.getByRole('button', { name: 'Characters', exact: true }).click();
-    await page.getByRole('button', { name: 'Add Reviewer', exact: true }).click();
+    await page.locator('.love-agent-toolbar').getByRole('button', { name: 'Agents', exact: true }).click();
+    await page.getByRole('menuitem', { name: 'Add Reviewer', exact: true }).click();
     assert.match(await page.getByRole('textbox', { name: 'Prompt', exact: true }).inputValue(), /review/i);
     assert.equal(await page.getByRole('textbox', { name: 'Model', exact: true }).inputValue(), 'gpt-6-luna');
     assert.equal(await page.getByRole('textbox', { name: 'Provider', exact: true }).inputValue(), 'openai');
