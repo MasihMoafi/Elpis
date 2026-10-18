@@ -15,5 +15,7 @@ for a in "$@"; do
 done
 case "${1:-}" in
   ""|-*|resume|fork) ELPIS_ENGINE_BIN="$REAL" exec "$BRIDGE_DIR/elpis-claude" "$@" ;;
+  # Elpis as an ACP agent over stdio (elpis-acp-agent.mjs), e.g. `elpis acp --model gpt-6-luna`.
+  acp) shift; ELPIS_ENGINE_BIN="$REAL" exec node "$BRIDGE_DIR/elpis-acp-agent.mjs" "$@" ;;
   *) direct "$@" ;;
 esac
