@@ -6,10 +6,10 @@
 .changes-note { margin:0; padding:12px; font-size:13px; color:var(--muted-foreground); }
 .changes-error { color:var(--destructive); }
 .change-list { list-style:none; margin:0; padding:4px; flex:0 1 auto; max-height:38%; min-height:34px; overflow:auto; border-bottom:1px solid var(--hairline); }
-.change-row { display:flex; align-items:center; gap:8px; width:100%; min-height:30px; padding:4px 8px; border:0; border-radius:var(--radius-sm); background:none; color:var(--foreground); font-size:13px; text-align:left; }
+.change-row { display:flex; align-items:center; gap:8px; width:100%; min-height:30px; padding:4px 8px; border:0; background:none; color:var(--foreground); font-size:13px; text-align:left; }
 .change-row:hover { background:var(--hover); }
 .change-row[aria-current="true"] { background:var(--selected); }
-.change-status { flex-shrink:0; display:inline-flex; align-items:center; justify-content:center; width:18px; height:18px; border-radius:4px; font:600 var(--text-small)/1 var(--mono); color:var(--muted-foreground); background:var(--muted); }
+.change-status { flex-shrink:0; display:inline-flex; align-items:center; justify-content:center; width:18px; height:18px; font:600 var(--text-small)/1 var(--mono); color:var(--muted-foreground); background:var(--muted); }
 .change-status[data-status="added"], .change-status[data-status="untracked"] { color:var(--success); background:color-mix(in oklch, var(--success) 14%, transparent); }
 .change-status[data-status="deleted"], .change-status[data-status="conflicted"] { color:var(--destructive); background:color-mix(in oklch, var(--destructive) 13%, transparent); }
 .change-path { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }

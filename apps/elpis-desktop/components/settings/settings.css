@@ -10,7 +10,7 @@
 .settings-group-heading h3 { font-size:13.5px; font-weight:600; margin:0; }
 .settings-group-description { font-size:12.5px; color:var(--muted-foreground); margin:-4px 0 10px; }
 /* Every row draws a top hairline; the first is clipped, so rows wrapped in forms still get dividers. */
-.settings-rows { border:1px solid var(--border); border-radius:12px; background:var(--card); min-width:0; overflow:hidden; }
+.settings-rows { border:1px solid var(--border); background:var(--card); min-width:0; overflow:hidden; }
 .settings-row { display:flex; align-items:center; justify-content:space-between; gap:16px; padding:13px 16px; min-height:58px; min-width:0; border-top:1px solid var(--hairline); margin-top:-1px; }
 .settings-row-text { min-width:0; flex:1 1 auto; }
 .settings-row-title { font-size:13.5px; font-weight:500; line-height:1.4; overflow-wrap:anywhere; }
@@ -25,7 +25,7 @@
 .settings-row-control .settings-path.unset { font:inherit; font-size:13px; direction:ltr; }
 .settings-notice { margin:8px 2px 0; font-size:12.5px; color:var(--muted-foreground); }
 .settings-notice.alert { color:var(--destructive); }
-.settings-badge { display:inline-flex; align-items:center; height:20px; padding:0 7px; border-radius:999px; border:1px solid var(--border); font-size:var(--text-small); font-weight:500; color:var(--muted-foreground); white-space:nowrap; }
+.settings-badge { display:inline-flex; align-items:center; height:20px; padding:0 7px; border:1px solid var(--border); font-size:var(--text-small); font-weight:500; color:var(--muted-foreground); white-space:nowrap; }
 .settings-badge.warn { color:var(--warning); border-color:color-mix(in oklch, var(--warning), transparent 55%); }
 .settings-badge.ok { color:var(--success); border-color:color-mix(in oklch, var(--success), transparent 55%); }
 .settings-code { font:12px/1.45 var(--mono); background:var(--muted); color:var(--foreground); padding:1px 5px; border-radius:5px; overflow-wrap:anywhere; }
@@ -41,7 +41,7 @@
 .settings-actions { min-height:52px; }
 .settings-actions .settings-notice { margin:0; }
 /* Cards: an account, a server or a form on a Settings page. Stacked cards keep one gap. */
-.settings-card { display:grid; gap:10px; padding:16px; border:1px solid var(--border); border-radius:12px; background:var(--card); min-width:0; }
+.settings-card { display:grid; gap:10px; padding:16px; border:1px solid var(--border); background:var(--card); min-width:0; }
 .settings-card h3 { font-size:14px; font-weight:600; margin:0; }
 /* A card of labelled fields (a form) spaces its fields wider than a card of lines. */
 form.settings-card, .settings-card:has(> .field) { gap:16px; }

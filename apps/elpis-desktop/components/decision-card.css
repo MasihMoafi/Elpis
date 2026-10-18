@@ -1,22 +1,22 @@
 /* The card for approvals, questions and plans (components/decision-card.tsx): a title, the request's details, and
    numbered choices whose keycaps say which number key takes them. Colours are the app's tokens, so both themes follow. */
-.decision-card { margin:12px 0 16px; border:1px solid var(--border); border-radius:var(--radius-lg); background:var(--card); box-shadow:var(--shadow); outline:none; overflow:hidden; }
+.decision-card { margin:12px 0 16px; border:1px solid var(--border); background:var(--card); box-shadow:var(--shadow); outline:none; overflow:hidden; }
 .pending-request .decision-card { margin:0 0 8px; box-shadow:none; }
 .decision-title { padding:12px 14px 0; font-size:13.5px; font-weight:600; line-height:1.4; overflow-wrap:anywhere; }
 .decision-body { padding:6px 14px 0; font-size:13px; line-height:1.55; overflow-wrap:anywhere; }
 .decision-body > p { margin:0 0 6px; }
-.decision-body pre { margin:6px 0; padding:8px 10px; border-radius:var(--radius-md); background:var(--muted); font:12px/1.55 var(--mono); white-space:pre-wrap; overflow-wrap:anywhere; }
+.decision-body pre { margin:6px 0; padding:8px 10px; background:var(--muted); font:12px/1.55 var(--mono); white-space:pre-wrap; overflow-wrap:anywhere; }
 .decision-body label { display:grid; gap:6px; margin:10px 0; }
 .decision-note { font-size:12.5px; line-height:1.55; color:var(--muted-foreground); }
 .decision-choices { display:grid; gap:2px; padding:8px 6px 6px; }
-.choice { display:grid; grid-template-columns:auto minmax(0,1fr) auto; align-items:start; gap:10px; width:100%; min-height:36px; padding:7px 8px; border:0; border-radius:var(--radius-md); background:none; color:var(--foreground); text-align:left; font-size:13px; line-height:20px; cursor:pointer; }
+.choice { display:grid; grid-template-columns:auto minmax(0,1fr) auto; align-items:start; gap:10px; width:100%; min-height:36px; padding:7px 8px; border:0; background:none; color:var(--foreground); text-align:left; font-size:13px; line-height:20px; cursor:pointer; }
 .choice:hover:not(:disabled) { background:var(--hover); }
 .choice:focus-visible { outline:2px solid var(--ring); outline-offset:-2px; }
 .choice:disabled { cursor:default; opacity:.55; }
 .choice[data-primary] { background:color-mix(in oklch, var(--primary) 6%, transparent); }
 .choice[data-primary]:hover:not(:disabled) { background:color-mix(in oklch, var(--primary) 10%, transparent); }
 .choice[aria-checked="true"] { background:var(--selected); }
-.choice-key { display:inline-flex; align-items:center; justify-content:center; width:20px; height:20px; border:1px solid var(--border); border-bottom-width:2px; border-radius:5px; background:var(--background); font:500 11.5px/1 var(--mono); color:var(--muted-foreground); }
+.choice-key { display:inline-flex; align-items:center; justify-content:center; width:20px; height:20px; border:1px solid var(--border); border-bottom-width:2px; background:var(--background); font:500 11.5px/1 var(--mono); color:var(--muted-foreground); }
 .choice[data-primary] .choice-key { color:var(--foreground); border-color:color-mix(in oklch, var(--primary) 35%, var(--border)); }
 .choice-key[data-radio] { width:14px; height:14px; margin:3px; border-width:1.5px; border-radius:50%; background:none; }
 .choice[aria-checked="true"] .choice-key[data-radio] { border-color:var(--primary); background:radial-gradient(circle, var(--primary) 0 3.5px, transparent 4px); }

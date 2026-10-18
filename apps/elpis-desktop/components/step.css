@@ -1,7 +1,7 @@
 /* One step of agent work in an opened group (components/step.tsx): a sentence, its time or counts at the right, and a
    bordered card under it. Commands, tools, searches, edits and reasoning all draw it. */
 .step { margin:6px 0 12px; }
-.step-head { display:flex; align-items:baseline; gap:12px; min-height:24px; padding:2px 6px; margin-inline-start:-6px; border-radius:6px; list-style:none; font-size:13.5px; color:var(--muted-foreground); }
+.step-head { display:flex; align-items:baseline; gap:12px; min-height:24px; padding:2px 6px; margin-inline-start:-6px; list-style:none; font-size:13.5px; color:var(--muted-foreground); }
 .step-head::-webkit-details-marker { display:none; }
 .step-head::after { content:""; flex:none; width:10px; text-align:center; font-size:15px; line-height:1; color:var(--subtle-foreground); transition:transform .15s; }
 summary.step-head { cursor:pointer; transition:color .12s, background .12s; }
@@ -15,8 +15,8 @@ summary.step-head:focus-visible { outline:2px solid var(--ring); outline-offset:
 .step-hint { margin-inline-start:2px; font-size:12px; color:var(--muted-foreground); }
 .step-meta { flex:none; display:inline-flex; align-items:baseline; gap:10px; font-size:12px; color:var(--subtle-foreground); font-variant-numeric:tabular-nums; }
 .step-status.failed, .step-status.declined { color:var(--destructive); }
-.step-card { margin-top:6px; border:1px solid var(--border); border-radius:10px; background:var(--card); overflow:hidden; }
-.step-script { margin:10px; padding:8px 12px; border:1px solid var(--hairline); border-radius:8px; background:var(--recessed); max-height:240px; overflow:auto; white-space:pre-wrap; overflow-wrap:anywhere; font:12.5px/1.6 var(--mono); color:var(--foreground); }
+.step-card { margin-top:6px; border:1px solid var(--border); background:var(--card); overflow:hidden; }
+.step-script { margin:10px; padding:8px 12px; border:1px solid var(--hairline); background:var(--recessed); max-height:240px; overflow:auto; white-space:pre-wrap; overflow-wrap:anywhere; font:12.5px/1.6 var(--mono); color:var(--foreground); }
 .step-exit, .step-output { margin:0; padding:0 12px; white-space:pre-wrap; overflow-wrap:anywhere; font:12.5px/1.6 var(--mono); }
 .step-output { padding:10px 12px; max-height:320px; overflow:auto; color:var(--foreground); }
 .step-script + .step-output, .step-exit + .step-output { padding-top:0; }
@@ -37,7 +37,7 @@ summary.step-head:focus-visible { outline:2px solid var(--ring); outline-offset:
 /* A turn's footer: "Changes · 3 files · +12 −4" and View changes; its files open as the same rows. */
 .turn-changes { margin:4px 0 14px; }
 .turn-changes-head { display:flex; align-items:center; justify-content:space-between; gap:12px; min-height:28px; }
-.turn-changes-toggle { display:flex; align-items:baseline; gap:10px; min-width:0; padding:2px 6px; margin-inline:-6px; border:0; border-radius:6px; background:none; font-size:13.5px; color:var(--muted-foreground); cursor:pointer; transition:color .12s, background .12s; }
+.turn-changes-toggle { display:flex; align-items:baseline; gap:10px; min-width:0; padding:2px 6px; margin-inline:-6px; border:0; background:none; font-size:13.5px; color:var(--muted-foreground); cursor:pointer; transition:color .12s, background .12s; }
 .turn-changes-toggle::after { content:"›"; flex:none; font-size:15px; line-height:1; color:var(--subtle-foreground); transition:transform .15s; }
 .turn-changes-toggle[aria-expanded="true"]::after { transform:rotate(90deg); }
 .turn-changes-toggle:hover { color:var(--foreground); background:var(--hover); }

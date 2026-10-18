@@ -207,7 +207,8 @@
     "tests/canvas-editing.test.cjs",
     "tests/personal.test.cjs",
     "tests/smart-prune.test.cjs",
-    "tests/composer-corner.test.cjs"
+    "tests/composer-corner.test.cjs",
+    "tests/hud-language.test.cjs"
   ],
   "opt-in": [
     "tests/app-fix-2.runtime.mjs",
