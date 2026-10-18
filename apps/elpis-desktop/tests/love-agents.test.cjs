@@ -253,8 +253,9 @@ for (const colorScheme of ['light', 'dark']) test(`an agent's permission request
     await f.open(page);
     await page.locator('.love-agent-toolbar').getByRole('button', { name: 'Agents', exact: true }).click();
     await page.getByRole('menuitem', { name: 'Add Researcher', exact: true }).click();
+    const draft = page.getByRole('textbox', { name: 'Task', exact: true });
+    await draft.fill('[permission] Save the plan'); await draft.press('Enter');
     const details = page.getByLabel('Agent details', { exact: true });
-    await details.getByRole('textbox', { name: 'Task', exact: true }).fill('[permission] Save the plan');
     await details.getByRole('button', { name: 'Run connected agents', exact: true }).click();
     const request = details.getByRole('group', { name: 'Permission request', exact: true });
     await request.getByText('Write notes.txt', { exact: true }).waitFor();
