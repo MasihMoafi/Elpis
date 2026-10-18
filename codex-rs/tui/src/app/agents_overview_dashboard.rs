@@ -48,7 +48,7 @@ fn agent_hex(model: &str) -> String {
 }
 
 /// `Model · effort`, without repeating an effort the model's name already carries.
-fn model_label(name: &str, effort: Option<&ReasoningEffort>) -> String {
+pub(in crate::app) fn model_label(name: &str, effort: Option<&ReasoningEffort>) -> String {
     match effort.map(ReasoningEffort::as_str) {
         Some(effort) if !name.to_ascii_lowercase().contains(&format!("({effort})")) => {
             format!("{name} · {effort}")
@@ -159,6 +159,7 @@ impl App {
             AgentsOverviewGroup::NeedsYou => (DashboardAgentStatus::NeedsYou, "Needs input"),
             AgentsOverviewGroup::Working => (DashboardAgentStatus::Working, "Working"),
             AgentsOverviewGroup::Ready => (DashboardAgentStatus::Ready, "Ready"),
+            AgentsOverviewGroup::Done => (DashboardAgentStatus::Ready, "Done"),
             AgentsOverviewGroup::Finished => (DashboardAgentStatus::Inactive, "Inactive"),
         };
         DashboardAgent {

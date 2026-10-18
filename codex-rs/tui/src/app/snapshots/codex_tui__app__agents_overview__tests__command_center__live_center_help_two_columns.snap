@@ -1,9 +1,10 @@
 ---
 source: tui/src/app/agent_center_tests.rs
+assertion_line: 362
 expression: "screen(&view, width, height)"
 ---
-  Agent command center  Group: Project  g
-   All 3   Needs you 1   Working 0   Ready 1   Inactive 1
+  Agent command center  Group: Project  g  View: list
+   All 3   Needs you 1   Working 0   Ready 1   Done 0    ›
   ────────────────────────────────────────────────────────
   Task shortcuts
 
@@ -17,12 +18,12 @@ expression: "screen(&view, width, height)"
                       a          Archive
                       h          Hide
                       backspace  Delete
+                      s          Steer
 
                       View
                       tab/⇧tab  Filter
                       f3        Search
                       g         Group
-
 
 
   esc back

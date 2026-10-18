@@ -109,7 +109,7 @@ async fn agents_overview_startup_restores_saved_grouping() -> Result<()> {
         .find(|line| line.contains("Group:"))
         .expect("production startup renders Command Center grouping")
         .trim();
-    insta::assert_snapshot!(grouping_header, @"Agent command center  Group: Status  g");
+    insta::assert_snapshot!(grouping_header, @"Agent command center  Group: Status  g  View: list");
     proxy.abort();
     Ok(())
 }

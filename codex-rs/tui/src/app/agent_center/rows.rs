@@ -11,8 +11,8 @@ use crate::bottom_pane::selection_style;
 use crate::resume_picker::format_relative_time;
 use crate::status::format_directory_display;
 
-/// Fits `Claude Opus 5.5`; longer catalog names end in an ellipsis.
-const MODEL_WIDTH: u16 = 18;
+/// Fits the demo's model and effort; longer labels end in an ellipsis.
+const MODEL_WIDTH: u16 = 26;
 
 struct Columns {
     title: Rect,
@@ -187,16 +187,11 @@ impl AgentsOverviewView {
                 let count = indices
                     .iter()
                     .filter(|&&candidate| {
-                        candidate != usize::MAX
-                            && self.parent_index(candidate).is_none()
-                            && self.same_group(state.grouping, candidate, index)
+                        candidate != usize::MAX && self.same_group(state.grouping, candidate, index)
                     })
                     .count();
                 let total = (0..self.rows.len())
-                    .filter(|&candidate| {
-                        self.parent_index(candidate).is_none()
-                            && self.same_group(state.grouping, candidate, index)
-                    })
+                    .filter(|&candidate| self.same_group(state.grouping, candidate, index))
                     .count();
                 let count = if count == total {
                     count.to_string()
@@ -230,23 +225,10 @@ impl AgentsOverviewView {
                 },
                 style,
             );
-            let (status, mut dot) = Self::status(task);
-            if index == self.selected {
-                dot.style = style;
-            }
+            let (status, glyph) = Self::status(task);
             line(
                 Line::from(if index == self.selected { "›" } else { " " }).style(style),
                 rect,
-                buf,
-            );
-            line(
-                Line::from(dot),
-                Rect::new(
-                    rect.x + rect.width.min(/*other*/ 2),
-                    rect.y,
-                    rect.width.saturating_sub(/*rhs*/ 2).min(/*other*/ 1),
-                    /*height*/ 1,
-                ),
                 buf,
             );
             let Columns {
@@ -270,23 +252,39 @@ impl AgentsOverviewView {
             } else {
                 self.title_style(task.thread_id)
             };
-            let depth = self.row_depth(index);
-            let title_text = if depth == 0 {
-                display_title(&task.thread).to_owned()
-            } else {
-                format!(
-                    "{}↳ {}",
-                    "  ".repeat(depth.saturating_sub(1)),
-                    display_title(&task.thread)
-                )
-            };
-            line(Line::from(title_text).style(title_style), title, buf);
+            let prefix = self.tree_prefix(index);
+            let provider_style = self.provider_style(task, style);
+            let task_area = Rect::new(
+                rect.x + rect.width.min(2),
+                title.y,
+                title.right().saturating_sub(rect.x + 2),
+                title.height,
+            );
             line(
-                Line::from(task.model_display_name().to_owned()).style(style),
+                Line::from(vec![
+                    prefix.dim(),
+                    Span::styled("●", provider_style),
+                    " ".into(),
+                    Span::styled(display_title(&task.thread).to_owned(), title_style),
+                ])
+                .style(style),
+                task_area,
+                buf,
+            );
+            line(
+                Line::from(Span::styled(task.model_label(), provider_style)).style(style),
                 model,
                 buf,
             );
-            line(Line::from(status).style(style), status_area, buf);
+            line(
+                Line::from(Span::styled(
+                    format!("{} {status}", glyph.content),
+                    Self::status_style(task, style),
+                ))
+                .style(style),
+                status_area,
+                buf,
+            );
             if !updated.is_empty() {
                 let age = format_relative_time(
                     reference,

@@ -110,6 +110,89 @@ async fn run_lifecycle_modal<T>(
 }
 
 impl App {
+    pub(super) async fn steer_agents_overview_thread(
+        &mut self,
+        app_server: &mut AppServerSession,
+        thread_id: ThreadId,
+        message: String,
+    ) {
+        let result = async {
+            let metadata = app_server.thread_read(thread_id, false).await.map_err(|error| error.to_string())?;
+            if metadata.can_accept_direct_input == Some(false) {
+                return Err("This agent is controlled by its parent. Open the parent to give it directions.".to_string());
+            }
+            let handle = app_server.request_handle();
+            if metadata.status == codex_app_server_protocol::ThreadStatus::NotLoaded {
+                handle.request_typed::<codex_app_server_protocol::ThreadResumeResponse>(ClientRequest::ThreadResume {
+                    request_id: RequestId::String(Uuid::new_v4().to_string()),
+                    params: codex_app_server_protocol::ThreadResumeParams { thread_id: thread_id.to_string(), ..Default::default() },
+                }).await.map_err(|error| error.to_string())?;
+            }
+            handle.request_typed::<codex_app_server_protocol::TurnStartResponse>(ClientRequest::TurnStart {
+                request_id: RequestId::String(Uuid::new_v4().to_string()),
+                params: codex_app_server_protocol::TurnStartParams {
+                    thread_id: thread_id.to_string(), client_user_message_id: Some(format!("{}{}", super::agents_overview::HUMAN_STEER_ID_PREFIX, Uuid::new_v4())),
+                    input: vec![codex_app_server_protocol::UserInput::Text { text: message.clone(), text_elements: Vec::new() }],
+                    ..Default::default()
+                },
+            }).await.map_err(|error| error.to_string())?;
+            Ok::<_, String>(())
+        }.await;
+        match result {
+            Ok(()) => {
+                self.append_message_history_entry(thread_id, message);
+                self.agents_overview.refresh_thread_ids.insert(thread_id);
+                self.refresh_changed_agents_overview_threads(app_server);
+            }
+            Err(error) => {
+                let mut state = self
+                    .agents_overview
+                    .view_state
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                state.steer_target = Some(thread_id);
+                state.set_rename_input(&message, &self.keymap);
+                drop(state);
+                self.add_agents_overview_error(format!("Failed to steer task: {error}"));
+            }
+        }
+    }
+
+    pub(super) fn refresh_agents_overview_conversation(
+        &mut self,
+        app_server: &AppServerSession,
+        frame_requester: crate::tui::FrameRequester,
+    ) {
+        let Some(thread_id) = self
+            .chat_widget
+            .selected_index_for_present_view(super::AGENTS_OVERVIEW_VIEW_ID)
+            .and_then(|index| self.agents_overview.visible_thread_ids.get(index))
+            .copied()
+        else {
+            self.agents_overview.conversation_preview_thread_id = None;
+            return;
+        };
+        if self
+            .agents_overview
+            .threads
+            .values()
+            .flatten()
+            .any(|thread| {
+                matches!(
+                    thread.status,
+                    codex_app_server_protocol::ThreadStatus::Active { .. }
+                )
+            })
+        {
+            frame_requester.schedule_frame_in(std::time::Duration::from_secs(1));
+        }
+        if self.agents_overview.conversation_preview_thread_id != Some(thread_id) {
+            self.agents_overview.conversation_preview_thread_id = Some(thread_id);
+            self.agents_overview.refresh_thread_ids.insert(thread_id);
+            self.refresh_changed_agents_overview_threads(app_server);
+        }
+    }
+
     pub(super) fn toggle_agents_overview_pin(
         &mut self,
         app_server: &AppServerSession,

@@ -1,27 +1,27 @@
 ---
 source: tui/src/app/agent_center_tests.rs
-assertion_line: 80
+assertion_line: 83
 expression: "screen(&view, 160, 22)"
 ---
-  Agent command center  Group: Project  g
-   All 1   Needs you 1   Working 0   Ready 0   Inactive 0                                                                                      tab/⇧tab filter
+  Agent command center  Group: Project  g  View: list
+   All 7   Needs you 3   Working 1   Ready 2   Done 0   Inactive 1                                                                             tab/⇧tab filter
   ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-      Tasks                                                               Model               Status         Updated  │ Task details
-  Pinned  1                                                                                                           │
-  › ● Current task                                                        Unknown             Needs input        now  │ Current task
-    ○ ↳ A longer task title that uses the available column                Unknown             Ready           5m ago  │ ● Needs input
-    ○   ↳ Child                                                   voice   Unknown             Ready           2m ago  │
-    ● ↳ Needs an answer                                                   Unknown             Needs input     2h ago  │ Model: Unknown
-    ○ ↳ Unloaded task                                                     Unknown             Inactive        2d ago  │ Reasoning: Unknown
-    ● ↳ Working task                                                      Unknown             Working         1d ago  │
-    ! ↳ Failed task                                                       Unknown             Error           1h ago  │ Project
-                                                                                                                      │ /tmp/project
-                                                                                                                      │
-                                                                                                                      │ Agent: Needs an answer
-                                                                                                                      │ Open task to review.
-                                                                                                                      │ Waiting for your response.
-                                                                                                                      │
-                                                                                                                      │ Prompt
-                                                                                                                      │ Current task
-                                                                                                                      │
-  ? help  esc back  ↑/↓ move  enter open  n new
+      Tasks                             Model                       Status         Updated  │ ● Current task
+  Pinned  7                                                                                 │ Unknown · OpenAI · asked by you
+  › ● Current task                      Unknown                     ! Needs you        now  │ ────────────────────────────────────────────────────────────────
+    ├─● A longer task title that uses…  Unknown                     ◇ Ready         5m ago  │ you → Unknown  ask
+    │ └─● Child                 voice   Unknown                     ◇ Ready         2m ago  │ Current task
+    ├─● Needs an answer                 Unknown                     ! Needs you     2h ago  │
+    ├─● Unloaded task                   Unknown                     ○ Inactive      2d ago  │ ▎ Unknown  ! needs you
+    ├─● Working task                    Unknown                     ◐ Working       1d ago  │
+    └─● Failed task                     Unknown                     ! Error         1h ago  │ Agent: Needs an answer
+                                                                                            │ Open task to review.
+                                                                                            │ Waiting for your response.
+                                                                                            │
+                                                                                            │
+                                                                                            │
+                                                                                            │
+                                                                                            │
+                                                                                            │
+                                                                                            │
+  ? help  esc back  ↑/↓ move  enter open  s steer  x stop  n new

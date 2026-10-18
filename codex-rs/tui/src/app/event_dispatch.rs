@@ -3014,6 +3014,9 @@ impl App {
                 self.stop_agents_overview_thread(app_server, thread_id)
                     .await;
             }
+            AppEvent::SteerAgentsOverviewThread { thread_id, message } => {
+                Box::pin(self.steer_agents_overview_thread(app_server, thread_id, message)).await;
+            }
             #[cfg(any(unix, windows))]
             AppEvent::StartAgentsDaemon => {
                 self.start_agents_daemon();

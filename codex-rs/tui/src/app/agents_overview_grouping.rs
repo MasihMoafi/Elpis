@@ -35,7 +35,7 @@ impl AgentsOverviewView {
             .rows
             .iter()
             .enumerate()
-            .filter_map(|(index, row)| {
+            .filter_map(|(index, _)| {
                 if roots[index] != index {
                     return None;
                 }
@@ -52,11 +52,15 @@ impl AgentsOverviewView {
                             .contains(&search))
                 });
                 let renaming_family = self.rows.iter().enumerate().any(|(member, row)| {
-                    roots[member] == index && state.rename_target == Some(row.thread_id)
+                    roots[member] == index && state.editor_target() == Some(row.thread_id)
                 });
-                (family_matches
-                    && (renaming_family || status_group.is_none_or(|group| group == row.group)))
-                .then_some(index)
+                let status_matches = status_group.is_none_or(|group| {
+                    self.rows
+                        .iter()
+                        .enumerate()
+                        .any(|(member, row)| roots[member] == index && group == row.group)
+                });
+                (family_matches && (renaming_family || status_matches)).then_some(index)
             })
             .partition(|index| self.is_pinned(*index));
         if let Some(ranks) = &self.pinned_thread_ranks {

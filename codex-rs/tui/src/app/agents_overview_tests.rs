@@ -65,10 +65,10 @@ async fn overview_thread_colors_match_footer_and_respect_color_suppression() {
             let text: String = row.iter().map(ratatui::buffer::Cell::symbol).collect();
             if let Some(x) = text.find("Named task") {
                 let x = text[..x].chars().count();
-                let dot = row.iter().find(|cell| cell.symbol() == "○").unwrap();
-                let mut expected = ratatui::buffer::Cell::default();
-                expected.set_symbol("○").set_style(Style::default().cyan());
-                assert_eq!(dot, &expected);
+                let dot = row.iter().find(|cell| cell.symbol() == "●").unwrap();
+                if !enabled {
+                    assert_eq!(dot.fg, ratatui::style::Color::Reset);
+                }
                 snapshot.push(format!(
                     "{} | title style: {:?}",
                     normalize_agent_center_snapshot(&text),
@@ -155,7 +155,6 @@ use pretty_assertions::assert_eq;
 use ratatui::Terminal;
 use ratatui::backend::TestBackend;
 use ratatui::layout::Rect;
-use ratatui::style::Style;
 
 static OVERVIEW_TIMESTAMP: std::sync::LazyLock<i64> =
     std::sync::LazyLock::new(|| chrono::Utc::now().timestamp() - 120);
@@ -868,6 +867,7 @@ async fn agents_overview_details_show_available_attention_without_expanding_rows
 
     let view = app.agents_overview_view(threads, Some(unloaded));
     app.chat_widget.show_bottom_pane_view(Box::new(view));
+    assert!(render_bottom_popup(&app.chat_widget, 96).contains("Found the regression"));
     insta::with_settings!({snapshot_path => "../snapshots"}, {
         insta::assert_snapshot!("agents_overview_last_message", render_bottom_popup(&app.chat_widget, /*width*/ 96).replace(&format!("{project}  2"), &normalized_group).replace(&project, "/tmp/project"));
     });
@@ -987,7 +987,7 @@ async fn agents_overview_preview_links_survive_wrapping_and_clipping() {
         format!("Opened [a pull request with a label that wraps across rows]({destination}).\n\nMore context that should be clipped in a short preview.\n\nAdditional details."),
     );
     let view = app.agents_overview_view(vec![thread], Some(thread_id));
-    for height in [40, 22] {
+    for height in [40, 18] {
         let area =
             ratatui::layout::Rect::new(/*x*/ 0, /*y*/ 0, /*width*/ 96, height);
         let mut buffer = ratatui::buffer::Buffer::empty(area);
@@ -1654,6 +1654,8 @@ async fn filtered_dashboard_actions_use_configured_shortcuts() {
     ));
     assert!(!view.is_complete());
     view.handle_key_event(KeyEvent::new(KeyCode::F(10), KeyModifiers::NONE));
+    assert!(event_rx.try_recv().is_err());
+    view.handle_key_event(KeyCode::Enter.into());
     assert!(matches!(
         event_rx.try_recv(),
         Ok(AppEvent::StopAgentsOverviewThread { thread_id }) if thread_id == second

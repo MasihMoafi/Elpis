@@ -17,6 +17,7 @@ mod selection;
 
 #[path = "agents_overview_dashboard.rs"]
 mod dashboard;
+pub(super) use dashboard::model_label;
 
 use super::agents_overview_view::AgentsOverviewGroup;
 use super::agents_overview_view::AgentsOverviewRow;
@@ -35,6 +36,7 @@ use codex_app_server_protocol::ThreadHistoryMode;
 use codex_protocol::protocol::SubAgentSource;
 
 pub(crate) const AGENTS_OVERVIEW_VIEW_ID: &str = "agents-overview";
+pub(super) const HUMAN_STEER_ID_PREFIX: &str = "agent-center-steer-";
 
 #[derive(Default)]
 pub(super) struct AgentsOverviewState {
@@ -45,6 +47,7 @@ pub(super) struct AgentsOverviewState {
     /// Local visibility only; activity and metadata refreshes never reveal hidden roots.
     pub(super) hidden_threads: HashSet<ThreadId>,
     pub(super) last_messages: HashMap<ThreadId, String>,
+    pub(super) conversation_preview_thread_id: Option<ThreadId>,
     pub(super) usage: HashMap<ThreadId, super::agents_overview_usage::AgentsOverviewUsage>,
     pub(super) pending_usage: Option<(ThreadId, Uuid)>,
     pub(super) usage_disabled: bool,
@@ -93,6 +96,7 @@ impl Drop for AgentsOverviewState {
 
 impl App {
     pub(super) fn open_agents_overview(&mut self, app_server: &AppServerSession) {
+        self.agents_overview.conversation_preview_thread_id = None;
         if matches!(self.app_server_target, AppServerTarget::Embedded) {
             let workload_identity_selected = codex_login::is_workload_identity_selected();
             self.chat_widget.show_selection_view(SelectionViewParams {
@@ -243,7 +247,7 @@ impl App {
                             self.agents_overview.refill_count =
                                 self.agents_overview.refill_count.saturating_sub(1);
                         }
-                        thread.turns.clear();
+                        super::agents_overview_details::retain_conversation(&mut thread.turns);
                         self.agents_overview.threads.insert(thread_id, Some(thread));
                     } else {
                         self.agents_overview.threads.entry(thread_id).or_default();
@@ -263,6 +267,9 @@ impl App {
                 {
                     // Discard stale read results without clearing activity received after the revert.
                     self.agents_overview.last_messages.remove(&thread_id);
+                    if let Some(Some(thread)) = self.agents_overview.threads.get_mut(&thread_id) {
+                        thread.turns.clear();
+                    }
                     if let Some(usage) = self.agents_overview.usage.get_mut(&thread_id) {
                         usage.tokens = None;
                     }
@@ -1335,8 +1342,11 @@ fn agents_overview_group(
     thread: &Thread,
     children: &HashMap<String, Vec<&Thread>>,
 ) -> AgentsOverviewGroup {
-    children.get(&thread.id).into_iter().flatten().fold(
-        AgentsOverviewGroup::for_status(&thread.status),
-        |group, child| group.min(agents_overview_group(child, children)),
-    )
+    children
+        .get(&thread.id)
+        .into_iter()
+        .flatten()
+        .fold(AgentsOverviewGroup::for_thread(thread), |group, child| {
+            group.min(agents_overview_group(child, children))
+        })
 }

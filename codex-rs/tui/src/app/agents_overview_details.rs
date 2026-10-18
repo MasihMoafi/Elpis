@@ -21,6 +21,90 @@ use ratatui::text::Line;
 use std::collections::HashMap;
 
 const PREVIEW_CHARS: usize = 512;
+pub(super) const CONVERSATION_TURNS: usize = 4;
+
+/// This UI cache never retains an unbounded transcript or raw tool result.
+pub(super) fn retain_conversation(turns: &mut Vec<codex_app_server_protocol::Turn>) {
+    if turns.len() > CONVERSATION_TURNS {
+        turns.drain(..turns.len() - CONVERSATION_TURNS);
+    }
+    for turn in turns {
+        if turn.items.len() > 32 {
+            turn.items.drain(..turn.items.len() - 32);
+        }
+        turn.items.retain_mut(|item| match item {
+            ThreadItem::UserMessage { content, .. } => {
+                content.truncate(8);
+                for input in content {
+                    let display = crate::chatwidget::ChatWidget::user_message_display_from_inputs(
+                        std::slice::from_ref(input),
+                    )
+                    .message;
+                    *input = codex_app_server_protocol::UserInput::Text {
+                        text: preview_markdown(&display),
+                        text_elements: Vec::new(),
+                    };
+                }
+                true
+            }
+            ThreadItem::AgentMessage { text, .. } => {
+                *text = preview_markdown(text);
+                true
+            }
+            ThreadItem::CommandExecution {
+                command,
+                aggregated_output,
+                ..
+            } => {
+                *command = preview_text(command);
+                *aggregated_output = aggregated_output.as_deref().map(preview_markdown);
+                true
+            }
+            ThreadItem::Reasoning {
+                summary, content, ..
+            } => {
+                summary.truncate(2);
+                for text in summary {
+                    *text = preview_markdown(text);
+                }
+                content.clear();
+                true
+            }
+            ThreadItem::McpToolCall {
+                arguments,
+                result,
+                error,
+                app_context,
+                mcp_app_ui,
+                ..
+            } => {
+                *arguments = serde_json::Value::Null;
+                *result = None;
+                *error = None;
+                *app_context = None;
+                *mcp_app_ui = None;
+                true
+            }
+            ThreadItem::DynamicToolCall {
+                arguments,
+                content_items,
+                ..
+            } => {
+                *arguments = serde_json::Value::Null;
+                *content_items = None;
+                true
+            }
+            ThreadItem::FileChange { changes, .. } => {
+                changes.truncate(8);
+                for change in changes {
+                    change.diff.clear();
+                }
+                true
+            }
+            _ => false,
+        });
+    }
+}
 
 pub(super) fn preview_agent_message(text: &str) -> String {
     preview_markdown(&crate::markdown::normalize_markdown_for_rendering(text))
@@ -63,6 +147,73 @@ struct ReasoningPreview {
 }
 
 impl App {
+    pub(super) fn track_agents_overview_conversation(
+        &mut self,
+        thread_id: ThreadId,
+        notification: &ServerNotification,
+    ) {
+        let Some(Some(thread)) = self.agents_overview.threads.get_mut(&thread_id) else {
+            return;
+        };
+        match notification {
+            ServerNotification::TurnStarted(event) => {
+                if !thread.turns.iter().any(|turn| turn.id == event.turn.id) {
+                    thread.turns.push(event.turn.clone());
+                }
+            }
+            ServerNotification::TurnCompleted(event) => {
+                if let Some(turn) = thread
+                    .turns
+                    .iter_mut()
+                    .find(|turn| turn.id == event.turn.id)
+                {
+                    let items = std::mem::take(&mut turn.items);
+                    *turn = event.turn.clone();
+                    if turn.items.is_empty() {
+                        turn.items = items;
+                    }
+                } else {
+                    thread.turns.push(event.turn.clone());
+                }
+            }
+            ServerNotification::ItemStarted(
+                codex_app_server_protocol::ItemStartedNotification { turn_id, item, .. },
+            )
+            | ServerNotification::ItemCompleted(
+                codex_app_server_protocol::ItemCompletedNotification { turn_id, item, .. },
+            ) => {
+                if !thread.turns.iter().any(|turn| turn.id == *turn_id) {
+                    thread.turns.push(codex_app_server_protocol::Turn {
+                        id: turn_id.clone(),
+                        root_turn_id: None,
+                        items: Vec::new(),
+                        items_view: Default::default(),
+                        status: codex_app_server_protocol::TurnStatus::InProgress,
+                        error: None,
+                        started_at: None,
+                        completed_at: None,
+                        duration_ms: None,
+                    });
+                }
+                if let Some(turn) = thread.turns.iter_mut().find(|turn| turn.id == *turn_id) {
+                    if let Some(existing) = turn
+                        .items
+                        .iter_mut()
+                        .find(|existing| existing.id() == item.id())
+                    {
+                        *existing = item.clone();
+                    } else {
+                        turn.items.push(item.clone());
+                    }
+                }
+            }
+            ServerNotification::ThreadReverted(_) => thread.turns.clear(),
+            _ => return,
+        }
+        retain_conversation(&mut thread.turns);
+        self.repaint_agents_overview();
+    }
+
     pub(super) fn track_agents_overview_activity(
         &mut self,
         thread_id: ThreadId,
@@ -149,7 +300,9 @@ impl App {
                             .and_then(|activity| activity.reasoning.as_ref())
                             .is_some_and(|reasoning| reasoning.header.is_some())
                 }
-                AgentsOverviewGroup::Ready | AgentsOverviewGroup::Finished => false,
+                AgentsOverviewGroup::Ready
+                | AgentsOverviewGroup::Done
+                | AgentsOverviewGroup::Finished => false,
             });
             (group, !has_detail)
         };
@@ -210,11 +363,18 @@ impl App {
             }
             lines.extend(["Latest activity".dim().into(), header.clone().into()]);
         }
-        let last_message = activity
+        let own_activity = ThreadId::from_string(&root.id)
+            .ok()
+            .and_then(|id| self.agents_overview.activity.get(&id));
+        let last_message = own_activity
             .and_then(|activity| activity.last_message.as_ref())
-            .or_else(|| self.agents_overview.last_messages.get(&thread_id))
+            .or_else(|| {
+                ThreadId::from_string(&root.id)
+                    .ok()
+                    .and_then(|id| self.agents_overview.last_messages.get(&id))
+            })
             .filter(|message| !message.trim().is_empty())
-            .map(|message| (message.clone(), source.cwd.clone()));
+            .map(|message| (message.clone(), root.cwd.clone()));
         AgentsOverviewDetails {
             lines,
             usage_lines: ThreadId::from_string(&root.id)

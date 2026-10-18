@@ -1,29 +1,29 @@
 ---
 source: tui/src/app/agents_overview_tests.rs
-assertion_line: 1462
+assertion_line: 1465
 expression: "render_bottom_popup(&app.chat_widget,\n96).replace(&format!(\"{project}  3\"),\n&normalized_project_group).replace(&project, \"/tmp/project\")"
 ---
-  Agent command center  Group: Project  g
-   All 3   Needs you 1   Working 1   Ready 0   Inactive 1                      tab/⇧tab filter
+  Agent command center  Group: Project  g  View: list
+   All 4   Needs you 2   Working 1   Ready 0   Done 0   Inactive 1             tab/⇧tab filter
   ────────────────────────────────────────────────────────────────────────────────────────────
-      Tasks                       Model               │ Task details
-  /tmp/project  3                                     │
-  › ● Build the dashboard         GPT-6.1-Sol         │ Build the dashboard
-    ● ↳ Inspect keyboard shortc…  Unknown             │ ● Needs input
-    ● Repair authentication       Unknown             │
-    ○ Review yesterday's changes  Unknown             │ Model: GPT-6.1-Sol
-                                                      │ Reasoning: Unknown
-                                                      │
-                                                      │ Project
-                                                      │ /tmp/project
+      Tasks                   Model                   │ ● Build the dashboard
+  /tmp/project  4                                     │ GPT-6.1-Sol · OpenAI · asked by you
+  › ● Build the dashboard     GPT-6.1-Sol             │ ──────────────────────────────────────
+    └─● Inspect keyboard sh…  Unknown                 │ you → GPT-6.1-Sol  ask
+    ● Repair authentication   Unknown                 │ Build the dashboard
+    ● Review yesterday's ch…  Unknown                 │
+                                                      │ ▎ GPT-6.1-Sol  ! needs you
                                                       │
                                                       │ Agent: Inspect keyboard shortcuts
                                                       │ Open task to review.
                                                       │ Waiting for approval.
                                                       │
-                                                      │ Prompt
-                                                      │ Build the dashboard
                                                       │
                                                       │
                                                       │
-  ? help  esc back  ↑/↓ move  enter open  n new
+                                                      │
+                                                      │
+                                                      │
+                                                      │
+                                                      │
+  ? help  esc back  ↑/↓ move  enter open  s steer  x stop  n new

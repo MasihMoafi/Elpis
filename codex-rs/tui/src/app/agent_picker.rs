@@ -14,8 +14,8 @@ use codex_app_server_protocol::ThreadStatus;
 use std::collections::HashSet;
 
 pub(super) const AGENT_PICKER_VIEW_ID: &str = "agent-picker";
-const AGENT_PICKER_PAGE_SIZE: u32 = 100;
-const AGENT_PICKER_MAX_THREADS: usize = 1_000;
+pub(super) const AGENT_PICKER_PAGE_SIZE: u32 = 100;
+pub(super) const AGENT_PICKER_MAX_THREADS: usize = 1_000;
 
 impl App {
     pub(super) fn refresh_agent_picker_threads(

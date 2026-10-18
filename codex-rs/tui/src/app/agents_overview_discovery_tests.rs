@@ -77,6 +77,9 @@ async fn check_discovery(mixed_sources: bool) -> Result<()> {
             let result = match request.method.as_str() {
                 "initialize" => json!({"userAgent": "overview-test/1.0"}),
                 "thread/loaded/list" => json!({"data": [], "nextCursor": null}),
+                "thread/list" if params["ancestorThreadId"].is_string() => {
+                    json!({"data": [], "nextCursor": null})
+                }
                 "thread/list" => {
                     if params["sortKey"] == "section_position" {
                         assert_eq!(params["sectionId"], codex_state::PINNED_THREAD_SECTION_ID);

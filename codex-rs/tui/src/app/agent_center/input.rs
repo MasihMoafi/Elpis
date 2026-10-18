@@ -6,7 +6,7 @@ use crossterm::event::KeyEventKind;
 impl AgentsOverviewView {
     pub(in crate::app::agents_overview_view) fn rename_key(&mut self, key: KeyEvent) -> bool {
         let mut state = self.state();
-        if state.rename_target.is_none() {
+        if state.editor_target().is_none() {
             return false;
         }
         let input = &mut state.input;
@@ -54,6 +54,31 @@ impl AgentsOverviewView {
         &mut self,
         key: KeyEvent,
     ) -> bool {
+        let stop_target = self.state().stop_target;
+        if let Some(thread_id) = stop_target {
+            match self.keymap.action_for(key) {
+                Some(ListAction::Cancel) => {
+                    self.state().stop_target = None;
+                }
+                Some(ListAction::Accept) => {
+                    let online = {
+                        let state = self.state();
+                        state.connection_notice.is_none() && !state.creating_worktree
+                    };
+                    let active = self.rows.iter().any(|row| {
+                        row.thread_id == thread_id
+                            && matches!(row.thread.status, ThreadStatus::Active { .. })
+                    });
+                    if online && active {
+                        self.app_event_tx
+                            .send(AppEvent::StopAgentsOverviewThread { thread_id });
+                    }
+                    self.state().stop_target = None;
+                }
+                _ => {}
+            }
+            return true;
+        }
         if self.state().editing_metadata() {
             if self.keymap.action_for(key) == Some(ListAction::Cancel) {
                 self.on_ctrl_c();
@@ -61,6 +86,7 @@ impl AgentsOverviewView {
             }
             return false;
         }
+        let steer_target = self.selected_row().map(|row| row.thread_id);
         let mut state = self.state();
         if state.help && self.keymap.action_for(key) == Some(ListAction::Cancel) {
             state.help = false;
@@ -79,6 +105,21 @@ impl AgentsOverviewView {
         }
         if self.center_shortcut_keys.is_pressed(key) {
             return false;
+        }
+        if key.code == KeyCode::Char('s')
+            && key.modifiers.is_empty()
+            && key.kind == KeyEventKind::Press
+        {
+            if state.connection_notice.is_none()
+                && !state.creating_worktree
+                && let Some(target) = steer_target
+            {
+                state.set_rename_input("", &self.editor_keymap);
+                state.steer_target = Some(target);
+                state.search.clear();
+                state.searching = false;
+            }
+            return true;
         }
         if key.code == KeyCode::Char('?')
             && key.kind == KeyEventKind::Press

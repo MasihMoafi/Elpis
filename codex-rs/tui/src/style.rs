@@ -38,6 +38,11 @@ pub(crate) const CHATGPT_BLUE_200: (u8, u8, u8) = (99, 168, 248);
 /// Shared accent for picker selection backgrounds and transcript foreground emphasis.
 pub(crate) const UI_ACCENT: (u8, u8, u8) = CHATGPT_BLUE_200;
 
+/// Informative accents resolve against the surface they are painted on, including selections.
+pub(crate) fn readable_color(preferred: (u8, u8, u8), background: Option<(u8, u8, u8)>) -> Color {
+    contrast::foreground(preferred, background, effective_stdout_color_level())
+}
+
 #[derive(Clone, Copy)]
 pub(crate) enum StatusTone {
     Success,

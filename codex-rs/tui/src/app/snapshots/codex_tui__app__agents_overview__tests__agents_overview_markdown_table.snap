@@ -1,28 +1,29 @@
 ---
 source: tui/src/app/agents_overview_tests.rs
+assertion_line: 967
 expression: "normalize_agent_center_snapshot(render_bottom_popup(&app.chat_widget, 96))"
 ---
-  Agent command center  Group: Project  g
-   All 1   Needs you 0   Working 0   Ready 1   Inactive 0                      tab/⇧tab filter
+  Agent command center  Group: Project  g  View: list
+   All 1   Needs you 0   Working 0   Ready 1   Done 0   Inactive 0             tab/⇧tab filter
   ────────────────────────────────────────────────────────────────────────────────────────────
-      Tasks                       Model               │ Task details
-  /tmp/project  1                                     │
-  › ○ Review parser               Unknown             │ Review parser
-                                                      │ ○ Ready
-                                                      │
-                                                      │ Model: Unknown
-                                                      │ Reasoning: Unknown
-                                                      │
-                                                      │ Project
-                                                      │ /tmp/project
+      Tasks                   Model                   │ ● Review parser
+  /tmp/project  1                                     │ Unknown · OpenAI · asked by you
+  › ● Review parser           Unknown                 │ ──────────────────────────────────────
+                                                      │ you → Unknown  ask
+                                                      │ long prompt long prompt long prompt
+                                                      │ long prompt long prompt long prompt
+                                                      │ long prompt long prompt long prompt
+                                                      │ long prompt long prompt long prompt
+                                                      │ long prompt long prompt long prompt
+                                                      │ long prompt long prompt long prompt
+                                                      │ long prompt long prompt long prompt
+                                                      │ long prompt long prompt long prompt
+                                                      │ long prompt
                                                       │
                                                       │ Last message
-                                                      │  Check     Result
-                                                      │ ━━━━━━━━  ━━━━━━━━
-                                                      │  Parser    Fixed
+                                                      │ | Check | Result |
+                                                      │ | --- | --- |
+                                                      │ | Parser | Fixed |
                                                       │
-                                                      │ Prompt
-                                                      │ long prompt long prompt long prompt
-                                                      │ …
-                                                      │
-  ? help  esc back  ↑/↓ move  enter open  n new
+                                                      │ ▎ Unknown  ◇ ready
+  ? help  esc back  ↑/↓ move  enter open  s steer  x stop  n new

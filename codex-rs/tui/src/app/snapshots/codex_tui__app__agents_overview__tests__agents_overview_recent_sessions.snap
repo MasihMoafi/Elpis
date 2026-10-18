@@ -1,23 +1,23 @@
 ---
 source: tui/src/app/agents_overview_tests.rs
-assertion_line: 633
+assertion_line: 637
 expression: "age.replace_all(&rendered, \" [age]\")"
 ---
-  Agent command center  Group: Project  g
-   All 10   Needs you 0   Working 0   Ready 0   Inactive 10
+  Agent command center  Group: Project  g  View: list
+   All 10   Needs you 0   Working 0   Ready 0   Done 0   Inactive 10
   ────────────────────────────────────────────────────────────────────────────
-      Tasks                        Model               Status         Updated
+      Tasks                    Model                   Status         Updated
   /  10
-  › ○ Task 12                      GPT-6.1-Sol         Inactive [age]
-    ○ Task 11                      Unknown             Inactive [age]
-    ○ Task 10                      Unknown             Inactive [age]
-    ○ Task 9                       Unknown             Inactive [age]
-    ○ Task 8                       Unknown             Inactive [age]
-    ○ Task 7                       Unknown             Inactive [age]
-    ○ Task 6                       Unknown             Inactive [age]
-    ○ Task 5                       Unknown             Inactive [age]
-    ○ Task 4                       Unknown             Inactive [age]
-    ○ Task 3                       GPT-6.1-Sol         Inactive [age]
+  › ● Task 12                  GPT-6.1-Sol             ○ Inactive [age]
+    ● Task 11                  Unknown                 ○ Inactive [age]
+    ● Task 10                  Unknown                 ○ Inactive [age]
+    ● Task 9                   Unknown                 ○ Inactive [age]
+    ● Task 8                   Unknown                 ○ Inactive [age]
+    ● Task 7                   Unknown                 ○ Inactive [age]
+    ● Task 6                   Unknown                 ○ Inactive [age]
+    ● Task 5                   Unknown                 ○ Inactive [age]
+    ● Task 4                   Unknown                 ○ Inactive [age]
+    ● Task 3                   GPT-6.1-Sol             ○ Inactive [age]
 
       Show more
 
@@ -26,4 +26,4 @@ expression: "age.replace_all(&rendered, \" [age]\")"
 
 
 
-  ? help  esc back  ↑/↓ move  enter open  n new
+  ? help  esc back  ↑/↓ move  enter open  s steer  x stop  n new

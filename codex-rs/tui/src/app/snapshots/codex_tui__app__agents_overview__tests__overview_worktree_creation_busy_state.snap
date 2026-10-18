@@ -1,9 +1,10 @@
 ---
 source: tui/src/app/agents_overview_tests.rs
+assertion_line: 32
 expression: "normalize_agent_center_snapshot(render_bottom_popup(&app.chat_widget, 80,))"
 ---
-  Agent command center  Group: Project  g
-   All 0   Needs you 0   Working 0   Ready 0   Inactive 0
+  Agent command center  Group: Project  g  View: list
+   All 0   Needs you 0   Working 0   Ready 0   Done 0   Inactive 0
   ────────────────────────────────────────────────────────────────────────────
   No tasks yet
 

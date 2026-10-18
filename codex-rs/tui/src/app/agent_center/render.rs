@@ -59,15 +59,19 @@ impl AgentsOverviewView {
             .inner(Margin::new(/*horizontal*/ 2, /*vertical*/ 0));
         let [list, gap, details] = if body.width >= 90 {
             Layout::horizontal([
-                Constraint::Min(46),
+                Constraint::Percentage(57),
                 Constraint::Length(3),
-                Constraint::Length(38),
+                Constraint::Min(38),
             ])
             .areas(body)
         } else {
             [body, Rect::default(), Rect::default()]
         };
-        let search = row(list, /*offset*/ 0, u16::from(state.editing_metadata()));
+        let search = row(
+            list,
+            /*offset*/ 0,
+            u16::from(state.editing_metadata() || state.stop_target.is_some()),
+        );
         let list = row(
             list,
             search.height,
@@ -91,7 +95,7 @@ impl Renderable for AgentsOverviewView {
 
     fn cursor_style(&self, _area: Rect) -> SetCursorStyle {
         let state = self.state();
-        if state.rename_target.is_some() && state.input.uses_vim_insert_cursor() {
+        if state.editor_target().is_some() && state.input.uses_vim_insert_cursor() {
             SetCursorStyle::SteadyBar
         } else {
             SetCursorStyle::DefaultUserShape
@@ -102,9 +106,9 @@ impl Renderable for AgentsOverviewView {
         let layout = self.center_layout(area);
         let state = self.state();
         if state.editing_metadata() && !layout.search.is_empty() {
-            if state.rename_target.is_some() {
+            if state.editor_target().is_some() {
                 let mut area = layout.search;
-                let prefix_width = 9.min(area.width);
+                let prefix_width = (state.editor_label().width() as u16).min(area.width);
                 area.x += prefix_width;
                 area.width -= prefix_width;
                 return state.input.cursor_pos(area);
@@ -149,6 +153,7 @@ impl Renderable for AgentsOverviewView {
             vec![
                 "Agent command center".bold(),
                 format!("  Group: {grouping}  {group_key}").dim(),
+                "  View: list".dim(),
             ],
             inset(layout.header),
             buf,
@@ -159,10 +164,7 @@ impl Renderable for AgentsOverviewView {
                 let count = self
                     .rows
                     .iter()
-                    .filter(|row| {
-                        row.thread.parent_thread_id.is_none()
-                            && group.is_none_or(|group| group == row.group)
-                    })
+                    .filter(|row| group.is_none_or(|group| group == row.group))
                     .count();
                 format!("{label} {count}")
             })
@@ -190,12 +192,27 @@ impl Renderable for AgentsOverviewView {
             inset(row(layout.header, /*offset*/ 2, /*height*/ 1)),
             buf,
         );
-        if state.editing_metadata() {
+        if let Some(target) = state.stop_target {
+            let title = self
+                .rows
+                .iter()
+                .find(|row| row.thread_id == target)
+                .map(|row| display_title(&row.thread))
+                .unwrap_or("this task");
+            line(format!("Stop {title}?").bold(), layout.search, buf);
+        } else if state.editing_metadata() {
             buf.set_style(layout.search, crate::bottom_pane::active_tab_style());
-            if state.rename_target.is_some() {
-                line("Rename › ".cyan().bold(), layout.search, buf);
+            if state.editor_target().is_some() {
+                line(
+                    Span::styled(
+                        state.editor_label(),
+                        crate::bottom_pane::active_tab_style().bold(),
+                    ),
+                    layout.search,
+                    buf,
+                );
                 let mut area = layout.search;
-                let prefix_width = 9.min(area.width);
+                let prefix_width = (state.editor_label().width() as u16).min(area.width);
                 area.x += prefix_width;
                 area.width -= prefix_width;
                 WidgetRef::render_ref(&&state.input, area, buf);
@@ -204,7 +221,7 @@ impl Renderable for AgentsOverviewView {
                 let available = usize::from(layout.search.width).saturating_sub(label.width() + 1);
                 line(
                     vec![
-                        label.cyan().bold(),
+                        Span::styled(label, crate::bottom_pane::active_tab_style().bold()),
                         visible_suffix(&state.search, available).to_owned().into(),
                     ],
                     layout.search,

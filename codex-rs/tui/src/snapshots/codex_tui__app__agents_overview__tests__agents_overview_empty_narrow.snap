@@ -1,8 +1,9 @@
 ---
 source: tui/src/app/agents_overview_tests.rs
+assertion_line: 2373
 expression: rendered
 ---
-  Agent command center  Group: Project  g
+  Agent command center  Group: Project  g  Vi…
    All 0   Needs you 0   Working 0           ›
   ────────────────────────────────────────────
   No tasks yet
@@ -25,4 +26,4 @@ expression: rendered
 
 
 
-  ? help  esc back  ↑/↓ move  enter open  n n…
+  ? help  esc back  ↑/↓ move  enter open  s s…

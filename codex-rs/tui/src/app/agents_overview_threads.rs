@@ -19,6 +19,8 @@ use codex_app_server_protocol::ServerNotification;
 use codex_app_server_protocol::SessionSource;
 use codex_app_server_protocol::Thread;
 use codex_app_server_protocol::ThreadItem;
+use codex_app_server_protocol::ThreadListParams;
+use codex_app_server_protocol::ThreadListResponse;
 use codex_app_server_protocol::ThreadLoadedListParams;
 use codex_app_server_protocol::ThreadLoadedListResponse;
 use codex_app_server_protocol::ThreadReadParams;
@@ -32,6 +34,56 @@ use std::collections::HashMap;
 use uuid::Uuid;
 
 const RECENT_DETAIL_LIMIT: usize = 10;
+
+/// Detached overview discovery uses the same descendant/page limits as the navigator.
+async fn overview_descendants(
+    handle: &codex_app_server_client::AppServerRequestHandle,
+    root: &str,
+) -> Vec<Thread> {
+    let mut cursor = None;
+    let mut threads = Vec::new();
+    let pages = super::agent_picker::AGENT_PICKER_MAX_THREADS
+        .div_ceil(super::agent_picker::AGENT_PICKER_PAGE_SIZE as usize);
+    for _ in 0..pages {
+        let response = handle
+            .request_typed::<ThreadListResponse>(ClientRequest::ThreadList {
+                request_id: RequestId::String(Uuid::new_v4().to_string()),
+                params: ThreadListParams {
+                    ancestor_thread_id: Some(root.to_string()),
+                    // Ancestry, rather than executor kind, identifies delegated workers.
+                    source_kinds: None,
+                    model_providers: Some(Vec::new()),
+                    archived: Some(false),
+                    limit: Some(super::agent_picker::AGENT_PICKER_PAGE_SIZE),
+                    cursor: cursor.clone(),
+                    use_state_db_only: true,
+                    originators: None,
+                    sort_key: None,
+                    sort_direction: None,
+                    section_id: None,
+                    project_id: None,
+                    parent_thread_id: None,
+                    cwd: None,
+                    search_term: None,
+                },
+            })
+            .await;
+        match response {
+            Ok(page) => {
+                threads.extend(page.data);
+                if page.next_cursor.is_none() || page.next_cursor == cursor {
+                    break;
+                }
+                cursor = page.next_cursor;
+            }
+            Err(error) => {
+                tracing::warn!(%error, root, "failed to discover task descendants");
+                break;
+            }
+        }
+    }
+    threads
+}
 
 // Listing supplies membership and row metadata without replaying every historical rollout.
 // Keep transcript previews fresh for recent and loaded tasks, plus notification-targeted reads.
@@ -56,6 +108,9 @@ fn detail_thread_ids<'a>(threads: impl Iterator<Item = &'a Thread>) -> Vec<Threa
 
 impl App {
     pub(super) fn remove_agents_overview_thread(&mut self, thread_id: ThreadId) {
+        if self.agents_overview.conversation_preview_thread_id == Some(thread_id) {
+            self.agents_overview.conversation_preview_thread_id = None;
+        }
         self.prepare_agents_overview_removal(&std::collections::HashSet::from([thread_id]));
         self.agents_overview.removed_threads.insert(thread_id);
         if let Some(Some(thread)) = self.agents_overview.threads.remove(&thread_id)
@@ -109,6 +164,7 @@ impl App {
         ) {
             self.agents_overview.blank_sessions.remove(&thread_id);
         }
+        self.track_agents_overview_conversation(thread_id, notification);
         self.track_agents_overview_activity(thread_id, notification);
         let thread = self
             .agents_overview
@@ -164,6 +220,9 @@ impl App {
                 }
             }
             ServerNotification::ThreadReverted(_) => {
+                if self.agents_overview.conversation_preview_thread_id == Some(thread_id) {
+                    self.agents_overview.conversation_preview_thread_id = None;
+                }
                 self.agents_overview.activity.remove(&thread_id);
                 self.agents_overview.last_messages.remove(&thread_id);
                 if let Some(usage) = self.agents_overview.usage.get_mut(&thread_id) {
@@ -315,6 +374,11 @@ impl App {
         });
         let mut thread_ids = std::mem::take(&mut self.agents_overview.refresh_thread_ids);
         self.agents_overview.active_refresh_thread_ids = thread_ids.clone();
+        let conversation_thread_id = self
+            .chat_widget
+            .selected_index_for_present_view(AGENTS_OVERVIEW_VIEW_ID)
+            .and_then(|index| self.agents_overview.visible_thread_ids.get(index))
+            .copied();
         let request_handle = app_server.request_handle();
         let app_event_tx = self.app_event_tx.clone();
         self.agents_overview
@@ -376,6 +440,12 @@ impl App {
                     );
                     thread_ids.extend(detail_thread_ids(recent.iter()));
                     for thread in recent {
+                        for child in overview_descendants(&request_handle, &thread.id).await {
+                            if let Ok(id) = ThreadId::from_string(&child.id) {
+                                thread_ids.insert(id);
+                                threads.insert(id, Some(child));
+                            }
+                        }
                         if let Ok(thread_id) = ThreadId::from_string(&thread.id) {
                             threads.insert(thread_id, Some(thread));
                         }
@@ -408,15 +478,15 @@ impl App {
                                             params: ThreadTurnsListParams {
                                                 thread_id: thread_id.to_string(),
                                                 cursor: None,
-                                                limit: Some(1),
-                                                sort_direction: None,
-                                                items_view: None,
+                                                limit: Some(super::agents_overview_details::CONVERSATION_TURNS as u32),
+                                                sort_direction: Some(codex_app_server_protocol::SortDirection::Desc),
+                                                items_view: Some(if conversation_thread_id == Some(thread_id) { codex_app_server_protocol::TurnItemsView::Full } else { codex_app_server_protocol::TurnItemsView::Summary }),
                                             },
                                         },
                                     )
                                     .await
-                                    && let Some(turn) = turns.data.first()
                                 {
+                                    if let Some(turn) = turns.data.first() {
                                     if let Some(ThreadItem::UserMessage { content, .. }) =
                                         turn.items.first()
                                     {
@@ -431,6 +501,9 @@ impl App {
                                             }
                                             _ => None,
                                         });
+                                    }
+                                    response.thread.turns = turns.data.into_iter().rev().collect();
+                                    super::agents_overview_details::retain_conversation(&mut response.thread.turns);
                                 }
                                 Some((thread_id, response.thread, last_message))
                             }

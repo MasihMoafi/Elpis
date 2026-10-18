@@ -3,19 +3,18 @@ source: tui/src/app/agents_overview_tests.rs
 assertion_line: 872
 expression: "render_bottom_popup(&app.chat_widget,\n96).replace(&format!(\"{project}  2\"),\n&normalized_group).replace(&project, \"/tmp/project\")"
 ---
-  Agent command center  Group: Project  g
-   All 2   Needs you 1   Working 0   Ready 0   Inactive 1                      tab/⇧tab filter
+  Agent command center  Group: Project  g  View: list
+   All 3   Needs you 2   Working 0   Ready 0   Done 0   Inactive 1             tab/⇧tab filter
   ────────────────────────────────────────────────────────────────────────────────────────────
-      Tasks                       Model               │ Task details
-  /tmp/project  2                                     │
-    ● Repair authentication       Unknown             │ Investigate parser
-    ● ↳ Check dependencies        Unknown             │ ○ Inactive
-  › ○ Investigate parser          provider/provider…  │
-                                                      │ Model: provider/provider/provider/pro…
-                                                      │ Reasoning: deliberatedeliberatedelibe…
-                                                      │
-                                                      │ Project
-                                                      │ /tmp/project
+      Tasks                   Model                   │ ● Investigate parser
+  /tmp/project  3                                     │ provider/provider/provider/provider/p…
+    ● Repair authentication   Unknown                 │ ──────────────────────────────────────
+    └─● Check dependencies    Unknown                 │ you → provider/provider/provider/
+  › ● Investigate parser      provider/provider/pro…  │ provider/provider/provider/provider/
+                                                      │ provider/provider/provider/provider/
+                                                      │ provider/  ask
+                                                      │ Investigate parser
+                                                      │ …
                                                       │
                                                       │ Last message
                                                       │ Found the regression in the parser.
@@ -23,7 +22,8 @@ expression: "render_bottom_popup(&app.chat_widget,\n96).replace(&format!(\"{proj
                                                       │ Found the regression in the parser.
                                                       │ …
                                                       │
-                                                      │ Prompt
-                                                      │ Investigate parser
-                                                      │ …
-  ? help  esc back  ↑/↓ move  enter open  n new
+                                                      │ ▎ provider/provider/provider/provider/
+                                                      │ provider/provider/provider/provider/
+                                                      │ provider/provider/provider/provider/
+                                                      │ ○ inactive
+  ? help  esc back  ↑/↓ move  enter open  s steer  x stop  n new

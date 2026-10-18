@@ -4,6 +4,9 @@ use super::*;
 use assert_matches::assert_matches;
 use pretty_assertions::assert_eq;
 
+#[path = "agent_center_demo_tests.rs"]
+mod demo;
+
 fn screen(view: &AgentsOverviewView, width: u16, height: u16) -> String {
     let area = Rect::new(/*x*/ 0, /*y*/ 0, width, height);
     let mut buf = ratatui::buffer::Buffer::empty(area);
@@ -95,15 +98,12 @@ async fn live_center_columns() {
             .iter()
             .position(|cell| cell.symbol() == "›")
             .unwrap();
-        assert_eq!(
-            selected_row[marker + 2].style(),
-            selected_row[marker].style()
-        );
-        selected_status_styles.push(format!(
-            "{} | {:?}",
-            selected_row[marker + 2].symbol(),
-            selected_row[marker + 2].style()
-        ));
+        let dot = selected_row
+            .iter()
+            .find(|cell| cell.symbol() == "●")
+            .unwrap();
+        assert_eq!(dot.bg, selected_row[marker].bg);
+        selected_status_styles.push(format!("{} | {:?}", dot.symbol(), dot.style()));
         view.handle_key_event(KeyCode::Down.into());
     }
     insta::assert_snapshot!(
@@ -669,13 +669,17 @@ async fn live_center_rows_show_each_model_at_wide_and_narrow_widths() {
     let view = app.agents_overview_view(threads, /*selected_thread_id*/ None);
 
     let wide = screen(&view, /*width*/ 160, /*height*/ 18);
-    let lines = wide.lines().collect::<Vec<_>>();
+    let lines = wide
+        .lines()
+        .map(|line| line.split('│').next().unwrap())
+        .collect::<Vec<_>>();
     let header = lines
         .iter()
         .find(|line| line.contains("Tasks") && line.contains("Model"))
         .unwrap();
     let column = |line: &str, needle: &str| line[..line.find(needle).unwrap()].chars().count();
     let model_column = column(header, "Model");
+    let status_column = column(header, "Status");
     assert!(column(header, "Tasks") < model_column && model_column < column(header, "Status"));
     let rows = ["First task", "Second task", "Third task"].map(|title| {
         let position = lines.iter().position(|line| line.contains(title)).unwrap();
@@ -683,7 +687,7 @@ async fn live_center_rows_show_each_model_at_wide_and_narrow_widths() {
     });
     assert!(rows[0].0 < rows[1].0 && rows[1].0 < rows[2].0);
     let labels = rows.map(|(_, line)| {
-        assert!(column(line, "Ready") > model_column + 18);
+        assert_eq!(column(line, "Ready"), status_column + 2);
         let chars = line.chars().collect::<Vec<_>>();
         // The title ends before the model column, and two spaces separate the model from the status.
         assert!(
@@ -697,9 +701,11 @@ async fn live_center_rows_show_each_model_at_wide_and_narrow_widths() {
                 .iter()
                 .all(|c| *c == ' ')
         );
-        chars[model_column..model_column + 18]
+        chars[model_column..status_column]
             .iter()
             .collect::<String>()
+            .trim_end()
+            .to_owned()
     });
     assert!(labels[0].starts_with("Opus 5.5 (Claude") && labels[0].ends_with('…'));
     assert_eq!(labels[1].trim_end(), "model-a");
@@ -757,14 +763,14 @@ async fn child_rows_stay_with_root_across_groupings_and_open_their_own_chat() {
             .position(|line| line.contains("Parent task"))
             .unwrap();
         assert!(
-            lines[parent_line + 1].contains("↳ Worker chat"),
+            lines[parent_line + 1].contains("└─● Worker chat"),
             "{rendered}"
         );
         assert!(
-            lines[parent_line + 2].contains("  ↳ Nested worker"),
+            lines[parent_line + 2].contains("  └─● Nested worker"),
             "{rendered}"
         );
-        assert!(rendered.contains("All 2"), "{rendered}");
+        assert!(rendered.contains("All 4"), "{rendered}");
         view.handle_key_event(KeyCode::Enter.into());
         assert!(
             matches!(rx.try_recv(), Ok(AppEvent::SelectAgentsOverviewThread { thread_id }) if thread_id == child)
@@ -774,7 +780,7 @@ async fn child_rows_stay_with_root_across_groupings_and_open_their_own_chat() {
     let view = app.agents_overview_view(threads.clone(), Some(child));
     let rendered = screen(&view, 160, 24);
     assert!(rendered.contains("Parent task"));
-    assert!(rendered.contains("↳ Worker chat"));
+    assert!(rendered.contains("└─● Worker chat"));
     assert!(!rendered.contains("Separate task"));
     app.agents_overview.hidden_threads.insert(root);
     let view = app.agents_overview_view(threads, None);

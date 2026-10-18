@@ -374,6 +374,11 @@ pub(crate) enum AppEvent {
     StopAgentsOverviewThread {
         thread_id: ThreadId,
     },
+    /// Send human input to the selected task without changing its saved configuration.
+    SteerAgentsOverviewThread {
+        thread_id: ThreadId,
+        message: String,
+    },
     /// Hide a dashboard row locally without stopping its task.
     HideAgentsOverviewThread {
         thread_id: ThreadId,
