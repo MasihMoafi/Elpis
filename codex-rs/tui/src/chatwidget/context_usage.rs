@@ -515,8 +515,8 @@ const LEFT_EIGHTHS: [&str; 8] = ["", "▏", "▎", "▍", "▌", "▋", "▊", "
 /// cell resolution keeps a 27k category wider than a 1k one, which whole cells could not.
 pub(super) fn category_bar_spans(segments: &[(u64, Color)], used_cells: usize) -> Vec<Span<'static>> {
     let tokens = segments.iter().map(|(tokens, _)| *tokens).collect::<Vec<_>>();
-    let shown = weighted_cell_counts(&tokens, used_cells * 8).into_iter().filter(|eighths| *eighths > 0).count();
-    if shown > 1 && used_cells >= 2 * shown {
+    let big = weighted_cell_counts(&tokens, used_cells).into_iter().filter(|cells| *cells > 0).count();
+    if big > 1 && used_cells >= 2 * big {
         gapped_spans(segments, &tokens, used_cells)
     } else {
         blended_spans(segments, used_cells)
@@ -890,6 +890,8 @@ mod tests {
         let spans = category_bar_spans(&[(2, Color::Blue), (0, Color::Green), (6, Color::Red), (2, Color::Yellow)], 10);
         assert_eq!(spans.iter().map(|span| span.content.as_ref()).collect::<String>(), "█▉█████▉██");
         for (cells, segments) in [
+            // Masih's nine-cell Ledger: tiny categories must not prevent gaps between whole-cell segments.
+            (9, vec![(6_000, Color::Blue), (30_000, Color::Green), (4_000, Color::Red), (3_000, Color::Yellow), (600, Color::Cyan), (500, Color::Magenta)]),
             (24, vec![(4_000, Color::Magenta), (2_500, Color::Green), (900, Color::DarkGray), (1_400, Color::Gray)]),
             (40, vec![(9_000, Color::Magenta), (6_000, Color::Green), (900, Color::DarkGray), (3_000, Color::Gray)]),
         ] {
