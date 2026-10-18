@@ -49,6 +49,10 @@ async function command(page, name) {
   await page.getByRole('option', { name: new RegExp('^' + name) }).first().click();
 }
 
+async function expectFocus(page, target) {
+  await page.waitForFunction(element => element === document.activeElement, await target.elementHandle());
+}
+
 for (const colorScheme of ['light', 'dark']) for (const [width, height] of [[1280, 800], [900, 700]]) {
   test(`desktop sweep: ${colorScheme} ${width}×${height}`, { timeout: 180000 }, async t => {
     const f = await fixture({ width, height, colorScheme, routes: routes() }), { page } = f;
@@ -100,11 +104,11 @@ for (const colorScheme of ['light', 'dark']) for (const [width, height] of [[128
       await f.composer.focus();
       await check('command menu', async () => { await page.keyboard.press('Control+k'); await page.getByRole('dialog', { name: 'Command menu' }).waitFor(); });
       await page.keyboard.press('Escape');
-      await check('command menu restores focus', async () => { assert.ok(await f.composer.evaluate(el => el === document.activeElement)); });
+      await check('command menu restores focus', () => expectFocus(page, f.composer));
       await f.composer.focus();
       await check('keyboard shortcuts dialog', async () => { await page.keyboard.press('Control+/'); await page.getByRole('alertdialog').waitFor(); });
       await page.keyboard.press('Escape');
-      await check('keyboard shortcuts restores focus', async () => { assert.ok(await f.composer.evaluate(el => el === document.activeElement)); });
+      await check('keyboard shortcuts restores focus', () => expectFocus(page, f.composer));
       await check('Bash mode', async () => { await f.composer.click(); await page.keyboard.type('!'); await page.getByText('Bash mode. Press Escape to return to chat.', { exact: true }).waitFor(); });
       await f.composer.press('Escape');
       await check('side chat', async () => { await f.composer.press('Control+;'); await page.getByRole('region', { name: 'Side chat', exact: true }).waitFor(); }, () => page.getByRole('region', { name: 'Side chat', exact: true }));
