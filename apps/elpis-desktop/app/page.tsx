@@ -1555,7 +1555,7 @@ export default function Home() {
       {view === "agentsGuide" && <div className="page-scroll"><AgentsGuide back={guideBack} onBack={() => show(guideBack === "Canvas" ? "canvas" : "agents")} /></div>}
       {view === "canvas" && <ViewBoundary label="Canvas"><CanvasGuideHelp onOpen={() => { setGuideBack("Canvas"); show("agentsGuide"); }}><AgentsCanvas models={models} cwd={newChatFolder(cwd) || undefined} dark={dark} onOpenChat={id => { show("chat"); void openById(id); }}
         projectMenu={<ProjectMenu variant="chip" projects={projects} selected={project} disabled={!ready || busy} onSelect={selectProject} onAdd={() => void addProject()} />} /></CanvasGuideHelp></ViewBoundary>}
-      {view === "loveSpot" && <LoveSpot dark={dark} />}
+      {view === "loveSpot" && <LoveSpot dark={dark} cwd={newChatFolder(cwd) || undefined} onOpenChat={id => { show("chat"); void openById(id); }} />}
       {view === "customize" && <div className="page-scroll"><ViewBoundary label="Ledger"><CustomizeView cwd={cwd} onOpenSettings={() => openSettings("mcp")}
         onConnectGithub={hasTerminal ? () => { show("chat"); setTuiLaunch({ key: side.openTerminal(cwd), command: "github-login", token: Date.now() }); } : undefined}
         onCreateSkill={() => { newChat(); requestAnimationFrame(() => editDraft("Use $skill-creator to create a new skill that ")); }} /></ViewBoundary></div>}

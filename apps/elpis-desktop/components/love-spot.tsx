@@ -3,7 +3,7 @@
 import "@/lib/love-spot-assets";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { X } from "lucide-react";
-import { Excalidraw, convertToExcalidrawElements, exportToBlob, restoreElements, serializeAsJSON, viewportCoordsToSceneCoords } from "@excalidraw/excalidraw";
+import { CaptureUpdateAction, Excalidraw, newElementWith, convertToExcalidrawElements, exportToBlob, restoreElements, serializeAsJSON, viewportCoordsToSceneCoords } from "@excalidraw/excalidraw";
 import type { ExcalidrawElement } from "@excalidraw/excalidraw/element/types";
 import type { AppState, BinaryFiles, ExcalidrawImperativeAPI, ExcalidrawInitialDataState, PointerDownState } from "@excalidraw/excalidraw/types";
 import { Button } from "@/components/ui/button";
@@ -12,6 +12,8 @@ import { Dictation } from "@/components/dictation";
 import { LoveSpotTalk, type LoveSpotQuote } from "@/components/love-spot-talk";
 import { api, chatProvider, providerChoices, unreadable, type Model, type ProviderSettings } from "@/lib/api";
 import { agentColor } from "@/lib/love-spot";
+import { agentOf, characters, makeAgent, type Character, type LoveAgent } from "@/lib/love-agents";
+import { CharacterPicker, LoveAgentPanel } from "./love-agent-panel";
 import "@excalidraw/excalidraw/index.css";
 import "./love-spot.css";
 
@@ -34,9 +36,10 @@ async function savePicture(data: Saved) {
   await api("/love-spot/picture", { revision: data.revision, png: dataURL.split(",")[1] });
 }
 
-export default function LoveSpot({ dark }: { dark: boolean }) {
+export default function LoveSpot({ dark, cwd, onOpenChat }: { dark: boolean; cwd?: string; onOpenChat?: (id: string) => void }) {
   const [initial, setInitial] = useState<ExcalidrawInitialDataState>();
   const [error, setError] = useState("");
+  const [runError, setRunError] = useState("");
   const [attempt, setAttempt] = useState(0);
   const [editor, setEditor] = useState<ExcalidrawImperativeAPI>();
   const [talk, setTalk] = useState(false), [quote, setQuote] = useState<LoveSpotQuote>();
@@ -47,6 +50,11 @@ export default function LoveSpot({ dark }: { dark: boolean }) {
   const [screenshots, setScreenshots] = useState<Screenshot[]>([]), [choosing, setChoosing] = useState(false);
   const lastPoint = useRef<{ x: number; y: number }>(undefined);
   const boardArea = useRef<HTMLDivElement>(null);
+  const [picker, setPicker] = useState(false);
+  const [agents, setAgents] = useState<readonly ExcalidrawElement[]>([]);
+  const [selected, setSelected] = useState<string>();
+  const [busy, setBusy] = useState(false);
+  const converting = useRef(new Set<string>());
   const latest = useRef<Drawing | undefined>(undefined);
   const revision = useRef("");
   const saveTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
@@ -69,12 +77,12 @@ export default function LoveSpot({ dark }: { dark: boolean }) {
   const provider = chatProvider(model, choices.find(c => c.id === choiceId)?.provider, settings?.main.provider);
 
   useEffect(() => {
-    if (!editor || !talk || !boardArea.current) return;
-    editor.updateScene({ appState: { selectedElementIds: {} } });
+    if (!editor || !boardArea.current) return;
+    if (talk) editor.updateScene({ appState: { selectedElementIds: {} } });
     let frame = 0;
     const observer = new ResizeObserver(() => {
       editor.refresh(); cancelAnimationFrame(frame);
-      frame = requestAnimationFrame(() => editor.scrollToContent(editor.getSceneElements(), { fitToViewport: true, viewportZoomFactor: 0.7, maxZoom: 1 }));
+      if (talk) frame = requestAnimationFrame(() => editor.scrollToContent(editor.getSceneElements(), { fitToViewport: true, viewportZoomFactor: 0.7, maxZoom: 1 }));
     });
     observer.observe(boardArea.current);
     return () => { observer.disconnect(); cancelAnimationFrame(frame); };
@@ -156,6 +164,22 @@ export default function LoveSpot({ dark }: { dark: boolean }) {
     // writer would resurrect a shape the user just deleted.
     const all = editor?.getSceneElementsIncludingDeleted() ?? elements;
     latest.current = snapshot(all, appState, files);
+    const cards = elements.filter(e => agentOf(e));
+    setAgents(previous => versions(previous) === versions(cards) ? previous : cards);
+    const note = !appState.editingTextElement && elements.find(e => e.type === "text" && !e.containerId && /(?:^|\s)@agent\b/i.test(e.text) && !converting.current.has(e.id));
+    if (editor && note && note.type === "text") {
+      converting.current.add(note.id);
+      const match = /(?:^|\s)@agent\b\s*/i.exec(note.text)!;
+      const rest = note.text.slice(match.index + match[0].length).trim();
+      const character = characters.find(c => new RegExp(`^${c.name}\\b`, "i").test(rest)) ?? characters[0];
+      const task = [note.text.slice(0, match.index).trim(), rest.replace(new RegExp(`^${character.name}\\b\\s*`, "i"), "")].filter(Boolean).join("\n");
+      const made = makeAgent(character, note.x, note.y, task);
+      // Change the scene after this notification returns; editor updates are synchronous.
+      queueMicrotask(() => {
+        editor.updateScene({ elements: [...editor.getSceneElementsIncludingDeleted().map(e => e.id === note.id ? newElementWith(e, { isDeleted: true }) : e), ...made.elements], captureUpdate: CaptureUpdateAction.IMMEDIATELY });
+        editor.addFiles([made.file]);
+      });
+    }
     if (!remote.current && (!before || versions(before.elements) !== versions(all) || JSON.stringify(before.appState) !== JSON.stringify(latest.current.appState))) {
       clearTimeout(saveTimer.current); saveTimer.current = setTimeout(() => save(), 150);
     }
@@ -188,6 +212,34 @@ export default function LoveSpot({ dark }: { dark: boolean }) {
     finally { setChoosing(false); }
   }
 
+  const add = (character: Character) => {
+    if (!editor) return;
+    const state = editor.getAppState(), zoom = state.zoom.value;
+    const made = makeAgent(character, 260 / zoom - state.scrollX + (agents.length % 2) * 280, 200 / zoom - state.scrollY + Math.floor(agents.length / 2) * 220);
+    editor.updateScene({ elements: [...editor.getSceneElementsIncludingDeleted(), ...made.elements], captureUpdate: CaptureUpdateAction.IMMEDIATELY });
+    editor.addFiles([made.file]);
+    setSelected(made.id); setPicker(false);
+    editor.setActiveTool({ type: "selection" });
+  };
+  const updateAgent = (change: Partial<LoveAgent>) => {
+    if (!editor || !selected) return;
+    editor.updateScene({ elements: editor.getSceneElementsIncludingDeleted().map(e => e.id === selected ? newElementWith(e, { customData: { ...e.customData, loveAgent: { ...agentOf(e), ...change } } }) : e), captureUpdate: CaptureUpdateAction.IMMEDIATELY });
+  };
+  const run = async () => {
+    if (!selected || busy) return;
+    setBusy(true); setRunError("");
+    try {
+      clearTimeout(saveTimer.current); await saving.current;
+      if (!editor) return;
+      receive(await api<Saved>("/love-spot", snapshot(editor.getSceneElementsIncludingDeleted(), editor.getAppState(), editor.getFiles())));
+      await api("/love-spot/agents/run", { id: selected, ...(cwd ? { cwd } : {}) });
+      receive(await api<Saved>("/love-spot"));
+    } catch (e) { if (mounted.current) setRunError(e instanceof Error ? e.message : "The agents could not run."); }
+    finally { if (mounted.current) setBusy(false); }
+  };
+  const inspected = agents.find(e => e.id === selected);
+  const agent = inspected && agentOf(inspected);
+
   function insertion() {
     if (!editor) return { text: "", start: 0, end: 0 };
     const state = editor.getAppState();
@@ -205,6 +257,11 @@ export default function LoveSpot({ dark }: { dark: boolean }) {
 
   return <section className="love-spot" aria-label="Love Spot">
     <div className="love-spot-tools">
+      {editor && <div className="love-agent-toolbar">
+        <Button variant="outline" size="sm" title="Add an agent, or type @agent in a text note" onClick={() => add(characters[0])}>Agent</Button>
+        <Button variant="outline" size="sm" aria-expanded={picker} onClick={() => setPicker(p => !p)}>Characters</Button>
+        {picker && <CharacterPicker onAdd={add} />}
+      </div>}
       <div role="group" aria-label="Voice note"><Dictation provider={provider} disabled={!editor || !settings || talkDictating} onBusy={setBoardBusy} selection={insertion} onTranscript={addVoiceNote} purpose="Adds a note to the board." /></div>
       <Button variant="outline" size="sm" aria-expanded={talk} onClick={() => setTalk(value => !value)}>Talk</Button>
     </div>
@@ -221,7 +278,8 @@ export default function LoveSpot({ dark }: { dark: boolean }) {
         <Button variant="outline" size="icon-xs" className="love-spot-screenshot-dismiss" aria-label={`Dismiss ${shot.name}`} title={`Dismiss ${shot.name}`} disabled={choosing} onClick={() => void chooseScreenshot(shot.id, "dismiss")}><X aria-hidden="true" /></Button>
       </li>)}</ul>
     </section>}
-    {error && <div className="love-spot-status" role="alert">{error}<Button variant="ghost" size="sm" onClick={() => { if (editor) save(); else setAttempt(a => a + 1); }}>Retry</Button></div>}
+    {(error || runError) && <div className="love-spot-status" role="alert">{runError || error}<Button variant="ghost" size="sm" onClick={() => { if (runError) setRunError(""); else if (editor) save(); else setAttempt(a => a + 1); }}>{runError ? "Dismiss" : "Retry"}</Button></div>}
+    {!!agents.length && <div className="love-agent-list" aria-label="Board agents">{agents.map(e => <Button key={e.id} variant="outline" size="sm" aria-label={`Inspect ${agentOf(e)!.name}`} onClick={() => setSelected(e.id)}>{agentOf(e)!.name}{agentOf(e)!.status === "running" ? " · running" : ""}</Button>)}</div>}
     <div className="love-spot-content"><div className="love-spot-editor" ref={boardArea} onDragOverCapture={event => {
       if (event.dataTransfer.types.includes(screenshotDrag)) { event.preventDefault(); event.stopPropagation(); event.dataTransfer.dropEffect = "copy"; }
     }} onDropCapture={event => {
@@ -234,10 +292,18 @@ export default function LoveSpot({ dark }: { dark: boolean }) {
       if (note?.type !== "text") return;
       event.preventDefault(); event.stopPropagation(); setMenu({ x: event.clientX, y: event.clientY, text: note.originalText || note.text });
     }}>
-      {initial ? <Excalidraw initialData={initial} excalidrawAPI={setEditor} onChange={changed} onPointerDown={(_tool: AppState["activeTool"], state: PointerDownState) => { lastPoint.current = state.origin; }} theme={dark ? "dark" : "light"} /> : !error && <p role="status">Opening Love Spot…</p>}
+      {initial ? <Excalidraw initialData={initial} excalidrawAPI={setEditor} onChange={changed} onPointerUp={() => {
+        if (!editor) return;
+        const ids = editor.getAppState().selectedElementIds;
+        const clicked = editor.getSceneElements().find(e => ids[e.id] && agentOf(e));
+        if (clicked) setSelected(clicked.id);
+      }} onPointerDown={(_tool: AppState["activeTool"], state: PointerDownState) => { lastPoint.current = state.origin; }} theme={dark ? "dark" : "light"} /> : !error && <p role="status">Opening Love Spot…</p>}
     </div>
-    <LoveSpotTalk open={talk} onClose={() => setTalk(false)} quote={quote} model={model} choiceId={choiceId} choices={choices} models={models}
-      onModel={value => { setModel(value.model); setChoiceId(value.choiceId); }} provider={provider} disabled={!editor || !settings || !model || boardBusy} onDictating={setTalkDictating} beforeSend={flush} />
+    <div className="love-spot-panels" hidden={!talk && !agent}>
+      {agent && <LoveAgentPanel agent={agent} cwd={cwd} busy={busy} onChange={updateAgent} onRun={() => void run()} onClose={() => setSelected(undefined)} onOpenChat={onOpenChat} />}
+      <LoveSpotTalk open={talk} onClose={() => setTalk(false)} quote={quote} model={model} choiceId={choiceId} choices={choices} models={models}
+        onModel={value => { setModel(value.model); setChoiceId(value.choiceId); }} provider={provider} disabled={!editor || !settings || !model || boardBusy} onDictating={setTalkDictating} beforeSend={flush} />
+    </div>
     </div>
     {menu && <DropdownMenu open onOpenChange={open => { if (!open) setMenu(undefined); }}>
       <DropdownMenuTrigger aria-label="Note actions" className="love-spot-menu-anchor" style={{ left: menu.x, top: menu.y }} />

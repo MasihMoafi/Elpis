@@ -3,7 +3,7 @@
 .love-spot-status { position: absolute; bottom: 58px; left: 50%; transform: translateX(-50%); z-index: 5; display: flex; align-items: center; gap: 12px; max-width: calc(100% - 32px); padding: 8px 12px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--background); color: var(--foreground); }
 .love-spot-content { display: flex; flex: 1; min-width: 0; min-height: 0; }
 .love-spot-editor { flex: 1; min-width: 0; height: 100%; min-height: 0; }
-.love-spot-tools { display: flex; justify-content: flex-end; align-items: center; gap: 8px; min-height: 44px; padding: 4px 16px; border-bottom: 1px solid var(--border); background: var(--background); color: var(--foreground); }
+.love-spot-tools { display: flex; justify-content: flex-end; align-items: center; gap: 8px; flex-shrink: 0; min-height: 44px; padding: 4px 16px; border-bottom: 1px solid var(--border); background: var(--background); color: var(--foreground); }
 .love-spot-tools .dictation-control { margin: 0; }
 .love-spot-screenshots { flex-shrink: 0; min-width: 0; padding: 8px 16px; border-bottom: 1px solid var(--border); background: var(--background); color: var(--foreground); }
 .love-spot-screenshots-heading { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; margin-bottom: 6px; }
@@ -15,7 +15,9 @@
 .love-spot-screenshot span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; font-size: var(--text-small); }
 .love-spot-screenshot-dismiss { position: absolute; top: 2px; right: 2px; background: var(--background); }
 .love-spot-tools .dictation-status:empty, .love-spot-talk .dictation-status:empty { display: none; }
-.love-spot-talk { flex: 0 0 min(360px, 42%); min-width: 0; display: flex; flex-direction: column; border-left: 1px solid var(--border); background: var(--background); color: var(--foreground); }
+.love-spot-panels { flex: 0 0 min(360px, 42%); min-width: 0; min-height: 0; display: flex; flex-direction: column; border-left: 1px solid var(--border); }
+.love-spot-panels[hidden] { display: none; }
+.love-spot-talk { flex: 1; min-height: 0; min-width: 0; display: flex; flex-direction: column; background: var(--background); color: var(--foreground); }
 .love-spot-talk[hidden] { display: none; }
 .love-spot-talk-heading { display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; border-bottom: 1px solid var(--border); }
 .love-spot-talk-messages { flex: 1; min-height: 0; overflow: auto; padding: 12px; overflow-wrap: anywhere; }
@@ -28,3 +30,18 @@
 .love-spot-talk-controls .dictation-status:not(:empty) { order: 1; flex-basis: 100%; }
 .love-spot-talk-error { padding: 8px 12px; color: var(--destructive); font-size: var(--text-small); overflow-wrap: anywhere; }
 .love-spot-menu-anchor { position: fixed; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+.love-agent-toolbar { position: relative; margin-right: auto; z-index: 6; display: flex; align-items: center; gap: 8px; color: var(--muted-foreground); font-size: 12px; }
+.love-agent-picker { position: absolute; top: 38px; left: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; width: 340px; max-width: calc(100vw - 48px); padding: 8px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--background); box-shadow: 0 8px 28px #0002; }
+.love-agent-picker > button { justify-content: flex-start; height: 66px; gap: 8px; text-align: left; }
+.love-agent-picker strong, .love-agent-picker small, .love-agent-heading small { display: block; }
+.love-agent-picker small, .love-agent-heading small { color: var(--muted-foreground); font-size: 11px; font-weight: 400; }
+.love-agent-list { display: flex; flex-shrink: 0; gap: 4px; padding: 4px 16px; border-bottom: 1px solid var(--border); overflow-x: auto; }
+.love-agent-panel { display: flex; flex: 1; min-height: 0; flex-direction: column; gap: 12px; padding: 16px; overflow-y: auto; background: var(--background); color: var(--foreground); font-size: 13px; }
+.love-agent-panel > * { flex-shrink: 0; }
+.love-agent-panel:has(+ .love-spot-talk:not([hidden])) { border-bottom: 1px solid var(--border); }
+.love-agent-heading { display: flex; gap: 10px; align-items: center; }
+.love-agent-heading > div { flex: 1; }
+.love-agent-panel label { display: flex; flex-direction: column; gap: 4px; font-weight: 500; }
+.love-agent-panel input, .love-agent-panel textarea { width: 100%; min-height: 32px; padding: 8px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--background); color: var(--foreground); font: inherit; resize: vertical; font-weight: 400; }
+.love-agent-panel p { color: var(--muted-foreground); font-size: 12px; overflow-wrap: anywhere; }
+.love-agent-answer { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px; }

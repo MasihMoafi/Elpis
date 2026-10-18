@@ -9,7 +9,7 @@ const { fakeDesktop } = require('./fake-desktop.cjs');
 const { guardDesktopStore } = require('./controls.cjs');
 const exec = promisify(execFile);
 
-async function loveSpotFixture({ colorScheme = 'light', reply = 'I am here with you.', replyDelay = 80 } = {}) {
+async function loveSpotFixture({ colorScheme = 'light', reply = 'I am here with you.', replyDelay = 80, configureClient } = {}) {
   const base = path.join(os.homedir(), '.cache/elpis-tests'); await fs.mkdir(base, { recursive: true });
   const root = await fs.mkdtemp(path.join(base, 'love-spot-ui-'));
   const directory = path.join(root, 'drawing'), screenshots = path.join(root, 'Screenshots');
@@ -27,25 +27,26 @@ async function loveSpotFixture({ colorScheme = 'light', reply = 'I am here with 
     providerSettings: async () => ({ providers: [], version: null, write: { available: false } }),
     listThreads: async () => ({ data: chats, nextCursor: null }), models: async () => ({ data: models, nextCursor: null }),
     createThread: async body => {
-      const thread = { id: 'love-chat', ...body, modelProvider: 'openai', status: { type: 'idle' }, desktopAccess: { writable: true, mode: 'direct', reason: null } }; chats.push(thread);
+      const thread = { id: chats.length ? `love-chat-${chats.length + 1}` : 'love-chat', ...body, modelProvider: 'openai', status: { type: 'idle' }, desktopAccess: { writable: true, mode: 'direct', reason: null } }; chats.push(thread);
       emitter.emit('event', { type: 'message', data: { method: 'thread/started', params: { thread } } });
       return { thread };
     },
-    readThread: async () => ({ thread: chats[0], data: [...entries].reverse(), nextCursor: null }),
-    resume: async () => ({ thread: chats[0], activeTurnId: null }),
+    readThread: async id => ({ thread: chats.find(chat => chat.id === id), data: entries.filter(entry => entry.threadId === id).reverse(), nextCursor: null }),
+    resume: async id => ({ thread: chats.find(chat => chat.id === id), activeTurnId: null }),
     send: async (id, body) => {
       const turn = { id: `turn-${turns.length + 1}` }; turns.push({ id, ...body });
-      const prompt = { turnId: turn.id, item: { id: `user-${turn.id}`, type: 'userMessage', content: [{ type: 'text', text: body.text }] } }; entries.push(prompt);
+      const prompt = { threadId: id, turnId: turn.id, item: { id: `user-${turn.id}`, type: 'userMessage', content: [{ type: 'text', text: body.text }] } }; entries.push(prompt);
       emitter.emit('event', { type: 'message', data: { method: 'turn/started', params: { threadId: id, turn } } });
       setTimeout(() => {
         const item = { id: `agent-${turn.id}`, type: 'agentMessage', text: reply };
-        if (reply) { entries.push({ turnId: turn.id, item }); emitter.emit('event', { type: 'message', data: { method: 'item/completed', params: { threadId: id, turnId: turn.id, item } } }); }
+        if (reply) { entries.push({ threadId: id, turnId: turn.id, item }); emitter.emit('event', { type: 'message', data: { method: 'item/completed', params: { threadId: id, turnId: turn.id, item } } }); }
         emitter.emit('event', { type: 'message', data: { method: 'turn/completed', params: { threadId: id, turn: { ...turn, status: reply ? 'completed' : 'failed', items: reply ? [item] : [], ...(!reply ? { error: { message: 'Test provider failed' } } : {}) } } } });
       }, replyDelay);
       return { turn };
     } });
+  configureClient?.(emitter);
   const client = new Proxy(emitter, { get(target, key) { return key in target ? Reflect.get(target, key) : async () => ({}); } });
-  const server = await startDesktopServer({ client, loveSpot: { directory, screenshots }, trashFile: path.join(root, 'trash.json') });
+  const server = await startDesktopServer({ client, staticDir: process.env.LOVE_SPOT_TEST_STATIC_DIR, loveSpot: { directory, screenshots }, trashFile: path.join(root, 'trash.json') });
   const browser = await chromium.launch({ executablePath: process.env.ELPIS_CHROMIUM || undefined, headless: true });
   const context = await browser.newContext({ viewport: { width: 1440, height: 960 }, colorScheme });
   const errors = [], requests = [], responses = [];

@@ -25,8 +25,29 @@ async function fixture(t) {
   const request = (suffix = '', data) => fetch(`${origin}/api/love-spot${suffix}`, { method: data === undefined ? 'GET' : 'POST', headers: { cookie, origin, 'content-type': 'application/json' }, ...(data === undefined ? {} : { body: JSON.stringify(data) }) });
   const load = async () => { const reply = await request(); assert.equal(reply.status, 200); return reply.json(); };
   const save = async scene => { const reply = await request('', scene); assert.equal(reply.status, 200); return reply.json(); };
-  return { directory, screenshots, request, load, save, origin };
+  return { directory, screenshots, request, load, save, origin, client };
 }
+
+test('Love Spot agent route authenticates, reads the saved drawing, and persists chat results', async t => {
+  const f = await fixture(t), calls = [];
+  Object.assign(f.client, {
+    models: async () => ({ data: [{ model: 'gpt-6-luna' }] }),
+    createThread: async body => { calls.push(body); return { thread: { id: 'real-route-chat' } }; },
+    send: async id => {
+      f.client.emit('event', { type: 'message', data: { method: 'turn/completed', params: { threadId: id, turn: { status: 'completed', items: [{ type: 'agentMessage', text: 'Only the real route knows this answer' }] } } } });
+      return { turn: { id: 'route-turn' } };
+    },
+  });
+  assert.equal((await fetch(`${f.origin}/api/love-spot/agents/run`, { method: 'POST', headers: { origin: f.origin, 'content-type': 'application/json' }, body: JSON.stringify({ id: 'agent' }) })).status, 401);
+  await f.save({ elements: [element('agent', 1, { customData: { loveAgent: { name: 'Writer', preset: 'writer', model: 'gpt-6-luna', provider: 'openai', prompt: 'Be precise', task: 'Route seed' } } })], files: {} });
+  assert.equal((await f.request('/agents/run', { id: 'agent', unknown: true })).status, 400);
+  assert.equal((await f.request('/agents/run', { id: 'agent', cwd: 'relative' })).status, 400);
+  assert.equal(calls.length, 0);
+  const reply = await f.request('/agents/run', { id: 'agent' });
+  assert.equal(reply.status, 200);
+  assert.equal((await reply.json()).results[0].output, 'Only the real route knows this answer');
+  assert.equal((await f.load()).scene.elements[0].customData.loveAgent.threadId, 'real-route-chat');
+});
 
 test('Love Spot load/save unions stale windows, keeps newest versions and deletion tombstones', async t => {
   const f = await fixture(t);

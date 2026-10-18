@@ -16,6 +16,7 @@ import { createTrash } from './trash.mjs';
 import { createObservability } from './observability.mjs';
 import { createLoveSpot } from './love-spot-store.cjs';
 import { createLoveSpotTalk } from './love-spot-talk.mjs';
+import { createLoveAgents } from './love-agents.mjs';
 import { createDevServers, devServerRequest } from './dev-servers.mjs';
 import { createImprovements } from './improve.mjs';
 import { dismissPersonalTip, openPersonal, personalStatus } from './personal.mjs';
@@ -95,6 +96,7 @@ export async function startDesktopServer(options = {}) {
   const listeners = new Set(); let origin; let closed = false;
   const loveSpot = createLoveSpot(options.loveSpot);
   const loveTalk = createLoveSpotTalk({ client, store: loveSpot });
+  const loveAgents = createLoveAgents(client, loveSpot);
   const devServers = createDevServers();
   const experimentLab = createExperimentLab({ client, ...(options.elpisHome ? { file: path.join(options.elpisHome, 'experiment-lab', 'latest.json') } : {}) });
   const loveStreams = new Set();
@@ -171,6 +173,7 @@ export async function startDesktopServer(options = {}) {
           });
           response.on('close', () => { stop(); loveStreams.delete(response); }); return;
         }
+        if (url.pathname === '/api/love-spot/agents/run' && method === 'POST') return json(response, 200, await loveAgents.run(await body(request)));
         if (url.pathname === '/api/love-spot/events' && method === 'GET') {
           response.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-store', Connection: 'keep-alive' });
           loveStreams.add(response);
