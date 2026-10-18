@@ -14,6 +14,12 @@ test('the chat provider picks the transcriber: ChatGPT sign-in for ChatGPT, the 
   assert.equal(JSON.stringify(transcriptionStatus(config, 'openai')).includes('private'), false);
 });
 
+// Masih (18 Oct): voice "should use whisper medium just like my local setup does", in every chat.
+test('WHISPERTYPE_EVERY_CHAT makes the Settings → Voice engine stand for every chat, ChatGPT and OpenRouter ones included', () => {
+  for (const provider of ['openai', 'openrouter', 'anthropic'])
+    assert.deepEqual(transcriptionStatus(server({ WHISPERTYPE_BACKEND: 'local', WHISPERTYPE_EVERY_CHAT: '1', WHISPERTYPE_CLOUD_MODEL: MODEL }), provider), { available: true, backend: 'local', label: 'Local WhisperType', source: 'fallback' }, provider);
+});
+
 test('providers without a transcription Elpis can reach use the Settings fallback', () => {
   for (const provider of ['anthropic', 'anthropic-credits', 'claude', 'gemini', 'google-gemini', 'lmstudio', 'custom-gateway', undefined, '']) {
     assert.deepEqual(transcriptionStatus(server({ WHISPERTYPE_BACKEND: 'local' }), provider), { available: true, backend: 'local', label: 'Local WhisperType', source: 'fallback' }, String(provider));

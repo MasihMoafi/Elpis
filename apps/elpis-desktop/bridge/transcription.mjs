@@ -29,7 +29,8 @@ export function transcriptionStatus(config, provider, env = {}) {
   if (!config || config.enabled === false || typeof config.command !== 'string' || !config.command || config.url) {
     return { available: false, reason: 'Enable a supported WhisperType stdio server in Settings → MCP.' };
   }
-  const own = typeof provider === 'string' && Object.hasOwn(OWN, provider);
+  // WHISPERTYPE_EVERY_CHAT=1: the Settings → Voice engine for every chat, so voice is the same model everywhere.
+  const own = config.env?.WHISPERTYPE_EVERY_CHAT !== '1' && typeof provider === 'string' && Object.hasOwn(OWN, provider);
   const route = own ? OWN[provider] : fallback(config, env);
   if (!LABELS[route]) return { available: false, reason: 'Choose a transcription engine in Settings → Voice.' };
   const source = own ? 'provider' : 'fallback';
