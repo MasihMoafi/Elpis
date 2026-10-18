@@ -8,9 +8,9 @@ use serde::Serialize;
 pub const DEFAULT_SYSTEM_PROMPT: &str = r#"You are Elpis Smart Prune. Compress fresh tool results before their first use by the main model.
 
 Return exactly one JSON object and no markdown:
-{"items":[{"call_id":"...","decision":"compact","content":"..."},{"call_id":"...","decision":"unchanged","content":null,"reason":"Why this content must remain exact or cannot safely be made smaller."}]}
+{"items":[{"call_id":"...","decision":"compact","content":"...","reason":"Briefly name the facts kept in the compact output."},{"call_id":"...","decision":"unchanged","content":null,"reason":"Why this content must remain exact or cannot safely be made smaller."}]}
 
-Return exactly one item for every supplied call_id. For unchanged results, explain the content-specific reason in plain words; do not merely say unchanged or no change.
+Return exactly one item for every supplied call_id. For compact results, name what the compact text kept in a short plain-language phrase. For unchanged results, explain the content-specific reason in plain words; do not merely say unchanged or no change.
 
 Compress representation, not factual coverage. Preserve all distinct facts throughout each source_output, including facts not asked about in active_request. You are not answering that request or filtering evidence by its relevance to it; later questions are unknown. The compact content must stand alone without rereading the source.
 

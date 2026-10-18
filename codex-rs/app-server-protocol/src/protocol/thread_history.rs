@@ -360,6 +360,12 @@ impl ThreadHistoryBuilder {
     /// See `persisted_rollout_item` in `codex-rs/rollout/src/policy.rs`.
     pub fn handle_event(&mut self, event: &EventMsg) {
         match event {
+            EventMsg::SmartPrune(prune) => {
+                self.upsert_item_in_current_turn(ThreadItem::SmartPrune {
+                    id: prune.item_id(),
+                    prune: prune.clone(),
+                })
+            }
             EventMsg::UserMessage(payload) => self.handle_user_message(payload),
             EventMsg::AgentMessage(payload) => self.handle_agent_message(payload),
             EventMsg::AgentReasoning(payload) => self.handle_agent_reasoning(payload),

@@ -116,11 +116,12 @@ pub(crate) fn decision_manifest_schema() -> serde_json::Value {
                         {
                             "type": "object",
                             "additionalProperties": false,
-                            "required": ["call_id", "decision", "content"],
+                            "required": ["call_id", "decision", "content", "reason"],
                             "properties": {
                                 "call_id": {"type": "string"},
                                 "decision": {"type": "string", "enum": ["compact"]},
-                                "content": {"type": "string"}
+                                "content": {"type": "string"},
+                                "reason": {"type": "string", "description": "Briefly name the facts kept in the compact output, in plain words."}
                             }
                         },
                         {
@@ -151,7 +152,7 @@ struct RawDecision {
     decision: RawDecisionKind,
     content: Option<String>,
     // Optional for existing audit manifests and non-LLM producers. The LLM
-    // response schema requests a reason for every new unchanged decision.
+    // response schema requests a reason for every new decision.
     #[serde(default, rename = "reason")]
     _reason: Option<String>,
 }

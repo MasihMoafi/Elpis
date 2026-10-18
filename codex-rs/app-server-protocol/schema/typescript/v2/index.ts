@@ -467,6 +467,7 @@ export type { SkillsExtraRootsSetResponse } from "./SkillsExtraRootsSetResponse"
 export type { SkillsListEntry } from "./SkillsListEntry";
 export type { SkillsListParams } from "./SkillsListParams";
 export type { SkillsListResponse } from "./SkillsListResponse";
+export type { SmartPruneEvent } from "./SmartPruneEvent";
 export type { SortDirection } from "./SortDirection";
 export type { SpendControlLimitSnapshot } from "./SpendControlLimitSnapshot";
 export type { StrictReviewRequiredNotification } from "./StrictReviewRequiredNotification";

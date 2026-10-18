@@ -340,6 +340,7 @@ fn searchable_text(item: &ThreadItem) -> Option<Cow<'_, str>> {
             (!text.is_empty()).then_some(Cow::Owned(text))
         }
         ThreadItem::HookPrompt { .. }
+        | ThreadItem::SmartPrune { .. }
         | ThreadItem::FunctionCallOutput { .. }
         | ThreadItem::Plan { .. }
         | ThreadItem::Reasoning { .. }

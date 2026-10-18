@@ -1006,6 +1006,7 @@ pub(crate) async fn apply_bespoke_event_handling(
         | EventMsg::CollabCloseEnd(_)
         | EventMsg::CollabResumeBegin(_)
         | EventMsg::CollabResumeEnd(_)
+        | EventMsg::SmartPrune(_)
         | EventMsg::SubAgentActivity(_)
         | EventMsg::ExecCommandBegin(_)
         | EventMsg::ExecCommandEnd(_)

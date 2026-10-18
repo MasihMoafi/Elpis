@@ -527,6 +527,7 @@ WHERE thread_id = ?
                 ..
             }
             | ThreadItem::HookPrompt { .. }
+            | ThreadItem::SmartPrune { .. }
             | ThreadItem::FunctionCallOutput { .. }
             | ThreadItem::Plan { .. }
             | ThreadItem::Reasoning { .. }

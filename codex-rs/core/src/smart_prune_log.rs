@@ -18,6 +18,8 @@ use crate::smart_prune::textual_tool_output;
 
 #[derive(Clone, Debug)]
 pub struct PruneLogItem {
+    pub call_id: String,
+    pub kept: Option<String>,
     pub description: String,
     pub source_tokens: usize,
     pub admitted_tokens: usize,
@@ -460,51 +462,86 @@ fn project_attempt(log_dir: &Path, attempt: Attempt) -> Result<PruneLogRecord> {
             record.add_note(format!("failed: {why} Original kept."));
         }
     }
+    record.items = project_items(
+        &root,
+        input,
+        attempt.raw_response.as_deref(),
+        attempt.status,
+        attempt.error.as_deref(),
+        attempt.admission_id.as_deref(),
+    )?;
+    Ok(record)
+}
+
+/// Project a live outcome without requiring a readable attempt record.
+/// Committed admission artifacts remain the source of replacement text and counts.
+pub(crate) fn inline_items(
+    log_dir: &Path,
+    input: &str,
+    raw_response: Option<&str>,
+    status: AttemptStatus,
+    error: Option<&str>,
+    admission_id: Option<&str>,
+) -> Result<Vec<PruneLogItem>> {
+    project_items(
+        &log_dir.join("smart-prune"),
+        serde_json::from_str(input)?,
+        raw_response,
+        status,
+        error,
+        admission_id,
+    )
+}
+
+fn project_items(
+    root: &Path,
+    input: OptimizerInput,
+    raw_response: Option<&str>,
+    status: AttemptStatus,
+    error: Option<&str>,
+    admission_id: Option<&str>,
+) -> Result<Vec<PruneLogItem>> {
+    let failure = crate::session::smart_prune::safe_failure_reason(status, error);
+    let mut items = Vec::new();
     let expected_ids = input
         .items
         .iter()
         .map(|item| item.call_id.as_str())
         .collect::<Vec<_>>();
-    let response = attempt
-        .raw_response
-        .as_deref()
-        .and_then(|raw| serde_json::from_str::<Value>(raw).ok());
-    let decisions = attempt
-        .raw_response
-        .as_deref()
-        .and_then(|raw| parse_decision_manifest(raw, &expected_ids));
-    let admission_dir = attempt
-        .admission_id
-        .as_ref()
-        .filter(|_| matches!(attempt.status, AttemptStatus::Admitted))
+    let response = raw_response.and_then(|raw| serde_json::from_str::<Value>(raw).ok());
+    let decisions = raw_response.and_then(|raw| parse_decision_manifest(raw, &expected_ids));
+    let admission_dir = admission_id
+        .filter(|_| matches!(status, AttemptStatus::Admitted))
         .map(|id| Path::new("admissions").join(id));
     let manifest: Option<Manifest> = admission_dir
         .as_ref()
         .map(|dir| -> Result<Manifest> {
             Ok(serde_json::from_slice(&confined_read(
-                &root,
+                root,
                 &dir.join("manifest.json"),
             )?)?)
         })
         .transpose()?;
     for candidate in input.items {
+        let kept = response
+            .as_ref()
+            .and_then(|response| response.get("items")?.as_array())
+            .and_then(|items| {
+                items
+                    .iter()
+                    .find(|item| item["call_id"].as_str() == Some(candidate.call_id.as_str()))
+            })
+            .and_then(|item| item["reason"].as_str())
+            .filter(|reason| !reason.trim().is_empty())
+            .map(one_line);
         let kept_reason = match decisions.as_ref().and_then(|items| {
             items
                 .iter()
                 .find(|item| item.call_id() == candidate.call_id)
         }) {
-            Some(AdmissionDecision::Unchanged { .. }) => response
-                .as_ref()
-                .and_then(|response| response.get("items").and_then(Value::as_array))
-                .and_then(|items| {
-                    items.iter().find(|item| {
-                        item.get("call_id").and_then(Value::as_str)
-                            == Some(candidate.call_id.as_str())
-                    })
-                })
-                .and_then(|item| item.get("reason").and_then(Value::as_str))
-                .filter(|reason| !reason.trim().is_empty())
-                .map(|reason| format!("kept: Pruner's reason: {}", one_line(reason.trim())))
+            Some(AdmissionDecision::Unchanged { .. }) => kept
+                .as_deref()
+                .map(|reason| format!("kept: Pruner's reason: {reason}"))
                 .unwrap_or_else(|| {
                     "kept: No reason was recorded; the original was retained.".to_string()
                 }),
@@ -514,6 +551,8 @@ fn project_attempt(log_dir: &Path, attempt: Attempt) -> Result<PruneLogRecord> {
             None => "kept: No usable replacement was recorded.".to_string(),
         };
         let mut item = PruneLogItem {
+            call_id: candidate.call_id.clone(),
+            kept,
             description: tool_description(candidate.invocation.as_ref()),
             source_tokens: candidate.source_tokens_estimate,
             admitted_tokens: candidate.source_tokens_estimate,
@@ -541,7 +580,7 @@ fn project_attempt(log_dir: &Path, attempt: Attempt) -> Result<PruneLogRecord> {
                 .as_ref()
                 .context("missing admission directory")?;
             let output: ResponseItem = serde_json::from_slice(&confined_read(
-                &root,
+                root,
                 &dir.join(&admitted.admitted_artifact),
             )?)?;
             let (_, text) = textual_tool_output(&output).context("non-text admission")?;
@@ -551,9 +590,9 @@ fn project_attempt(log_dir: &Path, attempt: Attempt) -> Result<PruneLogRecord> {
             item.decision =
                 removal_description(&item.original, item.compact.as_deref().unwrap_or_default());
         }
-        record.items.push(item);
+        items.push(item);
     }
-    Ok(record)
+    Ok(items)
 }
 
 /// Existing machine-only attempts remain browsable. Corrupt entries are counted explicitly.
@@ -753,6 +792,13 @@ mod tests {
     #[test]
     fn unchanged_response_schema_requests_a_content_specific_reason() {
         let schema = crate::smart_prune::decision_manifest_schema();
+        let compact = &schema["properties"]["items"]["items"]["anyOf"][0];
+        assert!(
+            compact["required"]
+                .as_array()
+                .unwrap()
+                .contains(&json!("reason"))
+        );
         let unchanged = &schema["properties"]["items"]["items"]["anyOf"][1];
         assert!(
             unchanged["required"]

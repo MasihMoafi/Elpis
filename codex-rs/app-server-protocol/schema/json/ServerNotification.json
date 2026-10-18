@@ -3983,6 +3983,55 @@
       "description": "Notification emitted when watched local skill files change.\n\nTreat this as an invalidation signal and re-run `skills/list` with the client's current parameters when refreshed skill metadata is needed.",
       "type": "object"
     },
+    "SmartPruneEvent": {
+      "description": "One completed admission attempt, attached to its tool call in conversation history. Exact output stays in the immutable audit, loaded only when the user opens it.",
+      "properties": {
+        "admittedTokens": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "attemptId": {
+          "type": "string"
+        },
+        "callId": {
+          "type": "string"
+        },
+        "failureReason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "kept": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "occurredAtMs": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "sourceTokens": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "tool": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "admittedTokens",
+        "attemptId",
+        "callId",
+        "occurredAtMs",
+        "sourceTokens",
+        "tool"
+      ],
+      "type": "object"
+    },
     "SpendControlLimitSnapshot": {
       "properties": {
         "limit": {
@@ -4697,6 +4746,30 @@
     },
     "ThreadItem": {
       "oneOf": [
+        {
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "prune": {
+              "$ref": "#/definitions/SmartPruneEvent"
+            },
+            "type": {
+              "enum": [
+                "smartPrune"
+              ],
+              "title": "SmartPruneThreadItemType",
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "prune",
+            "type"
+          ],
+          "title": "SmartPruneThreadItem",
+          "type": "object"
+        },
         {
           "properties": {
             "clientId": {

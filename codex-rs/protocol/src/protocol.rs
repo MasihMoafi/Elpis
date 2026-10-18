@@ -1462,6 +1462,9 @@ pub enum EventMsg {
     /// Optional means unknown — UIs should not display when `None`.
     TokenCount(TokenCountEvent),
 
+    /// Elpis: a prune at its tool output, retained for chat replay.
+    SmartPrune(crate::elpis_smart_prune::SmartPruneEvent),
+
     /// Agent text output message
     AgentMessage(AgentMessageEvent),
 

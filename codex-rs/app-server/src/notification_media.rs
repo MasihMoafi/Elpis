@@ -210,6 +210,7 @@ fn without_thread_item_media(mut item: ThreadItem) -> ThreadItem {
             ..
         }
         | ThreadItem::CollabAgentToolCall { .. }
+        | ThreadItem::SmartPrune { .. }
         | ThreadItem::SubAgentActivity { .. }
         | ThreadItem::WebSearch(_)
         | ThreadItem::ImageView { .. }
