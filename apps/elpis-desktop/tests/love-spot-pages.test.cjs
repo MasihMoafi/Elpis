@@ -2,7 +2,64 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
+const { createHash } = require('node:crypto');
 const { loveSpotFixture } = require('./love-spot-fixture.cjs');
+
+test('opening a saved page does not rewrite it; the first real edit still saves', async () => {
+  const shape = { type: 'rectangle', x: 0, y: 0, width: 120, height: 80, version: 1, versionNonce: 1 };
+  const original = JSON.stringify({ elements: [{ ...shape, id: 'saved-rectangle' }, { ...shape, id: 'deleted-rectangle', isDeleted: true }], files: {}, appState: { viewBackgroundColor: '#ffffff' } });
+  const f = await loveSpotFixture({ prepareDirectory: async directory => {
+    await fs.mkdir(directory, { recursive: true });
+    await fs.writeFile(path.join(directory, 'scene.excalidraw'), original);
+  } });
+  try {
+    const writes = [];
+    f.page.on('request', request => { if (request.method() === 'POST' && ['/api/love-spot', '/api/love-spot/picture'].includes(new URL(request.url()).pathname)) writes.push(request); });
+    await f.open(f.page); await f.page.waitForTimeout(1400);
+    assert.equal(await fs.readFile(path.join(f.directory, 'scene.excalidraw'), 'utf8'), original, 'opening must not serialize and resend unchanged image data');
+    assert.equal(writes.length, 0);
+    await f.draw(f.page);
+    const scene = await f.waitFor(s => s.elements.filter(e => !e.isDeleted).length === 2, 'the first edit must persist');
+    assert.ok(scene.elements.some(e => e.id === 'deleted-rectangle' && e.isDeleted), 'the loaded tombstone must survive the first edit');
+    assert.ok(writes.length > 0);
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});
+
+test('image previews refresh, and normalized file bytes do not cause a save loop', async () => {
+  const f = await loveSpotFixture();
+  try {
+    await f.open(f.page);
+    const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAEUlEQVR4nGM4o6SEFTEMLQkAvM5EAT6yk8sAAAAASUVORK5CYII=', 'base64');
+    await fs.writeFile(path.join(f.screenshots, 'pixel-change.png'), png);
+    await f.page.getByRole('button', { name: 'Add pixel-change.png to drawing', exact: true }).click();
+    await f.waitFor(s => s.elements.some(e => e.type === 'image'), 'the placed image must save');
+    const currentPicture = async () => {
+      const hash = createHash('sha256').update(await fs.readFile(path.join(f.directory, 'scene.excalidraw'))).digest('hex');
+      return await fs.readFile(path.join(f.directory, '.view-revision'), 'utf8').catch(() => '') === hash;
+    };
+    await f.waitFor(currentPicture, 'the placed image must refresh the picture');
+    const before = await fs.readFile(path.join(f.directory, 'view.png'));
+    const scene = await f.scene(), image = scene.elements.find(e => e.type === 'image');
+    const dataURL = await f.page.evaluate(async url => {
+      const image = new Image(); image.src = url; await image.decode();
+      const canvas = document.createElement('canvas'); canvas.width = image.naturalWidth; canvas.height = image.naturalHeight;
+      canvas.getContext('2d').drawImage(image, 0, 0); return canvas.toDataURL();
+    }, scene.files[image.fileId].dataURL);
+    assert.notEqual(dataURL, scene.files[image.fileId].dataURL, 'normalization must change the encoded bytes');
+    let saves = 0;
+    f.page.on('request', request => { if (request.method() === 'POST' && new URL(request.url()).pathname === '/api/love-spot') saves++; });
+    await fs.writeFile(path.join(f.directory, 'inbox', 'pixels.json'), JSON.stringify({ elements: [], files: { [image.fileId]: { ...scene.files[image.fileId], dataURL, loveSpotResized: true } } }));
+    await f.waitFor(s => s.files[image.fileId]?.dataURL === dataURL, 'normalized pixels must reach the saved scene');
+    await f.page.waitForTimeout(1400);
+    assert.equal(saves, 0, 'an immutable editor file must not repeatedly resend its original bytes');
+    await f.draw(f.page);
+    await f.waitFor(s => s.elements.some(e => e.type === 'rectangle'), 'the next real edit must save');
+    await f.waitFor(currentPicture, 'the next real edit must refresh the picture');
+    assert.notDeepEqual(await fs.readFile(path.join(f.directory, 'view.png')), before);
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});
 
 for (const colorScheme of ['light', 'dark']) test(`Love Spot pages: mouse/keyboard create, rename and switch in two windows (${colorScheme})`, async () => {
   const f = await loveSpotFixture({ colorScheme });

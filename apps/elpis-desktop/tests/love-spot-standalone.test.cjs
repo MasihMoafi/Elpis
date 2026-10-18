@@ -31,8 +31,15 @@ test('Love Spot standalone Electron and Elpis exchange mouse strokes in under a 
     const fromStandalone = Date.now(); // Measure propagation after the stroke is published.
     await f.page.bringToFront();
     await f.page.locator('.excalidraw').click({ position: { x: 1000, y: 700 } });
-    await f.page.waitForTimeout(200);
-    await f.page.keyboard.press('ControlOrMeta+a'); await f.page.keyboard.press('Delete');
+    await f.page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
+    // A disk write is not an acknowledgement from this window. Observe both
+    // shapes through the real Copy action before asking Delete to remove them.
+    await f.waitFor(async () => {
+      await f.page.keyboard.press('ControlOrMeta+a'); await f.page.keyboard.press('ControlOrMeta+c');
+      const text = await f.page.evaluate(() => navigator.clipboard.readText());
+      try { return JSON.parse(text).elements.filter(e => !e.isDeleted).length === 2; } catch { return false; }
+    }, 'both published shapes must reach the Elpis canvas', 700);
+    await f.page.keyboard.press('Delete');
     await f.waitFor(s => s.elements.filter(e => !e.isDeleted).length === 0, 'standalone stroke did not reach Elpis', 700).catch(async e => {
       await f.page.screenshot({ path: '/tmp/love-spot-pages-standalone-failure.png' });
       throw new Error(`${e.message}; scene: ${JSON.stringify((await f.scene()).elements.map(e => [e.id, e.version, e.isDeleted]))}; alerts: ${JSON.stringify(await f.page.locator('.love-spot [role="alert"]').allTextContents())}`);

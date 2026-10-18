@@ -213,6 +213,7 @@
     "tests/hud-language.test.cjs"
   ],
   "opt-in": [
+    "tests/love-spot-performance.test.cjs",
     "tests/app-fix-2.runtime.mjs",
     "tests/browser.runtime.mjs",
     "tests/canvas-live.runtime.mjs",

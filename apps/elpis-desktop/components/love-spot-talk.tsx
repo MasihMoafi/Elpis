@@ -12,9 +12,9 @@ import { insertTranscript } from "@/lib/dictation";
 
 type Conversation = { thread: Thread | null; entries: Entry[]; busy: boolean; error: string };
 export type LoveSpotQuote = { id: number; text: string };
-export function LoveSpotTalk({ open, onClose, quote, model, choiceId, choices, models, onModel, provider, disabled, onDictating, beforeSend }: {
+export function LoveSpotTalk({ open, onClose, quote, model, choiceId, choices, models, onModel, provider, disabled, onDictating, sendWithBoard }: {
   open: boolean; onClose: () => void; quote?: LoveSpotQuote; model: string; choiceId: string; choices: ProviderChoice[]; models: Model[];
-  onModel: (value: { model: string; choiceId: string }) => void; provider: string; disabled: boolean; onDictating: (busy: boolean) => void; beforeSend: () => Promise<string>;
+  onModel: (value: { model: string; choiceId: string }) => void; provider: string; disabled: boolean; onDictating: (busy: boolean) => void; sendWithBoard: (send: (revision: string) => Promise<void>) => Promise<void>;
 }) {
   const [conversation, setConversation] = useState<Conversation>({ thread: null, entries: [], busy: false, error: "" });
   const [draft, setDraft] = useState(""), [sending, setSending] = useState(false), [dictating, setDictating] = useState(false), [error, setError] = useState("");
@@ -45,10 +45,11 @@ export function LoveSpotTalk({ open, onClose, quote, model, choiceId, choices, m
     if (!text.trim() || busy || pending.current || disabled || dictating) return;
     pending.current = true; setSending(true); setError("");
     try {
-      const revision = await beforeSend();
-      const result = await api<Conversation>("/love-spot/talk", { text, model, ...(choices.find(c => c.id === choiceId)?.provider ? { provider: choices.find(c => c.id === choiceId)!.provider } : {}), revision });
-      setConversation(result);
-      if (currentDraft.current === text) setDraft("");
+      await sendWithBoard(async revision => {
+        const result = await api<Conversation>("/love-spot/talk", { text, model, ...(choices.find(c => c.id === choiceId)?.provider ? { provider: choices.find(c => c.id === choiceId)!.provider } : {}), revision });
+        setConversation(result);
+        if (currentDraft.current === text) setDraft("");
+      });
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Love Spot could not send your message."); }
     finally { pending.current = false; setSending(false); }
   }

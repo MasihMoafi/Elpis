@@ -12,11 +12,12 @@ const exec = promisify(execFile);
 // Love Spot cards run as ACP agent processes; here each is the scripted SDK agent, which logs what reaches it.
 const FAKE_ACP_AGENT = path.resolve(__dirname, '../../../tools/elpis-claude/test/fake-acp-agent.mjs');
 
-async function loveSpotFixture({ colorScheme = 'light', reply = 'I am here with you.', replyDelay = 80, configureClient } = {}) {
+async function loveSpotFixture({ colorScheme = 'light', reply = 'I am here with you.', replyDelay = 80, configureClient, prepareDirectory } = {}) {
   const base = path.join(os.homedir(), '.cache/elpis-tests'); await fs.mkdir(base, { recursive: true });
   const root = await fs.mkdtemp(path.join(base, 'love-spot-ui-'));
   const directory = path.join(root, 'drawing'), screenshots = path.join(root, 'Screenshots');
   await fs.mkdir(screenshots);
+  if (prepareDirectory) await prepareDirectory(directory);
   const { startDesktopServer } = await import('../bridge/server.mjs');
   const emitter = new EventEmitter();
   const chats = [], turns = [], entries = [];

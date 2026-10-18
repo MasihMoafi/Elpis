@@ -28,6 +28,36 @@ async function note(f, text) {
   return f.waitFor(s => s.elements.some(e => e.text === text), 'typed note was not saved');
 }
 
+test('an agent run waits for Talk to finish capturing the board', async () => {
+  const f = await loveSpotFixture();
+  let release;
+  try {
+    const { page } = f; await f.open(page);
+    await page.locator('.love-agent-toolbar').getByRole('button', { name: 'Agents', exact: true }).click();
+    await page.getByRole('menuitem', { name: 'Add Researcher', exact: true }).click();
+    await page.getByRole('textbox', { name: 'Task', exact: true }).fill('Review this board');
+    await page.getByRole('button', { name: 'Talk', exact: true }).click();
+    await page.waitForTimeout(1200);
+    let started;
+    const captured = new Promise(resolve => { started = resolve; });
+    const gate = new Promise(resolve => { release = resolve; });
+    await page.route('**/api/love-spot/picture', async route => { started(); await gate; await route.continue(); });
+    const talk = page.getByRole('region', { name: 'Love Spot Talk', exact: true });
+    await talk.getByRole('textbox', { name: 'Message Elpis' }).fill('Consider this board');
+    await talk.getByRole('button', { name: 'Send', exact: true }).click();
+    await captured;
+    await page.getByRole('button', { name: 'Run connected agents', exact: true }).click();
+    await page.waitForTimeout(200);
+    assert.equal(f.requests.some(url => url.endsWith('/love-spot/agents/run')), false, 'a run must not invalidate the picture Talk is exporting');
+    release();
+    await talk.getByText('I am here with you.', { exact: true }).waitFor();
+    await f.waitFor(s => s.elements.some(e => e.customData?.loveAgent?.status === 'completed'), 'the queued run must still complete');
+    assert.equal(f.chats.length, 2);
+    assert.deepEqual(await talk.getByRole('alert').allTextContents(), []);
+    assert.deepEqual(f.errors, []);
+  } finally { release?.(); await f.close(); }
+});
+
 test('board microphone inserts one coloured note at the last click; empty and failed recognition add nothing', async () => {
   const f = await loveSpotFixture();
   try {

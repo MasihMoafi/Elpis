@@ -29,8 +29,9 @@ const newer = (a: ExcalidrawElement, b: ExcalidrawElement) => a.version > b.vers
 const versions = (elements: readonly ExcalidrawElement[]) => JSON.stringify(elements.map(e => [e.id, e.version, e.versionNonce, e.isDeleted]));
 function snapshot(elements: readonly ExcalidrawElement[], appState: AppState, files: BinaryFiles, page?: BoardPage): Drawing {
   // Excalidraw's file serializer drops deleted elements even when they are supplied.
-  // Keep its app-state filtering, and explicitly preserve the merge tombstones.
-  return { ...JSON.parse(serializeAsJSON(elements, appState, files, "local")), elements: JSON.parse(JSON.stringify(elements)), files: { ...files }, page };
+  // Use it only to filter app state. Embedded image bytes are immutable and must not
+  // be stringified and parsed again on every pointer move or keystroke.
+  return { ...JSON.parse(serializeAsJSON([], appState, {}, "local")), elements: JSON.parse(JSON.stringify(elements)), files: { ...files }, page };
 }
 async function lightDrawing(drawing: Drawing) { return { ...drawing, files: await lightFiles(drawing.elements, drawing.files) }; }
 async function savePicture(data: Saved) {
@@ -46,6 +47,8 @@ export default function LoveSpot({ dark, cwd, onOpenChat }: { dark: boolean; cwd
   const [runError, setRunError] = useState("");
   const [attempt, setAttempt] = useState(0);
   const [editor, setEditor] = useState<ExcalidrawImperativeAPI>();
+  const editorRef = useRef<ExcalidrawImperativeAPI | undefined>(undefined);
+  const ready = useCallback((value: ExcalidrawImperativeAPI) => { editorRef.current = value; setEditor(value); }, []);
   const [talk, setTalk] = useState(false), [quote, setQuote] = useState<LoveSpotQuote>();
   const [boardBusy, setBoardBusy] = useState(false), [talkDictating, setTalkDictating] = useState(false);
   const [models, setModels] = useState<Model[]>([]), [settings, setSettings] = useState<ProviderSettings | null>(null);
@@ -67,7 +70,7 @@ export default function LoveSpot({ dark, cwd, onOpenChat }: { dark: boolean; cwd
   const saveTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const viewTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const saving = useRef<Promise<void>>(Promise.resolve());
-  const saveLatest = useRef<(() => void) | undefined>(undefined);
+  const saveLatest = useRef<((picture?: boolean) => void) | undefined>(undefined);
   const mounted = useRef(true);
   const remote = useRef(false);
   const report = useCallback((e: unknown) => { if (mounted.current) setError(e instanceof Error ? e.message : "Love Spot could not save the drawing."); }, []);
@@ -126,6 +129,17 @@ export default function LoveSpot({ dark, cwd, onOpenChat }: { dark: boolean; cwd
     return () => { active = false; };
   }, [attempt, loadPages, report]);
 
+  const schedulePicture = useCallback(() => {
+    clearTimeout(viewTimer.current);
+    viewTimer.current = setTimeout(async () => {
+      try {
+        await saving.current;
+        if (!editor || !mounted.current) return;
+        await savePicture({ scene: { ...snapshot(editor.getSceneElementsIncludingDeleted(), editor.getAppState(), editor.getFiles(), currentPage.current), page: currentPage.current! }, revision: revision.current });
+      } catch (e) { if (!(e instanceof Error && e.message.includes("drawing changed"))) report(e); }
+    }, 900);
+  }, [editor, report]);
+
   const receive = useCallback((data: Saved) => {
     revision.current = data.revision;
     const switching = currentPage.current?.session !== data.scene.page.session;
@@ -156,7 +170,9 @@ export default function LoveSpot({ dark, cwd, onOpenChat }: { dark: boolean; cwd
       const mine = shown.get(e.id);
       if (!mine || newer(e, mine)) { shown.set(e.id, e); changed = true; }
     }
-    const files = Object.values(data.scene.files).filter(f => editor.getFiles()[f.id]?.dataURL !== f.dataURL);
+    // File IDs are immutable in Excalidraw: addFiles only accepts missing IDs.
+    // Keep originals for undo instead of repeatedly resaving a normalized copy.
+    const files = Object.values(data.scene.files).filter(f => !editor.getFiles()[f.id]);
     if (files.length || changed) {
       remote.current = true;
       try {
@@ -171,8 +187,10 @@ export default function LoveSpot({ dark, cwd, onOpenChat }: { dark: boolean; cwd
       } else if (reply) editor.scrollToContent(editor.getSceneElements(), { fitToViewport: true, viewportZoomFactor: 0.7, maxZoom: 1 });
       // Inbox images and older pages also pass through the same pixel limit once they arrive.
       if (files.length) queueMicrotask(() => saveLatest.current?.());
+      // Excalidraw may notify after the merged snapshot is already current.
+      schedulePicture();
     }
-  }, [editor, loadPages]);
+  }, [editor, loadPages, schedulePicture]);
 
   const save = useCallback((picture = false) => {
     const drawing = latest.current;
@@ -190,13 +208,13 @@ export default function LoveSpot({ dark, cwd, onOpenChat }: { dark: boolean; cwd
   useEffect(() => {
     if (!editor) return;
     void document.fonts.load("20px Excalifont").catch(report);
-    const events = new EventSource("/api/love-spot/events");
+    const events = new EventSource(`/api/love-spot/events?revision=${encodeURIComponent(revision.current)}`);
     events.onmessage = event => {
       try {
         const data: Update = JSON.parse(event.data);
         if (data.type === "error") setError(data.message);
         else if (data.type === "screenshots") setScreenshots(data.screenshots);
-        else { receive(data); setError(""); }
+        else { if (data.revision !== revision.current) receive(data); setError(""); }
       } catch (e) { report(e); }
     };
     events.onerror = () => setError("Love Spot is reconnecting… Your drawing is still here.");
@@ -205,14 +223,15 @@ export default function LoveSpot({ dark, cwd, onOpenChat }: { dark: boolean; cwd
 
   useEffect(() => {
     mounted.current = true;
-    return () => { mounted.current = false; clearTimeout(saveTimer.current); clearTimeout(viewTimer.current); save(true); };
-  }, [save]);
+    // Acquiring the editor changes `save`; that is not a view unmount.
+    return () => { mounted.current = false; clearTimeout(saveTimer.current); clearTimeout(viewTimer.current); saveLatest.current?.(true); };
+  }, []);
 
   const changed = useCallback((elements: readonly ExcalidrawElement[], appState: AppState, files: BinaryFiles) => {
     const before = latest.current;
     // onChange contains only live elements. Persist the API's tombstones too, or a stale
     // writer would resurrect a shape the user just deleted.
-    const all = editor?.getSceneElementsIncludingDeleted() ?? elements;
+    const all = editorRef.current?.getSceneElementsIncludingDeleted() ?? elements;
     latest.current = snapshot(all, appState, files, currentPage.current);
     const cards = elements.filter(e => agentOf(e));
     setAgents(previous => versions(previous) === versions(cards) ? previous : cards);
@@ -230,25 +249,26 @@ export default function LoveSpot({ dark, cwd, onOpenChat }: { dark: boolean; cwd
         editor.addFiles([made.file]);
       });
     }
-    if (!remote.current && (!before || versions(before.elements) !== versions(all) || JSON.stringify(before.appState) !== JSON.stringify(latest.current.appState))) {
+    // Loading, selection and pointer movement do not need a save or a new PNG.
+    const filesChanged = before && (Object.keys(before.files).length !== Object.keys(files).length || Object.entries(files).some(([id, file]) => before.files[id]?.dataURL !== file.dataURL));
+    const drawingChanged = before && (filesChanged || versions(before.elements) !== versions(all) || JSON.stringify(before.appState) !== JSON.stringify(latest.current.appState));
+    if (!remote.current && drawingChanged) {
       clearTimeout(saveTimer.current); saveTimer.current = setTimeout(() => save(), 150);
     }
-    clearTimeout(viewTimer.current);
-    viewTimer.current = setTimeout(async () => {
-      try {
-        await saving.current;
-        if (!editor || !mounted.current) return;
-        await savePicture({ scene: { ...snapshot(editor.getSceneElementsIncludingDeleted(), editor.getAppState(), editor.getFiles(), currentPage.current), page: currentPage.current! }, revision: revision.current });
-      } catch (e) { if (!(e instanceof Error && e.message.includes("drawing changed"))) report(e); }
-    }, 900);
-  }, [editor, report, save]);
+    if (drawingChanged) schedulePicture();
+  }, [editor, save, schedulePicture]);
 
-  const flush = useCallback(async () => {
+  const sendWithBoard = useCallback(async (send: (revision: string) => Promise<void>) => {
     clearTimeout(saveTimer.current); clearTimeout(viewTimer.current);
-    await saving.current;
-    if (!editor) throw new Error("The board is still opening. Try again in a moment.");
-    const data = await api<Saved>("/love-spot", await lightDrawing(snapshot(editor.getSceneElementsIncludingDeleted(), editor.getAppState(), editor.getFiles(), currentPage.current)));
-    receive(data); await savePicture(data); return data.revision;
+    // Keep capture and dispatch in the save queue. A simultaneous agent run must
+    // wait until Talk accepts the picture before changing its revision.
+    const work = saving.current.then(async () => {
+      if (!editor) throw new Error("The board is still opening. Try again in a moment.");
+      const data = await api<Saved>("/love-spot", await lightDrawing(snapshot(editor.getSceneElementsIncludingDeleted(), editor.getAppState(), editor.getFiles(), currentPage.current)));
+      receive(data); await savePicture(data); await send(data.revision);
+    });
+    saving.current = work.then(() => {}, () => {});
+    return work;
   }, [editor, receive]);
 
   async function chooseScreenshot(id: string, action: "place" | "dismiss") {
@@ -354,7 +374,7 @@ export default function LoveSpot({ dark, cwd, onOpenChat }: { dark: boolean; cwd
       {editor && <div className="love-agent-toolbar">
         <DropdownMenu open={picker} onOpenChange={setPicker}>
           <DropdownMenuTrigger render={<Button variant="outline" size="sm" title="Choose an agent, or type @agent in a text note" />}>Agents</DropdownMenuTrigger>
-          <CharacterPicker onAdd={add} />
+          {picker && <CharacterPicker onAdd={add} />}
         </DropdownMenu>
       </div>}
       <div role="group" aria-label="Voice note"><Dictation provider={provider} disabled={!editor || !settings || talkDictating} onBusy={setBoardBusy} selection={insertion} onTranscript={addVoiceNote} purpose="Adds a note to the board." /></div>
@@ -387,7 +407,7 @@ export default function LoveSpot({ dark, cwd, onOpenChat }: { dark: boolean; cwd
       if (note?.type !== "text") return;
       event.preventDefault(); event.stopPropagation(); setMenu({ x: event.clientX, y: event.clientY, text: note.originalText || note.text });
     }}>
-      {initial ? <Excalidraw initialData={initial} excalidrawAPI={setEditor} onChange={changed} onPointerUp={() => {
+      {initial ? <Excalidraw initialData={initial} excalidrawAPI={ready} onChange={changed} onPointerUp={() => {
         if (!editor) return;
         const ids = editor.getAppState().selectedElementIds;
         const clicked = editor.getSceneElements().find(e => ids[e.id] && agentOf(e));
@@ -397,7 +417,7 @@ export default function LoveSpot({ dark, cwd, onOpenChat }: { dark: boolean; cwd
     <div className="love-spot-panels" hidden={!talk && !agent}>
       {agent && <LoveAgentPanel agent={agent} cwd={cwd} busy={busy} onChange={updateAgent} onRun={() => void run()} onClose={() => setSelected(undefined)} onOpenChat={onOpenChat} onAnswer={optionId => void answerPermission(optionId)} />}
       <LoveSpotTalk open={talk} onClose={() => setTalk(false)} quote={quote} model={model} choiceId={choiceId} choices={choices} models={models}
-        onModel={value => { setModel(value.model); setChoiceId(value.choiceId); }} provider={provider} disabled={!editor || !settings || !model || boardBusy} onDictating={setTalkDictating} beforeSend={flush} />
+        onModel={value => { setModel(value.model); setChoiceId(value.choiceId); }} provider={provider} disabled={!editor || !settings || !model || boardBusy} onDictating={setTalkDictating} sendWithBoard={sendWithBoard} />
     </div>
     </div>
     {menu && <DropdownMenu open onOpenChange={open => { if (!open) setMenu(undefined); }}>

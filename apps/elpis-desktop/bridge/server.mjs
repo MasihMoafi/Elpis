@@ -179,11 +179,20 @@ export async function startDesktopServer(options = {}) {
         if (url.pathname === '/api/love-spot/agents/run' && method === 'POST') return json(response, 200, await loveAgents.run(await body(request)));
         if (url.pathname === '/api/love-spot/agents/permission' && method === 'POST') return json(response, 200, loveAgents.answer(await body(request)));
         if (url.pathname === '/api/love-spot/events' && method === 'GET') {
+          const hint = url.searchParams.get('revision');
+          if (hint !== null && (!/^[a-f0-9]{64}$/.test(hint) || url.searchParams.getAll('revision').length > 1)) throw new BridgeError('Invalid drawing revision', 400);
+          // Skip only the fresh subscription's already loaded snapshot. All live
+          // updates and reconnect snapshots retain the existing reconciliation path.
+          let bootstrap = request.headers['last-event-id'] === undefined ? hint : null;
           response.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-store', Connection: 'keep-alive' });
           loveStreams.add(response);
           const stop = await loveSpot.watch(value => {
+            if (value.type === 'scene') {
+              if (bootstrap !== null && value.revision === bootstrap) return;
+              bootstrap = null;
+            }
             if (response.writableLength > 64 * 1024 * 1024) response.destroy();
-            else response.write(`data: ${JSON.stringify(value)}\n\n`);
+            else response.write(`${hint === null ? '' : 'id: love-spot\n'}data: ${JSON.stringify(value)}\n\n`);
           });
           response.on('close', () => { stop(); loveStreams.delete(response); }); return;
         }

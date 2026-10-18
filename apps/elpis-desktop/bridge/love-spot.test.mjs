@@ -26,7 +26,7 @@ async function fixture(t, { loveAgents } = {}) {
   const url = new URL(app.url), origin = url.origin;
   const auth = await fetch(`${origin}/api/session`, { method: 'POST', headers: { origin, 'content-type': 'application/json' }, body: JSON.stringify({ token: url.hash.slice(7) }) });
   const cookie = auth.headers.get('set-cookie').split(';')[0];
-  const request = (suffix = '', data) => fetch(`${origin}/api/love-spot${suffix}`, { method: data === undefined ? 'GET' : 'POST', headers: { cookie, origin, 'content-type': 'application/json' }, ...(data === undefined ? {} : { body: JSON.stringify(data) }) });
+  const request = (suffix = '', data, headers = {}) => fetch(`${origin}/api/love-spot${suffix}`, { method: data === undefined ? 'GET' : 'POST', headers: { cookie, origin, 'content-type': 'application/json', ...headers }, ...(data === undefined ? {} : { body: JSON.stringify(data) }) });
   const load = async () => { const reply = await request(); assert.equal(reply.status, 200); return reply.json(); };
   const save = async scene => { const reply = await request('', scene); assert.equal(reply.status, 200); return reply.json(); };
   return { directory, screenshots, request, load, save, origin, client };
@@ -89,6 +89,35 @@ test('Love Spot picture requires the current revision and PNG bytes', async t =>
   await f.save({ elements: [element('b')], files: {} });
   assert.equal((await f.request('/picture', { revision: a.revision, png: PNG.toString('base64') })).status, 409);
   assert.equal((await f.request('/picture', { revision: (await f.load()).revision, png: 'not a PNG' })).status, 400);
+});
+
+test('Love Spot cached bootstrap skips loaded bytes and still sends changed scenes and stale-cache recovery', { timeout: 10000 }, async t => {
+  const f = await fixture(t), initial = await f.save({ elements: [element('cached')], files: {} });
+  const reader = (await f.request(`/events?revision=${initial.revision}`)).body.getReader();
+  t.after(() => reader.cancel());
+  const decoder = new TextDecoder(), first = decoder.decode((await reader.read()).value);
+  assert.ok(first.includes('"type":"screenshots"'));
+  assert.ok(first.includes('id: love-spot'), 'metadata must identify a future reconnect');
+  assert.equal(first.includes('"type":"scene"'), false);
+  const changed = await f.save({ elements: [element('only-the-update-can-know-this')], files: {} });
+  let update = '';
+  while (!update.includes('only-the-update-can-know-this')) update += decoder.decode((await reader.read()).value, { stream: true });
+  assert.ok(update.includes(changed.revision));
+  const stale = (await f.request(`/events?revision=${initial.revision}`)).body.getReader();
+  t.after(() => stale.cancel());
+  assert.ok(decoder.decode((await stale.read()).value).includes('only-the-update-can-know-this'));
+});
+
+test('Love Spot cached bootstrap rejects invalid hints and always refreshes a reconnect', async t => {
+  const f = await fixture(t), initial = await f.save({ elements: [element('reconnect')], files: {} });
+  for (const suffix of ['/events?revision=bad', '/events?revision=', `/events?revision=${initial.revision}&revision=${initial.revision}`]) {
+    assert.equal((await f.request(suffix)).status, 400);
+  }
+  const reader = (await f.request(`/events?revision=${initial.revision}`, undefined, { 'last-event-id': 'love-spot' })).body.getReader();
+  t.after(() => reader.cancel());
+  const message = new TextDecoder().decode((await reader.read()).value);
+  assert.ok(message.includes('"type":"scene"'), 'reconnect must refresh even if the API cache and original hint have the same hash');
+  assert.ok(message.includes(initial.revision));
 });
 
 test('Love Spot inbox merges durably and retains partial JSON', async t => {
