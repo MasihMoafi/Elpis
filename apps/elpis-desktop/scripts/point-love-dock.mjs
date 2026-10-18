@@ -10,7 +10,7 @@ const quote = value => `'${value.replaceAll("'", "'\\''")}'`;
 const execPath = value => `"${value.replace(/[\\"`$%]/g, char => char === '%' ? '%%' : `\\${char}`)}"`;
 
 export function prepareDock(text, home) {
-  const exec = `Exec=${execPath(path.join(home, '.local/bin/elpis-app'))} --love-spot`;
+  const exec = `Exec=${execPath(path.join(home, '.local/bin/elpis-app'))} --love-spot-app`;
   const found = new Set(); let section = '';
   const next = text.split('\n').map(line => {
     if (/^\[.*\]$/.test(line)) section = line;

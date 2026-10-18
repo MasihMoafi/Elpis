@@ -78,8 +78,12 @@ async function prepareWindows() {
 
 // WM_CLASS comes from package.json "name" (elpis-desktop) when launched as the app directory;
 // elpis-desktop.desktop.in sets StartupWMClass=elpis-desktop to match, so docks show the Elpis icon.
-app.setName('Elpis');
-app.setPath('userData', process.env.ELPIS_DESKTOP_PROFILE || path.join(app.getPath('appData'), 'Elpis'));
+// --love-spot-app (the Love Spot dock icon): Love Spot as its own app, so its window groups under that icon. Wayland
+// takes the app id from the desktop name; its own profile gives it its own single-instance lock.
+const loveSpotApp = process.argv.includes('--love-spot-app');
+app.setName(loveSpotApp ? 'Love Spot' : 'Elpis');
+if (loveSpotApp) app.setDesktopName('excalidraw.desktop');
+app.setPath('userData', process.env.ELPIS_DESKTOP_PROFILE || path.join(app.getPath('appData'), loveSpotApp ? 'Elpis Love Spot' : 'Elpis'));
 enableWaylandIme(app.commandLine, process.env);
 // Wayland gives apps global shortcuts only through the desktop portal; Claude's app turns on Chromium's portal support the same way.
 app.commandLine.appendSwitch('enable-features', [app.commandLine.getSwitchValue('enable-features'), 'GlobalShortcutsPortal'].filter(Boolean).join(','));
@@ -87,7 +91,7 @@ if (!app.requestSingleInstanceLock({ openThread: openThreadArgument(process.argv
   app.quit();
 } else {
   app.on('second-instance', (_event, argv, _cwd, data) => {
-    const loveSpot = data?.loveSpot === true || argv.includes('--love-spot');
+    const loveSpot = loveSpotApp || data?.loveSpot === true || argv.includes('--love-spot');
     void openWindow(loveSpot).then(() => { if (!loveSpot) primaryOpeners.threads.queue(data?.openThread ?? openThreadArgument(argv)); }).catch(showStartupError);
   });
   app.whenReady().then(async () => {
@@ -98,6 +102,7 @@ if (!app.requestSingleInstanceLock({ openThread: openThreadArgument(process.argv
       { role: 'editMenu' },
       { label: 'View', submenu: [{ role: 'reload' }, { role: 'resetZoom' }, { role: 'zoomIn' }, { role: 'zoomOut' }, { role: 'togglefullscreen' }] },
     ]));
+    if (loveSpotApp) return void await openWindow(true);
     const showWindow = () => void openWindow().catch(showStartupError);
     quickEntry = startQuickEntry({ app, globalShortcut, BrowserWindow, screen, ipcMain, dark: () => darkTheme,
       onSubmit: text => { void openWindow().then(() => primaryOpeners.newChats.queue(text)).catch(showStartupError); } });
@@ -107,7 +112,7 @@ if (!app.requestSingleInstanceLock({ openThread: openThreadArgument(process.argv
       open: showWindow, newChat: () => { void openWindow().then(() => primaryOpeners.newChats.queue('')).catch(showStartupError); }, quickEntry: () => void quickEntry.toggle(), quit: () => app.quit(),
     } });
   }).catch(showStartupError);
-  app.on('activate', () => { void openWindow().catch(showStartupError); });
+  app.on('activate', () => { void openWindow(loveSpotApp).catch(showStartupError); });
   app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
   app.on('before-quit', event => {
     if (!server || closing) return;

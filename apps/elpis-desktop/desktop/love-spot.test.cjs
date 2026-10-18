@@ -8,7 +8,9 @@ const { EventEmitter } = require('node:events');
 
 async function launch(args) {
   const app = new EventEmitter(); let ready, lock;
-  Object.assign(app, { setName() {}, setPath() {}, getPath: () => '/tmp/love-dock-test',
+  const identity = {};
+  Object.assign(app, { setName: name => { identity.name = name; }, setPath: (key, value) => { identity[key] = value; },
+    setDesktopName: name => { identity.desktop = name; }, getPath: () => '/tmp/love-dock-test',
     commandLine: { appendSwitch() {}, getSwitchValue: () => '' },
     requestSingleInstanceLock: data => { lock = data; return true; },
     whenReady: () => new Promise(resolve => { ready = resolve; }), quit() {} });
@@ -19,27 +21,41 @@ async function launch(args) {
   const electron = { app, Menu: { buildFromTemplate: x => x, setApplicationMenu() {} } };
   const context = vm.createContext({ __dirname, console, process: { argv: ['electron', 'app', ...args], env: {}, platform: 'linux' },
     sessions, openers, testStore: { get: () => null },
-    require: name => name === 'electron' ? electron : name === './quick-entry.cjs' ? { startQuickEntry: () => ({ start: async () => {} }) }
-      : name === './tray.cjs' ? { createCloseToTray: () => ({}), createTray: () => ({}) } : require(name) });
+    require: name => name === 'electron' ? electron : name === './quick-entry.cjs' ? { startQuickEntry: () => { calls.push('quick-entry'); return { start: async () => {} }; } }
+      : name === './tray.cjs' ? { createCloseToTray: () => ({}), createTray: () => { calls.push('tray'); return {}; } } : require(name) });
   vm.runInContext(fs.readFileSync(path.join(__dirname, 'main.cjs'), 'utf8'), context);
   vm.runInContext('server = {}; store = testStore; sessionWindows = sessions; primaryOpeners = openers;', context);
   ready();
   const settle = () => new Promise(resolve => setImmediate(resolve)); await settle();
-  return { app, calls, lock, settle };
+  return { app, calls, lock, settle, identity };
 }
 
 test('cold --love-spot launch opens only the drawing window and carries the flag through the lock', async () => {
   const f = await launch(['--love-spot']);
   assert.equal(f.lock.loveSpot, true);
+  assert.deepEqual(f.calls, ['quick-entry', 'love', 'tray']);
+});
+
+// Masih (18 Oct): the red M on his dock is his Love Spot. Inside Elpis's process its window groups under Elpis's icon,
+// so the dock starts it as its own app: the dock's identity (excalidraw.desktop), its own profile and lock, and nothing
+// of Elpis's (no Quick Entry shortcut, no second tray icon).
+test('--love-spot-app is its own app under the Love Spot dock icon', async () => {
+  const f = await launch(['--love-spot-app']);
+  assert.equal(f.identity.desktop, 'excalidraw.desktop');
+  assert.match(f.identity.userData, /Love Spot$/);
   assert.deepEqual(f.calls, ['love']);
+  f.app.emit('second-instance', {}, ['electron', '--love-spot-app'], '', {}); await f.settle();
+  f.app.emit('activate'); await f.settle();
+  assert.deepEqual(f.calls, ['love', 'love', 'love'], 'every way back into it opens Love Spot');
 });
 
 test('a running Elpis routes second-instance Love Spot launches separately from chat and openThread', async () => {
   const f = await launch([]);
-  assert.deepEqual(f.calls, ['chat']);
+  const windows = () => f.calls.filter(call => call !== 'quick-entry' && call !== 'tray');
+  assert.deepEqual(windows(), ['chat']);
   f.app.emit('second-instance', {}, ['electron', '--love-spot'], '', {}); await f.settle();
   f.app.emit('second-instance', {}, [], '', { loveSpot: true }); await f.settle();
-  assert.deepEqual(f.calls, ['chat', 'love', 'love']);
+  assert.deepEqual(windows(), ['chat', 'love', 'love']);
   f.app.emit('second-instance', {}, ['electron', '--open-thread', 'chat-123'], '', {}); await f.settle();
   assert.deepEqual(f.calls.slice(-2), ['focus-chat', ['thread', 'chat-123']]);
 });
@@ -48,7 +64,7 @@ test('dock preparation replaces both launch paths, preserves other actions, and 
   const { prepareDock, rollbackCommand } = await import('../scripts/point-love-dock.mjs');
   const old = '[Desktop Entry]\nName=Love Spot\nExec=old-app\nActions=new-page;other;\nStartupWMClass=excalidraw\n\n[Desktop Action new-page]\nName=New page\nExec=old-new-page\n\n[Desktop Action other]\nExec=keep-this\n';
   const next = prepareDock(old, '/tmp/a home');
-  assert.equal(next.match(/Exec="\/tmp\/a home\/\.local\/bin\/elpis-app" --love-spot/g)?.length, 2);
+  assert.equal(next.match(/Exec="\/tmp\/a home\/\.local\/bin\/elpis-app" --love-spot-app$/gm)?.length, 2);
   assert.match(next, /\[Desktop Action other\]\nExec=keep-this/);
   assert.equal(prepareDock(next, '/tmp/a home'), next, 'applying twice is harmless');
   assert.throws(() => prepareDock('[Desktop Entry]\nExec=x\n', '/tmp'), /new-page/);
