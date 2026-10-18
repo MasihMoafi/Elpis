@@ -166,13 +166,14 @@ function createLoveSpot({ directory = process.env.EXCALIDRAW_LOCAL_DIR || path.j
     });
   }
   // The chat and its replies use the same lock as every board writer, including the standalone window.
-  async function chat(create) {
+  // `stale` names a saved chat Elpis no longer has: it is replaced, unless another window already did so.
+  async function chat(create, stale) {
     return locked(async () => {
       const file = path.join(directory, '.love-spot-chat.json');
       try {
         const saved = JSON.parse(await fs.readFile(file, 'utf8'));
         if (typeof saved.threadId !== 'string' || !saved.threadId) throw fail('Love Spot chat could not be read.', 409);
-        return saved.threadId;
+        if (saved.threadId !== stale) return saved.threadId;
       } catch (e) { if (e.code !== 'ENOENT') throw e; }
       if (!create) return null;
       const id = await create(directory);

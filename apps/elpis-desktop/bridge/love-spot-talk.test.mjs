@@ -111,3 +111,16 @@ test('a reply started on another page stays in Talk and does not write onto the 
   assert.ok(chat.entries.some(e => e.item.text === 'Here with you.'));
   assert.match(chat.error, /page changed/i);
 });
+
+test('after Masih deletes the Love Spot chat, Talk starts a new one instead of failing forever', async t => {
+  const f = await fixture(t);
+  await f.talk.send({ text: 'Hello', model: 'text' }); f.finish(); await f.talk.idle();
+  f.talk.close();
+  // Deleted from the sidebar and purged at quit: thread/read answers as the engine does for an unknown thread.
+  f.client.readThread = async id => { throw new Error(`thread not loaded: ${id}`); };
+  const next = createLoveSpotTalk({ client: f.client, store: f.store }); t.after(() => next.close());
+  assert.deepEqual((await next.read()).entries, []);
+  await next.send({ text: 'Are you still there?', model: 'text' });
+  assert.equal(f.created.length, 2);
+  assert.equal(f.sent.at(-1).text, 'Are you still there?');
+});
