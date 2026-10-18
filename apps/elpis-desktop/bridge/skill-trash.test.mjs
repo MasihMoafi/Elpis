@@ -176,3 +176,10 @@ test('a skill folder linked into a skill root is refused at the canonical path t
   await f.client.undoSkillDelete({ token: result.deleted.token });
   assert.equal(await fs.readFile(kept, 'utf8'), 'in a linked root');
 });
+
+test('a failed move to Trash says why, and the skill stays', async t => {
+  const f = await fixture(t), skill = f.skills[0];
+  await fs.chmod(f.root, 0o555); t.after(() => fs.chmod(f.root, 0o755));
+  await assert.rejects(f.client.deleteSkill({ path: skill.path }), /Could not move skill to Trash: .*permission denied/i);
+  assert.ok(await fs.stat(skill.path));
+});

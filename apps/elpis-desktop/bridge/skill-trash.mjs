@@ -89,7 +89,7 @@ export class SkillTrash {
     const checked = await skillFolder(file, skills, roots);
     if (checked.realFolder !== target.realFolder || checked.folderStat.ino !== target.folderStat.ino) throw Error('Skill folder changed; refresh Ledger');
     try { await run('gio', ['trash', '--', target.folder], { env: this.env, timeout: 10000 }); }
-    catch { throw Error('Could not move skill to Trash'); }
+    catch (error) { throw Error(`Could not move skill to Trash: ${String(error.stderr || error.message || 'gio failed').trim().split('\n').at(-1).replace(/^gio: \S+: /, '')}`); }
     const entry = (await this.#entries(locations, target.folder)).find(entry => !previous.has(entry.info));
     if (!entry) throw Error('Skill moved to Trash, but its Undo information could not be read');
     const token = randomUUID();
