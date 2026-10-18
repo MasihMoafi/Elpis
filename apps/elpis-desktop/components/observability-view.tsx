@@ -101,7 +101,7 @@ export function ObservabilityView({ onOpenChat, hiddenChats }: { onOpenChat: (id
   }, [hiddenKey]);
   const choose = (chat: Chat) => { setSelected(chat); setDetail(null); void loadChat(chat); };
   return <div className="customize observability" aria-label="Observability">
-    {selected && <button type="button" className="back-link" onClick={() => { request.current++; setBusy(false); setError(""); setSelected(null); }}><ArrowLeft size={18} />All chats</button>}
+    {selected && <button type="button" className="back-link" onClick={() => { request.current++; setBusy(false); setError(""); setSelected(null); void loadOverview(); }}><ArrowLeft size={18} />All chats</button>}
     {error && <SettingsNotice tone="alert"><FilePathText text={error} /> <Button variant="ghost" size="sm" onClick={() => void (selected ? loadChat(selected) : loadOverview())}>Retry</Button></SettingsNotice>}
     {busy && <SettingsNotice>Reading chats…</SettingsNotice>}
     {!selected && overview && <section aria-label="Chats">

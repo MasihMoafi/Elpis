@@ -146,6 +146,26 @@ test('a chat deleted while Observability is open disappears with its counts and 
   } finally { await f.close(); }
 });
 
+test('returning to the chat list after a subagent deletion reloads its totals', async () => {
+  let deleted = false; const all = routes([]);
+  const f = await fixture({ routes: { ...all,
+    '/api/observability': () => deleted ? { totals: { attempts: 0, saved: 0 }, chats: { data: [{ ...CHAT, totals: { attempts: 0, saved: 0 } }], nextCursor: null } } : all['/api/observability'](),
+    '/api/observability/chats/chat-a': (body, url) => { const result = all['/api/observability/chats/chat-a'](body, url); return deleted ? { ...result, agents: [AGENTS[0]] } : result; },
+  } });
+  try {
+    const { page } = f; await enter(page); await open(page);
+    await page.getByRole('region', { name: 'Iris', exact: true }).getByText('Unicode cases passed.', { exact: true }).waitFor();
+    deleted = true; f.emit('message', { method: 'thread/deleted', params: { threadId: 'worker-a' } });
+    await page.getByRole('region', { name: 'Iris', exact: true }).waitFor({ state: 'detached' });
+    await mother(page).getByText('Fix the parser 0.', { exact: true }).waitFor();
+    await page.getByRole('button', { name: 'All chats', exact: true }).click();
+    const list = page.getByRole('region', { name: 'Chats', exact: true });
+    await list.getByRole('button', { name: 'Fix the parser', exact: true }).waitFor();
+    assert.doesNotMatch(await list.innerText(), /1.5k|2 Smart Prune runs/);
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});
+
 test('MCP output and the full subagent prompt open with one click', async () => {
   const all = routes([], 1), f = await fixture({ routes: { ...all, '/api/observability/chats/chat-a': (body, url) => {
     const page = all['/api/observability/chats/chat-a'](body, url);
