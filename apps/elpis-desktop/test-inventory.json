@@ -65,7 +65,8 @@
     "bridge/love-spot-talk.test.mjs",
     "bridge/observability-turns.test.mjs",
     "bridge/skill-trash.test.mjs",
-    "bridge/source-map.test.mjs"
+    "bridge/source-map.test.mjs",
+    "bridge/personal.test.mjs"
   ],
   "desktop": [
     "desktop/browser-agent.test.cjs",
@@ -197,7 +198,9 @@
     "tests/ledger-page.test.cjs",
     "tests/love-spot-talk.test.cjs",
     "tests/startup-splash.test.cjs",
-    "tests/workflow-provenance.test.cjs"
+    "tests/workflow-provenance.test.cjs",
+    "tests/canvas-editing.test.cjs",
+    "tests/personal.test.cjs"
   ],
   "opt-in": [
     "tests/app-fix-2.runtime.mjs",
