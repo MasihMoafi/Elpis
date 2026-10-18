@@ -1244,11 +1244,11 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .context-files-error { padding:8px 16px; overflow-wrap:anywhere; }
 .context-files-error [role="alert"] { color:var(--destructive); }
 
-/* Workflows identity color is independent of run/check state. */
-.agent-node[data-kind="agent"] { --kind:var(--agent-color); border-left:5px solid var(--agent-color); background:color-mix(in oklab, var(--agent-color) 65%, var(--card)); padding-right:58px; }
+/* Identity edges stay distinct; restrained tints keep secondary text readable in both themes. */
+.agent-node[data-kind="agent"] { --kind:var(--agent-color); border-left:5px solid var(--agent-color); background:color-mix(in oklab, var(--agent-color) 20%, var(--card)); padding-right:58px; }
 .agent-portrait { float:left; position:absolute; right:8px; top:30px; pointer-events:none; }
 .agent-portrait > div { width:44px; height:44px; }
-.dark .agent-node[data-kind="agent"] { background:color-mix(in oklab, var(--agent-color) 26%, var(--card)); }
+.dark .agent-node[data-kind="agent"] { background:color-mix(in oklab, var(--agent-color) 10%, var(--card)); }
 .iso-node[data-kind="agent"] { --kind:var(--agent-color); }
 .canvas-pattern-command { position:absolute; bottom:48px; left:12px; right:12px; z-index:12; display:grid; gap:6px; padding:10px; border:1px solid var(--border); border-radius:var(--radius); box-shadow:var(--shadow); }
 .canvas-round-limit { position:absolute; bottom:48px; right:12px; z-index:3; display:flex; align-items:center; gap:8px; padding:6px 10px; background:var(--card); color:var(--foreground); border:1px solid var(--border); }

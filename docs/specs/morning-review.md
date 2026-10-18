@@ -10,6 +10,7 @@ legacy/packaged and missing-tool cases, package closure and the full gate must p
 Workflow test scratch data must be trashable on this machine, under its home cache.
 Install the current night adapter through the official engine installer, retaining
 its checked Rust executable; verify scoped writer/read-only metadata on that adapter.
+Workflow identity tints must leave secondary labels at 4.5:1 or better in both themes.
 Then install the clean desktop commit and check both themes on a private display.
 Keep real profiles and boards untouched except the authorized fixes-list replacement.
 Rollback uses each official installer's printed previous-selection command.
